@@ -1,0 +1,17 @@
+{
+  "name": "opendaw-headless",
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build --mode production"
+  },
+  "dependencies": {
+    "@types/node": "^22.15.18",
+    "@opendaw/studio-sdk": "^0.0.6",
+    "vite-plugin-cross-origin-isolation": "^0.1.6"
+  },
+  "devDependencies": {
+    "vite": "^6.3.5"
+  }
+}
