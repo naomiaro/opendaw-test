@@ -6,9 +6,7 @@ import {testFeatures} from "./features"
 import {SampleApi} from "./SampleApi"
 
 import WorkersUrl from "@opendaw/studio-core/workers.js?worker&url"
-import MeterProcessorUrl from "@opendaw/studio-core/meter-processor.js?url"
-import EngineProcessorUrl from "@opendaw/studio-core/engine-processor.js?url"
-import RecordingProcessorUrl from "@opendaw/studio-core/recording-processor.js?url"
+import WorkletsUrl from "@opendaw/studio-core/processors.js?url"
 
 (async () => {
     console.debug("openDAW -> headless")
@@ -27,11 +25,7 @@ import RecordingProcessorUrl from "@opendaw/studio-core/recording-processor.js?u
     const context = new AudioContext({latencyHint: 0})
     console.debug(`AudioContext state: ${context.state}, sampleRate: ${context.sampleRate}`)
     {
-        const {status, error} = await Promises.tryCatch(Worklets.install(context, {
-            meter: MeterProcessorUrl,
-            engine: EngineProcessorUrl,
-            recording: RecordingProcessorUrl
-        }))
+        const {status, error} = await Promises.tryCatch(Worklets.install(context, WorkletsUrl))
         if (status === "rejected") {
             alert(`Could not install Worklets (${error})`)
             return
@@ -56,4 +50,5 @@ import RecordingProcessorUrl from "@opendaw/studio-core/recording-processor.js?u
                 console.debug(`AudioContext resumed (${context.state})`)), {capture: true, once: true})
     }
     document.querySelector("#preloader")?.remove()
+    document.body.textContent = "running..."
 })()
