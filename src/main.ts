@@ -1,17 +1,21 @@
-import {assert} from "@opendaw/lib-std"
+import {assert, ProgressHandler, UUID} from "@opendaw/lib-std"
 import {Promises} from "@opendaw/lib-runtime"
-import {Project, Worklets} from "@opendaw/studio-core"
+import {AudioData, SampleMetaData} from "@opendaw/studio-adapters"
+import {MainThreadSampleManager, Project, SampleProvider, WorkerAgents, Worklets} from "@opendaw/studio-core"
+import {testFeatures} from "./features"
+import {SampleApi} from "./SampleApi"
+
+import WorkersUrl from "@opendaw/studio-core/workers.js?worker&url"
 import MeterProcessorUrl from "@opendaw/studio-core/meter-processor.js?url"
 import EngineProcessorUrl from "@opendaw/studio-core/engine-processor.js?url"
 import RecordingProcessorUrl from "@opendaw/studio-core/recording-processor.js?url"
-import {testFeatures} from "./features"
-import {MainThreadAudioLoaderManager} from "./MainThreadAudioLoaderManager"
 
 (async () => {
     console.debug("openDAW -> headless")
     assert(crossOriginIsolated, "window must be crossOriginIsolated")
     console.debug("booting...")
     document.body.textContent = "booting..."
+    WorkerAgents.install(WorkersUrl)
     {
         const {status, error} = await Promises.tryCatch(testFeatures())
         if (status === "rejected") {
@@ -34,8 +38,12 @@ import {MainThreadAudioLoaderManager} from "./MainThreadAudioLoaderManager"
         }
     }
     {
-        const audioManager = new MainThreadAudioLoaderManager(context)
-        const project = Project.load({audioManager}, await fetch("subset.od").then(x => x.arrayBuffer()))
+        const provider: SampleProvider = {
+            fetch: (uuid: UUID.Format, progress: ProgressHandler): Promise<[AudioData, SampleMetaData]> =>
+                SampleApi.load(context, uuid, progress)
+        }
+        const sampleManager = new MainThreadSampleManager(provider, context)
+        const project = Project.load({sampleManager}, await fetch("subset.od").then(x => x.arrayBuffer()))
         const worklet = Worklets.get(context).createEngine(project)
         await worklet.isReady()
         while (!await worklet.queryLoadingComplete()) {}

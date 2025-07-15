@@ -1,5 +1,5 @@
 import {Arrays, asDefined, panic, Procedure, unitValue, UUID} from "@opendaw/lib-std"
-import {AudioData, AudioMetaData, AudioSample} from "@opendaw/studio-adapters"
+import {AudioData, Sample, SampleMetaData} from "@opendaw/studio-adapters"
 import {network, Promises} from "@opendaw/lib-runtime"
 
 const username = "openDAW"
@@ -15,9 +15,9 @@ export namespace SampleApi {
     export const ApiRoot = "https://api.opendaw.studio/samples"
     export const FileRoot = "https://assets.opendaw.studio/samples"
 
-    export const get = async (uuid: UUID.Format): Promise<AudioSample> => {
+    export const get = async (uuid: UUID.Format): Promise<Sample> => {
         const url = `${ApiRoot}/get.php?uuid=${UUID.toString(uuid)}`
-        const sample: AudioSample = await Promises.retry(() => network.limitFetch(url, headers)
+        const sample: Sample = await Promises.retry(() => network.limitFetch(url, headers)
             .then(x => x.json()))
             .then(x => {if ("error" in x) {return panic(x.error)} else {return x}})
         return Object.freeze({...sample, cloud: true})
@@ -25,7 +25,7 @@ export namespace SampleApi {
 
     export const load = async (context: AudioContext,
                                uuid: UUID.Format,
-                               progress: Procedure<unitValue>): Promise<[AudioData, AudioMetaData]> => {
+                               progress: Procedure<unitValue>): Promise<[AudioData, SampleMetaData]> => {
         console.debug(`fetch ${UUID.toString(uuid)}`)
         return get(uuid)
             .then(({uuid, name, bpm}) => Promises.retry(() => network.limitFetch(`${FileRoot}/${uuid}`, headers))
