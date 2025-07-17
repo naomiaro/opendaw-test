@@ -8,7 +8,7 @@
   },
   "dependencies": {
     "@types/node": "^22.15.18",
-    "@opendaw/studio-sdk": "^0.0.11",
+    "@opendaw/studio-sdk": "^0.0.13",
     "vite-plugin-cross-origin-isolation": "^0.1.6"
   },
   "devDependencies": {
