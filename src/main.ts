@@ -1,29 +1,33 @@
 // noinspection PointlessArithmeticExpressionJS
 
-import {assert, ProgressHandler, UUID} from "@opendaw/lib-std"
+import {assert, Progress, UUID} from "@opendaw/lib-std"
 import {PPQN} from "@opendaw/lib-dsp"
 import {Promises} from "@opendaw/lib-runtime"
 import {AudioData, SampleMetaData} from "@opendaw/studio-adapters"
 import {
+    AudioWorklets,
     InstrumentFactories,
     MainThreadSampleManager,
     Project,
     SampleProvider,
-    WorkerAgents,
-    Worklets
+    Workers
 } from "@opendaw/studio-core"
 import {testFeatures} from "./features"
 import {SampleApi} from "./SampleApi"
 
-import WorkersUrl from "@opendaw/studio-core/workers.js?worker&url"
+import WorkersUrl from "@opendaw/studio-core/workers-main.js?worker&url"
 import WorkletsUrl from "@opendaw/studio-core/processors.js?url"
 
 (async () => {
     console.debug("openDAW -> headless")
+    console.debug("WorkersUrl", WorkersUrl)
+    console.debug("WorkletsUrl", WorkletsUrl)
     assert(crossOriginIsolated, "window must be crossOriginIsolated")
     console.debug("booting...")
     document.body.textContent = "booting..."
-    WorkerAgents.install(WorkersUrl)
+    Workers.setWorkerUrl(WorkersUrl)
+    AudioWorklets.setWorkletUrl(WorkletsUrl)
+    Workers.install()
     {
         const {status, error} = await Promises.tryCatch(testFeatures())
         if (status === "rejected") {
@@ -32,10 +36,10 @@ import WorkletsUrl from "@opendaw/studio-core/processors.js?url"
             return
         }
     }
-    const context = new AudioContext({latencyHint: 0})
-    console.debug(`AudioContext state: ${context.state}, sampleRate: ${context.sampleRate}`)
+    const audioContext = new AudioContext({latencyHint: 0})
+    console.debug(`AudioContext state: ${audioContext.state}, sampleRate: ${audioContext.sampleRate}`)
     {
-        const {status, error} = await Promises.tryCatch(Worklets.install(context, WorkletsUrl))
+        const {status, error} = await Promises.tryCatch(AudioWorklets.install(audioContext))
         if (status === "rejected") {
             alert(`Could not install Worklets (${error})`)
             return
@@ -43,18 +47,17 @@ import WorkletsUrl from "@opendaw/studio-core/processors.js?url"
     }
     {
         const sampleProvider = new class implements SampleProvider {
-            fetch(uuid: UUID.Format, progress: ProgressHandler): Promise<[AudioData, SampleMetaData]> {
-                return SampleApi.load(context, uuid, progress)
+            fetch(uuid: UUID.Bytes, progress: Progress.Handler): Promise<[AudioData, SampleMetaData]> {
+                return SampleApi.load(audioContext, uuid, progress)
             }
         }
         const {Quarter, Bar, SemiQuaver} = PPQN
-        const sampleManager = new MainThreadSampleManager(sampleProvider, context)
-        const project = Project.new({sampleManager})
-        const worklet = Worklets.get(context).createEngine(project)
-        await worklet.isReady()
-        while (!await worklet.queryLoadingComplete()) {}
-        worklet.connect(context.destination)
-        worklet.isPlaying().setValue(true)
+        const sampleManager = new MainThreadSampleManager(sampleProvider, audioContext)
+        const audioWorklets = AudioWorklets.get(audioContext)
+        const project = Project.new({audioContext, sampleManager, audioWorklets})
+        project.startAudioWorklet()
+        await project.engine.isReady()
+        project.engine.play()
         const {editing, api} = project
         editing.modify(() => {
             const {trackBox} = api.createInstrument(InstrumentFactories.Vaporisateur)
@@ -70,10 +73,10 @@ import WorkletsUrl from "@opendaw/studio-core/processors.js?url"
             api.createNoteEvent({owner: noteRegionBox, position: SemiQuaver * 3, duration: SemiQuaver, pitch: 70})
         })
     }
-    if (context.state === "suspended") {
+    if (audioContext.state === "suspended") {
         window.addEventListener("click",
-            async () => await context.resume().then(() =>
-                console.debug(`AudioContext resumed (${context.state})`)), {capture: true, once: true})
+            async () => await audioContext.resume().then(() =>
+                console.debug(`AudioContext resumed (${audioContext.state})`)), {capture: true, once: true})
     }
     document.querySelector("#preloader")?.remove()
     document.body.textContent = "running..."
