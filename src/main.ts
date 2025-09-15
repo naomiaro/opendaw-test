@@ -25,9 +25,8 @@ import WorkletsUrl from "@opendaw/studio-core/processors.js?url"
     assert(crossOriginIsolated, "window must be crossOriginIsolated")
     console.debug("booting...")
     document.body.textContent = "booting..."
-    Workers.setWorkerUrl(WorkersUrl)
-    AudioWorklets.setWorkletUrl(WorkletsUrl)
-    Workers.install()
+    await Workers.install(WorkersUrl)
+    AudioWorklets.install(WorkletsUrl)
     {
         const {status, error} = await Promises.tryCatch(testFeatures())
         if (status === "rejected") {
@@ -39,7 +38,7 @@ import WorkletsUrl from "@opendaw/studio-core/processors.js?url"
     const audioContext = new AudioContext({latencyHint: 0})
     console.debug(`AudioContext state: ${audioContext.state}, sampleRate: ${audioContext.sampleRate}`)
     {
-        const {status, error} = await Promises.tryCatch(AudioWorklets.install(audioContext))
+        const {status, error} = await Promises.tryCatch(AudioWorklets.createFor(audioContext))
         if (status === "rejected") {
             alert(`Could not install Worklets (${error})`)
             return
