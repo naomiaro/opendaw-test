@@ -1,19 +1,19 @@
 // noinspection PointlessArithmeticExpressionJS
 
-import {assert, Progress, UUID} from "@opendaw/lib-std"
+import {assert, Procedure, unitValue, UUID} from "@opendaw/lib-std"
 import {PPQN} from "@opendaw/lib-dsp"
 import {Promises} from "@opendaw/lib-runtime"
 import {AudioData, SampleMetaData} from "@opendaw/studio-adapters"
 import {
     AudioWorklets,
+    DefaultSampleLoaderManager,
     InstrumentFactories,
-    MainThreadSampleManager,
+    OpenSampleAPI,
     Project,
     SampleProvider,
     Workers
 } from "@opendaw/studio-core"
 import {testFeatures} from "./features"
-import {SampleApi} from "./SampleApi"
 
 import WorkersUrl from "@opendaw/studio-core/workers-main.js?worker&url"
 import WorkletsUrl from "@opendaw/studio-core/processors.js?url"
@@ -45,13 +45,12 @@ import WorkletsUrl from "@opendaw/studio-core/processors.js?url"
         }
     }
     {
-        const sampleProvider = new class implements SampleProvider {
-            fetch(uuid: UUID.Bytes, progress: Progress.Handler): Promise<[AudioData, SampleMetaData]> {
-                return SampleApi.load(audioContext, uuid, progress)
-            }
-        }
         const {Quarter, Bar, SemiQuaver} = PPQN
-        const sampleManager = new MainThreadSampleManager(sampleProvider, audioContext)
+        const sampleAPI = OpenSampleAPI.get()
+        const sampleManager = new DefaultSampleLoaderManager({
+            fetch: async (uuid: UUID.Bytes, progress: Procedure<unitValue>): Promise<[AudioData, SampleMetaData]> =>
+                sampleAPI.load(audioContext, uuid, progress)
+        } satisfies SampleProvider)
         const audioWorklets = AudioWorklets.get(audioContext)
         const project = Project.new({audioContext, sampleManager, audioWorklets})
         project.startAudioWorklet()
