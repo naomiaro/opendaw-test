@@ -1,14 +1,16 @@
 // noinspection PointlessArithmeticExpressionJS
 
-import {assert, Procedure, unitValue, UUID} from "@opendaw/lib-std"
+import {assert, Procedure, Progress, unitValue, UUID} from "@opendaw/lib-std"
 import {PPQN} from "@opendaw/lib-dsp"
 import {Promises} from "@opendaw/lib-runtime"
-import {AudioData, SampleMetaData} from "@opendaw/studio-adapters"
+import {AudioData, SampleMetaData, SoundfontMetaData} from "@opendaw/studio-adapters"
 import {
     AudioWorklets,
     DefaultSampleLoaderManager,
+    DefaultSoundfontLoaderManager,
     InstrumentFactories,
     OpenSampleAPI,
+    OpenSoundfontAPI,
     Project,
     SampleProvider,
     Workers
@@ -46,13 +48,16 @@ import WorkletsUrl from "@opendaw/studio-core/processors.js?url"
     }
     {
         const {Quarter, Bar, SemiQuaver} = PPQN
-        const sampleAPI = OpenSampleAPI.get()
         const sampleManager = new DefaultSampleLoaderManager({
             fetch: async (uuid: UUID.Bytes, progress: Procedure<unitValue>): Promise<[AudioData, SampleMetaData]> =>
-                sampleAPI.load(audioContext, uuid, progress)
+                OpenSampleAPI.get().load(audioContext, uuid, progress)
         } satisfies SampleProvider)
+        const soundfontManager = new DefaultSoundfontLoaderManager({
+            fetch: async (uuid: UUID.Bytes, progress: Progress.Handler): Promise<[ArrayBuffer, SoundfontMetaData]> =>
+                OpenSoundfontAPI.get().load(uuid, progress)
+        })
         const audioWorklets = AudioWorklets.get(audioContext)
-        const project = Project.new({audioContext, sampleManager, audioWorklets})
+        const project = Project.new({audioContext, sampleManager, soundfontManager, audioWorklets})
         project.startAudioWorklet()
         await project.engine.isReady()
         project.engine.play()
