@@ -12,7 +12,6 @@ import {
     OpenSampleAPI,
     OpenSoundfontAPI,
     Project,
-    SampleProvider,
     Workers
 } from "@opendaw/studio-core"
 import {testFeatures} from "./features"
@@ -51,7 +50,7 @@ import WorkletsUrl from "@opendaw/studio-core/processors.js?url"
         const sampleManager = new DefaultSampleLoaderManager({
             fetch: async (uuid: UUID.Bytes, progress: Procedure<unitValue>): Promise<[AudioData, SampleMetaData]> =>
                 OpenSampleAPI.get().load(audioContext, uuid, progress)
-        } satisfies SampleProvider)
+        })
         const soundfontManager = new DefaultSoundfontLoaderManager({
             fetch: async (uuid: UUID.Bytes, progress: Progress.Handler): Promise<[ArrayBuffer, SoundfontMetaData]> =>
                 OpenSoundfontAPI.get().load(uuid, progress)
@@ -63,17 +62,18 @@ import WorkletsUrl from "@opendaw/studio-core/processors.js?url"
         project.engine.play()
         const {editing, api} = project
         editing.modify(() => {
-            const {trackBox} = api.createInstrument(InstrumentFactories.Vaporisateur)
+            const {audioUnitBox, trackBox} = api.createInstrument(InstrumentFactories.Nano)
+            audioUnitBox.volume.setValue(-6)
             const noteRegionBox = api.createNoteRegion({
                 trackBox,
                 position: Quarter * 0,
                 duration: Bar * 4,
-                loopDuration: Quarter
+                loopDuration: Quarter * 2
             })
-            api.createNoteEvent({owner: noteRegionBox, position: SemiQuaver * 0, duration: SemiQuaver, pitch: 60})
-            api.createNoteEvent({owner: noteRegionBox, position: SemiQuaver * 1, duration: SemiQuaver, pitch: 63})
-            api.createNoteEvent({owner: noteRegionBox, position: SemiQuaver * 2, duration: SemiQuaver, pitch: 67})
-            api.createNoteEvent({owner: noteRegionBox, position: SemiQuaver * 3, duration: SemiQuaver, pitch: 70})
+            api.createNoteEvent({owner: noteRegionBox, position: SemiQuaver * 0, duration: SemiQuaver * 2, pitch: 60})
+            api.createNoteEvent({owner: noteRegionBox, position: SemiQuaver * 2, duration: SemiQuaver * 2, pitch: 63})
+            api.createNoteEvent({owner: noteRegionBox, position: SemiQuaver * 4, duration: SemiQuaver * 2, pitch: 67})
+            api.createNoteEvent({owner: noteRegionBox, position: SemiQuaver * 6, duration: SemiQuaver * 2, pitch: 70})
         })
     }
     if (audioContext.state === "suspended") {
