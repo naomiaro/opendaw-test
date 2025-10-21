@@ -182,9 +182,10 @@ async function loadAudioFile(audioContext: AudioContext, url: string): Promise<A
         if (preloader) preloader.style.display = "none"
         if (controls) controls.style.display = "flex"
 
-        // Track if we're paused (to maintain position) vs stopped (reset position)
-        let isPaused = false
-        let savedPosition = 0
+        // Track playback state and position
+        let pausedPosition: number | null = null
+        let playStartTime: number = 0
+        let playStartPosition: number = 0
 
         const updateButtonStates = (playing: boolean) => {
             if (playing) {
@@ -210,15 +211,20 @@ async function loadAudioFile(audioContext: AudioContext, url: string): Promise<A
                     console.debug(`AudioContext resumed (${audioContext.state})`)
                 }
 
-                // If we were paused, restore the saved position
-                if (isPaused) {
-                    console.debug(`Resuming from saved position: ${savedPosition}`)
-                    project.engine.setPosition(savedPosition)
-                    isPaused = false
+                // If resuming from pause, restore the position
+                if (pausedPosition !== null) {
+                    console.debug(`Restoring paused position: ${pausedPosition}`)
+                    project.engine.setPosition(pausedPosition)
+                    playStartPosition = pausedPosition
+                    pausedPosition = null
+                } else {
+                    playStartPosition = 0
                 }
 
-                console.debug("Starting playback")
+                console.debug("Starting playback...")
+                playStartTime = audioContext.currentTime
                 project.engine.play()
+
                 updateButtonStates(true)
                 updateStatus("Playing...")
             })
@@ -226,14 +232,32 @@ async function loadAudioFile(audioContext: AudioContext, url: string): Promise<A
 
         // Setup pause button - pauses and maintains position
         if (pauseButton) {
-            pauseButton.addEventListener("click", () => {
+            pauseButton.addEventListener("click", async () => {
                 console.debug("Pause button clicked")
-                savedPosition = project.engine.position.getValue()
-                console.debug(`Saving position: ${savedPosition}`)
-                project.engine.stop(false) // Stop without reset
-                isPaused = true
+
+                // Calculate how long we've been playing
+                const elapsedSeconds = audioContext.currentTime - playStartTime
+                console.debug(`Elapsed time: ${elapsedSeconds}s`)
+
+                // Convert to PPQN (assuming 120 BPM)
+                // At 120 BPM: 1 beat = 0.5 seconds
+                // Quarter note = 480 PPQN
+                const elapsedPPQN = (elapsedSeconds / 0.5) * Quarter
+                const currentPosition = playStartPosition + elapsedPPQN
+
+                console.debug(`Play started at position: ${playStartPosition}`)
+                console.debug(`Elapsed PPQN: ${elapsedPPQN}`)
+                console.debug(`Calculated current position: ${currentPosition}`)
+
+                // Save it for resume
+                pausedPosition = currentPosition
+                console.debug(`Saved paused position: ${pausedPosition}`)
+
+                // Stop playback (don't reset position)
+                project.engine.stop(false)
+
                 updateButtonStates(false)
-                updateStatus("Paused")
+                updateStatus(`Paused`)
             })
         }
 
@@ -241,9 +265,11 @@ async function loadAudioFile(audioContext: AudioContext, url: string): Promise<A
         if (stopButton) {
             stopButton.addEventListener("click", () => {
                 console.debug("Stop button clicked")
-                project.engine.stop(true) // Stop with reset
-                isPaused = false
-                savedPosition = 0
+                // Clear any saved pause position
+                pausedPosition = null
+                // Stop and reset to beginning
+                project.engine.stop(true)
+                project.engine.setPosition(0)
                 updateButtonStates(false)
                 updateStatus("Stopped")
             })
