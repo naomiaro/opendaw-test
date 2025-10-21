@@ -14,10 +14,18 @@ import {
     Project,
     Workers
 } from "@opendaw/studio-core"
+import {AudioFileBox, AudioRegionBox} from "@opendaw/studio-boxes"
 import {testFeatures} from "./features"
 
 import WorkersUrl from "@opendaw/studio-core/workers-main.js?worker&url"
 import WorkletsUrl from "@opendaw/studio-core/processors.js?url"
+
+// Helper function to load audio files
+async function loadAudioFile(audioContext: AudioContext, url: string): Promise<AudioBuffer> {
+    const response = await fetch(url)
+    const arrayBuffer = await response.arrayBuffer()
+    return await audioContext.decodeAudioData(arrayBuffer)
+}
 
 (async () => {
     console.debug("openDAW -> headless")
@@ -46,11 +54,34 @@ import WorkletsUrl from "@opendaw/studio-core/processors.js?url"
         }
     }
     {
-        const {Quarter, Bar, SemiQuaver} = PPQN
+        const {Quarter} = PPQN
+
+        // Custom sample provider that can load local audio files
+        const localAudioBuffers = new Map<string, AudioBuffer>()
+
         const sampleManager = new DefaultSampleLoaderManager({
-            fetch: async (uuid: UUID.Bytes, progress: Procedure<unitValue>): Promise<[AudioData, SampleMetaData]> =>
-                OpenSampleAPI.get().load(audioContext, uuid, progress)
+            fetch: async (uuid: UUID.Bytes, progress: Procedure<unitValue>): Promise<[AudioData, SampleMetaData]> => {
+                const uuidString = UUID.toString(uuid)
+                const audioBuffer = localAudioBuffers.get(uuidString)
+
+                if (audioBuffer) {
+                    // Convert AudioBuffer to AudioData format expected by OpenDAW
+                    const audioData = OpenSampleAPI.fromAudioBuffer(audioBuffer)
+                    const metadata: SampleMetaData = {
+                        name: uuidString,
+                        bpm: 120,
+                        duration: audioBuffer.duration,
+                        sample_rate: audioBuffer.sampleRate,
+                        origin: "import"
+                    }
+                    return [audioData, metadata]
+                }
+
+                // Fall back to OpenSampleAPI for built-in samples
+                return OpenSampleAPI.get().load(audioContext, uuid, progress)
+            }
         })
+
         const soundfontManager = new DefaultSoundfontLoaderManager({
             fetch: async (uuid: UUID.Bytes, progress: Progress.Handler): Promise<[ArrayBuffer, SoundfontMetaData]> =>
                 OpenSoundfontAPI.get().load(uuid, progress)
@@ -59,22 +90,64 @@ import WorkletsUrl from "@opendaw/studio-core/processors.js?url"
         const project = Project.new({audioContext, sampleManager, soundfontManager, audioWorklets})
         project.startAudioWorklet()
         await project.engine.isReady()
-        project.engine.play()
-        const {editing, api} = project
+
+        console.debug("Loading audio files...")
+        document.body.textContent = "Loading audio files..."
+
+        // Load all audio files from the public folder
+        const audioFiles = [
+            {name: "Bass & Drums", url: "/audio/BassDrums30.mp3"},
+            {name: "Guitar", url: "/audio/Guitar30.mp3"},
+            {name: "Piano & Synth", url: "/audio/PianoSynth30.mp3"},
+            {name: "Vocals", url: "/audio/Vocals30.mp3"}
+        ]
+
+        const audioBuffers = await Promise.all(
+            audioFiles.map(file => loadAudioFile(audioContext, file.url))
+        )
+
+        console.debug("Audio files loaded, creating tracks...")
+        document.body.textContent = "Creating tracks..."
+
+        const {editing, api, boxGraph} = project
         editing.modify(() => {
-            const {audioUnitBox, trackBox} = api.createInstrument(InstrumentFactories.Nano)
-            audioUnitBox.volume.setValue(-6)
-            const noteRegionBox = api.createNoteRegion({
-                trackBox,
-                position: Quarter * 0,
-                duration: Bar * 4,
-                loopDuration: Quarter * 2
+            // Create a tape track for each audio file
+            audioFiles.forEach((file, index) => {
+                const {audioUnitBox, trackBox} = api.createInstrument(InstrumentFactories.Tape)
+                audioUnitBox.volume.setValue(-3)
+
+                // Create an audio region for the full duration of the audio
+                const audioBuffer = audioBuffers[index]
+                const durationInPPQN = Math.ceil((audioBuffer.duration * 120 / 60) * Quarter) // Assuming 120 BPM
+
+                // Generate a UUID for this audio file
+                const fileUUID = UUID.generate()
+                const fileUUIDString = UUID.toString(fileUUID)
+
+                // Store the audio buffer so our sample manager can load it
+                localAudioBuffers.set(fileUUIDString, audioBuffer)
+
+                // Create AudioFileBox
+                const audioFileBox = AudioFileBox.create(boxGraph, fileUUID, box => {
+                    box.fileName.setValue(file.name)
+                    box.endInSeconds.setValue(audioBuffer.duration)
+                })
+
+                // Create AudioRegionBox
+                AudioRegionBox.create(boxGraph, UUID.generate(), box => {
+                    box.regions.refer(trackBox.regions)
+                    box.file.refer(audioFileBox)
+                    box.position.setValue(0) // Start at the beginning
+                    box.duration.setValue(durationInPPQN)
+                    box.label.setValue(file.name)
+                })
+
+                console.debug(`Created track "${file.name}" with duration ${audioBuffer.duration}s (${durationInPPQN} PPQN)`)
             })
-            api.createNoteEvent({owner: noteRegionBox, position: SemiQuaver * 0, duration: SemiQuaver * 2, pitch: 60})
-            api.createNoteEvent({owner: noteRegionBox, position: SemiQuaver * 2, duration: SemiQuaver * 2, pitch: 63})
-            api.createNoteEvent({owner: noteRegionBox, position: SemiQuaver * 4, duration: SemiQuaver * 2, pitch: 67})
-            api.createNoteEvent({owner: noteRegionBox, position: SemiQuaver * 6, duration: SemiQuaver * 2, pitch: 70})
         })
+
+        console.debug("Starting playback...")
+        project.engine.play()
     }
     if (audioContext.state === "suspended") {
         window.addEventListener("click",
