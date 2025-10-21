@@ -13,5 +13,7 @@
   },
   "devDependencies": {
     "vite": "^7.1.5"
-  }
+  },
+  "packageManager": "npm@11.4.2",
+  "engines": { "node": ">=23" }
 }
