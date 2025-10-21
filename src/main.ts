@@ -70,9 +70,11 @@ async function loadAudioFile(audioContext: AudioContext, url: string): Promise<A
         const sampleManager = new DefaultSampleLoaderManager({
             fetch: async (uuid: UUID.Bytes, progress: Procedure<unitValue>): Promise<[AudioData, SampleMetaData]> => {
                 const uuidString = UUID.toString(uuid)
+                console.debug(`Sample manager fetch called for UUID: ${uuidString}`)
                 const audioBuffer = localAudioBuffers.get(uuidString)
 
                 if (audioBuffer) {
+                    console.debug(`Found local audio buffer for ${uuidString}, channels: ${audioBuffer.numberOfChannels}, duration: ${audioBuffer.duration}s`)
                     // Convert AudioBuffer to AudioData format expected by OpenDAW
                     const audioData = OpenSampleAPI.fromAudioBuffer(audioBuffer)
                     const metadata: SampleMetaData = {
@@ -86,6 +88,7 @@ async function loadAudioFile(audioContext: AudioContext, url: string): Promise<A
                 }
 
                 // Fall back to OpenSampleAPI for built-in samples
+                console.debug(`No local buffer found for ${uuidString}, falling back to OpenSampleAPI`)
                 return OpenSampleAPI.get().load(audioContext, uuid, progress)
             }
         })
@@ -147,14 +150,26 @@ async function loadAudioFile(audioContext: AudioContext, url: string): Promise<A
                     box.file.refer(audioFileBox)
                     box.position.setValue(0) // Start at the beginning
                     box.duration.setValue(durationInPPQN)
+                    box.loopOffset.setValue(0)
+                    box.loopDuration.setValue(durationInPPQN)
                     box.label.setValue(file.name)
+                    box.mute.setValue(false)
                 })
 
-                console.debug(`Created track "${file.name}" with duration ${audioBuffer.duration}s (${durationInPPQN} PPQN)`)
+                console.debug(`Created track "${file.name}"`)
+                console.debug(`  - Audio duration: ${audioBuffer.duration}s`)
+                console.debug(`  - Duration in PPQN: ${durationInPPQN}`)
+                console.debug(`  - AudioFile UUID: ${fileUUIDString}`)
             })
         })
 
         console.debug("Tracks created, ready to play")
+        console.debug(`Timeline position: ${project.engine.position.getValue()}`)
+        console.debug(`BPM: ${project.bpm}`)
+
+        // Make sure the timeline is at the beginning
+        project.engine.setPosition(0)
+
         updateStatus("Ready - Click Play to start")
 
         // Hide preloader, show controls
@@ -168,18 +183,25 @@ async function loadAudioFile(audioContext: AudioContext, url: string): Promise<A
         // Setup play button
         if (playButton) {
             playButton.addEventListener("click", async () => {
+                console.debug("Play button clicked")
+
                 // Resume AudioContext if suspended
                 if (audioContext.state === "suspended") {
+                    console.debug("Resuming AudioContext...")
                     await audioContext.resume()
                     console.debug(`AudioContext resumed (${audioContext.state})`)
                 }
 
                 // Toggle play/stop
                 if (project.engine.isPlaying.getValue()) {
+                    console.debug("Stopping playback")
                     project.engine.stop()
                     playButton.textContent = "Play"
                     updateStatus("Stopped")
                 } else {
+                    console.debug("Starting playback")
+                    console.debug(`AudioContext state: ${audioContext.state}`)
+                    console.debug(`Master volume: ${project.masterAudioUnit.volume.getValue()}`)
                     project.engine.play()
                     playButton.textContent = "Stop"
                     updateStatus("Playing...")
