@@ -176,9 +176,27 @@ async function loadAudioFile(audioContext: AudioContext, url: string): Promise<A
         const preloader = document.querySelector("#preloader") as HTMLElement
         const controls = document.querySelector("#controls") as HTMLElement
         const playButton = document.querySelector("#playButton") as HTMLButtonElement
+        const pauseButton = document.querySelector("#pauseButton") as HTMLButtonElement
+        const stopButton = document.querySelector("#stopButton") as HTMLButtonElement
 
         if (preloader) preloader.style.display = "none"
         if (controls) controls.style.display = "flex"
+
+        // Track if we're paused (to maintain position) vs stopped (reset position)
+        let isPaused = false
+        let savedPosition = 0
+
+        const updateButtonStates = (playing: boolean) => {
+            if (playing) {
+                playButton.disabled = true
+                pauseButton.disabled = false
+                stopButton.disabled = false
+            } else {
+                playButton.disabled = false
+                pauseButton.disabled = true
+                stopButton.disabled = true
+            }
+        }
 
         // Setup play button
         if (playButton) {
@@ -192,20 +210,42 @@ async function loadAudioFile(audioContext: AudioContext, url: string): Promise<A
                     console.debug(`AudioContext resumed (${audioContext.state})`)
                 }
 
-                // Toggle play/stop
-                if (project.engine.isPlaying.getValue()) {
-                    console.debug("Stopping playback")
-                    project.engine.stop()
-                    playButton.textContent = "Play"
-                    updateStatus("Stopped")
-                } else {
-                    console.debug("Starting playback")
-                    console.debug(`AudioContext state: ${audioContext.state}`)
-                    console.debug(`Master volume: ${project.masterAudioUnit.volume.getValue()}`)
-                    project.engine.play()
-                    playButton.textContent = "Stop"
-                    updateStatus("Playing...")
+                // If we were paused, restore the saved position
+                if (isPaused) {
+                    console.debug(`Resuming from saved position: ${savedPosition}`)
+                    project.engine.setPosition(savedPosition)
+                    isPaused = false
                 }
+
+                console.debug("Starting playback")
+                project.engine.play()
+                updateButtonStates(true)
+                updateStatus("Playing...")
+            })
+        }
+
+        // Setup pause button - pauses and maintains position
+        if (pauseButton) {
+            pauseButton.addEventListener("click", () => {
+                console.debug("Pause button clicked")
+                savedPosition = project.engine.position.getValue()
+                console.debug(`Saving position: ${savedPosition}`)
+                project.engine.stop(false) // Stop without reset
+                isPaused = true
+                updateButtonStates(false)
+                updateStatus("Paused")
+            })
+        }
+
+        // Setup stop button - stops and resets to beginning
+        if (stopButton) {
+            stopButton.addEventListener("click", () => {
+                console.debug("Stop button clicked")
+                project.engine.stop(true) // Stop with reset
+                isPaused = false
+                savedPosition = 0
+                updateButtonStates(false)
+                updateStatus("Stopped")
             })
         }
     }

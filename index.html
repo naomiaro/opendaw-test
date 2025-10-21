@@ -25,23 +25,42 @@
             align-items: center;
             gap: 20px;
         }
-        #playButton {
+        #buttonGroup {
+            display: flex;
+            gap: 10px;
+        }
+        #playButton, #pauseButton, #stopButton {
             padding: 20px 40px;
             font-size: 18px;
             font-weight: bold;
-            background: #4a9eff;
             color: white;
             border: none;
             border-radius: 8px;
             cursor: pointer;
             transition: background 0.2s;
         }
-        #playButton:hover {
+        #playButton {
+            background: #4a9eff;
+        }
+        #playButton:hover:not(:disabled) {
             background: #357abd;
         }
-        #playButton:disabled {
+        #pauseButton {
+            background: #ff9f4a;
+        }
+        #pauseButton:hover:not(:disabled) {
+            background: #bd7535;
+        }
+        #stopButton {
+            background: #ff4a4a;
+        }
+        #stopButton:hover:not(:disabled) {
+            background: #bd3535;
+        }
+        #playButton:disabled, #pauseButton:disabled, #stopButton:disabled {
             background: #666;
             cursor: not-allowed;
+            opacity: 0.5;
         }
         #status {
             font-size: 14px;
@@ -56,7 +75,11 @@
     <div id="preloader">Loading...</div>
     <div id="controls" style="display: none;">
         <h1>OpenDAW Tape Tracks</h1>
-        <button id="playButton">Play</button>
+        <div id="buttonGroup">
+            <button id="playButton">Play</button>
+            <button id="pauseButton" disabled>Pause</button>
+            <button id="stopButton" disabled>Stop</button>
+        </div>
         <div id="status">Ready</div>
     </div>
 </body>
