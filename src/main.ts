@@ -33,7 +33,15 @@ async function loadAudioFile(audioContext: AudioContext, url: string): Promise<A
     console.debug("WorkletsUrl", WorkletsUrl)
     assert(crossOriginIsolated, "window must be crossOriginIsolated")
     console.debug("booting...")
-    document.body.textContent = "booting..."
+
+    const updateStatus = (text: string) => {
+        const preloader = document.querySelector("#preloader")
+        const status = document.querySelector("#status")
+        if (preloader) preloader.textContent = text
+        if (status) status.textContent = text
+    }
+
+    updateStatus("Booting...")
     await Workers.install(WorkersUrl)
     AudioWorklets.install(WorkletsUrl)
     {
@@ -92,7 +100,7 @@ async function loadAudioFile(audioContext: AudioContext, url: string): Promise<A
         await project.engine.isReady()
 
         console.debug("Loading audio files...")
-        document.body.textContent = "Loading audio files..."
+        updateStatus("Loading audio files...")
 
         // Load all audio files from the public folder
         const audioFiles = [
@@ -107,7 +115,7 @@ async function loadAudioFile(audioContext: AudioContext, url: string): Promise<A
         )
 
         console.debug("Audio files loaded, creating tracks...")
-        document.body.textContent = "Creating tracks..."
+        updateStatus("Creating tracks...")
 
         const {editing, api, boxGraph} = project
         editing.modify(() => {
@@ -146,14 +154,37 @@ async function loadAudioFile(audioContext: AudioContext, url: string): Promise<A
             })
         })
 
-        console.debug("Starting playback...")
-        project.engine.play()
+        console.debug("Tracks created, ready to play")
+        updateStatus("Ready - Click Play to start")
+
+        // Hide preloader, show controls
+        const preloader = document.querySelector("#preloader") as HTMLElement
+        const controls = document.querySelector("#controls") as HTMLElement
+        const playButton = document.querySelector("#playButton") as HTMLButtonElement
+
+        if (preloader) preloader.style.display = "none"
+        if (controls) controls.style.display = "flex"
+
+        // Setup play button
+        if (playButton) {
+            playButton.addEventListener("click", async () => {
+                // Resume AudioContext if suspended
+                if (audioContext.state === "suspended") {
+                    await audioContext.resume()
+                    console.debug(`AudioContext resumed (${audioContext.state})`)
+                }
+
+                // Toggle play/stop
+                if (project.engine.isPlaying.getValue()) {
+                    project.engine.stop()
+                    playButton.textContent = "Play"
+                    updateStatus("Stopped")
+                } else {
+                    project.engine.play()
+                    playButton.textContent = "Stop"
+                    updateStatus("Playing...")
+                }
+            })
+        }
     }
-    if (audioContext.state === "suspended") {
-        window.addEventListener("click",
-            async () => await audioContext.resume().then(() =>
-                console.debug(`AudioContext resumed (${audioContext.state})`)), {capture: true, once: true})
-    }
-    document.querySelector("#preloader")?.remove()
-    document.body.textContent = "running..."
 })()
