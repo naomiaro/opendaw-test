@@ -21,9 +21,6 @@ import {testFeatures} from "./features"
 import WorkersUrl from "@opendaw/studio-core/workers-main.js?worker&url"
 import WorkletsUrl from "@opendaw/studio-core/processors.js?url"
 
-// Import RecordingWorklet type from its direct path
-import type {RecordingWorklet} from "@opendaw/studio-core/RecordingWorklet"
-
 // Global state
 let recordingTerminator: any = null;
 let recordingStartTime: number = 0;
