@@ -87,8 +87,14 @@
 
             <a href="/recording-demo.html" class="demo-card">
                 <div class="demo-icon">🎙️</div>
-                <h2>Audio Recording</h2>
-                <p>Record audio from your microphone and play it back. Explore how OpenDAW handles real-time audio capture and sample playback.</p>
+                <h2>Audio Recording (Manual)</h2>
+                <p>Record audio from your microphone using RecordingWorklet directly. Manual approach that works despite broken state synchronization.</p>
+            </a>
+
+            <a href="/recording-api-demo.html" class="demo-card">
+                <div class="demo-icon">🎚️</div>
+                <h2>Recording API (High-Level)</h2>
+                <p>Testing the Recording.start() API with armed tracks. Requires engine observables to work correctly.</p>
             </a>
         </div>
     </div>
