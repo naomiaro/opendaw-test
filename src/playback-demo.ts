@@ -103,12 +103,12 @@ async function loadAudioFile(audioContext: AudioContext, url: string): Promise<A
         await project.engine.isReady()
 
         // DEBUG: Subscribe to engine state changes
-        project.engine.isPlaying.subscribe({
-            notify: (obs) => console.debug("[PLAYBACK DEMO ENGINE] isPlaying changed to:", obs.getValue())
-        });
-        project.engine.position.subscribe({
-            notify: (obs) => console.debug("[PLAYBACK DEMO ENGINE] position changed to:", obs.getValue())
-        });
+        project.engine.isPlaying.subscribe((obs) =>
+            console.debug("[PLAYBACK DEMO ENGINE] isPlaying changed to:", obs.getValue())
+        );
+        project.engine.position.subscribe((obs) =>
+            console.debug("[PLAYBACK DEMO ENGINE] position changed to:", obs.getValue())
+        );
 
         console.debug("Loading audio files...")
         updateStatus("Loading audio files...")

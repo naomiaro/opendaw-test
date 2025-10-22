@@ -1,6 +1,6 @@
 // noinspection PointlessArithmeticExpressionJS
 
-import {assert, Procedure, Progress, unitValue, UUID, Terminable} from "@opendaw/lib-std"
+import {assert, Procedure, Progress, unitValue, UUID} from "@opendaw/lib-std"
 import {PPQN} from "@opendaw/lib-dsp"
 import {Promises} from "@opendaw/lib-runtime"
 import {SampleMetaData, SoundfontMetaData} from "@opendaw/studio-adapters"
@@ -13,10 +13,9 @@ import {
     OpenSampleAPI,
     OpenSoundfontAPI,
     Project,
-    Workers,
-    Recording
+    Workers
 } from "@opendaw/studio-core"
-import {AudioFileBox, AudioRegionBox, CaptureAudioBox} from "@opendaw/studio-boxes"
+import {AudioFileBox, AudioRegionBox} from "@opendaw/studio-boxes"
 import {testFeatures} from "./features"
 
 import WorkersUrl from "@opendaw/studio-core/workers-main.js?worker&url"
@@ -76,7 +75,6 @@ let recordingDurationInterval: number | null = null;
 
     // Custom sample provider that can load recorded audio
     const localAudioData = new Map<string, AudioData>();
-    let recordingUUID: UUID.Bytes | null = null;
 
     const sampleManager = new DefaultSampleLoaderManager({
         fetch: async (uuid: UUID.Bytes, progress: Procedure<unitValue>): Promise<[AudioData, SampleMetaData]> => {
@@ -144,15 +142,15 @@ let recordingDurationInterval: number | null = null;
     console.debug("Has stopRecording method:", 'stopRecording' in project.engine);
 
     // Subscribe to engine state changes to debug
-    project.engine.isPlaying.subscribe({
-        notify: (obs) => console.debug("[ENGINE STATE] isPlaying changed to:", obs.getValue())
-    });
-    project.engine.isRecording.subscribe({
-        notify: (obs) => console.debug("[ENGINE STATE] isRecording changed to:", obs.getValue())
-    });
-    project.engine.position.subscribe({
-        notify: (obs) => console.debug("[ENGINE STATE] position changed to:", obs.getValue())
-    });
+    project.engine.isPlaying.subscribe((obs) =>
+        console.debug("[ENGINE STATE] isPlaying changed to:", obs.getValue())
+    );
+    project.engine.isRecording.subscribe((obs) =>
+        console.debug("[ENGINE STATE] isRecording changed to:", obs.getValue())
+    );
+    project.engine.position.subscribe((obs) =>
+        console.debug("[ENGINE STATE] position changed to:", obs.getValue())
+    );
 
     // Test if worklet is responsive by setting position
     console.debug("Testing worklet responsiveness - setting position to 100");
@@ -252,16 +250,11 @@ let recordingDurationInterval: number | null = null;
 
             if (!tapeUnit) {
                 console.debug("No tape instrument found, creating one...");
-                const created = project.editing.modify(() =>
-                    project.api.createInstrument(InstrumentFactories.Tape)
-                );
-
-                if (created) {
-                    tapeUnit = created.audioUnitBox;
-                    console.debug("Created tape instrument:", tapeUnit);
-                } else {
-                    throw new Error("Failed to create tape instrument");
-                }
+                project.editing.modify(() => {
+                    const {audioUnitBox} = project.api.createInstrument(InstrumentFactories.Tape);
+                    tapeUnit = audioUnitBox;
+                });
+                console.debug("Created tape instrument:", tapeUnit);
             }
 
             // Request microphone access
@@ -381,7 +374,6 @@ let recordingDurationInterval: number | null = null;
             const uuid = worklet.uuid;
             const uuidString = UUID.toString(uuid);
             localAudioData.set(uuidString, audioData);
-            recordingUUID = uuid;
 
             // Manually create the audio file and region boxes
             project.editing.modify(() => {
@@ -413,7 +405,7 @@ let recordingDurationInterval: number | null = null;
 
                 // Create the region first (without file reference)
                 const regionBox = AudioRegionBox.create(project.boxGraph, UUID.generate(), box => {
-                    box.regions.refer(trackBox.regions);
+                    box.regions.refer((trackBox as any).regions);
                     box.position.setValue(0);
                     const durationPPQN = PPQN.secondsToPulses(audioData.numberOfFrames / audioData.sampleRate, project.bpm);
                     box.duration.setValue(durationPPQN);
