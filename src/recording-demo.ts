@@ -276,10 +276,7 @@ let recordingDurationInterval: number | null = null;
             const source = audioContext.createMediaStreamSource(stream);
             source.connect(recordingWorklet);
 
-            // TEMP TEST: Also connect to destination to hear ourselves (will remove later)
-            source.connect(audioContext.destination);
-
-            console.debug("Connected microphone to RecordingWorklet and destination (for testing)");
+            console.debug("Connected microphone to RecordingWorklet");
 
             // Register with sample manager
             sampleManager.record(recordingWorklet);
