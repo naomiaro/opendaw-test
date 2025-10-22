@@ -9,6 +9,15 @@ export default defineConfig({
             "@": resolve(__dirname, "./src")
         }
     },
+    build: {
+        rollupOptions: {
+            input: {
+                main: resolve(__dirname, "index.html"),
+                playback: resolve(__dirname, "playback-demo.html"),
+                recording: resolve(__dirname, "recording-demo.html")
+            }
+        }
+    },
     server: {
         port: 8080,
         host: "localhost",

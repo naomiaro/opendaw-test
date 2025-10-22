@@ -4,8 +4,7 @@
     <meta charset="UTF-8"/>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>openDAW headless</title>
-    <script type="module" src="src/main.ts"></script>
+    <title>openDAW headless - Demos</title>
     <style>
         body {
             margin: 0;
@@ -19,68 +18,79 @@
             justify-content: center;
             min-height: 100vh;
         }
-        #controls {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 20px;
-        }
-        #buttonGroup {
-            display: flex;
-            gap: 10px;
-        }
-        #playButton, #pauseButton, #stopButton {
-            padding: 20px 40px;
-            font-size: 18px;
-            font-weight: bold;
-            color: white;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-        #playButton {
-            background: #4a9eff;
-        }
-        #playButton:hover:not(:disabled) {
-            background: #357abd;
-        }
-        #pauseButton {
-            background: #ff9f4a;
-        }
-        #pauseButton:hover:not(:disabled) {
-            background: #bd7535;
-        }
-        #stopButton {
-            background: #ff4a4a;
-        }
-        #stopButton:hover:not(:disabled) {
-            background: #bd3535;
-        }
-        #playButton:disabled, #pauseButton:disabled, #stopButton:disabled {
-            background: #666;
-            cursor: not-allowed;
-            opacity: 0.5;
-        }
-        #status {
-            font-size: 14px;
-            color: #aaa;
-        }
-        #preloader {
+        .container {
+            max-width: 800px;
+            padding: 40px;
             text-align: center;
+        }
+        h1 {
+            font-size: 48px;
+            margin-bottom: 20px;
+            background: linear-gradient(135deg, #4a9eff 0%, #ff4a9e 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .subtitle {
+            font-size: 18px;
+            color: #aaa;
+            margin-bottom: 60px;
+        }
+        .demo-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+            margin-top: 40px;
+        }
+        .demo-card {
+            background: #252525;
+            border: 2px solid #333;
+            border-radius: 12px;
+            padding: 30px;
+            text-decoration: none;
+            color: inherit;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        .demo-card:hover {
+            border-color: #4a9eff;
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(74, 158, 255, 0.2);
+        }
+        .demo-card h2 {
+            font-size: 24px;
+            margin-bottom: 15px;
+            color: #4a9eff;
+        }
+        .demo-card p {
+            font-size: 16px;
+            color: #999;
+            line-height: 1.6;
+        }
+        .demo-icon {
+            font-size: 48px;
+            margin-bottom: 20px;
         }
     </style>
 </head>
 <body>
-    <div id="preloader">Loading...</div>
-    <div id="controls" style="display: none;">
-        <h1>OpenDAW Tape Tracks</h1>
-        <div id="buttonGroup">
-            <button id="playButton">Play</button>
-            <button id="pauseButton" disabled>Pause</button>
-            <button id="stopButton" disabled>Stop</button>
+    <div class="container">
+        <h1>OpenDAW Demos</h1>
+        <p class="subtitle">Explore different capabilities of the OpenDAW headless audio engine</p>
+
+        <div class="demo-grid">
+            <a href="/playback-demo.html" class="demo-card">
+                <div class="demo-icon">🎵</div>
+                <h2>Multi-track Playback</h2>
+                <p>Load and play multiple audio tracks in sync. Demonstrates the tape track functionality with play, pause, and stop controls.</p>
+            </a>
+
+            <a href="/recording-demo.html" class="demo-card">
+                <div class="demo-icon">🎙️</div>
+                <h2>Audio Recording</h2>
+                <p>Record audio from your microphone and play it back. Explore how OpenDAW handles real-time audio capture and sample playback.</p>
+            </a>
         </div>
-        <div id="status">Ready</div>
     </div>
 </body>
 </html>
