@@ -15,7 +15,8 @@ export default defineConfig({
                 main: resolve(__dirname, "index.html"),
                 playback: resolve(__dirname, "playback-demo.html"),
                 recording: resolve(__dirname, "recording-demo.html"),
-                recordingApi: resolve(__dirname, "recording-api-demo.html")
+                recordingApi: resolve(__dirname, "recording-api-demo.html"),
+                observableTest: resolve(__dirname, "observable-test.html")
             }
         }
     },

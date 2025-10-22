@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>OpenDAW - Observable Test</title>
+    <script type="module" src="/src/observable-test.ts"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Courier New', monospace;
+            background: #1a1a1a;
+            color: #00ff00;
+            padding: 40px;
+        }
+        h1 {
+            color: #00ff00;
+            border-bottom: 2px solid #00ff00;
+            padding-bottom: 10px;
+        }
+        .section {
+            margin: 30px 0;
+            padding: 20px;
+            background: #0a0a0a;
+            border: 1px solid #00ff00;
+            border-radius: 4px;
+        }
+        .section h2 {
+            color: #ffff00;
+            margin-top: 0;
+        }
+        button {
+            background: #00ff00;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #00cc00;
+        }
+        button:disabled {
+            background: #666;
+            color: #333;
+            cursor: not-allowed;
+        }
+        #log {
+            background: #000;
+            border: 1px solid #00ff00;
+            padding: 10px;
+            min-height: 200px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-size: 12px;
+            margin-top: 20px;
+        }
+        .log-entry {
+            margin: 2px 0;
+        }
+        .log-entry.success {
+            color: #00ff00;
+        }
+        .log-entry.error {
+            color: #ff0000;
+        }
+        .log-entry.warning {
+            color: #ffff00;
+        }
+        .log-entry.info {
+            color: #00aaff;
+        }
+    </style>
+</head>
+<body>
+    <h1>OpenDAW Observable Test</h1>
+    <p>Testing if engine observables (isPlaying, isRecording, position) fire updates</p>
+
+    <div class="section">
+        <h2>Test Controls</h2>
+        <button id="testObservable">Test Custom Observable</button>
+        <button id="playButton">Play Engine</button>
+        <button id="stopButton" disabled>Stop Engine</button>
+        <button id="setPositionButton">Set Position to 1000</button>
+        <button id="clearLog">Clear Log</button>
+    </div>
+
+    <div class="section">
+        <h2>Observable Log</h2>
+        <div id="log"></div>
+    </div>
+</body>
+</html>
