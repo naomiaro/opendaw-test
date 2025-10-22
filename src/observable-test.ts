@@ -1,5 +1,5 @@
 import {assert, Progress} from "@opendaw/lib-std";
-import {DefaultObservableValue} from "@opendaw/lib-std";
+import {DefaultObservableValue, ObservableValue} from "@opendaw/lib-std";
 import {Promises} from "@opendaw/lib-runtime";
 import {
     AudioWorklets,
@@ -63,23 +63,44 @@ function log(message: string, type: 'success' | 'error' | 'warning' | 'info' = '
     // Test 1: Create a custom observable and verify it works
     const testObservableButton = document.querySelector("#testObservable") as HTMLButtonElement;
     testObservableButton.addEventListener("click", () => {
-        log("--- Testing Custom Observable ---", 'warning');
-        const customObservable = new DefaultObservableValue(0);
+        log("--- Testing Custom Observables ---", 'warning');
 
-        log("Created custom observable with value: 0", 'info');
+        // Test DefaultObservableValue (what we've been using)
+        log("Test 1: DefaultObservableValue", 'info');
+        const customObservable1 = new DefaultObservableValue(0);
+        log("Created DefaultObservableValue with value: 0", 'info');
 
-        customObservable.subscribe((obs) => {
-            log(`✓ Custom observable fired! New value: ${obs.getValue()}`, 'success');
+        customObservable1.subscribe((obs) => {
+            log(`✓ DefaultObservableValue fired! New value: ${obs.getValue()}`, 'success');
         });
 
-        log("Subscribed to custom observable", 'info');
+        log("Subscribed to DefaultObservableValue", 'info');
         log("Setting value to 42...", 'info');
-        customObservable.setValue(42);
+        customObservable1.setValue(42);
 
         log("Setting value to 100...", 'info');
-        customObservable.setValue(100);
+        customObservable1.setValue(100);
 
-        log("Custom observable test complete", 'warning');
+        // Test ObservableValue.make (factory method)
+        log("Test 2: ObservableValue.make() factory", 'info');
+        const customObservable2 = ObservableValue.make(false);
+        log("Created ObservableValue via factory with value: false", 'info');
+
+        customObservable2.subscribe((obs) => {
+            log(`✓ ObservableValue factory fired! New value: ${obs.getValue()}`, 'success');
+        });
+
+        log("Subscribed to ObservableValue", 'info');
+        log("Calling getValue()...", 'info');
+        log(`Current value: ${customObservable2.getValue()}`, 'info');
+
+        // Log engine observable types for comparison
+        log("--- Engine Observable Types ---", 'warning');
+        log(`engine.isPlaying type: ${project.engine.isPlaying.constructor.name}`, 'info');
+        log(`engine.position type: ${project.engine.position.constructor.name}`, 'info');
+        log(`Custom observable type: ${customObservable1.constructor.name}`, 'info');
+
+        log("Custom observable tests complete", 'warning');
     });
 
     // Subscribe to engine observables
