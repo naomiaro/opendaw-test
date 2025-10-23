@@ -49,18 +49,18 @@ const TransportDisplay: React.FC<{project: Project}> = ({project}) => {
     useEffect(() => {
         console.debug("[TransportDisplay] Component mounted, subscribing...")
 
-        // Subscribe to engine state
-        const playingSubscription = project.engine.isPlaying.subscribe((obs) => {
+        // Subscribe to engine state - use catchupAndSubscribe to get current value immediately
+        const playingSubscription = project.engine.isPlaying.catchupAndSubscribe((obs) => {
             setUpdateCount(prev => prev + 1)
             setIsPlaying(obs.getValue())
         })
 
-        const positionSubscription = project.engine.position.subscribe((obs) => {
+        const positionSubscription = project.engine.position.catchupAndSubscribe((obs) => {
             setUpdateCount(prev => prev + 1)
             setPosition(obs.getValue())
         })
 
-        console.debug("[TransportDisplay] Subscribed")
+        console.debug("[TransportDisplay] Subscribed and caught up with current state")
 
         // Cleanup function - React will call this when component unmounts
         return () => {
@@ -108,23 +108,23 @@ const TrackMonitor: React.FC<{
     useEffect(() => {
         console.debug(`[TrackMonitor:${track.name}] Component mounted, subscribing...`)
 
-        // Subscribe to track state changes
-        const volumeSubscription = track.audioUnitBox.volume.subscribe((obs) => {
+        // Subscribe to track state changes - use catchupAndSubscribe to get current value immediately
+        const volumeSubscription = track.audioUnitBox.volume.catchupAndSubscribe((obs) => {
             setUpdateCount(prev => prev + 1)
             setVolume(obs.getValue())
         })
 
-        const muteSubscription = track.audioUnitBox.mute.subscribe((obs) => {
+        const muteSubscription = track.audioUnitBox.mute.catchupAndSubscribe((obs) => {
             setUpdateCount(prev => prev + 1)
             setMuted(obs.getValue())
         })
 
-        const soloSubscription = track.audioUnitBox.solo.subscribe((obs) => {
+        const soloSubscription = track.audioUnitBox.solo.catchupAndSubscribe((obs) => {
             setUpdateCount(prev => prev + 1)
             setSoloed(obs.getValue())
         })
 
-        console.debug(`[TrackMonitor:${track.name}] Subscribed`)
+        console.debug(`[TrackMonitor:${track.name}] Subscribed and caught up with current state`)
 
         // Cleanup function
         return () => {
@@ -386,14 +386,40 @@ const App: React.FC = () => {
             if (!project) return
             const track = tracks[index]
             const currentSolo = track.audioUnitBox.solo.getValue()
-            const isMuted = track.audioUnitBox.mute.getValue()
-            console.debug(`[Solo] Track "${track.name}" - Current solo: ${currentSolo}, muted: ${isMuted}, Setting solo to: ${!currentSolo}`)
+            console.debug(`[Solo] Track "${track.name}" - Current solo: ${currentSolo}, Setting solo to: ${!currentSolo}`)
+
             project.editing.modify(() => {
+                // Toggle solo on this track
                 track.audioUnitBox.solo.setValue(!currentSolo)
-                // If soloing a muted track, unmute it (solo takes precedence over mute)
-                if (!currentSolo && isMuted) {
+
+                // If we're soloing this track (turning solo ON)
+                if (!currentSolo) {
+                    // Always unmute this track
                     track.audioUnitBox.mute.setValue(false)
-                    console.debug(`[Solo] Track "${track.name}" - Unmuting because solo takes precedence`)
+                    console.debug(`[Solo] Unmuting "${track.name}" because it's being soloed`)
+
+                    // Mute all other non-soloed tracks
+                    tracks.forEach((otherTrack, otherIndex) => {
+                        if (otherIndex !== index && !otherTrack.audioUnitBox.solo.getValue()) {
+                            otherTrack.audioUnitBox.mute.setValue(true)
+                            console.debug(`[Solo] Muting "${otherTrack.name}" because "${track.name}" is soloed`)
+                        }
+                    })
+                } else {
+                    // If we're unsoloing this track, check if any other tracks are still soloed
+                    const anyOtherSoloed = tracks.some((t, i) => i !== index && t.audioUnitBox.solo.getValue())
+
+                    if (!anyOtherSoloed) {
+                        // No tracks are soloed anymore, unmute everything
+                        tracks.forEach((t) => {
+                            t.audioUnitBox.mute.setValue(false)
+                            console.debug(`[Solo] Unmuting "${t.name}" because no tracks are soloed`)
+                        })
+                    } else {
+                        // Other tracks are still soloed, so mute this one
+                        track.audioUnitBox.mute.setValue(true)
+                        console.debug(`[Solo] Muting "${track.name}" because other tracks are still soloed`)
+                    }
                 }
             })
         },
