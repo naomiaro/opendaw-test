@@ -4,29 +4,32 @@
     <meta charset="UTF-8"/>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>OpenDAW - Recording API Demo</title>
-    <script type="module" src="/src/recording-api-demo.ts"></script>
+    <title>OpenDAW - Recording API React Demo</title>
     <style>
+        * {
+            box-sizing: border-box;
+        }
         body {
             margin: 0;
-            padding: 0;
+            padding: 20px;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
             background: #1a1a1a;
             color: #ffffff;
+            min-height: 100vh;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            min-height: 100vh;
         }
         .back-link {
-            position: absolute;
+            position: fixed;
             top: 20px;
             left: 20px;
             color: #4a9eff;
             text-decoration: none;
             font-size: 16px;
             transition: opacity 0.2s;
+            z-index: 1000;
         }
         .back-link:hover {
             opacity: 0.7;
@@ -38,11 +41,18 @@
             gap: 30px;
             max-width: 600px;
             padding: 40px;
+            width: 100%;
         }
         h1 {
             font-size: 32px;
             margin-bottom: 10px;
             text-align: center;
+        }
+        .subtitle {
+            text-align: center;
+            color: #888;
+            margin-bottom: 30px;
+            font-size: 14px;
         }
         .description {
             font-size: 16px;
@@ -58,6 +68,7 @@
             border-radius: 8px;
             border-left: 4px solid #ff9f4a;
             margin-bottom: 20px;
+            width: 100%;
         }
         .section {
             width: 100%;
@@ -70,6 +81,7 @@
             font-size: 20px;
             color: #4a9eff;
             margin-bottom: 20px;
+            margin-top: 0;
         }
         .button-group {
             display: flex;
@@ -87,27 +99,25 @@
             cursor: pointer;
             transition: all 0.2s;
         }
+        button:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+        }
         button:disabled {
             background: #666 !important;
             cursor: not-allowed;
             opacity: 0.5;
         }
-        #armButton {
+        button:not(.armed):not(.recording):not(:disabled) {
             background: #9f4aff;
         }
-        #armButton:hover:not(:disabled) {
+        button:not(.armed):not(.recording):hover:not(:disabled) {
             background: #7535bd;
         }
-        #armButton.armed {
+        button.armed {
             background: #ff4a9f;
         }
-        #recordButton {
-            background: #ff4a4a;
-        }
-        #recordButton:hover:not(:disabled) {
-            background: #bd3535;
-        }
-        #recordButton.recording {
+        button.recording {
             background: #ff0000;
             animation: pulse 1.5s ease-in-out infinite;
         }
@@ -115,70 +125,23 @@
             0%, 100% { opacity: 1; }
             50% { opacity: 0.6; }
         }
-        #stopRecordButton {
-            background: #666;
-        }
-        #stopRecordButton:hover:not(:disabled) {
-            background: #444;
-        }
-        #playRecordingButton {
-            background: #4a9eff;
-        }
-        #playRecordingButton:hover:not(:disabled) {
-            background: #357abd;
-        }
-        #stopPlaybackButton {
-            background: #ff9f4a;
-        }
-        #stopPlaybackButton:hover:not(:disabled) {
-            background: #bd7535;
-        }
         .status {
             font-size: 14px;
             color: #aaa;
             text-align: center;
             min-height: 20px;
+            margin-top: 10px;
         }
-        #preloader {
-            text-align: center;
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px;
+            }
         }
     </style>
 </head>
 <body>
     <a href="/" class="back-link">← Back to Demos</a>
-    <div id="preloader">Loading...</div>
-    <div class="container" id="mainContent" style="display: none;">
-        <h1>Recording API Demo</h1>
-        <p class="description">Testing OpenDAW's high-level Recording API</p>
-        <div class="tech-note">
-            <strong>Note:</strong> This demo uses the Recording.start() API which requires arming a track and depends on engine observables.
-        </div>
-
-        <div class="section">
-            <h2>Setup</h2>
-            <div class="button-group">
-                <button id="armButton">🎯 Arm Track for Recording</button>
-            </div>
-            <div class="status" id="armStatus">Click "Arm Track" to prepare for recording</div>
-        </div>
-
-        <div class="section">
-            <h2>Record Audio</h2>
-            <div class="button-group">
-                <button id="recordButton" disabled>⏺ Start Recording</button>
-                <button id="stopRecordButton" disabled>⏹ Stop Recording</button>
-            </div>
-            <div class="status" id="recordStatus">Arm a track first</div>
-        </div>
-
-        <div class="section">
-            <h2>Playback</h2>
-            <div class="button-group">
-                <button id="playRecordingButton" disabled>▶ Play Recording</button>
-                <button id="stopPlaybackButton" disabled>⏹ Stop</button>
-            </div>
-            <div class="status" id="playbackStatus">No recording available</div>
-        </div>
-    </div>
+    <div id="root"></div>
+    <script type="module" src="/src/recording-api-react-demo.tsx"></script>
 </body>
 </html>
