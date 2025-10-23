@@ -5,7 +5,6 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>OpenDAW - Multi-track Playback Demo</title>
-    <script type="module" src="/src/playback-demo.ts"></script>
     <style>
         body {
             margin: 0;
@@ -78,22 +77,11 @@
             font-size: 14px;
             color: #aaa;
         }
-        #preloader {
-            text-align: center;
-        }
     </style>
 </head>
 <body>
     <a href="/" class="back-link">← Back to Demos</a>
-    <div id="preloader">Loading...</div>
-    <div id="controls" style="display: none;">
-        <h1>OpenDAW Multi-track Playback</h1>
-        <div id="buttonGroup">
-            <button id="playButton">Play</button>
-            <button id="pauseButton" disabled>Pause</button>
-            <button id="stopButton" disabled>Stop</button>
-        </div>
-        <div id="status">Ready</div>
-    </div>
+    <div id="root"></div>
+    <script type="module" src="/src/playback-demo-react.tsx"></script>
 </body>
 </html>
