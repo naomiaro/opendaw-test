@@ -72,9 +72,14 @@ const App: React.FC = () => {
     const recordingSubscription = project.engine.isRecording.catchupAndSubscribe(obs => {
       const recording = obs.getValue();
 
-      // Update status when recording starts (after count-in)
-      if (recording && !project.engine.isCountingIn.getValue()) {
-        setRecordStatus("Recording...");
+      if (recording) {
+        // Update status when recording starts (after count-in)
+        if (!project.engine.isCountingIn.getValue()) {
+          setRecordStatus("Recording...");
+        }
+      } else {
+        // Update status when recording stops
+        setRecordStatus("Recording stopped");
       }
     });
 
@@ -343,7 +348,6 @@ const App: React.FC = () => {
 
     project.engine.stopRecording();
     setIsRecording(false);
-    setRecordStatus("Recording stopped");
     setPlaybackStatus("Recording ready to play");
 
     // Wait a moment for the sample to be saved to storage
