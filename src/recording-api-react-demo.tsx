@@ -18,8 +18,6 @@ import {
 } from "@opendaw/studio-core";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { Peaks, PeaksPainter } from "@opendaw/lib-fusion";
-import { AudioFileBox, AudioRegionBox } from "@opendaw/studio-boxes";
-import { PPQN } from "@opendaw/lib-dsp";
 import { testFeatures } from "./features";
 
 import WorkersUrl from "@opendaw/studio-core/workers-main.js?worker&url";
@@ -279,47 +277,6 @@ const App: React.FC = () => {
     return true;
   }, []);
 
-  const createRegionFromRecording = useCallback(
-    (recordingUUID: UUID.Bytes, duration: number) => {
-      if (!project || !tapeUnitRef.current) return;
-
-      const { boxGraph, editing } = project;
-      const { trackBox } = tapeUnitRef.current;
-      const { Quarter } = PPQN;
-
-      editing.modify(() => {
-        // Check if AudioFileBox already exists, otherwise create it
-        const existingBoxOption = boxGraph.findBox(recordingUUID);
-        let audioFileBox;
-
-        if (existingBoxOption.isEmpty()) {
-          audioFileBox = AudioFileBox.create(boxGraph, recordingUUID, box => {
-            box.fileName.setValue("Recording");
-            box.endInSeconds.setValue(duration);
-          });
-        } else {
-          audioFileBox = existingBoxOption.unwrap();
-        }
-
-        // Calculate duration in PPQN (assuming 120 BPM)
-        const durationInPPQN = Math.ceil(((duration * 120) / 60) * Quarter);
-
-        // Create AudioRegionBox and link to track
-        AudioRegionBox.create(boxGraph, UUID.generate(), box => {
-          box.regions.refer(trackBox.regions);
-          box.file.refer(audioFileBox);
-          box.position.setValue(0);
-          box.duration.setValue(durationInPPQN);
-          box.loopOffset.setValue(0);
-          box.loopDuration.setValue(durationInPPQN);
-          box.label.setValue("Recording");
-          box.mute.setValue(false);
-        });
-      });
-    },
-    [project]
-  );
-
   const handleStopRecording = useCallback(async () => {
     if (!project || !tapeUnitRef.current) return;
 
@@ -351,10 +308,8 @@ const App: React.FC = () => {
           subscription.terminate();
         }
 
-        // Create the boxes
-        createRegionFromRecording(recordingUUID, newSample.duration || 5.0);
-
-        // Try to get peaks directly from the loader (RecordingWorklet)
+        // RecordAudio.start() already created AudioFileBox and AudioRegionBox automatically!
+        // Just get peaks directly from the loader (RecordingWorklet)
         const loaderPeaks = (loader as any).peaks;
         if (loaderPeaks && !loaderPeaks.isEmpty()) {
           const peaks = loaderPeaks.unwrap();
@@ -367,7 +322,7 @@ const App: React.FC = () => {
         }
       }
     });
-  }, [project, createRegionFromRecording, renderPeaksDirectly]);
+  }, [project, renderPeaksDirectly]);
 
   const handlePlayRecording = useCallback(async () => {
     if (!project || !audioContext) return;

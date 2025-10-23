@@ -181,33 +181,73 @@ When you set `capture.armed.setValue(true)`:
 - ❌ Manually stop tracks on cleanup
 
 **Recording and Waveform Visualization:**
-```typescript
-// Start recording
-project.startRecording(useCountIn);
 
-// After stopping, find the new recording
+When you call `project.startRecording()`, the `RecordAudio.start()` function automatically:
+1. Creates a `RecordingWorklet` instance
+2. Registers it with the sample manager via `sampleManager.record(recordingWorklet)`
+3. **Automatically creates `AudioFileBox` and `AudioRegionBox`** on first position update
+4. Updates the region duration in real-time as recording progresses
+5. Links the boxes to the tape track
+
+**You don't need to:**
+- ❌ Manually create AudioFileBox
+- ❌ Manually create AudioRegionBox
+- ❌ Calculate durations in PPQN
+- ❌ Link boxes to tracks
+
+**Finding the Recording and Displaying Peaks:**
+
+Since boxes are created automatically, you just need to find the new recording UUID and access its peaks:
+
+```typescript
+// 1. Before recording, snapshot existing samples
+const existingSamples = await SampleStorage.get().list();
+const beforeRecording = new Set(existingSamples.map(s => s.uuid));
+
+// 2. Start recording
+project.startRecording(countIn);
+
+// 3. Stop recording
+project.engine.stopRecording();
+
+// 4. Find the new recording by comparing snapshots
+const allSamples = await SampleStorage.get().list();
+const newSample = allSamples.find(s => !beforeRecording.has(s.uuid));
+const recordingUUID = UUID.parse(newSample.uuid);
+
+// 5. Get the loader and subscribe to its state
 const loader = project.sampleManager.getOrCreate(recordingUUID);
 
-// Subscribe to loader state
 loader.subscribe(state => {
   if (state.type === "loaded") {
-    // Access peaks directly from RecordingWorklet (which implements SampleLoader)
+    // RecordingWorklet implements SampleLoader - peaks are already available!
     const peaks = loader.peaks.unwrap();
     renderWaveform(peaks);
   }
 });
 ```
 
-The `RecordingWorklet` implements `SampleLoader` and provides:
-- `peaks: Option<Peaks>` - Waveform data for visualization
+The `RecordingWorklet` (which implements `SampleLoader`) provides:
+- `peaks: Option<Peaks>` - Waveform data for visualization (calculated in worker)
 - `data: Option<AudioData>` - Raw audio data
 - `state: SampleLoaderState` - Loading state (idle, loading, loaded, error)
+- `uuid: UUID.Bytes` - Same UUID used for AudioFileBox creation
 
 **Observable State Flow:**
 - `engine.isCountingIn` → Tracks count-in state
 - `engine.countInBeatsRemaining` → Shows remaining beats (4, 3, 2, 1...)
 - `engine.isRecording` → Automatically transitions from count-in to recording
 - Status updates happen automatically via observable subscriptions
+
+**Key Simplification Principles:**
+
+This demo showcases how OpenDAW handles complexity internally so you don't have to:
+
+1. **Arming a track** → Just set `capture.armed.setValue(true)` - microphone access handled automatically
+2. **Starting recording** → Just call `project.startRecording(countIn)` - boxes created automatically
+3. **Getting waveforms** → Just access `loader.peaks` - RecordingWorklet provides them
+
+The pattern: **Set state via observables, OpenDAW handles the implementation details**. This is the recommended approach for working with OpenDAW's recording system.
 
 ### 3. Lifecycle Management Demo (`/lifecycle-react-demo.html`)
 
