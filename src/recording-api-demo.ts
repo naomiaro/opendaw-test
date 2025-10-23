@@ -185,7 +185,7 @@ import WorkletsUrl from "@opendaw/studio-core/processors.js?url";
         }
     });
 
-    // Record button - uses Recording.start()
+    // Record button - uses Recording.start() (awaitable, returns Terminable)
     recordButton.addEventListener("click", async () => {
         try {
             console.debug("Starting recording with Recording.start()...");
@@ -194,12 +194,12 @@ import WorkletsUrl from "@opendaw/studio-core/processors.js?url";
             recordButton.disabled = true;
             stopRecordButton.disabled = false;
 
-            // Use the high-level Recording API
+            // Use Recording.start() which returns a Terminable for proper control
             const terminator = await Recording.start(project, false); // false = no count-in
             recordingTerminator = terminator;
 
             console.debug("Recording started!");
-            console.debug("Recording.isRecording:", Recording.isRecording);
+            console.debug("engine.isRecording:", project.engine.isRecording.getValue());
             recordStatus.textContent = "Recording...";
 
         } catch (error) {
@@ -216,7 +216,7 @@ import WorkletsUrl from "@opendaw/studio-core/processors.js?url";
         console.debug("Stopping recording...");
 
         if (recordingTerminator) {
-            // Terminate the recording
+            // Terminate the recording (this calls capture.stopRecording() and finalizes)
             recordingTerminator.terminate();
             recordingTerminator = null;
         }
