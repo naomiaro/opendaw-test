@@ -15,6 +15,7 @@ import {
     Workers
 } from "@opendaw/studio-core"
 import {AudioFileBox, AudioRegionBox} from "@opendaw/studio-boxes"
+import {AnimationFrame} from "@opendaw/lib-dom"
 import {testFeatures} from "./features"
 
 import WorkersUrl from "@opendaw/studio-core/workers-main.js?worker&url"
@@ -28,11 +29,20 @@ async function loadAudioFile(audioContext: AudioContext, url: string): Promise<A
 }
 
 (async () => {
-    console.debug("openDAW -> headless -> playback demo")
-    console.debug("WorkersUrl", WorkersUrl)
-    console.debug("WorkletsUrl", WorkletsUrl)
-    assert(crossOriginIsolated, "window must be crossOriginIsolated")
-    console.debug("booting...")
+    console.log("========================================");
+    console.log("openDAW -> headless -> playback demo");
+    console.log("WorkersUrl", WorkersUrl);
+    console.log("WorkletsUrl", WorkletsUrl);
+    console.log("crossOriginIsolated:", crossOriginIsolated);
+    console.log("SharedArrayBuffer available:", typeof SharedArrayBuffer !== 'undefined');
+    console.log("========================================");
+    assert(crossOriginIsolated, "window must be crossOriginIsolated");
+    console.debug("booting...");
+
+    // CRITICAL: Start the AnimationFrame loop that reads state from the worklet!
+    console.debug("Starting AnimationFrame loop...");
+    AnimationFrame.start(window);
+    console.debug("AnimationFrame started!");
 
     const updateStatus = (text: string) => {
         const preloader = document.querySelector("#preloader")
@@ -99,16 +109,17 @@ async function loadAudioFile(audioContext: AudioContext, url: string): Promise<A
         })
         const audioWorklets = AudioWorklets.get(audioContext)
         const project = Project.new({audioContext, sampleManager, soundfontManager, audioWorklets})
-        project.startAudioWorklet()
+        const worklet = project.startAudioWorklet()
         await project.engine.isReady()
+        console.debug("Engine is ready!");
 
-        // DEBUG: Subscribe to engine state changes
-        project.engine.isPlaying.subscribe((obs) =>
-            console.debug("[PLAYBACK DEMO ENGINE] isPlaying changed to:", obs.getValue())
-        );
-        project.engine.position.subscribe((obs) =>
-            console.debug("[PLAYBACK DEMO ENGINE] position changed to:", obs.getValue())
-        );
+        // Subscribe to engine state changes
+        project.engine.isPlaying.subscribe((obs) => {
+            console.debug("[ENGINE] isPlaying:", obs.getValue());
+        });
+        project.engine.position.subscribe((obs) => {
+            console.debug("[ENGINE] position:", obs.getValue());
+        });
 
         console.debug("Loading audio files...")
         updateStatus("Loading audio files...")

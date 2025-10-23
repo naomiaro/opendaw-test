@@ -11,9 +11,9 @@ import {
     OpenSampleAPI,
     OpenSoundfontAPI,
     Project,
-    Workers,
-    Recording
+    Workers
 } from "@opendaw/studio-core";
+import {AnimationFrame} from "@opendaw/lib-dom";
 import {testFeatures} from "./features";
 
 import WorkersUrl from "@opendaw/studio-core/workers-main.js?worker&url";
@@ -25,6 +25,11 @@ import WorkletsUrl from "@opendaw/studio-core/processors.js?url";
     console.debug("WorkletsUrl", WorkletsUrl);
     assert(crossOriginIsolated, "window must be crossOriginIsolated");
     console.debug("booting...");
+
+    // CRITICAL: Start the AnimationFrame loop that reads state from the worklet!
+    console.debug("Starting AnimationFrame loop...");
+    AnimationFrame.start(window);
+    console.debug("AnimationFrame started!");
 
     const updateStatus = (text: string) => {
         const preloader = document.querySelector("#preloader");
@@ -72,15 +77,15 @@ import WorkletsUrl from "@opendaw/studio-core/processors.js?url";
 
     console.debug("Project ready!");
 
-    // Subscribe to engine state changes to debug
+    // Subscribe to engine state changes
     project.engine.isPlaying.subscribe((obs) =>
-        console.debug("[RECORDING API ENGINE] isPlaying changed to:", obs.getValue())
+        console.debug("[ENGINE] isPlaying:", obs.getValue())
     );
     project.engine.isRecording.subscribe((obs) =>
-        console.debug("[RECORDING API ENGINE] isRecording changed to:", obs.getValue())
+        console.debug("[ENGINE] isRecording:", obs.getValue())
     );
     project.engine.position.subscribe((obs) =>
-        console.debug("[RECORDING API ENGINE] position changed to:", obs.getValue())
+        console.debug("[ENGINE] position:", obs.getValue())
     );
 
     // Hide preloader, show controls
@@ -99,7 +104,6 @@ import WorkletsUrl from "@opendaw/studio-core/processors.js?url";
     if (mainContent) mainContent.style.display = "flex";
 
     let isArmed = false;
-    let recordingTerminator: any = null;
     let micStream: MediaStream | null = null;
 
     // Arm button - creates tape track and arms it for recording
@@ -185,21 +189,25 @@ import WorkletsUrl from "@opendaw/studio-core/processors.js?url";
         }
     });
 
-    // Record button - uses Recording.start() (awaitable, returns Terminable)
+    // Record button - uses project.startRecording() then engine.play()
     recordButton.addEventListener("click", async () => {
         try {
-            console.debug("Starting recording with Recording.start()...");
             recordStatus.textContent = "Starting recording...";
             recordButton.classList.add("recording");
             recordButton.disabled = true;
             stopRecordButton.disabled = false;
 
-            // Use Recording.start() which returns a Terminable for proper control
-            const terminator = await Recording.start(project, false); // false = no count-in
-            recordingTerminator = terminator;
+            // Resume AudioContext if suspended (required for user interaction)
+            if (audioContext.state === "suspended") {
+                await audioContext.resume();
+            }
 
-            console.debug("Recording started!");
-            console.debug("engine.isRecording:", project.engine.isRecording.getValue());
+            // Step 1: Prepare recording (arms captures, prepares engine state)
+            project.startRecording(false); // false = no count-in
+
+            // Step 2: Start playback to actually begin recording
+            project.engine.play();
+
             recordStatus.textContent = "Recording...";
 
         } catch (error) {
@@ -213,13 +221,7 @@ import WorkletsUrl from "@opendaw/studio-core/processors.js?url";
 
     // Stop recording button
     stopRecordButton.addEventListener("click", () => {
-        console.debug("Stopping recording...");
-
-        if (recordingTerminator) {
-            // Terminate the recording (this calls capture.stopRecording() and finalizes)
-            recordingTerminator.terminate();
-            recordingTerminator = null;
-        }
+        project.engine.stopRecording();
 
         recordButton.classList.remove("recording");
         recordButton.disabled = false;
@@ -229,17 +231,30 @@ import WorkletsUrl from "@opendaw/studio-core/processors.js?url";
         playbackStatus.textContent = "Recording ready to play";
     });
 
-    // Play recording button
+    // Play recording button - test if engine.play() works at all
     playRecordingButton.addEventListener("click", async () => {
         console.debug("Playing recording...");
+        console.debug("AudioContext state before play:", audioContext.state);
 
         // Resume AudioContext if suspended
         if (audioContext.state === "suspended") {
+            console.debug("Resuming AudioContext for playback...");
             await audioContext.resume();
+            console.debug("AudioContext resumed, state:", audioContext.state);
         }
 
+        console.debug("Setting position to 0...");
         project.engine.setPosition(0);
+
+        console.debug("Calling engine.play()...");
         project.engine.play();
+
+        // Wait to see if observables fire
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        console.debug("After 100ms:");
+        console.debug("engine.isPlaying:", project.engine.isPlaying.getValue());
+        console.debug("engine.position:", project.engine.position.getValue());
 
         playRecordingButton.disabled = true;
         stopPlaybackButton.disabled = false;
