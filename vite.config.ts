@@ -14,7 +14,8 @@ export default defineConfig({
             input: {
                 main: resolve(__dirname, "index.html"),
                 playback: resolve(__dirname, "playback-demo.html"),
-                recordingApi: resolve(__dirname, "recording-api-demo.html")
+                recordingApi: resolve(__dirname, "recording-api-demo.html"),
+                lifecycle: resolve(__dirname, "lifecycle-demo.html")
             }
         }
     },
