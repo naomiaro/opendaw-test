@@ -14,8 +14,8 @@ export default defineConfig({
         rollupOptions: {
             input: {
                 main: resolve(__dirname, "index.html"),
-                playback: resolve(__dirname, "playback-demo.html"),
-                recordingApi: resolve(__dirname, "recording-api-demo.html"),
+                playback: resolve(__dirname, "playback-demo-react.html"),
+                recordingApi: resolve(__dirname, "recording-api-react-demo.html"),
                 lifecycle: resolve(__dirname, "lifecycle-react-demo.html")
             }
         }

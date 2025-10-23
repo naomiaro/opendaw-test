@@ -4,7 +4,7 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { assert, Procedure, Progress, unitValue, UUID } from "@opendaw/lib-std";
 import { Promises } from "@opendaw/lib-runtime";
-import { SampleMetaData, SoundfontMetaData } from "@opendaw/studio-adapters";
+import { AudioFileBoxAdapter, SampleMetaData, SoundfontMetaData } from "@opendaw/studio-adapters";
 import {
   AudioWorklets,
   DefaultSampleLoaderManager,
@@ -13,9 +13,13 @@ import {
   OpenSampleAPI,
   OpenSoundfontAPI,
   Project,
-  Workers
+  Workers,
+  SampleStorage
 } from "@opendaw/studio-core";
 import { AnimationFrame } from "@opendaw/lib-dom";
+import { Peaks, PeaksPainter } from "@opendaw/lib-fusion";
+import { AudioFileBox, AudioRegionBox } from "@opendaw/studio-boxes";
+import { PPQN } from "@opendaw/lib-dsp";
 import { testFeatures } from "./features";
 
 import WorkersUrl from "@opendaw/studio-core/workers-main.js?worker&url";
@@ -39,10 +43,13 @@ const App: React.FC = () => {
   const [armStatus, setArmStatus] = useState('Click "Arm Track" to prepare for recording');
   const [recordStatus, setRecordStatus] = useState("Arm a track first");
   const [playbackStatus, setPlaybackStatus] = useState("No recording available");
+  const [hasPeaks, setHasPeaks] = useState(false);
 
   // Refs for non-reactive values - these don't need to trigger re-renders
-  const tapeUnitRef = useRef<any>(null);
+  const tapeUnitRef = useRef<{ audioUnitBox: any; trackBox: any } | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const beforeRecordingSamplesRef = useRef<Set<string>>(new Set());
 
   // Subscribe to count-in observables
   useEffect(() => {
@@ -90,6 +97,9 @@ const App: React.FC = () => {
         setStatus("Booting...");
         await Workers.install(WorkersUrl);
         AudioWorklets.install(WorkletsUrl);
+
+        // Delete obsolete samples
+        SampleStorage.cleanDeprecated().then();
 
         const { status: testStatus, error: testError } = await Promises.tryCatch(testFeatures());
         if (testStatus === "rejected") {
@@ -188,14 +198,14 @@ const App: React.FC = () => {
       if (!tapeUnitRef.current) {
         console.debug("Creating tape instrument...");
         project.editing.modify(() => {
-          const { audioUnitBox } = project.api.createInstrument(InstrumentFactories.Tape);
-          tapeUnitRef.current = audioUnitBox;
+          const { audioUnitBox, trackBox } = project.api.createInstrument(InstrumentFactories.Tape);
+          tapeUnitRef.current = { audioUnitBox, trackBox };
         });
         console.debug("Created tape instrument:", tapeUnitRef.current);
       }
 
       // Get the capture device for this audio unit and arm it
-      const uuid = tapeUnitRef.current.address.uuid;
+      const uuid = tapeUnitRef.current.audioUnitBox.address.uuid;
       console.debug("Getting capture device for UUID:", UUID.toString(uuid));
 
       const captureOption = project.captureDevices.get(uuid);
@@ -205,13 +215,18 @@ const App: React.FC = () => {
         throw new Error("Could not get capture device");
       }
 
-      const capture = captureOption.unwrap();
+      const capture = captureOption.unwrap() as any;
       console.debug("Got capture device, arming it...");
-      capture.armed.setValue(true);
 
-      // Connect microphone to capture device
+      // Connect microphone stream to capture device
       console.debug("Connecting microphone to capture device...");
-      // TODO: Need to figure out how to connect MediaStream to capture device
+      if (capture.stream && micStreamRef.current) {
+        capture.stream.wrap(micStreamRef.current);
+        console.debug("Microphone stream connected!");
+      }
+
+      // Arm the track
+      capture.armed.setValue(true);
 
       setIsArmed(true);
       setArmStatus("Track is armed and ready to record");
@@ -234,6 +249,11 @@ const App: React.FC = () => {
     try {
       setIsRecording(true);
 
+      // Snapshot existing samples before recording
+      const existingSamples = await SampleStorage.get().list();
+      beforeRecordingSamplesRef.current = new Set(existingSamples.map(s => s.uuid));
+      console.debug(`Before recording: ${beforeRecordingSamplesRef.current.size} samples in storage`);
+
       // Resume AudioContext if suspended (required for user interaction)
       if (audioContext.state === "suspended") {
         await audioContext.resume();
@@ -247,6 +267,15 @@ const App: React.FC = () => {
       // The count-in state is tracked by the observable subscriptions in useEffect
       project.startRecording(useCountIn);
 
+      // IMPORTANT: RecordAudio.start() creates AudioFileBox/AudioRegionBox on first position update
+      // So we need the engine to be playing/transporting for position to update
+      // We call play() AFTER startRecording() so count-in works correctly
+      if (!useCountIn) {
+        // If no count-in, start playing immediately
+        project.engine.play();
+      }
+      // If count-in is enabled, startRecording() handles play() internally
+
       setRecordStatus(useCountIn ? "Count-in..." : "Recording...");
     } catch (error) {
       console.error("Failed to start recording:", error);
@@ -255,14 +284,199 @@ const App: React.FC = () => {
     }
   }, [project, audioContext, useCountIn]);
 
-  const handleStopRecording = useCallback(() => {
-    if (!project) return;
+  const renderPeaksFromAdapter = useCallback((adapter: AudioFileBoxAdapter) => {
+    console.debug("renderPeaksFromAdapter called");
+    console.debug("canvasRef.current:", canvasRef.current);
+
+    if (!canvasRef.current) {
+      console.debug("No canvas found!");
+      return false;
+    }
+
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    console.debug("Canvas context:", ctx);
+
+    if (!ctx) {
+      console.debug("No canvas context!");
+      return false;
+    }
+
+    const peaksOption = adapter.peaks;
+    console.debug("Peaks option:", peaksOption);
+    console.debug("Peaks isEmpty:", peaksOption.isEmpty());
+
+    if (peaksOption.isEmpty()) {
+      console.debug("Peaks option is empty!");
+      return false;
+    }
+
+    const peaks = peaksOption.unwrap();
+    console.debug(`Rendering peaks: ${peaks.numFrames} frames, ${peaks.numChannels} channels`);
+
+    // Clear canvas
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Set waveform color
+    ctx.fillStyle = "#4a9eff";
+
+    // Render each channel
+    for (let channel = 0; channel < peaks.numChannels; channel++) {
+      const channelHeight = canvas.height / peaks.numChannels;
+      const y0 = channel * channelHeight;
+      const y1 = (channel + 1) * channelHeight;
+
+      PeaksPainter.renderBlocks(ctx, peaks, channel, {
+        x0: 0,
+        x1: canvas.width,
+        y0,
+        y1,
+        u0: 0,
+        u1: peaks.numFrames,
+        v0: -1,
+        v1: 1
+      });
+    }
+
+    setHasPeaks(true);
+    return true;
+  }, []);
+
+  const createRegionFromRecording = useCallback((recordingUUID: UUID.Bytes, duration: number) => {
+    if (!project || !tapeUnitRef.current) return;
+
+    const { boxGraph, editing } = project;
+    const { trackBox } = tapeUnitRef.current;
+    const { Quarter } = PPQN;
+
+    editing.modify(() => {
+      // Check if AudioFileBox already exists, otherwise create it
+      const existingBoxOption = boxGraph.findBox(recordingUUID);
+      let audioFileBox;
+
+      if (existingBoxOption.isEmpty()) {
+        audioFileBox = AudioFileBox.create(boxGraph, recordingUUID, box => {
+          box.fileName.setValue("Recording");
+          box.endInSeconds.setValue(duration);
+        });
+        console.debug("Created AudioFileBox:", UUID.toString(recordingUUID));
+      } else {
+        audioFileBox = existingBoxOption.unwrap();
+        console.debug("Found existing AudioFileBox:", UUID.toString(recordingUUID));
+      }
+
+      // Calculate duration in PPQN (assuming 120 BPM)
+      const durationInPPQN = Math.ceil(((duration * 120) / 60) * Quarter);
+
+      // Create AudioRegionBox and link to track
+      AudioRegionBox.create(boxGraph, UUID.generate(), box => {
+        box.regions.refer(trackBox.regions);
+        box.file.refer(audioFileBox);
+        box.position.setValue(0);
+        box.duration.setValue(durationInPPQN);
+        box.loopOffset.setValue(0);
+        box.loopDuration.setValue(durationInPPQN);
+        box.label.setValue("Recording");
+        box.mute.setValue(false);
+      });
+
+      console.debug("Created AudioRegionBox, duration:", durationInPPQN, "PPQN");
+    });
+  }, [project]);
+
+  const handleStopRecording = useCallback(async () => {
+    if (!project || !tapeUnitRef.current) return;
 
     project.engine.stopRecording();
     setIsRecording(false);
     setRecordStatus("Recording stopped");
     setPlaybackStatus("Recording ready to play");
-  }, [project]);
+
+    // Wait a moment for the sample to be saved to storage
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // Find the new sample by comparing with the before snapshot
+    const allSamples = await SampleStorage.get().list();
+    const newSample = allSamples.find(s => !beforeRecordingSamplesRef.current.has(s.uuid));
+
+    if (!newSample) {
+      console.error("Could not find new recording in storage!");
+      return;
+    }
+
+    const recordingUUID = UUID.parse(newSample.uuid);
+    console.debug("Found new recording:", newSample.uuid);
+    console.debug("Recording metadata:", newSample);
+
+    // Get the sample loader for this recording and subscribe to it
+    const loader = project.sampleManager.getOrCreate(recordingUUID);
+    console.debug("Got sample loader, subscribing to load state...");
+
+    let subscription: any;
+    subscription = loader.subscribe(state => {
+      console.debug("Recording loader state:", state.type);
+
+      if (state.type === "loaded") {
+        console.debug("Recording loaded! Creating boxes...");
+        if (subscription) {
+          subscription.terminate();
+        }
+
+        // Create the boxes
+        createRegionFromRecording(recordingUUID, newSample.duration || 5.0);
+
+        // Wait for boxes to be created, then render peaks
+        setTimeout(() => {
+          console.debug("Attempting to render peaks...");
+          const trackBox = tapeUnitRef.current?.trackBox;
+          if (!trackBox) {
+            console.debug("No trackBox found!");
+            return;
+          }
+
+          console.debug("Found trackBox, checking for regions...");
+          console.debug("trackBox.regions:", trackBox.regions);
+          const regions = trackBox.regions?.children;
+          console.debug("Regions children:", regions ? regions.length : "none", regions);
+
+          if (regions && regions.length > 0) {
+            const firstRegion = regions[0];
+            console.debug("First region:", firstRegion);
+            const audioFileBox = firstRegion.file.get();
+            console.debug("AudioFileBox from region:", audioFileBox);
+
+            if (audioFileBox) {
+              const adapter = project.boxAdapters.adapterFor(audioFileBox, AudioFileBoxAdapter);
+              console.debug("Got adapter, calling renderPeaksFromAdapter...");
+              renderPeaksFromAdapter(adapter);
+            } else {
+              console.debug("No audioFileBox found in region!");
+            }
+          } else {
+            console.debug("No regions found or regions empty! Trying to find AudioFileBox directly...");
+
+            // Try to get the AudioFileBox directly from the boxGraph
+            const audioFileBoxOption = project.boxGraph.findBox(recordingUUID);
+            if (!audioFileBoxOption.isEmpty()) {
+              const audioFileBox = audioFileBoxOption.unwrap();
+              console.debug("Found AudioFileBox directly from boxGraph:", audioFileBox);
+              const adapter = project.boxAdapters.adapterFor(audioFileBox, AudioFileBoxAdapter);
+              console.debug("Got adapter, calling renderPeaksFromAdapter...");
+              renderPeaksFromAdapter(adapter);
+            } else {
+              console.debug("Could not find AudioFileBox in boxGraph!");
+            }
+          }
+        }, 500);
+      } else if (state.type === "error") {
+        console.error("Recording loader error:", state.reason);
+        if (subscription) {
+          subscription.terminate();
+        }
+      }
+    });
+  }, [project, createRegionFromRecording, renderPeaksFromAdapter]);
 
   const handlePlayRecording = useCallback(async () => {
     if (!project || !audioContext) return;
@@ -376,6 +590,9 @@ const App: React.FC = () => {
           <button onClick={handleStopPlayback}>⏹ Stop</button>
         </div>
         <div className="status">{playbackStatus}</div>
+        <div className="waveform-container" style={{ display: hasPeaks ? "flex" : "none" }}>
+          <canvas ref={canvasRef} width={800} height={200} className="waveform-canvas" />
+        </div>
       </div>
     </div>
   );
