@@ -1,4 +1,5 @@
 import {defineConfig} from "vite"
+import react from "@vitejs/plugin-react"
 import crossOriginIsolation from "vite-plugin-cross-origin-isolation"
 import {readFileSync} from "fs"
 import {resolve} from "path"
@@ -15,7 +16,8 @@ export default defineConfig({
                 main: resolve(__dirname, "index.html"),
                 playback: resolve(__dirname, "playback-demo.html"),
                 recordingApi: resolve(__dirname, "recording-api-demo.html"),
-                lifecycle: resolve(__dirname, "lifecycle-demo.html")
+                lifecycle: resolve(__dirname, "lifecycle-demo.html"),
+                lifecycleReact: resolve(__dirname, "lifecycle-react-demo.html")
             }
         }
     },
@@ -36,6 +38,7 @@ export default defineConfig({
         }
     },
     plugins: [
+        react(),
         crossOriginIsolation()
     ]
 })

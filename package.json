@@ -7,13 +7,20 @@
     "build": "vite build --mode production"
   },
   "dependencies": {
-    "@types/node": "^22.15.18",
     "@opendaw/studio-sdk": "0.0.45",
+    "@types/node": "^22.15.18",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
     "vite-plugin-cross-origin-isolation": "^0.1.6"
   },
   "devDependencies": {
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@vitejs/plugin-react": "^5.0.4",
     "vite": "^7.1.5"
   },
   "packageManager": "npm@11.4.2",
-  "engines": { "node": ">=23" }
+  "engines": {
+    "node": ">=23"
+  }
 }
