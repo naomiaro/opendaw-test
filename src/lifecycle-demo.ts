@@ -444,8 +444,14 @@ async function loadAudioFile(audioContext: AudioContext, url: string): Promise<A
         btn.addEventListener("click", () => {
             const track = tracks[index]
             const currentSolo = track.audioUnitBox.solo.getValue()
+            const isMuted = track.audioUnitBox.mute.getValue()
             editing.modify(() => {
                 track.audioUnitBox.solo.setValue(!currentSolo)
+                // If soloing a muted track, unmute it (solo takes precedence over mute)
+                if (!currentSolo && isMuted) {
+                    track.audioUnitBox.mute.setValue(false)
+                    console.debug(`[Solo] Track "${track.name}" - Unmuting because solo takes precedence`)
+                }
             })
             btn.textContent = !currentSolo ? "Unsolo" : "Solo"
         })

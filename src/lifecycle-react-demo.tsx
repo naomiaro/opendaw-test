@@ -386,8 +386,15 @@ const App: React.FC = () => {
             if (!project) return
             const track = tracks[index]
             const currentSolo = track.audioUnitBox.solo.getValue()
+            const isMuted = track.audioUnitBox.mute.getValue()
+            console.debug(`[Solo] Track "${track.name}" - Current solo: ${currentSolo}, muted: ${isMuted}, Setting solo to: ${!currentSolo}`)
             project.editing.modify(() => {
                 track.audioUnitBox.solo.setValue(!currentSolo)
+                // If soloing a muted track, unmute it (solo takes precedence over mute)
+                if (!currentSolo && isMuted) {
+                    track.audioUnitBox.mute.setValue(false)
+                    console.debug(`[Solo] Track "${track.name}" - Unmuting because solo takes precedence`)
+                }
             })
         },
         [project, tracks]
