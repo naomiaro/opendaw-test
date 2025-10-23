@@ -160,8 +160,7 @@ Demonstrates real-time audio recording and playback using OpenDAW's Recording AP
 - Calls `AnimationFrame.start(window)` to enable observable state sync
 - Creates a tape instrument using `InstrumentFactories.Tape`
 - Arms the capture device associated with the tape track
-- Uses `project.startRecording(countIn)` to prepare recording state
-- Calls `engine.play()` to actually begin recording
+- Uses `project.startRecording(countIn)` to start recording
 - Uses `engine.stopRecording()` to finalize the recording
 - Observable subscriptions track recording state changes in real-time
 
