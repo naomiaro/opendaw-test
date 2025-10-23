@@ -66,14 +66,14 @@ const App: React.FC = () => {
       }
     });
 
-    const positionSubscription = project.engine.position.subscribe(obs => {
-      console.debug("[ENGINE] position:", obs.getValue());
-    });
+    // const positionSubscription = project.engine.position.subscribe(obs => {
+    //   console.debug("[ENGINE] position:", obs.getValue());
+    // });
 
     return () => {
       console.debug("[Playback] Cleaning up subscriptions...");
       playingSubscription.terminate();
-      positionSubscription.terminate();
+      // positionSubscription.terminate();
     };
   }, [project]);
 

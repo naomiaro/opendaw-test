@@ -100,6 +100,30 @@
             cursor: pointer;
             accent-color: #4a9eff;
         }
+        .count-in-display {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            background: #ff9f4a;
+            color: #1a1a1a;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            font-weight: bold;
+            animation: pulse 1s ease-in-out infinite;
+        }
+        .count-in-icon {
+            font-size: 24px;
+            animation: bounce 0.5s ease-in-out infinite;
+        }
+        .count-in-text {
+            font-size: 16px;
+        }
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-5px); }
+        }
         .button-group {
             display: flex;
             gap: 10px;

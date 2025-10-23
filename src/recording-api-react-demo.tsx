@@ -32,6 +32,8 @@ const App: React.FC = () => {
   // UI state
   const [isArmed, setIsArmed] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [isCountingIn, setIsCountingIn] = useState(false);
+  const [countInBeatsRemaining, setCountInBeatsRemaining] = useState(0);
   const [useCountIn, setUseCountIn] = useState(false);
   const [metronomeEnabled, setMetronomeEnabled] = useState(false);
   const [armStatus, setArmStatus] = useState('Click "Arm Track" to prepare for recording');
@@ -41,6 +43,24 @@ const App: React.FC = () => {
   // Refs for non-reactive values - these don't need to trigger re-renders
   const tapeUnitRef = useRef<any>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
+
+  // Subscribe to count-in observables
+  useEffect(() => {
+    if (!project) return undefined;
+
+    const countingInSubscription = project.engine.isCountingIn.catchupAndSubscribe(obs => {
+      setIsCountingIn(obs.getValue());
+    });
+
+    const beatsRemainingSubscription = project.engine.countInBeatsRemaining.catchupAndSubscribe(obs => {
+      setCountInBeatsRemaining(Math.ceil(obs.getValue()));
+    });
+
+    return () => {
+      countingInSubscription.terminate();
+      beatsRemainingSubscription.terminate();
+    };
+  }, [project]);
 
   // Sync metronome enabled state with engine
   useEffect(() => {
@@ -115,7 +135,10 @@ const App: React.FC = () => {
         // Subscribe to engine state changes
         newProject.engine.isPlaying.subscribe(obs => console.debug("[ENGINE] isPlaying:", obs.getValue()));
         newProject.engine.isRecording.subscribe(obs => console.debug("[ENGINE] isRecording:", obs.getValue()));
-        newProject.engine.position.subscribe(obs => console.debug("[ENGINE] position:", obs.getValue()));
+        newProject.engine.isCountingIn.subscribe(obs => console.debug("[ENGINE] isCountingIn:", obs.getValue()));
+        newProject.engine.countInBeatsRemaining.subscribe(obs =>
+          console.debug("[ENGINE] countInBeatsRemaining:", obs.getValue())
+        );
 
         if (!mounted) return;
 
@@ -209,7 +232,6 @@ const App: React.FC = () => {
     if (!project || !audioContext) return;
 
     try {
-      setRecordStatus(useCountIn ? "Count-in starting..." : "Starting recording...");
       setIsRecording(true);
 
       // Resume AudioContext if suspended (required for user interaction)
@@ -217,14 +239,15 @@ const App: React.FC = () => {
         await audioContext.resume();
       }
 
-      // Step 1: Prepare recording (arms captures, prepares engine state)
-      console.debug(`Starting recording with count-in: ${useCountIn}`);
+      // Ensure engine is stopped before starting recording
+      project.engine.stop(true);
+      project.engine.setPosition(0);
+
+      // Start recording (with or without count-in)
+      // The count-in state is tracked by the observable subscriptions in useEffect
       project.startRecording(useCountIn);
 
-      // Step 2: Start playback to actually begin recording
-      project.engine.play();
-
-      setRecordStatus(useCountIn ? "Count-in... then recording" : "Recording...");
+      setRecordStatus(useCountIn ? "Count-in..." : "Recording...");
     } catch (error) {
       console.error("Failed to start recording:", error);
       setRecordStatus(`Error: ${error}`);
@@ -321,6 +344,14 @@ const App: React.FC = () => {
             <span>Enable metronome (you'll hear clicks during count-in and recording)</span>
           </label>
         </div>
+
+        {isCountingIn && (
+          <div className="count-in-display">
+            <div className="count-in-icon">🎵</div>
+            <div className="count-in-text">Count-in: {countInBeatsRemaining} beats remaining</div>
+          </div>
+        )}
+
         <div className="button-group">
           <button
             onClick={handleStartRecording}
