@@ -4,7 +4,7 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { assert, Procedure, Progress, unitValue, UUID } from "@opendaw/lib-std";
 import { Promises } from "@opendaw/lib-runtime";
-import { AudioFileBoxAdapter, SampleMetaData, SoundfontMetaData } from "@opendaw/studio-adapters";
+import { SampleMetaData, SoundfontMetaData } from "@opendaw/studio-adapters";
 import {
   AudioWorklets,
   DefaultSampleLoaderManager,
@@ -47,7 +47,6 @@ const App: React.FC = () => {
 
   // Refs for non-reactive values - these don't need to trigger re-renders
   const tapeUnitRef = useRef<{ audioUnitBox: any; trackBox: any } | null>(null);
-  const micStreamRef = useRef<MediaStream | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const beforeRecordingSamplesRef = useRef<Set<string>>(new Set());
 
@@ -170,26 +169,17 @@ const App: React.FC = () => {
     if (!project) return;
 
     if (isArmed) {
-      // Disarm
+      // Disarm - this automatically stops the microphone stream
       const captures = project.captureDevices.filterArmed();
       captures.forEach(capture => capture.armed.setValue(false));
       setIsArmed(false);
       setArmStatus("Track disarmed");
       setRecordStatus("Arm a track first");
-
-      // Stop microphone
-      if (micStreamRef.current) {
-        micStreamRef.current.getTracks().forEach(track => track.stop());
-        micStreamRef.current = null;
-      }
       return;
     }
 
     try {
-      setArmStatus("Requesting microphone access...");
-
-      // Request microphone access first
-      micStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+      setArmStatus("Preparing to record...");
 
       // Create a tape instrument if doesn't exist
       if (!tapeUnitRef.current) {
@@ -199,7 +189,7 @@ const App: React.FC = () => {
         });
       }
 
-      // Get the capture device for this audio unit and arm it
+      // Get the capture device for this audio unit
       const uuid = tapeUnitRef.current.audioUnitBox.address.uuid;
       const captureOption = project.captureDevices.get(uuid);
 
@@ -207,14 +197,10 @@ const App: React.FC = () => {
         throw new Error("Could not get capture device");
       }
 
-      const capture = captureOption.unwrap() as any;
+      const capture = captureOption.unwrap();
 
-      // Connect microphone stream to capture device
-      if (capture.stream && micStreamRef.current) {
-        capture.stream.wrap(micStreamRef.current);
-      }
-
-      // Arm the track
+      // Arming automatically requests microphone access via CaptureAudio.prepareRecording()
+      // The system handles: getUserMedia(), stream management, and cleanup
       capture.armed.setValue(true);
 
       setIsArmed(true);
@@ -223,10 +209,6 @@ const App: React.FC = () => {
     } catch (error) {
       console.error("Failed to arm track:", error);
       setArmStatus(`Error: ${error}`);
-      if (micStreamRef.current) {
-        micStreamRef.current.getTracks().forEach(track => track.stop());
-        micStreamRef.current = null;
-      }
     }
   }, [project, isArmed]);
 
@@ -261,17 +243,12 @@ const App: React.FC = () => {
     }
   }, [project, audioContext, useCountIn]);
 
-  const renderPeaksFromAdapter = useCallback((adapter: AudioFileBoxAdapter) => {
+  const renderPeaksDirectly = useCallback((peaks: any) => {
     if (!canvasRef.current) return false;
 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
     if (!ctx) return false;
-
-    const peaksOption = adapter.peaks;
-    if (peaksOption.isEmpty()) return false;
-
-    const peaks = peaksOption.unwrap();
 
     // Clear canvas
     ctx.fillStyle = "#000";
@@ -377,31 +354,12 @@ const App: React.FC = () => {
         // Create the boxes
         createRegionFromRecording(recordingUUID, newSample.duration || 5.0);
 
-        // Wait for boxes to be created, then render peaks
-        setTimeout(() => {
-          const trackBox = tapeUnitRef.current?.trackBox;
-          if (!trackBox) return;
-
-          const regions = trackBox.regions?.children;
-
-          if (regions && regions.length > 0) {
-            const firstRegion = regions[0];
-            const audioFileBox = firstRegion.file.get();
-
-            if (audioFileBox) {
-              const adapter = project.boxAdapters.adapterFor(audioFileBox, AudioFileBoxAdapter);
-              renderPeaksFromAdapter(adapter);
-            }
-          } else {
-            // Try to get the AudioFileBox directly from the boxGraph
-            const audioFileBoxOption = project.boxGraph.findBox(recordingUUID);
-            if (!audioFileBoxOption.isEmpty()) {
-              const audioFileBox = audioFileBoxOption.unwrap();
-              const adapter = project.boxAdapters.adapterFor(audioFileBox, AudioFileBoxAdapter);
-              renderPeaksFromAdapter(adapter);
-            }
-          }
-        }, 500);
+        // Try to get peaks directly from the loader (RecordingWorklet)
+        const loaderPeaks = (loader as any).peaks;
+        if (loaderPeaks && !loaderPeaks.isEmpty()) {
+          const peaks = loaderPeaks.unwrap();
+          renderPeaksDirectly(peaks);
+        }
       } else if (state.type === "error") {
         console.error("Recording loader error:", state.reason);
         if (subscription) {
@@ -409,7 +367,7 @@ const App: React.FC = () => {
         }
       }
     });
-  }, [project, createRegionFromRecording, renderPeaksFromAdapter]);
+  }, [project, createRegionFromRecording, renderPeaksDirectly]);
 
   const handlePlayRecording = useCallback(async () => {
     if (!project || !audioContext) return;

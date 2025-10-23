@@ -143,26 +143,71 @@ Demonstrates simultaneous playback of multiple audio tracks:
 - All audio tracks are scheduled as `AudioRegionBox` instances with corresponding `AudioFileBox` references
 - Observable subscriptions track `isPlaying` and `position` state changes in real-time
 
-### 2. Recording API Demo (`/recording-api-demo.html`)
+### 2. Recording API Demo (`/recording-api-react-demo.html`)
 
-Demonstrates real-time audio recording and playback using OpenDAW's Recording API:
+Demonstrates real-time audio recording with waveform visualization using OpenDAW's Recording API:
 
-- **Project-based Recording** - Uses `project.startRecording()` and `engine.stopRecording()` APIs
-- **Microphone Input** - Captures audio from your microphone in real-time
-- **Tape Track Integration** - Creates and arms a tape instrument for recording
-- **Observable State Tracking** - Monitors `isRecording`, `isPlaying`, and `position` observables
+- **Automatic Microphone Access** - CaptureAudio handles microphone permissions automatically
+- **Waveform Visualization** - Renders recorded audio peaks directly from RecordingWorklet
+- **Count-in Support** - Optional metronome count-in before recording starts
+- **Observable State Tracking** - Real-time status updates via `isRecording`, `isCountingIn` observables
 - **Three-Step Workflow:**
-  - Arm Track - Creates a tape track and arms it for recording
-  - Start Recording - Begins recording with playback
-  - Stop Recording - Stops recording and enables playback
+  - **Arm Track** - Creates tape instrument and arms capture device (mic access handled automatically)
+  - **Start Recording** - Begins recording with optional count-in
+  - **Stop Recording** - Saves recording, creates audio regions, and displays waveform
 
 **How It Works:**
-- Calls `AnimationFrame.start(window)` to enable observable state sync
-- Creates a tape instrument using `InstrumentFactories.Tape`
-- Arms the capture device associated with the tape track
-- Uses `project.startRecording(countIn)` to start recording
-- Uses `engine.stopRecording()` to finalize the recording
-- Observable subscriptions track recording state changes in real-time
+
+**Automatic Microphone Access:**
+```typescript
+// Get the capture device for the tape instrument
+const captureOption = project.captureDevices.get(audioUnitUUID);
+const capture = captureOption.unwrap();
+
+// Just arm it - CaptureAudio handles microphone access automatically!
+capture.armed.setValue(true);
+```
+
+When you set `capture.armed.setValue(true)`:
+1. CaptureAudio's observable subscription triggers
+2. Calls `AudioDevices.requestStream()` to request microphone permission
+3. Stores the MediaStream internally
+4. Automatically stops the stream when disarmed
+
+**You don't need to:**
+- ❌ Manually call `navigator.mediaDevices.getUserMedia()`
+- ❌ Store the stream in a ref or state
+- ❌ Call `capture.stream.wrap()`
+- ❌ Manually stop tracks on cleanup
+
+**Recording and Waveform Visualization:**
+```typescript
+// Start recording
+project.startRecording(useCountIn);
+
+// After stopping, find the new recording
+const loader = project.sampleManager.getOrCreate(recordingUUID);
+
+// Subscribe to loader state
+loader.subscribe(state => {
+  if (state.type === "loaded") {
+    // Access peaks directly from RecordingWorklet (which implements SampleLoader)
+    const peaks = loader.peaks.unwrap();
+    renderWaveform(peaks);
+  }
+});
+```
+
+The `RecordingWorklet` implements `SampleLoader` and provides:
+- `peaks: Option<Peaks>` - Waveform data for visualization
+- `data: Option<AudioData>` - Raw audio data
+- `state: SampleLoaderState` - Loading state (idle, loading, loaded, error)
+
+**Observable State Flow:**
+- `engine.isCountingIn` → Tracks count-in state
+- `engine.countInBeatsRemaining` → Shows remaining beats (4, 3, 2, 1...)
+- `engine.isRecording` → Automatically transitions from count-in to recording
+- Status updates happen automatically via observable subscriptions
 
 ### 3. Lifecycle Management Demo (`/lifecycle-react-demo.html`)
 
