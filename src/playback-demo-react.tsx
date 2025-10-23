@@ -42,6 +42,40 @@ const App: React.FC = () => {
     // Refs for non-reactive values - these don't need to trigger re-renders
     const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map())
     const pausedPositionRef = useRef<number | null>(null)
+    const isPausedRef = useRef(false)
+
+    // Subscribe to engine observables - single source of truth!
+    useEffect(() => {
+        if (!project) return
+
+        console.debug("[Playback] Subscribing to engine.isPlaying observable...")
+
+        const playingSubscription = project.engine.isPlaying.catchupAndSubscribe((obs) => {
+            const playing = obs.getValue()
+            console.debug("[ENGINE] isPlaying:", playing)
+            setIsPlaying(playing)
+
+            // Update status based on playing state and pause flag
+            if (playing) {
+                isPausedRef.current = false
+                setStatus("Playing...")
+            } else if (isPausedRef.current) {
+                setStatus("Paused")
+            } else {
+                setStatus("Stopped")
+            }
+        })
+
+        const positionSubscription = project.engine.position.subscribe((obs) => {
+            console.debug("[ENGINE] position:", obs.getValue())
+        })
+
+        return () => {
+            console.debug("[Playback] Cleaning up subscriptions...")
+            playingSubscription.terminate()
+            positionSubscription.terminate()
+        }
+    }, [project])
 
     // Initialize OpenDAW
     useEffect(() => {
@@ -136,14 +170,6 @@ const App: React.FC = () => {
                 newProject.startAudioWorklet()
                 await newProject.engine.isReady()
                 console.debug("Engine is ready!")
-
-                // Subscribe to engine state changes
-                newProject.engine.isPlaying.subscribe((obs) => {
-                    console.debug("[ENGINE] isPlaying:", obs.getValue())
-                })
-                newProject.engine.position.subscribe((obs) => {
-                    console.debug("[ENGINE] position:", obs.getValue())
-                })
 
                 if (!mounted) return
 
@@ -252,9 +278,7 @@ const App: React.FC = () => {
 
         console.debug("Starting playback...")
         project.engine.play()
-
-        setIsPlaying(true)
-        setStatus("Playing...")
+        // Note: setIsPlaying and setStatus are handled by the observable subscription
     }, [project, audioContext])
 
     const handlePause = useCallback(() => {
@@ -270,11 +294,12 @@ const App: React.FC = () => {
         pausedPositionRef.current = currentPosition
         console.debug(`Saved paused position: ${pausedPositionRef.current}`)
 
+        // Mark as paused so the observable subscription shows "Paused" instead of "Stopped"
+        isPausedRef.current = true
+
         // Stop playback (don't reset position)
         project.engine.stop(false)
-
-        setIsPlaying(false)
-        setStatus("Paused")
+        // Note: setIsPlaying and setStatus are handled by the observable subscription
     }, [project])
 
     const handleStop = useCallback(() => {
@@ -283,11 +308,11 @@ const App: React.FC = () => {
         console.debug("Stop button clicked")
         // Clear any saved pause position
         pausedPositionRef.current = null
+        isPausedRef.current = false
         // Stop and reset to beginning
         project.engine.stop(true)
         project.engine.setPosition(0)
-        setIsPlaying(false)
-        setStatus("Stopped")
+        // Note: setIsPlaying and setStatus are handled by the observable subscription
     }, [project])
 
     if (!project) {
