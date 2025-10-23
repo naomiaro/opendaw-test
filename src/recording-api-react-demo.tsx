@@ -72,8 +72,6 @@ const App: React.FC = () => {
   // Sync metronome enabled state with engine
   useEffect(() => {
     if (!project) return;
-
-    console.debug("Setting metronome enabled:", metronomeEnabled);
     project.engine.metronomeEnabled.setValue(metronomeEnabled);
   }, [project, metronomeEnabled]);
 
@@ -83,16 +81,10 @@ const App: React.FC = () => {
 
     (async () => {
       try {
-        console.debug("openDAW -> headless -> Recording API React demo");
-        console.debug("WorkersUrl", WorkersUrl);
-        console.debug("WorkletsUrl", WorkletsUrl);
         assert(crossOriginIsolated, "window must be crossOriginIsolated");
-        console.debug("booting...");
 
         // CRITICAL: Start the AnimationFrame loop that reads state from the worklet!
-        console.debug("Starting AnimationFrame loop...");
         AnimationFrame.start(window);
-        console.debug("AnimationFrame started!");
 
         setStatus("Booting...");
         await Workers.install(WorkersUrl);
@@ -108,7 +100,6 @@ const App: React.FC = () => {
         }
 
         const newAudioContext = new AudioContext({ latencyHint: 0 });
-        console.debug(`AudioContext state: ${newAudioContext.state}, sampleRate: ${newAudioContext.sampleRate}`);
 
         const { status: workletStatus, error: workletError } = await Promises.tryCatch(
           AudioWorklets.createFor(newAudioContext)
@@ -119,10 +110,8 @@ const App: React.FC = () => {
         }
 
         const sampleManager = new DefaultSampleLoaderManager({
-          fetch: async (uuid: UUID.Bytes, progress: Procedure<unitValue>): Promise<[any, SampleMetaData]> => {
-            console.debug(`Sample manager fetch called for UUID: ${UUID.toString(uuid)}`);
-            return OpenSampleAPI.get().load(newAudioContext, uuid, progress);
-          }
+          fetch: async (uuid: UUID.Bytes, progress: Procedure<unitValue>): Promise<[any, SampleMetaData]> =>
+            OpenSampleAPI.get().load(newAudioContext, uuid, progress)
         });
 
         const soundfontManager = new DefaultSoundfontLoaderManager({
@@ -139,16 +128,6 @@ const App: React.FC = () => {
         });
         newProject.startAudioWorklet();
         await newProject.engine.isReady();
-
-        console.debug("Project ready!");
-
-        // Subscribe to engine state changes
-        newProject.engine.isPlaying.subscribe(obs => console.debug("[ENGINE] isPlaying:", obs.getValue()));
-        newProject.engine.isRecording.subscribe(obs => console.debug("[ENGINE] isRecording:", obs.getValue()));
-        newProject.engine.isCountingIn.subscribe(obs => console.debug("[ENGINE] isCountingIn:", obs.getValue()));
-        newProject.engine.countInBeatsRemaining.subscribe(obs =>
-          console.debug("[ENGINE] countInBeatsRemaining:", obs.getValue())
-        );
 
         if (!mounted) return;
 
@@ -171,7 +150,6 @@ const App: React.FC = () => {
 
     if (isArmed) {
       // Disarm
-      console.debug("Disarming track...");
       const captures = project.captureDevices.filterArmed();
       captures.forEach(capture => capture.armed.setValue(false));
       setIsArmed(false);
@@ -187,42 +165,32 @@ const App: React.FC = () => {
     }
 
     try {
-      console.debug("Arming track for recording...");
       setArmStatus("Requesting microphone access...");
 
       // Request microphone access first
       micStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
-      console.debug("Got microphone stream");
 
       // Create a tape instrument if doesn't exist
       if (!tapeUnitRef.current) {
-        console.debug("Creating tape instrument...");
         project.editing.modify(() => {
           const { audioUnitBox, trackBox } = project.api.createInstrument(InstrumentFactories.Tape);
           tapeUnitRef.current = { audioUnitBox, trackBox };
         });
-        console.debug("Created tape instrument:", tapeUnitRef.current);
       }
 
       // Get the capture device for this audio unit and arm it
       const uuid = tapeUnitRef.current.audioUnitBox.address.uuid;
-      console.debug("Getting capture device for UUID:", UUID.toString(uuid));
-
       const captureOption = project.captureDevices.get(uuid);
-      console.debug("Capture device option:", captureOption);
 
       if (captureOption.isEmpty()) {
         throw new Error("Could not get capture device");
       }
 
       const capture = captureOption.unwrap() as any;
-      console.debug("Got capture device, arming it...");
 
       // Connect microphone stream to capture device
-      console.debug("Connecting microphone to capture device...");
       if (capture.stream && micStreamRef.current) {
         capture.stream.wrap(micStreamRef.current);
-        console.debug("Microphone stream connected!");
       }
 
       // Arm the track
@@ -231,8 +199,6 @@ const App: React.FC = () => {
       setIsArmed(true);
       setArmStatus("Track is armed and ready to record");
       setRecordStatus("Ready to record");
-
-      console.debug("Track armed successfully!");
     } catch (error) {
       console.error("Failed to arm track:", error);
       setArmStatus(`Error: ${error}`);
@@ -252,7 +218,6 @@ const App: React.FC = () => {
       // Snapshot existing samples before recording
       const existingSamples = await SampleStorage.get().list();
       beforeRecordingSamplesRef.current = new Set(existingSamples.map(s => s.uuid));
-      console.debug(`Before recording: ${beforeRecordingSamplesRef.current.size} samples in storage`);
 
       // Resume AudioContext if suspended (required for user interaction)
       if (audioContext.state === "suspended") {
@@ -267,15 +232,6 @@ const App: React.FC = () => {
       // The count-in state is tracked by the observable subscriptions in useEffect
       project.startRecording(useCountIn);
 
-      // IMPORTANT: RecordAudio.start() creates AudioFileBox/AudioRegionBox on first position update
-      // So we need the engine to be playing/transporting for position to update
-      // We call play() AFTER startRecording() so count-in works correctly
-      if (!useCountIn) {
-        // If no count-in, start playing immediately
-        project.engine.play();
-      }
-      // If count-in is enabled, startRecording() handles play() internally
-
       setRecordStatus(useCountIn ? "Count-in..." : "Recording...");
     } catch (error) {
       console.error("Failed to start recording:", error);
@@ -285,34 +241,16 @@ const App: React.FC = () => {
   }, [project, audioContext, useCountIn]);
 
   const renderPeaksFromAdapter = useCallback((adapter: AudioFileBoxAdapter) => {
-    console.debug("renderPeaksFromAdapter called");
-    console.debug("canvasRef.current:", canvasRef.current);
-
-    if (!canvasRef.current) {
-      console.debug("No canvas found!");
-      return false;
-    }
+    if (!canvasRef.current) return false;
 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
-    console.debug("Canvas context:", ctx);
-
-    if (!ctx) {
-      console.debug("No canvas context!");
-      return false;
-    }
+    if (!ctx) return false;
 
     const peaksOption = adapter.peaks;
-    console.debug("Peaks option:", peaksOption);
-    console.debug("Peaks isEmpty:", peaksOption.isEmpty());
-
-    if (peaksOption.isEmpty()) {
-      console.debug("Peaks option is empty!");
-      return false;
-    }
+    if (peaksOption.isEmpty()) return false;
 
     const peaks = peaksOption.unwrap();
-    console.debug(`Rendering peaks: ${peaks.numFrames} frames, ${peaks.numChannels} channels`);
 
     // Clear canvas
     ctx.fillStyle = "#000";
@@ -360,10 +298,8 @@ const App: React.FC = () => {
           box.fileName.setValue("Recording");
           box.endInSeconds.setValue(duration);
         });
-        console.debug("Created AudioFileBox:", UUID.toString(recordingUUID));
       } else {
         audioFileBox = existingBoxOption.unwrap();
-        console.debug("Found existing AudioFileBox:", UUID.toString(recordingUUID));
       }
 
       // Calculate duration in PPQN (assuming 120 BPM)
@@ -380,8 +316,6 @@ const App: React.FC = () => {
         box.label.setValue("Recording");
         box.mute.setValue(false);
       });
-
-      console.debug("Created AudioRegionBox, duration:", durationInPPQN, "PPQN");
     });
   }, [project]);
 
@@ -406,19 +340,13 @@ const App: React.FC = () => {
     }
 
     const recordingUUID = UUID.parse(newSample.uuid);
-    console.debug("Found new recording:", newSample.uuid);
-    console.debug("Recording metadata:", newSample);
 
     // Get the sample loader for this recording and subscribe to it
     const loader = project.sampleManager.getOrCreate(recordingUUID);
-    console.debug("Got sample loader, subscribing to load state...");
 
     let subscription: any;
     subscription = loader.subscribe(state => {
-      console.debug("Recording loader state:", state.type);
-
       if (state.type === "loaded") {
-        console.debug("Recording loaded! Creating boxes...");
         if (subscription) {
           subscription.terminate();
         }
@@ -428,44 +356,26 @@ const App: React.FC = () => {
 
         // Wait for boxes to be created, then render peaks
         setTimeout(() => {
-          console.debug("Attempting to render peaks...");
           const trackBox = tapeUnitRef.current?.trackBox;
-          if (!trackBox) {
-            console.debug("No trackBox found!");
-            return;
-          }
+          if (!trackBox) return;
 
-          console.debug("Found trackBox, checking for regions...");
-          console.debug("trackBox.regions:", trackBox.regions);
           const regions = trackBox.regions?.children;
-          console.debug("Regions children:", regions ? regions.length : "none", regions);
 
           if (regions && regions.length > 0) {
             const firstRegion = regions[0];
-            console.debug("First region:", firstRegion);
             const audioFileBox = firstRegion.file.get();
-            console.debug("AudioFileBox from region:", audioFileBox);
 
             if (audioFileBox) {
               const adapter = project.boxAdapters.adapterFor(audioFileBox, AudioFileBoxAdapter);
-              console.debug("Got adapter, calling renderPeaksFromAdapter...");
               renderPeaksFromAdapter(adapter);
-            } else {
-              console.debug("No audioFileBox found in region!");
             }
           } else {
-            console.debug("No regions found or regions empty! Trying to find AudioFileBox directly...");
-
             // Try to get the AudioFileBox directly from the boxGraph
             const audioFileBoxOption = project.boxGraph.findBox(recordingUUID);
             if (!audioFileBoxOption.isEmpty()) {
               const audioFileBox = audioFileBoxOption.unwrap();
-              console.debug("Found AudioFileBox directly from boxGraph:", audioFileBox);
               const adapter = project.boxAdapters.adapterFor(audioFileBox, AudioFileBoxAdapter);
-              console.debug("Got adapter, calling renderPeaksFromAdapter...");
               renderPeaksFromAdapter(adapter);
-            } else {
-              console.debug("Could not find AudioFileBox in boxGraph!");
             }
           }
         }, 500);
@@ -481,29 +391,13 @@ const App: React.FC = () => {
   const handlePlayRecording = useCallback(async () => {
     if (!project || !audioContext) return;
 
-    console.debug("Playing recording...");
-    console.debug("AudioContext state before play:", audioContext.state);
-
     // Resume AudioContext if suspended
     if (audioContext.state === "suspended") {
-      console.debug("Resuming AudioContext for playback...");
       await audioContext.resume();
-      console.debug("AudioContext resumed, state:", audioContext.state);
     }
 
-    console.debug("Setting position to 0...");
     project.engine.setPosition(0);
-
-    console.debug("Calling engine.play()...");
     project.engine.play();
-
-    // Wait to see if observables fire
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    console.debug("After 100ms:");
-    console.debug("engine.isPlaying:", project.engine.isPlaying.getValue());
-    console.debug("engine.position:", project.engine.position.getValue());
-
     setPlaybackStatus("Playing...");
   }, [project, audioContext]);
 
