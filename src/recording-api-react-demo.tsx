@@ -51,23 +51,39 @@ const App: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const beforeRecordingSamplesRef = useRef<Set<string>>(new Set());
 
-  // Subscribe to count-in observables
+  // Subscribe to count-in and recording observables
   useEffect(() => {
     if (!project) return undefined;
 
     const countingInSubscription = project.engine.isCountingIn.catchupAndSubscribe(obs => {
-      setIsCountingIn(obs.getValue());
+      const countingIn = obs.getValue();
+      setIsCountingIn(countingIn);
+
+      // Update status when count-in finishes
+      if (!countingIn && isRecording) {
+        setRecordStatus("Recording...");
+      }
     });
 
     const beatsRemainingSubscription = project.engine.countInBeatsRemaining.catchupAndSubscribe(obs => {
       setCountInBeatsRemaining(Math.ceil(obs.getValue()));
     });
 
+    const recordingSubscription = project.engine.isRecording.catchupAndSubscribe(obs => {
+      const recording = obs.getValue();
+
+      // Update status when recording starts (after count-in)
+      if (recording && !project.engine.isCountingIn.getValue()) {
+        setRecordStatus("Recording...");
+      }
+    });
+
     return () => {
       countingInSubscription.terminate();
       beatsRemainingSubscription.terminate();
+      recordingSubscription.terminate();
     };
-  }, [project]);
+  }, [project, isRecording]);
 
   // Sync metronome enabled state with engine
   useEffect(() => {
