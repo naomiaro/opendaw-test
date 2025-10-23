@@ -32,6 +32,8 @@ const App: React.FC = () => {
   // UI state
   const [isArmed, setIsArmed] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [useCountIn, setUseCountIn] = useState(false);
+  const [metronomeEnabled, setMetronomeEnabled] = useState(false);
   const [armStatus, setArmStatus] = useState('Click "Arm Track" to prepare for recording');
   const [recordStatus, setRecordStatus] = useState("Arm a track first");
   const [playbackStatus, setPlaybackStatus] = useState("No recording available");
@@ -39,6 +41,14 @@ const App: React.FC = () => {
   // Refs for non-reactive values - these don't need to trigger re-renders
   const tapeUnitRef = useRef<any>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
+
+  // Sync metronome enabled state with engine
+  useEffect(() => {
+    if (!project) return;
+
+    console.debug("Setting metronome enabled:", metronomeEnabled);
+    project.engine.metronomeEnabled.setValue(metronomeEnabled);
+  }, [project, metronomeEnabled]);
 
   // Initialize OpenDAW
   useEffect(() => {
@@ -199,7 +209,7 @@ const App: React.FC = () => {
     if (!project || !audioContext) return;
 
     try {
-      setRecordStatus("Starting recording...");
+      setRecordStatus(useCountIn ? "Count-in starting..." : "Starting recording...");
       setIsRecording(true);
 
       // Resume AudioContext if suspended (required for user interaction)
@@ -208,18 +218,19 @@ const App: React.FC = () => {
       }
 
       // Step 1: Prepare recording (arms captures, prepares engine state)
-      project.startRecording(false); // false = no count-in
+      console.debug(`Starting recording with count-in: ${useCountIn}`);
+      project.startRecording(useCountIn);
 
       // Step 2: Start playback to actually begin recording
       project.engine.play();
 
-      setRecordStatus("Recording...");
+      setRecordStatus(useCountIn ? "Count-in... then recording" : "Recording...");
     } catch (error) {
       console.error("Failed to start recording:", error);
       setRecordStatus(`Error: ${error}`);
       setIsRecording(false);
     }
-  }, [project, audioContext]);
+  }, [project, audioContext, useCountIn]);
 
   const handleStopRecording = useCallback(() => {
     if (!project) return;
@@ -298,6 +309,18 @@ const App: React.FC = () => {
 
       <div className="section">
         <h2>Record Audio</h2>
+        <div className="checkbox-group">
+          <label>
+            <input type="checkbox" checked={useCountIn} onChange={e => setUseCountIn(e.target.checked)} />
+            <span>Use count-in before recording</span>
+          </label>
+        </div>
+        <div className="checkbox-group">
+          <label>
+            <input type="checkbox" checked={metronomeEnabled} onChange={e => setMetronomeEnabled(e.target.checked)} />
+            <span>Enable metronome (you'll hear clicks during count-in and recording)</span>
+          </label>
+        </div>
         <div className="button-group">
           <button
             onClick={handleStartRecording}
