@@ -203,8 +203,6 @@ async function loadAudioFile(audioContext: AudioContext, url: string): Promise<A
 
         // Track playback state and position
         let pausedPosition: number | null = null
-        let playStartTime: number = 0
-        let playStartPosition: number = 0
 
         const updateButtonStates = (playing: boolean) => {
             if (playing) {
@@ -234,14 +232,10 @@ async function loadAudioFile(audioContext: AudioContext, url: string): Promise<A
                 if (pausedPosition !== null) {
                     console.debug(`Restoring paused position: ${pausedPosition}`)
                     project.engine.setPosition(pausedPosition)
-                    playStartPosition = pausedPosition
                     pausedPosition = null
-                } else {
-                    playStartPosition = 0
                 }
 
                 console.debug("Starting playback...")
-                playStartTime = audioContext.currentTime
                 project.engine.play()
 
                 updateButtonStates(true)
@@ -254,19 +248,9 @@ async function loadAudioFile(audioContext: AudioContext, url: string): Promise<A
             pauseButton.addEventListener("click", async () => {
                 console.debug("Pause button clicked")
 
-                // Calculate how long we've been playing
-                const elapsedSeconds = audioContext.currentTime - playStartTime
-                console.debug(`Elapsed time: ${elapsedSeconds}s`)
-
-                // Convert to PPQN (assuming 120 BPM)
-                // At 120 BPM: 1 beat = 0.5 seconds
-                // Quarter note = 480 PPQN
-                const elapsedPPQN = (elapsedSeconds / 0.5) * Quarter
-                const currentPosition = playStartPosition + elapsedPPQN
-
-                console.debug(`Play started at position: ${playStartPosition}`)
-                console.debug(`Elapsed PPQN: ${elapsedPPQN}`)
-                console.debug(`Calculated current position: ${currentPosition}`)
+                // Read current position from observable
+                const currentPosition = project.engine.position.getValue()
+                console.debug(`Current position from observable: ${currentPosition}`)
 
                 // Save it for resume
                 pausedPosition = currentPosition
