@@ -42,6 +42,7 @@ const App: React.FC = () => {
   const [recordStatus, setRecordStatus] = useState("Arm a track first");
   const [playbackStatus, setPlaybackStatus] = useState("No recording available");
   const [hasPeaks, setHasPeaks] = useState(false);
+  const [isPlayingBack, setIsPlayingBack] = useState(false);
 
   // Refs for non-reactive values - these don't need to trigger re-renders
   const tapeUnitRef = useRef<{ audioUnitBox: any; trackBox: any } | null>(null);
@@ -150,18 +151,28 @@ const App: React.FC = () => {
       }
     });
 
+    const playingSubscription = project.engine.isPlaying.catchupAndSubscribe(obs => {
+      const playing = obs.getValue();
+      setIsPlayingBack(playing);
+      if (playing) {
+        setPlaybackStatus("Playing...");
+      } else if (!playing && hasPeaks) {
+        setPlaybackStatus("Playback stopped");
+      }
+    });
+
     return () => {
       countingInSubscription.terminate();
       beatsRemainingSubscription.terminate();
       recordingSubscription.terminate();
+      playingSubscription.terminate();
     };
-  }, [project, isRecording]);
+  }, [project, isRecording, hasPeaks]);
 
   // Watch for new AudioRegionBox creation during recording to get live peaks
   useEffect(() => {
     if (!project || !tapeUnitRef.current || !isRecording) return undefined;
 
-    console.log("[LIVE PEAKS] Effect started, isRecording:", isRecording);
     const { trackBox } = tapeUnitRef.current;
     let animationFrameId: number;
     let currentRecordingWorklet: any = null;
@@ -173,19 +184,10 @@ const App: React.FC = () => {
 
       // RecordingWorklet.peaks returns Option<PeaksWriter> during recording
       const peaksOption = currentRecordingWorklet.peaks;
-      console.log("[LIVE PEAKS] peaksOption:", peaksOption, "isEmpty:", peaksOption?.isEmpty());
 
       if (peaksOption && !peaksOption.isEmpty()) {
         const peaks = peaksOption.unwrap();
-        const isPeaksWriter = "dataIndex" in peaks;
-        console.log("[LIVE PEAKS] Got peaks, isPeaksWriter:", isPeaksWriter);
-
-        if (isPeaksWriter) {
-          console.log("[LIVE PEAKS] dataIndex[0]:", peaks.dataIndex[0], "numChannels:", peaks.numChannels);
-        }
-
-        const rendered = renderPeaksDirectly(peaks);
-        console.log("[LIVE PEAKS] Rendered:", rendered);
+        renderPeaksDirectly(peaks);
       }
 
       // Continue polling at 60fps for smooth waveform updates
@@ -196,14 +198,12 @@ const App: React.FC = () => {
     const checkForRecording = () => {
       // Access regions via pointerHub.incoming() - same pattern as in Recording.js
       const regions = trackBox.regions.pointerHub.incoming().map(({ box }) => box);
-      console.log("[LIVE PEAKS] Checking for regions, count:", regions.length);
 
       if (regions.length > 0) {
         const latestRegion = regions[regions.length - 1];
 
         // Check if the pointer is set
         if (latestRegion.file.isEmpty()) {
-          console.log("[LIVE PEAKS] File pointer is empty, checking again...");
           setTimeout(checkForRecording, 100);
           return;
         }
@@ -212,25 +212,20 @@ const App: React.FC = () => {
         const targetAddressOption = latestRegion.file.targetAddress;
 
         if (targetAddressOption.isEmpty()) {
-          console.log("[LIVE PEAKS] No target address yet, checking again...");
           setTimeout(checkForRecording, 100);
           return;
         }
 
         const targetAddress = targetAddressOption.unwrap();
         const recordingUUID = targetAddress.uuid;
-        console.log("[LIVE PEAKS] Recording UUID:", UUID.toString(recordingUUID));
 
         // Get the RecordingWorklet from the sample manager
         currentRecordingWorklet = project.sampleManager.getOrCreate(recordingUUID);
-        console.log("[LIVE PEAKS] Got worklet:", currentRecordingWorklet);
-        console.log("[LIVE PEAKS] Worklet type:", currentRecordingWorklet?.constructor?.name);
 
         // Start polling for live peaks
         pollForPeaks();
       } else {
         // AudioRegionBox not created yet, check again soon
-        console.log("[LIVE PEAKS] No regions yet, checking again...");
         setTimeout(checkForRecording, 100);
       }
     };
@@ -238,7 +233,6 @@ const App: React.FC = () => {
     checkForRecording();
 
     return () => {
-      console.log("[LIVE PEAKS] Cleaning up");
       if (animationFrameId) {
         cancelAnimationFrame(animationFrameId);
       }
@@ -480,11 +474,11 @@ const App: React.FC = () => {
           <button
             onClick={handleStartRecording}
             disabled={!isArmed || isRecording}
-            className={isRecording ? "recording" : ""}
+            className={isRecording ? "recording record-btn" : "record-btn"}
           >
             ⏺ Start Recording
           </button>
-          <button onClick={handleStopRecording} disabled={!isRecording}>
+          <button onClick={handleStopRecording} disabled={!isRecording} className="stop-btn">
             ⏹ Stop Recording
           </button>
         </div>
@@ -494,10 +488,12 @@ const App: React.FC = () => {
       <div className="section">
         <h2>Playback</h2>
         <div className="button-group">
-          <button onClick={handlePlayRecording} disabled={isRecording}>
+          <button onClick={handlePlayRecording} disabled={isRecording || isPlayingBack || !hasPeaks} className="play-btn">
             ▶ Play Recording
           </button>
-          <button onClick={handleStopPlayback}>⏹ Stop</button>
+          <button onClick={handleStopPlayback} disabled={!isPlayingBack} className="stop-btn">
+            ⏹ Stop
+          </button>
         </div>
         <div className="status">{playbackStatus}</div>
         <div className="waveform-container" style={{ display: hasPeaks ? "flex" : "none" }}>

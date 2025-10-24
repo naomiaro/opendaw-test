@@ -149,18 +149,46 @@
             cursor: not-allowed;
             opacity: 0.5;
         }
-        button:not(.armed):not(.recording):not(:disabled) {
+        /* Default button style (purple) */
+        button:not(.armed):not(.recording):not(.record-btn):not(.play-btn):not(.stop-btn):not(:disabled) {
             background: #9f4aff;
         }
-        button:not(.armed):not(.recording):hover:not(:disabled) {
+        button:not(.armed):not(.recording):not(.record-btn):not(.play-btn):not(.stop-btn):hover:not(:disabled) {
             background: #7535bd;
         }
+        /* Armed button (pink) */
         button.armed {
             background: #ff4a9f;
+        }
+        button.armed:hover:not(:disabled) {
+            background: #d63d82;
+        }
+        /* Record button (red) */
+        button.record-btn:not(:disabled) {
+            background: #ff4a4a;
+        }
+        button.record-btn:hover:not(:disabled) {
+            background: #cc3838;
         }
         button.recording {
             background: #ff0000;
             animation: pulse 1.5s ease-in-out infinite;
+        }
+        /* Play button (green) */
+        button.play-btn:not(:disabled) {
+            background: #4aff9f;
+            color: #1a1a1a;
+        }
+        button.play-btn:hover:not(:disabled) {
+            background: #38cc7f;
+        }
+        /* Stop button (orange) */
+        button.stop-btn:not(:disabled) {
+            background: #ff9f4a;
+            color: #1a1a1a;
+        }
+        button.stop-btn:hover:not(:disabled) {
+            background: #cc7f38;
         }
         @keyframes pulse {
             0%, 100% { opacity: 1; }
