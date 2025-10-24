@@ -592,7 +592,7 @@ const App: React.FC = () => {
   }, [project, audioContext, useCountIn]);
 
   const handleStopRecording = useCallback(async () => {
-    if (!project) return;
+    if (!project || !tapeUnitRef.current) return;
 
     console.log('[Recording] Stopping recording...');
     project.engine.stopRecording();
@@ -607,10 +607,31 @@ const App: React.FC = () => {
     setIsPlayingBack(false);
     setRecordStatus("Recording stopped");
 
-    // Wait a moment for peaks to be generated, then update playback status
-    setTimeout(() => {
-      setPlaybackStatus("Recording ready to play");
-    }, 100);
+    // Get the recording UUID from the latest region
+    const { trackBox } = tapeUnitRef.current;
+    const regions = trackBox.regions.pointerHub.incoming().map(({ box }) => box);
+
+    if (regions.length > 0) {
+      const latestRegion = regions[regions.length - 1];
+      const targetAddressOption = latestRegion.file.targetAddress;
+
+      if (!targetAddressOption.isEmpty()) {
+        const targetAddress = targetAddressOption.unwrap();
+        const recordingUUID = targetAddress.uuid;
+
+        // Subscribe to the sample loader to know when final peaks are ready
+        const sampleLoader = project.sampleManager.getOrCreate(recordingUUID);
+        const subscription = sampleLoader.subscribe(state => {
+          if (state.type === "loaded") {
+            console.log('[Recording] Final peaks loaded');
+            setPlaybackStatus("Recording ready to play");
+            subscription.terminate();
+          }
+        });
+
+        console.log('[Recording] Subscribed to sample loader for final peaks');
+      }
+    }
 
     console.log('[Recording] Recording stopped, sessionRef set to false');
   }, [project]);
