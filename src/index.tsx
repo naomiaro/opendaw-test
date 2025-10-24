@@ -9,7 +9,17 @@ const App: React.FC = () => {
       <Container size="3" px="4" py="8">
         <Flex direction="column" align="center" gap="6" style={{ maxWidth: 900, margin: "0 auto" }}>
           <Flex direction="column" align="center" gap="2">
-            <Heading size="9">OpenDAW Demos</Heading>
+            <Heading
+              size="9"
+              style={{
+                background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+                WebkitBackgroundClip: "text",
+                WebkitTextFillColor: "transparent",
+                backgroundClip: "text"
+              }}
+            >
+              OpenDAW Demos
+            </Heading>
             <Text size="3" color="gray" align="center">
               Explore different capabilities of the OpenDAW headless audio engine
             </Text>
