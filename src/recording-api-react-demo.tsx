@@ -61,6 +61,7 @@ const App: React.FC = () => {
   const [bpm, setBpm] = useState(120);
   const [timeSignatureNumerator, setTimeSignatureNumerator] = useState(3);
   const [timeSignatureDenominator, setTimeSignatureDenominator] = useState(4);
+  const [countInBars, setCountInBars] = useState(1);
 
   // Ref to track if we're currently in a recording/counting-in session (not subject to re-renders)
   const isRecordingSessionRef = useRef(false);
@@ -410,6 +411,12 @@ const App: React.FC = () => {
     project.engine.metronomeEnabled.setValue(metronomeEnabled);
   }, [project, metronomeEnabled]);
 
+  // Sync count in bars with engine
+  useEffect(() => {
+    if (!project) return;
+    project.engine.countInBarsTotal.setValue(countInBars);
+  }, [project, countInBars]);
+
   // Initialize OpenDAW
   useEffect(() => {
     let mounted = true;
@@ -693,6 +700,23 @@ const App: React.FC = () => {
                       </Select.Content>
                     </Select.Root>
                   </Flex>
+                </Flex>
+
+                <Flex align="center" gap="2">
+                  <Text size="2" weight="medium">Count in bars:</Text>
+                  <Select.Root
+                    value={countInBars.toString()}
+                    onValueChange={value => setCountInBars(Number(value))}
+                    disabled={isRecording}
+                  >
+                    <Select.Trigger style={{ width: 70 }} />
+                    <Select.Content>
+                      <Select.Item value="1">1</Select.Item>
+                      <Select.Item value="2">2</Select.Item>
+                      <Select.Item value="3">3</Select.Item>
+                      <Select.Item value="4">4</Select.Item>
+                    </Select.Content>
+                  </Select.Root>
                 </Flex>
               </Flex>
 
