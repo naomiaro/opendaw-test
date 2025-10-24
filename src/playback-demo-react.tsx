@@ -18,6 +18,7 @@ import {
 } from "@opendaw/studio-core";
 import { AudioFileBox, AudioRegionBox } from "@opendaw/studio-boxes";
 import { AnimationFrame } from "@opendaw/lib-dom";
+import { PeaksPainter } from "@opendaw/lib-fusion";
 import { testFeatures } from "./features";
 import "@radix-ui/themes/styles.css";
 import {
@@ -48,11 +49,97 @@ const App: React.FC = () => {
   const [project, setProject] = useState<Project | null>(null);
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [tracks, setTracks] = useState<Array<{ name: string; uuid: UUID.Bytes }>>([]);
+  const [peaksReady, setPeaksReady] = useState(false);
 
   // Refs for non-reactive values - these don't need to trigger re-renders
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
   const pausedPositionRef = useRef<number | null>(null);
   const isPausedRef = useRef(false);
+  const canvasRefs = useRef<Map<string, HTMLCanvasElement>>(new Map());
+
+  // Render peaks to canvas
+  const renderPeaks = useCallback((canvas: HTMLCanvasElement, peaks: any, trackName: string) => {
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    // Clear canvas
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    console.debug(`[Peaks] Rendering waveform for "${trackName}": ${peaks.numFrames} frames, ${peaks.numChannels} channels`);
+
+    // Set waveform color
+    ctx.fillStyle = "#4a9eff";
+
+    // Render each channel
+    for (let channel = 0; channel < peaks.numChannels; channel++) {
+      const channelHeight = canvas.height / peaks.numChannels;
+      const y0 = channel * channelHeight;
+      const y1 = (channel + 1) * channelHeight;
+
+      PeaksPainter.renderBlocks(ctx, peaks, channel, {
+        x0: 0,
+        x1: canvas.width,
+        y0,
+        y1,
+        u0: 0,
+        u1: peaks.numFrames,
+        v0: -1,
+        v1: 1
+      });
+    }
+  }, []);
+
+  // Monitor for peaks and render them
+  useEffect(() => {
+    if (!project || tracks.length === 0) return undefined;
+
+    console.debug("[Peaks] Starting to monitor peaks for", tracks.length, "tracks");
+
+    let mounted = true;
+    let allPeaksRendered = false;
+
+    const checkPeaks = () => {
+      if (!mounted || allPeaksRendered) return;
+
+      let renderedCount = 0;
+
+      tracks.forEach(track => {
+        const uuidString = UUID.toString(track.uuid);
+        const canvas = canvasRefs.current.get(uuidString);
+        if (!canvas) return;
+
+        // Get the sample loader using UUID.Bytes
+        const sampleLoader = project.sampleManager.getOrCreate(track.uuid);
+        const peaksOption = sampleLoader.peaks;
+
+        if (!peaksOption.isEmpty()) {
+          const peaks = peaksOption.unwrap();
+          renderPeaks(canvas, peaks, track.name);
+          renderedCount++;
+        }
+      });
+
+      // Check if all peaks are rendered
+      if (renderedCount === tracks.length) {
+        console.debug("[Peaks] All waveforms rendered!");
+        allPeaksRendered = true;
+        setPeaksReady(true);
+        setStatus("Ready - Click Play to start");
+      } else {
+        // Keep checking
+        setTimeout(checkPeaks, 100);
+      }
+    };
+
+    // Start checking for peaks
+    checkPeaks();
+
+    return () => {
+      mounted = false;
+    };
+  }, [project, tracks, renderPeaks]);
 
   // Subscribe to engine observables - single source of truth!
   useEffect(() => {
@@ -197,6 +284,8 @@ const App: React.FC = () => {
         setStatus("Creating tracks...");
 
         const { editing, api, boxGraph } = newProject;
+        const loadedTracks: Array<{ name: string; uuid: UUID.Bytes }> = [];
+
         editing.modify(() => {
           // Create a tape track for each audio file
           audioFiles.forEach((file, index) => {
@@ -213,6 +302,9 @@ const App: React.FC = () => {
 
             // Store the audio buffer so our sample manager can load it
             localAudioBuffersRef.current.set(fileUUIDString, audioBuffer);
+
+            // Store track info for waveform rendering (store UUID.Bytes, not string)
+            loadedTracks.push({ name: file.name, uuid: fileUUID });
 
             // Create AudioFileBox
             const audioFileBox = AudioFileBox.create(boxGraph, fileUUID, box => {
@@ -239,7 +331,9 @@ const App: React.FC = () => {
           });
         });
 
-        console.debug("Tracks created, ready to play");
+        setTracks(loadedTracks);
+
+        console.debug("Tracks created, generating waveforms...");
         console.debug(`Timeline position: ${newProject.engine.position.getValue()}`);
         console.debug(`BPM: ${newProject.bpm}`);
 
@@ -250,7 +344,7 @@ const App: React.FC = () => {
 
         setAudioContext(newAudioContext);
         setProject(newProject);
-        setStatus("Ready - Click Play to start");
+        setStatus("Generating waveforms...");
       } catch (error) {
         console.error("Initialization error:", error);
         setStatus(`Error: ${error}`);
@@ -336,11 +430,39 @@ const App: React.FC = () => {
   return (
     <Theme appearance="dark" accentColor="blue" radius="large">
       <Container size="3" px="4" py="8">
-        <Flex direction="column" align="center" gap="6" style={{ maxWidth: 700, margin: "0 auto" }}>
+        <Flex direction="column" align="center" gap="6" style={{ maxWidth: 900, margin: "0 auto" }}>
           <Flex direction="column" align="center" gap="2">
             <Heading size="8">OpenDAW Multi-track Playback</Heading>
             <Text size="3" color="gray">Four-track audio playback demo</Text>
           </Flex>
+
+          {tracks.length > 0 && (
+            <Card style={{ width: "100%" }}>
+              <Flex direction="column" gap="4">
+                <Heading size="5" color="blue">Tracks {peaksReady && <Text size="2" color="gray" style={{ display: "inline" }}>(waveforms ready)</Text>}</Heading>
+                <Flex direction="column" gap="3">
+                  {tracks.map(track => {
+                    const uuidString = UUID.toString(track.uuid);
+                    return (
+                      <Flex key={uuidString} direction="column" gap="2">
+                        <Text size="2" weight="medium">{track.name}</Text>
+                        <div style={{ background: "var(--gray-3)", borderRadius: "var(--radius-3)", padding: "var(--space-2)" }}>
+                          <canvas
+                            ref={el => {
+                              if (el) canvasRefs.current.set(uuidString, el);
+                            }}
+                            width={800}
+                            height={80}
+                            style={{ width: "100%", height: "80px", display: "block" }}
+                          />
+                        </div>
+                      </Flex>
+                    );
+                  })}
+                </Flex>
+              </Flex>
+            </Card>
+          )}
 
           <Card style={{ width: "100%" }}>
             <Flex direction="column" gap="4">
