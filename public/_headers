@@ -1,0 +1,6 @@
+# Headers for Cloudflare Pages / Netlify
+# Required for SharedArrayBuffer support in OpenDAW
+
+/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp

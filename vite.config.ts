@@ -1,10 +1,18 @@
 import {defineConfig} from "vite"
 import react from "@vitejs/plugin-react"
 import crossOriginIsolation from "vite-plugin-cross-origin-isolation"
-import {readFileSync} from "fs"
+import {readFileSync, existsSync} from "fs"
 import {resolve} from "path"
 
+// Only load SSL certs if they exist (for local dev)
+const certKeyPath = "localhost-key.pem"
+const certPath = "localhost.pem"
+const hasLocalCerts = existsSync(certKeyPath) && existsSync(certPath)
+
 export default defineConfig({
+    // For GitHub Pages deployment: set base to '/repo-name/' or use env variable
+    // For local dev and production on custom domain, use '/'
+    base: process.env.VITE_BASE_PATH || '/',
     resolve: {
         alias: {
             "@": resolve(__dirname, "./src")
@@ -23,10 +31,13 @@ export default defineConfig({
     server: {
         port: 8080,
         host: "localhost",
-        https: {
-            key: readFileSync("localhost-key.pem"),
-            cert: readFileSync("localhost.pem")
-        },
+        // Only use HTTPS with local certs in dev mode
+        ...(hasLocalCerts && {
+            https: {
+                key: readFileSync(certKeyPath),
+                cert: readFileSync(certPath)
+            }
+        }),
         headers: {
             "Cross-Origin-Opener-Policy": "same-origin",
             "Cross-Origin-Embedder-Policy": "require-corp"

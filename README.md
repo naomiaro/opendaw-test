@@ -11,6 +11,88 @@ This is a template to run the openDAW SDK with the least possible number of depe
 * `npm install`
 * `npm run dev`
 
+## Building for Production
+
+To build the project for production:
+
+```bash
+npm run build
+```
+
+This creates a production build in the `dist/` directory. You can preview the build locally:
+
+```bash
+npm run preview
+```
+
+### GitHub Pages Deployment
+
+The project includes a GitHub Actions workflow (`.github/workflows/deploy.yml`) that automatically deploys to GitHub Pages when you push to the `main` branch.
+
+**Setup Steps:**
+
+1. Go to your GitHub repository Settings → Pages
+2. Under "Build and deployment", select "GitHub Actions" as the source
+3. Update the `VITE_BASE_PATH` in `.github/workflows/deploy.yml` to match your repository name:
+   ```yaml
+   VITE_BASE_PATH: /your-repo-name/
+   ```
+4. Push to `main` branch - the site will be automatically deployed
+
+**⚠️ CRITICAL LIMITATION: Cross-Origin Isolation on GitHub Pages**
+
+OpenDAW requires `SharedArrayBuffer`, which needs these HTTP headers:
+- `Cross-Origin-Opener-Policy: same-origin`
+- `Cross-Origin-Embedder-Policy: require-corp`
+
+**GitHub Pages does not support custom HTTP headers**, so the demos **will not work** on standard GitHub Pages.
+
+**Recommended Solutions (All FREE):**
+
+1. **Cloudflare Pages** ⭐ (Recommended - Best Free Tier)
+   - 🆓 **Free**: Unlimited bandwidth, unlimited requests
+   - This project includes `public/_headers` file with required configuration
+   - Simply connect your GitHub repo to Cloudflare Pages
+   - Headers are automatically applied ✅
+   - [Sign up free](https://pages.cloudflare.com/)
+
+2. **Netlify**
+   - 🆓 **Free**: 100 GB bandwidth/month, 300 build minutes/month
+   - Uses the same `public/_headers` file
+   - Connect your GitHub repo to Netlify
+   - Headers are automatically applied ✅
+   - [Sign up free](https://www.netlify.com/)
+
+3. **Vercel**
+   - 🆓 **Free**: 100 GB bandwidth/month, unlimited sites
+   - This project includes `vercel.json` with required header configuration
+   - Connect your GitHub repo to Vercel
+   - Headers are automatically applied ✅
+   - [Sign up free](https://vercel.com/)
+
+4. **Custom Domain with Cloudflare Workers**
+   - Point your GitHub Pages to a custom domain
+   - Configure headers via Cloudflare Workers
+
+5. **Local Development Only**
+   - Keep using `npm run dev` with the provided HTTPS setup
+   - This includes the required headers via Vite configuration
+
+**Quick Start with Cloudflare Pages:**
+```bash
+# 1. Build the project
+npm run build
+
+# 2. Deploy to Cloudflare Pages
+# - Go to https://pages.cloudflare.com/
+# - Connect your GitHub repository
+# - Set build command: npm run build
+# - Set build output directory: dist
+# - Deploy!
+```
+
+The GitHub Actions workflow is provided for projects that may not need SharedArrayBuffer or for deployment to platforms that support custom headers.
+
 ## Critical: AnimationFrame Initialization
 
 **⚠️ IMPORTANT**: You must call `AnimationFrame.start(window)` before using OpenDAW's engine, or observables will not work!
