@@ -153,11 +153,16 @@ const App: React.FC = () => {
 
     const playingSubscription = project.engine.isPlaying.catchupAndSubscribe(obs => {
       const playing = obs.getValue();
-      setIsPlayingBack(playing);
-      if (playing) {
-        setPlaybackStatus("Playing...");
-      } else if (!playing && hasPeaks) {
-        setPlaybackStatus("Playback stopped");
+
+      // Only update isPlayingBack if we're not recording
+      if (!isRecording) {
+        setIsPlayingBack(playing);
+
+        if (playing) {
+          setPlaybackStatus("Playing...");
+        } else if (!playing && hasPeaks) {
+          setPlaybackStatus("Playback stopped");
+        }
       }
     });
 
@@ -382,12 +387,17 @@ const App: React.FC = () => {
       project.startRecording(useCountIn);
 
       setRecordStatus(useCountIn ? "Count-in..." : "Recording...");
+
+      // Keep playback status unchanged while recording
+      if (hasPeaks) {
+        setPlaybackStatus("Recording ready to play");
+      }
     } catch (error) {
       console.error("Failed to start recording:", error);
       setRecordStatus(`Error: ${error}`);
       setIsRecording(false);
     }
-  }, [project, audioContext, useCountIn]);
+  }, [project, audioContext, useCountIn, hasPeaks]);
 
   const handleStopRecording = useCallback(async () => {
     if (!project) return;
@@ -491,7 +501,7 @@ const App: React.FC = () => {
           <button onClick={handlePlayRecording} disabled={isRecording || isPlayingBack || !hasPeaks} className="play-btn">
             ▶ Play Recording
           </button>
-          <button onClick={handleStopPlayback} disabled={!isPlayingBack} className="stop-btn">
+          <button onClick={handleStopPlayback} disabled={!isPlayingBack || isRecording} className="stop-btn">
             ⏹ Stop
           </button>
         </div>
