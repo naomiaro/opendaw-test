@@ -4,99 +4,20 @@
     <meta charset="UTF-8"/>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>openDAW headless - Demos</title>
+    <title>OpenDAW - Demos</title>
     <style>
         body {
             margin: 0;
-            padding: 0;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: #1a1a1a;
-            color: #ffffff;
+            padding: 20px;
+            min-height: 100vh;
             display: flex;
-            flex-direction: column;
             align-items: center;
             justify-content: center;
-            min-height: 100vh;
-        }
-        .container {
-            max-width: 800px;
-            padding: 40px;
-            text-align: center;
-        }
-        h1 {
-            font-size: 48px;
-            margin-bottom: 20px;
-            background: linear-gradient(135deg, #4a9eff 0%, #ff4a9e 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-        .subtitle {
-            font-size: 18px;
-            color: #aaa;
-            margin-bottom: 60px;
-        }
-        .demo-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 30px;
-            margin-top: 40px;
-        }
-        .demo-card {
-            background: #252525;
-            border: 2px solid #333;
-            border-radius: 12px;
-            padding: 30px;
-            text-decoration: none;
-            color: inherit;
-            transition: all 0.3s ease;
-            cursor: pointer;
-        }
-        .demo-card:hover {
-            border-color: #4a9eff;
-            transform: translateY(-5px);
-            box-shadow: 0 10px 30px rgba(74, 158, 255, 0.2);
-        }
-        .demo-card h2 {
-            font-size: 24px;
-            margin-bottom: 15px;
-            color: #4a9eff;
-        }
-        .demo-card p {
-            font-size: 16px;
-            color: #999;
-            line-height: 1.6;
-        }
-        .demo-icon {
-            font-size: 48px;
-            margin-bottom: 20px;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>OpenDAW Demos</h1>
-        <p class="subtitle">Explore different capabilities of the OpenDAW headless audio engine</p>
-
-        <div class="demo-grid">
-            <a href="/playback-demo-react.html" class="demo-card">
-                <div class="demo-icon">🎵</div>
-                <h2>Multi-track Playback</h2>
-                <p>Load and play multiple audio tracks in sync. Demonstrates the tape track functionality with play, pause, and stop controls.</p>
-            </a>
-
-            <a href="/recording-api-react-demo.html" class="demo-card">
-                <div class="demo-icon">🎙️</div>
-                <h2>Recording API Demo</h2>
-                <p>Record audio from your microphone using OpenDAW's Recording API. Uses React with useRef to efficiently store the tape unit reference.</p>
-            </a>
-
-            <a href="/lifecycle-react-demo.html" class="demo-card">
-                <div class="demo-icon">⚛️</div>
-                <h2>Lifecycle Management (React)</h2>
-                <p>Learn proper subscription cleanup with React useEffect. Add/remove dynamic components and watch subscriptions being managed automatically.</p>
-            </a>
-        </div>
-    </div>
+    <div id="root"></div>
+    <script type="module" src="/src/index.tsx"></script>
 </body>
 </html>

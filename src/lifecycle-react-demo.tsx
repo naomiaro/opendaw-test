@@ -19,6 +19,19 @@ import {
 import { AudioFileBox, AudioRegionBox, AudioUnitBox, TrackBox } from "@opendaw/studio-boxes";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { testFeatures } from "./features";
+import "@radix-ui/themes/styles.css";
+import {
+  Theme,
+  Container,
+  Heading,
+  Text,
+  Button,
+  Flex,
+  Card,
+  Badge,
+  Separator,
+  Callout
+} from "@radix-ui/themes";
 
 import WorkersUrl from "@opendaw/studio-core/workers-main.js?worker&url";
 import WorkletsUrl from "@opendaw/studio-core/processors.js?url";
@@ -72,21 +85,27 @@ const TransportDisplay: React.FC<{ project: Project }> = ({ project }) => {
   }, [project]); // Re-run only if project changes
 
   return (
-    <div className="transport-display">
-      <h3>
-        Transport Display <span className="badge">Active</span>
-      </h3>
-      <div className="state-row">
-        <strong>Playing:</strong>
-        <span style={{ color: isPlaying ? "#4caf50" : "#f44336" }}>{isPlaying ? "▶ Playing" : "⏸ Stopped"}</span>
-      </div>
-      <div className="state-row">
-        <strong>Position:</strong> <span>{position.toFixed(2)}</span>
-      </div>
-      <div className="state-row">
-        <strong>Updates:</strong> <span>{updateCount}</span>
-      </div>
-    </div>
+    <Card>
+      <Flex direction="column" gap="3">
+        <Flex justify="between" align="center">
+          <Heading size="4">Transport Display</Heading>
+          <Badge color="green">Active</Badge>
+        </Flex>
+        <Separator size="4" />
+        <Flex justify="between" align="center">
+          <Text weight="bold">Playing:</Text>
+          <Text style={{ color: isPlaying ? "#4caf50" : "#f44336" }}>{isPlaying ? "▶ Playing" : "⏸ Stopped"}</Text>
+        </Flex>
+        <Flex justify="between" align="center">
+          <Text weight="bold">Position:</Text>
+          <Text>{position.toFixed(2)}</Text>
+        </Flex>
+        <Flex justify="between" align="center">
+          <Text weight="bold">Updates:</Text>
+          <Text>{updateCount}</Text>
+        </Flex>
+      </Flex>
+    </Card>
   );
 };
 
@@ -135,28 +154,33 @@ const TrackMonitor: React.FC<{
   }, [track]);
 
   return (
-    <div className="track-monitor">
-      <div className="track-header">
-        <h4>{track.name}</h4>
-        <button className="remove-btn" onClick={onRemove}>
-          Remove
-        </button>
-      </div>
-      <div>
-        <div className="stat-row">
-          <strong>Volume:</strong> <span>{volume.toFixed(1)} dB</span>
-        </div>
-        <div className="stat-row">
-          <strong>Muted:</strong> <span>{muted ? "🔇 Yes" : "🔊 No"}</span>
-        </div>
-        <div className="stat-row">
-          <strong>Soloed:</strong> <span>{soloed ? "⭐ Yes" : "No"}</span>
-        </div>
-        <div className="stat-row">
-          <strong>Updates:</strong> <span>{updateCount}</span>
-        </div>
-      </div>
-    </div>
+    <Card>
+      <Flex direction="column" gap="3">
+        <Flex justify="between" align="center">
+          <Heading size="4">{track.name}</Heading>
+          <Button color="red" size="1" onClick={onRemove}>
+            Remove
+          </Button>
+        </Flex>
+        <Separator size="4" />
+        <Flex justify="between" align="center">
+          <Text weight="bold">Volume:</Text>
+          <Text>{volume.toFixed(1)} dB</Text>
+        </Flex>
+        <Flex justify="between" align="center">
+          <Text weight="bold">Muted:</Text>
+          <Text>{muted ? "🔇 Yes" : "🔊 No"}</Text>
+        </Flex>
+        <Flex justify="between" align="center">
+          <Text weight="bold">Soloed:</Text>
+          <Text>{soloed ? "⭐ Yes" : "No"}</Text>
+        </Flex>
+        <Flex justify="between" align="center">
+          <Text weight="bold">Updates:</Text>
+          <Text>{updateCount}</Text>
+        </Flex>
+      </Flex>
+    </Card>
   );
 };
 
@@ -426,112 +450,152 @@ const App: React.FC = () => {
 
   if (!project) {
     return (
-      <div className="container">
-        <h1>OpenDAW React Lifecycle Demo</h1>
-        <p className="subtitle">{status}</p>
-      </div>
+      <Theme appearance="dark" accentColor="blue" radius="large">
+        <Container size="2" px="4" py="8">
+          <Flex direction="column" align="center" gap="4">
+            <Heading size="8">OpenDAW React Lifecycle Demo</Heading>
+            <Text size="3" color="gray">{status}</Text>
+          </Flex>
+        </Container>
+      </Theme>
     );
   }
 
   return (
-    <div className="container">
-      <h1>OpenDAW React Lifecycle Demo</h1>
-      <p className="subtitle">Demonstrating proper subscription cleanup with React useEffect</p>
+    <Theme appearance="dark" accentColor="blue" radius="large">
+      <Container size="3" px="4" py="8">
+        <Flex direction="column" gap="6" style={{ maxWidth: 1200, margin: "0 auto" }}>
+          <Flex direction="column" align="center" gap="2">
+            <Heading size="8">OpenDAW React Lifecycle Demo</Heading>
+            <Text size="3" color="gray">Demonstrating proper subscription cleanup with React useEffect</Text>
+          </Flex>
 
-      <div className="info-box">
-        <strong>What is this demo?</strong>
-        <br />
-        This demo shows how to properly manage OpenDAW observable subscriptions in React using useEffect cleanup
-        functions. Components automatically clean up their subscriptions when unmounted. Watch the console to see
-        subscription lifecycle events!
-      </div>
+          <Callout.Root color="blue">
+            <Callout.Text>
+              <strong>What is this demo?</strong>
+              <br />
+              This demo shows how to properly manage OpenDAW observable subscriptions in React using useEffect cleanup
+              functions. Components automatically clean up their subscriptions when unmounted. Watch the console to see
+              subscription lifecycle events!
+            </Callout.Text>
+          </Callout.Root>
 
-      {/* Playback Controls */}
-      <div className="section">
-        <h2>Playback Controls</h2>
-        <div className="button-group">
-          <button onClick={handlePlay} disabled={isPlaying} className="btn-success">
-            ▶ Play
-          </button>
-          <button onClick={handleStop} disabled={!isPlaying} className="btn-danger">
-            ■ Stop
-          </button>
-        </div>
-        <div id="status">{status}</div>
-      </div>
+          {/* Playback Controls */}
+          <Card>
+            <Flex direction="column" gap="4">
+              <Heading size="5" color="blue">Playback Controls</Heading>
+              <Flex gap="3" wrap="wrap">
+                <Button onClick={handlePlay} disabled={isPlaying} color="green" size="3">
+                  ▶ Play
+                </Button>
+                <Button onClick={handleStop} disabled={!isPlaying} color="red" size="3">
+                  ■ Stop
+                </Button>
+              </Flex>
+              <Text size="2" align="center" color="gray">{status}</Text>
+            </Flex>
+          </Card>
 
-      {/* Track Controls */}
-      <div className="section">
-        <h2>Track Controls</h2>
-        <p style={{ color: "#888", fontSize: "13px", marginBottom: "15px" }}>
-          Modify track state to see monitors update in real-time
-        </p>
-        <div className="track-controls">
-          {tracks.map((track, index) => (
-            <React.Fragment key={index}>
-              <button onClick={() => handleMuteTrack(index)} className="btn-warning">
-                Mute {track.name}
-              </button>
-              <button onClick={() => handleSoloTrack(index)} className="btn-primary">
-                Solo {track.name}
-              </button>
-            </React.Fragment>
-          ))}
-        </div>
-      </div>
-
-      {/* Component Management */}
-      <div className="section">
-        <h2>Component Management</h2>
-        <div className="controls-section">
-          <div className="control-group">
-            <label>Transport Display</label>
-            <button onClick={handleToggleTransport} className={`btn-primary ${showTransport ? "active" : ""}`}>
-              {showTransport ? "Hide Transport" : "Show Transport"}
-            </button>
-            <div id="transport-container">{showTransport && <TransportDisplay project={project} />}</div>
-          </div>
-          <div className="control-group">
-            <label>Track Monitors</label>
-            <div className="button-group">
-              <select value={selectedTrack} onChange={e => setSelectedTrack(Number(e.target.value))}>
+          {/* Track Controls */}
+          <Card>
+            <Flex direction="column" gap="4">
+              <Heading size="5" color="blue">Track Controls</Heading>
+              <Text size="2" color="gray">
+                Modify track state to see monitors update in real-time
+              </Text>
+              <Flex gap="2" wrap="wrap" style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)" }}>
                 {tracks.map((track, index) => (
-                  <option key={index} value={index}>
-                    {track.name}
-                  </option>
+                  <React.Fragment key={index}>
+                    <Button onClick={() => handleMuteTrack(index)} color="orange" size="2">
+                      Mute {track.name}
+                    </Button>
+                    <Button onClick={() => handleSoloTrack(index)} color="blue" size="2">
+                      Solo {track.name}
+                    </Button>
+                  </React.Fragment>
                 ))}
-              </select>
-              <button onClick={handleAddMonitor} className="btn-success">
-                Add Monitor
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+              </Flex>
+            </Flex>
+          </Card>
 
-      {/* Active Monitors */}
-      <div className="section">
-        <h2>Active Monitors</h2>
-        <p style={{ color: "#888", fontSize: "13px", marginBottom: "15px" }}>
-          Each monitor is a React component with its own useEffect. Click "Remove" to unmount and watch subscriptions
-          clean up automatically!
-        </p>
-        <div id="monitors-container" className="monitors-grid">
-          {Array.from(activeMonitors).map(trackIndex => (
-            <TrackMonitor
-              key={trackIndex}
-              track={tracks[trackIndex]}
-              onRemove={() => handleRemoveMonitor(trackIndex)}
-            />
-          ))}
-          {activeMonitors.size === 0 && (
-            <p style={{ color: "#666", fontStyle: "italic" }}>
-              No active monitors. Add some to see lifecycle management in action!
-            </p>
-          )}
-        </div>
-      </div>
-    </div>
+          {/* Component Management */}
+          <Card>
+            <Flex direction="column" gap="4">
+              <Heading size="5" color="blue">Component Management</Heading>
+              <Flex direction="column" gap="6">
+                <Flex direction="column" gap="3">
+                  <Text size="2" weight="medium" color="gray" style={{ textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                    Transport Display
+                  </Text>
+                  <Button
+                    onClick={handleToggleTransport}
+                    color={showTransport ? "green" : "blue"}
+                    size="3"
+                  >
+                    {showTransport ? "Hide Transport" : "Show Transport"}
+                  </Button>
+                  {showTransport && <TransportDisplay project={project} />}
+                </Flex>
+                <Flex direction="column" gap="3">
+                  <Text size="2" weight="medium" color="gray" style={{ textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                    Track Monitors
+                  </Text>
+                  <Flex gap="3" wrap="wrap">
+                    <select
+                      value={selectedTrack}
+                      onChange={e => setSelectedTrack(Number(e.target.value))}
+                      style={{
+                        padding: "10px",
+                        fontSize: "14px",
+                        background: "#333",
+                        color: "white",
+                        border: "1px solid #555",
+                        borderRadius: "6px",
+                        cursor: "pointer"
+                      }}
+                    >
+                      {tracks.map((track, index) => (
+                        <option key={index} value={index}>
+                          {track.name}
+                        </option>
+                      ))}
+                    </select>
+                    <Button onClick={handleAddMonitor} color="green" size="3">
+                      Add Monitor
+                    </Button>
+                  </Flex>
+                </Flex>
+              </Flex>
+            </Flex>
+          </Card>
+
+          {/* Active Monitors */}
+          <Card>
+            <Flex direction="column" gap="4">
+              <Heading size="5" color="blue">Active Monitors</Heading>
+              <Text size="2" color="gray">
+                Each monitor is a React component with its own useEffect. Click "Remove" to unmount and watch subscriptions
+                clean up automatically!
+              </Text>
+              <Flex gap="4" wrap="wrap" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))" }}>
+                {Array.from(activeMonitors).map(trackIndex => (
+                  <TrackMonitor
+                    key={trackIndex}
+                    track={tracks[trackIndex]}
+                    onRemove={() => handleRemoveMonitor(trackIndex)}
+                  />
+                ))}
+              </Flex>
+              {activeMonitors.size === 0 && (
+                <Text size="2" color="gray" style={{ fontStyle: "italic" }}>
+                  No active monitors. Add some to see lifecycle management in action!
+                </Text>
+              )}
+            </Flex>
+          </Card>
+        </Flex>
+      </Container>
+    </Theme>
   );
 };
 

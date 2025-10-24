@@ -799,9 +799,6 @@ const App: React.FC = () => {
                 </Button>
               </Flex>
               <Text size="2" align="center" color="gray">{playbackStatus}</Text>
-              <Text size="1" align="center" color="gray" style={{ opacity: 0.5 }}>
-                Debug: isRecording={String(isRecording)} isPlayingBack={String(isPlayingBack)} hasPeaks={String(hasPeaks)}
-              </Text>
             </Flex>
           </Card>
         </Flex>

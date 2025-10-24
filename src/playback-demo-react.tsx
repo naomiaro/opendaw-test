@@ -19,6 +19,16 @@ import {
 import { AudioFileBox, AudioRegionBox } from "@opendaw/studio-boxes";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { testFeatures } from "./features";
+import "@radix-ui/themes/styles.css";
+import {
+  Theme,
+  Container,
+  Heading,
+  Text,
+  Button,
+  Flex,
+  Card
+} from "@radix-ui/themes";
 
 import WorkersUrl from "@opendaw/studio-core/workers-main.js?worker&url";
 import WorkletsUrl from "@opendaw/studio-core/processors.js?url";
@@ -312,29 +322,65 @@ const App: React.FC = () => {
 
   if (!project) {
     return (
-      <div id="controls">
-        <h1>OpenDAW Multi-track Playback</h1>
-        <div id="status">{status}</div>
-      </div>
+      <Theme appearance="dark" accentColor="blue" radius="large">
+        <Container size="2" px="4" py="8">
+          <Flex direction="column" align="center" gap="4">
+            <Heading size="8">OpenDAW Multi-track Playback</Heading>
+            <Text size="3" color="gray">{status}</Text>
+          </Flex>
+        </Container>
+      </Theme>
     );
   }
 
   return (
-    <div id="controls">
-      <h1>OpenDAW Multi-track Playback</h1>
-      <div id="buttonGroup">
-        <button id="playButton" onClick={handlePlay} disabled={isPlaying}>
-          Play
-        </button>
-        <button id="pauseButton" onClick={handlePause} disabled={!isPlaying}>
-          Pause
-        </button>
-        <button id="stopButton" onClick={handleStop} disabled={!isPlaying}>
-          Stop
-        </button>
-      </div>
-      <div id="status">{status}</div>
-    </div>
+    <Theme appearance="dark" accentColor="blue" radius="large">
+      <Container size="3" px="4" py="8">
+        <Flex direction="column" align="center" gap="6" style={{ maxWidth: 700, margin: "0 auto" }}>
+          <Flex direction="column" align="center" gap="2">
+            <Heading size="8">OpenDAW Multi-track Playback</Heading>
+            <Text size="3" color="gray">Four-track audio playback demo</Text>
+          </Flex>
+
+          <Card style={{ width: "100%" }}>
+            <Flex direction="column" gap="4">
+              <Heading size="5" color="blue">Transport Controls</Heading>
+
+              <Flex gap="3" wrap="wrap" justify="center">
+                <Button
+                  onClick={handlePlay}
+                  disabled={isPlaying}
+                  color="green"
+                  size="3"
+                  variant="solid"
+                >
+                  Play
+                </Button>
+                <Button
+                  onClick={handlePause}
+                  disabled={!isPlaying}
+                  color="orange"
+                  size="3"
+                  variant="solid"
+                >
+                  Pause
+                </Button>
+                <Button
+                  onClick={handleStop}
+                  disabled={!isPlaying}
+                  color="red"
+                  size="3"
+                  variant="solid"
+                >
+                  Stop
+                </Button>
+              </Flex>
+              <Text size="2" align="center" color="gray">{status}</Text>
+            </Flex>
+          </Card>
+        </Flex>
+      </Container>
+    </Theme>
   );
 };
 
