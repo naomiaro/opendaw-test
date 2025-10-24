@@ -257,9 +257,9 @@ Since boxes are created automatically by `RecordAudio.start()`, you can access l
 // 1. Start recording
 project.startRecording(countIn);
 
-// 2. Wait for RecordAudio to create the AudioRegionBox (happens on first position update)
-const checkForRecording = () => {
-  // Access regions via pointerHub.incoming() - same pattern as in Recording.js
+// 2. Subscribe to position updates to detect when AudioRegionBox is created
+const positionSubscription = project.engine.position.subscribe(() => {
+  // Access regions via pointerHub.incoming()
   const regions = trackBox.regions.pointerHub.incoming().map(({ box }) => box);
 
   if (regions.length > 0) {
@@ -267,20 +267,21 @@ const checkForRecording = () => {
 
     // Check if the file pointer is set
     if (latestRegion.file.isEmpty()) {
-      setTimeout(checkForRecording, 100);
-      return;
+      return; // Will check again on next position update
     }
 
     // Get the recording UUID - targetAddress is an Option type, so unwrap it
     const targetAddressOption = latestRegion.file.targetAddress;
 
     if (targetAddressOption.isEmpty()) {
-      setTimeout(checkForRecording, 100);
-      return;
+      return; // Will check again on next position update
     }
 
     const targetAddress = targetAddressOption.unwrap();
     const recordingUUID = targetAddress.uuid;
+
+    // Unsubscribe now that we found what we need
+    positionSubscription.terminate();
 
     // 3. Get the RecordingWorklet from sample manager
     const recordingWorklet = project.sampleManager.getOrCreate(recordingUUID);
@@ -312,12 +313,8 @@ const checkForRecording = () => {
     };
 
     monitorLivePeaks();
-  } else {
-    setTimeout(checkForRecording, 100);
   }
-};
-
-checkForRecording();
+});
 ```
 
 **Important Box Graph Patterns:**

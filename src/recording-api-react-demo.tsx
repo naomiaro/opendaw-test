@@ -236,10 +236,10 @@ const App: React.FC = () => {
     console.log('[Peaks] Effect mounted, waiting for recording to start...');
 
     let animationFrameId: number | undefined;
-    let timeoutId: number | undefined;
     let currentRecordingWorklet: any = null;
     let lastLogTime = 0;
     let monitoringStarted = false;
+    let positionSubscription: any = null;
 
     // Subscribe to recording state to know when to start monitoring
     const recordingSubscription = project.engine.isRecording.catchupAndSubscribe(obs => {
@@ -250,7 +250,7 @@ const App: React.FC = () => {
       // Only start monitoring once when recording begins
       if (recording && !monitoringStarted) {
         monitoringStarted = true;
-        console.log('[Peaks] Recording started, beginning to monitor for regions...');
+        console.log('[Peaks] Recording started, subscribing to position updates for region monitoring...');
 
         // Check if tape unit exists now
         if (!tapeUnitRef.current) {
@@ -258,8 +258,12 @@ const App: React.FC = () => {
           return;
         }
 
-        console.log('[Peaks] Tape unit found, starting region monitoring...');
-        checkForRecording();
+        console.log('[Peaks] Tape unit found, subscribing to position...');
+
+        // Subscribe to position updates to check for region creation
+        positionSubscription = project.engine.position.subscribe(() => {
+          checkForRecording();
+        });
       }
     });
 
@@ -298,6 +302,11 @@ const App: React.FC = () => {
 
     // Check for new AudioRegionBox created by RecordAudio.start()
     const checkForRecording = () => {
+      // If we already found the recording worklet, no need to check again
+      if (currentRecordingWorklet) {
+        return;
+      }
+
       // Get trackBox at call time, not from closure
       if (!tapeUnitRef.current) {
         console.error('[Peaks] No tape unit in checkForRecording');
@@ -314,8 +323,7 @@ const App: React.FC = () => {
 
         // Check if the file pointer is set
         if (latestRegion.file.isEmpty()) {
-          console.log('[Peaks] Region file is empty, retrying...');
-          timeoutId = setTimeout(checkForRecording, 100) as any;
+          console.log('[Peaks] Region file is empty, will check on next position update...');
           return;
         }
 
@@ -323,8 +331,7 @@ const App: React.FC = () => {
         const targetAddressOption = latestRegion.file.targetAddress;
 
         if (targetAddressOption.isEmpty()) {
-          console.log('[Peaks] Target address is empty, retrying...');
-          timeoutId = setTimeout(checkForRecording, 100) as any;
+          console.log('[Peaks] Target address is empty, will check on next position update...');
           return;
         }
 
@@ -332,6 +339,13 @@ const App: React.FC = () => {
         const recordingUUID = targetAddress.uuid;
 
         console.log('[Peaks] Found recording UUID:', recordingUUID);
+
+        // Unsubscribe from position updates now that we found what we need
+        if (positionSubscription) {
+          positionSubscription.terminate();
+          positionSubscription = null;
+          console.log('[Peaks] Unsubscribed from position updates');
+        }
 
         // Get the RecordingWorklet from the sample manager
         currentRecordingWorklet = project.sampleManager.getOrCreate(recordingUUID);
@@ -341,19 +355,19 @@ const App: React.FC = () => {
         // Start monitoring live peaks
         monitorLivePeaks();
       } else {
-        // AudioRegionBox not created yet, check again soon
-        timeoutId = setTimeout(checkForRecording, 100) as any;
+        // AudioRegionBox not created yet, will check on next position update
+        console.log('[Peaks] No regions yet, waiting for next position update...');
       }
     };
 
     return () => {
       console.log('[Peaks] Cleanup: stopping monitoring');
       recordingSubscription.terminate();
+      if (positionSubscription) {
+        positionSubscription.terminate();
+      }
       if (animationFrameId !== undefined) {
         cancelAnimationFrame(animationFrameId);
-      }
-      if (timeoutId !== undefined) {
-        clearTimeout(timeoutId);
       }
     };
   }, [project, renderPeaksDirectly]);
@@ -757,7 +771,7 @@ const App: React.FC = () => {
 
               {isCountingIn && (
                 <Callout.Root color="amber">
-                  <Callout.Text>
+                  <Callout.Text as="div">
                     <Flex align="center" gap="2">
                       <span className="count-in-icon">🎵</span>
                       <strong>Count-in: {countInBeatsRemaining} beats remaining</strong>
