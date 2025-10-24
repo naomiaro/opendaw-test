@@ -576,12 +576,7 @@ const App: React.FC = () => {
 
       setRecordStatus(useCountIn ? "Count-in..." : "Recording...");
 
-      // Use setTimeout to ensure playback status is set AFTER all observables fire
-      setTimeout(() => {
-        setPlaybackStatus("No recording available");
-        console.log('[Recording] Set playback status to "No recording available"');
-      }, 50);
-
+      // Playback status will be set by the playingSubscription observable
       console.log('[Recording] Recording started');
     } catch (error) {
       console.error("Failed to start recording:", error);
