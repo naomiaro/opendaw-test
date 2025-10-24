@@ -263,7 +263,7 @@ const App: React.FC = () => {
       }
     });
 
-    const pollForPeaks = () => {
+    const monitorLivePeaks = () => {
       if (!currentRecordingWorklet) {
         return;
       }
@@ -278,7 +278,7 @@ const App: React.FC = () => {
         // Check if this is the final Peaks (not PeaksWriter)
         const isPeaksWriter = "dataIndex" in peaks;
 
-        // If we got final Peaks (not PeaksWriter), stop polling
+        // If we got final Peaks (not PeaksWriter), stop monitoring
         if (!isPeaksWriter && rendered) {
           console.log('[Peaks] Received final peaks, stopping monitoring');
           return;
@@ -292,8 +292,8 @@ const App: React.FC = () => {
         }
       }
 
-      // Continue polling at 60fps for smooth waveform updates
-      animationFrameId = requestAnimationFrame(pollForPeaks);
+      // Continue monitoring at 60fps for smooth waveform updates
+      animationFrameId = requestAnimationFrame(monitorLivePeaks);
     };
 
     // Check for new AudioRegionBox created by RecordAudio.start()
@@ -336,10 +336,10 @@ const App: React.FC = () => {
         // Get the RecordingWorklet from the sample manager
         currentRecordingWorklet = project.sampleManager.getOrCreate(recordingUUID);
 
-        console.log('[Peaks] Got worklet, starting peaks polling...');
+        console.log('[Peaks] Got worklet, starting live peaks monitoring...');
 
-        // Start polling for live peaks
-        pollForPeaks();
+        // Start monitoring live peaks
+        monitorLivePeaks();
       } else {
         // AudioRegionBox not created yet, check again soon
         timeoutId = setTimeout(checkForRecording, 100) as any;

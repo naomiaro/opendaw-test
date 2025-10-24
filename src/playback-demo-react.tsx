@@ -91,53 +91,51 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // Monitor for peaks and render them
+  // Subscribe to sample loader state changes for peaks
   useEffect(() => {
     if (!project || tracks.length === 0) return undefined;
 
-    console.debug("[Peaks] Starting to monitor peaks for", tracks.length, "tracks");
+    console.debug("[Peaks] Subscribing to sample loader state for", tracks.length, "tracks");
 
-    let mounted = true;
-    let allPeaksRendered = false;
+    const subscriptions: Array<{ terminate: () => void }> = [];
+    let renderedCount = 0;
 
-    const checkPeaks = () => {
-      if (!mounted || allPeaksRendered) return;
+    tracks.forEach(track => {
+      const uuidString = UUID.toString(track.uuid);
+      const canvas = canvasRefs.current.get(uuidString);
+      if (!canvas) return;
 
-      let renderedCount = 0;
+      // Get the sample loader and subscribe to state changes
+      const sampleLoader = project.sampleManager.getOrCreate(track.uuid);
 
-      tracks.forEach(track => {
-        const uuidString = UUID.toString(track.uuid);
-        const canvas = canvasRefs.current.get(uuidString);
-        if (!canvas) return;
+      const subscription = sampleLoader.subscribe(state => {
+        console.debug(`[Peaks] Sample loader state for "${track.name}":`, state.type);
 
-        // Get the sample loader using UUID.Bytes
-        const sampleLoader = project.sampleManager.getOrCreate(track.uuid);
-        const peaksOption = sampleLoader.peaks;
+        // When state becomes "loaded", peaks are ready
+        if (state.type === "loaded") {
+          const peaksOption = sampleLoader.peaks;
 
-        if (!peaksOption.isEmpty()) {
-          const peaks = peaksOption.unwrap();
-          renderPeaks(canvas, peaks, track.name);
-          renderedCount++;
+          if (!peaksOption.isEmpty()) {
+            const peaks = peaksOption.unwrap();
+            renderPeaks(canvas, peaks, track.name);
+            renderedCount++;
+
+            // Check if all peaks are rendered
+            if (renderedCount === tracks.length) {
+              console.debug("[Peaks] All waveforms rendered!");
+              setPeaksReady(true);
+              setStatus("Ready - Click Play to start");
+            }
+          }
         }
       });
 
-      // Check if all peaks are rendered
-      if (renderedCount === tracks.length) {
-        console.debug("[Peaks] All waveforms rendered!");
-        allPeaksRendered = true;
-        setPeaksReady(true);
-        setStatus("Ready - Click Play to start");
-      } else {
-        // Keep checking
-        setTimeout(checkPeaks, 100);
-      }
-    };
-
-    // Start checking for peaks
-    checkPeaks();
+      subscriptions.push(subscription);
+    });
 
     return () => {
-      mounted = false;
+      console.debug("[Peaks] Cleaning up sample loader subscriptions");
+      subscriptions.forEach(sub => sub.terminate());
     };
   }, [project, tracks, renderPeaks]);
 

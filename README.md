@@ -285,8 +285,10 @@ const checkForRecording = () => {
     // 3. Get the RecordingWorklet from sample manager
     const recordingWorklet = project.sampleManager.getOrCreate(recordingUUID);
 
-    // 4. Poll for live peaks using requestAnimationFrame
-    const pollForPeaks = () => {
+    // 4. Monitor live peaks during recording using requestAnimationFrame
+    // Note: This is different from waiting for loaded peaks - here we need
+    // continuous updates at 60fps for real-time waveform rendering
+    const monitorLivePeaks = () => {
       const peaksOption = recordingWorklet.peaks;
 
       if (peaksOption && !peaksOption.isEmpty()) {
@@ -306,10 +308,10 @@ const checkForRecording = () => {
         }
       }
 
-      requestAnimationFrame(pollForPeaks);
+      requestAnimationFrame(monitorLivePeaks);
     };
 
-    pollForPeaks();
+    monitorLivePeaks();
   } else {
     setTimeout(checkForRecording, 100);
   }
@@ -494,63 +496,73 @@ const renderWaveform = (canvas: HTMLCanvasElement, peaks: Peaks) => {
 
 ### Waiting for Peaks to be Generated
 
-Since peaks are generated asynchronously, you may need to poll until they're ready:
+Since peaks are generated asynchronously, the best approach is to **subscribe to the sample loader's state changes**:
 
 ```typescript
-const checkPeaks = () => {
-  const peaksOption = sampleLoader.peaks;
+const sampleLoader = project.sampleManager.getOrCreate(audioFileUUID);
 
-  if (!peaksOption.isEmpty()) {
-    const peaks = peaksOption.unwrap();
-    renderWaveform(canvas, peaks);
-  } else {
-    // Peaks not ready yet, check again
-    setTimeout(checkPeaks, 100);
+// Subscribe to state changes - callback receives state directly
+const subscription = sampleLoader.subscribe(state => {
+  // When state becomes "loaded", peaks are ready
+  if (state.type === "loaded") {
+    const peaksOption = sampleLoader.peaks;
+
+    if (!peaksOption.isEmpty()) {
+      const peaks = peaksOption.unwrap();
+      renderWaveform(canvas, peaks);
+    }
   }
-};
+});
 
-checkPeaks();
+// Clean up when done
+subscription.terminate();
 ```
+
+**SampleLoaderState Types:**
+- `"idle"` - Initial state
+- `"progress"` - Loading in progress (has `progress: number` field)
+- `"loaded"` - Sample and peaks are ready ✅
+- `"record"` - Currently recording
+- `"error"` - Loading failed (has `reason: string` field)
 
 **React Pattern:**
 ```typescript
 useEffect(() => {
   if (!project || tracks.length === 0) return;
 
-  let mounted = true;
-  let allPeaksRendered = false;
+  const subscriptions: Array<{ terminate: () => void }> = [];
+  let renderedCount = 0;
 
-  const checkPeaks = () => {
-    if (!mounted || allPeaksRendered) return;
+  tracks.forEach(track => {
+    const canvas = canvasRefs.current.get(track.uuid);
+    if (!canvas) return;
 
-    let renderedCount = 0;
+    const sampleLoader = project.sampleManager.getOrCreate(track.uuid);
 
-    tracks.forEach(track => {
-      const canvas = canvasRefs.current.get(track.uuid);
-      if (!canvas) return;
+    // Subscribe to state changes
+    const subscription = sampleLoader.subscribe(state => {
+      // When state becomes "loaded", peaks are ready
+      if (state.type === "loaded") {
+        const peaksOption = sampleLoader.peaks;
 
-      const uuid = UUID.fromString(track.uuid);
-      const sampleLoader = project.sampleManager.getOrCreate(uuid);
-      const peaksOption = sampleLoader.peaks;
+        if (!peaksOption.isEmpty()) {
+          const peaks = peaksOption.unwrap();
+          renderWaveform(canvas, peaks);
+          renderedCount++;
 
-      if (!peaksOption.isEmpty()) {
-        const peaks = peaksOption.unwrap();
-        renderWaveform(canvas, peaks);
-        renderedCount++;
+          if (renderedCount === tracks.length) {
+            setPeaksReady(true);
+          }
+        }
       }
     });
 
-    if (renderedCount === tracks.length) {
-      allPeaksRendered = true;
-    } else {
-      setTimeout(checkPeaks, 100);
-    }
-  };
-
-  checkPeaks();
+    subscriptions.push(subscription);
+  });
 
   return () => {
-    mounted = false;
+    // Clean up all subscriptions
+    subscriptions.forEach(sub => sub.terminate());
   };
 }, [project, tracks]);
 ```
@@ -576,7 +588,7 @@ When accessing peaks, you may encounter two types:
 See `src/playback-demo-react.tsx` for a complete example showing:
 - Loading multiple audio files
 - Storing track UUIDs for peak access
-- Polling for peaks asynchronously
+- Subscribing to sample loader state changes
 - Rendering waveforms for all tracks
 - React integration with proper cleanup
 
