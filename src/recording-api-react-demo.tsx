@@ -771,11 +771,8 @@ const App: React.FC = () => {
 
               {isCountingIn && (
                 <Callout.Root color="amber">
-                  <Callout.Text as="div">
-                    <Flex align="center" gap="2">
-                      <span className="count-in-icon">🎵</span>
-                      <strong>Count-in: {countInBeatsRemaining} beats remaining</strong>
-                    </Flex>
+                  <Callout.Text>
+                    <span className="count-in-icon">🎵</span> <strong>Count-in: {countInBeatsRemaining} beats remaining</strong>
                   </Callout.Text>
                 </Callout.Root>
               )}
