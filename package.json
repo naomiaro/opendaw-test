@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@opendaw/studio-sdk": "0.0.48",
+    "@radix-ui/themes": "^3.2.1",
     "@types/node": "^22.15.18",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

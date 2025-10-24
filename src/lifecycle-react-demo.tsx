@@ -142,7 +142,7 @@ const TrackMonitor: React.FC<{
           Remove
         </button>
       </div>
-      <div className="track-stats">
+      <div>
         <div className="stat-row">
           <strong>Volume:</strong> <span>{volume.toFixed(1)} dB</span>
         </div>
