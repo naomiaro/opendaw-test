@@ -17,7 +17,7 @@ import {
   SampleStorage
 } from "@opendaw/studio-core";
 import { AnimationFrame } from "@opendaw/lib-dom";
-import { Peaks, PeaksPainter } from "@opendaw/lib-fusion";
+import { PeaksPainter } from "@opendaw/lib-fusion";
 import { testFeatures } from "./features";
 
 import WorkersUrl from "@opendaw/studio-core/workers-main.js?worker&url";
@@ -44,7 +44,7 @@ const App: React.FC = () => {
   const [hasPeaks, setHasPeaks] = useState(false);
   const [isPlayingBack, setIsPlayingBack] = useState(false);
   const [bpm, setBpm] = useState(120);
-  const [timeSignatureNumerator, setTimeSignatureNumerator] = useState(4);
+  const [timeSignatureNumerator, setTimeSignatureNumerator] = useState(3);
   const [timeSignatureDenominator, setTimeSignatureDenominator] = useState(4);
 
   // Refs for non-reactive values - these don't need to trigger re-renders
@@ -255,12 +255,12 @@ const App: React.FC = () => {
     const initialBpm = project.bpm;
     const signature = project.timelineBox.signature;
 
-    if (signature?.numerator && signature?.denominator) {
-      const initialNumerator = signature.numerator.getValue();
+    if (signature?.nominator && signature?.denominator) {
+      const initialNominator = signature.nominator.getValue();
       const initialDenominator = signature.denominator.getValue();
 
       setBpm(initialBpm);
-      setTimeSignatureNumerator(initialNumerator);
+      setTimeSignatureNumerator(initialNominator);
       setTimeSignatureDenominator(initialDenominator);
     }
   }, [project]);
@@ -273,13 +273,22 @@ const App: React.FC = () => {
     });
   }, [project, bpm]);
 
-  // Sync time signature to project
+  // Sync time signature to project when user changes it
+  // Skip running on initial project mount to avoid overwriting initial signature
+  const isInitialMount = useRef(true);
   useEffect(() => {
     if (!project?.timelineBox) return;
+
+    // Skip the first run when project is initially set (it already has correct signature from initialization)
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+
     project.editing.modify(() => {
       const signature = project.timelineBox.signature;
-      if (signature?.numerator && signature?.denominator) {
-        signature.numerator.setValue(timeSignatureNumerator);
+      if (signature?.nominator && signature?.denominator) {
+        signature.nominator.setValue(timeSignatureNumerator);
         signature.denominator.setValue(timeSignatureDenominator);
       }
     });
@@ -342,6 +351,7 @@ const App: React.FC = () => {
           soundfontManager,
           audioWorklets
         });
+
         newProject.startAudioWorklet();
         await newProject.engine.isReady();
 
@@ -419,8 +429,6 @@ const App: React.FC = () => {
         await audioContext.resume();
       }
 
-      // Ensure engine is stopped before starting recording
-      project.engine.stop(true);
       project.engine.setPosition(0);
 
       // Start recording (with or without count-in)
