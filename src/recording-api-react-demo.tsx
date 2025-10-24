@@ -46,7 +46,77 @@ const App: React.FC = () => {
   // Refs for non-reactive values - these don't need to trigger re-renders
   const tapeUnitRef = useRef<{ audioUnitBox: any; trackBox: any } | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const beforeRecordingSamplesRef = useRef<Set<string>>(new Set());
+
+  const renderPeaksDirectly = useCallback((peaks: any) => {
+    if (!canvasRef.current) return false;
+
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return false;
+
+    // Clear canvas
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Check if this is a PeaksWriter (during recording) or Peaks (after recording)
+    const isPeaksWriter = "dataIndex" in peaks;
+
+    if (isPeaksWriter) {
+      // PeaksWriter: Use actual written peaks count from dataIndex
+      const numWrittenPeaks = peaks.dataIndex[0]; // All channels should have same index
+
+      if (numWrittenPeaks === 0) {
+        return false; // No peaks written yet
+      }
+
+      // Calculate actual number of frames from written peaks
+      const actualFrames = numWrittenPeaks * peaks.unitsEachPeak();
+
+      // Set waveform color
+      ctx.fillStyle = "#4a9eff";
+
+      // Render each channel
+      for (let channel = 0; channel < peaks.numChannels; channel++) {
+        const channelHeight = canvas.height / peaks.numChannels;
+        const y0 = channel * channelHeight;
+        const y1 = (channel + 1) * channelHeight;
+
+        PeaksPainter.renderBlocks(ctx, peaks, channel, {
+          x0: 0,
+          x1: canvas.width,
+          y0,
+          y1,
+          u0: 0,
+          u1: actualFrames,
+          v0: -1,
+          v1: 1
+        });
+      }
+    } else {
+      // Regular Peaks object (after recording completes)
+      ctx.fillStyle = "#4a9eff";
+
+      for (let channel = 0; channel < peaks.numChannels; channel++) {
+        const channelHeight = canvas.height / peaks.numChannels;
+        const y0 = channel * channelHeight;
+        const y1 = (channel + 1) * channelHeight;
+
+        PeaksPainter.renderBlocks(ctx, peaks, channel, {
+          x0: 0,
+          x1: canvas.width,
+          y0,
+          y1,
+          u0: 0,
+          u1: peaks.numFrames,
+          v0: -1,
+          v1: 1
+        });
+      }
+    }
+
+    setHasPeaks(true);
+    return true;
+  }, []);
 
   // Subscribe to count-in and recording observables
   useEffect(() => {
@@ -86,6 +156,94 @@ const App: React.FC = () => {
       recordingSubscription.terminate();
     };
   }, [project, isRecording]);
+
+  // Watch for new AudioRegionBox creation during recording to get live peaks
+  useEffect(() => {
+    if (!project || !tapeUnitRef.current || !isRecording) return undefined;
+
+    console.log("[LIVE PEAKS] Effect started, isRecording:", isRecording);
+    const { trackBox } = tapeUnitRef.current;
+    let animationFrameId: number;
+    let currentRecordingWorklet: any = null;
+
+    const pollForPeaks = () => {
+      if (!isRecording || !currentRecordingWorklet) {
+        return;
+      }
+
+      // RecordingWorklet.peaks returns Option<PeaksWriter> during recording
+      const peaksOption = currentRecordingWorklet.peaks;
+      console.log("[LIVE PEAKS] peaksOption:", peaksOption, "isEmpty:", peaksOption?.isEmpty());
+
+      if (peaksOption && !peaksOption.isEmpty()) {
+        const peaks = peaksOption.unwrap();
+        const isPeaksWriter = "dataIndex" in peaks;
+        console.log("[LIVE PEAKS] Got peaks, isPeaksWriter:", isPeaksWriter);
+
+        if (isPeaksWriter) {
+          console.log("[LIVE PEAKS] dataIndex[0]:", peaks.dataIndex[0], "numChannels:", peaks.numChannels);
+        }
+
+        const rendered = renderPeaksDirectly(peaks);
+        console.log("[LIVE PEAKS] Rendered:", rendered);
+      }
+
+      // Continue polling at 60fps for smooth waveform updates
+      animationFrameId = requestAnimationFrame(pollForPeaks);
+    };
+
+    // Check for new AudioRegionBox created by RecordAudio.start()
+    const checkForRecording = () => {
+      // Access regions via pointerHub.incoming() - same pattern as in Recording.js
+      const regions = trackBox.regions.pointerHub.incoming().map(({ box }) => box);
+      console.log("[LIVE PEAKS] Checking for regions, count:", regions.length);
+
+      if (regions.length > 0) {
+        const latestRegion = regions[regions.length - 1];
+
+        // Check if the pointer is set
+        if (latestRegion.file.isEmpty()) {
+          console.log("[LIVE PEAKS] File pointer is empty, checking again...");
+          setTimeout(checkForRecording, 100);
+          return;
+        }
+
+        // Get the recording UUID - targetAddress is an Option type, so unwrap it
+        const targetAddressOption = latestRegion.file.targetAddress;
+
+        if (targetAddressOption.isEmpty()) {
+          console.log("[LIVE PEAKS] No target address yet, checking again...");
+          setTimeout(checkForRecording, 100);
+          return;
+        }
+
+        const targetAddress = targetAddressOption.unwrap();
+        const recordingUUID = targetAddress.uuid;
+        console.log("[LIVE PEAKS] Recording UUID:", UUID.toString(recordingUUID));
+
+        // Get the RecordingWorklet from the sample manager
+        currentRecordingWorklet = project.sampleManager.getOrCreate(recordingUUID);
+        console.log("[LIVE PEAKS] Got worklet:", currentRecordingWorklet);
+        console.log("[LIVE PEAKS] Worklet type:", currentRecordingWorklet?.constructor?.name);
+
+        // Start polling for live peaks
+        pollForPeaks();
+      } else {
+        // AudioRegionBox not created yet, check again soon
+        console.log("[LIVE PEAKS] No regions yet, checking again...");
+        setTimeout(checkForRecording, 100);
+      }
+    };
+
+    checkForRecording();
+
+    return () => {
+      console.log("[LIVE PEAKS] Cleaning up");
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+    };
+  }, [project, isRecording, renderPeaksDirectly]);
 
   // Sync metronome enabled state with engine
   useEffect(() => {
@@ -216,10 +374,6 @@ const App: React.FC = () => {
     try {
       setIsRecording(true);
 
-      // Snapshot existing samples before recording
-      const existingSamples = await SampleStorage.get().list();
-      beforeRecordingSamplesRef.current = new Set(existingSamples.map(s => s.uuid));
-
       // Resume AudioContext if suspended (required for user interaction)
       if (audioContext.state === "suspended") {
         await audioContext.resume();
@@ -241,88 +395,14 @@ const App: React.FC = () => {
     }
   }, [project, audioContext, useCountIn]);
 
-  const renderPeaksDirectly = useCallback((peaks: any) => {
-    if (!canvasRef.current) return false;
-
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return false;
-
-    // Clear canvas
-    ctx.fillStyle = "#000";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // Set waveform color
-    ctx.fillStyle = "#4a9eff";
-
-    // Render each channel
-    for (let channel = 0; channel < peaks.numChannels; channel++) {
-      const channelHeight = canvas.height / peaks.numChannels;
-      const y0 = channel * channelHeight;
-      const y1 = (channel + 1) * channelHeight;
-
-      PeaksPainter.renderBlocks(ctx, peaks, channel, {
-        x0: 0,
-        x1: canvas.width,
-        y0,
-        y1,
-        u0: 0,
-        u1: peaks.numFrames,
-        v0: -1,
-        v1: 1
-      });
-    }
-
-    setHasPeaks(true);
-    return true;
-  }, []);
-
   const handleStopRecording = useCallback(async () => {
-    if (!project || !tapeUnitRef.current) return;
+    if (!project) return;
 
     project.engine.stopRecording();
     setIsRecording(false);
     setPlaybackStatus("Recording ready to play");
-
-    // Wait a moment for the sample to be saved to storage
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    // Find the new sample by comparing with the before snapshot
-    const allSamples = await SampleStorage.get().list();
-    const newSample = allSamples.find(s => !beforeRecordingSamplesRef.current.has(s.uuid));
-
-    if (!newSample) {
-      console.error("Could not find new recording in storage!");
-      return;
-    }
-
-    const recordingUUID = UUID.parse(newSample.uuid);
-
-    // Get the sample loader for this recording and subscribe to it
-    const loader = project.sampleManager.getOrCreate(recordingUUID);
-
-    let subscription: any;
-    subscription = loader.subscribe(state => {
-      if (state.type === "loaded") {
-        if (subscription) {
-          subscription.terminate();
-        }
-
-        // RecordAudio.start() already created AudioFileBox and AudioRegionBox automatically!
-        // Just get peaks directly from the loader (RecordingWorklet)
-        const loaderPeaks = (loader as any).peaks;
-        if (loaderPeaks && !loaderPeaks.isEmpty()) {
-          const peaks = loaderPeaks.unwrap();
-          renderPeaksDirectly(peaks);
-        }
-      } else if (state.type === "error") {
-        console.error("Recording loader error:", state.reason);
-        if (subscription) {
-          subscription.terminate();
-        }
-      }
-    });
-  }, [project, renderPeaksDirectly]);
+    // Peaks are already rendered live during recording!
+  }, [project]);
 
   const handlePlayRecording = useCallback(async () => {
     if (!project || !audioContext) return;

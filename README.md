@@ -195,42 +195,75 @@ When you call `project.startRecording()`, the `RecordAudio.start()` function aut
 - ❌ Calculate durations in PPQN
 - ❌ Link boxes to tracks
 
-**Finding the Recording and Displaying Peaks:**
+**Live Waveform Rendering During Recording:**
 
-Since boxes are created automatically, you just need to find the new recording UUID and access its peaks:
+Since boxes are created automatically by `RecordAudio.start()`, you can access live peak data during recording:
 
 ```typescript
-// 1. Before recording, snapshot existing samples
-const existingSamples = await SampleStorage.get().list();
-const beforeRecording = new Set(existingSamples.map(s => s.uuid));
-
-// 2. Start recording
+// 1. Start recording
 project.startRecording(countIn);
 
-// 3. Stop recording
-project.engine.stopRecording();
+// 2. Wait for RecordAudio to create the AudioRegionBox (happens on first position update)
+const checkForRecording = () => {
+  const regions = trackBox.regions?.children;
 
-// 4. Find the new recording by comparing snapshots
-const allSamples = await SampleStorage.get().list();
-const newSample = allSamples.find(s => !beforeRecording.has(s.uuid));
-const recordingUUID = UUID.parse(newSample.uuid);
+  if (regions && regions.length > 0) {
+    const latestRegion = regions[regions.length - 1];
+    const audioFileBox = latestRegion.file.get();
 
-// 5. Get the loader and subscribe to its state
-const loader = project.sampleManager.getOrCreate(recordingUUID);
+    if (audioFileBox) {
+      const recordingUUID = audioFileBox.address.uuid;
 
-loader.subscribe(state => {
-  if (state.type === "loaded") {
-    // RecordingWorklet implements SampleLoader - peaks are already available!
-    const peaks = loader.peaks.unwrap();
-    renderWaveform(peaks);
+      // 3. Get the RecordingWorklet from sample manager
+      const recordingWorklet = project.sampleManager.getOrCreate(recordingUUID);
+
+      // 4. Poll for live peaks using requestAnimationFrame
+      const pollForPeaks = () => {
+        const peaksOption = recordingWorklet.peaks;
+
+        if (peaksOption && !peaksOption.isEmpty()) {
+          const peaks = peaksOption.unwrap(); // Returns PeaksWriter during recording
+
+          // Detect if it's PeaksWriter (during recording) vs final Peaks (after recording)
+          const isPeaksWriter = "dataIndex" in peaks;
+
+          if (isPeaksWriter) {
+            // Use actual written peaks count from dataIndex
+            const numWrittenPeaks = peaks.dataIndex[0];
+            const actualFrames = numWrittenPeaks * peaks.unitsEachPeak();
+            // Render waveform with actualFrames...
+          }
+        }
+
+        requestAnimationFrame(pollForPeaks);
+      };
+
+      pollForPeaks();
+    }
+  } else {
+    setTimeout(checkForRecording, 100);
   }
-});
+};
+
+checkForRecording();
 ```
 
-The `RecordingWorklet` (which implements `SampleLoader`) provides:
-- `peaks: Option<Peaks>` - Waveform data for visualization (calculated in worker)
-- `data: Option<AudioData>` - Raw audio data
-- `state: SampleLoaderState` - Loading state (idle, loading, loaded, error)
+**How RecordingWorklet Peaks Work:**
+
+The `RecordingWorklet` (which implements `SampleLoader`) provides different peak types during vs after recording:
+
+**During Recording:**
+- `peaks: Option<PeaksWriter>` - Live waveform data updated in real-time
+- `PeaksWriter` has:
+  - `dataIndex: Int32Array` - Tracks how many peaks written per channel
+  - `data: Int32Array[]` - Packed min/max peak values per channel
+  - `unitsEachPeak()` - Returns 128 (number of frames per peak)
+  - Use `dataIndex[0] * unitsEachPeak()` to get actual recorded frames
+
+**After Recording:**
+- `peaks: Option<Peaks>` - Final high-quality waveform data (calculated in worker)
+- `data: Option<AudioData>` - Complete audio data
+- `state: SampleLoaderState` - Changes to "loaded"
 - `uuid: UUID.Bytes` - Same UUID used for AudioFileBox creation
 
 **Observable State Flow:**
