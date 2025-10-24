@@ -205,41 +205,57 @@ project.startRecording(countIn);
 
 // 2. Wait for RecordAudio to create the AudioRegionBox (happens on first position update)
 const checkForRecording = () => {
-  const regions = trackBox.regions?.children;
+  // Access regions via pointerHub.incoming() - same pattern as in Recording.js
+  const regions = trackBox.regions.pointerHub.incoming().map(({ box }) => box);
 
-  if (regions && regions.length > 0) {
+  if (regions.length > 0) {
     const latestRegion = regions[regions.length - 1];
-    const audioFileBox = latestRegion.file.get();
 
-    if (audioFileBox) {
-      const recordingUUID = audioFileBox.address.uuid;
-
-      // 3. Get the RecordingWorklet from sample manager
-      const recordingWorklet = project.sampleManager.getOrCreate(recordingUUID);
-
-      // 4. Poll for live peaks using requestAnimationFrame
-      const pollForPeaks = () => {
-        const peaksOption = recordingWorklet.peaks;
-
-        if (peaksOption && !peaksOption.isEmpty()) {
-          const peaks = peaksOption.unwrap(); // Returns PeaksWriter during recording
-
-          // Detect if it's PeaksWriter (during recording) vs final Peaks (after recording)
-          const isPeaksWriter = "dataIndex" in peaks;
-
-          if (isPeaksWriter) {
-            // Use actual written peaks count from dataIndex
-            const numWrittenPeaks = peaks.dataIndex[0];
-            const actualFrames = numWrittenPeaks * peaks.unitsEachPeak();
-            // Render waveform with actualFrames...
-          }
-        }
-
-        requestAnimationFrame(pollForPeaks);
-      };
-
-      pollForPeaks();
+    // Check if the file pointer is set
+    if (latestRegion.file.isEmpty()) {
+      setTimeout(checkForRecording, 100);
+      return;
     }
+
+    // Get the recording UUID - targetAddress is an Option type, so unwrap it
+    const targetAddressOption = latestRegion.file.targetAddress;
+
+    if (targetAddressOption.isEmpty()) {
+      setTimeout(checkForRecording, 100);
+      return;
+    }
+
+    const targetAddress = targetAddressOption.unwrap();
+    const recordingUUID = targetAddress.uuid;
+
+    // 3. Get the RecordingWorklet from sample manager
+    const recordingWorklet = project.sampleManager.getOrCreate(recordingUUID);
+
+    // 4. Poll for live peaks using requestAnimationFrame
+    const pollForPeaks = () => {
+      const peaksOption = recordingWorklet.peaks;
+
+      if (peaksOption && !peaksOption.isEmpty()) {
+        const peaks = peaksOption.unwrap(); // Returns PeaksWriter during recording
+
+        // Detect if it's PeaksWriter (during recording) vs final Peaks (after recording)
+        const isPeaksWriter = "dataIndex" in peaks;
+
+        if (isPeaksWriter) {
+          // Use actual written peaks count from dataIndex
+          const numWrittenPeaks = peaks.dataIndex[0];
+          const actualFrames = numWrittenPeaks * peaks.unitsEachPeak();
+          // Render waveform with actualFrames using PeaksPainter.renderBlocks()...
+        } else {
+          // After recording completes, peaks.numFrames is available
+          // Render final waveform...
+        }
+      }
+
+      requestAnimationFrame(pollForPeaks);
+    };
+
+    pollForPeaks();
   } else {
     setTimeout(checkForRecording, 100);
   }
@@ -247,6 +263,42 @@ const checkForRecording = () => {
 
 checkForRecording();
 ```
+
+**Important Box Graph Patterns:**
+
+When working with OpenDAW's box graph, you need to understand how to access related boxes:
+
+1. **Accessing Child Boxes via PointerHub:**
+   ```typescript
+   // WRONG: trackBox.regions.children - this doesn't exist!
+   // RIGHT: Use pointerHub.incoming() to get boxes pointing to this field
+   const regions = trackBox.regions.pointerHub.incoming().map(({ box }) => box);
+   ```
+
+2. **Accessing Pointer Fields:**
+   ```typescript
+   // PointerField doesn't have .get() or .read() methods
+   // Use .targetAddress to get the Option<Address> of the pointed-to box
+   const targetAddressOption = regionBox.file.targetAddress;
+
+   // Always check if Option is empty before unwrapping
+   if (!targetAddressOption.isEmpty()) {
+     const targetAddress = targetAddressOption.unwrap();
+     const uuid = targetAddress.uuid;
+   }
+   ```
+
+3. **Working with Option Types:**
+   ```typescript
+   // Many values in OpenDAW are wrapped in Option types
+   // Always check isEmpty() before unwrapping
+   if (!someOption.isEmpty()) {
+     const value = someOption.unwrap();
+     // Use value...
+   }
+   ```
+
+See `src/recording-api-react-demo.tsx` (lines 197-239) for a complete example of these patterns in action.
 
 **How RecordingWorklet Peaks Work:**
 
