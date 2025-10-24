@@ -43,6 +43,9 @@ const App: React.FC = () => {
   const [playbackStatus, setPlaybackStatus] = useState("No recording available");
   const [hasPeaks, setHasPeaks] = useState(false);
   const [isPlayingBack, setIsPlayingBack] = useState(false);
+  const [bpm, setBpm] = useState(120);
+  const [timeSignatureNumerator, setTimeSignatureNumerator] = useState(4);
+  const [timeSignatureDenominator, setTimeSignatureDenominator] = useState(4);
 
   // Refs for non-reactive values - these don't need to trigger re-renders
   const tapeUnitRef = useRef<{ audioUnitBox: any; trackBox: any } | null>(null);
@@ -243,6 +246,44 @@ const App: React.FC = () => {
       }
     };
   }, [project, isRecording, renderPeaksDirectly]);
+
+  // Initialize BPM and time signature from project
+  useEffect(() => {
+    if (!project) return;
+
+    // Get initial values from project
+    const initialBpm = project.bpm;
+    const signature = project.timelineBox.signature;
+
+    if (signature?.numerator && signature?.denominator) {
+      const initialNumerator = signature.numerator.getValue();
+      const initialDenominator = signature.denominator.getValue();
+
+      setBpm(initialBpm);
+      setTimeSignatureNumerator(initialNumerator);
+      setTimeSignatureDenominator(initialDenominator);
+    }
+  }, [project]);
+
+  // Sync BPM to project
+  useEffect(() => {
+    if (!project?.timelineBox?.bpm) return;
+    project.editing.modify(() => {
+      project.timelineBox.bpm.setValue(bpm);
+    });
+  }, [project, bpm]);
+
+  // Sync time signature to project
+  useEffect(() => {
+    if (!project?.timelineBox) return;
+    project.editing.modify(() => {
+      const signature = project.timelineBox.signature;
+      if (signature?.numerator && signature?.denominator) {
+        signature.numerator.setValue(timeSignatureNumerator);
+        signature.denominator.setValue(timeSignatureDenominator);
+      }
+    });
+  }, [project, timeSignatureNumerator, timeSignatureDenominator]);
 
   // Sync metronome enabled state with engine
   useEffect(() => {
@@ -450,6 +491,49 @@ const App: React.FC = () => {
 
       <div className="section">
         <h2>Setup</h2>
+
+        <div className="project-settings">
+          <div className="setting-group">
+            <label htmlFor="bpm">BPM:</label>
+            <input
+              type="number"
+              id="bpm"
+              value={bpm}
+              onChange={e => setBpm(Number(e.target.value))}
+              min="20"
+              max="300"
+              disabled={isRecording}
+            />
+          </div>
+
+          <div className="setting-group">
+            <label htmlFor="time-sig">Time Signature:</label>
+            <div className="time-signature-inputs">
+              <input
+                type="number"
+                id="time-sig-num"
+                value={timeSignatureNumerator}
+                onChange={e => setTimeSignatureNumerator(Number(e.target.value))}
+                min="1"
+                max="16"
+                disabled={isRecording}
+              />
+              <span className="time-sig-separator">/</span>
+              <select
+                id="time-sig-denom"
+                value={timeSignatureDenominator}
+                onChange={e => setTimeSignatureDenominator(Number(e.target.value))}
+                disabled={isRecording}
+              >
+                <option value="2">2</option>
+                <option value="4">4</option>
+                <option value="8">8</option>
+                <option value="16">16</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
         <div className="button-group">
           <button onClick={handleArmTrack} className={isArmed ? "armed" : ""}>
             {isArmed ? "✓ Track Armed (click to disarm)" : "🎯 Arm Track for Recording"}

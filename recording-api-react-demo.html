@@ -83,6 +83,66 @@
             margin-bottom: 20px;
             margin-top: 0;
         }
+        .project-settings {
+            display: flex;
+            gap: 30px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .setting-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .setting-group label {
+            font-size: 14px;
+            color: #ccc;
+            font-weight: 500;
+        }
+        .setting-group input[type="number"] {
+            width: 70px;
+            padding: 8px 12px;
+            font-size: 14px;
+            background: #1a1a1a;
+            border: 2px solid #444;
+            border-radius: 6px;
+            color: #fff;
+            font-weight: 600;
+        }
+        .setting-group input[type="number"]:focus {
+            outline: none;
+            border-color: #4a9eff;
+        }
+        .setting-group input[type="number"]:disabled,
+        .setting-group select:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .time-signature-inputs {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .time-sig-separator {
+            font-size: 18px;
+            color: #888;
+            font-weight: bold;
+        }
+        .setting-group select {
+            width: 60px;
+            padding: 8px 8px;
+            font-size: 14px;
+            background: #1a1a1a;
+            border: 2px solid #444;
+            border-radius: 6px;
+            color: #fff;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .setting-group select:focus {
+            outline: none;
+            border-color: #4a9eff;
+        }
         .checkbox-group {
             margin-bottom: 15px;
         }

@@ -148,13 +148,15 @@ Demonstrates simultaneous playback of multiple audio tracks:
 Demonstrates real-time audio recording with waveform visualization using OpenDAW's Recording API:
 
 - **Automatic Microphone Access** - CaptureAudio handles microphone permissions automatically
-- **Waveform Visualization** - Renders recorded audio peaks directly from RecordingWorklet
+- **Live Waveform Visualization** - Renders growing waveform in real-time as you record
+- **Project Settings** - Configure BPM and time signature (affects metronome/click track)
 - **Count-in Support** - Optional metronome count-in before recording starts
 - **Observable State Tracking** - Real-time status updates via `isRecording`, `isCountingIn` observables
 - **Three-Step Workflow:**
+  - **Configure** - Set BPM and time signature for the project
   - **Arm Track** - Creates tape instrument and arms capture device (mic access handled automatically)
-  - **Start Recording** - Begins recording with optional count-in
-  - **Stop Recording** - Saves recording, creates audio regions, and displays waveform
+  - **Start Recording** - Begins recording with optional count-in at your chosen tempo/meter
+  - **Stop Recording** - Saves recording, creates audio regions, and displays final waveform
 
 **How It Works:**
 
@@ -268,14 +270,25 @@ checkForRecording();
 
 When working with OpenDAW's box graph, you need to understand how to access related boxes:
 
-1. **Accessing Child Boxes via PointerHub:**
+1. **Modifying Box Graph Values (CRITICAL):**
+   ```typescript
+   // WRONG: Direct modification will throw "Modification only prohibited in transaction mode"
+   project.timelineBox.bpm.setValue(120);
+
+   // RIGHT: All box graph modifications must be wrapped in a transaction
+   project.editing.modify(() => {
+     project.timelineBox.bpm.setValue(120);
+   });
+   ```
+
+2. **Accessing Child Boxes via PointerHub:**
    ```typescript
    // WRONG: trackBox.regions.children - this doesn't exist!
    // RIGHT: Use pointerHub.incoming() to get boxes pointing to this field
    const regions = trackBox.regions.pointerHub.incoming().map(({ box }) => box);
    ```
 
-2. **Accessing Pointer Fields:**
+3. **Accessing Pointer Fields:**
    ```typescript
    // PointerField doesn't have .get() or .read() methods
    // Use .targetAddress to get the Option<Address> of the pointed-to box
@@ -288,7 +301,7 @@ When working with OpenDAW's box graph, you need to understand how to access rela
    }
    ```
 
-3. **Working with Option Types:**
+4. **Working with Option Types:**
    ```typescript
    // Many values in OpenDAW are wrapped in Option types
    // Always check isEmpty() before unwrapping
@@ -298,7 +311,21 @@ When working with OpenDAW's box graph, you need to understand how to access rela
    }
    ```
 
-See `src/recording-api-react-demo.tsx` (lines 197-239) for a complete example of these patterns in action.
+5. **Setting BPM and Time Signature:**
+   ```typescript
+   // Set BPM (affects metronome and count-in)
+   project.editing.modify(() => {
+     project.timelineBox.bpm.setValue(120);
+   });
+
+   // Set time signature
+   project.editing.modify(() => {
+     project.timelineBox.signature.numerator.setValue(4);
+     project.timelineBox.signature.denominator.setValue(4);
+   });
+   ```
+
+See `src/recording-api-react-demo.tsx` for complete examples of these patterns in action.
 
 **How RecordingWorklet Peaks Work:**
 
