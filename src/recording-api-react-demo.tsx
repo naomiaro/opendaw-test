@@ -18,6 +18,7 @@ import {
 } from "@opendaw/studio-core";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { PeaksPainter } from "@opendaw/lib-fusion";
+import { CanvasPainter } from "./lib/CanvasPainter";
 import { testFeatures } from "./features";
 import "@radix-ui/themes/styles.css";
 import {
@@ -69,52 +70,103 @@ const App: React.FC = () => {
   // Refs for non-reactive values - these don't need to trigger re-renders
   const tapeUnitRef = useRef<{ audioUnitBox: any; trackBox: any } | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const canvasPainterRef = useRef<CanvasPainter | null>(null);
+  const currentPeaksRef = useRef<any>(null);
 
-  const renderPeaksDirectly = useCallback((peaks: any) => {
-    if (!canvasRef.current) {
-      console.log('[Peaks] Canvas ref not available');
+  // Channel padding in pixels (matches OpenDAW pattern)
+  const CHANNEL_PADDING = 4;
+
+  /**
+   * Update the current peaks data and request a canvas repaint.
+   * Returns false if no valid peaks data to render.
+   */
+  const updatePeaks = useCallback((peaks: any): boolean => {
+    if (!peaks) {
       return false;
     }
-
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) {
-      console.log('[Peaks] Could not get canvas context');
-      return false;
-    }
-
-    // Clear canvas
-    ctx.fillStyle = "#000";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // Check if this is a PeaksWriter (during recording) or Peaks (after recording)
     const isPeaksWriter = "dataIndex" in peaks;
 
     if (isPeaksWriter) {
-      // PeaksWriter: Use actual written peaks count from dataIndex
-      const numWrittenPeaks = peaks.dataIndex[0]; // All channels should have same index
-
+      const numWrittenPeaks = peaks.dataIndex[0];
       if (numWrittenPeaks === 0) {
         return false; // No peaks written yet
       }
+    }
 
-      // Calculate actual number of frames from written peaks
-      const actualFrames = numWrittenPeaks * peaks.unitsEachPeak();
+    // Store peaks and request render
+    currentPeaksRef.current = peaks;
+    canvasPainterRef.current?.requestUpdate();
 
-      console.log(`[Peaks] Rendering ${numWrittenPeaks} peaks (${actualFrames} frames) for ${peaks.numChannels} channels`);
+    setHasPeaks(true);
+    return true;
+  }, []);
+
+  // Initialize CanvasPainter when canvas becomes available (when recording starts or has peaks)
+  useEffect(() => {
+    // Only initialize when canvas should be visible
+    if (!isRecording && !hasPeaks) {
+      return undefined;
+    }
+
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      console.log('[CanvasPainter] Canvas ref not available yet');
+      return undefined;
+    }
+
+    // Don't reinitialize if already exists
+    if (canvasPainterRef.current) {
+      console.log('[CanvasPainter] Painter already initialized');
+      return undefined;
+    }
+
+    console.log('[CanvasPainter] Initializing painter');
+
+    // Create painter with rendering callback
+    const painter = new CanvasPainter(canvas, (_, context) => {
+      const peaks = currentPeaksRef.current;
+      if (!peaks) {
+        // Clear canvas if no peaks
+        context.fillStyle = "#000";
+        context.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+        return;
+      }
+
+      // Clear canvas
+      context.fillStyle = "#000";
+      context.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+
+      // Check if this is a PeaksWriter (during recording) or Peaks (after recording)
+      const isPeaksWriter = "dataIndex" in peaks;
+
+      let actualFrames: number;
+      if (isPeaksWriter) {
+        const numWrittenPeaks = peaks.dataIndex[0];
+        actualFrames = numWrittenPeaks * peaks.unitsEachPeak();
+        console.log(`[Peaks] Rendering ${numWrittenPeaks} peaks (${actualFrames} frames) for ${peaks.numChannels} channels`);
+      } else {
+        actualFrames = peaks.numFrames;
+        console.log(`[Peaks] Rendering final peaks: ${actualFrames} frames for ${peaks.numChannels} channels`);
+      }
 
       // Set waveform color
-      ctx.fillStyle = "#4a9eff";
+      context.fillStyle = "#4a9eff";
 
-      // Render each channel
-      for (let channel = 0; channel < peaks.numChannels; channel++) {
-        const channelHeight = canvas.height / peaks.numChannels;
-        const y0 = channel * channelHeight;
-        const y1 = (channel + 1) * channelHeight;
+      // Calculate channel layout with padding
+      const totalHeight = canvas.clientHeight;
+      const numChannels = peaks.numChannels;
+      const channelHeight = totalHeight / numChannels;
 
-        PeaksPainter.renderBlocks(ctx, peaks, channel, {
+      // Render each channel with padding
+      for (let channel = 0; channel < numChannels; channel++) {
+        const y0 = channel * channelHeight + CHANNEL_PADDING / 2;
+        const y1 = (channel + 1) * channelHeight - CHANNEL_PADDING / 2;
+
+        PeaksPainter.renderBlocks(context, peaks, channel, {
           x0: 0,
-          x1: canvas.width,
+          x1: canvas.clientWidth,
           y0,
           y1,
           u0: 0,
@@ -123,32 +175,16 @@ const App: React.FC = () => {
           v1: 1
         });
       }
-    } else {
-      // Regular Peaks object (after recording completes)
-      console.log(`[Peaks] Rendering final peaks: ${peaks.numFrames} frames for ${peaks.numChannels} channels`);
-      ctx.fillStyle = "#4a9eff";
+    });
 
-      for (let channel = 0; channel < peaks.numChannels; channel++) {
-        const channelHeight = canvas.height / peaks.numChannels;
-        const y0 = channel * channelHeight;
-        const y1 = (channel + 1) * channelHeight;
+    canvasPainterRef.current = painter;
 
-        PeaksPainter.renderBlocks(ctx, peaks, channel, {
-          x0: 0,
-          x1: canvas.width,
-          y0,
-          y1,
-          u0: 0,
-          u1: peaks.numFrames,
-          v0: -1,
-          v1: 1
-        });
-      }
-    }
-
-    setHasPeaks(true);
-    return true;
-  }, []);
+    return () => {
+      console.log('[CanvasPainter] Terminating painter');
+      painter.terminate();
+      canvasPainterRef.current = null;
+    };
+  }, [isRecording, hasPeaks]); // Initialize when canvas becomes visible
 
   // Subscribe to count-in and recording observables
   useEffect(() => {
@@ -277,7 +313,7 @@ const App: React.FC = () => {
 
       if (peaksOption && !peaksOption.isEmpty()) {
         const peaks = peaksOption.unwrap();
-        const rendered = renderPeaksDirectly(peaks);
+        const rendered = updatePeaks(peaks);
 
         // Check if this is the final Peaks (not PeaksWriter)
         const isPeaksWriter = "dataIndex" in peaks;
@@ -371,7 +407,7 @@ const App: React.FC = () => {
         livePeaksTerminable.terminate();
       }
     };
-  }, [project, renderPeaksDirectly]);
+  }, [project, updatePeaks]);
 
   // Initialize BPM and time signature from project
   useEffect(() => {
@@ -820,7 +856,7 @@ const App: React.FC = () => {
 
               {(isRecording || hasPeaks) && (
                 <Flex justify="center" align="center" mt="4" style={{ background: "var(--gray-3)", borderRadius: "var(--radius-3)", padding: "var(--space-3)" }}>
-                  <canvas ref={canvasRef} width={800} height={200} className="waveform-canvas" />
+                  <canvas ref={canvasRef} style={{ width: "800px", height: "200px", display: "block" }} className="waveform-canvas" />
                 </Flex>
               )}
             </Flex>

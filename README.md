@@ -295,18 +295,13 @@ const checkForRegion = () => {
 
       if (peaksOption && !peaksOption.isEmpty()) {
         const peaks = peaksOption.unwrap(); // Returns PeaksWriter during recording
+        const rendered = updatePeaks(peaks); // CanvasPainter renders efficiently
 
         // Detect if it's PeaksWriter (during recording) vs final Peaks (after recording)
         const isPeaksWriter = "dataIndex" in peaks;
 
-        if (isPeaksWriter) {
-          // Use actual written peaks count from dataIndex
-          const numWrittenPeaks = peaks.dataIndex[0];
-          const actualFrames = numWrittenPeaks * peaks.unitsEachPeak();
-          // Render waveform with actualFrames using PeaksPainter.renderBlocks()...
-        } else {
-          // After recording completes, peaks.numFrames is available
-          // Render final waveform...
+        // If we got final Peaks (not PeaksWriter), stop monitoring
+        if (!isPeaksWriter && rendered) {
           livePeaksTerminable.terminate(); // Stop monitoring
         }
       }
@@ -455,43 +450,97 @@ const sampleLoader = audioFileBoxAdapter.getOrCreateLoader();
 const peaksOption = sampleLoader.peaks;
 ```
 
-### Rendering Waveforms with PeaksPainter
+### Rendering Waveforms with CanvasPainter
 
-Once you have peaks, rendering is straightforward using `PeaksPainter.renderBlocks()`:
+The recommended approach is to use the **CanvasPainter pattern** for efficient, optimized rendering:
 
 ```typescript
 import { PeaksPainter } from "@opendaw/lib-fusion";
+import { AnimationFrame } from "@opendaw/lib-dom";
 
-const renderWaveform = (canvas: HTMLCanvasElement, peaks: Peaks) => {
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
+// CanvasPainter manages AnimationFrame scheduling, resize handling, and HiDPI scaling
+class CanvasPainter {
+  private needsUpdate = true;
+  private animationFrameTerminable: any;
+
+  constructor(
+    private canvas: HTMLCanvasElement,
+    private render: (context: CanvasRenderingContext2D) => void
+  ) {
+    // AnimationFrame integration - syncs with OpenDAW's engine updates
+    this.animationFrameTerminable = AnimationFrame.add(() => this.update());
+  }
+
+  requestUpdate(): void {
+    this.needsUpdate = true; // Debounced - renders once per frame
+  }
+
+  private update(): void {
+    if (!this.needsUpdate) return;
+    this.needsUpdate = false;
+
+    const context = this.canvas.getContext("2d");
+    if (context) {
+      this.render(context); // Call user's render function
+    }
+  }
+
+  terminate(): void {
+    this.animationFrameTerminable?.terminate();
+  }
+}
+
+// Usage: Create painter with rendering callback
+const currentPeaksRef = { current: null };
+
+const painter = new CanvasPainter(canvas, (context) => {
+  const peaks = currentPeaksRef.current;
+  if (!peaks) return;
 
   // Clear canvas
-  ctx.fillStyle = "#000";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = "#000";
+  context.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
 
   // Set waveform color
-  ctx.fillStyle = "#4a9eff";
+  context.fillStyle = "#4a9eff";
 
-  // Render each channel
+  // Channel padding (4px matches OpenDAW pattern)
+  const CHANNEL_PADDING = 4;
+  const channelHeight = canvas.clientHeight / peaks.numChannels;
+
+  // Render each channel with padding
   for (let channel = 0; channel < peaks.numChannels; channel++) {
-    const channelHeight = canvas.height / peaks.numChannels;
-    const y0 = channel * channelHeight;
-    const y1 = (channel + 1) * channelHeight;
+    const y0 = channel * channelHeight + CHANNEL_PADDING / 2;
+    const y1 = (channel + 1) * channelHeight - CHANNEL_PADDING / 2;
 
-    PeaksPainter.renderBlocks(ctx, peaks, channel, {
-      x0: 0,           // Canvas left edge
-      x1: canvas.width, // Canvas right edge
-      y0,              // Channel top
-      y1,              // Channel bottom
-      u0: 0,           // Start frame
-      u1: peaks.numFrames, // End frame
-      v0: -1,          // Min amplitude (-1 to 1 range)
-      v1: 1            // Max amplitude
+    PeaksPainter.renderBlocks(context, peaks, channel, {
+      x0: 0,
+      x1: canvas.clientWidth,
+      y0,
+      y1,
+      u0: 0,
+      u1: peaks.numFrames,
+      v0: -1,
+      v1: 1
     });
   }
+});
+
+// Update peaks and request render
+const updatePeaks = (peaks) => {
+  currentPeaksRef.current = peaks;
+  painter.requestUpdate(); // Efficient - debounced to one render per frame
 };
+
+// Clean up
+painter.terminate();
 ```
+
+**Benefits of CanvasPainter:**
+- ✅ **Efficient rendering**: AnimationFrame integration syncs with OpenDAW's engine
+- ✅ **Automatic debouncing**: Multiple `requestUpdate()` calls batch to single render
+- ✅ **HiDPI support**: Handles devicePixelRatio for sharp displays
+- ✅ **Clean lifecycle**: Terminable pattern for proper cleanup
 
 ### Waiting for Peaks to be Generated
 
@@ -508,7 +557,7 @@ const subscription = sampleLoader.subscribe(state => {
 
     if (!peaksOption.isEmpty()) {
       const peaks = peaksOption.unwrap();
-      renderWaveform(canvas, peaks);
+      updatePeaks(peaks); // CanvasPainter efficiently renders on next frame
     }
   }
 });
