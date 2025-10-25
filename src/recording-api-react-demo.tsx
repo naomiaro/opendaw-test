@@ -235,11 +235,11 @@ const App: React.FC = () => {
 
     console.log('[Peaks] Effect mounted, waiting for recording to start...');
 
-    let animationFrameId: number | undefined;
+    let regionCheckTerminable: any = null;
+    let livePeaksTerminable: any = null;
     let currentRecordingWorklet: any = null;
     let lastLogTime = 0;
     let monitoringStarted = false;
-    let positionSubscription: any = null;
 
     // Subscribe to recording state to know when to start monitoring
     const recordingSubscription = project.engine.isRecording.catchupAndSubscribe(obs => {
@@ -250,7 +250,7 @@ const App: React.FC = () => {
       // Only start monitoring once when recording begins
       if (recording && !monitoringStarted) {
         monitoringStarted = true;
-        console.log('[Peaks] Recording started, subscribing to position updates for region monitoring...');
+        console.log('[Peaks] Recording started, using AnimationFrame for region monitoring...');
 
         // Check if tape unit exists now
         if (!tapeUnitRef.current) {
@@ -258,10 +258,10 @@ const App: React.FC = () => {
           return;
         }
 
-        console.log('[Peaks] Tape unit found, subscribing to position...');
+        console.log('[Peaks] Tape unit found, adding AnimationFrame callback...');
 
-        // Subscribe to position updates to check for region creation
-        positionSubscription = project.engine.position.subscribe(() => {
+        // Use AnimationFrame to check for region creation on each frame
+        regionCheckTerminable = AnimationFrame.add(() => {
           checkForRecording();
         });
       }
@@ -285,6 +285,10 @@ const App: React.FC = () => {
         // If we got final Peaks (not PeaksWriter), stop monitoring
         if (!isPeaksWriter && rendered) {
           console.log('[Peaks] Received final peaks, stopping monitoring');
+          if (livePeaksTerminable) {
+            livePeaksTerminable.terminate();
+            livePeaksTerminable = null;
+          }
           return;
         }
       } else {
@@ -295,9 +299,6 @@ const App: React.FC = () => {
           lastLogTime = now;
         }
       }
-
-      // Continue monitoring at 60fps for smooth waveform updates
-      animationFrameId = requestAnimationFrame(monitorLivePeaks);
     };
 
     // Check for new AudioRegionBox created by RecordAudio.start()
@@ -323,7 +324,7 @@ const App: React.FC = () => {
 
         // Check if the file pointer is set
         if (latestRegion.file.isEmpty()) {
-          console.log('[Peaks] Region file is empty, will check on next position update...');
+          console.log('[Peaks] Region file is empty, will check on next animation frame...');
           return;
         }
 
@@ -331,7 +332,7 @@ const App: React.FC = () => {
         const targetAddressOption = latestRegion.file.targetAddress;
 
         if (targetAddressOption.isEmpty()) {
-          console.log('[Peaks] Target address is empty, will check on next position update...');
+          console.log('[Peaks] Target address is empty, will check on next animation frame...');
           return;
         }
 
@@ -340,34 +341,34 @@ const App: React.FC = () => {
 
         console.log('[Peaks] Found recording UUID:', recordingUUID);
 
-        // Unsubscribe from position updates now that we found what we need
-        if (positionSubscription) {
-          positionSubscription.terminate();
-          positionSubscription = null;
-          console.log('[Peaks] Unsubscribed from position updates');
+        // Terminate region checking now that we found what we need
+        if (regionCheckTerminable) {
+          regionCheckTerminable.terminate();
+          regionCheckTerminable = null;
+          console.log('[Peaks] Terminated region check AnimationFrame');
         }
 
         // Get the RecordingWorklet from the sample manager
         currentRecordingWorklet = project.sampleManager.getOrCreate(recordingUUID);
 
-        console.log('[Peaks] Got worklet, starting live peaks monitoring...');
+        console.log('[Peaks] Got worklet, starting live peaks monitoring with AnimationFrame...');
 
-        // Start monitoring live peaks
-        monitorLivePeaks();
+        // Start monitoring live peaks using AnimationFrame
+        livePeaksTerminable = AnimationFrame.add(monitorLivePeaks);
       } else {
-        // AudioRegionBox not created yet, will check on next position update
-        console.log('[Peaks] No regions yet, waiting for next position update...');
+        // AudioRegionBox not created yet, will check on next animation frame
+        console.log('[Peaks] No regions yet, waiting for next animation frame...');
       }
     };
 
     return () => {
       console.log('[Peaks] Cleanup: stopping monitoring');
       recordingSubscription.terminate();
-      if (positionSubscription) {
-        positionSubscription.terminate();
+      if (regionCheckTerminable) {
+        regionCheckTerminable.terminate();
       }
-      if (animationFrameId !== undefined) {
-        cancelAnimationFrame(animationFrameId);
+      if (livePeaksTerminable) {
+        livePeaksTerminable.terminate();
       }
     };
   }, [project, renderPeaksDirectly]);
