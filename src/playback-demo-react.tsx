@@ -19,6 +19,7 @@ import {
 import { AudioFileBox, AudioRegionBox } from "@opendaw/studio-boxes";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { PeaksPainter } from "@opendaw/lib-fusion";
+import { CanvasPainter } from "./lib/CanvasPainter";
 import { testFeatures } from "./features";
 import "@radix-ui/themes/styles.css";
 import {
@@ -57,39 +58,85 @@ const App: React.FC = () => {
   const pausedPositionRef = useRef<number | null>(null);
   const isPausedRef = useRef(false);
   const canvasRefs = useRef<Map<string, HTMLCanvasElement>>(new Map());
+  const canvasPaintersRef = useRef<Map<string, CanvasPainter>>(new Map());
+  const trackPeaksRef = useRef<Map<string, any>>(new Map());
 
-  // Render peaks to canvas
-  const renderPeaks = useCallback((canvas: HTMLCanvasElement, peaks: any, trackName: string) => {
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+  // Channel padding in pixels (matches OpenDAW pattern)
+  const CHANNEL_PADDING = 4;
 
-    // Clear canvas
-    ctx.fillStyle = "#000";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  // Initialize CanvasPainters for each track
+  useEffect(() => {
+    if (tracks.length === 0) return undefined;
 
-    console.debug(`[Peaks] Rendering waveform for "${trackName}": ${peaks.numFrames} frames, ${peaks.numChannels} channels`);
+    console.debug("[CanvasPainter] Initializing painters for", tracks.length, "tracks");
 
-    // Set waveform color
-    ctx.fillStyle = "#4a9eff";
+    tracks.forEach(track => {
+      const uuidString = UUID.toString(track.uuid);
+      const canvas = canvasRefs.current.get(uuidString);
 
-    // Render each channel
-    for (let channel = 0; channel < peaks.numChannels; channel++) {
-      const channelHeight = canvas.height / peaks.numChannels;
-      const y0 = channel * channelHeight;
-      const y1 = (channel + 1) * channelHeight;
+      if (!canvas) {
+        console.debug(`[CanvasPainter] Canvas not ready for "${track.name}"`);
+        return;
+      }
 
-      PeaksPainter.renderBlocks(ctx, peaks, channel, {
-        x0: 0,
-        x1: canvas.width,
-        y0,
-        y1,
-        u0: 0,
-        u1: peaks.numFrames,
-        v0: -1,
-        v1: 1
+      // Don't reinitialize if painter already exists
+      if (canvasPaintersRef.current.has(uuidString)) {
+        return;
+      }
+
+      console.debug(`[CanvasPainter] Creating painter for "${track.name}"`);
+
+      // Create painter with rendering callback
+      const painter = new CanvasPainter(canvas, (_, context) => {
+        const peaks = trackPeaksRef.current.get(uuidString);
+        if (!peaks) {
+          // Clear canvas if no peaks
+          context.fillStyle = "#000";
+          context.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+          return;
+        }
+
+        // Clear canvas
+        context.fillStyle = "#000";
+        context.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+
+        console.debug(`[Peaks] Rendering waveform for "${track.name}": ${peaks.numFrames} frames, ${peaks.numChannels} channels`);
+
+        // Set waveform color
+        context.fillStyle = "#4a9eff";
+
+        // Calculate channel layout with padding
+        const totalHeight = canvas.clientHeight;
+        const numChannels = peaks.numChannels;
+        const channelHeight = totalHeight / numChannels;
+
+        // Render each channel with padding
+        for (let channel = 0; channel < numChannels; channel++) {
+          const y0 = channel * channelHeight + CHANNEL_PADDING / 2;
+          const y1 = (channel + 1) * channelHeight - CHANNEL_PADDING / 2;
+
+          PeaksPainter.renderBlocks(context, peaks, channel, {
+            x0: 0,
+            x1: canvas.clientWidth,
+            y0,
+            y1,
+            u0: 0,
+            u1: peaks.numFrames,
+            v0: -1,
+            v1: 1
+          });
+        }
       });
-    }
-  }, []);
+
+      canvasPaintersRef.current.set(uuidString, painter);
+    });
+
+    return () => {
+      console.debug("[CanvasPainter] Cleaning up painters");
+      canvasPaintersRef.current.forEach(painter => painter.terminate());
+      canvasPaintersRef.current.clear();
+    };
+  }, [tracks, CHANNEL_PADDING]);
 
   // Subscribe to sample loader state changes for peaks
   useEffect(() => {
@@ -102,8 +149,6 @@ const App: React.FC = () => {
 
     tracks.forEach(track => {
       const uuidString = UUID.toString(track.uuid);
-      const canvas = canvasRefs.current.get(uuidString);
-      if (!canvas) return;
 
       // Get the sample loader and subscribe to state changes
       const sampleLoader = project.sampleManager.getOrCreate(track.uuid);
@@ -117,14 +162,20 @@ const App: React.FC = () => {
 
           if (!peaksOption.isEmpty()) {
             const peaks = peaksOption.unwrap();
-            renderPeaks(canvas, peaks, track.name);
-            renderedCount++;
 
-            // Check if all peaks are rendered
-            if (renderedCount === tracks.length) {
-              console.debug("[Peaks] All waveforms rendered!");
-              setPeaksReady(true);
-              setStatus("Ready - Click Play to start");
+            // Store peaks and request render
+            trackPeaksRef.current.set(uuidString, peaks);
+            const painter = canvasPaintersRef.current.get(uuidString);
+            if (painter) {
+              painter.requestUpdate();
+              renderedCount++;
+
+              // Check if all peaks are rendered
+              if (renderedCount === tracks.length) {
+                console.debug("[Peaks] All waveforms rendered!");
+                setPeaksReady(true);
+                setStatus("Ready - Click Play to start");
+              }
             }
           }
         }
@@ -137,7 +188,7 @@ const App: React.FC = () => {
       console.debug("[Peaks] Cleaning up sample loader subscriptions");
       subscriptions.forEach(sub => sub.terminate());
     };
-  }, [project, tracks, renderPeaks]);
+  }, [project, tracks]);
 
   // Subscribe to engine observables - single source of truth!
   useEffect(() => {
@@ -449,8 +500,6 @@ const App: React.FC = () => {
                             ref={el => {
                               if (el) canvasRefs.current.set(uuidString, el);
                             }}
-                            width={800}
-                            height={80}
                             style={{ width: "100%", height: "80px", display: "block" }}
                           />
                         </div>
