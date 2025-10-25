@@ -257,8 +257,9 @@ Since boxes are created automatically by `RecordAudio.start()`, you can access l
 // 1. Start recording
 project.startRecording(countIn);
 
-// 2. Subscribe to position updates to detect when AudioRegionBox is created
-const positionSubscription = project.engine.position.subscribe(() => {
+// 2. Use AnimationFrame to detect when AudioRegionBox is created
+// AnimationFrame syncs with OpenDAW's engine update cycle
+const checkForRegion = () => {
   // Access regions via pointerHub.incoming()
   const regions = trackBox.regions.pointerHub.incoming().map(({ box }) => box);
 
@@ -267,28 +268,28 @@ const positionSubscription = project.engine.position.subscribe(() => {
 
     // Check if the file pointer is set
     if (latestRegion.file.isEmpty()) {
-      return; // Will check again on next position update
+      return; // Will check again on next animation frame
     }
 
     // Get the recording UUID - targetAddress is an Option type, so unwrap it
     const targetAddressOption = latestRegion.file.targetAddress;
 
     if (targetAddressOption.isEmpty()) {
-      return; // Will check again on next position update
+      return; // Will check again on next animation frame
     }
 
     const targetAddress = targetAddressOption.unwrap();
     const recordingUUID = targetAddress.uuid;
 
-    // Unsubscribe now that we found what we need
-    positionSubscription.terminate();
+    // Terminate region checking now that we found what we need
+    regionCheckTerminable.terminate();
 
     // 3. Get the RecordingWorklet from sample manager
     const recordingWorklet = project.sampleManager.getOrCreate(recordingUUID);
 
-    // 4. Monitor live peaks during recording using requestAnimationFrame
+    // 4. Monitor live peaks during recording using AnimationFrame
     // Note: This is different from waiting for loaded peaks - here we need
-    // continuous updates at 60fps for real-time waveform rendering
+    // continuous updates synced with OpenDAW's animation frame cycle
     const monitorLivePeaks = () => {
       const peaksOption = recordingWorklet.peaks;
 
@@ -306,15 +307,16 @@ const positionSubscription = project.engine.position.subscribe(() => {
         } else {
           // After recording completes, peaks.numFrames is available
           // Render final waveform...
+          livePeaksTerminable.terminate(); // Stop monitoring
         }
       }
-
-      requestAnimationFrame(monitorLivePeaks);
     };
 
-    monitorLivePeaks();
+    livePeaksTerminable = AnimationFrame.add(monitorLivePeaks);
   }
-});
+};
+
+const regionCheckTerminable = AnimationFrame.add(checkForRegion);
 ```
 
 **Important Box Graph Patterns:**
