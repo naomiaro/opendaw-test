@@ -19,6 +19,7 @@ import {
 import { AudioFileBox, AudioRegionBox, AudioUnitBox, TrackBox } from "@opendaw/studio-boxes";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { testFeatures } from "./features";
+import { GitHubCorner } from "./components/GitHubCorner";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
@@ -463,6 +464,7 @@ const App: React.FC = () => {
 
   return (
     <Theme appearance="dark" accentColor="blue" radius="large">
+      <GitHubCorner />
       <Container size="3" px="4" py="8">
         <Flex direction="column" gap="6" style={{ maxWidth: 1200, margin: "0 auto" }}>
           <Flex direction="column" align="center" gap="2">

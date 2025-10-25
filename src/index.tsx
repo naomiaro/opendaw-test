@@ -2,10 +2,12 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import "@radix-ui/themes/styles.css";
 import { Theme, Container, Heading, Text, Flex, Card, Link } from "@radix-ui/themes";
+import { GitHubCorner } from "./components/GitHubCorner";
 
 const App: React.FC = () => {
   return (
     <Theme appearance="dark" accentColor="blue" radius="large">
+      <GitHubCorner />
       <Container size="3" px="4" py="8">
         <Flex direction="column" align="center" gap="6" style={{ maxWidth: 900, margin: "0 auto" }}>
           <Flex direction="column" align="center" gap="2">

@@ -20,6 +20,7 @@ import { AnimationFrame } from "@opendaw/lib-dom";
 import { PeaksPainter } from "@opendaw/lib-fusion";
 import { CanvasPainter } from "./lib/CanvasPainter";
 import { testFeatures } from "./features";
+import { GitHubCorner } from "./components/GitHubCorner";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
@@ -711,6 +712,7 @@ const App: React.FC = () => {
 
   return (
     <Theme appearance="dark" accentColor="blue" radius="large">
+      <GitHubCorner />
       <Container size="3" px="4" py="8">
         <Flex direction="column" align="center" gap="6" style={{ maxWidth: 700, margin: "0 auto" }}>
           <Flex direction="column" align="center" gap="2">
