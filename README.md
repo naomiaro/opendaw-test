@@ -1176,51 +1176,96 @@ public/audio/90sSamplePack/
 └── Accents & FX/ (24 accent samples)
 ```
 
-#### Tempo Changes Without Pitch Shifting
+#### AudioPlayback Modes
 
-A key feature of this demo is the ability to change BPM without affecting the pitch of drum samples. This is accomplished using OpenDAW's **AudioFit playback mode** and **AutofitUtils**.
+OpenDAW provides four playback modes that control how audio regions respond to tempo changes:
 
-**Setting AudioFit playback mode:**
+##### NoSync (Recommended for Drums) ✅
+
+**What it does:**
+- Plays audio at original speed and pitch, completely ignoring project BPM
+- Scheduling positions (in PPQN) determine when samples trigger
+- No automatic duration recalculation
+
+**When to use:**
+- ✅ **Drum samples** - Drums should always sound the same, regardless of tempo
+- ✅ Short one-shot sounds (hits, impacts, effects)
+- ✅ Samples that must maintain exact original characteristics
+
+**Example:**
 ```typescript
-import { AudioPlayback } from "@opendaw/studio-enums";
-
 AudioRegionBox.create(boxGraph, UUID.generate(), box => {
-  box.playback.setValue(AudioPlayback.AudioFit); // Maintains original speed regardless of BPM
-  // ... other properties
+  box.playback.setValue(AudioPlayback.NoSync); // Always plays at original speed/pitch
+  box.position.setValue(0 * Quarter);  // Trigger on beat 1
+  box.duration.setValue(clipDurationInPPQN);
 });
 ```
 
-**Handling BPM changes:**
-```typescript
-import { AutofitUtils } from "@opendaw/studio-core";
+**BPM changes:**
+When BPM changes, only the *timing between triggers* changes - the samples themselves sound identical.
 
+---
+
+##### Pitch
+
+**What it does:**
+- Changes both speed AND pitch to match BPM (like tape speed)
+- Faster BPM = higher pitch and faster playback
+- Slower BPM = lower pitch and slower playback
+
+**When to use:**
+- ✅ Emulating tape machines or turntables
+- ✅ Creative pitch-shifting effects
+- ❌ NOT for drums (causes unwanted pitch changes)
+
+---
+
+##### Timestretch
+
+**What it does:**
+- Time-stretches audio to match BPM while attempting to maintain pitch
+- Uses digital time-stretching algorithms (may introduce artifacts)
+
+**When to use:**
+- ✅ Vocals or melodic content that needs to fit tempo
+- ✅ Loops that should sync to project tempo
+- ⚠️ May cause audio artifacts, especially on percussive content
+
+---
+
+##### AudioFit
+
+**What it does:**
+- Maintains original playback speed/pitch
+- Automatically recalculates `duration` in PPQN when BPM changes
+- Requires `AutofitUtils.changeBpm()` to update durations
+
+**When to use:**
+- ✅ Long audio files that need accurate PPQN duration tracking
+- ⚠️ May cause issues with very short samples (< 1 second)
+
+**Example with AutofitUtils:**
+```typescript
+// Set up regions with AudioFit
+AudioRegionBox.create(boxGraph, UUID.generate(), box => {
+  box.playback.setValue(AudioPlayback.AudioFit);
+  // ... other properties
+});
+
+// When BPM changes, recalculate all AudioFit region durations
 const handleBpmChange = (newBpm: number) => {
-  // AutofitUtils automatically recalculates durations for all AudioFit regions
   AutofitUtils.changeBpm(project, newBpm, false);
   setBpm(newBpm);
 };
 ```
 
-**How it works:**
-1. **AudioFit regions** maintain their original playback speed regardless of project BPM
-2. When `AutofitUtils.changeBpm()` is called:
-   - Updates `project.timelineBox.bpm` to the new value
-   - Finds all AudioRegionBox instances with `playback = AudioPlayback.AudioFit`
-   - Recalculates their `duration` and `loopDuration` in PPQN based on audio file duration and new BPM
-   - Formula: `duration = (audioSeconds * newBpm / 60) * Quarter`
-3. **Result**: Drum samples play at their original pitch and speed, but timing between hits adjusts to match new tempo
-
-**AudioPlayback modes:**
-- `AudioPlayback.NoSync` - No tempo synchronization
-- `AudioPlayback.Pitch` - Changes pitch with tempo (default, like old tape machines)
-- `AudioPlayback.Timestretch` - Time-stretches audio to fit tempo (changes speed, not pitch)
-- `AudioPlayback.AudioFit` - Maintains original speed, recalculates duration in PPQN ✅ (best for drums)
+**Note:** In the drum scheduling demo, we use **NoSync** instead of AudioFit because it's simpler and more reliable for short drum samples.
 
 See `src/drum-scheduling-demo.tsx` for the complete implementation showing:
 - Box graph creation and management
-- PPQN-based scheduling
-- SVG timeline visualization
+- PPQN-based scheduling with NoSync playback mode
+- SVG timeline visualization with alternating bar colors
 - Real-time playhead tracking
-- Pattern generation algorithms
-- AudioFit playback mode with AutofitUtils tempo changes
+- Pattern generation algorithms for drums
+- Dynamic BPM control (60-180 BPM)
 

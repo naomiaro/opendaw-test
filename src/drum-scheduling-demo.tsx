@@ -171,7 +171,7 @@ const App: React.FC = () => {
               AudioRegionBox.create(boxGraph, UUID.generate(), box => {
                 box.regions.refer(trackBox.regions);
                 box.file.refer(audioFileBox);
-                box.playback.setValue(AudioPlayback.AudioFit); // AudioFit: maintains original speed regardless of BPM
+                box.playback.setValue(AudioPlayback.NoSync); // NoSync: plays at original speed/pitch, ignores BPM
                 box.position.setValue(position);
                 box.duration.setValue(clipDurationInPPQN);
                 box.loopOffset.setValue(0);
