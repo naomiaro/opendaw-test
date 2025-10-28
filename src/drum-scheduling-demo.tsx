@@ -398,13 +398,35 @@ const App: React.FC = () => {
           )}
         </svg>
 
-        {/* Beat numbers */}
-        <div style={{ display: "flex", justifyContent: "space-between", paddingTop: "8px", color: "#888", fontSize: "12px" }}>
-          {Array.from({ length: TOTAL_BEATS + 1 }, (_, i) => (
-            <div key={`beat-${i}`} style={{ width: `${100 / TOTAL_BEATS}%`, textAlign: i === 0 ? "left" : "center" }}>
-              {i % BEATS_PER_BAR === 0 && i < TOTAL_BEATS ? `Bar ${i / BEATS_PER_BAR + 1}` : ""}
-            </div>
-          ))}
+        {/* Bar labels with alternating colored backgrounds */}
+        <div style={{ position: "relative", marginTop: "8px", height: "32px", width: `${timelineWidth}px` }}>
+          {Array.from({ length: BARS }, (_, barIndex) => {
+            const x = (barIndex * BEATS_PER_BAR * Quarter / totalDuration) * timelineWidth;
+            const width = (BEATS_PER_BAR * Quarter / totalDuration) * timelineWidth;
+            const isOddBar = barIndex % 2 === 0; // Bar 1 and 3 (index 0, 2)
+
+            return (
+              <div
+                key={`bar-${barIndex}`}
+                style={{
+                  position: "absolute",
+                  left: `${x}px`,
+                  width: `${width}px`,
+                  height: "100%",
+                  backgroundColor: isOddBar ? "#00d4ff" : "#ff00ff",
+                  display: "flex",
+                  alignItems: "center",
+                  paddingLeft: "8px",
+                  borderLeft: "2px solid #555",
+                  boxSizing: "border-box"
+                }}
+              >
+                <span style={{ color: "#000", fontWeight: "bold", fontSize: "12px" }}>
+                  Bar {barIndex + 1}
+                </span>
+              </div>
+            );
+          })}
         </div>
       </div>
     );
