@@ -130,10 +130,6 @@ const App: React.FC = () => {
             // Store the audio buffer first
             localAudioBuffersRef.current.set(fileUUIDString, audioBuffer);
 
-            // Ensure the sample manager loads this sample immediately
-            // This prevents AutofitUtils from seeing durationInSeconds = 0
-            newProject.sampleManager.getOrCreate(fileUUID);
-
             // Create AudioFileBox with proper duration
             const audioFileBox = AudioFileBox.create(boxGraph, fileUUID, box => {
               box.fileName.setValue(sample.name);
