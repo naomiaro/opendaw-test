@@ -108,6 +108,7 @@ project.engine.play();
 If you want to load your own audio files (MP3, WAV, etc.) instead of using OpenDAW's built-in samples:
 
 ```typescript
+import { UUID } from "@opendaw/lib-std";
 import { loadAudioFile } from "./lib/audioUtils";
 
 // Load your audio files
