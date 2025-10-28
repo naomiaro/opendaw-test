@@ -172,7 +172,7 @@ See `src/lifecycle-react-demo.tsx` for a complete React example with dynamic com
 
 ## Demos
 
-This project includes three demos showcasing different OpenDAW capabilities:
+This project includes four demos showcasing different OpenDAW capabilities:
 
 ### 1. Multi-track Playback Demo (`/playback-demo-react.html`)
 
@@ -615,4 +615,268 @@ useEffect(() => {
 ```
 
 This demo is perfect for understanding how to integrate OpenDAW with React applications in production.
+
+### 4. Drum Pattern Scheduling Demo (`/drum-scheduling-demo.html`)
+
+Demonstrates scheduling drum samples across a timeline to create rhythmic patterns, with a visual timeline showing clips and playback position:
+
+- **90s-Style Drum Pattern** - Classic boom-bap pattern at 90 BPM across 4 bars
+- **Visual Timeline** - SVG-based visualization showing scheduled clips, grid lines, and playback position
+- **Four Drum Types** - Kick, Snare, Closed Hi-Hat, Open Hi-Hat with color-coded clips
+- **Real-time Playhead** - White vertical line tracking current playback position
+- **Pattern Info** - Displays total clips, duration, BPM, and pattern style
+
+**How OpenDAW's Scheduling System Works:**
+
+OpenDAW uses a **Box Graph** system to represent your project's timeline structure. Understanding this is crucial for scheduling audio:
+
+#### The Box Graph: Three Core Box Types
+
+1. **AudioFileBox** - Represents a physical audio file
+   - Contains metadata: `fileName`, `endInSeconds`, `sampleRate`
+   - Has a UUID that links to the sample manager
+   - One AudioFileBox per unique audio file
+
+2. **AudioRegionBox** - Represents a scheduled instance of audio on the timeline
+   - `position` - When the clip starts (in PPQN units)
+   - `duration` - How long the clip lasts (in PPQN units)
+   - `loopOffset` / `loopDuration` - Which part of the audio file to play
+   - `file` - PointerField linking to an AudioFileBox
+   - `regions` - PointerField linking to a TrackBox's regions collection
+   - Multiple regions can reference the same AudioFileBox
+
+3. **TrackBox** - Represents an audio track
+   - `regions` - Collection that AudioRegionBoxes point to
+   - Created via `api.createInstrument(InstrumentFactories.Tape)`
+   - Returns both `trackBox` and `audioUnitBox` (for volume, mute, solo)
+
+#### Creating and Scheduling Clips
+
+**Complete Pattern:**
+```typescript
+import { PPQN } from "@opendaw/lib-dsp";
+
+const { Quarter } = PPQN;
+const BPM = 90;
+
+project.editing.modify(() => {
+  // 1. Create a tape track
+  const { audioUnitBox, trackBox } = api.createInstrument(InstrumentFactories.Tape);
+  audioUnitBox.volume.setValue(0); // Set volume (in dB)
+
+  // 2. Generate UUID for the audio file
+  const fileUUID = UUID.generate();
+  const fileUUIDString = UUID.toString(fileUUID);
+
+  // 3. Store the audio buffer (for sample manager to load)
+  localAudioBuffersRef.current.set(fileUUIDString, audioBuffer);
+
+  // 4. Create AudioFileBox
+  const audioFileBox = AudioFileBox.create(boxGraph, fileUUID, box => {
+    box.fileName.setValue("Kick 1.wav");
+    box.endInSeconds.setValue(audioBuffer.duration);
+  });
+
+  // 5. Calculate clip duration in PPQN
+  const clipDurationInPPQN = Math.ceil(((audioBuffer.duration * BPM) / 60) * Quarter);
+
+  // 6. Create AudioRegionBox instances at specific positions
+  const kickPositions = [0, Quarter * 2, Quarter * 4, Quarter * 6]; // Beats 1, 3, 5, 7
+
+  kickPositions.forEach((position) => {
+    AudioRegionBox.create(boxGraph, UUID.generate(), box => {
+      box.regions.refer(trackBox.regions);  // Link to track
+      box.file.refer(audioFileBox);         // Link to audio file
+      box.position.setValue(position);      // When to play (PPQN)
+      box.duration.setValue(clipDurationInPPQN);
+      box.loopOffset.setValue(0);           // Start from beginning of file
+      box.loopDuration.setValue(clipDurationInPPQN);
+      box.label.setValue("Kick 1");
+      box.mute.setValue(false);
+    });
+  });
+});
+```
+
+#### Understanding PPQN (Pulses Per Quarter Note)
+
+OpenDAW uses PPQN as its internal time unit for precise scheduling:
+
+- **PPQN.Quarter** - Number of pulses in a quarter note (standard reference)
+- **Position in PPQN** = `beat * Quarter`
+- **Duration in PPQN** = `((durationInSeconds * BPM) / 60) * Quarter`
+
+**Examples at 90 BPM:**
+```typescript
+const { Quarter } = PPQN;
+
+// Schedule on beat 1 (first beat of bar 1)
+box.position.setValue(0);
+
+// Schedule on beat 2
+box.position.setValue(Quarter * 1);
+
+// Schedule on beat 3 (downbeat of bar 2 in 4/4)
+box.position.setValue(Quarter * 2);
+
+// Schedule on eighth notes (half a quarter note)
+box.position.setValue(Quarter / 2);
+
+// Schedule one bar later (4 beats in 4/4 time)
+box.position.setValue(Quarter * 4);
+```
+
+#### The Box Graph Transaction Model
+
+**CRITICAL:** All modifications to the box graph must happen inside a transaction:
+
+```typescript
+// ❌ WRONG: Direct modification throws error
+project.timelineBox.bpm.setValue(120);
+
+// ✅ CORRECT: Wrap in editing.modify()
+project.editing.modify(() => {
+  project.timelineBox.bpm.setValue(120);
+
+  // You can modify multiple boxes in one transaction
+  audioUnitBox.volume.setValue(-3);
+  trackBox.label.setValue("Drums");
+});
+```
+
+**Why transactions?** OpenDAW's box graph maintains referential integrity. Transactions ensure all related changes happen atomically, preventing invalid states.
+
+#### Accessing Child Boxes via PointerHub
+
+Box relationships work differently than typical parent/child trees. Child boxes **point to** parent collections via PointerFields:
+
+```typescript
+// ❌ WRONG: Boxes don't have direct children arrays
+const regions = trackBox.regions.children; // Doesn't exist!
+
+// ✅ CORRECT: Use pointerHub.incoming() to get boxes pointing here
+const regions = trackBox.regions.pointerHub.incoming().map(({ box }) => box);
+```
+
+**How it works:**
+- TrackBox has a `regions` field
+- AudioRegionBox has `box.regions.refer(trackBox.regions)` pointing to it
+- Call `pointerHub.incoming()` on the parent to get all children pointing to it
+- Returns array of `{ box, field }` objects
+
+#### Visual Timeline Implementation
+
+The demo creates an SVG timeline showing:
+
+```typescript
+const totalDuration = BARS * BEATS_PER_BAR * Quarter; // 4 bars × 4 beats
+const timelineWidth = 800; // pixels
+
+// Convert PPQN position to screen pixels
+const x = (clip.position / totalDuration) * timelineWidth;
+const width = (clip.duration / totalDuration) * timelineWidth;
+
+// Render clip as SVG rect
+<rect
+  x={x}
+  y={trackY}
+  width={width}
+  height={trackHeight}
+  fill={clip.color}
+/>
+
+// Playhead position (updates every frame via AnimationFrame)
+const playheadX = (currentPosition / totalDuration) * timelineWidth;
+```
+
+**Real-time Position Tracking:**
+```typescript
+// Subscribe to position updates (driven by AnimationFrame)
+const positionSubscription = project.engine.position.catchupAndSubscribe(obs => {
+  setCurrentPosition(obs.getValue()); // Triggers re-render
+});
+```
+
+#### Pattern Generation Logic
+
+The demo creates different patterns for each drum type:
+
+```typescript
+if (drumType === "Kick") {
+  // Kick on beats 1 and 3 of each bar (every 2 quarter notes)
+  positions = Array.from({ length: BARS * 2 }, (_, i) => i * Quarter * 2);
+  // Result: [0, Quarter*2, Quarter*4, Quarter*6, ...]
+}
+
+if (drumType === "Snare") {
+  // Snare on beats 2 and 4 (backbeats)
+  positions = Array.from({ length: BARS * 2 }, (_, i) => Quarter + i * Quarter * 2);
+  // Result: [Quarter, Quarter*3, Quarter*5, Quarter*7, ...]
+}
+
+if (drumType === "Hi-Hat Closed") {
+  // Every eighth note (Quarter / 2), alternating with open
+  positions = Array.from({ length: TOTAL_BEATS * 2 }, (_, i) => i * (Quarter / 2))
+    .filter((_, i) => i % 2 === 0);
+  // Result: [0, Quarter, Quarter*2, Quarter*3, ...]
+}
+```
+
+#### Key Box System Concepts
+
+**1. One AudioFileBox, Many AudioRegionBoxes**
+```typescript
+// Create ONE AudioFileBox for the kick sample
+const kickFileBox = AudioFileBox.create(boxGraph, kickUUID, ...);
+
+// Create MULTIPLE AudioRegionBoxes all referencing the same file
+positions.forEach(pos => {
+  AudioRegionBox.create(boxGraph, UUID.generate(), box => {
+    box.file.refer(kickFileBox); // All point to same AudioFileBox
+    box.position.setValue(pos);  // But at different positions
+  });
+});
+```
+
+**2. PointerFields Use `.refer()`, Not `.setValue()`**
+```typescript
+// ❌ WRONG
+box.file.setValue(audioFileBox);
+
+// ✅ CORRECT
+box.file.refer(audioFileBox);
+```
+
+**3. Always Check Option Types**
+```typescript
+const targetAddressOption = regionBox.file.targetAddress;
+
+if (!targetAddressOption.isEmpty()) {
+  const address = targetAddressOption.unwrap();
+  const uuid = address.uuid;
+  // Now safe to use uuid
+}
+```
+
+#### Sample Attribution
+
+This demo uses the [90s MPC Sample Pack](https://soundpacks.com/free-sound-packs/90s-mpc-sample-pack/) by SoundPacks.com.
+
+**Sample Structure:**
+```
+public/audio/90sSamplePack/
+├── Kick/        (66 kick samples)
+├── Snare/       (64 snare samples)
+├── Hats/        (40 hi-hat samples)
+├── Bass/        (9 bass samples)
+├── Perc/        (25 percussion samples)
+└── Accents & FX/ (24 accent samples)
+```
+
+See `src/drum-scheduling-demo.tsx` for the complete implementation showing:
+- Box graph creation and management
+- PPQN-based scheduling
+- SVG timeline visualization
+- Real-time playhead tracking
+- Pattern generation algorithms
 
