@@ -170,6 +170,119 @@ interface ProjectSetupResult {
 }
 ```
 
+### Local Audio Buffers vs OpenSampleAPI
+
+OpenDAW provides two ways to load audio samples, and understanding when to use each is important:
+
+#### OpenSampleAPI (Cloud-based Sample Library)
+
+**What it is:**
+- OpenDAW's cloud-based sample library (hosted at `https://assets.opendaw.studio/samples`)
+- Contains samples that can be browsed, loaded, and even uploaded via API
+- Automatically used as a fallback when you don't provide custom audio buffers
+- Provides methods: `all()`, `get(uuid)`, `load(uuid)`, `upload()`
+
+**When to use:**
+- ✅ Quick prototyping and testing
+- ✅ Learning OpenDAW without preparing your own audio files
+- ✅ Accessing samples from OpenDAW's sample library
+- ✅ When you don't need custom audio content
+
+**Example:**
+```typescript
+// No localAudioBuffers provided - uses OpenSampleAPI automatically
+const { project, audioContext } = await initializeOpenDAW();
+
+// When loading samples by UUID, they'll come from OpenDAW's cloud
+```
+
+**Characteristics:**
+- 🌐 Requires internet connection to load samples
+- 📚 Access to OpenDAW's sample library
+- ☁️ Cloud-hosted samples
+- ❌ Can't use your own custom audio files (unless you upload them)
+- ❌ May not be suitable for production apps requiring custom content
+
+#### Local Audio Buffers (Your Own Audio Files)
+
+**What it is:**
+- Load your own audio files (MP3, WAV, FLAC, etc.) from your server/filesystem
+- Store them in a `Map<string, AudioBuffer>` keyed by UUID
+- The sample manager checks this map first before falling back to OpenSampleAPI
+
+**When to use:**
+- ✅ Production applications with custom audio
+- ✅ Loading user-uploaded audio files
+- ✅ Using your own drum samples, loops, or recordings
+- ✅ Full control over audio content
+
+**Example:**
+```typescript
+// Load your audio files
+const kick = await loadAudioFile(audioContext, "/audio/my-kick.wav");
+const snare = await loadAudioFile(audioContext, "/audio/my-snare.wav");
+
+// Store with UUIDs
+const localAudioBuffers = new Map<string, AudioBuffer>();
+const kickUUID = UUID.generate();
+const snareUUID = UUID.generate();
+
+localAudioBuffers.set(UUID.toString(kickUUID), kick);
+localAudioBuffers.set(UUID.toString(snareUUID), snare);
+
+// Pass to initialization
+const { project, audioContext } = await initializeOpenDAW({
+  localAudioBuffers
+});
+
+// Now when you create AudioFileBox with kickUUID, it loads from your map
+```
+
+**How it works:**
+1. When OpenDAW needs to load a sample by UUID, it calls the sample manager's `fetch` function
+2. The function first checks `localAudioBuffers.get(uuidString)`
+3. If found, it converts the AudioBuffer to OpenDAW's format and returns it
+4. If not found, it falls back to `OpenSampleAPI.get().load()` for built-in samples
+
+**Benefits:**
+- ✅ Full control over audio quality and format
+- ✅ Can use any audio file your browser supports
+- ✅ Perfect for production applications
+- ✅ Can mix custom files with OpenSampleAPI fallback
+
+#### Hybrid Approach
+
+You can combine both! Provide `localAudioBuffers` for your custom samples, and OpenDAW will automatically fall back to OpenSampleAPI for any UUIDs not in your map:
+
+```typescript
+const localAudioBuffers = new Map<string, AudioBuffer>();
+
+// Add only your custom samples
+localAudioBuffers.set(UUID.toString(myCustomKick), kickBuffer);
+
+const { project, audioContext } = await initializeOpenDAW({
+  localAudioBuffers
+});
+
+// myCustomKick UUID → loads from localAudioBuffers
+// other UUIDs → falls back to OpenSampleAPI
+```
+
+**Quick Decision Guide:**
+
+| Scenario | Use |
+|----------|-----|
+| Quick prototype or demo | OpenSampleAPI (default) |
+| Production app with custom audio | Local Audio Buffers |
+| User uploads their own files | Local Audio Buffers |
+| Learning OpenDAW | OpenSampleAPI (default) |
+| Need to use your own audio files | Local Audio Buffers |
+| Mix of custom + cloud samples | Hybrid (both) |
+
+See the demos for examples:
+- **OpenSampleAPI (default)**: Recording demo (no custom files needed)
+- **Local Audio Buffers**: Playback demo, Lifecycle demo, Drum scheduling demo (all load custom MP3/WAV files)
+
 ### Benefits of Shared Setup
 
 - ✅ **Consistent initialization** - All demos use the same reliable setup
