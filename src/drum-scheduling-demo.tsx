@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
 import { PPQN } from "@opendaw/lib-dsp";
 import { AudioPlayback } from "@opendaw/studio-enums";
-import { InstrumentFactories, Project, AutofitUtils } from "@opendaw/studio-core";
+import { InstrumentFactories, Project } from "@opendaw/studio-core";
 import { AudioFileBox, AudioRegionBox } from "@opendaw/studio-boxes";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { loadAudioFile } from "./lib/audioUtils";
@@ -48,6 +48,7 @@ const App: React.FC = () => {
   // Refs for non-reactive values
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
   const sampleUUIDsRef = useRef<UUID.Bytes[]>([]);
+  const audioRegionsRef = useRef<Array<{ box: any; audioDuration: number }>>([]); // Store region refs for BPM updates
 
   const { Quarter } = PPQN;
   const BARS = 4;
@@ -168,7 +169,7 @@ const App: React.FC = () => {
 
             // Create AudioRegionBox for each position
             positions.forEach((position, clipIndex) => {
-              AudioRegionBox.create(boxGraph, UUID.generate(), box => {
+              const regionBox = AudioRegionBox.create(boxGraph, UUID.generate(), box => {
                 box.regions.refer(trackBox.regions);
                 box.file.refer(audioFileBox);
                 box.playback.setValue(AudioPlayback.NoSync); // NoSync: plays at original speed/pitch, ignores BPM
@@ -178,6 +179,12 @@ const App: React.FC = () => {
                 box.loopDuration.setValue(clipDurationInPPQN);
                 box.label.setValue(`${sample.name} ${clipIndex + 1}`);
                 box.mute.setValue(false);
+              });
+
+              // Store region reference for BPM updates
+              audioRegionsRef.current.push({
+                box: regionBox,
+                audioDuration: audioBuffer.duration
               });
 
               // Store clip info for visualization
@@ -292,15 +299,23 @@ const App: React.FC = () => {
 
     console.debug(`[BPM Change] Changing from ${bpm} to ${newBpm}`);
 
-    // Use OpenDAW's built-in AutofitUtils to handle BPM changes
-    // This automatically recalculates durations for all AudioFit regions
-    console.debug(`[BPM Change] Calling AutofitUtils.changeBpm...`);
-    AutofitUtils.changeBpm(project, newBpm, false);
-    console.debug(`[BPM Change] AutofitUtils.changeBpm completed`);
+    // Update BPM and recalculate region durations
+    project.editing.modify(() => {
+      // Update timeline BPM
+      project.timelineBox.bpm.setValue(newBpm);
+
+      // Recalculate duration in PPQN for all regions
+      // Even with NoSync mode, the duration needs to match the timeline's PPQN units
+      audioRegionsRef.current.forEach(({ box, audioDuration }) => {
+        const newDurationInPPQN = Math.ceil(((audioDuration * newBpm) / 60) * Quarter);
+        box.duration.setValue(newDurationInPPQN);
+        box.loopDuration.setValue(newDurationInPPQN);
+      });
+    });
 
     // Update local state
     setBpm(newBpm);
-  }, [project, samplesLoaded, bpm]);
+  }, [project, samplesLoaded, bpm, Quarter]);
 
   // Timeline visualization
   const renderTimeline = () => {

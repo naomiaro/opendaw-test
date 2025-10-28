@@ -1183,9 +1183,9 @@ OpenDAW provides four playback modes that control how audio regions respond to t
 ##### NoSync (Recommended for Drums) ✅
 
 **What it does:**
-- Plays audio at original speed and pitch, completely ignoring project BPM
+- Plays audio at original speed and pitch, completely ignoring project BPM for playback
 - Scheduling positions (in PPQN) determine when samples trigger
-- No automatic duration recalculation
+- **Important:** Region durations still need to be recalculated in PPQN when BPM changes
 
 **When to use:**
 - ✅ **Drum samples** - Drums should always sound the same, regardless of tempo
@@ -1194,15 +1194,33 @@ OpenDAW provides four playback modes that control how audio regions respond to t
 
 **Example:**
 ```typescript
+// Creating regions with NoSync
 AudioRegionBox.create(boxGraph, UUID.generate(), box => {
   box.playback.setValue(AudioPlayback.NoSync); // Always plays at original speed/pitch
   box.position.setValue(0 * Quarter);  // Trigger on beat 1
   box.duration.setValue(clipDurationInPPQN);
 });
+
+// Handling BPM changes with NoSync
+const handleBpmChange = (newBpm: number) => {
+  project.editing.modify(() => {
+    // Update timeline BPM
+    project.timelineBox.bpm.setValue(newBpm);
+
+    // Manually recalculate region durations in PPQN
+    audioRegions.forEach(({ box, audioDuration }) => {
+      const newDurationInPPQN = Math.ceil(((audioDuration * newBpm) / 60) * Quarter);
+      box.duration.setValue(newDurationInPPQN);
+      box.loopDuration.setValue(newDurationInPPQN);
+    });
+  });
+};
 ```
 
 **BPM changes:**
-When BPM changes, only the *timing between triggers* changes - the samples themselves sound identical.
+- Samples play identically at all BPMs (original speed/pitch maintained)
+- Only the *timing between triggers* changes
+- Region durations must be recalculated to match timeline's PPQN units
 
 ---
 
@@ -1259,7 +1277,10 @@ const handleBpmChange = (newBpm: number) => {
 };
 ```
 
-**Note:** In the drum scheduling demo, we use **NoSync** instead of AudioFit because it's simpler and more reliable for short drum samples.
+**Key Differences:**
+- **NoSync**: Simpler for drums - just set BPM and recalculate durations manually
+- **AudioFit**: Uses AutofitUtils.changeBpm() but may have issues with very short samples (< 1 second)
+- **For drum patterns**: NoSync is recommended for consistent, predictable behavior
 
 See `src/drum-scheduling-demo.tsx` for the complete implementation showing:
 - Box graph creation and management
