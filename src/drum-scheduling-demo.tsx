@@ -20,6 +20,7 @@ import { AudioFileBox, AudioRegionBox } from "@opendaw/studio-boxes";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { testFeatures } from "./features";
 import { GitHubCorner } from "./components/GitHubCorner";
+import { loadAudioFile } from "./lib/audioUtils";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
@@ -35,13 +36,6 @@ import {
 
 import WorkersUrl from "@opendaw/studio-core/workers-main.js?worker&url";
 import WorkletsUrl from "@opendaw/studio-core/processors.js?url";
-
-// Helper function to load audio files
-async function loadAudioFile(audioContext: AudioContext, url: string): Promise<AudioBuffer> {
-  const response = await fetch(url);
-  const arrayBuffer = await response.arrayBuffer();
-  return await audioContext.decodeAudioData(arrayBuffer);
-}
 
 // Type for scheduled clip
 type ScheduledClip = {

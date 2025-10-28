@@ -20,6 +20,7 @@ import { AudioFileBox, AudioRegionBox, AudioUnitBox, TrackBox } from "@opendaw/s
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { testFeatures } from "./features";
 import { GitHubCorner } from "./components/GitHubCorner";
+import { loadAudioFile } from "./lib/audioUtils";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
@@ -43,13 +44,6 @@ type TrackData = {
   trackBox: TrackBox;
   audioUnitBox: AudioUnitBox;
 };
-
-// Helper function to load audio files
-async function loadAudioFile(audioContext: AudioContext, url: string): Promise<AudioBuffer> {
-  const response = await fetch(url);
-  const arrayBuffer = await response.arrayBuffer();
-  return await audioContext.decodeAudioData(arrayBuffer);
-}
 
 /**
  * TransportDisplay - React component that displays global playback state
