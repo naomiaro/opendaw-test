@@ -926,6 +926,7 @@ Demonstrates scheduling drum samples across a timeline to create rhythmic patter
 - **Visual Timeline** - SVG-based visualization showing scheduled clips, grid lines, and playback position
 - **Four Drum Types** - Kick, Snare, Closed Hi-Hat, Open Hi-Hat with color-coded clips
 - **Real-time Playhead** - White vertical line tracking current playback position
+- **BPM Control** - Adjustable tempo slider (60-180 BPM) with real-time playback changes
 - **Pattern Info** - Displays total clips, duration, BPM, and pattern style
 
 **How OpenDAW's Scheduling System Works:**
@@ -1175,10 +1176,51 @@ public/audio/90sSamplePack/
 └── Accents & FX/ (24 accent samples)
 ```
 
+#### Tempo Changes Without Pitch Shifting
+
+A key feature of this demo is the ability to change BPM without affecting the pitch of drum samples. This is accomplished using OpenDAW's **AudioFit playback mode** and **AutofitUtils**.
+
+**Setting AudioFit playback mode:**
+```typescript
+import { AudioPlayback } from "@opendaw/studio-enums";
+
+AudioRegionBox.create(boxGraph, UUID.generate(), box => {
+  box.playback.setValue(AudioPlayback.AudioFit); // Maintains original speed regardless of BPM
+  // ... other properties
+});
+```
+
+**Handling BPM changes:**
+```typescript
+import { AutofitUtils } from "@opendaw/studio-core";
+
+const handleBpmChange = (newBpm: number) => {
+  // AutofitUtils automatically recalculates durations for all AudioFit regions
+  AutofitUtils.changeBpm(project, newBpm, false);
+  setBpm(newBpm);
+};
+```
+
+**How it works:**
+1. **AudioFit regions** maintain their original playback speed regardless of project BPM
+2. When `AutofitUtils.changeBpm()` is called:
+   - Updates `project.timelineBox.bpm` to the new value
+   - Finds all AudioRegionBox instances with `playback = AudioPlayback.AudioFit`
+   - Recalculates their `duration` and `loopDuration` in PPQN based on audio file duration and new BPM
+   - Formula: `duration = (audioSeconds * newBpm / 60) * Quarter`
+3. **Result**: Drum samples play at their original pitch and speed, but timing between hits adjusts to match new tempo
+
+**AudioPlayback modes:**
+- `AudioPlayback.NoSync` - No tempo synchronization
+- `AudioPlayback.Pitch` - Changes pitch with tempo (default, like old tape machines)
+- `AudioPlayback.Timestretch` - Time-stretches audio to fit tempo (changes speed, not pitch)
+- `AudioPlayback.AudioFit` - Maintains original speed, recalculates duration in PPQN ✅ (best for drums)
+
 See `src/drum-scheduling-demo.tsx` for the complete implementation showing:
 - Box graph creation and management
 - PPQN-based scheduling
 - SVG timeline visualization
 - Real-time playhead tracking
 - Pattern generation algorithms
+- AudioFit playback mode with AutofitUtils tempo changes
 

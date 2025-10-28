@@ -4,7 +4,8 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
 import { PPQN } from "@opendaw/lib-dsp";
-import { InstrumentFactories, Project } from "@opendaw/studio-core";
+import { AudioPlayback } from "@opendaw/studio-enums";
+import { InstrumentFactories, Project, AutofitUtils } from "@opendaw/studio-core";
 import { AudioFileBox, AudioRegionBox } from "@opendaw/studio-boxes";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { loadAudioFile } from "./lib/audioUtils";
@@ -158,6 +159,7 @@ const App: React.FC = () => {
               AudioRegionBox.create(boxGraph, UUID.generate(), box => {
                 box.regions.refer(trackBox.regions);
                 box.file.refer(audioFileBox);
+                box.playback.setValue(AudioPlayback.AudioFit); // AudioFit: maintains original speed regardless of BPM
                 box.position.setValue(position);
                 box.duration.setValue(clipDurationInPPQN);
                 box.loopOffset.setValue(0);
@@ -234,10 +236,10 @@ const App: React.FC = () => {
 
     console.debug(`BPM changed to ${newBpm}`);
 
-    // Update BPM in OpenDAW project
-    project.editing.modify(() => {
-      project.timelineBox.bpm.setValue(newBpm);
-    });
+    // Use OpenDAW's built-in AutofitUtils to handle BPM changes
+    // This automatically recalculates durations for all AudioFit regions
+    // See: https://github.com/andremichelle/openDAW/commit/ff010b067eec9840648e78dcec523634df16caed
+    AutofitUtils.changeBpm(project, newBpm, false);
 
     // Update local state
     setBpm(newBpm);
