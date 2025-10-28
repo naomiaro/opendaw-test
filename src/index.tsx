@@ -59,6 +59,21 @@ const App: React.FC = () => {
             </Card>
 
             <Card asChild>
+              <Link href="/drum-scheduling-demo.html" style={{ textDecoration: "none", padding: "var(--space-5)" }}>
+                <Flex direction="column" gap="3">
+                  <Flex direction="column" align="center" gap="2">
+                    <Text size="8">🥁</Text>
+                    <Heading size="5">Drum Pattern Scheduling</Heading>
+                  </Flex>
+                  <Text size="2" color="gray">
+                    Schedule drum samples across a timeline to create rhythmic patterns. Features a visual timeline showing
+                    clips and a playhead that tracks playback position.
+                  </Text>
+                </Flex>
+              </Link>
+            </Card>
+
+            <Card asChild>
               <Link href="/lifecycle-react-demo.html" style={{ textDecoration: "none", padding: "var(--space-5)" }}>
                 <Flex direction="column" gap="3">
                   <Flex direction="column" align="center" gap="2">
