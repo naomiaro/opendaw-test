@@ -1,26 +1,14 @@
 // noinspection PointlessArithmeticExpressionJS
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { assert, Procedure, Progress, unitValue, UUID } from "@opendaw/lib-std";
+import { UUID } from "@opendaw/lib-std";
 import { PPQN } from "@opendaw/lib-dsp";
-import { Promises } from "@opendaw/lib-runtime";
-import { AudioData, SampleMetaData, SoundfontMetaData } from "@opendaw/studio-adapters";
-import {
-  AudioWorklets,
-  DefaultSampleLoaderManager,
-  DefaultSoundfontLoaderManager,
-  InstrumentFactories,
-  OpenSampleAPI,
-  OpenSoundfontAPI,
-  Project,
-  Workers
-} from "@opendaw/studio-core";
+import { InstrumentFactories, Project } from "@opendaw/studio-core";
 import { AudioFileBox, AudioRegionBox, AudioUnitBox, TrackBox } from "@opendaw/studio-boxes";
-import { AnimationFrame } from "@opendaw/lib-dom";
-import { testFeatures } from "./features";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { loadAudioFile } from "./lib/audioUtils";
+import { initializeOpenDAW } from "./lib/projectSetup";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
@@ -34,9 +22,6 @@ import {
   Separator,
   Callout
 } from "@radix-ui/themes";
-
-import WorkersUrl from "@opendaw/studio-core/workers-main.js?worker&url";
-import WorkletsUrl from "@opendaw/studio-core/processors.js?url";
 
 // Type definitions
 type TrackData = {
@@ -198,85 +183,20 @@ const App: React.FC = () => {
 
     (async () => {
       try {
-        console.log("========================================");
-        console.log("openDAW -> headless -> React lifecycle demo");
-        console.log("WorkersUrl", WorkersUrl);
-        console.log("WorkletsUrl", WorkletsUrl);
-        console.log("crossOriginIsolated:", crossOriginIsolated);
-        console.log("SharedArrayBuffer available:", typeof SharedArrayBuffer !== "undefined");
-        console.log("========================================");
-        assert(crossOriginIsolated, "window must be crossOriginIsolated");
-
-        // Start AnimationFrame loop
-        console.debug("Starting AnimationFrame loop...");
-        AnimationFrame.start(window);
-        console.debug("AnimationFrame started!");
-
-        setStatus("Booting...");
-        await Workers.install(WorkersUrl);
-        AudioWorklets.install(WorkletsUrl);
-
-        const { status: testStatus, error: testError } = await Promises.tryCatch(testFeatures());
-        if (testStatus === "rejected") {
-          alert(`Could not test features (${testError})`);
-          return;
-        }
-
-        const newAudioContext = new AudioContext({ latencyHint: 0 });
-        console.debug(`AudioContext state: ${newAudioContext.state}, sampleRate: ${newAudioContext.sampleRate}`);
-        setAudioContext(newAudioContext);
-
-        const { status: workletStatus, error: workletError } = await Promises.tryCatch(
-          AudioWorklets.createFor(newAudioContext)
-        );
-        if (workletStatus === "rejected") {
-          alert(`Could not install Worklets (${workletError})`);
-          return;
-        }
-
-        const { Quarter } = PPQN;
-
-        // Custom sample provider
+        // Store local audio buffers for the sample manager
         const localAudioBuffers = new Map<string, AudioBuffer>();
 
-        const sampleManager = new DefaultSampleLoaderManager({
-          fetch: async (uuid: UUID.Bytes, progress: Procedure<unitValue>): Promise<[AudioData, SampleMetaData]> => {
-            const uuidString = UUID.toString(uuid);
-            const audioBuffer = localAudioBuffers.get(uuidString);
-
-            if (audioBuffer) {
-              const audioData = OpenSampleAPI.fromAudioBuffer(audioBuffer);
-              const metadata: SampleMetaData = {
-                name: uuidString,
-                bpm: 120,
-                duration: audioBuffer.duration,
-                sample_rate: audioBuffer.sampleRate,
-                origin: "import"
-              };
-              return [audioData, metadata];
-            }
-
-            return OpenSampleAPI.get().load(newAudioContext, uuid, progress);
-          }
+        // Initialize OpenDAW with custom sample loading
+        const { project: newProject, audioContext: newAudioContext } = await initializeOpenDAW({
+          localAudioBuffers,
+          onStatusUpdate: setStatus
         });
-
-        const soundfontManager = new DefaultSoundfontLoaderManager({
-          fetch: async (uuid: UUID.Bytes, progress: Progress.Handler): Promise<[ArrayBuffer, SoundfontMetaData]> =>
-            OpenSoundfontAPI.get().load(uuid, progress)
-        });
-
-        const audioWorklets = AudioWorklets.get(newAudioContext);
-        const newProject = Project.new({
-          audioContext: newAudioContext,
-          sampleManager,
-          soundfontManager,
-          audioWorklets
-        });
-        newProject.startAudioWorklet();
-        await newProject.engine.isReady();
-        console.debug("Engine is ready!");
 
         if (!mounted) return;
+
+        setAudioContext(newAudioContext);
+
+        const { Quarter } = PPQN;
 
         setStatus("Loading audio files...");
 

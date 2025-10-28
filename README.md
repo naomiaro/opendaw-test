@@ -87,6 +87,99 @@ Call `AnimationFrame.start(window)` early in your app initialization, before cre
 
 See `src/playback-demo.ts` and `src/recording-api-demo.ts` for examples.
 
+## Project Setup
+
+All demos use a shared `initializeOpenDAW()` utility that handles the complete OpenDAW initialization process. This function encapsulates all the boilerplate setup code, making it easy to get started.
+
+### Basic Usage
+
+```typescript
+import { initializeOpenDAW } from "./lib/projectSetup";
+
+// Minimal setup - uses default configuration
+const { project, audioContext } = await initializeOpenDAW();
+
+// Now you can use the project
+project.engine.play();
+```
+
+### With Custom Audio Buffers
+
+If you want to load your own audio files (MP3, WAV, etc.) instead of using OpenDAW's built-in samples:
+
+```typescript
+import { loadAudioFile } from "./lib/audioUtils";
+
+// Load your audio files
+const audioBuffer = await loadAudioFile(audioContext, "/audio/drum.wav");
+
+// Store in a map with UUIDs as keys
+const localAudioBuffers = new Map<string, AudioBuffer>();
+const fileUUID = UUID.generate();
+localAudioBuffers.set(UUID.toString(fileUUID), audioBuffer);
+
+// Initialize with custom sample loading
+const { project, audioContext } = await initializeOpenDAW({
+  localAudioBuffers,
+  bpm: 90,  // Optional: Set custom BPM (default: 120)
+  onStatusUpdate: (status) => console.log(status)  // Optional: Progress callback
+});
+```
+
+### What `initializeOpenDAW()` Does
+
+The function handles all the required OpenDAW setup steps in the correct order:
+
+1. **Validates environment** - Checks `crossOriginIsolated` is enabled
+2. **Starts AnimationFrame** - Calls `AnimationFrame.start(window)` for observables
+3. **Installs Workers & Worklets** - Loads OpenDAW's audio processing code
+4. **Tests features** - Verifies browser capabilities
+5. **Creates AudioContext** - Initializes Web Audio API
+6. **Configures sample manager** - Sets up audio loading with optional custom buffers
+7. **Creates project** - Initializes OpenDAW's project system
+8. **Starts engine** - Launches the audio worklet and waits for ready state
+
+**Configuration Options:**
+
+```typescript
+interface ProjectSetupOptions {
+  /**
+   * Optional map of local audio buffers to use instead of OpenSampleAPI
+   * Key: UUID string, Value: AudioBuffer
+   */
+  localAudioBuffers?: Map<string, AudioBuffer>;
+
+  /**
+   * Optional custom BPM for the project (default: 120)
+   */
+  bpm?: number;
+
+  /**
+   * Optional status update callback for progress messages
+   */
+  onStatusUpdate?: (status: string) => void;
+}
+```
+
+**Returns:**
+
+```typescript
+interface ProjectSetupResult {
+  project: Project;      // OpenDAW project instance
+  audioContext: AudioContext;  // Web Audio API context
+}
+```
+
+### Benefits of Shared Setup
+
+- ✅ **Consistent initialization** - All demos use the same reliable setup
+- ✅ **Less boilerplate** - ~80 lines of code reduced to ~4 lines per demo
+- ✅ **Better error handling** - Centralized validation and error messages
+- ✅ **Easy customization** - Simple options interface for common needs
+- ✅ **Maintainable** - One place to update when OpenDAW's setup requirements change
+
+See `src/lib/projectSetup.ts` for the full implementation and `src/drum-scheduling-demo.tsx`, `src/playback-demo-react.tsx`, or `src/lifecycle-react-demo.tsx` for usage examples.
+
 ## Observable Patterns
 
 OpenDAW uses observables for state management. Understanding when to use `subscribe()` vs `catchupAndSubscribe()` is crucial:
