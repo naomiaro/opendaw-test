@@ -323,7 +323,7 @@ const App: React.FC = () => {
 
     const totalDuration = BARS * BEATS_PER_BAR * Quarter;
     const timelineWidth = 800;
-    const trackHeight = 60;
+    const trackHeight = 90;
     const tracks = ["Kick", "Snare", "Hi-Hat Closed", "Hi-Hat Open"];
 
     return (
@@ -360,27 +360,45 @@ const App: React.FC = () => {
             />
           ))}
 
-          {/* Track labels */}
-          {tracks.map((track, i) => (
-            <text
-              key={`label-${i}`}
-              x={10}
-              y={i * trackHeight + 25}
-              fill="#888"
-              fontSize="12"
-              fontFamily="system-ui"
-            >
-              {track}
-            </text>
-          ))}
+          {/* Track labels with colored backgrounds */}
+          {tracks.map((track, i) => {
+            // Find the color for this track from the scheduled clips
+            const trackClip = scheduledClips.find(clip => clip.trackName === track);
+            const trackColor = trackClip?.color || "#888";
+
+            return (
+              <g key={`label-${i}`}>
+                {/* Background rectangle for label */}
+                <rect
+                  x={0}
+                  y={i * trackHeight}
+                  width={150}
+                  height={20}
+                  fill="#000"
+                  opacity={0.7}
+                />
+                {/* Track label text */}
+                <text
+                  x={8}
+                  y={i * trackHeight + 14}
+                  fill={trackColor}
+                  fontSize="14"
+                  fontWeight="bold"
+                  fontFamily="system-ui"
+                >
+                  {track}
+                </text>
+              </g>
+            );
+          })}
 
           {/* Clips */}
           {scheduledClips.map((clip, i) => {
             const trackIndex = tracks.indexOf(clip.trackName);
             const x = (clip.position / totalDuration) * timelineWidth;
             const width = Math.max(4, (clip.duration / totalDuration) * timelineWidth);
-            const y = trackIndex * trackHeight + 10;
-            const height = trackHeight - 20;
+            const y = trackIndex * trackHeight + 25; // Start below label
+            const height = trackHeight - 30; // More padding for label space
 
             return (
               <rect
@@ -497,26 +515,6 @@ const App: React.FC = () => {
                 Each colored block represents a scheduled drum hit. Watch the white playhead move across the timeline as the pattern plays.
               </Text>
               {renderTimeline()}
-              <Flex direction="column" gap="2" mt="3">
-                <Flex gap="4" wrap="wrap">
-                  <Flex align="center" gap="2">
-                    <div style={{ width: 16, height: 16, background: "#ef4444", borderRadius: 3 }} />
-                    <Text size="2">Kick</Text>
-                  </Flex>
-                  <Flex align="center" gap="2">
-                    <div style={{ width: 16, height: 16, background: "#f59e0b", borderRadius: 3 }} />
-                    <Text size="2">Snare</Text>
-                  </Flex>
-                  <Flex align="center" gap="2">
-                    <div style={{ width: 16, height: 16, background: "#10b981", borderRadius: 3 }} />
-                    <Text size="2">Closed Hat</Text>
-                  </Flex>
-                  <Flex align="center" gap="2">
-                    <div style={{ width: 16, height: 16, background: "#06b6d4", borderRadius: 3 }} />
-                    <Text size="2">Open Hat</Text>
-                  </Flex>
-                </Flex>
-              </Flex>
             </Flex>
           </Card>
 
