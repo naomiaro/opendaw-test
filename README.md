@@ -284,6 +284,109 @@ See the demos for examples:
 - **OpenSampleAPI (default)**: Recording demo (no custom files needed)
 - **Local Audio Buffers**: Playback demo, Lifecycle demo, Drum scheduling demo (all load custom MP3/WAV files)
 
+### Understanding Samples vs Soundfonts
+
+OpenDAW provides two distinct audio systems that serve different purposes:
+
+#### Audio Samples
+
+**What they are:**
+- Individual audio files (MP3, WAV, FLAC, etc.)
+- Used for playback of recorded audio, loops, one-shots, drum hits
+- Managed by `DefaultSampleLoaderManager`
+- Default source: `OpenSampleAPI` (cloud-hosted at `https://assets.opendaw.studio/samples`)
+- Alternative: Load your own files via `localAudioBuffers`
+
+**Common use cases:**
+- ✅ Playing back recorded audio (like the recording demo)
+- ✅ Loading drum samples (like the drum scheduling demo)
+- ✅ Playing multi-track arrangements (like the playback demo)
+- ✅ User-uploaded audio files
+
+#### Soundfonts
+
+**What they are:**
+- Instrument definitions in SF2 format (SoundFont 2)
+- Contain multi-sampled instruments (piano, strings, brass, synths, etc.)
+- Support velocity layers, key ranges, and articulations
+- Managed by `DefaultSoundfontLoaderManager`
+- Default source: `OpenSoundfontAPI` (cloud-hosted at `https://assets.opendaw.studio/soundfonts`)
+
+**Common use cases:**
+- ✅ MIDI playback with realistic instrument sounds
+- ✅ Virtual instruments (piano, drums, orchestra, etc.)
+- ✅ Music notation playback
+- ✅ Synthesizer-based compositions
+
+**Important difference:**
+- **Samples** are for audio playback (tape track, audio regions)
+- **Soundfonts** are for synthesizer/MIDI instruments
+
+#### Do You Need Both?
+
+**Current setup** (as used in all demos):
+```typescript
+const { project, audioContext } = await initializeOpenDAW({
+  localAudioBuffers  // Custom samples
+  // Soundfonts still available via OpenSoundfontAPI
+});
+```
+
+This configuration:
+- ✅ Uses your custom audio samples
+- ✅ Falls back to OpenSampleAPI for unknown UUIDs
+- ✅ Keeps soundfonts available via OpenSoundfontAPI
+- ⚠️ Requires internet for soundfonts
+
+**If you ONLY need custom audio samples** (no synthesizers/MIDI):
+
+You can disable soundfonts entirely to avoid the cloud dependency. Here's how (based on [the reference headless implementation](https://github.com/andremichelle/openDAW/blob/main/packages/app/headless/src/main.ts)):
+
+```typescript
+import { InaccessibleProperty } from "@opendaw/lib-std";
+
+// Custom setup without cloud dependencies
+const sampleManager = new DefaultSampleLoaderManager({
+  fetch: async (uuid, progress) => {
+    const uuidString = UUID.toString(uuid);
+    const audioBuffer = localAudioBuffers.get(uuidString);
+
+    if (audioBuffer) {
+      const audioData = OpenSampleAPI.fromAudioBuffer(audioBuffer);
+      const metadata = { name: uuidString, /* ... */ };
+      return [audioData, metadata];
+    }
+
+    throw new Error(`Sample ${uuidString} not found`);
+  }
+});
+
+const project = Project.new({
+  audioContext,
+  sampleManager,
+  soundfontManager: InaccessibleProperty('No SoundFont manager available'),
+  audioWorklets
+});
+```
+
+**When to disable soundfonts:**
+- ✅ You only use audio samples (WAV/MP3 playback)
+- ✅ You want to avoid cloud dependencies
+- ✅ Your app doesn't need MIDI/synthesizer instruments
+- ✅ You're building an audio editor (not a music composition tool)
+
+**When to keep soundfonts:**
+- ✅ You need MIDI playback
+- ✅ You want virtual instruments
+- ✅ You're building a DAW with synthesizers
+- ✅ You need both audio and MIDI capabilities
+
+**Cloud dependencies summary:**
+- `OpenSampleAPI`: Cloud samples (can be replaced with `localAudioBuffers`)
+- `OpenSoundfontAPI`: Cloud soundfonts (can be disabled if not needed)
+
+All demos in this project use **samples only** (no soundfonts), but keep the soundfont manager available via `OpenSoundfontAPI` for future use.
+
 ### Benefits of Shared Setup
 
 - ✅ **Consistent initialization** - All demos use the same reliable setup
