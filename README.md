@@ -387,14 +387,6 @@ const project = Project.new({
 
 All demos in this project use **samples only** (no soundfonts), but keep the soundfont manager available via `OpenSoundfontAPI` for future use.
 
-### Benefits of Shared Setup
-
-- ✅ **Consistent initialization** - All demos use the same reliable setup
-- ✅ **Less boilerplate** - ~80 lines of code reduced to ~4 lines per demo
-- ✅ **Better error handling** - Centralized validation and error messages
-- ✅ **Easy customization** - Simple options interface for common needs
-- ✅ **Maintainable** - One place to update when OpenDAW's setup requirements change
-
 See `src/lib/projectSetup.ts` for the full implementation and `src/drum-scheduling-demo.tsx`, `src/playback-demo-react.tsx`, or `src/lifecycle-react-demo.tsx` for usage examples.
 
 ## Observable Patterns
