@@ -50,6 +50,7 @@ const App: React.FC = () => {
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
   const sampleUUIDsRef = useRef<UUID.Bytes[]>([]);
   const audioRegionsRef = useRef<Array<{ box: any; audioDuration: number }>>([]); // Store region refs for BPM updates
+  const clipTemplatesRef = useRef<Array<{ trackName: string; position: number; audioDuration: number; label: string; color: string }>>([]); // Templates for recalculating clips
 
   const { Quarter } = PPQN;
   const BARS = 4;
@@ -145,8 +146,8 @@ const App: React.FC = () => {
               box.endInSeconds.setValue(audioBuffer.duration);
             });
 
-            // Calculate clip duration - most drum hits are short, use actual duration
-            const clipDurationInPPQN = Math.ceil(((audioBuffer.duration * bpm) / 60) * Quarter);
+            // Calculate clip duration using OpenDAW's utility function
+            const clipDurationInPPQN = PPQN.secondsToPulses(audioBuffer.duration, bpm);
 
             // Create a drum pattern based on the drum type
             let positions: number[] = [];
@@ -187,6 +188,15 @@ const App: React.FC = () => {
               audioRegionsRef.current.push({
                 box: regionBox,
                 audioDuration: audioBuffer.duration
+              });
+
+              // Store clip template for BPM-based recalculation
+              clipTemplatesRef.current.push({
+                trackName: sample.name,
+                position,
+                audioDuration: audioBuffer.duration,
+                label: `${sample.name} ${clipIndex + 1}`,
+                color: sample.color
               });
 
               // Store clip info for visualization
@@ -309,15 +319,28 @@ const App: React.FC = () => {
       // Recalculate duration in PPQN for all regions
       // Even with NoSync mode, the duration needs to match the timeline's PPQN units
       audioRegionsRef.current.forEach(({ box, audioDuration }) => {
-        const newDurationInPPQN = Math.ceil(((audioDuration * newBpm) / 60) * Quarter);
+        const newDurationInPPQN = PPQN.secondsToPulses(audioDuration, newBpm);
         box.duration.setValue(newDurationInPPQN);
         box.loopDuration.setValue(newDurationInPPQN);
       });
     });
 
+    // Recalculate clip durations for timeline visualization
+    const updatedClips = clipTemplatesRef.current.map(template => {
+      const newDurationInPPQN = PPQN.secondsToPulses(template.audioDuration, newBpm);
+      return {
+        trackName: template.trackName,
+        position: template.position,
+        duration: newDurationInPPQN,
+        label: template.label,
+        color: template.color
+      };
+    });
+    setScheduledClips(updatedClips);
+
     // Update local state
     setBpm(newBpm);
-  }, [project, samplesLoaded, bpm, Quarter]);
+  }, [project, samplesLoaded, bpm]);
 
   // Timeline visualization
   const renderTimeline = () => {

@@ -980,8 +980,8 @@ project.editing.modify(() => {
     box.endInSeconds.setValue(audioBuffer.duration);
   });
 
-  // 5. Calculate clip duration in PPQN
-  const clipDurationInPPQN = Math.ceil(((audioBuffer.duration * BPM) / 60) * Quarter);
+  // 5. Calculate clip duration in PPQN using OpenDAW's conversion utility
+  const clipDurationInPPQN = PPQN.secondsToPulses(audioBuffer.duration, BPM);
 
   // 6. Create AudioRegionBox instances at specific positions
   const kickPositions = [0, Quarter * 2, Quarter * 4, Quarter * 6]; // Beats 1, 3, 5, 7
@@ -1003,31 +1003,72 @@ project.editing.modify(() => {
 
 #### Understanding PPQN (Pulses Per Quarter Note)
 
-OpenDAW uses PPQN as its internal time unit for precise scheduling:
+OpenDAW uses PPQN as its internal time unit for precise scheduling. Understanding the difference between **resolution** (constant) and **playback speed** (variable) is crucial:
 
-- **PPQN.Quarter** - Number of pulses in a quarter note (standard reference)
-- **Position in PPQN** = `beat * Quarter`
-- **Duration in PPQN** = `((durationInSeconds * BPM) / 60) * Quarter`
+##### PPQN.Quarter = Resolution Constant ⚠️
 
-**Examples at 90 BPM:**
+**`PPQN.Quarter = 960` is a resolution constant that NEVER changes**, regardless of BPM or time signature:
+
 ```typescript
+import { PPQN } from "@opendaw/lib-dsp";
+
 const { Quarter } = PPQN;
-
-// Schedule on beat 1 (first beat of bar 1)
-box.position.setValue(0);
-
-// Schedule on beat 2
-box.position.setValue(Quarter * 1);
-
-// Schedule on beat 3 (downbeat of bar 2 in 4/4)
-box.position.setValue(Quarter * 2);
-
-// Schedule on eighth notes (half a quarter note)
-box.position.setValue(Quarter / 2);
-
-// Schedule one bar later (4 beats in 4/4 time)
-box.position.setValue(Quarter * 4);
+console.log(Quarter); // Always 960 - this is the resolution/grid
 ```
+
+Think of it this way:
+- **PPQN = Resolution** (how fine-grained the timing grid is)
+  - One quarter note = 960 pulses (constant)
+  - This defines the timing precision, not the playback speed
+
+- **BPM = Playback Speed** (how fast those pulses play)
+  - At 120 BPM: 960 pulses play in 0.5 seconds
+  - At 60 BPM: 960 pulses play in 1.0 second
+  - At 240 BPM: 960 pulses play in 0.25 seconds
+
+##### When to Use What
+
+**For Musical Positions (beat grid placement) - Use `Quarter` constant:**
+```typescript
+// These positions NEVER change when BPM changes - they're fixed on the musical grid
+const kickOnBeat1 = 0 * Quarter;           // Beat 1 = 0
+const snareOnBeat2 = 1 * Quarter;          // Beat 2 = 960
+const hiHatOnEighthNote = Quarter / 2;     // Eighth note = 480
+const oneBarLater = Quarter * 4;           // One bar (4/4 time) = 3840
+```
+
+**For Audio Durations (real-world time) - Use `PPQN.secondsToPulses()`:**
+```typescript
+// These durations DO change when BPM changes - they convert real-world time to pulses
+const audioDuration = 0.5; // 500ms kick drum sample
+
+// ✅ CORRECT: Use OpenDAW's conversion utility
+const durationInPPQN = PPQN.secondsToPulses(audioDuration, bpm);
+
+// ❌ WRONG: Don't manually calculate (this is what the utility does internally)
+const manualCalc = Math.ceil(((audioDuration * bpm) / 60) * Quarter);
+```
+
+**Examples at different BPMs:**
+```typescript
+const kickSample = 0.5; // 500ms audio file
+
+// At 60 BPM
+PPQN.secondsToPulses(0.5, 60);  // = 960 pulses (one quarter note)
+
+// At 120 BPM
+PPQN.secondsToPulses(0.5, 120); // = 1920 pulses (two quarter notes)
+
+// At 240 BPM
+PPQN.secondsToPulses(0.5, 240); // = 3840 pulses (four quarter notes)
+
+// The audio always plays for 0.5 seconds, but covers more musical beats at higher BPM
+```
+
+##### Key Takeaway
+
+- **Musical positions** (where notes go on the grid) → Use `Quarter` constant → Don't change with BPM
+- **Audio durations** (how long samples play) → Use `PPQN.secondsToPulses(duration, bpm)` → Recalculate when BPM changes
 
 #### The Box Graph Transaction Model
 
@@ -1207,9 +1248,9 @@ const handleBpmChange = (newBpm: number) => {
     // Update timeline BPM
     project.timelineBox.bpm.setValue(newBpm);
 
-    // Manually recalculate region durations in PPQN
+    // Manually recalculate region durations in PPQN using OpenDAW's utility
     audioRegions.forEach(({ box, audioDuration }) => {
-      const newDurationInPPQN = Math.ceil(((audioDuration * newBpm) / 60) * Quarter);
+      const newDurationInPPQN = PPQN.secondsToPulses(audioDuration, newBpm);
       box.duration.setValue(newDurationInPPQN);
       box.loopDuration.setValue(newDurationInPPQN);
     });
