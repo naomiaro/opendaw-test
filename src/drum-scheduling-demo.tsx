@@ -444,15 +444,15 @@ const App: React.FC = () => {
                   left: `${x}px`,
                   width: `${width}px`,
                   height: "100%",
-                  backgroundColor: isOddBar ? "#00d4ff" : "#ff00ff",
+                  backgroundColor: isOddBar ? "var(--gray-3)" : "var(--gray-4)",
                   display: "flex",
                   alignItems: "center",
                   paddingLeft: "8px",
-                  borderLeft: "2px solid #555",
+                  borderLeft: "2px solid var(--gray-6)",
                   boxSizing: "border-box"
                 }}
               >
-                <span style={{ color: "#000", fontWeight: "bold", fontSize: "12px" }}>
+                <span style={{ color: "var(--gray-12)", fontWeight: "bold", fontSize: "12px" }}>
                   Bar {barIndex + 1}
                 </span>
               </div>
