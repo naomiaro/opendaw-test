@@ -402,7 +402,7 @@ const App: React.FC = () => {
         <div style={{ display: "flex", justifyContent: "space-between", paddingTop: "8px", color: "#888", fontSize: "12px" }}>
           {Array.from({ length: TOTAL_BEATS + 1 }, (_, i) => (
             <div key={`beat-${i}`} style={{ width: `${100 / TOTAL_BEATS}%`, textAlign: i === 0 ? "left" : "center" }}>
-              {i % BEATS_PER_BAR === 0 ? `Bar ${i / BEATS_PER_BAR + 1}` : ""}
+              {i % BEATS_PER_BAR === 0 && i < TOTAL_BEATS ? `Bar ${i / BEATS_PER_BAR + 1}` : ""}
             </div>
           ))}
         </div>
