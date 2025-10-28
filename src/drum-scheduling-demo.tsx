@@ -43,9 +43,11 @@ const App: React.FC = () => {
   const [scheduledClips, setScheduledClips] = useState<ScheduledClip[]>([]);
   const [currentPosition, setCurrentPosition] = useState(0);
   const [bpm, setBpm] = useState(90);
+  const [samplesLoaded, setSamplesLoaded] = useState(false);
 
   // Refs for non-reactive values
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
+  const sampleUUIDsRef = useRef<UUID.Bytes[]>([]);
 
   const { Quarter } = PPQN;
   const BARS = 4;
@@ -108,6 +110,7 @@ const App: React.FC = () => {
 
         const { editing, api, boxGraph } = newProject;
         const clips: ScheduledClip[] = [];
+        const sampleUUIDs: UUID.Bytes[] = [];
 
         editing.modify(() => {
           // Create a tape track for each drum type
@@ -121,12 +124,25 @@ const App: React.FC = () => {
             const fileUUID = UUID.generate();
             const fileUUIDString = UUID.toString(fileUUID);
 
-            // Store the audio buffer
+            // Store the UUID for sample loading tracking
+            sampleUUIDs.push(fileUUID);
+
+            // Store the audio buffer first
             localAudioBuffersRef.current.set(fileUUIDString, audioBuffer);
 
-            // Create AudioFileBox
+            // Ensure the sample manager loads this sample immediately
+            // This prevents AutofitUtils from seeing durationInSeconds = 0
+            newProject.sampleManager.getOrCreate(fileUUID);
+
+            // Create AudioFileBox with proper duration
             const audioFileBox = AudioFileBox.create(boxGraph, fileUUID, box => {
               box.fileName.setValue(sample.name);
+
+              // WORKAROUND: AudioFileBox.endInSeconds has a bug where it won't accept values < 1.0
+              // unless it's been set to a value >= 1.0 first. So we set it to 2.0 first for short samples.
+              if (audioBuffer.duration < 1.0) {
+                box.endInSeconds.setValue(2.0);
+              }
               box.endInSeconds.setValue(audioBuffer.duration);
             });
 
@@ -193,9 +209,13 @@ const App: React.FC = () => {
 
         if (!mounted) return;
 
+        // Store sample UUIDs for loading tracking
+        sampleUUIDsRef.current = sampleUUIDs;
+
+        if (!mounted) return;
+
         setAudioContext(newAudioContext);
         setProject(newProject);
-        setStatus("Ready - Click Play to hear the drum pattern!");
       } catch (error) {
         console.error("Initialization error:", error);
         setStatus(`Error: ${error}`);
@@ -206,6 +226,43 @@ const App: React.FC = () => {
       mounted = false;
     };
   }, []);
+
+  // Subscribe to sample loader states to track when all samples are fully loaded
+  useEffect(() => {
+    if (!project || sampleUUIDsRef.current.length === 0) return undefined;
+
+    console.debug("[SampleLoading] Setting up sample loading tracking for", sampleUUIDsRef.current.length, "samples");
+
+    const subscriptions: Array<{ terminate: () => void }> = [];
+    let loadedCount = 0;
+
+    sampleUUIDsRef.current.forEach((uuid) => {
+      const sampleLoader = project.sampleManager.getOrCreate(uuid);
+      const uuidString = UUID.toString(uuid);
+
+      const subscription = sampleLoader.subscribe((state) => {
+        console.debug(`[SampleLoading] Sample ${uuidString} state:`, state.type);
+
+        if (state.type === "loaded") {
+          loadedCount++;
+          console.debug(`[SampleLoading] ${loadedCount}/${sampleUUIDsRef.current.length} samples loaded`);
+
+          if (loadedCount === sampleUUIDsRef.current.length) {
+            console.debug("[SampleLoading] All samples loaded! BPM changes are now safe.");
+            setSamplesLoaded(true);
+            setStatus("Ready - Click Play to hear the drum pattern!");
+          }
+        }
+      });
+
+      subscriptions.push(subscription);
+    });
+
+    return () => {
+      console.debug("[SampleLoading] Cleaning up sample loading subscriptions");
+      subscriptions.forEach(sub => sub.terminate());
+    };
+  }, [project]);
 
   const handlePlay = useCallback(async () => {
     if (!project || !audioContext) return;
@@ -232,18 +289,22 @@ const App: React.FC = () => {
   }, [project]);
 
   const handleBpmChange = useCallback((newBpm: number) => {
-    if (!project) return;
+    if (!project || !samplesLoaded) {
+      console.warn("Cannot change BPM: samples not fully loaded yet");
+      return;
+    }
 
-    console.debug(`BPM changed to ${newBpm}`);
+    console.debug(`[BPM Change] Changing from ${bpm} to ${newBpm}`);
 
     // Use OpenDAW's built-in AutofitUtils to handle BPM changes
     // This automatically recalculates durations for all AudioFit regions
-    // See: https://github.com/andremichelle/openDAW/commit/ff010b067eec9840648e78dcec523634df16caed
+    console.debug(`[BPM Change] Calling AutofitUtils.changeBpm...`);
     AutofitUtils.changeBpm(project, newBpm, false);
+    console.debug(`[BPM Change] AutofitUtils.changeBpm completed`);
 
     // Update local state
     setBpm(newBpm);
-  }, [project]);
+  }, [project, samplesLoaded, bpm]);
 
   // Timeline visualization
   const renderTimeline = () => {
@@ -442,11 +503,19 @@ const App: React.FC = () => {
                     max="180"
                     value={bpm}
                     onChange={(e) => handleBpmChange(Number(e.target.value))}
+                    disabled={!samplesLoaded}
                     style={{
                       width: "100%",
-                      accentColor: "var(--accent-9)"
+                      accentColor: "var(--accent-9)",
+                      opacity: samplesLoaded ? 1 : 0.5,
+                      cursor: samplesLoaded ? "pointer" : "not-allowed"
                     }}
                   />
+                  {!samplesLoaded && (
+                    <Text size="1" color="orange" style={{ textAlign: "center" }}>
+                      Loading samples...
+                    </Text>
+                  )}
                   <Flex justify="between">
                     <Text size="1" color="gray">60 BPM</Text>
                     <Text size="1" color="gray">180 BPM</Text>
