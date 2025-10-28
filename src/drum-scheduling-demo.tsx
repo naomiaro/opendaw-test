@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
 import { PPQN } from "@opendaw/lib-dsp";
+import { AnimationFrame } from "@opendaw/lib-dom";
 import { AudioPlayback } from "@opendaw/studio-enums";
 import { InstrumentFactories, Project } from "@opendaw/studio-core";
 import { AudioFileBox, AudioRegionBox } from "@opendaw/studio-boxes";
@@ -65,8 +66,9 @@ const App: React.FC = () => {
       setIsPlaying(obs.getValue());
     });
 
-    const positionSubscription = project.engine.position.catchupAndSubscribe(obs => {
-      setCurrentPosition(obs.getValue());
+    // Use AnimationFrame to throttle position updates to once per frame
+    const positionSubscription = AnimationFrame.add(() => {
+      setCurrentPosition(project.engine.position.getValue());
     });
 
     return () => {
