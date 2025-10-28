@@ -41,12 +41,12 @@ const App: React.FC = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [scheduledClips, setScheduledClips] = useState<ScheduledClip[]>([]);
   const [currentPosition, setCurrentPosition] = useState(0);
+  const [bpm, setBpm] = useState(90);
 
   // Refs for non-reactive values
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
 
   const { Quarter } = PPQN;
-  const BPM = 90;
   const BARS = 4;
   const BEATS_PER_BAR = 4;
   const TOTAL_BEATS = BARS * BEATS_PER_BAR;
@@ -81,7 +81,7 @@ const App: React.FC = () => {
         // Initialize OpenDAW with custom sample loading and BPM
         const { project: newProject, audioContext: newAudioContext } = await initializeOpenDAW({
           localAudioBuffers: localAudioBuffersRef.current,
-          bpm: BPM,
+          bpm: bpm,
           onStatusUpdate: setStatus
         });
 
@@ -130,7 +130,7 @@ const App: React.FC = () => {
             });
 
             // Calculate clip duration - most drum hits are short, use actual duration
-            const clipDurationInPPQN = Math.ceil(((audioBuffer.duration * BPM) / 60) * Quarter);
+            const clipDurationInPPQN = Math.ceil(((audioBuffer.duration * bpm) / 60) * Quarter);
 
             // Create a drum pattern based on the drum type
             let positions: number[] = [];
@@ -227,6 +227,20 @@ const App: React.FC = () => {
     console.debug("Stop button clicked");
     project.engine.stop(true);
     project.engine.setPosition(0);
+  }, [project]);
+
+  const handleBpmChange = useCallback((newBpm: number) => {
+    if (!project) return;
+
+    console.debug(`BPM changed to ${newBpm}`);
+
+    // Update BPM in OpenDAW project
+    project.editing.modify(() => {
+      project.timelineBox.bpm.setValue(newBpm);
+    });
+
+    // Update local state
+    setBpm(newBpm);
   }, [project]);
 
   // Timeline visualization
@@ -360,7 +374,7 @@ const App: React.FC = () => {
             <Flex direction="column" gap="4">
               <Flex justify="between" align="center">
                 <Heading size="5" color="blue">Pattern Info</Heading>
-                <Badge color="green" size="2">{BPM} BPM</Badge>
+                <Badge color="green" size="2">{bpm} BPM</Badge>
               </Flex>
               <Separator size="4" />
               <Flex direction="column" gap="2">
@@ -414,25 +428,51 @@ const App: React.FC = () => {
             <Flex direction="column" gap="4">
               <Heading size="5" color="blue">Transport Controls</Heading>
 
-              <Flex gap="3" wrap="wrap" justify="center">
-                <Button
-                  onClick={handlePlay}
-                  disabled={isPlaying}
-                  color="green"
-                  size="3"
-                  variant="solid"
-                >
-                  Play Pattern
-                </Button>
-                <Button
-                  onClick={handleStop}
-                  disabled={!isPlaying}
-                  color="red"
-                  size="3"
-                  variant="solid"
-                >
-                  Stop
-                </Button>
+              <Flex direction="column" gap="3">
+                <Flex direction="column" gap="2">
+                  <Flex justify="between" align="center">
+                    <Text size="2" weight="bold">Tempo</Text>
+                    <Text size="2" color="gray">{bpm} BPM</Text>
+                  </Flex>
+                  <input
+                    type="range"
+                    min="60"
+                    max="180"
+                    value={bpm}
+                    onChange={(e) => handleBpmChange(Number(e.target.value))}
+                    style={{
+                      width: "100%",
+                      accentColor: "var(--accent-9)"
+                    }}
+                  />
+                  <Flex justify="between">
+                    <Text size="1" color="gray">60 BPM</Text>
+                    <Text size="1" color="gray">180 BPM</Text>
+                  </Flex>
+                </Flex>
+
+                <Separator size="4" />
+
+                <Flex gap="3" wrap="wrap" justify="center">
+                  <Button
+                    onClick={handlePlay}
+                    disabled={isPlaying}
+                    color="green"
+                    size="3"
+                    variant="solid"
+                  >
+                    Play Pattern
+                  </Button>
+                  <Button
+                    onClick={handleStop}
+                    disabled={!isPlaying}
+                    color="red"
+                    size="3"
+                    variant="solid"
+                  >
+                    Stop
+                  </Button>
+                </Flex>
               </Flex>
               <Text size="2" align="center" color="gray">{status}</Text>
             </Flex>
