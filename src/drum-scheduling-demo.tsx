@@ -356,6 +356,17 @@ const App: React.FC = () => {
       <div style={{ position: "relative", width: `${timelineWidth}px`, margin: "0 auto" }}>
         {/* Timeline background */}
         <svg width={timelineWidth} height={tracks.length * trackHeight} style={{ background: "#1a1a1a", borderRadius: "8px" }}>
+          {/* SVG Filter Definitions */}
+          <defs>
+            <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+              <feMerge>
+                <feMergeNode in="coloredBlur"/>
+                <feMergeNode in="SourceGraphic"/>
+              </feMerge>
+            </filter>
+          </defs>
+
           {/* Grid lines for beats */}
           {Array.from({ length: TOTAL_BEATS + 1 }, (_, i) => {
             const x = (i * Quarter / totalDuration) * timelineWidth;
@@ -426,17 +437,38 @@ const App: React.FC = () => {
             const y = trackIndex * trackHeight + 25; // Start below label
             const height = trackHeight - 30; // More padding for label space
 
+            // Check if playhead is inside this clip
+            const isActive = currentPosition >= clip.position && currentPosition < clip.position + clip.duration;
+
             return (
-              <rect
-                key={`clip-${i}`}
-                x={x}
-                y={y}
-                width={width}
-                height={height}
-                fill={clip.color}
-                rx={3}
-                opacity={0.8}
-              />
+              <g key={`clip-${i}`}>
+                {/* Glow effect when active */}
+                {isActive && (
+                  <rect
+                    x={x - 2}
+                    y={y - 2}
+                    width={width + 4}
+                    height={height + 4}
+                    fill={clip.color}
+                    rx={5}
+                    opacity={0.4}
+                    filter="url(#glow)"
+                  />
+                )}
+                {/* Main clip rectangle */}
+                <rect
+                  x={x}
+                  y={y}
+                  width={width}
+                  height={height}
+                  fill={clip.color}
+                  rx={3}
+                  opacity={isActive ? 1.0 : 0.8}
+                  style={{
+                    transition: "opacity 0.1s ease-in-out"
+                  }}
+                />
+              </g>
             );
           })}
 
