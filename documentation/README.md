@@ -167,17 +167,16 @@ import { PeaksPainter } from "@opendaw/lib-fusion";
 ### AnimationFrame Setup (Required!)
 
 ```typescript
-// STEP 1: Start AnimationFrame BEFORE creating project
-AnimationFrame.start(window);
-
-// STEP 2: Create project
+// AnimationFrame.start(window) is called automatically by initializeOpenDAW()
 const project = await initializeOpenDAW();
 
-// STEP 3: Subscribe to observables (they work now!)
+// Now you can subscribe to observables (they work!)
 project.engine.isPlaying.subscribe(obs => {
   setIsPlaying(obs.getValue()); // ✓ Updates!
 });
 ```
+
+**Note:** The `initializeOpenDAW()` function handles calling `AnimationFrame.start(window)` internally. If you're not using this helper function, you must call `AnimationFrame.start(window)` before creating your project.
 
 ## Common Patterns
 
