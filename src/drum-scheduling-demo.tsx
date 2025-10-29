@@ -437,8 +437,8 @@ const App: React.FC = () => {
             const y = trackIndex * trackHeight + 25; // Start below label
             const height = trackHeight - 30; // More padding for label space
 
-            // Check if playhead is inside this clip
-            const isActive = currentPosition >= clip.position && currentPosition < clip.position + clip.duration;
+            // Check if playhead is inside this clip AND we're playing
+            const isActive = isPlaying && currentPosition >= clip.position && currentPosition < clip.position + clip.duration;
 
             return (
               <g key={`clip-${i}`}>
