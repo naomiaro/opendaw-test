@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "@radix-ui/themes/styles.css";
 import { Theme, Container, Heading, Text, Flex, Card, Link } from "@radix-ui/themes";
 import { GitHubCorner } from "./components/GitHubCorner";
+import { MoisesLogo } from "./components/MoisesLogo";
 
 const App: React.FC = () => {
   return (
@@ -88,6 +89,8 @@ const App: React.FC = () => {
               </Link>
             </Card>
           </div>
+
+          <MoisesLogo />
         </Flex>
       </Container>
     </Theme>

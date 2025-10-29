@@ -9,6 +9,7 @@ import { AudioFileBox, AudioRegionBox } from "@opendaw/studio-boxes";
 import { PeaksPainter } from "@opendaw/lib-fusion";
 import { CanvasPainter } from "./lib/CanvasPainter";
 import { GitHubCorner } from "./components/GitHubCorner";
+import { MoisesLogo } from "./components/MoisesLogo";
 import { loadAudioFile } from "./lib/audioUtils";
 import { initializeOpenDAW } from "./lib/projectSetup";
 import "@radix-ui/themes/styles.css";
@@ -453,6 +454,8 @@ const App: React.FC = () => {
               <Text size="2" align="center" color="gray">{status}</Text>
             </Flex>
           </Card>
+
+          <MoisesLogo />
         </Flex>
       </Container>
     </Theme>

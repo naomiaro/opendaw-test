@@ -21,6 +21,7 @@ import { PeaksPainter } from "@opendaw/lib-fusion";
 import { CanvasPainter } from "./lib/CanvasPainter";
 import { testFeatures } from "./features";
 import { GitHubCorner } from "./components/GitHubCorner";
+import { MoisesLogo } from "./components/MoisesLogo";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
@@ -891,6 +892,8 @@ const App: React.FC = () => {
               <Text size="2" align="center" color="gray">{playbackStatus}</Text>
             </Flex>
           </Card>
+
+          <MoisesLogo />
         </Flex>
       </Container>
     </Theme>

@@ -7,6 +7,7 @@ import { PPQN } from "@opendaw/lib-dsp";
 import { InstrumentFactories, Project } from "@opendaw/studio-core";
 import { AudioFileBox, AudioRegionBox, AudioUnitBox, TrackBox } from "@opendaw/studio-boxes";
 import { GitHubCorner } from "./components/GitHubCorner";
+import { MoisesLogo } from "./components/MoisesLogo";
 import { loadAudioFile } from "./lib/audioUtils";
 import { initializeOpenDAW } from "./lib/projectSetup";
 import "@radix-ui/themes/styles.css";
@@ -509,6 +510,8 @@ const App: React.FC = () => {
               )}
             </Flex>
           </Card>
+
+          <MoisesLogo />
         </Flex>
       </Container>
     </Theme>
