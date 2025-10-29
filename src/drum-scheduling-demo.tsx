@@ -138,12 +138,6 @@ const App: React.FC = () => {
             // Create AudioFileBox with proper duration
             const audioFileBox = AudioFileBox.create(boxGraph, fileUUID, box => {
               box.fileName.setValue(sample.name);
-
-              // WORKAROUND: AudioFileBox.endInSeconds has a bug where it won't accept values < 1.0
-              // unless it's been set to a value >= 1.0 first. So we set it to 2.0 first for short samples.
-              if (audioBuffer.duration < 1.0) {
-                box.endInSeconds.setValue(2.0);
-              }
               box.endInSeconds.setValue(audioBuffer.duration);
             });
 
