@@ -10,6 +10,14 @@ This guide is for developers who:
 - Are new to DAW architecture and audio programming concepts
 - Need to understand OpenDAW's PPQN-based timing system
 
+## ⚠️ Critical Concept: AnimationFrame
+
+**Before you start coding**, understand this:
+
+OpenDAW's observables **will not work** without `AnimationFrame.start(window)`. This is the #1 cause of "why isn't my UI updating?" issues.
+
+**→ Read [AnimationFrame Guide](./07-animation-frame.md) first if you're having issues with observables not updating.**
+
 ## Documentation Structure
 
 Read these documents in order to build up your understanding:
@@ -35,7 +43,20 @@ Read these documents in order to build up your understanding:
 
 ---
 
-### 3. [Box System](./03-box-system.md)
+### 3. [AnimationFrame Guide](./03-animation-frame.md) ⚠️
+- What is AnimationFrame and why it's required
+- How the audio-to-UI bridge works
+- Setting up the update loop
+- Observable.subscribe() vs AnimationFrame.add()
+- Performance patterns
+- Common mistakes and debugging
+- Essential initialization sequence
+
+**Start here if:** Your observables aren't updating or you're having UI sync issues
+
+---
+
+### 4. [Box System](./04-box-system.md)
 - OpenDAW's data model (the "box graph")
 - Creating and modifying boxes
 - Transactions and undo/redo
@@ -47,7 +68,7 @@ Read these documents in order to build up your understanding:
 
 ---
 
-### 4. [Sample Management and Peaks](./04-sample-management-and-peaks.md)
+### 5. [Sample Management and Peaks](./05-sample-management-and-peaks.md)
 - Loading audio files
 - Sample manager configuration
 - Understanding peaks (waveform data)
@@ -59,7 +80,7 @@ Read these documents in order to build up your understanding:
 
 ---
 
-### 5. [Timeline Rendering](./05-timeline-rendering.md)
+### 6. [Timeline Rendering](./06-timeline-rendering.md)
 - Timeline coordinate system
 - Converting PPQN to pixels
 - Rendering grid lines, clips, and playhead
@@ -72,7 +93,7 @@ Read these documents in order to build up your understanding:
 
 ---
 
-### 6. [Putting It All Together](./06-putting-it-together.md)
+### 7. [Putting It All Together](./07-putting-it-together.md)
 - Complete working application
 - Project initialization
 - Full React component examples
@@ -121,6 +142,9 @@ eighthNote = Quarter / 2;        // 480
 ### Essential Imports
 
 ```typescript
+// ⚠️ CRITICAL: AnimationFrame (start before creating project!)
+import { AnimationFrame } from "@opendaw/lib-dom";
+
 // PPQN utilities
 import { PPQN } from "@opendaw/lib-dsp";
 
@@ -135,10 +159,24 @@ import { AudioPlayback } from "@opendaw/studio-enums";
 
 // Utilities
 import { UUID } from "@opendaw/lib-std";
-import { AnimationFrame } from "@opendaw/lib-dom";
 
 // Rendering
 import { PeaksPainter } from "@opendaw/lib-fusion";
+```
+
+### AnimationFrame Setup (Required!)
+
+```typescript
+// STEP 1: Start AnimationFrame BEFORE creating project
+AnimationFrame.start(window);
+
+// STEP 2: Create project
+const project = await initializeOpenDAW();
+
+// STEP 3: Subscribe to observables (they work now!)
+project.engine.isPlaying.subscribe(obs => {
+  setIsPlaying(obs.getValue()); // ✓ Updates!
+});
 ```
 
 ## Common Patterns
@@ -261,11 +299,14 @@ Found an error or want to improve this documentation? PRs welcome!
 |----------|------------|----------|
 | [Introduction](./01-introduction.md) | Overview & concepts | Beginners to DAW architecture |
 | [PPQN Fundamentals](./02-ppqn-fundamentals.md) | Timing system | All developers |
-| [Box System](./03-box-system.md) | Data model | Backend/state management |
-| [Sample Management](./04-sample-management-and-peaks.md) | Audio & waveforms | Frontend/canvas developers |
-| [Timeline Rendering](./05-timeline-rendering.md) | UI visualization | Frontend developers |
-| [Complete Example](./06-putting-it-together.md) | Full application | All developers |
+| [AnimationFrame ⚠️](./03-animation-frame.md) | Observable updates | **Required reading** |
+| [Box System](./04-box-system.md) | Data model | Backend/state management |
+| [Sample Management](./05-sample-management-and-peaks.md) | Audio & waveforms | Frontend/canvas developers |
+| [Timeline Rendering](./06-timeline-rendering.md) | UI visualization | Frontend developers |
+| [Complete Example](./07-putting-it-together.md) | Full application | All developers |
 
-**Recommended reading order:** 1 → 2 → 3 → 4 → 5 → 6
+**Recommended reading order:** 1 → 2 → 3 → 4 → 5 → 6 → 7
+
+**Troubleshooting order:** Having issues? → Read 3 first!
 
 Happy building! 🎵
