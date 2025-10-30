@@ -26,7 +26,8 @@ export default defineConfig({
                 recordingApi: resolve(__dirname, "recording-api-react-demo.html"),
                 drumScheduling: resolve(__dirname, "drum-scheduling-demo.html"),
                 drumSchedulingAutofit: resolve(__dirname, "drum-scheduling-autofit-demo.html"),
-                lifecycle: resolve(__dirname, "lifecycle-react-demo.html")
+                lifecycle: resolve(__dirname, "lifecycle-react-demo.html"),
+                effects: resolve(__dirname, "effects-demo.html")
             }
         }
     },

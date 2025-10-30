@@ -1,0 +1,606 @@
+// noinspection PointlessArithmeticExpressionJS
+
+import React, { useEffect, useState, useCallback, useRef } from "react";
+import { createRoot } from "react-dom/client";
+import { UUID } from "@opendaw/lib-std";
+import { PPQN } from "@opendaw/lib-dsp";
+import { InstrumentFactories, Project } from "@opendaw/studio-core";
+import { AudioFileBox, AudioRegionBox, AudioUnitBox, TrackBox } from "@opendaw/studio-boxes";
+import { AudioPlayback } from "@opendaw/studio-enums";
+import { PeaksPainter } from "@opendaw/lib-fusion";
+import { CanvasPainter } from "./lib/CanvasPainter";
+import { GitHubCorner } from "./components/GitHubCorner";
+import { MoisesLogo } from "./components/MoisesLogo";
+import { loadAudioFile } from "./lib/audioUtils";
+import { initializeOpenDAW } from "./lib/projectSetup";
+import "@radix-ui/themes/styles.css";
+import {
+  Theme,
+  Container,
+  Heading,
+  Text,
+  Button,
+  Flex,
+  Card,
+  Slider,
+  Switch,
+  Badge,
+  Separator,
+  Callout
+} from "@radix-ui/themes";
+
+const { Quarter } = PPQN;
+
+// Type definitions
+type TrackData = {
+  name: string;
+  trackBox: TrackBox;
+  audioUnitBox: AudioUnitBox;
+  uuid: UUID.Bytes;
+};
+
+/**
+ * MixerChannel - Individual track mixer channel with volume, mute, solo controls
+ */
+const MixerChannel: React.FC<{
+  track: TrackData;
+  project: Project;
+  allTracks: TrackData[];
+  peaks: any;
+  canvasRef: (el: HTMLCanvasElement | null) => void;
+}> = ({ track, project, allTracks, peaks, canvasRef }) => {
+  const [volume, setVolume] = useState(0);
+  const [muted, setMuted] = useState(false);
+  const [soloed, setSoloed] = useState(false);
+
+  // Subscribe to audio unit state
+  useEffect(() => {
+    const volumeSubscription = track.audioUnitBox.volume.catchupAndSubscribe(obs => {
+      setVolume(obs.getValue());
+    });
+
+    const muteSubscription = track.audioUnitBox.mute.catchupAndSubscribe(obs => {
+      setMuted(obs.getValue());
+    });
+
+    const soloSubscription = track.audioUnitBox.solo.catchupAndSubscribe(obs => {
+      setSoloed(obs.getValue());
+    });
+
+    return () => {
+      volumeSubscription.terminate();
+      muteSubscription.terminate();
+      soloSubscription.terminate();
+    };
+  }, [track]);
+
+  // Handle volume change
+  const handleVolumeChange = useCallback((values: number[]) => {
+    const newVolume = values[0];
+    project.editing.modify(() => {
+      track.audioUnitBox.volume.setValue(newVolume);
+    });
+  }, [project, track]);
+
+  // Handle mute toggle
+  const handleMuteToggle = useCallback(() => {
+    project.editing.modify(() => {
+      track.audioUnitBox.mute.setValue(!muted);
+    });
+  }, [project, track, muted]);
+
+  // Handle solo toggle with DAW-style behavior
+  const handleSoloToggle = useCallback(() => {
+    const currentSolo = track.audioUnitBox.solo.getValue();
+
+    project.editing.modify(() => {
+      // Toggle solo on this track
+      track.audioUnitBox.solo.setValue(!currentSolo);
+
+      // If we're soloing this track (turning solo ON)
+      if (!currentSolo) {
+        // Always unmute this track
+        track.audioUnitBox.mute.setValue(false);
+
+        // Mute all other non-soloed tracks
+        allTracks.forEach(otherTrack => {
+          if (otherTrack.uuid !== track.uuid && !otherTrack.audioUnitBox.solo.getValue()) {
+            otherTrack.audioUnitBox.mute.setValue(true);
+          }
+        });
+      } else {
+        // If we're un-soloing and no other tracks are soloed, unmute all tracks
+        const anyOtherSoloed = allTracks.some(
+          t => t.uuid !== track.uuid && t.audioUnitBox.solo.getValue()
+        );
+
+        if (!anyOtherSoloed) {
+          allTracks.forEach(t => {
+            t.audioUnitBox.mute.setValue(false);
+          });
+        }
+      }
+    });
+  }, [project, track, allTracks]);
+
+  return (
+    <Card style={{ minWidth: "200px", flex: 1 }}>
+      <Flex direction="column" gap="3" style={{ height: "100%" }}>
+        {/* Track name */}
+        <Heading size="3" style={{ textAlign: "center" }}>
+          {track.name}
+        </Heading>
+
+        <Separator size="4" />
+
+        {/* Waveform display */}
+        <div style={{
+          width: "100%",
+          height: "80px",
+          backgroundColor: "#000",
+          borderRadius: "4px",
+          overflow: "hidden"
+        }}>
+          <canvas
+            ref={canvasRef}
+            style={{ width: "100%", height: "100%", display: "block" }}
+          />
+        </div>
+
+        {/* Volume fader */}
+        <Flex direction="column" gap="2" style={{ flex: 1 }}>
+          <Text size="2" weight="bold" style={{ textAlign: "center" }}>
+            {volume.toFixed(1)} dB
+          </Text>
+          <div style={{ padding: "0 8px" }}>
+            <Slider
+              value={[volume]}
+              onValueChange={handleVolumeChange}
+              min={-60}
+              max={6}
+              step={0.1}
+              orientation="vertical"
+              style={{ height: "120px" }}
+            />
+          </div>
+        </Flex>
+
+        {/* Mute button */}
+        <Button
+          color={muted ? "red" : "gray"}
+          variant={muted ? "solid" : "soft"}
+          onClick={handleMuteToggle}
+          style={{ width: "100%" }}
+        >
+          {muted ? "🔇 Muted" : "🔊 Mute"}
+        </Button>
+
+        {/* Solo button */}
+        <Button
+          color={soloed ? "yellow" : "gray"}
+          variant={soloed ? "solid" : "soft"}
+          onClick={handleSoloToggle}
+          style={{ width: "100%" }}
+        >
+          {soloed ? "⭐ Solo" : "Solo"}
+        </Button>
+
+        {/* Status indicators */}
+        <Flex justify="center" gap="2">
+          {muted && <Badge color="red">M</Badge>}
+          {soloed && <Badge color="yellow">S</Badge>}
+        </Flex>
+      </Flex>
+    </Card>
+  );
+};
+
+/**
+ * Main Effects Demo App Component
+ */
+const App: React.FC = () => {
+  const [status, setStatus] = useState("Loading...");
+  const [project, setProject] = useState<Project | null>(null);
+  const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentPosition, setCurrentPosition] = useState(0);
+  const [tracks, setTracks] = useState<TrackData[]>([]);
+  const [peaksReady, setPeaksReady] = useState(false);
+
+  // Refs for non-reactive values
+  const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
+  const canvasRefs = useRef<Map<string, HTMLCanvasElement>>(new Map());
+  const canvasPaintersRef = useRef<Map<string, CanvasPainter>>(new Map());
+  const trackPeaksRef = useRef<Map<string, any>>(new Map());
+
+  const CHANNEL_PADDING = 4;
+
+  // Initialize CanvasPainters for waveform rendering
+  useEffect(() => {
+    if (tracks.length === 0 || !peaksReady) return undefined;
+
+    console.debug("[CanvasPainter] Initializing painters for", tracks.length, "tracks");
+
+    tracks.forEach(track => {
+      const uuidString = UUID.toString(track.uuid);
+      const canvas = canvasRefs.current.get(uuidString);
+
+      if (!canvas || canvasPaintersRef.current.has(uuidString)) {
+        return;
+      }
+
+      console.debug(`[CanvasPainter] Creating painter for "${track.name}"`);
+
+      const painter = new CanvasPainter(canvas, (_, context) => {
+        const peaks = trackPeaksRef.current.get(uuidString);
+        if (!peaks) {
+          context.fillStyle = "#000";
+          context.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+          return;
+        }
+
+        context.fillStyle = "#000";
+        context.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+
+        const width = canvas.clientWidth;
+        const height = canvas.clientHeight;
+
+        PeaksPainter.drawPeaks({
+          context,
+          x: 0,
+          y: 0,
+          width,
+          height,
+          peaks,
+          channelPadding: CHANNEL_PADDING,
+          primaryColor: "#4caf50",
+          secondaryColor: "#2196f3"
+        });
+      });
+
+      canvasPaintersRef.current.set(uuidString, painter);
+    });
+
+    return () => {
+      canvasPaintersRef.current.forEach(painter => painter.terminate());
+      canvasPaintersRef.current.clear();
+    };
+  }, [tracks, peaksReady]);
+
+  // Subscribe to sample loader state changes for peaks
+  useEffect(() => {
+    if (!project || tracks.length === 0) return undefined;
+
+    console.debug("[Peaks] Subscribing to sample loader state for", tracks.length, "tracks");
+
+    const subscriptions: Array<{ terminate: () => void }> = [];
+    let renderedCount = 0;
+
+    tracks.forEach(track => {
+      const uuidString = UUID.toString(track.uuid);
+
+      // Get the sample loader and subscribe to state changes
+      const sampleLoader = project.sampleManager.getOrCreate(track.uuid);
+
+      const subscription = sampleLoader.subscribe(state => {
+        console.debug(`[Peaks] Sample loader state for "${track.name}":`, state.type);
+
+        // When state becomes "loaded", peaks are ready
+        if (state.type === "loaded") {
+          const peaksOption = sampleLoader.peaks;
+
+          if (!peaksOption.isEmpty()) {
+            const peaks = peaksOption.unwrap();
+
+            // Store peaks and request render
+            trackPeaksRef.current.set(uuidString, peaks);
+            const painter = canvasPaintersRef.current.get(uuidString);
+            if (painter) {
+              painter.requestUpdate();
+              renderedCount++;
+
+              // Check if all peaks are rendered
+              if (renderedCount === tracks.length) {
+                console.debug("[Peaks] All waveforms rendered!");
+                setPeaksReady(true);
+                setStatus("Ready to play!");
+              }
+            }
+          }
+        }
+      });
+
+      subscriptions.push(subscription);
+    });
+
+    return () => {
+      console.debug("[Peaks] Cleaning up sample loader subscriptions");
+      subscriptions.forEach(sub => sub.terminate());
+    };
+  }, [project, tracks]);
+
+  // Initialize OpenDAW
+  useEffect(() => {
+    let mounted = true;
+
+    (async () => {
+      try {
+        const localAudioBuffers = new Map<string, AudioBuffer>();
+        localAudioBuffersRef.current = localAudioBuffers;
+
+        const { project: newProject, audioContext: newAudioContext } = await initializeOpenDAW({
+          localAudioBuffers,
+          onStatusUpdate: setStatus
+        });
+
+        if (!mounted) return;
+
+        setAudioContext(newAudioContext);
+        setProject(newProject);
+
+        // Subscribe to playback state
+        newProject.engine.isPlaying.catchupAndSubscribe(obs => {
+          if (mounted) setIsPlaying(obs.getValue());
+        });
+
+        // Subscribe to position for display
+        newProject.engine.position.catchupAndSubscribe(obs => {
+          if (mounted) setCurrentPosition(obs.getValue());
+        });
+
+        // Load audio files and create tracks
+        await setupTracks(newProject, newAudioContext, localAudioBuffers);
+
+        if (mounted) {
+          setStatus("Loading waveforms...");
+        }
+      } catch (error) {
+        console.error("Failed to initialize:", error);
+        if (mounted) setStatus(`Error: ${error}`);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // Setup tracks with audio files
+  const setupTracks = async (
+    proj: Project,
+    ctx: AudioContext,
+    audioBuffers: Map<string, AudioBuffer>
+  ) => {
+    const bpm = proj.timelineBox.bpm.getValue();
+    const boxGraph = proj.boxGraph;
+
+    // Define sample files to load
+    const samples = [
+      { name: "Kick", file: "/audio/90sSamplePack/Kick/Kick 1.wav" },
+      { name: "Snare", file: "/audio/90sSamplePack/Snare/Snare 1.wav" },
+      { name: "Hi-Hat Closed", file: "/audio/90sSamplePack/Hats/Hi Hat 1.wav" },
+      { name: "Hi-Hat Open", file: "/audio/90sSamplePack/Hats/Hi Hat 20.wav" }
+    ];
+
+    const loadedTracks: TrackData[] = [];
+
+    for (const sample of samples) {
+      try {
+        // Load audio file
+        const audioBuffer = await loadAudioFile(ctx, sample.file);
+        const fileUUID = UUID.generate();
+        const uuidString = UUID.toString(fileUUID);
+
+        audioBuffers.set(uuidString, audioBuffer);
+
+        proj.editing.modify(() => {
+          // Create track with Tape instrument
+          const { audioUnitBox, trackBox } = proj.api.createInstrument(
+            InstrumentFactories.Tape
+          );
+
+          // Set default volume
+          audioUnitBox.volume.setValue(0);
+
+          // Create audio file box
+          const audioFileBox = AudioFileBox.create(boxGraph, fileUUID, box => {
+            box.fileName.setValue(sample.name);
+            box.endInSeconds.setValue(audioBuffer.duration);
+          });
+
+          // Create audio region spanning 4 bars
+          const clipDurationInPPQN = PPQN.secondsToPulses(audioBuffer.duration, bpm);
+
+          AudioRegionBox.create(boxGraph, UUID.generate(), box => {
+            box.regions.refer(trackBox.regions);
+            box.file.refer(audioFileBox);
+            box.playback.setValue(AudioPlayback.NoSync);
+            box.position.setValue(0);
+            box.duration.setValue(clipDurationInPPQN);
+            box.loopOffset.setValue(0);
+            box.loopDuration.setValue(clipDurationInPPQN);
+            box.label.setValue(sample.name);
+          });
+
+          loadedTracks.push({
+            name: sample.name,
+            trackBox,
+            audioUnitBox,
+            uuid: fileUUID
+          });
+        });
+
+        console.debug(`Created track: ${sample.name}`);
+      } catch (error) {
+        console.error(`Failed to load ${sample.name}:`, error);
+      }
+    }
+
+    setTracks(loadedTracks);
+  };
+
+  // Transport controls
+  const handlePlay = useCallback(() => {
+    if (!project) return;
+    project.engine.play();
+  }, [project]);
+
+  const handlePause = useCallback(() => {
+    if (!project) return;
+    project.engine.pause();
+  }, [project]);
+
+  const handleStop = useCallback(() => {
+    if (!project) return;
+    project.engine.stop();
+  }, [project]);
+
+  if (!project) {
+    return (
+      <Theme appearance="dark" accentColor="green" radius="medium">
+        <Container size="4" style={{ padding: "32px" }}>
+          <Heading size="8">OpenDAW Effects Demo</Heading>
+          <Text size="4">{status}</Text>
+        </Container>
+      </Theme>
+    );
+  }
+
+  return (
+    <Theme appearance="dark" accentColor="green" radius="medium">
+      <GitHubCorner url="https://github.com/moisesai/opendaw" />
+      <Container size="4" style={{ padding: "32px" }}>
+        <Flex direction="column" gap="6">
+          {/* Header */}
+          <Flex direction="column" gap="3">
+            <Heading size="8">OpenDAW Effects Demo</Heading>
+            <Text size="4" color="gray">
+              Multi-track mixer demonstrating volume, mute, and solo effects
+            </Text>
+          </Flex>
+
+          {/* Info callout */}
+          <Callout.Root color="blue">
+            <Callout.Text>
+              💡 This demo shows OpenDAW's built-in audio effects: volume control, mute, and solo.
+              Each track has an independent mixer channel with a vertical fader and controls.
+              Solo behavior follows DAW conventions: soloing a track unmutes it and mutes all non-soloed tracks.
+            </Callout.Text>
+          </Callout.Root>
+
+          {/* Transport controls */}
+          <Card>
+            <Flex direction="column" gap="3">
+              <Heading size="4">Transport</Heading>
+              <Separator size="4" />
+              <Flex gap="3" align="center">
+                <Button
+                  color="green"
+                  variant={isPlaying ? "solid" : "soft"}
+                  onClick={handlePlay}
+                  disabled={isPlaying}
+                >
+                  ▶ Play
+                </Button>
+                <Button
+                  color="orange"
+                  onClick={handlePause}
+                  disabled={!isPlaying}
+                >
+                  ⏸ Pause
+                </Button>
+                <Button
+                  color="red"
+                  onClick={handleStop}
+                >
+                  ⏹ Stop
+                </Button>
+                <Separator orientation="vertical" size="2" />
+                <Text size="2" color="gray">
+                  Position: {(currentPosition / Quarter).toFixed(2)} quarters
+                </Text>
+                <Badge color={isPlaying ? "green" : "gray"}>
+                  {isPlaying ? "Playing" : "Stopped"}
+                </Badge>
+              </Flex>
+            </Flex>
+          </Card>
+
+          {/* Mixer section */}
+          <Card>
+            <Flex direction="column" gap="4">
+              <Heading size="4">Mixer</Heading>
+              <Separator size="4" />
+
+              <Flex gap="4" style={{ minHeight: "400px" }}>
+                {tracks.map(track => (
+                  <MixerChannel
+                    key={UUID.toString(track.uuid)}
+                    track={track}
+                    project={project}
+                    allTracks={tracks}
+                    peaks={trackPeaksRef.current.get(UUID.toString(track.uuid))}
+                    canvasRef={(el) => {
+                      if (el) {
+                        canvasRefs.current.set(UUID.toString(track.uuid), el);
+                      }
+                    }}
+                  />
+                ))}
+              </Flex>
+            </Flex>
+          </Card>
+
+          {/* Usage instructions */}
+          <Card>
+            <Flex direction="column" gap="3">
+              <Heading size="4">How to Use</Heading>
+              <Separator size="4" />
+              <Flex direction="column" gap="2">
+                <Text>• <strong>Volume Fader:</strong> Drag the vertical slider to adjust track volume (-60 dB to +6 dB)</Text>
+                <Text>• <strong>Mute Button:</strong> Click to mute/unmute the track (prevents audio output)</Text>
+                <Text>• <strong>Solo Button:</strong> Click to solo the track (mutes all other non-soloed tracks)</Text>
+                <Text>• <strong>Multiple Solos:</strong> You can solo multiple tracks simultaneously</Text>
+                <Text>• <strong>Waveform:</strong> Shows the audio content of each track</Text>
+              </Flex>
+            </Flex>
+          </Card>
+
+          {/* Technical details */}
+          <Card>
+            <Flex direction="column" gap="3">
+              <Heading size="4">Technical Details</Heading>
+              <Separator size="4" />
+              <Flex direction="column" gap="2">
+                <Text size="2">
+                  • Effects are applied through <code>AudioUnitBox</code> properties
+                </Text>
+                <Text size="2">
+                  • All modifications happen within <code>project.editing.modify()</code> transactions
+                </Text>
+                <Text size="2">
+                  • State changes are observed via <code>catchupAndSubscribe()</code>
+                </Text>
+                <Text size="2">
+                  • Volume range: -60 dB (near silence) to +6 dB (amplification)
+                </Text>
+                <Text size="2">
+                  • Solo behavior: automatically manages mute states across all tracks
+                </Text>
+              </Flex>
+            </Flex>
+          </Card>
+
+          <MoisesLogo />
+        </Flex>
+      </Container>
+    </Theme>
+  );
+};
+
+// Mount the app
+const container = document.getElementById("root");
+if (container) {
+  const root = createRoot(container);
+  root.render(<App />);
+}

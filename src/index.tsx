@@ -102,6 +102,21 @@ const App: React.FC = () => {
                 </Flex>
               </Link>
             </Card>
+
+            <Card asChild>
+              <Link href="/effects-demo.html" style={{ textDecoration: "none", padding: "var(--space-5)" }}>
+                <Flex direction="column" gap="3">
+                  <Flex direction="column" align="center" gap="2">
+                    <Text size="8">🎚️</Text>
+                    <Heading size="5">Effects & Mixer</Heading>
+                  </Flex>
+                  <Text size="2" color="gray">
+                    Multi-track mixer demonstrating volume, mute, and solo effects. Features vertical faders,
+                    waveform visualization, and DAW-style solo behavior.
+                  </Text>
+                </Flex>
+              </Link>
+            </Card>
           </div>
 
           <MoisesLogo />
