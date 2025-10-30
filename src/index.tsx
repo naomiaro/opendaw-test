@@ -111,8 +111,8 @@ const App: React.FC = () => {
                     <Heading size="5">Effects & Mixer</Heading>
                   </Flex>
                   <Text size="2" color="gray">
-                    Multi-track mixer demonstrating volume, mute, and solo effects. Features vertical faders,
-                    waveform visualization, and DAW-style solo behavior.
+                    Multi-track mixer using the Muse song tracks. Demonstrates volume, mute, and solo effects with
+                    vertical faders, waveform visualization, and DAW-style solo behavior.
                   </Text>
                 </Flex>
               </Link>

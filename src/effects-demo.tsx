@@ -212,12 +212,13 @@ const App: React.FC = () => {
   const canvasRefs = useRef<Map<string, HTMLCanvasElement>>(new Map());
   const canvasPaintersRef = useRef<Map<string, CanvasPainter>>(new Map());
   const trackPeaksRef = useRef<Map<string, any>>(new Map());
+  const pausedPositionRef = useRef<number | null>(null);
 
   const CHANNEL_PADDING = 4;
 
   // Initialize CanvasPainters for waveform rendering
   useEffect(() => {
-    if (tracks.length === 0 || !peaksReady) return undefined;
+    if (tracks.length === 0) return undefined;
 
     console.debug("[CanvasPainter] Initializing painters for", tracks.length, "tracks");
 
@@ -225,47 +226,69 @@ const App: React.FC = () => {
       const uuidString = UUID.toString(track.uuid);
       const canvas = canvasRefs.current.get(uuidString);
 
-      if (!canvas || canvasPaintersRef.current.has(uuidString)) {
+      if (!canvas) {
+        console.debug(`[CanvasPainter] Canvas not ready for "${track.name}"`);
+        return;
+      }
+
+      // Don't reinitialize if painter already exists
+      if (canvasPaintersRef.current.has(uuidString)) {
         return;
       }
 
       console.debug(`[CanvasPainter] Creating painter for "${track.name}"`);
 
+      // Create painter with rendering callback
       const painter = new CanvasPainter(canvas, (_, context) => {
         const peaks = trackPeaksRef.current.get(uuidString);
         if (!peaks) {
+          // Clear canvas if no peaks
           context.fillStyle = "#000";
           context.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
           return;
         }
 
+        // Clear canvas
         context.fillStyle = "#000";
         context.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
 
-        const width = canvas.clientWidth;
-        const height = canvas.clientHeight;
+        console.debug(`[Peaks] Rendering waveform for "${track.name}": ${peaks.numFrames} frames, ${peaks.numChannels} channels`);
 
-        PeaksPainter.drawPeaks({
-          context,
-          x: 0,
-          y: 0,
-          width,
-          height,
-          peaks,
-          channelPadding: CHANNEL_PADDING,
-          primaryColor: "#4caf50",
-          secondaryColor: "#2196f3"
-        });
+        // Set waveform color
+        context.fillStyle = "#4a9eff";
+
+        // Calculate channel layout with padding
+        const totalHeight = canvas.clientHeight;
+        const numChannels = peaks.numChannels;
+        const channelHeight = totalHeight / numChannels;
+
+        // Render each channel with padding
+        for (let channel = 0; channel < numChannels; channel++) {
+          const y0 = channel * channelHeight + CHANNEL_PADDING / 2;
+          const y1 = (channel + 1) * channelHeight - CHANNEL_PADDING / 2;
+
+          PeaksPainter.renderBlocks(context, peaks, channel, {
+            x0: 0,
+            x1: canvas.clientWidth,
+            y0,
+            y1,
+            u0: 0,
+            u1: peaks.numFrames,
+            v0: -1,
+            v1: 1
+          });
+        }
       });
 
       canvasPaintersRef.current.set(uuidString, painter);
     });
 
     return () => {
+      console.debug("[CanvasPainter] Cleaning up painters");
       canvasPaintersRef.current.forEach(painter => painter.terminate());
       canvasPaintersRef.current.clear();
     };
-  }, [tracks, peaksReady]);
+  }, [tracks, CHANNEL_PADDING]);
 
   // Subscribe to sample loader state changes for peaks
   useEffect(() => {
@@ -374,12 +397,12 @@ const App: React.FC = () => {
     const bpm = proj.timelineBox.bpm.getValue();
     const boxGraph = proj.boxGraph;
 
-    // Define sample files to load
+    // Define audio files to load (Muse tracks)
     const samples = [
-      { name: "Kick", file: "/audio/90sSamplePack/Kick/Kick 1.wav" },
-      { name: "Snare", file: "/audio/90sSamplePack/Snare/Snare 1.wav" },
-      { name: "Hi-Hat Closed", file: "/audio/90sSamplePack/Hats/Hi Hat 1.wav" },
-      { name: "Hi-Hat Open", file: "/audio/90sSamplePack/Hats/Hi Hat 20.wav" }
+      { name: "Bass & Drums", file: "/audio/BassDrums30.mp3" },
+      { name: "Guitar", file: "/audio/Guitar30.mp3" },
+      { name: "Piano & Synth", file: "/audio/PianoSynth30.mp3" },
+      { name: "Vocals", file: "/audio/Vocals30.mp3" }
     ];
 
     const loadedTracks: TrackData[] = [];
@@ -408,19 +431,24 @@ const App: React.FC = () => {
             box.endInSeconds.setValue(audioBuffer.duration);
           });
 
-          // Create audio region spanning 4 bars
+          // Create audio region for the full duration of the audio
           const clipDurationInPPQN = PPQN.secondsToPulses(audioBuffer.duration, bpm);
 
           AudioRegionBox.create(boxGraph, UUID.generate(), box => {
             box.regions.refer(trackBox.regions);
             box.file.refer(audioFileBox);
-            box.playback.setValue(AudioPlayback.NoSync);
-            box.position.setValue(0);
+            box.position.setValue(0); // Start at the beginning
             box.duration.setValue(clipDurationInPPQN);
             box.loopOffset.setValue(0);
             box.loopDuration.setValue(clipDurationInPPQN);
             box.label.setValue(sample.name);
+            box.mute.setValue(false);
           });
+
+          console.debug(`Created track "${sample.name}"`);
+          console.debug(`  - Audio duration: ${audioBuffer.duration}s`);
+          console.debug(`  - Duration in PPQN: ${clipDurationInPPQN}`);
+          console.debug(`  - AudioFile UUID: ${uuidString}`);
 
           loadedTracks.push({
             name: sample.name,
@@ -429,29 +457,69 @@ const App: React.FC = () => {
             uuid: fileUUID
           });
         });
-
-        console.debug(`Created track: ${sample.name}`);
       } catch (error) {
         console.error(`Failed to load ${sample.name}:`, error);
       }
     }
 
     setTracks(loadedTracks);
+
+    console.debug("Tracks created, generating waveforms...");
+    console.debug(`Timeline position: ${proj.engine.position.getValue()}`);
+    console.debug(`BPM: ${bpm}`);
+
+    // Make sure the timeline is at the beginning
+    proj.engine.setPosition(0);
   };
 
   // Transport controls
-  const handlePlay = useCallback(() => {
-    if (!project) return;
+  const handlePlay = useCallback(async () => {
+    if (!project || !audioContext) return;
+
+    console.debug("Play button clicked");
+
+    // Resume AudioContext if suspended
+    if (audioContext.state === "suspended") {
+      console.debug("Resuming AudioContext...");
+      await audioContext.resume();
+      console.debug(`AudioContext resumed (${audioContext.state})`);
+    }
+
+    // If resuming from pause, restore the position
+    if (pausedPositionRef.current !== null) {
+      console.debug(`Restoring paused position: ${pausedPositionRef.current}`);
+      project.engine.setPosition(pausedPositionRef.current);
+      pausedPositionRef.current = null;
+    }
+
+    console.debug("Starting playback...");
     project.engine.play();
-  }, [project]);
+  }, [project, audioContext]);
 
   const handlePause = useCallback(() => {
     if (!project) return;
-    project.engine.pause();
+    console.debug("Pause button clicked");
+
+    // Read current position from observable
+    const currentPosition = project.engine.position.getValue();
+    console.debug(`Current position from observable: ${currentPosition}`);
+
+    // Save it for resume
+    pausedPositionRef.current = currentPosition;
+    console.debug(`Saved paused position: ${pausedPositionRef.current}`);
+
+    // Stop playback without resetting position
+    project.engine.stop(false);
   }, [project]);
 
   const handleStop = useCallback(() => {
     if (!project) return;
+    console.debug("Stop button clicked");
+
+    // Clear any paused position
+    pausedPositionRef.current = null;
+
+    // Stop and reset position
     project.engine.stop();
   }, [project]);
 
@@ -483,7 +551,7 @@ const App: React.FC = () => {
           <Callout.Root color="blue">
             <Callout.Text>
               💡 This demo shows OpenDAW's built-in audio effects: volume control, mute, and solo.
-              Each track has an independent mixer channel with a vertical fader and controls.
+              Each track from the Muse song has an independent mixer channel with a vertical fader and controls.
               Solo behavior follows DAW conventions: soloing a track unmutes it and mutes all non-soloed tracks.
             </Callout.Text>
           </Callout.Root>
@@ -512,6 +580,7 @@ const App: React.FC = () => {
                 <Button
                   color="red"
                   onClick={handleStop}
+                  disabled={!isPlaying}
                 >
                   ⏹ Stop
                 </Button>
