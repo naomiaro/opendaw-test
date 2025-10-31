@@ -40,9 +40,9 @@ type TrackData = {
 };
 
 /**
- * MixerChannel - Individual track mixer channel with volume, mute, solo controls
+ * TrackRow - Audacity-style track row with mixer controls on left and waveform on right
  */
-const MixerChannel: React.FC<{
+const TrackRow: React.FC<{
   track: TrackData;
   project: Project;
   allTracks: TrackData[];
@@ -124,74 +124,87 @@ const MixerChannel: React.FC<{
   }, [project, track, allTracks]);
 
   return (
-    <Card style={{ minWidth: "200px", flex: 1 }}>
-      <Flex direction="column" gap="3" style={{ height: "100%" }}>
+    <Flex gap="0" style={{
+      borderBottom: "1px solid var(--gray-6)",
+      backgroundColor: "var(--gray-2)"
+    }}>
+      {/* Mixer Controls - Left Side (Audacity-style) */}
+      <Flex
+        direction="column"
+        gap="2"
+        style={{
+          width: "200px",
+          padding: "12px",
+          backgroundColor: "var(--gray-3)",
+          borderRight: "1px solid var(--gray-6)"
+        }}
+      >
         {/* Track name */}
-        <Heading size="3" style={{ textAlign: "center" }}>
+        <Text size="2" weight="bold" style={{ marginBottom: "4px" }}>
           {track.name}
-        </Heading>
+        </Text>
 
-        <Separator size="4" />
-
-        {/* Waveform display */}
-        <div style={{
-          width: "100%",
-          height: "80px",
-          backgroundColor: "#000",
-          borderRadius: "4px",
-          overflow: "hidden"
-        }}>
-          <canvas
-            ref={canvasRef}
-            style={{ width: "100%", height: "100%", display: "block" }}
-          />
-        </div>
-
-        {/* Volume fader */}
-        <Flex direction="column" gap="2" style={{ flex: 1 }}>
-          <Text size="2" weight="bold" style={{ textAlign: "center" }}>
-            {volume.toFixed(1)} dB
+        {/* Mute and Solo buttons */}
+        <Flex gap="2" align="center">
+          <Button
+            size="1"
+            color={muted ? "red" : "gray"}
+            variant={muted ? "solid" : "soft"}
+            onClick={handleMuteToggle}
+            style={{
+              width: "32px",
+              height: "24px",
+              padding: 0,
+              fontSize: "12px",
+              fontWeight: "bold"
+            }}
+          >
+            M
+          </Button>
+          <Button
+            size="1"
+            color={soloed ? "yellow" : "gray"}
+            variant={soloed ? "solid" : "soft"}
+            onClick={handleSoloToggle}
+            style={{
+              width: "32px",
+              height: "24px",
+              padding: 0,
+              fontSize: "12px",
+              fontWeight: "bold"
+            }}
+          >
+            S
+          </Button>
+          <Text size="1" color="gray" style={{ marginLeft: "4px" }}>
+            {volume.toFixed(1)}dB
           </Text>
-          <div style={{ padding: "0 8px" }}>
-            <Slider
-              value={[volume]}
-              onValueChange={handleVolumeChange}
-              min={-60}
-              max={6}
-              step={0.1}
-              orientation="vertical"
-              style={{ height: "120px" }}
-            />
-          </div>
         </Flex>
 
-        {/* Mute button */}
-        <Button
-          color={muted ? "red" : "gray"}
-          variant={muted ? "solid" : "soft"}
-          onClick={handleMuteToggle}
+        {/* Volume slider - horizontal */}
+        <Slider
+          value={[volume]}
+          onValueChange={handleVolumeChange}
+          min={-60}
+          max={6}
+          step={0.1}
           style={{ width: "100%" }}
-        >
-          {muted ? "🔇 Muted" : "🔊 Mute"}
-        </Button>
-
-        {/* Solo button */}
-        <Button
-          color={soloed ? "yellow" : "gray"}
-          variant={soloed ? "solid" : "soft"}
-          onClick={handleSoloToggle}
-          style={{ width: "100%" }}
-        >
-          {soloed ? "⭐ Solo" : "Solo"}
-        </Button>
-
-        {/* Status indicators */}
-        <Flex justify="center" gap="2">
-          {muted && <Badge color="red">M</Badge>}
-          {soloed && <Badge color="yellow">S</Badge>}
-        </Flex>
+        />
       </Flex>
-    </Card>
+
+      {/* Waveform - Right Side */}
+      <div style={{
+        flex: 1,
+        height: "120px",
+        backgroundColor: "#000",
+        position: "relative"
+      }}>
+        <canvas
+          ref={canvasRef}
+          style={{ width: "100%", height: "100%", display: "block" }}
+        />
+      </div>
+    </Flex>
   );
 };
 
@@ -713,9 +726,9 @@ const App: React.FC = () => {
               <Heading size="4">Mixer</Heading>
               <Separator size="4" />
 
-              <Flex gap="4" style={{ minHeight: "400px" }}>
+              <Flex direction="column" gap="0" style={{ border: "1px solid var(--gray-6)" }}>
                 {tracks.map(track => (
-                  <MixerChannel
+                  <TrackRow
                     key={UUID.toString(track.uuid)}
                     track={track}
                     project={project}
