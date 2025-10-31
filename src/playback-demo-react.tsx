@@ -11,7 +11,7 @@ import { CanvasPainter } from "./lib/CanvasPainter";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { MoisesLogo } from "./components/MoisesLogo";
 import { loadAudioFile } from "./lib/audioUtils";
-import { initializeOpenDAW } from "./lib/projectSetup";
+import { initializeOpenDAW, setLoopEndFromTracks } from "./lib/projectSetup";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
@@ -287,6 +287,9 @@ const App: React.FC = () => {
         });
 
         setTracks(loadedTracks);
+
+        // Set loop end to accommodate the longest track
+        setLoopEndFromTracks(newProject, localAudioBuffersRef.current);
 
         console.debug("Tracks created, generating waveforms...");
         console.debug(`Timeline position: ${newProject.engine.position.getValue()}`);

@@ -1,5 +1,6 @@
 import { assert, Procedure, Progress, unitValue, UUID } from "@opendaw/lib-std";
 import { Promises } from "@opendaw/lib-runtime";
+import { PPQN } from "@opendaw/lib-dsp";
 import { AudioData, SampleMetaData, SoundfontMetaData } from "@opendaw/studio-adapters";
 import {
   AudioWorklets,
@@ -184,4 +185,57 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
   onStatusUpdate?.("Ready!");
 
   return { project, audioContext };
+}
+
+/**
+ * Sets the timeline loop end to accommodate the longest audio track.
+ *
+ * By default, OpenDAW's timeline loop end is set to 15360 PPQN (~16 seconds at 120 BPM).
+ * For demos with longer tracks, call this function after loading audio to extend the loop
+ * to match the longest track duration.
+ *
+ * @param project - The OpenDAW project instance
+ * @param audioBuffers - Map of audio buffers (UUID string -> AudioBuffer)
+ * @param bpm - Optional BPM override (defaults to project's current BPM)
+ *
+ * @example
+ * ```typescript
+ * // After loading tracks
+ * const audioBuffers = new Map<string, AudioBuffer>();
+ * audioBuffers.set(uuid1, buffer1);
+ * audioBuffers.set(uuid2, buffer2);
+ *
+ * // Set loop end to longest track
+ * setLoopEndFromTracks(project, audioBuffers);
+ * ```
+ */
+export function setLoopEndFromTracks(
+  project: Project,
+  audioBuffers: Map<string, AudioBuffer>,
+  bpm?: number
+): void {
+  if (audioBuffers.size === 0) {
+    console.warn("No audio buffers provided to setLoopEndFromTracks");
+    return;
+  }
+
+  // Get BPM from project if not provided
+  const effectiveBpm = bpm ?? project.timelineBox.bpm.getValue();
+
+  // Calculate the max duration from the audio buffers
+  const maxDurationSeconds = Math.max(
+    ...Array.from(audioBuffers.values()).map(buf => buf.duration)
+  );
+
+  // Convert to PPQN
+  const loopEndInPPQN = PPQN.secondsToPulses(maxDurationSeconds, effectiveBpm);
+
+  // Set the loop end in a transaction
+  project.editing.modify(() => {
+    project.timelineBox.loopArea.to.setValue(loopEndInPPQN);
+  });
+
+  console.debug(
+    `[setLoopEndFromTracks] Set loop end to ${loopEndInPPQN} PPQN (${maxDurationSeconds.toFixed(2)}s at ${effectiveBpm} BPM)`
+  );
 }
