@@ -52,10 +52,12 @@ const TrackRow: React.FC<{
   isPlaying: boolean;
   bpm: number;
   audioBuffer: AudioBuffer | undefined;
-}> = ({ track, project, allTracks, canvasRef, currentPosition, isPlaying, bpm, audioBuffer }) => {
+  setCurrentPosition: (position: number) => void;
+}> = ({ track, project, allTracks, canvasRef, currentPosition, isPlaying, bpm, audioBuffer, setCurrentPosition }) => {
   const [volume, setVolume] = useState(0);
   const [muted, setMuted] = useState(false);
   const [soloed, setSoloed] = useState(false);
+  const waveformContainerRef = useRef<HTMLDivElement>(null);
 
   // Subscribe to audio unit state
   useEffect(() => {
@@ -127,6 +129,25 @@ const TrackRow: React.FC<{
     });
   }, [project, track, allTracks]);
 
+  // Handle waveform click to seek
+  const handleWaveformClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (!audioBuffer || !waveformContainerRef.current) return;
+
+    const rect = waveformContainerRef.current.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const percent = clickX / rect.width;
+
+    // Calculate position in seconds, then convert to PPQN
+    const timeInSeconds = percent * audioBuffer.duration;
+    const positionInPPQN = PPQN.secondsToPulses(timeInSeconds, bpm);
+
+    // Set the playback position in engine and update state
+    project.engine.setPosition(positionInPPQN);
+    setCurrentPosition(positionInPPQN);
+
+    console.debug(`Seek to ${timeInSeconds.toFixed(2)}s (${positionInPPQN} PPQN)`);
+  }, [audioBuffer, bpm, project, setCurrentPosition]);
+
   return (
     <Flex gap="0" style={{
       borderBottom: "1px solid var(--gray-6)",
@@ -197,13 +218,18 @@ const TrackRow: React.FC<{
       </Flex>
 
       {/* Waveform - Right Side */}
-      <div style={{
-        flex: 1,
-        height: "120px",
-        backgroundColor: "#000",
-        position: "relative",
-        boxSizing: "border-box"
-      }}>
+      <div
+        ref={waveformContainerRef}
+        onClick={handleWaveformClick}
+        style={{
+          flex: 1,
+          height: "120px",
+          backgroundColor: "#000",
+          position: "relative",
+          boxSizing: "border-box",
+          cursor: "pointer"
+        }}
+      >
         <canvas
           ref={canvasRef}
           style={{ width: "100%", height: "100%", display: "block" }}
@@ -987,6 +1013,7 @@ const App: React.FC = () => {
                     isPlaying={isPlaying}
                     bpm={bpmRef.current}
                     audioBuffer={localAudioBuffersRef.current.get(UUID.toString(track.uuid))}
+                    setCurrentPosition={setCurrentPosition}
                   />
                 ))}
               </Flex>
