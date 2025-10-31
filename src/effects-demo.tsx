@@ -207,8 +207,8 @@ const TrackRow: React.FC<{
           ref={canvasRef}
           style={{ width: "100%", height: "100%", display: "block" }}
         />
-        {/* SVG Playhead Overlay */}
-        {isPlaying && audioBuffer && currentPosition > 0 && (
+        {/* SVG Playhead Overlay - Shows during playback and when paused */}
+        {audioBuffer && currentPosition > 0 && (
           <svg
             style={{
               position: "absolute",
@@ -576,12 +576,15 @@ const App: React.FC = () => {
     console.debug("Pause button clicked");
 
     // Read current position from observable
-    const currentPosition = project.engine.position.getValue();
-    console.debug(`Current position from observable: ${currentPosition}`);
+    const position = project.engine.position.getValue();
+    console.debug(`Current position from observable: ${position}`);
 
     // Save it for resume
-    pausedPositionRef.current = currentPosition;
+    pausedPositionRef.current = position;
     console.debug(`Saved paused position: ${pausedPositionRef.current}`);
+
+    // Update state so playhead stays visible
+    setCurrentPosition(position);
 
     // Stop playback without resetting position
     project.engine.stop(false);
@@ -596,6 +599,10 @@ const App: React.FC = () => {
 
     // Stop and reset position
     project.engine.stop();
+
+    // Reset position to beginning
+    project.engine.setPosition(0);
+    setCurrentPosition(0);
   }, [project]);
 
   // Effect management functions
