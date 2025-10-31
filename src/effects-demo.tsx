@@ -220,6 +220,7 @@ const App: React.FC = () => {
   const [tracks, setTracks] = useState<TrackData[]>([]);
   const [peaksReady, setPeaksReady] = useState(false);
   const [hasVocalsReverb, setHasVocalsReverb] = useState(false);
+  const [hasVocalsCompressor, setHasVocalsCompressor] = useState(false);
   const [hasGuitarDelay, setHasGuitarDelay] = useState(false);
   const [hasBassLoCrusher, setHasBassLoCrusher] = useState(false);
   const [hasMasterCompressor, setHasMasterCompressor] = useState(false);
@@ -233,6 +234,7 @@ const App: React.FC = () => {
 
   // Refs to store effect boxes for removal
   const vocalsReverbRef = useRef<any>(null);
+  const vocalsCompressorRef = useRef<any>(null);
   const guitarDelayRef = useRef<any>(null);
   const bassLoCrusherRef = useRef<any>(null);
   const masterCompressorRef = useRef<any>(null);
@@ -587,6 +589,49 @@ const App: React.FC = () => {
     setHasVocalsReverb(false);
   }, [project, hasVocalsReverb]);
 
+  const handleAddVocalsCompressor = useCallback(() => {
+    if (!project || hasVocalsCompressor) return;
+
+    const vocalsTrack = tracks.find(t => t.name === "Vocals");
+    if (!vocalsTrack) return;
+
+    project.editing.modify(() => {
+      const compressor = project.api.insertEffect(
+        vocalsTrack.audioUnitBox.audioEffects,
+        EffectFactories.AudioNamed.Compressor,
+        0  // Add at index 0 (before reverb if it exists)
+      );
+
+      // Configure compressor for vocals
+      compressor.label.setValue("Vocal Compressor");
+      compressor.threshold.setValue(-18.0);  // Moderate threshold
+      compressor.ratio.setValue(3.0);  // 3:1 ratio
+      compressor.attack.setValue(5.0);  // Fast attack for vocals
+      compressor.release.setValue(50.0);  // Medium release
+      compressor.automakeup.setValue(true);  // Auto makeup gain
+      compressor.knee.setValue(4.0);  // Soft knee
+
+      // Store reference for removal
+      vocalsCompressorRef.current = compressor;
+
+      console.log("Added compressor to Vocals track at index 0");
+    });
+
+    setHasVocalsCompressor(true);
+  }, [project, tracks, hasVocalsCompressor]);
+
+  const handleRemoveVocalsCompressor = useCallback(() => {
+    if (!project || !hasVocalsCompressor || !vocalsCompressorRef.current) return;
+
+    project.editing.modify(() => {
+      vocalsCompressorRef.current.delete();
+      vocalsCompressorRef.current = null;
+      console.log("Removed compressor from Vocals track");
+    });
+
+    setHasVocalsCompressor(false);
+  }, [project, hasVocalsCompressor]);
+
   const handleAddGuitarDelay = useCallback(() => {
     if (!project || hasGuitarDelay) return;
 
@@ -642,8 +687,8 @@ const App: React.FC = () => {
       // Configure crusher for obvious lo-fi effect
       crusher.label.setValue("Lo-Fi Crusher");
       crusher.bits.setValue(6);  // Extreme bit reduction (very obvious!)
-      crusher.crush.setValue(8.0);  // Heavy crushing
-      crusher.boost.setValue(2.0);  // Boost to compensate for level loss
+      crusher.crush.setValue(0.9);  // Heavy crushing (0-1 range)
+      crusher.boost.setValue(0.5);  // Boost to compensate for level loss (0-1 range)
       crusher.mix.setValue(0.7);  // 70% wet for dramatic but musical effect
 
       // Store reference for removal
@@ -743,7 +788,7 @@ const App: React.FC = () => {
             <Callout.Text>
               💡 This demo shows OpenDAW's mixer controls and professional audio effects.
               Each track has independent volume, mute, and solo controls. Add studio-quality effects
-              to individual tracks (Reverb on Vocals, Delay on Guitar, Lo-Fi Crusher on Bass) or the master output (Compressor for mix glue).
+              to individual tracks (Compressor + Reverb on Vocals demonstrates effect chain ordering, Delay on Guitar, Lo-Fi Crusher on Bass) or the master output (Compressor for mix glue).
             </Callout.Text>
           </Callout.Root>
 
@@ -820,7 +865,7 @@ const App: React.FC = () => {
               <Callout.Root color="purple">
                 <Callout.Text>
                   ✨ Add professional audio effects to individual tracks or the master output.
-                  These are the same effects used in professional DAWs!
+                  These are the same effects used in professional DAWs! Try adding both Compressor and Reverb to Vocals to see effect chain ordering (Compressor at index 0 → Reverb at index 1).
                 </Callout.Text>
               </Callout.Root>
 
@@ -846,6 +891,28 @@ const App: React.FC = () => {
                     </Flex>
                     {hasVocalsReverb && (
                       <Badge color="purple">Active: Medium room, 20ms pre-delay</Badge>
+                    )}
+                  </Flex>
+                </Card>
+
+                <Card variant="surface">
+                  <Flex direction="column" gap="2">
+                    <Flex justify="between" align="center">
+                      <Flex direction="column" gap="1">
+                        <Text weight="bold">Vocals - Compressor</Text>
+                        <Text size="2" color="gray">
+                          Smooths vocal dynamics (adds at index 0, before reverb)
+                        </Text>
+                      </Flex>
+                      <Button
+                        color={hasVocalsCompressor ? "red" : "purple"}
+                        onClick={hasVocalsCompressor ? handleRemoveVocalsCompressor : handleAddVocalsCompressor}
+                      >
+                        {hasVocalsCompressor ? "− Remove" : "+ Add Compressor"}
+                      </Button>
+                    </Flex>
+                    {hasVocalsCompressor && (
+                      <Badge color="purple">Active: 3:1 ratio, -18dB threshold, at index 0</Badge>
                     )}
                   </Flex>
                 </Card>
