@@ -451,6 +451,7 @@ const App: React.FC = () => {
               <TransportControls
                 isPlaying={isPlaying}
                 currentPosition={currentPosition}
+                bpm={bpmRef.current}
                 onPlay={handlePlay}
                 onPause={handlePause}
                 onStop={handleStop}
