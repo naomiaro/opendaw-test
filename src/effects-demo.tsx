@@ -292,6 +292,7 @@ const App: React.FC = () => {
   const [hasVocalsReverb, setHasVocalsReverb] = useState(false);
   const [hasVocalsCompressor, setHasVocalsCompressor] = useState(false);
   const [hasGuitarDelay, setHasGuitarDelay] = useState(false);
+  const [hasGuitarCrusher, setHasGuitarCrusher] = useState(false);
   const [hasBassLoCrusher, setHasBassLoCrusher] = useState(false);
   const [hasMasterCompressor, setHasMasterCompressor] = useState(false);
 
@@ -309,6 +310,7 @@ const App: React.FC = () => {
   const vocalsReverbRef = useRef<any>(null);
   const vocalsCompressorRef = useRef<any>(null);
   const guitarDelayRef = useRef<any>(null);
+  const guitarCrusherRef = useRef<any>(null);
   const bassLoCrusherRef = useRef<any>(null);
   const masterCompressorRef = useRef<any>(null);
 
@@ -774,6 +776,46 @@ const App: React.FC = () => {
     setHasGuitarDelay(false);
   }, [project, hasGuitarDelay]);
 
+  const handleAddGuitarCrusher = useCallback(() => {
+    if (!project || hasGuitarCrusher) return;
+
+    const guitarTrack = tracks.find(t => t.name === "Guitar");
+    if (!guitarTrack) return;
+
+    project.editing.modify(() => {
+      const crusher = project.api.insertEffect(
+        guitarTrack.audioUnitBox.audioEffects,
+        EffectFactories.AudioNamed.Crusher
+      );
+
+      // Configure crusher for very obvious lo-fi effect on guitar
+      crusher.label.setValue("Guitar Lo-Fi");
+      crusher.bits.setValue(4);  // Very low bit depth for obvious effect
+      crusher.crush.setValue(0.95);  // Heavy crushing
+      crusher.boost.setValue(0.6);  // Boost to compensate
+      crusher.mix.setValue(0.8);  // 80% wet for dramatic but still musical effect
+
+      // Store reference for removal
+      guitarCrusherRef.current = crusher;
+
+      console.log("Added lo-fi crusher to Guitar track");
+    });
+
+    setHasGuitarCrusher(true);
+  }, [project, tracks, hasGuitarCrusher]);
+
+  const handleRemoveGuitarCrusher = useCallback(() => {
+    if (!project || !hasGuitarCrusher || !guitarCrusherRef.current) return;
+
+    project.editing.modify(() => {
+      guitarCrusherRef.current.delete();
+      guitarCrusherRef.current = null;
+      console.log("Removed lo-fi crusher from Guitar track");
+    });
+
+    setHasGuitarCrusher(false);
+  }, [project, hasGuitarCrusher]);
+
   const handleAddBassLoCrusher = useCallback(() => {
     if (!project || hasBassLoCrusher) return;
 
@@ -891,8 +933,8 @@ const App: React.FC = () => {
           <Callout.Root color="blue">
             <Callout.Text>
               💡 This demo shows OpenDAW's mixer controls and professional audio effects.
-              Each track has independent volume, mute, and solo controls. Add studio-quality effects
-              to individual tracks (Compressor + Reverb on Vocals demonstrates effect chain ordering, Delay on Guitar, Lo-Fi Crusher on Bass) or the master output (Compressor for mix glue).
+              Each track has independent volume, pan, mute, and solo controls. Add studio-quality effects
+              to individual tracks (Compressor + Reverb on Vocals demonstrates effect chain ordering, Delay + Lo-Fi on Guitar, Lo-Fi Crusher on Bass) or the master output (Compressor for mix glue).
             </Callout.Text>
           </Callout.Root>
 
@@ -1190,6 +1232,28 @@ const App: React.FC = () => {
                     </Flex>
                     {hasGuitarDelay && (
                       <Badge color="purple">Active: 1/8 note, light feedback</Badge>
+                    )}
+                  </Flex>
+                </Card>
+
+                <Card variant="surface">
+                  <Flex direction="column" gap="2">
+                    <Flex justify="between" align="center">
+                      <Flex direction="column" gap="1">
+                        <Text weight="bold">Guitar - Lo-Fi Crusher</Text>
+                        <Text size="2" color="gray">
+                          Heavy bit-crushing for very obvious lo-fi distortion effect
+                        </Text>
+                      </Flex>
+                      <Button
+                        color={hasGuitarCrusher ? "red" : "purple"}
+                        onClick={hasGuitarCrusher ? handleRemoveGuitarCrusher : handleAddGuitarCrusher}
+                      >
+                        {hasGuitarCrusher ? "− Remove" : "+ Add Lo-Fi"}
+                      </Button>
+                    </Flex>
+                    {hasGuitarCrusher && (
+                      <Badge color="purple">Active: 4-bit, heavy crush, 80% wet</Badge>
                     )}
                   </Flex>
                 </Card>
