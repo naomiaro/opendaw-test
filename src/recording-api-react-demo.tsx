@@ -374,6 +374,49 @@ const App: React.FC = () => {
         return;
       }
 
+      // Delete any previous recording before starting a new one
+      project.editing.modify(() => {
+        const allBoxes = project.boxGraph.boxes();
+        const recordingRegions: any[] = [];
+        const recordingFiles: any[] = [];
+
+        // Find all Recording AudioRegionBox instances and their associated files
+        for (const box of allBoxes) {
+          if (box.name === "AudioRegionBox") {
+            const regionBox = box as any;
+            const label = regionBox.label?.getValue();
+
+            if (label === "Recording") {
+              recordingRegions.push(regionBox);
+
+              // Get the associated AudioFileBox
+              const fileVertexOption = regionBox.file.targetVertex;
+              if (fileVertexOption.nonEmpty()) {
+                const fileBox = fileVertexOption.unwrap();
+                recordingFiles.push(fileBox);
+              }
+            }
+          }
+        }
+
+        // Delete all previous recording regions and files
+        console.log(`[Recording] Deleting ${recordingRegions.length} previous recording(s)`);
+
+        // First, clear all pointer references
+        recordingRegions.forEach(region => {
+          region.regions.defer(); // Clear regions pointer
+          region.file.defer();    // Clear file pointer
+        });
+
+        // Then unstage the boxes
+        recordingRegions.forEach(region => region.unstage());
+        recordingFiles.forEach(file => file.unstage());
+      });
+
+      // Reset peaks state
+      currentPeaksRef.current = null;
+      setHasPeaks(false);
+
       project.engine.setPosition(0);
 
       // Recording.start() handles EVERYTHING:
@@ -439,7 +482,8 @@ const App: React.FC = () => {
       await audioContext.resume();
     }
 
-    // Disable metronome during playback to avoid double-click with recorded metronome
+    // Temporarily disable metronome during playback to avoid double-click with recorded metronome
+    // (It will be restored to the user's preference when playback stops)
     project.engine.metronomeEnabled.setValue(false);
 
     project.engine.setPosition(0);
@@ -452,8 +496,12 @@ const App: React.FC = () => {
 
     project.engine.stop(true);
     project.engine.setPosition(0);
+
+    // Restore metronome to user's preference
+    project.engine.metronomeEnabled.setValue(metronomeEnabled);
+
     setPlaybackStatus("Playback stopped");
-  }, [project]);
+  }, [project, metronomeEnabled]);
 
   if (!project) {
     return (
