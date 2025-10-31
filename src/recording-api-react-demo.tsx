@@ -360,9 +360,15 @@ const App: React.FC = () => {
         await audioContext.resume();
       }
 
-      // Request microphone permission
+      // Request microphone permission with constraints to prevent echo/feedback
       try {
-        await navigator.mediaDevices.getUserMedia({ audio: true });
+        await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        });
       } catch (error) {
         setRecordStatus(`Microphone error: ${error}`);
         return;
@@ -397,9 +403,28 @@ const App: React.FC = () => {
 
     setRecordStatus("Recording stopped");
 
-    // After recording stops, OpenDAW will finalize the recording and create peaks
-    // We can just set a flag that recording is available for playback
+    // After recording stops, set the timeline loop end to match the recording duration
     setTimeout(() => {
+      // Find the Recording AudioRegionBox and set loop end to its duration
+      const allBoxes = project.boxGraph.boxes();
+      for (const box of allBoxes) {
+        if (box.name === "AudioRegionBox") {
+          const regionBox = box as any;
+          const label = regionBox.label?.getValue();
+
+          if (label === "Recording") {
+            const duration = regionBox.duration.getValue();
+            console.log('[Recording] Setting timeline loop end to:', duration);
+
+            // Set the timeline loop end to match the recording duration
+            project.editing.modify(() => {
+              project.timelineBox.loopArea.to.setValue(duration);
+            });
+            break;
+          }
+        }
+      }
+
       setHasPeaks(true);
       setPlaybackStatus("Recording ready to play");
     }, 500);
@@ -413,6 +438,9 @@ const App: React.FC = () => {
     if (audioContext.state === "suspended") {
       await audioContext.resume();
     }
+
+    // Disable metronome during playback to avoid double-click with recorded metronome
+    project.engine.metronomeEnabled.setValue(false);
 
     project.engine.setPosition(0);
     project.engine.play();
@@ -525,6 +553,12 @@ const App: React.FC = () => {
           <Card>
             <Flex direction="column" gap="4">
               <Heading size="5">Record Audio</Heading>
+
+              <Callout.Root color="orange">
+                <Callout.Text>
+                  🎧 <strong>Use headphones when recording with metronome enabled!</strong> Without headphones, your microphone will pick up the metronome sound from your speakers, causing echo/doubling during playback.
+                </Callout.Text>
+              </Callout.Root>
 
               <Flex direction="column" gap="2">
                 <Flex asChild align="center" gap="2">
