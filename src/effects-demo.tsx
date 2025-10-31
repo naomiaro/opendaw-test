@@ -54,7 +54,8 @@ const TrackRow: React.FC<{
   audioBuffer: AudioBuffer | undefined;
   setCurrentPosition: (position: number) => void;
   pausedPositionRef: React.MutableRefObject<number | null>;
-}> = ({ track, project, allTracks, canvasRef, currentPosition, isPlaying, bpm, audioBuffer, setCurrentPosition, pausedPositionRef }) => {
+  maxDuration: number;
+}> = ({ track, project, allTracks, canvasRef, currentPosition, isPlaying, bpm, audioBuffer, setCurrentPosition, pausedPositionRef, maxDuration }) => {
   const [volume, setVolume] = useState(0);
   const [pan, setPan] = useState(0);
   const [muted, setMuted] = useState(false);
@@ -152,8 +153,8 @@ const TrackRow: React.FC<{
     const clickX = e.clientX - rect.left;
     const percent = clickX / rect.width;
 
-    // Calculate position in seconds, then convert to PPQN
-    const timeInSeconds = percent * audioBuffer.duration;
+    // Calculate position in seconds using maxDuration (same as playhead), then convert to PPQN
+    const timeInSeconds = percent * maxDuration;
     const positionInPPQN = PPQN.secondsToPulses(timeInSeconds, bpm);
 
     // Set the playback position in engine and update state
@@ -166,7 +167,7 @@ const TrackRow: React.FC<{
     }
 
     console.debug(`Seek to ${timeInSeconds.toFixed(2)}s (${positionInPPQN} PPQN)`);
-  }, [audioBuffer, bpm, project, setCurrentPosition, isPlaying, pausedPositionRef]);
+  }, [audioBuffer, bpm, project, setCurrentPosition, isPlaying, pausedPositionRef, maxDuration]);
 
   return (
     <Flex gap="0" style={{
@@ -272,28 +273,6 @@ const TrackRow: React.FC<{
           ref={canvasRef}
           style={{ width: "100%", height: "100%", display: "block" }}
         />
-        {/* SVG Playhead Overlay - Shows during playback and when paused */}
-        {audioBuffer && currentPosition > 0 && (
-          <svg
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              width: "100%",
-              height: "100%",
-              pointerEvents: "none"
-            }}
-          >
-            <line
-              x1={`${(PPQN.pulsesToSeconds(currentPosition, bpm) / audioBuffer.duration) * 100}%`}
-              y1={0}
-              x2={`${(PPQN.pulsesToSeconds(currentPosition, bpm) / audioBuffer.duration) * 100}%`}
-              y2="100%"
-              stroke="#fff"
-              strokeWidth={2}
-            />
-          </svg>
-        )}
       </div>
     </Flex>
   );
@@ -324,6 +303,7 @@ const App: React.FC = () => {
   const pausedPositionRef = useRef<number | null>(null);
   const currentPositionRef = useRef<number>(0);
   const bpmRef = useRef<number>(120);
+  const tracksContainerRef = useRef<HTMLDivElement>(null);
 
   // Refs to store effect boxes for removal
   const vocalsReverbRef = useRef<any>(null);
@@ -962,7 +942,8 @@ const App: React.FC = () => {
               <Separator size="4" />
 
               {/* Timeline and tracks container with shared border */}
-              <Flex direction="column" gap="0" style={{ border: "1px solid var(--gray-6)" }}>
+              <Flex direction="column" gap="0" style={{ border: "1px solid var(--gray-6)", position: "relative" }}>
+                <div ref={tracksContainerRef} style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none" }} />
                 {/* Timeline - Dynamically calculated duration */}
                 <div style={{
                   display: "flex",
@@ -1051,26 +1032,81 @@ const App: React.FC = () => {
                     })()}
                   </div>
                 </div>
-                {tracks.map(track => (
-                  <TrackRow
-                    key={UUID.toString(track.uuid)}
-                    track={track}
-                    project={project}
-                    allTracks={tracks}
-                    peaks={trackPeaksRef.current.get(UUID.toString(track.uuid))}
-                    canvasRef={(el) => {
-                      if (el) {
-                        canvasRefs.current.set(UUID.toString(track.uuid), el);
-                      }
-                    }}
-                    currentPosition={currentPosition}
-                    isPlaying={isPlaying}
-                    bpm={bpmRef.current}
-                    audioBuffer={localAudioBuffersRef.current.get(UUID.toString(track.uuid))}
-                    setCurrentPosition={setCurrentPosition}
-                    pausedPositionRef={pausedPositionRef}
-                  />
-                ))}
+                {(() => {
+                  // Calculate max duration once for all tracks
+                  const maxDuration = Math.max(
+                    ...Array.from(localAudioBuffersRef.current.values()).map(buf => buf.duration),
+                    1
+                  );
+
+                  return tracks.map(track => (
+                    <TrackRow
+                      key={UUID.toString(track.uuid)}
+                      track={track}
+                      project={project}
+                      allTracks={tracks}
+                      peaks={trackPeaksRef.current.get(UUID.toString(track.uuid))}
+                      canvasRef={(el) => {
+                        if (el) {
+                          canvasRefs.current.set(UUID.toString(track.uuid), el);
+                        }
+                      }}
+                      currentPosition={currentPosition}
+                      isPlaying={isPlaying}
+                      bpm={bpmRef.current}
+                      audioBuffer={localAudioBuffersRef.current.get(UUID.toString(track.uuid))}
+                      setCurrentPosition={setCurrentPosition}
+                      pausedPositionRef={pausedPositionRef}
+                      maxDuration={maxDuration}
+                    />
+                  ));
+                })()}
+
+                {/* Single unified playhead overlay spanning all tracks */}
+                {currentPosition > 0 && localAudioBuffersRef.current.size > 0 && canvasRefs.current.size > 0 && (() => {
+                  const maxDuration = Math.max(
+                    ...Array.from(localAudioBuffersRef.current.values()).map(buf => buf.duration),
+                    1
+                  );
+                  const timeInSeconds = PPQN.pulsesToSeconds(currentPosition, bpmRef.current);
+                  const xPercent = (timeInSeconds / maxDuration);
+
+                  // Get the first canvas to measure waveform area offset
+                  const firstCanvas = Array.from(canvasRefs.current.values())[0];
+                  if (!firstCanvas || !tracksContainerRef.current) return null;
+
+                  const containerRect = tracksContainerRef.current.parentElement?.getBoundingClientRect();
+                  const canvasRect = firstCanvas.getBoundingClientRect();
+
+                  if (!containerRect) return null;
+
+                  const waveformOffsetLeft = canvasRect.left - containerRect.left;
+                  const waveformWidth = canvasRect.width;
+                  const xPosition = waveformOffsetLeft + (waveformWidth * xPercent);
+
+                  return (
+                    <svg
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        height: "100%",
+                        pointerEvents: "none",
+                        zIndex: 10
+                      }}
+                    >
+                      <line
+                        x1={xPosition}
+                        y1="24px"
+                        x2={xPosition}
+                        y2="100%"
+                        stroke="#fff"
+                        strokeWidth={2}
+                      />
+                    </svg>
+                  );
+                })()}
               </Flex>
             </Flex>
           </Card>
