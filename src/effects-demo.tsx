@@ -414,12 +414,12 @@ const App: React.FC = () => {
     const bpm = proj.timelineBox.bpm.getValue();
     const boxGraph = proj.boxGraph;
 
-    // Define audio files to load (Muse tracks)
+    // Define audio files to load (Muse tracks) - ordered Vocals first
     const samples = [
-      { name: "Bass & Drums", file: "/audio/BassDrums30.mp3" },
-      { name: "Guitar", file: "/audio/Guitar30.mp3" },
+      { name: "Vocals", file: "/audio/Vocals30.mp3" },
       { name: "Piano & Synth", file: "/audio/PianoSynth30.mp3" },
-      { name: "Vocals", file: "/audio/Vocals30.mp3" }
+      { name: "Guitar", file: "/audio/Guitar30.mp3" },
+      { name: "Bass & Drums", file: "/audio/BassDrums30.mp3" }
     ];
 
     const loadedTracks: TrackData[] = [];
