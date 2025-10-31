@@ -55,15 +55,18 @@ const App: React.FC = () => {
 
   // Get audio boxes for effects
   const vocalsAudioBox = tracks.find(t => t.name === "Vocals")?.audioUnitBox || null;
+  const guitarLeadAudioBox = tracks.find(t => t.name === "Guitar Lead")?.audioUnitBox || null;
   const guitarAudioBox = tracks.find(t => t.name === "Guitar")?.audioUnitBox || null;
-  const bassAudioBox = tracks.find(t => t.name === "Bass & Drums")?.audioUnitBox || null;
+  const drumsAudioBox = tracks.find(t => t.name === "Drums")?.audioUnitBox || null;
+  const bassAudioBox = tracks.find(t => t.name === "Bass")?.audioUnitBox || null;
   const masterAudioBox = project?.rootBox.outputDevice.pointerHub.incoming().at(0)?.box || null;
 
   // Effect hooks with generic implementations
   const vocalsReverb = useReverb(project, vocalsAudioBox, { wet: -18, decay: 0.7, preDelay: 0.02, damp: 0.5 }, "Vocals Reverb");
   const vocalsCompressor = useCompressor(project, vocalsAudioBox, { threshold: -24, ratio: 3, attack: 5, release: 100, knee: 6 }, "Vocals Comp", 0);
-  const guitarDelay = useDelay(project, guitarAudioBox, { wet: -12, feedback: 0.4, time: 6, filter: 0.3 }, "Guitar Delay");
+  const guitarLeadDelay = useDelay(project, guitarLeadAudioBox, { wet: -12, feedback: 0.4, time: 6, filter: 0.3 }, "Guitar Lead Delay");
   const guitarCrusher = useCrusher(project, guitarAudioBox, { bits: 4, crush: 0.95, boost: 0.6, mix: 0.8 }, "Guitar Lo-Fi");
+  const drumsCrusher = useCrusher(project, drumsAudioBox, { bits: 6, crush: 0.9, boost: 0.5, mix: 0.7 }, "Drums Lo-Fi");
   const bassCrusher = useCrusher(project, bassAudioBox, { bits: 6, crush: 0.9, boost: 0.5, mix: 0.7 }, "Bass Lo-Fi");
   const masterCompressor = useCompressor(project, masterAudioBox, { threshold: -12, ratio: 2, attack: 5, release: 100, knee: 6 }, "Master Glue");
   const masterStereoWidth = useStereoWidth(project, masterAudioBox, { width: 0.8, pan: 0.0 }, "Master Width");
@@ -85,6 +88,8 @@ const App: React.FC = () => {
     if (tracks.length === 0) return undefined;
 
     console.debug("[CanvasPainter] Initializing painters for", tracks.length, "tracks");
+
+    const lastRenderedPeaks = new Map<string, any>();
 
     tracks.forEach(track => {
       const uuidString = UUID.toString(track.uuid);
@@ -109,6 +114,11 @@ const App: React.FC = () => {
           // Clear canvas if no peaks
           context.fillStyle = "#000";
           context.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+          return;
+        }
+
+        // Skip rendering if peaks haven't changed
+        if (lastRenderedPeaks.get(uuidString) === peaks) {
           return;
         }
 
@@ -142,6 +152,8 @@ const App: React.FC = () => {
             v1: 1
           });
         }
+
+        lastRenderedPeaks.set(uuidString, peaks);
       });
 
       canvasPaintersRef.current.set(uuidString, painter);
@@ -161,7 +173,7 @@ const App: React.FC = () => {
     console.debug("[Peaks] Subscribing to sample loader state for", tracks.length, "tracks");
 
     const subscriptions: Array<{ terminate: () => void }> = [];
-    let renderedCount = 0;
+    const renderedTracks = new Set<string>();
 
     tracks.forEach(track => {
       const uuidString = UUID.toString(track.uuid);
@@ -173,7 +185,7 @@ const App: React.FC = () => {
         console.debug(`[Peaks] Sample loader state for "${track.name}":`, state.type);
 
         // When state becomes "loaded", peaks are ready
-        if (state.type === "loaded") {
+        if (state.type === "loaded" && !renderedTracks.has(uuidString)) {
           const peaksOption = sampleLoader.peaks;
 
           if (!peaksOption.isEmpty()) {
@@ -184,10 +196,10 @@ const App: React.FC = () => {
             const painter = canvasPaintersRef.current.get(uuidString);
             if (painter) {
               painter.requestUpdate();
-              renderedCount++;
+              renderedTracks.add(uuidString);
 
               // Check if all peaks are rendered
-              if (renderedCount === tracks.length) {
+              if (renderedTracks.size === tracks.length) {
                 console.debug("[Peaks] All waveforms rendered!");
                 setStatus("Ready to play!");
               }
@@ -217,6 +229,7 @@ const App: React.FC = () => {
 
         const { project: newProject, audioContext: newAudioContext } = await initializeOpenDAW({
           localAudioBuffers,
+          bpm: 124,
           onStatusUpdate: setStatus
         });
 
@@ -279,12 +292,15 @@ const App: React.FC = () => {
     const bpm = proj.timelineBox.bpm.getValue();
     const boxGraph = proj.boxGraph;
 
-    // Define audio files to load (Muse tracks) - ordered Vocals first
+    // Define audio files to load (DarkRide tracks) - all 7 tracks
     const samples = [
-      { name: "Vocals", file: "/audio/Vocals30.mp3" },
-      { name: "Piano & Synth", file: "/audio/PianoSynth30.mp3" },
-      { name: "Guitar", file: "/audio/Guitar30.mp3" },
-      { name: "Bass & Drums", file: "/audio/BassDrums30.mp3" }
+      { name: "Intro", file: "/audio/DarkRide/01_Intro.ogg" },
+      { name: "Vocals", file: "/audio/DarkRide/06_Vox.ogg" },
+      { name: "Guitar Lead", file: "/audio/DarkRide/05_ElecGtrsLead.ogg" },
+      { name: "Guitar", file: "/audio/DarkRide/04_ElecGtrs.ogg" },
+      { name: "Drums", file: "/audio/DarkRide/02_Drums.ogg" },
+      { name: "Bass", file: "/audio/DarkRide/03_Bass.ogg" },
+      { name: "Effect Returns", file: "/audio/DarkRide/07_EffectReturns.ogg" }
     ];
 
     const loadedTracks: TrackData[] = [];
@@ -437,16 +453,16 @@ const App: React.FC = () => {
           <Flex direction="column" gap="3">
             <Heading size="8">OpenDAW Effects Demo</Heading>
             <Text size="4" color="gray">
-              Multi-track mixer with professional audio effects (Reverb, Delay, Lo-Fi Crusher, Compressor, Stereo Width)
+              Multi-track mixer featuring DarkRide stems with professional audio effects (Reverb, Delay, Lo-Fi Crusher, Compressor, Stereo Width)
             </Text>
           </Flex>
 
           {/* Info callout */}
           <Callout.Root color="blue">
             <Callout.Text>
-              💡 This demo shows OpenDAW's mixer controls and professional audio effects.
+              💡 This demo shows OpenDAW's mixer controls and professional audio effects with all 7 tracks from Dark Ride's 'Deny Control'.
               Each track has independent volume, pan, mute, and solo controls. Add studio-quality effects
-              to individual tracks (Compressor + Reverb on Vocals demonstrates effect chain ordering, Delay + Lo-Fi on Guitar, Lo-Fi Crusher on Bass) or the master output (Compressor for mix glue, Stereo Width for spaciousness).
+              to individual tracks (Compressor + Reverb on Vocals demonstrates effect chain ordering, Delay on Guitar Lead, Lo-Fi Crusher on Guitar/Drums/Bass) or the master output (Compressor for mix glue, Stereo Width for spaciousness).
               <br /><br />
               ✨ <strong>New:</strong> Each effect now includes presets! Try loading presets like "Small Room", "Vocal Smooth", "Slap Back Delay", "8-bit Game", and more to hear how different parameter combinations sound.
             </Callout.Text>
@@ -604,19 +620,19 @@ const App: React.FC = () => {
                 />
 
                 <EffectPanel
-                  title="Guitar - Delay"
-                  description="Adds rhythmic echo effect to guitar track"
-                  isActive={guitarDelay.isActive}
-                  onToggle={guitarDelay.handleToggle}
-                  parameters={guitarDelay.parameters}
-                  onParameterChange={guitarDelay.handleParameterChange}
+                  title="Guitar Lead - Delay"
+                  description="Adds rhythmic echo effect to guitar lead track"
+                  isActive={guitarLeadDelay.isActive}
+                  onToggle={guitarLeadDelay.handleToggle}
+                  parameters={guitarLeadDelay.parameters}
+                  onParameterChange={guitarLeadDelay.handleParameterChange}
                   presets={DELAY_PRESETS}
-                  onPresetChange={(preset) => guitarDelay.loadPreset(preset.params)}
+                  onPresetChange={(preset) => guitarLeadDelay.loadPreset(preset.params)}
                 />
 
                 <EffectPanel
                   title="Guitar - Lo-Fi Crusher"
-                  description="Heavy bit-crushing for very obvious lo-fi distortion effect"
+                  description="Heavy bit-crushing for obvious lo-fi distortion effect"
                   isActive={guitarCrusher.isActive}
                   onToggle={guitarCrusher.handleToggle}
                   parameters={guitarCrusher.parameters}
@@ -626,8 +642,19 @@ const App: React.FC = () => {
                 />
 
                 <EffectPanel
-                  title="Bass & Drums - Lo-Fi Crusher"
-                  description="Extreme bit-crushing for dramatic lo-fi distortion (very obvious!)"
+                  title="Drums - Lo-Fi Crusher"
+                  description="Extreme bit-crushing for dramatic lo-fi distortion on drums"
+                  isActive={drumsCrusher.isActive}
+                  onToggle={drumsCrusher.handleToggle}
+                  parameters={drumsCrusher.parameters}
+                  onParameterChange={drumsCrusher.handleParameterChange}
+                  presets={CRUSHER_PRESETS}
+                  onPresetChange={(preset) => drumsCrusher.loadPreset(preset.params)}
+                />
+
+                <EffectPanel
+                  title="Bass - Lo-Fi Crusher"
+                  description="Bit-crushing for lo-fi distortion on bass"
                   isActive={bassCrusher.isActive}
                   onToggle={bassCrusher.handleToggle}
                   parameters={bassCrusher.parameters}
@@ -729,6 +756,23 @@ const App: React.FC = () => {
                   • State changes are observed via <code>catchupAndSubscribe()</code>
                 </Text>
               </Flex>
+            </Flex>
+          </Card>
+
+          {/* Audio Attribution */}
+          <Card>
+            <Flex direction="column" gap="3">
+              <Heading size="4">Audio Attribution</Heading>
+              <Separator size="4" />
+              <Text size="2">
+                Mix stems from Dark Ride's 'Deny Control'. This file is provided for educational purposes only,
+                and the material contained in it should not be used for any commercial purpose without the express
+                permission of the copyright holders. Please refer to{" "}
+                <a href="https://www.cambridge-mt.com" target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent-9)" }}>
+                  www.cambridge-mt.com
+                </a>{" "}
+                for further details.
+              </Text>
             </Flex>
           </Card>
 
