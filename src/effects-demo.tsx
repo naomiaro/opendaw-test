@@ -201,7 +201,8 @@ const TrackRow: React.FC<{
         flex: 1,
         height: "120px",
         backgroundColor: "#000",
-        position: "relative"
+        position: "relative",
+        boxSizing: "border-box"
       }}>
         <canvas
           ref={canvasRef}
@@ -896,7 +897,80 @@ const App: React.FC = () => {
               <Heading size="4">Mixer</Heading>
               <Separator size="4" />
 
+              {/* Timeline and tracks container with shared border */}
               <Flex direction="column" gap="0" style={{ border: "1px solid var(--gray-6)" }}>
+                {/* Timeline - Shows 30-second duration */}
+                <div style={{
+                  display: "flex",
+                  flexDirection: "row",
+                  gap: 0,
+                  alignItems: "stretch",
+                  borderBottom: "1px solid var(--gray-6)"
+                }}>
+                  {/* Left spacer matching controls width - using inline flex to match TrackRow exactly */}
+                  <div style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "8px",
+                    width: "200px",
+                    padding: "12px",
+                    backgroundColor: "var(--gray-3)",
+                    borderRight: "1px solid var(--gray-6)",
+                    boxSizing: "border-box"
+                  }}
+                  ></div>
+
+                  {/* Timeline ruler aligned with waveforms */}
+                  <div style={{
+                    flex: 1,
+                    height: "24px",
+                    position: "relative",
+                    borderBottom: "1px solid var(--gray-8)",
+                    backgroundColor: "var(--gray-2)",
+                    boxSizing: "border-box"
+                  }}>
+                    {/* Generate tick marks every second */}
+                    {Array.from({ length: 31 }, (_, i) => {
+                      const seconds = i;
+                      const percent = (seconds / 30) * 100;
+                      const isMajorTick = seconds % 5 === 0;
+
+                      return (
+                        <div
+                          key={seconds}
+                          style={{
+                            position: "absolute",
+                            left: `${percent}%`,
+                            bottom: 0,
+                            height: isMajorTick ? "12px" : "6px",
+                            width: "1px",
+                            backgroundColor: isMajorTick ? "var(--gray-10)" : "var(--gray-7)"
+                          }}
+                        />
+                      );
+                    })}
+
+                    {/* Time labels at major intervals */}
+                    {[0, 5, 10, 15, 20, 25, 30].map((seconds) => {
+                      const percent = (seconds / 30) * 100;
+                      return (
+                        <div
+                          key={`label-${seconds}`}
+                          style={{
+                            position: "absolute",
+                            left: `${percent}%`,
+                            top: 0,
+                            transform: "translateX(-50%)"
+                          }}
+                        >
+                          <Text size="1" color="gray" style={{ fontWeight: "500" }}>
+                            {seconds}s
+                          </Text>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
                 {tracks.map(track => (
                   <TrackRow
                     key={UUID.toString(track.uuid)}
