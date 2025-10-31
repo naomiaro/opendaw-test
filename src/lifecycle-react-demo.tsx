@@ -8,6 +8,7 @@ import { InstrumentFactories, Project } from "@opendaw/studio-core";
 import { AudioFileBox, AudioRegionBox, AudioUnitBox, TrackBox } from "@opendaw/studio-boxes";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { MoisesLogo } from "./components/MoisesLogo";
+import { BackLink } from "./components/BackLink";
 import { loadAudioFile } from "./lib/audioUtils";
 import { initializeOpenDAW } from "./lib/projectSetup";
 import "@radix-ui/themes/styles.css";
@@ -382,6 +383,8 @@ const App: React.FC = () => {
       <GitHubCorner />
       <Container size="3" px="4" py="8">
         <Flex direction="column" gap="6" style={{ maxWidth: 1200, margin: "0 auto" }}>
+          <BackLink />
+
           <Flex direction="column" align="center" gap="2">
             <Heading size="8">OpenDAW React Lifecycle Demo</Heading>
             <Text size="3" color="gray">Demonstrating proper subscription cleanup with React useEffect</Text>

@@ -10,6 +10,7 @@ import { AutofitUtils, InstrumentFactories, Project } from "@opendaw/studio-core
 import { AudioFileBox, AudioRegionBox } from "@opendaw/studio-boxes";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { MoisesLogo } from "./components/MoisesLogo";
+import { BackLink } from "./components/BackLink";
 import { loadAudioFile } from "./lib/audioUtils";
 import { initializeOpenDAW } from "./lib/projectSetup";
 import "@radix-ui/themes/styles.css";
@@ -524,7 +525,9 @@ const App: React.FC = () => {
     <Theme appearance="dark" accentColor="blue" radius="large">
       <GitHubCorner />
       <Container size="3" px="4" py="8">
-        <Flex direction="column" align="center" gap="6" style={{ maxWidth: 900, margin: "0 auto" }}>
+        <Flex direction="column" gap="6" style={{ maxWidth: 900, margin: "0 auto" }}>
+          <BackLink />
+
           <Flex direction="column" align="center" gap="2">
             <Heading size="8">Drum Scheduling (AudioFit Mode)</Heading>
             <Text size="3" color="gray">Bug demonstration: AudioFit mode with short audio samples</Text>

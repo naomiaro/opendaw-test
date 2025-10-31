@@ -22,6 +22,7 @@ import { CanvasPainter } from "./lib/CanvasPainter";
 import { testFeatures } from "./features";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { MoisesLogo } from "./components/MoisesLogo";
+import { BackLink } from "./components/BackLink";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
@@ -715,7 +716,9 @@ const App: React.FC = () => {
     <Theme appearance="dark" accentColor="blue" radius="large">
       <GitHubCorner />
       <Container size="3" px="4" py="8">
-        <Flex direction="column" align="center" gap="6" style={{ maxWidth: 700, margin: "0 auto" }}>
+        <Flex direction="column" gap="6" style={{ maxWidth: 700, margin: "0 auto" }}>
+          <BackLink />
+
           <Flex direction="column" align="center" gap="2">
             <Heading size="8">Recording API React Demo</Heading>
             <Text size="3" color="gray">Testing OpenDAW's high-level Recording API with React</Text>

@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-    <meta charset="UTF-8"/>
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>OpenDAW - Recording API React Demo</title>
     <style>
         body {
@@ -15,31 +16,43 @@
             align-items: center;
             justify-content: center;
         }
+
         .back-link {
             position: fixed;
             top: 20px;
             left: 20px;
             z-index: 1000;
         }
+
         .waveform-canvas {
             max-width: 100%;
             height: auto;
             border-radius: var(--radius-3);
             background: var(--color-background);
         }
+
         @keyframes bounce {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-5px); }
+
+            0%,
+            100% {
+                transform: translateY(0);
+            }
+
+            50% {
+                transform: translateY(-5px);
+            }
         }
+
         .count-in-icon {
             font-size: 24px;
             animation: bounce 0.5s ease-in-out infinite;
         }
     </style>
 </head>
+
 <body>
-    <a href="/" class="back-link">← Back to Demos</a>
     <div id="root"></div>
     <script type="module" src="/src/recording-api-react-demo.tsx"></script>
 </body>
+
 </html>

@@ -12,6 +12,7 @@ import { PeaksPainter } from "@opendaw/lib-fusion";
 import { CanvasPainter } from "./lib/CanvasPainter";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { MoisesLogo } from "./components/MoisesLogo";
+import { BackLink } from "./components/BackLink";
 import { loadAudioFile } from "./lib/audioUtils";
 import { initializeOpenDAW, setLoopEndFromTracks } from "./lib/projectSetup";
 import "@radix-ui/themes/styles.css";
@@ -826,6 +827,8 @@ const App: React.FC = () => {
       <GitHubCorner url="https://github.com/moisesai/opendaw" />
       <Container size="4" style={{ padding: "32px" }}>
         <Flex direction="column" gap="6">
+          <BackLink />
+
           {/* Header */}
           <Flex direction="column" gap="3">
             <Heading size="8">OpenDAW Effects Demo</Heading>
