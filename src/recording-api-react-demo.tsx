@@ -173,56 +173,38 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!project || !isRecording) return undefined;
 
-    console.log('[Peaks] Starting peak monitoring...');
-    console.log('[Peaks] CanvasPainter ref:', canvasPainterRef.current);
-    console.log('[Peaks] Canvas ref:', canvasRef.current);
-
     let animationFrameTerminable: any = null;
     let sampleLoader: any = null;
-    let recordingFileUuid: any = null;
-    let lastLogTime = 0;
-    let frameCount = 0;
+    let searchAttempts = 0;
+    const MAX_SEARCH_ATTEMPTS = 300; // ~5 seconds at 60fps
 
     // Use AnimationFrame to monitor for new recordings
     animationFrameTerminable = AnimationFrame.add(() => {
-      frameCount++;
-
-      // Log every 60 frames (~1 second) if we haven't found recording yet
-      if (!recordingFileUuid && frameCount % 60 === 0) {
-        console.log('[Peaks] Frame', frameCount, '- still searching for recording...');
+      // If we haven't found the sample loader yet, search for it
+      if (!sampleLoader && searchAttempts < MAX_SEARCH_ATTEMPTS) {
+        searchAttempts++;
 
         // Find the AudioRegionBox with label "Recording"
         const allBoxes = project.boxGraph.boxes();
-        console.log('[Peaks] Total boxes in graph:', allBoxes.length);
 
         for (const box of allBoxes) {
           if (box.name === "AudioRegionBox") {
             const regionBox = box as any;
             const label = regionBox.label?.getValue();
-            console.log('[Peaks] Found AudioRegionBox with label:', label);
 
             if (label === "Recording") {
               // Get the AudioFileBox via targetVertex
               const fileVertexOption = regionBox.file.targetVertex;
-              console.log('[Peaks] File vertex option:', fileVertexOption);
 
               if (fileVertexOption.nonEmpty()) {
                 const fileBox = fileVertexOption.unwrap();
-                console.log('[Peaks] File box object:', fileBox);
-                console.log('[Peaks] File box keys:', Object.keys(fileBox));
-
-                // Try to get UUID - boxes have a #uuid private field, access via address
                 const fileAddress = fileBox.address;
-                console.log('[Peaks] File box address:', fileAddress);
 
                 if (fileAddress) {
                   const fileUuid = fileAddress.uuid;
-                  console.log('[Peaks] Found file box UUID from address:', fileUuid);
-
                   // Get the sample loader using the file UUID
                   sampleLoader = project.sampleManager.getOrCreate(fileUuid);
-                  recordingFileUuid = fileUuid;
-                  console.log('[Peaks] Got sample loader:', sampleLoader);
+                  console.log('[Peaks] Found recording, starting live rendering');
                   break;
                 }
               }
@@ -231,8 +213,8 @@ const App: React.FC = () => {
         }
       }
 
-      if (sampleLoader && recordingFileUuid) {
-        // Monitor sample loader for peaks
+      // If we have the sample loader, monitor and render peaks every frame
+      if (sampleLoader) {
         const peaksOption = sampleLoader.peaks;
         if (peaksOption && !peaksOption.isEmpty()) {
           const peaks = peaksOption.unwrap();
@@ -242,18 +224,11 @@ const App: React.FC = () => {
             const numWrittenPeaks = peaks.dataIndex[0];
             if (numWrittenPeaks > 0) {
               currentPeaksRef.current = peaks;
-              const updateRequested = canvasPainterRef.current?.requestUpdate();
-
-              // Log occasionally
-              const now = Date.now();
-              if (now - lastLogTime > 1000) {
-                console.log('[Peaks] Rendering live peaks:', numWrittenPeaks, 'peaks written, update requested:', updateRequested);
-                lastLogTime = now;
-              }
+              // Request canvas update on every frame for smooth rendering
+              canvasPainterRef.current?.requestUpdate();
             }
           } else {
             // Final peaks received, stop monitoring
-            console.log('[Peaks] Received final peaks');
             currentPeaksRef.current = peaks;
             canvasPainterRef.current?.requestUpdate();
             setHasPeaks(true);
@@ -267,7 +242,6 @@ const App: React.FC = () => {
     });
 
     return () => {
-      console.log('[Peaks] Stopping peak monitoring');
       if (animationFrameTerminable) {
         animationFrameTerminable.terminate();
       }
