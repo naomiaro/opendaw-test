@@ -375,12 +375,12 @@ const App: React.FC = () => {
       }
 
       // Delete any previous recording before starting a new one
+      // Using the high-level delete() API which handles all dependencies automatically
       project.editing.modify(() => {
         const allBoxes = project.boxGraph.boxes();
         const recordingRegions: any[] = [];
-        const recordingFiles: any[] = [];
 
-        // Find all Recording AudioRegionBox instances and their associated files
+        // Find all Recording AudioRegionBox instances
         for (const box of allBoxes) {
           if (box.name === "AudioRegionBox") {
             const regionBox = box as any;
@@ -388,29 +388,14 @@ const App: React.FC = () => {
 
             if (label === "Recording") {
               recordingRegions.push(regionBox);
-
-              // Get the associated AudioFileBox
-              const fileVertexOption = regionBox.file.targetVertex;
-              if (fileVertexOption.nonEmpty()) {
-                const fileBox = fileVertexOption.unwrap();
-                recordingFiles.push(fileBox);
-              }
             }
           }
         }
 
-        // Delete all previous recording regions and files
+        // Delete all previous recording regions
+        // The delete() method automatically handles clearing pointers and deleting dependent boxes (like AudioFileBox)
         console.log(`[Recording] Deleting ${recordingRegions.length} previous recording(s)`);
-
-        // First, clear all pointer references
-        recordingRegions.forEach(region => {
-          region.regions.defer(); // Clear regions pointer
-          region.file.defer();    // Clear file pointer
-        });
-
-        // Then unstage the boxes
-        recordingRegions.forEach(region => region.unstage());
-        recordingFiles.forEach(file => file.unstage());
+        recordingRegions.forEach(region => region.delete());
       });
 
       // Reset peaks state
