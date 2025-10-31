@@ -790,74 +790,90 @@ const App: React.FC = () => {
               <Flex direction="column" gap="3">
                 <Heading size="3">Per-Track Effects</Heading>
 
-                <EffectChain
-                  trackName="Intro"
-                  effects={introEffects.effects}
-                  onAddEffect={introEffects.addEffect}
-                  onRemoveEffect={introEffects.removeEffect}
-                  renderEffect={renderIntroEffect}
-                />
+                <div style={{ padding: "12px", backgroundColor: "var(--gray-2)", borderRadius: "var(--radius-2)" }}>
+                  <EffectChain
+                    trackName="Intro"
+                    effects={introEffects.effects}
+                    onAddEffect={introEffects.addEffect}
+                    onRemoveEffect={introEffects.removeEffect}
+                    renderEffect={renderIntroEffect}
+                  />
+                </div>
 
-                <EffectChain
-                  trackName="Vocals"
-                  effects={vocalsEffects.effects}
-                  onAddEffect={vocalsEffects.addEffect}
-                  onRemoveEffect={vocalsEffects.removeEffect}
-                  renderEffect={renderVocalsEffect}
-                />
+                <div style={{ padding: "12px", backgroundColor: "var(--gray-4)", borderRadius: "var(--radius-2)" }}>
+                  <EffectChain
+                    trackName="Vocals"
+                    effects={vocalsEffects.effects}
+                    onAddEffect={vocalsEffects.addEffect}
+                    onRemoveEffect={vocalsEffects.removeEffect}
+                    renderEffect={renderVocalsEffect}
+                  />
+                </div>
 
-                <EffectChain
-                  trackName="Guitar Lead"
-                  effects={guitarLeadEffects.effects}
-                  onAddEffect={guitarLeadEffects.addEffect}
-                  onRemoveEffect={guitarLeadEffects.removeEffect}
-                  renderEffect={renderGuitarLeadEffect}
-                />
+                <div style={{ padding: "12px", backgroundColor: "var(--gray-2)", borderRadius: "var(--radius-2)" }}>
+                  <EffectChain
+                    trackName="Guitar Lead"
+                    effects={guitarLeadEffects.effects}
+                    onAddEffect={guitarLeadEffects.addEffect}
+                    onRemoveEffect={guitarLeadEffects.removeEffect}
+                    renderEffect={renderGuitarLeadEffect}
+                  />
+                </div>
 
-                <EffectChain
-                  trackName="Guitar"
-                  effects={guitarEffects.effects}
-                  onAddEffect={guitarEffects.addEffect}
-                  onRemoveEffect={guitarEffects.removeEffect}
-                  renderEffect={renderGuitarEffect}
-                />
+                <div style={{ padding: "12px", backgroundColor: "var(--gray-4)", borderRadius: "var(--radius-2)" }}>
+                  <EffectChain
+                    trackName="Guitar"
+                    effects={guitarEffects.effects}
+                    onAddEffect={guitarEffects.addEffect}
+                    onRemoveEffect={guitarEffects.removeEffect}
+                    renderEffect={renderGuitarEffect}
+                  />
+                </div>
 
-                <EffectChain
-                  trackName="Drums"
-                  effects={drumsEffects.effects}
-                  onAddEffect={drumsEffects.addEffect}
-                  onRemoveEffect={drumsEffects.removeEffect}
-                  renderEffect={renderDrumsEffect}
-                />
+                <div style={{ padding: "12px", backgroundColor: "var(--gray-2)", borderRadius: "var(--radius-2)" }}>
+                  <EffectChain
+                    trackName="Drums"
+                    effects={drumsEffects.effects}
+                    onAddEffect={drumsEffects.addEffect}
+                    onRemoveEffect={drumsEffects.removeEffect}
+                    renderEffect={renderDrumsEffect}
+                  />
+                </div>
 
-                <EffectChain
-                  trackName="Bass"
-                  effects={bassEffects.effects}
-                  onAddEffect={bassEffects.addEffect}
-                  onRemoveEffect={bassEffects.removeEffect}
-                  renderEffect={renderBassEffect}
-                />
+                <div style={{ padding: "12px", backgroundColor: "var(--gray-4)", borderRadius: "var(--radius-2)" }}>
+                  <EffectChain
+                    trackName="Bass"
+                    effects={bassEffects.effects}
+                    onAddEffect={bassEffects.addEffect}
+                    onRemoveEffect={bassEffects.removeEffect}
+                    renderEffect={renderBassEffect}
+                  />
+                </div>
 
-                <EffectChain
-                  trackName="Effect Returns"
-                  effects={effectReturnsEffects.effects}
-                  onAddEffect={effectReturnsEffects.addEffect}
-                  onRemoveEffect={effectReturnsEffects.removeEffect}
-                  renderEffect={renderEffectReturnsEffect}
-                />
+                <div style={{ padding: "12px", backgroundColor: "var(--gray-2)", borderRadius: "var(--radius-2)" }}>
+                  <EffectChain
+                    trackName="Effect Returns"
+                    effects={effectReturnsEffects.effects}
+                    onAddEffect={effectReturnsEffects.addEffect}
+                    onRemoveEffect={effectReturnsEffects.removeEffect}
+                    renderEffect={renderEffectReturnsEffect}
+                  />
+                </div>
               </Flex>
 
               {/* Master Effects */}
               <Flex direction="column" gap="3">
                 <Heading size="3">Master Output Effects</Heading>
 
-                <EffectChain
-                  trackName="Master"
-                  effects={masterEffects.effects}
-                  onAddEffect={masterEffects.addEffect}
-                  onRemoveEffect={masterEffects.removeEffect}
-                  renderEffect={renderMasterEffect}
-                />
+                <div style={{ padding: "12px", backgroundColor: "var(--accent-3)", borderRadius: "var(--radius-2)" }}>
+                  <EffectChain
+                    trackName="Master"
+                    effects={masterEffects.effects}
+                    onAddEffect={masterEffects.addEffect}
+                    onRemoveEffect={masterEffects.removeEffect}
+                    renderEffect={renderMasterEffect}
+                  />
+                </div>
               </Flex>
 
               <Text size="2" color="gray" style={{ fontStyle: "italic" }}>
