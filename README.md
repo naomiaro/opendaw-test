@@ -30,6 +30,7 @@ Quick links:
 - [Sample Management & Peaks](./documentation/05-sample-management-and-peaks.md) - Audio loading and waveform rendering
 - [Timeline Rendering](./documentation/06-timeline-rendering.md) - Building timeline UI
 - [Complete Example](./documentation/07-putting-it-together.md) - Full working application
+- [Recording & Live Peaks](./documentation/08-recording-and-live-peaks.md) - Audio recording with live waveforms
 
 ## Deployment
 
@@ -75,12 +76,15 @@ src/
 
 ## Key Learnings
 
-### Recording API Simplification
-The recording demo uses OpenDAW's high-level `Recording.start()` API which automatically:
-- Creates Tape instrument and arms tracks
-- Manages MediaStream lifecycle
-- Creates AudioRegionBox and AudioFileBox
-- Handles live peak generation with PeaksWriter
+### Recording with Live Peaks
+The recording demo showcases two production-ready patterns for accessing live waveform data:
+
+1. **Timeline UI Pattern (OpenDAW's approach)**: Iterate regions and check `loader.state.type === "record"`
+2. **Standalone Demo Pattern**: Search for region with label "Recording"
+
+Both use public APIs and achieve smooth 60fps rendering by using `dataIndex` from PeaksWriter.
+
+**📚 See [Recording & Live Peaks](./documentation/08-recording-and-live-peaks.md) for complete examples and implementation details.**
 
 ### Smooth Live Waveform Rendering (60fps)
 For smooth progressive waveform rendering during recording:

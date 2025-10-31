@@ -167,50 +167,43 @@ const App: React.FC = () => {
     };
   }, [project, hasPeaks]);
 
-  // Monitor live peaks during recording
+  // Monitor live peaks during recording using the production-ready approach:
+  // 1. Find AudioRegionBox with label "Recording" (OpenDAW sets this intentionally)
+  // 2. Get AudioFileBox UUID from the region
+  // 3. Use sampleManager.getOrCreate(uuid) to access the SampleLoader (public API)
+  // 4. Access SampleLoader.peaks for live waveform data
   useEffect(() => {
     if (!project || !isRecording) return undefined;
 
     let animationFrameTerminable: any = null;
     let sampleLoader: any = null;
-    let searchAttempts = 0;
-    const MAX_SEARCH_ATTEMPTS = 300; // ~5 seconds at 60fps
 
-    // Use AnimationFrame to monitor for new recordings
+    // Use AnimationFrame to monitor for recording peaks
     animationFrameTerminable = AnimationFrame.add(() => {
-      // If we haven't found the sample loader yet, search for it
-      if (!sampleLoader && searchAttempts < MAX_SEARCH_ATTEMPTS) {
-        searchAttempts++;
+      // Find the recording region in the box graph
+      if (!sampleLoader) {
+        const boxes = project.boxGraph.boxes();
+        const recordingRegion = boxes.find((box: any) => {
+          return box.label?.getValue?.() === "Recording";
+        });
 
-        // Find the AudioRegionBox with label "Recording"
-        const allBoxes = project.boxGraph.boxes();
-
-        for (const box of allBoxes) {
-          if (box.name === "AudioRegionBox") {
-            const regionBox = box as any;
-            const label = regionBox.label?.getValue();
-
-            if (label === "Recording") {
-              // Get the AudioFileBox via targetVertex
-              const fileVertexOption = regionBox.file.targetVertex;
-
-              if (fileVertexOption.nonEmpty()) {
-                const fileBox = fileVertexOption.unwrap();
-                const fileAddress = fileBox.address;
-
-                if (fileAddress) {
-                  const fileUuid = fileAddress.uuid;
-                  // Get the sample loader using the file UUID
-                  sampleLoader = project.sampleManager.getOrCreate(fileUuid);
-                  break;
-                }
-              }
+        if (recordingRegion && (recordingRegion as any).file) {
+          // Get the AudioFileBox from the region's file pointer
+          // PointerField.targetVertex returns the Box itself (Box extends Vertex)
+          const fileVertexOption = (recordingRegion as any).file.targetVertex;
+          if (fileVertexOption && !fileVertexOption.isEmpty()) {
+            const audioFileBox = fileVertexOption.unwrap();
+            // Use the public API to get the SampleLoader
+            // Box stores UUID in address.uuid, not directly in uuid
+            if (audioFileBox && (audioFileBox as any).address?.uuid) {
+              const uuid = (audioFileBox as any).address.uuid;
+              sampleLoader = project.sampleManager.getOrCreate(uuid);
             }
           }
         }
       }
 
-      // If we have the sample loader, monitor and render peaks every frame
+      // Monitor the sample loader for peak updates
       if (sampleLoader) {
         const peaksOption = sampleLoader.peaks;
         if (peaksOption && !peaksOption.isEmpty()) {
@@ -218,11 +211,11 @@ const App: React.FC = () => {
           const isPeaksWriter = "dataIndex" in peaks;
 
           if (isPeaksWriter) {
-            // Always update the ref and request render - PeaksWriter.numFrames grows as recording progresses
+            // Live recording - update peaks every frame for smooth rendering
             currentPeaksRef.current = peaks;
             canvasPainterRef.current?.requestUpdate();
           } else {
-            // Final peaks received, stop monitoring
+            // Recording finished - received final peaks
             currentPeaksRef.current = peaks;
             canvasPainterRef.current?.requestUpdate();
             setHasPeaks(true);

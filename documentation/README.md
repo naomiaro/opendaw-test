@@ -106,6 +106,18 @@ Read these documents in order to build up your understanding:
 
 ---
 
+### 8. [Recording and Live Peaks](./08-recording-and-live-peaks.md)
+- Recording API overview
+- Accessing live recording peaks
+- Production pattern (timeline UI - OpenDAW's approach)
+- Demo pattern (standalone recording)
+- Smooth 60fps waveform rendering
+- Complete examples
+
+**Start here if:** You're implementing audio recording with live waveform display
+
+---
+
 ## Quick Reference
 
 ### Core Formulas
@@ -303,8 +315,9 @@ Found an error or want to improve this documentation? PRs welcome!
 | [Sample Management](./05-sample-management-and-peaks.md) | Audio & waveforms | Frontend/canvas developers |
 | [Timeline Rendering](./06-timeline-rendering.md) | UI visualization | Frontend developers |
 | [Complete Example](./07-putting-it-together.md) | Full application | All developers |
+| [Recording & Live Peaks](./08-recording-and-live-peaks.md) | Recording with live waveforms | Frontend/recording features |
 
-**Recommended reading order:** 1 → 2 → 3 → 4 → 5 → 6 → 7
+**Recommended reading order:** 1 → 2 → 3 → 4 → 5 → 6 → 7 (→ 8 if implementing recording)
 
 **Troubleshooting order:** Having issues? → Read 3 first!
 
