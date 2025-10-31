@@ -100,37 +100,12 @@ export const TrackRow: React.FC<TrackRowProps> = ({
 
   // Handle solo toggle with DAW-style behavior
   const handleSoloToggle = useCallback(() => {
-    const currentSolo = track.audioUnitBox.solo.getValue();
-
     project.editing.modify(() => {
-      // Toggle solo on this track
-      track.audioUnitBox.solo.setValue(!currentSolo);
-
-      // If we're soloing this track (turning solo ON)
-      if (!currentSolo) {
-        // Always unmute this track
-        track.audioUnitBox.mute.setValue(false);
-
-        // Mute all other non-soloed tracks
-        allTracks.forEach(otherTrack => {
-          if (otherTrack.uuid !== track.uuid && !otherTrack.audioUnitBox.solo.getValue()) {
-            otherTrack.audioUnitBox.mute.setValue(true);
-          }
-        });
-      } else {
-        // If we're un-soloing and no other tracks are soloed, unmute all tracks
-        const anyOtherSoloed = allTracks.some(
-          t => t.uuid !== track.uuid && t.audioUnitBox.solo.getValue()
-        );
-
-        if (!anyOtherSoloed) {
-          allTracks.forEach(t => {
-            t.audioUnitBox.mute.setValue(false);
-          });
-        }
-      }
+      // Simply toggle solo - OpenDAW handles the audio routing
+      // This way the mute buttons don't get visually toggled
+      track.audioUnitBox.solo.setValue(!soloed);
     });
-  }, [project, track, allTracks]);
+  }, [project, track, soloed]);
 
   // Handle waveform click to seek
   const handleWaveformClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
