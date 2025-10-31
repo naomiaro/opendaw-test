@@ -29,36 +29,29 @@ export default defineConfig({
             },
             output: {
                 manualChunks: (id) => {
-                    // Split OpenDAW packages into separate chunks
-                    if (id.includes('@opendaw/studio-core')) {
-                        return 'opendaw-studio-core';
-                    }
-                    if (id.includes('@opendaw/studio-boxes')) {
-                        return 'opendaw-studio-boxes';
-                    }
-                    if (id.includes('@opendaw/studio-adapters')) {
-                        return 'opendaw-studio-adapters';
-                    }
-                    if (id.includes('@opendaw/lib-')) {
-                        return 'opendaw-lib';
-                    }
-
-                    // Split React and React DOM into separate chunk
-                    if (id.includes('react') || id.includes('react-dom')) {
-                        return 'react-vendor';
-                    }
-
-                    // Split Radix UI into separate chunk
-                    if (id.includes('@radix-ui')) {
-                        return 'radix-ui';
-                    }
-
-                    // Put all other node_modules into vendor chunk
+                    // Keep React, ReactDOM, and Radix UI together in one vendor chunk
+                    // to avoid dependency issues
                     if (id.includes('node_modules')) {
+                        if (id.includes('react') || id.includes('react-dom') || id.includes('@radix-ui')) {
+                            return 'vendor-react';
+                        }
+
+                        // Split large OpenDAW packages into separate chunks
+                        if (id.includes('@opendaw/studio-core')) {
+                            return 'opendaw-studio-core';
+                        }
+                        if (id.includes('@opendaw/studio-boxes')) {
+                            return 'opendaw-studio-boxes';
+                        }
+                        if (id.includes('@opendaw/')) {
+                            return 'opendaw-lib';
+                        }
+
+                        // All other vendor code
                         return 'vendor';
                     }
 
-                    // Return undefined for modules that don't match any pattern
+                    // Return undefined for application code (use default chunking)
                     return undefined;
                 }
             }
