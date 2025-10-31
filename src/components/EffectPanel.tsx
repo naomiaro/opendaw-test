@@ -84,11 +84,20 @@ export const EffectPanel: React.FC<EffectPanelProps> = ({
   onPresetChange
 }) => {
   return (
-    <Card variant="surface">
+    <Card
+      variant="surface"
+      style={{
+        border: "2px solid var(--gray-6)",
+        borderLeft: "4px solid var(--purple-9)",
+        boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)"
+      }}
+    >
       <Flex direction="column" gap="3">
         <Flex justify="between" align="center">
           <Flex direction="column" gap="1">
-            <Text weight="bold">{title}</Text>
+            <Text weight="bold" size="3">
+              {title}
+            </Text>
             <Text size="2" color="gray">
               {description}
             </Text>

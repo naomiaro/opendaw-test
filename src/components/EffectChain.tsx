@@ -42,9 +42,11 @@ export const EffectChain: React.FC<EffectChainProps> = memo(
             </Text>
           )}
 
-          {effects.map(effect => (
-            <div key={effect.id}>{renderEffect(effect)}</div>
-          ))}
+          <Flex direction="column" gap="3">
+            {effects.map(effect => (
+              <div key={effect.id}>{renderEffect(effect)}</div>
+            ))}
+          </Flex>
         </Flex>
 
         <Separator size="4" />
