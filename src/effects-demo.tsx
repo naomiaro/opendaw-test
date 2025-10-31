@@ -1,6 +1,6 @@
 // noinspection PointlessArithmeticExpressionJS
 
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, { useEffect, useState, useCallback, useRef, memo } from "react";
 import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
 import { PPQN } from "@opendaw/lib-dsp";
@@ -16,20 +16,11 @@ import { TrackRow, type TrackData } from "./components/TrackRow";
 import { TransportControls } from "./components/TransportControls";
 import { TimelineRuler } from "./components/TimelineRuler";
 import { EffectPanel } from "./components/EffectPanel";
+import { EffectChain, type EffectInstance, type EffectType } from "./components/EffectChain";
 import { loadAudioFile } from "./lib/audioUtils";
 import { initializeOpenDAW, setLoopEndFromTracks } from "./lib/projectSetup";
-import { useReverb } from "./hooks/useReverb";
-import { useCompressor } from "./hooks/useCompressor";
-import { useDelay } from "./hooks/useDelay";
-import { useCrusher } from "./hooks/useCrusher";
-import { useStereoWidth } from "./hooks/useStereoWidth";
-import {
-  REVERB_PRESETS,
-  COMPRESSOR_PRESETS,
-  DELAY_PRESETS,
-  CRUSHER_PRESETS,
-  STEREO_WIDTH_PRESETS
-} from "./lib/effectPresets";
+import { useEffectChain } from "./hooks/useEffectChain";
+import { useDynamicEffect } from "./hooks/useDynamicEffect";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
@@ -41,6 +32,42 @@ import {
   Separator,
   Callout
 } from "@radix-ui/themes";
+
+/**
+ * Component to render individual effect instances (memoized to prevent re-renders)
+ */
+const EffectRenderer: React.FC<{
+  effect: EffectInstance;
+  trackName: string;
+  audioBox: any;
+  onRemove: (id: string) => void;
+  project: Project | null;
+}> = memo(({ effect, trackName, audioBox, onRemove, project }) => {
+  const dynamicEffect = useDynamicEffect({
+    id: effect.id,
+    type: effect.type,
+    trackName,
+    project,
+    audioBox
+  });
+
+  return (
+    <EffectPanel
+      title={effect.label}
+      description={`${effect.type} effect`}
+      isActive={true}
+      onToggle={() => onRemove(effect.id)}
+      isBypassed={dynamicEffect.isBypassed}
+      onBypass={dynamicEffect.handleBypass}
+      parameters={dynamicEffect.parameters}
+      onParameterChange={dynamicEffect.handleParameterChange}
+      presets={dynamicEffect.presets}
+      onPresetChange={(preset) => dynamicEffect.loadPreset(preset)}
+    />
+  );
+});
+
+EffectRenderer.displayName = 'EffectRenderer';
 
 /**
  * Main Effects Demo App Component
@@ -61,17 +88,104 @@ const App: React.FC = () => {
   const bassAudioBox = tracks.find(t => t.name === "Bass")?.audioUnitBox || null;
   const masterAudioBox = project?.rootBox.outputDevice.pointerHub.incoming().at(0)?.box || null;
 
-  // Effect hooks with generic implementations
-  const vocalsReverb = useReverb(project, vocalsAudioBox, { wet: -18, decay: 0.7, preDelay: 0.02, damp: 0.5 }, "Vocals Reverb");
-  const vocalsCompressor = useCompressor(project, vocalsAudioBox, { threshold: -24, ratio: 3, attack: 5, release: 100, knee: 6 }, "Vocals Comp", 0);
-  const guitarLeadDelay = useDelay(project, guitarLeadAudioBox, { wet: -12, feedback: 0.4, delay: 6, filter: 0.3 }, "Guitar Lead Delay");
-  const guitarCrusher = useCrusher(project, guitarAudioBox, { bits: 4, crush: 0.95, boost: 0.6, mix: 0.8 }, "Guitar Lo-Fi");
-  const drumsCompressor = useCompressor(project, drumsAudioBox, { threshold: -18, ratio: 4, attack: 1, release: 50, knee: 3 }, "Drums Comp");
-  const drumsCrusher = useCrusher(project, drumsAudioBox, { bits: 6, crush: 0.9, boost: 0.5, mix: 0.7 }, "Drums Lo-Fi");
-  const bassCompressor = useCompressor(project, bassAudioBox, { threshold: -20, ratio: 4, attack: 10, release: 80, knee: 4 }, "Bass Comp");
-  const bassCrusher = useCrusher(project, bassAudioBox, { bits: 6, crush: 0.9, boost: 0.5, mix: 0.7 }, "Bass Lo-Fi");
-  const masterCompressor = useCompressor(project, masterAudioBox, { threshold: -12, ratio: 2, attack: 5, release: 100, knee: 6 }, "Master Glue");
-  const masterStereoWidth = useStereoWidth(project, masterAudioBox, { width: 0.8, pan: 0.0 }, "Master Width");
+  // Effect chain hooks for each track and master
+  const introEffects = useEffectChain(project, tracks.find(t => t.name === "Intro")?.audioUnitBox || null, "Intro");
+  const vocalsEffects = useEffectChain(project, vocalsAudioBox, "Vocals");
+  const guitarLeadEffects = useEffectChain(project, guitarLeadAudioBox, "Guitar Lead");
+  const guitarEffects = useEffectChain(project, guitarAudioBox, "Guitar");
+  const drumsEffects = useEffectChain(project, drumsAudioBox, "Drums");
+  const bassEffects = useEffectChain(project, bassAudioBox, "Bass");
+  const effectReturnsEffects = useEffectChain(project, tracks.find(t => t.name === "Effect Returns")?.audioUnitBox || null, "Effect Returns");
+  const masterEffects = useEffectChain(project, masterAudioBox, "Master");
+
+  // Memoized render functions to prevent unnecessary re-renders
+  const renderIntroEffect = useCallback((effect: EffectInstance) => (
+    <EffectRenderer
+      key={effect.id}
+      effect={effect}
+      trackName="Intro"
+      audioBox={tracks.find(t => t.name === "Intro")?.audioUnitBox}
+      onRemove={introEffects.removeEffect}
+      project={project}
+    />
+  ), [project, tracks, introEffects.removeEffect]);
+
+  const renderVocalsEffect = useCallback((effect: EffectInstance) => (
+    <EffectRenderer
+      key={effect.id}
+      effect={effect}
+      trackName="Vocals"
+      audioBox={vocalsAudioBox}
+      onRemove={vocalsEffects.removeEffect}
+      project={project}
+    />
+  ), [project, vocalsAudioBox, vocalsEffects.removeEffect]);
+
+  const renderGuitarLeadEffect = useCallback((effect: EffectInstance) => (
+    <EffectRenderer
+      key={effect.id}
+      effect={effect}
+      trackName="Guitar Lead"
+      audioBox={guitarLeadAudioBox}
+      onRemove={guitarLeadEffects.removeEffect}
+      project={project}
+    />
+  ), [project, guitarLeadAudioBox, guitarLeadEffects.removeEffect]);
+
+  const renderGuitarEffect = useCallback((effect: EffectInstance) => (
+    <EffectRenderer
+      key={effect.id}
+      effect={effect}
+      trackName="Guitar"
+      audioBox={guitarAudioBox}
+      onRemove={guitarEffects.removeEffect}
+      project={project}
+    />
+  ), [project, guitarAudioBox, guitarEffects.removeEffect]);
+
+  const renderDrumsEffect = useCallback((effect: EffectInstance) => (
+    <EffectRenderer
+      key={effect.id}
+      effect={effect}
+      trackName="Drums"
+      audioBox={drumsAudioBox}
+      onRemove={drumsEffects.removeEffect}
+      project={project}
+    />
+  ), [project, drumsAudioBox, drumsEffects.removeEffect]);
+
+  const renderBassEffect = useCallback((effect: EffectInstance) => (
+    <EffectRenderer
+      key={effect.id}
+      effect={effect}
+      trackName="Bass"
+      audioBox={bassAudioBox}
+      onRemove={bassEffects.removeEffect}
+      project={project}
+    />
+  ), [project, bassAudioBox, bassEffects.removeEffect]);
+
+  const renderEffectReturnsEffect = useCallback((effect: EffectInstance) => (
+    <EffectRenderer
+      key={effect.id}
+      effect={effect}
+      trackName="Effect Returns"
+      audioBox={tracks.find(t => t.name === "Effect Returns")?.audioUnitBox}
+      onRemove={effectReturnsEffects.removeEffect}
+      project={project}
+    />
+  ), [project, tracks, effectReturnsEffects.removeEffect]);
+
+  const renderMasterEffect = useCallback((effect: EffectInstance) => (
+    <EffectRenderer
+      key={effect.id}
+      effect={effect}
+      trackName="Master"
+      audioBox={masterAudioBox}
+      onRemove={masterEffects.removeEffect}
+      project={project}
+    />
+  ), [project, masterAudioBox, masterEffects.removeEffect]);
 
   // Refs for non-reactive values
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
@@ -599,108 +713,60 @@ const App: React.FC = () => {
               <Flex direction="column" gap="3">
                 <Heading size="3">Per-Track Effects</Heading>
 
-                <EffectPanel
-                  title="Vocals - Reverb"
-                  description="Adds spacious ambience to vocal track"
-                  isActive={vocalsReverb.isActive}
-                  onToggle={vocalsReverb.handleToggle}
-                  isBypassed={vocalsReverb.isBypassed}
-                  onBypass={vocalsReverb.handleBypass}
-                  parameters={vocalsReverb.parameters}
-                  onParameterChange={vocalsReverb.handleParameterChange}
-                  presets={REVERB_PRESETS}
-                  onPresetChange={(preset) => vocalsReverb.loadPreset(preset.params)}
+                <EffectChain
+                  trackName="Intro"
+                  effects={introEffects.effects}
+                  onAddEffect={introEffects.addEffect}
+                  onRemoveEffect={introEffects.removeEffect}
+                  renderEffect={renderIntroEffect}
                 />
 
-                <EffectPanel
-                  title="Vocals - Compressor"
-                  description="Smooths vocal dynamics (adds at index 0, before reverb)"
-                  isActive={vocalsCompressor.isActive}
-                  onToggle={vocalsCompressor.handleToggle}
-                  isBypassed={vocalsCompressor.isBypassed}
-                  onBypass={vocalsCompressor.handleBypass}
-                  parameters={vocalsCompressor.parameters}
-                  onParameterChange={vocalsCompressor.handleParameterChange}
-                  presets={COMPRESSOR_PRESETS}
-                  onPresetChange={(preset) => vocalsCompressor.loadPreset(preset.params)}
+                <EffectChain
+                  trackName="Vocals"
+                  effects={vocalsEffects.effects}
+                  onAddEffect={vocalsEffects.addEffect}
+                  onRemoveEffect={vocalsEffects.removeEffect}
+                  renderEffect={renderVocalsEffect}
                 />
 
-                <EffectPanel
-                  title="Guitar Lead - Delay"
-                  description="Adds rhythmic echo effect to guitar lead track"
-                  isActive={guitarLeadDelay.isActive}
-                  onToggle={guitarLeadDelay.handleToggle}
-                  isBypassed={guitarLeadDelay.isBypassed}
-                  onBypass={guitarLeadDelay.handleBypass}
-                  parameters={guitarLeadDelay.parameters}
-                  onParameterChange={guitarLeadDelay.handleParameterChange}
-                  presets={DELAY_PRESETS}
-                  onPresetChange={(preset) => guitarLeadDelay.loadPreset(preset.params)}
+                <EffectChain
+                  trackName="Guitar Lead"
+                  effects={guitarLeadEffects.effects}
+                  onAddEffect={guitarLeadEffects.addEffect}
+                  onRemoveEffect={guitarLeadEffects.removeEffect}
+                  renderEffect={renderGuitarLeadEffect}
                 />
 
-                <EffectPanel
-                  title="Guitar - Lo-Fi Crusher"
-                  description="Heavy bit-crushing for obvious lo-fi distortion effect"
-                  isActive={guitarCrusher.isActive}
-                  onToggle={guitarCrusher.handleToggle}
-                  isBypassed={guitarCrusher.isBypassed}
-                  onBypass={guitarCrusher.handleBypass}
-                  parameters={guitarCrusher.parameters}
-                  onParameterChange={guitarCrusher.handleParameterChange}
-                  presets={CRUSHER_PRESETS}
-                  onPresetChange={(preset) => guitarCrusher.loadPreset(preset.params)}
+                <EffectChain
+                  trackName="Guitar"
+                  effects={guitarEffects.effects}
+                  onAddEffect={guitarEffects.addEffect}
+                  onRemoveEffect={guitarEffects.removeEffect}
+                  renderEffect={renderGuitarEffect}
                 />
 
-                <EffectPanel
-                  title="Drums - Compressor"
-                  description="Tighten drum transients and control dynamics"
-                  isActive={drumsCompressor.isActive}
-                  onToggle={drumsCompressor.handleToggle}
-                  isBypassed={drumsCompressor.isBypassed}
-                  onBypass={drumsCompressor.handleBypass}
-                  parameters={drumsCompressor.parameters}
-                  onParameterChange={drumsCompressor.handleParameterChange}
-                  presets={COMPRESSOR_PRESETS}
-                  onPresetChange={(preset) => drumsCompressor.loadPreset(preset.params)}
+                <EffectChain
+                  trackName="Drums"
+                  effects={drumsEffects.effects}
+                  onAddEffect={drumsEffects.addEffect}
+                  onRemoveEffect={drumsEffects.removeEffect}
+                  renderEffect={renderDrumsEffect}
                 />
 
-                <EffectPanel
-                  title="Drums - Lo-Fi Crusher"
-                  description="Extreme bit-crushing for dramatic lo-fi distortion on drums"
-                  isActive={drumsCrusher.isActive}
-                  onToggle={drumsCrusher.handleToggle}
-                  isBypassed={drumsCrusher.isBypassed}
-                  onBypass={drumsCrusher.handleBypass}
-                  parameters={drumsCrusher.parameters}
-                  onParameterChange={drumsCrusher.handleParameterChange}
-                  presets={CRUSHER_PRESETS}
-                  onPresetChange={(preset) => drumsCrusher.loadPreset(preset.params)}
+                <EffectChain
+                  trackName="Bass"
+                  effects={bassEffects.effects}
+                  onAddEffect={bassEffects.addEffect}
+                  onRemoveEffect={bassEffects.removeEffect}
+                  renderEffect={renderBassEffect}
                 />
 
-                <EffectPanel
-                  title="Bass - Compressor"
-                  description="Control bass dynamics for a tighter low end"
-                  isActive={bassCompressor.isActive}
-                  onToggle={bassCompressor.handleToggle}
-                  isBypassed={bassCompressor.isBypassed}
-                  onBypass={bassCompressor.handleBypass}
-                  parameters={bassCompressor.parameters}
-                  onParameterChange={bassCompressor.handleParameterChange}
-                  presets={COMPRESSOR_PRESETS}
-                  onPresetChange={(preset) => bassCompressor.loadPreset(preset.params)}
-                />
-
-                <EffectPanel
-                  title="Bass - Lo-Fi Crusher"
-                  description="Bit-crushing for lo-fi distortion on bass"
-                  isActive={bassCrusher.isActive}
-                  onToggle={bassCrusher.handleToggle}
-                  isBypassed={bassCrusher.isBypassed}
-                  onBypass={bassCrusher.handleBypass}
-                  parameters={bassCrusher.parameters}
-                  onParameterChange={bassCrusher.handleParameterChange}
-                  presets={CRUSHER_PRESETS}
-                  onPresetChange={(preset) => bassCrusher.loadPreset(preset.params)}
+                <EffectChain
+                  trackName="Effect Returns"
+                  effects={effectReturnsEffects.effects}
+                  onAddEffect={effectReturnsEffects.addEffect}
+                  onRemoveEffect={effectReturnsEffects.removeEffect}
+                  renderEffect={renderEffectReturnsEffect}
                 />
               </Flex>
 
@@ -708,30 +774,12 @@ const App: React.FC = () => {
               <Flex direction="column" gap="3">
                 <Heading size="3">Master Output Effects</Heading>
 
-                <EffectPanel
-                  title="Master - Compressor"
-                  description='"Glue" compressor for cohesive mix on all tracks'
-                  isActive={masterCompressor.isActive}
-                  onToggle={masterCompressor.handleToggle}
-                  isBypassed={masterCompressor.isBypassed}
-                  onBypass={masterCompressor.handleBypass}
-                  parameters={masterCompressor.parameters}
-                  onParameterChange={masterCompressor.handleParameterChange}
-                  presets={COMPRESSOR_PRESETS}
-                  onPresetChange={(preset) => masterCompressor.loadPreset(preset.params)}
-                />
-
-                <EffectPanel
-                  title="Master - Stereo Width"
-                  description="Widens the stereo field for a bigger, more spacious sound"
-                  isActive={masterStereoWidth.isActive}
-                  onToggle={masterStereoWidth.handleToggle}
-                  isBypassed={masterStereoWidth.isBypassed}
-                  onBypass={masterStereoWidth.handleBypass}
-                  parameters={masterStereoWidth.parameters}
-                  onParameterChange={masterStereoWidth.handleParameterChange}
-                  presets={STEREO_WIDTH_PRESETS}
-                  onPresetChange={(preset) => masterStereoWidth.loadPreset(preset.params)}
+                <EffectChain
+                  trackName="Master"
+                  effects={masterEffects.effects}
+                  onAddEffect={masterEffects.addEffect}
+                  onRemoveEffect={masterEffects.removeEffect}
+                  renderEffect={renderMasterEffect}
                 />
               </Flex>
 
