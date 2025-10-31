@@ -74,12 +74,20 @@ const App: React.FC = () => {
     }
 
     console.log('[CanvasPainter] Creating painter...');
+    let lastLoggedFrames = 0;
     const painter = new CanvasPainter(canvas, (_, context) => {
       const peaks = currentPeaksRef.current;
       if (!peaks) {
         context.fillStyle = "#000";
         context.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
         return;
+      }
+
+      // Debug: log numFrames changes during recording
+      const isPeaksWriter = "dataIndex" in peaks;
+      if (isPeaksWriter && peaks.numFrames !== lastLoggedFrames) {
+        console.log(`[Render] PeaksWriter - numFrames: ${peaks.numFrames}, dataIndex: ${peaks.dataIndex[0]}, numPeaks: ${peaks.numPeaks}`);
+        lastLoggedFrames = peaks.numFrames;
       }
 
       context.fillStyle = "#000";
@@ -94,15 +102,20 @@ const App: React.FC = () => {
         const y0 = channel * channelHeight + CHANNEL_PADDING / 2;
         const y1 = (channel + 1) * channelHeight - CHANNEL_PADDING / 2;
 
-        // Always use numFrames for the range to keep consistent scaling
-        // PeaksWriter will naturally only show waveforms where data has been written
+        // For PeaksWriter: render based on written data (dataIndex * unitsPerPeak)
+        // For final Peaks: render full buffer (numFrames)
+        // This gives smooth rendering during recording since dataIndex updates frequently
+        const unitsToRender = isPeaksWriter
+          ? peaks.dataIndex[0] * peaks.unitsEachPeak()  // Smooth: updates at 60fps
+          : peaks.numFrames;                              // Final: render all
+
         PeaksPainter.renderBlocks(context, peaks, channel, {
           x0: 0,
           x1: canvas.clientWidth,
           y0,
           y1,
           u0: 0,
-          u1: peaks.numFrames,
+          u1: unitsToRender,
           v0: -1,
           v1: 1
         });
@@ -223,12 +236,9 @@ const App: React.FC = () => {
           const isPeaksWriter = "dataIndex" in peaks;
 
           if (isPeaksWriter) {
-            const numWrittenPeaks = peaks.dataIndex[0];
-            if (numWrittenPeaks > 0) {
-              currentPeaksRef.current = peaks;
-              // Request canvas update on every frame for smooth rendering
-              canvasPainterRef.current?.requestUpdate();
-            }
+            // Always update the ref and request render - PeaksWriter.numFrames grows as recording progresses
+            currentPeaksRef.current = peaks;
+            canvasPainterRef.current?.requestUpdate();
           } else {
             // Final peaks received, stop monitoring
             currentPeaksRef.current = peaks;
