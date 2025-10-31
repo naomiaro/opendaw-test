@@ -68,6 +68,7 @@ interface EffectPanelProps {
   badgeText?: string;
   presets?: EffectPreset<any>[];
   onPresetChange?: (preset: EffectPreset<any>) => void;
+  accentColor?: string;
 }
 
 export const EffectPanel: React.FC<EffectPanelProps> = ({
@@ -81,14 +82,15 @@ export const EffectPanel: React.FC<EffectPanelProps> = ({
   onParameterChange,
   badgeText,
   presets,
-  onPresetChange
+  onPresetChange,
+  accentColor = "purple"
 }) => {
   return (
     <Card
       variant="surface"
       style={{
         border: "2px solid var(--gray-6)",
-        borderLeft: "4px solid var(--purple-9)",
+        borderLeft: `4px solid var(--${accentColor}-9)`,
         boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)"
       }}
     >

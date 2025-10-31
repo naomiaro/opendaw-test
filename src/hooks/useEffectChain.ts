@@ -9,6 +9,7 @@ interface EffectInstanceData {
   effectRef: any;
   isBypassed: boolean;
   parameters: any;
+  accentColor: string;
 }
 
 export const useEffectChain = (project: Project | null, audioBox: any, trackName: string) => {
@@ -20,6 +21,10 @@ export const useEffectChain = (project: Project | null, audioBox: any, trackName
 
       const effectId = `${trackName}-${type}-${Date.now()}`;
       const label = `${trackName} ${type}`;
+
+      // Pick a random accent color from available Radix UI colors
+      const accentColors = ["purple", "blue", "cyan", "teal", "green", "orange", "red", "pink", "plum", "amber"];
+      const accentColor = accentColors[Math.floor(Math.random() * accentColors.length)];
 
       project.editing.modify(() => {
         let effectBox;
@@ -98,11 +103,12 @@ export const useEffectChain = (project: Project | null, audioBox: any, trackName
           label,
           effectRef: effectBox,
           isBypassed: false,
-          parameters: {} // Will be populated per effect type
+          parameters: {}, // Will be populated per effect type
+          accentColor
         };
 
         setEffects(prev => [...prev, newEffect]);
-        console.log(`Added ${type} effect to ${trackName}`);
+        console.log(`Added ${type} effect to ${trackName} with accent color: ${accentColor}`);
       });
     },
     [project, audioBox, trackName]

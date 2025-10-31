@@ -54,6 +54,7 @@ const EffectRenderer: React.FC<{
       onParameterChange={dynamicEffect.handleParameterChange}
       presets={dynamicEffect.presets}
       onPresetChange={preset => dynamicEffect.loadPreset(preset)}
+      accentColor={effect.accentColor}
     />
   );
 });

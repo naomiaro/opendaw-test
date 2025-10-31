@@ -8,6 +8,7 @@ export interface EffectInstance {
   id: string;
   type: EffectType;
   label: string;
+  accentColor?: string;
 }
 
 interface EffectChainProps {
