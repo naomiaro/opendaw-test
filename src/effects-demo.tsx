@@ -7,7 +7,6 @@ import { PPQN } from "@opendaw/lib-dsp";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { InstrumentFactories, Project, EffectFactories } from "@opendaw/studio-core";
 import { AudioFileBox, AudioRegionBox, AudioUnitBox, TrackBox } from "@opendaw/studio-boxes";
-import { AudioPlayback } from "@opendaw/studio-enums";
 import { PeaksPainter } from "@opendaw/lib-fusion";
 import { CanvasPainter } from "./lib/CanvasPainter";
 import { GitHubCorner } from "./components/GitHubCorner";
@@ -25,7 +24,6 @@ import {
   Flex,
   Card,
   Slider,
-  Switch,
   Badge,
   Separator,
   Callout
@@ -50,7 +48,11 @@ const TrackRow: React.FC<{
   allTracks: TrackData[];
   peaks: any;
   canvasRef: (el: HTMLCanvasElement | null) => void;
-}> = ({ track, project, allTracks, peaks, canvasRef }) => {
+  currentPosition: number;
+  isPlaying: boolean;
+  bpm: number;
+  audioBuffer: AudioBuffer | undefined;
+}> = ({ track, project, allTracks, canvasRef, currentPosition, isPlaying, bpm, audioBuffer }) => {
   const [volume, setVolume] = useState(0);
   const [muted, setMuted] = useState(false);
   const [soloed, setSoloed] = useState(false);
@@ -205,6 +207,28 @@ const TrackRow: React.FC<{
           ref={canvasRef}
           style={{ width: "100%", height: "100%", display: "block" }}
         />
+        {/* SVG Playhead Overlay */}
+        {isPlaying && audioBuffer && currentPosition > 0 && (
+          <svg
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              width: "100%",
+              height: "100%",
+              pointerEvents: "none"
+            }}
+          >
+            <line
+              x1={`${(PPQN.pulsesToSeconds(currentPosition, bpm) / audioBuffer.duration) * 100}%`}
+              y1={0}
+              x2={`${(PPQN.pulsesToSeconds(currentPosition, bpm) / audioBuffer.duration) * 100}%`}
+              y2="100%"
+              stroke="#fff"
+              strokeWidth={2}
+            />
+          </svg>
+        )}
       </div>
     </Flex>
   );
@@ -307,30 +331,6 @@ const App: React.FC = () => {
             v1: 1
           });
         }
-
-        // Draw playhead
-        const currentPos = currentPositionRef.current;
-        const bpm = bpmRef.current;
-        const audioBuffer = localAudioBuffersRef.current.get(uuidString);
-
-        if (audioBuffer && currentPos > 0) {
-          // Convert position from PPQN to seconds
-          const positionInSeconds = PPQN.pulsesToSeconds(currentPos, bpm);
-          const duration = audioBuffer.duration;
-
-          // Calculate playhead X position as a ratio of canvas width
-          const playheadX = (positionInSeconds / duration) * canvas.clientWidth;
-
-          // Only draw if playhead is within canvas bounds
-          if (playheadX >= 0 && playheadX <= canvas.clientWidth) {
-            context.strokeStyle = "#fff";
-            context.lineWidth = 2;
-            context.beginPath();
-            context.moveTo(playheadX, 0);
-            context.lineTo(playheadX, canvas.clientHeight);
-            context.stroke();
-          }
-        }
       });
 
       canvasPaintersRef.current.set(uuidString, painter);
@@ -428,17 +428,15 @@ const App: React.FC = () => {
           if (mounted) setCurrentPosition(obs.getValue());
         });
 
-        // Subscribe to AnimationFrame for efficient playhead updates
+        // Subscribe to AnimationFrame for efficient playhead position updates
         animationFrameSubscription = AnimationFrame.add(() => {
-          // Update position ref for playhead rendering
+          // Update position for playhead rendering (used by SVG overlay)
           const position = newProject.engine.position.getValue();
           currentPositionRef.current = position;
 
-          // Request update on all painters when playing
-          if (newProject.engine.isPlaying.getValue()) {
-            canvasPaintersRef.current.forEach(painter => {
-              painter.requestUpdate();
-            });
+          // Update React state to trigger playhead re-render
+          if (mounted && newProject.engine.isPlaying.getValue()) {
+            setCurrentPosition(position);
           }
         });
 
@@ -904,6 +902,10 @@ const App: React.FC = () => {
                         canvasRefs.current.set(UUID.toString(track.uuid), el);
                       }
                     }}
+                    currentPosition={currentPosition}
+                    isPlaying={isPlaying}
+                    bpm={bpmRef.current}
+                    audioBuffer={localAudioBuffersRef.current.get(UUID.toString(track.uuid))}
                   />
                 ))}
               </Flex>
