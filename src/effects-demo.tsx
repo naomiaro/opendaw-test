@@ -64,7 +64,7 @@ const App: React.FC = () => {
   // Effect hooks with generic implementations
   const vocalsReverb = useReverb(project, vocalsAudioBox, { wet: -18, decay: 0.7, preDelay: 0.02, damp: 0.5 }, "Vocals Reverb");
   const vocalsCompressor = useCompressor(project, vocalsAudioBox, { threshold: -24, ratio: 3, attack: 5, release: 100, knee: 6 }, "Vocals Comp", 0);
-  const guitarLeadDelay = useDelay(project, guitarLeadAudioBox, { wet: -12, feedback: 0.4, time: 6, filter: 0.3 }, "Guitar Lead Delay");
+  const guitarLeadDelay = useDelay(project, guitarLeadAudioBox, { wet: -12, feedback: 0.4, delay: 6, filter: 0.3 }, "Guitar Lead Delay");
   const guitarCrusher = useCrusher(project, guitarAudioBox, { bits: 4, crush: 0.95, boost: 0.6, mix: 0.8 }, "Guitar Lo-Fi");
   const drumsCrusher = useCrusher(project, drumsAudioBox, { bits: 6, crush: 0.9, boost: 0.5, mix: 0.7 }, "Drums Lo-Fi");
   const bassCrusher = useCrusher(project, bassAudioBox, { bits: 6, crush: 0.9, boost: 0.5, mix: 0.7 }, "Bass Lo-Fi");

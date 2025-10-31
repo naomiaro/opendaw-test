@@ -127,50 +127,50 @@ export const COMPRESSOR_PRESETS: EffectPreset<CompressorParams>[] = [
 export interface DelayParams {
   wet: number;      // dB: -60 to 0
   feedback: number; // 0-0.9: amount of feedback
-  time: number;     // PPQN units (960 = quarter note)
-  filter: number;   // 0-1: high frequency filtering
+  delay: number;    // 0-16: delay time indices (note fractions)
+  filter: number;   // -1 to 1: filter amount (negative=LP, positive=HP)
 }
 
 export const DELAY_PRESETS: EffectPreset<DelayParams>[] = [
   {
     name: "Slap Back",
     description: "Classic 50s-style short delay for vocals",
-    params: { wet: -18, feedback: 0.1, time: 2, filter: 0.4 }
+    params: { wet: -18, feedback: 0.1, delay: 2, filter: 0.4 }
   },
   {
     name: "Quarter Note",
     description: "Rhythmic delay synced to tempo",
-    params: { wet: -12, feedback: 0.4, time: 4, filter: 0.3 }
+    params: { wet: -12, feedback: 0.4, delay: 4, filter: 0.3 }
   },
   {
     name: "Dotted Eighth",
     description: "U2-style delay (3/16 notes)",
-    params: { wet: -10, feedback: 0.45, time: 6, filter: 0.35 }
+    params: { wet: -10, feedback: 0.45, delay: 6, filter: 0.35 }
   },
   {
     name: "Ping Pong",
     description: "Bouncing delay with moderate feedback",
-    params: { wet: -14, feedback: 0.5, time: 4, filter: 0.25 }
+    params: { wet: -14, feedback: 0.5, delay: 4, filter: 0.25 }
   },
   {
     name: "Ambient Wash",
     description: "Long, filtered delay for atmospheric sound",
-    params: { wet: -8, feedback: 0.65, time: 8, filter: 0.6 }
+    params: { wet: -8, feedback: 0.65, delay: 8, filter: 0.6 }
   },
   {
     name: "Dub Echo",
     description: "Heavy feedback with dark tone",
-    params: { wet: -6, feedback: 0.7, time: 6, filter: 0.7 }
+    params: { wet: -6, feedback: 0.7, delay: 6, filter: 0.7 }
   },
   {
     name: "Subtle Double",
     description: "Very short delay for thickening sound",
-    params: { wet: -24, feedback: 0, time: 1, filter: 0.2 }
+    params: { wet: -24, feedback: 0, delay: 1, filter: 0.2 }
   },
   {
     name: "Tape Echo",
     description: "Vintage tape echo simulation",
-    params: { wet: -15, feedback: 0.5, time: 5, filter: 0.5 }
+    params: { wet: -15, feedback: 0.5, delay: 5, filter: 0.5 }
   }
 ];
 

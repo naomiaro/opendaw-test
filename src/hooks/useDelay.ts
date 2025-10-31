@@ -5,7 +5,7 @@ import type { EffectParameter } from "../components/EffectPanel";
 interface DelayParams {
   wet: number;
   feedback: number;
-  time: number;
+  delay: number;
   filter: number;
 }
 
@@ -18,7 +18,7 @@ export const useDelay = (
   const [isActive, setIsActive] = useState(false);
   const [wet, setWet] = useState(defaultParams.wet);
   const [feedback, setFeedback] = useState(defaultParams.feedback);
-  const [time, setTime] = useState(defaultParams.time);
+  const [delay, setDelay] = useState(defaultParams.delay);
   const [filter, setFilter] = useState(defaultParams.filter);
   const effectRef = useRef<any>(null);
 
@@ -26,29 +26,29 @@ export const useDelay = (
     if (!project || !audioBox || isActive) return;
 
     project.editing.modify(() => {
-      const delay = project.api.insertEffect(
+      const delayEffect = project.api.insertEffect(
         (audioBox as any).audioEffects,
         EffectFactories.AudioNamed.Delay
       );
 
-      delay.label.setValue(label);
-      (delay as any).wet.setValue(wet);
-      (delay as any).feedback.setValue(feedback);
-      (delay as any).time.setValue(time);
-      (delay as any).filter.setValue(filter);
+      delayEffect.label.setValue(label);
+      (delayEffect as any).wet.setValue(wet);
+      (delayEffect as any).feedback.setValue(feedback);
+      (delayEffect as any).delay.setValue(delay);
+      (delayEffect as any).filter.setValue(filter);
 
-      effectRef.current = delay;
+      effectRef.current = delayEffect;
 
-      (delay as any).wet.catchupAndSubscribe((obs: any) => setWet(obs.getValue()));
-      (delay as any).feedback.catchupAndSubscribe((obs: any) => setFeedback(obs.getValue()));
-      (delay as any).time.catchupAndSubscribe((obs: any) => setTime(obs.getValue()));
-      (delay as any).filter.catchupAndSubscribe((obs: any) => setFilter(obs.getValue()));
+      (delayEffect as any).wet.catchupAndSubscribe((obs: any) => setWet(obs.getValue()));
+      (delayEffect as any).feedback.catchupAndSubscribe((obs: any) => setFeedback(obs.getValue()));
+      (delayEffect as any).delay.catchupAndSubscribe((obs: any) => setDelay(obs.getValue()));
+      (delayEffect as any).filter.catchupAndSubscribe((obs: any) => setFilter(obs.getValue()));
 
       console.log(`Added delay: ${label}`);
     });
 
     setIsActive(true);
-  }, [project, audioBox, isActive, wet, feedback, time, filter, label]);
+  }, [project, audioBox, isActive, wet, feedback, delay, filter, label]);
 
   const handleRemove = useCallback(() => {
     if (!project || !isActive || !effectRef.current) return;
@@ -56,7 +56,7 @@ export const useDelay = (
     project.editing.modify(() => {
       effectRef.current.delete();
       effectRef.current = null;
-      console.log(`Removed delay: ${label}`);
+      console.log(`Removed delay effect: ${label}`);
     });
 
     setIsActive(false);
@@ -66,19 +66,19 @@ export const useDelay = (
     if (!project || !effectRef.current) return;
 
     project.editing.modify(() => {
-      const delay = effectRef.current;
+      const delayEffect = effectRef.current;
       switch (paramName) {
         case 'wet':
-          (delay as any).wet.setValue(value);
+          (delayEffect as any).wet.setValue(value);
           break;
         case 'feedback':
-          (delay as any).feedback.setValue(value);
+          (delayEffect as any).feedback.setValue(value);
           break;
-        case 'time':
-          (delay as any).time.setValue(value);
+        case 'delay':
+          (delayEffect as any).delay.setValue(value);
           break;
         case 'filter':
-          (delay as any).filter.setValue(value);
+          (delayEffect as any).filter.setValue(value);
           break;
       }
     });
@@ -104,26 +104,25 @@ export const useDelay = (
       format: (v) => `${(v * 100).toFixed(0)}%`
     },
     {
-      name: 'time',
+      name: 'delay',
       label: 'Delay Time',
-      value: time,
-      min: 1,
+      value: delay,
+      min: 0,
       max: 16,
       step: 1,
       format: (v) => {
-        const notes = ['1/16', '1/8', '1/4', '1/2', '1'];
-        const index = Math.round((v - 1) / 3);
-        return notes[Math.min(index, notes.length - 1)] || `${v} PPQN`;
+        const notes = ['1/1', '1/2', '1/3', '1/4', '3/16', '1/6', '1/8', '3/32', '1/12', '1/16', '3/64', '1/24', '1/32', '1/48', '1/64', '1/96', '1/128'];
+        return notes[Math.floor(v)] || `${v}`;
       }
     },
     {
       name: 'filter',
       label: 'Filter',
       value: filter,
-      min: 0,
+      min: -1,
       max: 1,
       step: 0.01,
-      format: (v) => `${(v * 100).toFixed(0)}%`
+      format: (v) => v < 0 ? `LP ${Math.abs(v * 100).toFixed(0)}%` : v > 0 ? `HP ${(v * 100).toFixed(0)}%` : 'Off'
     }
   ];
 
@@ -131,11 +130,11 @@ export const useDelay = (
     if (!project || !effectRef.current) return;
 
     project.editing.modify(() => {
-      const delay = effectRef.current;
-      (delay as any).wet.setValue(params.wet);
-      (delay as any).feedback.setValue(params.feedback);
-      (delay as any).time.setValue(params.time);
-      (delay as any).filter.setValue(params.filter);
+      const delayEffect = effectRef.current;
+      (delayEffect as any).wet.setValue(params.wet);
+      (delayEffect as any).feedback.setValue(params.feedback);
+      (delayEffect as any).delay.setValue(params.delay);
+      (delayEffect as any).filter.setValue(params.filter);
     });
   }, [project]);
 
