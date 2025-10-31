@@ -131,7 +131,7 @@ project.editing.modify(() => {
     
     // Add reverb
     const reverb = project.api.insertEffect(
-        audioUnitBox.audioDevices,
+        audioUnitBox.audioEffects,
         EffectFactories.AudioNamed.Reverb
     );
     

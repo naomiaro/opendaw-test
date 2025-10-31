@@ -4,7 +4,7 @@ This document explains how to add audio effects to individual track channels.
 
 ## Overview
 
-In OpenDAW, effects are added to tracks by attaching them to the track's **AudioUnitBox**. Each AudioUnit has an `audioDevices` field that stores the chain of audio effects.
+In OpenDAW, effects are added to tracks by attaching them to the track's **AudioUnitBox**. Each AudioUnit has an `audioEffects` field that stores the chain of audio effects.
 
 ## Track Structure
 
@@ -37,10 +37,10 @@ project.editing.modify(() => {
     
     // Add a reverb effect to the track
     const reverb = project.api.insertEffect(
-        audioUnitBox.audioDevices,
+        audioUnitBox.audioEffects,
         EffectFactories.AudioNamed.Reverb
     );
-    
+
     // The effect is now in the track's effect chain
 });
 ```
@@ -53,23 +53,23 @@ Effects are processed in index order, from 0 to N. You can control insertion pos
 project.editing.modify(() => {
     // Add effects in specific order
     const compressor = project.api.insertEffect(
-        audioUnitBox.audioDevices,
+        audioUnitBox.audioEffects,
         EffectFactories.AudioNamed.Compressor,
         0  // First position
     );
-    
+
     const delay = project.api.insertEffect(
-        audioUnitBox.audioDevices,
+        audioUnitBox.audioEffects,
         EffectFactories.AudioNamed.Delay,
         1  // Second position
     );
-    
+
     const reverb = project.api.insertEffect(
-        audioUnitBox.audioDevices,
+        audioUnitBox.audioEffects,
         EffectFactories.AudioNamed.Reverb,
         2  // Third position
     );
-    
+
     // Chain order: Compressor -> Delay -> Reverb -> Output
 });
 ```
@@ -205,7 +205,7 @@ async function setupTrackWithEffects(project: Project) {
         
         // Add a compressor for tone shaping
         const compressor = project.api.insertEffect(
-            audioUnitBox.audioDevices,
+            audioUnitBox.audioEffects,
             EffectFactories.AudioNamed.Compressor,
             0
         );
@@ -213,10 +213,10 @@ async function setupTrackWithEffects(project: Project) {
         compressor.threshold.setValue(-15.0);
         compressor.ratio.setValue(4.0);
         compressor.attack.setValue(10.0);
-        
+
         // Add a delay for space
         const delay = project.api.insertEffect(
-            audioUnitBox.audioDevices,
+            audioUnitBox.audioEffects,
             EffectFactories.AudioNamed.Delay,
             1
         );
@@ -224,10 +224,10 @@ async function setupTrackWithEffects(project: Project) {
         delay.wet.setValue(-12.0);
         delay.feedback.setValue(0.4);
         delay.delay.setValue(4);  // Quarter note
-        
+
         // Add reverb at the end
         const reverb = project.api.insertEffect(
-            audioUnitBox.audioDevices,
+            audioUnitBox.audioEffects,
             EffectFactories.AudioNamed.Reverb,
             2
         );
@@ -264,7 +264,7 @@ Audio Output
 ## Key Points
 
 1. **AudioUnitBox Contains Effects**
-   - Each AudioUnit has an `audioDevices` field
+   - Each AudioUnit has an `audioEffects` field
    - This field points to the effect chain
 
 2. **Index-Based Ordering**
@@ -296,10 +296,9 @@ Audio Output
 project.editing.modify(() => {
     // Remove effect by setting enabled to false (soft remove/bypass)
     effectBox.enabled.setValue(false);
-    
+
     // Or actually remove from chain (hard remove)
-    const audioDevices = audioUnitBox.audioDevices;
-    // ... use BoxGraph methods to remove the box
+    effectBox.delete();
 });
 ```
 

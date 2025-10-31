@@ -16,10 +16,10 @@ async function addReverbToTrack(project: Project) {
         
         // Add reverb to the track
         const reverb = project.api.insertEffect(
-            audioUnitBox.audioDevices,
+            audioUnitBox.audioEffects,
             EffectFactories.AudioNamed.Reverb
         );
-        
+
         // Customize the reverb
         reverb.label.setValue("Room Reverb");
         reverb.wet.setValue(-6.0);  // Subtle effect
@@ -42,27 +42,27 @@ async function createTrackWithEffectChain(project: Project) {
         
         // Add compressor at start of chain
         const compressor = project.api.insertEffect(
-            audioUnitBox.audioDevices,
+            audioUnitBox.audioEffects,
             EffectFactories.AudioNamed.Compressor,
             0
         );
         compressor.label.setValue("Compressor");
         compressor.threshold.setValue(-15.0);
         compressor.ratio.setValue(4.0);
-        
+
         // Add delay in middle
         const delay = project.api.insertEffect(
-            audioUnitBox.audioDevices,
+            audioUnitBox.audioEffects,
             EffectFactories.AudioNamed.Delay,
             1
         );
         delay.label.setValue("Delay");
         delay.wet.setValue(-12.0);
         delay.feedback.setValue(0.4);
-        
+
         // Add reverb at end
         const reverb = project.api.insertEffect(
-            audioUnitBox.audioDevices,
+            audioUnitBox.audioEffects,
             EffectFactories.AudioNamed.Reverb,
             2
         );
@@ -81,24 +81,29 @@ import { Project, EffectFactories } from "@opendaw/studio-core";
 
 async function setupMasterEffects(project: Project) {
     project.editing.modify(() => {
-        const masterChannel = project.rootBox.masterChannel;
-        
+        const masterAudioUnit = project.rootBox.outputDevice.pointerHub.incoming().at(0)?.box;
+
+        if (!masterAudioUnit) {
+            console.error("Could not find master audio unit");
+            return;
+        }
+
         // Set master volume
-        masterChannel.volume.setValue(-6.0);
-        
+        masterAudioUnit.volume.setValue(-6.0);
+
         // Add mastering chain
-        
+
         // 1. Parametric EQ for tone shaping
         const eq = project.api.insertEffect(
-            masterChannel.audioDevices,
+            masterAudioUnit.audioEffects,
             EffectFactories.AudioNamed.Revamp,
             0
         );
         eq.label.setValue("Master EQ");
-        
+
         // 2. Compression for glue
         const compressor = project.api.insertEffect(
-            masterChannel.audioDevices,
+            masterAudioUnit.audioEffects,
             EffectFactories.AudioNamed.Compressor,
             1
         );
@@ -107,10 +112,10 @@ async function setupMasterEffects(project: Project) {
         compressor.ratio.setValue(2.0);
         compressor.attack.setValue(20.0);
         compressor.release.setValue(200.0);
-        
+
         // 3. Limiter for safety
         const limiter = project.api.insertEffect(
-            masterChannel.audioDevices,
+            masterAudioUnit.audioEffects,
             EffectFactories.AudioNamed.Compressor,
             2
         );
@@ -142,54 +147,54 @@ async function createMultiTrackSetup(project: Project) {
         drumsUnit.volume.setValue(-3.0);
         
         const drumsCompressor = project.api.insertEffect(
-            drumsUnit.audioDevices,
+            drumsUnit.audioEffects,
             EffectFactories.AudioNamed.Compressor,
             0
         );
         drumsCompressor.label.setValue("Drums Compressor");
         drumsCompressor.threshold.setValue(-20.0);
         drumsCompressor.ratio.setValue(6.0);
-        
+
         const drumsReverb = project.api.insertEffect(
-            drumsUnit.audioDevices,
+            drumsUnit.audioEffects,
             EffectFactories.AudioNamed.Reverb,
             1
         );
         drumsReverb.label.setValue("Drums Reverb");
         drumsReverb.wet.setValue(-12.0);
-        
+
         // Track 2: Bass with compression only
         const { audioUnitBox: bassUnit } = project.api.createInstrument(
             InstrumentFactories.Tape
         );
         bassUnit.volume.setValue(-6.0);
-        
+
         const bassCompressor = project.api.insertEffect(
-            bassUnit.audioDevices,
+            bassUnit.audioEffects,
             EffectFactories.AudioNamed.Compressor,
             0
         );
         bassCompressor.label.setValue("Bass Compressor");
         bassCompressor.threshold.setValue(-12.0);
         bassCompressor.ratio.setValue(4.0);
-        
+
         // Track 3: Vocals with delay and reverb
         const { audioUnitBox: vocalsUnit } = project.api.createInstrument(
             InstrumentFactories.Tape
         );
         vocalsUnit.volume.setValue(-3.0);
-        
+
         const vocalsDelay = project.api.insertEffect(
-            vocalsUnit.audioDevices,
+            vocalsUnit.audioEffects,
             EffectFactories.AudioNamed.Delay,
             0
         );
         vocalsDelay.label.setValue("Vocals Delay");
         vocalsDelay.wet.setValue(-18.0);
         vocalsDelay.feedback.setValue(0.3);
-        
+
         const vocalsReverb = project.api.insertEffect(
-            vocalsUnit.audioDevices,
+            vocalsUnit.audioEffects,
             EffectFactories.AudioNamed.Reverb,
             1
         );
@@ -244,7 +249,7 @@ async function createInteractiveEffects(
     // Add an effect
     project.editing.modify(() => {
         const delay = project.api.insertEffect(
-            audioUnitBox.audioDevices,
+            audioUnitBox.audioEffects,
             EffectFactories.AudioNamed.Delay
         );
         delay.label.setValue("Interactive Delay");
@@ -288,8 +293,8 @@ async function addEffectByName(
     project.editing.modify(() => {
         try {
             const effect = position >= 0
-                ? project.api.insertEffect(audioUnitBox.audioDevices, factory, position)
-                : project.api.insertEffect(audioUnitBox.audioDevices, factory);
+                ? project.api.insertEffect(audioUnitBox.audioEffects, factory, position)
+                : project.api.insertEffect(audioUnitBox.audioEffects, factory);
             
             effect.label.setValue(`${factory.defaultName}`);
             console.log(`Added ${effectType} effect`);
@@ -380,7 +385,7 @@ async function applyPreset(
     project.editing.modify(() => {
         try {
             const effect = project.api.insertEffect(
-                audioUnitBox.audioDevices,
+                audioUnitBox.audioEffects,
                 factory
             );
             effect.label.setValue(preset.name);
@@ -422,7 +427,7 @@ async function demonstrateParameterAutomation(project: Project) {
     
     // Add reverb
     const reverb = project.api.insertEffect(
-        audioUnitBox.audioDevices,
+        audioUnitBox.audioEffects,
         EffectFactories.AudioNamed.Reverb
     );
     
@@ -559,7 +564,7 @@ export function useEffectsDemo(project: Project | null): EffectsDemo {
         
         project.editing.modify(() => {
             const effect = project.api.insertEffect(
-                audioUnitBox.audioDevices,
+                audioUnitBox.audioEffects,
                 factory
             );
             effect.label.setValue(factory.defaultName);

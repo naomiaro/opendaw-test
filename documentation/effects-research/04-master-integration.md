@@ -8,17 +8,18 @@ Master effects are global effects applied to the entire mix after all tracks hav
 
 ## Master Bus Structure
 
-The master bus is accessed through the root box:
+The master bus is accessed through the root box's output device:
 
 ```typescript
 // Access the root box
 const rootBox = project.rootBox;
 
-// The master channel contains the global effect chain
-const masterChannel = rootBox.masterChannel;
+// The master audio unit is the first AudioUnitBox connected to the output device
+const masterAudioUnit = rootBox.outputDevice.pointerHub.incoming().at(0)?.box;
 
-// Or access main output bus
-const mainOutputBus = /* ... */;
+if (!masterAudioUnit) {
+    console.error("Could not find master audio unit");
+}
 ```
 
 ## Adding Effects to Master
@@ -31,15 +32,20 @@ import { Project, EffectFactories } from "@opendaw/studio-core";
 const project = /* ... */;
 
 project.editing.modify(() => {
-    // Get the master channel from root box
-    const masterChannel = project.rootBox.masterChannel;
-    
+    // Get the master audio unit from output device
+    const masterAudioUnit = project.rootBox.outputDevice.pointerHub.incoming().at(0)?.box;
+
+    if (!masterAudioUnit) {
+        console.error("Could not find master audio unit");
+        return;
+    }
+
     // Add a reverb effect to the master
     const masterReverb = project.api.insertEffect(
-        masterChannel.audioDevices,  // Master effect chain
+        masterAudioUnit.audioEffects,  // Master effect chain
         EffectFactories.AudioNamed.Reverb
     );
-    
+
     masterReverb.label.setValue("Master Reverb");
     masterReverb.wet.setValue(-12.0);  // Subtle master reverb
 });
@@ -51,34 +57,39 @@ Like track effects, master effects are ordered by index:
 
 ```typescript
 project.editing.modify(() => {
-    const masterDevices = project.rootBox.masterChannel.audioDevices;
-    
+    const masterAudioUnit = project.rootBox.outputDevice.pointerHub.incoming().at(0)?.box;
+
+    if (!masterAudioUnit) {
+        console.error("Could not find master audio unit");
+        return;
+    }
+
     // Add EQ first
     const eq = project.api.insertEffect(
-        masterDevices,
+        masterAudioUnit.audioEffects,
         EffectFactories.AudioNamed.Revamp,
         0
     );
     eq.label.setValue("Master EQ");
-    
+
     // Add compressor for limiting
     const limiter = project.api.insertEffect(
-        masterDevices,
+        masterAudioUnit.audioEffects,
         EffectFactories.AudioNamed.Compressor,
         1
     );
     limiter.label.setValue("Master Limiter");
     limiter.threshold.setValue(-3.0);
     limiter.ratio.setValue(20.0);  // Near hard limit
-    
+
     // Add final reverb for glue
     const reverb = project.api.insertEffect(
-        masterDevices,
+        masterAudioUnit.audioEffects,
         EffectFactories.AudioNamed.Reverb,
         2
     );
     reverb.label.setValue("Master Reverb");
-    
+
     // Chain: Master EQ -> Limiter -> Reverb
 });
 ```
@@ -90,16 +101,21 @@ project.editing.modify(() => {
 ```typescript
 import { AudioUnitBoxAdapter } from "@opendaw/studio-adapters";
 
-const masterChannel = project.rootBox.masterChannel;
+const masterAudioUnit = project.rootBox.outputDevice.pointerHub.incoming().at(0)?.box;
 
-// Get the adapter for the master channel
+if (!masterAudioUnit) {
+    console.error("Could not find master audio unit");
+    return;
+}
+
+// Get the adapter for the master audio unit
 const masterAdapter = project.boxAdapters.adapterFor(
-    masterChannel,
+    masterAudioUnit,
     AudioUnitBoxAdapter
 );
 
 // Get all audio effect adapters
-const masterEffects = project.boxAdapters.audioEffects(masterChannel);
+const masterEffects = project.boxAdapters.audioEffects(masterAudioUnit);
 
 masterEffects.forEach(effectAdapter => {
     console.log("Master Effect:", effectAdapter.labelField.getValue());
@@ -110,9 +126,14 @@ masterEffects.forEach(effectAdapter => {
 ### Get Specific Master Effect
 
 ```typescript
-const masterEffects = project.boxAdapters.audioEffects(
-    project.rootBox.masterChannel
-);
+const masterAudioUnit = project.rootBox.outputDevice.pointerHub.incoming().at(0)?.box;
+
+if (!masterAudioUnit) {
+    console.error("Could not find master audio unit");
+    return;
+}
+
+const masterEffects = project.boxAdapters.audioEffects(masterAudioUnit);
 
 const masterLimiter = masterEffects.find(
     e => e.labelField.getValue() === "Master Limiter"
@@ -140,20 +161,25 @@ project.editing.modify(() => {
 
 ### Master Volume Control
 
-The master channel also has volume and mute controls:
+The master audio unit also has volume and mute controls:
 
 ```typescript
 project.editing.modify(() => {
-    const masterChannel = project.rootBox.masterChannel;
-    
+    const masterAudioUnit = project.rootBox.outputDevice.pointerHub.incoming().at(0)?.box;
+
+    if (!masterAudioUnit) {
+        console.error("Could not find master audio unit");
+        return;
+    }
+
     // Set master volume
-    masterChannel.volume.setValue(-3.0);  // -3dB
-    
+    masterAudioUnit.volume.setValue(-3.0);  // -3dB
+
     // Mute master (mutes entire mix)
-    masterChannel.mute.setValue(true);
-    
+    masterAudioUnit.mute.setValue(true);
+
     // Unmute
-    masterChannel.mute.setValue(false);
+    masterAudioUnit.mute.setValue(false);
 });
 ```
 
@@ -164,25 +190,30 @@ import { Project, EffectFactories } from "@opendaw/studio-core";
 
 async function setupMasterBus(project: Project) {
     project.editing.modify(() => {
-        const masterChannel = project.rootBox.masterChannel;
-        
+        const masterAudioUnit = project.rootBox.outputDevice.pointerHub.incoming().at(0)?.box;
+
+        if (!masterAudioUnit) {
+            console.error("Could not find master audio unit");
+            return;
+        }
+
         // Set overall master volume
-        masterChannel.volume.setValue(-6.0);
-        
+        masterAudioUnit.volume.setValue(-6.0);
+
         // Add professional mastering chain
-        
+
         // 1. Parametric EQ for tone shaping
         const eq = project.api.insertEffect(
-            masterChannel.audioDevices,
+            masterAudioUnit.audioEffects,
             EffectFactories.AudioNamed.Revamp,
             0
         );
         eq.label.setValue("Master EQ");
         // Apply professional default curve
-        
+
         // 2. Compressor for glue
         const compressor = project.api.insertEffect(
-            masterChannel.audioDevices,
+            masterAudioUnit.audioEffects,
             EffectFactories.AudioNamed.Compressor,
             1
         );
@@ -192,10 +223,10 @@ async function setupMasterBus(project: Project) {
         compressor.attack.setValue(20.0);
         compressor.release.setValue(200.0);
         compressor.makeup.setValue(2.0);
-        
+
         // 3. Limiter for peak protection
         const limiter = project.api.insertEffect(
-            masterChannel.audioDevices,
+            masterAudioUnit.audioEffects,
             EffectFactories.AudioNamed.Compressor,
             2
         );
@@ -204,15 +235,15 @@ async function setupMasterBus(project: Project) {
         limiter.ratio.setValue(20.0);      // Hard limiting
         limiter.attack.setValue(1.0);      // Fast attack
         limiter.release.setValue(100.0);
-        
+
         // 4. Stereo enhancement
         const stereoTool = project.api.insertEffect(
-            masterChannel.audioDevices,
+            masterAudioUnit.audioEffects,
             EffectFactories.AudioNamed.StereoTool,
             3
         );
         stereoTool.label.setValue("Master Stereo");
-        
+
         console.log("Master mastering chain created:");
         console.log("1. Master EQ");
         console.log("2. Master Glue (Compressor)");
@@ -268,10 +299,15 @@ Audio Interface Output
 Subscribe to master effect changes:
 
 ```typescript
-const masterChannel = project.rootBox.masterChannel;
+const masterAudioUnit = project.rootBox.outputDevice.pointerHub.incoming().at(0)?.box;
+
+if (!masterAudioUnit) {
+    console.error("Could not find master audio unit");
+    return;
+}
 
 // Subscribe to master effect chain changes
-const subscription = project.boxAdapters.audioEffects(masterChannel)
+const subscription = project.boxAdapters.audioEffects(masterAudioUnit)
     .catchupAndSubscribe({
         onAdd: (effectAdapter) => {
             console.log("Master effect added:", effectAdapter.labelField.getValue());
@@ -282,7 +318,7 @@ const subscription = project.boxAdapters.audioEffects(masterChannel)
     });
 
 // Also subscribe to master volume changes
-const volumeSubscription = masterChannel.volume.catchupAndSubscribe(
+const volumeSubscription = masterAudioUnit.volume.catchupAndSubscribe(
     obs => console.log("Master volume:", obs.getValue())
 );
 
@@ -293,9 +329,9 @@ volumeSubscription.terminate();
 
 ## Key Points
 
-1. **Master Channel Contains Effects**
-   - Access via `project.rootBox.masterChannel`
-   - Has its own effect chain in `audioDevices`
+1. **Master Audio Unit Contains Effects**
+   - Access via `project.rootBox.outputDevice.pointerHub.incoming().at(0)?.box`
+   - Has its own effect chain in `audioEffects`
 
 2. **Master Affects All Output**
    - Every track must pass through master

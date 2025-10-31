@@ -63,7 +63,7 @@ const audioUnitBox = /* ... */;
 // Add an effect to the audio unit's effect chain
 project.editing.modify(() => {
     const effectBox = project.api.insertEffect(
-        audioUnitBox.audioDevices,  // Field<EffectPointerType>
+        audioUnitBox.audioEffects,  // Field<EffectPointerType>
         EffectFactories.AudioNamed.Delay,
         0  // Insert at beginning (optional, defaults to end)
     );
@@ -81,7 +81,7 @@ For more control over parameters during creation:
 const factory = EffectFactories.AudioNamed.Compressor;
 
 project.editing.modify(() => {
-    const effectBox = factory.create(project, audioUnitBox.audioDevices, 0);
+    const effectBox = factory.create(project, audioUnitBox.audioEffects, 0);
     
     // Customize after creation
     effectBox.label.setValue("My Compressor");
@@ -130,7 +130,7 @@ Some effects have specialized default initialization:
 import { EffectParameterDefaults } from "@opendaw/studio-core";
 
 project.editing.modify(() => {
-    const revampBox = factory.create(project, audioUnitBox.audioDevices, 0);
+    const revampBox = factory.create(project, audioUnitBox.audioEffects, 0);
     
     // Apply professional default EQ curve
     EffectParameterDefaults.defaultRevampDeviceBox(revampBox);
@@ -142,7 +142,7 @@ project.editing.modify(() => {
 ```typescript
 project.editing.modify(() => {
     const compressorBox = EffectFactories.AudioNamed.Compressor
-        .create(project, audioUnitBox.audioDevices, 0);
+        .create(project, audioUnitBox.audioEffects, 0);
     
     // Customize parameters
     compressorBox.threshold.setInitValue(-20.0);
@@ -191,8 +191,8 @@ Each box contains:
 Effects belong to a device host and form a chain:
 
 ```typescript
-// Effects are stored in the audioDevices field of AudioUnitBox
-const audioDevices = audioUnitBox.audioDevices;  // Field<EffectPointerType>
+// Effects are stored in the audioEffects field of AudioUnitBox
+const audioDevices = audioUnitBox.audioEffects;  // Field<EffectPointerType>
 
 // Insert effect into chain
 const effectBox = project.api.insertEffect(audioDevices, factory);
@@ -240,7 +240,7 @@ async function createInstrumentWithEffects(project: Project) {
         
         // Add reverb (3rd position)
         const reverb = project.api.insertEffect(
-            audioUnitBox.audioDevices,
+            audioUnitBox.audioEffects,
             EffectFactories.AudioNamed.Reverb,
             2
         );
@@ -248,7 +248,7 @@ async function createInstrumentWithEffects(project: Project) {
         
         // Add delay (2nd position)
         const delay = project.api.insertEffect(
-            audioUnitBox.audioDevices,
+            audioUnitBox.audioEffects,
             EffectFactories.AudioNamed.Delay,
             1
         );
@@ -257,7 +257,7 @@ async function createInstrumentWithEffects(project: Project) {
         
         // Add compressor (1st position)
         const compressor = project.api.insertEffect(
-            audioUnitBox.audioDevices,
+            audioUnitBox.audioEffects,
             EffectFactories.AudioNamed.Compressor,
             0
         );
@@ -326,10 +326,13 @@ custom.someParameter.setValue(customValue);
 ### 3. Use ProjectApi for Track/Master Effects
 ```typescript
 // For track effects
-project.api.insertEffect(audioUnitBox.audioDevices, factory);
+project.api.insertEffect(audioUnitBox.audioEffects, factory);
 
 // For master effects
-project.api.insertEffect(rootBox.masterChannel.audioDevices, factory);
+const masterAudioUnit = rootBox.outputDevice.pointerHub.incoming().at(0)?.box;
+if (masterAudioUnit) {
+    project.api.insertEffect(masterAudioUnit.audioEffects, factory);
+}
 ```
 
 ### 4. Access Factories Consistently
