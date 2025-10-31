@@ -281,6 +281,111 @@ export const STEREO_WIDTH_PRESETS: EffectPreset<StereoWidthParams>[] = [
 ];
 
 // ============================================================================
+// EQ PRESETS (3-Band Parametric EQ)
+// ============================================================================
+
+export interface EQParams {
+  lowGain: number;  // dB: -24 to 24 (250 Hz)
+  midGain: number;  // dB: -24 to 24 (1 kHz)
+  highGain: number; // dB: -24 to 24 (4 kHz)
+}
+
+export const EQ_PRESETS: EffectPreset<EQParams>[] = [
+  {
+    name: "Vocal Presence",
+    description: "Enhance vocal clarity and presence",
+    params: { lowGain: -2, midGain: 4, highGain: 3 }
+  },
+  {
+    name: "Bass Boost",
+    description: "Add weight and warmth to low end",
+    params: { lowGain: 6, midGain: 0, highGain: -1 }
+  },
+  {
+    name: "Bright & Airy",
+    description: "Lift highs for sparkle and air",
+    params: { lowGain: -3, midGain: 2, highGain: 5 }
+  },
+  {
+    name: "Warm & Full",
+    description: "Rich, warm sound with body",
+    params: { lowGain: 4, midGain: 2, highGain: -2 }
+  },
+  {
+    name: "Smiley Face",
+    description: "Boost lows and highs, scoop mids",
+    params: { lowGain: 5, midGain: -4, highGain: 5 }
+  },
+  {
+    name: "Telephone",
+    description: "Narrow midrange band",
+    params: { lowGain: -12, midGain: 6, highGain: -10 }
+  },
+  {
+    name: "De-Muddy",
+    description: "Reduce muddiness in mids",
+    params: { lowGain: 0, midGain: -6, highGain: 2 }
+  },
+  {
+    name: "Radio Voice",
+    description: "Classic radio announcer sound",
+    params: { lowGain: -4, midGain: 8, highGain: 1 }
+  }
+];
+
+// ============================================================================
+// WAVEFOLDER PRESETS
+// ============================================================================
+
+export interface FoldParams {
+  drive: number;  // dB: 0 to 40 (input drive)
+  volume: number; // dB: -40 to 20 (output level)
+}
+
+export const FOLD_PRESETS: EffectPreset<FoldParams>[] = [
+  {
+    name: "Subtle Warmth",
+    description: "Gentle saturation and harmonics",
+    params: { drive: 8, volume: -2 }
+  },
+  {
+    name: "Soft Clip",
+    description: "Smooth overdrive character",
+    params: { drive: 15, volume: -4 }
+  },
+  {
+    name: "Aggressive",
+    description: "Heavy distortion with bite",
+    params: { drive: 25, volume: -6 }
+  },
+  {
+    name: "Extreme Fold",
+    description: "Maximum folding and harmonics",
+    params: { drive: 35, volume: -8 }
+  },
+  {
+    name: "Tube Amp",
+    description: "Warm tube amplifier simulation",
+    params: { drive: 12, volume: -3 }
+  },
+  {
+    name: "Fuzz",
+    description: "Classic fuzz pedal sound",
+    params: { drive: 30, volume: -7 }
+  },
+  {
+    name: "Crunch",
+    description: "Crunchy guitar amp overdrive",
+    params: { drive: 18, volume: -4 }
+  },
+  {
+    name: "Clean Boost",
+    description: "Transparent boost with character",
+    params: { drive: 6, volume: 2 }
+  }
+];
+
+// ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
 
@@ -299,6 +404,10 @@ export function getPresetsForEffect(effectType: string) {
       return CRUSHER_PRESETS;
     case 'stereowidth':
       return STEREO_WIDTH_PRESETS;
+    case 'eq':
+      return EQ_PRESETS;
+    case 'fold':
+      return FOLD_PRESETS;
     default:
       return [];
   }

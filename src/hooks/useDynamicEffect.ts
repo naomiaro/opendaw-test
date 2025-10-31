@@ -7,7 +7,9 @@ import {
   COMPRESSOR_PRESETS,
   DELAY_PRESETS,
   CRUSHER_PRESETS,
-  STEREO_WIDTH_PRESETS
+  STEREO_WIDTH_PRESETS,
+  EQ_PRESETS,
+  FOLD_PRESETS
 } from "../lib/effectPresets";
 
 interface DynamicEffectConfig {
@@ -98,6 +100,40 @@ export const useDynamicEffect = (config: DynamicEffectConfig) => {
           (effectBox as any).panning.setValue(0);
           setParameters({ width: 1.0, pan: 0 });
           break;
+
+        case "EQ":
+          effectBox = project.api.insertEffect(
+            (audioBox as any).audioEffects,
+            EffectFactories.AudioNamed.Revamp
+          );
+          effectBox.label.setValue(label);
+          // Simple 3-band EQ setup
+          (effectBox as any).lowBell.enabled.setValue(true);
+          (effectBox as any).lowBell.frequency.setValue(250);
+          (effectBox as any).lowBell.gain.setValue(0);
+          (effectBox as any).lowBell.q.setValue(1.0);
+          (effectBox as any).midBell.enabled.setValue(true);
+          (effectBox as any).midBell.frequency.setValue(1000);
+          (effectBox as any).midBell.gain.setValue(0);
+          (effectBox as any).midBell.q.setValue(1.0);
+          (effectBox as any).highBell.enabled.setValue(true);
+          (effectBox as any).highBell.frequency.setValue(4000);
+          (effectBox as any).highBell.gain.setValue(0);
+          (effectBox as any).highBell.q.setValue(1.0);
+          setParameters({ lowGain: 0, midGain: 0, highGain: 0 });
+          break;
+
+        case "Fold":
+          effectBox = project.api.insertEffect(
+            (audioBox as any).audioEffects,
+            EffectFactories.AudioNamed.Fold
+          );
+          effectBox.label.setValue(label);
+          (effectBox as any).drive.setValue(0);
+          (effectBox as any).overSampling.setValue(0);
+          (effectBox as any).volume.setValue(0);
+          setParameters({ drive: 0, volume: 0 });
+          break;
       }
 
       if (effectBox) {
@@ -129,11 +165,23 @@ export const useDynamicEffect = (config: DynamicEffectConfig) => {
 
     project.editing.modify(() => {
       const effect = effectRef.current;
-      (effect as any)[paramName].setValue(value);
+
+      // Handle nested EQ parameters
+      if (type === "EQ") {
+        if (paramName === "lowGain") {
+          (effect as any).lowBell.gain.setValue(value);
+        } else if (paramName === "midGain") {
+          (effect as any).midBell.gain.setValue(value);
+        } else if (paramName === "highGain") {
+          (effect as any).highBell.gain.setValue(value);
+        }
+      } else {
+        (effect as any)[paramName].setValue(value);
+      }
     });
 
     setParameters(prev => ({ ...prev, [paramName]: value }));
-  }, [project]);
+  }, [project, type]);
 
   const getParameterDefinitions = (): EffectParameter[] => {
     switch (type) {
@@ -331,6 +379,59 @@ export const useDynamicEffect = (config: DynamicEffectConfig) => {
           }
         ];
 
+      case "EQ":
+        return [
+          {
+            name: 'lowGain',
+            label: 'Low (250 Hz)',
+            value: parameters.lowGain || 0,
+            min: -24,
+            max: 24,
+            step: 0.1,
+            unit: ' dB'
+          },
+          {
+            name: 'midGain',
+            label: 'Mid (1 kHz)',
+            value: parameters.midGain || 0,
+            min: -24,
+            max: 24,
+            step: 0.1,
+            unit: ' dB'
+          },
+          {
+            name: 'highGain',
+            label: 'High (4 kHz)',
+            value: parameters.highGain || 0,
+            min: -24,
+            max: 24,
+            step: 0.1,
+            unit: ' dB'
+          }
+        ];
+
+      case "Fold":
+        return [
+          {
+            name: 'drive',
+            label: 'Drive',
+            value: parameters.drive || 0,
+            min: 0,
+            max: 40,
+            step: 0.1,
+            unit: ' dB'
+          },
+          {
+            name: 'volume',
+            label: 'Output',
+            value: parameters.volume || 0,
+            min: -40,
+            max: 20,
+            step: 0.1,
+            unit: ' dB'
+          }
+        ];
+
       default:
         return [];
     }
@@ -343,6 +444,8 @@ export const useDynamicEffect = (config: DynamicEffectConfig) => {
       case "Delay": return DELAY_PRESETS;
       case "Crusher": return CRUSHER_PRESETS;
       case "StereoWidth": return STEREO_WIDTH_PRESETS;
+      case "EQ": return EQ_PRESETS;
+      case "Fold": return FOLD_PRESETS;
       default: return [];
     }
   };
@@ -354,9 +457,24 @@ export const useDynamicEffect = (config: DynamicEffectConfig) => {
       const effect = effectRef.current;
       Object.entries(preset.params).forEach(([key, value]) => {
         // Handle special case for StereoWidth which uses different param names
-        const paramName = type === "StereoWidth" && key === "width" ? "stereo" :
-                         type === "StereoWidth" && key === "pan" ? "panning" : key;
-        (effect as any)[paramName].setValue(value);
+        if (type === "StereoWidth") {
+          const paramName = key === "width" ? "stereo" : key === "pan" ? "panning" : key;
+          (effect as any)[paramName].setValue(value);
+        }
+        // Handle special case for EQ which has nested parameters
+        else if (type === "EQ") {
+          if (key === "lowGain") {
+            (effect as any).lowBell.gain.setValue(value);
+          } else if (key === "midGain") {
+            (effect as any).midBell.gain.setValue(value);
+          } else if (key === "highGain") {
+            (effect as any).highBell.gain.setValue(value);
+          }
+        }
+        // Default case
+        else {
+          (effect as any)[key].setValue(value);
+        }
       });
     });
 

@@ -88,6 +88,30 @@ export const useEffectChain = (
           (effectBox as any).panning.setValue(0);
           break;
 
+        case "EQ":
+          effectBox = project.api.insertEffect(
+            (audioBox as any).audioEffects,
+            EffectFactories.AudioNamed.Revamp
+          );
+          effectBox.label.setValue(label);
+          // Enable mid bell by default for quick EQ adjustments
+          (effectBox as any).midBell.enabled.setValue(true);
+          (effectBox as any).midBell.frequency.setValue(1000);
+          (effectBox as any).midBell.gain.setValue(0);
+          (effectBox as any).midBell.q.setValue(1.0);
+          break;
+
+        case "Fold":
+          effectBox = project.api.insertEffect(
+            (audioBox as any).audioEffects,
+            EffectFactories.AudioNamed.Fold
+          );
+          effectBox.label.setValue(label);
+          (effectBox as any).drive.setValue(0);
+          (effectBox as any).overSampling.setValue(0);
+          (effectBox as any).volume.setValue(0);
+          break;
+
         default:
           return;
       }
