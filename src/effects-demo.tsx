@@ -244,7 +244,7 @@ const App: React.FC = () => {
       console.debug(`[CanvasPainter] Creating painter for "${track.name}"`);
 
       // Create painter with rendering callback
-      const painter = new CanvasPainter(canvas, (_, context) => {
+      const painter = new CanvasPainter(canvas, (canvasPainter, context) => {
         const peaks = trackPeaksRef.current.get(uuidString);
         if (!peaks) {
           // Clear canvas if no peaks
@@ -253,8 +253,8 @@ const App: React.FC = () => {
           return;
         }
 
-        // Skip rendering if peaks haven't changed
-        if (lastRenderedPeaks.get(uuidString) === peaks) {
+        // Skip rendering if peaks haven't changed AND canvas wasn't resized
+        if (lastRenderedPeaks.get(uuidString) === peaks && !canvasPainter.wasResized) {
           return;
         }
 
