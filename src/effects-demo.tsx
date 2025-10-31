@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
 import { PPQN } from "@opendaw/lib-dsp";
+import { AnimationFrame } from "@opendaw/lib-dom";
 import { InstrumentFactories, Project, EffectFactories } from "@opendaw/studio-core";
 import { AudioFileBox, AudioRegionBox, AudioUnitBox, TrackBox } from "@opendaw/studio-boxes";
 import { AudioPlayback } from "@opendaw/studio-enums";
@@ -231,6 +232,8 @@ const App: React.FC = () => {
   const canvasPaintersRef = useRef<Map<string, CanvasPainter>>(new Map());
   const trackPeaksRef = useRef<Map<string, any>>(new Map());
   const pausedPositionRef = useRef<number | null>(null);
+  const currentPositionRef = useRef<number>(0);
+  const bpmRef = useRef<number>(120);
 
   // Refs to store effect boxes for removal
   const vocalsReverbRef = useRef<any>(null);
@@ -303,6 +306,30 @@ const App: React.FC = () => {
             v1: 1
           });
         }
+
+        // Draw playhead
+        const currentPos = currentPositionRef.current;
+        const bpm = bpmRef.current;
+        const audioBuffer = localAudioBuffersRef.current.get(uuidString);
+
+        if (audioBuffer && currentPos > 0) {
+          // Convert position from PPQN to seconds
+          const positionInSeconds = PPQN.pulsesToSeconds(currentPos, bpm);
+          const duration = audioBuffer.duration;
+
+          // Calculate playhead X position as a ratio of canvas width
+          const playheadX = (positionInSeconds / duration) * canvas.clientWidth;
+
+          // Only draw if playhead is within canvas bounds
+          if (playheadX >= 0 && playheadX <= canvas.clientWidth) {
+            context.strokeStyle = "#ff4444";
+            context.lineWidth = 2;
+            context.beginPath();
+            context.moveTo(playheadX, 0);
+            context.lineTo(playheadX, canvas.clientHeight);
+            context.stroke();
+          }
+        }
       });
 
       canvasPaintersRef.current.set(uuidString, painter);
@@ -370,6 +397,7 @@ const App: React.FC = () => {
   // Initialize OpenDAW
   useEffect(() => {
     let mounted = true;
+    let animationFrameSubscription: { terminate: () => void } | null = null;
 
     (async () => {
       try {
@@ -386,6 +414,9 @@ const App: React.FC = () => {
         setAudioContext(newAudioContext);
         setProject(newProject);
 
+        // Store BPM for playhead calculations
+        bpmRef.current = newProject.timelineBox.bpm.getValue();
+
         // Subscribe to playback state
         newProject.engine.isPlaying.catchupAndSubscribe(obs => {
           if (mounted) setIsPlaying(obs.getValue());
@@ -394,6 +425,20 @@ const App: React.FC = () => {
         // Subscribe to position for display
         newProject.engine.position.catchupAndSubscribe(obs => {
           if (mounted) setCurrentPosition(obs.getValue());
+        });
+
+        // Subscribe to AnimationFrame for efficient playhead updates
+        animationFrameSubscription = AnimationFrame.add(() => {
+          // Update position ref for playhead rendering
+          const position = newProject.engine.position.getValue();
+          currentPositionRef.current = position;
+
+          // Request update on all painters when playing
+          if (newProject.engine.isPlaying.getValue()) {
+            canvasPaintersRef.current.forEach(painter => {
+              painter.requestUpdate();
+            });
+          }
         });
 
         // Load audio files and create tracks
@@ -410,6 +455,9 @@ const App: React.FC = () => {
 
     return () => {
       mounted = false;
+      if (animationFrameSubscription) {
+        animationFrameSubscription.terminate();
+      }
     };
   }, []);
 
@@ -488,6 +536,16 @@ const App: React.FC = () => {
     }
 
     setTracks(loadedTracks);
+
+    // Set loop end to accommodate the longest track (all tracks are 30 seconds)
+    // Calculate the max duration from the audio buffers
+    const maxDurationSeconds = Math.max(...Array.from(audioBuffers.values()).map(buf => buf.duration));
+    const loopEndInPPQN = PPQN.secondsToPulses(maxDurationSeconds, bpm);
+
+    proj.editing.modify(() => {
+      proj.timelineBox.loopArea.to.setValue(loopEndInPPQN);
+      console.debug(`Set loop end to ${loopEndInPPQN} PPQN (${maxDurationSeconds}s)`);
+    });
 
     console.debug("Tracks created, generating waveforms...");
     console.debug(`Timeline position: ${proj.engine.position.getValue()}`);
