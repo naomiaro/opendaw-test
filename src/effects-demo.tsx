@@ -296,7 +296,9 @@ const App: React.FC = () => {
         // Track visual rendering completion
         if (!visuallyRenderedTracksRef.current.has(uuidString)) {
           visuallyRenderedTracksRef.current.add(uuidString);
-          console.debug(`[Rendering] Visually rendered "${track.name}" (${visuallyRenderedTracksRef.current.size}/${tracks.length})`);
+          console.debug(
+            `[Rendering] Visually rendered "${track.name}" (${visuallyRenderedTracksRef.current.size}/${tracks.length})`
+          );
 
           // Check if all tracks are visually rendered
           if (visuallyRenderedTracksRef.current.size === tracks.length) {
