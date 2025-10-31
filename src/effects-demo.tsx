@@ -789,63 +789,58 @@ const App: React.FC = () => {
             </Flex>
           </Card>
 
-          {/* Usage instructions */}
-          <Card>
-            <Flex direction="column" gap="3">
-              <Heading size="4">How to Use</Heading>
-              <Separator size="4" />
-              <Flex direction="column" gap="2">
-                <Text>• <strong>Volume Fader:</strong> Drag the vertical slider to adjust track volume (-60 dB to +6 dB)</Text>
-                <Text>• <strong>Mute Button:</strong> Click to mute/unmute the track (prevents audio output)</Text>
-                <Text>• <strong>Solo Button:</strong> Click to solo the track (mutes all other non-soloed tracks)</Text>
-                <Text>• <strong>Multiple Solos:</strong> You can solo multiple tracks simultaneously</Text>
-                <Text>• <strong>Waveform:</strong> Shows the audio content of each track</Text>
-              </Flex>
-            </Flex>
-          </Card>
-
           {/* Technical details */}
           <Card>
             <Flex direction="column" gap="3">
               <Heading size="4">Technical Details</Heading>
               <Separator size="4" />
               <Flex direction="column" gap="2">
-                <Text size="2" weight="bold">Mixer Controls:</Text>
+                <Text size="2" weight="bold">Dynamic Effect Chain System:</Text>
                 <Text size="2">
-                  • Volume/mute/solo applied through <code>AudioUnitBox</code> properties
+                  • Dynamic effect system allows adding multiple effects of any type to each track
                 </Text>
                 <Text size="2">
-                  • Volume range: -60 dB (near silence) to +6 dB (amplification)
+                  • Effects are managed via <code>useEffectChain</code> hook per track/master
                 </Text>
                 <Text size="2">
-                  • Solo behavior: automatically manages mute states across all tracks
-                </Text>
-                <Separator size="1" />
-                <Text size="2" weight="bold">Audio Effects:</Text>
-                <Text size="2">
-                  • Per-track effects: <code>project.api.insertEffect(audioUnitBox.audioDevices, ...)</code>
-                </Text>
-                <Text size="2">
-                  • Master effects: <code>project.api.insertEffect(masterChannel.audioDevices, ...)</code>
-                </Text>
-                <Text size="2">
-                  • Reverb: Space simulation with decay, pre-delay, and damping controls
-                </Text>
-                <Text size="2">
-                  • Delay: Tempo-synced echo with feedback and filtering
-                </Text>
-                <Text size="2">
-                  • Crusher: Bit-crushing and sample rate reduction for lo-fi distortion
-                </Text>
-                <Text size="2">
-                  • Compressor: Dynamic range control with threshold, ratio, and makeup gain
+                  • Individual effects use <code>useDynamicEffect</code> for full lifecycle management
                 </Text>
                 <Separator size="1" />
+                <Text size="2" weight="bold">Available Effects (7 Total):</Text>
                 <Text size="2">
-                  • All modifications happen within <code>project.editing.modify()</code> transactions
+                  • <strong>Reverb:</strong> Space simulation with decay, pre-delay, and damping controls
                 </Text>
                 <Text size="2">
-                  • State changes are observed via <code>catchupAndSubscribe()</code>
+                  • <strong>Compressor:</strong> Dynamic range control with threshold, ratio, attack, release, and makeup gain
+                </Text>
+                <Text size="2">
+                  • <strong>Parametric EQ:</strong> 3-band EQ (Low 250Hz, Mid 1kHz, High 4kHz) with ±24dB gain range
+                </Text>
+                <Text size="2">
+                  • <strong>Delay:</strong> Tempo-synced echo with feedback, cross-feedback, and filtering
+                </Text>
+                <Text size="2">
+                  • <strong>Lo-Fi Crusher:</strong> Bit-crushing and sample rate reduction for digital degradation
+                </Text>
+                <Text size="2">
+                  • <strong>Wavefolder:</strong> Distortion/saturation with drive and oversampling for harmonic generation
+                </Text>
+                <Text size="2">
+                  • <strong>Stereo Width:</strong> Stereo imaging with width, panning, and phase controls
+                </Text>
+                <Separator size="1" />
+                <Text size="2" weight="bold">Implementation:</Text>
+                <Text size="2">
+                  • Effect insertion: <code>project.api.insertEffect(audioBox.audioEffects, EffectFactories.AudioNamed.*)</code>
+                </Text>
+                <Text size="2">
+                  • All modifications within <code>project.editing.modify()</code> transactions
+                </Text>
+                <Text size="2">
+                  • State observation via <code>catchupAndSubscribe()</code>
+                </Text>
+                <Text size="2">
+                  • Each effect includes presets and bypass functionality
                 </Text>
               </Flex>
             </Flex>
