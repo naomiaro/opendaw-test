@@ -12,6 +12,11 @@ import { CanvasPainter } from "./lib/CanvasPainter";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { MoisesLogo } from "./components/MoisesLogo";
 import { BackLink } from "./components/BackLink";
+import { TrackRow } from "./components/TrackRow";
+import { TransportControls } from "./components/TransportControls";
+import { TimelineRuler } from "./components/TimelineRuler";
+import { EffectPanel, EffectParameter } from "./components/EffectPanel";
+import { EffectsSection } from "./components/EffectsSection";
 import { loadAudioFile } from "./lib/audioUtils";
 import { initializeOpenDAW, setLoopEndFromTracks } from "./lib/projectSetup";
 import "@radix-ui/themes/styles.css";
@@ -32,250 +37,11 @@ import {
 const { Quarter } = PPQN;
 
 // Type definitions
-type TrackData = {
+export type TrackData = {
   name: string;
   trackBox: TrackBox;
   audioUnitBox: AudioUnitBox;
   uuid: UUID.Bytes;
-};
-
-/**
- * TrackRow - Audacity-style track row with mixer controls on left and waveform on right
- */
-const TrackRow: React.FC<{
-  track: TrackData;
-  project: Project;
-  allTracks: TrackData[];
-  peaks: any;
-  canvasRef: (el: HTMLCanvasElement | null) => void;
-  currentPosition: number;
-  isPlaying: boolean;
-  bpm: number;
-  audioBuffer: AudioBuffer | undefined;
-  setCurrentPosition: (position: number) => void;
-  pausedPositionRef: React.MutableRefObject<number | null>;
-  maxDuration: number;
-}> = ({ track, project, allTracks, canvasRef, currentPosition, isPlaying, bpm, audioBuffer, setCurrentPosition, pausedPositionRef, maxDuration }) => {
-  const [volume, setVolume] = useState(0);
-  const [pan, setPan] = useState(0);
-  const [muted, setMuted] = useState(false);
-  const [soloed, setSoloed] = useState(false);
-  const waveformContainerRef = useRef<HTMLDivElement>(null);
-
-  // Subscribe to audio unit state
-  useEffect(() => {
-    const volumeSubscription = track.audioUnitBox.volume.catchupAndSubscribe(obs => {
-      setVolume(obs.getValue());
-    });
-
-    const panSubscription = track.audioUnitBox.panning.catchupAndSubscribe(obs => {
-      setPan(obs.getValue());
-    });
-
-    const muteSubscription = track.audioUnitBox.mute.catchupAndSubscribe(obs => {
-      setMuted(obs.getValue());
-    });
-
-    const soloSubscription = track.audioUnitBox.solo.catchupAndSubscribe(obs => {
-      setSoloed(obs.getValue());
-    });
-
-    return () => {
-      volumeSubscription.terminate();
-      panSubscription.terminate();
-      muteSubscription.terminate();
-      soloSubscription.terminate();
-    };
-  }, [track]);
-
-  // Handle volume change
-  const handleVolumeChange = useCallback((values: number[]) => {
-    const newVolume = values[0];
-    project.editing.modify(() => {
-      track.audioUnitBox.volume.setValue(newVolume);
-    });
-  }, [project, track]);
-
-  // Handle pan change
-  const handlePanChange = useCallback((values: number[]) => {
-    const newPan = values[0];
-    project.editing.modify(() => {
-      track.audioUnitBox.panning.setValue(newPan);
-    });
-  }, [project, track]);
-
-  // Handle mute toggle
-  const handleMuteToggle = useCallback(() => {
-    project.editing.modify(() => {
-      track.audioUnitBox.mute.setValue(!muted);
-    });
-  }, [project, track, muted]);
-
-  // Handle solo toggle with DAW-style behavior
-  const handleSoloToggle = useCallback(() => {
-    const currentSolo = track.audioUnitBox.solo.getValue();
-
-    project.editing.modify(() => {
-      // Toggle solo on this track
-      track.audioUnitBox.solo.setValue(!currentSolo);
-
-      // If we're soloing this track (turning solo ON)
-      if (!currentSolo) {
-        // Always unmute this track
-        track.audioUnitBox.mute.setValue(false);
-
-        // Mute all other non-soloed tracks
-        allTracks.forEach(otherTrack => {
-          if (otherTrack.uuid !== track.uuid && !otherTrack.audioUnitBox.solo.getValue()) {
-            otherTrack.audioUnitBox.mute.setValue(true);
-          }
-        });
-      } else {
-        // If we're un-soloing and no other tracks are soloed, unmute all tracks
-        const anyOtherSoloed = allTracks.some(
-          t => t.uuid !== track.uuid && t.audioUnitBox.solo.getValue()
-        );
-
-        if (!anyOtherSoloed) {
-          allTracks.forEach(t => {
-            t.audioUnitBox.mute.setValue(false);
-          });
-        }
-      }
-    });
-  }, [project, track, allTracks]);
-
-  // Handle waveform click to seek
-  const handleWaveformClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (!audioBuffer || !waveformContainerRef.current) return;
-
-    const rect = waveformContainerRef.current.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const percent = clickX / rect.width;
-
-    // Calculate position in seconds using maxDuration (same as playhead), then convert to PPQN
-    const timeInSeconds = percent * maxDuration;
-    const positionInPPQN = PPQN.secondsToPulses(timeInSeconds, bpm);
-
-    // Set the playback position in engine and update state
-    project.engine.setPosition(positionInPPQN);
-    setCurrentPosition(positionInPPQN);
-
-    // If not playing, save position so play will start from here
-    if (!isPlaying) {
-      pausedPositionRef.current = positionInPPQN;
-    }
-
-    console.debug(`Seek to ${timeInSeconds.toFixed(2)}s (${positionInPPQN} PPQN)`);
-  }, [audioBuffer, bpm, project, setCurrentPosition, isPlaying, pausedPositionRef, maxDuration]);
-
-  return (
-    <Flex gap="0" style={{
-      borderBottom: "1px solid var(--gray-6)",
-      backgroundColor: "var(--gray-2)"
-    }}>
-      {/* Mixer Controls - Left Side (Audacity-style) */}
-      <Flex
-        direction="column"
-        gap="2"
-        style={{
-          width: "200px",
-          padding: "12px",
-          backgroundColor: "var(--gray-3)",
-          borderRight: "1px solid var(--gray-6)"
-        }}
-      >
-        {/* Track name */}
-        <Text size="2" weight="bold" style={{ marginBottom: "4px" }}>
-          {track.name}
-        </Text>
-
-        {/* Mute and Solo buttons */}
-        <Flex gap="2" align="center">
-          <Button
-            size="1"
-            color={muted ? "red" : "gray"}
-            variant={muted ? "solid" : "soft"}
-            onClick={handleMuteToggle}
-            style={{
-              width: "32px",
-              height: "24px",
-              padding: 0,
-              fontSize: "12px",
-              fontWeight: "bold"
-            }}
-          >
-            M
-          </Button>
-          <Button
-            size="1"
-            color={soloed ? "yellow" : "gray"}
-            variant={soloed ? "solid" : "soft"}
-            onClick={handleSoloToggle}
-            style={{
-              width: "32px",
-              height: "24px",
-              padding: 0,
-              fontSize: "12px",
-              fontWeight: "bold"
-            }}
-          >
-            S
-          </Button>
-          <Text size="1" color="gray" style={{ marginLeft: "4px" }}>
-            {volume.toFixed(1)}dB
-          </Text>
-        </Flex>
-
-        {/* Volume slider - horizontal */}
-        <Slider
-          value={[volume]}
-          onValueChange={handleVolumeChange}
-          min={-60}
-          max={6}
-          step={0.1}
-          style={{ width: "100%" }}
-        />
-
-        {/* Pan label */}
-        <Flex justify="between" align="center">
-          <Text size="1" color="gray">Pan</Text>
-          <Text size="1" color="gray">
-            {pan === 0 ? 'C' : pan < 0 ? `L${Math.abs(pan * 100).toFixed(0)}` : `R${(pan * 100).toFixed(0)}`}
-          </Text>
-        </Flex>
-
-        {/* Pan slider - horizontal */}
-        <Slider
-          value={[pan]}
-          onValueChange={handlePanChange}
-          min={-1}
-          max={1}
-          step={0.01}
-          style={{ width: "100%" }}
-        />
-      </Flex>
-
-      {/* Waveform - Right Side */}
-      <div
-        ref={waveformContainerRef}
-        onClick={handleWaveformClick}
-        style={{
-          flex: 1,
-          height: "120px",
-          backgroundColor: "#000",
-          position: "relative",
-          boxSizing: "border-box",
-          cursor: "pointer"
-        }}
-      >
-        <canvas
-          ref={canvasRef}
-          style={{ width: "100%", height: "100%", display: "block" }}
-        />
-      </div>
-    </Flex>
-  );
 };
 
 /**
@@ -296,6 +62,12 @@ const App: React.FC = () => {
   const [hasBassLoCrusher, setHasBassLoCrusher] = useState(false);
   const [hasMasterCompressor, setHasMasterCompressor] = useState(false);
   const [hasMasterLimiter, setHasMasterLimiter] = useState(false);
+
+  // Vocals Reverb parameters
+  const [vocalsReverbWet, setVocalsReverbWet] = useState(-6.0);
+  const [vocalsReverbDecay, setVocalsReverbDecay] = useState(0.6);
+  const [vocalsReverbPreDelay, setVocalsReverbPreDelay] = useState(0.02);
+  const [vocalsReverbDamp, setVocalsReverbDamp] = useState(0.7);
 
   // Refs for non-reactive values
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
@@ -669,19 +441,48 @@ const App: React.FC = () => {
 
       // Configure reverb for vocals
       reverb.label.setValue("Vocal Reverb");
-      reverb.wet.setValue(-6.0);  // Subtle reverb
-      reverb.decay.setValue(0.6);  // Medium room
-      reverb.preDelay.setValue(0.02);  // 20ms pre-delay
-      reverb.damp.setValue(0.7);  // Soften high frequencies
+      (reverb as any).wet.setValue(vocalsReverbWet);
+      (reverb as any).decay.setValue(vocalsReverbDecay);
+      (reverb as any).preDelay.setValue(vocalsReverbPreDelay);
+      (reverb as any).damp.setValue(vocalsReverbDamp);
 
       // Store reference for removal
       vocalsReverbRef.current = reverb;
+
+      // Subscribe to parameter changes
+      (reverb as any).wet.catchupAndSubscribe((obs: any) => setVocalsReverbWet(obs.getValue()));
+      (reverb as any).decay.catchupAndSubscribe((obs: any) => setVocalsReverbDecay(obs.getValue()));
+      (reverb as any).preDelay.catchupAndSubscribe((obs: any) => setVocalsReverbPreDelay(obs.getValue()));
+      (reverb as any).damp.catchupAndSubscribe((obs: any) => setVocalsReverbDamp(obs.getValue()));
 
       console.log("Added reverb to Vocals track");
     });
 
     setHasVocalsReverb(true);
-  }, [project, tracks, hasVocalsReverb]);
+  }, [project, tracks, hasVocalsReverb, vocalsReverbWet, vocalsReverbDecay, vocalsReverbPreDelay, vocalsReverbDamp]);
+
+  // Handler for updating vocals reverb parameters
+  const handleVocalsReverbParamChange = useCallback((paramName: string, value: number) => {
+    if (!project || !vocalsReverbRef.current) return;
+
+    project.editing.modify(() => {
+      const reverb = vocalsReverbRef.current;
+      switch (paramName) {
+        case 'wet':
+          (reverb as any).wet.setValue(value);
+          break;
+        case 'decay':
+          (reverb as any).decay.setValue(value);
+          break;
+        case 'preDelay':
+          (reverb as any).preDelay.setValue(value);
+          break;
+        case 'damp':
+          (reverb as any).damp.setValue(value);
+          break;
+      }
+    });
+  }, [project]);
 
   const handleRemoveVocalsReverb = useCallback(() => {
     if (!project || !hasVocalsReverb || !vocalsReverbRef.current) return;
@@ -988,37 +789,13 @@ const App: React.FC = () => {
             <Flex direction="column" gap="3">
               <Heading size="4">Transport</Heading>
               <Separator size="4" />
-              <Flex gap="3" align="center">
-                <Button
-                  color="green"
-                  variant={isPlaying ? "solid" : "soft"}
-                  onClick={handlePlay}
-                  disabled={isPlaying}
-                >
-                  ▶ Play
-                </Button>
-                <Button
-                  color="orange"
-                  onClick={handlePause}
-                  disabled={!isPlaying}
-                >
-                  ⏸ Pause
-                </Button>
-                <Button
-                  color="red"
-                  onClick={handleStop}
-                  disabled={!isPlaying}
-                >
-                  ⏹ Stop
-                </Button>
-                <Separator orientation="vertical" size="2" />
-                <Text size="2" color="gray">
-                  Position: {(currentPosition / Quarter).toFixed(2)} quarters
-                </Text>
-                <Badge color={isPlaying ? "green" : "gray"}>
-                  {isPlaying ? "Playing" : "Stopped"}
-                </Badge>
-              </Flex>
+              <TransportControls
+                isPlaying={isPlaying}
+                currentPosition={currentPosition}
+                onPlay={handlePlay}
+                onPause={handlePause}
+                onStop={handleStop}
+              />
             </Flex>
           </Card>
 
@@ -1032,93 +809,12 @@ const App: React.FC = () => {
               <Flex direction="column" gap="0" style={{ border: "1px solid var(--gray-6)", position: "relative" }}>
                 <div ref={tracksContainerRef} style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none" }} />
                 {/* Timeline - Dynamically calculated duration */}
-                <div style={{
-                  display: "flex",
-                  flexDirection: "row",
-                  gap: 0,
-                  alignItems: "stretch",
-                  borderBottom: "1px solid var(--gray-6)"
-                }}>
-                  {/* Left spacer matching controls width - using inline flex to match TrackRow exactly */}
-                  <div style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "8px",
-                    width: "200px",
-                    padding: "12px",
-                    backgroundColor: "var(--gray-3)",
-                    borderRight: "1px solid var(--gray-6)",
-                    boxSizing: "border-box"
-                  }}
-                  ></div>
-
-                  {/* Timeline ruler aligned with waveforms */}
-                  <div style={{
-                    flex: 1,
-                    height: "24px",
-                    position: "relative",
-                    borderBottom: "1px solid var(--gray-8)",
-                    backgroundColor: "var(--gray-2)",
-                    boxSizing: "border-box"
-                  }}>
-                    {(() => {
-                      // Calculate max duration from all audio buffers
-                      const maxDuration = Math.max(
-                        ...Array.from(localAudioBuffersRef.current.values()).map(buf => buf.duration),
-                        1 // Fallback to 1 second minimum
-                      );
-                      const totalSeconds = Math.ceil(maxDuration);
-
-                      return (
-                        <>
-                          {/* Generate tick marks every second */}
-                          {Array.from({ length: totalSeconds + 1 }, (_, i) => {
-                            const seconds = i;
-                            const percent = (seconds / maxDuration) * 100;
-                            const isMajorTick = seconds % 5 === 0;
-
-                            return (
-                              <div
-                                key={seconds}
-                                style={{
-                                  position: "absolute",
-                                  left: `${percent}%`,
-                                  bottom: 0,
-                                  height: isMajorTick ? "12px" : "6px",
-                                  width: "1px",
-                                  backgroundColor: isMajorTick ? "var(--gray-10)" : "var(--gray-7)"
-                                }}
-                              />
-                            );
-                          })}
-
-                          {/* Time labels at major intervals (every 5 seconds) */}
-                          {Array.from(
-                            { length: Math.floor(totalSeconds / 5) + 1 },
-                            (_, i) => i * 5
-                          ).map((seconds) => {
-                            const percent = (seconds / maxDuration) * 100;
-                            return (
-                              <div
-                                key={`label-${seconds}`}
-                                style={{
-                                  position: "absolute",
-                                  left: `${percent}%`,
-                                  top: "-6px",
-                                  transform: "translateX(-50%)"
-                                }}
-                              >
-                                <Text size="1" color="gray" style={{ fontWeight: "500" }}>
-                                  {seconds}
-                                </Text>
-                              </div>
-                            );
-                          })}
-                        </>
-                      );
-                    })()}
-                  </div>
-                </div>
+                <TimelineRuler
+                  maxDuration={Math.max(
+                    ...Array.from(localAudioBuffersRef.current.values()).map(buf => buf.duration),
+                    1
+                  )}
+                />
                 {(() => {
                   // Calculate max duration once for all tracks
                   const maxDuration = Math.max(
@@ -1215,27 +911,51 @@ const App: React.FC = () => {
               <Flex direction="column" gap="3">
                 <Heading size="3">Per-Track Effects</Heading>
 
-                <Card variant="surface">
-                  <Flex direction="column" gap="2">
-                    <Flex justify="between" align="center">
-                      <Flex direction="column" gap="1">
-                        <Text weight="bold">Vocals - Reverb</Text>
-                        <Text size="2" color="gray">
-                          Adds spacious ambience to vocal track
-                        </Text>
-                      </Flex>
-                      <Button
-                        color={hasVocalsReverb ? "red" : "purple"}
-                        onClick={hasVocalsReverb ? handleRemoveVocalsReverb : handleAddVocalsReverb}
-                      >
-                        {hasVocalsReverb ? "− Remove" : "+ Add Reverb"}
-                      </Button>
-                    </Flex>
-                    {hasVocalsReverb && (
-                      <Badge color="purple">Active: Medium room, 20ms pre-delay</Badge>
-                    )}
-                  </Flex>
-                </Card>
+                <EffectPanel
+                  title="Vocals - Reverb"
+                  description="Adds spacious ambience to vocal track"
+                  isActive={hasVocalsReverb}
+                  onToggle={hasVocalsReverb ? handleRemoveVocalsReverb : handleAddVocalsReverb}
+                  parameters={[
+                    {
+                      name: 'wet',
+                      label: 'Wet/Dry Mix',
+                      value: vocalsReverbWet,
+                      min: -60,
+                      max: 0,
+                      step: 0.1,
+                      unit: ' dB'
+                    },
+                    {
+                      name: 'decay',
+                      label: 'Decay Time',
+                      value: vocalsReverbDecay,
+                      min: 0,
+                      max: 1,
+                      step: 0.01,
+                      format: (v) => `${(v * 100).toFixed(0)}%`
+                    },
+                    {
+                      name: 'preDelay',
+                      label: 'Pre-Delay',
+                      value: vocalsReverbPreDelay,
+                      min: 0,
+                      max: 0.1,
+                      step: 0.001,
+                      format: (v) => `${(v * 1000).toFixed(0)} ms`
+                    },
+                    {
+                      name: 'damp',
+                      label: 'Damping',
+                      value: vocalsReverbDamp,
+                      min: 0,
+                      max: 1,
+                      step: 0.01,
+                      format: (v) => `${(v * 100).toFixed(0)}%`
+                    }
+                  ]}
+                  onParameterChange={handleVocalsReverbParamChange}
+                />
 
                 <Card variant="surface">
                   <Flex direction="column" gap="2">
