@@ -931,7 +931,7 @@ const App: React.FC = () => {
 
               {/* Timeline and tracks container with shared border */}
               <Flex direction="column" gap="0" style={{ border: "1px solid var(--gray-6)" }}>
-                {/* Timeline - Shows 30-second duration */}
+                {/* Timeline - Dynamically calculated duration */}
                 <div style={{
                   display: "flex",
                   flexDirection: "row",
@@ -961,46 +961,62 @@ const App: React.FC = () => {
                     backgroundColor: "var(--gray-2)",
                     boxSizing: "border-box"
                   }}>
-                    {/* Generate tick marks every second */}
-                    {Array.from({ length: 31 }, (_, i) => {
-                      const seconds = i;
-                      const percent = (seconds / 30) * 100;
-                      const isMajorTick = seconds % 5 === 0;
+                    {(() => {
+                      // Calculate max duration from all audio buffers
+                      const maxDuration = Math.max(
+                        ...Array.from(localAudioBuffersRef.current.values()).map(buf => buf.duration),
+                        1 // Fallback to 1 second minimum
+                      );
+                      const totalSeconds = Math.ceil(maxDuration);
 
                       return (
-                        <div
-                          key={seconds}
-                          style={{
-                            position: "absolute",
-                            left: `${percent}%`,
-                            bottom: 0,
-                            height: isMajorTick ? "12px" : "6px",
-                            width: "1px",
-                            backgroundColor: isMajorTick ? "var(--gray-10)" : "var(--gray-7)"
-                          }}
-                        />
-                      );
-                    })}
+                        <>
+                          {/* Generate tick marks every second */}
+                          {Array.from({ length: totalSeconds + 1 }, (_, i) => {
+                            const seconds = i;
+                            const percent = (seconds / maxDuration) * 100;
+                            const isMajorTick = seconds % 5 === 0;
 
-                    {/* Time labels at major intervals */}
-                    {[0, 5, 10, 15, 20, 25, 30].map((seconds) => {
-                      const percent = (seconds / 30) * 100;
-                      return (
-                        <div
-                          key={`label-${seconds}`}
-                          style={{
-                            position: "absolute",
-                            left: `${percent}%`,
-                            top: "-6px",
-                            transform: "translateX(-50%)"
-                          }}
-                        >
-                          <Text size="1" color="gray" style={{ fontWeight: "500" }}>
-                            {seconds}
-                          </Text>
-                        </div>
+                            return (
+                              <div
+                                key={seconds}
+                                style={{
+                                  position: "absolute",
+                                  left: `${percent}%`,
+                                  bottom: 0,
+                                  height: isMajorTick ? "12px" : "6px",
+                                  width: "1px",
+                                  backgroundColor: isMajorTick ? "var(--gray-10)" : "var(--gray-7)"
+                                }}
+                              />
+                            );
+                          })}
+
+                          {/* Time labels at major intervals (every 5 seconds) */}
+                          {Array.from(
+                            { length: Math.floor(totalSeconds / 5) + 1 },
+                            (_, i) => i * 5
+                          ).map((seconds) => {
+                            const percent = (seconds / maxDuration) * 100;
+                            return (
+                              <div
+                                key={`label-${seconds}`}
+                                style={{
+                                  position: "absolute",
+                                  left: `${percent}%`,
+                                  top: "-6px",
+                                  transform: "translateX(-50%)"
+                                }}
+                              >
+                                <Text size="1" color="gray" style={{ fontWeight: "500" }}>
+                                  {seconds}
+                                </Text>
+                              </div>
+                            );
+                          })}
+                        </>
                       );
-                    })}
+                    })()}
                   </div>
                 </div>
                 {tracks.map(track => (
