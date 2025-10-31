@@ -208,6 +208,7 @@ const App: React.FC = () => {
   const [peaksReady, setPeaksReady] = useState(false);
   const [hasVocalsReverb, setHasVocalsReverb] = useState(false);
   const [hasGuitarDelay, setHasGuitarDelay] = useState(false);
+  const [hasBassLoCrusher, setHasBassLoCrusher] = useState(false);
   const [hasMasterCompressor, setHasMasterCompressor] = useState(false);
 
   // Refs for non-reactive values
@@ -577,6 +578,31 @@ const App: React.FC = () => {
     setHasGuitarDelay(true);
   }, [project, tracks, hasGuitarDelay]);
 
+  const handleAddBassLoCrusher = useCallback(() => {
+    if (!project || hasBassLoCrusher) return;
+
+    const bassTrack = tracks.find(t => t.name === "Bass & Drums");
+    if (!bassTrack) return;
+
+    project.editing.modify(() => {
+      const crusher = project.api.insertEffect(
+        bassTrack.audioUnitBox.audioEffects,
+        EffectFactories.AudioNamed.Crusher
+      );
+
+      // Configure crusher for obvious lo-fi effect
+      crusher.label.setValue("Lo-Fi Crusher");
+      crusher.bits.setValue(6);  // Extreme bit reduction (very obvious!)
+      crusher.crush.setValue(8.0);  // Heavy crushing
+      crusher.boost.setValue(2.0);  // Boost to compensate for level loss
+      crusher.mix.setValue(0.7);  // 70% wet for dramatic but musical effect
+
+      console.log("Added lo-fi crusher to Bass & Drums track");
+    });
+
+    setHasBassLoCrusher(true);
+  }, [project, tracks, hasBassLoCrusher]);
+
   const handleAddMasterCompressor = useCallback(() => {
     if (!project || hasMasterCompressor) return;
 
@@ -629,7 +655,7 @@ const App: React.FC = () => {
           <Flex direction="column" gap="3">
             <Heading size="8">OpenDAW Effects Demo</Heading>
             <Text size="4" color="gray">
-              Multi-track mixer with professional audio effects (Reverb, Delay, Compressor)
+              Multi-track mixer with professional audio effects (Reverb, Delay, Lo-Fi Crusher, Compressor)
             </Text>
           </Flex>
 
@@ -637,8 +663,8 @@ const App: React.FC = () => {
           <Callout.Root color="blue">
             <Callout.Text>
               💡 This demo shows OpenDAW's mixer controls and professional audio effects.
-              Each track has independent volume, mute, and solo controls. You can add studio-quality effects
-              to individual tracks (Reverb on Vocals, Delay on Guitar) or the master output (Compressor for mix glue).
+              Each track has independent volume, mute, and solo controls. Add studio-quality effects
+              to individual tracks (Reverb on Vocals, Delay on Guitar, Lo-Fi Crusher on Bass) or the master output (Compressor for mix glue).
             </Callout.Text>
           </Callout.Root>
 
@@ -768,6 +794,29 @@ const App: React.FC = () => {
                     )}
                   </Flex>
                 </Card>
+
+                <Card variant="surface">
+                  <Flex direction="column" gap="2">
+                    <Flex justify="between" align="center">
+                      <Flex direction="column" gap="1">
+                        <Text weight="bold">Bass & Drums - Lo-Fi Crusher</Text>
+                        <Text size="2" color="gray">
+                          Extreme bit-crushing for dramatic lo-fi distortion (very obvious!)
+                        </Text>
+                      </Flex>
+                      <Button
+                        color="purple"
+                        onClick={handleAddBassLoCrusher}
+                        disabled={hasBassLoCrusher}
+                      >
+                        {hasBassLoCrusher ? "✓ Added" : "+ Add Crusher"}
+                      </Button>
+                    </Flex>
+                    {hasBassLoCrusher && (
+                      <Badge color="purple">Active: 6-bit depth, heavy crush</Badge>
+                    )}
+                  </Flex>
+                </Card>
               </Flex>
 
               {/* Master Effects */}
@@ -848,6 +897,9 @@ const App: React.FC = () => {
                 </Text>
                 <Text size="2">
                   • Delay: Tempo-synced echo with feedback and filtering
+                </Text>
+                <Text size="2">
+                  • Crusher: Bit-crushing and sample rate reduction for lo-fi distortion
                 </Text>
                 <Text size="2">
                   • Compressor: Dynamic range control with threshold, ratio, and makeup gain

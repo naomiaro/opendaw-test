@@ -112,7 +112,7 @@ const App: React.FC = () => {
                   </Flex>
                   <Text size="2" color="gray">
                     Multi-track mixer with professional audio effects. Add Reverb to vocals, Delay to guitar,
-                    or Compressor to master output. Includes volume faders, mute/solo controls, and waveform visualization.
+                    Lo-Fi Crusher to bass (very obvious!), or Compressor to master output. Includes volume faders, mute/solo controls, and waveforms.
                   </Text>
                 </Flex>
               </Link>
