@@ -25,11 +25,8 @@ import {
   Container,
   Heading,
   Text,
-  Button,
   Flex,
   Card,
-  Slider,
-  Badge,
   Separator,
   Callout
 } from "@radix-ui/themes";
@@ -68,6 +65,42 @@ const App: React.FC = () => {
   const [vocalsReverbDecay, setVocalsReverbDecay] = useState(0.6);
   const [vocalsReverbPreDelay, setVocalsReverbPreDelay] = useState(0.02);
   const [vocalsReverbDamp, setVocalsReverbDamp] = useState(0.7);
+
+  // Vocals Compressor parameters
+  const [vocalsCompThreshold, setVocalsCompThreshold] = useState(-18.0);
+  const [vocalsCompRatio, setVocalsCompRatio] = useState(3.0);
+  const [vocalsCompAttack, setVocalsCompAttack] = useState(5.0);
+  const [vocalsCompRelease, setVocalsCompRelease] = useState(50.0);
+  const [vocalsCompKnee, setVocalsCompKnee] = useState(4.0);
+
+  // Guitar Delay parameters
+  const [guitarDelayWet, setGuitarDelayWet] = useState(-12.0);
+  const [guitarDelayFeedback, setGuitarDelayFeedback] = useState(0.3);
+  const [guitarDelayTime, setGuitarDelayTime] = useState(6);
+  const [guitarDelayFilter, setGuitarDelayFilter] = useState(0.2);
+
+  // Guitar Crusher parameters
+  const [guitarCrusherBits, setGuitarCrusherBits] = useState(4);
+  const [guitarCrusherCrush, setGuitarCrusherCrush] = useState(0.95);
+  const [guitarCrusherBoost, setGuitarCrusherBoost] = useState(0.6);
+  const [guitarCrusherMix, setGuitarCrusherMix] = useState(0.8);
+
+  // Bass Crusher parameters
+  const [bassCrusherBits, setBassCrusherBits] = useState(6);
+  const [bassCrusherCrush, setBassCrusherCrush] = useState(0.9);
+  const [bassCrusherBoost, setBassCrusherBoost] = useState(0.5);
+  const [bassCrusherMix, setBassCrusherMix] = useState(0.7);
+
+  // Master Compressor parameters
+  const [masterCompThreshold, setMasterCompThreshold] = useState(-12.0);
+  const [masterCompRatio, setMasterCompRatio] = useState(2.0);
+  const [masterCompAttack, setMasterCompAttack] = useState(5.0);
+  const [masterCompRelease, setMasterCompRelease] = useState(100.0);
+  const [masterCompKnee, setMasterCompKnee] = useState(6.0);
+
+  // Master Stereo Width parameters
+  const [masterStereoWidth, setMasterStereoWidth] = useState(0.8);
+  const [masterStereoPan, setMasterStereoPan] = useState(0.0);
 
   // Refs for non-reactive values
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
@@ -511,21 +544,53 @@ const App: React.FC = () => {
 
       // Configure compressor for vocals
       compressor.label.setValue("Vocal Compressor");
-      compressor.threshold.setValue(-18.0);  // Moderate threshold
-      compressor.ratio.setValue(3.0);  // 3:1 ratio
-      compressor.attack.setValue(5.0);  // Fast attack for vocals
-      compressor.release.setValue(50.0);  // Medium release
-      compressor.automakeup.setValue(true);  // Auto makeup gain
-      compressor.knee.setValue(4.0);  // Soft knee
+      (compressor as any).threshold.setValue(vocalsCompThreshold);
+      (compressor as any).ratio.setValue(vocalsCompRatio);
+      (compressor as any).attack.setValue(vocalsCompAttack);
+      (compressor as any).release.setValue(vocalsCompRelease);
+      (compressor as any).automakeup.setValue(true);
+      (compressor as any).knee.setValue(vocalsCompKnee);
 
       // Store reference for removal
       vocalsCompressorRef.current = compressor;
+
+      // Subscribe to parameter changes
+      (compressor as any).threshold.catchupAndSubscribe((obs: any) => setVocalsCompThreshold(obs.getValue()));
+      (compressor as any).ratio.catchupAndSubscribe((obs: any) => setVocalsCompRatio(obs.getValue()));
+      (compressor as any).attack.catchupAndSubscribe((obs: any) => setVocalsCompAttack(obs.getValue()));
+      (compressor as any).release.catchupAndSubscribe((obs: any) => setVocalsCompRelease(obs.getValue()));
+      (compressor as any).knee.catchupAndSubscribe((obs: any) => setVocalsCompKnee(obs.getValue()));
 
       console.log("Added compressor to Vocals track at index 0");
     });
 
     setHasVocalsCompressor(true);
-  }, [project, tracks, hasVocalsCompressor]);
+  }, [project, tracks, hasVocalsCompressor, vocalsCompThreshold, vocalsCompRatio, vocalsCompAttack, vocalsCompRelease, vocalsCompKnee]);
+
+  const handleVocalsCompressorParamChange = useCallback((paramName: string, value: number) => {
+    if (!project || !vocalsCompressorRef.current) return;
+
+    project.editing.modify(() => {
+      const comp = vocalsCompressorRef.current;
+      switch (paramName) {
+        case 'threshold':
+          (comp as any).threshold.setValue(value);
+          break;
+        case 'ratio':
+          (comp as any).ratio.setValue(value);
+          break;
+        case 'attack':
+          (comp as any).attack.setValue(value);
+          break;
+        case 'release':
+          (comp as any).release.setValue(value);
+          break;
+        case 'knee':
+          (comp as any).knee.setValue(value);
+          break;
+      }
+    });
+  }, [project]);
 
   const handleRemoveVocalsCompressor = useCallback(() => {
     if (!project || !hasVocalsCompressor || !vocalsCompressorRef.current) return;
@@ -553,19 +618,47 @@ const App: React.FC = () => {
 
       // Configure delay for guitar
       delay.label.setValue("Guitar Delay");
-      delay.wet.setValue(-12.0);  // Subtle delay
-      delay.feedback.setValue(0.3);  // Light feedback
-      delay.delay.setValue(6);  // 1/8 note delay
-      delay.filter.setValue(0.2);  // Slight high-pass on feedback
+      (delay as any).wet.setValue(guitarDelayWet);
+      (delay as any).feedback.setValue(guitarDelayFeedback);
+      (delay as any).delay.setValue(guitarDelayTime);
+      (delay as any).filter.setValue(guitarDelayFilter);
 
       // Store reference for removal
       guitarDelayRef.current = delay;
+
+      // Subscribe to parameter changes
+      (delay as any).wet.catchupAndSubscribe((obs: any) => setGuitarDelayWet(obs.getValue()));
+      (delay as any).feedback.catchupAndSubscribe((obs: any) => setGuitarDelayFeedback(obs.getValue()));
+      (delay as any).delay.catchupAndSubscribe((obs: any) => setGuitarDelayTime(obs.getValue()));
+      (delay as any).filter.catchupAndSubscribe((obs: any) => setGuitarDelayFilter(obs.getValue()));
 
       console.log("Added delay to Guitar track");
     });
 
     setHasGuitarDelay(true);
-  }, [project, tracks, hasGuitarDelay]);
+  }, [project, tracks, hasGuitarDelay, guitarDelayWet, guitarDelayFeedback, guitarDelayTime, guitarDelayFilter]);
+
+  const handleGuitarDelayParamChange = useCallback((paramName: string, value: number) => {
+    if (!project || !guitarDelayRef.current) return;
+
+    project.editing.modify(() => {
+      const delay = guitarDelayRef.current;
+      switch (paramName) {
+        case 'wet':
+          (delay as any).wet.setValue(value);
+          break;
+        case 'feedback':
+          (delay as any).feedback.setValue(value);
+          break;
+        case 'time':
+          (delay as any).delay.setValue(value);
+          break;
+        case 'filter':
+          (delay as any).filter.setValue(value);
+          break;
+      }
+    });
+  }, [project]);
 
   const handleRemoveGuitarDelay = useCallback(() => {
     if (!project || !hasGuitarDelay || !guitarDelayRef.current) return;
@@ -593,19 +686,47 @@ const App: React.FC = () => {
 
       // Configure crusher for very obvious lo-fi effect on guitar
       crusher.label.setValue("Guitar Lo-Fi");
-      crusher.bits.setValue(4);  // Very low bit depth for obvious effect
-      crusher.crush.setValue(0.95);  // Heavy crushing
-      crusher.boost.setValue(0.6);  // Boost to compensate
-      crusher.mix.setValue(0.8);  // 80% wet for dramatic but still musical effect
+      (crusher as any).bits.setValue(guitarCrusherBits);
+      (crusher as any).crush.setValue(guitarCrusherCrush);
+      (crusher as any).boost.setValue(guitarCrusherBoost);
+      (crusher as any).mix.setValue(guitarCrusherMix);
 
       // Store reference for removal
       guitarCrusherRef.current = crusher;
+
+      // Subscribe to parameter changes
+      (crusher as any).bits.catchupAndSubscribe((obs: any) => setGuitarCrusherBits(obs.getValue()));
+      (crusher as any).crush.catchupAndSubscribe((obs: any) => setGuitarCrusherCrush(obs.getValue()));
+      (crusher as any).boost.catchupAndSubscribe((obs: any) => setGuitarCrusherBoost(obs.getValue()));
+      (crusher as any).mix.catchupAndSubscribe((obs: any) => setGuitarCrusherMix(obs.getValue()));
 
       console.log("Added lo-fi crusher to Guitar track");
     });
 
     setHasGuitarCrusher(true);
-  }, [project, tracks, hasGuitarCrusher]);
+  }, [project, tracks, hasGuitarCrusher, guitarCrusherBits, guitarCrusherCrush, guitarCrusherBoost, guitarCrusherMix]);
+
+  const handleGuitarCrusherParamChange = useCallback((paramName: string, value: number) => {
+    if (!project || !guitarCrusherRef.current) return;
+
+    project.editing.modify(() => {
+      const crusher = guitarCrusherRef.current;
+      switch (paramName) {
+        case 'bits':
+          (crusher as any).bits.setValue(value);
+          break;
+        case 'crush':
+          (crusher as any).crush.setValue(value);
+          break;
+        case 'boost':
+          (crusher as any).boost.setValue(value);
+          break;
+        case 'mix':
+          (crusher as any).mix.setValue(value);
+          break;
+      }
+    });
+  }, [project]);
 
   const handleRemoveGuitarCrusher = useCallback(() => {
     if (!project || !hasGuitarCrusher || !guitarCrusherRef.current) return;
@@ -633,19 +754,47 @@ const App: React.FC = () => {
 
       // Configure crusher for obvious lo-fi effect
       crusher.label.setValue("Lo-Fi Crusher");
-      crusher.bits.setValue(6);  // Extreme bit reduction (very obvious!)
-      crusher.crush.setValue(0.9);  // Heavy crushing (0-1 range)
-      crusher.boost.setValue(0.5);  // Boost to compensate for level loss (0-1 range)
-      crusher.mix.setValue(0.7);  // 70% wet for dramatic but musical effect
+      (crusher as any).bits.setValue(bassCrusherBits);
+      (crusher as any).crush.setValue(bassCrusherCrush);
+      (crusher as any).boost.setValue(bassCrusherBoost);
+      (crusher as any).mix.setValue(bassCrusherMix);
 
       // Store reference for removal
       bassLoCrusherRef.current = crusher;
+
+      // Subscribe to parameter changes
+      (crusher as any).bits.catchupAndSubscribe((obs: any) => setBassCrusherBits(obs.getValue()));
+      (crusher as any).crush.catchupAndSubscribe((obs: any) => setBassCrusherCrush(obs.getValue()));
+      (crusher as any).boost.catchupAndSubscribe((obs: any) => setBassCrusherBoost(obs.getValue()));
+      (crusher as any).mix.catchupAndSubscribe((obs: any) => setBassCrusherMix(obs.getValue()));
 
       console.log("Added lo-fi crusher to Bass & Drums track");
     });
 
     setHasBassLoCrusher(true);
-  }, [project, tracks, hasBassLoCrusher]);
+  }, [project, tracks, hasBassLoCrusher, bassCrusherBits, bassCrusherCrush, bassCrusherBoost, bassCrusherMix]);
+
+  const handleBassCrusherParamChange = useCallback((paramName: string, value: number) => {
+    if (!project || !bassLoCrusherRef.current) return;
+
+    project.editing.modify(() => {
+      const crusher = bassLoCrusherRef.current;
+      switch (paramName) {
+        case 'bits':
+          (crusher as any).bits.setValue(value);
+          break;
+        case 'crush':
+          (crusher as any).crush.setValue(value);
+          break;
+        case 'boost':
+          (crusher as any).boost.setValue(value);
+          break;
+        case 'mix':
+          (crusher as any).mix.setValue(value);
+          break;
+      }
+    });
+  }, [project]);
 
   const handleRemoveBassLoCrusher = useCallback(() => {
     if (!project || !hasBassLoCrusher || !bassLoCrusherRef.current) return;
@@ -672,27 +821,59 @@ const App: React.FC = () => {
       }
 
       const compressor = project.api.insertEffect(
-        masterAudioUnit.audioEffects,
+        (masterAudioUnit as any).audioEffects,
         EffectFactories.AudioNamed.Compressor
       );
 
       // Configure mastering compressor
       compressor.label.setValue("Master Glue");
-      compressor.threshold.setValue(-12.0);  // Gentle threshold
-      compressor.ratio.setValue(2.0);  // Gentle ratio
-      compressor.attack.setValue(5.0);  // Fast attack
-      compressor.release.setValue(100.0);  // Medium release
-      compressor.automakeup.setValue(true);  // Auto makeup gain
-      compressor.knee.setValue(6.0);  // Soft knee
+      (compressor as any).threshold.setValue(masterCompThreshold);
+      (compressor as any).ratio.setValue(masterCompRatio);
+      (compressor as any).attack.setValue(masterCompAttack);
+      (compressor as any).release.setValue(masterCompRelease);
+      (compressor as any).automakeup.setValue(true);
+      (compressor as any).knee.setValue(masterCompKnee);
 
       // Store reference for removal
       masterCompressorRef.current = compressor;
+
+      // Subscribe to parameter changes
+      (compressor as any).threshold.catchupAndSubscribe((obs: any) => setMasterCompThreshold(obs.getValue()));
+      (compressor as any).ratio.catchupAndSubscribe((obs: any) => setMasterCompRatio(obs.getValue()));
+      (compressor as any).attack.catchupAndSubscribe((obs: any) => setMasterCompAttack(obs.getValue()));
+      (compressor as any).release.catchupAndSubscribe((obs: any) => setMasterCompRelease(obs.getValue()));
+      (compressor as any).knee.catchupAndSubscribe((obs: any) => setMasterCompKnee(obs.getValue()));
 
       console.log("Added compressor to master output");
     });
 
     setHasMasterCompressor(true);
-  }, [project, hasMasterCompressor]);
+  }, [project, hasMasterCompressor, masterCompThreshold, masterCompRatio, masterCompAttack, masterCompRelease, masterCompKnee]);
+
+  const handleMasterCompressorParamChange = useCallback((paramName: string, value: number) => {
+    if (!project || !masterCompressorRef.current) return;
+
+    project.editing.modify(() => {
+      const comp = masterCompressorRef.current;
+      switch (paramName) {
+        case 'threshold':
+          (comp as any).threshold.setValue(value);
+          break;
+        case 'ratio':
+          (comp as any).ratio.setValue(value);
+          break;
+        case 'attack':
+          (comp as any).attack.setValue(value);
+          break;
+        case 'release':
+          (comp as any).release.setValue(value);
+          break;
+        case 'knee':
+          (comp as any).knee.setValue(value);
+          break;
+      }
+    });
+  }, [project]);
 
   const handleRemoveMasterCompressor = useCallback(() => {
     if (!project || !hasMasterCompressor || !masterCompressorRef.current) return;
@@ -719,23 +900,43 @@ const App: React.FC = () => {
       }
 
       const stereoTool = project.api.insertEffect(
-        masterAudioUnit.audioEffects,
+        (masterAudioUnit as any).audioEffects,
         EffectFactories.AudioNamed.StereoTool
       );
 
       // Configure stereo tool for wider stereo field
       stereoTool.label.setValue("Master Width");
-      stereoTool.stereo.setValue(0.8);  // Enhanced stereo width (0-1 range, 1=normal)
-      stereoTool.panning.setValue(0.0);  // Keep centered
+      (stereoTool as any).stereo.setValue(masterStereoWidth);
+      (stereoTool as any).panning.setValue(masterStereoPan);
 
       // Store reference for removal
       masterLimiterRef.current = stereoTool;
+
+      // Subscribe to parameter changes
+      (stereoTool as any).stereo.catchupAndSubscribe((obs: any) => setMasterStereoWidth(obs.getValue()));
+      (stereoTool as any).panning.catchupAndSubscribe((obs: any) => setMasterStereoPan(obs.getValue()));
 
       console.log("Added stereo width to master output");
     });
 
     setHasMasterLimiter(true);
-  }, [project, hasMasterLimiter]);
+  }, [project, hasMasterLimiter, masterStereoWidth, masterStereoPan]);
+
+  const handleMasterStereoParamChange = useCallback((paramName: string, value: number) => {
+    if (!project || !masterLimiterRef.current) return;
+
+    project.editing.modify(() => {
+      const stereo = masterLimiterRef.current;
+      switch (paramName) {
+        case 'width':
+          (stereo as any).stereo.setValue(value);
+          break;
+        case 'pan':
+          (stereo as any).panning.setValue(value);
+          break;
+      }
+    });
+  }, [project]);
 
   const handleRemoveMasterLimiter = useCallback(() => {
     if (!project || !hasMasterLimiter || !masterLimiterRef.current) return;
@@ -957,146 +1158,294 @@ const App: React.FC = () => {
                   onParameterChange={handleVocalsReverbParamChange}
                 />
 
-                <Card variant="surface">
-                  <Flex direction="column" gap="2">
-                    <Flex justify="between" align="center">
-                      <Flex direction="column" gap="1">
-                        <Text weight="bold">Vocals - Compressor</Text>
-                        <Text size="2" color="gray">
-                          Smooths vocal dynamics (adds at index 0, before reverb)
-                        </Text>
-                      </Flex>
-                      <Button
-                        color={hasVocalsCompressor ? "red" : "purple"}
-                        onClick={hasVocalsCompressor ? handleRemoveVocalsCompressor : handleAddVocalsCompressor}
-                      >
-                        {hasVocalsCompressor ? "− Remove" : "+ Add Compressor"}
-                      </Button>
-                    </Flex>
-                    {hasVocalsCompressor && (
-                      <Badge color="purple">Active: 3:1 ratio, -18dB threshold, at index 0</Badge>
-                    )}
-                  </Flex>
-                </Card>
+                <EffectPanel
+                  title="Vocals - Compressor"
+                  description="Smooths vocal dynamics (adds at index 0, before reverb)"
+                  isActive={hasVocalsCompressor}
+                  onToggle={hasVocalsCompressor ? handleRemoveVocalsCompressor : handleAddVocalsCompressor}
+                  parameters={[
+                    {
+                      name: 'threshold',
+                      label: 'Threshold',
+                      value: vocalsCompThreshold,
+                      min: -60,
+                      max: 0,
+                      step: 0.5,
+                      unit: ' dB'
+                    },
+                    {
+                      name: 'ratio',
+                      label: 'Ratio',
+                      value: vocalsCompRatio,
+                      min: 1,
+                      max: 20,
+                      step: 0.1,
+                      format: (v) => `${v.toFixed(1)}:1`
+                    },
+                    {
+                      name: 'attack',
+                      label: 'Attack',
+                      value: vocalsCompAttack,
+                      min: 0.1,
+                      max: 100,
+                      step: 0.1,
+                      unit: ' ms'
+                    },
+                    {
+                      name: 'release',
+                      label: 'Release',
+                      value: vocalsCompRelease,
+                      min: 10,
+                      max: 1000,
+                      step: 10,
+                      unit: ' ms'
+                    },
+                    {
+                      name: 'knee',
+                      label: 'Knee',
+                      value: vocalsCompKnee,
+                      min: 0,
+                      max: 12,
+                      step: 0.5,
+                      unit: ' dB'
+                    }
+                  ]}
+                  onParameterChange={handleVocalsCompressorParamChange}
+                />
 
-                <Card variant="surface">
-                  <Flex direction="column" gap="2">
-                    <Flex justify="between" align="center">
-                      <Flex direction="column" gap="1">
-                        <Text weight="bold">Guitar - Delay</Text>
-                        <Text size="2" color="gray">
-                          Adds rhythmic echo effect to guitar track
-                        </Text>
-                      </Flex>
-                      <Button
-                        color={hasGuitarDelay ? "red" : "purple"}
-                        onClick={hasGuitarDelay ? handleRemoveGuitarDelay : handleAddGuitarDelay}
-                      >
-                        {hasGuitarDelay ? "− Remove" : "+ Add Delay"}
-                      </Button>
-                    </Flex>
-                    {hasGuitarDelay && (
-                      <Badge color="purple">Active: 1/8 note, light feedback</Badge>
-                    )}
-                  </Flex>
-                </Card>
+                <EffectPanel
+                  title="Guitar - Delay"
+                  description="Adds rhythmic echo effect to guitar track"
+                  isActive={hasGuitarDelay}
+                  onToggle={hasGuitarDelay ? handleRemoveGuitarDelay : handleAddGuitarDelay}
+                  parameters={[
+                    {
+                      name: 'wet',
+                      label: 'Wet/Dry Mix',
+                      value: guitarDelayWet,
+                      min: -60,
+                      max: 0,
+                      step: 0.1,
+                      unit: ' dB'
+                    },
+                    {
+                      name: 'feedback',
+                      label: 'Feedback',
+                      value: guitarDelayFeedback,
+                      min: 0,
+                      max: 0.95,
+                      step: 0.01,
+                      format: (v) => `${(v * 100).toFixed(0)}%`
+                    },
+                    {
+                      name: 'time',
+                      label: 'Delay Time',
+                      value: guitarDelayTime,
+                      min: 1,
+                      max: 16,
+                      step: 1,
+                      format: (v) => {
+                        const notes = ['1/16', '1/8', '1/4', '1/2', '1'];
+                        const index = Math.round((v - 1) / 3);
+                        return notes[Math.min(index, notes.length - 1)] || `${v} PPQN`;
+                      }
+                    },
+                    {
+                      name: 'filter',
+                      label: 'Filter',
+                      value: guitarDelayFilter,
+                      min: 0,
+                      max: 1,
+                      step: 0.01,
+                      format: (v) => `${(v * 100).toFixed(0)}%`
+                    }
+                  ]}
+                  onParameterChange={handleGuitarDelayParamChange}
+                />
 
-                <Card variant="surface">
-                  <Flex direction="column" gap="2">
-                    <Flex justify="between" align="center">
-                      <Flex direction="column" gap="1">
-                        <Text weight="bold">Guitar - Lo-Fi Crusher</Text>
-                        <Text size="2" color="gray">
-                          Heavy bit-crushing for very obvious lo-fi distortion effect
-                        </Text>
-                      </Flex>
-                      <Button
-                        color={hasGuitarCrusher ? "red" : "purple"}
-                        onClick={hasGuitarCrusher ? handleRemoveGuitarCrusher : handleAddGuitarCrusher}
-                      >
-                        {hasGuitarCrusher ? "− Remove" : "+ Add Lo-Fi"}
-                      </Button>
-                    </Flex>
-                    {hasGuitarCrusher && (
-                      <Badge color="purple">Active: 4-bit, heavy crush, 80% wet</Badge>
-                    )}
-                  </Flex>
-                </Card>
+                <EffectPanel
+                  title="Guitar - Lo-Fi Crusher"
+                  description="Heavy bit-crushing for very obvious lo-fi distortion effect"
+                  isActive={hasGuitarCrusher}
+                  onToggle={hasGuitarCrusher ? handleRemoveGuitarCrusher : handleAddGuitarCrusher}
+                  parameters={[
+                    {
+                      name: 'bits',
+                      label: 'Bit Depth',
+                      value: guitarCrusherBits,
+                      min: 1,
+                      max: 16,
+                      step: 1,
+                      format: (v) => `${v.toFixed(0)} bits`
+                    },
+                    {
+                      name: 'crush',
+                      label: 'Crush Amount',
+                      value: guitarCrusherCrush,
+                      min: 0,
+                      max: 1,
+                      step: 0.01,
+                      format: (v) => `${(v * 100).toFixed(0)}%`
+                    },
+                    {
+                      name: 'boost',
+                      label: 'Boost',
+                      value: guitarCrusherBoost,
+                      min: 0,
+                      max: 1,
+                      step: 0.01,
+                      format: (v) => `${(v * 100).toFixed(0)}%`
+                    },
+                    {
+                      name: 'mix',
+                      label: 'Wet/Dry Mix',
+                      value: guitarCrusherMix,
+                      min: 0,
+                      max: 1,
+                      step: 0.01,
+                      format: (v) => `${(v * 100).toFixed(0)}%`
+                    }
+                  ]}
+                  onParameterChange={handleGuitarCrusherParamChange}
+                />
 
-                <Card variant="surface">
-                  <Flex direction="column" gap="2">
-                    <Flex justify="between" align="center">
-                      <Flex direction="column" gap="1">
-                        <Text weight="bold">Bass & Drums - Lo-Fi Crusher</Text>
-                        <Text size="2" color="gray">
-                          Extreme bit-crushing for dramatic lo-fi distortion (very obvious!)
-                        </Text>
-                      </Flex>
-                      <Button
-                        color={hasBassLoCrusher ? "red" : "purple"}
-                        onClick={hasBassLoCrusher ? handleRemoveBassLoCrusher : handleAddBassLoCrusher}
-                      >
-                        {hasBassLoCrusher ? "− Remove" : "+ Add Crusher"}
-                      </Button>
-                    </Flex>
-                    {hasBassLoCrusher && (
-                      <Badge color="purple">Active: 6-bit depth, heavy crush</Badge>
-                    )}
-                  </Flex>
-                </Card>
+                <EffectPanel
+                  title="Bass & Drums - Lo-Fi Crusher"
+                  description="Extreme bit-crushing for dramatic lo-fi distortion (very obvious!)"
+                  isActive={hasBassLoCrusher}
+                  onToggle={hasBassLoCrusher ? handleRemoveBassLoCrusher : handleAddBassLoCrusher}
+                  parameters={[
+                    {
+                      name: 'bits',
+                      label: 'Bit Depth',
+                      value: bassCrusherBits,
+                      min: 1,
+                      max: 16,
+                      step: 1,
+                      format: (v) => `${v.toFixed(0)} bits`
+                    },
+                    {
+                      name: 'crush',
+                      label: 'Crush Amount',
+                      value: bassCrusherCrush,
+                      min: 0,
+                      max: 1,
+                      step: 0.01,
+                      format: (v) => `${(v * 100).toFixed(0)}%`
+                    },
+                    {
+                      name: 'boost',
+                      label: 'Boost',
+                      value: bassCrusherBoost,
+                      min: 0,
+                      max: 1,
+                      step: 0.01,
+                      format: (v) => `${(v * 100).toFixed(0)}%`
+                    },
+                    {
+                      name: 'mix',
+                      label: 'Wet/Dry Mix',
+                      value: bassCrusherMix,
+                      min: 0,
+                      max: 1,
+                      step: 0.01,
+                      format: (v) => `${(v * 100).toFixed(0)}%`
+                    }
+                  ]}
+                  onParameterChange={handleBassCrusherParamChange}
+                />
               </Flex>
 
               {/* Master Effects */}
               <Flex direction="column" gap="3">
                 <Heading size="3">Master Output Effects</Heading>
 
-                <Card variant="surface">
-                  <Flex direction="column" gap="2">
-                    <Flex justify="between" align="center">
-                      <Flex direction="column" gap="1">
-                        <Text weight="bold">Master - Compressor</Text>
-                        <Text size="2" color="gray">
-                          "Glue" compressor for cohesive mix on all tracks
-                        </Text>
-                      </Flex>
-                      <Button
-                        color={hasMasterCompressor ? "red" : "purple"}
-                        onClick={hasMasterCompressor ? handleRemoveMasterCompressor : handleAddMasterCompressor}
-                      >
-                        {hasMasterCompressor ? "− Remove" : "+ Add Compressor"}
-                      </Button>
-                    </Flex>
-                    {hasMasterCompressor && (
-                      <Badge color="purple">Active: 2:1 ratio, -12dB threshold</Badge>
-                    )}
-                  </Flex>
-                </Card>
+                <EffectPanel
+                  title="Master - Compressor"
+                  description='"Glue" compressor for cohesive mix on all tracks'
+                  isActive={hasMasterCompressor}
+                  onToggle={hasMasterCompressor ? handleRemoveMasterCompressor : handleAddMasterCompressor}
+                  parameters={[
+                    {
+                      name: 'threshold',
+                      label: 'Threshold',
+                      value: masterCompThreshold,
+                      min: -60,
+                      max: 0,
+                      step: 0.5,
+                      unit: ' dB'
+                    },
+                    {
+                      name: 'ratio',
+                      label: 'Ratio',
+                      value: masterCompRatio,
+                      min: 1,
+                      max: 20,
+                      step: 0.1,
+                      format: (v) => `${v.toFixed(1)}:1`
+                    },
+                    {
+                      name: 'attack',
+                      label: 'Attack',
+                      value: masterCompAttack,
+                      min: 0.1,
+                      max: 100,
+                      step: 0.1,
+                      unit: ' ms'
+                    },
+                    {
+                      name: 'release',
+                      label: 'Release',
+                      value: masterCompRelease,
+                      min: 10,
+                      max: 1000,
+                      step: 10,
+                      unit: ' ms'
+                    },
+                    {
+                      name: 'knee',
+                      label: 'Knee',
+                      value: masterCompKnee,
+                      min: 0,
+                      max: 12,
+                      step: 0.5,
+                      unit: ' dB'
+                    }
+                  ]}
+                  onParameterChange={handleMasterCompressorParamChange}
+                />
 
-                <Card variant="surface">
-                  <Flex direction="column" gap="2">
-                    <Flex justify="between" align="center">
-                      <Flex direction="column" gap="1">
-                        <Text weight="bold">Master - Stereo Width</Text>
-                        <Text size="2" color="gray">
-                          Widens the stereo field for a bigger, more spacious sound
-                        </Text>
-                      </Flex>
-                      <Button
-                        color={hasMasterLimiter ? "red" : "purple"}
-                        onClick={hasMasterLimiter ? handleRemoveMasterLimiter : handleAddMasterLimiter}
-                      >
-                        {hasMasterLimiter ? "− Remove" : "+ Add Width"}
-                      </Button>
-                    </Flex>
-                    {hasMasterLimiter && (
-                      <Badge color="purple">Active: Enhanced stereo width</Badge>
-                    )}
-                  </Flex>
-                </Card>
+                <EffectPanel
+                  title="Master - Stereo Width"
+                  description="Widens the stereo field for a bigger, more spacious sound"
+                  isActive={hasMasterLimiter}
+                  onToggle={hasMasterLimiter ? handleRemoveMasterLimiter : handleAddMasterLimiter}
+                  parameters={[
+                    {
+                      name: 'width',
+                      label: 'Stereo Width',
+                      value: masterStereoWidth,
+                      min: 0,
+                      max: 2,
+                      step: 0.01,
+                      format: (v) => `${(v * 100).toFixed(0)}%`
+                    },
+                    {
+                      name: 'pan',
+                      label: 'Pan',
+                      value: masterStereoPan,
+                      min: -1,
+                      max: 1,
+                      step: 0.01,
+                      format: (v) => v === 0 ? 'Center' : v < 0 ? `L${Math.abs(v * 100).toFixed(0)}` : `R${(v * 100).toFixed(0)}`
+                    }
+                  ]}
+                  onParameterChange={handleMasterStereoParamChange}
+                />
               </Flex>
 
               <Text size="2" color="gray" style={{ fontStyle: "italic" }}>
-                💡 Tip: Try adding and removing effects while playback is active to hear the difference in real-time!
+                💡 Tip: Adjust effect parameters while playback is active to hear the changes in real-time!
               </Text>
             </Flex>
           </Card>
