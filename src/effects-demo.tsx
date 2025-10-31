@@ -959,12 +959,12 @@ const App: React.FC = () => {
                           style={{
                             position: "absolute",
                             left: `${percent}%`,
-                            top: 0,
+                            top: "-6px",
                             transform: "translateX(-50%)"
                           }}
                         >
                           <Text size="1" color="gray" style={{ fontWeight: "500" }}>
-                            {seconds}s
+                            {seconds}
                           </Text>
                         </div>
                       );
