@@ -323,7 +323,7 @@ const App: React.FC = () => {
 
           // Only draw if playhead is within canvas bounds
           if (playheadX >= 0 && playheadX <= canvas.clientWidth) {
-            context.strokeStyle = "#ff4444";
+            context.strokeStyle = "#fff";
             context.lineWidth = 2;
             context.beginPath();
             context.moveTo(playheadX, 0);
