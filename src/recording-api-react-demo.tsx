@@ -63,18 +63,8 @@ const App: React.FC = () => {
   // Initialize CanvasPainter when canvas is available
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) {
-      console.log('[CanvasPainter] Canvas not ready yet');
-      return undefined;
-    }
+    if (!canvas || canvasPainterRef.current) return undefined;
 
-    if (canvasPainterRef.current) {
-      console.log('[CanvasPainter] Painter already exists');
-      return undefined;
-    }
-
-    console.log('[CanvasPainter] Creating painter...');
-    let lastLoggedFrames = 0;
     const painter = new CanvasPainter(canvas, (_, context) => {
       const peaks = currentPeaksRef.current;
       if (!peaks) {
@@ -83,12 +73,7 @@ const App: React.FC = () => {
         return;
       }
 
-      // Debug: log numFrames changes during recording
       const isPeaksWriter = "dataIndex" in peaks;
-      if (isPeaksWriter && peaks.numFrames !== lastLoggedFrames) {
-        console.log(`[Render] PeaksWriter - numFrames: ${peaks.numFrames}, dataIndex: ${peaks.dataIndex[0]}, numPeaks: ${peaks.numPeaks}`);
-        lastLoggedFrames = peaks.numFrames;
-      }
 
       context.fillStyle = "#000";
       context.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
@@ -123,10 +108,8 @@ const App: React.FC = () => {
     });
 
     canvasPainterRef.current = painter;
-    console.log('[CanvasPainter] Painter created successfully');
 
     return () => {
-      console.log('[CanvasPainter] Cleaning up painter');
       painter.terminate();
       canvasPainterRef.current = null;
     };
@@ -219,7 +202,6 @@ const App: React.FC = () => {
                   const fileUuid = fileAddress.uuid;
                   // Get the sample loader using the file UUID
                   sampleLoader = project.sampleManager.getOrCreate(fileUuid);
-                  console.log('[Peaks] Found recording, starting live rendering');
                   break;
                 }
               }
