@@ -2,24 +2,11 @@
 
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { assert, Procedure, Progress, unitValue, UUID } from "@opendaw/lib-std";
-import { Promises } from "@opendaw/lib-runtime";
-import { SampleMetaData, SoundfontMetaData } from "@opendaw/studio-adapters";
-import {
-  AudioWorklets,
-  DefaultSampleLoaderManager,
-  DefaultSoundfontLoaderManager,
-  InstrumentFactories,
-  OpenSampleAPI,
-  OpenSoundfontAPI,
-  Project,
-  Workers,
-  SampleStorage
-} from "@opendaw/studio-core";
+import { Project } from "@opendaw/studio-core";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { PeaksPainter } from "@opendaw/lib-fusion";
 import { CanvasPainter } from "./lib/CanvasPainter";
-import { testFeatures } from "./features";
+import { initializeOpenDAW } from "./lib/projectSetup";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { MoisesLogo } from "./components/MoisesLogo";
 import { BackLink } from "./components/BackLink";
@@ -39,130 +26,70 @@ import {
   Separator
 } from "@radix-ui/themes";
 
-import WorkersUrl from "@opendaw/studio-core/workers-main.js?worker&url";
-import WorkletsUrl from "@opendaw/studio-core/processors.js?url";
-
 /**
- * Main Recording Demo App Component
+ * Simplified Recording Demo - Uses Recording.start() API properly
  */
 const App: React.FC = () => {
   const [status, setStatus] = useState("Loading...");
   const [project, setProject] = useState<Project | null>(null);
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
 
-  // UI state
-  const [isArmed, setIsArmed] = useState(false);
+  // Recording state
   const [isRecording, setIsRecording] = useState(false);
   const [isCountingIn, setIsCountingIn] = useState(false);
   const [countInBeatsRemaining, setCountInBeatsRemaining] = useState(0);
+  const [isPlayingBack, setIsPlayingBack] = useState(false);
+  const [hasPeaks, setHasPeaks] = useState(false);
+
+  // Settings
   const [useCountIn, setUseCountIn] = useState(false);
   const [metronomeEnabled, setMetronomeEnabled] = useState(false);
-  const [armStatus, setArmStatus] = useState('Click "Arm Track" to prepare for recording');
-  const [recordStatus, setRecordStatus] = useState("Arm a track first");
-  const [playbackStatus, setPlaybackStatus] = useState("No recording available");
-  const [hasPeaks, setHasPeaks] = useState(false);
-  const [isPlayingBack, setIsPlayingBack] = useState(false);
   const [bpm, setBpm] = useState(120);
   const [timeSignatureNumerator, setTimeSignatureNumerator] = useState(3);
   const [timeSignatureDenominator, setTimeSignatureDenominator] = useState(4);
   const [countInBars, setCountInBars] = useState(1);
 
-  // Ref to track if we're currently in a recording/counting-in session (not subject to re-renders)
-  const isRecordingSessionRef = useRef(false);
+  // Status messages
+  const [recordStatus, setRecordStatus] = useState("Click Record to start");
+  const [playbackStatus, setPlaybackStatus] = useState("No recording available");
 
-  // Refs for non-reactive values - these don't need to trigger re-renders
-  const tapeUnitRef = useRef<{ audioUnitBox: any; trackBox: any } | null>(null);
+  // Refs
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const canvasPainterRef = useRef<CanvasPainter | null>(null);
   const currentPeaksRef = useRef<any>(null);
 
-  // Channel padding in pixels (matches OpenDAW pattern)
   const CHANNEL_PADDING = 4;
 
-  /**
-   * Update the current peaks data and request a canvas repaint.
-   * Returns false if no valid peaks data to render.
-   */
-  const updatePeaks = useCallback((peaks: any): boolean => {
-    if (!peaks) {
-      return false;
-    }
-
-    // Check if this is a PeaksWriter (during recording) or Peaks (after recording)
-    const isPeaksWriter = "dataIndex" in peaks;
-
-    if (isPeaksWriter) {
-      const numWrittenPeaks = peaks.dataIndex[0];
-      if (numWrittenPeaks === 0) {
-        return false; // No peaks written yet
-      }
-    }
-
-    // Store peaks and request render
-    currentPeaksRef.current = peaks;
-    canvasPainterRef.current?.requestUpdate();
-
-    setHasPeaks(true);
-    return true;
-  }, []);
-
-  // Initialize CanvasPainter when canvas becomes available (when recording starts or has peaks)
+  // Initialize CanvasPainter when canvas is available
   useEffect(() => {
-    // Only initialize when canvas should be visible
-    if (!isRecording && !hasPeaks) {
-      return undefined;
-    }
-
     const canvas = canvasRef.current;
     if (!canvas) {
-      console.log('[CanvasPainter] Canvas ref not available yet');
+      console.log('[CanvasPainter] Canvas not ready yet');
       return undefined;
     }
 
-    // Don't reinitialize if already exists
     if (canvasPainterRef.current) {
-      console.log('[CanvasPainter] Painter already initialized');
+      console.log('[CanvasPainter] Painter already exists');
       return undefined;
     }
 
-    console.log('[CanvasPainter] Initializing painter');
-
-    // Create painter with rendering callback
+    console.log('[CanvasPainter] Creating painter...');
     const painter = new CanvasPainter(canvas, (_, context) => {
       const peaks = currentPeaksRef.current;
       if (!peaks) {
-        // Clear canvas if no peaks
         context.fillStyle = "#000";
         context.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
         return;
       }
 
-      // Clear canvas
       context.fillStyle = "#000";
       context.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
-
-      // Check if this is a PeaksWriter (during recording) or Peaks (after recording)
-      const isPeaksWriter = "dataIndex" in peaks;
-
-      let actualFrames: number;
-      if (isPeaksWriter) {
-        const numWrittenPeaks = peaks.dataIndex[0];
-        actualFrames = numWrittenPeaks * peaks.unitsEachPeak();
-        console.log(`[Peaks] Rendering ${numWrittenPeaks} peaks (${actualFrames} frames) for ${peaks.numChannels} channels`);
-      } else {
-        actualFrames = peaks.numFrames;
-        console.log(`[Peaks] Rendering final peaks: ${actualFrames} frames for ${peaks.numChannels} channels`);
-      }
-
-      // Set waveform color
       context.fillStyle = "#4a9eff";
 
-      // Calculate channel layout with padding
       const totalHeight = canvas.clientHeight;
       const numChannels = peaks.numChannels;
       const channelHeight = totalHeight / numChannels;
 
-      // Render each channel with padding
       for (let channel = 0; channel < numChannels; channel++) {
         const y0 = channel * channelHeight + CHANNEL_PADDING / 2;
         const y1 = (channel + 1) * channelHeight - CHANNEL_PADDING / 2;
@@ -173,7 +100,7 @@ const App: React.FC = () => {
           y0,
           y1,
           u0: 0,
-          u1: actualFrames,
+          u1: peaks.numFrames,
           v0: -1,
           v1: 1
         });
@@ -181,256 +108,187 @@ const App: React.FC = () => {
     });
 
     canvasPainterRef.current = painter;
+    console.log('[CanvasPainter] Painter created successfully');
 
     return () => {
-      console.log('[CanvasPainter] Terminating painter');
+      console.log('[CanvasPainter] Cleaning up painter');
       painter.terminate();
       canvasPainterRef.current = null;
     };
-  }, [isRecording, hasPeaks]); // Initialize when canvas becomes visible
+  }, [canvasRef.current]);
 
-  // Subscribe to count-in and recording observables
+  // Subscribe to engine state
   useEffect(() => {
     if (!project) return undefined;
 
-    const countingInSubscription = project.engine.isCountingIn.catchupAndSubscribe(obs => {
-      const countingIn = obs.getValue();
-      setIsCountingIn(countingIn);
-
-      // Update status when count-in finishes
-      if (!countingIn && project.engine.isRecording.getValue()) {
+    const countingInSub = project.engine.isCountingIn.catchupAndSubscribe(obs => {
+      const counting = obs.getValue();
+      setIsCountingIn(counting);
+      if (counting) {
+        setRecordStatus("Count-in...");
+      } else if (project.engine.isRecording.getValue()) {
         setRecordStatus("Recording...");
-      }
-
-      // If count-in just ended but we're not recording anymore, clear the session ref
-      if (!countingIn && !project.engine.isRecording.getValue()) {
-        isRecordingSessionRef.current = false;
-        console.log('[CountIn Observable] Count-in ended without recording, cleared sessionRef');
       }
     });
 
-    const beatsRemainingSubscription = project.engine.countInBeatsRemaining.catchupAndSubscribe(obs => {
+    const beatsRemainingSub = project.engine.countInBeatsRemaining.catchupAndSubscribe(obs => {
       setCountInBeatsRemaining(Math.ceil(obs.getValue()));
     });
 
-    const recordingSubscription = project.engine.isRecording.catchupAndSubscribe(obs => {
+    const recordingSub = project.engine.isRecording.catchupAndSubscribe(obs => {
       const recording = obs.getValue();
-
-      if (recording) {
-        // Update status when recording starts (after count-in)
-        if (!project.engine.isCountingIn.getValue()) {
-          setRecordStatus("Recording...");
-        }
-      } else {
-        // Update status when recording stops
+      setIsRecording(recording);
+      if (recording && !project.engine.isCountingIn.getValue()) {
+        setRecordStatus("Recording...");
+      } else if (!recording) {
         setRecordStatus("Recording stopped");
-
-        // Also clear the session ref when recording actually stops
-        isRecordingSessionRef.current = false;
-        console.log('[Recording Observable] Recording stopped, cleared sessionRef');
       }
     });
 
-    const playingSubscription = project.engine.isPlaying.catchupAndSubscribe(obs => {
+    const playingSub = project.engine.isPlaying.catchupAndSubscribe(obs => {
       const playing = obs.getValue();
-      const currentlyRecording = project.engine.isRecording.getValue();
-      const currentlyCountingIn = project.engine.isCountingIn.getValue();
+      const recording = project.engine.isRecording.getValue();
 
-      // Use ref to check if we're in a recording session (more reliable than state)
-      const inRecordingSession = isRecordingSessionRef.current || currentlyRecording || currentlyCountingIn;
-
-      console.log('[Playback Observable] playing=', playing, 'recording=', currentlyRecording, 'countingIn=', currentlyCountingIn, 'sessionRef=', isRecordingSessionRef.current, 'inSession=', inRecordingSession);
-
-      // Only update playback state if we're not in a recording session
-      if (!inRecordingSession) {
+      if (!recording) {
         setIsPlayingBack(playing);
-
         if (playing) {
           setPlaybackStatus("Playing...");
-        } else if (!playing && hasPeaks) {
+        } else if (hasPeaks) {
           setPlaybackStatus("Playback stopped");
-        } else if (!playing) {
+        } else {
           setPlaybackStatus("No recording available");
         }
-      } else {
-        // If we're in a recording session, ensure playback state is false
-        setIsPlayingBack(false);
-        // Don't change playback status while recording - it should show recording-related status
       }
     });
 
     return () => {
-      countingInSubscription.terminate();
-      beatsRemainingSubscription.terminate();
-      recordingSubscription.terminate();
-      playingSubscription.terminate();
+      countingInSub.terminate();
+      beatsRemainingSub.terminate();
+      recordingSub.terminate();
+      playingSub.terminate();
     };
-  }, [project, hasPeaks]); // Removed isRecording from deps - it causes re-subscription on every recording state change
+  }, [project, hasPeaks]);
 
-  // Watch for new AudioRegionBox creation during recording to get live peaks
-  // This effect starts when recording begins and continues until final peaks are received
+  // Monitor live peaks during recording
   useEffect(() => {
-    if (!project) return undefined;
+    if (!project || !isRecording) return undefined;
 
-    console.log('[Peaks] Effect mounted, waiting for recording to start...');
+    console.log('[Peaks] Starting peak monitoring...');
+    console.log('[Peaks] CanvasPainter ref:', canvasPainterRef.current);
+    console.log('[Peaks] Canvas ref:', canvasRef.current);
 
-    let regionCheckTerminable: any = null;
-    let livePeaksTerminable: any = null;
-    let currentRecordingWorklet: any = null;
+    let animationFrameTerminable: any = null;
+    let sampleLoader: any = null;
+    let recordingFileUuid: any = null;
     let lastLogTime = 0;
-    let monitoringStarted = false;
+    let frameCount = 0;
 
-    // Subscribe to recording state to know when to start monitoring
-    const recordingSubscription = project.engine.isRecording.catchupAndSubscribe(obs => {
-      const recording = obs.getValue();
+    // Use AnimationFrame to monitor for new recordings
+    animationFrameTerminable = AnimationFrame.add(() => {
+      frameCount++;
 
-      console.log('[Peaks] Recording observable fired, recording=', recording, 'monitoringStarted=', monitoringStarted);
+      // Log every 60 frames (~1 second) if we haven't found recording yet
+      if (!recordingFileUuid && frameCount % 60 === 0) {
+        console.log('[Peaks] Frame', frameCount, '- still searching for recording...');
 
-      // Only start monitoring once when recording begins
-      if (recording && !monitoringStarted) {
-        monitoringStarted = true;
-        console.log('[Peaks] Recording started, using AnimationFrame for region monitoring...');
+        // Find the AudioRegionBox with label "Recording"
+        const allBoxes = project.boxGraph.boxes();
+        console.log('[Peaks] Total boxes in graph:', allBoxes.length);
 
-        // Check if tape unit exists now
-        if (!tapeUnitRef.current) {
-          console.error('[Peaks] ERROR: No tape unit found when recording started!');
-          return;
+        for (const box of allBoxes) {
+          if (box.name === "AudioRegionBox") {
+            const regionBox = box as any;
+            const label = regionBox.label?.getValue();
+            console.log('[Peaks] Found AudioRegionBox with label:', label);
+
+            if (label === "Recording") {
+              // Get the AudioFileBox via targetVertex
+              const fileVertexOption = regionBox.file.targetVertex;
+              console.log('[Peaks] File vertex option:', fileVertexOption);
+
+              if (fileVertexOption.nonEmpty()) {
+                const fileBox = fileVertexOption.unwrap();
+                console.log('[Peaks] File box object:', fileBox);
+                console.log('[Peaks] File box keys:', Object.keys(fileBox));
+
+                // Try to get UUID - boxes have a #uuid private field, access via address
+                const fileAddress = fileBox.address;
+                console.log('[Peaks] File box address:', fileAddress);
+
+                if (fileAddress) {
+                  const fileUuid = fileAddress.uuid;
+                  console.log('[Peaks] Found file box UUID from address:', fileUuid);
+
+                  // Get the sample loader using the file UUID
+                  sampleLoader = project.sampleManager.getOrCreate(fileUuid);
+                  recordingFileUuid = fileUuid;
+                  console.log('[Peaks] Got sample loader:', sampleLoader);
+                  break;
+                }
+              }
+            }
+          }
         }
+      }
 
-        console.log('[Peaks] Tape unit found, adding AnimationFrame callback...');
+      if (sampleLoader && recordingFileUuid) {
+        // Monitor sample loader for peaks
+        const peaksOption = sampleLoader.peaks;
+        if (peaksOption && !peaksOption.isEmpty()) {
+          const peaks = peaksOption.unwrap();
+          const isPeaksWriter = "dataIndex" in peaks;
 
-        // Use AnimationFrame to check for region creation on each frame
-        regionCheckTerminable = AnimationFrame.add(() => {
-          checkForRecording();
-        });
+          if (isPeaksWriter) {
+            const numWrittenPeaks = peaks.dataIndex[0];
+            if (numWrittenPeaks > 0) {
+              currentPeaksRef.current = peaks;
+              const updateRequested = canvasPainterRef.current?.requestUpdate();
+
+              // Log occasionally
+              const now = Date.now();
+              if (now - lastLogTime > 1000) {
+                console.log('[Peaks] Rendering live peaks:', numWrittenPeaks, 'peaks written, update requested:', updateRequested);
+                lastLogTime = now;
+              }
+            }
+          } else {
+            // Final peaks received, stop monitoring
+            console.log('[Peaks] Received final peaks');
+            currentPeaksRef.current = peaks;
+            canvasPainterRef.current?.requestUpdate();
+            setHasPeaks(true);
+            if (animationFrameTerminable) {
+              animationFrameTerminable.terminate();
+              animationFrameTerminable = null;
+            }
+          }
+        }
       }
     });
 
-    const monitorLivePeaks = () => {
-      if (!currentRecordingWorklet) {
-        return;
-      }
-
-      // RecordingWorklet.peaks returns Option<PeaksWriter> during recording, then Option<Peaks> after
-      const peaksOption = currentRecordingWorklet.peaks;
-
-      if (peaksOption && !peaksOption.isEmpty()) {
-        const peaks = peaksOption.unwrap();
-        const rendered = updatePeaks(peaks);
-
-        // Check if this is the final Peaks (not PeaksWriter)
-        const isPeaksWriter = "dataIndex" in peaks;
-
-        // If we got final Peaks (not PeaksWriter), stop monitoring
-        if (!isPeaksWriter && rendered) {
-          console.log('[Peaks] Received final peaks, stopping monitoring');
-          if (livePeaksTerminable) {
-            livePeaksTerminable.terminate();
-            livePeaksTerminable = null;
-          }
-          return;
-        }
-      } else {
-        // Only log once per second to avoid spam
-        const now = Date.now();
-        if (now - lastLogTime > 1000) {
-          console.log('[Peaks] Waiting for peaks...');
-          lastLogTime = now;
-        }
-      }
-    };
-
-    // Check for new AudioRegionBox created by RecordAudio.start()
-    const checkForRecording = () => {
-      // If we already found the recording worklet, no need to check again
-      if (currentRecordingWorklet) {
-        return;
-      }
-
-      // Get trackBox at call time, not from closure
-      if (!tapeUnitRef.current) {
-        console.error('[Peaks] No tape unit in checkForRecording');
-        return;
-      }
-
-      const { trackBox } = tapeUnitRef.current;
-      const regions = trackBox.regions.pointerHub.incoming().map(({ box }) => box);
-
-      console.log('[Peaks] Checking for regions, found:', regions.length);
-
-      if (regions.length > 0) {
-        const latestRegion = regions[regions.length - 1];
-
-        // Check if the file pointer is set
-        if (latestRegion.file.isEmpty()) {
-          console.log('[Peaks] Region file is empty, will check on next animation frame...');
-          return;
-        }
-
-        // Get the recording UUID
-        const targetAddressOption = latestRegion.file.targetAddress;
-
-        if (targetAddressOption.isEmpty()) {
-          console.log('[Peaks] Target address is empty, will check on next animation frame...');
-          return;
-        }
-
-        const targetAddress = targetAddressOption.unwrap();
-        const recordingUUID = targetAddress.uuid;
-
-        console.log('[Peaks] Found recording UUID:', recordingUUID);
-
-        // Terminate region checking now that we found what we need
-        if (regionCheckTerminable) {
-          regionCheckTerminable.terminate();
-          regionCheckTerminable = null;
-          console.log('[Peaks] Terminated region check AnimationFrame');
-        }
-
-        // Get the RecordingWorklet from the sample manager
-        currentRecordingWorklet = project.sampleManager.getOrCreate(recordingUUID);
-
-        console.log('[Peaks] Got worklet, starting live peaks monitoring with AnimationFrame...');
-
-        // Start monitoring live peaks using AnimationFrame
-        livePeaksTerminable = AnimationFrame.add(monitorLivePeaks);
-      } else {
-        // AudioRegionBox not created yet, will check on next animation frame
-        console.log('[Peaks] No regions yet, waiting for next animation frame...');
-      }
-    };
-
     return () => {
-      console.log('[Peaks] Cleanup: stopping monitoring');
-      recordingSubscription.terminate();
-      if (regionCheckTerminable) {
-        regionCheckTerminable.terminate();
-      }
-      if (livePeaksTerminable) {
-        livePeaksTerminable.terminate();
+      console.log('[Peaks] Stopping peak monitoring');
+      if (animationFrameTerminable) {
+        animationFrameTerminable.terminate();
       }
     };
-  }, [project, updatePeaks]);
+  }, [project, isRecording]);
 
-  // Initialize BPM and time signature from project
+  // Initialize project settings from OpenDAW
   useEffect(() => {
     if (!project) return;
 
-    // Get initial values from project
     const initialBpm = project.bpm;
     const signature = project.timelineBox.signature;
 
     if (signature?.nominator && signature?.denominator) {
-      const initialNominator = signature.nominator.getValue();
-      const initialDenominator = signature.denominator.getValue();
-
       setBpm(initialBpm);
-      setTimeSignatureNumerator(initialNominator);
-      setTimeSignatureDenominator(initialDenominator);
+      setTimeSignatureNumerator(signature.nominator.getValue());
+      setTimeSignatureDenominator(signature.denominator.getValue());
     }
   }, [project]);
 
-  // Sync BPM to project
+  // Sync settings to project
   useEffect(() => {
     if (!project?.timelineBox?.bpm) return;
     project.editing.modify(() => {
@@ -438,13 +296,9 @@ const App: React.FC = () => {
     });
   }, [project, bpm]);
 
-  // Sync time signature to project when user changes it
-  // Skip running on initial project mount to avoid overwriting initial signature
   const isInitialMount = useRef(true);
   useEffect(() => {
     if (!project?.timelineBox) return;
-
-    // Skip the first run when project is initially set (it already has correct signature from initialization)
     if (isInitialMount.current) {
       isInitialMount.current = false;
       return;
@@ -459,13 +313,11 @@ const App: React.FC = () => {
     });
   }, [project, timeSignatureNumerator, timeSignatureDenominator]);
 
-  // Sync metronome enabled state with engine
   useEffect(() => {
     if (!project) return;
     project.engine.metronomeEnabled.setValue(metronomeEnabled);
   }, [project, metronomeEnabled]);
 
-  // Sync count in bars with engine
   useEffect(() => {
     if (!project) return;
     project.engine.countInBarsTotal.setValue(countInBars);
@@ -477,54 +329,9 @@ const App: React.FC = () => {
 
     (async () => {
       try {
-        assert(crossOriginIsolated, "window must be crossOriginIsolated");
-
-        // CRITICAL: Start the AnimationFrame loop that reads state from the worklet!
-        AnimationFrame.start(window);
-
-        setStatus("Booting...");
-        await Workers.install(WorkersUrl);
-        AudioWorklets.install(WorkletsUrl);
-
-        // Delete obsolete samples
-        SampleStorage.cleanDeprecated().then();
-
-        const { status: testStatus, error: testError } = await Promises.tryCatch(testFeatures());
-        if (testStatus === "rejected") {
-          alert(`Could not test features (${testError})`);
-          return;
-        }
-
-        const newAudioContext = new AudioContext({ latencyHint: 0 });
-
-        const { status: workletStatus, error: workletError } = await Promises.tryCatch(
-          AudioWorklets.createFor(newAudioContext)
-        );
-        if (workletStatus === "rejected") {
-          alert(`Could not install Worklets (${workletError})`);
-          return;
-        }
-
-        const sampleManager = new DefaultSampleLoaderManager({
-          fetch: async (uuid: UUID.Bytes, progress: Procedure<unitValue>): Promise<[any, SampleMetaData]> =>
-            OpenSampleAPI.get().load(newAudioContext, uuid, progress)
+        const { project: newProject, audioContext: newAudioContext } = await initializeOpenDAW({
+          onStatusUpdate: setStatus
         });
-
-        const soundfontManager = new DefaultSoundfontLoaderManager({
-          fetch: async (uuid: UUID.Bytes, progress: Progress.Handler): Promise<[ArrayBuffer, SoundfontMetaData]> =>
-            OpenSoundfontAPI.get().load(uuid, progress)
-        });
-
-        const audioWorklets = AudioWorklets.get(newAudioContext);
-        const newProject = Project.new({
-          audioContext: newAudioContext,
-          sampleManager,
-          soundfontManager,
-          audioWorklets
-        });
-
-        newProject.startAudioWorklet();
-        await newProject.engine.isReady();
 
         if (!mounted) return;
 
@@ -542,161 +349,82 @@ const App: React.FC = () => {
     };
   }, []);
 
-  const handleArmTrack = useCallback(async () => {
-    if (!project) return;
-
-    if (isArmed) {
-      // Disarm - this automatically stops the microphone stream
-      const captures = project.captureDevices.filterArmed();
-      captures.forEach(capture => capture.armed.setValue(false));
-      setIsArmed(false);
-      setArmStatus("Track disarmed");
-      setRecordStatus("Arm a track first");
-      return;
-    }
-
-    try {
-      setArmStatus("Preparing to record...");
-
-      // Create a tape instrument if doesn't exist
-      if (!tapeUnitRef.current) {
-        project.editing.modify(() => {
-          const { audioUnitBox, trackBox } = project.api.createInstrument(InstrumentFactories.Tape);
-          tapeUnitRef.current = { audioUnitBox, trackBox };
-        });
-      }
-
-      // Get the capture device for this audio unit
-      const uuid = tapeUnitRef.current.audioUnitBox.address.uuid;
-      const captureOption = project.captureDevices.get(uuid);
-
-      if (captureOption.isEmpty()) {
-        throw new Error("Could not get capture device");
-      }
-
-      const capture = captureOption.unwrap();
-
-      // Arming automatically requests microphone access via CaptureAudio.prepareRecording()
-      // The system handles: getUserMedia(), stream management, and cleanup
-      capture.armed.setValue(true);
-
-      setIsArmed(true);
-      setArmStatus("Track is armed and ready to record");
-      setRecordStatus("Ready to record");
-    } catch (error) {
-      console.error("Failed to arm track:", error);
-      setArmStatus(`Error: ${error}`);
-    }
-  }, [project, isArmed]);
-
   const handleStartRecording = useCallback(async () => {
     if (!project || !audioContext) return;
 
     try {
       console.log('[Recording] Starting recording...');
 
-      // Set ref FIRST to prevent observable from updating status
-      isRecordingSessionRef.current = true;
-      console.log('[Recording] Set sessionRef to TRUE');
-
-      // Resume AudioContext if suspended (required for user interaction)
+      // Resume AudioContext if needed
       if (audioContext.state === "suspended") {
         await audioContext.resume();
       }
 
+      // Request microphone permission
+      try {
+        await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (error) {
+        setRecordStatus(`Microphone error: ${error}`);
+        return;
+      }
+
       project.engine.setPosition(0);
 
-      // Start recording (with or without count-in)
-      // The count-in state is tracked by the observable subscriptions in useEffect
+      // Recording.start() handles EVERYTHING:
+      // - Creates Tape instrument if needed
+      // - Auto-arms the track
+      // - Sets up MediaStream
+      // - Creates AudioRegionBox
+      // - Manages peaks
       project.startRecording(useCountIn);
 
-      // Set recording state AFTER starting recording so engine observables are already set
-      setIsRecording(true);
-      setIsPlayingBack(false);
-
       setRecordStatus(useCountIn ? "Count-in..." : "Recording...");
-
-      // Playback status will be set by the playingSubscription observable
       console.log('[Recording] Recording started');
     } catch (error) {
       console.error("Failed to start recording:", error);
       setRecordStatus(`Error: ${error}`);
-      setIsRecording(false);
-      isRecordingSessionRef.current = false;
     }
   }, [project, audioContext, useCountIn]);
 
-  const handleStopRecording = useCallback(async () => {
-    if (!project || !tapeUnitRef.current) return;
+  const handleStopRecording = useCallback(() => {
+    if (!project) return;
 
     console.log('[Recording] Stopping recording...');
+
     project.engine.stopRecording();
-    project.engine.stop(true); // Stop playback completely
-    project.engine.setPosition(0); // Reset to beginning
+    project.engine.stop(true);
+    project.engine.setPosition(0);
 
-    // Clear recording session ref
-    isRecordingSessionRef.current = false;
-
-    // Update state after engine operations
-    setIsRecording(false);
-    setIsPlayingBack(false);
     setRecordStatus("Recording stopped");
 
-    // Get the recording UUID from the latest region
-    const { trackBox } = tapeUnitRef.current;
-    const regions = trackBox.regions.pointerHub.incoming().map(({ box }) => box);
+    // After recording stops, OpenDAW will finalize the recording and create peaks
+    // We can just set a flag that recording is available for playback
+    setTimeout(() => {
+      setHasPeaks(true);
+      setPlaybackStatus("Recording ready to play");
+    }, 500);
 
-    if (regions.length > 0) {
-      const latestRegion = regions[regions.length - 1];
-      const targetAddressOption = latestRegion.file.targetAddress;
-
-      if (!targetAddressOption.isEmpty()) {
-        const targetAddress = targetAddressOption.unwrap();
-        const recordingUUID = targetAddress.uuid;
-
-        // Subscribe to the sample loader to know when final peaks are ready
-        const sampleLoader = project.sampleManager.getOrCreate(recordingUUID);
-        const subscription = sampleLoader.subscribe(state => {
-          if (state.type === "loaded") {
-            console.log('[Recording] Final peaks loaded');
-            setPlaybackStatus("Recording ready to play");
-            subscription.terminate();
-          }
-        });
-
-        console.log('[Recording] Subscribed to sample loader for final peaks');
-      }
-    }
-
-    console.log('[Recording] Recording stopped, sessionRef set to false');
+    console.log('[Recording] Recording stopped');
   }, [project]);
 
   const handlePlayRecording = useCallback(async () => {
     if (!project || !audioContext) return;
 
-    console.log('[Playback] Starting playback...');
-
-    // Resume AudioContext if suspended
     if (audioContext.state === "suspended") {
       await audioContext.resume();
     }
 
     project.engine.setPosition(0);
     project.engine.play();
-    setIsPlayingBack(true); // Set state immediately for responsive UI
     setPlaybackStatus("Playing...");
-    console.log('[Playback] Playback started');
   }, [project, audioContext]);
 
   const handleStopPlayback = useCallback(() => {
     if (!project) return;
 
-    console.log('[Playback] Stopping playback...');
     project.engine.stop(true);
     project.engine.setPosition(0);
-    setIsPlayingBack(false); // Set state immediately for responsive UI
     setPlaybackStatus("Playback stopped");
-    console.log('[Playback] Playback stopped');
   }, [project]);
 
   if (!project) {
@@ -704,7 +432,7 @@ const App: React.FC = () => {
       <Theme appearance="dark" accentColor="blue" radius="large">
         <Container size="2" px="4" py="8">
           <Flex direction="column" align="center" gap="4">
-            <Heading size="8">Recording API React Demo</Heading>
+            <Heading size="8">Recording API Demo</Heading>
             <Text size="3" color="gray">{status}</Text>
           </Flex>
         </Container>
@@ -714,27 +442,26 @@ const App: React.FC = () => {
 
   return (
     <Theme appearance="dark" accentColor="blue" radius="large">
-      <GitHubCorner />
+      <GitHubCorner repoUrl="https://github.com/moisesai/opendaw" />
       <Container size="3" px="4" py="8">
         <Flex direction="column" gap="6" style={{ maxWidth: 1200, margin: "0 auto" }}>
           <BackLink />
 
           <Flex direction="column" align="center" gap="2">
-            <Heading size="8">Recording API React Demo</Heading>
-            <Text size="3" color="gray">Testing OpenDAW's high-level Recording API with React</Text>
+            <Heading size="8">Recording API Demo</Heading>
+            <Text size="3" color="gray">Simplified recording using Recording.start() API</Text>
           </Flex>
 
-          <Callout.Root color="orange">
+          <Callout.Root color="blue">
             <Callout.Text>
-              <strong>Note:</strong> This demo uses the Recording.start() API which requires arming a track and depends on
-              engine observables. The tape unit reference is stored in a React useRef to avoid unnecessary re-renders and
-              searching.
+              💡 This demo uses OpenDAW's high-level <strong>Recording.start()</strong> API which automatically:
+              creates a Tape instrument, arms the track, manages the microphone stream, creates audio regions, and handles peaks.
             </Callout.Text>
           </Callout.Root>
 
-          <Card style={{ width: "100%" }}>
+          <Card>
             <Flex direction="column" gap="4">
-              <Heading size="5" color="blue">Setup</Heading>
+              <Heading size="5">Setup</Heading>
 
               <Flex gap="4" wrap="wrap">
                 <Flex align="center" gap="2">
@@ -792,26 +519,12 @@ const App: React.FC = () => {
                   </Select.Root>
                 </Flex>
               </Flex>
-
-              <Separator size="4" />
-
-              <Flex direction="column" gap="3">
-                <Button
-                  onClick={handleArmTrack}
-                  color={isArmed ? "pink" : "purple"}
-                  size="3"
-                  variant="solid"
-                >
-                  {isArmed ? "✓ Track Armed (click to disarm)" : "🎯 Arm Track for Recording"}
-                </Button>
-                <Text size="2" align="center" color="gray">{armStatus}</Text>
-              </Flex>
             </Flex>
           </Card>
 
-          <Card style={{ width: "100%" }}>
+          <Card>
             <Flex direction="column" gap="4">
-              <Heading size="5" color="blue">Record Audio</Heading>
+              <Heading size="5">Record Audio</Heading>
 
               <Flex direction="column" gap="2">
                 <Flex asChild align="center" gap="2">
@@ -823,7 +536,7 @@ const App: React.FC = () => {
                 <Flex asChild align="center" gap="2">
                   <Text as="label" size="2">
                     <Checkbox checked={metronomeEnabled} onCheckedChange={checked => setMetronomeEnabled(checked === true)} />
-                    Enable metronome (you'll hear clicks during count-in and recording)
+                    Enable metronome
                   </Text>
                 </Flex>
               </Flex>
@@ -831,7 +544,7 @@ const App: React.FC = () => {
               {isCountingIn && (
                 <Callout.Root color="amber">
                   <Callout.Text>
-                    <span className="count-in-icon">🎵</span> <strong>Count-in: {countInBeatsRemaining} beats remaining</strong>
+                    <strong>Count-in: {countInBeatsRemaining} beats remaining</strong>
                   </Callout.Text>
                 </Callout.Root>
               )}
@@ -841,7 +554,7 @@ const App: React.FC = () => {
               <Flex gap="3" wrap="wrap" justify="center">
                 <Button
                   onClick={handleStartRecording}
-                  disabled={!isArmed || isRecording}
+                  disabled={isRecording}
                   color="red"
                   size="3"
                   variant="solid"
@@ -860,17 +573,15 @@ const App: React.FC = () => {
               </Flex>
               <Text size="2" align="center" color="gray">{recordStatus}</Text>
 
-              {(isRecording || hasPeaks) && (
-                <Flex justify="center" align="center" mt="4" style={{ background: "var(--gray-3)", borderRadius: "var(--radius-3)", padding: "var(--space-3)" }}>
-                  <canvas ref={canvasRef} style={{ width: "800px", height: "200px", display: "block" }} className="waveform-canvas" />
-                </Flex>
-              )}
+              <Flex justify="center" align="center" mt="4" style={{ background: "var(--gray-3)", borderRadius: "var(--radius-3)", padding: "var(--space-3)" }}>
+                <canvas ref={canvasRef} style={{ width: "800px", height: "200px", display: "block" }} />
+              </Flex>
             </Flex>
           </Card>
 
-          <Card style={{ width: "100%" }}>
+          <Card>
             <Flex direction="column" gap="4">
-              <Heading size="5" color="blue">Playback</Heading>
+              <Heading size="5">Playback</Heading>
 
               <Flex gap="3" wrap="wrap" justify="center">
                 <Button
