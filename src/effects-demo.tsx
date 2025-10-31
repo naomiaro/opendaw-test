@@ -6,16 +6,16 @@ import { UUID } from "@opendaw/lib-std";
 import { PPQN } from "@opendaw/lib-dsp";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { InstrumentFactories, Project, EffectFactories } from "@opendaw/studio-core";
-import { AudioFileBox, AudioRegionBox, AudioUnitBox, TrackBox } from "@opendaw/studio-boxes";
+import { AudioFileBox, AudioRegionBox } from "@opendaw/studio-boxes";
 import { PeaksPainter } from "@opendaw/lib-fusion";
 import { CanvasPainter } from "./lib/CanvasPainter";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { MoisesLogo } from "./components/MoisesLogo";
 import { BackLink } from "./components/BackLink";
-import { TrackRow } from "./components/TrackRow";
+import { TrackRow, type TrackData } from "./components/TrackRow";
 import { TransportControls } from "./components/TransportControls";
 import { TimelineRuler } from "./components/TimelineRuler";
-import { EffectPanel, EffectParameter } from "./components/EffectPanel";
+import { EffectPanel } from "./components/EffectPanel";
 import { EffectsSection } from "./components/EffectsSection";
 import { loadAudioFile } from "./lib/audioUtils";
 import { initializeOpenDAW, setLoopEndFromTracks } from "./lib/projectSetup";
@@ -32,14 +32,6 @@ import {
 } from "@radix-ui/themes";
 
 const { Quarter } = PPQN;
-
-// Type definitions
-export type TrackData = {
-  name: string;
-  trackBox: TrackBox;
-  audioUnitBox: AudioUnitBox;
-  uuid: UUID.Bytes;
-};
 
 /**
  * Main Effects Demo App Component

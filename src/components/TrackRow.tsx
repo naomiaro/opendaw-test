@@ -2,8 +2,15 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import { UUID } from "@opendaw/lib-std";
 import { PPQN } from "@opendaw/lib-dsp";
 import { Project } from "@opendaw/studio-core";
+import { AudioUnitBox, TrackBox } from "@opendaw/studio-boxes";
 import { Button, Flex, Text, Slider } from "@radix-ui/themes";
-import type { TrackData } from "../effects-demo";
+
+export type TrackData = {
+  name: string;
+  trackBox: TrackBox;
+  audioUnitBox: AudioUnitBox;
+  uuid: UUID.Bytes;
+};
 
 interface TrackRowProps {
   track: TrackData;
