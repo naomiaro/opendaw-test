@@ -23,6 +23,13 @@ import { useCompressor } from "./hooks/useCompressor";
 import { useDelay } from "./hooks/useDelay";
 import { useCrusher } from "./hooks/useCrusher";
 import { useStereoWidth } from "./hooks/useStereoWidth";
+import {
+  REVERB_PRESETS,
+  COMPRESSOR_PRESETS,
+  DELAY_PRESETS,
+  CRUSHER_PRESETS,
+  STEREO_WIDTH_PRESETS
+} from "./lib/effectPresets";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
@@ -440,6 +447,8 @@ const App: React.FC = () => {
               💡 This demo shows OpenDAW's mixer controls and professional audio effects.
               Each track has independent volume, pan, mute, and solo controls. Add studio-quality effects
               to individual tracks (Compressor + Reverb on Vocals demonstrates effect chain ordering, Delay + Lo-Fi on Guitar, Lo-Fi Crusher on Bass) or the master output (Compressor for mix glue, Stereo Width for spaciousness).
+              <br /><br />
+              ✨ <strong>New:</strong> Each effect now includes presets! Try loading presets like "Small Room", "Vocal Smooth", "Slap Back Delay", "8-bit Game", and more to hear how different parameter combinations sound.
             </Callout.Text>
           </Callout.Root>
 
@@ -563,7 +572,8 @@ const App: React.FC = () => {
               <Callout.Root color="purple">
                 <Callout.Text>
                   ✨ Add professional audio effects to individual tracks or the master output.
-                  These are the same effects used in professional DAWs! Try adding both Compressor and Reverb to Vocals to see effect chain ordering (Compressor at index 0 → Reverb at index 1).
+                  These are the same effects used in professional DAWs! Each effect includes preset options - try loading presets to quickly explore different sounds, then fine-tune the parameters to your liking.
+                  Try adding both Compressor and Reverb to Vocals to see effect chain ordering (Compressor at index 0 → Reverb at index 1).
                 </Callout.Text>
               </Callout.Root>
 
@@ -578,6 +588,8 @@ const App: React.FC = () => {
                   onToggle={vocalsReverb.handleToggle}
                   parameters={vocalsReverb.parameters}
                   onParameterChange={vocalsReverb.handleParameterChange}
+                  presets={REVERB_PRESETS}
+                  onPresetChange={(preset) => vocalsReverb.loadPreset(preset.params)}
                 />
 
                 <EffectPanel
@@ -587,6 +599,8 @@ const App: React.FC = () => {
                   onToggle={vocalsCompressor.handleToggle}
                   parameters={vocalsCompressor.parameters}
                   onParameterChange={vocalsCompressor.handleParameterChange}
+                  presets={COMPRESSOR_PRESETS}
+                  onPresetChange={(preset) => vocalsCompressor.loadPreset(preset.params)}
                 />
 
                 <EffectPanel
@@ -596,6 +610,8 @@ const App: React.FC = () => {
                   onToggle={guitarDelay.handleToggle}
                   parameters={guitarDelay.parameters}
                   onParameterChange={guitarDelay.handleParameterChange}
+                  presets={DELAY_PRESETS}
+                  onPresetChange={(preset) => guitarDelay.loadPreset(preset.params)}
                 />
 
                 <EffectPanel
@@ -605,6 +621,8 @@ const App: React.FC = () => {
                   onToggle={guitarCrusher.handleToggle}
                   parameters={guitarCrusher.parameters}
                   onParameterChange={guitarCrusher.handleParameterChange}
+                  presets={CRUSHER_PRESETS}
+                  onPresetChange={(preset) => guitarCrusher.loadPreset(preset.params)}
                 />
 
                 <EffectPanel
@@ -614,6 +632,8 @@ const App: React.FC = () => {
                   onToggle={bassCrusher.handleToggle}
                   parameters={bassCrusher.parameters}
                   onParameterChange={bassCrusher.handleParameterChange}
+                  presets={CRUSHER_PRESETS}
+                  onPresetChange={(preset) => bassCrusher.loadPreset(preset.params)}
                 />
               </Flex>
 
@@ -628,6 +648,8 @@ const App: React.FC = () => {
                   onToggle={masterCompressor.handleToggle}
                   parameters={masterCompressor.parameters}
                   onParameterChange={masterCompressor.handleParameterChange}
+                  presets={COMPRESSOR_PRESETS}
+                  onPresetChange={(preset) => masterCompressor.loadPreset(preset.params)}
                 />
 
                 <EffectPanel
@@ -637,6 +659,8 @@ const App: React.FC = () => {
                   onToggle={masterStereoWidth.handleToggle}
                   parameters={masterStereoWidth.parameters}
                   onParameterChange={masterStereoWidth.handleParameterChange}
+                  presets={STEREO_WIDTH_PRESETS}
+                  onPresetChange={(preset) => masterStereoWidth.loadPreset(preset.params)}
                 />
               </Flex>
 

@@ -127,10 +127,23 @@ export const useDelay = (
     }
   ];
 
+  const loadPreset = useCallback((params: DelayParams) => {
+    if (!project || !effectRef.current) return;
+
+    project.editing.modify(() => {
+      const delay = effectRef.current;
+      (delay as any).wet.setValue(params.wet);
+      (delay as any).feedback.setValue(params.feedback);
+      (delay as any).time.setValue(params.time);
+      (delay as any).filter.setValue(params.filter);
+    });
+  }, [project]);
+
   return {
     isActive,
     parameters,
     handleToggle: isActive ? handleRemove : handleAdd,
-    handleParameterChange
+    handleParameterChange,
+    loadPreset
   };
 };

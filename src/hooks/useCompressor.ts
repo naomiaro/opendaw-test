@@ -142,10 +142,24 @@ export const useCompressor = (
     }
   ];
 
+  const loadPreset = useCallback((params: CompressorParams) => {
+    if (!project || !effectRef.current) return;
+
+    project.editing.modify(() => {
+      const comp = effectRef.current;
+      (comp as any).threshold.setValue(params.threshold);
+      (comp as any).ratio.setValue(params.ratio);
+      (comp as any).attack.setValue(params.attack);
+      (comp as any).release.setValue(params.release);
+      (comp as any).knee.setValue(params.knee);
+    });
+  }, [project]);
+
   return {
     isActive,
     parameters,
     handleToggle: isActive ? handleRemove : handleAdd,
-    handleParameterChange
+    handleParameterChange,
+    loadPreset
   };
 };

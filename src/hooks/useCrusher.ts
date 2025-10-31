@@ -123,10 +123,23 @@ export const useCrusher = (
     }
   ];
 
+  const loadPreset = useCallback((params: CrusherParams) => {
+    if (!project || !effectRef.current) return;
+
+    project.editing.modify(() => {
+      const crusher = effectRef.current;
+      (crusher as any).bits.setValue(params.bits);
+      (crusher as any).crush.setValue(params.crush);
+      (crusher as any).boost.setValue(params.boost);
+      (crusher as any).mix.setValue(params.mix);
+    });
+  }, [project]);
+
   return {
     isActive,
     parameters,
     handleToggle: isActive ? handleRemove : handleAdd,
-    handleParameterChange
+    handleParameterChange,
+    loadPreset
   };
 };

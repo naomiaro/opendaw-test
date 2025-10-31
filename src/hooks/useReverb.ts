@@ -123,10 +123,23 @@ export const useReverb = (
     }
   ];
 
+  const loadPreset = useCallback((params: ReverbParams) => {
+    if (!project || !effectRef.current) return;
+
+    project.editing.modify(() => {
+      const reverb = effectRef.current;
+      (reverb as any).wet.setValue(params.wet);
+      (reverb as any).decay.setValue(params.decay);
+      (reverb as any).preDelay.setValue(params.preDelay);
+      (reverb as any).damp.setValue(params.damp);
+    });
+  }, [project]);
+
   return {
     isActive,
     parameters,
     handleToggle: isActive ? handleRemove : handleAdd,
-    handleParameterChange
+    handleParameterChange,
+    loadPreset
   };
 };

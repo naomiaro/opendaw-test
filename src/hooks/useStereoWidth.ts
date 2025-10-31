@@ -91,10 +91,21 @@ export const useStereoWidth = (
     }
   ];
 
+  const loadPreset = useCallback((params: StereoWidthParams) => {
+    if (!project || !effectRef.current) return;
+
+    project.editing.modify(() => {
+      const stereo = effectRef.current;
+      (stereo as any).stereo.setValue(params.width);
+      (stereo as any).panning.setValue(params.pan);
+    });
+  }, [project]);
+
   return {
     isActive,
     parameters,
     handleToggle: isActive ? handleRemove : handleAdd,
-    handleParameterChange
+    handleParameterChange,
+    loadPreset
   };
 };

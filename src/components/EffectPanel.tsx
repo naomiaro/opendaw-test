@@ -1,6 +1,45 @@
-import React from "react";
-import { Button, Flex, Text, Badge, Card, Slider } from "@radix-ui/themes";
+import React, { useState } from "react";
+import { Button, Flex, Text, Badge, Card, Slider, Select } from "@radix-ui/themes";
 import { Project } from "@opendaw/studio-core";
+import type { EffectPreset } from "../lib/effectPresets";
+
+const PresetSelector: React.FC<{ presets: EffectPreset<any>[]; onPresetChange: (preset: EffectPreset<any>) => void }> = ({ presets, onPresetChange }) => {
+  const [selectedPreset, setSelectedPreset] = useState<string>("");
+
+  return (
+    <Flex direction="column" gap="2">
+      <Text size="2" weight="medium">Presets</Text>
+      <Select.Root
+        value={selectedPreset}
+        onValueChange={(presetName) => {
+          setSelectedPreset(presetName);
+          const preset = presets.find(p => p.name === presetName);
+          if (preset) onPresetChange(preset);
+        }}
+      >
+        <Select.Trigger placeholder="Load a preset...">
+          <Flex as="span" align="center">
+            {selectedPreset ? presets.find(p => p.name === selectedPreset)?.name : "Load a preset..."}
+          </Flex>
+        </Select.Trigger>
+        <Select.Content position="popper">
+          {presets.map(preset => (
+            <Select.Item
+              key={preset.name}
+              value={preset.name}
+              style={{ padding: "12px 36px", minHeight: "60px" }}
+            >
+              <Flex direction="column" gap="1">
+                <Text weight="medium">{preset.name}</Text>
+                <Text size="1" color="gray">{preset.description}</Text>
+              </Flex>
+            </Select.Item>
+          ))}
+        </Select.Content>
+      </Select.Root>
+    </Flex>
+  );
+};
 
 export type EffectParameter = {
   name: string;
@@ -22,6 +61,8 @@ interface EffectPanelProps {
   onParameterChange?: (paramName: string, value: number) => void;
   project?: Project;
   badgeText?: string;
+  presets?: EffectPreset<any>[];
+  onPresetChange?: (preset: EffectPreset<any>) => void;
 }
 
 export const EffectPanel: React.FC<EffectPanelProps> = ({
@@ -31,7 +72,9 @@ export const EffectPanel: React.FC<EffectPanelProps> = ({
   onToggle,
   parameters = [],
   onParameterChange,
-  badgeText
+  badgeText,
+  presets,
+  onPresetChange
 }) => {
   return (
     <Card variant="surface">
@@ -55,6 +98,11 @@ export const EffectPanel: React.FC<EffectPanelProps> = ({
           <>
             {badgeText && (
               <Badge color="purple">{badgeText}</Badge>
+            )}
+
+            {/* Preset Selector */}
+            {presets && presets.length > 0 && onPresetChange && (
+              <PresetSelector presets={presets} onPresetChange={onPresetChange} />
             )}
 
             {/* Parameter controls */}
