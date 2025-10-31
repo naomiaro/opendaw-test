@@ -1,31 +1,41 @@
 import { useState, useCallback, useRef } from "react";
 import { Project, EffectFactories } from "@opendaw/studio-core";
-import type { TrackData } from "../components/TrackRow";
 import type { EffectParameter } from "../components/EffectPanel";
 
-export const useVocalsCompressor = (project: Project | null, tracks: TrackData[]) => {
+interface CompressorParams {
+  threshold: number;
+  ratio: number;
+  attack: number;
+  release: number;
+  knee: number;
+}
+
+export const useCompressor = (
+  project: Project | null,
+  audioBox: any,
+  defaultParams: CompressorParams,
+  label: string,
+  insertAtIndex?: number
+) => {
   const [isActive, setIsActive] = useState(false);
-  const [threshold, setThreshold] = useState(-18.0);
-  const [ratio, setRatio] = useState(3.0);
-  const [attack, setAttack] = useState(5.0);
-  const [release, setRelease] = useState(50.0);
-  const [knee, setKnee] = useState(4.0);
+  const [threshold, setThreshold] = useState(defaultParams.threshold);
+  const [ratio, setRatio] = useState(defaultParams.ratio);
+  const [attack, setAttack] = useState(defaultParams.attack);
+  const [release, setRelease] = useState(defaultParams.release);
+  const [knee, setKnee] = useState(defaultParams.knee);
   const effectRef = useRef<any>(null);
 
   const handleAdd = useCallback(() => {
-    if (!project || isActive) return;
-
-    const vocalsTrack = tracks.find(t => t.name === "Vocals");
-    if (!vocalsTrack) return;
+    if (!project || !audioBox || isActive) return;
 
     project.editing.modify(() => {
       const compressor = project.api.insertEffect(
-        vocalsTrack.audioUnitBox.audioEffects,
+        (audioBox as any).audioEffects,
         EffectFactories.AudioNamed.Compressor,
-        0
+        insertAtIndex
       );
 
-      compressor.label.setValue("Vocal Compressor");
+      compressor.label.setValue(label);
       (compressor as any).threshold.setValue(threshold);
       (compressor as any).ratio.setValue(ratio);
       (compressor as any).attack.setValue(attack);
@@ -41,11 +51,11 @@ export const useVocalsCompressor = (project: Project | null, tracks: TrackData[]
       (compressor as any).release.catchupAndSubscribe((obs: any) => setRelease(obs.getValue()));
       (compressor as any).knee.catchupAndSubscribe((obs: any) => setKnee(obs.getValue()));
 
-      console.log("Added compressor to Vocals track at index 0");
+      console.log(`Added compressor: ${label}`);
     });
 
     setIsActive(true);
-  }, [project, tracks, isActive, threshold, ratio, attack, release, knee]);
+  }, [project, audioBox, isActive, threshold, ratio, attack, release, knee, label, insertAtIndex]);
 
   const handleRemove = useCallback(() => {
     if (!project || !isActive || !effectRef.current) return;
@@ -53,11 +63,11 @@ export const useVocalsCompressor = (project: Project | null, tracks: TrackData[]
     project.editing.modify(() => {
       effectRef.current.delete();
       effectRef.current = null;
-      console.log("Removed compressor from Vocals track");
+      console.log(`Removed compressor: ${label}`);
     });
 
     setIsActive(false);
-  }, [project, isActive]);
+  }, [project, isActive, label]);
 
   const handleParameterChange = useCallback((paramName: string, value: number) => {
     if (!project || !effectRef.current) return;

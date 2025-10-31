@@ -18,13 +18,11 @@ import { TimelineRuler } from "./components/TimelineRuler";
 import { EffectPanel } from "./components/EffectPanel";
 import { loadAudioFile } from "./lib/audioUtils";
 import { initializeOpenDAW, setLoopEndFromTracks } from "./lib/projectSetup";
-import { useVocalsReverb } from "./hooks/useVocalsReverb";
-import { useVocalsCompressor } from "./hooks/useVocalsCompressor";
-import { useGuitarDelay } from "./hooks/useGuitarDelay";
-import { useGuitarCrusher } from "./hooks/useGuitarCrusher";
-import { useBassCrusher } from "./hooks/useBassCrusher";
-import { useMasterCompressor } from "./hooks/useMasterCompressor";
-import { useMasterStereoWidth } from "./hooks/useMasterStereoWidth";
+import { useReverb } from "./hooks/useReverb";
+import { useCompressor } from "./hooks/useCompressor";
+import { useDelay } from "./hooks/useDelay";
+import { useCrusher } from "./hooks/useCrusher";
+import { useStereoWidth } from "./hooks/useStereoWidth";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
@@ -47,14 +45,21 @@ const App: React.FC = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentPosition, setCurrentPosition] = useState(0);
   const [tracks, setTracks] = useState<TrackData[]>([]);
-  // Effect hooks
-  const vocalsReverb = useVocalsReverb(project, tracks);
-  const vocalsCompressor = useVocalsCompressor(project, tracks);
-  const guitarDelay = useGuitarDelay(project, tracks);
-  const guitarCrusher = useGuitarCrusher(project, tracks);
-  const bassCrusher = useBassCrusher(project, tracks);
-  const masterCompressor = useMasterCompressor(project);
-  const masterStereoWidth = useMasterStereoWidth(project);
+
+  // Get audio boxes for effects
+  const vocalsAudioBox = tracks.find(t => t.name === "Vocals")?.audioUnitBox || null;
+  const guitarAudioBox = tracks.find(t => t.name === "Guitar")?.audioUnitBox || null;
+  const bassAudioBox = tracks.find(t => t.name === "Bass & Drums")?.audioUnitBox || null;
+  const masterAudioBox = project?.rootBox.outputDevice.pointerHub.incoming().at(0)?.box || null;
+
+  // Effect hooks with generic implementations
+  const vocalsReverb = useReverb(project, vocalsAudioBox, { wet: -18, decay: 0.7, preDelay: 0.02, damp: 0.5 }, "Vocals Reverb");
+  const vocalsCompressor = useCompressor(project, vocalsAudioBox, { threshold: -24, ratio: 3, attack: 5, release: 100, knee: 6 }, "Vocals Comp", 0);
+  const guitarDelay = useDelay(project, guitarAudioBox, { wet: -12, feedback: 0.4, time: 6, filter: 0.3 }, "Guitar Delay");
+  const guitarCrusher = useCrusher(project, guitarAudioBox, { bits: 4, crush: 0.95, boost: 0.6, mix: 0.8 }, "Guitar Lo-Fi");
+  const bassCrusher = useCrusher(project, bassAudioBox, { bits: 6, crush: 0.9, boost: 0.5, mix: 0.7 }, "Bass Lo-Fi");
+  const masterCompressor = useCompressor(project, masterAudioBox, { threshold: -12, ratio: 2, attack: 5, release: 100, knee: 6 }, "Master Glue");
+  const masterStereoWidth = useStereoWidth(project, masterAudioBox, { width: 0.8, pan: 0.0 }, "Master Width");
 
   // Refs for non-reactive values
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());

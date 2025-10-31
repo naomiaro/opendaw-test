@@ -1,29 +1,37 @@
 import { useState, useCallback, useRef } from "react";
 import { Project, EffectFactories } from "@opendaw/studio-core";
-import type { TrackData } from "../components/TrackRow";
 import type { EffectParameter } from "../components/EffectPanel";
 
-export const useGuitarCrusher = (project: Project | null, tracks: TrackData[]) => {
+interface CrusherParams {
+  bits: number;
+  crush: number;
+  boost: number;
+  mix: number;
+}
+
+export const useCrusher = (
+  project: Project | null,
+  audioBox: any,
+  defaultParams: CrusherParams,
+  label: string
+) => {
   const [isActive, setIsActive] = useState(false);
-  const [bits, setBits] = useState(4);
-  const [crush, setCrush] = useState(0.95);
-  const [boost, setBoost] = useState(0.6);
-  const [mix, setMix] = useState(0.8);
+  const [bits, setBits] = useState(defaultParams.bits);
+  const [crush, setCrush] = useState(defaultParams.crush);
+  const [boost, setBoost] = useState(defaultParams.boost);
+  const [mix, setMix] = useState(defaultParams.mix);
   const effectRef = useRef<any>(null);
 
   const handleAdd = useCallback(() => {
-    if (!project || isActive) return;
-
-    const guitarTrack = tracks.find(t => t.name === "Guitar");
-    if (!guitarTrack) return;
+    if (!project || !audioBox || isActive) return;
 
     project.editing.modify(() => {
       const crusher = project.api.insertEffect(
-        guitarTrack.audioUnitBox.audioEffects,
+        (audioBox as any).audioEffects,
         EffectFactories.AudioNamed.Crusher
       );
 
-      crusher.label.setValue("Guitar Lo-Fi");
+      crusher.label.setValue(label);
       (crusher as any).bits.setValue(bits);
       (crusher as any).crush.setValue(crush);
       (crusher as any).boost.setValue(boost);
@@ -36,11 +44,11 @@ export const useGuitarCrusher = (project: Project | null, tracks: TrackData[]) =
       (crusher as any).boost.catchupAndSubscribe((obs: any) => setBoost(obs.getValue()));
       (crusher as any).mix.catchupAndSubscribe((obs: any) => setMix(obs.getValue()));
 
-      console.log("Added lo-fi crusher to Guitar track");
+      console.log(`Added crusher: ${label}`);
     });
 
     setIsActive(true);
-  }, [project, tracks, isActive, bits, crush, boost, mix]);
+  }, [project, audioBox, isActive, bits, crush, boost, mix, label]);
 
   const handleRemove = useCallback(() => {
     if (!project || !isActive || !effectRef.current) return;
@@ -48,11 +56,11 @@ export const useGuitarCrusher = (project: Project | null, tracks: TrackData[]) =
     project.editing.modify(() => {
       effectRef.current.delete();
       effectRef.current = null;
-      console.log("Removed lo-fi crusher from Guitar track");
+      console.log(`Removed crusher: ${label}`);
     });
 
     setIsActive(false);
-  }, [project, isActive]);
+  }, [project, isActive, label]);
 
   const handleParameterChange = useCallback((paramName: string, value: number) => {
     if (!project || !effectRef.current) return;

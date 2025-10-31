@@ -1,29 +1,37 @@
 import { useState, useCallback, useRef } from "react";
 import { Project, EffectFactories } from "@opendaw/studio-core";
-import type { TrackData } from "../components/TrackRow";
 import type { EffectParameter } from "../components/EffectPanel";
 
-export const useVocalsReverb = (project: Project | null, tracks: TrackData[]) => {
+interface ReverbParams {
+  wet: number;
+  decay: number;
+  preDelay: number;
+  damp: number;
+}
+
+export const useReverb = (
+  project: Project | null,
+  audioBox: any,
+  defaultParams: ReverbParams,
+  label: string
+) => {
   const [isActive, setIsActive] = useState(false);
-  const [wet, setWet] = useState(-6.0);
-  const [decay, setDecay] = useState(0.6);
-  const [preDelay, setPreDelay] = useState(0.02);
-  const [damp, setDamp] = useState(0.7);
+  const [wet, setWet] = useState(defaultParams.wet);
+  const [decay, setDecay] = useState(defaultParams.decay);
+  const [preDelay, setPreDelay] = useState(defaultParams.preDelay);
+  const [damp, setDamp] = useState(defaultParams.damp);
   const effectRef = useRef<any>(null);
 
   const handleAdd = useCallback(() => {
-    if (!project || isActive) return;
-
-    const vocalsTrack = tracks.find(t => t.name === "Vocals");
-    if (!vocalsTrack) return;
+    if (!project || !audioBox || isActive) return;
 
     project.editing.modify(() => {
       const reverb = project.api.insertEffect(
-        vocalsTrack.audioUnitBox.audioEffects,
+        (audioBox as any).audioEffects,
         EffectFactories.AudioNamed.Reverb
       );
 
-      reverb.label.setValue("Vocal Reverb");
+      reverb.label.setValue(label);
       (reverb as any).wet.setValue(wet);
       (reverb as any).decay.setValue(decay);
       (reverb as any).preDelay.setValue(preDelay);
@@ -36,11 +44,11 @@ export const useVocalsReverb = (project: Project | null, tracks: TrackData[]) =>
       (reverb as any).preDelay.catchupAndSubscribe((obs: any) => setPreDelay(obs.getValue()));
       (reverb as any).damp.catchupAndSubscribe((obs: any) => setDamp(obs.getValue()));
 
-      console.log("Added reverb to Vocals track");
+      console.log(`Added reverb: ${label}`);
     });
 
     setIsActive(true);
-  }, [project, tracks, isActive, wet, decay, preDelay, damp]);
+  }, [project, audioBox, isActive, wet, decay, preDelay, damp, label]);
 
   const handleRemove = useCallback(() => {
     if (!project || !isActive || !effectRef.current) return;
@@ -48,11 +56,11 @@ export const useVocalsReverb = (project: Project | null, tracks: TrackData[]) =>
     project.editing.modify(() => {
       effectRef.current.delete();
       effectRef.current = null;
-      console.log("Removed reverb from Vocals track");
+      console.log(`Removed reverb: ${label}`);
     });
 
     setIsActive(false);
-  }, [project, isActive]);
+  }, [project, isActive, label]);
 
   const handleParameterChange = useCallback((paramName: string, value: number) => {
     if (!project || !effectRef.current) return;

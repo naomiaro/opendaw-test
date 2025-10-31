@@ -1,46 +1,54 @@
 import { useState, useCallback, useRef } from "react";
 import { Project, EffectFactories } from "@opendaw/studio-core";
-import type { TrackData } from "../components/TrackRow";
 import type { EffectParameter } from "../components/EffectPanel";
 
-export const useGuitarDelay = (project: Project | null, tracks: TrackData[]) => {
+interface DelayParams {
+  wet: number;
+  feedback: number;
+  time: number;
+  filter: number;
+}
+
+export const useDelay = (
+  project: Project | null,
+  audioBox: any,
+  defaultParams: DelayParams,
+  label: string
+) => {
   const [isActive, setIsActive] = useState(false);
-  const [wet, setWet] = useState(-12.0);
-  const [feedback, setFeedback] = useState(0.3);
-  const [time, setTime] = useState(6);
-  const [filter, setFilter] = useState(0.2);
+  const [wet, setWet] = useState(defaultParams.wet);
+  const [feedback, setFeedback] = useState(defaultParams.feedback);
+  const [time, setTime] = useState(defaultParams.time);
+  const [filter, setFilter] = useState(defaultParams.filter);
   const effectRef = useRef<any>(null);
 
   const handleAdd = useCallback(() => {
-    if (!project || isActive) return;
-
-    const guitarTrack = tracks.find(t => t.name === "Guitar");
-    if (!guitarTrack) return;
+    if (!project || !audioBox || isActive) return;
 
     project.editing.modify(() => {
       const delay = project.api.insertEffect(
-        guitarTrack.audioUnitBox.audioEffects,
+        (audioBox as any).audioEffects,
         EffectFactories.AudioNamed.Delay
       );
 
-      delay.label.setValue("Guitar Delay");
+      delay.label.setValue(label);
       (delay as any).wet.setValue(wet);
       (delay as any).feedback.setValue(feedback);
-      (delay as any).delay.setValue(time);
+      (delay as any).time.setValue(time);
       (delay as any).filter.setValue(filter);
 
       effectRef.current = delay;
 
       (delay as any).wet.catchupAndSubscribe((obs: any) => setWet(obs.getValue()));
       (delay as any).feedback.catchupAndSubscribe((obs: any) => setFeedback(obs.getValue()));
-      (delay as any).delay.catchupAndSubscribe((obs: any) => setTime(obs.getValue()));
+      (delay as any).time.catchupAndSubscribe((obs: any) => setTime(obs.getValue()));
       (delay as any).filter.catchupAndSubscribe((obs: any) => setFilter(obs.getValue()));
 
-      console.log("Added delay to Guitar track");
+      console.log(`Added delay: ${label}`);
     });
 
     setIsActive(true);
-  }, [project, tracks, isActive, wet, feedback, time, filter]);
+  }, [project, audioBox, isActive, wet, feedback, time, filter, label]);
 
   const handleRemove = useCallback(() => {
     if (!project || !isActive || !effectRef.current) return;
@@ -48,11 +56,11 @@ export const useGuitarDelay = (project: Project | null, tracks: TrackData[]) => 
     project.editing.modify(() => {
       effectRef.current.delete();
       effectRef.current = null;
-      console.log("Removed delay from Guitar track");
+      console.log(`Removed delay: ${label}`);
     });
 
     setIsActive(false);
-  }, [project, isActive]);
+  }, [project, isActive, label]);
 
   const handleParameterChange = useCallback((paramName: string, value: number) => {
     if (!project || !effectRef.current) return;
@@ -67,7 +75,7 @@ export const useGuitarDelay = (project: Project | null, tracks: TrackData[]) => 
           (delay as any).feedback.setValue(value);
           break;
         case 'time':
-          (delay as any).delay.setValue(value);
+          (delay as any).time.setValue(value);
           break;
         case 'filter':
           (delay as any).filter.setValue(value);
