@@ -29,29 +29,23 @@ export default defineConfig({
             },
             output: {
                 manualChunks: (id) => {
-                    // Keep React, ReactDOM, and Radix UI together in one vendor chunk
-                    // to avoid dependency issues
+                    // Only split OpenDAW packages, let Vite handle React/UI libraries automatically
                     if (id.includes('node_modules')) {
-                        if (id.includes('react') || id.includes('react-dom') || id.includes('@radix-ui')) {
-                            return 'vendor-react';
-                        }
-
-                        // Split large OpenDAW packages into separate chunks
+                        // Split large OpenDAW packages
                         if (id.includes('@opendaw/studio-core')) {
-                            return 'opendaw-studio-core';
+                            return 'opendaw-core';
                         }
                         if (id.includes('@opendaw/studio-boxes')) {
-                            return 'opendaw-studio-boxes';
+                            return 'opendaw-boxes';
                         }
-                        if (id.includes('@opendaw/')) {
-                            return 'opendaw-lib';
+                        if (id.includes('@opendaw/studio-adapters')) {
+                            return 'opendaw-adapters';
                         }
-
-                        // All other vendor code
-                        return 'vendor';
+                        if (id.includes('@opendaw/lib-')) {
+                            return 'opendaw-libs';
+                        }
                     }
-
-                    // Return undefined for application code (use default chunking)
+                    // Let Vite handle all other chunking automatically
                     return undefined;
                 }
             }
