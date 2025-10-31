@@ -56,6 +56,7 @@ const TrackRow: React.FC<{
   pausedPositionRef: React.MutableRefObject<number | null>;
 }> = ({ track, project, allTracks, canvasRef, currentPosition, isPlaying, bpm, audioBuffer, setCurrentPosition, pausedPositionRef }) => {
   const [volume, setVolume] = useState(0);
+  const [pan, setPan] = useState(0);
   const [muted, setMuted] = useState(false);
   const [soloed, setSoloed] = useState(false);
   const waveformContainerRef = useRef<HTMLDivElement>(null);
@@ -64,6 +65,10 @@ const TrackRow: React.FC<{
   useEffect(() => {
     const volumeSubscription = track.audioUnitBox.volume.catchupAndSubscribe(obs => {
       setVolume(obs.getValue());
+    });
+
+    const panSubscription = track.audioUnitBox.panning.catchupAndSubscribe(obs => {
+      setPan(obs.getValue());
     });
 
     const muteSubscription = track.audioUnitBox.mute.catchupAndSubscribe(obs => {
@@ -76,6 +81,7 @@ const TrackRow: React.FC<{
 
     return () => {
       volumeSubscription.terminate();
+      panSubscription.terminate();
       muteSubscription.terminate();
       soloSubscription.terminate();
     };
@@ -86,6 +92,14 @@ const TrackRow: React.FC<{
     const newVolume = values[0];
     project.editing.modify(() => {
       track.audioUnitBox.volume.setValue(newVolume);
+    });
+  }, [project, track]);
+
+  // Handle pan change
+  const handlePanChange = useCallback((values: number[]) => {
+    const newPan = values[0];
+    project.editing.modify(() => {
+      track.audioUnitBox.panning.setValue(newPan);
     });
   }, [project, track]);
 
@@ -219,6 +233,24 @@ const TrackRow: React.FC<{
           min={-60}
           max={6}
           step={0.1}
+          style={{ width: "100%" }}
+        />
+
+        {/* Pan label */}
+        <Flex justify="between" align="center">
+          <Text size="1" color="gray">Pan</Text>
+          <Text size="1" color="gray">
+            {pan === 0 ? 'C' : pan < 0 ? `L${Math.abs(pan * 100).toFixed(0)}` : `R${(pan * 100).toFixed(0)}`}
+          </Text>
+        </Flex>
+
+        {/* Pan slider - horizontal */}
+        <Slider
+          value={[pan]}
+          onValueChange={handlePanChange}
+          min={-1}
+          max={1}
+          step={0.01}
           style={{ width: "100%" }}
         />
       </Flex>
