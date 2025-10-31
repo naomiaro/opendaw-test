@@ -7,6 +7,14 @@ interface TimelineRulerProps {
 
 export const TimelineRuler: React.FC<TimelineRulerProps> = ({ maxDuration }) => {
   const totalSeconds = Math.ceil(maxDuration);
+  const tickInterval = 30; // Tick every 30 seconds
+
+  // Format seconds as mm:ss
+  const formatTime = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
   return (
     <div style={{
@@ -38,11 +46,10 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = ({ maxDuration }) => 
         backgroundColor: "var(--gray-2)",
         boxSizing: "border-box"
       }}>
-        {/* Generate tick marks every second */}
-        {Array.from({ length: totalSeconds + 1 }, (_, i) => {
-          const seconds = i;
+        {/* Generate tick marks every 30 seconds */}
+        {Array.from({ length: Math.floor(totalSeconds / tickInterval) + 1 }, (_, i) => {
+          const seconds = i * tickInterval;
           const percent = (seconds / maxDuration) * 100;
-          const isMajorTick = seconds % 5 === 0;
 
           return (
             <div
@@ -51,18 +58,18 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = ({ maxDuration }) => 
                 position: "absolute",
                 left: `${percent}%`,
                 bottom: 0,
-                height: isMajorTick ? "12px" : "6px",
+                height: "12px",
                 width: "1px",
-                backgroundColor: isMajorTick ? "var(--gray-10)" : "var(--gray-7)"
+                backgroundColor: "var(--gray-10)"
               }}
             />
           );
         })}
 
-        {/* Time labels at major intervals (every 5 seconds) */}
+        {/* Time labels (mm:ss format) */}
         {Array.from(
-          { length: Math.floor(totalSeconds / 5) + 1 },
-          (_, i) => i * 5
+          { length: Math.floor(totalSeconds / tickInterval) + 1 },
+          (_, i) => i * tickInterval
         ).map((seconds) => {
           const percent = (seconds / maxDuration) * 100;
           return (
@@ -76,7 +83,7 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = ({ maxDuration }) => 
               }}
             >
               <Text size="1" color="gray" style={{ fontWeight: "500" }}>
-                {seconds}
+                {formatTime(seconds)}
               </Text>
             </div>
           );
