@@ -825,8 +825,8 @@ const App: React.FC = () => {
   return (
     <Theme appearance="dark" accentColor="green" radius="medium">
       <GitHubCorner url="https://github.com/moisesai/opendaw" />
-      <Container size="4" style={{ padding: "32px" }}>
-        <Flex direction="column" gap="6">
+      <Container size="3" px="4" py="8">
+        <Flex direction="column" gap="6" style={{ maxWidth: 1200, margin: "0 auto" }}>
           <BackLink />
 
           {/* Header */}

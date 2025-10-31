@@ -716,7 +716,7 @@ const App: React.FC = () => {
     <Theme appearance="dark" accentColor="blue" radius="large">
       <GitHubCorner />
       <Container size="3" px="4" py="8">
-        <Flex direction="column" gap="6" style={{ maxWidth: 700, margin: "0 auto" }}>
+        <Flex direction="column" gap="6" style={{ maxWidth: 1200, margin: "0 auto" }}>
           <BackLink />
 
           <Flex direction="column" align="center" gap="2">
