@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
 import { PPQN } from "@opendaw/lib-dsp";
 import { AnimationFrame } from "@opendaw/lib-dom";
-import { InstrumentFactories, Project, EffectFactories } from "@opendaw/studio-core";
+import { InstrumentFactories, Project } from "@opendaw/studio-core";
 import { AudioFileBox, AudioRegionBox } from "@opendaw/studio-boxes";
 import { PeaksPainter } from "@opendaw/lib-fusion";
 import { CanvasPainter } from "./lib/CanvasPainter";
@@ -16,9 +16,15 @@ import { TrackRow, type TrackData } from "./components/TrackRow";
 import { TransportControls } from "./components/TransportControls";
 import { TimelineRuler } from "./components/TimelineRuler";
 import { EffectPanel } from "./components/EffectPanel";
-import { EffectsSection } from "./components/EffectsSection";
 import { loadAudioFile } from "./lib/audioUtils";
 import { initializeOpenDAW, setLoopEndFromTracks } from "./lib/projectSetup";
+import { useVocalsReverb } from "./hooks/useVocalsReverb";
+import { useVocalsCompressor } from "./hooks/useVocalsCompressor";
+import { useGuitarDelay } from "./hooks/useGuitarDelay";
+import { useGuitarCrusher } from "./hooks/useGuitarCrusher";
+import { useBassCrusher } from "./hooks/useBassCrusher";
+import { useMasterCompressor } from "./hooks/useMasterCompressor";
+import { useMasterStereoWidth } from "./hooks/useMasterStereoWidth";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
@@ -31,8 +37,6 @@ import {
   Callout
 } from "@radix-ui/themes";
 
-const { Quarter } = PPQN;
-
 /**
  * Main Effects Demo App Component
  */
@@ -43,56 +47,14 @@ const App: React.FC = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentPosition, setCurrentPosition] = useState(0);
   const [tracks, setTracks] = useState<TrackData[]>([]);
-  const [peaksReady, setPeaksReady] = useState(false);
-  const [hasVocalsReverb, setHasVocalsReverb] = useState(false);
-  const [hasVocalsCompressor, setHasVocalsCompressor] = useState(false);
-  const [hasGuitarDelay, setHasGuitarDelay] = useState(false);
-  const [hasGuitarCrusher, setHasGuitarCrusher] = useState(false);
-  const [hasBassLoCrusher, setHasBassLoCrusher] = useState(false);
-  const [hasMasterCompressor, setHasMasterCompressor] = useState(false);
-  const [hasMasterLimiter, setHasMasterLimiter] = useState(false);
-
-  // Vocals Reverb parameters
-  const [vocalsReverbWet, setVocalsReverbWet] = useState(-6.0);
-  const [vocalsReverbDecay, setVocalsReverbDecay] = useState(0.6);
-  const [vocalsReverbPreDelay, setVocalsReverbPreDelay] = useState(0.02);
-  const [vocalsReverbDamp, setVocalsReverbDamp] = useState(0.7);
-
-  // Vocals Compressor parameters
-  const [vocalsCompThreshold, setVocalsCompThreshold] = useState(-18.0);
-  const [vocalsCompRatio, setVocalsCompRatio] = useState(3.0);
-  const [vocalsCompAttack, setVocalsCompAttack] = useState(5.0);
-  const [vocalsCompRelease, setVocalsCompRelease] = useState(50.0);
-  const [vocalsCompKnee, setVocalsCompKnee] = useState(4.0);
-
-  // Guitar Delay parameters
-  const [guitarDelayWet, setGuitarDelayWet] = useState(-12.0);
-  const [guitarDelayFeedback, setGuitarDelayFeedback] = useState(0.3);
-  const [guitarDelayTime, setGuitarDelayTime] = useState(6);
-  const [guitarDelayFilter, setGuitarDelayFilter] = useState(0.2);
-
-  // Guitar Crusher parameters
-  const [guitarCrusherBits, setGuitarCrusherBits] = useState(4);
-  const [guitarCrusherCrush, setGuitarCrusherCrush] = useState(0.95);
-  const [guitarCrusherBoost, setGuitarCrusherBoost] = useState(0.6);
-  const [guitarCrusherMix, setGuitarCrusherMix] = useState(0.8);
-
-  // Bass Crusher parameters
-  const [bassCrusherBits, setBassCrusherBits] = useState(6);
-  const [bassCrusherCrush, setBassCrusherCrush] = useState(0.9);
-  const [bassCrusherBoost, setBassCrusherBoost] = useState(0.5);
-  const [bassCrusherMix, setBassCrusherMix] = useState(0.7);
-
-  // Master Compressor parameters
-  const [masterCompThreshold, setMasterCompThreshold] = useState(-12.0);
-  const [masterCompRatio, setMasterCompRatio] = useState(2.0);
-  const [masterCompAttack, setMasterCompAttack] = useState(5.0);
-  const [masterCompRelease, setMasterCompRelease] = useState(100.0);
-  const [masterCompKnee, setMasterCompKnee] = useState(6.0);
-
-  // Master Stereo Width parameters
-  const [masterStereoWidth, setMasterStereoWidth] = useState(0.8);
-  const [masterStereoPan, setMasterStereoPan] = useState(0.0);
+  // Effect hooks
+  const vocalsReverb = useVocalsReverb(project, tracks);
+  const vocalsCompressor = useVocalsCompressor(project, tracks);
+  const guitarDelay = useGuitarDelay(project, tracks);
+  const guitarCrusher = useGuitarCrusher(project, tracks);
+  const bassCrusher = useBassCrusher(project, tracks);
+  const masterCompressor = useMasterCompressor(project);
+  const masterStereoWidth = useMasterStereoWidth(project);
 
   // Refs for non-reactive values
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
@@ -103,15 +65,6 @@ const App: React.FC = () => {
   const currentPositionRef = useRef<number>(0);
   const bpmRef = useRef<number>(120);
   const tracksContainerRef = useRef<HTMLDivElement>(null);
-
-  // Refs to store effect boxes for removal
-  const vocalsReverbRef = useRef<any>(null);
-  const vocalsCompressorRef = useRef<any>(null);
-  const guitarDelayRef = useRef<any>(null);
-  const guitarCrusherRef = useRef<any>(null);
-  const bassLoCrusherRef = useRef<any>(null);
-  const masterCompressorRef = useRef<any>(null);
-  const masterLimiterRef = useRef<any>(null);
 
   const CHANNEL_PADDING = 4;
 
@@ -224,7 +177,6 @@ const App: React.FC = () => {
               // Check if all peaks are rendered
               if (renderedCount === tracks.length) {
                 console.debug("[Peaks] All waveforms rendered!");
-                setPeaksReady(true);
                 setStatus("Ready to play!");
               }
             }
@@ -451,497 +403,6 @@ const App: React.FC = () => {
     setCurrentPosition(0);
   }, [project]);
 
-  // Effect management functions
-  const handleAddVocalsReverb = useCallback(() => {
-    if (!project || hasVocalsReverb) return;
-
-    const vocalsTrack = tracks.find(t => t.name === "Vocals");
-    if (!vocalsTrack) return;
-
-    project.editing.modify(() => {
-      const reverb = project.api.insertEffect(
-        vocalsTrack.audioUnitBox.audioEffects,
-        EffectFactories.AudioNamed.Reverb
-      );
-
-      // Configure reverb for vocals
-      reverb.label.setValue("Vocal Reverb");
-      (reverb as any).wet.setValue(vocalsReverbWet);
-      (reverb as any).decay.setValue(vocalsReverbDecay);
-      (reverb as any).preDelay.setValue(vocalsReverbPreDelay);
-      (reverb as any).damp.setValue(vocalsReverbDamp);
-
-      // Store reference for removal
-      vocalsReverbRef.current = reverb;
-
-      // Subscribe to parameter changes
-      (reverb as any).wet.catchupAndSubscribe((obs: any) => setVocalsReverbWet(obs.getValue()));
-      (reverb as any).decay.catchupAndSubscribe((obs: any) => setVocalsReverbDecay(obs.getValue()));
-      (reverb as any).preDelay.catchupAndSubscribe((obs: any) => setVocalsReverbPreDelay(obs.getValue()));
-      (reverb as any).damp.catchupAndSubscribe((obs: any) => setVocalsReverbDamp(obs.getValue()));
-
-      console.log("Added reverb to Vocals track");
-    });
-
-    setHasVocalsReverb(true);
-  }, [project, tracks, hasVocalsReverb, vocalsReverbWet, vocalsReverbDecay, vocalsReverbPreDelay, vocalsReverbDamp]);
-
-  // Handler for updating vocals reverb parameters
-  const handleVocalsReverbParamChange = useCallback((paramName: string, value: number) => {
-    if (!project || !vocalsReverbRef.current) return;
-
-    project.editing.modify(() => {
-      const reverb = vocalsReverbRef.current;
-      switch (paramName) {
-        case 'wet':
-          (reverb as any).wet.setValue(value);
-          break;
-        case 'decay':
-          (reverb as any).decay.setValue(value);
-          break;
-        case 'preDelay':
-          (reverb as any).preDelay.setValue(value);
-          break;
-        case 'damp':
-          (reverb as any).damp.setValue(value);
-          break;
-      }
-    });
-  }, [project]);
-
-  const handleRemoveVocalsReverb = useCallback(() => {
-    if (!project || !hasVocalsReverb || !vocalsReverbRef.current) return;
-
-    project.editing.modify(() => {
-      vocalsReverbRef.current.delete();
-      vocalsReverbRef.current = null;
-      console.log("Removed reverb from Vocals track");
-    });
-
-    setHasVocalsReverb(false);
-  }, [project, hasVocalsReverb]);
-
-  const handleAddVocalsCompressor = useCallback(() => {
-    if (!project || hasVocalsCompressor) return;
-
-    const vocalsTrack = tracks.find(t => t.name === "Vocals");
-    if (!vocalsTrack) return;
-
-    project.editing.modify(() => {
-      const compressor = project.api.insertEffect(
-        vocalsTrack.audioUnitBox.audioEffects,
-        EffectFactories.AudioNamed.Compressor,
-        0  // Add at index 0 (before reverb if it exists)
-      );
-
-      // Configure compressor for vocals
-      compressor.label.setValue("Vocal Compressor");
-      (compressor as any).threshold.setValue(vocalsCompThreshold);
-      (compressor as any).ratio.setValue(vocalsCompRatio);
-      (compressor as any).attack.setValue(vocalsCompAttack);
-      (compressor as any).release.setValue(vocalsCompRelease);
-      (compressor as any).automakeup.setValue(true);
-      (compressor as any).knee.setValue(vocalsCompKnee);
-
-      // Store reference for removal
-      vocalsCompressorRef.current = compressor;
-
-      // Subscribe to parameter changes
-      (compressor as any).threshold.catchupAndSubscribe((obs: any) => setVocalsCompThreshold(obs.getValue()));
-      (compressor as any).ratio.catchupAndSubscribe((obs: any) => setVocalsCompRatio(obs.getValue()));
-      (compressor as any).attack.catchupAndSubscribe((obs: any) => setVocalsCompAttack(obs.getValue()));
-      (compressor as any).release.catchupAndSubscribe((obs: any) => setVocalsCompRelease(obs.getValue()));
-      (compressor as any).knee.catchupAndSubscribe((obs: any) => setVocalsCompKnee(obs.getValue()));
-
-      console.log("Added compressor to Vocals track at index 0");
-    });
-
-    setHasVocalsCompressor(true);
-  }, [project, tracks, hasVocalsCompressor, vocalsCompThreshold, vocalsCompRatio, vocalsCompAttack, vocalsCompRelease, vocalsCompKnee]);
-
-  const handleVocalsCompressorParamChange = useCallback((paramName: string, value: number) => {
-    if (!project || !vocalsCompressorRef.current) return;
-
-    project.editing.modify(() => {
-      const comp = vocalsCompressorRef.current;
-      switch (paramName) {
-        case 'threshold':
-          (comp as any).threshold.setValue(value);
-          break;
-        case 'ratio':
-          (comp as any).ratio.setValue(value);
-          break;
-        case 'attack':
-          (comp as any).attack.setValue(value);
-          break;
-        case 'release':
-          (comp as any).release.setValue(value);
-          break;
-        case 'knee':
-          (comp as any).knee.setValue(value);
-          break;
-      }
-    });
-  }, [project]);
-
-  const handleRemoveVocalsCompressor = useCallback(() => {
-    if (!project || !hasVocalsCompressor || !vocalsCompressorRef.current) return;
-
-    project.editing.modify(() => {
-      vocalsCompressorRef.current.delete();
-      vocalsCompressorRef.current = null;
-      console.log("Removed compressor from Vocals track");
-    });
-
-    setHasVocalsCompressor(false);
-  }, [project, hasVocalsCompressor]);
-
-  const handleAddGuitarDelay = useCallback(() => {
-    if (!project || hasGuitarDelay) return;
-
-    const guitarTrack = tracks.find(t => t.name === "Guitar");
-    if (!guitarTrack) return;
-
-    project.editing.modify(() => {
-      const delay = project.api.insertEffect(
-        guitarTrack.audioUnitBox.audioEffects,
-        EffectFactories.AudioNamed.Delay
-      );
-
-      // Configure delay for guitar
-      delay.label.setValue("Guitar Delay");
-      (delay as any).wet.setValue(guitarDelayWet);
-      (delay as any).feedback.setValue(guitarDelayFeedback);
-      (delay as any).delay.setValue(guitarDelayTime);
-      (delay as any).filter.setValue(guitarDelayFilter);
-
-      // Store reference for removal
-      guitarDelayRef.current = delay;
-
-      // Subscribe to parameter changes
-      (delay as any).wet.catchupAndSubscribe((obs: any) => setGuitarDelayWet(obs.getValue()));
-      (delay as any).feedback.catchupAndSubscribe((obs: any) => setGuitarDelayFeedback(obs.getValue()));
-      (delay as any).delay.catchupAndSubscribe((obs: any) => setGuitarDelayTime(obs.getValue()));
-      (delay as any).filter.catchupAndSubscribe((obs: any) => setGuitarDelayFilter(obs.getValue()));
-
-      console.log("Added delay to Guitar track");
-    });
-
-    setHasGuitarDelay(true);
-  }, [project, tracks, hasGuitarDelay, guitarDelayWet, guitarDelayFeedback, guitarDelayTime, guitarDelayFilter]);
-
-  const handleGuitarDelayParamChange = useCallback((paramName: string, value: number) => {
-    if (!project || !guitarDelayRef.current) return;
-
-    project.editing.modify(() => {
-      const delay = guitarDelayRef.current;
-      switch (paramName) {
-        case 'wet':
-          (delay as any).wet.setValue(value);
-          break;
-        case 'feedback':
-          (delay as any).feedback.setValue(value);
-          break;
-        case 'time':
-          (delay as any).delay.setValue(value);
-          break;
-        case 'filter':
-          (delay as any).filter.setValue(value);
-          break;
-      }
-    });
-  }, [project]);
-
-  const handleRemoveGuitarDelay = useCallback(() => {
-    if (!project || !hasGuitarDelay || !guitarDelayRef.current) return;
-
-    project.editing.modify(() => {
-      guitarDelayRef.current.delete();
-      guitarDelayRef.current = null;
-      console.log("Removed delay from Guitar track");
-    });
-
-    setHasGuitarDelay(false);
-  }, [project, hasGuitarDelay]);
-
-  const handleAddGuitarCrusher = useCallback(() => {
-    if (!project || hasGuitarCrusher) return;
-
-    const guitarTrack = tracks.find(t => t.name === "Guitar");
-    if (!guitarTrack) return;
-
-    project.editing.modify(() => {
-      const crusher = project.api.insertEffect(
-        guitarTrack.audioUnitBox.audioEffects,
-        EffectFactories.AudioNamed.Crusher
-      );
-
-      // Configure crusher for very obvious lo-fi effect on guitar
-      crusher.label.setValue("Guitar Lo-Fi");
-      (crusher as any).bits.setValue(guitarCrusherBits);
-      (crusher as any).crush.setValue(guitarCrusherCrush);
-      (crusher as any).boost.setValue(guitarCrusherBoost);
-      (crusher as any).mix.setValue(guitarCrusherMix);
-
-      // Store reference for removal
-      guitarCrusherRef.current = crusher;
-
-      // Subscribe to parameter changes
-      (crusher as any).bits.catchupAndSubscribe((obs: any) => setGuitarCrusherBits(obs.getValue()));
-      (crusher as any).crush.catchupAndSubscribe((obs: any) => setGuitarCrusherCrush(obs.getValue()));
-      (crusher as any).boost.catchupAndSubscribe((obs: any) => setGuitarCrusherBoost(obs.getValue()));
-      (crusher as any).mix.catchupAndSubscribe((obs: any) => setGuitarCrusherMix(obs.getValue()));
-
-      console.log("Added lo-fi crusher to Guitar track");
-    });
-
-    setHasGuitarCrusher(true);
-  }, [project, tracks, hasGuitarCrusher, guitarCrusherBits, guitarCrusherCrush, guitarCrusherBoost, guitarCrusherMix]);
-
-  const handleGuitarCrusherParamChange = useCallback((paramName: string, value: number) => {
-    if (!project || !guitarCrusherRef.current) return;
-
-    project.editing.modify(() => {
-      const crusher = guitarCrusherRef.current;
-      switch (paramName) {
-        case 'bits':
-          (crusher as any).bits.setValue(value);
-          break;
-        case 'crush':
-          (crusher as any).crush.setValue(value);
-          break;
-        case 'boost':
-          (crusher as any).boost.setValue(value);
-          break;
-        case 'mix':
-          (crusher as any).mix.setValue(value);
-          break;
-      }
-    });
-  }, [project]);
-
-  const handleRemoveGuitarCrusher = useCallback(() => {
-    if (!project || !hasGuitarCrusher || !guitarCrusherRef.current) return;
-
-    project.editing.modify(() => {
-      guitarCrusherRef.current.delete();
-      guitarCrusherRef.current = null;
-      console.log("Removed lo-fi crusher from Guitar track");
-    });
-
-    setHasGuitarCrusher(false);
-  }, [project, hasGuitarCrusher]);
-
-  const handleAddBassLoCrusher = useCallback(() => {
-    if (!project || hasBassLoCrusher) return;
-
-    const bassTrack = tracks.find(t => t.name === "Bass & Drums");
-    if (!bassTrack) return;
-
-    project.editing.modify(() => {
-      const crusher = project.api.insertEffect(
-        bassTrack.audioUnitBox.audioEffects,
-        EffectFactories.AudioNamed.Crusher
-      );
-
-      // Configure crusher for obvious lo-fi effect
-      crusher.label.setValue("Lo-Fi Crusher");
-      (crusher as any).bits.setValue(bassCrusherBits);
-      (crusher as any).crush.setValue(bassCrusherCrush);
-      (crusher as any).boost.setValue(bassCrusherBoost);
-      (crusher as any).mix.setValue(bassCrusherMix);
-
-      // Store reference for removal
-      bassLoCrusherRef.current = crusher;
-
-      // Subscribe to parameter changes
-      (crusher as any).bits.catchupAndSubscribe((obs: any) => setBassCrusherBits(obs.getValue()));
-      (crusher as any).crush.catchupAndSubscribe((obs: any) => setBassCrusherCrush(obs.getValue()));
-      (crusher as any).boost.catchupAndSubscribe((obs: any) => setBassCrusherBoost(obs.getValue()));
-      (crusher as any).mix.catchupAndSubscribe((obs: any) => setBassCrusherMix(obs.getValue()));
-
-      console.log("Added lo-fi crusher to Bass & Drums track");
-    });
-
-    setHasBassLoCrusher(true);
-  }, [project, tracks, hasBassLoCrusher, bassCrusherBits, bassCrusherCrush, bassCrusherBoost, bassCrusherMix]);
-
-  const handleBassCrusherParamChange = useCallback((paramName: string, value: number) => {
-    if (!project || !bassLoCrusherRef.current) return;
-
-    project.editing.modify(() => {
-      const crusher = bassLoCrusherRef.current;
-      switch (paramName) {
-        case 'bits':
-          (crusher as any).bits.setValue(value);
-          break;
-        case 'crush':
-          (crusher as any).crush.setValue(value);
-          break;
-        case 'boost':
-          (crusher as any).boost.setValue(value);
-          break;
-        case 'mix':
-          (crusher as any).mix.setValue(value);
-          break;
-      }
-    });
-  }, [project]);
-
-  const handleRemoveBassLoCrusher = useCallback(() => {
-    if (!project || !hasBassLoCrusher || !bassLoCrusherRef.current) return;
-
-    project.editing.modify(() => {
-      bassLoCrusherRef.current.delete();
-      bassLoCrusherRef.current = null;
-      console.log("Removed lo-fi crusher from Bass & Drums track");
-    });
-
-    setHasBassLoCrusher(false);
-  }, [project, hasBassLoCrusher]);
-
-  const handleAddMasterCompressor = useCallback(() => {
-    if (!project || hasMasterCompressor) return;
-
-    project.editing.modify(() => {
-      // Access the master audio unit (first incoming pointer to outputDevice)
-      const masterAudioUnit = project.rootBox.outputDevice.pointerHub.incoming().at(0)?.box;
-
-      if (!masterAudioUnit) {
-        console.error("Could not find master audio unit");
-        return;
-      }
-
-      const compressor = project.api.insertEffect(
-        (masterAudioUnit as any).audioEffects,
-        EffectFactories.AudioNamed.Compressor
-      );
-
-      // Configure mastering compressor
-      compressor.label.setValue("Master Glue");
-      (compressor as any).threshold.setValue(masterCompThreshold);
-      (compressor as any).ratio.setValue(masterCompRatio);
-      (compressor as any).attack.setValue(masterCompAttack);
-      (compressor as any).release.setValue(masterCompRelease);
-      (compressor as any).automakeup.setValue(true);
-      (compressor as any).knee.setValue(masterCompKnee);
-
-      // Store reference for removal
-      masterCompressorRef.current = compressor;
-
-      // Subscribe to parameter changes
-      (compressor as any).threshold.catchupAndSubscribe((obs: any) => setMasterCompThreshold(obs.getValue()));
-      (compressor as any).ratio.catchupAndSubscribe((obs: any) => setMasterCompRatio(obs.getValue()));
-      (compressor as any).attack.catchupAndSubscribe((obs: any) => setMasterCompAttack(obs.getValue()));
-      (compressor as any).release.catchupAndSubscribe((obs: any) => setMasterCompRelease(obs.getValue()));
-      (compressor as any).knee.catchupAndSubscribe((obs: any) => setMasterCompKnee(obs.getValue()));
-
-      console.log("Added compressor to master output");
-    });
-
-    setHasMasterCompressor(true);
-  }, [project, hasMasterCompressor, masterCompThreshold, masterCompRatio, masterCompAttack, masterCompRelease, masterCompKnee]);
-
-  const handleMasterCompressorParamChange = useCallback((paramName: string, value: number) => {
-    if (!project || !masterCompressorRef.current) return;
-
-    project.editing.modify(() => {
-      const comp = masterCompressorRef.current;
-      switch (paramName) {
-        case 'threshold':
-          (comp as any).threshold.setValue(value);
-          break;
-        case 'ratio':
-          (comp as any).ratio.setValue(value);
-          break;
-        case 'attack':
-          (comp as any).attack.setValue(value);
-          break;
-        case 'release':
-          (comp as any).release.setValue(value);
-          break;
-        case 'knee':
-          (comp as any).knee.setValue(value);
-          break;
-      }
-    });
-  }, [project]);
-
-  const handleRemoveMasterCompressor = useCallback(() => {
-    if (!project || !hasMasterCompressor || !masterCompressorRef.current) return;
-
-    project.editing.modify(() => {
-      masterCompressorRef.current.delete();
-      masterCompressorRef.current = null;
-      console.log("Removed compressor from master output");
-    });
-
-    setHasMasterCompressor(false);
-  }, [project, hasMasterCompressor]);
-
-  const handleAddMasterLimiter = useCallback(() => {
-    if (!project || hasMasterLimiter) return;
-
-    project.editing.modify(() => {
-      // Access the master audio unit (first incoming pointer to outputDevice)
-      const masterAudioUnit = project.rootBox.outputDevice.pointerHub.incoming().at(0)?.box;
-
-      if (!masterAudioUnit) {
-        console.error("Could not find master audio unit");
-        return;
-      }
-
-      const stereoTool = project.api.insertEffect(
-        (masterAudioUnit as any).audioEffects,
-        EffectFactories.AudioNamed.StereoTool
-      );
-
-      // Configure stereo tool for wider stereo field
-      stereoTool.label.setValue("Master Width");
-      (stereoTool as any).stereo.setValue(masterStereoWidth);
-      (stereoTool as any).panning.setValue(masterStereoPan);
-
-      // Store reference for removal
-      masterLimiterRef.current = stereoTool;
-
-      // Subscribe to parameter changes
-      (stereoTool as any).stereo.catchupAndSubscribe((obs: any) => setMasterStereoWidth(obs.getValue()));
-      (stereoTool as any).panning.catchupAndSubscribe((obs: any) => setMasterStereoPan(obs.getValue()));
-
-      console.log("Added stereo width to master output");
-    });
-
-    setHasMasterLimiter(true);
-  }, [project, hasMasterLimiter, masterStereoWidth, masterStereoPan]);
-
-  const handleMasterStereoParamChange = useCallback((paramName: string, value: number) => {
-    if (!project || !masterLimiterRef.current) return;
-
-    project.editing.modify(() => {
-      const stereo = masterLimiterRef.current;
-      switch (paramName) {
-        case 'width':
-          (stereo as any).stereo.setValue(value);
-          break;
-        case 'pan':
-          (stereo as any).panning.setValue(value);
-          break;
-      }
-    });
-  }, [project]);
-
-  const handleRemoveMasterLimiter = useCallback(() => {
-    if (!project || !hasMasterLimiter || !masterLimiterRef.current) return;
-
-    project.editing.modify(() => {
-      masterLimiterRef.current.delete();
-      masterLimiterRef.current = null;
-      console.log("Removed stereo width from master output");
-    });
-
-    setHasMasterLimiter(false);
-  }, [project, hasMasterLimiter]);
-
   if (!project) {
     return (
       <Theme appearance="dark" accentColor="green" radius="medium">
@@ -955,7 +416,7 @@ const App: React.FC = () => {
 
   return (
     <Theme appearance="dark" accentColor="green" radius="medium">
-      <GitHubCorner url="https://github.com/moisesai/opendaw" />
+      <GitHubCorner repoUrl="https://github.com/moisesai/opendaw" />
       <Container size="3" px="4" py="8">
         <Flex direction="column" gap="6" style={{ maxWidth: 1200, margin: "0 auto" }}>
           <BackLink />
@@ -1107,244 +568,46 @@ const App: React.FC = () => {
                 <EffectPanel
                   title="Vocals - Reverb"
                   description="Adds spacious ambience to vocal track"
-                  isActive={hasVocalsReverb}
-                  onToggle={hasVocalsReverb ? handleRemoveVocalsReverb : handleAddVocalsReverb}
-                  parameters={[
-                    {
-                      name: 'wet',
-                      label: 'Wet/Dry Mix',
-                      value: vocalsReverbWet,
-                      min: -60,
-                      max: 0,
-                      step: 0.1,
-                      unit: ' dB'
-                    },
-                    {
-                      name: 'decay',
-                      label: 'Decay Time',
-                      value: vocalsReverbDecay,
-                      min: 0,
-                      max: 1,
-                      step: 0.01,
-                      format: (v) => `${(v * 100).toFixed(0)}%`
-                    },
-                    {
-                      name: 'preDelay',
-                      label: 'Pre-Delay',
-                      value: vocalsReverbPreDelay,
-                      min: 0,
-                      max: 0.1,
-                      step: 0.001,
-                      format: (v) => `${(v * 1000).toFixed(0)} ms`
-                    },
-                    {
-                      name: 'damp',
-                      label: 'Damping',
-                      value: vocalsReverbDamp,
-                      min: 0,
-                      max: 1,
-                      step: 0.01,
-                      format: (v) => `${(v * 100).toFixed(0)}%`
-                    }
-                  ]}
-                  onParameterChange={handleVocalsReverbParamChange}
+                  isActive={vocalsReverb.isActive}
+                  onToggle={vocalsReverb.handleToggle}
+                  parameters={vocalsReverb.parameters}
+                  onParameterChange={vocalsReverb.handleParameterChange}
                 />
 
                 <EffectPanel
                   title="Vocals - Compressor"
                   description="Smooths vocal dynamics (adds at index 0, before reverb)"
-                  isActive={hasVocalsCompressor}
-                  onToggle={hasVocalsCompressor ? handleRemoveVocalsCompressor : handleAddVocalsCompressor}
-                  parameters={[
-                    {
-                      name: 'threshold',
-                      label: 'Threshold',
-                      value: vocalsCompThreshold,
-                      min: -60,
-                      max: 0,
-                      step: 0.5,
-                      unit: ' dB'
-                    },
-                    {
-                      name: 'ratio',
-                      label: 'Ratio',
-                      value: vocalsCompRatio,
-                      min: 1,
-                      max: 20,
-                      step: 0.1,
-                      format: (v) => `${v.toFixed(1)}:1`
-                    },
-                    {
-                      name: 'attack',
-                      label: 'Attack',
-                      value: vocalsCompAttack,
-                      min: 0.1,
-                      max: 100,
-                      step: 0.1,
-                      unit: ' ms'
-                    },
-                    {
-                      name: 'release',
-                      label: 'Release',
-                      value: vocalsCompRelease,
-                      min: 10,
-                      max: 1000,
-                      step: 10,
-                      unit: ' ms'
-                    },
-                    {
-                      name: 'knee',
-                      label: 'Knee',
-                      value: vocalsCompKnee,
-                      min: 0,
-                      max: 12,
-                      step: 0.5,
-                      unit: ' dB'
-                    }
-                  ]}
-                  onParameterChange={handleVocalsCompressorParamChange}
+                  isActive={vocalsCompressor.isActive}
+                  onToggle={vocalsCompressor.handleToggle}
+                  parameters={vocalsCompressor.parameters}
+                  onParameterChange={vocalsCompressor.handleParameterChange}
                 />
 
                 <EffectPanel
                   title="Guitar - Delay"
                   description="Adds rhythmic echo effect to guitar track"
-                  isActive={hasGuitarDelay}
-                  onToggle={hasGuitarDelay ? handleRemoveGuitarDelay : handleAddGuitarDelay}
-                  parameters={[
-                    {
-                      name: 'wet',
-                      label: 'Wet/Dry Mix',
-                      value: guitarDelayWet,
-                      min: -60,
-                      max: 0,
-                      step: 0.1,
-                      unit: ' dB'
-                    },
-                    {
-                      name: 'feedback',
-                      label: 'Feedback',
-                      value: guitarDelayFeedback,
-                      min: 0,
-                      max: 0.95,
-                      step: 0.01,
-                      format: (v) => `${(v * 100).toFixed(0)}%`
-                    },
-                    {
-                      name: 'time',
-                      label: 'Delay Time',
-                      value: guitarDelayTime,
-                      min: 1,
-                      max: 16,
-                      step: 1,
-                      format: (v) => {
-                        const notes = ['1/16', '1/8', '1/4', '1/2', '1'];
-                        const index = Math.round((v - 1) / 3);
-                        return notes[Math.min(index, notes.length - 1)] || `${v} PPQN`;
-                      }
-                    },
-                    {
-                      name: 'filter',
-                      label: 'Filter',
-                      value: guitarDelayFilter,
-                      min: 0,
-                      max: 1,
-                      step: 0.01,
-                      format: (v) => `${(v * 100).toFixed(0)}%`
-                    }
-                  ]}
-                  onParameterChange={handleGuitarDelayParamChange}
+                  isActive={guitarDelay.isActive}
+                  onToggle={guitarDelay.handleToggle}
+                  parameters={guitarDelay.parameters}
+                  onParameterChange={guitarDelay.handleParameterChange}
                 />
 
                 <EffectPanel
                   title="Guitar - Lo-Fi Crusher"
                   description="Heavy bit-crushing for very obvious lo-fi distortion effect"
-                  isActive={hasGuitarCrusher}
-                  onToggle={hasGuitarCrusher ? handleRemoveGuitarCrusher : handleAddGuitarCrusher}
-                  parameters={[
-                    {
-                      name: 'bits',
-                      label: 'Bit Depth',
-                      value: guitarCrusherBits,
-                      min: 1,
-                      max: 16,
-                      step: 1,
-                      format: (v) => `${v.toFixed(0)} bits`
-                    },
-                    {
-                      name: 'crush',
-                      label: 'Crush Amount',
-                      value: guitarCrusherCrush,
-                      min: 0,
-                      max: 1,
-                      step: 0.01,
-                      format: (v) => `${(v * 100).toFixed(0)}%`
-                    },
-                    {
-                      name: 'boost',
-                      label: 'Boost',
-                      value: guitarCrusherBoost,
-                      min: 0,
-                      max: 1,
-                      step: 0.01,
-                      format: (v) => `${(v * 100).toFixed(0)}%`
-                    },
-                    {
-                      name: 'mix',
-                      label: 'Wet/Dry Mix',
-                      value: guitarCrusherMix,
-                      min: 0,
-                      max: 1,
-                      step: 0.01,
-                      format: (v) => `${(v * 100).toFixed(0)}%`
-                    }
-                  ]}
-                  onParameterChange={handleGuitarCrusherParamChange}
+                  isActive={guitarCrusher.isActive}
+                  onToggle={guitarCrusher.handleToggle}
+                  parameters={guitarCrusher.parameters}
+                  onParameterChange={guitarCrusher.handleParameterChange}
                 />
 
                 <EffectPanel
                   title="Bass & Drums - Lo-Fi Crusher"
                   description="Extreme bit-crushing for dramatic lo-fi distortion (very obvious!)"
-                  isActive={hasBassLoCrusher}
-                  onToggle={hasBassLoCrusher ? handleRemoveBassLoCrusher : handleAddBassLoCrusher}
-                  parameters={[
-                    {
-                      name: 'bits',
-                      label: 'Bit Depth',
-                      value: bassCrusherBits,
-                      min: 1,
-                      max: 16,
-                      step: 1,
-                      format: (v) => `${v.toFixed(0)} bits`
-                    },
-                    {
-                      name: 'crush',
-                      label: 'Crush Amount',
-                      value: bassCrusherCrush,
-                      min: 0,
-                      max: 1,
-                      step: 0.01,
-                      format: (v) => `${(v * 100).toFixed(0)}%`
-                    },
-                    {
-                      name: 'boost',
-                      label: 'Boost',
-                      value: bassCrusherBoost,
-                      min: 0,
-                      max: 1,
-                      step: 0.01,
-                      format: (v) => `${(v * 100).toFixed(0)}%`
-                    },
-                    {
-                      name: 'mix',
-                      label: 'Wet/Dry Mix',
-                      value: bassCrusherMix,
-                      min: 0,
-                      max: 1,
-                      step: 0.01,
-                      format: (v) => `${(v * 100).toFixed(0)}%`
-                    }
-                  ]}
-                  onParameterChange={handleBassCrusherParamChange}
+                  isActive={bassCrusher.isActive}
+                  onToggle={bassCrusher.handleToggle}
+                  parameters={bassCrusher.parameters}
+                  onParameterChange={bassCrusher.handleParameterChange}
                 />
               </Flex>
 
@@ -1355,84 +618,19 @@ const App: React.FC = () => {
                 <EffectPanel
                   title="Master - Compressor"
                   description='"Glue" compressor for cohesive mix on all tracks'
-                  isActive={hasMasterCompressor}
-                  onToggle={hasMasterCompressor ? handleRemoveMasterCompressor : handleAddMasterCompressor}
-                  parameters={[
-                    {
-                      name: 'threshold',
-                      label: 'Threshold',
-                      value: masterCompThreshold,
-                      min: -60,
-                      max: 0,
-                      step: 0.5,
-                      unit: ' dB'
-                    },
-                    {
-                      name: 'ratio',
-                      label: 'Ratio',
-                      value: masterCompRatio,
-                      min: 1,
-                      max: 20,
-                      step: 0.1,
-                      format: (v) => `${v.toFixed(1)}:1`
-                    },
-                    {
-                      name: 'attack',
-                      label: 'Attack',
-                      value: masterCompAttack,
-                      min: 0.1,
-                      max: 100,
-                      step: 0.1,
-                      unit: ' ms'
-                    },
-                    {
-                      name: 'release',
-                      label: 'Release',
-                      value: masterCompRelease,
-                      min: 10,
-                      max: 1000,
-                      step: 10,
-                      unit: ' ms'
-                    },
-                    {
-                      name: 'knee',
-                      label: 'Knee',
-                      value: masterCompKnee,
-                      min: 0,
-                      max: 12,
-                      step: 0.5,
-                      unit: ' dB'
-                    }
-                  ]}
-                  onParameterChange={handleMasterCompressorParamChange}
+                  isActive={masterCompressor.isActive}
+                  onToggle={masterCompressor.handleToggle}
+                  parameters={masterCompressor.parameters}
+                  onParameterChange={masterCompressor.handleParameterChange}
                 />
 
                 <EffectPanel
                   title="Master - Stereo Width"
                   description="Widens the stereo field for a bigger, more spacious sound"
-                  isActive={hasMasterLimiter}
-                  onToggle={hasMasterLimiter ? handleRemoveMasterLimiter : handleAddMasterLimiter}
-                  parameters={[
-                    {
-                      name: 'width',
-                      label: 'Stereo Width',
-                      value: masterStereoWidth,
-                      min: 0,
-                      max: 2,
-                      step: 0.01,
-                      format: (v) => `${(v * 100).toFixed(0)}%`
-                    },
-                    {
-                      name: 'pan',
-                      label: 'Pan',
-                      value: masterStereoPan,
-                      min: -1,
-                      max: 1,
-                      step: 0.01,
-                      format: (v) => v === 0 ? 'Center' : v < 0 ? `L${Math.abs(v * 100).toFixed(0)}` : `R${(v * 100).toFixed(0)}`
-                    }
-                  ]}
-                  onParameterChange={handleMasterStereoParamChange}
+                  isActive={masterStereoWidth.isActive}
+                  onToggle={masterStereoWidth.handleToggle}
+                  parameters={masterStereoWidth.parameters}
+                  onParameterChange={masterStereoWidth.handleParameterChange}
                 />
               </Flex>
 
