@@ -231,6 +231,12 @@ const App: React.FC = () => {
   const trackPeaksRef = useRef<Map<string, any>>(new Map());
   const pausedPositionRef = useRef<number | null>(null);
 
+  // Refs to store effect boxes for removal
+  const vocalsReverbRef = useRef<any>(null);
+  const guitarDelayRef = useRef<any>(null);
+  const bassLoCrusherRef = useRef<any>(null);
+  const masterCompressorRef = useRef<any>(null);
+
   const CHANNEL_PADDING = 4;
 
   // Initialize CanvasPainters for waveform rendering
@@ -560,11 +566,26 @@ const App: React.FC = () => {
       reverb.preDelay.setValue(0.02);  // 20ms pre-delay
       reverb.damp.setValue(0.7);  // Soften high frequencies
 
+      // Store reference for removal
+      vocalsReverbRef.current = reverb;
+
       console.log("Added reverb to Vocals track");
     });
 
     setHasVocalsReverb(true);
   }, [project, tracks, hasVocalsReverb]);
+
+  const handleRemoveVocalsReverb = useCallback(() => {
+    if (!project || !hasVocalsReverb || !vocalsReverbRef.current) return;
+
+    project.editing.modify(() => {
+      vocalsReverbRef.current.delete();
+      vocalsReverbRef.current = null;
+      console.log("Removed reverb from Vocals track");
+    });
+
+    setHasVocalsReverb(false);
+  }, [project, hasVocalsReverb]);
 
   const handleAddGuitarDelay = useCallback(() => {
     if (!project || hasGuitarDelay) return;
@@ -585,11 +606,26 @@ const App: React.FC = () => {
       delay.delay.setValue(6);  // 1/8 note delay
       delay.filter.setValue(0.2);  // Slight high-pass on feedback
 
+      // Store reference for removal
+      guitarDelayRef.current = delay;
+
       console.log("Added delay to Guitar track");
     });
 
     setHasGuitarDelay(true);
   }, [project, tracks, hasGuitarDelay]);
+
+  const handleRemoveGuitarDelay = useCallback(() => {
+    if (!project || !hasGuitarDelay || !guitarDelayRef.current) return;
+
+    project.editing.modify(() => {
+      guitarDelayRef.current.delete();
+      guitarDelayRef.current = null;
+      console.log("Removed delay from Guitar track");
+    });
+
+    setHasGuitarDelay(false);
+  }, [project, hasGuitarDelay]);
 
   const handleAddBassLoCrusher = useCallback(() => {
     if (!project || hasBassLoCrusher) return;
@@ -610,11 +646,26 @@ const App: React.FC = () => {
       crusher.boost.setValue(2.0);  // Boost to compensate for level loss
       crusher.mix.setValue(0.7);  // 70% wet for dramatic but musical effect
 
+      // Store reference for removal
+      bassLoCrusherRef.current = crusher;
+
       console.log("Added lo-fi crusher to Bass & Drums track");
     });
 
     setHasBassLoCrusher(true);
   }, [project, tracks, hasBassLoCrusher]);
+
+  const handleRemoveBassLoCrusher = useCallback(() => {
+    if (!project || !hasBassLoCrusher || !bassLoCrusherRef.current) return;
+
+    project.editing.modify(() => {
+      bassLoCrusherRef.current.delete();
+      bassLoCrusherRef.current = null;
+      console.log("Removed lo-fi crusher from Bass & Drums track");
+    });
+
+    setHasBassLoCrusher(false);
+  }, [project, hasBassLoCrusher]);
 
   const handleAddMasterCompressor = useCallback(() => {
     if (!project || hasMasterCompressor) return;
@@ -642,10 +693,25 @@ const App: React.FC = () => {
       compressor.automakeup.setValue(true);  // Auto makeup gain
       compressor.knee.setValue(6.0);  // Soft knee
 
+      // Store reference for removal
+      masterCompressorRef.current = compressor;
+
       console.log("Added compressor to master output");
     });
 
     setHasMasterCompressor(true);
+  }, [project, hasMasterCompressor]);
+
+  const handleRemoveMasterCompressor = useCallback(() => {
+    if (!project || !hasMasterCompressor || !masterCompressorRef.current) return;
+
+    project.editing.modify(() => {
+      masterCompressorRef.current.delete();
+      masterCompressorRef.current = null;
+      console.log("Removed compressor from master output");
+    });
+
+    setHasMasterCompressor(false);
   }, [project, hasMasterCompressor]);
 
   if (!project) {
@@ -772,11 +838,10 @@ const App: React.FC = () => {
                         </Text>
                       </Flex>
                       <Button
-                        color="purple"
-                        onClick={handleAddVocalsReverb}
-                        disabled={hasVocalsReverb}
+                        color={hasVocalsReverb ? "red" : "purple"}
+                        onClick={hasVocalsReverb ? handleRemoveVocalsReverb : handleAddVocalsReverb}
                       >
-                        {hasVocalsReverb ? "✓ Added" : "+ Add Reverb"}
+                        {hasVocalsReverb ? "− Remove" : "+ Add Reverb"}
                       </Button>
                     </Flex>
                     {hasVocalsReverb && (
@@ -795,11 +860,10 @@ const App: React.FC = () => {
                         </Text>
                       </Flex>
                       <Button
-                        color="purple"
-                        onClick={handleAddGuitarDelay}
-                        disabled={hasGuitarDelay}
+                        color={hasGuitarDelay ? "red" : "purple"}
+                        onClick={hasGuitarDelay ? handleRemoveGuitarDelay : handleAddGuitarDelay}
                       >
-                        {hasGuitarDelay ? "✓ Added" : "+ Add Delay"}
+                        {hasGuitarDelay ? "− Remove" : "+ Add Delay"}
                       </Button>
                     </Flex>
                     {hasGuitarDelay && (
@@ -818,11 +882,10 @@ const App: React.FC = () => {
                         </Text>
                       </Flex>
                       <Button
-                        color="purple"
-                        onClick={handleAddBassLoCrusher}
-                        disabled={hasBassLoCrusher}
+                        color={hasBassLoCrusher ? "red" : "purple"}
+                        onClick={hasBassLoCrusher ? handleRemoveBassLoCrusher : handleAddBassLoCrusher}
                       >
-                        {hasBassLoCrusher ? "✓ Added" : "+ Add Crusher"}
+                        {hasBassLoCrusher ? "− Remove" : "+ Add Crusher"}
                       </Button>
                     </Flex>
                     {hasBassLoCrusher && (
@@ -846,11 +909,10 @@ const App: React.FC = () => {
                         </Text>
                       </Flex>
                       <Button
-                        color="purple"
-                        onClick={handleAddMasterCompressor}
-                        disabled={hasMasterCompressor}
+                        color={hasMasterCompressor ? "red" : "purple"}
+                        onClick={hasMasterCompressor ? handleRemoveMasterCompressor : handleAddMasterCompressor}
                       >
-                        {hasMasterCompressor ? "✓ Added" : "+ Add Compressor"}
+                        {hasMasterCompressor ? "− Remove" : "+ Add Compressor"}
                       </Button>
                     </Flex>
                     {hasMasterCompressor && (
@@ -861,7 +923,7 @@ const App: React.FC = () => {
               </Flex>
 
               <Text size="2" color="gray" style={{ fontStyle: "italic" }}>
-                💡 Tip: Try adding effects while playback is active to hear the difference in real-time!
+                💡 Tip: Try adding and removing effects while playback is active to hear the difference in real-time!
               </Text>
             </Flex>
           </Card>
