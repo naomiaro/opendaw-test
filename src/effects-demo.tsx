@@ -295,6 +295,7 @@ const App: React.FC = () => {
   const [hasGuitarCrusher, setHasGuitarCrusher] = useState(false);
   const [hasBassLoCrusher, setHasBassLoCrusher] = useState(false);
   const [hasMasterCompressor, setHasMasterCompressor] = useState(false);
+  const [hasMasterLimiter, setHasMasterLimiter] = useState(false);
 
   // Refs for non-reactive values
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
@@ -313,6 +314,7 @@ const App: React.FC = () => {
   const guitarCrusherRef = useRef<any>(null);
   const bassLoCrusherRef = useRef<any>(null);
   const masterCompressorRef = useRef<any>(null);
+  const masterLimiterRef = useRef<any>(null);
 
   const CHANNEL_PADDING = 4;
 
@@ -903,6 +905,49 @@ const App: React.FC = () => {
     setHasMasterCompressor(false);
   }, [project, hasMasterCompressor]);
 
+  const handleAddMasterLimiter = useCallback(() => {
+    if (!project || hasMasterLimiter) return;
+
+    project.editing.modify(() => {
+      // Access the master audio unit (first incoming pointer to outputDevice)
+      const masterAudioUnit = project.rootBox.outputDevice.pointerHub.incoming().at(0)?.box;
+
+      if (!masterAudioUnit) {
+        console.error("Could not find master audio unit");
+        return;
+      }
+
+      const stereoTool = project.api.insertEffect(
+        masterAudioUnit.audioEffects,
+        EffectFactories.AudioNamed.StereoTool
+      );
+
+      // Configure stereo tool for wider stereo field
+      stereoTool.label.setValue("Master Width");
+      stereoTool.stereo.setValue(0.8);  // Enhanced stereo width (0-1 range, 1=normal)
+      stereoTool.panning.setValue(0.0);  // Keep centered
+
+      // Store reference for removal
+      masterLimiterRef.current = stereoTool;
+
+      console.log("Added stereo width to master output");
+    });
+
+    setHasMasterLimiter(true);
+  }, [project, hasMasterLimiter]);
+
+  const handleRemoveMasterLimiter = useCallback(() => {
+    if (!project || !hasMasterLimiter || !masterLimiterRef.current) return;
+
+    project.editing.modify(() => {
+      masterLimiterRef.current.delete();
+      masterLimiterRef.current = null;
+      console.log("Removed stereo width from master output");
+    });
+
+    setHasMasterLimiter(false);
+  }, [project, hasMasterLimiter]);
+
   if (!project) {
     return (
       <Theme appearance="dark" accentColor="green" radius="medium">
@@ -925,7 +970,7 @@ const App: React.FC = () => {
           <Flex direction="column" gap="3">
             <Heading size="8">OpenDAW Effects Demo</Heading>
             <Text size="4" color="gray">
-              Multi-track mixer with professional audio effects (Reverb, Delay, Lo-Fi Crusher, Compressor)
+              Multi-track mixer with professional audio effects (Reverb, Delay, Lo-Fi Crusher, Compressor, Stereo Width)
             </Text>
           </Flex>
 
@@ -934,7 +979,7 @@ const App: React.FC = () => {
             <Callout.Text>
               💡 This demo shows OpenDAW's mixer controls and professional audio effects.
               Each track has independent volume, pan, mute, and solo controls. Add studio-quality effects
-              to individual tracks (Compressor + Reverb on Vocals demonstrates effect chain ordering, Delay + Lo-Fi on Guitar, Lo-Fi Crusher on Bass) or the master output (Compressor for mix glue).
+              to individual tracks (Compressor + Reverb on Vocals demonstrates effect chain ordering, Delay + Lo-Fi on Guitar, Lo-Fi Crusher on Bass) or the master output (Compressor for mix glue, Stereo Width for spaciousness).
             </Callout.Text>
           </Callout.Root>
 
@@ -1303,6 +1348,28 @@ const App: React.FC = () => {
                     </Flex>
                     {hasMasterCompressor && (
                       <Badge color="purple">Active: 2:1 ratio, -12dB threshold</Badge>
+                    )}
+                  </Flex>
+                </Card>
+
+                <Card variant="surface">
+                  <Flex direction="column" gap="2">
+                    <Flex justify="between" align="center">
+                      <Flex direction="column" gap="1">
+                        <Text weight="bold">Master - Stereo Width</Text>
+                        <Text size="2" color="gray">
+                          Widens the stereo field for a bigger, more spacious sound
+                        </Text>
+                      </Flex>
+                      <Button
+                        color={hasMasterLimiter ? "red" : "purple"}
+                        onClick={hasMasterLimiter ? handleRemoveMasterLimiter : handleAddMasterLimiter}
+                      >
+                        {hasMasterLimiter ? "− Remove" : "+ Add Width"}
+                      </Button>
+                    </Flex>
+                    {hasMasterLimiter && (
+                      <Badge color="purple">Active: Enhanced stereo width</Badge>
                     )}
                   </Flex>
                 </Card>
