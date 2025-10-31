@@ -30,15 +30,15 @@ const App: React.FC = () => {
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "1rem", width: "100%" }}>
             <Card asChild>
-              <Link href="/playback-demo-react.html" style={{ textDecoration: "none", padding: "var(--space-5)" }}>
+              <Link href="/effects-demo.html" style={{ textDecoration: "none", padding: "var(--space-5)" }}>
                 <Flex direction="column" gap="3">
                   <Flex direction="column" align="center" gap="2">
-                    <Text size="8">🎵</Text>
-                    <Heading size="5">Multi-track Playback</Heading>
+                    <Text size="8">🎚️</Text>
+                    <Heading size="5">Effects & Mixer</Heading>
                   </Flex>
                   <Text size="2" color="gray">
-                    Load and play multiple audio tracks in sync. Demonstrates the tape track functionality with play,
-                    pause, and stop controls.
+                    Comprehensive multi-track mixer with professional audio effects, waveforms, volume faders, pan controls, mute/solo,
+                    and live effect parameters. Includes Reverb, Compressor, Delay, Lo-Fi Crusher, and Stereo Width effects.
                   </Text>
                 </Flex>
               </Link>
@@ -49,26 +49,11 @@ const App: React.FC = () => {
                 <Flex direction="column" gap="3">
                   <Flex direction="column" align="center" gap="2">
                     <Text size="8">🎙️</Text>
-                    <Heading size="5">Recording API Demo</Heading>
+                    <Heading size="5">Recording API</Heading>
                   </Flex>
                   <Text size="2" color="gray">
                     Record audio from your microphone using OpenDAW's Recording API. Uses React with useRef to
                     efficiently store the tape unit reference.
-                  </Text>
-                </Flex>
-              </Link>
-            </Card>
-
-            <Card asChild>
-              <Link href="/lifecycle-react-demo.html" style={{ textDecoration: "none", padding: "var(--space-5)" }}>
-                <Flex direction="column" gap="3">
-                  <Flex direction="column" align="center" gap="2">
-                    <Text size="8">⚛️</Text>
-                    <Heading size="5">Lifecycle Management (React)</Heading>
-                  </Flex>
-                  <Text size="2" color="gray">
-                    Learn proper subscription cleanup with React useEffect. Add/remove dynamic components and watch
-                    subscriptions being managed automatically.
                   </Text>
                 </Flex>
               </Link>
@@ -98,21 +83,6 @@ const App: React.FC = () => {
                   </Flex>
                   <Text size="2" color="gray">
                     Same drum pattern but using AudioFit mode with AutofitUtils.changeBpm().
-                  </Text>
-                </Flex>
-              </Link>
-            </Card>
-
-            <Card asChild>
-              <Link href="/effects-demo.html" style={{ textDecoration: "none", padding: "var(--space-5)" }}>
-                <Flex direction="column" gap="3">
-                  <Flex direction="column" align="center" gap="2">
-                    <Text size="8">🎚️</Text>
-                    <Heading size="5">Effects & Mixer</Heading>
-                  </Flex>
-                  <Text size="2" color="gray">
-                    Multi-track mixer with professional audio effects. Add Compressor + Reverb to vocals (demonstrates effect chain ordering),
-                    Delay to guitar, Lo-Fi Crusher to bass (very obvious!), or Compressor to master output. Includes volume faders, mute/solo controls, and waveforms.
                   </Text>
                 </Flex>
               </Link>
