@@ -53,7 +53,8 @@ const TrackRow: React.FC<{
   bpm: number;
   audioBuffer: AudioBuffer | undefined;
   setCurrentPosition: (position: number) => void;
-}> = ({ track, project, allTracks, canvasRef, currentPosition, isPlaying, bpm, audioBuffer, setCurrentPosition }) => {
+  pausedPositionRef: React.MutableRefObject<number | null>;
+}> = ({ track, project, allTracks, canvasRef, currentPosition, isPlaying, bpm, audioBuffer, setCurrentPosition, pausedPositionRef }) => {
   const [volume, setVolume] = useState(0);
   const [muted, setMuted] = useState(false);
   const [soloed, setSoloed] = useState(false);
@@ -145,8 +146,13 @@ const TrackRow: React.FC<{
     project.engine.setPosition(positionInPPQN);
     setCurrentPosition(positionInPPQN);
 
+    // If not playing, save position so play will start from here
+    if (!isPlaying) {
+      pausedPositionRef.current = positionInPPQN;
+    }
+
     console.debug(`Seek to ${timeInSeconds.toFixed(2)}s (${positionInPPQN} PPQN)`);
-  }, [audioBuffer, bpm, project, setCurrentPosition]);
+  }, [audioBuffer, bpm, project, setCurrentPosition, isPlaying, pausedPositionRef]);
 
   return (
     <Flex gap="0" style={{
@@ -1014,6 +1020,7 @@ const App: React.FC = () => {
                     bpm={bpmRef.current}
                     audioBuffer={localAudioBuffersRef.current.get(UUID.toString(track.uuid))}
                     setCurrentPosition={setCurrentPosition}
+                    pausedPositionRef={pausedPositionRef}
                   />
                 ))}
               </Flex>
