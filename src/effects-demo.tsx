@@ -421,7 +421,7 @@ const App: React.FC = () => {
 
   return (
     <Theme appearance="dark" accentColor="green" radius="medium">
-      <GitHubCorner repoUrl="https://github.com/moisesai/opendaw" />
+      <GitHubCorner />
       <Container size="3" px="4" py="8">
         <Flex direction="column" gap="6" style={{ maxWidth: 1200, margin: "0 auto" }}>
           <BackLink />
