@@ -16,7 +16,7 @@ import { TrackRow, type TrackData } from "./components/TrackRow";
 import { TransportControls } from "./components/TransportControls";
 import { TimelineRuler } from "./components/TimelineRuler";
 import { EffectPanel } from "./components/EffectPanel";
-import { EffectChain, type EffectInstance, type EffectType } from "./components/EffectChain";
+import { EffectChain, type EffectInstance } from "./components/EffectChain";
 import { loadAudioFile } from "./lib/audioUtils";
 import { initializeOpenDAW, setLoopEndFromTracks } from "./lib/projectSetup";
 import { useEffectChain } from "./hooks/useEffectChain";
@@ -558,11 +558,48 @@ const App: React.FC = () => {
     );
   }
 
+  // Show loading overlay while status is not "Ready to play!"
+  const isLoading = status !== "Ready to play!";
+
   return (
     <Theme appearance="dark" accentColor="green" radius="medium">
       <GitHubCorner />
       <Container size="3" px="4" py="8">
-        <Flex direction="column" gap="6" style={{ maxWidth: 1200, margin: "0 auto" }}>
+        <Flex direction="column" gap="6" style={{ maxWidth: 1200, margin: "0 auto", position: "relative" }}>
+          {/* Loading Overlay */}
+          {isLoading && (
+            <div style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: "rgba(0, 0, 0, 0.85)",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 9999,
+              gap: "20px"
+            }}>
+              <div style={{
+                width: "50px",
+                height: "50px",
+                border: "4px solid rgba(74, 158, 255, 0.3)",
+                borderTop: "4px solid #4a9eff",
+                borderRadius: "50%",
+                animation: "spin 1s linear infinite"
+              }} />
+              <Text size="5" weight="medium" style={{ color: "#fff" }}>{status}</Text>
+              <style>{`
+                @keyframes spin {
+                  0% { transform: rotate(0deg); }
+                  100% { transform: rotate(360deg); }
+                }
+              `}</style>
+            </div>
+          )}
+
           <BackLink />
 
           {/* Header */}

@@ -182,7 +182,7 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
   await project.engine.isReady();
 
   console.debug("Engine is ready!");
-  onStatusUpdate?.("Ready!");
+  onStatusUpdate?.("Loading tracks...");
 
   return { project, audioContext };
 }

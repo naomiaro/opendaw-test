@@ -78,3 +78,5 @@ export const EffectChain: React.FC<EffectChainProps> = memo(({
     </Flex>
   );
 });
+
+EffectChain.displayName = 'EffectChain';
