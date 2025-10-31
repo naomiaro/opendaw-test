@@ -211,6 +211,7 @@ const App: React.FC = () => {
   const canvasRefs = useRef<Map<string, HTMLCanvasElement>>(new Map());
   const canvasPaintersRef = useRef<Map<string, CanvasPainter>>(new Map());
   const trackPeaksRef = useRef<Map<string, any>>(new Map());
+  const visuallyRenderedTracksRef = useRef<Set<string>>(new Set());
   const pausedPositionRef = useRef<number | null>(null);
   const currentPositionRef = useRef<number>(0);
   const bpmRef = useRef<number>(120);
@@ -291,6 +292,18 @@ const App: React.FC = () => {
         }
 
         lastRenderedPeaks.set(uuidString, peaks);
+
+        // Track visual rendering completion
+        if (!visuallyRenderedTracksRef.current.has(uuidString)) {
+          visuallyRenderedTracksRef.current.add(uuidString);
+          console.debug(`[Rendering] Visually rendered "${track.name}" (${visuallyRenderedTracksRef.current.size}/${tracks.length})`);
+
+          // Check if all tracks are visually rendered
+          if (visuallyRenderedTracksRef.current.size === tracks.length) {
+            console.debug("[Rendering] All waveforms visually rendered!");
+            setStatus("Ready to play!");
+          }
+        }
       });
 
       canvasPaintersRef.current.set(uuidString, painter);
@@ -300,6 +313,7 @@ const App: React.FC = () => {
       console.debug("[CanvasPainter] Cleaning up painters");
       canvasPaintersRef.current.forEach(painter => painter.terminate());
       canvasPaintersRef.current.clear();
+      visuallyRenderedTracksRef.current.clear();
     };
   }, [tracks, CHANNEL_PADDING]);
 
@@ -335,10 +349,9 @@ const App: React.FC = () => {
               painter.requestUpdate();
               renderedTracks.add(uuidString);
 
-              // Check if all peaks are rendered
+              // Check if all peaks are loaded (not visually rendered yet)
               if (renderedTracks.size === tracks.length) {
-                console.debug("[Peaks] All waveforms rendered!");
-                setStatus("Ready to play!");
+                console.debug("[Peaks] All peaks loaded, visual rendering in progress...");
               }
             }
           }
