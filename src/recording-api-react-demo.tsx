@@ -94,6 +94,8 @@ const App: React.FC = () => {
         const y0 = channel * channelHeight + CHANNEL_PADDING / 2;
         const y1 = (channel + 1) * channelHeight - CHANNEL_PADDING / 2;
 
+        // Always use numFrames for the range to keep consistent scaling
+        // PeaksWriter will naturally only show waveforms where data has been written
         PeaksPainter.renderBlocks(context, peaks, channel, {
           x0: 0,
           x1: canvas.clientWidth,
