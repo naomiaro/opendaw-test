@@ -18,65 +18,57 @@ interface EffectChainProps {
   renderEffect: (effect: EffectInstance) => React.ReactNode;
 }
 
-export const EffectChain: React.FC<EffectChainProps> = memo(({
-  trackName,
-  effects,
-  onAddEffect,
-  onRemoveEffect,
-  renderEffect
-}) => {
-  const [selectedEffectType, setSelectedEffectType] = useState<string>("");
+export const EffectChain: React.FC<EffectChainProps> = memo(
+  ({ trackName, effects, onAddEffect, onRemoveEffect, renderEffect }) => {
+    const [selectedEffectType, setSelectedEffectType] = useState<string>("");
 
-  const handleAddEffect = () => {
-    if (selectedEffectType) {
-      onAddEffect(selectedEffectType as EffectType);
-      setSelectedEffectType(""); // Reset selection
-    }
-  };
+    const handleAddEffect = () => {
+      if (selectedEffectType) {
+        onAddEffect(selectedEffectType as EffectType);
+        setSelectedEffectType(""); // Reset selection
+      }
+    };
 
-  return (
-    <Flex direction="column" gap="3">
-      <Flex direction="column" gap="2">
-        <Text size="3" weight="bold">{trackName}</Text>
-
-        {effects.length === 0 && (
-          <Text size="2" color="gray" style={{ fontStyle: "italic" }}>
-            No effects added
+    return (
+      <Flex direction="column" gap="3">
+        <Flex direction="column" gap="2">
+          <Text size="3" weight="bold">
+            {trackName}
           </Text>
-        )}
 
-        {effects.map(effect => (
-          <div key={effect.id}>
-            {renderEffect(effect)}
-          </div>
-        ))}
+          {effects.length === 0 && (
+            <Text size="2" color="gray" style={{ fontStyle: "italic" }}>
+              No effects added
+            </Text>
+          )}
+
+          {effects.map(effect => (
+            <div key={effect.id}>{renderEffect(effect)}</div>
+          ))}
+        </Flex>
+
+        <Separator size="4" />
+
+        <Flex gap="2" align="center">
+          <Select.Root value={selectedEffectType} onValueChange={setSelectedEffectType}>
+            <Select.Trigger placeholder="Choose effect..." style={{ flex: 1 }} />
+            <Select.Content>
+              <Select.Item value="Reverb">Reverb</Select.Item>
+              <Select.Item value="Compressor">Compressor</Select.Item>
+              <Select.Item value="EQ">Parametric EQ</Select.Item>
+              <Select.Item value="Delay">Delay</Select.Item>
+              <Select.Item value="Crusher">Lo-Fi Crusher</Select.Item>
+              <Select.Item value="Fold">Wavefolder</Select.Item>
+              <Select.Item value="StereoWidth">Stereo Width</Select.Item>
+            </Select.Content>
+          </Select.Root>
+          <Button onClick={handleAddEffect} disabled={!selectedEffectType} color="purple">
+            + Add Effect
+          </Button>
+        </Flex>
       </Flex>
+    );
+  }
+);
 
-      <Separator size="4" />
-
-      <Flex gap="2" align="center">
-        <Select.Root value={selectedEffectType} onValueChange={setSelectedEffectType}>
-          <Select.Trigger placeholder="Choose effect..." style={{ flex: 1 }} />
-          <Select.Content>
-            <Select.Item value="Reverb">Reverb</Select.Item>
-            <Select.Item value="Compressor">Compressor</Select.Item>
-            <Select.Item value="EQ">Parametric EQ</Select.Item>
-            <Select.Item value="Delay">Delay</Select.Item>
-            <Select.Item value="Crusher">Lo-Fi Crusher</Select.Item>
-            <Select.Item value="Fold">Wavefolder</Select.Item>
-            <Select.Item value="StereoWidth">Stereo Width</Select.Item>
-          </Select.Content>
-        </Select.Root>
-        <Button
-          onClick={handleAddEffect}
-          disabled={!selectedEffectType}
-          color="purple"
-        >
-          + Add Effect
-        </Button>
-      </Flex>
-    </Flex>
-  );
-});
-
-EffectChain.displayName = 'EffectChain';
+EffectChain.displayName = "EffectChain";

@@ -4,9 +4,7 @@ interface GitHubCornerProps {
   repoUrl?: string;
 }
 
-export const GitHubCorner: React.FC<GitHubCornerProps> = ({
-  repoUrl = "https://github.com/naomiaro/opendaw-test"
-}) => {
+export const GitHubCorner: React.FC<GitHubCornerProps> = ({ repoUrl = "https://github.com/naomiaro/opendaw-test" }) => {
   return (
     <>
       <a

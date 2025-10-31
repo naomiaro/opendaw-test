@@ -114,9 +114,7 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
   onStatusUpdate?.("Installing audio worklets...");
 
   // Create audio worklets
-  const { status: workletStatus, error: workletError } = await Promises.tryCatch(
-    AudioWorklets.createFor(audioContext)
-  );
+  const { status: workletStatus, error: workletError } = await Promises.tryCatch(AudioWorklets.createFor(audioContext));
   if (workletStatus === "rejected") {
     throw new Error(`Could not install Worklets: ${workletError}`);
   }
@@ -209,11 +207,7 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
  * setLoopEndFromTracks(project, audioBuffers);
  * ```
  */
-export function setLoopEndFromTracks(
-  project: Project,
-  audioBuffers: Map<string, AudioBuffer>,
-  bpm?: number
-): void {
+export function setLoopEndFromTracks(project: Project, audioBuffers: Map<string, AudioBuffer>, bpm?: number): void {
   if (audioBuffers.size === 0) {
     console.warn("No audio buffers provided to setLoopEndFromTracks");
     return;
@@ -223,9 +217,7 @@ export function setLoopEndFromTracks(
   const effectiveBpm = bpm ?? project.timelineBox.bpm.getValue();
 
   // Calculate the max duration from the audio buffers
-  const maxDurationSeconds = Math.max(
-    ...Array.from(audioBuffers.values()).map(buf => buf.duration)
-  );
+  const maxDurationSeconds = Math.max(...Array.from(audioBuffers.values()).map(buf => buf.duration));
 
   // Convert to PPQN
   const loopEndInPPQN = PPQN.secondsToPulses(maxDurationSeconds, effectiveBpm);

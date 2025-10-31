@@ -16,10 +16,10 @@ export interface EffectPreset<T> {
 // ============================================================================
 
 export interface ReverbParams {
-  wet: number;      // dB: -60 to 0
-  decay: number;    // 0-1: decay time
+  wet: number; // dB: -60 to 0
+  decay: number; // 0-1: decay time
   preDelay: number; // seconds: 0-0.1
-  damp: number;     // 0-1: high frequency damping
+  damp: number; // 0-1: high frequency damping
 }
 
 export const REVERB_PRESETS: EffectPreset<ReverbParams>[] = [
@@ -71,10 +71,10 @@ export const REVERB_PRESETS: EffectPreset<ReverbParams>[] = [
 
 export interface CompressorParams {
   threshold: number; // dB: -60 to 0
-  ratio: number;     // 1-20:1
-  attack: number;    // ms: 0.1-100
-  release: number;   // ms: 10-1000
-  knee: number;      // dB: 0-12
+  ratio: number; // 1-20:1
+  attack: number; // ms: 0.1-100
+  release: number; // ms: 10-1000
+  knee: number; // dB: 0-12
 }
 
 export const COMPRESSOR_PRESETS: EffectPreset<CompressorParams>[] = [
@@ -125,10 +125,10 @@ export const COMPRESSOR_PRESETS: EffectPreset<CompressorParams>[] = [
 // ============================================================================
 
 export interface DelayParams {
-  wet: number;      // dB: -60 to 0
+  wet: number; // dB: -60 to 0
   feedback: number; // 0-0.9: amount of feedback
-  delay: number;    // 0-16: delay time indices (note fractions)
-  filter: number;   // -1 to 1: filter amount (negative=LP, positive=HP)
+  delay: number; // 0-16: delay time indices (note fractions)
+  filter: number; // -1 to 1: filter amount (negative=LP, positive=HP)
 }
 
 export const DELAY_PRESETS: EffectPreset<DelayParams>[] = [
@@ -179,10 +179,10 @@ export const DELAY_PRESETS: EffectPreset<DelayParams>[] = [
 // ============================================================================
 
 export interface CrusherParams {
-  bits: number;   // 1-16: bit depth reduction
-  crush: number;  // 0-1: sample rate reduction
-  boost: number;  // 0-1: compensatory gain
-  mix: number;    // 0-1: dry/wet mix
+  bits: number; // 1-16: bit depth reduction
+  crush: number; // 0-1: sample rate reduction
+  boost: number; // 0-1: compensatory gain
+  mix: number; // 0-1: dry/wet mix
 }
 
 export const CRUSHER_PRESETS: EffectPreset<CrusherParams>[] = [
@@ -234,7 +234,7 @@ export const CRUSHER_PRESETS: EffectPreset<CrusherParams>[] = [
 
 export interface StereoWidthParams {
   width: number; // 0-1: stereo width (0.5 = normal, 1 = wide)
-  pan: number;   // -1 to 1: pan position
+  pan: number; // -1 to 1: pan position
 }
 
 export const STEREO_WIDTH_PRESETS: EffectPreset<StereoWidthParams>[] = [
@@ -285,8 +285,8 @@ export const STEREO_WIDTH_PRESETS: EffectPreset<StereoWidthParams>[] = [
 // ============================================================================
 
 export interface EQParams {
-  lowGain: number;  // dB: -24 to 24 (250 Hz)
-  midGain: number;  // dB: -24 to 24 (1 kHz)
+  lowGain: number; // dB: -24 to 24 (250 Hz)
+  midGain: number; // dB: -24 to 24 (1 kHz)
   highGain: number; // dB: -24 to 24 (4 kHz)
 }
 
@@ -338,7 +338,7 @@ export const EQ_PRESETS: EffectPreset<EQParams>[] = [
 // ============================================================================
 
 export interface FoldParams {
-  drive: number;  // dB: 0 to 40 (input drive)
+  drive: number; // dB: 0 to 40 (input drive)
   volume: number; // dB: -40 to 20 (output level)
 }
 
@@ -394,19 +394,19 @@ export const FOLD_PRESETS: EffectPreset<FoldParams>[] = [
  */
 export function getPresetsForEffect(effectType: string) {
   switch (effectType.toLowerCase()) {
-    case 'reverb':
+    case "reverb":
       return REVERB_PRESETS;
-    case 'compressor':
+    case "compressor":
       return COMPRESSOR_PRESETS;
-    case 'delay':
+    case "delay":
       return DELAY_PRESETS;
-    case 'crusher':
+    case "crusher":
       return CRUSHER_PRESETS;
-    case 'stereowidth':
+    case "stereowidth":
       return STEREO_WIDTH_PRESETS;
-    case 'eq':
+    case "eq":
       return EQ_PRESETS;
-    case 'fold':
+    case "fold":
       return FOLD_PRESETS;
     default:
       return [];

@@ -3,15 +3,20 @@ import { Button, Flex, Text, Badge, Card, Slider, Select } from "@radix-ui/theme
 import { Project } from "@opendaw/studio-core";
 import type { EffectPreset } from "../lib/effectPresets";
 
-const PresetSelector: React.FC<{ presets: EffectPreset<any>[]; onPresetChange: (preset: EffectPreset<any>) => void }> = ({ presets, onPresetChange }) => {
+const PresetSelector: React.FC<{
+  presets: EffectPreset<any>[];
+  onPresetChange: (preset: EffectPreset<any>) => void;
+}> = ({ presets, onPresetChange }) => {
   const [selectedPreset, setSelectedPreset] = useState<string>("");
 
   return (
     <Flex direction="column" gap="2">
-      <Text size="2" weight="medium">Presets</Text>
+      <Text size="2" weight="medium">
+        Presets
+      </Text>
       <Select.Root
         value={selectedPreset}
-        onValueChange={(presetName) => {
+        onValueChange={presetName => {
           setSelectedPreset(presetName);
           const preset = presets.find(p => p.name === presetName);
           if (preset) onPresetChange(preset);
@@ -24,14 +29,12 @@ const PresetSelector: React.FC<{ presets: EffectPreset<any>[]; onPresetChange: (
         </Select.Trigger>
         <Select.Content position="popper">
           {presets.map(preset => (
-            <Select.Item
-              key={preset.name}
-              value={preset.name}
-              style={{ padding: "12px 36px", minHeight: "60px" }}
-            >
+            <Select.Item key={preset.name} value={preset.name} style={{ padding: "12px 36px", minHeight: "60px" }}>
               <Flex direction="column" gap="1">
                 <Text weight="medium">{preset.name}</Text>
-                <Text size="1" color="gray">{preset.description}</Text>
+                <Text size="1" color="gray">
+                  {preset.description}
+                </Text>
               </Flex>
             </Select.Item>
           ))}
@@ -97,11 +100,7 @@ export const EffectPanel: React.FC<EffectPanelProps> = ({
           ) : (
             <Flex gap="2">
               {onBypass && (
-                <Button
-                  color={isBypassed ? "gray" : "green"}
-                  variant="soft"
-                  onClick={onBypass}
-                >
+                <Button color={isBypassed ? "gray" : "green"} variant="soft" onClick={onBypass}>
                   {isBypassed ? "Bypassed" : "Active"}
                 </Button>
               )}
@@ -114,9 +113,7 @@ export const EffectPanel: React.FC<EffectPanelProps> = ({
 
         {isActive && (
           <>
-            {badgeText && (
-              <Badge color="purple">{badgeText}</Badge>
-            )}
+            {badgeText && <Badge color="purple">{badgeText}</Badge>}
 
             {/* Preset Selector */}
             {presets && presets.length > 0 && onPresetChange && (
@@ -129,17 +126,18 @@ export const EffectPanel: React.FC<EffectPanelProps> = ({
                 {parameters.map(param => (
                   <Flex key={param.name} direction="column" gap="1">
                     <Flex justify="between" align="center">
-                      <Text size="2" weight="medium">{param.label}</Text>
+                      <Text size="2" weight="medium">
+                        {param.label}
+                      </Text>
                       <Text size="2" color="gray">
                         {param.format
                           ? param.format(param.value)
-                          : `${param.value.toFixed(param.step < 1 ? 2 : 0)}${param.unit || ''}`
-                        }
+                          : `${param.value.toFixed(param.step < 1 ? 2 : 0)}${param.unit || ""}`}
                       </Text>
                     </Flex>
                     <Slider
                       value={[param.value]}
-                      onValueChange={(values) => onParameterChange(param.name, values[0])}
+                      onValueChange={values => onParameterChange(param.name, values[0])}
                       min={param.min}
                       max={param.max}
                       step={param.step}

@@ -37,10 +37,7 @@ export const useDynamicEffect = (config: DynamicEffectConfig) => {
 
       switch (type) {
         case "Reverb":
-          effectBox = project.api.insertEffect(
-            (audioBox as any).audioEffects,
-            EffectFactories.AudioNamed.Reverb
-          );
+          effectBox = project.api.insertEffect((audioBox as any).audioEffects, EffectFactories.AudioNamed.Reverb);
           effectBox.label.setValue(label);
           (effectBox as any).wet.setValue(-18);
           (effectBox as any).decay.setValue(0.5);
@@ -50,10 +47,7 @@ export const useDynamicEffect = (config: DynamicEffectConfig) => {
           break;
 
         case "Compressor":
-          effectBox = project.api.insertEffect(
-            (audioBox as any).audioEffects,
-            EffectFactories.AudioNamed.Compressor
-          );
+          effectBox = project.api.insertEffect((audioBox as any).audioEffects, EffectFactories.AudioNamed.Compressor);
           effectBox.label.setValue(label);
           (effectBox as any).threshold.setValue(-20);
           (effectBox as any).ratio.setValue(3);
@@ -65,10 +59,7 @@ export const useDynamicEffect = (config: DynamicEffectConfig) => {
           break;
 
         case "Delay":
-          effectBox = project.api.insertEffect(
-            (audioBox as any).audioEffects,
-            EffectFactories.AudioNamed.Delay
-          );
+          effectBox = project.api.insertEffect((audioBox as any).audioEffects, EffectFactories.AudioNamed.Delay);
           effectBox.label.setValue(label);
           (effectBox as any).wet.setValue(-12);
           (effectBox as any).feedback.setValue(0.4);
@@ -78,10 +69,7 @@ export const useDynamicEffect = (config: DynamicEffectConfig) => {
           break;
 
         case "Crusher":
-          effectBox = project.api.insertEffect(
-            (audioBox as any).audioEffects,
-            EffectFactories.AudioNamed.Crusher
-          );
+          effectBox = project.api.insertEffect((audioBox as any).audioEffects, EffectFactories.AudioNamed.Crusher);
           effectBox.label.setValue(label);
           (effectBox as any).bits.setValue(8);
           (effectBox as any).crush.setValue(0.5);
@@ -91,10 +79,7 @@ export const useDynamicEffect = (config: DynamicEffectConfig) => {
           break;
 
         case "StereoWidth":
-          effectBox = project.api.insertEffect(
-            (audioBox as any).audioEffects,
-            EffectFactories.AudioNamed.StereoTool
-          );
+          effectBox = project.api.insertEffect((audioBox as any).audioEffects, EffectFactories.AudioNamed.StereoTool);
           effectBox.label.setValue(label);
           (effectBox as any).stereo.setValue(1.0);
           (effectBox as any).panning.setValue(0);
@@ -102,10 +87,7 @@ export const useDynamicEffect = (config: DynamicEffectConfig) => {
           break;
 
         case "EQ":
-          effectBox = project.api.insertEffect(
-            (audioBox as any).audioEffects,
-            EffectFactories.AudioNamed.Revamp
-          );
+          effectBox = project.api.insertEffect((audioBox as any).audioEffects, EffectFactories.AudioNamed.Revamp);
           effectBox.label.setValue(label);
           // Simple 3-band EQ setup
           (effectBox as any).lowBell.enabled.setValue(true);
@@ -124,10 +106,7 @@ export const useDynamicEffect = (config: DynamicEffectConfig) => {
           break;
 
         case "Fold":
-          effectBox = project.api.insertEffect(
-            (audioBox as any).audioEffects,
-            EffectFactories.AudioNamed.Fold
-          );
+          effectBox = project.api.insertEffect((audioBox as any).audioEffects, EffectFactories.AudioNamed.Fold);
           effectBox.label.setValue(label);
           (effectBox as any).drive.setValue(0);
           (effectBox as any).overSampling.setValue(0);
@@ -160,275 +139,296 @@ export const useDynamicEffect = (config: DynamicEffectConfig) => {
     });
   }, [project]);
 
-  const handleParameterChange = useCallback((paramName: string, value: number) => {
-    if (!project || !effectRef.current) return;
+  const handleParameterChange = useCallback(
+    (paramName: string, value: number) => {
+      if (!project || !effectRef.current) return;
 
-    project.editing.modify(() => {
-      const effect = effectRef.current;
+      project.editing.modify(() => {
+        const effect = effectRef.current;
 
-      // Handle nested EQ parameters
-      if (type === "EQ") {
-        if (paramName === "lowGain") {
-          (effect as any).lowBell.gain.setValue(value);
-        } else if (paramName === "midGain") {
-          (effect as any).midBell.gain.setValue(value);
-        } else if (paramName === "highGain") {
-          (effect as any).highBell.gain.setValue(value);
+        // Handle nested EQ parameters
+        if (type === "EQ") {
+          if (paramName === "lowGain") {
+            (effect as any).lowBell.gain.setValue(value);
+          } else if (paramName === "midGain") {
+            (effect as any).midBell.gain.setValue(value);
+          } else if (paramName === "highGain") {
+            (effect as any).highBell.gain.setValue(value);
+          }
+        } else {
+          (effect as any)[paramName].setValue(value);
         }
-      } else {
-        (effect as any)[paramName].setValue(value);
-      }
-    });
+      });
 
-    setParameters(prev => ({ ...prev, [paramName]: value }));
-  }, [project, type]);
+      setParameters(prev => ({ ...prev, [paramName]: value }));
+    },
+    [project, type]
+  );
 
   const getParameterDefinitions = (): EffectParameter[] => {
     switch (type) {
       case "Reverb":
         return [
           {
-            name: 'wet',
-            label: 'Wet/Dry Mix',
+            name: "wet",
+            label: "Wet/Dry Mix",
             value: parameters.wet || -18,
             min: -60,
             max: 0,
             step: 0.1,
-            unit: ' dB'
+            unit: " dB"
           },
           {
-            name: 'decay',
-            label: 'Decay Time',
+            name: "decay",
+            label: "Decay Time",
             value: parameters.decay || 0.5,
             min: 0,
             max: 1,
             step: 0.01,
-            format: (v) => `${(v * 100).toFixed(0)}%`
+            format: v => `${(v * 100).toFixed(0)}%`
           },
           {
-            name: 'preDelay',
-            label: 'Pre-Delay',
+            name: "preDelay",
+            label: "Pre-Delay",
             value: parameters.preDelay || 0.02,
             min: 0,
             max: 0.1,
             step: 0.001,
-            format: (v) => `${(v * 1000).toFixed(0)} ms`
+            format: v => `${(v * 1000).toFixed(0)} ms`
           },
           {
-            name: 'damp',
-            label: 'Damping',
+            name: "damp",
+            label: "Damping",
             value: parameters.damp || 0.5,
             min: 0,
             max: 1,
             step: 0.01,
-            format: (v) => `${(v * 100).toFixed(0)}%`
+            format: v => `${(v * 100).toFixed(0)}%`
           }
         ];
 
       case "Compressor":
         return [
           {
-            name: 'threshold',
-            label: 'Threshold',
+            name: "threshold",
+            label: "Threshold",
             value: parameters.threshold || -20,
             min: -60,
             max: 0,
             step: 0.1,
-            unit: ' dB'
+            unit: " dB"
           },
           {
-            name: 'ratio',
-            label: 'Ratio',
+            name: "ratio",
+            label: "Ratio",
             value: parameters.ratio || 3,
             min: 1,
             max: 20,
             step: 0.1,
-            format: (v) => `${v.toFixed(1)}:1`
+            format: v => `${v.toFixed(1)}:1`
           },
           {
-            name: 'attack',
-            label: 'Attack',
+            name: "attack",
+            label: "Attack",
             value: parameters.attack || 5,
             min: 0,
             max: 100,
             step: 0.1,
-            unit: ' ms'
+            unit: " ms"
           },
           {
-            name: 'release',
-            label: 'Release',
+            name: "release",
+            label: "Release",
             value: parameters.release || 100,
             min: 5,
             max: 1500,
             step: 1,
-            unit: ' ms'
+            unit: " ms"
           },
           {
-            name: 'knee',
-            label: 'Knee',
+            name: "knee",
+            label: "Knee",
             value: parameters.knee || 6,
             min: 0,
             max: 24,
             step: 0.1,
-            unit: ' dB'
+            unit: " dB"
           }
         ];
 
       case "Delay":
         return [
           {
-            name: 'wet',
-            label: 'Wet/Dry Mix',
+            name: "wet",
+            label: "Wet/Dry Mix",
             value: parameters.wet || -12,
             min: -60,
             max: 0,
             step: 0.1,
-            unit: ' dB'
+            unit: " dB"
           },
           {
-            name: 'feedback',
-            label: 'Feedback',
+            name: "feedback",
+            label: "Feedback",
             value: parameters.feedback || 0.4,
             min: 0,
             max: 0.95,
             step: 0.01,
-            format: (v) => `${(v * 100).toFixed(0)}%`
+            format: v => `${(v * 100).toFixed(0)}%`
           },
           {
-            name: 'delay',
-            label: 'Delay Time',
+            name: "delay",
+            label: "Delay Time",
             value: parameters.delay || 4,
             min: 0,
             max: 16,
             step: 1,
-            format: (v) => {
-              const notes = ['1/1', '1/2', '1/3', '1/4', '3/16', '1/6', '1/8', '3/32', '1/12', '1/16', '3/64', '1/24', '1/32', '1/48', '1/64', '1/96', '1/128'];
+            format: v => {
+              const notes = [
+                "1/1",
+                "1/2",
+                "1/3",
+                "1/4",
+                "3/16",
+                "1/6",
+                "1/8",
+                "3/32",
+                "1/12",
+                "1/16",
+                "3/64",
+                "1/24",
+                "1/32",
+                "1/48",
+                "1/64",
+                "1/96",
+                "1/128"
+              ];
               return notes[Math.floor(v)] || `${v}`;
             }
           },
           {
-            name: 'filter',
-            label: 'Filter',
+            name: "filter",
+            label: "Filter",
             value: parameters.filter || 0,
             min: -1,
             max: 1,
             step: 0.01,
-            format: (v) => v < 0 ? `LP ${Math.abs(v * 100).toFixed(0)}%` : v > 0 ? `HP ${(v * 100).toFixed(0)}%` : 'Off'
+            format: v => (v < 0 ? `LP ${Math.abs(v * 100).toFixed(0)}%` : v > 0 ? `HP ${(v * 100).toFixed(0)}%` : "Off")
           }
         ];
 
       case "Crusher":
         return [
           {
-            name: 'bits',
-            label: 'Bit Depth',
+            name: "bits",
+            label: "Bit Depth",
             value: parameters.bits || 8,
             min: 1,
             max: 16,
             step: 1,
-            format: (v) => `${v.toFixed(0)} bits`
+            format: v => `${v.toFixed(0)} bits`
           },
           {
-            name: 'crush',
-            label: 'Crush Amount',
+            name: "crush",
+            label: "Crush Amount",
             value: parameters.crush || 0.5,
             min: 0,
             max: 1,
             step: 0.01,
-            format: (v) => `${(v * 100).toFixed(0)}%`
+            format: v => `${(v * 100).toFixed(0)}%`
           },
           {
-            name: 'boost',
-            label: 'Boost',
+            name: "boost",
+            label: "Boost",
             value: parameters.boost || 0.5,
             min: 0,
             max: 1,
             step: 0.01,
-            format: (v) => `${(v * 100).toFixed(0)}%`
+            format: v => `${(v * 100).toFixed(0)}%`
           },
           {
-            name: 'mix',
-            label: 'Wet/Dry Mix',
+            name: "mix",
+            label: "Wet/Dry Mix",
             value: parameters.mix || 0.8,
             min: 0,
             max: 1,
             step: 0.01,
-            format: (v) => `${(v * 100).toFixed(0)}%`
+            format: v => `${(v * 100).toFixed(0)}%`
           }
         ];
 
       case "StereoWidth":
         return [
           {
-            name: 'width',
-            label: 'Stereo Width',
+            name: "width",
+            label: "Stereo Width",
             value: parameters.width || 1.0,
             min: 0,
             max: 2,
             step: 0.01,
-            format: (v) => `${(v * 100).toFixed(0)}%`
+            format: v => `${(v * 100).toFixed(0)}%`
           },
           {
-            name: 'pan',
-            label: 'Pan',
+            name: "pan",
+            label: "Pan",
             value: parameters.pan || 0,
             min: -1,
             max: 1,
             step: 0.01,
-            format: (v) => v === 0 ? 'Center' : v < 0 ? `L${Math.abs(v * 100).toFixed(0)}` : `R${(v * 100).toFixed(0)}`
+            format: v => (v === 0 ? "Center" : v < 0 ? `L${Math.abs(v * 100).toFixed(0)}` : `R${(v * 100).toFixed(0)}`)
           }
         ];
 
       case "EQ":
         return [
           {
-            name: 'lowGain',
-            label: 'Low (250 Hz)',
+            name: "lowGain",
+            label: "Low (250 Hz)",
             value: parameters.lowGain || 0,
             min: -24,
             max: 24,
             step: 0.1,
-            unit: ' dB'
+            unit: " dB"
           },
           {
-            name: 'midGain',
-            label: 'Mid (1 kHz)',
+            name: "midGain",
+            label: "Mid (1 kHz)",
             value: parameters.midGain || 0,
             min: -24,
             max: 24,
             step: 0.1,
-            unit: ' dB'
+            unit: " dB"
           },
           {
-            name: 'highGain',
-            label: 'High (4 kHz)',
+            name: "highGain",
+            label: "High (4 kHz)",
             value: parameters.highGain || 0,
             min: -24,
             max: 24,
             step: 0.1,
-            unit: ' dB'
+            unit: " dB"
           }
         ];
 
       case "Fold":
         return [
           {
-            name: 'drive',
-            label: 'Drive',
+            name: "drive",
+            label: "Drive",
             value: parameters.drive || 0,
             min: 0,
             max: 40,
             step: 0.1,
-            unit: ' dB'
+            unit: " dB"
           },
           {
-            name: 'volume',
-            label: 'Output',
+            name: "volume",
+            label: "Output",
             value: parameters.volume || 0,
             min: -40,
             max: 20,
             step: 0.1,
-            unit: ' dB'
+            unit: " dB"
           }
         ];
 
@@ -439,47 +439,58 @@ export const useDynamicEffect = (config: DynamicEffectConfig) => {
 
   const getPresets = () => {
     switch (type) {
-      case "Reverb": return REVERB_PRESETS;
-      case "Compressor": return COMPRESSOR_PRESETS;
-      case "Delay": return DELAY_PRESETS;
-      case "Crusher": return CRUSHER_PRESETS;
-      case "StereoWidth": return STEREO_WIDTH_PRESETS;
-      case "EQ": return EQ_PRESETS;
-      case "Fold": return FOLD_PRESETS;
-      default: return [];
+      case "Reverb":
+        return REVERB_PRESETS;
+      case "Compressor":
+        return COMPRESSOR_PRESETS;
+      case "Delay":
+        return DELAY_PRESETS;
+      case "Crusher":
+        return CRUSHER_PRESETS;
+      case "StereoWidth":
+        return STEREO_WIDTH_PRESETS;
+      case "EQ":
+        return EQ_PRESETS;
+      case "Fold":
+        return FOLD_PRESETS;
+      default:
+        return [];
     }
   };
 
-  const loadPreset = useCallback((preset: any) => {
-    if (!project || !effectRef.current) return;
+  const loadPreset = useCallback(
+    (preset: any) => {
+      if (!project || !effectRef.current) return;
 
-    project.editing.modify(() => {
-      const effect = effectRef.current;
-      Object.entries(preset.params).forEach(([key, value]) => {
-        // Handle special case for StereoWidth which uses different param names
-        if (type === "StereoWidth") {
-          const paramName = key === "width" ? "stereo" : key === "pan" ? "panning" : key;
-          (effect as any)[paramName].setValue(value);
-        }
-        // Handle special case for EQ which has nested parameters
-        else if (type === "EQ") {
-          if (key === "lowGain") {
-            (effect as any).lowBell.gain.setValue(value);
-          } else if (key === "midGain") {
-            (effect as any).midBell.gain.setValue(value);
-          } else if (key === "highGain") {
-            (effect as any).highBell.gain.setValue(value);
+      project.editing.modify(() => {
+        const effect = effectRef.current;
+        Object.entries(preset.params).forEach(([key, value]) => {
+          // Handle special case for StereoWidth which uses different param names
+          if (type === "StereoWidth") {
+            const paramName = key === "width" ? "stereo" : key === "pan" ? "panning" : key;
+            (effect as any)[paramName].setValue(value);
           }
-        }
-        // Default case
-        else {
-          (effect as any)[key].setValue(value);
-        }
+          // Handle special case for EQ which has nested parameters
+          else if (type === "EQ") {
+            if (key === "lowGain") {
+              (effect as any).lowBell.gain.setValue(value);
+            } else if (key === "midGain") {
+              (effect as any).midBell.gain.setValue(value);
+            } else if (key === "highGain") {
+              (effect as any).highBell.gain.setValue(value);
+            }
+          }
+          // Default case
+          else {
+            (effect as any)[key].setValue(value);
+          }
+        });
       });
-    });
 
-    setParameters(preset.params);
-  }, [project, type]);
+      setParameters(preset.params);
+    },
+    [project, type]
+  );
 
   return {
     isBypassed,

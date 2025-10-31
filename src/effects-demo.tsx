@@ -22,16 +22,7 @@ import { initializeOpenDAW, setLoopEndFromTracks } from "./lib/projectSetup";
 import { useEffectChain } from "./hooks/useEffectChain";
 import { useDynamicEffect } from "./hooks/useDynamicEffect";
 import "@radix-ui/themes/styles.css";
-import {
-  Theme,
-  Container,
-  Heading,
-  Text,
-  Flex,
-  Card,
-  Separator,
-  Callout
-} from "@radix-ui/themes";
+import { Theme, Container, Heading, Text, Flex, Card, Separator, Callout } from "@radix-ui/themes";
 
 /**
  * Component to render individual effect instances (memoized to prevent re-renders)
@@ -62,12 +53,12 @@ const EffectRenderer: React.FC<{
       parameters={dynamicEffect.parameters}
       onParameterChange={dynamicEffect.handleParameterChange}
       presets={dynamicEffect.presets}
-      onPresetChange={(preset) => dynamicEffect.loadPreset(preset)}
+      onPresetChange={preset => dynamicEffect.loadPreset(preset)}
     />
   );
 });
 
-EffectRenderer.displayName = 'EffectRenderer';
+EffectRenderer.displayName = "EffectRenderer";
 
 /**
  * Main Effects Demo App Component
@@ -95,97 +86,125 @@ const App: React.FC = () => {
   const guitarEffects = useEffectChain(project, guitarAudioBox, "Guitar");
   const drumsEffects = useEffectChain(project, drumsAudioBox, "Drums");
   const bassEffects = useEffectChain(project, bassAudioBox, "Bass");
-  const effectReturnsEffects = useEffectChain(project, tracks.find(t => t.name === "Effect Returns")?.audioUnitBox || null, "Effect Returns");
+  const effectReturnsEffects = useEffectChain(
+    project,
+    tracks.find(t => t.name === "Effect Returns")?.audioUnitBox || null,
+    "Effect Returns"
+  );
   const masterEffects = useEffectChain(project, masterAudioBox, "Master");
 
   // Memoized render functions to prevent unnecessary re-renders
-  const renderIntroEffect = useCallback((effect: EffectInstance) => (
-    <EffectRenderer
-      key={effect.id}
-      effect={effect}
-      trackName="Intro"
-      audioBox={tracks.find(t => t.name === "Intro")?.audioUnitBox}
-      onRemove={introEffects.removeEffect}
-      project={project}
-    />
-  ), [project, tracks, introEffects.removeEffect]);
+  const renderIntroEffect = useCallback(
+    (effect: EffectInstance) => (
+      <EffectRenderer
+        key={effect.id}
+        effect={effect}
+        trackName="Intro"
+        audioBox={tracks.find(t => t.name === "Intro")?.audioUnitBox}
+        onRemove={introEffects.removeEffect}
+        project={project}
+      />
+    ),
+    [project, tracks, introEffects.removeEffect]
+  );
 
-  const renderVocalsEffect = useCallback((effect: EffectInstance) => (
-    <EffectRenderer
-      key={effect.id}
-      effect={effect}
-      trackName="Vocals"
-      audioBox={vocalsAudioBox}
-      onRemove={vocalsEffects.removeEffect}
-      project={project}
-    />
-  ), [project, vocalsAudioBox, vocalsEffects.removeEffect]);
+  const renderVocalsEffect = useCallback(
+    (effect: EffectInstance) => (
+      <EffectRenderer
+        key={effect.id}
+        effect={effect}
+        trackName="Vocals"
+        audioBox={vocalsAudioBox}
+        onRemove={vocalsEffects.removeEffect}
+        project={project}
+      />
+    ),
+    [project, vocalsAudioBox, vocalsEffects.removeEffect]
+  );
 
-  const renderGuitarLeadEffect = useCallback((effect: EffectInstance) => (
-    <EffectRenderer
-      key={effect.id}
-      effect={effect}
-      trackName="Guitar Lead"
-      audioBox={guitarLeadAudioBox}
-      onRemove={guitarLeadEffects.removeEffect}
-      project={project}
-    />
-  ), [project, guitarLeadAudioBox, guitarLeadEffects.removeEffect]);
+  const renderGuitarLeadEffect = useCallback(
+    (effect: EffectInstance) => (
+      <EffectRenderer
+        key={effect.id}
+        effect={effect}
+        trackName="Guitar Lead"
+        audioBox={guitarLeadAudioBox}
+        onRemove={guitarLeadEffects.removeEffect}
+        project={project}
+      />
+    ),
+    [project, guitarLeadAudioBox, guitarLeadEffects.removeEffect]
+  );
 
-  const renderGuitarEffect = useCallback((effect: EffectInstance) => (
-    <EffectRenderer
-      key={effect.id}
-      effect={effect}
-      trackName="Guitar"
-      audioBox={guitarAudioBox}
-      onRemove={guitarEffects.removeEffect}
-      project={project}
-    />
-  ), [project, guitarAudioBox, guitarEffects.removeEffect]);
+  const renderGuitarEffect = useCallback(
+    (effect: EffectInstance) => (
+      <EffectRenderer
+        key={effect.id}
+        effect={effect}
+        trackName="Guitar"
+        audioBox={guitarAudioBox}
+        onRemove={guitarEffects.removeEffect}
+        project={project}
+      />
+    ),
+    [project, guitarAudioBox, guitarEffects.removeEffect]
+  );
 
-  const renderDrumsEffect = useCallback((effect: EffectInstance) => (
-    <EffectRenderer
-      key={effect.id}
-      effect={effect}
-      trackName="Drums"
-      audioBox={drumsAudioBox}
-      onRemove={drumsEffects.removeEffect}
-      project={project}
-    />
-  ), [project, drumsAudioBox, drumsEffects.removeEffect]);
+  const renderDrumsEffect = useCallback(
+    (effect: EffectInstance) => (
+      <EffectRenderer
+        key={effect.id}
+        effect={effect}
+        trackName="Drums"
+        audioBox={drumsAudioBox}
+        onRemove={drumsEffects.removeEffect}
+        project={project}
+      />
+    ),
+    [project, drumsAudioBox, drumsEffects.removeEffect]
+  );
 
-  const renderBassEffect = useCallback((effect: EffectInstance) => (
-    <EffectRenderer
-      key={effect.id}
-      effect={effect}
-      trackName="Bass"
-      audioBox={bassAudioBox}
-      onRemove={bassEffects.removeEffect}
-      project={project}
-    />
-  ), [project, bassAudioBox, bassEffects.removeEffect]);
+  const renderBassEffect = useCallback(
+    (effect: EffectInstance) => (
+      <EffectRenderer
+        key={effect.id}
+        effect={effect}
+        trackName="Bass"
+        audioBox={bassAudioBox}
+        onRemove={bassEffects.removeEffect}
+        project={project}
+      />
+    ),
+    [project, bassAudioBox, bassEffects.removeEffect]
+  );
 
-  const renderEffectReturnsEffect = useCallback((effect: EffectInstance) => (
-    <EffectRenderer
-      key={effect.id}
-      effect={effect}
-      trackName="Effect Returns"
-      audioBox={tracks.find(t => t.name === "Effect Returns")?.audioUnitBox}
-      onRemove={effectReturnsEffects.removeEffect}
-      project={project}
-    />
-  ), [project, tracks, effectReturnsEffects.removeEffect]);
+  const renderEffectReturnsEffect = useCallback(
+    (effect: EffectInstance) => (
+      <EffectRenderer
+        key={effect.id}
+        effect={effect}
+        trackName="Effect Returns"
+        audioBox={tracks.find(t => t.name === "Effect Returns")?.audioUnitBox}
+        onRemove={effectReturnsEffects.removeEffect}
+        project={project}
+      />
+    ),
+    [project, tracks, effectReturnsEffects.removeEffect]
+  );
 
-  const renderMasterEffect = useCallback((effect: EffectInstance) => (
-    <EffectRenderer
-      key={effect.id}
-      effect={effect}
-      trackName="Master"
-      audioBox={masterAudioBox}
-      onRemove={masterEffects.removeEffect}
-      project={project}
-    />
-  ), [project, masterAudioBox, masterEffects.removeEffect]);
+  const renderMasterEffect = useCallback(
+    (effect: EffectInstance) => (
+      <EffectRenderer
+        key={effect.id}
+        effect={effect}
+        trackName="Master"
+        audioBox={masterAudioBox}
+        onRemove={masterEffects.removeEffect}
+        project={project}
+      />
+    ),
+    [project, masterAudioBox, masterEffects.removeEffect]
+  );
 
   // Refs for non-reactive values
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
@@ -242,7 +261,9 @@ const App: React.FC = () => {
         context.fillStyle = "#000";
         context.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
 
-        console.debug(`[Peaks] Rendering waveform for "${track.name}": ${peaks.numFrames} frames, ${peaks.numChannels} channels`);
+        console.debug(
+          `[Peaks] Rendering waveform for "${track.name}": ${peaks.numFrames} frames, ${peaks.numChannels} channels`
+        );
 
         // Set waveform color
         context.fillStyle = "#4a9eff";
@@ -400,11 +421,7 @@ const App: React.FC = () => {
   }, []);
 
   // Setup tracks with audio files
-  const setupTracks = async (
-    proj: Project,
-    ctx: AudioContext,
-    audioBuffers: Map<string, AudioBuffer>
-  ) => {
+  const setupTracks = async (proj: Project, ctx: AudioContext, audioBuffers: Map<string, AudioBuffer>) => {
     const bpm = proj.timelineBox.bpm.getValue();
     const boxGraph = proj.boxGraph;
 
@@ -432,9 +449,7 @@ const App: React.FC = () => {
 
         proj.editing.modify(() => {
           // Create track with Tape instrument
-          const { audioUnitBox, trackBox } = proj.api.createInstrument(
-            InstrumentFactories.Tape
-          );
+          const { audioUnitBox, trackBox } = proj.api.createInstrument(InstrumentFactories.Tape);
 
           // Set default volume
           audioUnitBox.volume.setValue(0);
@@ -568,29 +583,35 @@ const App: React.FC = () => {
         <Flex direction="column" gap="6" style={{ maxWidth: 1200, margin: "0 auto", position: "relative" }}>
           {/* Loading Overlay */}
           {isLoading && (
-            <div style={{
-              position: "fixed",
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: "rgba(0, 0, 0, 0.85)",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              zIndex: 9999,
-              gap: "20px"
-            }}>
-              <div style={{
-                width: "50px",
-                height: "50px",
-                border: "4px solid rgba(74, 158, 255, 0.3)",
-                borderTop: "4px solid #4a9eff",
-                borderRadius: "50%",
-                animation: "spin 1s linear infinite"
-              }} />
-              <Text size="5" weight="medium" style={{ color: "#fff" }}>{status}</Text>
+            <div
+              style={{
+                position: "fixed",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: "rgba(0, 0, 0, 0.85)",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                zIndex: 9999,
+                gap: "20px"
+              }}
+            >
+              <div
+                style={{
+                  width: "50px",
+                  height: "50px",
+                  border: "4px solid rgba(74, 158, 255, 0.3)",
+                  borderTop: "4px solid #4a9eff",
+                  borderRadius: "50%",
+                  animation: "spin 1s linear infinite"
+                }}
+              />
+              <Text size="5" weight="medium" style={{ color: "#fff" }}>
+                {status}
+              </Text>
               <style>{`
                 @keyframes spin {
                   0% { transform: rotate(0deg); }
@@ -606,18 +627,23 @@ const App: React.FC = () => {
           <Flex direction="column" gap="3">
             <Heading size="8">OpenDAW Effects Demo</Heading>
             <Text size="4" color="gray">
-              Multi-track mixer featuring DarkRide stems with professional audio effects (Reverb, Delay, Lo-Fi Crusher, Compressor, Stereo Width)
+              Multi-track mixer featuring DarkRide stems with professional audio effects (Reverb, Delay, Lo-Fi Crusher,
+              Compressor, Stereo Width)
             </Text>
           </Flex>
 
           {/* Info callout */}
           <Callout.Root color="blue">
             <Callout.Text>
-              💡 This demo shows OpenDAW's mixer controls and professional audio effects with all 7 unmastered tracks from Dark Ride's 'Deny Control'.
-              Each track has independent volume, pan, mute, and solo controls. Add studio-quality effects
-              to individual tracks (Compressors to tighten Drums/Bass, Reverb + Compressor on Vocals, Delay on Guitar Lead, Lo-Fi Crusher for creative effects) or the master output (Compressor for mix glue, Stereo Width for spaciousness).
-              <br /><br />
-              ✨ <strong>New:</strong> Each effect now includes presets! Try loading presets like "Drum Punch", "Bass Control", "Vocal Smooth", "Slap Back Delay", and more to hear how different parameter combinations sound.
+              💡 This demo shows OpenDAW's mixer controls and professional audio effects with all 7 unmastered tracks
+              from Dark Ride's 'Deny Control'. Each track has independent volume, pan, mute, and solo controls. Add
+              studio-quality effects to individual tracks (Compressors to tighten Drums/Bass, Reverb + Compressor on
+              Vocals, Delay on Guitar Lead, Lo-Fi Crusher for creative effects) or the master output (Compressor for mix
+              glue, Stereo Width for spaciousness).
+              <br />
+              <br />✨ <strong>New:</strong> Each effect now includes presets! Try loading presets like "Drum Punch",
+              "Bass Control", "Vocal Smooth", "Slap Back Delay", and more to hear how different parameter combinations
+              sound.
             </Callout.Text>
           </Callout.Root>
 
@@ -645,7 +671,10 @@ const App: React.FC = () => {
 
               {/* Timeline and tracks container with shared border */}
               <Flex direction="column" gap="0" style={{ border: "1px solid var(--gray-6)", position: "relative" }}>
-                <div ref={tracksContainerRef} style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none" }} />
+                <div
+                  ref={tracksContainerRef}
+                  style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none" }}
+                />
                 {/* Timeline - Dynamically calculated duration */}
                 <TimelineRuler
                   maxDuration={Math.max(
@@ -667,7 +696,7 @@ const App: React.FC = () => {
                       project={project}
                       allTracks={tracks}
                       peaks={trackPeaksRef.current.get(UUID.toString(track.uuid))}
-                      canvasRef={(el) => {
+                      canvasRef={el => {
                         if (el) {
                           canvasRefs.current.set(UUID.toString(track.uuid), el);
                         }
@@ -684,50 +713,46 @@ const App: React.FC = () => {
                 })()}
 
                 {/* Single unified playhead overlay spanning all tracks */}
-                {currentPosition > 0 && localAudioBuffersRef.current.size > 0 && canvasRefs.current.size > 0 && (() => {
-                  const maxDuration = Math.max(
-                    ...Array.from(localAudioBuffersRef.current.values()).map(buf => buf.duration),
-                    1
-                  );
-                  const timeInSeconds = PPQN.pulsesToSeconds(currentPosition, bpmRef.current);
-                  const xPercent = (timeInSeconds / maxDuration);
+                {currentPosition > 0 &&
+                  localAudioBuffersRef.current.size > 0 &&
+                  canvasRefs.current.size > 0 &&
+                  (() => {
+                    const maxDuration = Math.max(
+                      ...Array.from(localAudioBuffersRef.current.values()).map(buf => buf.duration),
+                      1
+                    );
+                    const timeInSeconds = PPQN.pulsesToSeconds(currentPosition, bpmRef.current);
+                    const xPercent = timeInSeconds / maxDuration;
 
-                  // Get the first canvas to measure waveform area offset
-                  const firstCanvas = Array.from(canvasRefs.current.values())[0];
-                  if (!firstCanvas || !tracksContainerRef.current) return null;
+                    // Get the first canvas to measure waveform area offset
+                    const firstCanvas = Array.from(canvasRefs.current.values())[0];
+                    if (!firstCanvas || !tracksContainerRef.current) return null;
 
-                  const containerRect = tracksContainerRef.current.parentElement?.getBoundingClientRect();
-                  const canvasRect = firstCanvas.getBoundingClientRect();
+                    const containerRect = tracksContainerRef.current.parentElement?.getBoundingClientRect();
+                    const canvasRect = firstCanvas.getBoundingClientRect();
 
-                  if (!containerRect) return null;
+                    if (!containerRect) return null;
 
-                  const waveformOffsetLeft = canvasRect.left - containerRect.left;
-                  const waveformWidth = canvasRect.width;
-                  const xPosition = waveformOffsetLeft + (waveformWidth * xPercent);
+                    const waveformOffsetLeft = canvasRect.left - containerRect.left;
+                    const waveformWidth = canvasRect.width;
+                    const xPosition = waveformOffsetLeft + waveformWidth * xPercent;
 
-                  return (
-                    <svg
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        width: "100%",
-                        height: "100%",
-                        pointerEvents: "none",
-                        zIndex: 10
-                      }}
-                    >
-                      <line
-                        x1={xPosition}
-                        y1="24px"
-                        x2={xPosition}
-                        y2="100%"
-                        stroke="#fff"
-                        strokeWidth={2}
-                      />
-                    </svg>
-                  );
-                })()}
+                    return (
+                      <svg
+                        style={{
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                          width: "100%",
+                          height: "100%",
+                          pointerEvents: "none",
+                          zIndex: 10
+                        }}
+                      >
+                        <line x1={xPosition} y1="24px" x2={xPosition} y2="100%" stroke="#fff" strokeWidth={2} />
+                      </svg>
+                    );
+                  })()}
               </Flex>
             </Flex>
           </Card>
@@ -740,9 +765,11 @@ const App: React.FC = () => {
 
               <Callout.Root color="purple">
                 <Callout.Text>
-                  ✨ Add professional audio effects to individual tracks or the master output.
-                  These are the same effects used in professional DAWs! Each effect includes preset options - try loading presets to quickly explore different sounds, then fine-tune the parameters to your liking.
-                  Try adding Compressors to Drums and Bass to tighten up these unmastered stems, or add Reverb to Vocals with Compressor for a polished vocal chain.
+                  ✨ Add professional audio effects to individual tracks or the master output. These are the same
+                  effects used in professional DAWs! Each effect includes preset options - try loading presets to
+                  quickly explore different sounds, then fine-tune the parameters to your liking. Try adding Compressors
+                  to Drums and Bass to tighten up these unmastered stems, or add Reverb to Vocals with Compressor for a
+                  polished vocal chain.
                 </Callout.Text>
               </Callout.Root>
 
@@ -832,10 +859,10 @@ const App: React.FC = () => {
               <Heading size="4">Technical Details</Heading>
               <Separator size="4" />
               <Flex direction="column" gap="2">
-                <Text size="2" weight="bold">Dynamic Effect Chain System:</Text>
-                <Text size="2">
-                  • Dynamic effect system allows adding multiple effects of any type to each track
+                <Text size="2" weight="bold">
+                  Dynamic Effect Chain System:
                 </Text>
+                <Text size="2">• Dynamic effect system allows adding multiple effects of any type to each track</Text>
                 <Text size="2">
                   • Effects are managed via <code>useEffectChain</code> hook per track/master
                 </Text>
@@ -843,12 +870,15 @@ const App: React.FC = () => {
                   • Individual effects use <code>useDynamicEffect</code> for full lifecycle management
                 </Text>
                 <Separator size="1" />
-                <Text size="2" weight="bold">Available Effects (7 Total):</Text>
+                <Text size="2" weight="bold">
+                  Available Effects (7 Total):
+                </Text>
                 <Text size="2">
                   • <strong>Reverb:</strong> Space simulation with decay, pre-delay, and damping controls
                 </Text>
                 <Text size="2">
-                  • <strong>Compressor:</strong> Dynamic range control with threshold, ratio, attack, release, and makeup gain
+                  • <strong>Compressor:</strong> Dynamic range control with threshold, ratio, attack, release, and
+                  makeup gain
                 </Text>
                 <Text size="2">
                   • <strong>Parametric EQ:</strong> 3-band EQ (Low 250Hz, Mid 1kHz, High 4kHz) with ±24dB gain range
@@ -860,15 +890,19 @@ const App: React.FC = () => {
                   • <strong>Lo-Fi Crusher:</strong> Bit-crushing and sample rate reduction for digital degradation
                 </Text>
                 <Text size="2">
-                  • <strong>Wavefolder:</strong> Distortion/saturation with drive and oversampling for harmonic generation
+                  • <strong>Wavefolder:</strong> Distortion/saturation with drive and oversampling for harmonic
+                  generation
                 </Text>
                 <Text size="2">
                   • <strong>Stereo Width:</strong> Stereo imaging with width, panning, and phase controls
                 </Text>
                 <Separator size="1" />
-                <Text size="2" weight="bold">Implementation:</Text>
+                <Text size="2" weight="bold">
+                  Implementation:
+                </Text>
                 <Text size="2">
-                  • Effect insertion: <code>project.api.insertEffect(audioBox.audioEffects, EffectFactories.AudioNamed.*)</code>
+                  • Effect insertion:{" "}
+                  <code>project.api.insertEffect(audioBox.audioEffects, EffectFactories.AudioNamed.*)</code>
                 </Text>
                 <Text size="2">
                   • All modifications within <code>project.editing.modify()</code> transactions
@@ -876,9 +910,7 @@ const App: React.FC = () => {
                 <Text size="2">
                   • State observation via <code>catchupAndSubscribe()</code>
                 </Text>
-                <Text size="2">
-                  • Each effect includes presets and bypass functionality
-                </Text>
+                <Text size="2">• Each effect includes presets and bypass functionality</Text>
               </Flex>
             </Flex>
           </Card>
@@ -889,10 +921,15 @@ const App: React.FC = () => {
               <Heading size="4">Audio Attribution</Heading>
               <Separator size="4" />
               <Text size="2">
-                Mix stems from Dark Ride's 'Deny Control'. This file is provided for educational purposes only,
-                and the material contained in it should not be used for any commercial purpose without the express
-                permission of the copyright holders. Please refer to{" "}
-                <a href="https://www.cambridge-mt.com" target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent-9)" }}>
+                Mix stems from Dark Ride's 'Deny Control'. This file is provided for educational purposes only, and the
+                material contained in it should not be used for any commercial purpose without the express permission of
+                the copyright holders. Please refer to{" "}
+                <a
+                  href="https://www.cambridge-mt.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: "var(--accent-9)" }}
+                >
                   www.cambridge-mt.com
                 </a>{" "}
                 for further details.

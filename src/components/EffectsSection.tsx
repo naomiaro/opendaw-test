@@ -13,8 +13,8 @@ export const EffectsSection: React.FC<EffectsSectionProps> = ({ children }) => {
 
       <Callout.Root color="purple">
         <Callout.Text>
-          ✨ Add professional audio effects and adjust their parameters in real-time!
-          Try tweaking the knobs while the music is playing to hear the changes.
+          ✨ Add professional audio effects and adjust their parameters in real-time! Try tweaking the knobs while the
+          music is playing to hear the changes.
         </Callout.Text>
       </Callout.Root>
 

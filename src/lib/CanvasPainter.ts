@@ -64,9 +64,7 @@ export class CanvasPainter implements Terminable {
 
     // Detect resize
     this.isResized =
-      this.lastWidth !== width ||
-      this.lastHeight !== height ||
-      this.lastDevicePixelRatio !== devicePixelRatio;
+      this.lastWidth !== width || this.lastHeight !== height || this.lastDevicePixelRatio !== devicePixelRatio;
 
     if (this.isResized) {
       // Update canvas resolution for HiDPI displays

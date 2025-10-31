@@ -14,17 +14,7 @@ import { BackLink } from "./components/BackLink";
 import { loadAudioFile } from "./lib/audioUtils";
 import { initializeOpenDAW } from "./lib/projectSetup";
 import "@radix-ui/themes/styles.css";
-import {
-  Theme,
-  Container,
-  Heading,
-  Text,
-  Button,
-  Flex,
-  Card,
-  Badge,
-  Separator
-} from "@radix-ui/themes";
+import { Theme, Container, Heading, Text, Button, Flex, Card, Badge, Separator } from "@radix-ui/themes";
 
 // Type for scheduled clip
 type ScheduledClip = {
@@ -52,7 +42,9 @@ const App: React.FC = () => {
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
   const sampleUUIDsRef = useRef<UUID.Bytes[]>([]);
   const audioRegionsRef = useRef<Array<{ box: any; audioDuration: number }>>([]); // Store region refs for BPM updates
-  const clipTemplatesRef = useRef<Array<{ trackName: string; position: number; audioDuration: number; label: string; color: string }>>([]); // Templates for recalculating clips
+  const clipTemplatesRef = useRef<
+    Array<{ trackName: string; position: number; audioDuration: number; label: string; color: string }>
+  >([]); // Templates for recalculating clips
 
   const { Quarter } = PPQN;
   const BARS = 4;
@@ -247,11 +239,11 @@ const App: React.FC = () => {
     const subscriptions: Array<{ terminate: () => void }> = [];
     let loadedCount = 0;
 
-    sampleUUIDsRef.current.forEach((uuid) => {
+    sampleUUIDsRef.current.forEach(uuid => {
       const sampleLoader = project.sampleManager.getOrCreate(uuid);
       const uuidString = UUID.toString(uuid);
 
-      const subscription = sampleLoader.subscribe((state) => {
+      const subscription = sampleLoader.subscribe(state => {
         console.debug(`[SampleLoading] Sample ${uuidString} state:`, state.type);
 
         if (state.type === "loaded") {
@@ -299,44 +291,47 @@ const App: React.FC = () => {
     project.engine.setPosition(0);
   }, [project]);
 
-  const handleBpmChange = useCallback((newBpm: number) => {
-    if (!project || !samplesLoaded) {
-      console.warn("Cannot change BPM: samples not fully loaded yet");
-      return;
-    }
+  const handleBpmChange = useCallback(
+    (newBpm: number) => {
+      if (!project || !samplesLoaded) {
+        console.warn("Cannot change BPM: samples not fully loaded yet");
+        return;
+      }
 
-    console.debug(`[BPM Change] Changing from ${bpm} to ${newBpm}`);
+      console.debug(`[BPM Change] Changing from ${bpm} to ${newBpm}`);
 
-    // Update BPM and recalculate region durations
-    project.editing.modify(() => {
-      // Update timeline BPM
-      project.timelineBox.bpm.setValue(newBpm);
+      // Update BPM and recalculate region durations
+      project.editing.modify(() => {
+        // Update timeline BPM
+        project.timelineBox.bpm.setValue(newBpm);
 
-      // Recalculate duration in PPQN for all regions
-      // Even with NoSync mode, the duration needs to match the timeline's PPQN units
-      audioRegionsRef.current.forEach(({ box, audioDuration }) => {
-        const newDurationInPPQN = PPQN.secondsToPulses(audioDuration, newBpm);
-        box.duration.setValue(newDurationInPPQN);
-        box.loopDuration.setValue(newDurationInPPQN);
+        // Recalculate duration in PPQN for all regions
+        // Even with NoSync mode, the duration needs to match the timeline's PPQN units
+        audioRegionsRef.current.forEach(({ box, audioDuration }) => {
+          const newDurationInPPQN = PPQN.secondsToPulses(audioDuration, newBpm);
+          box.duration.setValue(newDurationInPPQN);
+          box.loopDuration.setValue(newDurationInPPQN);
+        });
       });
-    });
 
-    // Recalculate clip durations for timeline visualization
-    const updatedClips = clipTemplatesRef.current.map(template => {
-      const newDurationInPPQN = PPQN.secondsToPulses(template.audioDuration, newBpm);
-      return {
-        trackName: template.trackName,
-        position: template.position,
-        duration: newDurationInPPQN,
-        label: template.label,
-        color: template.color
-      };
-    });
-    setScheduledClips(updatedClips);
+      // Recalculate clip durations for timeline visualization
+      const updatedClips = clipTemplatesRef.current.map(template => {
+        const newDurationInPPQN = PPQN.secondsToPulses(template.audioDuration, newBpm);
+        return {
+          trackName: template.trackName,
+          position: template.position,
+          duration: newDurationInPPQN,
+          label: template.label,
+          color: template.color
+        };
+      });
+      setScheduledClips(updatedClips);
 
-    // Update local state
-    setBpm(newBpm);
-  }, [project, samplesLoaded, bpm]);
+      // Update local state
+      setBpm(newBpm);
+    },
+    [project, samplesLoaded, bpm]
+  );
 
   // Timeline visualization
   const renderTimeline = () => {
@@ -350,21 +345,25 @@ const App: React.FC = () => {
     return (
       <div style={{ position: "relative", width: `${timelineWidth}px`, margin: "0 auto" }}>
         {/* Timeline background */}
-        <svg width={timelineWidth} height={tracks.length * trackHeight} style={{ background: "#1a1a1a", borderRadius: "8px" }}>
+        <svg
+          width={timelineWidth}
+          height={tracks.length * trackHeight}
+          style={{ background: "#1a1a1a", borderRadius: "8px" }}
+        >
           {/* SVG Filter Definitions */}
           <defs>
             <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+              <feGaussianBlur stdDeviation="4" result="coloredBlur" />
               <feMerge>
-                <feMergeNode in="coloredBlur"/>
-                <feMergeNode in="SourceGraphic"/>
+                <feMergeNode in="coloredBlur" />
+                <feMergeNode in="SourceGraphic" />
               </feMerge>
             </filter>
           </defs>
 
           {/* Grid lines for beats */}
           {Array.from({ length: TOTAL_BEATS + 1 }, (_, i) => {
-            const x = (i * Quarter / totalDuration) * timelineWidth;
+            const x = ((i * Quarter) / totalDuration) * timelineWidth;
             const isMeasure = i % BEATS_PER_BAR === 0;
             return (
               <line
@@ -401,14 +400,7 @@ const App: React.FC = () => {
             return (
               <g key={`label-${i}`}>
                 {/* Background rectangle for label */}
-                <rect
-                  x={0}
-                  y={i * trackHeight}
-                  width={150}
-                  height={20}
-                  fill="#000"
-                  opacity={0.7}
-                />
+                <rect x={0} y={i * trackHeight} width={150} height={20} fill="#000" opacity={0.7} />
                 {/* Track label text */}
                 <text
                   x={8}
@@ -433,7 +425,8 @@ const App: React.FC = () => {
             const height = trackHeight - 30; // More padding for label space
 
             // Check if playhead is inside this clip AND we're playing
-            const isActive = isPlaying && currentPosition >= clip.position && currentPosition < clip.position + clip.duration;
+            const isActive =
+              isPlaying && currentPosition >= clip.position && currentPosition < clip.position + clip.duration;
 
             return (
               <g key={`clip-${i}`}>
@@ -483,8 +476,8 @@ const App: React.FC = () => {
         {/* Bar labels with alternating colored backgrounds */}
         <div style={{ position: "relative", marginTop: "8px", height: "32px", width: `${timelineWidth}px` }}>
           {Array.from({ length: BARS }, (_, barIndex) => {
-            const x = (barIndex * BEATS_PER_BAR * Quarter / totalDuration) * timelineWidth;
-            const width = (BEATS_PER_BAR * Quarter / totalDuration) * timelineWidth;
+            const x = ((barIndex * BEATS_PER_BAR * Quarter) / totalDuration) * timelineWidth;
+            const width = ((BEATS_PER_BAR * Quarter) / totalDuration) * timelineWidth;
             const isOddBar = barIndex % 2 === 0; // Bar 1 and 3 (index 0, 2)
 
             return (
@@ -520,7 +513,9 @@ const App: React.FC = () => {
         <Container size="2" px="4" py="8">
           <Flex direction="column" align="center" gap="4">
             <Heading size="8">Drum Scheduling Demo</Heading>
-            <Text size="3" color="gray">{status}</Text>
+            <Text size="3" color="gray">
+              {status}
+            </Text>
           </Flex>
         </Container>
       </Theme>
@@ -536,28 +531,46 @@ const App: React.FC = () => {
 
           <Flex direction="column" align="center" gap="2">
             <Heading size="8">Drum Scheduling Demo</Heading>
-            <Text size="3" color="gray">90s-style drum pattern with visual timeline</Text>
+            <Text size="3" color="gray">
+              90s-style drum pattern with visual timeline
+            </Text>
           </Flex>
 
           <Card style={{ width: "100%" }}>
             <Flex direction="column" gap="4">
               <Flex justify="between" align="center">
-                <Heading size="5" color="blue">Pattern Info</Heading>
-                <Badge color="green" size="2">{bpm} BPM</Badge>
+                <Heading size="5" color="blue">
+                  Pattern Info
+                </Heading>
+                <Badge color="green" size="2">
+                  {bpm} BPM
+                </Badge>
               </Flex>
               <Separator size="4" />
               <Flex direction="column" gap="2">
                 <Flex justify="between">
-                  <Text size="2" color="gray">Total Clips:</Text>
-                  <Text size="2" weight="bold">{scheduledClips.length}</Text>
+                  <Text size="2" color="gray">
+                    Total Clips:
+                  </Text>
+                  <Text size="2" weight="bold">
+                    {scheduledClips.length}
+                  </Text>
                 </Flex>
                 <Flex justify="between">
-                  <Text size="2" color="gray">Duration:</Text>
-                  <Text size="2" weight="bold">{BARS} bars ({TOTAL_BEATS} beats)</Text>
+                  <Text size="2" color="gray">
+                    Duration:
+                  </Text>
+                  <Text size="2" weight="bold">
+                    {BARS} bars ({TOTAL_BEATS} beats)
+                  </Text>
                 </Flex>
                 <Flex justify="between">
-                  <Text size="2" color="gray">Pattern:</Text>
-                  <Text size="2" weight="bold">Classic boom-bap with hi-hats</Text>
+                  <Text size="2" color="gray">
+                    Pattern:
+                  </Text>
+                  <Text size="2" weight="bold">
+                    Classic boom-bap with hi-hats
+                  </Text>
                 </Flex>
               </Flex>
             </Flex>
@@ -565,9 +578,12 @@ const App: React.FC = () => {
 
           <Card style={{ width: "100%" }}>
             <Flex direction="column" gap="4">
-              <Heading size="5" color="blue">Timeline</Heading>
+              <Heading size="5" color="blue">
+                Timeline
+              </Heading>
               <Text size="2" color="gray">
-                Each colored block represents a scheduled drum hit. Watch the white playhead move across the timeline as the pattern plays.
+                Each colored block represents a scheduled drum hit. Watch the white playhead move across the timeline as
+                the pattern plays.
               </Text>
               {renderTimeline()}
             </Flex>
@@ -575,20 +591,26 @@ const App: React.FC = () => {
 
           <Card style={{ width: "100%" }}>
             <Flex direction="column" gap="4">
-              <Heading size="5" color="blue">Transport Controls</Heading>
+              <Heading size="5" color="blue">
+                Transport Controls
+              </Heading>
 
               <Flex direction="column" gap="3">
                 <Flex direction="column" gap="2">
                   <Flex justify="between" align="center">
-                    <Text size="2" weight="bold">Tempo</Text>
-                    <Text size="2" color="gray">{bpm} BPM</Text>
+                    <Text size="2" weight="bold">
+                      Tempo
+                    </Text>
+                    <Text size="2" color="gray">
+                      {bpm} BPM
+                    </Text>
                   </Flex>
                   <input
                     type="range"
                     min="60"
                     max="180"
                     value={bpm}
-                    onChange={(e) => handleBpmChange(Number(e.target.value))}
+                    onChange={e => handleBpmChange(Number(e.target.value))}
                     disabled={!samplesLoaded}
                     style={{
                       width: "100%",
@@ -603,35 +625,29 @@ const App: React.FC = () => {
                     </Text>
                   )}
                   <Flex justify="between">
-                    <Text size="1" color="gray">60 BPM</Text>
-                    <Text size="1" color="gray">180 BPM</Text>
+                    <Text size="1" color="gray">
+                      60 BPM
+                    </Text>
+                    <Text size="1" color="gray">
+                      180 BPM
+                    </Text>
                   </Flex>
                 </Flex>
 
                 <Separator size="4" />
 
                 <Flex gap="3" wrap="wrap" justify="center">
-                  <Button
-                    onClick={handlePlay}
-                    disabled={isPlaying}
-                    color="green"
-                    size="3"
-                    variant="solid"
-                  >
+                  <Button onClick={handlePlay} disabled={isPlaying} color="green" size="3" variant="solid">
                     Play Pattern
                   </Button>
-                  <Button
-                    onClick={handleStop}
-                    disabled={!isPlaying}
-                    color="red"
-                    size="3"
-                    variant="solid"
-                  >
+                  <Button onClick={handleStop} disabled={!isPlaying} color="red" size="3" variant="solid">
                     Stop
                   </Button>
                 </Flex>
               </Flex>
-              <Text size="2" align="center" color="gray">{status}</Text>
+              <Text size="2" align="center" color="gray">
+                {status}
+              </Text>
             </Flex>
           </Card>
 
@@ -646,8 +662,8 @@ const App: React.FC = () => {
                   style={{ color: "var(--accent-9)", textDecoration: "none" }}
                 >
                   90s MPC Sample Pack
-                </a>
-                {" "}by SoundPacks.com
+                </a>{" "}
+                by SoundPacks.com
               </Text>
             </Flex>
           </Card>

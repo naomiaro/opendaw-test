@@ -91,8 +91,8 @@ const App: React.FC = () => {
         // For final Peaks: render full buffer (numFrames)
         // This gives smooth rendering during recording since dataIndex updates frequently
         const unitsToRender = isPeaksWriter
-          ? peaks.dataIndex[0] * peaks.unitsEachPeak()  // Smooth: updates at 60fps
-          : peaks.numFrames;                              // Final: render all
+          ? peaks.dataIndex[0] * peaks.unitsEachPeak() // Smooth: updates at 60fps
+          : peaks.numFrames; // Final: render all
 
         PeaksPainter.renderBlocks(context, peaks, channel, {
           x0: 0,
@@ -314,7 +314,7 @@ const App: React.FC = () => {
     if (!project || !audioContext) return;
 
     try {
-      console.log('[Recording] Starting recording...');
+      console.log("[Recording] Starting recording...");
 
       // Resume AudioContext if needed
       if (audioContext.state === "suspended") {
@@ -374,7 +374,7 @@ const App: React.FC = () => {
       project.startRecording(useCountIn);
 
       setRecordStatus(useCountIn ? "Count-in..." : "Recording...");
-      console.log('[Recording] Recording started');
+      console.log("[Recording] Recording started");
     } catch (error) {
       console.error("Failed to start recording:", error);
       setRecordStatus(`Error: ${error}`);
@@ -384,7 +384,7 @@ const App: React.FC = () => {
   const handleStopRecording = useCallback(() => {
     if (!project) return;
 
-    console.log('[Recording] Stopping recording...');
+    console.log("[Recording] Stopping recording...");
 
     project.engine.stopRecording();
     project.engine.stop(true);
@@ -403,7 +403,7 @@ const App: React.FC = () => {
 
           if (label === "Recording") {
             const duration = regionBox.duration.getValue();
-            console.log('[Recording] Setting timeline loop end to:', duration);
+            console.log("[Recording] Setting timeline loop end to:", duration);
 
             // Set the timeline loop end to match the recording duration
             project.editing.modify(() => {
@@ -418,7 +418,7 @@ const App: React.FC = () => {
       setPlaybackStatus("Recording ready to play");
     }, 500);
 
-    console.log('[Recording] Recording stopped');
+    console.log("[Recording] Recording stopped");
   }, [project]);
 
   const handlePlayRecording = useCallback(async () => {
@@ -455,7 +455,9 @@ const App: React.FC = () => {
         <Container size="2" px="4" py="8">
           <Flex direction="column" align="center" gap="4">
             <Heading size="8">Recording API Demo</Heading>
-            <Text size="3" color="gray">{status}</Text>
+            <Text size="3" color="gray">
+              {status}
+            </Text>
           </Flex>
         </Container>
       </Theme>
@@ -471,13 +473,16 @@ const App: React.FC = () => {
 
           <Flex direction="column" align="center" gap="2">
             <Heading size="8">Recording API Demo</Heading>
-            <Text size="3" color="gray">Simplified recording using Recording.start() API</Text>
+            <Text size="3" color="gray">
+              Simplified recording using Recording.start() API
+            </Text>
           </Flex>
 
           <Callout.Root color="blue">
             <Callout.Text>
-              💡 This demo uses OpenDAW's high-level <strong>Recording.start()</strong> API which automatically:
-              creates a Tape instrument, arms the track, manages the microphone stream, creates audio regions, and handles peaks.
+              💡 This demo uses OpenDAW's high-level <strong>Recording.start()</strong> API which automatically: creates
+              a Tape instrument, arms the track, manages the microphone stream, creates audio regions, and handles
+              peaks.
             </Callout.Text>
           </Callout.Root>
 
@@ -487,7 +492,9 @@ const App: React.FC = () => {
 
               <Flex gap="4" wrap="wrap">
                 <Flex align="center" gap="2">
-                  <Text size="2" weight="medium">BPM:</Text>
+                  <Text size="2" weight="medium">
+                    BPM:
+                  </Text>
                   <TextField.Root
                     type="number"
                     value={bpm.toString()}
@@ -498,7 +505,9 @@ const App: React.FC = () => {
                 </Flex>
 
                 <Flex align="center" gap="2">
-                  <Text size="2" weight="medium">Time Signature:</Text>
+                  <Text size="2" weight="medium">
+                    Time Signature:
+                  </Text>
                   <Flex align="center" gap="1">
                     <TextField.Root
                       type="number"
@@ -507,7 +516,9 @@ const App: React.FC = () => {
                       disabled={isRecording}
                       style={{ width: 60 }}
                     />
-                    <Text size="3" color="gray" weight="bold">/</Text>
+                    <Text size="3" color="gray" weight="bold">
+                      /
+                    </Text>
                     <Select.Root
                       value={timeSignatureDenominator.toString()}
                       onValueChange={value => setTimeSignatureDenominator(Number(value))}
@@ -525,7 +536,9 @@ const App: React.FC = () => {
                 </Flex>
 
                 <Flex align="center" gap="2">
-                  <Text size="2" weight="medium">Count in bars:</Text>
+                  <Text size="2" weight="medium">
+                    Count in bars:
+                  </Text>
                   <Select.Root
                     value={countInBars.toString()}
                     onValueChange={value => setCountInBars(Number(value))}
@@ -550,7 +563,8 @@ const App: React.FC = () => {
 
               <Callout.Root color="orange">
                 <Callout.Text>
-                  🎧 <strong>Use headphones when recording with metronome enabled!</strong> Without headphones, your microphone will pick up the metronome sound from your speakers, causing echo/doubling during playback.
+                  🎧 <strong>Use headphones when recording with metronome enabled!</strong> Without headphones, your
+                  microphone will pick up the metronome sound from your speakers, causing echo/doubling during playback.
                 </Callout.Text>
               </Callout.Root>
 
@@ -563,7 +577,10 @@ const App: React.FC = () => {
                 </Flex>
                 <Flex asChild align="center" gap="2">
                   <Text as="label" size="2">
-                    <Checkbox checked={metronomeEnabled} onCheckedChange={checked => setMetronomeEnabled(checked === true)} />
+                    <Checkbox
+                      checked={metronomeEnabled}
+                      onCheckedChange={checked => setMetronomeEnabled(checked === true)}
+                    />
                     Enable metronome
                   </Text>
                 </Flex>
@@ -580,28 +597,23 @@ const App: React.FC = () => {
               <Separator size="4" />
 
               <Flex gap="3" wrap="wrap" justify="center">
-                <Button
-                  onClick={handleStartRecording}
-                  disabled={isRecording}
-                  color="red"
-                  size="3"
-                  variant="solid"
-                >
+                <Button onClick={handleStartRecording} disabled={isRecording} color="red" size="3" variant="solid">
                   ⏺ Start Recording
                 </Button>
-                <Button
-                  onClick={handleStopRecording}
-                  disabled={!isRecording}
-                  color="orange"
-                  size="3"
-                  variant="solid"
-                >
+                <Button onClick={handleStopRecording} disabled={!isRecording} color="orange" size="3" variant="solid">
                   ⏹ Stop Recording
                 </Button>
               </Flex>
-              <Text size="2" align="center" color="gray">{recordStatus}</Text>
+              <Text size="2" align="center" color="gray">
+                {recordStatus}
+              </Text>
 
-              <Flex justify="center" align="center" mt="4" style={{ background: "var(--gray-3)", borderRadius: "var(--radius-3)", padding: "var(--space-3)" }}>
+              <Flex
+                justify="center"
+                align="center"
+                mt="4"
+                style={{ background: "var(--gray-3)", borderRadius: "var(--radius-3)", padding: "var(--space-3)" }}
+              >
                 <canvas ref={canvasRef} style={{ width: "800px", height: "200px", display: "block" }} />
               </Flex>
             </Flex>
@@ -631,7 +643,9 @@ const App: React.FC = () => {
                   ⏹ Stop
                 </Button>
               </Flex>
-              <Text size="2" align="center" color="gray">{playbackStatus}</Text>
+              <Text size="2" align="center" color="gray">
+                {playbackStatus}
+              </Text>
             </Flex>
           </Card>
 

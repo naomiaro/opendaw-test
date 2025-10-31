@@ -76,20 +76,26 @@ export const TrackRow: React.FC<TrackRowProps> = ({
   }, [track]);
 
   // Handle volume change
-  const handleVolumeChange = useCallback((values: number[]) => {
-    const newVolume = values[0];
-    project.editing.modify(() => {
-      track.audioUnitBox.volume.setValue(newVolume);
-    });
-  }, [project, track]);
+  const handleVolumeChange = useCallback(
+    (values: number[]) => {
+      const newVolume = values[0];
+      project.editing.modify(() => {
+        track.audioUnitBox.volume.setValue(newVolume);
+      });
+    },
+    [project, track]
+  );
 
   // Handle pan change
-  const handlePanChange = useCallback((values: number[]) => {
-    const newPan = values[0];
-    project.editing.modify(() => {
-      track.audioUnitBox.panning.setValue(newPan);
-    });
-  }, [project, track]);
+  const handlePanChange = useCallback(
+    (values: number[]) => {
+      const newPan = values[0];
+      project.editing.modify(() => {
+        track.audioUnitBox.panning.setValue(newPan);
+      });
+    },
+    [project, track]
+  );
 
   // Handle mute toggle
   const handleMuteToggle = useCallback(() => {
@@ -108,34 +114,40 @@ export const TrackRow: React.FC<TrackRowProps> = ({
   }, [project, track, soloed]);
 
   // Handle waveform click to seek
-  const handleWaveformClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (!audioBuffer || !waveformContainerRef.current) return;
+  const handleWaveformClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!audioBuffer || !waveformContainerRef.current) return;
 
-    const rect = waveformContainerRef.current.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const percent = clickX / rect.width;
+      const rect = waveformContainerRef.current.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const percent = clickX / rect.width;
 
-    // Calculate position in seconds using maxDuration (same as playhead), then convert to PPQN
-    const timeInSeconds = percent * maxDuration;
-    const positionInPPQN = PPQN.secondsToPulses(timeInSeconds, bpm);
+      // Calculate position in seconds using maxDuration (same as playhead), then convert to PPQN
+      const timeInSeconds = percent * maxDuration;
+      const positionInPPQN = PPQN.secondsToPulses(timeInSeconds, bpm);
 
-    // Set the playback position in engine and update state
-    project.engine.setPosition(positionInPPQN);
-    setCurrentPosition(positionInPPQN);
+      // Set the playback position in engine and update state
+      project.engine.setPosition(positionInPPQN);
+      setCurrentPosition(positionInPPQN);
 
-    // If not playing, save position so play will start from here
-    if (!isPlaying) {
-      pausedPositionRef.current = positionInPPQN;
-    }
+      // If not playing, save position so play will start from here
+      if (!isPlaying) {
+        pausedPositionRef.current = positionInPPQN;
+      }
 
-    console.debug(`Seek to ${timeInSeconds.toFixed(2)}s (${positionInPPQN} PPQN)`);
-  }, [audioBuffer, bpm, project, setCurrentPosition, isPlaying, pausedPositionRef, maxDuration]);
+      console.debug(`Seek to ${timeInSeconds.toFixed(2)}s (${positionInPPQN} PPQN)`);
+    },
+    [audioBuffer, bpm, project, setCurrentPosition, isPlaying, pausedPositionRef, maxDuration]
+  );
 
   return (
-    <Flex gap="0" style={{
-      borderBottom: "1px solid var(--gray-6)",
-      backgroundColor: "var(--gray-2)"
-    }}>
+    <Flex
+      gap="0"
+      style={{
+        borderBottom: "1px solid var(--gray-6)",
+        backgroundColor: "var(--gray-2)"
+      }}
+    >
       {/* Mixer Controls - Left Side (Audacity-style) */}
       <Flex
         direction="column"
@@ -201,21 +213,16 @@ export const TrackRow: React.FC<TrackRowProps> = ({
 
         {/* Pan label */}
         <Flex justify="between" align="center">
-          <Text size="1" color="gray">Pan</Text>
           <Text size="1" color="gray">
-            {pan === 0 ? 'C' : pan < 0 ? `L${Math.abs(pan * 100).toFixed(0)}` : `R${(pan * 100).toFixed(0)}`}
+            Pan
+          </Text>
+          <Text size="1" color="gray">
+            {pan === 0 ? "C" : pan < 0 ? `L${Math.abs(pan * 100).toFixed(0)}` : `R${(pan * 100).toFixed(0)}`}
           </Text>
         </Flex>
 
         {/* Pan slider - horizontal */}
-        <Slider
-          value={[pan]}
-          onValueChange={handlePanChange}
-          min={-1}
-          max={1}
-          step={0.01}
-          style={{ width: "100%" }}
-        />
+        <Slider value={[pan]} onValueChange={handlePanChange} min={-1} max={1} step={0.01} style={{ width: "100%" }} />
       </Flex>
 
       {/* Waveform - Right Side */}
@@ -231,10 +238,7 @@ export const TrackRow: React.FC<TrackRowProps> = ({
           cursor: "pointer"
         }}
       >
-        <canvas
-          ref={canvasRef}
-          style={{ width: "100%", height: "100%", display: "block" }}
-        />
+        <canvas ref={canvasRef} style={{ width: "100%", height: "100%", display: "block" }} />
       </div>
     </Flex>
   );

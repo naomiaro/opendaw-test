@@ -37,8 +37,9 @@ const App: React.FC = () => {
                     <Heading size="5">Effects & Mixer</Heading>
                   </Flex>
                   <Text size="2" color="gray">
-                    Comprehensive multi-track mixer with professional audio effects, waveforms, volume faders, pan controls, mute/solo,
-                    and live effect parameters. Includes Reverb, Compressor, Delay, Lo-Fi Crusher, and Stereo Width effects.
+                    Comprehensive multi-track mixer with professional audio effects, waveforms, volume faders, pan
+                    controls, mute/solo, and live effect parameters. Includes Reverb, Compressor, Delay, Lo-Fi Crusher,
+                    and Stereo Width effects.
                   </Text>
                 </Flex>
               </Link>
@@ -67,15 +68,18 @@ const App: React.FC = () => {
                     <Heading size="5">Drum Pattern Scheduling</Heading>
                   </Flex>
                   <Text size="2" color="gray">
-                    Schedule drum samples across a timeline to create rhythmic patterns. Features a visual timeline showing
-                    clips and a playhead that tracks playback position.
+                    Schedule drum samples across a timeline to create rhythmic patterns. Features a visual timeline
+                    showing clips and a playhead that tracks playback position.
                   </Text>
                 </Flex>
               </Link>
             </Card>
 
             <Card asChild>
-              <Link href="/drum-scheduling-autofit-demo.html" style={{ textDecoration: "none", padding: "var(--space-5)" }}>
+              <Link
+                href="/drum-scheduling-autofit-demo.html"
+                style={{ textDecoration: "none", padding: "var(--space-5)" }}
+              >
                 <Flex direction="column" gap="3">
                   <Flex direction="column" align="center" gap="2">
                     <Text size="8">🥁</Text>
