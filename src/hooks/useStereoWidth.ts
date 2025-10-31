@@ -14,6 +14,7 @@ export const useStereoWidth = (
   label: string
 ) => {
   const [isActive, setIsActive] = useState(false);
+  const [isBypassed, setIsBypassed] = useState(false);
   const [width, setWidth] = useState(defaultParams.width);
   const [pan, setPan] = useState(defaultParams.pan);
   const effectRef = useRef<any>(null);
@@ -35,6 +36,7 @@ export const useStereoWidth = (
 
       (stereoTool as any).stereo.catchupAndSubscribe((obs: any) => setWidth(obs.getValue()));
       (stereoTool as any).panning.catchupAndSubscribe((obs: any) => setPan(obs.getValue()));
+      stereoTool.enabled.catchupAndSubscribe((obs: any) => setIsBypassed(!obs.getValue()));
 
       console.log(`Added stereo width: ${label}`);
     });
@@ -101,11 +103,22 @@ export const useStereoWidth = (
     });
   }, [project]);
 
+  const handleBypass = useCallback(() => {
+    if (!project || !effectRef.current) return;
+
+    project.editing.modify(() => {
+      const stereoTool = effectRef.current;
+      stereoTool.enabled.setValue(!stereoTool.enabled.getValue());
+    });
+  }, [project]);
+
   return {
     isActive,
+    isBypassed,
     parameters,
     handleToggle: isActive ? handleRemove : handleAdd,
     handleParameterChange,
+    handleBypass,
     loadPreset
   };
 };

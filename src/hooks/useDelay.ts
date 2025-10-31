@@ -16,6 +16,7 @@ export const useDelay = (
   label: string
 ) => {
   const [isActive, setIsActive] = useState(false);
+  const [isBypassed, setIsBypassed] = useState(false);
   const [wet, setWet] = useState(defaultParams.wet);
   const [feedback, setFeedback] = useState(defaultParams.feedback);
   const [delay, setDelay] = useState(defaultParams.delay);
@@ -43,6 +44,7 @@ export const useDelay = (
       (delayEffect as any).feedback.catchupAndSubscribe((obs: any) => setFeedback(obs.getValue()));
       (delayEffect as any).delay.catchupAndSubscribe((obs: any) => setDelay(obs.getValue()));
       (delayEffect as any).filter.catchupAndSubscribe((obs: any) => setFilter(obs.getValue()));
+      delayEffect.enabled.catchupAndSubscribe((obs: any) => setIsBypassed(!obs.getValue()));
 
       console.log(`Added delay: ${label}`);
     });
@@ -138,11 +140,22 @@ export const useDelay = (
     });
   }, [project]);
 
+  const handleBypass = useCallback(() => {
+    if (!project || !effectRef.current) return;
+
+    project.editing.modify(() => {
+      const delayEffect = effectRef.current;
+      delayEffect.enabled.setValue(!delayEffect.enabled.getValue());
+    });
+  }, [project]);
+
   return {
     isActive,
+    isBypassed,
     parameters,
     handleToggle: isActive ? handleRemove : handleAdd,
     handleParameterChange,
+    handleBypass,
     loadPreset
   };
 };

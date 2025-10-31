@@ -16,6 +16,7 @@ export const useCrusher = (
   label: string
 ) => {
   const [isActive, setIsActive] = useState(false);
+  const [isBypassed, setIsBypassed] = useState(false);
   const [bits, setBits] = useState(defaultParams.bits);
   const [crush, setCrush] = useState(defaultParams.crush);
   const [boost, setBoost] = useState(defaultParams.boost);
@@ -43,6 +44,7 @@ export const useCrusher = (
       (crusher as any).crush.catchupAndSubscribe((obs: any) => setCrush(obs.getValue()));
       (crusher as any).boost.catchupAndSubscribe((obs: any) => setBoost(obs.getValue()));
       (crusher as any).mix.catchupAndSubscribe((obs: any) => setMix(obs.getValue()));
+      crusher.enabled.catchupAndSubscribe((obs: any) => setIsBypassed(!obs.getValue()));
 
       console.log(`Added crusher: ${label}`);
     });
@@ -135,11 +137,22 @@ export const useCrusher = (
     });
   }, [project]);
 
+  const handleBypass = useCallback(() => {
+    if (!project || !effectRef.current) return;
+
+    project.editing.modify(() => {
+      const crusher = effectRef.current;
+      crusher.enabled.setValue(!crusher.enabled.getValue());
+    });
+  }, [project]);
+
   return {
     isActive,
+    isBypassed,
     parameters,
     handleToggle: isActive ? handleRemove : handleAdd,
     handleParameterChange,
+    handleBypass,
     loadPreset
   };
 };

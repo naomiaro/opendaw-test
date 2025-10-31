@@ -18,6 +18,7 @@ export const useCompressor = (
   insertAtIndex?: number
 ) => {
   const [isActive, setIsActive] = useState(false);
+  const [isBypassed, setIsBypassed] = useState(false);
   const [threshold, setThreshold] = useState(defaultParams.threshold);
   const [ratio, setRatio] = useState(defaultParams.ratio);
   const [attack, setAttack] = useState(defaultParams.attack);
@@ -50,6 +51,7 @@ export const useCompressor = (
       (compressor as any).attack.catchupAndSubscribe((obs: any) => setAttack(obs.getValue()));
       (compressor as any).release.catchupAndSubscribe((obs: any) => setRelease(obs.getValue()));
       (compressor as any).knee.catchupAndSubscribe((obs: any) => setKnee(obs.getValue()));
+      compressor.enabled.catchupAndSubscribe((obs: any) => setIsBypassed(!obs.getValue()));
 
       console.log(`Added compressor: ${label}`);
     });
@@ -155,11 +157,22 @@ export const useCompressor = (
     });
   }, [project]);
 
+  const handleBypass = useCallback(() => {
+    if (!project || !effectRef.current) return;
+
+    project.editing.modify(() => {
+      const compressor = effectRef.current;
+      compressor.enabled.setValue(!compressor.enabled.getValue());
+    });
+  }, [project]);
+
   return {
     isActive,
+    isBypassed,
     parameters,
     handleToggle: isActive ? handleRemove : handleAdd,
     handleParameterChange,
+    handleBypass,
     loadPreset
   };
 };

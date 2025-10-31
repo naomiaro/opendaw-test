@@ -57,6 +57,8 @@ interface EffectPanelProps {
   description: string;
   isActive: boolean;
   onToggle: () => void;
+  isBypassed?: boolean;
+  onBypass?: () => void;
   parameters?: EffectParameter[];
   onParameterChange?: (paramName: string, value: number) => void;
   project?: Project;
@@ -70,6 +72,8 @@ export const EffectPanel: React.FC<EffectPanelProps> = ({
   description,
   isActive,
   onToggle,
+  isBypassed = false,
+  onBypass,
   parameters = [],
   onParameterChange,
   badgeText,
@@ -86,12 +90,26 @@ export const EffectPanel: React.FC<EffectPanelProps> = ({
               {description}
             </Text>
           </Flex>
-          <Button
-            color={isActive ? "red" : "purple"}
-            onClick={onToggle}
-          >
-            {isActive ? "− Remove" : "+ Add"}
-          </Button>
+          {!isActive ? (
+            <Button color="purple" onClick={onToggle}>
+              + Add
+            </Button>
+          ) : (
+            <Flex gap="2">
+              {onBypass && (
+                <Button
+                  color={isBypassed ? "gray" : "green"}
+                  variant="soft"
+                  onClick={onBypass}
+                >
+                  {isBypassed ? "Bypassed" : "Active"}
+                </Button>
+              )}
+              <Button color="red" onClick={onToggle}>
+                × Remove
+              </Button>
+            </Flex>
+          )}
         </Flex>
 
         {isActive && (

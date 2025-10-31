@@ -66,7 +66,9 @@ const App: React.FC = () => {
   const vocalsCompressor = useCompressor(project, vocalsAudioBox, { threshold: -24, ratio: 3, attack: 5, release: 100, knee: 6 }, "Vocals Comp", 0);
   const guitarLeadDelay = useDelay(project, guitarLeadAudioBox, { wet: -12, feedback: 0.4, delay: 6, filter: 0.3 }, "Guitar Lead Delay");
   const guitarCrusher = useCrusher(project, guitarAudioBox, { bits: 4, crush: 0.95, boost: 0.6, mix: 0.8 }, "Guitar Lo-Fi");
+  const drumsCompressor = useCompressor(project, drumsAudioBox, { threshold: -18, ratio: 4, attack: 1, release: 50, knee: 3 }, "Drums Comp");
   const drumsCrusher = useCrusher(project, drumsAudioBox, { bits: 6, crush: 0.9, boost: 0.5, mix: 0.7 }, "Drums Lo-Fi");
+  const bassCompressor = useCompressor(project, bassAudioBox, { threshold: -20, ratio: 4, attack: 10, release: 80, knee: 4 }, "Bass Comp");
   const bassCrusher = useCrusher(project, bassAudioBox, { bits: 6, crush: 0.9, boost: 0.5, mix: 0.7 }, "Bass Lo-Fi");
   const masterCompressor = useCompressor(project, masterAudioBox, { threshold: -12, ratio: 2, attack: 5, release: 100, knee: 6 }, "Master Glue");
   const masterStereoWidth = useStereoWidth(project, masterAudioBox, { width: 0.8, pan: 0.0 }, "Master Width");
@@ -460,11 +462,11 @@ const App: React.FC = () => {
           {/* Info callout */}
           <Callout.Root color="blue">
             <Callout.Text>
-              💡 This demo shows OpenDAW's mixer controls and professional audio effects with all 7 tracks from Dark Ride's 'Deny Control'.
+              💡 This demo shows OpenDAW's mixer controls and professional audio effects with all 7 unmastered tracks from Dark Ride's 'Deny Control'.
               Each track has independent volume, pan, mute, and solo controls. Add studio-quality effects
-              to individual tracks (Compressor + Reverb on Vocals demonstrates effect chain ordering, Delay on Guitar Lead, Lo-Fi Crusher on Guitar/Drums/Bass) or the master output (Compressor for mix glue, Stereo Width for spaciousness).
+              to individual tracks (Compressors to tighten Drums/Bass, Reverb + Compressor on Vocals, Delay on Guitar Lead, Lo-Fi Crusher for creative effects) or the master output (Compressor for mix glue, Stereo Width for spaciousness).
               <br /><br />
-              ✨ <strong>New:</strong> Each effect now includes presets! Try loading presets like "Small Room", "Vocal Smooth", "Slap Back Delay", "8-bit Game", and more to hear how different parameter combinations sound.
+              ✨ <strong>New:</strong> Each effect now includes presets! Try loading presets like "Drum Punch", "Bass Control", "Vocal Smooth", "Slap Back Delay", and more to hear how different parameter combinations sound.
             </Callout.Text>
           </Callout.Root>
 
@@ -589,7 +591,7 @@ const App: React.FC = () => {
                 <Callout.Text>
                   ✨ Add professional audio effects to individual tracks or the master output.
                   These are the same effects used in professional DAWs! Each effect includes preset options - try loading presets to quickly explore different sounds, then fine-tune the parameters to your liking.
-                  Try adding both Compressor and Reverb to Vocals to see effect chain ordering (Compressor at index 0 → Reverb at index 1).
+                  Try adding Compressors to Drums and Bass to tighten up these unmastered stems, or add Reverb to Vocals with Compressor for a polished vocal chain.
                 </Callout.Text>
               </Callout.Root>
 
@@ -602,6 +604,8 @@ const App: React.FC = () => {
                   description="Adds spacious ambience to vocal track"
                   isActive={vocalsReverb.isActive}
                   onToggle={vocalsReverb.handleToggle}
+                  isBypassed={vocalsReverb.isBypassed}
+                  onBypass={vocalsReverb.handleBypass}
                   parameters={vocalsReverb.parameters}
                   onParameterChange={vocalsReverb.handleParameterChange}
                   presets={REVERB_PRESETS}
@@ -613,6 +617,8 @@ const App: React.FC = () => {
                   description="Smooths vocal dynamics (adds at index 0, before reverb)"
                   isActive={vocalsCompressor.isActive}
                   onToggle={vocalsCompressor.handleToggle}
+                  isBypassed={vocalsCompressor.isBypassed}
+                  onBypass={vocalsCompressor.handleBypass}
                   parameters={vocalsCompressor.parameters}
                   onParameterChange={vocalsCompressor.handleParameterChange}
                   presets={COMPRESSOR_PRESETS}
@@ -624,6 +630,8 @@ const App: React.FC = () => {
                   description="Adds rhythmic echo effect to guitar lead track"
                   isActive={guitarLeadDelay.isActive}
                   onToggle={guitarLeadDelay.handleToggle}
+                  isBypassed={guitarLeadDelay.isBypassed}
+                  onBypass={guitarLeadDelay.handleBypass}
                   parameters={guitarLeadDelay.parameters}
                   onParameterChange={guitarLeadDelay.handleParameterChange}
                   presets={DELAY_PRESETS}
@@ -635,6 +643,8 @@ const App: React.FC = () => {
                   description="Heavy bit-crushing for obvious lo-fi distortion effect"
                   isActive={guitarCrusher.isActive}
                   onToggle={guitarCrusher.handleToggle}
+                  isBypassed={guitarCrusher.isBypassed}
+                  onBypass={guitarCrusher.handleBypass}
                   parameters={guitarCrusher.parameters}
                   onParameterChange={guitarCrusher.handleParameterChange}
                   presets={CRUSHER_PRESETS}
@@ -642,10 +652,25 @@ const App: React.FC = () => {
                 />
 
                 <EffectPanel
+                  title="Drums - Compressor"
+                  description="Tighten drum transients and control dynamics"
+                  isActive={drumsCompressor.isActive}
+                  onToggle={drumsCompressor.handleToggle}
+                  isBypassed={drumsCompressor.isBypassed}
+                  onBypass={drumsCompressor.handleBypass}
+                  parameters={drumsCompressor.parameters}
+                  onParameterChange={drumsCompressor.handleParameterChange}
+                  presets={COMPRESSOR_PRESETS}
+                  onPresetChange={(preset) => drumsCompressor.loadPreset(preset.params)}
+                />
+
+                <EffectPanel
                   title="Drums - Lo-Fi Crusher"
                   description="Extreme bit-crushing for dramatic lo-fi distortion on drums"
                   isActive={drumsCrusher.isActive}
                   onToggle={drumsCrusher.handleToggle}
+                  isBypassed={drumsCrusher.isBypassed}
+                  onBypass={drumsCrusher.handleBypass}
                   parameters={drumsCrusher.parameters}
                   onParameterChange={drumsCrusher.handleParameterChange}
                   presets={CRUSHER_PRESETS}
@@ -653,10 +678,25 @@ const App: React.FC = () => {
                 />
 
                 <EffectPanel
+                  title="Bass - Compressor"
+                  description="Control bass dynamics for a tighter low end"
+                  isActive={bassCompressor.isActive}
+                  onToggle={bassCompressor.handleToggle}
+                  isBypassed={bassCompressor.isBypassed}
+                  onBypass={bassCompressor.handleBypass}
+                  parameters={bassCompressor.parameters}
+                  onParameterChange={bassCompressor.handleParameterChange}
+                  presets={COMPRESSOR_PRESETS}
+                  onPresetChange={(preset) => bassCompressor.loadPreset(preset.params)}
+                />
+
+                <EffectPanel
                   title="Bass - Lo-Fi Crusher"
                   description="Bit-crushing for lo-fi distortion on bass"
                   isActive={bassCrusher.isActive}
                   onToggle={bassCrusher.handleToggle}
+                  isBypassed={bassCrusher.isBypassed}
+                  onBypass={bassCrusher.handleBypass}
                   parameters={bassCrusher.parameters}
                   onParameterChange={bassCrusher.handleParameterChange}
                   presets={CRUSHER_PRESETS}
@@ -673,6 +713,8 @@ const App: React.FC = () => {
                   description='"Glue" compressor for cohesive mix on all tracks'
                   isActive={masterCompressor.isActive}
                   onToggle={masterCompressor.handleToggle}
+                  isBypassed={masterCompressor.isBypassed}
+                  onBypass={masterCompressor.handleBypass}
                   parameters={masterCompressor.parameters}
                   onParameterChange={masterCompressor.handleParameterChange}
                   presets={COMPRESSOR_PRESETS}
@@ -684,6 +726,8 @@ const App: React.FC = () => {
                   description="Widens the stereo field for a bigger, more spacious sound"
                   isActive={masterStereoWidth.isActive}
                   onToggle={masterStereoWidth.handleToggle}
+                  isBypassed={masterStereoWidth.isBypassed}
+                  onBypass={masterStereoWidth.handleBypass}
                   parameters={masterStereoWidth.parameters}
                   onParameterChange={masterStereoWidth.handleParameterChange}
                   presets={STEREO_WIDTH_PRESETS}

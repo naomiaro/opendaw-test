@@ -16,6 +16,7 @@ export const useReverb = (
   label: string
 ) => {
   const [isActive, setIsActive] = useState(false);
+  const [isBypassed, setIsBypassed] = useState(false);
   const [wet, setWet] = useState(defaultParams.wet);
   const [decay, setDecay] = useState(defaultParams.decay);
   const [preDelay, setPreDelay] = useState(defaultParams.preDelay);
@@ -43,6 +44,7 @@ export const useReverb = (
       (reverb as any).decay.catchupAndSubscribe((obs: any) => setDecay(obs.getValue()));
       (reverb as any).preDelay.catchupAndSubscribe((obs: any) => setPreDelay(obs.getValue()));
       (reverb as any).damp.catchupAndSubscribe((obs: any) => setDamp(obs.getValue()));
+      reverb.enabled.catchupAndSubscribe((obs: any) => setIsBypassed(!obs.getValue()));
 
       console.log(`Added reverb: ${label}`);
     });
@@ -135,11 +137,22 @@ export const useReverb = (
     });
   }, [project]);
 
+  const handleBypass = useCallback(() => {
+    if (!project || !effectRef.current) return;
+
+    project.editing.modify(() => {
+      const reverb = effectRef.current;
+      reverb.enabled.setValue(!reverb.enabled.getValue());
+    });
+  }, [project]);
+
   return {
     isActive,
+    isBypassed,
     parameters,
     handleToggle: isActive ? handleRemove : handleAdd,
     handleParameterChange,
+    handleBypass,
     loadPreset
   };
 };
