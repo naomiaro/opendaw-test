@@ -22,7 +22,7 @@ import { initializeOpenDAW, setLoopEndFromTracks } from "./lib/projectSetup";
 import { useEffectChain } from "./hooks/useEffectChain";
 import { useDynamicEffect } from "./hooks/useDynamicEffect";
 import "@radix-ui/themes/styles.css";
-import { Theme, Container, Heading, Text, Flex, Card, Separator, Callout } from "@radix-ui/themes";
+import { Theme, Container, Heading, Text, Flex, Card, Separator, Callout, Slider } from "@radix-ui/themes";
 
 /**
  * Component to render individual effect instances (memoized to prevent re-renders)
@@ -79,6 +79,9 @@ const App: React.FC = () => {
   const drumsAudioBox = tracks.find(t => t.name === "Drums")?.audioUnitBox || null;
   const bassAudioBox = tracks.find(t => t.name === "Bass")?.audioUnitBox || null;
   const masterAudioBox = project?.rootBox.outputDevice.pointerHub.incoming().at(0)?.box || null;
+
+  // Master volume state
+  const [masterVolume, setMasterVolume] = useState(0); // dB
 
   // Effect chain hooks for each track and master
   const introEffects = useEffectChain(project, tracks.find(t => t.name === "Intro")?.audioUnitBox || null, "Intro");
@@ -578,6 +581,32 @@ const App: React.FC = () => {
     setCurrentPosition(0);
   }, [project]);
 
+  const handleMasterVolumeChange = useCallback(
+    (value: number) => {
+      if (!project || !masterAudioBox) return;
+
+      project.editing.modify(() => {
+        (masterAudioBox as any).volume.setValue(value);
+      });
+
+      setMasterVolume(value);
+    },
+    [project, masterAudioBox]
+  );
+
+  // Subscribe to master volume changes
+  useEffect(() => {
+    if (!masterAudioBox) return undefined;
+
+    const subscription = (masterAudioBox as any).volume.catchupAndSubscribe((obs: any) => {
+      setMasterVolume(obs.getValue());
+    });
+
+    return () => {
+      subscription.terminate();
+    };
+  }, [masterAudioBox]);
+
   if (!project) {
     return (
       <Theme appearance="dark" accentColor="green" radius="medium">
@@ -682,7 +711,26 @@ const App: React.FC = () => {
           {/* Mixer section */}
           <Card>
             <Flex direction="column" gap="4">
-              <Heading size="4">Mixer</Heading>
+              <Flex justify="between" align="center" gap="4">
+                <Heading size="4">Mixer</Heading>
+                {/* Master Volume Control */}
+                <Flex align="center" gap="3" style={{ minWidth: "300px" }}>
+                  <Text size="2" weight="bold" style={{ whiteSpace: "nowrap" }}>
+                    Master Volume
+                  </Text>
+                  <Slider
+                    value={[masterVolume]}
+                    onValueChange={values => handleMasterVolumeChange(values[0])}
+                    min={-60}
+                    max={12}
+                    step={0.1}
+                    style={{ flex: 1 }}
+                  />
+                  <Text size="2" color="gray" style={{ minWidth: "50px", textAlign: "right" }}>
+                    {masterVolume.toFixed(1)} dB
+                  </Text>
+                </Flex>
+              </Flex>
               <Separator size="4" />
 
               {/* Timeline and tracks container with shared border */}
