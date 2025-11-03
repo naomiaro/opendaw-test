@@ -5,19 +5,20 @@ import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
 import { PPQN } from "@opendaw/lib-dsp";
 import { AnimationFrame } from "@opendaw/lib-dom";
-import { InstrumentFactories, Project } from "@opendaw/studio-core";
-import { AudioFileBox, AudioRegionBox } from "@opendaw/studio-boxes";
-import { RegionEditing } from "@opendaw/studio-adapters";
-import { PeaksPainter } from "@opendaw/lib-fusion";
-import { CanvasPainter } from "./lib/CanvasPainter";
+import { Project } from "@opendaw/studio-core";
+import { AudioRegionBox } from "@opendaw/studio-boxes";
+import { RegionEditing, AudioRegionBoxAdapter } from "@opendaw/studio-adapters";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { MoisesLogo } from "./components/MoisesLogo";
 import { BackLink } from "./components/BackLink";
-import { TrackRow, type TrackData } from "./components/TrackRow";
+import { TrackRow } from "./components/TrackRow";
 import { TransportControls } from "./components/TransportControls";
 import { TimelineRuler } from "./components/TimelineRuler";
-import { loadAudioFile } from "./lib/audioUtils";
-import { initializeOpenDAW, setLoopEndFromTracks } from "./lib/projectSetup";
+import { Playhead } from "./components/Playhead";
+import { initializeOpenDAW } from "./lib/projectSetup";
+import { loadTracksFromFiles } from "./lib/trackLoading";
+import { useWaveformRendering } from "./hooks/useWaveformRendering";
+import type { TrackData } from "./lib/types";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
@@ -27,11 +28,9 @@ import {
   Flex,
   Card,
   Button,
-  Separator,
   Callout,
   Badge,
-  IconButton,
-  Box
+  Box as RadixBox
 } from "@radix-ui/themes";
 
 /**
@@ -56,148 +55,16 @@ const App: React.FC = () => {
   // Refs for non-reactive values
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
   const canvasRefs = useRef<Map<string, HTMLCanvasElement>>(new Map());
-  const canvasPaintersRef = useRef<Map<string, CanvasPainter>>(new Map());
-  const trackPeaksRef = useRef<Map<string, any>>(new Map());
-  const visuallyRenderedTracksRef = useRef<Set<string>>(new Set());
   const pausedPositionRef = useRef<number | null>(null);
   const currentPositionRef = useRef<number>(0);
   const bpmRef = useRef<number>(124);
-  const tracksContainerRef = useRef<HTMLDivElement>(null);
 
-  const CHANNEL_PADDING = 4;
   const BPM = 124; // Dark Ride BPM
 
-  // Initialize CanvasPainters for waveform rendering
-  useEffect(() => {
-    if (tracks.length === 0 || !project) return undefined;
-
-    console.debug("[CanvasPainter] Initializing painters for", tracks.length, "tracks");
-
-    const lastRenderedPeaks = new Map<string, any>();
-
-    tracks.forEach(track => {
-      const uuidString = UUID.toString(track.uuid);
-      const canvas = canvasRefs.current.get(uuidString);
-
-      if (!canvas) {
-        console.debug(`[CanvasPainter] Canvas not ready for "${track.name}"`);
-        return;
-      }
-
-      // Don't reinitialize if painter already exists
-      if (canvasPaintersRef.current.has(uuidString)) {
-        return;
-      }
-
-      console.debug(`[CanvasPainter] Creating painter for "${track.name}"`);
-
-      // Create painter with rendering callback
-      const painter = new CanvasPainter(canvas, (canvasPainter, context) => {
-        const peaks = trackPeaksRef.current.get(uuidString);
-        if (!peaks) {
-          // Clear canvas if no peaks
-          context.fillStyle = "#000";
-          context.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
-          return;
-        }
-
-        // Skip rendering if peaks haven't changed AND canvas wasn't resized
-        if (lastRenderedPeaks.get(uuidString) === peaks && !canvasPainter.wasResized) {
-          return;
-        }
-
-        // Clear canvas
-        context.fillStyle = "#000";
-        context.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
-
-        // Set waveform color
-        context.fillStyle = "#4a9eff";
-
-        // Calculate channel layout with padding
-        const totalHeight = canvas.clientHeight;
-        const numChannels = peaks.numChannels;
-        const channelHeight = totalHeight / numChannels;
-
-        // Render each channel with padding
-        for (let channel = 0; channel < numChannels; channel++) {
-          const y0 = channel * channelHeight + CHANNEL_PADDING / 2;
-          const y1 = (channel + 1) * channelHeight - CHANNEL_PADDING / 2;
-
-          PeaksPainter.renderBlocks(context, peaks, channel, {
-            x0: 0,
-            x1: canvas.clientWidth,
-            y0,
-            y1,
-            u0: 0,
-            u1: peaks.numFrames,
-            v0: -1,
-            v1: 1
-          });
-        }
-
-        lastRenderedPeaks.set(uuidString, peaks);
-      });
-
-      canvasPaintersRef.current.set(uuidString, painter);
-    });
-
-    return () => {
-      console.debug("[CanvasPainter] Cleaning up painters");
-      canvasPaintersRef.current.forEach(painter => painter.terminate());
-      canvasPaintersRef.current.clear();
-    };
-  }, [tracks, project]);
-
-  // Subscribe to sample loader state changes for peaks
-  useEffect(() => {
-    if (!project || tracks.length === 0) return undefined;
-
-    console.debug("[Peaks] Subscribing to sample loader state for", tracks.length, "tracks");
-
-    const subscriptions: Array<{ terminate: () => void }> = [];
-
-    tracks.forEach(track => {
-      const uuidString = UUID.toString(track.uuid);
-
-      // Get the sample loader and subscribe to state changes
-      const sampleLoader = project.sampleManager.getOrCreate(track.uuid);
-
-      const subscription = sampleLoader.subscribe(state => {
-        console.debug(`[Peaks] Sample loader state for "${track.name}":`, state.type);
-
-        // When state becomes "loaded", peaks are ready
-        if (state.type === "loaded") {
-          const peaksOption = sampleLoader.peaks;
-
-          if (!peaksOption.isEmpty()) {
-            const peaks = peaksOption.unwrap();
-
-            // Store peaks and request render
-            trackPeaksRef.current.set(uuidString, peaks);
-            const painter = canvasPaintersRef.current.get(uuidString);
-            if (painter) {
-              painter.requestUpdate();
-              visuallyRenderedTracksRef.current.add(uuidString);
-              console.debug(`[CanvasPainter] Rendered "${track.name}"`);
-
-              // Check if all tracks are loaded
-              if (visuallyRenderedTracksRef.current.size === tracks.length) {
-                console.debug("[Rendering] All waveforms loaded!");
-                setStatus("Ready to play!");
-              }
-            }
-          }
-        }
-      });
-
-      subscriptions.push(subscription);
-    });
-
-    return () => {
-      console.debug("[Peaks] Cleaning up sample loader subscriptions");
-      subscriptions.forEach(sub => sub.terminate());
-    };
-  }, [project, tracks]);
+  // Use waveform rendering hook
+  useWaveformRendering(project, tracks, canvasRefs.current, localAudioBuffersRef.current, {
+    onAllRendered: () => setStatus("Ready to play!")
+  });
 
   // Initialize OpenDAW
   useEffect(() => {
@@ -248,9 +115,26 @@ const App: React.FC = () => {
         });
 
         // Load audio files and create tracks
-        await setupTracks(newProject, newAudioContext, localAudioBuffers);
+        const loadedTracks = await loadTracksFromFiles(
+          newProject,
+          newAudioContext,
+          [
+            { name: "Drums", file: "/audio/DarkRide/02_Drums.ogg" },
+            { name: "Bass", file: "/audio/DarkRide/03_Bass.ogg" },
+            { name: "Guitar", file: "/audio/DarkRide/04_ElecGtrs.ogg" },
+            { name: "Vocals", file: "/audio/DarkRide/06_Vox.ogg" }
+          ],
+          localAudioBuffers,
+          {
+            onProgress: (current, total, trackName) => {
+              if (mounted) setStatus(`Loading ${trackName} (${current}/${total})...`);
+            }
+          }
+        );
 
         if (mounted) {
+          setTracks(loadedTracks);
+          updateRegionInfo(newProject);
           setStatus("Loading waveforms...");
         }
       } catch (error) {
@@ -267,89 +151,6 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Setup tracks with audio files
-  const setupTracks = async (proj: Project, ctx: AudioContext, audioBuffers: Map<string, AudioBuffer>) => {
-    const bpm = proj.timelineBox.bpm.getValue();
-    const boxGraph = proj.boxGraph;
-
-    // Define audio files to load - only 4 tracks for editing demo
-    const samples = [
-      { name: "Drums", file: "/audio/DarkRide/02_Drums.ogg" },
-      { name: "Bass", file: "/audio/DarkRide/03_Bass.ogg" },
-      { name: "Guitar", file: "/audio/DarkRide/04_ElecGtrs.ogg" },
-      { name: "Vocals", file: "/audio/DarkRide/06_Vox.ogg" }
-    ];
-
-    const loadedTracks: TrackData[] = [];
-
-    for (const sample of samples) {
-      try {
-        // Load audio file
-        const audioBuffer = await loadAudioFile(ctx, sample.file);
-        const fileUUID = UUID.generate();
-        const uuidString = UUID.toString(fileUUID);
-
-        audioBuffers.set(uuidString, audioBuffer);
-
-        proj.editing.modify(() => {
-          // Create track with Tape instrument
-          const { audioUnitBox, trackBox } = proj.api.createInstrument(InstrumentFactories.Tape);
-
-          // Set default volume
-          audioUnitBox.volume.setValue(0);
-
-          // Create audio file box
-          const audioFileBox = AudioFileBox.create(boxGraph, fileUUID, box => {
-            box.fileName.setValue(sample.name);
-            box.endInSeconds.setValue(audioBuffer.duration);
-          });
-
-          // Create audio region for the full duration of the audio
-          const clipDurationInPPQN = PPQN.secondsToPulses(audioBuffer.duration, bpm);
-
-          AudioRegionBox.create(boxGraph, UUID.generate(), box => {
-            box.regions.refer(trackBox.regions);
-            box.file.refer(audioFileBox);
-            box.position.setValue(0); // Start at the beginning
-            box.duration.setValue(clipDurationInPPQN);
-            box.loopOffset.setValue(0);
-            box.loopDuration.setValue(clipDurationInPPQN);
-            box.label.setValue(sample.name);
-            box.mute.setValue(false);
-          });
-
-          console.debug(`Created track "${sample.name}"`);
-          console.debug(`  - Audio duration: ${audioBuffer.duration}s`);
-          console.debug(`  - Duration in PPQN: ${clipDurationInPPQN}`);
-          console.debug(`  - AudioFile UUID: ${uuidString}`);
-
-          loadedTracks.push({
-            name: sample.name,
-            trackBox,
-            audioUnitBox,
-            uuid: fileUUID
-          });
-        });
-      } catch (error) {
-        console.error(`Failed to load ${sample.name}:`, error);
-      }
-    }
-
-    setTracks(loadedTracks);
-
-    // Set loop end to accommodate the longest track
-    setLoopEndFromTracks(proj, audioBuffers, bpm);
-
-    // Update region info
-    updateRegionInfo(proj);
-
-    console.debug("Tracks created, generating waveforms...");
-    console.debug(`Timeline position: ${proj.engine.position.getValue()}`);
-    console.debug(`BPM: ${bpm}`);
-
-    // Make sure the timeline is at the beginning
-    proj.engine.setPosition(0);
-  };
 
   // Update region information for all tracks
   const updateRegionInfo = useCallback((proj: Project) => {
@@ -358,14 +159,15 @@ const App: React.FC = () => {
     const regionMap = new Map<string, any[]>();
 
     // Access regions using pointerHub to get all region boxes
-    tracks.forEach((track, index) => {
+    tracks.forEach(track => {
       const regionList: any[] = [];
 
       // Get all pointers from the regions collection
       const pointers = track.trackBox.regions.pointerHub.incoming();
 
-      pointers.forEach(({box: regionBox}) => {
-        if (!regionBox) return;
+      pointers.forEach(({box}) => {
+        if (!box) return;
+        const regionBox = box as AudioRegionBox;
 
         regionList.push({
           uuid: UUID.toString(regionBox.address.uuid),
@@ -459,10 +261,11 @@ const App: React.FC = () => {
       const pointers = track.trackBox.regions.pointerHub.incoming();
 
       // Find region that contains the playhead
-      pointers.forEach(({box: regionBox}) => {
-        if (!regionBox) return;
+      pointers.forEach(({box}) => {
+        if (!box) return;
+        const regionBox = box as AudioRegionBox;
 
-        const regionAdapter = project.adapters.audioRegionBox.get(regionBox);
+        const regionAdapter = project.boxAdapters.adapterFor(regionBox, AudioRegionBoxAdapter);
         if (!regionAdapter) return;
 
         const regionStart = regionAdapter.position;
@@ -491,8 +294,9 @@ const App: React.FC = () => {
       // Get all regions from this track using pointerHub
       const pointers = track.trackBox.regions.pointerHub.incoming();
 
-      pointers.forEach(({box: regionBox}) => {
-        if (!regionBox) return;
+      pointers.forEach(({box}) => {
+        if (!box) return;
+        const regionBox = box as AudioRegionBox;
 
         const currentPosition = regionBox.position.getValue();
         regionBox.position.setValue(currentPosition + moveAmount);
@@ -514,8 +318,9 @@ const App: React.FC = () => {
       // Get all regions from this track using pointerHub
       const pointers = track.trackBox.regions.pointerHub.incoming();
 
-      pointers.forEach(({box: regionBox}) => {
-        if (!regionBox) return;
+      pointers.forEach(({box}) => {
+        if (!box) return;
+        const regionBox = box as AudioRegionBox;
 
         const currentPosition = regionBox.position.getValue();
         const newPosition = Math.max(0, currentPosition - moveAmount);
@@ -687,7 +492,7 @@ const App: React.FC = () => {
               <TimelineRuler maxDuration={maxDuration} />
 
               {/* Track List */}
-              <div ref={tracksContainerRef}>
+              <div>
                 {tracks.map((track, index) => {
                   const uuidString = UUID.toString(track.uuid);
                   const regions = regionInfo.get(track.name) || [];
@@ -710,7 +515,7 @@ const App: React.FC = () => {
                         track={track}
                         project={project}
                         allTracks={tracks}
-                        peaks={trackPeaksRef.current.get(uuidString)}
+                        peaks={undefined}
                         canvasRef={canvas => {
                           if (canvas) canvasRefs.current.set(uuidString, canvas);
                         }}
@@ -725,7 +530,7 @@ const App: React.FC = () => {
 
                       {/* Region info */}
                       {regions.length > 0 && (
-                        <Box px="4" pb="2">
+                        <RadixBox px="4" pb="2">
                           <Flex gap="2" wrap="wrap">
                             {regions.map((region, idx) => (
                               <Badge key={region.uuid} size="1" color="gray">
@@ -734,7 +539,7 @@ const App: React.FC = () => {
                               </Badge>
                             ))}
                           </Flex>
-                        </Box>
+                        </RadixBox>
                       )}
                     </div>
                   );
@@ -742,20 +547,7 @@ const App: React.FC = () => {
               </div>
 
               {/* Playhead overlay */}
-              {currentPosition > 0 && (
-                <div
-                  style={{
-                    position: "absolute",
-                    left: `calc(200px + ${(PPQN.pulsesToSeconds(currentPosition, BPM) / maxDuration) * 100}%)`,
-                    top: 0,
-                    bottom: 0,
-                    width: "2px",
-                    backgroundColor: "var(--red-9)",
-                    pointerEvents: "none",
-                    zIndex: 10
-                  }}
-                />
-              )}
+              <Playhead currentPosition={currentPosition} bpm={BPM} maxDuration={maxDuration} leftOffset={200} />
             </Flex>
           </Card>
 
