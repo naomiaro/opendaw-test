@@ -11,7 +11,7 @@ import { BackLink } from "./components/BackLink";
 import { TrackRow } from "./components/TrackRow";
 import { TransportControls } from "./components/TransportControls";
 import { TimelineRuler } from "./components/TimelineRuler";
-import { Playhead } from "./components/Playhead";
+import { TracksContainer } from "./components/TracksContainer";
 import { EffectPanel } from "./components/EffectPanel";
 import { EffectChain, type EffectInstance } from "./components/EffectChain";
 import { initializeOpenDAW } from "./lib/projectSetup";
@@ -516,8 +516,18 @@ const App: React.FC = () => {
               </Flex>
               <Separator size="4" />
 
-              {/* Timeline and tracks container with shared border */}
-              <Flex direction="column" gap="0" style={{ border: "1px solid var(--gray-6)", position: "relative" }}>
+              {/* Timeline and tracks container with playhead overlay */}
+              <TracksContainer
+                currentPosition={currentPosition}
+                bpm={bpmRef.current}
+                maxDuration={Math.max(
+                  ...Array.from(localAudioBuffersRef.current.values()).map(buf => buf.duration),
+                  1
+                )}
+                leftOffset={200}
+                playheadColor="#fff"
+                showBorder={true}
+              >
                 {/* Timeline - Dynamically calculated duration */}
                 <TimelineRuler
                   maxDuration={Math.max(
@@ -554,19 +564,7 @@ const App: React.FC = () => {
                     />
                   ));
                 })()}
-
-                {/* Playhead component */}
-                <Playhead
-                  currentPosition={currentPosition}
-                  bpm={bpmRef.current}
-                  maxDuration={Math.max(
-                    ...Array.from(localAudioBuffersRef.current.values()).map(buf => buf.duration),
-                    1
-                  )}
-                  leftOffset={200}
-                  color="#fff"
-                />
-              </Flex>
+              </TracksContainer>
             </Flex>
           </Card>
 

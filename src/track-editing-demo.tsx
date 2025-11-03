@@ -14,7 +14,7 @@ import { BackLink } from "./components/BackLink";
 import { TrackRow } from "./components/TrackRow";
 import { TransportControls } from "./components/TransportControls";
 import { TimelineRuler } from "./components/TimelineRuler";
-import { Playhead } from "./components/Playhead";
+import { TracksContainer } from "./components/TracksContainer";
 import { initializeOpenDAW } from "./lib/projectSetup";
 import { loadTracksFromFiles } from "./lib/trackLoading";
 import { useWaveformRendering } from "./hooks/useWaveformRendering";
@@ -495,8 +495,13 @@ const App: React.FC = () => {
             <Flex direction="column" gap="4">
               <Heading size="4">Tracks</Heading>
 
-              {/* Timeline + Tracks container with relative positioning for Playhead */}
-              <Flex direction="column" gap="0" style={{ position: "relative" }}>
+              {/* Timeline + Tracks container with playhead overlay */}
+              <TracksContainer
+                currentPosition={currentPosition}
+                bpm={BPM}
+                maxDuration={maxDuration}
+                leftOffset={200}
+              >
                 {/* Timeline Ruler */}
                 <TimelineRuler maxDuration={maxDuration} />
 
@@ -512,8 +517,7 @@ const App: React.FC = () => {
                         onClick={() => setSelectedTrackIndex(index)}
                         style={{
                           cursor: "pointer",
-                          outline: selectedTrackIndex === index ? "2px solid var(--blue-9)" : "none",
-                          outlineOffset: "-2px",
+                          boxShadow: selectedTrackIndex === index ? "0 0 0 2px var(--blue-9)" : "none",
                           borderRadius: "4px",
                           marginBottom: "8px",
                           backgroundColor:
@@ -555,10 +559,7 @@ const App: React.FC = () => {
                     );
                   })}
                 </div>
-
-                {/* Playhead overlay */}
-                <Playhead currentPosition={currentPosition} bpm={BPM} maxDuration={maxDuration} leftOffset={200} />
-              </Flex>
+              </TracksContainer>
             </Flex>
           </Card>
 
