@@ -99,13 +99,16 @@ const App: React.FC = () => {
 
         // Subscribe to position for display
         newProject.engine.position.catchupAndSubscribe(obs => {
-          if (mounted) setCurrentPosition(obs.getValue());
+          if (mounted) {
+            const pos = Math.max(0, obs.getValue()); // Ensure position is never negative
+            setCurrentPosition(pos);
+          }
         });
 
         // Subscribe to AnimationFrame for efficient playhead position updates
         animationFrameSubscription = AnimationFrame.add(() => {
           // Update position for playhead rendering (used by SVG overlay)
-          const position = newProject.engine.position.getValue();
+          const position = Math.max(0, newProject.engine.position.getValue()); // Ensure position is never negative
           currentPositionRef.current = position;
 
           // Update React state to trigger playhead re-render
@@ -119,10 +122,10 @@ const App: React.FC = () => {
           newProject,
           newAudioContext,
           [
-            { name: "Drums", file: "/audio/DarkRide/02_Drums.ogg" },
-            { name: "Bass", file: "/audio/DarkRide/03_Bass.ogg" },
+            { name: "Vocals", file: "/audio/DarkRide/06_Vox.ogg" },
             { name: "Guitar", file: "/audio/DarkRide/04_ElecGtrs.ogg" },
-            { name: "Vocals", file: "/audio/DarkRide/06_Vox.ogg" }
+            { name: "Bass", file: "/audio/DarkRide/03_Bass.ogg" },
+            { name: "Drums", file: "/audio/DarkRide/02_Drums.ogg" }
           ],
           localAudioBuffers,
           {
@@ -207,6 +210,10 @@ const App: React.FC = () => {
       console.debug(`Restoring paused position: ${pausedPositionRef.current}`);
       project.engine.setPosition(pausedPositionRef.current);
       pausedPositionRef.current = null;
+    } else {
+      // On first play, explicitly set position to 0 to ensure clean start
+      project.engine.setPosition(0);
+      console.debug("Set position to 0 for first play");
     }
 
     console.debug("Starting playback...");
@@ -488,66 +495,70 @@ const App: React.FC = () => {
             <Flex direction="column" gap="4">
               <Heading size="4">Tracks</Heading>
 
-              {/* Timeline Ruler */}
-              <TimelineRuler maxDuration={maxDuration} />
+              {/* Timeline + Tracks container with relative positioning for Playhead */}
+              <Flex direction="column" gap="0" style={{ position: "relative" }}>
+                {/* Timeline Ruler */}
+                <TimelineRuler maxDuration={maxDuration} />
 
-              {/* Track List */}
-              <div>
-                {tracks.map((track, index) => {
-                  const uuidString = UUID.toString(track.uuid);
-                  const regions = regionInfo.get(track.name) || [];
+                {/* Track List */}
+                <div>
+                  {tracks.map((track, index) => {
+                    const uuidString = UUID.toString(track.uuid);
+                    const regions = regionInfo.get(track.name) || [];
 
-                  return (
-                    <div
-                      key={uuidString}
-                      onClick={() => setSelectedTrackIndex(index)}
-                      style={{
-                        cursor: "pointer",
-                        border: selectedTrackIndex === index ? "2px solid var(--blue-9)" : "2px solid transparent",
-                        borderRadius: "4px",
-                        marginBottom: "8px",
-                        backgroundColor:
-                          selectedTrackIndex === index ? "var(--blue-2)" : "transparent",
-                        transition: "all 0.2s ease"
-                      }}
-                    >
-                      <TrackRow
-                        track={track}
-                        project={project}
-                        allTracks={tracks}
-                        peaks={undefined}
-                        canvasRef={canvas => {
-                          if (canvas) canvasRefs.current.set(uuidString, canvas);
+                    return (
+                      <div
+                        key={uuidString}
+                        onClick={() => setSelectedTrackIndex(index)}
+                        style={{
+                          cursor: "pointer",
+                          outline: selectedTrackIndex === index ? "2px solid var(--blue-9)" : "none",
+                          outlineOffset: "-2px",
+                          borderRadius: "4px",
+                          marginBottom: "8px",
+                          backgroundColor:
+                            selectedTrackIndex === index ? "var(--blue-2)" : "transparent",
+                          transition: "all 0.2s ease"
                         }}
-                        currentPosition={currentPosition}
-                        isPlaying={isPlaying}
-                        bpm={BPM}
-                        audioBuffer={localAudioBuffersRef.current.get(uuidString)}
-                        setCurrentPosition={setCurrentPosition}
-                        pausedPositionRef={pausedPositionRef}
-                        maxDuration={maxDuration}
-                      />
+                      >
+                        <TrackRow
+                          track={track}
+                          project={project}
+                          allTracks={tracks}
+                          peaks={undefined}
+                          canvasRef={canvas => {
+                            if (canvas) canvasRefs.current.set(uuidString, canvas);
+                          }}
+                          currentPosition={currentPosition}
+                          isPlaying={isPlaying}
+                          bpm={BPM}
+                          audioBuffer={localAudioBuffersRef.current.get(uuidString)}
+                          setCurrentPosition={setCurrentPosition}
+                          pausedPositionRef={pausedPositionRef}
+                          maxDuration={maxDuration}
+                        />
 
-                      {/* Region info */}
-                      {regions.length > 0 && (
-                        <RadixBox px="4" pb="2">
-                          <Flex gap="2" wrap="wrap">
-                            {regions.map((region, idx) => (
-                              <Badge key={region.uuid} size="1" color="gray">
-                                Region {idx + 1}: {PPQN.pulsesToSeconds(region.position, BPM).toFixed(1)}s -{" "}
-                                {PPQN.pulsesToSeconds(region.position + region.duration, BPM).toFixed(1)}s
-                              </Badge>
-                            ))}
-                          </Flex>
-                        </RadixBox>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+                        {/* Region info */}
+                        {regions.length > 0 && (
+                          <RadixBox px="4" pb="2">
+                            <Flex gap="2" wrap="wrap">
+                              {regions.map((region, idx) => (
+                                <Badge key={region.uuid} size="1" color="gray">
+                                  Region {idx + 1}: {PPQN.pulsesToSeconds(region.position, BPM).toFixed(1)}s -{" "}
+                                  {PPQN.pulsesToSeconds(region.position + region.duration, BPM).toFixed(1)}s
+                                </Badge>
+                              ))}
+                            </Flex>
+                          </RadixBox>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
 
-              {/* Playhead overlay */}
-              <Playhead currentPosition={currentPosition} bpm={BPM} maxDuration={maxDuration} leftOffset={200} />
+                {/* Playhead overlay */}
+                <Playhead currentPosition={currentPosition} bpm={BPM} maxDuration={maxDuration} leftOffset={200} />
+              </Flex>
             </Flex>
           </Card>
 

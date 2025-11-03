@@ -156,7 +156,8 @@ export const TrackRow: React.FC<TrackRowProps> = ({
           width: "200px",
           padding: "12px",
           backgroundColor: "var(--gray-3)",
-          borderRight: "1px solid var(--gray-6)"
+          borderRight: "1px solid var(--gray-6)",
+          boxSizing: "border-box"
         }}
       >
         {/* Track name */}

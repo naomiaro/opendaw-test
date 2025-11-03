@@ -79,8 +79,8 @@ export const Playhead: React.FC<PlayheadProps> = ({
   // Convert PPQN to seconds
   const timeInSeconds = PPQN.pulsesToSeconds(currentPosition, bpm);
 
-  // Calculate percentage position (0 to 1)
-  const positionFraction = timeInSeconds / maxDuration;
+  // Calculate percentage position (0 to 1), clamped to ensure it's never negative
+  const positionFraction = Math.max(0, Math.min(1, timeInSeconds / maxDuration));
 
   // Calculate left position: leftOffset + (percentage of the remaining waveform area)
   // The waveform area is (100% - leftOffset), so we apply the position fraction to that
