@@ -101,6 +101,7 @@ const App: React.FC = () => {
         newProject.engine.position.catchupAndSubscribe(obs => {
           if (mounted) {
             const pos = Math.max(0, obs.getValue()); // Ensure position is never negative
+            currentPositionRef.current = pos; // Keep ref in sync
             setCurrentPosition(pos);
           }
         });
@@ -259,7 +260,8 @@ const App: React.FC = () => {
     if (!project || selectedTrackIndex === null) return;
 
     const track = tracks[selectedTrackIndex];
-    const playheadPosition = currentPositionRef.current;
+    // Use currentPosition state which is updated when clicking on waveform
+    const playheadPosition = currentPosition;
 
     console.debug(`Splitting track "${track.name}" at position ${playheadPosition}`);
 
@@ -287,7 +289,7 @@ const App: React.FC = () => {
     });
 
     updateRegionInfo(project);
-  }, [project, selectedTrackIndex, tracks, updateRegionInfo]);
+  }, [project, selectedTrackIndex, tracks, updateRegionInfo, currentPosition]);
 
   const handleMoveRegionForward = useCallback(() => {
     if (!project || selectedTrackIndex === null) return;
