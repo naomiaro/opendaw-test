@@ -637,6 +637,8 @@ const App: React.FC = () => {
               <Heading size="4">Transport</Heading>
               <TransportControls
                 isPlaying={isPlaying}
+                currentPosition={currentPosition}
+                bpm={BPM}
                 onPlay={handlePlay}
                 onPause={handlePause}
                 onStop={handleStop}
