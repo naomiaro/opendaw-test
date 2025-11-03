@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { UUID } from "@opendaw/lib-std";
+import { PPQN } from "@opendaw/lib-dsp";
 import { Project } from "@opendaw/studio-core";
 import { PeaksPainter } from "@opendaw/lib-fusion";
 import { CanvasPainter } from "../lib/CanvasPainter";
@@ -20,6 +21,21 @@ export interface WaveformRenderingOptions {
    * Callback when all waveforms are rendered
    */
   onAllRendered?: () => void;
+
+  /**
+   * Map of track names to their regions for region-aware rendering
+   */
+  regionInfo?: Map<string, any[]>;
+
+  /**
+   * BPM for time calculations
+   */
+  bpm?: number;
+
+  /**
+   * Maximum duration in seconds for calculating region positions
+   */
+  maxDuration?: number;
 }
 
 /**
@@ -54,7 +70,7 @@ export function useWaveformRendering(
   audioBuffers: Map<string, AudioBuffer>,
   options?: WaveformRenderingOptions
 ): void {
-  const { channelPadding = 4, waveformColor = "#4a9eff", onAllRendered } = options || {};
+  const { channelPadding = 4, waveformColor = "#4a9eff", onAllRendered, regionInfo, bpm = 120, maxDuration = 1 } = options || {};
 
   const canvasPaintersRef = useRef<Map<string, CanvasPainter>>(new Map());
   const trackPeaksRef = useRef<Map<string, any>>(new Map());
@@ -65,6 +81,14 @@ export function useWaveformRendering(
   useEffect(() => {
     onAllRenderedRef.current = onAllRendered;
   }, [onAllRendered]);
+
+  // Store regionInfo in ref to avoid re-rendering on every region update
+  const regionInfoRef = useRef(regionInfo);
+  useEffect(() => {
+    regionInfoRef.current = regionInfo;
+    // Request re-render when regions change
+    canvasPaintersRef.current.forEach(painter => painter.requestUpdate());
+  }, [regionInfo]);
 
   // Initialize CanvasPainters for waveform rendering
   // Only depends on tracks and project - other values (canvasRefs, colors, padding, callbacks)
@@ -102,8 +126,9 @@ export function useWaveformRendering(
           return;
         }
 
-        // Skip rendering if peaks haven't changed AND canvas wasn't resized
-        if (lastRenderedPeaks.get(uuidString) === peaks && !canvasPainter.wasResized) {
+        // Skip rendering if peaks haven't changed AND canvas wasn't resized AND regions haven't changed
+        const currentRegions = regionInfoRef.current?.get(track.name);
+        if (lastRenderedPeaks.get(uuidString) === peaks && !canvasPainter.wasResized && currentRegions === lastRenderedPeaks.get(`${uuidString}_regions`)) {
           return;
         }
 
@@ -119,24 +144,80 @@ export function useWaveformRendering(
         const numChannels = peaks.numChannels;
         const channelHeight = totalHeight / numChannels;
 
-        // Render each channel with padding
-        for (let channel = 0; channel < numChannels; channel++) {
-          const y0 = channel * channelHeight + channelPadding / 2;
-          const y1 = (channel + 1) * channelHeight - channelPadding / 2;
+        // Get regions for this track for region-aware rendering
+        const regions = regionInfoRef.current?.get(track.name) || [];
+        const audioBuffer = audioBuffers.get(uuidString);
 
-          PeaksPainter.renderBlocks(context, peaks, channel, {
-            x0: 0,
-            x1: canvas.clientWidth,
-            y0,
-            y1,
-            u0: 0,
-            u1: peaks.numFrames,
-            v0: -1,
-            v1: 1
+        // Use region-aware rendering if:
+        // 1. We have regionInfo populated (regionInfoRef.current exists)
+        // 2. We have regions for this track
+        // 3. We have the audio buffer and maxDuration
+        // This ensures timeline-based positioning for all tracks
+        const useRegionRendering = regionInfoRef.current && regions.length > 0 && audioBuffer && maxDuration > 0;
+
+        if (useRegionRendering) {
+          // Region-aware rendering: render each region at its position
+          regions.forEach((region: any, idx: number) => {
+            // Convert region position from PPQN to seconds to pixels
+            const regionStartSeconds = PPQN.pulsesToSeconds(region.position, bpm);
+            const regionDurationSeconds = PPQN.pulsesToSeconds(region.duration, bpm);
+
+            // Calculate x position as percentage of maxDuration
+            const x0Percent = regionStartSeconds / maxDuration;
+            const x1Percent = (regionStartSeconds + regionDurationSeconds) / maxDuration;
+
+            const x0 = Math.floor(x0Percent * canvas.clientWidth);
+            const x1 = Math.floor(x1Percent * canvas.clientWidth);
+
+            // Calculate which part of the audio file this region should display
+            // Use loopOffset for where to start in the audio file
+            // Use the region's duration for how much to show (not loopDuration, which may differ for time-stretching)
+            const loopOffsetSeconds = PPQN.pulsesToSeconds(region.loopOffset, bpm);
+
+            // Convert to frame indices in the peaks data
+            const u0 = Math.floor((loopOffsetSeconds / audioBuffer.duration) * peaks.numFrames);
+            const u1 = Math.floor(((loopOffsetSeconds + regionDurationSeconds) / audioBuffer.duration) * peaks.numFrames);
+
+            console.debug(`[Waveform] Region ${idx}: pos=${regionStartSeconds.toFixed(2)}s-${(regionStartSeconds + regionDurationSeconds).toFixed(2)}s, x=${x0}-${x1}px, loopOffset=${loopOffsetSeconds.toFixed(2)}s, regionDur=${regionDurationSeconds.toFixed(2)}s, u=${u0}-${u1}`);
+
+            // Render each channel with padding
+            for (let channel = 0; channel < numChannels; channel++) {
+              const y0 = channel * channelHeight + channelPadding / 2;
+              const y1 = (channel + 1) * channelHeight - channelPadding / 2;
+
+              PeaksPainter.renderBlocks(context, peaks, channel, {
+                x0,
+                x1,
+                y0,
+                y1,
+                u0: Math.max(0, Math.min(peaks.numFrames, u0)),
+                u1: Math.max(0, Math.min(peaks.numFrames, u1)),
+                v0: -1,
+                v1: 1
+              });
+            }
           });
+        } else {
+          // Fall back to full waveform rendering
+          for (let channel = 0; channel < numChannels; channel++) {
+            const y0 = channel * channelHeight + channelPadding / 2;
+            const y1 = (channel + 1) * channelHeight - channelPadding / 2;
+
+            PeaksPainter.renderBlocks(context, peaks, channel, {
+              x0: 0,
+              x1: canvas.clientWidth,
+              y0,
+              y1,
+              u0: 0,
+              u1: peaks.numFrames,
+              v0: -1,
+              v1: 1
+            });
+          }
         }
 
         lastRenderedPeaks.set(uuidString, peaks);
+        lastRenderedPeaks.set(`${uuidString}_regions`, currentRegions);
 
         // Track visual rendering completion
         if (!visuallyRenderedTracksRef.current.has(uuidString)) {

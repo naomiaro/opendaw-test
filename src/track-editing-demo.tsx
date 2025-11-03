@@ -50,6 +50,7 @@ const App: React.FC = () => {
   const [currentPosition, setCurrentPosition] = useState(0);
   const [tracks, setTracks] = useState<TrackData[]>([]);
   const [selectedTrackIndex, setSelectedTrackIndex] = useState<number | null>(null);
+  const [selectedRegionUuid, setSelectedRegionUuid] = useState<string | null>(null);
   const [regionInfo, setRegionInfo] = useState<Map<string, any[]>>(new Map());
 
   // Refs for non-reactive values
@@ -61,9 +62,12 @@ const App: React.FC = () => {
 
   const BPM = 124; // Dark Ride BPM
 
-  // Use waveform rendering hook
+  // Use waveform rendering hook with region-aware rendering
   useWaveformRendering(project, tracks, canvasRefs.current, localAudioBuffersRef.current, {
-    onAllRendered: () => setStatus("Ready to play!")
+    onAllRendered: () => setStatus("Ready to play!"),
+    regionInfo,
+    bpm: BPM,
+    maxDuration: Math.max(...Array.from(localAudioBuffersRef.current.values()).map(buf => buf.duration), 30)
   });
 
   // Initialize OpenDAW
@@ -177,6 +181,8 @@ const App: React.FC = () => {
           uuid: UUID.toString(regionBox.address.uuid),
           position: regionBox.position.getValue(),
           duration: regionBox.duration.getValue(),
+          loopOffset: regionBox.loopOffset.getValue(),
+          loopDuration: regionBox.loopDuration.getValue(),
           label: regionBox.label.getValue()
         });
       });
@@ -282,7 +288,7 @@ const App: React.FC = () => {
 
         // Check if playhead is within this region
         if (playheadPosition > regionStart && playheadPosition < regionEnd) {
-          console.debug(`Found region to split: ${regionAdapter.box.label.getValue()}`);
+          console.debug(`Splitting region "${regionAdapter.box.label.getValue()}" at ${playheadPosition}`);
           RegionEditing.cut(regionAdapter, playheadPosition, true);
         }
       });
@@ -297,7 +303,8 @@ const App: React.FC = () => {
     const track = tracks[selectedTrackIndex];
     const moveAmount = PPQN.secondsToPulses(1, BPM); // Move by 1 second
 
-    console.debug(`Moving regions in track "${track.name}" forward by ${moveAmount} PPQN`);
+    const regionDesc = selectedRegionUuid ? "selected region" : "all regions";
+    console.debug(`Moving ${regionDesc} in track "${track.name}" forward by ${moveAmount} PPQN`);
 
     project.editing.modify(() => {
       // Get all regions from this track using pointerHub
@@ -306,6 +313,10 @@ const App: React.FC = () => {
       pointers.forEach(({box}) => {
         if (!box) return;
         const regionBox = box as AudioRegionBox;
+        const regionUuid = UUID.toString(regionBox.address.uuid);
+
+        // If a region is selected, only move that one
+        if (selectedRegionUuid && regionUuid !== selectedRegionUuid) return;
 
         const currentPosition = regionBox.position.getValue();
         regionBox.position.setValue(currentPosition + moveAmount);
@@ -313,7 +324,7 @@ const App: React.FC = () => {
     });
 
     updateRegionInfo(project);
-  }, [project, selectedTrackIndex, tracks, updateRegionInfo]);
+  }, [project, selectedTrackIndex, tracks, updateRegionInfo, selectedRegionUuid]);
 
   const handleMoveRegionBackward = useCallback(() => {
     if (!project || selectedTrackIndex === null) return;
@@ -321,7 +332,8 @@ const App: React.FC = () => {
     const track = tracks[selectedTrackIndex];
     const moveAmount = PPQN.secondsToPulses(1, BPM); // Move by 1 second
 
-    console.debug(`Moving regions in track "${track.name}" backward by ${moveAmount} PPQN`);
+    const regionDesc = selectedRegionUuid ? "selected region" : "all regions";
+    console.debug(`Moving ${regionDesc} in track "${track.name}" backward by ${moveAmount} PPQN`);
 
     project.editing.modify(() => {
       // Get all regions from this track using pointerHub
@@ -330,6 +342,10 @@ const App: React.FC = () => {
       pointers.forEach(({box}) => {
         if (!box) return;
         const regionBox = box as AudioRegionBox;
+        const regionUuid = UUID.toString(regionBox.address.uuid);
+
+        // If a region is selected, only move that one
+        if (selectedRegionUuid && regionUuid !== selectedRegionUuid) return;
 
         const currentPosition = regionBox.position.getValue();
         const newPosition = Math.max(0, currentPosition - moveAmount);
@@ -338,7 +354,7 @@ const App: React.FC = () => {
     });
 
     updateRegionInfo(project);
-  }, [project, selectedTrackIndex, tracks, updateRegionInfo]);
+  }, [project, selectedTrackIndex, tracks, updateRegionInfo, selectedRegionUuid]);
 
   if (!project) {
     return (
@@ -426,15 +442,16 @@ const App: React.FC = () => {
                   <strong>1. Select a track</strong> by clicking on it (highlighted in blue)
                 </Text>
                 <Text size="2">
-                  <strong>2. Use transport controls</strong> to play, pause, or stop the audio
+                  <strong>2. Select a region</strong> (optional) by clicking on a region badge below the track
                 </Text>
                 <Text size="2">
-                  <strong>3. Split regions</strong> - Position the playhead and click "Split at Playhead" to cut the
-                  region
+                  <strong>3. Use transport controls</strong> to play, pause, or stop the audio
                 </Text>
                 <Text size="2">
-                  <strong>4. Move regions</strong> - Use "Move Forward" / "Move Backward" buttons to reposition
-                  regions (1 second increments)
+                  <strong>4. Split regions</strong> - Click on waveform to position playhead, then click "Split at Playhead"
+                </Text>
+                <Text size="2">
+                  <strong>5. Move regions</strong> - Use "Move Forward" / "Move Backward" to move selected region (or all if none selected)
                 </Text>
               </Flex>
               <Callout.Root size="1" color="blue">
@@ -473,18 +490,29 @@ const App: React.FC = () => {
                 </Callout.Root>
               ) : (
                 <>
-                  <Text size="2" color="gray">
-                    Selected track: <strong>{tracks[selectedTrackIndex]?.name}</strong>
-                  </Text>
+                  <Flex direction="column" gap="2">
+                    <Text size="2" color="gray">
+                      Selected track: <strong>{tracks[selectedTrackIndex]?.name}</strong>
+                    </Text>
+                    {selectedRegionUuid && (
+                      <Text size="2" color="blue">
+                        Selected region: <strong>Region {(() => {
+                          const regions = regionInfo.get(tracks[selectedTrackIndex]?.name) || [];
+                          const idx = regions.findIndex(r => r.uuid === selectedRegionUuid);
+                          return idx + 1;
+                        })()}</strong> (Click region badge to deselect)
+                      </Text>
+                    )}
+                  </Flex>
                   <Flex gap="2" wrap="wrap">
                     <Button onClick={handleSplitAtPlayhead} variant="soft" size="2">
                       Split at Playhead
                     </Button>
                     <Button onClick={handleMoveRegionBackward} variant="soft" size="2">
-                      ← Move Backward (1s)
+                      ← Move {selectedRegionUuid ? "Selected" : "All"} Backward (1s)
                     </Button>
                     <Button onClick={handleMoveRegionForward} variant="soft" size="2">
-                      Move Forward (1s) →
+                      Move {selectedRegionUuid ? "Selected" : "All"} Forward (1s) →
                     </Button>
                   </Flex>
                 </>
@@ -544,16 +572,30 @@ const App: React.FC = () => {
                           maxDuration={maxDuration}
                         />
 
-                        {/* Region info */}
+                        {/* Region info - clickable to select */}
                         {regions.length > 0 && (
                           <RadixBox px="4" pb="2">
                             <Flex gap="2" wrap="wrap">
-                              {regions.map((region, idx) => (
-                                <Badge key={region.uuid} size="1" color="gray">
-                                  Region {idx + 1}: {PPQN.pulsesToSeconds(region.position, BPM).toFixed(1)}s -{" "}
-                                  {PPQN.pulsesToSeconds(region.position + region.duration, BPM).toFixed(1)}s
-                                </Badge>
-                              ))}
+                              {regions.map((region, idx) => {
+                                const isSelected = selectedRegionUuid === region.uuid;
+                                return (
+                                  <Badge
+                                    key={region.uuid}
+                                    size="1"
+                                    color={isSelected ? "blue" : "gray"}
+                                    variant={isSelected ? "solid" : "soft"}
+                                    style={{ cursor: "pointer" }}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedRegionUuid(isSelected ? null : region.uuid);
+                                      setSelectedTrackIndex(index);
+                                    }}
+                                  >
+                                    Region {idx + 1}: {PPQN.pulsesToSeconds(region.position, BPM).toFixed(1)}s -{" "}
+                                    {PPQN.pulsesToSeconds(region.position + region.duration, BPM).toFixed(1)}s
+                                  </Badge>
+                                );
+                              })}
                             </Flex>
                           </RadixBox>
                         )}
