@@ -60,7 +60,15 @@ export function useWaveformRendering(
   const trackPeaksRef = useRef<Map<string, any>>(new Map());
   const visuallyRenderedTracksRef = useRef<Set<string>>(new Set());
 
+  // Store callback in ref to avoid triggering effect on every render
+  const onAllRenderedRef = useRef(onAllRendered);
+  useEffect(() => {
+    onAllRenderedRef.current = onAllRendered;
+  }, [onAllRendered]);
+
   // Initialize CanvasPainters for waveform rendering
+  // Only depends on tracks and project - other values (canvasRefs, colors, padding, callbacks)
+  // are captured in closures and don't require rebuilding painters when they change
   useEffect(() => {
     if (tracks.length === 0 || !project) return undefined;
 
@@ -140,7 +148,7 @@ export function useWaveformRendering(
           // Check if all tracks are visually rendered
           if (visuallyRenderedTracksRef.current.size === tracks.length) {
             console.debug("[Rendering] All waveforms visually rendered!");
-            onAllRendered?.();
+            onAllRenderedRef.current?.();
           }
         }
       });
@@ -154,7 +162,7 @@ export function useWaveformRendering(
       canvasPaintersRef.current.clear();
       visuallyRenderedTracksRef.current.clear();
     };
-  }, [tracks, project, canvasRefs, channelPadding, waveformColor, onAllRendered]);
+  }, [tracks, project]);
 
   // Subscribe to sample loader state changes for peaks
   useEffect(() => {
