@@ -20,18 +20,7 @@ import { loadTracksFromFiles } from "./lib/trackLoading";
 import { useWaveformRendering } from "./hooks/useWaveformRendering";
 import type { TrackData } from "./lib/types";
 import "@radix-ui/themes/styles.css";
-import {
-  Theme,
-  Container,
-  Heading,
-  Text,
-  Flex,
-  Card,
-  Button,
-  Callout,
-  Badge,
-  Box as RadixBox
-} from "@radix-ui/themes";
+import { Theme, Container, Heading, Text, Flex, Card, Button, Callout, Badge, Box as RadixBox } from "@radix-ui/themes";
 
 /**
  * Track Editing Demo App Component
@@ -159,39 +148,41 @@ const App: React.FC = () => {
     };
   }, []);
 
-
   // Update region information for all tracks
-  const updateRegionInfo = useCallback((proj: Project) => {
-    if (!proj) return;
+  const updateRegionInfo = useCallback(
+    (proj: Project) => {
+      if (!proj) return;
 
-    const regionMap = new Map<string, any[]>();
+      const regionMap = new Map<string, any[]>();
 
-    // Access regions using pointerHub to get all region boxes
-    tracks.forEach(track => {
-      const regionList: any[] = [];
+      // Access regions using pointerHub to get all region boxes
+      tracks.forEach(track => {
+        const regionList: any[] = [];
 
-      // Get all pointers from the regions collection
-      const pointers = track.trackBox.regions.pointerHub.incoming();
+        // Get all pointers from the regions collection
+        const pointers = track.trackBox.regions.pointerHub.incoming();
 
-      pointers.forEach(({box}) => {
-        if (!box) return;
-        const regionBox = box as AudioRegionBox;
+        pointers.forEach(({ box }) => {
+          if (!box) return;
+          const regionBox = box as AudioRegionBox;
 
-        regionList.push({
-          uuid: UUID.toString(regionBox.address.uuid),
-          position: regionBox.position.getValue(),
-          duration: regionBox.duration.getValue(),
-          loopOffset: regionBox.loopOffset.getValue(),
-          loopDuration: regionBox.loopDuration.getValue(),
-          label: regionBox.label.getValue()
+          regionList.push({
+            uuid: UUID.toString(regionBox.address.uuid),
+            position: regionBox.position.getValue(),
+            duration: regionBox.duration.getValue(),
+            loopOffset: regionBox.loopOffset.getValue(),
+            loopDuration: regionBox.loopDuration.getValue(),
+            label: regionBox.label.getValue()
+          });
         });
+
+        regionMap.set(track.name, regionList);
       });
 
-      regionMap.set(track.name, regionList);
-    });
-
-    setRegionInfo(regionMap);
-  }, [tracks]);
+      setRegionInfo(regionMap);
+    },
+    [tracks]
+  );
 
   // Initial region info update
   useEffect(() => {
@@ -276,7 +267,7 @@ const App: React.FC = () => {
       const pointers = track.trackBox.regions.pointerHub.incoming();
 
       // Find region that contains the playhead
-      pointers.forEach(({box}) => {
+      pointers.forEach(({ box }) => {
         if (!box) return;
         const regionBox = box as AudioRegionBox;
 
@@ -310,7 +301,7 @@ const App: React.FC = () => {
       // Get all regions from this track using pointerHub
       const pointers = track.trackBox.regions.pointerHub.incoming();
 
-      pointers.forEach(({box}) => {
+      pointers.forEach(({ box }) => {
         if (!box) return;
         const regionBox = box as AudioRegionBox;
         const regionUuid = UUID.toString(regionBox.address.uuid);
@@ -339,7 +330,7 @@ const App: React.FC = () => {
       // Get all regions from this track using pointerHub
       const pointers = track.trackBox.regions.pointerHub.incoming();
 
-      pointers.forEach(({box}) => {
+      pointers.forEach(({ box }) => {
         if (!box) return;
         const regionBox = box as AudioRegionBox;
         const regionUuid = UUID.toString(regionBox.address.uuid);
@@ -371,10 +362,7 @@ const App: React.FC = () => {
   const isLoading = status !== "Ready to play!";
 
   // Calculate max duration for ruler
-  const maxDuration = Math.max(
-    ...Array.from(localAudioBuffersRef.current.values()).map(buf => buf.duration),
-    30
-  );
+  const maxDuration = Math.max(...Array.from(localAudioBuffersRef.current.values()).map(buf => buf.duration), 30);
 
   return (
     <Theme appearance="dark" accentColor="green" radius="medium">
@@ -448,16 +436,16 @@ const App: React.FC = () => {
                   <strong>3. Use transport controls</strong> to play, pause, or stop the audio
                 </Text>
                 <Text size="2">
-                  <strong>4. Split regions</strong> - Click on waveform to position playhead, then click "Split at Playhead"
+                  <strong>4. Split regions</strong> - Click on waveform to position playhead, then click "Split at
+                  Playhead"
                 </Text>
                 <Text size="2">
-                  <strong>5. Move regions</strong> - Use "Move Forward" / "Move Backward" to move selected region (or all if none selected)
+                  <strong>5. Move regions</strong> - Use "Move Forward" / "Move Backward" to move selected region (or
+                  all if none selected)
                 </Text>
               </Flex>
               <Callout.Root size="1" color="blue">
-                <Callout.Text>
-                  All edits are non-destructive! The original audio files remain unchanged.
-                </Callout.Text>
+                <Callout.Text>All edits are non-destructive! The original audio files remain unchanged.</Callout.Text>
               </Callout.Root>
             </Flex>
           </Card>
@@ -496,11 +484,16 @@ const App: React.FC = () => {
                     </Text>
                     {selectedRegionUuid && (
                       <Text size="2" color="blue">
-                        Selected region: <strong>Region {(() => {
-                          const regions = regionInfo.get(tracks[selectedTrackIndex]?.name) || [];
-                          const idx = regions.findIndex(r => r.uuid === selectedRegionUuid);
-                          return idx + 1;
-                        })()}</strong> (Click region badge to deselect)
+                        Selected region:{" "}
+                        <strong>
+                          Region{" "}
+                          {(() => {
+                            const regions = regionInfo.get(tracks[selectedTrackIndex]?.name) || [];
+                            const idx = regions.findIndex(r => r.uuid === selectedRegionUuid);
+                            return idx + 1;
+                          })()}
+                        </strong>{" "}
+                        (Click region badge to deselect)
                       </Text>
                     )}
                   </Flex>
@@ -526,12 +519,7 @@ const App: React.FC = () => {
               <Heading size="4">Tracks</Heading>
 
               {/* Timeline + Tracks container with playhead overlay */}
-              <TracksContainer
-                currentPosition={currentPosition}
-                bpm={BPM}
-                maxDuration={maxDuration}
-                leftOffset={200}
-              >
+              <TracksContainer currentPosition={currentPosition} bpm={BPM} maxDuration={maxDuration} leftOffset={200}>
                 {/* Timeline Ruler */}
                 <TimelineRuler maxDuration={maxDuration} />
 
@@ -550,8 +538,7 @@ const App: React.FC = () => {
                           boxShadow: selectedTrackIndex === index ? "0 0 0 2px var(--blue-9)" : "none",
                           borderRadius: "4px",
                           marginBottom: "8px",
-                          backgroundColor:
-                            selectedTrackIndex === index ? "var(--blue-2)" : "transparent",
+                          backgroundColor: selectedTrackIndex === index ? "var(--blue-2)" : "transparent",
                           transition: "all 0.2s ease"
                         }}
                       >
@@ -585,7 +572,7 @@ const App: React.FC = () => {
                                     color={isSelected ? "blue" : "gray"}
                                     variant={isSelected ? "solid" : "soft"}
                                     style={{ cursor: "pointer" }}
-                                    onClick={(e) => {
+                                    onClick={e => {
                                       e.stopPropagation();
                                       setSelectedRegionUuid(isSelected ? null : region.uuid);
                                       setSelectedTrackIndex(index);

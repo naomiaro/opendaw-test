@@ -70,7 +70,14 @@ export function useWaveformRendering(
   audioBuffers: Map<string, AudioBuffer>,
   options?: WaveformRenderingOptions
 ): void {
-  const { channelPadding = 4, waveformColor = "#4a9eff", onAllRendered, regionInfo, bpm = 120, maxDuration = 1 } = options || {};
+  const {
+    channelPadding = 4,
+    waveformColor = "#4a9eff",
+    onAllRendered,
+    regionInfo,
+    bpm = 120,
+    maxDuration = 1
+  } = options || {};
 
   const canvasPaintersRef = useRef<Map<string, CanvasPainter>>(new Map());
   const trackPeaksRef = useRef<Map<string, any>>(new Map());
@@ -128,7 +135,11 @@ export function useWaveformRendering(
 
         // Skip rendering if peaks haven't changed AND canvas wasn't resized AND regions haven't changed
         const currentRegions = regionInfoRef.current?.get(track.name);
-        if (lastRenderedPeaks.get(uuidString) === peaks && !canvasPainter.wasResized && currentRegions === lastRenderedPeaks.get(`${uuidString}_regions`)) {
+        if (
+          lastRenderedPeaks.get(uuidString) === peaks &&
+          !canvasPainter.wasResized &&
+          currentRegions === lastRenderedPeaks.get(`${uuidString}_regions`)
+        ) {
           return;
         }
 
@@ -176,9 +187,13 @@ export function useWaveformRendering(
 
             // Convert to frame indices in the peaks data
             const u0 = Math.floor((loopOffsetSeconds / audioBuffer.duration) * peaks.numFrames);
-            const u1 = Math.floor(((loopOffsetSeconds + regionDurationSeconds) / audioBuffer.duration) * peaks.numFrames);
+            const u1 = Math.floor(
+              ((loopOffsetSeconds + regionDurationSeconds) / audioBuffer.duration) * peaks.numFrames
+            );
 
-            console.debug(`[Waveform] Region ${idx}: pos=${regionStartSeconds.toFixed(2)}s-${(regionStartSeconds + regionDurationSeconds).toFixed(2)}s, x=${x0}-${x1}px, loopOffset=${loopOffsetSeconds.toFixed(2)}s, regionDur=${regionDurationSeconds.toFixed(2)}s, u=${u0}-${u1}`);
+            console.debug(
+              `[Waveform] Region ${idx}: pos=${regionStartSeconds.toFixed(2)}s-${(regionStartSeconds + regionDurationSeconds).toFixed(2)}s, x=${x0}-${x1}px, loopOffset=${loopOffsetSeconds.toFixed(2)}s, regionDur=${regionDurationSeconds.toFixed(2)}s, u=${u0}-${u1}`
+            );
 
             // Render each channel with padding
             for (let channel = 0; channel < numChannels; channel++) {

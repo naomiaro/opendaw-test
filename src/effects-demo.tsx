@@ -520,10 +520,7 @@ const App: React.FC = () => {
               <TracksContainer
                 currentPosition={currentPosition}
                 bpm={bpmRef.current}
-                maxDuration={Math.max(
-                  ...Array.from(localAudioBuffersRef.current.values()).map(buf => buf.duration),
-                  1
-                )}
+                maxDuration={Math.max(...Array.from(localAudioBuffersRef.current.values()).map(buf => buf.duration), 1)}
                 leftOffset={200}
                 playheadColor="#fff"
                 showBorder={true}
