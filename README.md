@@ -14,6 +14,7 @@ Visit http://localhost:5173 to explore the demos.
 ## Demos
 
 - **Effects & Mixer** - Multi-track mixer with professional audio effects (reverb, compressor, delay, crusher, stereo width)
+- **Track Editing** - Interactive audio region editing: split regions at playhead, move regions along timeline, non-destructive editing
 - **Recording API** - Real-time microphone recording with smooth 60fps live waveform visualization
 - **Drum Scheduling** - Timeline-based drum pattern programming with visual playback
 - **Drum Scheduling (AudioFit)** - Same pattern using AudioFit mode with `AutofitUtils.changeBpm()`
@@ -31,6 +32,7 @@ Quick links:
 - [Timeline Rendering](./documentation/06-timeline-rendering.md) - Building timeline UI
 - [Complete Example](./documentation/07-putting-it-together.md) - Full working application
 - [Recording & Live Peaks](./documentation/08-recording-and-live-peaks.md) - Audio recording with live waveforms
+- [Track Editing & Fades](./documentation/09-track-editing-and-fades.md) - Region editing capabilities and fade status
 
 ## Deployment
 
@@ -69,6 +71,7 @@ src/
 │   ├── projectSetup.ts # OpenDAW initialization
 │   └── audioUtils.ts   # Audio loading helpers
 ├── effects-demo.tsx    # Multi-track mixer demo
+├── track-editing-demo.tsx        # Interactive region editing
 ├── recording-api-react-demo.tsx  # Recording with live peaks
 ├── drum-scheduling-demo.tsx      # Drum pattern (NoSync mode)
 └── drum-scheduling-autofit-demo.tsx  # Drum pattern (AudioFit mode)

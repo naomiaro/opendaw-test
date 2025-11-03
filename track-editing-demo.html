@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- Primary Meta Tags -->
+  <title>OpenDAW Track Editing Demo - Interactive Audio Region Editing</title>
+  <meta name="title" content="OpenDAW Track Editing Demo - Interactive Audio Region Editing" />
+  <meta name="description" content="Interactive demonstration of audio track editing in the browser. Split, move, trim, and rearrange audio regions in real-time using Dark Ride's stems. Experience DAW-style editing with cut, copy, and paste operations." />
+  <meta name="keywords" content="OpenDAW, track editing, audio editing, web audio, DAW, cut, split, move, trim, regions, timeline, WebAssembly, SharedArrayBuffer, non-destructive editing" />
+  <meta name="author" content="Moises AI" />
+  <meta name="theme-color" content="#30a46c" />
+
+  <!-- Canonical URL -->
+  <link rel="canonical" href="https://opendaw-test.pages.dev/track-editing-demo.html" />
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://opendaw-test.pages.dev/track-editing-demo.html" />
+  <meta property="og:title" content="OpenDAW Track Editing Demo - Interactive Audio Region Editing" />
+  <meta property="og:description" content="Interactive demonstration of audio track editing. Split, move, trim, and rearrange audio regions in real-time using Dark Ride's stems." />
+  <meta property="og:image" content="https://opendaw-test.pages.dev/og-image-editing.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:site_name" content="OpenDAW Demos" />
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:url" content="https://opendaw-test.pages.dev/track-editing-demo.html" />
+  <meta name="twitter:title" content="OpenDAW Track Editing Demo - Interactive Audio Region Editing" />
+  <meta name="twitter:description" content="Interactive demonstration of audio track editing. Split, move, trim, and rearrange audio regions in real-time." />
+  <meta name="twitter:image" content="https://opendaw-test.pages.dev/og-image-editing.png" />
+
+  <!-- Structured Data (JSON-LD) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "OpenDAW Track Editing Demo",
+    "applicationCategory": "MultimediaApplication",
+    "operatingSystem": "Any",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "description": "Interactive demonstration of audio track editing in the browser. Split, move, trim, and rearrange audio regions in real-time using Dark Ride's stems. Experience DAW-style editing with cut, copy, and paste operations.",
+    "author": {
+      "@type": "Organization",
+      "name": "Moises AI",
+      "url": "https://moises.ai"
+    },
+    "screenshot": "https://opendaw-test.pages.dev/og-image-editing.png",
+    "softwareRequirements": "Modern web browser with SharedArrayBuffer support",
+    "featureList": [
+      "Split audio regions at playhead",
+      "Move and rearrange regions",
+      "Trim region start and end points",
+      "Copy and duplicate regions",
+      "Multi-track timeline editing",
+      "Real-time playback preview",
+      "Non-destructive editing"
+    ]
+  }
+  </script>
+
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+</head>
+<body>
+<div id="root"></div>
+<script type="module" src="/src/track-editing-demo.tsx"></script>
+</body>
+</html>

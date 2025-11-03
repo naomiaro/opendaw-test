@@ -23,6 +23,7 @@ export default defineConfig({
             input: {
                 main: resolve(__dirname, "index.html"),
                 effects: resolve(__dirname, "effects-demo.html"),
+                trackEditing: resolve(__dirname, "track-editing-demo.html"),
                 recordingApi: resolve(__dirname, "recording-api-react-demo.html"),
                 drumScheduling: resolve(__dirname, "drum-scheduling-demo.html"),
                 drumSchedulingAutofit: resolve(__dirname, "drum-scheduling-autofit-demo.html")

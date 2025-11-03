@@ -118,6 +118,17 @@ Read these documents in order to build up your understanding:
 
 ---
 
+### 9. [Track Editing and Fades](./09-track-editing-and-fades.md)
+- Track editing capabilities (split, move, trim, copy)
+- RegionEditing API and usage
+- Region properties and manipulation
+- Current status of fade functionality
+- Recommendations for implementing fades
+
+**Start here if:** You're implementing timeline editing features or need to understand fade support
+
+---
+
 ## Quick Reference
 
 ### Core Formulas
@@ -316,8 +327,9 @@ Found an error or want to improve this documentation? PRs welcome!
 | [Timeline Rendering](./06-timeline-rendering.md) | UI visualization | Frontend developers |
 | [Complete Example](./07-putting-it-together.md) | Full application | All developers |
 | [Recording & Live Peaks](./08-recording-and-live-peaks.md) | Recording with live waveforms | Frontend/recording features |
+| [Track Editing & Fades](./09-track-editing-and-fades.md) | Region editing & fades | Timeline/editing features |
 
-**Recommended reading order:** 1 → 2 → 3 → 4 → 5 → 6 → 7 (→ 8 if implementing recording)
+**Recommended reading order:** 1 → 2 → 3 → 4 → 5 → 6 → 7 (→ 8 if implementing recording, → 9 if implementing editing)
 
 **Troubleshooting order:** Having issues? → Read 3 first!
 

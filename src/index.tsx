@@ -46,6 +46,21 @@ const App: React.FC = () => {
             </Card>
 
             <Card asChild>
+              <Link href="/track-editing-demo.html" style={{ textDecoration: "none", padding: "var(--space-5)" }}>
+                <Flex direction="column" gap="3">
+                  <Flex direction="column" align="center" gap="2">
+                    <Text size="8">✂️</Text>
+                    <Heading size="5">Track Editing</Heading>
+                  </Flex>
+                  <Text size="2" color="gray">
+                    Interactive audio region editing with Dark Ride stems. Split regions at the playhead, move regions
+                    around the timeline, and experiment with non-destructive editing operations.
+                  </Text>
+                </Flex>
+              </Link>
+            </Card>
+
+            <Card asChild>
               <Link href="/recording-api-react-demo.html" style={{ textDecoration: "none", padding: "var(--space-5)" }}>
                 <Flex direction="column" gap="3">
                   <Flex direction="column" align="center" gap="2">
