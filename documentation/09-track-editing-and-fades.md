@@ -12,8 +12,6 @@ OpenDAW provides robust support for splitting audio regions at specific position
 
 #### API: `RegionEditing.cut()`
 
-**Location:** `/Users/naomiaro/Code/openDAW/packages/studio/adapters/src/timeline/RegionEditing.ts`
-
 **Method Signature:**
 ```typescript
 export const cut = (
@@ -59,8 +57,6 @@ editing.modify(() => {
 
 #### Advanced Movement with RegionMoveModifier
 
-**Location:** `/Users/naomiaro/Code/openDAW/packages/app/studio/src/ui/timeline/tracks/audio-unit/regions/RegionMoveModifier.ts`
-
 **Features:**
 - Drag regions along the timeline
 - Move regions between tracks
@@ -73,8 +69,6 @@ editing.modify(() => {
 Regions can be trimmed from both the start and end points.
 
 #### Trimming the Start (Moving In-Point)
-
-**Location:** `/Users/naomiaro/Code/openDAW/packages/app/studio/src/ui/timeline/tracks/audio-unit/regions/RegionStartModifier.ts`
 
 ```typescript
 // Trim start by adjusting position, duration, and loopOffset atomically
@@ -91,8 +85,6 @@ editing.modify(() => {
 - Hold **Ctrl** for aligned mode (all selected regions align)
 
 #### Trimming the End (Moving Out-Point)
-
-**Location:** `/Users/naomiaro/Code/openDAW/packages/app/studio/src/ui/timeline/tracks/audio-unit/regions/RegionDurationModifier.ts`
 
 ```typescript
 // Trim end by adjusting duration
@@ -209,7 +201,7 @@ regions.forEach(region => {
 
 **Example Implementation:**
 
-See `/Users/naomiaro/Code/opendaw-headless/src/hooks/useWaveformRendering.ts` for a complete React hook implementation that:
+See `src/hooks/useWaveformRendering.ts` for a complete React hook implementation that:
 - Subscribes to region changes
 - Renders waveforms with region awareness
 - Handles canvas resizing and repainting
@@ -246,8 +238,6 @@ After comprehensive analysis of the OpenDAW codebase, **user-facing fade functio
 
 #### 1. DAWProject Schema Support
 
-**Location:** `/Users/naomiaro/Code/openDAW/packages/lib/dawproject/src/defaults.ts` (lines 269-276)
-
 ```typescript
 // Schema definitions for DAWProject file format
 fadeTimeUnit: string
@@ -258,8 +248,6 @@ fadeOutTime: number
 **Status:** These are only defined for file format compatibility when importing/exporting DAWProject files. They are **NOT** implemented in the application itself.
 
 #### 2. Internal Crossfade Implementation
-
-**Location:** `/Users/naomiaro/Code/openDAW/packages/studio/core-processors/src/devices/instruments/TapeDeviceProcessor.ts`
 
 ```typescript
 // Fixed 128-sample crossfade for preventing audio glitches
@@ -273,8 +261,6 @@ const CROSSFADE_LENGTH = 128
 **Not user-accessible:** This is an internal audio processing detail, not a user-facing fade feature.
 
 #### 3. Automation System (Potential Workaround)
-
-**Location:** `/Users/naomiaro/Code/openDAW/packages/app/studio/src/ui/pages/AutomationPage.tsx`
 
 OpenDAW has a comprehensive automation system with:
 - Linear interpolation
@@ -306,10 +292,7 @@ OpenDAW has a comprehensive automation system with:
 
 ### Developer Note
 
-In `/Users/naomiaro/Code/openDAW/packages/app/studio/public/manuals/dev-log.md` (line 60):
-```markdown
-- "Fix loop discontinuations with fades" - TODO item
-```
+OpenDAW's dev-log includes a TODO item: "Fix loop discontinuations with fades"
 
 This appears to be a planned improvement for the internal loop crossfading, not user-facing fades.
 
@@ -517,10 +500,10 @@ This keeps the region data clean while adding fade support.
 
 For a complete working example of region-aware waveform visualization and track editing, see:
 
-- **Demo:** `/Users/naomiaro/Code/opendaw-headless/src/track-editing-demo.tsx`
-- **Waveform Hook:** `/Users/naomiaro/Code/opendaw-headless/src/hooks/useWaveformRendering.ts`
-- **TracksContainer:** `/Users/naomiaro/Code/opendaw-headless/src/components/TracksContainer.tsx`
-- **Playhead Component:** `/Users/naomiaro/Code/opendaw-headless/src/components/Playhead.tsx`
+- **Demo:** `src/track-editing-demo.tsx`
+- **Waveform Hook:** `src/hooks/useWaveformRendering.ts`
+- **TracksContainer:** `src/components/TracksContainer.tsx`
+- **Playhead Component:** `src/components/Playhead.tsx`
 
 The demo shows:
 - Splitting regions at playhead position
