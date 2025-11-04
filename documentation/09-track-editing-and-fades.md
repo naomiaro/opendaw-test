@@ -266,13 +266,17 @@ Each audio region has the following editable properties:
 
 **Example:**
 ```typescript
-// After splitting a region at 90 seconds:
+// Original region (before split):
+// position=0, duration=230s, loopOffset=0, loopDuration=230s
+// (Plays the entire 230-second audio file starting at timeline position 0)
+
+// After splitting at 90 seconds:
 // Left region:  position=0, duration=90s, loopOffset=0, loopDuration=90s
 // Right region: position=90s, duration=140s, loopOffset=90s, loopDuration=140s
 
 // If you move the right region to 120s:
 // Right region: position=120s, duration=140s, loopOffset=90s, loopDuration=140s
-// (Timeline position changed, but it still plays audio from 90-230s of the file)
+// (Timeline position changed to 120s, but it still plays audio from 90-230s of the file)
 ```
 
 **Critical Note About loopDuration:**
