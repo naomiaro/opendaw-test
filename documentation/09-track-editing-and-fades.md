@@ -125,16 +125,116 @@ Each audio region has the following editable properties:
 ```typescript
 // AudioRegionBox fields
 {
-    position: Int32Field        // Start position (PPQN)
-    duration: Int32Field        // Duration (PPQN)
-    loopOffset: Int32Field      // Loop start offset
-    loopDuration: Int32Field    // Loop duration
+    position: Int32Field        // Start position on timeline (PPQN)
+    duration: Int32Field        // Duration on timeline (PPQN)
+    loopOffset: Int32Field      // Which part of the audio file to play (PPQN)
+    loopDuration: Int32Field    // How much audio to play (PPQN)
     gain: Float32Field          // Volume/gain (static, not a fade)
     mute: BooleanField          // Mute state
     label: StringField          // Region name
     hue: Int32Field             // Color
 }
 ```
+
+**Important Distinction - Position vs LoopOffset:**
+
+- **`position` and `duration`**: Define WHERE the region sits on the timeline (when it plays)
+- **`loopOffset` and `loopDuration`**: Define WHICH part of the audio file is played
+
+**Example:**
+```typescript
+// After splitting a region at 90 seconds:
+// Left region:  position=0, duration=90s, loopOffset=0, loopDuration=90s
+// Right region: position=90s, duration=140s, loopOffset=90s, loopDuration=140s
+
+// If you move the right region to 120s:
+// Right region: position=120s, duration=140s, loopOffset=90s, loopDuration=140s
+// (Timeline position changed, but it still plays audio from 90-230s of the file)
+```
+
+**Critical Note About loopDuration:**
+
+When `RegionEditing.cut()` splits a region, it correctly sets `loopOffset` but may not update `loopDuration`. The parent region's `loopDuration` is preserved, which can cause audio playback issues if modified.
+
+**Do NOT manually modify `loopDuration` after cutting**, as OpenDAW uses the relationship between `duration` and `loopDuration` for time-stretching/pitch calculations. Changing it can result in pitch-shifted or time-stretched audio playback.
+
+### 6. Region-Aware Waveform Visualization
+
+When building a UI with split regions, waveforms need to be rendered based on timeline position to show gaps and splits correctly.
+
+#### The Problem
+
+Without region-aware rendering:
+- Single-region tracks stretch their waveform across the entire canvas
+- After splitting, if you continue using full-canvas rendering, the waveform appears to shift/change
+- Moving regions causes waveform peaks to change incorrectly
+
+#### The Solution: Timeline-Based Rendering
+
+Render all tracks using timeline-based positioning from the start:
+
+```typescript
+// For each region in the track
+regions.forEach(region => {
+  // Calculate timeline position (WHERE on the canvas)
+  const regionStartSeconds = PPQN.pulsesToSeconds(region.position, bpm);
+  const regionDurationSeconds = PPQN.pulsesToSeconds(region.duration, bpm);
+
+  const x0 = Math.floor((regionStartSeconds / maxDuration) * canvas.width);
+  const x1 = Math.floor(((regionStartSeconds + regionDurationSeconds) / maxDuration) * canvas.width);
+
+  // Calculate which audio to show (WHICH part of the audio file)
+  const loopOffsetSeconds = PPQN.pulsesToSeconds(region.loopOffset, bpm);
+
+  // Use region.duration (not loopDuration) to determine how much audio to show
+  const u0 = Math.floor((loopOffsetSeconds / audioBuffer.duration) * peaks.numFrames);
+  const u1 = Math.floor(((loopOffsetSeconds + regionDurationSeconds) / audioBuffer.duration) * peaks.numFrames);
+
+  // Render peaks from frames u0-u1 to canvas positions x0-x1
+  PeaksPainter.renderBlocks(context, peaks, channel, {
+    x0, x1,  // Canvas pixel positions
+    y0, y1,  // Vertical position
+    u0, u1,  // Frame indices in peaks data
+    v0: -1, v1: 1  // Amplitude range
+  });
+});
+```
+
+**Key Points:**
+
+1. **Always use timeline-based positioning** - Even for single-region tracks, this ensures consistency
+2. **Use `loopOffset` for audio selection** - Tells you which part of the audio file to show
+3. **Use `region.duration` (not `loopDuration`)** - For calculating how much audio to display
+4. **Gaps appear automatically** - When regions don't fill the timeline, gaps show as black space
+
+**Example Implementation:**
+
+See `/Users/naomiaro/Code/opendaw-headless/src/hooks/useWaveformRendering.ts` for a complete React hook implementation that:
+- Subscribes to region changes
+- Renders waveforms with region awareness
+- Handles canvas resizing and repainting
+- Shows gaps when regions are moved
+
+#### TracksContainer Component
+
+For building timeline-based UIs, use a container with absolute-positioned playhead overlay:
+
+```typescript
+<TracksContainer
+  currentPosition={currentPosition}
+  bpm={120}
+  maxDuration={maxDuration}
+  leftOffset={200}  // Width of track controls area
+>
+  <TimelineRuler maxDuration={maxDuration} />
+  {tracks.map(track => <TrackRow {...track} />)}
+</TracksContainer>
+```
+
+This ensures:
+- Playhead aligns correctly with waveforms
+- Timeline ruler matches waveform positions
+- Consistent positioning across all visual elements
 
 ## Fade Functionality Status
 
@@ -275,6 +375,46 @@ editing.modify(() => {
 })
 ```
 
+### Example 6: Update Region Info for Waveform Rendering
+
+```typescript
+// Create a map of regions for each track to pass to waveform rendering
+const updateRegionInfo = (project: Project) => {
+  const regionMap = new Map<string, any[]>();
+
+  tracks.forEach(track => {
+    const regionList: any[] = [];
+    const pointers = track.trackBox.regions.pointerHub.incoming();
+
+    pointers.forEach(({box}) => {
+      if (!box) return;
+      const regionBox = box as AudioRegionBox;
+
+      regionList.push({
+        uuid: UUID.toString(regionBox.address.uuid),
+        position: regionBox.position.getValue(),
+        duration: regionBox.duration.getValue(),
+        loopOffset: regionBox.loopOffset.getValue(),
+        loopDuration: regionBox.loopDuration.getValue(),
+        label: regionBox.label.getValue()
+      });
+    });
+
+    regionMap.set(track.name, regionList);
+  });
+
+  return regionMap;
+};
+
+// Use this after editing operations
+project.editing.modify(() => {
+  RegionEditing.cut(region, cutPosition, true);
+});
+
+// Update region info to trigger waveform re-render
+const regionInfo = updateRegionInfo(project);
+```
+
 ## Important Notes
 
 ### PPQN Units
@@ -307,6 +447,18 @@ project.editing.modify(() => {
 ### Loopable Regions
 
 Audio regions support looping with independent `loopOffset` and `loopDuration` parameters. When trimming regions, these must be updated to maintain proper loop behavior.
+
+### Visual Consistency with Timeline-Based Rendering
+
+When implementing waveform visualization:
+
+1. **Use timeline-based positioning from the start** - Don't wait until regions are split. This ensures waveforms look identical before and after splitting.
+
+2. **Waveforms should stay in place when splitting** - The visual appearance should not change when a region is split. Both resulting regions should show exactly the same waveforms they had before the split.
+
+3. **Peaks move with regions** - When a region is moved, its waveform peaks should move with it, because `loopOffset` stays constant and tells which audio to play.
+
+**Common Mistake:** Using full-canvas rendering for single regions and timeline-based rendering for split regions causes visual "jumps" when splitting. Always use timeline-based rendering.
 
 ### Region Consolidation
 
@@ -360,6 +512,22 @@ class FadeCurve {
 ```
 
 This keeps the region data clean while adding fade support.
+
+## Demo Implementation
+
+For a complete working example of region-aware waveform visualization and track editing, see:
+
+- **Demo:** `/Users/naomiaro/Code/opendaw-headless/src/track-editing-demo.tsx`
+- **Waveform Hook:** `/Users/naomiaro/Code/opendaw-headless/src/hooks/useWaveformRendering.ts`
+- **TracksContainer:** `/Users/naomiaro/Code/opendaw-headless/src/components/TracksContainer.tsx`
+- **Playhead Component:** `/Users/naomiaro/Code/opendaw-headless/src/components/Playhead.tsx`
+
+The demo shows:
+- Splitting regions at playhead position
+- Moving individual or all regions forward/backward
+- Region selection with visual feedback
+- Timeline-based waveform rendering with gaps
+- Correct peak visualization after splits and moves
 
 ## References
 

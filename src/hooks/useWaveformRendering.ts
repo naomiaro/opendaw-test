@@ -191,10 +191,6 @@ export function useWaveformRendering(
               ((loopOffsetSeconds + regionDurationSeconds) / audioBuffer.duration) * peaks.numFrames
             );
 
-            console.debug(
-              `[Waveform] Region ${idx}: pos=${regionStartSeconds.toFixed(2)}s-${(regionStartSeconds + regionDurationSeconds).toFixed(2)}s, x=${x0}-${x1}px, loopOffset=${loopOffsetSeconds.toFixed(2)}s, regionDur=${regionDurationSeconds.toFixed(2)}s, u=${u0}-${u1}`
-            );
-
             // Render each channel with padding
             for (let channel = 0; channel < numChannels; channel++) {
               const y0 = channel * channelHeight + channelPadding / 2;
