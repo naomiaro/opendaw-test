@@ -115,16 +115,16 @@ function snapToGrid(position: number, gridSize: number): number {
   return Math.round(position / gridSize) * gridSize;
 }
 
-// Example: Snap to quarter note (assuming 480 PPQN)
-const quarterNote = 480;
-const snappedPosition = snapToGrid(dragPosition, quarterNote);
+// Example: Snap to quarter note
+const { Quarter } = PPQN; // Always 960
+const snappedPosition = snapToGrid(dragPosition, Quarter);
 
 editing.modify(() => {
   regionBox.position.setValue(snappedPosition);
 });
 
 // Example: Snap to bar (4 beats in 4/4 time)
-const bar = 480 * 4; // 1920 PPQN
+const bar = Quarter * 4; // 3840 PPQN
 const snappedToBar = snapToGrid(dragPosition, bar);
 ```
 
@@ -425,9 +425,12 @@ Here are practical examples for common editing operations:
 
 ```typescript
 import { RegionEditing } from "@opendaw/studio-adapters"
+import { PPQN } from "@opendaw/lib-dsp"
 
-// Split at bar 8 (assuming 480 PPQN and 4/4 time)
-const bar8Position = 480 * 4 * 8 // 15360 PPQN
+const { Quarter } = PPQN; // Always 960
+
+// Split at bar 8 (4/4 time)
+const bar8Position = Quarter * 4 * 8 // 30720 PPQN
 
 editing.modify(() => {
     RegionEditing.cut(drumRegion, bar8Position, true)
@@ -437,8 +440,12 @@ editing.modify(() => {
 ### Example 2: Move a Vocal Region
 
 ```typescript
+import { PPQN } from "@opendaw/lib-dsp"
+
+const { Quarter } = PPQN; // Always 960
+
 // Move to start at bar 4
-const bar4Position = 480 * 4 * 4 // 7680 PPQN
+const bar4Position = Quarter * 4 * 4 // 15360 PPQN
 
 editing.modify(() => {
     vocalRegion.box.position.setValue(bar4Position)
@@ -448,9 +455,13 @@ editing.modify(() => {
 ### Example 3: Copy and Rearrange
 
 ```typescript
+import { PPQN } from "@opendaw/lib-dsp"
+
+const { Quarter } = PPQN; // Always 960
+
 // Copy a bass line to a different position
 const basslineCopy = bassRegion.copyTo({
-    position: 480 * 4 * 16, // Bar 16
+    position: Quarter * 4 * 16, // Bar 16 = 61440 PPQN
     track: bassTrack.box.regions
 })
 ```
@@ -458,8 +469,12 @@ const basslineCopy = bassRegion.copyTo({
 ### Example 4: Trim a Guitar Region
 
 ```typescript
+import { PPQN } from "@opendaw/lib-dsp"
+
+const { Quarter } = PPQN; // Always 960
+
 // Trim 2 beats from the start
-const trimAmount = 480 * 2 // 2 beats
+const trimAmount = Quarter * 2 // 2 beats = 1920 PPQN
 
 editing.modify(() => {
     guitarRegion.box.position.setValue(guitarRegion.position + trimAmount)
@@ -523,7 +538,7 @@ const regionInfo = updateRegionInfo(project);
 
 ### PPQN Units
 
-All positions and durations in OpenDAW are expressed in **PPQN** (Pulses Per Quarter Note) units, not seconds or samples. The standard PPQN value is 480.
+All positions and durations in OpenDAW are expressed in **PPQN** (Pulses Per Quarter Note) units, not seconds or samples. The standard PPQN value is 960 (available as `PPQN.Quarter`).
 
 **Converting between time units:**
 ```typescript
