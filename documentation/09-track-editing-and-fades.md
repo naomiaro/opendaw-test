@@ -246,12 +246,12 @@ const newRegion = audioRegion.copyTo({
 Each audio region has the following editable properties:
 
 ```typescript
-// AudioRegionBox fields
+// AudioRegionBox fields (all time values in PPQN)
 {
-    position: Int32Field        // Start position on timeline (PPQN)
-    duration: Int32Field        // Duration on timeline (PPQN)
-    loopOffset: Int32Field      // Which part of the audio file to play (PPQN)
-    loopDuration: Int32Field    // How much audio to play (PPQN)
+    position: Int32Field        // Timeline start position (when to play)
+    duration: Int32Field        // Timeline duration (how long on timeline)
+    loopOffset: Int32Field      // Audio file offset (which audio to play)
+    loopDuration: Int32Field    // Audio playback duration (how much audio)
     gain: Float32Field          // Volume/gain (static, not a fade)
     mute: BooleanField          // Mute state
     label: StringField          // Region name
@@ -259,24 +259,33 @@ Each audio region has the following editable properties:
 }
 ```
 
+**Note:** All time values are in PPQN units (960 per quarter note). Convert using `PPQN.pulsesToSeconds()` and `PPQN.secondsToPulses()` to work with seconds.
+
 **Important Distinction - Position vs LoopOffset:**
 
 - **`position` and `duration`**: Define WHERE the region sits on the timeline (when it plays)
-- **`loopOffset` and `loopDuration`**: Define WHICH part of the audio file is played
+  - Controls the region's placement on the timeline
+  - Determines when the region starts and how long it occupies on the timeline
 
-**Example:**
+- **`loopOffset` and `loopDuration`**: Define WHICH part of the audio file is played
+  - Controls which portion of the source audio file is used
+  - Determines where in the audio file to start reading and how much to read
+
+**Example (values shown in seconds for clarity, but stored as PPQN):**
 ```typescript
 // Original region (before split):
-// position=0, duration=230s, loopOffset=0, loopDuration=230s
-// (Plays the entire 230-second audio file starting at timeline position 0)
+// position=0s (0 PPQN), duration=230s (442560 PPQN)
+// loopOffset=0s (0 PPQN), loopDuration=230s (442560 PPQN)
+// → Plays the entire 230-second audio file starting at timeline position 0
 
-// After splitting at 90 seconds:
-// Left region:  position=0, duration=90s, loopOffset=0, loopDuration=90s
+// After splitting at 90 seconds (173520 PPQN):
+// Left region:  position=0s, duration=90s, loopOffset=0s, loopDuration=90s
 // Right region: position=90s, duration=140s, loopOffset=90s, loopDuration=140s
 
-// If you move the right region to 120s:
+// If you move the right region to timeline position 120s:
 // Right region: position=120s, duration=140s, loopOffset=90s, loopDuration=140s
-// (Timeline position changed to 120s, but it still plays audio from 90-230s of the file)
+// → Timeline position changed to 120s, but it still plays audio from 90-230s of the file
+// → loopOffset stays at 90s because it defines WHICH audio plays, not WHEN
 ```
 
 **Critical Note About loopDuration:**
