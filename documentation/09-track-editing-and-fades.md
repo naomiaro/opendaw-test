@@ -58,11 +58,132 @@ editing.modify(() => {
 #### Advanced Movement with RegionMoveModifier
 
 **Features:**
-- Drag regions along the timeline
-- Move regions between tracks
-- Copy mode with **Alt** key
-- Snapping to grid
-- Multiple region selection support
+
+##### Drag Regions Along the Timeline
+
+Move a region to a new position on the same track:
+
+```typescript
+// Move region forward by 4 beats
+const moveAmount = PPQN.secondsToPulses(1, bpm); // 1 second at given BPM
+
+editing.modify(() => {
+  const currentPosition = regionBox.position.getValue();
+  regionBox.position.setValue(currentPosition + moveAmount);
+});
+```
+
+##### Move Regions Between Tracks
+
+Transfer a region from one track to another:
+
+```typescript
+// Move region to a different track
+editing.modify(() => {
+  // Remove from current track
+  region.box.regions.unrefer();
+
+  // Add to target track
+  region.box.regions.refer(targetTrack.box.regions);
+
+  // Optionally adjust position
+  region.box.position.setValue(newPosition);
+});
+```
+
+##### Copy Mode (Alt Key)
+
+Create a copy of a region instead of moving it:
+
+```typescript
+// Copy region to new position
+const copiedRegion = originalRegion.copyTo({
+  position: newPosition,
+  track: targetTrack.box.regions  // Optional: different track
+});
+
+// Copy maintains all properties: loopOffset, loopDuration, gain, etc.
+```
+
+##### Snapping to Grid
+
+Snap positions to musical grid (bars, beats, subdivisions):
+
+```typescript
+// Helper function to snap to grid
+function snapToGrid(position: number, gridSize: number): number {
+  return Math.round(position / gridSize) * gridSize;
+}
+
+// Example: Snap to quarter note (assuming 480 PPQN)
+const quarterNote = 480;
+const snappedPosition = snapToGrid(dragPosition, quarterNote);
+
+editing.modify(() => {
+  regionBox.position.setValue(snappedPosition);
+});
+
+// Example: Snap to bar (4 beats in 4/4 time)
+const bar = 480 * 4; // 1920 PPQN
+const snappedToBar = snapToGrid(dragPosition, bar);
+```
+
+##### Multiple Region Selection
+
+Move multiple selected regions together:
+
+```typescript
+// Track which regions are selected
+const selectedRegions: AudioRegionBox[] = [region1, region2, region3];
+
+// Move all selected regions by the same delta
+const delta = PPQN.secondsToPulses(2, bpm);
+
+editing.modify(() => {
+  selectedRegions.forEach(region => {
+    const currentPos = region.position.getValue();
+    region.position.setValue(currentPos + delta);
+  });
+});
+```
+
+**Complete Interactive Movement Example:**
+
+```typescript
+// Example: Click and drag to move a region
+const handleRegionDragStart = (region: AudioRegionBox, startX: number) => {
+  const startPosition = region.position.getValue();
+
+  const handleMouseMove = (e: MouseEvent) => {
+    // Convert pixel delta to PPQN delta
+    const pixelDelta = e.clientX - startX;
+    const secondsDelta = (pixelDelta / canvasWidth) * maxDuration;
+    const ppqnDelta = PPQN.secondsToPulses(secondsDelta, bpm);
+
+    let newPosition = startPosition + ppqnDelta;
+
+    // Optional: Snap to grid
+    if (snapEnabled) {
+      newPosition = snapToGrid(newPosition, snapGridSize);
+    }
+
+    // Clamp to prevent negative positions
+    newPosition = Math.max(0, newPosition);
+
+    project.editing.modify(() => {
+      region.position.setValue(newPosition);
+    });
+  };
+
+  const handleMouseUp = () => {
+    window.removeEventListener('mousemove', handleMouseMove);
+    window.removeEventListener('mouseup', handleMouseUp);
+  };
+
+  window.addEventListener('mousemove', handleMouseMove);
+  window.addEventListener('mouseup', handleMouseUp);
+};
+```
 
 ### 3. Trimming Audio Regions
 
