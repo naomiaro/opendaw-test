@@ -40,7 +40,7 @@ const App: React.FC = () => {
   const [tracks, setTracks] = useState<TrackData[]>([]);
   const [selectedTrackIndex, setSelectedTrackIndex] = useState<number | null>(null);
   const [selectedRegionUuid, setSelectedRegionUuid] = useState<string | null>(null);
-  const [regionInfo, setRegionInfo] = useState<Map<string, any[]>>(new Map());
+  const [updateTrigger, setUpdateTrigger] = useState({});
 
   // Refs for non-reactive values
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
@@ -51,12 +51,34 @@ const App: React.FC = () => {
 
   const BPM = 124; // Dark Ride BPM
 
+  // Helper function to get regions from a track
+  const getRegionsForTrack = useCallback((track: TrackData) => {
+    const regions: any[] = [];
+    const pointers = track.trackBox.regions.pointerHub.incoming();
+
+    pointers.forEach(({ box }) => {
+      if (!box) return;
+      const regionBox = box as AudioRegionBox;
+
+      regions.push({
+        uuid: UUID.toString(regionBox.address.uuid),
+        position: regionBox.position.getValue(),
+        duration: regionBox.duration.getValue(),
+        loopOffset: regionBox.loopOffset.getValue(),
+        loopDuration: regionBox.loopDuration.getValue(),
+        label: regionBox.label.getValue()
+      });
+    });
+
+    return regions;
+  }, []);
+
   // Use waveform rendering hook with region-aware rendering
   useWaveformRendering(project, tracks, canvasRefs.current, localAudioBuffersRef.current, {
     onAllRendered: () => setStatus("Ready to play!"),
-    regionInfo,
     bpm: BPM,
-    maxDuration: Math.max(...Array.from(localAudioBuffersRef.current.values()).map(buf => buf.duration), 30)
+    maxDuration: Math.max(...Array.from(localAudioBuffersRef.current.values()).map(buf => buf.duration), 30),
+    updateTrigger
   });
 
   // Initialize OpenDAW
@@ -131,7 +153,6 @@ const App: React.FC = () => {
 
         if (mounted) {
           setTracks(loadedTracks);
-          updateRegionInfo(newProject);
           setStatus("Loading waveforms...");
         }
       } catch (error) {
@@ -147,48 +168,6 @@ const App: React.FC = () => {
       }
     };
   }, []);
-
-  // Update region information for all tracks
-  const updateRegionInfo = useCallback(
-    (proj: Project) => {
-      if (!proj) return;
-
-      const regionMap = new Map<string, any[]>();
-
-      // Access regions using pointerHub to get all region boxes
-      tracks.forEach(track => {
-        const regionList: any[] = [];
-
-        // Get all pointers from the regions collection
-        const pointers = track.trackBox.regions.pointerHub.incoming();
-
-        pointers.forEach(({ box }) => {
-          if (!box) return;
-          const regionBox = box as AudioRegionBox;
-
-          regionList.push({
-            uuid: UUID.toString(regionBox.address.uuid),
-            position: regionBox.position.getValue(),
-            duration: regionBox.duration.getValue(),
-            loopOffset: regionBox.loopOffset.getValue(),
-            loopDuration: regionBox.loopDuration.getValue(),
-            label: regionBox.label.getValue()
-          });
-        });
-
-        regionMap.set(track.name, regionList);
-      });
-
-      setRegionInfo(regionMap);
-    },
-    [tracks]
-  );
-
-  // Initial region info update
-  useEffect(() => {
-    if (!project || tracks.length === 0) return;
-    updateRegionInfo(project);
-  }, [project, tracks, updateRegionInfo]);
 
   // Transport controls
   const handlePlay = useCallback(async () => {
@@ -285,8 +264,9 @@ const App: React.FC = () => {
       });
     });
 
-    updateRegionInfo(project);
-  }, [project, selectedTrackIndex, tracks, updateRegionInfo, currentPosition]);
+    // Force re-render to show updated regions
+    setUpdateTrigger({});
+  }, [project, selectedTrackIndex, tracks, currentPosition]);
 
   const handleMoveRegionForward = useCallback(() => {
     if (!project || selectedTrackIndex === null) return;
@@ -314,8 +294,9 @@ const App: React.FC = () => {
       });
     });
 
-    updateRegionInfo(project);
-  }, [project, selectedTrackIndex, tracks, updateRegionInfo, selectedRegionUuid]);
+    // Force re-render to show updated regions
+    setUpdateTrigger({});
+  }, [project, selectedTrackIndex, tracks, selectedRegionUuid]);
 
   const handleMoveRegionBackward = useCallback(() => {
     if (!project || selectedTrackIndex === null) return;
@@ -344,8 +325,9 @@ const App: React.FC = () => {
       });
     });
 
-    updateRegionInfo(project);
-  }, [project, selectedTrackIndex, tracks, updateRegionInfo, selectedRegionUuid]);
+    // Force re-render to show updated regions
+    setUpdateTrigger({});
+  }, [project, selectedTrackIndex, tracks, selectedRegionUuid]);
 
   if (!project) {
     return (
@@ -488,7 +470,7 @@ const App: React.FC = () => {
                         <strong>
                           Region{" "}
                           {(() => {
-                            const regions = regionInfo.get(tracks[selectedTrackIndex]?.name) || [];
+                            const regions = getRegionsForTrack(tracks[selectedTrackIndex]);
                             const idx = regions.findIndex(r => r.uuid === selectedRegionUuid);
                             return idx + 1;
                           })()}
@@ -527,7 +509,7 @@ const App: React.FC = () => {
                 <div>
                   {tracks.map((track, index) => {
                     const uuidString = UUID.toString(track.uuid);
-                    const regions = regionInfo.get(track.name) || [];
+                    const regions = getRegionsForTrack(track);
 
                     return (
                       <div

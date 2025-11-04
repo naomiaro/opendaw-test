@@ -5,7 +5,6 @@ import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { Project } from "@opendaw/studio-core";
-import { AudioRegionBox } from "@opendaw/studio-boxes";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { MoisesLogo } from "./components/MoisesLogo";
 import { BackLink } from "./components/BackLink";
@@ -71,7 +70,6 @@ const App: React.FC = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentPosition, setCurrentPosition] = useState(0);
   const [tracks, setTracks] = useState<TrackData[]>([]);
-  const [regionInfo, setRegionInfo] = useState<Map<string, any[]>>(new Map());
 
   // Get audio boxes for effects
   const vocalsAudioBox = tracks.find(t => t.name === "Vocals")?.audioUnitBox || null;
@@ -224,44 +222,9 @@ const App: React.FC = () => {
   // Use shared waveform rendering hook with region-aware rendering
   useWaveformRendering(project, tracks, canvasRefs.current, localAudioBuffersRef.current, {
     onAllRendered: () => setStatus("Ready to play!"),
-    regionInfo,
     bpm: bpmRef.current,
     maxDuration
   });
-
-  // Update region info whenever tracks change
-  useEffect(() => {
-    if (!project || tracks.length === 0) return;
-
-    const updateRegions = () => {
-      const newRegionInfo = new Map<string, any[]>();
-
-      tracks.forEach(track => {
-        const regionList: any[] = [];
-        const pointers = track.trackBox.regions.pointerHub.incoming();
-
-        pointers.forEach(({ box }) => {
-          if (!box) return;
-          const regionBox = box as AudioRegionBox;
-
-          regionList.push({
-            uuid: UUID.toString(regionBox.address.uuid),
-            position: regionBox.position.getValue(),
-            duration: regionBox.duration.getValue(),
-            loopOffset: regionBox.loopOffset.getValue(),
-            loopDuration: regionBox.loopDuration.getValue(),
-            label: regionBox.label.getValue()
-          });
-        });
-
-        newRegionInfo.set(track.name, regionList);
-      });
-
-      setRegionInfo(newRegionInfo);
-    };
-
-    updateRegions();
-  }, [project, tracks]);
 
   // Initialize OpenDAW
   useEffect(() => {

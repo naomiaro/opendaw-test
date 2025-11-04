@@ -23,19 +23,21 @@ export interface WaveformRenderingOptions {
   onAllRendered?: () => void;
 
   /**
-   * Map of track names to their regions for region-aware rendering
-   */
-  regionInfo?: Map<string, any[]>;
-
-  /**
-   * BPM for time calculations
+   * BPM for time calculations (default: 120)
    */
   bpm?: number;
 
   /**
    * Maximum duration in seconds for calculating region positions
+   * If not provided, will use the longest audio buffer duration
    */
   maxDuration?: number;
+
+  /**
+   * Update trigger - change this value to force waveform re-render
+   * Useful when regions are modified externally
+   */
+  updateTrigger?: any;
 }
 
 /**
@@ -74,9 +76,9 @@ export function useWaveformRendering(
     channelPadding = 4,
     waveformColor = "#4a9eff",
     onAllRendered,
-    regionInfo,
     bpm = 120,
-    maxDuration = 1
+    maxDuration,
+    updateTrigger
   } = options || {};
 
   const canvasPaintersRef = useRef<Map<string, CanvasPainter>>(new Map());
@@ -89,13 +91,12 @@ export function useWaveformRendering(
     onAllRenderedRef.current = onAllRendered;
   }, [onAllRendered]);
 
-  // Store regionInfo in ref to avoid re-rendering on every region update
-  const regionInfoRef = useRef(regionInfo);
+  // Request painter updates when updateTrigger changes
   useEffect(() => {
-    regionInfoRef.current = regionInfo;
-    // Request re-render when regions change
-    canvasPaintersRef.current.forEach(painter => painter.requestUpdate());
-  }, [regionInfo]);
+    if (updateTrigger !== undefined) {
+      canvasPaintersRef.current.forEach(painter => painter.requestUpdate());
+    }
+  }, [updateTrigger]);
 
   // Initialize CanvasPainters for waveform rendering
   // Only depends on tracks and project - other values (canvasRefs, colors, padding, callbacks)
@@ -133,12 +134,25 @@ export function useWaveformRendering(
           return;
         }
 
+        // Get regions for this track by reading directly from trackBox
+        const regions: any[] = [];
+        const pointers = track.trackBox.regions.pointerHub.incoming();
+        pointers.forEach(({ box }) => {
+          if (!box) return;
+          regions.push({
+            position: (box as any).position.getValue(),
+            duration: (box as any).duration.getValue(),
+            loopOffset: (box as any).loopOffset.getValue(),
+            loopDuration: (box as any).loopDuration.getValue()
+          });
+        });
+
         // Skip rendering if peaks haven't changed AND canvas wasn't resized AND regions haven't changed
-        const currentRegions = regionInfoRef.current?.get(track.name);
+        const regionsKey = regions.map(r => `${r.position},${r.duration},${r.loopOffset}`).join(";");
         if (
           lastRenderedPeaks.get(uuidString) === peaks &&
           !canvasPainter.wasResized &&
-          currentRegions === lastRenderedPeaks.get(`${uuidString}_regions`)
+          regionsKey === lastRenderedPeaks.get(`${uuidString}_regions`)
         ) {
           return;
         }
@@ -155,27 +169,28 @@ export function useWaveformRendering(
         const numChannels = peaks.numChannels;
         const channelHeight = totalHeight / numChannels;
 
-        // Get regions for this track for region-aware rendering
-        const regions = regionInfoRef.current?.get(track.name) || [];
         const audioBuffer = audioBuffers.get(uuidString);
 
+        // Calculate maxDuration if not provided
+        const effectiveMaxDuration =
+          maxDuration || Math.max(...Array.from(audioBuffers.values()).map(buf => buf.duration), 1);
+
         // Use region-aware rendering if:
-        // 1. We have regionInfo populated (regionInfoRef.current exists)
-        // 2. We have regions for this track
-        // 3. We have the audio buffer and maxDuration
+        // 1. We have regions for this track
+        // 2. We have the audio buffer and maxDuration
         // This ensures timeline-based positioning for all tracks
-        const useRegionRendering = regionInfoRef.current && regions.length > 0 && audioBuffer && maxDuration > 0;
+        const useRegionRendering = regions.length > 0 && audioBuffer && effectiveMaxDuration > 0;
 
         if (useRegionRendering) {
           // Region-aware rendering: render each region at its position
-          regions.forEach((region: any, idx: number) => {
+          regions.forEach((region: any) => {
             // Convert region position from PPQN to seconds to pixels
             const regionStartSeconds = PPQN.pulsesToSeconds(region.position, bpm);
             const regionDurationSeconds = PPQN.pulsesToSeconds(region.duration, bpm);
 
             // Calculate x position as percentage of maxDuration
-            const x0Percent = regionStartSeconds / maxDuration;
-            const x1Percent = (regionStartSeconds + regionDurationSeconds) / maxDuration;
+            const x0Percent = regionStartSeconds / effectiveMaxDuration;
+            const x1Percent = (regionStartSeconds + regionDurationSeconds) / effectiveMaxDuration;
 
             const x0 = Math.floor(x0Percent * canvas.clientWidth);
             const x1 = Math.floor(x1Percent * canvas.clientWidth);
@@ -228,7 +243,7 @@ export function useWaveformRendering(
         }
 
         lastRenderedPeaks.set(uuidString, peaks);
-        lastRenderedPeaks.set(`${uuidString}_regions`, currentRegions);
+        lastRenderedPeaks.set(`${uuidString}_regions`, regionsKey);
 
         // Track visual rendering completion
         if (!visuallyRenderedTracksRef.current.has(uuidString)) {
