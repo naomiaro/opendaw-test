@@ -285,16 +285,9 @@ When `RegionEditing.cut()` splits a region, it correctly sets `loopOffset` but m
 
 When building a UI with split regions, waveforms need to be rendered based on timeline position to show gaps and splits correctly.
 
-#### The Problem
+#### Timeline-Based Rendering
 
-Without region-aware rendering:
-- Single-region tracks stretch their waveform across the entire canvas
-- After splitting, if you continue using full-canvas rendering, the waveform appears to shift/change
-- Moving regions causes waveform peaks to change incorrectly
-
-#### The Solution: Timeline-Based Rendering
-
-Render all tracks using timeline-based positioning from the start:
+Render waveforms by specifying both the canvas position (where to draw) and the audio position (which audio to show):
 
 ```typescript
 import { PPQN } from "@opendaw/lib-dsp";
@@ -327,8 +320,8 @@ regions.forEach(region => {
 
 **Key Points:**
 
-1. **Always use timeline-based positioning** - Even for single-region tracks, this ensures consistency
-2. **Use `loopOffset` for audio selection** - Tells you which part of the audio file to show
+1. **Calculate canvas positions from timeline time** - Use `position` and `duration` to determine where on the canvas to draw (x0, x1)
+2. **Use `loopOffset` for audio selection** - Tells you which part of the audio file to show (u0, u1 frame indices)
 3. **Use `region.duration` (not `loopDuration`)** - For calculating how much audio to display
 4. **Gaps appear automatically** - When regions don't fill the timeline, gaps show as black space
 
@@ -586,13 +579,11 @@ Audio regions support looping with independent `loopOffset` and `loopDuration` p
 
 When implementing waveform visualization:
 
-1. **Use timeline-based positioning from the start** - Don't wait until regions are split. This ensures waveforms look identical before and after splitting.
+1. **Use timeline-based positioning** - Calculate canvas positions based on the region's timeline position and duration. This ensures waveforms look identical before and after splitting.
 
 2. **Waveforms should stay in place when splitting** - The visual appearance should not change when a region is split. Both resulting regions should show exactly the same waveforms they had before the split.
 
 3. **Peaks move with regions** - When a region is moved, its waveform peaks should move with it, because `loopOffset` stays constant and tells which audio to play.
-
-**Common Mistake:** Using full-canvas rendering for single regions and timeline-based rendering for split regions causes visual "jumps" when splitting. Always use timeline-based rendering.
 
 ### Region Consolidation
 
