@@ -288,11 +288,68 @@ Each audio region has the following editable properties:
 // → loopOffset stays at 90s because it defines WHICH audio plays, not WHEN
 ```
 
-**Critical Note About loopDuration:**
+**Understanding loopDuration (Critical Concept):**
 
-When `RegionEditing.cut()` splits a region, it correctly sets `loopOffset` but may not update `loopDuration`. The parent region's `loopDuration` is preserved, which can cause audio playback issues if modified.
+`loopDuration` acts as a **"coordinate system"** for mapping PPQN time to audio content. It defines the PPQN equivalent of the audio content duration and must match the actual time length of the audio being played.
 
-**Do NOT manually modify `loopDuration` after cutting**, as OpenDAW uses the relationship between `duration` and `loopDuration` for time-stretching/pitch calculations. Changing it can result in pitch-shifted or time-stretched audio playback.
+**Why loopDuration Stays Constant When Cutting:**
+
+When `RegionEditing.cut()` splits a region, `loopDuration` is intentionally **NOT** updated. Instead, only `loopOffset` and `duration` change. This works because OpenDAW's audio engine clamps the playback range based on each region's `duration`, even though both regions reference the same `loopDuration`.
+
+**Example: Cutting a 10-second region at 5 seconds:**
+
+Before cut:
+```typescript
+position: 0, duration: 9600 PPQN (10s), loopOffset: 0, loopDuration: 9600 PPQN
+→ Plays audio frames 0% to 100% (full 10 seconds)
+```
+
+After cut at 4800 PPQN (5 seconds):
+```typescript
+// First region
+position: 0, duration: 4800 PPQN (5s), loopOffset: 0, loopDuration: 9600 PPQN
+→ resultEndValue = 4800 / 9600 = 0.5
+→ Plays audio frames 0% to 50% (first 5 seconds) ✓
+
+// Second region
+position: 4800, duration: 4800 PPQN (5s), loopOffset: 4800, loopDuration: 9600 PPQN
+→ resultStartValue = 4800 / 9600 = 0.5
+→ Plays audio frames 50% to 100% (last 5 seconds) ✓
+```
+
+The `loopDuration` provides the reference length (9600 PPQN = 10 seconds), while `duration` and `loopOffset` select which portion to play.
+
+**Why Pitch Depends on loopDuration:**
+
+OpenDAW calculates playback speed using:
+```typescript
+stepSize = (audioFrameEnd - audioFrameStart) / outputBufferSize
+```
+
+Where:
+- `audioFrameEnd = audioFileFrames * (resultEndValue)`
+- `resultEndValue` is calculated from `loopDuration`
+
+If you manually change `loopDuration` to a value that doesn't match the audio content's actual duration in PPQN:
+- The resultStartValue/resultEndValue fractions become incorrect
+- This causes the wrong stepSize calculation
+- Wrong stepSize = time-stretching/pitch-shifting
+
+**Example of incorrect loopDuration:**
+```typescript
+// Audio is actually 10 seconds, but you set loopDuration to 5 seconds:
+loopDuration: 4800 PPQN  // Wrong! Should be 9600
+→ System thinks it only has 5 seconds of audio to stretch across 10 seconds
+→ stepSize becomes 0.5 (half speed)
+→ Result: Audio plays at half speed = pitch down by one octave
+```
+
+**Important Rules:**
+
+1. **When creating a region:** Set `loopDuration = PPQN.secondsToPulses(audioContentDuration, bpm)`
+2. **When cutting a region:** Do NOT change `loopDuration` - it stays constant as the coordinate system
+3. **When looping:** Set `duration` as a multiple of `loopDuration` (e.g., `duration = loopDuration * 2` for 2 loops)
+4. **Never manually modify `loopDuration`** unless you're intentionally time-stretching/pitch-shifting
 
 ### 6. Region-Aware Waveform Visualization
 
