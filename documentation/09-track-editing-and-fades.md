@@ -29,6 +29,8 @@ export const cut = (
 
 **Example Usage:**
 ```typescript
+import { RegionEditing } from "@opendaw/studio-adapters";
+
 // From the OpenDAW timeline UI
 editing.modify(() =>
     regionSelection.selected()
@@ -64,6 +66,8 @@ editing.modify(() => {
 Move a region to a new position on the same track:
 
 ```typescript
+import { PPQN } from "@opendaw/lib-dsp";
+
 // Move region forward by 4 beats
 const moveAmount = PPQN.secondsToPulses(1, bpm); // 1 second at given BPM
 
@@ -110,6 +114,8 @@ const copiedRegion = originalRegion.copyTo({
 Snap positions to musical grid (bars, beats, subdivisions):
 
 ```typescript
+import { PPQN } from "@opendaw/lib-dsp";
+
 // Helper function to snap to grid
 function snapToGrid(position: number, gridSize: number): number {
   return Math.round(position / gridSize) * gridSize;
@@ -133,6 +139,8 @@ const snappedToBar = snapToGrid(dragPosition, bar);
 Move multiple selected regions together:
 
 ```typescript
+import { PPQN } from "@opendaw/lib-dsp";
+
 // Track which regions are selected
 const selectedRegions: AudioRegionBox[] = [region1, region2, region3];
 
@@ -150,6 +158,8 @@ editing.modify(() => {
 **Complete Interactive Movement Example:**
 
 ```typescript
+import { PPQN } from "@opendaw/lib-dsp";
+
 // Example: Click and drag to move a region
 const handleRegionDragStart = (region: AudioRegionBox, startX: number) => {
   const startPosition = region.position.getValue();
@@ -287,6 +297,8 @@ Without region-aware rendering:
 Render all tracks using timeline-based positioning from the start:
 
 ```typescript
+import { PPQN } from "@opendaw/lib-dsp";
+
 // For each region in the track
 regions.forEach(region => {
   // Calculate timeline position (WHERE on the canvas)
@@ -497,6 +509,9 @@ editing.modify(() => {
 ### Example 6: Update Region Info for Waveform Rendering
 
 ```typescript
+import { RegionEditing } from "@opendaw/studio-adapters";
+import { UUID } from "@opendaw/lib-std";
+
 // Create a map of regions for each track to pass to waveform rendering
 const updateRegionInfo = (project: Project) => {
   const regionMap = new Map<string, any[]>();
