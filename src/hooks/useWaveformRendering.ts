@@ -23,11 +23,6 @@ export interface WaveformRenderingOptions {
   onAllRendered?: () => void;
 
   /**
-   * BPM for time calculations (default: 120)
-   */
-  bpm?: number;
-
-  /**
    * Maximum duration in seconds for calculating region positions
    * If not provided, will use the longest audio buffer duration
    */
@@ -72,14 +67,10 @@ export function useWaveformRendering(
   audioBuffers: Map<string, AudioBuffer>,
   options?: WaveformRenderingOptions
 ): void {
-  const {
-    channelPadding = 4,
-    waveformColor = "#4a9eff",
-    onAllRendered,
-    bpm = 120,
-    maxDuration,
-    updateTrigger
-  } = options || {};
+  const { channelPadding = 4, waveformColor = "#4a9eff", onAllRendered, maxDuration, updateTrigger } = options || {};
+
+  // Read BPM from project
+  const bpm = project?.timelineBox.bpm.getValue() ?? 120;
 
   const canvasPaintersRef = useRef<Map<string, CanvasPainter>>(new Map());
   const trackPeaksRef = useRef<Map<string, any>>(new Map());

@@ -222,7 +222,6 @@ const App: React.FC = () => {
   // Use shared waveform rendering hook with region-aware rendering
   useWaveformRendering(project, tracks, canvasRefs.current, localAudioBuffersRef.current, {
     onAllRendered: () => setStatus("Ready to play!"),
-    bpm: bpmRef.current,
     maxDuration
   });
 
