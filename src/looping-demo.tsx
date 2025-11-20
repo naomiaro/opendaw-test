@@ -445,69 +445,75 @@ const App: React.FC = () => {
               <Text size="3" weight="bold">Timeline</Text>
 
               {/* Custom Loop Area Visualization */}
-              <div style={{ position: "relative", width: "100%", height: "40px", background: "#1a1a1a", borderRadius: "4px" }}>
-                <svg
-                  width="100%"
-                  height="40"
-                  style={{ position: "absolute", top: 0, left: 0 }}
-                >
-                  {/* Timeline grid */}
-                  {Array.from({ length: 17 }).map((_, i) => {
-                    const x = (i / 16) * 100;
-                    return (
-                      <line
-                        key={i}
-                        x1={`${x}%`}
-                        y1="0"
-                        x2={`${x}%`}
-                        y2="40"
-                        stroke="#333"
-                        strokeWidth="1"
-                      />
-                    );
-                  })}
+              <div style={{ display: "flex", flexDirection: "row", alignItems: "stretch", borderRadius: "4px", overflow: "hidden" }}>
+                {/* Left spacer matching controls width */}
+                <div style={{ width: "200px", backgroundColor: "var(--gray-3)", borderRight: "1px solid var(--gray-6)" }} />
 
-                  {/* Loop area visualization */}
-                  {loopEnabled && (
-                    <>
-                      <rect
-                        x={`${(loopStart / (PPQN.Bar * 16)) * 100}%`}
-                        y="0"
-                        width={`${((loopEnd - loopStart) / (PPQN.Bar * 16)) * 100}%`}
-                        height="40"
-                        fill="rgba(147, 51, 234, 0.2)"
-                        stroke="rgb(147, 51, 234)"
-                        strokeWidth="2"
-                      />
+                {/* Timeline area aligned with waveforms */}
+                <div style={{ position: "relative", flex: 1, height: "40px", background: "#1a1a1a" }}>
+                  <svg
+                    width="100%"
+                    height="40"
+                    style={{ position: "absolute", top: 0, left: 0 }}
+                  >
+                    {/* Timeline grid */}
+                    {Array.from({ length: 17 }).map((_, i) => {
+                      const x = (i / 16) * 100;
+                      return (
+                        <line
+                          key={i}
+                          x1={`${x}%`}
+                          y1="0"
+                          x2={`${x}%`}
+                          y2="40"
+                          stroke="#333"
+                          strokeWidth="1"
+                        />
+                      );
+                    })}
 
-                      {/* Loop start handle */}
-                      <circle
-                        cx={`${(loopStart / (PPQN.Bar * 16)) * 100}%`}
-                        cy="20"
-                        r="6"
-                        fill="rgb(147, 51, 234)"
-                      />
+                    {/* Loop area visualization */}
+                    {loopEnabled && (
+                      <>
+                        <rect
+                          x={`${(loopStart / (PPQN.Bar * 16)) * 100}%`}
+                          y="0"
+                          width={`${((loopEnd - loopStart) / (PPQN.Bar * 16)) * 100}%`}
+                          height="40"
+                          fill="rgba(147, 51, 234, 0.2)"
+                          stroke="rgb(147, 51, 234)"
+                          strokeWidth="2"
+                        />
 
-                      {/* Loop end handle */}
-                      <circle
-                        cx={`${(loopEnd / (PPQN.Bar * 16)) * 100}%`}
-                        cy="20"
-                        r="6"
-                        fill="rgb(147, 51, 234)"
-                      />
-                    </>
-                  )}
+                        {/* Loop start handle */}
+                        <circle
+                          cx={`${(loopStart / (PPQN.Bar * 16)) * 100}%`}
+                          cy="20"
+                          r="6"
+                          fill="rgb(147, 51, 234)"
+                        />
 
-                  {/* Playhead */}
-                  <line
-                    x1={`${(currentPosition / (PPQN.Bar * 16)) * 100}%`}
-                    y1="0"
-                    x2={`${(currentPosition / (PPQN.Bar * 16)) * 100}%`}
-                    y2="40"
-                    stroke="#ff0066"
-                    strokeWidth="2"
-                  />
-                </svg>
+                        {/* Loop end handle */}
+                        <circle
+                          cx={`${(loopEnd / (PPQN.Bar * 16)) * 100}%`}
+                          cy="20"
+                          r="6"
+                          fill="rgb(147, 51, 234)"
+                        />
+                      </>
+                    )}
+
+                    {/* Playhead */}
+                    <line
+                      x1={`${(currentPosition / (PPQN.Bar * 16)) * 100}%`}
+                      y1="0"
+                      x2={`${(currentPosition / (PPQN.Bar * 16)) * 100}%`}
+                      y2="40"
+                      stroke="#ff0066"
+                      strokeWidth="2"
+                    />
+                  </svg>
+                </div>
               </div>
 
               <TimelineRuler
@@ -517,21 +523,36 @@ const App: React.FC = () => {
               />
 
               <TracksContainer>
-                {tracks.map((track, index) => {
-                  const uuidString = UUID.toString(track.uuid);
-                  return (
-                    <TrackRow
-                      key={uuidString}
-                      track={track}
-                      canvasRef={canvas => {
-                        if (canvas) canvasRefs.current.set(uuidString, canvas);
-                      }}
-                      currentPosition={currentPosition}
-                      bpm={BPM}
-                      maxDuration={16 * PPQN.Bar}
-                    />
+                {(() => {
+                  // Calculate max duration in seconds from audio buffers
+                  const maxDuration = Math.max(
+                    ...Array.from(localAudioBuffersRef.current.values()).map(buf => buf.duration),
+                    1
                   );
-                })}
+
+                  return tracks.map((track, index) => {
+                    const uuidString = UUID.toString(track.uuid);
+                    return (
+                      <TrackRow
+                        key={uuidString}
+                        track={track}
+                        project={project!}
+                        allTracks={tracks}
+                        peaks={undefined}
+                        canvasRef={canvas => {
+                          if (canvas) canvasRefs.current.set(uuidString, canvas);
+                        }}
+                        currentPosition={currentPosition}
+                        isPlaying={isPlaying}
+                        bpm={BPM}
+                        audioBuffer={localAudioBuffersRef.current.get(uuidString)}
+                        setCurrentPosition={setCurrentPosition}
+                        pausedPositionRef={pausedPositionRef}
+                        maxDuration={maxDuration}
+                      />
+                    );
+                  });
+                })()}
               </TracksContainer>
             </Flex>
           </Card>
