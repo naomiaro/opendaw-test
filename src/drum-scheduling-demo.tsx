@@ -14,7 +14,7 @@ import { MoisesLogo } from "./components/MoisesLogo";
 import { BackLink } from "./components/BackLink";
 import { loadAudioFile } from "./lib/audioUtils";
 import { initializeOpenDAW } from "./lib/projectSetup";
-import { useAudioExport } from "./lib/useAudioExport";
+import { useAudioExport } from "./hooks/useAudioExport";
 import "@radix-ui/themes/styles.css";
 import { Theme, Container, Heading, Text, Button, Flex, Card, Badge, Separator } from "@radix-ui/themes";
 

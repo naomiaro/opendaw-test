@@ -252,10 +252,10 @@ await exportStems(project, stemsConfig, {
 
 For React applications, the `useAudioExport` hook provides a convenient way to manage export state and handlers.
 
-**Location:** `src/lib/useAudioExport.ts`
+**Location:** `src/hooks/useAudioExport.ts`
 
 ```typescript
-import { useAudioExport } from "./lib/useAudioExport";
+import { useAudioExport } from "./hooks/useAudioExport";
 
 const {
   isExporting,
@@ -293,7 +293,7 @@ interface StemConfigBuilder {
 **Complete Example:**
 
 ```typescript
-import { useAudioExport } from "./lib/useAudioExport";
+import { useAudioExport } from "./hooks/useAudioExport";
 import { Button, Progress, Text } from "@radix-ui/themes";
 
 const ExportControls = ({ project }: { project: Project | null }) => {
@@ -1102,7 +1102,7 @@ This is **not a bug** - it's intentional data integrity checking to prevent temp
 ### Related Files
 
 - **Export Utility:** `src/lib/audioExport.ts`
-- **React Hook:** `src/lib/useAudioExport.ts`
+- **React Hook:** `src/hooks/useAudioExport.ts`
 - **Drum Demo Integration:** `src/drum-scheduling-demo.tsx`
 - **Effects Demo Integration:** `src/effects-demo.tsx`
 

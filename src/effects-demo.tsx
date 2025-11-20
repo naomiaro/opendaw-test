@@ -19,7 +19,7 @@ import { loadTracksFromFiles } from "./lib/trackLoading";
 import { useWaveformRendering } from "./hooks/useWaveformRendering";
 import { useEffectChain } from "./hooks/useEffectChain";
 import { useDynamicEffect } from "./hooks/useDynamicEffect";
-import { useAudioExport } from "./lib/useAudioExport";
+import { useAudioExport } from "./hooks/useAudioExport";
 import type { TrackData } from "./lib/types";
 import "@radix-ui/themes/styles.css";
 import { Theme, Container, Heading, Text, Flex, Card, Separator, Callout, Slider, Button } from "@radix-ui/themes";

@@ -1,8 +1,8 @@
 import { useState, useCallback } from "react";
 import { Project } from "@opendaw/studio-core";
 import { UUID } from "@opendaw/lib-std";
-import { exportFullMix, exportStems } from "./audioExport";
-import type { StemExportConfig } from "./audioExport";
+import { exportFullMix, exportStems } from "../lib/audioExport";
+import type { StemExportConfig } from "../lib/audioExport";
 
 /**
  * Configuration for building stem export settings
