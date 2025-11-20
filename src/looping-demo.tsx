@@ -6,7 +6,6 @@ import { UUID } from "@opendaw/lib-std";
 import { PPQN } from "@opendaw/lib-dsp";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { Project } from "@opendaw/studio-core";
-import { AudioRegionBox } from "@opendaw/studio-boxes";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { MoisesLogo } from "./components/MoisesLogo";
 import { BackLink } from "./components/BackLink";
@@ -57,7 +56,7 @@ const App: React.FC = () => {
   const [tracks, setTracks] = useState<TrackData[]>([]);
 
   // Loop-specific state
-  const [loopEnabled, setLoopEnabled] = useState(true);
+  const [loopEnabled, setLoopEnabled] = useState(false);
   const [loopStart, setLoopStart] = useState(0);
   const [loopEnd, setLoopEnd] = useState(PPQN.fromSignature(4, 1)); // 4 bars
   const [loopCount, setLoopCount] = useState(0); // Track how many times we've looped
@@ -81,28 +80,24 @@ const App: React.FC = () => {
   // Initialize OpenDAW
   useEffect(() => {
     let mounted = true;
-    let animationFrameSubscription: any;
+    let animationFrameSubscription: { terminate: () => void } | null = null;
 
     (async () => {
       try {
-        setStatus("Initializing OpenDAW...");
+        const localAudioBuffers = new Map<string, AudioBuffer>();
+        localAudioBuffersRef.current = localAudioBuffers;
 
-        const localAudioBuffers = localAudioBuffersRef.current;
-
-        // Initialize OpenDAW with custom BPM
         const { project: newProject, audioContext: newAudioContext } = await initializeOpenDAW({
           localAudioBuffers,
           bpm: BPM,
-          onStatusUpdate: status => {
-            if (mounted) setStatus(status);
-          }
+          onStatusUpdate: setStatus
         });
 
-        if (mounted) {
-          setProject(newProject);
-          setAudioContext(newAudioContext);
-          bpmRef.current = BPM;
-        }
+        if (!mounted) return;
+
+        setAudioContext(newAudioContext);
+        setProject(newProject);
+        bpmRef.current = BPM;
 
         // Subscribe to playback state
         newProject.engine.isPlaying.catchupAndSubscribe(obs => {
@@ -111,47 +106,23 @@ const App: React.FC = () => {
 
         // Subscribe to position for display
         newProject.engine.position.catchupAndSubscribe(obs => {
-          if (mounted) {
-            const pos = Math.max(0, obs.getValue());
-            currentPositionRef.current = pos;
-            setCurrentPosition(pos);
-          }
+          if (mounted) setCurrentPosition(obs.getValue());
         });
 
         // Subscribe to AnimationFrame for efficient playhead position updates
         animationFrameSubscription = AnimationFrame.add(() => {
-          const position = Math.max(0, newProject.engine.position.getValue());
+          const position = newProject.engine.position.getValue();
           currentPositionRef.current = position;
 
-          // Detect loop wraparound
+          // Update React state to trigger playhead re-render
           if (mounted && newProject.engine.isPlaying.getValue()) {
-            if (position < previousPositionRef.current - 1000) { // Threshold to detect jump back
+            // Detect loop wraparound
+            if (position < previousPositionRef.current - 1000) {
               setLoopCount(prev => prev + 1);
             }
             previousPositionRef.current = position;
             setCurrentPosition(position);
           }
-        });
-
-        // Configure initial loop area
-        const timelineBox = newProject.timelineBoxAdapter.box;
-        const { loopArea } = timelineBox;
-
-        // Set loop to first 4 bars
-        const fourBars = PPQN.fromSignature(4, 1);
-        loopArea.from.setValue(0);
-        loopArea.to.setValue(fourBars);
-        loopArea.enabled.setValue(true);
-
-        // Subscribe to loop area changes
-        loopArea.enabled.subscribe(obs => {
-          if (mounted) setLoopEnabled(obs.getValue());
-        });
-        loopArea.from.subscribe(obs => {
-          if (mounted) setLoopStart(obs.getValue());
-        });
-        loopArea.to.subscribe(obs => {
-          if (mounted) setLoopEnd(obs.getValue());
         });
 
         // Load audio files and create tracks
@@ -165,6 +136,7 @@ const App: React.FC = () => {
           ],
           localAudioBuffers,
           {
+            autoSetLoopEnd: false, // We manually configure loop area below
             onProgress: (current, total, trackName) => {
               if (mounted) setStatus(`Loading ${trackName} (${current}/${total})...`);
             }
@@ -175,6 +147,42 @@ const App: React.FC = () => {
           setTracks(loadedTracks);
           setStatus("Loading waveforms...");
         }
+
+        // Configure initial loop area AFTER tracks are loaded
+        console.debug("Configuring loop area...");
+        const timelineBox = newProject.timelineBox;
+        const { loopArea } = timelineBox;
+
+        // Set loop to first 4 bars (must be done in a transaction)
+        const fourBars = PPQN.fromSignature(4, 1);
+        console.debug("Setting loop area: from=0, to=", fourBars, "enabled=false");
+        newProject.editing.modify(() => {
+          loopArea.from.setValue(0);
+          loopArea.to.setValue(fourBars);
+          loopArea.enabled.setValue(false); // Start with loop disabled
+        });
+        console.debug("Loop area configured successfully");
+
+        // Subscribe to loop area changes using catchupAndSubscribe to get initial values
+        loopArea.enabled.catchupAndSubscribe(obs => {
+          if (mounted) {
+            console.debug("Loop enabled changed:", obs.getValue());
+            setLoopEnabled(obs.getValue());
+          }
+        });
+        loopArea.from.catchupAndSubscribe(obs => {
+          if (mounted) {
+            console.debug("Loop start changed:", obs.getValue());
+            setLoopStart(obs.getValue());
+          }
+        });
+        loopArea.to.catchupAndSubscribe(obs => {
+          if (mounted) {
+            console.debug("Loop end changed:", obs.getValue());
+            setLoopEnd(obs.getValue());
+          }
+        });
+        console.debug("Loop area subscriptions complete");
       } catch (error) {
         console.error("Failed to initialize:", error);
         if (mounted) setStatus(`Error: ${error}`);
@@ -193,23 +201,37 @@ const App: React.FC = () => {
   const handlePlay = useCallback(async () => {
     if (!project || !audioContext) return;
 
+    console.debug("Play button clicked");
+
     // Resume AudioContext if suspended
     if (audioContext.state === "suspended") {
+      console.debug("Resuming AudioContext...");
       await audioContext.resume();
+      console.debug(`AudioContext resumed (${audioContext.state})`);
     }
 
     // If resuming from pause, restore the position
     if (pausedPositionRef.current !== null) {
+      console.debug(`Restoring paused position: ${pausedPositionRef.current}`);
       project.engine.setPosition(pausedPositionRef.current);
       pausedPositionRef.current = null;
     } else {
-      // On first play, explicitly set position to 0
+      // On first play, set position to 0
       project.engine.setPosition(0);
       setLoopCount(0); // Reset loop counter
     }
 
+    console.debug("Starting playback...");
+    console.debug("Before play() - isPlaying:", project.engine.isPlaying.getValue());
     project.engine.play();
-  }, [project, audioContext]);
+    console.debug("After play() - isPlaying:", project.engine.isPlaying.getValue());
+    console.debug("Engine state:", {
+      position: project.engine.position.getValue(),
+      isPlaying: project.engine.isPlaying.getValue(),
+      tracksCount: tracks.length,
+      audioContextState: audioContext.state
+    });
+  }, [project, audioContext, tracks]);
 
   const handlePause = useCallback(() => {
     if (!project) return;
@@ -234,7 +256,7 @@ const App: React.FC = () => {
   // Loop control handlers
   const handleToggleLoop = useCallback((checked: boolean) => {
     if (!project) return;
-    const timelineBox = project.timelineBoxAdapter.box;
+    const timelineBox = project.timelineBox;
     project.editing.modify(() => {
       timelineBox.loopArea.enabled.setValue(checked);
     });
@@ -242,7 +264,7 @@ const App: React.FC = () => {
 
   const handleSetLoopStart = useCallback((bars: number) => {
     if (!project) return;
-    const timelineBox = project.timelineBoxAdapter.box;
+    const timelineBox = project.timelineBox;
     const ppqnValue = PPQN.fromSignature(bars, 1);
     project.editing.modify(() => {
       timelineBox.loopArea.from.setValue(ppqnValue);
@@ -251,7 +273,7 @@ const App: React.FC = () => {
 
   const handleSetLoopEnd = useCallback((bars: number) => {
     if (!project) return;
-    const timelineBox = project.timelineBoxAdapter.box;
+    const timelineBox = project.timelineBox;
     const ppqnValue = PPQN.fromSignature(bars, 1);
     project.editing.modify(() => {
       timelineBox.loopArea.to.setValue(ppqnValue);
@@ -260,7 +282,7 @@ const App: React.FC = () => {
 
   const handleJumpToLoopStart = useCallback(() => {
     if (!project) return;
-    const timelineBox = project.timelineBoxAdapter.box;
+    const timelineBox = project.timelineBox;
     const loopStartPos = timelineBox.loopArea.from.getValue();
     project.engine.setPosition(loopStartPos);
     setCurrentPosition(loopStartPos);
@@ -268,7 +290,7 @@ const App: React.FC = () => {
 
   const handleJumpToLoopEnd = useCallback(() => {
     if (!project) return;
-    const timelineBox = project.timelineBoxAdapter.box;
+    const timelineBox = project.timelineBox;
     const loopEndPos = timelineBox.loopArea.to.getValue();
     project.engine.setPosition(loopEndPos - 1000); // Slightly before end to see the loop
     setCurrentPosition(loopEndPos - 1000);
@@ -432,6 +454,8 @@ const App: React.FC = () => {
               <Text size="3" weight="bold">Transport</Text>
               <TransportControls
                 isPlaying={isPlaying}
+                currentPosition={currentPosition}
+                bpm={BPM}
                 onPlay={handlePlay}
                 onPause={handlePause}
                 onStop={handleStop}
