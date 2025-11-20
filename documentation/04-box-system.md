@@ -122,7 +122,7 @@ box.file.refer(audioFileBox);
 Here's how to create a track with an audio clip:
 
 ```typescript
-import { InstrumentFactories } from "@opendaw/studio-core";
+import { InstrumentFactories } from "@opendaw/studio-adapters";
 import { AudioFileBox, AudioRegionBox } from "@opendaw/studio-boxes";
 import { AudioPlayback } from "@opendaw/studio-enums";
 import { UUID } from "@opendaw/lib-std";

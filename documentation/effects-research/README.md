@@ -121,7 +121,8 @@ Plus common patterns and best practices.
 ## Quick Start: Adding Reverb to a Track
 
 ```typescript
-import { Project, EffectFactories, InstrumentFactories } from "@opendaw/studio-core";
+import { Project, EffectFactories } from "@opendaw/studio-core";
+import { InstrumentFactories } from "@opendaw/studio-adapters";
 
 project.editing.modify(() => {
     // Create a track

@@ -1,6 +1,5 @@
 import { useState, useCallback } from "react";
-import { Project } from "@opendaw/studio-core";
-import { EffectFactories } from "@opendaw/studio-adapters";
+import { Project, EffectFactories } from "@opendaw/studio-core";
 import type { EffectType } from "../components/EffectChain";
 
 interface EffectInstanceData {

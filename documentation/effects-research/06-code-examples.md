@@ -5,7 +5,8 @@ This document provides complete, copy-paste ready code examples for adding effec
 ## Example 1: Simple Single Effect on a Track
 
 ```typescript
-import { Project, EffectFactories, InstrumentFactories } from "@opendaw/studio-core";
+import { Project, EffectFactories } from "@opendaw/studio-core";
+import { InstrumentFactories } from "@opendaw/studio-adapters";
 
 async function addReverbToTrack(project: Project) {
     project.editing.modify(() => {
@@ -31,7 +32,8 @@ async function addReverbToTrack(project: Project) {
 ## Example 2: Effect Chain on Single Track
 
 ```typescript
-import { Project, EffectFactories, InstrumentFactories } from "@opendaw/studio-core";
+import { Project, EffectFactories } from "@opendaw/studio-core";
+import { InstrumentFactories } from "@opendaw/studio-adapters";
 
 async function createTrackWithEffectChain(project: Project) {
     project.editing.modify(() => {
