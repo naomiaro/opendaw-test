@@ -22,7 +22,7 @@ export interface StemConfigBuilder {
 /**
  * Custom hook for audio export functionality
  *
- * Provides full mix and stems export with progress tracking
+ * Provides full mix and stems export with status tracking
  *
  * @param project - The OpenDAW project instance
  * @param options - Export configuration options
@@ -32,7 +32,6 @@ export interface StemConfigBuilder {
  * ```typescript
  * const {
  *   isExporting,
- *   exportProgress,
  *   exportStatus,
  *   handleExportMix,
  *   handleExportStems
@@ -68,7 +67,6 @@ export function useAudioExport(
   const { sampleRate = 48000, mixFileName = "mix" } = options;
 
   const [isExporting, setIsExporting] = useState(false);
-  const [exportProgress, setExportProgress] = useState(0);
   const [exportStatus, setExportStatus] = useState("");
 
   /**
@@ -78,14 +76,12 @@ export function useAudioExport(
     if (!project) return;
 
     setIsExporting(true);
-    setExportProgress(0);
-    setExportStatus("Starting export...");
+    setExportStatus("Exporting... This may take a moment.");
 
     try {
       await exportFullMix(project, {
         fileName: mixFileName,
         sampleRate,
-        onProgress: setExportProgress,
         onStatus: setExportStatus
       });
     } catch (error) {
@@ -105,8 +101,7 @@ export function useAudioExport(
     if (!project) return;
 
     setIsExporting(true);
-    setExportProgress(0);
-    setExportStatus("Starting stems export...");
+    setExportStatus("Exporting stems... This may take a moment.");
 
     try {
       // Build stem configuration by iterating through all audio units in the project
@@ -132,7 +127,6 @@ export function useAudioExport(
 
       await exportStems(project, stemsConfig, {
         sampleRate,
-        onProgress: setExportProgress,
         onStatus: setExportStatus
       });
     } catch (error) {
@@ -145,7 +139,6 @@ export function useAudioExport(
 
   return {
     isExporting,
-    exportProgress,
     exportStatus,
     handleExportMix,
     handleExportStems

@@ -43,7 +43,6 @@ const App: React.FC = () => {
   // Audio export hook
   const {
     isExporting,
-    exportProgress,
     exportStatus,
     handleExportMix,
     handleExportStems
@@ -724,28 +723,9 @@ const App: React.FC = () => {
                         {exportStatus}
                       </Text>
                       {isExporting && (
-                        <div style={{ width: "100%", maxWidth: "400px" }}>
-                          <div
-                            style={{
-                              height: "8px",
-                              backgroundColor: "var(--gray-5)",
-                              borderRadius: "4px",
-                              overflow: "hidden"
-                            }}
-                          >
-                            <div
-                              style={{
-                                height: "100%",
-                                width: `${exportProgress}%`,
-                                backgroundColor: "var(--purple-9)",
-                                transition: "width 0.3s ease"
-                              }}
-                            />
-                          </div>
-                          <Text size="1" color="gray" align="center" style={{ marginTop: "4px" }}>
-                            {Math.round(exportProgress)}%
-                          </Text>
-                        </div>
+                        <Text size="1" color="gray" align="center">
+                          Rendering offline (may take a moment for long tracks)
+                        </Text>
                       )}
                     </Flex>
                   </>

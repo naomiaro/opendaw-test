@@ -48,7 +48,6 @@ import { exportFullMix } from "./lib/audioExport";
 // Export entire project to a single WAV file
 await exportFullMix(project, {
   fileName: "my-mix",
-  onProgress: (p) => console.log(`${p}%`),
   onStatus: (s) => console.log(s)
 });
 ```
@@ -159,8 +158,8 @@ export async function exportFullMix(
 interface ExportOptions {
   sampleRate?: number;      // Default: 48000
   fileName?: string;         // Default: "mix"
-  onProgress?: (p: number) => void;  // Progress 0-100
-  onStatus?: (s: string) => void;    // Status messages
+  onProgress?: (p: number) => void;  // Limited milestone updates (not recommended)
+  onStatus?: (s: string) => void;    // Status messages (recommended)
 }
 ```
 
@@ -169,9 +168,6 @@ interface ExportOptions {
 await exportFullMix(project, {
   fileName: "my-song-master",
   sampleRate: 48000,
-  onProgress: (progress) => {
-    setProgressBar(progress);
-  },
   onStatus: (status) => {
     setStatusText(status);
   }
@@ -233,7 +229,6 @@ const stemsConfig = {
 
 await exportStems(project, stemsConfig, {
   sampleRate: 48000,
-  onProgress: setProgress,
   onStatus: setStatus
 });
 ```
@@ -259,7 +254,6 @@ import { useAudioExport } from "./hooks/useAudioExport";
 
 const {
   isExporting,
-  exportProgress,
   exportStatus,
   handleExportMix,
   handleExportStems
@@ -277,10 +271,11 @@ const {
 
 **Returns:**
 - `isExporting: boolean` - Whether an export is currently in progress
-- `exportProgress: number` - Export progress (0-100)
 - `exportStatus: string` - Current status message
 - `handleExportMix: () => Promise<void>` - Export full mix handler
 - `handleExportStems: (config: StemConfigBuilder) => Promise<void>` - Export stems handler
+
+**Note:** Progress tracking is not available because OpenDAW's offline renderer doesn't provide progress callbacks. The export will show status messages and a note that it may take time for long tracks.
 
 **Stem Configuration:**
 ```typescript
@@ -299,7 +294,6 @@ import { Button, Progress, Text } from "@radix-ui/themes";
 const ExportControls = ({ project }: { project: Project | null }) => {
   const {
     isExporting,
-    exportProgress,
     exportStatus,
     handleExportMix,
     handleExportStems
@@ -326,11 +320,15 @@ const ExportControls = ({ project }: { project: Project | null }) => {
         Export Stems (with FX)
       </Button>
 
-      {isExporting && (
-        <>
-          <Progress value={exportProgress} max={100} />
-          <Text>{exportStatus} ({Math.round(exportProgress)}%)</Text>
-        </>
+      {(exportStatus || isExporting) && (
+        <div>
+          <Text>{exportStatus}</Text>
+          {isExporting && (
+            <Text size="1" color="gray">
+              Rendering offline (may take a moment for long tracks)
+            </Text>
+          )}
+        </div>
       )}
     </div>
   );
@@ -338,7 +336,7 @@ const ExportControls = ({ project }: { project: Project | null }) => {
 ```
 
 **Benefits:**
-- ✅ Automatic state management (progress, status, isExporting flag)
+- ✅ Automatic state management (status, isExporting flag)
 - ✅ Built-in error handling
 - ✅ Consistent API across demos
 - ✅ Less boilerplate code
@@ -370,41 +368,26 @@ const ExportControls = ({ project }: { project: Project | null }) => {
 
 ### Example Integration
 
+**Recommended:** Use the `useAudioExport` hook (see [React Hook section](#react-hook-recommended))
+
 ```typescript
+import { useAudioExport } from "./hooks/useAudioExport";
+
 const App = () => {
   const [project, setProject] = useState<Project | null>(null);
-  const [exportStatus, setExportStatus] = useState("");
-  const [exportProgress, setExportProgress] = useState(0);
-  const [isExporting, setIsExporting] = useState(false);
 
-  const handleExportMix = async () => {
-    if (!project) return;
-
-    setIsExporting(true);
-    setExportProgress(0);
-    setExportStatus("Starting export...");
-
-    try {
-      await exportFullMix(project, {
-        fileName: "final-mix",
-        sampleRate: 48000,
-        onProgress: setExportProgress,
-        onStatus: setExportStatus
-      });
-
-      setExportStatus("Export complete!");
-    } catch (error) {
-      console.error("Export failed:", error);
-      setExportStatus("Export failed!");
-    } finally {
-      setIsExporting(false);
-    }
-  };
+  const { isExporting, exportStatus, handleExportMix } = useAudioExport(project, {
+    sampleRate: 48000,
+    mixFileName: "final-mix"
+  });
 
   return (
-    <button onClick={handleExportMix} disabled={isExporting}>
-      {isExporting ? `Exporting ${exportProgress}%` : "Export Mix"}
-    </button>
+    <div>
+      <button onClick={handleExportMix} disabled={isExporting}>
+        {isExporting ? "Exporting..." : "Export Mix"}
+      </button>
+      {exportStatus && <p>{exportStatus}</p>}
+    </div>
   );
 };
 ```
@@ -455,38 +438,34 @@ const stemsConfig = {
 
 ### Example Integration
 
+**Recommended:** Use the `useAudioExport` hook (see [React Hook section](#react-hook-recommended))
+
 ```typescript
-const handleExportStems = async () => {
-  if (!project || tracks.length === 0) return;
+import { useAudioExport } from "./hooks/useAudioExport";
 
-  setIsExporting(true);
-  setExportStatus("Preparing stems...");
+const App = () => {
+  const [project, setProject] = useState<Project | null>(null);
 
-  try {
-    // Build configuration from loaded tracks
-    const stemsConfig: Record<string, StemExportConfig> = {};
+  const { isExporting, exportStatus, handleExportStems } = useAudioExport(project, {
+    sampleRate: 48000
+  });
 
-    tracks.forEach((track) => {
-      const uuid = UUID.toString(track.uuid);
-      stemsConfig[uuid] = {
-        includeAudioEffects: true,  // Include effects
-        includeSends: false,
-        fileName: track.name
-      };
+  // Wrapper with your desired configuration
+  const handleStemsWithEffects = useCallback(async () => {
+    await handleExportStems({
+      includeAudioEffects: true,
+      includeSends: false
     });
+  }, [handleExportStems]);
 
-    await exportStems(project, stemsConfig, {
-      sampleRate: 48000,
-      onProgress: setExportProgress,
-      onStatus: setExportStatus
-    });
-
-    setExportStatus(`Successfully exported ${tracks.length} stems!`);
-  } catch (error) {
-    setExportStatus("Stems export failed!");
-  } finally {
-    setIsExporting(false);
-  }
+  return (
+    <div>
+      <button onClick={handleStemsWithEffects} disabled={isExporting}>
+        {isExporting ? "Exporting..." : "Export Stems"}
+      </button>
+      {exportStatus && <p>{exportStatus}</p>}
+    </div>
+  );
 };
 ```
 
@@ -511,22 +490,14 @@ await exportFullMix(project, {
 
 ### Progress Tracking
 
-Receive real-time progress updates during export:
+**Note:** Real-time progress tracking is not available during the offline rendering phase because OpenDAW's `AudioOfflineRenderer` doesn't provide progress callbacks. The export functions support an `onProgress` callback parameter for compatibility, but progress updates are limited to milestone events rather than continuous progress.
 
-```typescript
-await exportFullMix(project, {
-  onProgress: (progress) => {
-    console.log(`Export progress: ${progress}%`);
-    updateProgressBar(progress);
-  }
-});
-```
-
-**Progress values:**
-- `0` - Export starting
+**Milestone events:**
 - `50` - Rendering complete, encoding started
-- `75` - Encoding complete, preparing download
+- `75` - Encoding complete, preparing download (full mix only)
 - `100` - Export complete
+
+**Recommendation:** Use status messages (`onStatus`) and show an indeterminate loading indicator rather than a progress bar, with a note that export may take time for long tracks.
 
 ### Status Messages
 
@@ -700,122 +671,87 @@ await Mixdowns.exportMixdown({ project, meta });
 
 ### Example 1: Drum Scheduling Demo
 
-Export a programmatic drum pattern:
+Export a programmatic drum pattern using the `useAudioExport` hook:
 
 ```typescript
-// Export full drum pattern
-const handleExportMix = async () => {
-  await exportFullMix(project, {
-    fileName: `drum-pattern-${bpm}bpm`,
-    sampleRate: 48000,
-    onProgress: setExportProgress,
-    onStatus: setExportStatus
-  });
-};
+import { useAudioExport } from "./hooks/useAudioExport";
 
-// Export individual drum sounds
-const handleExportStems = async () => {
-  const stemsConfig: Record<string, StemExportConfig> = {};
+// Use the hook (automatically names file based on BPM)
+const { handleExportMix, handleExportStems } = useAudioExport(project, {
+  sampleRate: 48000,
+  mixFileName: `drum-pattern-${bpm}bpm`
+});
 
-  trackUUIDs.forEach((track) => {
-    stemsConfig[track.uuid] = {
-      includeAudioEffects: false,  // Drums are dry samples
-      includeSends: false,
-      fileName: track.name  // "Kick", "Snare", "Hi-Hat Closed", etc.
-    };
-  });
+// Export full drum pattern (just call it!)
+await handleExportMix();
 
-  await exportStems(project, stemsConfig, {
-    sampleRate: 48000,
-    onProgress: setExportProgress,
-    onStatus: setExportStatus
+// Export individual drum sounds (no effects for dry samples)
+const handleDrumStems = useCallback(async () => {
+  await handleExportStems({
+    includeAudioEffects: false,  // Drums are dry samples
+    includeSends: false
   });
-};
+  // Result: Separate files for "Kick", "Snare", "Hi-Hat Closed", etc.
+}, [handleExportStems]);
 ```
 
 ### Example 2: Effects Demo
 
-Export with audio effects rendered:
+Export with audio effects rendered using the `useAudioExport` hook:
 
 ```typescript
-// Export full mix with all effects
-const handleExportMix = async () => {
-  await exportFullMix(project, {
-    fileName: "darkride-mix-with-effects",
-    sampleRate: 48000,
-    onProgress: setExportProgress,
-    onStatus: setExportStatus
-  });
-  // Result: All track effects + master effects rendered
-};
+import { useAudioExport } from "./hooks/useAudioExport";
+
+// Use the hook
+const { handleExportMix, handleExportStems } = useAudioExport(project, {
+  sampleRate: 48000,
+  mixFileName: "dark-ride-mix"
+});
+
+// Export full mix with all effects (just call it!)
+await handleExportMix();
+// Result: All track effects + master effects rendered
 
 // Export stems with effects
-const handleExportStems = async () => {
-  const stemsConfig: Record<string, StemExportConfig> = {};
-
-  tracks.forEach((track) => {
-    const uuid = UUID.toString(track.uuid);
-    stemsConfig[uuid] = {
-      includeAudioEffects: true,  // ← Export with effects!
-      includeSends: false,
-      fileName: track.name
-    };
-  });
-
-  await exportStems(project, stemsConfig, {
-    sampleRate: 48000,
-    onProgress: setExportProgress,
-    onStatus: setExportStatus
+const handleEffectsStems = useCallback(async () => {
+  await handleExportStems({
+    includeAudioEffects: true,  // ← Export with effects!
+    includeSends: false
   });
   // Result: 7 WAV files (Intro, Vocals, Guitar Lead, Guitar, Drums, Bass, Effect Returns)
   // Each with their effects baked in!
-};
+}, [handleExportStems]);
 ```
 
 ### Example 3: Custom UI Integration
 
-Complete React component with export UI:
+Complete React component with export UI using the hook:
 
 ```typescript
-import { exportFullMix } from "./lib/audioExport";
-import { Button, Text, Progress } from "@radix-ui/themes";
+import { useAudioExport } from "./hooks/useAudioExport";
+import { Button, Text } from "@radix-ui/themes";
 
 const ExportPanel = ({ project }: { project: Project | null }) => {
-  const [exportStatus, setExportStatus] = useState("");
-  const [exportProgress, setExportProgress] = useState(0);
-  const [isExporting, setIsExporting] = useState(false);
-
-  const handleExport = async () => {
-    if (!project) return;
-
-    setIsExporting(true);
-    setExportProgress(0);
-
-    try {
-      await exportFullMix(project, {
-        fileName: "my-export",
-        sampleRate: 48000,
-        onProgress: setExportProgress,
-        onStatus: setExportStatus
-      });
-    } catch (error) {
-      setExportStatus("Export failed!");
-    } finally {
-      setIsExporting(false);
-    }
-  };
+  const { isExporting, exportStatus, handleExportMix } = useAudioExport(project, {
+    sampleRate: 48000,
+    mixFileName: "my-export"
+  });
 
   return (
     <div>
-      <Button onClick={handleExport} disabled={!project || isExporting}>
+      <Button onClick={handleExportMix} disabled={!project || isExporting}>
         {isExporting ? "Exporting..." : "Export Mix"}
       </Button>
 
-      {isExporting && (
-        <>
-          <Progress value={exportProgress} max={100} />
-          <Text>{exportStatus} ({Math.round(exportProgress)}%)</Text>
-        </>
+      {(exportStatus || isExporting) && (
+        <div>
+          <Text>{exportStatus}</Text>
+          {isExporting && (
+            <Text size="1" color="gray">
+              Rendering offline (may take a moment for long tracks)
+            </Text>
+          )}
+        </div>
       )}
     </div>
   );
@@ -843,14 +779,20 @@ const handleExport = async () => {
 
 ### 2. Provide User Feedback
 
-Always show progress and status:
+**Recommended:** Use the `useAudioExport` hook which handles feedback automatically:
+
+```typescript
+const { isExporting, exportStatus, handleExportMix } = useAudioExport(project);
+
+// Display status to user
+{exportStatus && <Text>{exportStatus}</Text>}
+{isExporting && <Text>Rendering offline (may take a moment)...</Text>}
+```
+
+**Alternative (low-level API):** Use status callbacks:
 
 ```typescript
 await exportFullMix(project, {
-  onProgress: (p) => {
-    setProgress(p);
-    console.log(`Export: ${p}%`);
-  },
   onStatus: (s) => {
     setStatusMessage(s);
     console.log(s);
@@ -967,17 +909,16 @@ const stemsConfig = {
 - This is normal and ensures quality
 
 **Solution:**
-- Show progress bar to user
-- Provide status messages
+- Use the `useAudioExport` hook to show status messages
+- Display a note that export may take time for long tracks
 - Consider exporting shorter sections for testing
 
 ```typescript
-await exportFullMix(project, {
-  onProgress: (p) => {
-    setProgress(p);
-    console.log(`Rendering: ${p}%`);
-  }
-});
+const { isExporting, exportStatus, handleExportMix } = useAudioExport(project);
+
+// Show status to user
+{exportStatus && <Text>{exportStatus}</Text>}
+{isExporting && <Text>Rendering offline (may take a moment for long tracks)</Text>}
 ```
 
 ### Volume Too Low/High in Export
