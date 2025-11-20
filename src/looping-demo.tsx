@@ -304,6 +304,13 @@ const App: React.FC = () => {
     return `${bars}.${beats}.${sixteenths}`;
   };
 
+  // Calculate max duration in seconds and PPQN for playhead/loop visualization
+  const maxDurationInSeconds = Math.max(
+    ...Array.from(localAudioBuffersRef.current.values()).map(buf => buf.duration),
+    1
+  );
+  const maxDurationInPPQN = PPQN.secondsToPulses(maxDurationInSeconds, BPM);
+
   return (
     <Theme appearance="dark" accentColor="violet">
       <Container size="4" style={{ padding: "2rem", minHeight: "100vh" }}>
@@ -500,9 +507,9 @@ const App: React.FC = () => {
                     {loopEnabled && (
                       <>
                         <rect
-                          x={`${(loopStart / (PPQN.Bar * 16)) * 100}%`}
+                          x={`${(loopStart / maxDurationInPPQN) * 100}%`}
                           y="0"
-                          width={`${((loopEnd - loopStart) / (PPQN.Bar * 16)) * 100}%`}
+                          width={`${((loopEnd - loopStart) / maxDurationInPPQN) * 100}%`}
                           height="40"
                           fill="rgba(147, 51, 234, 0.2)"
                           stroke="rgb(147, 51, 234)"
@@ -511,7 +518,7 @@ const App: React.FC = () => {
 
                         {/* Loop start handle */}
                         <circle
-                          cx={`${(loopStart / (PPQN.Bar * 16)) * 100}%`}
+                          cx={`${(loopStart / maxDurationInPPQN) * 100}%`}
                           cy="20"
                           r="6"
                           fill="rgb(147, 51, 234)"
@@ -519,7 +526,7 @@ const App: React.FC = () => {
 
                         {/* Loop end handle */}
                         <circle
-                          cx={`${(loopEnd / (PPQN.Bar * 16)) * 100}%`}
+                          cx={`${(loopEnd / maxDurationInPPQN) * 100}%`}
                           cy="20"
                           r="6"
                           fill="rgb(147, 51, 234)"
@@ -529,9 +536,9 @@ const App: React.FC = () => {
 
                     {/* Playhead */}
                     <line
-                      x1={`${(currentPosition / (PPQN.Bar * 16)) * 100}%`}
+                      x1={`${(currentPosition / maxDurationInPPQN) * 100}%`}
                       y1="0"
-                      x2={`${(currentPosition / (PPQN.Bar * 16)) * 100}%`}
+                      x2={`${(currentPosition / maxDurationInPPQN) * 100}%`}
                       y2="40"
                       stroke="#ff0066"
                       strokeWidth="2"
@@ -540,44 +547,37 @@ const App: React.FC = () => {
                 </div>
               </div>
 
-              <TimelineRuler
-                maxDuration={Math.max(
-                  ...Array.from(localAudioBuffersRef.current.values()).map(buf => buf.duration),
-                  1
-                )}
-              />
+              <TimelineRuler maxDuration={maxDurationInSeconds} />
 
-              <TracksContainer>
-                {(() => {
-                  // Calculate max duration in seconds from audio buffers
-                  const maxDuration = Math.max(
-                    ...Array.from(localAudioBuffersRef.current.values()).map(buf => buf.duration),
-                    1
+              <TracksContainer
+                currentPosition={currentPosition}
+                bpm={BPM}
+                maxDuration={maxDurationInSeconds}
+                leftOffset={200}
+                playheadColor="#ff0066"
+              >
+                {tracks.map((track, index) => {
+                  const uuidString = UUID.toString(track.uuid);
+                  return (
+                    <TrackRow
+                      key={uuidString}
+                      track={track}
+                      project={project!}
+                      allTracks={tracks}
+                      peaks={undefined}
+                      canvasRef={canvas => {
+                        if (canvas) canvasRefs.current.set(uuidString, canvas);
+                      }}
+                      currentPosition={currentPosition}
+                      isPlaying={isPlaying}
+                      bpm={BPM}
+                      audioBuffer={localAudioBuffersRef.current.get(uuidString)}
+                      setCurrentPosition={setCurrentPosition}
+                      pausedPositionRef={pausedPositionRef}
+                      maxDuration={maxDurationInSeconds}
+                    />
                   );
-
-                  return tracks.map((track, index) => {
-                    const uuidString = UUID.toString(track.uuid);
-                    return (
-                      <TrackRow
-                        key={uuidString}
-                        track={track}
-                        project={project!}
-                        allTracks={tracks}
-                        peaks={undefined}
-                        canvasRef={canvas => {
-                          if (canvas) canvasRefs.current.set(uuidString, canvas);
-                        }}
-                        currentPosition={currentPosition}
-                        isPlaying={isPlaying}
-                        bpm={BPM}
-                        audioBuffer={localAudioBuffersRef.current.get(uuidString)}
-                        setCurrentPosition={setCurrentPosition}
-                        pausedPositionRef={pausedPositionRef}
-                        maxDuration={maxDuration}
-                      />
-                    );
-                  });
-                })()}
+                })}
               </TracksContainer>
             </Flex>
           </Card>
