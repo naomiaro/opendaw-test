@@ -541,9 +541,10 @@ const App: React.FC = () => {
               </div>
 
               <TimelineRuler
-                currentPosition={currentPosition}
-                maxDuration={16 * PPQN.Bar}
-                bpm={BPM}
+                maxDuration={Math.max(
+                  ...Array.from(localAudioBuffersRef.current.values()).map(buf => buf.duration),
+                  1
+                )}
               />
 
               <TracksContainer>
