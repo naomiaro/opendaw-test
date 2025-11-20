@@ -19,9 +19,10 @@ import { loadTracksFromFiles } from "./lib/trackLoading";
 import { useWaveformRendering } from "./hooks/useWaveformRendering";
 import { useEffectChain } from "./hooks/useEffectChain";
 import { useDynamicEffect } from "./hooks/useDynamicEffect";
+import { exportFullMix, exportStems } from "./lib/audioExport";
 import type { TrackData } from "./lib/types";
 import "@radix-ui/themes/styles.css";
-import { Theme, Container, Heading, Text, Flex, Card, Separator, Callout, Slider } from "@radix-ui/themes";
+import { Theme, Container, Heading, Text, Flex, Card, Separator, Callout, Slider, Button } from "@radix-ui/themes";
 
 /**
  * Component to render individual effect instances (memoized to prevent re-renders)
@@ -81,6 +82,11 @@ const App: React.FC = () => {
 
   // Master volume state
   const [masterVolume, setMasterVolume] = useState(0); // dB
+
+  // Export state
+  const [exportStatus, setExportStatus] = useState("");
+  const [exportProgress, setExportProgress] = useState(0);
+  const [isExporting, setIsExporting] = useState(false);
 
   // Effect chain hooks for each track and master
   const introEffects = useEffectChain(project, tracks.find(t => t.name === "Intro")?.audioUnitBox || null, "Intro");
@@ -393,6 +399,63 @@ const App: React.FC = () => {
       subscription.terminate();
     };
   }, [masterAudioBox]);
+
+  // Export full mix with all effects rendered
+  const handleExportMix = useCallback(async () => {
+    if (!project) return;
+
+    setIsExporting(true);
+    setExportProgress(0);
+    setExportStatus("Starting export...");
+
+    try {
+      await exportFullMix(project, {
+        fileName: "darkride-mix-with-effects",
+        sampleRate: 48000,
+        onProgress: setExportProgress,
+        onStatus: setExportStatus
+      });
+    } catch (error) {
+      console.error("Export failed:", error);
+      setExportStatus("Export failed!");
+    } finally {
+      setIsExporting(false);
+    }
+  }, [project]);
+
+  // Export individual stems with effects rendered
+  const handleExportStems = useCallback(async () => {
+    if (!project || tracks.length === 0) return;
+
+    setIsExporting(true);
+    setExportProgress(0);
+    setExportStatus("Starting stems export...");
+
+    try {
+      // Build stem configuration - include audio effects to hear the processed sound!
+      const stemsConfig: Record<string, { includeAudioEffects: boolean; includeSends: boolean; fileName: string }> = {};
+
+      tracks.forEach((track) => {
+        const uuid = UUID.toString(track.uuid);
+        stemsConfig[uuid] = {
+          includeAudioEffects: true, // IMPORTANT: Include effects to hear them in the export!
+          includeSends: false,
+          fileName: track.name
+        };
+      });
+
+      await exportStems(project, stemsConfig, {
+        sampleRate: 48000,
+        onProgress: setExportProgress,
+        onStatus: setExportStatus
+      });
+    } catch (error) {
+      console.error("Stems export failed:", error);
+      setExportStatus("Stems export failed!");
+    } finally {
+      setIsExporting(false);
+    }
+  }, [project, tracks]);
 
   if (!project) {
     return (
@@ -739,6 +802,86 @@ const App: React.FC = () => {
                   • State observation via <code>catchupAndSubscribe()</code>
                 </Text>
                 <Text size="2">• Each effect includes presets and bypass functionality</Text>
+              </Flex>
+            </Flex>
+          </Card>
+
+          {/* Export Audio */}
+          <Card>
+            <Flex direction="column" gap="4">
+              <Heading size="4">Export Audio</Heading>
+              <Separator size="4" />
+
+              <Callout.Root color="purple">
+                <Callout.Text>
+                  🎵 Export your mix with all effects fully rendered! This is perfect for hearing how your effect chains
+                  (Reverb, Compressor, Lo-Fi Crusher, etc.) sound in the final audio. The "Export Full Mix" renders
+                  everything together, while "Export Stems" gives you individual tracks with their effects baked in.
+                </Callout.Text>
+              </Callout.Root>
+
+              <Flex direction="column" gap="3">
+                <Flex gap="3" wrap="wrap" justify="center">
+                  <Button
+                    onClick={handleExportMix}
+                    disabled={tracks.length === 0 || isExporting}
+                    color="purple"
+                    size="3"
+                    variant="solid"
+                  >
+                    Export Full Mix (with Effects)
+                  </Button>
+                  <Button
+                    onClick={handleExportStems}
+                    disabled={tracks.length === 0 || isExporting}
+                    color="purple"
+                    size="3"
+                    variant="outline"
+                  >
+                    Export Stems ({tracks.length} tracks with Effects)
+                  </Button>
+                </Flex>
+
+                {/* Export status */}
+                {(exportStatus || isExporting) && (
+                  <>
+                    <Separator size="4" />
+                    <Flex direction="column" gap="2" align="center">
+                      <Text size="2" weight="medium">
+                        {exportStatus}
+                      </Text>
+                      {isExporting && (
+                        <div style={{ width: "100%", maxWidth: "500px" }}>
+                          <div
+                            style={{
+                              height: "8px",
+                              backgroundColor: "var(--gray-5)",
+                              borderRadius: "4px",
+                              overflow: "hidden"
+                            }}
+                          >
+                            <div
+                              style={{
+                                height: "100%",
+                                width: `${exportProgress}%`,
+                                backgroundColor: "var(--purple-9)",
+                                transition: "width 0.3s ease"
+                              }}
+                            />
+                          </div>
+                          <Text size="1" color="gray" align="center" style={{ marginTop: "4px" }}>
+                            {Math.round(exportProgress)}% - Rendering offline (may take a moment for long tracks)
+                          </Text>
+                        </div>
+                      )}
+                    </Flex>
+                  </>
+                )}
+
+                <Text size="2" color="gray" style={{ fontStyle: "italic" }}>
+                  💡 Tip: Add effects to tracks first, then export to hear them in the final audio. The effects are
+                  rendered offline at high quality (48kHz, 32-bit float WAV).
+                </Text>
               </Flex>
             </Flex>
           </Card>

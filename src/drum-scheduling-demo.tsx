@@ -14,6 +14,7 @@ import { MoisesLogo } from "./components/MoisesLogo";
 import { BackLink } from "./components/BackLink";
 import { loadAudioFile } from "./lib/audioUtils";
 import { initializeOpenDAW } from "./lib/projectSetup";
+import { exportFullMix, exportStems } from "./lib/audioExport";
 import "@radix-ui/themes/styles.css";
 import { Theme, Container, Heading, Text, Button, Flex, Card, Badge, Separator } from "@radix-ui/themes";
 
@@ -38,6 +39,9 @@ const App: React.FC = () => {
   const [currentPosition, setCurrentPosition] = useState(0);
   const [bpm, setBpm] = useState(90);
   const [samplesLoaded, setSamplesLoaded] = useState(false);
+  const [exportStatus, setExportStatus] = useState("");
+  const [exportProgress, setExportProgress] = useState(0);
+  const [isExporting, setIsExporting] = useState(false);
 
   // Refs for non-reactive values
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
@@ -46,6 +50,7 @@ const App: React.FC = () => {
   const clipTemplatesRef = useRef<
     Array<{ trackName: string; position: number; audioDuration: number; label: string; color: string }>
   >([]); // Templates for recalculating clips
+  const trackAudioBoxesRef = useRef<Array<{ name: string; audioUnitBox: any }>>([]); // Track audio boxes for stem export
 
   const { Quarter } = PPQN;
   const BARS = 4;
@@ -92,12 +97,12 @@ const App: React.FC = () => {
         console.debug("Loading drum samples...");
         setStatus("Loading drum samples...");
 
-        // Load drum samples
+        // Load drum samples (selected for short duration to prevent overlapping regions)
         const drumSamples = [
-          { name: "Kick", url: "/audio/90sSamplePack/Kick/Kick 1.wav", color: "#ef4444" },
-          { name: "Snare", url: "/audio/90sSamplePack/Snare/Snare 1.wav", color: "#f59e0b" },
-          { name: "Hi-Hat Closed", url: "/audio/90sSamplePack/Hats/Hi Hat 1.wav", color: "#10b981" },
-          { name: "Hi-Hat Open", url: "/audio/90sSamplePack/Hats/Hi Hat 20.wav", color: "#06b6d4" }
+          { name: "Kick", url: "/audio/90sSamplePack/Kick/Kick 2.wav", color: "#ef4444" },
+          { name: "Snare", url: "/audio/90sSamplePack/Snare/Snare 5.wav", color: "#f59e0b" },
+          { name: "Hi-Hat Closed", url: "/audio/90sSamplePack/Hats/Hi Hat 27.wav", color: "#10b981" },
+          { name: "Hi-Hat Open", url: "/audio/90sSamplePack/Hats/Hi Hat 29.wav", color: "#06b6d4" }
         ];
 
         const audioBuffers = await Promise.all(drumSamples.map(sample => loadAudioFile(newAudioContext, sample.url)));
@@ -122,6 +127,12 @@ const App: React.FC = () => {
             // Generate a UUID for this audio file
             const fileUUID = UUID.generate();
             const fileUUIDString = UUID.toString(fileUUID);
+
+            // Store track name for stem export (we'll get UUIDs from project.rootBoxAdapter later)
+            trackAudioBoxesRef.current.push({
+              name: sample.name,
+              audioUnitBox: audioUnitBox
+            });
 
             // Store the UUID for sample loading tracking
             sampleUUIDs.push(fileUUID);
@@ -333,6 +344,75 @@ const App: React.FC = () => {
     },
     [project, samplesLoaded, bpm]
   );
+
+  // Export full mix
+  const handleExportMix = useCallback(async () => {
+    if (!project) return;
+
+    setIsExporting(true);
+    setExportProgress(0);
+    setExportStatus("Starting export...");
+
+    try {
+      await exportFullMix(project, {
+        fileName: `drum-pattern-${bpm}bpm`,
+        sampleRate: 48000,
+        onProgress: setExportProgress,
+        onStatus: setExportStatus
+      });
+    } catch (error) {
+      console.error("Export failed:", error);
+      setExportStatus("Export failed!");
+    } finally {
+      setIsExporting(false);
+    }
+  }, [project, bpm]);
+
+  // Export individual stems
+  const handleExportStems = useCallback(async () => {
+    if (!project || trackAudioBoxesRef.current.length === 0) return;
+
+    setIsExporting(true);
+    setExportProgress(0);
+    setExportStatus("Starting stems export...");
+
+    try {
+      // Build stem configuration by iterating through all audio units in the project
+      // This is how OpenDAW does it in showExportStemsDialog
+      const stemsConfig: Record<string, { includeAudioEffects: boolean; includeSends: boolean; fileName: string }> = {};
+
+      // Get all audio units from the project
+      const audioUnits = project.rootBoxAdapter.audioUnits.adapters();
+
+      // Map our track names to audio units (in order of creation)
+      const trackNames = trackAudioBoxesRef.current.map(t => t.name);
+
+      audioUnits.forEach((unit, index) => {
+        // Skip the output unit
+        if (unit.isOutput) return;
+
+        const uuidString = UUID.toString(unit.uuid);
+        const trackName = trackNames[index] || `Track ${index + 1}`;
+
+        stemsConfig[uuidString] = {
+          includeAudioEffects: false, // No effects in drum demo
+          includeSends: false,
+          fileName: trackName
+        };
+      });
+
+      await exportStems(project, stemsConfig, {
+        sampleRate: 48000,
+        onProgress: setExportProgress,
+        onStatus: setExportStatus
+      });
+    } catch (error) {
+      console.error("Stems export failed:", error);
+      setExportStatus("Stems export failed!");
+    } finally {
+      setIsExporting(false);
+    }
+  }, [project]);
 
   // Timeline visualization
   const renderTimeline = () => {
@@ -608,8 +688,8 @@ const App: React.FC = () => {
                   </Flex>
                   <input
                     type="range"
-                    min="60"
-                    max="180"
+                    min="80"
+                    max="160"
                     value={bpm}
                     onChange={e => handleBpmChange(Number(e.target.value))}
                     disabled={!samplesLoaded}
@@ -649,6 +729,80 @@ const App: React.FC = () => {
               <Text size="2" align="center" color="gray">
                 {status}
               </Text>
+            </Flex>
+          </Card>
+
+          {/* Export Audio Card */}
+          <Card style={{ width: "100%" }}>
+            <Flex direction="column" gap="4">
+              <Heading size="5" color="purple">
+                Export Audio
+              </Heading>
+
+              <Flex direction="column" gap="3">
+                <Text size="2" color="gray">
+                  Export your drum pattern as audio files. Choose full mix or individual stems (Kick, Snare, Hi-Hats).
+                </Text>
+
+                <Separator size="4" />
+
+                <Flex gap="3" wrap="wrap" justify="center">
+                  <Button
+                    onClick={handleExportMix}
+                    disabled={!samplesLoaded || isExporting}
+                    color="purple"
+                    size="3"
+                    variant="solid"
+                  >
+                    Export Full Mix
+                  </Button>
+                  <Button
+                    onClick={handleExportStems}
+                    disabled={!samplesLoaded || isExporting}
+                    color="purple"
+                    size="3"
+                    variant="outline"
+                  >
+                    Export Stems (4 files)
+                  </Button>
+                </Flex>
+
+                {/* Export status */}
+                {(exportStatus || isExporting) && (
+                  <>
+                    <Separator size="4" />
+                    <Flex direction="column" gap="2" align="center">
+                      <Text size="2" weight="medium">
+                        {exportStatus}
+                      </Text>
+                      {isExporting && (
+                        <div style={{ width: "100%", maxWidth: "400px" }}>
+                          <div
+                            style={{
+                              height: "8px",
+                              backgroundColor: "var(--gray-5)",
+                              borderRadius: "4px",
+                              overflow: "hidden"
+                            }}
+                          >
+                            <div
+                              style={{
+                                height: "100%",
+                                width: `${exportProgress}%`,
+                                backgroundColor: "var(--purple-9)",
+                                transition: "width 0.3s ease"
+                              }}
+                            />
+                          </div>
+                          <Text size="1" color="gray" align="center" style={{ marginTop: "4px" }}>
+                            {Math.round(exportProgress)}%
+                          </Text>
+                        </div>
+                      )}
+                    </Flex>
+                  </>
+                )}
+              </Flex>
             </Flex>
           </Card>
 
