@@ -153,12 +153,13 @@ const App: React.FC = () => {
         const timelineBox = newProject.timelineBox;
         const { loopArea } = timelineBox;
 
-        // Set loop to first 4 bars (must be done in a transaction)
-        const fourBars = PPQN.fromSignature(4, 1);
-        console.debug("Setting loop area: from=0, to=", fourBars, "enabled=false");
+        // Set loop to bars 8-12 (4 bars starting at bar 8, where audio begins)
+        const loopStartBars = PPQN.fromSignature(8, 1);
+        const loopEndBars = PPQN.fromSignature(12, 1);
+        console.debug("Setting loop area: from=", loopStartBars, "to=", loopEndBars, "enabled=false");
         newProject.editing.modify(() => {
-          loopArea.from.setValue(0);
-          loopArea.to.setValue(fourBars);
+          loopArea.from.setValue(loopStartBars);
+          loopArea.to.setValue(loopEndBars);
           loopArea.enabled.setValue(false); // Start with loop disabled
         });
         console.debug("Loop area configured successfully");
@@ -370,14 +371,14 @@ const App: React.FC = () => {
                 <Flex align="center" justify="between" gap="3">
                   <Text size="2" style={{ minWidth: "80px" }}>Loop Start:</Text>
                   <Flex gap="2" style={{ flex: 1 }}>
-                    <Button size="1" onClick={() => handleSetLoopStart(0)} disabled={!project}>
-                      0 bars
+                    <Button size="1" onClick={() => handleSetLoopStart(8)} disabled={!project}>
+                      8 bars
                     </Button>
-                    <Button size="1" onClick={() => handleSetLoopStart(2)} disabled={!project}>
-                      2 bars
+                    <Button size="1" onClick={() => handleSetLoopStart(16)} disabled={!project}>
+                      16 bars
                     </Button>
-                    <Button size="1" onClick={() => handleSetLoopStart(4)} disabled={!project}>
-                      4 bars
+                    <Button size="1" onClick={() => handleSetLoopStart(24)} disabled={!project}>
+                      24 bars
                     </Button>
                   </Flex>
                   <Text size="2" color="gray" style={{ fontFamily: "monospace", minWidth: "80px" }}>
@@ -388,14 +389,14 @@ const App: React.FC = () => {
                 <Flex align="center" justify="between" gap="3">
                   <Text size="2" style={{ minWidth: "80px" }}>Loop End:</Text>
                   <Flex gap="2" style={{ flex: 1 }}>
-                    <Button size="1" onClick={() => handleSetLoopEnd(2)} disabled={!project}>
-                      2 bars
+                    <Button size="1" onClick={() => handleSetLoopEnd(12)} disabled={!project}>
+                      12 bars
                     </Button>
-                    <Button size="1" onClick={() => handleSetLoopEnd(4)} disabled={!project}>
-                      4 bars
+                    <Button size="1" onClick={() => handleSetLoopEnd(20)} disabled={!project}>
+                      20 bars
                     </Button>
-                    <Button size="1" onClick={() => handleSetLoopEnd(8)} disabled={!project}>
-                      8 bars
+                    <Button size="1" onClick={() => handleSetLoopEnd(28)} disabled={!project}>
+                      28 bars
                     </Button>
                   </Flex>
                   <Text size="2" color="gray" style={{ fontFamily: "monospace", minWidth: "80px" }}>
@@ -588,10 +589,10 @@ const App: React.FC = () => {
               <Text size="3" weight="bold">How to Use</Text>
               <Flex direction="column" gap="2" style={{ fontSize: "0.9rem" }}>
                 <Text size="2">
-                  <strong>1. Basic Looping:</strong> Press Play and watch the playhead loop back when it reaches the loop end point (default: 4 bars)
+                  <strong>1. Basic Looping:</strong> Enable the loop switch and press Play to hear the music loop between bars 8-12
                 </Text>
                 <Text size="2">
-                  <strong>2. Adjust Loop Boundaries:</strong> Use the Loop Start/End buttons to change the loop region size
+                  <strong>2. Adjust Loop Boundaries:</strong> Use the Loop Start/End buttons to move the loop to different sections of the song
                 </Text>
                 <Text size="2">
                   <strong>3. Enable/Disable:</strong> Toggle the loop switch to enable or disable looping during playback
@@ -603,7 +604,7 @@ const App: React.FC = () => {
                   <strong>5. Watch Loop Counter:</strong> The iteration counter shows how many times you've looped through the section
                 </Text>
                 <Text size="2" color="gray" style={{ marginTop: "0.5rem" }}>
-                  💡 Try playing through bar 3 and watch it automatically jump back to the loop start at bar 4!
+                  💡 The loop starts at bar 8 where the music begins (the first 8 bars are silent)
                 </Text>
               </Flex>
             </Flex>
