@@ -317,7 +317,6 @@ const App: React.FC = () => {
       <Container size="4" style={{ padding: "2rem", minHeight: "100vh" }}>
         <GitHubCorner />
         <BackLink />
-        <MoisesLogo />
 
         <Flex direction="column" gap="4">
           <Heading size="8" align="center">
@@ -610,6 +609,7 @@ const App: React.FC = () => {
             </Flex>
           </Card>
         </Flex>
+        <MoisesLogo />
       </Container>
     </Theme>
   );

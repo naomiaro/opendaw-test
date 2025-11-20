@@ -62,10 +62,10 @@ export const useEffectChain = (project: Project | null, audioBox: any, trackName
           case "Crusher":
             effectBox = project.api.insertEffect((audioBox as any).audioEffects, EffectFactories.AudioNamed.Crusher);
             effectBox.label.setValue(label);
-            (effectBox as any).bits.setValue(8);
-            (effectBox as any).crush.setValue(0.5);
-            (effectBox as any).boost.setValue(0.5);
-            (effectBox as any).mix.setValue(0.8);
+            (effectBox as any).bits.setValue(10);
+            (effectBox as any).crush.setValue(0.7); // Processor inverts this internally!
+            (effectBox as any).boost.setValue(0); // Boost causes volume reduction! Use 0 for most cases
+            (effectBox as any).mix.setValue(0.7);
             break;
 
           case "StereoWidth":

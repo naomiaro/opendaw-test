@@ -71,11 +71,11 @@ export const useDynamicEffect = (config: DynamicEffectConfig) => {
         case "Crusher":
           effectBox = project.api.insertEffect((audioBox as any).audioEffects, EffectFactories.AudioNamed.Crusher);
           effectBox.label.setValue(label);
-          (effectBox as any).bits.setValue(8);
-          (effectBox as any).crush.setValue(0.5);
-          (effectBox as any).boost.setValue(0.5);
-          (effectBox as any).mix.setValue(0.8);
-          setParameters({ bits: 8, crush: 0.5, boost: 0.5, mix: 0.8 });
+          (effectBox as any).bits.setValue(10);
+          (effectBox as any).crush.setValue(0.7); // Processor inverts this internally!
+          (effectBox as any).boost.setValue(0); // Boost causes volume reduction! Use 0 for most cases
+          (effectBox as any).mix.setValue(0.7);
+          setParameters({ bits: 10, crush: 0.7, boost: 0, mix: 0.7 });
           break;
 
         case "StereoWidth":
@@ -117,11 +117,21 @@ export const useDynamicEffect = (config: DynamicEffectConfig) => {
 
       if (effectBox) {
         effectRef.current = effectBox;
-        effectBox.enabled.catchupAndSubscribe((obs: any) => setIsBypassed(!obs.getValue()));
       }
     });
 
+    // Subscribe to enabled state OUTSIDE the modify transaction
+    let subscription: any = null;
+    if (effectRef.current) {
+      subscription = effectRef.current.enabled.catchupAndSubscribe((obs: any) => {
+        setIsBypassed(!obs.getValue());
+      });
+    }
+
     return () => {
+      if (subscription) {
+        subscription.terminate();
+      }
       if (effectRef.current && project) {
         project.editing.modify(() => {
           effectRef.current.delete();
@@ -322,16 +332,16 @@ export const useDynamicEffect = (config: DynamicEffectConfig) => {
           {
             name: "bits",
             label: "Bit Depth",
-            value: parameters.bits || 8,
-            min: 1,
+            value: parameters.bits || 10,
+            min: 5,
             max: 16,
             step: 1,
             format: v => `${v.toFixed(0)} bits`
           },
           {
             name: "crush",
-            label: "Crush Amount",
-            value: parameters.crush || 0.5,
+            label: "Sample Rate Reduction",
+            value: parameters.crush || 0.7,
             min: 0,
             max: 1,
             step: 0.01,
@@ -340,11 +350,11 @@ export const useDynamicEffect = (config: DynamicEffectConfig) => {
           {
             name: "boost",
             label: "Boost",
-            value: parameters.boost || 0.5,
+            value: parameters.boost || 0,
             min: 0,
-            max: 1,
-            step: 0.01,
-            format: v => `${(v * 100).toFixed(0)}%`
+            max: 24,
+            step: 0.5,
+            format: v => `${v.toFixed(1)} dB`
           },
           {
             name: "mix",

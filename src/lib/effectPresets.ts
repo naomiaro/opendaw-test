@@ -180,8 +180,8 @@ export const DELAY_PRESETS: EffectPreset<DelayParams>[] = [
 
 export interface CrusherParams {
   bits: number; // 1-16: bit depth reduction
-  crush: number; // 0-1: sample rate reduction
-  boost: number; // 0-1: compensatory gain
+  crush: number; // 0-1: sample rate reduction (0 = clean, 1 = max crush)
+  boost: number; // 0-24 dB: pre-emphasis gain (NOT 0-1!)
   mix: number; // 0-1: dry/wet mix
 }
 
@@ -189,42 +189,42 @@ export const CRUSHER_PRESETS: EffectPreset<CrusherParams>[] = [
   {
     name: "Subtle Lo-Fi",
     description: "Gentle vintage character without being obvious",
-    params: { bits: 12, crush: 0.85, boost: 0.3, mix: 0.5 }
+    params: { bits: 14, crush: 0.85, boost: 0, mix: 0.4 } // Processor inverts crush internally!
   },
   {
     name: "AM Radio",
     description: "Old radio or telephone sound",
-    params: { bits: 8, crush: 0.7, boost: 0.5, mix: 0.9 }
+    params: { bits: 10, crush: 0.7, boost: 0, mix: 0.7 }
   },
   {
     name: "8-bit Game",
     description: "Retro video game sound",
-    params: { bits: 4, crush: 0.6, boost: 0.6, mix: 1.0 }
+    params: { bits: 6, crush: 0.55, boost: 0, mix: 0.85 }
   },
   {
     name: "Destroyed",
     description: "Extreme bit crushing and distortion",
-    params: { bits: 2, crush: 0.4, boost: 0.8, mix: 1.0 }
+    params: { bits: 5, crush: 0.4, boost: 0, mix: 1.0 } // 5 bits min for audibility
   },
   {
     name: "Vinyl Warmth",
     description: "Subtle degradation for analog warmth",
-    params: { bits: 14, crush: 0.95, boost: 0.2, mix: 0.3 }
+    params: { bits: 15, crush: 0.92, boost: 0, mix: 0.25 }
   },
   {
     name: "Grungy",
     description: "Heavy distortion with character",
-    params: { bits: 6, crush: 0.75, boost: 0.7, mix: 0.85 }
+    params: { bits: 8, crush: 0.6, boost: 0, mix: 0.8 }
   },
   {
     name: "Glitch",
     description: "Digital artifacts and glitches",
-    params: { bits: 3, crush: 0.5, boost: 0.65, mix: 0.9 }
+    params: { bits: 5, crush: 0.45, boost: 0, mix: 0.9 }
   },
   {
     name: "Tape Saturation",
     description: "Warm tape-like saturation",
-    params: { bits: 13, crush: 0.9, boost: 0.4, mix: 0.6 }
+    params: { bits: 13, crush: 0.88, boost: 0, mix: 0.5 }
   }
 ];
 
