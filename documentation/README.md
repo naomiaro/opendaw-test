@@ -295,9 +295,22 @@ useEffect(() => {
 - Check peaks are available (`!peaksOption.isEmpty()`)
 - Verify canvas has proper dimensions
 
+### 10. [Audio Export](./audio-export.md)
+- Full mix and stems export
+- AudioOfflineRenderer API
+- Effects rendering in exports
+- Export options and formats
+- Overlapping regions troubleshooting
+- TimeBase considerations
+
+**Start here if:** You're implementing audio export functionality
+
+---
+
 ## Additional Resources
 
 - **OpenDAW Examples**: See the demo applications in `src/` directory
+- **Audio Export Guide**: See [audio-export.md](./audio-export.md) for comprehensive export documentation
 - **TypeScript Definitions**: Check `node_modules/@opendaw/*/dist/*.d.ts` for API details
 - **Live Demos**: Run `npm run dev` to see working examples
 
@@ -328,8 +341,9 @@ Found an error or want to improve this documentation? PRs welcome!
 | [Complete Example](./07-putting-it-together.md) | Full application | All developers |
 | [Recording & Live Peaks](./08-recording-and-live-peaks.md) | Recording with live waveforms | Frontend/recording features |
 | [Track Editing & Fades](./09-track-editing-and-fades.md) | Region editing & fades | Timeline/editing features |
+| [Audio Export](./audio-export.md) | Mix & stem export | Export/rendering features |
 
-**Recommended reading order:** 1 → 2 → 3 → 4 → 5 → 6 → 7 (→ 8 if implementing recording, → 9 if implementing editing)
+**Recommended reading order:** 1 → 2 → 3 → 4 → 5 → 6 → 7 (→ 8 if implementing recording, → 9 if implementing editing, → 10 if implementing export)
 
 **Troubleshooting order:** Having issues? → Read 3 first!
 

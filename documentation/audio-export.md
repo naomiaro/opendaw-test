@@ -8,6 +8,7 @@ Comprehensive guide to exporting audio from OpenDAW projects, including full mix
 - [Quick Start](#quick-start)
 - [Core API](#core-api)
 - [Export Utility Functions](#export-utility-functions)
+- [React Hook (Recommended)](#react-hook-recommended)
 - [Full Mix Export](#full-mix-export)
 - [Stems Export](#stems-export)
 - [Export Options](#export-options)
@@ -242,6 +243,117 @@ await exportStems(project, stemsConfig, {
 - Individual stereo files automatically downloaded
 - Effects optionally included per stem
 - Each file named according to `fileName`
+
+---
+
+## React Hook (Recommended)
+
+### useAudioExport()
+
+For React applications, the `useAudioExport` hook provides a convenient way to manage export state and handlers.
+
+**Location:** `src/lib/useAudioExport.ts`
+
+```typescript
+import { useAudioExport } from "./lib/useAudioExport";
+
+const {
+  isExporting,
+  exportProgress,
+  exportStatus,
+  handleExportMix,
+  handleExportStems
+} = useAudioExport(project, {
+  sampleRate: 48000,
+  mixFileName: "my-mix"
+});
+```
+
+**Parameters:**
+- `project` - The OpenDAW project instance (or `null`)
+- `options` - Optional configuration:
+  - `sampleRate?: number` - Sample rate for export (default: 48000)
+  - `mixFileName?: string` - Base filename for full mix export (default: "mix")
+
+**Returns:**
+- `isExporting: boolean` - Whether an export is currently in progress
+- `exportProgress: number` - Export progress (0-100)
+- `exportStatus: string` - Current status message
+- `handleExportMix: () => Promise<void>` - Export full mix handler
+- `handleExportStems: (config: StemConfigBuilder) => Promise<void>` - Export stems handler
+
+**Stem Configuration:**
+```typescript
+interface StemConfigBuilder {
+  includeAudioEffects: boolean;  // Include effects in stems
+  includeSends: boolean;          // Include send/aux effects
+}
+```
+
+**Complete Example:**
+
+```typescript
+import { useAudioExport } from "./lib/useAudioExport";
+import { Button, Progress, Text } from "@radix-ui/themes";
+
+const ExportControls = ({ project }: { project: Project | null }) => {
+  const {
+    isExporting,
+    exportProgress,
+    exportStatus,
+    handleExportMix,
+    handleExportStems
+  } = useAudioExport(project, {
+    sampleRate: 48000,
+    mixFileName: "my-song"
+  });
+
+  // Wrapper for stems with specific configuration
+  const handleStemsWithEffects = useCallback(async () => {
+    await handleExportStems({
+      includeAudioEffects: true,
+      includeSends: false
+    });
+  }, [handleExportStems]);
+
+  return (
+    <div>
+      <Button onClick={handleExportMix} disabled={!project || isExporting}>
+        Export Mix
+      </Button>
+
+      <Button onClick={handleStemsWithEffects} disabled={!project || isExporting}>
+        Export Stems (with FX)
+      </Button>
+
+      {isExporting && (
+        <>
+          <Progress value={exportProgress} max={100} />
+          <Text>{exportStatus} ({Math.round(exportProgress)}%)</Text>
+        </>
+      )}
+    </div>
+  );
+};
+```
+
+**Benefits:**
+- ✅ Automatic state management (progress, status, isExporting flag)
+- ✅ Built-in error handling
+- ✅ Consistent API across demos
+- ✅ Less boilerplate code
+- ✅ Type-safe stem configuration
+
+**When to use:**
+- React applications
+- Multiple export buttons/features
+- Consistent export UI patterns
+- Reduced boilerplate
+
+**When to use raw functions instead:**
+- Non-React applications
+- Custom state management needs
+- Special error handling requirements
 
 ---
 
@@ -990,6 +1102,7 @@ This is **not a bug** - it's intentional data integrity checking to prevent temp
 ### Related Files
 
 - **Export Utility:** `src/lib/audioExport.ts`
+- **React Hook:** `src/lib/useAudioExport.ts`
 - **Drum Demo Integration:** `src/drum-scheduling-demo.tsx`
 - **Effects Demo Integration:** `src/effects-demo.tsx`
 
@@ -1018,6 +1131,7 @@ OpenDAW's export system provides:
 ✅ **High Quality** - 48kHz, 32-bit float WAV
 ✅ **Progress Tracking** - Real-time status updates
 ✅ **Easy Integration** - Simple API for demos
+✅ **React Hook** - Convenient `useAudioExport` hook for React apps
 
 Perfect for:
 - Final masters

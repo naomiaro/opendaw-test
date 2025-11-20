@@ -19,7 +19,7 @@ import { loadTracksFromFiles } from "./lib/trackLoading";
 import { useWaveformRendering } from "./hooks/useWaveformRendering";
 import { useEffectChain } from "./hooks/useEffectChain";
 import { useDynamicEffect } from "./hooks/useDynamicEffect";
-import { exportFullMix, exportStems } from "./lib/audioExport";
+import { useAudioExport } from "./lib/useAudioExport";
 import type { TrackData } from "./lib/types";
 import "@radix-ui/themes/styles.css";
 import { Theme, Container, Heading, Text, Flex, Card, Separator, Callout, Slider, Button } from "@radix-ui/themes";
@@ -83,10 +83,17 @@ const App: React.FC = () => {
   // Master volume state
   const [masterVolume, setMasterVolume] = useState(0); // dB
 
-  // Export state
-  const [exportStatus, setExportStatus] = useState("");
-  const [exportProgress, setExportProgress] = useState(0);
-  const [isExporting, setIsExporting] = useState(false);
+  // Audio export hook
+  const {
+    isExporting,
+    exportProgress,
+    exportStatus,
+    handleExportMix,
+    handleExportStems
+  } = useAudioExport(project, {
+    sampleRate: 48000,
+    mixFileName: "dark-ride-mix"
+  });
 
   // Effect chain hooks for each track and master
   const introEffects = useEffectChain(project, tracks.find(t => t.name === "Intro")?.audioUnitBox || null, "Intro");
@@ -401,61 +408,13 @@ const App: React.FC = () => {
   }, [masterAudioBox]);
 
   // Export full mix with all effects rendered
-  const handleExportMix = useCallback(async () => {
-    if (!project) return;
-
-    setIsExporting(true);
-    setExportProgress(0);
-    setExportStatus("Starting export...");
-
-    try {
-      await exportFullMix(project, {
-        fileName: "darkride-mix-with-effects",
-        sampleRate: 48000,
-        onProgress: setExportProgress,
-        onStatus: setExportStatus
-      });
-    } catch (error) {
-      console.error("Export failed:", error);
-      setExportStatus("Export failed!");
-    } finally {
-      setIsExporting(false);
-    }
-  }, [project]);
-
-  // Export individual stems with effects rendered
-  const handleExportStems = useCallback(async () => {
-    if (!project || tracks.length === 0) return;
-
-    setIsExporting(true);
-    setExportProgress(0);
-    setExportStatus("Starting stems export...");
-
-    try {
-      // Build stem configuration - include audio effects to hear the processed sound!
-      const stemsConfig: Record<string, { includeAudioEffects: boolean; includeSends: boolean; fileName: string }> = {};
-
-      tracks.forEach((track) => {
-        const uuid = UUID.toString(track.uuid);
-        stemsConfig[uuid] = {
-          includeAudioEffects: true, // IMPORTANT: Include effects to hear them in the export!
-          includeSends: false,
-          fileName: track.name
-        };
-      });
-
-      await exportStems(project, stemsConfig, {
-        sampleRate: 48000,
-        onProgress: setExportProgress,
-        onStatus: setExportStatus
-      });
-    } catch (error) {
-      console.error("Stems export failed:", error);
-      setExportStatus("Stems export failed!");
-    } finally {
-      setIsExporting(false);
-    }
-  }, [project, tracks]);
+  // Wrapper for stems export with effects enabled
+  const handleEffectsStems = useCallback(async () => {
+    await handleExportStems({
+      includeAudioEffects: true, // IMPORTANT: Include effects to hear them in the export!
+      includeSends: false
+    });
+  }, [handleExportStems]);
 
   if (!project) {
     return (
@@ -832,7 +791,7 @@ const App: React.FC = () => {
                     Export Full Mix (with Effects)
                   </Button>
                   <Button
-                    onClick={handleExportStems}
+                    onClick={handleEffectsStems}
                     disabled={tracks.length === 0 || isExporting}
                     color="purple"
                     size="3"

@@ -14,7 +14,7 @@ import { MoisesLogo } from "./components/MoisesLogo";
 import { BackLink } from "./components/BackLink";
 import { loadAudioFile } from "./lib/audioUtils";
 import { initializeOpenDAW } from "./lib/projectSetup";
-import { exportFullMix, exportStems } from "./lib/audioExport";
+import { useAudioExport } from "./lib/useAudioExport";
 import "@radix-ui/themes/styles.css";
 import { Theme, Container, Heading, Text, Button, Flex, Card, Badge, Separator } from "@radix-ui/themes";
 
@@ -39,9 +39,18 @@ const App: React.FC = () => {
   const [currentPosition, setCurrentPosition] = useState(0);
   const [bpm, setBpm] = useState(90);
   const [samplesLoaded, setSamplesLoaded] = useState(false);
-  const [exportStatus, setExportStatus] = useState("");
-  const [exportProgress, setExportProgress] = useState(0);
-  const [isExporting, setIsExporting] = useState(false);
+
+  // Audio export hook
+  const {
+    isExporting,
+    exportProgress,
+    exportStatus,
+    handleExportMix,
+    handleExportStems
+  } = useAudioExport(project, {
+    sampleRate: 48000,
+    mixFileName: `drum-pattern-${bpm}bpm`
+  });
 
   // Refs for non-reactive values
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
@@ -345,74 +354,13 @@ const App: React.FC = () => {
     [project, samplesLoaded, bpm]
   );
 
-  // Export full mix
-  const handleExportMix = useCallback(async () => {
-    if (!project) return;
-
-    setIsExporting(true);
-    setExportProgress(0);
-    setExportStatus("Starting export...");
-
-    try {
-      await exportFullMix(project, {
-        fileName: `drum-pattern-${bpm}bpm`,
-        sampleRate: 48000,
-        onProgress: setExportProgress,
-        onStatus: setExportStatus
-      });
-    } catch (error) {
-      console.error("Export failed:", error);
-      setExportStatus("Export failed!");
-    } finally {
-      setIsExporting(false);
-    }
-  }, [project, bpm]);
-
-  // Export individual stems
-  const handleExportStems = useCallback(async () => {
-    if (!project || trackAudioBoxesRef.current.length === 0) return;
-
-    setIsExporting(true);
-    setExportProgress(0);
-    setExportStatus("Starting stems export...");
-
-    try {
-      // Build stem configuration by iterating through all audio units in the project
-      // This is how OpenDAW does it in showExportStemsDialog
-      const stemsConfig: Record<string, { includeAudioEffects: boolean; includeSends: boolean; fileName: string }> = {};
-
-      // Get all audio units from the project
-      const audioUnits = project.rootBoxAdapter.audioUnits.adapters();
-
-      // Map our track names to audio units (in order of creation)
-      const trackNames = trackAudioBoxesRef.current.map(t => t.name);
-
-      audioUnits.forEach((unit, index) => {
-        // Skip the output unit
-        if (unit.isOutput) return;
-
-        const uuidString = UUID.toString(unit.uuid);
-        const trackName = trackNames[index] || `Track ${index + 1}`;
-
-        stemsConfig[uuidString] = {
-          includeAudioEffects: false, // No effects in drum demo
-          includeSends: false,
-          fileName: trackName
-        };
-      });
-
-      await exportStems(project, stemsConfig, {
-        sampleRate: 48000,
-        onProgress: setExportProgress,
-        onStatus: setExportStatus
-      });
-    } catch (error) {
-      console.error("Stems export failed:", error);
-      setExportStatus("Stems export failed!");
-    } finally {
-      setIsExporting(false);
-    }
-  }, [project]);
+  // Wrapper for stems export with drum demo configuration
+  const handleDrumStems = useCallback(async () => {
+    await handleExportStems({
+      includeAudioEffects: false, // No effects in drum demo
+      includeSends: false
+    });
+  }, [handleExportStems]);
 
   // Timeline visualization
   const renderTimeline = () => {
@@ -757,7 +705,7 @@ const App: React.FC = () => {
                     Export Full Mix
                   </Button>
                   <Button
-                    onClick={handleExportStems}
+                    onClick={handleDrumStems}
                     disabled={!samplesLoaded || isExporting}
                     color="purple"
                     size="3"
