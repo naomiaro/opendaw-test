@@ -6,7 +6,8 @@ import { UUID } from "@opendaw/lib-std";
 import { PPQN } from "@opendaw/lib-dsp";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { AudioPlayback } from "@opendaw/studio-enums";
-import { InstrumentFactories, Project } from "@opendaw/studio-core";
+import { Project } from "@opendaw/studio-core";
+import { InstrumentFactories } from "@opendaw/studio-adapters";
 import { AudioFileBox, AudioRegionBox } from "@opendaw/studio-boxes";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { MoisesLogo } from "./components/MoisesLogo";
@@ -205,7 +206,7 @@ const App: React.FC = () => {
 
         console.debug("Pattern created!");
         console.debug(`Timeline position: ${newProject.engine.position.getValue()}`);
-        console.debug(`BPM: ${newProject.bpm}`);
+        console.debug(`BPM: ${newProject.timelineBox.bpm.getValue()}`);
 
         // Make sure the timeline is at the beginning
         newProject.engine.setPosition(0);

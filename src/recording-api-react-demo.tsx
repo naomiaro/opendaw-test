@@ -239,7 +239,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!project) return;
 
-    const initialBpm = project.bpm;
+    const initialBpm = project.timelineBox.bpm.getValue();
     const signature = project.timelineBox.signature;
 
     if (signature?.nominator && signature?.denominator) {
