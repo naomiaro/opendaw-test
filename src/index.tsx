@@ -91,23 +91,6 @@ const App: React.FC = () => {
             </Card>
 
             <Card asChild>
-              <Link
-                href="/drum-scheduling-autofit-demo.html"
-                style={{ textDecoration: "none", padding: "var(--space-5)" }}
-              >
-                <Flex direction="column" gap="3">
-                  <Flex direction="column" align="center" gap="2">
-                    <Text size="8">🥁</Text>
-                    <Heading size="5">Drum Scheduling (AudioFit)</Heading>
-                  </Flex>
-                  <Text size="2" color="gray">
-                    Same drum pattern but using AudioFit mode with AutofitUtils.changeBpm().
-                  </Text>
-                </Flex>
-              </Link>
-            </Card>
-
-            <Card asChild>
               <Link href="/looping-demo.html" style={{ textDecoration: "none", padding: "var(--space-5)" }}>
                 <Flex direction="column" gap="3">
                   <Flex direction="column" align="center" gap="2">

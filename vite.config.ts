@@ -26,7 +26,6 @@ export default defineConfig({
                 trackEditing: resolve(__dirname, "track-editing-demo.html"),
                 recordingApi: resolve(__dirname, "recording-api-react-demo.html"),
                 drumScheduling: resolve(__dirname, "drum-scheduling-demo.html"),
-                drumSchedulingAutofit: resolve(__dirname, "drum-scheduling-autofit-demo.html"),
                 looping: resolve(__dirname, "looping-demo.html")
             },
             output: {
