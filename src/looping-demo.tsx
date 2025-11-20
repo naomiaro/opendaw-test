@@ -13,6 +13,7 @@ import { TrackRow } from "./components/TrackRow";
 import { TransportControls } from "./components/TransportControls";
 import { TimelineRuler } from "./components/TimelineRuler";
 import { TracksContainer } from "./components/TracksContainer";
+import { Playhead } from "./components/Playhead";
 import { initializeOpenDAW } from "./lib/projectSetup";
 import { loadTracksFromFiles } from "./lib/trackLoading";
 import { useWaveformRendering } from "./hooks/useWaveformRendering";
@@ -28,13 +29,10 @@ import {
   Button,
   Callout,
   Badge,
-  Box as RadixBox,
   Switch,
   Separator,
-  TextField,
-  IconButton
 } from "@radix-ui/themes";
-import { InfoCircledIcon, LoopIcon, PlayIcon } from "@radix-ui/react-icons";
+import { InfoCircledIcon, LoopIcon } from "@radix-ui/react-icons";
 
 /**
  * Looping Demo App Component
@@ -533,17 +531,17 @@ const App: React.FC = () => {
                         />
                       </>
                     )}
-
-                    {/* Playhead */}
-                    <line
-                      x1={`${(currentPosition / maxDurationInPPQN) * 100}%`}
-                      y1="0"
-                      x2={`${(currentPosition / maxDurationInPPQN) * 100}%`}
-                      y2="40"
-                      stroke="#ff0066"
-                      strokeWidth="2"
-                    />
                   </svg>
+
+                  {/* Playhead using the reusable Playhead component */}
+                  <Playhead
+                    currentPosition={currentPosition}
+                    bpm={BPM}
+                    maxDuration={maxDurationInSeconds}
+                    leftOffset={0}
+                    color="white"
+                    visible={true}
+                  />
                 </div>
               </div>
 
@@ -554,9 +552,9 @@ const App: React.FC = () => {
                 bpm={BPM}
                 maxDuration={maxDurationInSeconds}
                 leftOffset={200}
-                playheadColor="#ff0066"
+                playheadColor="#fff"
               >
-                {tracks.map((track, index) => {
+                {tracks.map((track) => {
                   const uuidString = UUID.toString(track.uuid);
                   return (
                     <TrackRow
