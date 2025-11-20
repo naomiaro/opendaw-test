@@ -1,7 +1,8 @@
 import { UUID } from "@opendaw/lib-std";
 import { PPQN } from "@opendaw/lib-dsp";
-import { Project, InstrumentFactories } from "@opendaw/studio-core";
+import { Project } from "@opendaw/studio-core";
 import { AudioFileBox, AudioRegionBox } from "@opendaw/studio-boxes";
+import { InstrumentFactories } from "@opendaw/studio-adapters";
 import { loadAudioFile } from "./audioUtils";
 import { setLoopEndFromTracks } from "./projectSetup";
 import type { TrackData, TrackFileConfig } from "./types";

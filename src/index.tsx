@@ -106,6 +106,21 @@ const App: React.FC = () => {
                 </Flex>
               </Link>
             </Card>
+
+            <Card asChild>
+              <Link href="/looping-demo.html" style={{ textDecoration: "none", padding: "var(--space-5)" }}>
+                <Flex direction="column" gap="3">
+                  <Flex direction="column" align="center" gap="2">
+                    <Text size="8">🔁</Text>
+                    <Heading size="5">Looping Capabilities</Heading>
+                  </Flex>
+                  <Text size="2" color="gray">
+                    Comprehensive demonstration of OpenDAW's looping features. Control timeline loop areas, enable/disable
+                    looping, adjust loop boundaries, and watch loop iterations in real-time.
+                  </Text>
+                </Flex>
+              </Link>
+            </Card>
           </div>
 
           <MoisesLogo />
