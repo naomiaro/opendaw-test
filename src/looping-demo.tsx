@@ -485,21 +485,39 @@ const App: React.FC = () => {
                     height="40"
                     style={{ position: "absolute", top: 0, left: 0 }}
                   >
-                    {/* Timeline grid */}
-                    {Array.from({ length: 17 }).map((_, i) => {
-                      const x = (i / 16) * 100;
-                      return (
-                        <line
-                          key={i}
-                          x1={`${x}%`}
-                          y1="0"
-                          x2={`${x}%`}
-                          y2="40"
-                          stroke="#333"
-                          strokeWidth="1"
-                        />
-                      );
-                    })}
+                    {/* Bar markers */}
+                    {(() => {
+                      const totalBars = Math.ceil(maxDurationInPPQN / PPQN.Bar);
+                      return Array.from({ length: totalBars + 1 }).map((_, barIndex) => {
+                        const barPPQN = barIndex * PPQN.Bar;
+                        const x = (barPPQN / maxDurationInPPQN) * 100;
+                        return (
+                          <g key={barIndex}>
+                            {/* Bar line */}
+                            <line
+                              x1={`${x}%`}
+                              y1="0"
+                              x2={`${x}%`}
+                              y2="40"
+                              stroke={barIndex % 4 === 0 ? "#555" : "#333"}
+                              strokeWidth={barIndex % 4 === 0 ? "2" : "1"}
+                            />
+                            {/* Bar number label */}
+                            {barIndex % 4 === 0 && (
+                              <text
+                                x={`${x}%`}
+                                y="12"
+                                fill="#888"
+                                fontSize="10"
+                                textAnchor="middle"
+                              >
+                                {barIndex + 1}
+                              </text>
+                            )}
+                          </g>
+                        );
+                      });
+                    })()}
 
                     {/* Loop area visualization */}
                     {loopEnabled && (
