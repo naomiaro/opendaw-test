@@ -26,7 +26,8 @@ export default defineConfig({
                 trackEditing: resolve(__dirname, "track-editing-demo.html"),
                 recordingApi: resolve(__dirname, "recording-api-react-demo.html"),
                 drumScheduling: resolve(__dirname, "drum-scheduling-demo.html"),
-                looping: resolve(__dirname, "looping-demo.html")
+                looping: resolve(__dirname, "looping-demo.html"),
+                timebase: resolve(__dirname, "timebase-demo.html")
             },
             output: {
                 manualChunks: (id) => {

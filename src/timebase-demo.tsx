@@ -163,7 +163,7 @@ function TimeBaseDemo() {
       const { editing, api } = project;
 
       editing.modify(() => {
-        // Disable looping so playback stops at the end instead of looping
+        // Disable looping so playback keeps going after the sample ends
         project.timelineBox.loopArea.enabled.setValue(false);
 
         // Set timeline loop end to accommodate the full audio
