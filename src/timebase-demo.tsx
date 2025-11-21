@@ -413,7 +413,7 @@ function TimeBaseDemo() {
 
         <Flex direction="column" gap="4">
           <Flex direction="column" gap="2" align="center">
-            <MoisesLogo />
+            
             <Heading size="8" align="center">
               TimeBase Demo
             </Heading>
@@ -658,8 +658,8 @@ function TimeBaseDemo() {
                     <strong>Musical TimeBase:</strong>
                   </Text>
                   <ul style={{ marginLeft: "1.5rem", marginTop: "0.25rem" }}>
-                    <li>Duration automatically adjusts when BPM changes</li>
-                    <li>Overlapping regions are forbidden (validation error)</li>
+                    <li>Duration in beats - automatically adjusts when BPM changes</li>
+                    <li>Overlapping regions are forbidden on export (validation error)</li>
                     <li>Perfect for loops that need to stay in sync with tempo</li>
                     <li>Use for: melodic content, loops, tempo-synced samples</li>
                   </ul>
@@ -668,7 +668,7 @@ function TimeBaseDemo() {
                     <strong>Seconds TimeBase:</strong>
                   </Text>
                   <ul style={{ marginLeft: "1.5rem", marginTop: "0.25rem" }}>
-                    <li>Duration stays constant regardless of BPM</li>
+                    <li>Duration in seconds - stays constant regardless of BPM</li>
                     <li>Overlapping regions are allowed</li>
                     <li>Perfect for one-shot samples with natural decay</li>
                     <li>Use for: drums, percussion, sound effects, vocals</li>
@@ -687,6 +687,7 @@ function TimeBaseDemo() {
             </Card>
           )}
         </Flex>
+        <MoisesLogo />
       </Container>
     </Theme>
   );
