@@ -104,6 +104,21 @@ const App: React.FC = () => {
                 </Flex>
               </Link>
             </Card>
+
+            <Card asChild>
+              <Link href="/timebase-demo.html" style={{ textDecoration: "none", padding: "var(--space-5)" }}>
+                <Flex direction="column" gap="3">
+                  <Flex direction="column" align="center" gap="2">
+                    <Text size="8">⏱️</Text>
+                    <Heading size="5">TimeBase Comparison</Heading>
+                  </Flex>
+                  <Text size="2" color="gray">
+                    Understand Musical vs Seconds TimeBase. See how Musical regions change duration with BPM while Seconds
+                    regions stay constant. Learn when overlaps are allowed and which TimeBase to use for different scenarios.
+                  </Text>
+                </Flex>
+              </Link>
+            </Card>
           </div>
 
           <MoisesLogo />
