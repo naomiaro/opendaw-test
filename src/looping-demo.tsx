@@ -128,9 +128,9 @@ const App: React.FC = () => {
           newProject,
           newAudioContext,
           [
-            { name: "Drums", file: "/audio/DarkRide/02_Drums.ogg" },
-            { name: "Bass", file: "/audio/DarkRide/03_Bass.ogg" },
-            { name: "Guitar", file: "/audio/DarkRide/04_ElecGtrs.ogg" }
+            { name: "Drums", file: "/audio/DarkRide/02_Drums.opus" },
+            { name: "Bass", file: "/audio/DarkRide/03_Bass.opus" },
+            { name: "Guitar", file: "/audio/DarkRide/04_ElecGtrs.opus" }
           ],
           localAudioBuffers,
           {

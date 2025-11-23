@@ -137,10 +137,10 @@ const App: React.FC = () => {
           newProject,
           newAudioContext,
           [
-            { name: "Vocals", file: "/audio/DarkRide/06_Vox.ogg" },
-            { name: "Guitar", file: "/audio/DarkRide/04_ElecGtrs.ogg" },
-            { name: "Bass", file: "/audio/DarkRide/03_Bass.ogg" },
-            { name: "Drums", file: "/audio/DarkRide/02_Drums.ogg" }
+            { name: "Vocals", file: "/audio/DarkRide/06_Vox.opus" },
+            { name: "Guitar", file: "/audio/DarkRide/04_ElecGtrs.opus" },
+            { name: "Bass", file: "/audio/DarkRide/03_Bass.opus" },
+            { name: "Drums", file: "/audio/DarkRide/02_Drums.opus" }
           ],
           localAudioBuffers,
           {

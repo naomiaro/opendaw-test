@@ -288,13 +288,13 @@ const App: React.FC = () => {
           newProject,
           newAudioContext,
           [
-            { name: "Intro", file: "/audio/DarkRide/01_Intro.ogg" },
-            { name: "Vocals", file: "/audio/DarkRide/06_Vox.ogg" },
-            { name: "Guitar Lead", file: "/audio/DarkRide/05_ElecGtrsLead.ogg" },
-            { name: "Guitar", file: "/audio/DarkRide/04_ElecGtrs.ogg" },
-            { name: "Drums", file: "/audio/DarkRide/02_Drums.ogg" },
-            { name: "Bass", file: "/audio/DarkRide/03_Bass.ogg" },
-            { name: "Effect Returns", file: "/audio/DarkRide/07_EffectReturns.ogg" }
+            { name: "Intro", file: "/audio/DarkRide/01_Intro.opus" },
+            { name: "Vocals", file: "/audio/DarkRide/06_Vox.opus" },
+            { name: "Guitar Lead", file: "/audio/DarkRide/05_ElecGtrsLead.opus" },
+            { name: "Guitar", file: "/audio/DarkRide/04_ElecGtrs.opus" },
+            { name: "Drums", file: "/audio/DarkRide/02_Drums.opus" },
+            { name: "Bass", file: "/audio/DarkRide/03_Bass.opus" },
+            { name: "Effect Returns", file: "/audio/DarkRide/07_EffectReturns.opus" }
           ],
           localAudioBuffers,
           {
