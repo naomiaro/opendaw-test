@@ -7,7 +7,7 @@ import { AnimationFrame } from "@opendaw/lib-dom";
 import { PeaksPainter } from "@opendaw/lib-fusion";
 import { CanvasPainter } from "./lib/CanvasPainter";
 import { initializeOpenDAW } from "./lib/projectSetup";
-import { useEnginePreference, CountInBarsValue } from "./hooks/useEnginePreference";
+import { useEnginePreference, CountInBarsValue, MetronomeBeatSubDivisionValue } from "./hooks/useEnginePreference";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { MoisesLogo } from "./components/MoisesLogo";
 import { BackLink } from "./components/BackLink";
@@ -24,7 +24,8 @@ import {
   TextField,
   Select,
   Callout,
-  Separator
+  Separator,
+  Slider
 } from "@radix-ui/themes";
 
 /**
@@ -53,10 +54,19 @@ const App: React.FC = () => {
     project,
     ["metronome", "enabled"]
   );
+  const [metronomeGain, setMetronomeGain] = useEnginePreference(
+    project,
+    ["metronome", "gain"]
+  );
+  const [metronomeBeatSubDivision, setMetronomeBeatSubDivision] = useEnginePreference(
+    project,
+    ["metronome", "beatSubDivision"]
+  );
   const [countInBars, setCountInBars] = useEnginePreference(
     project,
     ["recording", "countInBars"]
   );
+
 
   // Status messages
   const [recordStatus, setRecordStatus] = useState("Click Record to start");
@@ -339,18 +349,15 @@ const App: React.FC = () => {
       }
 
       // Delete any previous recording before starting a new one
-      // Using the high-level delete() API which handles all dependencies automatically
       project.editing.modify(() => {
         const allBoxes = project.boxGraph.boxes();
         const recordingRegions: any[] = [];
 
         // Find all Recording AudioRegionBox instances
-        // In SDK 0.0.91+, recording regions are labeled "Take N" instead of "Recording"
         for (const box of allBoxes) {
           if (box.name === "AudioRegionBox") {
             const regionBox = box as any;
             const label = regionBox.label?.getValue();
-
             if (label === "Recording" || (label && label.startsWith("Take "))) {
               recordingRegions.push(regionBox);
             }
@@ -358,7 +365,6 @@ const App: React.FC = () => {
         }
 
         // Delete all previous recording regions
-        // The delete() method automatically handles clearing pointers and deleting dependent boxes (like AudioFileBox)
         console.log(`[Recording] Deleting ${recordingRegions.length} previous recording(s)`);
         recordingRegions.forEach(region => region.delete());
       });
@@ -398,8 +404,6 @@ const App: React.FC = () => {
 
     // After recording stops, set the timeline loop end to match the recording duration
     setTimeout(() => {
-      // Find the Recording AudioRegionBox and set loop end to its duration
-      // In SDK 0.0.91+, recording regions are labeled "Take N" instead of "Recording"
       const allBoxes = project.boxGraph.boxes();
       for (const box of allBoxes) {
         if (box.name === "AudioRegionBox") {
@@ -580,7 +584,7 @@ const App: React.FC = () => {
                 </Callout.Text>
               </Callout.Root>
 
-              <Flex direction="column" gap="2">
+              <Flex direction="column" gap="3">
                 <Flex asChild align="center" gap="2">
                   <Text as="label" size="2">
                     <Checkbox checked={useCountIn} onCheckedChange={checked => setUseCountIn(checked === true)} />
@@ -596,6 +600,57 @@ const App: React.FC = () => {
                     Enable metronome
                   </Text>
                 </Flex>
+
+                {/* Metronome settings - only show when metronome is enabled */}
+                {metronomeEnabled && (
+                  <Card style={{ background: "var(--gray-2)" }}>
+                    <Flex direction="column" gap="3">
+                      <Text size="2" weight="medium" color="gray">
+                        Metronome Settings
+                      </Text>
+                      <Flex gap="4" wrap="wrap" align="center">
+                        <Flex align="center" gap="2">
+                          <Text size="2">Volume:</Text>
+                          <Flex align="center" gap="2" style={{ width: 150 }}>
+                            <Slider
+                              value={[Math.round(((metronomeGain ?? -6) + 60) * (100 / 60))]}
+                              onValueChange={values => {
+                                // Convert 0-100 slider to -60 to 0 dB range
+                                const dB = (values[0] * 60) / 100 - 60;
+                                setMetronomeGain(dB);
+                              }}
+                              min={0}
+                              max={100}
+                              step={1}
+                              disabled={isRecording}
+                            />
+                            <Text size="1" color="gray" style={{ width: 45 }}>
+                              {Math.round(metronomeGain ?? -6)} dB
+                            </Text>
+                          </Flex>
+                        </Flex>
+                        <Flex align="center" gap="2">
+                          <Text size="2">Subdivision:</Text>
+                          <Select.Root
+                            value={(metronomeBeatSubDivision ?? 1).toString()}
+                            onValueChange={value =>
+                              setMetronomeBeatSubDivision(Number(value) as MetronomeBeatSubDivisionValue)
+                            }
+                            disabled={isRecording}
+                          >
+                            <Select.Trigger style={{ width: 120 }} />
+                            <Select.Content>
+                              <Select.Item value="1">Quarter (1)</Select.Item>
+                              <Select.Item value="2">Eighth (2)</Select.Item>
+                              <Select.Item value="4">16th (4)</Select.Item>
+                              <Select.Item value="8">32nd (8)</Select.Item>
+                            </Select.Content>
+                          </Select.Root>
+                        </Flex>
+                      </Flex>
+                    </Flex>
+                  </Card>
+                )}
               </Flex>
 
               {isCountingIn && (
