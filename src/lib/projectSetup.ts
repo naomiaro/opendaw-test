@@ -205,6 +205,12 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
   console.debug("Engine is ready!");
   onStatusUpdate?.("Loading tracks...");
 
+  // Clear engine preferences on page unload so demos start fresh
+  // This prevents settings from one demo affecting another
+  window.addEventListener("beforeunload", () => {
+    localStorage.removeItem("engine-preferences");
+  });
+
   return { project, audioContext };
 }
 
