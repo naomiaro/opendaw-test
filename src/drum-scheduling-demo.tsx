@@ -5,10 +5,9 @@ import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
 import { PPQN } from "@opendaw/lib-dsp";
 import { AnimationFrame } from "@opendaw/lib-dom";
-import { AudioPlayback } from "@opendaw/studio-enums";
 import { Project } from "@opendaw/studio-core";
 import { InstrumentFactories } from "@opendaw/studio-adapters";
-import { AudioFileBox, AudioRegionBox } from "@opendaw/studio-boxes";
+import { AudioFileBox, AudioRegionBox, ValueEventCollectionBox } from "@opendaw/studio-boxes";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { MoisesLogo } from "./components/MoisesLogo";
 import { BackLink } from "./components/BackLink";
@@ -17,6 +16,7 @@ import { initializeOpenDAW } from "./lib/projectSetup";
 import { useAudioExport } from "./hooks/useAudioExport";
 import "@radix-ui/themes/styles.css";
 import { Theme, Container, Heading, Text, Button, Flex, Card, Badge, Separator } from "@radix-ui/themes";
+import { ExportProgress } from "./components/ExportProgress";
 
 // Type for scheduled clip
 type ScheduledClip = {
@@ -44,8 +44,10 @@ const App: React.FC = () => {
   const {
     isExporting,
     exportStatus,
+    exportProgress,
     handleExportMix,
-    handleExportStems
+    handleExportStems,
+    handleAbortExport
   } = useAudioExport(project, {
     sampleRate: 48000,
     mixFileName: `drum-pattern-${bpm}bpm`
@@ -180,10 +182,13 @@ const App: React.FC = () => {
 
             // Create AudioRegionBox for each position
             positions.forEach((position, clipIndex) => {
+              // Create events collection box (required for AudioRegionBox)
+              const eventsCollectionBox = ValueEventCollectionBox.create(boxGraph, UUID.generate());
+
               const regionBox = AudioRegionBox.create(boxGraph, UUID.generate(), box => {
                 box.regions.refer(trackBox.regions);
                 box.file.refer(audioFileBox);
-                box.playback.setValue(AudioPlayback.NoSync); // NoSync: plays at original speed/pitch, ignores BPM
+                box.events.refer(eventsCollectionBox.owners);
                 box.position.setValue(position);
                 box.duration.setValue(clipDurationInPPQN);
                 box.loopOffset.setValue(0);
@@ -715,21 +720,12 @@ const App: React.FC = () => {
                 </Flex>
 
                 {/* Export status */}
-                {(exportStatus || isExporting) && (
-                  <>
-                    <Separator size="4" />
-                    <Flex direction="column" gap="2" align="center">
-                      <Text size="2" weight="medium">
-                        {exportStatus}
-                      </Text>
-                      {isExporting && (
-                        <Text size="1" color="gray" align="center">
-                          Rendering offline (may take a moment for long tracks)
-                        </Text>
-                      )}
-                    </Flex>
-                  </>
-                )}
+                <ExportProgress
+                  isExporting={isExporting}
+                  status={exportStatus}
+                  progress={exportProgress}
+                  onCancel={handleAbortExport}
+                />
               </Flex>
             </Flex>
           </Card>

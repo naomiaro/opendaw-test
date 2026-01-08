@@ -7,6 +7,7 @@ import { AnimationFrame } from "@opendaw/lib-dom";
 import { PeaksPainter } from "@opendaw/lib-fusion";
 import { CanvasPainter } from "./lib/CanvasPainter";
 import { initializeOpenDAW } from "./lib/projectSetup";
+import { useEnginePreference, CountInBarsValue, MetronomeBeatSubDivisionValue } from "./hooks/useEnginePreference";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { MoisesLogo } from "./components/MoisesLogo";
 import { BackLink } from "./components/BackLink";
@@ -23,7 +24,8 @@ import {
   TextField,
   Select,
   Callout,
-  Separator
+  Separator,
+  Slider
 } from "@radix-ui/themes";
 
 /**
@@ -43,11 +45,28 @@ const App: React.FC = () => {
 
   // Settings
   const [useCountIn, setUseCountIn] = useState(false);
-  const [metronomeEnabled, setMetronomeEnabled] = useState(false);
   const [bpm, setBpm] = useState(120);
   const [timeSignatureNumerator, setTimeSignatureNumerator] = useState(3);
   const [timeSignatureDenominator, setTimeSignatureDenominator] = useState(4);
-  const [countInBars, setCountInBars] = useState(1);
+
+  // Engine preferences (using new hook for 0.0.87+ API)
+  const [metronomeEnabled, setMetronomeEnabled] = useEnginePreference(
+    project,
+    ["metronome", "enabled"]
+  );
+  const [metronomeGain, setMetronomeGain] = useEnginePreference(
+    project,
+    ["metronome", "gain"]
+  );
+  const [metronomeBeatSubDivision, setMetronomeBeatSubDivision] = useEnginePreference(
+    project,
+    ["metronome", "beatSubDivision"]
+  );
+  const [countInBars, setCountInBars] = useEnginePreference(
+    project,
+    ["recording", "countInBars"]
+  );
+
 
   // Status messages
   const [recordStatus, setRecordStatus] = useState("Click Record to start");
@@ -57,6 +76,7 @@ const App: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const canvasPainterRef = useRef<CanvasPainter | null>(null);
   const currentPeaksRef = useRef<any>(null);
+  const userMetronomePreferenceRef = useRef<boolean>(false); // Track user's metronome preference for restore after playback
 
   const CHANNEL_PADDING = 4;
 
@@ -168,7 +188,7 @@ const App: React.FC = () => {
   }, [project, hasPeaks]);
 
   // Monitor live peaks during recording using the production-ready approach:
-  // 1. Find AudioRegionBox with label "Recording" (OpenDAW sets this intentionally)
+  // 1. Find AudioRegionBox with label "Take N" (SDK 0.0.91+) or "Recording" (older SDKs)
   // 2. Get AudioFileBox UUID from the region
   // 3. Use sampleManager.getOrCreate(uuid) to access the SampleLoader (public API)
   // 4. Access SampleLoader.peaks for live waveform data
@@ -183,8 +203,11 @@ const App: React.FC = () => {
       // Find the recording region in the box graph
       if (!sampleLoader) {
         const boxes = project.boxGraph.boxes();
+
+        // In SDK 0.0.91+, recording regions are labeled "Take N" instead of "Recording"
         const recordingRegion = boxes.find((box: any) => {
-          return box.label?.getValue?.() === "Recording";
+          const label = box.label?.getValue?.();
+          return label === "Recording" || (label && label.startsWith("Take "));
         });
 
         if (recordingRegion && (recordingRegion as any).file) {
@@ -274,16 +297,6 @@ const App: React.FC = () => {
     });
   }, [project, timeSignatureNumerator, timeSignatureDenominator]);
 
-  useEffect(() => {
-    if (!project) return;
-    project.engine.metronomeEnabled.setValue(metronomeEnabled);
-  }, [project, metronomeEnabled]);
-
-  useEffect(() => {
-    if (!project) return;
-    project.engine.countInBarsTotal.setValue(countInBars);
-  }, [project, countInBars]);
-
   // Initialize OpenDAW
   useEffect(() => {
     let mounted = true;
@@ -336,7 +349,6 @@ const App: React.FC = () => {
       }
 
       // Delete any previous recording before starting a new one
-      // Using the high-level delete() API which handles all dependencies automatically
       project.editing.modify(() => {
         const allBoxes = project.boxGraph.boxes();
         const recordingRegions: any[] = [];
@@ -346,15 +358,13 @@ const App: React.FC = () => {
           if (box.name === "AudioRegionBox") {
             const regionBox = box as any;
             const label = regionBox.label?.getValue();
-
-            if (label === "Recording") {
+            if (label === "Recording" || (label && label.startsWith("Take "))) {
               recordingRegions.push(regionBox);
             }
           }
         }
 
         // Delete all previous recording regions
-        // The delete() method automatically handles clearing pointers and deleting dependent boxes (like AudioFileBox)
         console.log(`[Recording] Deleting ${recordingRegions.length} previous recording(s)`);
         recordingRegions.forEach(region => region.delete());
       });
@@ -394,14 +404,13 @@ const App: React.FC = () => {
 
     // After recording stops, set the timeline loop end to match the recording duration
     setTimeout(() => {
-      // Find the Recording AudioRegionBox and set loop end to its duration
       const allBoxes = project.boxGraph.boxes();
       for (const box of allBoxes) {
         if (box.name === "AudioRegionBox") {
           const regionBox = box as any;
           const label = regionBox.label?.getValue();
 
-          if (label === "Recording") {
+          if (label === "Recording" || (label && label.startsWith("Take "))) {
             const duration = regionBox.duration.getValue();
             console.log("[Recording] Setting timeline loop end to:", duration);
 
@@ -428,14 +437,17 @@ const App: React.FC = () => {
       await audioContext.resume();
     }
 
+    // Save user's metronome preference before disabling
+    userMetronomePreferenceRef.current = metronomeEnabled ?? false;
+
     // Temporarily disable metronome during playback to avoid double-click with recorded metronome
     // (It will be restored to the user's preference when playback stops)
-    project.engine.metronomeEnabled.setValue(false);
+    setMetronomeEnabled(false);
 
     project.engine.setPosition(0);
     project.engine.play();
     setPlaybackStatus("Playing...");
-  }, [project, audioContext]);
+  }, [project, audioContext, metronomeEnabled]);
 
   const handleStopPlayback = useCallback(() => {
     if (!project) return;
@@ -443,11 +455,11 @@ const App: React.FC = () => {
     project.engine.stop(true);
     project.engine.setPosition(0);
 
-    // Restore metronome to user's preference
-    project.engine.metronomeEnabled.setValue(metronomeEnabled);
+    // Restore metronome to user's preference (saved before playback started)
+    setMetronomeEnabled(userMetronomePreferenceRef.current);
 
     setPlaybackStatus("Playback stopped");
-  }, [project, metronomeEnabled]);
+  }, [project, setMetronomeEnabled]);
 
   if (!project) {
     return (
@@ -540,8 +552,8 @@ const App: React.FC = () => {
                     Count in bars:
                   </Text>
                   <Select.Root
-                    value={countInBars.toString()}
-                    onValueChange={value => setCountInBars(Number(value))}
+                    value={(countInBars ?? 1).toString()}
+                    onValueChange={value => setCountInBars(Number(value) as CountInBarsValue)}
                     disabled={isRecording}
                   >
                     <Select.Trigger style={{ width: 70 }} />
@@ -550,6 +562,10 @@ const App: React.FC = () => {
                       <Select.Item value="2">2</Select.Item>
                       <Select.Item value="3">3</Select.Item>
                       <Select.Item value="4">4</Select.Item>
+                      <Select.Item value="5">5</Select.Item>
+                      <Select.Item value="6">6</Select.Item>
+                      <Select.Item value="7">7</Select.Item>
+                      <Select.Item value="8">8</Select.Item>
                     </Select.Content>
                   </Select.Root>
                 </Flex>
@@ -568,7 +584,7 @@ const App: React.FC = () => {
                 </Callout.Text>
               </Callout.Root>
 
-              <Flex direction="column" gap="2">
+              <Flex direction="column" gap="3">
                 <Flex asChild align="center" gap="2">
                   <Text as="label" size="2">
                     <Checkbox checked={useCountIn} onCheckedChange={checked => setUseCountIn(checked === true)} />
@@ -578,12 +594,63 @@ const App: React.FC = () => {
                 <Flex asChild align="center" gap="2">
                   <Text as="label" size="2">
                     <Checkbox
-                      checked={metronomeEnabled}
+                      checked={metronomeEnabled ?? false}
                       onCheckedChange={checked => setMetronomeEnabled(checked === true)}
                     />
                     Enable metronome
                   </Text>
                 </Flex>
+
+                {/* Metronome settings - only show when metronome is enabled */}
+                {metronomeEnabled && (
+                  <Card style={{ background: "var(--gray-2)" }}>
+                    <Flex direction="column" gap="3">
+                      <Text size="2" weight="medium" color="gray">
+                        Metronome Settings
+                      </Text>
+                      <Flex gap="4" wrap="wrap" align="center">
+                        <Flex align="center" gap="2">
+                          <Text size="2">Volume:</Text>
+                          <Flex align="center" gap="2" style={{ width: 150 }}>
+                            <Slider
+                              value={[Math.round(((metronomeGain ?? -6) + 60) * (100 / 60))]}
+                              onValueChange={values => {
+                                // Convert 0-100 slider to -60 to 0 dB range
+                                const dB = (values[0] * 60) / 100 - 60;
+                                setMetronomeGain(dB);
+                              }}
+                              min={0}
+                              max={100}
+                              step={1}
+                              disabled={isRecording}
+                            />
+                            <Text size="1" color="gray" style={{ width: 45 }}>
+                              {Math.round(metronomeGain ?? -6)} dB
+                            </Text>
+                          </Flex>
+                        </Flex>
+                        <Flex align="center" gap="2">
+                          <Text size="2">Subdivision:</Text>
+                          <Select.Root
+                            value={(metronomeBeatSubDivision ?? 1).toString()}
+                            onValueChange={value =>
+                              setMetronomeBeatSubDivision(Number(value) as MetronomeBeatSubDivisionValue)
+                            }
+                            disabled={isRecording}
+                          >
+                            <Select.Trigger style={{ width: 120 }} />
+                            <Select.Content>
+                              <Select.Item value="1">Quarter (1)</Select.Item>
+                              <Select.Item value="2">Eighth (2)</Select.Item>
+                              <Select.Item value="4">16th (4)</Select.Item>
+                              <Select.Item value="8">32nd (8)</Select.Item>
+                            </Select.Content>
+                          </Select.Root>
+                        </Flex>
+                      </Flex>
+                    </Flex>
+                  </Card>
+                )}
               </Flex>
 
               {isCountingIn && (

@@ -169,19 +169,19 @@ eighthNote = Quarter / 2;        // 480
 import { AnimationFrame } from "@opendaw/lib-dom";
 
 // PPQN utilities
-import { PPQN } from "@opendaw/lib-dsp";
+import { PPQN, AudioData } from "@opendaw/lib-dsp";
 
 // Core project
-import { Project, InstrumentFactories } from "@opendaw/studio-core";
+import { Project, GlobalSampleLoaderManager } from "@opendaw/studio-core";
+
+// Instrument factories (moved to studio-adapters in 0.0.59)
+import { InstrumentFactories } from "@opendaw/studio-adapters";
 
 // Boxes
-import { AudioFileBox, AudioRegionBox } from "@opendaw/studio-boxes";
-
-// Enums
-import { AudioPlayback } from "@opendaw/studio-enums";
+import { AudioFileBox, AudioRegionBox, ValueEventCollectionBox } from "@opendaw/studio-boxes";
 
 // Utilities
-import { UUID } from "@opendaw/lib-std";
+import { UUID, Progress } from "@opendaw/lib-std";
 
 // Rendering
 import { PeaksPainter } from "@opendaw/lib-fusion";
@@ -219,13 +219,16 @@ project.editing.modify(() => {
     box.endInSeconds.setValue(audioBuffer.duration);
   });
 
-  // 3. Create clip on timeline
+  // 3. Create events collection (required in 0.0.87+)
+  const eventsCollectionBox = ValueEventCollectionBox.create(boxGraph, UUID.generate());
+
+  // 4. Create clip on timeline
   const clipDuration = PPQN.secondsToPulses(audioBuffer.duration, bpm);
 
   AudioRegionBox.create(boxGraph, UUID.generate(), box => {
     box.regions.refer(trackBox.regions);
     box.file.refer(audioFileBox);
-    box.playback.setValue(AudioPlayback.NoSync);
+    box.events.refer(eventsCollectionBox.owners); // Required in 0.0.87+
     box.position.setValue(0 * Quarter);
     box.duration.setValue(clipDuration);
     box.loopDuration.setValue(clipDuration);

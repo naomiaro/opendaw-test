@@ -8,7 +8,7 @@
  */
 
 import { Project, AudioOfflineRenderer, WavFile } from "@opendaw/studio-core";
-import { Option } from "@opendaw/lib-std";
+import { Errors, Option, Progress } from "@opendaw/lib-std";
 import type { ExportStemsConfiguration } from "@opendaw/studio-adapters";
 
 export interface ExportOptions {
@@ -31,6 +31,11 @@ export interface ExportOptions {
    * Callback for status messages
    */
   onStatus?: (status: string) => void;
+
+  /**
+   * AbortSignal to cancel the export
+   */
+  abortSignal?: AbortSignal;
 }
 
 export interface StemExportConfig {
@@ -74,7 +79,8 @@ export async function exportFullMix(
     sampleRate = 48000,
     fileName = "mix",
     onProgress,
-    onStatus
+    onStatus,
+    abortSignal
   } = options;
 
   try {
@@ -83,27 +89,36 @@ export async function exportFullMix(
     // Render the project offline to AudioBuffer
     // Pass Option.None for exportConfiguration to render the full mix
     onStatus?.("Rendering audio...");
+
+    const progressHandler: Progress.Handler = (value) => {
+      onProgress?.(Math.round(value * 100));
+    };
+
     const audioBuffer = await AudioOfflineRenderer.start(
       project,
       Option.None, // No stem configuration = full mix
+      progressHandler,
+      abortSignal,
       sampleRate
     );
 
-    onProgress?.(50);
     onStatus?.("Encoding WAV file...");
 
     // Convert AudioBuffer to WAV format (32-bit float)
     const wavArrayBuffer = WavFile.encodeFloats(audioBuffer);
 
-    onProgress?.(75);
     onStatus?.("Preparing download...");
 
     // Trigger browser download
     downloadArrayBuffer(wavArrayBuffer, `${fileName}.wav`, "audio/wav");
 
-    onProgress?.(100);
     onStatus?.("Export complete!");
   } catch (error) {
+    // Check if this was an abort
+    if (Errors.isAbort(error)) {
+      onStatus?.("Export cancelled");
+      return;
+    }
     console.error("Export failed:", error);
     onStatus?.(`Export failed: ${error}`);
     throw error;
@@ -142,7 +157,8 @@ export async function exportStems(
   const {
     sampleRate = 48000,
     onProgress,
-    onStatus
+    onStatus,
+    abortSignal
   } = options;
 
   try {
@@ -157,13 +173,18 @@ export async function exportStems(
     const exportConfig: ExportStemsConfiguration = stemsConfig;
 
     onStatus?.("Rendering stems offline...");
+
+    const progressHandler: Progress.Handler = (value) => {
+      onProgress?.(Math.round(value * 100));
+    };
+
     const audioBuffer = await AudioOfflineRenderer.start(
       project,
       Option.wrap(exportConfig),
+      progressHandler,
+      abortSignal,
       sampleRate
     );
-
-    onProgress?.(50);
 
     // AudioBuffer contains interleaved stereo pairs for each stem
     // Channel layout: [stem1_L, stem1_R, stem2_L, stem2_R, ...]
@@ -191,13 +212,15 @@ export async function exportStems(
 
       // Download
       downloadArrayBuffer(wavArrayBuffer, `${stem.fileName}.wav`, "audio/wav");
-
-      const progress = 50 + ((i + 1) / totalStems) * 50;
-      onProgress?.(progress);
     }
 
     onStatus?.(`Successfully exported ${totalStems} stems!`);
   } catch (error) {
+    // Check if this was an abort
+    if (Errors.isAbort(error)) {
+      onStatus?.("Export cancelled");
+      return;
+    }
     console.error("Stems export failed:", error);
     onStatus?.(`Export failed: ${error}`);
     throw error;

@@ -29,8 +29,8 @@ Start here if you just want to add effects to your demo:
 
 **Read this for:** Understanding the big picture of how effects work
 
-### 01-effect-types.md (11 KB)
-- Complete reference for all 8 audio effects
+### 01-effect-types.md (15 KB)
+- Complete reference for all 11 audio effects
 - Parameters, ranges, defaults for each effect
 - Feature highlights and use cases
 - Common parameter patterns
@@ -39,10 +39,13 @@ Start here if you just want to add effects to your demo:
 - Compressor
 - Delay
 - Reverb
+- Dattorro Reverb
 - Revamp (Parametric EQ)
 - Crusher
 - Fold
 - Stereo Tool
+- Tidal (LFO)
+- Maximizer
 - Modular
 
 **Read this for:** Understanding what each effect does and its parameters
@@ -110,12 +113,15 @@ Plus common patterns and best practices.
 | Effect | Purpose | Key Parameters |
 |--------|---------|-----------------|
 | **Compressor** | Dynamic range reduction | threshold, ratio, attack, release, makeup |
-| **Delay** | Echo/time-based effects | delay (tempo-synced), feedback, cross, wet/dry |
+| **Delay** | Echo/time-based effects | delayMusical (tempo-synced), feedback, cross, wet/dry |
 | **Reverb** | Space/room simulation | decay, pre-delay, damp, wet/dry |
+| **Dattorro Reverb** | High-quality algorithmic reverb | decay, damping, excursionRate, excursionDepth, wet/dry |
 | **Revamp** | Parametric EQ | high-pass, low/mid/high-shelf, low-pass, gain |
 | **Crusher** | Bit reduction/distortion | crush, bits, boost, mix |
 | **Fold** | Waveshaping/saturation | drive, oversampling, volume |
 | **Stereo Tool** | Stereo manipulation | volume, panning, stereo width, phase inversion |
+| **Tidal** | LFO/Tremolo/Auto-pan | slope, symmetry, rate, depth, channelOffset |
+| **Maximizer** | Brick-wall limiter | threshold, lookahead |
 | **Modular** | Custom audio effects | module-based patching |
 
 ## Quick Start: Adding Reverb to a Track
@@ -263,9 +269,9 @@ sub.terminate();
 
 ## File Statistics
 
-- **Total Documentation**: 77 KB across 7 files
+- **Total Documentation**: ~85 KB across 7 files
 - **Code Examples**: 10 complete, working examples
-- **Effect Types Documented**: 8 audio effects
+- **Effect Types Documented**: 11 audio effects
 - **Estimated Read Time**: 30-45 minutes for complete understanding
 
 ## Questions?
@@ -280,7 +286,8 @@ Refer to the specific document that covers your question:
 ## Version
 
 Created: October 30, 2025
-OpenDAW Version: Based on current main branch
+Updated: January 8, 2026
+OpenDAW Version: Based on current main branch (SDK 0.0.91)
 Documentation Completeness: Very Thorough (100%)
 
 ---

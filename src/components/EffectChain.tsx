@@ -2,7 +2,7 @@ import React, { useState, memo } from "react";
 import { Flex, Text, Select, Button, Separator } from "@radix-ui/themes";
 import { EffectPanel } from "./EffectPanel";
 
-export type EffectType = "Reverb" | "Compressor" | "Delay" | "Crusher" | "StereoWidth" | "EQ" | "Fold";
+export type EffectType = "Reverb" | "DattorroReverb" | "Compressor" | "Delay" | "Crusher" | "StereoWidth" | "EQ" | "Fold" | "Tidal" | "Maximizer";
 
 export interface EffectInstance {
   id: string;
@@ -57,12 +57,15 @@ export const EffectChain: React.FC<EffectChainProps> = memo(
             <Select.Trigger placeholder="Choose effect..." style={{ flex: 1 }} />
             <Select.Content>
               <Select.Item value="Reverb">Reverb</Select.Item>
+              <Select.Item value="DattorroReverb">Dattorro Reverb</Select.Item>
               <Select.Item value="Compressor">Compressor</Select.Item>
               <Select.Item value="EQ">Parametric EQ</Select.Item>
               <Select.Item value="Delay">Delay</Select.Item>
               <Select.Item value="Crusher">Lo-Fi Crusher</Select.Item>
               <Select.Item value="Fold">Wavefolder</Select.Item>
+              <Select.Item value="Tidal">Tidal (LFO)</Select.Item>
               <Select.Item value="StereoWidth">Stereo Width</Select.Item>
+              <Select.Item value="Maximizer">Maximizer</Select.Item>
             </Select.Content>
           </Select.Root>
           <Button onClick={handleAddEffect} disabled={!selectedEffectType} color="purple">

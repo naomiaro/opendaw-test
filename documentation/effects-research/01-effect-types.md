@@ -48,7 +48,7 @@ This document provides detailed information about each available audio effect ty
 
 | Parameter | Type | Range | Default | Unit | Description |
 |-----------|------|-------|---------|------|-------------|
-| delay | float32 | 0 to 16 | 4 | indices | Delay time as note fraction (1/1, 1/2, 1/3, 1/4, etc.) |
+| delayMusical | float32 | 0 to 16 | 4 | indices | Delay time as note fraction (1/1, 1/2, 1/3, 1/4, etc.) |
 | feedback | float32 | 0.0 to 1.0 | 0.5 | % | Amount of output fed back to input |
 | cross | float32 | 0.0 to 1.0 | 0.0 | % | Cross-channel feedback (0=none, 1=full) |
 | filter | float32 | -1.0 to 1.0 | 0.0 | % | Filter on feedback (negative=low-pass, positive=high-pass) |
@@ -252,6 +252,84 @@ This document provides detailed information about each available audio effect ty
 
 ---
 
+## Dattorro Reverb
+
+**Purpose:** High-quality algorithmic reverb based on the Dattorro plate reverb algorithm with modulation.
+
+**Factory Reference:** `EffectFactories.AudioNamed.DattorroReverb`
+
+**Parameters:**
+
+| Parameter | Type | Range | Default | Unit | Description |
+|-----------|------|-------|---------|------|-------------|
+| preDelay | float32 | 0.0 to 0.1 | 0.0 | s | Time before first reflection |
+| bandwidth | float32 | 0.0 to 1.0 | 0.9995 | % | Input bandwidth filter |
+| inputDiffusion1 | float32 | 0.0 to 1.0 | 0.75 | % | First input diffusion stage |
+| inputDiffusion2 | float32 | 0.0 to 1.0 | 0.625 | % | Second input diffusion stage |
+| decay | float32 | 0.0 to 1.0 | 0.5 | % | Reverb decay time |
+| decayDiffusion1 | float32 | 0.0 to 1.0 | 0.7 | % | First decay diffusion stage |
+| decayDiffusion2 | float32 | 0.0 to 1.0 | 0.5 | % | Second decay diffusion stage |
+| damping | float32 | 0.0 to 1.0 | 0.005 | % | High frequency damping |
+| excursionRate | float32 | 0.0 to 1.0 | 0.5 | % | Modulation LFO rate |
+| excursionDepth | float32 | 0.0 to 1.0 | 0.7 | % | Modulation depth |
+| wet | float32 | -60.0 to 6.0 | -6.0 | dB | Wet signal level |
+| dry | float32 | -60.0 to 6.0 | 0.0 | dB | Dry signal level |
+
+**Features:**
+- True stereo reverb algorithm
+- Modulation for lush, animated tails
+- Extensive control over diffusion stages
+- Excellent for ambient and atmospheric effects
+- Based on Jon Dattorro's 1997 plate reverb design
+
+---
+
+## Tidal (LFO Modulator)
+
+**Purpose:** Low-frequency oscillator for amplitude modulation, tremolo, and auto-pan effects.
+
+**Factory Reference:** `EffectFactories.AudioNamed.Tidal`
+
+**Parameters:**
+
+| Parameter | Type | Range | Default | Unit | Description |
+|-----------|------|-------|---------|------|-------------|
+| slope | float32 | 0.0 to 1.0 | 0.5 | % | Waveform slope (0=triangle, 1=square) |
+| symmetry | float32 | 0.0 to 1.0 | 0.5 | % | Waveform symmetry (0.5=symmetric) |
+| rate | float32 | 0.01 to 20.0 | 1.0 | Hz | LFO frequency |
+| depth | float32 | 0.0 to 1.0 | 0.5 | % | Modulation depth |
+| offset | float32 | 0.0 to 1.0 | 0.0 | phase | Phase offset (0-1 = 0-360°) |
+| channelOffset | float32 | 0.0 to 1.0 | 0.0 | phase | Stereo phase offset for auto-pan |
+
+**Features:**
+- Variable waveform shape (sine to triangle to square)
+- Stereo phase offset for panning effects
+- Wide rate range from slow drift to fast tremolo
+- Classic amplitude modulation effects
+
+---
+
+## Maximizer (Limiter)
+
+**Purpose:** Brick-wall limiter for loudness maximization and peak control.
+
+**Factory Reference:** `EffectFactories.AudioNamed.Maximizer`
+
+**Parameters:**
+
+| Parameter | Type | Range | Default | Unit | Description |
+|-----------|------|-------|---------|------|-------------|
+| threshold | float32 | -30.0 to 0.0 | 0.0 | dB | Limiting threshold |
+| lookahead | boolean | - | true | - | Enable lookahead for transparent limiting |
+
+**Features:**
+- True peak limiting
+- Lookahead mode for transparent gain reduction
+- Simple, effective loudness control
+- Essential for mastering chains
+
+---
+
 ## Modular (Custom Audio Effects)
 
 **Purpose:** Creates custom audio effects through visual module patching.
@@ -282,10 +360,13 @@ import { EffectFactories } from "@opendaw/studio-core";
 EffectFactories.AudioNamed.Compressor
 EffectFactories.AudioNamed.Delay
 EffectFactories.AudioNamed.Reverb
+EffectFactories.AudioNamed.DattorroReverb
 EffectFactories.AudioNamed.Revamp
 EffectFactories.AudioNamed.Crusher
 EffectFactories.AudioNamed.Fold
 EffectFactories.AudioNamed.StereoTool
+EffectFactories.AudioNamed.Tidal
+EffectFactories.AudioNamed.Maximizer
 EffectFactories.AudioNamed.Modular
 
 // As list

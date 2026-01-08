@@ -1,21 +1,42 @@
-import { assert, Procedure, Progress, unitValue, UUID } from "@opendaw/lib-std";
+import { assert, Progress, UUID } from "@opendaw/lib-std";
 import { Promises } from "@opendaw/lib-runtime";
 import { PPQN } from "@opendaw/lib-dsp";
-import { AudioData, SampleMetaData, SoundfontMetaData } from "@opendaw/studio-adapters";
+import { SampleMetaData, SoundfontMetaData } from "@opendaw/studio-adapters";
+import { AudioData } from "@opendaw/lib-dsp";
 import {
   AudioWorklets,
-  DefaultSampleLoaderManager,
+  GlobalSampleLoaderManager,
   DefaultSoundfontLoaderManager,
   OpenSampleAPI,
   OpenSoundfontAPI,
   Project,
-  Workers
+  Workers,
+  SampleProvider,
+  SoundfontProvider
 } from "@opendaw/studio-core";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { testFeatures } from "../features";
 
 import WorkersUrl from "@opendaw/studio-core/workers-main.js?worker&url";
 import WorkletsUrl from "@opendaw/studio-core/processors.js?url";
+
+/**
+ * Convert a browser AudioBuffer to OpenDAW's AudioData format.
+ * AudioData uses SharedArrayBuffer for efficient cross-thread communication.
+ */
+function audioBufferToAudioData(audioBuffer: AudioBuffer): AudioData {
+  const { numberOfChannels, length: numberOfFrames, sampleRate } = audioBuffer;
+
+  // Use AudioData.create which properly allocates SharedArrayBuffer
+  const audioData = AudioData.create(sampleRate, numberOfFrames, numberOfChannels);
+
+  // Copy channel data from browser AudioBuffer to AudioData frames
+  for (let channel = 0; channel < numberOfChannels; channel++) {
+    audioData.frames[channel].set(audioBuffer.getChannelData(channel));
+  }
+
+  return audioData;
+}
 
 /**
  * Configuration options for custom sample loading
@@ -120,8 +141,8 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
   }
 
   // Create sample manager with optional local audio buffer support
-  const sampleManager = new DefaultSampleLoaderManager({
-    fetch: async (uuid: UUID.Bytes, progress: Procedure<unitValue>): Promise<[AudioData, SampleMetaData]> => {
+  const sampleProvider: SampleProvider = {
+    fetch: async (uuid: UUID.Bytes, progress: Progress.Handler): Promise<[AudioData, SampleMetaData]> => {
       const uuidString = UUID.toString(uuid);
       console.debug(`Sample manager fetch called for UUID: ${uuidString}`);
 
@@ -133,7 +154,7 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
           console.debug(
             `Found local audio buffer for ${uuidString}, channels: ${audioBuffer.numberOfChannels}, duration: ${audioBuffer.duration}s`
           );
-          const audioData = OpenSampleAPI.fromAudioBuffer(audioBuffer);
+          const audioData = audioBufferToAudioData(audioBuffer);
           const metadata: SampleMetaData = {
             name: uuidString,
             bpm,
@@ -147,15 +168,17 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
 
       // Fall back to OpenSampleAPI for built-in samples
       console.debug(`No local buffer found for ${uuidString}, falling back to OpenSampleAPI`);
-      return OpenSampleAPI.get().load(audioContext, uuid, progress);
+      return OpenSampleAPI.get().load(uuid, progress);
     }
-  });
+  };
+  const sampleManager = new GlobalSampleLoaderManager(sampleProvider);
 
   // Create soundfont manager
-  const soundfontManager = new DefaultSoundfontLoaderManager({
+  const soundfontProvider: SoundfontProvider = {
     fetch: async (uuid: UUID.Bytes, progress: Progress.Handler): Promise<[ArrayBuffer, SoundfontMetaData]> =>
       OpenSoundfontAPI.get().load(uuid, progress)
-  });
+  };
+  const soundfontManager = new DefaultSoundfontLoaderManager(soundfontProvider);
 
   onStatusUpdate?.("Creating project...");
 
@@ -181,6 +204,12 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
 
   console.debug("Engine is ready!");
   onStatusUpdate?.("Loading tracks...");
+
+  // Clear engine preferences on page unload so demos start fresh
+  // This prevents settings from one demo affecting another
+  window.addEventListener("beforeunload", () => {
+    localStorage.removeItem("engine-preferences");
+  });
 
   return { project, audioContext };
 }

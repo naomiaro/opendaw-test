@@ -38,8 +38,19 @@ This document combines all the concepts (PPQN, Box System, Sample Management, Ti
 ```typescript
 // src/lib/projectSetup.ts
 import { AnimationFrame } from "@opendaw/lib-dom";
-import { AudioWorklets, DefaultSampleLoaderManager, Project, Workers } from "@opendaw/studio-core";
-import { PPQN } from "@opendaw/lib-dsp";
+import { AudioWorklets, GlobalSampleLoaderManager, Project, Workers, SampleProvider } from "@opendaw/studio-core";
+import { PPQN, AudioData } from "@opendaw/lib-dsp";
+import { UUID, Progress } from "@opendaw/lib-std";
+
+// Helper to convert browser AudioBuffer to OpenDAW's AudioData format
+function audioBufferToAudioData(audioBuffer: AudioBuffer): AudioData {
+  const { numberOfChannels, length: numberOfFrames, sampleRate } = audioBuffer;
+  const audioData = AudioData.create(sampleRate, numberOfFrames, numberOfChannels);
+  for (let channel = 0; channel < numberOfChannels; channel++) {
+    audioData.frames[channel].set(audioBuffer.getChannelData(channel));
+  }
+  return audioData;
+}
 
 export async function initializeOpenDAW(localAudioBuffers: Map<string, AudioBuffer>) {
   // Start AnimationFrame loop (required for observables)
@@ -52,14 +63,14 @@ export async function initializeOpenDAW(localAudioBuffers: Map<string, AudioBuff
   // Create AudioContext
   const audioContext = new AudioContext({ latencyHint: 0 });
 
-  // Configure sample manager
-  const sampleManager = new DefaultSampleLoaderManager({
-    fetch: async (uuid, progress) => {
+  // Configure sample manager (API changed in 0.0.87)
+  const sampleProvider: SampleProvider = {
+    fetch: async (uuid: UUID.Bytes, progress: Progress.Handler) => {
       const uuidString = UUID.toString(uuid);
       const audioBuffer = localAudioBuffers.get(uuidString);
 
       if (audioBuffer) {
-        const audioData = OpenSampleAPI.fromAudioBuffer(audioBuffer);
+        const audioData = audioBufferToAudioData(audioBuffer);
         const metadata = {
           name: uuidString,
           bpm: 120,
@@ -72,7 +83,8 @@ export async function initializeOpenDAW(localAudioBuffers: Map<string, AudioBuff
 
       throw new Error(`Audio buffer not found: ${uuidString}`);
     }
-  });
+  };
+  const sampleManager = new GlobalSampleLoaderManager(sampleProvider);
 
   // Create worklets
   await AudioWorklets.createFor(audioContext);
@@ -103,8 +115,7 @@ import { PPQN } from "@opendaw/lib-dsp";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { Project } from "@opendaw/studio-core";
 import { InstrumentFactories } from "@opendaw/studio-adapters";
-import { AudioFileBox, AudioRegionBox } from "@opendaw/studio-boxes";
-import { AudioPlayback } from "@opendaw/studio-enums";
+import { AudioFileBox, AudioRegionBox, ValueEventCollectionBox } from "@opendaw/studio-boxes";
 import { initializeOpenDAW } from "./lib/projectSetup";
 import { loadAudioFile } from "./lib/audioUtils";
 import { Timeline } from "./components/Timeline";
@@ -192,13 +203,16 @@ function App() {
               120
             );
 
+            // Create events collection (required in 0.0.87+)
+            const eventsCollectionBox = ValueEventCollectionBox.create(boxGraph, UUID.generate());
+
             const regionBox = AudioRegionBox.create(
               boxGraph,
               UUID.generate(),
               box => {
                 box.regions.refer(trackBox.regions);
                 box.file.refer(AudioFileBox.get(boxGraph, fileUUID));
-                box.playback.setValue(AudioPlayback.NoSync);
+                box.events.refer(eventsCollectionBox.owners); // Required in 0.0.87+
                 box.position.setValue(position);
                 box.duration.setValue(clipDuration);
                 box.loopOffset.setValue(0);
@@ -654,13 +668,15 @@ project.timelineBox.bpm.subscribe(field => {
 ### 3. Sample Manager for Audio
 
 ```typescript
-// Configure sample manager with local buffers
-const sampleManager = new DefaultSampleLoaderManager({
-  fetch: async (uuid) => {
+// Configure sample manager with local buffers (API changed in 0.0.87)
+const sampleProvider: SampleProvider = {
+  fetch: async (uuid, progress) => {
     const audioBuffer = localBuffers.get(UUID.toString(uuid));
+    const audioData = audioBufferToAudioData(audioBuffer);
     return [audioData, metadata];
   }
-});
+};
+const sampleManager = new GlobalSampleLoaderManager(sampleProvider);
 
 // Subscribe to peaks
 sampleLoader.subscribe(state => {

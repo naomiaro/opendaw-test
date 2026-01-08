@@ -84,18 +84,28 @@ The core offline rendering engine from `@opendaw/studio-core`:
 
 ```typescript
 import { AudioOfflineRenderer } from "@opendaw/studio-core";
+import { Progress } from "@opendaw/lib-std";
 
-// Render full mix
+// Progress handler (required in 0.0.87+)
+const progressHandler: Progress.Handler = (value) => {
+  console.log(`${Math.round(value * 100)}%`);
+};
+
+// Render full mix (API changed in 0.0.87)
 const audioBuffer = await AudioOfflineRenderer.start(
   project,
-  undefined, // No stem config = full mix
-  48000      // Sample rate
+  undefined,        // No stem config = full mix
+  progressHandler,  // Progress.Handler (0.0 - 1.0)
+  undefined,        // AbortSignal (optional)
+  48000             // Sample rate
 );
 
 // Render stems
 const audioBuffer = await AudioOfflineRenderer.start(
   project,
   stemsConfiguration,
+  progressHandler,
+  undefined,
   48000
 );
 ```
@@ -960,12 +970,16 @@ For audio that doesn't need tempo sync (drums, sound effects, ambience), use `Ti
 
 ```typescript
 import { TimeBase } from "@opendaw/studio-core";
+import { ValueEventCollectionBox } from "@opendaw/studio-boxes";
+
+// Create events collection (required in 0.0.87+)
+const eventsCollectionBox = ValueEventCollectionBox.create(boxGraph, UUID.generate());
 
 const regionBox = AudioRegionBox.create(boxGraph, UUID.generate(), box => {
   box.regions.refer(trackBox.regions);
   box.file.refer(audioFileBox);
+  box.events.refer(eventsCollectionBox.owners); // Required in 0.0.87+
   box.timeBase.setValue(TimeBase.Seconds);  // ← Allow overlaps
-  box.playback.setValue(AudioPlayback.NoSync);
   box.position.setValue(position);
   box.duration.setValue(clipDurationInPPQN);  // Full natural duration OK
   // ... other settings
@@ -992,7 +1006,13 @@ const safeDuration = Math.min(
   spacing  // Cap at spacing to prevent overlap
 );
 
+// Create events collection (required in 0.0.87+)
+const eventsCollectionBox = ValueEventCollectionBox.create(boxGraph, UUID.generate());
+
 const regionBox = AudioRegionBox.create(boxGraph, UUID.generate(), box => {
+  box.regions.refer(trackBox.regions);
+  box.file.refer(audioFileBox);
+  box.events.refer(eventsCollectionBox.owners); // Required in 0.0.87+
   box.timeBase.setValue(TimeBase.Musical);  // Default, tempo-aware
   box.duration.setValue(safeDuration);  // ← Capped duration
   // ... other settings
