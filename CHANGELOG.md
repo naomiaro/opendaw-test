@@ -427,6 +427,64 @@ All notable changes to this project will be documented in this file.
 
 - **Metronome respects time signature**: The metronome now correctly plays the accent pattern based on the time signature (e.g., 3/4 plays three beats with accent on beat 1).
 
+### Added - Demo Improvements
+
+#### New Hooks
+
+- **useEnginePreference hook**: New React hook for accessing OpenDAW engine preferences with automatic cleanup. Located at `src/hooks/useEnginePreference.ts`.
+
+  ```typescript
+  import { useEnginePreference } from "./hooks/useEnginePreference";
+
+  // Individual preference access
+  const [metronomeEnabled, setMetronomeEnabled] = useEnginePreference(
+    project,
+    ["metronome", "enabled"]
+  );
+
+  const [countInBars, setCountInBars] = useEnginePreference(
+    project,
+    ["recording", "countInBars"]
+  );
+
+  // Available preference paths:
+  // ["metronome", "enabled"] - boolean
+  // ["metronome", "gain"] - number (0-1)
+  // ["metronome", "beatSubDivision"] - 1 | 2 | 4 | 8
+  // ["recording", "countInBars"] - 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8
+  // ["playback", "timestampEnabled"] - boolean
+  // ["playback", "pauseOnLoopDisabled"] - boolean
+  // ["playback", "truncateNotesAtRegionEnd"] - boolean
+  ```
+
+- **useMetronomePreferences hook**: Convenience hook for all metronome-related preferences.
+
+  ```typescript
+  const {
+    metronomeEnabled,
+    setMetronomeEnabled,
+    metronomeGain,
+    setMetronomeGain,
+    beatSubDivision,
+    setBeatSubDivision,
+    countInBars,
+    setCountInBars
+  } = useMetronomePreferences(project);
+  ```
+
+- **usePlaybackPreferences hook**: Convenience hook for playback-related preferences.
+
+  ```typescript
+  const {
+    timestampEnabled,
+    setTimestampEnabled,
+    pauseOnLoopDisabled,
+    setPauseOnLoopDisabled,
+    truncateNotesAtRegionEnd,
+    setTruncateNotesAtRegionEnd
+  } = usePlaybackPreferences(project);
+  ```
+
 #### Known Limitations (0.0.87)
 
 - **Metronome ignores time signature** (FIXED in 0.0.91): In 0.0.87, the metronome did not respect the `timelineBox.signature` setting. This has been fixed in 0.0.91.

@@ -7,6 +7,7 @@ import { AnimationFrame } from "@opendaw/lib-dom";
 import { PeaksPainter } from "@opendaw/lib-fusion";
 import { CanvasPainter } from "./lib/CanvasPainter";
 import { initializeOpenDAW } from "./lib/projectSetup";
+import { useEnginePreference, CountInBarsValue } from "./hooks/useEnginePreference";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { MoisesLogo } from "./components/MoisesLogo";
 import { BackLink } from "./components/BackLink";
@@ -43,11 +44,19 @@ const App: React.FC = () => {
 
   // Settings
   const [useCountIn, setUseCountIn] = useState(false);
-  const [metronomeEnabled, setMetronomeEnabled] = useState(false);
   const [bpm, setBpm] = useState(120);
   const [timeSignatureNumerator, setTimeSignatureNumerator] = useState(3);
   const [timeSignatureDenominator, setTimeSignatureDenominator] = useState(4);
-  const [countInBars, setCountInBars] = useState(1);
+
+  // Engine preferences (using new hook for 0.0.87+ API)
+  const [metronomeEnabled, setMetronomeEnabled] = useEnginePreference(
+    project,
+    ["metronome", "enabled"]
+  );
+  const [countInBars, setCountInBars] = useEnginePreference(
+    project,
+    ["recording", "countInBars"]
+  );
 
   // Status messages
   const [recordStatus, setRecordStatus] = useState("Click Record to start");
@@ -57,10 +66,7 @@ const App: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const canvasPainterRef = useRef<CanvasPainter | null>(null);
   const currentPeaksRef = useRef<any>(null);
-
-  // Preferences observable refs (created once when project is available)
-  const metronomeEnabledRef = useRef<any>(null);
-  const countInBarsRef = useRef<any>(null);
+  const userMetronomePreferenceRef = useRef<boolean>(false); // Track user's metronome preference for restore after playback
 
   const CHANNEL_PADDING = 4;
 
@@ -254,23 +260,6 @@ const App: React.FC = () => {
       setTimeSignatureNumerator(signature.nominator.getValue());
       setTimeSignatureDenominator(signature.denominator.getValue());
     }
-
-    // Create mutable observable values for preferences (new API in 0.0.87)
-    // These are created once and stored in refs to avoid recreation on every render
-    metronomeEnabledRef.current = project.engine.preferences.createMutableObservableValue("metronome", "enabled");
-    countInBarsRef.current = project.engine.preferences.createMutableObservableValue("recording", "countInBars");
-
-    // Initialize state from preferences
-    setMetronomeEnabled(metronomeEnabledRef.current.getValue());
-    setCountInBars(countInBarsRef.current.getValue());
-
-    return () => {
-      // Terminate the observable values on cleanup
-      metronomeEnabledRef.current?.terminate();
-      countInBarsRef.current?.terminate();
-      metronomeEnabledRef.current = null;
-      countInBarsRef.current = null;
-    };
   }, [project]);
 
   // Sync settings to project
@@ -297,16 +286,6 @@ const App: React.FC = () => {
       }
     });
   }, [project, timeSignatureNumerator, timeSignatureDenominator]);
-
-  useEffect(() => {
-    if (!project || !metronomeEnabledRef.current) return;
-    metronomeEnabledRef.current.setValue(metronomeEnabled);
-  }, [project, metronomeEnabled]);
-
-  useEffect(() => {
-    if (!project || !countInBarsRef.current) return;
-    countInBarsRef.current.setValue(countInBars);
-  }, [project, countInBars]);
 
   // Initialize OpenDAW
   useEffect(() => {
@@ -454,14 +433,17 @@ const App: React.FC = () => {
       await audioContext.resume();
     }
 
+    // Save user's metronome preference before disabling
+    userMetronomePreferenceRef.current = metronomeEnabled ?? false;
+
     // Temporarily disable metronome during playback to avoid double-click with recorded metronome
     // (It will be restored to the user's preference when playback stops)
-    metronomeEnabledRef.current?.setValue(false);
+    setMetronomeEnabled(false);
 
     project.engine.setPosition(0);
     project.engine.play();
     setPlaybackStatus("Playing...");
-  }, [project, audioContext]);
+  }, [project, audioContext, metronomeEnabled]);
 
   const handleStopPlayback = useCallback(() => {
     if (!project) return;
@@ -469,11 +451,11 @@ const App: React.FC = () => {
     project.engine.stop(true);
     project.engine.setPosition(0);
 
-    // Restore metronome to user's preference
-    metronomeEnabledRef.current?.setValue(metronomeEnabled);
+    // Restore metronome to user's preference (saved before playback started)
+    setMetronomeEnabled(userMetronomePreferenceRef.current);
 
     setPlaybackStatus("Playback stopped");
-  }, [project, metronomeEnabled]);
+  }, [project, setMetronomeEnabled]);
 
   if (!project) {
     return (
@@ -566,8 +548,8 @@ const App: React.FC = () => {
                     Count in bars:
                   </Text>
                   <Select.Root
-                    value={countInBars.toString()}
-                    onValueChange={value => setCountInBars(Number(value))}
+                    value={(countInBars ?? 1).toString()}
+                    onValueChange={value => setCountInBars(Number(value) as CountInBarsValue)}
                     disabled={isRecording}
                   >
                     <Select.Trigger style={{ width: 70 }} />
@@ -576,6 +558,10 @@ const App: React.FC = () => {
                       <Select.Item value="2">2</Select.Item>
                       <Select.Item value="3">3</Select.Item>
                       <Select.Item value="4">4</Select.Item>
+                      <Select.Item value="5">5</Select.Item>
+                      <Select.Item value="6">6</Select.Item>
+                      <Select.Item value="7">7</Select.Item>
+                      <Select.Item value="8">8</Select.Item>
                     </Select.Content>
                   </Select.Root>
                 </Flex>
@@ -604,7 +590,7 @@ const App: React.FC = () => {
                 <Flex asChild align="center" gap="2">
                   <Text as="label" size="2">
                     <Checkbox
-                      checked={metronomeEnabled}
+                      checked={metronomeEnabled ?? false}
                       onCheckedChange={checked => setMetronomeEnabled(checked === true)}
                     />
                     Enable metronome
