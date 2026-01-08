@@ -1,6 +1,6 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { Project } from "@opendaw/studio-core";
-import { UUID } from "@opendaw/lib-std";
+import { Errors, UUID } from "@opendaw/lib-std";
 import { exportFullMix, exportStems } from "../lib/audioExport";
 import type { StemExportConfig } from "../lib/audioExport";
 
@@ -69,12 +69,26 @@ export function useAudioExport(
   const [isExporting, setIsExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState("");
   const [exportProgress, setExportProgress] = useState(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  /**
+   * Abort the current export
+   */
+  const handleAbortExport = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+  }, []);
 
   /**
    * Export the full mix (all tracks mixed down)
    */
   const handleExportMix = useCallback(async () => {
     if (!project) return;
+
+    // Create new AbortController for this export
+    abortControllerRef.current = new AbortController();
 
     setIsExporting(true);
     setExportProgress(0);
@@ -85,14 +99,19 @@ export function useAudioExport(
         fileName: mixFileName,
         sampleRate,
         onStatus: setExportStatus,
-        onProgress: setExportProgress
+        onProgress: setExportProgress,
+        abortSignal: abortControllerRef.current.signal
       });
     } catch (error) {
-      console.error("Export failed:", error);
-      setExportStatus("Export failed!");
+      // Don't log abort errors as failures
+      if (!Errors.isAbort(error)) {
+        console.error("Export failed:", error);
+        setExportStatus("Export failed!");
+      }
     } finally {
       setIsExporting(false);
       setExportProgress(0);
+      abortControllerRef.current = null;
     }
   }, [project, mixFileName, sampleRate]);
 
@@ -103,6 +122,9 @@ export function useAudioExport(
    */
   const handleExportStems = useCallback(async (config: StemConfigBuilder) => {
     if (!project) return;
+
+    // Create new AbortController for this export
+    abortControllerRef.current = new AbortController();
 
     setIsExporting(true);
     setExportProgress(0);
@@ -133,14 +155,19 @@ export function useAudioExport(
       await exportStems(project, stemsConfig, {
         sampleRate,
         onStatus: setExportStatus,
-        onProgress: setExportProgress
+        onProgress: setExportProgress,
+        abortSignal: abortControllerRef.current.signal
       });
     } catch (error) {
-      console.error("Stems export failed:", error);
-      setExportStatus("Stems export failed!");
+      // Don't log abort errors as failures
+      if (!Errors.isAbort(error)) {
+        console.error("Stems export failed:", error);
+        setExportStatus("Stems export failed!");
+      }
     } finally {
       setIsExporting(false);
       setExportProgress(0);
+      abortControllerRef.current = null;
     }
   }, [project, sampleRate]);
 
@@ -149,6 +176,7 @@ export function useAudioExport(
     exportStatus,
     exportProgress,
     handleExportMix,
-    handleExportStems
+    handleExportStems,
+    handleAbortExport
   };
 }

@@ -45,7 +45,8 @@ const App: React.FC = () => {
     exportStatus,
     exportProgress,
     handleExportMix,
-    handleExportStems
+    handleExportStems,
+    handleAbortExport
   } = useAudioExport(project, {
     sampleRate: 48000,
     mixFileName: `drum-pattern-${bpm}bpm`
@@ -728,9 +729,19 @@ const App: React.FC = () => {
                       {isExporting && (
                         <>
                           <Progress value={exportProgress} style={{ width: "100%" }} />
-                          <Text size="1" color="gray" align="center">
-                            {exportProgress}% complete
-                          </Text>
+                          <Flex gap="3" align="center">
+                            <Text size="1" color="gray">
+                              {exportProgress}% complete
+                            </Text>
+                            <Button
+                              size="1"
+                              variant="soft"
+                              color="red"
+                              onClick={handleAbortExport}
+                            >
+                              Cancel
+                            </Button>
+                          </Flex>
                         </>
                       )}
                     </Flex>

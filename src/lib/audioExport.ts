@@ -8,7 +8,7 @@
  */
 
 import { Project, AudioOfflineRenderer, WavFile } from "@opendaw/studio-core";
-import { Option, Progress } from "@opendaw/lib-std";
+import { Errors, Option, Progress } from "@opendaw/lib-std";
 import type { ExportStemsConfiguration } from "@opendaw/studio-adapters";
 
 export interface ExportOptions {
@@ -31,6 +31,11 @@ export interface ExportOptions {
    * Callback for status messages
    */
   onStatus?: (status: string) => void;
+
+  /**
+   * AbortSignal to cancel the export
+   */
+  abortSignal?: AbortSignal;
 }
 
 export interface StemExportConfig {
@@ -74,7 +79,8 @@ export async function exportFullMix(
     sampleRate = 48000,
     fileName = "mix",
     onProgress,
-    onStatus
+    onStatus,
+    abortSignal
   } = options;
 
   try {
@@ -92,7 +98,7 @@ export async function exportFullMix(
       project,
       Option.None, // No stem configuration = full mix
       progressHandler,
-      undefined, // No abort signal
+      abortSignal,
       sampleRate
     );
 
@@ -108,6 +114,11 @@ export async function exportFullMix(
 
     onStatus?.("Export complete!");
   } catch (error) {
+    // Check if this was an abort
+    if (Errors.isAbort(error)) {
+      onStatus?.("Export cancelled");
+      return;
+    }
     console.error("Export failed:", error);
     onStatus?.(`Export failed: ${error}`);
     throw error;
@@ -146,7 +157,8 @@ export async function exportStems(
   const {
     sampleRate = 48000,
     onProgress,
-    onStatus
+    onStatus,
+    abortSignal
   } = options;
 
   try {
@@ -170,7 +182,7 @@ export async function exportStems(
       project,
       Option.wrap(exportConfig),
       progressHandler,
-      undefined, // No abort signal
+      abortSignal,
       sampleRate
     );
 
@@ -204,6 +216,11 @@ export async function exportStems(
 
     onStatus?.(`Successfully exported ${totalStems} stems!`);
   } catch (error) {
+    // Check if this was an abort
+    if (Errors.isAbort(error)) {
+      onStatus?.("Export cancelled");
+      return;
+    }
     console.error("Stems export failed:", error);
     onStatus?.(`Export failed: ${error}`);
     throw error;
