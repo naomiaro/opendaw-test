@@ -21,6 +21,24 @@ import WorkersUrl from "@opendaw/studio-core/workers-main.js?worker&url";
 import WorkletsUrl from "@opendaw/studio-core/processors.js?url";
 
 /**
+ * Convert a browser AudioBuffer to OpenDAW's AudioData format.
+ * AudioData uses SharedArrayBuffer for efficient cross-thread communication.
+ */
+function audioBufferToAudioData(audioBuffer: AudioBuffer): AudioData {
+  const { numberOfChannels, length: numberOfFrames, sampleRate } = audioBuffer;
+
+  // Use AudioData.create which properly allocates SharedArrayBuffer
+  const audioData = AudioData.create(sampleRate, numberOfFrames, numberOfChannels);
+
+  // Copy channel data from browser AudioBuffer to AudioData frames
+  for (let channel = 0; channel < numberOfChannels; channel++) {
+    audioData.frames[channel].set(audioBuffer.getChannelData(channel));
+  }
+
+  return audioData;
+}
+
+/**
  * Configuration options for custom sample loading
  */
 export interface ProjectSetupOptions {
@@ -136,7 +154,7 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
           console.debug(
             `Found local audio buffer for ${uuidString}, channels: ${audioBuffer.numberOfChannels}, duration: ${audioBuffer.duration}s`
           );
-          const audioData = OpenSampleAPI.fromAudioBuffer(audioBuffer);
+          const audioData = audioBufferToAudioData(audioBuffer);
           const metadata: SampleMetaData = {
             name: uuidString,
             bpm,
@@ -150,7 +168,7 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
 
       // Fall back to OpenSampleAPI for built-in samples
       console.debug(`No local buffer found for ${uuidString}, falling back to OpenSampleAPI`);
-      return OpenSampleAPI.get().load(audioContext, uuid, progress);
+      return OpenSampleAPI.get().load(uuid, progress);
     }
   };
   const sampleManager = new GlobalSampleLoaderManager(sampleProvider);
