@@ -309,6 +309,11 @@ const App: React.FC = () => {
 
         if (!mounted) return;
 
+        // Disable looping by default for recording playback
+        newProject.editing.modify(() => {
+          newProject.timelineBox.loopArea.enabled.setValue(false);
+        });
+
         setAudioContext(newAudioContext);
         setProject(newProject);
         setStatus("Ready!");
@@ -412,11 +417,13 @@ const App: React.FC = () => {
 
           if (label === "Recording" || (label && label.startsWith("Take "))) {
             const duration = regionBox.duration.getValue();
-            console.log("[Recording] Setting timeline loop end to:", duration);
+            console.log("[Recording] Setting timeline loop area to:", duration);
 
-            // Set the timeline loop end to match the recording duration
+            // Configure loop area for full recording playback
             project.editing.modify(() => {
+              project.timelineBox.loopArea.from.setValue(0);
               project.timelineBox.loopArea.to.setValue(duration);
+              project.timelineBox.loopArea.enabled.setValue(false);
             });
             break;
           }
