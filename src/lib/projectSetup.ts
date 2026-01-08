@@ -1,15 +1,18 @@
-import { assert, Procedure, Progress, unitValue, UUID } from "@opendaw/lib-std";
+import { assert, Progress, UUID } from "@opendaw/lib-std";
 import { Promises } from "@opendaw/lib-runtime";
 import { PPQN } from "@opendaw/lib-dsp";
-import { AudioData, SampleMetaData, SoundfontMetaData } from "@opendaw/studio-adapters";
+import { SampleMetaData, SoundfontMetaData } from "@opendaw/studio-adapters";
+import { AudioData } from "@opendaw/lib-dsp";
 import {
   AudioWorklets,
-  DefaultSampleLoaderManager,
+  GlobalSampleLoaderManager,
   DefaultSoundfontLoaderManager,
   OpenSampleAPI,
   OpenSoundfontAPI,
   Project,
-  Workers
+  Workers,
+  SampleProvider,
+  SoundfontProvider
 } from "@opendaw/studio-core";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { testFeatures } from "../features";
@@ -120,8 +123,8 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
   }
 
   // Create sample manager with optional local audio buffer support
-  const sampleManager = new DefaultSampleLoaderManager({
-    fetch: async (uuid: UUID.Bytes, progress: Procedure<unitValue>): Promise<[AudioData, SampleMetaData]> => {
+  const sampleProvider: SampleProvider = {
+    fetch: async (uuid: UUID.Bytes, progress: Progress.Handler): Promise<[AudioData, SampleMetaData]> => {
       const uuidString = UUID.toString(uuid);
       console.debug(`Sample manager fetch called for UUID: ${uuidString}`);
 
@@ -149,13 +152,15 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
       console.debug(`No local buffer found for ${uuidString}, falling back to OpenSampleAPI`);
       return OpenSampleAPI.get().load(audioContext, uuid, progress);
     }
-  });
+  };
+  const sampleManager = new GlobalSampleLoaderManager(sampleProvider);
 
   // Create soundfont manager
-  const soundfontManager = new DefaultSoundfontLoaderManager({
+  const soundfontProvider: SoundfontProvider = {
     fetch: async (uuid: UUID.Bytes, progress: Progress.Handler): Promise<[ArrayBuffer, SoundfontMetaData]> =>
       OpenSoundfontAPI.get().load(uuid, progress)
-  });
+  };
+  const soundfontManager = new DefaultSoundfontLoaderManager(soundfontProvider);
 
   onStatusUpdate?.("Creating project...");
 

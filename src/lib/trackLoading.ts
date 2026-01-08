@@ -1,7 +1,7 @@
 import { UUID } from "@opendaw/lib-std";
 import { PPQN } from "@opendaw/lib-dsp";
 import { Project } from "@opendaw/studio-core";
-import { AudioFileBox, AudioRegionBox } from "@opendaw/studio-boxes";
+import { AudioFileBox, AudioRegionBox, ValueEventCollectionBox } from "@opendaw/studio-boxes";
 import { InstrumentFactories } from "@opendaw/studio-adapters";
 import { loadAudioFile } from "./audioUtils";
 import { setLoopEndFromTracks } from "./projectSetup";
@@ -79,9 +79,13 @@ export async function loadTracksFromFiles(
         // Create audio region for the full duration of the audio
         const clipDurationInPPQN = PPQN.secondsToPulses(audioBuffer.duration, bpm);
 
+        // Create events collection box (required for AudioRegionBox)
+        const eventsCollectionBox = ValueEventCollectionBox.create(boxGraph, UUID.generate());
+
         AudioRegionBox.create(boxGraph, UUID.generate(), box => {
           box.regions.refer(trackBox.regions);
           box.file.refer(audioFileBox);
+          box.events.refer(eventsCollectionBox.owners);
           box.position.setValue(0); // Start at the beginning
           box.duration.setValue(clipDurationInPPQN);
           box.loopOffset.setValue(0);

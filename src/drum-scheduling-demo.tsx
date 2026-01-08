@@ -5,10 +5,9 @@ import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
 import { PPQN } from "@opendaw/lib-dsp";
 import { AnimationFrame } from "@opendaw/lib-dom";
-import { AudioPlayback } from "@opendaw/studio-enums";
 import { Project } from "@opendaw/studio-core";
 import { InstrumentFactories } from "@opendaw/studio-adapters";
-import { AudioFileBox, AudioRegionBox } from "@opendaw/studio-boxes";
+import { AudioFileBox, AudioRegionBox, ValueEventCollectionBox } from "@opendaw/studio-boxes";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { MoisesLogo } from "./components/MoisesLogo";
 import { BackLink } from "./components/BackLink";
@@ -180,10 +179,13 @@ const App: React.FC = () => {
 
             // Create AudioRegionBox for each position
             positions.forEach((position, clipIndex) => {
+              // Create events collection box (required for AudioRegionBox)
+              const eventsCollectionBox = ValueEventCollectionBox.create(boxGraph, UUID.generate());
+
               const regionBox = AudioRegionBox.create(boxGraph, UUID.generate(), box => {
                 box.regions.refer(trackBox.regions);
                 box.file.refer(audioFileBox);
-                box.playback.setValue(AudioPlayback.NoSync); // NoSync: plays at original speed/pitch, ignores BPM
+                box.events.refer(eventsCollectionBox.owners);
                 box.position.setValue(position);
                 box.duration.setValue(clipDurationInPPQN);
                 box.loopOffset.setValue(0);

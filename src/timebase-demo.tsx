@@ -3,10 +3,9 @@ import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
 import { PPQN, TimeBase } from "@opendaw/lib-dsp";
 import { AnimationFrame } from "@opendaw/lib-dom";
-import { AudioPlayback } from "@opendaw/studio-enums";
 import { Project } from "@opendaw/studio-core";
 import { InstrumentFactories } from "@opendaw/studio-adapters";
-import { AudioFileBox, AudioRegionBox } from "@opendaw/studio-boxes";
+import { AudioFileBox, AudioRegionBox, ValueEventCollectionBox } from "@opendaw/studio-boxes";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { MoisesLogo } from "./components/MoisesLogo";
 import { BackLink } from "./components/BackLink";
@@ -232,14 +231,17 @@ function TimeBaseDemo() {
           project.timelineBox.loopArea.to.setValue(regionEnd);
         }
 
+        // Create events collection box (required for AudioRegionBox)
+        const eventsCollectionBox = ValueEventCollectionBox.create(boxGraph, UUID.generate());
+
         const regionBox = AudioRegionBox.create(
           boxGraph,
           UUID.generate(),
           (box) => {
             box.regions.refer(musicalTrackInfo.trackBox.regions);
             box.file.refer(fileBox);
+            box.events.refer(eventsCollectionBox.owners);
             box.timeBase.setValue(TimeBase.Musical); // Musical timebase
-            box.playback.setValue(AudioPlayback.NoSync);
             box.position.setValue(regionPosition);
             box.duration.setValue(clipDuration);
             box.loopDuration.setValue(clipDuration);
@@ -288,14 +290,17 @@ function TimeBaseDemo() {
           project.timelineBox.loopArea.to.setValue(regionEnd);
         }
 
+        // Create events collection box (required for AudioRegionBox)
+        const eventsCollectionBox = ValueEventCollectionBox.create(boxGraph, UUID.generate());
+
         const regionBox = AudioRegionBox.create(
           boxGraph,
           UUID.generate(),
           (box) => {
             box.regions.refer(secondsTrackInfo.trackBox.regions);
             box.file.refer(fileBox);
+            box.events.refer(eventsCollectionBox.owners);
             box.timeBase.setValue(TimeBase.Seconds); // Seconds timebase
-            box.playback.setValue(AudioPlayback.NoSync);
             box.position.setValue(regionPosition);
             box.duration.setValue(durationInSeconds); // In seconds, not PPQN!
             box.loopDuration.setValue(durationInSeconds); // In seconds, not PPQN!
