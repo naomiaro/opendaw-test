@@ -485,6 +485,23 @@ All notable changes to this project will be documented in this file.
   } = usePlaybackPreferences(project);
   ```
 
+#### Recording Demo Enhancements
+
+- **Metronome settings UI**: The recording demo now includes controls for metronome volume (dB slider) and beat subdivision (quarter, eighth, 16th, 32nd notes) when the metronome is enabled.
+
+#### Project Setup Improvements
+
+- **Engine preferences cleared on page unload**: Engine preferences (metronome, playback, recording settings) are now cleared from localStorage when leaving a demo page. This ensures each demo starts with fresh defaults and prevents settings from one demo affecting another.
+
+  OpenDAW stores engine preferences in localStorage under the key `"engine-preferences"`. Without this cleanup, enabling the metronome in one demo would leave it enabled in all other demos.
+
+  ```typescript
+  // Added to initializeOpenDAW() in src/lib/projectSetup.ts
+  window.addEventListener("beforeunload", () => {
+    localStorage.removeItem("engine-preferences");
+  });
+  ```
+
 #### Known Limitations (0.0.87)
 
 - **Metronome ignores time signature** (FIXED in 0.0.91): In 0.0.87, the metronome did not respect the `timelineBox.signature` setting. This has been fixed in 0.0.91.
