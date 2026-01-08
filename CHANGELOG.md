@@ -392,9 +392,44 @@ All notable changes to this project will be documented in this file.
   }
   ```
 
-#### Known Limitations
+### Changed - openDAW 0.0.87 → 0.0.91
 
-- **Metronome ignores time signature**: The metronome in OpenDAW 0.0.87 does not respect the `timelineBox.signature` setting. Even when the time signature is correctly set to 3/4 (or other values), the metronome continues to play a 4/4 click pattern. The signature values are stored correctly on the box (verified via read-back), but the metronome's internal click generator doesn't use them. This same behavior exists in opendaw.studio, indicating it's an upstream OpenDAW limitation, possibly related to ongoing signature map work.
+#### Breaking Changes
+
+- **Recording regions labeled "Take N" instead of "Recording"**: The `AudioRegionBox` created during recording now has label `"Take 1"`, `"Take 2"`, etc. instead of `"Recording"`. This is part of a new "Takes" feature for loop recording.
+
+  **Before (0.0.87):**
+  ```typescript
+  // Find recording region by label
+  const recordingRegion = boxes.find(box => box.label?.getValue() === "Recording");
+  ```
+
+  **After (0.0.91):**
+  ```typescript
+  // Find recording region by label - check for both old and new format
+  const recordingRegion = boxes.find(box => {
+    const label = box.label?.getValue();
+    return label === "Recording" || (label && label.startsWith("Take "));
+  });
+  ```
+
+  This change affects:
+  - `src/recording-api-react-demo.tsx`
+
+#### New Features
+
+- **Recording Takes**: OpenDAW 0.0.91 introduces a "Takes" feature for loop recording:
+  - When recording with loop enabled, each loop cycle creates a new "take" on a separate track
+  - Takes are labeled sequentially: "Take 1", "Take 2", "Take 3", etc.
+  - Previous takes are automatically muted when a new take starts
+  - All takes initially share one audio file with different waveform offsets
+  - This enables comping workflows where you can record multiple performances and choose the best parts
+
+- **Metronome respects time signature**: The metronome now correctly plays the accent pattern based on the time signature (e.g., 3/4 plays three beats with accent on beat 1).
+
+#### Known Limitations (0.0.87)
+
+- **Metronome ignores time signature** (FIXED in 0.0.91): In 0.0.87, the metronome did not respect the `timelineBox.signature` setting. This has been fixed in 0.0.91.
 
 #### Migration Checklist
 
@@ -408,3 +443,4 @@ All notable changes to this project will be documented in this file.
 8. [ ] Update progress callbacks to use `Progress.Handler` type
 9. [ ] Use `Errors.isAbort()` for abort error detection
 10. [ ] Migrate `engine.metronomeEnabled` and `engine.countInBarsTotal` to use `engine.preferences` API
+11. [ ] Update code that searches for recording regions by `"Recording"` label to also check for `"Take N"` labels
