@@ -68,6 +68,7 @@ export function useAudioExport(
 
   const [isExporting, setIsExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState("");
+  const [exportProgress, setExportProgress] = useState(0);
 
   /**
    * Export the full mix (all tracks mixed down)
@@ -76,19 +77,22 @@ export function useAudioExport(
     if (!project) return;
 
     setIsExporting(true);
+    setExportProgress(0);
     setExportStatus("Exporting... This may take a moment.");
 
     try {
       await exportFullMix(project, {
         fileName: mixFileName,
         sampleRate,
-        onStatus: setExportStatus
+        onStatus: setExportStatus,
+        onProgress: setExportProgress
       });
     } catch (error) {
       console.error("Export failed:", error);
       setExportStatus("Export failed!");
     } finally {
       setIsExporting(false);
+      setExportProgress(0);
     }
   }, [project, mixFileName, sampleRate]);
 
@@ -101,6 +105,7 @@ export function useAudioExport(
     if (!project) return;
 
     setIsExporting(true);
+    setExportProgress(0);
     setExportStatus("Exporting stems... This may take a moment.");
 
     try {
@@ -127,19 +132,22 @@ export function useAudioExport(
 
       await exportStems(project, stemsConfig, {
         sampleRate,
-        onStatus: setExportStatus
+        onStatus: setExportStatus,
+        onProgress: setExportProgress
       });
     } catch (error) {
       console.error("Stems export failed:", error);
       setExportStatus("Stems export failed!");
     } finally {
       setIsExporting(false);
+      setExportProgress(0);
     }
   }, [project, sampleRate]);
 
   return {
     isExporting,
     exportStatus,
+    exportProgress,
     handleExportMix,
     handleExportStems
   };

@@ -15,7 +15,7 @@ import { loadAudioFile } from "./lib/audioUtils";
 import { initializeOpenDAW } from "./lib/projectSetup";
 import { useAudioExport } from "./hooks/useAudioExport";
 import "@radix-ui/themes/styles.css";
-import { Theme, Container, Heading, Text, Button, Flex, Card, Badge, Separator } from "@radix-ui/themes";
+import { Theme, Container, Heading, Text, Button, Flex, Card, Badge, Separator, Progress } from "@radix-ui/themes";
 
 // Type for scheduled clip
 type ScheduledClip = {
@@ -43,6 +43,7 @@ const App: React.FC = () => {
   const {
     isExporting,
     exportStatus,
+    exportProgress,
     handleExportMix,
     handleExportStems
   } = useAudioExport(project, {
@@ -720,14 +721,17 @@ const App: React.FC = () => {
                 {(exportStatus || isExporting) && (
                   <>
                     <Separator size="4" />
-                    <Flex direction="column" gap="2" align="center">
+                    <Flex direction="column" gap="2" align="center" style={{ width: "100%" }}>
                       <Text size="2" weight="medium">
                         {exportStatus}
                       </Text>
                       {isExporting && (
-                        <Text size="1" color="gray" align="center">
-                          Rendering offline (may take a moment for long tracks)
-                        </Text>
+                        <>
+                          <Progress value={exportProgress} style={{ width: "100%" }} />
+                          <Text size="1" color="gray" align="center">
+                            {exportProgress}% complete
+                          </Text>
+                        </>
                       )}
                     </Flex>
                   </>
