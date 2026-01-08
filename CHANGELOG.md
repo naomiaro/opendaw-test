@@ -330,6 +330,50 @@ All notable changes to this project will be documented in this file.
   - `src/lib/projectSetup.ts`
   - `src/lib/audioExport.ts`
 
+- **Engine metronome and recording settings moved to preferences**: The `metronomeEnabled` and `countInBarsTotal` properties have been removed from `project.engine`. These settings are now accessed via the new `project.engine.preferences` API.
+
+  **Before (0.0.59):**
+  ```typescript
+  // Direct property access
+  project.engine.metronomeEnabled.setValue(true);
+  project.engine.countInBarsTotal.setValue(2);
+
+  // Reading values
+  const enabled = project.engine.metronomeEnabled.getValue();
+  ```
+
+  **After (0.0.87):**
+  ```typescript
+  // Create mutable observable values for preferences
+  const metronomeEnabled = project.engine.preferences.createMutableObservableValue("metronome", "enabled");
+  const countInBars = project.engine.preferences.createMutableObservableValue("recording", "countInBars");
+
+  // Setting values
+  metronomeEnabled.setValue(true);
+  countInBars.setValue(2);
+
+  // Reading values
+  const enabled = metronomeEnabled.getValue();
+  // Or directly from settings (read-only):
+  const enabledReadOnly = project.engine.preferences.settings.metronome.enabled;
+
+  // Important: terminate when done to avoid memory leaks
+  metronomeEnabled.terminate();
+  countInBars.terminate();
+  ```
+
+  **Available preference paths:**
+  - `("metronome", "enabled")` - boolean
+  - `("metronome", "beatSubDivision")` - 1 | 2 | 4 | 8
+  - `("metronome", "gain")` - number
+  - `("recording", "countInBars")` - 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8
+  - `("playback", "timestampEnabled")` - boolean
+  - `("playback", "pauseOnLoopDisabled")` - boolean
+  - `("playback", "truncateNotesAtRegionEnd")` - boolean
+
+  This change affects:
+  - `src/recording-api-react-demo.tsx`
+
 #### New Features
 
 - **Errors.isAbort helper**: OpenDAW now provides `Errors.isAbort()` from `@opendaw/lib-std` to check if an error was caused by an AbortController abort. This is more reliable than checking for `DOMException` with name `"AbortError"`.
@@ -348,6 +392,10 @@ All notable changes to this project will be documented in this file.
   }
   ```
 
+#### Known Limitations
+
+- **Metronome ignores time signature**: The metronome in OpenDAW 0.0.87 does not respect the `timelineBox.signature` setting. Even when the time signature is correctly set to 3/4 (or other values), the metronome continues to play a 4/4 click pattern. The signature values are stored correctly on the box (verified via read-back), but the metronome's internal click generator doesn't use them. This same behavior exists in opendaw.studio, indicating it's an upstream OpenDAW limitation, possibly related to ongoing signature map work.
+
 #### Migration Checklist
 
 1. [ ] Update `DefaultSampleLoaderManager` → `GlobalSampleLoaderManager`
@@ -359,3 +407,4 @@ All notable changes to this project will be documented in this file.
 7. [ ] Update `AudioOfflineRenderer.start()` calls with new parameter order
 8. [ ] Update progress callbacks to use `Progress.Handler` type
 9. [ ] Use `Errors.isAbort()` for abort error detection
+10. [ ] Migrate `engine.metronomeEnabled` and `engine.countInBarsTotal` to use `engine.preferences` API

@@ -58,6 +58,10 @@ const App: React.FC = () => {
   const canvasPainterRef = useRef<CanvasPainter | null>(null);
   const currentPeaksRef = useRef<any>(null);
 
+  // Preferences observable refs (created once when project is available)
+  const metronomeEnabledRef = useRef<any>(null);
+  const countInBarsRef = useRef<any>(null);
+
   const CHANNEL_PADDING = 4;
 
   // Initialize CanvasPainter when canvas is available
@@ -247,6 +251,23 @@ const App: React.FC = () => {
       setTimeSignatureNumerator(signature.nominator.getValue());
       setTimeSignatureDenominator(signature.denominator.getValue());
     }
+
+    // Create mutable observable values for preferences (new API in 0.0.87)
+    // These are created once and stored in refs to avoid recreation on every render
+    metronomeEnabledRef.current = project.engine.preferences.createMutableObservableValue("metronome", "enabled");
+    countInBarsRef.current = project.engine.preferences.createMutableObservableValue("recording", "countInBars");
+
+    // Initialize state from preferences
+    setMetronomeEnabled(metronomeEnabledRef.current.getValue());
+    setCountInBars(countInBarsRef.current.getValue());
+
+    return () => {
+      // Terminate the observable values on cleanup
+      metronomeEnabledRef.current?.terminate();
+      countInBarsRef.current?.terminate();
+      metronomeEnabledRef.current = null;
+      countInBarsRef.current = null;
+    };
   }, [project]);
 
   // Sync settings to project
@@ -275,13 +296,13 @@ const App: React.FC = () => {
   }, [project, timeSignatureNumerator, timeSignatureDenominator]);
 
   useEffect(() => {
-    if (!project) return;
-    project.engine.metronomeEnabled.setValue(metronomeEnabled);
+    if (!project || !metronomeEnabledRef.current) return;
+    metronomeEnabledRef.current.setValue(metronomeEnabled);
   }, [project, metronomeEnabled]);
 
   useEffect(() => {
-    if (!project) return;
-    project.engine.countInBarsTotal.setValue(countInBars);
+    if (!project || !countInBarsRef.current) return;
+    countInBarsRef.current.setValue(countInBars);
   }, [project, countInBars]);
 
   // Initialize OpenDAW
@@ -430,7 +451,7 @@ const App: React.FC = () => {
 
     // Temporarily disable metronome during playback to avoid double-click with recorded metronome
     // (It will be restored to the user's preference when playback stops)
-    project.engine.metronomeEnabled.setValue(false);
+    metronomeEnabledRef.current?.setValue(false);
 
     project.engine.setPosition(0);
     project.engine.play();
@@ -444,7 +465,7 @@ const App: React.FC = () => {
     project.engine.setPosition(0);
 
     // Restore metronome to user's preference
-    project.engine.metronomeEnabled.setValue(metronomeEnabled);
+    metronomeEnabledRef.current?.setValue(metronomeEnabled);
 
     setPlaybackStatus("Playback stopped");
   }, [project, metronomeEnabled]);
