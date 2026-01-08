@@ -9,7 +9,10 @@ import {
   CRUSHER_PRESETS,
   STEREO_WIDTH_PRESETS,
   EQ_PRESETS,
-  FOLD_PRESETS
+  FOLD_PRESETS,
+  DATTORRO_REVERB_PRESETS,
+  TIDAL_PRESETS,
+  MAXIMIZER_PRESETS
 } from "../lib/effectPresets";
 
 interface DynamicEffectConfig {
@@ -63,9 +66,9 @@ export const useDynamicEffect = (config: DynamicEffectConfig) => {
           effectBox.label.setValue(label);
           (effectBox as any).wet.setValue(-12);
           (effectBox as any).feedback.setValue(0.4);
-          (effectBox as any).delay.setValue(4);
+          (effectBox as any).delayMusical.setValue(4);
           (effectBox as any).filter.setValue(0);
-          setParameters({ wet: -12, feedback: 0.4, delay: 4, filter: 0 });
+          setParameters({ wet: -12, feedback: 0.4, delayMusical: 4, filter: 0 });
           break;
 
         case "Crusher":
@@ -112,6 +115,47 @@ export const useDynamicEffect = (config: DynamicEffectConfig) => {
           (effectBox as any).overSampling.setValue(0);
           (effectBox as any).volume.setValue(0);
           setParameters({ drive: 0, volume: 0 });
+          break;
+
+        case "DattorroReverb":
+          effectBox = project.api.insertEffect((audioBox as any).audioEffects, EffectFactories.AudioNamed.DattorroReverb);
+          effectBox.label.setValue(label);
+          (effectBox as any).preDelay.setValue(0.02);
+          (effectBox as any).bandwidth.setValue(0.9);
+          (effectBox as any).inputDiffusion1.setValue(0.75);
+          (effectBox as any).inputDiffusion2.setValue(0.625);
+          (effectBox as any).decay.setValue(0.5);
+          (effectBox as any).decayDiffusion1.setValue(0.7);
+          (effectBox as any).decayDiffusion2.setValue(0.5);
+          (effectBox as any).damping.setValue(0.5);
+          (effectBox as any).excursionRate.setValue(0.5);
+          (effectBox as any).excursionDepth.setValue(0.5);
+          (effectBox as any).wet.setValue(-12);
+          (effectBox as any).dry.setValue(0);
+          setParameters({
+            preDelay: 0.02, bandwidth: 0.9, decay: 0.5, damping: 0.5,
+            excursionRate: 0.5, excursionDepth: 0.5, wet: -12, dry: 0
+          });
+          break;
+
+        case "Tidal":
+          effectBox = project.api.insertEffect((audioBox as any).audioEffects, EffectFactories.AudioNamed.Tidal);
+          effectBox.label.setValue(label);
+          (effectBox as any).slope.setValue(0.5);
+          (effectBox as any).symmetry.setValue(0.5);
+          (effectBox as any).rate.setValue(1);
+          (effectBox as any).depth.setValue(0.5);
+          (effectBox as any).offset.setValue(0);
+          (effectBox as any).channelOffset.setValue(0);
+          setParameters({ slope: 0.5, symmetry: 0.5, rate: 1, depth: 0.5, offset: 0, channelOffset: 0 });
+          break;
+
+        case "Maximizer":
+          effectBox = project.api.insertEffect((audioBox as any).audioEffects, EffectFactories.AudioNamed.Maximizer);
+          effectBox.label.setValue(label);
+          (effectBox as any).threshold.setValue(-3);
+          (effectBox as any).lookahead.setValue(true);
+          setParameters({ threshold: -3 });
           break;
       }
 
@@ -165,6 +209,11 @@ export const useDynamicEffect = (config: DynamicEffectConfig) => {
           } else if (paramName === "highGain") {
             (effect as any).highBell.gain.setValue(value);
           }
+        }
+        // Handle StereoWidth parameter mapping (UI uses width/pan, SDK uses stereo/panning)
+        else if (type === "StereoWidth") {
+          const sdkParamName = paramName === "width" ? "stereo" : paramName === "pan" ? "panning" : paramName;
+          (effect as any)[sdkParamName].setValue(value);
         } else {
           (effect as any)[paramName].setValue(value);
         }
@@ -287,9 +336,9 @@ export const useDynamicEffect = (config: DynamicEffectConfig) => {
             format: v => `${(v * 100).toFixed(0)}%`
           },
           {
-            name: "delay",
+            name: "delayMusical",
             label: "Delay Time",
-            value: parameters.delay || 4,
+            value: parameters.delayMusical || 4,
             min: 0,
             max: 16,
             step: 1,
@@ -442,6 +491,153 @@ export const useDynamicEffect = (config: DynamicEffectConfig) => {
           }
         ];
 
+      case "DattorroReverb":
+        return [
+          {
+            name: "wet",
+            label: "Wet",
+            value: parameters.wet || -12,
+            min: -60,
+            max: 0,
+            step: 0.1,
+            unit: " dB"
+          },
+          {
+            name: "dry",
+            label: "Dry",
+            value: parameters.dry || 0,
+            min: -60,
+            max: 0,
+            step: 0.1,
+            unit: " dB"
+          },
+          {
+            name: "decay",
+            label: "Decay",
+            value: parameters.decay || 0.5,
+            min: 0,
+            max: 1,
+            step: 0.01,
+            format: (v: number) => `${(v * 100).toFixed(0)}%`
+          },
+          {
+            name: "damping",
+            label: "Damping",
+            value: parameters.damping || 0.5,
+            min: 0,
+            max: 1,
+            step: 0.01,
+            format: (v: number) => `${(v * 100).toFixed(0)}%`
+          },
+          {
+            name: "preDelay",
+            label: "Pre-Delay",
+            value: parameters.preDelay || 0.02,
+            min: 0,
+            max: 0.1,
+            step: 0.001,
+            format: (v: number) => `${(v * 1000).toFixed(0)} ms`
+          },
+          {
+            name: "bandwidth",
+            label: "Bandwidth",
+            value: parameters.bandwidth || 0.9,
+            min: 0,
+            max: 1,
+            step: 0.01,
+            format: (v: number) => `${(v * 100).toFixed(0)}%`
+          },
+          {
+            name: "excursionRate",
+            label: "Mod Rate",
+            value: parameters.excursionRate || 0.5,
+            min: 0,
+            max: 1,
+            step: 0.01,
+            format: (v: number) => `${(v * 100).toFixed(0)}%`
+          },
+          {
+            name: "excursionDepth",
+            label: "Mod Depth",
+            value: parameters.excursionDepth || 0.5,
+            min: 0,
+            max: 1,
+            step: 0.01,
+            format: (v: number) => `${(v * 100).toFixed(0)}%`
+          }
+        ];
+
+      case "Tidal":
+        return [
+          {
+            name: "rate",
+            label: "Rate",
+            value: parameters.rate || 1,
+            min: 0.01,
+            max: 20,
+            step: 0.01,
+            format: (v: number) => `${v.toFixed(2)} Hz`
+          },
+          {
+            name: "depth",
+            label: "Depth",
+            value: parameters.depth || 0.5,
+            min: 0,
+            max: 1,
+            step: 0.01,
+            format: (v: number) => `${(v * 100).toFixed(0)}%`
+          },
+          {
+            name: "slope",
+            label: "Slope",
+            value: parameters.slope || 0.5,
+            min: 0,
+            max: 1,
+            step: 0.01,
+            format: (v: number) => `${(v * 100).toFixed(0)}%`
+          },
+          {
+            name: "symmetry",
+            label: "Symmetry",
+            value: parameters.symmetry || 0.5,
+            min: 0,
+            max: 1,
+            step: 0.01,
+            format: (v: number) => `${(v * 100).toFixed(0)}%`
+          },
+          {
+            name: "offset",
+            label: "Phase Offset",
+            value: parameters.offset || 0,
+            min: 0,
+            max: 1,
+            step: 0.01,
+            format: (v: number) => `${(v * 360).toFixed(0)}°`
+          },
+          {
+            name: "channelOffset",
+            label: "Stereo Offset",
+            value: parameters.channelOffset || 0,
+            min: 0,
+            max: 1,
+            step: 0.01,
+            format: (v: number) => `${(v * 360).toFixed(0)}°`
+          }
+        ];
+
+      case "Maximizer":
+        return [
+          {
+            name: "threshold",
+            label: "Threshold",
+            value: parameters.threshold || -3,
+            min: -30,
+            max: 0,
+            step: 0.1,
+            unit: " dB"
+          }
+        ];
+
       default:
         return [];
     }
@@ -463,6 +659,12 @@ export const useDynamicEffect = (config: DynamicEffectConfig) => {
         return EQ_PRESETS;
       case "Fold":
         return FOLD_PRESETS;
+      case "DattorroReverb":
+        return DATTORRO_REVERB_PRESETS;
+      case "Tidal":
+        return TIDAL_PRESETS;
+      case "Maximizer":
+        return MAXIMIZER_PRESETS;
       default:
         return [];
     }
