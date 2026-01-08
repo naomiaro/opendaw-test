@@ -126,3 +126,236 @@ All notable changes to this project will be documented in this file.
 
 - **Effect Enhancements**:
   - Reverb effect now includes damping parameter for better control
+
+### Changed - openDAW 0.0.59 → 0.0.87
+
+#### Breaking Changes
+
+- **DefaultSampleLoaderManager renamed to GlobalSampleLoaderManager**: The sample loader manager class has been renamed and its constructor signature changed to accept a `SampleProvider` directly instead of a configuration object.
+
+  **Before (0.0.59):**
+  ```typescript
+  import { DefaultSampleLoaderManager } from "@opendaw/studio-core";
+
+  const sampleManager = new DefaultSampleLoaderManager({
+    fetch: async (uuid, progress) => { /* ... */ }
+  });
+  ```
+
+  **After (0.0.87):**
+  ```typescript
+  import { GlobalSampleLoaderManager, SampleProvider } from "@opendaw/studio-core";
+
+  const sampleProvider: SampleProvider = {
+    fetch: async (uuid, progress) => { /* ... */ }
+  };
+  const sampleManager = new GlobalSampleLoaderManager(sampleProvider);
+  ```
+
+  This change affects:
+  - `src/lib/projectSetup.ts`
+
+- **AudioData moved from studio-adapters to lib-dsp**: The `AudioData` type has been moved to a different package.
+
+  **Before (0.0.59):**
+  ```typescript
+  import { AudioData } from "@opendaw/studio-adapters";
+  ```
+
+  **After (0.0.87):**
+  ```typescript
+  import { AudioData } from "@opendaw/lib-dsp";
+  ```
+
+  This change affects:
+  - `src/lib/projectSetup.ts`
+
+- **OpenSampleAPI.fromAudioBuffer removed**: The convenience method for converting browser `AudioBuffer` to OpenDAW's `AudioData` has been removed. You must now manually convert using `AudioData.create()`.
+
+  **Before (0.0.59):**
+  ```typescript
+  import { OpenSampleAPI } from "@opendaw/studio-core";
+
+  const audioData = OpenSampleAPI.fromAudioBuffer(audioBuffer);
+  ```
+
+  **After (0.0.87):**
+  ```typescript
+  import { AudioData } from "@opendaw/lib-dsp";
+
+  function audioBufferToAudioData(audioBuffer: AudioBuffer): AudioData {
+    const { numberOfChannels, length: numberOfFrames, sampleRate } = audioBuffer;
+    const audioData = AudioData.create(sampleRate, numberOfFrames, numberOfChannels);
+    for (let channel = 0; channel < numberOfChannels; channel++) {
+      audioData.frames[channel].set(audioBuffer.getChannelData(channel));
+    }
+    return audioData;
+  }
+
+  const audioData = audioBufferToAudioData(audioBuffer);
+  ```
+
+  This change affects:
+  - `src/lib/projectSetup.ts`
+
+- **OpenSampleAPI.load signature changed**: The `audioContext` parameter has been removed.
+
+  **Before (0.0.59):**
+  ```typescript
+  const [audioData, metadata] = await OpenSampleAPI.get().load(uuid, audioContext, progress);
+  ```
+
+  **After (0.0.87):**
+  ```typescript
+  const [audioData, metadata] = await OpenSampleAPI.get().load(uuid, progress);
+  ```
+
+  This change affects:
+  - `src/lib/projectSetup.ts`
+
+- **AudioRegionBox requires mandatory `events` edge**: The `AudioRegionBox` now requires a connection to a `ValueEventCollectionBox` via the `events` edge. This is a runtime error if not provided.
+
+  **Before (0.0.59):**
+  ```typescript
+  import { AudioRegionBox } from "@opendaw/studio-boxes";
+
+  AudioRegionBox.create(boxGraph, UUID.generate(), box => {
+    box.regions.refer(trackBox.regions);
+    box.file.refer(audioFileBox);
+  });
+  ```
+
+  **After (0.0.87):**
+  ```typescript
+  import { AudioRegionBox, ValueEventCollectionBox } from "@opendaw/studio-boxes";
+
+  // Create events collection box first
+  const eventsCollectionBox = ValueEventCollectionBox.create(boxGraph, UUID.generate());
+
+  AudioRegionBox.create(boxGraph, UUID.generate(), box => {
+    box.regions.refer(trackBox.regions);
+    box.file.refer(audioFileBox);
+    box.events.refer(eventsCollectionBox.owners); // NEW - required
+  });
+  ```
+
+  **Error if not provided:**
+  ```
+  Error: Pointer {_AudioRegionBox:_PointerField (events) xxx/5 requires an edge.
+  ```
+
+  This change affects:
+  - `src/drum-scheduling-demo.tsx`
+  - `src/timebase-demo.tsx`
+  - `src/lib/trackLoading.ts`
+
+- **AudioPlayback enum removed**: The `AudioPlayback` enum and related `playback.setValue()` method on AudioRegionBox have been removed. Audio playback sync mode is now handled differently.
+
+  **Before (0.0.59):**
+  ```typescript
+  import { AudioPlayback } from "@opendaw/studio-boxes";
+
+  AudioRegionBox.create(boxGraph, UUID.generate(), box => {
+    // ...
+    box.playback.setValue(AudioPlayback.NoSync);
+  });
+  ```
+
+  **After (0.0.87):**
+  ```typescript
+  AudioRegionBox.create(boxGraph, UUID.generate(), box => {
+    // Remove the playback.setValue() call entirely
+    // Sync behavior is now handled automatically or through other means
+  });
+  ```
+
+  This change affects:
+  - `src/drum-scheduling-demo.tsx`
+  - `src/timebase-demo.tsx`
+  - `src/lib/trackLoading.ts`
+
+- **AudioOfflineRenderer.start signature changed**: The progress callback is now a required 3rd parameter, and `abortSignal` is a separate 4th parameter.
+
+  **Before (0.0.59):**
+  ```typescript
+  import { AudioOfflineRenderer } from "@opendaw/studio-core";
+
+  const audioBuffer = await AudioOfflineRenderer.start(
+    project,
+    exportConfig,
+    sampleRate
+  );
+  ```
+
+  **After (0.0.87):**
+  ```typescript
+  import { AudioOfflineRenderer } from "@opendaw/studio-core";
+  import { Progress } from "@opendaw/lib-std";
+
+  const progressHandler: Progress.Handler = (value) => {
+    console.log(`${Math.round(value * 100)}%`);
+  };
+
+  const audioBuffer = await AudioOfflineRenderer.start(
+    project,
+    exportConfig,        // Option<ExportStemsConfiguration>
+    progressHandler,     // Progress.Handler (value: 0.0 - 1.0)
+    abortSignal,         // AbortSignal | undefined
+    sampleRate           // number
+  );
+  ```
+
+  **Note:** The progress value is now `0.0` to `1.0` (multiply by 100 for percentage).
+
+  This change affects:
+  - `src/lib/audioExport.ts`
+
+- **Progress callback type changed**: Progress callbacks now use `Progress.Handler` from `@opendaw/lib-std` instead of `Procedure<unitValue>`.
+
+  **Before (0.0.59):**
+  ```typescript
+  import { Procedure, unitValue } from "@opendaw/lib-std";
+
+  const onProgress: Procedure<unitValue> = (value) => { /* ... */ };
+  ```
+
+  **After (0.0.87):**
+  ```typescript
+  import { Progress } from "@opendaw/lib-std";
+
+  const progressHandler: Progress.Handler = (value) => { /* ... */ };
+  ```
+
+  This change affects:
+  - `src/lib/projectSetup.ts`
+  - `src/lib/audioExport.ts`
+
+#### New Features
+
+- **Errors.isAbort helper**: OpenDAW now provides `Errors.isAbort()` from `@opendaw/lib-std` to check if an error was caused by an AbortController abort. This is more reliable than checking for `DOMException` with name `"AbortError"`.
+
+  ```typescript
+  import { Errors } from "@opendaw/lib-std";
+
+  try {
+    await AudioOfflineRenderer.start(project, config, progress, abortSignal, sampleRate);
+  } catch (error) {
+    if (Errors.isAbort(error)) {
+      console.log("Export was cancelled");
+      return;
+    }
+    throw error;
+  }
+  ```
+
+#### Migration Checklist
+
+1. [ ] Update `DefaultSampleLoaderManager` → `GlobalSampleLoaderManager`
+2. [ ] Update import for `AudioData` from `@opendaw/studio-adapters` → `@opendaw/lib-dsp`
+3. [ ] Replace `OpenSampleAPI.fromAudioBuffer()` with manual `AudioData.create()` conversion
+4. [ ] Remove `audioContext` parameter from `OpenSampleAPI.get().load()` calls
+5. [ ] Add `ValueEventCollectionBox` and connect via `events.refer()` for all `AudioRegionBox` instances
+6. [ ] Remove `AudioPlayback` import and `playback.setValue()` calls
+7. [ ] Update `AudioOfflineRenderer.start()` calls with new parameter order
+8. [ ] Update progress callbacks to use `Progress.Handler` type
+9. [ ] Use `Errors.isAbort()` for abort error detection
