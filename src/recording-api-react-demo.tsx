@@ -172,7 +172,7 @@ const App: React.FC = () => {
   }, [project, hasPeaks]);
 
   // Monitor live peaks during recording using the production-ready approach:
-  // 1. Find AudioRegionBox with label "Recording" (OpenDAW sets this intentionally)
+  // 1. Find AudioRegionBox with label "Take N" (SDK 0.0.91+) or "Recording" (older SDKs)
   // 2. Get AudioFileBox UUID from the region
   // 3. Use sampleManager.getOrCreate(uuid) to access the SampleLoader (public API)
   // 4. Access SampleLoader.peaks for live waveform data
@@ -187,21 +187,39 @@ const App: React.FC = () => {
       // Find the recording region in the box graph
       if (!sampleLoader) {
         const boxes = project.boxGraph.boxes();
+
+        // Log all boxes with labels to see what's available
+        const boxesWithLabels = boxes.filter((box: any) => box.label?.getValue?.());
+        if (boxesWithLabels.length > 0) {
+          console.log("[Recording Debug] Boxes with labels:", boxesWithLabels.map((b: any) => ({
+            name: b.name,
+            label: b.label?.getValue?.()
+          })));
+        }
+
+        // In SDK 0.0.91+, recording regions are labeled "Take N" instead of "Recording"
         const recordingRegion = boxes.find((box: any) => {
-          return box.label?.getValue?.() === "Recording";
+          const label = box.label?.getValue?.();
+          return label === "Recording" || (label && label.startsWith("Take "));
         });
+
+        console.log("[Recording Debug] Found region:", !!recordingRegion, "Total boxes:", boxes.length);
 
         if (recordingRegion && (recordingRegion as any).file) {
           // Get the AudioFileBox from the region's file pointer
           // PointerField.targetVertex returns the Box itself (Box extends Vertex)
           const fileVertexOption = (recordingRegion as any).file.targetVertex;
+          console.log("[Recording Debug] File vertex option:", fileVertexOption, "isEmpty:", fileVertexOption?.isEmpty?.());
           if (fileVertexOption && !fileVertexOption.isEmpty()) {
             const audioFileBox = fileVertexOption.unwrap();
+            console.log("[Recording Debug] AudioFileBox:", audioFileBox);
             // Use the public API to get the SampleLoader
             // Box stores UUID in address.uuid, not directly in uuid
             if (audioFileBox && (audioFileBox as any).address?.uuid) {
               const uuid = (audioFileBox as any).address.uuid;
+              console.log("[Recording Debug] UUID:", uuid);
               sampleLoader = project.sampleManager.getOrCreate(uuid);
+              console.log("[Recording Debug] SampleLoader:", sampleLoader);
             }
           }
         }
@@ -210,9 +228,11 @@ const App: React.FC = () => {
       // Monitor the sample loader for peak updates
       if (sampleLoader) {
         const peaksOption = sampleLoader.peaks;
+        console.log("[Recording Debug] PeaksOption:", peaksOption, "isEmpty:", peaksOption?.isEmpty?.());
         if (peaksOption && !peaksOption.isEmpty()) {
           const peaks = peaksOption.unwrap();
           const isPeaksWriter = "dataIndex" in peaks;
+          console.log("[Recording Debug] Peaks:", peaks, "isPeaksWriter:", isPeaksWriter);
 
           if (isPeaksWriter) {
             // Live recording - update peaks every frame for smooth rendering
@@ -363,12 +383,13 @@ const App: React.FC = () => {
         const recordingRegions: any[] = [];
 
         // Find all Recording AudioRegionBox instances
+        // In SDK 0.0.91+, recording regions are labeled "Take N" instead of "Recording"
         for (const box of allBoxes) {
           if (box.name === "AudioRegionBox") {
             const regionBox = box as any;
             const label = regionBox.label?.getValue();
 
-            if (label === "Recording") {
+            if (label === "Recording" || (label && label.startsWith("Take "))) {
               recordingRegions.push(regionBox);
             }
           }
@@ -416,13 +437,14 @@ const App: React.FC = () => {
     // After recording stops, set the timeline loop end to match the recording duration
     setTimeout(() => {
       // Find the Recording AudioRegionBox and set loop end to its duration
+      // In SDK 0.0.91+, recording regions are labeled "Take N" instead of "Recording"
       const allBoxes = project.boxGraph.boxes();
       for (const box of allBoxes) {
         if (box.name === "AudioRegionBox") {
           const regionBox = box as any;
           const label = regionBox.label?.getValue();
 
-          if (label === "Recording") {
+          if (label === "Recording" || (label && label.startsWith("Take "))) {
             const duration = regionBox.duration.getValue();
             console.log("[Recording] Setting timeline loop end to:", duration);
 
