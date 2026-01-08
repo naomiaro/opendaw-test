@@ -44,7 +44,22 @@ OpenDAW provides a comprehensive audio effects system with both **MIDI Effects**
    - Phase inversion per channel
    - Stereo mixing algorithm selection
 
-8. **Modular** - Custom audio effect designer
+8. **Dattorro Reverb** - High-quality algorithmic reverb
+   - Based on Jon Dattorro's plate reverb algorithm
+   - Modulation for lush, animated tails
+   - Extensive diffusion controls
+
+9. **Tidal** - LFO modulator/tremolo
+   - Variable waveform shape (sine to square)
+   - Stereo phase offset for auto-pan
+   - Wide rate range for tremolo effects
+
+10. **Maximizer** - Brick-wall limiter
+    - True peak limiting
+    - Lookahead mode for transparency
+    - Essential for mastering chains
+
+11. **Modular** - Custom audio effect designer
    - Visual modular environment
    - Connect modules together
    - Create custom signal processors
@@ -161,10 +176,13 @@ openDAW/
 │   ├── CompressorDeviceBox.ts
 │   ├── DelayDeviceBox.ts
 │   ├── ReverbDeviceBox.ts
+│   ├── DattorroReverbDeviceBox.ts
 │   ├── RevampDeviceBox.ts
 │   ├── CrusherDeviceBox.ts
 │   ├── FoldDeviceBox.ts
-│   └── StereoToolDeviceBox.ts
+│   ├── StereoToolDeviceBox.ts
+│   ├── TidalDeviceBox.ts
+│   └── MaximizerDeviceBox.ts
 ├── packages/studio/core/src/
 │   ├── EffectFactory.ts (interface)
 │   ├── EffectFactories.ts (implementations)
