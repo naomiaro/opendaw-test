@@ -15,7 +15,8 @@ import { loadAudioFile } from "./lib/audioUtils";
 import { initializeOpenDAW } from "./lib/projectSetup";
 import { useAudioExport } from "./hooks/useAudioExport";
 import "@radix-ui/themes/styles.css";
-import { Theme, Container, Heading, Text, Button, Flex, Card, Badge, Separator, Progress } from "@radix-ui/themes";
+import { Theme, Container, Heading, Text, Button, Flex, Card, Badge, Separator } from "@radix-ui/themes";
+import { ExportProgress } from "./components/ExportProgress";
 
 // Type for scheduled clip
 type ScheduledClip = {
@@ -719,34 +720,12 @@ const App: React.FC = () => {
                 </Flex>
 
                 {/* Export status */}
-                {(exportStatus || isExporting) && (
-                  <>
-                    <Separator size="4" />
-                    <Flex direction="column" gap="2" align="center" style={{ width: "100%" }}>
-                      <Text size="2" weight="medium">
-                        {exportStatus}
-                      </Text>
-                      {isExporting && (
-                        <>
-                          <Progress value={exportProgress} style={{ width: "100%" }} />
-                          <Flex gap="3" align="center">
-                            <Text size="1" color="gray">
-                              {exportProgress}% complete
-                            </Text>
-                            <Button
-                              size="1"
-                              variant="soft"
-                              color="red"
-                              onClick={handleAbortExport}
-                            >
-                              Cancel
-                            </Button>
-                          </Flex>
-                        </>
-                      )}
-                    </Flex>
-                  </>
-                )}
+                <ExportProgress
+                  isExporting={isExporting}
+                  status={exportStatus}
+                  progress={exportProgress}
+                  onCancel={handleAbortExport}
+                />
               </Flex>
             </Flex>
           </Card>
