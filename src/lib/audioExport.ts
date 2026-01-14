@@ -7,9 +7,9 @@
  * - WAV format with 32-bit float encoding
  */
 
-import { Project, AudioOfflineRenderer, WavFile } from "@opendaw/studio-core";
-import { Errors, Option, Progress } from "@opendaw/lib-std";
-import type { ExportStemsConfiguration } from "@opendaw/studio-adapters";
+import { Project, AudioOfflineRenderer, WavFile } from "@moises-ai/studio-core";
+import { Errors, Option, Progress } from "@moises-ai/lib-std";
+import type { ExportStemsConfiguration } from "@moises-ai/studio-adapters";
 
 export interface ExportOptions {
   /**

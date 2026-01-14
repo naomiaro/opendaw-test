@@ -1,8 +1,8 @@
 import { useEffect, useRef } from "react";
-import { UUID } from "@opendaw/lib-std";
-import { PPQN } from "@opendaw/lib-dsp";
-import { Project } from "@opendaw/studio-core";
-import { PeaksPainter } from "@opendaw/lib-fusion";
+import { UUID } from "@moises-ai/lib-std";
+import { PPQN } from "@moises-ai/lib-dsp";
+import { Project } from "@moises-ai/studio-core";
+import { PeaksPainter } from "@moises-ai/lib-fusion";
 import { CanvasPainter } from "../lib/CanvasPainter";
 import type { TrackData } from "../lib/types";
 

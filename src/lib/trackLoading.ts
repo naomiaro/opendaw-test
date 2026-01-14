@@ -1,8 +1,8 @@
-import { UUID } from "@opendaw/lib-std";
-import { PPQN } from "@opendaw/lib-dsp";
-import { Project } from "@opendaw/studio-core";
-import { AudioFileBox, AudioRegionBox, ValueEventCollectionBox } from "@opendaw/studio-boxes";
-import { InstrumentFactories } from "@opendaw/studio-adapters";
+import { UUID } from "@moises-ai/lib-std";
+import { PPQN } from "@moises-ai/lib-dsp";
+import { Project } from "@moises-ai/studio-core";
+import { AudioFileBox, AudioRegionBox, ValueEventCollectionBox } from "@moises-ai/studio-boxes";
+import { InstrumentFactories } from "@moises-ai/studio-adapters";
 import { loadAudioFile } from "./audioUtils";
 import { setLoopEndFromTracks } from "./projectSetup";
 import type { TrackData, TrackFileConfig } from "./types";

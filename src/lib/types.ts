@@ -1,5 +1,5 @@
-import { UUID } from "@opendaw/lib-std";
-import { AudioUnitBox, TrackBox } from "@opendaw/studio-boxes";
+import { UUID } from "@moises-ai/lib-std";
+import { AudioUnitBox, TrackBox } from "@moises-ai/studio-boxes";
 
 /**
  * Shared type representing a loaded audio track in OpenDAW

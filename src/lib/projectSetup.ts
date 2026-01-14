@@ -1,8 +1,8 @@
-import { assert, Progress, UUID } from "@opendaw/lib-std";
-import { Promises } from "@opendaw/lib-runtime";
-import { PPQN } from "@opendaw/lib-dsp";
-import { SampleMetaData, SoundfontMetaData } from "@opendaw/studio-adapters";
-import { AudioData } from "@opendaw/lib-dsp";
+import { assert, Progress, UUID } from "@moises-ai/lib-std";
+import { Promises } from "@moises-ai/lib-runtime";
+import { PPQN } from "@moises-ai/lib-dsp";
+import { SampleMetaData, SoundfontMetaData } from "@moises-ai/studio-adapters";
+import { AudioData } from "@moises-ai/lib-dsp";
 import {
   AudioWorklets,
   GlobalSampleLoaderManager,
@@ -13,12 +13,12 @@ import {
   Workers,
   SampleProvider,
   SoundfontProvider
-} from "@opendaw/studio-core";
-import { AnimationFrame } from "@opendaw/lib-dom";
+} from "@moises-ai/studio-core";
+import { AnimationFrame } from "@moises-ai/lib-dom";
 import { testFeatures } from "../features";
 
-import WorkersUrl from "@opendaw/studio-core/workers-main.js?worker&url";
-import WorkletsUrl from "@opendaw/studio-core/processors.js?url";
+import WorkersUrl from "@moises-ai/studio-core/workers-main.js?worker&url";
+import WorkletsUrl from "@moises-ai/studio-core/processors.js?url";
 
 /**
  * Convert a browser AudioBuffer to OpenDAW's AudioData format.

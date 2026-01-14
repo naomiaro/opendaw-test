@@ -1,5 +1,5 @@
-import { AnimationFrame } from "@opendaw/lib-dom";
-import { Terminable } from "@opendaw/lib-std";
+import { AnimationFrame } from "@moises-ai/lib-dom";
+import { Terminable } from "@moises-ai/lib-std";
 
 /**
  * CanvasPainter wraps a canvas element and provides efficient rendering

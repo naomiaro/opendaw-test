@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from "react";
-import { Project } from "@opendaw/studio-core";
-import { Errors, UUID } from "@opendaw/lib-std";
+import { Project } from "@moises-ai/studio-core";
+import { Errors, UUID } from "@moises-ai/lib-std";
 import { exportFullMix, exportStems } from "../lib/audioExport";
 import type { StemExportConfig } from "../lib/audioExport";
 

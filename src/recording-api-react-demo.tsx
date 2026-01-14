@@ -2,9 +2,9 @@
 
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { Project } from "@opendaw/studio-core";
-import { AnimationFrame } from "@opendaw/lib-dom";
-import { PeaksPainter } from "@opendaw/lib-fusion";
+import { Project } from "@moises-ai/studio-core";
+import { AnimationFrame } from "@moises-ai/lib-dom";
+import { PeaksPainter } from "@moises-ai/lib-fusion";
 import { CanvasPainter } from "./lib/CanvasPainter";
 import { initializeOpenDAW } from "./lib/projectSetup";
 import { useEnginePreference, CountInBarsValue, MetronomeBeatSubDivisionValue } from "./hooks/useEnginePreference";

@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { Project, EffectFactories } from "@opendaw/studio-core";
+import { Project, EffectFactories } from "@moises-ai/studio-core";
 import type { EffectParameter } from "../components/EffectPanel";
 import type { EffectType } from "../components/EffectChain";
 import {

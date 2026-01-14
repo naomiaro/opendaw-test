@@ -1,11 +1,11 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { createRoot } from "react-dom/client";
-import { UUID } from "@opendaw/lib-std";
-import { PPQN, TimeBase } from "@opendaw/lib-dsp";
-import { AnimationFrame } from "@opendaw/lib-dom";
-import { Project } from "@opendaw/studio-core";
-import { InstrumentFactories } from "@opendaw/studio-adapters";
-import { AudioFileBox, AudioRegionBox, ValueEventCollectionBox } from "@opendaw/studio-boxes";
+import { UUID } from "@moises-ai/lib-std";
+import { PPQN, TimeBase } from "@moises-ai/lib-dsp";
+import { AnimationFrame } from "@moises-ai/lib-dom";
+import { Project } from "@moises-ai/studio-core";
+import { InstrumentFactories } from "@moises-ai/studio-adapters";
+import { AudioFileBox, AudioRegionBox, ValueEventCollectionBox } from "@moises-ai/studio-boxes";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { MoisesLogo } from "./components/MoisesLogo";
 import { BackLink } from "./components/BackLink";

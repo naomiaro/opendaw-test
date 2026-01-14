@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Button, Flex, Text, Badge, Card, Slider, Select } from "@radix-ui/themes";
-import { Project } from "@opendaw/studio-core";
+import { Project } from "@moises-ai/studio-core";
 import type { EffectPreset } from "../lib/effectPresets";
 
 const PresetSelector: React.FC<{

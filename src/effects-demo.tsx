@@ -2,9 +2,9 @@
 
 import React, { useEffect, useState, useCallback, useRef, memo } from "react";
 import { createRoot } from "react-dom/client";
-import { UUID } from "@opendaw/lib-std";
-import { AnimationFrame } from "@opendaw/lib-dom";
-import { Project } from "@opendaw/studio-core";
+import { UUID } from "@moises-ai/lib-std";
+import { AnimationFrame } from "@moises-ai/lib-dom";
+import { Project } from "@moises-ai/studio-core";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { MoisesLogo } from "./components/MoisesLogo";
 import { BackLink } from "./components/BackLink";

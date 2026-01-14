@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
-import { UUID } from "@opendaw/lib-std";
-import { PPQN } from "@opendaw/lib-dsp";
-import { Project } from "@opendaw/studio-core";
-import { AudioUnitBox, TrackBox } from "@opendaw/studio-boxes";
+import { UUID } from "@moises-ai/lib-std";
+import { PPQN } from "@moises-ai/lib-dsp";
+import { Project } from "@moises-ai/studio-core";
+import { AudioUnitBox, TrackBox } from "@moises-ai/studio-boxes";
 import { Button, Flex, Text, Slider } from "@radix-ui/themes";
 
 export type TrackData = {

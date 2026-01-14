@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Project } from "@opendaw/studio-core";
+import { Project } from "@moises-ai/studio-core";
 
 /**
  * Available engine preference paths

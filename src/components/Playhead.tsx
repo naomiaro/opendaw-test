@@ -1,5 +1,5 @@
 import React from "react";
-import { PPQN } from "@opendaw/lib-dsp";
+import { PPQN } from "@moises-ai/lib-dsp";
 
 export interface PlayheadProps {
   /**
