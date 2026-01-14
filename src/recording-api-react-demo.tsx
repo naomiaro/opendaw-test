@@ -160,6 +160,30 @@ const App: React.FC = () => {
         setRecordStatus("Recording...");
       } else if (!recording) {
         setRecordStatus("Recording stopped");
+
+        // When recording stops, set up the timeline for playback
+        // The recording region should be available immediately
+        const allBoxes = project.boxGraph.boxes();
+
+        for (const box of allBoxes) {
+          if (box.name === "AudioRegionBox") {
+            const regionBox = box as any;
+            const label = regionBox.label?.getValue();
+
+            if (label === "Recording" || (label && label.startsWith("Take "))) {
+              const duration = regionBox.duration.getValue();
+              console.log("[Recording] Setting timeline loop area to:", duration);
+
+              project.editing.modify(() => {
+                project.timelineBox.loopArea.from.setValue(0);
+                project.timelineBox.loopArea.to.setValue(duration);
+                project.timelineBox.loopArea.enabled.setValue(false);
+              });
+              break;
+            }
+          }
+        }
+        // Note: hasPeaks is set by the animation frame loop when final peaks are received
       }
     });
 
@@ -187,13 +211,32 @@ const App: React.FC = () => {
     };
   }, [project, hasPeaks]);
 
-  // Monitor live peaks during recording using the production-ready approach:
+  // Track if we should be monitoring peaks (true from recording start until final peaks received)
+  const [shouldMonitorPeaks, setShouldMonitorPeaks] = useState(false);
+
+  // Start monitoring when recording starts
+  useEffect(() => {
+    if (isRecording && !shouldMonitorPeaks) {
+      setShouldMonitorPeaks(true);
+    }
+  }, [isRecording, shouldMonitorPeaks]);
+
+  // Stop monitoring when we have final peaks
+  useEffect(() => {
+    if (hasPeaks && shouldMonitorPeaks) {
+      setShouldMonitorPeaks(false);
+    }
+  }, [hasPeaks, shouldMonitorPeaks]);
+
+  // Monitor peaks - continues running after recording stops until final peaks are received
+  // Uses the production-ready approach:
   // 1. Find AudioRegionBox with label "Take N" (SDK 0.0.91+) or "Recording" (older SDKs)
   // 2. Get AudioFileBox UUID from the region
   // 3. Use sampleManager.getOrCreate(uuid) to access the SampleLoader (public API)
   // 4. Access SampleLoader.peaks for live waveform data
   useEffect(() => {
-    if (!project || !isRecording) return undefined;
+    // Only run if we should be monitoring peaks
+    if (!project || !shouldMonitorPeaks) return undefined;
 
     let animationFrameTerminable: any = null;
     let sampleLoader: any = null;
@@ -242,6 +285,8 @@ const App: React.FC = () => {
             currentPeaksRef.current = peaks;
             canvasPainterRef.current?.requestUpdate();
             setHasPeaks(true);
+            setPlaybackStatus("Recording ready to play");
+            console.log("[Recording] Final peaks received, playback ready");
             if (animationFrameTerminable) {
               animationFrameTerminable.terminate();
               animationFrameTerminable = null;
@@ -256,7 +301,7 @@ const App: React.FC = () => {
         animationFrameTerminable.terminate();
       }
     };
-  }, [project, isRecording]);
+  }, [project, shouldMonitorPeaks]);
 
   // Initialize project settings from OpenDAW
   useEffect(() => {
@@ -401,42 +446,12 @@ const App: React.FC = () => {
 
     console.log("[Recording] Stopping recording...");
 
+    // Only stop recording - like OpenDAW's record button toggle
+    // The isRecording subscription will handle setting up the timeline for playback
     project.engine.stopRecording();
-    project.engine.stop(true);
-    project.engine.setPosition(0);
-
-    setRecordStatus("Recording stopped");
-
-    // After recording stops, set the timeline loop end to match the recording duration
-    setTimeout(() => {
-      const allBoxes = project.boxGraph.boxes();
-      for (const box of allBoxes) {
-        if (box.name === "AudioRegionBox") {
-          const regionBox = box as any;
-          const label = regionBox.label?.getValue();
-
-          if (label === "Recording" || (label && label.startsWith("Take "))) {
-            const duration = regionBox.duration.getValue();
-            console.log("[Recording] Setting timeline loop area to:", duration);
-
-            // Configure loop area for full recording playback
-            project.editing.modify(() => {
-              project.timelineBox.loopArea.from.setValue(0);
-              project.timelineBox.loopArea.to.setValue(duration);
-              project.timelineBox.loopArea.enabled.setValue(false);
-            });
-            break;
-          }
-        }
-      }
-
-      setHasPeaks(true);
-      setPlaybackStatus("Recording ready to play");
-    }, 500);
-
-    console.log("[Recording] Recording stopped");
   }, [project]);
 
+  // Play recording from the beginning
   const handlePlayRecording = useCallback(async () => {
     if (!project || !audioContext) return;
 
@@ -451,22 +466,50 @@ const App: React.FC = () => {
     // (It will be restored to the user's preference when playback stops)
     setMetronomeEnabled(false);
 
-    project.engine.setPosition(0);
+    // Wait for audio to be fully loaded before playing
+    const isLoaded = await project.engine.queryLoadingComplete();
+    if (!isLoaded) {
+      console.log("[Playback] Waiting for audio to load...");
+      setPlaybackStatus("Loading audio...");
+      // Poll until loaded
+      await new Promise<void>(resolve => {
+        const checkLoaded = async () => {
+          if (await project.engine.queryLoadingComplete()) {
+            resolve();
+          } else {
+            requestAnimationFrame(checkLoaded);
+          }
+        };
+        checkLoaded();
+      });
+    }
+
+    // Reset engine and position before playing (like OpenDAW's stop button)
+    project.engine.stop(true);
     project.engine.play();
     setPlaybackStatus("Playing...");
   }, [project, audioContext, metronomeEnabled]);
 
-  const handleStopPlayback = useCallback(() => {
+  // Single stop button - stops recording or playback and resets
+  const handleStop = useCallback(() => {
     if (!project) return;
 
+    const wasRecording = project.engine.isRecording.getValue() || project.engine.isCountingIn.getValue();
+
+    // Stop and reset (like OpenDAW's stop button)
     project.engine.stop(true);
-    project.engine.setPosition(0);
 
-    // Restore metronome to user's preference (saved before playback started)
-    setMetronomeEnabled(userMetronomePreferenceRef.current);
+    // Restore metronome to user's preference if we were playing back
+    if (!wasRecording && isPlayingBack) {
+      setMetronomeEnabled(userMetronomePreferenceRef.current);
+    }
 
-    setPlaybackStatus("Playback stopped");
-  }, [project, setMetronomeEnabled]);
+    if (wasRecording) {
+      setRecordStatus("Recording stopped");
+    } else if (hasPeaks) {
+      setPlaybackStatus("Playback stopped");
+    }
+  }, [project, isPlayingBack, hasPeaks, setMetronomeEnabled]);
 
   if (!project) {
     return (
@@ -671,15 +714,30 @@ const App: React.FC = () => {
               <Separator size="4" />
 
               <Flex gap="3" wrap="wrap" justify="center">
-                <Button onClick={handleStartRecording} disabled={isRecording} color="red" size="3" variant="solid">
-                  ⏺ Start Recording
+                <Button
+                  onClick={isRecording ? handleStopRecording : handleStartRecording}
+                  color="red"
+                  size="3"
+                  variant="solid"
+                  disabled={isPlayingBack}
+                >
+                  {isRecording ? "⏹ Stop Recording" : "⏺ Start Recording"}
                 </Button>
-                <Button onClick={handleStopRecording} disabled={!isRecording} color="orange" size="3" variant="solid">
-                  ⏹ Stop Recording
+                <Button
+                  onClick={handlePlayRecording}
+                  disabled={isRecording || isPlayingBack || !hasPeaks}
+                  color="green"
+                  size="3"
+                  variant="solid"
+                >
+                  ▶ Play
+                </Button>
+                <Button onClick={handleStop} color="gray" size="3" variant="solid">
+                  ⏹ Stop
                 </Button>
               </Flex>
               <Text size="2" align="center" color="gray">
-                {recordStatus}
+                {isRecording || isCountingIn ? recordStatus : playbackStatus}
               </Text>
 
               <Flex
@@ -690,36 +748,6 @@ const App: React.FC = () => {
               >
                 <canvas ref={canvasRef} style={{ width: "800px", height: "200px", display: "block" }} />
               </Flex>
-            </Flex>
-          </Card>
-
-          <Card>
-            <Flex direction="column" gap="4">
-              <Heading size="5">Playback</Heading>
-
-              <Flex gap="3" wrap="wrap" justify="center">
-                <Button
-                  onClick={handlePlayRecording}
-                  disabled={isRecording || isPlayingBack || !hasPeaks}
-                  color="green"
-                  size="3"
-                  variant="solid"
-                >
-                  ▶ Play Recording
-                </Button>
-                <Button
-                  onClick={handleStopPlayback}
-                  disabled={!isPlayingBack || isRecording}
-                  color="orange"
-                  size="3"
-                  variant="solid"
-                >
-                  ⏹ Stop
-                </Button>
-              </Flex>
-              <Text size="2" align="center" color="gray">
-                {playbackStatus}
-              </Text>
             </Flex>
           </Card>
 
