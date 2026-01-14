@@ -3,6 +3,40 @@
 ## Project Overview
 This project demonstrates headless usage of the OpenDAW SDK for browser-based audio recording and playback.
 
+## Package Sources & Branches
+
+This project can use either the original OpenDAW packages or the Moises fork:
+
+| Branch | Package Scope | Source |
+|--------|---------------|--------|
+| `main` | `@opendaw/*` | npm registry (original OpenDAW) |
+| `feature/moises-packages` | `@moises-ai/*` | GitHub Package Registry (Moises fork) |
+
+### Moises Fork Locations
+- **Moises OpenDAW repo**: `/Users/naomiaro/Code/MoisesOpenDAW`
+- **Original OpenDAW repo**: `/Users/naomiaro/Code/openDAWOriginal`
+
+### Switching Between Package Sources
+
+**DO NOT use npm aliasing** (e.g., `"@opendaw/lib-std": "npm:@moises-ai/lib-std@^0.0.65"`). This causes module duplication issues where multiple instances of the same classes are loaded, breaking `instanceof` checks and causing runtime errors like `watchVertex called but has no edge requirement`.
+
+**Correct approach**: Change both `package.json` dependencies AND all source file imports to use the desired scope directly:
+
+```typescript
+// For original OpenDAW (main branch)
+import { Project } from "@opendaw/studio-core";
+
+// For Moises fork (feature/moises-packages branch)
+import { Project } from "@moises-ai/studio-core";
+```
+
+### Moises Package Registry Setup
+The `@moises-ai` packages are hosted on GitHub Package Registry. Ensure `~/.npmrc` contains:
+```
+@moises-ai:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=<your-github-token>
+```
+
 ## Key OpenDAW APIs
 
 ### Recording
@@ -174,7 +208,9 @@ useEffect(() => {
 
 ### Using AnimationFrame from OpenDAW
 ```typescript
+// Use @opendaw on main branch, @moises-ai on feature/moises-packages
 import { AnimationFrame } from "@opendaw/lib-dom";
+// or: import { AnimationFrame } from "@moises-ai/lib-dom";
 
 const terminable = AnimationFrame.add(() => {
   // Called every frame
@@ -189,3 +225,9 @@ terminable.terminate();
 - Project setup: `src/lib/projectSetup.ts`
 - Engine preferences hook: `src/hooks/useEnginePreference.ts`
 - OpenDAW original source: `/Users/naomiaro/Code/openDAWOriginal`
+- Moises OpenDAW fork: `/Users/naomiaro/Code/MoisesOpenDAW`
+
+## Troubleshooting
+
+### "watchVertex called but has no edge requirement" Error
+This error occurs when using npm aliasing to map `@opendaw/*` to `@moises-ai/*` packages. The aliasing creates duplicate module instances. **Solution**: Use direct imports with the correct scope (see "Switching Between Package Sources" above).
