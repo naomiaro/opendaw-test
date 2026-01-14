@@ -441,16 +441,6 @@ const App: React.FC = () => {
     }
   }, [project, audioContext, useCountIn]);
 
-  const handleStopRecording = useCallback(() => {
-    if (!project) return;
-
-    console.log("[Recording] Stopping recording...");
-
-    // Only stop recording - like OpenDAW's record button toggle
-    // The isRecording subscription will handle setting up the timeline for playback
-    project.engine.stopRecording();
-  }, [project]);
-
   // Play recording from the beginning
   const handlePlayRecording = useCallback(async () => {
     if (!project || !audioContext) return;
@@ -715,17 +705,17 @@ const App: React.FC = () => {
 
               <Flex gap="3" wrap="wrap" justify="center">
                 <Button
-                  onClick={isRecording ? handleStopRecording : handleStartRecording}
+                  onClick={handleStartRecording}
                   color="red"
                   size="3"
                   variant="solid"
-                  disabled={isPlayingBack}
+                  disabled={isRecording || isCountingIn || isPlayingBack}
                 >
-                  {isRecording ? "⏹ Stop Recording" : "⏺ Start Recording"}
+                  ⏺ Record
                 </Button>
                 <Button
                   onClick={handlePlayRecording}
-                  disabled={isRecording || isPlayingBack || !hasPeaks}
+                  disabled={isRecording || isCountingIn || isPlayingBack || !hasPeaks}
                   color="green"
                   size="3"
                   variant="solid"
