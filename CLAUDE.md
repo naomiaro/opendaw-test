@@ -223,6 +223,10 @@ const terminable = AnimationFrame.add(() => {
 terminable.terminate();
 ```
 
+### Demo Layout Structure
+GitHubCorner, BackLink, content, and MoisesLogo all go *inside* `<Container>`, not as siblings.
+See `src/looping-demo.tsx` for the reference layout pattern.
+
 ## Reference Files
 - Recording demo: `src/recording-api-react-demo.tsx`
 - Project setup: `src/lib/projectSetup.ts`
