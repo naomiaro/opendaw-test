@@ -133,40 +133,49 @@ function applyPattern(project: Project, pattern: SignaturePattern): void {
   const totalPpqn = bars.reduce((sum, b) => sum + b.durationPpqn, 0);
   const [initNom, initDenom] = getInitialSignature(pattern);
 
+  const signatureTrack = project.timelineBoxAdapter.signatureTrack;
+
+  // Clear existing signature events — each deletion in its own modify
+  // so the adapter collection stays in sync between deletions
+  const existingEvents = Array.from(signatureTrack.iterateAll()).slice(1);
+  for (let i = existingEvents.length - 1; i >= 0; i--) {
+    project.editing.modify(() => {
+      signatureTrack.adapterAt(existingEvents[i].index).ifSome(a => a.box.delete());
+    });
+  }
+
+  // Set storage signature
   project.editing.modify(() => {
-    const signatureTrack = project.timelineBoxAdapter.signatureTrack;
-
-    // Clear existing signature events (skip index -1 which is the storage signature)
-    const existingEvents = Array.from(signatureTrack.iterateAll()).slice(1);
-    for (const event of existingEvents) {
-      signatureTrack.adapterAt(event.index).ifSome(a => a.box.delete());
-    }
-
-    // Set storage signature (initial time signature)
     project.timelineBox.signature.nominator.setValue(initNom);
     project.timelineBox.signature.denominator.setValue(initDenom);
+  });
 
-    // Create signature change events at absolute PPQN positions
-    let ppqnAccum: ppqn = 0 as ppqn;
-    let currentNom = initNom;
-    let currentDenom = initDenom;
+  // Create signature change events one at a time so the adapter
+  // collection updates between calls (createEvent reads iterateAll internally)
+  let ppqnAccum: ppqn = 0 as ppqn;
+  let currentNom = initNom;
+  let currentDenom = initDenom;
 
-    const firstChangeOffset = pattern.changes[0]?.barOffset ?? 8;
-    ppqnAccum = (firstChangeOffset * PPQN.fromSignature(currentNom, currentDenom)) as ppqn;
+  const firstChangeOffset = pattern.changes[0]?.barOffset ?? 8;
+  ppqnAccum = (firstChangeOffset * PPQN.fromSignature(currentNom, currentDenom)) as ppqn;
 
-    const lastSectionBars = getLastSectionBars(pattern);
-    for (let i = 0; i < pattern.changes.length; i++) {
-      const change = pattern.changes[i];
-      signatureTrack.createEvent(ppqnAccum, change.nominator, change.denominator);
+  const lastSectionBars = getLastSectionBars(pattern);
+  for (let i = 0; i < pattern.changes.length; i++) {
+    const change = pattern.changes[i];
+    const position = ppqnAccum;
+    project.editing.modify(() => {
+      signatureTrack.createEvent(position, change.nominator, change.denominator);
+    });
 
-      currentNom = change.nominator;
-      currentDenom = change.denominator;
+    currentNom = change.nominator;
+    currentDenom = change.denominator;
 
-      const numBars = (i + 1 < pattern.changes.length) ? pattern.changes[i + 1].barOffset : lastSectionBars;
-      ppqnAccum = (ppqnAccum + numBars * PPQN.fromSignature(currentNom, currentDenom)) as ppqn;
-    }
+    const numBars = (i + 1 < pattern.changes.length) ? pattern.changes[i + 1].barOffset : lastSectionBars;
+    ppqnAccum = (ppqnAccum + numBars * PPQN.fromSignature(currentNom, currentDenom)) as ppqn;
+  }
 
-    // Set timeline duration and loop
+  // Set timeline duration and loop
+  project.editing.modify(() => {
     project.timelineBox.durationInPulses.setValue(totalPpqn);
     project.timelineBox.loopArea.from.setValue(0);
     project.timelineBox.loopArea.to.setValue(totalPpqn);
