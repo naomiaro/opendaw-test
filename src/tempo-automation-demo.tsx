@@ -263,7 +263,7 @@ const App: React.FC = () => {
     if (!project || !isPlaying) return;
 
     const terminable = AnimationFrame.add(() => {
-      setPlayheadPosition(project.engine.getPosition());
+      setPlayheadPosition(project.engine.position.getValue());
     });
 
     return () => terminable.terminate();
