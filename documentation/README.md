@@ -129,6 +129,29 @@ Read these documents in order to build up your understanding:
 
 ---
 
+### 14. [Tempo Automation](./14-tempo-automation.md)
+- Tempo change events and interpolation modes
+- Creating stepped and linear tempo ramps
+- ValueEventCollectionBoxAdapter API
+- Preset-based tempo patterns
+- Playhead monitoring during tempo changes
+
+**Start here if:** You're implementing tempo automation or variable BPM playback
+
+---
+
+### 15. [Time Signature Changes](./15-time-signature-changes.md)
+- Time signature change events
+- SignatureTrackAdapter API
+- PPQN calculations for different signatures
+- Computing bar layouts with mixed signatures
+- Critical transaction-per-event requirement
+- Proportional bar width visualization
+
+**Start here if:** You're implementing time signature changes during playback
+
+---
+
 ## Quick Reference
 
 ### Core Formulas
@@ -345,8 +368,10 @@ Found an error or want to improve this documentation? PRs welcome!
 | [Recording & Live Peaks](./08-recording-and-live-peaks.md) | Recording with live waveforms | Frontend/recording features |
 | [Track Editing & Fades](./09-track-editing-and-fades.md) | Region editing & fades | Timeline/editing features |
 | [Audio Export](./audio-export.md) | Mix & stem export | Export/rendering features |
+| [Tempo Automation](./14-tempo-automation.md) | Variable BPM | Tempo/timing features |
+| [Time Signature Changes](./15-time-signature-changes.md) | Signature events | Tempo/timing features |
 
-**Recommended reading order:** 1 → 2 → 3 → 4 → 5 → 6 → 7 (→ 8 if implementing recording, → 9 if implementing editing, → 10 if implementing export)
+**Recommended reading order:** 1 → 2 → 3 → 4 → 5 → 6 → 7 (→ 8 if implementing recording, → 9 if implementing editing, → 10 if implementing export, → 14-15 if implementing tempo/signature changes)
 
 **Troubleshooting order:** Having issues? → Read 3 first!
 
