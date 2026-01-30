@@ -303,9 +303,9 @@ const App: React.FC = () => {
 
   return (
     <Theme appearance="dark" accentColor="blue" radius="large">
-      <GitHubCorner />
-      <BackLink />
       <Container size="3" px="4" py="8">
+        <GitHubCorner />
+        <BackLink />
         <Flex direction="column" gap="6" style={{ maxWidth: 900, margin: "0 auto" }}>
           <Flex direction="column" align="center" gap="2">
             <Heading size="8">Tempo Automation</Heading>
@@ -356,8 +356,8 @@ const App: React.FC = () => {
             </Flex>
           )}
         </Flex>
+        <MoisesLogo />
       </Container>
-      <MoisesLogo />
     </Theme>
   );
 };
