@@ -205,4 +205,3 @@ See `src/time-signature-demo.tsx` for a complete implementation of this pattern.
 - Demo: `src/time-signature-demo.tsx`
 - SignatureTrackAdapter: `packages/studio/adapters/src/timeline/SignatureTrackAdapter.ts`
 - PPQN utilities: `packages/lib/dsp/src/ppqn.ts`
-- Research: `documentation/10-tempo-change-events-research.md`

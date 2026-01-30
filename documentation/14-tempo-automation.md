@@ -186,4 +186,3 @@ terminable.terminate();
 - Demo: `src/tempo-automation-demo.tsx`
 - VaryingTempoMap: `packages/studio/adapters/src/VaryingTempoMap.ts`
 - ValueEventCollectionBoxAdapter: `packages/studio/adapters/src/timeline/collection/ValueEventCollectionBoxAdapter.ts`
-- Research: `documentation/10-tempo-change-events-research.md`
