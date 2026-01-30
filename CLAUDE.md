@@ -110,6 +110,35 @@ if (!peaksOption.isEmpty()) {
 }
 ```
 
+### Time Signature Events
+```typescript
+// Access signature track
+const signatureTrack = project.timelineBoxAdapter.signatureTrack;
+
+// Create event at PPQN position
+signatureTrack.createEvent(position, nominator, denominator);
+
+// Iterate all events (index -1 is storage signature)
+const events = Array.from(signatureTrack.iterateAll());
+
+// Delete event
+signatureTrack.adapterAt(event.index).ifSome(a => a.box.delete());
+
+// PPQN per bar: PPQN.fromSignature(nom, denom) = Math.floor(3840/denom) * nom
+```
+
+### Tempo Automation Events
+```typescript
+// Access tempo track events
+project.timelineBoxAdapter.tempoTrackEvents.ifSome(collection => {
+  // Clear existing
+  collection.events.asArray().forEach(event => event.box.delete());
+  // Create event
+  collection.createEvent({ position, index: 0, value: bpm, interpolation });
+});
+// Interpolation: Interpolation.Linear, Interpolation.None from @opendaw/lib-dsp
+```
+
 ### Timeline and Loop Area
 ```typescript
 project.editing.modify(() => {
@@ -133,6 +162,11 @@ project.editing.modify(() => {
   project.timelineBox.bpm.setValue(120);
 });
 ```
+
+### SignatureTrack: One editing.modify() Per Event
+`SignatureTrackAdapter.createEvent()` calls `iterateAll()` internally. Inside a single
+`editing.modify()` transaction, adapter collection notifications are deferred, so subsequent
+calls see stale state. Use separate `editing.modify()` per `createEvent` and per deletion.
 
 ### Proper Recording to Playback Flow
 1. Call `project.startRecording(useCountIn)`
@@ -188,4 +222,6 @@ terminable.terminate();
 - Recording demo: `src/recording-api-react-demo.tsx`
 - Project setup: `src/lib/projectSetup.ts`
 - Engine preferences hook: `src/hooks/useEnginePreference.ts`
+- Tempo automation demo: `src/tempo-automation-demo.tsx`
+- Time signature demo: `src/time-signature-demo.tsx`
 - OpenDAW original source: `/Users/naomiaro/Code/openDAWOriginal`
