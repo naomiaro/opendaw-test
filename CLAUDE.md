@@ -153,6 +153,11 @@ project.timelineBox.signature.nominator.setValue(4);
 project.timelineBox.signature.denominator.setValue(4);
 ```
 
+### AudioContext Suspension
+Browser autoplay policy means `AudioContext` starts suspended until a user gesture.
+`initializeOpenDAW()` registers click/keydown listeners to auto-resume it.
+If playback doesn't start after calling `play()`, check `audioContext.state`.
+
 ## Important Patterns
 
 ### Always Use editing.modify() for State Changes
