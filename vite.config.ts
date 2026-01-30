@@ -27,7 +27,8 @@ export default defineConfig({
                 recordingApi: resolve(__dirname, "recording-api-react-demo.html"),
                 drumScheduling: resolve(__dirname, "drum-scheduling-demo.html"),
                 looping: resolve(__dirname, "looping-demo.html"),
-                timebase: resolve(__dirname, "timebase-demo.html")
+                timebase: resolve(__dirname, "timebase-demo.html"),
+                tempoAutomation: resolve(__dirname, "tempo-automation-demo.html")
             },
             output: {
                 manualChunks: (id) => {

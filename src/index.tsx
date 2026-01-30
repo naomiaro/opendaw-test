@@ -119,6 +119,20 @@ const App: React.FC = () => {
                 </Flex>
               </Link>
             </Card>
+            <Card asChild>
+              <Link href="/tempo-automation-demo.html" style={{ textDecoration: "none", padding: "var(--space-5)" }}>
+                <Flex direction="column" gap="3">
+                  <Flex direction="column" align="center" gap="2">
+                    <Text size="8">🎵</Text>
+                    <Heading size="5">Tempo Automation</Heading>
+                  </Flex>
+                  <Text size="2" color="gray">
+                    Apply preset tempo automation patterns (accelerando, ritardando, stepped changes)
+                    and hear the metronome and drum loop respond to tempo changes in real-time.
+                  </Text>
+                </Flex>
+              </Link>
+            </Card>
           </div>
 
           <MoisesLogo />
