@@ -130,11 +130,13 @@ const TempoCanvas: React.FC<TempoCanvasProps> = ({ pattern, playheadPosition, is
     ctx.fillStyle = "#1a1a2e";
     ctx.fillRect(0, 0, width, height);
 
-    // Grid lines (bar lines)
+    // Grid lines (bar lines) — use PPQN positions for consistency with engine timing
+    const toX = (ppqnPos: number) => (ppqnPos / TOTAL_PPQN) * width;
+
     ctx.strokeStyle = "#333";
     ctx.lineWidth = 1;
     for (let bar = 0; bar <= NUM_BARS; bar++) {
-      const x = (bar / NUM_BARS) * width;
+      const x = toX(bar * BAR);
       ctx.beginPath();
       ctx.moveTo(x, 0);
       ctx.lineTo(x, height);
@@ -164,7 +166,6 @@ const TempoCanvas: React.FC<TempoCanvasProps> = ({ pattern, playheadPosition, is
     }
 
     // Draw tempo curve
-    const toX = (ppqnPos: number) => (ppqnPos / TOTAL_PPQN) * width;
     const toY = (bpm: number) => height - ((bpm - BPM_MIN) / (BPM_MAX - BPM_MIN)) * height;
 
     ctx.strokeStyle = "#667eea";
