@@ -182,6 +182,10 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
 
   onStatusUpdate?.("Creating project...");
 
+  // Clear persisted engine preferences before project creation so demos start fresh.
+  // This prevents settings from a previous session affecting the current demo.
+  localStorage.removeItem("engine-preferences");
+
   // Create project
   const audioWorklets = AudioWorklets.get(audioContext);
   const project = Project.new({
@@ -205,11 +209,17 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
   console.debug("Engine is ready!");
   onStatusUpdate?.("Loading tracks...");
 
-  // Clear engine preferences on page unload so demos start fresh
-  // This prevents settings from one demo affecting another
-  window.addEventListener("beforeunload", () => {
-    localStorage.removeItem("engine-preferences");
-  });
+  // Resume AudioContext on first user interaction if it starts suspended
+  // (browsers require a user gesture before audio can play)
+  if (audioContext.state === "suspended") {
+    const resume = () => {
+      audioContext.resume();
+      document.removeEventListener("click", resume);
+      document.removeEventListener("keydown", resume);
+    };
+    document.addEventListener("click", resume);
+    document.addEventListener("keydown", resume);
+  }
 
   return { project, audioContext };
 }
