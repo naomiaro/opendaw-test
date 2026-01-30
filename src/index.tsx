@@ -133,6 +133,20 @@ const App: React.FC = () => {
                 </Flex>
               </Link>
             </Card>
+            <Card asChild>
+              <Link href="/time-signature-demo.html" style={{ textDecoration: "none", padding: "var(--space-5)" }}>
+                <Flex direction="column" gap="3">
+                  <Flex direction="column" align="center" gap="2">
+                    <Text size="8">🎼</Text>
+                    <Heading size="5">Time Signature Changes</Heading>
+                  </Flex>
+                  <Text size="2" color="gray">
+                    Apply preset time signature sequences (standard to waltz, prog rock, film score patterns)
+                    and hear the metronome adapt to changing meters in real-time.
+                  </Text>
+                </Flex>
+              </Link>
+            </Card>
           </div>
 
           <MoisesLogo />
