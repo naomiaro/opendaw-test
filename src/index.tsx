@@ -147,6 +147,20 @@ const App: React.FC = () => {
                 </Flex>
               </Link>
             </Card>
+            <Card asChild>
+              <Link href="/clip-fades-demo.html" style={{ textDecoration: "none", padding: "var(--space-5)" }}>
+                <Flex direction="column" gap="3">
+                  <Flex direction="column" align="center" gap="2">
+                    <Text size="8">📈</Text>
+                    <Heading size="5">Clip Fades</Heading>
+                  </Flex>
+                  <Text size="2" color="gray">
+                    Explore audio clip fade types: logarithmic, linear, and exponential curves.
+                    See visual curve representations and hear how each fade type sounds different.
+                  </Text>
+                </Flex>
+              </Link>
+            </Card>
           </div>
 
           <MoisesLogo />
