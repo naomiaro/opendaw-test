@@ -29,7 +29,9 @@ project.engine.setPosition(0);
 project.engine.play();
 
 // Wait for all audio samples to be loaded before playing
-const isLoaded = await project.engine.queryLoadingComplete();
+// NOTE: loadTracksFromFiles() calls this automatically before returning,
+// so you only need this for recordings or manually created tracks
+await project.engine.queryLoadingComplete();
 ```
 
 ### Engine State Observables
@@ -230,7 +232,9 @@ See `src/looping-demo.tsx` for the reference layout pattern.
 ## Reference Files
 - Recording demo: `src/recording-api-react-demo.tsx`
 - Project setup: `src/lib/projectSetup.ts`
+- Track loading: `src/lib/trackLoading.ts` (handles queryLoadingComplete automatically)
 - Engine preferences hook: `src/hooks/useEnginePreference.ts`
 - Tempo automation demo: `src/tempo-automation-demo.tsx`
 - Time signature demo: `src/time-signature-demo.tsx`
+- Clip fades demo: `src/clip-fades-demo.tsx`
 - OpenDAW original source: `/Users/naomiaro/Code/openDAWOriginal`

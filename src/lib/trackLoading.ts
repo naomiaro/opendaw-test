@@ -116,7 +116,13 @@ export async function loadTracksFromFiles(
     setLoopEndFromTracks(project, audioBuffers, bpm);
   }
 
-  console.debug("Tracks created, generating waveforms...");
+  console.debug("Tracks created, waiting for samples to load into engine...");
+
+  // Wait for all samples to be loaded into the audio engine before returning
+  // This ensures playback can start immediately without waiting
+  await project.engine.queryLoadingComplete();
+
+  console.debug("Samples loaded, ready for playback");
   console.debug(`Timeline position: ${project.engine.position.getValue()}`);
   console.debug(`BPM: ${bpm}`);
 
