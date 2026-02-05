@@ -155,6 +155,30 @@ project.timelineBox.signature.nominator.setValue(4);
 project.timelineBox.signature.denominator.setValue(4);
 ```
 
+### Clip Fades
+```typescript
+// Fades are relative to region start, NOT the timeline.
+// fillGainBuffer computes: startPpqn = cycle.resultStart - regionPosition
+// If the region spans full audio but playback is mid-file, fades at the
+// edges are never reached (early-return keeps gain at 1.0).
+//
+// To make fades audible, trim regions to short clips:
+project.editing.modify(() => {
+  adapter.box.position.setValue(clipStartPPQN);      // where on timeline
+  adapter.box.duration.setValue(clipDurationPPQN);    // clip length
+  adapter.box.loopOffset.setValue(clipStartPPQN);     // where to read in audio
+  // loopDuration can stay at full audio length
+});
+
+// Apply fades in a SEPARATE editing.modify() after region changes
+project.editing.modify(() => {
+  adapter.fading.inField.setValue(fadeInPPQN);
+  adapter.fading.outField.setValue(fadeOutPPQN);
+  adapter.fading.inSlopeField.setValue(slope);  // 0.25=log, 0.5=linear, 0.75=exp
+  adapter.fading.outSlopeField.setValue(slope);
+});
+```
+
 ### AudioContext Suspension
 Browser autoplay policy means `AudioContext` starts suspended until a user gesture.
 `initializeOpenDAW()` registers click/keydown listeners to auto-resume it.
@@ -174,6 +198,15 @@ project.editing.modify(() => {
 `SignatureTrackAdapter.createEvent()` calls `iterateAll()` internally. Inside a single
 `editing.modify()` transaction, adapter collection notifications are deferred, so subsequent
 calls see stale state. Use separate `editing.modify()` per `createEvent` and per deletion.
+
+### Fades: Separate editing.modify() After Region Changes
+Apply fading values in a separate `editing.modify()` transaction from box creation
+or region property changes (position, duration, loopOffset).
+
+### Region Sorting When Positions Match
+When regions share the same position, sort by label for deterministic ordering:
+`regionAdapters.sort((a, b) => labelIndex(a) - labelIndex(b))`
+Set custom labels with `adapter.box.label.setValue("name")`.
 
 ### Proper Recording to Playback Flow
 1. Call `project.startRecording(useCountIn)`
