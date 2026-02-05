@@ -262,25 +262,20 @@ const App: React.FC = () => {
         // in the fade-in zone. The 2-beat fade-in/out will be clearly audible.
         const clipData: Array<{ position: number; duration: number }> = [];
 
-        // Trim regions to short clips and set labels to match FADE_TYPES
-        newProject.editing.modify(() => {
-          regionAdapters.forEach((adapter, index) => {
-            adapter.box.position.setValue(clipStartPPQN);
-            adapter.box.duration.setValue(clipDurationPPQN);
-            adapter.box.loopOffset.setValue(clipStartPPQN);
-            // Keep loopDuration at full audio length (already set by loadTracksFromFiles)
-            if (index < FADE_TYPES.length) {
-              adapter.box.label.setValue(FADE_TYPES[index].name);
-            }
-          });
-        });
-
-        // Apply fades in a separate transaction
+        // Trim regions to short clips, set labels, and apply fades
         newProject.editing.modify(() => {
           regionAdapters.forEach((adapter, index) => {
             if (index < FADE_TYPES.length) {
               const fadeType = FADE_TYPES[index];
 
+              // Reposition and trim
+              adapter.box.position.setValue(clipStartPPQN);
+              adapter.box.duration.setValue(clipDurationPPQN);
+              adapter.box.loopOffset.setValue(clipStartPPQN);
+              // Keep loopDuration at full audio length (already set by loadTracksFromFiles)
+              adapter.box.label.setValue(fadeType.name);
+
+              // Apply fades
               adapter.fading.inField.setValue(FADE_DURATION_PPQN);
               adapter.fading.outField.setValue(FADE_DURATION_PPQN);
               adapter.fading.inSlopeField.setValue(fadeType.slope);

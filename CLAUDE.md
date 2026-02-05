@@ -170,8 +170,13 @@ project.editing.modify(() => {
   // loopDuration can stay at full audio length
 });
 
-// Apply fades in a SEPARATE editing.modify() after region changes
+// Fades can be set in the same transaction as region changes
 project.editing.modify(() => {
+  // Region trimming + fades together
+  adapter.box.position.setValue(clipStartPPQN);
+  adapter.box.duration.setValue(clipDurationPPQN);
+  adapter.box.loopOffset.setValue(clipStartPPQN);
+
   adapter.fading.inField.setValue(fadeInPPQN);
   adapter.fading.outField.setValue(fadeOutPPQN);
   adapter.fading.inSlopeField.setValue(slope);  // 0.25=log, 0.5=linear, 0.75=exp
@@ -199,9 +204,9 @@ project.editing.modify(() => {
 `editing.modify()` transaction, adapter collection notifications are deferred, so subsequent
 calls see stale state. Use separate `editing.modify()` per `createEvent` and per deletion.
 
-### Fades: Separate editing.modify() After Region Changes
-Apply fading values in a separate `editing.modify()` transaction from box creation
-or region property changes (position, duration, loopOffset).
+### Fades Can Share a Transaction with Region Changes
+Fading values (in, out, slopes) can be set in the same `editing.modify()` as
+region property changes (position, duration, loopOffset). No separate transaction needed.
 
 ### Region Sorting When Positions Match
 When regions share the same position, sort by label for deterministic ordering:
