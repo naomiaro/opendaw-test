@@ -1,11 +1,13 @@
 /**
  * Returns the preferred audio file extension for the current browser.
- * Safari (including iOS) doesn't reliably decode Ogg Opus, so we use m4a (AAC).
- * All other browsers use opus for smaller file sizes.
+ * Safari (including iOS) doesn't reliably decode Ogg Opus via decodeAudioData,
+ * even though canPlayType may return "maybe". Use m4a (AAC) for all Apple devices.
  */
 export function getAudioExtension(): string {
-  const audio = new Audio();
-  return audio.canPlayType('audio/ogg; codecs="opus"') ? "opus" : "m4a";
+  const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
+    || /iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  return isSafari ? "m4a" : "opus";
 }
 
 /**
