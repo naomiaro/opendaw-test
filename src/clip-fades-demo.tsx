@@ -139,6 +139,10 @@ const FadeCurveCanvas: React.FC<{
   );
 };
 
+// Clip positioning: bar 18 is where the guitar has audio content
+const CLIP_START_BAR = 17; // 0-indexed, so bar 18
+const CLIP_LENGTH_BARS = 4;
+
 /**
  * Main Clip Fades Demo Component
  */
@@ -156,6 +160,10 @@ const App: React.FC = () => {
   const BPM = 124; // Match Dark Ride BPM
   const FADE_DURATION_BEATS = 2;
   const FADE_DURATION_PPQN = PPQN.Quarter * FADE_DURATION_BEATS;
+
+  // Clip position and duration in PPQN
+  const clipStartPPQN = PPQN.Bar * CLIP_START_BAR;
+  const clipDurationPPQN = PPQN.Bar * CLIP_LENGTH_BARS;
 
   // Initialize OpenDAW and create clips
   useEffect(() => {
@@ -184,7 +192,6 @@ const App: React.FC = () => {
         newProject.engine.isPlaying.catchupAndSubscribe(obs => {
           if (!mounted) return;
           const playing = obs.getValue();
-          console.log("[ClipFades] isPlaying changed:", playing);
           setIsPlaying(playing);
           if (!playing) {
             setPlayingClipIndex(null);
@@ -193,10 +200,9 @@ const App: React.FC = () => {
 
         setStatus("Loading guitar tracks...");
 
-        console.log("[ClipFades] Loading tracks...");
-
-        // Load 3 separate tracks (one for each fade type) using the proven loadTracksFromFiles
-        const tracks = await loadTracksFromFiles(
+        // Load 3 separate tracks (one for each fade type) using the proven loadTracksFromFiles.
+        // This creates full-duration regions at position=0, which we'll trim below.
+        await loadTracksFromFiles(
           newProject,
           newAudioContext,
           [
@@ -213,20 +219,11 @@ const App: React.FC = () => {
           }
         );
 
-        console.log("[ClipFades] Tracks loaded:", tracks.length);
-        console.log("[ClipFades] Audio buffers in map:", localAudioBuffers.size);
-        localAudioBuffers.forEach((buffer, uuid) => {
-          console.log(`[ClipFades] Buffer ${uuid}: ${buffer.duration}s, ${buffer.numberOfChannels}ch, ${buffer.sampleRate}Hz`);
-        });
-
         if (!mounted) return;
 
         setStatus("Applying fades to clips...");
 
-        // Find the audio regions and apply different fades to each
-        const clipData: Array<{ position: number; duration: number }> = [];
-
-        // Get all audio region adapters
+        // Find the audio region adapters created by loadTracksFromFiles
         const boxes = newProject.boxGraph.boxes();
         const regionAdapters: AudioRegionBoxAdapter[] = [];
 
@@ -241,46 +238,70 @@ const App: React.FC = () => {
           }
         }
 
-        console.debug(`Found ${regionAdapters.length} audio regions`);
+        // Sort to match FADE_TYPES order (by label name)
+        const fadeTypeIndex = (label: string) => FADE_TYPES.findIndex(ft => label.startsWith(ft.name));
+        regionAdapters.sort((a, b) =>
+          fadeTypeIndex(a.box.label.getValue()) - fadeTypeIndex(b.box.label.getValue())
+        );
 
-        // Sort by position to ensure consistent ordering
-        regionAdapters.sort((a, b) => a.position - b.position);
+        console.debug(`[ClipFades] Found ${regionAdapters.length} audio regions`);
 
-        // Apply different fade types to each region (keep original duration for now)
+        // Trim regions to short clips at bar 18 and apply fades.
+        //
+        // loadTracksFromFiles creates regions with:
+        //   position=0, loopOffset=0, loopDuration=fullAudioPPQN
+        //
+        // With that config, playing from bar 18 puts us at startPpqn=65280 relative
+        // to the region start (position=0). Since fadeIn=1920, the early-return in
+        // fillGainBuffer triggers (65280 >= 1920) and gain stays at 1.0 — fades are
+        // never audible.
+        //
+        // Fix: reposition regions to bar 18 with a short duration (4 bars).
+        // Set loopOffset=bar18 so the engine reads audio from bar 18 in the file.
+        // Now when playing from bar 18, startPpqn = 65280 - 65280 = 0, which IS
+        // in the fade-in zone. The 2-beat fade-in/out will be clearly audible.
+        const clipData: Array<{ position: number; duration: number }> = [];
+
+        // Trim regions to short clips and set labels to match FADE_TYPES
+        newProject.editing.modify(() => {
+          regionAdapters.forEach((adapter, index) => {
+            adapter.box.position.setValue(clipStartPPQN);
+            adapter.box.duration.setValue(clipDurationPPQN);
+            adapter.box.loopOffset.setValue(clipStartPPQN);
+            // Keep loopDuration at full audio length (already set by loadTracksFromFiles)
+            if (index < FADE_TYPES.length) {
+              adapter.box.label.setValue(FADE_TYPES[index].name);
+            }
+          });
+        });
+
+        // Apply fades in a separate transaction
         newProject.editing.modify(() => {
           regionAdapters.forEach((adapter, index) => {
             if (index < FADE_TYPES.length) {
               const fadeType = FADE_TYPES[index];
 
-              // Apply fade in and fade out with same slope
               adapter.fading.inField.setValue(FADE_DURATION_PPQN);
               adapter.fading.outField.setValue(FADE_DURATION_PPQN);
               adapter.fading.inSlopeField.setValue(fadeType.slope);
               adapter.fading.outSlopeField.setValue(fadeType.slope);
 
               clipData.push({
-                position: adapter.position,
-                duration: adapter.duration,
+                position: clipStartPPQN,
+                duration: clipDurationPPQN,
               });
-
-              console.log(`[ClipFades] Region ${index}: position=${adapter.position}, duration=${adapter.duration}`);
             }
           });
         });
 
         clipDataRef.current = clipData;
-        console.log("[ClipFades] Clip data stored:", clipData);
 
-        // Enable looping from bar 18 to bar 22 (4 bars)
-        const loopStart = PPQN.Bar * 17; // Bar 18
-        const loopEnd = PPQN.Bar * 21;   // Bar 22
+        // Enable looping from bar 18 to bar 22 (4 bars, matching clip duration)
         newProject.editing.modify(() => {
-          newProject.timelineBox.loopArea.from.setValue(loopStart);
-          newProject.timelineBox.loopArea.to.setValue(loopEnd);
+          newProject.timelineBox.loopArea.from.setValue(clipStartPPQN);
+          newProject.timelineBox.loopArea.to.setValue(clipStartPPQN + clipDurationPPQN);
           newProject.timelineBox.loopArea.enabled.setValue(true);
         });
-
-        console.log("[ClipFades] Loop enabled from bar 18 to bar 22");
 
         // Monitor position for UI updates
         animationFrameSubscription = AnimationFrame.add(() => {
@@ -288,7 +309,6 @@ const App: React.FC = () => {
         });
 
         if (mounted) {
-          console.log("[ClipFades] Ready to play!");
           setStatus("Ready to play!");
         }
       } catch (error) {
@@ -308,26 +328,18 @@ const App: React.FC = () => {
   // Play/stop toggle for a specific clip (track)
   const handleToggleClip = useCallback(
     async (clipIndex: number) => {
-      if (!project || !audioContext) {
-        console.log("[ClipFades] No project or audioContext");
-        return;
-      }
+      if (!project || !audioContext) return;
 
       // If this clip is already playing, stop it
       if (playingClipIndex === clipIndex && isPlaying) {
-        console.log("[ClipFades] Stopping clip", clipIndex);
         project.engine.stop(true);
         setPlayingClipIndex(null);
         return;
       }
 
-      console.log("[ClipFades] ========== PLAY CLIP", clipIndex, "==========");
-      console.log("[ClipFades] AudioContext state:", audioContext.state);
-
       // Resume AudioContext if suspended
       if (audioContext.state === "suspended") {
         await audioContext.resume();
-        console.log("[ClipFades] AudioContext resumed:", audioContext.state);
       }
 
       // Get all audio region adapters
@@ -345,8 +357,11 @@ const App: React.FC = () => {
         }
       }
 
-      // Sort by position for consistent ordering
-      regionAdapters.sort((a, b) => a.position - b.position);
+      // Sort to match FADE_TYPES order (by label name)
+      const fadeTypeIndex = (label: string) => FADE_TYPES.findIndex(ft => label.startsWith(ft.name));
+      regionAdapters.sort((a, b) =>
+        fadeTypeIndex(a.box.label.getValue()) - fadeTypeIndex(b.box.label.getValue())
+      );
 
       // Mute all tracks except the one we want to play
       project.editing.modify(() => {
@@ -354,18 +369,14 @@ const App: React.FC = () => {
           adapter.box.mute.setValue(index !== clipIndex);
         });
       });
-      console.log("[ClipFades] Set mute states, unmuted clip", clipIndex);
 
       setPlayingClipIndex(clipIndex);
 
-      // Start playback at bar 18 where the guitar has audio
-      const startPosition = PPQN.Bar * 17; // Bar 18 (0-indexed)
-      project.engine.setPosition(startPosition);
+      // Start playback at bar 18 where the clips are positioned
+      project.engine.setPosition(clipStartPPQN);
       project.engine.play();
-      console.log("[ClipFades] Playing from bar 18, position:", startPosition);
-
     },
-    [project, audioContext, playingClipIndex, isPlaying]
+    [project, audioContext, playingClipIndex, isPlaying, clipStartPPQN]
   );
 
   return (
