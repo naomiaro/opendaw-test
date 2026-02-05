@@ -332,9 +332,23 @@ const App: React.FC = () => {
         return;
       }
 
-      // Resume AudioContext if suspended
-      if (audioContext.state === "suspended") {
+      // Resume AudioContext if suspended (iOS Safari can re-suspend after backgrounding)
+      if (audioContext.state !== "running") {
         await audioContext.resume();
+        // After resume(), state may not be "running" yet on iOS Safari
+        await new Promise<void>(resolve => {
+          if (audioContext.state === ("running" as AudioContextState)) {
+            resolve();
+            return;
+          }
+          const handler = () => {
+            if (audioContext.state === ("running" as AudioContextState)) {
+              audioContext.removeEventListener("statechange", handler);
+              resolve();
+            }
+          };
+          audioContext.addEventListener("statechange", handler);
+        });
       }
 
       // Get all audio region adapters
