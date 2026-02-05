@@ -16,6 +16,7 @@ import { TracksContainer } from "./components/TracksContainer";
 import { Playhead } from "./components/Playhead";
 import { initializeOpenDAW } from "./lib/projectSetup";
 import { loadTracksFromFiles } from "./lib/trackLoading";
+import { getAudioExtension } from "./lib/audioUtils";
 import { useWaveformRendering } from "./hooks/useWaveformRendering";
 import type { TrackData } from "./lib/types";
 import "@radix-ui/themes/styles.css";
@@ -124,13 +125,14 @@ const App: React.FC = () => {
         });
 
         // Load audio files and create tracks
+        const ext = getAudioExtension();
         const loadedTracks = await loadTracksFromFiles(
           newProject,
           newAudioContext,
           [
-            { name: "Drums", file: "/audio/DarkRide/02_Drums.opus" },
-            { name: "Bass", file: "/audio/DarkRide/03_Bass.opus" },
-            { name: "Guitar", file: "/audio/DarkRide/04_ElecGtrs.opus" }
+            { name: "Drums", file: `/audio/DarkRide/02_Drums.${ext}` },
+            { name: "Bass", file: `/audio/DarkRide/03_Bass.${ext}` },
+            { name: "Guitar", file: `/audio/DarkRide/04_ElecGtrs.${ext}` }
           ],
           localAudioBuffers,
           {

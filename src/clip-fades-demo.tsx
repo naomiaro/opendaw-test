@@ -9,6 +9,7 @@ import { MoisesLogo } from "./components/MoisesLogo";
 import { BackLink } from "./components/BackLink";
 import { initializeOpenDAW } from "./lib/projectSetup";
 import { loadTracksFromFiles } from "./lib/trackLoading";
+import { getAudioExtension } from "./lib/audioUtils";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
@@ -198,6 +199,7 @@ const App: React.FC = () => {
           }
         });
 
+        const ext = getAudioExtension();
         setStatus("Loading guitar tracks...");
 
         // Load 3 separate tracks (one for each fade type) using the proven loadTracksFromFiles.
@@ -206,9 +208,9 @@ const App: React.FC = () => {
           newProject,
           newAudioContext,
           [
-            { name: "Logarithmic Fade", file: "/audio/DarkRide/04_ElecGtrs.opus" },
-            { name: "Linear Fade", file: "/audio/DarkRide/04_ElecGtrs.opus" },
-            { name: "Exponential Fade", file: "/audio/DarkRide/04_ElecGtrs.opus" },
+            { name: "Logarithmic Fade", file: `/audio/DarkRide/04_ElecGtrs.${ext}` },
+            { name: "Linear Fade", file: `/audio/DarkRide/04_ElecGtrs.${ext}` },
+            { name: "Exponential Fade", file: `/audio/DarkRide/04_ElecGtrs.${ext}` },
           ],
           localAudioBuffers,
           {

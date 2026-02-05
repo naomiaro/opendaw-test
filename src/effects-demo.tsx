@@ -16,6 +16,7 @@ import { EffectPanel } from "./components/EffectPanel";
 import { EffectChain, type EffectInstance } from "./components/EffectChain";
 import { initializeOpenDAW } from "./lib/projectSetup";
 import { loadTracksFromFiles } from "./lib/trackLoading";
+import { getAudioExtension } from "./lib/audioUtils";
 import { useWaveformRendering } from "./hooks/useWaveformRendering";
 import { useEffectChain } from "./hooks/useEffectChain";
 import { useDynamicEffect } from "./hooks/useDynamicEffect";
@@ -284,17 +285,18 @@ const App: React.FC = () => {
         });
 
         // Load audio files and create tracks
+        const ext = getAudioExtension();
         const loadedTracks = await loadTracksFromFiles(
           newProject,
           newAudioContext,
           [
-            { name: "Intro", file: "/audio/DarkRide/01_Intro.opus" },
-            { name: "Vocals", file: "/audio/DarkRide/06_Vox.opus" },
-            { name: "Guitar Lead", file: "/audio/DarkRide/05_ElecGtrsLead.opus" },
-            { name: "Guitar", file: "/audio/DarkRide/04_ElecGtrs.opus" },
-            { name: "Drums", file: "/audio/DarkRide/02_Drums.opus" },
-            { name: "Bass", file: "/audio/DarkRide/03_Bass.opus" },
-            { name: "Effect Returns", file: "/audio/DarkRide/07_EffectReturns.opus" }
+            { name: "Intro", file: `/audio/DarkRide/01_Intro.${ext}` },
+            { name: "Vocals", file: `/audio/DarkRide/06_Vox.${ext}` },
+            { name: "Guitar Lead", file: `/audio/DarkRide/05_ElecGtrsLead.${ext}` },
+            { name: "Guitar", file: `/audio/DarkRide/04_ElecGtrs.${ext}` },
+            { name: "Drums", file: `/audio/DarkRide/02_Drums.${ext}` },
+            { name: "Bass", file: `/audio/DarkRide/03_Bass.${ext}` },
+            { name: "Effect Returns", file: `/audio/DarkRide/07_EffectReturns.${ext}` }
           ],
           localAudioBuffers,
           {
