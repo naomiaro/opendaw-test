@@ -186,8 +186,14 @@ project.editing.modify(() => {
 
 ### AudioContext Suspension
 Browser autoplay policy means `AudioContext` starts suspended until a user gesture.
-`initializeOpenDAW()` registers click/keydown listeners to auto-resume it.
-If playback doesn't start after calling `play()`, check `audioContext.state`.
+`initializeOpenDAW()` registers click/keydown listeners to auto-resume it (one-shot).
+iOS Safari can re-suspend after backgrounding/locking. Before calling `play()`:
+```typescript
+if (audioContext.state !== "running") {
+  await audioContext.resume();
+  // iOS Safari may not be "running" yet — wait for statechange event
+}
+```
 
 ## Important Patterns
 
@@ -212,6 +218,16 @@ region property changes (position, duration, loopOffset). No separate transactio
 When regions share the same position, sort by label for deterministic ordering:
 `regionAdapters.sort((a, b) => labelIndex(a) - labelIndex(b))`
 Set custom labels with `adapter.box.label.setValue("name")`.
+
+### Recording Peaks Include Count-In Frames
+The SDK captures audio during count-in. `waveformOffset` on the region (in seconds)
+tells playback to skip it. When rendering peaks, use `waveformOffset * sampleRate`
+as the `u0` parameter to `PeaksPainter.renderBlocks()` to skip count-in frames.
+
+### Safari Audio Format Compatibility
+Safari can't decode Ogg Opus via `decodeAudioData` (even though `canPlayType` returns
+`"maybe"`). Provide m4a (AAC) fallback. Detect Safari via UA string, not feature detection.
+See `src/lib/audioUtils.ts` `getAudioExtension()`.
 
 ### Proper Recording to Playback Flow
 1. Call `project.startRecording(useCountIn)`
@@ -275,4 +291,5 @@ See `src/looping-demo.tsx` for the reference layout pattern.
 - Tempo automation demo: `src/tempo-automation-demo.tsx`
 - Time signature demo: `src/time-signature-demo.tsx`
 - Clip fades demo: `src/clip-fades-demo.tsx`
+- Audio utilities: `src/lib/audioUtils.ts` (format detection, file loading)
 - OpenDAW original source: `/Users/naomiaro/Code/openDAWOriginal`

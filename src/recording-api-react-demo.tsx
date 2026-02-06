@@ -78,6 +78,7 @@ const App: React.FC = () => {
   const currentPeaksRef = useRef<any>(null);
   const userMetronomePreferenceRef = useRef<boolean>(false); // Track user's metronome preference for restore after playback
 
+  const waveformOffsetFramesRef = useRef<number>(0);
   const CHANNEL_PADDING = 4;
 
   // Initialize CanvasPainter when canvas is available
@@ -119,7 +120,7 @@ const App: React.FC = () => {
           x1: canvas.clientWidth,
           y0,
           y1,
-          u0: 0,
+          u0: waveformOffsetFramesRef.current,
           u1: unitsToRender,
           v0: -1,
           v1: 1
@@ -254,6 +255,12 @@ const App: React.FC = () => {
         });
 
         if (recordingRegion && (recordingRegion as any).file) {
+          // Read waveformOffset to skip count-in frames in peak rendering
+          const waveformOffsetSec = (recordingRegion as any).waveformOffset?.getValue?.() ?? 0;
+          if (audioContext && waveformOffsetSec > 0) {
+            waveformOffsetFramesRef.current = Math.round(waveformOffsetSec * audioContext.sampleRate);
+          }
+
           // Get the AudioFileBox from the region's file pointer
           // PointerField.targetVertex returns the Box itself (Box extends Vertex)
           const fileVertexOption = (recordingRegion as any).file.targetVertex;
@@ -421,6 +428,7 @@ const App: React.FC = () => {
 
       // Reset peaks state
       currentPeaksRef.current = null;
+      waveformOffsetFramesRef.current = 0;
       setHasPeaks(false);
 
       project.engine.setPosition(0);
