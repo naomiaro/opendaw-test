@@ -424,73 +424,9 @@ This ensures:
 - Timeline ruler matches waveform positions
 - Consistent positioning across all visual elements
 
-## Fade Functionality Status
+## Fade Functionality
 
-### Current State: NOT IMPLEMENTED
-
-After comprehensive analysis of the OpenDAW codebase, **user-facing fade functionality does not exist**. Here's what was found:
-
-### What EXISTS (but not user-accessible):
-
-#### 1. DAWProject Schema Support
-
-```typescript
-// Schema definitions for DAWProject file format
-fadeTimeUnit: string
-fadeInTime: number
-fadeOutTime: number
-```
-
-**Status:** These are only defined for file format compatibility when importing/exporting DAWProject files. They are **NOT** implemented in the application itself.
-
-#### 2. Internal Crossfade Implementation
-
-```typescript
-// Fixed 128-sample crossfade for preventing audio glitches
-const CROSSFADE_LENGTH = 128
-```
-
-**Purpose:** The Tape Device Processor has an internal crossfade mechanism to prevent audio discontinuities when the playback position jumps (e.g., during loops or when seeking).
-
-**Usage:** Automatic - triggers when playback position changes by more than 2 samples.
-
-**Not user-accessible:** This is an internal audio processing detail, not a user-facing fade feature.
-
-#### 3. Automation System (Potential Workaround)
-
-OpenDAW has a comprehensive automation system with:
-- Linear interpolation
-- Curve interpolation with adjustable curve values
-- Multiple interpolation modes
-
-**Potential workaround:** You could manually create fade effects by automating volume/gain parameters.
-
-**Limitation:** This requires manual automation drawing and is track-level, not per-region.
-
-### What DOES NOT EXIST:
-
-1. **No Clip/Region Fade Parameters**
-   - Audio region fields do not include `fadeIn` or `fadeOut` properties
-   - Clip playback fields only include: loop, reverse, mute, speed, quantise, trigger
-
-2. **No Fade UI Components**
-   - No fade handles on audio regions in the timeline
-   - No fade curves visualized on waveforms
-   - No fade controls in region context menus or properties panels
-
-3. **No Fade Processing**
-   - Audio regions do not apply fade in/out processing to their audio output
-   - No crossfade functionality between adjacent regions
-
-4. **No Fade-Related Tests or Examples**
-   - No test files demonstrating fade functionality
-   - No examples in the codebase showing fade usage
-
-### Developer Note
-
-OpenDAW's dev-log includes a TODO item: "Fix loop discontinuations with fades"
-
-This appears to be a planned improvement for the internal loop crossfading, not user-facing fades.
+OpenDAW supports per-region fade-in and fade-out via the `fading` object on `AudioRegionBox`. For full documentation on the fading API, curve types, slope values, and implementation details, see [Clip Fades](./16-clip-fades.md).
 
 ## Complete Editing Workflow Examples
 
@@ -668,46 +604,6 @@ editing.modify(() => {
 })
 ```
 
-## Recommendations for Implementing Fades
-
-If fade functionality is needed in a future version, here are some architectural considerations:
-
-### Option 1: Per-Region Fade Parameters
-
-Add fade fields to `AudioRegionBox`:
-```typescript
-{
-    fadeInDuration: Int32Field   // Fade in length in PPQN
-    fadeOutDuration: Int32Field  // Fade out length in PPQN
-    fadeInCurve: Float32Field    // Curve shape (-1 to 1)
-    fadeOutCurve: Float32Field   // Curve shape (-1 to 1)
-}
-```
-
-Apply fades during audio processing in the Tape Device processor.
-
-### Option 2: Automation-Based Fades
-
-Create dedicated fade automation lanes that are automatically managed:
-- When a fade is added to a region, create automation points
-- Fade handles in the UI manipulate the underlying automation
-- Benefits: Uses existing automation infrastructure
-- Drawbacks: More complex data model
-
-### Option 3: Non-Destructive Fade Curves
-
-Store fade curves as separate objects that reference regions:
-```typescript
-class FadeCurve {
-    region: AudioRegionBox
-    type: "fadeIn" | "fadeOut"
-    duration: ppqn
-    curve: number // -1 to 1
-}
-```
-
-This keeps the region data clean while adding fade support.
-
 ## Demo Implementation
 
 For a complete working example of region-aware waveform visualization and track editing, see:
@@ -729,3 +625,4 @@ The demo shows:
 - [PPQN Fundamentals](./02-ppqn-fundamentals.md)
 - [Box System](./04-box-system.md)
 - [Timeline Rendering](./06-timeline-rendering.md)
+- [Clip Fades](./16-clip-fades.md)
