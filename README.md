@@ -1,6 +1,6 @@
 # OpenDAW Headless Demos
 
-Interactive demos showcasing the OpenDAW SDK for building web-based audio applications.
+Interactive demos showcasing the [OpenDAW](https://github.com/nickyvanurk/opendaw) SDK for building web-based audio applications.
 
 ## Quick Start
 
@@ -13,48 +13,51 @@ Visit http://localhost:5173 to explore the demos.
 
 ## Demos
 
-- **Effects & Mixer** - Multi-track mixer with professional audio effects (reverb, compressor, delay, crusher, stereo width)
-- **Track Editing** - Interactive audio region editing: split regions at playhead, move regions along timeline, non-destructive editing
-- **Recording API** - Real-time microphone recording with smooth 60fps live waveform visualization
-- **Drum Scheduling** - Timeline-based drum pattern programming with visual playback
-- **Drum Scheduling (AudioFit)** - Same pattern using AudioFit mode with `AutofitUtils.changeBpm()`
+| Demo | Description |
+|------|-------------|
+| **Effects & Mixer** | Multi-track mixer with reverb, compressor, delay, lo-fi crusher, and stereo width effects |
+| **Track Editing** | Split, move, and rearrange audio regions on a timeline |
+| **Recording API** | Microphone recording with live 60fps waveform, device selection, mono/stereo, input gain, and monitoring modes |
+| **MIDI Recording** | Record MIDI notes with device/channel selection, on-screen piano keyboard, and step recording |
+| **Loop Recording & Takes** | Record multiple takes over a loop region with per-take waveforms and mute controls |
+| **Drum Pattern Scheduling** | Schedule drum samples across a timeline with visual playback |
+| **Looping** | Timeline loop areas, adjustable boundaries, and real-time loop iteration tracking |
+| **TimeBase Comparison** | Musical vs Seconds TimeBase and how regions behave with BPM changes |
+| **Tempo Automation** | Preset tempo patterns (accelerando, ritardando, stepped) with real-time metronome response |
+| **Time Signature Changes** | Preset signature sequences (waltz, prog rock, film score) with adaptive metronome |
+| **Clip Fades** | Logarithmic, linear, and exponential fade curves with visual representations |
+| **Mixer Groups** | Sub-mixing with group buses: Track → Group → Master signal flow |
 
 ## Documentation
 
-📚 **[Full Documentation](./documentation/README.md)** - Complete guides for building DAW interfaces with OpenDAW
+**[Full Documentation](./documentation/README.md)** — Guides for building DAW interfaces with OpenDAW:
 
-Quick links:
-- [Introduction](./documentation/01-introduction.md) - DAW concepts and system architecture
-- [PPQN Fundamentals](./documentation/02-ppqn-fundamentals.md) - Understanding timing systems
-- [AnimationFrame Guide](./documentation/03-animation-frame.md) ⚠️ **Required reading** - Observable updates
-- [Box System](./documentation/04-box-system.md) - Data model and state management
-- [Sample Management & Peaks](./documentation/05-sample-management-and-peaks.md) - Audio loading and waveform rendering
-- [Timeline Rendering](./documentation/06-timeline-rendering.md) - Building timeline UI
-- [Complete Example](./documentation/07-putting-it-together.md) - Full working application
-- [Recording & Live Peaks](./documentation/08-recording-and-live-peaks.md) - Audio recording with live waveforms
-- [Track Editing & Fades](./documentation/09-track-editing-and-fades.md) - Region editing capabilities and fade status
+- [Introduction](./documentation/01-introduction.md) — DAW concepts and system architecture
+- [PPQN Fundamentals](./documentation/02-ppqn-fundamentals.md) — Timing systems
+- [AnimationFrame](./documentation/03-animation-frame.md) — Observable updates (**required reading**)
+- [Box System](./documentation/04-box-system.md) — Data model and state management
+- [Sample Management & Peaks](./documentation/05-sample-management-and-peaks.md) — Audio loading and waveforms
+- [Timeline Rendering](./documentation/06-timeline-rendering.md) — Building timeline UI
+- [Complete Example](./documentation/07-putting-it-together.md) — Full working application
+- [Recording Guide](./documentation/08-recording-and-live-peaks.md) — Audio/MIDI recording, takes, monitoring, live peaks
+- [Track Editing & Fades](./documentation/09-track-editing-and-fades.md) — Region editing and fade support
+- [Audio Export](./documentation/audio-export.md) — Mix and stems export
+- [Tempo Automation](./documentation/14-tempo-automation.md) — Variable BPM playback
+- [Time Signature Changes](./documentation/15-time-signature-changes.md) — Signature events
+- [Mixer Groups](./documentation/17-mixer-groups.md) — Sub-mixing and track routing
 
 ## Deployment
 
-**⚠️ Important:** OpenDAW requires `SharedArrayBuffer`, which needs these HTTP headers:
-- `Cross-Origin-Opener-Policy: same-origin`
-- `Cross-Origin-Embedder-Policy: require-corp`
+OpenDAW requires `SharedArrayBuffer`, which needs these HTTP headers:
 
-### Recommended Free Hosting
+```
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
+```
 
-All configuration files are included - just connect your repo:
-
-- **[Cloudflare Pages](https://pages.cloudflare.com/)** ⭐ (Unlimited bandwidth)
-- **[Netlify](https://www.netlify.com/)** (100 GB/month)
-- **[Vercel](https://vercel.com/)** (100 GB/month)
-
-**Build settings:**
-- Build command: `npm run build`
-- Output directory: `dist`
+Configuration files for Cloudflare Pages, Netlify, and Vercel are included.
 
 > **Note:** GitHub Pages does not support custom headers and cannot be used.
-
-## Building for Production
 
 ```bash
 npm run build     # Build to dist/
@@ -65,57 +68,26 @@ npm run preview   # Preview build locally
 
 ```
 src/
-├── components/          # Reusable UI components
-├── hooks/              # Custom React hooks for effects
-├── lib/                # Shared utilities
-│   ├── projectSetup.ts # OpenDAW initialization
-│   └── audioUtils.ts   # Audio loading helpers
-├── effects-demo.tsx    # Multi-track mixer demo
-├── track-editing-demo.tsx        # Interactive region editing
-├── recording-api-react-demo.tsx  # Recording with live peaks
-├── drum-scheduling-demo.tsx      # Drum pattern (NoSync mode)
-└── drum-scheduling-autofit-demo.tsx  # Drum pattern (AudioFit mode)
-```
-
-## Key Learnings
-
-### Recording with Live Peaks
-The recording demo showcases two production-ready patterns for accessing live waveform data:
-
-1. **Timeline UI Pattern (OpenDAW's approach)**: Iterate regions and check `loader.state.type === "record"`
-2. **Standalone Demo Pattern**: Search for region with label "Recording"
-
-Both use public APIs and achieve smooth 60fps rendering by using `dataIndex` from PeaksWriter.
-
-**📚 See [Recording & Live Peaks](./documentation/08-recording-and-live-peaks.md) for complete examples and implementation details.**
-
-### Smooth Live Waveform Rendering (60fps)
-For smooth progressive waveform rendering during recording:
-```typescript
-// During recording: Use dataIndex for smooth updates at 60fps
-const isPeaksWriter = "dataIndex" in peaks;
-const unitsToRender = isPeaksWriter
-  ? peaks.dataIndex[0] * peaks.unitsEachPeak()  // Grows smoothly
-  : peaks.numFrames;                              // Final render
-
-PeaksPainter.renderBlocks(context, peaks, channel, {
-  u0: 0,
-  u1: unitsToRender  // Only render written data
-});
-```
-
-**Why:** `peaks.numFrames` jumps in 0.5-second chunks, but `dataIndex[0]` updates every frame.
-
-### Box Deletion
-Use OpenDAW's high-level `box.delete()` API which automatically handles:
-- Finding all dependencies
-- Clearing pointer references
-- Unstaging dependent boxes
-
-```typescript
-project.editing.modify(() => {
-  region.delete();  // Handles all cleanup automatically
-});
+├── components/                        # Reusable UI components
+├── hooks/                             # Custom React hooks
+├── lib/
+│   ├── projectSetup.ts                # OpenDAW initialization
+│   ├── trackLoading.ts                # Track loading with queryLoadingComplete
+│   ├── groupTrackLoading.ts           # Group bus creation + track routing
+│   ├── audioUtils.ts                  # Format detection, file loading
+│   └── CanvasPainter.ts              # Canvas rendering helper
+├── effects-demo.tsx                   # Multi-track mixer with effects
+├── track-editing-demo.tsx             # Region split/move editing
+├── recording-api-react-demo.tsx       # Audio recording with live peaks
+├── midi-recording-demo.tsx            # MIDI recording + step recording
+├── loop-recording-demo.tsx            # Loop recording with takes
+├── drum-scheduling-demo.tsx           # Drum pattern scheduling
+├── looping-demo.tsx                   # Loop area controls
+├── timebase-demo.tsx                  # Musical vs Seconds TimeBase
+├── tempo-automation-demo.tsx          # Tempo automation patterns
+├── time-signature-demo.tsx            # Time signature changes
+├── clip-fades-demo.tsx                # Fade curve types
+└── mixer-groups-demo.tsx              # Group bus sub-mixing
 ```
 
 ## License
