@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { Project } from "@opendaw/studio-core";
+import { Project, AudioDevices, CaptureAudio } from "@opendaw/studio-core";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { PeaksPainter } from "@opendaw/lib-fusion";
 import { CanvasPainter } from "./lib/CanvasPainter";
@@ -25,8 +25,10 @@ import {
   Select,
   Callout,
   Separator,
-  Slider
+  Slider,
+  Badge
 } from "@radix-ui/themes";
+import type { MonitoringMode } from "@opendaw/studio-core";
 
 /**
  * Simplified Recording Demo - Uses Recording.start() API properly
@@ -68,6 +70,16 @@ const App: React.FC = () => {
   );
 
 
+  // Audio input configuration
+  const [audioInputDevices, setAudioInputDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string>("");
+  const [isMono, setIsMono] = useState(false);
+  const [inputGainDb, setInputGainDb] = useState(0);
+  const [monitoringMode, setMonitoringMode] = useState<MonitoringMode>("off");
+  const [isArmed, setIsArmed] = useState(false);
+  const [hasPermission, setHasPermission] = useState(false);
+  const captureRef = useRef<CaptureAudio | null>(null);
+
   // Status messages
   const [recordStatus, setRecordStatus] = useState("Click Record to start");
   const [playbackStatus, setPlaybackStatus] = useState("No recording available");
@@ -79,6 +91,7 @@ const App: React.FC = () => {
   const userMetronomePreferenceRef = useRef<boolean>(false); // Track user's metronome preference for restore after playback
 
   const waveformOffsetFramesRef = useRef<number>(0);
+  const recordingSampleLoaderRef = useRef<any>(null);
   const CHANNEL_PADDING = 4;
 
   // Initialize CanvasPainter when canvas is available
@@ -271,6 +284,7 @@ const App: React.FC = () => {
             if (audioFileBox && (audioFileBox as any).address?.uuid) {
               const uuid = (audioFileBox as any).address.uuid;
               sampleLoader = project.sampleManager.getOrCreate(uuid);
+              recordingSampleLoaderRef.current = sampleLoader;
             }
           }
         }
@@ -349,6 +363,58 @@ const App: React.FC = () => {
     });
   }, [project, timeSignatureNumerator, timeSignatureDenominator]);
 
+  // Request audio permission and enumerate devices
+  const handleRequestPermission = useCallback(async () => {
+    try {
+      await AudioDevices.requestPermission();
+      await AudioDevices.updateInputList();
+      const inputs = AudioDevices.inputs;
+      setAudioInputDevices([...inputs]);
+      setHasPermission(true);
+      if (inputs.length > 0 && !selectedDeviceId) {
+        setSelectedDeviceId(inputs[0].deviceId);
+      }
+    } catch (error) {
+      console.error("Failed to get audio devices:", error);
+    }
+  }, [selectedDeviceId]);
+
+  // Sync capture settings when device/mono/gain/monitoring changes
+  useEffect(() => {
+    const capture = captureRef.current;
+    if (!capture || !project) return;
+
+    // deviceId, gainDb, requestChannels are box graph fields — require a transaction
+    project.editing.modify(() => {
+      if (selectedDeviceId) {
+        capture.captureBox.deviceId.setValue(selectedDeviceId);
+      }
+      capture.requestChannels = isMono ? 1 : 2;
+      capture.captureBox.gainDb.setValue(inputGainDb);
+    });
+    // monitoringMode manipulates Web Audio graph + may auto-arm — set outside transaction
+    capture.monitoringMode = monitoringMode;
+  }, [project, selectedDeviceId, isMono, inputGainDb, monitoringMode]);
+
+  // Find and track the capture device after recording starts
+  useEffect(() => {
+    if (!project) return;
+    const checkCapture = () => {
+      const armed = project.captureDevices.filterArmed();
+      for (const cap of armed) {
+        if (cap instanceof CaptureAudio) {
+          captureRef.current = cap;
+          setIsArmed(true);
+          return;
+        }
+      }
+    };
+    // Check immediately and after recording changes
+    checkCapture();
+    const sub = project.engine.isRecording.catchupAndSubscribe(() => checkCapture());
+    return () => sub.terminate();
+  }, [project, isRecording]);
+
   // Initialize OpenDAW
   useEffect(() => {
     let mounted = true;
@@ -391,18 +457,21 @@ const App: React.FC = () => {
         await audioContext.resume();
       }
 
-      // Request microphone permission with constraints to prevent echo/feedback
-      try {
-        await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
-          }
-        });
-      } catch (error) {
-        setRecordStatus(`Microphone error: ${error}`);
-        return;
+      // Request microphone permission if not already granted
+      if (!hasPermission) {
+        try {
+          await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true
+            }
+          });
+          setHasPermission(true);
+        } catch (error) {
+          setRecordStatus(`Microphone error: ${error}`);
+          return;
+        }
       }
 
       // Delete any previous recording before starting a new one
@@ -429,6 +498,7 @@ const App: React.FC = () => {
       // Reset peaks state
       currentPeaksRef.current = null;
       waveformOffsetFramesRef.current = 0;
+      recordingSampleLoaderRef.current = null;
       setHasPeaks(false);
 
       project.engine.setPosition(0);
@@ -494,18 +564,34 @@ const App: React.FC = () => {
 
     const wasRecording = project.engine.isRecording.getValue() || project.engine.isCountingIn.getValue();
 
-    // Stop and reset (like OpenDAW's stop button)
-    project.engine.stop(true);
-
-    // Restore metronome to user's preference if we were playing back
-    if (!wasRecording && isPlayingBack) {
-      setMetronomeEnabled(userMetronomePreferenceRef.current);
-    }
-
     if (wasRecording) {
+      // Use stopRecording() to keep the audio graph alive for finalization.
+      // stop(true) kills the graph and prevents RecordingProcessor from
+      // writing remaining data to the RingBuffer.
+      project.engine.stopRecording();
       setRecordStatus("Recording stopped");
-    } else if (hasPeaks) {
-      setPlaybackStatus("Playback stopped");
+
+      // Wait for finalization via sampleLoader.subscribe, then reset engine.
+      const loader = recordingSampleLoaderRef.current;
+      if (loader) {
+        const sub = loader.subscribe((state: any) => {
+          if (state.type === "loaded") {
+            sub.terminate();
+            project.engine.stop(true);
+          }
+        });
+      } else {
+        // No sampleLoader found (e.g., count-in cancelled) — stop directly
+        project.engine.stop(true);
+      }
+    } else {
+      project.engine.stop(true);
+      if (isPlayingBack) {
+        setMetronomeEnabled(userMetronomePreferenceRef.current);
+      }
+      if (hasPeaks) {
+        setPlaybackStatus("Playback stopped");
+      }
     }
   }, [project, isPlayingBack, hasPeaks, setMetronomeEnabled]);
 
@@ -618,6 +704,105 @@ const App: React.FC = () => {
                   </Select.Root>
                 </Flex>
               </Flex>
+            </Flex>
+          </Card>
+
+          <Card>
+            <Flex direction="column" gap="4">
+              <Heading size="5">Audio Input</Heading>
+
+              {!hasPermission ? (
+                <Flex direction="column" gap="3" align="center">
+                  <Text size="2" color="gray">
+                    Grant microphone access to see available audio input devices.
+                  </Text>
+                  <Button onClick={handleRequestPermission} color="blue" size="2" variant="soft">
+                    Request Microphone Permission
+                  </Button>
+                </Flex>
+              ) : (
+                <Flex direction="column" gap="4">
+                  <Flex gap="4" wrap="wrap" align="end">
+                    <Flex direction="column" gap="1" style={{ flex: 1, minWidth: 200 }}>
+                      <Text size="2" weight="medium">Input Device:</Text>
+                      <Select.Root
+                        value={selectedDeviceId}
+                        onValueChange={setSelectedDeviceId}
+                        disabled={isRecording}
+                      >
+                        <Select.Trigger placeholder="Select input device..." />
+                        <Select.Content>
+                          {audioInputDevices.map(device => (
+                            <Select.Item key={device.deviceId} value={device.deviceId}>
+                              {device.label || `Input ${device.deviceId.slice(0, 8)}...`}
+                            </Select.Item>
+                          ))}
+                        </Select.Content>
+                      </Select.Root>
+                    </Flex>
+
+                    <Flex direction="column" gap="1">
+                      <Text size="2" weight="medium">Channels:</Text>
+                      <Flex gap="2">
+                        <Button
+                          size="1"
+                          variant={isMono ? "soft" : "solid"}
+                          color={isMono ? "gray" : "blue"}
+                          onClick={() => setIsMono(false)}
+                          disabled={isRecording}
+                        >
+                          Stereo
+                        </Button>
+                        <Button
+                          size="1"
+                          variant={isMono ? "solid" : "soft"}
+                          color={isMono ? "blue" : "gray"}
+                          onClick={() => setIsMono(true)}
+                          disabled={isRecording}
+                        >
+                          Mono
+                        </Button>
+                      </Flex>
+                    </Flex>
+
+                    <Flex direction="column" gap="1">
+                      <Text size="2" weight="medium">Monitoring:</Text>
+                      <Select.Root
+                        value={monitoringMode}
+                        onValueChange={value => setMonitoringMode(value as MonitoringMode)}
+                        disabled={isRecording}
+                      >
+                        <Select.Trigger style={{ width: 110 }} />
+                        <Select.Content>
+                          <Select.Item value="off">Off</Select.Item>
+                          <Select.Item value="direct">Direct</Select.Item>
+                          <Select.Item value="effects">Effects</Select.Item>
+                        </Select.Content>
+                      </Select.Root>
+                    </Flex>
+                  </Flex>
+
+                  <Flex align="center" gap="3">
+                    <Text size="2" weight="medium" style={{ minWidth: 80 }}>Input Gain:</Text>
+                    <Slider
+                      value={[inputGainDb + 60]}
+                      onValueChange={values => setInputGainDb(values[0] - 60)}
+                      min={0}
+                      max={72}
+                      step={0.5}
+                      disabled={isRecording}
+                      style={{ flex: 1 }}
+                    />
+                    <Text size="1" color="gray" style={{ minWidth: 55, fontFamily: "monospace" }}>
+                      {inputGainDb > 0 ? "+" : ""}{inputGainDb.toFixed(1)} dB
+                    </Text>
+                  </Flex>
+
+                  {isArmed && (
+                    <Badge color="red" size="1">Armed for Recording</Badge>
+                  )}
+                </Flex>
+              )}
             </Flex>
           </Card>
 

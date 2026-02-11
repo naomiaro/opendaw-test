@@ -31,7 +31,9 @@ export default defineConfig({
                 tempoAutomation: resolve(__dirname, "tempo-automation-demo.html"),
                 timeSignature: resolve(__dirname, "time-signature-demo.html"),
                 clipFades: resolve(__dirname, "clip-fades-demo.html"),
-                mixerGroups: resolve(__dirname, "mixer-groups-demo.html")
+                mixerGroups: resolve(__dirname, "mixer-groups-demo.html"),
+                midiRecording: resolve(__dirname, "midi-recording-demo.html"),
+                loopRecording: resolve(__dirname, "loop-recording-demo.html")
             },
             output: {
                 manualChunks: (id) => {

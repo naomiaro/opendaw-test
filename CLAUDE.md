@@ -10,14 +10,82 @@ This project demonstrates headless usage of the OpenDAW SDK for browser-based au
 // Start recording (handles everything: Tape instrument, track arming, microphone, regions, peaks)
 project.startRecording(useCountIn: boolean);
 
-// Stop recording only (keeps engine running)
+// CRITICAL: Use stopRecording() to stop recording, NOT stop(true).
+// stop(true) kills the audio graph, preventing RecordingProcessor from
+// writing remaining data to the RingBuffer. It also resets position to 0,
+// which triggers spurious loop-wrap detection in loop recording (muting
+// the last take). Call stop(true) only AFTER finalization completes.
 project.engine.stopRecording();
+// Wait for finalization via sampleLoader.subscribe, then reset engine:
+const sub = sampleLoader.subscribe((state: any) => {
+  if (state.type === "loaded") {
+    sub.terminate();
+    project.engine.stop(true);
+  }
+});
 
 // Stop everything and reset position to 0
 project.engine.stop(true);
 
 // Stop without resetting position
 project.engine.stop(false);
+```
+
+### Audio Input & Capture
+```typescript
+import { AudioDevices, CaptureAudio } from "@opendaw/studio-core";
+import type { MonitoringMode } from "@opendaw/studio-core";
+
+// Request mic permission and enumerate devices
+await AudioDevices.requestPermission();
+await AudioDevices.updateInputList();
+const inputs = AudioDevices.inputs; // ReadonlyArray<MediaDeviceInfo>
+
+// Access capture device for an armed track
+const capture = project.captureDevices.get(audioUnitBox.address.uuid).unwrap();
+if (capture instanceof CaptureAudio) {
+  // deviceId, requestChannels, gainDb are box graph fields — require transaction
+  project.editing.modify(() => {
+    capture.captureBox.deviceId.setValue(deviceId);
+    capture.requestChannels = 1;        // 1 = mono, 2 = stereo
+    capture.captureBox.gainDb.setValue(0); // dB
+  });
+  // monitoringMode manipulates Web Audio nodes — set outside transaction
+  capture.monitoringMode = "direct";  // "off" | "direct" | "effects"
+}
+
+// Track arming
+project.captureDevices.setArm(capture, true); // exclusive=true disarms others
+const armed = project.captureDevices.filterArmed();
+```
+
+### MIDI Devices & Recording
+```typescript
+import { MidiDevices } from "@opendaw/studio-core";
+import { NoteSignal } from "@opendaw/studio-adapters";  // NoteSignalOn, NoteSignalOff
+import { NoteEventBox, NoteEventCollectionBox, NoteRegionBox } from "@opendaw/studio-boxes";
+
+await MidiDevices.requestPermission();
+const devices = MidiDevices.inputDevices(); // includes Software Keyboard
+
+// Software keyboard for on-screen note input
+MidiDevices.softwareMIDIInput.sendNoteOn(60, 0.8); // note, velocity (0-1)
+MidiDevices.softwareMIDIInput.sendNoteOff(60);
+
+// Subscribe to MIDI events
+const sub = MidiDevices.subscribeMessageEvents(event => { ... }, channel?);
+
+// MIDI capture channel filter: set on CaptureMidiBox
+captureMidiBox.channel.setValue(-1); // -1=all, 0-15=specific channel
+```
+
+### Recording Preferences (Takes)
+```typescript
+const settings = project.engine.preferences.settings;
+settings.recording.allowTakes = true;        // enable loop-based takes
+settings.recording.olderTakeAction = "mute-region"; // or "disable-track"
+settings.recording.olderTakeScope = "previous-only"; // or "all"
+settings.recording.countInBars = 1;          // 1-8
 ```
 
 ### Playback
@@ -197,6 +265,19 @@ if (audioContext.state !== "running") {
 
 ## Important Patterns
 
+### Option Types Are Always Truthy
+OpenDAW uses Option types that are **always truthy** (even `Option.None`):
+```typescript
+// WRONG - Option.None is truthy, this never triggers
+if (!sampleLoader.peaks) { ... }
+
+// CORRECT
+const peaksOption = sampleLoader.peaks;
+if (peaksOption.isEmpty()) { return; }
+const peaks = peaksOption.unwrap();
+```
+API: `.isEmpty()`, `.nonEmpty()`, `.unwrap()`, `.unwrapOrNull()`, `.unwrapOrUndefined()`
+
 ### Always Use editing.modify() for State Changes
 ```typescript
 project.editing.modify(() => {
@@ -220,6 +301,22 @@ connection, causing dual routing. Always re-route in a separate transaction. Sim
 Fading values (in, out, slopes) can be set in the same `editing.modify()` as
 region property changes (position, duration, loopOffset). No separate transaction needed.
 
+### Capture Settings Require editing.modify()
+`captureBox.deviceId`, `captureBox.gainDb`, and `capture.requestChannels` are box graph fields —
+wrap in `editing.modify()`. `capture.monitoringMode` is NOT a box graph field (it manipulates
+Web Audio nodes), so set it outside the transaction.
+
+### MIDI Recording Requires a Synth Instrument
+`startRecording()` auto-creates a Tape (audio-only) when no instruments exist. Tape can't play
+MIDI notes. For MIDI recording, pre-create a synth instrument before recording:
+```typescript
+project.editing.modify(() => {
+  project.api.createInstrument(InstrumentFactories.Vaporisateur); // built-in synth, no files needed
+});
+// startRecording() will find and arm this instrument's CaptureMidiBox
+```
+Available MIDI instruments: `Vaporisateur` (synth), `Soundfont` (sf2 player), `Nano` (sampler), `Playfield` (drums).
+
 ### Region Sorting When Positions Match
 When regions share the same position, sort by label for deterministic ordering:
 `regionAdapters.sort((a, b) => labelIndex(a) - labelIndex(b))`
@@ -230,6 +327,10 @@ The SDK captures audio during count-in. `waveformOffset` on the region (in secon
 tells playback to skip it. When rendering peaks, use `waveformOffset * sampleRate`
 as the `u0` parameter to `PeaksPainter.renderBlocks()` to skip count-in frames.
 
+For **loop recording takes**, all takes share one `AudioFileBox` (continuous buffer).
+Each take's `waveformOffset` = count-in + sum of prior take durations. Render each take
+with `u0 = waveformOffset * sampleRate`, `u1 = u0 + duration * sampleRate`.
+
 ### Safari Audio Format Compatibility
 Safari can't decode Ogg Opus via `decodeAudioData` (even though `canPlayType` returns
 `"maybe"`). Provide m4a (AAC) fallback. Detect Safari via UA string, not feature detection.
@@ -237,14 +338,17 @@ See `src/lib/audioUtils.ts` `getAudioExtension()`.
 
 ### Proper Recording to Playback Flow
 1. Call `project.startRecording(useCountIn)`
-2. Monitor `isRecording` observable for when recording stops
-3. Wait for final peaks (not PeaksWriter) to be received
-4. Wait for `queryLoadingComplete()` before playing
-5. Call `project.engine.stop(true)` to reset, then `project.engine.play()`
+2. During recording, discover `sampleLoader` via `sampleManager.getOrCreate(audioFileBox.address.uuid)`
+3. Call `engine.stopRecording()` (NOT `stop(true)`) to stop recording
+4. Subscribe to `sampleLoader.subscribe()` — wait for `state.type === "loaded"`
+5. Call `engine.stop(true)` to reset, then `engine.play()`
+**Note**: `queryLoadingComplete()` resolves before `sampleLoader.data` is set — do NOT use it to detect recording data availability.
 
 ### Stop Button Behavior
+- `stopRecording()` - Stops recording but keeps engine alive for finalization
 - `stop(true)` - Resets position to 0, clears all voices, resets processors (like DAW stop button)
 - `stop(false)` - Pauses without resetting position
+- **NEVER call `stop(true)` while recording** — kills the audio graph and prevents finalization
 
 ## React Integration Tips
 
@@ -318,9 +422,18 @@ See `src/looping-demo.tsx` for the reference layout pattern.
 
 ## Build & Verification
 - `npm run build` — Vite handles TypeScript transpilation (no standalone `tsc` available)
+- Verify SDK exports: check `node_modules/@opendaw/<package>/dist/*.d.ts` before writing imports
+
+### Adding a New Demo
+1. Create `<name>-demo.html` (copy existing HTML entry point, update meta tags and script src)
+2. Create `src/<name>-demo.tsx` (use Radix UI Theme, GitHubCorner, BackLink, MoisesLogo, API Reference Callout)
+3. Add build entry in `vite.config.ts` → `rollupOptions.input`
+4. Add card in `src/index.tsx`
 
 ## Reference Files
-- Recording demo: `src/recording-api-react-demo.tsx`
+- Recording demo: `src/recording-api-react-demo.tsx` (audio input, mono/stereo, gain, monitoring)
+- MIDI recording demo: `src/midi-recording-demo.tsx` (MIDI devices, keyboard, step recording)
+- Loop recording demo: `src/loop-recording-demo.tsx` (takes, loop recording preferences)
 - Project setup: `src/lib/projectSetup.ts`
 - Track loading: `src/lib/trackLoading.ts` (handles queryLoadingComplete automatically)
 - Engine preferences hook: `src/hooks/useEnginePreference.ts`

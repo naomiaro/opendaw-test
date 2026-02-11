@@ -106,15 +106,20 @@ Read these documents in order to build up your understanding:
 
 ---
 
-### 8. [Recording and Live Peaks](./08-recording-and-live-peaks.md)
-- Recording API overview
-- Accessing live recording peaks
-- Production pattern (timeline UI - OpenDAW's approach)
-- Demo pattern (standalone recording)
+### 8. [Recording Guide](./08-recording-and-live-peaks.md)
+- Recording pipeline overview (full flow from startRecording to region creation)
+- Track arming (exclusive/multi-track, auto-arming)
+- Audio input configuration (device selection, mono/stereo, input gain)
+- MIDI input configuration (device enumeration, software keyboard, channel filtering)
+- Input monitoring (off/direct/effects modes)
+- Loop recording & takes (allowTakes, olderTakeAction, olderTakeScope)
+- Step recording (NoteEventBox creation, headless pattern)
+- Recording preferences reference
+- Multi-track simultaneous recording
+- Accessing live recording peaks (production & demo patterns)
 - Smooth 60fps waveform rendering
-- Complete examples
 
-**Start here if:** You're implementing audio recording with live waveform display
+**Start here if:** You're implementing any recording feature — audio, MIDI, takes, or monitoring
 
 ---
 
@@ -377,7 +382,7 @@ Found an error or want to improve this documentation? PRs welcome!
 | [Sample Management](./05-sample-management-and-peaks.md) | Audio & waveforms | Frontend/canvas developers |
 | [Timeline Rendering](./06-timeline-rendering.md) | UI visualization | Frontend developers |
 | [Complete Example](./07-putting-it-together.md) | Full application | All developers |
-| [Recording & Live Peaks](./08-recording-and-live-peaks.md) | Recording with live waveforms | Frontend/recording features |
+| [Recording Guide](./08-recording-and-live-peaks.md) | Recording, MIDI, takes, monitoring | Recording/capture features |
 | [Track Editing & Fades](./09-track-editing-and-fades.md) | Region editing & fades | Timeline/editing features |
 | [Audio Export](./audio-export.md) | Mix & stem export | Export/rendering features |
 | [Tempo Automation](./14-tempo-automation.md) | Variable BPM | Tempo/timing features |

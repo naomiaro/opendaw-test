@@ -175,6 +175,34 @@ const App: React.FC = () => {
                 </Flex>
               </Link>
             </Card>
+            <Card asChild>
+              <Link href="/midi-recording-demo.html" style={{ textDecoration: "none", padding: "var(--space-5)" }}>
+                <Flex direction="column" gap="3">
+                  <Flex direction="column" align="center" gap="2">
+                    <Text size="8">🎹</Text>
+                    <Heading size="5">MIDI Recording</Heading>
+                  </Flex>
+                  <Text size="2" color="gray">
+                    Record MIDI notes with device selection, channel filtering, an on-screen piano keyboard,
+                    and step recording mode for precise note-by-note entry.
+                  </Text>
+                </Flex>
+              </Link>
+            </Card>
+            <Card asChild>
+              <Link href="/loop-recording-demo.html" style={{ textDecoration: "none", padding: "var(--space-5)" }}>
+                <Flex direction="column" gap="3">
+                  <Flex direction="column" align="center" gap="2">
+                    <Text size="8">🔄</Text>
+                    <Heading size="5">Loop Recording & Takes</Heading>
+                  </Flex>
+                  <Text size="2" color="gray">
+                    Record multiple takes over a loop region. Each loop iteration creates a new take
+                    with independent waveforms. Compare and manage takes with mute controls.
+                  </Text>
+                </Flex>
+              </Link>
+            </Card>
           </div>
 
           <MoisesLogo />
