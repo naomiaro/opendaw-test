@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- Primary Meta Tags -->
+  <title>OpenDAW Mixer Groups Demo - Sub-Mixing with Track Groups</title>
+  <meta name="title" content="OpenDAW Mixer Groups Demo - Sub-Mixing with Track Groups" />
+  <meta name="description" content="Interactive demonstration of mixer group routing in the browser. Route tracks through intermediate group buses (Rhythm, Melodic) before reaching the master output. Control volume, mute, and solo per track and per group." />
+  <meta name="keywords" content="OpenDAW, mixer groups, sub-mixing, audio routing, group bus, track routing, web audio, DAW, WebAssembly, SharedArrayBuffer" />
+  <meta name="author" content="Moises AI" />
+  <meta name="theme-color" content="#3b82f6" />
+
+  <!-- Canonical URL -->
+  <link rel="canonical" href="https://opendaw-test.pages.dev/mixer-groups-demo.html" />
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://opendaw-test.pages.dev/mixer-groups-demo.html" />
+  <meta property="og:title" content="OpenDAW Mixer Groups Demo - Sub-Mixing with Track Groups" />
+  <meta property="og:description" content="Interactive demonstration of mixer group routing. Route tracks through group buses with per-track and per-group volume, mute, and solo controls." />
+  <meta property="og:site_name" content="OpenDAW Demos" />
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:url" content="https://opendaw-test.pages.dev/mixer-groups-demo.html" />
+  <meta name="twitter:title" content="OpenDAW Mixer Groups Demo - Sub-Mixing with Track Groups" />
+  <meta name="twitter:description" content="Interactive demonstration of mixer group routing in the browser." />
+
+  <!-- Structured Data (JSON-LD) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "OpenDAW Mixer Groups Demo",
+    "applicationCategory": "MultimediaApplication",
+    "operatingSystem": "Any",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "description": "Interactive demonstration of mixer group routing in the browser. Route tracks through intermediate group buses before reaching the master output.",
+    "author": {
+      "@type": "Organization",
+      "name": "Moises AI",
+      "url": "https://moises.ai"
+    },
+    "softwareRequirements": "Modern web browser with SharedArrayBuffer support",
+    "featureList": [
+      "Track group routing (sub-mixing)",
+      "Per-track volume, mute, and solo",
+      "Per-group volume, mute, and solo",
+      "Master output volume control",
+      "Visual signal flow diagram",
+      "Real-time audio playback"
+    ]
+  }
+  </script>
+
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+</head>
+<body>
+<div id="root"></div>
+<script type="module" src="/src/mixer-groups-demo.tsx"></script>
+</body>
+</html>

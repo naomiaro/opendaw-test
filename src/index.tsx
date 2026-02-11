@@ -161,6 +161,20 @@ const App: React.FC = () => {
                 </Flex>
               </Link>
             </Card>
+            <Card asChild>
+              <Link href="/mixer-groups-demo.html" style={{ textDecoration: "none", padding: "var(--space-5)" }}>
+                <Flex direction="column" gap="3">
+                  <Flex direction="column" align="center" gap="2">
+                    <Text size="8">🎛️</Text>
+                    <Heading size="5">Mixer Groups</Heading>
+                  </Flex>
+                  <Text size="2" color="gray">
+                    Route tracks through group buses for sub-mixing. Rhythm and Melodic groups with
+                    independent volume, mute, and solo controls demonstrate the Track → Group → Master signal flow.
+                  </Text>
+                </Flex>
+              </Link>
+            </Card>
           </div>
 
           <MoisesLogo />

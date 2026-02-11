@@ -210,6 +210,12 @@ project.editing.modify(() => {
 `editing.modify()` transaction, adapter collection notifications are deferred, so subsequent
 calls see stale state. Use separate `editing.modify()` per `createEvent` and per deletion.
 
+### Pointer Re-Routing: Separate Transaction from Creation
+`createInstrument()` internally routes `audioUnitBox.output` to master. Re-routing with
+`output.refer(newTarget)` in the same `editing.modify()` may not disconnect the old
+connection, causing dual routing. Always re-route in a separate transaction. Similarly,
+`targetVertex` traversal on pointers created in the same transaction may return stale data.
+
 ### Fades Can Share a Transaction with Region Changes
 Fading values (in, out, slopes) can be set in the same `editing.modify()` as
 region property changes (position, duration, loopOffset). No separate transaction needed.
@@ -279,9 +285,39 @@ const terminable = AnimationFrame.add(() => {
 terminable.terminate();
 ```
 
+### Mixer Groups (Sub-Mixing)
+```typescript
+import { AudioBusFactory } from "@opendaw/studio-adapters";
+import { AudioUnitType, IconSymbol, Colors } from "@opendaw/studio-enums";
+
+// Create a group bus (routes to master by default)
+project.editing.modify(() => {
+  const audioBusBox = AudioBusFactory.create(
+    project.skeleton,          // provides boxGraph + mandatory boxes
+    "Rhythm",                  // group name
+    IconSymbol.AudioBus,       // icon
+    AudioUnitType.Bus,         // type
+    Colors.blue                // color
+  );
+});
+
+// IMPORTANT: Resolve pointers AFTER the creation transaction commits
+const groupUnitBox = audioBusBox.output.targetVertex.unwrap().box;
+
+// IMPORTANT: Re-route tracks in a SEPARATE transaction from createInstrument().
+// Doing output.refer() in the same transaction as createInstrument() causes
+// dual routing (audio reaches master both directly AND through the group).
+project.editing.modify(() => {
+  audioUnitBox.output.refer(audioBusBox.input);
+});
+```
+
 ### Demo Layout Structure
 GitHubCorner, BackLink, content, and MoisesLogo all go *inside* `<Container>`, not as siblings.
 See `src/looping-demo.tsx` for the reference layout pattern.
+
+## Build & Verification
+- `npm run build` — Vite handles TypeScript transpilation (no standalone `tsc` available)
 
 ## Reference Files
 - Recording demo: `src/recording-api-react-demo.tsx`
@@ -291,5 +327,7 @@ See `src/looping-demo.tsx` for the reference layout pattern.
 - Tempo automation demo: `src/tempo-automation-demo.tsx`
 - Time signature demo: `src/time-signature-demo.tsx`
 - Clip fades demo: `src/clip-fades-demo.tsx`
+- Mixer groups demo: `src/mixer-groups-demo.tsx`
+- Group track loading: `src/lib/groupTrackLoading.ts` (creates group buses + routes tracks)
 - Audio utilities: `src/lib/audioUtils.ts` (format detection, file loading)
 - OpenDAW original source: `/Users/naomiaro/Code/openDAWOriginal`

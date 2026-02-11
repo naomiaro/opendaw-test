@@ -30,7 +30,8 @@ export default defineConfig({
                 timebase: resolve(__dirname, "timebase-demo.html"),
                 tempoAutomation: resolve(__dirname, "tempo-automation-demo.html"),
                 timeSignature: resolve(__dirname, "time-signature-demo.html"),
-                clipFades: resolve(__dirname, "clip-fades-demo.html")
+                clipFades: resolve(__dirname, "clip-fades-demo.html"),
+                mixerGroups: resolve(__dirname, "mixer-groups-demo.html")
             },
             output: {
                 manualChunks: (id) => {
