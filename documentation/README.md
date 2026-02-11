@@ -152,6 +152,18 @@ Read these documents in order to build up your understanding:
 
 ---
 
+### 17. [Mixer Groups (Sub-Mixing)](./17-mixer-groups.md)
+- Group bus creation with AudioBusFactory
+- Track-to-group routing (replacing default master routing)
+- Group volume, mute, and solo controls
+- Automatic solo propagation through routing graph
+- Critical: separate transactions for creation and re-routing
+- Groups vs aux units comparison
+
+**Start here if:** You're implementing sub-mixing, group buses, or track routing
+
+---
+
 ## Quick Reference
 
 ### Core Formulas
@@ -370,8 +382,9 @@ Found an error or want to improve this documentation? PRs welcome!
 | [Audio Export](./audio-export.md) | Mix & stem export | Export/rendering features |
 | [Tempo Automation](./14-tempo-automation.md) | Variable BPM | Tempo/timing features |
 | [Time Signature Changes](./15-time-signature-changes.md) | Signature events | Tempo/timing features |
+| [Mixer Groups](./17-mixer-groups.md) | Sub-mixing & routing | Mixer/routing features |
 
-**Recommended reading order:** 1 → 2 → 3 → 4 → 5 → 6 → 7 (→ 8 if implementing recording, → 9 if implementing editing, → 10 if implementing export, → 14-15 if implementing tempo/signature changes)
+**Recommended reading order:** 1 → 2 → 3 → 4 → 5 → 6 → 7 (→ 8 if implementing recording, → 9 if implementing editing, → 10 if implementing export, → 14-15 if implementing tempo/signature changes, → 17 if implementing mixer routing)
 
 **Troubleshooting order:** Having issues? → Read 3 first!
 
