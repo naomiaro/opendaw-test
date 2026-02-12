@@ -331,6 +331,36 @@ For **loop recording takes**, all takes share one `AudioFileBox` (continuous buf
 Each take's `waveformOffset` = count-in + sum of prior take durations. Render each take
 with `u0 = waveformOffset * sampleRate`, `u1 = u0 + duration * sampleRate`.
 
+### Loop Take Buffer Layout and Offsets
+All takes record into a single continuous audio buffer. The count-in offset is only
+explicitly set for take 1; subsequent takes inherit it transitively through accumulation:
+```
+Buffer: [count-in frames | Take 1 audio | Take 2 audio | Take 3 audio ...]
+
+Take 1: waveformOffset = preRecordingSeconds (count-in duration)
+Take 2: waveformOffset = take1.waveformOffset + take1.duration
+Take 3: waveformOffset = take2.waveformOffset + take2.duration
+```
+The count-in frames sit at the start of the buffer and are never referenced after take 1
+skips past them. Each take's `waveformOffset` is set once at creation time in
+`RecordAudio.ts` and never modified afterward.
+
+**Duration overshoot (~2-3ms):** Loop-wrap detection (`currentPosition < lastPosition`)
+fires at audio block boundaries (~128 frames), so each take's `duration` includes a few
+extra frames past the exact loop boundary. The next take's `waveformOffset` compensates
+(starts after those frames), so audio reads stay aligned. This causes a minor visual
+artifact where each take's waveform shows ~2-3ms of extra audio at the tail.
+
+**20ms voice crossfade at loop boundaries:** At loop wrap, the engine sets
+`BlockFlag.discontinuous`, which fades out old voices over `VOICE_FADE_DURATION = 0.020s`
+(20ms) and fades in new voices over the same duration. During this window, both the
+outgoing and incoming take audio overlap briefly. This is SDK-level behavior to prevent
+clicks — not a bug.
+
+**Playback audio read formula** (TapeDeviceProcessor.ts):
+`sampleIndex = ((elapsedSeconds + waveformOffset) * sampleRate) | 0`
+where `elapsedSeconds = tempoMap.intervalToSeconds(cycle.rawStart, cycle.resultStart)`
+
 ### Safari Audio Format Compatibility
 Safari can't decode Ogg Opus via `decodeAudioData` (even though `canPlayType` returns
 `"maybe"`). Provide m4a (AAC) fallback. Detect Safari via UA string, not feature detection.
