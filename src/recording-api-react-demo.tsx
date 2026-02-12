@@ -2,9 +2,11 @@
 
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
+import { UUID } from "@opendaw/lib-std";
 import type { Terminable } from "@opendaw/lib-std";
 import { Project, AudioDevices, CaptureAudio, PeaksWriter } from "@opendaw/studio-core";
 import type { SampleLoader } from "@opendaw/studio-adapters";
+import { InstrumentFactories } from "@opendaw/studio-adapters";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import type { Peaks } from "@opendaw/lib-fusion";
 import { PeaksPainter } from "@opendaw/lib-fusion";
@@ -18,6 +20,8 @@ import { BackLink } from "./components/BackLink";
 import { BpmControl } from "./components/BpmControl";
 import { TimeSignatureControl } from "./components/TimeSignatureControl";
 import { RecordingPreferences } from "./components/RecordingPreferences";
+import { RecordingTrackCard } from "./components/RecordingTrackCard";
+import type { RecordingTrack } from "./components/RecordingTrackCard";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
@@ -27,18 +31,22 @@ import {
   Button,
   Flex,
   Card,
-  Checkbox,
-  TextField,
   Select,
   Callout,
   Separator,
   Slider,
   Badge
 } from "@radix-ui/themes";
-import type { MonitoringMode } from "@opendaw/studio-core";
+
+/** Per-track peaks monitoring state stored in a ref */
+interface TrackPeaksState {
+  sampleLoader: SampleLoader | null;
+  peaks: Peaks | PeaksWriter | null;
+  waveformOffsetFrames: number;
+}
 
 /**
- * Simplified Recording Demo - Uses Recording.start() API properly
+ * Multi-Device Recording Demo - Supports multiple simultaneous recording tracks
  */
 const App: React.FC = () => {
   const [status, setStatus] = useState("Loading...");
@@ -76,38 +84,54 @@ const App: React.FC = () => {
     ["recording", "countInBars"]
   );
 
-
-  // Audio input configuration
+  // Audio input configuration — multi-track
   const [audioInputDevices, setAudioInputDevices] = useState<MediaDeviceInfo[]>([]);
-  const [selectedDeviceId, setSelectedDeviceId] = useState<string>("");
-  const [isMono, setIsMono] = useState(false);
-  const [inputGainDb, setInputGainDb] = useState(0);
-  const [monitoringMode, setMonitoringMode] = useState<MonitoringMode>("off");
-  const [isArmed, setIsArmed] = useState(false);
   const [hasPermission, setHasPermission] = useState(false);
-  const captureRef = useRef<CaptureAudio | null>(null);
+  const [recordingTracks, setRecordingTracks] = useState<RecordingTrack[]>([]);
 
   // Status messages
   const [recordStatus, setRecordStatus] = useState("Click Record to start");
   const [playbackStatus, setPlaybackStatus] = useState("No recording available");
 
-  // Refs
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const canvasPainterRef = useRef<CanvasPainter | null>(null);
-  const currentPeaksRef = useRef<Peaks | PeaksWriter | null>(null);
-  const userMetronomePreferenceRef = useRef<boolean>(false); // Track user's metronome preference for restore after playback
+  // Per-track canvas refs — keyed by track index
+  const canvasRefsMap = useRef<Map<number, HTMLCanvasElement>>(new Map());
+  const canvasPaintersMap = useRef<Map<number, CanvasPainter>>(new Map());
 
-  const waveformOffsetFramesRef = useRef<number>(0);
-  const recordingSampleLoaderRef = useRef<SampleLoader | null>(null);
+  // Per-track peaks state — keyed by track index
+  const trackPeaksRef = useRef<Map<number, TrackPeaksState>>(new Map());
+
+  // Track which sample loaders we've found (for finalization after stop)
+  const recordingSampleLoadersRef = useRef<SampleLoader[]>([]);
+
+  const userMetronomePreferenceRef = useRef<boolean>(false);
   const CHANNEL_PADDING = 4;
 
-  // Initialize CanvasPainter when canvas is available
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || canvasPainterRef.current) return undefined;
+  // Canvas ref callback for a given track index
+  const getCanvasRef = useCallback((trackIndex: number) => {
+    return (el: HTMLCanvasElement | null) => {
+      if (el) {
+        canvasRefsMap.current.set(trackIndex, el);
+      } else {
+        // Cleanup painter when canvas unmounts
+        const painter = canvasPaintersMap.current.get(trackIndex);
+        if (painter) {
+          painter.terminate();
+          canvasPaintersMap.current.delete(trackIndex);
+        }
+        canvasRefsMap.current.delete(trackIndex);
+      }
+    };
+  }, []);
+
+  // Initialize CanvasPainter for a specific track canvas
+  const ensureCanvasPainter = useCallback((trackIndex: number) => {
+    const canvas = canvasRefsMap.current.get(trackIndex);
+    if (!canvas || canvasPaintersMap.current.has(trackIndex)) return;
 
     const painter = new CanvasPainter(canvas, (_, context) => {
-      const peaks = currentPeaksRef.current;
+      const trackState = trackPeaksRef.current.get(trackIndex);
+      const peaks = trackState?.peaks;
+
       if (!peaks) {
         context.fillStyle = "#000";
         context.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
@@ -123,24 +147,22 @@ const App: React.FC = () => {
       const totalHeight = canvas.clientHeight;
       const numChannels = peaks.numChannels;
       const channelHeight = totalHeight / numChannels;
+      const waveformOffsetFrames = trackState?.waveformOffsetFrames ?? 0;
 
       for (let channel = 0; channel < numChannels; channel++) {
         const y0 = channel * channelHeight + CHANNEL_PADDING / 2;
         const y1 = (channel + 1) * channelHeight - CHANNEL_PADDING / 2;
 
-        // For PeaksWriter: render based on written data (dataIndex * unitsPerPeak)
-        // For final Peaks: render full buffer (numFrames)
-        // This gives smooth rendering during recording since dataIndex updates frequently
         const unitsToRender = isPeaksWriter
-          ? peaks.dataIndex[0] * peaks.unitsEachPeak() // Smooth: updates at 60fps
-          : peaks.numFrames; // Final: render all
+          ? peaks.dataIndex[0] * peaks.unitsEachPeak()
+          : peaks.numFrames;
 
         PeaksPainter.renderBlocks(context, peaks, channel, {
           x0: 0,
           x1: canvas.clientWidth,
           y0,
           y1,
-          u0: waveformOffsetFramesRef.current,
+          u0: waveformOffsetFrames,
           u1: unitsToRender,
           v0: -1,
           v1: 1
@@ -148,13 +170,8 @@ const App: React.FC = () => {
       }
     });
 
-    canvasPainterRef.current = painter;
-
-    return () => {
-      painter.terminate();
-      canvasPainterRef.current = null;
-    };
-  }, [canvasRef.current]);
+    canvasPaintersMap.current.set(trackIndex, painter);
+  }, []);
 
   // Subscribe to engine state
   useEffect(() => {
@@ -183,18 +200,14 @@ const App: React.FC = () => {
         setRecordStatus("Recording stopped");
 
         // When recording stops, set up the timeline for playback
-        // The recording region should be available immediately
         const allBoxes = project.boxGraph.boxes();
-
         for (const box of allBoxes) {
           if (box.name === "AudioRegionBox") {
             const regionBox = box as AudioRegionBox;
             const label = regionBox.label.getValue();
-
             if (label === "Recording" || label.startsWith("Take ")) {
               const duration = regionBox.duration.getValue();
               console.log("[Recording] Setting timeline loop area to:", duration);
-
               project.editing.modify(() => {
                 project.timelineBox.loopArea.from.setValue(0);
                 project.timelineBox.loopArea.to.setValue(duration);
@@ -204,7 +217,6 @@ const App: React.FC = () => {
             }
           }
         }
-        // Note: hasPeaks is set by the animation frame loop when final peaks are received
       }
     });
 
@@ -249,74 +261,102 @@ const App: React.FC = () => {
     }
   }, [hasPeaks, shouldMonitorPeaks]);
 
-  // Monitor peaks - continues running after recording stops until final peaks are received
-  // Uses the production-ready approach:
-  // 1. Find AudioRegionBox with label "Take N" (SDK 0.0.91+) or "Recording" (older SDKs)
-  // 2. Get AudioFileBox UUID from the region
-  // 3. Use sampleManager.getOrCreate(uuid) to access the SampleLoader (public API)
-  // 4. Access SampleLoader.peaks for live waveform data
+  // Monitor peaks for ALL recording tracks
   useEffect(() => {
-    // Only run if we should be monitoring peaks
-    if (!project || !shouldMonitorPeaks) return undefined;
+    if (!project || !shouldMonitorPeaks || !audioContext) return undefined;
 
     let animationFrameTerminable: Terminable | null = null;
-    let sampleLoader: SampleLoader | null = null;
 
-    // Use AnimationFrame to monitor for recording peaks
+    // Initialize per-track peaks state for each canvas
+    for (let i = 0; i < recordingTracks.length; i++) {
+      if (!trackPeaksRef.current.has(i)) {
+        trackPeaksRef.current.set(i, {
+          sampleLoader: null,
+          peaks: null,
+          waveformOffsetFrames: 0
+        });
+      }
+    }
+
+    let allFinalPeaksReceived = false;
+
     animationFrameTerminable = AnimationFrame.add(() => {
-      // Find the recording region in the box graph
-      if (!sampleLoader) {
-        const boxes = project.boxGraph.boxes();
+      // Ensure painters exist for all track canvases
+      for (let i = 0; i < recordingTracks.length; i++) {
+        ensureCanvasPainter(i);
+      }
 
-        // In SDK 0.0.91+, recording regions are labeled "Take N" instead of "Recording"
-        const recordingRegion = boxes.find((box) => {
-          if (box.name !== "AudioRegionBox") return false;
-          const label = (box as AudioRegionBox).label.getValue();
-          return label === "Recording" || label.startsWith("Take ");
-        }) as AudioRegionBox | undefined;
+      // Find recording regions and match them to tracks
+      const boxes = project.boxGraph.boxes();
+      const recordingRegions: AudioRegionBox[] = [];
 
-        if (recordingRegion) {
-          // Read waveformOffset to skip count-in frames in peak rendering
-          const waveformOffsetSec = recordingRegion.waveformOffset.getValue();
-          if (audioContext && waveformOffsetSec > 0) {
-            waveformOffsetFramesRef.current = Math.round(waveformOffsetSec * audioContext.sampleRate);
+      for (const box of boxes) {
+        if (box.name !== "AudioRegionBox") continue;
+        const label = (box as AudioRegionBox).label.getValue();
+        if (label === "Recording" || label.startsWith("Take ")) {
+          recordingRegions.push(box as AudioRegionBox);
+        }
+      }
+
+      // Assign regions to tracks in order (one region per track)
+      let finalCount = 0;
+      let totalTracked = 0;
+
+      for (let i = 0; i < recordingTracks.length; i++) {
+        const trackState = trackPeaksRef.current.get(i);
+        if (!trackState) continue;
+
+        // Find the region for this track index
+        const region = recordingRegions[i];
+        if (!region) continue;
+
+        // Get or create sample loader for this track
+        if (!trackState.sampleLoader) {
+          const waveformOffsetSec = region.waveformOffset.getValue();
+          if (waveformOffsetSec > 0) {
+            trackState.waveformOffsetFrames = Math.round(waveformOffsetSec * audioContext.sampleRate);
           }
 
-          // Get the AudioFileBox from the region's file pointer
-          // PointerField.targetVertex returns the Box itself (Box extends Vertex)
-          const fileVertexOption = recordingRegion.file.targetVertex;
+          const fileVertexOption = region.file.targetVertex;
           if (!fileVertexOption.isEmpty()) {
             const fileVertex = fileVertexOption.unwrap();
             const uuid = fileVertex.address.uuid;
-            sampleLoader = project.sampleManager.getOrCreate(uuid);
-            recordingSampleLoaderRef.current = sampleLoader;
+            trackState.sampleLoader = project.sampleManager.getOrCreate(uuid);
+
+            // Track for finalization
+            if (!recordingSampleLoadersRef.current.includes(trackState.sampleLoader)) {
+              recordingSampleLoadersRef.current.push(trackState.sampleLoader);
+            }
+          }
+        }
+
+        // Monitor the sample loader for peak updates
+        if (trackState.sampleLoader) {
+          totalTracked++;
+          const peaksOption = trackState.sampleLoader.peaks;
+          if (peaksOption && !peaksOption.isEmpty()) {
+            const peaks = peaksOption.unwrap();
+            const isPeaksWriter = "dataIndex" in peaks;
+
+            trackState.peaks = peaks;
+            canvasPaintersMap.current.get(i)?.requestUpdate();
+
+            if (!isPeaksWriter) {
+              finalCount++;
+            }
           }
         }
       }
 
-      // Monitor the sample loader for peak updates
-      if (sampleLoader) {
-        const peaksOption = sampleLoader.peaks;
-        if (peaksOption && !peaksOption.isEmpty()) {
-          const peaks = peaksOption.unwrap();
-          const isPeaksWriter = "dataIndex" in peaks;
-
-          if (isPeaksWriter) {
-            // Live recording - update peaks every frame for smooth rendering
-            currentPeaksRef.current = peaks;
-            canvasPainterRef.current?.requestUpdate();
-          } else {
-            // Recording finished - received final peaks
-            currentPeaksRef.current = peaks;
-            canvasPainterRef.current?.requestUpdate();
-            setHasPeaks(true);
-            setPlaybackStatus("Recording ready to play");
-            console.log("[Recording] Final peaks received, playback ready");
-            if (animationFrameTerminable) {
-              animationFrameTerminable.terminate();
-              animationFrameTerminable = null;
-            }
-          }
+      // All tracked loaders have final peaks
+      if (totalTracked > 0 && finalCount === totalTracked && !allFinalPeaksReceived) {
+        allFinalPeaksReceived = true;
+        setHasPeaks(true);
+        setPlaybackStatus("Recording ready to play");
+        console.log("[Recording] Final peaks received for all tracks, playback ready");
+        if (animationFrameTerminable) {
+          animationFrameTerminable.terminate();
+          animationFrameTerminable = null;
         }
       }
     });
@@ -326,7 +366,7 @@ const App: React.FC = () => {
         animationFrameTerminable.terminate();
       }
     };
-  }, [project, shouldMonitorPeaks]);
+  }, [project, shouldMonitorPeaks, audioContext, recordingTracks.length, ensureCanvasPainter]);
 
   // Initialize project settings from OpenDAW
   useEffect(() => {
@@ -375,49 +415,10 @@ const App: React.FC = () => {
       const inputs = AudioDevices.inputs;
       setAudioInputDevices([...inputs]);
       setHasPermission(true);
-      if (inputs.length > 0 && !selectedDeviceId) {
-        setSelectedDeviceId(inputs[0].deviceId);
-      }
     } catch (error) {
       console.error("Failed to get audio devices:", error);
     }
-  }, [selectedDeviceId]);
-
-  // Sync capture settings when device/mono/gain/monitoring changes
-  useEffect(() => {
-    const capture = captureRef.current;
-    if (!capture || !project) return;
-
-    // deviceId, gainDb, requestChannels are box graph fields — require a transaction
-    project.editing.modify(() => {
-      if (selectedDeviceId) {
-        capture.captureBox.deviceId.setValue(selectedDeviceId);
-      }
-      capture.requestChannels = isMono ? 1 : 2;
-      capture.captureBox.gainDb.setValue(inputGainDb);
-    });
-    // monitoringMode manipulates Web Audio graph + may auto-arm — set outside transaction
-    capture.monitoringMode = monitoringMode;
-  }, [project, selectedDeviceId, isMono, inputGainDb, monitoringMode]);
-
-  // Find and track the capture device after recording starts
-  useEffect(() => {
-    if (!project) return;
-    const checkCapture = () => {
-      const armed = project.captureDevices.filterArmed();
-      for (const cap of armed) {
-        if (cap instanceof CaptureAudio) {
-          captureRef.current = cap;
-          setIsArmed(true);
-          return;
-        }
-      }
-    };
-    // Check immediately and after recording changes
-    checkCapture();
-    const sub = project.engine.isRecording.catchupAndSubscribe(() => checkCapture());
-    return () => sub.terminate();
-  }, [project, isRecording]);
+  }, []);
 
   // Initialize OpenDAW
   useEffect(() => {
@@ -450,6 +451,59 @@ const App: React.FC = () => {
     };
   }, []);
 
+  // Add a new recording track
+  const handleAddTrack = useCallback(() => {
+    if (!project) return;
+
+    // Create Tape instrument and configure capture in one transaction.
+    // editing.modify() doesn't forward return values, so we capture via outer variable.
+    let audioUnitBoxRef: any = null;
+
+    project.editing.modify(() => {
+      const { audioUnitBox } = project.api.createInstrument(InstrumentFactories.Tape);
+      audioUnitBoxRef = audioUnitBox;
+
+      if (audioInputDevices.length > 0) {
+        const captureOpt = project.captureDevices.get(audioUnitBox.address.uuid);
+        if (!captureOpt.isEmpty()) {
+          const cap = captureOpt.unwrap();
+          if (cap instanceof CaptureAudio) {
+            cap.captureBox.deviceId.setValue(audioInputDevices[0].deviceId);
+            cap.requestChannels = 1; // mono by default
+          }
+        }
+      }
+    });
+
+    if (!audioUnitBoxRef) return;
+
+    // Get capture device after transaction commits
+    const captureOpt = project.captureDevices.get(audioUnitBoxRef.address.uuid);
+    if (captureOpt.isEmpty()) return;
+    const capture = captureOpt.unwrap();
+    if (!(capture instanceof CaptureAudio)) return;
+
+    // Arm non-exclusively so other tracks stay armed
+    project.captureDevices.setArm(capture, false);
+
+    setRecordingTracks(prev => [...prev, {
+      id: UUID.toString(audioUnitBoxRef.address.uuid),
+      capture
+    }]);
+  }, [project, audioInputDevices]);
+
+  // Remove a recording track
+  const handleRemoveTrack = useCallback((id: string) => {
+    setRecordingTracks(prev => {
+      const track = prev.find(t => t.id === id);
+      if (track) {
+        // Disarm before removing
+        track.capture.armed.setValue(false);
+      }
+      return prev.filter(t => t.id !== id);
+    });
+  }, []);
+
   const handleStartRecording = useCallback(async () => {
     if (!project || !audioContext) return;
 
@@ -461,16 +515,12 @@ const App: React.FC = () => {
         await audioContext.resume();
       }
 
-      // Request microphone permission if not already granted
+      // Request microphone permission via AudioDevices API if not already granted
       if (!hasPermission) {
         try {
-          await navigator.mediaDevices.getUserMedia({
-            audio: {
-              echoCancellation: true,
-              noiseSuppression: true,
-              autoGainControl: true
-            }
-          });
+          await AudioDevices.requestPermission();
+          await AudioDevices.updateInputList();
+          setAudioInputDevices([...AudioDevices.inputs]);
           setHasPermission(true);
         } catch (error) {
           setRecordStatus(`Microphone error: ${error}`);
@@ -478,12 +528,11 @@ const App: React.FC = () => {
         }
       }
 
-      // Delete any previous recording before starting a new one
+      // Delete any previous recording regions before starting a new one
       project.editing.modify(() => {
         const allBoxes = project.boxGraph.boxes();
         const recordingRegions: AudioRegionBox[] = [];
 
-        // Find all Recording AudioRegionBox instances
         for (const box of allBoxes) {
           if (box.name === "AudioRegionBox") {
             const regionBox = box as AudioRegionBox;
@@ -494,25 +543,24 @@ const App: React.FC = () => {
           }
         }
 
-        // Delete all previous recording regions
         console.log(`[Recording] Deleting ${recordingRegions.length} previous recording(s)`);
         recordingRegions.forEach(region => region.delete());
       });
 
-      // Reset peaks state
-      currentPeaksRef.current = null;
-      waveformOffsetFramesRef.current = 0;
-      recordingSampleLoaderRef.current = null;
+      // Reset peaks state for all tracks
+      trackPeaksRef.current.clear();
+      recordingSampleLoadersRef.current = [];
       setHasPeaks(false);
+
+      // Cleanup old painters
+      for (const [, painter] of canvasPaintersMap.current) {
+        painter.terminate();
+      }
+      canvasPaintersMap.current.clear();
 
       project.engine.setPosition(0);
 
-      // Recording.start() handles EVERYTHING:
-      // - Creates Tape instrument if needed
-      // - Auto-arms the track
-      // - Sets up MediaStream
-      // - Creates AudioRegionBox
-      // - Manages peaks
+      // startRecording() uses filterArmed() internally to record ALL armed tracks
       project.startRecording(useCountIn);
 
       setRecordStatus(useCountIn ? "Count-in..." : "Recording...");
@@ -521,7 +569,7 @@ const App: React.FC = () => {
       console.error("Failed to start recording:", error);
       setRecordStatus(`Error: ${error}`);
     }
-  }, [project, audioContext, useCountIn]);
+  }, [project, audioContext, useCountIn, hasPermission]);
 
   // Play recording from the beginning
   const handlePlayRecording = useCallback(async () => {
@@ -534,8 +582,7 @@ const App: React.FC = () => {
     // Save user's metronome preference before disabling
     userMetronomePreferenceRef.current = metronomeEnabled ?? false;
 
-    // Temporarily disable metronome during playback to avoid double-click with recorded metronome
-    // (It will be restored to the user's preference when playback stops)
+    // Temporarily disable metronome during playback
     setMetronomeEnabled(false);
 
     // Wait for audio to be fully loaded before playing
@@ -543,7 +590,6 @@ const App: React.FC = () => {
     if (!isLoaded) {
       console.log("[Playback] Waiting for audio to load...");
       setPlaybackStatus("Loading audio...");
-      // Poll until loaded
       await new Promise<void>(resolve => {
         const checkLoaded = async () => {
           if (await project.engine.queryLoadingComplete()) {
@@ -556,7 +602,6 @@ const App: React.FC = () => {
       });
     }
 
-    // Reset engine and position before playing (like OpenDAW's stop button)
     project.engine.stop(true);
     project.engine.play();
     setPlaybackStatus("Playing...");
@@ -569,23 +614,27 @@ const App: React.FC = () => {
     const wasRecording = project.engine.isRecording.getValue() || project.engine.isCountingIn.getValue();
 
     if (wasRecording) {
-      // Use stopRecording() to keep the audio graph alive for finalization.
-      // stop(true) kills the graph and prevents RecordingProcessor from
-      // writing remaining data to the RingBuffer.
+      // Use stopRecording() to keep the audio graph alive for finalization
       project.engine.stopRecording();
       setRecordStatus("Recording stopped");
 
-      // Wait for finalization via sampleLoader.subscribe, then reset engine.
-      const loader = recordingSampleLoaderRef.current;
-      if (loader) {
-        const sub = loader.subscribe((state) => {
-          if (state.type === "loaded") {
-            sub.terminate();
-            project.engine.stop(true);
-          }
-        });
+      // Wait for finalization via sampleLoader.subscribe for ALL loaders
+      const loaders = recordingSampleLoadersRef.current;
+      if (loaders.length > 0) {
+        let finalized = 0;
+        for (const loader of loaders) {
+          const sub = loader.subscribe((state) => {
+            if (state.type === "loaded") {
+              sub.terminate();
+              finalized++;
+              if (finalized === loaders.length) {
+                project.engine.stop(true);
+              }
+            }
+          });
+        }
       } else {
-        // No sampleLoader found (e.g., count-in cancelled) — stop directly
+        // No sampleLoaders found (e.g., count-in cancelled) — stop directly
         project.engine.stop(true);
       }
     } else {
@@ -614,6 +663,8 @@ const App: React.FC = () => {
     );
   }
 
+  const armedCount = recordingTracks.filter(t => t.capture.armed.getValue()).length;
+
   return (
     <Theme appearance="dark" accentColor="blue" radius="large">
       <GitHubCorner />
@@ -624,15 +675,15 @@ const App: React.FC = () => {
           <Flex direction="column" align="center" gap="2">
             <Heading size="8">Recording API Demo</Heading>
             <Text size="3" color="gray">
-              Simplified recording using Recording.start() API
+              Multi-device recording using Recording.start() API
             </Text>
           </Flex>
 
           <Callout.Root color="blue">
             <Callout.Text>
-              💡 This demo uses OpenDAW's high-level <strong>Recording.start()</strong> API which automatically: creates
-              a Tape instrument, arms the track, manages the microphone stream, creates audio regions, and handles
-              peaks.
+              This demo uses OpenDAW's <strong>Recording.start()</strong> API with multi-device support.
+              Add multiple recording tracks, each with its own input device, then record all armed tracks simultaneously.
+              The SDK handles parallel capture with independent <strong>RecordingWorklet</strong> instances per device.
             </Callout.Text>
           </Callout.Root>
 
@@ -677,7 +728,14 @@ const App: React.FC = () => {
 
           <Card>
             <Flex direction="column" gap="4">
-              <Heading size="5">Audio Input</Heading>
+              <Flex justify="between" align="center">
+                <Heading size="5">Audio Input</Heading>
+                {hasPermission && (
+                  <Badge color="gray" size="1">
+                    {armedCount} of {recordingTracks.length} track{recordingTracks.length !== 1 ? "s" : ""} armed
+                  </Badge>
+                )}
+              </Flex>
 
               {!hasPermission ? (
                 <Flex direction="column" gap="3" align="center">
@@ -689,86 +747,33 @@ const App: React.FC = () => {
                   </Button>
                 </Flex>
               ) : (
-                <Flex direction="column" gap="4">
-                  <Flex gap="4" wrap="wrap" align="end">
-                    <Flex direction="column" gap="1" style={{ flex: 1, minWidth: 200 }}>
-                      <Text size="2" weight="medium">Input Device:</Text>
-                      <Select.Root
-                        value={selectedDeviceId}
-                        onValueChange={setSelectedDeviceId}
-                        disabled={isRecording}
-                      >
-                        <Select.Trigger placeholder="Select input device..." />
-                        <Select.Content>
-                          {audioInputDevices.map(device => (
-                            <Select.Item key={device.deviceId} value={device.deviceId}>
-                              {device.label || `Input ${device.deviceId.slice(0, 8)}...`}
-                            </Select.Item>
-                          ))}
-                        </Select.Content>
-                      </Select.Root>
-                    </Flex>
-
-                    <Flex direction="column" gap="1">
-                      <Text size="2" weight="medium">Channels:</Text>
-                      <Flex gap="2">
-                        <Button
-                          size="1"
-                          variant={isMono ? "soft" : "solid"}
-                          color={isMono ? "gray" : "blue"}
-                          onClick={() => setIsMono(false)}
-                          disabled={isRecording}
-                        >
-                          Stereo
-                        </Button>
-                        <Button
-                          size="1"
-                          variant={isMono ? "solid" : "soft"}
-                          color={isMono ? "blue" : "gray"}
-                          onClick={() => setIsMono(true)}
-                          disabled={isRecording}
-                        >
-                          Mono
-                        </Button>
-                      </Flex>
-                    </Flex>
-
-                    <Flex direction="column" gap="1">
-                      <Text size="2" weight="medium">Monitoring:</Text>
-                      <Select.Root
-                        value={monitoringMode}
-                        onValueChange={value => setMonitoringMode(value as MonitoringMode)}
-                        disabled={isRecording}
-                      >
-                        <Select.Trigger style={{ width: 110 }} />
-                        <Select.Content>
-                          <Select.Item value="off">Off</Select.Item>
-                          <Select.Item value="direct">Direct</Select.Item>
-                          <Select.Item value="effects">Effects</Select.Item>
-                        </Select.Content>
-                      </Select.Root>
-                    </Flex>
-                  </Flex>
-
-                  <Flex align="center" gap="3">
-                    <Text size="2" weight="medium" style={{ minWidth: 80 }}>Input Gain:</Text>
-                    <Slider
-                      value={[inputGainDb + 60]}
-                      onValueChange={values => setInputGainDb(values[0] - 60)}
-                      min={0}
-                      max={72}
-                      step={0.5}
-                      disabled={isRecording}
-                      style={{ flex: 1 }}
-                    />
-                    <Text size="1" color="gray" style={{ minWidth: 55, fontFamily: "monospace" }}>
-                      {inputGainDb > 0 ? "+" : ""}{inputGainDb.toFixed(1)} dB
+                <Flex direction="column" gap="3">
+                  {recordingTracks.length === 0 && (
+                    <Text size="2" color="gray" style={{ fontStyle: "italic" }}>
+                      No recording tracks added. Click "Add Track" to create one.
                     </Text>
-                  </Flex>
-
-                  {isArmed && (
-                    <Badge color="red" size="1">Armed for Recording</Badge>
                   )}
+
+                  {recordingTracks.map((track, index) => (
+                    <RecordingTrackCard
+                      key={track.id}
+                      track={track}
+                      trackIndex={index}
+                      project={project}
+                      audioInputDevices={audioInputDevices}
+                      disabled={isRecording || isCountingIn}
+                      onRemove={handleRemoveTrack}
+                    />
+                  ))}
+
+                  <Button
+                    onClick={handleAddTrack}
+                    color="blue"
+                    variant="soft"
+                    disabled={isRecording || isCountingIn}
+                  >
+                    + Add Track
+                  </Button>
                 </Flex>
               )}
             </Flex>
@@ -780,7 +785,7 @@ const App: React.FC = () => {
 
               <Callout.Root color="orange">
                 <Callout.Text>
-                  🎧 <strong>Use headphones when recording with metronome enabled!</strong> Without headphones, your
+                  <strong>Use headphones when recording with metronome enabled!</strong> Without headphones, your
                   microphone will pick up the metronome sound from your speakers, causing echo/doubling during playback.
                 </Callout.Text>
               </Callout.Root>
@@ -861,9 +866,9 @@ const App: React.FC = () => {
                   color="red"
                   size="3"
                   variant="solid"
-                  disabled={isRecording || isCountingIn || isPlayingBack}
+                  disabled={isRecording || isCountingIn || isPlayingBack || armedCount === 0}
                 >
-                  ⏺ Record
+                  ⏺ Record{armedCount > 0 ? ` (${armedCount} track${armedCount !== 1 ? "s" : ""})` : ""}
                 </Button>
                 <Button
                   onClick={handlePlayRecording}
@@ -882,14 +887,52 @@ const App: React.FC = () => {
                 {isRecording || isCountingIn ? recordStatus : playbackStatus}
               </Text>
 
-              <Flex
-                justify="center"
-                align="center"
-                mt="4"
-                style={{ background: "var(--gray-3)", borderRadius: "var(--radius-3)", padding: "var(--space-3)" }}
-              >
-                <canvas ref={canvasRef} style={{ width: "800px", height: "200px", display: "block" }} />
-              </Flex>
+              {/* Waveform canvases — one per recording track */}
+              {recordingTracks.length > 0 && (
+                <Flex direction="column" gap="2" mt="4">
+                  {recordingTracks.map((track, index) => (
+                    <Flex
+                      key={track.id}
+                      direction="column"
+                      gap="1"
+                    >
+                      <Text size="1" color="gray">Track {index + 1}</Text>
+                      <Flex
+                        justify="center"
+                        align="center"
+                        style={{
+                          background: "var(--gray-3)",
+                          borderRadius: "var(--radius-3)",
+                          padding: "var(--space-2)"
+                        }}
+                      >
+                        <canvas
+                          ref={getCanvasRef(index)}
+                          style={{ width: "800px", height: "120px", display: "block" }}
+                        />
+                      </Flex>
+                    </Flex>
+                  ))}
+                </Flex>
+              )}
+
+              {/* Show a placeholder canvas when no tracks exist */}
+              {recordingTracks.length === 0 && (
+                <Flex
+                  justify="center"
+                  align="center"
+                  mt="4"
+                  style={{
+                    background: "var(--gray-3)",
+                    borderRadius: "var(--radius-3)",
+                    padding: "var(--space-3)"
+                  }}
+                >
+                  <Text size="2" color="gray" style={{ padding: "40px 0" }}>
+                    Add a track to see waveforms here
+                  </Text>
+                </Flex>
+              )}
             </Flex>
           </Card>
 

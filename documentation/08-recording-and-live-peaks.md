@@ -12,6 +12,9 @@ This comprehensive guide covers OpenDAW's recording system: audio and MIDI captu
 - [Step Recording](#step-recording)
 - [Recording Preferences Reference](#recording-preferences-reference)
 - [Multi-Track Recording](#multi-track-recording)
+  - [Adding Recording Tracks Dynamically](#adding-recording-tracks-dynamically)
+  - [Recording Multiple Devices Simultaneously](#recording-multiple-devices-simultaneously)
+  - [Multi-Track Finalization (Counting Barrier)](#multi-track-finalization-counting-barrier)
 - [Accessing Live Recording Peaks](#accessing-live-recording-peaks)
   - [Production Pattern (Timeline UI)](#production-pattern-timeline-ui)
   - [Demo Pattern (Standalone Recording)](#demo-pattern-standalone-recording)
@@ -403,23 +406,81 @@ Other related preferences:
 
 ## Multi-Track Recording
 
-OpenDAW supports recording multiple tracks simultaneously. Each armed capture device records independently.
+OpenDAW supports recording multiple tracks simultaneously. Each armed capture device records independently with its own `MediaStream`, `RecordingWorklet`, and `SharedArrayBuffer`.
+
+### Adding Recording Tracks Dynamically
+
+```typescript
+import { InstrumentFactories } from "@opendaw/studio-adapters";
+
+// 1. Create a Tape instrument (auto-routes to master)
+//    editing.modify() doesn't forward return values — capture via outer variable
+let audioUnitBox: any = null;
+project.editing.modify(() => {
+  const result = project.api.createInstrument(InstrumentFactories.Tape);
+  audioUnitBox = result.audioUnitBox;
+  // Can also configure capture inside the same transaction:
+  const captureOpt = project.captureDevices.get(result.audioUnitBox.address.uuid);
+  if (!captureOpt.isEmpty()) {
+    const cap = captureOpt.unwrap();
+    cap.captureBox.deviceId.setValue(deviceId);
+    cap.requestChannels = 1; // 1 = mono, 2 = stereo
+  }
+});
+
+// 2. Get the CaptureAudio after transaction commits
+const captureOpt = project.captureDevices.get(audioUnitBox.address.uuid);
+if (captureOpt.isEmpty()) return;
+const capture = captureOpt.unwrap();
+
+// 3. Arm non-exclusively (keeps other tracks armed)
+project.captureDevices.setArm(capture, false);
+```
+
+### Recording Multiple Devices Simultaneously
 
 ```typescript
 // Arm multiple tracks (non-exclusive)
-const audioCapture = project.captureDevices.get(audioUnitUuid).unwrap();
-const midiCapture = project.captureDevices.get(midiUnitUuid).unwrap();
+const audioCapture1 = project.captureDevices.get(uuid1).unwrap();
+const audioCapture2 = project.captureDevices.get(uuid2).unwrap();
 
-project.captureDevices.setArm(audioCapture, false); // non-exclusive
-project.captureDevices.setArm(midiCapture, false);  // both stay armed
+project.captureDevices.setArm(audioCapture1, false); // non-exclusive
+project.captureDevices.setArm(audioCapture2, false);  // both stay armed
 
-// Start recording — both capture devices record simultaneously
+// Start recording — ALL armed captures record simultaneously
 project.startRecording(useCountIn);
 
 // Each capture creates its own region on its own track
 // Audio capture → AudioRegionBox with peaks
 // MIDI capture → NoteRegionBox with NoteEventBoxes
 ```
+
+### Multi-Track Finalization (Counting Barrier)
+
+When stopping a multi-track recording, you must wait for ALL sample loaders to finalize before resetting the engine:
+
+```typescript
+project.engine.stopRecording();
+
+// Collect all sampleLoaders discovered during recording
+const loaders: SampleLoader[] = [...allDiscoveredLoaders];
+
+let finalized = 0;
+for (const loader of loaders) {
+  const sub = loader.subscribe((state) => {
+    if (state.type === "loaded") {
+      sub.terminate();
+      finalized++;
+      // Only reset engine after ALL tracks have finalized
+      if (finalized === loaders.length) {
+        project.engine.stop(true);
+      }
+    }
+  });
+}
+```
+
+**Why a barrier?** Calling `engine.stop(true)` kills the audio graph. If any track's `RecordingWorklet` hasn't finished writing to its `RingBuffer`, that track's audio data is lost.
 
 ## Accessing Live Recording Peaks
 
@@ -549,6 +610,7 @@ PeaksPainter.renderBlocks(context, peaks, channel, {
 | Mono/stereo | `capture.requestChannels` | `recording-api-react-demo.html` |
 | Input gain | `capture.captureBox.gainDb` | `recording-api-react-demo.html` |
 | Input monitoring | `capture.monitoringMode` | `recording-api-react-demo.html` |
+| Multi-device recording | `setArm(capture, false)` | `recording-api-react-demo.html` |
 | MIDI recording | `MidiDevices`, `CaptureMidi` | `midi-recording-demo.html` |
 | Software keyboard | `MidiDevices.softwareMIDIInput` | `midi-recording-demo.html` |
 | Step recording | `NoteEventBox.create()` | `midi-recording-demo.html` |

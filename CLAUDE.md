@@ -57,6 +57,11 @@ if (capture instanceof CaptureAudio) {
 // Track arming
 project.captureDevices.setArm(capture, true); // exclusive=true disarms others
 const armed = project.captureDevices.filterArmed();
+
+// Multi-device recording: arm multiple captures non-exclusively
+project.captureDevices.setArm(capture1, false); // false = keep others armed
+project.captureDevices.setArm(capture2, false);
+// startRecording() uses filterArmed() internally — records ALL armed captures in parallel
 ```
 
 ### MIDI Devices & Recording
@@ -301,6 +306,26 @@ connection, causing dual routing. Always re-route in a separate transaction. Sim
 Fading values (in, out, slopes) can be set in the same `editing.modify()` as
 region property changes (position, duration, loopOffset). No separate transaction needed.
 
+### createInstrument Must Be Destructured Inside editing.modify()
+`project.api.createInstrument()` returns `{ audioUnitBox, trackBox }` directly — no `.unwrap()`.
+But `editing.modify()` does NOT forward return values, so capture via outer variable:
+```typescript
+let audioUnitBox: any = null;
+project.editing.modify(() => {
+  const result = project.api.createInstrument(InstrumentFactories.Tape);
+  audioUnitBox = result.audioUnitBox;
+});
+// audioUnitBox is now available outside the transaction
+```
+
+### monitoringMode Not in Type Declarations
+`capture.monitoringMode` exists at runtime but isn't in `.d.ts` files.
+Use `(capture as any).monitoringMode = "direct"` when TypeScript complains.
+
+### UUID.Bytes Is Not a String
+`audioUnitBox.address.uuid` is `UUID.Bytes`, not `string`. Use `UUID.toString(uuid)` for
+React keys, Map keys, or any string context. Import: `import { UUID } from "@opendaw/lib-std"`.
+
 ### Capture Settings Require editing.modify()
 `captureBox.deviceId`, `captureBox.gainDb`, and `capture.requestChannels` are box graph fields —
 wrap in `editing.modify()`. `capture.monitoringMode` is NOT a box graph field (it manipulates
@@ -372,6 +397,8 @@ See `src/lib/audioUtils.ts` `getAudioExtension()`.
 3. Call `engine.stopRecording()` (NOT `stop(true)`) to stop recording
 4. Subscribe to `sampleLoader.subscribe()` — wait for `state.type === "loaded"`
 5. Call `engine.stop(true)` to reset, then `engine.play()`
+**Multi-device**: When recording multiple tracks, subscribe to ALL sampleLoaders and only call
+`stop(true)` after all have emitted `"loaded"` (counting barrier pattern).
 **Note**: `queryLoadingComplete()` resolves before `sampleLoader.data` is set — do NOT use it to detect recording data availability.
 
 ### Stop Button Behavior
@@ -462,6 +489,7 @@ See `src/looping-demo.tsx` for the reference layout pattern.
 
 ## Reference Files
 - Recording demo: `src/recording-api-react-demo.tsx` (audio input, mono/stereo, gain, monitoring)
+- Recording track card: `src/components/RecordingTrackCard.tsx` (per-track capture controls)
 - MIDI recording demo: `src/midi-recording-demo.tsx` (MIDI devices, keyboard, step recording)
 - Loop recording demo: `src/loop-recording-demo.tsx` (takes, loop recording preferences)
 - Project setup: `src/lib/projectSetup.ts`

@@ -115,7 +115,7 @@ Read these documents in order to build up your understanding:
 - Loop recording & takes (allowTakes, olderTakeAction, olderTakeScope)
 - Step recording (NoteEventBox creation, headless pattern)
 - Recording preferences reference
-- Multi-track simultaneous recording
+- Multi-device simultaneous recording (dynamic track creation, non-exclusive arming, finalization barrier)
 - Accessing live recording peaks (production & demo patterns)
 - Smooth 60fps waveform rendering
 
