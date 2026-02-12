@@ -4,16 +4,16 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
 import { PPQN } from "@opendaw/lib-dsp";
-import { AnimationFrame } from "@opendaw/lib-dom";
 import { Project } from "@opendaw/studio-core";
 import { InstrumentFactories } from "@opendaw/studio-adapters";
-import { AudioFileBox, AudioRegionBox, ValueEventCollectionBox } from "@opendaw/studio-boxes";
+import { AudioFileBox, AudioRegionBox, AudioUnitBox, ValueEventCollectionBox } from "@opendaw/studio-boxes";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { MoisesLogo } from "./components/MoisesLogo";
 import { BackLink } from "./components/BackLink";
 import { loadAudioFile } from "./lib/audioUtils";
 import { initializeOpenDAW } from "./lib/projectSetup";
 import { useAudioExport } from "./hooks/useAudioExport";
+import { usePlaybackPosition } from "./hooks/usePlaybackPosition";
 import "@radix-ui/themes/styles.css";
 import { Theme, Container, Heading, Text, Button, Flex, Card, Badge, Separator } from "@radix-ui/themes";
 import { ExportProgress } from "./components/ExportProgress";
@@ -34,11 +34,12 @@ const App: React.FC = () => {
   const [status, setStatus] = useState("Loading...");
   const [project, setProject] = useState<Project | null>(null);
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
   const [scheduledClips, setScheduledClips] = useState<ScheduledClip[]>([]);
-  const [currentPosition, setCurrentPosition] = useState(0);
   const [bpm, setBpm] = useState(90);
   const [samplesLoaded, setSamplesLoaded] = useState(false);
+
+  // Playback position hook
+  const { currentPosition, isPlaying } = usePlaybackPosition(project);
 
   // Audio export hook
   const {
@@ -56,38 +57,16 @@ const App: React.FC = () => {
   // Refs for non-reactive values
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
   const sampleUUIDsRef = useRef<UUID.Bytes[]>([]);
-  const audioRegionsRef = useRef<Array<{ box: any; audioDuration: number }>>([]); // Store region refs for BPM updates
+  const audioRegionsRef = useRef<Array<{ box: AudioRegionBox; audioDuration: number }>>([]); // Store region refs for BPM updates
   const clipTemplatesRef = useRef<
     Array<{ trackName: string; position: number; audioDuration: number; label: string; color: string }>
   >([]); // Templates for recalculating clips
-  const trackAudioBoxesRef = useRef<Array<{ name: string; audioUnitBox: any }>>([]); // Track audio boxes for stem export
+  const trackAudioBoxesRef = useRef<Array<{ name: string; audioUnitBox: AudioUnitBox }>>([]); // Track audio boxes for stem export
 
   const { Quarter } = PPQN;
   const BARS = 4;
   const BEATS_PER_BAR = 4;
   const TOTAL_BEATS = BARS * BEATS_PER_BAR;
-
-  // Subscribe to engine observables
-  useEffect(() => {
-    if (!project) return undefined;
-
-    console.debug("[Playback] Subscribing to engine observables...");
-
-    const playingSubscription = project.engine.isPlaying.catchupAndSubscribe(obs => {
-      setIsPlaying(obs.getValue());
-    });
-
-    // Use AnimationFrame to throttle position updates to once per frame
-    const positionSubscription = AnimationFrame.add(() => {
-      setCurrentPosition(project.engine.position.getValue());
-    });
-
-    return () => {
-      console.debug("[Playback] Cleaning up subscriptions...");
-      playingSubscription.terminate();
-      positionSubscription.terminate();
-    };
-  }, [project]);
 
   // Initialize OpenDAW
   useEffect(() => {

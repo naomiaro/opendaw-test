@@ -3,9 +3,10 @@ import { Text } from "@radix-ui/themes";
 
 interface TimelineRulerProps {
   maxDuration: number;
+  controlsWidth?: number;
 }
 
-export const TimelineRuler: React.FC<TimelineRulerProps> = ({ maxDuration }) => {
+export const TimelineRuler: React.FC<TimelineRulerProps> = ({ maxDuration, controlsWidth = 200 }) => {
   const totalSeconds = Math.ceil(maxDuration);
   const tickInterval = 30; // Tick every 30 seconds
 
@@ -32,7 +33,7 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = ({ maxDuration }) => 
           display: "flex",
           flexDirection: "column",
           gap: "8px",
-          width: "200px",
+          width: `${controlsWidth}px`,
           padding: "12px",
           backgroundColor: "var(--gray-3)",
           borderRight: "1px solid var(--gray-6)",

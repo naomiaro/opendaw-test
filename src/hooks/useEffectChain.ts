@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { Project } from "@opendaw/studio-core";
-import type { EffectType } from "../components/EffectChain";
+import { AudioUnitBox } from "@opendaw/studio-boxes";
+import type { EffectType } from "../lib/types";
 
 /**
  * UI state for effect instances.
@@ -17,7 +18,7 @@ interface EffectInstanceData {
  * Manages UI state for effects on a track.
  * Actual audio effects are handled by useDynamicEffect on mount/unmount.
  */
-export const useEffectChain = (project: Project | null, audioBox: any, trackName: string) => {
+export const useEffectChain = (project: Project | null, audioBox: AudioUnitBox | null, trackName: string) => {
   const [effects, setEffects] = useState<EffectInstanceData[]>([]);
 
   const addEffect = useCallback(

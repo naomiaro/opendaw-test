@@ -3,8 +3,10 @@ import { UUID } from "@opendaw/lib-std";
 import { PPQN } from "@opendaw/lib-dsp";
 import { Project } from "@opendaw/studio-core";
 import { PeaksPainter } from "@opendaw/lib-fusion";
+import { AudioRegionBox } from "@opendaw/studio-boxes";
 import { CanvasPainter } from "../lib/CanvasPainter";
-import type { TrackData } from "../lib/types";
+import type { Peaks } from "@opendaw/lib-fusion";
+import type { TrackData, RegionView } from "../lib/types";
 
 export interface WaveformRenderingOptions {
   /**
@@ -32,7 +34,7 @@ export interface WaveformRenderingOptions {
    * Update trigger - change this value to force waveform re-render
    * Useful when regions are modified externally
    */
-  updateTrigger?: any;
+  updateTrigger?: unknown;
 }
 
 /**
@@ -73,7 +75,7 @@ export function useWaveformRendering(
   const bpm = project?.timelineBox.bpm.getValue() ?? 120;
 
   const canvasPaintersRef = useRef<Map<string, CanvasPainter>>(new Map());
-  const trackPeaksRef = useRef<Map<string, any>>(new Map());
+  const trackPeaksRef = useRef<Map<string, Peaks>>(new Map());
   const visuallyRenderedTracksRef = useRef<Set<string>>(new Set());
 
   // Store callback in ref to avoid triggering effect on every render
@@ -97,7 +99,8 @@ export function useWaveformRendering(
 
     console.debug("[CanvasPainter] Initializing painters for", tracks.length, "tracks");
 
-    const lastRenderedPeaks = new Map<string, any>();
+    const lastRenderedPeaks = new Map<string, Peaks>();
+    const lastRenderedRegions = new Map<string, string>();
 
     tracks.forEach(track => {
       const uuidString = UUID.toString(track.uuid);
@@ -126,15 +129,16 @@ export function useWaveformRendering(
         }
 
         // Get regions for this track by reading directly from trackBox
-        const regions: any[] = [];
+        const regions: RegionView[] = [];
         const pointers = track.trackBox.regions.pointerHub.incoming();
         pointers.forEach(({ box }) => {
           if (!box) return;
+          const regionBox = box as AudioRegionBox;
           regions.push({
-            position: (box as any).position.getValue(),
-            duration: (box as any).duration.getValue(),
-            loopOffset: (box as any).loopOffset.getValue(),
-            loopDuration: (box as any).loopDuration.getValue()
+            position: regionBox.position.getValue(),
+            duration: regionBox.duration.getValue(),
+            loopOffset: regionBox.loopOffset.getValue(),
+            loopDuration: regionBox.loopDuration.getValue()
           });
         });
 
@@ -143,7 +147,7 @@ export function useWaveformRendering(
         if (
           lastRenderedPeaks.get(uuidString) === peaks &&
           !canvasPainter.wasResized &&
-          regionsKey === lastRenderedPeaks.get(`${uuidString}_regions`)
+          regionsKey === lastRenderedRegions.get(uuidString)
         ) {
           return;
         }
@@ -174,7 +178,7 @@ export function useWaveformRendering(
 
         if (useRegionRendering) {
           // Region-aware rendering: render each region at its position
-          regions.forEach((region: any) => {
+          regions.forEach((region) => {
             // Convert region position from PPQN to seconds to pixels
             const regionStartSeconds = PPQN.pulsesToSeconds(region.position, bpm);
             const regionDurationSeconds = PPQN.pulsesToSeconds(region.duration, bpm);
@@ -234,7 +238,7 @@ export function useWaveformRendering(
         }
 
         lastRenderedPeaks.set(uuidString, peaks);
-        lastRenderedPeaks.set(`${uuidString}_regions`, regionsKey);
+        lastRenderedRegions.set(uuidString, regionsKey);
 
         // Track visual rendering completion
         if (!visuallyRenderedTracksRef.current.has(uuidString)) {

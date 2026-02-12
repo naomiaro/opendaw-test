@@ -4,8 +4,8 @@ import { Project } from "@opendaw/studio-core";
 import type { EffectPreset } from "../lib/effectPresets";
 
 const PresetSelector: React.FC<{
-  presets: EffectPreset<any>[];
-  onPresetChange: (preset: EffectPreset<any>) => void;
+  presets: EffectPreset<Record<string, number>>[];
+  onPresetChange: (preset: EffectPreset<Record<string, number>>) => void;
 }> = ({ presets, onPresetChange }) => {
   const [selectedPreset, setSelectedPreset] = useState<string>("");
 
@@ -66,8 +66,8 @@ interface EffectPanelProps {
   onParameterChange?: (paramName: string, value: number) => void;
   project?: Project;
   badgeText?: string;
-  presets?: EffectPreset<any>[];
-  onPresetChange?: (preset: EffectPreset<any>) => void;
+  presets?: EffectPreset<Record<string, number>>[];
+  onPresetChange?: (preset: EffectPreset<Record<string, number>>) => void;
   accentColor?: string;
 }
 

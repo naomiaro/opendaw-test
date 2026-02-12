@@ -1,11 +1,12 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
+import { UUID } from "@opendaw/lib-std";
 import { Project, MidiDevices } from "@opendaw/studio-core";
 import { NoteSignal, InstrumentFactories } from "@opendaw/studio-adapters";
 import { PPQN } from "@opendaw/lib-dsp";
 import { AnimationFrame } from "@opendaw/lib-dom";
-import { NoteEventBox, NoteEventCollectionBox, NoteRegionBox } from "@opendaw/studio-boxes";
-import { UUID } from "@opendaw/lib-std";
+import { NoteEventBox, NoteEventCollectionBox, NoteRegionBox, AudioUnitBox } from "@opendaw/studio-boxes";
+import type { TrackBox } from "@opendaw/studio-boxes";
 import { initializeOpenDAW } from "./lib/projectSetup";
 import { useEnginePreference, CountInBarsValue, MetronomeBeatSubDivisionValue } from "./hooks/useEnginePreference";
 import { GitHubCorner } from "./components/GitHubCorner";
@@ -224,33 +225,36 @@ const StepRecordingSection: React.FC<{
 
     // Find the first instrument's track to create notes on
     const boxes = project.boxGraph.boxes();
-    let eventsField: any = null;
+    let eventsCollection: NoteEventCollectionBox | null = null;
     let regionOffset = 0;
 
     for (const box of boxes) {
       if (box.name === "NoteRegionBox") {
-        const regionBox = box as any;
-        const label = regionBox.label?.getValue?.();
+        const regionBox = box as NoteRegionBox;
+        const label = regionBox.label.getValue();
         if (label === "Step Recording") {
-          eventsField = regionBox.events?.targetVertex;
-          regionOffset = regionBox.position?.getValue?.() ?? 0;
+          const eventsVertex = regionBox.events.targetVertex;
+          if (!eventsVertex.isEmpty()) {
+            eventsCollection = eventsVertex.unwrap().box as NoteEventCollectionBox;
+          }
+          regionOffset = regionBox.position.getValue();
           break;
         }
       }
     }
 
     // Create a step recording region if none exists
-    if (!eventsField) {
+    if (!eventsCollection) {
       // Find an instrument track
       const audioUnits = project.rootBox.audioUnits.pointerHub.incoming();
       if (audioUnits.length === 0) return;
 
-      const audioUnitBox = audioUnits[0].box as any;
-      const tracks = audioUnitBox.tracks?.pointerHub?.incoming() ?? [];
-      let trackBox: any = null;
+      const audioUnitBox = audioUnits[0].box as AudioUnitBox;
+      const tracks = audioUnitBox.tracks.pointerHub.incoming();
+      let trackBox: TrackBox | null = null;
 
       for (const t of tracks) {
-        trackBox = t.box;
+        trackBox = t.box as TrackBox;
         break;
       }
 
@@ -258,8 +262,8 @@ const StepRecordingSection: React.FC<{
 
       project.editing.modify(() => {
         const collection = NoteEventCollectionBox.create(project.boxGraph, UUID.generate());
-        NoteRegionBox.create(project.boxGraph, UUID.generate(), (box: any) => {
-          box.regions.refer(trackBox.regions);
+        NoteRegionBox.create(project.boxGraph, UUID.generate(), (box: NoteRegionBox) => {
+          box.regions.refer(trackBox!.regions);
           box.events.refer(collection.owners);
           box.position.setValue(0);
           box.label.setValue("Step Recording");
@@ -269,23 +273,24 @@ const StepRecordingSection: React.FC<{
       // Re-find the created region
       for (const box of project.boxGraph.boxes()) {
         if (box.name === "NoteRegionBox") {
-          const regionBox = box as any;
-          if (regionBox.label?.getValue?.() === "Step Recording") {
-            eventsField = regionBox.events?.targetVertex;
-            regionOffset = regionBox.position?.getValue?.() ?? 0;
+          const regionBox = box as NoteRegionBox;
+          if (regionBox.label.getValue() === "Step Recording") {
+            const eventsVertex = regionBox.events.targetVertex;
+            if (!eventsVertex.isEmpty()) {
+              eventsCollection = eventsVertex.unwrap().box as NoteEventCollectionBox;
+            }
+            regionOffset = regionBox.position.getValue();
             break;
           }
         }
       }
     }
 
-    if (!eventsField || eventsField.isEmpty()) return;
-
-    const eventsBox = eventsField.unwrap().box;
+    if (!eventsCollection) return;
 
     project.editing.modify(() => {
       NoteEventBox.create(project.boxGraph, UUID.generate(), (box: NoteEventBox) => {
-        box.events.refer(eventsBox.events);
+        box.events.refer(eventsCollection!.events);
         box.position.setValue(Math.max(0, position - regionOffset));
         box.duration.setValue(duration);
         box.pitch.setValue(note);

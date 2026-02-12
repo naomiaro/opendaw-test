@@ -1,22 +1,13 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
-import { UUID } from "@opendaw/lib-std";
 import { PPQN } from "@opendaw/lib-dsp";
 import { Project } from "@opendaw/studio-core";
-import { AudioUnitBox, TrackBox } from "@opendaw/studio-boxes";
 import { Button, Flex, Text, Slider } from "@radix-ui/themes";
-
-export type TrackData = {
-  name: string;
-  trackBox: TrackBox;
-  audioUnitBox: AudioUnitBox;
-  uuid: UUID.Bytes;
-};
+import type { TrackData } from "../lib/types";
 
 interface TrackRowProps {
   track: TrackData;
   project: Project;
   allTracks: TrackData[];
-  peaks: any;
   canvasRef: (el: HTMLCanvasElement | null) => void;
   currentPosition: number;
   isPlaying: boolean;

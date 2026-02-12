@@ -2,15 +2,17 @@ import React, { useEffect, useState, useCallback } from "react";
 import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
 import { PPQN, TimeBase } from "@opendaw/lib-dsp";
-import { AnimationFrame } from "@opendaw/lib-dom";
 import { Project } from "@opendaw/studio-core";
 import { InstrumentFactories } from "@opendaw/studio-adapters";
-import { AudioFileBox, AudioRegionBox, ValueEventCollectionBox } from "@opendaw/studio-boxes";
+import { AudioFileBox, AudioRegionBox, AudioUnitBox, ValueEventCollectionBox } from "@opendaw/studio-boxes";
+import type { TrackBox } from "@opendaw/studio-boxes";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { MoisesLogo } from "./components/MoisesLogo";
 import { BackLink } from "./components/BackLink";
 import { loadAudioFile } from "./lib/audioUtils";
 import { initializeOpenDAW } from "./lib/projectSetup";
+import { usePlaybackPosition } from "./hooks/usePlaybackPosition";
+import { useTransportControls } from "./hooks/useTransportControls";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
@@ -38,26 +40,27 @@ const { Quarter } = PPQN;
 function TimeBaseDemo() {
   const [project, setProject] = useState<Project | null>(null);
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentPosition, setCurrentPosition] = useState(0);
   const [bpm, setBpm] = useState(120);
   const [sampleLoaded, setSampleLoaded] = useState(false);
 
+  const { currentPosition, isPlaying, pausedPositionRef } = usePlaybackPosition(project);
+  const { handlePlay, handlePause, handleStop } = useTransportControls({ project, audioContext, pausedPositionRef });
+
   // Track info
   const [musicalTrackInfo, setMusicalTrackInfo] = useState<{
-    trackBox: any;
-    audioUnitBox: any;
-    regions: Array<{ box: any; position: number }>;
+    trackBox: TrackBox;
+    audioUnitBox: AudioUnitBox;
+    regions: Array<{ box: AudioRegionBox; position: number }>;
   } | null>(null);
 
   const [secondsTrackInfo, setSecondsTrackInfo] = useState<{
-    trackBox: any;
-    audioUnitBox: any;
-    regions: Array<{ box: any; position: number }>;
+    trackBox: TrackBox;
+    audioUnitBox: AudioUnitBox;
+    regions: Array<{ box: AudioRegionBox; position: number }>;
   } | null>(null);
 
   const [audioFileUUID, setAudioFileUUID] = useState<UUID.Bytes | null>(null);
-  const [audioFileBox, setAudioFileBox] = useState<any>(null);
+  const [audioFileBox, setAudioFileBox] = useState<AudioFileBox | null>(null);
   const [sampleDurationInSeconds, setSampleDurationInSeconds] = useState(0);
 
   // Create audio buffers map for sample manager
@@ -97,23 +100,7 @@ function TimeBaseDemo() {
     };
   }, []);
 
-  // Subscribe to playback state
-  useEffect(() => {
-    if (!project) return;
-
-    const playingSub = project.engine.isPlaying.subscribe((obs) => {
-      setIsPlaying(obs.getValue());
-    });
-
-    const positionSub = AnimationFrame.add(() => {
-      setCurrentPosition(project.engine.position.getValue());
-    });
-
-    return () => {
-      playingSub.terminate();
-      positionSub.terminate();
-    };
-  }, [project]);
+  // Playback state is managed by usePlaybackPosition and useTransportControls hooks
 
   // Subscribe to sample loading state
   useEffect(() => {
@@ -385,22 +372,7 @@ function TimeBaseDemo() {
     setSecondsTrackInfo((prev) => ({ ...prev!, regions: [] }));
   }, [project, secondsTrackInfo, musicalTrackInfo, audioFileBox]);
 
-  // Playback controls
-  const handlePlay = async () => {
-    if (!project || !audioContext) return;
-    await audioContext.resume(); // Resume AudioContext on user interaction
-    project.engine.play();
-  };
-
-  const handlePause = () => {
-    if (!project) return;
-    project.engine.stop(false); // Stop without resetting position
-  };
-
-  const handleStop = () => {
-    if (!project) return;
-    project.engine.stop(); // Stop and reset position
-  };
+  // Playback controls provided by useTransportControls hook
 
   // Calculate durations for display
   // Musical: stored in PPQN (beats) - duration changes with BPM

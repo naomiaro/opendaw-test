@@ -4,7 +4,6 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
 import { PPQN } from "@opendaw/lib-dsp";
-import { AnimationFrame } from "@opendaw/lib-dom";
 import { Project } from "@opendaw/studio-core";
 import { AudioRegionBox } from "@opendaw/studio-boxes";
 import { RegionEditing, AudioRegionBoxAdapter } from "@opendaw/studio-adapters";
@@ -19,6 +18,8 @@ import { initializeOpenDAW } from "./lib/projectSetup";
 import { loadTracksFromFiles } from "./lib/trackLoading";
 import { getAudioExtension } from "./lib/audioUtils";
 import { useWaveformRendering } from "./hooks/useWaveformRendering";
+import { usePlaybackPosition } from "./hooks/usePlaybackPosition";
+import { useTransportControls } from "./hooks/useTransportControls";
 import type { TrackData } from "./lib/types";
 import "@radix-ui/themes/styles.css";
 import { Theme, Container, Heading, Text, Flex, Card, Button, Callout, Badge, Box as RadixBox } from "@radix-ui/themes";
@@ -36,25 +37,25 @@ const App: React.FC = () => {
   const [status, setStatus] = useState("Loading...");
   const [project, setProject] = useState<Project | null>(null);
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentPosition, setCurrentPosition] = useState(0);
   const [tracks, setTracks] = useState<TrackData[]>([]);
   const [selectedTrackIndex, setSelectedTrackIndex] = useState<number | null>(null);
   const [selectedRegionUuid, setSelectedRegionUuid] = useState<string | null>(null);
   const [updateTrigger, setUpdateTrigger] = useState({});
 
+  // Playback position and transport hooks
+  const { currentPosition, setCurrentPosition, isPlaying, pausedPositionRef } = usePlaybackPosition(project);
+  const { handlePlay, handlePause, handleStop } = useTransportControls({ project, audioContext, pausedPositionRef });
+
   // Refs for non-reactive values
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
   const canvasRefs = useRef<Map<string, HTMLCanvasElement>>(new Map());
-  const pausedPositionRef = useRef<number | null>(null);
-  const currentPositionRef = useRef<number>(0);
   const bpmRef = useRef<number>(124);
 
   const BPM = 124; // Dark Ride BPM
 
   // Helper function to get regions from a track
   const getRegionsForTrack = useCallback((track: TrackData) => {
-    const regions: any[] = [];
+    const regions: { uuid: string; position: number; duration: number; loopOffset: number; loopDuration: number; label: string }[] = [];
     const pointers = track.trackBox.regions.pointerHub.incoming();
 
     pointers.forEach(({ box }) => {
@@ -84,7 +85,6 @@ const App: React.FC = () => {
   // Initialize OpenDAW
   useEffect(() => {
     let mounted = true;
-    let animationFrameSubscription: any;
 
     (async () => {
       try {
@@ -106,32 +106,6 @@ const App: React.FC = () => {
           setAudioContext(newAudioContext);
           bpmRef.current = BPM;
         }
-
-        // Subscribe to playback state
-        newProject.engine.isPlaying.catchupAndSubscribe(obs => {
-          if (mounted) setIsPlaying(obs.getValue());
-        });
-
-        // Subscribe to position for display
-        newProject.engine.position.catchupAndSubscribe(obs => {
-          if (mounted) {
-            const pos = Math.max(0, obs.getValue()); // Ensure position is never negative
-            currentPositionRef.current = pos; // Keep ref in sync
-            setCurrentPosition(pos);
-          }
-        });
-
-        // Subscribe to AnimationFrame for efficient playhead position updates
-        animationFrameSubscription = AnimationFrame.add(() => {
-          // Update position for playhead rendering (used by SVG overlay)
-          const position = Math.max(0, newProject.engine.position.getValue()); // Ensure position is never negative
-          currentPositionRef.current = position;
-
-          // Update React state to trigger playhead re-render
-          if (mounted && newProject.engine.isPlaying.getValue()) {
-            setCurrentPosition(position);
-          }
-        });
 
         // Load audio files and create tracks
         const ext = getAudioExtension();
@@ -164,73 +138,8 @@ const App: React.FC = () => {
 
     return () => {
       mounted = false;
-      if (animationFrameSubscription) {
-        animationFrameSubscription.terminate();
-      }
     };
   }, []);
-
-  // Transport controls
-  const handlePlay = useCallback(async () => {
-    if (!project || !audioContext) return;
-
-    console.debug("Play button clicked");
-
-    // Resume AudioContext if suspended
-    if (audioContext.state === "suspended") {
-      console.debug("Resuming AudioContext...");
-      await audioContext.resume();
-      console.debug(`AudioContext resumed (${audioContext.state})`);
-    }
-
-    // If resuming from pause, restore the position
-    if (pausedPositionRef.current !== null) {
-      console.debug(`Restoring paused position: ${pausedPositionRef.current}`);
-      project.engine.setPosition(pausedPositionRef.current);
-      pausedPositionRef.current = null;
-    } else {
-      // On first play, explicitly set position to 0 to ensure clean start
-      project.engine.setPosition(0);
-      console.debug("Set position to 0 for first play");
-    }
-
-    console.debug("Starting playback...");
-    project.engine.play();
-  }, [project, audioContext]);
-
-  const handlePause = useCallback(() => {
-    if (!project) return;
-    console.debug("Pause button clicked");
-
-    // Read current position from observable
-    const position = project.engine.position.getValue();
-    console.debug(`Current position from observable: ${position}`);
-
-    // Save it for resume
-    pausedPositionRef.current = position;
-    console.debug(`Saved paused position: ${pausedPositionRef.current}`);
-
-    // Update state so playhead stays visible
-    setCurrentPosition(position);
-
-    // Stop playback without resetting position
-    project.engine.stop(false);
-  }, [project]);
-
-  const handleStop = useCallback(() => {
-    if (!project) return;
-    console.debug("Stop button clicked");
-
-    // Clear any paused position
-    pausedPositionRef.current = null;
-
-    // Stop and reset position
-    project.engine.stop();
-
-    // Reset position to beginning
-    project.engine.setPosition(0);
-    setCurrentPosition(0);
-  }, [project]);
 
   // Editing operations
   const handleSplitAtPlayhead = useCallback(() => {
@@ -529,7 +438,6 @@ const App: React.FC = () => {
                           track={track}
                           project={project}
                           allTracks={tracks}
-                          peaks={undefined}
                           canvasRef={canvas => {
                             if (canvas) canvasRefs.current.set(uuidString, canvas);
                           }}

@@ -1,8 +1,9 @@
 import React, { useState, memo } from "react";
 import { Flex, Text, Select, Button, Separator } from "@radix-ui/themes";
 import { EffectPanel } from "./EffectPanel";
+import type { EffectType } from "../lib/types";
 
-export type EffectType = "Reverb" | "DattorroReverb" | "Compressor" | "Delay" | "Crusher" | "StereoWidth" | "EQ" | "Fold" | "Tidal" | "Maximizer";
+export type { EffectType };
 
 export interface EffectInstance {
   id: string;

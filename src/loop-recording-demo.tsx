@@ -1,9 +1,13 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
+import type { Terminable } from "@opendaw/lib-std";
 import { Project, AudioDevices } from "@opendaw/studio-core";
+import type { SampleLoader } from "@opendaw/studio-adapters";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { PeaksPainter } from "@opendaw/lib-fusion";
 import { PPQN } from "@opendaw/lib-dsp";
+import { AudioRegionBox } from "@opendaw/studio-boxes";
+import type { TrackBox } from "@opendaw/studio-boxes";
 import { CanvasPainter } from "./lib/CanvasPainter";
 import { initializeOpenDAW } from "./lib/projectSetup";
 import { useEnginePreference, CountInBarsValue } from "./hooks/useEnginePreference";
@@ -31,11 +35,11 @@ import {
 
 type TakeInfo = {
   label: string;
-  regionBox: any;
-  trackBox: any;
+  regionBox: AudioRegionBox;
+  trackBox: TrackBox | null;
   isMuted: boolean;
-  peaks: any;
-  sampleLoader: any;
+  peaks: null;
+  sampleLoader: SampleLoader | null;
   waveformOffsetFrames: number; // frames to skip (count-in + prior takes)
   durationFrames: number; // take duration in frames
 };
@@ -195,7 +199,7 @@ const App: React.FC = () => {
   // Initialize OpenDAW
   useEffect(() => {
     let mounted = true;
-    let animSub: any = null;
+    let animSub: Terminable | null = null;
 
     (async () => {
       try {
@@ -284,32 +288,30 @@ const App: React.FC = () => {
 
     for (const box of allBoxes) {
       if (box.name === "AudioRegionBox") {
-        const regionBox = box as any;
-        const label = regionBox.label?.getValue?.();
-        if (label && label.startsWith("Take ")) {
-          const isMuted = regionBox.mute?.getValue?.() ?? false;
+        const regionBox = box as AudioRegionBox;
+        const label = regionBox.label.getValue();
+        if (label.startsWith("Take ")) {
+          const isMuted = regionBox.mute.getValue();
 
           // waveformOffset (seconds) tells us where this take starts in the shared buffer
-          const waveformOffsetSec = regionBox.waveformOffset?.getValue?.() ?? 0;
+          const waveformOffsetSec = regionBox.waveformOffset.getValue();
           const waveformOffsetFrames = Math.round(waveformOffsetSec * sampleRate);
 
           // duration (seconds, since TimeBase is Seconds for recordings)
-          const durationSec = regionBox.duration?.getValue?.() ?? 0;
+          const durationSec = regionBox.duration.getValue();
           const durationFrames = Math.round(durationSec * sampleRate);
 
           // Get sample loader for peaks
-          let sampleLoader: any = null;
-          const fileVertex = regionBox.file?.targetVertex;
-          if (fileVertex && !fileVertex.isEmpty()) {
-            const audioFileBox = fileVertex.unwrap();
-            if (audioFileBox?.address?.uuid) {
-              sampleLoader = project.sampleManager.getOrCreate(audioFileBox.address.uuid);
-            }
+          let loader: SampleLoader | null = null;
+          const fileVertex = regionBox.file.targetVertex;
+          if (!fileVertex.isEmpty()) {
+            const vertex = fileVertex.unwrap();
+            loader = project.sampleManager.getOrCreate(vertex.address.uuid);
           }
 
           // Find the track this region belongs to
-          const trackVertex = regionBox.regions?.targetVertex;
-          const trackBox = trackVertex && !trackVertex.isEmpty() ? trackVertex.unwrap()?.box : null;
+          const trackVertex = regionBox.regions.targetVertex;
+          const trackBox = !trackVertex.isEmpty() ? trackVertex.unwrap().box as TrackBox : null;
 
           foundTakes.push({
             label,
@@ -317,7 +319,7 @@ const App: React.FC = () => {
             trackBox,
             isMuted,
             peaks: null,
-            sampleLoader,
+            sampleLoader: loader,
             waveformOffsetFrames,
             durationFrames,
           });
@@ -380,28 +382,26 @@ const App: React.FC = () => {
 
     // Find the recording's sampleLoader via any Take region so we can wait
     // for finalization (all takes share one AudioFileBox / sampleLoader).
-    let sampleLoader: any = null;
+    let loader: SampleLoader | null = null;
     for (const box of project.boxGraph.boxes()) {
       if (box.name === "AudioRegionBox") {
-        const regionBox = box as any;
-        const label = regionBox.label?.getValue?.();
-        if (label && label.startsWith("Take ")) {
-          const fileVertex = regionBox.file?.targetVertex;
-          if (fileVertex && !fileVertex.isEmpty()) {
-            const audioFileBox = fileVertex.unwrap();
-            if (audioFileBox?.address?.uuid) {
-              sampleLoader = project.sampleManager.getOrCreate(audioFileBox.address.uuid);
-              break;
-            }
+        const regionBox = box as AudioRegionBox;
+        const label = regionBox.label.getValue();
+        if (label.startsWith("Take ")) {
+          const fileVertex = regionBox.file.targetVertex;
+          if (!fileVertex.isEmpty()) {
+            const vertex = fileVertex.unwrap();
+            loader = project.sampleManager.getOrCreate(vertex.address.uuid);
+            break;
           }
         }
       }
     }
 
-    if (sampleLoader) {
+    if (loader) {
       // Subscribe to loaded state — fires when recording data is finalized.
       // If already loaded (e.g., short recording), fires immediately.
-      const sub = sampleLoader.subscribe((state: any) => {
+      const sub = loader.subscribe((state) => {
         if (state.type === "loaded") {
           sub.terminate();
           project.engine.stop(true);
@@ -431,7 +431,7 @@ const App: React.FC = () => {
   const handleToggleTakeMute = useCallback((take: TakeInfo) => {
     if (!project) return;
     project.editing.modify(() => {
-      const currentMute = take.regionBox.mute?.getValue?.() ?? false;
+      const currentMute = take.regionBox.mute.getValue();
       take.regionBox.mute.setValue(!currentMute);
     });
     scanTakes();
@@ -443,9 +443,9 @@ const App: React.FC = () => {
       const allBoxes = project.boxGraph.boxes();
       for (const box of allBoxes) {
         if (box.name === "AudioRegionBox") {
-          const regionBox = box as any;
-          const label = regionBox.label?.getValue?.();
-          if (label && label.startsWith("Take ")) {
+          const regionBox = box as AudioRegionBox;
+          const label = regionBox.label.getValue();
+          if (label.startsWith("Take ")) {
             regionBox.delete();
           }
         }

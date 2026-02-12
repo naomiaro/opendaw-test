@@ -2,9 +2,13 @@
 
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { Project, AudioDevices, CaptureAudio } from "@opendaw/studio-core";
+import type { Terminable } from "@opendaw/lib-std";
+import { Project, AudioDevices, CaptureAudio, PeaksWriter } from "@opendaw/studio-core";
+import type { SampleLoader } from "@opendaw/studio-adapters";
 import { AnimationFrame } from "@opendaw/lib-dom";
+import type { Peaks } from "@opendaw/lib-fusion";
 import { PeaksPainter } from "@opendaw/lib-fusion";
+import { AudioRegionBox } from "@opendaw/studio-boxes";
 import { CanvasPainter } from "./lib/CanvasPainter";
 import { initializeOpenDAW } from "./lib/projectSetup";
 import { useEnginePreference, CountInBarsValue, MetronomeBeatSubDivisionValue } from "./hooks/useEnginePreference";
@@ -87,11 +91,11 @@ const App: React.FC = () => {
   // Refs
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const canvasPainterRef = useRef<CanvasPainter | null>(null);
-  const currentPeaksRef = useRef<any>(null);
+  const currentPeaksRef = useRef<Peaks | PeaksWriter | null>(null);
   const userMetronomePreferenceRef = useRef<boolean>(false); // Track user's metronome preference for restore after playback
 
   const waveformOffsetFramesRef = useRef<number>(0);
-  const recordingSampleLoaderRef = useRef<any>(null);
+  const recordingSampleLoaderRef = useRef<SampleLoader | null>(null);
   const CHANNEL_PADDING = 4;
 
   // Initialize CanvasPainter when canvas is available
@@ -181,10 +185,10 @@ const App: React.FC = () => {
 
         for (const box of allBoxes) {
           if (box.name === "AudioRegionBox") {
-            const regionBox = box as any;
-            const label = regionBox.label?.getValue();
+            const regionBox = box as AudioRegionBox;
+            const label = regionBox.label.getValue();
 
-            if (label === "Recording" || (label && label.startsWith("Take "))) {
+            if (label === "Recording" || label.startsWith("Take ")) {
               const duration = regionBox.duration.getValue();
               console.log("[Recording] Setting timeline loop area to:", duration);
 
@@ -252,8 +256,8 @@ const App: React.FC = () => {
     // Only run if we should be monitoring peaks
     if (!project || !shouldMonitorPeaks) return undefined;
 
-    let animationFrameTerminable: any = null;
-    let sampleLoader: any = null;
+    let animationFrameTerminable: Terminable | null = null;
+    let sampleLoader: SampleLoader | null = null;
 
     // Use AnimationFrame to monitor for recording peaks
     animationFrameTerminable = AnimationFrame.add(() => {
@@ -262,30 +266,27 @@ const App: React.FC = () => {
         const boxes = project.boxGraph.boxes();
 
         // In SDK 0.0.91+, recording regions are labeled "Take N" instead of "Recording"
-        const recordingRegion = boxes.find((box: any) => {
-          const label = box.label?.getValue?.();
-          return label === "Recording" || (label && label.startsWith("Take "));
-        });
+        const recordingRegion = boxes.find((box) => {
+          if (box.name !== "AudioRegionBox") return false;
+          const label = (box as AudioRegionBox).label.getValue();
+          return label === "Recording" || label.startsWith("Take ");
+        }) as AudioRegionBox | undefined;
 
-        if (recordingRegion && (recordingRegion as any).file) {
+        if (recordingRegion) {
           // Read waveformOffset to skip count-in frames in peak rendering
-          const waveformOffsetSec = (recordingRegion as any).waveformOffset?.getValue?.() ?? 0;
+          const waveformOffsetSec = recordingRegion.waveformOffset.getValue();
           if (audioContext && waveformOffsetSec > 0) {
             waveformOffsetFramesRef.current = Math.round(waveformOffsetSec * audioContext.sampleRate);
           }
 
           // Get the AudioFileBox from the region's file pointer
           // PointerField.targetVertex returns the Box itself (Box extends Vertex)
-          const fileVertexOption = (recordingRegion as any).file.targetVertex;
-          if (fileVertexOption && !fileVertexOption.isEmpty()) {
-            const audioFileBox = fileVertexOption.unwrap();
-            // Use the public API to get the SampleLoader
-            // Box stores UUID in address.uuid, not directly in uuid
-            if (audioFileBox && (audioFileBox as any).address?.uuid) {
-              const uuid = (audioFileBox as any).address.uuid;
-              sampleLoader = project.sampleManager.getOrCreate(uuid);
-              recordingSampleLoaderRef.current = sampleLoader;
-            }
+          const fileVertexOption = recordingRegion.file.targetVertex;
+          if (!fileVertexOption.isEmpty()) {
+            const fileVertex = fileVertexOption.unwrap();
+            const uuid = fileVertex.address.uuid;
+            sampleLoader = project.sampleManager.getOrCreate(uuid);
+            recordingSampleLoaderRef.current = sampleLoader;
           }
         }
       }
@@ -477,14 +478,14 @@ const App: React.FC = () => {
       // Delete any previous recording before starting a new one
       project.editing.modify(() => {
         const allBoxes = project.boxGraph.boxes();
-        const recordingRegions: any[] = [];
+        const recordingRegions: AudioRegionBox[] = [];
 
         // Find all Recording AudioRegionBox instances
         for (const box of allBoxes) {
           if (box.name === "AudioRegionBox") {
-            const regionBox = box as any;
-            const label = regionBox.label?.getValue();
-            if (label === "Recording" || (label && label.startsWith("Take "))) {
+            const regionBox = box as AudioRegionBox;
+            const label = regionBox.label.getValue();
+            if (label === "Recording" || label.startsWith("Take ")) {
               recordingRegions.push(regionBox);
             }
           }
@@ -574,7 +575,7 @@ const App: React.FC = () => {
       // Wait for finalization via sampleLoader.subscribe, then reset engine.
       const loader = recordingSampleLoaderRef.current;
       if (loader) {
-        const sub = loader.subscribe((state: any) => {
+        const sub = loader.subscribe((state) => {
           if (state.type === "loaded") {
             sub.terminate();
             project.engine.stop(true);

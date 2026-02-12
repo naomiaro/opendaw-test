@@ -5,11 +5,11 @@ import { Theme, Container, Heading, Text, Flex, Button } from "@radix-ui/themes"
 import { Project } from "@opendaw/studio-core";
 import { PPQN } from "@opendaw/lib-dsp";
 import type { ppqn } from "@opendaw/lib-dsp";
-import { AnimationFrame } from "@opendaw/lib-dom";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { MoisesLogo } from "./components/MoisesLogo";
 import { BackLink } from "./components/BackLink";
 import { initializeOpenDAW } from "./lib/projectSetup";
+import { usePlaybackPosition } from "./hooks/usePlaybackPosition";
 
 // --- Pattern Types & Data ---
 
@@ -302,44 +302,31 @@ const TimelineCanvas: React.FC<TimelineCanvasProps> = ({ bars, playheadPosition,
 
 const App: React.FC = () => {
   const [status, setStatus] = useState("Loading...");
+  const [project, setProject] = useState<Project | null>(null);
   const projectRef = useRef<Project | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [activePatternIndex, setActivePatternIndex] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
   const [metronomeEnabled, setMetronomeEnabled] = useState(true);
-  const [playheadPosition, setPlayheadPosition] = useState<ppqn>(0 as ppqn);
   const [bars, setBars] = useState<BarInfo[]>([]);
 
-  useEffect(() => {
-    initializeOpenDAW({ onStatusUpdate: setStatus }).then(({ project }) => {
-      projectRef.current = project;
+  const { currentPosition: playheadPosition, isPlaying } = usePlaybackPosition(project);
 
-      const settings = project.engine.preferences.settings;
+  useEffect(() => {
+    initializeOpenDAW({ onStatusUpdate: setStatus }).then(({ project: newProject }) => {
+      projectRef.current = newProject;
+      setProject(newProject);
+
+      const settings = newProject.engine.preferences.settings;
       settings.metronome.enabled = true;
       settings.metronome.gain = -6;
 
-      project.engine.isPlaying.catchupAndSubscribe(obs => {
-        setIsPlaying(obs.getValue());
-      });
-
       const initialBars = computeBars(PATTERNS[0]);
       setBars(initialBars);
-      applyPattern(project, PATTERNS[0]);
+      applyPattern(newProject, PATTERNS[0]);
       setStatus("Ready");
       setIsReady(true);
     });
   }, []);
-
-  useEffect(() => {
-    const project = projectRef.current;
-    if (!project || !isPlaying) return;
-
-    const terminable = AnimationFrame.add(() => {
-      setPlayheadPosition(project.engine.position.getValue());
-    });
-
-    return () => terminable.terminate();
-  }, [isPlaying]);
 
   const handlePatternSelect = (index: number) => {
     const project = projectRef.current;
@@ -409,7 +396,7 @@ const App: React.FC = () => {
 
               <TimelineCanvas
                 bars={bars}
-                playheadPosition={playheadPosition}
+                playheadPosition={playheadPosition as ppqn}
                 isPlaying={isPlaying}
               />
 

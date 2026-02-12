@@ -3,8 +3,8 @@
 import React, { useEffect, useState, useCallback, useRef, memo } from "react";
 import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
-import { AnimationFrame } from "@opendaw/lib-dom";
 import { Project } from "@opendaw/studio-core";
+import { AudioUnitBox } from "@opendaw/studio-boxes";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { MoisesLogo } from "./components/MoisesLogo";
 import { BackLink } from "./components/BackLink";
@@ -21,6 +21,8 @@ import { useWaveformRendering } from "./hooks/useWaveformRendering";
 import { useEffectChain } from "./hooks/useEffectChain";
 import { useDynamicEffect } from "./hooks/useDynamicEffect";
 import { useAudioExport } from "./hooks/useAudioExport";
+import { usePlaybackPosition } from "./hooks/usePlaybackPosition";
+import { useTransportControls } from "./hooks/useTransportControls";
 import type { TrackData } from "./lib/types";
 import "@radix-ui/themes/styles.css";
 import { Theme, Container, Heading, Text, Flex, Card, Separator, Callout, Slider, Button } from "@radix-ui/themes";
@@ -31,7 +33,7 @@ import { Theme, Container, Heading, Text, Flex, Card, Separator, Callout, Slider
 const EffectRenderer: React.FC<{
   effect: EffectInstance;
   trackName: string;
-  audioBox: any;
+  audioBox: AudioUnitBox | null;
   onRemove: (id: string) => void;
   project: Project | null;
 }> = memo(({ effect, trackName, audioBox, onRemove, project }) => {
@@ -69,9 +71,11 @@ const App: React.FC = () => {
   const [status, setStatus] = useState("Loading...");
   const [project, setProject] = useState<Project | null>(null);
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentPosition, setCurrentPosition] = useState(0);
   const [tracks, setTracks] = useState<TrackData[]>([]);
+
+  // Playback position and transport hooks
+  const { currentPosition, setCurrentPosition, isPlaying, currentPositionRef, pausedPositionRef } = usePlaybackPosition(project);
+  const { handlePlay, handlePause, handleStop } = useTransportControls({ project, audioContext, pausedPositionRef });
 
   // Get audio boxes for effects
   const vocalsAudioBox = tracks.find(t => t.name === "Vocals")?.audioUnitBox || null;
@@ -79,7 +83,7 @@ const App: React.FC = () => {
   const guitarAudioBox = tracks.find(t => t.name === "Guitar")?.audioUnitBox || null;
   const drumsAudioBox = tracks.find(t => t.name === "Drums")?.audioUnitBox || null;
   const bassAudioBox = tracks.find(t => t.name === "Bass")?.audioUnitBox || null;
-  const masterAudioBox = project?.rootBox.outputDevice.pointerHub.incoming().at(0)?.box || null;
+  const masterAudioBox = project?.rootBox.outputDevice.pointerHub.incoming().at(0)?.box as AudioUnitBox | null ?? null;
 
   // Master volume state
   const [masterVolume, setMasterVolume] = useState(0); // dB
@@ -225,8 +229,6 @@ const App: React.FC = () => {
   // Refs for non-reactive values
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
   const canvasRefs = useRef<Map<string, HTMLCanvasElement>>(new Map());
-  const pausedPositionRef = useRef<number | null>(null);
-  const currentPositionRef = useRef<number>(0);
   const bpmRef = useRef<number>(120);
 
   // Calculate max duration for timeline
@@ -241,7 +243,6 @@ const App: React.FC = () => {
   // Initialize OpenDAW
   useEffect(() => {
     let mounted = true;
-    let animationFrameSubscription: { terminate: () => void } | null = null;
 
     (async () => {
       try {
@@ -261,28 +262,6 @@ const App: React.FC = () => {
 
         // Store BPM for playhead calculations
         bpmRef.current = newProject.timelineBox.bpm.getValue();
-
-        // Subscribe to playback state
-        newProject.engine.isPlaying.catchupAndSubscribe(obs => {
-          if (mounted) setIsPlaying(obs.getValue());
-        });
-
-        // Subscribe to position for display
-        newProject.engine.position.catchupAndSubscribe(obs => {
-          if (mounted) setCurrentPosition(obs.getValue());
-        });
-
-        // Subscribe to AnimationFrame for efficient playhead position updates
-        animationFrameSubscription = AnimationFrame.add(() => {
-          // Update position for playhead rendering (used by SVG overlay)
-          const position = newProject.engine.position.getValue();
-          currentPositionRef.current = position;
-
-          // Update React state to trigger playhead re-render
-          if (mounted && newProject.engine.isPlaying.getValue()) {
-            setCurrentPosition(position);
-          }
-        });
 
         // Load audio files and create tracks
         const ext = getAudioExtension();
@@ -318,76 +297,15 @@ const App: React.FC = () => {
 
     return () => {
       mounted = false;
-      if (animationFrameSubscription) {
-        animationFrameSubscription.terminate();
-      }
     };
   }, []);
-
-  // Transport controls
-  const handlePlay = useCallback(async () => {
-    if (!project || !audioContext) return;
-
-    console.debug("Play button clicked");
-
-    // Resume AudioContext if suspended
-    if (audioContext.state === "suspended") {
-      console.debug("Resuming AudioContext...");
-      await audioContext.resume();
-      console.debug(`AudioContext resumed (${audioContext.state})`);
-    }
-
-    // If resuming from pause, restore the position
-    if (pausedPositionRef.current !== null) {
-      console.debug(`Restoring paused position: ${pausedPositionRef.current}`);
-      project.engine.setPosition(pausedPositionRef.current);
-      pausedPositionRef.current = null;
-    }
-
-    console.debug("Starting playback...");
-    project.engine.play();
-  }, [project, audioContext]);
-
-  const handlePause = useCallback(() => {
-    if (!project) return;
-    console.debug("Pause button clicked");
-
-    // Read current position from observable
-    const position = project.engine.position.getValue();
-    console.debug(`Current position from observable: ${position}`);
-
-    // Save it for resume
-    pausedPositionRef.current = position;
-    console.debug(`Saved paused position: ${pausedPositionRef.current}`);
-
-    // Update state so playhead stays visible
-    setCurrentPosition(position);
-
-    // Stop playback without resetting position
-    project.engine.stop(false);
-  }, [project]);
-
-  const handleStop = useCallback(() => {
-    if (!project) return;
-    console.debug("Stop button clicked");
-
-    // Clear any paused position
-    pausedPositionRef.current = null;
-
-    // Stop and reset position
-    project.engine.stop();
-
-    // Reset position to beginning
-    project.engine.setPosition(0);
-    setCurrentPosition(0);
-  }, [project]);
 
   const handleMasterVolumeChange = useCallback(
     (value: number) => {
       if (!project || !masterAudioBox) return;
 
       project.editing.modify(() => {
-        (masterAudioBox as any).volume.setValue(value);
+        masterAudioBox.volume.setValue(value);
       });
 
       setMasterVolume(value);
@@ -399,7 +317,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!masterAudioBox) return undefined;
 
-    const subscription = (masterAudioBox as any).volume.catchupAndSubscribe((obs: any) => {
+    const subscription = masterAudioBox.volume.catchupAndSubscribe((obs: { getValue: () => number }) => {
       setMasterVolume(obs.getValue());
     });
 
@@ -572,7 +490,6 @@ const App: React.FC = () => {
                       track={track}
                       project={project}
                       allTracks={tracks}
-                      peaks={undefined}
                       canvasRef={el => {
                         if (el) {
                           canvasRefs.current.set(UUID.toString(track.uuid), el);

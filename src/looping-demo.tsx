@@ -18,6 +18,7 @@ import { initializeOpenDAW } from "./lib/projectSetup";
 import { loadTracksFromFiles } from "./lib/trackLoading";
 import { getAudioExtension } from "./lib/audioUtils";
 import { useWaveformRendering } from "./hooks/useWaveformRendering";
+import { usePlaybackPosition } from "./hooks/usePlaybackPosition";
 import type { TrackData } from "./lib/types";
 import "@radix-ui/themes/styles.css";
 import {
@@ -50,9 +51,11 @@ const App: React.FC = () => {
   const [status, setStatus] = useState("Loading...");
   const [project, setProject] = useState<Project | null>(null);
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentPosition, setCurrentPosition] = useState(0);
   const [tracks, setTracks] = useState<TrackData[]>([]);
+
+  // Playback position and state from hook
+  const { currentPosition, setCurrentPosition, isPlaying, pausedPositionRef } =
+    usePlaybackPosition(project);
 
   // Loop-specific state
   const [loopEnabled, setLoopEnabled] = useState(false);
@@ -63,8 +66,6 @@ const App: React.FC = () => {
   // Refs for non-reactive values
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
   const canvasRefs = useRef<Map<string, HTMLCanvasElement>>(new Map());
-  const pausedPositionRef = useRef<number | null>(null);
-  const currentPositionRef = useRef<number>(0);
   const bpmRef = useRef<number>(124);
   const previousPositionRef = useRef<number>(0);
 
@@ -79,7 +80,6 @@ const App: React.FC = () => {
   // Initialize OpenDAW
   useEffect(() => {
     let mounted = true;
-    let animationFrameSubscription: { terminate: () => void } | null = null;
 
     (async () => {
       try {
@@ -97,32 +97,6 @@ const App: React.FC = () => {
         setAudioContext(newAudioContext);
         setProject(newProject);
         bpmRef.current = BPM;
-
-        // Subscribe to playback state
-        newProject.engine.isPlaying.catchupAndSubscribe(obs => {
-          if (mounted) setIsPlaying(obs.getValue());
-        });
-
-        // Subscribe to position for display
-        newProject.engine.position.catchupAndSubscribe(obs => {
-          if (mounted) setCurrentPosition(obs.getValue());
-        });
-
-        // Subscribe to AnimationFrame for efficient playhead position updates
-        animationFrameSubscription = AnimationFrame.add(() => {
-          const position = newProject.engine.position.getValue();
-          currentPositionRef.current = position;
-
-          // Update React state to trigger playhead re-render
-          if (mounted && newProject.engine.isPlaying.getValue()) {
-            // Detect loop wraparound
-            if (position < previousPositionRef.current - 1000) {
-              setLoopCount(prev => prev + 1);
-            }
-            previousPositionRef.current = position;
-            setCurrentPosition(position);
-          }
-        });
 
         // Load audio files and create tracks
         const ext = getAudioExtension();
@@ -192,11 +166,24 @@ const App: React.FC = () => {
 
     return () => {
       mounted = false;
-      if (animationFrameSubscription) {
-        animationFrameSubscription.terminate();
-      }
     };
   }, []);
+
+  // Loop wraparound detection (separate from usePlaybackPosition)
+  useEffect(() => {
+    if (!project || !isPlaying) return;
+
+    const terminable = AnimationFrame.add(() => {
+      const position = project.engine.position.getValue();
+      // Detect loop wraparound
+      if (position < previousPositionRef.current - 1000) {
+        setLoopCount(prev => prev + 1);
+      }
+      previousPositionRef.current = position;
+    });
+
+    return () => terminable.terminate();
+  }, [project, isPlaying]);
 
   // Transport controls
   const handlePlay = useCallback(async () => {
@@ -582,7 +569,6 @@ const App: React.FC = () => {
                       track={track}
                       project={project!}
                       allTracks={tracks}
-                      peaks={undefined}
                       canvasRef={canvas => {
                         if (canvas) canvasRefs.current.set(uuidString, canvas);
                       }}

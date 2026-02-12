@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { PPQN } from "@opendaw/lib-dsp";
-import { AnimationFrame } from "@opendaw/lib-dom";
 import { Project } from "@opendaw/studio-core";
 import { AudioRegionBoxAdapter } from "@opendaw/studio-adapters";
 import { GitHubCorner } from "./components/GitHubCorner";
@@ -169,7 +168,6 @@ const App: React.FC = () => {
   // Initialize OpenDAW and create clips
   useEffect(() => {
     let mounted = true;
-    let animationFrameSubscription: { terminate: () => void } | null = null;
 
     (async () => {
       try {
@@ -300,11 +298,6 @@ const App: React.FC = () => {
           newProject.timelineBox.loopArea.enabled.setValue(true);
         });
 
-        // Monitor position for UI updates
-        animationFrameSubscription = AnimationFrame.add(() => {
-          if (!mounted) return;
-        });
-
         if (mounted) {
           setStatus("Ready to play!");
         }
@@ -316,9 +309,6 @@ const App: React.FC = () => {
 
     return () => {
       mounted = false;
-      if (animationFrameSubscription) {
-        animationFrameSubscription.terminate();
-      }
     };
   }, []);
 

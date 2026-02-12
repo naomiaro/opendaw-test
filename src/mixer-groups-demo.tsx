@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { AnimationFrame } from "@opendaw/lib-dom";
 import { Project } from "@opendaw/studio-core";
 import { AudioUnitBox } from "@opendaw/studio-boxes";
 import { Colors } from "@opendaw/studio-enums";
@@ -11,6 +10,8 @@ import { TransportControls } from "./components/TransportControls";
 import { initializeOpenDAW } from "./lib/projectSetup";
 import { loadTracksWithGroups, type GroupData } from "./lib/groupTrackLoading";
 import { getAudioExtension } from "./lib/audioUtils";
+import { usePlaybackPosition } from "./hooks/usePlaybackPosition";
+import { useTransportControls } from "./hooks/useTransportControls";
 import type { TrackData } from "./lib/types";
 import "@radix-ui/themes/styles.css";
 import {
@@ -182,13 +183,13 @@ const MasterStrip: React.FC<{
 
   useEffect(() => {
     if (!masterBox) return;
-    const sub = (masterBox as any).volume.catchupAndSubscribe((obs: any) => setVolume(obs.getValue()));
+    const sub = masterBox.volume.catchupAndSubscribe((obs: { getValue: () => number }) => setVolume(obs.getValue()));
     return () => sub.terminate();
   }, [masterBox]);
 
   const handleVolume = useCallback((values: number[]) => {
     if (!project || !masterBox) return;
-    project.editing.modify(() => { (masterBox as any).volume.setValue(values[0]); });
+    project.editing.modify(() => { masterBox.volume.setValue(values[0]); });
   }, [project, masterBox]);
 
   return (
@@ -302,12 +303,13 @@ const App: React.FC = () => {
   const [status, setStatus] = useState("Loading...");
   const [project, setProject] = useState<Project | null>(null);
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentPosition, setCurrentPosition] = useState(0);
   const [tracks, setTracks] = useState<TrackData[]>([]);
   const [groups, setGroups] = useState<GroupData[]>([]);
 
-  const pausedPositionRef = useRef<number | null>(null);
+  // Playback position and transport hooks
+  const { currentPosition, isPlaying, pausedPositionRef } = usePlaybackPosition(project);
+  const { handlePlay, handlePause, handleStop } = useTransportControls({ project, audioContext, pausedPositionRef });
+
   const bpmRef = useRef<number>(BPM);
 
   const masterAudioBox = project?.rootBox.outputDevice.pointerHub.incoming().at(0)?.box as AudioUnitBox | null ?? null;
@@ -315,7 +317,6 @@ const App: React.FC = () => {
   // Initialize OpenDAW
   useEffect(() => {
     let mounted = true;
-    let animSub: { terminate: () => void } | null = null;
 
     (async () => {
       try {
@@ -332,16 +333,6 @@ const App: React.FC = () => {
         setAudioContext(ctx);
         setProject(newProject);
         bpmRef.current = BPM;
-
-        newProject.engine.isPlaying.catchupAndSubscribe(obs => {
-          if (mounted) setIsPlaying(obs.getValue());
-        });
-
-        animSub = AnimationFrame.add(() => {
-          if (mounted && newProject.engine.isPlaying.getValue()) {
-            setCurrentPosition(newProject.engine.position.getValue());
-          }
-        });
 
         const ext = getAudioExtension();
         const result = await loadTracksWithGroups(
@@ -378,36 +369,8 @@ const App: React.FC = () => {
 
     return () => {
       mounted = false;
-      animSub?.terminate();
     };
   }, []);
-
-  // Transport handlers
-  const handlePlay = useCallback(async () => {
-    if (!project || !audioContext) return;
-    if (audioContext.state === "suspended") await audioContext.resume();
-    if (pausedPositionRef.current !== null) {
-      project.engine.setPosition(pausedPositionRef.current);
-      pausedPositionRef.current = null;
-    }
-    project.engine.play();
-  }, [project, audioContext]);
-
-  const handlePause = useCallback(() => {
-    if (!project) return;
-    const pos = project.engine.position.getValue();
-    pausedPositionRef.current = pos;
-    setCurrentPosition(pos);
-    project.engine.stop(false);
-  }, [project]);
-
-  const handleStop = useCallback(() => {
-    if (!project) return;
-    pausedPositionRef.current = null;
-    project.engine.stop();
-    project.engine.setPosition(0);
-    setCurrentPosition(0);
-  }, [project]);
 
   // Helpers to get tracks belonging to a group
   const tracksForGroup = (groupName: string) => {
