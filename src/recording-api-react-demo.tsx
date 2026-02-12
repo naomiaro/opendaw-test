@@ -10,7 +10,7 @@ import { InstrumentFactories } from "@opendaw/studio-adapters";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import type { Peaks } from "@opendaw/lib-fusion";
 import { PeaksPainter } from "@opendaw/lib-fusion";
-import { AudioRegionBox } from "@opendaw/studio-boxes";
+import { AudioRegionBox, AudioUnitBox } from "@opendaw/studio-boxes";
 import { CanvasPainter } from "./lib/CanvasPainter";
 import { initializeOpenDAW } from "./lib/projectSetup";
 import { useEnginePreference, CountInBarsValue, MetronomeBeatSubDivisionValue } from "./hooks/useEnginePreference";
@@ -37,6 +37,8 @@ import {
   Slider,
   Badge
 } from "@radix-ui/themes";
+
+const CHANNEL_PADDING = 4;
 
 /** Per-track peaks monitoring state stored in a ref */
 interface TrackPeaksState {
@@ -102,9 +104,13 @@ const App: React.FC = () => {
 
   // Track which sample loaders we've found (for finalization after stop)
   const recordingSampleLoadersRef = useRef<SampleLoader[]>([]);
+  // Track finalization subscriptions for cleanup on unmount
+  const finalizationSubsRef = useRef<Terminable[]>([]);
 
   const userMetronomePreferenceRef = useRef<boolean>(false);
-  const CHANNEL_PADDING = 4;
+
+  // Reactive armed count — updated via callback from RecordingTrackCard
+  const [armedCount, setArmedCount] = useState(0);
 
   // Canvas ref callback for a given track index
   const getCanvasRef = useCallback((trackIndex: number) => {
@@ -173,9 +179,26 @@ const App: React.FC = () => {
     canvasPaintersMap.current.set(trackIndex, painter);
   }, []);
 
+  // Recompute armed count when a track's armed state changes
+  const handleArmedChange = useCallback(() => {
+    setArmedCount(
+      recordingTracks.filter(t => t.capture.armed.getValue()).length
+    );
+  }, [recordingTracks]);
+
+  // Cleanup finalization subscriptions on unmount
+  useEffect(() => {
+    return () => {
+      for (const sub of finalizationSubsRef.current) {
+        sub.terminate();
+      }
+      finalizationSubsRef.current = [];
+    };
+  }, []);
+
   // Subscribe to engine state
   useEffect(() => {
-    if (!project) return undefined;
+    if (!project) return;
 
     const countingInSub = project.engine.isCountingIn.catchupAndSubscribe(obs => {
       const counting = obs.getValue();
@@ -263,7 +286,7 @@ const App: React.FC = () => {
 
   // Monitor peaks for ALL recording tracks
   useEffect(() => {
-    if (!project || !shouldMonitorPeaks || !audioContext) return undefined;
+    if (!project || !shouldMonitorPeaks || !audioContext) return;
 
     let animationFrameTerminable: Terminable | null = null;
 
@@ -457,7 +480,7 @@ const App: React.FC = () => {
 
     // Create Tape instrument and configure capture in one transaction.
     // editing.modify() doesn't forward return values, so we capture via outer variable.
-    let audioUnitBoxRef: any = null;
+    let audioUnitBoxRef: AudioUnitBox | null = null;
 
     project.editing.modify(() => {
       const { audioUnitBox } = project.api.createInstrument(InstrumentFactories.Tape);
@@ -500,7 +523,11 @@ const App: React.FC = () => {
         // Disarm before removing
         track.capture.armed.setValue(false);
       }
-      return prev.filter(t => t.id !== id);
+      const next = prev.filter(t => t.id !== id);
+      // Update armed count immediately since the removed track's
+      // onArmedChange callback won't fire after unmount
+      setArmedCount(next.filter(t => t.capture.armed.getValue()).length);
+      return next;
     });
   }, []);
 
@@ -619,6 +646,12 @@ const App: React.FC = () => {
       setRecordStatus("Recording stopped");
 
       // Wait for finalization via sampleLoader.subscribe for ALL loaders
+      // Store subscriptions in ref so they can be cleaned up on unmount
+      for (const sub of finalizationSubsRef.current) {
+        sub.terminate();
+      }
+      finalizationSubsRef.current = [];
+
       const loaders = recordingSampleLoadersRef.current;
       if (loaders.length > 0) {
         let finalized = 0;
@@ -626,12 +659,14 @@ const App: React.FC = () => {
           const sub = loader.subscribe((state) => {
             if (state.type === "loaded") {
               sub.terminate();
+              finalizationSubsRef.current = finalizationSubsRef.current.filter(s => s !== sub);
               finalized++;
               if (finalized === loaders.length) {
                 project.engine.stop(true);
               }
             }
           });
+          finalizationSubsRef.current.push(sub);
         }
       } else {
         // No sampleLoaders found (e.g., count-in cancelled) — stop directly
@@ -662,8 +697,6 @@ const App: React.FC = () => {
       </Theme>
     );
   }
-
-  const armedCount = recordingTracks.filter(t => t.capture.armed.getValue()).length;
 
   return (
     <Theme appearance="dark" accentColor="blue" radius="large">
@@ -763,6 +796,7 @@ const App: React.FC = () => {
                       audioInputDevices={audioInputDevices}
                       disabled={isRecording || isCountingIn}
                       onRemove={handleRemoveTrack}
+                      onArmedChange={handleArmedChange}
                     />
                   ))}
 

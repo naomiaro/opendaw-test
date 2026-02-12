@@ -15,6 +15,7 @@ interface RecordingTrackCardProps {
   audioInputDevices: readonly MediaDeviceInfo[];
   disabled: boolean;
   onRemove: (id: string) => void;
+  onArmedChange?: (id: string, armed: boolean) => void;
 }
 
 export const RecordingTrackCard: React.FC<RecordingTrackCardProps> = ({
@@ -23,7 +24,8 @@ export const RecordingTrackCard: React.FC<RecordingTrackCardProps> = ({
   project,
   audioInputDevices,
   disabled,
-  onRemove
+  onRemove,
+  onArmedChange
 }) => {
   const { capture } = track;
 
@@ -39,17 +41,18 @@ export const RecordingTrackCard: React.FC<RecordingTrackCardProps> = ({
   const [monitoringMode, setMonitoringModeState] = useState<MonitoringMode>("off");
   const [isArmed, setIsArmed] = useState<boolean>(() => capture.armed.getValue());
 
-  // Subscribe to armed state changes
+  // Subscribe to armed state changes and notify parent
   useEffect(() => {
     const sub = capture.armed.catchupAndSubscribe(obs => {
-      setIsArmed(obs.getValue());
+      const armed = obs.getValue();
+      setIsArmed(armed);
+      onArmedChange?.(track.id, armed);
     });
     return () => sub.terminate();
-  }, [capture]);
+  }, [capture, track.id, onArmedChange]);
 
-  // Sync capture settings when device/mono/gain changes
+  // Sync box graph fields — require a transaction
   useEffect(() => {
-    // deviceId, gainDb, requestChannels are box graph fields — require a transaction
     project.editing.modify(() => {
       if (selectedDeviceId) {
         capture.captureBox.deviceId.setValue(selectedDeviceId);
@@ -57,9 +60,12 @@ export const RecordingTrackCard: React.FC<RecordingTrackCardProps> = ({
       capture.requestChannels = isMono ? 1 : 2;
       capture.captureBox.gainDb.setValue(inputGainDb);
     });
-    // monitoringMode manipulates Web Audio nodes — set outside transaction
+  }, [project, capture, selectedDeviceId, isMono, inputGainDb]);
+
+  // Sync monitoring mode — manipulates Web Audio nodes, outside transaction
+  useEffect(() => {
     (capture as any).monitoringMode = monitoringMode;
-  }, [project, capture, selectedDeviceId, isMono, inputGainDb, monitoringMode]);
+  }, [capture, monitoringMode]);
 
   const handleToggleArm = useCallback(() => {
     if (isArmed) {
