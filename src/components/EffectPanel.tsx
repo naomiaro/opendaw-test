@@ -71,7 +71,7 @@ interface EffectPanelProps {
   accentColor?: string;
 }
 
-export const EffectPanel: React.FC<EffectPanelProps> = ({
+export const EffectPanel: React.FC<EffectPanelProps> = React.memo(({
   title,
   description,
   isActive,
@@ -163,4 +163,6 @@ export const EffectPanel: React.FC<EffectPanelProps> = ({
       </Flex>
     </Card>
   );
-};
+});
+
+EffectPanel.displayName = "EffectPanel";

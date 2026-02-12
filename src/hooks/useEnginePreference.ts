@@ -1,5 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Project } from "@opendaw/studio-core";
+import type { Terminable } from "@opendaw/lib-std";
+
+interface MutableObservableValue<T> {
+  getValue(): T;
+  setValue(value: T): void;
+  subscribe(callback: (obs: { getValue(): T }) => void): Terminable;
+  terminate(): void;
+}
 
 /**
  * Available engine preference paths
@@ -85,29 +93,33 @@ export function useEnginePreference<P extends PreferencePath>(
   path: P
 ): [PreferenceValue<P> | undefined, (value: PreferenceValue<P>) => void] {
   const [value, setValue] = useState<PreferenceValue<P> | undefined>(undefined);
-  const observableRef = useRef<any>(null);
+  const observableRef = useRef<MutableObservableValue<PreferenceValue<P>> | null>(null);
 
   useEffect(() => {
     if (!project) return;
 
     // Create mutable observable value for this preference path
     // The path is spread as arguments: ["metronome", "enabled"] -> ("metronome", "enabled")
-    observableRef.current = project.engine.preferences.createMutableObservableValue(
-      path[0] as any,
-      path[1] as any
-    );
+    // The SDK method has overloads for specific path pairs, but our generic P
+    // has already been validated at the call site. Cast the result to our typed interface.
+    // Must call directly on preferences object to preserve `this` binding (uses private fields).
+    const observable = (project.engine.preferences as unknown as {
+      createMutableObservableValue(section: string, key: string): MutableObservableValue<PreferenceValue<P>>;
+    }).createMutableObservableValue(path[0], path[1]);
+
+    observableRef.current = observable;
 
     // Initialize state from current value
-    setValue(observableRef.current.getValue() as PreferenceValue<P>);
+    setValue(observable.getValue());
 
     // Subscribe to changes - callback receives the observable, need to call getValue()
-    const subscription = observableRef.current.subscribe((obs: any) => {
-      setValue(obs.getValue() as PreferenceValue<P>);
+    const subscription = observable.subscribe((obs) => {
+      setValue(obs.getValue());
     });
 
     return () => {
-      subscription?.terminate?.();
-      observableRef.current?.terminate();
+      subscription.terminate();
+      observable.terminate();
       observableRef.current = null;
     };
   }, [project, path[0], path[1]]);

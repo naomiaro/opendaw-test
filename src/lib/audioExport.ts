@@ -193,8 +193,18 @@ export async function exportStems(
 
     for (let i = 0; i < totalStems; i++) {
       const stem = stems[i];
-      const leftChannel = audioBuffer.getChannelData(i * 2);
-      const rightChannel = audioBuffer.getChannelData(i * 2 + 1);
+      const leftChannelIndex = i * 2;
+      const rightChannelIndex = i * 2 + 1;
+
+      if (rightChannelIndex >= audioBuffer.numberOfChannels) {
+        throw new Error(
+          `Insufficient channels for stem "${stem.fileName}": ` +
+          `expected channel ${rightChannelIndex} but buffer only has ${audioBuffer.numberOfChannels} channels`
+        );
+      }
+
+      const leftChannel = audioBuffer.getChannelData(leftChannelIndex);
+      const rightChannel = audioBuffer.getChannelData(rightChannelIndex);
 
       onStatus?.(`Encoding ${stem.fileName}.wav (${i + 1}/${totalStems})...`);
 

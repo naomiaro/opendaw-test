@@ -59,7 +59,7 @@ export interface PlayheadProps {
  * />
  * ```
  */
-export const Playhead: React.FC<PlayheadProps> = ({
+export const Playhead: React.FC<PlayheadProps> = React.memo(({
   currentPosition,
   bpm,
   maxDuration,
@@ -101,4 +101,6 @@ export const Playhead: React.FC<PlayheadProps> = ({
       aria-label={`Playhead at ${timeInSeconds.toFixed(2)} seconds`}
     />
   );
-};
+});
+
+Playhead.displayName = "Playhead";

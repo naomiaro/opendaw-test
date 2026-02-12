@@ -12,6 +12,8 @@ import { useEnginePreference, CountInBarsValue, MetronomeBeatSubDivisionValue } 
 import { GitHubCorner } from "./components/GitHubCorner";
 import { MoisesLogo } from "./components/MoisesLogo";
 import { BackLink } from "./components/BackLink";
+import { BpmControl } from "./components/BpmControl";
+import { RecordingPreferences } from "./components/RecordingPreferences";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
@@ -670,31 +672,13 @@ const App: React.FC = () => {
             <Flex direction="column" gap="4">
               <Heading size="5">Setup</Heading>
               <Flex gap="4" wrap="wrap" align="center">
-                <Flex align="center" gap="2">
-                  <Text size="2" weight="medium">BPM:</Text>
-                  <TextField.Root
-                    type="number"
-                    value={bpm.toString()}
-                    onChange={e => setBpm(Number(e.target.value))}
-                    disabled={isRecording}
-                    style={{ width: 80 }}
-                  />
-                </Flex>
-                <Flex asChild align="center" gap="2">
-                  <Text as="label" size="2">
-                    <Checkbox checked={useCountIn} onCheckedChange={c => setUseCountIn(c === true)} />
-                    Count-in
-                  </Text>
-                </Flex>
-                <Flex asChild align="center" gap="2">
-                  <Text as="label" size="2">
-                    <Checkbox
-                      checked={metronomeEnabled ?? false}
-                      onCheckedChange={c => setMetronomeEnabled(c === true)}
-                    />
-                    Metronome
-                  </Text>
-                </Flex>
+                <BpmControl value={bpm} onChange={setBpm} disabled={isRecording} />
+                <RecordingPreferences
+                  useCountIn={useCountIn}
+                  onUseCountInChange={setUseCountIn}
+                  metronomeEnabled={metronomeEnabled}
+                  onMetronomeEnabledChange={setMetronomeEnabled}
+                />
               </Flex>
             </Flex>
           </Card>

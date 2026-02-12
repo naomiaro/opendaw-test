@@ -15,6 +15,9 @@ import { useEnginePreference, CountInBarsValue, MetronomeBeatSubDivisionValue } 
 import { GitHubCorner } from "./components/GitHubCorner";
 import { MoisesLogo } from "./components/MoisesLogo";
 import { BackLink } from "./components/BackLink";
+import { BpmControl } from "./components/BpmControl";
+import { TimeSignatureControl } from "./components/TimeSignatureControl";
+import { RecordingPreferences } from "./components/RecordingPreferences";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
@@ -638,50 +641,14 @@ const App: React.FC = () => {
               <Heading size="5">Setup</Heading>
 
               <Flex gap="4" wrap="wrap">
-                <Flex align="center" gap="2">
-                  <Text size="2" weight="medium">
-                    BPM:
-                  </Text>
-                  <TextField.Root
-                    type="number"
-                    value={bpm.toString()}
-                    onChange={e => setBpm(Number(e.target.value))}
-                    disabled={isRecording}
-                    style={{ width: 80 }}
-                  />
-                </Flex>
-
-                <Flex align="center" gap="2">
-                  <Text size="2" weight="medium">
-                    Time Signature:
-                  </Text>
-                  <Flex align="center" gap="1">
-                    <TextField.Root
-                      type="number"
-                      value={timeSignatureNumerator.toString()}
-                      onChange={e => setTimeSignatureNumerator(Number(e.target.value))}
-                      disabled={isRecording}
-                      style={{ width: 60 }}
-                    />
-                    <Text size="3" color="gray" weight="bold">
-                      /
-                    </Text>
-                    <Select.Root
-                      value={timeSignatureDenominator.toString()}
-                      onValueChange={value => setTimeSignatureDenominator(Number(value))}
-                      disabled={isRecording}
-                    >
-                      <Select.Trigger style={{ width: 70 }} />
-                      <Select.Content>
-                        <Select.Item value="2">2</Select.Item>
-                        <Select.Item value="4">4</Select.Item>
-                        <Select.Item value="8">8</Select.Item>
-                        <Select.Item value="16">16</Select.Item>
-                      </Select.Content>
-                    </Select.Root>
-                  </Flex>
-                </Flex>
-
+                <BpmControl value={bpm} onChange={setBpm} disabled={isRecording} />
+                <TimeSignatureControl
+                  numerator={timeSignatureNumerator}
+                  denominator={timeSignatureDenominator}
+                  onNumeratorChange={setTimeSignatureNumerator}
+                  onDenominatorChange={setTimeSignatureDenominator}
+                  disabled={isRecording}
+                />
                 <Flex align="center" gap="2">
                   <Text size="2" weight="medium">
                     Count in bars:
@@ -819,21 +786,12 @@ const App: React.FC = () => {
               </Callout.Root>
 
               <Flex direction="column" gap="3">
-                <Flex asChild align="center" gap="2">
-                  <Text as="label" size="2">
-                    <Checkbox checked={useCountIn} onCheckedChange={checked => setUseCountIn(checked === true)} />
-                    Use count-in before recording
-                  </Text>
-                </Flex>
-                <Flex asChild align="center" gap="2">
-                  <Text as="label" size="2">
-                    <Checkbox
-                      checked={metronomeEnabled ?? false}
-                      onCheckedChange={checked => setMetronomeEnabled(checked === true)}
-                    />
-                    Enable metronome
-                  </Text>
-                </Flex>
+                <RecordingPreferences
+                  useCountIn={useCountIn}
+                  onUseCountInChange={setUseCountIn}
+                  metronomeEnabled={metronomeEnabled}
+                  onMetronomeEnabledChange={setMetronomeEnabled}
+                />
 
                 {/* Metronome settings - only show when metronome is enabled */}
                 {metronomeEnabled && (

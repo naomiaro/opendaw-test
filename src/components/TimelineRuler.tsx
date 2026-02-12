@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { Text } from "@radix-ui/themes";
 
 interface TimelineRulerProps {
@@ -6,7 +6,7 @@ interface TimelineRulerProps {
   controlsWidth?: number;
 }
 
-export const TimelineRuler: React.FC<TimelineRulerProps> = ({ maxDuration, controlsWidth = 200 }) => {
+export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(({ maxDuration, controlsWidth = 200 }) => {
   const totalSeconds = Math.ceil(maxDuration);
   const tickInterval = 30; // Tick every 30 seconds
 
@@ -16,6 +16,11 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = ({ maxDuration, contr
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
+
+  const tickSeconds = useMemo(
+    () => Array.from({ length: Math.floor(totalSeconds / tickInterval) + 1 }, (_, i) => i * tickInterval),
+    [totalSeconds, tickInterval]
+  );
 
   return (
     <div
@@ -52,33 +57,23 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = ({ maxDuration, contr
           boxSizing: "border-box"
         }}
       >
-        {/* Generate tick marks every 30 seconds */}
-        {Array.from({ length: Math.floor(totalSeconds / tickInterval) + 1 }, (_, i) => {
-          const seconds = i * tickInterval;
+        {/* Generate tick marks and labels */}
+        {tickSeconds.map(seconds => {
           const percent = (seconds / maxDuration) * 100;
 
           return (
-            <div
-              key={seconds}
-              style={{
-                position: "absolute",
-                left: `${percent}%`,
-                bottom: 0,
-                height: "12px",
-                width: "1px",
-                backgroundColor: "var(--gray-10)"
-              }}
-            />
-          );
-        })}
-
-        {/* Time labels (mm:ss format) */}
-        {Array.from({ length: Math.floor(totalSeconds / tickInterval) + 1 }, (_, i) => i * tickInterval).map(
-          seconds => {
-            const percent = (seconds / maxDuration) * 100;
-            return (
+            <React.Fragment key={seconds}>
               <div
-                key={`label-${seconds}`}
+                style={{
+                  position: "absolute",
+                  left: `${percent}%`,
+                  bottom: 0,
+                  height: "12px",
+                  width: "1px",
+                  backgroundColor: "var(--gray-10)"
+                }}
+              />
+              <div
                 style={{
                   position: "absolute",
                   left: `${percent}%`,
@@ -90,10 +85,12 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = ({ maxDuration, contr
                   {formatTime(seconds)}
                 </Text>
               </div>
-            );
-          }
-        )}
+            </React.Fragment>
+          );
+        })}
       </div>
     </div>
   );
-};
+});
+
+TimelineRuler.displayName = "TimelineRuler";

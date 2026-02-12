@@ -163,6 +163,8 @@ export const TrackRow: React.FC<TrackRowProps> = ({
             color={muted ? "red" : "gray"}
             variant={muted ? "solid" : "soft"}
             onClick={handleMuteToggle}
+            aria-label={muted ? "Unmute track" : "Mute track"}
+            aria-pressed={muted}
             style={{
               width: "32px",
               height: "24px",
@@ -178,6 +180,8 @@ export const TrackRow: React.FC<TrackRowProps> = ({
             color={soloed ? "yellow" : "gray"}
             variant={soloed ? "solid" : "soft"}
             onClick={handleSoloToggle}
+            aria-label={soloed ? "Unsolo track" : "Solo track"}
+            aria-pressed={soloed}
             style={{
               width: "32px",
               height: "24px",
@@ -200,6 +204,7 @@ export const TrackRow: React.FC<TrackRowProps> = ({
           min={-60}
           max={6}
           step={0.1}
+          aria-label={`${track.name} volume`}
           style={{ width: "100%" }}
         />
 
@@ -214,7 +219,7 @@ export const TrackRow: React.FC<TrackRowProps> = ({
         </Flex>
 
         {/* Pan slider - horizontal */}
-        <Slider value={[pan]} onValueChange={handlePanChange} min={-1} max={1} step={0.01} style={{ width: "100%" }} />
+        <Slider value={[pan]} onValueChange={handlePanChange} min={-1} max={1} step={0.01} aria-label={`${track.name} pan`} style={{ width: "100%" }} />
       </Flex>
 
       {/* Waveform - Right Side */}

@@ -18,6 +18,9 @@ export function getAudioExtension(): string {
  */
 export async function loadAudioFile(audioContext: AudioContext, url: string): Promise<AudioBuffer> {
   const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to load audio file "${url}": ${response.status} ${response.statusText}`);
+  }
   const arrayBuffer = await response.arrayBuffer();
   return await audioContext.decodeAudioData(arrayBuffer);
 }

@@ -49,6 +49,7 @@ export async function loadTracksFromFiles(
   const bpm = project.timelineBox.bpm.getValue();
   const boxGraph = project.boxGraph;
   const loadedTracks: TrackData[] = [];
+  const failedTracks: string[] = [];
 
   for (let i = 0; i < files.length; i++) {
     const sample = files[i];
@@ -108,7 +109,12 @@ export async function loadTracksFromFiles(
       });
     } catch (error) {
       console.error(`Failed to load ${sample.name}:`, error);
+      failedTracks.push(sample.name);
     }
+  }
+
+  if (failedTracks.length > 0) {
+    console.warn(`Failed to load ${failedTracks.length} track(s): ${failedTracks.join(", ")}`);
   }
 
   // Set loop end to accommodate the longest track

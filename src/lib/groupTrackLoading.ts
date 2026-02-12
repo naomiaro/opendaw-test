@@ -108,6 +108,7 @@ export async function loadTracksWithGroups(
 
   // Step 3: Load audio files and create tracks (with default master routing)
   const loadedTracks: TrackData[] = [];
+  const failedTracks: string[] = [];
 
   for (let i = 0; i < files.length; i++) {
     const sample = files[i];
@@ -159,7 +160,12 @@ export async function loadTracksWithGroups(
       });
     } catch (error) {
       console.error(`Failed to load ${sample.name}:`, error);
+      failedTracks.push(sample.name);
     }
+  }
+
+  if (failedTracks.length > 0) {
+    console.warn(`Failed to load ${failedTracks.length} track(s): ${failedTracks.join(", ")}`);
   }
 
   // Step 4: Re-route tracks to groups in a SEPARATE transaction

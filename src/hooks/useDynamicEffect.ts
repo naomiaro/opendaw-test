@@ -390,18 +390,26 @@ const EFFECT_CONFIGS: Record<EffectType, EffectConfig> = {
 // Hook
 // ---------------------------------------------------------------------------
 
-export const useDynamicEffect = (config: DynamicEffectConfig) => {
-  const { id, type, trackName, project, audioBox } = config;
+interface DynamicEffectResult {
+  isBypassed: boolean;
+  parameters: EffectParameter[];
+  presets: EffectPreset<EffectParams>[];
+  handleBypass: () => void;
+  handleParameterChange: (paramName: string, value: number) => void;
+  loadPreset: (preset: EffectPreset<EffectParams>) => void;
+}
+
+export const useDynamicEffect = (config: DynamicEffectConfig): DynamicEffectResult => {
+  const { type, trackName, project, audioBox } = config;
   const [isBypassed, setIsBypassed] = useState(false);
   const [parameters, setParameters] = useState<Record<string, number>>({});
   const effectRef = useRef<EffectBox | null>(null);
-
-  const effectConfig = EFFECT_CONFIGS[type];
 
   // Initialize effect when component mounts
   useEffect(() => {
     if (!project || !audioBox || effectRef.current) return;
 
+    const effectConfig = EFFECT_CONFIGS[type];
     const label = `${trackName} ${type}`;
 
     project.editing.modify(() => {
@@ -430,7 +438,9 @@ export const useDynamicEffect = (config: DynamicEffectConfig) => {
         });
       }
     };
-  }, [project, audioBox, type, trackName, effectConfig]);
+  }, [project, audioBox, type, trackName]);
+
+  const effectConfig = EFFECT_CONFIGS[type];
 
   const handleBypass = useCallback(() => {
     if (!project || !effectRef.current) return;
@@ -446,21 +456,13 @@ export const useDynamicEffect = (config: DynamicEffectConfig) => {
       if (!project || !effectRef.current) return;
 
       project.editing.modify(() => {
-        effectConfig.applyParam(effectRef.current!, paramName, value);
+        EFFECT_CONFIGS[type].applyParam(effectRef.current!, paramName, value);
       });
 
       setParameters(prev => ({ ...prev, [paramName]: value }));
     },
-    [project, effectConfig]
+    [project, type]
   );
-
-  const getParameterDefinitions = (): EffectParameter[] => {
-    return effectConfig.getParameterDefinitions(parameters);
-  };
-
-  const getPresets = (): EffectPreset<EffectParams>[] => {
-    return effectConfig.presets;
-  };
 
   const loadPreset = useCallback(
     (preset: EffectPreset<EffectParams>) => {
@@ -469,19 +471,19 @@ export const useDynamicEffect = (config: DynamicEffectConfig) => {
       project.editing.modify(() => {
         const effect = effectRef.current!;
         Object.entries(preset.params).forEach(([key, value]) => {
-          effectConfig.applyParam(effect, key, value as number);
+          EFFECT_CONFIGS[type].applyParam(effect, key, value as number);
         });
       });
 
       setParameters(preset.params as Record<string, number>);
     },
-    [project, effectConfig]
+    [project, type]
   );
 
   return {
     isBypassed,
-    parameters: getParameterDefinitions(),
-    presets: getPresets(),
+    parameters: effectConfig.getParameterDefinitions(parameters),
+    presets: effectConfig.presets,
     handleBypass,
     handleParameterChange,
     loadPreset
