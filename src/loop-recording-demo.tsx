@@ -492,8 +492,8 @@ const App: React.FC = () => {
             <Callout.Text>
               This demo shows <strong>loop recording with takes</strong>. When loop mode is enabled and
               <Code size="1">allowTakes</Code> is true, each loop iteration creates a new take
-              (labeled "Take N") on a separate track. Previous takes are automatically muted
-              based on the <Code size="1">olderTakeAction</Code> preference.
+              (labeled "Take N") on a separate track. Previous takes are automatically handled
+              based on the <Code size="1">olderTakeAction</Code> (mute or disable) and <Code size="1">olderTakeScope</Code> (which takes are affected) preferences.
             </Callout.Text>
           </Callout.Root>
 
@@ -573,6 +573,11 @@ const App: React.FC = () => {
                   </Select.Root>
                 </Flex>
               </Flex>
+              <Text size="1" color="gray">
+                {olderTakeScope === "previous-only"
+                  ? "Only the most recent take is affected when a new take is recorded. Use this for layering — unmute an older take and it will stay audible through subsequent recordings (e.g., stacking vocal harmonies or guitar parts)."
+                  : "All older takes are affected each time a new take is recorded. Use this for comping — keeps a clean slate so you only hear the latest take, even if you unmuted older ones."}
+              </Text>
             </Flex>
           </Card>
 
