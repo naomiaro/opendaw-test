@@ -87,11 +87,23 @@ captureMidiBox.channel.setValue(-1); // -1=all, 0-15=specific channel
 ### Recording Preferences (Takes)
 ```typescript
 const settings = project.engine.preferences.settings;
-settings.recording.allowTakes = true;        // enable loop-based takes
+settings.recording.allowTakes = true;        // enable loop-based takes (default: true since SDK 0.0.109)
 settings.recording.olderTakeAction = "mute-region"; // or "disable-track"
 settings.recording.olderTakeScope = "previous-only"; // or "all"
 settings.recording.countInBars = 1;          // 1-8
 ```
+
+**How takes work:** Takes are driven by the timeline loop area (`timelineBox.loopArea`).
+When `allowTakes` is true AND `loopArea.enabled` is true, each time playback wraps past
+`loopArea.to` back to `loopArea.from`, the current take is finalized and a new take begins.
+
+- Recording can start **before** the loop region. Take 1 records from the start position
+  through the first loop wrap. Subsequent takes are scoped to the loop region
+  (`loopFrom` → `loopTo`).
+- With `loopArea.enabled = false`, `allowTakes` has no effect — recording produces a
+  single continuous region regardless of the setting.
+- Loop-wrap detection uses `currentPosition < lastPosition` (position jumped backward),
+  then calls `startNewTake(loopFrom)` to begin the next take at the loop start.
 
 ### Playback
 ```typescript
