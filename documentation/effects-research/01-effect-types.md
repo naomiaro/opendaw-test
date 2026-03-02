@@ -203,9 +203,9 @@ This document provides detailed information about each available audio effect ty
 
 | Parameter | Type | Range | Default | Unit | Description |
 |-----------|------|-------|---------|------|-------------|
-| drive | float32 | -∞ to ∞ | 0.0 | - | Input drive amount |
+| drive | float32 | 0.0 to 30.0 | 0.0 | dB | Input drive amount |
 | overSampling | int32 | - | 0 | - | Oversampling factor for quality |
-| volume | float32 | -∞ to ∞ | 0.0 | - | Output volume compensation |
+| volume | float32 | -18.0 to 0.0 | 0.0 | dB | Output volume compensation |
 
 **Source Code:**
 - Box: `/openDAW/packages/studio/forge-boxes/src/schema/devices/audio-effects/FoldDeviceBox.ts`
@@ -232,7 +232,7 @@ This document provides detailed information about each available audio effect ty
 |-----------|------|-------|---------|------|-------------|
 | volume | float32 | - | (default) | dB | Master volume level |
 | panning | float32 | -1.0 to 1.0 | 0.0 | bipolar | Left/right panning (-1=left, 1=right) |
-| stereo | float32 | 0.0 to ∞ | (default) | % | Stereo width (0=mono, >1=wider) |
+| stereo | float32 | -1.0 to 1.0 | 0.0 | bipolar | Stereo width (-1=mono, 0=normal, 1=max wide) |
 | invertL | boolean | - | false | - | Invert left channel phase |
 | invertR | boolean | - | false | - | Invert right channel phase |
 | swap | boolean | - | false | - | Swap left and right channels |
@@ -294,18 +294,34 @@ This document provides detailed information about each available audio effect ty
 
 | Parameter | Type | Range | Default | Unit | Description |
 |-----------|------|-------|---------|------|-------------|
-| slope | float32 | 0.0 to 1.0 | 0.5 | % | Waveform slope (0=triangle, 1=square) |
+| slope | float32 | -1.0 to 1.0 | 0.0 | bipolar | Waveform slope (-1=ramp down, 0=triangle/sine, 1=square) |
 | symmetry | float32 | 0.0 to 1.0 | 0.5 | % | Waveform symmetry (0.5=symmetric) |
-| rate | float32 | 0.01 to 20.0 | 1.0 | Hz | LFO frequency |
+| rate | int32 | 0 to 16 | 3 | index | Rate fraction index into RateFractions array (see table below) |
 | depth | float32 | 0.0 to 1.0 | 0.5 | % | Modulation depth |
-| offset | float32 | 0.0 to 1.0 | 0.0 | phase | Phase offset (0-1 = 0-360°) |
-| channelOffset | float32 | 0.0 to 1.0 | 0.0 | phase | Stereo phase offset for auto-pan |
+| offset | float32 | -180.0 to 180.0 | 0.0 | degrees | Phase offset |
+| channelOffset | float32 | -180.0 to 180.0 | 0.0 | degrees | Stereo phase offset for auto-pan |
+
+**Rate Fraction Index Mapping:**
+
+| Index | Fraction | Index | Fraction |
+|-------|----------|-------|----------|
+| 0 | 1/1 (whole) | 9 | 1/16 |
+| 1 | 1/2 (half) | 10 | 3/64 |
+| 2 | 1/3 (triplet) | 11 | 1/24 |
+| 3 | 1/4 (quarter) | 12 | 1/32 |
+| 4 | 3/16 (dotted eighth) | 13 | 1/48 |
+| 5 | 1/6 | 14 | 1/64 |
+| 6 | 1/8 (eighth) | 15 | 1/96 |
+| 7 | 3/32 | 16 | 1/128 |
+| 8 | 1/12 | | |
 
 **Features:**
 - Variable waveform shape (sine to triangle to square)
-- Stereo phase offset for panning effects
-- Wide rate range from slow drift to fast tremolo
+- Stereo phase offset for panning effects (in degrees, not 0-1)
+- Tempo-synced rate via note fraction indices (same array as Delay)
 - Classic amplitude modulation effects
+
+**Important:** The `rate` parameter is an integer index into the `RateFractions` array — NOT a frequency in Hz. The processor reads it with `RateFractions[this.#pRate.getValue()]`. Setting rate to 3 selects the 1/4 note fraction.
 
 ---
 
