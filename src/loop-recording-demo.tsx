@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
 import type { Terminable } from "@opendaw/lib-std";
@@ -71,7 +71,6 @@ const App: React.FC = () => {
 
   // Takes
   const [takeIterations, setTakeIterations] = useState<TakeIteration[]>([]);
-  const [takeCount, setTakeCount] = useState(0);
 
   // Audio input configuration
   const [audioInputDevices, setAudioInputDevices] = useState<MediaDeviceInfo[]>(
@@ -228,7 +227,7 @@ const App: React.FC = () => {
       const label = regionBox.label.getValue();
       if (!label.startsWith("Take ")) continue;
 
-      const takeNumber = parseInt(label.replace("Take ", ""));
+      const takeNumber = parseInt(label.replace("Take ", ""), 10);
       const isMuted = regionBox.mute.getValue();
       const waveformOffsetSec = regionBox.waveformOffset.getValue();
       const waveformOffsetFrames = Math.round(waveformOffsetSec * sampleRate);
@@ -307,7 +306,6 @@ const App: React.FC = () => {
     if (fingerprint !== lastTakeFingerprintRef.current) {
       lastTakeFingerprintRef.current = fingerprint;
       setTakeIterations(iterations);
-      setTakeCount(iterations.length);
     }
   }, [project, audioContext, recordingTracks, leadInBars]);
 
@@ -391,17 +389,18 @@ const App: React.FC = () => {
     ]);
   }, [project, audioInputDevices, recordingTracks.length]);
 
-  const handleRemoveTrack = useCallback((id: string) => {
-    setRecordingTracks((prev) => {
-      const track = prev.find((t) => t.id === id);
+  const handleRemoveTrack = useCallback(
+    (id: string) => {
+      const track = recordingTracks.find((t) => t.id === id);
       if (track) {
         track.capture.armed.setValue(false);
       }
-      const next = prev.filter((t) => t.id !== id);
+      const next = recordingTracks.filter((t) => t.id !== id);
+      setRecordingTracks(next);
       setArmedCount(next.filter((t) => t.capture.armed.getValue()).length);
-      return next;
-    });
-  }, []);
+    },
+    [recordingTracks]
+  );
 
   // --- Recording handlers ---
 
@@ -546,21 +545,21 @@ const App: React.FC = () => {
     });
     lastTakeFingerprintRef.current = "";
     setTakeIterations([]);
-    setTakeCount(0);
   }, [project]);
 
   // --- Derived values ---
 
+  const takeCount = takeIterations.length;
   const totalBars = leadInBars + loopLengthBars;
   const totalPPQN = totalBars * BAR_PPQN;
   const timeInSeconds = PPQN.pulsesToSeconds(currentPosition, bpm);
   const loopProgress =
     totalPPQN > 0 ? (currentPosition % totalPPQN) / totalPPQN : 0;
 
-  const recordingTrackLabels = recordingTracks.map((t) => ({
-    id: t.id,
-    label: t.label,
-  }));
+  const recordingTrackLabels = useMemo(
+    () => recordingTracks.map((t) => ({ id: t.id, label: t.label })),
+    [recordingTracks]
+  );
 
   // --- Render ---
 
