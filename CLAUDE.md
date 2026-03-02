@@ -407,6 +407,18 @@ See `src/lib/audioUtils.ts` `getAudioExtension()`.
 - `stop(false)` - Pauses without resetting position
 - **NEVER call `stop(true)` while recording** — kills the audio graph and prevents finalization
 
+### Effects Parameter Architecture
+Effects use a 3-layer chain: Box (raw storage) → Adapter (UI mapping) → Processor (DSP).
+`box.field.setValue()` stores raw values that the processor reads directly via `getValue()`.
+`ValueMapping` in adapters only affects UI display/automation — NOT audio processing.
+
+**Gotchas discovered during SDK 0.0.115 audit:**
+- Delay has its own 21-entry `Fractions` array (Off→1/1) — different from Tidal's 17-entry `RateFractions` (1/1→1/128)
+- Crusher processor inverts crush: `setCrush(1.0 - value)` — higher box value = MORE crushing
+- DattorroReverb `preDelay` is in milliseconds (0-1000), standard Reverb is in seconds (0.001-0.5)
+- StereoTool `stereo` (width) is bipolar (-1..1), not unipolar — 0 = normal, not center of 0-2 range
+- To verify parameter ranges, audit all 3 layers: schema (Box), adapter (ValueMapping), and processor (how value is consumed)
+
 ## React Integration Tips
 
 ### Monitoring Peaks Across Recording Lifecycle
@@ -501,4 +513,8 @@ See `src/looping-demo.tsx` for the reference layout pattern.
 - Mixer groups demo: `src/mixer-groups-demo.tsx`
 - Group track loading: `src/lib/groupTrackLoading.ts` (creates group buses + routes tracks)
 - Audio utilities: `src/lib/audioUtils.ts` (format detection, file loading)
+- Effects demo: `src/effects-demo.tsx` (multi-track mixer with dynamic effects)
+- Effect hook: `src/hooks/useDynamicEffect.ts` (effect configs, parameter ranges, defaults)
+- Effect presets: `src/lib/effectPresets.ts` (preset values for all effect types)
+- Effects research docs: `documentation/effects-research/` (parameter tables, code examples, architecture)
 - OpenDAW original source: `/Users/naomiaro/Code/openDAWOriginal`
