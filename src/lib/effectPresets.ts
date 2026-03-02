@@ -18,7 +18,7 @@ export interface EffectPreset<T> {
 export interface ReverbParams {
   wet: number; // dB: -60 to 0
   decay: number; // 0-1: decay time
-  preDelay: number; // seconds: 0-0.1
+  preDelay: number; // seconds: 0-0.5
   damp: number; // 0-1: high frequency damping
 }
 
@@ -126,8 +126,8 @@ export const COMPRESSOR_PRESETS: EffectPreset<CompressorParams>[] = [
 
 export interface DelayParams {
   wet: number; // dB: -60 to 0
-  feedback: number; // 0-0.9: amount of feedback
-  delayMusical: number; // 0-16: delay time indices (note fractions)
+  feedback: number; // 0-0.95: amount of feedback
+  delayMusical: number; // 0-20: index into Delay Fractions array (0=Off, 11=1/8, 14=1/4, 20=1/1)
   filter: number; // -1 to 1: filter amount (negative=LP, positive=HP)
 }
 
@@ -135,32 +135,32 @@ export const DELAY_PRESETS: EffectPreset<DelayParams>[] = [
   {
     name: "Slap Back",
     description: "Classic 50s-style short delay for vocals",
-    params: { wet: -18, feedback: 0.1, delayMusical: 2, filter: 0.4 }
+    params: { wet: -18, feedback: 0.1, delayMusical: 5, filter: 0.4 }
   },
   {
     name: "Quarter Note",
     description: "Rhythmic delay synced to tempo",
-    params: { wet: -12, feedback: 0.4, delayMusical: 4, filter: 0.3 }
+    params: { wet: -12, feedback: 0.4, delayMusical: 14, filter: 0.3 }
   },
   {
     name: "Dotted Eighth",
     description: "U2-style delay (3/16 notes)",
-    params: { wet: -10, feedback: 0.45, delayMusical: 6, filter: 0.35 }
+    params: { wet: -10, feedback: 0.45, delayMusical: 13, filter: 0.35 }
   },
   {
     name: "Ping Pong",
     description: "Bouncing delay with moderate feedback",
-    params: { wet: -14, feedback: 0.5, delayMusical: 4, filter: 0.25 }
+    params: { wet: -14, feedback: 0.5, delayMusical: 14, filter: 0.25 }
   },
   {
     name: "Ambient Wash",
     description: "Long, filtered delay for atmospheric sound",
-    params: { wet: -8, feedback: 0.65, delayMusical: 8, filter: 0.6 }
+    params: { wet: -8, feedback: 0.65, delayMusical: 19, filter: 0.6 }
   },
   {
     name: "Dub Echo",
     description: "Heavy feedback with dark tone",
-    params: { wet: -6, feedback: 0.7, delayMusical: 6, filter: 0.7 }
+    params: { wet: -6, feedback: 0.7, delayMusical: 13, filter: 0.7 }
   },
   {
     name: "Subtle Double",
@@ -170,7 +170,7 @@ export const DELAY_PRESETS: EffectPreset<DelayParams>[] = [
   {
     name: "Tape Echo",
     description: "Vintage tape echo simulation",
-    params: { wet: -15, feedback: 0.5, delayMusical: 5, filter: 0.5 }
+    params: { wet: -15, feedback: 0.5, delayMusical: 11, filter: 0.5 }
   }
 ];
 
@@ -189,42 +189,42 @@ export const CRUSHER_PRESETS: EffectPreset<CrusherParams>[] = [
   {
     name: "Subtle Lo-Fi",
     description: "Gentle vintage character without being obvious",
-    params: { bits: 14, crush: 0.85, boost: 0, mix: 0.4 } // Processor inverts crush internally!
+    params: { bits: 14, crush: 0.08, boost: 0, mix: 0.4 }
   },
   {
     name: "AM Radio",
     description: "Old radio or telephone sound",
-    params: { bits: 10, crush: 0.7, boost: 0, mix: 0.7 }
+    params: { bits: 10, crush: 0.25, boost: 0, mix: 0.7 }
   },
   {
     name: "8-bit Game",
     description: "Retro video game sound",
-    params: { bits: 6, crush: 0.55, boost: 0, mix: 0.85 }
+    params: { bits: 6, crush: 0.15, boost: 0, mix: 0.85 }
   },
   {
     name: "Destroyed",
     description: "Extreme bit crushing and distortion",
-    params: { bits: 5, crush: 0.4, boost: 0, mix: 1.0 } // 5 bits min for audibility
+    params: { bits: 5, crush: 0.65, boost: 0, mix: 1.0 }
   },
   {
     name: "Vinyl Warmth",
     description: "Subtle degradation for analog warmth",
-    params: { bits: 15, crush: 0.92, boost: 0, mix: 0.25 }
+    params: { bits: 15, crush: 0.05, boost: 0, mix: 0.25 }
   },
   {
     name: "Grungy",
     description: "Heavy distortion with character",
-    params: { bits: 8, crush: 0.6, boost: 0, mix: 0.8 }
+    params: { bits: 8, crush: 0.35, boost: 0, mix: 0.8 }
   },
   {
     name: "Glitch",
     description: "Digital artifacts and glitches",
-    params: { bits: 5, crush: 0.45, boost: 0, mix: 0.9 }
+    params: { bits: 5, crush: 0.55, boost: 0, mix: 0.9 }
   },
   {
     name: "Tape Saturation",
     description: "Warm tape-like saturation",
-    params: { bits: 13, crush: 0.88, boost: 0, mix: 0.5 }
+    params: { bits: 13, crush: 0.07, boost: 0, mix: 0.5 }
   }
 ];
 
@@ -233,7 +233,7 @@ export const CRUSHER_PRESETS: EffectPreset<CrusherParams>[] = [
 // ============================================================================
 
 export interface StereoWidthParams {
-  width: number; // 0-1: stereo width (0.5 = normal, 1 = wide)
+  width: number; // -1 to 1: stereo width (0 = normal, -1 = mono, 1 = max wide)
   pan: number; // -1 to 1: pan position
 }
 
@@ -241,17 +241,17 @@ export const STEREO_WIDTH_PRESETS: EffectPreset<StereoWidthParams>[] = [
   {
     name: "Narrow (Mono)",
     description: "Collapses to mono for compatibility",
-    params: { width: 0, pan: 0 }
+    params: { width: -1, pan: 0 }
   },
   {
     name: "Natural",
     description: "Standard stereo width",
-    params: { width: 0.5, pan: 0 }
+    params: { width: 0, pan: 0 }
   },
   {
     name: "Wide",
     description: "Enhanced stereo width for spaciousness",
-    params: { width: 0.8, pan: 0 }
+    params: { width: 0.6, pan: 0 }
   },
   {
     name: "Extra Wide",
@@ -261,22 +261,22 @@ export const STEREO_WIDTH_PRESETS: EffectPreset<StereoWidthParams>[] = [
   {
     name: "Pan Left",
     description: "Panned to left side",
-    params: { width: 0.5, pan: -0.7 }
+    params: { width: 0, pan: -0.7 }
   },
   {
     name: "Pan Right",
     description: "Panned to right side",
-    params: { width: 0.5, pan: 0.7 }
+    params: { width: 0, pan: 0.7 }
   },
   {
     name: "Wide Left",
     description: "Wide stereo, biased left",
-    params: { width: 0.8, pan: -0.3 }
+    params: { width: 0.6, pan: -0.3 }
   },
   {
     name: "Wide Right",
     description: "Wide stereo, biased right",
-    params: { width: 0.8, pan: 0.3 }
+    params: { width: 0.6, pan: 0.3 }
   }
 ];
 
@@ -338,8 +338,8 @@ export const EQ_PRESETS: EffectPreset<EQParams>[] = [
 // ============================================================================
 
 export interface FoldParams {
-  drive: number; // dB: 0 to 40 (input drive)
-  volume: number; // dB: -40 to 20 (output level)
+  drive: number; // dB: 0 to 30 (input drive)
+  volume: number; // dB: -18 to 0 (output level)
 }
 
 export const FOLD_PRESETS: EffectPreset<FoldParams>[] = [
@@ -361,7 +361,7 @@ export const FOLD_PRESETS: EffectPreset<FoldParams>[] = [
   {
     name: "Extreme Fold",
     description: "Maximum folding and harmonics",
-    params: { drive: 35, volume: -8 }
+    params: { drive: 30, volume: -8 }
   },
   {
     name: "Tube Amp",
@@ -381,7 +381,7 @@ export const FOLD_PRESETS: EffectPreset<FoldParams>[] = [
   {
     name: "Clean Boost",
     description: "Transparent boost with character",
-    params: { drive: 6, volume: 2 }
+    params: { drive: 6, volume: 0 }
   }
 ];
 
@@ -390,56 +390,56 @@ export const FOLD_PRESETS: EffectPreset<FoldParams>[] = [
 // ============================================================================
 
 export interface DattorroReverbParams {
-  preDelay: number; // seconds: 0-0.1
+  preDelay: number; // ms: 0-1000 (NOTE: milliseconds, not seconds — unlike standard Reverb)
   bandwidth: number; // 0-1: input bandwidth
   decay: number; // 0-1: decay time
   damping: number; // 0-1: high frequency damping
   excursionRate: number; // 0-1: modulation rate
   excursionDepth: number; // 0-1: modulation depth
   wet: number; // dB: -60 to 0
-  dry: number; // dB: -60 to 0
+  dry: number; // dB: -60 to 6
 }
 
 export const DATTORRO_REVERB_PRESETS: EffectPreset<DattorroReverbParams>[] = [
   {
     name: "Small Space",
     description: "Intimate room with subtle modulation",
-    params: { preDelay: 0.01, bandwidth: 0.95, decay: 0.3, damping: 0.6, excursionRate: 0.3, excursionDepth: 0.3, wet: -18, dry: 0 }
+    params: { preDelay: 10, bandwidth: 0.95, decay: 0.3, damping: 0.6, excursionRate: 0.3, excursionDepth: 0.3, wet: -18, dry: 0 }
   },
   {
     name: "Medium Hall",
     description: "Balanced hall reverb for most uses",
-    params: { preDelay: 0.02, bandwidth: 0.9, decay: 0.5, damping: 0.5, excursionRate: 0.5, excursionDepth: 0.5, wet: -12, dry: 0 }
+    params: { preDelay: 20, bandwidth: 0.9, decay: 0.5, damping: 0.5, excursionRate: 0.5, excursionDepth: 0.5, wet: -12, dry: 0 }
   },
   {
     name: "Large Hall",
     description: "Spacious concert hall with long decay",
-    params: { preDelay: 0.03, bandwidth: 0.85, decay: 0.75, damping: 0.4, excursionRate: 0.4, excursionDepth: 0.6, wet: -10, dry: 0 }
+    params: { preDelay: 30, bandwidth: 0.85, decay: 0.75, damping: 0.4, excursionRate: 0.4, excursionDepth: 0.6, wet: -10, dry: 0 }
   },
   {
     name: "Cathedral",
     description: "Massive space with very long, bright reverb",
-    params: { preDelay: 0.05, bandwidth: 0.8, decay: 0.9, damping: 0.25, excursionRate: 0.3, excursionDepth: 0.7, wet: -8, dry: 0 }
+    params: { preDelay: 50, bandwidth: 0.8, decay: 0.9, damping: 0.25, excursionRate: 0.3, excursionDepth: 0.7, wet: -8, dry: 0 }
   },
   {
     name: "Shimmer",
     description: "Ethereal reverb with heavy modulation",
-    params: { preDelay: 0.04, bandwidth: 0.7, decay: 0.85, damping: 0.3, excursionRate: 0.8, excursionDepth: 0.9, wet: -6, dry: 0 }
+    params: { preDelay: 40, bandwidth: 0.7, decay: 0.85, damping: 0.3, excursionRate: 0.8, excursionDepth: 0.9, wet: -6, dry: 0 }
   },
   {
     name: "Dark Ambient",
     description: "Moody, heavily damped reverb",
-    params: { preDelay: 0.03, bandwidth: 0.6, decay: 0.7, damping: 0.8, excursionRate: 0.2, excursionDepth: 0.4, wet: -10, dry: 0 }
+    params: { preDelay: 30, bandwidth: 0.6, decay: 0.7, damping: 0.8, excursionRate: 0.2, excursionDepth: 0.4, wet: -10, dry: 0 }
   },
   {
     name: "Bright Plate",
     description: "Crisp plate-like reverb",
-    params: { preDelay: 0.015, bandwidth: 0.98, decay: 0.6, damping: 0.2, excursionRate: 0.6, excursionDepth: 0.5, wet: -14, dry: 0 }
+    params: { preDelay: 15, bandwidth: 0.98, decay: 0.6, damping: 0.2, excursionRate: 0.6, excursionDepth: 0.5, wet: -14, dry: 0 }
   },
   {
     name: "Infinite",
     description: "Near-infinite decay for drones",
-    params: { preDelay: 0.02, bandwidth: 0.85, decay: 0.98, damping: 0.35, excursionRate: 0.4, excursionDepth: 0.6, wet: -6, dry: -12 }
+    params: { preDelay: 20, bandwidth: 0.85, decay: 0.98, damping: 0.35, excursionRate: 0.4, excursionDepth: 0.6, wet: -6, dry: -12 }
   }
 ];
 
@@ -448,54 +448,54 @@ export const DATTORRO_REVERB_PRESETS: EffectPreset<DattorroReverbParams>[] = [
 // ============================================================================
 
 export interface TidalParams {
-  slope: number; // 0-1: waveform slope
+  slope: number; // -1 to 1: waveform slope (bipolar)
   symmetry: number; // 0-1: waveform symmetry
-  rate: number; // Hz: LFO rate
+  rate: number; // 0-16: fraction index (0=1/1, 3=1/4, 6=1/8, etc.)
   depth: number; // 0-1: modulation depth
-  offset: number; // 0-1: phase offset
-  channelOffset: number; // 0-1: stereo phase offset
+  offset: number; // -180 to 180: phase offset in degrees
+  channelOffset: number; // -180 to 180: stereo phase offset in degrees
 }
 
 export const TIDAL_PRESETS: EffectPreset<TidalParams>[] = [
   {
     name: "Subtle Tremolo",
     description: "Gentle volume modulation",
-    params: { slope: 0.5, symmetry: 0.5, rate: 4, depth: 0.2, offset: 0, channelOffset: 0 }
+    params: { slope: 0, symmetry: 0.5, rate: 3, depth: 0.2, offset: 0, channelOffset: 0 }
   },
   {
     name: "Classic Tremolo",
     description: "Standard tremolo effect",
-    params: { slope: 0.5, symmetry: 0.5, rate: 6, depth: 0.5, offset: 0, channelOffset: 0 }
+    params: { slope: 0, symmetry: 0.5, rate: 6, depth: 0.5, offset: 0, channelOffset: 0 }
   },
   {
     name: "Deep Tremolo",
     description: "Heavy, dramatic tremolo",
-    params: { slope: 0.5, symmetry: 0.5, rate: 5, depth: 0.8, offset: 0, channelOffset: 0 }
+    params: { slope: 0, symmetry: 0.5, rate: 4, depth: 0.8, offset: 0, channelOffset: 0 }
   },
   {
     name: "Auto-Pan",
     description: "Stereo panning effect",
-    params: { slope: 0.5, symmetry: 0.5, rate: 0.5, depth: 0.7, offset: 0, channelOffset: 0.5 }
+    params: { slope: 0, symmetry: 0.5, rate: 0, depth: 0.7, offset: 0, channelOffset: 180 }
   },
   {
     name: "Fast Pan",
     description: "Quick stereo movement",
-    params: { slope: 0.5, symmetry: 0.5, rate: 3, depth: 0.6, offset: 0, channelOffset: 0.5 }
+    params: { slope: 0, symmetry: 0.5, rate: 6, depth: 0.6, offset: 0, channelOffset: 180 }
   },
   {
     name: "Square Wave",
     description: "Choppy on/off modulation",
-    params: { slope: 1, symmetry: 0.5, rate: 4, depth: 0.7, offset: 0, channelOffset: 0 }
+    params: { slope: 1, symmetry: 0.5, rate: 3, depth: 0.7, offset: 0, channelOffset: 0 }
   },
   {
     name: "Sawtooth",
     description: "Ramping modulation",
-    params: { slope: 0, symmetry: 1, rate: 2, depth: 0.5, offset: 0, channelOffset: 0 }
+    params: { slope: -1, symmetry: 1, rate: 3, depth: 0.5, offset: 0, channelOffset: 0 }
   },
   {
     name: "Slow Drift",
     description: "Very slow, subtle movement",
-    params: { slope: 0.5, symmetry: 0.5, rate: 0.1, depth: 0.3, offset: 0, channelOffset: 0.25 }
+    params: { slope: 0, symmetry: 0.5, rate: 0, depth: 0.3, offset: 0, channelOffset: 90 }
   }
 ];
 

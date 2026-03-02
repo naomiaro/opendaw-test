@@ -286,8 +286,8 @@ Refer to the specific document that covers your question:
 ## Version
 
 Created: October 30, 2025
-Updated: January 8, 2026
-OpenDAW Version: Based on current main branch (SDK 0.0.91)
+Updated: March 2, 2026
+OpenDAW Version: Based on current main branch (SDK 0.0.115)
 Documentation Completeness: Very Thorough (100%)
 
 ---

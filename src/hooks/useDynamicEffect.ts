@@ -105,7 +105,7 @@ const EFFECT_CONFIGS: Record<EffectType, EffectConfig> = {
     getParameterDefinitions: (params) => [
       { name: "wet", label: "Wet/Dry Mix", value: params.wet || -18, min: -60, max: 0, step: 0.1, unit: " dB" },
       { name: "decay", label: "Decay Time", value: params.decay || 0.5, min: 0, max: 1, step: 0.01, format: v => `${(v * 100).toFixed(0)}%` },
-      { name: "preDelay", label: "Pre-Delay", value: params.preDelay || 0.02, min: 0, max: 0.1, step: 0.001, format: v => `${(v * 1000).toFixed(0)} ms` },
+      { name: "preDelay", label: "Pre-Delay", value: params.preDelay || 0.02, min: 0, max: 0.5, step: 0.001, format: v => `${(v * 1000).toFixed(0)} ms` },
       { name: "damp", label: "Damping", value: params.damp || 0.5, min: 0, max: 1, step: 0.01, format: v => `${(v * 100).toFixed(0)}%` }
     ],
     presets: REVERB_PRESETS
@@ -149,9 +149,9 @@ const EFFECT_CONFIGS: Record<EffectType, EffectConfig> = {
       const b = box as DelayDeviceBox;
       b.wet.setValue(-12);
       b.feedback.setValue(0.4);
-      b.delayMusical.setValue(4);
+      b.delayMusical.setValue(14);
       b.filter.setValue(0);
-      return { wet: -12, feedback: 0.4, delayMusical: 4, filter: 0 };
+      return { wet: -12, feedback: 0.4, delayMusical: 14, filter: 0 };
     },
     applyParam(box: EffectBox, name: string, value: number) {
       const b = box as DelayDeviceBox;
@@ -163,14 +163,16 @@ const EFFECT_CONFIGS: Record<EffectType, EffectConfig> = {
       }
     },
     getParameterDefinitions: (params) => {
-      const notes = [
-        "1/1", "1/2", "1/3", "1/4", "3/16", "1/6", "1/8", "3/32",
-        "1/12", "1/16", "3/64", "1/24", "1/32", "1/48", "1/64", "1/96", "1/128"
+      // Delay Fractions array (21 entries, indices 0-20) — different from Tidal's RateFractions
+      const fractions = [
+        "Off", "1/128", "1/96", "1/64", "1/48", "1/32", "1/24", "3/64",
+        "1/16", "1/12", "3/32", "1/8", "1/6", "3/16", "1/4", "5/16",
+        "1/3", "3/8", "7/16", "1/2", "1/1"
       ];
       return [
         { name: "wet", label: "Wet/Dry Mix", value: params.wet || -12, min: -60, max: 0, step: 0.1, unit: " dB" },
         { name: "feedback", label: "Feedback", value: params.feedback || 0.4, min: 0, max: 0.95, step: 0.01, format: v => `${(v * 100).toFixed(0)}%` },
-        { name: "delayMusical", label: "Delay Time", value: params.delayMusical || 4, min: 0, max: 16, step: 1, format: v => notes[Math.floor(v)] || `${v}` },
+        { name: "delayMusical", label: "Delay Time", value: params.delayMusical || 14, min: 0, max: 20, step: 1, format: (v: number) => fractions[Math.round(v)] || `${v}` },
         { name: "filter", label: "Filter", value: params.filter || 0, min: -1, max: 1, step: 0.01, format: v => (v < 0 ? `LP ${Math.abs(v * 100).toFixed(0)}%` : v > 0 ? `HP ${(v * 100).toFixed(0)}%` : "Off") }
       ];
     },
@@ -181,11 +183,11 @@ const EFFECT_CONFIGS: Record<EffectType, EffectConfig> = {
     factory: EffectFactories.AudioNamed.Crusher,
     initDefaults(box: EffectBox) {
       const b = box as CrusherDeviceBox;
-      b.bits.setValue(10);
-      b.crush.setValue(0.7);
+      b.bits.setValue(12);
+      b.crush.setValue(0.2);
       b.boost.setValue(0);
       b.mix.setValue(0.7);
-      return { bits: 10, crush: 0.7, boost: 0, mix: 0.7 };
+      return { bits: 12, crush: 0.2, boost: 0, mix: 0.7 };
     },
     applyParam(box: EffectBox, name: string, value: number) {
       const b = box as CrusherDeviceBox;
@@ -197,8 +199,8 @@ const EFFECT_CONFIGS: Record<EffectType, EffectConfig> = {
       }
     },
     getParameterDefinitions: (params) => [
-      { name: "bits", label: "Bit Depth", value: params.bits || 10, min: 5, max: 16, step: 1, format: v => `${v.toFixed(0)} bits` },
-      { name: "crush", label: "Sample Rate Reduction", value: params.crush || 0.7, min: 0, max: 1, step: 0.01, format: v => `${(v * 100).toFixed(0)}%` },
+      { name: "bits", label: "Bit Depth", value: params.bits || 12, min: 1, max: 16, step: 1, format: v => `${v.toFixed(0)} bits` },
+      { name: "crush", label: "Sample Rate Reduction", value: params.crush || 0.2, min: 0, max: 1, step: 0.01, format: v => `${(v * 100).toFixed(0)}%` },
       { name: "boost", label: "Boost", value: params.boost || 0, min: 0, max: 24, step: 0.5, format: v => `${v.toFixed(1)} dB` },
       { name: "mix", label: "Wet/Dry Mix", value: params.mix || 0.8, min: 0, max: 1, step: 0.01, format: v => `${(v * 100).toFixed(0)}%` }
     ],
@@ -209,9 +211,9 @@ const EFFECT_CONFIGS: Record<EffectType, EffectConfig> = {
     factory: EffectFactories.AudioNamed.StereoTool,
     initDefaults(box: EffectBox) {
       const b = box as StereoToolDeviceBox;
-      b.stereo.setValue(1.0);
+      b.stereo.setValue(0);
       b.panning.setValue(0);
-      return { width: 1.0, pan: 0 };
+      return { width: 0, pan: 0 };
     },
     applyParam(box: EffectBox, name: string, value: number) {
       const b = box as StereoToolDeviceBox;
@@ -221,7 +223,7 @@ const EFFECT_CONFIGS: Record<EffectType, EffectConfig> = {
       }
     },
     getParameterDefinitions: (params) => [
-      { name: "width", label: "Stereo Width", value: params.width || 1.0, min: 0, max: 2, step: 0.01, format: v => `${(v * 100).toFixed(0)}%` },
+      { name: "width", label: "Stereo Width", value: params.width ?? 0, min: -1, max: 1, step: 0.01, format: (v: number) => v === 0 ? "Normal" : v < 0 ? `Narrow ${(v * 100).toFixed(0)}%` : `Wide +${(v * 100).toFixed(0)}%` },
       { name: "pan", label: "Pan", value: params.pan || 0, min: -1, max: 1, step: 0.01, format: v => (v === 0 ? "Center" : v < 0 ? `L${Math.abs(v * 100).toFixed(0)}` : `R${(v * 100).toFixed(0)}`) }
     ],
     presets: STEREO_WIDTH_PRESETS
@@ -278,8 +280,8 @@ const EFFECT_CONFIGS: Record<EffectType, EffectConfig> = {
       }
     },
     getParameterDefinitions: (params) => [
-      { name: "drive", label: "Drive", value: params.drive || 0, min: 0, max: 40, step: 0.1, unit: " dB" },
-      { name: "volume", label: "Output", value: params.volume || 0, min: -40, max: 20, step: 0.1, unit: " dB" }
+      { name: "drive", label: "Drive", value: params.drive || 0, min: 0, max: 30, step: 0.1, unit: " dB" },
+      { name: "volume", label: "Output", value: params.volume || 0, min: -18, max: 0, step: 0.1, unit: " dB" }
     ],
     presets: FOLD_PRESETS
   },
@@ -288,7 +290,7 @@ const EFFECT_CONFIGS: Record<EffectType, EffectConfig> = {
     factory: EffectFactories.AudioNamed.DattorroReverb,
     initDefaults(box: EffectBox) {
       const b = box as DattorroReverbDeviceBox;
-      b.preDelay.setValue(0.02);
+      b.preDelay.setValue(20);
       b.bandwidth.setValue(0.9);
       b.inputDiffusion1.setValue(0.75);
       b.inputDiffusion2.setValue(0.625);
@@ -301,7 +303,7 @@ const EFFECT_CONFIGS: Record<EffectType, EffectConfig> = {
       b.wet.setValue(-12);
       b.dry.setValue(0);
       return {
-        preDelay: 0.02, bandwidth: 0.9, decay: 0.5, damping: 0.5,
+        preDelay: 20, bandwidth: 0.9, decay: 0.5, damping: 0.5,
         excursionRate: 0.5, excursionDepth: 0.5, wet: -12, dry: 0
       };
     },
@@ -320,10 +322,10 @@ const EFFECT_CONFIGS: Record<EffectType, EffectConfig> = {
     },
     getParameterDefinitions: (params) => [
       { name: "wet", label: "Wet", value: params.wet || -12, min: -60, max: 0, step: 0.1, unit: " dB" },
-      { name: "dry", label: "Dry", value: params.dry || 0, min: -60, max: 0, step: 0.1, unit: " dB" },
+      { name: "dry", label: "Dry", value: params.dry || 0, min: -60, max: 6, step: 0.1, unit: " dB" },
       { name: "decay", label: "Decay", value: params.decay || 0.5, min: 0, max: 1, step: 0.01, format: (v: number) => `${(v * 100).toFixed(0)}%` },
       { name: "damping", label: "Damping", value: params.damping || 0.5, min: 0, max: 1, step: 0.01, format: (v: number) => `${(v * 100).toFixed(0)}%` },
-      { name: "preDelay", label: "Pre-Delay", value: params.preDelay || 0.02, min: 0, max: 0.1, step: 0.001, format: (v: number) => `${(v * 1000).toFixed(0)} ms` },
+      { name: "preDelay", label: "Pre-Delay", value: params.preDelay || 20, min: 0, max: 1000, step: 1, format: (v: number) => `${v.toFixed(0)} ms` },
       { name: "bandwidth", label: "Bandwidth", value: params.bandwidth || 0.9, min: 0, max: 1, step: 0.01, format: (v: number) => `${(v * 100).toFixed(0)}%` },
       { name: "excursionRate", label: "Mod Rate", value: params.excursionRate || 0.5, min: 0, max: 1, step: 0.01, format: (v: number) => `${(v * 100).toFixed(0)}%` },
       { name: "excursionDepth", label: "Mod Depth", value: params.excursionDepth || 0.5, min: 0, max: 1, step: 0.01, format: (v: number) => `${(v * 100).toFixed(0)}%` }
@@ -335,13 +337,13 @@ const EFFECT_CONFIGS: Record<EffectType, EffectConfig> = {
     factory: EffectFactories.AudioNamed.Tidal,
     initDefaults(box: EffectBox) {
       const b = box as TidalDeviceBox;
-      b.slope.setValue(0.5);
+      b.slope.setValue(0);
       b.symmetry.setValue(0.5);
-      b.rate.setValue(1);
+      b.rate.setValue(3);
       b.depth.setValue(0.5);
       b.offset.setValue(0);
       b.channelOffset.setValue(0);
-      return { slope: 0.5, symmetry: 0.5, rate: 1, depth: 0.5, offset: 0, channelOffset: 0 };
+      return { slope: 0, symmetry: 0.5, rate: 3, depth: 0.5, offset: 0, channelOffset: 0 };
     },
     applyParam(box: EffectBox, name: string, value: number) {
       const b = box as TidalDeviceBox;
@@ -354,14 +356,17 @@ const EFFECT_CONFIGS: Record<EffectType, EffectConfig> = {
         case "channelOffset": b.channelOffset.setValue(value); break;
       }
     },
-    getParameterDefinitions: (params) => [
-      { name: "rate", label: "Rate", value: params.rate || 1, min: 0.01, max: 20, step: 0.01, format: (v: number) => `${v.toFixed(2)} Hz` },
-      { name: "depth", label: "Depth", value: params.depth || 0.5, min: 0, max: 1, step: 0.01, format: (v: number) => `${(v * 100).toFixed(0)}%` },
-      { name: "slope", label: "Slope", value: params.slope || 0.5, min: 0, max: 1, step: 0.01, format: (v: number) => `${(v * 100).toFixed(0)}%` },
-      { name: "symmetry", label: "Symmetry", value: params.symmetry || 0.5, min: 0, max: 1, step: 0.01, format: (v: number) => `${(v * 100).toFixed(0)}%` },
-      { name: "offset", label: "Phase Offset", value: params.offset || 0, min: 0, max: 1, step: 0.01, format: (v: number) => `${(v * 360).toFixed(0)}\u00B0` },
-      { name: "channelOffset", label: "Stereo Offset", value: params.channelOffset || 0, min: 0, max: 1, step: 0.01, format: (v: number) => `${(v * 360).toFixed(0)}\u00B0` }
-    ],
+    getParameterDefinitions: (params) => {
+      const fractions = ["1/1","1/2","1/3","1/4","3/16","1/6","1/8","3/32","1/12","1/16","3/64","1/24","1/32","1/48","1/64","1/96","1/128"];
+      return [
+        { name: "rate", label: "Rate", value: params.rate || 3, min: 0, max: 16, step: 1, format: (v: number) => fractions[Math.round(v)] || `${v}` },
+        { name: "depth", label: "Depth", value: params.depth || 0.5, min: 0, max: 1, step: 0.01, format: (v: number) => `${(v * 100).toFixed(0)}%` },
+        { name: "slope", label: "Slope", value: params.slope ?? 0, min: -1, max: 1, step: 0.01, format: (v: number) => v.toFixed(2) },
+        { name: "symmetry", label: "Symmetry", value: params.symmetry || 0.5, min: 0, max: 1, step: 0.01, format: (v: number) => `${(v * 100).toFixed(0)}%` },
+        { name: "offset", label: "Phase Offset", value: params.offset ?? 0, min: -180, max: 180, step: 1, format: (v: number) => `${v.toFixed(0)}\u00B0` },
+        { name: "channelOffset", label: "Stereo Offset", value: params.channelOffset ?? 0, min: -180, max: 180, step: 1, format: (v: number) => `${v.toFixed(0)}\u00B0` }
+      ];
+    },
     presets: TIDAL_PRESETS
   },
 

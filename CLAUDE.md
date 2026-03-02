@@ -80,6 +80,13 @@ MidiDevices.softwareMIDIInput.sendNoteOff(60);
 // Subscribe to MIDI events
 const sub = MidiDevices.subscribeMessageEvents(event => { ... }, channel?);
 
+// IMPORTANT: CaptureMidi must be explicitly armed for MIDI to produce sound.
+// Unlike CaptureAudio (which auto-arms when monitoringMode is set), CaptureMidi
+// has no implicit arming. Without arming, softwareMIDIInput notes never reach
+// the synth (no live monitoring) and Recording.start() skips the capture (no recording).
+const capture = project.captureDevices.get(audioUnitBox.address.uuid).unwrap();
+project.captureDevices.setArm(capture, true);
+
 // MIDI capture channel filter: set on CaptureMidiBox
 captureMidiBox.channel.setValue(-1); // -1=all, 0-15=specific channel
 ```
@@ -87,11 +94,23 @@ captureMidiBox.channel.setValue(-1); // -1=all, 0-15=specific channel
 ### Recording Preferences (Takes)
 ```typescript
 const settings = project.engine.preferences.settings;
-settings.recording.allowTakes = true;        // enable loop-based takes
+settings.recording.allowTakes = true;        // enable loop-based takes (default: true since SDK 0.0.109)
 settings.recording.olderTakeAction = "mute-region"; // or "disable-track"
 settings.recording.olderTakeScope = "previous-only"; // or "all"
 settings.recording.countInBars = 1;          // 1-8
 ```
+
+**How takes work:** Takes are driven by the timeline loop area (`timelineBox.loopArea`).
+When `allowTakes` is true AND `loopArea.enabled` is true, each time playback wraps past
+`loopArea.to` back to `loopArea.from`, the current take is finalized and a new take begins.
+
+- Recording can start **before** the loop region. Take 1 records from the start position
+  through the first loop wrap. Subsequent takes are scoped to the loop region
+  (`loopFrom` → `loopTo`).
+- With `loopArea.enabled = false`, `allowTakes` has no effect — recording produces a
+  single continuous region regardless of the setting.
+- Loop-wrap detection uses `currentPosition < lastPosition` (position jumped backward),
+  then calls `startNewTake(loopFrom)` to begin the next take at the loop start.
 
 ### Playback
 ```typescript
@@ -301,6 +320,8 @@ calls see stale state. Use separate `editing.modify()` per `createEvent` and per
 `output.refer(newTarget)` in the same `editing.modify()` may not disconnect the old
 connection, causing dual routing. Always re-route in a separate transaction. Similarly,
 `targetVertex` traversal on pointers created in the same transaction may return stale data.
+This also applies to `captureDevices.get(uuid)` — resolve captures and set their fields
+(deviceId, requestChannels) in a **separate** transaction after `createInstrument` commits.
 
 ### Fades Can Share a Transaction with Region Changes
 Fading values (in, out, slopes) can be set in the same `editing.modify()` as
@@ -356,6 +377,19 @@ For **loop recording takes**, all takes share one `AudioFileBox` (continuous buf
 Each take's `waveformOffset` = count-in + sum of prior take durations. Render each take
 with `u0 = waveformOffset * sampleRate`, `u1 = u0 + duration * sampleRate`.
 
+### Take Waveform Rendering: Shared Buffer Gotcha
+All takes share ONE PeaksWriter during recording. `dataIndex[0] * unitsEachPeak()`
+returns total accumulated frames across ALL takes — NOT per-take. Using it as `u1`
+causes finalized takes to render audio from subsequent takes.
+**Always use `u0 + durationFrames` for per-take waveform bounds.** The SDK updates
+`regionBox.duration` every frame via `RecordAudio.ts`, so even the live take grows
+smoothly. Only fall back to `dataIndex` when `durationFrames === 0`.
+
+### Take-to-Track Matching (Multi-Track Loop Recording)
+SDK creates take regions on new TrackBoxes under the same AudioUnitBox. Match via:
+`regionBox.regions.targetVertex` → `TrackBox` → `trackBox.tracks.targetVertex` → `AudioUnitBox`
+Then `UUID.toString(audioUnitBox.address.uuid)` matches `RecordingInputTrack.id`.
+
 ### Loop Take Buffer Layout and Offsets
 All takes record into a single continuous audio buffer. The count-in offset is only
 explicitly set for take 1; subsequent takes inherit it transitively through accumulation:
@@ -398,7 +432,8 @@ See `src/lib/audioUtils.ts` `getAudioExtension()`.
 4. Subscribe to `sampleLoader.subscribe()` — wait for `state.type === "loaded"`
 5. Call `engine.stop(true)` to reset, then `engine.play()`
 **Multi-device**: When recording multiple tracks, subscribe to ALL sampleLoaders and only call
-`stop(true)` after all have emitted `"loaded"` (counting barrier pattern).
+`stop(true)` after all have emitted `"loaded"` (counting barrier pattern). Add a safety
+timeout (~10s) to force-finalize if any loader fails to emit.
 **Note**: `queryLoadingComplete()` resolves before `sampleLoader.data` is set — do NOT use it to detect recording data availability.
 
 ### Stop Button Behavior
@@ -406,6 +441,19 @@ See `src/lib/audioUtils.ts` `getAudioExtension()`.
 - `stop(true)` - Resets position to 0, clears all voices, resets processors (like DAW stop button)
 - `stop(false)` - Pauses without resetting position
 - **NEVER call `stop(true)` while recording** — kills the audio graph and prevents finalization
+
+### Effects Parameter Architecture
+Effects use a 3-layer chain: Box (raw storage) → Adapter (UI mapping) → Processor (DSP).
+`box.field.setValue()` stores raw values that the processor reads directly via `getValue()`.
+`ValueMapping` in adapters only affects UI display/automation — NOT audio processing.
+
+**Gotchas discovered during SDK 0.0.115 audit:**
+- Delay has its own 21-entry `Fractions` array (Off→1/1) — different from Tidal's 17-entry `RateFractions` (1/1→1/128)
+- Crusher processor inverts crush: `setCrush(1.0 - value)` — higher box value = MORE crushing
+- DattorroReverb `preDelay` is in milliseconds (0-1000), standard Reverb is in seconds (0.001-0.5)
+- DattorroReverb `dry` uses `DefaultDecibel` mapping (-60 to 6 dB), not -60 to 0
+- StereoTool `stereo` (width) is bipolar (-1..1), not unipolar — 0 = normal, not center of 0-2 range
+- To verify parameter ranges, audit all 3 layers: schema (Box), adapter (ValueMapping), and processor (how value is consumed)
 
 ## React Integration Tips
 
@@ -445,6 +493,27 @@ const terminable = AnimationFrame.add(() => {
 // Cleanup
 terminable.terminate();
 ```
+
+### Always Terminate Observable Subscriptions
+`catchupAndSubscribe()` and `subscribe()` return `Terminable` objects. Store them and call
+`.terminate()` in the React `useEffect` cleanup. Discarding the return value leaks the
+subscription — callbacks continue firing after unmount.
+
+### CanvasPainter in React: Use Refs to Avoid Per-Frame Recreation
+`CanvasPainter` creates a `ResizeObserver` + `AnimationFrame` subscription — expensive to
+teardown/recreate. If a `useEffect` depends on an object prop (e.g., `region`) that gets
+recreated each frame, the painter is destroyed and rebuilt every frame (150ms+ per frame → crash).
+**Fix:** Store frequently-changing props in refs, read them inside the painter's render callback,
+and limit `useEffect` deps to stable values like `height` or `sampleRate`. For live data
+(e.g., recording duration), read directly from the box graph: `regionBox.duration.getValue()`.
+
+### AnimationFrame Scanning: Use Structural Fingerprints
+When scanning box graph state every frame (e.g., `scanAndGroupTakes`), avoid calling
+`setState()` unless structure actually changed. Build a fingerprint string from stable
+identifiers (take numbers, mute states, track IDs) and compare to previous. Duration
+growth doesn't need re-renders when painters read live values from the box graph via refs.
+Also limit AnimationFrame scanning to active recording — idle scanning is redundant when
+direct calls handle mute toggles, finalization, and clear.
 
 ### Mixer Groups (Sub-Mixing)
 ```typescript
@@ -501,4 +570,9 @@ See `src/looping-demo.tsx` for the reference layout pattern.
 - Mixer groups demo: `src/mixer-groups-demo.tsx`
 - Group track loading: `src/lib/groupTrackLoading.ts` (creates group buses + routes tracks)
 - Audio utilities: `src/lib/audioUtils.ts` (format detection, file loading)
+- Effects demo: `src/effects-demo.tsx` (multi-track mixer with dynamic effects)
+- Effect hook: `src/hooks/useDynamicEffect.ts` (effect configs, parameter ranges, defaults)
+- Effect presets: `src/lib/effectPresets.ts` (preset values for all effect types)
+- Take timeline: `src/components/TakeTimeline.tsx` (bar ruler, take lanes, waveform canvases)
+- Effects research docs: `documentation/effects-research/` (parameter tables, code examples, architecture)
 - OpenDAW original source: `/Users/naomiaro/Code/openDAWOriginal`

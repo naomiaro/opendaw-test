@@ -10,6 +10,33 @@ export function getAudioExtension(): string {
   return isSafari ? "m4a" : "opus";
 }
 
+const channelCache = new Map<string, 1 | 2>();
+
+/**
+ * Probes an audio input device to determine its maximum channel count.
+ * Opens a short-lived getUserMedia stream requesting stereo, checks the
+ * actual channelCount from getSettings(), then immediately stops the stream.
+ * Results are cached per deviceId.
+ */
+export async function probeDeviceChannels(deviceId: string): Promise<1 | 2> {
+  const cached = channelCache.get(deviceId);
+  if (cached !== undefined) return cached;
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { deviceId: { exact: deviceId }, channelCount: { ideal: 2 } },
+    });
+    const tracks = stream.getAudioTracks();
+    const channels = (tracks[0]?.getSettings().channelCount ?? 1) >= 2 ? 2 : 1;
+    stream.getTracks().forEach((t) => t.stop());
+    channelCache.set(deviceId, channels);
+    return channels;
+  } catch {
+    channelCache.set(deviceId, 1);
+    return 1;
+  }
+}
+
 /**
  * Helper function to load and decode audio files
  * @param audioContext - The AudioContext to use for decoding

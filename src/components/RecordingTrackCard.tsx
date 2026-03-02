@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect } from "react";
 import { Flex, Text, Select, Button, Slider, Badge, Card } from "@radix-ui/themes";
 import { Project, CaptureAudio } from "@opendaw/studio-core";
 import type { MonitoringMode } from "@opendaw/studio-core";
+import { probeDeviceChannels } from "../lib/audioUtils";
 
 export interface RecordingTrack {
   id: string;
@@ -39,7 +40,20 @@ export const RecordingTrackCard: React.FC<RecordingTrackCardProps> = ({
   });
   const [inputGainDb, setInputGainDb] = useState<number>(() => capture.gainDb);
   const [monitoringMode, setMonitoringModeState] = useState<MonitoringMode>("off");
+  const [maxChannels, setMaxChannels] = useState<1 | 2>(2);
   const [isArmed, setIsArmed] = useState<boolean>(() => capture.armed.getValue());
+
+  // Probe device channel capabilities when device changes
+  useEffect(() => {
+    if (!selectedDeviceId) return;
+    let cancelled = false;
+    probeDeviceChannels(selectedDeviceId).then(channels => {
+      if (cancelled) return;
+      setMaxChannels(channels);
+      if (channels === 1) setIsMono(true);
+    });
+    return () => { cancelled = true; };
+  }, [selectedDeviceId]);
 
   // Subscribe to armed state changes and notify parent
   useEffect(() => {
@@ -131,14 +145,17 @@ export const RecordingTrackCard: React.FC<RecordingTrackCardProps> = ({
           </Flex>
 
           <Flex direction="column" gap="1">
-            <Text size="2" weight="medium">Channels:</Text>
+            <Flex align="center" gap="1">
+              <Text size="2" weight="medium">Channels:</Text>
+              {maxChannels === 1 && <Text size="1" color="gray">(mono only)</Text>}
+            </Flex>
             <Flex gap="2">
               <Button
                 size="1"
                 variant={isMono ? "soft" : "solid"}
                 color={isMono ? "gray" : "blue"}
                 onClick={() => setIsMono(false)}
-                disabled={disabled}
+                disabled={disabled || maxChannels === 1}
               >
                 Stereo
               </Button>

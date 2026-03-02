@@ -438,9 +438,22 @@ const App: React.FC = () => {
         // Create a synth instrument so MIDI notes produce sound on playback.
         // startRecording() auto-creates a Tape (audio-only) if no instruments exist,
         // which can't play back MIDI. Vaporisateur is a built-in subtractive synth.
+        let audioUnitBox: any = null;
         newProject.editing.modify(() => {
-          newProject.api.createInstrument(InstrumentFactories.Vaporisateur);
+          const result = newProject.api.createInstrument(InstrumentFactories.Vaporisateur);
+          audioUnitBox = result.audioUnitBox;
         });
+
+        // Arm the CaptureMidi so it listens to software keyboard and external MIDI
+        // devices. Must resolve capture outside the creation transaction (pointer
+        // re-routing guideline). Arming enables both live monitoring (hearing notes
+        // as you play) and recording (CaptureMidi captures notes into NoteEventBoxes).
+        if (audioUnitBox) {
+          const captureOption = newProject.captureDevices.get(audioUnitBox.address.uuid);
+          if (!captureOption.isEmpty()) {
+            newProject.captureDevices.setArm(captureOption.unwrap(), true);
+          }
+        }
 
         setProject(newProject);
         setStatus("Ready!");

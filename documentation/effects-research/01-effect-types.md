@@ -48,15 +48,26 @@ This document provides detailed information about each available audio effect ty
 
 | Parameter | Type | Range | Default | Unit | Description |
 |-----------|------|-------|---------|------|-------------|
-| delayMusical | float32 | 0 to 16 | 4 | indices | Delay time as note fraction (1/1, 1/2, 1/3, 1/4, etc.) |
+| delayMusical | float32 | 0 to 20 | 13 | index | Delay time as index into Fractions array (see table below) |
 | feedback | float32 | 0.0 to 1.0 | 0.5 | % | Amount of output fed back to input |
-| cross | float32 | 0.0 to 1.0 | 0.0 | % | Cross-channel feedback (0=none, 1=full) |
+| cross | float32 | 0.0 to 1.0 | 1.0 | % | Cross-channel feedback (0=none, 1=full ping-pong) |
 | filter | float32 | -1.0 to 1.0 | 0.0 | % | Filter on feedback (negative=low-pass, positive=high-pass) |
-| dry | float32 | -60.0 to 6.0 | 0.0 | dB | Dry signal level |
-| wet | float32 | -60.0 to 6.0 | -6.0 | dB | Wet signal level |
+| dry | float32 | -60.0 to 0.0 | 0.0 | dB | Dry signal level |
+| wet | float32 | -60.0 to 0.0 | -6.0 | dB | Wet signal level |
 
-**Available Delay Time Fractions:**
-1/1, 1/2, 1/3, 1/4, 3/16, 1/6, 1/8, 3/32, 1/12, 1/16, 3/64, 1/24, 1/32, 1/48, 1/64, 1/96, 1/128
+**Delay Fractions Array (21 entries, indices 0-20):**
+
+| Index | Fraction | Index | Fraction | Index | Fraction |
+|-------|----------|-------|----------|-------|----------|
+| 0 | Off | 7 | 3/64 | 14 | 1/4 |
+| 1 | 1/128 | 8 | 1/16 | 15 | 5/16 |
+| 2 | 1/96 | 9 | 1/12 | 16 | 1/3 |
+| 3 | 1/64 | 10 | 3/32 | 17 | 3/8 |
+| 4 | 1/48 | 11 | 1/8 | 18 | 7/16 |
+| 5 | 1/32 | 12 | 1/6 | 19 | 1/2 |
+| 6 | 1/24 | 13 | 3/16 | 20 | 1/1 |
+
+**Important:** This is a different array from Tidal's `RateFractions` (17 entries, largest-to-smallest). The Delay Fractions go smallest-to-largest and include "Off" at index 0. Box default 13 = 3/16 (dotted eighth).
 
 **Source Code:**
 - Box: `/openDAW/packages/studio/forge-boxes/src/schema/devices/audio-effects/DelayDeviceBox.ts`
@@ -175,10 +186,23 @@ This document provides detailed information about each available audio effect ty
 
 | Parameter | Type | Range | Default | Unit | Description |
 |-----------|------|-------|---------|------|-------------|
-| crush | float32 | 0.0 to ∞ | 0.0 | - | Amount of bit reduction |
+| crush | float32 | 0.0 to 1.0 | 0.0 | unipolar | Sample rate reduction (0=clean, 1=max crush) |
 | bits | int32 | 1 to 16 | 16 | bits | Target bit depth for reduction |
-| boost | float32 | 0.0 to ∞ | 0.0 | - | Output level boost |
-| mix | float32 | 0.0 to 1.0 | 1.0 | % | Dry/Wet mix percentage |
+| boost | float32 | 0.0 to 24.0 | 0.0 | dB | Pre-emphasis gain before quantization |
+| mix | float32 | 0.0 to 1.0 | 1.0 | % | Dry/Wet mix (adapter uses exponential mapping) |
+
+**Important — Crush inversion:** The processor inverts the crush value internally (`setCrush(1.0 - value)`) before applying exponential mapping to compute the crushed sample rate: `exponential(20, 20000, invertedValue)`. This means small box values produce subtle effects and large values produce extreme crushing:
+
+| Box value | Effective crushed SR | Character |
+|-----------|---------------------|-----------|
+| 0.0 | 20,000 Hz | Clean (no crushing) |
+| 0.05 | ~14,000 Hz | Very subtle warmth |
+| 0.15 | ~8,000 Hz | Retro, lo-fi character |
+| 0.25 | ~3,500 Hz | AM radio / telephone |
+| 0.35 | ~2,000 Hz | Heavy lo-fi |
+| 0.55 | ~500 Hz | Glitchy artifacts |
+| 0.65 | ~200 Hz | Extreme destruction |
+| 1.0 | 20 Hz | Inaudible |
 
 **Source Code:**
 - Box: `/openDAW/packages/studio/forge-boxes/src/schema/devices/audio-effects/CrusherDeviceBox.ts`
@@ -186,9 +210,10 @@ This document provides detailed information about each available audio effect ty
 - Editor: `/openDAW/packages/app/studio/src/ui/devices/audio-effects/CrusherDeviceEditor.tsx`
 
 **Features:**
-- Adjustable bit depth
-- Crushing amount control
-- Output boost for compensation
+- Adjustable bit depth (1-16 bits)
+- Sample rate reduction via exponential crush mapping
+- Pre-emphasis boost for louder quantization artifacts
+- Dry/wet mix with exponential adapter mapping for fine control at low values
 - Creates lo-fi/retro digital artifacts
 
 ---
@@ -203,9 +228,9 @@ This document provides detailed information about each available audio effect ty
 
 | Parameter | Type | Range | Default | Unit | Description |
 |-----------|------|-------|---------|------|-------------|
-| drive | float32 | -∞ to ∞ | 0.0 | - | Input drive amount |
+| drive | float32 | 0.0 to 30.0 | 0.0 | dB | Input drive amount |
 | overSampling | int32 | - | 0 | - | Oversampling factor for quality |
-| volume | float32 | -∞ to ∞ | 0.0 | - | Output volume compensation |
+| volume | float32 | -18.0 to 0.0 | 0.0 | dB | Output volume compensation |
 
 **Source Code:**
 - Box: `/openDAW/packages/studio/forge-boxes/src/schema/devices/audio-effects/FoldDeviceBox.ts`
@@ -232,7 +257,7 @@ This document provides detailed information about each available audio effect ty
 |-----------|------|-------|---------|------|-------------|
 | volume | float32 | - | (default) | dB | Master volume level |
 | panning | float32 | -1.0 to 1.0 | 0.0 | bipolar | Left/right panning (-1=left, 1=right) |
-| stereo | float32 | 0.0 to ∞ | (default) | % | Stereo width (0=mono, >1=wider) |
+| stereo | float32 | -1.0 to 1.0 | 0.0 | bipolar | Stereo width (-1=mono, 0=normal, 1=max wide) |
 | invertL | boolean | - | false | - | Invert left channel phase |
 | invertR | boolean | - | false | - | Invert right channel phase |
 | swap | boolean | - | false | - | Swap left and right channels |
@@ -262,17 +287,17 @@ This document provides detailed information about each available audio effect ty
 
 | Parameter | Type | Range | Default | Unit | Description |
 |-----------|------|-------|---------|------|-------------|
-| preDelay | float32 | 0.0 to 0.1 | 0.0 | s | Time before first reflection |
-| bandwidth | float32 | 0.0 to 1.0 | 0.9995 | % | Input bandwidth filter |
+| preDelay | float32 | 0.0 to 1000.0 | 0.0 | ms | Time before first reflection (NOTE: milliseconds, not seconds) |
+| bandwidth | float32 | 0.0 to 1.0 | 0.9999 | % | Input bandwidth filter |
 | inputDiffusion1 | float32 | 0.0 to 1.0 | 0.75 | % | First input diffusion stage |
 | inputDiffusion2 | float32 | 0.0 to 1.0 | 0.625 | % | Second input diffusion stage |
-| decay | float32 | 0.0 to 1.0 | 0.5 | % | Reverb decay time |
+| decay | float32 | 0.0 to 1.0 | 0.75 | % | Reverb decay time |
 | decayDiffusion1 | float32 | 0.0 to 1.0 | 0.7 | % | First decay diffusion stage |
 | decayDiffusion2 | float32 | 0.0 to 1.0 | 0.5 | % | Second decay diffusion stage |
-| damping | float32 | 0.0 to 1.0 | 0.005 | % | High frequency damping |
-| excursionRate | float32 | 0.0 to 1.0 | 0.5 | % | Modulation LFO rate |
-| excursionDepth | float32 | 0.0 to 1.0 | 0.7 | % | Modulation depth |
-| wet | float32 | -60.0 to 6.0 | -6.0 | dB | Wet signal level |
+| damping | float32 | 0.0 to 1.0 | 0.005 | % | High frequency damping (inverted internally: dp = 1.0 - damping) |
+| excursionRate | float32 | 0.0 to 1.0 | 0.5 | % | Modulation LFO rate (scaled ×2 internally) |
+| excursionDepth | float32 | 0.0 to 1.0 | 0.7 | % | Modulation depth (scaled ×2 internally) |
+| wet | float32 | -60.0 to 0.0 | -6.0 | dB | Wet signal level (additionally scaled ×0.6 in DSP) |
 | dry | float32 | -60.0 to 6.0 | 0.0 | dB | Dry signal level |
 
 **Features:**
@@ -294,18 +319,34 @@ This document provides detailed information about each available audio effect ty
 
 | Parameter | Type | Range | Default | Unit | Description |
 |-----------|------|-------|---------|------|-------------|
-| slope | float32 | 0.0 to 1.0 | 0.5 | % | Waveform slope (0=triangle, 1=square) |
+| slope | float32 | -1.0 to 1.0 | 0.0 | bipolar | Waveform slope (-1=ramp down, 0=triangle/sine, 1=square) |
 | symmetry | float32 | 0.0 to 1.0 | 0.5 | % | Waveform symmetry (0.5=symmetric) |
-| rate | float32 | 0.01 to 20.0 | 1.0 | Hz | LFO frequency |
+| rate | int32 | 0 to 16 | 3 | index | Rate fraction index into RateFractions array (see table below) |
 | depth | float32 | 0.0 to 1.0 | 0.5 | % | Modulation depth |
-| offset | float32 | 0.0 to 1.0 | 0.0 | phase | Phase offset (0-1 = 0-360°) |
-| channelOffset | float32 | 0.0 to 1.0 | 0.0 | phase | Stereo phase offset for auto-pan |
+| offset | float32 | -180.0 to 180.0 | 0.0 | degrees | Phase offset |
+| channelOffset | float32 | -180.0 to 180.0 | 0.0 | degrees | Stereo phase offset for auto-pan |
+
+**Rate Fraction Index Mapping:**
+
+| Index | Fraction | Index | Fraction |
+|-------|----------|-------|----------|
+| 0 | 1/1 (whole) | 9 | 1/16 |
+| 1 | 1/2 (half) | 10 | 3/64 |
+| 2 | 1/3 (triplet) | 11 | 1/24 |
+| 3 | 1/4 (quarter) | 12 | 1/32 |
+| 4 | 3/16 (dotted eighth) | 13 | 1/48 |
+| 5 | 1/6 | 14 | 1/64 |
+| 6 | 1/8 (eighth) | 15 | 1/96 |
+| 7 | 3/32 | 16 | 1/128 |
+| 8 | 1/12 | | |
 
 **Features:**
 - Variable waveform shape (sine to triangle to square)
-- Stereo phase offset for panning effects
-- Wide rate range from slow drift to fast tremolo
+- Stereo phase offset for panning effects (in degrees, not 0-1)
+- Tempo-synced rate via note fraction indices (same array as Delay)
 - Classic amplitude modulation effects
+
+**Important:** The `rate` parameter is an integer index into the `RateFractions` array — NOT a frequency in Hz. The processor reads it with `RateFractions[this.#pRate.getValue()]`. Setting rate to 3 selects the 1/4 note fraction.
 
 ---
 

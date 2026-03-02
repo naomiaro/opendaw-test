@@ -601,6 +601,37 @@ PeaksPainter.renderBlocks(context, peaks, channel, {
 
 **Count-in frames**: Use `waveformOffset * sampleRate` as `u0` to skip count-in audio in the visualization.
 
+### Loop Recording Takes: Shared Buffer Gotcha
+
+**All takes in a loop recording share one AudioFileBox and one PeaksWriter.** During recording, `isPeaksWriter` is true for ALL takes (finalized and live), and `dataIndex[0] * unitsEachPeak()` returns the **total accumulated frames across all takes** — not the current take's slice.
+
+Using the dataIndex approach for per-take rendering causes finalized takes to render audio from subsequent takes (waveform "bleeds" forward in the buffer).
+
+**Correct pattern for take waveforms:** Always use `u0 + durationFrames` for `u1`. The SDK updates each take's `regionBox.duration` every frame (via `RecordAudio.ts`), so even the currently-recording take shows smooth 60fps growth:
+
+```typescript
+const waveformOffsetSec = regionBox.waveformOffset.getValue();
+const durationSec = regionBox.duration.getValue();
+const sampleRate = audioContext.sampleRate;
+
+const u0 = Math.round(waveformOffsetSec * sampleRate);
+const u1 = u0 + Math.round(durationSec * sampleRate);
+
+PeaksPainter.renderBlocks(context, peaks, channel, {
+  x0: 0, x1: canvas.width,
+  y0, y1,
+  u0, u1,  // render only this take's slice of the shared buffer
+  v0: -1, v1: 1,
+});
+```
+
+**Why NOT use dataIndex for takes:**
+- `dataIndex[0] * unitsEachPeak()` = total frames in the entire recording buffer
+- Take 1's `u0` might be 44100, but `u1` would be 500000+ (all takes combined)
+- This renders take 2, 3, etc. audio into take 1's canvas
+
+**When to use dataIndex:** Only for single-region standalone recording (no takes), where there's one region spanning the entire buffer.
+
 ## Summary
 
 | Feature | API | Demo |
