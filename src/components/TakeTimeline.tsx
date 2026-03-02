@@ -34,6 +34,7 @@ interface TakeTimelineProps {
   loopLengthBars: number;
   isRecording: boolean;
   isPlaying: boolean;
+  sampleRate: number;
   onToggleMute: (takeNumber: number) => void;
 }
 
@@ -44,13 +45,22 @@ const CONTROLS_WIDTH = 120;
 
 // --- Sub-components ---
 
-/** Renders a single track's waveform within a take */
+/** Renders a single track's waveform within a take.
+ *  Uses refs so the CanvasPainter survives across React re-renders.
+ *  Duration is read live from the box graph each frame. */
 const TakeWaveformCanvas: React.FC<{
   region: TakeRegion;
   height: number;
   isMuted: boolean;
-}> = ({ region, height, isMuted }) => {
+  sampleRate: number;
+}> = ({ region, height, isMuted, sampleRate }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const regionRef = useRef(region);
+  const isMutedRef = useRef(isMuted);
+
+  // Update refs on every render — painter reads these without recreation
+  regionRef.current = region;
+  isMutedRef.current = isMuted;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -59,33 +69,37 @@ const TakeWaveformCanvas: React.FC<{
     const painter = new CanvasPainter(canvas, (_, context) => {
       const w = canvas.clientWidth;
       const h = canvas.clientHeight;
+      const r = regionRef.current;
+      const muted = isMutedRef.current;
 
-      context.fillStyle = isMuted ? "#1a1a2e" : "#0a0a1a";
+      context.fillStyle = muted ? "#1a1a2e" : "#0a0a1a";
       context.fillRect(0, 0, w, h);
 
-      if (!region.sampleLoader) return;
+      if (!r.sampleLoader) return;
 
-      const peaksOption = region.sampleLoader.peaks;
+      const peaksOption = r.sampleLoader.peaks;
       if (!peaksOption || peaksOption.isEmpty()) return;
 
       const peaks = peaksOption.unwrap();
       const isPeaksWriter = "dataIndex" in peaks;
 
-      const u0 = region.waveformOffsetFrames;
-      // All takes share one PeaksWriter during recording, so dataIndex gives
-      // the TOTAL accumulated frames across ALL takes — not this take's slice.
-      // Always use u0 + durationFrames to render only this take's portion.
-      // The SDK updates duration every frame, so the live take still grows.
+      const u0 = r.waveformOffsetFrames;
+      // Read duration live from box graph — SDK updates every frame during recording.
+      // This avoids needing React re-renders for live waveform growth.
+      const durationFrames = Math.round(
+        r.regionBox.duration.getValue() * sampleRate
+      );
+
       const u1 =
-        region.durationFrames > 0
-          ? u0 + region.durationFrames
+        durationFrames > 0
+          ? u0 + durationFrames
           : isPeaksWriter
             ? peaks.dataIndex[0] * peaks.unitsEachPeak()
             : peaks.numFrames;
 
       if (u1 <= u0) return;
 
-      context.fillStyle = isMuted ? "#555577" : "#f59e0b";
+      context.fillStyle = muted ? "#555577" : "#f59e0b";
       const numChannels = peaks.numChannels;
       const channelHeight = h / numChannels;
 
@@ -109,7 +123,7 @@ const TakeWaveformCanvas: React.FC<{
       animSub.terminate();
       painter.terminate();
     };
-  }, [region, height, isMuted]);
+  }, [height, sampleRate]);
 
   return (
     <canvas
@@ -179,8 +193,9 @@ const TakeIterationLane: React.FC<{
   trackLabels: { id: string; label: string }[];
   leadInBars: number;
   loopLengthBars: number;
+  sampleRate: number;
   onToggleMute: () => void;
-}> = ({ take, trackLabels, leadInBars, loopLengthBars, onToggleMute }) => {
+}> = ({ take, trackLabels, leadInBars, loopLengthBars, sampleRate, onToggleMute }) => {
   const totalBars = leadInBars + loopLengthBars;
   const leadInPercent = totalBars > 0 ? (leadInBars / totalBars) * 100 : 0;
   const loopPercent = totalBars > 0 ? (loopLengthBars / totalBars) * 100 : 0;
@@ -287,6 +302,7 @@ const TakeIterationLane: React.FC<{
                 region={region}
                 height={TRACK_HEIGHT}
                 isMuted={take.isMuted}
+                sampleRate={sampleRate}
               />
             </div>
           ))}
@@ -320,6 +336,7 @@ export const TakeTimeline: React.FC<TakeTimelineProps> = ({
   loopLengthBars,
   isRecording,
   isPlaying,
+  sampleRate,
   onToggleMute,
 }) => {
   const totalBars = leadInBars + loopLengthBars;
@@ -351,6 +368,7 @@ export const TakeTimeline: React.FC<TakeTimelineProps> = ({
             trackLabels={recordingTrackLabels}
             leadInBars={leadInBars}
             loopLengthBars={loopLengthBars}
+            sampleRate={sampleRate}
             onToggleMute={() => onToggleMute(take.takeNumber)}
           />
         ))}

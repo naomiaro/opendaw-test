@@ -110,6 +110,8 @@ const App: React.FC = () => {
 
   // Finalization subscriptions for cleanup
   const finalizationSubsRef = useRef<Terminable[]>([]);
+  // Structural fingerprint to avoid unnecessary React re-renders during recording
+  const lastTakeFingerprintRef = useRef("");
 
   // Cleanup finalization subscriptions on unmount
   useEffect(() => {
@@ -293,22 +295,33 @@ const App: React.FC = () => {
       });
     }
 
-    setTakeIterations(iterations);
-    setTakeCount(iterations.length);
+    // Only update React state when structure changes (new take, mute toggle, track assignment).
+    // Duration growth is read live from box graph by TakeWaveformCanvas painters.
+    const fingerprint = iterations
+      .map(
+        (t) =>
+          `${t.takeNumber}:${t.isMuted}:${t.regions.map((r) => r.inputTrackId).join("+")}`
+      )
+      .join(",");
+
+    if (fingerprint !== lastTakeFingerprintRef.current) {
+      lastTakeFingerprintRef.current = fingerprint;
+      setTakeIterations(iterations);
+      setTakeCount(iterations.length);
+    }
   }, [project, audioContext, recordingTracks, leadInBars]);
 
-  // Monitor for new takes during recording
+  // Monitor for new takes during recording only.
+  // Non-recording updates (mute toggle, finalization) call scanAndGroupTakes directly.
   useEffect(() => {
-    if (!project) return;
+    if (!project || !isRecording) return;
 
     const sub = AnimationFrame.add(() => {
-      if (isRecording || !isPlaying) {
-        scanAndGroupTakes();
-      }
+      scanAndGroupTakes();
     });
 
     return () => sub.terminate();
-  }, [project, isRecording, isPlaying, scanAndGroupTakes]);
+  }, [project, isRecording, scanAndGroupTakes]);
 
   // --- Audio input management ---
 
@@ -531,6 +544,7 @@ const App: React.FC = () => {
         }
       }
     });
+    lastTakeFingerprintRef.current = "";
     setTakeIterations([]);
     setTakeCount(0);
   }, [project]);
@@ -923,6 +937,7 @@ const App: React.FC = () => {
               loopLengthBars={loopLengthBars}
               isRecording={isRecording}
               isPlaying={isPlaying}
+              sampleRate={audioContext?.sampleRate ?? 44100}
               onToggleMute={handleToggleTakeMute}
             />
           )}
