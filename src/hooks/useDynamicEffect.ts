@@ -322,10 +322,10 @@ const EFFECT_CONFIGS: Record<EffectType, EffectConfig> = {
     },
     getParameterDefinitions: (params) => [
       { name: "wet", label: "Wet", value: params.wet || -12, min: -60, max: 0, step: 0.1, unit: " dB" },
-      { name: "dry", label: "Dry", value: params.dry || 0, min: -60, max: 0, step: 0.1, unit: " dB" },
+      { name: "dry", label: "Dry", value: params.dry || 0, min: -60, max: 6, step: 0.1, unit: " dB" },
       { name: "decay", label: "Decay", value: params.decay || 0.5, min: 0, max: 1, step: 0.01, format: (v: number) => `${(v * 100).toFixed(0)}%` },
       { name: "damping", label: "Damping", value: params.damping || 0.5, min: 0, max: 1, step: 0.01, format: (v: number) => `${(v * 100).toFixed(0)}%` },
-      { name: "preDelay", label: "Pre-Delay", value: params.preDelay || 20, min: 0, max: 500, step: 1, format: (v: number) => `${v.toFixed(0)} ms` },
+      { name: "preDelay", label: "Pre-Delay", value: params.preDelay || 20, min: 0, max: 1000, step: 1, format: (v: number) => `${v.toFixed(0)} ms` },
       { name: "bandwidth", label: "Bandwidth", value: params.bandwidth || 0.9, min: 0, max: 1, step: 0.01, format: (v: number) => `${(v * 100).toFixed(0)}%` },
       { name: "excursionRate", label: "Mod Rate", value: params.excursionRate || 0.5, min: 0, max: 1, step: 0.01, format: (v: number) => `${(v * 100).toFixed(0)}%` },
       { name: "excursionDepth", label: "Mod Depth", value: params.excursionDepth || 0.5, min: 0, max: 1, step: 0.01, format: (v: number) => `${(v * 100).toFixed(0)}%` }

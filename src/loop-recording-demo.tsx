@@ -126,6 +126,7 @@ const App: React.FC = () => {
   useEffect(() => {
     let mounted = true;
     let animSub: Terminable | null = null;
+    const subs: Terminable[] = [];
 
     (async () => {
       try {
@@ -155,15 +156,21 @@ const App: React.FC = () => {
         settings.recording.olderTakeScope = "previous-only";
 
         // Subscribe to engine state
-        newProject.engine.isRecording.catchupAndSubscribe((obs) => {
-          if (mounted) setIsRecording(obs.getValue());
-        });
-        newProject.engine.isPlaying.catchupAndSubscribe((obs) => {
-          if (mounted) setIsPlaying(obs.getValue());
-        });
-        newProject.engine.isCountingIn.catchupAndSubscribe((obs) => {
-          if (mounted) setIsCountingIn(obs.getValue());
-        });
+        subs.push(
+          newProject.engine.isRecording.catchupAndSubscribe((obs) => {
+            if (mounted) setIsRecording(obs.getValue());
+          })
+        );
+        subs.push(
+          newProject.engine.isPlaying.catchupAndSubscribe((obs) => {
+            if (mounted) setIsPlaying(obs.getValue());
+          })
+        );
+        subs.push(
+          newProject.engine.isCountingIn.catchupAndSubscribe((obs) => {
+            if (mounted) setIsCountingIn(obs.getValue());
+          })
+        );
 
         animSub = AnimationFrame.add(() => {
           if (mounted)
@@ -181,6 +188,7 @@ const App: React.FC = () => {
     return () => {
       mounted = false;
       animSub?.terminate();
+      subs.forEach((s) => s.terminate());
     };
   }, []);
 
@@ -331,6 +339,7 @@ const App: React.FC = () => {
       setHasPermission(true);
     } catch (error) {
       console.error("Failed to get audio devices:", error);
+      setStatus("Microphone permission denied. Please allow access and try again.");
     }
   }, []);
 
@@ -345,24 +354,12 @@ const App: React.FC = () => {
 
     let audioUnitBoxRef: AudioUnitBox | null = null;
 
+    // Create instrument in its own transaction (pointer re-routing guideline)
     project.editing.modify(() => {
       const { audioUnitBox } = project.api.createInstrument(
         InstrumentFactories.Tape
       );
       audioUnitBoxRef = audioUnitBox;
-
-      if (audioInputDevices.length > 0) {
-        const captureOpt = project.captureDevices.get(
-          audioUnitBox.address.uuid
-        );
-        if (!captureOpt.isEmpty()) {
-          const cap = captureOpt.unwrap();
-          if (cap instanceof CaptureAudio) {
-            cap.captureBox.deviceId.setValue(audioInputDevices[0].deviceId);
-            cap.requestChannels = 1;
-          }
-        }
-      }
     });
 
     if (!audioUnitBoxRef) return;
@@ -373,6 +370,14 @@ const App: React.FC = () => {
     if (captureOpt.isEmpty()) return;
     const capture = captureOpt.unwrap();
     if (!(capture instanceof CaptureAudio)) return;
+
+    // Initialize capture settings in separate transaction after creation commits
+    if (audioInputDevices.length > 0) {
+      project.editing.modify(() => {
+        capture.captureBox.deviceId.setValue(audioInputDevices[0].deviceId);
+        capture.requestChannels = 1;
+      });
+    }
 
     // Arm non-exclusively so other tracks stay armed
     project.captureDevices.setArm(capture, false);
@@ -417,6 +422,7 @@ const App: React.FC = () => {
         setHasPermission(true);
       } catch (error) {
         console.error("Mic error:", error);
+        setStatus("Microphone permission denied. Cannot start recording.");
         return;
       }
     }
@@ -473,14 +479,30 @@ const App: React.FC = () => {
     if (loaders.size > 0) {
       let finalized = 0;
       const total = loaders.size;
+      let timedOut = false;
+
+      // Safety timeout: force-finalize if loaders don't emit within 10s
+      const timeout = window.setTimeout(() => {
+        if (finalized < total) {
+          timedOut = true;
+          console.warn(`Finalization timed out (${finalized}/${total} loaded)`);
+          for (const sub of finalizationSubsRef.current) sub.terminate();
+          finalizationSubsRef.current = [];
+          project.engine.stop(true);
+          scanAndGroupTakes();
+        }
+      }, 10_000);
+
       for (const loader of loaders) {
         const sub = loader.subscribe((state) => {
+          if (timedOut) return;
           if (state.type === "loaded") {
             sub.terminate();
             finalizationSubsRef.current =
               finalizationSubsRef.current.filter((s) => s !== sub);
             finalized++;
             if (finalized === total) {
+              clearTimeout(timeout);
               project.engine.stop(true);
               scanAndGroupTakes();
             }

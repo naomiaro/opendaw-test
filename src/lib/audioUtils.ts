@@ -26,9 +26,9 @@ export async function probeDeviceChannels(deviceId: string): Promise<1 | 2> {
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: { deviceId: { exact: deviceId }, channelCount: { ideal: 2 } },
     });
-    const track = stream.getAudioTracks()[0];
-    const channels = (track.getSettings().channelCount ?? 1) >= 2 ? 2 : 1;
-    track.stop();
+    const tracks = stream.getAudioTracks();
+    const channels = (tracks[0]?.getSettings().channelCount ?? 1) >= 2 ? 2 : 1;
+    stream.getTracks().forEach((t) => t.stop());
     channelCache.set(deviceId, channels);
     return channels;
   } catch {

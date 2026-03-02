@@ -18,7 +18,7 @@ export interface EffectPreset<T> {
 export interface ReverbParams {
   wet: number; // dB: -60 to 0
   decay: number; // 0-1: decay time
-  preDelay: number; // seconds: 0-0.1
+  preDelay: number; // seconds: 0-0.5
   damp: number; // 0-1: high frequency damping
 }
 
@@ -390,14 +390,14 @@ export const FOLD_PRESETS: EffectPreset<FoldParams>[] = [
 // ============================================================================
 
 export interface DattorroReverbParams {
-  preDelay: number; // ms: 0-500 (NOTE: milliseconds, not seconds — unlike standard Reverb)
+  preDelay: number; // ms: 0-1000 (NOTE: milliseconds, not seconds — unlike standard Reverb)
   bandwidth: number; // 0-1: input bandwidth
   decay: number; // 0-1: decay time
   damping: number; // 0-1: high frequency damping
   excursionRate: number; // 0-1: modulation rate
   excursionDepth: number; // 0-1: modulation depth
   wet: number; // dB: -60 to 0
-  dry: number; // dB: -60 to 0
+  dry: number; // dB: -60 to 6
 }
 
 export const DATTORRO_REVERB_PRESETS: EffectPreset<DattorroReverbParams>[] = [
