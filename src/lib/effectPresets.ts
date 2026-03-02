@@ -189,42 +189,42 @@ export const CRUSHER_PRESETS: EffectPreset<CrusherParams>[] = [
   {
     name: "Subtle Lo-Fi",
     description: "Gentle vintage character without being obvious",
-    params: { bits: 14, crush: 0.85, boost: 0, mix: 0.4 } // Processor inverts crush internally!
+    params: { bits: 14, crush: 0.08, boost: 0, mix: 0.4 }
   },
   {
     name: "AM Radio",
     description: "Old radio or telephone sound",
-    params: { bits: 10, crush: 0.7, boost: 0, mix: 0.7 }
+    params: { bits: 10, crush: 0.25, boost: 0, mix: 0.7 }
   },
   {
     name: "8-bit Game",
     description: "Retro video game sound",
-    params: { bits: 6, crush: 0.55, boost: 0, mix: 0.85 }
+    params: { bits: 6, crush: 0.15, boost: 0, mix: 0.85 }
   },
   {
     name: "Destroyed",
     description: "Extreme bit crushing and distortion",
-    params: { bits: 5, crush: 0.4, boost: 0, mix: 1.0 } // 5 bits min for audibility
+    params: { bits: 5, crush: 0.65, boost: 0, mix: 1.0 }
   },
   {
     name: "Vinyl Warmth",
     description: "Subtle degradation for analog warmth",
-    params: { bits: 15, crush: 0.92, boost: 0, mix: 0.25 }
+    params: { bits: 15, crush: 0.05, boost: 0, mix: 0.25 }
   },
   {
     name: "Grungy",
     description: "Heavy distortion with character",
-    params: { bits: 8, crush: 0.6, boost: 0, mix: 0.8 }
+    params: { bits: 8, crush: 0.35, boost: 0, mix: 0.8 }
   },
   {
     name: "Glitch",
     description: "Digital artifacts and glitches",
-    params: { bits: 5, crush: 0.45, boost: 0, mix: 0.9 }
+    params: { bits: 5, crush: 0.55, boost: 0, mix: 0.9 }
   },
   {
     name: "Tape Saturation",
     description: "Warm tape-like saturation",
-    params: { bits: 13, crush: 0.88, boost: 0, mix: 0.5 }
+    params: { bits: 13, crush: 0.07, boost: 0, mix: 0.5 }
   }
 ];
 

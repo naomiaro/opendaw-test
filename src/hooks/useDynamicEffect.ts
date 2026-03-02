@@ -181,11 +181,11 @@ const EFFECT_CONFIGS: Record<EffectType, EffectConfig> = {
     factory: EffectFactories.AudioNamed.Crusher,
     initDefaults(box: EffectBox) {
       const b = box as CrusherDeviceBox;
-      b.bits.setValue(10);
-      b.crush.setValue(0.75);
+      b.bits.setValue(12);
+      b.crush.setValue(0.2);
       b.boost.setValue(0);
       b.mix.setValue(0.7);
-      return { bits: 10, crush: 0.75, boost: 0, mix: 0.7 };
+      return { bits: 12, crush: 0.2, boost: 0, mix: 0.7 };
     },
     applyParam(box: EffectBox, name: string, value: number) {
       const b = box as CrusherDeviceBox;
@@ -197,8 +197,8 @@ const EFFECT_CONFIGS: Record<EffectType, EffectConfig> = {
       }
     },
     getParameterDefinitions: (params) => [
-      { name: "bits", label: "Bit Depth", value: params.bits || 10, min: 5, max: 16, step: 1, format: v => `${v.toFixed(0)} bits` },
-      { name: "crush", label: "Sample Rate Reduction", value: params.crush || 0.7, min: 0, max: 1, step: 0.01, format: v => `${(v * 100).toFixed(0)}%` },
+      { name: "bits", label: "Bit Depth", value: params.bits || 12, min: 1, max: 16, step: 1, format: v => `${v.toFixed(0)} bits` },
+      { name: "crush", label: "Sample Rate Reduction", value: params.crush || 0.2, min: 0, max: 1, step: 0.01, format: v => `${(v * 100).toFixed(0)}%` },
       { name: "boost", label: "Boost", value: params.boost || 0, min: 0, max: 24, step: 0.5, format: v => `${v.toFixed(1)} dB` },
       { name: "mix", label: "Wet/Dry Mix", value: params.mix || 0.8, min: 0, max: 1, step: 0.01, format: v => `${(v * 100).toFixed(0)}%` }
     ],
