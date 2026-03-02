@@ -233,7 +233,7 @@ export const CRUSHER_PRESETS: EffectPreset<CrusherParams>[] = [
 // ============================================================================
 
 export interface StereoWidthParams {
-  width: number; // 0-1: stereo width (0.5 = normal, 1 = wide)
+  width: number; // -1 to 1: stereo width (0 = normal, -1 = mono, 1 = max wide)
   pan: number; // -1 to 1: pan position
 }
 
@@ -241,17 +241,17 @@ export const STEREO_WIDTH_PRESETS: EffectPreset<StereoWidthParams>[] = [
   {
     name: "Narrow (Mono)",
     description: "Collapses to mono for compatibility",
-    params: { width: 0, pan: 0 }
+    params: { width: -1, pan: 0 }
   },
   {
     name: "Natural",
     description: "Standard stereo width",
-    params: { width: 0.5, pan: 0 }
+    params: { width: 0, pan: 0 }
   },
   {
     name: "Wide",
     description: "Enhanced stereo width for spaciousness",
-    params: { width: 0.8, pan: 0 }
+    params: { width: 0.6, pan: 0 }
   },
   {
     name: "Extra Wide",
@@ -261,22 +261,22 @@ export const STEREO_WIDTH_PRESETS: EffectPreset<StereoWidthParams>[] = [
   {
     name: "Pan Left",
     description: "Panned to left side",
-    params: { width: 0.5, pan: -0.7 }
+    params: { width: 0, pan: -0.7 }
   },
   {
     name: "Pan Right",
     description: "Panned to right side",
-    params: { width: 0.5, pan: 0.7 }
+    params: { width: 0, pan: 0.7 }
   },
   {
     name: "Wide Left",
     description: "Wide stereo, biased left",
-    params: { width: 0.8, pan: -0.3 }
+    params: { width: 0.6, pan: -0.3 }
   },
   {
     name: "Wide Right",
     description: "Wide stereo, biased right",
-    params: { width: 0.8, pan: 0.3 }
+    params: { width: 0.6, pan: 0.3 }
   }
 ];
 
@@ -338,8 +338,8 @@ export const EQ_PRESETS: EffectPreset<EQParams>[] = [
 // ============================================================================
 
 export interface FoldParams {
-  drive: number; // dB: 0 to 40 (input drive)
-  volume: number; // dB: -40 to 20 (output level)
+  drive: number; // dB: 0 to 30 (input drive)
+  volume: number; // dB: -18 to 0 (output level)
 }
 
 export const FOLD_PRESETS: EffectPreset<FoldParams>[] = [
@@ -361,7 +361,7 @@ export const FOLD_PRESETS: EffectPreset<FoldParams>[] = [
   {
     name: "Extreme Fold",
     description: "Maximum folding and harmonics",
-    params: { drive: 35, volume: -8 }
+    params: { drive: 30, volume: -8 }
   },
   {
     name: "Tube Amp",
@@ -381,7 +381,7 @@ export const FOLD_PRESETS: EffectPreset<FoldParams>[] = [
   {
     name: "Clean Boost",
     description: "Transparent boost with character",
-    params: { drive: 6, volume: 2 }
+    params: { drive: 6, volume: 0 }
   }
 ];
 
@@ -448,54 +448,54 @@ export const DATTORRO_REVERB_PRESETS: EffectPreset<DattorroReverbParams>[] = [
 // ============================================================================
 
 export interface TidalParams {
-  slope: number; // 0-1: waveform slope
+  slope: number; // -1 to 1: waveform slope (bipolar)
   symmetry: number; // 0-1: waveform symmetry
-  rate: number; // Hz: LFO rate
+  rate: number; // 0-16: fraction index (0=1/1, 3=1/4, 6=1/8, etc.)
   depth: number; // 0-1: modulation depth
-  offset: number; // 0-1: phase offset
-  channelOffset: number; // 0-1: stereo phase offset
+  offset: number; // -180 to 180: phase offset in degrees
+  channelOffset: number; // -180 to 180: stereo phase offset in degrees
 }
 
 export const TIDAL_PRESETS: EffectPreset<TidalParams>[] = [
   {
     name: "Subtle Tremolo",
     description: "Gentle volume modulation",
-    params: { slope: 0.5, symmetry: 0.5, rate: 4, depth: 0.2, offset: 0, channelOffset: 0 }
+    params: { slope: 0, symmetry: 0.5, rate: 3, depth: 0.2, offset: 0, channelOffset: 0 }
   },
   {
     name: "Classic Tremolo",
     description: "Standard tremolo effect",
-    params: { slope: 0.5, symmetry: 0.5, rate: 6, depth: 0.5, offset: 0, channelOffset: 0 }
+    params: { slope: 0, symmetry: 0.5, rate: 6, depth: 0.5, offset: 0, channelOffset: 0 }
   },
   {
     name: "Deep Tremolo",
     description: "Heavy, dramatic tremolo",
-    params: { slope: 0.5, symmetry: 0.5, rate: 5, depth: 0.8, offset: 0, channelOffset: 0 }
+    params: { slope: 0, symmetry: 0.5, rate: 4, depth: 0.8, offset: 0, channelOffset: 0 }
   },
   {
     name: "Auto-Pan",
     description: "Stereo panning effect",
-    params: { slope: 0.5, symmetry: 0.5, rate: 0.5, depth: 0.7, offset: 0, channelOffset: 0.5 }
+    params: { slope: 0, symmetry: 0.5, rate: 0, depth: 0.7, offset: 0, channelOffset: 180 }
   },
   {
     name: "Fast Pan",
     description: "Quick stereo movement",
-    params: { slope: 0.5, symmetry: 0.5, rate: 3, depth: 0.6, offset: 0, channelOffset: 0.5 }
+    params: { slope: 0, symmetry: 0.5, rate: 6, depth: 0.6, offset: 0, channelOffset: 180 }
   },
   {
     name: "Square Wave",
     description: "Choppy on/off modulation",
-    params: { slope: 1, symmetry: 0.5, rate: 4, depth: 0.7, offset: 0, channelOffset: 0 }
+    params: { slope: 1, symmetry: 0.5, rate: 3, depth: 0.7, offset: 0, channelOffset: 0 }
   },
   {
     name: "Sawtooth",
     description: "Ramping modulation",
-    params: { slope: 0, symmetry: 1, rate: 2, depth: 0.5, offset: 0, channelOffset: 0 }
+    params: { slope: -1, symmetry: 1, rate: 3, depth: 0.5, offset: 0, channelOffset: 0 }
   },
   {
     name: "Slow Drift",
     description: "Very slow, subtle movement",
-    params: { slope: 0.5, symmetry: 0.5, rate: 0.1, depth: 0.3, offset: 0, channelOffset: 0.25 }
+    params: { slope: 0, symmetry: 0.5, rate: 0, depth: 0.3, offset: 0, channelOffset: 90 }
   }
 ];
 
