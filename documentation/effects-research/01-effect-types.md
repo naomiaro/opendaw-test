@@ -175,10 +175,23 @@ This document provides detailed information about each available audio effect ty
 
 | Parameter | Type | Range | Default | Unit | Description |
 |-----------|------|-------|---------|------|-------------|
-| crush | float32 | 0.0 to ∞ | 0.0 | - | Amount of bit reduction |
+| crush | float32 | 0.0 to 1.0 | 0.0 | unipolar | Sample rate reduction (0=clean, 1=max crush) |
 | bits | int32 | 1 to 16 | 16 | bits | Target bit depth for reduction |
-| boost | float32 | 0.0 to ∞ | 0.0 | - | Output level boost |
-| mix | float32 | 0.0 to 1.0 | 1.0 | % | Dry/Wet mix percentage |
+| boost | float32 | 0.0 to 24.0 | 0.0 | dB | Pre-emphasis gain before quantization |
+| mix | float32 | 0.0 to 1.0 | 1.0 | % | Dry/Wet mix (adapter uses exponential mapping) |
+
+**Important — Crush inversion:** The processor inverts the crush value internally (`setCrush(1.0 - value)`) before applying exponential mapping to compute the crushed sample rate: `exponential(20, 20000, invertedValue)`. This means small box values produce subtle effects and large values produce extreme crushing:
+
+| Box value | Effective crushed SR | Character |
+|-----------|---------------------|-----------|
+| 0.0 | 20,000 Hz | Clean (no crushing) |
+| 0.05 | ~14,000 Hz | Very subtle warmth |
+| 0.15 | ~8,000 Hz | Retro, lo-fi character |
+| 0.25 | ~3,500 Hz | AM radio / telephone |
+| 0.35 | ~2,000 Hz | Heavy lo-fi |
+| 0.55 | ~500 Hz | Glitchy artifacts |
+| 0.65 | ~200 Hz | Extreme destruction |
+| 1.0 | 20 Hz | Inaudible |
 
 **Source Code:**
 - Box: `/openDAW/packages/studio/forge-boxes/src/schema/devices/audio-effects/CrusherDeviceBox.ts`
@@ -186,9 +199,10 @@ This document provides detailed information about each available audio effect ty
 - Editor: `/openDAW/packages/app/studio/src/ui/devices/audio-effects/CrusherDeviceEditor.tsx`
 
 **Features:**
-- Adjustable bit depth
-- Crushing amount control
-- Output boost for compensation
+- Adjustable bit depth (1-16 bits)
+- Sample rate reduction via exponential crush mapping
+- Pre-emphasis boost for louder quantization artifacts
+- Dry/wet mix with exponential adapter mapping for fine control at low values
 - Creates lo-fi/retro digital artifacts
 
 ---
