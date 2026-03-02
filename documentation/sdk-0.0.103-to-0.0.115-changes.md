@@ -5,10 +5,11 @@
 All changes are additive, internal renames hidden behind abstractions, or new features we don't use.
 
 **Note:** The MIDI recording demo required a fix to explicitly arm CaptureMidi
-(`captureDevices.setArm(capture, true)`) for live MIDI input to produce sound. Investigation
-of both SDK versions confirmed this was NOT a regression — CaptureMidi has always required
-explicit arming (`armed` defaults to `false` in both 0.0.103 and 0.0.115). The demo was
-missing this call. See Section 2 for freeze-related changes to arming APIs.
+(`captureDevices.setArm(capture, true)`) for live MIDI input to produce sound. In 0.0.103,
+MIDI sound only worked after clicking Record (likely `engine.prepareRecordingState()` enabled
+an implicit monitoring path). In 0.0.115, that implicit path no longer works. The fix is an
+improvement: explicitly arming at init gives live keyboard sound immediately without needing
+to start recording first. See Section 2 for details.
 
 ---
 
