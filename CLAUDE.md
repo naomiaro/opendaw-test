@@ -483,6 +483,22 @@ const terminable = AnimationFrame.add(() => {
 terminable.terminate();
 ```
 
+### CanvasPainter in React: Use Refs to Avoid Per-Frame Recreation
+`CanvasPainter` creates a `ResizeObserver` + `AnimationFrame` subscription — expensive to
+teardown/recreate. If a `useEffect` depends on an object prop (e.g., `region`) that gets
+recreated each frame, the painter is destroyed and rebuilt every frame (150ms+ per frame → crash).
+**Fix:** Store frequently-changing props in refs, read them inside the painter's render callback,
+and limit `useEffect` deps to stable values like `height` or `sampleRate`. For live data
+(e.g., recording duration), read directly from the box graph: `regionBox.duration.getValue()`.
+
+### AnimationFrame Scanning: Use Structural Fingerprints
+When scanning box graph state every frame (e.g., `scanAndGroupTakes`), avoid calling
+`setState()` unless structure actually changed. Build a fingerprint string from stable
+identifiers (take numbers, mute states, track IDs) and compare to previous. Duration
+growth doesn't need re-renders when painters read live values from the box graph via refs.
+Also limit AnimationFrame scanning to active recording — idle scanning is redundant when
+direct calls handle mute toggles, finalization, and clear.
+
 ### Mixer Groups (Sub-Mixing)
 ```typescript
 import { AudioBusFactory } from "@opendaw/studio-adapters";
