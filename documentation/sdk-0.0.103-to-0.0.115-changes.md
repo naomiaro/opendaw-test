@@ -2,7 +2,13 @@
 
 ## Summary
 
-No breaking changes affect our demos. All changes are additive, internal renames hidden behind abstractions, or new features we don't use.
+All changes are additive, internal renames hidden behind abstractions, or new features we don't use.
+
+**Note:** The MIDI recording demo required a fix to explicitly arm CaptureMidi
+(`captureDevices.setArm(capture, true)`) for live MIDI input to produce sound. Investigation
+of both SDK versions confirmed this was NOT a regression — CaptureMidi has always required
+explicit arming (`armed` defaults to `false` in both 0.0.103 and 0.0.115). The demo was
+missing this call. See Section 2 for freeze-related changes to arming APIs.
 
 ---
 
@@ -47,7 +53,17 @@ New `AudioUnitFreeze` class exported from `@opendaw/studio-core`.
 - `MidiDeviceChain` skips wiring for frozen units
 - New `FrozenPlaybackProcessor` plays back pre-rendered audio in place of live processing
 
-**Demo impact:** None. Purely additive feature.
+**Demo impact:** The freeze guards in `setArm()` and `filterArmed()` are additive (our instruments
+are never frozen). However, while investigating a MIDI demo sound issue, we confirmed that
+**CaptureMidi has always required explicit arming** — `Capture.armed` defaults to `false` in both
+0.0.103 and 0.0.115. The MIDI demo was missing `captureDevices.setArm(capture, true)`, which is
+required for:
+- **Live monitoring**: CaptureMidi only subscribes to MIDI device events (including Software Keyboard)
+  when armed, routing notes to `engine.noteSignal()` → synth
+- **Recording**: `Recording.start()` uses `filterArmed()` which requires `armed === true`
+
+CaptureAudio has implicit arming via `monitoringMode` setter (setting mode to "direct" or "effects"
+auto-arms), but CaptureMidi has no equivalent — always arm explicitly.
 
 ---
 

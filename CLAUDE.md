@@ -80,6 +80,13 @@ MidiDevices.softwareMIDIInput.sendNoteOff(60);
 // Subscribe to MIDI events
 const sub = MidiDevices.subscribeMessageEvents(event => { ... }, channel?);
 
+// IMPORTANT: CaptureMidi must be explicitly armed for MIDI to produce sound.
+// Unlike CaptureAudio (which auto-arms when monitoringMode is set), CaptureMidi
+// has no implicit arming. Without arming, softwareMIDIInput notes never reach
+// the synth (no live monitoring) and Recording.start() skips the capture (no recording).
+const capture = project.captureDevices.get(audioUnitBox.address.uuid).unwrap();
+project.captureDevices.setArm(capture, true);
+
 // MIDI capture channel filter: set on CaptureMidiBox
 captureMidiBox.channel.setValue(-1); // -1=all, 0-15=specific channel
 ```
@@ -313,6 +320,8 @@ calls see stale state. Use separate `editing.modify()` per `createEvent` and per
 `output.refer(newTarget)` in the same `editing.modify()` may not disconnect the old
 connection, causing dual routing. Always re-route in a separate transaction. Similarly,
 `targetVertex` traversal on pointers created in the same transaction may return stale data.
+This also applies to `captureDevices.get(uuid)` — resolve captures and set their fields
+(deviceId, requestChannels) in a **separate** transaction after `createInstrument` commits.
 
 ### Fades Can Share a Transaction with Region Changes
 Fading values (in, out, slopes) can be set in the same `editing.modify()` as
@@ -423,7 +432,8 @@ See `src/lib/audioUtils.ts` `getAudioExtension()`.
 4. Subscribe to `sampleLoader.subscribe()` — wait for `state.type === "loaded"`
 5. Call `engine.stop(true)` to reset, then `engine.play()`
 **Multi-device**: When recording multiple tracks, subscribe to ALL sampleLoaders and only call
-`stop(true)` after all have emitted `"loaded"` (counting barrier pattern).
+`stop(true)` after all have emitted `"loaded"` (counting barrier pattern). Add a safety
+timeout (~10s) to force-finalize if any loader fails to emit.
 **Note**: `queryLoadingComplete()` resolves before `sampleLoader.data` is set — do NOT use it to detect recording data availability.
 
 ### Stop Button Behavior
@@ -441,6 +451,7 @@ Effects use a 3-layer chain: Box (raw storage) → Adapter (UI mapping) → Proc
 - Delay has its own 21-entry `Fractions` array (Off→1/1) — different from Tidal's 17-entry `RateFractions` (1/1→1/128)
 - Crusher processor inverts crush: `setCrush(1.0 - value)` — higher box value = MORE crushing
 - DattorroReverb `preDelay` is in milliseconds (0-1000), standard Reverb is in seconds (0.001-0.5)
+- DattorroReverb `dry` uses `DefaultDecibel` mapping (-60 to 6 dB), not -60 to 0
 - StereoTool `stereo` (width) is bipolar (-1..1), not unipolar — 0 = normal, not center of 0-2 range
 - To verify parameter ranges, audit all 3 layers: schema (Box), adapter (ValueMapping), and processor (how value is consumed)
 
@@ -482,6 +493,11 @@ const terminable = AnimationFrame.add(() => {
 // Cleanup
 terminable.terminate();
 ```
+
+### Always Terminate Observable Subscriptions
+`catchupAndSubscribe()` and `subscribe()` return `Terminable` objects. Store them and call
+`.terminate()` in the React `useEffect` cleanup. Discarding the return value leaks the
+subscription — callbacks continue firing after unmount.
 
 ### CanvasPainter in React: Use Refs to Avoid Per-Frame Recreation
 `CanvasPainter` creates a `ResizeObserver` + `AnimationFrame` subscription — expensive to
