@@ -149,9 +149,9 @@ const EFFECT_CONFIGS: Record<EffectType, EffectConfig> = {
       const b = box as DelayDeviceBox;
       b.wet.setValue(-12);
       b.feedback.setValue(0.4);
-      b.delayMusical.setValue(4);
+      b.delayMusical.setValue(14);
       b.filter.setValue(0);
-      return { wet: -12, feedback: 0.4, delayMusical: 4, filter: 0 };
+      return { wet: -12, feedback: 0.4, delayMusical: 14, filter: 0 };
     },
     applyParam(box: EffectBox, name: string, value: number) {
       const b = box as DelayDeviceBox;
@@ -163,14 +163,16 @@ const EFFECT_CONFIGS: Record<EffectType, EffectConfig> = {
       }
     },
     getParameterDefinitions: (params) => {
-      const notes = [
-        "1/1", "1/2", "1/3", "1/4", "3/16", "1/6", "1/8", "3/32",
-        "1/12", "1/16", "3/64", "1/24", "1/32", "1/48", "1/64", "1/96", "1/128"
+      // Delay Fractions array (21 entries, indices 0-20) — different from Tidal's RateFractions
+      const fractions = [
+        "Off", "1/128", "1/96", "1/64", "1/48", "1/32", "1/24", "3/64",
+        "1/16", "1/12", "3/32", "1/8", "1/6", "3/16", "1/4", "5/16",
+        "1/3", "3/8", "7/16", "1/2", "1/1"
       ];
       return [
         { name: "wet", label: "Wet/Dry Mix", value: params.wet || -12, min: -60, max: 0, step: 0.1, unit: " dB" },
         { name: "feedback", label: "Feedback", value: params.feedback || 0.4, min: 0, max: 0.95, step: 0.01, format: v => `${(v * 100).toFixed(0)}%` },
-        { name: "delayMusical", label: "Delay Time", value: params.delayMusical || 4, min: 0, max: 16, step: 1, format: v => notes[Math.floor(v)] || `${v}` },
+        { name: "delayMusical", label: "Delay Time", value: params.delayMusical || 14, min: 0, max: 20, step: 1, format: (v: number) => fractions[Math.round(v)] || `${v}` },
         { name: "filter", label: "Filter", value: params.filter || 0, min: -1, max: 1, step: 0.01, format: v => (v < 0 ? `LP ${Math.abs(v * 100).toFixed(0)}%` : v > 0 ? `HP ${(v * 100).toFixed(0)}%` : "Off") }
       ];
     },
@@ -288,7 +290,7 @@ const EFFECT_CONFIGS: Record<EffectType, EffectConfig> = {
     factory: EffectFactories.AudioNamed.DattorroReverb,
     initDefaults(box: EffectBox) {
       const b = box as DattorroReverbDeviceBox;
-      b.preDelay.setValue(0.02);
+      b.preDelay.setValue(20);
       b.bandwidth.setValue(0.9);
       b.inputDiffusion1.setValue(0.75);
       b.inputDiffusion2.setValue(0.625);
@@ -301,7 +303,7 @@ const EFFECT_CONFIGS: Record<EffectType, EffectConfig> = {
       b.wet.setValue(-12);
       b.dry.setValue(0);
       return {
-        preDelay: 0.02, bandwidth: 0.9, decay: 0.5, damping: 0.5,
+        preDelay: 20, bandwidth: 0.9, decay: 0.5, damping: 0.5,
         excursionRate: 0.5, excursionDepth: 0.5, wet: -12, dry: 0
       };
     },
@@ -323,7 +325,7 @@ const EFFECT_CONFIGS: Record<EffectType, EffectConfig> = {
       { name: "dry", label: "Dry", value: params.dry || 0, min: -60, max: 0, step: 0.1, unit: " dB" },
       { name: "decay", label: "Decay", value: params.decay || 0.5, min: 0, max: 1, step: 0.01, format: (v: number) => `${(v * 100).toFixed(0)}%` },
       { name: "damping", label: "Damping", value: params.damping || 0.5, min: 0, max: 1, step: 0.01, format: (v: number) => `${(v * 100).toFixed(0)}%` },
-      { name: "preDelay", label: "Pre-Delay", value: params.preDelay || 0.02, min: 0, max: 0.5, step: 0.001, format: (v: number) => `${(v * 1000).toFixed(0)} ms` },
+      { name: "preDelay", label: "Pre-Delay", value: params.preDelay || 20, min: 0, max: 500, step: 1, format: (v: number) => `${v.toFixed(0)} ms` },
       { name: "bandwidth", label: "Bandwidth", value: params.bandwidth || 0.9, min: 0, max: 1, step: 0.01, format: (v: number) => `${(v * 100).toFixed(0)}%` },
       { name: "excursionRate", label: "Mod Rate", value: params.excursionRate || 0.5, min: 0, max: 1, step: 0.01, format: (v: number) => `${(v * 100).toFixed(0)}%` },
       { name: "excursionDepth", label: "Mod Depth", value: params.excursionDepth || 0.5, min: 0, max: 1, step: 0.01, format: (v: number) => `${(v * 100).toFixed(0)}%` }

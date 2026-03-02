@@ -126,8 +126,8 @@ export const COMPRESSOR_PRESETS: EffectPreset<CompressorParams>[] = [
 
 export interface DelayParams {
   wet: number; // dB: -60 to 0
-  feedback: number; // 0-0.9: amount of feedback
-  delayMusical: number; // 0-16: delay time indices (note fractions)
+  feedback: number; // 0-0.95: amount of feedback
+  delayMusical: number; // 0-20: index into Delay Fractions array (0=Off, 11=1/8, 14=1/4, 20=1/1)
   filter: number; // -1 to 1: filter amount (negative=LP, positive=HP)
 }
 
@@ -135,32 +135,32 @@ export const DELAY_PRESETS: EffectPreset<DelayParams>[] = [
   {
     name: "Slap Back",
     description: "Classic 50s-style short delay for vocals",
-    params: { wet: -18, feedback: 0.1, delayMusical: 2, filter: 0.4 }
+    params: { wet: -18, feedback: 0.1, delayMusical: 5, filter: 0.4 }
   },
   {
     name: "Quarter Note",
     description: "Rhythmic delay synced to tempo",
-    params: { wet: -12, feedback: 0.4, delayMusical: 4, filter: 0.3 }
+    params: { wet: -12, feedback: 0.4, delayMusical: 14, filter: 0.3 }
   },
   {
     name: "Dotted Eighth",
     description: "U2-style delay (3/16 notes)",
-    params: { wet: -10, feedback: 0.45, delayMusical: 6, filter: 0.35 }
+    params: { wet: -10, feedback: 0.45, delayMusical: 13, filter: 0.35 }
   },
   {
     name: "Ping Pong",
     description: "Bouncing delay with moderate feedback",
-    params: { wet: -14, feedback: 0.5, delayMusical: 4, filter: 0.25 }
+    params: { wet: -14, feedback: 0.5, delayMusical: 14, filter: 0.25 }
   },
   {
     name: "Ambient Wash",
     description: "Long, filtered delay for atmospheric sound",
-    params: { wet: -8, feedback: 0.65, delayMusical: 8, filter: 0.6 }
+    params: { wet: -8, feedback: 0.65, delayMusical: 19, filter: 0.6 }
   },
   {
     name: "Dub Echo",
     description: "Heavy feedback with dark tone",
-    params: { wet: -6, feedback: 0.7, delayMusical: 6, filter: 0.7 }
+    params: { wet: -6, feedback: 0.7, delayMusical: 13, filter: 0.7 }
   },
   {
     name: "Subtle Double",
@@ -170,7 +170,7 @@ export const DELAY_PRESETS: EffectPreset<DelayParams>[] = [
   {
     name: "Tape Echo",
     description: "Vintage tape echo simulation",
-    params: { wet: -15, feedback: 0.5, delayMusical: 5, filter: 0.5 }
+    params: { wet: -15, feedback: 0.5, delayMusical: 11, filter: 0.5 }
   }
 ];
 
@@ -390,7 +390,7 @@ export const FOLD_PRESETS: EffectPreset<FoldParams>[] = [
 // ============================================================================
 
 export interface DattorroReverbParams {
-  preDelay: number; // seconds: 0-0.1
+  preDelay: number; // ms: 0-500 (NOTE: milliseconds, not seconds — unlike standard Reverb)
   bandwidth: number; // 0-1: input bandwidth
   decay: number; // 0-1: decay time
   damping: number; // 0-1: high frequency damping
@@ -404,42 +404,42 @@ export const DATTORRO_REVERB_PRESETS: EffectPreset<DattorroReverbParams>[] = [
   {
     name: "Small Space",
     description: "Intimate room with subtle modulation",
-    params: { preDelay: 0.01, bandwidth: 0.95, decay: 0.3, damping: 0.6, excursionRate: 0.3, excursionDepth: 0.3, wet: -18, dry: 0 }
+    params: { preDelay: 10, bandwidth: 0.95, decay: 0.3, damping: 0.6, excursionRate: 0.3, excursionDepth: 0.3, wet: -18, dry: 0 }
   },
   {
     name: "Medium Hall",
     description: "Balanced hall reverb for most uses",
-    params: { preDelay: 0.02, bandwidth: 0.9, decay: 0.5, damping: 0.5, excursionRate: 0.5, excursionDepth: 0.5, wet: -12, dry: 0 }
+    params: { preDelay: 20, bandwidth: 0.9, decay: 0.5, damping: 0.5, excursionRate: 0.5, excursionDepth: 0.5, wet: -12, dry: 0 }
   },
   {
     name: "Large Hall",
     description: "Spacious concert hall with long decay",
-    params: { preDelay: 0.03, bandwidth: 0.85, decay: 0.75, damping: 0.4, excursionRate: 0.4, excursionDepth: 0.6, wet: -10, dry: 0 }
+    params: { preDelay: 30, bandwidth: 0.85, decay: 0.75, damping: 0.4, excursionRate: 0.4, excursionDepth: 0.6, wet: -10, dry: 0 }
   },
   {
     name: "Cathedral",
     description: "Massive space with very long, bright reverb",
-    params: { preDelay: 0.05, bandwidth: 0.8, decay: 0.9, damping: 0.25, excursionRate: 0.3, excursionDepth: 0.7, wet: -8, dry: 0 }
+    params: { preDelay: 50, bandwidth: 0.8, decay: 0.9, damping: 0.25, excursionRate: 0.3, excursionDepth: 0.7, wet: -8, dry: 0 }
   },
   {
     name: "Shimmer",
     description: "Ethereal reverb with heavy modulation",
-    params: { preDelay: 0.04, bandwidth: 0.7, decay: 0.85, damping: 0.3, excursionRate: 0.8, excursionDepth: 0.9, wet: -6, dry: 0 }
+    params: { preDelay: 40, bandwidth: 0.7, decay: 0.85, damping: 0.3, excursionRate: 0.8, excursionDepth: 0.9, wet: -6, dry: 0 }
   },
   {
     name: "Dark Ambient",
     description: "Moody, heavily damped reverb",
-    params: { preDelay: 0.03, bandwidth: 0.6, decay: 0.7, damping: 0.8, excursionRate: 0.2, excursionDepth: 0.4, wet: -10, dry: 0 }
+    params: { preDelay: 30, bandwidth: 0.6, decay: 0.7, damping: 0.8, excursionRate: 0.2, excursionDepth: 0.4, wet: -10, dry: 0 }
   },
   {
     name: "Bright Plate",
     description: "Crisp plate-like reverb",
-    params: { preDelay: 0.015, bandwidth: 0.98, decay: 0.6, damping: 0.2, excursionRate: 0.6, excursionDepth: 0.5, wet: -14, dry: 0 }
+    params: { preDelay: 15, bandwidth: 0.98, decay: 0.6, damping: 0.2, excursionRate: 0.6, excursionDepth: 0.5, wet: -14, dry: 0 }
   },
   {
     name: "Infinite",
     description: "Near-infinite decay for drones",
-    params: { preDelay: 0.02, bandwidth: 0.85, decay: 0.98, damping: 0.35, excursionRate: 0.4, excursionDepth: 0.6, wet: -6, dry: -12 }
+    params: { preDelay: 20, bandwidth: 0.85, decay: 0.98, damping: 0.35, excursionRate: 0.4, excursionDepth: 0.6, wet: -6, dry: -12 }
   }
 ];
 

@@ -48,15 +48,26 @@ This document provides detailed information about each available audio effect ty
 
 | Parameter | Type | Range | Default | Unit | Description |
 |-----------|------|-------|---------|------|-------------|
-| delayMusical | float32 | 0 to 16 | 4 | indices | Delay time as note fraction (1/1, 1/2, 1/3, 1/4, etc.) |
+| delayMusical | float32 | 0 to 20 | 13 | index | Delay time as index into Fractions array (see table below) |
 | feedback | float32 | 0.0 to 1.0 | 0.5 | % | Amount of output fed back to input |
-| cross | float32 | 0.0 to 1.0 | 0.0 | % | Cross-channel feedback (0=none, 1=full) |
+| cross | float32 | 0.0 to 1.0 | 1.0 | % | Cross-channel feedback (0=none, 1=full ping-pong) |
 | filter | float32 | -1.0 to 1.0 | 0.0 | % | Filter on feedback (negative=low-pass, positive=high-pass) |
-| dry | float32 | -60.0 to 6.0 | 0.0 | dB | Dry signal level |
-| wet | float32 | -60.0 to 6.0 | -6.0 | dB | Wet signal level |
+| dry | float32 | -60.0 to 0.0 | 0.0 | dB | Dry signal level |
+| wet | float32 | -60.0 to 0.0 | -6.0 | dB | Wet signal level |
 
-**Available Delay Time Fractions:**
-1/1, 1/2, 1/3, 1/4, 3/16, 1/6, 1/8, 3/32, 1/12, 1/16, 3/64, 1/24, 1/32, 1/48, 1/64, 1/96, 1/128
+**Delay Fractions Array (21 entries, indices 0-20):**
+
+| Index | Fraction | Index | Fraction | Index | Fraction |
+|-------|----------|-------|----------|-------|----------|
+| 0 | Off | 7 | 3/64 | 14 | 1/4 |
+| 1 | 1/128 | 8 | 1/16 | 15 | 5/16 |
+| 2 | 1/96 | 9 | 1/12 | 16 | 1/3 |
+| 3 | 1/64 | 10 | 3/32 | 17 | 3/8 |
+| 4 | 1/48 | 11 | 1/8 | 18 | 7/16 |
+| 5 | 1/32 | 12 | 1/6 | 19 | 1/2 |
+| 6 | 1/24 | 13 | 3/16 | 20 | 1/1 |
+
+**Important:** This is a different array from Tidal's `RateFractions` (17 entries, largest-to-smallest). The Delay Fractions go smallest-to-largest and include "Off" at index 0. Box default 13 = 3/16 (dotted eighth).
 
 **Source Code:**
 - Box: `/openDAW/packages/studio/forge-boxes/src/schema/devices/audio-effects/DelayDeviceBox.ts`
@@ -276,17 +287,17 @@ This document provides detailed information about each available audio effect ty
 
 | Parameter | Type | Range | Default | Unit | Description |
 |-----------|------|-------|---------|------|-------------|
-| preDelay | float32 | 0.0 to 0.1 | 0.0 | s | Time before first reflection |
-| bandwidth | float32 | 0.0 to 1.0 | 0.9995 | % | Input bandwidth filter |
+| preDelay | float32 | 0.0 to 1000.0 | 0.0 | ms | Time before first reflection (NOTE: milliseconds, not seconds) |
+| bandwidth | float32 | 0.0 to 1.0 | 0.9999 | % | Input bandwidth filter |
 | inputDiffusion1 | float32 | 0.0 to 1.0 | 0.75 | % | First input diffusion stage |
 | inputDiffusion2 | float32 | 0.0 to 1.0 | 0.625 | % | Second input diffusion stage |
-| decay | float32 | 0.0 to 1.0 | 0.5 | % | Reverb decay time |
+| decay | float32 | 0.0 to 1.0 | 0.75 | % | Reverb decay time |
 | decayDiffusion1 | float32 | 0.0 to 1.0 | 0.7 | % | First decay diffusion stage |
 | decayDiffusion2 | float32 | 0.0 to 1.0 | 0.5 | % | Second decay diffusion stage |
-| damping | float32 | 0.0 to 1.0 | 0.005 | % | High frequency damping |
-| excursionRate | float32 | 0.0 to 1.0 | 0.5 | % | Modulation LFO rate |
-| excursionDepth | float32 | 0.0 to 1.0 | 0.7 | % | Modulation depth |
-| wet | float32 | -60.0 to 6.0 | -6.0 | dB | Wet signal level |
+| damping | float32 | 0.0 to 1.0 | 0.005 | % | High frequency damping (inverted internally: dp = 1.0 - damping) |
+| excursionRate | float32 | 0.0 to 1.0 | 0.5 | % | Modulation LFO rate (scaled ×2 internally) |
+| excursionDepth | float32 | 0.0 to 1.0 | 0.7 | % | Modulation depth (scaled ×2 internally) |
+| wet | float32 | -60.0 to 0.0 | -6.0 | dB | Wet signal level (additionally scaled ×0.6 in DSP) |
 | dry | float32 | -60.0 to 6.0 | 0.0 | dB | Dry signal level |
 
 **Features:**
