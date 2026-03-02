@@ -1,6 +1,6 @@
 # OpenDAW Headless Demos
 
-Interactive demos showcasing the [OpenDAW](https://github.com/nickyvanurk/opendaw) SDK for building web-based audio applications.
+Interactive demos showcasing the [OpenDAW](https://github.com/andremichelle/openDAW) SDK for building web-based audio applications.
 
 ## Quick Start
 
@@ -92,4 +92,4 @@ src/
 
 ## License
 
-See [LICENSE](LICENSE) for details.
+This project uses the [OpenDAW](https://github.com/andremichelle/openDAW) SDK. See OpenDAW for licensing details.
