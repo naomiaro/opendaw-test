@@ -368,6 +368,19 @@ For **loop recording takes**, all takes share one `AudioFileBox` (continuous buf
 Each take's `waveformOffset` = count-in + sum of prior take durations. Render each take
 with `u0 = waveformOffset * sampleRate`, `u1 = u0 + duration * sampleRate`.
 
+### Take Waveform Rendering: Shared Buffer Gotcha
+All takes share ONE PeaksWriter during recording. `dataIndex[0] * unitsEachPeak()`
+returns total accumulated frames across ALL takes — NOT per-take. Using it as `u1`
+causes finalized takes to render audio from subsequent takes.
+**Always use `u0 + durationFrames` for per-take waveform bounds.** The SDK updates
+`regionBox.duration` every frame via `RecordAudio.ts`, so even the live take grows
+smoothly. Only fall back to `dataIndex` when `durationFrames === 0`.
+
+### Take-to-Track Matching (Multi-Track Loop Recording)
+SDK creates take regions on new TrackBoxes under the same AudioUnitBox. Match via:
+`regionBox.regions.targetVertex` → `TrackBox` → `trackBox.tracks.targetVertex` → `AudioUnitBox`
+Then `UUID.toString(audioUnitBox.address.uuid)` matches `RecordingInputTrack.id`.
+
 ### Loop Take Buffer Layout and Offsets
 All takes record into a single continuous audio buffer. The count-in offset is only
 explicitly set for take 1; subsequent takes inherit it transitively through accumulation:
@@ -528,5 +541,6 @@ See `src/looping-demo.tsx` for the reference layout pattern.
 - Effects demo: `src/effects-demo.tsx` (multi-track mixer with dynamic effects)
 - Effect hook: `src/hooks/useDynamicEffect.ts` (effect configs, parameter ranges, defaults)
 - Effect presets: `src/lib/effectPresets.ts` (preset values for all effect types)
+- Take timeline: `src/components/TakeTimeline.tsx` (bar ruler, take lanes, waveform canvases)
 - Effects research docs: `documentation/effects-research/` (parameter tables, code examples, architecture)
 - OpenDAW original source: `/Users/naomiaro/Code/openDAWOriginal`
