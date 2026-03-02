@@ -72,9 +72,16 @@ const TakeWaveformCanvas: React.FC<{
       const isPeaksWriter = "dataIndex" in peaks;
 
       const u0 = region.waveformOffsetFrames;
-      const u1 = isPeaksWriter
-        ? peaks.dataIndex[0] * peaks.unitsEachPeak()
-        : u0 + region.durationFrames;
+      // All takes share one PeaksWriter during recording, so dataIndex gives
+      // the TOTAL accumulated frames across ALL takes — not this take's slice.
+      // Always use u0 + durationFrames to render only this take's portion.
+      // The SDK updates duration every frame, so the live take still grows.
+      const u1 =
+        region.durationFrames > 0
+          ? u0 + region.durationFrames
+          : isPeaksWriter
+            ? peaks.dataIndex[0] * peaks.unitsEachPeak()
+            : peaks.numFrames;
 
       if (u1 <= u0) return;
 
