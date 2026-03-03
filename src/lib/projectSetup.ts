@@ -6,7 +6,7 @@ import { AudioData } from "@opendaw/lib-dsp";
 import {
   AudioWorklets,
   GlobalSampleLoaderManager,
-  DefaultSoundfontLoaderManager,
+  GlobalSoundfontLoaderManager,
   OpenSampleAPI,
   OpenSoundfontAPI,
   Project,
@@ -178,7 +178,7 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
     fetch: async (uuid: UUID.Bytes, progress: Progress.Handler): Promise<[ArrayBuffer, SoundfontMetaData]> =>
       OpenSoundfontAPI.get().load(uuid, progress)
   };
-  const soundfontManager = new DefaultSoundfontLoaderManager(soundfontProvider);
+  const soundfontManager = new GlobalSoundfontLoaderManager(soundfontProvider);
 
   onStatusUpdate?.("Creating project...");
 
