@@ -113,8 +113,10 @@ const App: React.FC = () => {
   const pointerHubSubsRef = useRef<Terminable[]>([]);
   // SampleLoaders discovered during recording — ref avoids stale closure in handleStopRecording
   const sampleLoadersRef = useRef<Set<SampleLoader>>(new Set());
+  // Ref for recordingTracks to avoid restarting pointerHub subscriptions when tracks change
+  const recordingTracksRef = useRef<RecordingInputTrack[]>([]);
 
-  // Cleanup all subscriptions on unmount
+  // Cleanup subscriptions on unmount (but NOT sampleLoadersRef — handleStopRecording owns that)
   useEffect(() => {
     return () => {
       for (const sub of pointerHubSubsRef.current) {
@@ -125,7 +127,6 @@ const App: React.FC = () => {
         sub.terminate();
       }
       finalizationSubsRef.current = [];
-      sampleLoadersRef.current.clear();
     };
   }, []);
 
@@ -227,6 +228,11 @@ const App: React.FC = () => {
     settings.recording.olderTakeScope = olderTakeScope;
   }, [project, allowTakes, olderTakeAction, olderTakeScope]);
 
+  // Keep recordingTracks ref in sync with state
+  useEffect(() => {
+    recordingTracksRef.current = recordingTracks;
+  }, [recordingTracks]);
+
   // --- Reactive take discovery via pointerHub subscriptions ---
 
   // Build a TakeRegion from a regionBox, resolving its sample loader, track assignment, and waveform offset
@@ -268,9 +274,10 @@ const App: React.FC = () => {
         }
       }
 
-      // Fallback for single track
-      if (!inputTrackId && recordingTracks.length === 1) {
-        inputTrackId = recordingTracks[0].id;
+      // Fallback for single track (read from ref to avoid dep on recordingTracks)
+      const tracks = recordingTracksRef.current;
+      if (!inputTrackId && tracks.length === 1) {
+        inputTrackId = tracks[0].id;
       }
 
       return {
@@ -283,7 +290,7 @@ const App: React.FC = () => {
         durationFrames,
       };
     },
-    [project, audioContext, recordingTracks]
+    [project, audioContext]
   );
 
   // Insert a TakeRegion into takeIterations state incrementally
@@ -391,7 +398,8 @@ const App: React.FC = () => {
         sub.terminate();
       }
       pointerHubSubsRef.current = [];
-      sampleLoadersRef.current.clear();
+      // Do NOT clear sampleLoadersRef here — handleStopRecording owns its lifecycle
+      // and may still be using the Set reference for the finalization barrier.
     };
   }, [
     project,
@@ -541,8 +549,9 @@ const App: React.FC = () => {
     }
     finalizationSubsRef.current = [];
 
-    // 4. Collect sampleLoaders from ref (avoids stale closure over React state)
-    const loaders = sampleLoadersRef.current;
+    // 4. Snapshot sampleLoaders from ref (copy to avoid race with useEffect cleanup)
+    const loaders = new Set(sampleLoadersRef.current);
+    sampleLoadersRef.current = new Set();
 
     if (loaders.size > 0) {
       let finalized = 0;
@@ -558,30 +567,27 @@ const App: React.FC = () => {
           for (const sub of finalizationSubsRef.current) sub.terminate();
           finalizationSubsRef.current = [];
           project.engine.stop(true);
-          sampleLoadersRef.current = new Set();
         }
       }, 10_000);
 
       for (const loader of loaders) {
-        const sub = loader.subscribe((state) => {
-          if (timedOut) return;
-          if (state.type === "loaded") {
-            sub.terminate();
-            finalizationSubsRef.current =
-              finalizationSubsRef.current.filter((s) => s !== sub);
-            finalized++;
-            if (finalized === total) {
-              clearTimeout(timeout);
-              project.engine.stop(true);
-              sampleLoadersRef.current = new Set();
+        finalizationSubsRef.current.push(
+          loader.subscribe((state) => {
+            if (timedOut) return;
+            if (state.type === "loaded") {
+              finalized++;
+              if (finalized === total) {
+                clearTimeout(timeout);
+                for (const sub of finalizationSubsRef.current) sub.terminate();
+                finalizationSubsRef.current = [];
+                project.engine.stop(true);
+              }
             }
-          }
-        });
-        finalizationSubsRef.current.push(sub);
+          })
+        );
       }
     } else {
       project.engine.stop(true);
-      sampleLoadersRef.current = new Set();
     }
   }, [project]);
 
@@ -611,21 +617,23 @@ const App: React.FC = () => {
       const take = takeIterations.find((t) => t.takeNumber === takeNumber);
       if (!take) return;
 
+      // Compute new mute values before the transaction to avoid stale reads
+      const newMuteValues = take.regions.map((r) => ({
+        regionBox: r.regionBox,
+        newMuted: !r.regionBox.mute.getValue(),
+      }));
+
       project.editing.modify(() => {
-        for (const region of take.regions) {
-          const currentMute = region.regionBox.mute.getValue();
-          region.regionBox.mute.setValue(!currentMute);
+        for (const { regionBox, newMuted } of newMuteValues) {
+          regionBox.mute.setValue(newMuted);
         }
       });
 
       // Pointer hub mute subscriptions handle this during recording.
       // After recording stops (subscriptions terminated in handleStopRecording), sync state manually.
       if (!isRecording) {
-        for (const region of take.regions) {
-          updateTakeMuteInState(
-            region.regionBox,
-            region.regionBox.mute.getValue()
-          );
+        for (const { regionBox, newMuted } of newMuteValues) {
+          updateTakeMuteInState(regionBox, newMuted);
         }
       }
     },
