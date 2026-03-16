@@ -112,6 +112,43 @@ When `allowTakes` is true AND `loopArea.enabled` is true, each time playback wra
 - Loop-wrap detection uses `currentPosition < lastPosition` (position jumped backward),
   then calls `startNewTake(loopFrom)` to begin the next take at the loop start.
 
+### Reactive Box Graph Subscriptions (pointerHub)
+```typescript
+// Prefer pointerHub subscriptions over AnimationFrame polling for structural changes.
+// Use AnimationFrame ONLY for continuous rendering (e.g., waveform peaks at 60fps).
+
+// Reactive subscription chain: audioUnit → tracks → regions → field changes
+const subs: Terminable[] = [];
+const trackSub = audioUnitBox.tracks.pointerHub.catchupAndSubscribe({
+  onAdded: (pointer) => {
+    const trackBox = pointer.box;
+    const regionSub = (trackBox as any).regions.pointerHub.catchupAndSubscribe({
+      onAdded: (regionPointer: any) => {
+        const regionBox = regionPointer.box as AudioRegionBox;
+        // Subscribe to scalar field changes (e.g., mute)
+        const muteSub = regionBox.mute.subscribe((obs: any) => {
+          const isMuted = obs.getValue();
+        });
+        subs.push(muteSub);
+      },
+      onRemoved: () => {},
+    });
+    subs.push(regionSub);
+  },
+  onRemoved: () => {},
+});
+subs.push(trackSub);
+// Cleanup: terminate all subs (outer first to prevent cascading callbacks)
+```
+
+**Key rules:**
+- `catchupAndSubscribe` fires immediately for existing data + future changes (preferred)
+- `subscribe` fires only for future changes (use when initial state already known)
+- `pointerHub.incoming()` is a snapshot read, NOT reactive
+- Pointer callbacks receive `PointerField` — access box via `pointer.box`
+- Terminate pointer hub subs BEFORE engine cleanup when stopping recording
+- After recording stops, reactive subscriptions are terminated — update React state directly for user-initiated changes (e.g., mute toggle)
+
 ### Playback
 ```typescript
 // Set playback position (in PPQN - pulses per quarter note)
@@ -575,4 +612,5 @@ See `src/looping-demo.tsx` for the reference layout pattern.
 - Effect presets: `src/lib/effectPresets.ts` (preset values for all effect types)
 - Take timeline: `src/components/TakeTimeline.tsx` (bar ruler, take lanes, waveform canvases)
 - Effects research docs: `documentation/effects-research/` (parameter tables, code examples, architecture)
-- OpenDAW original source: `/Users/naomiaro/Code/openDAWOriginal`
+- Box subscription lifecycle: `documentation/18-box-subscriptions-lifecycle.md` (pointerHub API, reactive patterns, cleanup)
+- OpenDAW source code locations: see `.claude/local.md`

@@ -342,8 +342,11 @@ export const TakeTimeline: React.FC<TakeTimelineProps> = ({
   const totalBars = leadInBars + loopLengthBars;
   const totalPPQN = totalBars * PPQN.Quarter * 4; // 4/4 time
 
+  // Use modulo so the playhead wraps correctly during looped playback
   const playheadPercent =
-    totalPPQN > 0 ? Math.min((currentPosition / totalPPQN) * 100, 100) : 0;
+    totalPPQN > 0
+      ? Math.min(((currentPosition % totalPPQN) / totalPPQN) * 100, 100)
+      : 0;
 
   const showPlayhead = (isRecording || isPlaying) && totalPPQN > 0;
 
@@ -394,7 +397,6 @@ export const TakeTimeline: React.FC<TakeTimelineProps> = ({
                 width: 2,
                 background: "var(--amber-9)",
                 zIndex: 10,
-                transition: "left 0.05s linear",
               }}
             />
           </div>
