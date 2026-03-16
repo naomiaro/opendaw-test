@@ -111,14 +111,21 @@ const App: React.FC = () => {
   const finalizationSubsRef = useRef<Terminable[]>([]);
   // Pointer hub subscriptions for reactive take discovery
   const pointerHubSubsRef = useRef<Terminable[]>([]);
+  // SampleLoaders discovered during recording — ref avoids stale closure in handleStopRecording
+  const sampleLoadersRef = useRef<Set<SampleLoader>>(new Set());
 
-  // Cleanup finalization subscriptions on unmount
+  // Cleanup all subscriptions on unmount
   useEffect(() => {
     return () => {
+      for (const sub of pointerHubSubsRef.current) {
+        sub.terminate();
+      }
+      pointerHubSubsRef.current = [];
       for (const sub of finalizationSubsRef.current) {
         sub.terminate();
       }
       finalizationSubsRef.current = [];
+      sampleLoadersRef.current.clear();
     };
   }, []);
 
@@ -222,7 +229,7 @@ const App: React.FC = () => {
 
   // --- Reactive take discovery via pointerHub subscriptions ---
 
-  // Build a TakeRegion from a regionBox (extracted from the old scanAndGroupTakes)
+  // Build a TakeRegion from a regionBox, resolving its sample loader, track assignment, and waveform offset
   const buildTakeRegion = useCallback(
     (regionBox: AudioRegionBox): TakeRegion | null => {
       if (!audioContext || !project) return null;
@@ -231,6 +238,7 @@ const App: React.FC = () => {
       if (!label.startsWith("Take ")) return null;
 
       const takeNumber = parseInt(label.replace("Take ", ""), 10);
+      if (isNaN(takeNumber)) return null;
       const isMuted = regionBox.mute.getValue();
       const sampleRate = audioContext.sampleRate;
       const waveformOffsetSec = regionBox.waveformOffset.getValue();
@@ -247,7 +255,7 @@ const App: React.FC = () => {
         );
       }
 
-      // Match region to input track via pointer chain
+      // Match region to input track: regionBox → TrackBox → AudioUnitBox
       let inputTrackId = "";
       const trackVertex = regionBox.regions.targetVertex;
       if (!trackVertex.isEmpty()) {
@@ -284,6 +292,10 @@ const App: React.FC = () => {
       setTakeIterations((prev) => {
         const existing = prev.find((t) => t.takeNumber === region.takeNumber);
         if (existing) {
+          // Skip if this exact regionBox is already tracked (prevents duplicates on re-subscribe)
+          if (existing.regions.some((r) => r.regionBox === region.regionBox)) {
+            return prev;
+          }
           // Add region to existing take (multi-track: same take, different track)
           const updatedRegions = [...existing.regions, region];
           return prev.map((t) =>
@@ -316,10 +328,7 @@ const App: React.FC = () => {
     (regionBox: AudioRegionBox, isMuted: boolean) => {
       setTakeIterations((prev) =>
         prev.map((t) => {
-          const regionIndex = t.regions.findIndex(
-            (r) => r.regionBox === regionBox
-          );
-          if (regionIndex === -1) return t;
+          if (!t.regions.some((r) => r.regionBox === regionBox)) return t;
           const updatedRegions = t.regions.map((r) =>
             r.regionBox === regionBox ? { ...r, isMuted } : r
           );
@@ -355,6 +364,11 @@ const App: React.FC = () => {
 
                 addTakeRegionToState(takeRegion);
 
+                // Track sampleLoader in ref for finalization barrier
+                if (takeRegion.sampleLoader) {
+                  sampleLoadersRef.current.add(takeRegion.sampleLoader);
+                }
+
                 // Subscribe to mute changes for reactive UI updates
                 const muteSub = regionBox.mute.subscribe((obs: any) => {
                   updateTakeMuteInState(regionBox, obs.getValue());
@@ -377,6 +391,7 @@ const App: React.FC = () => {
         sub.terminate();
       }
       pointerHubSubsRef.current = [];
+      sampleLoadersRef.current.clear();
     };
   }, [
     project,
@@ -510,7 +525,8 @@ const App: React.FC = () => {
   const handleStopRecording = useCallback(() => {
     if (!project) return;
 
-    // 1. Terminate pointer hub subs first to prevent phantom takes
+    // 1. Terminate pointer hub subs before stopRecording() to prevent late
+    //    SDK events from adding stale regions to state
     for (const sub of pointerHubSubsRef.current) {
       sub.terminate();
     }
@@ -525,29 +541,24 @@ const App: React.FC = () => {
     }
     finalizationSubsRef.current = [];
 
-    // 4. Collect unique sampleLoaders from current take state
-    const loaders = new Set<SampleLoader>();
-    for (const take of takeIterations) {
-      for (const region of take.regions) {
-        if (region.sampleLoader) {
-          loaders.add(region.sampleLoader);
-        }
-      }
-    }
+    // 4. Collect sampleLoaders from ref (avoids stale closure over React state)
+    const loaders = sampleLoadersRef.current;
 
     if (loaders.size > 0) {
       let finalized = 0;
       const total = loaders.size;
       let timedOut = false;
 
-      // Safety timeout: force-finalize if loaders don't emit within 10s
+      // Safety timeout: if loaders haven't emitted "loaded" within 10s, give up and reset
       const timeout = window.setTimeout(() => {
         if (finalized < total) {
           timedOut = true;
           console.warn(`Finalization timed out (${finalized}/${total} loaded)`);
+          setStatus(`Warning: Recording finalization timed out. Some audio may be incomplete.`);
           for (const sub of finalizationSubsRef.current) sub.terminate();
           finalizationSubsRef.current = [];
           project.engine.stop(true);
+          sampleLoadersRef.current = new Set();
         }
       }, 10_000);
 
@@ -562,6 +573,7 @@ const App: React.FC = () => {
             if (finalized === total) {
               clearTimeout(timeout);
               project.engine.stop(true);
+              sampleLoadersRef.current = new Set();
             }
           }
         });
@@ -569,8 +581,9 @@ const App: React.FC = () => {
       }
     } else {
       project.engine.stop(true);
+      sampleLoadersRef.current = new Set();
     }
-  }, [project, takeIterations]);
+  }, [project]);
 
   const handlePlay = useCallback(async () => {
     if (!project || !audioContext) return;
@@ -605,26 +618,18 @@ const App: React.FC = () => {
         }
       });
 
-      // During recording, regionBox.mute.subscribe() updates state reactively.
-      // After recording, subscriptions are terminated, so update state directly.
+      // Pointer hub mute subscriptions handle this during recording.
+      // After recording stops (subscriptions terminated in handleStopRecording), sync state manually.
       if (!isRecording) {
-        setTakeIterations((prev) =>
-          prev.map((t) => {
-            if (t.takeNumber !== takeNumber) return t;
-            const updatedRegions = t.regions.map((r) => ({
-              ...r,
-              isMuted: r.regionBox.mute.getValue(),
-            }));
-            return {
-              ...t,
-              regions: updatedRegions,
-              isMuted: updatedRegions.every((r) => r.isMuted),
-            };
-          })
-        );
+        for (const region of take.regions) {
+          updateTakeMuteInState(
+            region.regionBox,
+            region.regionBox.mute.getValue()
+          );
+        }
       }
     },
-    [project, takeIterations, isRecording]
+    [project, takeIterations, isRecording, updateTakeMuteInState]
   );
 
   const handleClearTakes = useCallback(() => {
