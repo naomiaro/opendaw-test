@@ -598,15 +598,33 @@ const App: React.FC = () => {
       const take = takeIterations.find((t) => t.takeNumber === takeNumber);
       if (!take) return;
 
-      // Mute state updates flow reactively via regionBox.mute.subscribe()
       project.editing.modify(() => {
         for (const region of take.regions) {
           const currentMute = region.regionBox.mute.getValue();
           region.regionBox.mute.setValue(!currentMute);
         }
       });
+
+      // During recording, regionBox.mute.subscribe() updates state reactively.
+      // After recording, subscriptions are terminated, so update state directly.
+      if (!isRecording) {
+        setTakeIterations((prev) =>
+          prev.map((t) => {
+            if (t.takeNumber !== takeNumber) return t;
+            const updatedRegions = t.regions.map((r) => ({
+              ...r,
+              isMuted: r.regionBox.mute.getValue(),
+            }));
+            return {
+              ...t,
+              regions: updatedRegions,
+              isMuted: updatedRegions.every((r) => r.isMuted),
+            };
+          })
+        );
+      }
     },
-    [project, takeIterations]
+    [project, takeIterations, isRecording]
   );
 
   const handleClearTakes = useCallback(() => {
