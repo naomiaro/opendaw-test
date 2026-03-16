@@ -403,4 +403,5 @@ Key rules:
 
 ## Next Steps
 
-Continue to **Sample Management and Peaks** to learn how to load audio files and render waveforms.
+- Continue to **[Sample Management and Peaks](./05-sample-management-and-peaks.md)** to learn how to load audio files and render waveforms.
+- See **[Box Subscriptions & Reactive Lifecycle](./18-box-subscriptions-lifecycle.md)** for advanced reactive patterns using `pointerHub.catchupAndSubscribe()` and nested subscription chains.
