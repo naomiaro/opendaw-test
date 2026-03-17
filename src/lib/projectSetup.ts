@@ -14,8 +14,8 @@ import {
   SampleProvider,
   SoundfontProvider,
   SampleService,
-  SoundfontService
 } from "@opendaw/studio-core";
+import type { SoundfontService } from "@opendaw/studio-core";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { testFeatures } from "../features";
 
@@ -188,9 +188,11 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
   // This prevents settings from a previous session affecting the current demo.
   localStorage.removeItem("engine-preferences");
 
-  // Create services (0.0.124+: no callback params, use subscribe() if needed)
+  // Create sample service (0.0.124+: required for recording finalization)
   const sampleService = new SampleService(audioContext);
-  const soundfontService = new SoundfontService();
+  // Skip SoundfontService — its constructor fetches from api.opendaw.studio (CORS issues
+  // in dev, and none of the demos use soundfont instruments). The SDK declares
+  // soundfontService in ProjectEnv but never reads it internally.
 
   // Create project
   const audioWorklets = AudioWorklets.get(audioContext);
@@ -200,7 +202,7 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
     soundfontManager,
     audioWorklets,
     sampleService,
-    soundfontService
+    soundfontService: undefined as unknown as SoundfontService,
   });
 
   // Set BPM if custom value provided
