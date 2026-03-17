@@ -90,16 +90,15 @@ soundfontService.subscribe(observer);
 
 ## Impact Assessment for opendaw-test
 
-### Must Address
-- **0.0.124 — SampleService/SoundfontService**: `projectSetup.ts` will need updating if it creates these services directly. If using `initializeOpenDAW()` which wraps SDK initialization, check whether the service constructors are called there.
-- **0.0.124 — RecordingWorklet.sampleService**: Recording demos that access the worklet directly may need changes.
-
-### Should Investigate
-- **0.0.122 — Tape playback fix**: Verify pitch-shifted audio playback still works correctly in demos that use time-stretched content.
-- **0.0.126 — PeaksPainter changes**: `TakeWaveformCanvas` and any component using `PeaksPainter.renderBlocks()` — check if the API is still the same or if `renderPixelStrips()` replaces it.
-- **0.0.126 — RegionRenderer**: Check if any demo code imports `RegionRenderer` and whether the namespace change affects it.
+### Resolved
+- **0.0.124 — SampleService**: Added `new SampleService(audioContext)` to `projectSetup.ts`. Required for recording finalization (SDK delegates to it internally).
+- **0.0.124 — SoundfontService**: Skipped — constructor unconditionally fetches `api.opendaw.studio/soundfonts/list.json` (CORS error in dev). The SDK declares `soundfontService` in `ProjectEnv` but never reads it internally, so we pass `undefined`. None of the demos use soundfont instruments (MIDI demo uses Vaporisateur built-in synth).
+- **0.0.124 — RecordingWorklet.sampleService**: No action needed — `CaptureAudio.prepareRecording()` injects it automatically from ProjectEnv.
+- **0.0.126 — PeaksPainter**: Renamed `renderBlocks()` → `renderPixelStrips()` in 3 files (same signature). **Note:** After upgrading, clear the Vite dep cache (`rm -rf node_modules/.vite`) or the dev server will serve the old pre-bundled SDK with `renderBlocks`.
+- **0.0.126 — RegionRenderer**: Not used in this project — no action needed.
 
 ### No Action Needed
 - 0.0.120 (YSync — not used in headless demos)
+- 0.0.122 (Tape playback sample rate fix — automatic improvement)
 - 0.0.123 (Performance stats / offline rendering — not used)
 - 0.0.125 (MIDI count-in fix — automatic behavior improvement)
