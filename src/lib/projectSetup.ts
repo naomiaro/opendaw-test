@@ -192,7 +192,17 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
   const sampleService = new SampleService(audioContext);
   // Skip SoundfontService — its constructor fetches from api.opendaw.studio (CORS issues
   // in dev, and none of the demos use soundfont instruments). The SDK declares
-  // soundfontService in ProjectEnv but never reads it internally.
+  // soundfontService in ProjectEnv but never reads it internally (verified in 0.0.128).
+  // Proxy guard ensures a clear error if a future SDK version starts accessing it.
+  const soundfontService = new Proxy({} as SoundfontService, {
+    get(_target, prop) {
+      throw new Error(
+        `SoundfontService.${String(prop)} was accessed, but SoundfontService is disabled. ` +
+        `Its constructor fetches from api.opendaw.studio (CORS issues in dev). ` +
+        `To enable, replace this proxy with: new SoundfontService()`
+      );
+    },
+  });
 
   // Create project
   const audioWorklets = AudioWorklets.get(audioContext);
@@ -202,7 +212,7 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
     soundfontManager,
     audioWorklets,
     sampleService,
-    soundfontService: undefined as unknown as SoundfontService,
+    soundfontService,
   });
 
   // Set BPM if custom value provided

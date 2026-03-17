@@ -152,9 +152,10 @@ subs.push(trackSub);
 ### Waveform Rendering (SDK 0.0.128+)
 - `PeaksPainter.renderBlocks()` was renamed to `PeaksPainter.renderPixelStrips()` — same signature
 
-### SoundfontService (Disabled)
+### SoundfontService (Disabled via Proxy Guard)
 - `SoundfontService` constructor auto-fetches `api.opendaw.studio/soundfonts/list.json` (CORS error in dev)
-- SDK declares `soundfontService` in `ProjectEnv` but never reads it — pass `undefined` for headless demos
+- SDK declares `soundfontService` in `ProjectEnv` but never reads it (verified in 0.0.128)
+- We pass a Proxy that throws a clear error if a future SDK version accesses it
 - None of the demos use soundfont instruments (MIDI demo uses Vaporisateur built-in synth)
 
 ### SampleService (SDK 0.0.124+)
