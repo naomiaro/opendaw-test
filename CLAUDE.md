@@ -149,6 +149,23 @@ subs.push(trackSub);
 - Terminate pointer hub subs BEFORE engine cleanup when stopping recording
 - After recording stops, reactive subscriptions are terminated — update React state directly for user-initiated changes (e.g., mute toggle)
 
+### Waveform Rendering (SDK 0.0.128+)
+- `PeaksPainter.renderBlocks()` was renamed to `PeaksPainter.renderPixelStrips()` — same signature
+
+### SoundfontService (Disabled)
+- `SoundfontService` constructor auto-fetches `api.opendaw.studio/soundfonts/list.json` (CORS error in dev)
+- SDK declares `soundfontService` in `ProjectEnv` but never reads it — pass `undefined` for headless demos
+- None of the demos use soundfont instruments (MIDI demo uses Vaporisateur built-in synth)
+
+### SampleService (SDK 0.0.124+)
+- `new SampleService(audioContext)` required in `ProjectEnv` for recording finalization
+- `CaptureAudio.prepareRecording()` injects it into `RecordingWorklet` automatically
+
+### capture.armed Is Not a Box Graph Field
+- `capture.armed` is a `MutableObservableValue<boolean>`, not a box graph field
+- Set directly: `capture.armed.setValue(false)` — do NOT wrap in `editing.modify()`
+- Same as `monitoringMode` — runtime observable, not persisted in the box graph
+
 ### Playback
 ```typescript
 // Set playback position (in PPQN - pulses per quarter note)
@@ -585,6 +602,7 @@ See `src/looping-demo.tsx` for the reference layout pattern.
 
 ## Build & Verification
 - `npm run build` — Vite handles TypeScript transpilation (no standalone `tsc` available)
+- After SDK upgrades, clear Vite dep cache: `rm -rf node_modules/.vite` (dev server pre-bundles old SDK)
 - Verify SDK exports: check `node_modules/@opendaw/<package>/dist/*.d.ts` before writing imports
 
 ### Adding a New Demo
@@ -613,4 +631,5 @@ See `src/looping-demo.tsx` for the reference layout pattern.
 - Take timeline: `src/components/TakeTimeline.tsx` (bar ruler, take lanes, waveform canvases)
 - Effects research docs: `documentation/effects-research/` (parameter tables, code examples, architecture)
 - Box subscription lifecycle: `documentation/18-box-subscriptions-lifecycle.md` (pointerHub API, reactive patterns, cleanup)
+- SDK 0.0.119→0.0.128 changelog: `documentation/sdk-0.0.119-to-0.0.128-changes.md`
 - OpenDAW source code locations: see `.claude/local.md`
