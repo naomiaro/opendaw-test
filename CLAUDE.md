@@ -426,7 +426,7 @@ Set custom labels with `adapter.box.label.setValue("name")`.
 ### Recording Peaks Include Count-In Frames
 The SDK captures audio during count-in. `waveformOffset` on the region (in seconds)
 tells playback to skip it. When rendering peaks, use `waveformOffset * sampleRate`
-as the `u0` parameter to `PeaksPainter.renderBlocks()` to skip count-in frames.
+as the `u0` parameter to `PeaksPainter.renderPixelStrips()` to skip count-in frames.
 
 For **loop recording takes**, all takes share one `AudioFileBox` (continuous buffer).
 Each take's `waveformOffset` = count-in + sum of prior take durations. Render each take

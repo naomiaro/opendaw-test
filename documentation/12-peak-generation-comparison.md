@@ -331,7 +331,7 @@ Compression ratio: 7:1
 **File**: `/packages/lib/fusion/src/peaks/PeaksPainter.ts`
 
 ```typescript
-export const renderBlocks = (
+export const renderPixelStrips = (
     context: CanvasRenderingContext2D,
     peaks: Peaks,
     channelIndex: int,

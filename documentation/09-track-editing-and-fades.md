@@ -379,7 +379,7 @@ regions.forEach(region => {
   const u1 = Math.floor(((loopOffsetSeconds + regionDurationSeconds) / audioBuffer.duration) * peaks.numFrames);
 
   // Render peaks from frames u0-u1 to canvas positions x0-x1
-  PeaksPainter.renderBlocks(context, peaks, channel, {
+  PeaksPainter.renderPixelStrips(context, peaks, channel, {
     x0, x1,  // Canvas pixel positions
     y0, y1,  // Vertical position
     u0, u1,  // Frame indices in peaks data
