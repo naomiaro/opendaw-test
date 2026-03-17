@@ -206,7 +206,7 @@ export function useWaveformRendering(
               const y0 = channel * channelHeight + channelPadding / 2;
               const y1 = (channel + 1) * channelHeight - channelPadding / 2;
 
-              PeaksPainter.renderBlocks(context, peaks, channel, {
+              PeaksPainter.renderPixelStrips(context, peaks, channel, {
                 x0,
                 x1,
                 y0,
@@ -224,7 +224,7 @@ export function useWaveformRendering(
             const y0 = channel * channelHeight + channelPadding / 2;
             const y1 = (channel + 1) * channelHeight - channelPadding / 2;
 
-            PeaksPainter.renderBlocks(context, peaks, channel, {
+            PeaksPainter.renderPixelStrips(context, peaks, channel, {
               x0: 0,
               x1: canvas.clientWidth,
               y0,

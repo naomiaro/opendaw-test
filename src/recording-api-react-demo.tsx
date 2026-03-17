@@ -163,7 +163,7 @@ const App: React.FC = () => {
           ? peaks.dataIndex[0] * peaks.unitsEachPeak()
           : peaks.numFrames;
 
-        PeaksPainter.renderBlocks(context, peaks, channel, {
+        PeaksPainter.renderPixelStrips(context, peaks, channel, {
           x0: 0,
           x1: canvas.clientWidth,
           y0,

@@ -12,7 +12,9 @@ import {
   Project,
   Workers,
   SampleProvider,
-  SoundfontProvider
+  SoundfontProvider,
+  SampleService,
+  SoundfontService
 } from "@opendaw/studio-core";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { testFeatures } from "../features";
@@ -186,13 +188,19 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
   // This prevents settings from a previous session affecting the current demo.
   localStorage.removeItem("engine-preferences");
 
+  // Create services (0.0.124+: no callback params, use subscribe() if needed)
+  const sampleService = new SampleService(audioContext);
+  const soundfontService = new SoundfontService();
+
   // Create project
   const audioWorklets = AudioWorklets.get(audioContext);
   const project = Project.new({
     audioContext,
     sampleManager,
     soundfontManager,
-    audioWorklets
+    audioWorklets,
+    sampleService,
+    soundfontService
   });
 
   // Set BPM if custom value provided

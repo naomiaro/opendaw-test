@@ -104,7 +104,7 @@ const TakeWaveformCanvas: React.FC<{
       const channelHeight = h / numChannels;
 
       for (let ch = 0; ch < numChannels; ch++) {
-        PeaksPainter.renderBlocks(context, peaks, ch, {
+        PeaksPainter.renderPixelStrips(context, peaks, ch, {
           x0: 0,
           x1: w,
           y0: ch * channelHeight + 1,
