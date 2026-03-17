@@ -230,7 +230,7 @@ function renderWaveform(
     const y0 = channel * channelHeight + PADDING / 2;
     const y1 = (channel + 1) * channelHeight - PADDING / 2;
 
-    PeaksPainter.renderBlocks(context, peaks, channel, {
+    PeaksPainter.renderPixelStrips(context, peaks, channel, {
       x0: 0,                    // Start X (pixels)
       x1: canvas.width,         // End X (pixels)
       y0: y0,                   // Start Y (pixels)
@@ -247,7 +247,7 @@ function renderWaveform(
 ### Understanding PeaksPainter Parameters
 
 ```typescript
-PeaksPainter.renderBlocks(context, peaks, channel, rect);
+PeaksPainter.renderPixelStrips(context, peaks, channel, rect);
 ```
 
 **Rect parameters:**
@@ -385,7 +385,7 @@ function AudioTrack({ project, audioContext }) {
       context.fillRect(0, 0, canvas.width, canvas.height);
       context.fillStyle = "#4a9eff";
 
-      PeaksPainter.renderBlocks(context, peaks, 0, {
+      PeaksPainter.renderPixelStrips(context, peaks, 0, {
         x0: 0,
         x1: canvas.width,
         y0: 0,
@@ -436,7 +436,7 @@ If showing a zoomed-in view, only render the visible peaks:
 
 ```typescript
 // Only render frames 1000-2000 instead of all frames
-PeaksPainter.renderBlocks(context, peaks, channel, {
+PeaksPainter.renderPixelStrips(context, peaks, channel, {
   x0: 0,
   x1: canvas.width,
   y0: 0,

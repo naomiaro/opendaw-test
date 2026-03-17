@@ -38,7 +38,7 @@ This document combines all the concepts (PPQN, Box System, Sample Management, Ti
 ```typescript
 // src/lib/projectSetup.ts
 import { AnimationFrame } from "@opendaw/lib-dom";
-import { AudioWorklets, GlobalSampleLoaderManager, Project, Workers, SampleProvider } from "@opendaw/studio-core";
+import { AudioWorklets, GlobalSampleLoaderManager, Project, Workers, SampleProvider, SampleService } from "@opendaw/studio-core";
 import { PPQN, AudioData } from "@opendaw/lib-dsp";
 import { UUID, Progress } from "@opendaw/lib-std";
 
@@ -89,12 +89,19 @@ export async function initializeOpenDAW(localAudioBuffers: Map<string, AudioBuff
   // Create worklets
   await AudioWorklets.createFor(audioContext);
 
+  // Create services (0.0.124+)
+  const sampleService = new SampleService(audioContext);
+  // SoundfontService skipped — constructor fetches from api.opendaw.studio (CORS issues).
+  // SDK declares soundfontService in ProjectEnv but never reads it (verified in 0.0.128).
+
   // Create project
   const project = Project.new({
     audioContext,
     sampleManager,
     soundfontManager,
-    audioWorklets: AudioWorklets.get(audioContext)
+    audioWorklets: AudioWorklets.get(audioContext),
+    sampleService,
+    soundfontService: undefined as any, // not used in headless demos
   });
 
   // Start audio engine

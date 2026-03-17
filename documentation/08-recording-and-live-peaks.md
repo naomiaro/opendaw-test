@@ -322,7 +322,7 @@ const sampleRate = audioContext.sampleRate;
 const u0 = Math.round(waveformOffsetSec * sampleRate); // start of this take in buffer
 const u1 = u0 + Math.round(durationSec * sampleRate);  // end of this take in buffer
 
-PeaksPainter.renderBlocks(context, peaks, channel, {
+PeaksPainter.renderPixelStrips(context, peaks, channel, {
   x0: 0, x1: canvas.width,
   y0, y1,
   u0, u1,  // render only this take's slice
@@ -585,7 +585,7 @@ if (isPeaksWriter) {
   const unitsToRender = peaks.numFrames;
 }
 
-PeaksPainter.renderBlocks(context, peaks, channel, {
+PeaksPainter.renderPixelStrips(context, peaks, channel, {
   x0: 0, x1: canvas.clientWidth,
   y0, y1,
   u0: waveformOffsetFrames, // skip count-in frames
@@ -617,7 +617,7 @@ const sampleRate = audioContext.sampleRate;
 const u0 = Math.round(waveformOffsetSec * sampleRate);
 const u1 = u0 + Math.round(durationSec * sampleRate);
 
-PeaksPainter.renderBlocks(context, peaks, channel, {
+PeaksPainter.renderPixelStrips(context, peaks, channel, {
   x0: 0, x1: canvas.width,
   y0, y1,
   u0, u1,  // render only this take's slice of the shared buffer
