@@ -101,26 +101,26 @@ The automation track's events are accessed through the TrackBoxAdapter's regions
 
 ### Volume Automation (8 bars, values 0.0–1.0)
 
-**Fade In:**
-- Bar 0: value 0.0, Linear
-- Bar 4: value 1.0, Linear
+**Fade In (logarithmic):**
+- Bar 0: value 0.0, Curve(slope: 0.25) (slow start, fast finish — logarithmic)
+- Bar 4: value 1.0, None
 
-**Fade Out:**
-- Bar 0: value 1.0, Linear
-- Bar 8: value 0.0, Linear
+**Fade Out (exponential):**
+- Bar 0: value 1.0, Curve(slope: 0.75) (fast drop, long tail — exponential)
+- Bar 8: value 0.0, None
 
-**Swell:**
-- Bar 0: value 0.2, Linear
-- Bar 4: value 1.0, Linear
-- Bar 8: value 0.2, Linear
+**Swell (curved):**
+- Bar 0: value 0.2, Curve(slope: 0.3) (gentle rise)
+- Bar 4: value 1.0, Curve(slope: 0.7) (gentle fall)
+- Bar 8: value 0.2, None
 
 **Ducking:**
 - Bar 0: value 1.0, Linear
-- Bar 2: value 1.0, Linear
-- Bar 3: value 0.2, None (step down)
-- Bar 5: value 0.2, None
-- Bar 5: value 1.0, None (step up)
-- Bar 8: value 1.0, Linear
+- Bar 2: value 1.0, Curve(slope: 0.75) (fast duck down)
+- Bar 3: value 0.2, None (hold low)
+- Bar 5: value 0.2, Curve(slope: 0.25) (slow rise back up)
+- Bar 6: value 1.0, Linear
+- Bar 8: value 1.0, None
 
 ### Pan Automation (8 bars, values 0.0=L, 0.5=center, 1.0=R)
 
