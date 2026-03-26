@@ -7,7 +7,6 @@ import {
   AudioWorklets,
   GlobalSampleLoaderManager,
   GlobalSoundfontLoaderManager,
-  OpenSampleAPI,
   OpenSoundfontAPI,
   Project,
   Workers,
@@ -168,9 +167,9 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
         }
       }
 
-      // Fall back to OpenSampleAPI for built-in samples
-      console.debug(`No local buffer found for ${uuidString}, falling back to OpenSampleAPI`);
-      return OpenSampleAPI.get().load(uuid, progress);
+      // No local buffer found — warn instead of hitting the OpenDAW API (CORS fails in dev)
+      console.warn(`No local audio buffer found for UUID: ${uuidString}. The sample will not be available.`);
+      throw new Error(`Sample not found locally: ${uuidString}`);
     }
   };
   const sampleManager = new GlobalSampleLoaderManager(sampleProvider);
