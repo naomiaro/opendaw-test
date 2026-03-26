@@ -67,8 +67,8 @@ const volumePresets: AutomationPreset[] = [
   {
     name: "Swell",
     events: [
-      { position: 0 as ppqn, value: 0.2, interpolation: Interpolation.Curve(0.3) },
-      { position: (BAR * 4) as ppqn, value: 1.0, interpolation: Interpolation.Curve(0.7) },
+      { position: 0 as ppqn, value: 0.2, interpolation: Interpolation.Curve(0.25) },
+      { position: (BAR * 4) as ppqn, value: 1.0, interpolation: Interpolation.Curve(0.75) },
       { position: (BAR * 8) as ppqn, value: 0.2, interpolation: Interpolation.None },
     ],
   },
