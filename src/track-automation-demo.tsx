@@ -453,6 +453,8 @@ interface AutomationSectionProps {
   config: AutomationTrackConfig;
   activePresetIndex: number;
   onPresetSelect: (index: number) => void;
+  onPlay: () => void;
+  onStop: () => void;
   playheadPosition: ppqn;
   isPlaying: boolean;
   targetUnitId: string;
@@ -462,6 +464,8 @@ const AutomationSection: React.FC<AutomationSectionProps> = ({
   config,
   activePresetIndex,
   onPresetSelect,
+  onPlay,
+  onStop,
   playheadPosition,
   isPlaying,
   targetUnitId,
@@ -472,17 +476,28 @@ const AutomationSection: React.FC<AutomationSectionProps> = ({
   return (
     <Card size="3">
       <Flex direction="column" gap="3">
-        <Flex align="center" gap="2">
-          <div
-            style={{
-              width: 12,
-              height: 12,
-              borderRadius: "50%",
-              backgroundColor: config.color,
-              flexShrink: 0,
-            }}
-          />
-          <Heading size="4">{config.label} Automation</Heading>
+        <Flex align="center" justify="between">
+          <Flex align="center" gap="2">
+            <div
+              style={{
+                width: 12,
+                height: 12,
+                borderRadius: "50%",
+                backgroundColor: config.color,
+                flexShrink: 0,
+              }}
+            />
+            <Heading size="4">{config.label} Automation</Heading>
+          </Flex>
+          {!isPlaying ? (
+            <Button size="2" onClick={onPlay}>
+              Play
+            </Button>
+          ) : (
+            <Button size="2" color="red" onClick={onStop}>
+              Stop
+            </Button>
+          )}
         </Flex>
 
         <Flex gap="2" wrap="wrap">
@@ -707,19 +722,6 @@ const App: React.FC = () => {
             <Text align="center">{status}</Text>
           ) : (
             <Flex direction="column" gap="5">
-              {/* Transport Controls */}
-              <Flex gap="3" align="center" justify="center">
-                {!isPlaying ? (
-                  <Button size="3" onClick={handlePlay}>
-                    Play
-                  </Button>
-                ) : (
-                  <Button size="3" color="red" onClick={handleStop}>
-                    Stop
-                  </Button>
-                )}
-              </Flex>
-
               {/* Automation Sections */}
               {TRACK_CONFIGS.map((config, sectionIndex) => (
                 <AutomationSection
@@ -729,6 +731,8 @@ const App: React.FC = () => {
                   onPresetSelect={(presetIndex) =>
                     handlePresetSelect(sectionIndex, presetIndex)
                   }
+                  onPlay={handlePlay}
+                  onStop={handleStop}
                   playheadPosition={playheadPosition as ppqn}
                   isPlaying={isPlaying}
                   targetUnitId={targetUnitId}
