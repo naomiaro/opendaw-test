@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import "@radix-ui/themes/styles.css";
 import { Theme, Container, Heading, Text, Flex, Button, Card } from "@radix-ui/themes";
 import { Project, EffectFactories } from "@opendaw/studio-core";
-import { AudioUnitBox, ReverbDeviceBox, TrackBox, ValueRegionBox } from "@opendaw/studio-boxes";
+import { AudioRegionBox, AudioUnitBox, ReverbDeviceBox, TrackBox, ValueRegionBox } from "@opendaw/studio-boxes";
 import { PPQN, Interpolation } from "@opendaw/lib-dsp";
 import type { ppqn } from "@opendaw/lib-dsp";
 import { UUID } from "@opendaw/lib-std";
@@ -584,6 +584,20 @@ const App: React.FC = () => {
       const { audioUnitBox } = tracks[0];
       audioUnitBoxRef.current = audioUnitBox;
       setTargetUnitId(UUID.toString(audioUnitBox.address.uuid));
+
+      // Trim the audio region to start at bar 17 (skip silence) and span 8 bars
+      const audioStartOffset = (BAR * 16) as ppqn; // bar 17 = 16 bars in
+      const boxes = newProject.boxGraph.boxes();
+      const audioRegion = boxes.find(
+        (box: any) => box instanceof AudioRegionBox && box.label?.getValue?.() === "Guitar"
+      );
+      if (audioRegion) {
+        newProject.editing.modify(() => {
+          (audioRegion as AudioRegionBox).loopOffset.setValue(audioStartOffset);
+          (audioRegion as AudioRegionBox).position.setValue(0);
+          (audioRegion as AudioRegionBox).duration.setValue(TOTAL_PPQN);
+        });
+      }
 
       // Insert a Reverb effect on this track
       setStatus("Setting up automation tracks...");
