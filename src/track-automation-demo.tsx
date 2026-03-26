@@ -18,6 +18,7 @@ import { usePlaybackPosition } from "./hooks/usePlaybackPosition";
 
 // 4/4 time: one bar = 3840 PPQN
 const BAR = PPQN.fromSignature(4, 4); // 3840
+const BPM = 124; // Match Dark Ride BPM
 const NUM_BARS = 8;
 const TOTAL_PPQN = BAR * NUM_BARS; // 30720
 
@@ -573,6 +574,7 @@ const App: React.FC = () => {
 
       const { project: newProject, audioContext } = await initializeOpenDAW({
         localAudioBuffers,
+        bpm: BPM,
         onStatusUpdate: setStatus,
       });
 
