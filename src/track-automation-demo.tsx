@@ -220,10 +220,10 @@ function applyAutomationEvents(
     if (collectionOpt.isEmpty()) return;
     const collection = collectionOpt.unwrap();
 
-    // Offset event positions to match the playback window
+    // Event positions are LOCAL to the region (0 to duration)
     for (const evt of events) {
       collection.createEvent({
-        position: (evt.position + PLAYBACK_START) as ppqn,
+        position: evt.position,
         index: 0,
         value: evt.value,
         interpolation: evt.interpolation,
