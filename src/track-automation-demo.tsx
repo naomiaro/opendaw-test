@@ -570,15 +570,15 @@ const App: React.FC = () => {
 
       // Insert a Reverb effect on this track
       setStatus("Setting up automation tracks...");
-      let reverbBox: ReverbDeviceBox;
-      project: {
+      let reverbBox: ReverbDeviceBox = null!;
+      newProject.editing.modify(() => {
         const effectBox = newProject.api.insertEffect(
           audioUnitBox.audioEffects,
           EffectFactories.Reverb
         );
         reverbBox = effectBox as ReverbDeviceBox;
-        reverbDeviceBoxRef.current = reverbBox;
-      }
+      });
+      reverbDeviceBoxRef.current = reverbBox;
 
       // Create 3 automation tracks: volume, pan, reverb wet
       const automationTargets = [
