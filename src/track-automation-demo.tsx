@@ -1,0 +1,762 @@
+import React, { useEffect, useRef, useState } from "react";
+import { createRoot } from "react-dom/client";
+import "@radix-ui/themes/styles.css";
+import { Theme, Container, Heading, Text, Flex, Button, Card } from "@radix-ui/themes";
+import { Project, EffectFactories } from "@opendaw/studio-core";
+import { AudioUnitBox, ReverbDeviceBox, TrackBox, ValueRegionBox } from "@opendaw/studio-boxes";
+import { PPQN, Interpolation } from "@opendaw/lib-dsp";
+import type { ppqn } from "@opendaw/lib-dsp";
+import { UUID } from "@opendaw/lib-std";
+import { ValueRegionBoxAdapter } from "@opendaw/studio-adapters";
+import { GitHubCorner } from "./components/GitHubCorner";
+import { MoisesLogo } from "./components/MoisesLogo";
+import { BackLink } from "./components/BackLink";
+import { initializeOpenDAW } from "./lib/projectSetup";
+import { loadTracksFromFiles } from "./lib/trackLoading";
+import { usePlaybackPosition } from "./hooks/usePlaybackPosition";
+
+// 4/4 time: one bar = 3840 PPQN
+const BAR = PPQN.fromSignature(4, 4); // 3840
+const NUM_BARS = 8;
+const TOTAL_PPQN = BAR * NUM_BARS; // 30720
+
+// ─── Automation Event Types ──────────────────────────────────────────────
+
+type AutomationEvent = {
+  position: ppqn;
+  value: number; // unitValue 0..1
+  interpolation: Interpolation;
+};
+
+type AutomationPreset = {
+  name: string;
+  events: AutomationEvent[];
+};
+
+type AutomationTrackConfig = {
+  label: string;
+  parameterName: string;
+  color: string;
+  yLabels: { value: number; label: string }[];
+  presets: AutomationPreset[];
+};
+
+// ─── Preset Definitions ─────────────────────────────────────────────────
+
+const volumePresets: AutomationPreset[] = [
+  {
+    name: "Fade In",
+    events: [
+      { position: 0 as ppqn, value: 0.0, interpolation: Interpolation.Curve(0.25) },
+      { position: (BAR * 4) as ppqn, value: 1.0, interpolation: Interpolation.None },
+    ],
+  },
+  {
+    name: "Fade Out",
+    events: [
+      { position: 0 as ppqn, value: 1.0, interpolation: Interpolation.Curve(0.75) },
+      { position: (BAR * 8) as ppqn, value: 0.0, interpolation: Interpolation.None },
+    ],
+  },
+  {
+    name: "Swell",
+    events: [
+      { position: 0 as ppqn, value: 0.2, interpolation: Interpolation.Curve(0.3) },
+      { position: (BAR * 4) as ppqn, value: 1.0, interpolation: Interpolation.Curve(0.7) },
+      { position: (BAR * 8) as ppqn, value: 0.2, interpolation: Interpolation.None },
+    ],
+  },
+  {
+    name: "Ducking",
+    events: [
+      { position: 0 as ppqn, value: 1.0, interpolation: Interpolation.Linear },
+      { position: (BAR * 2) as ppqn, value: 1.0, interpolation: Interpolation.Curve(0.75) },
+      { position: (BAR * 3) as ppqn, value: 0.2, interpolation: Interpolation.None },
+      { position: (BAR * 5) as ppqn, value: 0.2, interpolation: Interpolation.Curve(0.25) },
+      { position: (BAR * 6) as ppqn, value: 1.0, interpolation: Interpolation.Linear },
+      { position: (BAR * 8) as ppqn, value: 1.0, interpolation: Interpolation.None },
+    ],
+  },
+];
+
+const panPresets: AutomationPreset[] = [
+  {
+    name: "L-R Sweep",
+    events: [
+      { position: 0 as ppqn, value: 0.0, interpolation: Interpolation.Linear },
+      { position: (BAR * 8) as ppqn, value: 1.0, interpolation: Interpolation.Linear },
+    ],
+  },
+  {
+    name: "Ping-Pong",
+    events: [
+      { position: 0 as ppqn, value: 0.0, interpolation: Interpolation.Linear },
+      { position: (BAR * 2) as ppqn, value: 1.0, interpolation: Interpolation.Linear },
+      { position: (BAR * 4) as ppqn, value: 0.0, interpolation: Interpolation.Linear },
+      { position: (BAR * 6) as ppqn, value: 1.0, interpolation: Interpolation.Linear },
+      { position: (BAR * 8) as ppqn, value: 0.0, interpolation: Interpolation.Linear },
+    ],
+  },
+  {
+    name: "Center Hold",
+    events: [
+      { position: 0 as ppqn, value: 0.5, interpolation: Interpolation.None },
+      { position: (BAR * 8) as ppqn, value: 0.5, interpolation: Interpolation.None },
+    ],
+  },
+];
+
+const reverbWetPresets: AutomationPreset[] = [
+  {
+    name: "Dry to Wet",
+    events: [
+      { position: 0 as ppqn, value: 0.0, interpolation: Interpolation.Curve(0.25) },
+      { position: (BAR * 8) as ppqn, value: 1.0, interpolation: Interpolation.Linear },
+    ],
+  },
+  {
+    name: "Wet to Dry",
+    events: [
+      { position: 0 as ppqn, value: 1.0, interpolation: Interpolation.Curve(0.75) },
+      { position: (BAR * 8) as ppqn, value: 0.0, interpolation: Interpolation.Linear },
+    ],
+  },
+  {
+    name: "Pulse",
+    events: [
+      { position: 0 as ppqn, value: 0.0, interpolation: Interpolation.None },
+      { position: (BAR * 2) as ppqn, value: 0.8, interpolation: Interpolation.None },
+      { position: (BAR * 4) as ppqn, value: 0.0, interpolation: Interpolation.None },
+      { position: (BAR * 6) as ppqn, value: 0.8, interpolation: Interpolation.None },
+      { position: (BAR * 8) as ppqn, value: 0.0, interpolation: Interpolation.None },
+    ],
+  },
+];
+
+const TRACK_CONFIGS: AutomationTrackConfig[] = [
+  {
+    label: "Volume",
+    parameterName: "volume",
+    color: "#a855f7",
+    yLabels: [
+      { value: 1.0, label: "0 dB" },
+      { value: 0.5, label: "-6 dB" },
+      { value: 0.0, label: "-inf" },
+    ],
+    presets: volumePresets,
+  },
+  {
+    label: "Pan",
+    parameterName: "panning",
+    color: "#38bdf8",
+    yLabels: [
+      { value: 1.0, label: "R" },
+      { value: 0.5, label: "C" },
+      { value: 0.0, label: "L" },
+    ],
+    presets: panPresets,
+  },
+  {
+    label: "Reverb Wet",
+    parameterName: "wet",
+    color: "#34d399",
+    yLabels: [
+      { value: 1.0, label: "Wet" },
+      { value: 0.5, label: "50%" },
+      { value: 0.0, label: "Dry" },
+    ],
+    presets: reverbWetPresets,
+  },
+];
+
+// ─── Helper: Apply Automation Events to a Track ─────────────────────────
+
+function applyAutomationEvents(
+  project: Project,
+  trackBox: TrackBox,
+  events: AutomationEvent[]
+): void {
+  // First, find and clear existing regions on this track
+  const boxes = project.boxGraph.boxes();
+  const existingRegions = boxes.filter(
+    (box: any) =>
+      box instanceof ValueRegionBox &&
+      box.regions.targetVertex.nonEmpty() &&
+      box.regions.targetVertex.unwrap().box === trackBox
+  );
+
+  project.editing.modify(() => {
+    for (const region of existingRegions) {
+      // Clear events inside this region
+      const adapter = project.boxAdapters.adapterFor(region, ValueRegionBoxAdapter);
+      const collectionOpt = adapter.optCollection;
+      if (collectionOpt.nonEmpty()) {
+        const collection = collectionOpt.unwrap();
+        collection.events.asArray().forEach((evt: any) => evt.box.delete());
+      }
+      region.delete();
+    }
+  });
+
+  // Create a new region spanning the full timeline
+  project.editing.modify(() => {
+    const regionOpt = project.api.createTrackRegion(
+      trackBox,
+      0 as ppqn,
+      TOTAL_PPQN as ppqn
+    );
+    if (regionOpt.isEmpty()) return;
+    const regionBox = regionOpt.unwrap() as ValueRegionBox;
+
+    // Get the adapter and collection to create events
+    const adapter = project.boxAdapters.adapterFor(regionBox, ValueRegionBoxAdapter);
+    const collectionOpt = adapter.optCollection;
+    if (collectionOpt.isEmpty()) return;
+    const collection = collectionOpt.unwrap();
+
+    for (const evt of events) {
+      collection.createEvent({
+        position: evt.position,
+        index: 0,
+        value: evt.value,
+        interpolation: evt.interpolation,
+      });
+    }
+  });
+}
+
+// ─── Helper: Convert Events to JSON for Server Persistence ──────────────
+
+function interpolationToJson(interp: Interpolation): Record<string, unknown> {
+  if (interp.type === "none") return { type: "none" };
+  if (interp.type === "linear") return { type: "linear" };
+  return { type: "curve", slope: (interp as { type: "curve"; slope: number }).slope };
+}
+
+function eventsToJson(
+  events: AutomationEvent[],
+  parameterName: string,
+  targetUnitId: string
+): Record<string, unknown> {
+  return {
+    automationTrack: {
+      targetParameter: parameterName,
+      targetUnitId,
+      enabled: true,
+      events: events.map((evt, idx) => ({
+        position: evt.position,
+        value: evt.value,
+        index: idx,
+        interpolation: interpolationToJson(evt.interpolation),
+      })),
+    },
+  };
+}
+
+// ─── Canvas Component ───────────────────────────────────────────────────
+
+const CANVAS_HEIGHT = 150;
+
+interface AutomationCanvasProps {
+  events: AutomationEvent[];
+  color: string;
+  yLabels: { value: number; label: string }[];
+  playheadPosition: ppqn;
+  isPlaying: boolean;
+}
+
+const AutomationCanvas: React.FC<AutomationCanvasProps> = ({
+  events,
+  color,
+  yLabels,
+  playheadPosition,
+  isPlaying,
+}) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const width = canvas.clientWidth;
+    const height = CANVAS_HEIGHT;
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    ctx.scale(dpr, dpr);
+
+    const padLeft = 40;
+    const padRight = 8;
+    const drawWidth = width - padLeft - padRight;
+
+    // Clear and draw background
+    ctx.clearRect(0, 0, width, height);
+    ctx.fillStyle = "#1a1a2e";
+    ctx.fillRect(0, 0, width, height);
+
+    const toX = (ppqnPos: number) => padLeft + (ppqnPos / TOTAL_PPQN) * drawWidth;
+    const toY = (value: number) => height - value * height;
+
+    // Grid lines (bar lines)
+    ctx.strokeStyle = "#333";
+    ctx.lineWidth = 1;
+    for (let bar = 0; bar <= NUM_BARS; bar++) {
+      const x = toX(bar * BAR);
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, height);
+      ctx.stroke();
+
+      if (bar < NUM_BARS) {
+        ctx.fillStyle = "#666";
+        ctx.font = "11px sans-serif";
+        ctx.textAlign = "left";
+        ctx.fillText(`${bar + 1}`, x + 4, height - 4);
+      }
+    }
+
+    // Y-axis labels
+    ctx.fillStyle = "#555";
+    ctx.font = "10px sans-serif";
+    ctx.textAlign = "left";
+    for (const yl of yLabels) {
+      const y = toY(yl.value);
+      ctx.fillText(yl.label, 2, y + 3);
+      // horizontal guide line
+      ctx.strokeStyle = "#222";
+      ctx.beginPath();
+      ctx.moveTo(padLeft, y);
+      ctx.lineTo(width - padRight, y);
+      ctx.stroke();
+    }
+
+    // Draw automation curve
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+
+    if (events.length > 0) {
+      for (let i = 0; i < events.length; i++) {
+        const evt = events[i];
+        const x = toX(evt.position);
+        const y = toY(evt.value);
+
+        if (i === 0) {
+          ctx.moveTo(x, y);
+        } else {
+          const prev = events[i - 1];
+          const prevX = toX(prev.position);
+          const prevY = toY(prev.value);
+
+          if (prev.interpolation.type === "none") {
+            // Step: horizontal then vertical
+            ctx.lineTo(x, prevY);
+            ctx.lineTo(x, y);
+          } else if (prev.interpolation.type === "linear") {
+            ctx.lineTo(x, y);
+          } else if (prev.interpolation.type === "curve") {
+            const slope = prev.interpolation.slope;
+            // Quadratic bezier for curve interpolation
+            const cpX = prevX + (x - prevX) * slope;
+            const cpY = prevY + (y - prevY) * (1 - slope);
+            ctx.quadraticCurveTo(cpX, cpY, x, y);
+          }
+        }
+      }
+
+      // Extend last event value to end of timeline
+      const lastEvt = events[events.length - 1];
+      if (lastEvt.position < TOTAL_PPQN) {
+        const lastY = toY(lastEvt.value);
+        ctx.lineTo(toX(TOTAL_PPQN), lastY);
+      }
+    }
+    ctx.stroke();
+
+    // Dots at event points
+    ctx.fillStyle = color;
+    for (const evt of events) {
+      ctx.beginPath();
+      ctx.arc(toX(evt.position), toY(evt.value), 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Playhead
+    if (isPlaying && playheadPosition >= 0) {
+      const px = toX(playheadPosition);
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(px, 0);
+      ctx.lineTo(px, height);
+      ctx.stroke();
+    }
+  }, [events, color, yLabels, playheadPosition, isPlaying]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        width: "100%",
+        height: CANVAS_HEIGHT,
+        borderRadius: "var(--radius-3)",
+        border: "1px solid var(--gray-6)",
+      }}
+    />
+  );
+};
+
+// ─── Server Data Block Component ────────────────────────────────────────
+
+interface ServerDataBlockProps {
+  data: Record<string, unknown>;
+  label: string;
+}
+
+const ServerDataBlock: React.FC<ServerDataBlockProps> = ({ data, label }) => {
+  return (
+    <details style={{ marginTop: 4 }}>
+      <summary
+        style={{
+          cursor: "pointer",
+          color: "var(--gray-9)",
+          fontSize: 13,
+          userSelect: "none",
+        }}
+      >
+        {label}
+      </summary>
+      <pre
+        style={{
+          background: "#0d0d1a",
+          border: "1px solid var(--gray-6)",
+          borderRadius: "var(--radius-2)",
+          padding: 12,
+          fontSize: 12,
+          overflow: "auto",
+          maxHeight: 300,
+          color: "var(--gray-11)",
+          marginTop: 4,
+        }}
+      >
+        {JSON.stringify(data, null, 2)}
+      </pre>
+    </details>
+  );
+};
+
+// ─── Automation Section Component ───────────────────────────────────────
+
+interface AutomationSectionProps {
+  config: AutomationTrackConfig;
+  activePresetIndex: number;
+  onPresetSelect: (index: number) => void;
+  playheadPosition: ppqn;
+  isPlaying: boolean;
+  targetUnitId: string;
+}
+
+const AutomationSection: React.FC<AutomationSectionProps> = ({
+  config,
+  activePresetIndex,
+  onPresetSelect,
+  playheadPosition,
+  isPlaying,
+  targetUnitId,
+}) => {
+  const activePreset = config.presets[activePresetIndex];
+  const jsonData = eventsToJson(activePreset.events, config.parameterName, targetUnitId);
+
+  return (
+    <Card size="3">
+      <Flex direction="column" gap="3">
+        <Flex align="center" gap="2">
+          <div
+            style={{
+              width: 12,
+              height: 12,
+              borderRadius: "50%",
+              backgroundColor: config.color,
+              flexShrink: 0,
+            }}
+          />
+          <Heading size="4">{config.label} Automation</Heading>
+        </Flex>
+
+        <Flex gap="2" wrap="wrap">
+          {config.presets.map((preset, index) => (
+            <Button
+              key={preset.name}
+              variant={activePresetIndex === index ? "solid" : "outline"}
+              size="2"
+              onClick={() => onPresetSelect(index)}
+              style={
+                activePresetIndex === index
+                  ? { backgroundColor: config.color, color: "#000" }
+                  : { borderColor: config.color, color: config.color }
+              }
+            >
+              {preset.name}
+            </Button>
+          ))}
+        </Flex>
+
+        <AutomationCanvas
+          events={activePreset.events}
+          color={config.color}
+          yLabels={config.yLabels}
+          playheadPosition={playheadPosition}
+          isPlaying={isPlaying}
+        />
+
+        <ServerDataBlock data={jsonData} label="Server persistence data" />
+      </Flex>
+    </Card>
+  );
+};
+
+// ─── Main App ───────────────────────────────────────────────────────────
+
+const App: React.FC = () => {
+  const [status, setStatus] = useState("Loading...");
+  const [project, setProject] = useState<Project | null>(null);
+  const projectRef = useRef<Project | null>(null);
+  const [isReady, setIsReady] = useState(false);
+  const [targetUnitId, setTargetUnitId] = useState("");
+
+  // Per-section active preset indices
+  const [activePresets, setActivePresets] = useState([0, 0, 0]);
+
+  // Store track boxes for automation tracks
+  const automationTrackBoxesRef = useRef<TrackBox[]>([]);
+  const audioUnitBoxRef = useRef<AudioUnitBox | null>(null);
+  const reverbDeviceBoxRef = useRef<ReverbDeviceBox | null>(null);
+
+  const { currentPosition: playheadPosition, isPlaying } = usePlaybackPosition(project);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function init() {
+      setStatus("Initializing audio engine...");
+
+      const { project: newProject, audioContext } = await initializeOpenDAW({
+        onStatusUpdate: setStatus,
+      });
+
+      if (cancelled) return;
+
+      projectRef.current = newProject;
+      setProject(newProject);
+
+      // Load guitar track
+      setStatus("Loading audio track...");
+      const audioBuffers = new Map<string, AudioBuffer>();
+
+      const tracks = await loadTracksFromFiles(
+        newProject,
+        audioContext,
+        [{ name: "Guitar", file: "/audio/Guitar30.mp3" }],
+        audioBuffers
+      );
+
+      if (cancelled || tracks.length === 0) return;
+
+      const { audioUnitBox } = tracks[0];
+      audioUnitBoxRef.current = audioUnitBox;
+      setTargetUnitId(UUID.toString(audioUnitBox.address.uuid));
+
+      // Insert a Reverb effect on this track
+      setStatus("Setting up automation tracks...");
+      let reverbBox: ReverbDeviceBox;
+      project: {
+        const effectBox = newProject.api.insertEffect(
+          audioUnitBox.audioEffects,
+          EffectFactories.Reverb
+        );
+        reverbBox = effectBox as ReverbDeviceBox;
+        reverbDeviceBoxRef.current = reverbBox;
+      }
+
+      // Create 3 automation tracks: volume, pan, reverb wet
+      const automationTargets = [
+        audioUnitBox.volume,
+        audioUnitBox.panning,
+        reverbBox.wet,
+      ];
+
+      const trackBoxes: TrackBox[] = [];
+      for (const target of automationTargets) {
+        let trackBox: TrackBox | null = null;
+        newProject.editing.modify(() => {
+          trackBox = newProject.api.createAutomationTrack(audioUnitBox, target);
+        });
+        if (trackBox) {
+          trackBoxes.push(trackBox);
+        }
+      }
+
+      automationTrackBoxesRef.current = trackBoxes;
+
+      // Apply default presets (index 0 for each)
+      for (let i = 0; i < trackBoxes.length; i++) {
+        applyAutomationEvents(newProject, trackBoxes[i], TRACK_CONFIGS[i].presets[0].events);
+      }
+
+      // Set loop area for 8 bars
+      newProject.editing.modify(() => {
+        newProject.timelineBox.loopArea.from.setValue(0);
+        newProject.timelineBox.loopArea.to.setValue(TOTAL_PPQN);
+        newProject.timelineBox.loopArea.enabled.setValue(true);
+      });
+
+      setStatus("Ready");
+      setIsReady(true);
+    }
+
+    init();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handlePresetSelect = (sectionIndex: number, presetIndex: number) => {
+    const p = projectRef.current;
+    const trackBox = automationTrackBoxesRef.current[sectionIndex];
+    if (!p || !trackBox) return;
+
+    if (isPlaying) {
+      p.engine.stop(true);
+    }
+
+    setActivePresets((prev) => {
+      const next = [...prev];
+      next[sectionIndex] = presetIndex;
+      return next;
+    });
+
+    applyAutomationEvents(p, trackBox, TRACK_CONFIGS[sectionIndex].presets[presetIndex].events);
+  };
+
+  const handlePlay = () => {
+    const p = projectRef.current;
+    if (!p) return;
+    p.engine.setPosition(0);
+    p.engine.play();
+  };
+
+  const handleStop = () => {
+    const p = projectRef.current;
+    if (!p) return;
+    p.engine.stop(true);
+  };
+
+  // Build full project JSON
+  const buildFullProjectJson = () => {
+    const trackData = TRACK_CONFIGS.map((config, i) => {
+      const preset = config.presets[activePresets[i]];
+      return eventsToJson(preset.events, config.parameterName, targetUnitId);
+    });
+
+    return {
+      project: {
+        bpm: 120,
+        timeSignature: { numerator: 4, denominator: 4 },
+        duration: { bars: NUM_BARS, ppqn: TOTAL_PPQN },
+        loop: { enabled: true, from: 0, to: TOTAL_PPQN },
+        tracks: [
+          {
+            type: "audio",
+            name: "Guitar",
+            unitId: targetUnitId,
+          },
+        ],
+        automation: trackData.map((d) => d.automationTrack),
+      },
+    };
+  };
+
+  return (
+    <Theme appearance="dark" accentColor="purple" radius="large">
+      <Container size="3" px="4" py="8">
+        <GitHubCorner />
+        <BackLink />
+        <Flex direction="column" gap="6" style={{ maxWidth: 900, margin: "0 auto" }}>
+          <Flex direction="column" align="center" gap="2">
+            <Heading
+              size="8"
+              style={{
+                background: "linear-gradient(135deg, #a855f7 0%, #38bdf8 100%)",
+                WebkitBackgroundClip: "text",
+                WebkitTextFillColor: "transparent",
+                backgroundClip: "text",
+              }}
+            >
+              Track Automation
+            </Heading>
+            <Text size="3" color="gray" align="center">
+              Automate volume, pan, and reverb parameters with visual envelopes
+            </Text>
+          </Flex>
+
+          {!isReady ? (
+            <Text align="center">{status}</Text>
+          ) : (
+            <Flex direction="column" gap="5">
+              {/* Transport Controls */}
+              <Flex gap="3" align="center" justify="center">
+                {!isPlaying ? (
+                  <Button size="3" onClick={handlePlay}>
+                    Play
+                  </Button>
+                ) : (
+                  <Button size="3" color="red" onClick={handleStop}>
+                    Stop
+                  </Button>
+                )}
+              </Flex>
+
+              {/* Automation Sections */}
+              {TRACK_CONFIGS.map((config, sectionIndex) => (
+                <AutomationSection
+                  key={config.label}
+                  config={config}
+                  activePresetIndex={activePresets[sectionIndex]}
+                  onPresetSelect={(presetIndex) =>
+                    handlePresetSelect(sectionIndex, presetIndex)
+                  }
+                  playheadPosition={playheadPosition as ppqn}
+                  isPlaying={isPlaying}
+                  targetUnitId={targetUnitId}
+                />
+              ))}
+
+              {/* Full Project Data */}
+              <Card size="3">
+                <Flex direction="column" gap="3">
+                  <Heading size="4">Full Project Data</Heading>
+                  <Text size="2" color="gray">
+                    Combined automation data for all tracks, ready for server persistence.
+                  </Text>
+                  <ServerDataBlock
+                    data={buildFullProjectJson()}
+                    label="Full project JSON"
+                  />
+                </Flex>
+              </Card>
+            </Flex>
+          )}
+        </Flex>
+        <MoisesLogo />
+      </Container>
+    </Theme>
+  );
+};
+
+const rootElement = document.getElementById("root");
+if (rootElement) {
+  const root = createRoot(rootElement);
+  root.render(<App />);
+}
