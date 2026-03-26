@@ -20,6 +20,10 @@ const BAR = PPQN.fromSignature(4, 4); // 3840
 const NUM_BARS = 8;
 const TOTAL_PPQN = BAR * NUM_BARS; // 30720
 
+// Start at bar 17 of the guitar track (skip silence at the beginning)
+const PLAYBACK_START = (BAR * 16) as ppqn; // bar 17 = 16 bars in
+const PLAYBACK_END = (PLAYBACK_START + TOTAL_PPQN) as ppqn;
+
 // ─── Automation Event Types ──────────────────────────────────────────────
 
 type AutomationEvent = {
@@ -198,11 +202,11 @@ function applyAutomationEvents(
     }
   });
 
-  // Create a new region spanning the full timeline
+  // Create a new region at the playback start position
   project.editing.modify(() => {
     const regionOpt = project.api.createTrackRegion(
       trackBox,
-      0 as ppqn,
+      PLAYBACK_START,
       TOTAL_PPQN as ppqn
     );
     if (regionOpt.isEmpty()) return;
@@ -214,9 +218,10 @@ function applyAutomationEvents(
     if (collectionOpt.isEmpty()) return;
     const collection = collectionOpt.unwrap();
 
+    // Offset event positions to match the playback window
     for (const evt of events) {
       collection.createEvent({
-        position: evt.position,
+        position: (evt.position + PLAYBACK_START) as ppqn,
         index: 0,
         value: evt.value,
         interpolation: evt.interpolation,
@@ -383,9 +388,10 @@ const AutomationCanvas: React.FC<AutomationCanvasProps> = ({
       ctx.fill();
     }
 
-    // Playhead
-    if (isPlaying && playheadPosition >= 0) {
-      const px = toX(playheadPosition);
+    // Playhead (offset from PLAYBACK_START to match canvas 0-based positions)
+    const relativePlayhead = playheadPosition - PLAYBACK_START;
+    if (isPlaying && relativePlayhead >= 0) {
+      const px = toX(relativePlayhead);
       ctx.strokeStyle = "#fff";
       ctx.lineWidth = 1.5;
       ctx.beginPath();
@@ -585,17 +591,16 @@ const App: React.FC = () => {
       audioUnitBoxRef.current = audioUnitBox;
       setTargetUnitId(UUID.toString(audioUnitBox.address.uuid));
 
-      // Trim the audio region to start at bar 17 (skip silence) and span 8 bars
-      const audioStartOffset = (BAR * 16) as ppqn; // bar 17 = 16 bars in
+      // Trim the audio region: position at bar 17, read from bar 17 of audio, 8 bars long
       const boxes = newProject.boxGraph.boxes();
       const audioRegion = boxes.find(
         (box: any) => box instanceof AudioRegionBox && box.label?.getValue?.() === "Guitar"
       );
       if (audioRegion) {
         newProject.editing.modify(() => {
-          (audioRegion as AudioRegionBox).loopOffset.setValue(audioStartOffset);
-          (audioRegion as AudioRegionBox).position.setValue(0);
+          (audioRegion as AudioRegionBox).position.setValue(PLAYBACK_START);
           (audioRegion as AudioRegionBox).duration.setValue(TOTAL_PPQN);
+          (audioRegion as AudioRegionBox).loopOffset.setValue(PLAYBACK_START);
         });
       }
 
@@ -636,12 +641,13 @@ const App: React.FC = () => {
         applyAutomationEvents(newProject, trackBoxes[i], TRACK_CONFIGS[i].presets[0].events);
       }
 
-      // Set loop area for 8 bars
+      // Set loop area to bar 17–25 and position engine at bar 17
       newProject.editing.modify(() => {
-        newProject.timelineBox.loopArea.from.setValue(0);
-        newProject.timelineBox.loopArea.to.setValue(TOTAL_PPQN);
+        newProject.timelineBox.loopArea.from.setValue(PLAYBACK_START);
+        newProject.timelineBox.loopArea.to.setValue(PLAYBACK_END);
         newProject.timelineBox.loopArea.enabled.setValue(true);
       });
+      newProject.engine.setPosition(PLAYBACK_START);
 
       setStatus("Ready");
       setIsReady(true);
@@ -674,7 +680,7 @@ const App: React.FC = () => {
   const handlePlay = () => {
     const p = projectRef.current;
     if (!p) return;
-    p.engine.setPosition(0);
+    p.engine.setPosition(PLAYBACK_START);
     p.engine.play();
   };
 
