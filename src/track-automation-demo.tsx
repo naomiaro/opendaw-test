@@ -50,17 +50,17 @@ type AutomationTrackConfig = {
 
 const volumePresets: AutomationPreset[] = [
   {
-    name: "Fade Out",
-    events: [
-      { position: 0 as ppqn, value: 1.0, interpolation: Interpolation.Curve(0.75) },
-      { position: (BAR * 8) as ppqn, value: 0.0, interpolation: Interpolation.None },
-    ],
-  },
-  {
     name: "Fade In",
     events: [
       { position: 0 as ppqn, value: 0.0, interpolation: Interpolation.Curve(0.25) },
       { position: (BAR * 4) as ppqn, value: 1.0, interpolation: Interpolation.None },
+    ],
+  },
+  {
+    name: "Fade Out",
+    events: [
+      { position: 0 as ppqn, value: 1.0, interpolation: Interpolation.Curve(0.75) },
+      { position: (BAR * 8) as ppqn, value: 0.0, interpolation: Interpolation.None },
     ],
   },
   {
@@ -463,6 +463,7 @@ interface AutomationSectionProps {
   onPlay: () => void;
   onStop: () => void;
   playheadPosition: ppqn;
+  isActiveSection: boolean;
   isPlaying: boolean;
   targetUnitId: string;
 }
@@ -474,11 +475,13 @@ const AutomationSection: React.FC<AutomationSectionProps> = ({
   onPlay,
   onStop,
   playheadPosition,
+  isActiveSection,
   isPlaying,
   targetUnitId,
 }) => {
   const activePreset = config.presets[activePresetIndex];
   const jsonData = eventsToJson(activePreset.events, config.parameterName, targetUnitId);
+  const showPlayhead = isActiveSection && isPlaying;
 
   return (
     <Card size="3">
@@ -496,7 +499,7 @@ const AutomationSection: React.FC<AutomationSectionProps> = ({
             />
             <Heading size="4">{config.label} Automation</Heading>
           </Flex>
-          {!isPlaying ? (
+          {!(isActiveSection && isPlaying) ? (
             <Button size="2" onClick={onPlay}>
               Play
             </Button>
@@ -530,7 +533,7 @@ const AutomationSection: React.FC<AutomationSectionProps> = ({
           color={config.color}
           yLabels={config.yLabels}
           playheadPosition={playheadPosition}
-          isPlaying={isPlaying}
+          isPlaying={showPlayhead}
         />
 
         <ServerDataBlock data={jsonData} label="Server persistence data" />
@@ -551,6 +554,7 @@ const App: React.FC = () => {
 
   // Per-section active preset indices
   const [activePresets, setActivePresets] = useState([0, 0, 0]);
+  const [playingSectionIndex, setPlayingSectionIndex] = useState<number | null>(null);
 
   // Store track boxes for automation tracks
   const automationTrackBoxesRef = useRef<TrackBox[]>([]);
@@ -640,10 +644,8 @@ const App: React.FC = () => {
 
       automationTrackBoxesRef.current = trackBoxes;
 
-      // Apply default presets (index 0 for each)
-      for (let i = 0; i < trackBoxes.length; i++) {
-        applyAutomationEvents(newProject, trackBoxes[i], TRACK_CONFIGS[i].presets[0].events);
-      }
+      // Apply default preset for volume only (one automation at a time)
+      applyAutomationEvents(newProject, trackBoxes[0], TRACK_CONFIGS[0].presets[0].events);
 
       // Set loop area to bar 17–25 and position engine at bar 17
       newProject.editing.modify(() => {
@@ -670,6 +672,7 @@ const App: React.FC = () => {
 
     if (isPlaying) {
       p.engine.stop(true);
+      setPlayingSectionIndex(null);
     }
 
     setActivePresets((prev) => {
@@ -681,14 +684,46 @@ const App: React.FC = () => {
     applyAutomationEvents(p, trackBox, TRACK_CONFIGS[sectionIndex].presets[presetIndex].events);
   };
 
-  const handlePlay = async () => {
+  const clearAutomationForSection = (sectionIndex: number) => {
+    const p = projectRef.current;
+    const trackBox = automationTrackBoxesRef.current[sectionIndex];
+    if (!p || !trackBox) return;
+
+    // Remove all regions from this automation track
+    const boxes = p.boxGraph.boxes();
+    const existingRegions = boxes.filter(
+      (box: any) =>
+        box instanceof ValueRegionBox &&
+        box.regions.targetVertex.nonEmpty() &&
+        box.regions.targetVertex.unwrap().box === trackBox
+    );
+    if (existingRegions.length > 0) {
+      p.editing.modify(() => {
+        for (const region of existingRegions) {
+          const adapter = p.boxAdapters.adapterFor(region, ValueRegionBoxAdapter);
+          const collectionOpt = adapter.optCollection;
+          if (collectionOpt.nonEmpty()) {
+            collectionOpt.unwrap().events.asArray().forEach((evt: any) => evt.box.delete());
+          }
+          region.delete();
+        }
+      });
+    }
+  };
+
+  const handlePlaySection = async (sectionIndex: number) => {
     const p = projectRef.current;
     const ac = audioContextRef.current;
     if (!p || !ac) return;
-    // Ensure AudioContext is running (browser autoplay policy / iOS suspend)
+
+    // Stop if currently playing
+    if (isPlaying) {
+      p.engine.stop(true);
+    }
+
+    // Ensure AudioContext is running
     if (ac.state !== "running") {
       await ac.resume();
-      // Wait for state to actually be running (iOS Safari)
       if (ac.state !== "running") {
         await new Promise<void>(resolve => {
           const handler = () => {
@@ -701,7 +736,20 @@ const App: React.FC = () => {
         });
       }
     }
-    console.log("[TrackAutomation] Playing from position", PLAYBACK_START, "AudioContext state:", ac.state);
+
+    // Clear automation from all other sections
+    for (let i = 0; i < TRACK_CONFIGS.length; i++) {
+      if (i !== sectionIndex) {
+        clearAutomationForSection(i);
+      }
+    }
+
+    // Ensure the active section's automation is applied
+    const trackBox = automationTrackBoxesRef.current[sectionIndex];
+    const presetIndex = activePresets[sectionIndex];
+    applyAutomationEvents(p, trackBox, TRACK_CONFIGS[sectionIndex].presets[presetIndex].events);
+
+    setPlayingSectionIndex(sectionIndex);
     p.engine.setPosition(PLAYBACK_START);
     p.engine.play();
   };
@@ -710,6 +758,7 @@ const App: React.FC = () => {
     const p = projectRef.current;
     if (!p) return;
     p.engine.stop(true);
+    setPlayingSectionIndex(null);
   };
 
   // Build full project JSON
@@ -773,9 +822,10 @@ const App: React.FC = () => {
                   onPresetSelect={(presetIndex) =>
                     handlePresetSelect(sectionIndex, presetIndex)
                   }
-                  onPlay={handlePlay}
+                  onPlay={() => handlePlaySection(sectionIndex)}
                   onStop={handleStop}
                   playheadPosition={playheadPosition as ppqn}
+                  isActiveSection={playingSectionIndex === sectionIndex}
                   isPlaying={isPlaying}
                   targetUnitId={targetUnitId}
                 />
