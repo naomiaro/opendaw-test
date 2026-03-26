@@ -13,6 +13,7 @@ import { MoisesLogo } from "./components/MoisesLogo";
 import { BackLink } from "./components/BackLink";
 import { initializeOpenDAW } from "./lib/projectSetup";
 import { loadTracksFromFiles } from "./lib/trackLoading";
+import { getAudioExtension } from "./lib/audioUtils";
 import { usePlaybackPosition } from "./hooks/usePlaybackPosition";
 
 // 4/4 time: one bar = 3840 PPQN
@@ -578,10 +579,11 @@ const App: React.FC = () => {
       // Load guitar track
       setStatus("Loading audio track...");
 
+      const ext = getAudioExtension();
       const tracks = await loadTracksFromFiles(
         newProject,
         audioContext,
-        [{ name: "Guitar", file: "/audio/Guitar30.mp3" }],
+        [{ name: "Guitar", file: `/audio/DarkRide/04_ElecGtrs.${ext}` }],
         localAudioBuffers
       );
 
