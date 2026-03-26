@@ -542,7 +542,10 @@ const App: React.FC = () => {
     async function init() {
       setStatus("Initializing audio engine...");
 
+      const localAudioBuffers = new Map<string, AudioBuffer>();
+
       const { project: newProject, audioContext } = await initializeOpenDAW({
+        localAudioBuffers,
         onStatusUpdate: setStatus,
       });
 
@@ -553,13 +556,12 @@ const App: React.FC = () => {
 
       // Load guitar track
       setStatus("Loading audio track...");
-      const audioBuffers = new Map<string, AudioBuffer>();
 
       const tracks = await loadTracksFromFiles(
         newProject,
         audioContext,
         [{ name: "Guitar", file: "/audio/Guitar30.mp3" }],
-        audioBuffers
+        localAudioBuffers
       );
 
       if (cancelled || tracks.length === 0) return;
