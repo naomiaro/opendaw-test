@@ -545,6 +545,7 @@ const App: React.FC = () => {
   const [status, setStatus] = useState("Loading...");
   const [project, setProject] = useState<Project | null>(null);
   const projectRef = useRef<Project | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [targetUnitId, setTargetUnitId] = useState("");
 
@@ -574,6 +575,7 @@ const App: React.FC = () => {
       if (cancelled) return;
 
       projectRef.current = newProject;
+      audioContextRef.current = audioContext;
       setProject(newProject);
 
       // Load guitar track
@@ -679,9 +681,14 @@ const App: React.FC = () => {
     applyAutomationEvents(p, trackBox, TRACK_CONFIGS[sectionIndex].presets[presetIndex].events);
   };
 
-  const handlePlay = () => {
+  const handlePlay = async () => {
     const p = projectRef.current;
+    const ac = audioContextRef.current;
     if (!p) return;
+    // Ensure AudioContext is running (browser autoplay policy / iOS suspend)
+    if (ac && ac.state !== "running") {
+      await ac.resume();
+    }
     p.engine.setPosition(PLAYBACK_START);
     p.engine.play();
   };
