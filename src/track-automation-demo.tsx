@@ -50,17 +50,17 @@ type AutomationTrackConfig = {
 
 const volumePresets: AutomationPreset[] = [
   {
-    name: "Fade In",
-    events: [
-      { position: 0 as ppqn, value: 0.0, interpolation: Interpolation.Curve(0.25) },
-      { position: (BAR * 4) as ppqn, value: 1.0, interpolation: Interpolation.None },
-    ],
-  },
-  {
     name: "Fade Out",
     events: [
       { position: 0 as ppqn, value: 1.0, interpolation: Interpolation.Curve(0.75) },
       { position: (BAR * 8) as ppqn, value: 0.0, interpolation: Interpolation.None },
+    ],
+  },
+  {
+    name: "Fade In",
+    events: [
+      { position: 0 as ppqn, value: 0.0, interpolation: Interpolation.Curve(0.25) },
+      { position: (BAR * 4) as ppqn, value: 1.0, interpolation: Interpolation.None },
     ],
   },
   {
@@ -684,11 +684,24 @@ const App: React.FC = () => {
   const handlePlay = async () => {
     const p = projectRef.current;
     const ac = audioContextRef.current;
-    if (!p) return;
+    if (!p || !ac) return;
     // Ensure AudioContext is running (browser autoplay policy / iOS suspend)
-    if (ac && ac.state !== "running") {
+    if (ac.state !== "running") {
       await ac.resume();
+      // Wait for state to actually be running (iOS Safari)
+      if (ac.state !== "running") {
+        await new Promise<void>(resolve => {
+          const handler = () => {
+            if (ac.state === "running") {
+              ac.removeEventListener("statechange", handler);
+              resolve();
+            }
+          };
+          ac.addEventListener("statechange", handler);
+        });
+      }
     }
+    console.log("[TrackAutomation] Playing from position", PLAYBACK_START, "AudioContext state:", ac.state);
     p.engine.setPosition(PLAYBACK_START);
     p.engine.play();
   };
