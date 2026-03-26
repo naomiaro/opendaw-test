@@ -6,7 +6,7 @@ import { Project, EffectFactories } from "@opendaw/studio-core";
 import { AudioRegionBox, AudioUnitBox, ReverbDeviceBox, TrackBox, ValueRegionBox } from "@opendaw/studio-boxes";
 import { PPQN, Interpolation } from "@opendaw/lib-dsp";
 import type { ppqn } from "@opendaw/lib-dsp";
-import { UUID } from "@opendaw/lib-std";
+import { Curve, UUID } from "@opendaw/lib-std";
 import { ValueRegionBoxAdapter } from "@opendaw/studio-adapters";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { MoisesLogo } from "./components/MoisesLogo";
@@ -364,11 +364,15 @@ const AutomationCanvas: React.FC<AutomationCanvasProps> = ({
           } else if (prev.interpolation.type === "linear") {
             ctx.lineTo(x, y);
           } else if (prev.interpolation.type === "curve") {
+            // Use SDK's Curve.normalizedAt for pixel-accurate rendering
             const slope = prev.interpolation.slope;
-            // Quadratic bezier for curve interpolation
-            const cpX = prevX + (x - prevX) * slope;
-            const cpY = prevY + (y - prevY) * (1 - slope);
-            ctx.quadraticCurveTo(cpX, cpY, x, y);
+            const segments = Math.max(20, Math.round(x - prevX));
+            for (let s = 1; s <= segments; s++) {
+              const t = s / segments;
+              const normalized = Curve.normalizedAt(t, slope);
+              const val = prev.value + normalized * (evt.value - prev.value);
+              ctx.lineTo(prevX + (x - prevX) * t, toY(val));
+            }
           }
         }
       }
