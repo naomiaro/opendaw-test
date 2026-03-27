@@ -131,7 +131,6 @@ const LoopedWaveformCanvas: React.FC<{
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    console.debug("[ClipLoop Canvas] effect running, canvas:", !!canvas, "peaks:", !!peaks);
     if (!canvas || !peaks) return;
 
     const ctx = canvas.getContext("2d");
@@ -140,7 +139,6 @@ const LoopedWaveformCanvas: React.FC<{
     const dpr = window.devicePixelRatio || 1;
     const width = canvas.clientWidth;
     const height = CANVAS_HEIGHT;
-    console.debug("[ClipLoop Canvas] rendering:", width, "x", height, "dpr:", dpr, "numFrames:", peaks.numFrames, "loopOffset:", loopOffset, "loopDuration:", loopDuration, "fullAudioPpqn:", fullAudioPpqn);
     canvas.width = width * dpr;
     canvas.height = height * dpr;
     ctx.scale(dpr, dpr);
@@ -165,13 +163,16 @@ const LoopedWaveformCanvas: React.FC<{
 
       if (tileEndX <= tileStartX) continue;
 
-      // Slightly different bg for repeated tiles
-      if (tile > 0) {
-        ctx.fillStyle = "rgba(255, 150, 50, 0.03)";
+      // Alternate tile backgrounds
+      if (tile % 2 === 1) {
+        ctx.fillStyle = "rgba(255, 160, 60, 0.06)";
         ctx.fillRect(tileStartX, 0, tileEndX - tileStartX, height);
       }
 
-      // Render channel 0 (left) at full height for a cleaner look
+      // Set waveform color before rendering — PeaksPainter uses the current fillStyle
+      ctx.fillStyle = "#f59e0b";
+
+      // Render channel 0 (left) at full height
       PeaksPainter.renderPixelStrips(ctx, peaks, 0, {
         x0: tileStartX,
         x1: tileEndX,
@@ -321,36 +322,20 @@ const App: React.FC = () => {
         const track = tracks[0];
         if (track) {
           const sampleLoader = newProject.sampleManager.getOrCreate(track.uuid);
-          console.debug("[ClipLoop] sampleLoader created for UUID:", UUID.toString(track.uuid));
-          console.debug("[ClipLoop] sampleLoader.peaks isEmpty:", sampleLoader.peaks.isEmpty());
-          console.debug("[ClipLoop] sampleLoader type:", typeof sampleLoader);
-          console.debug("[ClipLoop] sampleLoader keys:", Object.getOwnPropertyNames(Object.getPrototypeOf(sampleLoader)));
-
           sampleLoader.subscribe((state: any) => {
-            console.debug("[ClipLoop] sampleLoader state event:", state.type, state);
             if (state.type === "loaded") {
               const peaksOpt = sampleLoader.peaks;
-              console.debug("[ClipLoop] peaks isEmpty after loaded:", peaksOpt.isEmpty());
-              if (!peaksOpt.isEmpty()) {
-                const p = peaksOpt.unwrap();
-                console.debug("[ClipLoop] peaks unwrapped:", p.numFrames, "frames,", p.numChannels, "channels");
-                if (mounted) {
-                  setPeaks(p);
-                  setSampleRate(newAudioContext.sampleRate);
-                }
+              if (!peaksOpt.isEmpty() && mounted) {
+                setPeaks(peaksOpt.unwrap());
+                setSampleRate(newAudioContext.sampleRate);
               }
             }
           });
-
           // Also check if already loaded
           const peaksOpt = sampleLoader.peaks;
           if (!peaksOpt.isEmpty()) {
-            const p = peaksOpt.unwrap();
-            console.debug("[ClipLoop] peaks already available:", p.numFrames, "frames");
-            setPeaks(p);
+            setPeaks(peaksOpt.unwrap());
             setSampleRate(newAudioContext.sampleRate);
-          } else {
-            console.debug("[ClipLoop] peaks NOT yet available, waiting for subscribe...");
           }
         }
 
