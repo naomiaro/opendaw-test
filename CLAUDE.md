@@ -159,6 +159,8 @@ PeaksPainter.renderPixelStrips(context, peaks, channel, {
   v0: -1, v1: 1 // amplitude range (always -1 to 1)
 });
 ```
+**IMPORTANT:** `renderPixelStrips` uses the current `ctx.fillStyle` — set it before calling.
+It does NOT accept color parameters. Without setting fillStyle, waveforms are invisible.
 
 ### SoundfontService (Disabled via Proxy Guard)
 - `SoundfontService` constructor auto-fetches `api.opendaw.studio/soundfonts/list.json` (CORS error in dev)
@@ -187,6 +189,10 @@ project.engine.play();
 // NOTE: loadTracksFromFiles() calls this automatically before returning,
 // so you only need this for recordings or manually created tracks
 await project.engine.queryLoadingComplete();
+// NOTE: queryLoadingComplete() resolves before SamplePeaks worker finishes
+// (~120ms gap). To get peaks, use sampleLoader.subscribe() and wait for
+// state.type === "loaded". Direct sampleLoader.peaks read immediately after
+// loadTracksFromFiles returns will be empty.
 ```
 
 ### Engine State Observables
@@ -546,7 +552,10 @@ where `elapsedSeconds = tempoMap.intervalToSeconds(cycle.rawStart, cycle.resultS
 - BPM: 124 (pass to `initializeOpenDAW({ bpm: 124 })`)
 - Stems: `public/audio/DarkRide/01_Intro` through `07_EffectReturns` (.opus + .m4a)
 - Full song length (~235 seconds, ~117 bars at 124 BPM)
-- Guitar has silence at the beginning; bar 17+ has audible content
+- All stems have silence at the beginning (intro/buildup)
+- Guitar: audible content from bar 17+
+- Drums: full drum pattern from bar 25+ (sparse/building before that)
+- When creating demos, use a CONTENT_START offset to skip silence
 
 ### localAudioBuffers Must Be Passed to initializeOpenDAW
 The sample manager's fetch callback checks `localAudioBuffers` map at init time.
