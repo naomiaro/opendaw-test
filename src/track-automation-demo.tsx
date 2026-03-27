@@ -600,12 +600,18 @@ const App: React.FC = () => {
         });
       }
 
-      // Insert a Reverb effect on this track
+      // Insert a Reverb effect with exaggerated settings for demo
       setStatus("Setting up automation tracks...");
       let reverbBox: ReverbDeviceBox = null!;
       newProject.editing.modify(() => {
         const effectBox = newProject.api.insertEffect(audioUnitBox.audioEffects, EffectFactories.Reverb);
         reverbBox = effectBox as ReverbDeviceBox;
+        // Large hall: long decay, low damping, noticeable wet level
+        reverbBox.decay.setValue(0.85);     // long tail (0-1)
+        reverbBox.preDelay.setValue(0.03);  // 30ms pre-delay
+        reverbBox.damp.setValue(0.3);       // low damping = brighter
+        reverbBox.wet.setValue(-6);         // -6 dB wet (loud enough to hear)
+        reverbBox.dry.setValue(0);          // 0 dB dry
       });
       reverbDeviceBoxRef.current = reverbBox;
 
