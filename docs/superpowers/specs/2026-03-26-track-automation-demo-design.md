@@ -109,9 +109,9 @@ The automation track's events are accessed through the TrackBoxAdapter's regions
 - Bar 0: value 1.0, Curve(slope: 0.75) (fast drop, long tail — exponential)
 - Bar 8: value 0.0, None
 
-**Swell (curved):**
-- Bar 0: value 0.2, Curve(slope: 0.3) (gentle rise)
-- Bar 4: value 1.0, Curve(slope: 0.7) (gentle fall)
+**Swell (round Möbius-Ease):**
+- Bar 0: value 0.2, Curve(slope: 0.75) (logarithmic rise)
+- Bar 4: value 1.0, Curve(slope: 0.25) (logarithmic fall)
 - Bar 8: value 0.2, None
 
 **Ducking:**

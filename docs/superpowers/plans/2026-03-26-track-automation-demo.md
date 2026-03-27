@@ -568,10 +568,10 @@ const VOLUME_PATTERNS: AutomationPattern[] = [
   },
   {
     name: "Swell",
-    description: "Curved rise to bar 4, then fall",
+    description: "Round Möbius-Ease rise to bar 4, then fall",
     events: [
-      { position: 0 as ppqn, value: 0.2, index: 0, interpolation: { type: "curve", slope: 0.3 } },
-      { position: (BAR * 4) as ppqn, value: 1.0, index: 0, interpolation: { type: "curve", slope: 0.7 } },
+      { position: 0 as ppqn, value: 0.2, index: 0, interpolation: { type: "curve", slope: 0.75 } },
+      { position: (BAR * 4) as ppqn, value: 1.0, index: 0, interpolation: { type: "curve", slope: 0.25 } },
       { position: (BAR * 8) as ppqn, value: 0.2, index: 0, interpolation: { type: "none" } },
     ],
   },
