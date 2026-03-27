@@ -561,7 +561,9 @@ Effects use a 3-layer chain: Box (raw storage) → Adapter (UI mapping) → Proc
 - DattorroReverb `preDelay` is in milliseconds (0-1000), standard Reverb is in seconds (0.001-0.5)
 - DattorroReverb `dry` uses `DefaultDecibel` mapping (-60 to 6 dB), not -60 to 0
 - StereoTool `stereo` (width) is bipolar (-1..1), not unipolar — 0 = normal, not center of 0-2 range
-- Volume `DefaultDecibel` mapping: unitValue 0.0 = -inf, 0.5 = -12 dB, 1.0 = 0 dB (range: -72 to 0 dB)
+- `DefaultDecibel` mapping: `decibel(-72, -12, 0)` — unitValue 0.0 = -inf, 0.5 = -12 dB, 1.0 = 0 dB
+- AudioUnit `VolumeMapper`: `decibel(-96, -9, +6)` — different range, unitValue 0.0 = -inf, 1.0 = +6 dB
+- ValueMapping only affects UI/adapter display — automation writes raw unitValues (0-1) to box fields
 - To verify parameter ranges, audit all 3 layers: schema (Box), adapter (ValueMapping), and processor (how value is consumed)
 
 ## React Integration Tips
