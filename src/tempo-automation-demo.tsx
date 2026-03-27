@@ -5,6 +5,7 @@ import { Theme, Container, Heading, Text, Flex, Button } from "@radix-ui/themes"
 import { Project } from "@opendaw/studio-core";
 import { PPQN, Interpolation } from "@opendaw/lib-dsp";
 import type { ppqn } from "@opendaw/lib-dsp";
+import { Curve } from "@opendaw/lib-std";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { MoisesLogo } from "./components/MoisesLogo";
 import { BackLink } from "./components/BackLink";
@@ -19,7 +20,7 @@ const TOTAL_PPQN = BAR * NUM_BARS; // 30720
 type TempoPoint = {
   position: ppqn;
   bpm: number;
-  interpolation: "step" | "linear";
+  interpolation: "step" | "linear" | { curve: number }; // curve: slope 0-1 (0.5=linear, <0.5=slow start, >0.5=fast start)
 };
 
 type TempoPattern = {
@@ -64,6 +65,31 @@ const PATTERNS: TempoPattern[] = [
       { position: (BAR * 8) as ppqn, bpm: 100, interpolation: "linear" },
     ],
   },
+  {
+    name: "Logarithmic Accel.",
+    description: "Fast initial pickup that eases into final tempo (curve 0.75)",
+    points: [
+      { position: 0 as ppqn, bpm: 90, interpolation: { curve: 0.75 } },
+      { position: (BAR * 8) as ppqn, bpm: 160, interpolation: "step" },
+    ],
+  },
+  {
+    name: "Exponential Rit.",
+    description: "Holds tempo then drops off steeply at the end (curve 0.25)",
+    points: [
+      { position: 0 as ppqn, bpm: 150, interpolation: { curve: 0.25 } },
+      { position: (BAR * 8) as ppqn, bpm: 80, interpolation: "step" },
+    ],
+  },
+  {
+    name: "Breath (Swell)",
+    description: "Logarithmic rise to bar 4, exponential fall — like a natural breath",
+    points: [
+      { position: 0 as ppqn, bpm: 100, interpolation: { curve: 0.75 } },
+      { position: (BAR * 4) as ppqn, bpm: 160, interpolation: { curve: 0.25 } },
+      { position: (BAR * 8) as ppqn, bpm: 100, interpolation: "step" },
+    ],
+  },
 ];
 
 function applyPattern(project: Project, pattern: TempoPattern): void {
@@ -78,11 +104,19 @@ function applyPattern(project: Project, pattern: TempoPattern): void {
     // Create new events
     adapter.tempoTrackEvents.ifSome(collection => {
       for (const point of pattern.points) {
+        let interpolation;
+        if (point.interpolation === "linear") {
+          interpolation = Interpolation.Linear;
+        } else if (point.interpolation === "step") {
+          interpolation = Interpolation.None;
+        } else {
+          interpolation = Interpolation.Curve(point.interpolation.curve);
+        }
         collection.createEvent({
           position: point.position,
           index: 0,
           value: point.bpm,
-          interpolation: point.interpolation === "linear" ? Interpolation.Linear : Interpolation.None,
+          interpolation,
         });
       }
     });
@@ -185,6 +219,19 @@ const TempoCanvas: React.FC<TempoCanvasProps> = ({ pattern, playheadPosition, is
         if (prevPoint.interpolation === "step") {
           ctx.lineTo(x, toY(prevPoint.bpm));
           ctx.lineTo(x, y);
+        } else if (typeof prevPoint.interpolation === "object") {
+          // Curve interpolation — use Curve.normalizedAt to match engine
+          const slope = prevPoint.interpolation.curve;
+          const prevX = toX(prevPoint.position);
+          const prevY = toY(prevPoint.bpm);
+          const segments = 40;
+          for (let s = 1; s <= segments; s++) {
+            const t = s / segments;
+            const normalized = Curve.normalizedAt(t, slope);
+            const segX = prevX + t * (x - prevX);
+            const segY = prevY + normalized * (y - prevY);
+            ctx.lineTo(segX, segY);
+          }
         } else {
           ctx.lineTo(x, y);
         }
