@@ -203,6 +203,21 @@ const App: React.FC = () => {
                 </Flex>
               </Link>
             </Card>
+            <Card asChild>
+              <Link href="/track-automation-demo.html" style={{ textDecoration: "none", padding: "var(--space-5)" }}>
+                <Flex direction="column" gap="3">
+                  <Flex direction="column" align="center" gap="2">
+                    <Text size="8">🎛️</Text>
+                    <Heading size="5">Track Automation</Heading>
+                  </Flex>
+                  <Text size="2" color="gray">
+                    Automate volume, pan, and effect parameters with preset patterns.
+                    Visualize automation envelopes and see the JSON data a server would
+                    store to save and restore automation state.
+                  </Text>
+                </Flex>
+              </Link>
+            </Card>
           </div>
 
           <MoisesLogo />

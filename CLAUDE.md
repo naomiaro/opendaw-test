@@ -288,6 +288,42 @@ project.timelineBoxAdapter.tempoTrackEvents.ifSome(collection => {
 // Interpolation: Interpolation.Linear, Interpolation.None from @opendaw/lib-dsp
 ```
 
+### Track Automation (Volume, Pan, Effects)
+```typescript
+// Create automation track targeting a parameter field
+let trackBox: TrackBox;
+project.editing.modify(() => {
+  trackBox = project.api.createAutomationTrack(audioUnitBox, audioUnitBox.volume);
+});
+
+// Create a region and add events
+project.editing.modify(() => {
+  const regionOpt = project.api.createTrackRegion(trackBox, position, duration);
+  const regionBox = regionOpt.unwrap() as ValueRegionBox;
+  const adapter = project.boxAdapters.adapterFor(regionBox, ValueRegionBoxAdapter);
+  const collection = adapter.optCollection.unwrap();
+  collection.createEvent({ position: 0 as ppqn, index: 0, value: 0.5, interpolation: Interpolation.Linear });
+});
+```
+
+**Automation event positions are REGION-LOCAL, not absolute.**
+`ValueRegionBoxAdapter.valueAt()` calls `LoopableRegion.globalToLocal(region, ppqn)` =
+`mod(ppqn - region.position + region.loopOffset, region.loopDuration)` before looking up events.
+Events at absolute positions will fall outside the region duration and never trigger.
+
+### Curve Rendering Must Use SDK's Curve.normalizedAt
+Canvas rendering of automation curves must use `Curve.normalizedAt(t, slope)` from `@opendaw/lib-std`,
+not quadratic bezier approximations. The SDK uses an exponential formula:
+`(p²)/(1-2p) * (((1-p)/p)^(2x) - 1)` (Möbius-Ease) — visually different from bezier.
+Slope semantics: 0.75 = steep start, flat end (logarithmic feel); 0.25 = flat start, steep end.
+For a round swell: use Curve(0.75) rising, Curve(0.25) falling.
+
+### EffectBox Is a Union Type
+`project.api.insertEffect()` returns `EffectBox` which is a union of device box types
+(`ReverbDeviceBox | CompressorDeviceBox | ...`), not a wrapper. Cast directly:
+`const reverbBox = effectBox as ReverbDeviceBox;`
+Automatable fields: `reverbBox.wet`, `reverbBox.dry`, etc.
+
 ### Timeline and Loop Area
 ```typescript
 project.editing.modify(() => {
@@ -475,6 +511,23 @@ clicks — not a bug.
 `sampleIndex = ((elapsedSeconds + waveformOffset) * sampleRate) | 0`
 where `elapsedSeconds = tempoMap.intervalToSeconds(cycle.rawStart, cycle.resultStart)`
 
+### Dark Ride Audio
+- BPM: 124 (pass to `initializeOpenDAW({ bpm: 124 })`)
+- Stems: `public/audio/DarkRide/01_Intro` through `07_EffectReturns` (.opus + .m4a)
+- Full song length (~235 seconds, ~117 bars at 124 BPM)
+- Guitar has silence at the beginning; bar 17+ has audible content
+
+### localAudioBuffers Must Be Passed to initializeOpenDAW
+The sample manager's fetch callback checks `localAudioBuffers` map at init time.
+Create the map BEFORE calling `initializeOpenDAW`, pass it in, then pass the same
+map to `loadTracksFromFiles`. Without this, the sample manager falls back to
+OpenSampleAPI (CORS error in dev).
+```typescript
+const localAudioBuffers = new Map<string, AudioBuffer>();
+const { project, audioContext } = await initializeOpenDAW({ localAudioBuffers, bpm: 124 });
+const tracks = await loadTracksFromFiles(project, audioContext, files, localAudioBuffers);
+```
+
 ### Safari Audio Format Compatibility
 Safari can't decode Ogg Opus via `decodeAudioData` (even though `canPlayType` returns
 `"maybe"`). Provide m4a (AAC) fallback. Detect Safari via UA string, not feature detection.
@@ -508,6 +561,13 @@ Effects use a 3-layer chain: Box (raw storage) → Adapter (UI mapping) → Proc
 - DattorroReverb `preDelay` is in milliseconds (0-1000), standard Reverb is in seconds (0.001-0.5)
 - DattorroReverb `dry` uses `DefaultDecibel` mapping (-60 to 6 dB), not -60 to 0
 - StereoTool `stereo` (width) is bipolar (-1..1), not unipolar — 0 = normal, not center of 0-2 range
+- `DefaultDecibel` mapping: `decibel(-72, -12, 0)` — unitValue 0.0 = -inf, 0.5 = -12 dB, 1.0 = 0 dB
+- AudioUnit `VolumeMapper`: `decibel(-96, -9, +6)` — different range, unitValue 0.0 = -inf, 1.0 = +6 dB
+- Automation values (unitValue 0-1) go through ValueMapping before reaching the processor:
+  `AutomatableParameterFieldAdapter.valueAt()` calls `valueMapping.y(unitValue)` to convert to dB/raw
+- Convert dB ↔ unitValue: `AudioUnitBoxAdapter.VolumeMapper.x(0)` → unitValue for 0 dB (~0.734);
+  `.y(0.5)` → -9 dB. Import `AudioUnitBoxAdapter` from `@opendaw/studio-adapters`.
+  For effects: `ValueMapping.DefaultDecibel` from `@opendaw/lib-std`.
 - To verify parameter ranges, audit all 3 layers: schema (Box), adapter (ValueMapping), and processor (how value is consumed)
 
 ## React Integration Tips
@@ -620,6 +680,8 @@ See `src/looping-demo.tsx` for the reference layout pattern.
 - Project setup: `src/lib/projectSetup.ts`
 - Track loading: `src/lib/trackLoading.ts` (handles queryLoadingComplete automatically)
 - Engine preferences hook: `src/hooks/useEnginePreference.ts`
+- Track automation demo: `src/track-automation-demo.tsx` (volume, pan, effect parameter automation with canvas + JSON)
+- Track automation: `documentation/19-track-automation.md` (automation lanes, region-local events, Möbius-Ease curves)
 - Tempo automation demo: `src/tempo-automation-demo.tsx`
 - Time signature demo: `src/time-signature-demo.tsx`
 - Clip fades demo: `src/clip-fades-demo.tsx`
