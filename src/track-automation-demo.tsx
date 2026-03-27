@@ -285,9 +285,12 @@ const AutomationCanvas: React.FC<AutomationCanvasProps> = ({ events, color, yLab
     canvas.height = height * dpr;
     ctx.scale(dpr, dpr);
 
-    const padLeft = 40;
+    const padLeft = 48;
     const padRight = 8;
+    const padTop = 14;
+    const padBottom = 18;
     const drawWidth = width - padLeft - padRight;
+    const drawHeight = height - padTop - padBottom;
 
     // Clear and draw background
     ctx.clearRect(0, 0, width, height);
@@ -295,7 +298,7 @@ const AutomationCanvas: React.FC<AutomationCanvasProps> = ({ events, color, yLab
     ctx.fillRect(0, 0, width, height);
 
     const toX = (ppqnPos: number) => padLeft + (ppqnPos / TOTAL_PPQN) * drawWidth;
-    const toY = (value: number) => height - value * height;
+    const toY = (value: number) => padTop + drawHeight - value * drawHeight;
 
     // Grid lines (bar lines)
     ctx.strokeStyle = "#333";
@@ -303,8 +306,8 @@ const AutomationCanvas: React.FC<AutomationCanvasProps> = ({ events, color, yLab
     for (let bar = 0; bar <= NUM_BARS; bar++) {
       const x = toX(bar * BAR);
       ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, height);
+      ctx.moveTo(x, padTop);
+      ctx.lineTo(x, height - padBottom);
       ctx.stroke();
 
       if (bar < NUM_BARS) {
@@ -315,13 +318,13 @@ const AutomationCanvas: React.FC<AutomationCanvasProps> = ({ events, color, yLab
       }
     }
 
-    // Y-axis labels
-    ctx.fillStyle = "#555";
+    // Y-axis labels and horizontal guide lines
     ctx.font = "10px sans-serif";
-    ctx.textAlign = "left";
+    ctx.textAlign = "right";
     for (const yl of yLabels) {
       const y = toY(yl.value);
-      ctx.fillText(yl.label, 2, y + 3);
+      ctx.fillStyle = "#888";
+      ctx.fillText(yl.label, padLeft - 6, y + 4);
       // horizontal guide line
       ctx.strokeStyle = "#222";
       ctx.beginPath();
@@ -392,8 +395,8 @@ const AutomationCanvas: React.FC<AutomationCanvasProps> = ({ events, color, yLab
       ctx.strokeStyle = "#fff";
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.moveTo(px, 0);
-      ctx.lineTo(px, height);
+      ctx.moveTo(px, padTop);
+      ctx.lineTo(px, height - padBottom);
       ctx.stroke();
     }
   }, [events, color, yLabels, playheadPosition, isPlaying]);
@@ -404,7 +407,6 @@ const AutomationCanvas: React.FC<AutomationCanvasProps> = ({ events, color, yLab
       style={{
         width: "100%",
         height: CANVAS_HEIGHT,
-        borderRadius: "var(--radius-3)",
         border: "1px solid var(--gray-6)"
       }}
     />
