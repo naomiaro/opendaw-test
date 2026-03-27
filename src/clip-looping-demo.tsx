@@ -7,6 +7,7 @@ import { AudioRegionBox } from "@opendaw/studio-boxes";
 import { PeaksPainter } from "@opendaw/lib-fusion";
 import type { Peaks } from "@opendaw/lib-fusion";
 import { UUID } from "@opendaw/lib-std";
+import { AnimationFrame } from "@opendaw/lib-dom";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { MoisesLogo } from "./components/MoisesLogo";
 import { BackLink } from "./components/BackLink";
@@ -323,28 +324,21 @@ const App: React.FC = () => {
         setFullAudioPpqn(audioPpqn);
         setRegionBox(foundRegion);
 
-        // Get peaks for waveform rendering
+        // Get peaks for waveform rendering via AnimationFrame polling
+        // (more reliable than subscribe — peaks may arrive between subscribe and loaded event)
         const fileVertex = foundRegion.file.targetVertex;
         if (fileVertex.nonEmpty()) {
           const audioFileBox = fileVertex.unwrap().box;
           const uuid = audioFileBox.address.uuid;
           const sampleLoader = newProject.sampleManager.getOrCreate(uuid);
-          const sub = sampleLoader.subscribe((state: any) => {
-            if (state.type === "loaded") {
-              const peaksOpt = sampleLoader.peaks;
-              if (peaksOpt.nonEmpty()) {
-                setPeaks(peaksOpt.unwrap());
-              }
+          const peakPoller = AnimationFrame.add(() => {
+            const peaksOpt = sampleLoader.peaks;
+            if (!peaksOpt.isEmpty()) {
+              setPeaks(peaksOpt.unwrap());
               setSampleRate(newAudioContext.sampleRate);
-              sub.terminate();
+              peakPoller.terminate();
             }
           });
-          // Peaks may already be loaded
-          const peaksOpt = sampleLoader.peaks;
-          if (peaksOpt.nonEmpty()) {
-            setPeaks(peaksOpt.unwrap());
-            setSampleRate(newAudioContext.sampleRate);
-          }
         }
 
         const preset = PRESETS[0];
