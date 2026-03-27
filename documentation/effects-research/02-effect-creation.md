@@ -19,10 +19,12 @@ interface EffectFactory {
     readonly defaultName: string
     readonly defaultIcon: IconSymbol
     readonly description: string
+    readonly briefDescription: string   // SDK 0.0.129+
     readonly manualPage?: string
     readonly separatorBefore: boolean
+    readonly external: boolean           // SDK 0.0.129+
     readonly type: "audio" | "midi"
-    
+
     create(project: Project, unit: Field<EffectPointerType>, index: int): EffectBox
 }
 ```
