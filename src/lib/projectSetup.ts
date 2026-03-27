@@ -44,7 +44,7 @@ function audioBufferToAudioData(audioBuffer: AudioBuffer): AudioData {
  */
 export interface ProjectSetupOptions {
   /**
-   * Optional map of local audio buffers to use instead of fetching from OpenSampleAPI
+   * Map of local audio buffers for sample loading.
    * Key: UUID string, Value: AudioBuffer
    */
   localAudioBuffers?: Map<string, AudioBuffer>;
