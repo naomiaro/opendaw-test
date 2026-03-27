@@ -101,10 +101,18 @@ function applyLoopSettings(
   const ld = loopDuration === -1 ? fullAudioPpqn : loopDuration;
   const d = duration === -1 ? fullAudioPpqn : duration;
 
+  // waveformOffset (seconds) shifts the audio read position in the file.
+  // loopOffset (PPQN) is used for waveform rendering to show the right slice of peaks.
+  // The region sits at position 0 on the timeline; waveformOffset skips into the audio.
+  const bpm = project.timelineBox.bpm.getValue();
+  const waveformOffsetSeconds = PPQN.pulsesToSeconds(loopOffset, bpm);
+
   project.editing.modify(() => {
+    regionBox.position.setValue(0);
+    regionBox.loopOffset.setValue(0);
     regionBox.loopDuration.setValue(ld);
-    regionBox.loopOffset.setValue(loopOffset);
     regionBox.duration.setValue(d);
+    regionBox.waveformOffset.setValue(waveformOffsetSeconds);
   });
 
   project.editing.modify(() => {
@@ -113,6 +121,8 @@ function applyLoopSettings(
     project.timelineBox.loopArea.enabled.setValue(true);
     project.timelineBox.durationInPulses.setValue(d);
   });
+
+  project.engine.setPosition(0);
 }
 
 const CANVAS_HEIGHT = 120;
@@ -255,7 +265,7 @@ const App: React.FC = () => {
   const [loopOffset, setLoopOffset] = useState(CONTENT_START);
   const [duration, setDuration] = useState(BAR * 8);
 
-  const [metronomeEnabled, setMetronomeEnabled] = useState(true);
+  const [metronomeEnabled, setMetronomeEnabled] = useState(false);
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
   const [peaks, setPeaks] = useState<Peaks | null>(null);
   const [sampleRate, setSampleRate] = useState(48000);
@@ -286,8 +296,7 @@ const App: React.FC = () => {
         setProject(newProject);
 
         const settings = newProject.engine.preferences.settings;
-        settings.metronome.enabled = true;
-        settings.metronome.gain = -6;
+        settings.metronome.enabled = false;
 
         const ext = getAudioExtension();
         const tracks = await loadTracksFromFiles(
