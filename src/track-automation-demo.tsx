@@ -78,12 +78,12 @@ const volumePresets: AutomationPreset[] = [
   {
     name: "Ducking",
     events: [
-      { position: 0 as ppqn, value: 1.0, interpolation: Interpolation.Linear },
-      { position: (BAR * 2) as ppqn, value: 1.0, interpolation: Interpolation.Curve(0.75) },
+      { position: 0 as ppqn, value: VOLUME_0DB, interpolation: Interpolation.Linear },
+      { position: (BAR * 2) as ppqn, value: VOLUME_0DB, interpolation: Interpolation.Curve(0.75) },
       { position: (BAR * 3) as ppqn, value: 0.2, interpolation: Interpolation.None },
       { position: (BAR * 5) as ppqn, value: 0.2, interpolation: Interpolation.Curve(0.25) },
-      { position: (BAR * 6) as ppqn, value: 1.0, interpolation: Interpolation.Linear },
-      { position: (BAR * 8) as ppqn, value: 1.0, interpolation: Interpolation.None }
+      { position: (BAR * 6) as ppqn, value: VOLUME_0DB, interpolation: Interpolation.Linear },
+      { position: (BAR * 8) as ppqn, value: VOLUME_0DB, interpolation: Interpolation.None }
     ]
   }
 ];
