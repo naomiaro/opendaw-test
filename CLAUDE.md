@@ -149,8 +149,16 @@ subs.push(trackSub);
 - Terminate pointer hub subs BEFORE engine cleanup when stopping recording
 - After recording stops, reactive subscriptions are terminated — update React state directly for user-initiated changes (e.g., mute toggle)
 
-### Waveform Rendering (SDK 0.0.128+)
-- `PeaksPainter.renderBlocks()` was renamed to `PeaksPainter.renderPixelStrips()` — same signature
+### Waveform Rendering (SDK 0.0.126+)
+`PeaksPainter.renderBlocks()` was replaced by `PeaksPainter.renderPixelStrips()` with a new signature:
+```typescript
+PeaksPainter.renderPixelStrips(context, peaks, channel, {
+  x0, x1,       // pixel x range on canvas
+  y0, y1,       // pixel y range on canvas
+  u0, u1,       // frame range in peaks data
+  v0: -1, v1: 1 // amplitude range (always -1 to 1)
+});
+```
 
 ### SoundfontService (Disabled via Proxy Guard)
 - `SoundfontService` constructor auto-fetches `api.opendaw.studio/soundfonts/list.json` (CORS error in dev)
