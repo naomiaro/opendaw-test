@@ -232,7 +232,7 @@ The LFO is a triangle wave that modulates the delay line read position, creating
 - **q** (float32): Resonance
 
 ### Global
-- **gain** (float32): Output level adjustment (-18 to 18 dB) — **deprecated in schema**
+- ~~**gain** (float32): Output level adjustment (-18 to 18 dB)~~ — removed (deprecated in schema)
 
 **Source Code:**
 - Box: `/openDAW/packages/studio/forge-boxes/src/schema/devices/audio-effects/RevampDeviceBox.ts`
