@@ -94,7 +94,7 @@ soundfontService.subscribe(observer);
 - **0.0.124 — SampleService**: Added `new SampleService(audioContext)` to `projectSetup.ts`. Required for recording finalization (SDK delegates to it internally).
 - **0.0.124 — SoundfontService**: Skipped — constructor unconditionally fetches `api.opendaw.studio/soundfonts/list.json` (CORS error in dev). The SDK declares `soundfontService` in `ProjectEnv` but never reads it internally (verified in 0.0.128), so we pass a Proxy guard that throws a clear error if a future SDK version accesses it. None of the demos use soundfont instruments (MIDI demo uses Vaporisateur built-in synth).
 - **0.0.124 — RecordingWorklet.sampleService**: No action needed — `CaptureAudio.prepareRecording()` injects it automatically from ProjectEnv.
-- **0.0.126 — PeaksPainter**: Renamed `renderBlocks()` → `renderPixelStrips()` in 3 files (same signature). **Note:** After upgrading, clear the Vite dep cache (`rm -rf node_modules/.vite`) or the dev server will serve the old pre-bundled SDK with `renderBlocks`.
+- **0.0.126 — PeaksPainter**: Replaced `renderBlocks()` with `renderPixelStrips()` — new signature uses `(context, peaks, channel, { x0, x1, y0, y1, u0, u1, v0, v1 })` options object instead of positional args. **Note:** After upgrading, clear the Vite dep cache (`rm -rf node_modules/.vite`) or the dev server will serve the old pre-bundled SDK.
 - **0.0.126 — RegionRenderer**: Not used in this project — no action needed.
 
 ### No Action Needed
