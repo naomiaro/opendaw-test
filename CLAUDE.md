@@ -315,7 +315,7 @@ Events at absolute positions will fall outside the region duration and never tri
 Canvas rendering of automation curves must use `Curve.normalizedAt(t, slope)` from `@opendaw/lib-std`,
 not quadratic bezier approximations. The SDK uses an exponential formula:
 `(p²)/(1-2p) * (((1-p)/p)^(2x) - 1)` (Möbius-Ease) — visually different from bezier.
-Slope semantics: 0.75 = logarithmic/round (slow start, steep end), 0.25 = inverse.
+Slope semantics: 0.75 = steep start, flat end (logarithmic feel); 0.25 = flat start, steep end.
 For a round swell: use Curve(0.75) rising, Curve(0.25) falling.
 
 ### EffectBox Is a Union Type

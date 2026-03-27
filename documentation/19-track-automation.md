@@ -119,9 +119,9 @@ The curve interpolation uses an exponential formula from `@opendaw/lib-std`:
 import { Curve } from "@opendaw/lib-std";
 
 // Curve.normalizedAt(x, slope) where x is 0..1 normalized position
-// slope < 0.5 → logarithmic (steep start, flat end)
+// slope < 0.5 → flat start, steep end (exponential feel)
 // slope = 0.5 → linear (equivalent to Interpolation.Linear)
-// slope > 0.5 → exponential (flat start, steep end)
+// slope > 0.5 → steep start, flat end (logarithmic feel)
 ```
 
 The actual formula:
@@ -151,13 +151,13 @@ for (let s = 1; s <= segments; s++) {
 
 | Slope | Shape | Use Case |
 |-------|-------|----------|
-| 0.25 | Logarithmic (steep start, flat end) | Fade out, natural decay |
+| 0.25 | Flat start, steep end (exponential feel) | Fade in from silence |
 | 0.50 | Linear (becomes `Interpolation.Linear`) | Even ramps |
-| 0.75 | Exponential (flat start, steep end) | Fade in, swell rise |
+| 0.75 | Steep start, flat end (logarithmic feel) | Fade out, natural decay |
 
 For a **round swell** (smooth hill shape):
-- Rise: `Curve(0.75)` — slow start, accelerates to peak
-- Fall: `Curve(0.25)` — fast departure from peak, decelerates
+- Rise: `Curve(0.75)` — steep start, decelerates toward peak
+- Fall: `Curve(0.25)` — slow departure from peak, accelerates drop
 
 ## Clearing and Replacing Automation Events
 

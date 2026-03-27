@@ -146,7 +146,7 @@ const TRACK_CONFIGS: AutomationTrackConfig[] = [
     color: "#a855f7",
     yLabels: [
       { value: 1.0, label: "0 dB" },
-      { value: 0.5, label: "-6 dB" },
+      { value: 0.5, label: "-12 dB" },
       { value: 0.0, label: "-inf" }
     ],
     presets: volumePresets
@@ -178,7 +178,7 @@ const TRACK_CONFIGS: AutomationTrackConfig[] = [
 // ─── Helper: Apply Automation Events to a Track ─────────────────────────
 
 function applyAutomationEvents(project: Project, trackBox: TrackBox, events: AutomationEvent[]): void {
-  // First, find and clear existing regions on this track
+  // Snapshot existing regions BEFORE creating new ones
   const boxes = project.boxGraph.boxes();
   const existingRegions = boxes.filter(
     (box: any) =>
@@ -187,29 +187,22 @@ function applyAutomationEvents(project: Project, trackBox: TrackBox, events: Aut
       box.regions.targetVertex.unwrap().box === trackBox
   );
 
-  project.editing.modify(() => {
-    for (const region of existingRegions) {
-      // Clear events inside this region
-      const adapter = project.boxAdapters.adapterFor(region, ValueRegionBoxAdapter);
-      const collectionOpt = adapter.optCollection;
-      if (collectionOpt.nonEmpty()) {
-        const collection = collectionOpt.unwrap();
-        collection.events.asArray().forEach((evt: any) => evt.box.delete());
-      }
-      region.delete();
-    }
-  });
-
-  // Create a new region at the playback start position
+  // Create new region first (don't delete old ones until this succeeds)
+  let newRegionCreated = false;
   project.editing.modify(() => {
     const regionOpt = project.api.createTrackRegion(trackBox, PLAYBACK_START, TOTAL_PPQN as ppqn);
-    if (regionOpt.isEmpty()) return;
+    if (regionOpt.isEmpty()) {
+      console.warn("Failed to create automation region");
+      return;
+    }
     const regionBox = regionOpt.unwrap() as ValueRegionBox;
 
-    // Get the adapter and collection to create events
     const adapter = project.boxAdapters.adapterFor(regionBox, ValueRegionBoxAdapter);
     const collectionOpt = adapter.optCollection;
-    if (collectionOpt.isEmpty()) return;
+    if (collectionOpt.isEmpty()) {
+      console.warn("Failed to get event collection from automation region");
+      return;
+    }
     const collection = collectionOpt.unwrap();
 
     // Event positions are LOCAL to the region (0 to duration)
@@ -221,7 +214,22 @@ function applyAutomationEvents(project: Project, trackBox: TrackBox, events: Aut
         interpolation: evt.interpolation
       });
     }
+    newRegionCreated = true;
   });
+
+  // Only delete old regions after new one was successfully created
+  if (newRegionCreated && existingRegions.length > 0) {
+    project.editing.modify(() => {
+      for (const region of existingRegions) {
+        const adapter = project.boxAdapters.adapterFor(region, ValueRegionBoxAdapter);
+        const collectionOpt = adapter.optCollection;
+        if (collectionOpt.nonEmpty()) {
+          collectionOpt.unwrap().events.asArray().forEach((evt: any) => evt.box.delete());
+        }
+        region.delete();
+      }
+    });
+  }
 }
 
 // ─── Helper: Convert Events to JSON for Server Persistence ──────────────
@@ -272,6 +280,7 @@ const AutomationCanvas: React.FC<AutomationCanvasProps> = ({ events, color, yLab
     const dpr = window.devicePixelRatio || 1;
     const width = canvas.clientWidth;
     const height = CANVAS_HEIGHT;
+    if (width <= 0 || height <= 0) return;
     canvas.width = width * dpr;
     canvas.height = height * dpr;
     ctx.scale(dpr, dpr);
@@ -554,96 +563,116 @@ const App: React.FC = () => {
     let cancelled = false;
 
     async function init() {
-      setStatus("Initializing audio engine...");
+      try {
+        setStatus("Initializing audio engine...");
 
-      const localAudioBuffers = new Map<string, AudioBuffer>();
+        const localAudioBuffers = new Map<string, AudioBuffer>();
 
-      const { project: newProject, audioContext } = await initializeOpenDAW({
-        localAudioBuffers,
-        bpm: BPM,
-        onStatusUpdate: setStatus
-      });
-
-      if (cancelled) return;
-
-      projectRef.current = newProject;
-      audioContextRef.current = audioContext;
-      setProject(newProject);
-
-      // Load guitar track
-      setStatus("Loading audio track...");
-
-      const ext = getAudioExtension();
-      const tracks = await loadTracksFromFiles(
-        newProject,
-        audioContext,
-        [{ name: "Guitar", file: `/audio/DarkRide/04_ElecGtrs.${ext}` }],
-        localAudioBuffers
-      );
-
-      if (cancelled || tracks.length === 0) return;
-
-      const { audioUnitBox } = tracks[0];
-      audioUnitBoxRef.current = audioUnitBox;
-      setTargetUnitId(UUID.toString(audioUnitBox.address.uuid));
-
-      // Trim the audio region: position at bar 17, read from bar 17 of audio, 8 bars long
-      const boxes = newProject.boxGraph.boxes();
-      const audioRegion = boxes.find(
-        (box: any) => box instanceof AudioRegionBox && box.label?.getValue?.() === "Guitar"
-      );
-      if (audioRegion) {
-        newProject.editing.modify(() => {
-          (audioRegion as AudioRegionBox).position.setValue(PLAYBACK_START);
-          (audioRegion as AudioRegionBox).duration.setValue(TOTAL_PPQN);
-          (audioRegion as AudioRegionBox).loopOffset.setValue(PLAYBACK_START);
+        const { project: newProject, audioContext } = await initializeOpenDAW({
+          localAudioBuffers,
+          bpm: BPM,
+          onStatusUpdate: setStatus
         });
-      }
 
-      // Insert a Reverb effect with exaggerated settings for demo
-      setStatus("Setting up automation tracks...");
-      let reverbBox: ReverbDeviceBox = null!;
-      newProject.editing.modify(() => {
-        const effectBox = newProject.api.insertEffect(audioUnitBox.audioEffects, EffectFactories.Reverb);
-        reverbBox = effectBox as ReverbDeviceBox;
-        // Large hall: long decay, low damping, noticeable wet level
-        reverbBox.decay.setValue(0.85);     // long tail (0-1)
-        reverbBox.preDelay.setValue(0.03);  // 30ms pre-delay
-        reverbBox.damp.setValue(0.3);       // low damping = brighter
-        reverbBox.wet.setValue(-6);         // -6 dB wet (loud enough to hear)
-        reverbBox.dry.setValue(0);          // 0 dB dry
-      });
-      reverbDeviceBoxRef.current = reverbBox;
+        if (cancelled) return;
 
-      // Create 3 automation tracks: volume, pan, reverb wet
-      const automationTargets = [audioUnitBox.volume, audioUnitBox.panning, reverbBox.wet];
+        projectRef.current = newProject;
+        audioContextRef.current = audioContext;
+        setProject(newProject);
 
-      const trackBoxes: TrackBox[] = [];
-      for (const target of automationTargets) {
-        let trackBox: TrackBox | null = null;
+        // Load guitar track
+        setStatus("Loading audio track...");
+
+        const ext = getAudioExtension();
+        const tracks = await loadTracksFromFiles(
+          newProject,
+          audioContext,
+          [{ name: "Guitar", file: `/audio/DarkRide/04_ElecGtrs.${ext}` }],
+          localAudioBuffers
+        );
+
+        if (cancelled) return;
+        if (tracks.length === 0) {
+          setStatus("Error: Failed to load audio track. Check the browser console.");
+          return;
+        }
+
+        const { audioUnitBox } = tracks[0];
+        audioUnitBoxRef.current = audioUnitBox;
+        setTargetUnitId(UUID.toString(audioUnitBox.address.uuid));
+
+        // Trim the audio region: position at bar 17, read from bar 17 of audio, 8 bars long
+        const boxes = newProject.boxGraph.boxes();
+        const audioRegion = boxes.find(
+          (box: any) => box instanceof AudioRegionBox && box.label?.getValue?.() === "Guitar"
+        );
+        if (audioRegion) {
+          newProject.editing.modify(() => {
+            (audioRegion as AudioRegionBox).position.setValue(PLAYBACK_START);
+            (audioRegion as AudioRegionBox).duration.setValue(TOTAL_PPQN);
+            (audioRegion as AudioRegionBox).loopOffset.setValue(PLAYBACK_START);
+          });
+        } else {
+          console.warn('Could not find AudioRegionBox with label "Guitar" — audio may play from wrong position');
+        }
+
+        // Insert a Reverb effect with exaggerated settings for demo
+        setStatus("Setting up automation tracks...");
+        let reverbBox: ReverbDeviceBox | null = null;
         newProject.editing.modify(() => {
-          trackBox = newProject.api.createAutomationTrack(audioUnitBox, target);
+          const effectBox = newProject.api.insertEffect(audioUnitBox.audioEffects, EffectFactories.Reverb);
+          reverbBox = effectBox as ReverbDeviceBox;
+          // Large hall: long decay, low damping, noticeable wet level
+          reverbBox.decay.setValue(0.85);     // long tail (0-1)
+          reverbBox.preDelay.setValue(0.03);  // 30ms pre-delay
+          reverbBox.damp.setValue(0.3);       // low damping = brighter
+          reverbBox.wet.setValue(-6);         // -6 dB wet (loud enough to hear)
+          reverbBox.dry.setValue(0);          // 0 dB dry
         });
-        if (trackBox) {
-          trackBoxes.push(trackBox);
+        if (!reverbBox) {
+          throw new Error("Failed to create Reverb effect");
+        }
+        reverbDeviceBoxRef.current = reverbBox;
+
+        // Create 3 automation tracks: volume, pan, reverb wet
+        const automationTargets = [audioUnitBox.volume, audioUnitBox.panning, reverbBox.wet];
+
+        const trackBoxes: TrackBox[] = [];
+        for (let i = 0; i < automationTargets.length; i++) {
+          let trackBox: TrackBox | null = null;
+          newProject.editing.modify(() => {
+            trackBox = newProject.api.createAutomationTrack(audioUnitBox, automationTargets[i]);
+          });
+          if (trackBox) {
+            trackBoxes.push(trackBox);
+          } else {
+            console.warn(`Failed to create automation track for ${TRACK_CONFIGS[i].parameterName}`);
+          }
+        }
+
+        automationTrackBoxesRef.current = trackBoxes;
+
+        // Apply default preset for volume only (one automation at a time)
+        if (trackBoxes[0]) {
+          applyAutomationEvents(newProject, trackBoxes[0], TRACK_CONFIGS[0].presets[0].events);
+        }
+
+        // Set loop area to bar 17–25 and position engine at bar 17
+        newProject.editing.modify(() => {
+          newProject.timelineBox.loopArea.from.setValue(PLAYBACK_START);
+          newProject.timelineBox.loopArea.to.setValue(PLAYBACK_END);
+          newProject.timelineBox.loopArea.enabled.setValue(true);
+        });
+        newProject.engine.setPosition(PLAYBACK_START);
+
+        setStatus("Ready");
+        setIsReady(true);
+      } catch (error) {
+        console.error("Track automation demo initialization failed:", error);
+        if (!cancelled) {
+          setStatus(`Error: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
-
-      automationTrackBoxesRef.current = trackBoxes;
-
-      // Apply default preset for volume only (one automation at a time)
-      applyAutomationEvents(newProject, trackBoxes[0], TRACK_CONFIGS[0].presets[0].events);
-
-      // Set loop area to bar 17–25 and position engine at bar 17
-      newProject.editing.modify(() => {
-        newProject.timelineBox.loopArea.from.setValue(PLAYBACK_START);
-        newProject.timelineBox.loopArea.to.setValue(PLAYBACK_END);
-        newProject.timelineBox.loopArea.enabled.setValue(true);
-      });
-      newProject.engine.setPosition(PLAYBACK_START);
-
-      setStatus("Ready");
-      setIsReady(true);
     }
 
     init();
@@ -706,42 +735,52 @@ const App: React.FC = () => {
     const ac = audioContextRef.current;
     if (!p || !ac) return;
 
-    // Stop if currently playing
-    if (isPlaying) {
-      p.engine.stop(true);
-    }
+    try {
+      // Stop if currently playing
+      if (isPlaying) {
+        p.engine.stop(true);
+      }
 
-    // Ensure AudioContext is running
-    if (ac.state !== "running") {
-      await ac.resume();
+      // Ensure AudioContext is running (with 5s timeout for iOS)
       if (ac.state !== "running") {
-        await new Promise<void>(resolve => {
-          const handler = () => {
-            if (ac.state === "running") {
-              ac.removeEventListener("statechange", handler);
-              resolve();
-            }
-          };
-          ac.addEventListener("statechange", handler);
-        });
+        await ac.resume();
+        if (ac.state !== "running") {
+          await Promise.race([
+            new Promise<void>(resolve => {
+              const handler = () => {
+                if (ac.state === "running") {
+                  ac.removeEventListener("statechange", handler);
+                  resolve();
+                }
+              };
+              ac.addEventListener("statechange", handler);
+            }),
+            new Promise<void>((_, reject) =>
+              setTimeout(() => reject(new Error("AudioContext failed to resume within 5 seconds")), 5000)
+            ),
+          ]);
+        }
       }
-    }
 
-    // Clear automation from all other sections
-    for (let i = 0; i < TRACK_CONFIGS.length; i++) {
-      if (i !== sectionIndex) {
-        clearAutomationForSection(i);
+      // Clear automation from all other sections
+      for (let i = 0; i < TRACK_CONFIGS.length; i++) {
+        if (i !== sectionIndex) {
+          clearAutomationForSection(i);
+        }
       }
+
+      // Ensure the active section's automation is applied
+      const trackBox = automationTrackBoxesRef.current[sectionIndex];
+      const presetIndex = activePresets[sectionIndex];
+      applyAutomationEvents(p, trackBox, TRACK_CONFIGS[sectionIndex].presets[presetIndex].events);
+
+      setPlayingSectionIndex(sectionIndex);
+      p.engine.setPosition(PLAYBACK_START);
+      p.engine.play();
+    } catch (error) {
+      console.error("Failed to start playback:", error);
+      setPlayingSectionIndex(null);
     }
-
-    // Ensure the active section's automation is applied
-    const trackBox = automationTrackBoxesRef.current[sectionIndex];
-    const presetIndex = activePresets[sectionIndex];
-    applyAutomationEvents(p, trackBox, TRACK_CONFIGS[sectionIndex].presets[presetIndex].events);
-
-    setPlayingSectionIndex(sectionIndex);
-    p.engine.setPosition(PLAYBACK_START);
-    p.engine.play();
   };
 
   const handleStop = () => {
