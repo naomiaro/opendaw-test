@@ -565,6 +565,9 @@ Effects use a 3-layer chain: Box (raw storage) → Adapter (UI mapping) → Proc
 - AudioUnit `VolumeMapper`: `decibel(-96, -9, +6)` — different range, unitValue 0.0 = -inf, 1.0 = +6 dB
 - Automation values (unitValue 0-1) go through ValueMapping before reaching the processor:
   `AutomatableParameterFieldAdapter.valueAt()` calls `valueMapping.y(unitValue)` to convert to dB/raw
+- Convert dB ↔ unitValue: `AudioUnitBoxAdapter.VolumeMapper.x(0)` → unitValue for 0 dB (~0.734);
+  `.y(0.5)` → -9 dB. Import `AudioUnitBoxAdapter` from `@opendaw/studio-adapters`.
+  For effects: `ValueMapping.DefaultDecibel` from `@opendaw/lib-std`.
 - To verify parameter ranges, audit all 3 layers: schema (Box), adapter (ValueMapping), and processor (how value is consumed)
 
 ## React Integration Tips
