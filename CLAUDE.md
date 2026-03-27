@@ -154,7 +154,7 @@ subs.push(trackSub);
 
 ### SoundfontService (Disabled via Proxy Guard)
 - `SoundfontService` constructor auto-fetches `api.opendaw.studio/soundfonts/list.json` (CORS error in dev)
-- SDK declares `soundfontService` in `ProjectEnv` but never reads it (verified in 0.0.128)
+- SDK declares `soundfontService` in `ProjectEnv` but never reads it (verified in 0.0.129)
 - We pass a Proxy that throws a clear error if a future SDK version accesses it
 - None of the demos use soundfont instruments (MIDI demo uses Vaporisateur built-in synth)
 
@@ -320,9 +320,32 @@ For a round swell: use Curve(0.75) rising, Curve(0.25) falling.
 
 ### EffectBox Is a Union Type
 `project.api.insertEffect()` returns `EffectBox` which is a union of device box types
-(`ReverbDeviceBox | CompressorDeviceBox | ...`), not a wrapper. Cast directly:
+(`ReverbDeviceBox | CompressorDeviceBox | WerkstattDeviceBox | SpielwerkDeviceBox | ...`), not a wrapper. Cast directly:
 `const reverbBox = effectBox as ReverbDeviceBox;`
 Automatable fields: `reverbBox.wet`, `reverbBox.dry`, etc.
+
+### WavFile Moved to lib-dsp (SDK 0.0.129+)
+`WavFile` was removed from `@opendaw/studio-core` and moved to `@opendaw/lib-dsp`.
+```typescript
+// Before (0.0.128)
+import { WavFile } from "@opendaw/studio-core";
+// After (0.0.129)
+import { WavFile } from "@opendaw/lib-dsp";
+```
+Now supports 24-bit PCM WAV decoding in addition to 16-bit PCM and 32-bit float.
+
+### Scriptable Devices (SDK 0.0.129+)
+Three new scriptable device types powered by `ScriptCompiler`:
+- **Apparat** — scriptable instrument (`InstrumentFactories.Apparat`), accepts MIDI, runs JS DSP
+- **Werkstatt** — scriptable audio effect (`EffectFactories.Werkstatt`), runs JS audio DSP
+- **Spielwerk** — scriptable MIDI effect (`EffectFactories.Spielwerk`), processes MIDI via JS
+All use `// @param` and `// @sample` comment declarations in code for parameters/samples.
+Box types: `ApparatDeviceBox`, `WerkstattDeviceBox`, `SpielwerkDeviceBox`.
+
+### Effect Display Name Changes (SDK 0.0.129+)
+- `EffectFactories.Reverb` display name changed from "Cheap Reverb" to "Free Reverb" (API name unchanged)
+- `EffectFactories.NeuralAmp` display name changed to "Tone3000" (`IconSymbol.Tone3000`)
+- `EffectFactories.AudioNamed` now alphabetically ordered; `includeNeuralAmp` flag removed
 
 ### Timeline and Loop Area
 ```typescript
@@ -452,7 +475,7 @@ project.editing.modify(() => {
 });
 // startRecording() will find and arm this instrument's CaptureMidiBox
 ```
-Available MIDI instruments: `Vaporisateur` (synth), `Soundfont` (sf2 player), `Nano` (sampler), `Playfield` (drums).
+Available MIDI instruments: `Vaporisateur` (synth), `Soundfont` (sf2 player), `Nano` (sampler), `Playfield` (drums), `Apparat` (scriptable DSP).
 
 ### Region Sorting When Positions Match
 When regions share the same position, sort by label for deterministic ordering:
@@ -695,4 +718,5 @@ See `src/looping-demo.tsx` for the reference layout pattern.
 - Effects research docs: `documentation/effects-research/` (parameter tables, code examples, architecture)
 - Box subscription lifecycle: `documentation/18-box-subscriptions-lifecycle.md` (pointerHub API, reactive patterns, cleanup)
 - SDK 0.0.119→0.0.128 changelog: `documentation/sdk-0.0.119-to-0.0.128-changes.md`
+- SDK 0.0.128→0.0.129 changelog: `documentation/sdk-0.0.128-to-0.0.129-changes.md`
 - OpenDAW source code locations: see `.claude/local.md`

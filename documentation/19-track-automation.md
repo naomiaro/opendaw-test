@@ -322,6 +322,110 @@ Key differences:
 - Tempo uses `tempoTrackEvents` accessor; track automation uses `createAutomationTrack` + `createTrackRegion`
 - Tempo values are BPM; track automation values are unitValue (0..1)
 
+## Live Automation Recording (SDK 0.0.129+)
+
+The SDK supports recording parameter changes in real-time during playback. When a user interacts with an automatable parameter (e.g., drags a volume fader) while recording, the engine captures those movements as `ValueEventBox` entries inside a `ValueRegionBox` on an automation track.
+
+### Automation Modes
+
+```typescript
+type AutomationMode = "read" | "touch" | "latch"
+```
+
+| Mode | Behavior |
+|------|----------|
+| **Read** | Parameter follows existing automation. User input ignored during recording. |
+| **Touch** | User interaction overrides and records. On release, returns to automated value. |
+| **Latch** | Like touch, but holds the last value after release instead of returning. |
+
+**Current state:** Only touch mode has behavioral implementation. Latch and read have type definitions and storage (`setMode`/`getMode` on `ParameterFieldAdapters`) but `getMode()` is never called — no behavioral distinction yet. The plan documents state mode differentiation is a separate implementation step.
+
+### How Touch Recording Works
+
+The recording flow uses a "touch" metaphor — the user presses (touches) a parameter control, moves it, then releases:
+
+1. **Touch start** — `adapter.touchStart()` marks the parameter as "touched" and emits the current value
+2. **Value changes** — each `setValue()` call triggers `notifyWrite()`, which `RecordAutomation` captures as events at the current timeline position
+3. **Touch end** — `adapter.touchEnd()` finalizes the automation region (sets duration, adds hold event, runs simplification)
+
+In the OpenDAW app, every automatable knob/slider is wrapped in an `AutomationControl` component that binds `pointerdown` → `touchStart()` and `pointerup` → `touchEnd()`.
+
+### Enabling Automation Recording
+
+Automation recording is controlled by a recording preference (default: `true`):
+
+```typescript
+project.engine.preferences.settings.recording.automationEnabled = true;
+```
+
+When enabled, `Recording.start()` subscribes `RecordAutomation` to parameter write events. Only parameters that are "touched" (via `touchStart()`) are recorded — untouched parameter changes are ignored.
+
+### Programmatic API
+
+The touch/record cycle can be driven programmatically without UI:
+
+```typescript
+// 1. Get the AutomatableParameterFieldAdapter for a parameter
+//    (created by device box adapters, e.g., AudioUnitBoxAdapter for .volume)
+const adapter: AutomatableParameterFieldAdapter = /* ... */;
+
+// 2. Register tracks so RecordAutomation can find/create automation tracks
+adapter.registerTracks(audioUnitTracks);
+
+// 3. Start recording
+await project.startRecording(false);
+
+// 4. Simulate "touching" the parameter
+adapter.touchStart();
+
+// 5. Change the value over time
+project.editing.modify(() => adapter.setUnitValue(0.3));
+// ... time passes (AnimationFrame, setTimeout, etc.) ...
+project.editing.modify(() => adapter.setUnitValue(0.7));
+
+// 6. Release the "touch" — finalizes the automation region
+adapter.touchEnd();
+
+// 7. Stop recording
+project.engine.stopRecording();
+```
+
+### Post-Recording Simplification
+
+After `touchEnd()`, the engine runs a Ramer-Douglas-Peucker simplifier (epsilon = 0.01) on the recorded events to remove redundant linear points. This reduces event count while preserving the automation curve shape.
+
+### Loop Recording
+
+During loop recording, `RecordAutomation` handles loop-wrap detection. When the transport wraps past the loop end:
+- Active recordings are finalized (duration set to loop boundary)
+- New regions are created for the next loop pass
+- The simplifier runs on the completed region
+
+### Key Types and APIs
+
+```typescript
+import { AutomationMode } from "@opendaw/studio-adapters";
+
+// ParameterFieldAdapters (on project context)
+parameterFieldAdapters.touchStart(address)      // Mark parameter as touched
+parameterFieldAdapters.touchEnd(address)        // Release touch, finalize recording
+parameterFieldAdapters.isTouched(address)       // Check if currently touched
+parameterFieldAdapters.setMode(address, mode)   // Set automation mode (infrastructure only)
+parameterFieldAdapters.getMode(address)         // Get automation mode (not yet used by engine)
+parameterFieldAdapters.registerTracks(address, tracks)  // Register tracks for recording
+parameterFieldAdapters.subscribeTouchEnd(observer)      // Observe touch-end events
+```
+
+### Standalone Demo (Future)
+
+A standalone automation recording demo could show:
+- Live parameter recording during playback (volume fade via programmatic touch)
+- Visualizing recorded events on a canvas after recording stops
+- Comparing hand-drawn automation curves vs preset curves
+- Loop recording with automation overdubs
+
+This would complement the existing track-automation-demo which creates automation events purely through code.
+
 ## Reference
 
 - Demo: `src/track-automation-demo.tsx`
@@ -329,4 +433,6 @@ Key differences:
 - SDK interpolation: `@opendaw/lib-dsp` → `value.ts` → `interpolate()`
 - SDK region mapping: `@opendaw/lib-dsp` → `events.ts` → `LoopableRegion.globalToLocal`
 - SDK adapter: `@opendaw/studio-adapters` → `ValueRegionBoxAdapter`, `ValueEventCollectionBoxAdapter`
+- SDK automation recording: `@opendaw/studio-core` → `capture/RecordAutomation.ts`
+- SDK touch management: `@opendaw/studio-adapters` → `ParameterFieldAdapters.ts`, `AutomatableParameterFieldAdapter.ts`
 - Effect parameter docs: `documentation/effects-research/01-effect-types.md`

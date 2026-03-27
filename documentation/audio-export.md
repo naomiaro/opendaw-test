@@ -124,10 +124,10 @@ const audioBuffer = await AudioOfflineRenderer.start(
 
 ### WavFile
 
-WAV file encoding/decoding from `@opendaw/studio-core`:
+WAV file encoding/decoding from `@opendaw/lib-dsp` (moved from `studio-core` in SDK 0.0.129):
 
 ```typescript
-import { WavFile } from "@opendaw/studio-core";
+import { WavFile } from "@opendaw/lib-dsp";
 
 // Convert AudioBuffer to WAV ArrayBuffer
 const wavArrayBuffer = WavFile.encodeFloats(audioBuffer);
@@ -137,8 +137,10 @@ const audio = WavFile.decodeFloats(arrayBuffer);
 // Returns: { channels: Float32Array[], sampleRate: number, numFrames: number }
 ```
 
-**Supported Format:**
+**Supported Formats:**
 - 32-bit IEEE float
+- 24-bit PCM (SDK 0.0.129+)
+- 16-bit PCM
 - Stereo or mono
 - Lossless quality
 
@@ -1070,7 +1072,7 @@ This is **not a bug** - it's intentional data integrity checking to prevent temp
 ### OpenDAW Core Files
 
 - **Offline Renderer:** `@opendaw/studio-core/AudioOfflineRenderer.ts`
-- **WAV Encoding:** `@opendaw/studio-core/WavFile.ts`
+- **WAV Encoding:** `@opendaw/lib-dsp/WavFile.ts`
 - **Mixdowns Service:** `@opendaw/studio/service/Mixdowns.ts`
 - **Engine Integration:** `@opendaw/studio-core-processors/EngineProcessor.ts`
 

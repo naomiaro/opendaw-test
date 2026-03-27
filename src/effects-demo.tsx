@@ -400,15 +400,15 @@ const App: React.FC = () => {
           <Flex direction="column" gap="3">
             <Heading size="8">OpenDAW Effects Demo</Heading>
             <Text size="4" color="gray">
-              Multi-track mixer featuring DarkRide stems with professional audio effects (Reverb, Delay, Lo-Fi Crusher,
-              Compressor, Stereo Width)
+              Multi-track mixer featuring DarkRide stems with 10 professional audio effects (Reverb, Dattorro Reverb,
+              Compressor, EQ, Delay, Lo-Fi Crusher, Wavefolder, Stereo Width, Tidal LFO, Maximizer)
             </Text>
           </Flex>
 
           {/* Info callout */}
           <Callout.Root color="blue">
             <Callout.Text>
-              💡 This demo shows OpenDAW's mixer controls and professional audio effects with all 7 unmastered tracks
+              💡 This demo shows OpenDAW's mixer controls and 10 professional audio effects with all 7 unmastered tracks
               from Dark Ride's 'Deny Control'. Each track has independent volume, pan, mute, and solo controls. Add
               studio-quality effects to individual tracks (Compressors to tighten Drums/Bass, Reverb + Compressor on
               Vocals, Delay on Guitar Lead, Lo-Fi Crusher for creative effects) or the master output (Compressor for mix
@@ -639,7 +639,7 @@ const App: React.FC = () => {
                 </Text>
                 <Separator size="1" />
                 <Text size="2" weight="bold">
-                  Available Effects (7 Total):
+                  Available Effects (10 Total):
                 </Text>
                 <Text size="2">
                   • <strong>Reverb:</strong> Space simulation with decay, pre-delay, and damping controls
@@ -663,6 +663,15 @@ const App: React.FC = () => {
                 </Text>
                 <Text size="2">
                   • <strong>Stereo Width:</strong> Stereo imaging with width, panning, and phase controls
+                </Text>
+                <Text size="2">
+                  • <strong>Dattorro Reverb:</strong> High-quality plate reverb with modulation and diffusion controls
+                </Text>
+                <Text size="2">
+                  • <strong>Tidal LFO:</strong> Tempo-synced amplitude modulation, tremolo, and auto-pan
+                </Text>
+                <Text size="2">
+                  • <strong>Maximizer:</strong> Brick-wall limiter for loudness maximization and peak control
                 </Text>
                 <Separator size="1" />
                 <Text size="2" weight="bold">

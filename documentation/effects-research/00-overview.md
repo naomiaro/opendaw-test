@@ -64,12 +64,20 @@ OpenDAW provides a comprehensive audio effects system with both **MIDI Effects**
    - Connect modules together
    - Create custom signal processors
 
+12. **Werkstatt** - Scriptable audio effect (SDK 0.0.129+)
+    - User-written JavaScript DSP code
+    - Uses `// @param` and `// @sample` comment declarations for parameters
+    - Custom audio signal processing
+
 ### MIDI Effects (Process and transform MIDI note data)
 
 1. **Arpeggio** - Rhythmic note sequence generation
 2. **Pitch** - MIDI note pitch shifting
 3. **Velocity** - MIDI velocity manipulation
 4. **Zeitgeist** - Time/groove distortion
+5. **Spielwerk** - Scriptable MIDI effect (SDK 0.0.129+)
+   - User-written JavaScript MIDI processing
+   - Uses `// @param` comment declarations for parameters
 
 ## Architecture Overview
 

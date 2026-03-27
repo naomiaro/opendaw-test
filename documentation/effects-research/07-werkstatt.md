@@ -1,0 +1,245 @@
+# Werkstatt - Scriptable Audio Effect
+
+Werkstatt is a scriptable audio effect that lets users write custom DSP code in plain JavaScript. The code runs inside an AudioWorklet. Users define a `Processor` class with a `process()` method that receives stereo audio buffers and outputs processed audio sample by sample.
+
+**WASM is not supported.** The SDK design doc states WASM compilation is a future possibility but is not implemented. Werkstatt is JavaScript only.
+
+## Factory Reference
+
+```typescript
+import { EffectFactories } from "@opendaw/studio-core";
+
+const effectBox = project.api.insertEffect(audioUnitBox.audioEffects, EffectFactories.Werkstatt);
+const werkstattBox = effectBox as WerkstattDeviceBox;
+```
+
+- `defaultName`: "Werkstatt"
+- `defaultIcon`: `IconSymbol.Code`
+- `briefDescription`: "Scriptable FX"
+- `external`: false
+- `type`: "audio"
+
+## Box Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| code | string | JavaScript source code (with compiled header prepended) |
+| parameters | pointer collection | `WerkstattParameterBox` instances from `// @param` declarations |
+| samples | pointer collection | `WerkstattSampleBox` instances from `// @sample` declarations |
+
+Parameters are fully automatable (same automation system as built-in effects).
+
+## User Processor API
+
+The user must define a `class Processor` with a `process(io, block)` method:
+
+```javascript
+class Processor {
+    // REQUIRED: Called every audio block
+    process({src, out}, {s0, s1}) {
+        const [srcL, srcR] = src
+        const [outL, outR] = out
+        for (let i = s0; i < s1; i++) {
+            outL[i] = srcL[i]
+            outR[i] = srcR[i]
+        }
+    }
+
+    // OPTIONAL: Called when a @param knob changes
+    paramChanged(label, value) { }
+}
+```
+
+### `io` Object
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `src` | `ReadonlyArray<Float32Array>` | `[leftInput, rightInput]` |
+| `out` | `ReadonlyArray<Float32Array>` | `[leftOutput, rightOutput]` |
+
+### `block` Object
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `s0` | number | First sample index (inclusive) |
+| `s1` | number | Last sample index (exclusive) |
+| `index` | number | Block counter |
+| `bpm` | number | Current tempo |
+| `p0` | number | Start position in PPQN (480 ppqn) |
+| `p1` | number | End position in PPQN |
+| `flags` | number | Bitmask: 1=transporting, 2=discontinuous, 4=playing, 8=bpmChanged |
+
+### Globals Available
+
+- `sampleRate` — the AudioContext sample rate
+
+## Parameter Declarations (`// @param`)
+
+Declare parameters with comments at the top of the script. Each declaration creates an automatable knob on the device panel.
+
+### Syntax
+
+```
+// @param <name> [default] [min max type [unit]]
+```
+
+### Forms
+
+| Declaration | Result |
+|---|---|
+| `// @param gain` | Unipolar 0-1, default 0 |
+| `// @param gain 0.5` | Unipolar 0-1, default 0.5 |
+| `// @param gain 0.5 0 1 linear` | Linear 0-1, default 0.5 |
+| `// @param time 500 1 2000` | Linear 1-2000, default 500 (auto-linear with 4 tokens) |
+| `// @param cutoff 1000 20 20000 exp Hz` | Exponential 20-20000, default 1000, unit "Hz" |
+| `// @param steps 4 1 16 int` | Integer 1-16, default 4 |
+| `// @param bypass false` | Boolean, default Off |
+| `// @param bypass true` | Boolean, default On |
+| `// @param bypass bool` | Boolean, default Off |
+
+### Mapping Types
+
+| Type | `paramChanged` receives | UI Display |
+|------|------------------------|------------|
+| *(none/unipolar)* | 0.0-1.0 | percent |
+| `linear` | min-max | 2 decimal places |
+| `exp` | min-max | 2 decimal places |
+| `int` | integer min-max | 0 decimal places |
+| `bool` | 0 or 1 | "On"/"Off" |
+
+## Sample Declarations (`// @sample`)
+
+```
+// @sample <name>
+```
+
+Creates a file picker drop zone on the device panel. Note: sample data is **not yet wired** to the Werkstatt processor — `@sample` is more fully realized in the Apparat instrument where `this.samples.<name>` provides audio data.
+
+## Safety Constraints
+
+- Code runs in an AudioWorklet thread — no DOM, no fetch, no setTimeout, no imports
+- Only `sampleRate` is available as a global
+- Must only read/write sample indices from `s0` to `s1` (exclusive)
+- **Never allocate memory inside `process()`** — no `new`, no array/object literals, no closures, no string concatenation (causes GC pauses)
+- Output validated every block: NaN or amplitude > 1000 (~60dB) silences the processor
+
+## Examples
+
+### Default — Simple Gain
+
+```javascript
+// @param gain 1.0
+
+class Processor {
+    gain = 0
+    paramChanged(label, value) {
+        if (label === "gain") this.gain = value
+    }
+    process({src, out}, {s0, s1}) {
+        const [srcL, srcR] = src
+        const [outL, outR] = out
+        for (let i = s0; i < s1; i++) {
+            outL[i] = srcL[i] * this.gain
+            outR[i] = srcR[i] * this.gain
+        }
+    }
+}
+```
+
+### Ring Modulator
+
+```javascript
+// @param frequency 440 20 20000 exp Hz
+// @param mix 0.5
+
+class Processor {
+    frequency = 440
+    mix = 0.5
+    phase = 0
+
+    paramChanged(label, value) {
+        if (label === "frequency") this.frequency = value
+        if (label === "mix") this.mix = value
+    }
+
+    process({src, out}, {s0, s1}) {
+        const [srcL, srcR] = src
+        const [outL, outR] = out
+        const phaseInc = this.frequency / sampleRate
+        for (let i = s0; i < s1; i++) {
+            const mod = Math.sin(this.phase * 2 * Math.PI)
+            this.phase = (this.phase + phaseInc) % 1.0
+            const wet = this.mix
+            const dry = 1 - wet
+            outL[i] = srcL[i] * dry + srcL[i] * mod * wet
+            outR[i] = srcR[i] * dry + srcR[i] * mod * wet
+        }
+    }
+}
+```
+
+### Biquad Lowpass Filter
+
+```javascript
+// @param cutoff 1000 20 20000 exp Hz
+// @param resonance 0.707 0.1 20 exp
+
+class Processor {
+    b0 = 0; b1 = 0; b2 = 0; a1 = 0; a2 = 0
+    xL1 = 0; xL2 = 0; yL1 = 0; yL2 = 0
+    xR1 = 0; xR2 = 0; yR1 = 0; yR2 = 0
+
+    paramChanged(label, value) {
+        if (label === "cutoff" || label === "resonance") this.recalc()
+    }
+
+    cutoff = 1000
+    resonance = 0.707
+
+    recalc() {
+        const w0 = 2 * Math.PI * this.cutoff / sampleRate
+        const alpha = Math.sin(w0) / (2 * this.resonance)
+        const cosw0 = Math.cos(w0)
+        const a0 = 1 + alpha
+        this.b0 = ((1 - cosw0) / 2) / a0
+        this.b1 = (1 - cosw0) / a0
+        this.b2 = this.b0
+        this.a1 = (-2 * cosw0) / a0
+        this.a2 = (1 - alpha) / a0
+    }
+
+    process({src, out}, {s0, s1}) {
+        const [srcL, srcR] = src
+        const [outL, outR] = out
+        for (let i = s0; i < s1; i++) {
+            const xL = srcL[i]
+            outL[i] = this.b0*xL + this.b1*this.xL1 + this.b2*this.xL2 - this.a1*this.yL1 - this.a2*this.yL2
+            this.xL2 = this.xL1; this.xL1 = xL; this.yL2 = this.yL1; this.yL1 = outL[i]
+            const xR = srcR[i]
+            outR[i] = this.b0*xR + this.b1*this.xR1 + this.b2*this.xR2 - this.a1*this.yR1 - this.a2*this.yR2
+            this.xR2 = this.xR1; this.xR1 = xR; this.yR2 = this.yR1; this.yR1 = outR[i]
+        }
+    }
+}
+```
+
+## Built-in Example Scripts (in SDK app)
+
+1. **Hard Clipper** — hard/soft clipping with threshold
+2. **Ring Modulator** — frequency-controlled ring modulation
+3. **Simple Delay** — time/feedback delay with pre-allocated buffers
+4. **Biquad Lowpass** — biquad filter with coefficient recalculation
+5. **Alienator** — multi-stage: chaos feedback, wavefolder, bitcrusher, decimator, ring mod
+6. **Beautifier** — mastering enhancer: warmth, air, punch, width, output gain
+
+## Source Code
+
+- Box: `/openDAW/packages/studio/forge-boxes/src/schema/devices/audio-effects/WerkstattDeviceBox.ts`
+- Parameter Box: `/openDAW/packages/studio/forge-boxes/src/schema/devices/audio-effects/WerkstattParameterBox.ts`
+- Sample Box: `/openDAW/packages/studio/forge-boxes/src/schema/devices/audio-effects/WerkstattSampleBox.ts`
+- Adapter: `/openDAW/packages/studio/adapters/src/devices/audio-effects/WerkstattDeviceBoxAdapter.ts`
+- Processor: `/openDAW/packages/studio/core-processors/src/devices/audio-effects/WerkstattDeviceProcessor.ts`
+- Compiler: `/openDAW/packages/studio/adapters/src/ScriptCompiler.ts`
+- Param Declarations: `/openDAW/packages/studio/adapters/src/ScriptParamDeclaration.ts`
+- Default Code: `/openDAW/packages/app/studio/src/ui/devices/audio-effects/werkstatt-default.js`
+- Examples: `/openDAW/packages/app/studio/src/ui/devices/audio-effects/examples/`

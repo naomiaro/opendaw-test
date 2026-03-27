@@ -193,18 +193,18 @@ export const CRUSHER_PRESETS: EffectPreset<CrusherParams>[] = [
   },
   {
     name: "AM Radio",
-    description: "Old radio or telephone sound",
-    params: { bits: 10, crush: 0.25, boost: 0, mix: 0.7 }
+    description: "Old radio or telephone sound with mid-range bite",
+    params: { bits: 10, crush: 0.25, boost: 4, mix: 0.7 }
   },
   {
     name: "8-bit Game",
-    description: "Retro video game sound",
-    params: { bits: 6, crush: 0.15, boost: 0, mix: 0.85 }
+    description: "Retro video game sound with punchy quantization",
+    params: { bits: 6, crush: 0.15, boost: 8, mix: 0.85 }
   },
   {
     name: "Destroyed",
-    description: "Extreme bit crushing and distortion",
-    params: { bits: 5, crush: 0.65, boost: 0, mix: 1.0 }
+    description: "Extreme bit crushing and distortion, fully driven",
+    params: { bits: 5, crush: 0.65, boost: 16, mix: 1.0 }
   },
   {
     name: "Vinyl Warmth",
@@ -213,18 +213,18 @@ export const CRUSHER_PRESETS: EffectPreset<CrusherParams>[] = [
   },
   {
     name: "Grungy",
-    description: "Heavy distortion with character",
-    params: { bits: 8, crush: 0.35, boost: 0, mix: 0.8 }
+    description: "Heavy distortion with aggressive character",
+    params: { bits: 8, crush: 0.35, boost: 10, mix: 0.8 }
   },
   {
     name: "Glitch",
-    description: "Digital artifacts and glitches",
-    params: { bits: 5, crush: 0.55, boost: 0, mix: 0.9 }
+    description: "Digital artifacts and glitches, hot signal",
+    params: { bits: 5, crush: 0.55, boost: 12, mix: 0.9 }
   },
   {
     name: "Tape Saturation",
-    description: "Warm tape-like saturation",
-    params: { bits: 13, crush: 0.07, boost: 0, mix: 0.5 }
+    description: "Warm tape-like saturation with gentle drive",
+    params: { bits: 13, crush: 0.07, boost: 3, mix: 0.5 }
   }
 ];
 
