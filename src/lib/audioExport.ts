@@ -7,7 +7,8 @@
  * - WAV format with 32-bit float encoding
  */
 
-import { Project, AudioOfflineRenderer, WavFile } from "@opendaw/studio-core";
+import { Project, AudioOfflineRenderer } from "@opendaw/studio-core";
+import { WavFile } from "@opendaw/lib-dsp";
 import { Errors, Option, Progress } from "@opendaw/lib-std";
 import type { ExportStemsConfiguration } from "@opendaw/studio-adapters";
 
