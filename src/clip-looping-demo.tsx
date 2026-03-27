@@ -7,6 +7,7 @@ import { AudioRegionBox } from "@opendaw/studio-boxes";
 import { PeaksPainter } from "@opendaw/lib-fusion";
 import type { Peaks } from "@opendaw/lib-fusion";
 import { UUID } from "@opendaw/lib-std";
+import { AnimationFrame } from "@opendaw/lib-dom";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { MoisesLogo } from "./components/MoisesLogo";
 import { BackLink } from "./components/BackLink";
@@ -137,17 +138,27 @@ const LoopedWaveformCanvas: React.FC<{
   playheadPosition: number;
   isPlaying: boolean;
 }> = ({ peaks, sampleRate, loopDuration, loopOffset, duration, fullAudioPpqn, playheadPosition, isPlaying }) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const waveformCanvasRef = useRef<HTMLCanvasElement>(null);
+  const playheadCanvasRef = useRef<HTMLCanvasElement>(null);
+  // Store mutable values in refs so the AnimationFrame callback reads live data
+  const playheadRef = useRef(playheadPosition);
+  const isPlayingRef = useRef(isPlaying);
+  const durationRef = useRef(duration);
+  playheadRef.current = playheadPosition;
+  isPlayingRef.current = isPlaying;
+  durationRef.current = duration;
 
+  // Waveform rendering — only re-renders when loop params or peaks change
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !peaks) return;
+    const canvas = waveformCanvasRef.current;
+    if (!canvas || !peaks || duration <= 0 || loopDuration <= 0 || fullAudioPpqn <= 0) return;
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     const dpr = window.devicePixelRatio || 1;
     const width = canvas.clientWidth;
+    if (width === 0) return;
     const height = CANVAS_HEIGHT;
     canvas.width = width * dpr;
     canvas.height = height * dpr;
@@ -158,13 +169,11 @@ const LoopedWaveformCanvas: React.FC<{
     ctx.fillRect(0, 0, width, height);
 
     const numFrames = peaks.numFrames;
-    const tileCount = loopDuration > 0 ? Math.ceil(duration / loopDuration) : 1;
+    const tileCount = Math.ceil(duration / loopDuration);
 
     // Compute frame ranges for loop content
-    const loopOffsetFrames = Math.floor((loopOffset / fullAudioPpqn) * numFrames);
-    const loopDurationFrames = Math.floor((loopDuration / fullAudioPpqn) * numFrames);
-    const u0 = loopOffsetFrames;
-    const u1 = u0 + loopDurationFrames;
+    const u0 = Math.floor((loopOffset / fullAudioPpqn) * numFrames);
+    const u1 = u0 + Math.floor((loopDuration / fullAudioPpqn) * numFrames);
 
     // Draw each tile
     for (let tile = 0; tile < tileCount; tile++) {
@@ -182,14 +191,13 @@ const LoopedWaveformCanvas: React.FC<{
       // Set waveform color before rendering — PeaksPainter uses the current fillStyle
       ctx.fillStyle = "#f59e0b";
 
-      // Render channel 0 (left) at full height
       PeaksPainter.renderPixelStrips(ctx, peaks, 0, {
         x0: tileStartX,
         x1: tileEndX,
         y0: 0,
         y1: height,
-        u0: Math.max(0, Math.min(peaks.numFrames, u0)),
-        u1: Math.max(0, Math.min(peaks.numFrames, u1)),
+        u0: Math.max(0, Math.min(numFrames, u0)),
+        u1: Math.max(0, Math.min(numFrames, u1)),
         v0: -1,
         v1: 1
       });
@@ -227,29 +235,68 @@ const LoopedWaveformCanvas: React.FC<{
       ctx.stroke();
     }
     ctx.setLineDash([]);
+  }, [peaks, sampleRate, loopDuration, loopOffset, duration, fullAudioPpqn]);
 
-    // Playhead
-    if (isPlaying && playheadPosition >= 0 && playheadPosition < duration) {
-      const px = (playheadPosition / duration) * width;
-      ctx.strokeStyle = "#fff";
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(px, 0);
-      ctx.lineTo(px, height);
-      ctx.stroke();
-    }
-  }, [peaks, sampleRate, loopDuration, loopOffset, duration, fullAudioPpqn, playheadPosition, isPlaying]);
+  // Playhead overlay — uses AnimationFrame to avoid redrawing waveform every frame
+  useEffect(() => {
+    const canvas = playheadCanvasRef.current;
+    if (!canvas) return;
+
+    const af = AnimationFrame.add(() => {
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      const dpr = window.devicePixelRatio || 1;
+      const width = canvas.clientWidth;
+      if (width === 0) return;
+      const height = CANVAS_HEIGHT;
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      ctx.scale(dpr, dpr);
+      ctx.clearRect(0, 0, width, height);
+
+      const d = durationRef.current;
+      const pos = playheadRef.current;
+      if (isPlayingRef.current && pos >= 0 && pos < d && d > 0) {
+        const px = (pos / d) * width;
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(px, 0);
+        ctx.lineTo(px, height);
+        ctx.stroke();
+      }
+    });
+
+    return () => af.terminate();
+  }, []);
 
   return (
-    <canvas
-      ref={canvasRef}
-      style={{
-        width: "100%",
-        height: CANVAS_HEIGHT,
-        borderRadius: "var(--radius-3)",
-        border: "1px solid var(--gray-6)",
-      }}
-    />
+    <div style={{ position: "relative", width: "100%", height: CANVAS_HEIGHT }}>
+      <canvas
+        ref={waveformCanvasRef}
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          width: "100%",
+          height: CANVAS_HEIGHT,
+          borderRadius: "var(--radius-3)",
+          border: "1px solid var(--gray-6)",
+        }}
+      />
+      <canvas
+        ref={playheadCanvasRef}
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          width: "100%",
+          height: CANVAS_HEIGHT,
+          pointerEvents: "none",
+        }}
+      />
+    </div>
   );
 };
 
@@ -279,6 +326,9 @@ const App: React.FC = () => {
 
   useEffect(() => {
     let mounted = true;
+    let sampleSub: { terminate(): void } | null = null;
+    let localProject: Project | null = null;
+    let localAudioContext: AudioContext | null = null;
 
     (async () => {
       try {
@@ -290,6 +340,9 @@ const App: React.FC = () => {
           bpm: BPM,
           onStatusUpdate: setStatus,
         });
+
+        localProject = newProject;
+        localAudioContext = newAudioContext;
 
         if (!mounted) return;
         setAudioContext(newAudioContext);
@@ -309,6 +362,11 @@ const App: React.FC = () => {
 
         if (!mounted) return;
 
+        if (tracks.length === 0) {
+          setStatus("Failed to load audio. Check browser console for details.");
+          return;
+        }
+
         const boxes = newProject.boxGraph.boxes();
         let foundRegion: AudioRegionBox | null = null;
         for (const box of boxes) {
@@ -319,7 +377,7 @@ const App: React.FC = () => {
         }
 
         if (!foundRegion) {
-          setStatus("Error: no region found");
+          setStatus("Failed to load audio. No audio region was created.");
           return;
         }
 
@@ -327,17 +385,20 @@ const App: React.FC = () => {
         setFullAudioPpqn(audioPpqn);
         setRegionBox(foundRegion);
 
-        // Subscribe for peaks (peaks worker runs async after queryLoadingComplete)
+        // Subscribe for peaks (peaks worker runs async ~120ms after queryLoadingComplete)
         const track = tracks[0];
         if (track) {
           const sampleLoader = newProject.sampleManager.getOrCreate(track.uuid);
-          sampleLoader.subscribe((state: any) => {
+          sampleSub = sampleLoader.subscribe((state: any) => {
             if (state.type === "loaded") {
               const peaksOpt = sampleLoader.peaks;
               if (!peaksOpt.isEmpty() && mounted) {
                 setPeaks(peaksOpt.unwrap());
                 setSampleRate(newAudioContext.sampleRate);
               }
+            } else if (state.type === "error" || state.type === "failed") {
+              console.error("Sample loader failed:", state);
+              if (mounted) setStatus("Waveform peaks failed to load.");
             }
           });
           // Also check if already loaded
@@ -359,11 +420,19 @@ const App: React.FC = () => {
         if (mounted) setStatus("Ready");
       } catch (error) {
         console.error("Failed to initialize:", error);
-        if (mounted) setStatus(`Error: ${error}`);
+        const message = error instanceof Error ? error.message : String(error);
+        if (mounted) setStatus(`Initialization failed: ${message}`);
       }
     })();
 
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+      sampleSub?.terminate();
+      if (localProject) localProject.engine.stop(true);
+      if (localAudioContext && localAudioContext.state !== "closed") {
+        localAudioContext.close();
+      }
+    };
   }, []);
 
   const handlePreset = useCallback((index: number) => {
