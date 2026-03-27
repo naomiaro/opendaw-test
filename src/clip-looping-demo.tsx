@@ -26,9 +26,9 @@ const BPM = 124;
 const BAR = PPQN.fromSignature(4, 4); // 3840
 const BEAT = BAR / 4; // 960
 
-// All Dark Ride stems have silence at the beginning.
-// Drums have audible content starting around bar 9.
-const CONTENT_START = BAR * 8; // bar 9 (0-indexed: 8 bars of silence)
+// All Dark Ride stems have silence/buildup at the beginning.
+// Full drum pattern kicks in around bar 25.
+const CONTENT_START = BAR * 24; // bar 25 (0-indexed)
 
 type LoopPreset = {
   name: string;
@@ -62,7 +62,7 @@ const PRESETS: LoopPreset[] = [
   },
   {
     name: "Offset Start",
-    description: "Loop from bar 13 of the audio (different drum pattern)",
+    description: "Loop from bar 29 of the audio (different drum pattern)",
     loopDuration: BAR * 2,
     loopOffset: CONTENT_START + BAR * 4,
     duration: BAR * 8,
@@ -159,7 +159,6 @@ const LoopedWaveformCanvas: React.FC<{
     const u1 = u0 + loopDurationFrames;
 
     // Draw each tile
-    const numChannels = peaks.numChannels;
     for (let tile = 0; tile < tileCount; tile++) {
       const tileStartX = (tile * loopDuration / duration) * width;
       const tileEndX = Math.min(((tile + 1) * loopDuration / duration) * width, width);
@@ -172,20 +171,17 @@ const LoopedWaveformCanvas: React.FC<{
         ctx.fillRect(tileStartX, 0, tileEndX - tileStartX, height);
       }
 
-      // Render each channel
-      const channelHeight = height / numChannels;
-      for (let ch = 0; ch < numChannels; ch++) {
-        PeaksPainter.renderPixelStrips(ctx, peaks, ch, {
-          x0: tileStartX,
-          x1: tileEndX,
-          y0: ch * channelHeight,
-          y1: (ch + 1) * channelHeight,
-          u0: Math.max(0, Math.min(peaks.numFrames, u0)),
-          u1: Math.max(0, Math.min(peaks.numFrames, u1)),
-          v0: -1,
-          v1: 1
-        });
-      }
+      // Render channel 0 (left) at full height for a cleaner look
+      PeaksPainter.renderPixelStrips(ctx, peaks, 0, {
+        x0: tileStartX,
+        x1: tileEndX,
+        y0: 0,
+        y1: height,
+        u0: Math.max(0, Math.min(peaks.numFrames, u0)),
+        u1: Math.max(0, Math.min(peaks.numFrames, u1)),
+        v0: -1,
+        v1: 1
+      });
     }
 
     // Bar grid lines
