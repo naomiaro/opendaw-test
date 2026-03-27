@@ -4,6 +4,9 @@ import { PPQN } from "@opendaw/lib-dsp";
 import type { ppqn } from "@opendaw/lib-dsp";
 import { Project } from "@opendaw/studio-core";
 import { AudioRegionBox } from "@opendaw/studio-boxes";
+import { PeaksPainter } from "@opendaw/lib-fusion";
+import type { Peaks } from "@opendaw/lib-fusion";
+import { UUID } from "@opendaw/lib-std";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { MoisesLogo } from "./components/MoisesLogo";
 import { BackLink } from "./components/BackLink";
@@ -108,6 +111,143 @@ function applyLoopSettings(
   });
 }
 
+const CANVAS_HEIGHT = 120;
+
+const LoopedWaveformCanvas: React.FC<{
+  peaks: Peaks | null;
+  sampleRate: number;
+  loopDuration: number;
+  loopOffset: number;
+  duration: number;
+  fullAudioPpqn: number;
+  playheadPosition: number;
+  isPlaying: boolean;
+}> = ({ peaks, sampleRate, loopDuration, loopOffset, duration, fullAudioPpqn, playheadPosition, isPlaying }) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !peaks) return;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const width = canvas.clientWidth;
+    const height = CANVAS_HEIGHT;
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    ctx.scale(dpr, dpr);
+
+    // Clear
+    ctx.fillStyle = "#1a1a2e";
+    ctx.fillRect(0, 0, width, height);
+
+    const numFrames = peaks.numFrames;
+    const tileCount = loopDuration > 0 ? Math.ceil(duration / loopDuration) : 1;
+
+    // Compute frame ranges for loop content
+    const loopOffsetFrames = Math.floor((loopOffset / fullAudioPpqn) * numFrames);
+    const loopDurationFrames = Math.floor((loopDuration / fullAudioPpqn) * numFrames);
+    const u0 = loopOffsetFrames;
+    const u1 = u0 + loopDurationFrames;
+
+    // Draw each tile
+    for (let tile = 0; tile < tileCount; tile++) {
+      const tileStartX = (tile * loopDuration / duration) * width;
+      const tileEndX = Math.min(((tile + 1) * loopDuration / duration) * width, width);
+      const tileWidth = tileEndX - tileStartX;
+
+      if (tileWidth <= 0) continue;
+
+      // Slightly different bg for repeated tiles
+      if (tile > 0) {
+        ctx.fillStyle = "rgba(255, 150, 50, 0.03)";
+        ctx.fillRect(tileStartX, 0, tileWidth, height);
+      }
+
+      // Create offscreen canvas for this tile's waveform
+      const tileCanvas = document.createElement("canvas");
+      tileCanvas.width = Math.ceil(tileWidth * dpr);
+      tileCanvas.height = height * dpr;
+      const tileCtx = tileCanvas.getContext("2d");
+      if (!tileCtx) continue;
+
+      tileCtx.scale(dpr, dpr);
+
+      PeaksPainter.renderPixelStrips(
+        tileCtx,
+        peaks,
+        Math.ceil(tileWidth),
+        height,
+        u0,
+        u1,
+        "rgba(255, 150, 50, 0.7)",
+        "rgba(255, 150, 50, 0.4)"
+      );
+
+      ctx.drawImage(tileCanvas, 0, 0, tileCanvas.width, tileCanvas.height,
+        tileStartX, 0, tileWidth, height);
+    }
+
+    // Bar grid lines
+    const barsInDuration = duration / BAR;
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.1)";
+    ctx.lineWidth = 1;
+    for (let bar = 1; bar < barsInDuration; bar++) {
+      const x = (bar / barsInDuration) * width;
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, height);
+      ctx.stroke();
+    }
+
+    // Bar number labels
+    ctx.fillStyle = "#666";
+    ctx.font = "10px sans-serif";
+    for (let bar = 0; bar < barsInDuration; bar++) {
+      const x = (bar / barsInDuration) * width;
+      ctx.fillText(`${bar + 1}`, x + 4, height - 4);
+    }
+
+    // Loop boundary lines (dashed, brighter)
+    ctx.strokeStyle = "rgba(255, 180, 80, 0.6)";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    for (let tile = 1; tile < tileCount; tile++) {
+      const x = (tile * loopDuration / duration) * width;
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, height);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+
+    // Playhead
+    if (isPlaying && playheadPosition >= 0 && playheadPosition < duration) {
+      const px = (playheadPosition / duration) * width;
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(px, 0);
+      ctx.lineTo(px, height);
+      ctx.stroke();
+    }
+  }, [peaks, sampleRate, loopDuration, loopOffset, duration, fullAudioPpqn, playheadPosition, isPlaying]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        width: "100%",
+        height: CANVAS_HEIGHT,
+        borderRadius: "var(--radius-3)",
+        border: "1px solid var(--gray-6)",
+      }}
+    />
+  );
+};
+
 const App: React.FC = () => {
   const [status, setStatus] = useState("Loading...");
   const [project, setProject] = useState<Project | null>(null);
@@ -122,6 +262,8 @@ const App: React.FC = () => {
 
   const [metronomeEnabled, setMetronomeEnabled] = useState(true);
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
+  const [peaks, setPeaks] = useState<Peaks | null>(null);
+  const [sampleRate, setSampleRate] = useState(48000);
 
   const { currentPosition, isPlaying, pausedPositionRef } = usePlaybackPosition(project);
   const { handlePlay, handlePause, handleStop } = useTransportControls({
@@ -180,6 +322,30 @@ const App: React.FC = () => {
         const audioPpqn = foundRegion.duration.getValue();
         setFullAudioPpqn(audioPpqn);
         setRegionBox(foundRegion);
+
+        // Get peaks for waveform rendering
+        const fileVertex = foundRegion.file.targetVertex;
+        if (fileVertex.nonEmpty()) {
+          const audioFileBox = fileVertex.unwrap().box;
+          const uuid = audioFileBox.address.uuid;
+          const sampleLoader = newProject.sampleManager.getOrCreate(uuid);
+          const sub = sampleLoader.subscribe((state: any) => {
+            if (state.type === "loaded") {
+              const peaksOpt = sampleLoader.peaks;
+              if (peaksOpt.nonEmpty()) {
+                setPeaks(peaksOpt.unwrap());
+              }
+              setSampleRate(newAudioContext.sampleRate);
+              sub.terminate();
+            }
+          });
+          // Peaks may already be loaded
+          const peaksOpt = sampleLoader.peaks;
+          if (peaksOpt.nonEmpty()) {
+            setPeaks(peaksOpt.unwrap());
+            setSampleRate(newAudioContext.sampleRate);
+          }
+        }
 
         const preset = PRESETS[0];
         const ld = preset.loopDuration === -1 ? audioPpqn : preset.loopDuration;
@@ -296,22 +462,20 @@ const App: React.FC = () => {
                 </Flex>
               </Card>
 
-              {/* Waveform canvas placeholder — replaced in Task 3 */}
+              {/* Waveform */}
               <Card>
                 <Flex direction="column" gap="2">
                   <Text size="2" weight="bold" color="gray">Waveform</Text>
-                  <div style={{
-                    width: "100%",
-                    height: 120,
-                    backgroundColor: "#1a1a2e",
-                    borderRadius: "var(--radius-3)",
-                    border: "1px solid var(--gray-6)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}>
-                    <Text size="2" color="gray">Waveform canvas (coming next)</Text>
-                  </div>
+                  <LoopedWaveformCanvas
+                    peaks={peaks}
+                    sampleRate={sampleRate}
+                    loopDuration={loopDuration}
+                    loopOffset={loopOffset}
+                    duration={duration}
+                    fullAudioPpqn={fullAudioPpqn}
+                    playheadPosition={currentPosition}
+                    isPlaying={isPlaying}
+                  />
                 </Flex>
               </Card>
 
