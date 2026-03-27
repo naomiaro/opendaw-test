@@ -29,6 +29,21 @@ Any `Float32Field<Pointers.Automation>` is automatable:
 - **DelayDeviceBox**: all parameters
 - All other effect device boxes follow the same pattern
 
+### Value Mapping: Same UnitValue, Different dB Ranges
+
+Automation events use **unitValue** (0.0–1.0) for all parameters, but each parameter has its own `ValueMapping` that converts unitValue to the actual dB or parameter range. The automation system writes raw unitValues — the adapter/processor handles the conversion.
+
+| Parameter | ValueMapping | unitValue 0.0 | unitValue 0.5 | unitValue 1.0 |
+|-----------|-------------|---------------|---------------|---------------|
+| Track volume | `decibel(-96, -9, +6)` | -inf | -9 dB | +6 dB |
+| Reverb wet/dry | `DefaultDecibel = decibel(-72, -12, 0)` | -inf | -12 dB | 0 dB |
+| Synth osc volume | `DefaultDecibel` | -inf | -12 dB | 0 dB |
+| Stereo Tool volume | `decibel(-72, 0, +12)` | -inf | 0 dB | +12 dB |
+
+The `Decibel` class formula (`value-mapping.js`): when `x <= 0.0` returns `-Infinity`; when `x >= 1.0` returns `max`; otherwise uses a Möbius transform `a - b/(x + c)` where coefficients are derived from `(min, mid, max)`.
+
+**Key takeaway:** unitValue `0.5` on track volume = -9 dB, but unitValue `0.5` on reverb wet = -12 dB. The same automation curve produces different sonic results on different parameters.
+
 ## Creating Automation Tracks
 
 ```typescript
