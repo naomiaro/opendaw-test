@@ -563,7 +563,8 @@ Effects use a 3-layer chain: Box (raw storage) → Adapter (UI mapping) → Proc
 - StereoTool `stereo` (width) is bipolar (-1..1), not unipolar — 0 = normal, not center of 0-2 range
 - `DefaultDecibel` mapping: `decibel(-72, -12, 0)` — unitValue 0.0 = -inf, 0.5 = -12 dB, 1.0 = 0 dB
 - AudioUnit `VolumeMapper`: `decibel(-96, -9, +6)` — different range, unitValue 0.0 = -inf, 1.0 = +6 dB
-- ValueMapping only affects UI/adapter display — automation writes raw unitValues (0-1) to box fields
+- Automation values (unitValue 0-1) go through ValueMapping before reaching the processor:
+  `AutomatableParameterFieldAdapter.valueAt()` calls `valueMapping.y(unitValue)` to convert to dB/raw
 - To verify parameter ranges, audit all 3 layers: schema (Box), adapter (ValueMapping), and processor (how value is consumed)
 
 ## React Integration Tips

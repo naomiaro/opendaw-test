@@ -31,7 +31,7 @@ Any `Float32Field<Pointers.Automation>` is automatable:
 
 ### Value Mapping: Same UnitValue, Different dB Ranges
 
-Automation events use **unitValue** (0.0–1.0) for all parameters, but each parameter has its own `ValueMapping` that converts unitValue to the actual dB or parameter range. The automation system writes raw unitValues — the adapter/processor handles the conversion.
+Automation events use **unitValue** (0.0–1.0) for all parameters. The `AutomatableParameterFieldAdapter.valueAt()` method applies the parameter's `ValueMapping` to convert the unitValue to the actual dB or parameter value before it reaches the processor. The processor never sees unitValues — it receives the mapped value (e.g., dB).
 
 | Parameter | ValueMapping | unitValue 0.0 | unitValue 0.5 | unitValue 1.0 |
 |-----------|-------------|---------------|---------------|---------------|

@@ -145,9 +145,9 @@ const TRACK_CONFIGS: AutomationTrackConfig[] = [
     parameterName: "volume",
     color: "#a855f7",
     yLabels: [
-      { value: 1.0, label: "0 dB" },
+      { value: 1.0, label: "+6 dB" },
       { value: 0.5, label: "-9 dB" },
-      { value: 0.0, label: "-72 dB" }
+      { value: 0.0, label: "-∞ dB" }
     ],
     presets: volumePresets
   },
