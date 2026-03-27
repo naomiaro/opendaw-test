@@ -26,6 +26,10 @@ const BPM = 124;
 const BAR = PPQN.fromSignature(4, 4); // 3840
 const BEAT = BAR / 4; // 960
 
+// All Dark Ride stems have silence at the beginning.
+// Drums have audible content starting around bar 9.
+const CONTENT_START = BAR * 8; // bar 9 (0-indexed: 8 bars of silence)
+
 type LoopPreset = {
   name: string;
   description: string;
@@ -39,35 +43,35 @@ const PRESETS: LoopPreset[] = [
     name: "2-Bar Loop",
     description: "Classic 2-bar drum loop tiled 4x",
     loopDuration: BAR * 2,
-    loopOffset: 0,
+    loopOffset: CONTENT_START,
     duration: BAR * 8,
   },
   {
     name: "1-Bar Loop",
     description: "Tight 1-bar pattern tiled 8x",
     loopDuration: BAR * 1,
-    loopOffset: 0,
+    loopOffset: CONTENT_START,
     duration: BAR * 8,
   },
   {
     name: "Half-Bar Loop",
     description: "Rapid half-bar repeat",
     loopDuration: BEAT * 2,
-    loopOffset: 0,
+    loopOffset: CONTENT_START,
     duration: BAR * 4,
   },
   {
     name: "Offset Start",
-    description: "Loop from bar 3 of the audio",
+    description: "Loop from bar 13 of the audio (different drum pattern)",
     loopDuration: BAR * 2,
-    loopOffset: BAR * 2,
+    loopOffset: CONTENT_START + BAR * 4,
     duration: BAR * 8,
   },
   {
     name: "Long Loop",
     description: "4-bar phrase tiled 4x",
     loopDuration: BAR * 4,
-    loopOffset: 0,
+    loopOffset: CONTENT_START,
     duration: BAR * 16,
   },
   {
@@ -257,7 +261,7 @@ const App: React.FC = () => {
   const [activePresetIndex, setActivePresetIndex] = useState(0);
 
   const [loopDuration, setLoopDuration] = useState(BAR * 2);
-  const [loopOffset, setLoopOffset] = useState(0);
+  const [loopOffset, setLoopOffset] = useState(CONTENT_START);
   const [duration, setDuration] = useState(BAR * 8);
 
   const [metronomeEnabled, setMetronomeEnabled] = useState(true);
@@ -323,28 +327,20 @@ const App: React.FC = () => {
         setFullAudioPpqn(audioPpqn);
         setRegionBox(foundRegion);
 
-        // Get peaks for waveform rendering
-        const fileVertex = foundRegion.file.targetVertex;
-        if (fileVertex.nonEmpty()) {
-          const audioFileBox = fileVertex.unwrap().box;
-          const uuid = audioFileBox.address.uuid;
-          const sampleLoader = newProject.sampleManager.getOrCreate(uuid);
+        // Get peaks for waveform rendering using track UUID from loadTracksFromFiles
+        const track = tracks[0];
+        if (track) {
+          const sampleLoader = newProject.sampleManager.getOrCreate(track.uuid);
           const sub = sampleLoader.subscribe((state: any) => {
             if (state.type === "loaded") {
               const peaksOpt = sampleLoader.peaks;
-              if (peaksOpt.nonEmpty()) {
+              if (!peaksOpt.isEmpty()) {
                 setPeaks(peaksOpt.unwrap());
               }
               setSampleRate(newAudioContext.sampleRate);
               sub.terminate();
             }
           });
-          // Peaks may already be loaded
-          const peaksOpt = sampleLoader.peaks;
-          if (peaksOpt.nonEmpty()) {
-            setPeaks(peaksOpt.unwrap());
-            setSampleRate(newAudioContext.sampleRate);
-          }
         }
 
         const preset = PRESETS[0];
