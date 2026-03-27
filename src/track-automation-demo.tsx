@@ -246,10 +246,10 @@ function eventsToJson(events: AutomationEvent[], parameterName: string, targetUn
       targetParameter: parameterName,
       targetUnitId,
       enabled: true,
-      events: events.map((evt, idx) => ({
+      events: events.map((evt, i) => ({
         position: evt.position,
         value: evt.value,
-        index: idx,
+        index: i > 0 && events[i - 1].position === evt.position ? 1 : 0,
         interpolation: interpolationToJson(evt.interpolation)
       }))
     }
