@@ -314,7 +314,9 @@ Events at absolute positions will fall outside the region duration and never tri
 ### Curve Rendering Must Use SDK's Curve.normalizedAt
 Canvas rendering of automation curves must use `Curve.normalizedAt(t, slope)` from `@opendaw/lib-std`,
 not quadratic bezier approximations. The SDK uses an exponential formula:
-`(p²)/(1-2p) * (((1-p)/p)^(2x) - 1)` — visually different from bezier.
+`(p²)/(1-2p) * (((1-p)/p)^(2x) - 1)` (Möbius-Ease) — visually different from bezier.
+Slope semantics: 0.75 = logarithmic/round (slow start, steep end), 0.25 = inverse.
+For a round swell: use Curve(0.75) rising, Curve(0.25) falling.
 
 ### EffectBox Is a Union Type
 `project.api.insertEffect()` returns `EffectBox` which is a union of device box types
@@ -672,6 +674,7 @@ See `src/looping-demo.tsx` for the reference layout pattern.
 - Track loading: `src/lib/trackLoading.ts` (handles queryLoadingComplete automatically)
 - Engine preferences hook: `src/hooks/useEnginePreference.ts`
 - Track automation demo: `src/track-automation-demo.tsx` (volume, pan, effect parameter automation with canvas + JSON)
+- Track automation: `documentation/19-track-automation.md` (automation lanes, region-local events, Möbius-Ease curves)
 - Tempo automation demo: `src/tempo-automation-demo.tsx`
 - Time signature demo: `src/time-signature-demo.tsx`
 - Clip fades demo: `src/clip-fades-demo.tsx`
