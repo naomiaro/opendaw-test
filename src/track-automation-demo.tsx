@@ -7,7 +7,7 @@ import { AudioRegionBox, AudioUnitBox, ReverbDeviceBox, TrackBox, ValueRegionBox
 import { PPQN, Interpolation } from "@opendaw/lib-dsp";
 import type { ppqn } from "@opendaw/lib-dsp";
 import { Curve, UUID } from "@opendaw/lib-std";
-import { ValueRegionBoxAdapter } from "@opendaw/studio-adapters";
+import { AudioUnitBoxAdapter, ValueRegionBoxAdapter } from "@opendaw/studio-adapters";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { MoisesLogo } from "./components/MoisesLogo";
 import { BackLink } from "./components/BackLink";
@@ -47,6 +47,9 @@ type AutomationTrackConfig = {
   presets: AutomationPreset[];
 };
 
+// unitValue that maps to 0 dB through the VolumeMapper
+const VOLUME_0DB = AudioUnitBoxAdapter.VolumeMapper.x(0);
+
 // ─── Preset Definitions ─────────────────────────────────────────────────
 
 const volumePresets: AutomationPreset[] = [
@@ -54,13 +57,13 @@ const volumePresets: AutomationPreset[] = [
     name: "Fade In",
     events: [
       { position: 0 as ppqn, value: 0.0, interpolation: Interpolation.Curve(0.25) },
-      { position: (BAR * 4) as ppqn, value: 1.0, interpolation: Interpolation.None }
+      { position: (BAR * 4) as ppqn, value: VOLUME_0DB, interpolation: Interpolation.None }
     ]
   },
   {
     name: "Fade Out",
     events: [
-      { position: 0 as ppqn, value: 1.0, interpolation: Interpolation.Curve(0.75) },
+      { position: 0 as ppqn, value: VOLUME_0DB, interpolation: Interpolation.Curve(0.75) },
       { position: (BAR * 8) as ppqn, value: 0.0, interpolation: Interpolation.None }
     ]
   },
@@ -146,6 +149,7 @@ const TRACK_CONFIGS: AutomationTrackConfig[] = [
     color: "#a855f7",
     yLabels: [
       { value: 1.0, label: "+6 dB" },
+      { value: VOLUME_0DB, label: "0 dB" },
       { value: 0.5, label: "-9 dB" },
       { value: 0.0, label: "-∞ dB" }
     ],
