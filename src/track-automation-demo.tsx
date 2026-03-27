@@ -760,10 +760,10 @@ const App: React.FC = () => {
 
     return {
       project: {
-        bpm: 120,
+        bpm: BPM,
         timeSignature: { numerator: 4, denominator: 4 },
         duration: { bars: NUM_BARS, ppqn: TOTAL_PPQN },
-        loop: { enabled: true, from: 0, to: TOTAL_PPQN },
+        loop: { enabled: true, from: PLAYBACK_START, to: PLAYBACK_END },
         tracks: [
           {
             type: "audio",
