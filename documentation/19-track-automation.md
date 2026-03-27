@@ -44,6 +44,35 @@ The `Decibel` class formula (`value-mapping.js`): when `x <= 0.0` returns `-Infi
 
 **Key takeaway:** unitValue `0.5` on track volume = -9 dB, but unitValue `0.5` on reverb wet = -12 dB. The same automation curve produces different sonic results on different parameters.
 
+### Converting Between dB and UnitValue
+
+Each `ValueMapping` provides bidirectional conversion:
+- `y(unitValue)` → dB value (what the processor receives)
+- `x(dbValue)` → unitValue (what automation events store)
+
+Use the static `VolumeMapper` on `AudioUnitBoxAdapter` to convert:
+
+```typescript
+import { AudioUnitBoxAdapter } from "@opendaw/studio-adapters";
+
+// unitValue for 0 dB (unity gain) on track volume
+const unity = AudioUnitBoxAdapter.VolumeMapper.x(0);  // ≈ 0.734
+
+// What dB does unitValue 0.5 map to?
+const db = AudioUnitBoxAdapter.VolumeMapper.y(0.5);   // -9 dB
+```
+
+For other parameters, create the mapping directly:
+
+```typescript
+import { ValueMapping } from "@opendaw/lib-std";
+
+const reverbWetMapping = ValueMapping.DefaultDecibel;  // decibel(-72, -12, 0)
+const wetUnity = reverbWetMapping.x(0);                // unitValue for 0 dB wet
+```
+
+This is useful for setting automation events at musically meaningful levels (e.g., fade to 0 dB instead of the mapping's maximum).
+
 ## Creating Automation Tracks
 
 ```typescript
