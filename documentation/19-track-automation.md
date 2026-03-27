@@ -54,7 +54,7 @@ project.editing.modify(() => {
 
   collection.createEvent({
     position: 0 as ppqn,       // region-local position
-    index: 0,
+    index: 0,                  // ordering tiebreaker for events at the same position
     value: 0.0,                // unitValue 0..1
     interpolation: Interpolation.Linear,
   });
@@ -67,6 +67,20 @@ project.editing.modify(() => {
   });
 });
 ```
+
+## Event Index (Ordering Tiebreaker)
+
+The `index` field on automation events is an integer used to order events that share the same PPQN position. The SDK sorts events by `(position, index)`:
+
+```typescript
+ValueEvent.Comparator = (a, b) => {
+  const positionDiff = a.position - b.position;
+  if (positionDiff !== 0) return positionDiff;
+  return a.index - b.index; // tiebreaker
+};
+```
+
+This is useful for step changes where you need two values at the same moment (e.g., jump from 0.8 to 0.2 at bar 4 — event at index 0 with value 0.8, event at index 1 with value 0.2). For most automation, use `index: 0`.
 
 ## Critical: Event Positions Are Region-Local
 
@@ -229,6 +243,12 @@ When saving automation state to a server, capture these fields per automation tr
   }
 }
 ```
+
+Event fields:
+- **position** (int32): Region-local position in PPQN
+- **value** (float32): Parameter value as unitValue (0.0–1.0)
+- **index** (int32): Ordering tiebreaker for events at the same position (usually 0)
+- **interpolation**: How to transition from this event to the next
 
 Interpolation types in JSON:
 - `{ "type": "none" }` — step/hold
