@@ -707,6 +707,7 @@ See `src/looping-demo.tsx` for the reference layout pattern.
 - Track automation: `documentation/19-track-automation.md` (automation lanes, region-local events, Möbius-Ease curves)
 - Tempo automation demo: `src/tempo-automation-demo.tsx`
 - Time signature demo: `src/time-signature-demo.tsx`
+- Clip looping demo: `src/clip-looping-demo.tsx` (region loopDuration/loopOffset/duration tiling)
 - Clip fades demo: `src/clip-fades-demo.tsx`
 - Mixer groups demo: `src/mixer-groups-demo.tsx`
 - Group track loading: `src/lib/groupTrackLoading.ts` (creates group buses + routes tracks)
