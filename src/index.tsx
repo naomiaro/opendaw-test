@@ -204,6 +204,20 @@ const App: React.FC = () => {
               </Link>
             </Card>
             <Card asChild>
+              <Link href="/clip-looping-demo.html" style={{ textDecoration: "none", padding: "var(--space-5)" }}>
+                <Flex direction="column" gap="3">
+                  <Flex direction="column" align="center" gap="2">
+                    <Text size="8">🔁</Text>
+                    <Heading size="5">Clip Looping</Heading>
+                  </Flex>
+                  <Text size="2" color="gray">
+                    Set a loop region within an audio clip and extend it to tile automatically.
+                    Interactive controls for loop duration, offset, and region length with waveform visualization.
+                  </Text>
+                </Flex>
+              </Link>
+            </Card>
+            <Card asChild>
               <Link href="/track-automation-demo.html" style={{ textDecoration: "none", padding: "var(--space-5)" }}>
                 <Flex direction="column" gap="3">
                   <Flex direction="column" align="center" gap="2">

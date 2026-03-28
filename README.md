@@ -26,6 +26,7 @@ Visit http://localhost:5173 to explore the demos.
 | **Tempo Automation** | Preset tempo patterns (accelerando, ritardando, stepped) with real-time metronome response |
 | **Time Signature Changes** | Preset signature sequences (waltz, prog rock, film score) with adaptive metronome |
 | **Track Automation** | Volume, pan, and effect parameter automation with preset patterns and canvas visualization |
+| **Clip Looping** | Set loop regions within audio clips and extend to tile automatically with waveform visualization |
 | **Clip Fades** | Logarithmic, linear, and exponential fade curves with visual representations |
 | **Mixer Groups** | Sub-mixing with group buses: Track → Group → Master signal flow |
 
@@ -46,6 +47,7 @@ Visit http://localhost:5173 to explore the demos.
 - [Tempo Automation](./documentation/14-tempo-automation.md) — Variable BPM playback
 - [Time Signature Changes](./documentation/15-time-signature-changes.md) — Signature events
 - [Track Automation](./documentation/19-track-automation.md) — Volume, pan, and effect automation
+- [Clip Looping](./documentation/20-clip-looping.md) — Region looping and tiling
 - [Mixer Groups](./documentation/17-mixer-groups.md) — Sub-mixing and track routing
 
 ## Deployment
@@ -89,6 +91,7 @@ src/
 ├── tempo-automation-demo.tsx          # Tempo automation patterns
 ├── time-signature-demo.tsx            # Time signature changes
 ├── track-automation-demo.tsx           # Volume/pan/effect automation
+├── clip-looping-demo.tsx              # Region loop tiling
 ├── clip-fades-demo.tsx                # Fade curve types
 └── mixer-groups-demo.tsx              # Group bus sub-mixing
 ```

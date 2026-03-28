@@ -149,8 +149,18 @@ subs.push(trackSub);
 - Terminate pointer hub subs BEFORE engine cleanup when stopping recording
 - After recording stops, reactive subscriptions are terminated — update React state directly for user-initiated changes (e.g., mute toggle)
 
-### Waveform Rendering (SDK 0.0.128+)
-- `PeaksPainter.renderBlocks()` was renamed to `PeaksPainter.renderPixelStrips()` — same signature
+### Waveform Rendering (SDK 0.0.126+)
+`PeaksPainter.renderBlocks()` was replaced by `PeaksPainter.renderPixelStrips()` with a new signature:
+```typescript
+PeaksPainter.renderPixelStrips(context, peaks, channel, {
+  x0, x1,       // pixel x range on canvas
+  y0, y1,       // pixel y range on canvas
+  u0, u1,       // frame range in peaks data
+  v0: -1, v1: 1 // amplitude range (always -1 to 1)
+});
+```
+**IMPORTANT:** `renderPixelStrips` uses the current `ctx.fillStyle` — set it before calling.
+It does NOT accept color parameters. Without setting fillStyle, waveforms are invisible.
 
 ### SoundfontService (Disabled via Proxy Guard)
 - `SoundfontService` constructor auto-fetches `api.opendaw.studio/soundfonts/list.json` (CORS error in dev)
@@ -179,6 +189,10 @@ project.engine.play();
 // NOTE: loadTracksFromFiles() calls this automatically before returning,
 // so you only need this for recordings or manually created tracks
 await project.engine.queryLoadingComplete();
+// NOTE: queryLoadingComplete() resolves before SamplePeaks worker finishes
+// (~120ms gap). To get peaks, use sampleLoader.subscribe() and wait for
+// state.type === "loaded". Direct sampleLoader.peaks read immediately after
+// loadTracksFromFiles returns will be empty.
 ```
 
 ### Engine State Observables
@@ -482,6 +496,12 @@ When regions share the same position, sort by label for deterministic ordering:
 `regionAdapters.sort((a, b) => labelIndex(a) - labelIndex(b))`
 Set custom labels with `adapter.box.label.setValue("name")`.
 
+### waveformOffset vs loopOffset
+- `loopOffset` (PPQN) — controls which loop cycle aligns with which timeline position on playback. Does NOT shift audio read position in the file.
+- `waveformOffset` (seconds, field 7 on AudioRegionBox) — shifts where TapeDeviceProcessor reads in the audio buffer: `sampleIndex = (elapsedSeconds + waveformOffset) * sampleRate`
+- To skip silence at the start of an audio file, set `waveformOffset` in seconds. `loopOffset` alone won't change what audio you hear.
+- For waveform rendering, use `loopOffset` to compute the peaks frame range (visual), and `waveformOffset` for the engine read position (audio).
+
 ### Recording Peaks Include Count-In Frames
 The SDK captures audio during count-in. `waveformOffset` on the region (in seconds)
 tells playback to skip it. When rendering peaks, use `waveformOffset * sampleRate`
@@ -538,7 +558,11 @@ where `elapsedSeconds = tempoMap.intervalToSeconds(cycle.rawStart, cycle.resultS
 - BPM: 124 (pass to `initializeOpenDAW({ bpm: 124 })`)
 - Stems: `public/audio/DarkRide/01_Intro` through `07_EffectReturns` (.opus + .m4a)
 - Full song length (~235 seconds, ~117 bars at 124 BPM)
-- Guitar has silence at the beginning; bar 17+ has audible content
+- All stems have silence at the beginning (intro/buildup)
+- Guitar: audible content from bar 17+
+- Drums: full drum pattern from bar 25+ (sparse/building before that)
+- To skip silence: set `regionBox.waveformOffset.setValue(seconds)` to shift the audio read position
+- For waveform rendering: compute peaks frame range from the PPQN offset into the audio
 
 ### localAudioBuffers Must Be Passed to initializeOpenDAW
 The sample manager's fetch callback checks `localAudioBuffers` map at init time.
@@ -636,6 +660,16 @@ terminable.terminate();
 `catchupAndSubscribe()` and `subscribe()` return `Terminable` objects. Store them and call
 `.terminate()` in the React `useEffect` cleanup. Discarding the return value leaks the
 subscription — callbacks continue firing after unmount.
+For one-shot subscriptions (e.g., waiting for `sampleLoader` "loaded"), terminate
+inside the callback on success AND on error — don't rely solely on effect cleanup:
+```typescript
+const sub = sampleLoader.subscribe((state: any) => {
+  if (state.type === "loaded") {
+    // ... handle data
+    sub.terminate(); // terminate immediately, don't wait for unmount
+  }
+});
+```
 
 ### CanvasPainter in React: Use Refs to Avoid Per-Frame Recreation
 `CanvasPainter` creates a `ResizeObserver` + `AnimationFrame` subscription — expensive to
@@ -707,6 +741,7 @@ See `src/looping-demo.tsx` for the reference layout pattern.
 - Track automation: `documentation/19-track-automation.md` (automation lanes, region-local events, Möbius-Ease curves)
 - Tempo automation demo: `src/tempo-automation-demo.tsx`
 - Time signature demo: `src/time-signature-demo.tsx`
+- Clip looping demo: `src/clip-looping-demo.tsx` (region loopDuration/loopOffset/duration tiling)
 - Clip fades demo: `src/clip-fades-demo.tsx`
 - Mixer groups demo: `src/mixer-groups-demo.tsx`
 - Group track loading: `src/lib/groupTrackLoading.ts` (creates group buses + routes tracks)
