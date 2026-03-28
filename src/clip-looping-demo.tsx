@@ -102,9 +102,10 @@ function applyLoopSettings(
   const ld = loopDuration === -1 ? fullAudioPpqn : loopDuration;
   const d = duration === -1 ? fullAudioPpqn : duration;
 
-  // waveformOffset (seconds) shifts the audio read position in the file.
-  // loopOffset (PPQN) is used for waveform rendering to show the right slice of peaks.
-  // The region sits at position 0 on the timeline; waveformOffset skips into the audio.
+  // waveformOffset (seconds) shifts where the engine reads in the audio file.
+  // The loopOffset parameter here is a PPQN offset used to compute waveformOffset
+  // and the peaks frame range for rendering — it is NOT set on regionBox.loopOffset
+  // (which stays 0, since it only controls loop cycle alignment, not audio position).
   const bpm = project.timelineBox.bpm.getValue();
   const waveformOffsetSeconds = PPQN.pulsesToSeconds(loopOffset, bpm);
 
@@ -130,14 +131,13 @@ const CANVAS_HEIGHT = 120;
 
 const LoopedWaveformCanvas: React.FC<{
   peaks: Peaks | null;
-  sampleRate: number;
   loopDuration: number;
   loopOffset: number;
   duration: number;
   fullAudioPpqn: number;
   playheadPosition: number;
   isPlaying: boolean;
-}> = ({ peaks, sampleRate, loopDuration, loopOffset, duration, fullAudioPpqn, playheadPosition, isPlaying }) => {
+}> = ({ peaks, loopDuration, loopOffset, duration, fullAudioPpqn, playheadPosition, isPlaying }) => {
   const waveformCanvasRef = useRef<HTMLCanvasElement>(null);
   const playheadCanvasRef = useRef<HTMLCanvasElement>(null);
   // Store mutable values in refs so the AnimationFrame callback reads live data
@@ -235,7 +235,7 @@ const LoopedWaveformCanvas: React.FC<{
       ctx.stroke();
     }
     ctx.setLineDash([]);
-  }, [peaks, sampleRate, loopDuration, loopOffset, duration, fullAudioPpqn]);
+  }, [peaks, loopDuration, loopOffset, duration, fullAudioPpqn]);
 
   // Playhead overlay — uses AnimationFrame to avoid redrawing waveform every frame
   useEffect(() => {
@@ -315,7 +315,6 @@ const App: React.FC = () => {
   const [metronomeEnabled, setMetronomeEnabled] = useState(false);
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
   const [peaks, setPeaks] = useState<Peaks | null>(null);
-  const [sampleRate, setSampleRate] = useState(48000);
 
   const { currentPosition, isPlaying, pausedPositionRef } = usePlaybackPosition(project);
   const { handlePlay, handlePause, handleStop } = useTransportControls({
@@ -394,7 +393,7 @@ const App: React.FC = () => {
               const peaksOpt = sampleLoader.peaks;
               if (!peaksOpt.isEmpty() && mounted) {
                 setPeaks(peaksOpt.unwrap());
-                setSampleRate(newAudioContext.sampleRate);
+
               }
             } else if (state.type === "error" || state.type === "failed") {
               console.error("Sample loader failed:", state);
@@ -503,7 +502,7 @@ const App: React.FC = () => {
             <Callout.Text>
               Every region has a <Code>loopDuration</Code> (content that repeats) and a <Code>duration</Code> (total
               visible length). When duration exceeds loopDuration, the content tiles automatically.
-              Use <Code>loopOffset</Code> to shift which part of the audio loops.
+              Use <Code>waveformOffset</Code> (seconds) to shift which part of the audio file plays.
             </Callout.Text>
           </Callout.Root>
 
@@ -538,7 +537,6 @@ const App: React.FC = () => {
                   <Text size="2" weight="bold" color="gray">Waveform</Text>
                   <LoopedWaveformCanvas
                     peaks={peaks}
-                    sampleRate={sampleRate}
                     loopDuration={loopDuration}
                     loopOffset={loopOffset}
                     duration={duration}
@@ -664,11 +662,13 @@ project.editing.modify(() => {
   // Content that repeats (e.g., 2 bars of drums)
   regionBox.loopDuration.setValue(PPQN.fromSignature(4, 4) * 2);
 
-  // Where in the source audio the loop starts
-  regionBox.loopOffset.setValue(0);
-
   // Total region length (e.g., 8 bars = 4 repetitions)
   regionBox.duration.setValue(PPQN.fromSignature(4, 4) * 8);
+
+  // Skip into the audio file (e.g., 30s to skip silence)
+  // waveformOffset (seconds) shifts the audio read position
+  // loopOffset (PPQN) only controls loop cycle alignment
+  regionBox.waveformOffset.setValue(30.0);
 });`}
                   </Code>
                 </Flex>
