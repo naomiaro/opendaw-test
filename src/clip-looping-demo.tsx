@@ -242,6 +242,9 @@ const LoopedWaveformCanvas: React.FC<{
     const canvas = playheadCanvasRef.current;
     if (!canvas) return;
 
+    let prevWidth = 0;
+    let prevHeight = 0;
+
     const af = AnimationFrame.add(() => {
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
@@ -250,9 +253,19 @@ const LoopedWaveformCanvas: React.FC<{
       const width = canvas.clientWidth;
       if (width === 0) return;
       const height = CANVAS_HEIGHT;
-      canvas.width = width * dpr;
-      canvas.height = height * dpr;
-      ctx.scale(dpr, dpr);
+
+      // Only resize canvas when dimensions actually change
+      const targetWidth = width * dpr;
+      const targetHeight = height * dpr;
+      if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        prevWidth = width;
+        prevHeight = height;
+      }
+
+      // Reset transform and clear (clearRect is cheap, no reflow)
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, width, height);
 
       const d = durationRef.current;
@@ -393,18 +406,22 @@ const App: React.FC = () => {
               const peaksOpt = sampleLoader.peaks;
               if (!peaksOpt.isEmpty() && mounted) {
                 setPeaks(peaksOpt.unwrap());
-
               }
+              sampleSub?.terminate();
+              sampleSub = null;
             } else if (state.type === "error" || state.type === "failed") {
               console.error("Sample loader failed:", state);
               if (mounted) setStatus("Waveform peaks failed to load.");
+              sampleSub?.terminate();
+              sampleSub = null;
             }
           });
           // Also check if already loaded
           const peaksOpt = sampleLoader.peaks;
           if (!peaksOpt.isEmpty()) {
             setPeaks(peaksOpt.unwrap());
-            setSampleRate(newAudioContext.sampleRate);
+            sampleSub?.terminate();
+            sampleSub = null;
           }
         }
 
