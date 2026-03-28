@@ -660,6 +660,16 @@ terminable.terminate();
 `catchupAndSubscribe()` and `subscribe()` return `Terminable` objects. Store them and call
 `.terminate()` in the React `useEffect` cleanup. Discarding the return value leaks the
 subscription — callbacks continue firing after unmount.
+For one-shot subscriptions (e.g., waiting for `sampleLoader` "loaded"), terminate
+inside the callback on success AND on error — don't rely solely on effect cleanup:
+```typescript
+const sub = sampleLoader.subscribe((state: any) => {
+  if (state.type === "loaded") {
+    // ... handle data
+    sub.terminate(); // terminate immediately, don't wait for unmount
+  }
+});
+```
 
 ### CanvasPainter in React: Use Refs to Avoid Per-Frame Recreation
 `CanvasPainter` creates a `ResizeObserver` + `AnimationFrame` subscription — expensive to
