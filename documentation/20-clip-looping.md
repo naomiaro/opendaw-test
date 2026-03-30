@@ -250,7 +250,69 @@ All use `LoopableRegion.locateLoops()` and the same `globalToLocal` formula.
 
 ## Works with Both Timebases
 
-Audio regions support both Musical (PPQN) and Seconds timebases. The `AudioRegionBoxAdapter` converts `loopDuration` to PPQN via `TimeBaseConverter` before any calculations, so tiling works identically regardless of timebase.
+Audio regions support both Musical and Seconds timebases via the `timeBase` field on `AudioRegionBox`.
+
+```typescript
+import { TimeBase } from "@opendaw/lib-dsp";
+```
+
+### Musical (default)
+
+Values are stored in PPQN. Loop durations scale with BPM changes — a 2-bar loop stays 2 bars regardless of tempo.
+
+```typescript
+project.editing.modify(() => {
+  regionBox.timeBase.setValue(TimeBase.Musical);
+  regionBox.loopDuration.setValue(BAR * 2);     // 7680 PPQN
+  regionBox.duration.setValue(BAR * 8);          // 30720 PPQN
+});
+```
+
+### Seconds
+
+Values are stored in seconds. Loop durations stay constant regardless of BPM — a 3.87s loop stays 3.87s even if tempo changes.
+
+```typescript
+const bpm = project.timelineBox.bpm.getValue();
+const loopDurationSeconds = PPQN.pulsesToSeconds(BAR * 2, bpm); // ~3.87s at 124 BPM
+
+project.editing.modify(() => {
+  regionBox.timeBase.setValue(TimeBase.Seconds);
+  regionBox.loopDuration.setValue(loopDurationSeconds); // seconds, not PPQN
+  regionBox.duration.setValue(loopDurationSeconds * 4); // 4 tiles
+});
+```
+
+### What's stored in each mode
+
+| Field | Musical | Seconds |
+|-------|---------|---------|
+| `position` | PPQN | PPQN (always PPQN on timeline) |
+| `duration` | PPQN | seconds |
+| `loopDuration` | PPQN | seconds |
+| `loopOffset` | PPQN | PPQN |
+| `waveformOffset` | seconds (always) | seconds (always) |
+| `timelineBox.loopArea.from/to` | PPQN (always) | PPQN (always) |
+| `timelineBox.durationInPulses` | PPQN (always) | PPQN (always) |
+
+**Key point:** The timeline loop area and `durationInPulses` are always in PPQN regardless of region timebase. Only `duration` and `loopDuration` on the region itself change storage units. The `AudioRegionBoxAdapter` uses `TimeBaseConverter` to convert to PPQN before any engine calculations, so tiling works identically in both modes.
+
+### Switching at runtime
+
+When switching an existing region between timebases, convert and re-store the values:
+
+```typescript
+// Switch from Musical to Seconds
+const bpm = project.timelineBox.bpm.getValue();
+const durationSeconds = PPQN.pulsesToSeconds(currentDurationPpqn, bpm);
+const loopDurationSeconds = PPQN.pulsesToSeconds(currentLoopDurationPpqn, bpm);
+
+project.editing.modify(() => {
+  regionBox.timeBase.setValue(TimeBase.Seconds);
+  regionBox.duration.setValue(durationSeconds);
+  regionBox.loopDuration.setValue(loopDurationSeconds);
+});
+```
 
 ## Reference
 
