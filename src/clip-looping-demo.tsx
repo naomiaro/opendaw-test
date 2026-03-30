@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { PPQN } from "@opendaw/lib-dsp";
+import { PPQN, TimeBase } from "@opendaw/lib-dsp";
 import type { ppqn } from "@opendaw/lib-dsp";
 import { Project } from "@opendaw/studio-core";
 import { AudioRegionBox } from "@opendaw/studio-boxes";
@@ -19,7 +19,7 @@ import { useTransportControls } from "./hooks/useTransportControls";
 import "@radix-ui/themes/styles.css";
 import {
   Theme, Container, Heading, Text, Flex, Card, Button,
-  Callout, Badge, Separator, Slider, Code
+  Callout, Badge, Separator, Slider, Code, SegmentedControl
 } from "@radix-ui/themes";
 import { InfoCircledIcon } from "@radix-ui/react-icons";
 
@@ -91,13 +91,19 @@ function formatPpqn(ppqn: number): string {
   return `${bars} bar${bars !== 1 ? "s" : ""} ${beats} beat${beats !== 1 ? "s" : ""}`;
 }
 
+function formatSeconds(seconds: number): string {
+  if (seconds < 1) return `${(seconds * 1000).toFixed(0)} ms`;
+  return `${seconds.toFixed(2)} s`;
+}
+
 function applyLoopSettings(
   project: Project,
   regionBox: AudioRegionBox,
   loopDuration: number,
   loopOffset: number,
   duration: number,
-  fullAudioPpqn: number
+  fullAudioPpqn: number,
+  timeBase: TimeBase
 ): void {
   const ld = loopDuration === -1 ? fullAudioPpqn : loopDuration;
   const d = duration === -1 ? fullAudioPpqn : duration;
@@ -109,14 +115,31 @@ function applyLoopSettings(
   const bpm = project.timelineBox.bpm.getValue();
   const waveformOffsetSeconds = PPQN.pulsesToSeconds(loopOffset, bpm);
 
-  project.editing.modify(() => {
-    regionBox.position.setValue(0);
-    regionBox.loopOffset.setValue(0);
-    regionBox.loopDuration.setValue(ld);
-    regionBox.duration.setValue(d);
-    regionBox.waveformOffset.setValue(waveformOffsetSeconds);
-  });
+  if (timeBase === TimeBase.Seconds) {
+    // Seconds mode: convert PPQN values to seconds for storage
+    const ldSeconds = PPQN.pulsesToSeconds(ld, bpm);
+    const dSeconds = PPQN.pulsesToSeconds(d, bpm);
+    project.editing.modify(() => {
+      regionBox.timeBase.setValue(TimeBase.Seconds);
+      regionBox.position.setValue(0);
+      regionBox.loopOffset.setValue(0);
+      regionBox.loopDuration.setValue(ldSeconds);
+      regionBox.duration.setValue(dSeconds);
+      regionBox.waveformOffset.setValue(waveformOffsetSeconds);
+    });
+  } else {
+    // Musical mode: store PPQN directly
+    project.editing.modify(() => {
+      regionBox.timeBase.setValue(TimeBase.Musical);
+      regionBox.position.setValue(0);
+      regionBox.loopOffset.setValue(0);
+      regionBox.loopDuration.setValue(ld);
+      regionBox.duration.setValue(d);
+      regionBox.waveformOffset.setValue(waveformOffsetSeconds);
+    });
+  }
 
+  // Timeline loop area is always in PPQN
   project.editing.modify(() => {
     project.timelineBox.loopArea.from.setValue(0);
     project.timelineBox.loopArea.to.setValue(d);
@@ -325,6 +348,7 @@ const App: React.FC = () => {
   const [loopOffset, setLoopOffset] = useState(CONTENT_START);
   const [duration, setDuration] = useState(BAR * 8);
 
+  const [timeBase, setTimeBase] = useState<TimeBase>(TimeBase.Musical);
   const [metronomeEnabled, setMetronomeEnabled] = useState(false);
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
   const [peaks, setPeaks] = useState<Peaks | null>(null);
@@ -428,7 +452,7 @@ const App: React.FC = () => {
         const preset = PRESETS[0];
         const ld = preset.loopDuration === -1 ? audioPpqn : preset.loopDuration;
         const d = preset.duration === -1 ? audioPpqn : preset.duration;
-        applyLoopSettings(newProject, foundRegion, ld, preset.loopOffset, d, audioPpqn);
+        applyLoopSettings(newProject, foundRegion, ld, preset.loopOffset, d, audioPpqn, TimeBase.Musical);
         setLoopDuration(ld);
         setLoopOffset(preset.loopOffset);
         setDuration(d);
@@ -460,36 +484,36 @@ const App: React.FC = () => {
     const lo = preset.loopOffset;
     const d = preset.duration === -1 ? fullAudioPpqn : preset.duration;
 
-    applyLoopSettings(project, regionBox, ld, lo, d, fullAudioPpqn);
+    applyLoopSettings(project, regionBox, ld, lo, d, fullAudioPpqn, timeBase);
     setActivePresetIndex(index);
     setLoopDuration(ld);
     setLoopOffset(lo);
     setDuration(d);
-  }, [project, regionBox, isPlaying, fullAudioPpqn]);
+  }, [project, regionBox, isPlaying, fullAudioPpqn, timeBase]);
 
   const handleLoopDurationCommit = useCallback((value: number[]) => {
     setLoopDuration(value[0]);
     if (project && regionBox) {
-      applyLoopSettings(project, regionBox, value[0], loopOffset, duration, fullAudioPpqn);
+      applyLoopSettings(project, regionBox, value[0], loopOffset, duration, fullAudioPpqn, timeBase);
       setActivePresetIndex(-1);
     }
-  }, [project, regionBox, loopOffset, duration, fullAudioPpqn]);
+  }, [project, regionBox, loopOffset, duration, fullAudioPpqn, timeBase]);
 
   const handleLoopOffsetCommit = useCallback((value: number[]) => {
     setLoopOffset(value[0]);
     if (project && regionBox) {
-      applyLoopSettings(project, regionBox, loopDuration, value[0], duration, fullAudioPpqn);
+      applyLoopSettings(project, regionBox, loopDuration, value[0], duration, fullAudioPpqn, timeBase);
       setActivePresetIndex(-1);
     }
-  }, [project, regionBox, loopDuration, duration, fullAudioPpqn]);
+  }, [project, regionBox, loopDuration, duration, fullAudioPpqn, timeBase]);
 
   const handleDurationCommit = useCallback((value: number[]) => {
     setDuration(value[0]);
     if (project && regionBox) {
-      applyLoopSettings(project, regionBox, loopDuration, loopOffset, value[0], fullAudioPpqn);
+      applyLoopSettings(project, regionBox, loopDuration, loopOffset, value[0], fullAudioPpqn, timeBase);
       setActivePresetIndex(-1);
     }
-  }, [project, regionBox, loopDuration, loopOffset, fullAudioPpqn]);
+  }, [project, regionBox, loopDuration, loopOffset, fullAudioPpqn, timeBase]);
 
   const handleMetronomeToggle = useCallback(() => {
     if (!project) return;
@@ -497,6 +521,16 @@ const App: React.FC = () => {
     setMetronomeEnabled(next);
     project.engine.preferences.settings.metronome.enabled = next;
   }, [project, metronomeEnabled]);
+
+  const handleTimeBaseChange = useCallback((value: string) => {
+    if (!project || !regionBox) return;
+    if (isPlaying) project.engine.stop(true);
+
+    const newTimeBase = value === "seconds" ? TimeBase.Seconds : TimeBase.Musical;
+    setTimeBase(newTimeBase);
+    // Re-apply current settings with new timebase — values stay in PPQN internally
+    applyLoopSettings(project, regionBox, loopDuration, loopOffset, duration, fullAudioPpqn, newTimeBase);
+  }, [project, regionBox, isPlaying, loopDuration, loopOffset, duration, fullAudioPpqn]);
 
   const tileCount = loopDuration > 0 ? Math.ceil(duration / loopDuration) : 1;
   const isReady = status === "Ready";
@@ -545,6 +579,26 @@ const App: React.FC = () => {
                   {activePresetIndex >= 0 && (
                     <Text size="2" color="gray">{PRESETS[activePresetIndex].description}</Text>
                   )}
+
+                  <Separator size="4" />
+
+                  {/* TimeBase toggle */}
+                  <Flex align="center" gap="3">
+                    <Text size="2" weight="bold" color="gray">TimeBase</Text>
+                    <SegmentedControl.Root
+                      value={timeBase}
+                      onValueChange={handleTimeBaseChange}
+                      size="1"
+                    >
+                      <SegmentedControl.Item value="musical">Musical (PPQN)</SegmentedControl.Item>
+                      <SegmentedControl.Item value="seconds">Seconds</SegmentedControl.Item>
+                    </SegmentedControl.Root>
+                    <Text size="1" color="gray">
+                      {timeBase === TimeBase.Musical
+                        ? "Loop values scale with BPM changes"
+                        : "Loop values stay constant regardless of BPM"}
+                    </Text>
+                  </Flex>
                 </Flex>
               </Card>
 
@@ -569,50 +623,61 @@ const App: React.FC = () => {
                 <Flex direction="column" gap="4">
                   <Text size="2" weight="bold" color="gray">Loop Controls</Text>
 
-                  <Flex direction="column" gap="1">
-                    <Flex justify="between">
-                      <Text size="2">Loop Duration</Text>
-                      <Text size="2" color="gray">{formatPpqn(loopDuration)}</Text>
-                    </Flex>
-                    <Slider
-                      value={[loopDuration]}
-                      onValueChange={(v) => setLoopDuration(v[0])}
-                      onValueCommit={handleLoopDurationCommit}
-                      min={BEAT}
-                      max={BAR * 8}
-                      step={BEAT}
-                    />
-                  </Flex>
+                  {(() => {
+                    // Display helpers: internal state is always PPQN, convert for display in Seconds mode
+                    const bpm = BPM;
+                    const fmt = (ppqn: number) => timeBase === TimeBase.Seconds
+                      ? formatSeconds(PPQN.pulsesToSeconds(ppqn, bpm))
+                      : formatPpqn(ppqn);
+                    return (
+                      <>
+                        <Flex direction="column" gap="1">
+                          <Flex justify="between">
+                            <Text size="2">Loop Duration</Text>
+                            <Text size="2" color="gray">{fmt(loopDuration)}</Text>
+                          </Flex>
+                          <Slider
+                            value={[loopDuration]}
+                            onValueChange={(v) => setLoopDuration(v[0])}
+                            onValueCommit={handleLoopDurationCommit}
+                            min={BEAT}
+                            max={BAR * 8}
+                            step={BEAT}
+                          />
+                        </Flex>
 
-                  <Flex direction="column" gap="1">
-                    <Flex justify="between">
-                      <Text size="2">Loop Offset</Text>
-                      <Text size="2" color="gray">{formatPpqn(loopOffset)}</Text>
-                    </Flex>
-                    <Slider
-                      value={[loopOffset]}
-                      onValueChange={(v) => setLoopOffset(v[0])}
-                      onValueCommit={handleLoopOffsetCommit}
-                      min={0}
-                      max={Math.max(BAR * 8, fullAudioPpqn - loopDuration)}
-                      step={BEAT}
-                    />
-                  </Flex>
+                        <Flex direction="column" gap="1">
+                          <Flex justify="between">
+                            <Text size="2">Loop Offset</Text>
+                            <Text size="2" color="gray">{fmt(loopOffset)}</Text>
+                          </Flex>
+                          <Slider
+                            value={[loopOffset]}
+                            onValueChange={(v) => setLoopOffset(v[0])}
+                            onValueCommit={handleLoopOffsetCommit}
+                            min={0}
+                            max={Math.max(BAR * 8, fullAudioPpqn - loopDuration)}
+                            step={BEAT}
+                          />
+                        </Flex>
 
-                  <Flex direction="column" gap="1">
-                    <Flex justify="between">
-                      <Text size="2">Region Duration</Text>
-                      <Text size="2" color="gray">{formatPpqn(duration)}</Text>
-                    </Flex>
-                    <Slider
-                      value={[duration]}
-                      onValueChange={(v) => setDuration(v[0])}
-                      onValueCommit={handleDurationCommit}
-                      min={BAR}
-                      max={BAR * 16}
-                      step={BAR}
-                    />
-                  </Flex>
+                        <Flex direction="column" gap="1">
+                          <Flex justify="between">
+                            <Text size="2">Region Duration</Text>
+                            <Text size="2" color="gray">{fmt(duration)}</Text>
+                          </Flex>
+                          <Slider
+                            value={[duration]}
+                            onValueChange={(v) => setDuration(v[0])}
+                            onValueCommit={handleDurationCommit}
+                            min={BAR}
+                            max={BAR * 16}
+                            step={BAR}
+                          />
+                        </Flex>
+                      </>
+                    );
+                  })()}
 
                   <Separator size="4" />
 
@@ -623,15 +688,25 @@ const App: React.FC = () => {
                     </Flex>
                     <Flex direction="column" gap="1">
                       <Text size="1" color="gray">Loop Duration</Text>
-                      <Badge size="2" variant="outline">{loopDuration} PPQN</Badge>
+                      <Badge size="2" variant="outline">
+                        {timeBase === TimeBase.Seconds
+                          ? formatSeconds(PPQN.pulsesToSeconds(loopDuration, BPM))
+                          : `${loopDuration} PPQN`}
+                      </Badge>
                     </Flex>
                     <Flex direction="column" gap="1">
                       <Text size="1" color="gray">Region Duration</Text>
-                      <Badge size="2" variant="outline">{duration} PPQN</Badge>
+                      <Badge size="2" variant="outline">
+                        {timeBase === TimeBase.Seconds
+                          ? formatSeconds(PPQN.pulsesToSeconds(duration, BPM))
+                          : `${duration} PPQN`}
+                      </Badge>
                     </Flex>
                     <Flex direction="column" gap="1">
-                      <Text size="1" color="gray">Source Audio</Text>
-                      <Badge size="2" variant="outline">{formatPpqn(fullAudioPpqn)}</Badge>
+                      <Text size="1" color="gray">TimeBase</Text>
+                      <Badge size="2" variant="outline" color={timeBase === TimeBase.Seconds ? "blue" : "orange"}>
+                        {timeBase === TimeBase.Musical ? "Musical" : "Seconds"}
+                      </Badge>
                     </Flex>
                   </Flex>
                 </Flex>
