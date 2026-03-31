@@ -66,6 +66,79 @@ const App: React.FC = () => {
     pausedPositionRef,
   });
 
+  // --- Werkstatt effect management ---
+  const loadShowcaseEffect = useCallback((effect: ShowcaseEffect) => {
+    if (!project || !audioBoxRef.current) return;
+
+    // Delete existing showcase effect
+    if (werkstattBoxRef.current) {
+      project.editing.modify(() => {
+        werkstattBoxRef.current!.delete();
+      });
+      werkstattBoxRef.current = null;
+    }
+
+    // Insert new Werkstatt effect
+    let newBox: WerkstattDeviceBox | null = null;
+    project.editing.modify(() => {
+      const effectBox = project.api.insertEffect(
+        audioBoxRef.current!.audioEffects,
+        EffectFactories.Werkstatt
+      );
+      newBox = effectBox as WerkstattDeviceBox;
+      newBox.label.setValue(effect.name);
+      newBox.code.setValue(effect.script);
+    });
+
+    werkstattBoxRef.current = newBox;
+    setActiveEffect(effect.name);
+
+    // Read initial parameter values from the WerkstattParameterBoxes
+    // Parameters are created by the SDK when code is set
+    // Give SDK a frame to create parameter boxes, then read them
+    requestAnimationFrame(() => {
+      if (!newBox) return;
+      const params: Record<string, number> = {};
+      const paramPointers = newBox.parameters.pointerHub.incoming();
+      for (const pointer of paramPointers) {
+        const paramBox = pointer.box as any;
+        const label = paramBox.label?.getValue?.();
+        const value = paramBox.value?.getValue?.();
+        if (label != null && value != null) {
+          params[label] = value;
+        }
+      }
+      setEffectParams(params);
+    });
+  }, [project]);
+
+  const updateEffectParam = useCallback((paramName: string, value: number) => {
+    if (!project || !werkstattBoxRef.current) return;
+
+    const paramPointers = werkstattBoxRef.current.parameters.pointerHub.incoming();
+    for (const pointer of paramPointers) {
+      const paramBox = pointer.box as any;
+      if (paramBox.label?.getValue?.() === paramName) {
+        project.editing.modify(() => {
+          paramBox.value.setValue(value);
+        });
+        break;
+      }
+    }
+
+    setEffectParams(prev => ({ ...prev, [paramName]: value }));
+  }, [project]);
+
+  const clearShowcaseEffect = useCallback(() => {
+    if (!project || !werkstattBoxRef.current) return;
+    project.editing.modify(() => {
+      werkstattBoxRef.current!.delete();
+    });
+    werkstattBoxRef.current = null;
+    setActiveEffect(null);
+    setEffectParams({});
+  }, [project]);
+
   // --- Initialization ---
   const handleInit = useCallback(async () => {
     if (isInitialized) return;
@@ -213,8 +286,102 @@ const App: React.FC = () => {
                 </Text>
               </Flex>
 
-              {/* Placeholder for showcase and API ref sections */}
-              <Text size="2" color="gray">Effect showcase and API reference sections coming next...</Text>
+              {/* Effect Showcase */}
+              <Flex direction="column" gap="4">
+                <Flex justify="between" align="center">
+                  <Heading size="6">Effect Showcase</Heading>
+                  {activeEffect && (
+                    <Button variant="ghost" size="1" onClick={clearShowcaseEffect}>
+                      Clear Effect
+                    </Button>
+                  )}
+                </Flex>
+
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "0.75rem" }}>
+                  {SHOWCASE_EFFECTS.map((effect) => (
+                    <Card
+                      key={effect.name}
+                      style={{
+                        cursor: "pointer",
+                        border: activeEffect === effect.name
+                          ? "2px solid var(--accent-9)"
+                          : "2px solid transparent",
+                      }}
+                      onClick={() => loadShowcaseEffect(effect)}
+                    >
+                      <Flex direction="column" gap="1" p="2">
+                        <Text size="2" weight="bold">{effect.name}</Text>
+                        <Text size="1" color="gray">{effect.description}</Text>
+                      </Flex>
+                    </Card>
+                  ))}
+                </div>
+
+                {/* Parameter sliders */}
+                {activeEffect && Object.keys(effectParams).length > 0 && (
+                  <Card>
+                    <Flex direction="column" gap="3" p="3">
+                      <Text size="2" weight="bold">Parameters</Text>
+                      {Object.entries(effectParams).map(([name, value]) => {
+                        // Parse param metadata from the active script
+                        const effect = SHOWCASE_EFFECTS.find(e => e.name === activeEffect);
+                        const paramLine = effect?.script
+                          .split("\n")
+                          .find(line => line.startsWith(`// @param ${name}`));
+                        const parts = paramLine?.split(/\s+/) || [];
+                        // // @param name [default] [min max type [unit]]
+                        const min = parts.length >= 5 ? parseFloat(parts[4]) : 0;
+                        const max = parts.length >= 6 ? parseFloat(parts[5]) : 1;
+                        const unit = parts.length >= 8 ? parts[7] : "";
+                        const step = parts[6] === "int" ? 1 : (max - min) / 200;
+
+                        return (
+                          <Flex key={name} direction="column" gap="1">
+                            <Flex justify="between">
+                              <Text size="1" color="gray">{name}</Text>
+                              <Text size="1" color="gray">
+                                {parts[6] === "int" ? value.toFixed(0) : value.toFixed(2)}{unit ? ` ${unit}` : ""}
+                              </Text>
+                            </Flex>
+                            <Slider
+                              min={min}
+                              max={max}
+                              step={step}
+                              value={[value]}
+                              onValueChange={([v]) => updateEffectParam(name, v)}
+                            />
+                          </Flex>
+                        );
+                      })}
+                    </Flex>
+                  </Card>
+                )}
+
+                {/* Code display */}
+                {activeEffect && (
+                  <Card>
+                    <Flex direction="column" gap="2" p="3">
+                      <Text size="2" weight="bold">Source Code</Text>
+                      <pre style={{
+                        margin: 0,
+                        padding: "1rem",
+                        backgroundColor: "var(--gray-2)",
+                        borderRadius: "var(--radius-2)",
+                        overflow: "auto",
+                        fontSize: "0.8rem",
+                        lineHeight: 1.5,
+                      }}>
+                        <code>{SHOWCASE_EFFECTS.find(e => e.name === activeEffect)?.script}</code>
+                      </pre>
+                    </Flex>
+                  </Card>
+                )}
+              </Flex>
+
+              <Separator size="4" />
+
+              {/* API Reference placeholder */}
+              <Text size="2" color="gray">API Reference section coming next...</Text>
             </>
           )}
 
