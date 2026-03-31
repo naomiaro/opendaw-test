@@ -35,7 +35,8 @@ export default defineConfig({
                 midiRecording: resolve(__dirname, "midi-recording-demo.html"),
                 loopRecording: resolve(__dirname, "loop-recording-demo.html"),
                 trackAutomation: resolve(__dirname, "track-automation-demo.html"),
-                clipLooping: resolve(__dirname, "clip-looping-demo.html")
+                clipLooping: resolve(__dirname, "clip-looping-demo.html"),
+                werkstatt: resolve(__dirname, "werkstatt-demo.html")
             },
             output: {
                 manualChunks: (id) => {
