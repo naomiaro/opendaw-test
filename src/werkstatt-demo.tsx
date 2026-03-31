@@ -185,6 +185,50 @@ const App: React.FC = () => {
     setAudioSource(source);
   }, [project]);
 
+  const loadApiExample = useCallback((script: string) => {
+    if (!project || !audioBoxRef.current) return;
+
+    // Delete existing showcase effect
+    if (werkstattBoxRef.current) {
+      project.editing.modify(() => {
+        werkstattBoxRef.current!.delete();
+      });
+      werkstattBoxRef.current = null;
+    }
+
+    // Insert the API example as a Werkstatt effect
+    let newBox: WerkstattDeviceBox | null = null;
+    project.editing.modify(() => {
+      const effectBox = project.api.insertEffect(
+        audioBoxRef.current!.audioEffects,
+        EffectFactories.Werkstatt
+      );
+      newBox = effectBox as WerkstattDeviceBox;
+      newBox.label.setValue("API Example");
+      newBox.code.setValue(script);
+    });
+
+    werkstattBoxRef.current = newBox;
+    setActiveEffect(null); // Deselect showcase cards
+    setEffectParams({});
+
+    // Read params after SDK processes the code
+    requestAnimationFrame(() => {
+      if (!newBox) return;
+      const params: Record<string, number> = {};
+      const paramPointers = newBox.parameters.pointerHub.incoming();
+      for (const pointer of paramPointers) {
+        const paramBox = pointer.box as any;
+        const label = paramBox.label?.getValue?.();
+        const value = paramBox.value?.getValue?.();
+        if (label != null && value != null) {
+          params[label] = value;
+        }
+      }
+      setEffectParams(params);
+    });
+  }, [project]);
+
   // --- Initialization ---
   const handleInit = useCallback(async () => {
     if (isInitialized) return;
@@ -439,8 +483,83 @@ const App: React.FC = () => {
 
               <Separator size="4" />
 
-              {/* API Reference placeholder */}
-              <Text size="2" color="gray">API Reference section coming next...</Text>
+              {/* API Reference */}
+              <Flex direction="column" gap="4">
+                <Heading size="6">API Reference</Heading>
+                <Text size="2" color="gray">
+                  Each section below documents a part of the Werkstatt API. Click &ldquo;Load&rdquo; to hear
+                  the example applied to the current audio source.
+                </Text>
+
+                {API_EXAMPLES.map((example) => (
+                  <Card key={example.id}>
+                    <Flex direction="column" gap="3" p="3">
+                      <Flex justify="between" align="center">
+                        <Heading size="4">{example.title}</Heading>
+                        {example.script && (
+                          <Button
+                            variant="soft"
+                            size="1"
+                            onClick={() => loadApiExample(example.script!)}
+                          >
+                            Load
+                          </Button>
+                        )}
+                      </Flex>
+
+                      <Text size="2" color="gray">{example.description}</Text>
+
+                      {example.id === "param-declarations" && (
+                        <RadixBox>
+                          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8rem" }}>
+                            <thead>
+                              <tr style={{ borderBottom: "1px solid var(--gray-6)" }}>
+                                <th style={{ textAlign: "left", padding: "0.5rem" }}>Declaration</th>
+                                <th style={{ textAlign: "left", padding: "0.5rem" }}>Type</th>
+                                <th style={{ textAlign: "left", padding: "0.5rem" }}>Range</th>
+                                <th style={{ textAlign: "left", padding: "0.5rem" }}>Default</th>
+                                <th style={{ textAlign: "left", padding: "0.5rem" }}>paramChanged receives</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {[
+                                ["// @param gain", "unipolar", "0\u20131", "0", "0.0\u20131.0"],
+                                ["// @param gain 0.5", "unipolar", "0\u20131", "0.5", "0.0\u20131.0"],
+                                ["// @param time 500 1 2000", "linear", "1\u20132000", "500", "raw value"],
+                                ["// @param cutoff 1000 20 20000 exp Hz", "exponential", "20\u201320000", "1000", "raw value"],
+                                ["// @param steps 4 1 16 int", "integer", "1\u201316", "4", "integer"],
+                                ["// @param bypass false", "boolean", "\u2014", "Off", "0 or 1"],
+                              ].map(([decl, type, range, def, receives], idx) => (
+                                <tr key={idx} style={{ borderBottom: "1px solid var(--gray-4)" }}>
+                                  <td style={{ padding: "0.5rem" }}><Code size="1">{decl}</Code></td>
+                                  <td style={{ padding: "0.5rem" }}>{type}</td>
+                                  <td style={{ padding: "0.5rem" }}>{range}</td>
+                                  <td style={{ padding: "0.5rem" }}>{def}</td>
+                                  <td style={{ padding: "0.5rem" }}>{receives}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </RadixBox>
+                      )}
+
+                      {example.script && (
+                        <pre style={{
+                          margin: 0,
+                          padding: "1rem",
+                          backgroundColor: "var(--gray-2)",
+                          borderRadius: "var(--radius-2)",
+                          overflow: "auto",
+                          fontSize: "0.8rem",
+                          lineHeight: 1.5,
+                        }}>
+                          <code>{example.script}</code>
+                        </pre>
+                      )}
+                    </Flex>
+                  </Card>
+                ))}
+              </Flex>
             </>
           )}
 
