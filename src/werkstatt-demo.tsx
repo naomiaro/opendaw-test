@@ -139,6 +139,52 @@ const App: React.FC = () => {
     setEffectParams({});
   }, [project]);
 
+  const switchAudioSource = useCallback((source: AudioSource) => {
+    if (!project || !audioBoxRef.current) return;
+
+    // Remove existing generator
+    if (generatorBoxRef.current) {
+      project.editing.modify(() => {
+        generatorBoxRef.current!.delete();
+      });
+      generatorBoxRef.current = null;
+    }
+
+    if (source === "sine" || source === "noise") {
+      // Mute the drum region so only the generator is heard
+      if (regionBoxRef.current) {
+        project.editing.modify(() => {
+          regionBoxRef.current!.mute.setValue(true);
+        });
+      }
+
+      // Insert generator Werkstatt at the beginning of the effect chain
+      const script = source === "sine" ? SINE_GENERATOR_SCRIPT : NOISE_GENERATOR_SCRIPT;
+      let genBox: WerkstattDeviceBox | null = null;
+      project.editing.modify(() => {
+        const effectBox = project.api.insertEffect(
+          audioBoxRef.current!.audioEffects,
+          EffectFactories.Werkstatt
+        );
+        genBox = effectBox as WerkstattDeviceBox;
+        genBox.label.setValue(source === "sine" ? "Sine Generator" : "Noise Generator");
+        genBox.code.setValue(script);
+        // Move to index 0 so it runs before the showcase effect
+        genBox.index.setValue(0);
+      });
+      generatorBoxRef.current = genBox;
+    } else {
+      // Drums: unmute the region
+      if (regionBoxRef.current) {
+        project.editing.modify(() => {
+          regionBoxRef.current!.mute.setValue(false);
+        });
+      }
+    }
+
+    setAudioSource(source);
+  }, [project]);
+
   // --- Initialization ---
   const handleInit = useCallback(async () => {
     if (isInitialized) return;
@@ -268,6 +314,19 @@ const App: React.FC = () => {
             </Card>
           ) : (
             <>
+              {/* Audio Source Selector */}
+              <Flex gap="3" align="center">
+                <Text size="2" weight="bold">Audio Source</Text>
+                <SegmentedControl.Root
+                  value={audioSource}
+                  onValueChange={(v) => switchAudioSource(v as AudioSource)}
+                >
+                  <SegmentedControl.Item value="drums">Drums</SegmentedControl.Item>
+                  <SegmentedControl.Item value="sine">Sine</SegmentedControl.Item>
+                  <SegmentedControl.Item value="noise">Noise</SegmentedControl.Item>
+                </SegmentedControl.Root>
+              </Flex>
+
               {/* Transport */}
               <Flex gap="2" align="center">
                 <Button
