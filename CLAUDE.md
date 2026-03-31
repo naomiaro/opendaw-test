@@ -356,6 +356,33 @@ Three new scriptable device types powered by `ScriptCompiler`:
 All use `// @param` and `// @sample` comment declarations in code for parameters/samples.
 Box types: `ApparatDeviceBox`, `WerkstattDeviceBox`, `SpielwerkDeviceBox`.
 
+### Scriptable Device Code: Must Use ScriptCompiler.compile()
+**CRITICAL:** `deviceBox.code.setValue(script)` does NOT execute the script. You must use
+`ScriptCompiler.compile()` which wraps the code, registers it via `audioWorklet.addModule()`,
+and writes back a header (`// @werkstatt js 1 <update-number>`) that the processor detects.
+Without compilation, the processor sees `update === 0` and stays silent.
+```typescript
+import { ScriptCompiler } from "@opendaw/studio-adapters";
+
+const compiler = ScriptCompiler.create({
+  headerTag: "werkstatt",       // or "apparat" or "spielwerk"
+  registryName: "werkstattProcessors",  // or "apparatProcessors" or "spielwerkProcessors"
+  functionName: "werkstatt",    // or "apparat" or "spielwerk"
+});
+
+// Insert the effect first (in editing.modify), then compile OUTSIDE the transaction:
+let werkstattBox: WerkstattDeviceBox;
+project.editing.modify(() => {
+  const effectBox = project.api.insertEffect(audioBox.audioEffects, EffectFactories.Werkstatt);
+  werkstattBox = effectBox as WerkstattDeviceBox;
+  werkstattBox.label.setValue("My Effect");
+});
+await compiler.compile(audioContext, project.editing, werkstattBox, userCode);
+// Parameters are now available via werkstattBox.parameters.pointerHub.incoming()
+```
+`compiler.stripHeader(code)` removes the `// @werkstatt ...` header to recover user code.
+`compiler.load(audioContext, deviceBox)` reloads already-compiled code (e.g., on page load).
+
 ### Effect Display Name Changes (SDK 0.0.129+)
 - `EffectFactories.Reverb` display name changed from "Cheap Reverb" to "Free Reverb" (API name unchanged)
 - `EffectFactories.NeuralAmp` display name changed to "Tone3000" (`IconSymbol.Tone3000`)
