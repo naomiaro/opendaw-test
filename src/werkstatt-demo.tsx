@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { PPQN } from "@opendaw/lib-dsp";
 import { Project, EffectFactories } from "@opendaw/studio-core";
 import { AudioRegionBox, AudioUnitBox, WerkstattDeviceBox } from "@opendaw/studio-boxes";
+import { ScriptCompiler } from "@opendaw/studio-adapters";
 import type { Peaks } from "@opendaw/lib-fusion";
 import { PeaksPainter } from "@opendaw/lib-fusion";
 import { AnimationFrame } from "@opendaw/lib-dom";
@@ -55,6 +56,11 @@ const App: React.FC = () => {
   const werkstattBoxRef = useRef<WerkstattDeviceBox | null>(null);
   const generatorBoxRef = useRef<WerkstattDeviceBox | null>(null);
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
+  const compilerRef = useRef(ScriptCompiler.create({
+    headerTag: "werkstatt",
+    registryName: "werkstattProcessors",
+    functionName: "werkstatt",
+  }));
   const [peaks, setPeaks] = useState<Peaks | null>(null);
   const [fullAudioPpqn, setFullAudioPpqn] = useState(0);
 
@@ -67,8 +73,8 @@ const App: React.FC = () => {
   });
 
   // --- Werkstatt effect management ---
-  const loadShowcaseEffect = useCallback((effect: ShowcaseEffect) => {
-    if (!project || !audioBoxRef.current) return;
+  const loadShowcaseEffect = useCallback(async (effect: ShowcaseEffect) => {
+    if (!project || !audioContext || !audioBoxRef.current) return;
 
     // Delete existing showcase effect
     if (werkstattBoxRef.current) {
@@ -87,30 +93,29 @@ const App: React.FC = () => {
       );
       newBox = effectBox as WerkstattDeviceBox;
       newBox.label.setValue(effect.name);
-      newBox.code.setValue(effect.script);
     });
 
+    if (!newBox) return;
     werkstattBoxRef.current = newBox;
     setActiveEffect(effect.name);
 
-    // Read initial parameter values from the WerkstattParameterBoxes
-    // Parameters are created by the SDK when code is set
-    // Give SDK a frame to create parameter boxes, then read them
-    requestAnimationFrame(() => {
-      if (!newBox) return;
-      const params: Record<string, number> = {};
-      const paramPointers = newBox.parameters.pointerHub.incoming();
-      for (const pointer of paramPointers) {
-        const paramBox = pointer.box as any;
-        const label = paramBox.label?.getValue?.();
-        const value = paramBox.value?.getValue?.();
-        if (label != null && value != null) {
-          params[label] = value;
-        }
+    // Compile the script — this wraps the code, registers it in the AudioWorklet,
+    // and writes the compiled code back to the box with a header the processor detects.
+    await compilerRef.current.compile(audioContext, project.editing, newBox, effect.script);
+
+    // Read parameter values after compilation creates the WerkstattParameterBoxes
+    const params: Record<string, number> = {};
+    const paramPointers = newBox.parameters.pointerHub.incoming();
+    for (const pointer of paramPointers) {
+      const paramBox = pointer.box as any;
+      const label = paramBox.label?.getValue?.();
+      const value = paramBox.value?.getValue?.();
+      if (label != null && value != null) {
+        params[label] = value;
       }
-      setEffectParams(params);
-    });
-  }, [project]);
+    }
+    setEffectParams(params);
+  }, [project, audioContext]);
 
   const updateEffectParam = useCallback((paramName: string, value: number) => {
     if (!project || !werkstattBoxRef.current) return;
@@ -139,8 +144,8 @@ const App: React.FC = () => {
     setEffectParams({});
   }, [project]);
 
-  const switchAudioSource = useCallback((source: AudioSource) => {
-    if (!project || !audioBoxRef.current) return;
+  const switchAudioSource = useCallback(async (source: AudioSource) => {
+    if (!project || !audioContext || !audioBoxRef.current) return;
 
     // Remove existing generator
     if (generatorBoxRef.current) {
@@ -168,11 +173,14 @@ const App: React.FC = () => {
         );
         genBox = effectBox as WerkstattDeviceBox;
         genBox.label.setValue(source === "sine" ? "Sine Generator" : "Noise Generator");
-        genBox.code.setValue(script);
         // Move to index 0 so it runs before the showcase effect
         genBox.index.setValue(0);
       });
-      generatorBoxRef.current = genBox;
+
+      if (genBox) {
+        await compilerRef.current.compile(audioContext, project.editing, genBox, script);
+        generatorBoxRef.current = genBox;
+      }
     } else {
       // Drums: unmute the region
       if (regionBoxRef.current) {
@@ -183,10 +191,10 @@ const App: React.FC = () => {
     }
 
     setAudioSource(source);
-  }, [project]);
+  }, [project, audioContext]);
 
-  const loadApiExample = useCallback((script: string) => {
-    if (!project || !audioBoxRef.current) return;
+  const loadApiExample = useCallback(async (script: string) => {
+    if (!project || !audioContext || !audioBoxRef.current) return;
 
     // Delete existing showcase effect
     if (werkstattBoxRef.current) {
@@ -205,29 +213,27 @@ const App: React.FC = () => {
       );
       newBox = effectBox as WerkstattDeviceBox;
       newBox.label.setValue("API Example");
-      newBox.code.setValue(script);
     });
 
+    if (!newBox) return;
     werkstattBoxRef.current = newBox;
     setActiveEffect(null); // Deselect showcase cards
-    setEffectParams({});
 
-    // Read params after SDK processes the code
-    requestAnimationFrame(() => {
-      if (!newBox) return;
-      const params: Record<string, number> = {};
-      const paramPointers = newBox.parameters.pointerHub.incoming();
-      for (const pointer of paramPointers) {
-        const paramBox = pointer.box as any;
-        const label = paramBox.label?.getValue?.();
-        const value = paramBox.value?.getValue?.();
-        if (label != null && value != null) {
-          params[label] = value;
-        }
+    await compilerRef.current.compile(audioContext, project.editing, newBox, script);
+
+    // Read params after compilation
+    const params: Record<string, number> = {};
+    const paramPointers = newBox.parameters.pointerHub.incoming();
+    for (const pointer of paramPointers) {
+      const paramBox = pointer.box as any;
+      const label = paramBox.label?.getValue?.();
+      const value = paramBox.value?.getValue?.();
+      if (label != null && value != null) {
+        params[label] = value;
       }
-      setEffectParams(params);
-    });
-  }, [project]);
+    }
+    setEffectParams(params);
+  }, [project, audioContext]);
 
   // --- Initialization ---
   const handleInit = useCallback(async () => {
