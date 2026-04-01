@@ -1,12 +1,9 @@
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { PPQN } from "@opendaw/lib-dsp";
 import { Project, EffectFactories } from "@opendaw/studio-core";
 import { AudioRegionBox, AudioUnitBox, WerkstattDeviceBox } from "@opendaw/studio-boxes";
 import { ScriptCompiler } from "@opendaw/studio-adapters";
-import type { Peaks } from "@opendaw/lib-fusion";
-import { PeaksPainter } from "@opendaw/lib-fusion";
-import { AnimationFrame } from "@opendaw/lib-dom";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { MoisesLogo } from "./components/MoisesLogo";
 import { BackLink } from "./components/BackLink";
@@ -25,10 +22,10 @@ import type { ShowcaseEffect } from "./lib/werkstattScripts";
 import "@radix-ui/themes/styles.css";
 import {
   Theme, Container, Heading, Text, Flex, Card, Button,
-  Callout, Badge, Separator, Slider, Code, SegmentedControl,
+  Separator, Slider, Code, SegmentedControl,
   Box as RadixBox,
 } from "@radix-ui/themes";
-import { InfoCircledIcon, PlayIcon, PauseIcon, StopIcon } from "@radix-ui/react-icons";
+import { PlayIcon, PauseIcon, StopIcon } from "@radix-ui/react-icons";
 
 const BPM = 124;
 const BAR = PPQN.fromSignature(4, 4); // 3840
@@ -61,8 +58,6 @@ const App: React.FC = () => {
     registryName: "werkstattProcessors",
     functionName: "werkstatt",
   }));
-  const [peaks, setPeaks] = useState<Peaks | null>(null);
-  const [fullAudioPpqn, setFullAudioPpqn] = useState(0);
 
   // Transport hooks
   const { currentPosition, isPlaying, pausedPositionRef } = usePlaybackPosition(project);
@@ -99,9 +94,18 @@ const App: React.FC = () => {
     werkstattBoxRef.current = newBox;
     setActiveEffect(effect.name);
 
-    // Compile the script — this wraps the code, registers it in the AudioWorklet,
-    // and writes the compiled code back to the box with a header the processor detects.
-    await compilerRef.current.compile(audioContext, project.editing, newBox, effect.script);
+    try {
+      // Compile the script — wraps code, registers in AudioWorklet, writes header
+      await compilerRef.current.compile(audioContext, project.editing, newBox, effect.script);
+    } catch (err) {
+      console.error(`Failed to compile effect "${effect.name}":`, err);
+      setStatus(`Failed to load effect: ${err instanceof Error ? err.message : String(err)}`);
+      try { project.editing.modify(() => newBox!.delete()); } catch { /* cleanup */ }
+      werkstattBoxRef.current = null;
+      setActiveEffect(null);
+      setEffectParams({});
+      return;
+    }
 
     // Read parameter values after compilation creates the WerkstattParameterBoxes
     const params: Record<string, number> = {};
@@ -120,6 +124,7 @@ const App: React.FC = () => {
   const updateEffectParam = useCallback((paramName: string, value: number) => {
     if (!project || !werkstattBoxRef.current) return;
 
+    let found = false;
     const paramPointers = werkstattBoxRef.current.parameters.pointerHub.incoming();
     for (const pointer of paramPointers) {
       const paramBox = pointer.box as any;
@@ -127,11 +132,14 @@ const App: React.FC = () => {
         project.editing.modify(() => {
           paramBox.value.setValue(value);
         });
+        found = true;
         break;
       }
     }
 
-    setEffectParams(prev => ({ ...prev, [paramName]: value }));
+    if (found) {
+      setEffectParams(prev => ({ ...prev, [paramName]: value }));
+    }
   }, [project]);
 
   const clearShowcaseEffect = useCallback(() => {
@@ -146,12 +154,11 @@ const App: React.FC = () => {
 
   const switchAudioSource = useCallback(async (source: AudioSource) => {
     if (!project || !audioContext || !audioBoxRef.current) return;
+    const previousSource = audioSource;
 
     // Remove existing generator
     if (generatorBoxRef.current) {
-      project.editing.modify(() => {
-        generatorBoxRef.current!.delete();
-      });
+      try { project.editing.modify(() => generatorBoxRef.current!.delete()); } catch { /* cleanup */ }
       generatorBoxRef.current = null;
     }
 
@@ -173,13 +180,24 @@ const App: React.FC = () => {
         );
         genBox = effectBox as WerkstattDeviceBox;
         genBox.label.setValue(source === "sine" ? "Sine Generator" : "Noise Generator");
-        // Move to index 0 so it runs before the showcase effect
         genBox.index.setValue(0);
       });
 
       if (genBox) {
-        await compilerRef.current.compile(audioContext, project.editing, genBox, script);
-        generatorBoxRef.current = genBox;
+        try {
+          await compilerRef.current.compile(audioContext, project.editing, genBox, script);
+          generatorBoxRef.current = genBox;
+        } catch (err) {
+          console.error("Failed to compile generator:", err);
+          setStatus(`Failed to switch source: ${err instanceof Error ? err.message : String(err)}`);
+          try { project.editing.modify(() => genBox!.delete()); } catch { /* cleanup */ }
+          // Restore drums
+          if (regionBoxRef.current) {
+            project.editing.modify(() => regionBoxRef.current!.mute.setValue(false));
+          }
+          setAudioSource(previousSource);
+          return;
+        }
       }
     } else {
       // Drums: unmute the region
@@ -191,7 +209,7 @@ const App: React.FC = () => {
     }
 
     setAudioSource(source);
-  }, [project, audioContext]);
+  }, [project, audioContext, audioSource]);
 
   const loadApiExample = useCallback(async (script: string) => {
     if (!project || !audioContext || !audioBoxRef.current) return;
@@ -219,7 +237,16 @@ const App: React.FC = () => {
     werkstattBoxRef.current = newBox;
     setActiveEffect(null); // Deselect showcase cards
 
-    await compilerRef.current.compile(audioContext, project.editing, newBox, script);
+    try {
+      await compilerRef.current.compile(audioContext, project.editing, newBox, script);
+    } catch (err) {
+      console.error("Failed to compile API example:", err);
+      setStatus(`Failed to load example: ${err instanceof Error ? err.message : String(err)}`);
+      try { project.editing.modify(() => newBox!.delete()); } catch { /* cleanup */ }
+      werkstattBoxRef.current = null;
+      setEffectParams({});
+      return;
+    }
 
     // Read params after compilation
     const params: Record<string, number> = {};
@@ -286,8 +313,6 @@ const App: React.FC = () => {
         return;
       }
 
-      const audioPpqn = foundRegion.duration.getValue();
-      setFullAudioPpqn(audioPpqn);
       regionBoxRef.current = foundRegion;
       audioBoxRef.current = tracks[0].audioUnitBox;
 
@@ -310,39 +335,20 @@ const App: React.FC = () => {
         newProject.timelineBox.durationInPulses.setValue(playbackDuration);
       });
 
-      // Subscribe for peaks
-      const track = tracks[0];
-      const sampleLoader = newProject.sampleManager.getOrCreate(track.uuid);
-      const sub = sampleLoader.subscribe((state: any) => {
-        if (state.type === "loaded") {
-          const peaksOpt = sampleLoader.peaks;
-          if (!peaksOpt.isEmpty()) {
-            setPeaks(peaksOpt.unwrap());
-          }
-          sub.terminate();
-        }
-      });
-      // Check if already loaded
-      const peaksOpt = sampleLoader.peaks;
-      if (!peaksOpt.isEmpty()) {
-        setPeaks(peaksOpt.unwrap());
-        sub.terminate();
-      }
-
       setIsInitialized(true);
       setStatus("Ready");
     } catch (err) {
-      console.error("Init failed:", err);
-      setStatus(`Error: ${err}`);
+      console.error("Werkstatt demo initialization failed:", err);
+      setStatus(`Initialization failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }, [isInitialized]);
 
   // --- Render ---
   return (
     <Theme appearance="dark" accentColor="blue" radius="large">
-      <GitHubCorner />
       <Container size="3" px="4" py="8">
         <Flex direction="column" gap="6" style={{ maxWidth: 1200, margin: "0 auto" }}>
+          <GitHubCorner />
           <BackLink />
 
           <Flex direction="column" gap="2">
@@ -438,7 +444,7 @@ const App: React.FC = () => {
                           .split("\n")
                           .find(line => line.startsWith(`// @param ${name}`));
                         const parts = paramLine?.split(/\s+/) || [];
-                        // // @param name [default] [min max type [unit]]
+                        // Format: @param <name> [default] [min max type [unit]]
                         const min = parts.length >= 5 ? parseFloat(parts[4]) : 0;
                         const max = parts.length >= 6 ? parseFloat(parts[5]) : 1;
                         const unit = parts.length >= 8 ? parts[7] : "";

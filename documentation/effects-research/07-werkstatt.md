@@ -65,7 +65,7 @@ class Processor {
 | `s1` | number | Last sample index (exclusive) |
 | `index` | number | Block counter |
 | `bpm` | number | Current tempo |
-| `p0` | number | Start position in PPQN (480 ppqn) |
+| `p0` | number | Start position in PPQN (960 ppqn per quarter note) |
 | `p1` | number | End position in PPQN |
 | `flags` | number | Bitmask (see below) |
 
@@ -207,7 +207,7 @@ for (const pointer of paramPointers) {
 // @param gain 1.0
 
 class Processor {
-    gain = 0
+    gain = 1
     paramChanged(label, value) {
         if (label === "gain") this.gain = value
     }
@@ -261,16 +261,19 @@ class Processor {
 // @param resonance 0.707 0.1 20 exp
 
 class Processor {
+    cutoff = 1000
+    resonance = 0.707
     b0 = 0; b1 = 0; b2 = 0; a1 = 0; a2 = 0
     xL1 = 0; xL2 = 0; yL1 = 0; yL2 = 0
     xR1 = 0; xR2 = 0; yR1 = 0; yR2 = 0
 
-    paramChanged(label, value) {
-        if (label === "cutoff" || label === "resonance") this.recalc()
-    }
+    constructor() { this.recalc() }
 
-    cutoff = 1000
-    resonance = 0.707
+    paramChanged(label, value) {
+        if (label === "cutoff") this.cutoff = value
+        if (label === "resonance") this.resonance = value
+        this.recalc()
+    }
 
     recalc() {
         const w0 = 2 * Math.PI * this.cutoff / sampleRate

@@ -42,7 +42,7 @@ class Processor {
   },
   {
     name: "Ring Modulator",
-    description: "Frequency-domain multiplication with a sine carrier",
+    description: "Amplitude multiplication with a sine carrier",
     script: `// @param frequency 440 20 20000 exp Hz
 // @param mix 0.5
 
@@ -84,6 +84,8 @@ class Processor {
   xL1 = 0; xL2 = 0; yL1 = 0; yL2 = 0
   xR1 = 0; xR2 = 0; yR1 = 0; yR2 = 0
 
+  constructor() { this.recalc() }
+
   paramChanged(label, value) {
     if (label === "cutoff") this.cutoff = value
     if (label === "resonance") this.resonance = value
@@ -118,7 +120,7 @@ class Processor {
   },
   {
     name: "Chorus",
-    description: "Modulated delay line for stereo widening",
+    description: "Modulated delay line chorus effect",
     script: `// @param rate 1.5 0.1 10 exp Hz
 // @param depth 0.5
 // @param mix 0.5
@@ -199,11 +201,11 @@ class Processor {
       let sR = srcR[i]
       for (let s = 0; s < this.stages; s++) {
         const inL = sL
-        sL = coeff * sL + this.apL[s] - coeff * this.apL[s]
-        this.apL[s] = inL
+        sL = coeff * inL + this.apL[s]
+        this.apL[s] = inL - coeff * sL
         const inR = sR
-        sR = coeff * sR + this.apR[s] - coeff * this.apR[s]
-        this.apR[s] = inR
+        sR = coeff * inR + this.apR[s]
+        this.apR[s] = inR - coeff * sR
       }
       outL[i] = 0.5 * (srcL[i] + sL)
       outR[i] = 0.5 * (srcR[i] + sR)
@@ -292,7 +294,7 @@ export const API_EXAMPLES: ApiExample[] = [
     title: "Parameter Declarations",
     description:
       "Declare parameters with // @param comments. The SDK creates UI knobs and calls paramChanged(label, value) when they change. " +
-      "Formats: unipolar (0-1), linear (min-max), exp (exponential), int (integer), bool (on/off).",
+      "Formats: default (0-1, no type keyword), linear (min-max), exp (exponential), int (integer), bool (on/off).",
     script: `// @param gain 1.0
 // @param mix 0.5 0 1 linear
 // @param cutoff 1000 20 20000 exp Hz
