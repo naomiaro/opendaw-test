@@ -356,9 +356,9 @@ const App: React.FC = () => {
         <GitHubCorner />
         <BackLink />
         <Flex direction="column" gap="6" style={{ maxWidth: 1200, margin: "0 auto" }}>
-          <Flex direction="column" gap="2">
+          <Flex direction="column" align="center" gap="2">
             <Heading size="8">Werkstatt &mdash; Scriptable Audio Effects</Heading>
-            <Text size="3" color="gray">
+            <Text size="3" color="gray" align="center">
               Write custom audio effects in JavaScript that run in the AudioWorklet thread.
               Browse pre-built effects or explore the API with runnable code examples.
             </Text>
