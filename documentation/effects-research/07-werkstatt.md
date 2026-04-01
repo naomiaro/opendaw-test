@@ -132,6 +132,30 @@ Declare parameters with comments at the top of the script. Each declaration crea
 | `int` | integer min-max | 0 decimal places |
 | `bool` | 0 or 1 | "On"/"Off" |
 
+## Label Directive (`// @label`) (SDK 0.0.132+)
+
+```
+// @label My Custom Filter
+```
+
+Sets the device label automatically when the script is compiled. Parsed with `ScriptDeclaration.parseLabel(code): Option<string>`.
+
+## Parameter Groups (`// @group`) (SDK 0.0.132+)
+
+Organize parameters into visual groups on the device panel with optional colors:
+
+```javascript
+// @group Envelope blue
+// @param attack 10 1 1000 exp ms
+// @param release 100 10 2000 exp ms
+
+// @group Filter
+// @param cutoff 1000 20 20000 exp Hz
+// @param resonance 0.707 0.1 20 exp
+```
+
+Parsed with `ScriptDeclaration.parseGroups(code): ReadonlyArray<DeclarationSection>`.
+
 ## Sample Declarations (`// @sample`)
 
 ```
@@ -333,6 +357,6 @@ class Processor {
 - Adapter: `/openDAW/packages/studio/adapters/src/devices/audio-effects/WerkstattDeviceBoxAdapter.ts`
 - Processor: `/openDAW/packages/studio/core-processors/src/devices/audio-effects/WerkstattDeviceProcessor.ts`
 - Compiler: `/openDAW/packages/studio/adapters/src/ScriptCompiler.ts`
-- Param Declarations: `/openDAW/packages/studio/adapters/src/ScriptParamDeclaration.ts`
+- Declarations: `/openDAW/packages/studio/adapters/src/ScriptDeclaration.ts`
 - Default Code: `/openDAW/packages/app/studio/src/ui/devices/audio-effects/werkstatt-default.js`
 - Examples: `/openDAW/packages/app/studio/src/ui/devices/audio-effects/examples/`

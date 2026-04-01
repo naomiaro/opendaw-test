@@ -260,7 +260,7 @@ class Processor {
 - Adapter: `/openDAW/packages/studio/adapters/src/devices/midi-effects/SpielwerkDeviceBoxAdapter.ts`
 - Processor: `/openDAW/packages/studio/core-processors/src/devices/midi-effects/SpielwerkDeviceProcessor.ts`
 - Compiler: `/openDAW/packages/studio/adapters/src/ScriptCompiler.ts` (shared with Werkstatt)
-- Param Declarations: `/openDAW/packages/studio/adapters/src/ScriptParamDeclaration.ts` (shared)
+- Declarations: `/openDAW/packages/studio/adapters/src/ScriptDeclaration.ts` (shared)
 - Default Code: `/openDAW/packages/app/studio/src/ui/devices/midi-effects/spielwerk-default.js`
 - Examples: `/openDAW/packages/app/studio/src/ui/devices/midi-effects/examples/`
 - AI Starter Prompt: `/openDAW/packages/app/studio/src/ui/devices/midi-effects/spielwerk-starter-prompt.txt`

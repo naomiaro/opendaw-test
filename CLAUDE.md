@@ -355,6 +355,8 @@ Three new scriptable device types powered by `ScriptCompiler`:
 - **Spielwerk** — scriptable MIDI effect (`EffectFactories.Spielwerk`), processes MIDI via JS
 All use `// @param` and `// @sample` comment declarations in code for parameters/samples.
 Box types: `ApparatDeviceBox`, `WerkstattDeviceBox`, `SpielwerkDeviceBox`.
+SDK 0.0.132 adds `// @label <name>` (auto-sets device label) and `// @group <name> [color]` (groups params visually).
+`ScriptParamDeclaration` was renamed to `ScriptDeclaration` in 0.0.132.
 
 ### Scriptable Device Code: Must Use ScriptCompiler.compile()
 **CRITICAL:** `deviceBox.code.setValue(script)` does NOT execute the script. You must use
@@ -403,6 +405,12 @@ process({src, out}, block) {
   // ... generate audio
 }
 ```
+
+### Parsing Werkstatt Script Declarations (SDK 0.0.132+)
+Use `ScriptDeclaration.parseGroups(code)` from `@opendaw/studio-adapters` to get structured
+param metadata (min, max, mapping, unit, defaultValue) grouped by `// @group` directives.
+Prefer this over manual `// @param` string parsing. Returns `DeclarationSection[]` with
+`group: { label, color } | null` and `items: DeclarationItem[]`.
 
 ### Effect Display Name Changes (SDK 0.0.129+)
 - `EffectFactories.Reverb` display name changed from "Cheap Reverb" to "Free Reverb" (API name unchanged)
@@ -770,6 +778,7 @@ See `src/looping-demo.tsx` for the reference layout pattern.
 - `npm run build` — Vite handles TypeScript transpilation (no standalone `tsc` available)
 - After SDK upgrades, clear Vite dep cache: `rm -rf node_modules/.vite` (dev server pre-bundles old SDK)
 - Verify SDK exports: check `node_modules/@opendaw/<package>/dist/*.d.ts` before writing imports
+- SDK version lives in `node_modules/@opendaw/studio-sdk/package.json`, NOT in individual sub-packages (studio-core, studio-boxes, etc.) which have their own independent version numbers
 
 ### Adding a New Demo
 1. Create `<name>-demo.html` (copy existing HTML entry point, update meta tags and script src)
@@ -804,4 +813,5 @@ See `src/looping-demo.tsx` for the reference layout pattern.
 - Box subscription lifecycle: `documentation/18-box-subscriptions-lifecycle.md` (pointerHub API, reactive patterns, cleanup)
 - SDK 0.0.119→0.0.128 changelog: `documentation/sdk-0.0.119-to-0.0.128-changes.md`
 - SDK 0.0.128→0.0.129 changelog: `documentation/sdk-0.0.128-to-0.0.129-changes.md`
+- SDK 0.0.129→0.0.132 changelog: `documentation/sdk-0.0.129-to-0.0.132-changes.md`
 - OpenDAW source code locations: see `.claude/local.md`
