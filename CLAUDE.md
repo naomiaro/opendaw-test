@@ -355,6 +355,8 @@ Three new scriptable device types powered by `ScriptCompiler`:
 - **Spielwerk** — scriptable MIDI effect (`EffectFactories.Spielwerk`), processes MIDI via JS
 All use `// @param` and `// @sample` comment declarations in code for parameters/samples.
 Box types: `ApparatDeviceBox`, `WerkstattDeviceBox`, `SpielwerkDeviceBox`.
+SDK 0.0.132 adds `// @label <name>` (auto-sets device label) and `// @group <name> [color]` (groups params visually).
+`ScriptParamDeclaration` was renamed to `ScriptDeclaration` in 0.0.132.
 
 ### Scriptable Device Code: Must Use ScriptCompiler.compile()
 **CRITICAL:** `deviceBox.code.setValue(script)` does NOT execute the script. You must use
@@ -804,4 +806,5 @@ See `src/looping-demo.tsx` for the reference layout pattern.
 - Box subscription lifecycle: `documentation/18-box-subscriptions-lifecycle.md` (pointerHub API, reactive patterns, cleanup)
 - SDK 0.0.119→0.0.128 changelog: `documentation/sdk-0.0.119-to-0.0.128-changes.md`
 - SDK 0.0.128→0.0.129 changelog: `documentation/sdk-0.0.128-to-0.0.129-changes.md`
+- SDK 0.0.129→0.0.132 changelog: `documentation/sdk-0.0.129-to-0.0.132-changes.md`
 - OpenDAW source code locations: see `.claude/local.md`
