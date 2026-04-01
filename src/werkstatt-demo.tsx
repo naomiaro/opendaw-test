@@ -22,10 +22,10 @@ import type { ShowcaseEffect } from "./lib/werkstattScripts";
 import "@radix-ui/themes/styles.css";
 import {
   Theme, Container, Heading, Text, Flex, Card, Button,
-  Separator, Slider, Code, SegmentedControl,
+  Callout, Separator, Slider, Code, SegmentedControl,
   Box as RadixBox,
 } from "@radix-ui/themes";
-import { PlayIcon, PauseIcon, StopIcon } from "@radix-ui/react-icons";
+import { InfoCircledIcon, PlayIcon, PauseIcon, StopIcon } from "@radix-ui/react-icons";
 
 const BPM = 124;
 const BAR = PPQN.fromSignature(4, 4); // 3840
@@ -53,6 +53,7 @@ const App: React.FC = () => {
   const werkstattBoxRef = useRef<WerkstattDeviceBox | null>(null);
   const generatorBoxRef = useRef<WerkstattDeviceBox | null>(null);
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
+  const lastAudioSourceRef = useRef<AudioSource>("drums");
   const compilerRef = useRef(ScriptCompiler.create({
     headerTag: "werkstatt",
     registryName: "werkstattProcessors",
@@ -154,7 +155,7 @@ const App: React.FC = () => {
 
   const switchAudioSource = useCallback(async (source: AudioSource) => {
     if (!project || !audioContext || !audioBoxRef.current) return;
-    const previousSource = audioSource;
+    const previousSource = lastAudioSourceRef.current;
 
     // Remove existing generator
     if (generatorBoxRef.current) {
@@ -170,7 +171,7 @@ const App: React.FC = () => {
         });
       }
 
-      // Insert generator Werkstatt at the beginning of the effect chain
+      // Insert generator Werkstatt
       const script = source === "sine" ? SINE_GENERATOR_SCRIPT : NOISE_GENERATOR_SCRIPT;
       let genBox: WerkstattDeviceBox | null = null;
       project.editing.modify(() => {
@@ -180,10 +181,14 @@ const App: React.FC = () => {
         );
         genBox = effectBox as WerkstattDeviceBox;
         genBox.label.setValue(source === "sine" ? "Sine Generator" : "Noise Generator");
-        genBox.index.setValue(0);
       });
 
+      // Move to index 0 in a separate transaction so it runs before the showcase effect
       if (genBox) {
+        project.editing.modify(() => {
+          genBox!.index.setValue(0);
+        });
+
         try {
           await compilerRef.current.compile(audioContext, project.editing, genBox, script);
           generatorBoxRef.current = genBox;
@@ -208,8 +213,9 @@ const App: React.FC = () => {
       }
     }
 
+    lastAudioSourceRef.current = source;
     setAudioSource(source);
-  }, [project, audioContext, audioSource]);
+  }, [project, audioContext]);
 
   const loadApiExample = useCallback(async (script: string) => {
     if (!project || !audioContext || !audioBoxRef.current) return;
@@ -347,10 +353,9 @@ const App: React.FC = () => {
   return (
     <Theme appearance="dark" accentColor="blue" radius="large">
       <Container size="3" px="4" py="8">
+        <GitHubCorner />
+        <BackLink />
         <Flex direction="column" gap="6" style={{ maxWidth: 1200, margin: "0 auto" }}>
-          <GitHubCorner />
-          <BackLink />
-
           <Flex direction="column" gap="2">
             <Heading size="8">Werkstatt &mdash; Scriptable Audio Effects</Heading>
             <Text size="3" color="gray">
@@ -358,6 +363,14 @@ const App: React.FC = () => {
               Browse pre-built effects or explore the API with runnable code examples.
             </Text>
           </Flex>
+
+          <Callout.Root color="blue">
+            <Callout.Icon><InfoCircledIcon /></Callout.Icon>
+            <Callout.Text>
+              Werkstatt scripts run in the AudioWorklet thread. Define a <Code>Processor</Code> class
+              with a <Code>process()</Code> method and declare parameters with <Code>// @param</Code> comments.
+            </Callout.Text>
+          </Callout.Root>
 
           {!isInitialized ? (
             <Card>
@@ -575,8 +588,8 @@ const App: React.FC = () => {
             </>
           )}
 
-          <MoisesLogo />
         </Flex>
+        <MoisesLogo />
       </Container>
     </Theme>
   );
