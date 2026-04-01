@@ -227,11 +227,12 @@ class Processor {
     if (label === "frequency") this.frequency = value
   }
 
-  process({src, out}, {s0, s1}) {
+  process({src, out}, block) {
     const [, ] = src
     const [outL, outR] = out
+    if (!(block.flags & 4)) return
     const phaseInc = this.frequency / sampleRate
-    for (let i = s0; i < s1; i++) {
+    for (let i = block.s0; i < block.s1; i++) {
       const sample = 0.3 * Math.sin(this.phase * 2 * Math.PI)
       this.phase = (this.phase + phaseInc) % 1.0
       outL[i] = sample
@@ -243,10 +244,11 @@ class Processor {
 export const NOISE_GENERATOR_SCRIPT = `class Processor {
   seed = 1
 
-  process({src, out}, {s0, s1}) {
+  process({src, out}, block) {
     const [, ] = src
     const [outL, outR] = out
-    for (let i = s0; i < s1; i++) {
+    if (!(block.flags & 4)) return
+    for (let i = block.s0; i < block.s1; i++) {
       this.seed = (this.seed * 1103515245 + 12345) & 0x7fffffff
       const sample = 0.3 * (this.seed / 0x7fffffff * 2 - 1)
       outL[i] = sample
