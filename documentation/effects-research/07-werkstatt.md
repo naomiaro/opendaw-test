@@ -67,7 +67,18 @@ class Processor {
 | `bpm` | number | Current tempo |
 | `p0` | number | Start position in PPQN (480 ppqn) |
 | `p1` | number | End position in PPQN |
-| `flags` | number | Bitmask: 1=transporting, 2=discontinuous, 4=playing, 8=bpmChanged |
+| `flags` | number | Bitmask (see below) |
+
+### `block.flags` Bitmask
+
+| Bit | Value | Name | Description |
+|-----|-------|------|-------------|
+| 0 | 1 | transporting | Engine is running (play or record) |
+| 1 | 2 | discontinuous | Position jumped (loop wrap, seek) — use to reset delay lines, filters |
+| 2 | 4 | playing | Transport is actively playing audio |
+| 3 | 8 | bpmChanged | Tempo changed this block — recalculate tempo-dependent values |
+
+Check with bitwise AND: `if (block.flags & 4)` = "is playing". Generator scripts that produce audio (ignoring `src`) **must** check `!(block.flags & 4)` and return early, otherwise they produce continuous output after Stop.
 
 ### Globals Available
 
@@ -114,6 +125,71 @@ Declare parameters with comments at the top of the script. Each declaration crea
 ```
 
 Creates a file picker drop zone on the device panel. Note: sample data is **not yet wired** to the Werkstatt processor — `@sample` is more fully realized in the Apparat instrument where `this.samples.<name>` provides audio data.
+
+## Code Compilation (ScriptCompiler)
+
+**CRITICAL:** `werkstattBox.code.setValue(script)` does NOT execute the script. You must use `ScriptCompiler.compile()`.
+
+The compilation pipeline:
+1. Parses `// @param` declarations from user code
+2. Wraps user code into `globalThis.openDAW.werkstattProcessors[uuid]`
+3. Registers via `audioContext.audioWorklet.addModule(blob)`
+4. Writes back to `werkstattBox.code` with header: `// @werkstatt js 1 <update-number>\n`
+5. The processor subscribes to `box.code`, parses the update number, and loads from the global registry
+
+Without compilation, the processor sees `update === 0` and stays silent.
+
+```typescript
+import { ScriptCompiler } from "@opendaw/studio-adapters";
+
+const compiler = ScriptCompiler.create({
+    headerTag: "werkstatt",
+    registryName: "werkstattProcessors",
+    functionName: "werkstatt",
+});
+
+// 1. Insert effect inside editing.modify()
+let werkstattBox: WerkstattDeviceBox;
+project.editing.modify(() => {
+    const effectBox = project.api.insertEffect(audioBox.audioEffects, EffectFactories.Werkstatt);
+    werkstattBox = effectBox as WerkstattDeviceBox;
+    werkstattBox.label.setValue("My Effect");
+});
+
+// 2. Compile OUTSIDE the transaction (async)
+await compiler.compile(audioContext, project.editing, werkstattBox, userCode);
+
+// 3. Parameters are now available
+const paramPointers = werkstattBox.parameters.pointerHub.incoming();
+```
+
+Other compiler methods:
+- `compiler.stripHeader(code)` — removes `// @werkstatt ...` header to recover user code
+- `compiler.load(audioContext, deviceBox)` — reloads already-compiled code (e.g., on page load)
+
+## Accessing Parameters from Host Code
+
+After `compile()`, the SDK creates `WerkstattParameterBox` instances for each `// @param` declaration. Access them via the `parameters` pointer collection:
+
+```typescript
+import { WerkstattParameterBox } from "@opendaw/studio-boxes";
+
+const paramPointers = werkstattBox.parameters.pointerHub.incoming();
+for (const pointer of paramPointers) {
+    const paramBox = pointer.box as WerkstattParameterBox;
+    const name = paramBox.label.getValue();        // "cutoff"
+    const current = paramBox.value.getValue();      // 1000
+    const def = paramBox.defaultValue.getValue();   // 1000
+
+    // Update a parameter value
+    project.editing.modify(() => {
+        paramBox.value.setValue(500);
+    });
+    // The SDK automatically calls paramChanged("cutoff", 500) on the processor
+}
+```
+
+`paramBox.value` is a `Float32Field` that supports `Pointers.Automation` and `Pointers.Modulation` — parameters are fully automatable just like built-in effect fields.
 
 ## Safety Constraints
 
