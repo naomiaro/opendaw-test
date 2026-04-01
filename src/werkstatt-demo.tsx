@@ -3,7 +3,8 @@ import { createRoot } from "react-dom/client";
 import { PPQN } from "@opendaw/lib-dsp";
 import { Project, EffectFactories } from "@opendaw/studio-core";
 import { AudioRegionBox, AudioUnitBox, WerkstattDeviceBox } from "@opendaw/studio-boxes";
-import { ScriptCompiler } from "@opendaw/studio-adapters";
+import { ScriptCompiler, ScriptDeclaration } from "@opendaw/studio-adapters";
+import type { DeclarationSection } from "@opendaw/studio-adapters";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { MoisesLogo } from "./components/MoisesLogo";
 import { BackLink } from "./components/BackLink";
@@ -54,6 +55,7 @@ const App: React.FC = () => {
   const generatorBoxRef = useRef<WerkstattDeviceBox | null>(null);
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
   const lastAudioSourceRef = useRef<AudioSource>("drums");
+  const activeScriptRef = useRef<string | null>(null);
   const compilerRef = useRef(ScriptCompiler.create({
     headerTag: "werkstatt",
     registryName: "werkstattProcessors",
@@ -93,6 +95,7 @@ const App: React.FC = () => {
 
     if (!newBox) return;
     werkstattBoxRef.current = newBox;
+    activeScriptRef.current = effect.script;
     setActiveEffect(effect.name);
 
     try {
@@ -103,6 +106,7 @@ const App: React.FC = () => {
       setStatus(`Failed to load effect: ${err instanceof Error ? err.message : String(err)}`);
       try { project.editing.modify(() => newBox!.delete()); } catch { /* cleanup */ }
       werkstattBoxRef.current = null;
+      activeScriptRef.current = null;
       setActiveEffect(null);
       setEffectParams({});
       return;
@@ -149,6 +153,7 @@ const App: React.FC = () => {
       werkstattBoxRef.current!.delete();
     });
     werkstattBoxRef.current = null;
+    activeScriptRef.current = null;
     setActiveEffect(null);
     setEffectParams({});
   }, [project]);
@@ -241,6 +246,7 @@ const App: React.FC = () => {
 
     if (!newBox) return;
     werkstattBoxRef.current = newBox;
+    activeScriptRef.current = script;
     setActiveEffect(null); // Deselect showcase cards
 
     try {
@@ -250,6 +256,7 @@ const App: React.FC = () => {
       setStatus(`Failed to load example: ${err instanceof Error ? err.message : String(err)}`);
       try { project.editing.modify(() => newBox!.delete()); } catch { /* cleanup */ }
       werkstattBoxRef.current = null;
+      activeScriptRef.current = null;
       setEffectParams({});
       return;
     }
@@ -446,44 +453,54 @@ const App: React.FC = () => {
                 </div>
 
                 {/* Parameter sliders */}
-                {activeEffect && Object.keys(effectParams).length > 0 && (
-                  <Card>
-                    <Flex direction="column" gap="3" p="3">
-                      <Text size="2" weight="bold">Parameters</Text>
-                      {Object.entries(effectParams).map(([name, value]) => {
-                        // Parse param metadata from the active script
-                        const effect = SHOWCASE_EFFECTS.find(e => e.name === activeEffect);
-                        const paramLine = effect?.script
-                          .split("\n")
-                          .find(line => line.startsWith(`// @param ${name}`));
-                        const parts = paramLine?.split(/\s+/) || [];
-                        // Format: @param <name> [default] [min max type [unit]]
-                        const min = parts.length >= 5 ? parseFloat(parts[4]) : 0;
-                        const max = parts.length >= 6 ? parseFloat(parts[5]) : 1;
-                        const unit = parts.length >= 8 ? parts[7] : "";
-                        const step = parts[6] === "int" ? 1 : (max - min) / 200;
-
-                        return (
-                          <Flex key={name} direction="column" gap="1">
-                            <Flex justify="between">
-                              <Text size="1" color="gray">{name}</Text>
-                              <Text size="1" color="gray">
-                                {parts[6] === "int" ? value.toFixed(0) : value.toFixed(2)}{unit ? ` ${unit}` : ""}
+                {Object.keys(effectParams).length > 0 && activeScriptRef.current && (() => {
+                  const sections = ScriptDeclaration.parseGroups(activeScriptRef.current!);
+                  return (
+                    <Card>
+                      <Flex direction="column" gap="3" p="3">
+                        <Text size="2" weight="bold">Parameters</Text>
+                        {sections.map((section, sIdx) => (
+                          <Flex key={sIdx} direction="column" gap="2">
+                            {section.group && (
+                              <Text size="1" weight="bold" style={{
+                                color: section.group.color || undefined,
+                                textTransform: "uppercase",
+                                letterSpacing: "0.05em",
+                              }}>
+                                {section.group.label}
                               </Text>
-                            </Flex>
-                            <Slider
-                              min={min}
-                              max={max}
-                              step={step}
-                              value={[value]}
-                              onValueChange={([v]) => updateEffectParam(name, v)}
-                            />
+                            )}
+                            {section.items
+                              .filter((item): item is Extract<typeof item, { type: "param" }> => item.type === "param")
+                              .map((item) => {
+                                const decl = item.declaration;
+                                const value = effectParams[decl.label] ?? decl.defaultValue;
+                                const step = decl.mapping === "int" ? 1 : (decl.max - decl.min) / 200;
+                                return (
+                                  <Flex key={decl.label} direction="column" gap="1">
+                                    <Flex justify="between">
+                                      <Text size="1" color="gray">{decl.label}</Text>
+                                      <Text size="1" color="gray">
+                                        {decl.mapping === "int" ? value.toFixed(0) : value.toFixed(2)}
+                                        {decl.unit ? ` ${decl.unit}` : ""}
+                                      </Text>
+                                    </Flex>
+                                    <Slider
+                                      min={decl.min}
+                                      max={decl.max}
+                                      step={step}
+                                      value={[value]}
+                                      onValueChange={([v]) => updateEffectParam(decl.label, v)}
+                                    />
+                                  </Flex>
+                                );
+                              })}
                           </Flex>
-                        );
-                      })}
-                    </Flex>
-                  </Card>
-                )}
+                        ))}
+                      </Flex>
+                    </Card>
+                  );
+                })()}
 
                 {/* Code display */}
                 {activeEffect && (
