@@ -367,10 +367,10 @@ class Processor {
       "sampleRate is the only global variable available in a Werkstatt script. " +
       "It reflects the AudioContext sample rate (typically 44100 or 48000). " +
       "Use it to compute phase increments, filter coefficients, and delay times.",
-    script: `// @param frequency 440 20 2000 exp Hz
+    script: `// @param frequency 4 0.5 20 exp Hz
 
 class Processor {
-  frequency = 440
+  frequency = 4
   phase = 0
 
   paramChanged(label, value) {
@@ -384,10 +384,10 @@ class Processor {
     // One full cycle (0 to 1) = one period of the wave
     const phaseInc = this.frequency / sampleRate
     for (let i = s0; i < s1; i++) {
-      const osc = 0.2 * Math.sin(this.phase * 2 * Math.PI)
+      const gain = 0.5 + 0.5 * Math.sin(this.phase * 2 * Math.PI)
       this.phase = (this.phase + phaseInc) % 1.0
-      outL[i] = srcL[i] + osc
-      outR[i] = srcR[i] + osc
+      outL[i] = srcL[i] * gain
+      outR[i] = srcR[i] * gain
     }
   }
 }`,
