@@ -238,7 +238,7 @@ const App: React.FC = () => {
                 <Flex direction="column" gap="3">
                   <Flex direction="column" align="center" gap="2">
                     <Text size="8">🔧</Text>
-                    <Heading size="5">Werkstatt — Scriptable FX</Heading>
+                    <Heading size="5">Werkstatt</Heading>
                   </Flex>
                   <Text size="2" color="gray">
                     Write custom audio effects in JavaScript. Browse pre-built effects (tremolo, ring mod,
