@@ -356,6 +356,54 @@ Three new scriptable device types powered by `ScriptCompiler`:
 All use `// @param` and `// @sample` comment declarations in code for parameters/samples.
 Box types: `ApparatDeviceBox`, `WerkstattDeviceBox`, `SpielwerkDeviceBox`.
 
+### Scriptable Device Code: Must Use ScriptCompiler.compile()
+**CRITICAL:** `deviceBox.code.setValue(script)` does NOT execute the script. You must use
+`ScriptCompiler.compile()` which wraps the code, registers it via `audioWorklet.addModule()`,
+and writes back a header (`// @werkstatt js 1 <update-number>`) that the processor detects.
+Without compilation, the processor sees `update === 0` and stays silent.
+```typescript
+import { ScriptCompiler } from "@opendaw/studio-adapters";
+
+const compiler = ScriptCompiler.create({
+  headerTag: "werkstatt",       // or "apparat" or "spielwerk"
+  registryName: "werkstattProcessors",  // or "apparatProcessors" or "spielwerkProcessors"
+  functionName: "werkstatt",    // or "apparat" or "spielwerk"
+});
+
+// Insert the effect first (in editing.modify), then compile OUTSIDE the transaction:
+let werkstattBox: WerkstattDeviceBox;
+project.editing.modify(() => {
+  const effectBox = project.api.insertEffect(audioBox.audioEffects, EffectFactories.Werkstatt);
+  werkstattBox = effectBox as WerkstattDeviceBox;
+  werkstattBox.label.setValue("My Effect");
+});
+await compiler.compile(audioContext, project.editing, werkstattBox, userCode);
+// Parameters are now available via werkstattBox.parameters.pointerHub.incoming()
+```
+`compiler.stripHeader(code)` removes the `// @werkstatt ...` header to recover user code.
+`compiler.load(audioContext, deviceBox)` reloads already-compiled code (e.g., on page load).
+
+### Werkstatt Parameter Access
+Parameters are created by `ScriptCompiler.compile()`. Access via:
+`werkstattBox.parameters.pointerHub.incoming()` → `pointer.box` as `WerkstattParameterBox`
+Fields: `.label` (StringField), `.value` (Float32Field, automatable), `.defaultValue` (Float32Field).
+
+### Werkstatt Generator Scripts Must Check Transport
+Scripts that generate audio (ignoring `src`) must check `block.flags & 4` (playing flag)
+and return early when stopped, otherwise they produce continuous output after Stop is pressed:
+```javascript
+process({src, out}, block) {
+  const [, ] = src
+  const [outL, outR] = out
+  if (!(block.flags & 4)) {
+    // Must zero output — the SDK does NOT clear buffers between blocks
+    for (let i = block.s0; i < block.s1; i++) { outL[i] = 0; outR[i] = 0 }
+    return
+  }
+  // ... generate audio
+}
+```
+
 ### Effect Display Name Changes (SDK 0.0.129+)
 - `EffectFactories.Reverb` display name changed from "Cheap Reverb" to "Free Reverb" (API name unchanged)
 - `EffectFactories.NeuralAmp` display name changed to "Tone3000" (`IconSymbol.Tone3000`)
@@ -750,6 +798,8 @@ See `src/looping-demo.tsx` for the reference layout pattern.
 - Effect hook: `src/hooks/useDynamicEffect.ts` (effect configs, parameter ranges, defaults)
 - Effect presets: `src/lib/effectPresets.ts` (preset values for all effect types)
 - Take timeline: `src/components/TakeTimeline.tsx` (bar ruler, take lanes, waveform canvases)
+- Werkstatt demo: `src/werkstatt-demo.tsx` (scriptable effects showcase + API reference)
+- Werkstatt DSP scripts: `src/lib/werkstattScripts.ts` (effect scripts, generator scripts, API examples)
 - Effects research docs: `documentation/effects-research/` (parameter tables, code examples, architecture)
 - Box subscription lifecycle: `documentation/18-box-subscriptions-lifecycle.md` (pointerHub API, reactive patterns, cleanup)
 - SDK 0.0.119→0.0.128 changelog: `documentation/sdk-0.0.119-to-0.0.128-changes.md`
