@@ -14,7 +14,8 @@ export const SHOWCASE_EFFECTS: ShowcaseEffect[] = [
   {
     name: "Tremolo",
     description: "Amplitude modulation via LFO",
-    script: `// @param rate 4 0.5 20 exp Hz
+    script: `// @label Tremolo
+// @param rate 4 0.5 20 exp Hz
 // @param depth 0.5
 
 class Processor {
@@ -43,7 +44,8 @@ class Processor {
   {
     name: "Ring Modulator",
     description: "Amplitude multiplication with a sine carrier",
-    script: `// @param frequency 440 20 20000 exp Hz
+    script: `// @label Ring Modulator
+// @param frequency 440 20 20000 exp Hz
 // @param mix 0.5
 
 class Processor {
@@ -74,7 +76,8 @@ class Processor {
   {
     name: "Lowpass Filter",
     description: "Classic 2nd-order biquad IIR lowpass",
-    script: `// @param cutoff 1000 20 20000 exp Hz
+    script: `// @label Lowpass Filter
+// @param cutoff 1000 20 20000 exp Hz
 // @param resonance 0.707 0.1 20 exp
 
 class Processor {
@@ -121,7 +124,8 @@ class Processor {
   {
     name: "Chorus",
     description: "Modulated delay line chorus effect",
-    script: `// @param rate 1.5 0.1 10 exp Hz
+    script: `// @label Chorus
+// @param rate 1.5 0.1 10 exp Hz
 // @param depth 0.5
 // @param mix 0.5
 
@@ -168,7 +172,8 @@ class Processor {
   {
     name: "Phaser",
     description: "All-pass filter chain with LFO modulation",
-    script: `// @param rate 0.5 0.1 10 exp Hz
+    script: `// @label Phaser
+// @param rate 0.5 0.1 10 exp Hz
 // @param depth 0.5
 // @param stages 4 2 12 int
 
