@@ -78,7 +78,21 @@ class Processor {
 | 2 | 4 | playing | Transport is actively playing audio |
 | 3 | 8 | bpmChanged | Tempo changed this block — recalculate tempo-dependent values |
 
-Check with bitwise AND: `if (block.flags & 4)` = "is playing". Generator scripts that produce audio (ignoring `src`) **must** check `!(block.flags & 4)` and return early, otherwise they produce continuous output after Stop.
+Check with bitwise AND: `if (block.flags & 4)` = "is playing". Generator scripts that produce audio (ignoring `src`) **must** check `!(block.flags & 4)` and silence the output, otherwise they produce continuous output after Stop.
+
+**Output buffers are NOT zeroed between blocks.** The SDK reuses the same `out` buffer across calls. A bare `return` from `process()` leaves the previous block's samples in the buffer, producing a frozen/held signal instead of silence. Always zero the output explicitly:
+
+```javascript
+process({src, out}, block) {
+    const [, ] = src
+    const [outL, outR] = out
+    if (!(block.flags & 4)) {
+        for (let i = block.s0; i < block.s1; i++) { outL[i] = 0; outR[i] = 0 }
+        return
+    }
+    // ... generate audio
+}
+```
 
 ### Globals Available
 
