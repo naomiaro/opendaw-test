@@ -393,7 +393,13 @@ Scripts that generate audio (ignoring `src`) must check `block.flags & 4` (playi
 and return early when stopped, otherwise they produce continuous output after Stop is pressed:
 ```javascript
 process({src, out}, block) {
-  if (!(block.flags & 4)) return  // silence when transport stopped
+  const [, ] = src
+  const [outL, outR] = out
+  if (!(block.flags & 4)) {
+    // Must zero output — the SDK does NOT clear buffers between blocks
+    for (let i = block.s0; i < block.s1; i++) { outL[i] = 0; outR[i] = 0 }
+    return
+  }
   // ... generate audio
 }
 ```
