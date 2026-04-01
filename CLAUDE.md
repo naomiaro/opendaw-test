@@ -406,6 +406,12 @@ process({src, out}, block) {
 }
 ```
 
+### Parsing Werkstatt Script Declarations (SDK 0.0.132+)
+Use `ScriptDeclaration.parseGroups(code)` from `@opendaw/studio-adapters` to get structured
+param metadata (min, max, mapping, unit, defaultValue) grouped by `// @group` directives.
+Prefer this over manual `// @param` string parsing. Returns `DeclarationSection[]` with
+`group: { label, color } | null` and `items: DeclarationItem[]`.
+
 ### Effect Display Name Changes (SDK 0.0.129+)
 - `EffectFactories.Reverb` display name changed from "Cheap Reverb" to "Free Reverb" (API name unchanged)
 - `EffectFactories.NeuralAmp` display name changed to "Tone3000" (`IconSymbol.Tone3000`)
@@ -772,6 +778,7 @@ See `src/looping-demo.tsx` for the reference layout pattern.
 - `npm run build` — Vite handles TypeScript transpilation (no standalone `tsc` available)
 - After SDK upgrades, clear Vite dep cache: `rm -rf node_modules/.vite` (dev server pre-bundles old SDK)
 - Verify SDK exports: check `node_modules/@opendaw/<package>/dist/*.d.ts` before writing imports
+- SDK version lives in `node_modules/@opendaw/studio-sdk/package.json`, NOT in individual sub-packages (studio-core, studio-boxes, etc.) which have their own independent version numbers
 
 ### Adding a New Demo
 1. Create `<name>-demo.html` (copy existing HTML entry point, update meta tags and script src)
