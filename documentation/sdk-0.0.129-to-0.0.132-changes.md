@@ -97,10 +97,10 @@ const box: ScriptCompiler.ScriptDeviceBox = werkstattBox;
 ### Output Compressor → Maximizer
 ```typescript
 // Before (0.0.129)
-const skeleton = ProjectSkeleton.create({ createOutputCompressor: true });
+const skeleton = ProjectSkeleton.empty({ createOutputCompressor: true });
 
 // After (0.0.132)
-const skeleton = ProjectSkeleton.create({ createOutputMaximizer: true });
+const skeleton = ProjectSkeleton.empty({ createOutputMaximizer: true });
 ```
 
 ## Source Code References

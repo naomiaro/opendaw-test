@@ -4,7 +4,6 @@ import { PPQN } from "@opendaw/lib-dsp";
 import { Project, EffectFactories } from "@opendaw/studio-core";
 import { AudioRegionBox, AudioUnitBox, WerkstattDeviceBox } from "@opendaw/studio-boxes";
 import { ScriptCompiler, ScriptDeclaration } from "@opendaw/studio-adapters";
-import type { DeclarationSection } from "@opendaw/studio-adapters";
 import { GitHubCorner } from "./components/GitHubCorner";
 import { MoisesLogo } from "./components/MoisesLogo";
 import { BackLink } from "./components/BackLink";
