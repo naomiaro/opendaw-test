@@ -1,6 +1,7 @@
-import { Project, OfflineEngineRenderer } from "@opendaw/studio-core";
+import { Project, OfflineEngineRenderer, AudioWorklets } from "@opendaw/studio-core";
 import { WavFile, PPQN, ppqn } from "@opendaw/lib-dsp";
-import { Option, UUID } from "@opendaw/lib-std";
+import { Option, UUID, TimeSpan } from "@opendaw/lib-std";
+import { Wait } from "@opendaw/lib-runtime";
 import type { ExportStemsConfiguration } from "@opendaw/studio-adapters";
 import type { TrackData } from "./types";
 
@@ -38,16 +39,22 @@ async function withProjectState<T>(
 }
 
 /**
- * Core render function: create renderer, set position, step exact samples.
+ * Render a range using OfflineEngineRenderer (worker-based).
+ * Requires a stem configuration — the SDK panics if numStems === 0.
+ * Used for Mode 2 (clean stems).
  */
-async function renderRange(
+async function renderRangeStemmed(
   project: Project,
-  exportConfig: Option<ExportStemsConfiguration>,
+  exportConfig: ExportStemsConfiguration,
   startPpqn: ppqn,
   endPpqn: ppqn,
   sampleRate: number
 ): Promise<Float32Array[]> {
-  const renderer = await OfflineEngineRenderer.create(project, exportConfig, sampleRate);
+  const renderer = await OfflineEngineRenderer.create(
+    project,
+    Option.wrap(exportConfig),
+    sampleRate
+  );
   try {
     await renderer.waitForLoading();
     renderer.setPosition(startPpqn);
@@ -59,6 +66,59 @@ async function renderRange(
   } finally {
     renderer.terminate();
   }
+}
+
+/**
+ * Render a range using OfflineAudioContext (mixdown path).
+ * No exportConfiguration = normal playback path = metronome included.
+ * Uses project.copy() to isolate state, then OfflineAudioContext for
+ * precise sample-count rendering.
+ *
+ * Used for Mode 1 (metronome only) and Mode 3 (stem + metronome).
+ */
+async function renderRangeMixdown(
+  project: Project,
+  startPpqn: ppqn,
+  endPpqn: ppqn,
+  sampleRate: number
+): Promise<Float32Array[]> {
+  const durationSeconds = project.tempoMap.intervalToSeconds(startPpqn, endPpqn);
+  const numSamples = Math.ceil(durationSeconds * sampleRate);
+
+  // Copy the project so mutations (mutes, metronome) are isolated
+  const projectCopy = project.copy();
+
+  // Disable loop area so playback doesn't wrap
+  projectCopy.boxGraph.beginTransaction();
+  projectCopy.timelineBox.loopArea.enabled.setValue(false);
+  projectCopy.boxGraph.endTransaction();
+
+  // Set start position on the copy
+  projectCopy.engine.setPosition(startPpqn);
+
+  const context = new OfflineAudioContext(2, numSamples, sampleRate);
+  const worklets = await AudioWorklets.createFor(context);
+  const engineWorklet = worklets.createEngine({ project: projectCopy });
+  engineWorklet.connect(context.destination);
+  engineWorklet.play();
+  await engineWorklet.isReady();
+
+  // Wait for samples to load
+  while (!(await engineWorklet.queryLoadingComplete())) {
+    await Wait.timeSpan(TimeSpan.millis(100));
+  }
+
+  const audioBuffer = await context.startRendering();
+
+  // Clean up
+  projectCopy.terminate();
+
+  // Extract channels
+  const channels: Float32Array[] = [];
+  for (let i = 0; i < audioBuffer.numberOfChannels; i++) {
+    channels.push(audioBuffer.getChannelData(i));
+  }
+  return channels;
 }
 
 /**
@@ -125,7 +185,7 @@ function createMetronomeHelper(project: Project) {
 
 /**
  * Mode 1: Export metronome only for a range.
- * Mutes all tracks, enables metronome, renders via Option.None (mixdown path).
+ * Mutes all tracks, enables metronome, renders via OfflineAudioContext mixdown path.
  */
 export async function exportMetronomeOnly(
   options: RangeExportOptions & { tracks: TrackData[]; metronomeGain?: number }
@@ -144,7 +204,7 @@ export async function exportMetronomeOnly(
       muteHelper.restore();
       metronomeHelper.restore();
     },
-    () => renderRange(project, Option.None, startPpqn, endPpqn, sampleRate)
+    () => renderRangeMixdown(project, startPpqn, endPpqn, sampleRate)
   );
 
   const durationSeconds = project.tempoMap.intervalToSeconds(startPpqn, endPpqn);
@@ -153,7 +213,7 @@ export async function exportMetronomeOnly(
 
 /**
  * Mode 2: Export clean stems for a range (selected tracks only).
- * Disables metronome, renders via ExportStemsConfiguration.
+ * Disables metronome, renders via OfflineEngineRenderer stem path.
  */
 export async function exportStemsRange(
   options: RangeExportOptions & { tracks: TrackData[]; selectedUuids: string[] }
@@ -180,7 +240,7 @@ export async function exportStemsRange(
     project,
     () => metronomeHelper.disable(),
     () => metronomeHelper.restore(),
-    () => renderRange(project, Option.wrap(exportConfig), startPpqn, endPpqn, sampleRate)
+    () => renderRangeStemmed(project, exportConfig, startPpqn, endPpqn, sampleRate)
   );
 
   // Split interleaved channels into per-stem results
@@ -203,7 +263,7 @@ export async function exportStemsRange(
 
 /**
  * Mode 3: Export single stem + metronome for a range.
- * Mutes all tracks except selected, enables metronome, renders via Option.None.
+ * Mutes all tracks except selected, enables metronome, renders via OfflineAudioContext mixdown path.
  */
 export async function exportStemWithMetronome(
   options: RangeExportOptions & {
@@ -227,7 +287,7 @@ export async function exportStemWithMetronome(
       muteHelper.restore();
       metronomeHelper.restore();
     },
-    () => renderRange(project, Option.None, startPpqn, endPpqn, sampleRate)
+    () => renderRangeMixdown(project, startPpqn, endPpqn, sampleRate)
   );
 
   const selectedTrack = tracks.find(
