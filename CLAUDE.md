@@ -648,10 +648,9 @@ timeout (~10s) to force-finalize if any loader fails to emit.
 **Note**: `queryLoadingComplete()` resolves before `sampleLoader.data` is set — do NOT use it to detect recording data availability.
 
 ### Offline Audio Rendering (Export)
-`OfflineEngineRenderer.create()` panics with `numStems === 0` — it only supports stem export,
-not mixdown. Both `OfflineEngineRenderer` and `AudioOfflineRenderer` (deprecated) reject `Option.None`.
-`OfflineEngineRenderer` also throws "Already connected" when passed a live project (due to
-`liveStreamReceiver` conflict).
+`OfflineEngineRenderer` throws "Already connected" when passed a live project (due to
+`liveStreamReceiver` conflict). With `Option.None`, `countStems` returns 1 (not 0), routing
+through the stem export branch (no metronome) rather than the mixdown branch.
 
 **Working approach for all offline rendering:**
 ```typescript
@@ -684,6 +683,20 @@ projectCopy.terminate();
 - Stem path (`exportConfiguration` provided) = per-track channels, metronome excluded
 - `project.copy()` shares the same `sampleManager` (samples stay loaded) but NOT engine preferences
 - Metronome gain: `z.number().min(-Infinity).max(0)` — default `-6` dB, max `0` dB (no boost, unlike track volume which goes to +6)
+
+### Mutate-Copy-Restore Pattern for Offline Rendering
+`project.copy()` creates new box instances — you cannot modify the original project's
+boxes through the copy's `editing.modify()` (throws "Modification only prohibited in
+transaction mode"). To capture muted state in a copy:
+```typescript
+// 1. Save state, 2. Mutate original, 3. Copy (synchronous), 4. Restore original
+const saved = track.audioUnitBox.mute.getValue();
+project.editing.modify(() => track.audioUnitBox.mute.setValue(true));
+const projectCopy = project.copy(); // synchronous — captures muted state
+project.editing.modify(() => track.audioUnitBox.mute.setValue(saved)); // restore immediately
+// 5. Use projectCopy for async rendering — original is already restored
+```
+The mute window is a single synchronous JS task — no audio blocks process in between.
 
 ### Stop Button Behavior
 - `stopRecording()` - Stops recording but keeps engine alive for finalization
