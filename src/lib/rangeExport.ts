@@ -43,7 +43,8 @@ async function renderRange(
   endPpqn: ppqn,
   sampleRate: number,
   exportConfiguration?: ExportStemsConfiguration,
-  prepareCopy?: (copy: Project) => void,
+  mutateBeforeCopy?: () => void,
+  restoreAfterCopy?: () => void,
   metronomeEnabled: boolean = false,
   metronomeGain: number = -6
 ): Promise<Float32Array[]> {
@@ -53,18 +54,17 @@ async function renderRange(
     : 2;
   const numSamples = Math.ceil(durationSeconds * sampleRate);
 
-  // Copy isolates box graph mutations. Shares the original's sampleManager
-  // so loaded samples remain available.
+  // Mutate the original project (e.g., mute tracks), copy synchronously to
+  // capture the state, then restore immediately. The mute window is a single
+  // synchronous JS task — no audio blocks process in between.
+  if (mutateBeforeCopy) mutateBeforeCopy();
   const projectCopy = project.copy();
+  if (restoreAfterCopy) restoreAfterCopy();
+
   try {
     projectCopy.boxGraph.beginTransaction();
     projectCopy.timelineBox.loopArea.enabled.setValue(false);
     projectCopy.boxGraph.endTransaction();
-
-    // Apply caller mutations (mutes) to the copy, not the live project
-    if (prepareCopy) {
-      prepareCopy(projectCopy);
-    }
 
     const context = new OfflineAudioContext(numChannels, numSamples, sampleRate);
     const worklets = await AudioWorklets.createFor(context);
@@ -119,14 +119,27 @@ export async function exportMixdown(
 ): Promise<ExportResult> {
   const { project, startPpqn, endPpqn, sampleRate = 48000, tracks, selectedUuids, includeMetronome, metronomeGain = -6 } = options;
 
+  // Save original mute states, mute unselected tracks, copy, restore
+  const originalMutes = new Map<TrackData, boolean>();
+  for (const track of tracks) {
+    originalMutes.set(track, track.audioUnitBox.mute.getValue());
+  }
+
   const channels = await renderRange(
     project, startPpqn, endPpqn, sampleRate,
     undefined,
-    (copy) => {
-      copy.editing.modify(() => {
+    () => {
+      project.editing.modify(() => {
         for (const track of tracks) {
           const uuid = UUID.toString(track.audioUnitBox.address.uuid);
           track.audioUnitBox.mute.setValue(!selectedUuids.includes(uuid));
+        }
+      });
+    },
+    () => {
+      project.editing.modify(() => {
+        for (const [track, wasMuted] of originalMutes) {
+          track.audioUnitBox.mute.setValue(wasMuted);
         }
       });
     },
@@ -175,7 +188,7 @@ export async function exportStemsRange(
   }
 
   const channels = selectedTracks.length > 0
-    ? await renderRange(project, startPpqn, endPpqn, sampleRate, exportConfig, undefined, false)
+    ? await renderRange(project, startPpqn, endPpqn, sampleRate, exportConfig, undefined, undefined, false)
     : [];
 
   if (selectedTracks.length > 0 && channels.length !== selectedTracks.length * 2) {
@@ -202,13 +215,25 @@ export async function exportStemsRange(
 
   // Render metronome as an additional stem via mixdown path (all tracks muted)
   if (includeMetronome) {
+    const savedMutes = new Map<TrackData, boolean>();
+    for (const track of tracks) {
+      savedMutes.set(track, track.audioUnitBox.mute.getValue());
+    }
+
     const metronomeChannels = await renderRange(
       project, startPpqn, endPpqn, sampleRate,
       undefined,
-      (copy) => {
-        copy.editing.modify(() => {
+      () => {
+        project.editing.modify(() => {
           for (const track of tracks) {
             track.audioUnitBox.mute.setValue(true);
+          }
+        });
+      },
+      () => {
+        project.editing.modify(() => {
+          for (const [track, wasMuted] of savedMutes) {
+            track.audioUnitBox.mute.setValue(wasMuted);
           }
         });
       },
