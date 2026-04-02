@@ -145,13 +145,20 @@ export async function exportMixdown(
 }
 
 /**
- * Export clean stems for a range (selected tracks only).
- * Renders via stem export path — one stereo pair per track, no metronome.
+ * Export clean stems for a range (selected tracks only), with optional metronome stem.
+ * Track stems render via the stem export path (one stereo pair per track, no metronome).
+ * If includeMetronome is true, an additional metronome-only stem is rendered via a
+ * separate mixdown pass (all tracks muted, metronome enabled).
  */
 export async function exportStemsRange(
-  options: RangeExportOptions & { tracks: TrackData[]; selectedUuids: string[] }
+  options: RangeExportOptions & {
+    tracks: TrackData[];
+    selectedUuids: string[];
+    includeMetronome?: boolean;
+    metronomeGain?: number;
+  }
 ): Promise<ExportResult[]> {
-  const { project, startPpqn, endPpqn, sampleRate = 48000, tracks, selectedUuids } = options;
+  const { project, startPpqn, endPpqn, sampleRate = 48000, tracks, selectedUuids, includeMetronome = false, metronomeGain = -6 } = options;
 
   const selectedTracks = tracks.filter((t) =>
     selectedUuids.includes(UUID.toString(t.audioUnitBox.address.uuid))
@@ -167,11 +174,11 @@ export async function exportStemsRange(
     };
   }
 
-  const channels = await renderRange(
-    project, startPpqn, endPpqn, sampleRate, exportConfig, undefined, false
-  );
+  const channels = selectedTracks.length > 0
+    ? await renderRange(project, startPpqn, endPpqn, sampleRate, exportConfig, undefined, false)
+    : [];
 
-  if (channels.length !== selectedTracks.length * 2) {
+  if (selectedTracks.length > 0 && channels.length !== selectedTracks.length * 2) {
     console.warn(
       `Expected ${selectedTracks.length * 2} channels for ${selectedTracks.length} stems, ` +
       `got ${channels.length}. Some stems may be missing.`
@@ -192,6 +199,29 @@ export async function exportStemsRange(
       });
     }
   }
+
+  // Render metronome as an additional stem via mixdown path (all tracks muted)
+  if (includeMetronome) {
+    const metronomeChannels = await renderRange(
+      project, startPpqn, endPpqn, sampleRate,
+      undefined,
+      (copy) => {
+        copy.editing.modify(() => {
+          for (const track of tracks) {
+            track.audioUnitBox.mute.setValue(true);
+          }
+        });
+      },
+      true, metronomeGain
+    );
+    results.push({
+      label: "Metronome",
+      channels: metronomeChannels,
+      sampleRate,
+      durationSeconds,
+    });
+  }
+
   return results;
 }
 

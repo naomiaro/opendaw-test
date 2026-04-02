@@ -76,6 +76,7 @@ const App: React.FC = () => {
   const [selectedStemUuids, setSelectedStemUuids] = useState<string[]>([]);
   const [mixdownUuids, setMixdownUuids] = useState<string[]>([]);
   const [mixdownMetronome, setMixdownMetronome] = useState(true);
+  const [stemsMetronome, setStemsMetronome] = useState(false);
 
   // --- Export state ---
   const [isExporting, setIsExporting] = useState(false);
@@ -206,6 +207,8 @@ const App: React.FC = () => {
         endPpqn,
         tracks,
         selectedUuids: selectedStemUuids,
+        includeMetronome: stemsMetronome,
+        metronomeGain,
       });
       const previewResults = stemResults.map((r) => ({
         ...r,
@@ -221,7 +224,7 @@ const App: React.FC = () => {
     } finally {
       setIsExporting(false);
     }
-  }, [project, audioContext, startPpqn, endPpqn, tracks, selectedStemUuids]);
+  }, [project, audioContext, startPpqn, endPpqn, tracks, selectedStemUuids, stemsMetronome, metronomeGain]);
 
   // --- Preview playback ---
   const stopPreview = useCallback(() => {
@@ -473,12 +476,13 @@ const App: React.FC = () => {
             </Flex>
           </Card>
 
-          {/* Export Clean Stems */}
+          {/* Export Stems */}
           <Card>
             <Flex direction="column" gap="3" p="4">
-              <Heading size="4">Export Clean Stems</Heading>
+              <Heading size="4">Export Stems</Heading>
               <Text size="2" color="gray">
-                Renders selected tracks as individual stems (no metronome).
+                Renders selected tracks as individual stem files. Optionally includes a
+                separate metronome stem.
               </Text>
               <CheckboxGroup.Root
                 value={selectedStemUuids}
@@ -511,11 +515,20 @@ const App: React.FC = () => {
                   Deselect All
                 </Button>
               </Flex>
+              <Text as="label" size="2">
+                <Flex gap="2" align="center">
+                  <Switch
+                    checked={stemsMetronome}
+                    onCheckedChange={setStemsMetronome}
+                  />
+                  Include Metronome Stem
+                </Flex>
+              </Text>
               <Button
                 onClick={handleExportStems}
-                disabled={isExporting || !validRange || selectedStemUuids.length === 0}
+                disabled={isExporting || !validRange || (selectedStemUuids.length === 0 && !stemsMetronome)}
               >
-                Export {selectedStemUuids.length} Stem(s)
+                Export {selectedStemUuids.length + (stemsMetronome ? 1 : 0)} Stem(s)
               </Button>
             </Flex>
           </Card>
