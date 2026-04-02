@@ -13,9 +13,8 @@ import { getAudioExtension } from "./lib/audioUtils";
 import { usePlaybackPosition } from "./hooks/usePlaybackPosition";
 import { useTransportControls } from "./hooks/useTransportControls";
 import {
-  exportMetronomeOnly,
   exportStemsRange,
-  exportStemWithMetronome,
+  exportMixdown,
   channelsToAudioBuffer,
   downloadAsWav,
   type ExportResult,
@@ -30,7 +29,6 @@ import {
   Flex,
   Card,
   Button,
-  Select,
   Slider,
   Switch,
   TextField,
@@ -74,9 +72,10 @@ const App: React.FC = () => {
   const [endBar, setEndBar] = useState(1);
   const [maxBar, setMaxBar] = useState(1);
 
-  // --- Stem selection ---
+  // --- Track selection ---
   const [selectedStemUuids, setSelectedStemUuids] = useState<string[]>([]);
-  const [stemWithMetronomeUuid, setStemWithMetronomeUuid] = useState<string>("");
+  const [mixdownUuids, setMixdownUuids] = useState<string[]>([]);
+  const [mixdownMetronome, setMixdownMetronome] = useState(true);
 
   // --- Export state ---
   const [isExporting, setIsExporting] = useState(false);
@@ -132,7 +131,7 @@ const App: React.FC = () => {
         // Default: all stems selected
         const uuids = loadedTracks.map((t) => UUID.toString(t.audioUnitBox.address.uuid));
         setSelectedStemUuids(uuids);
-        setStemWithMetronomeUuid(uuids[0] ?? "");
+        setMixdownUuids(uuids);
 
         setProject(newProject);
         setAudioContext(newAudioContext);
@@ -169,21 +168,24 @@ const App: React.FC = () => {
     : 0;
 
   // --- Export handlers ---
-  const handleExportMetronome = useCallback(async () => {
+  const handleExportMixdown = useCallback(async () => {
     if (!project || !audioContext) return;
+    if (!mixdownMetronome && mixdownUuids.length === 0) return;
     setIsExporting(true);
-    setExportStatus("Rendering metronome...");
+    setExportStatus("Rendering mixdown...");
     try {
-      const result = await exportMetronomeOnly({
+      const result = await exportMixdown({
         project,
         startPpqn,
         endPpqn,
         tracks,
+        selectedUuids: mixdownUuids,
+        includeMetronome: mixdownMetronome,
         metronomeGain,
       });
       const audioBuffer = channelsToAudioBuffer(result.channels, result.sampleRate);
       setResults((prev) => [...prev, { ...result, id: nextResultId++, audioBuffer }]);
-      setExportStatus("Metronome export complete");
+      setExportStatus("Mixdown export complete");
     } catch (error) {
       console.error("Export failed:", error);
       const message = error instanceof Error ? error.message : String(error);
@@ -191,7 +193,7 @@ const App: React.FC = () => {
     } finally {
       setIsExporting(false);
     }
-  }, [project, audioContext, startPpqn, endPpqn, tracks, metronomeGain]);
+  }, [project, audioContext, startPpqn, endPpqn, tracks, mixdownUuids, mixdownMetronome, metronomeGain]);
 
   const handleExportStems = useCallback(async () => {
     if (!project || !audioContext || selectedStemUuids.length === 0) return;
@@ -220,31 +222,6 @@ const App: React.FC = () => {
       setIsExporting(false);
     }
   }, [project, audioContext, startPpqn, endPpqn, tracks, selectedStemUuids]);
-
-  const handleExportStemWithMetronome = useCallback(async () => {
-    if (!project || !audioContext || !stemWithMetronomeUuid) return;
-    setIsExporting(true);
-    setExportStatus("Rendering stem + metronome...");
-    try {
-      const result = await exportStemWithMetronome({
-        project,
-        startPpqn,
-        endPpqn,
-        tracks,
-        audioUnitUuid: stemWithMetronomeUuid,
-        metronomeGain,
-      });
-      const audioBuffer = channelsToAudioBuffer(result.channels, result.sampleRate);
-      setResults((prev) => [...prev, { ...result, id: nextResultId++, audioBuffer }]);
-      setExportStatus("Stem + metronome export complete");
-    } catch (error) {
-      console.error("Export failed:", error);
-      const message = error instanceof Error ? error.message : String(error);
-      setExportStatus(`Export failed: ${message}`);
-    } finally {
-      setIsExporting(false);
-    }
-  }, [project, audioContext, startPpqn, endPpqn, tracks, stemWithMetronomeUuid, metronomeGain]);
 
   // --- Preview playback ---
   const stopPreview = useCallback(() => {
@@ -440,20 +417,63 @@ const App: React.FC = () => {
 
           <Separator size="4" />
 
-          {/* Export Mode 1: Metronome Only */}
+          {/* Export Mixdown */}
           <Card>
             <Flex direction="column" gap="3" p="4">
-              <Heading size="4">Export Metronome Only</Heading>
+              <Heading size="4">Export Mixdown</Heading>
               <Text size="2" color="gray">
-                Renders only metronome clicks for the selected range (all tracks muted).
+                Mix selected tracks and metronome into a single stereo file.
               </Text>
-              <Button onClick={handleExportMetronome} disabled={isExporting || !validRange}>
-                Export Metronome
+              <CheckboxGroup.Root
+                value={mixdownUuids}
+                onValueChange={setMixdownUuids}
+              >
+                <Flex direction="column" gap="2">
+                  {tracks.map((track) => {
+                    const uuid = UUID.toString(track.audioUnitBox.address.uuid);
+                    return (
+                      <CheckboxGroup.Item key={uuid} value={uuid}>
+                        {track.name}
+                      </CheckboxGroup.Item>
+                    );
+                  })}
+                </Flex>
+              </CheckboxGroup.Root>
+              <Flex gap="2">
+                <Button
+                  variant="soft"
+                  size="1"
+                  onClick={() =>
+                    setMixdownUuids(
+                      tracks.map((t) => UUID.toString(t.audioUnitBox.address.uuid))
+                    )
+                  }
+                >
+                  Select All
+                </Button>
+                <Button variant="soft" size="1" onClick={() => setMixdownUuids([])}>
+                  Deselect All
+                </Button>
+              </Flex>
+              <Text as="label" size="2">
+                <Flex gap="2" align="center">
+                  <Switch
+                    checked={mixdownMetronome}
+                    onCheckedChange={setMixdownMetronome}
+                  />
+                  Include Metronome
+                </Flex>
+              </Text>
+              <Button
+                onClick={handleExportMixdown}
+                disabled={isExporting || !validRange || (mixdownUuids.length === 0 && !mixdownMetronome)}
+              >
+                Export Mixdown
               </Button>
             </Flex>
           </Card>
 
-          {/* Export Mode 2: Clean Stems */}
+          {/* Export Clean Stems */}
           <Card>
             <Flex direction="column" gap="3" p="4">
               <Heading size="4">Export Clean Stems</Heading>
@@ -496,35 +516,6 @@ const App: React.FC = () => {
                 disabled={isExporting || !validRange || selectedStemUuids.length === 0}
               >
                 Export {selectedStemUuids.length} Stem(s)
-              </Button>
-            </Flex>
-          </Card>
-
-          {/* Export Mode 3: Stem + Metronome */}
-          <Card>
-            <Flex direction="column" gap="3" p="4">
-              <Heading size="4">Export Stem + Metronome</Heading>
-              <Text size="2" color="gray">
-                Renders a single track mixed with metronome clicks for the selected range.
-              </Text>
-              <Select.Root value={stemWithMetronomeUuid} onValueChange={setStemWithMetronomeUuid}>
-                <Select.Trigger placeholder="Select track..." />
-                <Select.Content>
-                  {tracks.map((track) => {
-                    const uuid = UUID.toString(track.audioUnitBox.address.uuid);
-                    return (
-                      <Select.Item key={uuid} value={uuid}>
-                        {track.name}
-                      </Select.Item>
-                    );
-                  })}
-                </Select.Content>
-              </Select.Root>
-              <Button
-                onClick={handleExportStemWithMetronome}
-                disabled={isExporting || !validRange || !stemWithMetronomeUuid}
-              >
-                Export Stem + Metronome
               </Button>
             </Flex>
           </Card>

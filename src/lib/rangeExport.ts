@@ -105,13 +105,19 @@ async function renderRange(
 }
 
 /**
- * Mode 1: Export metronome only for a range.
- * Mutes all tracks on the copy, enables metronome, renders via mixdown path.
+ * Export a mixdown of selected tracks for a range, optionally with metronome.
+ * Mutes unselected tracks on the copy, renders via mixdown path (stereo output).
+ * If no tracks are selected, renders metronome only.
  */
-export async function exportMetronomeOnly(
-  options: RangeExportOptions & { tracks: TrackData[]; metronomeGain?: number }
+export async function exportMixdown(
+  options: RangeExportOptions & {
+    tracks: TrackData[];
+    selectedUuids: string[];
+    includeMetronome: boolean;
+    metronomeGain?: number;
+  }
 ): Promise<ExportResult> {
-  const { project, startPpqn, endPpqn, sampleRate = 48000, tracks, metronomeGain = -6 } = options;
+  const { project, startPpqn, endPpqn, sampleRate = 48000, tracks, selectedUuids, includeMetronome, metronomeGain = -6 } = options;
 
   const channels = await renderRange(
     project, startPpqn, endPpqn, sampleRate,
@@ -119,20 +125,28 @@ export async function exportMetronomeOnly(
     (copy) => {
       copy.editing.modify(() => {
         for (const track of tracks) {
-          track.audioUnitBox.mute.setValue(true);
+          const uuid = UUID.toString(track.audioUnitBox.address.uuid);
+          track.audioUnitBox.mute.setValue(!selectedUuids.includes(uuid));
         }
       });
     },
-    true, metronomeGain
+    includeMetronome, metronomeGain
   );
 
+  const selectedNames = tracks
+    .filter((t) => selectedUuids.includes(UUID.toString(t.audioUnitBox.address.uuid)))
+    .map((t) => t.name);
+  const parts = [...selectedNames];
+  if (includeMetronome) parts.push("Metronome");
+  const label = parts.length > 0 ? parts.join(" + ") : "Empty";
+
   const durationSeconds = project.tempoMap.intervalToSeconds(startPpqn, endPpqn);
-  return { label: "Metronome", channels, sampleRate, durationSeconds };
+  return { label, channels, sampleRate, durationSeconds };
 }
 
 /**
- * Mode 2: Export clean stems for a range (selected tracks only).
- * Disables metronome, renders via stem export path.
+ * Export clean stems for a range (selected tracks only).
+ * Renders via stem export path — one stereo pair per track, no metronome.
  */
 export async function exportStemsRange(
   options: RangeExportOptions & { tracks: TrackData[]; selectedUuids: string[] }
@@ -179,46 +193,6 @@ export async function exportStemsRange(
     }
   }
   return results;
-}
-
-/**
- * Mode 3: Export single stem + metronome for a range.
- * Mutes all tracks except selected on the copy, enables metronome, renders via mixdown path.
- */
-export async function exportStemWithMetronome(
-  options: RangeExportOptions & {
-    tracks: TrackData[];
-    audioUnitUuid: string;
-    metronomeGain?: number;
-  }
-): Promise<ExportResult> {
-  const { project, startPpqn, endPpqn, sampleRate = 48000, tracks, audioUnitUuid, metronomeGain = -6 } =
-    options;
-
-  const channels = await renderRange(
-    project, startPpqn, endPpqn, sampleRate,
-    undefined,
-    (copy) => {
-      copy.editing.modify(() => {
-        for (const track of tracks) {
-          const uuid = UUID.toString(track.audioUnitBox.address.uuid);
-          track.audioUnitBox.mute.setValue(uuid !== audioUnitUuid);
-        }
-      });
-    },
-    true, metronomeGain
-  );
-
-  const selectedTrack = tracks.find(
-    (t) => UUID.toString(t.audioUnitBox.address.uuid) === audioUnitUuid
-  );
-  const durationSeconds = project.tempoMap.intervalToSeconds(startPpqn, endPpqn);
-  return {
-    label: `${selectedTrack?.name ?? "Track"} + Metronome`,
-    channels,
-    sampleRate,
-    durationSeconds,
-  };
 }
 
 /**
