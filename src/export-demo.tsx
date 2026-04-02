@@ -452,11 +452,12 @@ const App: React.FC = () => {
                 </Text>
                 <Button
                   size="1"
-                  variant={loopingRange ? "solid" : "soft"}
+                  variant="solid"
+                  color={loopingRange ? "red" : "green"}
                   onClick={handleLoopRange}
                   disabled={!validRange}
                 >
-                  {loopingRange ? "Stop Loop" : "Preview Range"}
+                  {loopingRange ? "Stop" : "Play Range"}
                 </Button>
               </Flex>
             </Flex>
