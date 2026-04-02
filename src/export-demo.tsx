@@ -161,6 +161,7 @@ const App: React.FC = () => {
   }, [project, metronomeGain]);
 
   // --- Range to PPQN helpers ---
+  const validRange = startBar <= endBar && startBar >= 1 && endBar <= maxBar;
   const startPpqn = ((startBar - 1) * BAR) as ppqn;
   const endPpqn = (endBar * BAR) as ppqn;
   const rangeDurationSeconds = project
@@ -184,7 +185,9 @@ const App: React.FC = () => {
       setResults((prev) => [...prev, { ...result, id: nextResultId++, audioBuffer }]);
       setExportStatus("Metronome export complete");
     } catch (error) {
-      setExportStatus(`Export failed: ${error}`);
+      console.error("Export failed:", error);
+      const message = error instanceof Error ? error.message : String(error);
+      setExportStatus(`Export failed: ${message}`);
     } finally {
       setIsExporting(false);
     }
@@ -210,7 +213,9 @@ const App: React.FC = () => {
       setResults((prev) => [...prev, ...previewResults]);
       setExportStatus(`Exported ${stemResults.length} stem(s)`);
     } catch (error) {
-      setExportStatus(`Export failed: ${error}`);
+      console.error("Export failed:", error);
+      const message = error instanceof Error ? error.message : String(error);
+      setExportStatus(`Export failed: ${message}`);
     } finally {
       setIsExporting(false);
     }
@@ -233,7 +238,9 @@ const App: React.FC = () => {
       setResults((prev) => [...prev, { ...result, id: nextResultId++, audioBuffer }]);
       setExportStatus("Stem + metronome export complete");
     } catch (error) {
-      setExportStatus(`Export failed: ${error}`);
+      console.error("Export failed:", error);
+      const message = error instanceof Error ? error.message : String(error);
+      setExportStatus(`Export failed: ${message}`);
     } finally {
       setIsExporting(false);
     }
@@ -242,7 +249,11 @@ const App: React.FC = () => {
   // --- Preview playback ---
   const stopPreview = useCallback(() => {
     if (previewSourceRef.current) {
-      previewSourceRef.current.stop();
+      try {
+        previewSourceRef.current.stop();
+      } catch {
+        // Source may have already ended naturally
+      }
       previewSourceRef.current.disconnect();
       previewSourceRef.current = null;
     }
@@ -253,7 +264,11 @@ const App: React.FC = () => {
   useEffect(() => {
     return () => {
       if (previewSourceRef.current) {
-        previewSourceRef.current.stop();
+        try {
+          previewSourceRef.current.stop();
+        } catch {
+          // Source may have already ended
+        }
         previewSourceRef.current.disconnect();
         previewSourceRef.current = null;
       }
@@ -269,7 +284,11 @@ const App: React.FC = () => {
       const source = audioContext.createBufferSource();
       source.buffer = result.audioBuffer;
       source.connect(audioContext.destination);
-      source.onended = () => setPlayingPreviewIndex(null);
+      source.onended = () => {
+        source.disconnect();
+        previewSourceRef.current = null;
+        setPlayingPreviewIndex(null);
+      };
       source.start();
       previewSourceRef.current = source;
       setPlayingPreviewIndex(index);
@@ -428,7 +447,7 @@ const App: React.FC = () => {
               <Text size="2" color="gray">
                 Renders only metronome clicks for the selected range (all tracks muted).
               </Text>
-              <Button onClick={handleExportMetronome} disabled={isExporting}>
+              <Button onClick={handleExportMetronome} disabled={isExporting || !validRange}>
                 Export Metronome
               </Button>
             </Flex>
@@ -474,7 +493,7 @@ const App: React.FC = () => {
               </Flex>
               <Button
                 onClick={handleExportStems}
-                disabled={isExporting || selectedStemUuids.length === 0}
+                disabled={isExporting || !validRange || selectedStemUuids.length === 0}
               >
                 Export {selectedStemUuids.length} Stem(s)
               </Button>
@@ -503,7 +522,7 @@ const App: React.FC = () => {
               </Select.Root>
               <Button
                 onClick={handleExportStemWithMetronome}
-                disabled={isExporting || !stemWithMetronomeUuid}
+                disabled={isExporting || !validRange || !stemWithMetronomeUuid}
               >
                 Export Stem + Metronome
               </Button>

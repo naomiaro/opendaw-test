@@ -1,5 +1,5 @@
 import { Project, AudioWorklets } from "@opendaw/studio-core";
-import { WavFile, PPQN, ppqn } from "@opendaw/lib-dsp";
+import { WavFile, ppqn } from "@opendaw/lib-dsp";
 import { UUID, TimeSpan } from "@opendaw/lib-std";
 import { Wait } from "@opendaw/lib-runtime";
 import type { ExportStemsConfiguration } from "@opendaw/studio-adapters";
@@ -19,39 +19,23 @@ interface RangeExportOptions {
   sampleRate?: number;
 }
 
-/**
- * Snapshot mutable project state, run a callback, then restore.
- * Mutations are captured by project.copy() inside the action,
- * so restoration after copy is safe.
- */
-async function withProjectState<T>(
-  project: Project,
-  mutate: () => void,
-  restore: () => void,
-  action: () => Promise<T>
-): Promise<T> {
-  mutate();
-  try {
-    return await action();
-  } finally {
-    restore();
-  }
-}
+const LOADING_TIMEOUT_MS = 30_000;
 
 /**
  * Core render function using OfflineAudioContext.
  *
  * Uses project.copy() + OfflineAudioContext + AudioWorklets.createEngine()
- * for all export modes. This approach:
- * - Avoids OfflineEngineRenderer (panics with numStems===0 for mixdown,
- *   and liveStreamReceiver "Already connected" issues)
- * - Supports both mixdown (metronome included) and stem export paths
- * - Provides precise sample-count rendering for exact range bounds
+ * for all export modes. This avoids OfflineEngineRenderer which has
+ * liveStreamReceiver conflicts and routes Option.None through the stem path
+ * (excluding metronome). See documentation/22-offline-rendering-advanced.md.
  *
  * @param exportConfiguration - undefined = mixdown path (includes metronome),
- *   ExportStemsConfiguration = stem path (excludes metronome)
+ *   ExportStemsConfiguration = stem path (excludes metronome).
+ *   When provided, returned channels are interleaved: [stem1_L, stem1_R, stem2_L, ...].
+ * @param prepareCopy - optional callback to mutate the project copy before rendering
+ *   (e.g., muting tracks). Applied to the copy, never the live project.
  * @param metronomeEnabled - set on the worklet's preferences before rendering
- * @param metronomeGain - dB value for metronome gain
+ * @param metronomeGain - dB value for metronome gain (max 0)
  */
 async function renderRange(
   project: Project,
@@ -59,6 +43,7 @@ async function renderRange(
   endPpqn: ppqn,
   sampleRate: number,
   exportConfiguration?: ExportStemsConfiguration,
+  prepareCopy?: (copy: Project) => void,
   metronomeEnabled: boolean = false,
   metronomeGain: number = -6
 ): Promise<Float32Array[]> {
@@ -68,103 +53,77 @@ async function renderRange(
     : 2;
   const numSamples = Math.ceil(durationSeconds * sampleRate);
 
-  // Copy the project so mutations (mutes) are isolated
+  // Copy isolates box graph mutations. Shares the original's sampleManager
+  // so loaded samples remain available.
   const projectCopy = project.copy();
+  try {
+    projectCopy.boxGraph.beginTransaction();
+    projectCopy.timelineBox.loopArea.enabled.setValue(false);
+    projectCopy.boxGraph.endTransaction();
 
-  // Disable loop area so playback doesn't wrap
-  projectCopy.boxGraph.beginTransaction();
-  projectCopy.timelineBox.loopArea.enabled.setValue(false);
-  projectCopy.boxGraph.endTransaction();
+    // Apply caller mutations (mutes) to the copy, not the live project
+    if (prepareCopy) {
+      prepareCopy(projectCopy);
+    }
 
-  const context = new OfflineAudioContext(numChannels, numSamples, sampleRate);
-  const worklets = await AudioWorklets.createFor(context);
-  const engineWorklet = worklets.createEngine({
-    project: projectCopy,
-    exportConfiguration,
-  });
-  engineWorklet.connect(context.destination);
+    const context = new OfflineAudioContext(numChannels, numSamples, sampleRate);
+    const worklets = await AudioWorklets.createFor(context);
+    const engineWorklet = worklets.createEngine({
+      project: projectCopy,
+      exportConfiguration,
+    });
+    engineWorklet.connect(context.destination);
 
-  // Set metronome on the worklet's preferences before play
-  engineWorklet.preferences.settings.metronome.enabled = metronomeEnabled;
-  engineWorklet.preferences.settings.metronome.gain = metronomeGain;
+    // Engine preferences don't travel with project.copy() — set on worklet directly
+    engineWorklet.preferences.settings.metronome.enabled = metronomeEnabled;
+    engineWorklet.preferences.settings.metronome.gain = metronomeGain;
 
-  // Set start position and play
-  engineWorklet.setPosition(startPpqn);
-  await engineWorklet.isReady();
-  engineWorklet.play();
+    engineWorklet.setPosition(startPpqn);
+    await engineWorklet.isReady();
+    engineWorklet.play();
 
-  // Wait for samples to load
-  while (!(await engineWorklet.queryLoadingComplete())) {
-    await Wait.timeSpan(TimeSpan.millis(100));
+    const startTime = Date.now();
+    while (!(await engineWorklet.queryLoadingComplete())) {
+      if (Date.now() - startTime > LOADING_TIMEOUT_MS) {
+        throw new Error(
+          `Sample loading timed out after ${LOADING_TIMEOUT_MS / 1000}s`
+        );
+      }
+      await Wait.timeSpan(TimeSpan.millis(100));
+    }
+
+    const audioBuffer = await context.startRendering();
+
+    const channels: Float32Array[] = [];
+    for (let i = 0; i < audioBuffer.numberOfChannels; i++) {
+      channels.push(audioBuffer.getChannelData(i));
+    }
+    return channels;
+  } finally {
+    projectCopy.terminate();
   }
-
-  const audioBuffer = await context.startRendering();
-
-  // Clean up
-  projectCopy.terminate();
-
-  // Extract channels
-  const channels: Float32Array[] = [];
-  for (let i = 0; i < audioBuffer.numberOfChannels; i++) {
-    channels.push(audioBuffer.getChannelData(i));
-  }
-  return channels;
-}
-
-/**
- * Get all AudioUnitBox mute states, and functions to mute all / restore.
- */
-function createMuteHelper(project: Project, tracks: TrackData[]) {
-  const originalMutes = new Map<string, boolean>();
-  for (const track of tracks) {
-    originalMutes.set(
-      UUID.toString(track.audioUnitBox.address.uuid),
-      track.audioUnitBox.mute.getValue()
-    );
-  }
-
-  return {
-    muteAll() {
-      project.editing.modify(() => {
-        for (const track of tracks) {
-          track.audioUnitBox.mute.setValue(true);
-        }
-      });
-    },
-    muteAllExcept(keepUuid: string) {
-      project.editing.modify(() => {
-        for (const track of tracks) {
-          const uuid = UUID.toString(track.audioUnitBox.address.uuid);
-          track.audioUnitBox.mute.setValue(uuid !== keepUuid);
-        }
-      });
-    },
-    restore() {
-      project.editing.modify(() => {
-        for (const track of tracks) {
-          const uuid = UUID.toString(track.audioUnitBox.address.uuid);
-          track.audioUnitBox.mute.setValue(originalMutes.get(uuid) ?? false);
-        }
-      });
-    },
-  };
 }
 
 /**
  * Mode 1: Export metronome only for a range.
- * Mutes all tracks, enables metronome, renders via mixdown path.
+ * Mutes all tracks on the copy, enables metronome, renders via mixdown path.
  */
 export async function exportMetronomeOnly(
   options: RangeExportOptions & { tracks: TrackData[]; metronomeGain?: number }
 ): Promise<ExportResult> {
   const { project, startPpqn, endPpqn, sampleRate = 48000, tracks, metronomeGain = -6 } = options;
-  const muteHelper = createMuteHelper(project, tracks);
 
-  const channels = await withProjectState(
-    project,
-    () => muteHelper.muteAll(),
-    () => muteHelper.restore(),
-    () => renderRange(project, startPpqn, endPpqn, sampleRate, undefined, true, metronomeGain)
+  const channels = await renderRange(
+    project, startPpqn, endPpqn, sampleRate,
+    undefined,
+    (copy) => {
+      copy.editing.modify(() => {
+        for (const track of tracks) {
+          track.audioUnitBox.mute.setValue(true);
+        }
+      });
+    },
+    true, metronomeGain
   );
 
   const durationSeconds = project.tempoMap.intervalToSeconds(startPpqn, endPpqn);
@@ -180,7 +139,6 @@ export async function exportStemsRange(
 ): Promise<ExportResult[]> {
   const { project, startPpqn, endPpqn, sampleRate = 48000, tracks, selectedUuids } = options;
 
-  // Build ExportStemsConfiguration for selected tracks only
   const selectedTracks = tracks.filter((t) =>
     selectedUuids.includes(UUID.toString(t.audioUnitBox.address.uuid))
   );
@@ -196,10 +154,16 @@ export async function exportStemsRange(
   }
 
   const channels = await renderRange(
-    project, startPpqn, endPpqn, sampleRate, exportConfig, false
+    project, startPpqn, endPpqn, sampleRate, exportConfig, undefined, false
   );
 
-  // Split interleaved channels into per-stem results
+  if (channels.length !== selectedTracks.length * 2) {
+    console.warn(
+      `Expected ${selectedTracks.length * 2} channels for ${selectedTracks.length} stems, ` +
+      `got ${channels.length}. Some stems may be missing.`
+    );
+  }
+
   const durationSeconds = project.tempoMap.intervalToSeconds(startPpqn, endPpqn);
   const results: ExportResult[] = [];
   for (let i = 0; i < selectedTracks.length; i++) {
@@ -219,7 +183,7 @@ export async function exportStemsRange(
 
 /**
  * Mode 3: Export single stem + metronome for a range.
- * Mutes all tracks except selected, enables metronome, renders via mixdown path.
+ * Mutes all tracks except selected on the copy, enables metronome, renders via mixdown path.
  */
 export async function exportStemWithMetronome(
   options: RangeExportOptions & {
@@ -230,13 +194,19 @@ export async function exportStemWithMetronome(
 ): Promise<ExportResult> {
   const { project, startPpqn, endPpqn, sampleRate = 48000, tracks, audioUnitUuid, metronomeGain = -6 } =
     options;
-  const muteHelper = createMuteHelper(project, tracks);
 
-  const channels = await withProjectState(
-    project,
-    () => muteHelper.muteAllExcept(audioUnitUuid),
-    () => muteHelper.restore(),
-    () => renderRange(project, startPpqn, endPpqn, sampleRate, undefined, true, metronomeGain)
+  const channels = await renderRange(
+    project, startPpqn, endPpqn, sampleRate,
+    undefined,
+    (copy) => {
+      copy.editing.modify(() => {
+        for (const track of tracks) {
+          const uuid = UUID.toString(track.audioUnitBox.address.uuid);
+          track.audioUnitBox.mute.setValue(uuid !== audioUnitUuid);
+        }
+      });
+    },
+    true, metronomeGain
   );
 
   const selectedTrack = tracks.find(
@@ -258,9 +228,11 @@ export function channelsToAudioBuffer(
   channels: Float32Array[],
   sampleRate: number
 ): AudioBuffer {
-  const length = channels[0]?.length ?? 0;
+  if (channels.length === 0 || channels[0].length === 0) {
+    throw new Error("No audio data to create buffer from");
+  }
   const buffer = new AudioBuffer({
-    length,
+    length: channels[0].length,
     numberOfChannels: channels.length,
     sampleRate,
   });
