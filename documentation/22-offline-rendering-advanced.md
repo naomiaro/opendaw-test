@@ -285,6 +285,107 @@ source.start();
 
 This is completely separate from the OpenDAW engine — no interference with live playback.
 
+## Future: Worker-Based Rendering with Mixdown Support
+
+### Current Limitation
+
+Our `OfflineAudioContext` approach works but runs on the main thread. The SDK's `OfflineEngineRenderer` runs in a dedicated Web Worker using a custom render loop (no Web Audio API), which is faster and non-blocking. However, it rejects mixdown rendering due to a guard in `create()`:
+
+```typescript
+// OfflineEngineRenderer.ts line 52-53
+const numStems = ExportStemsConfiguration.countStems(optExportConfiguration)
+if (numStems === 0) { return panic("Nothing to export") }
+```
+
+### How the SDK Worker Actually Renders
+
+The offline engine worker does **not** use `OfflineAudioContext`. It polyfills AudioWorklet globals and calls `processor.process()` directly in a tight loop:
+
+```typescript
+// offline-engine-main.ts (simplified)
+while (offset < numSamples) {
+  updateFrameTime(engine.totalFrames, engine.sampleRate)
+  engine.processor.process([[]], outputs)
+  engine.totalFrames += RenderQuantum
+  offset += RenderQuantum
+}
+```
+
+The metronome is already wired into `EngineProcessor.process()` — it runs in the mixdown branch (`stemExports.length === 0`) and would produce audio if the guard were removed. Sample fetching, script device loading, and preference syncing all work over MessageChannel between main thread and worker.
+
+### SDK Changes Requested
+
+**1. Remove or relax the `numStems === 0` guard in `OfflineEngineRenderer.create()`**
+
+The panic prevents mixdown rendering entirely. When no `ExportStemsConfiguration` is provided, the renderer should default to 2 channels (stereo mixdown) instead of panicking. This would enable the worker-based renderer for full mix export with metronome.
+
+```typescript
+// Current (OfflineEngineRenderer.ts line 52-53)
+const numStems = ExportStemsConfiguration.countStems(optExportConfiguration)
+if (numStems === 0) { return panic("Nothing to export") }
+const numberOfChannels = numStems * 2
+
+// Proposed
+const numStems = ExportStemsConfiguration.countStems(optExportConfiguration)
+const numberOfChannels = numStems === 0 ? 2 : numStems * 2
+```
+
+The same change is needed in `AudioOfflineRenderer.start()` (line 16-17).
+
+**2. Accept engine preferences in `OfflineEngineInitializeConfig`**
+
+`project.copy()` / `project.toArrayBuffer()` serializes the box graph but not engine preferences. The offline worker creates a fresh `EnginePreferences` with defaults (metronome disabled). Adding an optional `engineSettings` field to the init config would let the caller pass metronome state:
+
+```typescript
+// Current (studio-adapters/src/offline-renderer.ts)
+export interface OfflineEngineInitializeConfig {
+  sampleRate: number
+  numberOfChannels: number
+  processorsUrl: string
+  syncStreamBuffer: SharedArrayBuffer
+  controlFlagsBuffer: SharedArrayBuffer
+  project: ArrayBufferLike
+  exportConfiguration?: ExportStemsConfiguration
+}
+
+// Proposed: add optional engineSettings
+export interface OfflineEngineInitializeConfig {
+  // ... existing fields ...
+  engineSettings?: Partial<EngineSettings>  // metronome, playback, recording prefs
+}
+```
+
+The worker's `EngineProcessor` would merge these into its default preferences at construction time.
+
+**3. Support `setPosition()` before `play()` for range rendering**
+
+`OfflineEngineRenderer` already exposes `setPosition(ppqn)` and `step(numSamples)` which together enable precise range rendering. These work correctly today — no change needed. However, the `start()` convenience method always renders from position 0 to the last region. Adding optional `startPosition` and `endPosition` parameters to `start()` would make range export a first-class feature:
+
+```typescript
+// Current
+static async start(source, optExportConfiguration, progress, abortSignal?, sampleRate?): Promise<AudioData>
+
+// Proposed: add optional range parameters
+static async start(
+  source, optExportConfiguration, progress, abortSignal?, sampleRate?,
+  startPosition?: ppqn,  // default: 0
+  endPosition?: ppqn     // default: source.lastRegionAction()
+): Promise<AudioData>
+```
+
+**4. Resolve `liveStreamReceiver` conflict**
+
+`OfflineEngineRenderer.create()` calls `source.liveStreamReceiver.connect()` on the passed project, which throws "Already connected" if the live engine is running. Either:
+- Use `project.copy()` internally (like `AudioOfflineRenderer` does), or
+- Guard the connect call, or
+- Allow multiple connections on `liveStreamReceiver`
+
+### Workaround: Custom Worker Fork
+
+Until SDK changes land, a custom worker could be created by forking `offline-engine-main.ts` (~120 lines) and removing the guard. The main thread coordinator (`OfflineEngineRenderer.create()` setup — MessageChannel, Communicator, fetchAudio, script device loading) would need to be replicated (~60 lines), but the EngineProcessor, Metronome, and all DSP code are reused as-is from the SDK.
+
+This is a meaningful chunk of work (~200 lines + worker bundling) and probably warrants a separate PR if pursued.
+
 ## Reference
 
 - Export demo: `src/export-demo.tsx`
