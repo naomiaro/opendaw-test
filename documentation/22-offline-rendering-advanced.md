@@ -8,12 +8,14 @@ OpenDAW has two offline renderers, but both have limitations when used from a li
 
 | Renderer | Status | Limitation |
 |----------|--------|------------|
-| `AudioOfflineRenderer` | Deprecated | Panics with `numStems === 0` — no mixdown support |
-| `OfflineEngineRenderer` | Current | Same panic, plus `liveStreamReceiver` "Already connected" on live projects, and `project.copy()` loses sample data in worker context |
+| `AudioOfflineRenderer` | Deprecated | Uses `OfflineAudioContext` on main thread. `Option.None` → `countStems` returns 1, routing through stem path (no metronome). No range support (always renders 0 to last region). |
+| `OfflineEngineRenderer` | Current | Worker-based custom render loop. `Option.None` → same `countStems=1` stem routing. Throws "Already connected" on live project's `liveStreamReceiver`. |
+
+**Key clarification:** `ExportStemsConfiguration.countStems(Option.None)` returns **1** (not 0). The `numStems === 0` panic guard only fires for `Option.Some({})` (empty config object). With `Option.None`, the renderer creates 2 channels (`1 * 2`) and routes through the **stem export branch** — which excludes metronome. This is the fundamental reason neither renderer supports mixdown-with-metronome, not the panic guard.
 
 Neither renderer supports:
-- Rendering the **mixdown path** (which includes metronome)
-- **Range-bounded** export (start position + exact sample count)
+- Rendering the **mixdown path** (which includes metronome) — `Option.None` routes through the stem branch
+- **Range-bounded** export (start position + exact sample count) via the `start()` convenience method
 - Both rely on silence detection or `maxDurationSeconds` for end bounds
 
 ## The OfflineAudioContext Approach
@@ -32,6 +34,8 @@ async function renderRange(
   endPpqn: ppqn,
   sampleRate: number,
   exportConfiguration?: ExportStemsConfiguration,
+  mutateBeforeCopy?: () => void,
+  restoreAfterCopy?: () => void,
   metronomeEnabled: boolean = false,
   metronomeGain: number = -6
 ): Promise<Float32Array[]> {
@@ -42,43 +46,53 @@ async function renderRange(
     : 2;
   const numSamples = Math.ceil(durationSeconds * sampleRate);
 
-  // 2. Copy project — isolates mute state, shares sampleManager
+  // 2. Mutate original (e.g., mute tracks), copy synchronously, restore immediately
+  if (mutateBeforeCopy) mutateBeforeCopy();
   const projectCopy = project.copy();
-  projectCopy.boxGraph.beginTransaction();
-  projectCopy.timelineBox.loopArea.enabled.setValue(false);
-  projectCopy.boxGraph.endTransaction();
+  if (restoreAfterCopy) restoreAfterCopy();
 
-  // 3. Create OfflineAudioContext with exact bounds
-  const context = new OfflineAudioContext(numChannels, numSamples, sampleRate);
-  const worklets = await AudioWorklets.createFor(context);
-  const engineWorklet = worklets.createEngine({
-    project: projectCopy,
-    exportConfiguration, // undefined = mixdown, config = stems
-  });
-  engineWorklet.connect(context.destination);
+  try {
+    projectCopy.boxGraph.beginTransaction();
+    projectCopy.timelineBox.loopArea.enabled.setValue(false);
+    projectCopy.boxGraph.endTransaction();
 
-  // 4. Set preferences on the worklet (not the project copy)
-  engineWorklet.preferences.settings.metronome.enabled = metronomeEnabled;
-  engineWorklet.preferences.settings.metronome.gain = metronomeGain;
+    // 3. Create OfflineAudioContext with exact bounds
+    const context = new OfflineAudioContext(numChannels, numSamples, sampleRate);
+    const worklets = await AudioWorklets.createFor(context);
+    const engineWorklet = worklets.createEngine({
+      project: projectCopy,
+      exportConfiguration, // undefined = mixdown (metronome included), config = stems
+    });
+    engineWorklet.connect(context.destination);
 
-  // 5. Set position and render
-  engineWorklet.setPosition(startPpqn);
-  await engineWorklet.isReady();
-  engineWorklet.play();
+    // 4. Set preferences on the worklet (not the project copy)
+    engineWorklet.preferences.settings.metronome.enabled = metronomeEnabled;
+    engineWorklet.preferences.settings.metronome.gain = metronomeGain;
 
-  while (!(await engineWorklet.queryLoadingComplete())) {
-    await Wait.timeSpan(TimeSpan.millis(100));
+    // 5. Set position and render
+    engineWorklet.setPosition(startPpqn);
+    await engineWorklet.isReady();
+    engineWorklet.play();
+
+    const startTime = Date.now();
+    while (!(await engineWorklet.queryLoadingComplete())) {
+      if (Date.now() - startTime > 30_000) {
+        throw new Error("Sample loading timed out after 30s");
+      }
+      await Wait.timeSpan(TimeSpan.millis(100));
+    }
+
+    const audioBuffer = await context.startRendering();
+
+    // 6. Extract channels
+    const channels: Float32Array[] = [];
+    for (let i = 0; i < audioBuffer.numberOfChannels; i++) {
+      channels.push(audioBuffer.getChannelData(i));
+    }
+    return channels;
+  } finally {
+    projectCopy.terminate();
   }
-
-  const audioBuffer = await context.startRendering();
-  projectCopy.terminate();
-
-  // 6. Extract channels
-  const channels: Float32Array[] = [];
-  for (let i = 0; i < audioBuffer.numberOfChannels; i++) {
-    channels.push(audioBuffer.getChannelData(i));
-  }
-  return channels;
 }
 ```
 
@@ -103,10 +117,43 @@ if (this.#stemExports.length === 0) {
 }
 ```
 
-- **No `exportConfiguration`** → `stemExports.length === 0` → mixdown path → metronome included
+- **No `exportConfiguration`** passed to `createEngine()` → `stemExports.length === 0` → mixdown path → metronome included
 - **With `exportConfiguration`** → per-track channels → metronome excluded
 
 There is no way to get metronome in the stem path or individual stems in the mixdown path. This is a fundamental SDK design decision.
+
+**Note:** This is different from passing `Option.None` to `OfflineEngineRenderer.create()`. The renderer's `countStems(Option.None)` returns 1, which still populates `stemExports` — routing through the stem branch. Our approach bypasses the renderer entirely and passes `undefined` to `createEngine()`, which leaves `stemExports` empty.
+
+### Mutate-Copy-Restore Pattern
+
+`project.copy()` creates **new box instances** from the serialized box graph. You cannot modify the original project's boxes through the copy's `editing.modify()` — this throws "Modification only prohibited in transaction mode."
+
+To capture muted state in a copy, mutate the **original** project, copy synchronously, then restore:
+
+```typescript
+// Save original state
+const originalMutes = new Map<TrackData, boolean>();
+for (const track of tracks) {
+  originalMutes.set(track, track.audioUnitBox.mute.getValue());
+}
+
+// Mutate → copy (synchronous) → restore
+project.editing.modify(() => {
+  for (const track of tracks) {
+    track.audioUnitBox.mute.setValue(true);
+  }
+});
+const projectCopy = project.copy(); // synchronous — captures muted state
+project.editing.modify(() => {
+  for (const [track, wasMuted] of originalMutes) {
+    track.audioUnitBox.mute.setValue(wasMuted);
+  }
+});
+
+// projectCopy has muted state baked in, original is restored
+```
+
+The mute window is a single synchronous JS task — no audio blocks process in between, so there is no audible glitch during live playback.
 
 ### project.copy() Behavior
 
@@ -120,6 +167,7 @@ There is no way to get metronome in the stem path or individual stems in the mix
 - Engine preferences (metronome enabled/gain, recording settings)
 - Engine state (playback position, playing/recording flags)
 - Live stream receiver connections
+- Box instances (the copy has new instances with the same UUIDs)
 
 Preferences must be set on `engineWorklet.preferences` after `createEngine()`.
 
@@ -141,48 +189,53 @@ The gain max is **0 dB** (unity), not +6 dB like track volume. There is no boost
 
 Click sounds are built into the processor — no `loadClickSound()` call is needed for default clicks.
 
-### Why OfflineEngineRenderer Doesn't Work
+### Why OfflineEngineRenderer Doesn't Work for Mixdown
 
-1. **`create()` panics with `numStems === 0`** (line 53 in source):
-   ```typescript
-   if (numStems === 0) { return panic("Nothing to export") }
-   ```
-   Both `OfflineEngineRenderer` and `AudioOfflineRenderer` have this guard.
+1. **Stem-path routing with `Option.None`**: `countStems(Option.None)` returns 1, creating 2 channels routed through the stem export branch. The metronome lives in the mixdown branch (`stemExports.length === 0`), which is never reached.
 
-2. **`liveStreamReceiver` conflict**: `create()` calls `source.liveStreamReceiver.connect()` on the source project. If the live engine already has it connected, this throws "Already connected".
+2. **`liveStreamReceiver` conflict**: `create()` calls `source.liveStreamReceiver.connect()` on the source project. If the live engine already has it connected, this throws "Already connected". Using `project.copy()` avoids this, but introduces issue #3.
 
-3. **Sample data loss with `project.copy()`**: When passed to the worker-based renderer, the copy's sample manager can't serve audio to the worker's `fetchAudio` callbacks, resulting in silent stems.
+3. **Worker sample fetching with `project.copy()`**: The worker's `fetchAudio` callbacks use `source.sampleManager.getOrCreate(uuid)`. While `project.copy()` shares the same `sampleManager` reference, the worker communicates via `MessageChannel` — the sample loading callbacks need to resolve through the message passing layer, which may not work correctly with the copy's context.
 
 ## Export Modes
 
-### Mode 1: Metronome Only
+### Export Mixdown (selected tracks + optional metronome)
 
-Mute all tracks, render via mixdown path with metronome enabled.
+Mute unselected tracks on the original, copy, restore, render via mixdown path.
 
 ```typescript
-// Mute all tracks on the original (captured by copy)
-project.editing.modify(() => {
-  tracks.forEach(t => t.audioUnitBox.mute.setValue(true));
-});
-
 const channels = await renderRange(
   project, startPpqn, endPpqn, 48000,
   undefined,  // mixdown path
-  true,       // metronome enabled
-  -6          // metronome gain dB
+  () => {
+    project.editing.modify(() => {
+      for (const track of tracks) {
+        const uuid = UUID.toString(track.audioUnitBox.address.uuid);
+        track.audioUnitBox.mute.setValue(!selectedUuids.includes(uuid));
+      }
+    });
+  },
+  () => {
+    project.editing.modify(() => {
+      for (const [track, wasMuted] of savedMutes) {
+        track.audioUnitBox.mute.setValue(wasMuted);
+      }
+    });
+  },
+  true,  // metronome enabled
+  -6     // metronome gain dB
 );
-
-// Restore mutes
-project.editing.modify(() => {
-  tracks.forEach(t => t.audioUnitBox.mute.setValue(originalMuteState));
-});
+// Result: stereo mixdown of selected tracks + metronome
 ```
 
-### Mode 2: Clean Stems
+This replaces the original Mode 1 (metronome only) and Mode 3 (single stem + metronome) — select any combination of tracks and metronome.
 
-Render via stem path with metronome disabled.
+### Export Stems (individual files + optional metronome stem)
+
+Render via stem path for per-track files. If metronome is requested, run a second render pass via mixdown path with all tracks muted.
 
 ```typescript
+// Pass 1: Stem export (per-track channels, no metronome)
 const exportConfig: ExportStemsConfiguration = {};
 for (const track of selectedTracks) {
   const uuid = UUID.toString(track.audioUnitBox.address.uuid);
@@ -197,31 +250,22 @@ for (const track of selectedTracks) {
 const channels = await renderRange(
   project, startPpqn, endPpqn, 48000,
   exportConfig,  // stem path
-  false          // no metronome
+  undefined, undefined,
+  false  // no metronome in stem path
 );
-
 // Split interleaved channels: [stem1_L, stem1_R, stem2_L, stem2_R, ...]
-```
 
-### Mode 3: Single Stem + Metronome
-
-Mute all tracks except the target, render via mixdown path with metronome.
-
-```typescript
-project.editing.modify(() => {
-  tracks.forEach(t => {
-    const uuid = UUID.toString(t.audioUnitBox.address.uuid);
-    t.audioUnitBox.mute.setValue(uuid !== selectedUuid);
-  });
-});
-
-const channels = await renderRange(
-  project, startPpqn, endPpqn, 48000,
-  undefined,  // mixdown path (includes metronome)
-  true, -6
-);
-
-// Restore mutes after copy is taken
+// Pass 2 (optional): Metronome-only stem via mixdown path
+if (includeMetronome) {
+  const metronomeChannels = await renderRange(
+    project, startPpqn, endPpqn, 48000,
+    undefined,  // mixdown path
+    () => { /* mute all tracks */ },
+    () => { /* restore mutes */ },
+    true, -6    // metronome enabled
+  );
+  // Append as additional "Metronome" stem
+}
 ```
 
 ## Range Selection: Bars to PPQN
@@ -229,6 +273,7 @@ const channels = await renderRange(
 ```typescript
 import { PPQN } from "@opendaw/lib-dsp";
 
+// Assumes constant 4/4 time — for variable time signatures, accumulate per-bar
 const BAR = PPQN.fromSignature(4, 4); // 3840 PPQN per bar in 4/4
 
 // Bar numbers are 1-indexed
@@ -247,7 +292,7 @@ For projects with time signature changes, compute bar positions by accumulating 
 ```typescript
 import { WavFile } from "@opendaw/lib-dsp";
 
-// Channels → AudioBuffer → WAV
+// Channels → AudioBuffer → WAV (32-bit float)
 const audioBuffer = new AudioBuffer({
   length: channels[0].length,
   numberOfChannels: channels.length,
@@ -275,12 +320,17 @@ Play exported audio without the engine using a plain `AudioBufferSourceNode`:
 
 ```typescript
 const source = audioContext.createBufferSource();
-source.buffer = audioBuffer; // from channelsToAudioBuffer()
+source.buffer = audioBuffer;
 source.connect(audioContext.destination);
-source.onended = () => { /* update UI */ };
+source.onended = () => {
+  source.disconnect();
+  // update UI state
+};
 source.start();
 
-// Stop: source.stop(); source.disconnect();
+// Stop (guard against already-ended source):
+try { source.stop(); } catch { /* already ended */ }
+source.disconnect();
 ```
 
 This is completely separate from the OpenDAW engine — no interference with live playback.
@@ -289,13 +339,7 @@ This is completely separate from the OpenDAW engine — no interference with liv
 
 ### Current Limitation
 
-Our `OfflineAudioContext` approach works but runs on the main thread. The SDK's `OfflineEngineRenderer` runs in a dedicated Web Worker using a custom render loop (no Web Audio API), which is faster and non-blocking. However, it rejects mixdown rendering due to a guard in `create()`:
-
-```typescript
-// OfflineEngineRenderer.ts line 52-53
-const numStems = ExportStemsConfiguration.countStems(optExportConfiguration)
-if (numStems === 0) { return panic("Nothing to export") }
-```
+Our `OfflineAudioContext` approach works but runs on the main thread. The SDK's `OfflineEngineRenderer` runs in a dedicated Web Worker using a custom render loop (no Web Audio API), which is faster and non-blocking.
 
 ### How the SDK Worker Actually Renders
 
@@ -311,61 +355,33 @@ while (offset < numSamples) {
 }
 ```
 
-The metronome is already wired into `EngineProcessor.process()` — it runs in the mixdown branch (`stemExports.length === 0`) and would produce audio if the guard were removed. Sample fetching, script device loading, and preference syncing all work over MessageChannel between main thread and worker.
+The metronome is already wired into `EngineProcessor.process()` — it runs in the mixdown branch (`stemExports.length === 0`) and would produce audio if the engine were configured for mixdown. Sample fetching, script device loading, and preference syncing all work over MessageChannel between main thread and worker.
 
 ### SDK Changes Requested
 
-**1. Remove or relax the `numStems === 0` guard in `OfflineEngineRenderer.create()`**
+**1. Support mixdown path in `OfflineEngineRenderer`**
 
-The panic prevents mixdown rendering entirely. When no `ExportStemsConfiguration` is provided, the renderer should default to 2 channels (stereo mixdown) instead of panicking. This would enable the worker-based renderer for full mix export with metronome.
-
-```typescript
-// Current (OfflineEngineRenderer.ts line 52-53)
-const numStems = ExportStemsConfiguration.countStems(optExportConfiguration)
-if (numStems === 0) { return panic("Nothing to export") }
-const numberOfChannels = numStems * 2
-
-// Proposed
-const numStems = ExportStemsConfiguration.countStems(optExportConfiguration)
-const numberOfChannels = numStems === 0 ? 2 : numStems * 2
-```
-
-The same change is needed in `AudioOfflineRenderer.start()` (line 16-17).
+Currently, `Option.None` → `countStems` returns 1 → stem path (no metronome). To enable the mixdown path, the renderer needs a way to set `stemExports` to empty while still creating 2 output channels. Options:
+- Add an explicit `mixdown: boolean` flag to the config
+- Treat `Option.None` differently (set `numberOfChannels = 2` without populating `stemExports`)
+- Add a new `ExportStemsConfiguration` variant that means "mixdown"
 
 **2. Accept engine preferences in `OfflineEngineInitializeConfig`**
 
-`project.copy()` / `project.toArrayBuffer()` serializes the box graph but not engine preferences. The offline worker creates a fresh `EnginePreferences` with defaults (metronome disabled). Adding an optional `engineSettings` field to the init config would let the caller pass metronome state:
+`project.toArrayBuffer()` serializes the box graph but not engine preferences. The offline worker creates fresh `EnginePreferences` with defaults (metronome disabled). Adding an optional `engineSettings` field would let the caller pass metronome state:
 
 ```typescript
-// Current (studio-adapters/src/offline-renderer.ts)
-export interface OfflineEngineInitializeConfig {
-  sampleRate: number
-  numberOfChannels: number
-  processorsUrl: string
-  syncStreamBuffer: SharedArrayBuffer
-  controlFlagsBuffer: SharedArrayBuffer
-  project: ArrayBufferLike
-  exportConfiguration?: ExportStemsConfiguration
-}
-
-// Proposed: add optional engineSettings
 export interface OfflineEngineInitializeConfig {
   // ... existing fields ...
   engineSettings?: Partial<EngineSettings>  // metronome, playback, recording prefs
 }
 ```
 
-The worker's `EngineProcessor` would merge these into its default preferences at construction time.
-
 **3. Support `setPosition()` before `play()` for range rendering**
 
-`OfflineEngineRenderer` already exposes `setPosition(ppqn)` and `step(numSamples)` which together enable precise range rendering. These work correctly today — no change needed. However, the `start()` convenience method always renders from position 0 to the last region. Adding optional `startPosition` and `endPosition` parameters to `start()` would make range export a first-class feature:
+`OfflineEngineRenderer` already exposes `setPosition(ppqn)` and `step(numSamples)` for precise range rendering. However, the `start()` convenience method always renders from position 0. Adding optional range parameters would make this a first-class feature:
 
 ```typescript
-// Current
-static async start(source, optExportConfiguration, progress, abortSignal?, sampleRate?): Promise<AudioData>
-
-// Proposed: add optional range parameters
 static async start(
   source, optExportConfiguration, progress, abortSignal?, sampleRate?,
   startPosition?: ppqn,  // default: 0
@@ -382,7 +398,7 @@ static async start(
 
 ### Workaround: Custom Worker Fork
 
-Until SDK changes land, a custom worker could be created by forking `offline-engine-main.ts` (~120 lines) and removing the guard. The main thread coordinator (`OfflineEngineRenderer.create()` setup — MessageChannel, Communicator, fetchAudio, script device loading) would need to be replicated (~60 lines), but the EngineProcessor, Metronome, and all DSP code are reused as-is from the SDK.
+Until SDK changes land, a custom worker could be created by forking `offline-engine-main.ts` (~120 lines). The main thread coordinator (`OfflineEngineRenderer.create()` setup — MessageChannel, Communicator, fetchAudio, script device loading) would need to be replicated (~60 lines), but the EngineProcessor, Metronome, and all DSP code are reused as-is from the SDK.
 
 This is a meaningful chunk of work (~200 lines + worker bundling) and probably warrants a separate PR if pursued.
 
@@ -391,8 +407,11 @@ This is a meaningful chunk of work (~200 lines + worker bundling) and probably w
 - Export demo: `src/export-demo.tsx`
 - Range export utility: `src/lib/rangeExport.ts`
 - Existing export docs: `documentation/audio-export.md`
-- SDK offline renderer source: `packages/studio/core/src/OfflineEngineRenderer.ts`
-- SDK deprecated renderer: `packages/studio/core/src/AudioOfflineRenderer.ts`
-- Engine processor render method: `packages/studio/core-processors/src/EngineProcessor.ts`
-- Engine preferences schema: `packages/studio/adapters/src/engine/EnginePreferencesSchema.ts`
-- Metronome processor: `packages/studio/core-processors/src/Metronome.ts`
+- OpenDAW source repo paths (not this project):
+  - SDK offline renderer: `packages/studio/core/src/OfflineEngineRenderer.ts`
+  - SDK deprecated renderer: `packages/studio/core/src/AudioOfflineRenderer.ts`
+  - Engine processor render method: `packages/studio/core-processors/src/EngineProcessor.ts`
+  - Engine preferences schema: `packages/studio/adapters/src/engine/EnginePreferencesSchema.ts`
+  - Metronome processor: `packages/studio/core-processors/src/Metronome.ts`
+  - Offline engine worker: `packages/studio/core-workers/src/offline-engine-main.ts`
+  - Worklet environment polyfill: `packages/studio/core-workers/src/worklet-env.ts`
