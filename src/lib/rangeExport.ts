@@ -54,17 +54,28 @@ async function renderRange(
     : 2;
   const numSamples = Math.ceil(durationSeconds * sampleRate);
 
+  if (startPpqn >= endPpqn) {
+    throw new Error(
+      `Invalid export range: start (${startPpqn}) must be before end (${endPpqn})`
+    );
+  }
+
   // Mutate the original project (e.g., mute tracks), copy synchronously to
   // capture the state, then restore immediately. The mute window is a single
   // synchronous JS task — no audio blocks process in between.
+  // try/finally ensures restore even if project.copy() throws.
+  let projectCopy: Project;
   if (mutateBeforeCopy) mutateBeforeCopy();
-  const projectCopy = project.copy();
-  if (restoreAfterCopy) restoreAfterCopy();
+  try {
+    projectCopy = project.copy();
+  } finally {
+    if (restoreAfterCopy) restoreAfterCopy();
+  }
 
   try {
-    projectCopy.boxGraph.beginTransaction();
-    projectCopy.timelineBox.loopArea.enabled.setValue(false);
-    projectCopy.boxGraph.endTransaction();
+    projectCopy.editing.modify(() => {
+      projectCopy.timelineBox.loopArea.enabled.setValue(false);
+    });
 
     const context = new OfflineAudioContext(numChannels, numSamples, sampleRate);
     const worklets = await AudioWorklets.createFor(context);

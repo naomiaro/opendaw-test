@@ -256,8 +256,12 @@ const App: React.FC = () => {
   }, []);
 
   const playPreview = useCallback(
-    (index: number) => {
+    async (index: number) => {
       if (!audioContext) return;
+      // iOS Safari can re-suspend AudioContext after backgrounding
+      if (audioContext.state !== "running") {
+        await audioContext.resume();
+      }
       stopPreview();
       const result = results[index];
       if (!result) return;
@@ -589,13 +593,19 @@ const App: React.FC = () => {
                       <Button
                         size="1"
                         variant="soft"
-                        onClick={() =>
-                          downloadAsWav(
-                            result.channels,
-                            result.sampleRate,
-                            result.label.replace(/[^a-zA-Z0-9-_]/g, "_")
-                          )
-                        }
+                        onClick={() => {
+                          try {
+                            downloadAsWav(
+                              result.channels,
+                              result.sampleRate,
+                              result.label.replace(/[^a-zA-Z0-9-_]/g, "_")
+                            );
+                          } catch (e) {
+                            console.error("Download failed:", e);
+                            const msg = e instanceof Error ? e.message : String(e);
+                            setExportStatus(`Download failed: ${msg}`);
+                          }
+                        }}
                       >
                         Download WAV
                       </Button>
