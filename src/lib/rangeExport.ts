@@ -50,8 +50,12 @@ async function renderRangeStemmed(
   endPpqn: ppqn,
   sampleRate: number
 ): Promise<Float32Array[]> {
+  // Must use a copy — OfflineEngineRenderer.create() calls
+  // source.liveStreamReceiver.connect() which fails if the live engine
+  // already has it connected on the original project.
+  const projectCopy = project.copy();
   const renderer = await OfflineEngineRenderer.create(
-    project,
+    projectCopy,
     Option.wrap(exportConfig),
     sampleRate
   );
