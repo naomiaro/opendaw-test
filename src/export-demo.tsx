@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { PPQN } from "@opendaw/lib-dsp";
+import { PPQN, ppqn } from "@opendaw/lib-dsp";
 import { UUID } from "@opendaw/lib-std";
 import { Project } from "@opendaw/studio-core";
 import { GitHubCorner } from "./components/GitHubCorner";
@@ -44,8 +44,11 @@ const BPM = 124;
 const BAR = PPQN.fromSignature(4, 4); // 3840
 
 interface PreviewResult extends ExportResult {
+  id: number;
   audioBuffer: AudioBuffer;
 }
+
+let nextResultId = 0;
 
 const App: React.FC = () => {
   // --- Initialization state ---
@@ -158,8 +161,8 @@ const App: React.FC = () => {
   }, [project, metronomeGain]);
 
   // --- Range to PPQN helpers ---
-  const startPpqn = ((startBar - 1) * BAR) as import("@opendaw/lib-dsp").ppqn;
-  const endPpqn = (endBar * BAR) as import("@opendaw/lib-dsp").ppqn;
+  const startPpqn = ((startBar - 1) * BAR) as ppqn;
+  const endPpqn = (endBar * BAR) as ppqn;
   const rangeDurationSeconds = project
     ? project.tempoMap.intervalToSeconds(startPpqn, endPpqn)
     : 0;
@@ -178,7 +181,7 @@ const App: React.FC = () => {
         metronomeGain,
       });
       const audioBuffer = channelsToAudioBuffer(result.channels, result.sampleRate);
-      setResults((prev) => [...prev, { ...result, audioBuffer }]);
+      setResults((prev) => [...prev, { ...result, id: nextResultId++, audioBuffer }]);
       setExportStatus("Metronome export complete");
     } catch (error) {
       setExportStatus(`Export failed: ${error}`);
@@ -201,6 +204,7 @@ const App: React.FC = () => {
       });
       const previewResults = stemResults.map((r) => ({
         ...r,
+        id: nextResultId++,
         audioBuffer: channelsToAudioBuffer(r.channels, r.sampleRate),
       }));
       setResults((prev) => [...prev, ...previewResults]);
@@ -226,7 +230,7 @@ const App: React.FC = () => {
         metronomeGain,
       });
       const audioBuffer = channelsToAudioBuffer(result.channels, result.sampleRate);
-      setResults((prev) => [...prev, { ...result, audioBuffer }]);
+      setResults((prev) => [...prev, { ...result, id: nextResultId++, audioBuffer }]);
       setExportStatus("Stem + metronome export complete");
     } catch (error) {
       setExportStatus(`Export failed: ${error}`);
@@ -243,6 +247,17 @@ const App: React.FC = () => {
       previewSourceRef.current = null;
     }
     setPlayingPreviewIndex(null);
+  }, []);
+
+  // Cleanup preview on unmount
+  useEffect(() => {
+    return () => {
+      if (previewSourceRef.current) {
+        previewSourceRef.current.stop();
+        previewSourceRef.current.disconnect();
+        previewSourceRef.current = null;
+      }
+    };
   }, []);
 
   const playPreview = useCallback(
@@ -512,7 +527,7 @@ const App: React.FC = () => {
                 </Button>
               </Flex>
               {results.map((result, index) => (
-                <Card key={index}>
+                <Card key={result.id}>
                   <Flex direction="column" gap="2" p="3">
                     <Flex justify="between" align="center">
                       <Text weight="bold">{result.label}</Text>
