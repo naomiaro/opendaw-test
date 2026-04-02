@@ -381,20 +381,30 @@ const App: React.FC = () => {
                 <Text size="2">Start Bar:</Text>
                 <TextField.Root
                   type="number"
+                  min={1}
+                  max={endBar}
                   value={String(startBar)}
                   onChange={(e) => {
-                    const v = Math.max(1, Math.min(endBar, parseInt(e.target.value) || 1));
-                    setStartBar(v);
+                    const parsed = parseInt(e.target.value);
+                    if (!isNaN(parsed)) setStartBar(parsed);
+                  }}
+                  onBlur={() => {
+                    setStartBar((v) => Math.max(1, Math.min(endBar, v)));
                   }}
                   style={{ width: 80 }}
                 />
                 <Text size="2">End Bar:</Text>
                 <TextField.Root
                   type="number"
+                  min={startBar}
+                  max={maxBar}
                   value={String(endBar)}
                   onChange={(e) => {
-                    const v = Math.max(startBar, Math.min(maxBar, parseInt(e.target.value) || 1));
-                    setEndBar(v);
+                    const parsed = parseInt(e.target.value);
+                    if (!isNaN(parsed)) setEndBar(parsed);
+                  }}
+                  onBlur={() => {
+                    setEndBar((v) => Math.max(startBar, Math.min(maxBar, v)));
                   }}
                   style={{ width: 80 }}
                 />
