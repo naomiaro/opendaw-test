@@ -1,6 +1,6 @@
-import { Project, OfflineEngineRenderer, AudioWorklets } from "@opendaw/studio-core";
+import { Project, AudioWorklets } from "@opendaw/studio-core";
 import { WavFile, PPQN, ppqn } from "@opendaw/lib-dsp";
-import { Option, UUID, TimeSpan } from "@opendaw/lib-std";
+import { UUID, TimeSpan } from "@opendaw/lib-std";
 import { Wait } from "@opendaw/lib-runtime";
 import type { ExportStemsConfiguration } from "@opendaw/studio-adapters";
 import type { TrackData } from "./types";
@@ -21,8 +21,8 @@ interface RangeExportOptions {
 
 /**
  * Snapshot mutable project state, run a callback, then restore.
- * The callback receives the project with mutated state — the renderer
- * serializes the project on creation, so restoration is safe after that.
+ * Mutations are captured by project.copy() inside the action,
+ * so restoration after copy is safe.
  */
 async function withProjectState<T>(
   project: Project,
@@ -39,56 +39,33 @@ async function withProjectState<T>(
 }
 
 /**
- * Render a range using OfflineEngineRenderer (worker-based).
- * Requires a stem configuration — the SDK panics if numStems === 0.
- * Used for Mode 2 (clean stems).
- */
-async function renderRangeStemmed(
-  project: Project,
-  exportConfig: ExportStemsConfiguration,
-  startPpqn: ppqn,
-  endPpqn: ppqn,
-  sampleRate: number
-): Promise<Float32Array[]> {
-  // Must use a copy — OfflineEngineRenderer.create() calls
-  // source.liveStreamReceiver.connect() which fails if the live engine
-  // already has it connected on the original project.
-  const projectCopy = project.copy();
-  const renderer = await OfflineEngineRenderer.create(
-    projectCopy,
-    Option.wrap(exportConfig),
-    sampleRate
-  );
-  try {
-    await renderer.waitForLoading();
-    renderer.setPosition(startPpqn);
-    renderer.play();
-    const durationSeconds = project.tempoMap.intervalToSeconds(startPpqn, endPpqn);
-    const numSamples = Math.ceil(durationSeconds * sampleRate);
-    const channels = await renderer.step(numSamples);
-    return channels;
-  } finally {
-    renderer.terminate();
-  }
-}
-
-/**
- * Render a range using OfflineAudioContext (mixdown path).
- * No exportConfiguration = normal playback path = metronome included.
- * Uses project.copy() to isolate state, then OfflineAudioContext for
- * precise sample-count rendering.
+ * Core render function using OfflineAudioContext.
  *
- * Used for Mode 1 (metronome only) and Mode 3 (stem + metronome).
+ * Uses project.copy() + OfflineAudioContext + AudioWorklets.createEngine()
+ * for all export modes. This approach:
+ * - Avoids OfflineEngineRenderer (panics with numStems===0 for mixdown,
+ *   and liveStreamReceiver "Already connected" issues)
+ * - Supports both mixdown (metronome included) and stem export paths
+ * - Provides precise sample-count rendering for exact range bounds
+ *
+ * @param exportConfiguration - undefined = mixdown path (includes metronome),
+ *   ExportStemsConfiguration = stem path (excludes metronome)
+ * @param metronomeEnabled - set on the worklet's preferences before rendering
+ * @param metronomeGain - dB value for metronome gain
  */
-async function renderRangeMixdown(
+async function renderRange(
   project: Project,
   startPpqn: ppqn,
   endPpqn: ppqn,
   sampleRate: number,
-  metronomeEnabled: boolean,
-  metronomeGain: number
+  exportConfiguration?: ExportStemsConfiguration,
+  metronomeEnabled: boolean = false,
+  metronomeGain: number = -6
 ): Promise<Float32Array[]> {
   const durationSeconds = project.tempoMap.intervalToSeconds(startPpqn, endPpqn);
+  const numChannels = exportConfiguration
+    ? Object.keys(exportConfiguration).length * 2
+    : 2;
   const numSamples = Math.ceil(durationSeconds * sampleRate);
 
   // Copy the project so mutations (mutes) are isolated
@@ -99,14 +76,15 @@ async function renderRangeMixdown(
   projectCopy.timelineBox.loopArea.enabled.setValue(false);
   projectCopy.boxGraph.endTransaction();
 
-  const context = new OfflineAudioContext(2, numSamples, sampleRate);
+  const context = new OfflineAudioContext(numChannels, numSamples, sampleRate);
   const worklets = await AudioWorklets.createFor(context);
-  const engineWorklet = worklets.createEngine({ project: projectCopy });
+  const engineWorklet = worklets.createEngine({
+    project: projectCopy,
+    exportConfiguration,
+  });
   engineWorklet.connect(context.destination);
 
-  // Set metronome on the worklet's preferences — this syncs to the processor
-  // Must be done AFTER createEngine (which sets up the preferences host)
-  // but BEFORE play() so the processor sees the enabled state
+  // Set metronome on the worklet's preferences before play
   engineWorklet.preferences.settings.metronome.enabled = metronomeEnabled;
   engineWorklet.preferences.settings.metronome.gain = metronomeGain;
 
@@ -173,31 +151,8 @@ function createMuteHelper(project: Project, tracks: TrackData[]) {
 }
 
 /**
- * Save and restore metronome state.
- */
-function createMetronomeHelper(project: Project) {
-  const settings = project.engine.preferences.settings;
-  const wasEnabled = settings.metronome.enabled;
-  const previousGain = settings.metronome.gain;
-
-  return {
-    enable(gain?: number) {
-      settings.metronome.enabled = true;
-      if (gain !== undefined) settings.metronome.gain = gain;
-    },
-    disable() {
-      settings.metronome.enabled = false;
-    },
-    restore() {
-      settings.metronome.enabled = wasEnabled;
-      settings.metronome.gain = previousGain;
-    },
-  };
-}
-
-/**
  * Mode 1: Export metronome only for a range.
- * Mutes all tracks, enables metronome, renders via OfflineAudioContext mixdown path.
+ * Mutes all tracks, enables metronome, renders via mixdown path.
  */
 export async function exportMetronomeOnly(
   options: RangeExportOptions & { tracks: TrackData[]; metronomeGain?: number }
@@ -205,12 +160,11 @@ export async function exportMetronomeOnly(
   const { project, startPpqn, endPpqn, sampleRate = 48000, tracks, metronomeGain = -6 } = options;
   const muteHelper = createMuteHelper(project, tracks);
 
-  // Mute all tracks on the original project before copy() captures state
   const channels = await withProjectState(
     project,
     () => muteHelper.muteAll(),
     () => muteHelper.restore(),
-    () => renderRangeMixdown(project, startPpqn, endPpqn, sampleRate, true, metronomeGain)
+    () => renderRange(project, startPpqn, endPpqn, sampleRate, undefined, true, metronomeGain)
   );
 
   const durationSeconds = project.tempoMap.intervalToSeconds(startPpqn, endPpqn);
@@ -219,13 +173,12 @@ export async function exportMetronomeOnly(
 
 /**
  * Mode 2: Export clean stems for a range (selected tracks only).
- * Disables metronome, renders via OfflineEngineRenderer stem path.
+ * Disables metronome, renders via stem export path.
  */
 export async function exportStemsRange(
   options: RangeExportOptions & { tracks: TrackData[]; selectedUuids: string[] }
 ): Promise<ExportResult[]> {
   const { project, startPpqn, endPpqn, sampleRate = 48000, tracks, selectedUuids } = options;
-  const metronomeHelper = createMetronomeHelper(project);
 
   // Build ExportStemsConfiguration for selected tracks only
   const selectedTracks = tracks.filter((t) =>
@@ -242,11 +195,8 @@ export async function exportStemsRange(
     };
   }
 
-  const channels = await withProjectState(
-    project,
-    () => metronomeHelper.disable(),
-    () => metronomeHelper.restore(),
-    () => renderRangeStemmed(project, exportConfig, startPpqn, endPpqn, sampleRate)
+  const channels = await renderRange(
+    project, startPpqn, endPpqn, sampleRate, exportConfig, false
   );
 
   // Split interleaved channels into per-stem results
@@ -269,7 +219,7 @@ export async function exportStemsRange(
 
 /**
  * Mode 3: Export single stem + metronome for a range.
- * Mutes all tracks except selected, enables metronome, renders via OfflineAudioContext mixdown path.
+ * Mutes all tracks except selected, enables metronome, renders via mixdown path.
  */
 export async function exportStemWithMetronome(
   options: RangeExportOptions & {
@@ -282,12 +232,11 @@ export async function exportStemWithMetronome(
     options;
   const muteHelper = createMuteHelper(project, tracks);
 
-  // Mute all except selected track before copy() captures state
   const channels = await withProjectState(
     project,
     () => muteHelper.muteAllExcept(audioUnitUuid),
     () => muteHelper.restore(),
-    () => renderRangeMixdown(project, startPpqn, endPpqn, sampleRate, true, metronomeGain)
+    () => renderRange(project, startPpqn, endPpqn, sampleRate, undefined, true, metronomeGain)
   );
 
   const selectedTrack = tracks.find(
