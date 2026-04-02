@@ -647,6 +647,57 @@ See `src/lib/audioUtils.ts` `getAudioExtension()`.
 timeout (~10s) to force-finalize if any loader fails to emit.
 **Note**: `queryLoadingComplete()` resolves before `sampleLoader.data` is set — do NOT use it to detect recording data availability.
 
+### Offline Audio Rendering (Export)
+`OfflineEngineRenderer` throws "Already connected" when passed a live project (due to
+`liveStreamReceiver` conflict). With `Option.None`, `countStems` returns 1 (not 0), routing
+through the stem export branch (no metronome) rather than the mixdown branch.
+
+**Working approach for all offline rendering:**
+```typescript
+const projectCopy = project.copy();
+projectCopy.boxGraph.beginTransaction();
+projectCopy.timelineBox.loopArea.enabled.setValue(false);
+projectCopy.boxGraph.endTransaction();
+
+const context = new OfflineAudioContext(numChannels, numSamples, sampleRate);
+const worklets = await AudioWorklets.createFor(context);
+const engineWorklet = worklets.createEngine({
+  project: projectCopy,
+  exportConfiguration, // undefined = mixdown (metronome included), config = stems (no metronome)
+});
+engineWorklet.connect(context.destination);
+
+// Engine preferences don't travel with project.copy() — set on worklet directly
+engineWorklet.preferences.settings.metronome.enabled = true;
+engineWorklet.preferences.settings.metronome.gain = -6; // dB, max 0
+
+engineWorklet.setPosition(startPpqn);
+await engineWorklet.isReady();
+engineWorklet.play();
+while (!(await engineWorklet.queryLoadingComplete())) { await Wait.timeSpan(TimeSpan.millis(100)); }
+const audioBuffer = await context.startRendering();
+projectCopy.terminate();
+```
+
+- Mixdown path (no `exportConfiguration`) = `EngineProcessor` branch `stemExports.length === 0` = metronome included
+- Stem path (`exportConfiguration` provided) = per-track channels, metronome excluded
+- `project.copy()` shares the same `sampleManager` (samples stay loaded) but NOT engine preferences
+- Metronome gain: `z.number().min(-Infinity).max(0)` — default `-6` dB, max `0` dB (no boost, unlike track volume which goes to +6)
+
+### Mutate-Copy-Restore Pattern for Offline Rendering
+`project.copy()` creates new box instances — you cannot modify the original project's
+boxes through the copy's `editing.modify()` (throws "Modification only prohibited in
+transaction mode"). To capture muted state in a copy:
+```typescript
+// 1. Save state, 2. Mutate original, 3. Copy (synchronous), 4. Restore original
+const saved = track.audioUnitBox.mute.getValue();
+project.editing.modify(() => track.audioUnitBox.mute.setValue(true));
+const projectCopy = project.copy(); // synchronous — captures muted state
+project.editing.modify(() => track.audioUnitBox.mute.setValue(saved)); // restore immediately
+// 5. Use projectCopy for async rendering — original is already restored
+```
+The mute window is a single synchronous JS task — no audio blocks process in between.
+
 ### Stop Button Behavior
 - `stopRecording()` - Stops recording but keeps engine alive for finalization
 - `stop(true)` - Resets position to 0, clears all voices, resets processors (like DAW stop button)
@@ -808,6 +859,8 @@ See `src/looping-demo.tsx` for the reference layout pattern.
 - Effect presets: `src/lib/effectPresets.ts` (preset values for all effect types)
 - Take timeline: `src/components/TakeTimeline.tsx` (bar ruler, take lanes, waveform canvases)
 - Werkstatt demo: `src/werkstatt-demo.tsx` (scriptable effects showcase + API reference)
+- Export demo: `src/export-demo.tsx` (range-bounded export with metronome, stems, stem+metronome)
+- Range export utility: `src/lib/rangeExport.ts` (OfflineAudioContext-based rendering for all export modes)
 - Werkstatt DSP scripts: `src/lib/werkstattScripts.ts` (effect scripts, generator scripts, API examples)
 - Effects research docs: `documentation/effects-research/` (parameter tables, code examples, architecture)
 - Box subscription lifecycle: `documentation/18-box-subscriptions-lifecycle.md` (pointerHub API, reactive patterns, cleanup)

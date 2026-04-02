@@ -13,6 +13,7 @@ import {
   SampleProvider,
   SoundfontProvider,
   SampleService,
+  OfflineEngineRenderer,
 } from "@opendaw/studio-core";
 import type { SoundfontService } from "@opendaw/studio-core";
 import { AnimationFrame } from "@opendaw/lib-dom";
@@ -20,6 +21,7 @@ import { testFeatures } from "../features";
 
 import WorkersUrl from "@opendaw/studio-core/workers-main.js?worker&url";
 import WorkletsUrl from "@opendaw/studio-core/processors.js?url";
+import OfflineEngineUrl from "@opendaw/studio-core/offline-engine.js?worker&url";
 
 /**
  * Convert a browser AudioBuffer to OpenDAW's AudioData format.
@@ -122,6 +124,7 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
   // Install workers and worklets
   await Workers.install(WorkersUrl);
   AudioWorklets.install(WorkletsUrl);
+  OfflineEngineRenderer.install(OfflineEngineUrl);
 
   // Test browser features
   const { status: testStatus, error: testError } = await Promises.tryCatch(testFeatures());

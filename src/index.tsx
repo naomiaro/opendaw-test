@@ -247,6 +247,21 @@ const App: React.FC = () => {
                 </Flex>
               </Link>
             </Card>
+
+            <Card asChild>
+              <Link href="/export-demo.html" style={{ textDecoration: "none", padding: "var(--space-5)" }}>
+                <Flex direction="column" gap="3">
+                  <Flex direction="column" align="center" gap="2">
+                    <Text size="8">📦</Text>
+                    <Heading size="5">Audio Export</Heading>
+                  </Flex>
+                  <Text size="2" color="gray">
+                    Export audio with range selection and metronome control. Render metronome-only,
+                    clean stems, or stem + metronome mixes for any bar range using offline rendering.
+                  </Text>
+                </Flex>
+              </Link>
+            </Card>
           </div>
 
           <MoisesLogo />
