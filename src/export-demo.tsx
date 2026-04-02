@@ -57,11 +57,15 @@ const App: React.FC = () => {
 
   // --- Transport ---
   const { currentPosition, isPlaying, pausedPositionRef } = usePlaybackPosition(project);
-  const { handlePlay, handlePause, handleStop } = useTransportControls({
+  const { handlePlay, handlePause, handleStop: baseHandleStop } = useTransportControls({
     project,
     audioContext,
     pausedPositionRef,
   });
+  const handleStop = useCallback(() => {
+    baseHandleStop();
+    setLoopingRange(false);
+  }, [baseHandleStop]);
 
   // --- Metronome settings ---
   const [metronomeEnabled, setMetronomeEnabled] = useState(false);
@@ -71,6 +75,7 @@ const App: React.FC = () => {
   const [startBar, setStartBar] = useState(1);
   const [endBar, setEndBar] = useState(1);
   const [maxBar, setMaxBar] = useState(1);
+  const [loopingRange, setLoopingRange] = useState(false);
 
   // --- Track selection ---
   const [selectedStemUuids, setSelectedStemUuids] = useState<string[]>([]);
@@ -167,6 +172,31 @@ const App: React.FC = () => {
   const rangeDurationSeconds = project
     ? project.tempoMap.intervalToSeconds(startPpqn, endPpqn)
     : 0;
+
+  // --- Sync loop area with range selection ---
+  useEffect(() => {
+    if (!project || !validRange) return;
+    project.editing.modify(() => {
+      project.timelineBox.loopArea.from.setValue(startPpqn);
+      project.timelineBox.loopArea.to.setValue(endPpqn);
+      project.timelineBox.loopArea.enabled.setValue(loopingRange);
+    });
+  }, [project, startPpqn, endPpqn, loopingRange, validRange]);
+
+  const handleLoopRange = useCallback(async () => {
+    if (!project || !audioContext || !validRange) return;
+    if (audioContext.state !== "running") {
+      await audioContext.resume();
+    }
+    if (loopingRange) {
+      project.engine.stop(true);
+      setLoopingRange(false);
+    } else {
+      setLoopingRange(true);
+      project.engine.setPosition(startPpqn);
+      project.engine.play();
+    }
+  }, [project, audioContext, validRange, loopingRange, startPpqn]);
 
   // --- Export handlers ---
   const handleExportMixdown = useCallback(async () => {
@@ -415,10 +445,20 @@ const App: React.FC = () => {
                   / {maxBar} bars
                 </Text>
               </Flex>
-              <Text size="2" color="gray">
-                Duration: {formatDuration(rangeDurationSeconds)} | Bars {startBar}-{endBar} (
-                {endBar - startBar + 1} bars)
-              </Text>
+              <Flex align="center" gap="3">
+                <Text size="2" color="gray">
+                  Duration: {formatDuration(rangeDurationSeconds)} | Bars {startBar}-{endBar} (
+                  {endBar - startBar + 1} bars)
+                </Text>
+                <Button
+                  size="1"
+                  variant={loopingRange ? "solid" : "soft"}
+                  onClick={handleLoopRange}
+                  disabled={!validRange}
+                >
+                  {loopingRange ? "Stop Loop" : "Preview Range"}
+                </Button>
+              </Flex>
             </Flex>
           </Card>
 
