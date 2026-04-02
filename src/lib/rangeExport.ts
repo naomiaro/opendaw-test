@@ -80,12 +80,14 @@ async function renderRangeMixdown(
   project: Project,
   startPpqn: ppqn,
   endPpqn: ppqn,
-  sampleRate: number
+  sampleRate: number,
+  metronomeEnabled: boolean,
+  metronomeGain: number
 ): Promise<Float32Array[]> {
   const durationSeconds = project.tempoMap.intervalToSeconds(startPpqn, endPpqn);
   const numSamples = Math.ceil(durationSeconds * sampleRate);
 
-  // Copy the project so mutations (mutes, metronome) are isolated
+  // Copy the project so mutations (mutes) are isolated
   const projectCopy = project.copy();
 
   // Disable loop area so playback doesn't wrap
@@ -93,15 +95,21 @@ async function renderRangeMixdown(
   projectCopy.timelineBox.loopArea.enabled.setValue(false);
   projectCopy.boxGraph.endTransaction();
 
-  // Set start position on the copy
-  projectCopy.engine.setPosition(startPpqn);
-
   const context = new OfflineAudioContext(2, numSamples, sampleRate);
   const worklets = await AudioWorklets.createFor(context);
   const engineWorklet = worklets.createEngine({ project: projectCopy });
   engineWorklet.connect(context.destination);
-  engineWorklet.play();
+
+  // Set metronome on the worklet's preferences — this syncs to the processor
+  // Must be done AFTER createEngine (which sets up the preferences host)
+  // but BEFORE play() so the processor sees the enabled state
+  engineWorklet.preferences.settings.metronome.enabled = metronomeEnabled;
+  engineWorklet.preferences.settings.metronome.gain = metronomeGain;
+
+  // Set start position and play
+  engineWorklet.setPosition(startPpqn);
   await engineWorklet.isReady();
+  engineWorklet.play();
 
   // Wait for samples to load
   while (!(await engineWorklet.queryLoadingComplete())) {
@@ -190,21 +198,15 @@ function createMetronomeHelper(project: Project) {
 export async function exportMetronomeOnly(
   options: RangeExportOptions & { tracks: TrackData[]; metronomeGain?: number }
 ): Promise<ExportResult> {
-  const { project, startPpqn, endPpqn, sampleRate = 48000, tracks, metronomeGain } = options;
+  const { project, startPpqn, endPpqn, sampleRate = 48000, tracks, metronomeGain = -6 } = options;
   const muteHelper = createMuteHelper(project, tracks);
-  const metronomeHelper = createMetronomeHelper(project);
 
+  // Mute all tracks on the original project before copy() captures state
   const channels = await withProjectState(
     project,
-    () => {
-      muteHelper.muteAll();
-      metronomeHelper.enable(metronomeGain);
-    },
-    () => {
-      muteHelper.restore();
-      metronomeHelper.restore();
-    },
-    () => renderRangeMixdown(project, startPpqn, endPpqn, sampleRate)
+    () => muteHelper.muteAll(),
+    () => muteHelper.restore(),
+    () => renderRangeMixdown(project, startPpqn, endPpqn, sampleRate, true, metronomeGain)
   );
 
   const durationSeconds = project.tempoMap.intervalToSeconds(startPpqn, endPpqn);
@@ -272,22 +274,16 @@ export async function exportStemWithMetronome(
     metronomeGain?: number;
   }
 ): Promise<ExportResult> {
-  const { project, startPpqn, endPpqn, sampleRate = 48000, tracks, audioUnitUuid, metronomeGain } =
+  const { project, startPpqn, endPpqn, sampleRate = 48000, tracks, audioUnitUuid, metronomeGain = -6 } =
     options;
   const muteHelper = createMuteHelper(project, tracks);
-  const metronomeHelper = createMetronomeHelper(project);
 
+  // Mute all except selected track before copy() captures state
   const channels = await withProjectState(
     project,
-    () => {
-      muteHelper.muteAllExcept(audioUnitUuid);
-      metronomeHelper.enable(metronomeGain);
-    },
-    () => {
-      muteHelper.restore();
-      metronomeHelper.restore();
-    },
-    () => renderRangeMixdown(project, startPpqn, endPpqn, sampleRate)
+    () => muteHelper.muteAllExcept(audioUnitUuid),
+    () => muteHelper.restore(),
+    () => renderRangeMixdown(project, startPpqn, endPpqn, sampleRate, true, metronomeGain)
   );
 
   const selectedTrack = tracks.find(
