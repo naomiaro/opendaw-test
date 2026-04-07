@@ -8,16 +8,16 @@ import { InstrumentFactories } from "@opendaw/studio-adapters";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { PPQN } from "@opendaw/lib-dsp";
 import { AudioRegionBox, AudioUnitBox } from "@opendaw/studio-boxes";
-import { initializeOpenDAW } from "./lib/projectSetup";
-import { useEnginePreference } from "./hooks/useEnginePreference";
-import { GitHubCorner } from "./components/GitHubCorner";
-import { MoisesLogo } from "./components/MoisesLogo";
-import { BackLink } from "./components/BackLink";
-import { BpmControl } from "./components/BpmControl";
-import { RecordingPreferences } from "./components/RecordingPreferences";
-import { RecordingTrackCard } from "./components/RecordingTrackCard";
-import { TakeTimeline } from "./components/TakeTimeline";
-import type { TakeRegion, TakeIteration } from "./components/TakeTimeline";
+import { initializeOpenDAW } from "@/lib/projectSetup";
+import { useEnginePreference } from "@/hooks/useEnginePreference";
+import { GitHubCorner } from "@/components/GitHubCorner";
+import { MoisesLogo } from "@/components/MoisesLogo";
+import { BackLink } from "@/components/BackLink";
+import { BpmControl } from "@/components/BpmControl";
+import { RecordingPreferences } from "@/components/RecordingPreferences";
+import { RecordingTrackCard } from "@/components/RecordingTrackCard";
+import { TakeTimeline } from "@/components/TakeTimeline";
+import type { TakeRegion, TakeIteration } from "@/components/TakeTimeline";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,

@@ -3,16 +3,16 @@ import { createRoot } from "react-dom/client";
 import { Project } from "@opendaw/studio-core";
 import { AudioUnitBox } from "@opendaw/studio-boxes";
 import { Colors } from "@opendaw/studio-enums";
-import { GitHubCorner } from "./components/GitHubCorner";
-import { MoisesLogo } from "./components/MoisesLogo";
-import { BackLink } from "./components/BackLink";
-import { TransportControls } from "./components/TransportControls";
-import { initializeOpenDAW } from "./lib/projectSetup";
-import { loadTracksWithGroups, type GroupData } from "./lib/groupTrackLoading";
-import { getAudioExtension } from "./lib/audioUtils";
-import { usePlaybackPosition } from "./hooks/usePlaybackPosition";
-import { useTransportControls } from "./hooks/useTransportControls";
-import type { TrackData } from "./lib/types";
+import { GitHubCorner } from "@/components/GitHubCorner";
+import { MoisesLogo } from "@/components/MoisesLogo";
+import { BackLink } from "@/components/BackLink";
+import { TransportControls } from "@/components/TransportControls";
+import { initializeOpenDAW } from "@/lib/projectSetup";
+import { loadTracksWithGroups, type GroupData } from "@/lib/groupTrackLoading";
+import { getAudioExtension } from "@/lib/audioUtils";
+import { usePlaybackPosition } from "@/hooks/usePlaybackPosition";
+import { useTransportControls } from "@/hooks/useTransportControls";
+import type { TrackData } from "@/lib/types";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,

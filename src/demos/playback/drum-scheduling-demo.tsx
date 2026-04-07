@@ -7,16 +7,16 @@ import { PPQN } from "@opendaw/lib-dsp";
 import { Project } from "@opendaw/studio-core";
 import { InstrumentFactories } from "@opendaw/studio-adapters";
 import { AudioFileBox, AudioRegionBox, AudioUnitBox, ValueEventCollectionBox } from "@opendaw/studio-boxes";
-import { GitHubCorner } from "./components/GitHubCorner";
-import { MoisesLogo } from "./components/MoisesLogo";
-import { BackLink } from "./components/BackLink";
-import { loadAudioFile } from "./lib/audioUtils";
-import { initializeOpenDAW } from "./lib/projectSetup";
-import { useAudioExport } from "./hooks/useAudioExport";
-import { usePlaybackPosition } from "./hooks/usePlaybackPosition";
+import { GitHubCorner } from "@/components/GitHubCorner";
+import { MoisesLogo } from "@/components/MoisesLogo";
+import { BackLink } from "@/components/BackLink";
+import { loadAudioFile } from "@/lib/audioUtils";
+import { initializeOpenDAW } from "@/lib/projectSetup";
+import { useAudioExport } from "@/hooks/useAudioExport";
+import { usePlaybackPosition } from "@/hooks/usePlaybackPosition";
 import "@radix-ui/themes/styles.css";
 import { Theme, Container, Heading, Text, Button, Flex, Card, Badge, Separator } from "@radix-ui/themes";
-import { ExportProgress } from "./components/ExportProgress";
+import { ExportProgress } from "@/components/ExportProgress";
 
 // Type for scheduled clip
 type ScheduledClip = {

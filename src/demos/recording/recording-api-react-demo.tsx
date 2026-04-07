@@ -11,17 +11,17 @@ import { AnimationFrame } from "@opendaw/lib-dom";
 import type { Peaks } from "@opendaw/lib-fusion";
 import { PeaksPainter } from "@opendaw/lib-fusion";
 import { AudioRegionBox, AudioUnitBox } from "@opendaw/studio-boxes";
-import { CanvasPainter } from "./lib/CanvasPainter";
-import { initializeOpenDAW } from "./lib/projectSetup";
-import { useEnginePreference, CountInBarsValue, MetronomeBeatSubDivisionValue } from "./hooks/useEnginePreference";
-import { GitHubCorner } from "./components/GitHubCorner";
-import { MoisesLogo } from "./components/MoisesLogo";
-import { BackLink } from "./components/BackLink";
-import { BpmControl } from "./components/BpmControl";
-import { TimeSignatureControl } from "./components/TimeSignatureControl";
-import { RecordingPreferences } from "./components/RecordingPreferences";
-import { RecordingTrackCard } from "./components/RecordingTrackCard";
-import type { RecordingTrack } from "./components/RecordingTrackCard";
+import { CanvasPainter } from "@/lib/CanvasPainter";
+import { initializeOpenDAW } from "@/lib/projectSetup";
+import { useEnginePreference, CountInBarsValue, MetronomeBeatSubDivisionValue } from "@/hooks/useEnginePreference";
+import { GitHubCorner } from "@/components/GitHubCorner";
+import { MoisesLogo } from "@/components/MoisesLogo";
+import { BackLink } from "@/components/BackLink";
+import { BpmControl } from "@/components/BpmControl";
+import { TimeSignatureControl } from "@/components/TimeSignatureControl";
+import { RecordingPreferences } from "@/components/RecordingPreferences";
+import { RecordingTrackCard } from "@/components/RecordingTrackCard";
+import type { RecordingTrack } from "@/components/RecordingTrackCard";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,

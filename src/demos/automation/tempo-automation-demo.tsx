@@ -6,11 +6,11 @@ import { Project } from "@opendaw/studio-core";
 import { PPQN, Interpolation } from "@opendaw/lib-dsp";
 import type { ppqn } from "@opendaw/lib-dsp";
 import { Curve } from "@opendaw/lib-std";
-import { GitHubCorner } from "./components/GitHubCorner";
-import { MoisesLogo } from "./components/MoisesLogo";
-import { BackLink } from "./components/BackLink";
-import { initializeOpenDAW } from "./lib/projectSetup";
-import { usePlaybackPosition } from "./hooks/usePlaybackPosition";
+import { GitHubCorner } from "@/components/GitHubCorner";
+import { MoisesLogo } from "@/components/MoisesLogo";
+import { BackLink } from "@/components/BackLink";
+import { initializeOpenDAW } from "@/lib/projectSetup";
+import { usePlaybackPosition } from "@/hooks/usePlaybackPosition";
 
 // 4/4 time: one bar = 3840 PPQN
 const BAR = PPQN.fromSignature(4, 4); // 3840

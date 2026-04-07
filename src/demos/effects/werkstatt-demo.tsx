@@ -4,21 +4,21 @@ import { PPQN } from "@opendaw/lib-dsp";
 import { Project, EffectFactories } from "@opendaw/studio-core";
 import { AudioRegionBox, AudioUnitBox, WerkstattDeviceBox } from "@opendaw/studio-boxes";
 import { ScriptCompiler, ScriptDeclaration } from "@opendaw/studio-adapters";
-import { GitHubCorner } from "./components/GitHubCorner";
-import { MoisesLogo } from "./components/MoisesLogo";
-import { BackLink } from "./components/BackLink";
-import { initializeOpenDAW } from "./lib/projectSetup";
-import { loadTracksFromFiles } from "./lib/trackLoading";
-import { getAudioExtension } from "./lib/audioUtils";
-import { usePlaybackPosition } from "./hooks/usePlaybackPosition";
-import { useTransportControls } from "./hooks/useTransportControls";
+import { GitHubCorner } from "@/components/GitHubCorner";
+import { MoisesLogo } from "@/components/MoisesLogo";
+import { BackLink } from "@/components/BackLink";
+import { initializeOpenDAW } from "@/lib/projectSetup";
+import { loadTracksFromFiles } from "@/lib/trackLoading";
+import { getAudioExtension } from "@/lib/audioUtils";
+import { usePlaybackPosition } from "@/hooks/usePlaybackPosition";
+import { useTransportControls } from "@/hooks/useTransportControls";
 import {
   SHOWCASE_EFFECTS,
   SINE_GENERATOR_SCRIPT,
   NOISE_GENERATOR_SCRIPT,
   API_EXAMPLES,
-} from "./lib/werkstattScripts";
-import type { ShowcaseEffect } from "./lib/werkstattScripts";
+} from "@/lib/werkstattScripts";
+import type { ShowcaseEffect } from "@/lib/werkstattScripts";
 import "@radix-ui/themes/styles.css";
 import {
   Theme, Container, Heading, Text, Flex, Card, Button,

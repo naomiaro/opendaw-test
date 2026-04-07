@@ -7,13 +7,13 @@ import { PPQN } from "@opendaw/lib-dsp";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { NoteEventBox, NoteEventCollectionBox, NoteRegionBox, AudioUnitBox } from "@opendaw/studio-boxes";
 import type { TrackBox } from "@opendaw/studio-boxes";
-import { initializeOpenDAW } from "./lib/projectSetup";
-import { useEnginePreference, CountInBarsValue, MetronomeBeatSubDivisionValue } from "./hooks/useEnginePreference";
-import { GitHubCorner } from "./components/GitHubCorner";
-import { MoisesLogo } from "./components/MoisesLogo";
-import { BackLink } from "./components/BackLink";
-import { BpmControl } from "./components/BpmControl";
-import { RecordingPreferences } from "./components/RecordingPreferences";
+import { initializeOpenDAW } from "@/lib/projectSetup";
+import { useEnginePreference, CountInBarsValue, MetronomeBeatSubDivisionValue } from "@/hooks/useEnginePreference";
+import { GitHubCorner } from "@/components/GitHubCorner";
+import { MoisesLogo } from "@/components/MoisesLogo";
+import { BackLink } from "@/components/BackLink";
+import { BpmControl } from "@/components/BpmControl";
+import { RecordingPreferences } from "@/components/RecordingPreferences";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,

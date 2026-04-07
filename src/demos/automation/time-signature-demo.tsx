@@ -5,11 +5,11 @@ import { Theme, Container, Heading, Text, Flex, Button } from "@radix-ui/themes"
 import { Project } from "@opendaw/studio-core";
 import { PPQN } from "@opendaw/lib-dsp";
 import type { ppqn } from "@opendaw/lib-dsp";
-import { GitHubCorner } from "./components/GitHubCorner";
-import { MoisesLogo } from "./components/MoisesLogo";
-import { BackLink } from "./components/BackLink";
-import { initializeOpenDAW } from "./lib/projectSetup";
-import { usePlaybackPosition } from "./hooks/usePlaybackPosition";
+import { GitHubCorner } from "@/components/GitHubCorner";
+import { MoisesLogo } from "@/components/MoisesLogo";
+import { BackLink } from "@/components/BackLink";
+import { initializeOpenDAW } from "@/lib/projectSetup";
+import { usePlaybackPosition } from "@/hooks/usePlaybackPosition";
 
 // --- Pattern Types & Data ---
 

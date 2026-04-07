@@ -3,23 +3,23 @@ import { createRoot } from "react-dom/client";
 import { PPQN, ppqn } from "@opendaw/lib-dsp";
 import { UUID } from "@opendaw/lib-std";
 import { Project } from "@opendaw/studio-core";
-import { GitHubCorner } from "./components/GitHubCorner";
-import { MoisesLogo } from "./components/MoisesLogo";
-import { BackLink } from "./components/BackLink";
-import { TransportControls } from "./components/TransportControls";
-import { initializeOpenDAW } from "./lib/projectSetup";
-import { loadTracksFromFiles } from "./lib/trackLoading";
-import { getAudioExtension } from "./lib/audioUtils";
-import { usePlaybackPosition } from "./hooks/usePlaybackPosition";
-import { useTransportControls } from "./hooks/useTransportControls";
+import { GitHubCorner } from "@/components/GitHubCorner";
+import { MoisesLogo } from "@/components/MoisesLogo";
+import { BackLink } from "@/components/BackLink";
+import { TransportControls } from "@/components/TransportControls";
+import { initializeOpenDAW } from "@/lib/projectSetup";
+import { loadTracksFromFiles } from "@/lib/trackLoading";
+import { getAudioExtension } from "@/lib/audioUtils";
+import { usePlaybackPosition } from "@/hooks/usePlaybackPosition";
+import { useTransportControls } from "@/hooks/useTransportControls";
 import {
   exportStemsRange,
   exportMixdown,
   channelsToAudioBuffer,
   downloadAsWav,
   type ExportResult,
-} from "./lib/rangeExport";
-import type { TrackData } from "./lib/types";
+} from "@/lib/rangeExport";
+import type { TrackData } from "@/lib/types";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,

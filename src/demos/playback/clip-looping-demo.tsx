@@ -8,14 +8,14 @@ import { PeaksPainter } from "@opendaw/lib-fusion";
 import type { Peaks } from "@opendaw/lib-fusion";
 import { UUID } from "@opendaw/lib-std";
 import { AnimationFrame } from "@opendaw/lib-dom";
-import { GitHubCorner } from "./components/GitHubCorner";
-import { MoisesLogo } from "./components/MoisesLogo";
-import { BackLink } from "./components/BackLink";
-import { initializeOpenDAW } from "./lib/projectSetup";
-import { loadTracksFromFiles } from "./lib/trackLoading";
-import { getAudioExtension } from "./lib/audioUtils";
-import { usePlaybackPosition } from "./hooks/usePlaybackPosition";
-import { useTransportControls } from "./hooks/useTransportControls";
+import { GitHubCorner } from "@/components/GitHubCorner";
+import { MoisesLogo } from "@/components/MoisesLogo";
+import { BackLink } from "@/components/BackLink";
+import { initializeOpenDAW } from "@/lib/projectSetup";
+import { loadTracksFromFiles } from "@/lib/trackLoading";
+import { getAudioExtension } from "@/lib/audioUtils";
+import { usePlaybackPosition } from "@/hooks/usePlaybackPosition";
+import { useTransportControls } from "@/hooks/useTransportControls";
 import "@radix-ui/themes/styles.css";
 import {
   Theme, Container, Heading, Text, Flex, Card, Button,

@@ -6,13 +6,13 @@ import { Project } from "@opendaw/studio-core";
 import { InstrumentFactories } from "@opendaw/studio-adapters";
 import { AudioFileBox, AudioRegionBox, AudioUnitBox, ValueEventCollectionBox } from "@opendaw/studio-boxes";
 import type { TrackBox } from "@opendaw/studio-boxes";
-import { GitHubCorner } from "./components/GitHubCorner";
-import { MoisesLogo } from "./components/MoisesLogo";
-import { BackLink } from "./components/BackLink";
-import { loadAudioFile } from "./lib/audioUtils";
-import { initializeOpenDAW } from "./lib/projectSetup";
-import { usePlaybackPosition } from "./hooks/usePlaybackPosition";
-import { useTransportControls } from "./hooks/useTransportControls";
+import { GitHubCorner } from "@/components/GitHubCorner";
+import { MoisesLogo } from "@/components/MoisesLogo";
+import { BackLink } from "@/components/BackLink";
+import { loadAudioFile } from "@/lib/audioUtils";
+import { initializeOpenDAW } from "@/lib/projectSetup";
+import { usePlaybackPosition } from "@/hooks/usePlaybackPosition";
+import { useTransportControls } from "@/hooks/useTransportControls";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,

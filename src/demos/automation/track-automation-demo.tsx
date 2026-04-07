@@ -8,13 +8,13 @@ import { PPQN, Interpolation } from "@opendaw/lib-dsp";
 import type { ppqn } from "@opendaw/lib-dsp";
 import { Curve, UUID } from "@opendaw/lib-std";
 import { AudioUnitBoxAdapter, ValueRegionBoxAdapter } from "@opendaw/studio-adapters";
-import { GitHubCorner } from "./components/GitHubCorner";
-import { MoisesLogo } from "./components/MoisesLogo";
-import { BackLink } from "./components/BackLink";
-import { initializeOpenDAW } from "./lib/projectSetup";
-import { loadTracksFromFiles } from "./lib/trackLoading";
-import { getAudioExtension } from "./lib/audioUtils";
-import { usePlaybackPosition } from "./hooks/usePlaybackPosition";
+import { GitHubCorner } from "@/components/GitHubCorner";
+import { MoisesLogo } from "@/components/MoisesLogo";
+import { BackLink } from "@/components/BackLink";
+import { initializeOpenDAW } from "@/lib/projectSetup";
+import { loadTracksFromFiles } from "@/lib/trackLoading";
+import { getAudioExtension } from "@/lib/audioUtils";
+import { usePlaybackPosition } from "@/hooks/usePlaybackPosition";
 
 // 4/4 time: one bar = 3840 PPQN
 const BAR = PPQN.fromSignature(4, 4); // 3840

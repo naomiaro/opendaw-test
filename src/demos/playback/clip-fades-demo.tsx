@@ -3,12 +3,12 @@ import { createRoot } from "react-dom/client";
 import { PPQN } from "@opendaw/lib-dsp";
 import { Project } from "@opendaw/studio-core";
 import { AudioRegionBoxAdapter } from "@opendaw/studio-adapters";
-import { GitHubCorner } from "./components/GitHubCorner";
-import { MoisesLogo } from "./components/MoisesLogo";
-import { BackLink } from "./components/BackLink";
-import { initializeOpenDAW } from "./lib/projectSetup";
-import { loadTracksFromFiles } from "./lib/trackLoading";
-import { getAudioExtension } from "./lib/audioUtils";
+import { GitHubCorner } from "@/components/GitHubCorner";
+import { MoisesLogo } from "@/components/MoisesLogo";
+import { BackLink } from "@/components/BackLink";
+import { initializeOpenDAW } from "@/lib/projectSetup";
+import { loadTracksFromFiles } from "@/lib/trackLoading";
+import { getAudioExtension } from "@/lib/audioUtils";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
