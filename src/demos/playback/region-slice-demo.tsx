@@ -34,7 +34,8 @@ import {
 
 const BPM = 124;
 const FADE_SAMPLES = 512;
-const FADE_SLOPE = 0.5; // linear
+const FADE_IN_SLOPE = 0.75; // exponential — fast start, slow end
+const FADE_OUT_SLOPE = 0.25; // logarithmic — slow start, fast end
 
 const App: React.FC = () => {
   const [status, setStatus] = useState("Initializing...");
@@ -107,11 +108,11 @@ const App: React.FC = () => {
 
       adapters.forEach((adapter, index) => {
         adapter.fading.inField.setValue(index === 0 ? 0 : fadePPQN);
-        adapter.fading.inSlopeField.setValue(FADE_SLOPE);
+        adapter.fading.inSlopeField.setValue(FADE_IN_SLOPE);
         adapter.fading.outField.setValue(
           index === adapters.length - 1 ? 0 : fadePPQN
         );
-        adapter.fading.outSlopeField.setValue(FADE_SLOPE);
+        adapter.fading.outSlopeField.setValue(FADE_OUT_SLOPE);
       });
     });
   }, []);
@@ -406,7 +407,7 @@ const App: React.FC = () => {
             <Heading size="8">Region Slice Demo</Heading>
             <Text size="4" color="gray">
               Shift+Click anywhere on the waveform to split the region. Each
-              cut applies a 512-sample (~12ms) linear fade to prevent clicks.
+              cut applies a 512-sample (~12ms) equal-power fade to prevent clicks.
               Click to position the playhead, then play to verify seamless
               audio across all splice points.
             </Text>
