@@ -126,7 +126,8 @@ const App: React.FC = () => {
   // Handle waveform click to slice (overrides default seek behavior)
   const handleSlice = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
-      if (!project || tracks.length === 0 || isPlaying) return;
+      if (!project || tracks.length === 0 || isPlaying || !e.shiftKey) return;
+      e.stopPropagation();
 
       const track = tracks[0];
       const rect = e.currentTarget.getBoundingClientRect();
@@ -183,7 +184,7 @@ const App: React.FC = () => {
     canvasRefs.current,
     localAudioBuffersRef.current,
     {
-      onAllRendered: () => setStatus("Ready — click on the waveform to slice!"),
+      onAllRendered: () => setStatus("Ready — Shift+Click to slice!"),
       maxDuration: Math.max(
         ...Array.from(localAudioBuffersRef.current.values()).map(
           (buf) => buf.duration
@@ -318,9 +319,10 @@ const App: React.FC = () => {
             <BackLink />
             <Heading size="8">Region Slice Demo</Heading>
             <Text size="4" color="gray">
-              Click anywhere on the waveform to split the region. Each cut
-              applies a 128-sample (~3ms) linear fade to prevent clicks. Play
-              back to verify seamless audio across all splice points.
+              Shift+Click anywhere on the waveform to split the region. Each
+              cut applies a 128-sample (~3ms) linear fade to prevent clicks.
+              Click to position the playhead, then play to verify seamless
+              audio across all splice points.
             </Text>
           </Flex>
 
@@ -330,8 +332,8 @@ const App: React.FC = () => {
               <Heading size="4">How to Use</Heading>
               <Flex direction="column" gap="2">
                 <Text size="2">
-                  <strong>1. Click on the waveform</strong> to split the region
-                  at that point (only when stopped/paused)
+                  <strong>1. Shift+Click on the waveform</strong> to split the
+                  region at that point (only when stopped/paused)
                 </Text>
                 <Text size="2">
                   <strong>2. Repeat</strong> to create as many slices as you
