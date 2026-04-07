@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Web Audio Splice Test</title>
+  <style>
+    body { font-family: system-ui; background: #1a1a2e; color: #eee; padding: 40px; max-width: 800px; margin: 0 auto; }
+    .drop-zone { border: 2px dashed #555; border-radius: 12px; padding: 48px; text-align: center; cursor: pointer; transition: all 0.2s; }
+    .drop-zone.over { border-color: #4ade80; background: rgba(74, 222, 128, 0.1); }
+    button { background: #333; color: #eee; border: 1px solid #555; padding: 8px 16px; border-radius: 6px; cursor: pointer; margin: 4px; }
+    button:hover { background: #444; }
+    button:disabled { opacity: 0.4; cursor: default; }
+    canvas { width: 100%; height: 120px; background: #111; border-radius: 8px; cursor: crosshair; display: block; margin: 16px 0; }
+    .info { color: #888; font-size: 14px; margin: 8px 0; }
+    .controls { margin: 16px 0; }
+    h1 { color: #4ade80; }
+    #log { background: #111; padding: 12px; border-radius: 8px; font-family: monospace; font-size: 12px; max-height: 200px; overflow-y: auto; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>Web Audio Splice Test</h1>
+  <p class="info">Debug tool: tests if splitting an audio buffer into two consecutive AudioBufferSourceNodes produces a click at the splice point. No SDK involved — pure Web Audio API.</p>
+
+  <div class="drop-zone" id="dropZone">
+    <p style="font-size: 20px">Drop an audio file here</p>
+    <p class="info">or click to browse</p>
+    <input type="file" accept="audio/*" id="fileInput" style="display:none">
+  </div>
+
+  <div id="ui" style="display:none">
+    <canvas id="waveform"></canvas>
+    <p class="info">Click = position playhead. Shift+Click = add split (red line). Play to hear across splice points.</p>
+    <div class="controls">
+      <button id="play">Play</button>
+      <button id="stop">Stop</button>
+    </div>
+    <p class="info" id="splitInfo">Split point: none</p>
+    <div id="log"></div>
+  </div>
+
+  <script>
+    let audioCtx = null;
+    let audioBuffer = null;
+    let splits = []; // array of sample indices where splits occur
+    let playheadSample = 0;
+    let currentSources = [];
+    let isPlaying = false;
+    let playStartTime = 0;
+    let playStartSample = 0;
+    let animFrameId = null;
+
+    const log = (msg) => {
+      const el = document.getElementById('log');
+      el.textContent += msg + '\n';
+      el.scrollTop = el.scrollHeight;
+    };
+
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('over'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('over'));
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('over');
+      const file = e.dataTransfer.files[0];
+      if (file) loadFile(file);
+    });
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files[0]) loadFile(e.target.files[0]);
+    });
+
+    async function loadFile(file) {
+      if (!audioCtx) audioCtx = new AudioContext();
+      log(`Decoding ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)...`);
+      const arrayBuffer = await file.arrayBuffer();
+      audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+      log(`Decoded: ${audioBuffer.duration.toFixed(2)}s, ${audioBuffer.sampleRate}Hz, ${audioBuffer.numberOfChannels}ch, ${audioBuffer.length} samples`);
+
+      splits = [];
+      playheadSample = 0;
+      updateSplitInfo();
+      drawWaveform();
+      dropZone.style.display = 'none';
+      document.getElementById('ui').style.display = 'block';
+    }
+
+    function updateSplitInfo() {
+      const playSeconds = playheadSample / audioBuffer.sampleRate;
+      document.getElementById('splitInfo').textContent =
+        `Playhead: ${playSeconds.toFixed(3)}s | ${splits.length} split${splits.length !== 1 ? 's' : ''} → ${splits.length + 1} region${splits.length > 0 ? 's' : ''}`;
+    }
+
+    function drawWaveform() {
+      const canvas = document.getElementById('waveform');
+      const ctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = canvas.clientWidth * dpr;
+      canvas.height = canvas.clientHeight * dpr;
+      ctx.scale(dpr, dpr);
+      const w = canvas.clientWidth;
+      const h = canvas.clientHeight;
+
+      ctx.fillStyle = '#111';
+      ctx.fillRect(0, 0, w, h);
+
+      // Draw waveform (channel 0)
+      const data = audioBuffer.getChannelData(0);
+      const step = Math.ceil(data.length / w);
+      ctx.fillStyle = '#4ade80';
+      for (let x = 0; x < w; x++) {
+        const start = x * step;
+        let min = 0, max = 0;
+        for (let j = start; j < start + step && j < data.length; j++) {
+          if (data[j] < min) min = data[j];
+          if (data[j] > max) max = data[j];
+        }
+        const yMin = (1 + min) * h / 2;
+        const yMax = (1 + max) * h / 2;
+        ctx.fillRect(x, yMax, 1, yMin - yMax);
+      }
+
+      // Draw split lines (red dashed)
+      ctx.strokeStyle = 'rgba(255, 180, 80, 0.8)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 4]);
+      for (const s of splits) {
+        const x = (s / audioBuffer.length) * w;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, h);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+
+      // Draw playhead (white solid)
+      const phX = (playheadSample / audioBuffer.length) * w;
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(phX, 0);
+      ctx.lineTo(phX, h);
+      ctx.stroke();
+    }
+
+    document.getElementById('waveform').addEventListener('click', (e) => {
+      if (!audioBuffer || isPlaying) return;
+      const rect = e.target.getBoundingClientRect();
+      const fraction = (e.clientX - rect.left) / rect.width;
+      const sample = Math.round(fraction * audioBuffer.length);
+
+      if (e.shiftKey) {
+        // Shift+Click = add split
+        splits.push(sample);
+        splits.sort((a, b) => a - b);
+        log(`Split added at sample ${sample} (${(sample / audioBuffer.sampleRate).toFixed(4)}s) — ${splits.length + 1} regions`);
+      } else {
+        // Click = position playhead
+        playheadSample = sample;
+      }
+
+      updateSplitInfo();
+      drawWaveform();
+    });
+
+    function stopAll() {
+      currentSources.forEach(s => { try { s.stop(); } catch(e) {} });
+      currentSources = [];
+      isPlaying = false;
+      if (animFrameId) { cancelAnimationFrame(animFrameId); animFrameId = null; }
+    }
+
+    function updatePlayhead() {
+      if (!isPlaying) return;
+      const elapsed = audioCtx.currentTime - playStartTime;
+      playheadSample = Math.min(playStartSample + Math.round(elapsed * audioBuffer.sampleRate), audioBuffer.length);
+      drawWaveform();
+      updateSplitInfo();
+      if (playheadSample >= audioBuffer.length) { stopAll(); return; }
+      animFrameId = requestAnimationFrame(updatePlayhead);
+    }
+
+    document.getElementById('stop').addEventListener('click', () => {
+      stopAll();
+      drawWaveform();
+    });
+
+    // Play: schedule consecutive AudioBufferSourceNodes for each region
+    document.getElementById('play').addEventListener('click', () => {
+      if (!audioBuffer) return;
+      stopAll();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+
+      // Build region boundaries from splits
+      const boundaries = [0, ...splits, audioBuffer.length];
+      const sr = audioBuffer.sampleRate;
+
+      // Find which region the playhead is in
+      let startRegion = 0;
+      for (let i = 0; i < boundaries.length - 1; i++) {
+        if (playheadSample < boundaries[i + 1]) { startRegion = i; break; }
+      }
+
+      const now = audioCtx.currentTime + 0.05;
+      let scheduleTime = now;
+
+      // Start offset within first region
+      const firstRegionStart = boundaries[startRegion] / sr;
+      const playheadOffset = playheadSample / sr;
+
+      log(`Playing from ${playheadOffset.toFixed(4)}s across ${boundaries.length - 1 - startRegion} region(s)`);
+
+      for (let i = startRegion; i < boundaries.length - 1; i++) {
+        const regionStartSample = boundaries[i];
+        const regionEndSample = boundaries[i + 1];
+        const regionStartSec = regionStartSample / sr;
+        const regionEndSec = regionEndSample / sr;
+
+        // For first region, start from playhead position
+        const offsetSec = (i === startRegion) ? playheadOffset : regionStartSec;
+        const durationSec = regionEndSec - offsetSec;
+
+        if (durationSec <= 0) continue;
+
+        const source = audioCtx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(audioCtx.destination);
+        source.start(scheduleTime, offsetSec, durationSec);
+        currentSources.push(source);
+
+        log(`  region ${i}: ${offsetSec.toFixed(4)}s — ${regionEndSec.toFixed(4)}s (dur ${durationSec.toFixed(4)}s) @ t+${(scheduleTime - now).toFixed(4)}s`);
+        scheduleTime += durationSec;
+      }
+
+      isPlaying = true;
+      playStartTime = now;
+      playStartSample = playheadSample;
+      animFrameId = requestAnimationFrame(updatePlayhead);
+    });
+  </script>
+</body>
+</html>
