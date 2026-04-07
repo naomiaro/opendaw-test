@@ -136,7 +136,11 @@ const App: React.FC = () => {
         ),
         30
       );
-      const fraction = (e.clientX - rect.left) / rect.width;
+      const LEFT_OFFSET = 200;
+      const waveformLeft = rect.left + LEFT_OFFSET;
+      const waveformWidth = rect.width - LEFT_OFFSET;
+      if (e.clientX < waveformLeft || waveformWidth <= 0) return;
+      const fraction = (e.clientX - waveformLeft) / waveformWidth;
       const seconds = fraction * maxDuration;
       const cutPosition = PPQN.secondsToPulses(seconds, BPM);
 
