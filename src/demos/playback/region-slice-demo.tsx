@@ -417,6 +417,28 @@ const App: React.FC = () => {
                     />
                   </div>
                 )}
+
+                {/* Dashed vertical lines at splice points */}
+                {regions.length > 1 &&
+                  regions.slice(1).map((region) => {
+                    const seconds = PPQN.pulsesToSeconds(region.position, BPM);
+                    const fraction = Math.max(0, Math.min(1, seconds / maxDuration));
+                    return (
+                      <div
+                        key={`split-${region.uuid}`}
+                        style={{
+                          position: "absolute",
+                          left: `calc(200px + (100% - 200px) * ${fraction})`,
+                          top: 0,
+                          bottom: 0,
+                          width: 0,
+                          borderLeft: "1.5px dashed rgba(255, 180, 80, 0.6)",
+                          pointerEvents: "none",
+                          zIndex: 5
+                        }}
+                      />
+                    );
+                  })}
               </TracksContainer>
 
               {/* Region badges */}
