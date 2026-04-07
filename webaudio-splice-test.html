@@ -32,6 +32,8 @@
     <canvas id="waveform"></canvas>
     <p class="info">Click = position playhead. Shift+Click = add split (red line). Play to hear across splice points.</p>
     <div class="controls">
+      <label style="font-size: 14px; color: #aaa;">Fade samples: <input type="number" id="fadeSamples" value="128" min="0" max="8192" step="64" style="width:70px; background:#222; color:#eee; border:1px solid #555; padding:4px 8px; border-radius:4px;"></label>
+      <span class="info" id="fadeMs"></span>
       <button id="play">Play</button>
       <button id="stop">Stop</button>
     </div>
@@ -81,11 +83,17 @@
 
       splits = [];
       playheadSample = 0;
-      updateSplitInfo();
-      drawWaveform();
       dropZone.style.display = 'none';
       document.getElementById('ui').style.display = 'block';
+      updateSplitInfo();
+      updateFadeMs();
+      // Wait a frame for layout to resolve before drawing
+      requestAnimationFrame(() => drawWaveform());
     }
+
+    window.addEventListener('resize', () => {
+      if (audioBuffer) drawWaveform();
+    });
 
     function updateSplitInfo() {
       const playSeconds = playheadSample / audioBuffer.sampleRate;
@@ -187,15 +195,26 @@
       drawWaveform();
     });
 
-    // Play: schedule consecutive AudioBufferSourceNodes for each region
+    // Update fade ms display
+    function updateFadeMs() {
+      const samples = parseInt(document.getElementById('fadeSamples').value) || 0;
+      const sr = audioBuffer ? audioBuffer.sampleRate : 48000;
+      document.getElementById('fadeMs').textContent = `(${(samples / sr * 1000).toFixed(1)}ms)`;
+    }
+    document.getElementById('fadeSamples').addEventListener('input', updateFadeMs);
+
+    // Play: schedule consecutive AudioBufferSourceNodes with optional crossfade
     document.getElementById('play').addEventListener('click', () => {
       if (!audioBuffer) return;
       stopAll();
       if (audioCtx.state === 'suspended') audioCtx.resume();
 
+      const fadeSamples = parseInt(document.getElementById('fadeSamples').value) || 0;
+      const sr = audioBuffer.sampleRate;
+      const fadeDur = fadeSamples / sr;
+
       // Build region boundaries from splits
       const boundaries = [0, ...splits, audioBuffer.length];
-      const sr = audioBuffer.sampleRate;
 
       // Find which region the playhead is in
       let startRegion = 0;
@@ -206,31 +225,52 @@
       const now = audioCtx.currentTime + 0.05;
       let scheduleTime = now;
 
-      // Start offset within first region
-      const firstRegionStart = boundaries[startRegion] / sr;
       const playheadOffset = playheadSample / sr;
+      const hasFade = fadeSamples > 0 && splits.length > 0;
 
-      log(`Playing from ${playheadOffset.toFixed(4)}s across ${boundaries.length - 1 - startRegion} region(s)`);
+      log(`Playing from ${playheadOffset.toFixed(4)}s across ${boundaries.length - 1 - startRegion} region(s)${hasFade ? ` with ${fadeSamples}-sample crossfade (${(fadeDur * 1000).toFixed(1)}ms)` : ''}`);
 
       for (let i = startRegion; i < boundaries.length - 1; i++) {
         const regionStartSample = boundaries[i];
         const regionEndSample = boundaries[i + 1];
         const regionStartSec = regionStartSample / sr;
         const regionEndSec = regionEndSample / sr;
+        const isFirst = i === startRegion;
+        const isLast = i === boundaries.length - 2;
 
         // For first region, start from playhead position
-        const offsetSec = (i === startRegion) ? playheadOffset : regionStartSec;
+        const offsetSec = isFirst ? playheadOffset : regionStartSec;
         const durationSec = regionEndSec - offsetSec;
 
         if (durationSec <= 0) continue;
 
         const source = audioCtx.createBufferSource();
         source.buffer = audioBuffer;
-        source.connect(audioCtx.destination);
+
+        if (hasFade) {
+          const gain = audioCtx.createGain();
+          source.connect(gain).connect(audioCtx.destination);
+
+          // Fade-out at the end (except last region)
+          if (!isLast) {
+            const fadeOutStart = scheduleTime + durationSec - fadeDur;
+            gain.gain.setValueAtTime(1, fadeOutStart);
+            gain.gain.linearRampToValueAtTime(0, fadeOutStart + fadeDur);
+          }
+
+          // Fade-in at the start (except first region)
+          if (!isFirst) {
+            gain.gain.setValueAtTime(0, scheduleTime);
+            gain.gain.linearRampToValueAtTime(1, scheduleTime + fadeDur);
+          }
+        } else {
+          source.connect(audioCtx.destination);
+        }
+
         source.start(scheduleTime, offsetSec, durationSec);
         currentSources.push(source);
 
-        log(`  region ${i}: ${offsetSec.toFixed(4)}s — ${regionEndSec.toFixed(4)}s (dur ${durationSec.toFixed(4)}s) @ t+${(scheduleTime - now).toFixed(4)}s`);
+        log(`  region ${i}: ${offsetSec.toFixed(4)}s — ${regionEndSec.toFixed(4)}s @ t+${(scheduleTime - now).toFixed(4)}s`);
         scheduleTime += durationSec;
       }
 
