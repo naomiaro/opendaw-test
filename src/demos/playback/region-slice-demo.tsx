@@ -33,7 +33,7 @@ import {
 } from "@radix-ui/themes";
 
 const BPM = 124;
-const FADE_SAMPLES = 128;
+const FADE_SAMPLES = 512;
 const FADE_SLOPE = 0.5; // linear
 
 const App: React.FC = () => {
@@ -406,7 +406,7 @@ const App: React.FC = () => {
             <Heading size="8">Region Slice Demo</Heading>
             <Text size="4" color="gray">
               Shift+Click anywhere on the waveform to split the region. Each
-              cut applies a 128-sample (~3ms) linear fade to prevent clicks.
+              cut applies a 512-sample (~12ms) linear fade to prevent clicks.
               Click to position the playhead, then play to verify seamless
               audio across all splice points.
             </Text>
@@ -486,7 +486,7 @@ const App: React.FC = () => {
                 <Callout.Root size="1" color="blue">
                   <Callout.Text>
                     Refresh the page to start over. Each slice auto-applies a
-                    128-sample fade-out/fade-in at the cut boundary.
+                    512-sample fade-out/fade-in at the cut boundary.
                   </Callout.Text>
                 </Callout.Root>
               </Flex>
