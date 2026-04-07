@@ -13,8 +13,7 @@ import { TransportControls } from "@/components/TransportControls";
 import { TimelineRuler } from "@/components/TimelineRuler";
 import { TracksContainer } from "@/components/TracksContainer";
 import { initializeOpenDAW } from "@/lib/projectSetup";
-import { loadTracksFromFiles } from "@/lib/trackLoading";
-import { getAudioExtension } from "@/lib/audioUtils";
+import { getAudioExtension, loadAudioFile } from "@/lib/audioUtils";
 import { useWaveformRendering } from "@/hooks/useWaveformRendering";
 import { usePlaybackPosition } from "@/hooks/usePlaybackPosition";
 import { useTransportControls } from "@/hooks/useTransportControls";
@@ -29,6 +28,7 @@ import {
   Card,
   Callout,
   Badge,
+  Button,
   Box as RadixBox
 } from "@radix-ui/themes";
 
@@ -37,12 +37,13 @@ const FADE_SAMPLES = 128;
 const FADE_SLOPE = 0.5; // linear
 
 const App: React.FC = () => {
-  const [status, setStatus] = useState("Loading...");
+  const [status, setStatus] = useState("Initializing...");
   const [project, setProject] = useState<Project | null>(null);
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
   const [tracks, setTracks] = useState<TrackData[]>([]);
   const [sliceCount, setSliceCount] = useState(0);
   const [updateTrigger, setUpdateTrigger] = useState({});
+  const [isDragOver, setIsDragOver] = useState(false);
 
   const { currentPosition, setCurrentPosition, isPlaying, pausedPositionRef } =
     usePlaybackPosition(project);
@@ -55,75 +56,67 @@ const App: React.FC = () => {
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
   const canvasRefs = useRef<Map<string, HTMLCanvasElement>>(new Map());
   const sampleRateRef = useRef<number>(44100);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Get sorted regions for the track
-  const getRegions = useCallback(
-    (track: TrackData) => {
-      const regions: {
-        uuid: string;
-        position: number;
-        duration: number;
-        label: string;
-      }[] = [];
+  const getRegions = useCallback((track: TrackData) => {
+    const regions: {
+      uuid: string;
+      position: number;
+      duration: number;
+      label: string;
+    }[] = [];
+    const pointers = track.trackBox.regions.pointerHub.incoming();
+
+    pointers.forEach(({ box }) => {
+      if (!box) return;
+      const regionBox = box as AudioRegionBox;
+      regions.push({
+        uuid: UUID.toString(regionBox.address.uuid),
+        position: regionBox.position.getValue(),
+        duration: regionBox.duration.getValue(),
+        label: regionBox.label.getValue()
+      });
+    });
+
+    return regions.sort((a, b) => a.position - b.position);
+  }, []);
+
+  // Apply micro-fades to all regions on the track
+  const applyFades = useCallback((project: Project, track: TrackData) => {
+    const fadePPQN = PPQN.secondsToPulses(
+      FADE_SAMPLES / sampleRateRef.current,
+      BPM
+    );
+
+    project.editing.modify(() => {
       const pointers = track.trackBox.regions.pointerHub.incoming();
+      const adapters: AudioRegionBoxAdapter[] = [];
 
       pointers.forEach(({ box }) => {
         if (!box) return;
         const regionBox = box as AudioRegionBox;
-        regions.push({
-          uuid: UUID.toString(regionBox.address.uuid),
-          position: regionBox.position.getValue(),
-          duration: regionBox.duration.getValue(),
-          label: regionBox.label.getValue()
-        });
+        const adapter = project.boxAdapters.adapterFor(
+          regionBox,
+          AudioRegionBoxAdapter
+        );
+        if (adapter) adapters.push(adapter);
       });
 
-      return regions.sort((a, b) => a.position - b.position);
-    },
-    []
-  );
+      adapters.sort((a, b) => a.position - b.position);
 
-  // Apply micro-fades to all regions on the track
-  const applyFades = useCallback(
-    (project: Project, track: TrackData) => {
-      const fadePPQN = PPQN.secondsToPulses(
-        FADE_SAMPLES / sampleRateRef.current,
-        BPM
-      );
-
-      project.editing.modify(() => {
-        const pointers = track.trackBox.regions.pointerHub.incoming();
-        const adapters: AudioRegionBoxAdapter[] = [];
-
-        pointers.forEach(({ box }) => {
-          if (!box) return;
-          const regionBox = box as AudioRegionBox;
-          const adapter = project.boxAdapters.adapterFor(
-            regionBox,
-            AudioRegionBoxAdapter
-          );
-          if (adapter) adapters.push(adapter);
-        });
-
-        // Sort by position
-        adapters.sort((a, b) => a.position - b.position);
-
-        adapters.forEach((adapter, index) => {
-          // Fade-in on all except the first region
-          adapter.fading.inField.setValue(index === 0 ? 0 : fadePPQN);
-          adapter.fading.inSlopeField.setValue(FADE_SLOPE);
-          // Fade-out on all except the last region
-          adapter.fading.outField.setValue(
-            index === adapters.length - 1 ? 0 : fadePPQN
-          );
-          adapter.fading.outSlopeField.setValue(FADE_SLOPE);
-        });
+      adapters.forEach((adapter, index) => {
+        adapter.fading.inField.setValue(index === 0 ? 0 : fadePPQN);
+        adapter.fading.inSlopeField.setValue(FADE_SLOPE);
+        adapter.fading.outField.setValue(
+          index === adapters.length - 1 ? 0 : fadePPQN
+        );
+        adapter.fading.outSlopeField.setValue(FADE_SLOPE);
       });
-    },
-    []
-  );
+    });
+  }, []);
 
-  // Handle waveform click to slice (overrides default seek behavior)
+  // Handle waveform click to slice
   const handleSlice = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       if (!project || tracks.length === 0 || isPlaying || !e.shiftKey) return;
@@ -145,7 +138,6 @@ const App: React.FC = () => {
       const seconds = fraction * maxDuration;
       const cutPosition = PPQN.secondsToPulses(seconds, BPM);
 
-      // Find and cut the region at this position
       let didCut = false;
       project.editing.modify(() => {
         const pointers = track.trackBox.regions.pointerHub.incoming();
@@ -168,13 +160,123 @@ const App: React.FC = () => {
       });
 
       if (didCut) {
-        // Apply fades in a separate transaction
         applyFades(project, track);
         setSliceCount((prev) => prev + 1);
         setUpdateTrigger({});
       }
     },
     [project, tracks, isPlaying, applyFades]
+  );
+
+  // Load an AudioBuffer into the project as a single track
+  const loadAudioBuffer = useCallback(
+    async (name: string, audioBuffer: AudioBuffer) => {
+      if (!project || !audioContext) return;
+
+      setStatus(`Loading ${name}...`);
+      const localAudioBuffers = localAudioBuffersRef.current;
+      const fileUUID = UUID.generate();
+      const uuidString = UUID.toString(fileUUID);
+      localAudioBuffers.set(uuidString, audioBuffer);
+
+      const { AudioFileBox, AudioRegionBox: ARBox, ValueEventCollectionBox } = await import("@opendaw/studio-boxes");
+      const { InstrumentFactories } = await import("@opendaw/studio-adapters");
+      const { setLoopEndFromTracks } = await import("@/lib/projectSetup");
+
+      const bpm = project.timelineBox.bpm.getValue();
+      const boxGraph = project.boxGraph;
+      let trackData: TrackData | null = null;
+
+      project.editing.modify(() => {
+        const { audioUnitBox, trackBox } = project.api.createInstrument(InstrumentFactories.Tape);
+        audioUnitBox.volume.setValue(0);
+
+        const audioFileBox = AudioFileBox.create(boxGraph, fileUUID, (box: any) => {
+          box.fileName.setValue(name);
+          box.endInSeconds.setValue(audioBuffer.duration);
+        });
+
+        const clipDurationInPPQN = PPQN.secondsToPulses(audioBuffer.duration, bpm);
+        const eventsCollectionBox = ValueEventCollectionBox.create(boxGraph, UUID.generate());
+
+        ARBox.create(boxGraph, UUID.generate(), (box: any) => {
+          box.regions.refer(trackBox.regions);
+          box.file.refer(audioFileBox);
+          box.events.refer(eventsCollectionBox.owners);
+          box.position.setValue(0);
+          box.duration.setValue(clipDurationInPPQN);
+          box.loopOffset.setValue(0);
+          box.loopDuration.setValue(clipDurationInPPQN);
+          box.label.setValue(name);
+          box.mute.setValue(false);
+        });
+
+        trackData = { name, trackBox, audioUnitBox, uuid: fileUUID };
+      });
+
+      if (trackData) {
+        setLoopEndFromTracks(project, localAudioBuffers, bpm);
+        await project.engine.queryLoadingComplete();
+        project.engine.setPosition(0);
+        setTracks([trackData]);
+        setStatus("Loading waveforms...");
+      }
+    },
+    [project, audioContext]
+  );
+
+  // Handle dropped or selected file
+  const handleFile = useCallback(
+    async (file: File) => {
+      if (!audioContext) return;
+      try {
+        setStatus(`Decoding ${file.name}...`);
+        const arrayBuffer = await file.arrayBuffer();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        await loadAudioBuffer(file.name, audioBuffer);
+      } catch (error) {
+        console.error("Failed to decode audio file:", error);
+        setStatus(`Error: Could not decode "${file.name}". Try a different audio file.`);
+      }
+    },
+    [audioContext, loadAudioBuffer]
+  );
+
+  // Load demo vocals
+  const handleLoadDemo = useCallback(async () => {
+    if (!project || !audioContext) return;
+    try {
+      setStatus("Loading demo vocals...");
+      const ext = getAudioExtension();
+      const audioBuffer = await loadAudioFile(audioContext, `/audio/DarkRide/06_Vox.${ext}`);
+      await loadAudioBuffer("Dark Ride - Vocals", audioBuffer);
+    } catch (error) {
+      console.error("Failed to load demo vocals:", error);
+      setStatus(`Error: ${error}`);
+    }
+  }, [project, audioContext, loadAudioBuffer]);
+
+  // Drag and drop handlers
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragOver(false);
+      const file = e.dataTransfer.files[0];
+      if (file && file.type.startsWith("audio/")) {
+        handleFile(file);
+      }
+    },
+    [handleFile]
   );
 
   // Waveform rendering
@@ -195,14 +297,13 @@ const App: React.FC = () => {
     }
   );
 
-  // Initialize OpenDAW and load vocals
+  // Initialize OpenDAW (no audio loading — wait for user choice)
   useEffect(() => {
     let mounted = true;
 
     (async () => {
       try {
         setStatus("Initializing OpenDAW...");
-
         const localAudioBuffers = localAudioBuffersRef.current;
         const { project: newProject, audioContext: newAudioContext } =
           await initializeOpenDAW({
@@ -217,24 +318,7 @@ const App: React.FC = () => {
           setProject(newProject);
           setAudioContext(newAudioContext);
           sampleRateRef.current = newAudioContext.sampleRate;
-        }
-
-        const ext = getAudioExtension();
-        const loadedTracks = await loadTracksFromFiles(
-          newProject,
-          newAudioContext,
-          [{ name: "Vocals", file: `/audio/DarkRide/06_Vox.${ext}` }],
-          localAudioBuffers,
-          {
-            onProgress: (current, total, trackName) => {
-              if (mounted) setStatus(`Loading ${trackName} (${current}/${total})...`);
-            }
-          }
-        );
-
-        if (mounted) {
-          setTracks(loadedTracks);
-          setStatus("Loading waveforms...");
+          setStatus("ready-for-audio");
         }
       } catch (error) {
         console.error("Failed to initialize:", error);
@@ -247,6 +331,7 @@ const App: React.FC = () => {
     };
   }, []);
 
+  // Show init spinner before engine is ready
   if (!project) {
     return (
       <Theme appearance="dark" accentColor="green" radius="medium">
@@ -258,7 +343,8 @@ const App: React.FC = () => {
     );
   }
 
-  const isLoading = !status.startsWith("Ready");
+  const hasAudio = tracks.length > 0;
+  const isLoading = hasAudio && !status.startsWith("Ready");
   const maxDuration = Math.max(
     ...Array.from(localAudioBuffersRef.current.values()).map(
       (buf) => buf.duration
@@ -277,7 +363,7 @@ const App: React.FC = () => {
           gap="6"
           style={{ maxWidth: 1200, margin: "0 auto", position: "relative" }}
         >
-          {/* Loading Overlay */}
+          {/* Loading Overlay (only after audio is chosen) */}
           {isLoading && (
             <div
               style={{
@@ -326,148 +412,206 @@ const App: React.FC = () => {
             </Text>
           </Flex>
 
-          {/* Instructions */}
-          <Card>
-            <Flex direction="column" gap="3">
-              <Heading size="4">How to Use</Heading>
-              <Flex direction="column" gap="2">
-                <Text size="2">
-                  <strong>1. Shift+Click on the waveform</strong> to split the
-                  region at that point (only when stopped/paused)
-                </Text>
-                <Text size="2">
-                  <strong>2. Repeat</strong> to create as many slices as you
-                  want
-                </Text>
-                <Text size="2">
-                  <strong>3. Press Play</strong> to hear that all splice points
-                  are seamless
-                </Text>
-              </Flex>
-              <Callout.Root size="1" color="blue">
-                <Callout.Text>
-                  Refresh the page to start over. Each slice auto-applies a
-                  128-sample fade-out/fade-in at the cut boundary.
-                </Callout.Text>
-              </Callout.Root>
-            </Flex>
-          </Card>
-
-          {/* Transport */}
-          <Card>
-            <Flex direction="column" gap="4">
-              <Flex justify="between" align="center">
-                <Heading size="4">Transport</Heading>
-                <Badge size="2" color="green" variant="soft">
-                  {regions.length} region{regions.length !== 1 ? "s" : ""} ·{" "}
-                  {sliceCount} cut{sliceCount !== 1 ? "s" : ""}
-                </Badge>
-              </Flex>
-              <TransportControls
-                isPlaying={isPlaying}
-                currentPosition={currentPosition}
-                bpm={BPM}
-                onPlay={handlePlay}
-                onPause={handlePause}
-                onStop={handleStop}
-              />
-              <Text size="2" color="gray">
-                Position:{" "}
-                {PPQN.pulsesToSeconds(currentPosition, BPM).toFixed(2)}s (
-                {currentPosition} PPQN)
-              </Text>
-            </Flex>
-          </Card>
-
-          {/* Waveform */}
-          <Card>
-            <Flex direction="column" gap="4">
-              <Heading size="4">Waveform</Heading>
-
-              <TracksContainer
-                currentPosition={currentPosition}
-                bpm={BPM}
-                maxDuration={maxDuration}
-                leftOffset={200}
-              >
-                <TimelineRuler maxDuration={maxDuration} />
-
-                {track && (
-                  <div
-                    onClick={handleSlice}
-                    style={{
-                      cursor: isPlaying ? "default" : "crosshair",
-                      position: "relative"
-                    }}
-                  >
-                    <TrackRow
-                      track={track}
-                      project={project}
-                      allTracks={tracks}
-                      canvasRef={(canvas) => {
-                        if (canvas)
-                          canvasRefs.current.set(
-                            UUID.toString(track.uuid),
-                            canvas
-                          );
-                      }}
-                      currentPosition={currentPosition}
-                      isPlaying={isPlaying}
-                      bpm={BPM}
-                      audioBuffer={localAudioBuffersRef.current.get(
-                        UUID.toString(track.uuid)
-                      )}
-                      setCurrentPosition={setCurrentPosition}
-                      pausedPositionRef={pausedPositionRef}
-                      maxDuration={maxDuration}
-                    />
-                  </div>
-                )}
-
-                {/* Dashed vertical lines at splice points */}
-                {regions.length > 1 &&
-                  regions.slice(1).map((region) => {
-                    const seconds = PPQN.pulsesToSeconds(region.position, BPM);
-                    const fraction = Math.max(0, Math.min(1, seconds / maxDuration));
-                    return (
-                      <div
-                        key={`split-${region.uuid}`}
-                        style={{
-                          position: "absolute",
-                          left: `calc(200px + (100% - 200px) * ${fraction})`,
-                          top: 0,
-                          bottom: 0,
-                          width: 0,
-                          borderLeft: "1.5px dashed rgba(255, 180, 80, 0.6)",
-                          pointerEvents: "none",
-                          zIndex: 5
-                        }}
-                      />
-                    );
-                  })}
-              </TracksContainer>
-
-              {/* Region badges */}
-              {regions.length > 1 && (
-                <RadixBox>
-                  <Flex gap="2" wrap="wrap">
-                    {regions.map((region, idx) => (
-                      <Badge key={region.uuid} size="1" color="gray" variant="soft">
-                        Slice {idx + 1}:{" "}
-                        {PPQN.pulsesToSeconds(region.position, BPM).toFixed(1)}s
-                        {" — "}
-                        {PPQN.pulsesToSeconds(
-                          region.position + region.duration,
-                          BPM
-                        ).toFixed(1)}
-                        s
-                      </Badge>
-                    ))}
+          {/* Audio source selection — shown before audio is loaded */}
+          {!hasAudio && (
+            <Card>
+              <Flex direction="column" gap="4" align="center">
+                <Heading size="4">Choose Audio</Heading>
+                <div
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                  style={{
+                    width: "100%",
+                    padding: "48px 24px",
+                    border: `2px dashed ${isDragOver ? "var(--green-9)" : "var(--gray-7)"}`,
+                    borderRadius: "var(--radius-3)",
+                    backgroundColor: isDragOver ? "var(--green-2)" : "var(--gray-2)",
+                    cursor: "pointer",
+                    textAlign: "center",
+                    transition: "all 0.2s ease"
+                  }}
+                >
+                  <Flex direction="column" gap="2" align="center">
+                    <Text size="6">
+                      {isDragOver ? "Drop it!" : "Drop an audio file here"}
+                    </Text>
+                    <Text size="2" color="gray">
+                      or click to browse (mp3, wav, m4a, ogg, flac)
+                    </Text>
                   </Flex>
-                </RadixBox>
-              )}
-            </Flex>
-          </Card>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="audio/*"
+                    style={{ display: "none" }}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleFile(file);
+                    }}
+                  />
+                </div>
+                <Flex align="center" gap="3" style={{ width: "100%" }}>
+                  <div style={{ flex: 1, height: "1px", backgroundColor: "var(--gray-6)" }} />
+                  <Text size="2" color="gray">or</Text>
+                  <div style={{ flex: 1, height: "1px", backgroundColor: "var(--gray-6)" }} />
+                </Flex>
+                <Button size="3" variant="soft" onClick={handleLoadDemo}>
+                  Use demo vocals (Dark Ride)
+                </Button>
+              </Flex>
+            </Card>
+          )}
+
+          {/* Instructions — shown after audio is loaded */}
+          {hasAudio && (
+            <Card>
+              <Flex direction="column" gap="3">
+                <Heading size="4">How to Use</Heading>
+                <Flex direction="column" gap="2">
+                  <Text size="2">
+                    <strong>1. Shift+Click on the waveform</strong> to split the
+                    region at that point (only when stopped/paused)
+                  </Text>
+                  <Text size="2">
+                    <strong>2. Repeat</strong> to create as many slices as you
+                    want
+                  </Text>
+                  <Text size="2">
+                    <strong>3. Press Play</strong> to hear that all splice points
+                    are seamless
+                  </Text>
+                </Flex>
+                <Callout.Root size="1" color="blue">
+                  <Callout.Text>
+                    Refresh the page to start over. Each slice auto-applies a
+                    128-sample fade-out/fade-in at the cut boundary.
+                  </Callout.Text>
+                </Callout.Root>
+              </Flex>
+            </Card>
+          )}
+
+          {/* Transport — shown after audio is loaded */}
+          {hasAudio && (
+            <Card>
+              <Flex direction="column" gap="4">
+                <Flex justify="between" align="center">
+                  <Heading size="4">Transport</Heading>
+                  <Badge size="2" color="green" variant="soft">
+                    {regions.length} region{regions.length !== 1 ? "s" : ""} ·{" "}
+                    {sliceCount} cut{sliceCount !== 1 ? "s" : ""}
+                  </Badge>
+                </Flex>
+                <TransportControls
+                  isPlaying={isPlaying}
+                  currentPosition={currentPosition}
+                  bpm={BPM}
+                  onPlay={handlePlay}
+                  onPause={handlePause}
+                  onStop={handleStop}
+                />
+                <Text size="2" color="gray">
+                  Position:{" "}
+                  {PPQN.pulsesToSeconds(currentPosition, BPM).toFixed(2)}s (
+                  {currentPosition} PPQN)
+                </Text>
+              </Flex>
+            </Card>
+          )}
+
+          {/* Waveform — shown after audio is loaded */}
+          {hasAudio && (
+            <Card>
+              <Flex direction="column" gap="4">
+                <Heading size="4">Waveform</Heading>
+
+                <TracksContainer
+                  currentPosition={currentPosition}
+                  bpm={BPM}
+                  maxDuration={maxDuration}
+                  leftOffset={200}
+                >
+                  <TimelineRuler maxDuration={maxDuration} />
+
+                  {track && (
+                    <div
+                      onClick={handleSlice}
+                      style={{
+                        cursor: isPlaying ? "default" : "crosshair",
+                        position: "relative"
+                      }}
+                    >
+                      <TrackRow
+                        track={track}
+                        project={project}
+                        allTracks={tracks}
+                        canvasRef={(canvas) => {
+                          if (canvas)
+                            canvasRefs.current.set(
+                              UUID.toString(track.uuid),
+                              canvas
+                            );
+                        }}
+                        currentPosition={currentPosition}
+                        isPlaying={isPlaying}
+                        bpm={BPM}
+                        audioBuffer={localAudioBuffersRef.current.get(
+                          UUID.toString(track.uuid)
+                        )}
+                        setCurrentPosition={setCurrentPosition}
+                        pausedPositionRef={pausedPositionRef}
+                        maxDuration={maxDuration}
+                      />
+                    </div>
+                  )}
+
+                  {/* Dashed vertical lines at splice points */}
+                  {regions.length > 1 &&
+                    regions.slice(1).map((region) => {
+                      const seconds = PPQN.pulsesToSeconds(region.position, BPM);
+                      const fraction = Math.max(0, Math.min(1, seconds / maxDuration));
+                      return (
+                        <div
+                          key={`split-${region.uuid}`}
+                          style={{
+                            position: "absolute",
+                            left: `calc(200px + (100% - 200px) * ${fraction})`,
+                            top: 0,
+                            bottom: 0,
+                            width: 0,
+                            borderLeft: "1.5px dashed rgba(255, 180, 80, 0.6)",
+                            pointerEvents: "none",
+                            zIndex: 5
+                          }}
+                        />
+                      );
+                    })}
+                </TracksContainer>
+
+                {/* Region badges */}
+                {regions.length > 1 && (
+                  <RadixBox>
+                    <Flex gap="2" wrap="wrap">
+                      {regions.map((region, idx) => (
+                        <Badge key={region.uuid} size="1" color="gray" variant="soft">
+                          Slice {idx + 1}:{" "}
+                          {PPQN.pulsesToSeconds(region.position, BPM).toFixed(1)}s
+                          {" — "}
+                          {PPQN.pulsesToSeconds(
+                            region.position + region.duration,
+                            BPM
+                          ).toFixed(1)}
+                          s
+                        </Badge>
+                      ))}
+                    </Flex>
+                  </RadixBox>
+                )}
+              </Flex>
+            </Card>
+          )}
 
           {/* Footer */}
           <Flex justify="center" pt="6">
