@@ -264,21 +264,6 @@ const App: React.FC = () => {
             </Card>
 
             <Card asChild>
-              <Link href="/region-slice-demo.html" style={{ textDecoration: "none", padding: "var(--space-5)" }}>
-                <Flex direction="column" gap="3">
-                  <Flex direction="column" align="center" gap="2">
-                    <Text size="8">🔪</Text>
-                    <Heading size="5">Region Slicing</Heading>
-                  </Flex>
-                  <Text size="2" color="gray">
-                    Click on a waveform to split regions with automatic 128-sample micro-fades.
-                    Play back to verify seamless, click-free audio at every splice point.
-                  </Text>
-                </Flex>
-              </Link>
-            </Card>
-
-            <Card asChild>
               <Link href="/comp-lanes-demo.html" style={{ textDecoration: "none", padding: "var(--space-5)" }}>
                 <Flex direction="column" gap="3">
                   <Flex direction="column" align="center" gap="2">

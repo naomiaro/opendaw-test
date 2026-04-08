@@ -38,7 +38,6 @@ export default defineConfig({
                 clipLooping: resolve(__dirname, "clip-looping-demo.html"),
                 werkstatt: resolve(__dirname, "werkstatt-demo.html"),
                 export: resolve(__dirname, "export-demo.html"),
-                regionSlice: resolve(__dirname, "region-slice-demo.html"),
                 compLanes: resolve(__dirname, "comp-lanes-demo.html")
             },
             output: {
