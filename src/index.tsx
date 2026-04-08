@@ -277,6 +277,21 @@ const App: React.FC = () => {
                 </Flex>
               </Link>
             </Card>
+
+            <Card asChild>
+              <Link href="/comp-lanes-demo.html" style={{ textDecoration: "none", padding: "var(--space-5)" }}>
+                <Flex direction="column" gap="3">
+                  <Flex direction="column" align="center" gap="2">
+                    <Text size="8">🎚️</Text>
+                    <Heading size="5">Comp Lanes</Heading>
+                  </Flex>
+                  <Text size="2" color="gray">
+                    Comp between simulated takes using volume automation crossfades.
+                    Select which take is active per zone with seamless equal-power transitions.
+                  </Text>
+                </Flex>
+              </Link>
+            </Card>
           </div>
 
           <MoisesLogo />
