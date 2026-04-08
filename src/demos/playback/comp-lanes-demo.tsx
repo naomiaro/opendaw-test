@@ -142,14 +142,20 @@ const App: React.FC = () => {
           }
         }
 
-        // Deduplicate: keep last event at each position (later zones win)
-        const eventMap = new Map<number, { value: number; interpolation: any }>();
+        // Sort by position, assign incrementing index per position as tiebreaker
+        events.sort((a, b) => a.position - b.position);
+        const indexedEvents: { position: number; index: number; value: number; interpolation: any }[] = [];
+        let prevPos = -1;
+        let posIndex = 0;
         for (const evt of events) {
-          eventMap.set(evt.position, { value: evt.value, interpolation: evt.interpolation });
+          if (evt.position === prevPos) {
+            posIndex++;
+          } else {
+            posIndex = 0;
+            prevPos = evt.position;
+          }
+          indexedEvents.push({ ...evt, index: posIndex });
         }
-        const dedupedEvents = Array.from(eventMap.entries())
-          .sort(([a], [b]) => a - b)
-          .map(([position, { value, interpolation }]) => ({ position, value, interpolation }));
 
         // Create automation region and write deduped events
         project.editing.modify(() => {
@@ -165,10 +171,10 @@ const App: React.FC = () => {
           if (collectionOpt.isEmpty()) return;
           const collection = collectionOpt.unwrap();
 
-          for (const evt of dedupedEvents) {
+          for (const evt of indexedEvents) {
             collection.createEvent({
               position: evt.position as ppqn,
-              index: 0,
+              index: evt.index,
               value: evt.value,
               interpolation: evt.interpolation
             });
