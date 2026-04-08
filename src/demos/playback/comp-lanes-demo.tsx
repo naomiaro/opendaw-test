@@ -110,7 +110,48 @@ const App: React.FC = () => {
           });
         }
 
-        // Create new automation region and events
+        // Build events for this take, then deduplicate by position before creating
+        const events: { position: number; value: number; interpolation: any }[] = [];
+        const zoneBounds = [0, ...boundaries.map(b => b - playbackStart), TOTAL_PPQN];
+
+        for (let z = 0; z < assignments.length; z++) {
+          const zoneStart = zoneBounds[z];
+          const zoneEnd = zoneBounds[z + 1];
+          const isActive = assignments[z] === t;
+          const isFirst = z === 0;
+          const isLast = z === assignments.length - 1;
+
+          if (isActive) {
+            // Fade-in ramp start (except first zone)
+            if (!isFirst && crossfadePPQN > 0) {
+              events.push({ position: Math.max(0, zoneStart - crossfadePPQN), value: VOL_SILENT, interpolation: Interpolation.Curve(0.75) });
+            }
+            // Full volume at zone start
+            events.push({ position: zoneStart, value: VOL_0DB, interpolation: Interpolation.None });
+            // Fade-out ramp start (except last zone)
+            if (!isLast && crossfadePPQN > 0) {
+              events.push({ position: Math.max(zoneStart, zoneEnd - crossfadePPQN), value: VOL_0DB, interpolation: Interpolation.Curve(0.25) });
+            }
+            // Silent at zone end (except last zone)
+            if (!isLast) {
+              events.push({ position: zoneEnd, value: VOL_SILENT, interpolation: Interpolation.None });
+            }
+          } else {
+            // Inactive: silence at zone start
+            events.push({ position: zoneStart, value: VOL_SILENT, interpolation: Interpolation.None });
+          }
+        }
+
+        // Deduplicate: keep last event at each position (later zones win)
+        const eventMap = new Map<number, { value: number; interpolation: any }>();
+        for (const evt of events) {
+          eventMap.set(evt.position, { value: evt.value, interpolation: evt.interpolation });
+        }
+        const dedupedEvents = Array.from(eventMap.entries())
+          .sort(([a], [b]) => a - b)
+          .map(([position, { value, interpolation }]) => ({ position, value, interpolation }));
+
+        // Create automation region and write deduped events
         project.editing.modify(() => {
           const regionOpt = project.api.createTrackRegion(
             trackBox,
@@ -124,62 +165,13 @@ const App: React.FC = () => {
           if (collectionOpt.isEmpty()) return;
           const collection = collectionOpt.unwrap();
 
-          // Build zone boundaries (region-local: 0 to TOTAL_PPQN)
-          const zoneBounds = [0, ...boundaries.map(b => b - playbackStart), TOTAL_PPQN];
-
-          for (let z = 0; z < assignments.length; z++) {
-            const zoneStart = zoneBounds[z];
-            const zoneEnd = zoneBounds[z + 1];
-            const isActive = assignments[z] === t;
-
-            if (isActive) {
-              // Fade in at zone start (except first zone)
-              if (z > 0 && crossfadePPQN > 0) {
-                collection.createEvent({
-                  position: Math.max(0, zoneStart - crossfadePPQN) as ppqn,
-                  index: 0,
-                  value: VOL_SILENT,
-                  interpolation: Interpolation.Curve(0.75) // exponential fade-in
-                });
-              }
-              collection.createEvent({
-                position: (z > 0 && crossfadePPQN > 0 ? zoneStart : zoneStart) as ppqn,
-                index: 0,
-                value: VOL_0DB,
-                interpolation: Interpolation.None
-              });
-
-              // Hold at 0dB through the zone, then fade out (except last zone)
-              if (z < assignments.length - 1 && crossfadePPQN > 0) {
-                collection.createEvent({
-                  position: Math.max(zoneStart, zoneEnd - crossfadePPQN) as ppqn,
-                  index: 0,
-                  value: VOL_0DB,
-                  interpolation: Interpolation.Curve(0.25) // logarithmic fade-out
-                });
-                collection.createEvent({
-                  position: zoneEnd as ppqn,
-                  index: 0,
-                  value: VOL_SILENT,
-                  interpolation: Interpolation.None
-                });
-              } else if (z < assignments.length - 1) {
-                collection.createEvent({
-                  position: zoneEnd as ppqn,
-                  index: 0,
-                  value: VOL_SILENT,
-                  interpolation: Interpolation.None
-                });
-              }
-            } else {
-              // Inactive: ensure silence
-              collection.createEvent({
-                position: zoneStart as ppqn,
-                index: 0,
-                value: VOL_SILENT,
-                interpolation: Interpolation.None
-              });
-            }
+          for (const evt of dedupedEvents) {
+            collection.createEvent({
+              position: evt.position as ppqn,
+              index: 0,
+              value: evt.value,
+              interpolation: evt.interpolation
+            });
           }
         });
       }
