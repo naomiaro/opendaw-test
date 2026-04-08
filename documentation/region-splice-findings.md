@@ -59,6 +59,18 @@ Fade-out on the original (left) region works reliably. This may be related to ho
 | `src/demos/playback/region-slice-demo.tsx` | SDK demo with the voice pop issue |
 | `docs/superpowers/specs/2026-04-07-region-slice-demo-design.md` | Original design spec |
 
+## Fade Experiments (Web Audio)
+
+Tested three fade modes in pure Web Audio (`webaudio-splice-test.html`):
+
+| Mode | Behavior | Result |
+|------|----------|--------|
+| No fade (fade=0) | Raw consecutive scheduling | Seamless — audio is continuous |
+| Non-overlap fade | Fade-out then fade-in at boundary | Pop — V-shaped volume dip at splice |
+| Overlap crossfade | Regions overlap, left fades out while right fades in | Still pops at bad edit points |
+
+**Conclusion:** For same-file consecutive regions, no fade is needed — the audio samples are already continuous. Adding fades (with or without overlap) can introduce artifacts, especially if the edit point lands at a high-amplitude part of the waveform far from a zero crossing. Fades only help when splicing *different* audio content.
+
 ## Recommendation
 
 The voice fade behavior in `TapeDeviceProcessor` / `PitchVoice` should be suppressed or bypassed when adjacent regions on the same track reference the same audio file and are sample-aligned. This would allow the engine to treat consecutive regions as a continuous audio stream, matching the behavior of raw Web Audio API scheduling.
