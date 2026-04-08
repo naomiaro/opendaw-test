@@ -34,6 +34,7 @@
     <div class="controls">
       <label style="font-size: 14px; color: #aaa;">Fade samples: <input type="number" id="fadeSamples" value="128" min="0" max="8192" step="64" style="width:70px; background:#222; color:#eee; border:1px solid #555; padding:4px 8px; border-radius:4px;"></label>
       <span class="info" id="fadeMs"></span>
+      <label style="font-size: 14px; color: #aaa; margin-left: 12px;"><input type="checkbox" id="overlapMode" checked> Overlap crossfade</label>
       <button id="play">Play</button>
       <button id="stop">Stop</button>
     </div>
@@ -210,6 +211,7 @@
       if (audioCtx.state === 'suspended') audioCtx.resume();
 
       const fadeSamples = parseInt(document.getElementById('fadeSamples').value) || 0;
+      const overlap = document.getElementById('overlapMode').checked;
       const sr = audioBuffer.sampleRate;
       const fadeDur = fadeSamples / sr;
 
@@ -227,8 +229,9 @@
 
       const playheadOffset = playheadSample / sr;
       const hasFade = fadeSamples > 0 && splits.length > 0;
+      const mode = hasFade ? (overlap ? 'overlap crossfade' : 'non-overlap fade') : 'no fade';
 
-      log(`Playing from ${playheadOffset.toFixed(4)}s across ${boundaries.length - 1 - startRegion} region(s)${hasFade ? ` with ${fadeSamples}-sample crossfade (${(fadeDur * 1000).toFixed(1)}ms)` : ''}`);
+      log(`Playing from ${playheadOffset.toFixed(4)}s across ${boundaries.length - 1 - startRegion} region(s) [${mode}${hasFade ? `, ${fadeSamples} samples / ${(fadeDur * 1000).toFixed(1)}ms` : ''}]`);
 
       for (let i = startRegion; i < boundaries.length - 1; i++) {
         const regionStartSample = boundaries[i];
@@ -240,38 +243,83 @@
 
         // For first region, start from playhead position
         const offsetSec = isFirst ? playheadOffset : regionStartSec;
-        const durationSec = regionEndSec - offsetSec;
 
-        if (durationSec <= 0) continue;
+        if (hasFade && overlap) {
+          // OVERLAP MODE: extend each region by fadeDur, crossfade during overlap
+          // Left region plays fadeDur longer, right region starts fadeDur earlier
+          const extendEnd = (!isLast) ? fadeDur : 0;
+          const earlyStart = (!isFirst) ? fadeDur : 0;
+          const srcOffset = offsetSec - earlyStart;
+          const srcDuration = (regionEndSec - offsetSec) + extendEnd + earlyStart;
 
-        const source = audioCtx.createBufferSource();
-        source.buffer = audioBuffer;
+          if (srcDuration <= 0) continue;
 
-        if (hasFade) {
+          const source = audioCtx.createBufferSource();
+          source.buffer = audioBuffer;
           const gain = audioCtx.createGain();
           source.connect(gain).connect(audioCtx.destination);
 
+          const regionScheduleTime = scheduleTime - earlyStart;
+
+          // Fade-in at the start (except first region)
+          if (!isFirst) {
+            gain.gain.setValueAtTime(0, regionScheduleTime);
+            gain.gain.linearRampToValueAtTime(1, regionScheduleTime + fadeDur);
+          }
+
           // Fade-out at the end (except last region)
+          if (!isLast) {
+            const fadeOutStart = scheduleTime + (regionEndSec - offsetSec);
+            gain.gain.setValueAtTime(1, fadeOutStart);
+            gain.gain.linearRampToValueAtTime(0, fadeOutStart + fadeDur);
+          }
+
+          source.start(regionScheduleTime, srcOffset, srcDuration);
+          currentSources.push(source);
+
+          log(`  region ${i}: offset=${srcOffset.toFixed(4)}s dur=${srcDuration.toFixed(4)}s @ t+${(regionScheduleTime - now).toFixed(4)}s${!isFirst ? ' (early start)' : ''}${!isLast ? ' (extended end)' : ''}`);
+          scheduleTime += (regionEndSec - offsetSec);
+
+        } else if (hasFade && !overlap) {
+          // NON-OVERLAP MODE: fade-out/fade-in at boundaries, no overlap
+          const durationSec = regionEndSec - offsetSec;
+          if (durationSec <= 0) continue;
+
+          const source = audioCtx.createBufferSource();
+          source.buffer = audioBuffer;
+          const gain = audioCtx.createGain();
+          source.connect(gain).connect(audioCtx.destination);
+
           if (!isLast) {
             const fadeOutStart = scheduleTime + durationSec - fadeDur;
             gain.gain.setValueAtTime(1, fadeOutStart);
             gain.gain.linearRampToValueAtTime(0, fadeOutStart + fadeDur);
           }
-
-          // Fade-in at the start (except first region)
           if (!isFirst) {
             gain.gain.setValueAtTime(0, scheduleTime);
             gain.gain.linearRampToValueAtTime(1, scheduleTime + fadeDur);
           }
+
+          source.start(scheduleTime, offsetSec, durationSec);
+          currentSources.push(source);
+
+          log(`  region ${i}: ${offsetSec.toFixed(4)}s — ${regionEndSec.toFixed(4)}s @ t+${(scheduleTime - now).toFixed(4)}s`);
+          scheduleTime += durationSec;
+
         } else {
+          // NO FADE: simple consecutive scheduling
+          const durationSec = regionEndSec - offsetSec;
+          if (durationSec <= 0) continue;
+
+          const source = audioCtx.createBufferSource();
+          source.buffer = audioBuffer;
           source.connect(audioCtx.destination);
+          source.start(scheduleTime, offsetSec, durationSec);
+          currentSources.push(source);
+
+          log(`  region ${i}: ${offsetSec.toFixed(4)}s — ${regionEndSec.toFixed(4)}s @ t+${(scheduleTime - now).toFixed(4)}s`);
+          scheduleTime += durationSec;
         }
-
-        source.start(scheduleTime, offsetSec, durationSec);
-        currentSources.push(source);
-
-        log(`  region ${i}: ${offsetSec.toFixed(4)}s — ${regionEndSec.toFixed(4)}s @ t+${(scheduleTime - now).toFixed(4)}s`);
-        scheduleTime += durationSec;
       }
 
       isPlaying = true;
