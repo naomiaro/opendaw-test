@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Web Audio Comp Lanes Test</title>
+  <style>
+    body { font-family: system-ui; background: #1a1a2e; color: #eee; padding: 40px; max-width: 900px; margin: 0 auto; }
+    h1 { color: #4ade80; }
+    .info { color: #888; font-size: 14px; margin: 8px 0; }
+    button { background: #333; color: #eee; border: 1px solid #555; padding: 8px 16px; border-radius: 6px; cursor: pointer; margin: 4px; }
+    button:hover { background: #444; }
+    button:disabled { opacity: 0.4; }
+    .drop-zone { border: 2px dashed #555; border-radius: 12px; padding: 48px; text-align: center; cursor: pointer; transition: all 0.2s; }
+    .drop-zone.over { border-color: #4ade80; background: rgba(74, 222, 128, 0.1); }
+    .lane { position: relative; height: 60px; margin: 2px 0; border-radius: 4px; overflow: hidden; }
+    .lane canvas { width: 100%; height: 100%; display: block; }
+    .lane-label { position: absolute; left: 8px; top: 4px; font-size: 11px; color: rgba(255,255,255,0.7); pointer-events: none; z-index: 2; }
+    .comp-zone { position: absolute; top: 0; bottom: 0; opacity: 0.25; pointer-events: none; z-index: 1; }
+    .comp-zone.active { opacity: 0.5; }
+    .lanes-container { position: relative; border: 1px solid #333; border-radius: 8px; overflow: hidden; cursor: crosshair; }
+    .playhead-overlay { position: absolute; top: 0; bottom: 0; width: 2px; background: #fff; pointer-events: none; z-index: 10; }
+    .split-line { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1.5px dashed rgba(255, 180, 80, 0.6); pointer-events: none; z-index: 5; }
+    .controls { margin: 16px 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    #log { background: #111; padding: 12px; border-radius: 8px; font-family: monospace; font-size: 12px; max-height: 200px; overflow-y: auto; white-space: pre-wrap; }
+    .take-buttons { display: flex; gap: 4px; margin: 8px 0; }
+    .take-btn { font-size: 12px; padding: 4px 10px; }
+    .take-btn.selected { background: #4ade80; color: #111; border-color: #4ade80; }
+  </style>
+</head>
+<body>
+  <h1>Comp Lanes Test</h1>
+  <p class="info">
+    Proof of concept: multiple "takes" from different sections of the same audio file.
+    Click to position playhead. Shift+Click to add a comp boundary. Select which take is active per zone.
+    Crossfades between takes via overlapping gain ramps — no region splitting needed.
+  </p>
+
+  <div class="drop-zone" id="dropZone">
+    <p style="font-size: 20px">Drop an audio file here</p>
+    <p class="info">or click to browse</p>
+    <input type="file" accept="audio/*" id="fileInput" style="display:none">
+  </div>
+
+  <div id="ui" style="display:none">
+    <div class="lanes-container" id="lanesContainer"></div>
+
+    <div class="controls">
+      <label style="font-size: 14px; color: #aaa;">Crossfade ms: <input type="number" id="crossfadeMs" value="20" min="0" max="200" step="5" style="width:60px; background:#222; color:#eee; border:1px solid #555; padding:4px 8px; border-radius:4px;"></label>
+      <label style="font-size: 14px; color: #aaa;">Takes: <input type="number" id="numTakes" value="3" min="2" max="6" step="1" style="width:50px; background:#222; color:#eee; border:1px solid #555; padding:4px 8px; border-radius:4px;"></label>
+      <button id="reload">Reload Takes</button>
+      <button id="play">Play</button>
+      <button id="stop">Stop</button>
+    </div>
+
+    <p class="info" id="statusInfo"></p>
+
+    <div id="takeSelector"></div>
+
+    <div id="log"></div>
+  </div>
+
+  <script>
+    let audioCtx = null;
+    let audioBuffer = null;
+    let takes = []; // [{offset: seconds, color: string}]
+    let compBoundaries = []; // sample positions where comp switches happen
+    let compAssignments = []; // which take index is active per zone
+    let playheadSample = 0;
+    let currentSources = [];
+    let isPlaying = false;
+    let playStartTime = 0;
+    let playStartSample = 0;
+    let animFrameId = null;
+    let playDuration = 0; // total duration of the comp region in seconds
+
+    const TAKE_COLORS = ['#4ade80', '#f59e0b', '#ef4444', '#3b82f6', '#a855f7', '#ec4899'];
+    const BPM = 124;
+    const BAR_SEC = (60 / BPM) * 4;
+    const COMP_BARS = 8; // each take plays this many bars
+
+    const log = (msg) => {
+      const el = document.getElementById('log');
+      el.textContent += msg + '\n';
+      el.scrollTop = el.scrollHeight;
+    };
+
+    // --- File loading ---
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('over'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('over'));
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault(); dropZone.classList.remove('over');
+      if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', (e) => { if (e.target.files[0]) loadFile(e.target.files[0]); });
+
+    async function loadFile(file) {
+      if (!audioCtx) audioCtx = new AudioContext();
+      log(`Decoding ${file.name}...`);
+      const ab = await file.arrayBuffer();
+      audioBuffer = await audioCtx.decodeAudioData(ab);
+      log(`Decoded: ${audioBuffer.duration.toFixed(2)}s, ${audioBuffer.sampleRate}Hz, ${audioBuffer.numberOfChannels}ch`);
+      dropZone.style.display = 'none';
+      document.getElementById('ui').style.display = 'block';
+      setupTakes();
+    }
+
+    // --- Take setup ---
+    function setupTakes() {
+      const numTakes = parseInt(document.getElementById('numTakes').value) || 3;
+      const totalBars = Math.floor(audioBuffer.duration / BAR_SEC);
+      const usableBars = totalBars - COMP_BARS;
+
+      // Space takes evenly across the file, each offset by a different number of bars
+      takes = [];
+      for (let i = 0; i < numTakes; i++) {
+        const startBar = Math.floor((usableBars / numTakes) * i);
+        takes.push({
+          offset: startBar * BAR_SEC,
+          color: TAKE_COLORS[i % TAKE_COLORS.length]
+        });
+      }
+
+      playDuration = COMP_BARS * BAR_SEC;
+      compBoundaries = [];
+      compAssignments = [0]; // first zone uses take 0
+      playheadSample = 0;
+
+      log(`Created ${numTakes} takes (${COMP_BARS} bars each, ${playDuration.toFixed(2)}s):`);
+      takes.forEach((t, i) => log(`  Take ${i + 1}: offset ${t.offset.toFixed(2)}s (bar ${Math.round(t.offset / BAR_SEC) + 1})`));
+
+      buildLanes();
+      updateStatus();
+      renderTakeSelector();
+    }
+
+    document.getElementById('reload').addEventListener('click', () => { if (audioBuffer) setupTakes(); });
+
+    // --- Lane rendering ---
+    function buildLanes() {
+      const container = document.getElementById('lanesContainer');
+      container.innerHTML = '';
+
+      takes.forEach((take, i) => {
+        const lane = document.createElement('div');
+        lane.className = 'lane';
+        lane.style.backgroundColor = take.color + '15';
+
+        const canvas = document.createElement('canvas');
+        lane.appendChild(canvas);
+
+        const label = document.createElement('div');
+        label.className = 'lane-label';
+        label.textContent = `Take ${i + 1}`;
+        lane.appendChild(label);
+
+        container.appendChild(lane);
+        drawLaneWaveform(canvas, take);
+      });
+
+      drawOverlays();
+    }
+
+    function drawLaneWaveform(canvas, take) {
+      const ctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+
+      requestAnimationFrame(() => {
+        const w = canvas.clientWidth;
+        const h = canvas.clientHeight;
+        if (w === 0) return;
+        canvas.width = w * dpr;
+        canvas.height = h * dpr;
+        ctx.scale(dpr, dpr);
+
+        const data = audioBuffer.getChannelData(0);
+        const sr = audioBuffer.sampleRate;
+        const startSample = Math.floor(take.offset * sr);
+        const endSample = Math.min(startSample + Math.floor(playDuration * sr), data.length);
+        const totalSamples = endSample - startSample;
+        const step = Math.ceil(totalSamples / w);
+
+        ctx.fillStyle = take.color;
+        for (let x = 0; x < w; x++) {
+          const s = startSample + x * step;
+          let min = 0, max = 0;
+          for (let j = s; j < s + step && j < endSample; j++) {
+            if (data[j] < min) min = data[j];
+            if (data[j] > max) max = data[j];
+          }
+          const yMin = (1 + min) * h / 2;
+          const yMax = (1 + max) * h / 2;
+          ctx.fillRect(x, yMax, 1, Math.max(1, yMin - yMax));
+        }
+      });
+    }
+
+    function drawOverlays() {
+      const container = document.getElementById('lanesContainer');
+      // Remove old overlays
+      container.querySelectorAll('.playhead-overlay, .split-line, .comp-zone').forEach(el => el.remove());
+
+      const w = container.clientWidth;
+      const sr = audioBuffer.sampleRate;
+      const totalSamples = Math.floor(playDuration * sr);
+
+      // Comp zone highlights
+      const zoneBounds = [0, ...compBoundaries, totalSamples];
+      for (let z = 0; z < compAssignments.length; z++) {
+        const takeIdx = compAssignments[z];
+        const laneEl = container.children[takeIdx];
+        if (!laneEl) continue;
+
+        const left = (zoneBounds[z] / totalSamples) * 100;
+        const right = (zoneBounds[z + 1] / totalSamples) * 100;
+
+        const zone = document.createElement('div');
+        zone.className = 'comp-zone active';
+        zone.style.left = left + '%';
+        zone.style.width = (right - left) + '%';
+        zone.style.background = takes[takeIdx].color;
+        laneEl.appendChild(zone);
+      }
+
+      // Split lines
+      for (const b of compBoundaries) {
+        const x = (b / totalSamples) * 100;
+        const line = document.createElement('div');
+        line.className = 'split-line';
+        line.style.left = x + '%';
+        container.appendChild(line);
+      }
+
+      // Playhead
+      const phFrac = playheadSample / totalSamples;
+      const ph = document.createElement('div');
+      ph.className = 'playhead-overlay';
+      ph.style.left = (phFrac * 100) + '%';
+      container.appendChild(ph);
+    }
+
+    // --- Interaction ---
+    document.getElementById('lanesContainer').addEventListener('click', (e) => {
+      if (!audioBuffer || isPlaying) return;
+      const container = document.getElementById('lanesContainer');
+      const rect = container.getBoundingClientRect();
+      const fraction = (e.clientX - rect.left) / rect.width;
+      const sr = audioBuffer.sampleRate;
+      const totalSamples = Math.floor(playDuration * sr);
+      const sample = Math.round(fraction * totalSamples);
+
+      if (e.shiftKey) {
+        // Add comp boundary
+        compBoundaries.push(sample);
+        compBoundaries.sort((a, b) => a - b);
+        // Add assignment for the new zone (default to take 0)
+        compAssignments = [];
+        for (let i = 0; i <= compBoundaries.length; i++) {
+          compAssignments.push(i < compAssignments.length ? compAssignments[i] : 0);
+        }
+        log(`Comp boundary at ${(sample / sr).toFixed(3)}s — ${compBoundaries.length + 1} zones`);
+        renderTakeSelector();
+      } else {
+        playheadSample = sample;
+      }
+
+      updateStatus();
+      drawOverlays();
+    });
+
+    function updateStatus() {
+      const sr = audioBuffer ? audioBuffer.sampleRate : 48000;
+      const sec = playheadSample / sr;
+      document.getElementById('statusInfo').textContent =
+        `Playhead: ${sec.toFixed(3)}s | ${compBoundaries.length + 1} zone${compBoundaries.length > 0 ? 's' : ''}`;
+    }
+
+    // --- Take selector per zone ---
+    function renderTakeSelector() {
+      const el = document.getElementById('takeSelector');
+      const zoneBounds = [0, ...compBoundaries, Math.floor(playDuration * audioBuffer.sampleRate)];
+
+      let html = '';
+      for (let z = 0; z < zoneBounds.length - 1; z++) {
+        const startSec = (zoneBounds[z] / audioBuffer.sampleRate).toFixed(2);
+        const endSec = (zoneBounds[z + 1] / audioBuffer.sampleRate).toFixed(2);
+        html += `<div style="margin:4px 0"><span class="info" style="display:inline-block;width:140px">Zone ${z + 1} (${startSec}s–${endSec}s):</span>`;
+        for (let t = 0; t < takes.length; t++) {
+          const selected = (compAssignments[z] || 0) === t;
+          html += `<button class="take-btn ${selected ? 'selected' : ''}" style="${selected ? 'background:' + takes[t].color + ';border-color:' + takes[t].color : ''}" onclick="setZoneTake(${z},${t})">Take ${t + 1}</button>`;
+        }
+        html += '</div>';
+      }
+      el.innerHTML = html;
+    }
+
+    window.setZoneTake = (zone, take) => {
+      compAssignments[zone] = take;
+      renderTakeSelector();
+      drawOverlays();
+      log(`Zone ${zone + 1} → Take ${take + 1}`);
+    };
+
+    // --- Playback ---
+    function stopAll() {
+      currentSources.forEach(s => { try { s.stop(); } catch(e) {} });
+      currentSources = [];
+      isPlaying = false;
+      if (animFrameId) { cancelAnimationFrame(animFrameId); animFrameId = null; }
+    }
+
+    function updatePlayhead() {
+      if (!isPlaying) return;
+      const elapsed = audioCtx.currentTime - playStartTime;
+      const sr = audioBuffer.sampleRate;
+      const totalSamples = Math.floor(playDuration * sr);
+      playheadSample = Math.min(playStartSample + Math.round(elapsed * sr), totalSamples);
+      drawOverlays();
+      updateStatus();
+      if (playheadSample >= totalSamples) { stopAll(); return; }
+      animFrameId = requestAnimationFrame(updatePlayhead);
+    }
+
+    document.getElementById('stop').addEventListener('click', () => { stopAll(); drawOverlays(); });
+
+    document.getElementById('play').addEventListener('click', () => {
+      if (!audioBuffer) return;
+      stopAll();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+
+      const sr = audioBuffer.sampleRate;
+      const crossfadeMs = parseFloat(document.getElementById('crossfadeMs').value) || 0;
+      const crossfadeSec = crossfadeMs / 1000;
+      const totalSamples = Math.floor(playDuration * sr);
+      const zoneBounds = [0, ...compBoundaries, totalSamples];
+      const now = audioCtx.currentTime + 0.05;
+
+      // Find which zone the playhead is in
+      let startZone = 0;
+      for (let z = 0; z < zoneBounds.length - 1; z++) {
+        if (playheadSample < zoneBounds[z + 1]) { startZone = z; break; }
+      }
+
+      const playheadSec = playheadSample / sr;
+
+      log(`Playing comp from ${playheadSec.toFixed(3)}s [crossfade: ${crossfadeMs}ms]`);
+
+      // For each take, create ONE source for the full duration, with gain automation
+      for (let t = 0; t < takes.length; t++) {
+        const take = takes[t];
+        const source = audioCtx.createBufferSource();
+        source.buffer = audioBuffer;
+        const gain = audioCtx.createGain();
+        source.connect(gain).connect(audioCtx.destination);
+
+        // Start silent
+        gain.gain.setValueAtTime(0, now);
+
+        // Build gain automation from comp assignments
+        for (let z = startZone; z < zoneBounds.length - 1; z++) {
+          const zoneStartSample = zoneBounds[z];
+          const zoneEndSample = zoneBounds[z + 1];
+          const zoneStartSec = zoneStartSample / sr;
+          const zoneEndSec = zoneEndSample / sr;
+          const activeTake = compAssignments[z] || 0;
+
+          // Time relative to playback start
+          const relStart = Math.max(0, zoneStartSec - playheadSec);
+          const relEnd = zoneEndSec - playheadSec;
+
+          if (activeTake === t) {
+            // This take is active in this zone — ramp up at start, ramp down at end
+            if (crossfadeSec > 0) {
+              // Pin at 0 right before ramp-in, then ramp to 1
+              gain.gain.setValueAtTime(0, now + Math.max(0, relStart - 0.001));
+              gain.gain.linearRampToValueAtTime(1, now + relStart + crossfadeSec);
+              // Hold at 1, then ramp to 0
+              gain.gain.setValueAtTime(1, now + Math.max(relStart + crossfadeSec, relEnd - crossfadeSec));
+              gain.gain.linearRampToValueAtTime(0, now + relEnd);
+            } else {
+              gain.gain.setValueAtTime(1, now + relStart);
+              gain.gain.setValueAtTime(0, now + relEnd);
+            }
+          } else {
+            // This take is NOT active in this zone — ensure it stays silent
+            gain.gain.setValueAtTime(0, now + relStart);
+          }
+        }
+
+        // Start the source from the take's offset + playhead position
+        const sourceOffset = take.offset + playheadSec;
+        source.start(now, sourceOffset, playDuration - playheadSec);
+        currentSources.push(source);
+
+        log(`  Take ${t + 1}: source offset ${sourceOffset.toFixed(3)}s`);
+      }
+
+      isPlaying = true;
+      playStartTime = now;
+      playStartSample = playheadSample;
+      animFrameId = requestAnimationFrame(updatePlayhead);
+    });
+
+    window.addEventListener('resize', () => { if (audioBuffer) { buildLanes(); } });
+  </script>
+</body>
+</html>
