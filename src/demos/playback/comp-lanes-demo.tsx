@@ -4,7 +4,7 @@ import { UUID } from "@opendaw/lib-std";
 import { PPQN, Interpolation } from "@opendaw/lib-dsp";
 import type { ppqn } from "@opendaw/lib-dsp";
 import { Project } from "@opendaw/studio-core";
-import { AudioRegionBox, AudioUnitBox, TrackBox, ValueRegionBox } from "@opendaw/studio-boxes";
+import { AudioRegionBox, TrackBox, ValueRegionBox } from "@opendaw/studio-boxes";
 import { AudioUnitBoxAdapter, ValueRegionBoxAdapter } from "@opendaw/studio-adapters";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
@@ -26,8 +26,7 @@ import {
   Card,
   Callout,
   Badge,
-  Button,
-  Box as RadixBox
+  Button
 } from "@radix-ui/themes";
 
 const BPM = 124;
@@ -43,7 +42,7 @@ const TAKE_LABELS = ["Take 1", "Take 2", "Take 3"];
 
 // Volume automation values
 const VOL_0DB = AudioUnitBoxAdapter.VolumeMapper.x(0); // unitValue for 0 dB
-const VOL_SILENT = 0.0; // unitValue for -inf
+const VOL_SILENT = 0.0; // unitValue 0.0 maps to -inf dB (complete silence)
 
 interface TakeData {
   trackData: TrackData;
@@ -110,7 +109,7 @@ const App: React.FC = () => {
           });
         }
 
-        // Build events for this take, then deduplicate by position before creating
+        // Build events for this take, then assign unique indices per position before creating
         const events: { position: number; value: number; interpolation: any }[] = [];
         const zoneBounds = [0, ...boundaries.map(b => b - playbackStart), TOTAL_PPQN];
 
@@ -142,7 +141,7 @@ const App: React.FC = () => {
           }
         }
 
-        // Sort by position, assign incrementing index per position as tiebreaker
+        // Sort by position, assign incrementing index per position to form unique (position, index) composite keys
         events.sort((a, b) => a.position - b.position);
         const indexedEvents: { position: number; index: number; value: number; interpolation: any }[] = [];
         let prevPos = -1;
@@ -157,18 +156,24 @@ const App: React.FC = () => {
           indexedEvents.push({ ...evt, index: posIndex });
         }
 
-        // Create automation region and write deduped events
+        // Create automation region and write indexed events
         project.editing.modify(() => {
           const regionOpt = project.api.createTrackRegion(
             trackBox,
             playbackStart as ppqn,
             TOTAL_PPQN as ppqn
           );
-          if (regionOpt.isEmpty()) return;
+          if (regionOpt.isEmpty()) {
+            console.error(`rebuildAutomation: createTrackRegion failed for take ${t}`);
+            return;
+          }
           const regionBox = regionOpt.unwrap() as ValueRegionBox;
           const adapter = project.boxAdapters.adapterFor(regionBox, ValueRegionBoxAdapter);
           const collectionOpt = adapter.optCollection;
-          if (collectionOpt.isEmpty()) return;
+          if (collectionOpt.isEmpty()) {
+            console.error(`rebuildAutomation: optCollection is empty for take ${t}`);
+            return;
+          }
           const collection = collectionOpt.unwrap();
 
           for (const evt of indexedEvents) {
@@ -282,13 +287,15 @@ const App: React.FC = () => {
   const handleFile = useCallback(
     async (file: File) => {
       if (!audioContext) return;
+      const blobUrl = URL.createObjectURL(file);
       try {
-        const blobUrl = URL.createObjectURL(file);
         await loadTakes(file.name, blobUrl);
-        URL.revokeObjectURL(blobUrl);
       } catch (error) {
         console.error("Failed to load audio file:", error);
-        setStatus(`Error: Could not load "${file.name}".`);
+        const message = error instanceof Error ? error.message : String(error);
+        setStatus(`Error: Could not load "${file.name}". ${message}`);
+      } finally {
+        URL.revokeObjectURL(blobUrl);
       }
     },
     [audioContext, loadTakes]
@@ -301,7 +308,8 @@ const App: React.FC = () => {
       await loadTakes("Dark Ride - Vocals", `/audio/DarkRide/06_Vox.${ext}`);
     } catch (error) {
       console.error("Failed to load demo:", error);
-      setStatus(`Error: ${error}`);
+      const message = error instanceof Error ? error.message : String(error);
+      setStatus(`Error loading demo audio: ${message}`);
     }
   }, [project, audioContext, loadTakes]);
 
@@ -315,13 +323,12 @@ const App: React.FC = () => {
       const ppqnPos = Math.round(playbackStartRef.current + fraction * TOTAL_PPQN);
 
       if (e.shiftKey) {
-        // Add comp boundary
+        // Add comp boundary — splice a new zone assignment at the insertion point,
+        // copying the active take from the zone being split
         const newBoundaries = [...compBoundaries, ppqnPos].sort((a, b) => a - b);
-        // Add assignment for new zone (default to take 0)
-        const newAssignments: number[] = [];
-        for (let i = 0; i <= newBoundaries.length; i++) {
-          newAssignments.push(i < compAssignments.length ? compAssignments[i] : 0);
-        }
+        const insertionIdx = newBoundaries.indexOf(ppqnPos);
+        const newAssignments = [...compAssignments];
+        newAssignments.splice(insertionIdx + 1, 0, compAssignments[insertionIdx] ?? 0);
         setCompBoundaries(newBoundaries);
         setCompAssignments(newAssignments);
         rebuildAutomation(project, takes, newBoundaries, newAssignments, crossfadeMs);
@@ -562,7 +569,7 @@ const App: React.FC = () => {
                     <label style={{ fontSize: "14px", color: "var(--gray-11)" }}>
                       Crossfade:{" "}
                       <input type="number" value={crossfadeMs} min={0} max={200} step={5}
-                        onChange={(e) => handleCrossfadeChange(parseInt(e.target.value) || 0)}
+                        onChange={(e) => handleCrossfadeChange(Math.max(0, parseInt(e.target.value) || 0))}
                         style={{ width: "60px", background: "var(--gray-3)", color: "var(--gray-12)",
                           border: "1px solid var(--gray-7)", padding: "4px 8px", borderRadius: "4px" }}
                       /> ms

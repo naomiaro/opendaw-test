@@ -78,8 +78,13 @@
     async function loadFile(file) {
       if (!audioCtx) audioCtx = new AudioContext();
       log(`Decoding ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)...`);
-      const arrayBuffer = await file.arrayBuffer();
-      audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+      } catch (e) {
+        log(`Error: Could not decode "${file.name}". ${e.message || e}`);
+        return;
+      }
       log(`Decoded: ${audioBuffer.duration.toFixed(2)}s, ${audioBuffer.sampleRate}Hz, ${audioBuffer.numberOfChannels}ch, ${audioBuffer.length} samples`);
 
       splits = [];
@@ -175,7 +180,7 @@
     });
 
     function stopAll() {
-      currentSources.forEach(s => { try { s.stop(); } catch(e) {} });
+      currentSources.forEach(s => { try { s.stop(); } catch(e) { if (e.name !== 'InvalidStateError') console.warn('Error stopping source:', e); } });
       currentSources = [];
       isPlaying = false;
       if (animFrameId) { cancelAnimationFrame(animFrameId); animFrameId = null; }
@@ -205,10 +210,10 @@
     document.getElementById('fadeSamples').addEventListener('input', updateFadeMs);
 
     // Play: schedule consecutive AudioBufferSourceNodes with optional crossfade
-    document.getElementById('play').addEventListener('click', () => {
+    document.getElementById('play').addEventListener('click', async () => {
       if (!audioBuffer) return;
       stopAll();
-      if (audioCtx.state === 'suspended') audioCtx.resume();
+      if (audioCtx.state === 'suspended') await audioCtx.resume();
 
       const fadeSamples = parseInt(document.getElementById('fadeSamples').value) || 0;
       const overlap = document.getElementById('overlapMode').checked;

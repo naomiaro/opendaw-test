@@ -100,8 +100,13 @@
     async function loadFile(file) {
       if (!audioCtx) audioCtx = new AudioContext();
       log(`Decoding ${file.name}...`);
-      const ab = await file.arrayBuffer();
-      audioBuffer = await audioCtx.decodeAudioData(ab);
+      try {
+        const ab = await file.arrayBuffer();
+        audioBuffer = await audioCtx.decodeAudioData(ab);
+      } catch (e) {
+        log(`Error: Could not decode "${file.name}". ${e.message || e}`);
+        return;
+      }
       log(`Decoded: ${audioBuffer.duration.toFixed(2)}s, ${audioBuffer.sampleRate}Hz, ${audioBuffer.numberOfChannels}ch`);
       dropZone.style.display = 'none';
       document.getElementById('ui').style.display = 'block';
@@ -253,14 +258,13 @@
       const sample = Math.round(fraction * totalSamples);
 
       if (e.shiftKey) {
-        // Add comp boundary
+        // Add comp boundary — splice assignment at insertion point, copying active take
+        const oldAssignments = [...compAssignments];
         compBoundaries.push(sample);
         compBoundaries.sort((a, b) => a - b);
-        // Add assignment for the new zone (default to take 0)
-        compAssignments = [];
-        for (let i = 0; i <= compBoundaries.length; i++) {
-          compAssignments.push(i < compAssignments.length ? compAssignments[i] : 0);
-        }
+        const insertionIdx = compBoundaries.indexOf(sample);
+        compAssignments = [...oldAssignments];
+        compAssignments.splice(insertionIdx + 1, 0, oldAssignments[insertionIdx] ?? 0);
         log(`Comp boundary at ${(sample / sr).toFixed(3)}s — ${compBoundaries.length + 1} zones`);
         renderTakeSelector();
       } else {
@@ -306,7 +310,7 @@
 
     // --- Playback ---
     function stopAll() {
-      currentSources.forEach(s => { try { s.stop(); } catch(e) {} });
+      currentSources.forEach(s => { try { s.stop(); } catch(e) { if (e.name !== 'InvalidStateError') console.warn('Error stopping source:', e); } });
       currentSources = [];
       isPlaying = false;
       if (animFrameId) { cancelAnimationFrame(animFrameId); animFrameId = null; }
@@ -326,10 +330,10 @@
 
     document.getElementById('stop').addEventListener('click', () => { stopAll(); drawOverlays(); });
 
-    document.getElementById('play').addEventListener('click', () => {
+    document.getElementById('play').addEventListener('click', async () => {
       if (!audioBuffer) return;
       stopAll();
-      if (audioCtx.state === 'suspended') audioCtx.resume();
+      if (audioCtx.state === 'suspended') await audioCtx.resume();
 
       const sr = audioBuffer.sampleRate;
       const crossfadeMs = parseFloat(document.getElementById('crossfadeMs').value) || 0;
