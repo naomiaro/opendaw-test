@@ -24,7 +24,9 @@ Investigate seamless audio splicing and take comping in the OpenDAW SDK.
 
 1. The left region's voice fades out over ~20ms (gain ramps from 1 to 0)
 2. The right region's voice fades in over ~20ms (gain ramps from 0 to 1)
-3. This creates a V-shaped volume dip at the boundary, heard as a pop
+3. This creates a V-shaped volume dip at the boundary — the signal drops toward silence and recovers over ~40ms total
+
+The dip is heard as a pop because the rapid voltage change forces the speaker cone to move faster than the surrounding waveform would naturally require. The severity depends on the audio content at the boundary: sustained, high-amplitude material (vocals, pads, strings) makes the dip most audible, while percussive or sparse material (drums, staccato notes, silence) may mask it. Audio that happens to be near a zero crossing at the boundary will pop less than audio at peak amplitude.
 
 The voice fade is in `PitchVoice.process()` and applies independently of region-level fading (`FadingEnvelope`). There is no way to disable it from the API level.
 
@@ -71,7 +73,7 @@ The SDK uses `(position, index)` as composite key for automation events. Two eve
 
 ### Non-Overlapping Fades Create Pops
 
-Fade-out + fade-in without overlap creates a V-shaped volume dip at the splice point. For same-file consecutive regions, no fade is needed — the audio samples are already continuous. Adding fades (with or without overlap) can introduce artifacts, especially if the edit point lands at a high-amplitude part of the waveform far from a zero crossing. Fades only help when splicing *different* audio content.
+Fade-out + fade-in without overlap creates a V-shaped volume dip at the splice point — the same rapid voltage change issue as the voice pop, but caused by the fade envelope rather than voice lifecycle. The signal ramps to near-zero and back, which the speaker reproduces as an abrupt cone displacement. For same-file consecutive regions, no fade is needed — the audio samples are already continuous. Adding fades makes it worse, not better. Fades only help when splicing *different* audio content where the waveforms are discontinuous at the boundary.
 
 ## Fade Experiments (Web Audio)
 
@@ -80,8 +82,8 @@ Tested three fade modes in pure Web Audio (`webaudio-splice-test.html`):
 | Mode | Behavior | Result |
 |------|----------|--------|
 | No fade (fade=0) | Raw consecutive scheduling | Seamless — audio is continuous |
-| Non-overlap fade | Fade-out then fade-in at boundary | Pop — V-shaped volume dip at splice |
-| Overlap crossfade | Regions overlap, left fades out while right fades in | Smooth for same content, still pops at bad edit points with different content |
+| Non-overlap fade | Fade-out then fade-in at boundary | Pop — V-shaped dip forces rapid voltage change |
+| Overlap crossfade | Regions overlap, left fades out while right fades in | Smooth for same content; with different content, pops at high-amplitude edit points (vocal sustains, pad swells) but clean on percussive/sparse material |
 
 ## Files
 
@@ -99,7 +101,7 @@ The pop occurs regardless of how regions are created (manual or via `RegionEditi
 - `offset === 0` (voice starts from beginning of file): **Active state, no fade-in**
 - `offset > 0` (voice starts mid-file): **Fading state, 20ms fade-in applied**
 
-For adjacent regions, the right region always has `offset > 0` (reads from mid-file), so the 20ms fade-in always triggers. Combined with the left region's voice fade-out on eviction, this creates the V-shaped dip.
+For adjacent regions, the right region always has `offset > 0` (reads from mid-file), so the 20ms fade-in always triggers. Combined with the left region's voice fade-out on eviction, this creates the V-shaped dip. The audibility depends on the audio content at that moment — a sustained vocal note will pop noticeably, while a drum hit or a quiet passage may be inaudible.
 
 `VOICE_FADE_DURATION` (20ms) is defined in `Tape/constants.ts` as a hardcoded constant. It is not exposed via any API, settings, or device parameters.
 
