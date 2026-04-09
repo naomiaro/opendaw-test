@@ -87,7 +87,7 @@ Tested three fade modes in pure Web Audio (`webaudio-splice-test.html`):
 
 | File | Purpose |
 |------|---------|
-| `webaudio-splice-test.html` | Standalone Web Audio splice test — proves seamless same-file playback |
+| `webaudio-splice-test.html` | Standalone Web Audio splice test — proves seamless same-file playback; also demonstrates non-overlapping fade pop (uncheck "Overlap crossfade", set fade samples > 0) |
 | `webaudio-comp-test.html` | Standalone Web Audio comp lanes prototype — proves crossfade approach |
 | `src/demos/playback/comp-lanes-demo.tsx` | SDK comp lanes demo using volume automation crossfades |
 
