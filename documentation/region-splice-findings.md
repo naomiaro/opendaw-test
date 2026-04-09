@@ -91,8 +91,24 @@ Tested three fade modes in pure Web Audio (`webaudio-splice-test.html`):
 | `webaudio-comp-test.html` | Standalone Web Audio comp lanes prototype — proves crossfade approach |
 | `src/demos/playback/comp-lanes-demo.tsx` | SDK comp lanes demo using volume automation crossfades |
 
+## Voice Fade Details (from SDK source)
+
+The pop occurs regardless of how regions are created (manual or via `RegionEditing.cut()`). Voice management is keyed by region UUID, not by audio file — there is no optimization for adjacent same-file regions.
+
+`PitchVoice` constructor behavior:
+- `offset === 0` (voice starts from beginning of file): **Active state, no fade-in**
+- `offset > 0` (voice starts mid-file): **Fading state, 20ms fade-in applied**
+
+For adjacent regions, the right region always has `offset > 0` (reads from mid-file), so the 20ms fade-in always triggers. Combined with the left region's voice fade-out on eviction, this creates the V-shaped dip.
+
+`VOICE_FADE_DURATION` (20ms) is defined in `Tape/constants.ts` as a hardcoded constant. It is not exposed via any API, settings, or device parameters.
+
 ## Recommendation
 
-The voice fade behavior in `TapeDeviceProcessor` / `PitchVoice` should be suppressed or bypassed when adjacent regions on the same track reference the same audio file and are sample-aligned. This would allow the engine to treat consecutive regions as a continuous audio stream, matching the behavior of raw Web Audio API scheduling.
+Two potential SDK improvements:
 
-Until that is addressed, use multi-track volume automation crossfades for any scenario requiring seamless transitions between takes or audio sections.
+1. **Adjacent same-file optimization**: When two regions on the same track reference the same audio file and are sample-aligned, the engine could reuse the existing voice instead of evicting + creating. This would require checking file identity (not just region UUID) in `#updateOrCreatePitchVoice`.
+
+2. **Configurable voice fade**: Expose `VOICE_FADE_DURATION` as a configurable parameter (per-instrument or global), allowing it to be set to 0 for use cases where region-level fading handles transitions.
+
+Until either is addressed, use multi-track volume automation crossfades for any scenario requiring seamless transitions between takes or audio sections.
