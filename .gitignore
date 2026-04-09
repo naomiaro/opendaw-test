@@ -7,5 +7,6 @@
 .DS_Store
 .playwright-mcp/
 .claude/local.md
+.superpowers/
 
 documentation/14-peak-generation-opendaw-vs-studio.md
