@@ -272,7 +272,7 @@ const App: React.FC = () => {
                   </Flex>
                   <Text size="2" color="gray">
                     Comp between simulated takes using volume automation crossfades.
-                    Select which take is active per zone with seamless equal-power transitions.
+                    Select which take is active per zone with seamless crossfade transitions.
                   </Text>
                 </Flex>
               </Link>

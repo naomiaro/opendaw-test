@@ -52,7 +52,7 @@ Instead of splitting regions (which triggers voice eviction + creation), use mul
 1. Each "take" is a separate instrument track with its own audio region
 2. Each track has a volume automation track targeting `audioUnitBox.volume`
 3. At comp boundaries, the outgoing take's volume ramps to -inf while the incoming take's volume ramps to 0dB
-4. `Interpolation.Curve(0.25)` for fade-out (logarithmic), `Interpolation.Curve(0.75)` for fade-in (exponential) — equal-power crossfade
+4. `Interpolation.Curve(0.25)` for fade-out, `Interpolation.Curve(0.75)` for fade-in — smooth sigmoid crossfade via Mobius-Ease curves
 5. All tracks play continuously — no region splitting, no voice eviction
 
 This matches how professional DAWs (Logic Pro, Pro Tools, Reaper) handle comp lanes: automatic short overlap crossfades (~20ms) at comp boundaries.

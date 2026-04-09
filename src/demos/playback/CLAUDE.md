@@ -66,10 +66,10 @@ Fading values (in, out, slopes) can be set in the same `editing.modify()` as
 region property changes (position, duration, loopOffset). No separate transaction needed.
 
 ### waveformOffset vs loopOffset
-- `loopOffset` (PPQN) — controls which loop cycle aligns with which timeline position on playback. Does NOT shift audio read position in the file.
-- `waveformOffset` (seconds, field 7 on AudioRegionBox) — shifts where TapeDeviceProcessor reads in the audio buffer: `sampleIndex = (elapsedSeconds + waveformOffset) * sampleRate`
-- To skip silence at the start of an audio file, set `waveformOffset` in seconds. `loopOffset` alone won't change what audio you hear.
-- For waveform rendering, use `loopOffset` to compute the peaks frame range (visual), and `waveformOffset` for the engine read position (audio).
+- `loopOffset` (PPQN) — controls which audio content maps to which timeline position. Affects audio read position indirectly through the `LoopableRegion.locateLoops()` formula: `offset = position - loopOffset` changes `rawStart`, which changes `elapsedSeconds`, which changes which samples are read. Used by `RegionEditing.cut()`, `clip-fades-demo`, and `comp-lanes-demo` to position audio within regions.
+- `waveformOffset` (seconds, field 7 on AudioRegionBox) — a direct seconds offset added to the audio read position: `sampleIndex = (elapsedSeconds + waveformOffset) * sampleRate`. Used to skip count-in audio during recording finalization.
+- Both fields affect which audio is heard. `loopOffset` works in PPQN within the loop coordinate system; `waveformOffset` is a raw seconds shift applied after PPQN-to-seconds conversion.
+- For waveform rendering, use `loopOffset` to compute the peaks frame range (visual), and `waveformOffset` for the engine read position offset (audio).
 
 ### Waveform Rendering (SDK 0.0.126+)
 `PeaksPainter.renderBlocks()` was replaced by `PeaksPainter.renderPixelStrips()` with a new signature:

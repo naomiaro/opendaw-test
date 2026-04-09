@@ -508,7 +508,7 @@ const App: React.FC = () => {
             <Text size="4" color="gray">
               Simulated takes from different sections of the same audio file. Shift+Click
               to add comp boundaries, select which take is active per zone. Crossfades use
-              volume automation with equal-power curves — no region splitting, no pops.
+              volume automation with smooth crossfade curves — no region splitting, no pops.
             </Text>
           </Flex>
 
