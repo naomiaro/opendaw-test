@@ -153,6 +153,17 @@ Safari can't decode Ogg Opus via `decodeAudioData` (even though `canPlayType` re
 `"maybe"`). Provide m4a (AAC) fallback. Detect Safari via UA string, not feature detection.
 See `src/lib/audioUtils.ts` `getAudioExtension()`.
 
+### PPQN Values Must Be Integer
+`position`, `loopOffset`, `loopDuration`, `duration` on AudioRegionBox are Int32 fields.
+`PPQN.secondsToPulses()` returns float — always wrap with `Math.round()` before passing
+to `setValue()`, `RegionEditing.cut()`, or `createTrackRegion()`. Float values cause
+truncation misalignment between region boundaries.
+
+### Loading User-Dropped Audio Files
+`loadTracksFromFiles` uses `fetch()` internally via `loadAudioFile()`. For drag-and-drop
+files, create a blob URL: `const url = URL.createObjectURL(file)`, pass to
+`loadTracksFromFiles`, then `URL.revokeObjectURL(url)` after loading completes.
+
 ## React Integration Tips
 
 ### Using AnimationFrame from OpenDAW

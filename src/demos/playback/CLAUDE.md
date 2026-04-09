@@ -141,7 +141,30 @@ Set custom labels with `adapter.box.label.setValue("name")`.
 GitHubCorner, BackLink, content, and MoisesLogo all go *inside* `<Container>`, not as siblings.
 See `src/looping-demo.tsx` for the reference layout pattern.
 
+### Voice Pop on Region Boundaries (SDK Limitation)
+`RegionEditing.cut()` creates a new `PitchVoice` per region. Each voice has a forced
+20ms fade-in/fade-out (`VOICE_FADE_DURATION` in `Tape/constants.ts`, not configurable).
+When one region ends and the next begins, the voice eviction + creation causes an
+audible pop. Pure Web Audio scheduling of consecutive `AudioBufferSourceNode`s from
+the same buffer is seamless — the pop is entirely from SDK voice management.
+
+**Workaround:** Use multi-track volume automation crossfades instead of region splitting.
+Each "take" gets its own track; volume automation (`createAutomationTrack` +
+`Interpolation.Curve`) handles crossfades. See `comp-lanes-demo.tsx`.
+
+### Fade-In on Newly Created Regions May Not Apply
+Setting `adapter.fading.inField.setValue()` on regions created by `RegionEditing.cut()`
+/ `copyTo()` may not take effect in the audio engine, even when values read back
+correctly. Fade-out on the original (left) region works reliably. Fade-in on the
+new (right) region does not.
+
+### Non-Overlapping Fades Create Pops
+Fade-out + fade-in without overlap creates a V-shaped volume dip at the splice point.
+For same-file consecutive regions, no fade is needed — the audio is already continuous.
+Adding fades makes it worse. See `documentation/region-splice-findings.md`.
+
 ## Reference Files
+- Comp lanes demo: `src/demos/playback/comp-lanes-demo.tsx`
 - Looping demo: `src/demos/playback/looping-demo.tsx`
 - Clip looping demo: `src/demos/playback/clip-looping-demo.tsx`
 - Clip fades demo: `src/demos/playback/clip-fades-demo.tsx`
