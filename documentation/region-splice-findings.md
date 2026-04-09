@@ -12,6 +12,16 @@ Investigate seamless audio splicing and take comping in the OpenDAW SDK.
 
 **Multi-track volume automation crossfades**: Loading the same audio on multiple tracks and using per-track volume automation (`createAutomationTrack` + `Interpolation.Curve`) to crossfade between them produces zero pops. This is the approach used by the comp lanes demo. Verified with `webaudio-comp-test.html` (Web Audio prototype) and `comp-lanes-demo.tsx` (SDK implementation).
 
+## Audio Editing Fundamentals: Zero Crossings
+
+A digital audio waveform oscillates above and below zero (silence). A **zero crossing** is a point where the waveform crosses through zero. When cutting audio, the edit point should be at or near a zero crossing — otherwise the abrupt jump in amplitude at the boundary creates a click or pop. This is a fundamental principle of audio editing, not specific to any SDK.
+
+In practice, DAWs handle this in two ways:
+- **Snap to zero crossing**: The edit tool automatically finds the nearest zero crossing to the user's click position
+- **Short crossfade**: A brief (~10-20ms) overlap crossfade smooths out any discontinuity, even if the edit isn't at a zero crossing
+
+The SDK does not currently provide either mechanism automatically. The findings below document the specific behaviors and workarounds.
+
 ## SDK Voice Pop Issue
 
 **Symptom**: An audible pop/click at every region boundary during playback, even when:
