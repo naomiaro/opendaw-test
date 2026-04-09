@@ -66,10 +66,10 @@ Fading values (in, out, slopes) can be set in the same `editing.modify()` as
 region property changes (position, duration, loopOffset). No separate transaction needed.
 
 ### waveformOffset vs loopOffset
-- `loopOffset` (PPQN) — controls which loop cycle aligns with which timeline position on playback. Does NOT shift audio read position in the file.
-- `waveformOffset` (seconds, field 7 on AudioRegionBox) — shifts where TapeDeviceProcessor reads in the audio buffer: `sampleIndex = (elapsedSeconds + waveformOffset) * sampleRate`
-- To skip silence at the start of an audio file, set `waveformOffset` in seconds. `loopOffset` alone won't change what audio you hear.
-- For waveform rendering, use `loopOffset` to compute the peaks frame range (visual), and `waveformOffset` for the engine read position (audio).
+- `loopOffset` (PPQN) — controls which audio content maps to which timeline position. Affects audio read position indirectly through the `LoopableRegion.locateLoops()` formula: `offset = position - loopOffset` changes `rawStart`, which changes `elapsedSeconds`, which changes which samples are read. Used by `RegionEditing.cut()`, `clip-fades-demo`, and `comp-lanes-demo` to position audio within regions.
+- `waveformOffset` (seconds, field 7 on AudioRegionBox) — a direct seconds offset added to the audio read position: `sampleIndex = (elapsedSeconds + waveformOffset) * sampleRate`. Used to skip count-in audio during recording finalization.
+- Both fields affect which audio is heard. `loopOffset` works in PPQN within the loop coordinate system; `waveformOffset` is a raw seconds shift applied after PPQN-to-seconds conversion.
+- For waveform rendering, use `loopOffset` to compute the peaks frame range (visual), and `waveformOffset` for the engine read position offset (audio).
 
 ### Waveform Rendering (SDK 0.0.126+)
 `PeaksPainter.renderBlocks()` was replaced by `PeaksPainter.renderPixelStrips()` with a new signature:
@@ -141,7 +141,30 @@ Set custom labels with `adapter.box.label.setValue("name")`.
 GitHubCorner, BackLink, content, and MoisesLogo all go *inside* `<Container>`, not as siblings.
 See `src/looping-demo.tsx` for the reference layout pattern.
 
+### Voice Pop on Region Boundaries (SDK Limitation)
+`RegionEditing.cut()` creates a new `PitchVoice` per region. Each voice has a forced
+20ms fade-in/fade-out (`VOICE_FADE_DURATION` in `Tape/constants.ts`, not configurable).
+When one region ends and the next begins, the voice eviction + creation causes an
+audible pop. Pure Web Audio scheduling of consecutive `AudioBufferSourceNode`s from
+the same buffer is seamless — the pop is entirely from SDK voice management.
+
+**Workaround:** Use multi-track volume automation crossfades instead of region splitting.
+Each "take" gets its own track; volume automation (`createAutomationTrack` +
+`Interpolation.Curve`) handles crossfades. See `comp-lanes-demo.tsx`.
+
+### Fade-In on Newly Created Regions May Not Apply
+Setting `adapter.fading.inField.setValue()` on regions created by `RegionEditing.cut()`
+/ `copyTo()` may not take effect in the audio engine, even when values read back
+correctly. Fade-out on the original (left) region works reliably. Fade-in on the
+new (right) region does not.
+
+### Non-Overlapping Fades Create Pops
+Fade-out + fade-in without overlap creates a V-shaped volume dip at the splice point.
+For same-file consecutive regions, no fade is needed — the audio is already continuous.
+Adding fades makes it worse. See `documentation/region-splice-findings.md`.
+
 ## Reference Files
+- Comp lanes demo: `src/demos/playback/comp-lanes-demo.tsx`
 - Looping demo: `src/demos/playback/looping-demo.tsx`
 - Clip looping demo: `src/demos/playback/clip-looping-demo.tsx`
 - Clip fades demo: `src/demos/playback/clip-fades-demo.tsx`

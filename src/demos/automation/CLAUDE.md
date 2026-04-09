@@ -57,6 +57,12 @@ project.editing.modify(() => {
 `mod(ppqn - region.position + region.loopOffset, region.loopDuration)` before looking up events.
 Events at absolute positions will fall outside the region duration and never trigger.
 
+### Automation Events at Same Position Must Have Different Index
+The SDK uses `(position, index)` as composite key. Two events at the same PPQN with
+the same index cause a panic: "are identical in terms of comparison". When building
+automation events that may land on the same position (e.g., crossfade boundaries),
+assign incrementing `index` values per position.
+
 ### Curve Rendering Must Use SDK's Curve.normalizedAt
 Canvas rendering of automation curves must use `Curve.normalizedAt(t, slope)` from `@opendaw/lib-std`,
 not quadratic bezier approximations. The SDK uses an exponential formula:

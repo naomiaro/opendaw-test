@@ -37,7 +37,8 @@ export default defineConfig({
                 trackAutomation: resolve(__dirname, "track-automation-demo.html"),
                 clipLooping: resolve(__dirname, "clip-looping-demo.html"),
                 werkstatt: resolve(__dirname, "werkstatt-demo.html"),
-                export: resolve(__dirname, "export-demo.html")
+                export: resolve(__dirname, "export-demo.html"),
+                compLanes: resolve(__dirname, "comp-lanes-demo.html")
             },
             output: {
                 manualChunks: (id) => {

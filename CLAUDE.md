@@ -153,6 +153,17 @@ Safari can't decode Ogg Opus via `decodeAudioData` (even though `canPlayType` re
 `"maybe"`). Provide m4a (AAC) fallback. Detect Safari via UA string, not feature detection.
 See `src/lib/audioUtils.ts` `getAudioExtension()`.
 
+### PPQN Values Must Be Integer
+`position`, `loopOffset`, `loopDuration`, `duration` on AudioRegionBox are Int32 fields.
+`PPQN.secondsToPulses()` returns float — always wrap with `Math.round()` before passing
+to `setValue()`, `RegionEditing.cut()`, or `createTrackRegion()`. Float values cause
+truncation misalignment between region boundaries.
+
+### Loading User-Dropped Audio Files
+`loadTracksFromFiles` uses `fetch()` internally via `loadAudioFile()`. For drag-and-drop
+files, create a blob URL: `const url = URL.createObjectURL(file)`, pass to
+`loadTracksFromFiles`, then `URL.revokeObjectURL(url)` after loading completes.
+
 ## React Integration Tips
 
 ### Using AnimationFrame from OpenDAW
@@ -236,6 +247,7 @@ Each demo category folder has its own CLAUDE.md with SDK knowledge scoped to tho
 - Export demo: `src/demos/export/`
 - Effects research docs: `documentation/effects-research/`
 - Box subscription lifecycle: `documentation/18-box-subscriptions-lifecycle.md`
+- Region splice & comp lanes findings: `documentation/region-splice-findings.md`
 - SDK 0.0.119→0.0.128 changelog: `documentation/sdk-0.0.119-to-0.0.128-changes.md`
 - SDK 0.0.128→0.0.129 changelog: `documentation/sdk-0.0.128-to-0.0.129-changes.md`
 - SDK 0.0.129→0.0.132 changelog: `documentation/sdk-0.0.129-to-0.0.132-changes.md`
