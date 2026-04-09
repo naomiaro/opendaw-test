@@ -119,20 +119,25 @@ const App: React.FC = () => {
           const isActive = assignments[z] === t;
           const isFirst = z === 0;
           const isLast = z === assignments.length - 1;
+          // Check if adjacent zones have the same take — skip crossfade at shared boundary
+          const prevSameTake = !isFirst && assignments[z - 1] === t;
+          const nextSameTake = !isLast && assignments[z + 1] === t;
 
           if (isActive) {
-            // Fade-in ramp start (except first zone)
-            if (!isFirst && crossfadePPQN > 0) {
+            // Fade-in ramp start (only if previous zone had a different take)
+            if (!isFirst && !prevSameTake && crossfadePPQN > 0) {
               events.push({ position: Math.max(0, zoneStart - crossfadePPQN), value: VOL_SILENT, interpolation: Interpolation.Curve(0.75) });
             }
-            // Full volume at zone start
-            events.push({ position: zoneStart, value: VOL_0DB, interpolation: Interpolation.None });
-            // Fade-out ramp start (except last zone)
-            if (!isLast && crossfadePPQN > 0) {
+            // Full volume at zone start (skip if continuing from same take)
+            if (!prevSameTake) {
+              events.push({ position: zoneStart, value: VOL_0DB, interpolation: Interpolation.None });
+            }
+            // Fade-out ramp start (only if next zone has a different take)
+            if (!isLast && !nextSameTake && crossfadePPQN > 0) {
               events.push({ position: Math.max(zoneStart, zoneEnd - crossfadePPQN), value: VOL_0DB, interpolation: Interpolation.Curve(0.25) });
             }
-            // Silent at zone end (except last zone)
-            if (!isLast) {
+            // Silent at zone end (only if next zone has a different take)
+            if (!isLast && !nextSameTake) {
               events.push({ position: zoneEnd, value: VOL_SILENT, interpolation: Interpolation.None });
             }
           } else {
