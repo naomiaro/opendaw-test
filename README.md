@@ -29,6 +29,9 @@ Visit http://localhost:5173 to explore the demos.
 | **Clip Looping** | Set loop regions within audio clips and extend to tile automatically with waveform visualization |
 | **Clip Fades** | Logarithmic, linear, and exponential fade curves with visual representations |
 | **Mixer Groups** | Sub-mixing with group buses: Track → Group → Master signal flow |
+| **Comp Lanes** | Comp between simulated takes using volume automation crossfades with configurable duration |
+| **Werkstatt** | Write custom audio effects in JavaScript with pre-built examples and runnable code |
+| **Audio Export** | Export audio with range selection, metronome control, and offline rendering |
 
 ## Documentation
 
@@ -49,6 +52,7 @@ Visit http://localhost:5173 to explore the demos.
 - [Track Automation](./documentation/19-track-automation.md) — Volume, pan, and effect automation
 - [Clip Looping](./documentation/20-clip-looping.md) — Region looping and tiling
 - [Mixer Groups](./documentation/17-mixer-groups.md) — Sub-mixing and track routing
+- [Region Splice & Comp Lanes](./documentation/region-splice-findings.md) — SDK voice pop findings, crossfade workaround, zero-crossing fundamentals
 
 ## Deployment
 
@@ -80,20 +84,30 @@ src/
 │   ├── groupTrackLoading.ts           # Group bus creation + track routing
 │   ├── audioUtils.ts                  # Format detection, file loading
 │   └── CanvasPainter.ts              # Canvas rendering helper
-├── effects-demo.tsx                   # Multi-track mixer with effects
-├── track-editing-demo.tsx             # Region split/move editing
-├── recording-api-react-demo.tsx       # Audio recording with live peaks
-├── midi-recording-demo.tsx            # MIDI recording + step recording
-├── loop-recording-demo.tsx            # Loop recording with takes
-├── drum-scheduling-demo.tsx           # Drum pattern scheduling
-├── looping-demo.tsx                   # Loop area controls
-├── timebase-demo.tsx                  # Musical vs Seconds TimeBase
-├── tempo-automation-demo.tsx          # Tempo automation patterns
-├── time-signature-demo.tsx            # Time signature changes
-├── track-automation-demo.tsx           # Volume/pan/effect automation
-├── clip-looping-demo.tsx              # Region loop tiling
-├── clip-fades-demo.tsx                # Fade curve types
-└── mixer-groups-demo.tsx              # Group bus sub-mixing
+└── demos/
+    ├── playback/                      # Playback, editing, and mixing demos
+    │   ├── comp-lanes-demo.tsx        # Take comping with volume automation crossfades
+    │   ├── clip-fades-demo.tsx        # Fade curve types
+    │   ├── clip-looping-demo.tsx      # Region loop tiling
+    │   ├── drum-scheduling-demo.tsx   # Drum pattern scheduling
+    │   ├── looping-demo.tsx           # Loop area controls
+    │   ├── mixer-groups-demo.tsx      # Group bus sub-mixing
+    │   ├── timebase-demo.tsx          # Musical vs Seconds TimeBase
+    │   └── track-editing-demo.tsx     # Region split/move editing
+    ├── recording/                     # Recording demos
+    │   ├── recording-api-react-demo.tsx   # Audio recording with live peaks
+    │   └── loop-recording-demo.tsx    # Loop recording with takes
+    ├── midi/                          # MIDI demos
+    │   └── midi-recording-demo.tsx    # MIDI recording + step recording
+    ├── automation/                    # Automation demos
+    │   ├── track-automation-demo.tsx  # Volume/pan/effect automation
+    │   ├── tempo-automation-demo.tsx  # Tempo automation patterns
+    │   └── time-signature-demo.tsx    # Time signature changes
+    ├── effects/                       # Effects demos
+    │   ├── effects-demo.tsx           # Multi-track mixer with effects
+    │   └── werkstatt-demo.tsx         # Custom scriptable audio effects
+    └── export/                        # Export demos
+        └── export-demo.tsx            # Audio export with range selection
 ```
 
 ## License
