@@ -18,7 +18,7 @@ const engineWorklet = worklets.createEngine({
   project: projectCopy,
   exportConfiguration, // undefined = mixdown (metronome included), config = stems (no metronome)
 });
-engineWorklet.connect(context.destination);
+engineWorklet.connect(context.destination, 0);
 
 // Engine preferences don't travel with project.copy() — set on worklet directly
 engineWorklet.preferences.settings.metronome.enabled = true;

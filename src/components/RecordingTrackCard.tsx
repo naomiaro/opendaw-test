@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect } from "react";
-import { Flex, Text, Select, Button, Slider, Badge, Card } from "@radix-ui/themes";
+import { Flex, Text, Select, Button, Slider, Badge, Card, Separator } from "@radix-ui/themes";
 import { Project, CaptureAudio } from "@opendaw/studio-core";
+import { Option } from "@opendaw/lib-std";
 import type { MonitoringMode } from "@opendaw/studio-core";
 import { probeDeviceChannels } from "../lib/audioUtils";
 
@@ -14,6 +15,7 @@ interface RecordingTrackCardProps {
   trackIndex: number;
   project: Project;
   audioInputDevices: readonly MediaDeviceInfo[];
+  audioOutputDevices: readonly MediaDeviceInfo[];
   disabled: boolean;
   onRemove: (id: string) => void;
   onArmedChange?: (id: string, armed: boolean) => void;
@@ -24,6 +26,7 @@ export const RecordingTrackCard: React.FC<RecordingTrackCardProps> = ({
   trackIndex,
   project,
   audioInputDevices,
+  audioOutputDevices,
   disabled,
   onRemove,
   onArmedChange
@@ -42,6 +45,15 @@ export const RecordingTrackCard: React.FC<RecordingTrackCardProps> = ({
   const [monitoringMode, setMonitoringModeState] = useState<MonitoringMode>("off");
   const [maxChannels, setMaxChannels] = useState<1 | 2>(2);
   const [isArmed, setIsArmed] = useState<boolean>(() => capture.armed.getValue());
+
+  // Monitor controls (SDK 0.0.133+)
+  const [monitorVolumeDb, setMonitorVolumeDb] = useState<number>(() => capture.monitorVolumeDb);
+  const [monitorPan, setMonitorPan] = useState<number>(() => capture.monitorPan);
+  const [monitorMuted, setMonitorMuted] = useState<boolean>(() => capture.monitorMuted);
+  const [monitorOutputDeviceId, setMonitorOutputDeviceId] = useState<string>("default");
+
+  // setSinkId is Chrome/Edge only — gate output device selection
+  const canSwitchOutput = "setSinkId" in AudioContext.prototype;
 
   // Probe device channel capabilities when device changes
   useEffect(() => {
@@ -78,8 +90,28 @@ export const RecordingTrackCard: React.FC<RecordingTrackCardProps> = ({
 
   // Sync monitoring mode — manipulates Web Audio nodes, outside transaction
   useEffect(() => {
-    (capture as any).monitoringMode = monitoringMode;
+    capture.monitoringMode = monitoringMode;
   }, [capture, monitoringMode]);
+
+  // Sync monitor controls — direct property setters, no transaction needed
+  useEffect(() => {
+    capture.monitorVolumeDb = monitorVolumeDb;
+  }, [capture, monitorVolumeDb]);
+
+  useEffect(() => {
+    capture.monitorPan = monitorPan;
+  }, [capture, monitorPan]);
+
+  useEffect(() => {
+    capture.monitorMuted = monitorMuted;
+  }, [capture, monitorMuted]);
+
+  useEffect(() => {
+    const deviceId = monitorOutputDeviceId === "default"
+      ? Option.None
+      : Option.wrap(monitorOutputDeviceId);
+    capture.setMonitorOutputDevice(deviceId);
+  }, [capture, monitorOutputDeviceId]);
 
   const handleToggleArm = useCallback(() => {
     if (isArmed) {
@@ -203,6 +235,77 @@ export const RecordingTrackCard: React.FC<RecordingTrackCardProps> = ({
             {inputGainDb > 0 ? "+" : ""}{inputGainDb.toFixed(1)} dB
           </Text>
         </Flex>
+
+        {monitoringMode !== "off" && (
+          <>
+            <Separator size="4" />
+            <Flex direction="column" gap="3">
+              <Flex align="center" gap="2">
+                <Text size="2" weight="medium">Monitor</Text>
+                <Button
+                  size="1"
+                  variant={monitorMuted ? "solid" : "soft"}
+                  color={monitorMuted ? "orange" : "gray"}
+                  onClick={() => setMonitorMuted(!monitorMuted)}
+                >
+                  {monitorMuted ? "Muted" : "Mute"}
+                </Button>
+              </Flex>
+
+              <Flex align="center" gap="3">
+                <Text size="2" weight="medium" style={{ minWidth: 80 }}>Volume:</Text>
+                <Slider
+                  value={[monitorVolumeDb + 60]}
+                  onValueChange={values => setMonitorVolumeDb(values[0] - 60)}
+                  min={0}
+                  max={72}
+                  step={0.5}
+                  disabled={monitorMuted}
+                  style={{ flex: 1 }}
+                />
+                <Text size="1" color="gray" style={{ minWidth: 55, fontFamily: "monospace" }}>
+                  {monitorVolumeDb > 0 ? "+" : ""}{monitorVolumeDb.toFixed(1)} dB
+                </Text>
+              </Flex>
+
+              <Flex align="center" gap="3">
+                <Text size="2" weight="medium" style={{ minWidth: 80 }}>Pan:</Text>
+                <Slider
+                  value={[monitorPan * 50 + 50]}
+                  onValueChange={values => setMonitorPan((values[0] - 50) / 50)}
+                  min={0}
+                  max={100}
+                  step={1}
+                  disabled={monitorMuted}
+                  style={{ flex: 1 }}
+                />
+                <Text size="1" color="gray" style={{ minWidth: 55, fontFamily: "monospace" }}>
+                  {monitorPan === 0 ? "C" : monitorPan < 0 ? `L${Math.round(Math.abs(monitorPan) * 100)}` : `R${Math.round(monitorPan * 100)}`}
+                </Text>
+              </Flex>
+
+              {canSwitchOutput && audioOutputDevices.length > 0 && (
+                <Flex align="center" gap="3">
+                  <Text size="2" weight="medium" style={{ minWidth: 80 }}>Output:</Text>
+                  <Select.Root
+                    value={monitorOutputDeviceId}
+                    onValueChange={setMonitorOutputDeviceId}
+                  >
+                    <Select.Trigger style={{ flex: 1 }} />
+                    <Select.Content>
+                      <Select.Item value="default">System Default</Select.Item>
+                      {audioOutputDevices.map(device => (
+                        <Select.Item key={device.deviceId} value={device.deviceId}>
+                          {device.label || `Output ${device.deviceId.slice(0, 8)}...`}
+                        </Select.Item>
+                      ))}
+                    </Select.Content>
+                  </Select.Root>
+                </Flex>
+              )}
+            </Flex>
+          </>
+        )}
       </Flex>
     </Card>
   );

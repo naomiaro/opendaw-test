@@ -86,8 +86,9 @@ const App: React.FC = () => {
     ["recording", "countInBars"]
   );
 
-  // Audio input configuration — multi-track
+  // Audio input/output configuration — multi-track
   const [audioInputDevices, setAudioInputDevices] = useState<MediaDeviceInfo[]>([]);
+  const [audioOutputDevices, setAudioOutputDevices] = useState<MediaDeviceInfo[]>([]);
   const [hasPermission, setHasPermission] = useState(false);
   const [recordingTracks, setRecordingTracks] = useState<RecordingTrack[]>([]);
 
@@ -435,8 +436,14 @@ const App: React.FC = () => {
     try {
       await AudioDevices.requestPermission();
       await AudioDevices.updateInputList();
-      const inputs = AudioDevices.inputs;
-      setAudioInputDevices([...inputs]);
+      setAudioInputDevices([...AudioDevices.inputs]);
+
+      // Enumerate output devices (not handled by AudioDevices)
+      const allDevices = await navigator.mediaDevices.enumerateDevices();
+      setAudioOutputDevices(allDevices.filter(d =>
+        d.kind === "audiooutput" && d.deviceId !== "" && d.deviceId !== "default"
+      ));
+
       setHasPermission(true);
     } catch (error) {
       console.error("Failed to get audio devices:", error);
@@ -548,6 +555,12 @@ const App: React.FC = () => {
           await AudioDevices.requestPermission();
           await AudioDevices.updateInputList();
           setAudioInputDevices([...AudioDevices.inputs]);
+
+          const allDevices = await navigator.mediaDevices.enumerateDevices();
+          setAudioOutputDevices(allDevices.filter(d =>
+            d.kind === "audiooutput" && d.deviceId !== "" && d.deviceId !== "default"
+          ));
+
           setHasPermission(true);
         } catch (error) {
           setRecordStatus(`Microphone error: ${error}`);
@@ -794,6 +807,7 @@ const App: React.FC = () => {
                       trackIndex={index}
                       project={project}
                       audioInputDevices={audioInputDevices}
+                      audioOutputDevices={audioOutputDevices}
                       disabled={isRecording || isCountingIn}
                       onRemove={handleRemoveTrack}
                       onArmedChange={handleArmedChange}

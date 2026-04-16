@@ -72,8 +72,11 @@ const App: React.FC = () => {
   // Takes
   const [takeIterations, setTakeIterations] = useState<TakeIteration[]>([]);
 
-  // Audio input configuration
+  // Audio input/output configuration
   const [audioInputDevices, setAudioInputDevices] = useState<MediaDeviceInfo[]>(
+    []
+  );
+  const [audioOutputDevices, setAudioOutputDevices] = useState<MediaDeviceInfo[]>(
     []
   );
   const [hasPermission, setHasPermission] = useState(false);
@@ -417,6 +420,12 @@ const App: React.FC = () => {
       await AudioDevices.requestPermission();
       await AudioDevices.updateInputList();
       setAudioInputDevices([...AudioDevices.inputs]);
+
+      const allDevices = await navigator.mediaDevices.enumerateDevices();
+      setAudioOutputDevices(allDevices.filter(d =>
+        d.kind === "audiooutput" && d.deviceId !== "" && d.deviceId !== "default"
+      ));
+
       setHasPermission(true);
     } catch (error) {
       console.error("Failed to get audio devices:", error);
@@ -500,6 +509,12 @@ const App: React.FC = () => {
         await AudioDevices.requestPermission();
         await AudioDevices.updateInputList();
         setAudioInputDevices([...AudioDevices.inputs]);
+
+        const allDevices = await navigator.mediaDevices.enumerateDevices();
+        setAudioOutputDevices(allDevices.filter(d =>
+          d.kind === "audiooutput" && d.deviceId !== "" && d.deviceId !== "default"
+        ));
+
         setHasPermission(true);
       } catch (error) {
         console.error("Mic error:", error);
@@ -762,6 +777,7 @@ const App: React.FC = () => {
                       trackIndex={index}
                       project={project}
                       audioInputDevices={audioInputDevices}
+                      audioOutputDevices={audioOutputDevices}
                       disabled={isRecording || isCountingIn}
                       onRemove={handleRemoveTrack}
                       onArmedChange={handleArmedChange}

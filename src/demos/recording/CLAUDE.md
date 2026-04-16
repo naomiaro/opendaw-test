@@ -47,6 +47,13 @@ if (capture instanceof CaptureAudio) {
   });
   // monitoringMode manipulates Web Audio nodes — set outside transaction
   capture.monitoringMode = "direct";  // "off" | "direct" | "effects"
+
+  // Monitor controls (SDK 0.0.133+) — direct property setters, no transaction
+  capture.monitorVolumeDb = -6.0;     // independent monitor volume (dB)
+  capture.monitorPan = 0.0;           // stereo pan (-1.0 to 1.0)
+  capture.monitorMuted = false;       // mute monitor output
+  await capture.setMonitorOutputDevice(Option.wrap("device-id")); // route to specific output
+  // Option.None = system default destination
 }
 
 // Track arming
@@ -84,6 +91,22 @@ When `allowTakes` is true AND `loopArea.enabled` is true, each time playback wra
 - `capture.armed` is a `MutableObservableValue<boolean>`, not a box graph field
 - Set directly: `capture.armed.setValue(false)` — do NOT wrap in `editing.modify()`
 - Same as `monitoringMode` — runtime observable, not persisted in the box graph
+
+### Monitor Signal Chain (SDK 0.0.133+)
+Direct monitoring taps from `sourceNode` (before recording gain), allowing independent
+control of recording level vs monitoring level:
+```
+sourceNode → monitorGainNode → monitorPanNode → destination (or custom output device)
+         ↘ recordGainNode → RecordingWorklet (recording path)
+```
+- `monitorVolumeDb`, `monitorPan`, `monitorMuted` are direct property setters (no transaction)
+- `setMonitorOutputDevice(Option<string>)` routes monitor audio to a specific output device
+  via `HTMLAudioElement.setSinkId()` and `MediaStreamAudioDestinationNode`
+- `Option.None` = system default `audioContext.destination`
+- In "effects" mode, the source is routed through the engine for processing, then back
+  through `monitorGainNode` → `monitorPanNode` → destination
+- Output device enumeration: use `navigator.mediaDevices.enumerateDevices()` filtering
+  for `kind === "audiooutput"` (not handled by `AudioDevices` class)
 
 ### Finding Recording Regions
 ```typescript
@@ -132,7 +155,8 @@ if (!peaksOption.isEmpty()) {
 ### Capture Settings Require editing.modify()
 `captureBox.deviceId`, `captureBox.gainDb`, and `capture.requestChannels` are box graph fields —
 wrap in `editing.modify()`. `capture.monitoringMode` is NOT a box graph field (it manipulates
-Web Audio nodes), so set it outside the transaction.
+Web Audio nodes), so set it outside the transaction. As of SDK 0.0.133, `monitoringMode` is
+properly typed — no `(capture as any)` cast needed.
 
 ### Recording Peaks Include Count-In Frames
 The SDK captures audio during count-in. `waveformOffset` on the region (in seconds)

@@ -97,6 +97,19 @@ if (audioContext.state !== "running") {
 }
 ```
 
+### Engine Worklet Has 2 Outputs (SDK 0.0.133+)
+The engine worklet outputs main audio on output 0 and monitoring on output 1.
+Always use `engineWorklet.connect(destination, 0)` — bare `.connect(destination)`
+routes both outputs, causing unexpected channels in offline renders.
+
+### Output Device Enumeration
+`AudioDevices` only handles inputs. For output devices:
+```typescript
+const allDevices = await navigator.mediaDevices.enumerateDevices();
+const outputs = allDevices.filter(d => d.kind === "audiooutput" && d.deviceId !== "");
+```
+`setSinkId` is Chrome/Edge only — gate with `"setSinkId" in AudioContext.prototype`.
+
 ## Important Patterns
 
 ### Option Types Are Always Truthy
