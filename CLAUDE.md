@@ -251,4 +251,5 @@ Each demo category folder has its own CLAUDE.md with SDK knowledge scoped to tho
 - SDK 0.0.119→0.0.128 changelog: `documentation/sdk-0.0.119-to-0.0.128-changes.md`
 - SDK 0.0.128→0.0.129 changelog: `documentation/sdk-0.0.128-to-0.0.129-changes.md`
 - SDK 0.0.129→0.0.132 changelog: `documentation/sdk-0.0.129-to-0.0.132-changes.md`
+- SDK 0.0.132→0.0.133 changelog: `documentation/sdk-0.0.132-to-0.0.133-changes.md`
 - OpenDAW source code locations: see `.claude/local.md`
