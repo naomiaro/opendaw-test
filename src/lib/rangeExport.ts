@@ -83,7 +83,7 @@ async function renderRange(
       project: projectCopy,
       exportConfiguration,
     });
-    engineWorklet.connect(context.destination);
+    engineWorklet.connect(context.destination, 0);
 
     // Engine preferences don't travel with project.copy() — set on worklet directly
     engineWorklet.preferences.settings.metronome.enabled = metronomeEnabled;
