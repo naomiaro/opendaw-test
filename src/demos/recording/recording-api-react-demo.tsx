@@ -3,7 +3,6 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
-import type { Terminable } from "@opendaw/lib-std";
 import { Project, AudioDevices, CaptureAudio, PeaksWriter } from "@opendaw/studio-core";
 import { InstrumentFactories } from "@opendaw/studio-adapters";
 import { AnimationFrame } from "@opendaw/lib-dom";
@@ -216,11 +215,10 @@ const App: React.FC = () => {
     }
   }, [project, session.state]);
 
-  // Monitor peaks for ALL recording tracks
+  // Render waveform peaks during recording — purely visual, no state transitions.
+  // The hook's sampleLoader barrier handles finalization detection.
   useEffect(() => {
     if (!project || !session.shouldMonitorPeaks || !audioContext) return;
-
-    let animationFrameTerminable: Terminable | null = null;
 
     // Initialize per-track peaks state for each canvas
     for (let i = 0; i < recordingTracks.length; i++) {
@@ -233,9 +231,7 @@ const App: React.FC = () => {
       }
     }
 
-    let allFinalPeaksReceived = false;
-
-    animationFrameTerminable = AnimationFrame.add(() => {
+    const animationFrameTerminable = AnimationFrame.add(() => {
       // Ensure painters exist for all track canvases
       for (let i = 0; i < recordingTracks.length; i++) {
         ensureCanvasPainter(i);
@@ -253,15 +249,10 @@ const App: React.FC = () => {
         }
       }
 
-      // Assign regions to tracks in order (one region per track)
-      let finalCount = 0;
-      let totalTracked = 0;
-
       for (let i = 0; i < recordingTracks.length; i++) {
         const trackState = trackPeaksRef.current.get(i);
         if (!trackState) continue;
 
-        // Find the region for this track index
         const region = recordingRegions[i];
         if (!region) continue;
 
@@ -278,48 +269,26 @@ const App: React.FC = () => {
             const uuid = fileVertex.address.uuid;
             trackState.sampleLoader = project.sampleManager.getOrCreate(uuid);
 
-            // Track for finalization (shared ref with the hook)
+            // Share with the hook for finalization barrier
             if (!session.sampleLoadersRef.current.includes(trackState.sampleLoader)) {
               session.sampleLoadersRef.current.push(trackState.sampleLoader);
             }
           }
         }
 
-        // Monitor the sample loader for peak updates
+        // Update peaks for rendering
         if (trackState.sampleLoader) {
-          totalTracked++;
           const peaksOption = trackState.sampleLoader.peaks;
           if (peaksOption && !peaksOption.isEmpty()) {
-            const peaks = peaksOption.unwrap();
-            const isPeaksWriter = "dataIndex" in peaks;
-
-            trackState.peaks = peaks;
+            trackState.peaks = peaksOption.unwrap();
             canvasPaintersMap.current.get(i)?.requestUpdate();
-
-            if (!isPeaksWriter) {
-              finalCount++;
-            }
           }
-        }
-      }
-
-      // All tracked loaders have final peaks — signal the hook
-      if (totalTracked > 0 && finalCount === totalTracked && !allFinalPeaksReceived) {
-        allFinalPeaksReceived = true;
-        session.signalPeaksReady();
-        if (animationFrameTerminable) {
-          animationFrameTerminable.terminate();
-          animationFrameTerminable = null;
         }
       }
     });
 
-    return () => {
-      if (animationFrameTerminable) {
-        animationFrameTerminable.terminate();
-      }
-    };
-  }, [project, session.shouldMonitorPeaks, audioContext, recordingTracks.length, ensureCanvasPainter, session.signalPeaksReady, session.sampleLoadersRef]);
+    return () => animationFrameTerminable.terminate();
+  }, [project, session.shouldMonitorPeaks, audioContext, recordingTracks.length, ensureCanvasPainter, session.sampleLoadersRef]);
 
   // Initialize project settings from OpenDAW
   useEffect(() => {
