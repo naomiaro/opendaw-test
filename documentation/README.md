@@ -126,14 +126,15 @@ Read these documents in order to build up your understanding:
 
 ---
 
-### 9. [Track Editing and Fades](./09-track-editing-and-fades.md)
+### 9. [Editing, Fades & Automation](./09-editing-fades-and-automation.md)
 - Track editing capabilities (split, move, trim, copy)
 - RegionEditing API and usage
 - Region properties and manipulation
-- Current status of fade functionality
-- Recommendations for implementing fades
+- Clip fades (fade-in/fade-out, slope curves, region positioning)
+- Track automation (volume, pan, effect parameters, live recording)
+- Region splicing & comp lanes (voice pop findings, crossfade workaround)
 
-**Start here if:** You're implementing timeline editing features or need to understand fade support
+**Start here if:** You're implementing timeline editing, fades, or parameter automation
 
 ---
 
@@ -371,7 +372,7 @@ Found an error or want to improve this documentation? PRs welcome!
 | [Timeline & Rendering](./06-timeline-and-rendering.md) | UI visualization | Frontend developers |
 | [Complete Example](./07-building-a-complete-app.md) | Full application + mixer groups | All developers |
 | [Recording Guide](./08-recording-and-live-peaks.md) | Recording, MIDI, takes, monitoring | Recording/capture features |
-| [Track Editing & Fades](./09-track-editing-and-fades.md) | Region editing & fades | Timeline/editing features |
+| [Editing, Fades & Automation](./09-editing-fades-and-automation.md) | Region editing, fades & automation | Timeline/editing features |
 | [Audio Export](./audio-export.md) | Mix & stem export | Export/rendering features |
 | [Timing & Tempo (Advanced)](./02-timing-and-tempo.md#advanced-tempo-automation) | Variable BPM, signature events | Tempo/timing features |
 | [Mixer Groups](./07-building-a-complete-app.md#advanced-mixer-groups-sub-mixing) | Sub-mixing & routing | Mixer/routing features |

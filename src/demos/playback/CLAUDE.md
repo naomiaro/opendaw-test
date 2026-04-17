@@ -161,7 +161,7 @@ new (right) region does not.
 ### Non-Overlapping Fades Create Pops
 Fade-out + fade-in without overlap creates a V-shaped volume dip at the splice point.
 For same-file consecutive regions, no fade is needed — the audio is already continuous.
-Adding fades makes it worse. See `documentation/region-splice-findings.md`.
+Adding fades makes it worse. See `documentation/09-editing-fades-and-automation.md#advanced-region-splicing--comp-lanes`.
 
 ## Reference Files
 - Comp lanes demo: `src/demos/playback/comp-lanes-demo.tsx`

@@ -45,13 +45,11 @@ Visit http://localhost:5173 to explore the demos.
 - [Timeline & Rendering](./documentation/06-timeline-and-rendering.md) — Building timeline UI
 - [Complete Example](./documentation/07-putting-it-together.md) — Full working application
 - [Recording Guide](./documentation/08-recording-and-live-peaks.md) — Audio/MIDI recording, takes, monitoring, live peaks
-- [Track Editing & Fades](./documentation/09-track-editing-and-fades.md) — Region editing and fade support
+- [Editing, Fades & Automation](./documentation/09-editing-fades-and-automation.md) — Region editing, clip fades, track automation, and comp lanes
 - [Audio Export](./documentation/audio-export.md) — Mix and stems export
 - [Tempo Automation](./documentation/14-tempo-automation.md) — Variable BPM playback
 - [Time Signature Changes](./documentation/15-time-signature-changes.md) — Signature events
-- [Track Automation](./documentation/19-track-automation.md) — Volume, pan, and effect automation
 - [Mixer Groups](./documentation/17-mixer-groups.md) — Sub-mixing and track routing
-- [Region Splice & Comp Lanes](./documentation/region-splice-findings.md) — SDK voice pop findings, crossfade workaround, zero-crossing fundamentals
 
 ## Deployment
 
