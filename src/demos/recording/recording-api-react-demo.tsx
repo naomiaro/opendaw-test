@@ -112,8 +112,7 @@ const App: React.FC = () => {
   const trackPeaksRef = useRef<Map<number, TrackPeaksState>>(new Map());
 
   const userMetronomePreferenceRef = useRef<boolean>(false);
-  const shouldMonitorPeaksRef = useRef(session.shouldMonitorPeaks);
-  shouldMonitorPeaksRef.current = session.shouldMonitorPeaks;
+
 
   // Derived UI state from session
   const isActive = session.state !== "idle" && session.state !== "ready";
@@ -285,29 +284,23 @@ const App: React.FC = () => {
       subs.push(tracksSub);
     }
 
-    // AnimationFrame for continuous peaks rendering
-    let afLogOnce = false;
+    // AnimationFrame for continuous peaks rendering — no shouldMonitorPeaks guard.
+    // Runs every frame; when no sampleLoaders exist it's a no-op. This avoids
+    // React batching issues where the ref stays false across recording cycles.
     const animationFrameTerminable = AnimationFrame.add(() => {
-      if (!shouldMonitorPeaksRef.current) return;
-
       const tracks = recordingTracksRef.current;
       for (let i = 0; i < tracks.length; i++) {
         ensureCanvasPainter(i);
 
         const trackState = trackPeaksRef.current.get(i);
-        if (!trackState?.sampleLoader) {
-          if (!afLogOnce) console.log(`[Peaks AF] track ${i}: no sampleLoader`);
-          continue;
-        }
+        if (!trackState?.sampleLoader) continue;
 
         const peaksOption = trackState.sampleLoader.peaks;
         if (peaksOption && !peaksOption.isEmpty()) {
-          if (!afLogOnce) console.log(`[Peaks AF] track ${i}: rendering peaks`);
           trackState.peaks = peaksOption.unwrap();
           canvasPaintersMap.current.get(i)?.requestUpdate();
         }
       }
-      afLogOnce = true;
     });
 
     return () => {
