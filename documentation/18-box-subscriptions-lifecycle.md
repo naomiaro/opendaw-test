@@ -451,6 +451,72 @@ const outerSub = pointerHub.catchupAndSubscribe({
 subs.push(outerSub);
 ```
 
+## Adapter Layer (Preferred for UI)
+
+The SDK provides a typed **adapter layer** (`@opendaw/studio-adapters`) that wraps the raw `pointerHub` API with typed interfaces, automatic sampleLoader resolution, and proper listener patterns. Prefer adapters over raw `pointerHub` when building UI or discovering regions.
+
+### Access Path
+
+```typescript
+// Adapters are available on the project
+const audioUnits = project.rootBoxAdapter.audioUnits.adapters();
+// → ReadonlyArray<AudioUnitBoxAdapter>
+
+// Each AudioUnitBoxAdapter provides typed tracks
+audioUnitAdapter.tracks.catchupAndSubscribe({
+  onAdd: (trackAdapter: TrackBoxAdapter) => { ... },
+  onRemove: (trackAdapter: TrackBoxAdapter) => { ... },
+  onReorder: (trackAdapter: TrackBoxAdapter) => { ... },
+});
+// → TrackBoxAdapter has .regions, .label, etc.
+
+// Each TrackBoxAdapter provides typed regions
+trackAdapter.regions.catchupAndSubscribe({
+  onAdded: (regionAdapter: AnyRegionBoxAdapter) => {
+    if (regionAdapter.isAudioRegion()) {
+      // AudioRegionBoxAdapter — typed access to label, file, peaks, etc.
+      const peaks = regionAdapter.file.peaks; // Option<Peaks>
+      const loader = regionAdapter.file.getOrCreateLoader(); // SampleLoader
+    }
+  },
+  onRemoved: (regionAdapter: AnyRegionBoxAdapter) => { ... },
+});
+```
+
+### Key Differences from Raw PointerHub
+
+| Feature | Raw `pointerHub` | Adapter Layer |
+|---------|-------------------|---------------|
+| Type safety | `pointer.box` is untyped — needs `as any` casts | Fully typed (`TrackBoxAdapter`, `AudioRegionBoxAdapter`) |
+| SampleLoader | Manual `sampleManager.getOrCreate(uuid)` | `fileAdapter.getOrCreateLoader()` |
+| Peaks access | Manual `sampleLoader.peaks` | `fileAdapter.peaks` (resolves loader internally) |
+| Listener names | `onAdded` / `onRemoved` on pointerHub | `onAdd` / `onRemove` / `onReorder` on tracks; `onAdded` / `onRemoved` on regions |
+| Region type checking | Duck typing (`box.name === "AudioRegionBox"`) | `regionAdapter.isAudioRegion()` |
+
+### When to Use Which
+
+- **Adapter layer**: UI rendering, region discovery, peaks display — anywhere you need typed access to adapters and their convenience methods
+- **Raw pointerHub**: Low-level box graph operations, custom subscription patterns, or when adapters aren't available for the box type
+
+### Important: Listener Interface Differences
+
+The adapter listener interfaces differ between collection types:
+
+```typescript
+// AudioUnitTracks — uses onAdd/onRemove/onReorder
+audioUnitAdapter.tracks.catchupAndSubscribe({
+  onAdd: (adapter) => { ... },
+  onRemove: (adapter) => { ... },
+  onReorder: (adapter) => { ... },  // required
+});
+
+// TrackRegions — uses onAdded/onRemoved (no onReorder)
+trackAdapter.regions.catchupAndSubscribe({
+  onAdded: (adapter) => { ... },
+  onRemoved: (adapter) => { ... },
+});
+```
+
 ## Summary
 
 | API | Fires for existing? | Use case |
@@ -460,10 +526,13 @@ subs.push(outerSub);
 | `pointerHub.incoming()` | N/A (snapshot) | One-time read of current state |
 | `field.subscribe()` | No | Future value changes only |
 | `field.catchupAndSubscribe()` | Yes | Initialize + sync value changes |
+| `adapter.tracks.catchupAndSubscribe()` | Yes | Typed track discovery (preferred for UI) |
+| `adapter.regions.catchupAndSubscribe()` | Yes | Typed region discovery (preferred for UI) |
 
 **Key rules:**
 1. Use `catchupAndSubscribe` as the default — it catches existing data
-2. Collect all subscriptions for bulk cleanup
-3. Terminate outer subscriptions before inner cleanup
-4. Use `AnimationFrame` only for rendering, not for structural discovery
-5. Always check Option types with `.isEmpty()` / `.nonEmpty()`, never with `!value`
+2. Prefer the adapter layer over raw `pointerHub` for UI code
+3. Collect all subscriptions for bulk cleanup
+4. Terminate outer subscriptions before inner cleanup
+5. Use `AnimationFrame` only for rendering, not for structural discovery
+6. Always check Option types with `.isEmpty()` / `.nonEmpty()`, never with `!value`
