@@ -130,10 +130,11 @@ The sample manager goes through several states when loading:
 
 ```typescript
 type SampleLoaderState =
-  | { type: "idle" }           // Not started
-  | { type: "loading" }        // Fetching and processing
-  | { type: "loaded" }         // Ready to use (peaks available)
-  | { type: "error", error }   // Failed
+  | { type: "idle" }                      // Not started
+  | { type: "record" }                    // Recording in progress
+  | { type: "progress", progress: number }// Fetching/decoding (0-1)
+  | { type: "loaded" }                    // Ready to use
+  | { type: "error", reason: string }     // Failed
 ```
 
 ## Subscribing to Sample Loader
@@ -169,6 +170,41 @@ const subscription = sampleLoader.subscribe(state => {
 
 // Don't forget to clean up
 subscription.terminate();
+```
+
+**Important:** `SampleLoader` only has `subscribe()` (future changes), NOT `catchupAndSubscribe()`. Always check `loader.state.type` before subscribing — short recordings may already be `"loaded"` by the time you subscribe. Handle both `"loaded"` and `"error"` to avoid stuck states.
+
+### Using the Adapter Layer (Preferred)
+
+Instead of manually resolving loaders via `sampleManager.getOrCreate(uuid)`, prefer the adapter layer:
+
+```typescript
+// Raw approach (manual UUID resolution)
+const fileVertex = regionBox.file.targetVertex;
+const uuid = fileVertex.unwrap().address.uuid;
+const loader = project.sampleManager.getOrCreate(uuid);
+
+// Adapter approach (preferred — resolves loader internally)
+const regionAdapter: AudioRegionBoxAdapter = /* from subscription */;
+const loader = regionAdapter.file.getOrCreateLoader();
+const peaks = regionAdapter.file.peaks; // Option<Peaks>
+```
+
+### PeaksWriter vs Peaks
+
+During recording, `sampleLoader.peaks` returns a **PeaksWriter** (live, growing peaks). After finalization, it returns final **Peaks** (static). Both implement the same rendering interface, but you can distinguish them:
+
+```typescript
+const peaks = sampleLoader.peaks.unwrap();
+const isLive = "dataIndex" in peaks; // PeaksWriter has dataIndex
+
+if (isLive) {
+  // Live recording — total frames = dataIndex[0] * unitsEachPeak()
+  const unitsToRender = peaks.dataIndex[0] * peaks.unitsEachPeak();
+} else {
+  // Final peaks — use numFrames
+  const unitsToRender = peaks.numFrames;
+}
 ```
 
 ## What are Peaks?

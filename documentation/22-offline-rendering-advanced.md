@@ -63,7 +63,7 @@ async function renderRange(
       project: projectCopy,
       exportConfiguration, // undefined = mixdown (metronome included), config = stems
     });
-    engineWorklet.connect(context.destination);
+    engineWorklet.connect(context.destination, 0); // output 0 = main audio (worklet has 2 outputs since SDK 0.0.133)
 
     // 4. Set preferences on the worklet (not the project copy)
     engineWorklet.preferences.settings.metronome.enabled = metronomeEnabled;

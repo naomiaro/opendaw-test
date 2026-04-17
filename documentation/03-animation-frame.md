@@ -410,6 +410,52 @@ const sub = AnimationFrame.add(() => {
 });
 ```
 
+## React Integration Pitfalls
+
+### Don't Gate AnimationFrame on React State via Refs
+
+React batching can skip intermediate renders. If you assign a ref during render and check it inside an AnimationFrame callback, the callback may never see the intermediate value:
+
+```typescript
+// ❌ BAD — React may batch "finalizing"→"ready"→"recording" into one render,
+// so the ref goes from true → true (never false). The AnimationFrame misses
+// the transition and never renders peaks on the second recording.
+const shouldRenderRef = useRef(session.shouldMonitorPeaks);
+shouldRenderRef.current = session.shouldMonitorPeaks; // assigned during render
+
+const sub = AnimationFrame.add(() => {
+  if (!shouldRenderRef.current) return; // may stay false due to batching
+  renderPeaks();
+});
+
+// ✅ GOOD — run unconditionally; when there's nothing to render it's a no-op
+const sub = AnimationFrame.add(() => {
+  const trackState = trackPeaksRef.current.get(i);
+  if (!trackState?.sampleLoader) return; // natural guard — no data, no work
+  renderPeaks(trackState);
+});
+```
+
+### Use AnimationFrame for Rendering, Not Structural Discovery
+
+Use SDK subscriptions (`catchupAndSubscribe`, adapter layer) to discover structural changes (new regions, tracks). Use AnimationFrame only to read continuously-changing values (peaks, position) for rendering.
+
+```typescript
+// ❌ BAD — scans entire box graph every frame
+AnimationFrame.add(() => {
+  const boxes = project.boxGraph.boxes();
+  for (const box of boxes) { /* discover regions */ }
+});
+
+// ✅ GOOD — adapter subscriptions for discovery, AnimationFrame for rendering
+audioUnitAdapter.tracks.catchupAndSubscribe({
+  onAdd: (trackAdapter) => { /* discover tracks reactively */ }
+});
+AnimationFrame.add(() => {
+  /* read peaks from already-discovered loaders */
+});
+```
+
 ## Common Mistakes
 
 ### Mistake 1: Forgetting to Start

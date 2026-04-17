@@ -522,7 +522,36 @@ function renderAudioRegion(region: AudioRegionBoxAdapter) {
 }
 ```
 
-### Demo Pattern (Standalone Recording)
+### Demo Pattern (Preferred: Adapter Layer)
+
+For region discovery during recording, prefer the SDK adapter layer over `boxGraph.boxes()` scanning. The adapter provides typed access and automatic sampleLoader resolution:
+
+```typescript
+const allAudioUnits = project.rootBoxAdapter.audioUnits.adapters();
+const audioUnitAdapter = allAudioUnits.find(au => au.box === capture.audioUnitBox);
+
+audioUnitAdapter.tracks.catchupAndSubscribe({
+  onAdd: (trackAdapter) => {
+    trackAdapter.regions.catchupAndSubscribe({
+      onAdded: (regionAdapter) => {
+        if (!regionAdapter.isAudioRegion()) return;
+        if (regionAdapter.label !== "Recording") return;
+
+        // Adapter resolves loader internally — no manual UUID lookup
+        const loader = regionAdapter.file.getOrCreateLoader();
+        const peaks = regionAdapter.file.peaks; // Option<Peaks | PeaksWriter>
+      },
+      onRemoved: () => {},
+    });
+  },
+  onRemove: () => {},
+  onReorder: () => {},
+});
+```
+
+Note: `AudioUnitTracks` uses `onAdd`/`onRemove`/`onReorder`; `TrackRegions` uses `onAdded`/`onRemoved`.
+
+### Demo Pattern (Legacy: AnimationFrame Scanning)
 
 Simpler pattern for standalone recording demos.
 
