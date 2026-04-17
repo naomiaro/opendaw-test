@@ -109,6 +109,7 @@ const App: React.FC = () => {
   const finalizationSubsRef = useRef<Terminable[]>([]);
 
   const userMetronomePreferenceRef = useRef<boolean>(false);
+  const shouldMonitorPeaksRef = useRef(false);
 
   // Reactive armed count — updated via callback from RecordingTrackCard
   const [armedCount, setArmedCount] = useState(0);
@@ -199,6 +200,8 @@ const App: React.FC = () => {
 
   // Track if we should be monitoring peaks (true from recording start until final peaks received)
   const [shouldMonitorPeaks, setShouldMonitorPeaks] = useState(false);
+  // Keep ref in sync so subscriptions always read the latest value
+  shouldMonitorPeaksRef.current = shouldMonitorPeaks;
 
   // Subscribe to engine state
   useEffect(() => {
@@ -252,9 +255,9 @@ const App: React.FC = () => {
       const recording = project.engine.isRecording.getValue();
 
       // After stopRecording(), the engine keeps playing for finalization.
-      // Only treat isPlaying changes as user-facing playback when we're
-      // not in recording/finalization mode.
-      if (!recording && !shouldMonitorPeaks) {
+      // Use ref (not state) to always read the latest value without
+      // tearing down and recreating all subscriptions.
+      if (!recording && !shouldMonitorPeaksRef.current) {
         setIsPlayingBack(playing);
         if (playing) {
           setPlaybackStatus("Playing...");
@@ -272,7 +275,7 @@ const App: React.FC = () => {
       recordingSub.terminate();
       playingSub.terminate();
     };
-  }, [project, hasPeaks, shouldMonitorPeaks]);
+  }, [project, hasPeaks]);
 
   // Start monitoring when recording starts
   useEffect(() => {
