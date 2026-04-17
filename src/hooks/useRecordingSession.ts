@@ -41,8 +41,9 @@ const FINALIZATION_TIMEOUT_MS = 30_000;
  * waits for the remaining subscriptions to fire, with a 30s safety timeout.
  *
  * The hook does NOT call engine.stop(true) during finalization — the SDK
- * handles this internally. stop(true) is only called for the count-in
- * cancel case (no loaders).
+ * handles audio import internally while the engine keeps playing. Once all
+ * loaders report "loaded", the hook calls stop(true) to reset position
+ * and transitions to "ready".
  */
 export function useRecordingSession({
   project,
@@ -50,6 +51,10 @@ export function useRecordingSession({
   const [state, setState] = useState<RecordingState>("idle");
   const stateRef = useRef<RecordingState>("idle");
   const [countInBeatsRemaining, setCountInBeatsRemaining] = useState(0);
+
+  // Stable project ref so callbacks outside the effect can access it
+  const projectRef = useRef(project);
+  projectRef.current = project;
 
   // Eager loader tracking: subscribe as soon as discovered, not when recording stops
   const loadersRef = useRef<SampleLoader[]>([]);
@@ -73,6 +78,10 @@ export function useRecordingSession({
       loadersRef.current.length > 0 &&
       loadedCountRef.current >= loadersRef.current.length
     ) {
+      // Finalization is complete — stop the engine and reset position.
+      // This is AFTER finalization (all loaders loaded), not during it.
+      // The engine was still playing since stopRecording() doesn't stop playback.
+      projectRef.current?.engine.stop(true);
       transition("ready");
     }
   }
@@ -127,6 +136,7 @@ export function useRecordingSession({
         console.warn(
           `[RecordingSession] finalization timed out after ${FINALIZATION_TIMEOUT_MS / 1000}s — forcing ready`
         );
+        projectRef.current?.engine.stop(true);
         transition("ready");
       }
     }, FINALIZATION_TIMEOUT_MS);
