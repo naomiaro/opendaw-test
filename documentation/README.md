@@ -95,7 +95,7 @@ Read these documents in order to build up your understanding:
 
 ---
 
-### 7. [Putting It All Together](./07-putting-it-together.md)
+### 7. [Building a Complete App](./07-building-a-complete-app.md)
 - Complete working application
 - Project initialization
 - Full React component examples
@@ -103,6 +103,7 @@ Read these documents in order to build up your understanding:
 - Common issues and solutions
 - Production considerations
 - Next steps
+- Advanced: Mixer Groups (Sub-Mixing) — group bus creation, track routing, solo propagation
 
 **Start here if:** You want a complete working example
 
@@ -149,13 +150,8 @@ Read these documents in order to build up your understanding:
 
 ---
 
-### 17. [Mixer Groups (Sub-Mixing)](./17-mixer-groups.md)
-- Group bus creation with AudioBusFactory
-- Track-to-group routing (replacing default master routing)
-- Group volume, mute, and solo controls
-- Automatic solo propagation through routing graph
-- Critical: separate transactions for creation and re-routing
-- Groups vs aux units comparison
+### ~~17. Mixer Groups (Sub-Mixing)~~
+> Merged into [Chapter 07 — Building a Complete App](./07-building-a-complete-app.md#advanced-mixer-groups-sub-mixing)
 
 **Start here if:** You're implementing sub-mixing, group buses, or track routing
 
@@ -373,14 +369,14 @@ Found an error or want to improve this documentation? PRs welcome!
 | [Box System & Reactivity](./04-box-system-and-reactivity.md) | Data model & reactive subscriptions | Backend/state management |
 | [Samples, Peaks & Looping](./05-samples-peaks-and-looping.md) | Audio, waveforms & looping | Frontend/canvas developers |
 | [Timeline & Rendering](./06-timeline-and-rendering.md) | UI visualization | Frontend developers |
-| [Complete Example](./07-putting-it-together.md) | Full application | All developers |
+| [Complete Example](./07-building-a-complete-app.md) | Full application + mixer groups | All developers |
 | [Recording Guide](./08-recording-and-live-peaks.md) | Recording, MIDI, takes, monitoring | Recording/capture features |
 | [Track Editing & Fades](./09-track-editing-and-fades.md) | Region editing & fades | Timeline/editing features |
 | [Audio Export](./audio-export.md) | Mix & stem export | Export/rendering features |
 | [Timing & Tempo (Advanced)](./02-timing-and-tempo.md#advanced-tempo-automation) | Variable BPM, signature events | Tempo/timing features |
-| [Mixer Groups](./17-mixer-groups.md) | Sub-mixing & routing | Mixer/routing features |
+| [Mixer Groups](./07-building-a-complete-app.md#advanced-mixer-groups-sub-mixing) | Sub-mixing & routing | Mixer/routing features |
 
-**Recommended reading order:** 1 → 2 → 3 → 4 → 5 → 6 → 7 (→ 8 if implementing recording, → 9 if implementing editing, → 10 if implementing export, → 02 advanced sections if implementing tempo/signature changes, → 17 if implementing mixer routing)
+**Recommended reading order:** 1 → 2 → 3 → 4 → 5 → 6 → 7 (→ 8 if implementing recording, → 9 if implementing editing, → 10 if implementing export, → 02 advanced sections if implementing tempo/signature changes, → 07 advanced section if implementing mixer routing)
 
 **Troubleshooting order:** Having issues? → Read 3 first!
 
