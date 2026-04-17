@@ -288,6 +288,11 @@ const App: React.FC = () => {
   useEffect(() => {
     if (hasPeaks && shouldMonitorPeaks) {
       setShouldMonitorPeaks(false);
+      // The isPlaying=false event from stop(true) was suppressed during
+      // finalization. Now that finalization is complete, sync the UI state
+      // with the engine's actual state.
+      setIsPlayingBack(false);
+      setPlaybackStatus("Recording ready to play");
     }
   }, [hasPeaks, shouldMonitorPeaks]);
 
