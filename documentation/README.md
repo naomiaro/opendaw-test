@@ -1,162 +1,41 @@
 # Building a DAW UI with OpenDAW
 
-This documentation explains how to build a browser-based Digital Audio Workstation (DAW) user interface using OpenDAW's headless audio engine.
+This handbook explains how to build a browser-based Digital Audio Workstation (DAW) user interface using OpenDAW's headless audio engine.
 
 ## Who is this for?
 
-This guide is for developers who:
-- Want to build a DAW in the browser
-- Have web development experience (React, TypeScript, Canvas)
-- Are new to DAW architecture and audio programming concepts
-- Need to understand OpenDAW's PPQN-based timing system
+- **New to DAWs?** Start at Chapter 01 and read sequentially — audio concepts are explained alongside the SDK.
+- **Experienced developer joining a team?** Skim 01-03, focus on 04 (Box System) and the feature chapters you need.
+- **Evaluating OpenDAW?** Read 01 for architecture, then jump to the feature area you care about.
 
-## ⚠️ Critical Concept: AnimationFrame
+Each chapter has "Skip if" guidance at the top so you can find your level quickly.
 
-**Before you start coding**, understand this:
+## Chapters
 
-OpenDAW's observables **will not work** without `AnimationFrame.start(window)`. This is the #1 cause of "why isn't my UI updating?" issues.
+### Core Handbook
 
-**→ Read [AnimationFrame Guide](./07-animation-frame.md) first if you're having issues with observables not updating.**
+| # | Chapter | Focus | Start here if... |
+|---|---------|-------|-------------------|
+| 01 | [Introduction](./01-introduction.md) | DAW concepts, architecture | You're new to DAW architecture |
+| 02 | [Timing & Tempo](./02-timing-and-tempo.md) | PPQN, BPM, tempo automation, time signatures | You need to understand the timing system |
+| 03 | [AnimationFrame](./03-animation-frame.md) | Observable updates, UI sync | Your observables aren't updating |
+| 04 | [Box System & Reactivity](./04-box-system-and-reactivity.md) | Data model, subscriptions, reactive lifecycle | You need to understand data structures |
+| 05 | [Samples, Peaks & Looping](./05-samples-peaks-and-looping.md) | Audio loading, waveforms, region tiling | You need to display or loop audio |
+| 06 | [Timeline & Rendering](./06-timeline-and-rendering.md) | PPQN-to-pixels, grid, playhead, render pipeline | You're building the timeline view |
+| 07 | [Building a Complete App](./07-building-a-complete-app.md) | Full example, mixer groups, routing | You want a working application |
 
-## Documentation Structure
+### Feature Guides
 
-Read these documents in order to build up your understanding:
+| # | Chapter | Focus | Start here if... |
+|---|---------|-------|-------------------|
+| 08 | [Recording](./08-recording.md) | Audio/MIDI capture, takes, monitoring, live peaks | You're implementing recording |
+| 09 | [Editing, Fades & Automation](./09-editing-fades-and-automation.md) | Region editing, clip fades, track automation, comp lanes | You're implementing editing features |
+| 10 | [Export](./10-export.md) | Mix/stems export, offline rendering | You're implementing audio export |
+| 11 | [Effects](./11-effects.md) | Effect types, creation, track/master integration | You're implementing audio effects |
 
-### 1. [Introduction](./01-introduction.md)
-- What is a DAW?
-- Why OpenDAW?
-- System architecture overview
-- Key components
+**Recommended reading order:** 01 → 02 → 03 → 04 → 05 → 06 → 07, then jump to whichever feature chapter you need.
 
-**Start here if:** You're new to DAW concepts
-
----
-
-### 2. [Timing & Tempo](./02-timing-and-tempo.md)
-- What is PPQN and why use it?
-- PPQN vs BPM (resolution vs speed)
-- Musical time units (quarters, eighths, bars)
-- Converting between PPQN and seconds
-- Positioning clips and handling BPM changes
-- Tempo automation: stepped and linear BPM changes
-- Time signature changes and bar layout
-
-**Start here if:** You understand DAWs but not timing systems
-
----
-
-### 3. [AnimationFrame Guide](./03-animation-frame.md) ⚠️
-- What is AnimationFrame and why it's required
-- How the audio-to-UI bridge works
-- Setting up the update loop
-- Observable.subscribe() vs AnimationFrame.add()
-- Performance patterns
-- Common mistakes and debugging
-- Essential initialization sequence
-
-**Start here if:** Your observables aren't updating or you're having UI sync issues
-
----
-
-### 4. [Box System & Reactivity](./04-box-system-and-reactivity.md)
-- OpenDAW's data model (the "box graph")
-- Creating and modifying boxes
-- Transactions and undo/redo
-- References and relationships
-- Observing changes
-- Common patterns
-
-**Start here if:** You need to understand OpenDAW's data structures
-
----
-
-### 5. [Samples, Peaks & Looping](./05-samples-peaks-and-looping.md)
-- Loading audio files
-- Sample manager configuration
-- Understanding peaks (waveform data)
-- Rendering waveforms with PeaksPainter
-- React canvas patterns
-- Performance tips
-
-**Start here if:** You need to display audio waveforms
-
----
-
-### 6. [Timeline & Rendering](./06-timeline-and-rendering.md)
-- Timeline coordinate system
-- Converting PPQN to pixels
-- Rendering grid lines, clips, and playhead
-- Advanced features (zoom, highlighting, labels)
-- Handling BPM changes
-- Click and drag interactions
-- Performance optimization
-
-**Start here if:** You're building the timeline view
-
----
-
-### 7. [Building a Complete App](./07-building-a-complete-app.md)
-- Complete working application
-- Project initialization
-- Full React component examples
-- Transport controls
-- Common issues and solutions
-- Production considerations
-- Next steps
-- Advanced: Mixer Groups (Sub-Mixing) — group bus creation, track routing, solo propagation
-
-**Start here if:** You want a complete working example
-
----
-
-### 8. [Recording Guide](./08-recording-and-live-peaks.md)
-- Recording pipeline overview (full flow from startRecording to region creation)
-- Track arming (exclusive/multi-track, auto-arming)
-- Audio input configuration (device selection, mono/stereo, input gain)
-- MIDI input configuration (device enumeration, software keyboard, channel filtering)
-- Input monitoring (off/direct/effects modes)
-- Loop recording & takes (allowTakes, olderTakeAction, olderTakeScope)
-- Step recording (NoteEventBox creation, headless pattern)
-- Recording preferences reference
-- Multi-device simultaneous recording (dynamic track creation, non-exclusive arming, finalization barrier)
-- Accessing live recording peaks (production & demo patterns)
-- Smooth 60fps waveform rendering
-
-**Start here if:** You're implementing any recording feature — audio, MIDI, takes, or monitoring
-
----
-
-### 9. [Editing, Fades & Automation](./09-editing-fades-and-automation.md)
-- Track editing capabilities (split, move, trim, copy)
-- RegionEditing API and usage
-- Region properties and manipulation
-- Clip fades (fade-in/fade-out, slope curves, region positioning)
-- Track automation (volume, pan, effect parameters, live recording)
-- Region splicing & comp lanes (voice pop findings, crossfade workaround)
-
-**Start here if:** You're implementing timeline editing, fades, or parameter automation
-
----
-
-### 14–15. [Timing & Tempo (Advanced)](./02-timing-and-tempo.md#advanced-tempo-automation)
-- Tempo change events and interpolation modes (stepped/linear) — see [Tempo Automation](./02-timing-and-tempo.md#advanced-tempo-automation)
-- Time signature change events — see [Time Signature Changes](./02-timing-and-tempo.md#advanced-time-signature-changes)
-- SignatureTrackAdapter API and critical one-transaction-per-event requirement
-- Computing bar layouts with mixed signatures
-- Proportional bar width visualization
-
-**Start here if:** You're implementing tempo automation or variable BPM or mixed time signatures
-
-**Start here if:** You're implementing time signature changes during playback
-
----
-
-### ~~17. Mixer Groups (Sub-Mixing)~~
-> Merged into [Chapter 07 — Building a Complete App](./07-building-a-complete-app.md#advanced-mixer-groups-sub-mixing)
-
-**Start here if:** You're implementing sub-mixing, group buses, or track routing
-
----
+**Troubleshooting?** Read Chapter 03 (AnimationFrame) first — it's the #1 cause of "why isn't my UI updating?"
 
 ## Quick Reference
 
@@ -186,49 +65,22 @@ eighthNote = Quarter / 2;        // 480
 
 | Concept | Description | Changes with BPM? |
 |---------|-------------|-------------------|
-| `PPQN.Quarter = 960` | Resolution constant | ❌ Never |
-| Clip position | Musical beat location | ❌ Never |
-| Clip duration | Audio length in PPQN | ✅ Yes |
-| BPM | Playback speed | ✅ User adjustable |
+| `PPQN.Quarter = 960` | Resolution constant | Never |
+| Clip position | Musical beat location | Never |
+| Clip duration | Audio length in PPQN | Yes |
+| BPM | Playback speed | User adjustable |
 
 ### Essential Imports
 
 ```typescript
-// ⚠️ CRITICAL: AnimationFrame (start before creating project!)
 import { AnimationFrame } from "@opendaw/lib-dom";
-
-// PPQN utilities
 import { PPQN, AudioData } from "@opendaw/lib-dsp";
-
-// Core project
 import { Project, GlobalSampleLoaderManager } from "@opendaw/studio-core";
-
-// Instrument factories (moved to studio-adapters in 0.0.59)
 import { InstrumentFactories } from "@opendaw/studio-adapters";
-
-// Boxes
 import { AudioFileBox, AudioRegionBox, ValueEventCollectionBox } from "@opendaw/studio-boxes";
-
-// Utilities
 import { UUID, Progress } from "@opendaw/lib-std";
-
-// Rendering
 import { PeaksPainter } from "@opendaw/lib-fusion";
 ```
-
-### AnimationFrame Setup (Required!)
-
-```typescript
-// AnimationFrame.start(window) is called automatically by initializeOpenDAW()
-const project = await initializeOpenDAW();
-
-// Now you can subscribe to observables (they work!)
-project.engine.isPlaying.subscribe(obs => {
-  setIsPlaying(obs.getValue()); // ✓ Updates!
-});
-```
-
-**Note:** The `initializeOpenDAW()` function handles calling `AnimationFrame.start(window)` internally. If you're not using this helper function, you must call `AnimationFrame.start(window)` before creating your project.
 
 ## Common Patterns
 
@@ -236,28 +88,24 @@ project.engine.isPlaying.subscribe(obs => {
 
 ```typescript
 project.editing.modify(() => {
-  // 1. Create track
   const { audioUnitBox, trackBox } = project.api.createInstrument(
     InstrumentFactories.Tape
   );
 
-  // 2. Create audio file metadata
   const fileUUID = UUID.generate();
   const audioFileBox = AudioFileBox.create(boxGraph, fileUUID, box => {
     box.fileName.setValue("audio.wav");
     box.endInSeconds.setValue(audioBuffer.duration);
   });
 
-  // 3. Create events collection (required in 0.0.87+)
   const eventsCollectionBox = ValueEventCollectionBox.create(boxGraph, UUID.generate());
 
-  // 4. Create clip on timeline
   const clipDuration = PPQN.secondsToPulses(audioBuffer.duration, bpm);
 
   AudioRegionBox.create(boxGraph, UUID.generate(), box => {
     box.regions.refer(trackBox.regions);
     box.file.refer(audioFileBox);
-    box.events.refer(eventsCollectionBox.owners); // Required in 0.0.87+
+    box.events.refer(eventsCollectionBox.owners);
     box.position.setValue(0 * Quarter);
     box.duration.setValue(clipDuration);
     box.loopDuration.setValue(clipDuration);
@@ -265,39 +113,18 @@ project.editing.modify(() => {
 });
 ```
 
-### Handle BPM Changes
-
-```typescript
-function handleBpmChange(newBpm: number) {
-  project.editing.modify(() => {
-    // Update timeline BPM
-    project.timelineBox.bpm.setValue(newBpm);
-
-    // Recalculate all clip durations
-    audioRegions.forEach(({ box, audioDuration }) => {
-      const newDuration = PPQN.secondsToPulses(audioDuration, newBpm);
-      box.duration.setValue(newDuration);
-      box.loopDuration.setValue(newDuration);
-    });
-  });
-}
-```
-
 ### Subscribe to Changes
 
 ```typescript
 useEffect(() => {
-  // Subscribe to playing state
   const playingSub = project.engine.isPlaying.subscribe(obs => {
     setIsPlaying(obs.getValue());
   });
 
-  // Subscribe to position (throttled)
   const positionSub = AnimationFrame.add(() => {
     setCurrentPosition(project.engine.position.getValue());
   });
 
-  // Cleanup
   return () => {
     playingSub.terminate();
     positionSub.terminate();
@@ -307,79 +134,17 @@ useEffect(() => {
 
 ## Troubleshooting
 
-### No audio plays
-- Check AudioContext state (may need `audioContext.resume()`)
-- Verify cross-origin isolation headers
-- Check browser console for errors
+| Problem | Solution |
+|---------|----------|
+| No audio plays | Check AudioContext state, verify COOP/COEP headers, check console |
+| Playhead doesn't move | Ensure `AnimationFrame.start(window)` was called |
+| Clips in wrong position | Double-check PPQN calculations |
+| Waveforms not rendering | Subscribe to sample loader, check `!peaksOption.isEmpty()` |
+| Observables not updating | Read Chapter 03 — AnimationFrame must be started |
 
-### Playhead doesn't move
-- Ensure `AnimationFrame.start(window)` was called
-- Check position subscription is active
-- Verify engine is actually playing
+## Further Reading
 
-### Clips in wrong position
-- Double-check PPQN calculations
-- Verify `totalDuration` matches your timeline
-- Check pixel conversion formula
-
-### Waveforms not rendering
-- Subscribe to sample loader state
-- Check peaks are available (`!peaksOption.isEmpty()`)
-- Verify canvas has proper dimensions
-
-### 10. [Export & Offline Rendering](./10-export.md)
-- Full mix and stems export
-- AudioOfflineRenderer API
-- Effects rendering in exports
-- Export options and formats
-- Overlapping regions troubleshooting
-- TimeBase considerations
-- Advanced: range-bounded export, metronome rendering, OfflineAudioContext approach
-
-**Start here if:** You're implementing audio export functionality
-
----
-
-## Additional Resources
-
-- **OpenDAW Examples**: See the demo applications in `src/` directory
-- **Export Guide**: See [10-export.md](./10-export.md) for comprehensive export and offline rendering documentation
-- **TypeScript Definitions**: Check `node_modules/@opendaw/*/dist/*.d.ts` for API details
-- **Live Demos**: Run `npm run dev` to see working examples
-
-## Getting Help
-
-If you get stuck:
-1. Check the relevant documentation section above
-2. Look at the working demo code in `src/`
-3. Review TypeScript type definitions for API details
-4. Search for similar patterns in the codebase
-
-## Contributing
-
-Found an error or want to improve this documentation? PRs welcome!
-
----
-
-## Document Navigation
-
-| Document | Focus Area | Audience |
-|----------|------------|----------|
-| [Introduction](./01-introduction.md) | Overview & concepts | Beginners to DAW architecture |
-| [Timing & Tempo](./02-timing-and-tempo.md) | Timing system, tempo automation, time signatures | All developers |
-| [AnimationFrame ⚠️](./03-animation-frame.md) | Observable updates | **Required reading** |
-| [Box System & Reactivity](./04-box-system-and-reactivity.md) | Data model & reactive subscriptions | Backend/state management |
-| [Samples, Peaks & Looping](./05-samples-peaks-and-looping.md) | Audio, waveforms & looping | Frontend/canvas developers |
-| [Timeline & Rendering](./06-timeline-and-rendering.md) | UI visualization | Frontend developers |
-| [Complete Example](./07-building-a-complete-app.md) | Full application + mixer groups | All developers |
-| [Recording Guide](./08-recording-and-live-peaks.md) | Recording, MIDI, takes, monitoring | Recording/capture features |
-| [Editing, Fades & Automation](./09-editing-fades-and-automation.md) | Region editing, fades & automation | Timeline/editing features |
-| [Export & Offline Rendering](./10-export.md) | Mix & stem export, advanced offline rendering | Export/rendering features |
-| [Timing & Tempo (Advanced)](./02-timing-and-tempo.md#advanced-tempo-automation) | Variable BPM, signature events | Tempo/timing features |
-| [Mixer Groups](./07-building-a-complete-app.md#advanced-mixer-groups-sub-mixing) | Sub-mixing & routing | Mixer/routing features |
-
-**Recommended reading order:** 1 → 2 → 3 → 4 → 5 → 6 → 7 (→ 8 if implementing recording, → 9 if implementing editing, → 10 if implementing export, → 02 advanced sections if implementing tempo/signature changes, → 07 advanced section if implementing mixer routing)
-
-**Troubleshooting order:** Having issues? → Read 3 first!
-
-Happy building! 🎵
+- **Research:** [AudioBuffer Chunk Extraction](./research/audiobuffer-chunk-extraction.md), [WASM Effects Feasibility](./research/wasm-audio-effects-feasibility.md)
+- **SDK Changelogs:** See `changelogs/` in the project root
+- **Demo Code:** See `src/demos/` for working examples
+- **TypeScript Definitions:** Check `node_modules/@opendaw/*/dist/*.d.ts` for API details
