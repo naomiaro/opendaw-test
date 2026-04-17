@@ -443,7 +443,7 @@ See the [Advanced: Reactive Subscriptions & Lifecycle](#advanced-reactive-subscr
 
 ## Next Steps
 
-- Continue to **[Sample Management and Peaks](./05-sample-management-and-peaks.md)** to learn how to load audio files and render waveforms.
+- Continue to **[Samples, Peaks & Looping](./05-samples-peaks-and-looping.md)** to learn how to load audio files and render waveforms.
 - See the [Advanced: Reactive Subscriptions & Lifecycle](#advanced-reactive-subscriptions--lifecycle) section below for advanced reactive patterns using `pointerHub.catchupAndSubscribe()`, nested subscription chains, and the typed adapter layer.
 
 ---

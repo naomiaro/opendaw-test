@@ -41,7 +41,7 @@ Visit http://localhost:5173 to explore the demos.
 - [PPQN Fundamentals](./documentation/02-ppqn-fundamentals.md) — Timing systems
 - [AnimationFrame](./documentation/03-animation-frame.md) — Observable updates (**required reading**)
 - [Box System](./documentation/04-box-system.md) — Data model and state management
-- [Sample Management & Peaks](./documentation/05-sample-management-and-peaks.md) — Audio loading and waveforms
+- [Samples, Peaks & Looping](./documentation/05-samples-peaks-and-looping.md) — Audio loading, waveforms, and region looping
 - [Timeline Rendering](./documentation/06-timeline-rendering.md) — Building timeline UI
 - [Complete Example](./documentation/07-putting-it-together.md) — Full working application
 - [Recording Guide](./documentation/08-recording-and-live-peaks.md) — Audio/MIDI recording, takes, monitoring, live peaks
@@ -50,7 +50,6 @@ Visit http://localhost:5173 to explore the demos.
 - [Tempo Automation](./documentation/14-tempo-automation.md) — Variable BPM playback
 - [Time Signature Changes](./documentation/15-time-signature-changes.md) — Signature events
 - [Track Automation](./documentation/19-track-automation.md) — Volume, pan, and effect automation
-- [Clip Looping](./documentation/20-clip-looping.md) — Region looping and tiling
 - [Mixer Groups](./documentation/17-mixer-groups.md) — Sub-mixing and track routing
 - [Region Splice & Comp Lanes](./documentation/region-splice-findings.md) — SDK voice pop findings, crossfade workaround, zero-crossing fundamentals
 

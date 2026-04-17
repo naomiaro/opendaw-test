@@ -70,7 +70,7 @@ Read these documents in order to build up your understanding:
 
 ---
 
-### 5. [Sample Management and Peaks](./05-sample-management-and-peaks.md)
+### 5. [Samples, Peaks & Looping](./05-samples-peaks-and-looping.md)
 - Loading audio files
 - Sample manager configuration
 - Understanding peaks (waveform data)
@@ -371,7 +371,7 @@ Found an error or want to improve this documentation? PRs welcome!
 | [Timing & Tempo](./02-timing-and-tempo.md) | Timing system, tempo automation, time signatures | All developers |
 | [AnimationFrame ⚠️](./03-animation-frame.md) | Observable updates | **Required reading** |
 | [Box System & Reactivity](./04-box-system-and-reactivity.md) | Data model & reactive subscriptions | Backend/state management |
-| [Sample Management](./05-sample-management-and-peaks.md) | Audio & waveforms | Frontend/canvas developers |
+| [Samples, Peaks & Looping](./05-samples-peaks-and-looping.md) | Audio, waveforms & looping | Frontend/canvas developers |
 | [Timeline Rendering](./06-timeline-rendering.md) | UI visualization | Frontend developers |
 | [Complete Example](./07-putting-it-together.md) | Full application | All developers |
 | [Recording Guide](./08-recording-and-live-peaks.md) | Recording, MIDI, takes, monitoring | Recording/capture features |
