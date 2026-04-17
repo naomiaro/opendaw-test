@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
 import type { Terminable } from "@opendaw/lib-std";
 import { Project } from "@opendaw/studio-core";
-import type { SampleLoader } from "@opendaw/studio-adapters";
+import type { SampleLoader, AudioRegionBoxAdapter } from "@opendaw/studio-adapters";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { PPQN } from "@opendaw/lib-dsp";
 import { AudioRegionBox } from "@opendaw/studio-boxes";
@@ -224,47 +224,37 @@ const App: React.FC = () => {
 
   // --- Reactive take discovery via pointerHub subscriptions ---
 
-  // Build a TakeRegion from a regionBox, resolving its sample loader, track assignment, and waveform offset
+  // Build a TakeRegion from a region adapter, using the typed adapter layer
+  // for sampleLoader resolution and track matching.
   const buildTakeRegion = useCallback(
-    (regionBox: AudioRegionBox): TakeRegion | null => {
-      if (!audioContext || !project) return null;
+    (regionAdapter: AudioRegionBoxAdapter): TakeRegion | null => {
+      if (!audioContext) return null;
 
-      const label = regionBox.label.getValue();
+      const label = regionAdapter.label;
       if (!label.startsWith("Take ")) return null;
 
       const takeNumber = parseInt(label.replace("Take ", ""), 10);
       if (isNaN(takeNumber)) return null;
-      const isMuted = regionBox.mute.getValue();
+
+      const isMuted = regionAdapter.mute;
       const sampleRate = audioContext.sampleRate;
-      const waveformOffsetSec = regionBox.waveformOffset.getValue();
+      const waveformOffsetSec = regionAdapter.waveformOffset.getValue();
       const waveformOffsetFrames = Math.round(waveformOffsetSec * sampleRate);
+      const regionBox = regionAdapter.box;
       const durationSec = regionBox.duration.getValue();
       const durationFrames = Math.round(durationSec * sampleRate);
 
-      // Resolve sample loader
-      let loader: SampleLoader | null = null;
-      const fileVertex = regionBox.file.targetVertex;
-      if (!fileVertex.isEmpty()) {
-        loader = project.sampleManager.getOrCreate(
-          fileVertex.unwrap().address.uuid
-        );
-      }
+      // Adapter resolves sampleLoader via file → getOrCreateLoader()
+      const loader = regionAdapter.file.getOrCreateLoader();
 
-      // Match region to input track: regionBox → TrackBox → AudioUnitBox
+      // Match region to input track via typed adapter path
       let inputTrackId = "";
-      const trackVertex = regionBox.regions.targetVertex;
-      if (!trackVertex.isEmpty()) {
-        const trackBox = trackVertex.unwrap().box;
-        // SDK .d.ts doesn't expose tracks on the base box type — cast required
-        const audioUnitVertex = (trackBox as any).tracks?.targetVertex;
-        if (audioUnitVertex && !audioUnitVertex.isEmpty()) {
-          inputTrackId = UUID.toString(
-            audioUnitVertex.unwrap().box.address.uuid
-          );
-        }
+      const trackAdapterOpt = regionAdapter.trackBoxAdapter;
+      if (!trackAdapterOpt.isEmpty()) {
+        inputTrackId = UUID.toString(trackAdapterOpt.unwrap().audioUnit.address.uuid);
       }
 
-      // Fallback for single track (read from ref to avoid dep on recordingTracks)
+      // Fallback for single track
       const tracks = recordingTracksRef.current;
       if (!inputTrackId && tracks.length === 1) {
         inputTrackId = tracks[0].id;
@@ -280,7 +270,7 @@ const App: React.FC = () => {
         durationFrames,
       };
     },
-    [project, audioContext]
+    [audioContext]
   );
 
   // Insert a TakeRegion into takeIterations state incrementally
@@ -340,46 +330,47 @@ const App: React.FC = () => {
     []
   );
 
-  // Set up pointerHub subscriptions when recording starts
+  // Set up adapter subscriptions when recording starts — typed alternative to raw pointerHub.
   useEffect(() => {
     if (!project || !isRecording || recordingTracks.length === 0) return;
 
     const subs: Terminable[] = [];
+    const allAudioUnits = project.rootBoxAdapter.audioUnits.adapters();
 
     for (const track of recordingTracks) {
-      const trackSub =
-        track.capture.audioUnitBox.tracks.pointerHub.catchupAndSubscribe({
-          onAdded: (pointer) => {
-            const trackBox = pointer.box;
-            // SDK .d.ts doesn't expose regions on the base box type — cast required
-            const regionSub = (
-              trackBox as any
-            ).regions.pointerHub.catchupAndSubscribe({
-              onAdded: (regionPointer: any) => {
-                const regionBox = regionPointer.box as AudioRegionBox;
-                const takeRegion = buildTakeRegion(regionBox);
-                if (!takeRegion) return;
+      const audioUnitAdapter = allAudioUnits.find(
+        (au) => au.box === track.capture.audioUnitBox
+      );
+      if (!audioUnitAdapter) continue;
 
-                addTakeRegionToState(takeRegion);
+      const tracksSub = audioUnitAdapter.tracks.catchupAndSubscribe({
+        onAdd: (trackAdapter) => {
+          const regionsSub = trackAdapter.regions.catchupAndSubscribe({
+            onAdded: (regionAdapter) => {
+              if (!regionAdapter.isAudioRegion()) return;
+              const takeRegion = buildTakeRegion(regionAdapter);
+              if (!takeRegion) return;
 
-                // Track sampleLoader in ref for finalization barrier
-                if (takeRegion.sampleLoader) {
-                  sampleLoadersRef.current.add(takeRegion.sampleLoader);
-                }
+              addTakeRegionToState(takeRegion);
 
-                // Subscribe to mute changes for reactive UI updates
-                const muteSub = regionBox.mute.subscribe((obs: any) => {
-                  updateTakeMuteInState(regionBox, obs.getValue());
-                });
-                subs.push(muteSub);
-              },
-              onRemoved: () => {},
-            });
-            subs.push(regionSub);
-          },
-          onRemoved: () => {},
-        });
-      subs.push(trackSub);
+              if (takeRegion.sampleLoader) {
+                sampleLoadersRef.current.add(takeRegion.sampleLoader);
+              }
+
+              // Subscribe to mute changes for reactive UI updates
+              const muteSub = takeRegion.regionBox.mute.subscribe((obs: any) => {
+                updateTakeMuteInState(takeRegion.regionBox, obs.getValue());
+              });
+              subs.push(muteSub);
+            },
+            onRemoved: () => {},
+          });
+          subs.push(regionsSub);
+        },
+        onRemove: () => {},
+        onReorder: () => {},
+      });
+      subs.push(tracksSub);
     }
 
     pointerHubSubsRef.current = subs;
