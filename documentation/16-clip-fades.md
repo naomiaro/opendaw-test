@@ -194,4 +194,4 @@ See `src/clip-fades-demo.tsx` for a complete working example that:
 
 - [Timing & Tempo](./02-timing-and-tempo.md)
 - [Track Editing and Region Properties](./09-track-editing-and-fades.md)
-- [Box System](./04-box-system.md)
+- [Box System & Reactivity](./04-box-system-and-reactivity.md)

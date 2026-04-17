@@ -58,7 +58,7 @@ Read these documents in order to build up your understanding:
 
 ---
 
-### 4. [Box System](./04-box-system.md)
+### 4. [Box System & Reactivity](./04-box-system-and-reactivity.md)
 - OpenDAW's data model (the "box graph")
 - Creating and modifying boxes
 - Transactions and undo/redo
@@ -370,7 +370,7 @@ Found an error or want to improve this documentation? PRs welcome!
 | [Introduction](./01-introduction.md) | Overview & concepts | Beginners to DAW architecture |
 | [Timing & Tempo](./02-timing-and-tempo.md) | Timing system, tempo automation, time signatures | All developers |
 | [AnimationFrame ⚠️](./03-animation-frame.md) | Observable updates | **Required reading** |
-| [Box System](./04-box-system.md) | Data model | Backend/state management |
+| [Box System & Reactivity](./04-box-system-and-reactivity.md) | Data model & reactive subscriptions | Backend/state management |
 | [Sample Management](./05-sample-management-and-peaks.md) | Audio & waveforms | Frontend/canvas developers |
 | [Timeline Rendering](./06-timeline-rendering.md) | UI visualization | Frontend developers |
 | [Complete Example](./07-putting-it-together.md) | Full application | All developers |

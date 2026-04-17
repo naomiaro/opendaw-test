@@ -623,6 +623,6 @@ The demo shows:
 ## References
 
 - [Timing & Tempo](./02-timing-and-tempo.md)
-- [Box System](./04-box-system.md)
+- [Box System & Reactivity](./04-box-system-and-reactivity.md)
 - [Timeline Rendering](./06-timeline-rendering.md)
 - [Clip Fades](./16-clip-fades.md)

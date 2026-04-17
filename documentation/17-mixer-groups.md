@@ -269,6 +269,6 @@ The track loading logic is in `src/lib/groupTrackLoading.ts`.
 
 ## References
 
-- [Box System](./04-box-system.md) — Understanding boxes, pointers, and transactions
+- [Box System & Reactivity](./04-box-system-and-reactivity.md) — Understanding boxes, pointers, and transactions
 - [Clip Fades](./16-clip-fades.md) — Another example of transaction-sensitive operations
 - [Time Signature Changes](./02-timing-and-tempo.md#advanced-time-signature-changes) — Documents the same deferred notification behavior

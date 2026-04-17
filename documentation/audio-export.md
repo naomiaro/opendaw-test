@@ -1080,7 +1080,7 @@ This is **not a bug** - it's intentional data integrity checking to prevent temp
 
 - [Effects Documentation](./effects-research/README.md)
 - [Project Setup](./02-project-structure.md)
-- [Box System](./04-box-system.md)
+- [Box System & Reactivity](./04-box-system-and-reactivity.md)
 
 ---
 
