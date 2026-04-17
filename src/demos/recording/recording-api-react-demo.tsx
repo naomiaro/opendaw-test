@@ -197,6 +197,9 @@ const App: React.FC = () => {
     };
   }, []);
 
+  // Track if we should be monitoring peaks (true from recording start until final peaks received)
+  const [shouldMonitorPeaks, setShouldMonitorPeaks] = useState(false);
+
   // Subscribe to engine state
   useEffect(() => {
     if (!project) return;
@@ -270,9 +273,6 @@ const App: React.FC = () => {
       playingSub.terminate();
     };
   }, [project, hasPeaks, shouldMonitorPeaks]);
-
-  // Track if we should be monitoring peaks (true from recording start until final peaks received)
-  const [shouldMonitorPeaks, setShouldMonitorPeaks] = useState(false);
 
   // Start monitoring when recording starts
   useEffect(() => {
