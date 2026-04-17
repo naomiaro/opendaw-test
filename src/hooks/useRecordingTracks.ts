@@ -16,7 +16,7 @@ export interface RecordingTracksResult {
   armedCount: number;
   addTrack: () => void;
   removeTrack: (id: string) => void;
-  handleArmedChange: () => void;
+  handleArmedChange: (id: string, armed: boolean) => void;
 }
 
 /**
@@ -85,11 +85,9 @@ export function useRecordingTracks({
     });
   }, []);
 
-  const handleArmedChange = useCallback(() => {
-    setArmedCount(
-      recordingTracks.filter((t) => t.capture.armed.getValue()).length
-    );
-  }, [recordingTracks]);
+  const handleArmedChange = useCallback((_id: string, armed: boolean) => {
+    setArmedCount((prev) => prev + (armed ? 1 : -1));
+  }, []);
 
   return {
     recordingTracks,

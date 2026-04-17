@@ -574,7 +574,7 @@ const App: React.FC = () => {
     totalPPQN > 0 ? (currentPosition % totalPPQN) / totalPPQN : 0;
 
   const recordingTrackLabels = useMemo(
-    () => recordingTracks.map((t) => ({ id: t.id, label: t.label })),
+    () => recordingTracks.map((t, i) => ({ id: t.id, label: `Track ${i + 1}` })),
     [recordingTracks]
   );
 

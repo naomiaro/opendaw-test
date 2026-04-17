@@ -117,7 +117,7 @@ const App: React.FC = () => {
   const isActive = session.state !== "idle" && session.state !== "ready";
   const canRecord = (session.state === "idle" || session.state === "ready") && armedCount > 0;
   const canPlay = session.state === "ready";
-  const canStop = session.state !== "idle" && session.state !== "ready";
+  const canStop = session.state === "recording" || session.state === "counting-in" || session.state === "playing";
   const statusMessage = getStatusMessage(session.state, session.countInBeatsRemaining);
 
   // Canvas ref callback for a given track index
