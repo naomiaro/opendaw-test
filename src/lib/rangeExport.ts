@@ -27,7 +27,7 @@ const LOADING_TIMEOUT_MS = 30_000;
  * Uses project.copy() + OfflineAudioContext + AudioWorklets.createEngine()
  * for all export modes. This avoids OfflineEngineRenderer which has
  * liveStreamReceiver conflicts and routes Option.None through the stem path
- * (excluding metronome). See documentation/22-offline-rendering-advanced.md.
+ * (excluding metronome). See documentation/10-export.md.
  *
  * @param exportConfiguration - undefined = mixdown path (includes metronome),
  *   ExportStemsConfiguration = stem path (excludes metronome).

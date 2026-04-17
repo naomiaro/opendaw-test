@@ -94,4 +94,4 @@ Effects use a 3-layer chain: Box (raw storage) → Adapter (UI mapping) → Proc
 - Track automation demo: `src/demos/automation/track-automation-demo.tsx`
 - Tempo automation demo: `src/demos/automation/tempo-automation-demo.tsx`
 - Time signature demo: `src/demos/automation/time-signature-demo.tsx`
-- Track automation docs: `documentation/19-track-automation.md`
+- Track automation docs: `documentation/09-editing-fades-and-automation.md#advanced-track-automation`

@@ -38,21 +38,16 @@ Visit http://localhost:5173 to explore the demos.
 **[Full Documentation](./documentation/README.md)** — Guides for building DAW interfaces with OpenDAW:
 
 - [Introduction](./documentation/01-introduction.md) — DAW concepts and system architecture
-- [PPQN Fundamentals](./documentation/02-ppqn-fundamentals.md) — Timing systems
+- [Timing & Tempo](./documentation/02-timing-and-tempo.md) — PPQN, tempo automation, time signatures
 - [AnimationFrame](./documentation/03-animation-frame.md) — Observable updates (**required reading**)
-- [Box System](./documentation/04-box-system.md) — Data model and state management
-- [Sample Management & Peaks](./documentation/05-sample-management-and-peaks.md) — Audio loading and waveforms
-- [Timeline Rendering](./documentation/06-timeline-rendering.md) — Building timeline UI
-- [Complete Example](./documentation/07-putting-it-together.md) — Full working application
-- [Recording Guide](./documentation/08-recording-and-live-peaks.md) — Audio/MIDI recording, takes, monitoring, live peaks
-- [Track Editing & Fades](./documentation/09-track-editing-and-fades.md) — Region editing and fade support
-- [Audio Export](./documentation/audio-export.md) — Mix and stems export
-- [Tempo Automation](./documentation/14-tempo-automation.md) — Variable BPM playback
-- [Time Signature Changes](./documentation/15-time-signature-changes.md) — Signature events
-- [Track Automation](./documentation/19-track-automation.md) — Volume, pan, and effect automation
-- [Clip Looping](./documentation/20-clip-looping.md) — Region looping and tiling
-- [Mixer Groups](./documentation/17-mixer-groups.md) — Sub-mixing and track routing
-- [Region Splice & Comp Lanes](./documentation/region-splice-findings.md) — SDK voice pop findings, crossfade workaround, zero-crossing fundamentals
+- [Box System & Reactivity](./documentation/04-box-system-and-reactivity.md) — Data model, subscriptions, reactive lifecycle
+- [Samples, Peaks & Looping](./documentation/05-samples-peaks-and-looping.md) — Audio loading, waveforms, region looping
+- [Timeline & Rendering](./documentation/06-timeline-and-rendering.md) — Building timeline UI
+- [Building a Complete App](./documentation/07-building-a-complete-app.md) — Full working application, mixer groups
+- [Recording](./documentation/08-recording.md) — Audio/MIDI recording, takes, monitoring, live peaks
+- [Editing, Fades & Automation](./documentation/09-editing-fades-and-automation.md) — Region editing, clip fades, track automation, comp lanes
+- [Export & Offline Rendering](./documentation/10-export.md) — Mix and stems export, offline rendering
+- [Effects](./documentation/11-effects.md) — Effect types, creation, track/master integration
 
 ## Deployment
 

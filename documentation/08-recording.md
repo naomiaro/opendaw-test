@@ -1,4 +1,7 @@
-# Recording Guide
+# Recording
+
+> **Skip if:** you're not implementing recording, MIDI capture, or take management
+> **Prerequisites:** Chapter 04 (Box System), Chapter 05 (Samples & Peaks)
 
 This comprehensive guide covers OpenDAW's recording system: audio and MIDI capture, track arming, input configuration, monitoring, loop recording with takes, step recording, and live waveform peaks.
 
@@ -551,54 +554,6 @@ audioUnitAdapter.tracks.catchupAndSubscribe({
 
 Note: `AudioUnitTracks` uses `onAdd`/`onRemove`/`onReorder`; `TrackRegions` uses `onAdded`/`onRemoved`.
 
-### Demo Pattern (Legacy: AnimationFrame Scanning)
-
-Simpler pattern for standalone recording demos.
-
-```typescript
-import { AnimationFrame } from "@opendaw/lib-fusion";
-
-useEffect(() => {
-  if (!project || !isRecording) return undefined;
-  let sampleLoader: any = null;
-
-  const terminable = AnimationFrame.add(() => {
-    if (!sampleLoader) {
-      const boxes = project.boxGraph.boxes();
-      const recordingRegion = boxes.find((box: any) => {
-        const label = box.label?.getValue?.();
-        return label === "Recording" || (label && label.startsWith("Take "));
-      });
-
-      if (recordingRegion?.file) {
-        const fileVertex = recordingRegion.file.targetVertex;
-        if (fileVertex && !fileVertex.isEmpty()) {
-          const audioFileBox = fileVertex.unwrap();
-          if (audioFileBox?.address?.uuid) {
-            sampleLoader = project.sampleManager.getOrCreate(audioFileBox.address.uuid);
-          }
-        }
-      }
-    }
-
-    if (sampleLoader) {
-      const peaksOption = sampleLoader.peaks;
-      if (peaksOption && !peaksOption.isEmpty()) {
-        const peaks = peaksOption.unwrap();
-        const isPeaksWriter = "dataIndex" in peaks;
-        // Update canvas with peaks...
-        if (!isPeaksWriter) {
-          setHasPeaks(true); // Final peaks received
-          terminable.terminate();
-        }
-      }
-    }
-  });
-
-  return () => terminable.terminate();
-}, [project, isRecording]);
-```
-
 ## Smooth 60fps Rendering
 
 The key to smooth live waveform rendering is using `dataIndex` from PeaksWriter instead of `numFrames`.
@@ -677,4 +632,4 @@ PeaksPainter.renderPixelStrips(context, peaks, channel, {
 | Loop recording | `allowTakes` preference | `loop-recording-demo.html` |
 | Take management | region `.mute` field | `loop-recording-demo.html` |
 
-**Next Steps**: See [Timeline Rendering](./06-timeline-rendering.md) for rendering waveforms in a timeline context, or [Mixer Groups](./17-mixer-groups.md) for routing recorded tracks through sub-mixes.
+**Next Steps**: See [Timeline & Rendering](./06-timeline-and-rendering.md) for rendering waveforms in a timeline context, or [Mixer Groups](./07-building-a-complete-app.md#advanced-mixer-groups-sub-mixing) for routing recorded tracks through sub-mixes.

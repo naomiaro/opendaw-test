@@ -92,4 +92,4 @@ Prefer this over manual `// @param` string parsing. Returns `DeclarationSection[
 - Effect chain hook: `src/hooks/useEffectChain.ts`
 - Effect presets: `src/lib/effectPresets.ts`
 - Werkstatt DSP scripts: `src/lib/werkstattScripts.ts`
-- Effects research docs: `documentation/effects-research/`
+- Effects docs: `documentation/11-effects.md`

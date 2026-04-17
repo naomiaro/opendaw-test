@@ -261,11 +261,10 @@ Each demo category folder has its own CLAUDE.md with SDK knowledge scoped to tho
 - Automation demos: `src/demos/automation/`
 - Effects demos: `src/demos/effects/`
 - Export demo: `src/demos/export/`
-- Effects research docs: `documentation/effects-research/`
-- Box subscription lifecycle: `documentation/18-box-subscriptions-lifecycle.md`
-- Region splice & comp lanes findings: `documentation/region-splice-findings.md`
-- SDK 0.0.119→0.0.128 changelog: `documentation/sdk-0.0.119-to-0.0.128-changes.md`
-- SDK 0.0.128→0.0.129 changelog: `documentation/sdk-0.0.128-to-0.0.129-changes.md`
-- SDK 0.0.129→0.0.132 changelog: `documentation/sdk-0.0.129-to-0.0.132-changes.md`
-- SDK 0.0.132→0.0.133 changelog: `documentation/sdk-0.0.132-to-0.0.133-changes.md`
+- Effects docs: `documentation/11-effects.md`
+- Box system & reactivity: `documentation/04-box-system-and-reactivity.md`
+- Editing, fades & automation: `documentation/09-editing-fades-and-automation.md`
+- Export & offline rendering: `documentation/10-export.md`
+- SDK changelogs: `changelogs/`
+- Research: `documentation/research/`
 - OpenDAW source code locations: see `.claude/local.md`
