@@ -212,22 +212,20 @@ const App: React.FC = () => {
     }
   }, [project, session.state]);
 
-  // Persistent pointerHub subscriptions — set up once per project, not gated on
-  // shouldMonitorPeaks. The callback reads from refs so it always has current state.
-  // This avoids React batching issues where shouldMonitorPeaks stays true across
-  // recording cycles and effects don't re-run.
+  // PointerHub subscriptions — re-created when tracks change, NOT gated on
+  // shouldMonitorPeaks (avoids React batching issues across recording cycles).
+  // Subscriptions persist and discover regions whenever the SDK creates them.
   useEffect(() => {
-    if (!project || !audioContext) return;
+    if (!project || !audioContext || recordingTracks.length === 0) return;
 
     const subs: Terminable[] = [];
-    const tracks = recordingTracksRef.current;
 
     const trackIndexByUuid = new Map<string, number>();
-    for (let idx = 0; idx < tracks.length; idx++) {
-      trackIndexByUuid.set(tracks[idx].id, idx);
+    for (let idx = 0; idx < recordingTracks.length; idx++) {
+      trackIndexByUuid.set(recordingTracks[idx].id, idx);
     }
 
-    for (const track of tracks) {
+    for (const track of recordingTracks) {
       const trackSub = track.capture.audioUnitBox.tracks.pointerHub.catchupAndSubscribe({
         onAdded: (pointer) => {
           const trackBox = pointer.box;
@@ -263,7 +261,7 @@ const App: React.FC = () => {
 
               const waveformOffsetSec = regionBox.waveformOffset.getValue();
               if (waveformOffsetSec > 0) {
-                trackState.waveformOffsetFrames = Math.round(waveformOffsetSec * (audioContext as AudioContext).sampleRate);
+                trackState.waveformOffsetFrames = Math.round(waveformOffsetSec * audioContext.sampleRate);
               }
 
               const fileVertex = regionBox.file.targetVertex;
@@ -287,10 +285,10 @@ const App: React.FC = () => {
         sub.terminate();
       }
     };
-  }, [project, audioContext, session.registerLoader]);
+  }, [project, audioContext, recordingTracks, session.registerLoader]);
 
-  // Render waveform peaks — runs continuously via AnimationFrame, guards on
-  // shouldMonitorPeaks inside the callback (not in deps) to avoid batching issues.
+  // Render waveform peaks — AnimationFrame runs when shouldMonitorPeaks is true.
+  // Uses ref inside callback to survive React batching across recording cycles.
   useEffect(() => {
     if (!project) return;
 
