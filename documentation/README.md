@@ -32,12 +32,14 @@ Read these documents in order to build up your understanding:
 
 ---
 
-### 2. [PPQN Fundamentals](./02-ppqn-fundamentals.md)
+### 2. [Timing & Tempo](./02-timing-and-tempo.md)
 - What is PPQN and why use it?
 - PPQN vs BPM (resolution vs speed)
 - Musical time units (quarters, eighths, bars)
 - Converting between PPQN and seconds
 - Positioning clips and handling BPM changes
+- Tempo automation: stepped and linear BPM changes
+- Time signature changes and bar layout
 
 **Start here if:** You understand DAWs but not timing systems
 
@@ -134,24 +136,14 @@ Read these documents in order to build up your understanding:
 
 ---
 
-### 14. [Tempo Automation](./14-tempo-automation.md)
-- Tempo change events and interpolation modes
-- Creating stepped and linear tempo ramps
-- ValueEventCollectionBoxAdapter API
-- Preset-based tempo patterns
-- Playhead monitoring during tempo changes
-
-**Start here if:** You're implementing tempo automation or variable BPM playback
-
----
-
-### 15. [Time Signature Changes](./15-time-signature-changes.md)
-- Time signature change events
-- SignatureTrackAdapter API
-- PPQN calculations for different signatures
+### 14–15. [Timing & Tempo (Advanced)](./02-timing-and-tempo.md#advanced-tempo-automation)
+- Tempo change events and interpolation modes (stepped/linear) — see [Tempo Automation](./02-timing-and-tempo.md#advanced-tempo-automation)
+- Time signature change events — see [Time Signature Changes](./02-timing-and-tempo.md#advanced-time-signature-changes)
+- SignatureTrackAdapter API and critical one-transaction-per-event requirement
 - Computing bar layouts with mixed signatures
-- Critical transaction-per-event requirement
 - Proportional bar width visualization
+
+**Start here if:** You're implementing tempo automation or variable BPM or mixed time signatures
 
 **Start here if:** You're implementing time signature changes during playback
 
@@ -376,7 +368,7 @@ Found an error or want to improve this documentation? PRs welcome!
 | Document | Focus Area | Audience |
 |----------|------------|----------|
 | [Introduction](./01-introduction.md) | Overview & concepts | Beginners to DAW architecture |
-| [PPQN Fundamentals](./02-ppqn-fundamentals.md) | Timing system | All developers |
+| [Timing & Tempo](./02-timing-and-tempo.md) | Timing system, tempo automation, time signatures | All developers |
 | [AnimationFrame ⚠️](./03-animation-frame.md) | Observable updates | **Required reading** |
 | [Box System](./04-box-system.md) | Data model | Backend/state management |
 | [Sample Management](./05-sample-management-and-peaks.md) | Audio & waveforms | Frontend/canvas developers |
@@ -385,11 +377,10 @@ Found an error or want to improve this documentation? PRs welcome!
 | [Recording Guide](./08-recording-and-live-peaks.md) | Recording, MIDI, takes, monitoring | Recording/capture features |
 | [Track Editing & Fades](./09-track-editing-and-fades.md) | Region editing & fades | Timeline/editing features |
 | [Audio Export](./audio-export.md) | Mix & stem export | Export/rendering features |
-| [Tempo Automation](./14-tempo-automation.md) | Variable BPM | Tempo/timing features |
-| [Time Signature Changes](./15-time-signature-changes.md) | Signature events | Tempo/timing features |
+| [Timing & Tempo (Advanced)](./02-timing-and-tempo.md#advanced-tempo-automation) | Variable BPM, signature events | Tempo/timing features |
 | [Mixer Groups](./17-mixer-groups.md) | Sub-mixing & routing | Mixer/routing features |
 
-**Recommended reading order:** 1 → 2 → 3 → 4 → 5 → 6 → 7 (→ 8 if implementing recording, → 9 if implementing editing, → 10 if implementing export, → 14-15 if implementing tempo/signature changes, → 17 if implementing mixer routing)
+**Recommended reading order:** 1 → 2 → 3 → 4 → 5 → 6 → 7 (→ 8 if implementing recording, → 9 if implementing editing, → 10 if implementing export, → 02 advanced sections if implementing tempo/signature changes, → 17 if implementing mixer routing)
 
 **Troubleshooting order:** Having issues? → Read 3 first!
 

@@ -129,7 +129,7 @@ project.editing.modify(() => {
 
 OpenDAW's box graph defers pointer hub notifications within a single `editing.modify()` transaction. When `createInstrument()` connects the track to master, the pointer hub on the master bus records the incoming connection. If you immediately call `output.refer(newTarget)` in the same transaction, the hub notification to remove the old connection may not fire until after the transaction commits — leaving both connections active.
 
-This is analogous to the documented [SignatureTrack one-transaction-per-event](./15-time-signature-changes.md) requirement, which is caused by the same deferred notification mechanism.
+This is analogous to the documented [SignatureTrack one-transaction-per-event](./02-timing-and-tempo.md#critical-one-transaction-per-event) requirement, which is caused by the same deferred notification mechanism.
 
 ## Complete Example
 
@@ -271,4 +271,4 @@ The track loading logic is in `src/lib/groupTrackLoading.ts`.
 
 - [Box System](./04-box-system.md) — Understanding boxes, pointers, and transactions
 - [Clip Fades](./16-clip-fades.md) — Another example of transaction-sensitive operations
-- [Time Signature Changes](./15-time-signature-changes.md) — Documents the same deferred notification behavior
+- [Time Signature Changes](./02-timing-and-tempo.md#advanced-time-signature-changes) — Documents the same deferred notification behavior

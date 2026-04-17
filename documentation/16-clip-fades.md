@@ -192,6 +192,6 @@ See `src/clip-fades-demo.tsx` for a complete working example that:
 
 ## References
 
-- [PPQN Fundamentals](./02-ppqn-fundamentals.md)
+- [Timing & Tempo](./02-timing-and-tempo.md)
 - [Track Editing and Region Properties](./09-track-editing-and-fades.md)
 - [Box System](./04-box-system.md)
