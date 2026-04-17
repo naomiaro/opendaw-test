@@ -234,32 +234,38 @@ const App: React.FC = () => {
       }
     }
 
+    console.log("[Peaks] pointerHub effect starting, tracks:", tracks.length, "uuids:", [...trackIndexByUuid.keys()]);
+
     // Subscribe to regions created on any track under each audioUnit
     for (const track of tracks) {
       const trackSub = track.capture.audioUnitBox.tracks.pointerHub.catchupAndSubscribe({
         onAdded: (pointer) => {
           const trackBox = pointer.box;
+          console.log("[Peaks] TrackBox discovered");
           // SDK .d.ts doesn't expose regions on the base box type — cast required
           const regionSub = (trackBox as any).regions.pointerHub.catchupAndSubscribe({
             onAdded: (regionPointer: any) => {
               const regionBox = regionPointer.box as AudioRegionBox;
               const label = regionBox.label.getValue();
+              console.log("[Peaks] Region discovered:", label);
               if (label !== "Recording" && !label.startsWith("Take ")) return;
 
               // Resolve which recording track this region belongs to:
               // regionBox → TrackBox → AudioUnitBox → UUID
               const regionTrackVertex = regionBox.regions.targetVertex;
-              if (regionTrackVertex.isEmpty()) return;
+              if (regionTrackVertex.isEmpty()) { console.log("[Peaks] regionTrackVertex empty"); return; }
               const ownerTrackBox = regionTrackVertex.unwrap().box;
               const audioUnitVertex = (ownerTrackBox as any).tracks?.targetVertex;
-              if (!audioUnitVertex || audioUnitVertex.isEmpty()) return;
+              if (!audioUnitVertex || audioUnitVertex.isEmpty()) { console.log("[Peaks] audioUnitVertex empty"); return; }
               const audioUnitUuid = UUID.toString(audioUnitVertex.unwrap().box.address.uuid);
+              console.log("[Peaks] Region audioUnit UUID:", audioUnitUuid, "known:", trackIndexByUuid.has(audioUnitUuid));
 
               const idx = trackIndexByUuid.get(audioUnitUuid);
               if (idx === undefined) return;
 
               const trackState = trackPeaksRef.current.get(idx);
-              if (!trackState || trackState.sampleLoader) return;
+              if (!trackState) { console.log("[Peaks] no trackState for idx", idx); return; }
+              if (trackState.sampleLoader) { console.log("[Peaks] sampleLoader already set for idx", idx); return; }
 
               const waveformOffsetSec = regionBox.waveformOffset.getValue();
               if (waveformOffsetSec > 0) {
@@ -271,6 +277,9 @@ const App: React.FC = () => {
                 const loader = project.sampleManager.getOrCreate(fileVertex.unwrap().address.uuid);
                 trackState.sampleLoader = loader;
                 session.registerLoader(loader);
+                console.log("[Peaks] sampleLoader set for idx", idx);
+              } else {
+                console.log("[Peaks] fileVertex empty for idx", idx);
               }
             },
             onRemoved: () => {},
@@ -293,19 +302,29 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!session.shouldMonitorPeaks) return;
 
+    let loggedOnce = false;
     const animationFrameTerminable = AnimationFrame.add(() => {
       for (let i = 0; i < recordingTracks.length; i++) {
         ensureCanvasPainter(i);
 
         const trackState = trackPeaksRef.current.get(i);
-        if (!trackState?.sampleLoader) continue;
+        if (!trackState?.sampleLoader) {
+          if (!loggedOnce) {
+            console.log("[Peaks AF] track", i, "no sampleLoader yet, trackPeaksRef keys:", [...trackPeaksRef.current.keys()]);
+          }
+          continue;
+        }
 
         const peaksOption = trackState.sampleLoader.peaks;
         if (peaksOption && !peaksOption.isEmpty()) {
+          if (!loggedOnce) {
+            console.log("[Peaks AF] track", i, "has peaks, rendering");
+          }
           trackState.peaks = peaksOption.unwrap();
           canvasPaintersMap.current.get(i)?.requestUpdate();
         }
       }
+      loggedOnce = true;
     });
 
     return () => animationFrameTerminable.terminate();
