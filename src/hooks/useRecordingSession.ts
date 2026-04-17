@@ -25,15 +25,23 @@ export interface RecordingSessionResult {
   signalPeaksReady: () => void;
 }
 
+/**
+ * Manages the recording/playback lifecycle as an explicit state machine.
+ *
+ * States: idle → counting-in → recording → finalizing → ready → playing → ready
+ *
+ * After stopRecording(), the SDK finalizes the recording internally —
+ * the hook does NOT call engine.stop(true) during finalization.
+ * The component signals peak readiness via signalPeaksReady() to
+ * transition from "finalizing" to "ready".
+ */
 export function useRecordingSession({
   project,
-  audioContext,
 }: UseRecordingSessionOptions): RecordingSessionResult {
   const [state, setState] = useState<RecordingState>("idle");
   const stateRef = useRef<RecordingState>("idle");
   const [countInBeatsRemaining, setCountInBeatsRemaining] = useState(0);
   const sampleLoadersRef = useRef<SampleLoader[]>([]);
-  const finalizationSubsRef = useRef<Terminable[]>([]);
 
   function transition(next: RecordingState) {
     stateRef.current = next;
@@ -71,8 +79,15 @@ export function useRecordingSession({
           !recording &&
           (current === "recording" || current === "counting-in")
         ) {
-          transition("finalizing");
-          startFinalizationBarrier(project);
+          if (sampleLoadersRef.current.length === 0) {
+            // Nothing to finalize (e.g., cancelled during count-in)
+            project.engine.stop(true);
+            transition("idle");
+          } else {
+            // SDK handles finalization internally after stopRecording().
+            // Wait for signalPeaksReady() from the component.
+            transition("finalizing");
+          }
         }
       })
     );
@@ -90,63 +105,8 @@ export function useRecordingSession({
       })
     );
 
-    return () => {
-      subs.forEach((s) => s.terminate());
-      for (const sub of finalizationSubsRef.current) {
-        sub.terminate();
-      }
-      finalizationSubsRef.current = [];
-    };
+    return () => subs.forEach((s) => s.terminate());
   }, [project]);
-
-  function startFinalizationBarrier(proj: Project) {
-    // Clean up any prior finalization subs
-    for (const sub of finalizationSubsRef.current) {
-      sub.terminate();
-    }
-    finalizationSubsRef.current = [];
-
-    const loaders = sampleLoadersRef.current;
-    if (loaders.length === 0) {
-      // Nothing to finalize (e.g., cancelled during count-in)
-      proj.engine.stop(true);
-      transition("idle");
-      return;
-    }
-
-    let finalized = 0;
-    const checkComplete = () => {
-      if (finalized === loaders.length) {
-        proj.engine.stop(true);
-        // Don't transition to "ready" here — wait for signalPeaksReady()
-        // which fires when the component's AnimationFrame detects final peaks.
-      }
-    };
-
-    for (const loader of loaders) {
-      // Check if already loaded (race: short recordings may finalize
-      // before the barrier subscribes)
-      if (loader.state.type === "loaded") {
-        finalized++;
-        continue;
-      }
-
-      const sub = loader.subscribe((loaderState: { type: string }) => {
-        if (loaderState.type === "loaded") {
-          sub.terminate();
-          finalizationSubsRef.current = finalizationSubsRef.current.filter(
-            (s) => s !== sub
-          );
-          finalized++;
-          checkComplete();
-        }
-      });
-      finalizationSubsRef.current.push(sub);
-    }
-
-    // If all were already loaded, complete immediately
-    checkComplete();
-  }
 
   const signalPeaksReady = useCallback(() => {
     if (stateRef.current === "finalizing") {
