@@ -2,8 +2,6 @@
 
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { UUID } from "@opendaw/lib-std";
-import type { Terminable } from "@opendaw/lib-std";
 import { Project, PeaksWriter } from "@opendaw/studio-core";
 import type { SampleLoader } from "@opendaw/studio-adapters";
 import { AnimationFrame } from "@opendaw/lib-dom";
@@ -212,106 +210,70 @@ const App: React.FC = () => {
     }
   }, [project, session.state]);
 
-  // PointerHub subscriptions — re-created when tracks change, NOT gated on
-  // shouldMonitorPeaks (avoids React batching issues across recording cycles).
-  // Subscriptions persist and discover regions whenever the SDK creates them.
+  // Discover regions and render peaks via AnimationFrame — following OpenDAW's pattern
+  // of reading through the box graph each frame rather than caching loaders.
+  // Runs continuously; guards on shouldMonitorPeaksRef inside the callback to
+  // survive React batching across recording cycles.
   useEffect(() => {
-    if (!project || !audioContext || recordingTracks.length === 0) return;
-
-    const subs: Terminable[] = [];
-
-    const trackIndexByUuid = new Map<string, number>();
-    for (let idx = 0; idx < recordingTracks.length; idx++) {
-      trackIndexByUuid.set(recordingTracks[idx].id, idx);
-    }
-
-    for (const track of recordingTracks) {
-      const trackSub = track.capture.audioUnitBox.tracks.pointerHub.catchupAndSubscribe({
-        onAdded: (pointer) => {
-          const trackBox = pointer.box;
-          // SDK .d.ts doesn't expose regions on the base box type — cast required
-          const regionSub = (trackBox as any).regions.pointerHub.catchupAndSubscribe({
-            onAdded: (regionPointer: any) => {
-              const regionBox = regionPointer.box as AudioRegionBox;
-              const label = regionBox.label.getValue();
-              if (label !== "Recording" && !label.startsWith("Take ")) return;
-
-              // Resolve which recording track this region belongs to
-              const regionTrackVertex = regionBox.regions.targetVertex;
-              if (regionTrackVertex.isEmpty()) return;
-              const ownerTrackBox = regionTrackVertex.unwrap().box;
-              const audioUnitVertex = (ownerTrackBox as any).tracks?.targetVertex;
-              if (!audioUnitVertex || audioUnitVertex.isEmpty()) return;
-              const audioUnitUuid = UUID.toString(audioUnitVertex.unwrap().box.address.uuid);
-
-              const idx = trackIndexByUuid.get(audioUnitUuid);
-              if (idx === undefined) return;
-
-              // Initialize trackPeaksRef entry if needed (handleStartRecording clears it)
-              if (!trackPeaksRef.current.has(idx)) {
-                trackPeaksRef.current.set(idx, {
-                  sampleLoader: null,
-                  peaks: null,
-                  waveformOffsetFrames: 0
-                });
-              }
-
-              const trackState = trackPeaksRef.current.get(idx)!;
-              if (trackState.sampleLoader) return;
-
-              const waveformOffsetSec = regionBox.waveformOffset.getValue();
-              if (waveformOffsetSec > 0) {
-                trackState.waveformOffsetFrames = Math.round(waveformOffsetSec * audioContext.sampleRate);
-              }
-
-              const fileVertex = regionBox.file.targetVertex;
-              if (!fileVertex.isEmpty()) {
-                const loader = project.sampleManager.getOrCreate(fileVertex.unwrap().address.uuid);
-                trackState.sampleLoader = loader;
-                session.registerLoader(loader);
-              }
-            },
-            onRemoved: () => {},
-          });
-          subs.push(regionSub);
-        },
-        onRemoved: () => {},
-      });
-      subs.push(trackSub);
-    }
-
-    return () => {
-      for (const sub of subs) {
-        sub.terminate();
-      }
-    };
-  }, [project, audioContext, recordingTracks, session.registerLoader]);
-
-  // Render waveform peaks — AnimationFrame runs when shouldMonitorPeaks is true.
-  // Uses ref inside callback to survive React batching across recording cycles.
-  useEffect(() => {
-    if (!project) return;
+    if (!project || !audioContext) return;
 
     const animationFrameTerminable = AnimationFrame.add(() => {
       if (!shouldMonitorPeaksRef.current) return;
 
       const tracks = recordingTracksRef.current;
+
+      // Find recording regions from the box graph each frame
+      const boxes = project.boxGraph.boxes();
+      const recordingRegions: AudioRegionBox[] = [];
+      for (const box of boxes) {
+        if (box.name !== "AudioRegionBox") continue;
+        const label = (box as AudioRegionBox).label.getValue();
+        if (label === "Recording" || label.startsWith("Take ")) {
+          recordingRegions.push(box as AudioRegionBox);
+        }
+      }
+
       for (let i = 0; i < tracks.length; i++) {
         ensureCanvasPainter(i);
 
-        const trackState = trackPeaksRef.current.get(i);
-        if (!trackState?.sampleLoader) continue;
+        if (!trackPeaksRef.current.has(i)) {
+          trackPeaksRef.current.set(i, {
+            sampleLoader: null,
+            peaks: null,
+            waveformOffsetFrames: 0
+          });
+        }
+        const trackState = trackPeaksRef.current.get(i)!;
 
-        const peaksOption = trackState.sampleLoader.peaks;
-        if (peaksOption && !peaksOption.isEmpty()) {
-          trackState.peaks = peaksOption.unwrap();
-          canvasPaintersMap.current.get(i)?.requestUpdate();
+        // Resolve region → sampleLoader fresh each frame (like OpenDAW's adapter layer)
+        const region = recordingRegions[i];
+        if (region && !trackState.sampleLoader) {
+          const waveformOffsetSec = region.waveformOffset.getValue();
+          if (waveformOffsetSec > 0) {
+            trackState.waveformOffsetFrames = Math.round(waveformOffsetSec * audioContext.sampleRate);
+          }
+
+          const fileVertex = region.file.targetVertex;
+          if (!fileVertex.isEmpty()) {
+            const loader = project.sampleManager.getOrCreate(fileVertex.unwrap().address.uuid);
+            trackState.sampleLoader = loader;
+            session.registerLoader(loader);
+          }
+        }
+
+        // Render peaks
+        if (trackState.sampleLoader) {
+          const peaksOption = trackState.sampleLoader.peaks;
+          if (peaksOption && !peaksOption.isEmpty()) {
+            trackState.peaks = peaksOption.unwrap();
+            canvasPaintersMap.current.get(i)?.requestUpdate();
+          }
         }
       }
     });
 
     return () => animationFrameTerminable.terminate();
-  }, [project, ensureCanvasPainter]);
+  }, [project, audioContext, ensureCanvasPainter, session.registerLoader]);
 
   // Initialize project settings from OpenDAW
   useEffect(() => {
