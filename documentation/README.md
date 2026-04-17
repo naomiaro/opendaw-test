@@ -327,13 +327,14 @@ useEffect(() => {
 - Check peaks are available (`!peaksOption.isEmpty()`)
 - Verify canvas has proper dimensions
 
-### 10. [Audio Export](./audio-export.md)
+### 10. [Export & Offline Rendering](./10-export.md)
 - Full mix and stems export
 - AudioOfflineRenderer API
 - Effects rendering in exports
 - Export options and formats
 - Overlapping regions troubleshooting
 - TimeBase considerations
+- Advanced: range-bounded export, metronome rendering, OfflineAudioContext approach
 
 **Start here if:** You're implementing audio export functionality
 
@@ -342,7 +343,7 @@ useEffect(() => {
 ## Additional Resources
 
 - **OpenDAW Examples**: See the demo applications in `src/` directory
-- **Audio Export Guide**: See [audio-export.md](./audio-export.md) for comprehensive export documentation
+- **Export Guide**: See [10-export.md](./10-export.md) for comprehensive export and offline rendering documentation
 - **TypeScript Definitions**: Check `node_modules/@opendaw/*/dist/*.d.ts` for API details
 - **Live Demos**: Run `npm run dev` to see working examples
 
@@ -373,7 +374,7 @@ Found an error or want to improve this documentation? PRs welcome!
 | [Complete Example](./07-building-a-complete-app.md) | Full application + mixer groups | All developers |
 | [Recording Guide](./08-recording-and-live-peaks.md) | Recording, MIDI, takes, monitoring | Recording/capture features |
 | [Editing, Fades & Automation](./09-editing-fades-and-automation.md) | Region editing, fades & automation | Timeline/editing features |
-| [Audio Export](./audio-export.md) | Mix & stem export | Export/rendering features |
+| [Export & Offline Rendering](./10-export.md) | Mix & stem export, advanced offline rendering | Export/rendering features |
 | [Timing & Tempo (Advanced)](./02-timing-and-tempo.md#advanced-tempo-automation) | Variable BPM, signature events | Tempo/timing features |
 | [Mixer Groups](./07-building-a-complete-app.md#advanced-mixer-groups-sub-mixing) | Sub-mixing & routing | Mixer/routing features |
 
