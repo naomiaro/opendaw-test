@@ -248,7 +248,10 @@ const App: React.FC = () => {
       const playing = obs.getValue();
       const recording = project.engine.isRecording.getValue();
 
-      if (!recording) {
+      // After stopRecording(), the engine keeps playing for finalization.
+      // Only treat isPlaying changes as user-facing playback when we're
+      // not in recording/finalization mode.
+      if (!recording && !shouldMonitorPeaks) {
         setIsPlayingBack(playing);
         if (playing) {
           setPlaybackStatus("Playing...");
@@ -266,7 +269,7 @@ const App: React.FC = () => {
       recordingSub.terminate();
       playingSub.terminate();
     };
-  }, [project, hasPeaks]);
+  }, [project, hasPeaks, shouldMonitorPeaks]);
 
   // Track if we should be monitoring peaks (true from recording start until final peaks received)
   const [shouldMonitorPeaks, setShouldMonitorPeaks] = useState(false);
