@@ -3,7 +3,9 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
+import type { Terminable } from "@opendaw/lib-std";
 import { Project, AudioDevices, CaptureAudio, PeaksWriter } from "@opendaw/studio-core";
+import type { SampleLoader } from "@opendaw/studio-adapters";
 import { InstrumentFactories } from "@opendaw/studio-adapters";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import type { Peaks } from "@opendaw/lib-fusion";
@@ -43,7 +45,7 @@ const CHANNEL_PADDING = 4;
 
 /** Per-track peaks monitoring state stored in a ref */
 interface TrackPeaksState {
-  sampleLoader: import("@opendaw/studio-adapters").SampleLoader | null;
+  sampleLoader: SampleLoader | null;
   peaks: Peaks | PeaksWriter | null;
   waveformOffsetFrames: number;
 }
@@ -215,78 +217,87 @@ const App: React.FC = () => {
     }
   }, [project, session.state]);
 
-  // Render waveform peaks during recording — purely visual, no state transitions.
-  // The hook's sampleLoader barrier handles finalization detection.
+  // Reactively discover recording regions via pointerHub subscriptions.
+  // When the SDK creates a region during recording, the subscription fires
+  // immediately — no AnimationFrame polling needed for structural discovery.
   useEffect(() => {
     if (!project || !session.shouldMonitorPeaks || !audioContext) return;
 
-    // Initialize per-track peaks state for each canvas
-    for (let i = 0; i < recordingTracks.length; i++) {
-      if (!trackPeaksRef.current.has(i)) {
-        trackPeaksRef.current.set(i, {
+    const subs: Terminable[] = [];
+    let trackIndex = 0;
+
+    for (const track of recordingTracks) {
+      const idx = trackIndex++;
+
+      if (!trackPeaksRef.current.has(idx)) {
+        trackPeaksRef.current.set(idx, {
           sampleLoader: null,
           peaks: null,
           waveformOffsetFrames: 0
         });
       }
+
+      const trackSub = track.capture.audioUnitBox.tracks.pointerHub.catchupAndSubscribe({
+        onAdded: (pointer) => {
+          const trackBox = pointer.box;
+          const regionSub = (trackBox as any).regions.pointerHub.catchupAndSubscribe({
+            onAdded: (regionPointer: any) => {
+              const regionBox = regionPointer.box as AudioRegionBox;
+              const label = regionBox.label.getValue();
+              if (label !== "Recording" && !label.startsWith("Take ")) return;
+
+              const trackState = trackPeaksRef.current.get(idx);
+              if (!trackState || trackState.sampleLoader) return;
+
+              const waveformOffsetSec = regionBox.waveformOffset.getValue();
+              if (waveformOffsetSec > 0) {
+                trackState.waveformOffsetFrames = Math.round(waveformOffsetSec * audioContext.sampleRate);
+              }
+
+              const fileVertex = regionBox.file.targetVertex;
+              if (!fileVertex.isEmpty()) {
+                const loader = project.sampleManager.getOrCreate(fileVertex.unwrap().address.uuid);
+                trackState.sampleLoader = loader;
+                session.registerLoader(loader);
+              }
+            },
+            onRemoved: () => {},
+          });
+          subs.push(regionSub);
+        },
+        onRemoved: () => {},
+      });
+      subs.push(trackSub);
     }
 
+    return () => {
+      for (const sub of subs) {
+        sub.terminate();
+      }
+    };
+  }, [project, session.shouldMonitorPeaks, audioContext, recordingTracks, session.registerLoader]);
+
+  // Render waveform peaks — purely visual, reads from trackPeaksRef populated above.
+  useEffect(() => {
+    if (!session.shouldMonitorPeaks) return;
+
     const animationFrameTerminable = AnimationFrame.add(() => {
-      // Ensure painters exist for all track canvases
       for (let i = 0; i < recordingTracks.length; i++) {
         ensureCanvasPainter(i);
-      }
 
-      // Find recording regions and match them to tracks
-      const boxes = project.boxGraph.boxes();
-      const recordingRegions: AudioRegionBox[] = [];
-
-      for (const box of boxes) {
-        if (box.name !== "AudioRegionBox") continue;
-        const label = (box as AudioRegionBox).label.getValue();
-        if (label === "Recording" || label.startsWith("Take ")) {
-          recordingRegions.push(box as AudioRegionBox);
-        }
-      }
-
-      for (let i = 0; i < recordingTracks.length; i++) {
         const trackState = trackPeaksRef.current.get(i);
-        if (!trackState) continue;
+        if (!trackState?.sampleLoader) continue;
 
-        const region = recordingRegions[i];
-        if (!region) continue;
-
-        // Get or create sample loader for this track
-        if (!trackState.sampleLoader) {
-          const waveformOffsetSec = region.waveformOffset.getValue();
-          if (waveformOffsetSec > 0) {
-            trackState.waveformOffsetFrames = Math.round(waveformOffsetSec * audioContext.sampleRate);
-          }
-
-          const fileVertexOption = region.file.targetVertex;
-          if (!fileVertexOption.isEmpty()) {
-            const fileVertex = fileVertexOption.unwrap();
-            const uuid = fileVertex.address.uuid;
-            trackState.sampleLoader = project.sampleManager.getOrCreate(uuid);
-
-            // Register eagerly so the hook subscribes before recording stops
-            session.registerLoader(trackState.sampleLoader);
-          }
-        }
-
-        // Update peaks for rendering
-        if (trackState.sampleLoader) {
-          const peaksOption = trackState.sampleLoader.peaks;
-          if (peaksOption && !peaksOption.isEmpty()) {
-            trackState.peaks = peaksOption.unwrap();
-            canvasPaintersMap.current.get(i)?.requestUpdate();
-          }
+        const peaksOption = trackState.sampleLoader.peaks;
+        if (peaksOption && !peaksOption.isEmpty()) {
+          trackState.peaks = peaksOption.unwrap();
+          canvasPaintersMap.current.get(i)?.requestUpdate();
         }
       }
     });
 
     return () => animationFrameTerminable.terminate();
-  }, [project, session.shouldMonitorPeaks, audioContext, recordingTracks.length, ensureCanvasPainter, session.registerLoader]);
+  }, [session.shouldMonitorPeaks, recordingTracks.length, ensureCanvasPainter]);
 
   // Initialize project settings from OpenDAW
   useEffect(() => {
