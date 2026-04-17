@@ -1,4 +1,7 @@
-# Recording Guide
+# Recording
+
+> **Skip if:** you're not implementing recording, MIDI capture, or take management
+> **Prerequisites:** Chapter 04 (Box System), Chapter 05 (Samples & Peaks)
 
 This comprehensive guide covers OpenDAW's recording system: audio and MIDI capture, track arming, input configuration, monitoring, loop recording with takes, step recording, and live waveform peaks.
 
