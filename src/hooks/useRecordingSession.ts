@@ -115,7 +115,22 @@ export function useRecordingSession({
     }
 
     let finalized = 0;
+    const checkComplete = () => {
+      if (finalized === loaders.length) {
+        proj.engine.stop(true);
+        // Don't transition to "ready" here — wait for signalPeaksReady()
+        // which fires when the component's AnimationFrame detects final peaks.
+      }
+    };
+
     for (const loader of loaders) {
+      // Check if already loaded (race: short recordings may finalize
+      // before the barrier subscribes)
+      if (loader.state.type === "loaded") {
+        finalized++;
+        continue;
+      }
+
       const sub = loader.subscribe((loaderState: { type: string }) => {
         if (loaderState.type === "loaded") {
           sub.terminate();
@@ -123,15 +138,14 @@ export function useRecordingSession({
             (s) => s !== sub
           );
           finalized++;
-          if (finalized === loaders.length) {
-            proj.engine.stop(true);
-            // Don't transition to "ready" here — wait for signalPeaksReady()
-            // which fires when the component's AnimationFrame detects final peaks.
-          }
+          checkComplete();
         }
       });
       finalizationSubsRef.current.push(sub);
     }
+
+    // If all were already loaded, complete immediately
+    checkComplete();
   }
 
   const signalPeaksReady = useCallback(() => {
