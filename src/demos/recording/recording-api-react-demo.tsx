@@ -113,6 +113,8 @@ const App: React.FC = () => {
   const trackPeaksRef = useRef<Map<number, TrackPeaksState>>(new Map());
 
   const userMetronomePreferenceRef = useRef<boolean>(false);
+  const shouldMonitorPeaksRef = useRef(session.shouldMonitorPeaks);
+  shouldMonitorPeaksRef.current = session.shouldMonitorPeaks;
 
   // Derived UI state from session
   const isActive = session.state !== "idle" && session.state !== "ready";
@@ -210,66 +212,58 @@ const App: React.FC = () => {
     }
   }, [project, session.state]);
 
-  // Reactively discover recording regions via pointerHub subscriptions.
-  // When the SDK creates a region during recording, the subscription fires
-  // immediately — no AnimationFrame polling needed for structural discovery.
-  // Regions are matched to tracks via the pointer chain (regionBox → TrackBox →
-  // AudioUnitBox → UUID), not by index, to handle multiple recording cycles.
+  // Persistent pointerHub subscriptions — set up once per project, not gated on
+  // shouldMonitorPeaks. The callback reads from refs so it always has current state.
+  // This avoids React batching issues where shouldMonitorPeaks stays true across
+  // recording cycles and effects don't re-run.
   useEffect(() => {
-    if (!project || !session.shouldMonitorPeaks || !audioContext) return;
+    if (!project || !audioContext) return;
 
     const subs: Terminable[] = [];
     const tracks = recordingTracksRef.current;
 
-    // Build a lookup from audioUnitBox UUID → track index
     const trackIndexByUuid = new Map<string, number>();
     for (let idx = 0; idx < tracks.length; idx++) {
       trackIndexByUuid.set(tracks[idx].id, idx);
-      if (!trackPeaksRef.current.has(idx)) {
-        trackPeaksRef.current.set(idx, {
-          sampleLoader: null,
-          peaks: null,
-          waveformOffsetFrames: 0
-        });
-      }
     }
 
-    console.log("[Peaks] pointerHub effect starting, tracks:", tracks.length, "uuids:", [...trackIndexByUuid.keys()]);
-
-    // Subscribe to regions created on any track under each audioUnit
     for (const track of tracks) {
       const trackSub = track.capture.audioUnitBox.tracks.pointerHub.catchupAndSubscribe({
         onAdded: (pointer) => {
           const trackBox = pointer.box;
-          console.log("[Peaks] TrackBox discovered");
           // SDK .d.ts doesn't expose regions on the base box type — cast required
           const regionSub = (trackBox as any).regions.pointerHub.catchupAndSubscribe({
             onAdded: (regionPointer: any) => {
               const regionBox = regionPointer.box as AudioRegionBox;
               const label = regionBox.label.getValue();
-              console.log("[Peaks] Region discovered:", label);
               if (label !== "Recording" && !label.startsWith("Take ")) return;
 
-              // Resolve which recording track this region belongs to:
-              // regionBox → TrackBox → AudioUnitBox → UUID
+              // Resolve which recording track this region belongs to
               const regionTrackVertex = regionBox.regions.targetVertex;
-              if (regionTrackVertex.isEmpty()) { console.log("[Peaks] regionTrackVertex empty"); return; }
+              if (regionTrackVertex.isEmpty()) return;
               const ownerTrackBox = regionTrackVertex.unwrap().box;
               const audioUnitVertex = (ownerTrackBox as any).tracks?.targetVertex;
-              if (!audioUnitVertex || audioUnitVertex.isEmpty()) { console.log("[Peaks] audioUnitVertex empty"); return; }
+              if (!audioUnitVertex || audioUnitVertex.isEmpty()) return;
               const audioUnitUuid = UUID.toString(audioUnitVertex.unwrap().box.address.uuid);
-              console.log("[Peaks] Region audioUnit UUID:", audioUnitUuid, "known:", trackIndexByUuid.has(audioUnitUuid));
 
               const idx = trackIndexByUuid.get(audioUnitUuid);
               if (idx === undefined) return;
 
-              const trackState = trackPeaksRef.current.get(idx);
-              if (!trackState) { console.log("[Peaks] no trackState for idx", idx); return; }
-              if (trackState.sampleLoader) { console.log("[Peaks] sampleLoader already set for idx", idx); return; }
+              // Initialize trackPeaksRef entry if needed (handleStartRecording clears it)
+              if (!trackPeaksRef.current.has(idx)) {
+                trackPeaksRef.current.set(idx, {
+                  sampleLoader: null,
+                  peaks: null,
+                  waveformOffsetFrames: 0
+                });
+              }
+
+              const trackState = trackPeaksRef.current.get(idx)!;
+              if (trackState.sampleLoader) return;
 
               const waveformOffsetSec = regionBox.waveformOffset.getValue();
               if (waveformOffsetSec > 0) {
-                trackState.waveformOffsetFrames = Math.round(waveformOffsetSec * audioContext.sampleRate);
+                trackState.waveformOffsetFrames = Math.round(waveformOffsetSec * (audioContext as AudioContext).sampleRate);
               }
 
               const fileVertex = regionBox.file.targetVertex;
@@ -277,9 +271,6 @@ const App: React.FC = () => {
                 const loader = project.sampleManager.getOrCreate(fileVertex.unwrap().address.uuid);
                 trackState.sampleLoader = loader;
                 session.registerLoader(loader);
-                console.log("[Peaks] sampleLoader set for idx", idx);
-              } else {
-                console.log("[Peaks] fileVertex empty for idx", idx);
               }
             },
             onRemoved: () => {},
@@ -296,39 +287,33 @@ const App: React.FC = () => {
         sub.terminate();
       }
     };
-  }, [project, session.shouldMonitorPeaks, session.sessionId, audioContext, session.registerLoader]);
+  }, [project, audioContext, session.registerLoader]);
 
-  // Render waveform peaks — purely visual, reads from trackPeaksRef populated above.
+  // Render waveform peaks — runs continuously via AnimationFrame, guards on
+  // shouldMonitorPeaks inside the callback (not in deps) to avoid batching issues.
   useEffect(() => {
-    if (!session.shouldMonitorPeaks) return;
+    if (!project) return;
 
-    let loggedOnce = false;
     const animationFrameTerminable = AnimationFrame.add(() => {
-      for (let i = 0; i < recordingTracks.length; i++) {
+      if (!shouldMonitorPeaksRef.current) return;
+
+      const tracks = recordingTracksRef.current;
+      for (let i = 0; i < tracks.length; i++) {
         ensureCanvasPainter(i);
 
         const trackState = trackPeaksRef.current.get(i);
-        if (!trackState?.sampleLoader) {
-          if (!loggedOnce) {
-            console.log("[Peaks AF] track", i, "no sampleLoader yet, trackPeaksRef keys:", [...trackPeaksRef.current.keys()]);
-          }
-          continue;
-        }
+        if (!trackState?.sampleLoader) continue;
 
         const peaksOption = trackState.sampleLoader.peaks;
         if (peaksOption && !peaksOption.isEmpty()) {
-          if (!loggedOnce) {
-            console.log("[Peaks AF] track", i, "has peaks, rendering");
-          }
           trackState.peaks = peaksOption.unwrap();
           canvasPaintersMap.current.get(i)?.requestUpdate();
         }
       }
-      loggedOnce = true;
     });
 
     return () => animationFrameTerminable.terminate();
-  }, [session.shouldMonitorPeaks, session.sessionId, recordingTracks.length, ensureCanvasPainter]);
+  }, [project, ensureCanvasPainter]);
 
   // Initialize project settings from OpenDAW
   useEffect(() => {
