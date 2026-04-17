@@ -110,7 +110,7 @@ export function useRecordingSession({
     subs.push(
       project.engine.isCountingIn.catchupAndSubscribe((obs) => {
         const countingIn = obs.getValue();
-        if (countingIn && stateRef.current === "idle") {
+        if (countingIn && (stateRef.current === "idle" || stateRef.current === "ready")) {
           transition("counting-in");
         }
       })
@@ -126,7 +126,7 @@ export function useRecordingSession({
       project.engine.isRecording.catchupAndSubscribe((obs) => {
         const recording = obs.getValue();
         const current = stateRef.current;
-        if (recording && (current === "idle" || current === "counting-in")) {
+        if (recording && (current === "idle" || current === "counting-in" || current === "ready")) {
           transition("recording");
         } else if (
           !recording &&

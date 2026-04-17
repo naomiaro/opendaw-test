@@ -36,32 +36,31 @@ export function useRecordingTracks({
     if (!project) return;
     if (maxTracks !== undefined && recordingTracks.length >= maxTracks) return;
 
+    // Create instrument in its own transaction (pointer re-routing guideline:
+    // captureDevices.get() must be in a separate transaction after createInstrument commits)
     let audioUnitBoxRef: AudioUnitBox | null = null;
-
     project.editing.modify(() => {
       const { audioUnitBox } = project.api.createInstrument(InstrumentFactories.Tape);
       audioUnitBoxRef = audioUnitBox;
-
-      if (audioInputDevices.length > 0) {
-        const captureOpt = project.captureDevices.get(audioUnitBox.address.uuid);
-        if (!captureOpt.isEmpty()) {
-          const cap = captureOpt.unwrap();
-          if (cap instanceof CaptureAudio) {
-            cap.captureBox.deviceId.setValue(audioInputDevices[0].deviceId);
-            cap.requestChannels = 1;
-          }
-        }
-      }
     });
 
     if (!audioUnitBoxRef) return;
 
+    // Resolve capture after creation transaction commits
     const captureOpt = project.captureDevices.get(
       (audioUnitBoxRef as AudioUnitBox).address.uuid
     );
     if (captureOpt.isEmpty()) return;
     const capture = captureOpt.unwrap();
     if (!(capture instanceof CaptureAudio)) return;
+
+    // Configure capture in a separate transaction
+    if (audioInputDevices.length > 0) {
+      project.editing.modify(() => {
+        capture.captureBox.deviceId.setValue(audioInputDevices[0].deviceId);
+        capture.requestChannels = 1;
+      });
+    }
 
     project.captureDevices.setArm(capture, false);
 
