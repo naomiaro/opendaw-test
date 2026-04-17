@@ -677,4 +677,4 @@ PeaksPainter.renderPixelStrips(context, peaks, channel, {
 | Loop recording | `allowTakes` preference | `loop-recording-demo.html` |
 | Take management | region `.mute` field | `loop-recording-demo.html` |
 
-**Next Steps**: See [Timeline Rendering](./06-timeline-rendering.md) for rendering waveforms in a timeline context, or [Mixer Groups](./17-mixer-groups.md) for routing recorded tracks through sub-mixes.
+**Next Steps**: See [Timeline & Rendering](./06-timeline-and-rendering.md) for rendering waveforms in a timeline context, or [Mixer Groups](./17-mixer-groups.md) for routing recorded tracks through sub-mixes.

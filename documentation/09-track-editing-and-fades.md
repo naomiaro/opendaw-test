@@ -624,5 +624,5 @@ The demo shows:
 
 - [Timing & Tempo](./02-timing-and-tempo.md)
 - [Box System & Reactivity](./04-box-system-and-reactivity.md)
-- [Timeline Rendering](./06-timeline-rendering.md)
+- [Timeline & Rendering](./06-timeline-and-rendering.md)
 - [Clip Fades](./16-clip-fades.md)

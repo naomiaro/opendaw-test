@@ -42,7 +42,7 @@ Visit http://localhost:5173 to explore the demos.
 - [AnimationFrame](./documentation/03-animation-frame.md) — Observable updates (**required reading**)
 - [Box System](./documentation/04-box-system.md) — Data model and state management
 - [Samples, Peaks & Looping](./documentation/05-samples-peaks-and-looping.md) — Audio loading, waveforms, and region looping
-- [Timeline Rendering](./documentation/06-timeline-rendering.md) — Building timeline UI
+- [Timeline & Rendering](./documentation/06-timeline-and-rendering.md) — Building timeline UI
 - [Complete Example](./documentation/07-putting-it-together.md) — Full working application
 - [Recording Guide](./documentation/08-recording-and-live-peaks.md) — Audio/MIDI recording, takes, monitoring, live peaks
 - [Track Editing & Fades](./documentation/09-track-editing-and-fades.md) — Region editing and fade support

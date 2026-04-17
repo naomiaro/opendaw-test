@@ -82,7 +82,7 @@ Read these documents in order to build up your understanding:
 
 ---
 
-### 6. [Timeline Rendering](./06-timeline-rendering.md)
+### 6. [Timeline & Rendering](./06-timeline-and-rendering.md)
 - Timeline coordinate system
 - Converting PPQN to pixels
 - Rendering grid lines, clips, and playhead
@@ -372,7 +372,7 @@ Found an error or want to improve this documentation? PRs welcome!
 | [AnimationFrame ⚠️](./03-animation-frame.md) | Observable updates | **Required reading** |
 | [Box System & Reactivity](./04-box-system-and-reactivity.md) | Data model & reactive subscriptions | Backend/state management |
 | [Samples, Peaks & Looping](./05-samples-peaks-and-looping.md) | Audio, waveforms & looping | Frontend/canvas developers |
-| [Timeline Rendering](./06-timeline-rendering.md) | UI visualization | Frontend developers |
+| [Timeline & Rendering](./06-timeline-and-rendering.md) | UI visualization | Frontend developers |
 | [Complete Example](./07-putting-it-together.md) | Full application | All developers |
 | [Recording Guide](./08-recording-and-live-peaks.md) | Recording, MIDI, takes, monitoring | Recording/capture features |
 | [Track Editing & Fades](./09-track-editing-and-fades.md) | Region editing & fades | Timeline/editing features |
