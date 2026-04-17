@@ -225,6 +225,9 @@ direct calls handle mute toggles, finalization, and clear.
 ## Build & Verification
 - `npm run build` — Vite handles TypeScript transpilation (no standalone `tsc` available)
 - After SDK upgrades, clear Vite dep cache: `rm -rf node_modules/.vite` (dev server pre-bundles old SDK)
+- SDK upgrades: bump `@opendaw/studio-sdk` version in `package.json` and `npm install` — sub-packages
+  resolve transitively from the registry. NEVER install sub-packages as local `file:` references
+  (breaks Cloudflare CI).
 - Verify SDK exports: check `node_modules/@opendaw/<package>/dist/*.d.ts` before writing imports
 - SDK version lives in `node_modules/@opendaw/studio-sdk/package.json`, NOT in individual sub-packages (studio-core, studio-boxes, etc.) which have their own independent version numbers
 
