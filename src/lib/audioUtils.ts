@@ -38,6 +38,19 @@ export async function probeDeviceChannels(deviceId: string): Promise<1 | 2> {
 }
 
 /**
+ * Enumerates available audio output devices, excluding the browser's
+ * implicit "default" device (which duplicates a real device).
+ * AudioDevices class only handles inputs — use this for outputs.
+ * Note: setSinkId (required to actually use these) is Chrome/Edge only.
+ */
+export async function enumerateOutputDevices(): Promise<MediaDeviceInfo[]> {
+  const allDevices = await navigator.mediaDevices.enumerateDevices();
+  return allDevices.filter(
+    d => d.kind === "audiooutput" && d.deviceId !== "" && d.deviceId !== "default"
+  );
+}
+
+/**
  * Helper function to load and decode audio files
  * @param audioContext - The AudioContext to use for decoding
  * @param url - The URL of the audio file to load

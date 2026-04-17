@@ -9,6 +9,7 @@ import { AnimationFrame } from "@opendaw/lib-dom";
 import { PPQN } from "@opendaw/lib-dsp";
 import { AudioRegionBox, AudioUnitBox } from "@opendaw/studio-boxes";
 import { initializeOpenDAW } from "@/lib/projectSetup";
+import { enumerateOutputDevices } from "@/lib/audioUtils";
 import { useEnginePreference } from "@/hooks/useEnginePreference";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
@@ -421,10 +422,7 @@ const App: React.FC = () => {
       await AudioDevices.updateInputList();
       setAudioInputDevices([...AudioDevices.inputs]);
 
-      const allDevices = await navigator.mediaDevices.enumerateDevices();
-      setAudioOutputDevices(allDevices.filter(d =>
-        d.kind === "audiooutput" && d.deviceId !== "" && d.deviceId !== "default"
-      ));
+      setAudioOutputDevices(await enumerateOutputDevices());
 
       setHasPermission(true);
     } catch (error) {

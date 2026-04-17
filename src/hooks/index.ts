@@ -8,3 +8,5 @@ export { useAudioExport } from "./useAudioExport";
 export type { StemConfigBuilder } from "./useAudioExport";
 export { usePlaybackPosition } from "./usePlaybackPosition";
 export { useTransportControls } from "./useTransportControls";
+export { useRecordingSession } from "./useRecordingSession";
+export type { RecordingState, RecordingSessionResult } from "./useRecordingSession";
