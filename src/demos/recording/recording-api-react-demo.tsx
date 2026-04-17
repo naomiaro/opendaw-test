@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
+import { UUID } from "@opendaw/lib-std";
 import type { Terminable } from "@opendaw/lib-std";
 import { Project, PeaksWriter } from "@opendaw/studio-core";
 import type { SampleLoader } from "@opendaw/studio-adapters";
@@ -212,16 +213,18 @@ const App: React.FC = () => {
   // Reactively discover recording regions via pointerHub subscriptions.
   // When the SDK creates a region during recording, the subscription fires
   // immediately — no AnimationFrame polling needed for structural discovery.
+  // Regions are matched to tracks via the pointer chain (regionBox → TrackBox →
+  // AudioUnitBox → UUID), not by index, to handle multiple recording cycles.
   useEffect(() => {
     if (!project || !session.shouldMonitorPeaks || !audioContext) return;
 
     const subs: Terminable[] = [];
-    // Read from ref to avoid tearing down subscriptions when tracks array changes
     const tracks = recordingTracksRef.current;
 
+    // Build a lookup from audioUnitBox UUID → track index
+    const trackIndexByUuid = new Map<string, number>();
     for (let idx = 0; idx < tracks.length; idx++) {
-      const track = tracks[idx];
-
+      trackIndexByUuid.set(tracks[idx].id, idx);
       if (!trackPeaksRef.current.has(idx)) {
         trackPeaksRef.current.set(idx, {
           sampleLoader: null,
@@ -229,7 +232,10 @@ const App: React.FC = () => {
           waveformOffsetFrames: 0
         });
       }
+    }
 
+    // Subscribe to regions created on any track under each audioUnit
+    for (const track of tracks) {
       const trackSub = track.capture.audioUnitBox.tracks.pointerHub.catchupAndSubscribe({
         onAdded: (pointer) => {
           const trackBox = pointer.box;
@@ -239,6 +245,18 @@ const App: React.FC = () => {
               const regionBox = regionPointer.box as AudioRegionBox;
               const label = regionBox.label.getValue();
               if (label !== "Recording" && !label.startsWith("Take ")) return;
+
+              // Resolve which recording track this region belongs to:
+              // regionBox → TrackBox → AudioUnitBox → UUID
+              const regionTrackVertex = regionBox.regions.targetVertex;
+              if (regionTrackVertex.isEmpty()) return;
+              const ownerTrackBox = regionTrackVertex.unwrap().box;
+              const audioUnitVertex = (ownerTrackBox as any).tracks?.targetVertex;
+              if (!audioUnitVertex || audioUnitVertex.isEmpty()) return;
+              const audioUnitUuid = UUID.toString(audioUnitVertex.unwrap().box.address.uuid);
+
+              const idx = trackIndexByUuid.get(audioUnitUuid);
+              if (idx === undefined) return;
 
               const trackState = trackPeaksRef.current.get(idx);
               if (!trackState || trackState.sampleLoader) return;
