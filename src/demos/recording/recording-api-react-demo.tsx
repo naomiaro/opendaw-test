@@ -217,7 +217,6 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!project || !audioContext || recordingTracks.length === 0) return;
 
-    console.log(`[Peaks] effect starting for ${recordingTracks.length} tracks`);
     const subs: Terminable[] = [];
     const allAudioUnits = project.rootBoxAdapter.audioUnits.adapters();
 
@@ -226,25 +225,15 @@ const App: React.FC = () => {
       const audioUnitAdapter = allAudioUnits.find(
         (au) => au.box === track.capture.audioUnitBox
       );
-      if (!audioUnitAdapter) {
-        console.log(`[Peaks] track ${i}: no audioUnitAdapter found`);
-        continue;
-      }
+      if (!audioUnitAdapter) continue;
 
       const tracksSub = audioUnitAdapter.tracks.catchupAndSubscribe({
         onAdd: (trackAdapter) => {
-          console.log(`[Peaks] track ${i}: TrackBox onAdd`);
           const regionsSub = trackAdapter.regions.catchupAndSubscribe({
             onAdded: (regionAdapter) => {
-              const isAudio = regionAdapter.isAudioRegion();
-              const label = isAudio ? regionAdapter.label : "non-audio";
-              console.log(`[Peaks] track ${i}: region onAdded label="${label}" isAudio=${isAudio}`);
-              if (!isAudio) return;
+              if (!regionAdapter.isAudioRegion()) return;
+              const label = regionAdapter.label;
               if (label !== "Recording" && !label.startsWith("Take ")) return;
-
-              const hasEntry = trackPeaksRef.current.has(i);
-              const existingLoader = trackPeaksRef.current.get(i)?.sampleLoader;
-              console.log(`[Peaks] track ${i}: hasEntry=${hasEntry} existingLoader=${!!existingLoader}`);
 
               if (!trackPeaksRef.current.has(i)) {
                 trackPeaksRef.current.set(i, {
@@ -254,31 +243,24 @@ const App: React.FC = () => {
                 });
               }
               const trackState = trackPeaksRef.current.get(i)!;
-              if (trackState.sampleLoader) {
-                console.log(`[Peaks] track ${i}: SKIPPED — sampleLoader already set`);
-                return;
-              }
+              if (trackState.sampleLoader) return;
 
               const waveformOffsetSec = regionAdapter.waveformOffset.getValue();
               if (waveformOffsetSec > 0) {
                 trackState.waveformOffsetFrames = Math.round(waveformOffsetSec * audioContext.sampleRate);
               }
 
+              // Adapter resolves sampleLoader internally via file → getOrCreateLoader()
               const fileAdapter = regionAdapter.file;
               const loader = fileAdapter.getOrCreateLoader();
               trackState.sampleLoader = loader;
               session.registerLoader(loader);
-              console.log(`[Peaks] track ${i}: sampleLoader SET, loaderState=${loader.state.type}`);
             },
-            onRemoved: () => {
-              console.log(`[Peaks] track ${i}: region onRemoved`);
-            },
+            onRemoved: () => {},
           });
           subs.push(regionsSub);
         },
-        onRemove: () => {
-          console.log(`[Peaks] track ${i}: TrackBox onRemove`);
-        },
+        onRemove: () => {},
         onReorder: () => {},
       });
       subs.push(tracksSub);
@@ -304,7 +286,6 @@ const App: React.FC = () => {
     });
 
     return () => {
-      console.log(`[Peaks] effect cleanup`);
       animationFrameTerminable.terminate();
       for (const sub of subs) {
         sub.terminate();
