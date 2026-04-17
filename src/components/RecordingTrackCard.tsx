@@ -110,7 +110,10 @@ export const RecordingTrackCard: React.FC<RecordingTrackCardProps> = ({
     const deviceId = monitorOutputDeviceId === "default"
       ? Option.None
       : Option.wrap(monitorOutputDeviceId);
-    capture.setMonitorOutputDevice(deviceId);
+    capture.setMonitorOutputDevice(deviceId).catch(() => {
+      // Device unavailable (disconnected, permissions) — revert to system default
+      setMonitorOutputDeviceId("default");
+    });
   }, [capture, monitorOutputDeviceId]);
 
   const handleToggleArm = useCallback(() => {

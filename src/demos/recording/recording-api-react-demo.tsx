@@ -366,77 +366,89 @@ const App: React.FC = () => {
   const handleStartRecording = useCallback(async () => {
     if (!project || !audioContext) return;
 
-    // Resume AudioContext if needed
-    if (audioContext.state === "suspended") {
-      await audioContext.resume();
-    }
-
-    // Request microphone permission if not already granted
-    if (!hasPermission) {
-      try {
-        await requestPermission();
-      } catch (error) {
-        console.error("Microphone permission error:", error);
-        return;
+    try {
+      // Resume AudioContext if needed
+      if (audioContext.state === "suspended") {
+        await audioContext.resume();
       }
-    }
 
-    // Delete any previous recording regions before starting a new one
-    project.editing.modify(() => {
-      const allBoxes = project.boxGraph.boxes();
-      for (const box of allBoxes) {
-        if (box.name === "AudioRegionBox") {
-          const regionBox = box as AudioRegionBox;
-          const label = regionBox.label.getValue();
-          if (label === "Recording" || label.startsWith("Take ")) {
-            regionBox.delete();
+      // Request microphone permission if not already granted
+      if (!hasPermission) {
+        await requestPermission();
+      }
+
+      // Delete any previous recording regions before starting a new one
+      project.editing.modify(() => {
+        const allBoxes = project.boxGraph.boxes();
+        for (const box of allBoxes) {
+          if (box.name === "AudioRegionBox") {
+            const regionBox = box as AudioRegionBox;
+            const label = regionBox.label.getValue();
+            if (label === "Recording" || label.startsWith("Take ")) {
+              regionBox.delete();
+            }
           }
         }
+      });
+
+      // Reset peaks state for all tracks
+      trackPeaksRef.current.clear();
+      session.resetLoaders();
+
+      // Cleanup old painters
+      for (const [, painter] of canvasPaintersMap.current) {
+        painter.terminate();
       }
-    });
+      canvasPaintersMap.current.clear();
 
-    // Reset peaks state for all tracks
-    trackPeaksRef.current.clear();
-    session.resetLoaders();
-
-    // Cleanup old painters
-    for (const [, painter] of canvasPaintersMap.current) {
-      painter.terminate();
+      project.engine.setPosition(0);
+      project.startRecording(useCountIn);
+    } catch (error) {
+      console.error("Failed to start recording:", error);
     }
-    canvasPaintersMap.current.clear();
-
-    project.engine.setPosition(0);
-    project.startRecording(useCountIn);
   }, [project, audioContext, useCountIn, hasPermission, requestPermission, session.resetLoaders]);
 
   const handlePlayRecording = useCallback(async () => {
     if (!project || !audioContext) return;
 
-    if (audioContext.state === "suspended") {
-      await audioContext.resume();
-    }
-
     // Save user's metronome preference before disabling
     userMetronomePreferenceRef.current = metronomeEnabled ?? false;
-    setMetronomeEnabled(false);
 
-    // Wait for audio to be fully loaded before playing
-    const isLoaded = await project.engine.queryLoadingComplete();
-    if (!isLoaded) {
-      await new Promise<void>(resolve => {
-        const checkLoaded = async () => {
-          if (await project.engine.queryLoadingComplete()) {
-            resolve();
-          } else {
-            requestAnimationFrame(checkLoaded);
-          }
-        };
-        checkLoaded();
-      });
+    try {
+      if (audioContext.state === "suspended") {
+        await audioContext.resume();
+      }
+
+      setMetronomeEnabled(false);
+
+      // Wait for audio to be fully loaded before playing (with timeout)
+      const isLoaded = await project.engine.queryLoadingComplete();
+      if (!isLoaded) {
+        const LOADING_TIMEOUT_MS = 10_000;
+        await new Promise<void>((resolve, reject) => {
+          const timeout = setTimeout(
+            () => reject(new Error("Audio loading timed out")),
+            LOADING_TIMEOUT_MS
+          );
+          const checkLoaded = async () => {
+            if (await project.engine.queryLoadingComplete()) {
+              clearTimeout(timeout);
+              resolve();
+            } else {
+              requestAnimationFrame(checkLoaded);
+            }
+          };
+          checkLoaded();
+        });
+      }
+
+      project.engine.stop(true);
+      project.engine.play();
+    } catch (error) {
+      console.error("Failed to start playback:", error);
+      // Restore metronome preference on failure
+      setMetronomeEnabled(userMetronomePreferenceRef.current);
     }
-
-    project.engine.stop(true);
-    project.engine.play();
   }, [project, audioContext, metronomeEnabled, setMetronomeEnabled]);
 
   const handleStop = useCallback(() => {

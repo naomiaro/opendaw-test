@@ -24,19 +24,21 @@ export interface RecordingSessionResult {
   registerLoader: (loader: SampleLoader) => void;
   /** Reset loaders before starting a new recording. */
   resetLoaders: () => void;
-  signalPeaksReady: () => void;
 }
+
+const FINALIZATION_TIMEOUT_MS = 30_000;
 
 /**
  * Manages the recording/playback lifecycle as an explicit state machine.
  *
- * States: idle → counting-in → recording → finalizing → ready → playing → ready
+ * States: idle → counting-in → recording → finalizing → ready ⇄ playing
+ *         ready/idle → counting-in/recording (re-record)
  *
  * Loaders are registered eagerly during recording via registerLoader().
  * Each loader is subscribed immediately so the "loaded" event is never missed.
  * When isRecording fires false, the hook checks if all registered loaders
  * are already loaded — if so, transitions directly to "ready". Otherwise
- * waits for the remaining subscriptions to fire.
+ * waits for the remaining subscriptions to fire, with a 30s safety timeout.
  *
  * The hook does NOT call engine.stop(true) during finalization — the SDK
  * handles this internally. stop(true) is only called for the count-in
@@ -53,10 +55,16 @@ export function useRecordingSession({
   const loadersRef = useRef<SampleLoader[]>([]);
   const loaderSubsRef = useRef<Terminable[]>([]);
   const loadedCountRef = useRef(0);
+  const finalizationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function transition(next: RecordingState) {
     stateRef.current = next;
     setState(next);
+    // Clear finalization timeout when leaving "finalizing"
+    if (next !== "finalizing" && finalizationTimerRef.current !== null) {
+      clearTimeout(finalizationTimerRef.current);
+      finalizationTimerRef.current = null;
+    }
   }
 
   function checkFinalizationComplete() {
@@ -69,24 +77,31 @@ export function useRecordingSession({
     }
   }
 
+  function handleLoaderDone(sub: Terminable) {
+    sub.terminate();
+    loaderSubsRef.current = loaderSubsRef.current.filter((s) => s !== sub);
+    loadedCountRef.current++;
+    checkFinalizationComplete();
+  }
+
   // Register a loader eagerly during recording. Subscribes immediately
   // so the "loaded" event can never be missed.
   const registerLoader = useCallback((loader: SampleLoader) => {
     if (loadersRef.current.includes(loader)) return;
     loadersRef.current.push(loader);
 
-    if (loader.state.type === "loaded") {
+    if (loader.state.type === "loaded" || loader.state.type === "error") {
       loadedCountRef.current++;
       checkFinalizationComplete();
       return;
     }
 
     const sub = loader.subscribe((loaderState: SampleLoaderState) => {
-      if (loaderState.type === "loaded") {
-        sub.terminate();
-        loaderSubsRef.current = loaderSubsRef.current.filter((s) => s !== sub);
-        loadedCountRef.current++;
-        checkFinalizationComplete();
+      if (loaderState.type === "loaded" || loaderState.type === "error") {
+        if (loaderState.type === "error") {
+          console.error("[RecordingSession] sample loader failed during finalization");
+        }
+        handleLoaderDone(sub);
       }
     });
     loaderSubsRef.current.push(sub);
@@ -99,7 +114,23 @@ export function useRecordingSession({
     loaderSubsRef.current = [];
     loadersRef.current = [];
     loadedCountRef.current = 0;
+    if (finalizationTimerRef.current !== null) {
+      clearTimeout(finalizationTimerRef.current);
+      finalizationTimerRef.current = null;
+    }
   }, []);
+
+  function startFinalizationTimeout() {
+    if (finalizationTimerRef.current !== null) return;
+    finalizationTimerRef.current = setTimeout(() => {
+      if (stateRef.current === "finalizing") {
+        console.warn(
+          `[RecordingSession] finalization timed out after ${FINALIZATION_TIMEOUT_MS / 1000}s — forcing ready`
+        );
+        transition("ready");
+      }
+    }, FINALIZATION_TIMEOUT_MS);
+  }
 
   // Subscribe to engine state — depends only on [project]
   useEffect(() => {
@@ -138,6 +169,7 @@ export function useRecordingSession({
             transition("idle");
           } else {
             transition("finalizing");
+            startFinalizationTimeout();
             // Loaders were already subscribed eagerly via registerLoader().
             // Check if they all finished while we were still recording.
             checkFinalizationComplete();
@@ -165,12 +197,6 @@ export function useRecordingSession({
     };
   }, [project, resetLoaders]);
 
-  const signalPeaksReady = useCallback(() => {
-    if (stateRef.current === "finalizing") {
-      transition("ready");
-    }
-  }, []);
-
   const shouldMonitorPeaks =
     state === "counting-in" || state === "recording" || state === "finalizing";
 
@@ -180,6 +206,5 @@ export function useRecordingSession({
     shouldMonitorPeaks,
     registerLoader,
     resetLoaders,
-    signalPeaksReady,
   };
 }

@@ -6,6 +6,7 @@ export interface AudioDevicePermissionResult {
   audioInputDevices: readonly MediaDeviceInfo[];
   audioOutputDevices: readonly MediaDeviceInfo[];
   hasPermission: boolean;
+  /** Requests mic permission and enumerates devices. Throws on permission denial. */
   requestPermission: () => Promise<void>;
 }
 
@@ -13,6 +14,9 @@ export interface AudioDevicePermissionResult {
  * Manages microphone permission and audio device enumeration.
  * Enumerates both input devices (via AudioDevices) and output
  * devices (via enumerateOutputDevices) after permission is granted.
+ *
+ * Throws on permission denial so callers can handle it (e.g., show an error).
+ * Output device enumeration failures are non-fatal — permission is still granted.
  */
 export function useAudioDevicePermission(): AudioDevicePermissionResult {
   const [audioInputDevices, setAudioInputDevices] = useState<MediaDeviceInfo[]>([]);
@@ -20,11 +24,18 @@ export function useAudioDevicePermission(): AudioDevicePermissionResult {
   const [hasPermission, setHasPermission] = useState(false);
 
   const requestPermission = useCallback(async () => {
+    // Let permission errors propagate to the caller for user-facing feedback
     await AudioDevices.requestPermission();
     await AudioDevices.updateInputList();
     setAudioInputDevices([...AudioDevices.inputs]);
-    setAudioOutputDevices(await enumerateOutputDevices());
     setHasPermission(true);
+
+    // Output device enumeration is non-fatal — setSinkId is Chrome/Edge only
+    try {
+      setAudioOutputDevices(await enumerateOutputDevices());
+    } catch {
+      // Fails in insecure contexts or unsupported browsers — input devices still work
+    }
   }, []);
 
   return { audioInputDevices, audioOutputDevices, hasPermission, requestPermission };
