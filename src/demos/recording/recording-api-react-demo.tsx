@@ -2,18 +2,20 @@
 
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { UUID } from "@opendaw/lib-std";
 import type { Terminable } from "@opendaw/lib-std";
-import { Project, AudioDevices, CaptureAudio, PeaksWriter } from "@opendaw/studio-core";
+import { Project, PeaksWriter } from "@opendaw/studio-core";
 import type { SampleLoader } from "@opendaw/studio-adapters";
-import { InstrumentFactories } from "@opendaw/studio-adapters";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import type { Peaks } from "@opendaw/lib-fusion";
 import { PeaksPainter } from "@opendaw/lib-fusion";
-import { AudioRegionBox, AudioUnitBox } from "@opendaw/studio-boxes";
+import { AudioRegionBox } from "@opendaw/studio-boxes";
 import { CanvasPainter } from "@/lib/CanvasPainter";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { useEnginePreference, CountInBarsValue, MetronomeBeatSubDivisionValue } from "@/hooks/useEnginePreference";
+import { useRecordingSession } from "@/hooks/useRecordingSession";
+import type { RecordingState } from "@/hooks/useRecordingSession";
+import { useAudioDevicePermission } from "@/hooks/useAudioDevicePermission";
+import { useRecordingTracks } from "@/hooks/useRecordingTracks";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
@@ -21,7 +23,6 @@ import { BpmControl } from "@/components/BpmControl";
 import { TimeSignatureControl } from "@/components/TimeSignatureControl";
 import { RecordingPreferences } from "@/components/RecordingPreferences";
 import { RecordingTrackCard } from "@/components/RecordingTrackCard";
-import type { RecordingTrack } from "@/components/RecordingTrackCard";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
@@ -47,6 +48,17 @@ interface TrackPeaksState {
   waveformOffsetFrames: number;
 }
 
+function getStatusMessage(state: RecordingState, countInBeats: number): string {
+  switch (state) {
+    case "idle": return "Click Record to start";
+    case "counting-in": return `Count-in: ${countInBeats} beats remaining`;
+    case "recording": return "Recording...";
+    case "finalizing": return "Processing...";
+    case "ready": return "Recording ready to play";
+    case "playing": return "Playing...";
+  }
+}
+
 /**
  * Multi-Device Recording Demo - Supports multiple simultaneous recording tracks
  */
@@ -55,12 +67,8 @@ const App: React.FC = () => {
   const [project, setProject] = useState<Project | null>(null);
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
 
-  // Recording state
-  const [isRecording, setIsRecording] = useState(false);
-  const [isCountingIn, setIsCountingIn] = useState(false);
-  const [countInBeatsRemaining, setCountInBeatsRemaining] = useState(0);
-  const [isPlayingBack, setIsPlayingBack] = useState(false);
-  const [hasPeaks, setHasPeaks] = useState(false);
+  // Recording session state machine
+  const session = useRecordingSession({ project });
 
   // Settings
   const [useCountIn, setUseCountIn] = useState(false);
@@ -86,14 +94,15 @@ const App: React.FC = () => {
     ["recording", "countInBars"]
   );
 
-  // Audio input configuration — multi-track
-  const [audioInputDevices, setAudioInputDevices] = useState<MediaDeviceInfo[]>([]);
-  const [hasPermission, setHasPermission] = useState(false);
-  const [recordingTracks, setRecordingTracks] = useState<RecordingTrack[]>([]);
+  // Audio devices and recording tracks
+  const { audioInputDevices, audioOutputDevices, hasPermission, requestPermission } =
+    useAudioDevicePermission();
+  const { recordingTracks, armedCount, addTrack, removeTrack, handleArmedChange } =
+    useRecordingTracks({ project, audioInputDevices });
 
-  // Status messages
-  const [recordStatus, setRecordStatus] = useState("Click Record to start");
-  const [playbackStatus, setPlaybackStatus] = useState("No recording available");
+  // Keep ref in sync to avoid tearing down pointerHub subscriptions on track changes
+  const recordingTracksRef = useRef(recordingTracks);
+  recordingTracksRef.current = recordingTracks;
 
   // Per-track canvas refs — keyed by track index
   const canvasRefsMap = useRef<Map<number, HTMLCanvasElement>>(new Map());
@@ -102,15 +111,15 @@ const App: React.FC = () => {
   // Per-track peaks state — keyed by track index
   const trackPeaksRef = useRef<Map<number, TrackPeaksState>>(new Map());
 
-  // Track which sample loaders we've found (for finalization after stop)
-  const recordingSampleLoadersRef = useRef<SampleLoader[]>([]);
-  // Track finalization subscriptions for cleanup on unmount
-  const finalizationSubsRef = useRef<Terminable[]>([]);
-
   const userMetronomePreferenceRef = useRef<boolean>(false);
 
-  // Reactive armed count — updated via callback from RecordingTrackCard
-  const [armedCount, setArmedCount] = useState(0);
+
+  // Derived UI state from session
+  const isActive = session.state !== "idle" && session.state !== "ready";
+  const canRecord = (session.state === "idle" || session.state === "ready") && armedCount > 0;
+  const canPlay = session.state === "ready";
+  const canStop = session.state === "recording" || session.state === "counting-in" || session.state === "playing";
+  const statusMessage = getStatusMessage(session.state, session.countInBeatsRemaining);
 
   // Canvas ref callback for a given track index
   const getCanvasRef = useCallback((trackIndex: number) => {
@@ -179,217 +188,110 @@ const App: React.FC = () => {
     canvasPaintersMap.current.set(trackIndex, painter);
   }, []);
 
-  // Recompute armed count when a track's armed state changes
-  const handleArmedChange = useCallback(() => {
-    setArmedCount(
-      recordingTracks.filter(t => t.capture.armed.getValue()).length
-    );
-  }, [recordingTracks]);
-
-  // Cleanup finalization subscriptions on unmount
+  // Set up timeline loop area when recording finishes (transition to "ready")
   useEffect(() => {
+    if (!project || session.state !== "ready") return;
+
+    const allBoxes = project.boxGraph.boxes();
+    for (const box of allBoxes) {
+      if (box.name === "AudioRegionBox") {
+        const regionBox = box as AudioRegionBox;
+        const label = regionBox.label.getValue();
+        if (label === "Recording" || label.startsWith("Take ")) {
+          const duration = regionBox.duration.getValue();
+          project.editing.modify(() => {
+            project.timelineBox.loopArea.from.setValue(0);
+            project.timelineBox.loopArea.to.setValue(duration);
+            project.timelineBox.loopArea.enabled.setValue(false);
+          });
+          break;
+        }
+      }
+    }
+  }, [project, session.state]);
+
+  // Discover recording regions via adapter layer subscriptions.
+  // Uses AudioUnitBoxAdapter.tracks.catchupAndSubscribe → TrackRegions.catchupAndSubscribe
+  // for typed, reactive region discovery. Re-subscribes when tracks change.
+  // Peaks rendering is done by CanvasPainter (via AnimationFrame internally).
+  useEffect(() => {
+    if (!project || !audioContext || recordingTracks.length === 0) return;
+
+    const subs: Terminable[] = [];
+    const allAudioUnits = project.rootBoxAdapter.audioUnits.adapters();
+
+    for (let i = 0; i < recordingTracks.length; i++) {
+      const track = recordingTracks[i];
+      const audioUnitAdapter = allAudioUnits.find(
+        (au) => au.box === track.capture.audioUnitBox
+      );
+      if (!audioUnitAdapter) continue;
+
+      const tracksSub = audioUnitAdapter.tracks.catchupAndSubscribe({
+        onAdd: (trackAdapter) => {
+          const regionsSub = trackAdapter.regions.catchupAndSubscribe({
+            onAdded: (regionAdapter) => {
+              if (!regionAdapter.isAudioRegion()) return;
+              const label = regionAdapter.label;
+              if (label !== "Recording" && !label.startsWith("Take ")) return;
+
+              if (!trackPeaksRef.current.has(i)) {
+                trackPeaksRef.current.set(i, {
+                  sampleLoader: null,
+                  peaks: null,
+                  waveformOffsetFrames: 0
+                });
+              }
+              const trackState = trackPeaksRef.current.get(i)!;
+              if (trackState.sampleLoader) return;
+
+              const waveformOffsetSec = regionAdapter.waveformOffset.getValue();
+              if (waveformOffsetSec > 0) {
+                trackState.waveformOffsetFrames = Math.round(waveformOffsetSec * audioContext.sampleRate);
+              }
+
+              // Adapter resolves sampleLoader internally via file → getOrCreateLoader()
+              const fileAdapter = regionAdapter.file;
+              const loader = fileAdapter.getOrCreateLoader();
+              trackState.sampleLoader = loader;
+              session.registerLoader(loader);
+            },
+            onRemoved: () => {},
+          });
+          subs.push(regionsSub);
+        },
+        onRemove: () => {},
+        onReorder: () => {},
+      });
+      subs.push(tracksSub);
+    }
+
+    // AnimationFrame for continuous peaks rendering — no shouldMonitorPeaks guard.
+    // Runs every frame; when no sampleLoaders exist it's a no-op. This avoids
+    // React batching issues where the ref stays false across recording cycles.
+    const animationFrameTerminable = AnimationFrame.add(() => {
+      const tracks = recordingTracksRef.current;
+      for (let i = 0; i < tracks.length; i++) {
+        ensureCanvasPainter(i);
+
+        const trackState = trackPeaksRef.current.get(i);
+        if (!trackState?.sampleLoader) continue;
+
+        const peaksOption = trackState.sampleLoader.peaks;
+        if (peaksOption && !peaksOption.isEmpty()) {
+          trackState.peaks = peaksOption.unwrap();
+          canvasPaintersMap.current.get(i)?.requestUpdate();
+        }
+      }
+    });
+
     return () => {
-      for (const sub of finalizationSubsRef.current) {
+      animationFrameTerminable.terminate();
+      for (const sub of subs) {
         sub.terminate();
       }
-      finalizationSubsRef.current = [];
     };
-  }, []);
-
-  // Subscribe to engine state
-  useEffect(() => {
-    if (!project) return;
-
-    const countingInSub = project.engine.isCountingIn.catchupAndSubscribe(obs => {
-      const counting = obs.getValue();
-      setIsCountingIn(counting);
-      if (counting) {
-        setRecordStatus("Count-in...");
-      } else if (project.engine.isRecording.getValue()) {
-        setRecordStatus("Recording...");
-      }
-    });
-
-    const beatsRemainingSub = project.engine.countInBeatsRemaining.catchupAndSubscribe(obs => {
-      setCountInBeatsRemaining(Math.ceil(obs.getValue()));
-    });
-
-    const recordingSub = project.engine.isRecording.catchupAndSubscribe(obs => {
-      const recording = obs.getValue();
-      setIsRecording(recording);
-      if (recording && !project.engine.isCountingIn.getValue()) {
-        setRecordStatus("Recording...");
-      } else if (!recording) {
-        setRecordStatus("Recording stopped");
-
-        // When recording stops, set up the timeline for playback
-        const allBoxes = project.boxGraph.boxes();
-        for (const box of allBoxes) {
-          if (box.name === "AudioRegionBox") {
-            const regionBox = box as AudioRegionBox;
-            const label = regionBox.label.getValue();
-            if (label === "Recording" || label.startsWith("Take ")) {
-              const duration = regionBox.duration.getValue();
-              console.log("[Recording] Setting timeline loop area to:", duration);
-              project.editing.modify(() => {
-                project.timelineBox.loopArea.from.setValue(0);
-                project.timelineBox.loopArea.to.setValue(duration);
-                project.timelineBox.loopArea.enabled.setValue(false);
-              });
-              break;
-            }
-          }
-        }
-      }
-    });
-
-    const playingSub = project.engine.isPlaying.catchupAndSubscribe(obs => {
-      const playing = obs.getValue();
-      const recording = project.engine.isRecording.getValue();
-
-      if (!recording) {
-        setIsPlayingBack(playing);
-        if (playing) {
-          setPlaybackStatus("Playing...");
-        } else if (hasPeaks) {
-          setPlaybackStatus("Playback stopped");
-        } else {
-          setPlaybackStatus("No recording available");
-        }
-      }
-    });
-
-    return () => {
-      countingInSub.terminate();
-      beatsRemainingSub.terminate();
-      recordingSub.terminate();
-      playingSub.terminate();
-    };
-  }, [project, hasPeaks]);
-
-  // Track if we should be monitoring peaks (true from recording start until final peaks received)
-  const [shouldMonitorPeaks, setShouldMonitorPeaks] = useState(false);
-
-  // Start monitoring when recording starts
-  useEffect(() => {
-    if (isRecording && !shouldMonitorPeaks) {
-      setShouldMonitorPeaks(true);
-    }
-  }, [isRecording, shouldMonitorPeaks]);
-
-  // Stop monitoring when we have final peaks
-  useEffect(() => {
-    if (hasPeaks && shouldMonitorPeaks) {
-      setShouldMonitorPeaks(false);
-    }
-  }, [hasPeaks, shouldMonitorPeaks]);
-
-  // Monitor peaks for ALL recording tracks
-  useEffect(() => {
-    if (!project || !shouldMonitorPeaks || !audioContext) return;
-
-    let animationFrameTerminable: Terminable | null = null;
-
-    // Initialize per-track peaks state for each canvas
-    for (let i = 0; i < recordingTracks.length; i++) {
-      if (!trackPeaksRef.current.has(i)) {
-        trackPeaksRef.current.set(i, {
-          sampleLoader: null,
-          peaks: null,
-          waveformOffsetFrames: 0
-        });
-      }
-    }
-
-    let allFinalPeaksReceived = false;
-
-    animationFrameTerminable = AnimationFrame.add(() => {
-      // Ensure painters exist for all track canvases
-      for (let i = 0; i < recordingTracks.length; i++) {
-        ensureCanvasPainter(i);
-      }
-
-      // Find recording regions and match them to tracks
-      const boxes = project.boxGraph.boxes();
-      const recordingRegions: AudioRegionBox[] = [];
-
-      for (const box of boxes) {
-        if (box.name !== "AudioRegionBox") continue;
-        const label = (box as AudioRegionBox).label.getValue();
-        if (label === "Recording" || label.startsWith("Take ")) {
-          recordingRegions.push(box as AudioRegionBox);
-        }
-      }
-
-      // Assign regions to tracks in order (one region per track)
-      let finalCount = 0;
-      let totalTracked = 0;
-
-      for (let i = 0; i < recordingTracks.length; i++) {
-        const trackState = trackPeaksRef.current.get(i);
-        if (!trackState) continue;
-
-        // Find the region for this track index
-        const region = recordingRegions[i];
-        if (!region) continue;
-
-        // Get or create sample loader for this track
-        if (!trackState.sampleLoader) {
-          const waveformOffsetSec = region.waveformOffset.getValue();
-          if (waveformOffsetSec > 0) {
-            trackState.waveformOffsetFrames = Math.round(waveformOffsetSec * audioContext.sampleRate);
-          }
-
-          const fileVertexOption = region.file.targetVertex;
-          if (!fileVertexOption.isEmpty()) {
-            const fileVertex = fileVertexOption.unwrap();
-            const uuid = fileVertex.address.uuid;
-            trackState.sampleLoader = project.sampleManager.getOrCreate(uuid);
-
-            // Track for finalization
-            if (!recordingSampleLoadersRef.current.includes(trackState.sampleLoader)) {
-              recordingSampleLoadersRef.current.push(trackState.sampleLoader);
-            }
-          }
-        }
-
-        // Monitor the sample loader for peak updates
-        if (trackState.sampleLoader) {
-          totalTracked++;
-          const peaksOption = trackState.sampleLoader.peaks;
-          if (peaksOption && !peaksOption.isEmpty()) {
-            const peaks = peaksOption.unwrap();
-            const isPeaksWriter = "dataIndex" in peaks;
-
-            trackState.peaks = peaks;
-            canvasPaintersMap.current.get(i)?.requestUpdate();
-
-            if (!isPeaksWriter) {
-              finalCount++;
-            }
-          }
-        }
-      }
-
-      // All tracked loaders have final peaks
-      if (totalTracked > 0 && finalCount === totalTracked && !allFinalPeaksReceived) {
-        allFinalPeaksReceived = true;
-        setHasPeaks(true);
-        setPlaybackStatus("Recording ready to play");
-        console.log("[Recording] Final peaks received for all tracks, playback ready");
-        if (animationFrameTerminable) {
-          animationFrameTerminable.terminate();
-          animationFrameTerminable = null;
-        }
-      }
-    });
-
-    return () => {
-      if (animationFrameTerminable) {
-        animationFrameTerminable.terminate();
-      }
-    };
-  }, [project, shouldMonitorPeaks, audioContext, recordingTracks.length, ensureCanvasPainter]);
+  }, [project, audioContext, recordingTracks, ensureCanvasPainter, session.registerLoader]);
 
   // Initialize project settings from OpenDAW
   useEffect(() => {
@@ -430,19 +332,6 @@ const App: React.FC = () => {
     });
   }, [project, timeSignatureNumerator, timeSignatureDenominator]);
 
-  // Request audio permission and enumerate devices
-  const handleRequestPermission = useCallback(async () => {
-    try {
-      await AudioDevices.requestPermission();
-      await AudioDevices.updateInputList();
-      const inputs = AudioDevices.inputs;
-      setAudioInputDevices([...inputs]);
-      setHasPermission(true);
-    } catch (error) {
-      console.error("Failed to get audio devices:", error);
-    }
-  }, []);
-
   // Initialize OpenDAW
   useEffect(() => {
     let mounted = true;
@@ -474,110 +363,37 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Add a new recording track
-  const handleAddTrack = useCallback(() => {
-    if (!project) return;
-
-    // Create Tape instrument and configure capture in one transaction.
-    // editing.modify() doesn't forward return values, so we capture via outer variable.
-    let audioUnitBoxRef: AudioUnitBox | null = null;
-
-    project.editing.modify(() => {
-      const { audioUnitBox } = project.api.createInstrument(InstrumentFactories.Tape);
-      audioUnitBoxRef = audioUnitBox;
-
-      if (audioInputDevices.length > 0) {
-        const captureOpt = project.captureDevices.get(audioUnitBox.address.uuid);
-        if (!captureOpt.isEmpty()) {
-          const cap = captureOpt.unwrap();
-          if (cap instanceof CaptureAudio) {
-            cap.captureBox.deviceId.setValue(audioInputDevices[0].deviceId);
-            cap.requestChannels = 1; // mono by default
-          }
-        }
-      }
-    });
-
-    if (!audioUnitBoxRef) return;
-
-    // Get capture device after transaction commits
-    const captureOpt = project.captureDevices.get(audioUnitBoxRef.address.uuid);
-    if (captureOpt.isEmpty()) return;
-    const capture = captureOpt.unwrap();
-    if (!(capture instanceof CaptureAudio)) return;
-
-    // Arm non-exclusively so other tracks stay armed
-    project.captureDevices.setArm(capture, false);
-
-    setRecordingTracks(prev => [...prev, {
-      id: UUID.toString(audioUnitBoxRef.address.uuid),
-      capture
-    }]);
-  }, [project, audioInputDevices]);
-
-  // Remove a recording track
-  const handleRemoveTrack = useCallback((id: string) => {
-    setRecordingTracks(prev => {
-      const track = prev.find(t => t.id === id);
-      if (track) {
-        // Disarm before removing
-        track.capture.armed.setValue(false);
-      }
-      const next = prev.filter(t => t.id !== id);
-      // Update armed count immediately since the removed track's
-      // onArmedChange callback won't fire after unmount
-      setArmedCount(next.filter(t => t.capture.armed.getValue()).length);
-      return next;
-    });
-  }, []);
-
   const handleStartRecording = useCallback(async () => {
     if (!project || !audioContext) return;
 
     try {
-      console.log("[Recording] Starting recording...");
-
       // Resume AudioContext if needed
       if (audioContext.state === "suspended") {
         await audioContext.resume();
       }
 
-      // Request microphone permission via AudioDevices API if not already granted
+      // Request microphone permission if not already granted
       if (!hasPermission) {
-        try {
-          await AudioDevices.requestPermission();
-          await AudioDevices.updateInputList();
-          setAudioInputDevices([...AudioDevices.inputs]);
-          setHasPermission(true);
-        } catch (error) {
-          setRecordStatus(`Microphone error: ${error}`);
-          return;
-        }
+        await requestPermission();
       }
 
       // Delete any previous recording regions before starting a new one
       project.editing.modify(() => {
         const allBoxes = project.boxGraph.boxes();
-        const recordingRegions: AudioRegionBox[] = [];
-
         for (const box of allBoxes) {
           if (box.name === "AudioRegionBox") {
             const regionBox = box as AudioRegionBox;
             const label = regionBox.label.getValue();
             if (label === "Recording" || label.startsWith("Take ")) {
-              recordingRegions.push(regionBox);
+              regionBox.delete();
             }
           }
         }
-
-        console.log(`[Recording] Deleting ${recordingRegions.length} previous recording(s)`);
-        recordingRegions.forEach(region => region.delete());
       });
 
       // Reset peaks state for all tracks
       trackPeaksRef.current.clear();
-      recordingSampleLoadersRef.current = [];
-      setHasPeaks(false);
+      session.resetLoaders();
 
       // Cleanup old painters
       for (const [, painter] of canvasPaintersMap.current) {
@@ -586,102 +402,72 @@ const App: React.FC = () => {
       canvasPaintersMap.current.clear();
 
       project.engine.setPosition(0);
-
-      // startRecording() uses filterArmed() internally to record ALL armed tracks
       project.startRecording(useCountIn);
-
-      setRecordStatus(useCountIn ? "Count-in..." : "Recording...");
-      console.log("[Recording] Recording started");
     } catch (error) {
       console.error("Failed to start recording:", error);
-      setRecordStatus(`Error: ${error}`);
     }
-  }, [project, audioContext, useCountIn, hasPermission]);
+  }, [project, audioContext, useCountIn, hasPermission, requestPermission, session.resetLoaders]);
 
-  // Play recording from the beginning
   const handlePlayRecording = useCallback(async () => {
     if (!project || !audioContext) return;
-
-    if (audioContext.state === "suspended") {
-      await audioContext.resume();
-    }
 
     // Save user's metronome preference before disabling
     userMetronomePreferenceRef.current = metronomeEnabled ?? false;
 
-    // Temporarily disable metronome during playback
-    setMetronomeEnabled(false);
+    try {
+      if (audioContext.state === "suspended") {
+        await audioContext.resume();
+      }
 
-    // Wait for audio to be fully loaded before playing
-    const isLoaded = await project.engine.queryLoadingComplete();
-    if (!isLoaded) {
-      console.log("[Playback] Waiting for audio to load...");
-      setPlaybackStatus("Loading audio...");
-      await new Promise<void>(resolve => {
-        const checkLoaded = async () => {
-          if (await project.engine.queryLoadingComplete()) {
-            resolve();
-          } else {
-            requestAnimationFrame(checkLoaded);
-          }
-        };
-        checkLoaded();
-      });
+      setMetronomeEnabled(false);
+
+      // Wait for audio to be fully loaded before playing (with timeout)
+      const isLoaded = await project.engine.queryLoadingComplete();
+      if (!isLoaded) {
+        const LOADING_TIMEOUT_MS = 10_000;
+        await new Promise<void>((resolve, reject) => {
+          const timeout = setTimeout(
+            () => reject(new Error("Audio loading timed out")),
+            LOADING_TIMEOUT_MS
+          );
+          const checkLoaded = async () => {
+            if (await project.engine.queryLoadingComplete()) {
+              clearTimeout(timeout);
+              resolve();
+            } else {
+              requestAnimationFrame(checkLoaded);
+            }
+          };
+          checkLoaded();
+        });
+      }
+
+      project.engine.stop(true);
+      project.engine.play();
+    } catch (error) {
+      console.error("Failed to start playback:", error);
+      // Restore metronome preference on failure
+      setMetronomeEnabled(userMetronomePreferenceRef.current);
     }
+  }, [project, audioContext, metronomeEnabled, setMetronomeEnabled]);
 
-    project.engine.stop(true);
-    project.engine.play();
-    setPlaybackStatus("Playing...");
-  }, [project, audioContext, metronomeEnabled]);
-
-  // Single stop button - stops recording or playback and resets
   const handleStop = useCallback(() => {
     if (!project) return;
 
-    const wasRecording = project.engine.isRecording.getValue() || project.engine.isCountingIn.getValue();
+    const wasPlaying = session.state === "playing";
 
-    if (wasRecording) {
-      // Use stopRecording() to keep the audio graph alive for finalization
+    // The hook handles stopRecording() vs stop(true) and finalization
+    if (session.state === "recording" || session.state === "counting-in") {
       project.engine.stopRecording();
-      setRecordStatus("Recording stopped");
-
-      // Wait for finalization via sampleLoader.subscribe for ALL loaders
-      // Store subscriptions in ref so they can be cleaned up on unmount
-      for (const sub of finalizationSubsRef.current) {
-        sub.terminate();
-      }
-      finalizationSubsRef.current = [];
-
-      const loaders = recordingSampleLoadersRef.current;
-      if (loaders.length > 0) {
-        let finalized = 0;
-        for (const loader of loaders) {
-          const sub = loader.subscribe((state) => {
-            if (state.type === "loaded") {
-              sub.terminate();
-              finalizationSubsRef.current = finalizationSubsRef.current.filter(s => s !== sub);
-              finalized++;
-              if (finalized === loaders.length) {
-                project.engine.stop(true);
-              }
-            }
-          });
-          finalizationSubsRef.current.push(sub);
-        }
-      } else {
-        // No sampleLoaders found (e.g., count-in cancelled) — stop directly
-        project.engine.stop(true);
-      }
-    } else {
+    } else if (wasPlaying) {
       project.engine.stop(true);
-      if (isPlayingBack) {
-        setMetronomeEnabled(userMetronomePreferenceRef.current);
-      }
-      if (hasPeaks) {
-        setPlaybackStatus("Playback stopped");
-      }
     }
-  }, [project, isPlayingBack, hasPeaks, setMetronomeEnabled]);
+
+    // Restore metronome preference after playback
+    if (wasPlaying) {
+      setMetronomeEnabled(userMetronomePreferenceRef.current);
+    }
+  }, [project, session.state, setMetronomeEnabled]);
 
   if (!project) {
     return (
@@ -725,13 +511,13 @@ const App: React.FC = () => {
               <Heading size="5">Setup</Heading>
 
               <Flex gap="4" wrap="wrap">
-                <BpmControl value={bpm} onChange={setBpm} disabled={isRecording} />
+                <BpmControl value={bpm} onChange={setBpm} disabled={isActive} />
                 <TimeSignatureControl
                   numerator={timeSignatureNumerator}
                   denominator={timeSignatureDenominator}
                   onNumeratorChange={setTimeSignatureNumerator}
                   onDenominatorChange={setTimeSignatureDenominator}
-                  disabled={isRecording}
+                  disabled={isActive}
                 />
                 <Flex align="center" gap="2">
                   <Text size="2" weight="medium">
@@ -740,7 +526,7 @@ const App: React.FC = () => {
                   <Select.Root
                     value={(countInBars ?? 1).toString()}
                     onValueChange={value => setCountInBars(Number(value) as CountInBarsValue)}
-                    disabled={isRecording}
+                    disabled={isActive}
                   >
                     <Select.Trigger style={{ width: 70 }} />
                     <Select.Content>
@@ -775,7 +561,7 @@ const App: React.FC = () => {
                   <Text size="2" color="gray">
                     Grant microphone access to see available audio input devices.
                   </Text>
-                  <Button onClick={handleRequestPermission} color="blue" size="2" variant="soft">
+                  <Button onClick={requestPermission} color="blue" size="2" variant="soft">
                     Request Microphone Permission
                   </Button>
                 </Flex>
@@ -794,17 +580,18 @@ const App: React.FC = () => {
                       trackIndex={index}
                       project={project}
                       audioInputDevices={audioInputDevices}
-                      disabled={isRecording || isCountingIn}
-                      onRemove={handleRemoveTrack}
+                      audioOutputDevices={audioOutputDevices}
+                      disabled={isActive}
+                      onRemove={removeTrack}
                       onArmedChange={handleArmedChange}
                     />
                   ))}
 
                   <Button
-                    onClick={handleAddTrack}
+                    onClick={addTrack}
                     color="blue"
                     variant="soft"
-                    disabled={isRecording || isCountingIn}
+                    disabled={isActive}
                   >
                     + Add Track
                   </Button>
@@ -853,7 +640,7 @@ const App: React.FC = () => {
                               min={0}
                               max={100}
                               step={1}
-                              disabled={isRecording}
+                              disabled={isActive}
                             />
                             <Text size="1" color="gray" style={{ width: 45 }}>
                               {Math.round(metronomeGain ?? -6)} dB
@@ -867,7 +654,7 @@ const App: React.FC = () => {
                             onValueChange={value =>
                               setMetronomeBeatSubDivision(Number(value) as MetronomeBeatSubDivisionValue)
                             }
-                            disabled={isRecording}
+                            disabled={isActive}
                           >
                             <Select.Trigger style={{ width: 120 }} />
                             <Select.Content>
@@ -884,10 +671,10 @@ const App: React.FC = () => {
                 )}
               </Flex>
 
-              {isCountingIn && (
+              {session.state === "counting-in" && (
                 <Callout.Root color="amber">
                   <Callout.Text>
-                    <strong>Count-in: {countInBeatsRemaining} beats remaining</strong>
+                    <strong>Count-in: {session.countInBeatsRemaining} beats remaining</strong>
                   </Callout.Text>
                 </Callout.Root>
               )}
@@ -900,25 +687,25 @@ const App: React.FC = () => {
                   color="red"
                   size="3"
                   variant="solid"
-                  disabled={isRecording || isCountingIn || isPlayingBack || armedCount === 0}
+                  disabled={!canRecord}
                 >
                   ⏺ Record{armedCount > 0 ? ` (${armedCount} track${armedCount !== 1 ? "s" : ""})` : ""}
                 </Button>
                 <Button
                   onClick={handlePlayRecording}
-                  disabled={isRecording || isCountingIn || isPlayingBack || !hasPeaks}
+                  disabled={!canPlay}
                   color="green"
                   size="3"
                   variant="solid"
                 >
                   ▶ Play
                 </Button>
-                <Button onClick={handleStop} color="gray" size="3" variant="solid">
+                <Button onClick={handleStop} disabled={!canStop} color="gray" size="3" variant="solid">
                   ⏹ Stop
                 </Button>
               </Flex>
               <Text size="2" align="center" color="gray">
-                {isRecording || isCountingIn ? recordStatus : playbackStatus}
+                {statusMessage}
               </Text>
 
               {/* Waveform canvases — one per recording track */}

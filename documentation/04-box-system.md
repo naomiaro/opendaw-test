@@ -401,7 +401,23 @@ Key rules:
 3. Subscribe to changes and clean up subscriptions
 4. Store UUIDs, not box references
 
+## Adapter Layer
+
+For UI code, prefer the **adapter layer** (`@opendaw/studio-adapters`) over raw box access. Adapters wrap boxes with typed interfaces, convenience methods, and automatic sampleLoader resolution:
+
+```typescript
+// Raw box access (low-level)
+const regions = trackBox.regions.pointerHub.incoming().map(({ box }) => box);
+
+// Adapter access (preferred for UI)
+const audioUnits = project.rootBoxAdapter.audioUnits.adapters();
+const tracks = audioUnits[0].tracks.values();
+const regions = tracks[0].regions.adapters;
+```
+
+See **[Box Subscriptions & Reactive Lifecycle](./18-box-subscriptions-lifecycle.md)** for details on the adapter layer's `catchupAndSubscribe` API.
+
 ## Next Steps
 
 - Continue to **[Sample Management and Peaks](./05-sample-management-and-peaks.md)** to learn how to load audio files and render waveforms.
-- See **[Box Subscriptions & Reactive Lifecycle](./18-box-subscriptions-lifecycle.md)** for advanced reactive patterns using `pointerHub.catchupAndSubscribe()` and nested subscription chains.
+- See **[Box Subscriptions & Reactive Lifecycle](./18-box-subscriptions-lifecycle.md)** for advanced reactive patterns using `pointerHub.catchupAndSubscribe()`, nested subscription chains, and the typed adapter layer.

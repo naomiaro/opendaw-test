@@ -97,6 +97,19 @@ if (audioContext.state !== "running") {
 }
 ```
 
+### Engine Worklet Has 2 Outputs (SDK 0.0.133+)
+The engine worklet outputs main audio on output 0 and monitoring on output 1.
+Always use `engineWorklet.connect(destination, 0)` — bare `.connect(destination)`
+routes both outputs, causing unexpected channels in offline renders.
+
+### Output Device Enumeration
+`AudioDevices` only handles inputs. For output devices:
+```typescript
+const allDevices = await navigator.mediaDevices.enumerateDevices();
+const outputs = allDevices.filter(d => d.kind === "audiooutput" && d.deviceId !== "");
+```
+`setSinkId` is Chrome/Edge only — gate with `"setSinkId" in AudioContext.prototype`.
+
 ## Important Patterns
 
 ### Option Types Are Always Truthy
@@ -212,6 +225,9 @@ direct calls handle mute toggles, finalization, and clear.
 ## Build & Verification
 - `npm run build` — Vite handles TypeScript transpilation (no standalone `tsc` available)
 - After SDK upgrades, clear Vite dep cache: `rm -rf node_modules/.vite` (dev server pre-bundles old SDK)
+- SDK upgrades: bump `@opendaw/studio-sdk` version in `package.json` and `npm install` — sub-packages
+  resolve transitively from the registry. NEVER install sub-packages as local `file:` references
+  (breaks Cloudflare CI).
 - Verify SDK exports: check `node_modules/@opendaw/<package>/dist/*.d.ts` before writing imports
 - SDK version lives in `node_modules/@opendaw/studio-sdk/package.json`, NOT in individual sub-packages (studio-core, studio-boxes, etc.) which have their own independent version numbers
 

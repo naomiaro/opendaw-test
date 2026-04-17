@@ -1,0 +1,108 @@
+import { useState, useCallback } from "react";
+import { UUID } from "@opendaw/lib-std";
+import { Project, CaptureAudio } from "@opendaw/studio-core";
+import { InstrumentFactories } from "@opendaw/studio-adapters";
+import type { AudioUnitBox } from "@opendaw/studio-boxes";
+import type { RecordingTrack } from "@/components/RecordingTrackCard";
+
+interface UseRecordingTracksOptions {
+  project: Project | null;
+  audioInputDevices: readonly MediaDeviceInfo[];
+  maxTracks?: number;
+}
+
+export interface RecordingTracksResult {
+  recordingTracks: RecordingTrack[];
+  armedCount: number;
+  addTrack: () => void;
+  removeTrack: (id: string) => void;
+  handleArmedChange: (id: string, armed: boolean) => void;
+}
+
+/**
+ * Manages recording track creation, removal, and armed state tracking.
+ * Creates Tape instruments with capture devices configured for the first
+ * available input device, armed non-exclusively.
+ */
+export function useRecordingTracks({
+  project,
+  audioInputDevices,
+  maxTracks,
+}: UseRecordingTracksOptions): RecordingTracksResult {
+  const [recordingTracks, setRecordingTracks] = useState<RecordingTrack[]>([]);
+  const [armedCount, setArmedCount] = useState(0);
+
+  const addTrack = useCallback(() => {
+    if (!project) return;
+    if (maxTracks !== undefined && recordingTracks.length >= maxTracks) return;
+
+    // Create instrument in its own transaction (pointer re-routing guideline:
+    // captureDevices.get() must be in a separate transaction after createInstrument commits)
+    let audioUnitBoxRef: AudioUnitBox | null = null;
+    project.editing.modify(() => {
+      const { audioUnitBox } = project.api.createInstrument(InstrumentFactories.Tape);
+      audioUnitBoxRef = audioUnitBox;
+    });
+
+    if (!audioUnitBoxRef) {
+      console.error("[useRecordingTracks] createInstrument did not return audioUnitBox");
+      return;
+    }
+
+    // Resolve capture after creation transaction commits
+    const captureOpt = project.captureDevices.get(
+      (audioUnitBoxRef as AudioUnitBox).address.uuid
+    );
+    if (captureOpt.isEmpty()) {
+      console.error("[useRecordingTracks] No capture device found for new instrument");
+      return;
+    }
+    const capture = captureOpt.unwrap();
+    if (!(capture instanceof CaptureAudio)) {
+      console.error("[useRecordingTracks] Capture device is not CaptureAudio");
+      return;
+    }
+
+    // Configure capture in a separate transaction
+    if (audioInputDevices.length > 0) {
+      project.editing.modify(() => {
+        capture.captureBox.deviceId.setValue(audioInputDevices[0].deviceId);
+        capture.requestChannels = 1;
+      });
+    }
+
+    project.captureDevices.setArm(capture, false);
+
+    setRecordingTracks((prev) => [
+      ...prev,
+      {
+        id: UUID.toString((audioUnitBoxRef as AudioUnitBox).address.uuid),
+        capture,
+      },
+    ]);
+  }, [project, audioInputDevices, recordingTracks.length, maxTracks]);
+
+  const removeTrack = useCallback((id: string) => {
+    setRecordingTracks((prev) => {
+      const track = prev.find((t) => t.id === id);
+      if (track) {
+        track.capture.armed.setValue(false);
+      }
+      const next = prev.filter((t) => t.id !== id);
+      setArmedCount(next.filter((t) => t.capture.armed.getValue()).length);
+      return next;
+    });
+  }, []);
+
+  const handleArmedChange = useCallback((_id: string, armed: boolean) => {
+    setArmedCount((prev) => prev + (armed ? 1 : -1));
+  }, []);
+
+  return {
+    recordingTracks,
+    armedCount,
+    addTrack,
+    removeTrack,
+    handleArmedChange,
+  };
+}

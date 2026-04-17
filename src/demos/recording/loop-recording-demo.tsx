@@ -2,20 +2,22 @@ import React, { useEffect, useState, useCallback, useRef, useMemo } from "react"
 import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
 import type { Terminable } from "@opendaw/lib-std";
-import { Project, AudioDevices, CaptureAudio } from "@opendaw/studio-core";
-import type { SampleLoader } from "@opendaw/studio-adapters";
-import { InstrumentFactories } from "@opendaw/studio-adapters";
+import { Project } from "@opendaw/studio-core";
+import type { SampleLoader, AudioRegionBoxAdapter } from "@opendaw/studio-adapters";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { PPQN } from "@opendaw/lib-dsp";
-import { AudioRegionBox, AudioUnitBox } from "@opendaw/studio-boxes";
+import { AudioRegionBox } from "@opendaw/studio-boxes";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { useEnginePreference } from "@/hooks/useEnginePreference";
+import { useAudioDevicePermission } from "@/hooks/useAudioDevicePermission";
+import { useRecordingTracks } from "@/hooks/useRecordingTracks";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
 import { BpmControl } from "@/components/BpmControl";
 import { RecordingPreferences } from "@/components/RecordingPreferences";
 import { RecordingTrackCard } from "@/components/RecordingTrackCard";
+import type { RecordingTrack } from "@/components/RecordingTrackCard";
 import { TakeTimeline } from "@/components/TakeTimeline";
 import type { TakeRegion, TakeIteration } from "@/components/TakeTimeline";
 import "@radix-ui/themes/styles.css";
@@ -36,15 +38,6 @@ import {
 } from "@radix-ui/themes";
 
 // --- Types ---
-
-interface RecordingInputTrack {
-  id: string; // UUID.toString(audioUnitBox.address.uuid)
-  capture: CaptureAudio;
-  audioUnitBox: AudioUnitBox;
-  label: string;
-}
-
-// --- Constants ---
 
 const MAX_TRACKS = 4;
 const BAR_PPQN = PPQN.Quarter * 4; // one bar in 4/4 time
@@ -72,15 +65,11 @@ const App: React.FC = () => {
   // Takes
   const [takeIterations, setTakeIterations] = useState<TakeIteration[]>([]);
 
-  // Audio input configuration
-  const [audioInputDevices, setAudioInputDevices] = useState<MediaDeviceInfo[]>(
-    []
-  );
-  const [hasPermission, setHasPermission] = useState(false);
-  const [recordingTracks, setRecordingTracks] = useState<
-    RecordingInputTrack[]
-  >([]);
-  const [armedCount, setArmedCount] = useState(0);
+  // Audio input/output configuration
+  const { audioInputDevices, audioOutputDevices, hasPermission, requestPermission } =
+    useAudioDevicePermission();
+  const { recordingTracks, armedCount, addTrack, removeTrack, handleArmedChange } =
+    useRecordingTracks({ project, audioInputDevices, maxTracks: MAX_TRACKS });
 
   // Settings
   const [useCountIn, setUseCountIn] = useState(true);
@@ -114,7 +103,7 @@ const App: React.FC = () => {
   // SampleLoaders discovered during recording — ref avoids stale closure in handleStopRecording
   const sampleLoadersRef = useRef<Set<SampleLoader>>(new Set());
   // Ref for recordingTracks to avoid restarting pointerHub subscriptions when tracks change
-  const recordingTracksRef = useRef<RecordingInputTrack[]>([]);
+  const recordingTracksRef = useRef<RecordingTrack[]>([]);
 
   // Cleanup subscriptions on unmount (but NOT sampleLoadersRef — handleStopRecording owns that)
   useEffect(() => {
@@ -235,46 +224,37 @@ const App: React.FC = () => {
 
   // --- Reactive take discovery via pointerHub subscriptions ---
 
-  // Build a TakeRegion from a regionBox, resolving its sample loader, track assignment, and waveform offset
+  // Build a TakeRegion from a region adapter, using the typed adapter layer
+  // for sampleLoader resolution and track matching.
   const buildTakeRegion = useCallback(
-    (regionBox: AudioRegionBox): TakeRegion | null => {
-      if (!audioContext || !project) return null;
+    (regionAdapter: AudioRegionBoxAdapter): TakeRegion | null => {
+      if (!audioContext) return null;
 
-      const label = regionBox.label.getValue();
+      const label = regionAdapter.label;
       if (!label.startsWith("Take ")) return null;
 
       const takeNumber = parseInt(label.replace("Take ", ""), 10);
       if (isNaN(takeNumber)) return null;
-      const isMuted = regionBox.mute.getValue();
+
+      const isMuted = regionAdapter.mute;
       const sampleRate = audioContext.sampleRate;
-      const waveformOffsetSec = regionBox.waveformOffset.getValue();
+      const waveformOffsetSec = regionAdapter.waveformOffset.getValue();
       const waveformOffsetFrames = Math.round(waveformOffsetSec * sampleRate);
+      const regionBox = regionAdapter.box;
       const durationSec = regionBox.duration.getValue();
       const durationFrames = Math.round(durationSec * sampleRate);
 
-      // Resolve sample loader
-      let loader: SampleLoader | null = null;
-      const fileVertex = regionBox.file.targetVertex;
-      if (!fileVertex.isEmpty()) {
-        loader = project.sampleManager.getOrCreate(
-          fileVertex.unwrap().address.uuid
-        );
-      }
+      // Adapter resolves sampleLoader via file → getOrCreateLoader()
+      const loader = regionAdapter.file.getOrCreateLoader();
 
-      // Match region to input track: regionBox → TrackBox → AudioUnitBox
+      // Match region to input track via typed adapter path
       let inputTrackId = "";
-      const trackVertex = regionBox.regions.targetVertex;
-      if (!trackVertex.isEmpty()) {
-        const trackBox = trackVertex.unwrap().box;
-        const audioUnitVertex = (trackBox as any).tracks?.targetVertex;
-        if (audioUnitVertex && !audioUnitVertex.isEmpty()) {
-          inputTrackId = UUID.toString(
-            audioUnitVertex.unwrap().box.address.uuid
-          );
-        }
+      const trackAdapterOpt = regionAdapter.trackBoxAdapter;
+      if (!trackAdapterOpt.isEmpty()) {
+        inputTrackId = UUID.toString(trackAdapterOpt.unwrap().audioUnit.address.uuid);
       }
 
-      // Fallback for single track (read from ref to avoid dep on recordingTracks)
+      // Fallback for single track
       const tracks = recordingTracksRef.current;
       if (!inputTrackId && tracks.length === 1) {
         inputTrackId = tracks[0].id;
@@ -290,7 +270,7 @@ const App: React.FC = () => {
         durationFrames,
       };
     },
-    [project, audioContext]
+    [audioContext]
   );
 
   // Insert a TakeRegion into takeIterations state incrementally
@@ -350,45 +330,47 @@ const App: React.FC = () => {
     []
   );
 
-  // Set up pointerHub subscriptions when recording starts
+  // Set up adapter subscriptions when recording starts — typed alternative to raw pointerHub.
   useEffect(() => {
     if (!project || !isRecording || recordingTracks.length === 0) return;
 
     const subs: Terminable[] = [];
+    const allAudioUnits = project.rootBoxAdapter.audioUnits.adapters();
 
     for (const track of recordingTracks) {
-      const trackSub =
-        track.audioUnitBox.tracks.pointerHub.catchupAndSubscribe({
-          onAdded: (pointer) => {
-            const trackBox = pointer.box;
-            const regionSub = (
-              trackBox as any
-            ).regions.pointerHub.catchupAndSubscribe({
-              onAdded: (regionPointer: any) => {
-                const regionBox = regionPointer.box as AudioRegionBox;
-                const takeRegion = buildTakeRegion(regionBox);
-                if (!takeRegion) return;
+      const audioUnitAdapter = allAudioUnits.find(
+        (au) => au.box === track.capture.audioUnitBox
+      );
+      if (!audioUnitAdapter) continue;
 
-                addTakeRegionToState(takeRegion);
+      const tracksSub = audioUnitAdapter.tracks.catchupAndSubscribe({
+        onAdd: (trackAdapter) => {
+          const regionsSub = trackAdapter.regions.catchupAndSubscribe({
+            onAdded: (regionAdapter) => {
+              if (!regionAdapter.isAudioRegion()) return;
+              const takeRegion = buildTakeRegion(regionAdapter);
+              if (!takeRegion) return;
 
-                // Track sampleLoader in ref for finalization barrier
-                if (takeRegion.sampleLoader) {
-                  sampleLoadersRef.current.add(takeRegion.sampleLoader);
-                }
+              addTakeRegionToState(takeRegion);
 
-                // Subscribe to mute changes for reactive UI updates
-                const muteSub = regionBox.mute.subscribe((obs: any) => {
-                  updateTakeMuteInState(regionBox, obs.getValue());
-                });
-                subs.push(muteSub);
-              },
-              onRemoved: () => {},
-            });
-            subs.push(regionSub);
-          },
-          onRemoved: () => {},
-        });
-      subs.push(trackSub);
+              if (takeRegion.sampleLoader) {
+                sampleLoadersRef.current.add(takeRegion.sampleLoader);
+              }
+
+              // Subscribe to mute changes for reactive UI updates
+              const muteSub = takeRegion.regionBox.mute.subscribe((obs: any) => {
+                updateTakeMuteInState(takeRegion.regionBox, obs.getValue());
+              });
+              subs.push(muteSub);
+            },
+            onRemoved: () => {},
+          });
+          subs.push(regionsSub);
+        },
+        onRemove: () => {},
+        onReorder: () => {},
+      });
+      subs.push(tracksSub);
     }
 
     pointerHubSubsRef.current = subs;
@@ -410,116 +392,34 @@ const App: React.FC = () => {
     updateTakeMuteInState,
   ]);
 
-  // --- Audio input management ---
-
-  const handleRequestPermission = useCallback(async () => {
-    try {
-      await AudioDevices.requestPermission();
-      await AudioDevices.updateInputList();
-      setAudioInputDevices([...AudioDevices.inputs]);
-      setHasPermission(true);
-    } catch (error) {
-      console.error("Failed to get audio devices:", error);
-      setStatus("Microphone permission denied. Please allow access and try again.");
-    }
-  }, []);
-
-  const handleArmedChange = useCallback(() => {
-    setArmedCount(
-      recordingTracks.filter((t) => t.capture.armed.getValue()).length
-    );
-  }, [recordingTracks]);
-
-  const handleAddTrack = useCallback(() => {
-    if (!project || recordingTracks.length >= MAX_TRACKS) return;
-
-    let audioUnitBoxRef: AudioUnitBox | null = null;
-
-    // Create instrument in its own transaction (pointer re-routing guideline)
-    project.editing.modify(() => {
-      const { audioUnitBox } = project.api.createInstrument(
-        InstrumentFactories.Tape
-      );
-      audioUnitBoxRef = audioUnitBox;
-    });
-
-    if (!audioUnitBoxRef) return;
-
-    const captureOpt = project.captureDevices.get(
-      (audioUnitBoxRef as AudioUnitBox).address.uuid
-    );
-    if (captureOpt.isEmpty()) return;
-    const capture = captureOpt.unwrap();
-    if (!(capture instanceof CaptureAudio)) return;
-
-    // Initialize capture settings in separate transaction after creation commits
-    if (audioInputDevices.length > 0) {
-      project.editing.modify(() => {
-        capture.captureBox.deviceId.setValue(audioInputDevices[0].deviceId);
-        capture.requestChannels = 1;
-      });
-    }
-
-    // Arm non-exclusively so other tracks stay armed
-    project.captureDevices.setArm(capture, false);
-
-    const trackLabel = `Track ${recordingTracks.length + 1}`;
-    setRecordingTracks((prev) => [
-      ...prev,
-      {
-        id: UUID.toString((audioUnitBoxRef as AudioUnitBox).address.uuid),
-        capture,
-        audioUnitBox: audioUnitBoxRef as AudioUnitBox,
-        label: trackLabel,
-      },
-    ]);
-  }, [project, audioInputDevices, recordingTracks.length]);
-
-  const handleRemoveTrack = useCallback(
-    (id: string) => {
-      const track = recordingTracks.find((t) => t.id === id);
-      if (track) {
-        track.capture.armed.setValue(false);
-      }
-      const next = recordingTracks.filter((t) => t.id !== id);
-      setRecordingTracks(next);
-      setArmedCount(next.filter((t) => t.capture.armed.getValue()).length);
-    },
-    [recordingTracks]
-  );
-
   // --- Recording handlers ---
 
   const handleStartRecording = useCallback(async () => {
     if (!project || !audioContext || armedCount === 0) return;
-    if (audioContext.state === "suspended") await audioContext.resume();
 
-    // Safety: request permission if not granted
-    if (!hasPermission) {
-      try {
-        await AudioDevices.requestPermission();
-        await AudioDevices.updateInputList();
-        setAudioInputDevices([...AudioDevices.inputs]);
-        setHasPermission(true);
-      } catch (error) {
-        console.error("Mic error:", error);
-        setStatus("Microphone permission denied. Cannot start recording.");
-        return;
+    try {
+      if (audioContext.state === "suspended") await audioContext.resume();
+
+      // Safety: request permission if not granted
+      if (!hasPermission) {
+        await requestPermission();
       }
+
+      // Configure loop area with lead-in
+      const loopFrom = leadInBars * BAR_PPQN;
+      const loopTo = loopFrom + loopLengthBars * BAR_PPQN;
+
+      project.editing.modify(() => {
+        project.timelineBox.loopArea.from.setValue(loopFrom);
+        project.timelineBox.loopArea.to.setValue(loopTo);
+        project.timelineBox.loopArea.enabled.setValue(true);
+      });
+
+      project.engine.setPosition(0);
+      project.startRecording(useCountIn);
+    } catch (error) {
+      console.error("Failed to start recording:", error);
     }
-
-    // Configure loop area with lead-in
-    const loopFrom = leadInBars * BAR_PPQN;
-    const loopTo = loopFrom + loopLengthBars * BAR_PPQN;
-
-    project.editing.modify(() => {
-      project.timelineBox.loopArea.from.setValue(loopFrom);
-      project.timelineBox.loopArea.to.setValue(loopTo);
-      project.timelineBox.loopArea.enabled.setValue(true);
-    });
-
-    project.engine.setPosition(0);
-    project.startRecording(useCountIn);
   }, [
     project,
     audioContext,
@@ -528,6 +428,7 @@ const App: React.FC = () => {
     loopLengthBars,
     armedCount,
     hasPermission,
+    requestPermission,
   ]);
 
   const handleStopRecording = useCallback(() => {
@@ -593,16 +494,41 @@ const App: React.FC = () => {
 
   const handlePlay = useCallback(async () => {
     if (!project || !audioContext) return;
-    if (audioContext.state === "suspended") await audioContext.resume();
-    await project.engine.queryLoadingComplete();
 
-    // Keep loop area enabled so playback loops over takes
-    project.editing.modify(() => {
-      project.timelineBox.loopArea.enabled.setValue(true);
-    });
+    try {
+      if (audioContext.state === "suspended") await audioContext.resume();
 
-    project.engine.stop(true);
-    project.engine.play();
+      // Wait for audio to load with timeout
+      const isLoaded = await project.engine.queryLoadingComplete();
+      if (!isLoaded) {
+        const LOADING_TIMEOUT_MS = 10_000;
+        await new Promise<void>((resolve, reject) => {
+          const timeout = setTimeout(
+            () => reject(new Error("Audio loading timed out")),
+            LOADING_TIMEOUT_MS
+          );
+          const checkLoaded = async () => {
+            if (await project.engine.queryLoadingComplete()) {
+              clearTimeout(timeout);
+              resolve();
+            } else {
+              requestAnimationFrame(checkLoaded);
+            }
+          };
+          checkLoaded();
+        });
+      }
+
+      // Keep loop area enabled so playback loops over takes
+      project.editing.modify(() => {
+        project.timelineBox.loopArea.enabled.setValue(true);
+      });
+
+      project.engine.stop(true);
+      project.engine.play();
+    } catch (error) {
+      console.error("Failed to start playback:", error);
+    }
   }, [project, audioContext]);
 
   const handleStop = useCallback(() => {
@@ -664,7 +590,7 @@ const App: React.FC = () => {
     totalPPQN > 0 ? (currentPosition % totalPPQN) / totalPPQN : 0;
 
   const recordingTrackLabels = useMemo(
-    () => recordingTracks.map((t) => ({ id: t.id, label: t.label })),
+    () => recordingTracks.map((t, i) => ({ id: t.id, label: `Track ${i + 1}` })),
     [recordingTracks]
   );
 
@@ -735,7 +661,7 @@ const App: React.FC = () => {
                     devices.
                   </Text>
                   <Button
-                    onClick={handleRequestPermission}
+                    onClick={requestPermission}
                     color="amber"
                     size="2"
                     variant="soft"
@@ -762,14 +688,15 @@ const App: React.FC = () => {
                       trackIndex={index}
                       project={project}
                       audioInputDevices={audioInputDevices}
+                      audioOutputDevices={audioOutputDevices}
                       disabled={isRecording || isCountingIn}
-                      onRemove={handleRemoveTrack}
+                      onRemove={removeTrack}
                       onArmedChange={handleArmedChange}
                     />
                   ))}
 
                   <Button
-                    onClick={handleAddTrack}
+                    onClick={addTrack}
                     color="amber"
                     variant="soft"
                     disabled={

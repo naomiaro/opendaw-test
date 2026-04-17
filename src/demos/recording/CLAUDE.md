@@ -47,6 +47,13 @@ if (capture instanceof CaptureAudio) {
   });
   // monitoringMode manipulates Web Audio nodes — set outside transaction
   capture.monitoringMode = "direct";  // "off" | "direct" | "effects"
+
+  // Monitor controls (SDK 0.0.133+) — direct property setters, no transaction
+  capture.monitorVolumeDb = -6.0;     // independent monitor volume (dB)
+  capture.monitorPan = 0.0;           // stereo pan (-1.0 to 1.0)
+  capture.monitorMuted = false;       // mute monitor output
+  await capture.setMonitorOutputDevice(Option.wrap("device-id")); // route to specific output
+  // Option.None = system default destination
 }
 
 // Track arming
@@ -84,6 +91,59 @@ When `allowTakes` is true AND `loopArea.enabled` is true, each time playback wra
 - `capture.armed` is a `MutableObservableValue<boolean>`, not a box graph field
 - Set directly: `capture.armed.setValue(false)` — do NOT wrap in `editing.modify()`
 - Same as `monitoringMode` — runtime observable, not persisted in the box graph
+
+### Monitor Signal Chain (SDK 0.0.133+)
+Direct monitoring taps from `sourceNode` (before recording gain), allowing independent
+control of recording level vs monitoring level:
+```
+sourceNode → monitorGainNode → monitorPanNode → destination (or custom output device)
+         ↘ recordGainNode → RecordingWorklet (recording path)
+```
+- `monitorVolumeDb`, `monitorPan`, `monitorMuted` are direct property setters (no transaction)
+- `setMonitorOutputDevice(Option<string>)` routes monitor audio to a specific output device
+  via `HTMLAudioElement.setSinkId()` and `MediaStreamAudioDestinationNode`
+- `Option.None` = system default `audioContext.destination`
+- In "effects" mode, the source is routed through the engine for processing, then back
+  through `monitorGainNode` → `monitorPanNode` → destination
+- Output device enumeration: use `navigator.mediaDevices.enumerateDevices()` filtering
+  for `kind === "audiooutput"` (not handled by `AudioDevices` class)
+
+### Never Call stop(true) During Recording Finalization
+After `stopRecording()`, the SDK finalizes internally (imports sample, generates peaks).
+Calling `stop(true)` during this window kills the audio graph and prevents finalization.
+OpenDAW's transport never calls `stop(true)` after `stopRecording()` — finalization
+completes asynchronously while the engine keeps playing. Only call `stop(true)` for:
+- Cancelling count-in (no loaders to finalize)
+- Stopping playback (state is "ready" or "playing")
+- Resetting position before `play()` for playback
+
+### SampleLoader Has subscribe() Only (Not catchupAndSubscribe)
+`sampleLoader.subscribe()` fires only for future state changes. Check `loader.state.type`
+before subscribing — short recordings may already be `"loaded"` by the time you subscribe.
+`loader.state` is typed as `SampleLoaderState` with
+`.type: "idle" | "record" | "progress" | "error" | "loaded"`.
+Always handle both `"loaded"` and `"error"` in finalization barriers — ignoring
+`"error"` leaves the state machine stuck in "finalizing" permanently.
+
+### AnimationFrame Is for Rendering Only
+Use `AnimationFrame.add()` exclusively for continuous visual updates (waveform peaks,
+meters, progress bars). Never use it to drive state transitions — use SDK subscriptions
+(`catchupAndSubscribe`, `sampleLoader.subscribe`) instead. AnimationFrame polling is
+unreliable for detecting one-time events like finalization completion.
+
+### Use SDK Adapter Layer for Region Discovery
+Prefer `project.rootBoxAdapter.audioUnits` → `AudioUnitBoxAdapter.tracks.catchupAndSubscribe`
+→ `TrackRegions.catchupAndSubscribe` → `AudioFileBoxAdapter.getOrCreateLoader()` over raw
+`pointerHub` or `boxGraph.boxes()` scanning. The adapter layer is typed (no `as any` casts),
+resolves sampleLoaders internally, and matches OpenDAW's own architecture.
+Note: `AudioUnitTracks` uses `onAdd`/`onRemove`/`onReorder`; `TrackRegions` uses `onAdded`/`onRemoved`.
+
+### Don't Gate AnimationFrame on React State via Refs
+React batching can skip intermediate renders (e.g., finalizing→ready→recording batched
+into one commit). A ref assigned during render (`ref.current = derivedValue`) may never
+see the intermediate value. AnimationFrame callbacks that guard on such refs will miss
+state changes. Instead, let AnimationFrame run unconditionally — when there's nothing to
+render it's a no-op.
 
 ### Finding Recording Regions
 ```typescript
@@ -132,7 +192,8 @@ if (!peaksOption.isEmpty()) {
 ### Capture Settings Require editing.modify()
 `captureBox.deviceId`, `captureBox.gainDb`, and `capture.requestChannels` are box graph fields —
 wrap in `editing.modify()`. `capture.monitoringMode` is NOT a box graph field (it manipulates
-Web Audio nodes), so set it outside the transaction.
+Web Audio nodes), so set it outside the transaction. As of SDK 0.0.133, `monitoringMode` is
+properly typed — no `(capture as any)` cast needed.
 
 ### Recording Peaks Include Count-In Frames
 The SDK captures audio during count-in. `waveformOffset` on the region (in seconds)
@@ -154,7 +215,7 @@ smoothly. Only fall back to `dataIndex` when `durationFrames === 0`.
 ### Take-to-Track Matching (Multi-Track Loop Recording)
 SDK creates take regions on new TrackBoxes under the same AudioUnitBox. Match via:
 `regionBox.regions.targetVertex` → `TrackBox` → `trackBox.tracks.targetVertex` → `AudioUnitBox`
-Then `UUID.toString(audioUnitBox.address.uuid)` matches `RecordingInputTrack.id`.
+Then `UUID.toString(audioUnitBox.address.uuid)` matches `RecordingTrack.id`.
 
 ### Loop Take Buffer Layout and Offsets
 All takes record into a single continuous audio buffer. The count-in offset is only
@@ -234,3 +295,8 @@ useEffect(() => {
 - Recording track card: `src/components/RecordingTrackCard.tsx`
 - Take timeline: `src/components/TakeTimeline.tsx`
 - Engine preferences hook: `src/hooks/useEnginePreference.ts`
+
+## Shared Recording Hooks
+- `src/hooks/useRecordingSession.ts` — state machine (idle → counting-in → recording → finalizing → ready → playing), engine subscriptions, eager sampleLoader finalization barrier
+- `src/hooks/useAudioDevicePermission.ts` — mic permission + input/output device enumeration
+- `src/hooks/useRecordingTracks.ts` — Tape instrument creation, capture config, arming, track add/remove
