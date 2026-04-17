@@ -10,3 +10,7 @@ export { usePlaybackPosition } from "./usePlaybackPosition";
 export { useTransportControls } from "./useTransportControls";
 export { useRecordingSession } from "./useRecordingSession";
 export type { RecordingState, RecordingSessionResult } from "./useRecordingSession";
+export { useAudioDevicePermission } from "./useAudioDevicePermission";
+export type { AudioDevicePermissionResult } from "./useAudioDevicePermission";
+export { useRecordingTracks } from "./useRecordingTracks";
+export type { RecordingTracksResult } from "./useRecordingTracks";

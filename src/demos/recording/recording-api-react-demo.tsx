@@ -2,21 +2,20 @@
 
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { UUID } from "@opendaw/lib-std";
 import type { Terminable } from "@opendaw/lib-std";
-import { Project, AudioDevices, CaptureAudio, PeaksWriter } from "@opendaw/studio-core";
+import { Project, PeaksWriter } from "@opendaw/studio-core";
 import type { SampleLoader } from "@opendaw/studio-adapters";
-import { InstrumentFactories } from "@opendaw/studio-adapters";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import type { Peaks } from "@opendaw/lib-fusion";
 import { PeaksPainter } from "@opendaw/lib-fusion";
-import { AudioRegionBox, AudioUnitBox } from "@opendaw/studio-boxes";
+import { AudioRegionBox } from "@opendaw/studio-boxes";
 import { CanvasPainter } from "@/lib/CanvasPainter";
-import { enumerateOutputDevices } from "@/lib/audioUtils";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { useEnginePreference, CountInBarsValue, MetronomeBeatSubDivisionValue } from "@/hooks/useEnginePreference";
 import { useRecordingSession } from "@/hooks/useRecordingSession";
 import type { RecordingState } from "@/hooks/useRecordingSession";
+import { useAudioDevicePermission } from "@/hooks/useAudioDevicePermission";
+import { useRecordingTracks } from "@/hooks/useRecordingTracks";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
@@ -24,7 +23,6 @@ import { BpmControl } from "@/components/BpmControl";
 import { TimeSignatureControl } from "@/components/TimeSignatureControl";
 import { RecordingPreferences } from "@/components/RecordingPreferences";
 import { RecordingTrackCard } from "@/components/RecordingTrackCard";
-import type { RecordingTrack } from "@/components/RecordingTrackCard";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
@@ -96,11 +94,11 @@ const App: React.FC = () => {
     ["recording", "countInBars"]
   );
 
-  // Audio input/output configuration — multi-track
-  const [audioInputDevices, setAudioInputDevices] = useState<MediaDeviceInfo[]>([]);
-  const [audioOutputDevices, setAudioOutputDevices] = useState<MediaDeviceInfo[]>([]);
-  const [hasPermission, setHasPermission] = useState(false);
-  const [recordingTracks, setRecordingTracks] = useState<RecordingTrack[]>([]);
+  // Audio devices and recording tracks
+  const { audioInputDevices, audioOutputDevices, hasPermission, requestPermission } =
+    useAudioDevicePermission();
+  const { recordingTracks, armedCount, addTrack, removeTrack, handleArmedChange } =
+    useRecordingTracks({ project, audioInputDevices });
 
   // Per-track canvas refs — keyed by track index
   const canvasRefsMap = useRef<Map<number, HTMLCanvasElement>>(new Map());
@@ -110,9 +108,6 @@ const App: React.FC = () => {
   const trackPeaksRef = useRef<Map<number, TrackPeaksState>>(new Map());
 
   const userMetronomePreferenceRef = useRef<boolean>(false);
-
-  // Reactive armed count — updated via callback from RecordingTrackCard
-  const [armedCount, setArmedCount] = useState(0);
 
   // Derived UI state from session
   const isActive = session.state !== "idle" && session.state !== "ready";
@@ -187,13 +182,6 @@ const App: React.FC = () => {
 
     canvasPaintersMap.current.set(trackIndex, painter);
   }, []);
-
-  // Recompute armed count when a track's armed state changes
-  const handleArmedChange = useCallback(() => {
-    setArmedCount(
-      recordingTracks.filter(t => t.capture.armed.getValue()).length
-    );
-  }, [recordingTracks]);
 
   // Set up timeline loop area when recording finishes (transition to "ready")
   useEffect(() => {
@@ -338,19 +326,6 @@ const App: React.FC = () => {
     });
   }, [project, timeSignatureNumerator, timeSignatureDenominator]);
 
-  // Request audio permission and enumerate devices
-  const handleRequestPermission = useCallback(async () => {
-    try {
-      await AudioDevices.requestPermission();
-      await AudioDevices.updateInputList();
-      setAudioInputDevices([...AudioDevices.inputs]);
-      setAudioOutputDevices(await enumerateOutputDevices());
-      setHasPermission(true);
-    } catch (error) {
-      console.error("Failed to get audio devices:", error);
-    }
-  }, []);
-
   // Initialize OpenDAW
   useEffect(() => {
     let mounted = true;
@@ -382,63 +357,6 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Add a new recording track
-  const handleAddTrack = useCallback(() => {
-    if (!project) return;
-
-    // Create Tape instrument and configure capture in one transaction.
-    // editing.modify() doesn't forward return values, so we capture via outer variable.
-    let audioUnitBoxRef: AudioUnitBox | null = null;
-
-    project.editing.modify(() => {
-      const { audioUnitBox } = project.api.createInstrument(InstrumentFactories.Tape);
-      audioUnitBoxRef = audioUnitBox;
-
-      if (audioInputDevices.length > 0) {
-        const captureOpt = project.captureDevices.get(audioUnitBox.address.uuid);
-        if (!captureOpt.isEmpty()) {
-          const cap = captureOpt.unwrap();
-          if (cap instanceof CaptureAudio) {
-            cap.captureBox.deviceId.setValue(audioInputDevices[0].deviceId);
-            cap.requestChannels = 1; // mono by default
-          }
-        }
-      }
-    });
-
-    if (!audioUnitBoxRef) return;
-
-    // Get capture device after transaction commits
-    const captureOpt = project.captureDevices.get(audioUnitBoxRef.address.uuid);
-    if (captureOpt.isEmpty()) return;
-    const capture = captureOpt.unwrap();
-    if (!(capture instanceof CaptureAudio)) return;
-
-    // Arm non-exclusively so other tracks stay armed
-    project.captureDevices.setArm(capture, false);
-
-    setRecordingTracks(prev => [...prev, {
-      id: UUID.toString(audioUnitBoxRef.address.uuid),
-      capture
-    }]);
-  }, [project, audioInputDevices]);
-
-  // Remove a recording track
-  const handleRemoveTrack = useCallback((id: string) => {
-    setRecordingTracks(prev => {
-      const track = prev.find(t => t.id === id);
-      if (track) {
-        // Disarm before removing
-        track.capture.armed.setValue(false);
-      }
-      const next = prev.filter(t => t.id !== id);
-      // Update armed count immediately since the removed track's
-      // onArmedChange callback won't fire after unmount
-      setArmedCount(next.filter(t => t.capture.armed.getValue()).length);
-      return next;
-    });
-  }, []);
-
   const handleStartRecording = useCallback(async () => {
     if (!project || !audioContext) return;
 
@@ -447,14 +365,10 @@ const App: React.FC = () => {
       await audioContext.resume();
     }
 
-    // Request microphone permission via AudioDevices API if not already granted
+    // Request microphone permission if not already granted
     if (!hasPermission) {
       try {
-        await AudioDevices.requestPermission();
-        await AudioDevices.updateInputList();
-        setAudioInputDevices([...AudioDevices.inputs]);
-        setAudioOutputDevices(await enumerateOutputDevices());
-        setHasPermission(true);
+        await requestPermission();
       } catch (error) {
         console.error("Microphone permission error:", error);
         return;
@@ -487,7 +401,7 @@ const App: React.FC = () => {
 
     project.engine.setPosition(0);
     project.startRecording(useCountIn);
-  }, [project, audioContext, useCountIn, hasPermission, session.resetLoaders]);
+  }, [project, audioContext, useCountIn, hasPermission, requestPermission, session.resetLoaders]);
 
   const handlePlayRecording = useCallback(async () => {
     if (!project || !audioContext) return;
@@ -629,7 +543,7 @@ const App: React.FC = () => {
                   <Text size="2" color="gray">
                     Grant microphone access to see available audio input devices.
                   </Text>
-                  <Button onClick={handleRequestPermission} color="blue" size="2" variant="soft">
+                  <Button onClick={requestPermission} color="blue" size="2" variant="soft">
                     Request Microphone Permission
                   </Button>
                 </Flex>
@@ -650,13 +564,13 @@ const App: React.FC = () => {
                       audioInputDevices={audioInputDevices}
                       audioOutputDevices={audioOutputDevices}
                       disabled={isActive}
-                      onRemove={handleRemoveTrack}
+                      onRemove={removeTrack}
                       onArmedChange={handleArmedChange}
                     />
                   ))}
 
                   <Button
-                    onClick={handleAddTrack}
+                    onClick={addTrack}
                     color="blue"
                     variant="soft"
                     disabled={isActive}

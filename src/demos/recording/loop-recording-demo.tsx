@@ -2,21 +2,22 @@ import React, { useEffect, useState, useCallback, useRef, useMemo } from "react"
 import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
 import type { Terminable } from "@opendaw/lib-std";
-import { Project, AudioDevices, CaptureAudio } from "@opendaw/studio-core";
+import { Project } from "@opendaw/studio-core";
 import type { SampleLoader } from "@opendaw/studio-adapters";
-import { InstrumentFactories } from "@opendaw/studio-adapters";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { PPQN } from "@opendaw/lib-dsp";
-import { AudioRegionBox, AudioUnitBox } from "@opendaw/studio-boxes";
+import { AudioRegionBox } from "@opendaw/studio-boxes";
 import { initializeOpenDAW } from "@/lib/projectSetup";
-import { enumerateOutputDevices } from "@/lib/audioUtils";
 import { useEnginePreference } from "@/hooks/useEnginePreference";
+import { useAudioDevicePermission } from "@/hooks/useAudioDevicePermission";
+import { useRecordingTracks } from "@/hooks/useRecordingTracks";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
 import { BpmControl } from "@/components/BpmControl";
 import { RecordingPreferences } from "@/components/RecordingPreferences";
 import { RecordingTrackCard } from "@/components/RecordingTrackCard";
+import type { RecordingTrack } from "@/components/RecordingTrackCard";
 import { TakeTimeline } from "@/components/TakeTimeline";
 import type { TakeRegion, TakeIteration } from "@/components/TakeTimeline";
 import "@radix-ui/themes/styles.css";
@@ -37,15 +38,6 @@ import {
 } from "@radix-ui/themes";
 
 // --- Types ---
-
-interface RecordingInputTrack {
-  id: string; // UUID.toString(audioUnitBox.address.uuid)
-  capture: CaptureAudio;
-  audioUnitBox: AudioUnitBox;
-  label: string;
-}
-
-// --- Constants ---
 
 const MAX_TRACKS = 4;
 const BAR_PPQN = PPQN.Quarter * 4; // one bar in 4/4 time
@@ -74,17 +66,10 @@ const App: React.FC = () => {
   const [takeIterations, setTakeIterations] = useState<TakeIteration[]>([]);
 
   // Audio input/output configuration
-  const [audioInputDevices, setAudioInputDevices] = useState<MediaDeviceInfo[]>(
-    []
-  );
-  const [audioOutputDevices, setAudioOutputDevices] = useState<MediaDeviceInfo[]>(
-    []
-  );
-  const [hasPermission, setHasPermission] = useState(false);
-  const [recordingTracks, setRecordingTracks] = useState<
-    RecordingInputTrack[]
-  >([]);
-  const [armedCount, setArmedCount] = useState(0);
+  const { audioInputDevices, audioOutputDevices, hasPermission, requestPermission } =
+    useAudioDevicePermission();
+  const { recordingTracks, armedCount, addTrack, removeTrack, handleArmedChange } =
+    useRecordingTracks({ project, audioInputDevices, maxTracks: MAX_TRACKS });
 
   // Settings
   const [useCountIn, setUseCountIn] = useState(true);
@@ -118,7 +103,7 @@ const App: React.FC = () => {
   // SampleLoaders discovered during recording — ref avoids stale closure in handleStopRecording
   const sampleLoadersRef = useRef<Set<SampleLoader>>(new Set());
   // Ref for recordingTracks to avoid restarting pointerHub subscriptions when tracks change
-  const recordingTracksRef = useRef<RecordingInputTrack[]>([]);
+  const recordingTracksRef = useRef<RecordingTrack[]>([]);
 
   // Cleanup subscriptions on unmount (but NOT sampleLoadersRef — handleStopRecording owns that)
   useEffect(() => {
@@ -362,7 +347,7 @@ const App: React.FC = () => {
 
     for (const track of recordingTracks) {
       const trackSub =
-        track.audioUnitBox.tracks.pointerHub.catchupAndSubscribe({
+        track.capture.audioUnitBox.tracks.pointerHub.catchupAndSubscribe({
           onAdded: (pointer) => {
             const trackBox = pointer.box;
             const regionSub = (
@@ -414,87 +399,6 @@ const App: React.FC = () => {
     updateTakeMuteInState,
   ]);
 
-  // --- Audio input management ---
-
-  const handleRequestPermission = useCallback(async () => {
-    try {
-      await AudioDevices.requestPermission();
-      await AudioDevices.updateInputList();
-      setAudioInputDevices([...AudioDevices.inputs]);
-
-      setAudioOutputDevices(await enumerateOutputDevices());
-
-      setHasPermission(true);
-    } catch (error) {
-      console.error("Failed to get audio devices:", error);
-      setStatus("Microphone permission denied. Please allow access and try again.");
-    }
-  }, []);
-
-  const handleArmedChange = useCallback(() => {
-    setArmedCount(
-      recordingTracks.filter((t) => t.capture.armed.getValue()).length
-    );
-  }, [recordingTracks]);
-
-  const handleAddTrack = useCallback(() => {
-    if (!project || recordingTracks.length >= MAX_TRACKS) return;
-
-    let audioUnitBoxRef: AudioUnitBox | null = null;
-
-    // Create instrument in its own transaction (pointer re-routing guideline)
-    project.editing.modify(() => {
-      const { audioUnitBox } = project.api.createInstrument(
-        InstrumentFactories.Tape
-      );
-      audioUnitBoxRef = audioUnitBox;
-    });
-
-    if (!audioUnitBoxRef) return;
-
-    const captureOpt = project.captureDevices.get(
-      (audioUnitBoxRef as AudioUnitBox).address.uuid
-    );
-    if (captureOpt.isEmpty()) return;
-    const capture = captureOpt.unwrap();
-    if (!(capture instanceof CaptureAudio)) return;
-
-    // Initialize capture settings in separate transaction after creation commits
-    if (audioInputDevices.length > 0) {
-      project.editing.modify(() => {
-        capture.captureBox.deviceId.setValue(audioInputDevices[0].deviceId);
-        capture.requestChannels = 1;
-      });
-    }
-
-    // Arm non-exclusively so other tracks stay armed
-    project.captureDevices.setArm(capture, false);
-
-    const trackLabel = `Track ${recordingTracks.length + 1}`;
-    setRecordingTracks((prev) => [
-      ...prev,
-      {
-        id: UUID.toString((audioUnitBoxRef as AudioUnitBox).address.uuid),
-        capture,
-        audioUnitBox: audioUnitBoxRef as AudioUnitBox,
-        label: trackLabel,
-      },
-    ]);
-  }, [project, audioInputDevices, recordingTracks.length]);
-
-  const handleRemoveTrack = useCallback(
-    (id: string) => {
-      const track = recordingTracks.find((t) => t.id === id);
-      if (track) {
-        track.capture.armed.setValue(false);
-      }
-      const next = recordingTracks.filter((t) => t.id !== id);
-      setRecordingTracks(next);
-      setArmedCount(next.filter((t) => t.capture.armed.getValue()).length);
-    },
-    [recordingTracks]
-  );
-
   // --- Recording handlers ---
 
   const handleStartRecording = useCallback(async () => {
@@ -504,16 +408,7 @@ const App: React.FC = () => {
     // Safety: request permission if not granted
     if (!hasPermission) {
       try {
-        await AudioDevices.requestPermission();
-        await AudioDevices.updateInputList();
-        setAudioInputDevices([...AudioDevices.inputs]);
-
-        const allDevices = await navigator.mediaDevices.enumerateDevices();
-        setAudioOutputDevices(allDevices.filter(d =>
-          d.kind === "audiooutput" && d.deviceId !== "" && d.deviceId !== "default"
-        ));
-
-        setHasPermission(true);
+        await requestPermission();
       } catch (error) {
         console.error("Mic error:", error);
         setStatus("Microphone permission denied. Cannot start recording.");
@@ -748,7 +643,7 @@ const App: React.FC = () => {
                     devices.
                   </Text>
                   <Button
-                    onClick={handleRequestPermission}
+                    onClick={requestPermission}
                     color="amber"
                     size="2"
                     variant="soft"
@@ -777,13 +672,13 @@ const App: React.FC = () => {
                       audioInputDevices={audioInputDevices}
                       audioOutputDevices={audioOutputDevices}
                       disabled={isRecording || isCountingIn}
-                      onRemove={handleRemoveTrack}
+                      onRemove={removeTrack}
                       onArmedChange={handleArmedChange}
                     />
                   ))}
 
                   <Button
-                    onClick={handleAddTrack}
+                    onClick={addTrack}
                     color="amber"
                     variant="soft"
                     disabled={
