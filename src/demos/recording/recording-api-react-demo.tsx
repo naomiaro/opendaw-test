@@ -218,6 +218,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!project || !audioContext || recordingTracks.length === 0) return;
 
+    console.log(`[Peaks] effect starting for ${recordingTracks.length} tracks`);
     const subs: Terminable[] = [];
     const allAudioUnits = project.rootBoxAdapter.audioUnits.adapters();
 
@@ -226,15 +227,25 @@ const App: React.FC = () => {
       const audioUnitAdapter = allAudioUnits.find(
         (au) => au.box === track.capture.audioUnitBox
       );
-      if (!audioUnitAdapter) continue;
+      if (!audioUnitAdapter) {
+        console.log(`[Peaks] track ${i}: no audioUnitAdapter found`);
+        continue;
+      }
 
       const tracksSub = audioUnitAdapter.tracks.catchupAndSubscribe({
         onAdd: (trackAdapter) => {
+          console.log(`[Peaks] track ${i}: TrackBox onAdd`);
           const regionsSub = trackAdapter.regions.catchupAndSubscribe({
             onAdded: (regionAdapter) => {
-              if (!regionAdapter.isAudioRegion()) return;
-              const label = regionAdapter.label;
+              const isAudio = regionAdapter.isAudioRegion();
+              const label = isAudio ? regionAdapter.label : "non-audio";
+              console.log(`[Peaks] track ${i}: region onAdded label="${label}" isAudio=${isAudio}`);
+              if (!isAudio) return;
               if (label !== "Recording" && !label.startsWith("Take ")) return;
+
+              const hasEntry = trackPeaksRef.current.has(i);
+              const existingLoader = trackPeaksRef.current.get(i)?.sampleLoader;
+              console.log(`[Peaks] track ${i}: hasEntry=${hasEntry} existingLoader=${!!existingLoader}`);
 
               if (!trackPeaksRef.current.has(i)) {
                 trackPeaksRef.current.set(i, {
@@ -244,31 +255,38 @@ const App: React.FC = () => {
                 });
               }
               const trackState = trackPeaksRef.current.get(i)!;
-              if (trackState.sampleLoader) return;
+              if (trackState.sampleLoader) {
+                console.log(`[Peaks] track ${i}: SKIPPED — sampleLoader already set`);
+                return;
+              }
 
               const waveformOffsetSec = regionAdapter.waveformOffset.getValue();
               if (waveformOffsetSec > 0) {
                 trackState.waveformOffsetFrames = Math.round(waveformOffsetSec * audioContext.sampleRate);
               }
 
-              // Adapter resolves sampleLoader internally via file → getOrCreateLoader()
               const fileAdapter = regionAdapter.file;
               const loader = fileAdapter.getOrCreateLoader();
               trackState.sampleLoader = loader;
               session.registerLoader(loader);
+              console.log(`[Peaks] track ${i}: sampleLoader SET, loaderState=${loader.state.type}`);
             },
-            onRemoved: () => {},
+            onRemoved: () => {
+              console.log(`[Peaks] track ${i}: region onRemoved`);
+            },
           });
           subs.push(regionsSub);
         },
-        onRemove: () => {},
+        onRemove: () => {
+          console.log(`[Peaks] track ${i}: TrackBox onRemove`);
+        },
         onReorder: () => {},
       });
       subs.push(tracksSub);
     }
 
-    // AnimationFrame for continuous peaks rendering — reads from trackPeaksRef
-    // which is populated by the subscriptions above.
+    // AnimationFrame for continuous peaks rendering
+    let afLogOnce = false;
     const animationFrameTerminable = AnimationFrame.add(() => {
       if (!shouldMonitorPeaksRef.current) return;
 
@@ -277,17 +295,23 @@ const App: React.FC = () => {
         ensureCanvasPainter(i);
 
         const trackState = trackPeaksRef.current.get(i);
-        if (!trackState?.sampleLoader) continue;
+        if (!trackState?.sampleLoader) {
+          if (!afLogOnce) console.log(`[Peaks AF] track ${i}: no sampleLoader`);
+          continue;
+        }
 
         const peaksOption = trackState.sampleLoader.peaks;
         if (peaksOption && !peaksOption.isEmpty()) {
+          if (!afLogOnce) console.log(`[Peaks AF] track ${i}: rendering peaks`);
           trackState.peaks = peaksOption.unwrap();
           canvasPaintersMap.current.get(i)?.requestUpdate();
         }
       }
+      afLogOnce = true;
     });
 
     return () => {
+      console.log(`[Peaks] effect cleanup`);
       animationFrameTerminable.terminate();
       for (const sub of subs) {
         sub.terminate();
