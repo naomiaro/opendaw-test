@@ -44,15 +44,24 @@ export function useRecordingTracks({
       audioUnitBoxRef = audioUnitBox;
     });
 
-    if (!audioUnitBoxRef) return;
+    if (!audioUnitBoxRef) {
+      console.error("[useRecordingTracks] createInstrument did not return audioUnitBox");
+      return;
+    }
 
     // Resolve capture after creation transaction commits
     const captureOpt = project.captureDevices.get(
       (audioUnitBoxRef as AudioUnitBox).address.uuid
     );
-    if (captureOpt.isEmpty()) return;
+    if (captureOpt.isEmpty()) {
+      console.error("[useRecordingTracks] No capture device found for new instrument");
+      return;
+    }
     const capture = captureOpt.unwrap();
-    if (!(capture instanceof CaptureAudio)) return;
+    if (!(capture instanceof CaptureAudio)) {
+      console.error("[useRecordingTracks] Capture device is not CaptureAudio");
+      return;
+    }
 
     // Configure capture in a separate transaction
     if (audioInputDevices.length > 0) {

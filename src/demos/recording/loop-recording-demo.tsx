@@ -396,31 +396,30 @@ const App: React.FC = () => {
 
   const handleStartRecording = useCallback(async () => {
     if (!project || !audioContext || armedCount === 0) return;
-    if (audioContext.state === "suspended") await audioContext.resume();
 
-    // Safety: request permission if not granted
-    if (!hasPermission) {
-      try {
+    try {
+      if (audioContext.state === "suspended") await audioContext.resume();
+
+      // Safety: request permission if not granted
+      if (!hasPermission) {
         await requestPermission();
-      } catch (error) {
-        console.error("Mic error:", error);
-        setStatus("Microphone permission denied. Cannot start recording.");
-        return;
       }
+
+      // Configure loop area with lead-in
+      const loopFrom = leadInBars * BAR_PPQN;
+      const loopTo = loopFrom + loopLengthBars * BAR_PPQN;
+
+      project.editing.modify(() => {
+        project.timelineBox.loopArea.from.setValue(loopFrom);
+        project.timelineBox.loopArea.to.setValue(loopTo);
+        project.timelineBox.loopArea.enabled.setValue(true);
+      });
+
+      project.engine.setPosition(0);
+      project.startRecording(useCountIn);
+    } catch (error) {
+      console.error("Failed to start recording:", error);
     }
-
-    // Configure loop area with lead-in
-    const loopFrom = leadInBars * BAR_PPQN;
-    const loopTo = loopFrom + loopLengthBars * BAR_PPQN;
-
-    project.editing.modify(() => {
-      project.timelineBox.loopArea.from.setValue(loopFrom);
-      project.timelineBox.loopArea.to.setValue(loopTo);
-      project.timelineBox.loopArea.enabled.setValue(true);
-    });
-
-    project.engine.setPosition(0);
-    project.startRecording(useCountIn);
   }, [
     project,
     audioContext,
@@ -429,6 +428,7 @@ const App: React.FC = () => {
     loopLengthBars,
     armedCount,
     hasPermission,
+    requestPermission,
   ]);
 
   const handleStopRecording = useCallback(() => {
@@ -494,16 +494,41 @@ const App: React.FC = () => {
 
   const handlePlay = useCallback(async () => {
     if (!project || !audioContext) return;
-    if (audioContext.state === "suspended") await audioContext.resume();
-    await project.engine.queryLoadingComplete();
 
-    // Keep loop area enabled so playback loops over takes
-    project.editing.modify(() => {
-      project.timelineBox.loopArea.enabled.setValue(true);
-    });
+    try {
+      if (audioContext.state === "suspended") await audioContext.resume();
 
-    project.engine.stop(true);
-    project.engine.play();
+      // Wait for audio to load with timeout
+      const isLoaded = await project.engine.queryLoadingComplete();
+      if (!isLoaded) {
+        const LOADING_TIMEOUT_MS = 10_000;
+        await new Promise<void>((resolve, reject) => {
+          const timeout = setTimeout(
+            () => reject(new Error("Audio loading timed out")),
+            LOADING_TIMEOUT_MS
+          );
+          const checkLoaded = async () => {
+            if (await project.engine.queryLoadingComplete()) {
+              clearTimeout(timeout);
+              resolve();
+            } else {
+              requestAnimationFrame(checkLoaded);
+            }
+          };
+          checkLoaded();
+        });
+      }
+
+      // Keep loop area enabled so playback loops over takes
+      project.editing.modify(() => {
+        project.timelineBox.loopArea.enabled.setValue(true);
+      });
+
+      project.engine.stop(true);
+      project.engine.play();
+    } catch (error) {
+      console.error("Failed to start playback:", error);
+    }
   }, [project, audioContext]);
 
   const handleStop = useCallback(() => {

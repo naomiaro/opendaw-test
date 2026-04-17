@@ -33,8 +33,9 @@ export function useAudioDevicePermission(): AudioDevicePermissionResult {
     // Output device enumeration is non-fatal — setSinkId is Chrome/Edge only
     try {
       setAudioOutputDevices(await enumerateOutputDevices());
-    } catch {
-      // Fails in insecure contexts or unsupported browsers — input devices still work
+    } catch (e) {
+      // Non-fatal — setSinkId is Chrome/Edge only, input devices still work
+      console.warn("[AudioDevicePermission] Output device enumeration failed:", e);
     }
   }, []);
 
