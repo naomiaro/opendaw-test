@@ -68,7 +68,7 @@ const App: React.FC = () => {
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
 
   // Recording session state machine
-  const session = useRecordingSession({ project, audioContext });
+  const session = useRecordingSession({ project });
 
   // Settings
   const [useCountIn, setUseCountIn] = useState(false);
@@ -99,6 +99,10 @@ const App: React.FC = () => {
     useAudioDevicePermission();
   const { recordingTracks, armedCount, addTrack, removeTrack, handleArmedChange } =
     useRecordingTracks({ project, audioInputDevices });
+
+  // Keep ref in sync to avoid tearing down pointerHub subscriptions on track changes
+  const recordingTracksRef = useRef(recordingTracks);
+  recordingTracksRef.current = recordingTracks;
 
   // Per-track canvas refs — keyed by track index
   const canvasRefsMap = useRef<Map<number, HTMLCanvasElement>>(new Map());
@@ -212,10 +216,11 @@ const App: React.FC = () => {
     if (!project || !session.shouldMonitorPeaks || !audioContext) return;
 
     const subs: Terminable[] = [];
-    let trackIndex = 0;
+    // Read from ref to avoid tearing down subscriptions when tracks array changes
+    const tracks = recordingTracksRef.current;
 
-    for (const track of recordingTracks) {
-      const idx = trackIndex++;
+    for (let idx = 0; idx < tracks.length; idx++) {
+      const track = tracks[idx];
 
       if (!trackPeaksRef.current.has(idx)) {
         trackPeaksRef.current.set(idx, {
@@ -228,6 +233,7 @@ const App: React.FC = () => {
       const trackSub = track.capture.audioUnitBox.tracks.pointerHub.catchupAndSubscribe({
         onAdded: (pointer) => {
           const trackBox = pointer.box;
+          // SDK .d.ts doesn't expose regions on the base box type — cast required
           const regionSub = (trackBox as any).regions.pointerHub.catchupAndSubscribe({
             onAdded: (regionPointer: any) => {
               const regionBox = regionPointer.box as AudioRegionBox;
@@ -263,7 +269,7 @@ const App: React.FC = () => {
         sub.terminate();
       }
     };
-  }, [project, session.shouldMonitorPeaks, audioContext, recordingTracks, session.registerLoader]);
+  }, [project, session.shouldMonitorPeaks, audioContext, session.registerLoader]);
 
   // Render waveform peaks — purely visual, reads from trackPeaksRef populated above.
   useEffect(() => {

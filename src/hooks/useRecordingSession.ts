@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { Terminable } from "@opendaw/lib-std";
 import { Project } from "@opendaw/studio-core";
-import type { SampleLoader } from "@opendaw/studio-adapters";
+import type { SampleLoader, SampleLoaderState } from "@opendaw/studio-adapters";
 
 export type RecordingState =
   | "idle"
@@ -13,7 +13,6 @@ export type RecordingState =
 
 interface UseRecordingSessionOptions {
   project: Project | null;
-  audioContext: AudioContext | null;
 }
 
 export interface RecordingSessionResult {
@@ -56,7 +55,6 @@ export function useRecordingSession({
   const loadedCountRef = useRef(0);
 
   function transition(next: RecordingState) {
-    console.log(`[RecordingSession] ${stateRef.current} → ${next}`);
     stateRef.current = next;
     setState(next);
   }
@@ -67,7 +65,6 @@ export function useRecordingSession({
       loadersRef.current.length > 0 &&
       loadedCountRef.current >= loadersRef.current.length
     ) {
-      console.log(`[RecordingSession] all ${loadersRef.current.length} loaders loaded`);
       transition("ready");
     }
   }
@@ -77,7 +74,6 @@ export function useRecordingSession({
   const registerLoader = useCallback((loader: SampleLoader) => {
     if (loadersRef.current.includes(loader)) return;
     loadersRef.current.push(loader);
-    console.log(`[RecordingSession] registered loader (${loadersRef.current.length} total), state=${loader.state.type}`);
 
     if (loader.state.type === "loaded") {
       loadedCountRef.current++;
@@ -85,9 +81,8 @@ export function useRecordingSession({
       return;
     }
 
-    const sub = loader.subscribe((loaderState: { type: string }) => {
+    const sub = loader.subscribe((loaderState: SampleLoaderState) => {
       if (loaderState.type === "loaded") {
-        console.log(`[RecordingSession] loader loaded (${loadedCountRef.current + 1}/${loadersRef.current.length})`);
         sub.terminate();
         loaderSubsRef.current = loaderSubsRef.current.filter((s) => s !== sub);
         loadedCountRef.current++;
@@ -171,7 +166,6 @@ export function useRecordingSession({
   }, [project, resetLoaders]);
 
   const signalPeaksReady = useCallback(() => {
-    console.log(`[RecordingSession] signalPeaksReady called, state=${stateRef.current}`);
     if (stateRef.current === "finalizing") {
       transition("ready");
     }

@@ -255,6 +255,7 @@ const App: React.FC = () => {
       const trackVertex = regionBox.regions.targetVertex;
       if (!trackVertex.isEmpty()) {
         const trackBox = trackVertex.unwrap().box;
+        // SDK .d.ts doesn't expose tracks on the base box type — cast required
         const audioUnitVertex = (trackBox as any).tracks?.targetVertex;
         if (audioUnitVertex && !audioUnitVertex.isEmpty()) {
           inputTrackId = UUID.toString(
@@ -350,6 +351,7 @@ const App: React.FC = () => {
         track.capture.audioUnitBox.tracks.pointerHub.catchupAndSubscribe({
           onAdded: (pointer) => {
             const trackBox = pointer.box;
+            // SDK .d.ts doesn't expose regions on the base box type — cast required
             const regionSub = (
               trackBox as any
             ).regions.pointerHub.catchupAndSubscribe({
