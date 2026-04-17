@@ -131,6 +131,20 @@ meters, progress bars). Never use it to drive state transitions — use SDK subs
 (`catchupAndSubscribe`, `sampleLoader.subscribe`) instead. AnimationFrame polling is
 unreliable for detecting one-time events like finalization completion.
 
+### Use SDK Adapter Layer for Region Discovery
+Prefer `project.rootBoxAdapter.audioUnits` → `AudioUnitBoxAdapter.tracks.catchupAndSubscribe`
+→ `TrackRegions.catchupAndSubscribe` → `AudioFileBoxAdapter.getOrCreateLoader()` over raw
+`pointerHub` or `boxGraph.boxes()` scanning. The adapter layer is typed (no `as any` casts),
+resolves sampleLoaders internally, and matches OpenDAW's own architecture.
+Note: `AudioUnitTracks` uses `onAdd`/`onRemove`/`onReorder`; `TrackRegions` uses `onAdded`/`onRemoved`.
+
+### Don't Gate AnimationFrame on React State via Refs
+React batching can skip intermediate renders (e.g., finalizing→ready→recording batched
+into one commit). A ref assigned during render (`ref.current = derivedValue`) may never
+see the intermediate value. AnimationFrame callbacks that guard on such refs will miss
+state changes. Instead, let AnimationFrame run unconditionally — when there's nothing to
+render it's a no-op.
+
 ### Finding Recording Regions
 ```typescript
 // Recording regions are labeled "Take N" (SDK 0.0.91+) or "Recording" (older)
