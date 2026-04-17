@@ -19,6 +19,10 @@ export interface RecordingSessionResult {
   state: RecordingState;
   countInBeatsRemaining: number;
   shouldMonitorPeaks: boolean;
+  /** Increments each time a new recording starts. Use as an effect dep
+   *  to force re-initialization even if shouldMonitorPeaks stays true
+   *  (React may batch "finalizing"→"ready"→"recording" into one render). */
+  sessionId: number;
   /** Call when the AnimationFrame discovers a new sampleLoader during recording.
    *  The hook subscribes eagerly so the "loaded" event is never missed. */
   registerLoader: (loader: SampleLoader) => void;
@@ -51,6 +55,7 @@ export function useRecordingSession({
   const [state, setState] = useState<RecordingState>("idle");
   const stateRef = useRef<RecordingState>("idle");
   const [countInBeatsRemaining, setCountInBeatsRemaining] = useState(0);
+  const [sessionId, setSessionId] = useState(0);
 
   // Stable project ref so callbacks outside the effect can access it
   const projectRef = useRef(project);
@@ -152,6 +157,7 @@ export function useRecordingSession({
       project.engine.isCountingIn.catchupAndSubscribe((obs) => {
         const countingIn = obs.getValue();
         if (countingIn && (stateRef.current === "idle" || stateRef.current === "ready")) {
+          setSessionId((n) => n + 1);
           transition("counting-in");
         }
       })
@@ -168,6 +174,9 @@ export function useRecordingSession({
         const recording = obs.getValue();
         const current = stateRef.current;
         if (recording && (current === "idle" || current === "counting-in" || current === "ready")) {
+          if (current === "idle" || current === "ready") {
+            setSessionId((n) => n + 1);
+          }
           transition("recording");
         } else if (
           !recording &&
@@ -214,6 +223,7 @@ export function useRecordingSession({
     state,
     countInBeatsRemaining,
     shouldMonitorPeaks,
+    sessionId,
     registerLoader,
     resetLoaders,
   };

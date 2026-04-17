@@ -296,7 +296,7 @@ const App: React.FC = () => {
         sub.terminate();
       }
     };
-  }, [project, session.shouldMonitorPeaks, audioContext, session.registerLoader]);
+  }, [project, session.shouldMonitorPeaks, session.sessionId, audioContext, session.registerLoader]);
 
   // Render waveform peaks — purely visual, reads from trackPeaksRef populated above.
   useEffect(() => {
@@ -328,7 +328,7 @@ const App: React.FC = () => {
     });
 
     return () => animationFrameTerminable.terminate();
-  }, [session.shouldMonitorPeaks, recordingTracks.length, ensureCanvasPainter]);
+  }, [session.shouldMonitorPeaks, session.sessionId, recordingTracks.length, ensureCanvasPainter]);
 
   // Initialize project settings from OpenDAW
   useEffect(() => {
