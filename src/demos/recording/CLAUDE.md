@@ -122,6 +122,8 @@ completes asynchronously while the engine keeps playing. Only call `stop(true)` 
 before subscribing — short recordings may already be `"loaded"` by the time you subscribe.
 `loader.state` is typed as `SampleLoaderState` with
 `.type: "idle" | "record" | "progress" | "error" | "loaded"`.
+Always handle both `"loaded"` and `"error"` in finalization barriers — ignoring
+`"error"` leaves the state machine stuck in "finalizing" permanently.
 
 ### AnimationFrame Is for Rendering Only
 Use `AnimationFrame.add()` exclusively for continuous visual updates (waveform peaks,
