@@ -1091,7 +1091,7 @@ This is **not a bug** - it's intentional data integrity checking to prevent temp
 
 ### Documentation
 
-- [Effects Documentation](./effects-research/README.md)
+- [Effects Documentation](./11-effects.md)
 - [Project Setup](./02-project-structure.md)
 - [Box System & Reactivity](./04-box-system-and-reactivity.md)
 

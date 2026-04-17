@@ -261,7 +261,7 @@ Each demo category folder has its own CLAUDE.md with SDK knowledge scoped to tho
 - Automation demos: `src/demos/automation/`
 - Effects demos: `src/demos/effects/`
 - Export demo: `src/demos/export/`
-- Effects research docs: `documentation/effects-research/`
+- Effects docs: `documentation/11-effects.md`
 - Box subscription lifecycle: `documentation/18-box-subscriptions-lifecycle.md`
 - Region splice & comp lanes findings: `documentation/09-editing-fades-and-automation.md#advanced-region-splicing--comp-lanes`
 - SDK 0.0.119→0.0.128 changelog: `documentation/sdk-0.0.119-to-0.0.128-changes.md`

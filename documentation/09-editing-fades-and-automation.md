@@ -1298,7 +1298,7 @@ This would complement the existing track-automation-demo which creates automatio
 - SDK adapter: `@opendaw/studio-adapters` → `ValueRegionBoxAdapter`, `ValueEventCollectionBoxAdapter`
 - SDK automation recording: `@opendaw/studio-core` → `capture/RecordAutomation.ts`
 - SDK touch management: `@opendaw/studio-adapters` → `ParameterFieldAdapters.ts`, `AutomatableParameterFieldAdapter.ts`
-- Effect parameter docs: `documentation/effects-research/01-effect-types.md`
+- Effect parameter docs: `documentation/11-effects.md`
 
 ---
 
@@ -1435,4 +1435,4 @@ Until either is addressed, use multi-track volume automation crossfades for any 
 - [Timing & Tempo](./02-timing-and-tempo.md)
 - [Box System & Reactivity](./04-box-system-and-reactivity.md)
 - [Timeline & Rendering](./06-timeline-and-rendering.md)
-- [Effects](./effects-research/01-effect-types.md)
+- [Effects](./11-effects.md)
