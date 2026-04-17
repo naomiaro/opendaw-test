@@ -269,10 +269,8 @@ const App: React.FC = () => {
             const uuid = fileVertex.address.uuid;
             trackState.sampleLoader = project.sampleManager.getOrCreate(uuid);
 
-            // Share with the hook for finalization barrier
-            if (!session.sampleLoadersRef.current.includes(trackState.sampleLoader)) {
-              session.sampleLoadersRef.current.push(trackState.sampleLoader);
-            }
+            // Register eagerly so the hook subscribes before recording stops
+            session.registerLoader(trackState.sampleLoader);
           }
         }
 
@@ -288,7 +286,7 @@ const App: React.FC = () => {
     });
 
     return () => animationFrameTerminable.terminate();
-  }, [project, session.shouldMonitorPeaks, audioContext, recordingTracks.length, ensureCanvasPainter, session.sampleLoadersRef]);
+  }, [project, session.shouldMonitorPeaks, audioContext, recordingTracks.length, ensureCanvasPainter, session.registerLoader]);
 
   // Initialize project settings from OpenDAW
   useEffect(() => {
@@ -468,7 +466,7 @@ const App: React.FC = () => {
 
     // Reset peaks state for all tracks
     trackPeaksRef.current.clear();
-    session.sampleLoadersRef.current = [];
+    session.resetLoaders();
 
     // Cleanup old painters
     for (const [, painter] of canvasPaintersMap.current) {
@@ -478,7 +476,7 @@ const App: React.FC = () => {
 
     project.engine.setPosition(0);
     project.startRecording(useCountIn);
-  }, [project, audioContext, useCountIn, hasPermission, session.sampleLoadersRef]);
+  }, [project, audioContext, useCountIn, hasPermission, session.resetLoaders]);
 
   const handlePlayRecording = useCallback(async () => {
     if (!project || !audioContext) return;

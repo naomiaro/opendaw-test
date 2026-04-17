@@ -108,6 +108,27 @@ sourceNode → monitorGainNode → monitorPanNode → destination (or custom out
 - Output device enumeration: use `navigator.mediaDevices.enumerateDevices()` filtering
   for `kind === "audiooutput"` (not handled by `AudioDevices` class)
 
+### Never Call stop(true) During Recording Finalization
+After `stopRecording()`, the SDK finalizes internally (imports sample, generates peaks).
+Calling `stop(true)` during this window kills the audio graph and prevents finalization.
+OpenDAW's transport never calls `stop(true)` after `stopRecording()` — finalization
+completes asynchronously while the engine keeps playing. Only call `stop(true)` for:
+- Cancelling count-in (no loaders to finalize)
+- Stopping playback (state is "ready" or "playing")
+- Resetting position before `play()` for playback
+
+### SampleLoader Has subscribe() Only (Not catchupAndSubscribe)
+`sampleLoader.subscribe()` fires only for future state changes. Check `loader.state.type`
+before subscribing — short recordings may already be `"loaded"` by the time you subscribe.
+`loader.state` is typed as `SampleLoaderState` with
+`.type: "idle" | "record" | "progress" | "error" | "loaded"`.
+
+### AnimationFrame Is for Rendering Only
+Use `AnimationFrame.add()` exclusively for continuous visual updates (waveform peaks,
+meters, progress bars). Never use it to drive state transitions — use SDK subscriptions
+(`catchupAndSubscribe`, `sampleLoader.subscribe`) instead. AnimationFrame polling is
+unreliable for detecting one-time events like finalization completion.
+
 ### Finding Recording Regions
 ```typescript
 // Recording regions are labeled "Take N" (SDK 0.0.91+) or "Recording" (older)

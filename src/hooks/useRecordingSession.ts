@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import type { MutableRefObject } from "react";
 import type { Terminable } from "@opendaw/lib-std";
 import { Project } from "@opendaw/studio-core";
 import type { SampleLoader } from "@opendaw/studio-adapters";
@@ -21,7 +20,11 @@ export interface RecordingSessionResult {
   state: RecordingState;
   countInBeatsRemaining: number;
   shouldMonitorPeaks: boolean;
-  sampleLoadersRef: MutableRefObject<SampleLoader[]>;
+  /** Call when the AnimationFrame discovers a new sampleLoader during recording.
+   *  The hook subscribes eagerly so the "loaded" event is never missed. */
+  registerLoader: (loader: SampleLoader) => void;
+  /** Reset loaders before starting a new recording. */
+  resetLoaders: () => void;
   signalPeaksReady: () => void;
 }
 
@@ -30,10 +33,11 @@ export interface RecordingSessionResult {
  *
  * States: idle → counting-in → recording → finalizing → ready → playing → ready
  *
- * After stopRecording(), the SDK finalizes the recording internally.
- * The hook waits for all sampleLoaders to reach "loaded" state, then
- * transitions to "ready". The component can also call signalPeaksReady()
- * to trigger the transition (e.g., from an AnimationFrame peaks monitor).
+ * Loaders are registered eagerly during recording via registerLoader().
+ * Each loader is subscribed immediately so the "loaded" event is never missed.
+ * When isRecording fires false, the hook checks if all registered loaders
+ * are already loaded — if so, transitions directly to "ready". Otherwise
+ * waits for the remaining subscriptions to fire.
  *
  * The hook does NOT call engine.stop(true) during finalization — the SDK
  * handles this internally. stop(true) is only called for the count-in
@@ -45,14 +49,62 @@ export function useRecordingSession({
   const [state, setState] = useState<RecordingState>("idle");
   const stateRef = useRef<RecordingState>("idle");
   const [countInBeatsRemaining, setCountInBeatsRemaining] = useState(0);
-  const sampleLoadersRef = useRef<SampleLoader[]>([]);
-  const finalizationSubsRef = useRef<Terminable[]>([]);
+
+  // Eager loader tracking: subscribe as soon as discovered, not when recording stops
+  const loadersRef = useRef<SampleLoader[]>([]);
+  const loaderSubsRef = useRef<Terminable[]>([]);
+  const loadedCountRef = useRef(0);
 
   function transition(next: RecordingState) {
     console.log(`[RecordingSession] ${stateRef.current} → ${next}`);
     stateRef.current = next;
     setState(next);
   }
+
+  function checkFinalizationComplete() {
+    if (
+      stateRef.current === "finalizing" &&
+      loadersRef.current.length > 0 &&
+      loadedCountRef.current >= loadersRef.current.length
+    ) {
+      console.log(`[RecordingSession] all ${loadersRef.current.length} loaders loaded`);
+      transition("ready");
+    }
+  }
+
+  // Register a loader eagerly during recording. Subscribes immediately
+  // so the "loaded" event can never be missed.
+  const registerLoader = useCallback((loader: SampleLoader) => {
+    if (loadersRef.current.includes(loader)) return;
+    loadersRef.current.push(loader);
+    console.log(`[RecordingSession] registered loader (${loadersRef.current.length} total), state=${loader.state.type}`);
+
+    if (loader.state.type === "loaded") {
+      loadedCountRef.current++;
+      checkFinalizationComplete();
+      return;
+    }
+
+    const sub = loader.subscribe((loaderState: { type: string }) => {
+      if (loaderState.type === "loaded") {
+        console.log(`[RecordingSession] loader loaded (${loadedCountRef.current + 1}/${loadersRef.current.length})`);
+        sub.terminate();
+        loaderSubsRef.current = loaderSubsRef.current.filter((s) => s !== sub);
+        loadedCountRef.current++;
+        checkFinalizationComplete();
+      }
+    });
+    loaderSubsRef.current.push(sub);
+  }, []);
+
+  const resetLoaders = useCallback(() => {
+    for (const sub of loaderSubsRef.current) {
+      sub.terminate();
+    }
+    loaderSubsRef.current = [];
+    loadersRef.current = [];
+    loadedCountRef.current = 0;
+  }, []);
 
   // Subscribe to engine state — depends only on [project]
   useEffect(() => {
@@ -85,13 +137,15 @@ export function useRecordingSession({
           !recording &&
           (current === "recording" || current === "counting-in")
         ) {
-          if (sampleLoadersRef.current.length === 0) {
+          if (loadersRef.current.length === 0) {
             // Nothing to finalize (e.g., cancelled during count-in)
             project.engine.stop(true);
             transition("idle");
           } else {
             transition("finalizing");
-            startFinalizationBarrier();
+            // Loaders were already subscribed eagerly via registerLoader().
+            // Check if they all finished while we were still recording.
+            checkFinalizationComplete();
           }
         }
       })
@@ -112,57 +166,9 @@ export function useRecordingSession({
 
     return () => {
       subs.forEach((s) => s.terminate());
-      cleanupFinalizationSubs();
+      resetLoaders();
     };
-  }, [project]);
-
-  function cleanupFinalizationSubs() {
-    for (const sub of finalizationSubsRef.current) {
-      sub.terminate();
-    }
-    finalizationSubsRef.current = [];
-  }
-
-  function startFinalizationBarrier() {
-    cleanupFinalizationSubs();
-
-    const loaders = sampleLoadersRef.current;
-    console.log(`[RecordingSession] finalization barrier: ${loaders.length} loaders`);
-    let finalized = 0;
-
-    const checkComplete = () => {
-      console.log(`[RecordingSession] finalization progress: ${finalized}/${loaders.length}, state=${stateRef.current}`);
-      if (finalized === loaders.length && stateRef.current === "finalizing") {
-        transition("ready");
-      }
-    };
-
-    for (const loader of loaders) {
-      // Check if already loaded (race: short recordings may finalize
-      // before the barrier subscribes)
-      console.log(`[RecordingSession] loader state: ${loader.state.type}`);
-      if (loader.state.type === "loaded") {
-        finalized++;
-        continue;
-      }
-
-      const sub = loader.subscribe((loaderState: { type: string }) => {
-        console.log(`[RecordingSession] loader event: ${loaderState.type}`);
-        if (loaderState.type === "loaded") {
-          sub.terminate();
-          finalizationSubsRef.current = finalizationSubsRef.current.filter(
-            (s) => s !== sub
-          );
-          finalized++;
-          checkComplete();
-        }
-      });
-      finalizationSubsRef.current.push(sub);
-    }
-
-    // If all were already loaded, complete immediately
-    checkComplete();
-  }
+  }, [project, resetLoaders]);
 
   const signalPeaksReady = useCallback(() => {
     console.log(`[RecordingSession] signalPeaksReady called, state=${stateRef.current}`);
@@ -178,7 +184,8 @@ export function useRecordingSession({
     state,
     countInBeatsRemaining,
     shouldMonitorPeaks,
-    sampleLoadersRef,
+    registerLoader,
+    resetLoaders,
     signalPeaksReady,
   };
 }
