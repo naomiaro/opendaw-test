@@ -472,7 +472,7 @@ const sub = AnimationFrame.add(() => {
 });
 ```
 
-**When polling is appropriate:** Rendering waveform peaks at 60fps, where you need to read continuously-changing values (like `peaks.dataIndex`) every frame. Use `AnimationFrame` for rendering, not for discovering structural changes.
+**When polling is appropriate:** Canvas rendering at 60fps, where you need to repaint continuously (e.g., a growing waveform during recording). Use `AnimationFrame` for rendering, not for discovering structural changes.
 
 #### Reactive (preferred)
 
