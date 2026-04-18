@@ -12,7 +12,7 @@
 - [Musical Time Units in PPQN](#musical-time-units-in-ppqn)
 - [Positioning on the Timeline](#positioning-on-the-timeline)
 - [Audio Duration (Use PPQN Utilities)](#audio-duration-use-ppqn-utilities)
-- [The Golden Rule](#the-golden-rule)
+- [Positions vs Durations](#positions-vs-durations)
 - [Complete Example](#complete-example)
 - [Visualizing PPQN on Timeline](#visualizing-ppqn-on-timeline)
 - [Key Takeaways](#key-takeaways)
@@ -203,7 +203,7 @@ PPQN.secondsToPulses(0.5, 240); // = 3840 pulses (four quarter notes)
 
 Why? Because at higher BPM, the same audio file covers more musical time (more beats).
 
-## The Golden Rule
+## Positions vs Durations
 
 ```typescript
 // ✅ CORRECT: Musical positions (beat grid)
