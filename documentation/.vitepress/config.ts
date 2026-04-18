@@ -78,6 +78,17 @@ export default defineConfig({
     nav: [
       { text: "Handbook", link: "/01-introduction" },
       { text: "Demos", link: "https://opendaw-test.pages.dev" },
+      {
+        text: "Changelogs",
+        link: "https://github.com/naomiaro/opendaw-test/tree/main/changelogs",
+      },
+    ],
+
+    socialLinks: [
+      {
+        icon: "github",
+        link: "https://github.com/naomiaro/opendaw-test",
+      },
     ],
 
     search: {
