@@ -23,6 +23,8 @@
   - [Setting Up the Timeline](#setting-up-the-timeline)
   - [Common Patterns (Tempo)](#common-patterns-tempo)
   - [Converting with Variable Tempo](#converting-with-variable-tempo)
+  - [The Integration Algorithm](#the-integration-algorithm)
+  - [Two Timebase Modes for Clips](#two-timebase-modes-for-clips)
 - [Advanced: Time Signature Changes](#advanced-time-signature-changes)
   - [PPQN and Time Signatures](#ppqn-and-time-signatures)
   - [Accessing the Signature Track](#accessing-the-signature-track)
@@ -534,11 +536,58 @@ Same principle with tempo: if ticks 0-3840 (bar 1) are at 120 BPM, that's 2 seco
 
 With a linear ramp (e.g., 120 BPM accelerating to 180 BPM over 8 bars), the tempo is different at every point. The `tempoMap` handles this by stepping through the ramp in small 80-tick segments (~10ms each), computing each segment's duration at its local tempo, and summing them — a [Riemann sum](https://en.wikipedia.org/wiki/Riemann_sum) approximating the integral of `1/tempo` over the tick range.
 
-This is all handled internally by `project.tempoMap` — you just call `ppqnToSeconds()` or `intervalToSeconds()` and get the correct result. For the full algorithm details, see [Chapter 06: Audio Rendering Pipeline](./06-timeline-and-rendering.md#layer-2-tempo-integration-variable-tempo).
+This is all handled internally by `project.tempoMap` — you just call `ppqnToSeconds()` or `intervalToSeconds()` and get the correct result.
+
+### The Integration Algorithm
+
+The `VaryingTempoMap` converts ticks to seconds by stepping through 80-tick intervals (~10ms at typical tempos):
+
+```
+function ppqnToSeconds(targetTick):
+    accumulatedSeconds = 0
+    currentTick = 0
+
+    while currentTick < targetTick:
+        bpm = tempoMap.getTempoAt(currentTick)
+        nextGrid = ceil(currentTick / 80) * 80
+        segmentEnd = min(nextGrid, targetTick)
+        segmentTicks = segmentEnd - currentTick
+        segmentSeconds = segmentTicks * 60 / (960 * bpm)
+        accumulatedSeconds += segmentSeconds
+        currentTick = segmentEnd
+
+    return accumulatedSeconds
+```
+
+Each step assumes constant tempo within the 80-tick window. This is a **Riemann sum** — approximating the integral of `1/tempo` over the tick range.
+
+A **cache** stores pre-computed (tick, seconds, bpm) entries at tempo event boundaries for performance — binary search finds the nearest entry, then integration continues from there.
+
+The inverse (`secondsToTicks`) uses the same stepping approach but accumulates ticks instead of seconds, interpolating linearly within the final segment when it would overshoot the target.
+
+### Two Timebase Modes for Clips
+
+Audio clips can operate in two modes:
+
+**Musical Timebase** — position and duration stored in PPQN ticks. The clip stays at the same bar/beat regardless of tempo. When tempo changes, the clip's real-time duration changes but its musical position is fixed. Use for: drum loops, synth patterns, anything composed to fit specific bars.
+
+**Seconds Timebase** — position in PPQN (for grid alignment), but duration in seconds. When tempo changes, the clip's PPQN duration is recomputed by integrating over the tempo curve. The same 4-second clip takes fewer beats at high tempo and more beats at low tempo. Use for: sound effects, dialogue, field recordings.
+
+The conversion is **position-dependent** when tempo varies:
+
+```typescript
+// Convert a real-time duration to PPQN at a specific timeline position
+const startSeconds = tempoMap.ppqnToSeconds(positionTick);
+const endTick = tempoMap.secondsToPPQN(startSeconds + durationSeconds);
+const durationInTicks = endTick - positionTick;
+```
+
+At 120 BPM: 4 seconds = 7680 ticks (8 beats). At 60 BPM: 4 seconds = 3840 ticks (4 beats). At a ramp from 120→60: somewhere in between, determined by integration. See the [TimeBase demo](https://opendaw-test.pages.dev/timebase-demo.html) for an interactive comparison.
 
 ### Reference (Tempo Automation)
 
-- Demo: `src/tempo-automation-demo.tsx`
+- Tempo demo: [tempo-automation-demo](https://opendaw-test.pages.dev/tempo-automation-demo.html)
+- TimeBase demo: [timebase-demo](https://opendaw-test.pages.dev/timebase-demo.html)
 - VaryingTempoMap: `packages/studio/adapters/src/VaryingTempoMap.ts`
 - ValueEventCollectionBoxAdapter: `packages/studio/adapters/src/timeline/collection/ValueEventCollectionBoxAdapter.ts`
 

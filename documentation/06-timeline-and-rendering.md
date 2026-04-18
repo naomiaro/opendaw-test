@@ -30,15 +30,10 @@
   - [Pattern 2: Minimap Overview](#pattern-2-minimap-overview)
 - [Summary](#summary)
 - [Advanced: Audio Rendering Pipeline](#advanced-audio-rendering-pipeline)
-  - [The Two Coordinate Systems](#the-two-coordinate-systems)
-  - [Constants](#constants)
-  - [Layer 1: Core Conversions (Constant Tempo)](#layer-1-core-conversions-constant-tempo)
-  - [Layer 2: Tempo Integration (Variable Tempo)](#layer-2-tempo-integration-variable-tempo)
-  - [Layer 3: The Timeline Grid (PPQN-Linear)](#layer-3-the-timeline-grid-ppqn-linear)
-  - [Layer 4: Waveform Rendering (Tempo-Aware)](#layer-4-waveform-rendering-tempo-aware)
-  - [Layer 5: Peak Rendering (Pure Pixel Math)](#layer-5-peak-rendering-pure-pixel-math)
+  - [The Timeline Grid (PPQN-Linear)](#the-timeline-grid-ppqn-linear)
+  - [Waveform Rendering (Tempo-Aware)](#waveform-rendering-tempo-aware)
+  - [Peak Rendering (Pure Pixel Math)](#peak-rendering-pure-pixel-math)
   - [The Complete Pipeline](#the-complete-pipeline)
-  - [Two Timebase Modes for Clips](#two-timebase-modes-for-clips)
 
 ## Overview
 
@@ -661,119 +656,12 @@ Remember:
 ## Advanced: Audio Rendering Pipeline
 
 > **Skip if:** you don't need to understand the internal render path from musical time to pixels
+>
+> **Prerequisites:** [Chapter 02: Timing & Tempo](./02-timing-and-tempo.md) — especially the sections on tempo integration, timebase modes, and the integration algorithm
 
 How a DAW converts musical positions (beats, bars) into waveform pixels on screen, handling tempo changes along the way.
 
-### The Two Coordinate Systems
-
-A DAW timeline has two fundamentally different ways to measure position:
-
-**Musical time (PPQN ticks)** — measures position in beats. A quarter note is always 960 ticks (at PPQN=960), regardless of tempo. Bar 5, beat 3 is always the same tick number. The grid lines in a DAW are evenly spaced in this space.
-
-**Real time (seconds/samples)** — measures position in wall-clock time. One second is always one second. Audio samples live in this space (48,000 samples = 1 second at 48kHz).
-
-At a constant tempo, these two systems are proportional — converting between them is just multiplication. But when tempo changes, the relationship becomes non-linear, and the math gets interesting.
-
-### Constants
-
-```
-PPQN (Quarter) = 960          Ticks per quarter note
-Bar            = 3840          Ticks per bar (4/4 time: 4 x 960)
-SemiQuaver     = 240           Ticks per sixteenth note (960 / 4)
-TempoChangeGrid = 80           Integration resolution (~1/12 beat)
-RenderQuantum  = 128           Audio worklet block size (samples)
-```
-
-**Why 960 PPQN?** 960 = 2^6 x 3 x 5. This gives clean integer division for common subdivisions: triplets (960/3 = 320), sixteenths (960/4 = 240), thirty-seconds (960/8 = 120). No floating-point needed for standard musical divisions.
-
-### Layer 1: Core Conversions (Constant Tempo)
-
-At a single tempo, converting between ticks and seconds is a simple ratio:
-
-```
-seconds = ticks x 60 / (PPQN x BPM)
-ticks   = seconds x BPM x PPQN / 60
-```
-
-For example, at 120 BPM:
-- 1 quarter note = 960 ticks = 960 x 60 / (960 x 120) = **0.5 seconds**
-- 1 bar (4/4) = 3840 ticks = 3840 x 60 / (960 x 120) = **2.0 seconds**
-- 3 seconds of audio = 3 x 120 x 960 / 60 = **5760 ticks**
-
-To get samples, multiply seconds by the sample rate:
-
-```
-samples = ticks x 60 x sampleRate / (PPQN x BPM)
-```
-
-At 120 BPM and 48kHz: 960 ticks = 0.5 seconds = 24,000 samples.
-
-### Layer 2: Tempo Integration (Variable Tempo)
-
-When tempo changes mid-timeline, the simple ratio breaks. A section at 120 BPM has different seconds-per-tick than a section at 60 BPM. Converting a tick position to seconds requires **integrating** over the tempo curve — summing up the time contribution of each small segment at its local tempo.
-
-For an intuitive explanation of why integration is needed, see [Chapter 02: Why "integration across the ramp"?](./02-timing-and-tempo.md#why-integration-across-the-ramp)
-
-#### The Integration Algorithm
-
-The `VaryingTempoMap` converts ticks to seconds by stepping through `TempoChangeGrid`-sized intervals (80 ticks each, approximately 10ms at typical tempos):
-
-```
-function ppqnToSeconds(targetTick):
-    accumulatedSeconds = 0
-    currentTick = 0
-
-    while currentTick < targetTick:
-        // Get tempo at this position
-        bpm = tempoMap.getTempoAt(currentTick)
-
-        // Step to next grid boundary (or target, whichever is closer)
-        nextGrid = ceil(currentTick / 80) * 80
-        segmentEnd = min(nextGrid, targetTick)
-        segmentTicks = segmentEnd - currentTick
-
-        // Convert this segment's ticks to seconds at local tempo
-        segmentSeconds = segmentTicks * 60 / (960 * bpm)
-
-        accumulatedSeconds += segmentSeconds
-        currentTick = segmentEnd
-
-    return accumulatedSeconds
-```
-
-Each step assumes constant tempo within the 80-tick window. This is a **Riemann sum** — approximating the integral of `1/tempo` over the tick range. The 80-tick grid (~10ms) provides sufficient resolution for smooth tempo automation curves.
-
-#### Caching for Performance
-
-The integration runs from tick 0 every time, which would be slow for positions deep in the timeline. A **cache** stores pre-computed (tick, seconds, bpm) entries at tempo event boundaries. Binary search finds the nearest cached entry, then integration continues from there.
-
-#### The Inverse: Seconds to Ticks
-
-Going the other direction (seconds to ticks) uses the same stepping approach, but accumulates ticks instead of seconds. When a step would overshoot the target seconds, it interpolates linearly within that segment:
-
-```
-function secondsToTicks(targetSeconds):
-    accumulatedSeconds = 0
-    accumulatedTicks = 0
-
-    while accumulatedSeconds < targetSeconds:
-        bpm = tempoMap.getTempoAt(accumulatedTicks)
-        segmentTicks = 80  // TempoChangeGrid
-        segmentSeconds = segmentTicks * 60 / (960 * bpm)
-
-        if accumulatedSeconds + segmentSeconds >= targetSeconds:
-            // Overshoot — interpolate within this segment
-            remainingSeconds = targetSeconds - accumulatedSeconds
-            accumulatedTicks += remainingSeconds * bpm * 960 / 60
-            break
-
-        accumulatedSeconds += segmentSeconds
-        accumulatedTicks += segmentTicks
-
-    return accumulatedTicks
-```
-
-### Layer 3: The Timeline Grid (PPQN-Linear)
+### The Timeline Grid (PPQN-Linear)
 
 The grid, ruler, and beat markers use a simple **linear** mapping from ticks to pixels:
 
@@ -786,7 +674,7 @@ This is intentionally NOT tempo-aware. Every beat is the same pixel width. Every
 
 This is the correct behavior — when a musician looks at a timeline in "bars & beats" mode, they expect beat 1 of every bar to be equally spaced, regardless of whether the tempo is accelerating or decelerating.
 
-### Layer 4: Waveform Rendering (Tempo-Aware)
+### Waveform Rendering (Tempo-Aware)
 
 This is where it gets interesting. The waveform renderer needs to show audio content aligned to the tick-linear grid. At a constant tempo, this is trivial — the audio's sample positions map linearly to tick positions. But at tempo changes, the same number of audio samples maps to different pixel widths depending on the local tempo.
 
@@ -846,7 +734,7 @@ At a tempo change from 120 BPM to 60 BPM:
 
 Before the tempo change, each beat-width shows 0.5 seconds of audio. After, each beat-width shows 1.0 seconds of audio (because at 60 BPM, a beat IS 1 second). The waveform appears "compressed" after the tempo change — more audio content packed into the same visual beat width.
 
-### Layer 5: Peak Rendering (Pure Pixel Math)
+### Peak Rendering (Pure Pixel Math)
 
 The lowest level — `renderPixelStrips` — knows nothing about tempo, ticks, or music. It receives a pre-computed **layout**:
 
@@ -931,35 +819,4 @@ Peak renderer:
     Draw vertical line from yMin to yMax at x=500
 ```
 
-### Two Timebase Modes for Clips
-
-Audio clips can operate in two modes:
-
-#### Musical Timebase
-
-Position and duration stored in PPQN ticks. The clip stays at the same bar/beat position regardless of tempo. When tempo changes, the clip's real-time duration changes (faster tempo = shorter real time), but its musical position is fixed.
-
-Use case: drum loops, synth patterns, anything composed to fit specific bars.
-
-#### Seconds Timebase
-
-Position stored in PPQN (for grid alignment), but duration stored in seconds. When tempo changes, the clip's PPQN duration is **recomputed** by integrating over the tempo curve at the clip's position. The same 4-second clip takes fewer beats at high tempo and more beats at low tempo.
-
-Use case: sound effects, dialogue, field recordings — audio with a fixed real-time duration that shouldn't stretch with tempo.
-
-#### Conversion Between Timebases
-
-The conversion is **position-dependent** when tempo varies:
-
-```
-// Seconds timebase: convert duration to PPQN at a specific position
-function durationToPPQN(durationSeconds, positionTick):
-    startSeconds = tempoMap.ppqnToSeconds(positionTick)
-    endSeconds = startSeconds + durationSeconds
-    endTick = tempoMap.secondsToPPQN(endSeconds)
-    return endTick - positionTick
-```
-
-At 120 BPM: 4 seconds = 7680 ticks (8 beats).
-At 60 BPM: 4 seconds = 3840 ticks (4 beats).
-At a tempo ramp from 120 to 60 BPM: 4 seconds = somewhere between 3840 and 7680 ticks, determined by integration.
+For an explanation of Musical vs Seconds timebase modes and how they interact with tempo, see [Chapter 02: Two Timebase Modes for Clips](./02-timing-and-tempo.md#two-timebase-modes-for-clips).
