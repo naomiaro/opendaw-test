@@ -357,48 +357,62 @@ project.editing.modify(() => {
 
 ### Interpolation Modes
 
-| Mode | Import | Effect |
-|------|--------|--------|
-| `Interpolation.None` | `@opendaw/lib-dsp` | Stepped — instant jump to new BPM |
-| `Interpolation.Linear` | `@opendaw/lib-dsp` | Linear ramp between tempo values |
+| Mode | Effect |
+|------|--------|
+| `Interpolation.None` | Stepped — instant jump to new value |
+| `Interpolation.Linear` | Straight-line ramp between values |
+| `Interpolation.Curve(slope)` | Curved ramp — `slope` is 0–1 where 0.5 = linear, < 0.5 = slow start (logarithmic), > 0.5 = fast start (exponential) |
 
-#### Stepped Example (Discrete BPM Jumps)
+All imported from `@opendaw/lib-dsp`.
+
+#### Stepped (Discrete Jumps)
 
 ```typescript
 // 120 BPM for bars 1-2, then 140 BPM for bars 3-4
 collection.createEvent({
-  position: 0 as ppqn,
-  index: 0,
-  value: 120,
-  interpolation: Interpolation.None,  // Step: holds 120 until next event
+  position: 0 as ppqn, index: 0,
+  value: 120, interpolation: Interpolation.None,
 });
-
 collection.createEvent({
-  position: (2 * 3840) as ppqn,       // Bar 3 start
-  index: 0,
-  value: 140,
-  interpolation: Interpolation.None,
+  position: (2 * 3840) as ppqn, index: 0,
+  value: 140, interpolation: Interpolation.None,
 });
 ```
 
-#### Linear Ramp Example (Accelerando)
+#### Linear Ramp (Accelerando)
 
 ```typescript
-// Gradual speed up from 100 to 160 BPM over 8 bars
+// Even speed up from 100 to 160 BPM over 8 bars
 collection.createEvent({
-  position: 0 as ppqn,
-  index: 0,
-  value: 100,
-  interpolation: Interpolation.Linear,
+  position: 0 as ppqn, index: 0,
+  value: 100, interpolation: Interpolation.Linear,
 });
-
 collection.createEvent({
-  position: (8 * 3840) as ppqn,
-  index: 0,
-  value: 160,
-  interpolation: Interpolation.Linear,
+  position: (8 * 3840) as ppqn, index: 0,
+  value: 160, interpolation: Interpolation.Linear,
 });
 ```
+
+#### Curve (Logarithmic / Exponential)
+
+```typescript
+// Fast initial pickup that eases into final tempo (slope 0.75)
+collection.createEvent({
+  position: 0 as ppqn, index: 0,
+  value: 90, interpolation: Interpolation.Curve(0.75),
+});
+collection.createEvent({
+  position: (8 * 3840) as ppqn, index: 0,
+  value: 160, interpolation: Interpolation.None,
+});
+```
+
+Curve slopes create natural-sounding tempo changes:
+- **0.25** — slow start, steep finish (exponential ritardando)
+- **0.5** — equivalent to `Interpolation.Linear`
+- **0.75** — fast start, gentle finish (logarithmic accelerando)
+
+Combine curves for expressive shapes like a "breath" swell (fast rise with `0.75`, gentle fall with `0.25`). See the [Tempo Automation demo](https://opendaw-test.pages.dev/tempo-automation-demo.html) for interactive examples.
 
 ### Setting Up the Timeline
 
