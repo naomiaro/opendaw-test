@@ -240,6 +240,7 @@ direct calls handle mute toggles, finalization, and clear.
 3. Add build entry in `vite.config.ts` → `rollupOptions.input`
 4. Add card in `src/index.tsx`
 5. Add URL to `public/sitemap.xml`
+6. Take 1200x630 screenshot, save as `public/og-image-<name>.png`, add `og:image` + `twitter:image` tags to the HTML
 
 ## Demo-Specific SDK Knowledge
 
