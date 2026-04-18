@@ -22,6 +22,7 @@
   - [Interpolation Modes](#interpolation-modes)
   - [Setting Up the Timeline](#setting-up-the-timeline)
   - [Common Patterns (Tempo)](#common-patterns-tempo)
+  - [Converting with Variable Tempo](#converting-with-variable-tempo)
 - [Advanced: Time Signature Changes](#advanced-time-signature-changes)
   - [PPQN and Time Signatures](#ppqn-and-time-signatures)
   - [Accessing the Signature Track](#accessing-the-signature-track)
@@ -480,6 +481,33 @@ const terminable = AnimationFrame.add(() => {
 
 // Cleanup
 terminable.terminate();
+```
+
+### Converting with Variable Tempo
+
+The fundamentals section above uses `PPQN.secondsToPulses(seconds, bpm)` and `PPQN.pulsesToSeconds(ppqn, bpm)` — these assume a single constant BPM. When your project has tempo automation, use `project.tempoMap` instead:
+
+```typescript
+// Seconds → PPQN (variable tempo)
+const ppqn = project.tempoMap.secondsToPPQN(seconds);
+
+// PPQN → Seconds (variable tempo)
+const seconds = project.tempoMap.ppqnToSeconds(ppqn);
+
+// Duration of a PPQN interval in seconds (e.g., for export)
+const durationSeconds = project.tempoMap.intervalToSeconds(startPpqn, endPpqn);
+```
+
+To convert a duration at a specific timeline position:
+
+```typescript
+// "How many PPQN ticks does 2 seconds occupy starting at bar 5?"
+const startPpqn = 5 * BAR; // bar 5
+const startSeconds = project.tempoMap.ppqnToSeconds(startPpqn);
+const endPpqn = project.tempoMap.secondsToPPQN(startSeconds + 2.0);
+const durationPpqn = endPpqn - startPpqn;
+// At constant 120 BPM this equals PPQN.secondsToPulses(2.0, 120) = 3840
+// With a tempo ramp, the result depends on integration across the ramp
 ```
 
 ### Reference (Tempo Automation)
