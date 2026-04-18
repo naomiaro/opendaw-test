@@ -11,6 +11,12 @@ export default defineConfig({
   // Build into dist/docs/ so the Vite demo build (dist/) and docs coexist
   outDir: "../dist/docs",
 
+  sitemap: {
+    hostname: "https://opendaw-test.pages.dev",
+    transformItems: (items) =>
+      items.map((item) => ({ ...item, url: `docs/${item.url}` })),
+  },
+
   themeConfig: {
     sidebar: [
       {
