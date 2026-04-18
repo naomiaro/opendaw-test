@@ -39,7 +39,7 @@ Visit http://localhost:5173 to explore the demos.
 
 - [Introduction](./documentation/01-introduction.md) — DAW concepts and system architecture
 - [Timing & Tempo](./documentation/02-timing-and-tempo.md) — PPQN, tempo automation, time signatures
-- [AnimationFrame](./documentation/03-animation-frame.md) — Observable updates (**required reading**)
+- [AnimationFrame](./documentation/03-animation-frame.md) — Observable updates
 - [Box System & Reactivity](./documentation/04-box-system-and-reactivity.md) — Data model, subscriptions, reactive lifecycle
 - [Samples, Peaks & Looping](./documentation/05-samples-peaks-and-looping.md) — Audio loading, waveforms, region looping
 - [Timeline & Rendering](./documentation/06-timeline-and-rendering.md) — Building timeline UI
