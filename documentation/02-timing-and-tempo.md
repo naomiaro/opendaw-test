@@ -510,6 +510,18 @@ const durationPpqn = endPpqn - startPpqn;
 // With a tempo ramp, the result depends on integration across the ramp
 ```
 
+#### Why "integration across the ramp"?
+
+At a constant tempo, converting between ticks and seconds is simple multiplication: `seconds = ticks * 60 / (960 * bpm)`. But when tempo changes mid-timeline, different regions of the timeline have different tick-to-second ratios.
+
+Think of it like driving on a highway where the speed limit changes. If you drive 100km at 100km/h, then 100km at 50km/h, the total time isn't `200km / 75km/h` (averaged). You have to compute each segment separately: 1 hour + 2 hours = 3 hours.
+
+Same principle with tempo: if ticks 0-3840 (bar 1) are at 120 BPM, that's 2 seconds. If ticks 3840-7680 (bar 2) are at 60 BPM, that's 4 seconds. The total time to tick 7680 is 6 seconds — not the 4 seconds you'd get by averaging to 90 BPM.
+
+With a linear ramp (e.g., 120 BPM accelerating to 180 BPM over 8 bars), the tempo is different at every point. The `tempoMap` handles this by stepping through the ramp in small 80-tick segments (~10ms each), computing each segment's duration at its local tempo, and summing them — a [Riemann sum](https://en.wikipedia.org/wiki/Riemann_sum) approximating the integral of `1/tempo` over the tick range.
+
+This is all handled internally by `project.tempoMap` — you just call `ppqnToSeconds()` or `intervalToSeconds()` and get the correct result. For the full algorithm details, see [Chapter 06: Audio Rendering Pipeline](./06-timeline-and-rendering.md#layer-2-tempo-integration-variable-tempo).
+
 ### Reference (Tempo Automation)
 
 - Demo: `src/tempo-automation-demo.tsx`
