@@ -13,7 +13,7 @@ The horizontal representation of time where audio clips, MIDI notes, and automat
 Horizontal lanes stacked vertically, each holding audio clips or MIDI data. Each track typically represents one instrument or audio source.
 
 ### 3. Clips/Regions
-Chunks of audio or MIDI data placed on the timeline at specific positions.
+Chunks of audio or MIDI data placed on a track at specific timeline positions.
 
 ### 4. Transport
 Controls for playing, stopping, recording, and navigating through the timeline.
