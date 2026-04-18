@@ -239,6 +239,7 @@ direct calls handle mute toggles, finalization, and clear.
 2. Create `src/demos/<category>/<name>-demo.tsx` (use Radix UI Theme, GitHubCorner, BackLink, MoisesLogo; import shared code via `@/` alias)
 3. Add build entry in `vite.config.ts` → `rollupOptions.input`
 4. Add card in `src/index.tsx`
+5. Add URL to `public/sitemap.xml`
 
 ## Demo-Specific SDK Knowledge
 

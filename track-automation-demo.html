@@ -1,26 +1,45 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
+<head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Track Automation Demo - OpenDAW</title>
-    <meta
-      name="description"
-      content="Automate volume, pan, and effect parameters with visual envelopes and server persistence data"
-    />
+
+    <!-- Primary Meta Tags -->
+    <title>OpenDAW Track Automation Demo - Volume, Pan & Effect Envelopes</title>
+    <meta name="title" content="OpenDAW Track Automation Demo - Volume, Pan & Effect Envelopes" />
+    <meta name="description" content="Automate volume, pan, and effect parameters with preset patterns. Visualize automation envelopes and see the JSON data a server would store to save and restore automation state." />
+    <meta name="keywords" content="OpenDAW, track automation, volume automation, pan automation, effect automation, envelopes, web audio, DAW" />
+    <meta name="author" content="Moises AI" />
+    <meta name="theme-color" content="#30a46c" />
+
+    <!-- Canonical URL -->
+    <link rel="canonical" href="https://opendaw-test.pages.dev/track-automation-demo.html" />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://opendaw-test.pages.dev/track-automation-demo.html" />
+    <meta property="og:title" content="OpenDAW Track Automation Demo - Automation Envelopes" />
+    <meta property="og:description" content="Automate volume, pan, and effect parameters with visual envelopes. See the JSON data format for saving and restoring automation state." />
+    <meta property="og:site_name" content="OpenDAW Demos" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="OpenDAW Track Automation Demo - Automation Envelopes" />
+    <meta name="twitter:description" content="Automate volume, pan, and effect parameters with visual envelopes and server persistence data." />
+
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <style>
-      body {
-        margin: 0;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-          Oxygen, Ubuntu, Cantarell, sans-serif;
-        background: #111;
-        color: #fff;
-      }
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #111;
+            color: #fff;
+        }
     </style>
-  </head>
-  <body>
+</head>
+<body>
     <div id="root"></div>
     <script type="module" src="/src/demos/automation/track-automation-demo.tsx"></script>
-  </body>
+</body>
 </html>
