@@ -223,7 +223,10 @@ Also limit AnimationFrame scanning to active recording — idle scanning is redu
 direct calls handle mute toggles, finalization, and clear.
 
 ## Build & Verification
-- `npm run build` — Vite handles TypeScript transpilation (no standalone `tsc` available)
+- `npm run build` runs Vite then VitePress — demos go to `dist/`, docs go to `dist/docs/` for `/docs/` on Cloudflare Pages
+- `npm run docs:dev` — local VitePress dev server for documentation
+- COOP/COEP headers in `public/_headers` exclude `/docs/*` — VitePress assets break under `require-corp`
+- Vite handles TypeScript transpilation (no standalone `tsc` available)
 - After SDK upgrades, clear Vite dep cache: `rm -rf node_modules/.vite` (dev server pre-bundles old SDK)
 - SDK upgrades: bump `@opendaw/studio-sdk` version in `package.json` and `npm install` — sub-packages
   resolve transitively from the registry. NEVER install sub-packages as local `file:` references
