@@ -594,7 +594,7 @@ To read from a different point in the audio file, use `waveformOffset`:
 | Field | Type | What it does |
 |-------|------|-------------|
 | `loopOffset` | PPQN | Controls which loop cycle maps to which timeline position |
-| `waveformOffset` | seconds (field 7 on AudioRegionBox) | Shifts the audio buffer read position |
+| `waveformOffset` | seconds | Shifts the audio buffer read position |
 
 The TapeDeviceProcessor reads audio with:
 ```
@@ -884,4 +884,4 @@ project.editing.modify(() => {
 - SDK loop math: `@opendaw/lib-dsp` → `events.ts` → `LoopableRegion.locateLoops()`
 - SDK playback: `@opendaw/studio-core` → `TapeDeviceProcessor.ts`
 - SDK adapter: `@opendaw/studio-adapters` → `AudioRegionBoxAdapter.ts`
-- Region schema: `@opendaw/studio-boxes` → `AudioRegionBox.ts` (field 7: `waveform-offset`)
+- Region schema: `@opendaw/studio-boxes` → `AudioRegionBox.ts`
