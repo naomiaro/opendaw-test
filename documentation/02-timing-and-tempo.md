@@ -16,6 +16,10 @@
 - [Complete Example](#complete-example)
 - [Visualizing PPQN on Timeline](#visualizing-ppqn-on-timeline)
 - [Key Takeaways](#key-takeaways)
+- [Two Timebase Modes for Clips](#two-timebase-modes-for-clips)
+  - [Musical Timebase](#musical-timebase)
+  - [Seconds Timebase](#seconds-timebase)
+  - [Choosing Between Them](#choosing-between-them)
 - [Advanced: Tempo Automation](#advanced-tempo-automation)
   - [Accessing the Tempo Track](#accessing-the-tempo-track)
   - [Creating Tempo Events](#creating-tempo-events)
@@ -24,10 +28,6 @@
   - [Common Patterns (Tempo)](#common-patterns-tempo)
   - [Converting with Variable Tempo](#converting-with-variable-tempo)
   - [The Integration Algorithm](#the-integration-algorithm)
-  - [Two Timebase Modes for Clips](#two-timebase-modes-for-clips)
-    - [Musical Timebase](#musical-timebase)
-    - [Seconds Timebase](#seconds-timebase)
-    - [Choosing Between Them](#choosing-between-them)
 - [Advanced: Time Signature Changes](#advanced-time-signature-changes)
   - [PPQN and Time Signatures](#ppqn-and-time-signatures)
   - [Accessing the Signature Track](#accessing-the-signature-track)
@@ -303,6 +303,59 @@ The ratio `(position / totalDuration)` gives you the percentage of the timeline,
 
 ---
 
+## Two Timebase Modes for Clips
+
+Every audio region has a `timeBase` property that controls how its duration relates to tempo. This matters whenever BPM changes — either from the user adjusting it or from tempo automation.
+
+```typescript
+import { TimeBase } from "@opendaw/lib-dsp";
+
+box.timeBase.setValue(TimeBase.Musical);  // or TimeBase.Seconds
+```
+
+### Musical Timebase
+
+Position and duration are both stored in PPQN ticks. The clip occupies a fixed number of beats regardless of tempo. When BPM increases, the clip plays faster (shorter wall-clock time) but stays at the same bar/beat position.
+
+**When to use:**
+- Drum loops and patterns that should stay locked to the grid
+- MIDI-recorded performances
+- Any content composed to fit specific bars and beats
+- Loops that tile — the tiling stays aligned to beats at any tempo
+
+**Behavior when BPM changes:** A 4-beat clip always occupies 4 beats. At 120 BPM that's 2 seconds; at 60 BPM it's 4 seconds. The audio plays back at the original speed (no time-stretching) — it just finishes sooner or later relative to the grid.
+
+**Overlap rule:** Musical timebase regions are **not allowed to overlap** on the same track. The engine validates this during export.
+
+### Seconds Timebase
+
+Position is in PPQN (for grid alignment), but duration is in real-time seconds. When BPM changes, the engine recomputes how many PPQN ticks the clip spans. A 4-second clip is always 4 seconds — it just covers more or fewer beats depending on tempo.
+
+**When to use:**
+- Sound effects with a fixed real-time duration
+- Dialogue or voiceover
+- Field recordings
+- One-shot samples like drum hits (the sound's natural decay shouldn't change with tempo)
+
+**Behavior when BPM changes:** A 4-second clip always plays for 4 seconds. At 120 BPM it spans 8 beats; at 60 BPM it spans 4 beats. The clip's tick-duration is recalculated.
+
+**Overlap rule:** Seconds timebase regions **are allowed to overlap** (e.g., a drum hit's decay can extend into the next hit).
+
+### Choosing Between Them
+
+| Scenario | Timebase | Why |
+|----------|----------|-----|
+| Drum loop | Musical | Loop should stay on the beat grid |
+| Kick drum one-shot | Seconds | Natural decay shouldn't change with tempo |
+| MIDI piano recording | Musical | Performance is locked to beats |
+| Voiceover narration | Seconds | Speech has a fixed duration |
+| Sound effect (explosion) | Seconds | Effect timing is absolute |
+| Synth pad (4-bar chord) | Musical | Chord should fill exactly 4 bars |
+
+See the [TimeBase demo](https://opendaw-test.pages.dev/timebase-demo.html) for an interactive comparison.
+
+---
+
 ## Advanced: Tempo Automation
 
 > **Skip if:** you don't need variable BPM playback
@@ -568,58 +621,9 @@ A **cache** stores pre-computed (tick, seconds, bpm) entries at tempo event boun
 
 The inverse (`secondsToTicks`) uses the same stepping approach but accumulates ticks instead of seconds, interpolating linearly within the final segment when it would overshoot the target.
 
-### Two Timebase Modes for Clips
+### Seconds Timebase Duration with Variable Tempo
 
-Every audio region has a `timeBase` property that controls how its duration relates to tempo. This matters whenever BPM changes — either from the user adjusting it or from tempo automation.
-
-```typescript
-import { TimeBase } from "@opendaw/lib-dsp";
-
-box.timeBase.setValue(TimeBase.Musical);  // or TimeBase.Seconds
-```
-
-#### Musical Timebase
-
-Position and duration are both stored in PPQN ticks. The clip occupies a fixed number of beats regardless of tempo. When BPM increases, the clip plays faster (shorter wall-clock time) but stays at the same bar/beat position.
-
-**When to use:**
-- Drum loops and patterns that should stay locked to the grid
-- MIDI-recorded performances
-- Any content composed to fit specific bars and beats
-- Loops that tile — the tiling stays aligned to beats at any tempo
-
-**Behavior when BPM changes:** A 4-beat clip always occupies 4 beats. At 120 BPM that's 2 seconds; at 60 BPM it's 4 seconds. The audio plays back at the original speed (no time-stretching) — it just finishes sooner or later relative to the grid.
-
-**Overlap rule:** Musical timebase regions are **not allowed to overlap** on the same track. The engine validates this during export.
-
-#### Seconds Timebase
-
-Position is in PPQN (for grid alignment), but duration is in real-time seconds. When BPM changes, the engine recomputes how many PPQN ticks the clip spans. A 4-second clip is always 4 seconds — it just covers more or fewer beats depending on tempo.
-
-**When to use:**
-- Sound effects with a fixed real-time duration
-- Dialogue or voiceover
-- Field recordings
-- One-shot samples like drum hits (the sound's natural decay shouldn't change with tempo)
-
-**Behavior when BPM changes:** A 4-second clip always plays for 4 seconds. At 120 BPM it spans 8 beats; at 60 BPM it spans 4 beats. The clip's tick-duration is recalculated.
-
-**Overlap rule:** Seconds timebase regions **are allowed to overlap** (e.g., a drum hit's decay can extend into the next hit).
-
-#### Choosing Between Them
-
-| Scenario | Timebase | Why |
-|----------|----------|-----|
-| Drum loop | Musical | Loop should stay on the beat grid |
-| Kick drum one-shot | Seconds | Natural decay shouldn't change with tempo |
-| MIDI piano recording | Musical | Performance is locked to beats |
-| Voiceover narration | Seconds | Speech has a fixed duration |
-| Sound effect (explosion) | Seconds | Effect timing is absolute |
-| Synth pad (4-bar chord) | Musical | Chord should fill exactly 4 bars |
-
-#### Duration Conversion with Variable Tempo
-
-When converting a real-time duration to PPQN ticks under variable tempo, the result is **position-dependent** — the same 4-second clip gets a different tick-duration depending on where it sits on the timeline:
+When using [Seconds Timebase](#seconds-timebase) with tempo automation, converting a real-time duration to PPQN ticks is **position-dependent** — the same 4-second clip gets a different tick-duration depending on where it sits on the timeline:
 
 ```typescript
 const startSeconds = tempoMap.ppqnToSeconds(positionTick);
@@ -628,8 +632,6 @@ const durationInTicks = endTick - positionTick;
 ```
 
 At constant 120 BPM: 4 seconds = 7680 ticks. At constant 60 BPM: 4 seconds = 3840 ticks. At a ramp from 120→60: somewhere in between, determined by integration.
-
-See the [TimeBase demo](https://opendaw-test.pages.dev/timebase-demo.html) for an interactive comparison.
 
 ### Reference (Tempo Automation)
 
