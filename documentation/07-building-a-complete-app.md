@@ -813,7 +813,6 @@ You now have all the tools to build a fully-functional browser-based DAW!
 
 ## Advanced: Mixer Groups (Sub-Mixing)
 
-> *Previously: 17-mixer-groups.md*
 > **Skip if:** you don't need sub-mixing or track routing yet
 
 OpenDAW supports **group buses** (also called sub-groups or submixes) — intermediate mixing stages where multiple tracks are summed together before reaching the master output. This is a standard DAW mixing pattern for controlling related tracks as a unit.

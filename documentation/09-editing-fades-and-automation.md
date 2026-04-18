@@ -669,7 +669,6 @@ The demo shows:
 
 ## Clip Fades
 
-> *Previously: `16-clip-fades.md` — supersedes the old "Fade Functionality Status" section from `09-track-editing-and-fades.md`, which incorrectly stated fades are not implemented.*
 > **Skip if:** you don't need fade-in/fade-out on regions
 
 OpenDAW supports per-region fade-in and fade-out via the `fading` object on `AudioRegionBox`. Fades are applied as gain envelopes during audio processing — they are non-destructive and do not modify the underlying audio data.
@@ -860,7 +859,6 @@ if (audioContext.state !== "running") {
 
 ## Advanced: Track Automation
 
-> *Previously: `19-track-automation.md`*
 > **Skip if:** you don't need volume/pan/effect parameter automation
 
 Track automation allows you to automate any parameter on an AudioUnit (volume, panning) or effect device (reverb wet, delay feedback, etc.) over time using automation lanes with interpolated events.
@@ -1304,7 +1302,6 @@ This would complement the existing track-automation-demo which creates automatio
 
 ## Advanced: Region Splicing & Comp Lanes
 
-> *Previously: `region-splice-findings.md`*
 > **Skip if:** you don't need audio splicing or take comping
 
 ### What Works

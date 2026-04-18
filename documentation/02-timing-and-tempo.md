@@ -299,7 +299,6 @@ The ratio `(position / totalDuration)` gives you the percentage of the timeline,
 
 ## Advanced: Tempo Automation
 
-> *Previously: 14-tempo-automation.md*
 > **Skip if:** you don't need variable BPM playback
 
 ### Overview
@@ -493,7 +492,6 @@ terminable.terminate();
 
 ## Advanced: Time Signature Changes
 
-> *Previously: 15-time-signature-changes.md*
 > **Skip if:** your project uses only 4/4 time
 
 ### Overview

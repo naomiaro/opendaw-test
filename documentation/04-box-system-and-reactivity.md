@@ -450,7 +450,6 @@ See the [Advanced: Reactive Subscriptions & Lifecycle](#advanced-reactive-subscr
 
 ## Advanced: Reactive Subscriptions & Lifecycle
 
-> *Previously: 18-box-subscriptions-lifecycle.md*
 > **Skip if:** you only need basic box reads, not live reactive updates
 
 OpenDAW's box graph provides a reactive subscription system for responding to structural and value changes. Instead of polling the box graph every frame, you subscribe to changes and receive callbacks when boxes are added, removed, or modified.

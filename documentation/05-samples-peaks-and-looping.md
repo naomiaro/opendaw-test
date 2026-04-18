@@ -562,7 +562,6 @@ Key points:
 
 ## Advanced: Clip Looping (Region Tiling)
 
-> *Previously: 20-clip-looping.md*
 > **Skip if:** you don't need looping/tiling behavior
 
 When a region's `duration` exceeds its `loopDuration`, the content repeats (tiles) automatically. This is how DAWs handle loop-based workflows — a short drum pattern can fill an entire song by tiling.

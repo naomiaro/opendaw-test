@@ -660,7 +660,6 @@ Remember:
 
 ## Advanced: Audio Rendering Pipeline
 
-> *Previously: 21-audio-rendering-pipeline.md*
 > **Skip if:** you don't need to understand the internal render path from musical time to pixels
 
 How a DAW converts musical positions (beats, bars) into waveform pixels on screen, handling tempo changes along the way.

@@ -1124,7 +1124,6 @@ Perfect for:
 
 ## Advanced: Offline Rendering Patterns
 
-> *Previously: 22-offline-rendering-advanced.md*
 > **Skip if:** the basic export API meets your needs
 
 Range-bounded export, metronome rendering, and the OfflineAudioContext approach.
