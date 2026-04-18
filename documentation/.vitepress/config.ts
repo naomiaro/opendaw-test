@@ -16,6 +16,17 @@ export default defineConfig({
     "README.md": "index.md",
   },
 
+  head: [
+    [
+      "script",
+      {
+        "data-goatcounter": "https://opendaw-handbook.goatcounter.com/count",
+        async: "",
+        src: "//gc.zgo.at/count.js",
+      },
+    ],
+  ],
+
   sitemap: {
     hostname: "https://opendaw-test.pages.dev",
     transformItems: (items) =>
