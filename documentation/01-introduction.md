@@ -10,7 +10,7 @@ A **DAW (Digital Audio Workstation)** is software for recording, editing, and pr
 The horizontal representation of time where audio clips, MIDI notes, and automation are placed. In a DAW, the timeline isn't measured in seconds - it's measured in **musical time**.
 
 ### 2. Tracks
-Vertical lanes that hold audio clips or MIDI data. Each track typically represents one instrument or audio source.
+Horizontal lanes stacked vertically, each holding audio clips or MIDI data. Each track typically represents one instrument or audio source.
 
 ### 3. Clips/Regions
 Chunks of audio or MIDI data placed on the timeline at specific positions.
