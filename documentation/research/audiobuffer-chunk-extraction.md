@@ -443,5 +443,5 @@ The only requirement is to expose the existing internal chunk collection through
 
 ### Related Documentation
 
-- [08-recording-and-live-peaks.md](./08-recording-and-live-peaks.md) - Recording and peak visualization
+- [08-recording.md](../08-recording.md) - Recording and peak visualization
 - [05-samples-peaks-and-looping.md](../05-samples-peaks-and-looping.md) - Sample data structures

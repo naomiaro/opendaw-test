@@ -1092,7 +1092,7 @@ This is **not a bug** - it's intentional data integrity checking to prevent temp
 ### Documentation
 
 - [Effects Documentation](./11-effects.md)
-- [Project Setup](./02-project-structure.md)
+- [Timing & Tempo](./02-timing-and-tempo.md)
 - [Box System & Reactivity](./04-box-system-and-reactivity.md)
 
 ---
