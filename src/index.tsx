@@ -26,6 +26,11 @@ const App: React.FC = () => {
             <Text size="3" color="gray" align="center">
               Explore different capabilities of the OpenDAW headless audio engine
             </Text>
+            <Text size="2">
+              <Link href="/docs/" color="blue" highContrast>
+                📖 Read the Handbook
+              </Link>
+            </Text>
           </Flex>
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "1rem", width: "100%" }}>
