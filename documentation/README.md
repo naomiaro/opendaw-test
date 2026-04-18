@@ -46,9 +46,20 @@ Each chapter has "Skip if" guidance at the top so you can find your level quickl
 pixels = (ppqnPosition / totalPPQNDuration) * timelineWidthInPixels
 ```
 
-**Convert Seconds to PPQN:**
+**Convert Seconds to PPQN (single tempo):**
 ```typescript
 ppqn = PPQN.secondsToPulses(durationInSeconds, bpm)
+```
+
+**Convert Seconds to PPQN (variable tempo):**
+```typescript
+// Use the tempo map when your project has tempo automation
+const endPpqn = project.tempoMap.secondsToPPQN(durationInSeconds)
+
+// Convert a duration at a specific position (accounts for tempo changes)
+const startSeconds = project.tempoMap.ppqnToSeconds(positionPpqn)
+const endPpqn = project.tempoMap.secondsToPPQN(startSeconds + durationInSeconds)
+const durationPpqn = endPpqn - positionPpqn
 ```
 
 **Musical Positions (constant):**
