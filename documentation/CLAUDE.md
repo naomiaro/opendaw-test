@@ -6,6 +6,7 @@
 - Base path: `/docs/` — all VitePress internal links resolve under this prefix
 
 ## Gotchas
+- `README.md` is the docs homepage — VitePress `rewrites` maps it to `index.md` at build time. Do NOT rename to `index.md` (breaks GitHub folder rendering)
 - VitePress validates internal markdown links at build time — stale references fail the build
 - Sitemap `hostname` ignores VitePress `base` config — use `transformItems` to prepend `/docs/`
 - Adding/renaming a chapter: update sidebar in `.vitepress/config.ts` and fix cross-references
