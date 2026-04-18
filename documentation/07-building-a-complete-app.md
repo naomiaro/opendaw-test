@@ -34,7 +34,7 @@ This document combines all the concepts (PPQN, Box System, Sample Management, Ti
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                 React Application                        │
+│                  Your Application                        │
 ├─────────────────────────────────────────────────────────┤
 │  ┌─────────────────┐  ┌──────────────────┐             │
 │  │ Timeline        │  │ Transport        │             │

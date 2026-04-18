@@ -34,7 +34,7 @@ Web audio processing happens in a separate thread (AudioWorkletGlobalScope) for 
 ```
 Main Thread (UI)              Audio Worklet Thread
 ─────────────────             ────────────────────
-React Components              Audio Processing
+UI Components                 Audio Processing
   │                              │
   │  How does UI know           │  Playing audio
   │  audio is playing?           │  at 120 BPM
@@ -63,7 +63,7 @@ Writes to SharedArrayBuffer        Reads from SharedArrayBuffer
 [isPlaying: true]                  isPlaying observable updates
 [isRecording: false]               isRecording observable updates
     ↓                                  ↓
-                                   React components re-render
+                                   UI updates
 ```
 
 ### The Update Loop
@@ -82,7 +82,7 @@ function loop() {
   project.engine.isPlaying.notify(audioState.isPlaying);
   project.engine.isRecording.notify(audioState.isRecording);
 
-  // 3. All subscribers get notified → React re-renders
+  // 3. All subscribers get notified → UI updates
 
   // 4. Loop again next frame (60fps)
   window.requestAnimationFrame(loop);
@@ -116,7 +116,7 @@ Now observables will actually update:
 const subscription = project.engine.isPlaying.subscribe(obs => {
   const playing = obs.getValue();
   console.log("Playing:", playing); // ✓ Works!
-  setIsPlaying(playing); // Update React state
+  setIsPlaying(playing); // Update your UI state
 });
 
 // Don't forget to clean up
@@ -148,7 +148,7 @@ function App() {
 
 ### Pattern 2: Position Tracking
 
-For rapidly updating values like position, subscribe via AnimationFrame directly to avoid excessive React renders:
+For rapidly updating values like position, subscribe via AnimationFrame directly to avoid excessive UI updates:
 
 ```typescript
 import { AnimationFrame } from "@opendaw/lib-dom";
@@ -414,14 +414,16 @@ const sub = AnimationFrame.add(() => {
 });
 ```
 
-## React Integration Pitfalls
+## Framework Integration Pitfalls
 
-### Don't Gate AnimationFrame on React State via Refs
+> The examples below use React, but the same principles apply to any framework with batched or asynchronous rendering.
 
-React batching can skip intermediate renders. If you assign a ref during render and check it inside an AnimationFrame callback, the callback may never see the intermediate value:
+### Don't Gate AnimationFrame on UI State via Refs
+
+Frameworks that batch state updates (React, Vue, Solid) can skip intermediate renders. If you store a value during render and check it inside an AnimationFrame callback, the callback may never see the intermediate value:
 
 ```typescript
-// ❌ BAD — React may batch "finalizing"→"ready"→"recording" into one render,
+// ❌ BAD — the framework may batch "finalizing"→"ready"→"recording" into one render,
 // so the ref goes from true → true (never false). The AnimationFrame misses
 // the transition and never renders peaks on the second recording.
 const shouldRenderRef = useRef(session.shouldMonitorPeaks);
@@ -510,7 +512,7 @@ useEffect(() => {
 2. **Call `AnimationFrame.start(window)`** before creating the project
 3. **Use `AnimationFrame.add()`** for high-frequency updates (position)
 4. **Use `observable.subscribe()`** for discrete state changes (play/stop)
-5. **Always clean up** subscriptions in React useEffect returns
+5. **Always clean up** subscriptions when your component unmounts
 
 ### Essential Pattern
 
@@ -521,7 +523,7 @@ AnimationFrame.start(window);
 // 2. Create project
 const project = await initializeOpenDAW();
 
-// 3. Subscribe to state (in React)
+// 3. Subscribe to state (in your UI framework)
 useEffect(() => {
   // Discrete state
   const playingSub = project.engine.isPlaying.subscribe(obs => {
@@ -549,7 +551,7 @@ Think of AnimationFrame as the **bridge** between the audio world and the UI wor
 Audio World                 Bridge                    UI World
 ───────────                ─────────                 ─────────
 Audio Worklet    ←→    SharedArrayBuffer    ←→    Main Thread
-(processing)           (AnimationFrame          (React UI)
+(processing)           (AnimationFrame          (Your UI)
                         reads every frame)
 ```
 

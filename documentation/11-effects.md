@@ -129,7 +129,7 @@ Effects use the Adapter pattern to provide reactive properties:
 
 ### UI Rendering
 
-- **Device Editors** - React components for effect UI
+- **Device Editors** - UI components for effect controls
   - Located in: `@opendaw/app/studio/src/ui/devices/audio-effects/`
   - Examples: `CompressorDeviceEditor.tsx`, `DelayDeviceEditor.tsx`
   - Use `ControlBuilder` to create parameter controls
@@ -1311,7 +1311,7 @@ Audio Interface Output
 
 OpenDAW effects use a reactive UI pattern where:
 1. **Device Adapters** wrap effect boxes with observable properties
-2. **Device Editors** render React components for the UI
+2. **Device Editors** render UI components for effect controls
 3. **Parameter Controls** provide interactive knobs, sliders, and buttons
 4. **Control Builders** create standardized UI components
 

@@ -279,9 +279,9 @@ const subscription = project.timelineBox.bpm.subscribe(field => {
 subscription.terminate();
 ```
 
-### React Integration
+### UI Framework Integration
 
-In React, subscribe in useEffect and clean up:
+Subscribe during initialization and clean up on teardown. Here's a React example (the pattern is similar in any framework):
 
 ```typescript
 useEffect(() => {
@@ -376,7 +376,7 @@ const trackUUID = trackBox.uuid;
 const track = project.boxGraph.get(trackUUID);
 
 // ❌ Bad - storing box reference (can become stale)
-const trackRef = trackBox; // Don't do this in React state
+const trackRef = trackBox; // Don't store box references in UI state
 ```
 
 ### 3. Clean Up Subscriptions
@@ -724,7 +724,7 @@ for (const sub of pointerHubSubs) {
 project.engine.stop(true);
 ```
 
-#### React useEffect Pattern
+#### Subscription Lifecycle Pattern (React Example)
 
 ```typescript
 useEffect(() => {
@@ -780,14 +780,14 @@ The loop recording demo (`src/loop-recording-demo.tsx`) uses reactive subscripti
 3. **For each armed track's `audioUnitBox`**: subscribe to `tracks.pointerHub.catchupAndSubscribe()`
 4. **OpenDAW creates a track and "Take 1" region**: `onAdded` fires for the track, then `catchupAndSubscribe` on `regions.pointerHub` immediately discovers the region
 5. **`buildTakeRegion()`** extracts take number, mute state, sampleLoader, and waveform offsets from the regionBox
-6. **`addTakeRegionToState()`** incrementally adds the take to React state
+6. **`addTakeRegionToState()`** incrementally adds the take to UI state
 7. **`regionBox.mute.subscribe()`** fires when the SDK mutes older takes at loop boundaries
 8. **Loop wraps** → OpenDAW creates "Take 2" region → `onAdded` fires → new take added to state
 9. **User clicks Stop** → pointer hub subs terminated first, then finalization barrier runs
 
 #### Mute Sync
 
-When `olderTakeAction` is `"mute-region"`, the SDK sets `regionBox.mute.setValue(true)` on older takes at loop boundaries. The `regionBox.mute.subscribe()` callback fires and updates React state — no manual re-scan needed.
+When `olderTakeAction` is `"mute-region"`, the SDK sets `regionBox.mute.setValue(true)` on older takes at loop boundaries. The `regionBox.mute.subscribe()` callback fires and updates UI state — no manual re-scan needed.
 
 When the user clicks the Mute button in the UI, `editing.modify()` sets the mute value, and the same `subscribe()` callback updates state reactively.
 

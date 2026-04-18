@@ -11,7 +11,7 @@ Comprehensive guide to exporting audio from OpenDAW projects, including full mix
 - [Quick Start](#quick-start)
 - [Core API](#core-api)
 - [Export Utility Functions](#export-utility-functions)
-- [React Hook (Recommended)](#react-hook-recommended)
+- [React Hook](#react-hook)
 - [Full Mix Export](#full-mix-export)
 - [Stems Export](#stems-export)
 - [Export Options](#export-options)
@@ -266,11 +266,11 @@ await exportStems(project, stemsConfig, {
 
 ---
 
-## React Hook (Recommended)
+## React Hook
 
 ### useAudioExport()
 
-For React applications, the `useAudioExport` hook provides a convenient way to manage export state and handlers.
+The demo codebase includes a React hook that wraps the export API for convenience. If you're using a different framework, see the [Core API](#core-export-api) section above for the framework-agnostic approach.
 
 **Location:** `src/hooks/useAudioExport.ts`
 
@@ -368,12 +368,9 @@ const ExportControls = ({ project }: { project: Project | null }) => {
 - ✅ Type-safe stem configuration
 
 **When to use:**
-- React applications
-- Multiple export buttons/features
-- Consistent export UI patterns
-- Reduced boilerplate
+- React applications with multiple export buttons/features
 
-**When to use raw functions instead:**
+**When to use the core API instead:**
 - Non-React applications
 - Custom state management needs
 - Special error handling requirements
@@ -393,7 +390,7 @@ const ExportControls = ({ project }: { project: Project | null }) => {
 
 ### Example Integration
 
-**Recommended:** Use the `useAudioExport` hook (see [React Hook section](#react-hook-recommended))
+**React users:** See the [`useAudioExport` hook](#react-hook) for a convenient wrapper.
 
 ```typescript
 import { useAudioExport } from "./hooks/useAudioExport";
@@ -463,7 +460,7 @@ const stemsConfig = {
 
 ### Example Integration
 
-**Recommended:** Use the `useAudioExport` hook (see [React Hook section](#react-hook-recommended))
+**React users:** See the [`useAudioExport` hook](#react-hook) for a convenient wrapper.
 
 ```typescript
 import { useAudioExport } from "./hooks/useAudioExport";

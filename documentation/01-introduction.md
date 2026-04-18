@@ -34,7 +34,7 @@ OpenDAW is a headless (UI-less) audio engine that runs in the browser. It provid
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                     Your React UI                        │
+│                       Your UI                            │
 │  (Timeline, Waveforms, Transport Controls, Mixer, etc.) │
 └────────────────────────┬────────────────────────────────┘
                          │
