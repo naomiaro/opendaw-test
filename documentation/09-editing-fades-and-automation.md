@@ -1339,10 +1339,6 @@ See the [Comp Lanes demo](https://opendaw-test.pages.dev/comp-lanes-demo.html) f
 
 The SDK's `TapeDeviceProcessor` creates a separate voice per region with a built-in 20ms crossfade on creation and eviction. When one region ends and the next begins, this creates a brief V-shaped volume dip at the boundary. The voice fade is independent of region-level fading and is not configurable from the API.
 
-#### PPQN Must Be Integer
-
-`AudioRegionBox` fields `position` and `loopOffset` are `Int32`. Passing float PPQN to `RegionEditing.cut()` causes truncation misalignment. Always round: `Math.round(PPQN.secondsToPulses(seconds, bpm))`.
-
 #### Automation Events at Same Position
 
 The SDK uses `(position, index)` as a composite key for automation events. Two events at the same PPQN with the same `index` cause a panic. When building crossfade automation, assign incrementing `index` values per position.

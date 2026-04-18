@@ -80,16 +80,36 @@ This means **one quarter note = 960 pulses**.
 
 This is a **resolution constant** that never changes. It defines how precisely we can measure time.
 
-### Understanding Resolution
+### Why 960?
 
-Higher PPQN = more precise timing:
-```
-PPQN = 960  → We can place notes at 1/960th of a quarter note
-PPQN = 480  → We can place notes at 1/480th of a quarter note (less precise)
-PPQN = 1920 → We can place notes at 1/1920th of a quarter note (more precise)
+960 = 2⁶ × 3 × 5. This factorization gives clean integer division for every common musical subdivision:
+
+| Subdivision | Calculation | Ticks |
+|-------------|-------------|-------|
+| Quarter note | 960 | 960 |
+| Eighth note | 960 / 2 | 480 |
+| Triplet eighth | 960 / 3 | 320 |
+| Sixteenth note | 960 / 4 | 240 |
+| Triplet sixteenth | 960 / 6 | 160 |
+| Thirty-second note | 960 / 8 | 120 |
+| Quintuplet | 960 / 5 | 192 |
+| Septuplet | 960 / 7 | ~137 |
+
+Every division except 7 (rare in practice) produces a clean integer. No floating-point rounding errors for standard note values. 960 is widely used by professional DAWs (Logic Pro, Ableton Live, etc.).
+
+### PPQN Values Are Integers
+
+PPQN positions and durations are stored as **integers** (`Int32` fields on `AudioRegionBox`). This is important because `PPQN.secondsToPulses()` returns a float — always wrap the result with `Math.round()` before passing it to the SDK:
+
+```typescript
+// ❌ Float — causes truncation misalignment
+region.duration.setValue(PPQN.secondsToPulses(seconds, bpm));
+
+// ✅ Integer — safe
+region.duration.setValue(Math.round(PPQN.secondsToPulses(seconds, bpm)));
 ```
 
-960 is the standard used by most professional DAWs (Logic, Ableton, etc.).
+This applies to `position`, `duration`, `loopOffset`, and `loopDuration`.
 
 ## PPQN vs BPM: The Key Difference
 
