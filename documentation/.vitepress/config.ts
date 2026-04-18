@@ -60,19 +60,6 @@ export default defineConfig({
           { text: "Effects", link: "/11-effects" },
         ],
       },
-      {
-        text: "Research",
-        items: [
-          {
-            text: "AudioBuffer Chunk Extraction",
-            link: "/research/audiobuffer-chunk-extraction",
-          },
-          {
-            text: "WASM Effects Feasibility",
-            link: "/research/wasm-audio-effects-feasibility",
-          },
-        ],
-      },
     ],
 
     nav: [

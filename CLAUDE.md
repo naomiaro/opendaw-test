@@ -271,5 +271,4 @@ Each demo category folder has its own CLAUDE.md with SDK knowledge scoped to tho
 - Editing, fades & automation: `documentation/09-editing-fades-and-automation.md`
 - Export & offline rendering: `documentation/10-export.md`
 - SDK changelogs: `changelogs/`
-- Research: `documentation/research/`
 - OpenDAW source code locations: see `.claude/local.md`

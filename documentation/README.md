@@ -155,7 +155,6 @@ useEffect(() => {
 
 ## Further Reading
 
-- **Research:** [AudioBuffer Chunk Extraction](./research/audiobuffer-chunk-extraction.md), [WASM Effects Feasibility](./research/wasm-audio-effects-feasibility.md)
 - **SDK Changelogs:** [changelogs/](https://github.com/naomiaro/opendaw-test/tree/main/changelogs)
 - **Demo Code:** [src/demos/](https://github.com/naomiaro/opendaw-test/tree/main/src/demos)
 - **TypeScript Definitions:** Check `node_modules/@opendaw/*/dist/*.d.ts` for API details
