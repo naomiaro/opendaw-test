@@ -2,7 +2,6 @@
 /localhost-key.pem
 /.idea/
 /dist
-/dist-docs
 documentation/.vitepress/cache
 /node_modules/
 

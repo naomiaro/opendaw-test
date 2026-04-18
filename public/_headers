@@ -1,6 +1,12 @@
 # Headers for Cloudflare Pages / Netlify
 # Required for SharedArrayBuffer support in OpenDAW
+# Scoped to exclude /docs/ — VitePress doesn't need SharedArrayBuffer
+# and COEP: require-corp blocks its external assets (fonts, search)
 
 /*
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Embedder-Policy: require-corp
+
+/docs/*
+  ! Cross-Origin-Opener-Policy
+  ! Cross-Origin-Embedder-Policy

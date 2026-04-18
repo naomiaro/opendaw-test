@@ -5,8 +5,11 @@ export default defineConfig({
   description:
     "Learn how to build a browser-based DAW UI with OpenDAW's headless audio engine",
 
-  // Build output goes outside the documentation folder
-  outDir: "../dist-docs",
+  // Serve under /docs/ on the same Cloudflare Pages domain as the demos
+  base: "/docs/",
+
+  // Build into dist/docs/ so the Vite demo build (dist/) and docs coexist
+  outDir: "../dist/docs",
 
   themeConfig: {
     sidebar: [
