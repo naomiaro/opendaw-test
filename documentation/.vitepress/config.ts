@@ -11,6 +11,11 @@ export default defineConfig({
   // Build into dist/docs/ so the Vite demo build (dist/) and docs coexist
   outDir: "../dist/docs",
 
+  // Map README.md → index.html so /docs/ works, while keeping README.md for GitHub
+  rewrites: {
+    "README.md": "index.md",
+  },
+
   sitemap: {
     hostname: "https://opendaw-test.pages.dev",
     transformItems: (items) =>
