@@ -241,6 +241,7 @@ direct calls handle mute toggles, finalization, and clear.
 4. Add card in `src/index.tsx`
 5. Add URL to `public/sitemap.xml`
 6. Take 1200x630 screenshot, save as `public/og-image-<name>.png`, add `og:image` + `twitter:image` tags to the HTML
+7. Add GoatCounter script before `</body>` (copy from any existing demo HTML)
 
 ## Demo-Specific SDK Knowledge
 
