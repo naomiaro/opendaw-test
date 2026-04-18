@@ -712,11 +712,7 @@ At 120 BPM and 48kHz: 960 ticks = 0.5 seconds = 24,000 samples.
 
 When tempo changes mid-timeline, the simple ratio breaks. A section at 120 BPM has different seconds-per-tick than a section at 60 BPM. Converting a tick position to seconds requires **integrating** over the tempo curve — summing up the time contribution of each small segment at its local tempo.
 
-#### Why Integration?
-
-Think of it like driving on a highway where the speed limit changes. If you drive 100km at 100km/h, then 100km at 50km/h, the total time isn't `200km / 75km/h`. You have to compute each segment separately: 1 hour + 2 hours = 3 hours.
-
-Same principle: if tick 0-3840 is at 120 BPM (2 seconds) and tick 3840-7680 is at 60 BPM (4 seconds), the total time to tick 7680 is 6 seconds — not the 4 seconds you'd get by averaging the tempos.
+For an intuitive explanation of why integration is needed, see [Chapter 02: Why "integration across the ramp"?](./02-timing-and-tempo.md#why-integration-across-the-ramp)
 
 #### The Integration Algorithm
 
