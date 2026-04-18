@@ -4,9 +4,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build --mode production",
+    "build": "vite build --mode production && vitepress build documentation",
     "preview": "vite preview",
-    "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx}\""
+    "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx}\"",
+    "docs:dev": "vitepress dev documentation",
+    "docs:build": "vitepress build documentation",
+    "docs:preview": "vitepress preview documentation"
   },
   "dependencies": {
     "@opendaw/studio-sdk": "^0.0.133",
@@ -22,7 +25,8 @@
     "@types/react-dom": "^19.2.2",
     "@vitejs/plugin-react": "^5.0.4",
     "prettier": "^3.6.2",
-    "vite": "^7.1.5"
+    "vite": "^7.1.5",
+    "vitepress": "^1.6.4"
   },
   "packageManager": "npm@11.4.2",
   "engines": {

@@ -1,26 +1,49 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
+<head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Tempo Automation Demo - OpenDAW</title>
-    <meta
-      name="description"
-      content="Apply preset tempo automation patterns and hear tempo changes in real-time with OpenDAW"
-    />
+
+    <!-- Primary Meta Tags -->
+    <title>OpenDAW Tempo Automation Demo - Real-Time BPM Changes in the Browser</title>
+    <meta name="title" content="OpenDAW Tempo Automation Demo - Real-Time BPM Changes in the Browser" />
+    <meta name="description" content="Apply preset tempo automation patterns (accelerando, ritardando, stepped changes) and hear the metronome and drum loop respond to tempo changes in real-time with OpenDAW." />
+    <meta name="keywords" content="OpenDAW, tempo automation, BPM, accelerando, ritardando, tempo changes, metronome, web audio, DAW" />
+    <meta name="author" content="Moises AI" />
+    <meta name="theme-color" content="#30a46c" />
+
+    <!-- Canonical URL -->
+    <link rel="canonical" href="https://opendaw-test.pages.dev/tempo-automation-demo.html" />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://opendaw-test.pages.dev/tempo-automation-demo.html" />
+    <meta property="og:title" content="OpenDAW Tempo Automation Demo - Real-Time BPM Changes" />
+    <meta property="og:description" content="Apply tempo automation patterns and hear the metronome respond to tempo changes in real-time." />
+    <meta property="og:image" content="https://opendaw-test.pages.dev/og-image-tempo-automation.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:site_name" content="OpenDAW Demos" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="OpenDAW Tempo Automation Demo - Real-Time BPM Changes" />
+    <meta name="twitter:description" content="Apply preset tempo automation patterns and hear tempo changes in real-time with OpenDAW." />
+    <meta name="twitter:image" content="https://opendaw-test.pages.dev/og-image-tempo-automation.png" />
+
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <style>
-      body {
-        margin: 0;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-          Oxygen, Ubuntu, Cantarell, sans-serif;
-        background: #111;
-        color: #fff;
-      }
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #111;
+            color: #fff;
+        }
     </style>
-  </head>
-  <body>
+</head>
+<body>
     <div id="root"></div>
     <script type="module" src="/src/demos/automation/tempo-automation-demo.tsx"></script>
-  </body>
+</body>
 </html>

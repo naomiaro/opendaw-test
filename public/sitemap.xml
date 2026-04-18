@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://opendaw-test.pages.dev/</loc></url>
+  <url><loc>https://opendaw-test.pages.dev/clip-fades-demo.html</loc></url>
+  <url><loc>https://opendaw-test.pages.dev/clip-looping-demo.html</loc></url>
+  <url><loc>https://opendaw-test.pages.dev/comp-lanes-demo.html</loc></url>
+  <url><loc>https://opendaw-test.pages.dev/drum-scheduling-demo.html</loc></url>
+  <url><loc>https://opendaw-test.pages.dev/effects-demo.html</loc></url>
+  <url><loc>https://opendaw-test.pages.dev/export-demo.html</loc></url>
+  <url><loc>https://opendaw-test.pages.dev/loop-recording-demo.html</loc></url>
+  <url><loc>https://opendaw-test.pages.dev/looping-demo.html</loc></url>
+  <url><loc>https://opendaw-test.pages.dev/midi-recording-demo.html</loc></url>
+  <url><loc>https://opendaw-test.pages.dev/mixer-groups-demo.html</loc></url>
+  <url><loc>https://opendaw-test.pages.dev/recording-api-react-demo.html</loc></url>
+  <url><loc>https://opendaw-test.pages.dev/tempo-automation-demo.html</loc></url>
+  <url><loc>https://opendaw-test.pages.dev/time-signature-demo.html</loc></url>
+  <url><loc>https://opendaw-test.pages.dev/timebase-demo.html</loc></url>
+  <url><loc>https://opendaw-test.pages.dev/track-automation-demo.html</loc></url>
+  <url><loc>https://opendaw-test.pages.dev/track-editing-demo.html</loc></url>
+  <url><loc>https://opendaw-test.pages.dev/werkstatt-demo.html</loc></url>
+</urlset>

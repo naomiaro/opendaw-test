@@ -223,7 +223,10 @@ Also limit AnimationFrame scanning to active recording — idle scanning is redu
 direct calls handle mute toggles, finalization, and clear.
 
 ## Build & Verification
-- `npm run build` — Vite handles TypeScript transpilation (no standalone `tsc` available)
+- `npm run build` runs Vite then VitePress — demos go to `dist/`, docs go to `dist/docs/` for `/docs/` on Cloudflare Pages
+- `npm run docs:dev` — local VitePress dev server for documentation
+- COOP/COEP headers in `public/_headers` exclude `/docs/*` — VitePress assets break under `require-corp`
+- Vite handles TypeScript transpilation (no standalone `tsc` available)
 - After SDK upgrades, clear Vite dep cache: `rm -rf node_modules/.vite` (dev server pre-bundles old SDK)
 - SDK upgrades: bump `@opendaw/studio-sdk` version in `package.json` and `npm install` — sub-packages
   resolve transitively from the registry. NEVER install sub-packages as local `file:` references
@@ -236,6 +239,8 @@ direct calls handle mute toggles, finalization, and clear.
 2. Create `src/demos/<category>/<name>-demo.tsx` (use Radix UI Theme, GitHubCorner, BackLink, MoisesLogo; import shared code via `@/` alias)
 3. Add build entry in `vite.config.ts` → `rollupOptions.input`
 4. Add card in `src/index.tsx`
+5. Add URL to `public/sitemap.xml`
+6. Take 1200x630 screenshot, save as `public/og-image-<name>.png`, add `og:image` + `twitter:image` tags to the HTML
 
 ## Demo-Specific SDK Knowledge
 
@@ -266,5 +271,4 @@ Each demo category folder has its own CLAUDE.md with SDK knowledge scoped to tho
 - Editing, fades & automation: `documentation/09-editing-fades-and-automation.md`
 - Export & offline rendering: `documentation/10-export.md`
 - SDK changelogs: `changelogs/`
-- Research: `documentation/research/`
 - OpenDAW source code locations: see `.claude/local.md`
