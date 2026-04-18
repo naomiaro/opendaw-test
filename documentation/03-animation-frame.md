@@ -27,29 +27,6 @@ AnimationFrame is OpenDAW's mechanism for syncing real-time audio state from the
 
 Most Web Audio applications connect native `AudioNode` objects together and let the browser manage timing. OpenDAW takes a different approach — it runs its own audio engine inside an `AudioWorklet`, processing audio sample-by-sample in custom code. This gives the engine full control over scheduling, effects, and mixing, but it also means the browser has no built-in way to report engine state (playback position, transport state, recording status) back to the UI. AnimationFrame bridges that gap.
 
-### The Problem It Solves
-
-Web audio processing happens in a separate thread (AudioWorkletGlobalScope) for performance:
-
-```
-Main Thread (UI)              Audio Worklet Thread
-─────────────────             ────────────────────
-UI Components                 Audio Processing
-  │                              │
-  │  How does UI know           │  Playing audio
-  │  audio is playing?           │  at 120 BPM
-  │                              │  Position: 3840 PPQN
-  │  Need to sync! ──────────────┤
-  │                              │
-  ▼                              ▼
-```
-
-**Problem:** JavaScript can't directly share data between threads.
-
-**Solution:** OpenDAW uses `SharedArrayBuffer` + AnimationFrame polling.
-
-## How It Works
-
 ### Architecture
 
 ```
@@ -66,352 +43,92 @@ Writes to SharedArrayBuffer        Reads from SharedArrayBuffer
                                    UI updates
 ```
 
-### The Update Loop
+JavaScript can't directly share data between threads. OpenDAW solves this with `SharedArrayBuffer` — the audio worklet writes state, and AnimationFrame reads it every frame (~60fps), updating observables that your UI subscribes to.
 
-```typescript
-// What AnimationFrame does internally (simplified)
-AnimationFrame.start(window);
+## API
 
-// This creates a loop:
-function loop() {
-  // 1. Read from SharedArrayBuffer (written by audio worklet)
-  const audioState = readFromSharedBuffer();
+### `AnimationFrame.start(window)`
 
-  // 2. Update observables
-  project.engine.position.notify(audioState.position);
-  project.engine.isPlaying.notify(audioState.isPlaying);
-  project.engine.isRecording.notify(audioState.isRecording);
-
-  // 3. All subscribers get notified → UI updates
-
-  // 4. Loop again next frame (60fps)
-  window.requestAnimationFrame(loop);
-}
-
-loop(); // Start
-```
-
-## Required Setup
-
-### Step 1: Start the Loop
-
-**This MUST be called before creating the project:**
+Starts the update loop. Call this **once**, before creating the project.
 
 ```typescript
 import { AnimationFrame } from "@opendaw/lib-dom";
 
-// ✅ Call this early in your app initialization
 AnimationFrame.start(window);
 
 // Then create project
 const project = Project.new({ /* ... */ });
 ```
 
-### Step 2: Subscribe to Observables
+### `observable.subscribe()` — Discrete State Changes
 
-Now observables will actually update:
-
-```typescript
-// Subscribe to playing state
-const subscription = project.engine.isPlaying.subscribe(obs => {
-  const playing = obs.getValue();
-  console.log("Playing:", playing); // ✓ Works!
-  setIsPlaying(playing); // Update your UI state
-});
-
-// Don't forget to clean up
-subscription.terminate();
-```
-
-## Common Usage Patterns
-
-### Pattern 1: Playback State
+Fires when a value changes. Use for state that transitions occasionally (play/stop, BPM, mute).
 
 ```typescript
-import { AnimationFrame } from "@opendaw/lib-dom";
-
-function App() {
-  const [isPlaying, setIsPlaying] = useState(false);
-
-  useEffect(() => {
-    // Subscribe to engine state
-    const sub = project.engine.isPlaying.catchupAndSubscribe(obs => {
-      setIsPlaying(obs.getValue());
-    });
-
-    return () => sub.terminate();
-  }, [project]);
-
-  // isPlaying now updates automatically when audio starts/stops!
-}
-```
-
-### Pattern 2: Position Tracking
-
-For rapidly updating values like position, subscribe via AnimationFrame directly to avoid excessive UI updates:
-
-```typescript
-import { AnimationFrame } from "@opendaw/lib-dom";
-
-function Timeline() {
-  const [currentPosition, setCurrentPosition] = useState(0);
-
-  useEffect(() => {
-    // Instead of subscribing to observable directly:
-    // const sub = project.engine.position.subscribe(...) // Too many updates!
-
-    // ✅ Better: throttle to 60fps
-    const sub = AnimationFrame.add(() => {
-      setCurrentPosition(project.engine.position.getValue());
-    });
-
-    return () => sub.terminate();
-  }, [project]);
-
-  // currentPosition updates at 60fps, not thousands of times per second!
-}
-```
-
-### Pattern 3: Multiple Observables
-
-```typescript
-useEffect(() => {
-  const playingSub = project.engine.isPlaying.subscribe(obs => {
-    setIsPlaying(obs.getValue());
-  });
-
-  const recordingSub = project.engine.isRecording.subscribe(obs => {
-    setIsRecording(obs.getValue());
-  });
-
-  const positionSub = AnimationFrame.add(() => {
-    setPosition(project.engine.position.getValue());
-  });
-
-  return () => {
-    playingSub.terminate();
-    recordingSub.terminate();
-    positionSub.terminate();
-  };
-}, [project]);
-```
-
-## AnimationFrame API
-
-### `AnimationFrame.start(window)`
-
-Starts the update loop. Call this **once** during app initialization.
-
-```typescript
-// In your initialization code
-AnimationFrame.start(window);
-```
-
-**When to call:**
-- Before creating the OpenDAW project
-- Early in your app's lifecycle
-- Only call once (calling multiple times is safe but unnecessary)
-
-### `AnimationFrame.add(callback)`
-
-Register a callback to run every frame (60fps).
-
-```typescript
-const subscription = AnimationFrame.add(() => {
-  // This runs ~60 times per second
-  const position = project.engine.position.getValue();
-  updateUI(position);
+const sub = project.engine.isPlaying.subscribe(obs => {
+  setIsPlaying(obs.getValue());
 });
 
 // Cleanup when done
-subscription.terminate();
+sub.terminate();
 ```
 
-**Use cases:**
-- Position tracking for playhead
-- Real-time meter/level displays
-- Animation that syncs with audio
+Use `catchupAndSubscribe()` instead of `subscribe()` to also receive the current value immediately.
 
-### Observable.subscribe()
+### `AnimationFrame.add()` — Continuous Updates
 
-Subscribe to state changes (fires when value changes).
+Runs a callback every frame (~60fps). Use for values that change continuously (playhead position, audio levels, meters).
 
 ```typescript
-const subscription = observable.subscribe(obs => {
-  const value = obs.getValue();
-  // Handle change
-});
-
-subscription.terminate();
-```
-
-**Use cases:**
-- Playback state changes (play/stop)
-- Recording state changes
-- BPM changes
-- Any state that changes occasionally (not continuously)
-
-## Why Two Different Approaches?
-
-### Observable.subscribe() - For Discrete Changes
-
-```typescript
-// Fires only when state CHANGES
-project.engine.isPlaying.subscribe(obs => {
-  console.log(obs.getValue());
-});
-
-// User clicks play → Fires once (false → true)
-// User clicks stop → Fires once (true → false)
-// While playing → Doesn't fire
-```
-
-**Use when:**
-- Value changes occasionally
-- You want to react to specific state transitions
-- Examples: play/stop, BPM changes, track mute
-
-### AnimationFrame.add() - For Continuous Updates
-
-```typescript
-// Fires EVERY FRAME (~60fps)
-AnimationFrame.add(() => {
-  const position = project.engine.position.getValue();
-  console.log(position);
-});
-
-// While playing:
-// Frame 1: 960
-// Frame 2: 1020
-// Frame 3: 1080
-// ... (60 times per second)
-```
-
-**Use when:**
-- Value changes continuously
-- You need smooth animation
-- Examples: playhead position, audio levels, meters
-
-## Complete Initialization Example
-
-```typescript
-// src/lib/projectSetup.ts
-import { AnimationFrame } from "@opendaw/lib-dom";
-import { Workers, AudioWorklets, Project } from "@opendaw/studio-core";
-
-export async function initializeOpenDAW() {
-  console.log("Initializing OpenDAW...");
-
-  // STEP 1: Start AnimationFrame loop (CRITICAL!)
-  console.log("Starting AnimationFrame...");
-  AnimationFrame.start(window);
-
-  // STEP 2: Install workers and worklets
-  console.log("Installing workers...");
-  await Workers.install("/workers-main.js");
-  AudioWorklets.install("/processors.js");
-
-  // STEP 3: Create AudioContext
-  const audioContext = new AudioContext({ latencyHint: 0 });
-
-  // STEP 4: Create worklets
-  await AudioWorklets.createFor(audioContext);
-
-  // STEP 5: Create project
-  const project = Project.new({
-    audioContext,
-    sampleManager,
-    soundfontManager,
-    audioWorklets: AudioWorklets.get(audioContext)
-  });
-
-  // STEP 6: Start audio worklet
-  project.startAudioWorklet();
-  await project.engine.isReady();
-
-  console.log("OpenDAW ready!");
-
-  return { project, audioContext };
-}
-```
-
-## Debugging AnimationFrame Issues
-
-### Problem: Observables never fire
-
-```typescript
-// Check if AnimationFrame was started
-project.engine.play();
-
-setTimeout(() => {
-  console.log("Playing?", project.engine.isPlaying.getValue());
-  // If this shows false but audio is playing → AnimationFrame not started!
-}, 1000);
-```
-
-**Solution:**
-```typescript
-// Add this BEFORE creating project
-AnimationFrame.start(window);
-```
-
-### Problem: Position doesn't update
-
-```typescript
-// Bad: Direct subscription to position
-project.engine.position.subscribe(obs => {
-  setPosition(obs.getValue()); // Fires too often or not at all
-});
-
-// Good: Use AnimationFrame throttling
-AnimationFrame.add(() => {
+const sub = AnimationFrame.add(() => {
   setPosition(project.engine.position.getValue());
 });
+
+// Cleanup when done
+sub.terminate();
 ```
 
-### Problem: "SharedArrayBuffer is not defined"
+Don't subscribe to position via `observable.subscribe()` — it fires too frequently. `AnimationFrame.add()` naturally throttles to 60fps.
 
-**Solution:** Ensure cross-origin isolation headers:
+### Putting It Together
+
+```typescript
+// Discrete state — fires only on transitions
+const playingSub = project.engine.isPlaying.subscribe(obs => {
+  setIsPlaying(obs.getValue());
+});
+
+const recordingSub = project.engine.isRecording.subscribe(obs => {
+  setIsRecording(obs.getValue());
+});
+
+// Continuous state — fires every frame
+const positionSub = AnimationFrame.add(() => {
+  setPosition(project.engine.position.getValue());
+});
+
+// Cleanup all
+playingSub.terminate();
+recordingSub.terminate();
+positionSub.terminate();
+```
+
+## Debugging
+
+### Observables never fire
+
+AnimationFrame wasn't started, or was started after the project was created. Ensure `AnimationFrame.start(window)` is called before `Project.new()`.
+
+### Position doesn't update
+
+You're probably subscribing to the position observable directly. Use `AnimationFrame.add()` instead — see [Continuous Updates](#animationframeadd--continuous-updates) above.
+
+### "SharedArrayBuffer is not defined"
+
+Your server needs cross-origin isolation headers:
 ```
 Cross-Origin-Opener-Policy: same-origin
 Cross-Origin-Embedder-Policy: require-corp
-```
-
-These headers are required for SharedArrayBuffer, which AnimationFrame uses.
-
-## Performance Considerations
-
-### Good: Throttled Position Updates
-
-```typescript
-// ✅ Updates at 60fps (smooth, not excessive)
-const sub = AnimationFrame.add(() => {
-  setPosition(project.engine.position.getValue());
-});
-```
-
-### Bad: Unthrottled Updates
-
-```typescript
-// ❌ Could fire thousands of times per second
-const sub = project.engine.position.subscribe(obs => {
-  setPosition(obs.getValue());
-});
-```
-
-### Good: Memoize Expensive Calculations
-
-```typescript
-const sub = AnimationFrame.add(() => {
-  const position = project.engine.position.getValue();
-
-  // Only recalculate if position changed
-  if (position !== lastPosition) {
-    const pixels = (position / totalDuration) * width;
-    updatePlayhead(pixels);
-    lastPosition = position;
-  }
-});
 ```
 
 ## Framework Integration Pitfalls
@@ -462,101 +179,9 @@ AnimationFrame.add(() => {
 });
 ```
 
-## Common Mistakes
-
-### Mistake 1: Forgetting to Start
-
-```typescript
-// ❌ Forgot to start AnimationFrame
-const project = Project.new({ /* ... */ });
-
-project.engine.isPlaying.subscribe(obs => {
-  console.log(obs.getValue()); // NEVER FIRES!
-});
-```
-
-### Mistake 2: Starting Too Late
-
-```typescript
-// ❌ Started after project creation
-const project = Project.new({ /* ... */ });
-AnimationFrame.start(window); // Too late!
-```
-
-### Mistake 3: Not Cleaning Up
-
-```typescript
-// ❌ Memory leak - subscription never terminated
-useEffect(() => {
-  AnimationFrame.add(() => {
-    updateUI(project.engine.position.getValue());
-  });
-  // Missing cleanup!
-}, []);
-
-// ✅ Proper cleanup
-useEffect(() => {
-  const sub = AnimationFrame.add(() => {
-    updateUI(project.engine.position.getValue());
-  });
-
-  return () => sub.terminate();
-}, []);
-```
-
 ## Summary
 
-### Key Points
-
-1. **AnimationFrame is required** for OpenDAW observables to work
-2. **Call `AnimationFrame.start(window)`** before creating the project
-3. **Use `AnimationFrame.add()`** for high-frequency updates (position)
-4. **Use `observable.subscribe()`** for discrete state changes (play/stop)
-5. **Always clean up** subscriptions when your component unmounts
-
-### Essential Pattern
-
-```typescript
-// 1. Start AnimationFrame (once, early)
-AnimationFrame.start(window);
-
-// 2. Create project
-const project = await initializeOpenDAW();
-
-// 3. Subscribe to state (in your UI framework)
-useEffect(() => {
-  // Discrete state
-  const playingSub = project.engine.isPlaying.subscribe(obs => {
-    setIsPlaying(obs.getValue());
-  });
-
-  // Continuous state
-  const positionSub = AnimationFrame.add(() => {
-    setPosition(project.engine.position.getValue());
-  });
-
-  // Cleanup
-  return () => {
-    playingSub.terminate();
-    positionSub.terminate();
-  };
-}, [project]);
-```
-
-### Mental Model
-
-Think of AnimationFrame as the **bridge** between the audio world and the UI world:
-
-```
-Audio World                 Bridge                    UI World
-───────────                ─────────                 ─────────
-Audio Worklet    ←→    SharedArrayBuffer    ←→    Main Thread
-(processing)           (AnimationFrame          (Your UI)
-                        reads every frame)
-```
-
-Without this bridge, your UI has no way to know what the audio is doing!
-
-## Next Steps
-
-With AnimationFrame understood, you're ready to build reactive UIs that stay in sync with OpenDAW's audio engine. See the other documentation for building timelines, waveforms, and complete DAW interfaces.
+1. **`AnimationFrame.start(window)`** — call once, before creating the project
+2. **`observable.subscribe()`** — for discrete state changes (play/stop, BPM)
+3. **`AnimationFrame.add()`** — for continuous values (position, levels)
+4. **Always terminate** subscriptions when your component unmounts
