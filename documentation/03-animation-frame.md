@@ -2,7 +2,7 @@
 
 ## Critical Concept
 
-**⚠️ IMPORTANT:** OpenDAW's observables will **not work** without AnimationFrame. This is the most common mistake when integrating OpenDAW!
+**⚠️ IMPORTANT:** OpenDAW's observables will **not work** without AnimationFrame.
 
 ```typescript
 // ❌ WITHOUT AnimationFrame.start()
