@@ -23,6 +23,10 @@ project.engine.isPlaying.subscribe(obs => {
 
 AnimationFrame is OpenDAW's mechanism for syncing real-time audio state from the **audio worklet thread** to the **main thread** where your UI runs.
 
+### Why OpenDAW Needs This
+
+Most Web Audio applications connect native `AudioNode` objects together and let the browser manage timing. OpenDAW takes a different approach — it runs its own audio engine inside an `AudioWorklet`, processing audio sample-by-sample in custom code. This gives the engine full control over scheduling, effects, and mixing, but it also means the browser has no built-in way to report engine state (playback position, transport state, recording status) back to the UI. AnimationFrame bridges that gap.
+
 ### The Problem It Solves
 
 Web audio processing happens in a separate thread (AudioWorkletGlobalScope) for performance:
