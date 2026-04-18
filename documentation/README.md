@@ -51,6 +51,11 @@ pixels = (ppqnPosition / totalPPQNDuration) * timelineWidthInPixels
 ppqn = PPQN.secondsToPulses(durationInSeconds, bpm)
 ```
 
+**Convert PPQN to Seconds (single tempo):**
+```typescript
+seconds = PPQN.pulsesToSeconds(ppqn, bpm)
+```
+
 **Convert Seconds to PPQN (variable tempo):**
 ```typescript
 // Use the tempo map when your project has tempo automation
