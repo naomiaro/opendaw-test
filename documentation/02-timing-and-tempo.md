@@ -99,17 +99,19 @@ Every division except 7 (rare in practice) produces a clean integer. No floating
 
 ### PPQN Values Are Integers
 
-PPQN positions and durations are stored as **integers** (`Int32` fields on `AudioRegionBox`). This is important because `PPQN.secondsToPulses()` returns a float — always wrap the result with `Math.round()` before passing it to the SDK:
+The `position` field on `AudioRegionBox` is Int32 — it must receive integer values. The `duration`, `loopOffset`, and `loopDuration` fields are Float32 with `unit: "mixed"`, but in Musical timeBase they store PPQN ticks, which should be integers to avoid fractional pulse misalignment.
+
+Since `PPQN.secondsToPulses()` returns a float, always wrap the result with `Math.round()`:
 
 ```typescript
-// ❌ Float — causes truncation misalignment
-region.duration.setValue(PPQN.secondsToPulses(seconds, bpm));
+// ❌ Float — causes misalignment between region boundaries
+region.position.setValue(PPQN.secondsToPulses(seconds, bpm));
 
 // ✅ Integer — safe
-region.duration.setValue(Math.round(PPQN.secondsToPulses(seconds, bpm)));
+region.position.setValue(Math.round(PPQN.secondsToPulses(seconds, bpm)));
 ```
 
-This applies to `position`, `duration`, `loopOffset`, and `loopDuration`.
+This applies to `position` (Int32, always needs rounding) and `duration`, `loopOffset`, `loopDuration` (Float32, need rounding in Musical timeBase).
 
 ## PPQN vs BPM: The Key Difference
 
@@ -762,10 +764,11 @@ for (let i = existingEvents.length - 1; i >= 0; i--) {
 ### Iterating Signature Events
 
 ```typescript
-// iterateAll() yields { index, position, nominator, denominator }
+// iterateAll() yields { index, accumulatedPpqn, accumulatedBars, nominator, denominator }
 for (const event of signatureTrack.iterateAll()) {
   console.log(
-    `Index: ${event.index}, Position: ${event.position}, ` +
+    `Index: ${event.index}, Position: ${event.accumulatedPpqn}, ` +
+    `Bar: ${event.accumulatedBars}, ` +
     `Signature: ${event.nominator}/${event.denominator}`
   );
 }
@@ -863,10 +866,10 @@ const progRock: SignatureChange[] = [
 3. Create each change event at the correct PPQN position (separate transactions)
 4. Set timeline duration and loop area
 
-See `src/time-signature-demo.tsx` for a complete implementation of this pattern.
+See `src/demos/automation/time-signature-demo.tsx` for a complete implementation of this pattern.
 
 ### Reference (Time Signature Changes)
 
-- Demo: `src/time-signature-demo.tsx`
+- Demo: `src/demos/automation/time-signature-demo.tsx`
 - SignatureTrackAdapter: `packages/studio/adapters/src/timeline/SignatureTrackAdapter.ts`
 - PPQN utilities: `packages/lib/dsp/src/ppqn.ts`
