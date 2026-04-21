@@ -217,6 +217,10 @@ Use `.values()` for the track array, `.collection` for the underlying collection
 // Typed narrowing — returns AudioRegionBoxAdapter[]
 trackAdapter.regions.adapters.values().filter(r => r.isAudioRegion())
 ```
+**Critical:** `flatMap` does NOT flatten `SortedSet` — it only flattens arrays. Writing
+`.flatMap(track => track.regions.adapters)` produces `SortedSet[]`, not region adapters.
+Always use `.flatMap(track => [...track.regions.adapters.values()])` or the `getAllRegions()`
+utility from `src/lib/adapterUtils.ts`.
 
 ### Shared Adapter Utilities
 `src/lib/adapterUtils.ts` provides `getAllRegions(project)` and `getAllAudioRegions(project)`
