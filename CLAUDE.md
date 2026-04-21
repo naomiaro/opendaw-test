@@ -128,8 +128,11 @@ API: `.isEmpty()`, `.nonEmpty()`, `.unwrap()`, `.unwrapOrNull()`, `.unwrapOrUnde
 ### Box Graph API Names
 - Delete box: `project.boxGraph.unstageBox(box)` — takes box object, NOT UUID
 - Find box: `project.boxGraph.findBox(uuid)` — returns `Option<Box>`, NOT raw box
-- AudioRegionBox gain: field is `gain` (dB), NOT `volume`
+- AudioRegionBox gain: field is `gain` (dB, decibel constraint), NOT `volume`, NOT a 0-1 range
 - Option API: `isEmpty()` / `nonEmpty()` — NOT `isSome()` / `isNone()`
+- Disconnect pointer: `pointerField.defer()` — NOT `unrefer()` (doesn't exist)
+- Copy region: `adapter.copyTo({ target: field })` — parameter is `target`, NOT `track`
+- CompressorDeviceBox makeup gain: field is `makeup`, NOT `gain`
 
 ### Sample Manager Setup
 - Class: `GlobalSampleLoaderManager` (NOT `DefaultSampleLoaderManager`)
