@@ -192,20 +192,18 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!project || session.state !== "ready") return;
 
-    const allBoxes = project.boxGraph.boxes();
-    for (const box of allBoxes) {
-      if (box.name === "AudioRegionBox") {
-        const regionBox = box as AudioRegionBox;
-        const label = regionBox.label.getValue();
-        if (label === "Recording" || label.startsWith("Take ")) {
-          const duration = regionBox.duration.getValue();
-          project.editing.modify(() => {
-            project.timelineBox.loopArea.from.setValue(0);
-            project.timelineBox.loopArea.to.setValue(duration);
-            project.timelineBox.loopArea.enabled.setValue(false);
-          });
-          break;
-        }
+    const allRegions = project.rootBoxAdapter.audioUnits.adapters()
+      .flatMap(unit => unit.tracks.adapters())
+      .flatMap(track => track.regions.adapters);
+    for (const region of allRegions) {
+      if (region.label === "Recording" || region.label.startsWith("Take ")) {
+        const duration = region.box.duration.getValue();
+        project.editing.modify(() => {
+          project.timelineBox.loopArea.from.setValue(0);
+          project.timelineBox.loopArea.to.setValue(duration);
+          project.timelineBox.loopArea.enabled.setValue(false);
+        });
+        break;
       }
     }
   }, [project, session.state]);
@@ -379,14 +377,12 @@ const App: React.FC = () => {
 
       // Delete any previous recording regions before starting a new one
       project.editing.modify(() => {
-        const allBoxes = project.boxGraph.boxes();
-        for (const box of allBoxes) {
-          if (box.name === "AudioRegionBox") {
-            const regionBox = box as AudioRegionBox;
-            const label = regionBox.label.getValue();
-            if (label === "Recording" || label.startsWith("Take ")) {
-              regionBox.delete();
-            }
+        const allRegions = project.rootBoxAdapter.audioUnits.adapters()
+          .flatMap(unit => unit.tracks.adapters())
+          .flatMap(track => track.regions.adapters);
+        for (const region of allRegions) {
+          if (region.label === "Recording" || region.label.startsWith("Take ")) {
+            region.box.delete();
           }
         }
       });

@@ -226,14 +226,14 @@ const App: React.FC = () => {
 
         // Adjust region position and loopOffset for the take offset
         project.editing.modify(() => {
-          const pointers = track.trackBox.regions.pointerHub.incoming();
-          pointers.forEach(({ box }) => {
-            if (!box) return;
-            const regionBox = box as AudioRegionBox;
-            regionBox.position.setValue(playbackStart);
-            regionBox.duration.setValue(TOTAL_PPQN);
-            regionBox.loopOffset.setValue(playbackStart + offset);
-          });
+          const trackAdapter = project.boxAdapters.adapterFor(track.trackBox, TrackBoxAdapter);
+          trackAdapter.regions.adapters
+            .filter((r: any) => r.isAudioRegion?.())
+            .forEach((r: any) => {
+              r.box.position.setValue(playbackStart);
+              r.box.duration.setValue(TOTAL_PPQN);
+              r.box.loopOffset.setValue(playbackStart + offset);
+            });
         });
 
         // Create volume automation track

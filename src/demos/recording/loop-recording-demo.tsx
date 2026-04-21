@@ -569,11 +569,12 @@ const App: React.FC = () => {
   const handleClearTakes = useCallback(() => {
     if (!project) return;
     project.editing.modify(() => {
-      for (const box of project.boxGraph.boxes()) {
-        if (box.name !== "AudioRegionBox") continue;
-        const regionBox = box as AudioRegionBox;
-        if (regionBox.label.getValue().startsWith("Take ")) {
-          regionBox.delete();
+      const allRegions = project.rootBoxAdapter.audioUnits.adapters()
+        .flatMap(unit => unit.tracks.adapters())
+        .flatMap(track => track.regions.adapters);
+      for (const region of allRegions) {
+        if (region.label.startsWith("Take ")) {
+          region.box.delete();
         }
       }
     });
