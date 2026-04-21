@@ -125,6 +125,32 @@ const peaks = peaksOption.unwrap();
 ```
 API: `.isEmpty()`, `.nonEmpty()`, `.unwrap()`, `.unwrapOrNull()`, `.unwrapOrUndefined()`
 
+### Box Graph API Names
+- Delete box: `project.boxGraph.unstageBox(box)` — takes box object, NOT UUID
+- Find box: `project.boxGraph.findBox(uuid)` — returns `Option<Box>`, NOT raw box
+- AudioRegionBox gain: field is `gain` (dB), NOT `volume`
+- Option API: `isEmpty()` / `nonEmpty()` — NOT `isSome()` / `isNone()`
+
+### Sample Manager Setup
+- Class: `GlobalSampleLoaderManager` (NOT `DefaultSampleLoaderManager`)
+- AudioBuffer → AudioData: use `AudioData.create(sampleRate, length, channels)` + manual
+  channel copy. `OpenSampleAPI.fromAudioBuffer()` does not exist.
+- Progress callback type: `Progress.Handler` (alias for `Procedure<unitValue>`)
+- SampleLoaderState error field: `state.reason` (NOT `state.error`)
+- SampleLoader has `subscribe()` only — NO `catchupAndSubscribe()`. Check `state.type`
+  before subscribing, or use adapter layer + CanvasPainter to avoid subscribing entirely.
+
+### Adapter Layer for Peaks (Preferred)
+`regionAdapter.file.peaks` is a synchronous `Option<Peaks>` read — no subscribe needed.
+Combined with CanvasPainter (repaints every frame), peaks render automatically when ready.
+Use raw `sampleLoader.subscribe()` only when you need state change callbacks without a painter.
+
+### Import Locations
+- `AnimationFrame` → `@opendaw/lib-dom` (NOT `@opendaw/lib-fusion`)
+- `PeaksPainter` → `@opendaw/lib-fusion`
+- `SampleMetaData` → `@opendaw/studio-adapters`
+- `AudioData` → `@opendaw/lib-dsp`
+
 ### Always Use editing.modify() for State Changes
 ```typescript
 project.editing.modify(() => {
@@ -167,10 +193,10 @@ Safari can't decode Ogg Opus via `decodeAudioData` (even though `canPlayType` re
 See `src/lib/audioUtils.ts` `getAudioExtension()`.
 
 ### PPQN Values Must Be Integer
-`position`, `loopOffset`, `loopDuration`, `duration` on AudioRegionBox are Int32 fields.
+`position` on AudioRegionBox is Int32. `duration`, `loopDuration`, `loopOffset` are Float32
+with `unit: "mixed"` (PPQN in Musical timeBase, seconds in Seconds timeBase).
 `PPQN.secondsToPulses()` returns float — always wrap with `Math.round()` before passing
-to `setValue()`, `RegionEditing.cut()`, or `createTrackRegion()`. Float values cause
-truncation misalignment between region boundaries.
+to Int32 fields like `position`, or to `RegionEditing.cut()` / `createTrackRegion()`.
 
 ### Loading User-Dropped Audio Files
 `loadTracksFromFiles` uses `fetch()` internally via `loadAudioFile()`. For drag-and-drop
