@@ -556,7 +556,7 @@ Distinguish live vs. final peaks with `"dataIndex" in peaks`:
 This is OpenDAW's approach — iterate through regions during rendering and check loader state.
 
 ```typescript
-import { AnimationFrame } from "@opendaw/lib-fusion";
+import { AnimationFrame } from "@opendaw/lib-dom";
 
 function renderAudioRegion(region: AudioRegionBoxAdapter) {
   const loader = region.file.getOrCreateLoader();

@@ -193,7 +193,7 @@ project.editing.modify(() => {
   );
 
   // 4. Create AudioRegionBox (the clip on the timeline)
-  const clipDuration = PPQN.secondsToPulses(audioBuffer.duration, 120);
+  const clipDuration = Math.round(PPQN.secondsToPulses(audioBuffer.duration, 120));
 
   AudioRegionBox.create(
     project.boxGraph,
@@ -351,7 +351,7 @@ const allRegions = trackBox.regions.pointerHub
 // Modify them
 project.editing.modify(() => {
   allRegions.forEach(region => {
-    region.volume.setValue(-6); // Fade out all clips
+    region.gain.setValue(-6); // -6 dB on each clip
   });
 });
 ```
@@ -365,7 +365,7 @@ project.editing.modify(() => {
 
   // Delete each one
   regions.forEach(({ box }) => {
-    project.boxGraph.remove(box.uuid);
+    project.boxGraph.unstageBox(box);
   });
 });
 ```
@@ -388,9 +388,12 @@ box.value.setValue(123);
 
 ```typescript
 // ✅ Good - store UUID
-const trackUUID = trackBox.uuid;
-// Later: retrieve box
-const track = project.boxGraph.get(trackUUID);
+const trackUUID = trackBox.address.uuid;
+// Later: retrieve box (returns Option<Box>)
+const trackOpt = project.boxGraph.findBox(trackUUID);
+if (trackOpt.nonEmpty()) {
+  const track = trackOpt.unwrap();
+}
 
 // ❌ Bad - storing box reference (can become stale)
 const trackRef = trackBox; // Don't store box references in UI state
@@ -427,20 +430,6 @@ project.editing.modify(() => box2.setValue(2));
 project.editing.modify(() => box3.setValue(3));
 // Three undo points - harder to undo atomically
 ```
-
-## Summary
-
-The box system provides:
-- **Structured data** with change tracking
-- **Transactions** for undo/redo
-- **Observables** for reactive UI updates
-- **References** for complex relationships
-
-Key rules:
-1. All modifications must be in `project.editing.modify()`
-2. Use `pointerHub.incoming()` to get child boxes
-3. Subscribe to changes and clean up subscriptions
-4. Store UUIDs, not box references
 
 ## Adapter Layer
 
@@ -630,20 +619,6 @@ const sub = project.timelineBox.bpm.catchupAndSubscribe((obs) => {
 });
 ```
 
-#### Observer Callback
-
-The observer receives the field itself (not the raw value). Call `.getValue()` to read:
-
-```typescript
-regionBox.mute.subscribe((obs) => {
-  const value = obs.getValue(); // boolean
-});
-
-project.timelineBox.bpm.catchupAndSubscribe((obs) => {
-  const value = obs.getValue(); // number
-});
-```
-
 #### When to Use Which
 
 | Method | Fires for current value? | Use case |
@@ -687,25 +662,6 @@ const trackSub = audioUnitBox.tracks.pointerHub.catchupAndSubscribe({
   onRemoved: () => {},
 });
 subs.push(trackSub);
-```
-
-#### Collecting Subscriptions
-
-All subscriptions should be collected in an array for bulk cleanup:
-
-```typescript
-const subs: Terminable[] = [];
-
-// Add each subscription as it's created
-subs.push(trackSub);
-subs.push(regionSub);
-subs.push(muteSub);
-
-// Later, terminate all at once
-for (const sub of subs) {
-  sub.terminate();
-}
-subs.length = 0;
 ```
 
 #### Why catchupAndSubscribe at Every Level?
