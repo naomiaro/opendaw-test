@@ -702,7 +702,7 @@ Each `AudioRegionBox` has a `fading` object with four fields:
 | `fading.inSlope` | float32 | 0.75 | ratio (0-1) | Fade-in curve shape |
 | `fading.outSlope` | float32 | 0.25 | ratio (0-1) | Fade-out curve shape |
 
-Source: `AudioRegionBox` from `@opendaw/studio-boxes` (field 18)
+Source: `AudioRegionBox` from `@opendaw/studio-boxes`
 
 ### Setting Fades
 
