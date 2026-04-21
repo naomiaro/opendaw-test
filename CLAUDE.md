@@ -179,9 +179,10 @@ project.editing.modify(() => {
 // audioUnitBox is now available outside the transaction
 ```
 
-### monitoringMode Not in Type Declarations
-`capture.monitoringMode` exists at runtime but isn't in `.d.ts` files.
-Use `(capture as any).monitoringMode = "direct"` when TypeScript complains.
+### monitoringMode Is Not a Box Graph Field
+`capture.monitoringMode` is a plain getter/setter on `CaptureAudio`, not a box graph field.
+It manipulates Web Audio nodes directly. Do NOT set it inside `editing.modify()`.
+Type: `MonitoringMode = "off" | "direct" | "effects"`.
 
 ### UUID.Bytes Is Not a String
 `audioUnitBox.address.uuid` is `UUID.Bytes`, not `string`. Use `UUID.toString(uuid)` for
