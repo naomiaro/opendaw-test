@@ -17,7 +17,6 @@
 - [Complete Example: Loading and Rendering](#complete-example-loading-and-rendering)
 - [Performance Tips](#performance-tips)
 - [Common Issues](#common-issues)
-- [Summary](#summary)
 - [Advanced: Clip Looping (Region Tiling)](#advanced-clip-looping-region-tiling)
   - [Region Fields](#region-fields)
   - [waveformOffset — Shifting the Audio Read Position](#waveformoffset--shifting-the-audio-read-position)
@@ -63,18 +62,17 @@ Audio Playback   Peaks Data    Waveform Rendering
 The sample manager is configured during project initialization:
 
 ```typescript
-import { DefaultSampleLoaderManager, OpenSampleAPI } from "@opendaw/studio-core";
-import { UUID, Procedure, unitValue } from "@opendaw/lib-std";
+import { GlobalSampleLoaderManager } from "@opendaw/studio-core";
+import { SampleMetaData } from "@opendaw/studio-adapters";
+import { AudioData } from "@opendaw/lib-dsp";
+import { UUID, Progress } from "@opendaw/lib-std";
 
-const sampleManager = new DefaultSampleLoaderManager({
+const sampleManager = new GlobalSampleLoaderManager({
   fetch: async (
     uuid: UUID.Bytes,
-    progress: Procedure<unitValue>
+    progress: Progress.Handler
   ): Promise<[AudioData, SampleMetaData]> => {
-    // Option 1: Use OpenDAW's built-in sample library
-    return OpenSampleAPI.get().load(audioContext, uuid, progress);
-
-    // Option 2: Load custom audio files (explained below)
+    // Resolve UUID to audio data (explained below)
   }
 });
 ```
@@ -120,12 +118,25 @@ localAudioBuffers.set(uuidString, audioBuffer);
 Configure the sample manager to use your local buffers:
 
 ```typescript
-import { OpenSampleAPI } from "@opendaw/studio-core";
+import { GlobalSampleLoaderManager } from "@opendaw/studio-core";
+import { SampleMetaData } from "@opendaw/studio-adapters";
+import { AudioData } from "@opendaw/lib-dsp";
+import { UUID, Progress } from "@opendaw/lib-std";
 
-const sampleManager = new DefaultSampleLoaderManager({
+// Convert browser AudioBuffer to OpenDAW's AudioData format
+function audioBufferToAudioData(audioBuffer: AudioBuffer): AudioData {
+  const { numberOfChannels, length, sampleRate } = audioBuffer;
+  const audioData = AudioData.create(sampleRate, length, numberOfChannels);
+  for (let ch = 0; ch < numberOfChannels; ch++) {
+    audioData.frames[ch].set(audioBuffer.getChannelData(ch));
+  }
+  return audioData;
+}
+
+const sampleManager = new GlobalSampleLoaderManager({
   fetch: async (
     uuid: UUID.Bytes,
-    progress: Procedure<unitValue>
+    progress: Progress.Handler
   ): Promise<[AudioData, SampleMetaData]> => {
     const uuidString = UUID.toString(uuid);
 
@@ -133,9 +144,7 @@ const sampleManager = new DefaultSampleLoaderManager({
     const audioBuffer = localAudioBuffers.get(uuidString);
 
     if (audioBuffer) {
-      // Convert AudioBuffer to OpenDAW's format
-      const audioData = OpenSampleAPI.fromAudioBuffer(audioBuffer);
-
+      const audioData = audioBufferToAudioData(audioBuffer);
       const metadata: SampleMetaData = {
         name: uuidString,
         bpm: 120,
@@ -143,12 +152,10 @@ const sampleManager = new DefaultSampleLoaderManager({
         sample_rate: audioBuffer.sampleRate,
         origin: "import"
       };
-
       return [audioData, metadata];
     }
 
-    // Fallback: use built-in samples
-    return OpenSampleAPI.get().load(audioContext, uuid, progress);
+    throw new Error(`Sample not found: ${uuidString}`);
   }
 });
 ```
@@ -177,31 +184,34 @@ import { UUID } from "@opendaw/lib-std";
 const fileUUID = /* ... */;
 const sampleLoader = project.sampleManager.getOrCreate(fileUUID);
 
-// Subscribe to state changes
+// Check current state first — subscribe() only fires for FUTURE changes
+if (sampleLoader.state.type === "loaded") {
+  // Already loaded (e.g., short recording finished before we subscribed)
+  const peaks = sampleLoader.peaks;
+  if (!peaks.isEmpty()) {
+    console.log("Peaks ready:", peaks.unwrap());
+  }
+}
+
+// Subscribe to future state changes
 const subscription = sampleLoader.subscribe(state => {
-  console.log("Sample loader state:", state.type);
-
   if (state.type === "loaded") {
-    // Peaks are now available!
     const peaksOption = sampleLoader.peaks;
-
     if (!peaksOption.isEmpty()) {
-      const peaks = peaksOption.unwrap();
-      console.log("Peaks ready:", peaks);
-      // Now you can render the waveform
+      console.log("Peaks ready:", peaksOption.unwrap());
     }
   }
 
   if (state.type === "error") {
-    console.error("Failed to load sample:", state.error);
+    console.error("Failed to load sample:", state.reason);
   }
 });
 
-// Don't forget to clean up
+// Clean up when done
 subscription.terminate();
 ```
 
-**Important:** `SampleLoader` only has `subscribe()` (future changes), NOT `catchupAndSubscribe()`. Always check `loader.state.type` before subscribing — short recordings may already be `"loaded"` by the time you subscribe. Handle both `"loaded"` and `"error"` to avoid stuck states.
+**Important:** `SampleLoader` only has `subscribe()` (future changes), NOT `catchupAndSubscribe()`. Always check `sampleLoader.state.type` before subscribing — samples may already be `"loaded"` by the time you subscribe.
 
 ### Using the Adapter Layer (Preferred)
 
@@ -245,9 +255,8 @@ if (isLive) {
 ```typescript
 interface Peaks {
   numChannels: number;   // 1 = mono, 2 = stereo
-  numFrames: number;     // Number of peak frames
-  sampleRate: number;    // Original sample rate
-  // Internal data for rendering
+  numFrames: number;     // Total peak frames
+  // Internal data for rendering (stages, min/max arrays)
 }
 ```
 
@@ -352,18 +361,25 @@ function WaveformDisplay({ fileUUID }: { fileUUID: UUID.Bytes }) {
     return () => painter.terminate();
   }, []);
 
-  // Subscribe to peaks
+  // Subscribe to peaks (check current state first, then future changes)
   useEffect(() => {
     const sampleLoader = project.sampleManager.getOrCreate(fileUUID);
 
+    function handleLoaded() {
+      const peaksOption = sampleLoader.peaks;
+      if (!peaksOption.isEmpty()) {
+        peaksRef.current = peaksOption.unwrap();
+        painterRef.current?.requestUpdate();
+      }
+    }
+
+    if (sampleLoader.state.type === "loaded") {
+      handleLoaded();
+    }
+
     const subscription = sampleLoader.subscribe(state => {
       if (state.type === "loaded") {
-        const peaksOption = sampleLoader.peaks;
-
-        if (!peaksOption.isEmpty()) {
-          peaksRef.current = peaksOption.unwrap();
-          painterRef.current?.requestUpdate(); // Trigger re-render
-        }
+        handleLoaded();
       }
     });
 
@@ -395,6 +411,8 @@ function AudioTrack({ project, audioContext }) {
 
   // 1. Load audio file
   useEffect(() => {
+    let subscription: { terminate(): void } | null = null;
+
     async function loadAudio() {
       // Fetch and decode
       const response = await fetch("/audio/kick.wav");
@@ -417,19 +435,29 @@ function AudioTrack({ project, audioContext }) {
       // Subscribe to sample loader
       const sampleLoader = project.sampleManager.getOrCreate(fileUUID);
 
-      sampleLoader.subscribe(state => {
+      function handleLoaded() {
+        const peaksOption = sampleLoader.peaks;
+        if (!peaksOption.isEmpty()) {
+          peaksRef.current = peaksOption.unwrap();
+          painterRef.current?.requestUpdate();
+          setPeaksReady(true);
+        }
+      }
+
+      if (sampleLoader.state.type === "loaded") {
+        handleLoaded();
+      }
+
+      subscription = sampleLoader.subscribe(state => {
         if (state.type === "loaded") {
-          const peaksOption = sampleLoader.peaks;
-          if (!peaksOption.isEmpty()) {
-            peaksRef.current = peaksOption.unwrap();
-            painterRef.current?.requestUpdate();
-            setPeaksReady(true);
-          }
+          handleLoaded();
         }
       });
     }
 
     loadAudio();
+
+    return () => subscription?.terminate();
   }, []);
 
   // 2. Set up canvas painter
@@ -543,22 +571,6 @@ useEffect(() => {
   painter.requestUpdate(); // Proper render request
 }, [peaks]);
 ```
-
-## Summary
-
-Sample management workflow:
-1. **Fetch audio** → AudioBuffer
-2. **Store locally** → Map<UUID, AudioBuffer>
-3. **Configure sample manager** → Returns AudioData + metadata
-4. **Create AudioFileBox** → Links to UUID
-5. **Subscribe to sample loader** → Get peaks when ready
-6. **Render with PeaksPainter** → Draw waveform on canvas
-
-Key points:
-- Sample manager handles audio → peaks conversion
-- Subscribe to loader state to know when peaks are ready
-- Use CanvasPainter for efficient React canvas rendering
-- PeaksPainter provides optimized waveform rendering
 
 ## Advanced: Clip Looping (Region Tiling)
 
