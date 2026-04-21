@@ -71,6 +71,15 @@ export default defineConfig({
           { text: "Effects", link: "/11-effects" },
         ],
       },
+      {
+        text: "Appendix",
+        items: [
+          {
+            text: "Browser Compatibility",
+            link: "/12-browser-compatibility",
+          },
+        ],
+      },
     ],
 
     nav: [

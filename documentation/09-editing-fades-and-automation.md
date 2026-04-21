@@ -22,7 +22,6 @@
   - [How Fades Work Internally](#how-fades-work-internally)
   - [Critical: Fades Are Relative to Region Position](#critical-fades-are-relative-to-region-position)
   - [Region Sorting When Positions Match](#region-sorting-when-positions-match)
-  - [Safari/iOS Audio Compatibility](#safariios-audio-compatibility)
 - [Advanced: Track Automation](#advanced-track-automation)
   - [Core Concepts](#core-concepts)
   - [Creating Automation Tracks](#creating-automation-tracks)
@@ -855,41 +854,6 @@ const fadeTypeIndex = (label: string) =>
 regionAdapters.sort((a, b) =>
   fadeTypeIndex(a.box.label.getValue()) - fadeTypeIndex(b.box.label.getValue())
 );
-```
-
-### Safari/iOS Audio Compatibility
-
-Safari cannot decode Ogg Opus files via `decodeAudioData`, even though `canPlayType` returns `"maybe"`. Provide m4a (AAC) fallback files and detect the browser via user agent:
-
-```typescript
-// src/lib/audioUtils.ts
-export function getAudioExtension(): string {
-  const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
-    || /iPad|iPhone|iPod/.test(navigator.userAgent)
-    || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-  return isSafari ? "m4a" : "opus";
-}
-```
-
-iOS Safari also re-suspends AudioContext after backgrounding. Before calling `play()`:
-
-```typescript
-if (audioContext.state !== "running") {
-  await audioContext.resume();
-  // Wait for statechange event — iOS may not be "running" yet
-  await new Promise<void>(resolve => {
-    if (audioContext.state === ("running" as AudioContextState)) {
-      resolve();
-      return;
-    }
-    audioContext.addEventListener("statechange", function handler() {
-      if (audioContext.state === ("running" as AudioContextState)) {
-        audioContext.removeEventListener("statechange", handler);
-        resolve();
-      }
-    });
-  });
-}
 ```
 
 **Demo:** See `src/demos/playback/clip-fades-demo.tsx` for a complete working example that:
