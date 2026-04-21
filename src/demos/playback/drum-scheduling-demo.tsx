@@ -12,6 +12,7 @@ import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
 import { loadAudioFile } from "@/lib/audioUtils";
 import { initializeOpenDAW } from "@/lib/projectSetup";
+import { computeBarsFromSDK } from "@/lib/barLayout";
 import { useAudioExport } from "@/hooks/useAudioExport";
 import { usePlaybackPosition } from "@/hooks/usePlaybackPosition";
 import "@radix-ui/themes/styles.css";
@@ -205,6 +206,15 @@ const App: React.FC = () => {
           });
         });
 
+        // Set timeline duration to match the 4-bar pattern
+        const totalPpqn = BARS * BEATS_PER_BAR * Quarter;
+        editing.modify(() => {
+          newProject.timelineBox.durationInPulses.setValue(totalPpqn);
+          newProject.timelineBox.loopArea.from.setValue(0);
+          newProject.timelineBox.loopArea.to.setValue(totalPpqn);
+          newProject.timelineBox.loopArea.enabled.setValue(true);
+        });
+
         setScheduledClips(clips);
 
         console.debug("Pattern created!");
@@ -349,7 +359,8 @@ const App: React.FC = () => {
   const renderTimeline = () => {
     if (scheduledClips.length === 0) return null;
 
-    const totalDuration = BARS * BEATS_PER_BAR * Quarter;
+    const bars = computeBarsFromSDK(project!);
+    const totalDuration = project!.timelineBox.durationInPulses.getValue();
     const timelineWidth = 800;
     const trackHeight = 90;
     const tracks = ["Kick", "Snare", "Hi-Hat Closed", "Hi-Hat Open"];
@@ -373,21 +384,24 @@ const App: React.FC = () => {
             </filter>
           </defs>
 
-          {/* Grid lines for beats */}
-          {Array.from({ length: TOTAL_BEATS + 1 }, (_, i) => {
-            const x = ((i * Quarter) / totalDuration) * timelineWidth;
-            const isMeasure = i % BEATS_PER_BAR === 0;
-            return (
-              <line
-                key={`grid-${i}`}
-                x1={x}
-                y1={0}
-                x2={x}
-                y2={tracks.length * trackHeight}
-                stroke={isMeasure ? "#555" : "#333"}
-                strokeWidth={isMeasure ? 2 : 1}
-              />
-            );
+          {/* Grid lines for beats — reads bar layout from SDK */}
+          {bars.flatMap(bar => {
+            const beatDuration = bar.durationPpqn / bar.nominator;
+            return Array.from({ length: bar.nominator }, (_, beat) => {
+              const x = ((bar.startPpqn + beat * beatDuration) / totalDuration) * timelineWidth;
+              const isMeasure = beat === 0;
+              return (
+                <line
+                  key={`grid-${bar.barNumber}-${beat}`}
+                  x1={x}
+                  y1={0}
+                  x2={x}
+                  y2={tracks.length * trackHeight}
+                  stroke={isMeasure ? "#555" : "#333"}
+                  strokeWidth={isMeasure ? 2 : 1}
+                />
+              );
+            });
           })}
 
           {/* Track separators */}
@@ -487,20 +501,19 @@ const App: React.FC = () => {
 
         {/* Bar labels with alternating colored backgrounds */}
         <div style={{ position: "relative", marginTop: "8px", height: "32px", width: `${timelineWidth}px` }}>
-          {Array.from({ length: BARS }, (_, barIndex) => {
-            const x = ((barIndex * BEATS_PER_BAR * Quarter) / totalDuration) * timelineWidth;
-            const width = ((BEATS_PER_BAR * Quarter) / totalDuration) * timelineWidth;
-            const isOddBar = barIndex % 2 === 0; // Bar 1 and 3 (index 0, 2)
+          {bars.map(bar => {
+            const x = (bar.startPpqn / totalDuration) * timelineWidth;
+            const width = (bar.durationPpqn / totalDuration) * timelineWidth;
 
             return (
               <div
-                key={`bar-${barIndex}`}
+                key={`bar-${bar.barNumber}`}
                 style={{
                   position: "absolute",
                   left: `${x}px`,
                   width: `${width}px`,
                   height: "100%",
-                  backgroundColor: isOddBar ? "var(--gray-3)" : "var(--gray-4)",
+                  backgroundColor: bar.barNumber % 2 === 1 ? "var(--gray-3)" : "var(--gray-4)",
                   display: "flex",
                   alignItems: "center",
                   paddingLeft: "8px",
@@ -509,7 +522,7 @@ const App: React.FC = () => {
                 }}
               >
                 <span style={{ color: "var(--gray-12)", fontWeight: "bold", fontSize: "12px" }}>
-                  Bar {barIndex + 1}
+                  Bar {bar.barNumber}
                 </span>
               </div>
             );
