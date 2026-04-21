@@ -7,6 +7,7 @@ This comprehensive guide covers OpenDAW's recording system: audio and MIDI captu
 
 ## Table of Contents
 - [Recording Pipeline Overview](#recording-pipeline-overview)
+  - [AudioUnit, Tape, and Track: The Recording Hierarchy](#audiounit-tape-and-track-the-recording-hierarchy)
 - [Track Arming](#track-arming)
 - [Audio Input Configuration](#audio-input-configuration)
 - [MIDI Input Configuration](#midi-input-configuration)
@@ -52,25 +53,53 @@ The high-level `project.startRecording(countIn)` is a convenience wrapper. Under
 4. Calls `startRecording()` on each capture (begins data capture)
 5. Starts the engine (with count-in if requested)
 
+### AudioUnit, Tape, and Track: The Recording Hierarchy
+
+Before diving into recording behavior, it helps to understand how these boxes relate:
+
+- **AudioUnitBox** — The instrument channel (the "channel strip" in mixer terms). Owns volume, pan, effects, and a collection of **tracks**.
+- **Tape** — A type of instrument device (`TapeDeviceBox`) hosted by an AudioUnitBox. When you call `createInstrument(InstrumentFactories.Tape)`, you get back an `audioUnitBox` (the channel) and one initial `trackBox`.
+- **TrackBox** — A lane within the AudioUnitBox that holds regions. A single AudioUnitBox can have **multiple TrackBoxes**.
+
+```
+AudioUnitBox (channel strip: volume, pan, effects)
+  ├─ input → TapeDeviceBox (the Tape instrument)
+  └─ tracks
+       ├─ TrackBox 0 ── AudioRegionBox, AudioRegionBox, ...
+       ├─ TrackBox 1 ── AudioRegionBox (created by recording)
+       └─ TrackBox 2 ── AudioRegionBox (created by loop take)
+```
+
+The key insight: **a Tape is not a track — it's a channel that contains tracks.** One Tape AudioUnit can hold many tracks, and the recording system creates new ones automatically.
+
 ### Recording on Tracks with Existing Content
 
 OpenDAW's recording is non-destructive at the box graph level. When `startRecording()` runs on an armed Tape that already has audio regions, `RecordTrack.findOrCreate()` handles track selection:
 
 1. Searches the audio unit's tracks for one with **no regions** (`trackBox.regions.pointerHub.isEmpty()`)
 2. If an empty track is found, reuses it
-3. If no empty track exists, **creates a new track** within the same audio unit
+3. If no empty track exists, **creates a new TrackBox** within the same AudioUnitBox
 
 This means existing audio regions are never trimmed, split, or deleted by the recording system. The new recording always goes onto a separate, empty track within the audio unit.
 
 ```
-audioUnitBox (Tape)
-  +-- trackBox 0 -- existing audio regions (untouched)
-  +-- trackBox 1 -- new recording region ("Take 1")
+audioUnitBox (Tape "Lead Vocal")
+  +-- trackBox 0 ── existing audio regions (untouched)
+  +-- trackBox 1 ── new recording region ("Take 1")
 ```
 
-This applies to both loop and non-loop recording. For loop recording with `allowTakes`, each loop iteration may create additional tracks via the same `findOrCreate()` mechanism.
+This applies to both loop and non-loop recording. For loop recording with `allowTakes`, each loop iteration creates additional TrackBoxes via the same `findOrCreate()` mechanism:
 
-**Implication for DAW integrations:** A single Tape audio unit can serve as both the playback source (existing clips) and the recording target (new takes) simultaneously. There is no need to create a separate temporary Tape instrument to isolate recording from existing content -- `RecordTrack.findOrCreate()` guarantees isolation at the track level within the audio unit.
+```
+audioUnitBox (Tape "Lead Vocal") — loop recording with 3 takes
+  +-- trackBox 0 ── AudioRegionBox "Take 1" (muted by olderTakeAction)
+  +-- trackBox 1 ── AudioRegionBox "Take 2" (muted by olderTakeAction)
+  +-- trackBox 2 ── AudioRegionBox "Take 3" (active — latest take)
+```
+
+All TrackBoxes share the same AudioUnitBox, so they all route through the same volume/pan/effects chain.
+
+**Implication for DAW integrations:** A single Tape audio unit can serve as both the playback source (existing clips) and the recording target (new takes) simultaneously. There is no need to create a separate temporary Tape instrument to isolate recording from existing content — `RecordTrack.findOrCreate()` guarantees isolation at the track level within the audio unit.
 
 **Note:** This behavior is based on the `RecordTrack.findOrCreate()` implementation in the SDK source (`RecordTrack.ts`). It is not currently exposed as a configurable option.
 

@@ -59,26 +59,42 @@ OpenDAW's box system provides:
 | Box Type | Purpose | Examples |
 |----------|---------|----------|
 | `TimelineBox` | Root timeline | BPM, time signature |
-| `TrackBox` | Audio/MIDI track | Track name, routing |
-| `AudioUnitBox` | Audio processor | Volume, pan, effects |
+| `AudioUnitBox` | Instrument channel | Volume, pan, effects, owns tracks |
+| `TrackBox` | Lane within a channel | Holds regions, points back to its AudioUnit |
 | `AudioFileBox` | Audio file metadata | File name, duration |
 | `AudioRegionBox` | Audio clip on timeline | Position, duration, playback mode |
 | `MIDIRegionBox` | MIDI clip | Notes, CC data |
 
 ### Box Hierarchy Example
 
+An **AudioUnitBox** is the instrument channel — the "channel strip" with volume, pan, and effects. It owns one or more **TrackBoxes**, each of which holds regions. In the simplest case, `createInstrument(Tape)` creates one AudioUnitBox with one TrackBox:
+
 ```
 Project
   └─ TimelineBox (BPM, time signature)
-       ├─ TrackBox (Drums)
-       │    ├─ AudioUnitBox (Volume, Pan)
-       │    └─ AudioRegionBox (Kick 1)
-       │         └─ refers to → AudioFileBox (kick.wav)
        │
-       └─ TrackBox (Bass)
-            ├─ AudioUnitBox (Volume, Pan)
-            └─ AudioRegionBox (Bass line)
-                 └─ refers to → AudioFileBox (bass.wav)
+       ├─ AudioUnitBox "Drums" (Volume, Pan, Effects)
+       │    └─ tracks
+       │         └─ TrackBox 0
+       │              └─ regions
+       │                   └─ AudioRegionBox (Kick 1)
+       │                        └─ file → AudioFileBox (kick.wav)
+       │
+       └─ AudioUnitBox "Bass" (Volume, Pan, Effects)
+            └─ tracks
+                 └─ TrackBox 0
+                      └─ regions
+                           └─ AudioRegionBox (Bass line)
+                                └─ file → AudioFileBox (bass.wav)
+```
+
+A single AudioUnitBox can grow to hold **multiple TrackBoxes**. The recording system does this automatically — when recording onto a Tape that already has content, it creates a new TrackBox within the same AudioUnitBox rather than overwriting existing regions (see [Recording](./08-recording.md#recording-on-tracks-with-existing-content)):
+
+```
+AudioUnitBox "Vocals" (Volume, Pan)
+  └─ tracks
+       ├─ TrackBox 0 ── AudioRegionBox (existing vocal take)
+       └─ TrackBox 1 ── AudioRegionBox (new recording)
 ```
 
 ## Working with Boxes
@@ -143,7 +159,7 @@ box.file.refer(audioFileBox);
 
 ## Creating a Complete Audio Clip
 
-Here's how to create a track with an audio clip:
+Here's how to create a Tape instrument (AudioUnitBox + TrackBox) and place an audio clip on it:
 
 ```typescript
 import { InstrumentFactories } from "@opendaw/studio-adapters";
@@ -155,13 +171,14 @@ import { PPQN } from "@opendaw/lib-dsp";
 const { Quarter } = PPQN;
 
 project.editing.modify(() => {
-  // 1. Create a track (Tape instrument = audio playback track)
+  // 1. Create a Tape instrument — returns one AudioUnitBox (the channel)
+  //    and one initial TrackBox (the lane that holds regions)
   const { audioUnitBox, trackBox } = project.api.createInstrument(
     InstrumentFactories.Tape
   );
 
-  // 2. Set track properties
-  audioUnitBox.volume.setValue(-3);  // -3 dB
+  // 2. Set channel and track properties
+  audioUnitBox.volume.setValue(-3);  // -3 dB (on the channel strip)
   trackBox.label.setValue("Drums");
 
   // 3. Create AudioFileBox (metadata about the audio file)
