@@ -203,6 +203,30 @@ collection.catchupAndSubscribe({ onAdd, onRemove, onReorder })
 ```
 Both return `Terminable` from subscribe methods — always clean up.
 
+### SortedSet.values() for Region Collections
+`trackAdapter.regions.adapters` returns `SortedSet`, not `Array`. Call `.values()` before
+`.filter()`/`.map()`. `isAudioRegion()` is a type guard on the base interface — no cast needed:
+```typescript
+// Typed narrowing — returns AudioRegionBoxAdapter[]
+trackAdapter.regions.adapters.values().filter(r => r.isAudioRegion())
+```
+
+### Shared Adapter Utilities
+`src/lib/adapterUtils.ts` provides `getAllRegions(project)` and `getAllAudioRegions(project)`
+for full project traversal. Use these instead of inline `rootBoxAdapter.audioUnits.adapters()
+.flatMap(u => u.tracks.adapters()).flatMap(t => t.regions.adapters.values())` chains.
+
+### Master Bus Access (Adapter Layer)
+Use `project.rootBoxAdapter.audioUnits.adapters().find(u => u.isOutput)?.box` instead of
+`project.rootBox.outputDevice.pointerHub.incoming().at(0)?.box`. The adapter approach
+is typed and doesn't require `as AudioUnitBox` cast.
+
+### Avoid boxGraph.boxes() for Region Discovery
+Never scan `project.boxGraph.boxes()` with `instanceof` checks. Use adapter traversal
+(`getAllRegions()`, `trackAdapter.regions.adapters.values()`) or reactive subscriptions
+(`catchupAndSubscribe`). Only legitimate low-level usages: `sampleManager.getOrCreate()`
+during bootstrap (before regions exist), Werkstatt dynamic parameters via `pointerHub`.
+
 ### Region Visitor Pattern (Type-Safe Discrimination)
 Prefer visitor over casting for region type handling:
 ```typescript
