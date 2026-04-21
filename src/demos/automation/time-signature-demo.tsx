@@ -84,9 +84,9 @@ function getLastSectionBars(pattern: SignaturePattern): number {
 }
 
 /**
- * Read bar layout from the SDK's SignatureTrackAdapter after events have been applied.
- * Uses iterateAll() to get authoritative section boundaries (accumulatedPpqn, accumulatedBars),
- * then expands each section into individual bars.
+ * Read bar layout from the SDK after applyPattern() has committed all signature events.
+ * Uses iterateAll() to get section boundaries (accumulatedPpqn), then expands each
+ * section into individual bars.
  */
 function computeBarsFromSDK(project: Project): BarInfo[] {
   const signatureTrack = project.timelineBoxAdapter.signatureTrack;
@@ -157,7 +157,6 @@ function applyPattern(project: Project, pattern: SignaturePattern): void {
     ppqnAccum = (ppqnAccum + numBars * PPQN.fromSignature(currentNom, currentDenom)) as ppqn;
   }
 
-  // Compute total PPQN from the final accumulated position
   const totalPpqn = ppqnAccum;
 
   // Set timeline duration and loop
