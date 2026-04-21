@@ -83,45 +83,31 @@ function getLastSectionBars(pattern: SignaturePattern): number {
   return 2;
 }
 
-function computeBars(pattern: SignaturePattern): BarInfo[] {
+/**
+ * Read bar layout from the SDK after applyPattern() has committed all signature events.
+ * Uses iterateAll() to get section boundaries (accumulatedPpqn), then expands each
+ * section into individual bars.
+ */
+function computeBarsFromSDK(project: Project): BarInfo[] {
+  const signatureTrack = project.timelineBoxAdapter.signatureTrack;
+  const totalPpqn = project.timelineBox.durationInPulses.getValue();
+  const sections = Array.from(signatureTrack.iterateAll());
   const bars: BarInfo[] = [];
-  const [initNom, initDenom] = getInitialSignature(pattern);
-  let currentNom = initNom;
-  let currentDenom = initDenom;
-  let ppqnAccum: ppqn = 0 as ppqn;
   let barNumber = 1;
 
-  // Initial section: barOffset of first change, using initial signature
-  const firstChangeOffset = pattern.changes.length > 0 ? pattern.changes[0].barOffset : 8;
-  for (let b = 0; b < firstChangeOffset; b++) {
-    const dur = PPQN.fromSignature(currentNom, currentDenom);
-    bars.push({
-      startPpqn: ppqnAccum as ppqn,
-      durationPpqn: dur as ppqn,
-      nominator: currentNom,
-      denominator: currentDenom,
-      barNumber: barNumber++,
-    });
-    ppqnAccum = (ppqnAccum + dur) as ppqn;
-  }
+  for (let s = 0; s < sections.length; s++) {
+    const { accumulatedPpqn: sectionStart, nominator, denominator } = sections[s];
+    const sectionEnd = (s + 1 < sections.length) ? sections[s + 1].accumulatedPpqn : totalPpqn;
+    const barDuration = PPQN.fromSignature(nominator, denominator);
 
-  // Each change
-  const lastSectionBars = getLastSectionBars(pattern);
-  for (let i = 0; i < pattern.changes.length; i++) {
-    const change = pattern.changes[i];
-    currentNom = change.nominator;
-    currentDenom = change.denominator;
-    const numBars = (i + 1 < pattern.changes.length) ? pattern.changes[i + 1].barOffset : lastSectionBars;
-    for (let b = 0; b < numBars; b++) {
-      const dur = PPQN.fromSignature(currentNom, currentDenom);
+    for (let pos = sectionStart; pos < sectionEnd; pos += barDuration) {
       bars.push({
-        startPpqn: ppqnAccum as ppqn,
-        durationPpqn: dur as ppqn,
-        nominator: currentNom,
-        denominator: currentDenom,
+        startPpqn: pos as ppqn,
+        durationPpqn: barDuration as ppqn,
+        nominator,
+        denominator,
         barNumber: barNumber++,
       });
-      ppqnAccum = (ppqnAccum + dur) as ppqn;
     }
   }
 
@@ -129,10 +115,7 @@ function computeBars(pattern: SignaturePattern): BarInfo[] {
 }
 
 function applyPattern(project: Project, pattern: SignaturePattern): void {
-  const bars = computeBars(pattern);
-  const totalPpqn = bars.reduce((sum, b) => sum + b.durationPpqn, 0);
   const [initNom, initDenom] = getInitialSignature(pattern);
-
   const signatureTrack = project.timelineBoxAdapter.signatureTrack;
 
   // Clear existing signature events — each deletion in its own modify
@@ -173,6 +156,8 @@ function applyPattern(project: Project, pattern: SignaturePattern): void {
     const numBars = (i + 1 < pattern.changes.length) ? pattern.changes[i + 1].barOffset : lastSectionBars;
     ppqnAccum = (ppqnAccum + numBars * PPQN.fromSignature(currentNom, currentDenom)) as ppqn;
   }
+
+  const totalPpqn = ppqnAccum;
 
   // Set timeline duration and loop
   project.editing.modify(() => {
@@ -320,9 +305,8 @@ const App: React.FC = () => {
       settings.metronome.enabled = true;
       settings.metronome.gain = -6;
 
-      const initialBars = computeBars(PATTERNS[0]);
-      setBars(initialBars);
       applyPattern(newProject, PATTERNS[0]);
+      setBars(computeBarsFromSDK(newProject));
       setStatus("Ready");
       setIsReady(true);
     });
@@ -335,9 +319,8 @@ const App: React.FC = () => {
       project.engine.stop(true);
     }
     setActivePatternIndex(index);
-    const newBars = computeBars(PATTERNS[index]);
-    setBars(newBars);
     applyPattern(project, PATTERNS[index]);
+    setBars(computeBarsFromSDK(project));
   };
 
   const handlePlay = () => {
