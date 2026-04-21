@@ -93,12 +93,12 @@ Don't subscribe to position via `observable.subscribe()` — it fires too freque
 ### Putting It Together
 
 ```typescript
-// Discrete state — fires only on transitions
-const playingSub = project.engine.isPlaying.subscribe(obs => {
+// Discrete state — catchup gets initial value, then fires on transitions
+const playingSub = project.engine.isPlaying.catchupAndSubscribe(obs => {
   setIsPlaying(obs.getValue());
 });
 
-const recordingSub = project.engine.isRecording.subscribe(obs => {
+const recordingSub = project.engine.isRecording.catchupAndSubscribe(obs => {
   setIsRecording(obs.getValue());
 });
 
