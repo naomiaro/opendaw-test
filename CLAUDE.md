@@ -227,6 +227,13 @@ Never scan `project.boxGraph.boxes()` with `instanceof` checks. Use adapter trav
 (`catchupAndSubscribe`). Only legitimate low-level usages: `sampleManager.getOrCreate()`
 during bootstrap (before regions exist), Werkstatt dynamic parameters via `pointerHub`.
 
+### Adapter .box Is Already Typed — No Casts Needed
+`AudioRegionBoxAdapter.box` returns `AudioRegionBox` (not generic `Box`), and
+`AudioUnitBoxAdapter.box` returns `AudioUnitBox`. After `isAudioRegion()` narrows the
+union type, `.box` is fully typed — never write `adapter.box as AudioRegionBox`.
+Adapters also provide typed setters: use `adapter.position = value` instead of
+`adapter.box.position.setValue(value)` where available.
+
 ### Region Visitor Pattern (Type-Safe Discrimination)
 Prefer visitor over casting for region type handling:
 ```typescript
