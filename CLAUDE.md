@@ -234,6 +234,14 @@ union type, `.box` is fully typed — never write `adapter.box as AudioRegionBox
 Adapters also provide typed setters: use `adapter.position = value` instead of
 `adapter.box.position.setValue(value)` where available.
 
+### Region Type Guards: isAudioRegion, isValueRegion, isNoteRegion
+All three are type guards on the base `RegionBoxAdapter` interface:
+`isAudioRegion(): this is AudioRegionBoxAdapter`,
+`isValueRegion(): this is ValueRegionBoxAdapter`,
+`isNoteRegion(): this is NoteRegionBoxAdapter`.
+Use the positive guard (e.g., `r.isValueRegion()`) instead of negation
+(`!r.isAudioRegion() as ValueRegionBoxAdapter[]`) — avoids casts entirely.
+
 ### Region Visitor Pattern (Type-Safe Discrimination)
 Prefer visitor over casting for region type handling:
 ```typescript
