@@ -221,7 +221,7 @@ trackAdapter.regions.adapters.values().filter(r => r.isAudioRegion())
 ### Shared Adapter Utilities
 `src/lib/adapterUtils.ts` provides `getAllRegions(project)` and `getAllAudioRegions(project)`
 for full project traversal. Use these instead of inline `rootBoxAdapter.audioUnits.adapters()
-.flatMap(u => u.tracks.adapters()).flatMap(t => t.regions.adapters.values())` chains.
+.flatMap(u => u.tracks.values()).flatMap(t => t.regions.adapters.values())` chains.
 
 ### Master Bus Access (Adapter Layer)
 Use `project.rootBoxAdapter.audioUnits.adapters().find(u => u.isOutput)?.box` instead of

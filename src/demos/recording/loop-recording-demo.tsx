@@ -8,6 +8,7 @@ import { AnimationFrame } from "@opendaw/lib-dom";
 import { PPQN } from "@opendaw/lib-dsp";
 import { AudioRegionBox } from "@opendaw/studio-boxes";
 import { initializeOpenDAW } from "@/lib/projectSetup";
+import { getAllRegions } from "@/lib/adapterUtils";
 import { useEnginePreference } from "@/hooks/useEnginePreference";
 import { useAudioDevicePermission } from "@/hooks/useAudioDevicePermission";
 import { useRecordingTracks } from "@/hooks/useRecordingTracks";
@@ -569,10 +570,7 @@ const App: React.FC = () => {
   const handleClearTakes = useCallback(() => {
     if (!project) return;
     project.editing.modify(() => {
-      const allRegions = project.rootBoxAdapter.audioUnits.adapters()
-        .flatMap(unit => unit.tracks.values())
-        .flatMap(track => track.regions.adapters);
-      for (const region of allRegions) {
+      for (const region of getAllRegions(project)) {
         if (region.label.startsWith("Take ")) {
           region.box.delete();
         }

@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { PPQN } from "@opendaw/lib-dsp";
 import { Project, EffectFactories } from "@opendaw/studio-core";
 import { AudioRegionBox, AudioUnitBox, WerkstattDeviceBox } from "@opendaw/studio-boxes";
-import { ScriptCompiler, ScriptDeclaration, type WerkstattDeviceBoxAdapter } from "@opendaw/studio-adapters";
+import { ScriptCompiler, ScriptDeclaration } from "@opendaw/studio-adapters";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
@@ -316,12 +316,13 @@ const App: React.FC = () => {
       // Apply waveformOffset to skip silence (bar 25)
       const waveformOffsetSeconds = PPQN.pulsesToSeconds(CONTENT_START, BPM);
       const playbackDuration = BAR * 16; // 16 bars of drums
+      const regionBox = regionBoxRef.current!;
       newProject.editing.modify(() => {
-        foundRegion!.position.setValue(0);
-        foundRegion!.loopOffset.setValue(0);
-        foundRegion!.duration.setValue(playbackDuration);
-        foundRegion!.loopDuration.setValue(playbackDuration);
-        foundRegion!.waveformOffset.setValue(waveformOffsetSeconds);
+        regionBox.position.setValue(0);
+        regionBox.loopOffset.setValue(0);
+        regionBox.duration.setValue(playbackDuration);
+        regionBox.loopDuration.setValue(playbackDuration);
+        regionBox.waveformOffset.setValue(waveformOffsetSeconds);
       });
 
       // Timeline loop

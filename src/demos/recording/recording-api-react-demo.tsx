@@ -8,9 +8,9 @@ import type { SampleLoader } from "@opendaw/studio-adapters";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import type { Peaks } from "@opendaw/lib-fusion";
 import { PeaksPainter } from "@opendaw/lib-fusion";
-import { AudioRegionBox } from "@opendaw/studio-boxes";
 import { CanvasPainter } from "@/lib/CanvasPainter";
 import { initializeOpenDAW } from "@/lib/projectSetup";
+import { getAllRegions } from "@/lib/adapterUtils";
 import { useEnginePreference, CountInBarsValue, MetronomeBeatSubDivisionValue } from "@/hooks/useEnginePreference";
 import { useRecordingSession } from "@/hooks/useRecordingSession";
 import type { RecordingState } from "@/hooks/useRecordingSession";
@@ -192,10 +192,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!project || session.state !== "ready") return;
 
-    const allRegions = project.rootBoxAdapter.audioUnits.adapters()
-      .flatMap(unit => unit.tracks.values())
-      .flatMap(track => track.regions.adapters);
-    for (const region of allRegions) {
+    for (const region of getAllRegions(project)) {
       if (region.label === "Recording" || region.label.startsWith("Take ")) {
         const duration = region.box.duration.getValue();
         project.editing.modify(() => {
@@ -377,10 +374,7 @@ const App: React.FC = () => {
 
       // Delete any previous recording regions before starting a new one
       project.editing.modify(() => {
-        const allRegions = project.rootBoxAdapter.audioUnits.adapters()
-          .flatMap(unit => unit.tracks.values())
-          .flatMap(track => track.regions.adapters);
-        for (const region of allRegions) {
+        for (const region of getAllRegions(project)) {
           if (region.label === "Recording" || region.label.startsWith("Take ")) {
             region.box.delete();
           }
