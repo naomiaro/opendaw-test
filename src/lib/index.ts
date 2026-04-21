@@ -24,5 +24,7 @@ export type { GroupConfig, GroupData, GroupedTracksResult } from "./groupTrackLo
 export { exportFullMix, exportStems, sanitizeFileName } from "./audioExport";
 export type { ExportOptions, StemExportConfig } from "./audioExport";
 export { getAudioExtension, loadAudioFile } from "./audioUtils";
+export { computeBarsFromSDK } from "./barLayout";
+export type { BarInfo } from "./barLayout";
 export { getPresetsForEffect, findPreset } from "./effectPresets";
 export type { EffectPreset } from "./effectPresets";

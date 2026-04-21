@@ -9,6 +9,8 @@ import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
 import { initializeOpenDAW } from "@/lib/projectSetup";
+import { computeBarsFromSDK } from "@/lib/barLayout";
+import type { BarInfo } from "@/lib/barLayout";
 import { usePlaybackPosition } from "@/hooks/usePlaybackPosition";
 
 // --- Pattern Types & Data ---
@@ -64,14 +66,6 @@ const PATTERNS: SignaturePattern[] = [
 
 // --- Bar computation ---
 
-type BarInfo = {
-  startPpqn: ppqn;
-  durationPpqn: ppqn;
-  nominator: number;
-  denominator: number;
-  barNumber: number;
-};
-
 function getInitialSignature(pattern: SignaturePattern): [number, number] {
   if (pattern.name === "Film Score") return [6, 8];
   return [4, 4];
@@ -81,37 +75,6 @@ function getLastSectionBars(pattern: SignaturePattern): number {
   // Standard -> Waltz: 4 bars for last section, others: 2
   if (pattern.changes.length === 1 && pattern.changes[0].barOffset === 4) return 4;
   return 2;
-}
-
-/**
- * Read bar layout from the SDK after applyPattern() has committed all signature events.
- * Uses iterateAll() to get section boundaries (accumulatedPpqn), then expands each
- * section into individual bars.
- */
-function computeBarsFromSDK(project: Project): BarInfo[] {
-  const signatureTrack = project.timelineBoxAdapter.signatureTrack;
-  const totalPpqn = project.timelineBox.durationInPulses.getValue();
-  const sections = Array.from(signatureTrack.iterateAll());
-  const bars: BarInfo[] = [];
-  let barNumber = 1;
-
-  for (let s = 0; s < sections.length; s++) {
-    const { accumulatedPpqn: sectionStart, nominator, denominator } = sections[s];
-    const sectionEnd = (s + 1 < sections.length) ? sections[s + 1].accumulatedPpqn : totalPpqn;
-    const barDuration = PPQN.fromSignature(nominator, denominator);
-
-    for (let pos = sectionStart; pos < sectionEnd; pos += barDuration) {
-      bars.push({
-        startPpqn: pos as ppqn,
-        durationPpqn: barDuration as ppqn,
-        nominator,
-        denominator,
-        barNumber: barNumber++,
-      });
-    }
-  }
-
-  return bars;
 }
 
 function applyPattern(project: Project, pattern: SignaturePattern): void {
