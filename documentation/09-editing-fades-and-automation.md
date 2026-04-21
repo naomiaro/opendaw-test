@@ -123,7 +123,7 @@ Transfer a region from one track to another:
 // Move region to a different track
 editing.modify(() => {
   // Remove from current track
-  region.box.regions.unrefer();
+  region.box.regions.defer();
 
   // Add to target track
   region.box.regions.refer(targetTrack.box.regions);
@@ -141,7 +141,7 @@ Create a copy of a region instead of moving it:
 // Copy region to new position
 const copiedRegion = originalRegion.copyTo({
   position: newPosition,
-  track: targetTrack.box.regions  // Optional: different track
+  target: targetTrack.box.regions  // Optional: different track's region collection
 });
 
 // Copy maintains all properties: loopOffset, loopDuration, gain, etc.
@@ -271,7 +271,7 @@ Regions can be duplicated with optional parameters:
 
 ```typescript
 const newRegion = audioRegion.copyTo({
-    track: targetTrack.box.regions,  // Optional: different track
+    target: targetTrack.box.regions,  // Optional: different track's region collection
     position: newPosition,            // Optional: different position
     duration: newDuration,            // Optional: different duration
     loopOffset: newLoopOffset,        // Optional: different loop offset
@@ -284,13 +284,13 @@ const newRegion = audioRegion.copyTo({
 Each audio region has the following editable properties:
 
 ```typescript
-// AudioRegionBox fields (all time values in PPQN)
+// AudioRegionBox fields
 {
-    position: Int32Field        // Timeline start position (when to play)
-    duration: Int32Field        // Timeline duration (how long on timeline)
-    loopOffset: Int32Field      // Audio file offset (which audio to play)
-    loopDuration: Int32Field    // Audio playback duration (how much audio)
-    gain: Float32Field          // Volume/gain (static, not a fade)
+    position: Int32Field        // Timeline start position in PPQN (when to play)
+    duration: Float32Field      // Timeline duration — PPQN in Musical timeBase, seconds in Seconds
+    loopOffset: Float32Field    // Audio file offset — same unit as duration
+    loopDuration: Float32Field  // Audio playback duration — same unit as duration
+    gain: Float32Field          // Region gain in dB (decibel constraint)
     mute: BooleanField          // Mute state
     label: StringField          // Region name
     hue: Int32Field             // Color
@@ -509,7 +509,7 @@ const { Quarter } = PPQN; // Always 960
 // Copy a bass line to a different position
 const basslineCopy = bassRegion.copyTo({
     position: Quarter * 4 * 16, // Bar 16 = 61440 PPQN
-    track: bassTrack.box.regions
+    target: bassTrack.box.regions
 })
 ```
 
@@ -535,9 +535,9 @@ editing.modify(() => {
 ### Example 5: Adjust Region Gain
 
 ```typescript
-// Set region to 75% volume (not a fade, just static gain)
+// Set region gain to -6 dB (gain field is in dB, not a 0-1 range)
 editing.modify(() => {
-    audioRegion.box.gain.setValue(0.75)
+    audioRegion.box.gain.setValue(-6)
 })
 ```
 
@@ -635,10 +635,10 @@ When cutting regions, the `consolidate` parameter determines data sharing:
 - **`consolidate: false`**: New regions share the same underlying audio data (mirrored)
 - **`consolidate: true`**: New region gets an independent copy of the audio data
 
-To manually consolidate a region:
+To manually consolidate a region, use `copyTo` with the `consolidate` flag:
 ```typescript
 editing.modify(() => {
-    audioRegion.consolidate()
+    audioRegion.copyTo({ consolidate: true })
 })
 ```
 
@@ -648,7 +648,7 @@ editing.modify(() => {
 
 For a complete working example of region-aware waveform visualization and track editing, see:
 
-- **Demo:** `src/track-editing-demo.tsx`
+- **Demo:** `src/demos/playback/track-editing-demo.tsx`
 - **Waveform Hook:** `src/hooks/useWaveformRendering.ts`
 - **TracksContainer:** `src/components/TracksContainer.tsx`
 - **Playhead Component:** `src/components/Playhead.tsx`
@@ -842,7 +842,7 @@ if (audioContext.state !== "running") {
 }
 ```
 
-**Demo:** See `src/clip-fades-demo.tsx` for a complete working example that:
+**Demo:** See `src/demos/playback/clip-fades-demo.tsx` for a complete working example that:
 
 - Loads three copies of the same audio file
 - Trims them to 4-bar clips at bar 18
@@ -881,7 +881,7 @@ Any `Float32Field<Pointers.Automation>` is automatable:
 
 - **AudioUnitBox**: `volume`, `panning`
 - **ReverbDeviceBox**: `decay`, `preDelay`, `damp`, `filter`, `wet`, `dry`
-- **CompressorDeviceBox**: `threshold`, `ratio`, `attack`, `release`, `gain`
+- **CompressorDeviceBox**: `threshold`, `ratio`, `attack`, `release`, `makeup`
 - **DelayDeviceBox**: all parameters
 - All other effect device boxes follow the same pattern
 
@@ -1284,7 +1284,7 @@ This would complement the existing track-automation-demo which creates automatio
 
 **Reference:**
 
-- Demo: `src/track-automation-demo.tsx`
+- Demo: `src/demos/automation/track-automation-demo.tsx`
 - SDK curve algorithm: `@opendaw/lib-std` → `Curve.normalizedAt`
 - SDK interpolation: `@opendaw/lib-dsp` → `value.ts` → `interpolate()`
 - SDK region mapping: `@opendaw/lib-dsp` → `events.ts` → `LoopableRegion.globalToLocal`
