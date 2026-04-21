@@ -151,6 +151,11 @@ Use raw `sampleLoader.subscribe()` only when you need state change callbacks wit
 - `SampleMetaData` → `@opendaw/studio-adapters`
 - `AudioData` → `@opendaw/lib-dsp`
 
+### SignatureTrack Bar Layout
+`signatureTrack.iterateAll()` yields `{ index, accumulatedPpqn, accumulatedBars, nominator, denominator }`
+per section. Expand sections into bars instead of manual PPQN accumulation — see
+`computeBarsFromSDK()` in the time-signature demo and documentation chapters 02/06.
+
 ### Prefer catchupAndSubscribe Over subscribe
 `subscribe()` fires only for FUTURE changes — misses current state. Use `catchupAndSubscribe()`
 for engine state (isPlaying, isRecording, BPM) and box field observations. Only use `subscribe()`
