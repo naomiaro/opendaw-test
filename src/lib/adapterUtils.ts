@@ -1,5 +1,5 @@
 import type { Project } from "@opendaw/studio-core";
-import type { AudioRegionBoxAdapter, ValueRegionBoxAdapter, AnyRegionBoxAdapter } from "@opendaw/studio-adapters";
+import type { AudioRegionBoxAdapter, ValueRegionBoxAdapter } from "@opendaw/studio-adapters";
 
 /**
  * Collect all region adapters across every audio unit and track in the project.
@@ -7,7 +7,7 @@ import type { AudioRegionBoxAdapter, ValueRegionBoxAdapter, AnyRegionBoxAdapter 
 export function getAllRegions(project: Project): AnyRegionBoxAdapter[] {
   return project.rootBoxAdapter.audioUnits.adapters()
     .flatMap(unit => unit.tracks.values())
-    .flatMap(track => track.regions.adapters.values() as AnyRegionBoxAdapter[]);
+    .flatMap(track => [...track.regions.adapters.values()]);
 }
 
 /**
