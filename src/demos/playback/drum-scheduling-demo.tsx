@@ -651,10 +651,10 @@ const App: React.FC = () => {
                   )}
                   <Flex justify="between">
                     <Text size="1" color="gray">
-                      60 BPM
+                      80 BPM
                     </Text>
                     <Text size="1" color="gray">
-                      180 BPM
+                      160 BPM
                     </Text>
                   </Flex>
                 </Flex>

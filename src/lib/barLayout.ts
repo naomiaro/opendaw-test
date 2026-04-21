@@ -3,15 +3,17 @@ import type { ppqn } from "@opendaw/lib-dsp";
 import type { Project } from "@opendaw/studio-core";
 
 export type BarInfo = {
-  startPpqn: ppqn;
-  durationPpqn: ppqn;
-  nominator: number;
-  denominator: number;
-  barNumber: number;
+  readonly startPpqn: ppqn;
+  readonly durationPpqn: ppqn;
+  readonly nominator: number;
+  readonly denominator: number;
+  /** 1-based bar number (first bar is 1, not 0). */
+  readonly barNumber: number;
 };
 
 /**
  * Read bar layout from the SDK after signature events have been committed.
+ * Requires timelineBox.durationInPulses to be set (determines the end of the last section).
  * Uses signatureTrack.iterateAll() to get section boundaries (accumulatedPpqn),
  * then expands each section into individual bars.
  */
