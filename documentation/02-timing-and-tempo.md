@@ -673,8 +673,8 @@ All conversion methods account for tempo ramps and automation — they integrate
 
 - Tempo demo: [tempo-automation-demo](https://opendaw-test.pages.dev/tempo-automation-demo.html)
 - TimeBase demo: [timebase-demo](https://opendaw-test.pages.dev/timebase-demo.html)
-- VaryingTempoMap: `packages/studio/adapters/src/VaryingTempoMap.ts`
-- ValueEventCollectionBoxAdapter: `packages/studio/adapters/src/timeline/collection/ValueEventCollectionBoxAdapter.ts`
+- `VaryingTempoMap` from `@opendaw/studio-adapters`
+- `ValueEventCollectionBoxAdapter` from `@opendaw/studio-adapters`
 
 ---
 
@@ -883,8 +883,8 @@ See `src/demos/automation/time-signature-demo.tsx` for a complete implementation
 ### Reference (Time Signature Changes)
 
 - Demo: `src/demos/automation/time-signature-demo.tsx`
-- SignatureTrackAdapter: `packages/studio/adapters/src/timeline/SignatureTrackAdapter.ts`
-- PPQN utilities: `packages/lib/dsp/src/ppqn.ts`
+- `SignatureTrackAdapter` from `@opendaw/studio-adapters`
+- `PPQN` from `@opendaw/lib-dsp`
 
 ---
 
@@ -933,5 +933,5 @@ const markers = markerTrack.events; // EventCollection of MarkerBoxAdapter
 
 ### Reference (Markers)
 
-- MarkerTrackAdapter: `packages/studio/adapters/src/timeline/MarkerTrackAdapter.ts`
-- MarkerBoxAdapter: `packages/studio/adapters/src/timeline/MarkerBoxAdapter.ts`
+- `MarkerTrackAdapter` from `@opendaw/studio-adapters`
+- `MarkerBoxAdapter` from `@opendaw/studio-adapters`

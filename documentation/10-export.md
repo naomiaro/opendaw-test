@@ -1504,11 +1504,4 @@ This is a meaningful chunk of work (~200 lines + worker bundling) and probably w
 
 - Export demo: `src/demos/export/export-demo.tsx`
 - Range export utility: `src/lib/rangeExport.ts`
-- OpenDAW source repo paths (not this project):
-  - SDK offline renderer: `packages/studio/core/src/OfflineEngineRenderer.ts`
-  - SDK deprecated renderer: `packages/studio/core/src/AudioOfflineRenderer.ts`
-  - Engine processor render method: `packages/studio/core-processors/src/EngineProcessor.ts`
-  - Engine preferences schema: `packages/studio/adapters/src/engine/EnginePreferencesSchema.ts`
-  - Metronome processor: `packages/studio/core-processors/src/Metronome.ts`
-  - Offline engine worker: `packages/studio/core-workers/src/offline-engine-main.ts`
-  - Worklet environment polyfill: `packages/studio/core-workers/src/worklet-env.ts`
+- SDK packages used: `@opendaw/studio-core` (offline renderer, engine), `@opendaw/studio-adapters` (engine preferences), `@opendaw/lib-dsp` (WavFile)
