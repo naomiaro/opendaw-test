@@ -203,6 +203,13 @@ collection.catchupAndSubscribe({ onAdd, onRemove, onReorder })
 ```
 Both return `Terminable` from subscribe methods — always clean up.
 
+### AudioUnitTracks: .values() Not .adapters()
+`audioUnitAdapter.tracks` is an `AudioUnitTracks` object, NOT an `IndexedBoxAdapterCollection`.
+Use `.values()` for the track array, `.collection` for the underlying collection:
+- `unit.tracks.values()` → `ReadonlyArray<TrackBoxAdapter>`
+- `unit.tracks.collection.adapters()` → same data via the collection API
+- `unit.tracks.adapters()` → **DOES NOT EXIST** — runtime error
+
 ### SortedSet.values() for Region Collections
 `trackAdapter.regions.adapters` returns `SortedSet`, not `Array`. Call `.values()` before
 `.filter()`/`.map()`. `isAudioRegion()` is a type guard on the base interface — no cast needed:
