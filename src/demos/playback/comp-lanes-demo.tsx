@@ -90,7 +90,7 @@ const App: React.FC = () => {
         // Delete existing automation regions via the adapter layer
         const trackAdapter = project.boxAdapters.adapterFor(trackBox, TrackBoxAdapter);
         const existingAdapters = trackAdapter.regions.adapters.values()
-          .filter(r => !r.isAudioRegion()) as ValueRegionBoxAdapter[];
+          .filter(r => r.isValueRegion());
 
         if (existingAdapters.length > 0) {
           project.editing.modify(() => {

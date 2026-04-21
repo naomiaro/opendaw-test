@@ -21,5 +21,5 @@ export function getAllAudioRegions(project: Project): AudioRegionBoxAdapter[] {
  * Collect all non-audio (value/note) region adapters across every audio unit and track.
  */
 export function getAllValueRegions(project: Project): ValueRegionBoxAdapter[] {
-  return getAllRegions(project).filter(r => !r.isAudioRegion()) as ValueRegionBoxAdapter[];
+  return getAllRegions(project).filter(r => r.isValueRegion());
 }

@@ -186,7 +186,7 @@ function applyAutomationEvents(project: Project, trackBox: TrackBox, events: Aut
   // Snapshot existing automation regions via the adapter layer
   const trackAdapter = project.boxAdapters.adapterFor(trackBox, TrackBoxAdapter);
   const existingRegions = trackAdapter.regions.adapters.values()
-    .filter(r => !r.isAudioRegion())
+    .filter(r => r.isValueRegion())
     .map(r => r.box);
 
   // Create new region first (don't delete old ones until this succeeds)
@@ -711,7 +711,7 @@ const App: React.FC = () => {
     // Remove all regions from this automation track via the adapter layer
     const trackAdapter = p.boxAdapters.adapterFor(trackBox, TrackBoxAdapter);
     const existingAdapters = trackAdapter.regions.adapters.values()
-      .filter(r => !r.isAudioRegion()) as ValueRegionBoxAdapter[];
+      .filter(r => r.isValueRegion());
     if (existingAdapters.length > 0) {
       p.editing.modify(() => {
         for (const adapter of existingAdapters) {
