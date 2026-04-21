@@ -28,7 +28,6 @@
 - [Common Patterns](#common-patterns)
   - [Pattern 1: Ruler with Time Markers](#pattern-1-ruler-with-time-markers)
   - [Pattern 2: Minimap Overview](#pattern-2-minimap-overview)
-- [Summary](#summary)
 - [Advanced: Audio Rendering Pipeline](#advanced-audio-rendering-pipeline)
   - [The Timeline Grid (PPQN-Linear)](#the-timeline-grid-ppqn-linear)
   - [Waveform Rendering (Tempo-Aware)](#waveform-rendering-tempo-aware)
@@ -116,6 +115,7 @@ function renderGrid() {
 ```typescript
 type Clip = {
   trackIndex: number;
+  trackName: string;
   position: number;    // in PPQN
   duration: number;    // in PPQN
   color: string;
@@ -190,9 +190,9 @@ function Timeline({ project, clips, tracks }: TimelineProps) {
   const timelineWidth = 800;
   const trackHeight = 90;
 
-  // Subscribe to playback state
+  // Subscribe to playback state (catchup to get initial value)
   useEffect(() => {
-    const playingSub = project.engine.isPlaying.subscribe(obs => {
+    const playingSub = project.engine.isPlaying.catchupAndSubscribe(obs => {
       setIsPlaying(obs.getValue());
     });
 
@@ -436,7 +436,7 @@ function handleBpmChange(newBpm: number) {
 
     // Recalculate clip durations (NoSync mode)
     clips.forEach(clip => {
-      const newDuration = PPQN.secondsToPulses(clip.audioDuration, newBpm);
+      const newDuration = Math.round(PPQN.secondsToPulses(clip.audioDuration, newBpm));
       clip.region.duration.setValue(newDuration);
       clip.region.loopDuration.setValue(newDuration);
     });
@@ -445,7 +445,7 @@ function handleBpmChange(newBpm: number) {
   // Update visual clip durations
   const updatedClips = clipTemplates.map(template => ({
     ...template,
-    duration: PPQN.secondsToPulses(template.audioDuration, newBpm)
+    duration: Math.round(PPQN.secondsToPulses(template.audioDuration, newBpm))
   }));
 
   setClips(updatedClips);
@@ -461,16 +461,18 @@ function handleBpmChange(newBpm: number) {
 ### PPQN to Bar:Beat:Tick
 
 ```typescript
+// toParts returns { bars, beats, semiquavers, ticks }
+// Optional params: toParts(ppqn, nominator = 4, denominator = 4)
 function ppqnToBarBeatTick(ppqn: number): string {
   const parts = PPQN.toParts(ppqn);
 
-  return `${parts.bars + 1}:${parts.beats + 1}:${parts.ticks}`;
+  return `${parts.bars + 1}:${parts.beats + 1}:${parts.semiquavers + 1}:${parts.ticks}`;
 }
 
-// Examples:
-ppqnToBarBeatTick(0);       // "1:1:0" (bar 1, beat 1)
-ppqnToBarBeatTick(960);     // "1:2:0" (bar 1, beat 2)
-ppqnToBarBeatTick(3840);    // "2:1:0" (bar 2, beat 1)
+// Or use the built-in string formatter:
+PPQN.toString(0);       // "1.1.1:0" (bar.beat.semiquaver:tick)
+PPQN.toString(960);     // "1.2.1:0"
+PPQN.toString(3840);    // "2.1.1:0"
 ```
 
 ### PPQN to Seconds
@@ -494,8 +496,8 @@ function handleTimelineClick(event: React.MouseEvent<SVGSVGElement>) {
   const rect = event.currentTarget.getBoundingClientRect();
   const clickX = event.clientX - rect.left;
 
-  // Convert pixels to PPQN
-  const clickedPosition = (clickX / timelineWidth) * totalDuration;
+  // Convert pixels to PPQN (round to integer — position is Int32)
+  const clickedPosition = Math.round((clickX / timelineWidth) * totalDuration);
 
   // Seek to position
   project.engine.setPosition(clickedPosition);
@@ -631,27 +633,6 @@ function TimelineMinimap({ clips, currentPosition }: MinimapProps) {
   );
 }
 ```
-
-## Summary
-
-Timeline rendering with PPQN:
-1. **Define dimensions** - bars, beats, tracks, pixels
-2. **Convert PPQN → pixels** - `(ppqn / totalDuration) * width`
-3. **Render grid** - beat and bar lines
-4. **Render clips** - positioned and sized by PPQN
-5. **Render playhead** - current position indicator
-6. **Handle interactions** - clicks, drags, seeking
-7. **Optimize** - virtual rendering, throttling, memoization
-
-Key formula:
-```typescript
-pixels = (ppqnPosition / totalPPQNDuration) * timelineWidthInPixels
-```
-
-Remember:
-- Clip **positions** are musical (don't change with BPM)
-- Clip **durations** are temporal (recalculate when BPM changes)
-- Use AnimationFrame for smooth position updates
 
 ## Advanced: Audio Rendering Pipeline
 
