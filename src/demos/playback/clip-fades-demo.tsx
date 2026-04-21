@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { PPQN } from "@opendaw/lib-dsp";
+import { Curve } from "@opendaw/lib-std";
 import { Project } from "@opendaw/studio-core";
 import { AudioRegionBoxAdapter } from "@opendaw/studio-adapters";
 import { GitHubCorner } from "@/components/GitHubCorner";
@@ -52,19 +53,6 @@ const FADE_TYPES = [
 ] as const;
 
 /**
- * Calculate the normalized curve value at position x (0-1) for a given slope
- * This mirrors the OpenDAW Curve.normalizedAt function
- */
-function curveNormalizedAt(x: number, slope: number): number {
-  if (slope > 0.499999 && slope < 0.500001) {
-    return x; // Linear
-  }
-  const EPSILON = 1.0e-15;
-  const p = Math.max(EPSILON, Math.min(1.0 - EPSILON, slope));
-  return ((p * p) / (1.0 - p * 2.0)) * (Math.pow((1.0 - p) / p, 2.0 * x) - 1.0);
-}
-
-/**
  * Component to visualize a fade curve
  */
 const FadeCurveCanvas: React.FC<{
@@ -108,11 +96,11 @@ const FadeCurveCanvas: React.FC<{
 
     for (let i = 0; i <= drawWidth; i++) {
       const x = i / drawWidth; // 0 to 1
-      let y = curveNormalizedAt(x, slope);
+      let y = Curve.normalizedAt(x, slope);
 
       // For fade-out, invert the curve
       if (isFadeOut) {
-        y = 1 - curveNormalizedAt(x, slope);
+        y = 1 - Curve.normalizedAt(x, slope);
       }
 
       const canvasX = padding + i;
