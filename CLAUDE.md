@@ -154,7 +154,7 @@ Use raw `sampleLoader.subscribe()` only when you need state change callbacks wit
 ### SignatureTrack Bar Layout
 `signatureTrack.iterateAll()` yields `{ index, accumulatedPpqn, accumulatedBars, nominator, denominator }`
 per section. Expand sections into bars instead of manual PPQN accumulation — see
-`computeBarsFromSDK()` in the time-signature demo and documentation chapters 02/06.
+`computeBarsFromSDK()` in `src/lib/barLayout.ts` (used by time-signature and drum-scheduling demos).
 
 ### Prefer catchupAndSubscribe Over subscribe
 `subscribe()` fires only for FUTURE changes — misses current state. Use `catchupAndSubscribe()`
