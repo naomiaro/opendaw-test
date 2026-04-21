@@ -8,6 +8,7 @@ import { PPQN, Interpolation } from "@opendaw/lib-dsp";
 import type { ppqn } from "@opendaw/lib-dsp";
 import { Curve, UUID } from "@opendaw/lib-std";
 import { AudioUnitBoxAdapter, ValueRegionBoxAdapter, TrackBoxAdapter } from "@opendaw/studio-adapters";
+import { getAllRegions } from "@/lib/adapterUtils";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
@@ -184,9 +185,9 @@ const TRACK_CONFIGS: AutomationTrackConfig[] = [
 function applyAutomationEvents(project: Project, trackBox: TrackBox, events: AutomationEvent[]): void {
   // Snapshot existing automation regions via the adapter layer
   const trackAdapter = project.boxAdapters.adapterFor(trackBox, TrackBoxAdapter);
-  const existingRegions = trackAdapter.regions.adapters
-    .filter((r: any) => !r.isAudioRegion?.())
-    .map((r: any) => r.box);
+  const existingRegions = trackAdapter.regions.adapters.values()
+    .filter(r => !r.isAudioRegion())
+    .map(r => r.box);
 
   // Create new region first (don't delete old ones until this succeeds)
   let newRegionCreated = false;
@@ -605,11 +606,8 @@ const App: React.FC = () => {
         setTargetUnitId(UUID.toString(audioUnitBox.address.uuid));
 
         // Trim the audio region: position at bar 17, read from bar 17 of audio, 8 bars long
-        const allRegions = newProject.rootBoxAdapter.audioUnits.adapters()
-          .flatMap(unit => unit.tracks.adapters())
-          .flatMap(track => track.regions.adapters);
-        const guitarRegion = allRegions.find((r: any) =>
-          r.isAudioRegion?.() && r.box.label.getValue() === "Guitar"
+        const guitarRegion = getAllRegions(newProject).find(r =>
+          r.isAudioRegion() && r.box.label.getValue() === "Guitar"
         );
         if (guitarRegion) {
           newProject.editing.modify(() => {
@@ -712,8 +710,8 @@ const App: React.FC = () => {
 
     // Remove all regions from this automation track via the adapter layer
     const trackAdapter = p.boxAdapters.adapterFor(trackBox, TrackBoxAdapter);
-    const existingAdapters = trackAdapter.regions.adapters
-      .filter((r: any) => !r.isAudioRegion?.()) as ValueRegionBoxAdapter[];
+    const existingAdapters = trackAdapter.regions.adapters.values()
+      .filter(r => !r.isAudioRegion()) as ValueRegionBoxAdapter[];
     if (existingAdapters.length > 0) {
       p.editing.modify(() => {
         for (const adapter of existingAdapters) {

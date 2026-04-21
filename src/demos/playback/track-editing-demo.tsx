@@ -6,7 +6,7 @@ import { UUID } from "@opendaw/lib-std";
 import { PPQN } from "@opendaw/lib-dsp";
 import { Project } from "@opendaw/studio-core";
 import { AudioRegionBox } from "@opendaw/studio-boxes";
-import { RegionEditing, AudioRegionBoxAdapter, TrackBoxAdapter } from "@opendaw/studio-adapters";
+import { RegionEditing, TrackBoxAdapter } from "@opendaw/studio-adapters";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
@@ -57,9 +57,9 @@ const App: React.FC = () => {
   const getRegionsForTrack = useCallback((track: TrackData) => {
     if (!project) return [];
     const trackAdapter = project.boxAdapters.adapterFor(track.trackBox, TrackBoxAdapter);
-    return trackAdapter.regions.adapters
-      .filter((r: any) => r.isAudioRegion?.())
-      .map((r: any) => ({
+    return trackAdapter.regions.adapters.values()
+      .filter(r => r.isAudioRegion())
+      .map(r => ({
         uuid: UUID.toString(r.box.address.uuid),
         position: r.box.position.getValue(),
         duration: r.box.duration.getValue(),
@@ -148,7 +148,7 @@ const App: React.FC = () => {
     project.editing.modify(() => {
       // Get all audio region adapters from this track
       const trackAdapter = project.boxAdapters.adapterFor(track.trackBox, TrackBoxAdapter);
-      const regionAdapters = trackAdapter.regions.adapters.filter((r: any) => r.isAudioRegion?.()) as AudioRegionBoxAdapter[];
+      const regionAdapters = trackAdapter.regions.adapters.values().filter(r => r.isAudioRegion());
 
       // Find region that contains the playhead
       regionAdapters.forEach(regionAdapter => {
@@ -178,9 +178,9 @@ const App: React.FC = () => {
 
     project.editing.modify(() => {
       const trackAdapter = project.boxAdapters.adapterFor(track.trackBox, TrackBoxAdapter);
-      const regionAdapters = trackAdapter.regions.adapters.filter((r: any) => r.isAudioRegion?.());
+      const regionAdapters = trackAdapter.regions.adapters.values().filter(r => r.isAudioRegion());
 
-      regionAdapters.forEach((regionAdapter: any) => {
+      regionAdapters.forEach(regionAdapter => {
         const regionUuid = UUID.toString(regionAdapter.box.address.uuid);
         if (selectedRegionUuid && regionUuid !== selectedRegionUuid) return;
 
@@ -204,9 +204,9 @@ const App: React.FC = () => {
 
     project.editing.modify(() => {
       const trackAdapter = project.boxAdapters.adapterFor(track.trackBox, TrackBoxAdapter);
-      const regionAdapters = trackAdapter.regions.adapters.filter((r: any) => r.isAudioRegion?.());
+      const regionAdapters = trackAdapter.regions.adapters.values().filter(r => r.isAudioRegion());
 
-      regionAdapters.forEach((regionAdapter: any) => {
+      regionAdapters.forEach(regionAdapter => {
         const regionUuid = UUID.toString(regionAdapter.box.address.uuid);
         if (selectedRegionUuid && regionUuid !== selectedRegionUuid) return;
 

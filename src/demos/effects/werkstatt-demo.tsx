@@ -4,21 +4,6 @@ import { PPQN } from "@opendaw/lib-dsp";
 import { Project, EffectFactories } from "@opendaw/studio-core";
 import { AudioRegionBox, AudioUnitBox, WerkstattDeviceBox } from "@opendaw/studio-boxes";
 import { ScriptCompiler, ScriptDeclaration, type WerkstattDeviceBoxAdapter } from "@opendaw/studio-adapters";
-
-/** Read Werkstatt parameter values from the adapter's pointerHub. */
-function readWerkstattParams(werkstattBox: WerkstattDeviceBox): Record<string, number> {
-  const params: Record<string, number> = {};
-  const paramPointers = werkstattBox.parameters.pointerHub.incoming();
-  for (const pointer of paramPointers) {
-    const paramBox = pointer.box as { label?: { getValue(): string }; value?: { getValue(): number } };
-    const label = paramBox.label?.getValue?.();
-    const value = paramBox.value?.getValue?.();
-    if (label != null && value != null) {
-      params[label] = value;
-    }
-  }
-  return params;
-}
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
@@ -41,6 +26,21 @@ import {
   Box as RadixBox,
 } from "@radix-ui/themes";
 import { InfoCircledIcon, PlayIcon, PauseIcon, StopIcon } from "@radix-ui/react-icons";
+
+/** Read Werkstatt parameter values from the adapter's pointerHub. */
+function readWerkstattParams(werkstattBox: WerkstattDeviceBox): Record<string, number> {
+  const params: Record<string, number> = {};
+  const paramPointers = werkstattBox.parameters.pointerHub.incoming();
+  for (const pointer of paramPointers) {
+    const paramBox = pointer.box as { label?: { getValue(): string }; value?: { getValue(): number } };
+    const label = paramBox.label?.getValue?.();
+    const value = paramBox.value?.getValue?.();
+    if (label != null && value != null) {
+      params[label] = value;
+    }
+  }
+  return params;
+}
 
 const BPM = 124;
 const BAR = PPQN.fromSignature(4, 4); // 3840
@@ -303,7 +303,7 @@ const App: React.FC = () => {
       // Find the audio region via the adapter layer
       const firstUnit = newProject.rootBoxAdapter.audioUnits.adapters()[0];
       const firstTrack = firstUnit?.tracks.adapters()[0];
-      const regionAdapter = firstTrack?.regions.adapters.find((r: any) => r.isAudioRegion?.());
+      const regionAdapter = firstTrack?.regions.adapters.values().find(r => r.isAudioRegion());
 
       if (!regionAdapter) {
         setStatus("No audio region found.");

@@ -9,6 +9,7 @@ import { BackLink } from "@/components/BackLink";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { loadTracksFromFiles } from "@/lib/trackLoading";
 import { getAudioExtension } from "@/lib/audioUtils";
+import { getAllAudioRegions } from "@/lib/adapterUtils";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
@@ -224,10 +225,7 @@ const App: React.FC = () => {
         setStatus("Applying fades to clips...");
 
         // Find the audio region adapters via the adapter layer
-        const regionAdapters: AudioRegionBoxAdapter[] = newProject.rootBoxAdapter.audioUnits
-          .adapters()
-          .flatMap(unit => unit.tracks.adapters())
-          .flatMap(track => track.regions.adapters.filter((r: any) => r.isAudioRegion?.()));
+        const regionAdapters: AudioRegionBoxAdapter[] = getAllAudioRegions(newProject);
 
         // Sort to match FADE_TYPES order (by label name)
         const fadeTypeIndex = (label: string) => FADE_TYPES.findIndex(ft => label.startsWith(ft.name));
@@ -335,10 +333,7 @@ const App: React.FC = () => {
       }
 
       // Get all audio region adapters via the adapter layer
-      const regionAdapters: AudioRegionBoxAdapter[] = project.rootBoxAdapter.audioUnits
-        .adapters()
-        .flatMap(unit => unit.tracks.adapters())
-        .flatMap(track => track.regions.adapters.filter((r: any) => r.isAudioRegion?.()));
+      const regionAdapters: AudioRegionBoxAdapter[] = getAllAudioRegions(project);
 
       // Sort to match FADE_TYPES order (by label name)
       const fadeTypeIndex = (label: string) => FADE_TYPES.findIndex(ft => label.startsWith(ft.name));

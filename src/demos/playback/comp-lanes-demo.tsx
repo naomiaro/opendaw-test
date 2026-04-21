@@ -89,8 +89,8 @@ const App: React.FC = () => {
 
         // Delete existing automation regions via the adapter layer
         const trackAdapter = project.boxAdapters.adapterFor(trackBox, TrackBoxAdapter);
-        const existingAdapters = trackAdapter.regions.adapters
-          .filter((r: any) => !r.isAudioRegion?.()) as ValueRegionBoxAdapter[];
+        const existingAdapters = trackAdapter.regions.adapters.values()
+          .filter(r => !r.isAudioRegion()) as ValueRegionBoxAdapter[];
 
         if (existingAdapters.length > 0) {
           project.editing.modify(() => {
@@ -227,9 +227,9 @@ const App: React.FC = () => {
         // Adjust region position and loopOffset for the take offset
         project.editing.modify(() => {
           const trackAdapter = project.boxAdapters.adapterFor(track.trackBox, TrackBoxAdapter);
-          trackAdapter.regions.adapters
-            .filter((r: any) => r.isAudioRegion?.())
-            .forEach((r: any) => {
+          trackAdapter.regions.adapters.values()
+            .filter(r => r.isAudioRegion())
+            .forEach(r => {
               r.box.position.setValue(playbackStart);
               r.box.duration.setValue(TOTAL_PPQN);
               r.box.loopOffset.setValue(playbackStart + offset);

@@ -406,8 +406,8 @@ const App: React.FC = () => {
         // Find the audio region via the adapter layer
         const audioUnits = newProject.rootBoxAdapter.audioUnits.adapters();
         const firstTrackAdapter = audioUnits[0]?.tracks.adapters()[0];
-        const regionAdapters = firstTrackAdapter?.regions.adapters ?? [];
-        const audioRegionAdapter = regionAdapters.find((r: any) => r.isAudioRegion?.());
+        const regionAdapters = firstTrackAdapter?.regions.adapters.values() ?? [];
+        const audioRegionAdapter = regionAdapters.find(r => r.isAudioRegion());
 
         if (!audioRegionAdapter) {
           setStatus("Failed to load audio. No audio region was created.");

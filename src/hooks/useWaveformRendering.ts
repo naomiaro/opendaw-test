@@ -130,9 +130,9 @@ export function useWaveformRendering(
 
         // Get regions for this track via the adapter layer
         const trackAdapter = project.boxAdapters.adapterFor(track.trackBox, TrackBoxAdapter);
-        const regions: RegionView[] = trackAdapter.regions.adapters
-          .filter((r: any) => r.isAudioRegion?.())
-          .map((r: any) => ({
+        const regions: RegionView[] = trackAdapter.regions.adapters.values()
+          .filter(r => r.isAudioRegion())
+          .map(r => ({
             position: r.box.position.getValue(),
             duration: r.box.duration.getValue(),
             loopOffset: r.box.loopOffset.getValue(),
