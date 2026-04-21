@@ -7,7 +7,7 @@ import { AudioRegionBox, AudioUnitBox, ReverbDeviceBox, TrackBox, ValueRegionBox
 import { PPQN, Interpolation } from "@opendaw/lib-dsp";
 import type { ppqn } from "@opendaw/lib-dsp";
 import { Curve, UUID } from "@opendaw/lib-std";
-import { AudioUnitBoxAdapter, ValueRegionBoxAdapter } from "@opendaw/studio-adapters";
+import { AudioUnitBoxAdapter, ValueRegionBoxAdapter, TrackBoxAdapter } from "@opendaw/studio-adapters";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
@@ -182,14 +182,11 @@ const TRACK_CONFIGS: AutomationTrackConfig[] = [
 // ─── Helper: Apply Automation Events to a Track ─────────────────────────
 
 function applyAutomationEvents(project: Project, trackBox: TrackBox, events: AutomationEvent[]): void {
-  // Snapshot existing regions BEFORE creating new ones
-  const boxes = project.boxGraph.boxes();
-  const existingRegions = boxes.filter(
-    (box: any) =>
-      box instanceof ValueRegionBox &&
-      box.regions.targetVertex.nonEmpty() &&
-      box.regions.targetVertex.unwrap().box === trackBox
-  );
+  // Snapshot existing automation regions via the adapter layer
+  const trackAdapter = project.boxAdapters.adapterFor(trackBox, TrackBoxAdapter);
+  const existingRegions = trackAdapter.regions.adapters
+    .filter((r: any) => !r.isAudioRegion?.())
+    .map((r: any) => r.box);
 
   // Create new region first (don't delete old ones until this succeeds)
   let newRegionCreated = false;
@@ -608,15 +605,17 @@ const App: React.FC = () => {
         setTargetUnitId(UUID.toString(audioUnitBox.address.uuid));
 
         // Trim the audio region: position at bar 17, read from bar 17 of audio, 8 bars long
-        const boxes = newProject.boxGraph.boxes();
-        const audioRegion = boxes.find(
-          (box: any) => box instanceof AudioRegionBox && box.label?.getValue?.() === "Guitar"
+        const allRegions = newProject.rootBoxAdapter.audioUnits.adapters()
+          .flatMap(unit => unit.tracks.adapters())
+          .flatMap(track => track.regions.adapters);
+        const guitarRegion = allRegions.find((r: any) =>
+          r.isAudioRegion?.() && r.box.label.getValue() === "Guitar"
         );
-        if (audioRegion) {
+        if (guitarRegion) {
           newProject.editing.modify(() => {
-            (audioRegion as AudioRegionBox).position.setValue(PLAYBACK_START);
-            (audioRegion as AudioRegionBox).duration.setValue(TOTAL_PPQN);
-            (audioRegion as AudioRegionBox).loopOffset.setValue(PLAYBACK_START);
+            (guitarRegion.box as AudioRegionBox).position.setValue(PLAYBACK_START);
+            (guitarRegion.box as AudioRegionBox).duration.setValue(TOTAL_PPQN);
+            (guitarRegion.box as AudioRegionBox).loopOffset.setValue(PLAYBACK_START);
           });
         } else {
           console.warn('Could not find AudioRegionBox with label "Guitar" — audio may play from wrong position');
@@ -711,18 +710,13 @@ const App: React.FC = () => {
     const trackBox = automationTrackBoxesRef.current[sectionIndex];
     if (!p || !trackBox) return;
 
-    // Remove all regions from this automation track
-    const boxes = p.boxGraph.boxes();
-    const existingRegions = boxes.filter(
-      (box: any) =>
-        box instanceof ValueRegionBox &&
-        box.regions.targetVertex.nonEmpty() &&
-        box.regions.targetVertex.unwrap().box === trackBox
-    );
-    if (existingRegions.length > 0) {
+    // Remove all regions from this automation track via the adapter layer
+    const trackAdapter = p.boxAdapters.adapterFor(trackBox, TrackBoxAdapter);
+    const existingAdapters = trackAdapter.regions.adapters
+      .filter((r: any) => !r.isAudioRegion?.()) as ValueRegionBoxAdapter[];
+    if (existingAdapters.length > 0) {
       p.editing.modify(() => {
-        for (const region of existingRegions) {
-          const adapter = p.boxAdapters.adapterFor(region, ValueRegionBoxAdapter);
+        for (const adapter of existingAdapters) {
           const collectionOpt = adapter.optCollection;
           if (collectionOpt.nonEmpty()) {
             collectionOpt
@@ -730,7 +724,7 @@ const App: React.FC = () => {
               .events.asArray()
               .forEach((evt: any) => evt.box.delete());
           }
-          region.delete();
+          adapter.box.delete();
         }
       });
     }

@@ -5,7 +5,7 @@ import { PPQN, Interpolation } from "@opendaw/lib-dsp";
 import type { ppqn } from "@opendaw/lib-dsp";
 import { Project } from "@opendaw/studio-core";
 import { AudioRegionBox, TrackBox, ValueRegionBox } from "@opendaw/studio-boxes";
-import { AudioUnitBoxAdapter, ValueRegionBoxAdapter } from "@opendaw/studio-adapters";
+import { AudioUnitBoxAdapter, ValueRegionBoxAdapter, TrackBoxAdapter } from "@opendaw/studio-adapters";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
@@ -87,24 +87,19 @@ const App: React.FC = () => {
         const take = takes[t];
         const trackBox = take.automationTrackBox;
 
-        // Delete existing automation regions
-        const boxes = project.boxGraph.boxes();
-        const existingRegions = boxes.filter(
-          (box: any) =>
-            box instanceof ValueRegionBox &&
-            box.regions.targetVertex.nonEmpty() &&
-            box.regions.targetVertex.unwrap().box === trackBox
-        );
+        // Delete existing automation regions via the adapter layer
+        const trackAdapter = project.boxAdapters.adapterFor(trackBox, TrackBoxAdapter);
+        const existingAdapters = trackAdapter.regions.adapters
+          .filter((r: any) => !r.isAudioRegion?.()) as ValueRegionBoxAdapter[];
 
-        if (existingRegions.length > 0) {
+        if (existingAdapters.length > 0) {
           project.editing.modify(() => {
-            for (const region of existingRegions) {
-              const adapter = project.boxAdapters.adapterFor(region, ValueRegionBoxAdapter);
+            for (const adapter of existingAdapters) {
               const collectionOpt = adapter.optCollection;
               if (collectionOpt.nonEmpty()) {
                 collectionOpt.unwrap().events.asArray().forEach((evt: any) => evt.box.delete());
               }
-              region.delete();
+              adapter.box.delete();
             }
           });
         }

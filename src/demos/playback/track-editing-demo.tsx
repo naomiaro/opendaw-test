@@ -6,7 +6,7 @@ import { UUID } from "@opendaw/lib-std";
 import { PPQN } from "@opendaw/lib-dsp";
 import { Project } from "@opendaw/studio-core";
 import { AudioRegionBox } from "@opendaw/studio-boxes";
-import { RegionEditing, AudioRegionBoxAdapter } from "@opendaw/studio-adapters";
+import { RegionEditing, AudioRegionBoxAdapter, TrackBoxAdapter } from "@opendaw/studio-adapters";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
@@ -53,27 +53,21 @@ const App: React.FC = () => {
 
   const BPM = 124; // Dark Ride BPM
 
-  // Helper function to get regions from a track
+  // Helper function to get regions from a track via the adapter layer
   const getRegionsForTrack = useCallback((track: TrackData) => {
-    const regions: { uuid: string; position: number; duration: number; loopOffset: number; loopDuration: number; label: string }[] = [];
-    const pointers = track.trackBox.regions.pointerHub.incoming();
-
-    pointers.forEach(({ box }) => {
-      if (!box) return;
-      const regionBox = box as AudioRegionBox;
-
-      regions.push({
-        uuid: UUID.toString(regionBox.address.uuid),
-        position: regionBox.position.getValue(),
-        duration: regionBox.duration.getValue(),
-        loopOffset: regionBox.loopOffset.getValue(),
-        loopDuration: regionBox.loopDuration.getValue(),
-        label: regionBox.label.getValue()
-      });
-    });
-
-    return regions;
-  }, []);
+    if (!project) return [];
+    const trackAdapter = project.boxAdapters.adapterFor(track.trackBox, TrackBoxAdapter);
+    return trackAdapter.regions.adapters
+      .filter((r: any) => r.isAudioRegion?.())
+      .map((r: any) => ({
+        uuid: UUID.toString(r.box.address.uuid),
+        position: r.box.position.getValue(),
+        duration: r.box.duration.getValue(),
+        loopOffset: r.box.loopOffset.getValue(),
+        loopDuration: r.box.loopDuration.getValue(),
+        label: r.box.label.getValue()
+      }));
+  }, [project]);
 
   // Use waveform rendering hook with region-aware rendering
   useWaveformRendering(project, tracks, canvasRefs.current, localAudioBuffersRef.current, {
@@ -152,17 +146,12 @@ const App: React.FC = () => {
     console.debug(`Splitting track "${track.name}" at position ${playheadPosition}`);
 
     project.editing.modify(() => {
-      // Get all regions from this track using pointerHub
-      const pointers = track.trackBox.regions.pointerHub.incoming();
+      // Get all audio region adapters from this track
+      const trackAdapter = project.boxAdapters.adapterFor(track.trackBox, TrackBoxAdapter);
+      const regionAdapters = trackAdapter.regions.adapters.filter((r: any) => r.isAudioRegion?.()) as AudioRegionBoxAdapter[];
 
       // Find region that contains the playhead
-      pointers.forEach(({ box }) => {
-        if (!box) return;
-        const regionBox = box as AudioRegionBox;
-
-        const regionAdapter = project.boxAdapters.adapterFor(regionBox, AudioRegionBoxAdapter);
-        if (!regionAdapter) return;
-
+      regionAdapters.forEach(regionAdapter => {
         const regionStart = regionAdapter.position;
         const regionEnd = regionStart + regionAdapter.duration;
 
@@ -188,19 +177,15 @@ const App: React.FC = () => {
     console.debug(`Moving ${regionDesc} in track "${track.name}" forward by ${moveAmount} PPQN`);
 
     project.editing.modify(() => {
-      // Get all regions from this track using pointerHub
-      const pointers = track.trackBox.regions.pointerHub.incoming();
+      const trackAdapter = project.boxAdapters.adapterFor(track.trackBox, TrackBoxAdapter);
+      const regionAdapters = trackAdapter.regions.adapters.filter((r: any) => r.isAudioRegion?.());
 
-      pointers.forEach(({ box }) => {
-        if (!box) return;
-        const regionBox = box as AudioRegionBox;
-        const regionUuid = UUID.toString(regionBox.address.uuid);
-
-        // If a region is selected, only move that one
+      regionAdapters.forEach((regionAdapter: any) => {
+        const regionUuid = UUID.toString(regionAdapter.box.address.uuid);
         if (selectedRegionUuid && regionUuid !== selectedRegionUuid) return;
 
-        const currentPosition = regionBox.position.getValue();
-        regionBox.position.setValue(currentPosition + moveAmount);
+        const currentPosition = regionAdapter.box.position.getValue();
+        regionAdapter.box.position.setValue(currentPosition + moveAmount);
       });
     });
 
@@ -218,20 +203,16 @@ const App: React.FC = () => {
     console.debug(`Moving ${regionDesc} in track "${track.name}" backward by ${moveAmount} PPQN`);
 
     project.editing.modify(() => {
-      // Get all regions from this track using pointerHub
-      const pointers = track.trackBox.regions.pointerHub.incoming();
+      const trackAdapter = project.boxAdapters.adapterFor(track.trackBox, TrackBoxAdapter);
+      const regionAdapters = trackAdapter.regions.adapters.filter((r: any) => r.isAudioRegion?.());
 
-      pointers.forEach(({ box }) => {
-        if (!box) return;
-        const regionBox = box as AudioRegionBox;
-        const regionUuid = UUID.toString(regionBox.address.uuid);
-
-        // If a region is selected, only move that one
+      regionAdapters.forEach((regionAdapter: any) => {
+        const regionUuid = UUID.toString(regionAdapter.box.address.uuid);
         if (selectedRegionUuid && regionUuid !== selectedRegionUuid) return;
 
-        const currentPosition = regionBox.position.getValue();
+        const currentPosition = regionAdapter.box.position.getValue();
         const newPosition = Math.max(0, currentPosition - moveAmount);
-        regionBox.position.setValue(newPosition);
+        regionAdapter.box.position.setValue(newPosition);
       });
     });
 

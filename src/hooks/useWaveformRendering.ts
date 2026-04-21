@@ -3,7 +3,7 @@ import { UUID } from "@opendaw/lib-std";
 import { PPQN } from "@opendaw/lib-dsp";
 import { Project } from "@opendaw/studio-core";
 import { PeaksPainter } from "@opendaw/lib-fusion";
-import { AudioRegionBox } from "@opendaw/studio-boxes";
+import { TrackBoxAdapter } from "@opendaw/studio-adapters";
 import { CanvasPainter } from "../lib/CanvasPainter";
 import type { Peaks } from "@opendaw/lib-fusion";
 import type { TrackData, RegionView } from "../lib/types";
@@ -128,19 +128,16 @@ export function useWaveformRendering(
           return;
         }
 
-        // Get regions for this track by reading directly from trackBox
-        const regions: RegionView[] = [];
-        const pointers = track.trackBox.regions.pointerHub.incoming();
-        pointers.forEach(({ box }) => {
-          if (!box) return;
-          const regionBox = box as AudioRegionBox;
-          regions.push({
-            position: regionBox.position.getValue(),
-            duration: regionBox.duration.getValue(),
-            loopOffset: regionBox.loopOffset.getValue(),
-            loopDuration: regionBox.loopDuration.getValue()
-          });
-        });
+        // Get regions for this track via the adapter layer
+        const trackAdapter = project.boxAdapters.adapterFor(track.trackBox, TrackBoxAdapter);
+        const regions: RegionView[] = trackAdapter.regions.adapters
+          .filter((r: any) => r.isAudioRegion?.())
+          .map((r: any) => ({
+            position: r.box.position.getValue(),
+            duration: r.box.duration.getValue(),
+            loopOffset: r.box.loopOffset.getValue(),
+            loopDuration: r.box.loopDuration.getValue()
+          }));
 
         // Skip rendering if peaks haven't changed AND canvas wasn't resized AND regions haven't changed
         const regionsKey = regions.map(r => `${r.position},${r.duration},${r.loopOffset}`).join(";");
