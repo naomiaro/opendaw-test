@@ -15,7 +15,6 @@
 - [Testing the Application](#testing-the-application)
 - [Common Issues and Solutions](#common-issues-and-solutions)
 - [Next Steps](#next-steps)
-- [Summary](#summary)
 - [Advanced: Mixer Groups (Sub-Mixing)](#advanced-mixer-groups-sub-mixing)
   - [Architecture](#architecture)
   - [Creating Group Buses](#creating-group-buses)
@@ -122,14 +121,14 @@ export async function initializeOpenDAW(localAudioBuffers: Map<string, AudioBuff
   // SoundfontService skipped — constructor fetches from api.opendaw.studio (CORS issues).
   // SDK declares soundfontService in ProjectEnv but never reads it (verified in 0.0.128).
 
-  // Create project
+  // Create project (soundfontManager/soundfontService omitted — not used in headless demos)
   const project = Project.new({
     audioContext,
     sampleManager,
-    soundfontManager,
+    soundfontManager: undefined as any,
     audioWorklets: AudioWorklets.get(audioContext),
     sampleService,
-    soundfontService: undefined as any, // not used in headless demos
+    soundfontService: undefined as any,
   });
 
   // Start audio engine
@@ -211,7 +210,7 @@ function App() {
 
           createdTracks.push({
             name: file.name,
-            uuid: trackBox.uuid,
+            uuid: trackBox.address.uuid,
             color: file.color
           });
 
@@ -224,7 +223,7 @@ function App() {
             audioBuffer
           );
 
-          AudioFileBox.create(boxGraph, fileUUID, box => {
+          const audioFileBox = AudioFileBox.create(boxGraph, fileUUID, box => {
             box.fileName.setValue(file.name);
             box.endInSeconds.setValue(audioBuffer.duration);
           });
@@ -233,10 +232,10 @@ function App() {
           const positions = getPatternPositions(file.name);
 
           positions.forEach(position => {
-            const clipDuration = PPQN.secondsToPulses(
+            const clipDuration = Math.round(PPQN.secondsToPulses(
               audioBuffer.duration,
               120
-            );
+            ));
 
             // Create events collection (required in 0.0.87+)
             const eventsCollectionBox = ValueEventCollectionBox.create(boxGraph, UUID.generate());
@@ -246,7 +245,7 @@ function App() {
               UUID.generate(),
               box => {
                 box.regions.refer(trackBox.regions);
-                box.file.refer(AudioFileBox.get(boxGraph, fileUUID));
+                box.file.refer(audioFileBox);
                 box.events.refer(eventsCollectionBox.owners); // Required in 0.0.87+
                 box.position.setValue(position);
                 box.duration.setValue(clipDuration);
@@ -284,7 +283,7 @@ function App() {
   useEffect(() => {
     if (!project) return;
 
-    const playingSub = project.engine.isPlaying.subscribe(obs => {
+    const playingSub = project.engine.isPlaying.catchupAndSubscribe(obs => {
       setIsPlaying(obs.getValue());
     });
 
@@ -292,7 +291,7 @@ function App() {
       setCurrentPosition(project.engine.position.getValue());
     });
 
-    const bpmSub = project.timelineBox.bpm.subscribe(field => {
+    const bpmSub = project.timelineBox.bpm.catchupAndSubscribe(field => {
       setBpm(field.getValue());
     });
 
@@ -347,8 +346,7 @@ function App() {
 
   const handleStop = () => {
     if (!project) return;
-    project.engine.stop(true);
-    project.engine.setPosition(0);
+    project.engine.stop(true); // also resets position to 0
   };
 
   const handleBpmChange = (newBpm: number) => {
@@ -359,10 +357,10 @@ function App() {
 
       // Recalculate clip durations
       clips.forEach(clip => {
-        const newDuration = PPQN.secondsToPulses(
+        const newDuration = Math.round(PPQN.secondsToPulses(
           clip.audioDuration,
           newBpm
-        );
+        ));
         clip.regionBox.duration.setValue(newDuration);
         clip.regionBox.loopDuration.setValue(newDuration);
       });
@@ -371,7 +369,7 @@ function App() {
     // Update UI
     const updatedClips = clips.map(clip => ({
       ...clip,
-      duration: PPQN.secondsToPulses(clip.audioDuration, newBpm)
+      duration: Math.round(PPQN.secondsToPulses(clip.audioDuration, newBpm))
     }));
     setClips(updatedClips);
   };
@@ -682,7 +680,7 @@ const kickPosition = 0 * Quarter;        // Beat 1
 const snarePosition = 1 * Quarter;       // Beat 2
 
 // Clip durations are temporal (recalculate on BPM change)
-const duration = PPQN.secondsToPulses(audioDuration, bpm);
+const duration = Math.round(PPQN.secondsToPulses(audioDuration, bpm));
 ```
 
 ### 2. Box System for Data
@@ -755,7 +753,7 @@ if (audioContext.state === "suspended") {
 // Solution: Recalculate durations and update state
 const updatedClips = clips.map(clip => ({
   ...clip,
-  duration: PPQN.secondsToPulses(clip.audioDuration, newBpm)
+  duration: Math.round(PPQN.secondsToPulses(clip.audioDuration, newBpm))
 }));
 setClips(updatedClips);
 ```
@@ -788,26 +786,6 @@ const sub = AnimationFrame.add(() => {
 4. **Responsive Design** - Adapt to different screen sizes
 5. **Keyboard Shortcuts** - Space to play/pause, etc.
 6. **Project Save/Load** - Serialize and deserialize projects
-
-## Summary
-
-Building a DAW UI with OpenDAW requires understanding:
-
-1. **PPQN** - Musical time system (positions and durations)
-2. **Box System** - Data model with transactions and observables
-3. **Sample Manager** - Audio loading and peaks generation
-4. **Timeline Rendering** - Converting PPQN to pixels
-
-The key is to keep **positions** in PPQN (musical), convert to **pixels** for rendering, and recalculate **durations** when BPM changes.
-
-This architecture provides:
-- Precise musical timing
-- Tempo changes without breaking positions
-- Reactive UI updates
-- Efficient audio processing
-- Professional DAW workflow
-
-You now have all the tools to build a fully-functional browser-based DAW!
 
 ---
 
@@ -1069,7 +1047,7 @@ The mixer groups demo uses serial group routing. For parallel aux/send routing, 
 
 ### Demo
 
-See `src/mixer-groups-demo.tsx` for a complete working example that:
+See `src/demos/playback/mixer-groups-demo.tsx` for a complete working example that:
 
 - Creates two group buses (Rhythm and Melodic) using `AudioBusFactory`
 - Loads 7 audio stems and routes them to the appropriate group
