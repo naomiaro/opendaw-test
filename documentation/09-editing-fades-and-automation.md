@@ -642,6 +642,26 @@ editing.modify(() => {
 })
 ```
 
+### Region Transfer (Cross-Track/Cross-Project Copy)
+
+For copying regions between tracks or projects, `@opendaw/studio-adapters` provides `TransferRegions`:
+
+```typescript
+import { TransferRegions } from "@opendaw/studio-adapters";
+
+// Copy regions from one track to another
+// TransferRegions handles the underlying box graph operations,
+// including audio file references and event collections
+```
+
+For copying entire mixer channels (with effects, routing, and automation), use `TransferAudioUnits`:
+
+```typescript
+import { TransferAudioUnits } from "@opendaw/studio-adapters";
+
+// Copy audio units between projects or duplicate within a project
+```
+
 ---
 
 ## Demo Implementation
@@ -698,6 +718,33 @@ project.editing.modify(() => {
 ```
 
 Fades can be set in the same `editing.modify()` transaction as region property changes (position, duration, loopOffset). No separate transaction is needed.
+
+### FadingAdapter Convenience Methods
+
+Beyond raw field access, the `FadingAdapter` on `AudioRegionBoxAdapter` provides convenience methods:
+
+```typescript
+const fading = adapter.fading;
+
+// Check if any fades are active (quick guard for rendering)
+if (fading.hasFading) {
+  // Render fade curves on canvas
+}
+
+// Copy all fade settings to another region
+fading.copyTo(targetAdapter.fading);
+
+// Reset all fades to zero (remove fades)
+fading.reset();
+
+// Read-only shorthand for current values
+const fadeInPpqn = fading.in;
+const fadeOutPpqn = fading.out;
+const inCurve = fading.inSlope;
+const outCurve = fading.outSlope;
+```
+
+Use `.hasFading` as a rendering guard — skip fade curve drawing when false. Use `.copyTo()` for "paste fade settings" across regions. Use `.reset()` for "clear all fades" on selected regions.
 
 ### Slope Values and Curve Types
 

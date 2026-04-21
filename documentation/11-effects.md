@@ -754,6 +754,49 @@ Compressor and Gate support external side-chain inputs via `Pointers.SideChain` 
 
 ---
 
+## Device Type Discriminators
+
+When working with effects at the adapter level, use type-safe discriminator functions instead of `instanceof` checks:
+
+```typescript
+import { Devices } from "@opendaw/studio-adapters";
+
+// Type-safe narrowing for device adapters
+if (Devices.isAudioEffect(adapter)) {
+  // adapter is AudioEffectDeviceAdapter — has audio effect parameters
+}
+if (Devices.isMidiEffect(adapter)) {
+  // adapter is MidiEffectDeviceAdapter — processes MIDI
+}
+if (Devices.isInstrument(adapter)) {
+  // adapter is InstrumentDeviceBoxAdapter — generates audio from MIDI
+}
+if (Devices.isHost(adapter)) {
+  // adapter is DeviceHost (AudioUnitBoxAdapter or ModularAdapter)
+}
+```
+
+Navigate from a device back to its parent channel:
+
+```typescript
+const host = deviceAdapter.deviceHost();           // DeviceHost
+const unit = deviceAdapter.audioUnitBoxAdapter();   // AudioUnitBoxAdapter
+```
+
+All device adapters share a common interface:
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `.type` | string | Device type identifier |
+| `.labelField` | Field | Editable display name |
+| `.enabledField` | Field | Effect bypass toggle |
+| `.minimizedField` | Field | UI collapsed state |
+| `.host` | pointer | Reference to parent device host |
+| `.manualUrl` | string? | Link to documentation |
+| `.terminate()` | method | Cleanup resources |
+
+---
+
 ## Creating and Adding Effects
 
 Effects are created through the **EffectFactory** pattern, which provides:
