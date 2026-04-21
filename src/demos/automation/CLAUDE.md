@@ -90,6 +90,72 @@ Effects use a 3-layer chain: Box (raw storage) → Adapter (UI mapping) → Proc
   For effects: `ValueMapping.DefaultDecibel` from `@opendaw/lib-std`.
 - To verify parameter ranges, audit all 3 layers: schema (Box), adapter (ValueMapping), and processor (how value is consumed)
 
+### AutomatableParameterFieldAdapter Full API
+Each automatable parameter (volume, pan, effect wet/dry, etc.) is wrapped by an adapter:
+```typescript
+import { AutomatableParameterFieldAdapter } from "@opendaw/studio-adapters";
+
+// Properties
+parameter.value        // current value
+parameter.anchor       // default/rest value
+parameter.name         // parameter display name
+parameter.address      // box graph address
+parameter.interpolation // automation interpolation mode
+
+// Methods
+parameter.subscribe(callback)       // react to value changes
+parameter.createAutomation()        // create automation track for this parameter
+parameter.deleteAutomation()        // remove automation track
+parameter.copyTo(targetParameter)   // copy automation data
+parameter.terminate()               // cleanup
+```
+
+### Touch Recording Lifecycle
+Real-time automation recording (recording fader movements during playback):
+```typescript
+import { ParameterFieldAdapters } from "@opendaw/studio-adapters";
+
+// 1. Start touch — begins recording automation for this parameter
+adapter.touchStart();
+
+// 2. During touch, set values (typically from UI fader/knob input)
+adapter.setUnitValue(0.5); // unitValue 0-1, mapped through ValueMapping
+
+// 3. End touch — stops recording, finalizes automation events
+adapter.touchEnd();
+
+// Subscribe to touch state changes
+parameterFieldAdapters.subscribeTouchEnd(callback);
+```
+Touch state: `adapter.isTouched()` returns whether parameter is being actively recorded.
+
+### ParameterAdapterSet (Device Parameters)
+Access all automatable parameters on a device:
+```typescript
+const paramSet = deviceAdapter.parameters;
+paramSet.parameters()           // all AutomatableParameterFieldAdapter[]
+paramSet.parameterAt(index)     // specific parameter by index
+```
+Use this for building generic device UIs that enumerate all knobs/sliders.
+
+### ValueRegionBoxAdapter Full API
+Beyond `.optCollection` and `.valueAt()`:
+- `.events` — `ValueEventCollectionBoxAdapter` (if collection exists)
+- `.incomingValue()` — value entering the region (from prior region or default)
+- `.outgoingValue()` — value leaving the region (last event value)
+
+### ValueEventBoxAdapter Full API
+Each automation point:
+- `.position` — PPQN position (region-local)
+- `.value` — unitValue (0-1)
+- `.index` — ordering index (composite key with position)
+- `.interpolation` — `Interpolation.None`, `.Linear`, or `.Curve(slope)`
+- `.isSelected` — selection state
+- `.type` — event type discriminator
+- `.copyTo(target)` — copy event to another collection
+- `.moveToPosition(ppqn)` — move event to new position
+- `.delete()` — remove event from collection
+
 ## Reference Files
 - Track automation demo: `src/demos/automation/track-automation-demo.tsx`
 - Tempo automation demo: `src/demos/automation/tempo-automation-demo.tsx`

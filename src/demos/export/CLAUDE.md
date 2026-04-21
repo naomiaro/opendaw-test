@@ -51,6 +51,59 @@ project.editing.modify(() => track.audioUnitBox.mute.setValue(saved)); // restor
 ```
 The mute window is a single synchronous JS task — no audio blocks process in between.
 
+### Transfer APIs (Cross-Project Copy)
+`@opendaw/studio-adapters` provides utilities for copying content between projects:
+
+**TransferRegions** — copy regions between tracks:
+```typescript
+import { TransferRegions } from "@opendaw/studio-adapters";
+// Copy selected regions from one track to another (same or different project)
+```
+
+**TransferAudioUnits** — copy entire audio units (channels) between projects:
+```typescript
+import { TransferAudioUnits } from "@opendaw/studio-adapters";
+// Copy mixer channels with all effects, routing, and automation
+```
+
+### Preset Encode/Decode (Device State)
+Save and restore device (effect/instrument) state:
+```typescript
+import { PresetEncoder, PresetDecoder } from "@opendaw/studio-adapters";
+
+// Save device state
+const encoded = PresetEncoder.encode(deviceBox);
+
+// Restore device state
+PresetDecoder.decode(deviceBox, encoded);
+```
+`PresetHeader` contains metadata (name, version, device type).
+
+### Stem Export Configuration
+When exporting individual stems (vs full mixdown):
+```typescript
+// ExportStemsConfiguration controls per-stem rendering
+const stemConfig = {
+  stems: [
+    {
+      audioUnitBox: drumUnit,
+      includeAudioEffects: true,   // render with effects
+      includeSends: false,         // exclude aux sends
+    },
+    {
+      audioUnitBox: bassUnit,
+      includeAudioEffects: true,
+      includeSends: true,          // include reverb/delay sends
+    },
+  ],
+};
+
+// Pass to worklets.createEngine({ project: copy, exportConfiguration: stemConfig })
+// Each stem renders to separate channels in the output buffer
+```
+- Mixdown path (`exportConfiguration` = undefined): all audio mixed, metronome included
+- Stem path (`exportConfiguration` provided): per-track isolation, metronome excluded
+
 ## Reference Files
 - Export demo: `src/demos/export/export-demo.tsx`
 - Range export utility: `src/lib/rangeExport.ts`
