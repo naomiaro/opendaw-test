@@ -67,46 +67,86 @@ pixels = (ppqnPosition / totalPPQNDuration) * timelineWidthInPixels
 
 ### Step 1: Define Timeline Dimensions
 
+Read bar layout from the SDK's `signatureTrack.iterateAll()` — this works with any time signature (defaults to 4/4):
+
 ```typescript
 import { PPQN } from "@opendaw/lib-dsp";
+import type { ppqn } from "@opendaw/lib-dsp";
+
 const { Quarter } = PPQN;
 
-// Timeline configuration
-const BARS = 4;
-const BEATS_PER_BAR = 4;
-const TOTAL_BEATS = BARS * BEATS_PER_BAR;  // 16 beats
-const totalDuration = BARS * BEATS_PER_BAR * Quarter;  // 15,360 PPQN
+type BarInfo = {
+  startPpqn: ppqn;
+  durationPpqn: ppqn;
+  nominator: number;
+  denominator: number;
+  barNumber: number;
+};
+
+// Read bar layout from SDK state (works with any time signature)
+function computeBarsFromSDK(project: Project): BarInfo[] {
+  const signatureTrack = project.timelineBoxAdapter.signatureTrack;
+  const totalPpqn = project.timelineBox.durationInPulses.getValue();
+  const sections = Array.from(signatureTrack.iterateAll());
+  const bars: BarInfo[] = [];
+  let barNumber = 1;
+
+  for (let s = 0; s < sections.length; s++) {
+    const { accumulatedPpqn: sectionStart, nominator, denominator } = sections[s];
+    const sectionEnd = (s + 1 < sections.length)
+      ? sections[s + 1].accumulatedPpqn
+      : totalPpqn;
+    const barDuration = PPQN.fromSignature(nominator, denominator);
+
+    for (let pos = sectionStart; pos < sectionEnd; pos += barDuration) {
+      bars.push({
+        startPpqn: pos as ppqn,
+        durationPpqn: barDuration as ppqn,
+        nominator, denominator,
+        barNumber: barNumber++,
+      });
+    }
+  }
+
+  return bars;
+}
 
 // Visual dimensions
 const timelineWidth = 800;   // pixels
 const trackHeight = 90;      // pixels per track
-const numTracks = 4;
 ```
 
 ### Step 2: Render Grid Lines
 
+Iterate bars from the SDK, then render beat lines within each bar:
+
 ```typescript
-function renderGrid() {
-  // Beat lines
-  for (let beat = 0; beat <= TOTAL_BEATS; beat++) {
-    const ppqnPosition = beat * Quarter;
-    const x = (ppqnPosition / totalDuration) * timelineWidth;
+function renderGrid(bars: BarInfo[], totalDuration: number) {
+  const lines: JSX.Element[] = [];
 
-    // Is this a measure line (every 4 beats)?
-    const isMeasure = beat % BEATS_PER_BAR === 0;
+  bars.forEach(bar => {
+    const beatDuration = bar.durationPpqn / bar.nominator;
 
-    return (
-      <line
-        key={beat}
-        x1={x}
-        y1={0}
-        x2={x}
-        y2={numTracks * trackHeight}
-        stroke={isMeasure ? "#555" : "#333"}
-        strokeWidth={isMeasure ? 2 : 1}
-      />
-    );
-  }
+    for (let beat = 0; beat < bar.nominator; beat++) {
+      const ppqnPosition = bar.startPpqn + beat * beatDuration;
+      const x = (ppqnPosition / totalDuration) * timelineWidth;
+      const isMeasure = beat === 0;
+
+      lines.push(
+        <line
+          key={`${bar.barNumber}-${beat}`}
+          x1={x}
+          y1={0}
+          x2={x}
+          y2={numTracks * trackHeight}
+          stroke={isMeasure ? "#555" : "#333"}
+          strokeWidth={isMeasure ? 2 : 1}
+        />
+      );
+    }
+  });
+
+  return lines;
 }
 ```
 
@@ -183,10 +223,9 @@ function Timeline({ project, clips, tracks }: TimelineProps) {
   const [currentPosition, setCurrentPosition] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
 
-  const BARS = 4;
-  const BEATS_PER_BAR = 4;
-  const TOTAL_BEATS = BARS * BEATS_PER_BAR;
-  const totalDuration = BARS * BEATS_PER_BAR * Quarter;
+  // Read bar layout from SDK (works with any time signature)
+  const bars = computeBarsFromSDK(project);
+  const totalDuration = project.timelineBox.durationInPulses.getValue();
   const timelineWidth = 800;
   const trackHeight = 90;
 
@@ -214,22 +253,27 @@ function Timeline({ project, clips, tracks }: TimelineProps) {
       height={tracks.length * trackHeight}
       style={{ background: "#1a1a1a" }}
     >
-      {/* Grid lines */}
-      {Array.from({ length: TOTAL_BEATS + 1 }, (_, beat) => {
-        const x = (beat * Quarter / totalDuration) * timelineWidth;
-        const isMeasure = beat % BEATS_PER_BAR === 0;
+      {/* Grid lines — iterates bars from SDK, then beats within each bar */}
+      {bars.flatMap(bar => {
+        const beatDuration = bar.durationPpqn / bar.nominator;
 
-        return (
-          <line
-            key={`grid-${beat}`}
-            x1={x}
-            y1={0}
-            x2={x}
-            y2={tracks.length * trackHeight}
-            stroke={isMeasure ? "#555" : "#333"}
-            strokeWidth={isMeasure ? 2 : 1}
-          />
-        );
+        return Array.from({ length: bar.nominator }, (_, beat) => {
+          const ppqnPos = bar.startPpqn + beat * beatDuration;
+          const x = (ppqnPos / totalDuration) * timelineWidth;
+          const isMeasure = beat === 0;
+
+          return (
+            <line
+              key={`grid-${bar.barNumber}-${beat}`}
+              x1={x}
+              y1={0}
+              x2={x}
+              y2={tracks.length * trackHeight}
+              stroke={isMeasure ? "#555" : "#333"}
+              strokeWidth={isMeasure ? 2 : 1}
+            />
+          );
+        });
       })}
 
       {/* Track separators */}
@@ -303,14 +347,14 @@ function Timeline({ project, clips, tracks }: TimelineProps) {
 Show bar numbers below the timeline:
 
 ```typescript
-function renderBarLabels() {
-  return Array.from({ length: BARS }, (_, barIndex) => {
-    const x = (barIndex * BEATS_PER_BAR * Quarter / totalDuration) * timelineWidth;
-    const width = (BEATS_PER_BAR * Quarter / totalDuration) * timelineWidth;
+function renderBarLabels(bars: BarInfo[], totalDuration: number) {
+  return bars.map(bar => {
+    const x = (bar.startPpqn / totalDuration) * timelineWidth;
+    const width = (bar.durationPpqn / totalDuration) * timelineWidth;
 
     return (
       <div
-        key={barIndex}
+        key={bar.barNumber}
         style={{
           position: "absolute",
           left: `${x}px`,
@@ -319,11 +363,11 @@ function renderBarLabels() {
           display: "flex",
           alignItems: "center",
           paddingLeft: "8px",
-          backgroundColor: barIndex % 2 === 0 ? "var(--gray-3)" : "var(--gray-4)",
+          backgroundColor: bar.barNumber % 2 === 1 ? "var(--gray-3)" : "var(--gray-4)",
           borderLeft: "2px solid var(--gray-6)"
         }}
       >
-        <span>Bar {barIndex + 1}</span>
+        <span>Bar {bar.barNumber}</span>
       </div>
     );
   });
@@ -565,17 +609,15 @@ const clipRects = useMemo(() => {
 ### Pattern 1: Ruler with Time Markers
 
 ```typescript
-function TimeRuler({ totalDuration, width }: RulerProps) {
-  const numBeats = Math.floor(totalDuration / Quarter);
-
+function TimeRuler({ bars, totalDuration, width }: RulerProps) {
   return (
     <div style={{ width, height: 30, position: "relative" }}>
-      {Array.from({ length: numBeats + 1 }, (_, beat) => {
-        const x = (beat * Quarter / totalDuration) * width;
+      {bars.map(bar => {
+        const x = (bar.startPpqn / totalDuration) * width;
 
         return (
           <div
-            key={beat}
+            key={bar.barNumber}
             style={{
               position: "absolute",
               left: x,
@@ -584,7 +626,7 @@ function TimeRuler({ totalDuration, width }: RulerProps) {
               borderLeft: "1px solid #666"
             }}
           >
-            <span style={{ fontSize: 10 }}>{beat + 1}</span>
+            <span style={{ fontSize: 10 }}>{bar.barNumber}</span>
           </div>
         );
       })}
