@@ -52,6 +52,28 @@ The high-level `project.startRecording(countIn)` is a convenience wrapper. Under
 4. Calls `startRecording()` on each capture (begins data capture)
 5. Starts the engine (with count-in if requested)
 
+### Recording on Tracks with Existing Content
+
+OpenDAW's recording is non-destructive at the box graph level. When `startRecording()` runs on an armed Tape that already has audio regions, `RecordTrack.findOrCreate()` handles track selection:
+
+1. Searches the audio unit's tracks for one with **no regions** (`trackBox.regions.pointerHub.isEmpty()`)
+2. If an empty track is found, reuses it
+3. If no empty track exists, **creates a new track** within the same audio unit
+
+This means existing audio regions are never trimmed, split, or deleted by the recording system. The new recording always goes onto a separate, empty track within the audio unit.
+
+```
+audioUnitBox (Tape)
+  +-- trackBox 0 -- existing audio regions (untouched)
+  +-- trackBox 1 -- new recording region ("Take 1")
+```
+
+This applies to both loop and non-loop recording. For loop recording with `allowTakes`, each loop iteration may create additional tracks via the same `findOrCreate()` mechanism.
+
+**Implication for DAW integrations:** A single Tape audio unit can serve as both the playback source (existing clips) and the recording target (new takes) simultaneously. There is no need to create a separate temporary Tape instrument to isolate recording from existing content -- `RecordTrack.findOrCreate()` guarantees isolation at the track level within the audio unit.
+
+**Note:** This behavior is based on the `RecordTrack.findOrCreate()` implementation in the SDK source (`RecordTrack.ts`). It is not currently exposed as a configurable option.
+
 ### Stopping Recording
 
 **CRITICAL: Use `engine.stopRecording()` to stop recording, NOT `engine.stop(true)`.**
@@ -301,7 +323,8 @@ project.editing.modify(() => {
 
 ### How Takes Work Internally
 
-1. `RecordAudio.start()` creates the first take region (labeled "Take 1")
+1. `RecordAudio.start()` creates the first take region (labeled "Take 1") on an empty track
+   (see "Recording on Tracks with Existing Content" above for how the track is selected)
 2. When the engine position wraps past the loop end, a new take is created:
    - `RecordTrack.findOrCreate()` finds an empty track or creates a new one
    - A new `AudioRegionBox` is created (labeled "Take 2", "Take 3", etc.)
