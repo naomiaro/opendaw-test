@@ -79,7 +79,7 @@ Effects use a 3-layer chain: Box (raw storage) → Adapter (UI mapping) → Proc
 - Delay has its own 21-entry `Fractions` array (Off→1/1) — different from Tidal's 17-entry `RateFractions` (1/1→1/128)
 - Crusher processor inverts crush: `setCrush(1.0 - value)` — higher box value = MORE crushing
 - DattorroReverb `preDelay` is in milliseconds (0-1000), standard Reverb is in seconds (0.001-0.5)
-- DattorroReverb `dry` uses `DefaultDecibel` mapping (-60 to 6 dB), not -60 to 0
+- DattorroReverb `dry` uses `DefaultDecibel` mapping (-72 to 0 dB), not -60 to 0
 - StereoTool `stereo` (width) is bipolar (-1..1), not unipolar — 0 = normal, not center of 0-2 range
 - `DefaultDecibel` mapping: `decibel(-72, -12, 0)` — unitValue 0.0 = -inf, 0.5 = -12 dB, 1.0 = 0 dB
 - AudioUnit `VolumeMapper`: `decibel(-96, -9, +6)` — different range, unitValue 0.0 = -inf, 1.0 = +6 dB

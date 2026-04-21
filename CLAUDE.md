@@ -151,6 +151,17 @@ Use raw `sampleLoader.subscribe()` only when you need state change callbacks wit
 - `SampleMetaData` → `@opendaw/studio-adapters`
 - `AudioData` → `@opendaw/lib-dsp`
 
+### Prefer catchupAndSubscribe Over subscribe
+`subscribe()` fires only for FUTURE changes — misses current state. Use `catchupAndSubscribe()`
+for engine state (isPlaying, isRecording, BPM) and box field observations. Only use `subscribe()`
+when initial state is already known (e.g., mute sync after take creation).
+Exception: `SampleLoader` only has `subscribe()` — check `state.type` before subscribing.
+
+### DefaultDecibel Value Mapping
+`ValueMapping.DefaultDecibel` = `decibel(-72.0, -12.0, 0.0)` — range -72 to 0 dB,
+midpoint -12 dB. Used by Reverb wet/dry, Dattorro wet/dry, and other effect dB fields.
+AudioUnit volume uses a different mapping: `decibel(-96, -9, +6)`.
+
 ### Always Use editing.modify() for State Changes
 ```typescript
 project.editing.modify(() => {
