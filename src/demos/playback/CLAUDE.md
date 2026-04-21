@@ -65,6 +65,29 @@ project.editing.modify(() => {
 Fading values (in, out, slopes) can be set in the same `editing.modify()` as
 region property changes (position, duration, loopOffset). No separate transaction needed.
 
+### FadingAdapter Convenience Methods
+Beyond field access, `adapter.fading` provides:
+- `.hasFading` — `true` if any fade value is non-zero (quick check before rendering)
+- `.copyTo(targetAdapter)` — copy all fade settings (in, out, slopes) to another region's fading
+- `.reset()` — clear all fades to zero (in, out, inSlope, outSlope)
+- `.in` / `.out` — current fade values (read-only shorthand)
+- `.inSlope` / `.outSlope` — current slope values (read-only shorthand)
+
+### Region Adapter Full API (AudioRegionBoxAdapter)
+Beyond `.box`, `.fading`, `.file`:
+- `.playMode` — audio play mode
+- `.offset` — content offset
+- `.loopOffset` / `.loopDuration` — loop boundaries
+- `.fadeIn` / `.fadeOut` — fade values (PPQN)
+- `.moveContentStart(delta)` — shift content start position
+- `.resolveLoopDuration(ppqn)` — compute duration at position
+- `.valueAt(ppqn)` — read value at position
+- `.copyTo({ target })` — copy region to another track (`target` is the pointer field)
+- `.consolidate()` — bake loop into single region
+- `.mute` / `.label` / `.hue` — region metadata
+- `.isSelected` — selection state
+- `.canResize` / `.canMirror` — capability flags
+
 ### waveformOffset vs loopOffset
 - `loopOffset` (PPQN) — controls which audio content maps to which timeline position. Affects audio read position indirectly through the `LoopableRegion.locateLoops()` formula: `offset = position - loopOffset` changes `rawStart`, which changes `elapsedSeconds`, which changes which samples are read. Used by `RegionEditing.cut()`, `clip-fades-demo`, and `comp-lanes-demo` to position audio within regions.
 - `waveformOffset` (seconds, field 7 on AudioRegionBox) — a direct seconds offset added to the audio read position: `sampleIndex = (elapsedSeconds + waveformOffset) * sampleRate`. Used to skip count-in audio during recording finalization.

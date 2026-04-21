@@ -148,6 +148,107 @@ API: `.isEmpty()`, `.nonEmpty()`, `.unwrap()`, `.unwrapOrNull()`, `.unwrapOrUnde
 Combined with CanvasPainter (repaints every frame), peaks render automatically when ready.
 Use raw `sampleLoader.subscribe()` only when you need state change callbacks without a painter.
 
+### RootBoxAdapter: Project Entry Point
+`project.rootBoxAdapter` is the top-level adapter — use it to traverse the project:
+- `.audioUnits` — `IndexedBoxAdapterCollection<AudioUnitBoxAdapter>` (all channels)
+- `.audioBusses` — `BoxAdapterCollection<AudioBusBoxAdapter>` (aux/group buses)
+- `.clips` — clip pool
+- `.groove` — `GrooveBoxAdapter` (groove/shuffle quantization)
+- `.timeline` — `TimelineBoxAdapter` (signature, tempo, markers)
+- `.pianoMode` — piano mode state
+- `.midiOutputDevices` — external MIDI output devices
+- `.labeledAudioOutputs()` — named audio outputs
+
+### AudioUnitBoxAdapter Full API
+Beyond `.volume`, `.panning`, `.mute`, `.solo`, `.tracks`:
+- `.input` — audio input routing
+- `.output` — pointer to routing target (master, bus, etc.)
+- `.midiEffects` — `IndexedBoxAdapterCollection` of MIDI effect adapters
+- `.audioEffects` — `IndexedBoxAdapterCollection` of audio effect adapters
+- `.auxSends` — `BoxAdapterCollection<AuxSendBoxAdapter>` (sends to buses)
+- `.isBus`, `.isInstrument`, `.isOutput` — type checks
+- `.label` — display name
+- `.move(delta)` — reorder in mixer
+- `.moveTrack(track, delta)` — reorder track lanes
+- `.deleteTrack(track)` — remove a track
+- `.labeledAudioOutputs()` — named outputs for this unit
+
+### TrackBoxAdapter Full API
+Beyond `.regions`:
+- `.audioUnit` — parent `AudioUnitBoxAdapter`
+- `.target` — automation target (parameter field pointer)
+- `.clips` — `TrackClips` collection
+- `.enabled` — track enabled state
+- `.type` — `TrackType` (audio, note, value)
+- `.listIndex` — position in track list
+- `.accepts(region)` — check if track accepts a region type
+- `.valueAt(ppqn)` — read automation value at position
+- `.catchupAndSubscribePath()` — subscribe to automation path changes
+
+### Adapter Collection APIs
+Two collection types for typed child access:
+```typescript
+// BoxAdapterCollection<T> — unordered
+collection.adapters()       // T[] snapshot
+collection.size()
+collection.isEmpty()
+collection.catchupAndSubscribe({ onAdd, onRemove })
+collection.subscribe({ onAdd, onRemove })
+
+// IndexedBoxAdapterCollection<T> — ordered, supports reorder
+collection.adapters()       // T[] sorted by index
+collection.getAdapterByIndex(0)
+collection.move(adapter, delta)
+collection.catchupAndSubscribe({ onAdd, onRemove, onReorder })
+```
+Both return `Terminable` from subscribe methods — always clean up.
+
+### Region Visitor Pattern (Type-Safe Discrimination)
+Prefer visitor over casting for region type handling:
+```typescript
+region.accept({
+  visitAudioRegionBoxAdapter: (adapter) => { /* AudioRegionBoxAdapter */ },
+  visitNoteRegionBoxAdapter: (adapter) => { /* NoteRegionBoxAdapter */ },
+  visitValueRegionBoxAdapter: (adapter) => { /* ValueRegionBoxAdapter */ },
+});
+```
+Also available: `UnionAdapterTypes.isRegion(adapter)`, `.isLoopableRegion(adapter)`.
+
+### Device Type Discriminators
+Type-safe checks for device adapters (import from `@opendaw/studio-adapters`):
+- `Devices.isAudioEffect(adapter)` — narrows to `AudioEffectDeviceAdapter`
+- `Devices.isMidiEffect(adapter)` — narrows to `MidiEffectDeviceAdapter`
+- `Devices.isInstrument(adapter)` — narrows to `InstrumentDeviceBoxAdapter`
+- `Devices.isHost(adapter)` — narrows to `DeviceHost`
+Use these instead of `instanceof` checks for union device types.
+
+### VaryingTempoMap Methods
+`project.tempoMap` (or via `BoxAdaptersContext`) for tempo-aware time conversion:
+- `getTempoAt(ppqn)` — BPM at position
+- `ppqnToSeconds(ppqn)` — absolute PPQN → seconds
+- `secondsToPPQN(seconds)` — seconds → absolute PPQN
+- `intervalToSeconds(from, to)` — PPQN range → duration in seconds
+- `intervalToPPQN(from, to)` — seconds range → PPQN duration
+- `subscribe()` — react to tempo automation changes
+Essential for tempo-aware waveform rendering and position display.
+
+### FadingAdapter API
+`AudioRegionBoxAdapter.fading` provides the full fade envelope:
+- `.in` / `.out` — current fade values (PPQN)
+- `.inSlope` / `.outSlope` — curve shape (0.25=log, 0.5=linear, 0.75=exp)
+- `.inField` / `.outField` / `.inSlopeField` / `.outSlopeField` — settable fields
+- `.hasFading` — boolean, true if any fade is non-zero
+- `.copyTo(targetAdapter)` — copy fade settings to another region
+- `.reset()` — clear all fades to zero
+
+### MarkerTrackAdapter (Cue Points)
+`project.timelineBoxAdapter.markerTrack` manages cue point markers:
+- `.enabled` — marker track visibility
+- `.events` — `EventCollection` of `MarkerBoxAdapter`
+Each `MarkerBoxAdapter` has `.position` (PPQN) and `.label` (string).
+Subscribe via `.subscribe()` for marker changes. Use for navigation points,
+arrangement sections, or loop boundaries.
+
 ### Import Locations
 - `AnimationFrame` → `@opendaw/lib-dom` (NOT `@opendaw/lib-fusion`)
 - `PeaksPainter` → `@opendaw/lib-fusion`
