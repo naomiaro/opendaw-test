@@ -292,7 +292,7 @@ Output generated
 | ratio | float32 | 1.0 to 24.0 | 2.0 | ratio | yes | Compression ratio (1:1 to infinity:1) |
 | knee | float32 | 0.0 to 24.0 | 0.0 | dB | yes | Soft knee width |
 | attack | float32 | 0.0 to 100.0 | 0.0 | ms | yes | Time to reach compression |
-| release | float32 | 5.0 to 1500.0 | 5.0 | ms | yes | Time to release compression |
+| release | float32 | 5.0 to 1500.0 | 25.0 | ms | yes | Time to release compression |
 | makeup | float32 | -40.0 to 40.0 | 0.0 | dB | yes | Makeup gain to compensate for reduction |
 | mix | float32 | 0.0 to 1.0 | 1.0 | % | yes | Dry/Wet mix percentage |
 | side-chain | pointer | - | (none) | - | - | External side-chain input (Pointers.SideChain) |
@@ -438,8 +438,8 @@ The LFO is a triangle wave that modulates the delay line read position, creating
 | preDelay | float32 | 0.001 to 0.5 | 0.0 | s | yes | Time before first reflection |
 | damp | float32 | 0.0 to 1.0 | 0.5 | % | yes | Damping of high frequencies |
 | filter | float32 | -1.0 to 1.0 | 0.0 | % | yes | Additional filtering |
-| dry | float32 | -60.0 to 6.0 | 0.0 | dB | yes | Dry signal level |
-| wet | float32 | -60.0 to 6.0 | -3.0 | dB | yes | Wet signal level |
+| dry | float32 | -72.0 to 0.0 | 0.0 | dB | yes | Dry signal level (DefaultDecibel mapping) |
+| wet | float32 | -72.0 to 0.0 | -3.0 | dB | yes | Wet signal level (DefaultDecibel mapping) |
 
 **Source Code:**
 - Box: `/openDAW/packages/studio/forge-boxes/src/schema/devices/audio-effects/ReverbDeviceBox.ts`
@@ -644,8 +644,8 @@ The LFO is a triangle wave that modulates the delay line read position, creating
 | damping | float32 | 0.0 to 1.0 | 0.005 | % | yes | High frequency damping (inverted internally: dp = 1.0 - damping) |
 | excursionRate | float32 | 0.0 to 1.0 | 0.5 | % | yes | Modulation LFO rate (scaled ×2 internally) |
 | excursionDepth | float32 | 0.0 to 1.0 | 0.7 | % | yes | Modulation depth (scaled ×2 internally) |
-| wet | float32 | -60.0 to 0.0 | -6.0 | dB | yes | Wet signal level (additionally scaled ×0.6 in DSP) |
-| dry | float32 | -60.0 to 6.0 | 0.0 | dB | yes | Dry signal level |
+| wet | float32 | -72.0 to 0.0 | -6.0 | dB | yes | Wet signal level (DefaultDecibel mapping, additionally scaled ×0.6 in DSP) |
+| dry | float32 | -72.0 to 0.0 | 0.0 | dB | yes | Dry signal level (DefaultDecibel mapping) |
 
 ---
 
@@ -659,10 +659,10 @@ The LFO is a triangle wave that modulates the delay line read position, creating
 
 | Parameter | Type | Range | Default | Unit | Automatable | Description |
 |-----------|------|-------|---------|------|-------------|-------------|
-| slope | float32 | -1.0 to 1.0 | 0.0 | bipolar | yes | Waveform slope (-1=ramp down, 0=triangle/sine, 1=square) |
+| slope | float32 | -1.0 to 1.0 | -0.25 | bipolar | yes | Waveform slope (-1=ramp down, 0=triangle/sine, 1=square) |
 | symmetry | float32 | 0.0 to 1.0 | 0.5 | % | yes | Waveform symmetry (0.5=symmetric) |
 | rate | int32 | 0 to 16 | 3 | index | yes | Rate fraction index into RateFractions array (see table below) |
-| depth | float32 | 0.0 to 1.0 | 0.5 | % | yes | Modulation depth |
+| depth | float32 | 0.0 to 1.0 | 1.0 | % | yes | Modulation depth |
 | offset | float32 | -180.0 to 180.0 | 0.0 | degrees | yes | Phase offset |
 | channelOffset | float32 | -180.0 to 180.0 | 0.0 | degrees | yes | Stereo phase offset for auto-pan |
 
