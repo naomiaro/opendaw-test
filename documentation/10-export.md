@@ -981,7 +981,7 @@ const allowOverlap = (region: AnyRegionBoxAdapter) =>
 For audio that doesn't need tempo sync (drums, sound effects, ambience), use `TimeBase.Seconds`:
 
 ```typescript
-import { TimeBase } from "@opendaw/studio-core";
+import { TimeBase } from "@opendaw/lib-dsp";
 import { ValueEventCollectionBox } from "@opendaw/studio-boxes";
 
 // Create events collection (required in 0.0.87+)
@@ -1076,8 +1076,8 @@ This is **not a bug** - it's intentional data integrity checking to prevent temp
 
 - **Export Utility:** `src/lib/audioExport.ts`
 - **React Hook:** `src/hooks/useAudioExport.ts`
-- **Drum Demo Integration:** `src/drum-scheduling-demo.tsx`
-- **Effects Demo Integration:** `src/effects-demo.tsx`
+- **Drum Demo Integration:** `src/demos/playback/drum-scheduling-demo.tsx`
+- **Effects Demo Integration:** `src/demos/effects/effects-demo.tsx`
 
 ### OpenDAW Core Files
 
@@ -1091,31 +1091,6 @@ This is **not a bug** - it's intentional data integrity checking to prevent temp
 - [Effects Documentation](./11-effects.md)
 - [Timing & Tempo](./02-timing-and-tempo.md)
 - [Box System & Reactivity](./04-box-system-and-reactivity.md)
-
----
-
-## Summary
-
-OpenDAW's export system provides:
-
-✅ **Full Mix Export** - Complete stereo mixdown
-✅ **Stems Export** - Individual track files
-✅ **Effects Rendering** - All effects fully processed
-✅ **High Quality** - 48kHz, 32-bit float WAV
-✅ **Progress Tracking** - Real-time status updates
-✅ **Easy Integration** - Simple API for demos
-✅ **React Hook** - Convenient `useAudioExport` hook for React apps
-
-Perfect for:
-- Final masters
-- Collaboration
-- Effect testing
-- Archival
-- Sample creation
-
-**Ready to export!** Check out the demos at:
-- `http://localhost:5174/drum-scheduling-demo.html`
-- `http://localhost:5174/effects-demo.html`
 
 ---
 
@@ -1408,7 +1383,7 @@ const durationSeconds = project.tempoMap.intervalToSeconds(startPpqn, endPpqn);
 const numSamples = Math.ceil(durationSeconds * sampleRate);
 ```
 
-For projects with time signature changes, compute bar positions by accumulating `PPQN.fromSignature(nom, denom)` per bar (see `src/time-signature-demo.tsx` for reference).
+For projects with time signature changes, use `computeBarsFromSDK()` from `src/lib/barLayout.ts` to read bar positions from the SDK's signature track.
 
 ### Encoding and Download
 
@@ -1527,7 +1502,7 @@ This is a meaningful chunk of work (~200 lines + worker bundling) and probably w
 
 ### Reference
 
-- Export demo: `src/export-demo.tsx`
+- Export demo: `src/demos/export/export-demo.tsx`
 - Range export utility: `src/lib/rangeExport.ts`
 - OpenDAW source repo paths (not this project):
   - SDK offline renderer: `packages/studio/core/src/OfflineEngineRenderer.ts`
