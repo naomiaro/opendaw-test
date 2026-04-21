@@ -193,7 +193,7 @@ const App: React.FC = () => {
     if (!project || session.state !== "ready") return;
 
     const allRegions = project.rootBoxAdapter.audioUnits.adapters()
-      .flatMap(unit => unit.tracks.adapters())
+      .flatMap(unit => unit.tracks.values())
       .flatMap(track => track.regions.adapters);
     for (const region of allRegions) {
       if (region.label === "Recording" || region.label.startsWith("Take ")) {
@@ -378,7 +378,7 @@ const App: React.FC = () => {
       // Delete any previous recording regions before starting a new one
       project.editing.modify(() => {
         const allRegions = project.rootBoxAdapter.audioUnits.adapters()
-          .flatMap(unit => unit.tracks.adapters())
+          .flatMap(unit => unit.tracks.values())
           .flatMap(track => track.regions.adapters);
         for (const region of allRegions) {
           if (region.label === "Recording" || region.label.startsWith("Take ")) {

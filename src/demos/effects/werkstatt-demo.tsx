@@ -302,7 +302,7 @@ const App: React.FC = () => {
 
       // Find the audio region via the adapter layer
       const firstUnit = newProject.rootBoxAdapter.audioUnits.adapters()[0];
-      const firstTrack = firstUnit?.tracks.adapters()[0];
+      const firstTrack = firstUnit?.tracks.values()[0];
       const regionAdapter = firstTrack?.regions.adapters.values().find(r => r.isAudioRegion());
 
       if (!regionAdapter) {

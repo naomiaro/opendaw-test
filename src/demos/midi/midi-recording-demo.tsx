@@ -231,7 +231,7 @@ const StepRecordingSection: React.FC<{
     let regionOffset = 0;
 
     for (const unit of audioUnitAdapters) {
-      for (const track of unit.tracks.adapters()) {
+      for (const track of unit.tracks.values()) {
         for (const region of track.regions.adapters) {
           if (region.label === "Step Recording" && !region.isAudioRegion()) {
             const noteBox = region.box as NoteRegionBox;
@@ -252,7 +252,7 @@ const StepRecordingSection: React.FC<{
     if (!eventsCollection) {
       const firstUnit = audioUnitAdapters[0];
       if (!firstUnit) return;
-      const firstTrack = firstUnit.tracks.adapters()[0];
+      const firstTrack = firstUnit.tracks.values()[0];
       if (!firstTrack) return;
       const trackBox = firstTrack.box;
 
@@ -268,7 +268,7 @@ const StepRecordingSection: React.FC<{
 
       // Re-find the created region via the adapter layer
       for (const unit of project.rootBoxAdapter.audioUnits.adapters()) {
-        for (const track of unit.tracks.adapters()) {
+        for (const track of unit.tracks.values()) {
           for (const region of track.regions.adapters) {
             if (region.label === "Step Recording" && !region.isAudioRegion()) {
               const noteBox = region.box as NoteRegionBox;

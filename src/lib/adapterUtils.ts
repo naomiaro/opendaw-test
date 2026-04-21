@@ -6,7 +6,7 @@ import type { AudioRegionBoxAdapter, ValueRegionBoxAdapter, AnyRegionBoxAdapter 
  */
 export function getAllRegions(project: Project): AnyRegionBoxAdapter[] {
   return project.rootBoxAdapter.audioUnits.adapters()
-    .flatMap(unit => unit.tracks.adapters())
+    .flatMap(unit => unit.tracks.values())
     .flatMap(track => track.regions.adapters.values() as AnyRegionBoxAdapter[]);
 }
 

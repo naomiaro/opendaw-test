@@ -570,7 +570,7 @@ const App: React.FC = () => {
     if (!project) return;
     project.editing.modify(() => {
       const allRegions = project.rootBoxAdapter.audioUnits.adapters()
-        .flatMap(unit => unit.tracks.adapters())
+        .flatMap(unit => unit.tracks.values())
         .flatMap(track => track.regions.adapters);
       for (const region of allRegions) {
         if (region.label.startsWith("Take ")) {
