@@ -403,50 +403,45 @@ const App: React.FC = () => {
           return;
         }
 
-        const boxes = newProject.boxGraph.boxes();
-        let foundRegion: AudioRegionBox | null = null;
-        for (const box of boxes) {
-          if (box instanceof AudioRegionBox) {
-            foundRegion = box;
-            break;
-          }
-        }
+        // Find the audio region via the adapter layer
+        const audioUnits = newProject.rootBoxAdapter.audioUnits.adapters();
+        const firstTrackAdapter = audioUnits[0]?.tracks.adapters()[0];
+        const regionAdapters = firstTrackAdapter?.regions.adapters ?? [];
+        const audioRegionAdapter = regionAdapters.find((r: any) => r.isAudioRegion?.());
 
-        if (!foundRegion) {
+        if (!audioRegionAdapter) {
           setStatus("Failed to load audio. No audio region was created.");
           return;
         }
 
+        const foundRegion = audioRegionAdapter.box as AudioRegionBox;
         const audioPpqn = foundRegion.duration.getValue();
         setFullAudioPpqn(audioPpqn);
         setRegionBox(foundRegion);
 
-        // Subscribe for peaks (peaks worker runs async ~120ms after queryLoadingComplete)
-        const track = tracks[0];
-        if (track) {
-          const sampleLoader = newProject.sampleManager.getOrCreate(track.uuid);
-          sampleSub = sampleLoader.subscribe((state: any) => {
-            if (state.type === "loaded") {
-              const peaksOpt = sampleLoader.peaks;
-              if (!peaksOpt.isEmpty() && mounted) {
-                setPeaks(peaksOpt.unwrap());
-              }
-              sampleSub?.terminate();
-              sampleSub = null;
-            } else if (state.type === "error" || state.type === "failed") {
-              console.error("Sample loader failed:", state);
-              if (mounted) setStatus("Waveform peaks failed to load.");
-              sampleSub?.terminate();
-              sampleSub = null;
+        // Subscribe for peaks via the adapter's file loader
+        const sampleLoader = audioRegionAdapter.file.getOrCreateLoader();
+        sampleSub = sampleLoader.subscribe((state: any) => {
+          if (state.type === "loaded") {
+            const peaksOpt = sampleLoader.peaks;
+            if (!peaksOpt.isEmpty() && mounted) {
+              setPeaks(peaksOpt.unwrap());
             }
-          });
-          // Also check if already loaded
-          const peaksOpt = sampleLoader.peaks;
-          if (!peaksOpt.isEmpty()) {
-            setPeaks(peaksOpt.unwrap());
+            sampleSub?.terminate();
+            sampleSub = null;
+          } else if (state.type === "error" || state.type === "failed") {
+            console.error("Sample loader failed:", state);
+            if (mounted) setStatus("Waveform peaks failed to load.");
             sampleSub?.terminate();
             sampleSub = null;
           }
+        });
+        // Also check if already loaded
+        const peaksOpt = sampleLoader.peaks;
+        if (!peaksOpt.isEmpty()) {
+          setPeaks(peaksOpt.unwrap());
+          sampleSub?.terminate();
+          sampleSub = null;
         }
 
         const preset = PRESETS[0];

@@ -3,7 +3,22 @@ import { createRoot } from "react-dom/client";
 import { PPQN } from "@opendaw/lib-dsp";
 import { Project, EffectFactories } from "@opendaw/studio-core";
 import { AudioRegionBox, AudioUnitBox, WerkstattDeviceBox } from "@opendaw/studio-boxes";
-import { ScriptCompiler, ScriptDeclaration } from "@opendaw/studio-adapters";
+import { ScriptCompiler, ScriptDeclaration, type WerkstattDeviceBoxAdapter } from "@opendaw/studio-adapters";
+
+/** Read Werkstatt parameter values from the adapter's pointerHub. */
+function readWerkstattParams(werkstattBox: WerkstattDeviceBox): Record<string, number> {
+  const params: Record<string, number> = {};
+  const paramPointers = werkstattBox.parameters.pointerHub.incoming();
+  for (const pointer of paramPointers) {
+    const paramBox = pointer.box as { label?: { getValue(): string }; value?: { getValue(): number } };
+    const label = paramBox.label?.getValue?.();
+    const value = paramBox.value?.getValue?.();
+    if (label != null && value != null) {
+      params[label] = value;
+    }
+  }
+  return params;
+}
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
@@ -112,36 +127,21 @@ const App: React.FC = () => {
     }
 
     // Read parameter values after compilation creates the WerkstattParameterBoxes
-    const params: Record<string, number> = {};
-    const paramPointers = newBox.parameters.pointerHub.incoming();
-    for (const pointer of paramPointers) {
-      const paramBox = pointer.box as any;
-      const label = paramBox.label?.getValue?.();
-      const value = paramBox.value?.getValue?.();
-      if (label != null && value != null) {
-        params[label] = value;
-      }
-    }
-    setEffectParams(params);
+    setEffectParams(readWerkstattParams(newBox));
   }, [project, audioContext]);
 
   const updateEffectParam = useCallback((paramName: string, value: number) => {
     if (!project || !werkstattBoxRef.current) return;
 
-    let found = false;
     const paramPointers = werkstattBoxRef.current.parameters.pointerHub.incoming();
-    for (const pointer of paramPointers) {
-      const paramBox = pointer.box as any;
-      if (paramBox.label?.getValue?.() === paramName) {
-        project.editing.modify(() => {
-          paramBox.value.setValue(value);
-        });
-        found = true;
-        break;
-      }
-    }
+    const paramBox = paramPointers.find(
+      p => (p.box as { label?: { getValue(): string } }).label?.getValue?.() === paramName
+    )?.box as { value?: { setValue(v: number): void } } | undefined;
 
-    if (found) {
+    if (paramBox?.value) {
+      project.editing.modify(() => {
+        paramBox.value!.setValue(value);
+      });
       setEffectParams(prev => ({ ...prev, [paramName]: value }));
     }
   }, [project]);
@@ -261,17 +261,7 @@ const App: React.FC = () => {
     }
 
     // Read params after compilation
-    const params: Record<string, number> = {};
-    const paramPointers = newBox.parameters.pointerHub.incoming();
-    for (const pointer of paramPointers) {
-      const paramBox = pointer.box as any;
-      const label = paramBox.label?.getValue?.();
-      const value = paramBox.value?.getValue?.();
-      if (label != null && value != null) {
-        params[label] = value;
-      }
-    }
-    setEffectParams(params);
+    setEffectParams(readWerkstattParams(newBox));
   }, [project, audioContext]);
 
   // --- Initialization ---
@@ -310,22 +300,17 @@ const App: React.FC = () => {
         return;
       }
 
-      // Find the audio region and audio unit
-      const boxes = newProject.boxGraph.boxes();
-      let foundRegion: AudioRegionBox | null = null;
-      for (const box of boxes) {
-        if (box instanceof AudioRegionBox) {
-          foundRegion = box;
-          break;
-        }
-      }
+      // Find the audio region via the adapter layer
+      const firstUnit = newProject.rootBoxAdapter.audioUnits.adapters()[0];
+      const firstTrack = firstUnit?.tracks.adapters()[0];
+      const regionAdapter = firstTrack?.regions.adapters.find((r: any) => r.isAudioRegion?.());
 
-      if (!foundRegion) {
+      if (!regionAdapter) {
         setStatus("No audio region found.");
         return;
       }
 
-      regionBoxRef.current = foundRegion;
+      regionBoxRef.current = regionAdapter.box as AudioRegionBox;
       audioBoxRef.current = tracks[0].audioUnitBox;
 
       // Apply waveformOffset to skip silence (bar 25)
