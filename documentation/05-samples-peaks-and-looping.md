@@ -10,7 +10,7 @@
 - [Setting Up Sample Manager](#setting-up-sample-manager)
 - [Loading Custom Audio Files](#loading-custom-audio-files)
 - [Understanding Sample Loader States](#understanding-sample-loader-states)
-- [Subscribing to Sample Loader](#subscribing-to-sample-loader)
+- [Accessing Peaks via Adapters (Preferred)](#accessing-peaks-via-adapters-preferred)
 - [What are Peaks?](#what-are-peaks)
 - [Rendering Waveforms with PeaksPainter](#rendering-waveforms-with-peakspainter)
 - [React Canvas Pattern with CanvasPainter](#react-canvas-pattern-with-canvaspainter)
@@ -173,37 +173,54 @@ type SampleLoaderState =
   | { type: "error", reason: string }     // Failed
 ```
 
-## Subscribing to Sample Loader
+## Accessing Peaks via Adapters (Preferred)
 
-To know when peaks are ready:
+The adapter layer provides the simplest way to access peaks — no subscribe, no state management:
 
 ```typescript
-import { UUID } from "@opendaw/lib-std";
+// regionAdapter comes from a catchupAndSubscribe chain (see Chapter 04)
+const regionAdapter: AudioRegionBoxAdapter = /* from subscription */;
 
-// Get the sample loader for a specific UUID
-const fileUUID = /* ... */;
+// Synchronous read — returns Option.None if not ready, Option<Peaks> when loaded
+const peaksOption = regionAdapter.file.peaks;
+if (peaksOption.nonEmpty()) {
+  const peaks = peaksOption.unwrap();
+  // Render waveform with peaks
+}
+```
+
+**Why this works without subscribe:** `regionAdapter.file.peaks` reads the current peaks state each time you call it. When combined with `CanvasPainter` (which repaints every frame via AnimationFrame), you just check peaks inside the render callback — the waveform appears automatically as soon as peaks are ready. No explicit subscribe, no state check, no cleanup.
+
+```typescript
+// Adapter also provides the underlying loader when needed
+const loader = regionAdapter.file.getOrCreateLoader();
+const state = loader.state; // { type: "idle" | "progress" | "loaded" | ... }
+```
+
+### Low-Level: Subscribing to SampleLoader Directly
+
+For cases where you need to react to loading state changes (e.g., showing a progress bar without a CanvasPainter), you can subscribe to the loader directly:
+
+```typescript
 const sampleLoader = project.sampleManager.getOrCreate(fileUUID);
 
 // Check current state first — subscribe() only fires for FUTURE changes
 if (sampleLoader.state.type === "loaded") {
-  // Already loaded (e.g., short recording finished before we subscribed)
   const peaks = sampleLoader.peaks;
   if (!peaks.isEmpty()) {
-    console.log("Peaks ready:", peaks.unwrap());
+    // Already loaded
   }
 }
 
-// Subscribe to future state changes
 const subscription = sampleLoader.subscribe(state => {
   if (state.type === "loaded") {
     const peaksOption = sampleLoader.peaks;
     if (!peaksOption.isEmpty()) {
-      console.log("Peaks ready:", peaksOption.unwrap());
+      // Peaks now available
     }
   }
-
   if (state.type === "error") {
-    console.error("Failed to load sample:", state.reason);
+    console.error("Failed to load:", state.reason);
   }
 });
 
@@ -212,22 +229,6 @@ subscription.terminate();
 ```
 
 **Important:** `SampleLoader` only has `subscribe()` (future changes), NOT `catchupAndSubscribe()`. Always check `sampleLoader.state.type` before subscribing — samples may already be `"loaded"` by the time you subscribe.
-
-### Using the Adapter Layer (Preferred)
-
-Instead of manually resolving loaders via `sampleManager.getOrCreate(uuid)`, prefer the adapter layer:
-
-```typescript
-// Raw approach (manual UUID resolution)
-const fileVertex = regionBox.file.targetVertex;
-const uuid = fileVertex.unwrap().address.uuid;
-const loader = project.sampleManager.getOrCreate(uuid);
-
-// Adapter approach (preferred — resolves loader internally)
-const regionAdapter: AudioRegionBoxAdapter = /* from subscription */;
-const loader = regionAdapter.file.getOrCreateLoader();
-const peaks = regionAdapter.file.peaks; // Option<Peaks>
-```
 
 ### PeaksWriter vs Peaks
 
@@ -332,59 +333,30 @@ PeaksPainter.renderPixelStrips(context, peaks, channel, rect);
 
 ## React Canvas Pattern with CanvasPainter
 
-For efficient React rendering, use the `CanvasPainter` pattern:
+For efficient React rendering, use `CanvasPainter` with the adapter layer. The painter runs every frame via AnimationFrame — just read peaks inside the render callback:
 
 ```typescript
 import { CanvasPainter } from "./lib/CanvasPainter";
 import { useEffect, useRef } from "react";
+import type { AudioRegionBoxAdapter } from "@opendaw/studio-adapters";
 
-function WaveformDisplay({ fileUUID }: { fileUUID: UUID.Bytes }) {
+function WaveformDisplay({ regionAdapter }: { regionAdapter: AudioRegionBoxAdapter }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const painterRef = useRef<CanvasPainter | null>(null);
-  const peaksRef = useRef<Peaks | null>(null);
 
-  // Set up canvas painter
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
+    // CanvasPainter repaints every frame — peaks appear automatically when ready
     const painter = new CanvasPainter(canvas, (_, context) => {
-      const peaks = peaksRef.current;
-      if (!peaks) return;
+      const peaksOption = regionAdapter.file.peaks;
+      if (peaksOption.isEmpty()) return; // Not loaded yet — try next frame
 
-      // Render waveform
-      renderWaveform(context, peaks, canvas);
+      renderWaveform(context, peaksOption.unwrap(), canvas);
     });
-
-    painterRef.current = painter;
 
     return () => painter.terminate();
-  }, []);
-
-  // Subscribe to peaks (check current state first, then future changes)
-  useEffect(() => {
-    const sampleLoader = project.sampleManager.getOrCreate(fileUUID);
-
-    function handleLoaded() {
-      const peaksOption = sampleLoader.peaks;
-      if (!peaksOption.isEmpty()) {
-        peaksRef.current = peaksOption.unwrap();
-        painterRef.current?.requestUpdate();
-      }
-    }
-
-    if (sampleLoader.state.type === "loaded") {
-      handleLoaded();
-    }
-
-    const subscription = sampleLoader.subscribe(state => {
-      if (state.type === "loaded") {
-        handleLoaded();
-      }
-    });
-
-    return () => subscription.terminate();
-  }, [fileUUID]);
+  }, [regionAdapter]);
 
   return (
     <canvas
@@ -395,87 +367,34 @@ function WaveformDisplay({ fileUUID }: { fileUUID: UUID.Bytes }) {
 }
 ```
 
+No `subscribe()`, no state checks, no refs — the painter checks `regionAdapter.file.peaks` each frame and renders as soon as peaks are available.
+```
+
 ## Complete Example: Loading and Rendering
 
+This example loads an audio file, creates a Tape instrument with a region, then renders its waveform using the adapter + CanvasPainter pattern:
+
 ```typescript
-import { useState, useEffect, useRef } from "react";
-import { UUID } from "@opendaw/lib-std";
+import { useEffect, useRef } from "react";
 import { PeaksPainter } from "@opendaw/lib-fusion";
 import { CanvasPainter } from "./lib/CanvasPainter";
+import type { AudioRegionBoxAdapter } from "@opendaw/studio-adapters";
 
-function AudioTrack({ project, audioContext }) {
-  const [peaksReady, setPeaksReady] = useState(false);
+function AudioTrackWaveform({ regionAdapter }: { regionAdapter: AudioRegionBoxAdapter }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const painterRef = useRef<CanvasPainter | null>(null);
-  const peaksRef = useRef<Peaks | null>(null);
 
-  // 1. Load audio file
-  useEffect(() => {
-    let subscription: { terminate(): void } | null = null;
-
-    async function loadAudio() {
-      // Fetch and decode
-      const response = await fetch("/audio/kick.wav");
-      const arrayBuffer = await response.arrayBuffer();
-      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-
-      // Generate UUID and store
-      const fileUUID = UUID.generate();
-      const uuidString = UUID.toString(fileUUID);
-      localAudioBuffers.set(uuidString, audioBuffer);
-
-      // Create AudioFileBox in OpenDAW
-      project.editing.modify(() => {
-        AudioFileBox.create(project.boxGraph, fileUUID, box => {
-          box.fileName.setValue("kick.wav");
-          box.endInSeconds.setValue(audioBuffer.duration);
-        });
-      });
-
-      // Subscribe to sample loader
-      const sampleLoader = project.sampleManager.getOrCreate(fileUUID);
-
-      function handleLoaded() {
-        const peaksOption = sampleLoader.peaks;
-        if (!peaksOption.isEmpty()) {
-          peaksRef.current = peaksOption.unwrap();
-          painterRef.current?.requestUpdate();
-          setPeaksReady(true);
-        }
-      }
-
-      if (sampleLoader.state.type === "loaded") {
-        handleLoaded();
-      }
-
-      subscription = sampleLoader.subscribe(state => {
-        if (state.type === "loaded") {
-          handleLoaded();
-        }
-      });
-    }
-
-    loadAudio();
-
-    return () => subscription?.terminate();
-  }, []);
-
-  // 2. Set up canvas painter
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const painter = new CanvasPainter(canvas, (_, context) => {
-      const peaks = peaksRef.current;
-      if (!peaks) {
-        context.fillStyle = "#000";
-        context.fillRect(0, 0, canvas.width, canvas.height);
-        return;
-      }
-
-      // Render waveform
       context.fillStyle = "#000";
       context.fillRect(0, 0, canvas.width, canvas.height);
+
+      const peaksOption = regionAdapter.file.peaks;
+      if (peaksOption.isEmpty()) return; // Not loaded yet — next frame
+
+      const peaks = peaksOption.unwrap();
       context.fillStyle = "#4a9eff";
 
       PeaksPainter.renderPixelStrips(context, peaks, 0, {
@@ -486,25 +405,35 @@ function AudioTrack({ project, audioContext }) {
         u0: 0,
         u1: peaks.numFrames,
         v0: -1,
-        v1: 1
+        v1: 1,
       });
     });
 
-    painterRef.current = painter;
-
     return () => painter.terminate();
-  }, []);
+  }, [regionAdapter]);
 
-  return (
-    <div>
-      <h3>Kick Drum {peaksReady && "✓"}</h3>
-      <canvas
-        ref={canvasRef}
-        style={{ width: "100%", height: "80px" }}
-      />
-    </div>
-  );
+  return <canvas ref={canvasRef} style={{ width: "100%", height: "80px" }} />;
 }
+```
+
+To get a `regionAdapter`, discover regions via the adapter subscription chain (see [Chapter 04](./04-box-system-and-reactivity.md#adapter-layer-preferred-for-ui)):
+
+```typescript
+const audioUnits = project.rootBoxAdapter.audioUnits.adapters();
+audioUnits[0].tracks.catchupAndSubscribe({
+  onAdd: (trackAdapter) => {
+    trackAdapter.regions.catchupAndSubscribe({
+      onAdded: (regionAdapter) => {
+        if (regionAdapter.isAudioRegion()) {
+          // Pass regionAdapter to your component
+        }
+      },
+      onRemoved: () => {},
+    });
+  },
+  onRemove: () => {},
+  onReorder: () => {},
+});
 ```
 
 ## Performance Tips
