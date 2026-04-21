@@ -21,8 +21,10 @@ This comprehensive guide covers OpenDAW's recording system: audio and MIDI captu
   - [Multi-Track Finalization (Counting Barrier)](#multi-track-finalization-counting-barrier)
 - [Accessing Live Recording Peaks](#accessing-live-recording-peaks)
   - [Production Pattern (Timeline UI)](#production-pattern-timeline-ui)
-  - [Demo Pattern (Standalone Recording)](#demo-pattern-standalone-recording)
+  - [Demo Pattern (Preferred: Adapter Layer)](#demo-pattern-preferred-adapter-layer)
 - [Smooth 60fps Rendering](#smooth-60fps-rendering)
+  - [Single-Region Recording (No Takes)](#single-region-recording-no-takes)
+  - [Loop Recording Takes: Use Duration, Not dataIndex](#loop-recording-takes-use-duration-not-dataindex)
 
 ## Recording Pipeline Overview
 
@@ -142,19 +144,19 @@ Before recording, tracks must be "armed" — this tells the engine which tracks 
 import { CaptureAudio, CaptureDevices } from "@opendaw/studio-core";
 
 // Get capture device for a specific audio unit
-const capture = project.captureDevices.get(audioUnitBox.address.uuid);
-if (capture.isSome()) {
-  const cap = capture.unwrap();
+const captureOpt = project.captureDevices.get(audioUnitBox.address.uuid);
+if (captureOpt.nonEmpty()) {
+  const capture = captureOpt.unwrap();
 
   // Arm exclusively (disarms all other captures)
-  project.captureDevices.setArm(cap, true);
+  project.captureDevices.setArm(capture, true);
 
   // Arm non-exclusively (for multi-track recording)
-  project.captureDevices.setArm(cap, false);
-}
+  project.captureDevices.setArm(capture, false);
 
-// Check armed state
-const isArmed = capture.armed.getValue(); // MutableObservableValue<boolean>
+  // Check armed state
+  const isArmed = capture.armed.getValue();
+}
 
 // List all armed captures
 const armedCaptures = project.captureDevices.filterArmed();
@@ -367,11 +369,13 @@ project.editing.modify(() => {
 
 ### Rendering Take Peaks
 
-Since all takes share one recording buffer, you must use `waveformOffset` and `duration` to render only the correct slice for each take:
+Since all takes share one recording buffer, you must use `waveformOffset` and `duration` to render only the correct slice for each take.
+
+**Note on units:** The recording system sets `timeBase` to `TimeBase.Seconds` on recorded regions, so `duration` and `loopOffset`/`loopDuration` are in **seconds** (not PPQN pulses as in manually-placed clips where `timeBase` is `TimeBase.Musical`).
 
 ```typescript
 const waveformOffsetSec = regionBox.waveformOffset.getValue(); // seconds
-const durationSec = regionBox.duration.getValue();             // seconds
+const durationSec = regionBox.duration.getValue();             // seconds (timeBase is Seconds)
 const sampleRate = audioContext.sampleRate;
 
 const u0 = Math.round(waveformOffsetSec * sampleRate); // start of this take in buffer
@@ -608,65 +612,36 @@ Note: `AudioUnitTracks` uses `onAdd`/`onRemove`/`onReorder`; `TrackRegions` uses
 
 ## Smooth 60fps Rendering
 
-The key to smooth live waveform rendering is using `dataIndex` from PeaksWriter instead of `numFrames`.
+The key to smooth live waveform rendering is using `dataIndex` from PeaksWriter instead of `numFrames`:
+- `peaks.numFrames` jumps in 0.5-second chunks → choppy rendering
+- `peaks.dataIndex[0]` updates every frame → smooth progressive waveform
+
+### Single-Region Recording (No Takes)
+
+When there's one region spanning the entire buffer, use `dataIndex` for `u1`:
 
 ```typescript
 const isPeaksWriter = "dataIndex" in peaks;
+const u0 = Math.round(waveformOffsetSec * sampleRate); // skip count-in frames
 
 if (isPeaksWriter) {
-  // Use dataIndex for smooth progressive rendering at 60fps
-  const unitsToRender = peaks.dataIndex[0] * peaks.unitsEachPeak();
+  const u1 = peaks.dataIndex[0] * peaks.unitsEachPeak();
 } else {
-  // Final peaks — render all frames
-  const unitsToRender = peaks.numFrames;
+  const u1 = peaks.numFrames; // final peaks — render all
 }
 
 PeaksPainter.renderPixelStrips(context, peaks, channel, {
   x0: 0, x1: canvas.clientWidth,
-  y0, y1,
-  u0: waveformOffsetFrames, // skip count-in frames
-  u1: unitsToRender,
-  v0: -1, v1: 1
-});
-```
-
-**Why this works:**
-- `peaks.numFrames` jumps in 0.5-second chunks, causing choppy rendering
-- `peaks.dataIndex[0]` updates every frame, tracking exact peaks written
-- Result: Smooth progressive waveform at 60fps during recording
-
-**Count-in frames**: Use `waveformOffset * sampleRate` as `u0` to skip count-in audio in the visualization.
-
-### Loop Recording Takes: Shared Buffer Gotcha
-
-**All takes in a loop recording share one AudioFileBox and one PeaksWriter.** During recording, `isPeaksWriter` is true for ALL takes (finalized and live), and `dataIndex[0] * unitsEachPeak()` returns the **total accumulated frames across all takes** — not the current take's slice.
-
-Using the dataIndex approach for per-take rendering causes finalized takes to render audio from subsequent takes (waveform "bleeds" forward in the buffer).
-
-**Correct pattern for take waveforms:** Always use `u0 + durationFrames` for `u1`. The SDK updates each take's `regionBox.duration` every frame (via `RecordAudio.ts`), so even the currently-recording take shows smooth 60fps growth:
-
-```typescript
-const waveformOffsetSec = regionBox.waveformOffset.getValue();
-const durationSec = regionBox.duration.getValue();
-const sampleRate = audioContext.sampleRate;
-
-const u0 = Math.round(waveformOffsetSec * sampleRate);
-const u1 = u0 + Math.round(durationSec * sampleRate);
-
-PeaksPainter.renderPixelStrips(context, peaks, channel, {
-  x0: 0, x1: canvas.width,
-  y0, y1,
-  u0, u1,  // render only this take's slice of the shared buffer
+  y0, y1, u0, u1,
   v0: -1, v1: 1,
 });
 ```
 
-**Why NOT use dataIndex for takes:**
-- `dataIndex[0] * unitsEachPeak()` = total frames in the entire recording buffer
-- Take 1's `u0` might be 44100, but `u1` would be 500000+ (all takes combined)
-- This renders take 2, 3, etc. audio into take 1's canvas
+### Loop Recording Takes: Use Duration, Not dataIndex
 
-**When to use dataIndex:** Only for single-region standalone recording (no takes), where there's one region spanning the entire buffer.
+**Do NOT use `dataIndex` for per-take rendering.** All takes share one `AudioFileBox` and one `PeaksWriter`, so `dataIndex[0] * unitsEachPeak()` returns the total accumulated frames across **all** takes — not the current take's slice. This causes finalized takes to "bleed" into subsequent takes' audio.
+
+Instead, use `waveformOffset` + `duration` (see [Rendering Take Peaks](#rendering-take-peaks)). The SDK updates each take's `regionBox.duration` every frame, so even the currently-recording take renders smooth 60fps growth.
 
 ## Summary
 
