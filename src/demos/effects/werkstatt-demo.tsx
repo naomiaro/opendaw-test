@@ -310,7 +310,7 @@ const App: React.FC = () => {
         return;
       }
 
-      regionBoxRef.current = regionAdapter.box as AudioRegionBox;
+      regionBoxRef.current = regionAdapter.box;
       audioBoxRef.current = tracks[0].audioUnitBox;
 
       // Apply waveformOffset to skip silence (bar 25)

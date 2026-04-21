@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import "@radix-ui/themes/styles.css";
 import { Theme, Container, Heading, Text, Flex, Button, Card } from "@radix-ui/themes";
 import { Project, EffectFactories } from "@opendaw/studio-core";
-import { AudioRegionBox, AudioUnitBox, ReverbDeviceBox, TrackBox, ValueRegionBox } from "@opendaw/studio-boxes";
+import { AudioUnitBox, ReverbDeviceBox, TrackBox, ValueRegionBox } from "@opendaw/studio-boxes";
 import { PPQN, Interpolation } from "@opendaw/lib-dsp";
 import type { ppqn } from "@opendaw/lib-dsp";
 import { Curve, UUID } from "@opendaw/lib-std";
@@ -609,11 +609,11 @@ const App: React.FC = () => {
         const guitarRegion = getAllRegions(newProject).find(r =>
           r.isAudioRegion() && r.box.label.getValue() === "Guitar"
         );
-        if (guitarRegion) {
+        if (guitarRegion && guitarRegion.isAudioRegion()) {
           newProject.editing.modify(() => {
-            (guitarRegion.box as AudioRegionBox).position.setValue(PLAYBACK_START);
-            (guitarRegion.box as AudioRegionBox).duration.setValue(TOTAL_PPQN);
-            (guitarRegion.box as AudioRegionBox).loopOffset.setValue(PLAYBACK_START);
+            guitarRegion.position = PLAYBACK_START;
+            guitarRegion.duration = TOTAL_PPQN;
+            guitarRegion.loopOffset = PLAYBACK_START;
           });
         } else {
           console.warn('Could not find AudioRegionBox with label "Guitar" — audio may play from wrong position');

@@ -414,7 +414,7 @@ const App: React.FC = () => {
           return;
         }
 
-        const foundRegion = audioRegionAdapter.box as AudioRegionBox;
+        const foundRegion = audioRegionAdapter.box;
         const audioPpqn = foundRegion.duration.getValue();
         setFullAudioPpqn(audioPpqn);
         setRegionBox(foundRegion);

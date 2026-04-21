@@ -83,7 +83,7 @@ const App: React.FC = () => {
   const guitarAudioBox = tracks.find(t => t.name === "Guitar")?.audioUnitBox || null;
   const drumsAudioBox = tracks.find(t => t.name === "Drums")?.audioUnitBox || null;
   const bassAudioBox = tracks.find(t => t.name === "Bass")?.audioUnitBox || null;
-  const masterAudioBox = project?.rootBoxAdapter.audioUnits.adapters().find(u => u.isOutput)?.box as AudioUnitBox | null ?? null;
+  const masterAudioBox = project?.rootBoxAdapter.audioUnits.adapters().find(u => u.isOutput)?.box ?? null;
 
   // Master volume state
   const [masterVolume, setMasterVolume] = useState(0); // dB
