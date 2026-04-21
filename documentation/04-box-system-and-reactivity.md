@@ -15,6 +15,10 @@
 - [Common Patterns](#common-patterns)
 - [Box Graph Best Practices](#box-graph-best-practices)
 - [Adapter Layer](#adapter-layer)
+  - [Adapter Collections](#adapter-collections)
+  - [Region Visitor Pattern](#region-visitor-pattern)
+  - [Clips vs Regions](#clips-vs-regions)
+  - [Selection System](#selection-system)
 - [Advanced: Reactive Subscriptions & Lifecycle](#advanced-reactive-subscriptions--lifecycle)
   - [Overview: Polling vs Reactive](#overview-polling-vs-reactive)
   - [PointerHub API Reference](#pointerhub-api-reference)
@@ -446,6 +450,173 @@ const regions = tracks[0].regions.adapters;
 ```
 
 See the [Advanced: Reactive Subscriptions & Lifecycle](#advanced-reactive-subscriptions--lifecycle) section below for details on the adapter layer's `catchupAndSubscribe` API.
+
+### Adapter Collections
+
+Adapters organize children into typed collections. There are two collection types:
+
+#### BoxAdapterCollection (Unordered)
+
+Used for collections where ordering doesn't matter (e.g., aux sends, buses):
+
+```typescript
+const buses = project.rootBoxAdapter.audioBusses;
+
+buses.adapters();   // AudioBusBoxAdapter[] — current snapshot
+buses.size();       // number of buses
+buses.isEmpty();    // true if no buses
+
+const sub = buses.catchupAndSubscribe({
+  onAdd: (adapter) => { /* new bus added */ },
+  onRemove: (adapter) => { /* bus removed */ },
+});
+// Returns Terminable — clean up in useEffect
+```
+
+#### IndexedBoxAdapterCollection (Ordered)
+
+Used for collections where order matters (e.g., tracks, effects chains):
+
+```typescript
+const effects = audioUnitAdapter.audioEffects;
+
+effects.adapters();           // DeviceBoxAdapter[] — sorted by index
+effects.getAdapterByIndex(0); // first effect in chain
+effects.move(adapter, 1);     // move effect down one position
+
+const sub = effects.catchupAndSubscribe({
+  onAdd: (adapter) => { /* effect inserted */ },
+  onRemove: (adapter) => { /* effect removed */ },
+  onReorder: (adapter) => { /* effect chain reordered */ },
+});
+```
+
+Both collection types support `catchupAndSubscribe` (fires immediately for existing items + future changes) and `subscribe` (future changes only). Always terminate the returned subscription in cleanup.
+
+### Region Visitor Pattern
+
+When working with regions that could be audio, MIDI, or automation, use the visitor pattern instead of type casting:
+
+```typescript
+regionAdapter.accept({
+  visitAudioRegionBoxAdapter: (audio) => {
+    // Typed as AudioRegionBoxAdapter
+    const peaks = audio.file.peaks;
+  },
+  visitNoteRegionBoxAdapter: (note) => {
+    // Typed as NoteRegionBoxAdapter
+    const events = note.events;
+  },
+  visitValueRegionBoxAdapter: (value) => {
+    // Typed as ValueRegionBoxAdapter
+    const collection = value.optCollection;
+  },
+});
+```
+
+For simple boolean checks, use type guards:
+
+```typescript
+import { UnionAdapterTypes } from "@opendaw/studio-adapters";
+
+if (UnionAdapterTypes.isRegion(adapter)) { /* any region type */ }
+if (UnionAdapterTypes.isLoopableRegion(adapter)) { /* audio or note region */ }
+if (adapter.isAudioRegion()) { /* AudioRegionBoxAdapter */ }
+```
+
+### Clips vs Regions
+
+OpenDAW has two parallel concepts for content on tracks — **Clips** and **Regions**:
+
+| Feature | Regions | Clips |
+|---------|---------|-------|
+| **Positioning** | Explicit `position` on the timeline | Indexed within a track (no timeline position) |
+| **Looping** | `loopOffset`, `loopDuration` for tiling | Simple `duration` only |
+| **Mirroring** | Not supported | Note and Value clips can share one event collection |
+| **Use case** | Audio playback, recording, timeline editing | Reusable MIDI patterns, automation clips |
+| **Collection** | `TrackRegions` (`onAdded`/`onRemoved`) | `TrackClips` (`IndexedBoxAdapterCollection`) |
+
+A single `TrackBoxAdapter` has both `.regions` and `.clips` — they coexist independently.
+
+#### ClipBoxAdapter Types
+
+All clip adapters implement `ClipBoxAdapter<CONTENT>` with:
+- `.duration` — clip length (PPQN)
+- `.mute`, `.label`, `.hue` — metadata
+- `.isMirrowed` — true if sharing an event collection with another clip
+- `.canMirror` — whether this clip type supports mirroring
+- `.optCollection` — `Option<CONTENT>` (the event collection, if any)
+- `.consolidate()` — break a mirror, creating an independent copy
+- `.clone(consolidate)` — duplicate the clip
+- `.subscribeChange(observer)` — react to clip changes
+- `.accept(visitor)` — visitor pattern (same as regions)
+
+**Specialized clip types:**
+
+| Type | Content | Mirroring | Notes |
+|------|---------|-----------|-------|
+| `AudioClipBoxAdapter` | Audio file reference | No (`optCollection` = None) | Has `.file`, `.gain`, `.playMode` |
+| `NoteClipBoxAdapter` | `NoteEventCollectionBoxAdapter` | Yes | Shared MIDI patterns |
+| `ValueClipBoxAdapter` | `ValueEventCollectionBoxAdapter` | Yes | Has `.valueAt(ppqn, fallback)` |
+
+```typescript
+// Visitor pattern for clips
+clip.accept({
+  visitAudioClipBoxAdapter: (audio) => { /* AudioClipBoxAdapter */ },
+  visitNoteClipBoxAdapter: (note) => { /* NoteClipBoxAdapter */ },
+  visitValueClipBoxAdapter: (value) => { /* ValueClipBoxAdapter */ },
+});
+```
+
+### Selection System
+
+OpenDAW provides a document-backed selection system via `VertexSelection`. Selections are persisted in the box graph as `SelectionBox` entries, enabling undo/redo of selection changes.
+
+#### VertexSelection
+
+```typescript
+// Central selection manager
+const selection = new VertexSelection(project.editing, project.boxGraph);
+
+// Point to a user's selection field
+selection.switch(userSelectionField);
+
+// Select/deselect vertices
+selection.select(vertex1, vertex2);
+selection.deselect(vertex1);
+selection.deselectAll();
+
+// Query
+selection.isEmpty();
+selection.count();
+selection.isSelected(vertex);
+selection.selected();         // ReadonlyArray<SelectableVertex>
+selection.distance(inventory); // items NOT selected from inventory
+
+// Subscribe
+const sub = selection.catchupAndSubscribe({
+  onSelected: (vertex) => { /* vertex was selected */ },
+  onDeselected: (vertex) => { /* vertex was deselected */ },
+});
+```
+
+#### FilteredSelection
+
+Create type-safe, filtered views over a selection:
+
+```typescript
+// Create a filtered selection that only sees audio regions
+const regionSelection = selection.createFilteredSelection<AudioRegionBoxAdapter>(
+  isVertexOfBox(box => box instanceof AudioRegionBox),  // filter predicate
+  { fx: adapter => adapter.box, fy: box => adapterFor(box) }  // bidirectional mapping
+);
+
+regionSelection.selected();  // ReadonlyArray<AudioRegionBoxAdapter>
+regionSelection.select(regionAdapter);
+regionSelection.isSelected(regionAdapter);
+```
+
+`FilteredSelection` automatically stays in sync with the underlying `VertexSelection` — selecting/deselecting in either propagates correctly. The `isVertexOfBox(predicate)` utility lifts a box-level predicate to work with `SelectableVertex`.
 
 ## Next Steps
 

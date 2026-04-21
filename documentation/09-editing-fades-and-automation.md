@@ -642,6 +642,26 @@ editing.modify(() => {
 })
 ```
 
+### Region Transfer (Cross-Track/Cross-Project Copy)
+
+For copying regions between tracks or projects, `@opendaw/studio-adapters` provides `TransferRegions`:
+
+```typescript
+import { TransferRegions } from "@opendaw/studio-adapters";
+
+// Copy regions from one track to another
+// TransferRegions handles the underlying box graph operations,
+// including audio file references and event collections
+```
+
+For copying entire mixer channels (with effects, routing, and automation), use `TransferAudioUnits`:
+
+```typescript
+import { TransferAudioUnits } from "@opendaw/studio-adapters";
+
+// Copy audio units between projects or duplicate within a project
+```
+
 ---
 
 ## Demo Implementation
@@ -679,7 +699,7 @@ Each `AudioRegionBox` has a `fading` object with four fields:
 | `fading.inSlope` | float32 | 0.75 | ratio (0-1) | Fade-in curve shape |
 | `fading.outSlope` | float32 | 0.25 | ratio (0-1) | Fade-out curve shape |
 
-Source: `AudioRegionBox.ts` field 18 in `packages/studio/forge-boxes/src/schema/std/timeline/`
+Source: `AudioRegionBox` from `@opendaw/studio-boxes` (field 18)
 
 ### Setting Fades
 
@@ -698,6 +718,33 @@ project.editing.modify(() => {
 ```
 
 Fades can be set in the same `editing.modify()` transaction as region property changes (position, duration, loopOffset). No separate transaction is needed.
+
+### FadingAdapter Convenience Methods
+
+Beyond raw field access, the `FadingAdapter` on `AudioRegionBoxAdapter` provides convenience methods:
+
+```typescript
+const fading = adapter.fading;
+
+// Check if any fades are active (quick guard for rendering)
+if (fading.hasFading) {
+  // Render fade curves on canvas
+}
+
+// Copy all fade settings to another region
+fading.copyTo(targetAdapter.fading);
+
+// Reset all fades to zero (remove fades)
+fading.reset();
+
+// Read-only shorthand for current values
+const fadeInPpqn = fading.in;
+const fadeOutPpqn = fading.out;
+const inCurve = fading.inSlope;
+const outCurve = fading.outSlope;
+```
+
+Use `.hasFading` as a rendering guard — skip fade curve drawing when false. Use `.copyTo()` for "paste fade settings" across regions. Use `.reset()` for "clear all fades" on selected regions.
 
 ### Slope Values and Curve Types
 
@@ -727,16 +774,16 @@ This produces monotonic curves only. S-curves are not possible with a single slo
 
 #### Processing Pipeline
 
-1. **FadingAdapter** (`packages/studio/adapters/src/timeline/region/FadingAdapter.ts`)
+1. **FadingAdapter** (`@opendaw/studio-adapters`)
    - Wraps the `fading` box fields and implements `FadingEnvelope.Config`
    - Provides `inField`, `outField`, `inSlopeField`, `outSlopeField` accessors
 
-2. **FadingEnvelope.fillGainBuffer** (`packages/lib/dsp/src/fading.ts`)
+2. **FadingEnvelope.fillGainBuffer** (`@opendaw/lib-dsp`)
    - Called by `TapeDeviceProcessor` during audio rendering
    - Fills a gain buffer that is multiplied with the audio output
    - Computes position relative to region start: `startPpqn = cycle.resultStart - regionPosition`
 
-3. **TapeDeviceProcessor** (`packages/studio/core-processors/src/devices/instruments/TapeDeviceProcessor.ts`)
+3. **TapeDeviceProcessor** (internal — `@opendaw/studio-core-processors`)
    - Checks `hasFading` flag on the region
    - Calls `fillGainBuffer()` to get per-sample gain values
    - Multiplies audio output by the gain buffer

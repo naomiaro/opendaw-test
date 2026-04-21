@@ -654,12 +654,27 @@ const durationInTicks = endTick - positionTick;
 
 At constant 120 BPM: 4 seconds = 7680 ticks. At constant 60 BPM: 4 seconds = 3840 ticks. At a ramp from 120→60: somewhere in between, determined by integration.
 
+### VaryingTempoMap API Reference
+
+`project.tempoMap` (a `VaryingTempoMap` instance) provides the full tempo-aware conversion API:
+
+| Method | Description |
+|--------|-------------|
+| `getTempoAt(ppqn)` | BPM at a specific timeline position |
+| `ppqnToSeconds(ppqn)` | Convert absolute PPQN position to seconds |
+| `secondsToPPQN(seconds)` | Convert seconds to absolute PPQN position |
+| `intervalToSeconds(from, to)` | Duration of a PPQN range in seconds |
+| `intervalToPPQN(from, to)` | Duration of a seconds range in PPQN |
+| `subscribe(callback)` | React to tempo automation changes |
+
+All conversion methods account for tempo ramps and automation — they integrate across tempo changes rather than using a single BPM value. Use these instead of `PPQN.pulsesToSeconds()`/`PPQN.secondsToPulses()` when your project has tempo automation.
+
 ### Reference (Tempo Automation)
 
 - Tempo demo: [tempo-automation-demo](https://opendaw-test.pages.dev/tempo-automation-demo.html)
 - TimeBase demo: [timebase-demo](https://opendaw-test.pages.dev/timebase-demo.html)
-- VaryingTempoMap: `packages/studio/adapters/src/VaryingTempoMap.ts`
-- ValueEventCollectionBoxAdapter: `packages/studio/adapters/src/timeline/collection/ValueEventCollectionBoxAdapter.ts`
+- `VaryingTempoMap` from `@opendaw/studio-adapters`
+- `ValueEventCollectionBoxAdapter` from `@opendaw/studio-adapters`
 
 ---
 
@@ -868,5 +883,55 @@ See `src/demos/automation/time-signature-demo.tsx` for a complete implementation
 ### Reference (Time Signature Changes)
 
 - Demo: `src/demos/automation/time-signature-demo.tsx`
-- SignatureTrackAdapter: `packages/studio/adapters/src/timeline/SignatureTrackAdapter.ts`
-- PPQN utilities: `packages/lib/dsp/src/ppqn.ts`
+- `SignatureTrackAdapter` from `@opendaw/studio-adapters`
+- `PPQN` from `@opendaw/lib-dsp`
+
+---
+
+## Advanced: Cue Point Markers
+
+> **Skip if:** you don't need arrangement markers or navigation points
+
+### Overview
+
+OpenDAW supports **cue point markers** on the timeline via `MarkerTrackAdapter`. Markers are named positions used for navigation, arrangement sections, or loop boundaries.
+
+### Accessing the Marker Track
+
+```typescript
+const markerTrack = project.timelineBoxAdapter.markerTrack;
+
+// Enable/disable the marker track
+markerTrack.enabled; // boolean
+```
+
+### MarkerBoxAdapter
+
+Each marker has:
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `.position` | PPQN | Timeline position of the marker |
+| `.label` | string | Display name (e.g., "Intro", "Chorus", "Bridge") |
+
+### Subscribing to Marker Changes
+
+```typescript
+const sub = markerTrack.subscribe(listener);
+// Returns Terminable — clean up in useEffect
+
+// Iterate current markers
+const markers = markerTrack.events; // EventCollection of MarkerBoxAdapter
+```
+
+### Use Cases
+
+- **Arrangement sections** — mark Intro, Verse, Chorus, Bridge positions
+- **Navigation** — jump to named positions with `engine.setPosition(marker.position)`
+- **Loop boundaries** — set `loopArea.from`/`.to` from marker positions
+- **Export ranges** — define stem export start/end from marker pairs
+
+### Reference (Markers)
+
+- `MarkerTrackAdapter` from `@opendaw/studio-adapters`
+- `MarkerBoxAdapter` from `@opendaw/studio-adapters`

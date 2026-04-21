@@ -241,6 +241,40 @@ Essential for tempo-aware waveform rendering and position display.
 - `.copyTo(targetAdapter)` — copy fade settings to another region
 - `.reset()` — clear all fades to zero
 
+### BoxAdaptersContext (Dependency Injection)
+All adapters receive a `BoxAdaptersContext` that provides access to shared infrastructure:
+- `boxGraph` — the document's box graph
+- `boxAdapters` — central adapter factory/registry (`BoxAdapters`)
+- `sampleManager` — `SampleLoaderManager` for audio loading
+- `soundfontManager` — `SoundfontLoaderManager` for soundfont loading
+- `rootBoxAdapter` — project root adapter
+- `timelineBoxAdapter` — timeline adapter
+- `parameterFieldAdapters` — `ParameterFieldAdapters` for automation touch recording
+- `tempoMap` — `TempoMap` for tempo-aware conversions
+- `clipSequencing` — clip sequencing logic
+- `isMainThread` / `isAudioContext` — threading context checks
+
+Access adapters via `project.boxAdapters.adapterFor(box, TypeAdapter)` or
+`project.boxAdapters.optAdapter(box)` (returns `Option<BoxAdapter>`).
+Adapters are lazily created and cached by box UUID.
+
+### GrooveBoxAdapter (Swing/Shuffle)
+`project.rootBoxAdapter.groove` wraps a `GrooveShuffleBoxAdapter` for swing quantization:
+```typescript
+const groove = project.rootBoxAdapter.groove; // GrooveBoxAdapter
+
+// GrooveShuffleBoxAdapter provides:
+groove.namedParameter.duration  // musical duration selection (1/8, 1/4, etc.)
+groove.namedParameter.amount    // shuffle amount (0-1, unitValue)
+
+// Timing warp/unwarp for swing
+groove.warp(ppqn)    // apply groove timing
+groove.unwarp(ppqn)  // reverse groove timing
+```
+Static data: `GrooveShuffleBoxAdapter.Durations` (ratio pairs),
+`.DurationPPQNs` (PPQN values), `.DurationStrings` (labels like "1/8", "1/4").
+Uses Möbius-Ease easing for smooth swing transitions between on/off-beat timing.
+
 ### MarkerTrackAdapter (Cue Points)
 `project.timelineBoxAdapter.markerTrack` manages cue point markers:
 - `.enabled` — marker track visibility

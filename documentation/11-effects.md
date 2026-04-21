@@ -193,42 +193,14 @@ Effects are contained within a Device Host, which can be:
 
 Each effect has a `host` pointer field that references its container.
 
-### File Organization
+### Package Organization
 
-```
-openDAW/
-├── packages/studio/forge-boxes/src/schema/devices/audio-effects/
-│   ├── CompressorDeviceBox.ts
-│   ├── DelayDeviceBox.ts
-│   ├── ReverbDeviceBox.ts
-│   ├── DattorroReverbDeviceBox.ts
-│   ├── RevampDeviceBox.ts
-│   ├── CrusherDeviceBox.ts
-│   ├── FoldDeviceBox.ts
-│   ├── StereoToolDeviceBox.ts
-│   ├── TidalDeviceBox.ts
-│   └── MaximizerDeviceBox.ts
-├── packages/studio/core/src/
-│   ├── EffectFactory.ts (interface)
-│   ├── EffectFactories.ts (implementations)
-│   ├── EffectBox.ts (type union)
-│   └── EffectParameterDefaults.ts
-├── packages/studio/adapters/src/devices/audio-effects/
-│   ├── CompressorDeviceBoxAdapter.ts
-│   ├── DelayDeviceBoxAdapter.ts
-│   ├── ReverbDeviceBoxAdapter.ts
-│   └── (other adapters)
-├── packages/studio/core-processors/src/devices/audio-effects/
-│   ├── CompressorDeviceProcessor.ts
-│   ├── DelayDeviceProcessor.ts
-│   ├── ReverbDeviceProcessor.ts
-│   └── (other processors)
-└── packages/app/studio/src/ui/devices/audio-effects/
-    ├── CompressorDeviceEditor.tsx
-    ├── DelayDeviceEditor.tsx
-    ├── ReverbDeviceEditor.tsx
-    └── (other editors)
-```
+| Layer | Package | What it provides |
+|-------|---------|-----------------|
+| **Box (data)** | `@opendaw/studio-boxes` | `CompressorDeviceBox`, `DelayDeviceBox`, etc. — typed fields for parameters |
+| **Factory** | `@opendaw/studio-core` | `EffectFactories`, `EffectBox` (union type) — creation and defaults |
+| **Adapter (UI)** | `@opendaw/studio-adapters` | `CompressorDeviceBoxAdapter`, etc. — reactive bindings, ValueMapping |
+| **Processor (DSP)** | Internal (not directly imported) | Audio processing in the AudioWorklet thread |
 
 ### Flow Diagram
 
@@ -299,10 +271,7 @@ Output generated
 
 **Side-chain:** When connected, the compressor uses the side-chain signal for level detection instead of the input. The main input is still what gets compressed. Connect via `compressorBox.sideChain.refer(otherAudioOutput)`.
 
-**Source Code:**
-- Box: `/openDAW/packages/studio/forge-boxes/src/schema/devices/audio-effects/CompressorDeviceBox.ts`
-- Adapter: `/openDAW/packages/studio/adapters/src/devices/audio-effects/CompressorDeviceBoxAdapter.ts`
-- Editor: `/openDAW/packages/app/studio/src/ui/devices/audio-effects/CompressorDeviceEditor.tsx`
+**Imports:** `CompressorDeviceBox` from `@opendaw/studio-boxes`, `CompressorDeviceBoxAdapter` from `@opendaw/studio-adapters`
 
 **Features:**
 - Visual compression curve display
@@ -367,11 +336,7 @@ The LFO is a triangle wave that modulates the delay line read position, creating
 
 **Important:** This is a different array from Tidal's `RateFractions` (17 entries, largest-to-smallest). The Delay Fractions go smallest-to-largest and include "Off" at index 0. Box default 13 = 3/16 (dotted eighth).
 
-**Source Code:**
-- Box: `/openDAW/packages/studio/forge-boxes/src/schema/devices/audio-effects/DelayDeviceBox.ts`
-- Adapter: `/openDAW/packages/studio/adapters/src/devices/audio-effects/DelayDeviceBoxAdapter.ts`
-- Processor: `/openDAW/packages/studio/core-processors/src/devices/audio-effects/DelayDeviceDsp.ts`
-- Editor: `/openDAW/packages/app/studio/src/ui/devices/audio-effects/DelayDeviceEditor.tsx`
+**Imports:** `DelayDeviceBox` from `@opendaw/studio-boxes`, `DelayDeviceBoxAdapter` from `@opendaw/studio-adapters`
 
 ---
 
@@ -417,10 +382,7 @@ The LFO is a triangle wave that modulates the delay line read position, creating
 
 **Side-Chain:** When connected, uses the external signal for level detection while gating the main input.
 
-**Source Code:**
-- Box: `/openDAW/packages/studio/forge-boxes/src/schema/devices/audio-effects/GateDeviceBox.ts`
-- Adapter: `/openDAW/packages/studio/adapters/src/devices/audio-effects/GateDeviceBoxAdapter.ts`
-- Processor: `/openDAW/packages/studio/core-processors/src/devices/audio-effects/GateDeviceProcessor.ts`
+**Imports:** `GateDeviceBox` from `@opendaw/studio-boxes`, `GateDeviceBoxAdapter` from `@opendaw/studio-adapters`
 
 ---
 
@@ -441,10 +403,7 @@ The LFO is a triangle wave that modulates the delay line read position, creating
 | dry | float32 | -72.0 to 0.0 | 0.0 | dB | yes | Dry signal level (DefaultDecibel mapping) |
 | wet | float32 | -72.0 to 0.0 | -3.0 | dB | yes | Wet signal level (DefaultDecibel mapping) |
 
-**Source Code:**
-- Box: `/openDAW/packages/studio/forge-boxes/src/schema/devices/audio-effects/ReverbDeviceBox.ts`
-- Adapter: `/openDAW/packages/studio/adapters/src/devices/audio-effects/ReverbDeviceBoxAdapter.ts`
-- Editor: `/openDAW/packages/app/studio/src/ui/devices/audio-effects/ReverbDeviceEditor.tsx`
+**Imports:** `ReverbDeviceBox` from `@opendaw/studio-boxes`, `ReverbDeviceBoxAdapter` from `@opendaw/studio-adapters`
 
 ---
 
@@ -499,10 +458,7 @@ The LFO is a triangle wave that modulates the delay line read position, creating
 #### Global
 - ~~**gain** (float32): Output level adjustment (-18 to 18 dB)~~ — removed (deprecated in schema)
 
-**Source Code:**
-- Box: `/openDAW/packages/studio/forge-boxes/src/schema/devices/audio-effects/RevampDeviceBox.ts`
-- Adapter: `/openDAW/packages/studio/adapters/src/devices/audio-effects/RevampDeviceBoxAdapter.ts`
-- Editor: `/openDAW/packages/app/studio/src/ui/devices/audio-effects/RevampDeviceEditor.tsx`
+**Imports:** `RevampDeviceBox` from `@opendaw/studio-boxes`, `RevampDeviceBoxAdapter` from `@opendaw/studio-adapters`
 
 ---
 
@@ -534,10 +490,7 @@ The LFO is a triangle wave that modulates the delay line read position, creating
 | 0.65 | ~200 Hz | Extreme destruction |
 | 1.0 | 20 Hz | Inaudible |
 
-**Source Code:**
-- Box: `/openDAW/packages/studio/forge-boxes/src/schema/devices/audio-effects/CrusherDeviceBox.ts`
-- Adapter: `/openDAW/packages/studio/adapters/src/devices/audio-effects/CrusherDeviceBoxAdapter.ts`
-- Editor: `/openDAW/packages/app/studio/src/ui/devices/audio-effects/CrusherDeviceEditor.tsx`
+**Imports:** `CrusherDeviceBox` from `@opendaw/studio-boxes`, `CrusherDeviceBoxAdapter` from `@opendaw/studio-adapters`
 
 ---
 
@@ -555,10 +508,7 @@ The LFO is a triangle wave that modulates the delay line read position, creating
 | overSampling | int32 | - | 0 | - | **no** | Oversampling factor for quality (not automatable) |
 | volume | float32 | -18.0 to 0.0 | 0.0 | dB | yes | Output volume compensation |
 
-**Source Code:**
-- Box: `/openDAW/packages/studio/forge-boxes/src/schema/devices/audio-effects/FoldDeviceBox.ts`
-- Adapter: `/openDAW/packages/studio/adapters/src/devices/audio-effects/FoldDeviceBoxAdapter.ts`
-- Editor: `/openDAW/packages/app/studio/src/ui/devices/audio-effects/FoldDeviceEditor.tsx`
+**Imports:** `FoldDeviceBox` from `@opendaw/studio-boxes`, `FoldDeviceBoxAdapter` from `@opendaw/studio-adapters`
 
 ---
 
@@ -592,10 +542,7 @@ The LFO is a triangle wave that modulates the delay line read position, creating
 
 **Input-gain vs Output-gain:** Input-gain controls distortion amount (0-40dB boost only, drives signal harder into the waveshaper). Output-gain compensates for volume changes after shaping (-24 to +24dB). Output-gain scales only the wet (shaped) signal in the mix.
 
-**Source Code:**
-- Box: `/openDAW/packages/studio/forge-boxes/src/schema/devices/audio-effects/WaveshaperDeviceBox.ts`
-- Adapter: `/openDAW/packages/studio/adapters/src/devices/audio-effects/WaveshaperDeviceBoxAdapter.ts`
-- Processor: `/openDAW/packages/studio/core-processors/src/devices/audio-effects/WaveshaperDeviceProcessor.ts`
+**Imports:** `WaveshaperDeviceBox` from `@opendaw/studio-boxes`, `WaveshaperDeviceBoxAdapter` from `@opendaw/studio-adapters`
 
 ---
 
@@ -617,10 +564,7 @@ The LFO is a triangle wave that modulates the delay line read position, creating
 | swap | boolean | - | false | - | yes | Swap left and right channels |
 | panningMixing | int32 | - | EqualPower | enum | yes | Panning algorithm (EqualPower mode) |
 
-**Source Code:**
-- Box: `/openDAW/packages/studio/forge-boxes/src/schema/devices/audio-effects/StereoToolDeviceBox.ts`
-- Adapter: `/openDAW/packages/studio/adapters/src/devices/audio-effects/StereoToolDeviceBoxAdapter.ts`
-- Editor: `/openDAW/packages/app/studio/src/ui/devices/audio-effects/StereoToolDeviceEditor.tsx`
+**Imports:** `StereoToolDeviceBox` from `@opendaw/studio-boxes`, `StereoToolDeviceBoxAdapter` from `@opendaw/studio-adapters`
 
 ---
 
@@ -751,6 +695,49 @@ Delay and Reverb use:
 
 #### Side-Chain
 Compressor and Gate support external side-chain inputs via `Pointers.SideChain` pointer fields. The side-chain signal is used for detection only — the main input is what gets processed.
+
+---
+
+## Device Type Discriminators
+
+When working with effects at the adapter level, use type-safe discriminator functions instead of `instanceof` checks:
+
+```typescript
+import { Devices } from "@opendaw/studio-adapters";
+
+// Type-safe narrowing for device adapters
+if (Devices.isAudioEffect(adapter)) {
+  // adapter is AudioEffectDeviceAdapter — has audio effect parameters
+}
+if (Devices.isMidiEffect(adapter)) {
+  // adapter is MidiEffectDeviceAdapter — processes MIDI
+}
+if (Devices.isInstrument(adapter)) {
+  // adapter is InstrumentDeviceBoxAdapter — generates audio from MIDI
+}
+if (Devices.isHost(adapter)) {
+  // adapter is DeviceHost (AudioUnitBoxAdapter or ModularAdapter)
+}
+```
+
+Navigate from a device back to its parent channel:
+
+```typescript
+const host = deviceAdapter.deviceHost();           // DeviceHost
+const unit = deviceAdapter.audioUnitBoxAdapter();   // AudioUnitBoxAdapter
+```
+
+All device adapters share a common interface:
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `.type` | string | Device type identifier |
+| `.labelField` | Field | Editable display name |
+| `.enabledField` | Field | Effect bypass toggle |
+| `.minimizedField` | Field | UI collapsed state |
+| `.host` | pointer | Reference to parent device host |
+| `.manualUrl` | string? | Link to documentation |
+| `.terminate()` | method | Cleanup resources |
 
 ---
 
@@ -2189,17 +2176,10 @@ class Processor {
 5. **Alienator** — multi-stage: chaos feedback, wavefolder, bitcrusher, decimator, ring mod
 6. **Beautifier** — mastering enhancer: warmth, air, punch, width, output gain
 
-#### Source Code
+#### Imports
 
-- Box: `/openDAW/packages/studio/forge-boxes/src/schema/devices/audio-effects/WerkstattDeviceBox.ts`
-- Parameter Box: `/openDAW/packages/studio/forge-boxes/src/schema/devices/audio-effects/WerkstattParameterBox.ts`
-- Sample Box: `/openDAW/packages/studio/forge-boxes/src/schema/devices/audio-effects/WerkstattSampleBox.ts`
-- Adapter: `/openDAW/packages/studio/adapters/src/devices/audio-effects/WerkstattDeviceBoxAdapter.ts`
-- Processor: `/openDAW/packages/studio/core-processors/src/devices/audio-effects/WerkstattDeviceProcessor.ts`
-- Compiler: `/openDAW/packages/studio/adapters/src/ScriptCompiler.ts`
-- Declarations: `/openDAW/packages/studio/adapters/src/ScriptDeclaration.ts`
-- Default Code: `/openDAW/packages/app/studio/src/ui/devices/audio-effects/werkstatt-default.js`
-- Examples: `/openDAW/packages/app/studio/src/ui/devices/audio-effects/examples/`
+- `WerkstattDeviceBox`, `WerkstattParameterBox`, `WerkstattSampleBox` from `@opendaw/studio-boxes`
+- `WerkstattDeviceBoxAdapter`, `ScriptCompiler`, `ScriptDeclaration` from `@opendaw/studio-adapters`
 
 ---
 
@@ -2457,16 +2437,10 @@ class Processor {
 7. **Pitch Range Filter** — only passes notes within a pitch range
 8. **303 Sequencer** — autonomous step sequencer with deterministic pseudo-random patterns
 
-#### Source Code
+#### Imports
 
-- Box: `/openDAW/packages/studio/forge-boxes/src/schema/devices/midi-effects/SpielwerkDeviceBox.ts`
-- Adapter: `/openDAW/packages/studio/adapters/src/devices/midi-effects/SpielwerkDeviceBoxAdapter.ts`
-- Processor: `/openDAW/packages/studio/core-processors/src/devices/midi-effects/SpielwerkDeviceProcessor.ts`
-- Compiler: `/openDAW/packages/studio/adapters/src/ScriptCompiler.ts` (shared with Werkstatt)
-- Declarations: `/openDAW/packages/studio/adapters/src/ScriptDeclaration.ts` (shared)
-- Default Code: `/openDAW/packages/app/studio/src/ui/devices/midi-effects/spielwerk-default.js`
-- Examples: `/openDAW/packages/app/studio/src/ui/devices/midi-effects/examples/`
-- AI Starter Prompt: `/openDAW/packages/app/studio/src/ui/devices/midi-effects/spielwerk-starter-prompt.txt`
+- `SpielwerkDeviceBox` from `@opendaw/studio-boxes`
+- `SpielwerkDeviceBoxAdapter`, `ScriptCompiler`, `ScriptDeclaration` from `@opendaw/studio-adapters` (shared with Werkstatt)
 
 ---
 
@@ -2621,13 +2595,8 @@ The `@opendaw/nam-wasm` package (v1.0.3) provides the WASM-based NAM inference e
 
 This flag does NOT affect processing, box creation, or any runtime behavior.
 
-#### Source Code
+#### Imports
 
-- Box: `/openDAW/packages/studio/forge-boxes/src/schema/devices/audio-effects/NeuralAmpDeviceBox.ts`
-- Model Box: `/openDAW/packages/studio/forge-boxes/src/schema/std/NeuralAmpModelBox.ts`
-- Adapter: `/openDAW/packages/studio/adapters/src/devices/audio-effects/NeuralAmpDeviceBoxAdapter.ts`
-- Processor: `/openDAW/packages/studio/core-processors/src/devices/audio-effects/NeuralAmpDeviceProcessor.ts`
-- Migration: `/openDAW/packages/studio/core/src/project/migration/MigrateNeuralAmpDeviceBox.ts`
-- WASM Package: `@opendaw/nam-wasm` (npm), source at `https://github.com/andremichelle/nam-wasm`
-- Local Loader: `/openDAW/packages/app/studio/src/ui/devices/audio-effects/NeuralAmp/NamLocal.ts`
-- Tone3000 Integration: `/openDAW/packages/app/studio/src/ui/devices/audio-effects/NeuralAmp/NamTone3000.ts`
+- `NeuralAmpDeviceBox`, `NeuralAmpModelBox` from `@opendaw/studio-boxes`
+- `NeuralAmpDeviceBoxAdapter` from `@opendaw/studio-adapters`
+- WASM runtime: `@opendaw/nam-wasm` (npm package)
