@@ -778,7 +778,7 @@ for (const event of signatureTrack.iterateAll()) {
 
 ### Computing Bar Layout
 
-To calculate bar positions and durations for a sequence of signature changes:
+After applying signature events, read the authoritative bar layout from the SDK via `signatureTrack.iterateAll()`. Each `SignatureEvent` provides `accumulatedPpqn` (where the section starts) and `accumulatedBars` (how many bars precede it) — expand each section into individual bars:
 
 ```typescript
 import { PPQN } from "@opendaw/lib-dsp";
@@ -792,39 +792,36 @@ type BarInfo = {
   barNumber: number;
 };
 
-function computeBars(
-  initialSig: [number, number],
-  changes: Array<{ atBar: number; nominator: number; denominator: number }>,
-  totalBars: number
-): BarInfo[] {
+function computeBarsFromSDK(project: Project): BarInfo[] {
+  const signatureTrack = project.timelineBoxAdapter.signatureTrack;
+  const totalPpqn = project.timelineBox.durationInPulses.getValue();
+  const sections = Array.from(signatureTrack.iterateAll());
   const bars: BarInfo[] = [];
-  let [currentNom, currentDenom] = initialSig;
-  let ppqnAccum: ppqn = 0 as ppqn;
   let barNumber = 1;
-  let nextChangeIdx = 0;
 
-  for (let b = 0; b < totalBars; b++) {
-    // Check if a signature change happens at this bar
-    if (nextChangeIdx < changes.length && barNumber === changes[nextChangeIdx].atBar) {
-      currentNom = changes[nextChangeIdx].nominator;
-      currentDenom = changes[nextChangeIdx].denominator;
-      nextChangeIdx++;
+  for (let s = 0; s < sections.length; s++) {
+    const { accumulatedPpqn: sectionStart, nominator, denominator } = sections[s];
+    const sectionEnd = (s + 1 < sections.length)
+      ? sections[s + 1].accumulatedPpqn
+      : totalPpqn;
+    const barDuration = PPQN.fromSignature(nominator, denominator);
+
+    for (let pos = sectionStart; pos < sectionEnd; pos += barDuration) {
+      bars.push({
+        startPpqn: pos as ppqn,
+        durationPpqn: barDuration as ppqn,
+        nominator,
+        denominator,
+        barNumber: barNumber++,
+      });
     }
-
-    const dur = PPQN.fromSignature(currentNom, currentDenom);
-    bars.push({
-      startPpqn: ppqnAccum as ppqn,
-      durationPpqn: dur as ppqn,
-      nominator: currentNom,
-      denominator: currentDenom,
-      barNumber: barNumber++,
-    });
-    ppqnAccum = (ppqnAccum + dur) as ppqn;
   }
 
   return bars;
 }
 ```
+
+This reads from the SDK's actual state rather than re-deriving bar positions from pattern data independently. The `iterateAll()` generator yields one `SignatureEvent` per section (index -1 for the storage signature, then 0+ for change events).
 
 ### Timeline Visualization
 
