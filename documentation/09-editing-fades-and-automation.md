@@ -547,9 +547,18 @@ editing.modify(() => {
 import { RegionEditing, TrackBoxAdapter } from "@opendaw/studio-adapters";
 import { UUID } from "@opendaw/lib-std";
 
+interface RegionInfo {
+  uuid: string;
+  position: number;
+  duration: number;
+  loopOffset: number;
+  loopDuration: number;
+  label: string;
+}
+
 // Build region info per track using the adapter layer
 const updateRegionInfo = (project: Project) => {
-  const regionMap = new Map<string, any[]>();
+  const regionMap = new Map<string, RegionInfo[]>();
 
   tracks.forEach(track => {
     const trackAdapter = project.boxAdapters.adapterFor(track.trackBox, TrackBoxAdapter);
