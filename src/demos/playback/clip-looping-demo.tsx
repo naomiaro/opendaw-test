@@ -421,7 +421,7 @@ const App: React.FC = () => {
 
         // Subscribe for peaks via the adapter's file loader
         const sampleLoader = audioRegionAdapter.file.getOrCreateLoader();
-        sampleSub = sampleLoader.subscribe((state: any) => {
+        sampleSub = sampleLoader.subscribe(state => {
           if (state.type === "loaded") {
             const peaksOpt = sampleLoader.peaks;
             if (!peaksOpt.isEmpty() && mounted) {
