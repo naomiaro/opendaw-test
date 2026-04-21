@@ -544,31 +544,34 @@ editing.modify(() => {
 ### Example 6: Update Region Info for Waveform Rendering
 
 ```typescript
-import { RegionEditing } from "@opendaw/studio-adapters";
+import { RegionEditing, TrackBoxAdapter } from "@opendaw/studio-adapters";
 import { UUID } from "@opendaw/lib-std";
 
-// Create a map of regions for each track to pass to waveform rendering
+interface RegionInfo {
+  uuid: string;
+  position: number;
+  duration: number;
+  loopOffset: number;
+  loopDuration: number;
+  label: string;
+}
+
+// Build region info per track using the adapter layer
 const updateRegionInfo = (project: Project) => {
-  const regionMap = new Map<string, any[]>();
+  const regionMap = new Map<string, RegionInfo[]>();
 
   tracks.forEach(track => {
-    const regionList: any[] = [];
-    const pointers = track.trackBox.regions.pointerHub.incoming();
-
-    pointers.forEach(({box}) => {
-      if (!box) return;
-      const regionBox = box as AudioRegionBox;
-
-      regionList.push({
-        uuid: UUID.toString(regionBox.address.uuid),
-        position: regionBox.position.getValue(),
-        duration: regionBox.duration.getValue(),
-        loopOffset: regionBox.loopOffset.getValue(),
-        loopDuration: regionBox.loopDuration.getValue(),
-        label: regionBox.label.getValue()
-      });
-    });
-
+    const trackAdapter = project.boxAdapters.adapterFor(track.trackBox, TrackBoxAdapter);
+    const regionList = trackAdapter.regions.adapters.values()
+      .filter(r => r.isAudioRegion())
+      .map(r => ({
+        uuid: UUID.toString(r.uuid),
+        position: r.position,
+        duration: r.duration,
+        loopOffset: r.loopOffset,
+        loopDuration: r.loopDuration,
+        label: r.label,
+      }));
     regionMap.set(track.name, regionList);
   });
 

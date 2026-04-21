@@ -9,6 +9,7 @@ import { BackLink } from "@/components/BackLink";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { loadTracksFromFiles } from "@/lib/trackLoading";
 import { getAudioExtension } from "@/lib/audioUtils";
+import { getAllAudioRegions } from "@/lib/adapterUtils";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
@@ -223,20 +224,8 @@ const App: React.FC = () => {
 
         setStatus("Applying fades to clips...");
 
-        // Find the audio region adapters created by loadTracksFromFiles
-        const boxes = newProject.boxGraph.boxes();
-        const regionAdapters: AudioRegionBoxAdapter[] = [];
-
-        for (const box of boxes) {
-          try {
-            const adapter = newProject.boxAdapters.adapterFor(box, AudioRegionBoxAdapter);
-            if (adapter) {
-              regionAdapters.push(adapter);
-            }
-          } catch {
-            // Not an audio region, skip
-          }
-        }
+        // Find the audio region adapters via the adapter layer
+        const regionAdapters: AudioRegionBoxAdapter[] = getAllAudioRegions(newProject);
 
         // Sort to match FADE_TYPES order (by label name)
         const fadeTypeIndex = (label: string) => FADE_TYPES.findIndex(ft => label.startsWith(ft.name));
@@ -343,20 +332,8 @@ const App: React.FC = () => {
         });
       }
 
-      // Get all audio region adapters
-      const boxes = project.boxGraph.boxes();
-      const regionAdapters: AudioRegionBoxAdapter[] = [];
-
-      for (const box of boxes) {
-        try {
-          const adapter = project.boxAdapters.adapterFor(box, AudioRegionBoxAdapter);
-          if (adapter) {
-            regionAdapters.push(adapter);
-          }
-        } catch {
-          // Skip
-        }
-      }
+      // Get all audio region adapters via the adapter layer
+      const regionAdapters: AudioRegionBoxAdapter[] = getAllAudioRegions(project);
 
       // Sort to match FADE_TYPES order (by label name)
       const fadeTypeIndex = (label: string) => FADE_TYPES.findIndex(ft => label.startsWith(ft.name));

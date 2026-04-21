@@ -225,42 +225,36 @@ const StepRecordingSection: React.FC<{
     const position = currentPosition;
     const velocity = stepVelocity / 127;
 
-    // Find the first instrument's track to create notes on
-    const boxes = project.boxGraph.boxes();
+    // Find the "Step Recording" note region via the adapter layer
+    const audioUnitAdapters = project.rootBoxAdapter.audioUnits.adapters();
     let eventsCollection: NoteEventCollectionBox | null = null;
     let regionOffset = 0;
 
-    for (const box of boxes) {
-      if (box.name === "NoteRegionBox") {
-        const regionBox = box as NoteRegionBox;
-        const label = regionBox.label.getValue();
-        if (label === "Step Recording") {
-          const eventsVertex = regionBox.events.targetVertex;
-          if (!eventsVertex.isEmpty()) {
-            eventsCollection = eventsVertex.unwrap().box as NoteEventCollectionBox;
+    for (const unit of audioUnitAdapters) {
+      for (const track of unit.tracks.values()) {
+        for (const region of track.regions.adapters.values()) {
+          if (region.label === "Step Recording" && !region.isAudioRegion()) {
+            const noteBox = region.box as NoteRegionBox;
+            const eventsVertex = noteBox.events.targetVertex;
+            if (!eventsVertex.isEmpty()) {
+              eventsCollection = eventsVertex.unwrap().box as NoteEventCollectionBox;
+            }
+            regionOffset = noteBox.position.getValue();
+            break;
           }
-          regionOffset = regionBox.position.getValue();
-          break;
         }
+        if (eventsCollection) break;
       }
+      if (eventsCollection) break;
     }
 
     // Create a step recording region if none exists
     if (!eventsCollection) {
-      // Find an instrument track
-      const audioUnits = project.rootBox.audioUnits.pointerHub.incoming();
-      if (audioUnits.length === 0) return;
-
-      const audioUnitBox = audioUnits[0].box as AudioUnitBox;
-      const tracks = audioUnitBox.tracks.pointerHub.incoming();
-      let trackBox: TrackBox | null = null;
-
-      for (const t of tracks) {
-        trackBox = t.box as TrackBox;
-        break;
-      }
-
-      if (!trackBox) return;
+      const firstUnit = audioUnitAdapters[0];
+      if (!firstUnit) return;
+      const firstTrack = firstUnit.tracks.values()[0];
+      if (!firstTrack) return;
+      const trackBox = firstTrack.box;
 
       project.editing.modify(() => {
         const collection = NoteEventCollectionBox.create(project.boxGraph, UUID.generate());
@@ -272,19 +266,23 @@ const StepRecordingSection: React.FC<{
         });
       });
 
-      // Re-find the created region
-      for (const box of project.boxGraph.boxes()) {
-        if (box.name === "NoteRegionBox") {
-          const regionBox = box as NoteRegionBox;
-          if (regionBox.label.getValue() === "Step Recording") {
-            const eventsVertex = regionBox.events.targetVertex;
-            if (!eventsVertex.isEmpty()) {
-              eventsCollection = eventsVertex.unwrap().box as NoteEventCollectionBox;
+      // Re-find the created region via the adapter layer
+      for (const unit of project.rootBoxAdapter.audioUnits.adapters()) {
+        for (const track of unit.tracks.values()) {
+          for (const region of track.regions.adapters.values()) {
+            if (region.label === "Step Recording" && !region.isAudioRegion()) {
+              const noteBox = region.box as NoteRegionBox;
+              const eventsVertex = noteBox.events.targetVertex;
+              if (!eventsVertex.isEmpty()) {
+                eventsCollection = eventsVertex.unwrap().box as NoteEventCollectionBox;
+              }
+              regionOffset = noteBox.position.getValue();
+              break;
             }
-            regionOffset = regionBox.position.getValue();
-            break;
           }
+          if (eventsCollection) break;
         }
+        if (eventsCollection) break;
       }
     }
 

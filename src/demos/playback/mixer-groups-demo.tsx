@@ -312,7 +312,7 @@ const App: React.FC = () => {
 
   const bpmRef = useRef<number>(BPM);
 
-  const masterAudioBox = project?.rootBox.outputDevice.pointerHub.incoming().at(0)?.box as AudioUnitBox | null ?? null;
+  const masterAudioBox = project?.rootBoxAdapter.audioUnits.adapters().find(u => u.isOutput)?.box ?? null;
 
   // Initialize OpenDAW
   useEffect(() => {

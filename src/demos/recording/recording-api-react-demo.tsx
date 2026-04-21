@@ -8,9 +8,9 @@ import type { SampleLoader } from "@opendaw/studio-adapters";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import type { Peaks } from "@opendaw/lib-fusion";
 import { PeaksPainter } from "@opendaw/lib-fusion";
-import { AudioRegionBox } from "@opendaw/studio-boxes";
 import { CanvasPainter } from "@/lib/CanvasPainter";
 import { initializeOpenDAW } from "@/lib/projectSetup";
+import { getAllRegions } from "@/lib/adapterUtils";
 import { useEnginePreference, CountInBarsValue, MetronomeBeatSubDivisionValue } from "@/hooks/useEnginePreference";
 import { useRecordingSession } from "@/hooks/useRecordingSession";
 import type { RecordingState } from "@/hooks/useRecordingSession";
@@ -192,20 +192,15 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!project || session.state !== "ready") return;
 
-    const allBoxes = project.boxGraph.boxes();
-    for (const box of allBoxes) {
-      if (box.name === "AudioRegionBox") {
-        const regionBox = box as AudioRegionBox;
-        const label = regionBox.label.getValue();
-        if (label === "Recording" || label.startsWith("Take ")) {
-          const duration = regionBox.duration.getValue();
-          project.editing.modify(() => {
-            project.timelineBox.loopArea.from.setValue(0);
-            project.timelineBox.loopArea.to.setValue(duration);
-            project.timelineBox.loopArea.enabled.setValue(false);
-          });
-          break;
-        }
+    for (const region of getAllRegions(project)) {
+      if (region.label === "Recording" || region.label.startsWith("Take ")) {
+        const duration = region.box.duration.getValue();
+        project.editing.modify(() => {
+          project.timelineBox.loopArea.from.setValue(0);
+          project.timelineBox.loopArea.to.setValue(duration);
+          project.timelineBox.loopArea.enabled.setValue(false);
+        });
+        break;
       }
     }
   }, [project, session.state]);
@@ -379,14 +374,9 @@ const App: React.FC = () => {
 
       // Delete any previous recording regions before starting a new one
       project.editing.modify(() => {
-        const allBoxes = project.boxGraph.boxes();
-        for (const box of allBoxes) {
-          if (box.name === "AudioRegionBox") {
-            const regionBox = box as AudioRegionBox;
-            const label = regionBox.label.getValue();
-            if (label === "Recording" || label.startsWith("Take ")) {
-              regionBox.delete();
-            }
+        for (const region of getAllRegions(project)) {
+          if (region.label === "Recording" || region.label.startsWith("Take ")) {
+            region.box.delete();
           }
         }
       });

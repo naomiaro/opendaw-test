@@ -11,3 +11,4 @@
 - Sitemap `hostname` ignores VitePress `base` config — use `transformItems` to prepend `/docs/`
 - Adding/renaming a chapter: update sidebar in `.vitepress/config.ts` and fix cross-references
 - VitePress 1.x bundles React 18 via `@docsearch/js@3.x` (unused — we use local search). After installing/updating VitePress, regenerate `package-lock.json` with `npm install` or Cloudflare's `npm ci` will fail
+- Never reference openDAW internal source paths (`packages/studio/...`) in documentation chapters — use npm package import references (e.g., `CompressorDeviceBox` from `@opendaw/studio-boxes`)

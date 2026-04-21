@@ -27,6 +27,21 @@ import {
 } from "@radix-ui/themes";
 import { InfoCircledIcon, PlayIcon, PauseIcon, StopIcon } from "@radix-ui/react-icons";
 
+/** Read Werkstatt parameter values from the adapter's pointerHub. */
+function readWerkstattParams(werkstattBox: WerkstattDeviceBox): Record<string, number> {
+  const params: Record<string, number> = {};
+  const paramPointers = werkstattBox.parameters.pointerHub.incoming();
+  for (const pointer of paramPointers) {
+    const paramBox = pointer.box as { label?: { getValue(): string }; value?: { getValue(): number } };
+    const label = paramBox.label?.getValue?.();
+    const value = paramBox.value?.getValue?.();
+    if (label != null && value != null) {
+      params[label] = value;
+    }
+  }
+  return params;
+}
+
 const BPM = 124;
 const BAR = PPQN.fromSignature(4, 4); // 3840
 const CONTENT_START = BAR * 24; // bar 25 — where full drum pattern starts
@@ -112,36 +127,21 @@ const App: React.FC = () => {
     }
 
     // Read parameter values after compilation creates the WerkstattParameterBoxes
-    const params: Record<string, number> = {};
-    const paramPointers = newBox.parameters.pointerHub.incoming();
-    for (const pointer of paramPointers) {
-      const paramBox = pointer.box as any;
-      const label = paramBox.label?.getValue?.();
-      const value = paramBox.value?.getValue?.();
-      if (label != null && value != null) {
-        params[label] = value;
-      }
-    }
-    setEffectParams(params);
+    setEffectParams(readWerkstattParams(newBox));
   }, [project, audioContext]);
 
   const updateEffectParam = useCallback((paramName: string, value: number) => {
     if (!project || !werkstattBoxRef.current) return;
 
-    let found = false;
     const paramPointers = werkstattBoxRef.current.parameters.pointerHub.incoming();
-    for (const pointer of paramPointers) {
-      const paramBox = pointer.box as any;
-      if (paramBox.label?.getValue?.() === paramName) {
-        project.editing.modify(() => {
-          paramBox.value.setValue(value);
-        });
-        found = true;
-        break;
-      }
-    }
+    const paramBox = paramPointers.find(
+      p => (p.box as { label?: { getValue(): string } }).label?.getValue?.() === paramName
+    )?.box as { value?: { setValue(v: number): void } } | undefined;
 
-    if (found) {
+    if (paramBox?.value) {
+      project.editing.modify(() => {
+        paramBox.value!.setValue(value);
+      });
       setEffectParams(prev => ({ ...prev, [paramName]: value }));
     }
   }, [project]);
@@ -261,17 +261,7 @@ const App: React.FC = () => {
     }
 
     // Read params after compilation
-    const params: Record<string, number> = {};
-    const paramPointers = newBox.parameters.pointerHub.incoming();
-    for (const pointer of paramPointers) {
-      const paramBox = pointer.box as any;
-      const label = paramBox.label?.getValue?.();
-      const value = paramBox.value?.getValue?.();
-      if (label != null && value != null) {
-        params[label] = value;
-      }
-    }
-    setEffectParams(params);
+    setEffectParams(readWerkstattParams(newBox));
   }, [project, audioContext]);
 
   // --- Initialization ---
@@ -310,33 +300,29 @@ const App: React.FC = () => {
         return;
       }
 
-      // Find the audio region and audio unit
-      const boxes = newProject.boxGraph.boxes();
-      let foundRegion: AudioRegionBox | null = null;
-      for (const box of boxes) {
-        if (box instanceof AudioRegionBox) {
-          foundRegion = box;
-          break;
-        }
-      }
+      // Find the audio region via the adapter layer
+      const firstUnit = newProject.rootBoxAdapter.audioUnits.adapters()[0];
+      const firstTrack = firstUnit?.tracks.values()[0];
+      const regionAdapter = firstTrack?.regions.adapters.values().find(r => r.isAudioRegion());
 
-      if (!foundRegion) {
+      if (!regionAdapter) {
         setStatus("No audio region found.");
         return;
       }
 
-      regionBoxRef.current = foundRegion;
+      regionBoxRef.current = regionAdapter.box;
       audioBoxRef.current = tracks[0].audioUnitBox;
 
       // Apply waveformOffset to skip silence (bar 25)
       const waveformOffsetSeconds = PPQN.pulsesToSeconds(CONTENT_START, BPM);
       const playbackDuration = BAR * 16; // 16 bars of drums
+      const regionBox = regionBoxRef.current!;
       newProject.editing.modify(() => {
-        foundRegion!.position.setValue(0);
-        foundRegion!.loopOffset.setValue(0);
-        foundRegion!.duration.setValue(playbackDuration);
-        foundRegion!.loopDuration.setValue(playbackDuration);
-        foundRegion!.waveformOffset.setValue(waveformOffsetSeconds);
+        regionBox.position.setValue(0);
+        regionBox.loopOffset.setValue(0);
+        regionBox.duration.setValue(playbackDuration);
+        regionBox.loopDuration.setValue(playbackDuration);
+        regionBox.waveformOffset.setValue(waveformOffsetSeconds);
       });
 
       // Timeline loop
