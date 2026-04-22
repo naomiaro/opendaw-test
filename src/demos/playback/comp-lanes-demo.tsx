@@ -82,6 +82,8 @@ const App: React.FC = () => {
       setCompState(deriveCompState(project, takes, playbackStartRef.current));
     }
     const subscription = project.editing.subscribe(() => {
+      // Always update undo/redo button state
+      updateUndoRedo();
       // Skip re-derivation when we triggered the edit ourselves (splice rebuild)
       if (isRebuildingRef.current) return;
       if (takes.length > 0) {
@@ -91,7 +93,6 @@ const App: React.FC = () => {
           console.error("Failed to derive comp state after edit:", JSON.stringify(String(e)));
         }
       }
-      updateUndoRedo();
     });
     return () => subscription.terminate();
   }, [project, takes]);
