@@ -89,8 +89,26 @@ Replace the current raw `AudioBuffer.getChannelData()` waveform rendering with `
 
 This matches the pattern used in the other playback demos (clip-fades, track-editing) and produces smoother, resolution-independent waveforms.
 
+### 9. Undo/Redo of Comp Decisions
+
+Comp boundaries and assignments are UI-level decisions that generate automation — they live in React state, not the box graph. Undo/redo uses a simple React history stack:
+
+```typescript
+type CompSnapshot = { boundaries: number[]; assignments: number[] };
+const [history, setHistory] = useState<CompSnapshot[]>([]);
+const [historyIndex, setHistoryIndex] = useState(-1);
+```
+
+- Before each comp change (add boundary, change zone assignment), push current state to history
+- Undo: decrement `historyIndex`, restore boundaries/assignments, rebuild automation
+- Redo: increment `historyIndex`, restore, rebuild
+- Keyboard: Cmd+Z / Cmd+Shift+Z (standard shortcuts)
+- UI: Undo/Redo buttons with disabled state when at stack boundary
+- History clears when audio is loaded (new comp session)
+
+This is intentionally separate from OpenDAW's box graph undo (`editing.undo()`) — the comp decisions aren't box graph state, so box graph undo would leave the UI inconsistent.
+
 ## Out of Scope
 
 - Export functionality
-- Undo/redo of comp decisions
 - More than 4 takes
