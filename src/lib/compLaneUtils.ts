@@ -1,8 +1,9 @@
-import { PPQN } from "@opendaw/lib-dsp";
+import { PPQN, Interpolation } from "@opendaw/lib-dsp";
+import type { ppqn } from "@opendaw/lib-dsp";
 import { UUID } from "@opendaw/lib-std";
-import { AudioUnitBoxAdapter, TrackBoxAdapter } from "@opendaw/studio-adapters";
-import { AudioRegionBox, ValueEventCollectionBox } from "@opendaw/studio-boxes";
-import type { TrackBox } from "@opendaw/studio-boxes";
+import { AudioUnitBoxAdapter, TrackBoxAdapter, ValueRegionBoxAdapter } from "@opendaw/studio-adapters";
+import { AudioFileBox, AudioRegionBox, ValueEventCollectionBox } from "@opendaw/studio-boxes";
+import type { TrackBox, ValueRegionBox } from "@opendaw/studio-boxes";
 import type { Project } from "@opendaw/studio-core";
 import type { TrackData } from "./types";
 
@@ -36,7 +37,7 @@ export type CompMode = "automation" | "splice";
 export interface TakeData {
   trackData: TrackData;
   automationTrackBox: TrackBox;
-  audioFileBox: any;
+  audioFileBox: AudioFileBox | null;
   offset: number;
   color: string;
   label: string;
@@ -87,6 +88,129 @@ export function deriveCompState(
   }
 
   return { boundaries: [], assignments: [0] };
+}
+
+export function rebuildAutomation(
+  project: Project,
+  takes: TakeData[],
+  boundaries: number[],
+  assignments: number[],
+  xfadeMs: number,
+  playbackStart: number
+): void {
+  const crossfadePPQN = Math.round(PPQN.secondsToPulses(xfadeMs / 1000, BPM));
+
+  // Pre-compute events for each take outside the transaction (pure logic, no SDK calls)
+  const perTakeEvents: { position: number; index: number; value: number; interpolation: Interpolation }[][] = [];
+  for (let t = 0; t < takes.length; t++) {
+    const events: { position: number; value: number; interpolation: Interpolation }[] = [];
+    const zoneBounds = [0, ...boundaries.map(b => b - playbackStart), TOTAL_PPQN];
+
+    for (let z = 0; z < assignments.length; z++) {
+      const zoneStart = zoneBounds[z];
+      const zoneEnd = zoneBounds[z + 1];
+      const isActive = assignments[z] === t;
+      const isFirst = z === 0;
+      const isLast = z === assignments.length - 1;
+      // Check if adjacent zones have the same take — skip crossfade at shared boundary
+      const prevSameTake = !isFirst && assignments[z - 1] === t;
+      const nextSameTake = !isLast && assignments[z + 1] === t;
+
+      if (isActive) {
+        // Fade-in ramp start (only if previous zone had a different take)
+        if (!isFirst && !prevSameTake && crossfadePPQN > 0) {
+          events.push({ position: Math.max(0, zoneStart - crossfadePPQN), value: VOL_SILENT, interpolation: Interpolation.Curve(0.75) });
+        }
+        // Full volume at zone start (skip if continuing from same take)
+        if (!prevSameTake) {
+          events.push({ position: zoneStart, value: VOL_0DB, interpolation: Interpolation.None });
+        }
+        // Fade-out ramp start (only if next zone has a different take)
+        if (!isLast && !nextSameTake && crossfadePPQN > 0) {
+          events.push({ position: Math.max(zoneStart, zoneEnd - crossfadePPQN), value: VOL_0DB, interpolation: Interpolation.Curve(0.25) });
+        }
+        // Silent at zone end (only if next zone has a different take)
+        if (!isLast && !nextSameTake) {
+          events.push({ position: zoneEnd, value: VOL_SILENT, interpolation: Interpolation.None });
+        }
+      } else {
+        // Inactive: silence at zone start
+        events.push({ position: zoneStart, value: VOL_SILENT, interpolation: Interpolation.None });
+      }
+    }
+
+    // Sort by position, assign incrementing index per position to form unique (position, index) composite keys
+    events.sort((a, b) => a.position - b.position);
+    const indexedEvents: { position: number; index: number; value: number; interpolation: Interpolation }[] = [];
+    let prevPos = -1;
+    let posIndex = 0;
+    for (const evt of events) {
+      if (evt.position === prevPos) {
+        posIndex++;
+      } else {
+        posIndex = 0;
+        prevPos = evt.position;
+      }
+      indexedEvents.push({ ...evt, index: posIndex });
+    }
+    perTakeEvents.push(indexedEvents);
+  }
+
+  // Single atomic transaction: delete all old regions, then create all new ones
+  project.editing.modify(() => {
+    // Delete existing automation regions for all takes
+    for (let t = 0; t < takes.length; t++) {
+      const take = takes[t];
+      const trackAdapter = project.boxAdapters.adapterFor(take.automationTrackBox, TrackBoxAdapter);
+      const existingAdapters = trackAdapter.regions.adapters.values()
+        .filter(r => r.isValueRegion());
+
+      for (const adapter of existingAdapters) {
+        const collectionOpt = adapter.optCollection;
+        if (collectionOpt.nonEmpty()) {
+          collectionOpt.unwrap().events.asArray().forEach((evt: { box: { delete(): void } }) => evt.box.delete());
+        }
+        adapter.box.delete();
+      }
+    }
+
+    // Create new automation regions and events for all takes
+    for (let t = 0; t < takes.length; t++) {
+      const take = takes[t];
+      const indexedEvents = perTakeEvents[t];
+
+      const regionOpt = project.api.createTrackRegion(
+        take.automationTrackBox,
+        playbackStart as ppqn,
+        TOTAL_PPQN as ppqn
+      );
+      if (regionOpt.isEmpty()) {
+        console.error(`rebuildAutomation: createTrackRegion failed for take ${t}`);
+        continue;
+      }
+      const regionBox = regionOpt.unwrap() as ValueRegionBox;
+      // Encode comp state in first take's region label for undo/redo derivation
+      if (t === 0) {
+        regionBox.label.setValue(encodeCompStateToLabel({ boundaries, assignments }));
+      }
+      const adapter = project.boxAdapters.adapterFor(regionBox, ValueRegionBoxAdapter);
+      const collectionOpt = adapter.optCollection;
+      if (collectionOpt.isEmpty()) {
+        console.error(`rebuildAutomation: optCollection is empty for take ${t}`);
+        continue;
+      }
+      const collection = collectionOpt.unwrap();
+
+      for (const evt of indexedEvents) {
+        collection.createEvent({
+          position: evt.position as ppqn,
+          index: evt.index,
+          value: evt.value,
+          interpolation: evt.interpolation
+        });
+      }
+    }
+  });
 }
 
 export function rebuildSpliceRegions(

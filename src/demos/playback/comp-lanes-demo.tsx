@@ -1,16 +1,15 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { PeaksPainter } from "@opendaw/lib-fusion";
-import { PPQN, Interpolation } from "@opendaw/lib-dsp";
-import type { ppqn } from "@opendaw/lib-dsp";
+import { PPQN } from "@opendaw/lib-dsp";
 import { Project } from "@opendaw/studio-core";
-import { TrackBox, ValueRegionBox } from "@opendaw/studio-boxes";
-import { InstrumentFactories, ValueRegionBoxAdapter, TrackBoxAdapter } from "@opendaw/studio-adapters";
+import { AudioFileBox, AudioUnitBox, TrackBox } from "@opendaw/studio-boxes";
+import { InstrumentFactories, TrackBoxAdapter } from "@opendaw/studio-adapters";
 import {
   BPM, BAR, TOTAL_PPQN, MAX_TAKES,
-  TAKE_COLORS, VOL_0DB, VOL_SILENT,
+  TAKE_COLORS,
   generateTakeLabels, computeTakeOffsets,
-  deriveCompState, encodeCompStateToLabel, rebuildSpliceRegions,
+  deriveCompState, rebuildAutomation, rebuildSpliceRegions,
   type CompMode, type TakeData, type CompState
 } from "@/lib/compLaneUtils";
 import { GitHubCorner } from "@/components/GitHubCorner";
@@ -103,127 +102,6 @@ const App: React.FC = () => {
     );
   }, [project, takes, compMode, compState]);
 
-  // ─── Rebuild volume automation from current comp state ───
-  const rebuildAutomation = useCallback(
-    (project: Project, takes: TakeData[], boundaries: number[], assignments: number[], xfadeMs: number) => {
-      const crossfadePPQN = Math.round(PPQN.secondsToPulses(xfadeMs / 1000, BPM));
-      const playbackStart = playbackStartRef.current;
-
-      // Pre-compute events for each take outside the transaction (pure logic, no SDK calls)
-      const perTakeEvents: { position: number; index: number; value: number; interpolation: any }[][] = [];
-      for (let t = 0; t < takes.length; t++) {
-        const events: { position: number; value: number; interpolation: any }[] = [];
-        const zoneBounds = [0, ...boundaries.map(b => b - playbackStart), TOTAL_PPQN];
-
-        for (let z = 0; z < assignments.length; z++) {
-          const zoneStart = zoneBounds[z];
-          const zoneEnd = zoneBounds[z + 1];
-          const isActive = assignments[z] === t;
-          const isFirst = z === 0;
-          const isLast = z === assignments.length - 1;
-          // Check if adjacent zones have the same take — skip crossfade at shared boundary
-          const prevSameTake = !isFirst && assignments[z - 1] === t;
-          const nextSameTake = !isLast && assignments[z + 1] === t;
-
-          if (isActive) {
-            // Fade-in ramp start (only if previous zone had a different take)
-            if (!isFirst && !prevSameTake && crossfadePPQN > 0) {
-              events.push({ position: Math.max(0, zoneStart - crossfadePPQN), value: VOL_SILENT, interpolation: Interpolation.Curve(0.75) });
-            }
-            // Full volume at zone start (skip if continuing from same take)
-            if (!prevSameTake) {
-              events.push({ position: zoneStart, value: VOL_0DB, interpolation: Interpolation.None });
-            }
-            // Fade-out ramp start (only if next zone has a different take)
-            if (!isLast && !nextSameTake && crossfadePPQN > 0) {
-              events.push({ position: Math.max(zoneStart, zoneEnd - crossfadePPQN), value: VOL_0DB, interpolation: Interpolation.Curve(0.25) });
-            }
-            // Silent at zone end (only if next zone has a different take)
-            if (!isLast && !nextSameTake) {
-              events.push({ position: zoneEnd, value: VOL_SILENT, interpolation: Interpolation.None });
-            }
-          } else {
-            // Inactive: silence at zone start
-            events.push({ position: zoneStart, value: VOL_SILENT, interpolation: Interpolation.None });
-          }
-        }
-
-        // Sort by position, assign incrementing index per position to form unique (position, index) composite keys
-        events.sort((a, b) => a.position - b.position);
-        const indexedEvents: { position: number; index: number; value: number; interpolation: any }[] = [];
-        let prevPos = -1;
-        let posIndex = 0;
-        for (const evt of events) {
-          if (evt.position === prevPos) {
-            posIndex++;
-          } else {
-            posIndex = 0;
-            prevPos = evt.position;
-          }
-          indexedEvents.push({ ...evt, index: posIndex });
-        }
-        perTakeEvents.push(indexedEvents);
-      }
-
-      // Single atomic transaction: delete all old regions, then create all new ones
-      project.editing.modify(() => {
-        // Delete existing automation regions for all takes
-        for (let t = 0; t < takes.length; t++) {
-          const take = takes[t];
-          const trackAdapter = project.boxAdapters.adapterFor(take.automationTrackBox, TrackBoxAdapter);
-          const existingAdapters = trackAdapter.regions.adapters.values()
-            .filter(r => r.isValueRegion());
-
-          for (const adapter of existingAdapters) {
-            const collectionOpt = adapter.optCollection;
-            if (collectionOpt.nonEmpty()) {
-              collectionOpt.unwrap().events.asArray().forEach((evt: any) => evt.box.delete());
-            }
-            adapter.box.delete();
-          }
-        }
-
-        // Create new automation regions and events for all takes
-        for (let t = 0; t < takes.length; t++) {
-          const take = takes[t];
-          const indexedEvents = perTakeEvents[t];
-
-          const regionOpt = project.api.createTrackRegion(
-            take.automationTrackBox,
-            playbackStart as ppqn,
-            TOTAL_PPQN as ppqn
-          );
-          if (regionOpt.isEmpty()) {
-            console.error(`rebuildAutomation: createTrackRegion failed for take ${t}`);
-            continue;
-          }
-          const regionBox = regionOpt.unwrap() as ValueRegionBox;
-          // Encode comp state in first take's region label for undo/redo derivation
-          if (t === 0) {
-            regionBox.label.setValue(encodeCompStateToLabel({ boundaries, assignments }));
-          }
-          const adapter = project.boxAdapters.adapterFor(regionBox, ValueRegionBoxAdapter);
-          const collectionOpt = adapter.optCollection;
-          if (collectionOpt.isEmpty()) {
-            console.error(`rebuildAutomation: optCollection is empty for take ${t}`);
-            continue;
-          }
-          const collection = collectionOpt.unwrap();
-
-          for (const evt of indexedEvents) {
-            collection.createEvent({
-              position: evt.position as ppqn,
-              index: evt.index,
-              value: evt.value,
-              interpolation: evt.interpolation
-            });
-          }
-        }
-      });
-    },
-    []
-  );
-
   // ─── Load takes from audio file(s) ───
   const loadTakes = useCallback(
     async (files: Array<{ name: string; fileUrl: string }>) => {
@@ -269,7 +147,7 @@ const App: React.FC = () => {
         const offset = offsets[i];
 
         // Adjust region position and loopOffset for the take offset
-        let audioFileBox: any = null;
+        let audioFileBox: AudioFileBox | null = null;
         project.editing.modify(() => {
           const trackAdapter = project.boxAdapters.adapterFor(track.trackBox, TrackBoxAdapter);
           trackAdapter.regions.adapters.values()
@@ -319,10 +197,10 @@ const App: React.FC = () => {
       if (pausedPositionRef) pausedPositionRef.current = playbackStart;
 
       // Apply initial automation (editing.subscribe will derive comp state)
-      rebuildAutomation(project, takeData, [], [0], crossfadeMs);
+      rebuildAutomation(project, takeData, [], [0], crossfadeMs, playbackStartRef.current);
 
       // Create splice mode track (starts muted)
-      let spliceAudioUnitBox: any = null;
+      let spliceAudioUnitBox: AudioUnitBox | null = null;
       project.editing.modify(() => {
         const result = project.api.createInstrument(InstrumentFactories.Tape);
         spliceAudioUnitBox = result.audioUnitBox;
@@ -348,7 +226,7 @@ const App: React.FC = () => {
       setTakes(takeData);
       setStatus("Ready — Shift+Click to add comp boundaries!");
     },
-    [project, audioContext, crossfadeMs, rebuildAutomation, setCurrentPosition, pausedPositionRef]
+    [project, audioContext, crossfadeMs, setCurrentPosition, pausedPositionRef]
   );
 
   // ─── File handlers ───
@@ -398,14 +276,7 @@ const App: React.FC = () => {
         const insertionIdx = newBoundaries.indexOf(ppqnPos);
         const newAssignments = [...compState.assignments];
         newAssignments.splice(insertionIdx + 1, 0, compState.assignments[insertionIdx] ?? 0);
-        rebuildAutomation(project, takes, newBoundaries, newAssignments, crossfadeMs);
-        if (compMode === "splice" && spliceTrackRef.current) {
-          rebuildSpliceRegions(
-            project, spliceTrackRef.current, takes,
-            newBoundaries, newAssignments,
-            playbackStartRef.current, fullAudioPpqnRef.current
-          );
-        }
+        rebuildAutomation(project, takes, newBoundaries, newAssignments, crossfadeMs, playbackStartRef.current);
       } else {
         // Position playhead
         project.engine.setPosition(ppqnPos);
@@ -413,7 +284,7 @@ const App: React.FC = () => {
         if (pausedPositionRef) pausedPositionRef.current = ppqnPos;
       }
     },
-    [project, takes, isPlaying, compState, crossfadeMs, compMode, rebuildAutomation, setCurrentPosition, pausedPositionRef]
+    [project, takes, isPlaying, compState, crossfadeMs, setCurrentPosition, pausedPositionRef]
   );
 
   const setZoneTake = useCallback(
@@ -421,33 +292,19 @@ const App: React.FC = () => {
       if (!project || takes.length === 0) return;
       const newAssignments = [...compState.assignments];
       newAssignments[zone] = takeIndex;
-      rebuildAutomation(project, takes, compState.boundaries, newAssignments, crossfadeMs);
-      if (compMode === "splice" && spliceTrackRef.current) {
-        rebuildSpliceRegions(
-          project, spliceTrackRef.current, takes,
-          compState.boundaries, newAssignments,
-          playbackStartRef.current, fullAudioPpqnRef.current
-        );
-      }
+      rebuildAutomation(project, takes, compState.boundaries, newAssignments, crossfadeMs, playbackStartRef.current);
     },
-    [project, takes, compState, crossfadeMs, compMode, rebuildAutomation]
+    [project, takes, compState, crossfadeMs]
   );
 
   const handleCrossfadeChange = useCallback(
     (ms: number) => {
       setCrossfadeMs(ms);
       if (project && takes.length > 0) {
-        rebuildAutomation(project, takes, compState.boundaries, compState.assignments, ms);
-        if (compMode === "splice" && spliceTrackRef.current) {
-          rebuildSpliceRegions(
-            project, spliceTrackRef.current, takes,
-            compState.boundaries, compState.assignments,
-            playbackStartRef.current, fullAudioPpqnRef.current
-          );
-        }
+        rebuildAutomation(project, takes, compState.boundaries, compState.assignments, ms, playbackStartRef.current);
       }
     },
-    [project, takes, compState, compMode, rebuildAutomation]
+    [project, takes, compState]
   );
 
   // ─── Mode toggle ───
@@ -470,15 +327,7 @@ const App: React.FC = () => {
     });
 
     setCompMode(newMode);
-
-    if (newMode === "splice" && spliceTrackRef.current) {
-      rebuildSpliceRegions(
-        project, spliceTrackRef.current, takes,
-        compState.boundaries, compState.assignments,
-        playbackStartRef.current, fullAudioPpqnRef.current
-      );
-    }
-  }, [project, takes, compState]);
+  }, [project, takes]);
 
   // ─── Undo / Redo ───
   const handleUndo = useCallback(() => {
