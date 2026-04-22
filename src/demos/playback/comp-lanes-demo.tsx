@@ -633,9 +633,9 @@ const App: React.FC = () => {
             <BackLink />
             <Heading size="8">Comp Lanes Demo</Heading>
             <Text size="4" color="gray">
-              Simulated takes from different sections of the same audio file. Shift+Click
-              to add comp boundaries, select which take is active per zone. Crossfades use
-              volume automation with smooth crossfade curves — no region splitting, no pops.
+              Compare two approaches to take comping: volume automation crossfades vs
+              region splicing with SDK voice management. Drop one file for staggered
+              takes, or multiple files for separate performances. Undo/redo with Cmd+Z.
             </Text>
           </Flex>
 
@@ -689,7 +689,12 @@ const App: React.FC = () => {
                   <Text size="2"><strong>3. Press Play</strong> to hear the comp with crossfades</Text>
                 </Flex>
                 <Callout.Root size="1" color="blue">
-                  <Callout.Text>Refresh to start over. Crossfades use volume automation — no region splitting.</Callout.Text>
+                  <Callout.Text>
+                    {compMode === "automation"
+                      ? "Crossfades use volume automation curves between parallel tracks."
+                      : "Consecutive regions on a single track — SDK manages 20ms voice crossfade at boundaries."}
+                    {" "}Cmd+Z to undo, Cmd+Shift+Z to redo.
+                  </Callout.Text>
                 </Callout.Root>
               </Flex>
             </Card>
