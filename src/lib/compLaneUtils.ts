@@ -1,5 +1,7 @@
 import { PPQN } from "@opendaw/lib-dsp";
+import { UUID } from "@opendaw/lib-std";
 import { AudioUnitBoxAdapter, TrackBoxAdapter } from "@opendaw/studio-adapters";
+import { AudioRegionBox, ValueEventCollectionBox } from "@opendaw/studio-boxes";
 import type { TrackBox } from "@opendaw/studio-boxes";
 import type { Project } from "@opendaw/studio-core";
 import type { TrackData } from "./types";
@@ -108,4 +110,45 @@ export function deriveCompState(
   }
 
   return { boundaries, assignments };
+}
+
+export function rebuildSpliceRegions(
+  project: Project,
+  spliceTrackBox: TrackBox,
+  takes: TakeData[],
+  boundaries: number[],
+  assignments: number[],
+  playbackStart: number,
+  fullAudioPpqn: number
+): void {
+  project.editing.modify(() => {
+    // Delete existing regions on splice track
+    const trackAdapter = project.boxAdapters.adapterFor(spliceTrackBox, TrackBoxAdapter);
+    for (const region of trackAdapter.regions.adapters.values()) {
+      region.box.delete();
+    }
+
+    // Create consecutive regions per zone
+    const zoneBounds = [playbackStart, ...boundaries, playbackStart + TOTAL_PPQN];
+    for (let z = 0; z < assignments.length; z++) {
+      const zoneStart = zoneBounds[z];
+      const zoneEnd = zoneBounds[z + 1];
+      const take = takes[assignments[z]];
+      if (!take || !take.audioFileBox) continue;
+
+      const eventsCollectionBox = ValueEventCollectionBox.create(project.boxGraph, UUID.generate());
+
+      AudioRegionBox.create(project.boxGraph, UUID.generate(), box => {
+        box.regions.refer(spliceTrackBox.regions);
+        box.file.refer(take.audioFileBox);
+        box.events.refer(eventsCollectionBox.owners);
+        box.position.setValue(zoneStart);
+        box.duration.setValue(zoneEnd - zoneStart);
+        box.loopOffset.setValue(zoneStart + take.offset);
+        box.loopDuration.setValue(fullAudioPpqn);
+        box.label.setValue(take.label);
+        box.mute.setValue(false);
+      });
+    }
+  });
 }
