@@ -45,7 +45,7 @@ const App: React.FC = () => {
   const [crossfadeMs, setCrossfadeMs] = useState(20);
   const [crossfadeCurve, setCrossfadeCurve] = useState<CrossfadeCurve>("curve");
   const [compMode, setCompMode] = useState<CompMode>("automation");
-  const [spliceOverlap, setSpliceOverlap] = useState(true);
+  const [spliceOverlap, setSpliceOverlap] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
