@@ -368,6 +368,23 @@ project.editing.modify(() => {
 
 This pattern makes undo/redo work natively — the box graph is the single source of truth, and the UI is a derived view. See the [Comp Lanes demo](https://opendaw-test.pages.dev/comp-lanes-demo.html) for a working example.
 
+#### Pattern: Custom Metadata via Box Labels
+
+The box graph has no generic metadata field, but every box has a `label` (string). You can store structured data by prefixing a JSON string:
+
+```typescript
+// Write: encode state into the label inside editing.modify()
+regionBox.label.setValue("comp:" + JSON.stringify({ boundaries, assignments }));
+
+// Read: parse back from the label
+const label = regionAdapter.label;
+if (label.startsWith("comp:")) {
+  const state = JSON.parse(label.slice(5));
+}
+```
+
+Since `label` is a box graph field, it participates in transactions and undo/redo automatically. This is useful for persisting UI-level decisions (comp boundaries, zone assignments) alongside the box graph data they generate (automation regions), so undo reverts both atomically.
+
 ## Observing Changes
 
 Subscribe to field changes:

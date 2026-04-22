@@ -253,6 +253,13 @@ All three are type guards on the base `RegionBoxAdapter` interface:
 Use the positive guard (e.g., `r.isValueRegion()`) instead of negation
 (`!r.isAudioRegion() as ValueRegionBoxAdapter[]`) — avoids casts entirely.
 
+### Storing Custom Metadata in Box Labels
+The box graph has no generic metadata/annotation system, but every box has a `label`
+string field that participates in transactions and undo/redo. Use a prefixed JSON string
+to piggyback structured data: `box.label.setValue("comp:" + JSON.stringify(state))`.
+Read back with `label.startsWith("comp:") ? JSON.parse(label.slice(5)) : null`.
+See `compLaneUtils.ts` `encodeCompStateToLabel()` for a working example.
+
 ### Region Visitor Pattern (Type-Safe Discrimination)
 Prefer visitor over casting for region type handling:
 ```typescript
