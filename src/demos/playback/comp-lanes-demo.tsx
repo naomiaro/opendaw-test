@@ -10,7 +10,7 @@ import {
   TAKE_COLORS,
   generateTakeLabels, computeTakeOffsets,
   deriveCompState, rebuildAutomation, rebuildSpliceRegions,
-  type CompMode, type TakeData, type CompState
+  type CompMode, type CrossfadeCurve, type TakeData, type CompState
 } from "@/lib/compLaneUtils";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
@@ -43,6 +43,7 @@ const App: React.FC = () => {
   const [takes, setTakes] = useState<TakeData[]>([]);
   const [compState, setCompState] = useState<CompState>({ boundaries: [], assignments: [0] });
   const [crossfadeMs, setCrossfadeMs] = useState(20);
+  const [crossfadeCurve, setCrossfadeCurve] = useState<CrossfadeCurve>("curve");
   const [compMode, setCompMode] = useState<CompMode>("automation");
   const [isDragOver, setIsDragOver] = useState(false);
   const [canUndo, setCanUndo] = useState(false);
@@ -205,7 +206,7 @@ const App: React.FC = () => {
       if (pausedPositionRef) pausedPositionRef.current = playbackStart;
 
       // Apply initial automation (editing.subscribe will derive comp state)
-      rebuildAutomation(project, takeData, [], [0], crossfadeMs, playbackStartRef.current);
+      rebuildAutomation(project, takeData, [], [0], crossfadeMs, playbackStartRef.current, crossfadeCurve);
 
       // Create splice mode track (starts muted)
       let spliceAudioUnitBox: AudioUnitBox | null = null;
@@ -284,7 +285,7 @@ const App: React.FC = () => {
         const insertionIdx = newBoundaries.indexOf(ppqnPos);
         const newAssignments = [...compState.assignments];
         newAssignments.splice(insertionIdx + 1, 0, compState.assignments[insertionIdx] ?? 0);
-        rebuildAutomation(project, takes, newBoundaries, newAssignments, crossfadeMs, playbackStartRef.current);
+        rebuildAutomation(project, takes, newBoundaries, newAssignments, crossfadeMs, playbackStartRef.current, crossfadeCurve);
       } else {
         // Position playhead
         project.engine.setPosition(ppqnPos);
@@ -300,7 +301,7 @@ const App: React.FC = () => {
       if (!project || takes.length === 0) return;
       const newAssignments = [...compState.assignments];
       newAssignments[zone] = takeIndex;
-      rebuildAutomation(project, takes, compState.boundaries, newAssignments, crossfadeMs, playbackStartRef.current);
+      rebuildAutomation(project, takes, compState.boundaries, newAssignments, crossfadeMs, playbackStartRef.current, crossfadeCurve);
     },
     [project, takes, compState, crossfadeMs]
   );
@@ -309,7 +310,7 @@ const App: React.FC = () => {
     (ms: number) => {
       setCrossfadeMs(ms);
       if (project && takes.length > 0) {
-        rebuildAutomation(project, takes, compState.boundaries, compState.assignments, ms, playbackStartRef.current);
+        rebuildAutomation(project, takes, compState.boundaries, compState.assignments, ms, playbackStartRef.current, crossfadeCurve);
       }
     },
     [project, takes, compState]
@@ -596,17 +597,28 @@ const App: React.FC = () => {
                       <SegmentedControl.Item value="splice">Region Splice</SegmentedControl.Item>
                     </SegmentedControl.Root>
                     {compMode === "automation" ? (
-                      <label style={{ fontSize: "14px", color: "var(--gray-11)" }}>
-                        Crossfade:{" "}
-                        <input type="number" value={crossfadeMs} min={0} max={200} step={5}
-                          onChange={(e) => handleCrossfadeChange(Math.max(0, parseInt(e.target.value) || 0))}
-                          style={{ width: "60px", background: "var(--gray-3)", color: "var(--gray-12)",
-                            border: "1px solid var(--gray-7)", padding: "4px 8px", borderRadius: "4px" }}
-                        /> ms
-                      </label>
+                      <Flex gap="3" align="center">
+                        <label style={{ fontSize: "14px", color: "var(--gray-11)" }}>
+                          Crossfade:{" "}
+                          <input type="number" value={crossfadeMs} min={0} max={200} step={5}
+                            onChange={(e) => handleCrossfadeChange(Math.max(0, parseInt(e.target.value) || 0))}
+                            style={{ width: "60px", background: "var(--gray-3)", color: "var(--gray-12)",
+                              border: "1px solid var(--gray-7)", padding: "4px 8px", borderRadius: "4px" }}
+                          /> ms
+                        </label>
+                        <SegmentedControl.Root value={crossfadeCurve} onValueChange={(v) => {
+                          setCrossfadeCurve(v as CrossfadeCurve);
+                          if (project && takes.length > 0) {
+                            rebuildAutomation(project, takes, compState.boundaries, compState.assignments, crossfadeMs, playbackStartRef.current, v as CrossfadeCurve);
+                          }
+                        }}>
+                          <SegmentedControl.Item value="curve">Curve</SegmentedControl.Item>
+                          <SegmentedControl.Item value="linear">Linear</SegmentedControl.Item>
+                        </SegmentedControl.Root>
+                      </Flex>
                     ) : (
                       <Text size="2" color="gray" style={{ fontStyle: "italic" }}>
-                        SDK manages 20ms voice crossfade
+                        SDK manages 20ms linear voice crossfade
                       </Text>
                     )}
                     <Badge size="2" color="green" variant="soft">

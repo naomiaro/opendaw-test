@@ -90,13 +90,16 @@ export function deriveCompState(
   return { boundaries: [], assignments: [0] };
 }
 
+export type CrossfadeCurve = "curve" | "linear";
+
 export function rebuildAutomation(
   project: Project,
   takes: TakeData[],
   boundaries: number[],
   assignments: number[],
   xfadeMs: number,
-  playbackStart: number
+  playbackStart: number,
+  crossfadeCurve: CrossfadeCurve = "curve"
 ): void {
   const crossfadePPQN = Math.round(PPQN.secondsToPulses(xfadeMs / 1000, BPM));
 
@@ -116,10 +119,17 @@ export function rebuildAutomation(
       const prevSameTake = !isFirst && assignments[z - 1] === t;
       const nextSameTake = !isLast && assignments[z + 1] === t;
 
+      const fadeInInterpolation: Interpolation = crossfadeCurve === "linear"
+        ? Interpolation.Linear
+        : Interpolation.Curve(0.75);
+      const fadeOutInterpolation: Interpolation = crossfadeCurve === "linear"
+        ? Interpolation.Linear
+        : Interpolation.Curve(0.25);
+
       if (isActive) {
         // Fade-in ramp start (only if previous zone had a different take)
         if (!isFirst && !prevSameTake && crossfadePPQN > 0) {
-          events.push({ position: Math.max(0, zoneStart - crossfadePPQN), value: VOL_SILENT, interpolation: Interpolation.Curve(0.75) });
+          events.push({ position: Math.max(0, zoneStart - crossfadePPQN), value: VOL_SILENT, interpolation: fadeInInterpolation });
         }
         // Full volume at zone start (skip if continuing from same take)
         if (!prevSameTake) {
@@ -127,7 +137,7 @@ export function rebuildAutomation(
         }
         // Fade-out ramp start (only if next zone has a different take)
         if (!isLast && !nextSameTake && crossfadePPQN > 0) {
-          events.push({ position: Math.max(zoneStart, zoneEnd - crossfadePPQN), value: VOL_0DB, interpolation: Interpolation.Curve(0.25) });
+          events.push({ position: Math.max(zoneStart, zoneEnd - crossfadePPQN), value: VOL_0DB, interpolation: fadeOutInterpolation });
         }
         // Silent at zone end (only if next zone has a different take)
         if (!isLast && !nextSameTake) {
