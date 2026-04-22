@@ -1,6 +1,7 @@
 import { PPQN } from "@opendaw/lib-dsp";
-import { AudioUnitBoxAdapter } from "@opendaw/studio-adapters";
+import { AudioUnitBoxAdapter, TrackBoxAdapter } from "@opendaw/studio-adapters";
 import type { TrackBox } from "@opendaw/studio-boxes";
+import type { Project } from "@opendaw/studio-core";
 import type { TrackData } from "./types";
 
 export const BPM = 124;
@@ -28,4 +29,69 @@ export interface TakeData {
 export interface CompState {
   boundaries: number[];
   assignments: number[];
+}
+
+export function deriveCompState(
+  project: Project,
+  takes: TakeData[],
+  playbackStart: number
+): CompState {
+  if (takes.length === 0) return { boundaries: [], assignments: [0] };
+
+  const takeActiveRanges: Array<Array<{ start: number; end: number }>> = [];
+
+  for (const take of takes) {
+    const ranges: Array<{ start: number; end: number }> = [];
+    const trackAdapter = project.boxAdapters.adapterFor(take.automationTrackBox, TrackBoxAdapter);
+    const valueRegions = trackAdapter.regions.adapters.values().filter(r => r.isValueRegion());
+
+    for (const region of valueRegions) {
+      const collection = region.optCollection;
+      if (collection.isEmpty()) continue;
+      const events = collection.unwrap().events.asArray();
+      if (events.length === 0) continue;
+
+      let rangeStart: number | null = null;
+      for (const evt of events) {
+        const pos = evt.position;
+        const val = evt.value;
+        const isLoud = Math.abs(val - VOL_0DB) < 0.01;
+
+        if (isLoud && rangeStart === null) {
+          rangeStart = pos;
+        } else if (!isLoud && rangeStart !== null) {
+          ranges.push({ start: rangeStart, end: pos });
+          rangeStart = null;
+        }
+      }
+      if (rangeStart !== null) {
+        ranges.push({ start: rangeStart, end: TOTAL_PPQN });
+      }
+    }
+
+    takeActiveRanges.push(ranges);
+  }
+
+  const boundarySet = new Set<number>();
+  for (const ranges of takeActiveRanges) {
+    for (const range of ranges) {
+      if (range.start > 0) boundarySet.add(range.start + playbackStart);
+      if (range.end < TOTAL_PPQN) boundarySet.add(range.end + playbackStart);
+    }
+  }
+  const boundaries = [...boundarySet].sort((a, b) => a - b);
+
+  const zoneBounds = [0, ...boundaries.map(b => b - playbackStart), TOTAL_PPQN];
+  const assignments: number[] = [];
+  for (let z = 0; z < zoneBounds.length - 1; z++) {
+    const zoneMid = (zoneBounds[z] + zoneBounds[z + 1]) / 2;
+    let assignedTake = 0;
+    for (let t = 0; t < takeActiveRanges.length; t++) {
+      const isActive = takeActiveRanges[t].some(r => zoneMid >= r.start && zoneMid < r.end);
+      if (isActive) { assignedTake = t; break; }
+    }
+    assignments.push(assignedTake);
+  }
+
+  return { boundaries, assignments };
 }

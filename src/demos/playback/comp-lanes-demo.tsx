@@ -9,6 +9,7 @@ import { ValueRegionBoxAdapter, TrackBoxAdapter } from "@opendaw/studio-adapters
 import {
   BPM, BAR, BEAT, TOTAL_PPQN, MAX_TAKES, STAGGER_OFFSETS,
   TAKE_COLORS, VOL_0DB, VOL_SILENT,
+  deriveCompState,
   type CompMode, type TakeData, type CompState
 } from "@/lib/compLaneUtils";
 import { GitHubCorner } from "@/components/GitHubCorner";
@@ -39,10 +40,11 @@ const App: React.FC = () => {
   const [project, setProject] = useState<Project | null>(null);
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
   const [takes, setTakes] = useState<TakeData[]>([]);
-  const [compBoundaries, setCompBoundaries] = useState<number[]>([]); // PPQN positions
-  const [compAssignments, setCompAssignments] = useState<number[]>([0]); // take index per zone
+  const [compState, setCompState] = useState<CompState>({ boundaries: [], assignments: [0] });
   const [crossfadeMs, setCrossfadeMs] = useState(20);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
 
   const { currentPosition, setCurrentPosition, isPlaying, pausedPositionRef } =
     usePlaybackPosition(project);
@@ -58,6 +60,24 @@ const App: React.FC = () => {
 
   // ─── Playback range (set after takes are created) ───
   const playbackStartRef = useRef<number>(0);
+
+  // ─── Derive comp state from box graph whenever editing commits ───
+  useEffect(() => {
+    if (!project) return;
+    const updateUndoRedo = () => {
+      setCanUndo(project.editing.canUndo());
+      setCanRedo(project.editing.canRedo());
+    };
+    updateUndoRedo();
+    const subscription = project.editing.subscribe(() => {
+      if (takes.length > 0) {
+        const derived = deriveCompState(project, takes, playbackStartRef.current);
+        setCompState(derived);
+      }
+      updateUndoRedo();
+    });
+    return () => subscription.terminate();
+  }, [project, takes]);
 
   // ─── Rebuild volume automation from current comp state ───
   const rebuildAutomation = useCallback(
@@ -262,13 +282,8 @@ const App: React.FC = () => {
       setCurrentPosition(playbackStart);
       if (pausedPositionRef) pausedPositionRef.current = playbackStart;
 
-      // Initial comp state: take 0 active across whole range
-      const initialAssignments = [0];
-      setCompBoundaries([]);
-      setCompAssignments(initialAssignments);
-
-      // Apply initial automation
-      rebuildAutomation(project, takeData, [], initialAssignments, crossfadeMs);
+      // Apply initial automation (editing.subscribe will derive comp state)
+      rebuildAutomation(project, takeData, [], [0], crossfadeMs);
 
       setTakes(takeData);
       setStatus("Ready — Shift+Click to add comp boundaries!");
@@ -318,12 +333,10 @@ const App: React.FC = () => {
       if (e.shiftKey) {
         // Add comp boundary — splice a new zone assignment at the insertion point,
         // copying the active take from the zone being split
-        const newBoundaries = [...compBoundaries, ppqnPos].sort((a, b) => a - b);
+        const newBoundaries = [...compState.boundaries, ppqnPos].sort((a, b) => a - b);
         const insertionIdx = newBoundaries.indexOf(ppqnPos);
-        const newAssignments = [...compAssignments];
-        newAssignments.splice(insertionIdx + 1, 0, compAssignments[insertionIdx] ?? 0);
-        setCompBoundaries(newBoundaries);
-        setCompAssignments(newAssignments);
+        const newAssignments = [...compState.assignments];
+        newAssignments.splice(insertionIdx + 1, 0, compState.assignments[insertionIdx] ?? 0);
         rebuildAutomation(project, takes, newBoundaries, newAssignments, crossfadeMs);
       } else {
         // Position playhead
@@ -332,29 +345,54 @@ const App: React.FC = () => {
         if (pausedPositionRef) pausedPositionRef.current = ppqnPos;
       }
     },
-    [project, takes, isPlaying, compBoundaries, compAssignments, crossfadeMs, rebuildAutomation, setCurrentPosition, pausedPositionRef]
+    [project, takes, isPlaying, compState, crossfadeMs, rebuildAutomation, setCurrentPosition, pausedPositionRef]
   );
 
   const setZoneTake = useCallback(
     (zone: number, takeIndex: number) => {
       if (!project || takes.length === 0) return;
-      const newAssignments = [...compAssignments];
+      const newAssignments = [...compState.assignments];
       newAssignments[zone] = takeIndex;
-      setCompAssignments(newAssignments);
-      rebuildAutomation(project, takes, compBoundaries, newAssignments, crossfadeMs);
+      rebuildAutomation(project, takes, compState.boundaries, newAssignments, crossfadeMs);
     },
-    [project, takes, compBoundaries, compAssignments, crossfadeMs, rebuildAutomation]
+    [project, takes, compState, crossfadeMs, rebuildAutomation]
   );
 
   const handleCrossfadeChange = useCallback(
     (ms: number) => {
       setCrossfadeMs(ms);
       if (project && takes.length > 0) {
-        rebuildAutomation(project, takes, compBoundaries, compAssignments, ms);
+        rebuildAutomation(project, takes, compState.boundaries, compState.assignments, ms);
       }
     },
-    [project, takes, compBoundaries, compAssignments, rebuildAutomation]
+    [project, takes, compState, rebuildAutomation]
   );
+
+  // ─── Undo / Redo ───
+  const handleUndo = useCallback(() => {
+    if (!project) return;
+    project.editing.undo();
+  }, [project]);
+
+  const handleRedo = useCallback(() => {
+    if (!project) return;
+    project.editing.redo();
+  }, [project]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "z") {
+        e.preventDefault();
+        if (e.shiftKey) {
+          handleRedo();
+        } else {
+          handleUndo();
+        }
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [handleUndo, handleRedo]);
 
   // ─── Waveform rendering ───
   const drawWaveform = useCallback(
@@ -464,7 +502,7 @@ const App: React.FC = () => {
   const hasTakes = takes.length > 0;
   const isLoading = hasTakes && !status.startsWith("Ready");
   const playbackStart = playbackStartRef.current;
-  const zoneBounds = [playbackStart, ...compBoundaries, playbackStart + TOTAL_PPQN];
+  const zoneBounds = [playbackStart, ...compState.boundaries, playbackStart + TOTAL_PPQN];
 
   return (
     <Theme appearance="dark" accentColor="green" radius="medium">
@@ -568,8 +606,16 @@ const App: React.FC = () => {
                       /> ms
                     </label>
                     <Badge size="2" color="green" variant="soft">
-                      {compBoundaries.length + 1} zone{compBoundaries.length > 0 ? "s" : ""}
+                      {compState.boundaries.length + 1} zone{compState.boundaries.length > 0 ? "s" : ""}
                     </Badge>
+                    <Flex gap="1" align="center">
+                      <Button size="1" variant="soft" disabled={!canUndo} onClick={handleUndo}>
+                        Undo
+                      </Button>
+                      <Button size="1" variant="soft" disabled={!canRedo} onClick={handleRedo}>
+                        Redo
+                      </Button>
+                    </Flex>
                   </Flex>
                 </Flex>
                 <TransportControls
@@ -603,7 +649,7 @@ const App: React.FC = () => {
                         {take.label}
                       </div>
                       {/* Active zone highlights */}
-                      {compAssignments.map((assignedTake, z) => {
+                      {compState.assignments.map((assignedTake, z) => {
                         if (assignedTake !== i) return null;
                         const zoneStart = zoneBounds[z];
                         const zoneEnd = zoneBounds[z + 1];
@@ -621,7 +667,7 @@ const App: React.FC = () => {
                   ))}
 
                   {/* Comp boundary lines */}
-                  {compBoundaries.map((b, i) => {
+                  {compState.boundaries.map((b, i) => {
                     const frac = ((b - playbackStart) / TOTAL_PPQN) * 100;
                     return (
                       <div key={`b-${i}`} style={{
@@ -654,8 +700,8 @@ const App: React.FC = () => {
                         </Text>
                         {takes.map((take, t) => (
                           <Button
-                            key={t} size="1" variant={compAssignments[z] === t ? "solid" : "soft"}
-                            style={compAssignments[z] === t ? { background: take.color, borderColor: take.color } : {}}
+                            key={t} size="1" variant={compState.assignments[z] === t ? "solid" : "soft"}
+                            style={compState.assignments[z] === t ? { background: take.color, borderColor: take.color } : {}}
                             onClick={() => setZoneTake(z, t)}
                           >
                             {take.label}
