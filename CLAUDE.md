@@ -245,6 +245,13 @@ union type, `.box` is fully typed — never write `adapter.box as AudioRegionBox
 Adapters also provide typed setters: use `adapter.position = value` instead of
 `adapter.box.position.setValue(value)` where available.
 
+### Never Call editing.modify() Inside editing.subscribe()
+`editing.subscribe()` fires after every `editing.modify()`. Calling `editing.modify()` inside
+the callback causes infinite recursion. If you need to trigger a side-effect modification
+(e.g., rebuilding splice regions after comp state changes), use a separate `useEffect` that
+reacts to the derived state, and guard with a ref (`isRebuildingRef`) to skip re-derivation
+when the side-effect triggers the subscribe callback.
+
 ### Region Type Guards: isAudioRegion, isValueRegion, isNoteRegion
 All three are type guards on the base `RegionBoxAdapter` interface:
 `isAudioRegion(): this is AudioRegionBoxAdapter`,
@@ -252,6 +259,13 @@ All three are type guards on the base `RegionBoxAdapter` interface:
 `isNoteRegion(): this is NoteRegionBoxAdapter`.
 Use the positive guard (e.g., `r.isValueRegion()`) instead of negation
 (`!r.isAudioRegion() as ValueRegionBoxAdapter[]`) — avoids casts entirely.
+
+### Storing Custom Metadata in Box Labels
+The box graph has no generic metadata/annotation system, but every box has a `label`
+string field that participates in transactions and undo/redo. Use a prefixed JSON string
+to piggyback structured data: `box.label.setValue("comp:" + JSON.stringify(state))`.
+Read back with `label.startsWith("comp:") ? JSON.parse(label.slice(5)) : null`.
+See `compLaneUtils.ts` `encodeCompStateToLabel()` for a working example.
 
 ### Region Visitor Pattern (Type-Safe Discrimination)
 Prefer visitor over casting for region type handling:

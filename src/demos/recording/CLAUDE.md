@@ -240,8 +240,8 @@ artifact where each take's waveform shows ~2-3ms of extra audio at the tail.
 **20ms voice crossfade at loop boundaries:** At loop wrap, the engine sets
 `BlockFlag.discontinuous`, which fades out old voices over `VOICE_FADE_DURATION = 0.020s`
 (20ms) and fades in new voices over the same duration. During this window, both the
-outgoing and incoming take audio overlap briefly. This is SDK-level behavior to prevent
-clicks — not a bug.
+outgoing and incoming take audio overlap briefly. The fade-out starts from the current
+amplitude level, making these transitions smooth and click-free.
 
 **Playback audio read formula** (TapeDeviceProcessor.ts):
 `sampleIndex = ((elapsedSeconds + waveformOffset) * sampleRate) | 0`
