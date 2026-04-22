@@ -45,6 +45,7 @@ const App: React.FC = () => {
   const [crossfadeMs, setCrossfadeMs] = useState(20);
   const [crossfadeCurve, setCrossfadeCurve] = useState<CrossfadeCurve>("curve");
   const [compMode, setCompMode] = useState<CompMode>("automation");
+  const [spliceOverlap, setSpliceOverlap] = useState(true);
   const [isDragOver, setIsDragOver] = useState(false);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
@@ -104,12 +105,13 @@ const App: React.FC = () => {
       rebuildSpliceRegions(
         project, spliceTrackRef.current, takes,
         compState.boundaries, compState.assignments,
-        playbackStartRef.current, fullAudioPpqnRef.current
+        playbackStartRef.current, fullAudioPpqnRef.current,
+        spliceOverlap
       );
     } finally {
       isRebuildingRef.current = false;
     }
-  }, [project, takes, compMode, compState]);
+  }, [project, takes, compMode, compState, spliceOverlap]);
 
   // ─── Load takes from audio file(s) ───
   const loadTakes = useCallback(
@@ -617,9 +619,19 @@ const App: React.FC = () => {
                         </SegmentedControl.Root>
                       </Flex>
                     ) : (
-                      <Text size="2" color="gray" style={{ fontStyle: "italic" }}>
-                        SDK manages 20ms linear voice crossfade
-                      </Text>
+                      <Flex gap="3" align="center">
+                        <Text size="2" color="gray" style={{ fontStyle: "italic" }}>
+                          SDK 20ms voice crossfade
+                        </Text>
+                        <label style={{ fontSize: "14px", color: "var(--gray-11)", display: "flex", alignItems: "center", gap: "6px", cursor: "pointer" }}>
+                          <input
+                            type="checkbox"
+                            checked={spliceOverlap}
+                            onChange={(e) => setSpliceOverlap(e.target.checked)}
+                          />
+                          Region overlap
+                        </label>
+                      </Flex>
                     )}
                     <Badge size="2" color="green" variant="soft">
                       {compState.boundaries.length + 1} zone{compState.boundaries.length > 0 ? "s" : ""}

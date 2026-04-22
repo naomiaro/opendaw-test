@@ -230,7 +230,8 @@ export function rebuildSpliceRegions(
   boundaries: number[],
   assignments: number[],
   playbackStart: number,
-  fullAudioPpqn: number
+  fullAudioPpqn: number,
+  spliceOverlap: boolean = true
 ): void {
   project.editing.modify(() => {
     // Delete existing regions on splice track
@@ -239,10 +240,11 @@ export function rebuildSpliceRegions(
       region.box.delete();
     }
 
-    // Create regions per zone with slight overlap to ensure voice crossfade.
-    // Without overlap, the old voice may not be evicted in the same block as
-    // the new voice starts, causing a one-block gap (click).
-    const overlapPpqn = Math.round(PPQN.secondsToPulses(0.020, BPM)); // 20ms overlap
+    // With overlap enabled, extend each region by 20ms so adjacent regions overlap.
+    // This ensures the old voice is in iterateRange during the boundary block and
+    // gets properly evicted with a crossfade. Without overlap, there's a one-block
+    // gap where the old voice isn't evicted, causing a click.
+    const overlapPpqn = spliceOverlap ? Math.round(PPQN.secondsToPulses(0.020, BPM)) : 0;
     const zoneBounds = [playbackStart, ...boundaries, playbackStart + TOTAL_PPQN];
     for (let z = 0; z < assignments.length; z++) {
       const zoneStart = zoneBounds[z];
