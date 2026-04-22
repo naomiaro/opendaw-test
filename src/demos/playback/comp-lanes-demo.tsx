@@ -65,28 +65,9 @@ const App: React.FC = () => {
       const crossfadePPQN = Math.round(PPQN.secondsToPulses(xfadeMs / 1000, BPM));
       const playbackStart = playbackStartRef.current;
 
+      // Pre-compute events for each take outside the transaction (pure logic, no SDK calls)
+      const perTakeEvents: { position: number; index: number; value: number; interpolation: any }[][] = [];
       for (let t = 0; t < takes.length; t++) {
-        const take = takes[t];
-        const trackBox = take.automationTrackBox;
-
-        // Delete existing automation regions via the adapter layer
-        const trackAdapter = project.boxAdapters.adapterFor(trackBox, TrackBoxAdapter);
-        const existingAdapters = trackAdapter.regions.adapters.values()
-          .filter(r => r.isValueRegion());
-
-        if (existingAdapters.length > 0) {
-          project.editing.modify(() => {
-            for (const adapter of existingAdapters) {
-              const collectionOpt = adapter.optCollection;
-              if (collectionOpt.nonEmpty()) {
-                collectionOpt.unwrap().events.asArray().forEach((evt: any) => evt.box.delete());
-              }
-              adapter.box.delete();
-            }
-          });
-        }
-
-        // Build events for this take, then assign unique indices per position before creating
         const events: { position: number; value: number; interpolation: any }[] = [];
         const zoneBounds = [0, ...boundaries.map(b => b - playbackStart), TOTAL_PPQN];
 
@@ -137,24 +118,47 @@ const App: React.FC = () => {
           }
           indexedEvents.push({ ...evt, index: posIndex });
         }
+        perTakeEvents.push(indexedEvents);
+      }
 
-        // Create automation region and write indexed events
-        project.editing.modify(() => {
+      // Single atomic transaction: delete all old regions, then create all new ones
+      project.editing.modify(() => {
+        // Delete existing automation regions for all takes
+        for (let t = 0; t < takes.length; t++) {
+          const take = takes[t];
+          const trackAdapter = project.boxAdapters.adapterFor(take.automationTrackBox, TrackBoxAdapter);
+          const existingAdapters = trackAdapter.regions.adapters.values()
+            .filter(r => r.isValueRegion());
+
+          for (const adapter of existingAdapters) {
+            const collectionOpt = adapter.optCollection;
+            if (collectionOpt.nonEmpty()) {
+              collectionOpt.unwrap().events.asArray().forEach((evt: any) => evt.box.delete());
+            }
+            adapter.box.delete();
+          }
+        }
+
+        // Create new automation regions and events for all takes
+        for (let t = 0; t < takes.length; t++) {
+          const take = takes[t];
+          const indexedEvents = perTakeEvents[t];
+
           const regionOpt = project.api.createTrackRegion(
-            trackBox,
+            take.automationTrackBox,
             playbackStart as ppqn,
             TOTAL_PPQN as ppqn
           );
           if (regionOpt.isEmpty()) {
             console.error(`rebuildAutomation: createTrackRegion failed for take ${t}`);
-            return;
+            continue;
           }
           const regionBox = regionOpt.unwrap() as ValueRegionBox;
           const adapter = project.boxAdapters.adapterFor(regionBox, ValueRegionBoxAdapter);
           const collectionOpt = adapter.optCollection;
           if (collectionOpt.isEmpty()) {
             console.error(`rebuildAutomation: optCollection is empty for take ${t}`);
-            return;
+            continue;
           }
           const collection = collectionOpt.unwrap();
 
@@ -166,8 +170,8 @@ const App: React.FC = () => {
               interpolation: evt.interpolation
             });
           }
-        });
-      }
+        }
+      });
     },
     []
   );
