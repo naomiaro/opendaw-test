@@ -75,15 +75,33 @@ const App: React.FC = () => {
       setCanRedo(project.editing.canRedo());
     };
     updateUndoRedo();
+    // Eagerly derive comp state when takes are available (fixes stale closure on initial load)
+    if (takes.length > 0) {
+      setCompState(deriveCompState(project, takes, playbackStartRef.current));
+    }
     const subscription = project.editing.subscribe(() => {
       if (takes.length > 0) {
-        const derived = deriveCompState(project, takes, playbackStartRef.current);
-        setCompState(derived);
+        try {
+          setCompState(deriveCompState(project, takes, playbackStartRef.current));
+        } catch (e) {
+          console.error("Failed to derive comp state after edit:", JSON.stringify(String(e)));
+        }
       }
       updateUndoRedo();
     });
     return () => subscription.terminate();
   }, [project, takes]);
+
+  // ─── Rebuild splice regions when comp state changes (avoids infinite loop in editing.subscribe) ───
+  useEffect(() => {
+    if (!project || takes.length === 0) return;
+    if (compMode !== "splice" || !spliceTrackRef.current) return;
+    rebuildSpliceRegions(
+      project, spliceTrackRef.current, takes,
+      compState.boundaries, compState.assignments,
+      playbackStartRef.current, fullAudioPpqnRef.current
+    );
+  }, [project, takes, compMode, compState]);
 
   // ─── Rebuild volume automation from current comp state ───
   const rebuildAutomation = useCallback(
@@ -436,6 +454,11 @@ const App: React.FC = () => {
   const handleModeChange = useCallback((mode: string) => {
     if (!project || takes.length === 0) return;
     const newMode = mode as CompMode;
+
+    if (newMode === "splice" && (!spliceAudioUnitRef.current || !spliceTrackRef.current)) {
+      console.error("handleModeChange: splice track not available");
+      return;
+    }
 
     project.editing.modify(() => {
       for (const take of takes) {

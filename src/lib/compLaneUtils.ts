@@ -73,8 +73,14 @@ export function deriveCompState(
     const label = region.label;
     if (label.startsWith(COMP_STATE_PREFIX)) {
       try {
-        return JSON.parse(label.slice(COMP_STATE_PREFIX.length));
-      } catch {
+        const parsed = JSON.parse(label.slice(COMP_STATE_PREFIX.length));
+        if (!Array.isArray(parsed.boundaries) || !Array.isArray(parsed.assignments)) {
+          console.error("deriveCompState: parsed label has invalid shape:", JSON.stringify(parsed));
+          break;
+        }
+        return parsed as CompState;
+      } catch (e) {
+        console.error("deriveCompState: failed to parse comp state from label:", JSON.stringify({ label, error: String(e) }));
         break;
       }
     }
