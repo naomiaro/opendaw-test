@@ -10,7 +10,7 @@ import {
   BPM, BAR, TOTAL_PPQN, MAX_TAKES,
   TAKE_COLORS, VOL_0DB, VOL_SILENT,
   generateTakeLabels, computeTakeOffsets,
-  deriveCompState, rebuildSpliceRegions,
+  deriveCompState, encodeCompStateToLabel, rebuildSpliceRegions,
   type CompMode, type TakeData, type CompState
 } from "@/lib/compLaneUtils";
 import { GitHubCorner } from "@/components/GitHubCorner";
@@ -180,6 +180,10 @@ const App: React.FC = () => {
             continue;
           }
           const regionBox = regionOpt.unwrap() as ValueRegionBox;
+          // Encode comp state in first take's region label for undo/redo derivation
+          if (t === 0) {
+            regionBox.label.setValue(encodeCompStateToLabel({ boundaries, assignments }));
+          }
           const adapter = project.boxAdapters.adapterFor(regionBox, ValueRegionBoxAdapter);
           const collectionOpt = adapter.optCollection;
           if (collectionOpt.isEmpty()) {
