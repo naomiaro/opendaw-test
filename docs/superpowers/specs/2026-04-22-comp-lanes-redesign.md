@@ -141,6 +141,20 @@ Assignments = for each zone between boundaries,
 
 This is a practical example of using the box graph as the single source of truth for UI state — a pattern that scales to more complex applications. The comp decisions are encoded in automation data, not in parallel React state, so the SDK's transaction system handles undo/redo, persistence, and collaboration for free.
 
+### 10. VitePress Documentation
+
+Add an undo/redo section to the box system chapter (`documentation/04-box-system-and-reactivity.md`), covering:
+
+- `editing.undo()` / `editing.redo()` API and return values
+- `editing.canUndo()` / `editing.canRedo()` for button state
+- `editing.subscribe()` to observe changes (fires after undo/redo/modify)
+- Pattern: deriving UI state from the box graph instead of maintaining parallel React state
+- Pattern: batching related mutations into a single `editing.modify()` for atomic undo
+- `editing.modify(fn, mark)` — the `mark: false` option for intermediate updates that shouldn't create undo points
+- Link to the comp-lanes demo as a working example
+
+This fills a gap — Chapter 04 mentions "undo/redo" as a benefit of transactions but never shows the actual API.
+
 ## Out of Scope
 
 - Export functionality
