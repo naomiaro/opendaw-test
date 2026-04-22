@@ -4,8 +4,13 @@ import { UUID } from "@opendaw/lib-std";
 import { PPQN, Interpolation } from "@opendaw/lib-dsp";
 import type { ppqn } from "@opendaw/lib-dsp";
 import { Project } from "@opendaw/studio-core";
-import { AudioRegionBox, TrackBox, ValueRegionBox } from "@opendaw/studio-boxes";
-import { AudioUnitBoxAdapter, ValueRegionBoxAdapter, TrackBoxAdapter } from "@opendaw/studio-adapters";
+import { TrackBox, ValueRegionBox } from "@opendaw/studio-boxes";
+import { ValueRegionBoxAdapter, TrackBoxAdapter } from "@opendaw/studio-adapters";
+import {
+  BPM, BAR, BEAT, TOTAL_PPQN, MAX_TAKES, STAGGER_OFFSETS,
+  TAKE_COLORS, VOL_0DB, VOL_SILENT,
+  type CompMode, type TakeData, type CompState
+} from "@/lib/compLaneUtils";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
@@ -15,7 +20,6 @@ import { loadTracksFromFiles } from "@/lib/trackLoading";
 import { getAudioExtension } from "@/lib/audioUtils";
 import { usePlaybackPosition } from "@/hooks/usePlaybackPosition";
 import { useTransportControls } from "@/hooks/useTransportControls";
-import type { TrackData } from "@/lib/types";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
@@ -29,28 +33,6 @@ import {
   Button
 } from "@radix-ui/themes";
 
-const BPM = 124;
-const BAR = PPQN.fromSignature(4, 4); // 3840
-const BEAT = BAR / 4; // 960
-const NUM_BARS = 8;
-const TOTAL_PPQN = BAR * NUM_BARS;
-const NUM_TAKES = 3;
-// Offsets for simulated takes (fractions of a beat)
-const TAKE_OFFSETS = [0, Math.round(BEAT * 0.25), Math.round(BEAT * 0.5)]; // 0, 240, 480 PPQN
-const TAKE_COLORS = ["#4ade80", "#f59e0b", "#ef4444"];
-const TAKE_LABELS = ["Take 1", "Take 2", "Take 3"];
-
-// Volume automation values
-const VOL_0DB = AudioUnitBoxAdapter.VolumeMapper.x(0); // unitValue for 0 dB
-const VOL_SILENT = 0.0; // unitValue 0.0 maps to -inf dB (complete silence)
-
-interface TakeData {
-  trackData: TrackData;
-  automationTrackBox: TrackBox;
-  offset: number; // PPQN offset into the audio file
-  color: string;
-  label: string;
-}
 
 const App: React.FC = () => {
   const [status, setStatus] = useState("Initializing...");
@@ -199,7 +181,9 @@ const App: React.FC = () => {
       const localAudioBuffers = localAudioBuffersRef.current;
 
       // Load the same file 3 times as separate tracks
-      const fileConfigs = TAKE_LABELS.map((label) => ({ name: label, file: fileUrl }));
+      const takeLabels = ["Take 1", "Take 2", "Take 3"];
+      const takeOffsets = STAGGER_OFFSETS.slice(0, 3);
+      const fileConfigs = takeLabels.map((label) => ({ name: label, file: fileUrl }));
       const loadedTracks = await loadTracksFromFiles(
         project,
         audioContext,
@@ -208,7 +192,7 @@ const App: React.FC = () => {
         { onProgress: (i, total, trackName) => setStatus(`Loading ${trackName} (${i}/${total})...`) }
       );
 
-      if (loadedTracks.length !== NUM_TAKES) {
+      if (loadedTracks.length !== 3) {
         setStatus("Error: failed to create all takes");
         return;
       }
@@ -220,9 +204,9 @@ const App: React.FC = () => {
 
       // Adjust each track's region offset and create automation tracks
       const takeData: TakeData[] = [];
-      for (let i = 0; i < NUM_TAKES; i++) {
+      for (let i = 0; i < 3; i++) {
         const track = loadedTracks[i];
-        const offset = TAKE_OFFSETS[i];
+        const offset = takeOffsets[i];
 
         // Adjust region position and loopOffset for the take offset
         project.editing.modify(() => {
@@ -253,9 +237,10 @@ const App: React.FC = () => {
         takeData.push({
           trackData: track,
           automationTrackBox,
+          audioFileBox: null,
           offset,
           color: TAKE_COLORS[i],
-          label: TAKE_LABELS[i]
+          label: takeLabels[i]
         });
       }
 
