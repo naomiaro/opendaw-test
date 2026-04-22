@@ -239,11 +239,15 @@ export function rebuildSpliceRegions(
       region.box.delete();
     }
 
-    // Create consecutive regions per zone
+    // Create regions per zone with slight overlap to ensure voice crossfade.
+    // Without overlap, the old voice may not be evicted in the same block as
+    // the new voice starts, causing a one-block gap (click).
+    const overlapPpqn = Math.round(PPQN.secondsToPulses(0.020, BPM)); // 20ms overlap
     const zoneBounds = [playbackStart, ...boundaries, playbackStart + TOTAL_PPQN];
     for (let z = 0; z < assignments.length; z++) {
       const zoneStart = zoneBounds[z];
       const zoneEnd = zoneBounds[z + 1];
+      const isLast = z === assignments.length - 1;
       const take = takes[assignments[z]];
       if (!take || !take.audioFileBox) continue;
 
@@ -253,8 +257,9 @@ export function rebuildSpliceRegions(
         box.regions.refer(spliceTrackBox.regions);
         box.file.refer(take.audioFileBox);
         box.events.refer(eventsCollectionBox.owners);
+        const regionDuration = isLast ? (zoneEnd - zoneStart) : (zoneEnd - zoneStart + overlapPpqn);
         box.position.setValue(zoneStart);
-        box.duration.setValue(zoneEnd - zoneStart);
+        box.duration.setValue(regionDuration);
         box.loopOffset.setValue(zoneStart + take.offset);
         box.loopDuration.setValue(fullAudioPpqn);
         box.label.setValue(take.label);
