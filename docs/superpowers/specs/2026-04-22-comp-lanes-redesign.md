@@ -78,9 +78,19 @@ Stagger offsets increase from `[0, 1/4 beat, 1/2 beat]` to `[0, 1 beat, 2 beats,
 
 - `src/demos/playback/comp-lanes-demo.tsx` — all changes in this single file
 
+### 8. Waveform Rendering with PeaksPainter
+
+Replace the current raw `AudioBuffer.getChannelData()` waveform rendering with `PeaksPainter.renderPixelStrips()` using the adapter layer for peaks access:
+
+- Each take lane renders its full audio range using `regionAdapter.file.peaks`
+- Use `CanvasPainter` for automatic AnimationFrame-driven repainting
+- Peaks frame range (`u0`/`u1`) derived from the take's playback offset into the audio file
+- Active zone highlights overlay on top of the rendered waveform (existing behavior)
+
+This matches the pattern used in the other playback demos (clip-fades, track-editing) and produces smoother, resolution-independent waveforms.
+
 ## Out of Scope
 
-- Waveform rendering with PeaksPainter (current demo uses raw AudioBuffer rendering — keeping that)
 - Export functionality
 - Undo/redo of comp decisions
 - More than 4 takes
