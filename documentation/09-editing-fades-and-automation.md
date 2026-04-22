@@ -936,7 +936,7 @@ For track volume with `decibel(-96, -9, +6)`:
 - `Interpolation.None` (step) jumps instantly — no interpolation, the mapping is irrelevant.
 - `Interpolation.Curve(slope)` applies the Möbius-Ease curve to unitValue first, then the dB mapping on top. The two curves compound.
 
-**Practical consequence for crossfades:** A volume automation crossfade using `Interpolation.Linear` sounds smoother than a raw linear amplitude crossfade (like the SDK's built-in 20ms voice crossfade) because the dB mapping gives it an equal-power-like characteristic. To achieve a true linear amplitude crossfade via automation, you'd need to pre-compute the inverse mapping — which is rarely desirable since the dB-mapped version usually sounds better.
+**Practical consequence for crossfades:** A volume automation crossfade using `Interpolation.Linear` behaves differently from a raw linear amplitude crossfade (like the SDK's built-in voice crossfade) because the dB mapping reshapes the amplitude curve. Whether this is intentional or a side effect of the architecture is unclear — the interpolation was likely designed to work in unitValue space for UI consistency (linear knob/slider movement), and the dB mapping exists to make controls feel musically responsive.
 
 #### Converting Between dB and UnitValue
 
