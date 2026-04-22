@@ -213,6 +213,7 @@ const App: React.FC = () => {
         const offset = takeOffsets[i];
 
         // Adjust region position and loopOffset for the take offset
+        let audioFileBox: any = null;
         project.editing.modify(() => {
           const trackAdapter = project.boxAdapters.adapterFor(track.trackBox, TrackBoxAdapter);
           trackAdapter.regions.adapters.values()
@@ -221,6 +222,9 @@ const App: React.FC = () => {
               r.box.position.setValue(playbackStart);
               r.box.duration.setValue(TOTAL_PPQN);
               r.box.loopOffset.setValue(playbackStart + offset);
+              if (audioFileBox === null) {
+                audioFileBox = r.box.file.targetVertex.unwrap().box;
+              }
             });
         });
 
@@ -241,7 +245,7 @@ const App: React.FC = () => {
         takeData.push({
           trackData: track,
           automationTrackBox,
-          audioFileBox: null,
+          audioFileBox,
           offset,
           color: TAKE_COLORS[i],
           label: takeLabels[i]
