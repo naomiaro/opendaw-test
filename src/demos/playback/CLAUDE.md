@@ -164,16 +164,13 @@ Set custom labels with `adapter.box.label.setValue("name")`.
 GitHubCorner, BackLink, content, and MoisesLogo all go *inside* `<Container>`, not as siblings.
 See `src/looping-demo.tsx` for the reference layout pattern.
 
-### Voice Pop on Region Boundaries (SDK Limitation)
-`RegionEditing.cut()` creates a new `PitchVoice` per region. Each voice has a forced
-20ms fade-in/fade-out (`VOICE_FADE_DURATION` in `Tape/constants.ts`, not configurable).
-When one region ends and the next begins, the voice eviction + creation causes an
-audible pop. Pure Web Audio scheduling of consecutive `AudioBufferSourceNode`s from
-the same buffer is seamless — the pop is entirely from SDK voice management.
+### Voice Crossfade on Region Boundaries
+`RegionEditing.cut()` creates a new `PitchVoice` per region. Each voice has a
+20ms fade-in/fade-out (`VOICE_FADE_DURATION` in `Tape/constants.ts`). The fade-out starts
+from the current amplitude level, so transitions between consecutive regions are smooth.
 
-**Workaround:** Use multi-track volume automation crossfades instead of region splitting.
-Each "take" gets its own track; volume automation (`createAutomationTrack` +
-`Interpolation.Curve`) handles crossfades. See `comp-lanes-demo.tsx`.
+Multi-track volume automation crossfades (`comp-lanes-demo.tsx`) remain a valid alternative
+technique for complex comp workflows.
 
 ### Fade-In on Newly Created Regions May Not Apply
 Setting `adapter.fading.inField.setValue()` on regions created by `RegionEditing.cut()`

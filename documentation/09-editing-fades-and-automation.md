@@ -1351,7 +1351,7 @@ See the [Comp Lanes demo](https://opendaw-test.pages.dev/comp-lanes-demo.html) f
 
 #### Voice Fade Behavior
 
-The SDK's `TapeDeviceProcessor` creates a separate voice per region with a built-in 20ms crossfade on creation and eviction. When one region ends and the next begins, this creates a brief V-shaped volume dip at the boundary. The voice fade is independent of region-level fading and is not configurable from the API.
+The SDK's `TapeDeviceProcessor` creates a separate voice per region with a built-in 20ms crossfade on creation and eviction. The fade-out starts from the current amplitude level, so transitions between consecutive regions are smooth.
 
 #### Automation Events at Same Position
 
