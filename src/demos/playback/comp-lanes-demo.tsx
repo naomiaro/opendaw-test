@@ -65,6 +65,7 @@ const App: React.FC = () => {
 
   // ─── Playback range (set after takes are created) ───
   const playbackStartRef = useRef<number>(0);
+  const isRebuildingRef = useRef(false);
 
   // ─── Derive comp state from box graph whenever editing commits ───
   useEffect(() => {
@@ -79,6 +80,8 @@ const App: React.FC = () => {
       setCompState(deriveCompState(project, takes, playbackStartRef.current));
     }
     const subscription = project.editing.subscribe(() => {
+      // Skip re-derivation when we triggered the edit ourselves (splice rebuild)
+      if (isRebuildingRef.current) return;
       if (takes.length > 0) {
         try {
           setCompState(deriveCompState(project, takes, playbackStartRef.current));
@@ -91,15 +94,20 @@ const App: React.FC = () => {
     return () => subscription.terminate();
   }, [project, takes]);
 
-  // ─── Rebuild splice regions when comp state changes (avoids infinite loop in editing.subscribe) ───
+  // ─── Rebuild splice regions when comp state changes ───
   useEffect(() => {
     if (!project || takes.length === 0) return;
     if (compMode !== "splice" || !spliceTrackRef.current) return;
-    rebuildSpliceRegions(
-      project, spliceTrackRef.current, takes,
-      compState.boundaries, compState.assignments,
-      playbackStartRef.current, fullAudioPpqnRef.current
-    );
+    isRebuildingRef.current = true;
+    try {
+      rebuildSpliceRegions(
+        project, spliceTrackRef.current, takes,
+        compState.boundaries, compState.assignments,
+        playbackStartRef.current, fullAudioPpqnRef.current
+      );
+    } finally {
+      isRebuildingRef.current = false;
+    }
   }, [project, takes, compMode, compState]);
 
   // ─── Load takes from audio file(s) ───
