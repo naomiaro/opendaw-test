@@ -62,7 +62,7 @@ const App: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const canvasRefs = useRef<Map<number, HTMLCanvasElement>>(new Map());
   const spliceTrackRef = useRef<TrackBox | null>(null);
-  const spliceAudioUnitRef = useRef<any>(null);
+  const spliceAudioUnitRef = useRef<AudioUnitBox | null>(null);
   const fullAudioPpqnRef = useRef<number>(TOTAL_PPQN);
 
   // ─── Playback range (set after takes are created) ───
@@ -305,7 +305,7 @@ const App: React.FC = () => {
       newAssignments[zone] = takeIndex;
       rebuildAutomation(project, takes, compState.boundaries, newAssignments, crossfadeMs, playbackStartRef.current, crossfadeCurve);
     },
-    [project, takes, compState, crossfadeMs]
+    [project, takes, compState, crossfadeMs, crossfadeCurve]
   );
 
   const handleCrossfadeChange = useCallback(
@@ -315,7 +315,7 @@ const App: React.FC = () => {
         rebuildAutomation(project, takes, compState.boundaries, compState.assignments, ms, playbackStartRef.current, crossfadeCurve);
       }
     },
-    [project, takes, compState]
+    [project, takes, compState, crossfadeCurve]
   );
 
   // ─── Mode toggle ───
