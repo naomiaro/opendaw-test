@@ -89,24 +89,57 @@ Replace the current raw `AudioBuffer.getChannelData()` waveform rendering with `
 
 This matches the pattern used in the other playback demos (clip-fades, track-editing) and produces smoother, resolution-independent waveforms.
 
-### 9. Undo/Redo of Comp Decisions
+### 9. Undo/Redo via Box Graph (Single Source of Truth)
 
-Comp boundaries and assignments are UI-level decisions that generate automation — they live in React state, not the box graph. Undo/redo uses a simple React history stack:
+Comp state (boundaries + zone assignments) is **not stored in React state**. Instead, it is derived from the automation regions in the box graph. This makes OpenDAW's built-in `editing.undo()` / `editing.redo()` work natively — no parallel history stack needed.
 
-```typescript
-type CompSnapshot = { boundaries: number[]; assignments: number[] };
-const [history, setHistory] = useState<CompSnapshot[]>([]);
-const [historyIndex, setHistoryIndex] = useState(-1);
+#### How it works
+
+1. **User actions** (add boundary, change zone assignment) call `rebuildAutomation()`, which creates/deletes automation regions inside a **single** `editing.modify()` transaction. This creates one undo point per comp change.
+
+2. **`deriveCompState(takes)`** reads the automation events from each take's volume automation track and reconstructs `{ boundaries, assignments }`:
+   - For each take, find positions where volume transitions between silent and 0dB
+   - The union of all transition positions = zone boundaries
+   - For each zone, the take with 0dB volume = the active assignment
+
+3. **`editing.subscribe()`** fires after every undo/redo/modify. The callback calls `deriveCompState()` to update the UI.
+
+4. **Undo/Redo** calls `editing.undo()` / `editing.redo()`. The box graph reverts the automation regions. The `editing.subscribe()` callback fires, `deriveCompState()` re-reads the box graph, and React state updates to match.
+
+#### Key implementation details
+
+- **Single transaction per comp change**: `rebuildAutomation()` must batch all per-take automation updates (delete old regions + create new regions for ALL takes) into one `editing.modify()` call. Currently it uses multiple `editing.modify()` calls — this must be consolidated so undo reverses the entire comp change atomically.
+
+- **Crossfade slider changes**: Also wrapped in a single `editing.modify()` so changing crossfade duration from 20ms to 50ms is one undo point.
+
+- **Splice mode**: When in splice mode, `rebuildSpliceRegions()` also uses `editing.modify()` — undo/redo works the same way, with `deriveCompState()` reading from the splice track's regions instead of automation events.
+
+- **Mode switching**: Toggling between automation/splice mutes/unmutes tracks inside `editing.modify()`, so the mode switch itself is undoable.
+
+#### `deriveCompState()` algorithm
+
+```
+For each take's automation track:
+  Read all value events from the automation region
+  Find positions where value transitions to/from VOL_0DB
+  Record active ranges: [{start, end}, ...]
+
+Boundaries = sorted unique set of all active range start/end positions
+             (excluding 0 and TOTAL_PPQN)
+
+Assignments = for each zone between boundaries,
+              find which take has VOL_0DB in that zone
 ```
 
-- Before each comp change (add boundary, change zone assignment), push current state to history
-- Undo: decrement `historyIndex`, restore boundaries/assignments, rebuild automation
-- Redo: increment `historyIndex`, restore, rebuild
-- Keyboard: Cmd+Z / Cmd+Shift+Z (standard shortcuts)
-- UI: Undo/Redo buttons with disabled state when at stack boundary
-- History clears when audio is loaded (new comp session)
+#### UI
 
-This is intentionally separate from OpenDAW's box graph undo (`editing.undo()`) — the comp decisions aren't box graph state, so box graph undo would leave the UI inconsistent.
+- Undo/Redo buttons in transport card, disabled when `!editing.canUndo()` / `!editing.canRedo()`
+- Keyboard: Cmd+Z / Cmd+Shift+Z
+- Button state updates via `editing.subscribe()`
+
+#### What this demonstrates
+
+This is a practical example of using the box graph as the single source of truth for UI state — a pattern that scales to more complex applications. The comp decisions are encoded in automation data, not in parallel React state, so the SDK's transaction system handles undo/redo, persistence, and collaboration for free.
 
 ## Out of Scope
 
