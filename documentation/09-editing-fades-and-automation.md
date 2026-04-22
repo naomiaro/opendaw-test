@@ -914,6 +914,30 @@ The `Decibel` class formula (`value-mapping.js`): when `x <= 0.0` returns `-Infi
 
 **Key takeaway:** unitValue `0.5` on track volume = -9 dB, but unitValue `0.5` on reverb wet = -12 dB. The same automation curve produces different sonic results on different parameters.
 
+#### How ValueMapping Affects Interpolation
+
+Interpolation (`None`, `Linear`, `Curve`) controls how **unitValue** changes over time between two automation events. The `ValueMapping` then converts each interpolated unitValue to the actual parameter value (dB, Hz, etc.) before it reaches the processor.
+
+This means `Interpolation.Linear` produces a **linear ramp in unitValue space**, but the resulting amplitude is shaped by the mapping curve:
+
+```
+Interpolation pipeline:
+  event A (unitValue) → interpolate → event B (unitValue)
+                            ↓
+                    intermediate unitValue
+                            ↓
+                    ValueMapping.y(unitValue) → dB
+                            ↓
+                    Math.pow(10, dB / 20) → linear amplitude
+```
+
+For track volume with `decibel(-96, -9, +6)`:
+- `Interpolation.Linear` from silent (0.0) to 0dB (0.734) ramps unitValue linearly, but the dB curve makes the amplitude ramp logarithmic — it accelerates through the quiet range and decelerates near unity. This naturally produces a smoother-sounding fade than a raw linear amplitude ramp.
+- `Interpolation.None` (step) jumps instantly — no interpolation, the mapping is irrelevant.
+- `Interpolation.Curve(slope)` applies the Möbius-Ease curve to unitValue first, then the dB mapping on top. The two curves compound.
+
+**Practical consequence for crossfades:** A volume automation crossfade using `Interpolation.Linear` sounds smoother than a raw linear amplitude crossfade (like the SDK's built-in 20ms voice crossfade) because the dB mapping gives it an equal-power-like characteristic. To achieve a true linear amplitude crossfade via automation, you'd need to pre-compute the inverse mapping — which is rarely desirable since the dB-mapped version usually sounds better.
+
 #### Converting Between dB and UnitValue
 
 Each `ValueMapping` provides bidirectional conversion:
