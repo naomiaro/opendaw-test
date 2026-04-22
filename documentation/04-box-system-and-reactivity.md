@@ -11,6 +11,7 @@
 - [Creating a Complete Audio Clip](#creating-a-complete-audio-clip)
 - [Understanding References](#understanding-references)
 - [Transactions and Undo/Redo](#transactions-and-undoredo)
+  - [Undo/Redo API](#undoredo-api)
 - [Observing Changes](#observing-changes)
 - [Common Patterns](#common-patterns)
 - [Box Graph Best Practices](#box-graph-best-practices)
@@ -284,6 +285,88 @@ project.editing.modify(() => {
   });
 }); // Everything commits together
 ```
+
+### Undo/Redo API
+
+The transaction system provides built-in undo/redo. Each `editing.modify()` call creates an undo point automatically.
+
+#### Methods
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `editing.undo()` | `boolean` | Undo last transaction. Returns `false` if nothing to undo or if undo failed (e.g., conflicting collaborative changes). |
+| `editing.redo()` | `boolean` | Redo last undone transaction. Returns `false` if nothing to redo. |
+| `editing.canUndo()` | `boolean` | Whether undo is available |
+| `editing.canRedo()` | `boolean` | Whether redo is available |
+| `editing.subscribe(observer)` | `Subscription` | Fires after every undo, redo, or modify — use to update UI state |
+
+#### Skipping Undo Points
+
+By default, `editing.modify()` creates an undo point. Pass `mark: false` to suppress this for intermediate updates that shouldn't be individually undoable:
+
+```typescript
+// Creates an undo point (default)
+project.editing.modify(() => { region.position = newPosition; });
+
+// No undo point — used for continuous updates (e.g., region duration growth during recording)
+project.editing.modify(() => { region.duration = newDuration; }, false);
+```
+
+#### Batching for Atomic Undo
+
+Wrap related changes in a single `editing.modify()` so undo reverses them all at once:
+
+```typescript
+// BAD: 3 separate undo points — user must undo 3 times
+tracks.forEach(track => {
+  project.editing.modify(() => updateTrackAutomation(track));
+});
+
+// GOOD: 1 undo point — all tracks revert together
+project.editing.modify(() => {
+  tracks.forEach(track => updateTrackAutomation(track));
+});
+```
+
+#### Observing Changes for UI Updates
+
+`editing.subscribe()` fires after every transaction (including undo/redo). Use it to keep UI in sync:
+
+```typescript
+useEffect(() => {
+  if (!project) return;
+  const subscription = project.editing.subscribe(() => {
+    setCanUndo(project.editing.canUndo());
+    setCanRedo(project.editing.canRedo());
+    // Re-derive any UI state from the box graph here
+  });
+  return () => subscription.terminate();
+}, [project]);
+```
+
+#### Pattern: Deriving UI State from the Box Graph
+
+Instead of maintaining parallel React state for data that's encoded in the box graph, derive it:
+
+```typescript
+// Instead of keeping boundaries/assignments in React state:
+const [boundaries, setBoundaries] = useState([]);
+
+// Derive from the box graph after each change:
+project.editing.subscribe(() => {
+  const derived = deriveStateFromBoxGraph(project);
+  setState(derived);
+});
+
+// User actions modify the box graph (undoable):
+project.editing.modify(() => {
+  // ... create/delete regions, update automation
+});
+// editing.subscribe fires → UI updates automatically
+// editing.undo() fires → same callback → UI reverts
+```
+
+This pattern makes undo/redo work natively — the box graph is the single source of truth, and the UI is a derived view. See the [Comp Lanes demo](https://opendaw-test.pages.dev/comp-lanes-demo.html) for a working example.
 
 ## Observing Changes
 
