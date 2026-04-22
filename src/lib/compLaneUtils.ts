@@ -12,6 +12,20 @@ export const TOTAL_PPQN = BAR * NUM_BARS;
 export const MAX_TAKES = 4;
 export const STAGGER_OFFSETS = [0, BEAT, BEAT * 2, BEAT * 3];
 export const TAKE_COLORS = ["#4ade80", "#f59e0b", "#ef4444", "#a78bfa"];
+
+export function generateTakeLabels(fileCount: number, fileNames?: string[]): string[] {
+  if (fileCount === 1) {
+    return STAGGER_OFFSETS.map((_, i) =>
+      i === 0 ? "Take 1 (original)" : `Take ${i + 1} (+${i} beat${i > 1 ? "s" : ""})`
+    );
+  }
+  return (fileNames ?? []).slice(0, MAX_TAKES);
+}
+
+export function computeTakeOffsets(fileCount: number): number[] {
+  if (fileCount === 1) return STAGGER_OFFSETS;
+  return new Array(Math.min(fileCount, MAX_TAKES)).fill(0);
+}
 export const VOL_0DB = AudioUnitBoxAdapter.VolumeMapper.x(0);
 export const VOL_SILENT = 0.0;
 

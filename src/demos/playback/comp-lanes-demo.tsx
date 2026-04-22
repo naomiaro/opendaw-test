@@ -7,8 +7,9 @@ import { Project } from "@opendaw/studio-core";
 import { TrackBox, ValueRegionBox } from "@opendaw/studio-boxes";
 import { ValueRegionBoxAdapter, TrackBoxAdapter } from "@opendaw/studio-adapters";
 import {
-  BPM, BAR, BEAT, TOTAL_PPQN, MAX_TAKES, STAGGER_OFFSETS,
+  BPM, BAR, TOTAL_PPQN, MAX_TAKES,
   TAKE_COLORS, VOL_0DB, VOL_SILENT,
+  generateTakeLabels, computeTakeOffsets,
   deriveCompState,
   type CompMode, type TakeData, type CompState
 } from "@/lib/compLaneUtils";
@@ -196,18 +197,26 @@ const App: React.FC = () => {
     []
   );
 
-  // ─── Load takes from audio file ───
+  // ─── Load takes from audio file(s) ───
   const loadTakes = useCallback(
-    async (name: string, fileUrl: string) => {
+    async (files: Array<{ name: string; fileUrl: string }>) => {
       if (!project || !audioContext) return;
 
-      setStatus(`Loading ${name}...`);
+      setStatus(`Loading ${files.length === 1 ? files[0].name : `${files.length} files`}...`);
       const localAudioBuffers = localAudioBuffersRef.current;
 
-      // Load the same file 3 times as separate tracks
-      const takeLabels = ["Take 1", "Take 2", "Take 3"];
-      const takeOffsets = STAGGER_OFFSETS.slice(0, 3);
-      const fileConfigs = takeLabels.map((label) => ({ name: label, file: fileUrl }));
+      const isSingleFile = files.length === 1;
+      const offsets = computeTakeOffsets(files.length);
+      const takeCount = isSingleFile ? MAX_TAKES : Math.min(files.length, MAX_TAKES);
+      const labels = generateTakeLabels(files.length, files.map(f => f.name));
+
+      const fileConfigs = isSingleFile
+        ? Array.from({ length: takeCount }, (_, i) => ({
+            name: labels[i],
+            file: files[0].fileUrl,
+          }))
+        : files.slice(0, MAX_TAKES).map((f, i) => ({ name: labels[i] || f.name, file: f.fileUrl }));
+
       const loadedTracks = await loadTracksFromFiles(
         project,
         audioContext,
@@ -216,21 +225,21 @@ const App: React.FC = () => {
         { onProgress: (i, total, trackName) => setStatus(`Loading ${trackName} (${i}/${total})...`) }
       );
 
-      if (loadedTracks.length !== 3) {
+      if (loadedTracks.length !== takeCount) {
         setStatus("Error: failed to create all takes");
         return;
       }
 
       // Determine playback start (skip silence for Dark Ride, start at 0 for other files)
-      const isDarkRide = name.toLowerCase().includes("dark ride");
+      const isDarkRide = files.some(f => f.name.toLowerCase().includes("dark ride"));
       const playbackStart = isDarkRide ? BAR * 16 : 0; // bar 17 for Dark Ride
       playbackStartRef.current = playbackStart;
 
       // Adjust each track's region offset and create automation tracks
       const takeData: TakeData[] = [];
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < takeCount; i++) {
         const track = loadedTracks[i];
-        const offset = takeOffsets[i];
+        const offset = offsets[i];
 
         // Adjust region position and loopOffset for the take offset
         let audioFileBox: any = null;
@@ -268,7 +277,7 @@ const App: React.FC = () => {
           audioFileBox,
           offset,
           color: TAKE_COLORS[i],
-          label: takeLabels[i]
+          label: labels[i]
         });
       }
 
@@ -292,18 +301,20 @@ const App: React.FC = () => {
   );
 
   // ─── File handlers ───
-  const handleFile = useCallback(
-    async (file: File) => {
+  const handleFiles = useCallback(
+    async (fileList: File[]) => {
       if (!audioContext) return;
-      const blobUrl = URL.createObjectURL(file);
+      const configs = fileList.slice(0, MAX_TAKES).map(f => ({
+        name: f.name,
+        fileUrl: URL.createObjectURL(f)
+      }));
       try {
-        await loadTakes(file.name, blobUrl);
+        await loadTakes(configs);
       } catch (error) {
-        console.error("Failed to load audio file:", error);
         const message = error instanceof Error ? error.message : String(error);
-        setStatus(`Error: Could not load "${file.name}". ${message}`);
+        setStatus(`Error: ${message}`);
       } finally {
-        URL.revokeObjectURL(blobUrl);
+        configs.forEach(c => URL.revokeObjectURL(c.fileUrl));
       }
     },
     [audioContext, loadTakes]
@@ -313,9 +324,8 @@ const App: React.FC = () => {
     if (!project || !audioContext) return;
     try {
       const ext = getAudioExtension();
-      await loadTakes("Dark Ride - Vocals", `/audio/DarkRide/06_Vox.${ext}`);
+      await loadTakes([{ name: "Dark Ride - Vocals", fileUrl: `/audio/DarkRide/06_Vox.${ext}` }]);
     } catch (error) {
-      console.error("Failed to load demo:", error);
       const message = error instanceof Error ? error.message : String(error);
       setStatus(`Error loading demo audio: ${message}`);
     }
@@ -459,9 +469,12 @@ const App: React.FC = () => {
   const handleDragLeave = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragOver(false); }, []);
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault(); setIsDragOver(false);
-    const file = e.dataTransfer.files[0];
-    if (file && file.type.startsWith("audio/")) handleFile(file);
-  }, [handleFile]);
+    const fileList = Array.from(e.dataTransfer.files)
+      .filter(f => f.type.startsWith("audio/"))
+      .slice(0, MAX_TAKES);
+    if (fileList.length === 0) return;
+    handleFiles(fileList);
+  }, [handleFiles]);
 
   // ─── Initialize OpenDAW ───
   useEffect(() => {
@@ -555,11 +568,15 @@ const App: React.FC = () => {
                   }}
                 >
                   <Flex direction="column" gap="2" align="center">
-                    <Text size="6">{isDragOver ? "Drop it!" : "Drop an audio file here"}</Text>
-                    <Text size="2" color="gray">or click to browse</Text>
+                    <Text size="6">{isDragOver ? "Drop it!" : "Drop audio file(s) here"}</Text>
+                    <Text size="2" color="gray">Drop 1 file for staggered takes, or 2-4 files for separate performances</Text>
                   </Flex>
-                  <input ref={fileInputRef} type="file" accept="audio/*" style={{ display: "none" }}
-                    onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
+                  <input ref={fileInputRef} type="file" accept="audio/*" multiple style={{ display: "none" }}
+                    onChange={(e) => {
+                      const files = e.target.files;
+                      if (!files || files.length === 0) return;
+                      handleFiles(Array.from(files));
+                    }} />
                 </div>
                 <Flex align="center" gap="3" style={{ width: "100%" }}>
                   <div style={{ flex: 1, height: "1px", backgroundColor: "var(--gray-6)" }} />
