@@ -8,6 +8,9 @@ This comprehensive guide covers OpenDAW's recording system: audio and MIDI captu
 ## Table of Contents
 - [Recording Pipeline Overview](#recording-pipeline-overview)
   - [AudioUnit, Tape, and Track: The Recording Hierarchy](#audiounit-tape-and-track-the-recording-hierarchy)
+  - [TrackBox.index: What It Controls (and What It Doesn't)](#trackboxindex-what-it-controls-and-what-it-doesnt)
+  - [Creating TrackBoxes Manually](#creating-trackboxes-manually)
+  - [Multi-Lane Tape Semantics](#multi-lane-tape-semantics)
 - [Track Arming](#track-arming)
 - [Audio Input Configuration](#audio-input-configuration)
 - [MIDI Input Configuration](#midi-input-configuration)
@@ -104,6 +107,79 @@ All TrackBoxes share the same AudioUnitBox, so they all route through the same v
 **Implication for DAW integrations:** A single Tape audio unit can serve as both the playback source (existing clips) and the recording target (new takes) simultaneously. There is no need to create a separate temporary Tape instrument to isolate recording from existing content — `RecordTrack.findOrCreate()` guarantees isolation at the track level within the audio unit.
 
 **Note:** This behavior is based on the `RecordTrack.findOrCreate()` implementation in the SDK source (`RecordTrack.ts`). It is not currently exposed as a configurable option.
+
+### TrackBox.index: What It Controls (and What It Doesn't)
+
+Every TrackBox inside an AudioUnitBox carries a numeric `index` field. The naming suggests "lane order," but the contract is narrower:
+
+**What `index` does:**
+- Acts as a **slot identifier** for `RecordTrack.findOrCreate()`'s reuse logic. When recording starts, `findOrCreate()` walks existing TrackBoxes sorted by ascending `index` and reuses the first empty one whose `type` matches. Lower indexes get reused first.
+- Is computed as `max(existingIndexes) + 1` when a new TrackBox is created.
+
+**What `index` does NOT do:**
+- Does NOT drive lane render order. `TapeDeviceProcessor` keys its lanes by TrackBox UUID via `SortedSet<UUID.Bytes, Lane>`, then iterates them in UUID-encounter order — not index order.
+- Does NOT participate in mute/solo masking or take selection (those work off `regionBox.mute` and `olderTakeAction` directly).
+- Is NOT an array position. After deletions, gaps are normal: a Tape with three lanes deleted in the middle can have indexes `1, 2, 4` permanently. The next `findOrCreate` will assign `5`, not `3`.
+
+Treat `index` as opaque metadata the SDK maintains for its own reuse heuristic. Don't rewrite it to "compact" gaps after deletion — that would interfere with `findOrCreate`'s next-slot calculation if a recording is in progress on a parallel armed track.
+
+### Creating TrackBoxes Manually
+
+`project.api.createInstrument()` creates *both* an AudioUnitBox and an initial TrackBox in one call. To add additional lanes inside an existing Tape without going through the recording pipeline, use `TrackBox.create` directly and apply the same `max(existingIndexes) + 1` pattern that `RecordTrack.findOrCreate` uses internally:
+
+```typescript
+import { TrackType } from "@opendaw/studio-adapters";
+import { TrackBox } from "@opendaw/studio-boxes";
+import { UUID } from "@opendaw/lib-std";
+
+// Compute next index from existing TrackBoxes in this AudioUnit.
+let maxIndex = 0;
+for (const tb of audioUnitBox.tracks.pointerHub.incoming().map(({ box }) => box)) {
+  maxIndex = Math.max(maxIndex, tb.index?.getValue?.() ?? 0);
+}
+
+project.editing.modify(() => {
+  TrackBox.create(project.boxGraph, UUID.generate(), (box) => {
+    box.type.setValue(TrackType.Audio);
+    box.index.setValue(maxIndex + 1);
+    box.tracks.refer(audioUnitBox.tracks);  // membership pointer (lane belongs to this unit)
+    box.target.refer(audioUnitBox);          // routing pointer (lane plays through this unit)
+  });
+});
+```
+
+Both the membership pointer (`tracks`) and the routing pointer (`target`) are required — the box graph rejects insertion otherwise.
+
+**Don't update `index` after creation.** The SDK reads `index` only at `findOrCreate` time during recording. Mutating it doesn't change rendering and risks confusing `findOrCreate`'s next-slot calculation.
+
+### Multi-Lane Tape Semantics
+
+Once a Tape AudioUnitBox holds multiple TrackBoxes, a few invariants apply:
+
+**Shared at the AudioUnit, per-lane on the TrackBox:**
+- AudioUnitBox owns `volume`, `panning`, the effects chain, and `mute` (silences all lanes).
+- TrackBox owns `regions`, `index`, `type`, and `enabled` (per-lane silence).
+- Per-lane volume/effects aren't possible inside one Tape — use separate Tapes if you need that.
+
+**Two ways to silence a lane:**
+- `trackBox.enabled.setValue(false)` — disables the whole lane. The engine skips it in `TapeDeviceProcessor` (the same path `olderTakeAction: "disable-track"` uses).
+- `regionBox.mute.setValue(true)` — mutes individual regions on a lane (the path `olderTakeAction: "mute-region"` uses, which is the default).
+
+`audioUnitBox.mute` mutes the entire Tape (every lane) — don't reach for it for per-lane control.
+
+**TrackBox.type must match the region types you'll add** — `TrackType.Audio` for `AudioRegionBox`, `TrackType.Notes` for note regions. Mismatched type silently fails to render.
+
+**Deleting a TrackBox requires clearing pointer edges first, inside a transaction:**
+
+```typescript
+project.editing.modify(() => {
+  trackBox.tracks.defer();  // clear membership pointer
+  trackBox.target.defer();  // clear routing pointer
+  trackBox.delete();
+});
+```
+
+Like all box-graph mutations, both `defer()` and `delete()` must run inside `editing.modify()`. Skipping `defer()` causes the box graph to reject deletion (orphan-pointer error).
 
 ### Stopping Recording
 
