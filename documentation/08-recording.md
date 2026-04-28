@@ -3,7 +3,7 @@
 > **Skip if:** you're not implementing recording, MIDI capture, or take management
 > **Prerequisites:** Chapter 04 (Box System), Chapter 05 (Samples & Peaks)
 
-This comprehensive guide covers OpenDAW's recording system: audio and MIDI capture, track arming, input configuration, monitoring, loop recording with takes, step recording, and live waveform peaks.
+This comprehensive guide covers OpenDAW's recording system: audio and MIDI capture, capture arming, input configuration, monitoring, loop recording with takes, step recording, and live waveform peaks.
 
 ## Table of Contents
 - [Recording Pipeline Overview](#recording-pipeline-overview)
@@ -11,7 +11,7 @@ This comprehensive guide covers OpenDAW's recording system: audio and MIDI captu
   - [TrackBox.index: What It Controls (and What It Doesn't)](#trackboxindex-what-it-controls-and-what-it-doesnt)
   - [Creating TrackBoxes Manually](#creating-trackboxes-manually)
   - [Multi-Lane Tape Semantics](#multi-lane-tape-semantics)
-- [Track Arming](#track-arming)
+- [Capture Arming](#capture-arming)
 - [Audio Input Configuration](#audio-input-configuration)
 - [MIDI Input Configuration](#midi-input-configuration)
 - [Input Monitoring](#input-monitoring)
@@ -121,7 +121,7 @@ Every TrackBox inside an AudioUnitBox carries a numeric `index` field. The namin
 - Does NOT participate in mute/solo masking or take selection (those work off `regionBox.mute` and `olderTakeAction` directly).
 - Is NOT an array position. After deletions, gaps are normal: a Tape with three lanes deleted in the middle can have indexes `1, 2, 4` permanently. The next `findOrCreate` will assign `5`, not `3`.
 
-Treat `index` as opaque metadata the SDK maintains for its own reuse heuristic. Don't rewrite it to "compact" gaps after deletion — that would interfere with `findOrCreate`'s next-slot calculation if a recording is in progress on a parallel armed track.
+Treat `index` as opaque metadata the SDK maintains for its own reuse heuristic. Don't rewrite it to "compact" gaps after deletion — that would interfere with `findOrCreate`'s next-slot calculation if a recording is in progress on a parallel armed Tape.
 
 ### Creating TrackBoxes Manually
 
@@ -212,14 +212,16 @@ const sub = sampleLoader.subscribe((state) => {
 - `queryLoadingComplete()` resolves before `sampleLoader.data` is set — do NOT use it to detect recording data availability.
 - Do NOT call `setPosition(0)` after `engine.stop(true)` — `stop(true)` already resets position and calling `setPosition` separately can interfere with OpenDAW's internal finalization chain.
 
-## Track Arming
+## Capture Arming
 
-Before recording, tracks must be "armed" — this tells the engine which tracks will receive recorded data.
+Before recording, you arm one or more **captures**. A capture is associated with an **AudioUnitBox** (a Tape, an instrument) — not with individual TrackBox lanes within it. A Tape with multiple lanes has one shared capture; arming the Tape arms recording for that whole instrument, and `RecordTrack.findOrCreate` decides which lane each new region lands on.
+
+`project.captureDevices` is keyed by `audioUnitBox.address.uuid`. The same `setArm()` API works for audio (`CaptureAudio`) and MIDI (`CaptureMidi`) captures alike — both extend the same `Capture` base class.
 
 ```typescript
 import { CaptureAudio, CaptureDevices } from "@opendaw/studio-core";
 
-// Get capture device for a specific audio unit
+// Get the capture associated with an instrument's AudioUnitBox
 const captureOpt = project.captureDevices.get(audioUnitBox.address.uuid);
 if (captureOpt.nonEmpty()) {
   const capture = captureOpt.unwrap();
@@ -227,7 +229,7 @@ if (captureOpt.nonEmpty()) {
   // Arm exclusively (disarms all other captures)
   project.captureDevices.setArm(capture, true);
 
-  // Arm non-exclusively (for multi-track recording)
+  // Arm non-exclusively (lets multiple instruments record at once)
   project.captureDevices.setArm(capture, false);
 
   // Check armed state
@@ -238,7 +240,7 @@ if (captureOpt.nonEmpty()) {
 const armedCaptures = project.captureDevices.filterArmed();
 ```
 
-**Auto-arming behavior**: When you call `project.startRecording()` with no tracks armed, `Recording.start()` automatically creates a Tape instrument and arms it.
+**Auto-arming behavior**: When you call `project.startRecording()` with no captures armed, `Recording.start()` automatically creates a Tape instrument and arms its capture.
 
 ## Audio Input Configuration
 
@@ -285,6 +287,8 @@ project.editing.modify(() => {
 ```
 
 ## MIDI Input Configuration
+
+Arming a MIDI instrument's capture uses the **same** `project.captureDevices.setArm()` API as audio (see [Capture Arming](#capture-arming)). `project.captureDevices.get(audioUnitBox.address.uuid)` returns a `CaptureMidi` for MIDI instruments and a `CaptureAudio` for Tape — both extend the same `Capture` base class and share the arm/disarm interface. Channel filtering and software-keyboard input are MIDI-specific and configured below.
 
 ### Device Enumeration
 
@@ -366,7 +370,7 @@ capture.monitoringMode = "effects";
 const isMonitoring = capture.isMonitoring; // boolean
 ```
 
-**Important**: Enabling monitoring automatically arms the track if it isn't already armed.
+**Important**: Enabling monitoring automatically arms the capture if it isn't already armed.
 
 **Note**: Unlike `captureBox.deviceId`/`gainDb`/`requestChannels`, `monitoringMode` is not a box graph field — it manipulates Web Audio nodes directly. Do **not** set it inside `editing.modify()`.
 
@@ -541,7 +545,7 @@ Other related preferences:
 
 ## Multi-Track Recording
 
-OpenDAW supports recording multiple tracks simultaneously. Each armed capture device records independently with its own `MediaStream`, `RecordingWorklet`, and `SharedArrayBuffer`.
+OpenDAW supports recording multiple instruments simultaneously. Each armed capture (one per AudioUnitBox) records independently with its own `MediaStream`, `RecordingWorklet`, and `SharedArrayBuffer`.
 
 ### Adding Recording Tracks Dynamically
 
@@ -568,14 +572,14 @@ const captureOpt = project.captureDevices.get(audioUnitBox.address.uuid);
 if (captureOpt.isEmpty()) return;
 const capture = captureOpt.unwrap();
 
-// 3. Arm non-exclusively (keeps other tracks armed)
+// 3. Arm non-exclusively (keeps other captures armed)
 project.captureDevices.setArm(capture, false);
 ```
 
 ### Recording Multiple Devices Simultaneously
 
 ```typescript
-// Arm multiple tracks (non-exclusive)
+// Arm multiple captures (non-exclusive)
 const audioCapture1 = project.captureDevices.get(uuid1).unwrap();
 const audioCapture2 = project.captureDevices.get(uuid2).unwrap();
 
