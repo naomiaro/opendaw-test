@@ -288,6 +288,50 @@ const App: React.FC = () => {
     };
   }, [project, audioContext, recordingTapes, ensureCanvasPainter, session.registerLoader]);
 
+  // Debug: log per-tape recorded frame counts when finalization completes.
+  // Compares RecordingWorklet outputs across tapes to surface any drift.
+  const prevSessionStateRef = useRef<RecordingState>(session.state);
+  useEffect(() => {
+    if (prevSessionStateRef.current === "finalizing" && session.state === "ready") {
+      const tapes = recordingTapesRef.current;
+      const summary = tapes.map((tape, i) => {
+        const loader = tapePeaksRef.current.get(i)?.sampleLoader ?? null;
+        const data = loader?.data ?? null;
+        const peaksOpt = loader?.peaks;
+        const peaks = peaksOpt && !peaksOpt.isEmpty() ? peaksOpt.unwrap() : null;
+        const isPeaksWriter = peaks ? "dataIndex" in peaks : false;
+        return {
+          tape: i + 1,
+          tapeId: tape.id,
+          loaderState: loader?.state.type ?? "no-loader",
+          dataFrames: data?.numberOfFrames ?? null,
+          peakNumFrames: peaks && !isPeaksWriter ? peaks.numFrames : null,
+          sampleRate: data?.sampleRate ?? null,
+          numChannels: data?.numberOfChannels ?? null,
+        };
+      });
+
+      const frames = summary
+        .map((s) => s.dataFrames)
+        .filter((n): n is number => n !== null);
+      const minFrames = frames.length > 0 ? Math.min(...frames) : null;
+      const maxFrames = frames.length > 0 ? Math.max(...frames) : null;
+      const driftFrames =
+        minFrames !== null && maxFrames !== null ? maxFrames - minFrames : null;
+      const sampleRate = summary[0]?.sampleRate ?? null;
+      const driftSeconds =
+        driftFrames !== null && sampleRate !== null
+          ? driftFrames / sampleRate
+          : null;
+
+      console.debug(
+        "[recording-finalized] " +
+          JSON.stringify({ tapes: summary, driftFrames, driftSeconds })
+      );
+    }
+    prevSessionStateRef.current = session.state;
+  }, [session.state]);
+
   // Initialize project settings from OpenDAW
   useEffect(() => {
     if (!project) return;
