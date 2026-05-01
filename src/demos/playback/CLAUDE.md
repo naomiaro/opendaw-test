@@ -115,6 +115,12 @@ renderer clamps unpacked values to canvas bounds. Use ±1.001 at every call site
 this. Audio that genuinely exceeds ±1.001 still surfaces as clamping, so true over-range
 input is not masked.
 
+For reference, OpenDAW's own code uses two patterns: `SlotUtils.ts` hardcodes ±1.1 (10%
+headroom for visual margin), and `studio/core/src/ui/renderer/audio.ts` parameterises as
+`v0: -scale, v1: +scale` where `scale = dbToGain(-gain)`. Our ±1.001 is the minimum
+sufficient value — tighter than OpenDAW's ±1.1 because we want full canvas height for
+demo waveforms without visual compression.
+
 ### Mixer Groups (Sub-Mixing)
 ```typescript
 import { AudioBusFactory } from "@opendaw/studio-adapters";
