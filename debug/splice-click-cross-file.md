@@ -62,10 +62,6 @@ To reproduce manually without the static-setup button: open [`comp-lanes-demo.ht
 
 We hear a click at this boundary. Is this intended behaviour — i.e. the caller is responsible for adding fades on each region to crossfade across cross-file splice points — or is there an automatic voice-management path in the SDK that should be handling this and isn't firing for this case?
 
-If it's the caller's responsibility, the contract worth documenting is: *consecutive same-track regions referencing different audio files require explicit fades on the regions; the SDK will not interpolate at the boundary.*
-
-If it should be automatic, the natural place looks like `#updateOrCreatePitchVoice` (`TapeDeviceProcessor.ts:268-290`) — it already distinguishes "no existing voice" from "existing fading-out voice" from "existing active voice with drift," but it doesn't currently consider whether a *different* voice on the same lane is about to be replaced by this one.
-
 ## Code references (verified in 0.0.138)
 
 - `packages/studio/core-processors/src/devices/instruments/TapeDeviceProcessor.ts:104-200` — `#processBlock`
