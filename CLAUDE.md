@@ -118,12 +118,27 @@ OpenDAW uses Option types that are **always truthy** (even `Option.None`):
 // WRONG - Option.None is truthy, this never triggers
 if (!sampleLoader.peaks) { ... }
 
+// ALSO WRONG - ?. and ?? skip Option emptiness checks; data is the Option
+// object itself (truthy), and `.numberOfFrames` silently returns undefined
+const data = loader?.data ?? null;
+const frames = data?.numberOfFrames; // undefined even when state is "loaded"
+
 // CORRECT
 const peaksOption = sampleLoader.peaks;
 if (peaksOption.isEmpty()) { return; }
 const peaks = peaksOption.unwrap();
 ```
 API: `.isEmpty()`, `.nonEmpty()`, `.unwrap()`, `.unwrapOrNull()`, `.unwrapOrUndefined()`
+**Rule:** if it's typed `Option<T>`, never use `?.` or `??` on it. Always `.isEmpty()` / `.unwrap()`.
+
+### Tape vs Track Terminology
+- **Track** = SDK timeline concept (`TrackBox`, `TrackBoxAdapter`, `audioUnit.tracks`,
+  timeline lanes that hold regions). Use this term anywhere referring to box-graph structure.
+- **Tape** = app-level recording input (a `Tape` instrument + `CaptureAudio` device that
+  captures into a TrackBox). UI labels say "Tape N", code identifiers use `recordingTape`,
+  `useRecordingTapes`, `RecordingTapeCard`. Use this term for anything user-arms-and-records-onto.
+- The `disable-track` SDK preference value and "Multi-track loop recording" feature term are
+  exceptions — they describe SDK behaviour and industry concept respectively.
 
 ### Box Graph API Names
 - Delete box: `project.boxGraph.unstageBox(box)` — takes box object, NOT UUID
@@ -520,4 +535,7 @@ Each demo category folder has its own CLAUDE.md with SDK knowledge scoped to tho
 - Editing, fades & automation: `documentation/09-editing-fades-and-automation.md`
 - Export & offline rendering: `documentation/10-export.md`
 - SDK changelogs: `changelogs/`
+- SDK investigations & open questions: `debug/` (see `debug/README.md` for convention)
+- Unlisted debug demo pages: HTML at repo root with `<meta name="robots" content="noindex">`,
+  not added to `src/index.tsx` or `public/sitemap.xml`. See `comp-lanes-debug-demo.tsx` as reference.
 - OpenDAW source code locations: see `.claude/local.md`
