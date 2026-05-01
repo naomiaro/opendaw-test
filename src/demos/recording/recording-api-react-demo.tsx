@@ -296,16 +296,16 @@ const App: React.FC = () => {
       const tapes = recordingTapesRef.current;
       const summary = tapes.map((tape, i) => {
         const loader = tapePeaksRef.current.get(i)?.sampleLoader ?? null;
-        const data = loader?.data ?? null;
+        const dataOpt = loader?.data;
+        const data = dataOpt && !dataOpt.isEmpty() ? dataOpt.unwrap() : null;
         const peaksOpt = loader?.peaks;
         const peaks = peaksOpt && !peaksOpt.isEmpty() ? peaksOpt.unwrap() : null;
-        const isPeaksWriter = peaks ? "dataIndex" in peaks : false;
         return {
           tape: i + 1,
           tapeId: tape.id,
           loaderState: loader?.state.type ?? "no-loader",
           dataFrames: data?.numberOfFrames ?? null,
-          peakNumFrames: peaks && !isPeaksWriter ? peaks.numFrames : null,
+          peakNumFrames: peaks?.numFrames ?? null,
           sampleRate: data?.sampleRate ?? null,
           numChannels: data?.numberOfChannels ?? null,
         };
