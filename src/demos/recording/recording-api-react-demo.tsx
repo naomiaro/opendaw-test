@@ -6,8 +6,7 @@ import type { Terminable } from "@opendaw/lib-std";
 import { Project, PeaksWriter } from "@opendaw/studio-core";
 import type { SampleLoader } from "@opendaw/studio-adapters";
 import { AnimationFrame } from "@opendaw/lib-dom";
-import type { Peaks } from "@opendaw/lib-fusion";
-import { PeaksPainter } from "@opendaw/lib-fusion";
+import { Peaks, PeaksPainter } from "@opendaw/lib-fusion";
 import { CanvasPainter } from "@/lib/CanvasPainter";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { getAllRegions } from "@/lib/adapterUtils";
@@ -300,6 +299,39 @@ const App: React.FC = () => {
         const data = dataOpt && !dataOpt.isEmpty() ? dataOpt.unwrap() : null;
         const peaksOpt = loader?.peaks;
         const peaks = peaksOpt && !peaksOpt.isEmpty() ? peaksOpt.unwrap() : null;
+
+        // Scan peak data for out-of-range values (>1.0 or <-1.0). PeaksWriter
+        // packs min/max as Float16 (range ±65504), so >1.0 values are stored
+        // faithfully, but PeaksPainter.renderPixelStrips clamps to the visible
+        // [v0, v1] range, producing flat-top "square" waveforms.
+        const ranges = peaks
+          ? Array.from({ length: peaks.numChannels }, (_, ch) => {
+              const channelData = peaks.data[ch];
+              let absMin = 0;
+              let absMax = 0;
+              let overRangeCount = 0;
+              const stage = peaks.stages[0];
+              const peakCount = stage ? stage.numPeaks : channelData.length;
+              for (let p = 0; p < peakCount; p++) {
+                const bits = channelData[p];
+                const lo = Peaks.unpack(bits, 0);
+                const hi = Peaks.unpack(bits, 1);
+                if (lo < absMin) absMin = lo;
+                if (hi > absMax) absMax = hi;
+                if (lo < -1 || hi > 1) overRangeCount++;
+              }
+              return {
+                channel: ch,
+                min: absMin,
+                max: absMax,
+                peakAmplitude: Math.max(Math.abs(absMin), Math.abs(absMax)),
+                overRangePeakCount: overRangeCount,
+                totalPeaks: peakCount,
+                overRangeFraction: peakCount > 0 ? overRangeCount / peakCount : 0,
+              };
+            })
+          : [];
+
         return {
           tape: i + 1,
           tapeId: tape.id,
@@ -308,6 +340,7 @@ const App: React.FC = () => {
           peakNumFrames: peaks?.numFrames ?? null,
           sampleRate: data?.sampleRate ?? null,
           numChannels: data?.numberOfChannels ?? null,
+          ranges,
         };
       });
 
