@@ -491,7 +491,7 @@ const App: React.FC = () => {
           <Callout.Root color="blue">
             <Callout.Text>
               This demo uses OpenDAW's <strong>Recording.start()</strong> API with multi-device support.
-              Add multiple recording tracks, each with its own input device, then record all armed tracks simultaneously.
+              Add multiple tapes, each with its own input device, then record all armed tapes simultaneously.
               The SDK handles parallel capture with independent <strong>RecordingWorklet</strong> instances per device.
             </Callout.Text>
           </Callout.Root>
@@ -559,7 +559,7 @@ const App: React.FC = () => {
                 <Flex direction="column" gap="3">
                   {recordingTracks.length === 0 && (
                     <Text size="2" color="gray" style={{ fontStyle: "italic" }}>
-                      No recording tracks added. Click "Add Track" to create one.
+                      No recording tapes added. Click "Add Tape" to create one.
                     </Text>
                   )}
 
@@ -583,7 +583,7 @@ const App: React.FC = () => {
                     variant="soft"
                     disabled={isActive}
                   >
-                    + Add Track
+                    + Add Tape
                   </Button>
                 </Flex>
               )}
@@ -707,7 +707,7 @@ const App: React.FC = () => {
                       direction="column"
                       gap="1"
                     >
-                      <Text size="1" color="gray">Track {index + 1}</Text>
+                      <Text size="1" color="gray">Tape {index + 1}</Text>
                       <Flex
                         justify="center"
                         align="center"

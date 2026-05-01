@@ -135,7 +135,7 @@ export const RecordingTrackCard: React.FC<RecordingTrackCardProps> = ({
       <Flex direction="column" gap="3">
         <Flex justify="between" align="center">
           <Flex align="center" gap="2">
-            <Text size="2" weight="bold">Track {trackIndex + 1}</Text>
+            <Text size="2" weight="bold">Tape {trackIndex + 1}</Text>
             {isArmed && <Badge color="red" size="1">Armed</Badge>}
           </Flex>
           <Flex gap="2">

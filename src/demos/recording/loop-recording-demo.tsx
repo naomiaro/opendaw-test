@@ -634,8 +634,8 @@ const App: React.FC = () => {
               This demo shows <strong>loop recording with takes</strong>,{" "}
               <strong>multi-track input</strong>, and{" "}
               <strong>pre-loop lead-in</strong> recording. Add audio input
-              tracks, configure the lead-in and loop region, then record. Each
-              loop iteration creates takes across all armed tracks. Compare
+              tapes, configure the lead-in and loop region, then record. Each
+              loop iteration creates takes across all armed tapes. Compare
               takes in the timeline below.
             </Callout.Text>
           </Callout.Root>
@@ -647,7 +647,7 @@ const App: React.FC = () => {
                 <Heading size="5">Audio Inputs</Heading>
                 {hasPermission && (
                   <Badge color="gray" size="1">
-                    {armedCount} of {recordingTracks.length} track
+                    {armedCount} of {recordingTracks.length} tape
                     {recordingTracks.length !== 1 ? "s" : ""} armed
                   </Badge>
                 )}
@@ -676,7 +676,7 @@ const App: React.FC = () => {
                       color="gray"
                       style={{ fontStyle: "italic" }}
                     >
-                      No recording tracks. Click "Add Track" to create one.
+                      No recording tapes. Click "Add Tape" to create one.
                     </Text>
                   )}
 
@@ -704,7 +704,7 @@ const App: React.FC = () => {
                       recordingTracks.length >= MAX_TRACKS
                     }
                   >
-                    + Add Track{" "}
+                    + Add Tape{" "}
                     {recordingTracks.length >= MAX_TRACKS ? "(max 4)" : ""}
                   </Button>
                 </Flex>
@@ -854,7 +854,7 @@ const App: React.FC = () => {
                 <Callout.Text>
                   Press <strong>Record</strong> and perform over the loop. Each
                   time the loop wraps, a new take is created across all armed
-                  tracks. Stop recording when satisfied and compare takes below.
+                  tapes. Stop recording when satisfied and compare takes below.
                 </Callout.Text>
               </Callout.Root>
 
@@ -873,7 +873,7 @@ const App: React.FC = () => {
                 >
                   Record
                   {armedCount > 0
-                    ? ` (${armedCount} track${armedCount !== 1 ? "s" : ""})`
+                    ? ` (${armedCount} tape${armedCount !== 1 ? "s" : ""})`
                     : ""}
                 </Button>
                 <Button
