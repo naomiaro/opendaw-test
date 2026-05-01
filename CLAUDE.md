@@ -473,9 +473,12 @@ direct calls handle mute toggles, finalization, and clear.
 - COOP/COEP headers in `public/_headers` exclude `/docs/*` — VitePress assets break under `require-corp`
 - Vite handles TypeScript transpilation (no standalone `tsc` available)
 - After SDK upgrades, clear Vite dep cache: `rm -rf node_modules/.vite` (dev server pre-bundles old SDK)
-- SDK upgrades: bump `@opendaw/studio-sdk` version in `package.json` and `npm install` — sub-packages
-  resolve transitively from the registry. NEVER install sub-packages as local `file:` references
-  (breaks Cloudflare CI).
+- SDK upgrades: bump `@opendaw/studio-sdk` version in `package.json`, then **regenerate the lockfile
+  cleanly**: `rm -rf node_modules package-lock.json && npm install`. Sub-packages resolve transitively
+  from the registry. NEVER install sub-packages as local `file:` references (breaks Cloudflare CI).
+  An in-place `npm install` can leave stale transitive entries that local `npm@11+` tolerates but
+  Cloudflare's older `npm ci` rejects with "package.json and package-lock.json … are in sync" — always
+  verify with `npm ci` (not just `npm run build`) before pushing an SDK upgrade.
 - Verify SDK exports: check `node_modules/@opendaw/<package>/dist/*.d.ts` before writing imports
 - SDK version lives in `node_modules/@opendaw/studio-sdk/package.json`, NOT in individual sub-packages (studio-core, studio-boxes, etc.) which have their own independent version numbers
 
