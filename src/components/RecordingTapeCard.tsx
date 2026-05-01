@@ -136,7 +136,7 @@ export const RecordingTapeCard: React.FC<RecordingTapeCardProps> = ({
         <Flex justify="between" align="center">
           <Flex align="center" gap="2">
             <Text size="2" weight="bold">Tape {tapeIndex + 1}</Text>
-            {isArmed && <Badge color="red" size="1">Armed</Badge>}
+            {isArmed && <Badge color="red" size="1">Capture armed</Badge>}
           </Flex>
           <Flex gap="2">
             <Button
