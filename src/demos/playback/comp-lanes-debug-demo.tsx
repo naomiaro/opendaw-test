@@ -139,7 +139,7 @@ const App: React.FC = () => {
       spliceAudioUnitRef.current!.mute.setValue(false);
     });
     setCompMode("splice");
-    setStatus("Debug setup applied — Zone 1: Otherside, Zone 2: ScarTissue (no overlap)");
+    setStatus("Ready — Debug setup applied: Zone 1 Otherside, Zone 2 ScarTissue (no overlap)");
   }, [project, takes, crossfadeMs, crossfadeCurve]);
 
   // ─── Load takes from audio file(s) ───
