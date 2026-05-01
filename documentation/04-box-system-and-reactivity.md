@@ -15,6 +15,8 @@
 - [Observing Changes](#observing-changes)
 - [Common Patterns](#common-patterns)
 - [Box Graph Best Practices](#box-graph-best-practices)
+- [Moving a TrackBox onto a Manually-Created AudioUnit](#moving-a-trackbox-onto-a-manually-created-audiounit)
+- [Diagnosing Transaction Failures](#diagnosing-transaction-failures)
 - [Adapter Layer](#adapter-layer)
   - [Adapter Collections](#adapter-collections)
   - [Region Visitor Pattern](#region-visitor-pattern)
@@ -534,6 +536,146 @@ project.editing.modify(() => box2.setValue(2));
 project.editing.modify(() => box3.setValue(3));
 // Three undo points - harder to undo atomically
 ```
+
+### 5. Clear Outgoing Edges Before Deleting Linked Boxes
+
+`boxGraph.unstageBox(box)` (or `box.delete()`) panics with `"<BoxType> X has outgoing edges: [...]"` if the box still has outgoing pointer references at deletion time. Clear them first via `.defer()`:
+
+```typescript
+project.editing.modify(() => {
+  // ❌ Will panic — regionBox still points at trackBox.regions, audioFile, events
+  regionBox.delete();
+
+  // ✅ Clear outgoing pointers first
+  regionBox.regions?.defer();
+  regionBox.file?.defer();
+  regionBox.events?.defer();
+  regionBox.delete();
+});
+```
+
+Particularly affects boxes with multiple mandatory pointers — `TrackBox` has `tracks` and `target`; `AudioRegionBox` has `regions`, `file`, and `events`. If you're iterating and deleting a chain of related boxes, defer the outgoing pointers on each before unstaging.
+
+## Moving a TrackBox onto a Manually-Created AudioUnit
+
+`project.api.createInstrument(InstrumentFactories.Tape)` is the high-level API for creating an instrument — it builds an `AudioUnitBox` + an instrument device + a fresh `TrackBox` inside the AudioUnit, and registers a UI selection side effect. When you want finer control — building an AudioUnit to host an *existing* TrackBox, or creating a playback-only AudioUnit without the throwaway TrackBox — work directly with the low-level factories.
+
+The walked example below: take a TrackBox that currently lives on `oldAudioUnit` and move it onto a brand-new AudioUnit, with a Tape device, a capture box, and routing through a group bus.
+
+### Step 1: Build the destination AudioUnit
+
+```typescript
+import { AudioUnitFactory, InstrumentFactories } from "@opendaw/studio-adapters";
+import { AudioUnitType, IconSymbol } from "@opendaw/studio-enums";
+import { CaptureAudioBox } from "@opendaw/studio-boxes";
+import { Option, UUID } from "@opendaw/lib-std";
+
+let newAudioUnit;
+project.editing.modify(() => {
+  // 1a. Create a CaptureAudioBox. AudioUnitBoxAdapter#sanityCheck enforces
+  //     that any AudioUnit typed `Instrument` has a non-empty `capture`
+  //     pointer. Even for a playback-only AudioUnit you must attach one,
+  //     or the adapter throws on construction.
+  const captureBox = CaptureAudioBox.create(project.boxGraph, UUID.generate());
+
+  // 1b. Create the AudioUnitBox. Capture is wrapped in `Option` since
+  //     Bus/Output AudioUnits don't have one.
+  newAudioUnit = AudioUnitFactory.create(
+    project.skeleton,
+    AudioUnitType.Instrument,
+    Option.wrap(captureBox)
+  );
+
+  // 1c. Create the instrument device and wire its `host` pointer to the
+  //     AudioUnit's `input` field. The Tape device is what processes the
+  //     AudioRegionBoxes on lanes inside this AudioUnit.
+  InstrumentFactories.Tape.create(
+    project.boxGraph,
+    newAudioUnit.input,
+    "Tape",
+    IconSymbol.Tape
+  );
+});
+```
+
+The new AudioUnit now exists with a Tape device and a capture box, but **no TrackBoxes** inside it. `AudioUnitFactory.create` also sets the AudioUnit's `output` pointer to the project's primary audio bus (master) by default.
+
+### Step 2: Move the existing TrackBox
+
+A `TrackBox` lives inside its parent AudioUnit by virtue of two outgoing pointers: `tracks` (collection membership) and `target` (automation routing). Re-refer both to relocate it:
+
+```typescript
+project.editing.modify(() => {
+  oldTrackBox.tracks.refer(newAudioUnit.tracks);
+  oldTrackBox.target.refer(newAudioUnit);
+});
+```
+
+That's the entire move. **AudioRegionBoxes attached to the TrackBox follow automatically** — they reference `trackBox.regions`, a field on the TrackBox itself, not on the AudioUnit. Engine processors subscribed to `audioUnit.tracks` see a clean `onRemove` from the old AudioUnit and `onAdd` on the new one. Nothing else needs to be told.
+
+### Step 3 (optional): Route the new AudioUnit's output through a bus
+
+If you want the moved track to route through an `AudioBusBox` (e.g. a group bus you've already created) instead of master, re-refer the AudioUnit's `output`:
+
+```typescript
+project.editing.modify(() => {
+  newAudioUnit.output.refer(audioBusBox.input);
+});
+```
+
+A few things worth knowing about `AudioBusBox`:
+
+- `audioBusBox.input` is the **routing target** — tracks/AudioUnits sending TO the bus point at this field.
+- The bus's own channel-strip AudioUnit (volume, pan, effects on the bus signal) is a *separate* `AudioUnitBox`. It's reachable via `audioBusBox.output.targetVertex.unwrap().box` — but only resolvable AFTER the bus creation transaction commits, since `targetVertex` traversal needs pointer notifications to settle.
+- `AudioBusFactory.create` returns the `AudioBusBox` directly; the channel-strip AudioUnit is created internally and wired as `audioBusBox.output → channelStrip.input`.
+
+### Why move instead of delete-and-recreate
+
+Re-referring pointers is non-destructive — only the moved box's own outgoing edges change. Anything that holds an *incoming* reference to the box (capture devices tracking recording regions, sample loaders, automation hosts, UI selection, undo history) keeps working unchanged.
+
+Deleting a box that has incoming references can trigger pointer-notify cascades, which fail with errors like `Could not find pointer field <UUID>` when a subscriber tries to look up something that's gone. If the failing notification happens during a rollback, the rollback panic message hides the original cause (see [Diagnosing Transaction Failures](#diagnosing-transaction-failures)).
+
+Prefer move whenever the box has incoming pointer references owned by other parts of the SDK.
+
+## Diagnosing Transaction Failures
+
+When `editing.modify()` throws, OpenDAW's rollback machinery undoes the staged changes in reverse order. If the rollback itself fails (e.g. a box can't be unstaged because earlier in the transaction another box pointed at it, leaving an outgoing edge), the rollback panic message **hides the original error**. You'll see something like:
+
+```
+AudioUnitBox X has outgoing edges: [...]
+```
+
+…with no clue what actually went wrong inside the modify callback.
+
+**Diagnostic technique:** restructure the failing modify into smaller transactions, one operation per call, each wrapped in try/catch. The first one to throw will surface the original validation message:
+
+```typescript
+// Before — single large transaction, rollback hides the actual error
+project.editing.modify(() => {
+  for (const item of items) {
+    createSomething(item);
+    wireSomething(item);
+    routeSomething(item);
+  }
+});
+
+// After — per-step transactions surface the actual error
+for (const item of items) {
+  try {
+    project.editing.modify(() => createSomething(item));
+    project.editing.modify(() => wireSomething(item));
+    project.editing.modify(() => routeSomething(item));
+  } catch (e) {
+    console.warn(`failed for ${item.id}: ${e.message}`);
+  }
+}
+```
+
+Common validation errors revealed by this technique:
+
+- `<BoxType> X must have a capture` — Instrument-typed AudioUnits require a non-empty `capture` pointer (`AudioUnitBoxAdapter#sanityCheck`). Attach a `CaptureAudioBox`.
+- `pointer field X is exclusive: true` — only one incoming reference allowed for that field. `AudioUnitBox.input` is a typical example (only one device can host on it).
+- `mandatory pointer X is undefined` — a `mandatory: true` pointer wasn't initialized at creation time.
 
 ## Adapter Layer
 
