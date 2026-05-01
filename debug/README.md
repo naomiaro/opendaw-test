@@ -11,4 +11,4 @@ Documented bugs and open questions from working with the OpenDAW SDK. Each file 
 
 ## Index
 
-- [splice-click-cross-file.md](./splice-click-cross-file.md) — Click at exact region boundaries when consecutive same-track regions reference different audio files. Repro: [`comp-lanes-debug-demo.html`](../comp-lanes-debug-demo.html).
+- [splice-click-cross-file.md](./splice-click-cross-file.md) — Audible click at exact region boundaries when consecutive same-track regions reference different audio files. Open question: caller-managed fades or automatic voice handling? Repro: [`comp-lanes-debug-demo.html`](../comp-lanes-debug-demo.html).
