@@ -178,8 +178,11 @@ const App: React.FC = () => {
           y1,
           u0: waveformOffsetFrames,
           u1: unitsToRender,
-          v0: -1,
-          v1: 1
+          // Slight headroom absorbs the SDK Float16 unpack quirk: stored
+          // peaks at exactly ±1.0 unpack to ±1.0001219511032104, which
+          // would otherwise clamp and produce flat-top "square" waveforms.
+          v0: -1.001,
+          v1: 1.001
         });
       }
     });

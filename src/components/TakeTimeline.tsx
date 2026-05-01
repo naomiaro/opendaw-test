@@ -111,8 +111,12 @@ const TakeWaveformCanvas: React.FC<{
           y1: (ch + 1) * channelHeight - 1,
           u0,
           u1,
-          v0: -1,
-          v1: 1,
+          // Slight headroom absorbs the SDK Float16 unpack quirk: stored
+          // peaks at exactly ±1.0 unpack to ±1.0001219511032104 (the upper
+          // edge of the Float16 bucket), which would otherwise clamp to
+          // canvas bounds and produce flat-top "square" waveforms.
+          v0: -1.001,
+          v1: 1.001,
         });
       }
     });
