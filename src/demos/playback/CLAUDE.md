@@ -101,11 +101,19 @@ PeaksPainter.renderPixelStrips(context, peaks, channel, {
   x0, x1,       // pixel x range on canvas
   y0, y1,       // pixel y range on canvas
   u0, u1,       // frame range in peaks data
-  v0: -1, v1: 1 // amplitude range (always -1 to 1)
+  v0: -1.001, v1: 1.001 // amplitude range — note the headroom (see below)
 });
 ```
 **IMPORTANT:** `renderPixelStrips` uses the current `ctx.fillStyle` — set it before calling.
 It does NOT accept color parameters. Without setting fillStyle, waveforms are invisible.
+
+**Float16 unpack quirk — always use ±1.001, not ±1.0:** The SDK packs peaks as Float16 and
+the unpack at `lib-std/numeric.ts` rounds away from zero on power-of-two boundaries. A peak
+stored as exactly ±1.0 unpacks to ±1.0001219511032104 (the upper bucket edge). With
+`v0: -1, v1: 1`, full-scale audio renders as flat-top "square" waveforms because the
+renderer clamps unpacked values to canvas bounds. Use ±1.001 at every call site to absorb
+this. Audio that genuinely exceeds ±1.001 still surfaces as clamping, so true over-range
+input is not masked.
 
 ### Mixer Groups (Sub-Mixing)
 ```typescript
