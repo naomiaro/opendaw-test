@@ -11,14 +11,14 @@ import { initializeOpenDAW } from "@/lib/projectSetup";
 import { getAllRegions } from "@/lib/adapterUtils";
 import { useEnginePreference } from "@/hooks/useEnginePreference";
 import { useAudioDevicePermission } from "@/hooks/useAudioDevicePermission";
-import { useRecordingTracks } from "@/hooks/useRecordingTracks";
+import { useRecordingTapes } from "@/hooks/useRecordingTapes";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
 import { BpmControl } from "@/components/BpmControl";
 import { RecordingPreferences } from "@/components/RecordingPreferences";
-import { RecordingTrackCard } from "@/components/RecordingTrackCard";
-import type { RecordingTrack } from "@/components/RecordingTrackCard";
+import { RecordingTapeCard } from "@/components/RecordingTapeCard";
+import type { RecordingTape } from "@/components/RecordingTapeCard";
 import { TakeTimeline } from "@/components/TakeTimeline";
 import type { TakeRegion, TakeIteration } from "@/components/TakeTimeline";
 import "@radix-ui/themes/styles.css";
@@ -40,7 +40,7 @@ import {
 
 // --- Types ---
 
-const MAX_TRACKS = 4;
+const MAX_TAPES = 4;
 const BAR_PPQN = PPQN.Quarter * 4; // one bar in 4/4 time
 
 const codeStyle = {
@@ -69,8 +69,8 @@ const App: React.FC = () => {
   // Audio input/output configuration
   const { audioInputDevices, audioOutputDevices, hasPermission, requestPermission } =
     useAudioDevicePermission();
-  const { recordingTracks, armedCount, addTrack, removeTrack, handleArmedChange } =
-    useRecordingTracks({ project, audioInputDevices, maxTracks: MAX_TRACKS });
+  const { recordingTapes, armedCount, addTape, removeTape, handleArmedChange } =
+    useRecordingTapes({ project, audioInputDevices, maxTapes: MAX_TAPES });
 
   // Settings
   const [useCountIn, setUseCountIn] = useState(true);
@@ -103,8 +103,8 @@ const App: React.FC = () => {
   const pointerHubSubsRef = useRef<Terminable[]>([]);
   // SampleLoaders discovered during recording — ref avoids stale closure in handleStopRecording
   const sampleLoadersRef = useRef<Set<SampleLoader>>(new Set());
-  // Ref for recordingTracks to avoid restarting pointerHub subscriptions when tracks change
-  const recordingTracksRef = useRef<RecordingTrack[]>([]);
+  // Ref for recordingTapes to avoid restarting pointerHub subscriptions when tapes change
+  const recordingTapesRef = useRef<RecordingTape[]>([]);
 
   // Cleanup subscriptions on unmount (but NOT sampleLoadersRef — handleStopRecording owns that)
   useEffect(() => {
@@ -218,15 +218,15 @@ const App: React.FC = () => {
     settings.recording.olderTakeScope = olderTakeScope;
   }, [project, allowTakes, olderTakeAction, olderTakeScope]);
 
-  // Keep recordingTracks ref in sync with state
+  // Keep recordingTapes ref in sync with state
   useEffect(() => {
-    recordingTracksRef.current = recordingTracks;
-  }, [recordingTracks]);
+    recordingTapesRef.current = recordingTapes;
+  }, [recordingTapes]);
 
   // --- Reactive take discovery via pointerHub subscriptions ---
 
   // Build a TakeRegion from a region adapter, using the typed adapter layer
-  // for sampleLoader resolution and track matching.
+  // for sampleLoader resolution and tape matching.
   const buildTakeRegion = useCallback(
     (regionAdapter: AudioRegionBoxAdapter): TakeRegion | null => {
       if (!audioContext) return null;
@@ -248,22 +248,22 @@ const App: React.FC = () => {
       // Adapter resolves sampleLoader via file → getOrCreateLoader()
       const loader = regionAdapter.file.getOrCreateLoader();
 
-      // Match region to input track via typed adapter path
-      let inputTrackId = "";
+      // Match region to input tape via typed adapter path
+      let inputTapeId = "";
       const trackAdapterOpt = regionAdapter.trackBoxAdapter;
       if (!trackAdapterOpt.isEmpty()) {
-        inputTrackId = UUID.toString(trackAdapterOpt.unwrap().audioUnit.address.uuid);
+        inputTapeId = UUID.toString(trackAdapterOpt.unwrap().audioUnit.address.uuid);
       }
 
-      // Fallback for single track
-      const tracks = recordingTracksRef.current;
-      if (!inputTrackId && tracks.length === 1) {
-        inputTrackId = tracks[0].id;
+      // Fallback for single tape
+      const tapes = recordingTapesRef.current;
+      if (!inputTapeId && tapes.length === 1) {
+        inputTapeId = tapes[0].id;
       }
 
       return {
         regionBox,
-        inputTrackId,
+        inputTapeId,
         takeNumber,
         isMuted,
         sampleLoader: loader,
@@ -284,7 +284,7 @@ const App: React.FC = () => {
           if (existing.regions.some((r) => r.regionBox === region.regionBox)) {
             return prev;
           }
-          // Add region to existing take (multi-track: same take, different track)
+          // Add region to existing take (multi-track: same take, different tape)
           const updatedRegions = [...existing.regions, region];
           return prev.map((t) =>
             t.takeNumber === region.takeNumber
@@ -333,14 +333,14 @@ const App: React.FC = () => {
 
   // Set up adapter subscriptions when recording starts — typed alternative to raw pointerHub.
   useEffect(() => {
-    if (!project || !isRecording || recordingTracks.length === 0) return;
+    if (!project || !isRecording || recordingTapes.length === 0) return;
 
     const subs: Terminable[] = [];
     const allAudioUnits = project.rootBoxAdapter.audioUnits.adapters();
 
-    for (const track of recordingTracks) {
+    for (const tape of recordingTapes) {
       const audioUnitAdapter = allAudioUnits.find(
-        (au) => au.box === track.capture.audioUnitBox
+        (au) => au.box === tape.capture.audioUnitBox
       );
       if (!audioUnitAdapter) continue;
 
@@ -387,7 +387,7 @@ const App: React.FC = () => {
   }, [
     project,
     isRecording,
-    recordingTracks,
+    recordingTapes,
     buildTakeRegion,
     addTakeRegionToState,
     updateTakeMuteInState,
@@ -588,9 +588,9 @@ const App: React.FC = () => {
   const loopProgress =
     totalPPQN > 0 ? (currentPosition % totalPPQN) / totalPPQN : 0;
 
-  const recordingTrackLabels = useMemo(
-    () => recordingTracks.map((t, i) => ({ id: t.id, label: `Track ${i + 1}` })),
-    [recordingTracks]
+  const recordingTapeLabels = useMemo(
+    () => recordingTapes.map((t, i) => ({ id: t.id, label: `Tape ${i + 1}` })),
+    [recordingTapes]
   );
 
   // --- Render ---
@@ -647,8 +647,8 @@ const App: React.FC = () => {
                 <Heading size="5">Audio Inputs</Heading>
                 {hasPermission && (
                   <Badge color="gray" size="1">
-                    {armedCount} of {recordingTracks.length} tape
-                    {recordingTracks.length !== 1 ? "s" : ""} armed
+                    {armedCount} of {recordingTapes.length} tape
+                    {recordingTapes.length !== 1 ? "s" : ""} armed
                   </Badge>
                 )}
               </Flex>
@@ -670,7 +670,7 @@ const App: React.FC = () => {
                 </Flex>
               ) : (
                 <Flex direction="column" gap="3">
-                  {recordingTracks.length === 0 && (
+                  {recordingTapes.length === 0 && (
                     <Text
                       size="2"
                       color="gray"
@@ -680,32 +680,32 @@ const App: React.FC = () => {
                     </Text>
                   )}
 
-                  {recordingTracks.map((track, index) => (
-                    <RecordingTrackCard
-                      key={track.id}
-                      track={track}
-                      trackIndex={index}
+                  {recordingTapes.map((tape, index) => (
+                    <RecordingTapeCard
+                      key={tape.id}
+                      tape={tape}
+                      tapeIndex={index}
                       project={project}
                       audioInputDevices={audioInputDevices}
                       audioOutputDevices={audioOutputDevices}
                       disabled={isRecording || isCountingIn}
-                      onRemove={removeTrack}
+                      onRemove={removeTape}
                       onArmedChange={handleArmedChange}
                     />
                   ))}
 
                   <Button
-                    onClick={addTrack}
+                    onClick={addTape}
                     color="amber"
                     variant="soft"
                     disabled={
                       isRecording ||
                       isCountingIn ||
-                      recordingTracks.length >= MAX_TRACKS
+                      recordingTapes.length >= MAX_TAPES
                     }
                   >
                     + Add Tape{" "}
-                    {recordingTracks.length >= MAX_TRACKS ? "(max 4)" : ""}
+                    {recordingTapes.length >= MAX_TAPES ? "(max 4)" : ""}
                   </Button>
                 </Flex>
               )}
@@ -963,7 +963,7 @@ const App: React.FC = () => {
           {takeCount > 0 && (
             <TakeTimeline
               takeIterations={takeIterations}
-              recordingTrackLabels={recordingTrackLabels}
+              recordingTapeLabels={recordingTapeLabels}
               currentPosition={currentPosition}
               leadInBars={leadInBars}
               loopLengthBars={loopLengthBars}

@@ -5,14 +5,14 @@ import { Option } from "@opendaw/lib-std";
 import type { MonitoringMode } from "@opendaw/studio-core";
 import { probeDeviceChannels } from "../lib/audioUtils";
 
-export interface RecordingTrack {
+export interface RecordingTape {
   id: string;
   capture: CaptureAudio;
 }
 
-interface RecordingTrackCardProps {
-  track: RecordingTrack;
-  trackIndex: number;
+interface RecordingTapeCardProps {
+  tape: RecordingTape;
+  tapeIndex: number;
   project: Project;
   audioInputDevices: readonly MediaDeviceInfo[];
   audioOutputDevices: readonly MediaDeviceInfo[];
@@ -21,9 +21,9 @@ interface RecordingTrackCardProps {
   onArmedChange?: (id: string, armed: boolean) => void;
 }
 
-export const RecordingTrackCard: React.FC<RecordingTrackCardProps> = ({
-  track,
-  trackIndex,
+export const RecordingTapeCard: React.FC<RecordingTapeCardProps> = ({
+  tape,
+  tapeIndex,
   project,
   audioInputDevices,
   audioOutputDevices,
@@ -31,7 +31,7 @@ export const RecordingTrackCard: React.FC<RecordingTrackCardProps> = ({
   onRemove,
   onArmedChange
 }) => {
-  const { capture } = track;
+  const { capture } = tape;
 
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>(() => {
     const deviceOpt = capture.deviceId.getValue();
@@ -72,10 +72,10 @@ export const RecordingTrackCard: React.FC<RecordingTrackCardProps> = ({
     const sub = capture.armed.catchupAndSubscribe(obs => {
       const armed = obs.getValue();
       setIsArmed(armed);
-      onArmedChange?.(track.id, armed);
+      onArmedChange?.(tape.id, armed);
     });
     return () => sub.terminate();
-  }, [capture, track.id, onArmedChange]);
+  }, [capture, tape.id, onArmedChange]);
 
   // Sync box graph fields — require a transaction
   useEffect(() => {
@@ -121,21 +121,21 @@ export const RecordingTrackCard: React.FC<RecordingTrackCardProps> = ({
       // Disarm: set armed to false directly
       capture.armed.setValue(false);
     } else {
-      // Arm non-exclusively so other tracks stay armed
+      // Arm non-exclusively so other tapes stay armed
       project.captureDevices.setArm(capture, false);
     }
   }, [project, capture, isArmed]);
 
   const handleRemove = useCallback(() => {
-    onRemove(track.id);
-  }, [onRemove, track.id]);
+    onRemove(tape.id);
+  }, [onRemove, tape.id]);
 
   return (
     <Card style={{ background: "var(--gray-2)" }}>
       <Flex direction="column" gap="3">
         <Flex justify="between" align="center">
           <Flex align="center" gap="2">
-            <Text size="2" weight="bold">Tape {trackIndex + 1}</Text>
+            <Text size="2" weight="bold">Tape {tapeIndex + 1}</Text>
             {isArmed && <Badge color="red" size="1">Armed</Badge>}
           </Flex>
           <Flex gap="2">

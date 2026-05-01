@@ -3,38 +3,38 @@ import { UUID } from "@opendaw/lib-std";
 import { Project, CaptureAudio } from "@opendaw/studio-core";
 import { InstrumentFactories } from "@opendaw/studio-adapters";
 import type { AudioUnitBox } from "@opendaw/studio-boxes";
-import type { RecordingTrack } from "@/components/RecordingTrackCard";
+import type { RecordingTape } from "@/components/RecordingTapeCard";
 
-interface UseRecordingTracksOptions {
+interface UseRecordingTapesOptions {
   project: Project | null;
   audioInputDevices: readonly MediaDeviceInfo[];
-  maxTracks?: number;
+  maxTapes?: number;
 }
 
-export interface RecordingTracksResult {
-  recordingTracks: RecordingTrack[];
+export interface RecordingTapesResult {
+  recordingTapes: RecordingTape[];
   armedCount: number;
-  addTrack: () => void;
-  removeTrack: (id: string) => void;
+  addTape: () => void;
+  removeTape: (id: string) => void;
   handleArmedChange: (id: string, armed: boolean) => void;
 }
 
 /**
- * Manages recording track creation, removal, and armed state tracking.
+ * Manages recording tape creation, removal, and armed state tracking.
  * Creates Tape instruments with capture devices configured for the first
  * available input device, armed non-exclusively.
  */
-export function useRecordingTracks({
+export function useRecordingTapes({
   project,
   audioInputDevices,
-  maxTracks,
-}: UseRecordingTracksOptions): RecordingTracksResult {
-  const [recordingTracks, setRecordingTracks] = useState<RecordingTrack[]>([]);
+  maxTapes,
+}: UseRecordingTapesOptions): RecordingTapesResult {
+  const [recordingTapes, setRecordingTapes] = useState<RecordingTape[]>([]);
   const [armedCount, setArmedCount] = useState(0);
 
-  const addTrack = useCallback(() => {
+  const addTape = useCallback(() => {
     if (!project) return;
-    if (maxTracks !== undefined && recordingTracks.length >= maxTracks) return;
+    if (maxTapes !== undefined && recordingTapes.length >= maxTapes) return;
 
     // Create instrument in its own transaction (pointer re-routing guideline:
     // captureDevices.get() must be in a separate transaction after createInstrument commits)
@@ -45,7 +45,7 @@ export function useRecordingTracks({
     });
 
     if (!audioUnitBoxRef) {
-      console.error("[useRecordingTracks] createInstrument did not return audioUnitBox");
+      console.error("[useRecordingTapes] createInstrument did not return audioUnitBox");
       return;
     }
 
@@ -54,12 +54,12 @@ export function useRecordingTracks({
       (audioUnitBoxRef as AudioUnitBox).address.uuid
     );
     if (captureOpt.isEmpty()) {
-      console.error("[useRecordingTracks] No capture device found for new instrument");
+      console.error("[useRecordingTapes] No capture device found for new instrument");
       return;
     }
     const capture = captureOpt.unwrap();
     if (!(capture instanceof CaptureAudio)) {
-      console.error("[useRecordingTracks] Capture device is not CaptureAudio");
+      console.error("[useRecordingTapes] Capture device is not CaptureAudio");
       return;
     }
 
@@ -73,20 +73,20 @@ export function useRecordingTracks({
 
     project.captureDevices.setArm(capture, false);
 
-    setRecordingTracks((prev) => [
+    setRecordingTapes((prev) => [
       ...prev,
       {
         id: UUID.toString((audioUnitBoxRef as AudioUnitBox).address.uuid),
         capture,
       },
     ]);
-  }, [project, audioInputDevices, recordingTracks.length, maxTracks]);
+  }, [project, audioInputDevices, recordingTapes.length, maxTapes]);
 
-  const removeTrack = useCallback((id: string) => {
-    setRecordingTracks((prev) => {
-      const track = prev.find((t) => t.id === id);
-      if (track) {
-        track.capture.armed.setValue(false);
+  const removeTape = useCallback((id: string) => {
+    setRecordingTapes((prev) => {
+      const tape = prev.find((t) => t.id === id);
+      if (tape) {
+        tape.capture.armed.setValue(false);
       }
       const next = prev.filter((t) => t.id !== id);
       setArmedCount(next.filter((t) => t.capture.armed.getValue()).length);
@@ -99,10 +99,10 @@ export function useRecordingTracks({
   }, []);
 
   return {
-    recordingTracks,
+    recordingTapes,
     armedCount,
-    addTrack,
-    removeTrack,
+    addTape,
+    removeTape,
     handleArmedChange,
   };
 }

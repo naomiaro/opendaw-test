@@ -11,7 +11,7 @@ import { CanvasPainter } from "../lib/CanvasPainter";
 
 export interface TakeRegion {
   regionBox: AudioRegionBox;
-  inputTrackId: string;
+  inputTapeId: string;
   takeNumber: number;
   isMuted: boolean;
   sampleLoader: SampleLoader | null;
@@ -28,7 +28,7 @@ export interface TakeIteration {
 
 interface TakeTimelineProps {
   takeIterations: TakeIteration[];
-  recordingTrackLabels: { id: string; label: string }[];
+  recordingTapeLabels: { id: string; label: string }[];
   currentPosition: number;
   leadInBars: number;
   loopLengthBars: number;
@@ -40,12 +40,12 @@ interface TakeTimelineProps {
 
 // --- Constants ---
 
-const TRACK_HEIGHT = 40;
+const LANE_HEIGHT = 40;
 const CONTROLS_WIDTH = 120;
 
 // --- Sub-components ---
 
-/** Renders a single track's waveform within a take.
+/** Renders a single tape's waveform within a take.
  *  Uses refs so the CanvasPainter survives across React re-renders.
  *  Duration is read live from the box graph each frame. */
 const TakeWaveformCanvas: React.FC<{
@@ -190,12 +190,12 @@ const BarRuler: React.FC<{
 /** A single take iteration lane with controls and waveform area */
 const TakeIterationLane: React.FC<{
   take: TakeIteration;
-  trackLabels: { id: string; label: string }[];
+  tapeLabels: { id: string; label: string }[];
   leadInBars: number;
   loopLengthBars: number;
   sampleRate: number;
   onToggleMute: () => void;
-}> = ({ take, trackLabels, leadInBars, loopLengthBars, sampleRate, onToggleMute }) => {
+}> = ({ take, tapeLabels, leadInBars, loopLengthBars, sampleRate, onToggleMute }) => {
   const totalBars = leadInBars + loopLengthBars;
   const leadInPercent = totalBars > 0 ? (leadInBars / totalBars) * 100 : 0;
   const loopPercent = totalBars > 0 ? (loopLengthBars / totalBars) * 100 : 0;
@@ -205,12 +205,12 @@ const TakeIterationLane: React.FC<{
   const marginLeft = isFullWidth ? 0 : leadInPercent;
   const width = isFullWidth ? 100 : loopPercent;
 
-  // Sort regions to match track display order
-  const sortedRegions = trackLabels
-    .map((tl) => take.regions.find((r) => r.inputTrackId === tl.id))
+  // Sort regions to match tape display order
+  const sortedRegions = tapeLabels
+    .map((tl) => take.regions.find((r) => r.inputTapeId === tl.id))
     .filter((r): r is TakeRegion => r != null);
 
-  const totalHeight = Math.max(sortedRegions.length, 1) * TRACK_HEIGHT;
+  const totalHeight = Math.max(sortedRegions.length, 1) * LANE_HEIGHT;
 
   return (
     <div
@@ -276,13 +276,13 @@ const TakeIterationLane: React.FC<{
         >
           {sortedRegions.map((region, i) => (
             <div
-              key={region.inputTrackId}
+              key={region.inputTapeId}
               style={{
                 borderTop: i > 0 ? "1px solid var(--gray-6)" : undefined,
                 position: "relative",
               }}
             >
-              {trackLabels.length > 1 && (
+              {tapeLabels.length > 1 && (
                 <Text
                   size="1"
                   color="gray"
@@ -295,12 +295,12 @@ const TakeIterationLane: React.FC<{
                     opacity: 0.7,
                   }}
                 >
-                  {trackLabels.find((t) => t.id === region.inputTrackId)?.label}
+                  {tapeLabels.find((t) => t.id === region.inputTapeId)?.label}
                 </Text>
               )}
               <TakeWaveformCanvas
                 region={region}
-                height={TRACK_HEIGHT}
+                height={LANE_HEIGHT}
                 isMuted={take.isMuted}
                 sampleRate={sampleRate}
               />
@@ -309,7 +309,7 @@ const TakeIterationLane: React.FC<{
           {sortedRegions.length === 0 && (
             <div
               style={{
-                height: TRACK_HEIGHT,
+                height: LANE_HEIGHT,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -330,7 +330,7 @@ const TakeIterationLane: React.FC<{
 
 export const TakeTimeline: React.FC<TakeTimelineProps> = ({
   takeIterations,
-  recordingTrackLabels,
+  recordingTapeLabels,
   currentPosition,
   leadInBars,
   loopLengthBars,
@@ -368,7 +368,7 @@ export const TakeTimeline: React.FC<TakeTimelineProps> = ({
           <TakeIterationLane
             key={take.takeNumber}
             take={take}
-            trackLabels={recordingTrackLabels}
+            tapeLabels={recordingTapeLabels}
             leadInBars={leadInBars}
             loopLengthBars={loopLengthBars}
             sampleRate={sampleRate}
