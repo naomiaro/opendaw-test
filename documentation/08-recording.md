@@ -292,6 +292,8 @@ Arming a MIDI instrument's capture uses the **same** `project.captureDevices.set
 
 ### Device Enumeration
 
+`MidiDevices.requestPermission()` must be called explicitly before any `CaptureMidi` operations or `MIDILearning` registration — the SDK does not auto-request on first use. Call it once at app startup or on the user gesture that initiates MIDI usage.
+
 ```typescript
 import { MidiDevices } from "@opendaw/studio-core";
 

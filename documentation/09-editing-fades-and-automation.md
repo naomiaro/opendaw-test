@@ -51,11 +51,11 @@ OpenDAW provides robust support for splitting audio regions at specific position
 
 **Method Signature:**
 ```typescript
-export const cut = (
-    region: AnyRegionBoxAdapter,
-    cut: ppqn,              // Position where to cut (in PPQN units)
+export const cut = <REGION extends AnyRegionBoxAdapter>(
+    region: REGION,
+    cut: ppqn,               // Position where to cut (in PPQN units)
     consolidate: boolean     // Whether to consolidate after cutting
-): void
+): Option<REGION>
 ```
 
 **How It Works:**
@@ -63,6 +63,12 @@ export const cut = (
 - Creates two regions: one from start to cut point, another from cut point to end
 - For loopable regions, properly handles `loopOffset` and `loopDuration` to maintain loop integrity
 - The `consolidate` parameter determines if the new region should share or copy the underlying event collection
+- Generic over the input region type — the returned region (when present) has the same concrete adapter type as the input (e.g. `AudioRegionBoxAdapter` in, `AudioRegionBoxAdapter` out)
+- Returns `Option<REGION>`:
+  - `Option.wrap(rightHandRegion)` when the cut succeeds — the **newly created** region (the right-hand piece). The original region is mutated in place to be the left-hand piece.
+  - `Option.None` when the cut position is outside the region's range (`cut <= region.position` or `cut >= region.complete`) — no edit is performed.
+
+Callers that only need the side effect can ignore the return value. Callers that want to chain operations on the right-hand piece (apply a fade, set a label, copy to another track) can `.unwrap()` the returned Option.
 
 **Example Usage:**
 ```typescript
