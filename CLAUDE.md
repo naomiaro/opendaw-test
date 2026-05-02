@@ -488,12 +488,14 @@ direct calls handle mute toggles, finalization, and clear.
 - COOP/COEP headers in `public/_headers` exclude `/docs/*` — VitePress assets break under `require-corp`
 - Vite handles TypeScript transpilation (no standalone `tsc` available)
 - After SDK upgrades, clear Vite dep cache: `rm -rf node_modules/.vite` (dev server pre-bundles old SDK)
-- SDK upgrades: bump `@opendaw/studio-sdk` version in `package.json`, then **regenerate the lockfile
-  cleanly**: `rm -rf node_modules package-lock.json && npm install`. Sub-packages resolve transitively
+- After **any** `package.json` change (SDK upgrade, devDep add/remove, version bump), **regenerate
+  the lockfile cleanly**: `rm -rf node_modules package-lock.json && npm install`, then verify with
+  `npm ci` (not just `npm run build`) before pushing. In-place `npm install`/`uninstall` can leave
+  stale transitive entries that local `npm@11+` tolerates but Cloudflare's older `npm ci` rejects
+  with "package.json and package-lock.json … are in sync". This has bitten the project on both an
+  SDK upgrade (PR #25) and a devDep churn (PR #26) — same failure mode, same fix.
+- SDK upgrades specifically: bump `@opendaw/studio-sdk` only — sub-packages resolve transitively
   from the registry. NEVER install sub-packages as local `file:` references (breaks Cloudflare CI).
-  An in-place `npm install` can leave stale transitive entries that local `npm@11+` tolerates but
-  Cloudflare's older `npm ci` rejects with "package.json and package-lock.json … are in sync" — always
-  verify with `npm ci` (not just `npm run build`) before pushing an SDK upgrade.
 - After an SDK upgrade, audit `documentation/*.md` chapter docs for stale API signatures: grep
   each renamed/changed identifier from the changelog and update method signatures, return
   types, and code examples. Chapter docs describe current contracts — leaving stale
