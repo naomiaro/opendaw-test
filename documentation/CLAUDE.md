@@ -12,3 +12,4 @@
 - Adding/renaming a chapter: update sidebar in `.vitepress/config.ts` and fix cross-references
 - VitePress 1.x bundles React 18 via `@docsearch/js@3.x` (unused — we use local search). After installing/updating VitePress, regenerate `package-lock.json` with `npm install` or Cloudflare's `npm ci` will fail
 - Never reference openDAW internal source paths (`packages/studio/...`) in documentation chapters — use npm package import references (e.g., `CompressorDeviceBox` from `@opendaw/studio-boxes`)
+- Use present-tense framing — describe the current contract as fact, not "as of SDK X.Y.Z". The `changelogs/` folder is the durable record of *when* changes happened; chapter docs describe *what's true now*. Version qualifiers in prose decay over time.

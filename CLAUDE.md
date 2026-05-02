@@ -494,6 +494,10 @@ direct calls handle mute toggles, finalization, and clear.
   An in-place `npm install` can leave stale transitive entries that local `npm@11+` tolerates but
   Cloudflare's older `npm ci` rejects with "package.json and package-lock.json … are in sync" — always
   verify with `npm ci` (not just `npm run build`) before pushing an SDK upgrade.
+- After an SDK upgrade, audit `documentation/*.md` chapter docs for stale API signatures: grep
+  each renamed/changed identifier from the changelog and update method signatures, return
+  types, and code examples. Chapter docs describe current contracts — leaving stale
+  signatures is worse than no doc at all.
 - Verify SDK exports: check `node_modules/@opendaw/<package>/dist/*.d.ts` before writing imports
 - SDK version lives in `node_modules/@opendaw/studio-sdk/package.json`, NOT in individual sub-packages (studio-core, studio-boxes, etc.) which have their own independent version numbers
 
