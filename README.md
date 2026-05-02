@@ -35,7 +35,17 @@ Visit http://localhost:5173 to explore the demos.
 
 ## Documentation
 
-**[Full Documentation](./documentation/README.md)** — Guides for building DAW interfaces with OpenDAW:
+**[Full Documentation](./documentation/README.md)** — Guides for building DAW interfaces with OpenDAW.
+
+To run the documentation site locally with live reload:
+
+```bash
+npm run docs:dev      # serves at http://localhost:5173/docs/
+npm run docs:build    # static build to dist/docs/
+npm run docs:preview  # preview the static build
+```
+
+The chapter list below links to the rendered markdown on GitHub:
 
 - [Introduction](./documentation/01-introduction.md) — DAW concepts and system architecture
 - [Timing & Tempo](./documentation/02-timing-and-tempo.md) — PPQN, tempo automation, time signatures
