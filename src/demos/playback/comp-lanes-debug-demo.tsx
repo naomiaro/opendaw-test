@@ -18,7 +18,6 @@ import { BackLink } from "@/components/BackLink";
 import { TransportControls } from "@/components/TransportControls";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { loadTracksFromFiles } from "@/lib/trackLoading";
-import { getAudioExtension } from "@/lib/audioUtils";
 import { usePlaybackPosition } from "@/hooks/usePlaybackPosition";
 import { useTransportControls } from "@/hooks/useTransportControls";
 import "@radix-ui/themes/styles.css";
@@ -69,6 +68,9 @@ const App: React.FC = () => {
   const playbackStartRef = useRef<number>(0);
   const isRebuildingRef = useRef(false);
 
+  // ─── Debug: pending static config to apply once takes finish loading ───
+  const pendingDebugConfigRef = useRef(false);
+
   // ─── Derive comp state from box graph whenever editing commits ───
   useEffect(() => {
     if (!project) return;
@@ -113,6 +115,44 @@ const App: React.FC = () => {
       isRebuildingRef.current = false;
     }
   }, [project, takes, compMode, compState, spliceOverlap]);
+
+  // ─── Debug: apply static no-overlap config once takes finish loading ───
+  // Zone 1 (0.00s–2.32s) → Otherside (take 0)
+  // Zone 2 (2.32s–15.48s) → ScarTissue (take 1)
+  useEffect(() => {
+    if (!pendingDebugConfigRef.current) return;
+    if (!project || takes.length !== 2) return;
+    if (!spliceAudioUnitRef.current || !spliceTrackRef.current) {
+      console.warn(
+        "[comp-lanes-debug] " +
+          JSON.stringify({
+            message: "takes loaded but splice refs missing — debug config skipped",
+            hasSpliceAudioUnit: !!spliceAudioUnitRef.current,
+            hasSpliceTrack: !!spliceTrackRef.current,
+          })
+      );
+      setStatus("Ready — debug setup skipped (splice track unavailable)");
+      pendingDebugConfigRef.current = false;
+      return;
+    }
+    pendingDebugConfigRef.current = false;
+
+    const boundaryPpqn = playbackStartRef.current + Math.round(PPQN.secondsToPulses(2.32, BPM));
+    const boundaries = [boundaryPpqn];
+    const assignments = [0, 1];
+
+    rebuildAutomation(project, takes, boundaries, assignments, crossfadeMs, playbackStartRef.current, crossfadeCurve);
+    setSpliceOverlap(false);
+
+    project.editing.modify(() => {
+      for (const take of takes) {
+        take.trackData.audioUnitBox.mute.setValue(true);
+      }
+      spliceAudioUnitRef.current!.mute.setValue(false);
+    });
+    setCompMode("splice");
+    setStatus("Ready — Debug setup applied: Zone 1 Otherside, Zone 2 ScarTissue (no overlap)");
+  }, [project, takes, crossfadeMs, crossfadeCurve]);
 
   // ─── Load takes from audio file(s) ───
   const loadTakes = useCallback(
@@ -224,6 +264,13 @@ const App: React.FC = () => {
         .find(u => u.box === spliceAudioUnitBox)
         ?.tracks.values()[0]?.box ?? null;
 
+      if (!spliceTrackBox) {
+        console.error(
+          "[comp-lanes-debug] splice track lookup returned null after createInstrument — " +
+            "static debug config will be skipped"
+        );
+      }
+
       spliceTrackRef.current = spliceTrackBox;
       spliceAudioUnitRef.current = spliceAudioUnitBox;
 
@@ -261,14 +308,18 @@ const App: React.FC = () => {
     [audioContext, loadTakes]
   );
 
-  const handleLoadDemo = useCallback(async () => {
+  const handleLoadDebugSetup = useCallback(async () => {
     if (!project || !audioContext) return;
+    pendingDebugConfigRef.current = true;
     try {
-      const ext = getAudioExtension();
-      await loadTakes([{ name: "Dark Ride - Vocals", fileUrl: `/audio/DarkRide/06_Vox.${ext}` }]);
+      await loadTakes([
+        { name: "Otherside", fileUrl: "/audio/Otherside.mp3" },
+        { name: "ScarTissue", fileUrl: "/audio/ScarTissue.mp3" }
+      ]);
     } catch (error) {
+      pendingDebugConfigRef.current = false;
       const message = error instanceof Error ? error.message : String(error);
-      setStatus(`Error loading demo audio: ${message}`);
+      setStatus(`Error loading debug audio: ${message}`);
     }
   }, [project, audioContext, loadTakes]);
 
@@ -520,11 +571,13 @@ const App: React.FC = () => {
           {/* Header */}
           <Flex direction="column" gap="4">
             <BackLink />
-            <Heading size="8">Comp Lanes Demo</Heading>
+            <Heading size="8">Comp Lanes Debug Demo</Heading>
             <Text size="4" color="gray">
-              Compare two approaches to take comping: volume automation crossfades vs
-              region splicing with SDK voice management. Drop one file for staggered
-              takes, or multiple files for separate performances. Undo/redo with Cmd+Z.
+              Debug variant of the comp-lanes demo. Click the static-setup button below to
+              load Otherside (top) + ScarTissue (bottom) and apply a no-overlap splice
+              configuration: Zone 1 (0.00s–2.32s) → Otherside, Zone 2 (2.32s–15.48s) →
+              ScarTissue. Used for reproducing voice-eviction edge cases at exact region
+              boundaries.
             </Text>
           </Flex>
 
@@ -560,8 +613,8 @@ const App: React.FC = () => {
                   <Text size="2" color="gray">or</Text>
                   <div style={{ flex: 1, height: "1px", backgroundColor: "var(--gray-6)" }} />
                 </Flex>
-                <Button size="3" variant="soft" onClick={handleLoadDemo}>
-                  Use demo vocals (Dark Ride)
+                <Button size="3" variant="soft" onClick={handleLoadDebugSetup}>
+                  Static setup: Otherside / ScarTissue (no overlap)
                 </Button>
               </Flex>
             </Card>

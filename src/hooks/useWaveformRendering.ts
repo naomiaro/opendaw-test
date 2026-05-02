@@ -210,8 +210,10 @@ export function useWaveformRendering(
                 y1,
                 u0: Math.max(0, Math.min(peaks.numFrames, u0)),
                 u1: Math.max(0, Math.min(peaks.numFrames, u1)),
-                v0: -1,
-                v1: 1
+                // Slight headroom absorbs the SDK Float16 unpack quirk: stored
+                // peaks at exactly ±1.0 unpack to ±1.0001219511032104.
+                v0: -1.001,
+                v1: 1.001
               });
             }
           });
@@ -228,8 +230,9 @@ export function useWaveformRendering(
               y1,
               u0: 0,
               u1: peaks.numFrames,
-              v0: -1,
-              v1: 1
+              // Headroom for SDK Float16 unpack quirk (peaks at ±1.0 unpack to ±1.000122).
+              v0: -1.001,
+              v1: 1.001
             });
           }
         }

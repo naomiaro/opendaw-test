@@ -118,12 +118,27 @@ OpenDAW uses Option types that are **always truthy** (even `Option.None`):
 // WRONG - Option.None is truthy, this never triggers
 if (!sampleLoader.peaks) { ... }
 
+// ALSO WRONG - ?. and ?? skip Option emptiness checks; data is the Option
+// object itself (truthy), and `.numberOfFrames` silently returns undefined
+const data = loader?.data ?? null;
+const frames = data?.numberOfFrames; // undefined even when state is "loaded"
+
 // CORRECT
 const peaksOption = sampleLoader.peaks;
 if (peaksOption.isEmpty()) { return; }
 const peaks = peaksOption.unwrap();
 ```
 API: `.isEmpty()`, `.nonEmpty()`, `.unwrap()`, `.unwrapOrNull()`, `.unwrapOrUndefined()`
+**Rule:** if it's typed `Option<T>`, never use `?.` or `??` on it. Always `.isEmpty()` / `.unwrap()`.
+
+### Tape vs Track Terminology
+- **Track** = SDK timeline concept (`TrackBox`, `TrackBoxAdapter`, `audioUnit.tracks`,
+  timeline lanes that hold regions). Use this term anywhere referring to box-graph structure.
+- **Tape** = app-level recording input (a `Tape` instrument + `CaptureAudio` device that
+  captures into a TrackBox). UI labels say "Tape N", code identifiers use `recordingTape`,
+  `useRecordingTapes`, `RecordingTapeCard`. Use this term for anything user-arms-and-records-onto.
+- The `disable-track` SDK preference value and "Multi-track loop recording" feature term are
+  exceptions — they describe SDK behaviour and industry concept respectively.
 
 ### Box Graph API Names
 - Delete box: `project.boxGraph.unstageBox(box)` — takes box object, NOT UUID
@@ -473,9 +488,16 @@ direct calls handle mute toggles, finalization, and clear.
 - COOP/COEP headers in `public/_headers` exclude `/docs/*` — VitePress assets break under `require-corp`
 - Vite handles TypeScript transpilation (no standalone `tsc` available)
 - After SDK upgrades, clear Vite dep cache: `rm -rf node_modules/.vite` (dev server pre-bundles old SDK)
-- SDK upgrades: bump `@opendaw/studio-sdk` version in `package.json` and `npm install` — sub-packages
-  resolve transitively from the registry. NEVER install sub-packages as local `file:` references
-  (breaks Cloudflare CI).
+- SDK upgrades: bump `@opendaw/studio-sdk` version in `package.json`, then **regenerate the lockfile
+  cleanly**: `rm -rf node_modules package-lock.json && npm install`. Sub-packages resolve transitively
+  from the registry. NEVER install sub-packages as local `file:` references (breaks Cloudflare CI).
+  An in-place `npm install` can leave stale transitive entries that local `npm@11+` tolerates but
+  Cloudflare's older `npm ci` rejects with "package.json and package-lock.json … are in sync" — always
+  verify with `npm ci` (not just `npm run build`) before pushing an SDK upgrade.
+- After an SDK upgrade, audit `documentation/*.md` chapter docs for stale API signatures: grep
+  each renamed/changed identifier from the changelog and update method signatures, return
+  types, and code examples. Chapter docs describe current contracts — leaving stale
+  signatures is worse than no doc at all.
 - Verify SDK exports: check `node_modules/@opendaw/<package>/dist/*.d.ts` before writing imports
 - SDK version lives in `node_modules/@opendaw/studio-sdk/package.json`, NOT in individual sub-packages (studio-core, studio-boxes, etc.) which have their own independent version numbers
 
@@ -517,4 +539,7 @@ Each demo category folder has its own CLAUDE.md with SDK knowledge scoped to tho
 - Editing, fades & automation: `documentation/09-editing-fades-and-automation.md`
 - Export & offline rendering: `documentation/10-export.md`
 - SDK changelogs: `changelogs/`
+- SDK investigations & open questions: `debug/` (see `debug/README.md` for convention)
+- Unlisted debug demo pages: HTML at repo root with `<meta name="robots" content="noindex">`,
+  not added to `src/index.tsx` or `public/sitemap.xml`. See `comp-lanes-debug-demo.tsx` as reference.
 - OpenDAW source code locations: see `.claude/local.md`

@@ -215,7 +215,7 @@ smoothly. Only fall back to `dataIndex` when `durationFrames === 0`.
 ### Take-to-Track Matching (Multi-Track Loop Recording)
 SDK creates take regions on new TrackBoxes under the same AudioUnitBox. Match via:
 `regionBox.regions.targetVertex` → `TrackBox` → `trackBox.tracks.targetVertex` → `AudioUnitBox`
-Then `UUID.toString(audioUnitBox.address.uuid)` matches `RecordingTrack.id`.
+Then `UUID.toString(audioUnitBox.address.uuid)` matches `RecordingTape.id`.
 
 ### Loop Take Buffer Layout and Offsets
 All takes record into a single continuous audio buffer. The count-in offset is only
@@ -292,11 +292,11 @@ useEffect(() => {
 ## Reference Files
 - Recording demo: `src/demos/recording/recording-api-react-demo.tsx`
 - Loop recording demo: `src/demos/recording/loop-recording-demo.tsx`
-- Recording track card: `src/components/RecordingTrackCard.tsx`
+- Recording tape card: `src/components/RecordingTapeCard.tsx`
 - Take timeline: `src/components/TakeTimeline.tsx`
 - Engine preferences hook: `src/hooks/useEnginePreference.ts`
 
 ## Shared Recording Hooks
 - `src/hooks/useRecordingSession.ts` — state machine (idle → counting-in → recording → finalizing → ready → playing), engine subscriptions, eager sampleLoader finalization barrier
 - `src/hooks/useAudioDevicePermission.ts` — mic permission + input/output device enumeration
-- `src/hooks/useRecordingTracks.ts` — Tape instrument creation, capture config, arming, track add/remove
+- `src/hooks/useRecordingTapes.ts` — Tape instrument creation, capture config, arming, tape add/remove
