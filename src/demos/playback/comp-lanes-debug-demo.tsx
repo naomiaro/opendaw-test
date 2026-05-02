@@ -122,7 +122,19 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!pendingDebugConfigRef.current) return;
     if (!project || takes.length !== 2) return;
-    if (!spliceAudioUnitRef.current || !spliceTrackRef.current) return;
+    if (!spliceAudioUnitRef.current || !spliceTrackRef.current) {
+      console.warn(
+        "[comp-lanes-debug] " +
+          JSON.stringify({
+            message: "takes loaded but splice refs missing — debug config skipped",
+            hasSpliceAudioUnit: !!spliceAudioUnitRef.current,
+            hasSpliceTrack: !!spliceTrackRef.current,
+          })
+      );
+      setStatus("Ready — debug setup skipped (splice track unavailable)");
+      pendingDebugConfigRef.current = false;
+      return;
+    }
     pendingDebugConfigRef.current = false;
 
     const boundaryPpqn = playbackStartRef.current + Math.round(PPQN.secondsToPulses(2.32, BPM));
@@ -251,6 +263,13 @@ const App: React.FC = () => {
       const spliceTrackBox = project.rootBoxAdapter.audioUnits.adapters()
         .find(u => u.box === spliceAudioUnitBox)
         ?.tracks.values()[0]?.box ?? null;
+
+      if (!spliceTrackBox) {
+        console.error(
+          "[comp-lanes-debug] splice track lookup returned null after createInstrument — " +
+            "static debug config will be skipped"
+        );
+      }
 
       spliceTrackRef.current = spliceTrackBox;
       spliceAudioUnitRef.current = spliceAudioUnitBox;

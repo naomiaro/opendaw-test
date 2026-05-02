@@ -70,7 +70,12 @@ const App: React.FC = () => {
   const { audioInputDevices, audioOutputDevices, hasPermission, requestPermission } =
     useAudioDevicePermission();
   const { recordingTapes, armedCount, addTape, removeTape, handleArmedChange } =
-    useRecordingTapes({ project, audioInputDevices, maxTapes: MAX_TAPES });
+    useRecordingTapes({
+      project,
+      audioInputDevices,
+      maxTapes: MAX_TAPES,
+      onError: (msg) => setStatus(`Add tape failed: ${msg}`),
+    });
 
   // Settings
   const [useCountIn, setUseCountIn] = useState(true);

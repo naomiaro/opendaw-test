@@ -97,7 +97,11 @@ const App: React.FC = () => {
   const { audioInputDevices, audioOutputDevices, hasPermission, requestPermission } =
     useAudioDevicePermission();
   const { recordingTapes, armedCount, addTape, removeTape, handleArmedChange } =
-    useRecordingTapes({ project, audioInputDevices });
+    useRecordingTapes({
+      project,
+      audioInputDevices,
+      onError: (msg) => setStatus(`Add tape failed: ${msg}`),
+    });
 
   // Keep ref in sync to avoid tearing down pointerHub subscriptions on tape changes
   const recordingTapesRef = useRef(recordingTapes);

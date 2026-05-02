@@ -9,6 +9,7 @@ interface UseRecordingTapesOptions {
   project: Project | null;
   audioInputDevices: readonly MediaDeviceInfo[];
   maxTapes?: number;
+  onError?: (message: string) => void;
 }
 
 export interface RecordingTapesResult {
@@ -28,9 +29,15 @@ export function useRecordingTapes({
   project,
   audioInputDevices,
   maxTapes,
+  onError,
 }: UseRecordingTapesOptions): RecordingTapesResult {
   const [recordingTapes, setRecordingTapes] = useState<RecordingTape[]>([]);
   const [armedCount, setArmedCount] = useState(0);
+
+  const reportError = useCallback((message: string) => {
+    console.error("[useRecordingTapes] " + message);
+    onError?.(message);
+  }, [onError]);
 
   const addTape = useCallback(() => {
     if (!project) return;
@@ -45,7 +52,7 @@ export function useRecordingTapes({
     });
 
     if (!audioUnitBoxRef) {
-      console.error("[useRecordingTapes] createInstrument did not return audioUnitBox");
+      reportError("createInstrument did not return audioUnitBox");
       return;
     }
 
@@ -54,12 +61,12 @@ export function useRecordingTapes({
       (audioUnitBoxRef as AudioUnitBox).address.uuid
     );
     if (captureOpt.isEmpty()) {
-      console.error("[useRecordingTapes] No capture device found for new instrument");
+      reportError("No capture device found for new instrument");
       return;
     }
     const capture = captureOpt.unwrap();
     if (!(capture instanceof CaptureAudio)) {
-      console.error("[useRecordingTapes] Capture device is not CaptureAudio");
+      reportError("Capture device is not CaptureAudio");
       return;
     }
 
@@ -80,7 +87,7 @@ export function useRecordingTapes({
         capture,
       },
     ]);
-  }, [project, audioInputDevices, recordingTapes.length, maxTapes]);
+  }, [project, audioInputDevices, recordingTapes.length, maxTapes, reportError]);
 
   const removeTape = useCallback((id: string) => {
     setRecordingTapes((prev) => {

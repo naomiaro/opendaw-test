@@ -221,8 +221,9 @@ const LoopedWaveformCanvas: React.FC<{
         y1: height,
         u0: Math.max(0, Math.min(numFrames, u0)),
         u1: Math.max(0, Math.min(numFrames, u1)),
-        v0: -1,
-        v1: 1
+        // Headroom for SDK Float16 unpack quirk (peaks at ±1.0 unpack to ±1.000122).
+        v0: -1.001,
+        v1: 1.001
       });
     }
 

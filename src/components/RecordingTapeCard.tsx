@@ -110,8 +110,12 @@ export const RecordingTapeCard: React.FC<RecordingTapeCardProps> = ({
     const deviceId = monitorOutputDeviceId === "default"
       ? Option.None
       : Option.wrap(monitorOutputDeviceId);
-    capture.setMonitorOutputDevice(deviceId).catch(() => {
+    capture.setMonitorOutputDevice(deviceId).catch((err) => {
       // Device unavailable (disconnected, permissions) — revert to system default
+      console.debug(
+        "[RecordingTapeCard] setMonitorOutputDevice failed, reverting to default: " +
+          JSON.stringify(String(err))
+      );
       setMonitorOutputDeviceId("default");
     });
   }, [capture, monitorOutputDeviceId]);

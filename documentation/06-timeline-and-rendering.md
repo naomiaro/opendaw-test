@@ -831,16 +831,17 @@ Float16:  1 sign bit | 5 exponent bits | 10 mantissa bits   (16 bits total)
 
 The mantissa stores the fractional digits *after* the implicit leading 1. Float32's 23 mantissa bits give about 8 million distinct values between any two adjacent powers of 2; Float16's 10 mantissa bits give only **1024 values** in the same span.
 
-Near 1.0, that means consecutive Float16 values are spaced about `0.000977` apart:
+Near 1.0, that means consecutive Float16 values are spaced about `0.000977` apart **above** 1.0 and `0.000488` apart **below** 1.0 — Float16 (like all binary floats) halves its spacing at every power of 2:
 
 ```
 Float16 representable values around 1.0:
    ... 0.99902 → 0.99951 → 1.00000 → 1.00098 → 1.00195 ...
+       ←0.00049→ ←0.00049→ ←0.00098→ ←0.00098→
                               ↑
                        (mantissa bits all zero)
 ```
 
-Each Float16 value represents a bucket of nearby Float32 inputs. Anything in the range `[0.99975, 1.000488)` rounds to the bit pattern that "means" 1.0.
+Each Float16 value represents a bucket of nearby Float32 inputs. Anything in the range `[0.99975, 1.000488)` rounds to the bit pattern that "means" 1.0 — note the bucket is asymmetric around 1.0 because of the spacing change.
 
 #### The Unpack Quirk at Power-of-Two Boundaries
 
@@ -855,7 +856,7 @@ if (mantissa === 0 && exp > threshold) {
 }
 ```
 
-For `Float16(1.0)` (bit pattern `0x3c00`), this returns Float32 `1.0001219511032104` instead of `1.0` — a small bump of `1023 / 8_388_608` (the largest fractional offset that fits without changing the bit pattern's Float16 identity).
+For `Float16(1.0)` (bit pattern `0x3c00`), this returns Float32 `1.0001219511032104` instead of `1.0` — a small bump of `1023 / 8_388_608`, produced by filling Float32's lower 10 mantissa bits with 1s. (This is well inside the Float16 bucket — far less than the bucket's upper edge at `1.000488` — so it stays unambiguous in round-trip terms.)
 
 The likely intent is **conservative peak fidelity**: if the original sample was anywhere in the bucket `[0.99975, 1.000488)` that rounded to `Float16(1.0)`, returning a value slightly *above* 1.0 guarantees a peak meter never visually understates the true maximum amplitude.
 
