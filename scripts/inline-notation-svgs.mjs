@@ -22,30 +22,45 @@ if (!inputPath) {
 
 let md = readFileSync(inputPath, "utf-8");
 
-// Match <img src="/notation/NAME.svg" ... height="N" />, capturing the
-// height attribute so we can apply it to the inline <svg> element.
-const imgRe = /<img\s+src="\/notation\/([a-z-]+)\.svg"\s+alt="[^"]*"\s+height="(\d+)"\s*\/>/g;
-
-let replacements = 0;
-md = md.replace(imgRe, (match, name, height) => {
+function loadSvg(name, height) {
   const svgPath = join(notationDir, `${name}.svg`);
-  let svg;
-  try {
-    svg = readFileSync(svgPath, "utf-8");
-  } catch (err) {
-    console.error(`Could not read ${svgPath}: ${err.message}`);
-    return match;
-  }
-
+  const svg = readFileSync(svgPath, "utf-8");
   // Override the SVG's intrinsic width/height with the requested display height
   // (preserve aspect via removing fixed width and setting height).
-  const styled = svg
+  return svg
     .replace(/\swidth="\d+"/, "")
     .replace(/\sheight="\d+"/, ` height="${height}"`)
     .replace(/<svg\s/, `<svg aria-label="${name}" role="img" `);
+}
 
-  replacements++;
-  return styled;
+let replacements = 0;
+
+// 1. Replace placeholder <img src="/notation/NAME.svg" alt="..." height="N" />
+//    with the inline SVG content. Used the first time a section is added.
+const imgRe = /<img\s+src="\/notation\/([a-z-]+)\.svg"\s+alt="[^"]*"\s+height="(\d+)"\s*\/>/g;
+md = md.replace(imgRe, (match, name, height) => {
+  try {
+    replacements++;
+    return loadSvg(name, height);
+  } catch (err) {
+    console.error(`Could not read ${name}.svg: ${err.message}`);
+    return match;
+  }
+});
+
+// 2. Refresh existing inline <svg aria-label="NAME" ...>...</svg> blocks
+//    with the current SVG file contents. Used after regenerating notation
+//    glyphs (e.g. tweaking VexFlow output) so markdown picks up the change
+//    without manual edits. Preserves the existing height attribute.
+const inlineRe = /<svg\s+aria-label="([a-z-]+)"[^>]*\sheight="(\d+)"[^>]*>[\s\S]*?<\/svg>/g;
+md = md.replace(inlineRe, (match, name, height) => {
+  try {
+    replacements++;
+    return loadSvg(name, height);
+  } catch (err) {
+    console.error(`Could not refresh inline ${name}.svg: ${err.message}`);
+    return match;
+  }
 });
 
 writeFileSync(inputPath, md, "utf-8");

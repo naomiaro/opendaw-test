@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Notation render harness</title>
+  <style>
+    body { font-family: sans-serif; margin: 16px; }
+    .note { display: inline-block; margin: 8px; padding: 8px; border: 1px solid #ccc; }
+    .label { font-size: 12px; color: #666; margin-bottom: 4px; }
+  </style>
+</head>
+<body>
+  <p>VexFlow render harness — used by scripts/render-notation.mjs to extract SVGs into <code>documentation/public/notation/</code>.</p>
+  <div id="notes"></div>
+
+  <script type="module">
+    import VexFlow from 'https://unpkg.com/vexflow@5.0.0/build/esm/entry/vexflow.js';
+    // The ESM entry's default export IS VexFlow itself. setFonts is a static
+    // method that registers Bravura as the active SMuFL music font.
+    VexFlow.setFonts('Bravura', 'Academico');
+
+    // Wait for fonts to actually load via the browser FontFace API.
+    if (document.fonts && document.fonts.ready) {
+      await document.fonts.ready;
+    }
+
+    const { Factory, Renderer } = VexFlow;
+
+    function render(elementId, width, height, build) {
+      const factory = new Factory({
+        renderer: { elementId, width, height, backend: Renderer.Backends.SVG },
+      });
+      build(factory);
+      factory.draw();
+    }
+
+    function singleVoice(factory, notesString, voiceOpts = {}) {
+      const score = factory.EasyScore();
+      const system = factory.System({
+        x: 0, y: 0,
+        width: factory.options.renderer.width,
+      });
+      const notes = score.notes(notesString, voiceOpts);
+      const voice = score.voice(notes);
+      voice.setStrict(false);
+      system.addStave({ voices: [voice] });
+      return notes;
+    }
+
+    const items = [
+      { id: 'semibreve', easyScore: 'B4/w', width: 80, height: 100 },
+      { id: 'minim', easyScore: 'B4/h', width: 80, height: 100 },
+      { id: 'crotchet', easyScore: 'B4/q', width: 80, height: 100 },
+      { id: 'quaver', easyScore: 'B4/8', width: 80, height: 100 },
+      { id: 'semiquaver', easyScore: 'B4/16', width: 80, height: 100 },
+      { id: 'demisemiquaver', easyScore: 'B4/32', width: 80, height: 100 },
+      { id: 'hemidemisemiquaver', easyScore: 'B4/64', width: 80, height: 100 },
+      { id: 'dotted-quaver', easyScore: 'B4/8.', width: 80, height: 100 },
+    ];
+
+    const container = document.getElementById('notes');
+    for (const item of items) {
+      const wrap = document.createElement('div');
+      wrap.className = 'note';
+      const label = document.createElement('div');
+      label.className = 'label';
+      label.textContent = item.id;
+      wrap.appendChild(label);
+      const target = document.createElement('div');
+      target.id = item.id;
+      wrap.appendChild(target);
+      container.appendChild(wrap);
+      render(item.id, item.width, item.height, (f) => {
+        singleVoice(f, item.easyScore, { stem: 'up' });
+      });
+    }
+
+    // Triplet: three eighth notes beamed together with a "3" tuplet bracket
+    {
+      const wrap = document.createElement('div');
+      wrap.className = 'note';
+      const label = document.createElement('div');
+      label.className = 'label';
+      label.textContent = 'triplet';
+      wrap.appendChild(label);
+      const target = document.createElement('div');
+      target.id = 'triplet';
+      wrap.appendChild(target);
+      container.appendChild(wrap);
+      render('triplet', 140, 100, (f) => {
+        const notes = singleVoice(f, 'B4/8, B4, B4', { stem: 'up' });
+        f.Beam({ notes });
+        f.Tuplet({ notes });
+      });
+    }
+
+    // Mark ready for the extractor script
+    document.body.dataset.ready = '1';
+  </script>
+</body>
+</html>
