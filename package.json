@@ -25,6 +25,7 @@
     "@types/react-dom": "^19.2.2",
     "@vitejs/plugin-react": "^5.0.4",
     "prettier": "^3.6.2",
+    "vexflow": "^5.0.0",
     "vite": "^7.1.5",
     "vitepress": "^1.6.4"
   },

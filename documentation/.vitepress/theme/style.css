@@ -1,0 +1,10 @@
+/* Bravura SMuFL music notation font, used by inline VexFlow-rendered note
+   engravings in the handbook (e.g. the British/American note-name table in
+   01-introduction.md). Loaded once at the page level so inline <svg> elements
+   in markdown inherit it. Font binary is generated from VexFlow's bundled
+   Bravura data via scripts/generate-notation.mjs. */
+@font-face {
+  font-family: "Bravura";
+  src: url("/docs/fonts/Bravura.woff2") format("woff2");
+  font-display: block;
+}
