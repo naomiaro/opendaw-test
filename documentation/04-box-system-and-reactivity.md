@@ -756,6 +756,8 @@ regionAdapter.accept({
 });
 ```
 
+`AudioRegionBoxAdapter` exposes the file pointer two ways: `.file` returns the resolved `AudioFileBoxAdapter` and throws `"Cannot access file."` if the pointer is empty, while `.optFile` returns `Option<AudioFileBoxAdapter>` so callers can handle the empty case. Use `.file` when the region is known to have a file (the common case — recording and project-load both wire the pointer in the same transaction as region creation); reach for `.optFile` when walking the project tree generically (e.g., a "broken regions" audit) where an unresolved or deleted file pointer shouldn't crash the traversal.
+
 For simple boolean checks, use type guards:
 
 ```typescript
@@ -1305,7 +1307,6 @@ trackAdapter.regions.catchupAndSubscribe({
     if (regionAdapter.isAudioRegion()) {
       // AudioRegionBoxAdapter — typed access to label, file, peaks, etc.
       const peaks = regionAdapter.file.peaks; // Option<Peaks>
-      const loader = regionAdapter.file.getOrCreateLoader(); // SampleLoader
     }
   },
   onRemoved: (regionAdapter: AnyRegionBoxAdapter) => { ... },
