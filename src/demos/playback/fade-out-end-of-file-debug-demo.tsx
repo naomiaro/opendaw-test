@@ -45,6 +45,9 @@ const FADE_OUT_SECONDS = 0.7766286581569116; // matches original repro
 const VOICE_FADE_DURATION_SECONDS = 0.020; // SDK constant in core-processors/Tape/constants.ts
 // 21 ms of headroom: 20 ms VOICE_FADE_DURATION + 1 ms safety margin.
 const WORKAROUND_HEADROOM_SECONDS = 0.021;
+// Skip the first 20 s of the file so the listener only needs to wait
+// ~10 s before the fade-out (and the click, in BUG mode).
+const PLAYBACK_START_SECONDS = 20;
 
 type Scenario = "bug" | "workaround";
 
@@ -167,7 +170,7 @@ const App: React.FC = () => {
       });
 
       setScenario(next);
-      project.engine.setPosition(0);
+      project.engine.setPosition(PPQN.secondsToPulses(PLAYBACK_START_SECONDS, bpm));
       project.engine.play();
     },
     [project, audioContext]
@@ -223,6 +226,10 @@ const App: React.FC = () => {
               </Text>
               <Separator size="4" />
               <Flex direction="column" gap="2">
+                <Text size="2">
+                  Playback starts at <Code>{PLAYBACK_START_SECONDS}</Code> s so you only need to
+                  listen for ~10 s before the fade-out ends.
+                </Text>
                 <Text size="2">
                   <strong>Bug:</strong> region duration = full file duration (
                   {audioBufferRef.current
@@ -282,7 +289,8 @@ Fade-out slope:    0.5 (linear)
 Region position:   0
 Region duration:   bug=fileDuration | workaround=fileDuration − ${(
                   WORKAROUND_HEADROOM_SECONDS * 1000
-                ).toFixed(0)} ms`}
+                ).toFixed(0)} ms
+Playback start:    ${PLAYBACK_START_SECONDS} s (≈10 s before fade-out ends)`}
               </Code>
             </Flex>
           </Card>
