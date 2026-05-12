@@ -39,7 +39,8 @@ export default defineConfig({
                 werkstatt: resolve(__dirname, "werkstatt-demo.html"),
                 export: resolve(__dirname, "export-demo.html"),
                 compLanes: resolve(__dirname, "comp-lanes-demo.html"),
-                compLanesDebug: resolve(__dirname, "comp-lanes-debug-demo.html")
+                compLanesDebug: resolve(__dirname, "comp-lanes-debug-demo.html"),
+                fadeOutEndOfFileDebug: resolve(__dirname, "fade-out-end-of-file-debug-demo.html")
             },
             output: {
                 manualChunks: (id) => {
