@@ -57,14 +57,3 @@ for (const voice of lane.fadingVoices) {
 `#unitGainBuffer` is filled with 1.0 — the region's fade gain (`#fadingGainBuffer`) is applied only to voices in `lane.pitchVoices`. Result: the old voice plays its remaining ~20 ms of file content at unit amplitude, attenuated only by its own short internal fade. The new voice in `pitchVoices` does receive the region fade gain, but at this point the region fade is near 0, so its contribution is tiny. Sum ≈ old voice ≈ near-full amplitude. Region then ends, audio drops to 0 → click.
 
 The mechanism is **inferred from source-tracing**; the empirical verification at the sample level is the step at `numberOfFrames − VOICE_FADE_DURATION × sampleRate` and the fact that trimming the region by 21 ms eliminates the artifact.
-
-## Open question for OpenDAW
-
-When a region's fade-out is configured to reach silence at the region end and the region end coincides with the underlying audio file's end, two fade-out mechanisms overlap in the final 20 ms: the region's `FadingEnvelope` and `PitchVoice`'s internal end-of-file fade. The voice that triggered the internal fade is moved to `lane.fadingVoices` and is processed without the region's gain buffer applied, which lets near-full-amplitude content reach the output during the very window the caller intended to silence.
-
-Two possible contracts here:
-
-1. **Caller-managed.** Documented contract is: never end a region at the audio file's last sample if you've configured a region fade-out — leave at least `VOICE_FADE_DURATION` of headroom. In that case it would help to expose `VOICE_FADE_DURATION` as a public constant alongside `FadingEnvelope` so callers can compute the safe cueOut.
-2. **SDK-managed.** `TapeDeviceProcessor` should carry forward the per-region `fading` gain when escorting a voice to `lane.fadingVoices` so that the region's fade continues to attenuate the voice during its internal fade-out, rather than reverting to unit gain.
-
-Which one is intended?
