@@ -13,3 +13,4 @@ Documented bugs and open questions from working with the OpenDAW SDK. Each file 
 ## Index
 
 - [splice-click-cross-file.md](./splice-click-cross-file.md) — Audible click at exact region boundaries when consecutive same-track regions reference different audio files. Open question: caller-managed fades or automatic voice handling? Repro: [`comp-lanes-debug-demo.html`](../comp-lanes-debug-demo.html).
+- [fade-out-end-of-file-pop.md](./fade-out-end-of-file-pop.md) — Audible click at the end of a clip whose fade-out ends exactly at the audio file's end. Mechanism is source-traced and not empirically verified at runtime: `PitchVoice`'s end-of-file fade-out moves the voice to `lane.fadingVoices`, which appears to be processed without the region's fade gain. Open question: caller-managed headroom (e.g. trim region by 21 ms) or SDK-managed gain forwarding? Repro: [`fade-out-end-of-file-debug-demo.html`](../fade-out-end-of-file-debug-demo.html).
