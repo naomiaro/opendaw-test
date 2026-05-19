@@ -445,9 +445,11 @@ project.editing.modify(() => {
 3. All takes share the same underlying `AudioFileBox` (the continuous recording buffer)
 4. Each take's `position` and `duration` correspond to the loop boundaries
 5. Each take's `waveformOffset` (seconds) indicates where its audio starts in the shared buffer:
-   - Take 1: `waveformOffset` = count-in frames duration
-   - Take 2: `waveformOffset` = count-in + Take 1 duration
-   - Take N: `waveformOffset` = count-in + sum of all prior take durations
+   - Take 1: `waveformOffset` = count-in + `outputLatency` + worklet head-start *(see RecordAudio.ts for exact formula)*
+   - Take 2: `waveformOffset` = Take 1's offset + Take 1 duration
+   - Take N: `waveformOffset` = previous take's offset + previous take's duration
+
+   Consumers should always read `regionBox.waveformOffset.getValue()` directly rather than recomputing — the SDK accounts for output latency and worklet startup gap.
 
 ### Rendering Take Peaks
 

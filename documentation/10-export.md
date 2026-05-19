@@ -1109,7 +1109,7 @@ OpenDAW has two offline renderers, but both have limitations when used from a li
 | `AudioOfflineRenderer` | Deprecated | Uses `OfflineAudioContext` on main thread. `Option.None` → `countStems` returns 1, routing through stem path (no metronome). No range support (always renders 0 to last region). |
 | `OfflineEngineRenderer` | Current | Worker-based custom render loop. `Option.None` → same `countStems=1` stem routing. Throws "Already connected" on live project's `liveStreamReceiver`. |
 
-**Key clarification:** `ExportStemsConfiguration.countStems(Option.None)` returns **1** (not 0). The `numStems === 0` panic guard only fires for `Option.Some({})` (empty config object). With `Option.None`, the renderer creates 2 channels (`1 * 2`) and routes through the **stem export branch** — which excludes metronome. This is the fundamental reason neither renderer supports mixdown-with-metronome, not the panic guard.
+**Key clarification:** `ExportConfiguration.countStems(Option.None)` returns **1** (not 0). The `numStems === 0` panic guard only fires for `Option.Some({stems: {}})` (an empty stems map). With `Option.None`, the renderer creates 2 channels (`1 * 2`) and routes through the **stem export branch** — which excludes metronome. This is the fundamental reason neither renderer supports mixdown-with-metronome, not the panic guard.
 
 Neither renderer supports:
 - Rendering the **mixdown path** (which includes metronome) — `Option.None` routes through the stem branch
@@ -1131,7 +1131,7 @@ async function renderRange(
   startPpqn: ppqn,
   endPpqn: ppqn,
   sampleRate: number,
-  exportConfiguration?: ExportStemsConfiguration,
+  exportConfiguration?: Record<string, ExportStemConfiguration>,
   mutateBeforeCopy?: () => void,
   restoreAfterCopy?: () => void,
   metronomeEnabled: boolean = false,
@@ -1159,7 +1159,8 @@ async function renderRange(
     const worklets = await AudioWorklets.createFor(context);
     const engineWorklet = worklets.createEngine({
       project: projectCopy,
-      exportConfiguration, // undefined = mixdown (metronome included), config = stems
+      // undefined = mixdown (metronome included), {stems: …} = stem path (no metronome)
+      exportConfiguration: exportConfiguration ? { stems: exportConfiguration } : undefined,
     });
     engineWorklet.connect(context.destination, 0); // output 0 = main audio (worklet has 2 outputs since SDK 0.0.133)
 
@@ -1334,7 +1335,7 @@ Render via stem path for per-track files. If metronome is requested, run a secon
 
 ```typescript
 // Pass 1: Stem export (per-track channels, no metronome)
-const exportConfig: ExportStemsConfiguration = {};
+const exportConfig: Record<string, ExportStemConfiguration> = {};
 for (const track of selectedTracks) {
   const uuid = UUID.toString(track.audioUnitBox.address.uuid);
   exportConfig[uuid] = {
@@ -1462,7 +1463,7 @@ The metronome is already wired into `EngineProcessor.process()` — it runs in t
 Currently, `Option.None` → `countStems` returns 1 → stem path (no metronome). To enable the mixdown path, the renderer needs a way to set `stemExports` to empty while still creating 2 output channels. Options:
 - Add an explicit `mixdown: boolean` flag to the config
 - Treat `Option.None` differently (set `numberOfChannels = 2` without populating `stemExports`)
-- Add a new `ExportStemsConfiguration` variant that means "mixdown"
+- Add a new `ExportConfiguration` variant (alongside the existing `stems` / `range` fields) that means "mixdown"
 
 **2. Accept engine preferences in `OfflineEngineInitializeConfig`**
 
@@ -1475,17 +1476,9 @@ export interface OfflineEngineInitializeConfig {
 }
 ```
 
-**3. Support `setPosition()` before `play()` for range rendering**
+**3. Range-bounded rendering** *(resolved upstream)*
 
-`OfflineEngineRenderer` already exposes `setPosition(ppqn)` and `step(numSamples)` for precise range rendering. However, the `start()` convenience method always renders from position 0. Adding optional range parameters would make this a first-class feature:
-
-```typescript
-static async start(
-  source, optExportConfiguration, progress, abortSignal?, sampleRate?,
-  startPosition?: ppqn,  // default: 0
-  endPosition?: ppqn     // default: source.lastRegionAction()
-): Promise<AudioData>
-```
+`ExportConfiguration.range` is now a first-class field on the SDK config object — `range: "full" | { start: ppqn, end: ppqn }`. When set, `OfflineEngineRenderer.start()` seeks to `range.start` before playing and bounds the render at `tempoMap.intervalToSeconds(start, end)`. Our `renderRange()` helper predates this, still uses `setPosition` + `OfflineAudioContext` length for the same effect, and is retained because the mixdown path issue (#1 above) is not yet fixed.
 
 **4. Resolve `liveStreamReceiver` conflict**
 

@@ -223,7 +223,7 @@ explicitly set for take 1; subsequent takes inherit it transitively through accu
 ```
 Buffer: [count-in frames | Take 1 audio | Take 2 audio | Take 3 audio ...]
 
-Take 1: waveformOffset = preRecordingSeconds (count-in duration)
+Take 1: waveformOffset = countInSeconds + outputLatency + workletHeadStart (set by SDK)
 Take 2: waveformOffset = take1.waveformOffset + take1.duration
 Take 3: waveformOffset = take2.waveformOffset + take2.duration
 ```
