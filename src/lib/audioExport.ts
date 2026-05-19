@@ -10,7 +10,7 @@
 import { Project, AudioOfflineRenderer } from "@opendaw/studio-core";
 import { WavFile } from "@opendaw/lib-dsp";
 import { Errors, Option, Progress } from "@opendaw/lib-std";
-import type { ExportStemsConfiguration } from "@opendaw/studio-adapters";
+import type { ExportConfiguration } from "@opendaw/studio-adapters";
 
 export interface ExportOptions {
   /**
@@ -170,8 +170,8 @@ export async function exportStems(
 
     onStatus?.(`Preparing to export ${stemCount} stems...`);
 
-    // Convert our config format to OpenDAW's ExportStemsConfiguration format
-    const exportConfig: ExportStemsConfiguration = stemsConfig;
+    // Wrap our flat stem map into SDK ExportConfiguration shape ({stems: ...})
+    const exportConfig: ExportConfiguration = { stems: stemsConfig };
 
     onStatus?.("Rendering stems offline...");
 

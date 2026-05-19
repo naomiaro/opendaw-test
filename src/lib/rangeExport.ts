@@ -2,7 +2,7 @@ import { Project, AudioWorklets } from "@opendaw/studio-core";
 import { WavFile, ppqn } from "@opendaw/lib-dsp";
 import { UUID, TimeSpan } from "@opendaw/lib-std";
 import { Wait } from "@opendaw/lib-runtime";
-import type { ExportStemsConfiguration } from "@opendaw/studio-adapters";
+import type { ExportStemConfiguration } from "@opendaw/studio-adapters";
 import type { TrackData } from "./types";
 
 export interface ExportResult {
@@ -30,7 +30,7 @@ const LOADING_TIMEOUT_MS = 30_000;
  * (excluding metronome). See documentation/10-export.md.
  *
  * @param exportConfiguration - undefined = mixdown path (includes metronome),
- *   ExportStemsConfiguration = stem path (excludes metronome).
+ *   Record<uuid, ExportStemConfiguration> = stem path (excludes metronome).
  *   When provided, returned channels are interleaved: [stem1_L, stem1_R, stem2_L, ...].
  * @param prepareCopy - optional callback to mutate the project copy before rendering
  *   (e.g., muting tracks). Applied to the copy, never the live project.
@@ -42,7 +42,7 @@ async function renderRange(
   startPpqn: ppqn,
   endPpqn: ppqn,
   sampleRate: number,
-  exportConfiguration?: ExportStemsConfiguration,
+  exportConfiguration?: Record<string, ExportStemConfiguration>,
   mutateBeforeCopy?: () => void,
   restoreAfterCopy?: () => void,
   metronomeEnabled: boolean = false,
@@ -81,7 +81,7 @@ async function renderRange(
     const worklets = await AudioWorklets.createFor(context);
     const engineWorklet = worklets.createEngine({
       project: projectCopy,
-      exportConfiguration,
+      exportConfiguration: exportConfiguration ? { stems: exportConfiguration } : undefined,
     });
     engineWorklet.connect(context.destination, 0);
 
@@ -187,7 +187,7 @@ export async function exportStemsRange(
   const selectedTracks = tracks.filter((t) =>
     selectedUuids.includes(UUID.toString(t.audioUnitBox.address.uuid))
   );
-  const exportConfig: ExportStemsConfiguration = {};
+  const exportConfig: Record<string, ExportStemConfiguration> = {};
   for (const track of selectedTracks) {
     const uuid = UUID.toString(track.audioUnitBox.address.uuid);
     exportConfig[uuid] = {

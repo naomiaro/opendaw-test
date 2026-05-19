@@ -80,26 +80,31 @@ PresetDecoder.decode(deviceBox, encoded);
 `PresetHeader` contains metadata (name, version, device type).
 
 ### Stem Export Configuration
-When exporting individual stems (vs full mixdown):
+When exporting individual stems (vs full mixdown), `ExportConfiguration.stems` is a
+record keyed by audio unit UUID:
 ```typescript
-// ExportStemsConfiguration controls per-stem rendering
-const stemConfig = {
-  stems: [
-    {
-      audioUnitBox: drumUnit,
+import type { ExportConfiguration } from "@opendaw/studio-adapters";
+
+const stemConfig: ExportConfiguration = {
+  stems: {
+    [UUID.toString(drumUnit.address.uuid)]: {
       includeAudioEffects: true,   // render with effects
       includeSends: false,         // exclude aux sends
+      useInstrumentOutput: true,
+      fileName: "drums",
     },
-    {
-      audioUnitBox: bassUnit,
+    [UUID.toString(bassUnit.address.uuid)]: {
       includeAudioEffects: true,
       includeSends: true,          // include reverb/delay sends
+      useInstrumentOutput: true,
+      fileName: "bass",
     },
-  ],
+  },
+  // Optional: range?: { start: ppqn, end: ppqn } limits the render to a section
 };
 
 // Pass to worklets.createEngine({ project: copy, exportConfiguration: stemConfig })
-// Each stem renders to separate channels in the output buffer
+// Each stem renders to a stereo pair in the output buffer (interleaved by stem order)
 ```
 - Mixdown path (`exportConfiguration` = undefined): all audio mixed, metronome included
 - Stem path (`exportConfiguration` provided): per-track isolation, metronome excluded
