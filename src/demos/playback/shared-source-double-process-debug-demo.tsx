@@ -62,13 +62,12 @@ const App: React.FC = () => {
   const audioBufferRef = useRef<AudioBuffer | null>(null);
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
 
-  // We keep both files-with-distinct-UUIDs and the shared-UUID configuration
-  // pre-built so toggling scenarios is just a region.file pointer swap.
-  const sharedFileBoxRef = useRef<AudioFileBox | null>(null);
-  const separateFileBoxesRef = useRef<{ a: AudioFileBox | null; b: AudioFileBox | null }>({
-    a: null,
-    b: null,
-  });
+  // We track the currently-installed AudioFileBox(es) so toggle can delete
+  // them after re-routing the regions. The box graph rejects boxes with
+  // no incoming edge at transaction commit, so we cannot keep both
+  // configurations alive at once — every `AudioFileBox` must be referenced
+  // by at least one region's `file` pointer.
+  const installedFileBoxesRef = useRef<AudioFileBox[]>([]);
   const regionsRef = useRef<{ a: AudioRegionBox | null; b: AudioRegionBox | null }>({
     a: null,
     b: null,
@@ -97,40 +96,28 @@ const App: React.FC = () => {
         if (!mounted) return;
         audioBufferRef.current = audioBuffer;
 
-        // Register the SAME audio buffer under THREE UUIDs:
-        //   - sharedUuid (used by the bug case; both regions point to it)
-        //   - separateUuidA, separateUuidB (used by the workaround; each region
-        //     gets its own AudioFileBox referencing the same on-disk content)
-        // Same audio content under different UUIDs gives independent voices in
-        // TapeDeviceProcessor, since voices are keyed by sourceUuid.
-        const sharedUuid = UUID.generate();
-        const separateUuidA = UUID.generate();
-        const separateUuidB = UUID.generate();
-        for (const uuid of [sharedUuid, separateUuidA, separateUuidB]) {
-          localAudioBuffersRef.current.set(UUID.toString(uuid), audioBuffer);
-        }
-
         const bpm = newProject.timelineBox.bpm.getValue();
         const fullDurationPPQN = PPQN.secondsToPulses(audioBuffer.duration, bpm);
         const seamPPQN = PPQN.secondsToPulses(SEAM_SECONDS, bpm);
 
+        // Initial setup uses the BUG layout: one shared AudioFileBox that
+        // both regions reference. Toggling to WORKAROUND swaps it for two
+        // distinct AudioFileBoxes inside applyScenarioAndPlay.
+        const initialSharedUuid = UUID.generate();
+        localAudioBuffersRef.current.set(UUID.toString(initialSharedUuid), audioBuffer);
+
         newProject.editing.modify(() => {
           const { trackBox } = newProject.api.createInstrument(InstrumentFactories.Tape);
 
-          const sharedFileBox = AudioFileBox.create(newProject.boxGraph, sharedUuid, (box) => {
-            box.fileName.setValue("test-440hz.wav (shared)");
-            box.endInSeconds.setValue(audioBuffer.duration);
-          });
-          const fileBoxA = AudioFileBox.create(newProject.boxGraph, separateUuidA, (box) => {
-            box.fileName.setValue("test-440hz.wav (A)");
-            box.endInSeconds.setValue(audioBuffer.duration);
-          });
-          const fileBoxB = AudioFileBox.create(newProject.boxGraph, separateUuidB, (box) => {
-            box.fileName.setValue("test-440hz.wav (B)");
-            box.endInSeconds.setValue(audioBuffer.duration);
-          });
-          sharedFileBoxRef.current = sharedFileBox;
-          separateFileBoxesRef.current = { a: fileBoxA, b: fileBoxB };
+          const sharedFileBox = AudioFileBox.create(
+            newProject.boxGraph,
+            initialSharedUuid,
+            (box) => {
+              box.fileName.setValue("test-440hz.wav (shared)");
+              box.endInSeconds.setValue(audioBuffer.duration);
+            }
+          );
+          installedFileBoxesRef.current = [sharedFileBox];
 
           // Region A: [0 s, 30 s), reads source[0..30 s].
           const eventsA = ValueEventCollectionBox.create(newProject.boxGraph, UUID.generate());
@@ -139,7 +126,7 @@ const App: React.FC = () => {
             UUID.generate(),
             (box) => {
               box.regions.refer(trackBox.regions);
-              box.file.refer(sharedFileBox); // BUG by default; swapped on workaround
+              box.file.refer(sharedFileBox);
               box.events.refer(eventsA.owners);
               box.position.setValue(0);
               box.duration.setValue(seamPPQN);
@@ -160,7 +147,7 @@ const App: React.FC = () => {
             UUID.generate(),
             (box) => {
               box.regions.refer(trackBox.regions);
-              box.file.refer(sharedFileBox); // BUG by default; swapped on workaround
+              box.file.refer(sharedFileBox);
               box.events.refer(eventsB.owners);
               box.position.setValue(seamPPQN);
               box.duration.setValue(fullDurationPPQN - seamPPQN);
@@ -193,28 +180,60 @@ const App: React.FC = () => {
 
   const applyScenarioAndPlay = useCallback(
     async (next: Scenario) => {
-      if (!project || !audioContext) return;
+      if (!project || !audioContext || !audioBufferRef.current) return;
       const regionA = regionsRef.current.a;
       const regionB = regionsRef.current.b;
-      const sharedBox = sharedFileBoxRef.current;
-      const fileBoxA = separateFileBoxesRef.current.a;
-      const fileBoxB = separateFileBoxesRef.current.b;
-      if (!regionA || !regionB || !sharedBox || !fileBoxA || !fileBoxB) return;
+      if (!regionA || !regionB) return;
 
       if (audioContext.state !== "running") {
         await audioContext.resume();
       }
 
+      const oldBoxes = installedFileBoxesRef.current;
+      const newBoxes: AudioFileBox[] = [];
+      const audioBuffer = audioBufferRef.current;
+
+      // Pre-create the new AudioFileBoxes (registering their UUIDs in the
+      // SampleManager's lookup map) BEFORE the editing.modify, so the box
+      // graph commit doesn't have to fetch audio data for boxes that don't
+      // resolve. Each box's UUID maps to the same on-disk audio.
+      const newUuids =
+        next === "bug" ? [UUID.generate()] : [UUID.generate(), UUID.generate()];
+      for (const uuid of newUuids) {
+        localAudioBuffersRef.current.set(UUID.toString(uuid), audioBuffer);
+      }
+
       project.editing.modify(() => {
         if (next === "bug") {
+          const sharedBox = AudioFileBox.create(project.boxGraph, newUuids[0], (box) => {
+            box.fileName.setValue("test-440hz.wav (shared)");
+            box.endInSeconds.setValue(audioBuffer.duration);
+          });
+          newBoxes.push(sharedBox);
           regionA.file.refer(sharedBox);
           regionB.file.refer(sharedBox);
         } else {
+          const fileBoxA = AudioFileBox.create(project.boxGraph, newUuids[0], (box) => {
+            box.fileName.setValue("test-440hz.wav (A)");
+            box.endInSeconds.setValue(audioBuffer.duration);
+          });
+          const fileBoxB = AudioFileBox.create(project.boxGraph, newUuids[1], (box) => {
+            box.fileName.setValue("test-440hz.wav (B)");
+            box.endInSeconds.setValue(audioBuffer.duration);
+          });
+          newBoxes.push(fileBoxA, fileBoxB);
           regionA.file.refer(fileBoxA);
           regionB.file.refer(fileBoxB);
         }
+        // Delete the previous AudioFileBox(es) — they're no longer
+        // referenced after the .refer() calls above. Doing this in the
+        // same transaction keeps the graph consistent at commit time.
+        for (const oldBox of oldBoxes) {
+          oldBox.delete();
+        }
       });
 
+      installedFileBoxesRef.current = newBoxes;
       setScenario(next);
       const bpm = project.timelineBox.bpm.getValue();
       project.engine.setPosition(PPQN.secondsToPulses(PLAYBACK_START_SECONDS, bpm));
