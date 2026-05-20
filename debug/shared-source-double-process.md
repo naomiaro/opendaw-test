@@ -1,38 +1,43 @@
-# Sample-level discontinuity at non-block-aligned region seams
+# Sample-level discontinuity at touching region seams
 
 **Verified against:** OpenDAW SDK 0.0.147 (`@opendaw/studio-sdk@0.0.147`, `@opendaw/studio-core@0.0.145`).
 
-**Repro page:** [`shared-source-double-process-debug-demo.html`](../shared-source-double-process-debug-demo.html) (unlisted; filename preserved for now but the artifact is NOT shared-source-specific — see "Mechanism" below). Audio fixture: [`public/audio/test-440hz.wav`](../public/audio/test-440hz.wav) (60 s, 440 Hz sine, mono, 44.1 kHz, 16-bit).
+**Repro page:** [`shared-source-double-process-debug-demo.html`](../shared-source-double-process-debug-demo.html) (unlisted; filename preserved for history, but the artifact is NOT shared-source-specific and NOT block-alignment-specific — see "Mechanism" below). Audio fixture: [`public/audio/test-440hz.wav`](../public/audio/test-440hz.wav) (60 s, 440 Hz sine, mono, 44.1 kHz, 16-bit).
 
 ## Symptom
 
-Two adjacent `AudioRegionBoxAdapter`s on the same track that touch at an exact PPQN boundary (`region A.end == region B.start`) produce an audible sample-level discontinuity at the seam. In the one mid-block seam we measured offline (30.5 s @ 48 kHz, sample 64 of a 128-sample block), the seam-band `max |Δsample|` is ~2× the clean-sine expected value; in the one block-aligned seam we measured (30.0 s @ 48 kHz, exactly on a block boundary), the seam-band delta matches the clean-sine baseline. Two data points is not enough to characterise the magnitude as a function of in-block offset, but it's enough to confirm the artifact depends on block alignment.
+Two adjacent `AudioRegionBoxAdapter`s on the same track that touch at an exact PPQN boundary (`region A.end == region B.start`) produce a sample-level discontinuity at the seam: `seam-band max |Δsample|` measured ~2× the clean-sine baseline (`2π·440·0.5/SR`). Peak amplitude is unchanged.
 
-Offline render measurements (440 Hz / 0.5-amplitude sine, mono, 48 kHz, BPM 120, seam at 30.5 s = sample 1,464,000 = mid of block 11,437 + 64 samples):
+The repro page toggles **seam position** (block-aligned: seam lands on a 128-sample worklet block boundary; mid-block: seam lands 64 samples into a block — both computed from the AudioContext's actual sample rate) × **mediaId** (SHARED: one `AudioFileBox` referenced by both regions; DISTINCT: two `AudioFileBox`es with identical on-disk content).
+
+Offline-render `seam-band max |Δ|` on a 48 kHz AudioContext (BPM 120, 440 Hz / 0.5-amplitude sine):
 
 ```
-                            SHARED (1 AudioFileBox)   DISTINCT (2 AudioFileBoxes)
-pre-seam peak amplitude     0.5000                    0.5000
-seam-band peak amplitude    0.4999                    0.4999
-expected clean max |Δ|      0.02880  (= 2π·440·0.5/SR for a 440 Hz, 0.5-amp sine)
-pre-seam max |Δ|            0.02884                   0.02884
-seam-band max |Δ|           0.05747                   0.05747       ← ~2× expected
-seam-Δ / pre-Δ              1.99                       1.99
-largest jump at             30.499958 s                30.499958 s   ← 2 samples before seam
+                            BLOCK-ALIGNED (30.000000 s)        MID-BLOCK (30.001333 s)
+                            SHARED        DISTINCT             SHARED        DISTINCT
+pre-seam peak               0.5000        0.5000               0.5000        0.5000
+voice-fade-window peak      0.4999        0.4999               0.4999        0.4999
+expected clean max |Δ|      0.02880       0.02880              0.02880       0.02880
+pre-seam max |Δ|            0.02884       0.02884              0.02884       0.02884
+seam-band max |Δ|           0.05747       0.05747              0.05747       0.05747
+seam-Δ / pre-Δ              1.99          1.99                 1.99          1.99
+largest jump at             29.999958 s   29.999958 s          30.001292 s   30.001292 s
+                                          (all four: τ = −0.042 ms = 2 samples before seam)
 ```
 
-The peak-amplitude metric is *unchanged* by the artifact; only the sample-to-sample first difference reveals it. The discontinuity is audible — listeners describe it as a brief snap — because the ear is sensitive to high-frequency content introduced by sample-level jumps.
+All four configurations produce bit-identical offline output to floating-point precision. The artifact is **independent of both mediaId and the seam's offset within the 128-sample render quantum**. The originally-suspected "two regions sharing an `AudioFileBox`" mechanism is not the cause; the block-alignment-dependence mechanism initially inferred from live listening is not the cause either.
 
-**Both configurations produce identical output to floating-point precision.** The originally-suspected "two regions sharing an `AudioFileBox`" path is not the cause: configurations using one shared file (SHARED) vs two distinct files with the same audio content (DISTINCT) render bit-identical output and have the same artifact. Neither is a "workaround" for the other — both demonstrate the seam artifact identically.
+## Live vs offline discrepancy
 
-## Block alignment dependency
+Live playback through the AudioContext *does* sound different across seam positions: a block-aligned seam produces a noticeably quieter snap than a mid-block seam — sometimes close to inaudible on quiet material. The offline render does not reproduce this difference: it shows the same 0.05747 `max |Δ|` at the same `τ = −0.042 ms` offset for both seam positions.
 
-The two offline-render data points we have suggest the artifact depends on where the seam falls inside the 128-sample audio block:
+We don't have an offline metric that captures the live audibility difference. Possible explanations:
 
-- Seam at 30.0 s on a 48 kHz AudioContext: `30 × 48000 = 1,440,000 samples = 11,250 × 128` (block boundary). `seam-band max |Δ|` matches the clean-sine baseline.
-- Seam at 30.5 s on a 48 kHz AudioContext: `30.5 × 48000 = 1,464,000 samples = 11,437 × 128 + 64` (sample 64 of block — mid-block). `seam-band max |Δ|` is ~2× the clean-sine baseline.
+- The live worklet runs through an output device whose buffering or anti-aliasing interacts differently with seams on vs near block boundaries; the OfflineAudioContext doesn't pipe through that path.
+- Some live-only code (e.g. the live-stream receiver, peak-cache hooks, mute/unmute handlers) introduces a smoothing or zero-crossing-snap step at block boundaries that the offline renderer skips.
+- Perceptual masking related to AudioContext output-device sample-rate conversion (if the device runs at 48 kHz internally, an offline-rendered 48 kHz block-aligned discontinuity at sample 1,440,000 may resample to a different live position).
 
-The repro page only renders these two configurations; we have not swept the in-block offset to characterise the function. Live playback at 48 kHz can be unpredictable about block alignment depending on when `engine.play()` lands relative to the AudioContext's block clock, so the same configuration can sound clean on one playback and snap on the next.
+The repro page has both seam positions side-by-side so live A/B is one click apart, and the offline scan numbers are reproducible.
 
 ## How to reproduce
 
@@ -41,36 +46,44 @@ npm run dev
 # open https://localhost:5173/shared-source-double-process-debug-demo.html
 ```
 
-**HTTPS required** (self-signed cert). The repro page sets up two `AudioRegionBox`es on one Tape track at touching PPQN positions over a 60 s 440 Hz sine, with seam at 30.5 s (deliberately mid-block at 48 kHz). Click **Play (BUG)** or **Play (WORKAROUND)** for live audition (playback starts at 28 s so you reach the seam in ~2 s; a live playhead readout turns red when the seam passes). Click **Scan current scenario** to render `[seam ± 100 ms]` offline via `OfflineAudioContext` and report peak-amplitude and `max |Δsample|` metrics.
+**HTTPS required** (self-signed cert). The page sets up two `AudioRegionBox`es on one Tape track at touching PPQN positions over a 60 s 440 Hz sine. Two toggles:
+
+- **Seam position**: Block-aligned (the next block boundary at or near 30 s — `round(30 × SR / 128) × 128 / SR`) or Mid-block (block boundary + 64 samples). Times displayed in the UI are computed from the AudioContext's actual sample rate.
+- **Scenario (mediaId)**: SHARED (one `AudioFileBox`) or DISTINCT (two `AudioFileBox`es with identical content).
+
+Playback starts at 28 s so you reach the seam in ~2 s; a live playhead readout turns red when the seam passes. Click **Scan current scenario** to render `[seam ± 100 ms]` offline via `OfflineAudioContext` and report peak-amplitude and `max |Δsample|` metrics annotated with the current seam-in-block offset.
 
 Minimal box-graph setup:
 
 ```
-BPM 120, sample rate 48 kHz (or 44.1 kHz), one Tape track.
+BPM 120, AudioContext sample rate (typically 48 kHz), one Tape track.
 One or two AudioFileBoxes (identical audio content, same or different UUIDs).
 Two AudioRegionBoxes:
-  - Region A: position = 0, duration = PPQN(30.5 s),
+  - Region A: position = 0, duration = PPQN(seam),
               loopOffset = 0, loopDuration = PPQN(60 s),
               fading.in = 0, fading.out = 0, waveformOffset = 0.
-  - Region B: position = PPQN(30.5 s), duration = PPQN(29.5 s),
-              loopOffset = PPQN(30.5 s), loopDuration = PPQN(60 s),
-              fading.in = 0, fading.out = 0, waveformOffset = 30.5.
+  - Region B: position = PPQN(seam), duration = PPQN(60 s − seam),
+              loopOffset = PPQN(seam), loopDuration = PPQN(60 s),
+              fading.in = 0, fading.out = 0, waveformOffset = seam.
 ```
 
 ## Mechanism — **open**
 
-The originally-drafted mechanism (a shared `PitchVoice` keyed by `sourceUuid` getting `process()` called twice per block, doubling `readPosition` advancement) does not match the source. `TapeDeviceProcessor.#processPassPitch` calls `this.#updateOrCreatePitchVoice(lane, sourceUuid, ...)` with `sourceUuid = region.uuid` (the AudioRegionBox UUID via `AudioRegionBoxAdapter.uuid → this.#box.address.uuid`), so voices are keyed per-region, not per-file. Two same-file regions get two independent voices.
+Two mechanisms initially considered and ruled out:
 
-Working through the `#processPassPitch` and `PitchVoice.process` math for the documented configuration:
+- **Shared-voice double-process** (a single `PitchVoice` keyed by `sourceUuid` getting `process()` called twice per block, doubling `readPosition` advancement) does not match the source. `TapeDeviceProcessor.#processPassPitch` calls `this.#updateOrCreatePitchVoice(lane, sourceUuid, ...)` with `sourceUuid = region.uuid` (the AudioRegionBox UUID via `AudioRegionBoxAdapter.uuid → this.#box.address.uuid`), so voices are keyed per-region, not per-file. Two same-file regions get two independent voices. The SHARED/DISTINCT toggle in the repro confirms this empirically — bit-identical output.
+- **Block-alignment-dependence** (artifact only fires when the seam falls strictly inside a block) was the hypothesis after live listening, but the seam-position toggle disproved it: both `BLOCK-ALIGNED` and `MID-BLOCK` offline scans show `seam-band max |Δ| = 0.05747` (~2× the baseline), with the largest jump consistently at `τ = −0.042 ms` (2 samples before the seam). Offline render is invariant in seam-in-block offset.
 
-- For seam at sample 1,464,000 (sample 64 of audio block 11,437), region A's `bp0 = 0`, `bp1 = 64`, `bpn = (64 - 0) | 0 = 64`. Region B's `bp0 = 64`, `bp1 = 128`, `bpn = 64`. Voice A writes `output[0..63]`, voice B writes `output[64..127]`. No overlap, no gap.
-- Voice A's `readPosition` at block start (after 11,437 prior blocks) = `initial_offset + 11437 × 128`. With `initial_offset = 28 × 48000 = 1,344,000` (engine start at 28 s), readPos at block start = 1,463,936. After 64 iterations: 1,464,000 — exactly the seam sample. Voice A reads `source[1,463,936..1,463,999]`, writes to `output[0..63]` at unit gain.
-- Voice B is created at block start with `offset = 30.5 × 48000 = 1,464,000`. Voice B reads `source[1,464,000..1,464,063]` with voice-fade-in amplitude `0 → 63/882 ≈ 0.071`, writes to `output[64..127]`.
+What we do see consistently:
 
-Computed analytically, `|Δsample|` across this configuration should peak at the expected clean-sine maximum of `2π × 440 × 0.5 / 48000 ≈ 0.0288`. The empirical 0.057 result (~2× expected) and its location 2 samples before the seam do not match the analytic prediction, and re-reading `PitchVoice.process` and the adapter loop has not surfaced an obvious off-by-one. **Mechanism left as open question for the OpenDAW team.**
+- The discontinuity lives at `seam − 2 samples`, i.e. inside region A's last 128 samples, not at the seam transition itself.
+- Magnitude is approximately twice the maximum slope of a clean 440 Hz / 0.5-amplitude sine (`2π·f·A/SR`). The doubling is suspicious — it suggests an inversion of the 1-sample-ahead difference, or two equal contributions adding instead of cancelling.
+- Live playback shows an audibility difference between block-aligned and mid-block seams that the offline scan does not reproduce.
+
+A satisfying mechanism would explain (1) why the jump appears 2 samples before the seam rather than at it, (2) why the magnitude is exactly ~2× the clean-sine slope, and (3) why the offline render is block-alignment-invariant while live playback is not. **Mechanism left as open question for the OpenDAW team.**
 
 ## Open questions
 
-1. What produces the ~2× sample-to-sample first difference in the rendered output near a non-block-aligned region seam, given that voices are per-region and `bp0`/`bp1` math correctly partitions the block at the seam sample?
-2. Is the block-aligned vs mid-block dependency intentional (e.g. an unstated invariant that consumers should snap region boundaries to render quantum), or a real artifact to fix? At 48 kHz with 128-sample quanta, only seams at multiples of `1/375 s` (≈ 2.67 ms) align to block boundaries — the vast majority of musically-meaningful seams will not align.
+1. What produces the ~2× sample-to-sample first difference 2 samples before a touching region seam, given that voices are per-region and `bp0`/`bp1` math correctly partitions the block at the seam sample?
+2. Why does the offline scan show identical `seam-band max |Δ|` for block-aligned vs mid-block seams while live playback sounds audibly different? Is there a live-only signal path (output-device buffering, sample-rate conversion, peak-cache writes) that doesn't run through `OfflineAudioContext + AudioWorklets.createFor`?
 3. Is the audible "snap is louder in the shared-`AudioFileBox` case than in the two-distinct-`AudioFileBox` case" perception (which the offline render does *not* reproduce — both cases render bit-identical) a live-only artifact, or a perceptual artifact from playback context differences (timing, buffering, AudioContext output device)?
