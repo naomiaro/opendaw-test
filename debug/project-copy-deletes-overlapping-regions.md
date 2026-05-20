@@ -4,7 +4,7 @@
 
 **Repro page:** [`voice-fadein-clip-fadein-product-debug-demo.html`](../voice-fadein-clip-fadein-product-debug-demo.html) (unlisted). The CROSSFADE configuration places two `AudioRegionBox`es on the same Tape track with a 40 ms timeline overlap (region A's `fading.out` extends past the seam; region B's position is shifted back by half the fade) — live playback through the engine plays both regions audibly, but the offline-scan path (which uses `project.copy()`) returns silence.
 
-Note: the sibling target demo [`pure-webaudio-target-debug-demo.html`](../pure-webaudio-target-debug-demo.html) deliberately uses **two separate Tape tracks** for the same crossfade configuration as a workaround, since this is the only way to get a usable OpenDAW offline render. Each track has its own `regions` collection, so the per-track overlap check doesn't fire.
+Note: the sibling target demo [`pure-webaudio-target-debug-demo.html`](../pure-webaudio-target-debug-demo.html) deliberately uses **two separate Tape tracks** for the same crossfade configuration as a workaround. Each track has its own `regions` collection, so the per-track overlap check doesn't fire.
 
 ## Symptom
 
@@ -91,24 +91,15 @@ regionB.position  : 57602.56  → Int32 truncated to 57602
 `regionB.start = regionB.position = 57602`.
 **The two regions now overlap by 0.5625 PPQN**, even though the consumer's intent was that they touch exactly. `project.copy()`'s validator fires and deletes both regions.
 
-We hit this directly in the shared-source repro: an initial seam-in-samples calculation produced a non-integer PPQN at the chosen seam time, the offline scan returned all zeros, and the only signal was the console warning above. We worked around it by picking seam-in-seconds values whose PPQN happens to be integer at BPM 120 (`30.0 s → 57600`; `30.5 s → 58560`) — but the constraint is not part of the public box API.
-
-Consumer guidance:
-
-- Treat `AudioRegionBox.position` as integer-only. If you have a fractional PPQN value, round it (e.g. `Math.round`) before passing to `position.setValue`, and use the **same rounded value** for the adjacent region's `duration` so they remain consistent.
-- Or compute seam times directly in integer PPQN (e.g. `seamPPQN = Math.round(seamSec * bpm * 16)` at BPM 120) and derive seconds from that, rather than the other way around.
-
-API-side, this would be less of a footgun if (a) `position` were also `Float32Field` so duration and position used compatible precision, or (b) `Int32Field.setValue` warned when handed a non-integer (currently it silently truncates), or (c) `project.copy()`'s overlap validator used an epsilon less than one PPQN tick instead of strict `>0`.
+We hit this directly in the shared-source repro: an initial seam-in-samples calculation produced a non-integer PPQN at the chosen seam time, the offline scan returned all zeros, and the only signal was the console warning above. We worked around it by picking seam-in-seconds values whose PPQN happens to be integer at BPM 120 (`30.0 s → 57600`; `30.5 s → 58560`).
 
 ## Suspected mechanism
 
 _Inferred from runtime warnings; not source-traced._
 
-The console warnings point to `TrackRegions`'s `onAdded` callback ("Overlapping region added") and to a box-graph validation pass ("`_AudioRegionBox _AudioRegionBox Overlapping regions`" → "Deleting 2 invalid boxes"). The live engine appears to tolerate the violation at runtime — it accepts the second region during the initial `editing.modify` and renders both regions through `TapeDeviceProcessor`. The `project.copy()` path runs a stricter validator that deletes any box flagged invalid, including both overlapping regions.
-
-The two overlapping regions are presumably both flagged because the validator can't decide which one is "wrong." Either way, the offline-render path has no chance to surface the actual artefact because the regions are gone before the offline engine starts.
+The console warnings point to `TrackRegions`'s `onAdded` callback ("Overlapping region added") and to a box-graph validation pass ("`_AudioRegionBox _AudioRegionBox Overlapping regions`" → "Deleting 2 invalid boxes"). The live engine appears to tolerate the violation at runtime — it accepts the second region during the initial `editing.modify` and renders both regions through `TapeDeviceProcessor`. The `project.copy()` path runs a stricter validator that deletes both overlapping regions. The offline-render path has no chance to surface the actual artefact because the regions are gone before the offline engine starts.
 
 ## Open questions
 
 1. Is the OpenDAW data model meant to disallow overlapping regions on a single track, or is the deletion in `project.copy()` over-eager? The live engine plays the configuration without removing it; only `copy()` deletes. If overlap on one track is unsupported, what is the intended way to author a crossfade between two regions of the same lane?
-2. The deletion is silent — only console warnings, no thrown error or callback to the consumer. A consumer using `project.copy()` for offline rendering has no signal that the rendered output is structurally invalid. Should `copy()` throw, or at least return a manifest of deleted boxes?
+2. The deletion is silent from the consumer's perspective — only console warnings, no thrown error or callback. A consumer using `project.copy()` for offline rendering has no programmatic signal that the rendered output is structurally invalid.

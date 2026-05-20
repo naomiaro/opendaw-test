@@ -35,7 +35,7 @@ All four configurations produce bit-identical offline output to floating-point p
 
 ## Live vs offline discrepancy
 
-Live playback through the AudioContext *does* sound different across seam positions: a block-aligned seam produces a noticeably quieter snap than an off-boundary seam — sometimes close to inaudible on quiet material. The offline render does not reproduce this difference: it shows the same 0.05747 `max |Δ|` at the same `τ = −0.042 ms` offset for both seam positions.
+Live playback through the AudioContext *does* sound different across seam positions: a block-aligned seam produces a quieter snap than an off-boundary seam (listener-reported, in a normal listening environment with the repro page). The offline render does not reproduce this difference: it shows the same 0.05747 `max |Δ|` at the same `τ = −0.042 ms` offset for both seam positions.
 
 We don't have an offline metric that captures the live audibility difference. Possible explanations:
 
@@ -83,10 +83,10 @@ Two mechanisms initially considered and ruled out:
 What we do see consistently:
 
 - The discontinuity lives at `seam − 2 samples`, i.e. inside region A's last 128 samples, not at the seam transition itself.
-- Magnitude is approximately twice the maximum slope of a clean 440 Hz / 0.5-amplitude sine (`2π·f·A/SR`). The doubling is suspicious — it suggests an inversion of the 1-sample-ahead difference, or two equal contributions adding instead of cancelling.
+- Magnitude is approximately twice the maximum slope of a clean 440 Hz / 0.5-amplitude sine (`2π·f·A/SR`).
 - Live playback shows an audibility difference between block-aligned and off-boundary seams that the offline scan does not reproduce.
 
-A satisfying mechanism would explain (1) why the jump appears 2 samples before the seam rather than at it, (2) why the magnitude is exactly ~2× the clean-sine slope, and (3) why the offline render is block-alignment-invariant while live playback is not. **Mechanism left as open question for the OpenDAW team.**
+**Mechanism left as open question for the OpenDAW team.**
 
 ## Open questions
 

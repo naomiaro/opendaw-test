@@ -10,17 +10,27 @@ Audio fixtures: [`public/audio/test-440hz.wav`](../public/audio/test-440hz.wav) 
 
 ## Symptom
 
-Crossfading between two `AudioRegionBoxAdapter`s on the same track that reference **different `AudioFileBox`es** (different `sourceUuid`s, so the shared-source path in [shared-source-double-process.md](./shared-source-double-process.md) does **not** apply) produces an audible amplitude dip on the new voice's fade-in side. On a sustained 440 Hz sine with a 40 ms linear crossfade (`fading.out` 40 ms on the outgoing region, `fading.in` 40 ms on the incoming region, both slope 0.5), the dip peaks at ~−1.16 dB roughly 10 ms before the seam moment. The dip is **not symmetric**: the second half of the crossfade (after the new voice's voice-fade-in completes) sums to unity.
+Crossfading between two `AudioRegionBoxAdapter`s that reference **different `AudioFileBox`es** (different `sourceUuid`s, so the shared-source path in [shared-source-double-process.md](./shared-source-double-process.md) does **not** apply) produces an audible amplitude dip on the new voice's fade-in side. The dip is **not symmetric**: the second half of the crossfade (after the new voice's 20 ms voice-fade-in completes) sums to unity.
 
-The dip survives perfect phase alignment of the two regions at the seam. It's not caused by phase mismatch in the source signals.
+The dip survives perfect phase alignment of the two regions at the seam. It's not caused by phase mismatch in the source signals — confirmed in the target demo, where the pure-Web-Audio ALIGNED scenario (same phase-corrected configuration, no engine) measures `min/ref = 0.9998` (−0.00 dB) through the crossfade.
 
-A sample-level scan of the rendered output across the crossfade region shows the sum gain (`output[i] / source[i]` where `source` is the underlying sine) departing from 1.0 in the first 20 ms of the crossfade:
+**Measured magnitude** (target demo, 40 ms linear crossfade, BPM 120, 48 kHz, sustained 440 Hz sine with 30-sample inter-file delay corrected by phase-correlate shift):
+
+```
+ALIGNED  (pure Web Audio):   min/ref = 0.9998  (-0.00 dB)
+UNALIGNED (pure Web Audio):  min/ref = 0.5906  (-4.57 dB)   ← control: phase-mismatch dip
+OPENDAW  (TapeDeviceProcessor): min/ref = 0.8352  (-1.56 dB)  ← residual dip at τ ≈ -7.5 ms
+```
+
+The OPENDAW dip is the artifact this note documents.
+
+**Analytic prediction from the source-traced mechanism below** (voice-fade × clip-fade product on a 40 ms linear crossfade with 20 ms voice fade):
 
 ```
 τ (relative to seam)     V1 gain (outgoing)    V2 gain (incoming)    sum
 -20 ms                   1.000                  0.000                 1.000
 -15 ms                   0.875                  0.047                 0.922   ← −0.71 dB
--10 ms                   0.750                  0.125                 0.875   ← −1.16 dB (peak dip)
+-10 ms                   0.750                  0.125                 0.875   ← −1.16 dB (predicted peak dip)
  -5 ms                   0.625                  0.281                 0.906   ← −0.86 dB
   0 ms                   0.500                  0.500                 1.000
  +5 ms                   0.375                  0.625                 1.000
@@ -29,7 +39,7 @@ A sample-level scan of the rendered output across the crossfade region shows the
 +20 ms                   0.000                  1.000                 1.000
 ```
 
-(Numbers above are what the gain *should* be if voice-fade-in didn't multiply with clip-fade-in. The actual rendered amplitude on a sine matches the right column.)
+The measured peak dip in the target demo (−1.56 dB at τ ≈ −7.5 ms) is in the same range and on the same side as the predicted peak (−1.16 dB at τ = −10 ms). The remaining ~0.4 dB discrepancy and the shift in τ are not yet accounted for — possibilities include the V1 voice not being in `Active` state at the moment we expect, additional gain factors in the voice or capture path, or sample-rate-dependent fadeLength rounding. Reported empirically; mechanism partially confirmed.
 
 ## How to reproduce
 
@@ -38,7 +48,9 @@ npm run dev
 # open https://localhost:5173/voice-fadein-clip-fadein-product-debug-demo.html
 ```
 
-**HTTPS is required** (same self-signed cert as the other demos). Click **Play (CROSSFADE)**; playback starts at 28 s and reaches the crossfade region at 30 s in ~2 s. Listen for a brief amplitude dip ~10 ms before the seam. Then click **Play (HARD-CUT)** for the same regions with `fading.in = fading.out = 0` (regions touch, voice-fade alone handles the boundary). Use **Scan current scenario** to verify the predicted dip magnitudes empirically — the mechanism below is suspected from source-tracing and only fully credible once the scan matches the prediction.
+**HTTPS is required** (same self-signed cert as the other demos). Click **Play (CROSSFADE)**; playback starts at 28 s and reaches the crossfade region at 30 s in ~2 s. Listen for a brief amplitude dip on the new voice's fade-in side of the seam. Then click **Play (HARD-CUT)** for the same regions with `fading.in = fading.out = 0` (regions touch, voice-fade alone handles the boundary).
+
+**Note on the offline scan:** This demo's CROSSFADE configuration places two overlapping regions on a single track and so triggers the `project.copy()` deletion described in [project-copy-deletes-overlapping-regions.md](./project-copy-deletes-overlapping-regions.md) — the scan returns silence, not the dip. The numbers in the **Symptom** section above are measured in the sibling [`pure-webaudio-target-debug-demo.html`](../pure-webaudio-target-debug-demo.html) which works around the deletion by placing each region on its own Tape track.
 
 Minimal box-graph setup:
 
@@ -110,11 +122,6 @@ Past the voice-fade-in region (`τ ≥ 0`), V2's `amplitude` reaches 1.0, so the
 
 ## Open question
 
-Should `PitchVoice`'s 20 ms voice-fade-in still apply when the consuming region carries its own non-zero `fading.in`? The voice fade is a click-prevention safety net at voice creation; the clip fade is an authored crossfade. They are currently composed multiplicatively, which corrupts the authored fade shape over the first 20 ms.
+Is `PitchVoice`'s 20 ms voice-fade-in intended to apply when the consuming region carries its own non-zero `fading.in`? The voice fade is a click-prevention behaviour at voice creation; the clip fade is an authored crossfade. They are currently composed multiplicatively, which corrupts the authored fade shape over the first 20 ms.
 
-Possible behaviour fixes (without changing public API):
-- Skip the voice fade-in when the region's `fading.in > 0` (the clip fade is doing the same job).
-- Treat the voice fade-in as a floor under the clip fade-in (`max(voice_fadeIn, clip_fadeIn)`) rather than a multiplier.
-- Use the voice fade-in only for the **first** `fadeLength` samples that come before any region's `fading.in` would have begun (i.e. on hard-cuts, not crossfades).
-
-This is observable on any crossfade between regions whose `sourceUuid`s differ; it's most audible on sustained, pure tones because complex material masks the small amplitude curve.
+Observable on any crossfade between regions whose `sourceUuid`s differ; most audible on sustained pure tones because complex material masks the small amplitude curve.
