@@ -6,7 +6,7 @@
 
 ## Symptom
 
-Two adjacent `AudioRegionBoxAdapter`s on the same track that touch at an exact PPQN boundary (`region A.end == region B.start`) produce an audible sample-level discontinuity at the seam **when the seam time falls strictly inside an audio block** (i.e. `(seamSeconds × sampleRate) mod RenderQuantum ≠ 0`). When the seam falls *on* a block boundary, the artifact is silent. The artifact's magnitude tracks where the seam lands inside the block; at the midpoint of a block, the discontinuity is most audible.
+Two adjacent `AudioRegionBoxAdapter`s on the same track that touch at an exact PPQN boundary (`region A.end == region B.start`) produce an audible sample-level discontinuity at the seam. In the one mid-block seam we measured offline (30.5 s @ 48 kHz, sample 64 of a 128-sample block), the seam-band `max |Δsample|` is ~2× the clean-sine expected value; in the one block-aligned seam we measured (30.0 s @ 48 kHz, exactly on a block boundary), the seam-band delta matches the clean-sine baseline. Two data points is not enough to characterise the magnitude as a function of in-block offset, but it's enough to confirm the artifact depends on block alignment.
 
 Offline render measurements (440 Hz / 0.5-amplitude sine, mono, 48 kHz, BPM 120, seam at 30.5 s = sample 1,464,000 = mid of block 11,437 + 64 samples):
 
@@ -27,12 +27,12 @@ The peak-amplitude metric is *unchanged* by the artifact; only the sample-to-sam
 
 ## Block alignment dependency
 
-The artifact only fires when the seam time falls strictly inside an audio block (`RenderQuantum = 128` samples on the audio worklet). Demo evidence:
+The two offline-render data points we have suggest the artifact depends on where the seam falls inside the 128-sample audio block:
 
-- Seam at 30.0 s on a 48 kHz AudioContext: `30 × 48000 = 1,440,000 samples = 11,250 × 128` (block boundary). No measurable discontinuity (delta scan shows `pre-seam-Δ ≈ seam-band-Δ`); audibly silent.
-- Seam at 30.5 s on a 48 kHz AudioContext: `30.5 × 48000 = 1,464,000 samples = 11,437 × 128 + 64` (sample 64 of block — exactly mid-block). 2× delta as above; audibly snaps.
+- Seam at 30.0 s on a 48 kHz AudioContext: `30 × 48000 = 1,440,000 samples = 11,250 × 128` (block boundary). `seam-band max |Δ|` matches the clean-sine baseline.
+- Seam at 30.5 s on a 48 kHz AudioContext: `30.5 × 48000 = 1,464,000 samples = 11,437 × 128 + 64` (sample 64 of block — mid-block). `seam-band max |Δ|` is ~2× the clean-sine baseline.
 
-Live playback at 48 kHz can be unpredictable about block alignment depending on when `engine.play()` lands relative to the AudioContext's block clock, so the same configuration can sound clean on one playback and snap on the next.
+The repro page only renders these two configurations; we have not swept the in-block offset to characterise the function. Live playback at 48 kHz can be unpredictable about block alignment depending on when `engine.play()` lands relative to the AudioContext's block clock, so the same configuration can sound clean on one playback and snap on the next.
 
 ## How to reproduce
 
