@@ -11,7 +11,7 @@ import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { loadAudioFile } from "@/lib/audioUtils";
-import { peakInWindow, renderOfflineSlice } from "@/lib/offlineScan";
+import { maxDeltaInWindow, peakInWindow, renderOfflineSlice } from "@/lib/offlineScan";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
@@ -280,9 +280,6 @@ const App: React.FC = () => {
       // Mono sine duplicated to both channels; left is sufficient.
       const left = channels[0];
       const preWindow = peakInWindow(left, sliceStart, SEAM_SECONDS - 0.05, SEAM_SECONDS - 0.02, sr);
-      // Voice-fade transition extends ~20 ms past the seam (VOICE_FADE_DURATION),
-      // so an amplitude artifact from voice eviction + fade-in summing > 1 would
-      // peak somewhere in [seam, seam + 25 ms]. Scan a wide window.
       const transitionWindow = peakInWindow(
         left,
         sliceStart,
@@ -290,17 +287,33 @@ const App: React.FC = () => {
         SEAM_SECONDS + 0.025,
         sr
       );
-      const farPostWindow = peakInWindow(left, sliceStart, SEAM_SECONDS + 0.05, SEAM_SECONDS + 0.08, sr);
+      // For a 440 Hz sine at amplitude 0.5 sampled at 48 kHz, the maximum
+      // sample-to-sample delta of clean output is ~0.029 (at zero crossings).
+      // Any larger delta indicates a waveform discontinuity — a click,
+      // phase jump, or an impulse to zero from a missed-sample gap. This
+      // catches what the ear perceives as a "click" even when peak
+      // amplitude is unchanged.
+      const expectedDelta = (2 * Math.PI * 440 * 0.5) / sr;
+      const preDelta = maxDeltaInWindow(left, sliceStart, SEAM_SECONDS - 0.05, SEAM_SECONDS - 0.02, sr);
+      const seamDelta = maxDeltaInWindow(left, sliceStart, SEAM_SECONDS - 0.005, SEAM_SECONDS + 0.005, sr);
       const ratio = preWindow.peak > 1e-6 ? transitionWindow.peak / preWindow.peak : 0;
+      const deltaRatio = preDelta.maxDelta > 1e-9 ? seamDelta.maxDelta / preDelta.maxDelta : 0;
       setScanResult(
         [
           `scenario             : ${scenario.toUpperCase()}`,
           `sample rate          : ${sr} Hz`,
+          ``,
+          `── peak amplitude ──`,
           `pre-seam peak        : ${preWindow.peak.toFixed(4)}  (in [${(SEAM_SECONDS - 0.05).toFixed(3)} s, ${(SEAM_SECONDS - 0.02).toFixed(3)} s])`,
           `voice-fade window    : ${transitionWindow.peak.toFixed(4)}  (in [${(SEAM_SECONDS - 0.001).toFixed(3)} s, ${(SEAM_SECONDS + 0.025).toFixed(3)} s])`,
-          `far post-seam peak   : ${farPostWindow.peak.toFixed(4)}  (in [${(SEAM_SECONDS + 0.05).toFixed(3)} s, ${(SEAM_SECONDS + 0.08).toFixed(3)} s])`,
-          `transition / pre     : ${ratio.toFixed(3)}  (1.0 = no artifact; >1.0 = boost from voice A fade-out × voice B fade-in summing > 1)`,
-          `peak sample at       : ${(sliceStart + transitionWindow.atSecondsFromStart).toFixed(6)} s  (τ = ${((sliceStart + transitionWindow.atSecondsFromStart - SEAM_SECONDS) * 1000).toFixed(2)} ms relative to seam)`,
+          `transition / pre     : ${ratio.toFixed(3)}  (≥1.0 expected — peak unchanged ≠ no click)`,
+          ``,
+          `── sample-to-sample Δ (clicks/discontinuities) ──`,
+          `expected clean max Δ : ${expectedDelta.toFixed(5)}  (= 2π·440·0.5/SR for a 440 Hz, 0.5-amplitude sine)`,
+          `pre-seam max Δ       : ${preDelta.maxDelta.toFixed(5)}  (in [${(SEAM_SECONDS - 0.05).toFixed(3)} s, ${(SEAM_SECONDS - 0.02).toFixed(3)} s])`,
+          `seam-band max Δ      : ${seamDelta.maxDelta.toFixed(5)}  (in [${(SEAM_SECONDS - 0.005).toFixed(3)} s, ${(SEAM_SECONDS + 0.005).toFixed(3)} s])`,
+          `seam-Δ / pre-Δ       : ${deltaRatio.toFixed(2)}  (>>1 indicates a waveform discontinuity)`,
+          `largest jump at      : ${(sliceStart + seamDelta.atSecondsFromStart).toFixed(6)} s  (τ = ${((sliceStart + seamDelta.atSecondsFromStart - SEAM_SECONDS) * 1000).toFixed(3)} ms relative to seam)`,
         ].join("\n")
       );
     } catch (error) {

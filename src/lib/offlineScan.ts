@@ -114,6 +114,57 @@ export function peakInWindow(
   };
 }
 
+export interface MaxDeltaResult {
+  /** Maximum |sample[i+1] - sample[i]| in the scanned region. */
+  maxDelta: number;
+  /** Time of the leading sample of the largest jump. */
+  atSecondsFromStart: number;
+  /** Number of sample-to-sample steps examined. */
+  stepsScanned: number;
+}
+
+/**
+ * Largest sample-to-sample first difference in a time window. For a clean
+ * sinusoid at frequency f and amplitude A, `max |Δsample| ≈ 2π·f·A/SR`
+ * (at the zero crossing). Any large step beyond that is a waveform
+ * discontinuity — a click, a phase jump, or an amplitude impulse — which
+ * is what an ear perceives as a "click" even if the peak amplitude is
+ * unchanged.
+ *
+ * Example: a 440 Hz sine at 0.5 amplitude rendered at 48 kHz has expected
+ * max |Δ| ≈ 0.029. A 90° phase jump at the seam would produce Δ ≈ 0.5.
+ */
+export function maxDeltaInWindow(
+  channel: Float32Array,
+  channelStartSeconds: number,
+  windowStartSeconds: number,
+  windowEndSeconds: number,
+  sampleRate: number
+): MaxDeltaResult {
+  const startIdx = Math.max(
+    1,
+    Math.floor((windowStartSeconds - channelStartSeconds) * sampleRate)
+  );
+  const endIdx = Math.min(
+    channel.length,
+    Math.ceil((windowEndSeconds - channelStartSeconds) * sampleRate)
+  );
+  let maxDelta = 0;
+  let atIdx = startIdx;
+  for (let i = startIdx; i < endIdx; i++) {
+    const delta = Math.abs(channel[i] - channel[i - 1]);
+    if (delta > maxDelta) {
+      maxDelta = delta;
+      atIdx = i - 1;
+    }
+  }
+  return {
+    maxDelta,
+    atSecondsFromStart: atIdx / sampleRate,
+    stepsScanned: Math.max(0, endIdx - startIdx),
+  };
+}
+
 export interface EnvelopeMinResult {
   /** Smallest per-window peak amplitude found across the scanned region. */
   minPeak: number;
