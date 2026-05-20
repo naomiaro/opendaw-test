@@ -1,21 +1,38 @@
-# Audible artifact at adjacent same-track same-source seams
+# Sample-level discontinuity at non-block-aligned region seams
 
 **Verified against:** OpenDAW SDK 0.0.147 (`@opendaw/studio-sdk@0.0.147`, `@opendaw/studio-core@0.0.145`).
 
-**Repro page:** [`shared-source-double-process-debug-demo.html`](../shared-source-double-process-debug-demo.html) (unlisted). Audio fixture: [`public/audio/test-440hz.wav`](../public/audio/test-440hz.wav) (60 s, 440 Hz sine, mono, 44.1 kHz, 16-bit).
-
-> **Note on mechanism.** The original draft of this note attributed the artifact to a "shared voice double-process" path where two regions referencing the same `AudioFileBox` would share a `PitchVoice` keyed by source UUID. Closer reading of `TapeDeviceProcessor.#processPassPitch` (line ~151) shows the `sourceUuid` argument is actually `region.uuid` (the AudioRegionBox UUID, via `AudioRegionBoxAdapter.uuid → this.#box.address.uuid`), so voices are keyed per-region, not per-file. Two same-file regions get two independent voices, not one shared voice. The shared-voice mechanism was wrong. The audible artifact is real, but its cause is something else — likely the voice fade-out / fade-in geometry across the post-seam transition. **The report below is being rewritten based on empirical offline-render scans; treat the mechanism section as pending re-verification.**
+**Repro page:** [`shared-source-double-process-debug-demo.html`](../shared-source-double-process-debug-demo.html) (unlisted; filename preserved for now but the artifact is NOT shared-source-specific — see "Mechanism" below). Audio fixture: [`public/audio/test-440hz.wav`](../public/audio/test-440hz.wav) (60 s, 440 Hz sine, mono, 44.1 kHz, 16-bit).
 
 ## Symptom
 
-Two `AudioRegionBoxAdapter`s on the same track that **reference the same `AudioFileBox`** and have **touching or overlapping positions** produce an audible artifact at the seam. On a sustained 440 Hz sine the artifact sounds like a brief amplitude jump (with crossfade extensions: a smooth dip down to roughly 65 % through the overlap; without extensions, just touching: a single-block snap of ~130 % inverted amplitude). The shape of the artifact depends on the timeline block size and the signal's fundamental frequency.
+Two adjacent `AudioRegionBoxAdapter`s on the same track that touch at an exact PPQN boundary (`region A.end == region B.start`) produce an audible sample-level discontinuity at the seam **when the seam time falls strictly inside an audio block** (i.e. `(seamSeconds × sampleRate) mod RenderQuantum ≠ 0`). When the seam falls *on* a block boundary, the artifact is silent. The artifact's magnitude tracks where the seam lands inside the block; at the midpoint of a block, the discontinuity is most audible.
 
-The artifact does **not** depend on the relative `waveformOffset` of the two regions — it appears regardless of whether the source positions at the seam coincide (`x_end_source == y_start_source`) or differ. It does **not** appear when the two regions reference **different** `AudioFileBox`es, even when those files contain identical audio content.
+Offline render measurements (440 Hz / 0.5-amplitude sine, mono, 48 kHz, BPM 120, seam at 30.5 s = sample 1,464,000 = mid of block 11,437 + 64 samples):
 
-A simple way to demonstrate the difference is to render the project offline and scan the seam-spanning block:
+```
+                            BUG (one AudioFileBox)     WORKAROUND (two AudioFileBoxes)
+pre-seam peak amplitude     0.5000                    0.5000
+seam-band peak amplitude    0.4999                    0.4999
+expected clean max |Δ|      0.02880  (= 2π·440·0.5/SR for a 440 Hz, 0.5-amp sine)
+pre-seam max |Δ|            0.02884                   0.02884
+seam-band max |Δ|           0.05747                   0.05747       ← ~2× expected
+seam-Δ / pre-Δ              1.99                       1.99
+largest jump at             30.499958 s                30.499958 s   ← 2 samples before seam
+```
 
-- **Same `AudioFileBox` reference, regions touching** → the block's output amplitude is ~`2·cos(π·f·bpn/SR)` times the input. For 440 Hz at 44.1 kHz with a 128-sample render quantum that's ~−1.3× — a single block of inverted-and-amplified waveform.
-- **Different `AudioFileBox` references (same audio content), regions touching** → the block's output amplitude matches the input. No artifact.
+The peak-amplitude metric is *unchanged* by the artifact; only the sample-to-sample first difference reveals it. The discontinuity is audible — listeners describe it as a brief snap — because the ear is sensitive to high-frequency content introduced by sample-level jumps.
+
+**Both scenarios produce identical output to floating-point precision.** The originally-suspected "two regions sharing an `AudioFileBox`" path is not the cause: scenarios using one shared file vs two distinct files (with the same audio content) render bit-identical output and have the same artifact.
+
+## Block alignment dependency
+
+The artifact only fires when the seam time falls strictly inside an audio block (`RenderQuantum = 128` samples on the audio worklet). Demo evidence:
+
+- Seam at 30.0 s on a 48 kHz AudioContext: `30 × 48000 = 1,440,000 samples = 11,250 × 128` (block boundary). No measurable discontinuity (delta scan shows `pre-seam-Δ ≈ seam-band-Δ`); audibly silent.
+- Seam at 30.5 s on a 48 kHz AudioContext: `30.5 × 48000 = 1,464,000 samples = 11,437 × 128 + 64` (sample 64 of block — exactly mid-block). 2× delta as above; audibly snaps.
+
+Live playback at 48 kHz can be unpredictable about block alignment depending on when `engine.play()` lands relative to the AudioContext's block clock, so the same configuration can sound clean on one playback and snap on the next.
 
 ## How to reproduce
 
@@ -24,51 +41,36 @@ npm run dev
 # open https://localhost:5173/shared-source-double-process-debug-demo.html
 ```
 
-**HTTPS is required** (same self-signed cert as the other demos). Click **Play (BUG)**; playback starts at 28 s and you'll reach the seam at 30 s in ~2 s. Listen for a brief snap at the seam. Then click **Play (WORKAROUND)** for the same setup but with each region pointing at its own `AudioFileBox` (same on-disk audio) — no snap.
+**HTTPS required** (self-signed cert). The repro page sets up two `AudioRegionBox`es on one Tape track at touching PPQN positions over a 60 s 440 Hz sine, with seam at 30.5 s (deliberately mid-block at 48 kHz). Click **Play (BUG)** or **Play (WORKAROUND)** for live audition (playback starts at 28 s so you reach the seam in ~2 s; a live playhead readout turns red when the seam passes). Click **Scan current scenario** to render `[seam ± 100 ms]` offline via `OfflineAudioContext` and report peak-amplitude and `max |Δsample|` metrics.
 
 Minimal box-graph setup:
 
 ```
-BPM 120, sample rate 44.1 kHz, one Tape track.
-One AudioFileBox referencing test-440hz.wav (60 s).
-Two AudioRegionBoxes on the track, both referring to that one AudioFileBox:
-  - Region A: position = 0, duration = PPQN(30 s),
-              loopOffset = 0,  loopDuration = PPQN(60 s),
-              fading.in = 0,   fading.out = 0,
-              waveformOffset = 0.
-  - Region B: position = PPQN(30 s), duration = PPQN(30 s),
-              loopOffset = PPQN(30 s), loopDuration = PPQN(60 s),
-              fading.in = 0,   fading.out = 0,
-              waveformOffset = 30 s.
+BPM 120, sample rate 48 kHz (or 44.1 kHz), one Tape track.
+One or two AudioFileBoxes (identical audio content, same or different UUIDs).
+Two AudioRegionBoxes:
+  - Region A: position = 0, duration = PPQN(30.5 s),
+              loopOffset = 0, loopDuration = PPQN(60 s),
+              fading.in = 0, fading.out = 0, waveformOffset = 0.
+  - Region B: position = PPQN(30.5 s), duration = PPQN(29.5 s),
+              loopOffset = PPQN(30.5 s), loopDuration = PPQN(60 s),
+              fading.in = 0, fading.out = 0, waveformOffset = 30.5.
 ```
 
-Play. The seam at 30 s contains the artifact. Now duplicate the `AudioFileBox` (create a second one with a different `UUID` referring to the same on-disk file) and have Region B reference the second `AudioFileBox` instead. Same playback, same source positions — the artifact is gone.
+## Mechanism — **open**
 
-Adding a `fading.out` to Region A and a `fading.in` to Region B (so the regions overlap in time) makes the artifact broader and lower-amplitude rather than eliminating it: the overlap region's output amplitude drops to ~65 % at the midpoint for 440 Hz with 40 ms of crossfade.
+The originally-drafted mechanism (a shared `PitchVoice` keyed by `sourceUuid` getting `process()` called twice per block, doubling `readPosition` advancement) does not match the source. `TapeDeviceProcessor.#processPassPitch` calls `this.#updateOrCreatePitchVoice(lane, sourceUuid, ...)` with `sourceUuid = region.uuid` (the AudioRegionBox UUID via `AudioRegionBoxAdapter.uuid → this.#box.address.uuid`), so voices are keyed per-region, not per-file. Two same-file regions get two independent voices.
 
-## Suspected mechanism
+Working through the `#processPassPitch` and `PitchVoice.process` math for the documented configuration:
 
-_Inferred from source-tracing; the offline-rendered amplitude pattern is empirical._
+- For seam at sample 1,464,000 (sample 64 of audio block 11,437), region A's `bp0 = 0`, `bp1 = 64`, `bpn = (64 - 0) | 0 = 64`. Region B's `bp0 = 64`, `bp1 = 128`, `bpn = 64`. Voice A writes `output[0..63]`, voice B writes `output[64..127]`. No overlap, no gap.
+- Voice A's `readPosition` at block start (after 11,437 prior blocks) = `initial_offset + 11437 × 128`. With `initial_offset = 28 × 48000 = 1,344,000` (engine start at 28 s), readPos at block start = 1,463,936. After 64 iterations: 1,464,000 — exactly the seam sample. Voice A reads `source[1,463,936..1,463,999]`, writes to `output[0..63]` at unit gain.
+- Voice B is created at block start with `offset = 30.5 × 48000 = 1,464,000`. Voice B reads `source[1,464,000..1,464,063]` with voice-fade-in amplitude `0 → 63/882 ≈ 0.071`, writes to `output[64..127]`.
 
-`TapeDeviceProcessor.#processAdapter` (`packages/studio/core-processors/src/devices/instruments/TapeDeviceProcessor.ts`) keys voices in `lane.pitchVoices` by `sourceUuid` (= the AudioFileBox UUID). When two adapters in a block share that UUID, both call `voice.process(bp0, bpn, gainBuffer)` on the **same shared voice** (the second adapter's `#updateOrCreatePitchVoice` call lands in the `drift ≤ fadeLengthSamples` branch and returns without replacing the voice).
+Computed analytically, `|Δsample|` across this configuration should peak at the expected clean-sine maximum of `2π × 440 × 0.5 / 48000 ≈ 0.0288`. The empirical 0.057 result (~2× expected) and its location 2 samples before the seam do not match the analytic prediction, and re-reading `PitchVoice.process` and the adapter loop has not surfaced an obvious off-by-one. **Mechanism left as open question for the OpenDAW team.**
 
-`PitchVoice.process` (`packages/studio/core-processors/src/devices/instruments/Tape/PitchVoice.ts`) advances `#readPosition` by `playbackRate` per loop iteration, i.e. by `bpn × playbackRate` per call. Two calls per block ⇒ `readPosition` advances `2 × bpn × playbackRate`. The first call writes `sample[N + i] × x_gain[i]` into the output buffer for `i ∈ [0, bpn)`; the second call writes `sample[N + bpn + i] × y_gain[i]` into the same output indices. The block's per-sample output becomes:
+## Open questions
 
-```
-out[i] = sample[N + i]       × x_gain[i]
-       + sample[N + bpn + i] × y_gain[i]
-```
-
-For touching regions without fades, `x_gain = y_gain = 1`, so `out[i] = sample[N + i] + sample[N + bpn + i]`. For a sinusoid that's `2·sin(ω(N + bpn/2)/SR)·cos(ω·bpn/(2·SR))`. With overlapping regions and linear clip fades, `x_gain + y_gain = 1` per the crossfade math, but the read-position advance still produces two phase-shifted samples summed at different weights → the output peaks at the timeline position where the weights are equal (mid-overlap on a sine, this is where the −3.7 dB dip lands for 440 Hz / 128-sample quantum).
-
-## Open question
-
-Is `voice.process` intended to advance read position only once per block regardless of how many adapters call it (i.e. the second adapter should sum into the already-computed output without re-reading source), or is `sourceUuid` keying intended to be one-region-per-source-per-lane (i.e. consumers should never produce two regions referring to the same `AudioFileBox` on one track, and the SDK should perhaps reject or merge such inputs)?
-
-This case arises naturally in comp-track layouts where multiple lane tracks reference the same recorded buffer (loop-recorded takes share one `AudioFileBox`; comp clips taken from different lanes can land on the comp track with matching `waveformOffset`s). Avoiding the shared `sourceUuid` requires either duplicating the `AudioFileBox` or merging adjacent comp clips at the consumer layer.
-
-## Caveat: the workaround triggers a pre-existing different click
-
-Replacing the shared `AudioFileBox` with two distinct ones (the workaround in the repro page) eliminates the double-process artifact but introduces a smaller audible click at the same timeline position — see [splice-click-cross-file.md](./splice-click-cross-file.md). The two artifacts have different mechanisms: this note's artifact is the shared voice being processed twice in the seam-spanning block; the splice-click is the new voice's `blockOffset = 0` causing it to read from `offset` (= region B's source start) at sample 0 of the block even when region B's timeline range only really begins partway through the block, leaving voice A and voice B at a constant ~one-block readPosition offset and producing a sum-of-phase-shifted-sines transition (≈ −5 dB minimum on a sustained tone).
-
-The shared-source case is louder/more obvious; the cross-file case is the lingering tail when the shared-source workaround is applied. Both would need to be addressed for a fully clean comp-track crossfade between regions referring to the same underlying audio.
+1. What produces the ~2× sample-to-sample first difference in the rendered output near a non-block-aligned region seam, given that voices are per-region and `bp0`/`bp1` math correctly partitions the block at the seam sample?
+2. Is the block-aligned vs mid-block dependency intentional (e.g. an unstated invariant that consumers should snap region boundaries to render quantum), or a real artifact to fix? At 48 kHz with 128-sample quanta, only seams at multiples of `1/375 s` (≈ 2.67 ms) align to block boundaries — the vast majority of musically-meaningful seams will not align.
+3. Is the audible "snap is louder in the shared-`AudioFileBox` case than in the two-distinct-`AudioFileBox` case" perception (which the offline render does *not* reproduce — both cases render bit-identical) a live-only artifact, or a perceptual artifact from playback context differences (timing, buffering, AudioContext output device)?
