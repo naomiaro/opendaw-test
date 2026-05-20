@@ -197,6 +197,37 @@ Fade-out + fade-in without overlap creates a V-shaped volume dip at the splice p
 For same-file consecutive regions, no fade is needed — the audio is already continuous.
 Adding fades makes it worse. See `documentation/09-editing-fades-and-automation.md#advanced-region-splicing--comp-lanes`.
 
+### Overlapping Regions Need Separate Tracks
+`project.copy()` runs a per-track no-overlap validator. Two `AudioRegionBox`es on the
+SAME track whose timeline ranges overlap are silently deleted from the copied project —
+console shows `_AudioRegionBox _AudioRegionBox Overlapping regions` → `Deleting 2 invalid
+boxes`. The live engine plays the overlap fine; the deletion only happens through
+`project.copy()`, but anything that depends on copy (export, offline render via the
+standard `project.copy() → OfflineAudioContext → AudioWorklets.createFor(...) →
+createEngine(...)` pattern) will produce silence with no error.
+
+For crossfade-via-overlap (e.g. linear crossfade between two regions that overlap by
+the fade duration), put each region on its own Tape track. Each track has its own
+`regions` collection, so per-track overlap doesn't occur — the overlap is between
+tracks and the crossfade emerges from mixing the track outputs. See
+`debug/project-copy-deletes-overlapping-regions.md`.
+
+### Phase-Correlate Shifts: Don't Double-Compensate Source Delay
+When applying a phase-correlation result via `loopOffset` to align two regions reading
+different `AudioBuffer`s, the integer-sample shift returned by phase correlation
+operates on the **raw resampled buffers** as they exist in memory and already encodes
+whatever delay is between them — including any authored-time offset from the original
+WAV (e.g. a file recorded with a known time delay) that survives `decodeAudioData`'s
+resample.
+
+Do not separately add a "source offset" or "file delay" seconds term on top of the
+shift; the shift is absolute, not relative to a delay-corrected origin. Concretely, if
+phase-correlate returns `shiftSamples = N` against the raw buffers, set
+`loopOffset = (seam − halfFade) + N / sampleRate` for the incoming region — nothing
+else. Adding `+ sourceDelaySeconds` on top double-counts the delay and produces a
+phase mismatch at the seam (we measured −13.92 dB instead of the expected ~−1.16 dB
+in `pure-webaudio-target-debug-demo.tsx` until this was fixed).
+
 ## Reference Files
 - Comp lanes demo: `src/demos/playback/comp-lanes-demo.tsx`
 - Looping demo: `src/demos/playback/looping-demo.tsx`
