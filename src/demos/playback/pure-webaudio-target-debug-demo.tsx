@@ -44,14 +44,21 @@ import { InfoCircledIcon, PlayIcon, StopIcon, ActivityLogIcon } from "@radix-ui/
 //               dip mid-crossfade). Control / counter-example.
 //
 //   OPENDAW   — same scenario through OpenDAW: two AudioFileBoxes,
-//               two AudioRegionBoxes with crossfade extensions, the
-//               phase-correlate shift applied via loopOffset on
-//               region B. Should match ALIGNED once the engine
+//               two AudioRegionBoxes on SEPARATE Tape tracks (one
+//               region per track) with 40 ms linear crossfade
+//               extensions, the phase-correlate shift applied via
+//               loopOffset on region B. Two tracks rather than one
+//               sidesteps the per-track no-overlap invariant — see
+//               `debug/project-copy-deletes-overlapping-regions.md`
+//               (placing both overlapping regions on a single track
+//               caused `project.copy()` to silently delete them
+//               during validation, making offline rendering
+//               impossible). The track outputs sum at the master,
+//               so the crossfade emerges from mixing two separate
+//               voice paths. Should match ALIGNED once the engine
 //               artifacts documented in the sibling debug notes
 //               (shared-source-double-process, voice-fadein-clip-
-//               fadein-product) are resolved. Currently it does
-//               not — the audible delta between this and ALIGNED is
-//               the gap upstream needs to close.
+//               fadein-product) are resolved.
 //
 // Audio fixtures: test-440hz.wav and test-440hz-offset30.wav. File B
 // is file A delayed by 30 samples at the WAV's authored 44.1 kHz
@@ -263,17 +270,38 @@ const App: React.FC = () => {
         const halfFadeSec = CROSSFADE_MS / 2000;
         const halfFadePPQN = PPQN.secondsToPulses(halfFadeSec, bpm);
         const fadePPQN = PPQN.secondsToPulses(CROSSFADE_MS / 1000, bpm);
-        // loopOffset for region B = seam − half-fade (so region B starts
-        // reading source half-fade earlier than its nominal start, matching
-        // its backwards-shifted position) + sourceOffset (compensate for
-        // file B's authored 30-sample source delay) + shiftSeconds (apply
-        // the phase-correlation shift, same as the pure-JS ALIGNED case).
-        const loopOffsetBSec =
-          SEAM_SECONDS - halfFadeSec + SOURCE_OFFSET_SECONDS + shiftSeconds;
+        // loopOffset for region B = (seam − half-fade) + shiftSeconds. The
+        // phase-correlation result already finds the absolute sample shift
+        // that aligns file B's buffer with file A's at the seam — it
+        // operates on the raw resampled AudioBuffers, so it implicitly
+        // accounts for the 30-sample authored delay in file B. Adding a
+        // separate `SOURCE_OFFSET_SECONDS` term on top of `shiftSeconds`
+        // double-counts the delay and produces a phase mismatch in OpenDAW
+        // playback (≈ −13.9 dB dip in the offline scan vs the ≈ 1.0 ratio
+        // the pure-JS ALIGNED case achieves).
+        const loopOffsetBSec = SEAM_SECONDS - halfFadeSec + shiftSeconds;
         const loopOffsetBPPQN = PPQN.secondsToPulses(loopOffsetBSec, bpm);
 
+        // Use SEPARATE tracks for the two regions so they can overlap in
+        // timeline (crossfade) without violating the per-track no-overlap
+        // invariant that `project.copy()` enforces. See
+        // `debug/project-copy-deletes-overlapping-regions.md` — overlapping
+        // regions on the same track are deleted during copy, which makes
+        // offline rendering of any crossfade impossible. Separate tracks
+        // each have their own `regions` collection, so each track has only
+        // one region; the overlap is between tracks and the mix happens
+        // when the engine sums the track outputs.
+        let trackBoxA: { regions: unknown };
+        let trackBoxB: { regions: unknown };
         newProject.editing.modify(() => {
-          const { trackBox } = newProject.api.createInstrument(InstrumentFactories.Tape);
+          trackBoxA = newProject.api.createInstrument(InstrumentFactories.Tape)
+            .trackBox as { regions: unknown };
+        });
+        newProject.editing.modify(() => {
+          trackBoxB = newProject.api.createInstrument(InstrumentFactories.Tape)
+            .trackBox as { regions: unknown };
+        });
+        newProject.editing.modify(() => {
           const fileBoxA = AudioFileBox.create(newProject.boxGraph, uuidA, (box) => {
             box.fileName.setValue("test-440hz.wav");
             box.endInSeconds.setValue(a.duration);
@@ -287,7 +315,8 @@ const App: React.FC = () => {
             UUID.generate()
           );
           AudioRegionBox.create(newProject.boxGraph, UUID.generate(), (box) => {
-            box.regions.refer(trackBox.regions);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            box.regions.refer((trackBoxA as any).regions);
             box.file.refer(fileBoxA);
             box.events.refer(eventsA.owners);
             box.position.setValue(0);
@@ -306,7 +335,8 @@ const App: React.FC = () => {
             UUID.generate()
           );
           AudioRegionBox.create(newProject.boxGraph, UUID.generate(), (box) => {
-            box.regions.refer(trackBox.regions);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            box.regions.refer((trackBoxB as any).regions);
             box.file.refer(fileBoxB);
             box.events.refer(eventsB.owners);
             box.position.setValue(seamPPQN - halfFadePPQN);
@@ -774,7 +804,7 @@ const App: React.FC = () => {
 File B:              test-440hz-offset30.wav (B delayed ~0.680 ms / ~24° at 440 Hz)
 ALIGNED engine:      pure Web Audio (AudioBufferSourceNode → destination)
 UNALIGNED engine:    pure Web Audio (shift = 0)
-OPENDAW engine:      OpenDAW TapeDeviceProcessor (2 AudioFileBoxes, 2 AudioRegionBoxes)
+OPENDAW engine:      OpenDAW TapeDeviceProcessor (2 Tape tracks, 1 AudioRegionBox each)
 Seam:                ${SEAM_SECONDS} s
 Crossfade:           ${CROSSFADE_MS} ms linear (equal-gain), symmetric around seam
 Phase window:        ${WINDOW_SEC * 1000} ms straddling the seam
