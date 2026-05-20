@@ -79,5 +79,5 @@ The two overlapping regions are presumably both flagged because the validator ca
 
 ## Open questions
 
-1. Is the OpenDAW data model meant to disallow overlapping regions on a single track, or is the deletion in `project.copy()` over-eager? The comp-track UX in Moises Studio (and DAW comp-track UX generally) relies on overlapping regions to encode crossfade extensions — the audible output through the live engine plays this configuration. If overlap on one track is unsupported, the supported pattern for crossfading two regions of the same lane would be to put them on **separate tracks** and mix the track outputs. The sibling target demo would be a natural place to A/B that workaround once confirmed.
+1. Is the OpenDAW data model meant to disallow overlapping regions on a single track, or is the deletion in `project.copy()` over-eager? The live engine plays the configuration without removing it; only `copy()` deletes. If overlap on one track is unsupported, what is the intended way to author a crossfade between two regions of the same lane?
 2. The deletion is silent — only console warnings, no thrown error or callback to the consumer. A consumer using `project.copy()` for offline rendering has no signal that the rendered output is structurally invalid. Should `copy()` throw, or at least return a manifest of deleted boxes?
