@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
 import { PPQN } from "@opendaw/lib-dsp";
+import { AnimationFrame } from "@opendaw/lib-dom";
 import { Project } from "@opendaw/studio-core";
 import { AudioFileBox, AudioRegionBox, ValueEventCollectionBox } from "@opendaw/studio-boxes";
 import { InstrumentFactories } from "@opendaw/studio-adapters";
@@ -58,6 +59,7 @@ const App: React.FC = () => {
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
   const [scenario, setScenario] = useState<Scenario>("bug");
   const [isPlaying, setIsPlaying] = useState(false);
+  const [positionSec, setPositionSec] = useState(0);
 
   const audioBufferRef = useRef<AudioBuffer | null>(null);
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
@@ -247,6 +249,21 @@ const App: React.FC = () => {
     project.engine.stop(true);
   }, [project]);
 
+  // Live playhead readout: convert engine PPQN to seconds via the timeline's
+  // BPM each frame. Lets the listener visually correlate any audio artifact
+  // with the seam at SEAM_SECONDS.
+  useEffect(() => {
+    if (!project) return;
+    const sub = AnimationFrame.add(() => {
+      const bpm = project.timelineBox.bpm.getValue();
+      const positionPpqn = project.engine.position.getValue();
+      setPositionSec(PPQN.pulsesToSeconds(positionPpqn, bpm));
+    });
+    return () => sub.terminate();
+  }, [project]);
+
+  const atSeam = Math.abs(positionSec - SEAM_SECONDS) < 0.1;
+
   return (
     <Theme appearance="dark" accentColor="amber">
       <Container size="3" style={{ padding: "2rem", minHeight: "100vh" }}>
@@ -274,7 +291,7 @@ const App: React.FC = () => {
           </Callout.Root>
 
           <Card>
-            <Flex align="center" gap="2">
+            <Flex align="center" gap="3" wrap="wrap">
               <Text size="2" weight="bold">
                 Status:
               </Text>
@@ -284,6 +301,18 @@ const App: React.FC = () => {
               {isPlaying && (
                 <Badge color="amber">Playing: {scenario === "bug" ? "BUG" : "WORKAROUND"}</Badge>
               )}
+              <Text size="2" weight="bold">
+                Position:
+              </Text>
+              <Badge color={atSeam ? "red" : isPlaying ? "amber" : "gray"} size="2">
+                <Code>
+                  {positionSec.toFixed(3)} s
+                  {atSeam ? " ← SEAM" : ""}
+                </Code>
+              </Badge>
+              <Text size="2" color="gray">
+                (seam at {SEAM_SECONDS}.000 s)
+              </Text>
             </Flex>
           </Card>
 

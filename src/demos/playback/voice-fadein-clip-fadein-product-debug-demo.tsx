@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
 import { PPQN } from "@opendaw/lib-dsp";
+import { AnimationFrame } from "@opendaw/lib-dom";
 import { Project } from "@opendaw/studio-core";
 import { AudioFileBox, AudioRegionBox, ValueEventCollectionBox } from "@opendaw/studio-boxes";
 import { InstrumentFactories } from "@opendaw/studio-adapters";
@@ -74,6 +75,7 @@ const App: React.FC = () => {
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
   const [scenario, setScenario] = useState<Scenario>("bug");
   const [isPlaying, setIsPlaying] = useState(false);
+  const [positionSec, setPositionSec] = useState(0);
 
   const audioBuffersRef = useRef<{ a: AudioBuffer | null; b: AudioBuffer | null }>({
     a: null,
@@ -266,6 +268,24 @@ const App: React.FC = () => {
     project.engine.stop(true);
   }, [project]);
 
+  // Live playhead readout: convert engine PPQN to seconds via the timeline's
+  // BPM each frame. Helps the listener time the dip relative to the seam.
+  useEffect(() => {
+    if (!project) return;
+    const sub = AnimationFrame.add(() => {
+      const bpm = project.timelineBox.bpm.getValue();
+      const positionPpqn = project.engine.position.getValue();
+      setPositionSec(PPQN.pulsesToSeconds(positionPpqn, bpm));
+    });
+    return () => sub.terminate();
+  }, [project]);
+
+  // The dip in BUG mode is centered ~10 ms before the seam (in the first half
+  // of the 40 ms crossfade), so highlight the whole crossfade overlap window.
+  const inCrossfadeRegion =
+    positionSec > SEAM_SECONDS - CROSSFADE_MS / 2000 - 0.005 &&
+    positionSec < SEAM_SECONDS + CROSSFADE_MS / 2000 + 0.005;
+
   return (
     <Theme appearance="dark" accentColor="amber">
       <Container size="3" style={{ padding: "2rem", minHeight: "100vh" }}>
@@ -293,7 +313,7 @@ const App: React.FC = () => {
           </Callout.Root>
 
           <Card>
-            <Flex align="center" gap="2">
+            <Flex align="center" gap="3" wrap="wrap">
               <Text size="2" weight="bold">
                 Status:
               </Text>
@@ -303,6 +323,18 @@ const App: React.FC = () => {
               {isPlaying && (
                 <Badge color="amber">Playing: {scenario === "bug" ? "BUG" : "WORKAROUND"}</Badge>
               )}
+              <Text size="2" weight="bold">
+                Position:
+              </Text>
+              <Badge color={inCrossfadeRegion ? "red" : isPlaying ? "amber" : "gray"} size="2">
+                <Code>
+                  {positionSec.toFixed(3)} s
+                  {inCrossfadeRegion ? " ← CROSSFADE" : ""}
+                </Code>
+              </Badge>
+              <Text size="2" color="gray">
+                (seam at {SEAM_SECONDS}.000 s, crossfade ±{CROSSFADE_MS / 2} ms)
+              </Text>
             </Flex>
           </Card>
 
