@@ -11,7 +11,7 @@ Two adjacent `AudioRegionBoxAdapter`s on the same track that touch at an exact P
 Offline render measurements (440 Hz / 0.5-amplitude sine, mono, 48 kHz, BPM 120, seam at 30.5 s = sample 1,464,000 = mid of block 11,437 + 64 samples):
 
 ```
-                            BUG (one AudioFileBox)     WORKAROUND (two AudioFileBoxes)
+                            SHARED (1 AudioFileBox)   DISTINCT (2 AudioFileBoxes)
 pre-seam peak amplitude     0.5000                    0.5000
 seam-band peak amplitude    0.4999                    0.4999
 expected clean max |Δ|      0.02880  (= 2π·440·0.5/SR for a 440 Hz, 0.5-amp sine)
@@ -23,7 +23,7 @@ largest jump at             30.499958 s                30.499958 s   ← 2 sampl
 
 The peak-amplitude metric is *unchanged* by the artifact; only the sample-to-sample first difference reveals it. The discontinuity is audible — listeners describe it as a brief snap — because the ear is sensitive to high-frequency content introduced by sample-level jumps.
 
-**Both scenarios produce identical output to floating-point precision.** The originally-suspected "two regions sharing an `AudioFileBox`" path is not the cause: scenarios using one shared file vs two distinct files (with the same audio content) render bit-identical output and have the same artifact.
+**Both configurations produce identical output to floating-point precision.** The originally-suspected "two regions sharing an `AudioFileBox`" path is not the cause: configurations using one shared file (SHARED) vs two distinct files with the same audio content (DISTINCT) render bit-identical output and have the same artifact. Neither is a "workaround" for the other — both demonstrate the seam artifact identically.
 
 ## Block alignment dependency
 

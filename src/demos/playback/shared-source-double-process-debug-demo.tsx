@@ -31,19 +31,24 @@ import { InfoCircledIcon, PlayIcon, StopIcon, ActivityLogIcon } from "@radix-ui/
 // Repro for `debug/shared-source-double-process.md`.
 //
 // One Tape track. Two AudioRegionBoxes, each covering ~30 s of the same
-// 60 s 440 Hz sine. The bug case has both regions reference the SAME
-// AudioFileBox (one UUID, one entry in lane.pitchVoices). The workaround
-// has each region reference its OWN AudioFileBox (two UUIDs, two
-// independent voices) — same on-disk audio, no shared-voice path.
+// 60 s 440 Hz sine. Two toggleable configurations:
 //
-// On the bug case TapeDeviceProcessor calls voice.process() once per
-// adapter in any block that contains both. PitchVoice.process advances
-// readPosition each call, so for blocks straddling the seam at 30 s the
-// voice ends up reading two consecutive bpn-sample windows from source
-// and summing them with their per-region gain weights. For a 440 Hz tone
-// and a 128-sample render quantum that lands at ~−1.3 × the input — one
-// block of inverted-and-amplified waveform, audible as a "snap" at the
-// seam. With the workaround (separate AudioFileBoxes), the seam is clean.
+//   SHARED   — both regions reference ONE AudioFileBox (same UUID).
+//   DISTINCT — each region references its OWN AudioFileBox (different
+//              UUIDs but identical on-disk content).
+//
+// The original report framed the artifact as caused by voice sharing
+// (one PitchVoice keyed by AudioFileBox UUID, processed twice per block
+// at a seam). That mechanism was wrong: voices are keyed by region UUID
+// (AudioRegionBoxAdapter.uuid → box.address.uuid), so SHARED and
+// DISTINCT yield two independent voices either way.
+//
+// Empirically the two configurations produce BIT-IDENTICAL offline
+// output — same peak amplitudes, same max |Δsample|, same time-of-peak.
+// They sound the same live, too (within the precision of human
+// listening). Neither configuration is a "workaround" for the other;
+// both demonstrate the seam artifact identically. The toggle is kept
+// because it lets the report author confirm the equivalence empirically.
 const BPM = 120;
 const AUDIO_FILE = "/audio/test-440hz.wav";
 // Start playback 28 s in so the listener only needs to wait ~2 s for the
@@ -60,13 +65,13 @@ const PLAYBACK_START_SECONDS = 28;
 const SEAM_SECONDS = 30.5;
 const TOTAL_DURATION_SECONDS = 60;
 
-type Scenario = "bug" | "workaround";
+type Scenario = "shared" | "distinct";
 
 const App: React.FC = () => {
   const [status, setStatus] = useState("Loading...");
   const [project, setProject] = useState<Project | null>(null);
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
-  const [scenario, setScenario] = useState<Scenario>("bug");
+  const [scenario, setScenario] = useState<Scenario>("shared");
   const [isPlaying, setIsPlaying] = useState(false);
   const [positionSec, setPositionSec] = useState(0);
   const [scanResult, setScanResult] = useState<string | null>(null);
@@ -211,13 +216,13 @@ const App: React.FC = () => {
       // graph commit doesn't have to fetch audio data for boxes that don't
       // resolve. Each box's UUID maps to the same on-disk audio.
       const newUuids =
-        next === "bug" ? [UUID.generate()] : [UUID.generate(), UUID.generate()];
+        next === "shared" ? [UUID.generate()] : [UUID.generate(), UUID.generate()];
       for (const uuid of newUuids) {
         localAudioBuffersRef.current.set(UUID.toString(uuid), audioBuffer);
       }
 
       project.editing.modify(() => {
-        if (next === "bug") {
+        if (next === "shared") {
           const sharedBox = AudioFileBox.create(project.boxGraph, newUuids[0], (box) => {
             box.fileName.setValue("test-440hz.wav (shared)");
             box.endInSeconds.setValue(audioBuffer.duration);
@@ -354,13 +359,14 @@ const App: React.FC = () => {
               <InfoCircledIcon />
             </Callout.Icon>
             <Callout.Text>
-              Two adjacent same-track regions that reference the <strong>same</strong>{" "}
-              <Code>AudioFileBox</Code> produce an audible artifact at the seam, even though the
-              source positions at the seam are mathematically continuous.{" "}
-              <Code>TapeDeviceProcessor</Code> keys <Code>PitchVoice</Code>s by{" "}
-              <Code>sourceUuid</Code>, so both regions share one voice; the voice's{" "}
-              <Code>readPosition</Code> advances <strong>2× bpn</strong> in the seam-spanning
-              block.
+              Two adjacent same-track <Code>AudioRegionBox</Code>es touching at a non-block-aligned
+              seam produce an audible sample-level discontinuity (≈ 2× the clean-sine{" "}
+              <Code>max |Δsample|</Code>) at the seam. Peak amplitude is unchanged — only the
+              sample-to-sample first difference reveals it. The artifact is{" "}
+              <strong>independent of mediaId</strong>: SHARED (one <Code>AudioFileBox</Code>)
+              and DISTINCT (two distinct <Code>AudioFileBox</Code>es with identical content)
+              produce bit-identical offline output. Mechanism for the discontinuity is currently
+              open — see the markdown note.
             </Callout.Text>
           </Callout.Root>
 
@@ -373,7 +379,7 @@ const App: React.FC = () => {
                 {status}
               </Badge>
               {isPlaying && (
-                <Badge color="amber">Playing: {scenario === "bug" ? "BUG" : "WORKAROUND"}</Badge>
+                <Badge color="amber">Playing: {scenario === "shared" ? "SHARED" : "DISTINCT"}</Badge>
               )}
               <Text size="2" weight="bold">
                 Position:
@@ -399,39 +405,38 @@ const App: React.FC = () => {
               <Flex direction="column" gap="2">
                 <Text size="2">
                   Playback starts at <Code>{PLAYBACK_START_SECONDS}</Code> s, so you only wait ~2 s
-                  for the seam at <Code>{SEAM_SECONDS}</Code> s.
+                  for the seam at <Code>{SEAM_SECONDS}</Code> s (chosen mid-block at 48 kHz —
+                  block-aligned seams render clean, the artifact only fires when the seam is
+                  strictly inside a render quantum).
                 </Text>
                 <Text size="2">
-                  <strong>Bug:</strong> both regions reference one <Code>AudioFileBox</Code>. Same{" "}
-                  <Code>sourceUuid</Code> ⇒ shared voice ⇒ <Code>voice.process</Code> called twice
-                  in the seam-spanning block. Listen for a brief snap at <Code>{SEAM_SECONDS}</Code>{" "}
-                  s.
+                  <strong>SHARED:</strong> both regions reference one <Code>AudioFileBox</Code>{" "}
+                  (one UUID). Listen for a brief snap at <Code>{SEAM_SECONDS}</Code> s.
                 </Text>
                 <Text size="2">
-                  <strong>Workaround:</strong> each region references its own{" "}
-                  <Code>AudioFileBox</Code> (same on-disk audio, different UUIDs). Different{" "}
-                  <Code>sourceUuid</Code>s ⇒ two independent voices ⇒ no shared-voice path.{" "}
-                  <em>Note:</em> this exposes a smaller, pre-existing artifact at the same boundary
-                  — the cross-file splice click documented in{" "}
-                  <Code>debug/splice-click-cross-file.md</Code>. Loud snap → quiet click.
+                  <strong>DISTINCT:</strong> each region references its own{" "}
+                  <Code>AudioFileBox</Code> (two UUIDs, same on-disk audio). Same snap, same time,
+                  same magnitude — neither configuration is a fix for the other. The toggle exists
+                  to demonstrate that the artifact is independent of mediaId; offline scan
+                  confirms bit-identical output between modes.
                 </Text>
               </Flex>
               <Flex gap="3" wrap="wrap">
                 <Button
-                  onClick={() => applyScenarioAndPlay("bug")}
+                  onClick={() => applyScenarioAndPlay("shared")}
                   disabled={!project || status !== "Ready" || scanning}
-                  color="red"
+                  color="amber"
                   size="3"
                 >
-                  <PlayIcon /> Play (BUG)
+                  <PlayIcon /> Play (SHARED file)
                 </Button>
                 <Button
-                  onClick={() => applyScenarioAndPlay("workaround")}
+                  onClick={() => applyScenarioAndPlay("distinct")}
                   disabled={!project || status !== "Ready" || scanning}
-                  color="green"
+                  color="amber"
                   size="3"
                 >
-                  <PlayIcon /> Play (WORKAROUND)
+                  <PlayIcon /> Play (DISTINCT files)
                 </Button>
                 <Button onClick={handleStop} disabled={!isPlaying} variant="soft" size="3">
                   <StopIcon /> Stop
@@ -466,10 +471,10 @@ File:                test-440hz.wav (${TOTAL_DURATION_SECONDS} s, 440 Hz sine)
 Region A:            position=0,  duration=${SEAM_SECONDS}s, loopOffset=0
 Region B:            position=${SEAM_SECONDS}s, duration=${TOTAL_DURATION_SECONDS - SEAM_SECONDS}s, loopOffset=${SEAM_SECONDS}s
 Fades:               in=0, out=0 (touching seam, no crossfade)
-Bug:                 A.file === B.file (one AudioFileBox)
-Workaround:          A.file !== B.file (two AudioFileBoxes, same content)
+SHARED:              A.file === B.file (one AudioFileBox)
+DISTINCT:            A.file !== B.file (two AudioFileBoxes, same content)
 Playback start:      ${PLAYBACK_START_SECONDS} s (≈2 s before seam)
-Seam:                ${SEAM_SECONDS} s`}
+Seam:                ${SEAM_SECONDS} s (mid-block at 48 kHz)`}
               </Code>
             </Flex>
           </Card>
@@ -481,13 +486,12 @@ Seam:                ${SEAM_SECONDS} s`}
               </Text>
               <Separator size="4" />
               <Text size="2">
-                Render to an <Code>AudioBuffer</Code> offline and compare the seam blocks across
-                scenarios. In the bug case, the single 128-sample block straddling the seam at{" "}
-                <Code>{SEAM_SECONDS}</Code> s contains samples of the form{" "}
-                <Code>sample[N + i] + sample[N + bpn + i]</Code>. For a 440 Hz sine and 44.1 kHz
-                render that's amplitude ~<Code>1.3 × sample</Code> with ~99° phase shift — one
-                block of inverted-and-amplified waveform. In the workaround case, the same block
-                is a clean continuation of the sine.
+                Click <strong>Scan current scenario</strong> after each Play. The peak-amplitude
+                metric stays at ~0.5 (the artifact does not change the envelope), but the max{" "}
+                <Code>|Δsample|</Code> in the seam band jumps from ~0.029 (clean-sine theoretical
+                max) to ~0.057 — about 2× — at a sample 2 frames before the seam. Both SHARED
+                and DISTINCT configurations produce the same numbers, confirming the artifact
+                is independent of mediaId.
               </Text>
             </Flex>
           </Card>
