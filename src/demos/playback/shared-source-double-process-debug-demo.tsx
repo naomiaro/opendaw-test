@@ -47,9 +47,17 @@ import { InfoCircledIcon, PlayIcon, StopIcon, ActivityLogIcon } from "@radix-ui/
 const BPM = 120;
 const AUDIO_FILE = "/audio/test-440hz.wav";
 // Start playback 28 s in so the listener only needs to wait ~2 s for the
-// 30 s seam.
+// seam.
 const PLAYBACK_START_SECONDS = 28;
-const SEAM_SECONDS = 30;
+// Seam at 30.5 s is deliberately NOT block-aligned: at 48 kHz / 128-sample
+// render quantum, 30.5 × 48000 = 1,464,000 = 64 samples into a block; at
+// 44.1 kHz, 64-byte offset is 26 samples into a block. The shared-voice
+// double-process artifact only fires when both region adapters land in the
+// SAME block, which requires the seam to fall strictly inside a quantum
+// (a block-aligned seam puts exactly one region per block — no
+// double-process, no audible artifact). The original 30.0 s seam was a
+// block boundary at 48 kHz and rendered without artifact, masking the bug.
+const SEAM_SECONDS = 30.5;
 const TOTAL_DURATION_SECONDS = 60;
 
 type Scenario = "bug" | "workaround";
@@ -269,21 +277,30 @@ const App: React.FC = () => {
         sliceStart,
         sliceEnd
       );
-      // Look at left channel; mono sine duplicated, both channels identical.
+      // Mono sine duplicated to both channels; left is sufficient.
       const left = channels[0];
-      const seamWindow = peakInWindow(left, sliceStart, SEAM_SECONDS - 0.003, SEAM_SECONDS + 0.003, sr);
       const preWindow = peakInWindow(left, sliceStart, SEAM_SECONDS - 0.05, SEAM_SECONDS - 0.02, sr);
-      const postWindow = peakInWindow(left, sliceStart, SEAM_SECONDS + 0.02, SEAM_SECONDS + 0.05, sr);
-      const ratio = preWindow.peak > 1e-6 ? seamWindow.peak / preWindow.peak : 0;
+      // Voice-fade transition extends ~20 ms past the seam (VOICE_FADE_DURATION),
+      // so an amplitude artifact from voice eviction + fade-in summing > 1 would
+      // peak somewhere in [seam, seam + 25 ms]. Scan a wide window.
+      const transitionWindow = peakInWindow(
+        left,
+        sliceStart,
+        SEAM_SECONDS - 0.001,
+        SEAM_SECONDS + 0.025,
+        sr
+      );
+      const farPostWindow = peakInWindow(left, sliceStart, SEAM_SECONDS + 0.05, SEAM_SECONDS + 0.08, sr);
+      const ratio = preWindow.peak > 1e-6 ? transitionWindow.peak / preWindow.peak : 0;
       setScanResult(
         [
-          `scenario        : ${scenario.toUpperCase()}`,
-          `sample rate     : ${sr} Hz`,
-          `pre-seam peak   : ${preWindow.peak.toFixed(4)}  (in [${(SEAM_SECONDS - 0.05).toFixed(3)} s, ${(SEAM_SECONDS - 0.02).toFixed(3)} s])`,
-          `seam-band peak  : ${seamWindow.peak.toFixed(4)}  (in [${(SEAM_SECONDS - 0.003).toFixed(3)} s, ${(SEAM_SECONDS + 0.003).toFixed(3)} s])`,
-          `post-seam peak  : ${postWindow.peak.toFixed(4)}  (in [${(SEAM_SECONDS + 0.02).toFixed(3)} s, ${(SEAM_SECONDS + 0.05).toFixed(3)} s])`,
-          `seam / pre ratio: ${ratio.toFixed(3)}  (≈1.0 expected; >1.0 indicates inversion/amplification)`,
-          `peak sample at  : ${(sliceStart + seamWindow.atSecondsFromStart).toFixed(6)} s`,
+          `scenario             : ${scenario.toUpperCase()}`,
+          `sample rate          : ${sr} Hz`,
+          `pre-seam peak        : ${preWindow.peak.toFixed(4)}  (in [${(SEAM_SECONDS - 0.05).toFixed(3)} s, ${(SEAM_SECONDS - 0.02).toFixed(3)} s])`,
+          `voice-fade window    : ${transitionWindow.peak.toFixed(4)}  (in [${(SEAM_SECONDS - 0.001).toFixed(3)} s, ${(SEAM_SECONDS + 0.025).toFixed(3)} s])`,
+          `far post-seam peak   : ${farPostWindow.peak.toFixed(4)}  (in [${(SEAM_SECONDS + 0.05).toFixed(3)} s, ${(SEAM_SECONDS + 0.08).toFixed(3)} s])`,
+          `transition / pre     : ${ratio.toFixed(3)}  (1.0 = no artifact; >1.0 = boost from voice A fade-out × voice B fade-in summing > 1)`,
+          `peak sample at       : ${(sliceStart + transitionWindow.atSecondsFromStart).toFixed(6)} s  (τ = ${((sliceStart + transitionWindow.atSecondsFromStart - SEAM_SECONDS) * 1000).toFixed(2)} ms relative to seam)`,
         ].join("\n")
       );
     } catch (error) {

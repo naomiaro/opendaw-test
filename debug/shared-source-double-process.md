@@ -1,8 +1,10 @@
-# Shared-source double-process at adjacent same-track regions
+# Audible artifact at adjacent same-track same-source seams
 
 **Verified against:** OpenDAW SDK 0.0.147 (`@opendaw/studio-sdk@0.0.147`, `@opendaw/studio-core@0.0.145`).
 
 **Repro page:** [`shared-source-double-process-debug-demo.html`](../shared-source-double-process-debug-demo.html) (unlisted). Audio fixture: [`public/audio/test-440hz.wav`](../public/audio/test-440hz.wav) (60 s, 440 Hz sine, mono, 44.1 kHz, 16-bit).
+
+> **Note on mechanism.** The original draft of this note attributed the artifact to a "shared voice double-process" path where two regions referencing the same `AudioFileBox` would share a `PitchVoice` keyed by source UUID. Closer reading of `TapeDeviceProcessor.#processPassPitch` (line ~151) shows the `sourceUuid` argument is actually `region.uuid` (the AudioRegionBox UUID, via `AudioRegionBoxAdapter.uuid → this.#box.address.uuid`), so voices are keyed per-region, not per-file. Two same-file regions get two independent voices, not one shared voice. The shared-voice mechanism was wrong. The audible artifact is real, but its cause is something else — likely the voice fade-out / fade-in geometry across the post-seam transition. **The report below is being rewritten based on empirical offline-render scans; treat the mechanism section as pending re-verification.**
 
 ## Symptom
 
