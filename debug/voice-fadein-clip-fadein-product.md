@@ -2,7 +2,7 @@
 
 **Verified against:** OpenDAW SDK 0.0.147 (`@opendaw/studio-sdk@0.0.147`, `@opendaw/studio-core@0.0.145`).
 
-**Repro page:** _TBD — pending example._ Audio fixtures: [`public/audio/test-440hz.wav`](../public/audio/test-440hz.wav) and [`public/audio/test-440hz-offset30.wav`](../public/audio/test-440hz-offset30.wav) (the second file is the same sine delayed by 30 samples = ~0.68 ms = ~24° at 440 Hz, so the two files are phase-aligned by reading the offset file 30 samples earlier).
+**Repro page:** [`voice-fadein-clip-fadein-product-debug-demo.html`](../voice-fadein-clip-fadein-product-debug-demo.html) (unlisted). Audio fixtures: [`public/audio/test-440hz.wav`](../public/audio/test-440hz.wav) and [`public/audio/test-440hz-offset30.wav`](../public/audio/test-440hz-offset30.wav) (the second file is the same 440 Hz sine delayed by 30 samples = ~0.68 ms = ~24° at 440 Hz; the two files are phase-aligned by reading the offset file 30 samples *later* in source).
 
 ## Symptom
 
@@ -29,7 +29,14 @@ A sample-level scan of the rendered output across the crossfade region shows the
 
 ## How to reproduce
 
-_Pending demo page._ Minimal setup:
+```bash
+npm run dev
+# open https://localhost:5173/voice-fadein-clip-fadein-product-debug-demo.html
+```
+
+**HTTPS is required** (same self-signed cert as the other demos). Click **Play (BUG)**; playback starts at 28 s and reaches the crossfade region at 30 s in ~2 s. Listen for a brief amplitude dip ~10 ms before the seam. Then click **Play (WORKAROUND)** for the same regions with `fading.in = fading.out = 0` (hard cut, voice-fade alone handles the boundary) — no dip.
+
+Minimal box-graph setup:
 
 ```
 BPM 120, sample rate 44.1 kHz, one Tape track.
@@ -44,13 +51,13 @@ One AudioRegionBox per file on the same track:
               waveformOffset = 0.
   - Region B: position = PPQN(30 s) − PPQN(20 ms),    // 20 ms extension before A end
               duration = PPQN(30 s) + PPQN(20 ms),
-              loopOffset = PPQN(30 s) − PPQN(20 ms − 30 samples/SR),
+              loopOffset = PPQN(30 s + 30 samples/SR − 20 ms),
               loopDuration = PPQN(60 s),
               fading.in = PPQN(40 ms), fading.out = 0,
               waveformOffset = loopOffset.
 ```
 
-The `loopOffset` on Region B is shifted backwards by 30 samples to compensate for the source delay in the offset file — so both regions play phase-aligned content through the 40 ms overlap.
+The `loopOffset` on Region B compensates for two things at once: (1) Region B starts 20 ms before the seam in the timeline (because of the half-crossfade extension), so it needs to read 20 ms earlier in source; (2) `test-440hz-offset30.wav` is the original sine delayed by 30 samples (`B[N] = A[N − 30]`), so to play the same musical moment as File A, Region B must read its source 30 samples *later*. Net: `loopOffset = seam + 30 samples/SR − 20 ms`.
 
 Play and listen for a brief dip about 10 ms before the 30 s mark. The dip persists if you flip the slope from 0.5 (linear) to 0.25 or 0.75 — only the shape changes.
 

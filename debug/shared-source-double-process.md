@@ -2,7 +2,7 @@
 
 **Verified against:** OpenDAW SDK 0.0.147 (`@opendaw/studio-sdk@0.0.147`, `@opendaw/studio-core@0.0.145`).
 
-**Repro page:** _TBD — pending example._ Audio fixture: [`public/audio/test-440hz.wav`](../public/audio/test-440hz.wav) (60 s, 440 Hz sine, mono, 44.1 kHz, 16-bit).
+**Repro page:** [`shared-source-double-process-debug-demo.html`](../shared-source-double-process-debug-demo.html) (unlisted). Audio fixture: [`public/audio/test-440hz.wav`](../public/audio/test-440hz.wav) (60 s, 440 Hz sine, mono, 44.1 kHz, 16-bit).
 
 ## Symptom
 
@@ -17,7 +17,14 @@ A simple way to demonstrate the difference is to render the project offline and 
 
 ## How to reproduce
 
-_Pending demo page._ Minimal setup that reproduces the symptom in a fresh project:
+```bash
+npm run dev
+# open https://localhost:5173/shared-source-double-process-debug-demo.html
+```
+
+**HTTPS is required** (same self-signed cert as the other demos). Click **Play (BUG)**; playback starts at 28 s and you'll reach the seam at 30 s in ~2 s. Listen for a brief snap at the seam. Then click **Play (WORKAROUND)** for the same setup but with each region pointing at its own `AudioFileBox` (same on-disk audio) — no snap.
+
+Minimal box-graph setup:
 
 ```
 BPM 120, sample rate 44.1 kHz, one Tape track.
