@@ -56,21 +56,29 @@ const AUDIO_FILE = "/audio/test-440hz.wav";
 const PLAYBACK_START_SECONDS = 28;
 const TOTAL_DURATION_SECONDS = 60;
 
-// Two seam positions to A/B the dependency on block alignment, computed
-// from the AudioContext's actual sample rate at runtime (Web Audio's
-// render quantum is 128 samples regardless of rate). For each position
-// we pick a block near 30 s:
-//   block-aligned — exactly on a 128-sample block boundary.
-//   mid-block     — 64 samples into the block (deliberately not aligned).
+// Two seam positions to A/B. Both are exact integer PPQN values at BPM
+// 120 — they have to be, because `AudioRegionBox.position` is an
+// Int32Field that silently truncates non-integer PPQN values (while
+// `duration` is a Float32Field that preserves them), so assigning a
+// fractional PPQN to both fields creates a sub-PPQN overlap that
+// `project.copy()` deletes. See `debug/project-copy-deletes-overlapping-
+// regions.md` for the schema-mismatch mechanism.
+//
+// At 48 kHz the in-block sample offsets work out to 0 (block-aligned)
+// and 64 (off-boundary, mid-block); at other AudioContext rates the
+// offsets fall wherever they fall — see the live readout. PPQN stays
+// integer at any SR because PPQN is BPM-derived, not SR-derived.
 const RENDER_QUANTUM = 128;
-const APPROX_SEAM_SECONDS = 30;
-type SeamPosition = "block-aligned" | "mid-block";
-const INITIAL_SEAM_POSITION: SeamPosition = "mid-block";
+type SeamPosition = "block-aligned" | "off-boundary";
+const SEAM_SECONDS_BY_POSITION: Record<SeamPosition, number> = {
+  "block-aligned": 30.0, // PPQN 57600 at BPM 120
+  "off-boundary": 30.5, // PPQN 58560 at BPM 120
+};
+const INITIAL_SEAM_POSITION: SeamPosition = "off-boundary";
 
-function computeSeamSeconds(sampleRate: number, position: SeamPosition): number {
-  const blockIndex = Math.round((APPROX_SEAM_SECONDS * sampleRate) / RENDER_QUANTUM);
-  const offsetSamples = position === "block-aligned" ? 0 : RENDER_QUANTUM / 2;
-  return (blockIndex * RENDER_QUANTUM + offsetSamples) / sampleRate;
+function inBlockOffsetSamples(seamSeconds: number, sampleRate: number): number {
+  const samples = seamSeconds * sampleRate;
+  return Math.round(samples - Math.floor(samples / RENDER_QUANTUM) * RENDER_QUANTUM);
 }
 
 type Scenario = "shared" | "distinct";
@@ -82,12 +90,9 @@ const App: React.FC = () => {
   const [scenario, setScenario] = useState<Scenario>("shared");
   const [seamPosition, setSeamPosition] = useState<SeamPosition>(INITIAL_SEAM_POSITION);
   const [isPlaying, setIsPlaying] = useState(false);
-  // Seam in seconds derived from the AudioContext's actual sample rate
-  // (computed once initialised, then updated when seamPosition changes).
-  // 0 means "audio context not ready yet" — callers gate on `project`.
-  const seamSeconds = audioContext
-    ? computeSeamSeconds(audioContext.sampleRate, seamPosition)
-    : 0;
+  // Seam in seconds is BPM-derived (PPQN integer for both positions), not
+  // SR-derived. The in-block offset for display IS SR-derived.
+  const seamSeconds = SEAM_SECONDS_BY_POSITION[seamPosition];
   const [positionSec, setPositionSec] = useState(0);
   const [scanResult, setScanResult] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
@@ -131,10 +136,7 @@ const App: React.FC = () => {
 
         const bpm = newProject.timelineBox.bpm.getValue();
         const fullDurationPPQN = PPQN.secondsToPulses(audioBuffer.duration, bpm);
-        const initialSeamSeconds = computeSeamSeconds(
-          newAudioContext.sampleRate,
-          INITIAL_SEAM_POSITION
-        );
+        const initialSeamSeconds = SEAM_SECONDS_BY_POSITION[INITIAL_SEAM_POSITION];
         const seamPPQN = PPQN.secondsToPulses(initialSeamSeconds, bpm);
 
         // Initial setup uses the SHARED layout (one AudioFileBox referenced
@@ -291,13 +293,13 @@ const App: React.FC = () => {
   // disorienting to listen to and out of scope.
   const applySeamPosition = useCallback(
     (next: SeamPosition) => {
-      if (!project || !audioContext) return;
+      if (!project) return;
       const regionA = regionsRef.current.a;
       const regionB = regionsRef.current.b;
       if (!regionA || !regionB) return;
       if (project.engine.isPlaying.getValue()) project.engine.stop(true);
       const bpm = project.timelineBox.bpm.getValue();
-      const nextSeamSeconds = computeSeamSeconds(audioContext.sampleRate, next);
+      const nextSeamSeconds = SEAM_SECONDS_BY_POSITION[next];
       const seamPPQN = PPQN.secondsToPulses(nextSeamSeconds, bpm);
       const fullDurationPPQN = PPQN.secondsToPulses(TOTAL_DURATION_SECONDS, bpm);
       project.editing.modify(() => {
@@ -309,7 +311,7 @@ const App: React.FC = () => {
       setSeamPosition(next);
       setScanResult(null);
     },
-    [project, audioContext]
+    [project]
   );
 
   // Render the current scenario offline and look for the inversion-and-
@@ -350,12 +352,11 @@ const App: React.FC = () => {
       const seamDelta = maxDeltaInWindow(left, sliceStart, seamSeconds - 0.005, seamSeconds + 0.005, sr);
       const ratio = preWindow.peak > 1e-6 ? transitionWindow.peak / preWindow.peak : 0;
       const deltaRatio = preDelta.maxDelta > 1e-9 ? seamDelta.maxDelta / preDelta.maxDelta : 0;
-      const seamSamples = seamSeconds * sr;
-      const offsetInBlock = Math.round(seamSamples - Math.floor(seamSamples / RENDER_QUANTUM) * RENDER_QUANTUM);
+      const offsetInBlock = inBlockOffsetSamples(seamSeconds, sr);
       setScanResult(
         [
           `scenario             : ${scenario.toUpperCase()}`,
-          `seam position        : ${seamPosition.toUpperCase()}  (${seamSeconds.toFixed(6)} s, offset ${offsetInBlock}/${RENDER_QUANTUM} samples into block)`,
+          `seam position        : ${seamPosition.toUpperCase()}  (${seamSeconds.toFixed(3)} s, offset ${offsetInBlock}/${RENDER_QUANTUM} samples into block at SR ${sr})`,
           `sample rate          : ${sr} Hz`,
           ``,
           `── peak amplitude ──`,
@@ -413,7 +414,7 @@ const App: React.FC = () => {
               strictly inside a render quantum produce an audible sample-level discontinuity
               (≈ 2× the clean-sine <Code>max |Δsample|</Code>) at the seam. Peak amplitude is
               unchanged — only the sample-to-sample first difference reveals it. Toggle the seam
-              position to A/B block-aligned vs mid-block, and the scenario to confirm the artifact
+              position to A/B block-aligned vs off-boundary, and the scenario to confirm the artifact
               is <strong>independent of mediaId</strong>: SHARED (one <Code>AudioFileBox</Code>)
               and DISTINCT (two distinct <Code>AudioFileBox</Code>es with identical content) produce
               bit-identical offline output. Mechanism for the discontinuity is currently open —
@@ -433,7 +434,7 @@ const App: React.FC = () => {
                 <Badge color="amber">Playing: {scenario === "shared" ? "SHARED" : "DISTINCT"}</Badge>
               )}
               <Badge color={seamPosition === "block-aligned" ? "green" : "amber"}>
-                Seam: {seamPosition === "block-aligned" ? "block-aligned" : "mid-block"}
+                Seam: {seamPosition === "block-aligned" ? "block-aligned" : "off-boundary"}
               </Badge>
               <Text size="2" weight="bold">
                 Position:
@@ -445,7 +446,9 @@ const App: React.FC = () => {
                 </Code>
               </Badge>
               <Text size="2" color="gray">
-                (seam at {seamSeconds.toFixed(6)} s • SR {audioContext?.sampleRate ?? "—"} Hz)
+                (seam at {seamSeconds.toFixed(3)} s, offset{" "}
+                {audioContext ? inBlockOffsetSamples(seamSeconds, audioContext.sampleRate) : "—"}/
+                {RENDER_QUANTUM} samples into block at SR {audioContext?.sampleRate ?? "—"} Hz)
               </Text>
             </Flex>
           </Card>
@@ -457,9 +460,14 @@ const App: React.FC = () => {
               </Text>
               <Separator size="4" />
               <Text size="2">
-                The Web Audio render quantum is 128 samples regardless of sample rate. Choose where
-                the seam lands inside a block — these times are computed from the current
-                AudioContext rate ({audioContext?.sampleRate ?? "—"} Hz):
+                Both seam values are chosen so that <Code>PPQN.secondsToPulses(seam, BPM 120)</Code>{" "}
+                returns an exact integer — required because <Code>AudioRegionBox.position</Code> is
+                an <Code>Int32Field</Code> (it silently truncates non-integer PPQN), while{" "}
+                <Code>duration</Code> is <Code>Float32Field</Code>; a fractional PPQN assigned to
+                both fields creates a sub-PPQN overlap that <Code>project.copy()</Code> deletes.
+                The Web Audio render quantum is always 128 samples, but where the seam falls inside
+                a block depends on the AudioContext rate (
+                {audioContext?.sampleRate ?? "—"} Hz). Offsets shown below:
               </Text>
               <Flex gap="3" wrap="wrap">
                 <Button
@@ -469,16 +477,20 @@ const App: React.FC = () => {
                   color="green"
                   size="3"
                 >
-                  Block-aligned ({audioContext ? computeSeamSeconds(audioContext.sampleRate, "block-aligned").toFixed(6) : "—"} s)
+                  30.000 s — offset{" "}
+                  {audioContext ? inBlockOffsetSamples(30.0, audioContext.sampleRate) : "—"}/
+                  {RENDER_QUANTUM}
                 </Button>
                 <Button
-                  onClick={() => applySeamPosition("mid-block")}
+                  onClick={() => applySeamPosition("off-boundary")}
                   disabled={!project || status !== "Ready" || scanning}
-                  variant={seamPosition === "mid-block" ? "solid" : "outline"}
+                  variant={seamPosition === "off-boundary" ? "solid" : "outline"}
                   color="amber"
                   size="3"
                 >
-                  Mid-block ({audioContext ? computeSeamSeconds(audioContext.sampleRate, "mid-block").toFixed(6) : "—"} s)
+                  30.500 s — offset{" "}
+                  {audioContext ? inBlockOffsetSamples(30.5, audioContext.sampleRate) : "—"}/
+                  {RENDER_QUANTUM}
                 </Button>
               </Flex>
             </Flex>
@@ -561,7 +573,7 @@ Fades:               in=0, out=0 (touching seam, no crossfade)
 SHARED:              A.file === B.file (one AudioFileBox)
 DISTINCT:            A.file !== B.file (two AudioFileBoxes, same content)
 Playback start:      ${PLAYBACK_START_SECONDS} s (≈2 s before seam)
-Seam (current):      ${seamSeconds.toFixed(6)} s (${seamPosition})`}
+Seam (current):      ${seamSeconds.toFixed(3)} s (${seamPosition}, PPQN ${seamSeconds * BPM * 16}, offset ${audioContext ? inBlockOffsetSamples(seamSeconds, audioContext.sampleRate) : "—"}/${RENDER_QUANTUM} in block)`}
               </Code>
             </Flex>
           </Card>
@@ -576,10 +588,12 @@ Seam (current):      ${seamSeconds.toFixed(6)} s (${seamPosition})`}
                 Click <strong>Scan current scenario</strong> after each Play. The peak-amplitude
                 metric stays at ~0.5 (the artifact does not change the envelope). The interesting
                 quantity is <Code>seam-band max |Δ|</Code> vs <Code>pre-seam max |Δ|</Code> (a
-                clean-sine baseline of <Code>2π·440·0.5/SR</Code>). In the mid-block configuration
-                the seam-band Δ is ~2× the baseline; the block-aligned configuration's seam-band Δ
-                matches the baseline. SHARED and DISTINCT produce identical numbers, confirming
-                the artifact is independent of mediaId.
+                clean-sine baseline of <Code>2π·440·0.5/SR</Code>): seam-band Δ measures ~2×
+                baseline in both seam-position and both mediaId configurations, with the largest
+                jump consistently at <Code>τ = −0.042 ms</Code> (2 samples before seam). Live
+                playback sounds different across seam positions (off-boundary snap is louder than
+                block-aligned), but the offline scan does not reproduce that difference — see the
+                markdown note for the open question.
               </Text>
             </Flex>
           </Card>

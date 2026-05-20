@@ -69,6 +69,37 @@ Two AudioRegionBoxes on the same track:
 
 Touching seams (A ends at PPQN X, B starts at PPQN X, no overlap) do **not** trigger the deletion. The check is specifically for time-range overlap; the shared-source repro page uses touching regions and its scan returns non-zero peak amplitudes through the same code path.
 
+## Sub-PPQN overlap from `Int32` `position` vs `Float32` `duration`
+
+The most surprising way a consumer can hit this deletion is **without authoring any overlap at all**. From `packages/studio/boxes/src/AudioRegionBox.ts`:
+
+```
+position:      Int32Field    ← integer storage, ECMA ToInt32 truncation toward zero
+duration:      Float32Field  ← fractional storage (Float32-precision)
+loopOffset:    Float32Field
+loopDuration:  Float32Field
+```
+
+A consumer who computes a seam-in-PPQN value from a non-trivial seam-in-seconds will commonly get a fractional `Number` back from `PPQN.secondsToPulses(seamSec, bpm)`. Passing that same value to `regionA.duration.setValue(...)` and `regionB.position.setValue(...)` produces two different stored values:
+
+```
+regionA.duration  : 57602.56  → Float32 nearest value 57602.5625 (preserved)
+regionB.position  : 57602.56  → Int32 truncated to 57602
+```
+
+`regionA.end = regionA.position + regionA.duration = 0 + 57602.5625 = 57602.5625`.
+`regionB.start = regionB.position = 57602`.
+**The two regions now overlap by 0.5625 PPQN**, even though the consumer's intent was that they touch exactly. `project.copy()`'s validator fires and deletes both regions.
+
+We hit this directly in the shared-source repro: an initial seam-in-samples calculation produced a non-integer PPQN at the chosen seam time, the offline scan returned all zeros, and the only signal was the console warning above. We worked around it by picking seam-in-seconds values whose PPQN happens to be integer at BPM 120 (`30.0 s → 57600`; `30.5 s → 58560`) — but the constraint is not part of the public box API.
+
+Consumer guidance:
+
+- Treat `AudioRegionBox.position` as integer-only. If you have a fractional PPQN value, round it (e.g. `Math.round`) before passing to `position.setValue`, and use the **same rounded value** for the adjacent region's `duration` so they remain consistent.
+- Or compute seam times directly in integer PPQN (e.g. `seamPPQN = Math.round(seamSec * bpm * 16)` at BPM 120) and derive seconds from that, rather than the other way around.
+
+API-side, this would be less of a footgun if (a) `position` were also `Float32Field` so duration and position used compatible precision, or (b) `Int32Field.setValue` warned when handed a non-integer (currently it silently truncates), or (c) `project.copy()`'s overlap validator used an epsilon less than one PPQN tick instead of strict `>0`.
+
 ## Suspected mechanism
 
 _Inferred from runtime warnings; not source-traced._
