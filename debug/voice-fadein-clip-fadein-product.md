@@ -34,7 +34,7 @@ npm run dev
 # open https://localhost:5173/voice-fadein-clip-fadein-product-debug-demo.html
 ```
 
-**HTTPS is required** (same self-signed cert as the other demos). Click **Play (BUG)**; playback starts at 28 s and reaches the crossfade region at 30 s in ~2 s. Listen for a brief amplitude dip ~10 ms before the seam. Then click **Play (WORKAROUND)** for the same regions with `fading.in = fading.out = 0` (hard cut, voice-fade alone handles the boundary) — no dip.
+**HTTPS is required** (same self-signed cert as the other demos). Click **Play (CROSSFADE)**; playback starts at 28 s and reaches the crossfade region at 30 s in ~2 s. Listen for a brief amplitude dip ~10 ms before the seam. Then click **Play (HARD-CUT)** for the same regions with `fading.in = fading.out = 0` (regions touch, voice-fade alone handles the boundary). Use **Scan current scenario** to verify the predicted dip magnitudes empirically — the mechanism below is suspected from source-tracing and only fully credible once the scan matches the prediction.
 
 Minimal box-graph setup:
 

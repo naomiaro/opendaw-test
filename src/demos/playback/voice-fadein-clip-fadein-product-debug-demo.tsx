@@ -33,26 +33,36 @@ import { InfoCircledIcon, PlayIcon, StopIcon, ActivityLogIcon } from "@radix-ui/
 // Two distinct AudioFileBoxes (different UUIDs) on the same Tape track so
 // the shared-source path in `shared-source-double-process.md` does NOT
 // apply. They reference two on-disk WAVs that are the same 440 Hz sine
-// shifted in time by 30 samples; we read the offset file 30 samples
-// earlier (via loopOffset) so both regions play phase-aligned audio
-// through the crossfade region.
+// shifted in time by 30 samples (~0.680 ms ~24° at 440 Hz); we
+// compensate via loopOffset on Region B so both regions play
+// phase-aligned audio through the crossfade region.
 //
-// BUG case: 40 ms linear crossfade (slope 0.5). The incoming voice
-// enters in VoiceState.Fading / fadeDirection=1 for the first 20 ms
-// (VOICE_FADE_DURATION). PitchVoice.process multiplies that internal
-// voice-fade amplitude by the region's clip-fade gain buffer — so V2's
-// effective gain over the first 20 ms of the crossfade is
-//   voice_fadeIn × clip_fadeIn  =  ((τ+20ms)/20ms) × ((τ+20ms)/40ms)
-//                              =  (τ+20ms)² / 0.0008
-// — quadratic. V1's outgoing voice is Active so its effective gain is
-// just clip_fadeOut (linear). Sum at τ = −10 ms ≈ 0.875 ⇒ ~−1.16 dB dip.
+// Two toggleable configurations:
 //
-// WORKAROUND: drop the crossfade entirely and do a hard cut. With no
-// region fade on either side, the voice-fade is the only attenuation
-// applied to each voice individually — V1's outgoing voice fades out
-// over 20 ms (added to lane.fadingVoices) while V2's incoming voice
-// fades in over 20 ms. Each is processed with #unitGainBuffer, so the
-// fades aren't multiplied by anything authored. No dip.
+//   CROSSFADE — 40 ms linear crossfade centered on the seam
+//               (region A: fading.out=40ms, region B: fading.in=40ms,
+//                slope 0.5). Region positions extended by half-fade so
+//                the overlap window is symmetric across the seam.
+//
+//   HARD-CUT  — no clip fades, regions touch at the seam.
+//               OpenDAW's voice-level fade (VOICE_FADE_DURATION=20ms)
+//               applies on its own to the outgoing/incoming voices via
+//               lane.fadingVoices + #unitGainBuffer.
+//
+// Working hypothesis for the audible dip on a sustained tone in the
+// CROSSFADE configuration: PitchVoice puts every new voice in
+// `Fading`/`fadeDirection=1` for 20 ms, and process() multiplies that
+// internal voice-fade by the region's clip-fade gain buffer — so the
+// incoming voice's effective gain over the first 20 ms of the
+// crossfade is `voice_fadeIn × clip_fadeIn`, a quadratic ramp rather
+// than the linear ramp the crossfade math assumes. Sum at τ = −10 ms
+// ≈ 0.875 ⇒ ~−1.16 dB dip predicted.
+//
+// Empirical verification: click "Scan current scenario" after each
+// Play to render the seam region offline and report the min envelope
+// peak across the crossfade window. Mechanism is treated as suspected
+// until the scan confirms; this is a debug investigation, not a
+// solved bug.
 const BPM = 120;
 const FILE_A = "/audio/test-440hz.wav";
 const FILE_B = "/audio/test-440hz-offset30.wav";
@@ -68,13 +78,13 @@ const TOTAL_DURATION_SECONDS = 60;
 const PLAYBACK_START_SECONDS = 28;
 const CROSSFADE_MS = 40; // total overlap; symmetric 20 ms each side
 
-type Scenario = "bug" | "workaround";
+type Scenario = "crossfade" | "hardcut";
 
 const App: React.FC = () => {
   const [status, setStatus] = useState("Loading...");
   const [project, setProject] = useState<Project | null>(null);
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
-  const [scenario, setScenario] = useState<Scenario>("bug");
+  const [scenario, setScenario] = useState<Scenario>("crossfade");
   const [isPlaying, setIsPlaying] = useState(false);
   const [positionSec, setPositionSec] = useState(0);
   const [scanResult, setScanResult] = useState<string | null>(null);
@@ -229,7 +239,7 @@ const App: React.FC = () => {
       const fadePPQN = PPQN.secondsToPulses(CROSSFADE_MS / 1000, bpm);
 
       project.editing.modify(() => {
-        if (next === "bug") {
+        if (next === "crossfade") {
           regionA.duration.setValue(seamPPQN + halfFadePPQN);
           regionA.fading.out.setValue(fadePPQN);
           regionB.position.setValue(seamPPQN - halfFadePPQN);
@@ -316,7 +326,7 @@ const App: React.FC = () => {
           `sample rate        : ${sr} Hz`,
           `reference peak     : ${refWindow.peak.toFixed(4)}  (in [${(SEAM_SECONDS - 0.08).toFixed(3)} s, ${(SEAM_SECONDS - halfFadeSec - 0.005).toFixed(3)} s])`,
           `min envelope peak  : ${dip.minPeak.toFixed(4)}  (2.5 ms windows across [${(SEAM_SECONDS - halfFadeSec).toFixed(3)} s, ${(SEAM_SECONDS + halfFadeSec).toFixed(3)} s])`,
-          `min / reference    : ${ratio.toFixed(4)}  (${dipDb.toFixed(2)} dB; predicted ~0.875 / −1.16 dB in BUG, ~1.0 in WORKAROUND)`,
+          `min / reference    : ${ratio.toFixed(4)}  (${dipDb.toFixed(2)} dB; predicted ~0.875 / −1.16 dB in CROSSFADE, ~1.0 in HARD-CUT)`,
           `dip located at     : ${(sliceStart + dip.atSecondsFromStart).toFixed(6)} s  (τ = ${((sliceStart + dip.atSecondsFromStart - SEAM_SECONDS) * 1000).toFixed(2)} ms relative to seam)`,
           `windows scanned    : ${dip.windowsScanned}`,
         ].join("\n")
@@ -340,8 +350,9 @@ const App: React.FC = () => {
     return () => sub.terminate();
   }, [project]);
 
-  // The dip in BUG mode is centered ~10 ms before the seam (in the first half
-  // of the 40 ms crossfade), so highlight the whole crossfade overlap window.
+  // The predicted dip in CROSSFADE mode is centered ~10 ms before the seam
+  // (in the first half of the 40 ms crossfade), so highlight the whole
+  // crossfade overlap window.
   const inCrossfadeRegion =
     positionSec > SEAM_SECONDS - CROSSFADE_MS / 2000 - 0.005 &&
     positionSec < SEAM_SECONDS + CROSSFADE_MS / 2000 + 0.005;
@@ -381,7 +392,7 @@ const App: React.FC = () => {
                 {status}
               </Badge>
               {isPlaying && (
-                <Badge color="amber">Playing: {scenario === "bug" ? "BUG" : "WORKAROUND"}</Badge>
+                <Badge color="amber">Playing: {scenario === "crossfade" ? "CROSSFADE" : "HARD-CUT"}</Badge>
               )}
               <Text size="2" weight="bold">
                 Position:
@@ -410,33 +421,41 @@ const App: React.FC = () => {
                   for the seam at <Code>{SEAM_SECONDS}</Code> s.
                 </Text>
                 <Text size="2">
-                  <strong>Bug:</strong> 40 ms linear crossfade centered on the seam. New voice
-                  enters in voice-fadeIn state for 20 ms; voice fade × clip fade = quadratic ramp
-                  on the incoming voice. Listen for a brief dip ~10 ms before the seam.
+                  <strong>CROSSFADE:</strong> 40 ms linear clip fade (slope 0.5) on each region
+                  side of the seam. The proposed mechanism: the incoming voice spends its first
+                  20 ms in voice-fadeIn state, and <Code>PitchVoice.process</Code> multiplies
+                  that internal voice fade by the region's clip-fade gain buffer — a quadratic
+                  ramp instead of linear over the first half of the crossfade. Predicted ~−1.16
+                  dB dip ~10 ms before the seam.
                 </Text>
                 <Text size="2">
-                  <strong>Workaround:</strong> drop the crossfade and let voice-fade alone handle
-                  click prevention. Voice-fade is applied via{" "}
-                  <Code>#unitGainBuffer</Code> on <Code>lane.fadingVoices</Code>, so it isn't
-                  multiplied by an authored region fade. No dip — the seam is smooth.
+                  <strong>HARD-CUT:</strong> no region fades, regions touch at the seam.
+                  OpenDAW's per-voice fade (<Code>VOICE_FADE_DURATION</Code> = 20 ms) handles
+                  click prevention without being multiplied by an authored fade — it's applied
+                  via <Code>#unitGainBuffer</Code> on <Code>lane.fadingVoices</Code>.
+                </Text>
+                <Text size="2" color="gray">
+                  Neither configuration is a fix for the other — they're two different region
+                  topologies (with vs without authored crossfade). The toggle lets you A/B them
+                  audibly and via the offline scan to check the predicted dip empirically.
                 </Text>
               </Flex>
               <Flex gap="3" wrap="wrap">
                 <Button
-                  onClick={() => applyScenarioAndPlay("bug")}
+                  onClick={() => applyScenarioAndPlay("crossfade")}
                   disabled={!project || status !== "Ready" || scanning}
-                  color="red"
+                  color="amber"
                   size="3"
                 >
-                  <PlayIcon /> Play (BUG)
+                  <PlayIcon /> Play (CROSSFADE)
                 </Button>
                 <Button
-                  onClick={() => applyScenarioAndPlay("workaround")}
+                  onClick={() => applyScenarioAndPlay("hardcut")}
                   disabled={!project || status !== "Ready" || scanning}
-                  color="green"
+                  color="amber"
                   size="3"
                 >
-                  <PlayIcon /> Play (WORKAROUND)
+                  <PlayIcon /> Play (HARD-CUT)
                 </Button>
                 <Button onClick={handleStop} disabled={!isPlaying} variant="soft" size="3">
                   <StopIcon /> Stop
@@ -472,8 +491,8 @@ File B:              test-440hz-offset30.wav (delayed by ${(SOURCE_OFFSET_SECOND
 Region A:            position=0, duration=${SEAM_SECONDS}s (+20ms in bug)
 Region B:            position=${SEAM_SECONDS}s (−20ms in bug), loopOffset compensates source delay
 Crossfade duration:  ${CROSSFADE_MS} ms (slope 0.5 linear, both sides)
-Bug:                 fading.out on A = ${CROSSFADE_MS} ms, fading.in on B = ${CROSSFADE_MS} ms
-Workaround:          fading.out=0, fading.in=0 (hard cut, voice-fade handles boundary)
+CROSSFADE:           fading.out on A = ${CROSSFADE_MS} ms, fading.in on B = ${CROSSFADE_MS} ms
+HARD-CUT:            fading.out=0, fading.in=0 (regions touch, voice-fade handles boundary)
 Playback start:      ${PLAYBACK_START_SECONDS} s (≈2 s before seam)
 Seam:                ${SEAM_SECONDS} s`}
               </Code>
@@ -487,12 +506,13 @@ Seam:                ${SEAM_SECONDS} s`}
               </Text>
               <Separator size="4" />
               <Text size="2">
-                Render to an <Code>AudioBuffer</Code> offline. In the bug case, scan the
-                output amplitude across the crossfade region as
-                <Code>output[i] / source[i]</Code>: it should be 1.0 outside the crossfade, then dip
-                to ~0.875 (−1.16 dB) at ~10 ms before the seam, then return to 1.0 at the seam
-                moment. Past the seam the sum stays at 1.0 (V2's voice fade has completed). The dip
-                is concentrated on the incoming voice's fade-in side only.
+                Click <strong>Scan current scenario</strong> after each Play. The peak-amplitude
+                scan compares a clean pre-seam reference window against the minimum envelope peak
+                inside the crossfade overlap. The proposed mechanism predicts: CROSSFADE shows{" "}
+                <Code>min / reference ≈ 0.875</Code> (≈ −1.16 dB) with the dip landing ~10 ms
+                before the seam; HARD-CUT shows <Code>≈ 1.0</Code>. If the empirics diverge from
+                that, the mechanism is wrong — file the actual numbers and treat the cause as
+                open.
               </Text>
             </Flex>
           </Card>
