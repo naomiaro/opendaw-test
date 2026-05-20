@@ -336,8 +336,10 @@ const App: React.FC = () => {
                 <Text size="2">
                   <strong>Workaround:</strong> each region references its own{" "}
                   <Code>AudioFileBox</Code> (same on-disk audio, different UUIDs). Different{" "}
-                  <Code>sourceUuid</Code>s ⇒ two independent voices ⇒ no shared-voice path. Seam is
-                  clean.
+                  <Code>sourceUuid</Code>s ⇒ two independent voices ⇒ no shared-voice path.{" "}
+                  <em>Note:</em> this exposes a smaller, pre-existing artifact at the same boundary
+                  — the cross-file splice click documented in{" "}
+                  <Code>debug/splice-click-cross-file.md</Code>. Loud snap → quiet click.
                 </Text>
               </Flex>
               <Flex gap="3">
