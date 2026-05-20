@@ -11,6 +11,7 @@ import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { loadAudioFile } from "@/lib/audioUtils";
+import { peakInWindow, renderOfflineSlice } from "@/lib/offlineScan";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
@@ -25,7 +26,7 @@ import {
   Code,
   Separator,
 } from "@radix-ui/themes";
-import { InfoCircledIcon, PlayIcon, StopIcon } from "@radix-ui/react-icons";
+import { InfoCircledIcon, PlayIcon, StopIcon, ActivityLogIcon } from "@radix-ui/react-icons";
 
 // Repro for `debug/shared-source-double-process.md`.
 //
@@ -60,6 +61,8 @@ const App: React.FC = () => {
   const [scenario, setScenario] = useState<Scenario>("bug");
   const [isPlaying, setIsPlaying] = useState(false);
   const [positionSec, setPositionSec] = useState(0);
+  const [scanResult, setScanResult] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
 
   const audioBufferRef = useRef<AudioBuffer | null>(null);
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
@@ -249,6 +252,47 @@ const App: React.FC = () => {
     project.engine.stop(true);
   }, [project]);
 
+  // Render the current scenario offline and look for the inversion-and-
+  // amplification artifact in a tight window around the seam. The signal is
+  // a 0.5-amplitude sine, so any |sample| > 0.5 in the seam-spanning block
+  // is a clear sign that the shared voice was processed twice.
+  const handleScan = useCallback(async () => {
+    if (!project || scanning) return;
+    if (project.engine.isPlaying.getValue()) project.engine.stop(true);
+    setScanning(true);
+    setScanResult(null);
+    try {
+      const sliceStart = SEAM_SECONDS - 0.1;
+      const sliceEnd = SEAM_SECONDS + 0.1;
+      const { channels, sampleRate: sr } = await renderOfflineSlice(
+        project,
+        sliceStart,
+        sliceEnd
+      );
+      // Look at left channel; mono sine duplicated, both channels identical.
+      const left = channels[0];
+      const seamWindow = peakInWindow(left, sliceStart, SEAM_SECONDS - 0.003, SEAM_SECONDS + 0.003, sr);
+      const preWindow = peakInWindow(left, sliceStart, SEAM_SECONDS - 0.05, SEAM_SECONDS - 0.02, sr);
+      const postWindow = peakInWindow(left, sliceStart, SEAM_SECONDS + 0.02, SEAM_SECONDS + 0.05, sr);
+      const ratio = preWindow.peak > 1e-6 ? seamWindow.peak / preWindow.peak : 0;
+      setScanResult(
+        [
+          `scenario        : ${scenario.toUpperCase()}`,
+          `sample rate     : ${sr} Hz`,
+          `pre-seam peak   : ${preWindow.peak.toFixed(4)}  (in [${(SEAM_SECONDS - 0.05).toFixed(3)} s, ${(SEAM_SECONDS - 0.02).toFixed(3)} s])`,
+          `seam-band peak  : ${seamWindow.peak.toFixed(4)}  (in [${(SEAM_SECONDS - 0.003).toFixed(3)} s, ${(SEAM_SECONDS + 0.003).toFixed(3)} s])`,
+          `post-seam peak  : ${postWindow.peak.toFixed(4)}  (in [${(SEAM_SECONDS + 0.02).toFixed(3)} s, ${(SEAM_SECONDS + 0.05).toFixed(3)} s])`,
+          `seam / pre ratio: ${ratio.toFixed(3)}  (≈1.0 expected; >1.0 indicates inversion/amplification)`,
+          `peak sample at  : ${(sliceStart + seamWindow.atSecondsFromStart).toFixed(6)} s`,
+        ].join("\n")
+      );
+    } catch (error) {
+      setScanResult(`Error: ${String(error)}`);
+    } finally {
+      setScanning(false);
+    }
+  }, [project, scenario, scanning]);
+
   // Live playhead readout: convert engine PPQN to seconds via the timeline's
   // BPM each frame. Lets the listener visually correlate any audio artifact
   // with the seam at SEAM_SECONDS.
@@ -342,10 +386,10 @@ const App: React.FC = () => {
                   <Code>debug/splice-click-cross-file.md</Code>. Loud snap → quiet click.
                 </Text>
               </Flex>
-              <Flex gap="3">
+              <Flex gap="3" wrap="wrap">
                 <Button
                   onClick={() => applyScenarioAndPlay("bug")}
-                  disabled={!project || status !== "Ready"}
+                  disabled={!project || status !== "Ready" || scanning}
                   color="red"
                   size="3"
                 >
@@ -353,7 +397,7 @@ const App: React.FC = () => {
                 </Button>
                 <Button
                   onClick={() => applyScenarioAndPlay("workaround")}
-                  disabled={!project || status !== "Ready"}
+                  disabled={!project || status !== "Ready" || scanning}
                   color="green"
                   size="3"
                 >
@@ -362,7 +406,21 @@ const App: React.FC = () => {
                 <Button onClick={handleStop} disabled={!isPlaying} variant="soft" size="3">
                   <StopIcon /> Stop
                 </Button>
+                <Button
+                  onClick={handleScan}
+                  disabled={!project || status !== "Ready" || scanning}
+                  variant="soft"
+                  color="amber"
+                  size="3"
+                >
+                  <ActivityLogIcon /> {scanning ? "Scanning…" : "Scan current scenario"}
+                </Button>
               </Flex>
+              {scanResult && (
+                <Code size="2" style={{ whiteSpace: "pre-wrap", display: "block", padding: 12 }}>
+                  {scanResult}
+                </Code>
+              )}
             </Flex>
           </Card>
 

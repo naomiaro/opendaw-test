@@ -11,6 +11,7 @@ import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { loadAudioFile } from "@/lib/audioUtils";
+import { minEnvelopeInWindow, peakInWindow, renderOfflineSlice } from "@/lib/offlineScan";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
@@ -25,7 +26,7 @@ import {
   Code,
   Separator,
 } from "@radix-ui/themes";
-import { InfoCircledIcon, PlayIcon, StopIcon } from "@radix-ui/react-icons";
+import { InfoCircledIcon, PlayIcon, StopIcon, ActivityLogIcon } from "@radix-ui/react-icons";
 
 // Repro for `debug/voice-fadein-clip-fadein-product.md`.
 //
@@ -76,6 +77,8 @@ const App: React.FC = () => {
   const [scenario, setScenario] = useState<Scenario>("bug");
   const [isPlaying, setIsPlaying] = useState(false);
   const [positionSec, setPositionSec] = useState(0);
+  const [scanResult, setScanResult] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
 
   const audioBuffersRef = useRef<{ a: AudioBuffer | null; b: AudioBuffer | null }>({
     a: null,
@@ -268,6 +271,63 @@ const App: React.FC = () => {
     project.engine.stop(true);
   }, [project]);
 
+  // Render the current scenario offline and look for the amplitude dip in
+  // the first half of the crossfade region. For a 0.5-amplitude sine,
+  // "normal" peak per 2.5 ms window is ~0.5; the voice-fade × clip-fade
+  // product is predicted to drop the per-window peak to ~0.4375 (−1.16 dB).
+  const handleScan = useCallback(async () => {
+    if (!project || scanning) return;
+    if (project.engine.isPlaying.getValue()) project.engine.stop(true);
+    setScanning(true);
+    setScanResult(null);
+    try {
+      const sliceStart = SEAM_SECONDS - 0.1;
+      const sliceEnd = SEAM_SECONDS + 0.1;
+      const { channels, sampleRate: sr } = await renderOfflineSlice(
+        project,
+        sliceStart,
+        sliceEnd
+      );
+      const left = channels[0];
+      const halfFadeSec = CROSSFADE_MS / 2000;
+      // Reference peak well outside the crossfade region.
+      const refWindow = peakInWindow(
+        left,
+        sliceStart,
+        SEAM_SECONDS - 0.08,
+        SEAM_SECONDS - halfFadeSec - 0.005,
+        sr
+      );
+      // Min envelope peak across the crossfade region. The dip is predicted
+      // on the V2-fadeIn side, ~10 ms before the seam at 40 ms crossfade.
+      const dip = minEnvelopeInWindow(
+        left,
+        sliceStart,
+        SEAM_SECONDS - halfFadeSec,
+        SEAM_SECONDS + halfFadeSec,
+        sr,
+        2.5
+      );
+      const ratio = refWindow.peak > 1e-6 ? dip.minPeak / refWindow.peak : 0;
+      const dipDb = ratio > 1e-6 ? 20 * Math.log10(ratio) : -Infinity;
+      setScanResult(
+        [
+          `scenario           : ${scenario.toUpperCase()}`,
+          `sample rate        : ${sr} Hz`,
+          `reference peak     : ${refWindow.peak.toFixed(4)}  (in [${(SEAM_SECONDS - 0.08).toFixed(3)} s, ${(SEAM_SECONDS - halfFadeSec - 0.005).toFixed(3)} s])`,
+          `min envelope peak  : ${dip.minPeak.toFixed(4)}  (2.5 ms windows across [${(SEAM_SECONDS - halfFadeSec).toFixed(3)} s, ${(SEAM_SECONDS + halfFadeSec).toFixed(3)} s])`,
+          `min / reference    : ${ratio.toFixed(4)}  (${dipDb.toFixed(2)} dB; predicted ~0.875 / −1.16 dB in BUG, ~1.0 in WORKAROUND)`,
+          `dip located at     : ${(sliceStart + dip.atSecondsFromStart).toFixed(6)} s  (τ = ${((sliceStart + dip.atSecondsFromStart - SEAM_SECONDS) * 1000).toFixed(2)} ms relative to seam)`,
+          `windows scanned    : ${dip.windowsScanned}`,
+        ].join("\n")
+      );
+    } catch (error) {
+      setScanResult(`Error: ${String(error)}`);
+    } finally {
+      setScanning(false);
+    }
+  }, [project, scenario, scanning]);
+
   // Live playhead readout: convert engine PPQN to seconds via the timeline's
   // BPM each frame. Helps the listener time the dip relative to the seam.
   useEffect(() => {
@@ -361,10 +421,10 @@ const App: React.FC = () => {
                   multiplied by an authored region fade. No dip — the seam is smooth.
                 </Text>
               </Flex>
-              <Flex gap="3">
+              <Flex gap="3" wrap="wrap">
                 <Button
                   onClick={() => applyScenarioAndPlay("bug")}
-                  disabled={!project || status !== "Ready"}
+                  disabled={!project || status !== "Ready" || scanning}
                   color="red"
                   size="3"
                 >
@@ -372,7 +432,7 @@ const App: React.FC = () => {
                 </Button>
                 <Button
                   onClick={() => applyScenarioAndPlay("workaround")}
-                  disabled={!project || status !== "Ready"}
+                  disabled={!project || status !== "Ready" || scanning}
                   color="green"
                   size="3"
                 >
@@ -381,7 +441,21 @@ const App: React.FC = () => {
                 <Button onClick={handleStop} disabled={!isPlaying} variant="soft" size="3">
                   <StopIcon /> Stop
                 </Button>
+                <Button
+                  onClick={handleScan}
+                  disabled={!project || status !== "Ready" || scanning}
+                  variant="soft"
+                  color="amber"
+                  size="3"
+                >
+                  <ActivityLogIcon /> {scanning ? "Scanning…" : "Scan current scenario"}
+                </Button>
               </Flex>
+              {scanResult && (
+                <Code size="2" style={{ whiteSpace: "pre-wrap", display: "block", padding: 12 }}>
+                  {scanResult}
+                </Code>
+              )}
             </Flex>
           </Card>
 
