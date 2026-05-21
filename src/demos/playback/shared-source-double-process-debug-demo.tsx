@@ -310,6 +310,7 @@ const App: React.FC = () => {
         regionB.duration.setValue(fullDurationPPQN - seamPPQN);
         regionB.loopOffset.setValue(seamPPQN);
       });
+      setGotByStep({});
       setSeamPosition(next);
     },
     [project]
@@ -496,7 +497,7 @@ const App: React.FC = () => {
             description={
               <>
                 Seam at 30.000 s (PPQN 57600 at BPM 120 — block-aligned at 48 kHz; at other rates
-                see the in-block offset in the status row). Both regions reference one
+                see the in-block offset in the status row). Both regions reference one{" "}
                 <Code>AudioFileBox</Code>. <strong>Listen for:</strong> a barely-audible snap at
                 the seam; peak amplitude is unchanged.
               </>
