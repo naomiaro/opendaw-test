@@ -1,5 +1,6 @@
 import React from "react";
 import { Flex, Text } from "@radix-ui/themes";
+import { FileTextIcon, PlayIcon } from "@radix-ui/react-icons";
 
 export interface DebugLink {
   label: string;
@@ -25,11 +26,14 @@ export const DebugLinkBar: React.FC<DebugLinkBarProps> = ({ links }) => {
             style={{
               color: "var(--accent-11)",
               textDecoration: "underline",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.25rem",
             }}
             target={l.kind === "note" ? "_blank" : undefined}
             rel={l.kind === "note" ? "noopener noreferrer" : undefined}
           >
-            {l.kind === "demo" ? "▶ " : "📄 "}
+            {l.kind === "demo" ? <PlayIcon /> : <FileTextIcon />}
             {l.label}
           </a>
         </Text>
