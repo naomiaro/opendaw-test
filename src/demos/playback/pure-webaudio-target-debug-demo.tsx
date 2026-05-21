@@ -621,8 +621,16 @@ const App: React.FC = () => {
       <Text size="1" color="gray">
         seam {SEAM_SECONDS.toFixed(3)} s · crossfade ±{CROSSFADE_MS / 2} ms
       </Text>
-      <Button onClick={handleStop} disabled={!isPlaying} variant="soft" size="2">
-        <StopIcon /> Stop
+      <Button
+        onClick={() => {
+          handleStop();
+          void handleScan();
+        }}
+        disabled={!isPlaying}
+        variant="soft"
+        size="2"
+      >
+        <StopIcon /> Stop &amp; scan
       </Button>
     </>
   );
@@ -717,15 +725,6 @@ const App: React.FC = () => {
                 >
                   <PlayIcon /> Play (UNALIGNED — control)
                 </Button>
-                <Button
-                  onClick={handleScan}
-                  disabled={status !== "Ready" || scanning || scenario !== "unaligned"}
-                  variant="soft"
-                  color="amber"
-                  size="3"
-                >
-                  <ActivityLogIcon /> {scanning ? "Scanning…" : "Scan UNALIGNED"}
-                </Button>
                 {renderPlaybackHud()}
               </>
             }
@@ -758,15 +757,6 @@ const App: React.FC = () => {
                   size="3"
                 >
                   <PlayIcon /> Play (ALIGNED — target)
-                </Button>
-                <Button
-                  onClick={handleScan}
-                  disabled={status !== "Ready" || scanning || scenario !== "aligned"}
-                  variant="soft"
-                  color="amber"
-                  size="3"
-                >
-                  <ActivityLogIcon /> {scanning ? "Scanning…" : "Scan ALIGNED"}
                 </Button>
                 {renderPlaybackHud()}
               </>
@@ -803,15 +793,6 @@ const App: React.FC = () => {
                   size="3"
                 >
                   <PlayIcon /> Play (OPENDAW)
-                </Button>
-                <Button
-                  onClick={handleScan}
-                  disabled={status !== "Ready" || scanning || scenario !== "opendaw"}
-                  variant="soft"
-                  color="amber"
-                  size="3"
-                >
-                  <ActivityLogIcon /> {scanning ? "Scanning…" : "Scan OPENDAW"}
                 </Button>
                 {renderPlaybackHud()}
               </>

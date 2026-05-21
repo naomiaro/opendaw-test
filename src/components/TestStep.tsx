@@ -37,7 +37,7 @@ export const TestStep: React.FC<TestStepProps> = ({
         </Flex>
         <Separator size="4" />
         <Text size="2">{description}</Text>
-        <Flex gap="3" wrap="wrap">
+        <Flex gap="3" wrap="wrap" align="center">
           {actions}
         </Flex>
         {expected.length > 0 && (

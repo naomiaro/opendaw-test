@@ -426,8 +426,16 @@ const App: React.FC = () => {
         {audioContext ? inBlockOffsetSamples(seamSeconds, audioContext.sampleRate) : "—"}/
         {RENDER_QUANTUM} at SR {audioContext?.sampleRate ?? "—"} Hz
       </Text>
-      <Button onClick={handleStop} disabled={!isPlaying} variant="soft" size="2">
-        <StopIcon /> Stop
+      <Button
+        onClick={() => {
+          handleStop();
+          void handleScan();
+        }}
+        disabled={!isPlaying}
+        variant="soft"
+        size="2"
+      >
+        <StopIcon /> Stop &amp; scan
       </Button>
     </>
   );
@@ -525,21 +533,6 @@ const App: React.FC = () => {
                 >
                   <PlayIcon /> Play (SHARED file)
                 </Button>
-                <Button
-                  onClick={handleScan}
-                  disabled={
-                    !project ||
-                    status !== "Ready" ||
-                    scanning ||
-                    seamPosition !== "block-aligned" ||
-                    scenario !== "shared"
-                  }
-                  variant="soft"
-                  color="amber"
-                  size="3"
-                >
-                  <ActivityLogIcon /> {scanning ? "Scanning…" : "Scan step 1"}
-                </Button>
                 {renderPlaybackHud()}
               </>
             }
@@ -574,21 +567,6 @@ const App: React.FC = () => {
                   size="3"
                 >
                   <PlayIcon /> Play (DISTINCT files)
-                </Button>
-                <Button
-                  onClick={handleScan}
-                  disabled={
-                    !project ||
-                    status !== "Ready" ||
-                    scanning ||
-                    seamPosition !== "block-aligned" ||
-                    scenario !== "distinct"
-                  }
-                  variant="soft"
-                  color="amber"
-                  size="3"
-                >
-                  <ActivityLogIcon /> {scanning ? "Scanning…" : "Scan step 2"}
                 </Button>
                 {renderPlaybackHud()}
               </>
@@ -634,21 +612,6 @@ const App: React.FC = () => {
                 >
                   <PlayIcon /> Play (SHARED file)
                 </Button>
-                <Button
-                  onClick={handleScan}
-                  disabled={
-                    !project ||
-                    status !== "Ready" ||
-                    scanning ||
-                    seamPosition !== "off-boundary" ||
-                    scenario !== "shared"
-                  }
-                  variant="soft"
-                  color="amber"
-                  size="3"
-                >
-                  <ActivityLogIcon /> {scanning ? "Scanning…" : "Scan step 3"}
-                </Button>
                 {renderPlaybackHud()}
               </>
             }
@@ -682,21 +645,6 @@ const App: React.FC = () => {
                   size="3"
                 >
                   <PlayIcon /> Play (DISTINCT files)
-                </Button>
-                <Button
-                  onClick={handleScan}
-                  disabled={
-                    !project ||
-                    status !== "Ready" ||
-                    scanning ||
-                    seamPosition !== "off-boundary" ||
-                    scenario !== "distinct"
-                  }
-                  variant="soft"
-                  color="amber"
-                  size="3"
-                >
-                  <ActivityLogIcon /> {scanning ? "Scanning…" : "Scan step 4"}
                 </Button>
                 {renderPlaybackHud()}
               </>

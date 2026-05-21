@@ -293,7 +293,7 @@ const App: React.FC = () => {
   const handleScan = useCallback(async () => {
     if (!project || scanning) return;
     if (project.engine.isPlaying.getValue()) project.engine.stop(true);
-    const stepIndex = scenario === "hardcut" ? 1 : 3;
+    const stepIndex = scenario === "hardcut" ? 1 : 2;
     setScanning(true);
     setGotByStep((prev) => {
       const next = { ...prev };
@@ -379,8 +379,16 @@ const App: React.FC = () => {
       <Text size="1" color="gray">
         seam {SEAM_SECONDS.toFixed(3)} s · crossfade ±{CROSSFADE_MS / 2} ms
       </Text>
-      <Button onClick={handleStop} disabled={!isPlaying} variant="soft" size="2">
-        <StopIcon /> Stop
+      <Button
+        onClick={() => {
+          handleStop();
+          void handleScan();
+        }}
+        disabled={!isPlaying}
+        variant="soft"
+        size="2"
+      >
+        <StopIcon /> Stop &amp; scan
       </Button>
     </>
   );
@@ -467,15 +475,6 @@ const App: React.FC = () => {
                 >
                   <PlayIcon /> Play (HARD-CUT)
                 </Button>
-                <Button
-                  onClick={handleScan}
-                  disabled={!project || status !== "Ready" || scanning || scenario !== "hardcut"}
-                  variant="soft"
-                  color="amber"
-                  size="3"
-                >
-                  <ActivityLogIcon /> {scanning ? "Scanning…" : "Scan HARD-CUT"}
-                </Button>
                 {renderPlaybackHud()}
               </>
             }
@@ -491,14 +490,16 @@ const App: React.FC = () => {
 
           <TestStep
             index={2}
-            title="CROSSFADE — live listening test"
+            title="CROSSFADE — listen and observe"
             description={
               <>
                 40 ms linear clip crossfade (slope 0.5), regions extended symmetrically across
                 the seam on their separate tracks. <strong>Listen for:</strong> an amplitude dip
                 ~10 ms BEFORE the {SEAM_SECONDS} s seam — subtle on this sustained tone but
                 audible. The dip happens because the new voice's <em>voice-fade-in</em> and the
-                region's <em>clip-fade-in</em> multiply over the first 20 ms.
+                region's <em>clip-fade-in</em> multiply over the first 20 ms. Click{" "}
+                <strong>Stop &amp; scan</strong> when you're done listening — the offline scan
+                fires automatically and shows the dip below.
               </>
             }
             actions={
@@ -514,36 +515,6 @@ const App: React.FC = () => {
                 {renderPlaybackHud()}
               </>
             }
-            expected={[]}
-            got={null}
-          />
-
-          <TestStep
-            index={3}
-            title="CROSSFADE — offline scan measures the dip"
-            description={
-              <>
-                With CROSSFADE active and playback stopped, click <strong>Scan CROSSFADE</strong>{" "}
-                to render the seam ±100 ms slice offline and locate the minimum envelope peak
-                across the crossfade window. The Target page's OPENDAW scenario (same engine
-                configuration) measures <Code>min / reference ≈ 0.8352</Code> (−1.56 dB) at{" "}
-                <Code>τ ≈ −7.5 ms</Code> — this page should match.
-              </>
-            }
-            actions={
-              <>
-                <Button
-                  onClick={handleScan}
-                  disabled={!project || status !== "Ready" || scanning || scenario !== "crossfade"}
-                  variant="soft"
-                  color="amber"
-                  size="3"
-                >
-                  <ActivityLogIcon /> {scanning ? "Scanning…" : "Scan CROSSFADE"}
-                </Button>
-                {renderPlaybackHud()}
-              </>
-            }
             expected={[
               { label: "reference peak", value: "≈ 0.5000" },
               { label: "min envelope peak", value: "≈ 0.418 (dipped)" },
@@ -551,7 +522,7 @@ const App: React.FC = () => {
               { label: "dip τ (ms relative to seam)", value: "≈ −7.5 ms (before seam)" },
               { label: "sample rate", value: `${audioContext?.sampleRate ?? "—"} Hz` },
             ]}
-            got={gotByStep[3] ?? null}
+            got={gotByStep[2] ?? null}
           />
 
           <Card>
