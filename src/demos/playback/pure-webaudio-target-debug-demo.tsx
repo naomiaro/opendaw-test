@@ -27,6 +27,8 @@ import {
   Separator,
 } from "@radix-ui/themes";
 import { InfoCircledIcon, PlayIcon, StopIcon, ActivityLogIcon } from "@radix-ui/react-icons";
+import { TestStep, TestStepRow } from "@/components/TestStep";
+import { DebugLinkBar } from "@/components/DebugLinkBar";
 
 // Target / reference demo. Runs the SAME crossfade scenario through
 // three different paths so a listener (and the offline scan) can
@@ -181,10 +183,6 @@ function buildCrossfadedOutput(
   return out;
 }
 
-interface ScanResult {
-  text: string;
-}
-
 const App: React.FC = () => {
   const [status, setStatus] = useState("Loading...");
   const [scenario, setScenario] = useState<Scenario>("aligned");
@@ -193,7 +191,7 @@ const App: React.FC = () => {
   const [computedShift, setComputedShift] = useState<{ samples: number; score: number } | null>(
     null
   );
-  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
+  const [gotByStep, setGotByStep] = useState<Record<number, TestStepRow[]>>({});
   const [scanning, setScanning] = useState(false);
 
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -492,8 +490,14 @@ const App: React.FC = () => {
     const bufferA = buffersRef.current.a;
     const bufferB = buffersRef.current.b;
     if (!ctx || !bufferA || !bufferB || !computedShift || scanning) return;
+    const stepIndex =
+      scenario === "aligned" ? 1 : scenario === "unaligned" ? 2 : 3;
     setScanning(true);
-    setScanResult(null);
+    setGotByStep((prev) => {
+      const next = { ...prev };
+      delete next[stepIndex];
+      return next;
+    });
     try {
       const sr = ctx.sampleRate;
       const sliceStart = SEAM_SECONDS - 0.05;
@@ -502,10 +506,8 @@ const App: React.FC = () => {
       let renderedSampleRate: number;
       if (scenario === "opendaw") {
         if (!openDawProject) throw new Error("OpenDAW project not ready");
-        // Stop OpenDAW live playback before offline-rendering; OfflineAudioContext
-        // is independent but project.copy() snapshots state, so it's cleaner to
-        // not have the live engine running concurrently.
-        if (openDawProject.engine.isPlaying.getValue()) openDawProject.engine.stop(true);
+        if (openDawProject.engine.isPlaying.getValue())
+          openDawProject.engine.stop(true);
         const offlineResult = await renderOfflineSlice(
           openDawProject,
           sliceStart,
@@ -515,11 +517,10 @@ const App: React.FC = () => {
         data = offlineResult.channels[0];
         renderedSampleRate = offlineResult.sampleRate;
       } else {
-        // Pure Web Audio: render the same output buffer the live playback uses
-        // via OfflineAudioContext.
         const sliceSamples = Math.ceil((sliceEnd - sliceStart) * sr);
         const offline = new OfflineAudioContext(1, sliceSamples, sr);
-        const shiftForScenario = scenario === "aligned" ? computedShift.samples : 0;
+        const shiftForScenario =
+          scenario === "aligned" ? computedShift.samples : 0;
         const outputBuffer = buildCrossfadedOutput(
           bufferA,
           bufferB,
@@ -537,9 +538,6 @@ const App: React.FC = () => {
         renderedSampleRate = rendered.sampleRate;
       }
       const sr2 = renderedSampleRate;
-
-      // Compute peak in pre-seam reference, peak / min-envelope in crossfade
-      // overlap, and max |Δsample| anywhere in the rendered slice.
       const indexAtSeconds = (sec: number) =>
         Math.max(0, Math.min(data.length, Math.round((sec - sliceStart) * sr2)));
       const peakInRange = (startSec: number, endSec: number) => {
@@ -552,7 +550,11 @@ const App: React.FC = () => {
         }
         return peak;
       };
-      const minEnvelopeInRange = (startSec: number, endSec: number, windowMs: number) => {
+      const minEnvelopeInRange = (
+        startSec: number,
+        endSec: number,
+        windowMs: number
+      ) => {
         const winSamples = Math.max(1, Math.round((windowMs / 1000) * sr2));
         const stride = Math.max(1, Math.floor(winSamples / 2));
         let minPeak = Infinity;
@@ -575,61 +577,34 @@ const App: React.FC = () => {
           atSec: sliceStart + atIdx / sr2,
         };
       };
-      const maxDeltaInRange = (startSec: number, endSec: number) => {
-        let maxDelta = 0;
-        let atIdx = indexAtSeconds(startSec);
-        const s = Math.max(1, indexAtSeconds(startSec));
-        const e = indexAtSeconds(endSec);
-        for (let i = s; i < e; i++) {
-          const d = Math.abs(data[i] - data[i - 1]);
-          if (d > maxDelta) {
-            maxDelta = d;
-            atIdx = i - 1;
-          }
-        }
-        return { maxDelta, atSec: sliceStart + atIdx / sr2 };
-      };
-
       const halfFadeSec = CROSSFADE_MS / 2000;
-      const ref = peakInRange(SEAM_SECONDS - 0.04, SEAM_SECONDS - halfFadeSec - 0.005);
+      const ref = peakInRange(
+        SEAM_SECONDS - 0.04,
+        SEAM_SECONDS - halfFadeSec - 0.005
+      );
       const dip = minEnvelopeInRange(
         SEAM_SECONDS - halfFadeSec,
         SEAM_SECONDS + halfFadeSec,
         2.5
       );
-      const delta = maxDeltaInRange(SEAM_SECONDS - 0.005, SEAM_SECONDS + 0.005);
-      const expectedDelta = (2 * Math.PI * 440 * 0.5) / sr2;
       const ratio = ref > 1e-6 ? dip.minPeak / ref : 0;
       const ratioDb = ratio > 1e-6 ? 20 * Math.log10(ratio) : -Infinity;
-
-      const appliedShift =
-        scenario === "aligned" || scenario === "opendaw"
-          ? computedShift.samples
-          : 0;
-      setScanResult({
-        text: [
-          `scenario             : ${scenario.toUpperCase()}`,
-          `sample rate          : ${sr2} Hz`,
-          `phase-correlate shift: ${computedShift.samples} samples (score ${computedShift.score.toFixed(4)}); applied shift = ${appliedShift}`,
-          ``,
-          `── crossfade envelope ──`,
-          `reference peak       : ${ref.toFixed(4)}  (in [${(SEAM_SECONDS - 0.04).toFixed(3)} s, ${(SEAM_SECONDS - halfFadeSec - 0.005).toFixed(3)} s])`,
-          `min envelope peak    : ${dip.minPeak.toFixed(4)}  (2.5 ms windows across [${(SEAM_SECONDS - halfFadeSec).toFixed(3)} s, ${(SEAM_SECONDS + halfFadeSec).toFixed(3)} s])`,
-          `min / reference      : ${ratio.toFixed(4)}  (${ratioDb.toFixed(2)} dB; ALIGNED should be ≈ 1.0, UNALIGNED dips noticeably)`,
-          `dip located at       : ${dip.atSec.toFixed(6)} s  (τ = ${((dip.atSec - SEAM_SECONDS) * 1000).toFixed(3)} ms relative to seam)`,
-          ``,
-          `── sample-to-sample Δ ──`,
-          `expected clean max Δ : ${expectedDelta.toFixed(5)}  (= 2π·440·0.5/SR)`,
-          `seam-band max |Δ|    : ${delta.maxDelta.toFixed(5)}  (in [${(SEAM_SECONDS - 0.005).toFixed(3)} s, ${(SEAM_SECONDS + 0.005).toFixed(3)} s])`,
-          `largest jump at      : ${delta.atSec.toFixed(6)} s  (τ = ${((delta.atSec - SEAM_SECONDS) * 1000).toFixed(3)} ms relative to seam)`,
-        ].join("\n"),
-      });
+      const tauMs = (dip.atSec - SEAM_SECONDS) * 1000;
+      const rows: TestStepRow[] = [
+        { label: "min / reference", value: `${ratio.toFixed(4)}  (${ratioDb.toFixed(2)} dB)` },
+        { label: "dip τ (ms relative to seam)", value: `${tauMs.toFixed(2)} ms` },
+        { label: "sample rate", value: `${sr2} Hz` },
+      ];
+      setGotByStep((prev) => ({ ...prev, [stepIndex]: rows }));
     } catch (error) {
-      setScanResult({ text: `Error: ${String(error)}` });
+      setGotByStep((prev) => ({
+        ...prev,
+        [stepIndex]: [{ label: "error", value: String(error) }],
+      }));
     } finally {
       setScanning(false);
     }
-  }, [computedShift, scanning, scenario]);
+  }, [computedShift, openDawProject, scanning, scenario]);
 
   const inCrossfadeRegion =
     positionSec > SEAM_SECONDS - CROSSFADE_MS / 2000 - 0.005 &&
@@ -640,6 +615,25 @@ const App: React.FC = () => {
       <Container size="3" style={{ padding: "2rem", minHeight: "100vh" }}>
         <GitHubCorner />
         <BackLink />
+        <DebugLinkBar
+          links={[
+            {
+              label: "Voice-fade × clip-fade product demo",
+              href: "/voice-fadein-clip-fadein-product-debug-demo.html",
+              kind: "demo",
+            },
+            {
+              label: "Shared-source double-process demo",
+              href: "/shared-source-double-process-debug-demo.html",
+              kind: "demo",
+            },
+            {
+              label: "debug/voice-fadein-clip-fadein-product.md",
+              href: "https://github.com/moises-ai/opendaw-test/blob/main/debug/voice-fadein-clip-fadein-product.md",
+              kind: "note",
+            },
+          ]}
+        />
 
         <Flex direction="column" gap="4">
           <Heading size="7" align="center">
@@ -651,22 +645,22 @@ const App: React.FC = () => {
               <InfoCircledIcon />
             </Callout.Icon>
             <Callout.Text>
-              Same crossfade scenario rendered three ways for direct A/B/C comparison.{" "}
-              <strong>ALIGNED</strong> (pure Web Audio + phase correlation + linear crossfade)
-              is the audible target. <strong>UNALIGNED</strong> (pure Web Audio, no phase shift)
-              is the control showing what mis-aligned linear crossfade sounds like.{" "}
-              <strong>OPENDAW</strong> is the same scenario rendered through OpenDAW's
-              <Code>TapeDeviceProcessor</Code> with the phase-correlate shift applied via{" "}
-              <Code>loopOffset</Code> — should match ALIGNED once the engine artifacts documented
-              in the sibling debug notes are resolved.
+              Same 40 ms linear crossfade scenario rendered three ways for direct A/B/C
+              comparison. <strong>ALIGNED</strong> (pure Web Audio + phase correlation) is the
+              audible target — sums to unity through the crossfade.{" "}
+              <strong>UNALIGNED</strong> (pure Web Audio, no phase shift) is the control showing
+              what a phase-mismatched linear crossfade sounds like. <strong>OPENDAW</strong>{" "}
+              renders the same phase-corrected configuration through OpenDAW's{" "}
+              <Code>TapeDeviceProcessor</Code> on two Tape tracks (one region per track, mixed at
+              master); it produces a residual dip on the incoming voice's side caused by{" "}
+              <Code>PitchVoice</Code> multiplying its 20 ms voice-fade-in by the region's
+              clip-fade gain buffer.
             </Callout.Text>
           </Callout.Root>
 
           <Card>
             <Flex align="center" gap="3" wrap="wrap">
-              <Text size="2" weight="bold">
-                Status:
-              </Text>
+              <Text size="2" weight="bold">Status:</Text>
               <Badge color={status.includes("Error") ? "red" : status === "Ready" ? "green" : "blue"}>
                 {status}
               </Badge>
@@ -680,9 +674,7 @@ const App: React.FC = () => {
                       : "OPENDAW"}
                 </Badge>
               )}
-              <Text size="2" weight="bold">
-                Position:
-              </Text>
+              <Text size="2" weight="bold">Position:</Text>
               <Badge color={inCrossfadeRegion ? "red" : isPlaying ? "amber" : "gray"} size="2">
                 <Code>
                   {positionSec.toFixed(3)} s
@@ -692,14 +684,139 @@ const App: React.FC = () => {
               <Text size="2" color="gray">
                 (seam at {SEAM_SECONDS}.000 s, crossfade ±{CROSSFADE_MS / 2} ms)
               </Text>
+              <Button onClick={handleStop} disabled={!isPlaying} variant="soft" size="2">
+                <StopIcon /> Stop
+              </Button>
             </Flex>
           </Card>
 
+          <TestStep
+            index={1}
+            title="Target: ALIGNED (pure Web Audio)"
+            description={
+              <>
+                Phase-correlate file A's tail against file B's head, apply the integer-sample
+                shift to file B's read offset, build a single AudioBuffer with a linear crossfade,
+                play via AudioBufferSourceNode. Two phase-aligned identical-source signals sum to
+                unity through the crossfade. <strong>Listen for:</strong> a seamless transition
+                at the {SEAM_SECONDS} s seam — no dip.
+              </>
+            }
+            actions={
+              <>
+                <Button
+                  onClick={() => handlePlay("aligned")}
+                  disabled={status !== "Ready" || scanning}
+                  color="green"
+                  size="3"
+                >
+                  <PlayIcon /> Play (ALIGNED — target)
+                </Button>
+                <Button
+                  onClick={handleScan}
+                  disabled={status !== "Ready" || scanning || scenario !== "aligned"}
+                  variant="soft"
+                  color="amber"
+                  size="3"
+                >
+                  <ActivityLogIcon /> {scanning ? "Scanning…" : "Scan ALIGNED"}
+                </Button>
+              </>
+            }
+            expected={[
+              { label: "min / reference", value: "≈ 0.9998  (−0.00 dB)" },
+              { label: "dip τ (ms relative to seam)", value: "n/a (no dip)" },
+              { label: "sample rate", value: `${audioContextRef.current?.sampleRate ?? "—"} Hz` },
+            ]}
+            got={gotByStep[1] ?? null}
+          />
+
+          <TestStep
+            index={2}
+            title="Control: UNALIGNED (shift = 0)"
+            description={
+              <>
+                Identical setup to step 1 except <Code>shift = 0</Code>. Phase mismatch through
+                the crossfade produces a sub-unity sum. <strong>Listen for:</strong> an obvious
+                dip centred mid-crossfade — confirms the scan correctly detects a dip when one
+                exists.
+              </>
+            }
+            actions={
+              <>
+                <Button
+                  onClick={() => handlePlay("unaligned")}
+                  disabled={status !== "Ready" || scanning}
+                  color="amber"
+                  size="3"
+                >
+                  <PlayIcon /> Play (UNALIGNED — control)
+                </Button>
+                <Button
+                  onClick={handleScan}
+                  disabled={status !== "Ready" || scanning || scenario !== "unaligned"}
+                  variant="soft"
+                  color="amber"
+                  size="3"
+                >
+                  <ActivityLogIcon /> {scanning ? "Scanning…" : "Scan UNALIGNED"}
+                </Button>
+              </>
+            }
+            expected={[
+              { label: "min / reference", value: "≈ 0.5906  (−4.57 dB)" },
+              { label: "dip τ (ms relative to seam)", value: "near 0 ms (centred on seam)" },
+              { label: "sample rate", value: `${audioContextRef.current?.sampleRate ?? "—"} Hz` },
+            ]}
+            got={gotByStep[2] ?? null}
+          />
+
+          <TestStep
+            index={3}
+            title="OPENDAW: the artifact"
+            description={
+              <>
+                Same phase-corrected configuration as ALIGNED but rendered through OpenDAW's{" "}
+                <Code>TapeDeviceProcessor</Code> on two Tape tracks. <strong>Listen for:</strong>{" "}
+                a subtler dip on the incoming voice's side, ~10 ms <em>before</em> the seam —
+                smaller than UNALIGNED's obvious dip but bigger than ALIGNED's zero. Mechanism:{" "}
+                <Code>PitchVoice</Code> multiplies its 20 ms voice-fade-in by the region's
+                clip-fade gain, turning the first 20 ms of a linear fade-in into a quadratic
+                ramp.
+              </>
+            }
+            actions={
+              <>
+                <Button
+                  onClick={() => handlePlay("opendaw")}
+                  disabled={status !== "Ready" || scanning || !openDawProject}
+                  color="ruby"
+                  size="3"
+                >
+                  <PlayIcon /> Play (OPENDAW)
+                </Button>
+                <Button
+                  onClick={handleScan}
+                  disabled={status !== "Ready" || scanning || scenario !== "opendaw"}
+                  variant="soft"
+                  color="amber"
+                  size="3"
+                >
+                  <ActivityLogIcon /> {scanning ? "Scanning…" : "Scan OPENDAW"}
+                </Button>
+              </>
+            }
+            expected={[
+              { label: "min / reference", value: "≈ 0.8352  (−1.56 dB)" },
+              { label: "dip τ (ms relative to seam)", value: "≈ −7.5 ms (before seam)" },
+              { label: "sample rate", value: `${audioContextRef.current?.sampleRate ?? "—"} Hz` },
+            ]}
+            got={gotByStep[3] ?? null}
+          />
+
           <Card>
             <Flex direction="column" gap="3">
-              <Text size="3" weight="bold">
-                Phase correlation
-              </Text>
+              <Text size="3" weight="bold">Phase correlation</Text>
               <Separator size="4" />
               {computedShift ? (
                 <Code size="2" style={{ whiteSpace: "pre-wrap", display: "block", padding: 12 }}>
@@ -711,93 +828,14 @@ const App: React.FC = () => {
                   ].join("\n")}
                 </Code>
               ) : (
-                <Text size="2" color="gray">
-                  Awaiting audio load…
-                </Text>
-              )}
-            </Flex>
-          </Card>
-
-          <Card>
-            <Flex direction="column" gap="3">
-              <Text size="3" weight="bold">
-                Reproduce
-              </Text>
-              <Separator size="4" />
-              <Flex direction="column" gap="2">
-                <Text size="2">
-                  Playback starts at <Code>{PLAYBACK_START_SECONDS}</Code> s so the seam at{" "}
-                  <Code>{SEAM_SECONDS}</Code> s is reached in ~2 s.
-                </Text>
-                <Text size="2">
-                  <strong>ALIGNED</strong> (pure Web Audio, target): apply the phase-correlate
-                  shift to file B's read offset before the linear crossfade. Two phase-aligned
-                  identical-source signals sum to unity through the crossfade.
-                </Text>
-                <Text size="2">
-                  <strong>UNALIGNED</strong> (pure Web Audio, control): identical setup but with{" "}
-                  <Code>shift = 0</Code>. Phase mismatch through the crossfade produces a
-                  sub-unity sum — an audible dip centred mid-crossfade.
-                </Text>
-                <Text size="2">
-                  <strong>OPENDAW</strong>: same scenario through OpenDAW's{" "}
-                  <Code>TapeDeviceProcessor</Code>. Two <Code>AudioFileBox</Code>es, two{" "}
-                  <Code>AudioRegionBox</Code>es with 40 ms linear fades on each side, phase-shift
-                  applied via <Code>loopOffset</Code> on region B. Should sound identical to
-                  ALIGNED; currently does not (engine artifacts documented elsewhere).
-                </Text>
-              </Flex>
-              <Flex gap="3" wrap="wrap">
-                <Button
-                  onClick={() => handlePlay("aligned")}
-                  disabled={status !== "Ready" || scanning}
-                  color="green"
-                  size="3"
-                >
-                  <PlayIcon /> Play (ALIGNED — target)
-                </Button>
-                <Button
-                  onClick={() => handlePlay("unaligned")}
-                  disabled={status !== "Ready" || scanning}
-                  color="amber"
-                  size="3"
-                >
-                  <PlayIcon /> Play (UNALIGNED — control)
-                </Button>
-                <Button
-                  onClick={() => handlePlay("opendaw")}
-                  disabled={status !== "Ready" || scanning || !openDawProject}
-                  color="ruby"
-                  size="3"
-                >
-                  <PlayIcon /> Play (OPENDAW)
-                </Button>
-                <Button onClick={handleStop} disabled={!isPlaying} variant="soft" size="3">
-                  <StopIcon /> Stop
-                </Button>
-                <Button
-                  onClick={handleScan}
-                  disabled={status !== "Ready" || scanning}
-                  variant="soft"
-                  color="amber"
-                  size="3"
-                >
-                  <ActivityLogIcon /> {scanning ? "Scanning…" : "Scan current scenario"}
-                </Button>
-              </Flex>
-              {scanResult && (
-                <Code size="2" style={{ whiteSpace: "pre-wrap", display: "block", padding: 12 }}>
-                  {scanResult.text}
-                </Code>
+                <Text size="2" color="gray">Awaiting audio load…</Text>
               )}
             </Flex>
           </Card>
 
           <Card>
             <Flex direction="column" gap="2">
-              <Text size="3" weight="bold">
-                Configuration
-              </Text>
+              <Text size="3" weight="bold">Configuration</Text>
               <Separator size="4" />
               <Code size="2" style={{ whiteSpace: "pre-wrap", display: "block", padding: 12 }}>
                 {`File A:              test-440hz.wav (${TOTAL_DURATION_SECONDS} s, 440 Hz sine)
