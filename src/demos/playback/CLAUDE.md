@@ -198,19 +198,24 @@ For same-file consecutive regions, no fade is needed — the audio is already co
 Adding fades makes it worse. See `documentation/09-editing-fades-and-automation.md#advanced-region-splicing--comp-lanes`.
 
 ### Overlapping Regions Need Separate Tracks
-`project.copy()` runs a per-track no-overlap validator. Two `AudioRegionBox`es on the
-SAME track whose timeline ranges overlap are silently deleted from the copied project —
-console shows `_AudioRegionBox _AudioRegionBox Overlapping regions` → `Deleting 2 invalid
-boxes`. The live engine plays the overlap fine; the deletion only happens through
-`project.copy()`, but anything that depends on copy (export, offline render via the
-standard `project.copy() → OfflineAudioContext → AudioWorklets.createFor(...) →
-createEngine(...)` pattern) will produce silence with no error.
+Overlapping regions on a single track are **disallowed by design** in OpenDAW (Andre
+confirmed 2026-05-21). The live engine tolerates them at runtime but `project.copy()`'s
+validator deletes both regions, with console output `_AudioRegionBox _AudioRegionBox
+Overlapping regions` → `Deleting 2 invalid boxes`. Anything that depends on `copy()`
+(export, offline render via the standard `project.copy() → OfflineAudioContext →
+AudioWorklets.createFor(...) → createEngine(...)` pattern) will produce silence with
+no error. Any UI path that lets a user position two regions to overlap on one lane is
+the bug, not the deletion.
 
 For crossfade-via-overlap (e.g. linear crossfade between two regions that overlap by
-the fade duration), put each region on its own Tape track. Each track has its own
-`regions` collection, so per-track overlap doesn't occur — the overlap is between
-tracks and the crossfade emerges from mixing the track outputs. See
-`debug/project-copy-deletes-overlapping-regions.md`.
+the fade duration), put each region on its **own** Tape track. Each track has its own
+`regions` collection; the overlap is between tracks and the crossfade emerges from
+mixing the track outputs at the master. See `pure-webaudio-target-debug-demo.tsx` and
+`voice-fadein-clip-fadein-product-debug-demo.tsx` for the working pattern, and
+`debug/project-copy-deletes-overlapping-regions.md` for full context including the
+sub-PPQN overlap footgun (an `Int32` `position` + `Float32` `duration` at non-integer
+PPQN can produce a 0.5-PPQN overlap that triggers the same deletion without the
+consumer intending any).
 
 ### Phase-Correlate Shifts: Don't Double-Compensate Source Delay
 When applying a phase-correlation result via `loopOffset` to align two regions reading

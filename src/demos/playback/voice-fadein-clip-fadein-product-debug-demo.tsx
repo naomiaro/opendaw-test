@@ -9,6 +9,8 @@ import { InstrumentFactories } from "@opendaw/studio-adapters";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
+import { TestStep, TestStepRow } from "@/components/TestStep";
+import { DebugLinkBar } from "@/components/DebugLinkBar";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { loadAudioFile } from "@/lib/audioUtils";
 import { minEnvelopeInWindow, peakInWindow, renderOfflineSlice } from "@/lib/offlineScan";
@@ -87,7 +89,7 @@ const App: React.FC = () => {
   const [scenario, setScenario] = useState<Scenario>("crossfade");
   const [isPlaying, setIsPlaying] = useState(false);
   const [positionSec, setPositionSec] = useState(0);
-  const [scanResult, setScanResult] = useState<string | null>(null);
+  const [gotByStep, setGotByStep] = useState<Record<number, TestStepRow[]>>({});
   const [scanning, setScanning] = useState(false);
 
   const audioBuffersRef = useRef<{ a: AudioBuffer | null; b: AudioBuffer | null }>({
@@ -143,9 +145,17 @@ const App: React.FC = () => {
           bpm
         );
 
+        let trackBoxA: { regions: unknown };
+        let trackBoxB: { regions: unknown };
         newProject.editing.modify(() => {
-          const { trackBox } = newProject.api.createInstrument(InstrumentFactories.Tape);
-
+          trackBoxA = newProject.api.createInstrument(InstrumentFactories.Tape)
+            .trackBox as { regions: unknown };
+        });
+        newProject.editing.modify(() => {
+          trackBoxB = newProject.api.createInstrument(InstrumentFactories.Tape)
+            .trackBox as { regions: unknown };
+        });
+        newProject.editing.modify(() => {
           const fileBoxA = AudioFileBox.create(newProject.boxGraph, uuidA, (box) => {
             box.fileName.setValue("test-440hz.wav");
             box.endInSeconds.setValue(bufferA.duration);
@@ -155,13 +165,13 @@ const App: React.FC = () => {
             box.endInSeconds.setValue(bufferB.duration);
           });
 
-          // Region A: 0 → SEAM. fading.out set in applyScenarioAndPlay.
           const eventsA = ValueEventCollectionBox.create(newProject.boxGraph, UUID.generate());
           const regionA = AudioRegionBox.create(
             newProject.boxGraph,
             UUID.generate(),
             (box) => {
-              box.regions.refer(trackBox.regions);
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              box.regions.refer((trackBoxA as any).regions);
               box.file.refer(fileBoxA);
               box.events.refer(eventsA.owners);
               box.position.setValue(0);
@@ -176,14 +186,13 @@ const App: React.FC = () => {
               box.fading.outSlope.setValue(0.5);
             }
           );
-          // Region B: SEAM → end. loopOffset = SEAM − 30samples so source
-          // playback is phase-aligned with A at the seam moment.
           const eventsB = ValueEventCollectionBox.create(newProject.boxGraph, UUID.generate());
           const regionB = AudioRegionBox.create(
             newProject.boxGraph,
             UUID.generate(),
             (box) => {
-              box.regions.refer(trackBox.regions);
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              box.regions.refer((trackBoxB as any).regions);
               box.file.refer(fileBoxB);
               box.events.refer(eventsB.owners);
               box.position.setValue(seamPPQN);
@@ -281,15 +290,16 @@ const App: React.FC = () => {
     project.engine.stop(true);
   }, [project]);
 
-  // Render the current scenario offline and look for the amplitude dip in
-  // the first half of the crossfade region. For a 0.5-amplitude sine,
-  // "normal" peak per 2.5 ms window is ~0.5; the voice-fade × clip-fade
-  // product is predicted to drop the per-window peak to ~0.4375 (−1.16 dB).
   const handleScan = useCallback(async () => {
     if (!project || scanning) return;
     if (project.engine.isPlaying.getValue()) project.engine.stop(true);
+    const stepIndex = scenario === "hardcut" ? 1 : 2;
     setScanning(true);
-    setScanResult(null);
+    setGotByStep((prev) => {
+      const next = { ...prev };
+      delete next[stepIndex];
+      return next;
+    });
     try {
       const sliceStart = SEAM_SECONDS - 0.1;
       const sliceEnd = SEAM_SECONDS + 0.1;
@@ -300,7 +310,6 @@ const App: React.FC = () => {
       );
       const left = channels[0];
       const halfFadeSec = CROSSFADE_MS / 2000;
-      // Reference peak well outside the crossfade region.
       const refWindow = peakInWindow(
         left,
         sliceStart,
@@ -308,8 +317,6 @@ const App: React.FC = () => {
         SEAM_SECONDS - halfFadeSec - 0.005,
         sr
       );
-      // Min envelope peak across the crossfade region. The dip is predicted
-      // on the V2-fadeIn side, ~10 ms before the seam at 40 ms crossfade.
       const dip = minEnvelopeInWindow(
         left,
         sliceStart,
@@ -320,23 +327,27 @@ const App: React.FC = () => {
       );
       const ratio = refWindow.peak > 1e-6 ? dip.minPeak / refWindow.peak : 0;
       const dipDb = ratio > 1e-6 ? 20 * Math.log10(ratio) : -Infinity;
-      setScanResult(
-        [
-          `scenario           : ${scenario.toUpperCase()}`,
-          `sample rate        : ${sr} Hz`,
-          `reference peak     : ${refWindow.peak.toFixed(4)}  (in [${(SEAM_SECONDS - 0.08).toFixed(3)} s, ${(SEAM_SECONDS - halfFadeSec - 0.005).toFixed(3)} s])`,
-          `min envelope peak  : ${dip.minPeak.toFixed(4)}  (2.5 ms windows across [${(SEAM_SECONDS - halfFadeSec).toFixed(3)} s, ${(SEAM_SECONDS + halfFadeSec).toFixed(3)} s])`,
-          `min / reference    : ${ratio.toFixed(4)}  (${dipDb.toFixed(2)} dB; predicted ~0.875 / −1.16 dB in CROSSFADE, ~1.0 in HARD-CUT)`,
-          `dip located at     : ${(sliceStart + dip.atSecondsFromStart).toFixed(6)} s  (τ = ${((sliceStart + dip.atSecondsFromStart - SEAM_SECONDS) * 1000).toFixed(2)} ms relative to seam)`,
-          `windows scanned    : ${dip.windowsScanned}`,
-        ].join("\n")
-      );
+      const tauMs = (sliceStart + dip.atSecondsFromStart - SEAM_SECONDS) * 1000;
+      const rows: TestStepRow[] = [
+        { label: "reference peak", value: refWindow.peak.toFixed(4) },
+        { label: "min envelope peak", value: dip.minPeak.toFixed(4) },
+        {
+          label: "min / reference",
+          value: `${ratio.toFixed(4)}  (${dipDb.toFixed(2)} dB)`,
+        },
+        { label: "dip τ (ms relative to seam)", value: `${tauMs.toFixed(2)} ms` },
+        { label: "sample rate", value: `${sr} Hz` },
+      ];
+      setGotByStep((prev) => ({ ...prev, [stepIndex]: rows }));
     } catch (error) {
-      setScanResult(`Error: ${String(error)}`);
+      setGotByStep((prev) => ({
+        ...prev,
+        [stepIndex]: [{ label: "error", value: String(error) }],
+      }));
     } finally {
       setScanning(false);
     }
-  }, [project, scenario, scanning]);
+  }, [project, scanning, scenario]);
 
   // Live playhead readout: convert engine PPQN to seconds via the timeline's
   // BPM each frame. Helps the listener time the dip relative to the seam.
@@ -357,11 +368,55 @@ const App: React.FC = () => {
     positionSec > SEAM_SECONDS - CROSSFADE_MS / 2000 - 0.005 &&
     positionSec < SEAM_SECONDS + CROSSFADE_MS / 2000 + 0.005;
 
+  const renderPlaybackHud = () => (
+    <>
+      <Badge color={inCrossfadeRegion ? "red" : isPlaying ? "amber" : "gray"} size="2">
+        <Code>
+          {positionSec.toFixed(3)} s
+          {inCrossfadeRegion ? " ← CROSSFADE" : ""}
+        </Code>
+      </Badge>
+      <Text size="1" color="gray">
+        seam {SEAM_SECONDS.toFixed(3)} s · crossfade ±{CROSSFADE_MS / 2} ms
+      </Text>
+      <Button
+        onClick={() => {
+          handleStop();
+          void handleScan();
+        }}
+        disabled={!isPlaying}
+        variant="soft"
+        size="2"
+      >
+        <StopIcon /> Stop &amp; scan
+      </Button>
+    </>
+  );
+
   return (
     <Theme appearance="dark" accentColor="amber">
       <Container size="3" style={{ padding: "2rem", minHeight: "100vh" }}>
         <GitHubCorner />
         <BackLink />
+        <DebugLinkBar
+          links={[
+            {
+              label: "Pure-Web-Audio target demo",
+              href: "/pure-webaudio-target-debug-demo.html",
+              kind: "demo",
+            },
+            {
+              label: "Shared-source double-process demo",
+              href: "/shared-source-double-process-debug-demo.html",
+              kind: "demo",
+            },
+            {
+              label: "debug/voice-fadein-clip-fadein-product.md",
+              href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/voice-fadein-clip-fadein-product.md",
+              kind: "note",
+            },
+          ]}
+        />
 
         <Flex direction="column" gap="4">
           <Heading size="7" align="center">
@@ -373,82 +428,56 @@ const App: React.FC = () => {
               <InfoCircledIcon />
             </Callout.Icon>
             <Callout.Text>
-              A crossfade between two regions with <strong>different</strong>{" "}
-              <Code>sourceUuid</Code>s (so the shared-source path doesn't apply) still produces an
-              audible amplitude dip on the incoming voice's fade-in side. Cause:{" "}
-              <Code>PitchVoice</Code> starts every new voice in <Code>Fading</Code>/
-              <Code>fadeDirection=1</Code> for <Code>VOICE_FADE_DURATION</Code> (20 ms), and{" "}
-              <Code>process()</Code> multiplies that voice-fade by the region's clip-fade gain
-              buffer — turning a linear clip fade-in into a quadratic ramp over the first 20 ms.
+              A 40 ms linear clip crossfade between two regions with different{" "}
+              <Code>sourceUuid</Code>s — placed on <strong>separate</strong> Tape tracks so the
+              mix happens at the master (overlapping regions on a single track are disallowed by
+              design and get deleted by <Code>project.copy()</Code>) — produces a measurable dip
+              on the incoming voice's fade-in side. Cause: <Code>PitchVoice</Code> starts every
+              new voice in <Code>Fading</Code>/<Code>fadeDirection=1</Code> for{" "}
+              <Code>VOICE_FADE_DURATION</Code> (20 ms), and <Code>process()</Code> multiplies
+              that voice-fade by the region's clip-fade gain buffer — turning a linear clip
+              fade-in into a quadratic ramp over the first 20 ms.
             </Callout.Text>
           </Callout.Root>
 
           <Card>
             <Flex align="center" gap="3" wrap="wrap">
-              <Text size="2" weight="bold">
-                Status:
-              </Text>
+              <Text size="2" weight="bold">Status:</Text>
               <Badge color={status.includes("Error") ? "red" : status === "Ready" ? "green" : "blue"}>
                 {status}
               </Badge>
               {isPlaying && (
-                <Badge color="amber">Playing: {scenario === "crossfade" ? "CROSSFADE" : "HARD-CUT"}</Badge>
+                <Badge color="amber">
+                  Playing: {scenario === "crossfade" ? "CROSSFADE" : "HARD-CUT"}
+                </Badge>
               )}
-              <Text size="2" weight="bold">
-                Position:
-              </Text>
-              <Badge color={inCrossfadeRegion ? "red" : isPlaying ? "amber" : "gray"} size="2">
-                <Code>
-                  {positionSec.toFixed(3)} s
-                  {inCrossfadeRegion ? " ← CROSSFADE" : ""}
-                </Code>
-              </Badge>
-              <Text size="2" color="gray">
-                (seam at {SEAM_SECONDS}.000 s, crossfade ±{CROSSFADE_MS / 2} ms)
-              </Text>
             </Flex>
           </Card>
 
-          <Card>
-            <Flex direction="column" gap="3">
-              <Text size="3" weight="bold">
-                Reproduce
-              </Text>
-              <Separator size="4" />
-              <Flex direction="column" gap="2">
-                <Text size="2">
-                  Playback starts at <Code>{PLAYBACK_START_SECONDS}</Code> s, so you only wait ~2 s
-                  for the seam at <Code>{SEAM_SECONDS}</Code> s.
-                </Text>
-                <Text size="2">
-                  <strong>CROSSFADE:</strong> 40 ms linear clip fade (slope 0.5) on each region
-                  side of the seam. The proposed mechanism: the incoming voice spends its first
-                  20 ms in voice-fadeIn state, and <Code>PitchVoice.process</Code> multiplies
-                  that internal voice fade by the region's clip-fade gain buffer — a quadratic
-                  ramp instead of linear over the first half of the crossfade. Predicted ~−1.16
-                  dB dip ~10 ms before the seam.
-                </Text>
-                <Text size="2">
-                  <strong>HARD-CUT:</strong> no region fades, regions touch at the seam.
-                  OpenDAW's per-voice fade (<Code>VOICE_FADE_DURATION</Code> = 20 ms) handles
-                  click prevention without being multiplied by an authored fade — it's applied
-                  via <Code>#unitGainBuffer</Code> on <Code>lane.fadingVoices</Code>.
-                </Text>
-                <Text size="2" color="gray">
-                  Neither configuration is a fix for the other — they're two different region
-                  topologies (with vs without authored crossfade). The toggle lets you A/B them
-                  audibly and via the offline scan to check the predicted dip empirically.
-                </Text>
-              </Flex>
-              <Flex gap="3" wrap="wrap">
-                <Button
-                  onClick={() => applyScenarioAndPlay("crossfade")}
-                  disabled={!project || status !== "Ready" || scanning}
-                  color="amber"
-                  size="3"
+          <TestStep
+            index={1}
+            title="Baseline: HARD-CUT (no clip fades, regions touch)"
+            description={
+              <>
+                Regions touch at the seam, no <Code>fading.in</Code> / <Code>fading.out</Code>.
+                OpenDAW's per-voice 20 ms fade (<Code>VOICE_FADE_DURATION</Code>) handles the
+                envelope. <strong>Listen for:</strong> a brief sample-level click at the
+                {" "}{SEAM_SECONDS} s seam — peak amplitude is unchanged but the sample-to-sample
+                first difference jumps. That's a separate, open artifact (touching-seam
+                discontinuity); see the{" "}
+                <a
+                  href="/shared-source-double-process-debug-demo.html"
+                  style={{ color: "var(--accent-11)", textDecoration: "underline" }}
                 >
-                  <PlayIcon /> Play (CROSSFADE)
-                </Button>
+                  shared-source double-process demo
+                </a>{" "}
+                for the dedicated investigation. The scan here measures the envelope
+                (<Code>min / reference</Code>); it stays at 1.0 because the click doesn't dip
+                the envelope.
+              </>
+            }
+            actions={
+              <>
                 <Button
                   onClick={() => applyScenarioAndPlay("hardcut")}
                   disabled={!project || status !== "Ready" || scanning}
@@ -457,63 +486,73 @@ const App: React.FC = () => {
                 >
                   <PlayIcon /> Play (HARD-CUT)
                 </Button>
-                <Button onClick={handleStop} disabled={!isPlaying} variant="soft" size="3">
-                  <StopIcon /> Stop
-                </Button>
+                {renderPlaybackHud()}
+              </>
+            }
+            expected={[
+              { label: "reference peak", value: "≈ 0.5000" },
+              { label: "min envelope peak", value: "≈ 0.5000 (no dip)" },
+              { label: "min / reference", value: "≈ 1.0000  (−0.00 dB)" },
+              { label: "dip τ (ms relative to seam)", value: "n/a (no dip)" },
+              { label: "sample rate", value: `${audioContext?.sampleRate ?? "—"} Hz` },
+            ]}
+            got={gotByStep[1] ?? null}
+          />
+
+          <TestStep
+            index={2}
+            title="CROSSFADE — listen and observe"
+            description={
+              <>
+                40 ms linear clip crossfade (slope 0.5), regions extended symmetrically across
+                the seam on their separate tracks. <strong>Listen for:</strong> an amplitude dip
+                ~10 ms BEFORE the {SEAM_SECONDS} s seam — subtle on this sustained tone but
+                audible. The dip happens because the new voice's <em>voice-fade-in</em> and the
+                region's <em>clip-fade-in</em> multiply over the first 20 ms. Click{" "}
+                <strong>Stop &amp; scan</strong> when you're done listening — the offline scan
+                fires automatically and shows the dip below.
+              </>
+            }
+            actions={
+              <>
                 <Button
-                  onClick={handleScan}
+                  onClick={() => applyScenarioAndPlay("crossfade")}
                   disabled={!project || status !== "Ready" || scanning}
-                  variant="soft"
                   color="amber"
                   size="3"
                 >
-                  <ActivityLogIcon /> {scanning ? "Scanning…" : "Scan current scenario"}
+                  <PlayIcon /> Play (CROSSFADE)
                 </Button>
-              </Flex>
-              {scanResult && (
-                <Code size="2" style={{ whiteSpace: "pre-wrap", display: "block", padding: 12 }}>
-                  {scanResult}
-                </Code>
-              )}
-            </Flex>
-          </Card>
+                {renderPlaybackHud()}
+              </>
+            }
+            expected={[
+              { label: "reference peak", value: "≈ 0.5000" },
+              { label: "min envelope peak", value: "≈ 0.418 (dipped)" },
+              { label: "min / reference", value: "≈ 0.8352  (−1.56 dB)" },
+              { label: "dip τ (ms relative to seam)", value: "≈ −7.5 ms (before seam)" },
+              { label: "sample rate", value: `${audioContext?.sampleRate ?? "—"} Hz` },
+            ]}
+            got={gotByStep[2] ?? null}
+          />
 
           <Card>
             <Flex direction="column" gap="2">
-              <Text size="3" weight="bold">
-                Configuration
-              </Text>
+              <Text size="3" weight="bold">Configuration</Text>
               <Separator size="4" />
               <Code size="2" style={{ whiteSpace: "pre-wrap", display: "block", padding: 12 }}>
                 {`BPM:                 ${BPM}
 File A:              test-440hz.wav
 File B:              test-440hz-offset30.wav (delayed by ${(SOURCE_OFFSET_SECONDS * 1000).toFixed(3)} ms = ~24° at 440 Hz; preserved through any decode resample)
-Region A:            position=0, duration=${SEAM_SECONDS}s (+20ms in bug)
-Region B:            position=${SEAM_SECONDS}s (−20ms in bug), loopOffset compensates source delay
+Track layout:        2 Tape tracks, 1 AudioRegionBox each (mix at master)
+Region A:            position=0, duration=${SEAM_SECONDS}s (+20ms in CROSSFADE)
+Region B:            position=${SEAM_SECONDS}s (−20ms in CROSSFADE), loopOffset compensates source delay
 Crossfade duration:  ${CROSSFADE_MS} ms (slope 0.5 linear, both sides)
 CROSSFADE:           fading.out on A = ${CROSSFADE_MS} ms, fading.in on B = ${CROSSFADE_MS} ms
 HARD-CUT:            fading.out=0, fading.in=0 (regions touch, voice-fade handles boundary)
 Playback start:      ${PLAYBACK_START_SECONDS} s (≈2 s before seam)
 Seam:                ${SEAM_SECONDS} s`}
               </Code>
-            </Flex>
-          </Card>
-
-          <Card>
-            <Flex direction="column" gap="2">
-              <Text size="3" weight="bold">
-                What to inspect
-              </Text>
-              <Separator size="4" />
-              <Text size="2">
-                Click <strong>Scan current scenario</strong> after each Play. The peak-amplitude
-                scan compares a clean pre-seam reference window against the minimum envelope peak
-                inside the crossfade overlap. The proposed mechanism predicts: CROSSFADE shows{" "}
-                <Code>min / reference ≈ 0.875</Code> (≈ −1.16 dB) with the dip landing ~10 ms
-                before the seam; HARD-CUT shows <Code>≈ 1.0</Code>. If the empirics diverge from
-                that, the mechanism is wrong — file the actual numbers and treat the cause as
-                open.
-              </Text>
             </Flex>
           </Card>
         </Flex>

@@ -2,6 +2,8 @@
 
 **Verified against:** OpenDAW SDK 0.0.147 (`@opendaw/studio-sdk@0.0.147`, `@opendaw/studio-core@0.0.145`).
 
+**Status (2026-05-21):** Resolved by SDK author. Andre confirmed: "Regarding overlapping regions: They are not allowed in openDAW. That is why they get deleted in case the UI allowed such positioning at some point (which is considered a bug)." The deletion is intentional. Consumers authoring a crossfade between two regions of the same lane must use **separate tracks** for the overlapping regions and let the crossfade emerge from mixing the track outputs — see `pure-webaudio-target-debug-demo.tsx` for the working pattern. The sub-PPQN overlap from `Int32` `position` vs `Float32` `duration` (below) is still worth being aware of as a consumer footgun: it produces the same deletion without the consumer intending any overlap.
+
 **Repro page:** [`voice-fadein-clip-fadein-product-debug-demo.html`](../voice-fadein-clip-fadein-product-debug-demo.html) (unlisted). The CROSSFADE configuration places two `AudioRegionBox`es on the same Tape track with a 40 ms timeline overlap (region A's `fading.out` extends past the seam; region B's position is shifted back by half the fade) — live playback through the engine plays both regions audibly, but the offline-scan path (which uses `project.copy()`) returns silence.
 
 Note: the sibling target demo [`pure-webaudio-target-debug-demo.html`](../pure-webaudio-target-debug-demo.html) deliberately uses **two separate Tape tracks** for the same crossfade configuration as a workaround. Each track has its own `regions` collection, so the per-track overlap check doesn't fire.
@@ -33,23 +35,18 @@ produces a zero-filled buffer. `engineWorklet.queryLoadingComplete()` returns `t
 
 ## How to reproduce
 
-```bash
-npm run dev
-# open https://localhost:5173/voice-fadein-clip-fadein-product-debug-demo.html
-```
+The original reproducer was the CROSSFADE configuration of `voice-fadein-clip-fadein-product-debug-demo.html` placing two overlapping regions on a single Tape track. That demo has since been updated to use two Tape tracks (mix at master) so its offline scan can measure the actual voice-fade × clip-fade dip; the deletion is therefore no longer surfaced by any live demo on this repo.
 
-**HTTPS required.** Click **Play (CROSSFADE)** to mutate the project into the overlapping-regions configuration (`applyScenarioAndPlay` extends region A's duration forward by half the fade and shifts region B's position back by half the fade, so the two regions overlap by `CROSSFADE_MS` = 40 ms on the same track). Live playback works — the seam is audible. Click **Stop**, then **Scan current scenario**. The offline scan reports `reference peak: 0.0000`, `min envelope peak: 0.0000`, with all subsequent metrics at zero (the entire rendered buffer is silence). The browser console shows:
+To repro from scratch with the SDK directly, set up two `AudioRegionBox`es on the **same** track with overlapping timeline ranges (e.g. region A: `position = 0`, `duration = 30.02 s`; region B: `position = 29.98 s`, `duration = 30.02 s` — a 40 ms overlap). The live engine plays the configuration; calling `project.copy()` against it deletes both regions and the browser console logs:
 
 ```
 _AudioRegionBox _AudioRegionBox Overlapping regions
 Deleting 2 invalid boxes:
 ```
 
-The deletion fires inside `project.copy()`, which the offline-scan path (`renderOfflineSlice` in `src/lib/offlineScan.ts`) uses to snapshot project state for the offline engine. After the deletion the copied project has no regions to render.
+This is the expected, by-design behaviour — see the **Status** banner at the top of this note.
 
-Switching to the HARD-CUT configuration in the same demo (no clip fades, regions touch but do not overlap) renders normal audio offline — the same code path produces ~0.5 peak amplitude through the seam.
-
-Minimal box-graph setup that triggers the deletion (also matches the OPENDAW scenario in the repro page):
+Minimal box-graph setup that triggers the deletion:
 
 ```
 One Tape track.
@@ -101,5 +98,5 @@ The console warnings point to `TrackRegions`'s `onAdded` callback ("Overlapping 
 
 ## Open questions
 
-1. Is the OpenDAW data model meant to disallow overlapping regions on a single track, or is the deletion in `project.copy()` over-eager? The live engine plays the configuration without removing it; only `copy()` deletes. If overlap on one track is unsupported, what is the intended way to author a crossfade between two regions of the same lane?
-2. The deletion is silent from the consumer's perspective — only console warnings, no thrown error or callback. A consumer using `project.copy()` for offline rendering has no programmatic signal that the rendered output is structurally invalid.
+1. ~~Is the OpenDAW data model meant to disallow overlapping regions on a single track…~~ **Answered (2026-05-21):** overlaps are disallowed by design; `project.copy()` deletion is the data model's enforcement, and any UI path that permits authoring an overlap on one track is a bug. Intended way to author a crossfade between two regions of the same lane: put the two regions on separate tracks; the crossfade emerges from mixing the track outputs at the master.
+2. The deletion is silent from the consumer's perspective — only console warnings, no thrown error or callback. A consumer using `project.copy()` for offline rendering has no programmatic signal that the rendered output is structurally invalid. **Still open** as a diagnostics/UX concern, separate from the data-model question. The sub-PPQN overlap path above is the most likely way for a consumer to hit this without knowing they authored an overlap.

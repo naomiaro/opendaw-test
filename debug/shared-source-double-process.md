@@ -57,7 +57,7 @@ npm run dev
 - **Seam position**: Block-aligned (30.000 s, PPQN 57600 at BPM 120) or Off-boundary (30.500 s, PPQN 58560). Both are exact integer PPQN to avoid the sub-PPQN-overlap deletion described above. The in-block sample offset at the live AudioContext rate is shown next to each button.
 - **Scenario (mediaId)**: SHARED (one `AudioFileBox`) or DISTINCT (two `AudioFileBox`es with identical content).
 
-Playback starts at 28 s so you reach the seam in ~2 s; a live playhead readout turns red when the seam passes. Click **Scan current scenario** to render `[seam ± 100 ms]` offline via `OfflineAudioContext` and report peak-amplitude and `max |Δsample|` metrics annotated with the current seam-in-block offset.
+Playback starts at 28 s so you reach the seam in ~2 s; a live playhead readout turns red when the seam passes. Click the **Scan step N** button inside the step that matches your current seam-position + scenario to render `[seam ± 100 ms]` offline via `OfflineAudioContext` and report peak-amplitude and `max |Δsample|` metrics annotated with the current seam-in-block offset.
 
 Minimal box-graph setup:
 

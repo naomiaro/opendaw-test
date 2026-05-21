@@ -40,7 +40,10 @@ export default defineConfig({
                 export: resolve(__dirname, "export-demo.html"),
                 compLanes: resolve(__dirname, "comp-lanes-demo.html"),
                 compLanesDebug: resolve(__dirname, "comp-lanes-debug-demo.html"),
-                fadeOutEndOfFileDebug: resolve(__dirname, "fade-out-end-of-file-debug-demo.html")
+                fadeOutEndOfFileDebug: resolve(__dirname, "fade-out-end-of-file-debug-demo.html"),
+                pureWebaudioTargetDebug: resolve(__dirname, "pure-webaudio-target-debug-demo.html"),
+                sharedSourceDoubleProcessDebug: resolve(__dirname, "shared-source-double-process-debug-demo.html"),
+                voiceFadeinClipFadeinProductDebug: resolve(__dirname, "voice-fadein-clip-fadein-product-debug-demo.html")
             },
             output: {
                 manualChunks: (id) => {

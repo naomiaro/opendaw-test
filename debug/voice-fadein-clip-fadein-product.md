@@ -50,16 +50,16 @@ npm run dev
 
 **HTTPS is required** (same self-signed cert as the other demos). Click **Play (CROSSFADE)**; playback starts at 28 s and reaches the crossfade region at 30 s in ~2 s. Listen for a brief amplitude dip on the new voice's fade-in side of the seam. Then click **Play (HARD-CUT)** for the same regions with `fading.in = fading.out = 0` (regions touch, voice-fade alone handles the boundary).
 
-**Note on the offline scan:** This demo's CROSSFADE configuration places two overlapping regions on a single track and so triggers the `project.copy()` deletion described in [project-copy-deletes-overlapping-regions.md](./project-copy-deletes-overlapping-regions.md) — the scan returns silence, not the dip. The numbers in the **Symptom** section above are measured in the sibling [`pure-webaudio-target-debug-demo.html`](../pure-webaudio-target-debug-demo.html) which works around the deletion by placing each region on its own Tape track.
+**Note on the offline scan:** As of 2026-05-21, this demo's CROSSFADE configuration places each region on its own Tape track (mix happens at the master), matching the pattern used by the sibling [`pure-webaudio-target-debug-demo.html`](../pure-webaudio-target-debug-demo.html). Earlier versions placed both regions on a single track and were silently deleted by the per-track no-overlap validator (see [project-copy-deletes-overlapping-regions.md](./project-copy-deletes-overlapping-regions.md)); the scan now measures the dip directly. The numbers in the **Symptom** section are cross-checked against the target demo.
 
 Minimal box-graph setup:
 
 ```
-BPM 120, sample rate 44.1 kHz, one Tape track.
+BPM 120, sample rate 44.1 kHz, two Tape tracks (one region each — mix at master).
 Two AudioFileBoxes with distinct UUIDs:
   - File A: test-440hz.wav
   - File B: test-440hz-offset30.wav
-One AudioRegionBox per file on the same track:
+One AudioRegionBox per file, each on its own track:
   - Region A: position = 0,
               duration = PPQN(30 s) + PPQN(20 ms),   // 20 ms extension into B
               loopOffset = 0, loopDuration = PPQN(60 s),
