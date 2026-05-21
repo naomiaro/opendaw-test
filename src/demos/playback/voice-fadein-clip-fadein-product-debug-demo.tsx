@@ -460,9 +460,20 @@ const App: React.FC = () => {
             description={
               <>
                 Regions touch at the seam, no <Code>fading.in</Code> / <Code>fading.out</Code>.
-                OpenDAW's per-voice 20 ms fade (<Code>VOICE_FADE_DURATION</Code>) handles click
-                prevention on its own. <strong>Listen for:</strong> a clean transition at the
-                {" "}{SEAM_SECONDS} s seam.
+                OpenDAW's per-voice 20 ms fade (<Code>VOICE_FADE_DURATION</Code>) handles the
+                envelope. <strong>Listen for:</strong> a brief sample-level click at the
+                {" "}{SEAM_SECONDS} s seam — peak amplitude is unchanged but the sample-to-sample
+                first difference jumps. That's a separate, open artifact (touching-seam
+                discontinuity); see the{" "}
+                <a
+                  href="/shared-source-double-process-debug-demo.html"
+                  style={{ color: "var(--accent-11)", textDecoration: "underline" }}
+                >
+                  shared-source double-process demo
+                </a>{" "}
+                for the dedicated investigation. The scan here measures the envelope
+                (<Code>min / reference</Code>); it stays at 1.0 because the click doesn't dip
+                the envelope.
               </>
             }
             actions={
