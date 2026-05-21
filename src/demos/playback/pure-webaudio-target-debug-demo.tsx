@@ -491,7 +491,7 @@ const App: React.FC = () => {
     const bufferB = buffersRef.current.b;
     if (!ctx || !bufferA || !bufferB || !computedShift || scanning) return;
     const stepIndex =
-      scenario === "aligned" ? 1 : scenario === "unaligned" ? 2 : 3;
+      scenario === "unaligned" ? 1 : scenario === "aligned" ? 2 : 3;
     setScanning(true);
     setGotByStep((prev) => {
       const next = { ...prev };
@@ -645,14 +645,15 @@ const App: React.FC = () => {
               <InfoCircledIcon />
             </Callout.Icon>
             <Callout.Text>
-              Same 40 ms linear crossfade scenario rendered three ways for direct A/B/C
-              comparison. <strong>ALIGNED</strong> (pure Web Audio + phase correlation) is the
-              audible target — sums to unity through the crossfade.{" "}
-              <strong>UNALIGNED</strong> (pure Web Audio, no phase shift) is the control showing
-              what a phase-mismatched linear crossfade sounds like. <strong>OPENDAW</strong>{" "}
-              renders the same phase-corrected configuration through OpenDAW's{" "}
-              <Code>TapeDeviceProcessor</Code> on two Tape tracks (one region per track, mixed at
-              master); it produces a residual dip on the incoming voice's side caused by{" "}
+              Same 40 ms linear crossfade scenario rendered three ways, walk them in order:{" "}
+              <strong>step 1 UNALIGNED</strong> (pure Web Audio, no phase shift) is the control —
+              what mis-aligned linear crossfade sounds like, an obvious mid-crossfade dip.{" "}
+              <strong>Step 2 ALIGNED</strong> (pure Web Audio + phase correlation) is the audible
+              target — sums to unity through the crossfade, no dip.{" "}
+              <strong>Step 3 OPENDAW</strong> renders the same phase-corrected configuration as
+              step 2 through OpenDAW's <Code>TapeDeviceProcessor</Code> on two Tape tracks (one
+              region per track, mixed at master). It should sound identical to step 2; it
+              doesn't — there's a residual dip on the incoming voice's side caused by{" "}
               <Code>PitchVoice</Code> multiplying its 20 ms voice-fade-in by the region's
               clip-fade gain buffer.
             </Callout.Text>
@@ -692,54 +693,14 @@ const App: React.FC = () => {
 
           <TestStep
             index={1}
-            title="Target: ALIGNED (pure Web Audio)"
+            title="Control: UNALIGNED — what wrong sounds like"
             description={
               <>
-                Phase-correlate file A's tail against file B's head, apply the integer-sample
-                shift to file B's read offset, build a single AudioBuffer with a linear crossfade,
-                play via AudioBufferSourceNode. Two phase-aligned identical-source signals sum to
-                unity through the crossfade. <strong>Listen for:</strong> a seamless transition
-                at the {SEAM_SECONDS} s seam — no dip.
-              </>
-            }
-            actions={
-              <>
-                <Button
-                  onClick={() => handlePlay("aligned")}
-                  disabled={status !== "Ready" || scanning}
-                  color="green"
-                  size="3"
-                >
-                  <PlayIcon /> Play (ALIGNED — target)
-                </Button>
-                <Button
-                  onClick={handleScan}
-                  disabled={status !== "Ready" || scanning || scenario !== "aligned"}
-                  variant="soft"
-                  color="amber"
-                  size="3"
-                >
-                  <ActivityLogIcon /> {scanning ? "Scanning…" : "Scan ALIGNED"}
-                </Button>
-              </>
-            }
-            expected={[
-              { label: "min / reference", value: "≈ 0.9998  (−0.00 dB)" },
-              { label: "dip τ (ms relative to seam)", value: "n/a (no dip)" },
-              { label: "sample rate", value: `${audioContextRef.current?.sampleRate ?? "—"} Hz` },
-            ]}
-            got={gotByStep[1] ?? null}
-          />
-
-          <TestStep
-            index={2}
-            title="Control: UNALIGNED (shift = 0)"
-            description={
-              <>
-                Identical setup to step 1 except <Code>shift = 0</Code>. Phase mismatch through
-                the crossfade produces a sub-unity sum. <strong>Listen for:</strong> an obvious
-                dip centred mid-crossfade — confirms the scan correctly detects a dip when one
-                exists.
+                Pure Web Audio with <Code>shift = 0</Code> — no phase correction. Phase mismatch
+                between the two files through the crossfade produces a sub-unity sum.{" "}
+                <strong>Listen for:</strong> an obvious amplitude dip centred mid-crossfade at
+                the {SEAM_SECONDS} s seam. This is the failure mode the next two steps should
+                NOT sound like.
               </>
             }
             actions={
@@ -768,6 +729,47 @@ const App: React.FC = () => {
               { label: "dip τ (ms relative to seam)", value: "near 0 ms (centred on seam)" },
               { label: "sample rate", value: `${audioContextRef.current?.sampleRate ?? "—"} Hz` },
             ]}
+            got={gotByStep[1] ?? null}
+          />
+
+          <TestStep
+            index={2}
+            title="Target: ALIGNED — what right sounds like"
+            description={
+              <>
+                Same setup as step 1 except phase-correlate file A's tail against file B's
+                head, apply the integer-sample shift to file B's read offset before the linear
+                crossfade. Two phase-aligned identical-source signals now sum to unity.{" "}
+                <strong>Listen for:</strong> a seamless transition at the {SEAM_SECONDS} s
+                seam — no dip. This is the audible target for step 3.
+              </>
+            }
+            actions={
+              <>
+                <Button
+                  onClick={() => handlePlay("aligned")}
+                  disabled={status !== "Ready" || scanning}
+                  color="green"
+                  size="3"
+                >
+                  <PlayIcon /> Play (ALIGNED — target)
+                </Button>
+                <Button
+                  onClick={handleScan}
+                  disabled={status !== "Ready" || scanning || scenario !== "aligned"}
+                  variant="soft"
+                  color="amber"
+                  size="3"
+                >
+                  <ActivityLogIcon /> {scanning ? "Scanning…" : "Scan ALIGNED"}
+                </Button>
+              </>
+            }
+            expected={[
+              { label: "min / reference", value: "≈ 0.9998  (−0.00 dB)" },
+              { label: "dip τ (ms relative to seam)", value: "n/a (no dip)" },
+              { label: "sample rate", value: `${audioContextRef.current?.sampleRate ?? "—"} Hz` },
+            ]}
             got={gotByStep[2] ?? null}
           />
 
@@ -776,13 +778,14 @@ const App: React.FC = () => {
             title="OPENDAW: the artifact"
             description={
               <>
-                Same phase-corrected configuration as ALIGNED but rendered through OpenDAW's{" "}
-                <Code>TapeDeviceProcessor</Code> on two Tape tracks. <strong>Listen for:</strong>{" "}
-                a subtler dip on the incoming voice's side, ~10 ms <em>before</em> the seam —
-                smaller than UNALIGNED's obvious dip but bigger than ALIGNED's zero. Mechanism:{" "}
-                <Code>PitchVoice</Code> multiplies its 20 ms voice-fade-in by the region's
-                clip-fade gain, turning the first 20 ms of a linear fade-in into a quadratic
-                ramp.
+                Same phase-corrected configuration as step 2 (ALIGNED) but rendered through
+                OpenDAW's <Code>TapeDeviceProcessor</Code> on two Tape tracks.{" "}
+                <strong>It should sound identical to step 2 — no dip.</strong> It does not:
+                listen for a subtler dip on the incoming voice's side, ~10 ms <em>before</em>{" "}
+                the seam — smaller than UNALIGNED's obvious dip but clearly bigger than
+                ALIGNED's zero. Mechanism: <Code>PitchVoice</Code> multiplies its 20 ms
+                voice-fade-in by the region's clip-fade gain, turning the first 20 ms of a
+                linear fade-in into a quadratic ramp.
               </>
             }
             actions={
