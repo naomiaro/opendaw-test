@@ -610,6 +610,23 @@ const App: React.FC = () => {
     positionSec > SEAM_SECONDS - CROSSFADE_MS / 2000 - 0.005 &&
     positionSec < SEAM_SECONDS + CROSSFADE_MS / 2000 + 0.005;
 
+  const renderPlaybackHud = () => (
+    <>
+      <Badge color={inCrossfadeRegion ? "red" : isPlaying ? "amber" : "gray"} size="2">
+        <Code>
+          {positionSec.toFixed(3)} s
+          {inCrossfadeRegion ? " ← CROSSFADE" : ""}
+        </Code>
+      </Badge>
+      <Text size="1" color="gray">
+        seam {SEAM_SECONDS.toFixed(3)} s · crossfade ±{CROSSFADE_MS / 2} ms
+      </Text>
+      <Button onClick={handleStop} disabled={!isPlaying} variant="soft" size="2">
+        <StopIcon /> Stop
+      </Button>
+    </>
+  );
+
   return (
     <Theme appearance="dark" accentColor="green">
       <Container size="3" style={{ padding: "2rem", minHeight: "100vh" }}>
@@ -675,19 +692,6 @@ const App: React.FC = () => {
                       : "OPENDAW"}
                 </Badge>
               )}
-              <Text size="2" weight="bold">Position:</Text>
-              <Badge color={inCrossfadeRegion ? "red" : isPlaying ? "amber" : "gray"} size="2">
-                <Code>
-                  {positionSec.toFixed(3)} s
-                  {inCrossfadeRegion ? " ← CROSSFADE" : ""}
-                </Code>
-              </Badge>
-              <Text size="2" color="gray">
-                (seam at {SEAM_SECONDS}.000 s, crossfade ±{CROSSFADE_MS / 2} ms)
-              </Text>
-              <Button onClick={handleStop} disabled={!isPlaying} variant="soft" size="2">
-                <StopIcon /> Stop
-              </Button>
             </Flex>
           </Card>
 
@@ -722,6 +726,7 @@ const App: React.FC = () => {
                 >
                   <ActivityLogIcon /> {scanning ? "Scanning…" : "Scan UNALIGNED"}
                 </Button>
+                {renderPlaybackHud()}
               </>
             }
             expected={[
@@ -763,6 +768,7 @@ const App: React.FC = () => {
                 >
                   <ActivityLogIcon /> {scanning ? "Scanning…" : "Scan ALIGNED"}
                 </Button>
+                {renderPlaybackHud()}
               </>
             }
             expected={[
@@ -807,6 +813,7 @@ const App: React.FC = () => {
                 >
                   <ActivityLogIcon /> {scanning ? "Scanning…" : "Scan OPENDAW"}
                 </Button>
+                {renderPlaybackHud()}
               </>
             }
             expected={[

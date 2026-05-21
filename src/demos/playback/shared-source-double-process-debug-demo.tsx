@@ -413,6 +413,25 @@ const App: React.FC = () => {
 
   const atSeam = Math.abs(positionSec - seamSeconds) < 0.1;
 
+  const renderPlaybackHud = () => (
+    <>
+      <Badge color={atSeam ? "red" : isPlaying ? "amber" : "gray"} size="2">
+        <Code>
+          {positionSec.toFixed(3)} s
+          {atSeam ? " ← SEAM" : ""}
+        </Code>
+      </Badge>
+      <Text size="1" color="gray">
+        seam {seamSeconds.toFixed(3)} s · offset{" "}
+        {audioContext ? inBlockOffsetSamples(seamSeconds, audioContext.sampleRate) : "—"}/
+        {RENDER_QUANTUM} at SR {audioContext?.sampleRate ?? "—"} Hz
+      </Text>
+      <Button onClick={handleStop} disabled={!isPlaying} variant="soft" size="2">
+        <StopIcon /> Stop
+      </Button>
+    </>
+  );
+
   return (
     <Theme appearance="dark" accentColor="amber">
       <Container size="3" style={{ padding: "2rem", minHeight: "100vh" }}>
@@ -473,21 +492,6 @@ const App: React.FC = () => {
               <Badge color={seamPosition === "block-aligned" ? "green" : "amber"}>
                 Seam: {seamPosition === "block-aligned" ? "block-aligned" : "off-boundary"}
               </Badge>
-              <Text size="2" weight="bold">Position:</Text>
-              <Badge color={atSeam ? "red" : isPlaying ? "amber" : "gray"} size="2">
-                <Code>
-                  {positionSec.toFixed(3)} s
-                  {atSeam ? " ← SEAM" : ""}
-                </Code>
-              </Badge>
-              <Text size="2" color="gray">
-                (seam at {seamSeconds.toFixed(3)} s, offset{" "}
-                {audioContext ? inBlockOffsetSamples(seamSeconds, audioContext.sampleRate) : "—"}/
-                {RENDER_QUANTUM} samples into block at SR {audioContext?.sampleRate ?? "—"} Hz)
-              </Text>
-              <Button onClick={handleStop} disabled={!isPlaying} variant="soft" size="2">
-                <StopIcon /> Stop
-              </Button>
             </Flex>
           </Card>
 
@@ -536,6 +540,7 @@ const App: React.FC = () => {
                 >
                   <ActivityLogIcon /> {scanning ? "Scanning…" : "Scan step 1"}
                 </Button>
+                {renderPlaybackHud()}
               </>
             }
             expected={[
@@ -585,6 +590,7 @@ const App: React.FC = () => {
                 >
                   <ActivityLogIcon /> {scanning ? "Scanning…" : "Scan step 2"}
                 </Button>
+                {renderPlaybackHud()}
               </>
             }
             expected={[
@@ -643,6 +649,7 @@ const App: React.FC = () => {
                 >
                   <ActivityLogIcon /> {scanning ? "Scanning…" : "Scan step 3"}
                 </Button>
+                {renderPlaybackHud()}
               </>
             }
             expected={[
@@ -691,6 +698,7 @@ const App: React.FC = () => {
                 >
                   <ActivityLogIcon /> {scanning ? "Scanning…" : "Scan step 4"}
                 </Button>
+                {renderPlaybackHud()}
               </>
             }
             expected={[

@@ -368,6 +368,23 @@ const App: React.FC = () => {
     positionSec > SEAM_SECONDS - CROSSFADE_MS / 2000 - 0.005 &&
     positionSec < SEAM_SECONDS + CROSSFADE_MS / 2000 + 0.005;
 
+  const renderPlaybackHud = () => (
+    <>
+      <Badge color={inCrossfadeRegion ? "red" : isPlaying ? "amber" : "gray"} size="2">
+        <Code>
+          {positionSec.toFixed(3)} s
+          {inCrossfadeRegion ? " ← CROSSFADE" : ""}
+        </Code>
+      </Badge>
+      <Text size="1" color="gray">
+        seam {SEAM_SECONDS.toFixed(3)} s · crossfade ±{CROSSFADE_MS / 2} ms
+      </Text>
+      <Button onClick={handleStop} disabled={!isPlaying} variant="soft" size="2">
+        <StopIcon /> Stop
+      </Button>
+    </>
+  );
+
   return (
     <Theme appearance="dark" accentColor="amber">
       <Container size="3" style={{ padding: "2rem", minHeight: "100vh" }}>
@@ -426,19 +443,6 @@ const App: React.FC = () => {
                   Playing: {scenario === "crossfade" ? "CROSSFADE" : "HARD-CUT"}
                 </Badge>
               )}
-              <Text size="2" weight="bold">Position:</Text>
-              <Badge color={inCrossfadeRegion ? "red" : isPlaying ? "amber" : "gray"} size="2">
-                <Code>
-                  {positionSec.toFixed(3)} s
-                  {inCrossfadeRegion ? " ← CROSSFADE" : ""}
-                </Code>
-              </Badge>
-              <Text size="2" color="gray">
-                (seam at {SEAM_SECONDS}.000 s, crossfade ±{CROSSFADE_MS / 2} ms)
-              </Text>
-              <Button onClick={handleStop} disabled={!isPlaying} variant="soft" size="2">
-                <StopIcon /> Stop
-              </Button>
             </Flex>
           </Card>
 
@@ -472,6 +476,7 @@ const App: React.FC = () => {
                 >
                   <ActivityLogIcon /> {scanning ? "Scanning…" : "Scan HARD-CUT"}
                 </Button>
+                {renderPlaybackHud()}
               </>
             }
             expected={[
@@ -497,14 +502,17 @@ const App: React.FC = () => {
               </>
             }
             actions={
-              <Button
-                onClick={() => applyScenarioAndPlay("crossfade")}
-                disabled={!project || status !== "Ready" || scanning}
-                color="amber"
-                size="3"
-              >
-                <PlayIcon /> Play (CROSSFADE)
-              </Button>
+              <>
+                <Button
+                  onClick={() => applyScenarioAndPlay("crossfade")}
+                  disabled={!project || status !== "Ready" || scanning}
+                  color="amber"
+                  size="3"
+                >
+                  <PlayIcon /> Play (CROSSFADE)
+                </Button>
+                {renderPlaybackHud()}
+              </>
             }
             expected={[]}
             got={null}
@@ -523,15 +531,18 @@ const App: React.FC = () => {
               </>
             }
             actions={
-              <Button
-                onClick={handleScan}
-                disabled={!project || status !== "Ready" || scanning || scenario !== "crossfade"}
-                variant="soft"
-                color="amber"
-                size="3"
-              >
-                <ActivityLogIcon /> {scanning ? "Scanning…" : "Scan CROSSFADE"}
-              </Button>
+              <>
+                <Button
+                  onClick={handleScan}
+                  disabled={!project || status !== "Ready" || scanning || scenario !== "crossfade"}
+                  variant="soft"
+                  color="amber"
+                  size="3"
+                >
+                  <ActivityLogIcon /> {scanning ? "Scanning…" : "Scan CROSSFADE"}
+                </Button>
+                {renderPlaybackHud()}
+              </>
             }
             expected={[
               { label: "reference peak", value: "≈ 0.5000" },
