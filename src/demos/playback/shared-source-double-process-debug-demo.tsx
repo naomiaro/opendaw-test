@@ -503,19 +503,30 @@ const App: React.FC = () => {
             </Flex>
           </Card>
 
-          <TestStep
-            index={1}
-            title="Block-aligned seam + SHARED AudioFileBox"
-            description={
-              <>
-                Seam at 30.000 s (PPQN 57600 at BPM 120 — block-aligned at 48 kHz; at other rates
-                see the in-block offset in the status row). Both regions reference one{" "}
-                <Code>AudioFileBox</Code>. <strong>Listen for:</strong> a barely-audible snap at
-                the seam; peak amplitude is unchanged.
-              </>
-            }
-            actions={
-              <>
+          <Card>
+            <Flex direction="column" gap="3">
+              <Text size="3" weight="bold">Seam position (global config)</Text>
+              <Separator size="4" />
+              <Text size="2">
+                The Web Audio render quantum is 128 samples wide. We test two seam positions to
+                check whether the touching-seam discontinuity depends on where the seam lands
+                inside a quantum. Both positions are exact integer PPQN at BPM 120 (required —
+                <Code>position</Code> is <Code>Int32</Code> and would truncate a fractional
+                PPQN, creating a sub-PPQN overlap that <Code>project.copy()</Code> deletes).
+              </Text>
+              <Text size="2">
+                <strong>30.000 s</strong> = PPQN 57600 = sample 1,440,000 at 48 kHz =
+                exactly on a 128-sample block boundary (offset 0).{" "}
+                <strong>30.500 s</strong> = PPQN 58560 = sample 1,464,000 at 48 kHz =
+                64 samples into a block. Live playback sometimes sounds different across the
+                two; the offline scan does not reproduce that (numbers are bit-identical).
+              </Text>
+              <Text size="2" color="gray">
+                Steps 1–2 use 30.000 s. Steps 3–4 use 30.500 s. Use this toggle to switch
+                between them — switching also clears any previously-recorded Got rows so you
+                can re-walk the matrix from a clean slate.
+              </Text>
+              <Flex gap="3" wrap="wrap">
                 <Button
                   onClick={() => applySeamPosition("block-aligned")}
                   disabled={!project || status !== "Ready" || scanning}
@@ -523,11 +534,42 @@ const App: React.FC = () => {
                   color="green"
                   size="3"
                 >
-                  Set seam: 30.000 s (block-aligned)
+                  Set seam: 30.000 s (block-aligned, offset 0/128 at 48 kHz)
                 </Button>
                 <Button
-                  onClick={() => applyScenarioAndPlay("shared")}
+                  onClick={() => applySeamPosition("off-boundary")}
                   disabled={!project || status !== "Ready" || scanning}
+                  variant={seamPosition === "off-boundary" ? "solid" : "outline"}
+                  color="amber"
+                  size="3"
+                >
+                  Set seam: 30.500 s (off-boundary, offset 64/128 at 48 kHz)
+                </Button>
+              </Flex>
+            </Flex>
+          </Card>
+
+          <TestStep
+            index={1}
+            title="Block-aligned seam + SHARED AudioFileBox"
+            description={
+              <>
+                <strong>Requires:</strong> seam toggle above set to{" "}
+                <strong>30.000 s (block-aligned)</strong>. Both regions reference one{" "}
+                <Code>AudioFileBox</Code>. <strong>Listen for:</strong> a brief sample-level
+                snap at the seam; peak amplitude is unchanged.
+              </>
+            }
+            actions={
+              <>
+                <Button
+                  onClick={() => applyScenarioAndPlay("shared")}
+                  disabled={
+                    !project ||
+                    status !== "Ready" ||
+                    scanning ||
+                    seamPosition !== "block-aligned"
+                  }
                   color="amber"
                   size="3"
                 >
@@ -552,17 +594,24 @@ const App: React.FC = () => {
             title="Block-aligned seam + DISTINCT AudioFileBoxes"
             description={
               <>
-                Same seam, two <Code>AudioFileBox</Code>es with identical on-disk content (rules
-                out the shared-voice mechanism — voices are keyed per region, so SHARED and
-                DISTINCT yield independent voices either way). <strong>Listen for:</strong> the
-                same snap as step 1.
+                <strong>Requires:</strong> seam toggle still at{" "}
+                <strong>30.000 s (block-aligned)</strong>. Two distinct{" "}
+                <Code>AudioFileBox</Code>es with identical on-disk content (rules out the
+                shared-voice mechanism — voices are keyed per region, so SHARED and DISTINCT
+                yield independent voices either way). <strong>Listen for:</strong> the same
+                snap as step 1.
               </>
             }
             actions={
               <>
                 <Button
                   onClick={() => applyScenarioAndPlay("distinct")}
-                  disabled={!project || status !== "Ready" || scanning}
+                  disabled={
+                    !project ||
+                    status !== "Ready" ||
+                    scanning ||
+                    seamPosition !== "block-aligned"
+                  }
                   color="amber"
                   size="3"
                 >
@@ -587,26 +636,23 @@ const App: React.FC = () => {
             title="Off-boundary seam + SHARED AudioFileBox"
             description={
               <>
-                Seam moved to 30.500 s (PPQN 58560 at BPM 120 — 64 samples into a block at 48 kHz).
-                Both regions reference one <Code>AudioFileBox</Code>.{" "}
-                <strong>Listen for:</strong> live, the off-boundary snap sometimes sounds louder
-                than block-aligned (subjective). Offline scan: same numbers.
+                <strong>Requires:</strong> seam toggle above set to{" "}
+                <strong>30.500 s (off-boundary)</strong>. Both regions reference one{" "}
+                <Code>AudioFileBox</Code>. <strong>Listen for:</strong> live, the off-boundary
+                snap sometimes sounds louder than block-aligned (subjective). Offline scan:
+                same numbers.
               </>
             }
             actions={
               <>
                 <Button
-                  onClick={() => applySeamPosition("off-boundary")}
-                  disabled={!project || status !== "Ready" || scanning}
-                  variant={seamPosition === "off-boundary" ? "solid" : "outline"}
-                  color="amber"
-                  size="3"
-                >
-                  Set seam: 30.500 s (off-boundary)
-                </Button>
-                <Button
                   onClick={() => applyScenarioAndPlay("shared")}
-                  disabled={!project || status !== "Ready" || scanning}
+                  disabled={
+                    !project ||
+                    status !== "Ready" ||
+                    scanning ||
+                    seamPosition !== "off-boundary"
+                  }
                   color="amber"
                   size="3"
                 >
@@ -631,7 +677,9 @@ const App: React.FC = () => {
             title="Off-boundary seam + DISTINCT (confirms all four equivalent)"
             description={
               <>
-                Same off-boundary seam, two distinct <Code>AudioFileBox</Code>es. Closes the 2×2
+                <strong>Requires:</strong> seam toggle still at{" "}
+                <strong>30.500 s (off-boundary)</strong>. Two distinct{" "}
+                <Code>AudioFileBox</Code>es with identical on-disk content. Closes the 2×2
                 matrix — all four offline scans return bit-identical numbers, confirming the
                 artifact is independent of both mediaId and seam-position-in-block.
               </>
@@ -640,7 +688,12 @@ const App: React.FC = () => {
               <>
                 <Button
                   onClick={() => applyScenarioAndPlay("distinct")}
-                  disabled={!project || status !== "Ready" || scanning}
+                  disabled={
+                    !project ||
+                    status !== "Ready" ||
+                    scanning ||
+                    seamPosition !== "off-boundary"
+                  }
                   color="amber"
                   size="3"
                 >
