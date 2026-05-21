@@ -35,23 +35,18 @@ produces a zero-filled buffer. `engineWorklet.queryLoadingComplete()` returns `t
 
 ## How to reproduce
 
-```bash
-npm run dev
-# open https://localhost:5173/voice-fadein-clip-fadein-product-debug-demo.html
-```
+The original reproducer was the CROSSFADE configuration of `voice-fadein-clip-fadein-product-debug-demo.html` placing two overlapping regions on a single Tape track. That demo has since been updated to use two Tape tracks (mix at master) so its offline scan can measure the actual voice-fade × clip-fade dip; the deletion is therefore no longer surfaced by any live demo on this repo.
 
-**HTTPS required.** Click **Play (CROSSFADE)** to mutate the project into the overlapping-regions configuration (`applyScenarioAndPlay` extends region A's duration forward by half the fade and shifts region B's position back by half the fade, so the two regions overlap by `CROSSFADE_MS` = 40 ms on the same track). Live playback works — the seam is audible. Click **Stop**, then **Scan current scenario**. The offline scan reports `reference peak: 0.0000`, `min envelope peak: 0.0000`, with all subsequent metrics at zero (the entire rendered buffer is silence). The browser console shows:
+To repro from scratch with the SDK directly, set up two `AudioRegionBox`es on the **same** track with overlapping timeline ranges (e.g. region A: `position = 0`, `duration = 30.02 s`; region B: `position = 29.98 s`, `duration = 30.02 s` — a 40 ms overlap). The live engine plays the configuration; calling `project.copy()` against it deletes both regions and the browser console logs:
 
 ```
 _AudioRegionBox _AudioRegionBox Overlapping regions
 Deleting 2 invalid boxes:
 ```
 
-The deletion fires inside `project.copy()`, which the offline-scan path (`renderOfflineSlice` in `src/lib/offlineScan.ts`) uses to snapshot project state for the offline engine. After the deletion the copied project has no regions to render.
+This is the expected, by-design behaviour — see the **Status** banner at the top of this note.
 
-Switching to the HARD-CUT configuration in the same demo (no clip fades, regions touch but do not overlap) renders normal audio offline — the same code path produces ~0.5 peak amplitude through the seam.
-
-Minimal box-graph setup that triggers the deletion (also matches the OPENDAW scenario in the repro page):
+Minimal box-graph setup that triggers the deletion:
 
 ```
 One Tape track.
