@@ -387,7 +387,7 @@ const App: React.FC = () => {
             },
             {
               label: "debug/voice-fadein-clip-fadein-product.md",
-              href: "https://github.com/moises-ai/opendaw-test/blob/main/debug/voice-fadein-clip-fadein-product.md",
+              href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/voice-fadein-clip-fadein-product.md",
               kind: "note",
             },
           ]}

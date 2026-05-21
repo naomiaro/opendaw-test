@@ -432,7 +432,7 @@ const App: React.FC = () => {
             },
             {
               label: "debug/shared-source-double-process.md",
-              href: "https://github.com/moises-ai/opendaw-test/blob/main/debug/shared-source-double-process.md",
+              href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/shared-source-double-process.md",
               kind: "note",
             },
           ]}
