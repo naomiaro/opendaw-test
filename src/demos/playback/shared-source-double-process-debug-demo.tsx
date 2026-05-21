@@ -12,6 +12,8 @@ import { BackLink } from "@/components/BackLink";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { loadAudioFile } from "@/lib/audioUtils";
 import { maxDeltaInWindow, peakInWindow, renderOfflineSlice } from "@/lib/offlineScan";
+import { TestStep, TestStepRow } from "@/components/TestStep";
+import { DebugLinkBar } from "@/components/DebugLinkBar";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
@@ -94,7 +96,7 @@ const App: React.FC = () => {
   // SR-derived. The in-block offset for display IS SR-derived.
   const seamSeconds = SEAM_SECONDS_BY_POSITION[seamPosition];
   const [positionSec, setPositionSec] = useState(0);
-  const [scanResult, setScanResult] = useState<string | null>(null);
+  const [gotByStep, setGotByStep] = useState<Record<number, TestStepRow[]>>({});
   const [scanning, setScanning] = useState(false);
 
   const audioBufferRef = useRef<AudioBuffer | null>(null);
@@ -309,7 +311,6 @@ const App: React.FC = () => {
         regionB.loopOffset.setValue(seamPPQN);
       });
       setSeamPosition(next);
-      setScanResult(null);
     },
     [project]
   );
@@ -321,8 +322,20 @@ const App: React.FC = () => {
   const handleScan = useCallback(async () => {
     if (!project || scanning) return;
     if (project.engine.isPlaying.getValue()) project.engine.stop(true);
+    const stepIndex =
+      seamPosition === "block-aligned"
+        ? scenario === "shared"
+          ? 1
+          : 2
+        : scenario === "shared"
+          ? 3
+          : 4;
     setScanning(true);
-    setScanResult(null);
+    setGotByStep((prev) => {
+      const next = { ...prev };
+      delete next[stepIndex];
+      return next;
+    });
     try {
       const sliceStart = seamSeconds - 0.1;
       const sliceEnd = seamSeconds + 0.1;
@@ -331,53 +344,58 @@ const App: React.FC = () => {
         sliceStart,
         sliceEnd
       );
-      // Mono sine duplicated to both channels; left is sufficient.
       const left = channels[0];
-      const preWindow = peakInWindow(left, sliceStart, seamSeconds - 0.05, seamSeconds - 0.02, sr);
-      const transitionWindow = peakInWindow(
+      const preDelta = maxDeltaInWindow(
         left,
         sliceStart,
-        seamSeconds - 0.001,
-        seamSeconds + 0.025,
+        seamSeconds - 0.05,
+        seamSeconds - 0.02,
         sr
       );
-      // For a 440 Hz sine at amplitude 0.5, the maximum sample-to-sample
-      // delta of clean output is `2π·440·0.5/SR` (at zero crossings) —
-      // depends on the AudioContext's sample rate. Any larger delta
-      // indicates a waveform discontinuity — a click, phase jump, or an
-      // impulse to zero from a missed-sample gap. This catches what the
-      // ear perceives as a "click" even when peak amplitude is unchanged.
-      const expectedDelta = (2 * Math.PI * 440 * 0.5) / sr;
-      const preDelta = maxDeltaInWindow(left, sliceStart, seamSeconds - 0.05, seamSeconds - 0.02, sr);
-      const seamDelta = maxDeltaInWindow(left, sliceStart, seamSeconds - 0.005, seamSeconds + 0.005, sr);
-      const ratio = preWindow.peak > 1e-6 ? transitionWindow.peak / preWindow.peak : 0;
-      const deltaRatio = preDelta.maxDelta > 1e-9 ? seamDelta.maxDelta / preDelta.maxDelta : 0;
-      const offsetInBlock = inBlockOffsetSamples(seamSeconds, sr);
-      setScanResult(
-        [
-          `scenario             : ${scenario.toUpperCase()}`,
-          `seam position        : ${seamPosition.toUpperCase()}  (${seamSeconds.toFixed(3)} s, offset ${offsetInBlock}/${RENDER_QUANTUM} samples into block at SR ${sr})`,
-          `sample rate          : ${sr} Hz`,
-          ``,
-          `── peak amplitude ──`,
-          `pre-seam peak        : ${preWindow.peak.toFixed(4)}  (in [${(seamSeconds - 0.05).toFixed(3)} s, ${(seamSeconds - 0.02).toFixed(3)} s])`,
-          `voice-fade window    : ${transitionWindow.peak.toFixed(4)}  (in [${(seamSeconds - 0.001).toFixed(3)} s, ${(seamSeconds + 0.025).toFixed(3)} s])`,
-          `transition / pre     : ${ratio.toFixed(3)}  (≥1.0 expected — peak unchanged ≠ no click)`,
-          ``,
-          `── sample-to-sample Δ (clicks/discontinuities) ──`,
-          `expected clean max Δ : ${expectedDelta.toFixed(5)}  (= 2π·440·0.5/SR for a 440 Hz, 0.5-amplitude sine)`,
-          `pre-seam max Δ       : ${preDelta.maxDelta.toFixed(5)}  (in [${(seamSeconds - 0.05).toFixed(3)} s, ${(seamSeconds - 0.02).toFixed(3)} s])`,
-          `seam-band max Δ      : ${seamDelta.maxDelta.toFixed(5)}  (in [${(seamSeconds - 0.005).toFixed(3)} s, ${(seamSeconds + 0.005).toFixed(3)} s])`,
-          `seam-Δ / pre-Δ       : ${deltaRatio.toFixed(2)}  (>>1 indicates a waveform discontinuity)`,
-          `largest jump at      : ${(sliceStart + seamDelta.atSecondsFromStart).toFixed(6)} s  (τ = ${((sliceStart + seamDelta.atSecondsFromStart - seamSeconds) * 1000).toFixed(3)} ms relative to seam)`,
-        ].join("\n")
+      const seamDelta = maxDeltaInWindow(
+        left,
+        sliceStart,
+        seamSeconds - 0.005,
+        seamSeconds + 0.005,
+        sr
       );
+      const preWindow = peakInWindow(
+        left,
+        sliceStart,
+        seamSeconds - 0.05,
+        seamSeconds - 0.02,
+        sr
+      );
+      const expectedDelta = (2 * Math.PI * 440 * 0.5) / sr;
+      const deltaRatio =
+        preDelta.maxDelta > 1e-9 ? seamDelta.maxDelta / preDelta.maxDelta : 0;
+      const jumpTauMs =
+        (sliceStart + seamDelta.atSecondsFromStart - seamSeconds) * 1000;
+      const offsetInBlock = inBlockOffsetSamples(seamSeconds, sr);
+      const rows: TestStepRow[] = [
+        { label: "pre-seam peak", value: preWindow.peak.toFixed(4) },
+        {
+          label: "expected clean max |Δ| (= 2π·440·0.5/SR)",
+          value: expectedDelta.toFixed(5),
+        },
+        { label: "seam-band max |Δ|", value: seamDelta.maxDelta.toFixed(5) },
+        { label: "seam-Δ / pre-Δ", value: deltaRatio.toFixed(2) },
+        { label: "largest jump τ (ms relative to seam)", value: `${jumpTauMs.toFixed(3)} ms` },
+        {
+          label: "seam in-block offset (samples / 128 at SR)",
+          value: `${offsetInBlock} / ${RENDER_QUANTUM} at SR ${sr}`,
+        },
+      ];
+      setGotByStep((prev) => ({ ...prev, [stepIndex]: rows }));
     } catch (error) {
-      setScanResult(`Error: ${String(error)}`);
+      setGotByStep((prev) => ({
+        ...prev,
+        [stepIndex]: [{ label: "error", value: String(error) }],
+      }));
     } finally {
       setScanning(false);
     }
-  }, [project, scenario, scanning, seamPosition, seamSeconds]);
+  }, [project, scanning, seamPosition, scenario, seamSeconds]);
 
   // Live playhead readout: convert engine PPQN to seconds via the timeline's
   // BPM each frame. Lets the listener visually correlate any audio artifact
@@ -399,10 +417,29 @@ const App: React.FC = () => {
       <Container size="3" style={{ padding: "2rem", minHeight: "100vh" }}>
         <GitHubCorner />
         <BackLink />
+        <DebugLinkBar
+          links={[
+            {
+              label: "Voice-fade × clip-fade product demo",
+              href: "/voice-fadein-clip-fadein-product-debug-demo.html",
+              kind: "demo",
+            },
+            {
+              label: "Pure-Web-Audio target demo",
+              href: "/pure-webaudio-target-debug-demo.html",
+              kind: "demo",
+            },
+            {
+              label: "debug/shared-source-double-process.md",
+              href: "https://github.com/moises-ai/opendaw-test/blob/main/debug/shared-source-double-process.md",
+              kind: "note",
+            },
+          ]}
+        />
 
         <Flex direction="column" gap="4">
           <Heading size="7" align="center">
-            Shared-Source Double-Process
+            Touching-Seam Sample Discontinuity
           </Heading>
 
           <Callout.Root color="blue">
@@ -410,35 +447,32 @@ const App: React.FC = () => {
               <InfoCircledIcon />
             </Callout.Icon>
             <Callout.Text>
-              Two adjacent same-track <Code>AudioRegionBox</Code>es touching at a seam that falls
-              strictly inside a render quantum produce an audible sample-level discontinuity
-              (≈ 2× the clean-sine <Code>max |Δsample|</Code>) at the seam. Peak amplitude is
-              unchanged — only the sample-to-sample first difference reveals it. Toggle the seam
-              position to A/B block-aligned vs off-boundary, and the scenario to confirm the artifact
-              is <strong>independent of mediaId</strong>: SHARED (one <Code>AudioFileBox</Code>)
-              and DISTINCT (two distinct <Code>AudioFileBox</Code>es with identical content) produce
-              bit-identical offline output. Mechanism for the discontinuity is currently open —
-              see the markdown note.
+              Two adjacent same-track regions touching at a seam produce a sample-level
+              discontinuity 2 samples before the seam, where <Code>max |Δsample|</Code> measures
+              ≈ 2× the clean-sine baseline of <Code>2π·440·0.5/SR</Code>. The discontinuity is
+              independent of mediaId (SHARED vs DISTINCT <Code>AudioFileBox</Code>) AND
+              independent of where the seam falls within the 128-sample render quantum — all four
+              scenarios below produce bit-identical offline output. Live playback sometimes sounds
+              different across seam positions; the offline scan does not reproduce that.
+              Mechanism: open.
             </Callout.Text>
           </Callout.Root>
 
           <Card>
             <Flex align="center" gap="3" wrap="wrap">
-              <Text size="2" weight="bold">
-                Status:
-              </Text>
+              <Text size="2" weight="bold">Status:</Text>
               <Badge color={status.includes("Error") ? "red" : status === "Ready" ? "green" : "blue"}>
                 {status}
               </Badge>
               {isPlaying && (
-                <Badge color="amber">Playing: {scenario === "shared" ? "SHARED" : "DISTINCT"}</Badge>
+                <Badge color="amber">
+                  Playing: {scenario === "shared" ? "SHARED" : "DISTINCT"}
+                </Badge>
               )}
               <Badge color={seamPosition === "block-aligned" ? "green" : "amber"}>
                 Seam: {seamPosition === "block-aligned" ? "block-aligned" : "off-boundary"}
               </Badge>
-              <Text size="2" weight="bold">
-                Position:
-              </Text>
+              <Text size="2" weight="bold">Position:</Text>
               <Badge color={atSeam ? "red" : isPlaying ? "amber" : "gray"} size="2">
                 <Code>
                   {positionSec.toFixed(3)} s
@@ -450,26 +484,25 @@ const App: React.FC = () => {
                 {audioContext ? inBlockOffsetSamples(seamSeconds, audioContext.sampleRate) : "—"}/
                 {RENDER_QUANTUM} samples into block at SR {audioContext?.sampleRate ?? "—"} Hz)
               </Text>
+              <Button onClick={handleStop} disabled={!isPlaying} variant="soft" size="2">
+                <StopIcon /> Stop
+              </Button>
             </Flex>
           </Card>
 
-          <Card>
-            <Flex direction="column" gap="3">
-              <Text size="3" weight="bold">
-                Seam position
-              </Text>
-              <Separator size="4" />
-              <Text size="2">
-                Both seam values are chosen so that <Code>PPQN.secondsToPulses(seam, BPM 120)</Code>{" "}
-                returns an exact integer — required because <Code>AudioRegionBox.position</Code> is
-                an <Code>Int32Field</Code> (it silently truncates non-integer PPQN), while{" "}
-                <Code>duration</Code> is <Code>Float32Field</Code>; a fractional PPQN assigned to
-                both fields creates a sub-PPQN overlap that <Code>project.copy()</Code> deletes.
-                The Web Audio render quantum is always 128 samples, but where the seam falls inside
-                a block depends on the AudioContext rate (
-                {audioContext?.sampleRate ?? "—"} Hz). Offsets shown below:
-              </Text>
-              <Flex gap="3" wrap="wrap">
+          <TestStep
+            index={1}
+            title="Block-aligned seam + SHARED AudioFileBox"
+            description={
+              <>
+                Seam at 30.000 s (PPQN 57600 at BPM 120 — block-aligned at 48 kHz; at other rates
+                see the in-block offset in the status row). Both regions reference one
+                <Code>AudioFileBox</Code>. <strong>Listen for:</strong> a barely-audible snap at
+                the seam; peak amplitude is unchanged.
+              </>
+            }
+            actions={
+              <>
                 <Button
                   onClick={() => applySeamPosition("block-aligned")}
                   disabled={!project || status !== "Ready" || scanning}
@@ -477,48 +510,8 @@ const App: React.FC = () => {
                   color="green"
                   size="3"
                 >
-                  30.000 s — offset{" "}
-                  {audioContext ? inBlockOffsetSamples(30.0, audioContext.sampleRate) : "—"}/
-                  {RENDER_QUANTUM}
+                  Set seam: 30.000 s (block-aligned)
                 </Button>
-                <Button
-                  onClick={() => applySeamPosition("off-boundary")}
-                  disabled={!project || status !== "Ready" || scanning}
-                  variant={seamPosition === "off-boundary" ? "solid" : "outline"}
-                  color="amber"
-                  size="3"
-                >
-                  30.500 s — offset{" "}
-                  {audioContext ? inBlockOffsetSamples(30.5, audioContext.sampleRate) : "—"}/
-                  {RENDER_QUANTUM}
-                </Button>
-              </Flex>
-            </Flex>
-          </Card>
-
-          <Card>
-            <Flex direction="column" gap="3">
-              <Text size="3" weight="bold">
-                Reproduce
-              </Text>
-              <Separator size="4" />
-              <Flex direction="column" gap="2">
-                <Text size="2">
-                  Playback starts at <Code>{PLAYBACK_START_SECONDS}</Code> s, so you only wait ~2 s
-                  for the seam.
-                </Text>
-                <Text size="2">
-                  <strong>SHARED:</strong> both regions reference one <Code>AudioFileBox</Code>{" "}
-                  (one UUID).
-                </Text>
-                <Text size="2">
-                  <strong>DISTINCT:</strong> each region references its own{" "}
-                  <Code>AudioFileBox</Code> (two UUIDs, same on-disk audio). Offline scan confirms
-                  SHARED and DISTINCT produce bit-identical output, so the artifact is independent
-                  of mediaId.
-                </Text>
-              </Flex>
-              <Flex gap="3" wrap="wrap">
                 <Button
                   onClick={() => applyScenarioAndPlay("shared")}
                   disabled={!project || status !== "Ready" || scanning}
@@ -528,6 +521,47 @@ const App: React.FC = () => {
                   <PlayIcon /> Play (SHARED file)
                 </Button>
                 <Button
+                  onClick={handleScan}
+                  disabled={
+                    !project ||
+                    status !== "Ready" ||
+                    scanning ||
+                    seamPosition !== "block-aligned" ||
+                    scenario !== "shared"
+                  }
+                  variant="soft"
+                  color="amber"
+                  size="3"
+                >
+                  <ActivityLogIcon /> {scanning ? "Scanning…" : "Scan step 1"}
+                </Button>
+              </>
+            }
+            expected={[
+              { label: "pre-seam peak", value: "≈ 0.5000" },
+              { label: "expected clean max |Δ| (= 2π·440·0.5/SR)", value: "≈ 0.02880 at SR 48000" },
+              { label: "seam-band max |Δ|", value: "≈ 0.05747" },
+              { label: "seam-Δ / pre-Δ", value: "≈ 1.99 (~2× clean baseline)" },
+              { label: "largest jump τ (ms relative to seam)", value: "≈ −0.042 ms (2 samples before seam)" },
+              { label: "seam in-block offset (samples / 128 at SR)", value: "0 / 128 at SR 48000" },
+            ]}
+            got={gotByStep[1] ?? null}
+          />
+
+          <TestStep
+            index={2}
+            title="Block-aligned seam + DISTINCT AudioFileBoxes"
+            description={
+              <>
+                Same seam, two <Code>AudioFileBox</Code>es with identical on-disk content (rules
+                out the shared-voice mechanism — voices are keyed per region, so SHARED and
+                DISTINCT yield independent voices either way). <strong>Listen for:</strong> the
+                same snap as step 1.
+              </>
+            }
+            actions={
+              <>
+                <Button
                   onClick={() => applyScenarioAndPlay("distinct")}
                   disabled={!project || status !== "Ready" || scanning}
                   color="amber"
@@ -535,32 +569,143 @@ const App: React.FC = () => {
                 >
                   <PlayIcon /> Play (DISTINCT files)
                 </Button>
-                <Button onClick={handleStop} disabled={!isPlaying} variant="soft" size="3">
-                  <StopIcon /> Stop
-                </Button>
                 <Button
                   onClick={handleScan}
-                  disabled={!project || status !== "Ready" || scanning}
+                  disabled={
+                    !project ||
+                    status !== "Ready" ||
+                    scanning ||
+                    seamPosition !== "block-aligned" ||
+                    scenario !== "distinct"
+                  }
                   variant="soft"
                   color="amber"
                   size="3"
                 >
-                  <ActivityLogIcon /> {scanning ? "Scanning…" : "Scan current scenario"}
+                  <ActivityLogIcon /> {scanning ? "Scanning…" : "Scan step 2"}
                 </Button>
-              </Flex>
-              {scanResult && (
-                <Code size="2" style={{ whiteSpace: "pre-wrap", display: "block", padding: 12 }}>
-                  {scanResult}
-                </Code>
-              )}
-            </Flex>
-          </Card>
+              </>
+            }
+            expected={[
+              { label: "pre-seam peak", value: "≈ 0.5000" },
+              { label: "expected clean max |Δ| (= 2π·440·0.5/SR)", value: "≈ 0.02880 at SR 48000" },
+              { label: "seam-band max |Δ|", value: "≈ 0.05747" },
+              { label: "seam-Δ / pre-Δ", value: "≈ 1.99 (bit-identical to step 1)" },
+              { label: "largest jump τ (ms relative to seam)", value: "≈ −0.042 ms" },
+              { label: "seam in-block offset (samples / 128 at SR)", value: "0 / 128 at SR 48000" },
+            ]}
+            got={gotByStep[2] ?? null}
+          />
+
+          <TestStep
+            index={3}
+            title="Off-boundary seam + SHARED AudioFileBox"
+            description={
+              <>
+                Seam moved to 30.500 s (PPQN 58560 at BPM 120 — 64 samples into a block at 48 kHz).
+                Both regions reference one <Code>AudioFileBox</Code>.{" "}
+                <strong>Listen for:</strong> live, the off-boundary snap sometimes sounds louder
+                than block-aligned (subjective). Offline scan: same numbers.
+              </>
+            }
+            actions={
+              <>
+                <Button
+                  onClick={() => applySeamPosition("off-boundary")}
+                  disabled={!project || status !== "Ready" || scanning}
+                  variant={seamPosition === "off-boundary" ? "solid" : "outline"}
+                  color="amber"
+                  size="3"
+                >
+                  Set seam: 30.500 s (off-boundary)
+                </Button>
+                <Button
+                  onClick={() => applyScenarioAndPlay("shared")}
+                  disabled={!project || status !== "Ready" || scanning}
+                  color="amber"
+                  size="3"
+                >
+                  <PlayIcon /> Play (SHARED file)
+                </Button>
+                <Button
+                  onClick={handleScan}
+                  disabled={
+                    !project ||
+                    status !== "Ready" ||
+                    scanning ||
+                    seamPosition !== "off-boundary" ||
+                    scenario !== "shared"
+                  }
+                  variant="soft"
+                  color="amber"
+                  size="3"
+                >
+                  <ActivityLogIcon /> {scanning ? "Scanning…" : "Scan step 3"}
+                </Button>
+              </>
+            }
+            expected={[
+              { label: "pre-seam peak", value: "≈ 0.5000" },
+              { label: "expected clean max |Δ| (= 2π·440·0.5/SR)", value: "≈ 0.02880 at SR 48000" },
+              { label: "seam-band max |Δ|", value: "≈ 0.05747 (same as block-aligned offline)" },
+              { label: "seam-Δ / pre-Δ", value: "≈ 1.99" },
+              { label: "largest jump τ (ms relative to seam)", value: "≈ −0.042 ms" },
+              { label: "seam in-block offset (samples / 128 at SR)", value: "64 / 128 at SR 48000" },
+            ]}
+            got={gotByStep[3] ?? null}
+          />
+
+          <TestStep
+            index={4}
+            title="Off-boundary seam + DISTINCT (confirms all four equivalent)"
+            description={
+              <>
+                Same off-boundary seam, two distinct <Code>AudioFileBox</Code>es. Closes the 2×2
+                matrix — all four offline scans return bit-identical numbers, confirming the
+                artifact is independent of both mediaId and seam-position-in-block.
+              </>
+            }
+            actions={
+              <>
+                <Button
+                  onClick={() => applyScenarioAndPlay("distinct")}
+                  disabled={!project || status !== "Ready" || scanning}
+                  color="amber"
+                  size="3"
+                >
+                  <PlayIcon /> Play (DISTINCT files)
+                </Button>
+                <Button
+                  onClick={handleScan}
+                  disabled={
+                    !project ||
+                    status !== "Ready" ||
+                    scanning ||
+                    seamPosition !== "off-boundary" ||
+                    scenario !== "distinct"
+                  }
+                  variant="soft"
+                  color="amber"
+                  size="3"
+                >
+                  <ActivityLogIcon /> {scanning ? "Scanning…" : "Scan step 4"}
+                </Button>
+              </>
+            }
+            expected={[
+              { label: "pre-seam peak", value: "≈ 0.5000" },
+              { label: "expected clean max |Δ| (= 2π·440·0.5/SR)", value: "≈ 0.02880 at SR 48000" },
+              { label: "seam-band max |Δ|", value: "≈ 0.05747" },
+              { label: "seam-Δ / pre-Δ", value: "≈ 1.99 (bit-identical to steps 1–3)" },
+              { label: "largest jump τ (ms relative to seam)", value: "≈ −0.042 ms" },
+              { label: "seam in-block offset (samples / 128 at SR)", value: "64 / 128 at SR 48000" },
+            ]}
+            got={gotByStep[4] ?? null}
+          />
 
           <Card>
             <Flex direction="column" gap="2">
-              <Text size="3" weight="bold">
-                Configuration
-              </Text>
+              <Text size="3" weight="bold">Configuration</Text>
               <Separator size="4" />
               <Code size="2" style={{ whiteSpace: "pre-wrap", display: "block", padding: 12 }}>
                 {`BPM:                 ${BPM}
@@ -575,26 +720,6 @@ DISTINCT:            A.file !== B.file (two AudioFileBoxes, same content)
 Playback start:      ${PLAYBACK_START_SECONDS} s (≈2 s before seam)
 Seam (current):      ${seamSeconds.toFixed(3)} s (${seamPosition}, PPQN ${seamSeconds * BPM * 16}, offset ${audioContext ? inBlockOffsetSamples(seamSeconds, audioContext.sampleRate) : "—"}/${RENDER_QUANTUM} in block)`}
               </Code>
-            </Flex>
-          </Card>
-
-          <Card>
-            <Flex direction="column" gap="2">
-              <Text size="3" weight="bold">
-                What to inspect
-              </Text>
-              <Separator size="4" />
-              <Text size="2">
-                Click <strong>Scan current scenario</strong> after each Play. The peak-amplitude
-                metric stays at ~0.5 (the artifact does not change the envelope). The interesting
-                quantity is <Code>seam-band max |Δ|</Code> vs <Code>pre-seam max |Δ|</Code> (a
-                clean-sine baseline of <Code>2π·440·0.5/SR</Code>): seam-band Δ measures ~2×
-                baseline in both seam-position and both mediaId configurations, with the largest
-                jump consistently at <Code>τ = −0.042 ms</Code> (2 samples before seam). Live
-                playback sounds different across seam positions (off-boundary snap is louder than
-                block-aligned), but the offline scan does not reproduce that difference — see the
-                markdown note for the open question.
-              </Text>
             </Flex>
           </Card>
         </Flex>
