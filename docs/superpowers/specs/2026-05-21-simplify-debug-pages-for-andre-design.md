@@ -33,25 +33,23 @@ The `Stop` button stays as a standalone control (orthogonal to the steps).
 
 ### Page 1 — `voice-fadein-clip-fadein-product-debug-demo`
 
-**Top callout (1):** "A 40 ms linear clip crossfade between two regions with different `sourceUuid`s produces a measurable dip on the incoming voice's fade-in side. Cause: `PitchVoice` multiplies its 20 ms voice-fade-in by the region's clip-fade gain buffer, turning a linear fade-in into a quadratic ramp over the first 20 ms."
+**Top callout:** "A 40 ms linear clip crossfade between two regions (different `sourceUuid`s, on separate tracks so the mix happens at the master) produces a measurable dip on the incoming voice's fade-in side. Cause: `PitchVoice` multiplies its 20 ms voice-fade-in by the region's clip-fade gain buffer, turning a linear fade-in into a quadratic ramp over the first 20 ms."
 
-**Top callout (2):** "This page also surfaces a second artifact: same-track overlapping regions are silently deleted by `project.copy()`, so the offline scan returns silence in CROSSFADE mode. To measure the dip empirically, use the Target page (two-track workaround)."
+**Structural change from current page:** the existing demo places both crossfading regions on a **single** Tape track with a 40 ms timeline overlap, which triggers OpenDAW's "no overlapping regions on one track" invariant — `project.copy()` deletes both regions and the offline scan returns silence. Andre confirmed (2026-05-21) that this deletion is intentional. We now move each region to its **own** Tape track (same pattern the Target page uses for its OPENDAW scenario) so the crossfade emerges from mixing the two track outputs at the master, no per-track overlap, and the offline scan actually measures the dip.
 
 **Steps:**
 
-1. **Baseline: HARD-CUT.** No clip fades, regions touch at the seam.
+1. **Baseline: HARD-CUT.** No clip fades, regions touch at the seam (one on each track, end-to-end).
    - Action: `Play (HARD-CUT)` → listen at 30 s for a clean transition (just the 20 ms voice fade).
    - Then: `Scan current scenario`.
    - Expected: `peak ≈ 0.5`, `min / reference ≈ 1.0` (no dip).
-2. **CROSSFADE — live audio.** Live engine path plays both overlapping regions.
+2. **CROSSFADE — live audio.** 40 ms linear clip crossfade, regions extended symmetrically across the seam on their separate tracks.
    - Action: `Stop`, then `Play (CROSSFADE)` → listen for an amplitude dip ~10 ms BEFORE the 30 s seam.
-   - Expected: dip subtly audible on the 440 Hz sine.
-   - (No scan in this step — the dip is live-audible; the next step shows what the offline scan reveals.)
-3. **CROSSFADE — offline scan exposes the overlap-deletion artifact.**
+   - Expected: dip subtly audible on the sustained 440 Hz sine.
+3. **CROSSFADE — offline scan measures the dip.**
    - Action: `Scan current scenario`.
-   - Expected (in isolation, no overlap deletion): some dip near `min / reference ≈ 0.875` (−1.16 dB predicted) on the V2-fadeIn side.
-   - Got: `peak = 0` (silence) — `project.copy()` validator deletes both overlapping regions before the offline render starts.
-   - For the measured dip number, see the Target page (two-track configuration that dodges the deletion).
+   - Expected: `min / reference ≈ 0.875` (−1.16 dB predicted from voice-fade × clip-fade product) on the V2-fadeIn side, with the dip located ~10 ms before the seam.
+   - The Target page provides the apples-to-apples comparison vs pure-Web-Audio reference (−0.00 dB ALIGNED vs −1.56 dB OPENDAW measured).
 
 ### Page 2 — `pure-webaudio-target-debug-demo`
 
@@ -121,10 +119,11 @@ The page-side change is:
 
 ## What's out of scope
 
-- No change to the offline scan math, the audio fixtures, or any SDK-side reproduction code.
+- No change to the offline scan math or the audio fixtures.
 - No new debug pages.
-- No edits to the `debug/*.md` notes (they remain the source of truth for mechanism prose; the pages quote their numbers).
 - The `fade-out-end-of-file-debug-demo` and `comp-lanes-debug-demo` pages are out of scope (older debug investigations, different fixtures, separate questions).
+- `debug/project-copy-deletes-overlapping-regions.md` will need a follow-up edit (Andre answered the open question — overlaps are disallowed by design, the deletion is intentional, allowing them in the UI is a bug) but that edit is separate from this redesign and tracked elsewhere.
+- Other `debug/*.md` notes are not edited in this change — the pages quote their numbers, and the notes remain the source of truth for mechanism prose.
 
 ## Verification plan
 
