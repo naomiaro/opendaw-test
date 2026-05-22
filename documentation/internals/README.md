@@ -24,8 +24,7 @@ These chapters reference internal source paths inside [`andremichelle/openDAW`](
 | 04 | [Sample Loading and Peaks](./04-sample-loading.md) | The full sample lifecycle — decode (WAV fast path + Web Audio fallback), peaks generation (multi-scale, Float16-packed), OPFS storage layout, GlobalSampleLoaderManager cache + dedup + ref counts, worklet-side fetch, PeaksWriter for live recording, transient detection |
 | 05 | [Devices and Effects](./05-devices-and-effects.md) | The box/adapter/processor triple, DeviceProcessorFactory dispatch, EffectFactory + InstrumentFactory, a Compressor walked end-to-end, channel strip + aux sends + AudioBus, voicing strategies, modular devices + ScriptCompiler, NAM WASM, "how to add a new effect" |
 | 06 | [Project and Persistence](./06-project-and-persistence.md) | The Project class, the `.od` file format (`ProjectSkeleton` encode/decode), hash-chained `SyncLog` history, Y.js collaborative editing, dawproject import/export, track freeze, offline rendering, audio consolidation, preset storage, migrations |
-
-One more chapter to come: the repo + dev workflow guide (monorepo layout, build pipeline, "how to create a proper PR" with the forge regeneration flow).
+| 07 | [Repo Layout and Dev Workflow](./07-dev-workflow.md) | Top-level layout, Lerna+Turbo monorepo, root + per-package scripts, the forge regeneration flow, tests, code conventions from `CLAUDE.md`, the `plans/` design-doc convention, CI/CD, HTTPS dev server, and a step-by-step "How to create a proper PR" |
 
 ## Working with the openDAW monorepo
 
