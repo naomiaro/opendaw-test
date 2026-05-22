@@ -16,6 +16,7 @@ Each chapter has "Skip if" guidance at the top so you can find your level quickl
 
 | # | Chapter | Focus | Start here if... |
 |---|---------|-------|-------------------|
+| — | [Quick Start](./quick-start.md) | 5-minute "hello, sound" walkthrough | You want running audio before reading anything else |
 | 00 | [System Architecture](./00-system-architecture.md) | Mermaid diagrams: high-level, package layout, engine threads | You want a visual map of the SDK |
 | 01 | [Introduction](./01-introduction.md) | DAW concepts, architecture | You're new to DAW architecture |
 | 02 | [Timing & Tempo](./02-timing-and-tempo.md) | PPQN, BPM, tempo automation, time signatures | You need to understand the timing system |

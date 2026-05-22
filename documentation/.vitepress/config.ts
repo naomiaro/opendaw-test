@@ -40,6 +40,7 @@ export default withMermaid(defineConfig({
       {
         text: "Core Handbook",
         items: [
+          { text: "Quick Start", link: "/quick-start" },
           { text: "System Architecture", link: "/00-system-architecture" },
           { text: "Introduction", link: "/01-introduction" },
           { text: "Timing & Tempo", link: "/02-timing-and-tempo" },
