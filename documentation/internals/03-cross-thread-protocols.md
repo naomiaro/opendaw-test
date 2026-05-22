@@ -136,6 +136,33 @@ The dispatcher scans args and auto-detects transferables (`MessagePort`, `ImageB
 | `engine-live-data` | Worklet → Main | live broadcaster data (meters, spectrum, waveform) |
 | `engine-preferences` | Main ↔ Worklet | preferences sync |
 
+Visually:
+
+```mermaid
+flowchart LR
+    subgraph Main["Main Thread"]
+        Facade["EngineFacade"]
+        Project["Project"]
+        Prefs["PreferencesHost"]
+    end
+    subgraph Worklet["AudioWorklet"]
+        EP["EngineProcessor"]
+    end
+
+    Facade -- "engine-commands" --> EP
+    EP -- "engine-to-client" --> Facade
+    Project -- "engine-sync" --> EP
+    EP -- "engine-live-data" --> Facade
+    Prefs <-- "engine-preferences" --> EP
+
+    classDef main fill:#e8f0ff,stroke:#4a6fa5,color:#000
+    classDef rt fill:#fde8e8,stroke:#c25555,color:#000
+    class Facade,Project,Prefs main
+    class EP rt
+```
+
+One `MessagePort` underneath, five logical channels multiplexed over it by the `"__id__"` filter trick in `Channel`.
+
 ### `EngineCommands` (main → worklet)
 
 ```typescript
