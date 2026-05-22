@@ -1830,6 +1830,8 @@ const compressors = effectAdapters.filter(
 
 ### Werkstatt
 
+> **See also:** [Ch. 17 — Modular Devices](./17-modular-devices.md) is the cross-cutting overview that covers Werkstatt alongside Apparat (scriptable instrument) and Spielwerk (scriptable MIDI effect). Read that chapter first if you're choosing between modular devices.
+
 Werkstatt is a scriptable audio effect that lets users write custom DSP code in plain JavaScript. The code runs inside an AudioWorklet. Users define a `Processor` class with a `process()` method that receives stereo audio buffers and outputs processed audio sample by sample.
 
 **WASM is not supported.** The SDK design doc states WASM compilation is a future possibility but is not implemented. Werkstatt is JavaScript only.
@@ -2184,6 +2186,8 @@ class Processor {
 ---
 
 ### Spielwerk
+
+> **See also:** [Ch. 17 — Modular Devices](./17-modular-devices.md) covers Spielwerk in the context of the other two scriptable devices (Apparat instrument, Werkstatt audio effect). Read that chapter first if you want the cross-cutting picture before diving into MIDI-specific Spielwerk patterns.
 
 Spielwerk is a scriptable MIDI effect where users write a JavaScript `Processor` class that receives incoming note events and yields transformed or new notes. It sits in the MIDI effect chain before the instrument (e.g., Vaporisateur). Parameters declared via `// @param` comments appear as automatable knobs.
 

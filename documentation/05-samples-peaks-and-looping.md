@@ -438,6 +438,8 @@ audioUnits[0].tracks.catchupAndSubscribe({
 
 ## Performance Tips
 
+> **See also:** [Ch. 15 — Performance & Debugging](./15-performance-and-debugging.md) covers the full performance-diagnostic playbook (DSP load meter, main-thread profiling, memory leaks). The tips below are sample-specific.
+
 ### 1. Use CanvasPainter
 Don't render directly - use the CanvasPainter pattern to avoid unnecessary redraws.
 
