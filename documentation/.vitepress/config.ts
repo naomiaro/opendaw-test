@@ -84,6 +84,10 @@ export default withMermaid(defineConfig({
           },
           { text: "Troubleshooting & FAQ", link: "/13-troubleshooting" },
           { text: "Glossary", link: "/14-glossary" },
+          {
+            text: "Performance & Debugging",
+            link: "/15-performance-and-debugging",
+          },
         ],
       },
       {
