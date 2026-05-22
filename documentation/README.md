@@ -4,89 +4,80 @@ This handbook explains how to build a browser-based Digital Audio Workstation (D
 
 ## Who is this for?
 
-- **New to DAWs?** Start at Chapter 01 and read sequentially — audio concepts are explained alongside the SDK.
-- **Experienced developer joining a team?** Skim 01-03, focus on 04 (Box System) and the feature chapters you need.
-- **Evaluating OpenDAW?** Read 01 for architecture, then jump to the feature area you care about.
+- **Want running audio in 5 minutes?** Start at the [Quick Start](./quick-start.md). It's a complete, runnable component.
+- **New to DAWs?** After Quick Start, read Chapter 00 (System Architecture) for the visual map, then 01 → 07 sequentially — audio concepts are explained alongside the SDK.
+- **Experienced developer joining a team?** Skim 00–03, focus on 04 (Box System) and whichever feature chapters you need.
+- **Evaluating OpenDAW?** [Quick Start](./quick-start.md) then [System Architecture](./00-system-architecture.md) gives you the shape in 15 minutes.
+- **Contributing to openDAW itself?** Jump to the [Internals](./internals/) section.
 
 Each chapter has "Skip if" guidance at the top so you can find your level quickly.
+
+## Reading paths
+
+The handbook is large enough that "read everything" isn't realistic for most people. Pick the path that matches what you're building:
+
+### "I'm building a timeline / piano-roll UI"
+Quick Start → [Ch. 00](./00-system-architecture.md) (architecture) → [Ch. 02](./02-timing-and-tempo.md) (PPQN/BPM) → [Ch. 03](./03-animation-frame.md) (AnimationFrame) → [Ch. 06](./06-timeline-and-rendering.md) (timeline & rendering) → [Ch. 05](./05-samples-peaks-and-looping.md) (peaks for waveforms).
+
+### "I'm building audio recording"
+Quick Start → [Ch. 04](./04-box-system-and-reactivity.md) (box system) → [Ch. 05](./05-samples-peaks-and-looping.md) (samples) → [Ch. 08](./08-recording.md) (recording, takes, comp lanes) → [Ch. 09](./09-editing-fades-and-automation.md) (editing) for post-recording workflows.
+
+### "I'm building MIDI editing"
+Quick Start → [Ch. 04](./04-box-system-and-reactivity.md) (box system) → [Ch. 02](./02-timing-and-tempo.md) (timing) → [Ch. 16](./16-midi.md) (MIDI deep dive) → [Ch. 08](./08-recording.md) for MIDI capture specifically.
+
+### "I'm building a mix / mastering tool"
+Quick Start → [Ch. 04](./04-box-system-and-reactivity.md) → [Ch. 11](./11-effects.md) (effects) → [Ch. 09](./09-editing-fades-and-automation.md) (automation) → [Ch. 10](./10-export.md) (export & offline rendering).
+
+### "I want to write custom DSP / synths"
+Quick Start → [Ch. 11](./11-effects.md) (effects basics) → [Ch. 17](./17-modular-devices.md) (Apparat / Werkstatt / Spielwerk scripting model).
+
+### "I'm fixing a performance issue"
+[Ch. 15](./15-performance-and-debugging.md) (Performance & Debugging) → [Ch. 03](./03-animation-frame.md) (AnimationFrame) → [Ch. 13](./13-troubleshooting.md) (FAQ for the common cases).
+
+### "I want to contribute to openDAW itself"
+[Internals overview](./internals/) → Internals chapters 01–07 in order. Chapter 07 has the "How to create a proper PR" step-by-step.
 
 ## Chapters
 
 ### Core Handbook
 
-| # | Chapter | Focus | Start here if... |
-|---|---------|-------|-------------------|
-| — | [Quick Start](./quick-start.md) | 5-minute "hello, sound" walkthrough | You want running audio before reading anything else |
-| 00 | [System Architecture](./00-system-architecture.md) | Mermaid diagrams: high-level, package layout, engine threads | You want a visual map of the SDK |
-| 01 | [Introduction](./01-introduction.md) | DAW concepts, architecture | You're new to DAW architecture |
-| 02 | [Timing & Tempo](./02-timing-and-tempo.md) | PPQN, BPM, tempo automation, time signatures | You need to understand the timing system |
-| 03 | [AnimationFrame](./03-animation-frame.md) | Observable updates, UI sync | Your observables aren't updating |
-| 04 | [Box System & Reactivity](./04-box-system-and-reactivity.md) | Data model, subscriptions, reactive lifecycle | You need to understand data structures |
-| 05 | [Samples, Peaks & Looping](./05-samples-peaks-and-looping.md) | Audio loading, waveforms, region tiling | You need to display or loop audio |
-| 06 | [Timeline & Rendering](./06-timeline-and-rendering.md) | PPQN-to-pixels, grid, playhead, render pipeline | You're building the timeline view |
-| 07 | [Building a Complete App](./07-building-a-complete-app.md) | Full example, mixer groups, routing | You want a working application |
+| # | Chapter | Focus |
+|---|---------|-------|
+| — | [Quick Start](./quick-start.md) | 5-minute "hello, sound" walkthrough |
+| 00 | [System Architecture](./00-system-architecture.md) | Visual map: high-level, package layout, engine threads |
+| 01 | [Introduction](./01-introduction.md) | DAW concepts, OpenDAW architecture |
+| 02 | [Timing & Tempo](./02-timing-and-tempo.md) | PPQN, BPM, tempo automation, time signatures |
+| 03 | [AnimationFrame](./03-animation-frame.md) | Observable updates, UI sync |
+| 04 | [Box System & Reactivity](./04-box-system-and-reactivity.md) | Data model, subscriptions, reactive lifecycle |
+| 05 | [Samples, Peaks & Looping](./05-samples-peaks-and-looping.md) | Audio loading, waveforms, region tiling |
+| 06 | [Timeline & Rendering](./06-timeline-and-rendering.md) | PPQN-to-pixels, grid, playhead, render pipeline |
+| 07 | [Building a Complete App](./07-building-a-complete-app.md) | Full example, mixer groups, routing |
 
 ### Feature Guides
 
-| # | Chapter | Focus | Start here if... |
-|---|---------|-------|-------------------|
-| 08 | [Recording](./08-recording.md) | Audio/MIDI capture, takes, monitoring, live peaks | You're implementing recording |
-| 09 | [Editing, Fades & Automation](./09-editing-fades-and-automation.md) | Region editing, clip fades, track automation, comp lanes | You're implementing editing features |
-| 10 | [Export](./10-export.md) | Mix/stems export, offline rendering | You're implementing audio export |
-| 11 | [Effects](./11-effects.md) | Effect types, creation, track/master integration | You're implementing audio effects |
+| # | Chapter | Focus |
+|---|---------|-------|
+| 08 | [Recording](./08-recording.md) | Audio/MIDI capture, takes, monitoring, live peaks |
+| 09 | [Editing, Fades & Automation](./09-editing-fades-and-automation.md) | Region editing, clip fades, track automation, comp lanes |
+| 10 | [Export](./10-export.md) | Mix/stems export, offline rendering |
+| 11 | [Effects](./11-effects.md) | Effect types, creation, track/master integration |
+| 16 | [MIDI Deep Dive](./16-midi.md) | Note creation, hardware capture, MIDI effects, audition |
+| 17 | [Modular Devices](./17-modular-devices.md) | Apparat / Werkstatt / Spielwerk scripting |
 
-**Recommended reading order:** 00 → 01 → 02 → 03 → 04 → 05 → 06 → 07, then jump to whichever feature chapter you need.
+### Appendix
 
-**Troubleshooting?** Read Chapter 03 (AnimationFrame) first — it's the #1 cause of "why isn't my UI updating?"
+| # | Chapter | Focus |
+|---|---------|-------|
+| 12 | [Browser Compatibility](./12-browser-compatibility.md) | COOP/COEP, browser quirks, iframe embedding |
+| 13 | [Troubleshooting & FAQ](./13-troubleshooting.md) | Symptom-driven diagnostic checklists |
+| 14 | [Glossary](./14-glossary.md) | 80+ term definitions with chapter cross-references |
+| 15 | [Performance & Debugging](./15-performance-and-debugging.md) | DSP load meter, main-thread jank, loader hangs, memory leaks |
+
+### Internals (Contributors)
+
+Seven chapters covering the openDAW codebase from the inside, for anyone reading or modifying the SDK source. Start at the [Internals overview](./internals/). Topics: engine processor, box system, cross-thread protocols, sample loading, devices & effects, project & persistence, and the dev workflow + PR conventions.
 
 ## Quick Reference
-
-### Core Formulas
-
-**Convert PPQN to Pixels:**
-```typescript
-pixels = (ppqnPosition / totalPPQNDuration) * timelineWidthInPixels
-```
-
-**Convert Seconds to PPQN (single tempo):**
-```typescript
-ppqn = PPQN.secondsToPulses(durationInSeconds, bpm)
-```
-
-**Convert PPQN to Seconds (single tempo):**
-```typescript
-seconds = PPQN.pulsesToSeconds(ppqn, bpm)
-```
-
-**Convert Seconds to PPQN (variable tempo):**
-```typescript
-// Use the tempo map when your project has tempo automation
-const endPpqn = project.tempoMap.secondsToPPQN(durationInSeconds)
-
-// Convert a duration at a specific position (accounts for tempo changes)
-const startSeconds = project.tempoMap.ppqnToSeconds(positionPpqn)
-const endPpqn = project.tempoMap.secondsToPPQN(startSeconds + durationInSeconds)
-const durationPpqn = endPpqn - positionPpqn
-```
-
-**Musical Positions (constant):**
-```typescript
-const { Quarter } = PPQN; // Always 960
-
-beatOne = 0 * Quarter;           // 0
-beatTwo = 1 * Quarter;           // 960
-oneBar = 4 * Quarter;            // 3840 (in 4/4 time)
-eighthNote = Quarter / 2;        // 480
-```
-
-### Key Concepts
-
-| Concept | Description | Changes with BPM? |
-|---------|-------------|-------------------|
-| `PPQN.Quarter = 960` | Resolution constant | Never |
-| Clip position | Musical beat location | Never |
-| Clip duration | Audio length in PPQN | Yes |
-| BPM | Playback speed | User adjustable |
 
 ### Essential Imports
 
@@ -95,60 +86,19 @@ import { AnimationFrame } from "@opendaw/lib-dom";
 import { PPQN, AudioData } from "@opendaw/lib-dsp";
 import { Project, GlobalSampleLoaderManager } from "@opendaw/studio-core";
 import { InstrumentFactories } from "@opendaw/studio-adapters";
-import { AudioFileBox, AudioRegionBox, ValueEventCollectionBox } from "@opendaw/studio-boxes";
+import {
+  AudioFileBox, AudioRegionBox, ValueEventCollectionBox,
+} from "@opendaw/studio-boxes";
 import { UUID, Progress } from "@opendaw/lib-std";
 import { PeaksPainter } from "@opendaw/lib-fusion";
 ```
 
-## Common Patterns
+For specific topics, jump to the chapter that covers it:
 
-### Create a Track with Audio Clip
-
-```typescript
-project.editing.modify(() => {
-  const { audioUnitBox, trackBox } = project.api.createInstrument(
-    InstrumentFactories.Tape
-  );
-
-  const fileUUID = UUID.generate();
-  const audioFileBox = AudioFileBox.create(boxGraph, fileUUID, box => {
-    box.fileName.setValue("audio.wav");
-    box.endInSeconds.setValue(audioBuffer.duration);
-  });
-
-  const eventsCollectionBox = ValueEventCollectionBox.create(boxGraph, UUID.generate());
-
-  const clipDuration = PPQN.secondsToPulses(audioBuffer.duration, bpm);
-
-  AudioRegionBox.create(boxGraph, UUID.generate(), box => {
-    box.regions.refer(trackBox.regions);
-    box.file.refer(audioFileBox);
-    box.events.refer(eventsCollectionBox.owners);
-    box.position.setValue(0 * Quarter);
-    box.duration.setValue(clipDuration);
-    box.loopDuration.setValue(clipDuration);
-  });
-});
-```
-
-### Subscribe to Changes
-
-```typescript
-useEffect(() => {
-  const playingSub = project.engine.isPlaying.subscribe(obs => {
-    setIsPlaying(obs.getValue());
-  });
-
-  const positionSub = AnimationFrame.add(() => {
-    setCurrentPosition(project.engine.position.getValue());
-  });
-
-  return () => {
-    playingSub.terminate();
-    positionSub.terminate();
-  };
-}, [project]);
-```
+- **PPQN ↔ seconds formulas** — [Ch. 02 → Conversions](./02-timing-and-tempo.md#converting-with-variable-tempo)
+- **Creating a track with audio** — [Quick Start](./quick-start.md) shows the full transaction.
+- **Subscribing to playback state** — [Ch. 03 → AnimationFrame patterns](./03-animation-frame.md), [Quick Start](./quick-start.md).
+- **All terminology** — [Ch. 14 → Glossary](./14-glossary.md).
 
 ## Troubleshooting
 
@@ -162,9 +112,10 @@ Quick answers below. Anything more involved lives in the dedicated [Troubleshoot
 | Waveforms not rendering | Subscribe to sample loader; `peaks.nearest(unitsPerPixel)`. See [FAQ → Waveforms](./13-troubleshooting.md#waveforms-dont-render). |
 | Observables not updating | Use `catchupAndSubscribe`; check AnimationFrame is started. |
 | `SharedArrayBuffer is not defined` | Page isn't cross-origin isolated. See [FAQ → Engine won't start](./13-troubleshooting.md#the-engine-wont-start). |
+| App feels slow / dropouts | See [Ch. 15 → Performance & Debugging](./15-performance-and-debugging.md). |
 
 ## Further Reading
 
-- **SDK Changelogs:** [changelogs/](https://github.com/naomiaro/opendaw-test/tree/main/changelogs)
-- **Demo Code:** [src/demos/](https://github.com/naomiaro/opendaw-test/tree/main/src/demos)
-- **TypeScript Definitions:** Check `node_modules/@opendaw/*/dist/*.d.ts` for API details
+- **SDK Changelogs:** [changelogs/](https://github.com/naomiaro/opendaw-test/tree/main/changelogs) — one file per release range, what changed and what to migrate.
+- **Demo Code:** [src/demos/](https://github.com/naomiaro/opendaw-test/tree/main/src/demos) — every concept in the handbook has a runnable demo.
+- **TypeScript Definitions:** `node_modules/@opendaw/*/dist/*.d.ts` — the authoritative signature reference until upstream adds JSDoc.
