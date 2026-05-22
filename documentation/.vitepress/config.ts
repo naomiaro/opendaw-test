@@ -83,6 +83,10 @@ export default withMermaid(defineConfig({
             link: "/12-browser-compatibility",
           },
           { text: "Troubleshooting & FAQ", link: "/13-troubleshooting" },
+          {
+            text: "Performance & Debugging",
+            link: "/15-performance-and-debugging",
+          },
         ],
       },
       {
