@@ -94,6 +94,10 @@ export default withMermaid(defineConfig({
             link: "/internals/03-cross-thread-protocols",
           },
           { text: "Sample Loading", link: "/internals/04-sample-loading" },
+          {
+            text: "Devices and Effects",
+            link: "/internals/05-devices-and-effects",
+          },
         ],
       },
     ],

@@ -22,8 +22,9 @@ These chapters reference internal source paths inside [`andremichelle/openDAW`](
 | 02 | [Box System](./02-box-system.md) | The data layer — lib-box primitives, fields, transactions, pointers, the studio-boxes catalog, adapters, forge code generation, serialization |
 | 03 | [Cross-Thread Protocols](./03-cross-thread-protocols.md) | How main, worklet, and workers talk — Messenger + Communicator RPC, SyncStream over SharedArrayBuffer, SyncSource/Target graph sync, control flags, HRClock, RingBuffer, fetchAudio, COOP/COEP |
 | 04 | [Sample Loading and Peaks](./04-sample-loading.md) | The full sample lifecycle — decode (WAV fast path + Web Audio fallback), peaks generation (multi-scale, Float16-packed), OPFS storage layout, GlobalSampleLoaderManager cache + dedup + ref counts, worklet-side fetch, PeaksWriter for live recording, transient detection |
+| 05 | [Devices and Effects](./05-devices-and-effects.md) | The box/adapter/processor triple, DeviceProcessorFactory dispatch, EffectFactory + InstrumentFactory, a Compressor walked end-to-end, channel strip + aux sends + AudioBus, voicing strategies, modular devices + ScriptCompiler, NAM WASM, "how to add a new effect" |
 
-More chapters will be added covering devices/effects and project persistence.
+More chapters will be added covering project persistence (Y.js, dawproject, freeze) and the repo + dev workflow.
 
 ## Working with the openDAW monorepo
 
