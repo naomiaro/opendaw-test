@@ -151,13 +151,16 @@ useEffect(() => {
 
 ## Troubleshooting
 
-| Problem | Solution |
+Quick answers below. Anything more involved lives in the dedicated [Troubleshooting & FAQ](./13-troubleshooting.md) chapter — grouped by symptom with diagnostic checklists.
+
+| Problem | Quick answer |
 |---------|----------|
-| No audio plays | Check AudioContext state, verify COOP/COEP headers, check console |
-| Playhead doesn't move | Ensure `AnimationFrame.start(window)` was called |
-| Clips in wrong position | Double-check PPQN calculations |
-| Waveforms not rendering | Subscribe to sample loader, check `!peaksOption.isEmpty()` |
-| Observables not updating | Read Chapter 03 — AnimationFrame must be started |
+| No audio plays | Check AudioContext state, verify COOP/COEP headers, await sample loading. See [FAQ → No sound plays](./13-troubleshooting.md#no-sound-plays). |
+| Playhead doesn't move | Ensure `AnimationFrame.start(window)` was called. See [FAQ → UI doesn't update](./13-troubleshooting.md#my-ui-doesnt-update-during-playback). |
+| Clips in wrong position | Double-check PPQN calculations; `Math.round` floats. See [FAQ → Clips in wrong place](./13-troubleshooting.md#clips-are-in-the-wrong-place). |
+| Waveforms not rendering | Subscribe to sample loader; `peaks.nearest(unitsPerPixel)`. See [FAQ → Waveforms](./13-troubleshooting.md#waveforms-dont-render). |
+| Observables not updating | Use `catchupAndSubscribe`; check AnimationFrame is started. |
+| `SharedArrayBuffer is not defined` | Page isn't cross-origin isolated. See [FAQ → Engine won't start](./13-troubleshooting.md#the-engine-wont-start). |
 
 ## Further Reading
 
