@@ -75,9 +75,13 @@ flowchart TB
         std["lib-std"]
         runtime["lib-runtime"]
         dom["lib-dom"]
+        jsx["lib-jsx"]
         dsp["lib-dsp"]
         box["lib-box"]
+        xml["lib-xml"]
+        midi["lib-midi"]
         fusion["lib-fusion"]
+        dawproject["lib-dawproject"]
     end
 
     subgraph Studio["Studio packages (@opendaw/studio-*)"]
@@ -93,13 +97,21 @@ flowchart TB
     runtime --> std
     dom --> std
     dom --> runtime
+    jsx --> dom
+    jsx --> std
     dsp --> std
     box --> std
     box --> runtime
+    xml --> std
+    midi --> dsp
+    midi --> std
     fusion --> box
     fusion --> dom
     fusion --> runtime
     fusion --> std
+    dawproject --> dsp
+    dawproject --> runtime
+    dawproject --> xml
 
     boxes --> box
     adapters --> boxes
@@ -121,7 +133,7 @@ flowchart TB
     classDef lib fill:#fff4e6,stroke:#c98a3a,color:#000
     classDef studio fill:#fde8e8,stroke:#c25555,color:#000
     classDef app fill:#e8f0ff,stroke:#4a6fa5,color:#000
-    class std,runtime,dom,dsp,box,fusion lib
+    class std,runtime,dom,jsx,dsp,box,xml,midi,fusion,dawproject lib
     class enums,boxes,adapters,core studio
     class App app
 ```
@@ -129,9 +141,16 @@ flowchart TB
 **Reading guide:**
 
 - **`lib-std`** is the foundation — `Option<T>`, `UUID`, `Observable`, `tryCatch`, type guards. Almost everything depends on it.
+- **`lib-runtime`** holds the cross-thread plumbing — `Messenger`, `Communicator` for typed RPC over `MessagePort`, plus other runtime helpers.
 - **`lib-dsp`** holds the things you compute with: `PPQN` constants, `AudioData`, sample format helpers.
 - **`lib-dom`** is the only library that touches browser APIs (notably `AnimationFrame` — see [Ch. 3](./03-animation-frame.md)).
+- **`lib-jsx`** is the lightweight JSX runtime used by openDAW Studio's UI. Not needed if you're building with React/Vue/Svelte.
+- **`lib-box`** is the graph primitive library — boxes, fields, transactions. See [Ch. 4](./04-box-system-and-reactivity.md).
+- **`lib-xml`** is a small typed XML reader/writer used by `lib-dawproject`.
+- **`lib-midi`** parses and emits Standard MIDI Files; used by MIDI import/export.
 - **`lib-fusion`** is the rendering toolkit — `PeaksPainter` for waveforms — built on top of the lower libs.
+- **`lib-dawproject`** is the importer/exporter for the cross-DAW [DAW Project](https://github.com/bitwig/dawproject) interchange format.
+- **`studio-enums`** holds the shared enum values used across box definitions and adapters (e.g. `Pointers`).
 - **`studio-boxes`** is the box catalog (the data shapes): `AudioFileBox`, `AudioRegionBox`, `ValueEventCollectionBox`, etc.
 - **`studio-adapters`** wraps boxes with typed accessors and factories (`InstrumentFactories.Tape`).
 - **`studio-core`** is the engine: `Project`, `EngineFacade`, sample loading, offline rendering. Most apps import this one and let it pull the rest transitively.
