@@ -16,6 +16,7 @@ Each chapter has "Skip if" guidance at the top so you can find your level quickl
 
 | # | Chapter | Focus | Start here if... |
 |---|---------|-------|-------------------|
+| 00 | [System Architecture](./00-system-architecture.md) | Mermaid diagrams: high-level, package layout, engine threads | You want a visual map of the SDK |
 | 01 | [Introduction](./01-introduction.md) | DAW concepts, architecture | You're new to DAW architecture |
 | 02 | [Timing & Tempo](./02-timing-and-tempo.md) | PPQN, BPM, tempo automation, time signatures | You need to understand the timing system |
 | 03 | [AnimationFrame](./03-animation-frame.md) | Observable updates, UI sync | Your observables aren't updating |
@@ -33,7 +34,7 @@ Each chapter has "Skip if" guidance at the top so you can find your level quickl
 | 10 | [Export](./10-export.md) | Mix/stems export, offline rendering | You're implementing audio export |
 | 11 | [Effects](./11-effects.md) | Effect types, creation, track/master integration | You're implementing audio effects |
 
-**Recommended reading order:** 01 → 02 → 03 → 04 → 05 → 06 → 07, then jump to whichever feature chapter you need.
+**Recommended reading order:** 00 → 01 → 02 → 03 → 04 → 05 → 06 → 07, then jump to whichever feature chapter you need.
 
 **Troubleshooting?** Read Chapter 03 (AnimationFrame) first — it's the #1 cause of "why isn't my UI updating?"
 

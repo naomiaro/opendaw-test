@@ -1,6 +1,7 @@
 import { defineConfig } from "vitepress";
+import { withMermaid } from "vitepress-plugin-mermaid";
 
-export default defineConfig({
+export default withMermaid(defineConfig({
   title: "OpenDAW Handbook",
   description:
     "Learn how to build a browser-based DAW UI with OpenDAW's headless audio engine",
@@ -38,6 +39,7 @@ export default defineConfig({
       {
         text: "Core Handbook",
         items: [
+          { text: "System Architecture", link: "/00-system-architecture" },
           { text: "Introduction", link: "/01-introduction" },
           { text: "Timing & Tempo", link: "/02-timing-and-tempo" },
           { text: "AnimationFrame", link: "/03-animation-frame" },
@@ -106,4 +108,8 @@ export default defineConfig({
       level: [2, 3],
     },
   },
-});
+
+  mermaid: {
+    theme: "default",
+  },
+}));
