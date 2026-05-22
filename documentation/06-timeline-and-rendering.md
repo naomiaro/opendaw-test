@@ -44,6 +44,39 @@ A DAW timeline shows:
 
 All of this uses PPQN for positioning.
 
+### The render pipeline
+
+Every animation frame, your timeline component runs through this chain to produce one canvas paint:
+
+```mermaid
+flowchart LR
+    Pos["project.engine.position"]
+    AF["AnimationFrame"]
+    Convert["ppqn -> pixels"]
+    Canvas["Canvas redraw"]
+    Grid["Grid lines"]
+    Clips["Clips"]
+    Play["Playhead"]
+
+    Pos --> AF
+    AF --> Convert
+    Convert --> Canvas
+    Canvas --> Grid
+    Canvas --> Clips
+    Canvas --> Play
+
+    classDef state fill:#e8f0ff,stroke:#4a6fa5,color:#000
+    classDef tick fill:#fff4e6,stroke:#c98a3a,color:#000
+    classDef draw fill:#fde8e8,stroke:#c25555,color:#000
+    classDef out fill:#eef7ee,stroke:#5a9a5a,color:#000
+    class Pos state
+    class AF,Convert tick
+    class Canvas draw
+    class Grid,Clips,Play out
+```
+
+`project.engine.position` is an `Observable<ppqn>` that the audio worklet keeps current (see [Ch. 03 — AnimationFrame](./03-animation-frame.md)). On each frame, you read it once, convert to pixel coordinates with the formula in the next section, and redraw. Grid lines, clip rectangles, and the playhead all share the same conversion — keeping them in lockstep is what makes the playhead "ride" the grid correctly when you change BPM or zoom.
+
 ## Timeline Coordinate System
 
 ```

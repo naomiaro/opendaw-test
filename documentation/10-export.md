@@ -49,6 +49,39 @@ OpenDAW provides powerful audio export capabilities through its offline renderin
 - Automatic browser downloads
 - WAV, MP3, and FLAC format support (WAV built-in, others require FFmpeg)
 
+### How offline rendering works
+
+Export doesn't touch the live audio engine. Instead, the SDK clones your project and runs a copy through a separate worker thread, calling `step()` repeatedly to produce audio frames as fast as the CPU can crunch them:
+
+```mermaid
+flowchart TD
+    P["Project (live)"]
+    Copy["Project.copy()"]
+    OER["OfflineEngineRenderer"]
+    Worker["offline-engine Worker"]
+    EP["EngineProcessor (in worker)"]
+    Frames["Float32Array[]"]
+    WAV["WAV bytes"]
+    File["Browser download"]
+
+    P --> Copy
+    Copy --> OER
+    OER --> Worker
+    Worker --> EP
+    EP --> Frames
+    Frames --> WAV
+    WAV --> File
+
+    classDef src fill:#e8f0ff,stroke:#4a6fa5,color:#000
+    classDef wrk fill:#fde8e8,stroke:#c25555,color:#000
+    classDef out fill:#eef7ee,stroke:#5a9a5a,color:#000
+    class P,Copy src
+    class OER,Worker,EP wrk
+    class Frames,WAV,File out
+```
+
+The worker runs the same `EngineProcessor` class as the realtime audio worklet — same effects, same automation, same DSP. The only difference is the driver: in realtime, the audio thread calls `process()` 375 times a second; offline, the worker calls `step()` as quickly as possible until the silence detector says the mix has finished decaying. That's why export is *bit-exact* with realtime playback: it's literally the same code path.
+
 ---
 
 ## Quick Start

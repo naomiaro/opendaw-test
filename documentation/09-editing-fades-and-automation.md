@@ -764,6 +764,27 @@ The slope parameter (0.0 to 1.0) controls the shape of the fade curve using an e
 | 0.50 | Linear | Even progression | Neutral, technical fades |
 | 0.75 | Exponential | Fast start, slow end | Fade-ins (SDK default for `inSlope`) |
 
+The three curves drawn at the same length:
+
+<svg viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" style="max-width:520px;display:block">
+  <rect x="40" y="20" width="240" height="160" fill="none" stroke="#aaa" stroke-width="1"/>
+  <text x="160" y="195" text-anchor="middle" font-size="11" fill="#666">time →</text>
+  <text x="32" y="100" text-anchor="end" font-size="11" fill="#666" transform="rotate(-90 32 100)">gain →</text>
+  <line x1="40" y1="180" x2="280" y2="20" stroke="#4a6fa5" stroke-width="2" stroke-dasharray="0"/>
+  <path d="M 40 180 L 64 175 L 88 169 L 112 161 L 136 152 L 160 140 L 184 125 L 208 107 L 232 84 L 256 55 L 280 20" fill="none" stroke="#c25555" stroke-width="2"/>
+  <path d="M 40 180 L 64 145 L 88 116 L 112 93 L 136 75 L 160 60 L 184 48 L 208 39 L 232 31 L 256 25 L 280 20" fill="none" stroke="#5a9a5a" stroke-width="2"/>
+  <g font-size="11">
+    <rect x="295" y="34" width="14" height="2" fill="#c25555"/>
+    <text x="313" y="38" fill="#333">slope 0.25</text>
+    <rect x="295" y="94" width="14" height="2" fill="#4a6fa5"/>
+    <text x="313" y="98" fill="#333">slope 0.50</text>
+    <rect x="295" y="154" width="14" height="2" fill="#5a9a5a"/>
+    <text x="313" y="158" fill="#333">slope 0.75</text>
+  </g>
+</svg>
+
+The same shape is used for fade-in and fade-out — the SDK reflects it horizontally when applying to the end of a region. So `inSlope = 0.75` and `outSlope = 0.25` produce a *symmetric* "fade up gently, hold, fade down gently" envelope when both ends are set, which is the SDK's default and matches what most editors expect.
+
 #### Curve Formula
 
 The curve is computed by `Curve.normalizedAt()`:
