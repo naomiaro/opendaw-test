@@ -1,0 +1,45 @@
+# OpenDAW Internals
+
+> **Audience:** developers reading or contributing to the openDAW codebase itself, not just using the SDK.
+>
+> If you're building an app **with** OpenDAW, start with the [Core Handbook](../README.md) instead. This section is for understanding **how OpenDAW is built**.
+
+The Core Handbook describes the SDK surface as if it were a black box. This section opens the box: how the engine processor schedules audio, how the box graph stores state, how threads talk to each other.
+
+These chapters reference internal source paths inside [`andremichelle/openDAW`](https://github.com/andremichelle/openDAW) (e.g. `packages/studio/core-processors/src/EngineProcessor.ts`). Paths may move as the repo evolves — when in doubt, search by class or method name.
+
+## Conventions used in this section
+
+- **File paths** are relative to the openDAW monorepo root, not the opendaw-test docs repo.
+- **Line numbers** point to specific entry points; they decay over time, so treat them as approximate.
+- **Code blocks** quote the actual source (sometimes lightly trimmed) — not paraphrased pseudocode.
+
+## Chapters
+
+| # | Chapter | Focus |
+|---|---------|-------|
+| 01 | [Engine Processor](./01-engine-processor.md) | The AudioWorkletProcessor that runs the audio graph — render loop, BlockRenderer, ClipSequencing, AudioUnit, NoteSequencer, automation |
+
+More chapters will be added covering the box system, cross-thread protocols, sample loading, devices/effects, and project persistence.
+
+## Working with the openDAW monorepo
+
+The codebase is a Lerna + Turbo monorepo. The top-level layout:
+
+```
+openDAW/
+├── packages/
+│   ├── lib/           # foundation libraries (lib-std, lib-dsp, lib-fusion, ...)
+│   └── studio/        # the DAW-specific code
+│       ├── core/             # main-thread engine surface (Project, EngineFacade, ...)
+│       ├── core-processors/  # AudioWorkletProcessor code (EngineProcessor, ...)
+│       ├── core-workers/     # Web Worker code (peaks, FFmpeg, offline render)
+│       ├── adapters/         # box adapter wrappers
+│       ├── boxes/            # box catalog
+│       ├── enums/
+│       └── sdk/              # bundled studio-sdk meta-package
+├── plans/             # contributor design docs (read these before sending big PRs)
+└── wiki/              # rendered wiki content
+```
+
+The two packages most relevant to engine internals are **`@opendaw/studio-core`** (main thread) and **`@opendaw/studio-core-processors`** (audio thread).

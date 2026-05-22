@@ -15,6 +15,7 @@ export default withMermaid(defineConfig({
   // Map README.md → index.html so /docs/ works, while keeping README.md for GitHub
   rewrites: {
     "README.md": "index.md",
+    "internals/README.md": "internals/index.md",
   },
 
   head: [
@@ -80,6 +81,13 @@ export default withMermaid(defineConfig({
             text: "Browser Compatibility",
             link: "/12-browser-compatibility",
           },
+        ],
+      },
+      {
+        text: "Internals (Contributors)",
+        items: [
+          { text: "Overview", link: "/internals/" },
+          { text: "Engine Processor", link: "/internals/01-engine-processor" },
         ],
       },
     ],
