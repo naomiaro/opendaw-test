@@ -12,6 +12,41 @@ A "device" in openDAW is anything that processes audio or MIDI inside an `AudioU
 
 Adding a new device means adding all three plus two registration entries (factory + dispatcher). The rest of the system — wiring, automation, save/load, undo — just works because every device follows the same shape.
 
+## How a track's audio chain wires up
+
+Before diving into the processor interfaces, it helps to see what the chain itself looks like in motion. Every `AudioUnit`'s audio side wires its devices together like this:
+
+```mermaid
+flowchart LR
+    Input["Instrument"]
+    E1["Effect 1"]
+    Edots["..."]
+    EN["Effect N"]
+    Send["Aux Sends"]
+    CS["Channel Strip"]
+    Out["AudioUnit output"]
+    Bus["Aux Bus(es)"]
+
+    Input --> E1
+    E1 --> Edots
+    Edots --> EN
+    EN --> Send
+    Send --> CS
+    CS --> Out
+    Send -. "tap" .-> Bus
+
+    classDef src fill:#fff4e6,stroke:#c98a3a,color:#000
+    classDef fx fill:#fde8e8,stroke:#c25555,color:#000
+    classDef cs fill:#e8f0ff,stroke:#4a6fa5,color:#000
+    classDef io fill:#eef7ee,stroke:#5a9a5a,color:#000
+    class Input src
+    class E1,Edots,EN fx
+    class Send,CS cs
+    class Out,Bus io
+```
+
+The instrument (or `AudioBusProcessor` for a bus unit) is the source. Effects run in their declared order. Aux sends tap the signal *after* the effects, route copies to one or more aux buses, and pass the original through to the channel strip — which applies volume, pan, mute, solo, and produces the unit's output. The MIDI device chain is symmetric but simpler: notes flow through MIDI effects directly into the instrument's `noteEventTarget`, with no sends or channel strip.
+
 ## Processor interfaces
 
 The processor hierarchy is `Processor → DeviceProcessor → {AudioDeviceProcessor, MidiEffectProcessor}` with two further specializations under audio. From the source (`packages/studio/core-processors/src/`):

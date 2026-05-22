@@ -271,7 +271,17 @@ export class DefaultSampleLoader implements SampleLoader {
 
 Subscribers see a strict ordering: zero or more `progress`, then either `loaded` (with data accessible) or `error`. Once `loaded`, `subscribe()` short-circuits and calls the observer immediately with the current state — late subscribers don't miss it.
 
-`invalidate()` rolls the loader back to `progress: 0.0` and re-triggers the load. The peak regeneration on storage corruption uses this.
+```mermaid
+stateDiagram-v2
+    [*] --> progress
+    progress --> progress: setProgress
+    progress --> loaded: setLoaded
+    progress --> error: setError
+    loaded --> progress: invalidate
+    error --> progress: invalidate
+```
+
+`invalidate()` rolls the loader back to `progress: 0.0` and re-triggers the load. The peak regeneration on storage corruption uses this. The `SampleLoaderState` type also includes `"idle"` and `"record"` values for special cases — the worklet-side `SampleLoaderWorklet` reports `"idle"` because it doesn't drive its own loading lifecycle, and `"record"` is used while a `PeaksWriter` is actively appending audio. Neither is reachable through `DefaultSampleLoader`'s own transitions.
 
 ## `GlobalSampleLoaderManager` — the main-thread orchestrator
 

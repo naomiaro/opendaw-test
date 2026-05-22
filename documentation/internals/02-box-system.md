@@ -310,6 +310,45 @@ A common bug is forgetting to add a new pointer type to `accepts`; `refer()` the
 
 `packages/studio/boxes/src/` holds every concrete box class. Each file is **generated** (more on forge below), but the patterns are stable enough that reading one file teaches you the whole catalog.
 
+The catalog connects up like this — the major boxes and how a `Project` decomposes through them:
+
+```mermaid
+flowchart TD
+    Root["RootBox"]
+    Time["TimelineBox"]
+    AU["AudioUnitBox"]
+    AB["AudioBusBox"]
+    Track["TrackBox"]
+    Dev["DeviceBox"]
+    AR["AudioRegionBox"]
+    NR["NoteRegionBox"]
+    AF["AudioFileBox"]
+    VEC["ValueEventCollectionBox"]
+    NEC["NoteEventCollectionBox"]
+
+    Root --> Time
+    Root --> AU
+    Root --> AB
+    AU --> Track
+    AU --> Dev
+    Track --> AR
+    Track --> NR
+    AR -- "file" --> AF
+    AR -- "events" --> VEC
+    NR -- "events" --> NEC
+
+    classDef root fill:#e8f0ff,stroke:#4a6fa5,color:#000
+    classDef container fill:#fff4e6,stroke:#c98a3a,color:#000
+    classDef leaf fill:#fde8e8,stroke:#c25555,color:#000
+    classDef ref fill:#eef7ee,stroke:#5a9a5a,color:#000
+    class Root root
+    class AU,AB,Track,Time container
+    class Dev,AR,NR leaf
+    class AF,VEC,NEC ref
+```
+
+The solid arrows are "owns" (the child's pointer collection lives in the parent); the labelled arrows are "references" (the box points at, but doesn't own, another box's contents). `AudioFileBox` is the canonical shared resource — many `AudioRegionBox`es can refer to one `AudioFileBox`, which is why it's `resource: "preserved"` (see [Resource types](#resource-types)).
+
 `AudioFileBox.ts` is a good anchor:
 
 ```typescript

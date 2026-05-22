@@ -22,7 +22,31 @@ The main thread instantiates the worklet via `EngineWorklet` (an `AudioWorkletNo
 
 ## The Process Loop
 
-The audio thread invokes `process()` once per render quantum (128 frames). The implementation is a thin wrapper around `render()`:
+The audio thread invokes `process()` once per render quantum (128 frames). Each invocation walks a fixed sequence — wiring phase, topological-sort cache, block rendering, state publication:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant AW as AudioWorklet
+    participant EP as EngineProcessor
+    participant N as ProcessPhase Notifier
+    participant BR as BlockRenderer
+    participant P as Processors (sorted)
+    participant SAB as SyncStream SAB
+
+    AW->>EP: process(inputs, outputs)
+    EP->>N: notify(Before)
+    Note over EP: topological sort if dirty
+    EP->>BR: process(callback)
+    loop per Block in quantum
+        BR->>P: processor.process(info)
+    end
+    EP->>N: notify(After)
+    EP->>SAB: stateSender.tryWrite()
+    EP-->>AW: true
+```
+
+The implementation is a thin wrapper around `render()`:
 
 ```typescript
 // packages/studio/core-processors/src/EngineProcessor.ts:350
