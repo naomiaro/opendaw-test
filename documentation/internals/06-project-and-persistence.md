@@ -47,7 +47,7 @@ The project is a fairly broad object — it owns the entire session. Important f
 | `sampleManager` | `GlobalSampleLoaderManager` | The cache + ref-counted sample loader from [ch. 04](./04-sample-loading.md) |
 | `soundfontManager` | `SoundfontLoaderManager` | Same pattern, for soundfonts |
 | `engine` | `EngineFacade` | The observable wrapper around the worklet ([ch. 03](./03-cross-thread-protocols.md)) |
-| `tempoMap` | `TempoMap` | PPQN-to-seconds conversion with tempo automation |
+| `tempoMap` | `TempoMap` | PPQN-to-seconds conversion with tempo automation (internally memoised via `TempoGridCursor` so repeated overlapping `intervalToSeconds` calls amortise) |
 | `audioUnitFreeze` | `AudioUnitFreeze` | Track-freeze controller (see below) |
 | `mixer`, `midiLearning`, `captureDevices`, … | various | The smaller subsystems |
 

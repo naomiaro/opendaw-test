@@ -669,11 +669,34 @@ At constant 120 BPM: 4 seconds = 7680 ticks. At constant 60 BPM: 4 seconds = 384
 
 All conversion methods account for tempo ramps and automation — they integrate across tempo changes rather than using a single BPM value. Use these instead of `PPQN.pulsesToSeconds()`/`PPQN.secondsToPulses()` when your project has tempo automation.
 
+### Incremental conversion with `TempoGridCursor`
+
+`intervalToSeconds(from, to)` is memoised internally. When successive calls share the same `from` and a `to` that only grows, the tempo map reuses the previously-integrated segment and only computes the new tail. That means a scroll-driven preview or a long render that keeps extending the upper bound stays cheap as the range grows — no need to cache the result yourself.
+
+If you're doing something custom — say, stepping a playhead frame by frame across a tempo-automated range — `TempoGridCursor` (`@opendaw/studio-adapters`) is the underlying primitive exposed as a standalone class:
+
+```typescript
+import { TempoGridCursor } from "@opendaw/studio-adapters";
+
+const cursor = new TempoGridCursor();
+const events = tempoMap.events; // ReadonlyArray<ValueEvent>
+const storageBpm = tempoMap.box.bpm.getValue();
+
+// Integrate a range incrementally
+const seconds = cursor.integrate(events, fromPpqn, toPpqn, storageBpm);
+
+// Walk forward in seconds, find the PPQN you land on
+const nextPpqn = cursor.advance(events, fromPpqn, fromSeconds, targetSeconds, storageBpm);
+```
+
+The cursor holds the integration state between calls; reuse the same instance for sequential calls in a render loop. Most code doesn't need this — `tempoMap.intervalToSeconds()` already benefits from the same memoisation internally — but it's there if you want explicit control over the cursor lifetime.
+
 ### Reference (Tempo Automation)
 
 - Tempo demo: [tempo-automation-demo](https://opendaw-test.pages.dev/tempo-automation-demo.html)
 - TimeBase demo: [timebase-demo](https://opendaw-test.pages.dev/timebase-demo.html)
 - `VaryingTempoMap` from `@opendaw/studio-adapters`
+- `TempoGridCursor` from `@opendaw/studio-adapters`
 - `ValueEventCollectionBoxAdapter` from `@opendaw/studio-adapters`
 
 ---
