@@ -74,6 +74,7 @@ export default withMermaid(defineConfig({
           { text: "Export", link: "/10-export" },
           { text: "Effects", link: "/11-effects" },
           { text: "MIDI Deep Dive", link: "/16-midi" },
+          { text: "Modular Devices", link: "/17-modular-devices" },
         ],
       },
       {
