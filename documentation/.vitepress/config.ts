@@ -88,6 +88,7 @@ export default withMermaid(defineConfig({
         items: [
           { text: "Overview", link: "/internals/" },
           { text: "Engine Processor", link: "/internals/01-engine-processor" },
+          { text: "Box System", link: "/internals/02-box-system" },
         ],
       },
     ],

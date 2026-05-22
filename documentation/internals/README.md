@@ -19,8 +19,9 @@ These chapters reference internal source paths inside [`andremichelle/openDAW`](
 | # | Chapter | Focus |
 |---|---------|-------|
 | 01 | [Engine Processor](./01-engine-processor.md) | The AudioWorkletProcessor that runs the audio graph — render loop, BlockRenderer, ClipSequencing, AudioUnit, NoteSequencer, automation |
+| 02 | [Box System](./02-box-system.md) | The data layer — lib-box primitives, fields, transactions, pointers, the studio-boxes catalog, adapters, forge code generation, serialization |
 
-More chapters will be added covering the box system, cross-thread protocols, sample loading, devices/effects, and project persistence.
+More chapters will be added covering cross-thread protocols, sample loading, devices/effects, and project persistence.
 
 ## Working with the openDAW monorepo
 
