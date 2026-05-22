@@ -98,6 +98,10 @@ export default withMermaid(defineConfig({
             text: "Devices and Effects",
             link: "/internals/05-devices-and-effects",
           },
+          {
+            text: "Project and Persistence",
+            link: "/internals/06-project-and-persistence",
+          },
         ],
       },
     ],
