@@ -104,6 +104,37 @@ AudioUnitBox "Vocals" (Volume, Pan)
        └─ TrackBox 1 ── AudioRegionBox (new recording)
 ```
 
+### How the box graph composes
+
+The main boxes you'll touch when building a UI hang together like this:
+
+```mermaid
+flowchart TD
+    Project["Project"]
+    AU["AudioUnitBox"]
+    Track["TrackBox"]
+    AR["AudioRegionBox"]
+    AF["AudioFileBox"]
+    EC["ValueEventCollectionBox"]
+
+    Project --> AU
+    AU --> Track
+    Track --> AR
+    AR -- "file" --> AF
+    AR -- "events" --> EC
+
+    classDef root fill:#e8f0ff,stroke:#4a6fa5,color:#000
+    classDef container fill:#fff4e6,stroke:#c98a3a,color:#000
+    classDef leaf fill:#fde8e8,stroke:#c25555,color:#000
+    classDef ref fill:#eef7ee,stroke:#5a9a5a,color:#000
+    class Project root
+    class AU,Track container
+    class AR leaf
+    class AF,EC ref
+```
+
+Solid arrows are "owns" — the parent's collection field contains the child. Labelled arrows are "references" — the box points at something it doesn't own. `AudioFileBox` is the canonical example: many regions can refer to one file, which is why it's a *preserved* resource (copying a project preserves its UUID so other projects can share the same file).
+
 ## Working with Boxes
 
 ### Creating Boxes
