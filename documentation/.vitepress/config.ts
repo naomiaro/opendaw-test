@@ -102,6 +102,10 @@ export default withMermaid(defineConfig({
             text: "Project and Persistence",
             link: "/internals/06-project-and-persistence",
           },
+          {
+            text: "Repo Layout and Dev Workflow",
+            link: "/internals/07-dev-workflow",
+          },
         ],
       },
     ],
