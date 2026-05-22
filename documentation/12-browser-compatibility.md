@@ -1,6 +1,8 @@
 # Browser Compatibility
 
-> **Appendix** — platform-specific workarounds for Web Audio in different browsers
+> **Appendix** — platform-specific workarounds for Web Audio in different browsers.
+>
+> **See also:** [Ch. 13 — Troubleshooting & FAQ](./13-troubleshooting.md) covers the symptom-driven side of "engine won't start" — `SharedArrayBuffer is not defined`, `AudioContext was not allowed to start`, dev-server HTTPS / mkcert. This chapter covers the *what* (browser quirks); the FAQ covers the *symptoms*.
 
 ## Safari/iOS Audio Format
 

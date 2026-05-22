@@ -601,6 +601,8 @@ function handleClipDrag(clip: Clip, deltaX: number) {
 
 ## Performance Optimization
 
+> **See also:** [Ch. 15 — Performance & Debugging](./15-performance-and-debugging.md) covers the full performance-diagnostic playbook including the main-thread re-render storms that timeline UIs are most prone to.
+
 ### 1. Virtual Rendering
 
 Only render visible clips:

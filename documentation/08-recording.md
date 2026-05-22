@@ -288,6 +288,8 @@ project.editing.modify(() => {
 
 ## MIDI Input Configuration
 
+> **See also:** [Ch. 16 — MIDI Deep Dive](./16-midi.md) is the dedicated reference for the MIDI data model, programmatic note creation, MIDI effects, and note auditioning. This chapter covers MIDI specifically in the context of recording.
+
 Arming a MIDI instrument's capture uses the **same** `project.captureDevices.setArm()` API as audio (see [Capture Arming](#capture-arming)). `project.captureDevices.get(audioUnitBox.address.uuid)` returns a `CaptureMidi` for MIDI instruments and a `CaptureAudio` for Tape — both extend the same `Capture` base class and share the arm/disarm interface. Channel filtering and software-keyboard input are MIDI-specific and configured below.
 
 ### Device Enumeration
