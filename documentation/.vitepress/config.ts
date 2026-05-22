@@ -89,6 +89,10 @@ export default withMermaid(defineConfig({
           { text: "Overview", link: "/internals/" },
           { text: "Engine Processor", link: "/internals/01-engine-processor" },
           { text: "Box System", link: "/internals/02-box-system" },
+          {
+            text: "Cross-Thread Protocols",
+            link: "/internals/03-cross-thread-protocols",
+          },
         ],
       },
     ],
