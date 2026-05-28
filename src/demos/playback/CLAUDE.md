@@ -88,6 +88,35 @@ Beyond `.box`, `.fading`, `.file`:
 - `.isSelected` — selection state
 - `.canResize` / `.canMirror` — capability flags
 
+### Audio Play Modes (Time & Pitch)
+`AudioRegionBox.playMode` is `Option<AudioPlayMode>` → either `AudioPitchStretchBox`
+(varispeed — warp markers only, pitch follows tempo) or `AudioTimeStretchBox`
+(transient-aware + independent pitch via `cents`, clamped to ±1200 via
+`playbackRate` ∈ [0.5, 2.0]). Empty pointer = NoStretch (default, plays at source speed).
+Adapter accessors: `isPlayModeNoStretch`, `asPlayModePitchStretch`,
+`asPlayModeTimeStretch`, `optWarpMarkers`, `observableOptPlayMode`. Names are
+counterintuitive — PitchStretch is the *simple* mode; TimeStretch is the sophisticated one.
+See `documentation/18-time-and-pitch.md`.
+
+### TimeStretch Renders Silence Without Transients
+`AudioTimeStretchBox` needs ≥2 `TransientMarkerBox` entries on the *file* box
+(not the region) or the engine produces silence with no error. Detect with
+`Workers.Transients.detect(audioData): Promise<number[]>` from `@opendaw/studio-core`
+(worker, non-blocking) or `TransientDetector.detect(audioData): number[]` from
+`@opendaw/lib-dsp` (sync, main thread). Reusable helper at `src/lib/transientDetection.ts`
+takes any `AudioBuffer` and is idempotent.
+
+### Play-Mode Swap Needs Two Transactions
+Swapping `region.playMode` in one `editing.modify()` races pointer resolution.
+Split: transaction 1 = `region.playMode.defer()` + delete old stretch box +
+flip `timeBase`; transaction 2 = create new stretch box + warp markers +
+`region.playMode.refer(next)`. Same caveat as `createInstrument` + `output.refer`.
+
+### AudioFileBoxAdapter Audio Data Access
+`.audioData: Promise<AudioData>` (awaits sample loader), `.data: Option<AudioData>`
+(sync, None if not loaded), `.transients: EventCollection<TransientMarkerBoxAdapter>`,
+`.peaks: Option<Peaks>`. Prefer these over holding raw `AudioBuffer` refs.
+
 ### waveformOffset vs loopOffset
 - `loopOffset` (PPQN) — controls which audio content maps to which timeline position. Affects audio read position indirectly through the `LoopableRegion.locateLoops()` formula: `offset = position - loopOffset` changes `rawStart`, which changes `elapsedSeconds`, which changes which samples are read. Used by `RegionEditing.cut()`, `clip-fades-demo`, and `comp-lanes-demo` to position audio within regions.
 - `waveformOffset` (seconds, field 7 on AudioRegionBox) — a direct seconds offset added to the audio read position: `sampleIndex = (elapsedSeconds + waveformOffset) * sampleRate`. Used to skip count-in audio during recording finalization.
