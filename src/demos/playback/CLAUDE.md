@@ -91,26 +91,35 @@ Beyond `.box`, `.fading`, `.file`:
 ### Audio Play Modes (Time & Pitch)
 `AudioRegionBox.playMode` is `Option<AudioPlayMode>` → either `AudioPitchStretchBox`
 (varispeed — warp markers only, pitch follows tempo) or `AudioTimeStretchBox`
-(transient-aware + independent pitch via `cents`, clamped to ±1200 via
-`playbackRate` ∈ [0.5, 2.0]). Empty pointer = NoStretch (default, plays at source speed).
-Adapter accessors: `isPlayModeNoStretch`, `asPlayModePitchStretch`,
-`asPlayModeTimeStretch`, `optWarpMarkers`, `observableOptPlayMode`. Names are
-counterintuitive — PitchStretch is the *simple* mode; TimeStretch is the sophisticated one.
-See `documentation/18-time-and-pitch.md`.
+(transient-aware + independent pitch via `cents`, clamped ±1200 by
+`AudioTimeStretchBoxAdapter.cents` only — the underlying `playbackRate` field has
+`"positive"` constraint and accepts any value). Empty pointer = NoStretch
+(default, plays at source speed). Adapter accessors: `isPlayModeNoStretch`,
+`asPlayModePitchStretch`, `asPlayModeTimeStretch`, `optWarpMarkers`,
+`observableOptPlayMode`. Names are counterintuitive — PitchStretch is the *simple*
+mode; TimeStretch is the sophisticated one. See `documentation/18-time-and-pitch.md`.
 
-### TimeStretch Renders Silence Without Transients
-`AudioTimeStretchBox` needs ≥2 `TransientMarkerBox` entries on the *file* box
-(not the region) or the engine produces silence with no error. Detect with
-`Workers.Transients.detect(audioData): Promise<number[]>` from `@opendaw/studio-core`
-(worker, non-blocking) or `TransientDetector.detect(audioData): number[]` from
-`@opendaw/lib-dsp` (sync, main thread). Reusable helper at `src/lib/transientDetection.ts`
-takes any `AudioBuffer` and is idempotent.
+### TimeStretch Without Transients Renders Silence
+`AudioTimeStretchBox` needs `TransientMarkerBox` entries on the *file* box (not
+the region): 0 markers = silence, 1 marker = degenerate single segment to file end,
+≥2 = normal musical use. Detect with `Workers.Transients.detect(audioData): Promise<number[]>`
+from `@opendaw/studio-core` (worker, non-blocking) or `TransientDetector.detect(audioData):
+number[]` from `@opendaw/lib-dsp` (sync, main thread). Reusable helper at
+`src/lib/transientDetection.ts` — `ensureTransientMarkers` throws if detection
+returns 0 positions so callers can't silently end up with a silent region.
 
-### Play-Mode Swap Needs Two Transactions
-Swapping `region.playMode` in one `editing.modify()` races pointer resolution.
-Split: transaction 1 = `region.playMode.defer()` + delete old stretch box +
-flip `timeBase`; transaction 2 = create new stretch box + warp markers +
-`region.playMode.refer(next)`. Same caveat as `createInstrument` + `output.refer`.
+### Play-Mode Swap Works in One Transaction
+SDK pattern (per `AudioContentModifier.toPitchStretch` / `toTimeStretch`):
+1. Create new stretch box
+2. `region.playMode.refer(newBox)` — replaces previous target atomically; no
+   `defer()` needed first
+3. Re-own (or copy) the old box's warp markers
+4. `oldBox.delete()` (now has no incoming references)
+5. Flip `timeBase` to Musical (or Seconds when going to NoStretch)
+
+Explicitly calling `defer()` then `refer(new)` in the same transaction recreates
+the `createInstrument + output.refer` race; just don't — `refer()` alone does the
+swap.
 
 ### AudioFileBoxAdapter Audio Data Access
 `.audioData: Promise<AudioData>` (awaits sample loader), `.data: Option<AudioData>`

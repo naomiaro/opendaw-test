@@ -7,6 +7,7 @@
 
 - [The Three Audio Play Modes](#the-three-audio-play-modes)
   - [Decision Matrix](#decision-matrix)
+  - [Box-Graph Shape](#box-graph-shape)
 - [How to Tell What Mode a Region Is In](#how-to-tell-what-mode-a-region-is-in)
 - [NoStretch (Default)](#nostretch-default)
 - [PitchStretch (Varispeed via Warp Markers)](#pitchstretch-varispeed-via-warp-markers)
@@ -52,6 +53,39 @@ Need audio to sync to BPM changes?
              Independent pitch via cents (±1200). Transient-aware segment
              playback preserves attacks. Requires transient markers on the file.
 ```
+
+### Box-Graph Shape
+
+The three modes are all built from the same set of boxes; what differs is which box is wired into `region.playMode` and how many markers exist on each side.
+
+```mermaid
+graph LR
+    Region["AudioRegionBox"]
+    File["AudioFileBox"]
+    Stretch{"AudioPitchStretchBox<br/>or<br/>AudioTimeStretchBox<br/>(playMode target)"}
+    WM["WarpMarkerBox<br/>(position: PPQN, seconds)"]
+    TM["TransientMarkerBox<br/>(position: seconds)"]
+
+    Region -- "playMode<br/>(Option, empty = NoStretch)" --> Stretch
+    Region -- "file" --> File
+    WM -- "owner" --> Stretch
+    TM -- "owner" --> File
+
+    subgraph perRegion ["Per region — each region has its own"]
+      Stretch
+      WM
+    end
+
+    subgraph perFile ["Per file — shared by every region that references this file"]
+      File
+      TM
+    end
+```
+
+Two scoping rules to remember from the diagram:
+
+- **Warp markers are per-region** (owned by the play-mode box, which is owned by the region). Two regions over the same audio file can warp time differently.
+- **Transient markers are per-file** (owned by the `AudioFileBox`). Detect once, every region pointing at that file gets them. This is why `ensureTransientMarkers` (helper in `src/lib/transientDetection.ts`) keys on the file box — re-detection is wasted work.
 
 ---
 
@@ -175,7 +209,7 @@ Drop a marker at any beat you want to "pin" to a specific moment in the file. Be
 |-------|------|-------|---------|
 | `warpMarkers` | pointer collection | — | — |
 | `transientPlayMode` | enum `int32` | `Once` / `Repeat` / `Pingpong` | `Pingpong` |
-| `playbackRate` | `float32` | clamped `[0.5, 2.0]` via the adapter's `cents` setter | `1.0` |
+| `playbackRate` | `float32` | positive (box constraint); ±1 octave / `[0.5, 2.0]` is an adapter convention — see below | `1.0` |
 
 Warp markers still control timing the same way as PitchStretch — what changes is *how the file is read between transients*. Instead of reading samples at the rate implied by the warp curve, the engine plays each transient-bounded segment at the chosen `playbackRate` (pitch) and uses transient markers as resynchronization points. When the timeline asks for more time than a segment provides at this rate, the segment loops, pingpongs, or stops — that's the `transientPlayMode`.
 
@@ -207,19 +241,21 @@ The adapter exposes a `cents` setter that converts to the underlying `playbackRa
 project.editing.modify(() => {
   timeStretchAdapter.cents = 700;   // +7 semitones (a fifth up); playbackRate ≈ 1.498
   timeStretchAdapter.cents = -1200; // one octave down (clamped); playbackRate = 0.5
-  timeStretchAdapter.cents = 1500;  // clamped to +1200
+  timeStretchAdapter.cents = 1500;  // clamped to +1200 (playbackRate = 2.0)
 });
 
 const current = timeStretchAdapter.cents; // log2(playbackRate) * 1200
 ```
 
-If you need to read the raw rate (e.g. when persisting a project), use `timeStretchAdapter.playbackRate` directly — it returns the float that's actually stored on the box.
+The clamp lives in `AudioTimeStretchBoxAdapter.cents`, not the box schema — the box constraint on `playbackRate` is just `"positive"`. If you write `box.playbackRate.setValue(5.0)` directly, the box accepts it and `adapter.playbackRate` returns `5.0`; `adapter.cents` will then read back as `~2787` instead of clamping. **Set via `cents` (or mirror the `[0.5, 2.0]` clamp yourself if you go through the field) to stay inside the adapter's expected range.**
+
+If you need to read the raw rate (e.g. when persisting a project), use `timeStretchAdapter.playbackRate` — it returns the float that's actually stored on the box.
 
 ### Transient Markers Are Required
 
-The engine needs at least two `TransientMarkerBox` entries on the `AudioFileBox` (not on the region) to know where it can splice without clicks. Without them, TimeStretch regions render silence. Markers are stored on the *file* box, so they're shared by every region that references the same audio file.
+The engine needs `TransientMarkerBox` entries on the `AudioFileBox` (not on the region) to know where it can splice without clicks. With zero markers the engine produces no output for TimeStretch regions; one marker creates a single segment from that position to the end of the file (so technically renderable, but degenerate); **for any musical material you want ≥2 markers** — typically dozens, one per onset.
 
-You have three ways to populate them.
+Markers are stored on the *file* box, so they're shared by every region that references the same audio file. You have three ways to populate them.
 
 #### Option 1 — `Workers.Transients.detect()` (recommended)
 
@@ -391,12 +427,17 @@ project.editing.modify(() => {
     box.playbackRate.setValue(1.0);
   });
 
-  // Re-own each marker to the new stretch box.
+  // 1. Re-route the region pointer FIRST. `refer` replaces the old target
+  //    atomically — no `defer()` needed and no race.
+  region.box.playMode.refer(timeStretch);
+
+  // 2. Re-own each marker to the new stretch box. Markers point UP to their
+  //    play-mode owner via WarpMarkerBox.owner.
   oldStretch.warpMarkers.asArray().forEach(({ box: marker }) =>
     marker.owner.refer(timeStretch.warpMarkers)
   );
 
-  region.box.playMode.refer(timeStretch);
+  // 3. Now the old box has no incoming references — safe to delete.
   oldStretch.box.delete();
 });
 ```
@@ -429,7 +470,15 @@ project.editing.modify(() => {
 });
 ```
 
-**Two transactions, not one.** Mode flips that involve creating a stretch box, attaching warp markers, *and* re-routing `region.playMode` can race against pointer resolution if done in a single `editing.modify()` (same caveat that bites `createInstrument` + `output.refer` per Ch. 04). If you see stale-pointer behavior, split the create-and-attach step from the route step.
+**One transaction is fine — order matters.** Mode flips work in a single `editing.modify()` if you follow the SDK's own ordering (used by `AudioContentModifier.toPitchStretch` / `toTimeStretch` in `@opendaw/studio-core`):
+
+1. Create the new stretch box.
+2. `region.playMode.refer(newBox)` — `refer` replaces the existing target cleanly; **no `defer()` first**.
+3. Re-own or copy the old box's warp markers onto the new one.
+4. Delete the old box.
+5. Flip `timeBase` to `Musical`.
+
+The `createInstrument` + `output.refer` race documented in Ch. 04 is a different shape: it re-routes a pointer that `createInstrument`'s internal transaction has *already set* during the same `editing.modify()`. Play-mode swaps update a pointer on an existing region with `refer()` directly, which the box graph resolves atomically. If you do explicitly `defer()` first and then `refer(newBox)` later in the same transaction, you can recreate the createInstrument-style race — so just don't: skip the `defer()` and let `refer()` do the swap.
 
 ---
 
@@ -437,14 +486,14 @@ project.editing.modify(() => {
 
 | Property | Limit |
 |----------|-------|
-| Pitch range (TimeStretch) | ±1200 cents (±1 octave). The `cents` setter clamps; setting `playbackRate` directly outside `[0.5, 2.0]` will be clamped at the next read through the adapter. |
+| Pitch range (TimeStretch) | ±1200 cents (±1 octave) **via `AudioTimeStretchBoxAdapter.cents`**. The underlying `playbackRate` field has only a `"positive"` constraint — writing `box.playbackRate.setValue(5.0)` directly bypasses the clamp and is silently accepted. Use the adapter setter or mirror its `[0.5, 2.0]` clamp. |
 | Pitch automation | Not supported — `playbackRate` is a scalar field, not an automatable target. To automate pitch over time, draw it on a MIDI note region driving a sampler (Ch. 16). |
 | Formant preservation | Not implemented. Vocals will "chipmunk" up and "darken" down. |
 | Real-time interpolation | Linear only. Aliasing audible at extreme rates. |
-| Transient segment crossfade | Fixed at the engine's `VOICE_FADE_DURATION` (~20 ms). On very short segments (<40 ms) the crossfade can soften attacks audibly — choose `Once` mode or thin the transient markers. |
-| TimeStretch without transients | Renders silence. The engine needs ≥2 `TransientMarkerBox` entries on the file before it will produce output. |
-| PitchStretch without warp markers | Same — needs ≥2 anchors to define a slope. |
-| Mode flips | Need to preserve/copy warp markers across the swap; not a single field write. |
+| Transient segment crossfade | Fixed at `VOICE_FADE_DURATION = 0.020` (20 ms). On very short segments (<40 ms) the crossfade can soften attacks audibly — choose `Once` mode or thin the transient markers. |
+| TimeStretch without transients | 0 markers → silence. 1 marker → degenerate single segment to file end. ≥2 markers is what musical material wants. |
+| PitchStretch without warp markers | Needs ≥2 anchors to define a slope; otherwise no output. |
+| Mode flips | Single transaction works if you follow the SDK ordering above; `refer()` replaces the old pointer without a prior `defer()`. |
 
 ---
 

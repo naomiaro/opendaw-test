@@ -68,6 +68,10 @@ function TimePitchDemo() {
   >(null);
   const durationSecondsRef = useRef(0);
   const durationPpqnRef = useRef(0);
+  // Re-entrancy guard: the SegmentedControl can fire onValueChange faster than
+  // async transient detection completes. State-based guards have a stale closure;
+  // a ref is read fresh on every invocation.
+  const switchingRef = useRef(false);
 
   const { isPlaying, pausedPositionRef } = usePlaybackPosition(project);
   const { handlePlay, handlePause, handleStop } = useTransportControls({
@@ -170,11 +174,12 @@ function TimePitchDemo() {
       const durationPpqn = durationPpqnRef.current;
       const durationSeconds = durationSecondsRef.current;
 
+      switchingRef.current = true;
       setSwitching(true);
       try {
         // For TimeStretch, make sure the file has transient markers BEFORE we
-        // attach the play-mode box. Without them the engine renders silence.
-        // ensureTransientMarkers is idempotent — it's a no-op if markers exist.
+        // attach the play-mode box. ensureTransientMarkers throws if detection
+        // returns 0 positions, so the engine never silently renders nothing.
         if (nextMode === "time") {
           setStatus("Detecting transients...");
           const positions = await ensureTransientMarkers(
@@ -183,55 +188,39 @@ function TimePitchDemo() {
             audioBuffer
           );
           setTransientCount(positions.length);
+        } else {
+          setTransientCount(null);
         }
 
-        // Transaction 1: detach old play-mode (if any) and flip timebase if needed.
+        // Single transaction, matching the SDK's AudioContentModifier pattern:
+        // create new → refer (replaces old pointer) → delete old → flip timeBase.
+        // `refer` doesn't require a prior `defer` — it replaces atomically.
         project.editing.modify(() => {
           const prev = stretchBoxRef.current;
-          if (prev) {
-            region.playMode.defer();
-            prev.delete();
-            stretchBoxRef.current = null;
-          }
 
           if (nextMode === "none") {
+            region.playMode.defer();
+            if (prev) prev.delete();
+            stretchBoxRef.current = null;
             region.timeBase.setValue(TimeBase.Seconds);
             region.duration.setValue(durationSeconds);
             region.loopOffset.setValue(0);
             region.loopDuration.setValue(durationSeconds);
-          } else {
-            region.timeBase.setValue(TimeBase.Musical);
-            region.duration.setValue(durationPpqn);
-            region.loopOffset.setValue(0);
-            region.loopDuration.setValue(durationPpqn);
+            return;
           }
-        });
 
-        if (nextMode === "none") {
-          setPlayMode("none");
-          setCents(0);
-          setStatus("Ready");
-          return;
-        }
-
-        // Transaction 2: create the new stretch box + warp markers + attach.
-        // Split from transaction 1 so the previous play-mode pointer is fully
-        // disconnected before we route the new one (see Ch. 18 caveat).
-        project.editing.modify(() => {
           const boxGraph = project.boxGraph;
-          let nextBox: AudioPitchStretchBox | AudioTimeStretchBox;
+          const nextBox =
+            nextMode === "pitch"
+              ? AudioPitchStretchBox.create(boxGraph, UUID.generate())
+              : AudioTimeStretchBox.create(boxGraph, UUID.generate(), (b) => {
+                  b.transientPlayMode.setValue(transientMode);
+                  b.playbackRate.setValue(1.0);
+                });
 
-          if (nextMode === "pitch") {
-            nextBox = AudioPitchStretchBox.create(boxGraph, UUID.generate());
-          } else {
-            nextBox = AudioTimeStretchBox.create(boxGraph, UUID.generate(), (b) => {
-              b.transientPlayMode.setValue(transientMode);
-              b.playbackRate.setValue(1.0);
-            });
-          }
-          stretchBoxRef.current = nextBox;
-
-          // Two warp markers: 0 → 0, durationPpqn → durationSeconds.
+          // Default warp markers: 0 → 0, durationPpqn → durationSeconds.
+          // The studio app's AudioContentModifier preserves the old box's markers
+          // across swaps; this demo recreates defaults for simplicity.
           WarpMarkerBox.create(boxGraph, UUID.generate(), (m) => {
             m.owner.refer(nextBox.warpMarkers);
             m.position.setValue(0);
@@ -243,7 +232,16 @@ function TimePitchDemo() {
             m.seconds.setValue(durationSeconds);
           });
 
+          // Re-route the region pointer to the new box, then delete the old one.
+          // `refer` replaces the existing target cleanly — no `defer` needed first.
           region.playMode.refer(nextBox);
+          if (prev) prev.delete();
+          stretchBoxRef.current = nextBox;
+
+          region.timeBase.setValue(TimeBase.Musical);
+          region.duration.setValue(durationPpqn);
+          region.loopOffset.setValue(0);
+          region.loopDuration.setValue(durationPpqn);
         });
 
         setPlayMode(nextMode);
@@ -252,7 +250,15 @@ function TimePitchDemo() {
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
         setStatus("Failed");
+        // Reconcile UI ↔ box state: the editing.modify above is atomic, so on
+        // failure the box graph is unchanged. Drop UI back to the mode it was
+        // actually in by reading stretchBoxRef (untouched on throw).
+        const current = stretchBoxRef.current;
+        if (current === null) setPlayMode("none");
+        else if (current instanceof AudioTimeStretchBox) setPlayMode("time");
+        else setPlayMode("pitch");
       } finally {
+        switchingRef.current = false;
         setSwitching(false);
       }
     },
@@ -262,14 +268,16 @@ function TimePitchDemo() {
   // ---- Cents slider (TimeStretch only)
   const onCentsChange = useCallback(
     (value: number) => {
-      setCents(value);
       if (!project) return;
       const box = stretchBoxRef.current;
       if (!box || !(box instanceof AudioTimeStretchBox)) return;
+      // ±1200 cents clamp lives in the adapter; we mirror it here to keep the
+      // box-graph field within the adapter's expected range.
+      const rate = Math.min(2.0, Math.max(0.5, Math.pow(2, value / 1200)));
       project.editing.modify(() => {
-        const rate = Math.min(2.0, Math.max(0.5, Math.pow(2, value / 1200)));
         box.playbackRate.setValue(rate);
       });
+      setCents(value);
     },
     [project]
   );
@@ -277,13 +285,17 @@ function TimePitchDemo() {
   // ---- Transient play mode (TimeStretch only)
   const onTransientModeChange = useCallback(
     (mode: TransientPlayMode) => {
-      setTransientMode(mode);
       if (!project) return;
       const box = stretchBoxRef.current;
-      if (!box || !(box instanceof AudioTimeStretchBox)) return;
+      if (!box || !(box instanceof AudioTimeStretchBox)) {
+        // Not in TimeStretch mode — keep the UI state in sync but no-op the box.
+        setTransientMode(mode);
+        return;
+      }
       project.editing.modify(() => {
         box.transientPlayMode.setValue(mode);
       });
+      setTransientMode(mode);
     },
     [project]
   );
@@ -291,11 +303,11 @@ function TimePitchDemo() {
   // ---- BPM (visible in all modes — this is the control that reveals what each mode does)
   const onBpmChange = useCallback(
     (value: number) => {
-      setBpm(value);
       if (!project) return;
       project.editing.modify(() => {
         project.timelineBox.bpm.setValue(value);
       });
+      setBpm(value);
     },
     [project]
   );
@@ -336,17 +348,32 @@ function TimePitchDemo() {
                 <Badge color={status === "Ready" ? "green" : "gray"}>{status}</Badge>
               </Flex>
 
-              <SegmentedControl.Root
-                value={playMode}
-                onValueChange={(v) => {
-                  if (!switching) void switchMode(v as PlayMode);
+              <div
+                style={{
+                  opacity: switching || isPlaying ? 0.5 : 1,
+                  pointerEvents: switching || isPlaying ? "none" : "auto",
                 }}
-                size="3"
               >
-                <SegmentedControl.Item value="none">NoStretch</SegmentedControl.Item>
-                <SegmentedControl.Item value="pitch">PitchStretch</SegmentedControl.Item>
-                <SegmentedControl.Item value="time">TimeStretch</SegmentedControl.Item>
-              </SegmentedControl.Root>
+                <SegmentedControl.Root
+                  value={playMode}
+                  onValueChange={(v) => {
+                    // Belt-and-braces: the ref guards against re-entry even if
+                    // the parent's pointer-events block is bypassed.
+                    if (switchingRef.current) return;
+                    void switchMode(v as PlayMode);
+                  }}
+                  size="3"
+                >
+                  <SegmentedControl.Item value="none">NoStretch</SegmentedControl.Item>
+                  <SegmentedControl.Item value="pitch">PitchStretch</SegmentedControl.Item>
+                  <SegmentedControl.Item value="time">TimeStretch</SegmentedControl.Item>
+                </SegmentedControl.Root>
+              </div>
+              {isPlaying && (
+                <Text size="1" color="gray">
+                  Stop playback to change mode (avoids mid-stream glitches).
+                </Text>
+              )}
 
               <Text size="2" color="gray">
                 {playMode === "none" && (
