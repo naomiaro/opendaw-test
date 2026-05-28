@@ -10,7 +10,6 @@ import {
   AudioRegionBox,
   AudioPitchStretchBox,
   AudioTimeStretchBox,
-  TransientMarkerBox,
   ValueEventCollectionBox,
   WarpMarkerBox,
 } from "@opendaw/studio-boxes";
@@ -19,6 +18,7 @@ import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
 import { loadAudioFile } from "@/lib/audioUtils";
 import { initializeOpenDAW } from "@/lib/projectSetup";
+import { ensureTransientMarkers } from "@/lib/transientDetection";
 import { usePlaybackPosition } from "@/hooks/usePlaybackPosition";
 import { useTransportControls } from "@/hooks/useTransportControls";
 import "@radix-ui/themes/styles.css";
@@ -56,9 +56,12 @@ function TimePitchDemo() {
   const [transientMode, setTransientMode] = useState<TransientPlayMode>(
     TransientPlayMode.Pingpong
   );
+  const [transientCount, setTransientCount] = useState<number | null>(null);
+  const [switching, setSwitching] = useState(false);
 
   const regionRef = useRef<AudioRegionBox | null>(null);
   const audioFileBoxRef = useRef<AudioFileBox | null>(null);
+  const audioBufferRef = useRef<AudioBuffer | null>(null);
   const stretchBoxRef = useRef<
     AudioPitchStretchBox | AudioTimeStretchBox | null
   >(null);
@@ -89,6 +92,7 @@ function TimePitchDemo() {
         const audioBuffer = await loadAudioFile(newAudioContext, SAMPLE_PATH);
         const fileUuid = UUID.generate();
         localAudioBuffers.set(UUID.toString(fileUuid), audioBuffer);
+        audioBufferRef.current = audioBuffer;
 
         const durationSeconds = audioBuffer.duration;
         const durationPpqn = Math.round(
@@ -156,89 +160,100 @@ function TimePitchDemo() {
 
   // ---- Mode switch: tears down old stretch box, builds new one with default warp markers
   const switchMode = useCallback(
-    (nextMode: PlayMode) => {
-      if (!project || !regionRef.current) return;
+    async (nextMode: PlayMode) => {
+      if (!project || !regionRef.current || !audioBufferRef.current) return;
 
       const region = regionRef.current;
       const audioFileBox = audioFileBoxRef.current!;
+      const audioBuffer = audioBufferRef.current;
       const durationPpqn = durationPpqnRef.current;
       const durationSeconds = durationSecondsRef.current;
 
-      // Transaction 1: detach old play-mode (if any) and flip timebase if needed.
-      project.editing.modify(() => {
-        const prev = stretchBoxRef.current;
-        if (prev) {
-          region.playMode.defer();
-          prev.delete();
-          stretchBoxRef.current = null;
+      setSwitching(true);
+      try {
+        // For TimeStretch, make sure the file has transient markers BEFORE we
+        // attach the play-mode box. Without them the engine renders silence.
+        // ensureTransientMarkers is idempotent — it's a no-op if markers exist.
+        if (nextMode === "time") {
+          setStatus("Detecting transients...");
+          const positions = await ensureTransientMarkers(
+            project,
+            audioFileBox,
+            audioBuffer
+          );
+          setTransientCount(positions.length);
         }
+
+        // Transaction 1: detach old play-mode (if any) and flip timebase if needed.
+        project.editing.modify(() => {
+          const prev = stretchBoxRef.current;
+          if (prev) {
+            region.playMode.defer();
+            prev.delete();
+            stretchBoxRef.current = null;
+          }
+
+          if (nextMode === "none") {
+            region.timeBase.setValue(TimeBase.Seconds);
+            region.duration.setValue(durationSeconds);
+            region.loopOffset.setValue(0);
+            region.loopDuration.setValue(durationSeconds);
+          } else {
+            region.timeBase.setValue(TimeBase.Musical);
+            region.duration.setValue(durationPpqn);
+            region.loopOffset.setValue(0);
+            region.loopDuration.setValue(durationPpqn);
+          }
+        });
 
         if (nextMode === "none") {
-          region.timeBase.setValue(TimeBase.Seconds);
-          region.duration.setValue(durationSeconds);
-          region.loopOffset.setValue(0);
-          region.loopDuration.setValue(durationSeconds);
-        } else {
-          region.timeBase.setValue(TimeBase.Musical);
-          region.duration.setValue(durationPpqn);
-          region.loopOffset.setValue(0);
-          region.loopDuration.setValue(durationPpqn);
+          setPlayMode("none");
+          setCents(0);
+          setStatus("Ready");
+          return;
         }
-      });
 
-      if (nextMode === "none") {
-        setPlayMode("none");
-        setCents(0);
-        return;
-      }
+        // Transaction 2: create the new stretch box + warp markers + attach.
+        // Split from transaction 1 so the previous play-mode pointer is fully
+        // disconnected before we route the new one (see Ch. 18 caveat).
+        project.editing.modify(() => {
+          const boxGraph = project.boxGraph;
+          let nextBox: AudioPitchStretchBox | AudioTimeStretchBox;
 
-      // Transaction 2: create the new stretch box + warp markers + attach.
-      // Split from transaction 1 so the previous play-mode pointer is fully
-      // disconnected before we route the new one (see Ch. 18 caveat).
-      project.editing.modify(() => {
-        const boxGraph = project.boxGraph;
-        let nextBox: AudioPitchStretchBox | AudioTimeStretchBox;
-
-        if (nextMode === "pitch") {
-          nextBox = AudioPitchStretchBox.create(boxGraph, UUID.generate());
-        } else {
-          nextBox = AudioTimeStretchBox.create(boxGraph, UUID.generate(), (b) => {
-            b.transientPlayMode.setValue(transientMode);
-            b.playbackRate.setValue(1.0);
-          });
-        }
-        stretchBoxRef.current = nextBox;
-
-        // Two warp markers: 0 → 0, durationPpqn → durationSeconds.
-        WarpMarkerBox.create(boxGraph, UUID.generate(), (m) => {
-          m.owner.refer(nextBox.warpMarkers);
-          m.position.setValue(0);
-          m.seconds.setValue(0);
-        });
-        WarpMarkerBox.create(boxGraph, UUID.generate(), (m) => {
-          m.owner.refer(nextBox.warpMarkers);
-          m.position.setValue(durationPpqn);
-          m.seconds.setValue(durationSeconds);
-        });
-
-        // TimeStretch needs transient markers on the file.
-        if (nextMode === "time" && audioFileBox.transientMarkers.pointerHub.incoming().length === 0) {
-          // Sparse fallback markers — one per beat at PROJECT_BPM.
-          // In a real app, run onset detection (see Ch. 18).
-          const beatSeconds = 60 / PROJECT_BPM;
-          for (let t = 0; t < durationSeconds; t += beatSeconds) {
-            TransientMarkerBox.create(boxGraph, UUID.generate(), (m) => {
-              m.owner.refer(audioFileBox.transientMarkers);
-              m.position.setValue(t);
+          if (nextMode === "pitch") {
+            nextBox = AudioPitchStretchBox.create(boxGraph, UUID.generate());
+          } else {
+            nextBox = AudioTimeStretchBox.create(boxGraph, UUID.generate(), (b) => {
+              b.transientPlayMode.setValue(transientMode);
+              b.playbackRate.setValue(1.0);
             });
           }
-        }
+          stretchBoxRef.current = nextBox;
 
-        region.playMode.refer(nextBox);
-      });
+          // Two warp markers: 0 → 0, durationPpqn → durationSeconds.
+          WarpMarkerBox.create(boxGraph, UUID.generate(), (m) => {
+            m.owner.refer(nextBox.warpMarkers);
+            m.position.setValue(0);
+            m.seconds.setValue(0);
+          });
+          WarpMarkerBox.create(boxGraph, UUID.generate(), (m) => {
+            m.owner.refer(nextBox.warpMarkers);
+            m.position.setValue(durationPpqn);
+            m.seconds.setValue(durationSeconds);
+          });
 
-      setPlayMode(nextMode);
-      setCents(0);
+          region.playMode.refer(nextBox);
+        });
+
+        setPlayMode(nextMode);
+        setCents(0);
+        setStatus("Ready");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+        setStatus("Failed");
+      } finally {
+        setSwitching(false);
+      }
     },
     [project, transientMode]
   );
@@ -310,7 +325,9 @@ function TimePitchDemo() {
 
               <SegmentedControl.Root
                 value={playMode}
-                onValueChange={(v) => switchMode(v as PlayMode)}
+                onValueChange={(v) => {
+                  if (!switching) void switchMode(v as PlayMode);
+                }}
                 size="3"
               >
                 <SegmentedControl.Item value="none">NoStretch</SegmentedControl.Item>
@@ -333,8 +350,17 @@ function TimePitchDemo() {
                 )}
                 {playMode === "time" && (
                   <>
-                    <Code>AudioTimeStretchBox</Code> with transient markers. Pitch is
-                    independent — drag the cents slider. Tempo changes don't shift pitch.
+                    <Code>AudioTimeStretchBox</Code> with{" "}
+                    {transientCount !== null ? (
+                      <>
+                        <strong>{transientCount}</strong> transient markers detected by{" "}
+                        <Code>Workers.Transients.detect()</Code>
+                      </>
+                    ) : (
+                      <>transient markers</>
+                    )}
+                    . Pitch is independent — drag the cents slider. Tempo changes
+                    don't shift pitch.
                   </>
                 )}
               </Text>
@@ -423,11 +449,13 @@ function TimePitchDemo() {
               <InfoCircledIcon />
             </Callout.Icon>
             <Callout.Text>
-              This demo uses a sparse 1-beat fallback grid for transient markers
-              instead of real onset detection. It works for the included drum
-              loop but for music material you should run OpenDAW's transient
-              worker. See{" "}
-              <a href="https://opendaw-test.pages.dev/docs/18-time-and-pitch.html#timestretch-transient-aware-independent-pitch">
+              First TimeStretch switch runs <Code>Workers.Transients.detect()</Code>{" "}
+              on the loaded <Code>AudioBuffer</Code> and writes the detected
+              positions to the <Code>AudioFileBox</Code>. Reusable helper at{" "}
+              <Code>src/lib/transientDetection.ts</Code> — drop it into any
+              project to get a format-agnostic "any file → ready for TimeStretch"
+              pipeline. See{" "}
+              <a href="https://opendaw-test.pages.dev/docs/18-time-and-pitch.html#transient-markers-are-required">
                 Ch. 18 → Transient Markers Are Required
               </a>
               .

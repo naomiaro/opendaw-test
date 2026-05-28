@@ -217,15 +217,64 @@ If you need to read the raw rate (e.g. when persisting a project), use `timeStre
 
 ### Transient Markers Are Required
 
-The engine needs at least two `TransientMarkerBox` entries on the `AudioFileBox` (not on the region) to know where it can splice without clicks. Without them, TimeStretch regions render silence.
+The engine needs at least two `TransientMarkerBox` entries on the `AudioFileBox` (not on the region) to know where it can splice without clicks. Without them, TimeStretch regions render silence. Markers are stored on the *file* box, so they're shared by every region that references the same audio file.
 
-Most projects let OpenDAW's onset-detection worker populate them automatically (the studio app calls it when a user switches a region into TimeStretch mode). If you need to set them manually:
+You have three ways to populate them.
+
+#### Option 1 — `Workers.Transients.detect()` (recommended)
+
+The SDK ships an onset-detection worker that takes `AudioData` and returns `Promise<number[]>` (positions in file seconds). This is what `AudioContentModifier.toTimeStretch` calls internally when a user flips a region into TimeStretch mode in the studio app. Non-blocking, format-agnostic — feeds on `AudioData`, which you can derive from any browser-decoded `AudioBuffer` (MP3, WAV, OGG, FLAC, M4A — anything `decodeAudioData` accepts).
 
 ```typescript
+import { Workers } from "@opendaw/studio-core";
+import { AudioData } from "@opendaw/lib-dsp";
 import { TransientMarkerBox } from "@opendaw/studio-boxes";
+import { UUID } from "@opendaw/lib-std";
 
+// 1. Convert AudioBuffer → AudioData (SharedArrayBuffer-backed)
+function audioBufferToAudioData(buffer: AudioBuffer): AudioData {
+  const { numberOfChannels, length: numberOfFrames, sampleRate } = buffer;
+  const audioData = AudioData.create(sampleRate, numberOfFrames, numberOfChannels);
+  for (let channel = 0; channel < numberOfChannels; channel++) {
+    audioData.frames[channel].set(buffer.getChannelData(channel));
+  }
+  return audioData;
+}
+
+// 2. Detect (worker — does not block the main thread)
+const positions: number[] = await Workers.Transients.detect(
+  audioBufferToAudioData(audioBuffer)
+);
+
+// 3. Write the markers (single transaction)
 project.editing.modify(() => {
-  // Each entry is a position in *file seconds* where a transient lives.
+  positions.forEach(seconds => {
+    TransientMarkerBox.create(project.boxGraph, UUID.generate(), m => {
+      m.owner.refer(audioFileBox.transientMarkers);
+      m.position.setValue(seconds);
+    });
+  });
+});
+```
+
+#### Option 2 — `TransientDetector.detect()` (synchronous, main thread)
+
+For tests, server-side rendering, or short clips where worker round-trip cost matters more than UI responsiveness:
+
+```typescript
+import { TransientDetector } from "@opendaw/lib-dsp";
+
+const positions: number[] = TransientDetector.detect(audioData);
+```
+
+Same return shape as the worker version. Blocks the main thread for the duration of analysis — fine for clips under ~1 second, painful for 5-minute songs.
+
+#### Option 3 — Set them manually
+
+If you already know where the transients are (imported markers, user-drawn beat grid, MIR pipeline output):
+
+```typescript
+project.editing.modify(() => {
   [0.0, 0.512, 0.998, 1.487].forEach(seconds => {
     TransientMarkerBox.create(project.boxGraph, UUID.generate(), m => {
       m.owner.refer(audioFileBox.transientMarkers);
@@ -235,7 +284,66 @@ project.editing.modify(() => {
 });
 ```
 
-Markers are stored on the file box, so they're shared by every region that references the same audio file.
+#### Pattern: a format-agnostic "any file → ready for TimeStretch" API
+
+A common need is to wrap this in an internal service: user uploads any audio file → service returns it with transient markers populated. The shape is small:
+
+```typescript
+import { Workers } from "@opendaw/studio-core";
+import { AudioData } from "@opendaw/lib-dsp";
+import { AudioFileBox, TransientMarkerBox } from "@opendaw/studio-boxes";
+import { Project } from "@opendaw/studio-core";
+import { UUID } from "@opendaw/lib-std";
+
+export async function ensureTransientMarkers(
+  project: Project,
+  audioFileBox: AudioFileBox,
+  buffer: AudioBuffer
+): Promise<number[]> {
+  // Idempotent: already-populated files are returned as-is.
+  const existing = audioFileBox.transientMarkers.pointerHub.incoming();
+  if (existing.length > 0) {
+    return existing.map(p => (p.box as TransientMarkerBox).position.getValue());
+  }
+
+  const audioData = audioBufferToAudioData(buffer);
+  const positions = await Workers.Transients.detect(audioData);
+
+  project.editing.modify(() => {
+    positions.forEach(seconds => {
+      TransientMarkerBox.create(project.boxGraph, UUID.generate(), m => {
+        m.owner.refer(audioFileBox.transientMarkers);
+        m.position.setValue(seconds);
+      });
+    });
+  });
+
+  return positions;
+}
+```
+
+Call it once per file — after the upload completes, or lazily on the first TimeStretch mode switch. The demo wraps exactly this pattern in `src/lib/transientDetection.ts` and calls it on every mode-flip; the idempotency check means subsequent flips skip detection.
+
+#### Reading existing markers via the adapter
+
+When you have a region adapter rather than a raw box, the path is shorter — the `AudioFileBoxAdapter` already exposes the loaded data:
+
+```typescript
+import { AudioFileBoxAdapter } from "@opendaw/studio-adapters";
+
+const fileAdapter = project.boxAdapters.adapterFor(audioFileBox, AudioFileBoxAdapter);
+
+// Wait for the sample loader to finish:
+const audioData = await fileAdapter.audioData;
+
+// Read existing markers (no detection needed):
+const existing = fileAdapter.transients.asArray().map(m => m.position);
+
+// Or detect new ones:
+const detected = await Workers.Transients.detect(audioData);
+```
+
+`fileAdapter.audioData` is `Promise<AudioData>` — it resolves once the sample loader has produced the SharedArrayBuffer-backed copy. `fileAdapter.data` is the synchronous `Option<AudioData>` if you want to check without awaiting.
 
 ---
 
