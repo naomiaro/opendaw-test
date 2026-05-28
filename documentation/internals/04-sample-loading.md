@@ -478,18 +478,7 @@ When the recording stops, `numFrames` is set and the writer is read like any oth
 
 ## Transient detection
 
-`AudioFileBox` has a `transientMarkers` field that holds onset positions (kick/snare hits, note starts). Detection runs through `Workers.Transients.detect()`:
-
-```typescript
-// packages/lib/dsp/src/transient-protocol.ts
-export interface TransientProtocol {
-    detect(audioData: AudioData): Promise<Array<number>>
-}
-```
-
-Returns an array of times in seconds. The implementation (`TransientDetector.detect()` in `packages/lib/dsp/src/transient-detection.ts`) splits the audio into three frequency bands using 48th-order Linkwitz-Riley filters, computes per-band energy envelopes, detects onset peaks weighted by band (low: ×1, mid: ×4, high: ×8), refines to local energy minima, and enforces a 120 ms minimum spacing (capped at 40 transients per second).
-
-Detection is triggered explicitly via `AudioFileBoxFactory.createModifier()` when an audio file is dropped onto the timeline. The factory checks whether transients have already been detected for this file (the `transientMarkers` field is non-empty) and skips re-detection if so. Transients aren't computed for samples that never touch the timeline (e.g. drag into the browser pane but no track), so the cost is opt-in.
+`AudioFileBox` has a `transientMarkers` field that holds onset positions (kick/snare hits, note starts), populated via the `Workers.Transients.detect()` worker. The full algorithm — multi-band Linkwitz-Riley split, band-weighted onset detection, valley-snap refinement, density cap — plus the `AudioContentModifier.toTimeStretch` trigger that calls it lives in its own chapter: **[Ch. 08 — Time & Pitch](./08-time-and-pitch.md)**.
 
 ## End-to-end: drag-and-drop a `.wav`
 

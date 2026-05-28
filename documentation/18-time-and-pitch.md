@@ -253,6 +253,38 @@ The engine needs `TransientMarkerBox` entries on the `AudioFileBox` (not on the 
 
 Markers are stored on the *file* box, so they're shared by every region that references the same audio file. You have three ways to populate them.
 
+#### What you'll get back from detection
+
+Before you build UI around `Workers.Transients.detect()`, it helps to know the shape of its output:
+
+| Property | Behaviour |
+|----------|-----------|
+| **Output unit** | Floating-point seconds, relative to the start of the file (not PPQN, not samples). Write them to `TransientMarkerBox.position` directly. |
+| **Always includes endpoints** | The first entry is `0.0` (file start) and the last is the file's end. Even a silent file returns at least these two anchors, so `positions.length === 2` means "no internal onsets found." |
+| **Density ceiling** | Hard-capped at `40 × duration_seconds` markers (plus the two endpoints). A 1-second clip can't exceed 42 markers; a 30-second loop can't exceed 1,202. The cap is enforced by keeping the highest-energy onsets and discarding weaker ones. |
+| **Minimum spacing** | No two adjacent markers will be closer than ~120 ms. The detector keeps the louder one when candidates overlap inside that window. So a busy 32nd-note hi-hat at 240 BPM (intervals of ~62 ms) is *under-marked by design* — the detector treats it as one event per 120 ms window. |
+| **Typical real counts** | A 30-second drum loop: ~60–150 markers depending on density. A 30-second sustained pad: 5–20 (mostly the endpoints plus a few crests). A 4-minute vocal: a few hundred. The 1,200 ceiling is rarely approached in practice — material that dense exhausts the minimum-spacing rule long before the density cap. |
+| **Zero internal onsets** | Possible on pure tones, very quiet ambiences, or fully-faded material. The result is still `[0.0, duration]` — never an empty array. TimeStretch on such material plays back as a single long segment. |
+| **Stability across runs** | Deterministic: same `AudioData` in → same `number[]` out. There's no random seeding, no analysis window jitter. |
+| **Cost** | Roughly real-time (a 30-second file takes ~0.3 s on a modern laptop). The worker logs its realtime factor on each run. |
+
+The internals chapter has the full algorithm: weighted multi-band onset detection, valley-snap refinement, and the strict-increasing dedup guard — see [Internals Ch. 08 — Time & Pitch](./internals/08-time-and-pitch.md#transient-detection-algorithm).
+
+#### Per-file caching: re-detection is wasted
+
+Because markers belong to the `AudioFileBox`, every region that references that file shares the same detection result. Detecting twice for the same file is pure work, so always guard with the idempotency check:
+
+```typescript
+if (audioFileBox.transientMarkers.pointerHub.incoming().length > 0) {
+  // Already detected — nothing to do.
+  return;
+}
+```
+
+The SDK's own `AudioContentModifier.toTimeStretch` does this check before calling `Workers.Transients.detect()`. So does the demo's `ensureTransientMarkers` helper. The cost of *checking* is negligible; the cost of re-detecting a 4-minute track every time a user flips a region mode is not.
+
+
+
 #### Option 1 — `Workers.Transients.detect()` (recommended)
 
 The SDK ships an onset-detection worker that takes `AudioData` and returns `Promise<number[]>` (positions in file seconds). This is what `AudioContentModifier.toTimeStretch` calls internally when a user flips a region into TimeStretch mode in the studio app. Non-blocking, format-agnostic — feeds on `AudioData`, which you can derive from any browser-decoded `AudioBuffer` (MP3, WAV, OGG, FLAC, M4A — anything `decodeAudioData` accepts).
