@@ -314,6 +314,7 @@ When a `NoteRegionBox` plays, the engine walks an internal pipeline (see [intern
 - **MIDI effects insert before the instrument.** They transform note events between source (the region) and sink (the instrument). The order is `region → midi effects → instrument`.
 - **`Tape` doesn't respond to MIDI input.** Tape plays audio files, not notes. If you want a sample-based instrument that responds to MIDI, use `Soundfont` or `Playfield`.
 - **The audio thread runs everything sample-accurately.** A note that should start at position `P` starts at `P` regardless of when in a render block it lands; the engine schedules it within the 128-sample quantum.
+- **Synth tuning follows `project.rootBox.baseFrequency`.** Synth instruments like `Vaporisateur` compute oscillator frequency as `midiToHz(event.pitch + event.cent / 100, baseFrequency)` per note. Set the project's reference pitch (default 440 Hz, range 400–480 Hz, see `BaseFrequencyRange` in `@opendaw/studio-adapters`) once and every MIDI-driven instrument retunes. Audio files do not — see [Ch. 18 → Reference Pitch](./18-time-and-pitch.md#reference-pitch-concert-tuning).
 
 ## Note auditioning
 

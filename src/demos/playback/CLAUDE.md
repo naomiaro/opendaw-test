@@ -216,6 +216,13 @@ Set custom labels with `adapter.box.label.setValue("name")`.
 GitHubCorner, BackLink, content, and MoisesLogo all go *inside* `<Container>`, not as siblings.
 See `src/looping-demo.tsx` for the reference layout pattern.
 
+### Async-Affected Controls Need a `switching` Guard
+When a control triggers heavy async work (transient detection, mode switch,
+sample load), wrap it in a div keyed on the same `switching` state the demo
+uses elsewhere — `style={{ opacity: switching ? 0.5 : 1, pointerEvents: switching ? "none" : "auto" }}` — so rapid input during the work doesn't
+silently bail through a re-entry guard. Reference pattern: the Play Mode and
+Reference Pitch cards in `time-pitch-demo.tsx`.
+
 ### Voice Crossfade on Region Boundaries
 `RegionEditing.cut()` creates a new `PitchVoice` per region. Each voice has a
 20ms fade-in/fade-out (`VOICE_FADE_DURATION` in `Tape/constants.ts`). The fade-out starts
