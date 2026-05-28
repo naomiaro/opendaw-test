@@ -53,6 +53,7 @@ function TimePitchDemo() {
 
   const [playMode, setPlayMode] = useState<PlayMode>("none");
   const [cents, setCents] = useState(0);
+  const [bpm, setBpm] = useState(PROJECT_BPM);
   const [transientMode, setTransientMode] = useState<TransientPlayMode>(
     TransientPlayMode.Pingpong
   );
@@ -287,6 +288,18 @@ function TimePitchDemo() {
     [project]
   );
 
+  // ---- BPM (visible in all modes — this is the control that reveals what each mode does)
+  const onBpmChange = useCallback(
+    (value: number) => {
+      setBpm(value);
+      if (!project) return;
+      project.editing.modify(() => {
+        project.timelineBox.bpm.setValue(value);
+      });
+    },
+    [project]
+  );
+
   const playbackRate = Math.pow(2, cents / 1200);
 
   return (
@@ -415,6 +428,50 @@ function TimePitchDemo() {
 
           <Card>
             <Flex direction="column" gap="3" p="3">
+              <Flex justify="between" align="center">
+                <Heading size="4">Project BPM</Heading>
+                <Text color="gray">
+                  {bpm} BPM
+                  {bpm !== PROJECT_BPM && (
+                    <> · {((bpm / PROJECT_BPM - 1) * 100).toFixed(0)}% off source</>
+                  )}
+                </Text>
+              </Flex>
+              <Slider
+                value={[bpm]}
+                onValueChange={([v]) => onBpmChange(v)}
+                min={60}
+                max={200}
+                step={1}
+                disabled={!project}
+              />
+              <Text size="2" color="gray">
+                {playMode === "none" && (
+                  <>
+                    <strong>NoStretch:</strong> the file plays at its source speed
+                    no matter what the BPM is — the audio "drifts" off the grid.
+                  </>
+                )}
+                {playMode === "pitch" && (
+                  <>
+                    <strong>PitchStretch:</strong> the file follows the BPM and
+                    pitch follows tempo. Raise BPM → faster + pitched up. Drop BPM
+                    → slower + pitched down. (Classic tape vari-speed.)
+                  </>
+                )}
+                {playMode === "time" && (
+                  <>
+                    <strong>TimeStretch:</strong> the file follows the BPM but
+                    pitch stays at whatever cents you set — transients are spliced
+                    to fill the new wall-clock time.
+                  </>
+                )}
+              </Text>
+            </Flex>
+          </Card>
+
+          <Card>
+            <Flex direction="column" gap="3" p="3">
               <Heading size="4">Transport</Heading>
               <Flex gap="2">
                 <Button
@@ -437,9 +494,8 @@ function TimePitchDemo() {
                 </Button>
               </Flex>
               <Text size="2" color="gray">
-                Sample: <Code>{SAMPLE_PATH}</Code> · Project BPM {PROJECT_BPM}.
-                The drum loop is the easiest material to hear the difference
-                between PitchStretch and TimeStretch.
+                Sample: <Code>{SAMPLE_PATH}</Code>. The drum loop is the easiest
+                material to hear the difference between PitchStretch and TimeStretch.
               </Text>
             </Flex>
           </Card>
