@@ -48,13 +48,20 @@ const SAMPLE_PATH = "/audio/BassDrums30.mp3";
 const SAMPLE_NAME = "BassDrums30";
 const PROJECT_BPM = 120;
 
-// Concert pitch (e.g. A=443) maps to a cents offset relative to 440. The
-// TimeStretch box's playbackRate is the multiplier we need: 2^(cents/1200).
-function computeTuningCents(refHz: number): number {
-  return 1200 * Math.log2(refHz / BaseFrequencyRange.default);
+// Cents offset from the project's starting concert pitch. The TimeStretch
+// box's playbackRate is the multiplier we need: 2^(cents/1200). The baseline
+// is whatever the project loaded with (typically 440, but a project saved at
+// e.g. 443 is honoured) so audio plays at source rate when the slider matches
+// the baseline.
+function computeTuningCents(refHz: number, baselineHz: number): number {
+  return 1200 * Math.log2(refHz / baselineHz);
 }
-function computePlaybackRate(userCents: number, refHz: number): number {
-  const totalCents = userCents + computeTuningCents(refHz);
+function computePlaybackRate(
+  userCents: number,
+  refHz: number,
+  baselineHz: number
+): number {
+  const totalCents = userCents + computeTuningCents(refHz, baselineHz);
   return Math.min(2.0, Math.max(0.5, Math.pow(2, totalCents / 1200)));
 }
 
@@ -94,6 +101,9 @@ function TimePitchDemo() {
   referencePitchRef.current = referencePitch;
   const centsRef = useRef(cents);
   centsRef.current = cents;
+  // The project's starting baseFrequency — captured once at init, used as the
+  // "cents = 0" baseline so audio plays at source rate when the slider matches.
+  const initialPitchRef = useRef(BaseFrequencyRange.default);
 
   const { isPlaying, pausedPositionRef } = usePlaybackPosition(project);
   const { handlePlay, handlePause, handleStop } = useTransportControls({
@@ -128,11 +138,14 @@ function TimePitchDemo() {
         durationSecondsRef.current = durationSeconds;
         durationPpqnRef.current = durationPpqn;
 
+        // Honour whatever baseFrequency the project came in with — for a
+        // freshly created project this is the field default (440), but a saved
+        // project authored at e.g. 443 keeps that value. The captured baseline
+        // is what "cents = 0" means for the rest of the session.
+        const initialPitch = newProject.rootBox.baseFrequency.getValue();
+        initialPitchRef.current = initialPitch;
+
         newProject.editing.modify(() => {
-          // Anchor the demo at A=440 explicitly so the slider has a definite
-          // "original" value to diff against — relying on the field default is
-          // identical at runtime but leaves the project box graph "unowned".
-          newProject.rootBox.baseFrequency.setValue(BaseFrequencyRange.default);
           const { trackBox } = newProject.api.createInstrument(
             InstrumentFactories.Tape
           );
@@ -172,6 +185,8 @@ function TimePitchDemo() {
         await newProject.engine.queryLoadingComplete();
         if (cancelled) return;
 
+        setReferencePitch(initialPitch);
+        referencePitchRef.current = initialPitch;
         setProject(newProject);
         setAudioContext(newAudioContext);
         setStatus("Ready");
@@ -244,7 +259,11 @@ function TimePitchDemo() {
                   // userCents is 0 on mode switch (setCents below); only the
                   // active tuning offset contributes to the initial rate.
                   b.playbackRate.setValue(
-                    computePlaybackRate(0, referencePitchRef.current)
+                    computePlaybackRate(
+                      0,
+                      referencePitchRef.current,
+                      initialPitchRef.current
+                    )
                   );
                 });
 
@@ -301,7 +320,11 @@ function TimePitchDemo() {
       if (!project) return;
       const box = stretchBoxRef.current;
       if (!box || !(box instanceof AudioTimeStretchBox)) return;
-      const rate = computePlaybackRate(value, referencePitchRef.current);
+      const rate = computePlaybackRate(
+        value,
+        referencePitchRef.current,
+        initialPitchRef.current
+      );
       project.editing.modify(() => {
         box.playbackRate.setValue(rate);
       });
@@ -311,9 +334,10 @@ function TimePitchDemo() {
   );
 
   // ---- Reference pitch (A4): writes baseFrequency project-wide AND auto-engages
-  // TimeStretch on the first non-440 change. baseFrequency itself only affects
-  // MIDI synths in the SDK — to retune an audio file we need a TimeStretch box
-  // whose playbackRate can carry the cents offset, so we attach one on demand.
+  // TimeStretch the first time the value diverges from the loaded baseline.
+  // baseFrequency itself only affects MIDI synths in the SDK — to retune an
+  // audio file we need a TimeStretch box whose playbackRate can carry the
+  // cents offset, so we attach one on demand.
   const onReferencePitchChange = useCallback(
     async (value: number) => {
       if (!project) return;
@@ -329,7 +353,11 @@ function TimePitchDemo() {
         project.rootBox.baseFrequency.setValue(clamped);
         if (currentBox instanceof AudioTimeStretchBox) {
           currentBox.playbackRate.setValue(
-            computePlaybackRate(centsRef.current, clamped)
+            computePlaybackRate(
+              centsRef.current,
+              clamped,
+              initialPitchRef.current
+            )
           );
         }
       });
@@ -383,8 +411,12 @@ function TimePitchDemo() {
     [project]
   );
 
-  const tuningCents = computeTuningCents(referencePitch);
-  const playbackRate = computePlaybackRate(cents, referencePitch);
+  const tuningCents = computeTuningCents(referencePitch, initialPitchRef.current);
+  const playbackRate = computePlaybackRate(
+    cents,
+    referencePitch,
+    initialPitchRef.current
+  );
   // Derive displayed cents from the (clamped) rate so the readout never
   // disagrees with the audible playback at the ±1200 boundary.
   const appliedCents = 1200 * Math.log2(playbackRate);
@@ -555,7 +587,7 @@ function TimePitchDemo() {
                     <>
                       {" "}
                       · {tuningCents > 0 ? "+" : ""}
-                      {tuningCents.toFixed(2)} cents vs 440
+                      {tuningCents.toFixed(2)} cents vs {initialPitchRef.current.toFixed(1)}
                     </>
                   )}
                 </Text>
@@ -595,8 +627,9 @@ function TimePitchDemo() {
                 consumes this in <Code>midiToHz()</Code> for synth instruments
                 like Vaporisateur — audio files don't read it directly. To
                 make the retune audible on the drum loop, the demo
-                auto-engages <strong>TimeStretch</strong> on the first non-440
-                change and applies the equivalent{" "}
+                auto-engages <strong>TimeStretch</strong> the first time the
+                value diverges from the project's loaded baseline and applies
+                the equivalent{" "}
                 <strong>
                   {tuningCents > 0 ? "+" : ""}
                   {tuningCents.toFixed(2)} cents

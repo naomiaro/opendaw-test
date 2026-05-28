@@ -532,18 +532,22 @@ The Vaporisateur instrument calls `midiToHz(event.pitch + event.cent / 100.0, co
 
 It does **not** retune audio files. `AudioRegionBox` playback reads samples from an `AudioFileBox` at whatever rate the play-mode dictates (`NoStretch` → file's source rate, `PitchStretch` → derived from warp markers + tempo, `TimeStretch` → `playbackRate` field). None of those paths multiply by `baseFrequency`.
 
-If you want a project-wide concert pitch to be audible on audio files, you have to translate the tuning offset into the equivalent **cents shift** and apply it via TimeStretch:
+If you want a project-wide concert pitch to be audible on audio files, you have to translate the tuning offset into the equivalent **cents shift** and apply it via TimeStretch. Compute the shift relative to whatever baseline you treat as "no retune" — that's typically the value `baseFrequency` had when the project loaded (so the file plays at source rate when the slider matches the project's authored tuning), not the Western convention of 440:
 
 ```typescript
-const tuningCents = 1200 * Math.log2(referenceHz / 440);     // 443 → ≈ +11.76 cents
-const totalCents = userCents + tuningCents;                  // combine with user cents slider
-const playbackRate = Math.pow(2, totalCents / 1200);         // TimeStretch field
+// Capture once when the project loads:
+const baselineHz = project.rootBox.baseFrequency.getValue();
+
+// Per change:
+const tuningCents = 1200 * Math.log2(referenceHz / baselineHz);  // 0 at the loaded value
+const totalCents = userCents + tuningCents;                      // combine with user cents slider
+const playbackRate = Math.pow(2, totalCents / 1200);             // TimeStretch field
 // Clamp to AudioTimeStretchBoxAdapter.cents' ±1200 range:
 const clamped = Math.min(2.0, Math.max(0.5, playbackRate));
 box.playbackRate.setValue(clamped);
 ```
 
-This is what the Time & Pitch demo does: changing the **Reference Pitch (A4)** slider writes `rootBox.baseFrequency`, auto-engages a `TimeStretchBox` if the region is currently in `NoStretch` or `PitchStretch` mode, and recomputes `playbackRate` so the audio file's pitch follows the project tuning. The auto-engage is a demo-UX shortcut — in a real app you'd typically let the user choose when to engage TimeStretch and only update `playbackRate` if it's already attached; raw `baseFrequency` writes are always safe (they persist and retune MIDI synths regardless of mode).
+This is what the Time & Pitch demo does: it reads `rootBox.baseFrequency` at init and captures it as the cents-shift baseline, so a project saved at A=443 (or any other value in `BaseFrequencyRange`) plays at source rate when the slider sits at 443. Changing the **Reference Pitch (A4)** slider writes `rootBox.baseFrequency`, auto-engages a `TimeStretchBox` if the region is currently in `NoStretch` or `PitchStretch` mode, and recomputes `playbackRate` so the audio file's pitch follows the project tuning. The auto-engage is a demo-UX shortcut — in a real app you'd typically let the user choose when to engage TimeStretch and only update `playbackRate` if it's already attached; raw `baseFrequency` writes are always safe (they persist and retune MIDI synths regardless of mode).
 
 ### Pattern: a single transaction for both writes
 
