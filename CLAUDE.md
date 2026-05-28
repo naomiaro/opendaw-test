@@ -400,6 +400,14 @@ connection, causing dual routing. Always re-route in a separate transaction. Sim
 This also applies to `captureDevices.get(uuid)` — resolve captures and set their fields
 (deviceId, requestChannels) in a **separate** transaction after `createInstrument` commits.
 
+**The positive rule:** `pointerField.refer(target)` replaces the existing target atomically.
+Do NOT call `defer()` first in the same transaction unless you mean to leave the pointer
+empty — combining `defer()` + later `refer(new)` within one `editing.modify()` recreates
+the createInstrument-style race. Use `defer()` standalone (when removing a reference) or
+`refer()` standalone (when swapping to a new target). Verified against SDK's
+`AudioContentModifier.toPitchStretch` / `toTimeStretch` which swap play-mode in a single
+transaction this way.
+
 ### createInstrument Must Be Destructured Inside editing.modify()
 `project.api.createInstrument()` returns `{ audioUnitBox, trackBox }` directly — no `.unwrap()`.
 But `editing.modify()` does NOT forward return values, so capture via outer variable:
