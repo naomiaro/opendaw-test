@@ -61,31 +61,26 @@ The three modes are all built from the same set of boxes; what differs is which 
 ```mermaid
 graph LR
     Region["AudioRegionBox"]
+    Stretch["AudioPitchStretchBox<br/>or AudioTimeStretchBox"]
+    WM["WarpMarkerBox"]
     File["AudioFileBox"]
-    Stretch{"AudioPitchStretchBox<br/>or<br/>AudioTimeStretchBox<br/>(playMode target)"}
-    WM["WarpMarkerBox<br/>(position: PPQN, seconds)"]
-    TM["TransientMarkerBox<br/>(position: seconds)"]
+    TM["TransientMarkerBox"]
 
-    Region -- "playMode<br/>(Option, empty = NoStretch)" --> Stretch
+    Region -- "playMode" --> Stretch
     Region -- "file" --> File
     WM -- "owner" --> Stretch
     TM -- "owner" --> File
 
-    subgraph perRegion ["Per region — each region has its own"]
-      Stretch
-      WM
-    end
-
-    subgraph perFile ["Per file — shared by every region that references this file"]
-      File
-      TM
-    end
+    classDef perRegion fill:#e3f2fd,stroke:#1976d2,color:#0d47a1
+    classDef perFile fill:#fff3e0,stroke:#ef6c00,color:#e65100
+    class Region,Stretch,WM perRegion
+    class File,TM perFile
 ```
 
-Two scoping rules to remember from the diagram:
+**Blue boxes are per-region** (each region gets its own). **Orange boxes are per-file** (shared by every region that references this file). Two scoping rules to remember:
 
-- **Warp markers are per-region** (owned by the play-mode box, which is owned by the region). Two regions over the same audio file can warp time differently.
-- **Transient markers are per-file** (owned by the `AudioFileBox`). Detect once, every region pointing at that file gets them. This is why `ensureTransientMarkers` (helper in `src/lib/transientDetection.ts`) keys on the file box — re-detection is wasted work.
+- **Warp markers** are owned by the play-mode box, which is owned by the region → per-region. Two regions over the same audio file can warp time differently.
+- **Transient markers** are owned by the `AudioFileBox` → per-file. Detect once, every region pointing at that file gets them. This is why `ensureTransientMarkers` (helper in `src/lib/transientDetection.ts`) keys on the file box — re-detection is wasted work.
 
 ---
 
