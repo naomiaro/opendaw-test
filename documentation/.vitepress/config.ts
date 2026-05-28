@@ -116,6 +116,7 @@ export default withMermaid(defineConfig({
             text: "Repo Layout and Dev Workflow",
             link: "/internals/07-dev-workflow",
           },
+          { text: "Time & Pitch", link: "/internals/08-time-and-pitch" },
         ],
       },
     ],
