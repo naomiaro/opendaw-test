@@ -88,6 +88,44 @@ Beyond `.box`, `.fading`, `.file`:
 - `.isSelected` — selection state
 - `.canResize` / `.canMirror` — capability flags
 
+### Audio Play Modes (Time & Pitch)
+`AudioRegionBox.playMode` is `Option<AudioPlayMode>` → either `AudioPitchStretchBox`
+(varispeed — warp markers only, pitch follows tempo) or `AudioTimeStretchBox`
+(transient-aware + independent pitch via `cents`, clamped ±1200 by
+`AudioTimeStretchBoxAdapter.cents` only — the underlying `playbackRate` field has
+`"positive"` constraint and accepts any value). Empty pointer = NoStretch
+(default, plays at source speed). Adapter accessors: `isPlayModeNoStretch`,
+`asPlayModePitchStretch`, `asPlayModeTimeStretch`, `optWarpMarkers`,
+`observableOptPlayMode`. Names are counterintuitive — PitchStretch is the *simple*
+mode; TimeStretch is the sophisticated one. See `documentation/18-time-and-pitch.md`.
+
+### TimeStretch Without Transients Renders Silence
+`AudioTimeStretchBox` needs `TransientMarkerBox` entries on the *file* box (not
+the region): 0 markers = silence, 1 marker = degenerate single segment to file end,
+≥2 = normal musical use. Detect with `Workers.Transients.detect(audioData): Promise<number[]>`
+from `@opendaw/studio-core` (worker, non-blocking) or `TransientDetector.detect(audioData):
+number[]` from `@opendaw/lib-dsp` (sync, main thread). Reusable helper at
+`src/lib/transientDetection.ts` — `ensureTransientMarkers` throws if detection
+returns 0 positions so callers can't silently end up with a silent region.
+
+### Play-Mode Swap Works in One Transaction
+SDK pattern (per `AudioContentModifier.toPitchStretch` / `toTimeStretch`):
+1. Create new stretch box
+2. `region.playMode.refer(newBox)` — replaces previous target atomically; no
+   `defer()` needed first
+3. Re-own (or copy) the old box's warp markers
+4. `oldBox.delete()` (now has no incoming references)
+5. Flip `timeBase` to Musical (or Seconds when going to NoStretch)
+
+Explicitly calling `defer()` then `refer(new)` in the same transaction recreates
+the `createInstrument + output.refer` race; just don't — `refer()` alone does the
+swap.
+
+### AudioFileBoxAdapter Audio Data Access
+`.audioData: Promise<AudioData>` (awaits sample loader), `.data: Option<AudioData>`
+(sync, None if not loaded), `.transients: EventCollection<TransientMarkerBoxAdapter>`,
+`.peaks: Option<Peaks>`. Prefer these over holding raw `AudioBuffer` refs.
+
 ### waveformOffset vs loopOffset
 - `loopOffset` (PPQN) — controls which audio content maps to which timeline position. Affects audio read position indirectly through the `LoopableRegion.locateLoops()` formula: `offset = position - loopOffset` changes `rawStart`, which changes `elapsedSeconds`, which changes which samples are read. Used by `RegionEditing.cut()`, `clip-fades-demo`, and `comp-lanes-demo` to position audio within regions.
 - `waveformOffset` (seconds, field 7 on AudioRegionBox) — a direct seconds offset added to the audio read position: `sampleIndex = (elapsedSeconds + waveformOffset) * sampleRate`. Used to skip count-in audio during recording finalization.

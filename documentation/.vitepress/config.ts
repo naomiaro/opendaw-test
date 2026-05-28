@@ -75,6 +75,7 @@ export default withMermaid(defineConfig({
           { text: "Effects", link: "/11-effects" },
           { text: "MIDI Deep Dive", link: "/16-midi" },
           { text: "Modular Devices", link: "/17-modular-devices" },
+          { text: "Time & Pitch", link: "/18-time-and-pitch" },
         ],
       },
       {
