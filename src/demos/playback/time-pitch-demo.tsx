@@ -48,6 +48,16 @@ const SAMPLE_PATH = "/audio/BassDrums30.mp3";
 const SAMPLE_NAME = "BassDrums30";
 const PROJECT_BPM = 120;
 
+// Concert pitch (e.g. A=443) maps to a cents offset relative to 440. The
+// TimeStretch box's playbackRate is the multiplier we need: 2^(cents/1200).
+function computeTuningCents(refHz: number): number {
+  return 1200 * Math.log2(refHz / BaseFrequencyRange.default);
+}
+function computePlaybackRate(userCents: number, refHz: number): number {
+  const totalCents = userCents + computeTuningCents(refHz);
+  return Math.min(2.0, Math.max(0.5, Math.pow(2, totalCents / 1200)));
+}
+
 function TimePitchDemo() {
   const [project, setProject] = useState<Project | null>(null);
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
@@ -179,16 +189,6 @@ function TimePitchDemo() {
     };
   }, [localAudioBuffers]);
 
-  // Concert pitch (e.g. A=443) maps to a cents offset relative to 440. The
-  // TimeStretch box's playbackRate is the multiplier we need: 2^(cents/1200).
-  // We combine the user-selected cents with this tuning offset before clamping.
-  const computeTuningCents = (refHz: number): number =>
-    1200 * Math.log2(refHz / BaseFrequencyRange.default);
-  const computePlaybackRate = (userCents: number, refHz: number): number => {
-    const totalCents = userCents + computeTuningCents(refHz);
-    return Math.min(2.0, Math.max(0.5, Math.pow(2, totalCents / 1200)));
-  };
-
   // ---- Mode switch: tears down old stretch box, builds new one with default warp markers
   const switchMode = useCallback(
     async (nextMode: PlayMode) => {
@@ -241,7 +241,8 @@ function TimePitchDemo() {
               ? AudioPitchStretchBox.create(boxGraph, UUID.generate())
               : AudioTimeStretchBox.create(boxGraph, UUID.generate(), (b) => {
                   b.transientPlayMode.setValue(transientMode);
-                  // cents resets to 0 on mode switch; only tuning contributes.
+                  // userCents is 0 on mode switch (setCents below); only the
+                  // active tuning offset contributes to the initial rate.
                   b.playbackRate.setValue(
                     computePlaybackRate(0, referencePitchRef.current)
                   );
@@ -320,30 +321,33 @@ function TimePitchDemo() {
         BaseFrequencyRange.max,
         Math.max(BaseFrequencyRange.min, value)
       );
-      // Update refs first so switchMode reads the new tuning when it creates
-      // the TimeStretch box (its initialiser reads referencePitchRef).
       referencePitchRef.current = clamped;
       setReferencePitch(clamped);
 
+      const currentBox = stretchBoxRef.current;
       project.editing.modify(() => {
         project.rootBox.baseFrequency.setValue(clamped);
-      });
-
-      const currentBox = stretchBoxRef.current;
-      if (currentBox instanceof AudioTimeStretchBox) {
-        project.editing.modify(() => {
+        if (currentBox instanceof AudioTimeStretchBox) {
           currentBox.playbackRate.setValue(
             computePlaybackRate(centsRef.current, clamped)
           );
-        });
-        return;
-      }
+        }
+      });
 
-      // Not in TimeStretch — engage it so the retune is audible. The first
-      // switch runs transient detection (async); subsequent switches are
-      // synchronous because the markers are already on the AudioFileBox.
+      if (currentBox instanceof AudioTimeStretchBox) return;
+
+      // Not in TimeStretch — engage it so the retune is audible.
       if (!switchingRef.current) {
         await switchMode("time");
+        // If auto-engage failed (switchMode caught and surfaced its own error),
+        // add A4 context so the user knows the saved tuning is silent on audio.
+        if (stretchBoxRef.current === null) {
+          setError((prev) =>
+            prev
+              ? `${prev} A4 saved as ${clamped} Hz, but TimeStretch did not engage to retune the audio.`
+              : prev
+          );
+        }
       }
     },
     [project, switchMode]
@@ -380,8 +384,11 @@ function TimePitchDemo() {
   );
 
   const tuningCents = computeTuningCents(referencePitch);
-  const effectiveCents = cents + tuningCents;
   const playbackRate = computePlaybackRate(cents, referencePitch);
+  // Derive displayed cents from the (clamped) rate so the readout never
+  // disagrees with the audible playback at the ±1200 boundary.
+  const appliedCents = 1200 * Math.log2(playbackRate);
+  const isCentsClamped = Math.abs(appliedCents - (cents + tuningCents)) > 0.01;
 
   return (
     <Theme appearance="dark" accentColor="iris" radius="medium">
@@ -488,8 +495,14 @@ function TimePitchDemo() {
                             {" "}
                             {tuningCents > 0 ? "+" : ""}
                             {tuningCents.toFixed(2)} tuning ={" "}
-                            {effectiveCents > 0 ? "+" : ""}
-                            {effectiveCents.toFixed(2)}
+                            {appliedCents > 0 ? "+" : ""}
+                            {appliedCents.toFixed(2)}
+                          </>
+                        )}
+                        {isCentsClamped && (
+                          <>
+                            {" "}
+                            <strong>(clamped)</strong>
                           </>
                         )}{" "}
                         · rate {playbackRate.toFixed(3)}×
@@ -547,28 +560,35 @@ function TimePitchDemo() {
                   )}
                 </Text>
               </Flex>
-              <Slider
-                value={[referencePitch]}
-                onValueChange={([v]) => onReferencePitchChange(v)}
-                min={BaseFrequencyRange.min}
-                max={BaseFrequencyRange.max}
-                step={0.5}
-                disabled={!project}
-              />
-              <Flex gap="2" wrap="wrap">
-                {[432, 440, 442, 443, 444].map((hz) => (
-                  <Button
-                    key={hz}
-                    size="1"
-                    variant={referencePitch === hz ? "solid" : "soft"}
-                    color="gray"
-                    onClick={() => onReferencePitchChange(hz)}
-                    disabled={!project}
-                  >
-                    {hz} Hz
-                  </Button>
-                ))}
-              </Flex>
+              <div
+                style={{
+                  opacity: switching ? 0.5 : 1,
+                  pointerEvents: switching ? "none" : "auto",
+                }}
+              >
+                <Slider
+                  value={[referencePitch]}
+                  onValueChange={([v]) => onReferencePitchChange(v)}
+                  min={BaseFrequencyRange.min}
+                  max={BaseFrequencyRange.max}
+                  step={0.5}
+                  disabled={!project}
+                />
+                <Flex gap="2" wrap="wrap" mt="2">
+                  {[432, 440, 442, 443, 444].map((hz) => (
+                    <Button
+                      key={hz}
+                      size="1"
+                      variant={referencePitch === hz ? "solid" : "soft"}
+                      color="gray"
+                      onClick={() => onReferencePitchChange(hz)}
+                      disabled={!project}
+                    >
+                      {hz} Hz
+                    </Button>
+                  ))}
+                </Flex>
+              </div>
               <Text size="2" color="gray">
                 Writes <Code>project.rootBox.baseFrequency</Code> (range{" "}
                 {BaseFrequencyRange.min}–{BaseFrequencyRange.max} Hz). The SDK
