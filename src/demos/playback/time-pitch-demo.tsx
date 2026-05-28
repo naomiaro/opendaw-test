@@ -119,6 +119,10 @@ function TimePitchDemo() {
         durationPpqnRef.current = durationPpqn;
 
         newProject.editing.modify(() => {
+          // Anchor the demo at A=440 explicitly so the slider has a definite
+          // "original" value to diff against — relying on the field default is
+          // identical at runtime but leaves the project box graph "unowned".
+          newProject.rootBox.baseFrequency.setValue(BaseFrequencyRange.default);
           const { trackBox } = newProject.api.createInstrument(
             InstrumentFactories.Tape
           );
@@ -305,27 +309,44 @@ function TimePitchDemo() {
     [project]
   );
 
-  // ---- Reference pitch (A4): writes baseFrequency project-wide AND, if
-  // TimeStretch is active, applies the equivalent cents shift to the audio file.
+  // ---- Reference pitch (A4): writes baseFrequency project-wide AND auto-engages
+  // TimeStretch on the first non-440 change. baseFrequency itself only affects
+  // MIDI synths in the SDK — to retune an audio file we need a TimeStretch box
+  // whose playbackRate can carry the cents offset, so we attach one on demand.
   const onReferencePitchChange = useCallback(
-    (value: number) => {
+    async (value: number) => {
       if (!project) return;
       const clamped = Math.min(
         BaseFrequencyRange.max,
         Math.max(BaseFrequencyRange.min, value)
       );
-      const box = stretchBoxRef.current;
+      // Update refs first so switchMode reads the new tuning when it creates
+      // the TimeStretch box (its initialiser reads referencePitchRef).
+      referencePitchRef.current = clamped;
+      setReferencePitch(clamped);
+
       project.editing.modify(() => {
         project.rootBox.baseFrequency.setValue(clamped);
-        if (box instanceof AudioTimeStretchBox) {
-          box.playbackRate.setValue(
+      });
+
+      const currentBox = stretchBoxRef.current;
+      if (currentBox instanceof AudioTimeStretchBox) {
+        project.editing.modify(() => {
+          currentBox.playbackRate.setValue(
             computePlaybackRate(centsRef.current, clamped)
           );
-        }
-      });
-      setReferencePitch(clamped);
+        });
+        return;
+      }
+
+      // Not in TimeStretch — engage it so the retune is audible. The first
+      // switch runs transient detection (async); subsequent switches are
+      // synchronous because the markers are already on the AudioFileBox.
+      if (!switchingRef.current) {
+        await switchMode("time");
+      }
     },
-    [project]
+    [project, switchMode]
   );
 
   // ---- Transient play mode (TimeStretch only)
@@ -552,23 +573,15 @@ function TimePitchDemo() {
                 Writes <Code>project.rootBox.baseFrequency</Code> (range{" "}
                 {BaseFrequencyRange.min}–{BaseFrequencyRange.max} Hz). The SDK
                 consumes this in <Code>midiToHz()</Code> for synth instruments
-                like Vaporisateur — audio files (this demo) aren't affected
-                directly.{" "}
-                {playMode === "time" ? (
-                  <>
-                    Because TimeStretch is active, we also apply the equivalent{" "}
-                    <strong>
-                      {tuningCents > 0 ? "+" : ""}
-                      {tuningCents.toFixed(2)} cents
-                    </strong>{" "}
-                    to the audio file so the retune is audible.
-                  </>
-                ) : (
-                  <>
-                    Switch to <strong>TimeStretch</strong> to hear the audio
-                    file retuned to this reference.
-                  </>
-                )}
+                like Vaporisateur — audio files don't read it directly. To
+                make the retune audible on the drum loop, the demo
+                auto-engages <strong>TimeStretch</strong> on the first non-440
+                change and applies the equivalent{" "}
+                <strong>
+                  {tuningCents > 0 ? "+" : ""}
+                  {tuningCents.toFixed(2)} cents
+                </strong>{" "}
+                to the box's <Code>playbackRate</Code>.
               </Text>
             </Flex>
           </Card>

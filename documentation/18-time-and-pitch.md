@@ -543,7 +543,7 @@ const clamped = Math.min(2.0, Math.max(0.5, playbackRate));
 box.playbackRate.setValue(clamped);
 ```
 
-This is exactly what the Time & Pitch demo does: changing the **Reference Pitch (A4)** slider writes `rootBox.baseFrequency` *and*, if a `TimeStretchBox` is attached, recomputes `playbackRate` so the audio file's pitch follows the project tuning. In `NoStretch` or `PitchStretch` mode the setting is still written to the box graph (it persists and will affect synths) but is silent on the audio file.
+This is what the Time & Pitch demo does: changing the **Reference Pitch (A4)** slider writes `rootBox.baseFrequency`, auto-engages a `TimeStretchBox` if the region is currently in `NoStretch` or `PitchStretch` mode, and recomputes `playbackRate` so the audio file's pitch follows the project tuning. The auto-engage is a demo-UX shortcut — in a real app you'd typically let the user choose when to engage TimeStretch and only update `playbackRate` if it's already attached; raw `baseFrequency` writes are always safe (they persist and retune MIDI synths regardless of mode).
 
 ### Pattern: a single transaction for both writes
 
