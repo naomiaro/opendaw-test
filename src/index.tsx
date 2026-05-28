@@ -223,6 +223,21 @@ const App: React.FC = () => {
               </Link>
             </Card>
             <Card asChild>
+              <Link href="/time-pitch-demo.html" style={{ textDecoration: "none", padding: "var(--space-5)" }}>
+                <Flex direction="column" gap="3">
+                  <Flex direction="column" align="center" gap="2">
+                    <Text size="8">🎚️</Text>
+                    <Heading size="5">Time &amp; Pitch</Heading>
+                  </Flex>
+                  <Text size="2" color="gray">
+                    Switch a region between NoStretch, PitchStretch (varispeed) and
+                    TimeStretch (transient-aware) play modes. Pitch-shift up to ±1 octave
+                    in cents.
+                  </Text>
+                </Flex>
+              </Link>
+            </Card>
+            <Card asChild>
               <Link href="/track-automation-demo.html" style={{ textDecoration: "none", padding: "var(--space-5)" }}>
                 <Flex direction="column" gap="3">
                   <Flex direction="column" align="center" gap="2">

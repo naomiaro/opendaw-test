@@ -320,7 +320,7 @@ The ratio `(position / totalDuration)` gives you the percentage of the timeline,
 4. **Audio durations** use `PPQN.secondsToPulses()` and DO change with BPM
 5. When BPM changes:
    - Clip positions stay the same ✓
-   - Clip durations need recalculation (NoSync mode — no time-stretching) ✓
+   - Clip durations need recalculation (NoSync mode — without a play-mode box attached, audio plays at source speed; see [Ch. 18 — Time & Pitch](./18-time-and-pitch.md) to opt in to PitchStretch or TimeStretch) ✓
 
 ---
 
@@ -344,7 +344,7 @@ Position and duration are both stored in PPQN ticks. The clip occupies a fixed n
 - Any content composed to fit specific bars and beats
 - Loops that tile — the tiling stays aligned to beats at any tempo
 
-**Behavior when BPM changes:** A 4-beat clip always occupies 4 beats. At 120 BPM that's 2 seconds; at 60 BPM it's 4 seconds. The audio plays back at the original speed (no time-stretching) — it just finishes sooner or later relative to the grid.
+**Behavior when BPM changes:** A 4-beat clip always occupies 4 beats. At 120 BPM that's 2 seconds; at 60 BPM it's 4 seconds. Without a play-mode attached, the audio still plays back at its source speed — it just finishes sooner or later relative to the grid. To make the audio actually follow the tempo (so a 4-beat loop fills 4 beats at any BPM), attach an `AudioPitchStretchBox` or `AudioTimeStretchBox` to the region's `playMode` pointer. See [Ch. 18 — Time & Pitch](./18-time-and-pitch.md).
 
 **Overlap rule:** Musical timebase regions are **not allowed to overlap** on the same track. The engine validates this during export.
 

@@ -63,6 +63,7 @@ Quick Start → [Ch. 11](./11-effects.md) (effects basics) → [Ch. 17](./17-mod
 | 11 | [Effects](./11-effects.md) | Effect types, creation, track/master integration |
 | 16 | [MIDI Deep Dive](./16-midi.md) | Note creation, hardware capture, MIDI effects, audition |
 | 17 | [Modular Devices](./17-modular-devices.md) | Apparat / Werkstatt / Spielwerk scripting |
+| 18 | [Time & Pitch](./18-time-and-pitch.md) | NoStretch / PitchStretch / TimeStretch play modes, warp markers, transients, ±1 octave pitch |
 
 ### Appendix
 

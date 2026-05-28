@@ -376,7 +376,7 @@ Where:
 If you manually change `loopDuration` to a value that doesn't match the audio content's actual duration in PPQN:
 - The resultStartValue/resultEndValue fractions become incorrect
 - This causes the wrong stepSize calculation
-- Wrong stepSize = time-stretching/pitch-shifting
+- Wrong stepSize = unintended time-stretching/pitch-shifting on a region that isn't supposed to be stretched. (If you actually *want* a region to stretch or change pitch, don't do it by lying about `loopDuration` — attach a play-mode box and use warp markers instead. See [Ch. 18 — Time & Pitch](./18-time-and-pitch.md).)
 
 **Example of incorrect loopDuration:**
 ```typescript
@@ -392,7 +392,7 @@ loopDuration: 4800 PPQN  // Wrong! Should be 9600
 1. **When creating a region:** Set `loopDuration = PPQN.secondsToPulses(audioContentDuration, bpm)`
 2. **When cutting a region:** Do NOT change `loopDuration` - it stays constant as the coordinate system
 3. **When looping:** Set `duration` as a multiple of `loopDuration` (e.g., `duration = loopDuration * 2` for 2 loops)
-4. **Never manually modify `loopDuration`** unless you're intentionally time-stretching/pitch-shifting
+4. **Never manually modify `loopDuration`** to "stretch" audio — use a play-mode box (PitchStretch / TimeStretch) instead. See [Ch. 18 — Time & Pitch](./18-time-and-pitch.md).
 
 ### 6. Region-Aware Waveform Visualization
 
