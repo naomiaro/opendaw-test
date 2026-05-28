@@ -28,6 +28,7 @@ Visit http://localhost:5173 to explore the demos.
 | **Track Automation** | Volume, pan, and effect parameter automation with preset patterns and canvas visualization |
 | **Clip Looping** | Set loop regions within audio clips and extend to tile automatically with waveform visualization |
 | **Clip Fades** | Logarithmic, linear, and exponential fade curves with visual representations |
+| **Time & Pitch** | Switch a region between NoStretch / PitchStretch / TimeStretch, retune in cents, and adjust the project reference pitch (A4) with audible auto-engage |
 | **Mixer Groups** | Sub-mixing with group buses: Track → Group → Master signal flow |
 | **Comp Lanes** | Comp between simulated takes using volume automation crossfades with configurable duration |
 | **Werkstatt** | Write custom audio effects in JavaScript with pre-built examples and runnable code |
@@ -47,6 +48,11 @@ npm run docs:preview  # preview the static build
 
 The chapter list below links to the rendered markdown on GitHub:
 
+- [Quick Start](./documentation/quick-start.md) — fastest path from `npm install` to a playing project
+- [System Architecture](./documentation/00-system-architecture.md) — thread model, package layout, render pipeline
+
+**Core handbook**
+
 - [Introduction](./documentation/01-introduction.md) — DAW concepts and system architecture
 - [Timing & Tempo](./documentation/02-timing-and-tempo.md) — PPQN, tempo automation, time signatures
 - [AnimationFrame](./documentation/03-animation-frame.md) — Observable updates
@@ -58,6 +64,21 @@ The chapter list below links to the rendered markdown on GitHub:
 - [Editing, Fades & Automation](./documentation/09-editing-fades-and-automation.md) — Region editing, clip fades, track automation, comp lanes
 - [Export & Offline Rendering](./documentation/10-export.md) — Mix and stems export, offline rendering
 - [Effects](./documentation/11-effects.md) — Effect types, creation, track/master integration
+
+**Feature guides**
+
+- [MIDI Deep Dive](./documentation/16-midi.md) — Notes, hardware input, MIDI effects, synth tuning
+- [Modular Devices](./documentation/17-modular-devices.md) — Apparat, Vaporisateur, Playfield, Werkstatt
+- [Time & Pitch](./documentation/18-time-and-pitch.md) — NoStretch / PitchStretch / TimeStretch, transients, concert pitch
+
+**Appendix**
+
+- [Browser Compatibility](./documentation/12-browser-compatibility.md) — Supported browsers, headers, SharedArrayBuffer
+- [Troubleshooting & FAQ](./documentation/13-troubleshooting.md) — Common errors and fixes
+- [Glossary](./documentation/14-glossary.md) — SDK and DAW terminology
+- [Performance & Debugging](./documentation/15-performance-and-debugging.md) — Profiling, AnimationFrame patterns, leak hunting
+
+For the SDK-internals series (contributors), see [`documentation/internals/`](./documentation/internals/).
 
 ## Deployment
 
@@ -97,6 +118,7 @@ src/
     │   ├── drum-scheduling-demo.tsx   # Drum pattern scheduling
     │   ├── looping-demo.tsx           # Loop area controls
     │   ├── mixer-groups-demo.tsx      # Group bus sub-mixing
+    │   ├── time-pitch-demo.tsx        # Play modes, cents, project reference pitch
     │   ├── timebase-demo.tsx          # Musical vs Seconds TimeBase
     │   └── track-editing-demo.tsx     # Region split/move editing
     ├── recording/                     # Recording demos
