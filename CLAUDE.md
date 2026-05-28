@@ -362,6 +362,15 @@ Each `MarkerBoxAdapter` has `.position` (PPQN) and `.label` (string).
 Subscribe via `.subscribe()` for marker changes. Use for navigation points,
 arrangement sections, or loop boundaries.
 
+### Project Tuning (A4 / Concert Pitch)
+`project.rootBox.baseFrequency` — Float32, 400–480 Hz, default 440; range constant
+`BaseFrequencyRange` and `Validator.clampBaseFrequency()` from `@opendaw/studio-adapters`.
+Consumed **only** by MIDI synth instruments (Vaporisateur uses
+`midiToHz(pitch, baseFrequency)`) — audio file playback is unaffected. To make an
+audio file follow the project tuning, derive `cents = 1200 * Math.log2(refHz / 440)`
+and apply to `AudioTimeStretchBox.playbackRate` (±1200 cents clamp). See
+`documentation/18-time-and-pitch.md#reference-pitch-concert-tuning`.
+
 ### Import Locations
 - `AnimationFrame` → `@opendaw/lib-dom` (NOT `@opendaw/lib-fusion`)
 - `PeaksPainter` → `@opendaw/lib-fusion`
