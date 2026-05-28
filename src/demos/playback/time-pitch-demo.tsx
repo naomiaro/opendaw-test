@@ -3,7 +3,10 @@ import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
 import { PPQN, TimeBase } from "@opendaw/lib-dsp";
 import { Project } from "@opendaw/studio-core";
-import { InstrumentFactories } from "@opendaw/studio-adapters";
+import {
+  BaseFrequencyRange,
+  InstrumentFactories,
+} from "@opendaw/studio-adapters";
 import { TransientPlayMode } from "@opendaw/studio-enums";
 import {
   AudioFileBox,
@@ -53,6 +56,9 @@ function TimePitchDemo() {
 
   const [playMode, setPlayMode] = useState<PlayMode>("none");
   const [cents, setCents] = useState(0);
+  const [referencePitch, setReferencePitch] = useState(
+    BaseFrequencyRange.default
+  );
   const [bpm, setBpm] = useState(PROJECT_BPM);
   const [transientMode, setTransientMode] = useState<TransientPlayMode>(
     TransientPlayMode.Pingpong
@@ -72,6 +78,12 @@ function TimePitchDemo() {
   // async transient detection completes. State-based guards have a stale closure;
   // a ref is read fresh on every invocation.
   const switchingRef = useRef(false);
+  // Tuning is read by both the cents slider handler and the mode-switch path;
+  // keep it in a ref so those callbacks don't need to re-bind on every change.
+  const referencePitchRef = useRef(referencePitch);
+  referencePitchRef.current = referencePitch;
+  const centsRef = useRef(cents);
+  centsRef.current = cents;
 
   const { isPlaying, pausedPositionRef } = usePlaybackPosition(project);
   const { handlePlay, handlePause, handleStop } = useTransportControls({
@@ -163,6 +175,16 @@ function TimePitchDemo() {
     };
   }, [localAudioBuffers]);
 
+  // Concert pitch (e.g. A=443) maps to a cents offset relative to 440. The
+  // TimeStretch box's playbackRate is the multiplier we need: 2^(cents/1200).
+  // We combine the user-selected cents with this tuning offset before clamping.
+  const computeTuningCents = (refHz: number): number =>
+    1200 * Math.log2(refHz / BaseFrequencyRange.default);
+  const computePlaybackRate = (userCents: number, refHz: number): number => {
+    const totalCents = userCents + computeTuningCents(refHz);
+    return Math.min(2.0, Math.max(0.5, Math.pow(2, totalCents / 1200)));
+  };
+
   // ---- Mode switch: tears down old stretch box, builds new one with default warp markers
   const switchMode = useCallback(
     async (nextMode: PlayMode) => {
@@ -215,7 +237,10 @@ function TimePitchDemo() {
               ? AudioPitchStretchBox.create(boxGraph, UUID.generate())
               : AudioTimeStretchBox.create(boxGraph, UUID.generate(), (b) => {
                   b.transientPlayMode.setValue(transientMode);
-                  b.playbackRate.setValue(1.0);
+                  // cents resets to 0 on mode switch; only tuning contributes.
+                  b.playbackRate.setValue(
+                    computePlaybackRate(0, referencePitchRef.current)
+                  );
                 });
 
           // Default warp markers: 0 → 0, durationPpqn → durationSeconds.
@@ -271,13 +296,34 @@ function TimePitchDemo() {
       if (!project) return;
       const box = stretchBoxRef.current;
       if (!box || !(box instanceof AudioTimeStretchBox)) return;
-      // ±1200 cents clamp lives in the adapter; we mirror it here to keep the
-      // box-graph field within the adapter's expected range.
-      const rate = Math.min(2.0, Math.max(0.5, Math.pow(2, value / 1200)));
+      const rate = computePlaybackRate(value, referencePitchRef.current);
       project.editing.modify(() => {
         box.playbackRate.setValue(rate);
       });
       setCents(value);
+    },
+    [project]
+  );
+
+  // ---- Reference pitch (A4): writes baseFrequency project-wide AND, if
+  // TimeStretch is active, applies the equivalent cents shift to the audio file.
+  const onReferencePitchChange = useCallback(
+    (value: number) => {
+      if (!project) return;
+      const clamped = Math.min(
+        BaseFrequencyRange.max,
+        Math.max(BaseFrequencyRange.min, value)
+      );
+      const box = stretchBoxRef.current;
+      project.editing.modify(() => {
+        project.rootBox.baseFrequency.setValue(clamped);
+        if (box instanceof AudioTimeStretchBox) {
+          box.playbackRate.setValue(
+            computePlaybackRate(centsRef.current, clamped)
+          );
+        }
+      });
+      setReferencePitch(clamped);
     },
     [project]
   );
@@ -312,7 +358,9 @@ function TimePitchDemo() {
     [project]
   );
 
-  const playbackRate = Math.pow(2, cents / 1200);
+  const tuningCents = computeTuningCents(referencePitch);
+  const effectiveCents = cents + tuningCents;
+  const playbackRate = computePlaybackRate(cents, referencePitch);
 
   return (
     <Theme appearance="dark" accentColor="iris" radius="medium">
@@ -413,7 +461,17 @@ function TimePitchDemo() {
                       <Text weight="medium">Pitch (cents)</Text>
                       <Text color="gray">
                         {cents > 0 ? "+" : ""}
-                        {cents} cents · rate {playbackRate.toFixed(3)}×
+                        {cents} cents
+                        {Math.abs(tuningCents) > 0.01 && (
+                          <>
+                            {" "}
+                            {tuningCents > 0 ? "+" : ""}
+                            {tuningCents.toFixed(2)} tuning ={" "}
+                            {effectiveCents > 0 ? "+" : ""}
+                            {effectiveCents.toFixed(2)}
+                          </>
+                        )}{" "}
+                        · rate {playbackRate.toFixed(3)}×
                       </Text>
                     </Flex>
                     <Slider
@@ -450,6 +508,68 @@ function TimePitchDemo() {
                   </Flex>
                 </>
               )}
+            </Flex>
+          </Card>
+
+          <Card>
+            <Flex direction="column" gap="3" p="3">
+              <Flex justify="between" align="center">
+                <Heading size="4">Reference Pitch (A4)</Heading>
+                <Text color="gray">
+                  {referencePitch.toFixed(1)} Hz
+                  {Math.abs(tuningCents) > 0.01 && (
+                    <>
+                      {" "}
+                      · {tuningCents > 0 ? "+" : ""}
+                      {tuningCents.toFixed(2)} cents vs 440
+                    </>
+                  )}
+                </Text>
+              </Flex>
+              <Slider
+                value={[referencePitch]}
+                onValueChange={([v]) => onReferencePitchChange(v)}
+                min={BaseFrequencyRange.min}
+                max={BaseFrequencyRange.max}
+                step={0.5}
+                disabled={!project}
+              />
+              <Flex gap="2" wrap="wrap">
+                {[432, 440, 442, 443, 444].map((hz) => (
+                  <Button
+                    key={hz}
+                    size="1"
+                    variant={referencePitch === hz ? "solid" : "soft"}
+                    color="gray"
+                    onClick={() => onReferencePitchChange(hz)}
+                    disabled={!project}
+                  >
+                    {hz} Hz
+                  </Button>
+                ))}
+              </Flex>
+              <Text size="2" color="gray">
+                Writes <Code>project.rootBox.baseFrequency</Code> (range{" "}
+                {BaseFrequencyRange.min}–{BaseFrequencyRange.max} Hz). The SDK
+                consumes this in <Code>midiToHz()</Code> for synth instruments
+                like Vaporisateur — audio files (this demo) aren't affected
+                directly.{" "}
+                {playMode === "time" ? (
+                  <>
+                    Because TimeStretch is active, we also apply the equivalent{" "}
+                    <strong>
+                      {tuningCents > 0 ? "+" : ""}
+                      {tuningCents.toFixed(2)} cents
+                    </strong>{" "}
+                    to the audio file so the retune is audible.
+                  </>
+                ) : (
+                  <>
+                    Switch to <strong>TimeStretch</strong> to hear the audio
+                    file retuned to this reference.
+                  </>
+                )}
+              </Text>
             </Flex>
           </Card>
 

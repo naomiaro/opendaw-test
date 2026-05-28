@@ -19,6 +19,7 @@
 - [Switching Between Modes](#switching-between-modes)
 - [Quality and Limits](#quality-and-limits)
 - [MIDI Pitch vs Audio Pitch](#midi-pitch-vs-audio-pitch)
+- [Reference Pitch (Concert Tuning)](#reference-pitch-concert-tuning)
 - [Demo](#demo)
 
 ---
@@ -500,9 +501,70 @@ If you need to pitch-shift a sample for *playback*, use a sampler instrument (Va
 
 ---
 
+## Reference Pitch (Concert Tuning)
+
+Every project has a global reference pitch — the frequency that the MIDI note `A4` (note 69) maps to. The Western default is `440 Hz`. Orchestras and historical / non-Western tunings use other values: `432 Hz` (sometimes called "Verdi tuning"), `442 Hz` and `443 Hz` (common in European orchestras), `415 Hz` (Baroque). The SDK exposes this as a single Float32 field on the root box.
+
+| Where | What |
+|-------|------|
+| Field | `project.rootBox.baseFrequency` (`Float32Field`) |
+| Range constant | `BaseFrequencyRange` from `@opendaw/studio-adapters` — `{ min: 400, max: 480, default: 440.0 }` |
+| Validator | `Validator.clampBaseFrequency(hz)` from `@opendaw/studio-adapters` — clamps to range, falls back to default for non-finite input |
+| Read | `project.rootBox.baseFrequency.getValue()` (synchronous) |
+| Write | inside `editing.modify()`, like any other box-graph field |
+
+### What the SDK does with `baseFrequency`
+
+Only one place inside the engine consumes it today: **the MIDI synth instruments**. The pitch utilities in `@opendaw/lib-dsp` all accept it as an optional parameter:
+
+```typescript
+import { midiToHz, hzToMidi, semitoneToHz, hzToSemitone } from "@opendaw/lib-dsp";
+
+midiToHz(69, 440);   // 440  (A4 at standard tuning)
+midiToHz(69, 443);   // 443  (A4 at A=443)
+midiToHz(60, 440);   // 261.626 (middle C at standard tuning)
+midiToHz(60, 443);   // 263.408 (middle C at A=443 — sharp by ~11.76 cents)
+```
+
+The Vaporisateur instrument calls `midiToHz(event.pitch + event.cent / 100.0, context.baseFrequency)` to compute oscillator frequency per note, so retuning the project shifts everything the synth plays. Other future MIDI instruments will conventionally do the same.
+
+### What `baseFrequency` does NOT do
+
+It does **not** retune audio files. `AudioRegionBox` playback reads samples from an `AudioFileBox` at whatever rate the play-mode dictates (`NoStretch` → file's source rate, `PitchStretch` → derived from warp markers + tempo, `TimeStretch` → `playbackRate` field). None of those paths multiply by `baseFrequency`.
+
+If you want a project-wide concert pitch to be audible on audio files, you have to translate the tuning offset into the equivalent **cents shift** and apply it via TimeStretch:
+
+```typescript
+const tuningCents = 1200 * Math.log2(referenceHz / 440);     // 443 → ≈ +11.76 cents
+const totalCents = userCents + tuningCents;                  // combine with user cents slider
+const playbackRate = Math.pow(2, totalCents / 1200);         // TimeStretch field
+// Clamp to AudioTimeStretchBoxAdapter.cents' ±1200 range:
+const clamped = Math.min(2.0, Math.max(0.5, playbackRate));
+box.playbackRate.setValue(clamped);
+```
+
+This is exactly what the Time & Pitch demo does: changing the **Reference Pitch (A4)** slider writes `rootBox.baseFrequency` *and*, if a `TimeStretchBox` is attached, recomputes `playbackRate` so the audio file's pitch follows the project tuning. In `NoStretch` or `PitchStretch` mode the setting is still written to the box graph (it persists and will affect synths) but is silent on the audio file.
+
+### Pattern: a single transaction for both writes
+
+Because both writes target the same box graph, do them inside one `editing.modify()`:
+
+```typescript
+project.editing.modify(() => {
+  project.rootBox.baseFrequency.setValue(referenceHz);
+  if (timeStretchBox) {
+    timeStretchBox.playbackRate.setValue(clampedRate);
+  }
+});
+```
+
+One transaction = one undo entry, and the engine never sees an intermediate state where the project says "A = 443" but the stretch box still reads at `440`-based rate.
+
+---
+
 ## Demo
 
-[**Time & Pitch Demo →**](https://opendaw-test.pages.dev/time-pitch-demo.html) — switch a region between the three play modes and adjust cents on the TimeStretch path. Source: `src/demos/playback/time-pitch-demo.tsx`.
+[**Time & Pitch Demo →**](https://opendaw-test.pages.dev/time-pitch-demo.html) — switch a region between the three play modes, adjust cents on the TimeStretch path, and retune the project reference pitch (A4) from 400 to 480 Hz. Source: `src/demos/playback/time-pitch-demo.tsx`.
 
 ---
 
