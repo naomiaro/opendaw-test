@@ -147,8 +147,7 @@ render it's a no-op.
 
 ### Finding Recording Regions
 Recording regions are labeled "Take N" (SDK 0.0.91+) or "Recording" (older). Discover
-them via the adapter layer rather than scanning `boxGraph.boxes()` (see
-`src/lib/adapterUtils.ts` and root CLAUDE.md guidance):
+via `getAllAudioRegions(project)` from `src/lib/adapterUtils.ts`:
 ```typescript
 import { getAllAudioRegions } from "@/lib/adapterUtils";
 

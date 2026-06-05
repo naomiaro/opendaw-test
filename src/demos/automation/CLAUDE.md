@@ -127,14 +127,11 @@ parameter.registerTracks(tracks)         // wire to AudioUnitTracks
 parameter.updateMappings(value, string)  // swap mappings (e.g. on schema change)
 parameter.terminate()
 ```
-No `.value` getter, no `.interpolation` field, no `createAutomation`/`deleteAutomation`/
-`copyTo` on the parameter itself — those concepts live on the track-region/event layer.
 
 ### Touch Recording Lifecycle
-Real-time automation recording (recording fader movements during playback). Note the
-split: per-adapter actions are on `AutomatableParameterFieldAdapter`, while the
-**registry-level** lookups (mode, touch-state checks, change notifications across all
-parameters) are on `ParameterFieldAdapters` and addressed by `Address`.
+Real-time automation recording (fader movements during playback). Per-adapter actions
+on `AutomatableParameterFieldAdapter`; registry-level lookups on `ParameterFieldAdapters`
+by `Address`.
 ```typescript
 import { ParameterFieldAdapters } from "@opendaw/studio-adapters";
 // project.parameterFieldAdapters: ParameterFieldAdapters
@@ -184,8 +181,8 @@ Each automation point:
 - `.copyTo({ position?, index?, value?, interpolation?, events? })` — copy with overrides
 - `.copyFrom({...})` — write overrides into this event from a partial
 
-There is no `.moveToPosition()` or `.delete()` — move by setting `box.position.setValue()`
-inside `editing.modify()`; delete by unstaging the box.
+Move via `box.position.setValue()` in `editing.modify()`. Delete via
+`boxGraph.unstageBox(adapter.box)`.
 
 ## Reference Files
 - Track automation demo: `src/demos/automation/track-automation-demo.tsx`

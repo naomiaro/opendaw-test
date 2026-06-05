@@ -16,9 +16,8 @@ the stem branch (metronome excluded).
   `setPosition`, `waitForLoading`, etc.) and `.render(config, start, end, progress, abortSignal?)`
   for arbitrary ranges.
 
-Pass a **copy** (not the live project) — both wrappers run inside an
-`OfflineAudioContext` and the live project's `liveStreamReceiver` connection conflicts
-with offline workers if you reuse the live instance.
+Pass a copy (not the live project) — both wrappers create an `OfflineAudioContext`
+that conflicts with the live `liveStreamReceiver`.
 
 **Manual approach (full control over the pipeline):**
 ```typescript
@@ -101,8 +100,7 @@ const newUnits = TransferAudioUnits.transfer(
 ```
 
 ### Preset Encode/Decode (Audio Unit State)
-Save and restore mixer-channel state — the unit of preset is an **audio unit**
-(`AudioUnitBox`, a mixer channel), not an individual device:
+Encode/decode preset is per `AudioUnitBox` (a mixer channel), not per device:
 ```typescript
 import { PresetEncoder, PresetDecoder } from "@opendaw/studio-adapters";
 import type { PresetHeader } from "@opendaw/studio-adapters";

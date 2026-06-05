@@ -90,9 +90,9 @@ Devices.isMidiEffect(adapter)   // → MidiEffectDeviceAdapter
 Devices.isInstrument(adapter)   // → InstrumentDeviceBoxAdapter
 Devices.isHost(adapter)         // → DeviceHost (AudioUnitBoxAdapter or ModularAdapter)
 ```
-Navigate from device back to parent — both are direct sibling methods on the device
-adapter (not chained): `device.deviceHost()` returns the immediate host (audio unit or
-modular), `device.audioUnitBoxAdapter()` returns the owning `AudioUnitBoxAdapter`.
+Navigate from device back to parent — sibling methods (not chained):
+- `device.deviceHost()` → immediate host (audio unit or modular)
+- `device.audioUnitBoxAdapter()` → owning `AudioUnitBoxAdapter`
 
 ### Built-In Audio Effect Adapters
 All adapters implement `DeviceBoxAdapter` with `.type`, `.labelField`, `.enabledField`,

@@ -57,8 +57,7 @@ region.copyTo({ target, position?, duration?, loopOffset?, loopDuration?, consol
 region.consolidate()                     // bake loop into single region
 region.iterateActiveNotesAt(position)    // IterableIterator<NoteEvent> at a PPQN
 ```
-There is no `region.events` getter — go through `optCollection` (or guard with
-`hasCollection`) and read `collection.events` for the event list.
+Read events via `region.optCollection.unwrap().events` (or guard with `hasCollection`).
 
 ### NoteEventCollectionBoxAdapter (Event Container)
 Container for MIDI note events within a region:
@@ -67,21 +66,20 @@ const collection = region.optCollection.unwrap(); // or: if (!region.hasCollecti
 collection.events         // EventCollection<NoteEventBoxAdapter>
 
 collection.createEvent({
-  position: 0 as ppqn,    // region-local position (NOT absolute)
-  duration: 480 as ppqn,  // note duration (480 = quarter note at 960 PPQN)
+  position: 0 as ppqn,    // region-local
+  duration: 480 as ppqn,  // 480 = quarter note at 960 PPQN
   pitch: 60,              // MIDI note number (60 = middle C)
-  cent: 0,                // microtuning offset in cents (required field)
-  velocity: 0.8,          // float, 0-1 (NOT 0-127 — see normalizedPitch helpers below)
-  chance: 100,            // playback probability (0-100, %); 100 = always
-  playCount: 1,           // note-repeat count; 1 = single hit
+  cent: 0,                // microtuning offset in cents
+  velocity: 0.8,          // float, 0-1
+  chance: 100,            // playback probability (0-100)
+  playCount: 1,           // note-repeat count
 });
 collection.copy()                              // copy all events into a new collection
 collection.overlapping(from, to, pitch)        // events touching a PPQN range at a pitch
 collection.selectableAt({ x: ppqn, y: pitch }) // events at a (position, pitch) coordinate
 ```
-There is no `deleteEvent()` or `valueAt()` — remove events by unstaging the underlying
-box (`adapter.box`), and query position-bound events via `overlapping()` or
-`iterateActiveNotesAt()` on the region.
+Remove events via `boxGraph.unstageBox(adapter.box)`. Query position-bound events via
+`collection.overlapping()` or `region.iterateActiveNotesAt(position)`.
 
 ### NoteEventBoxAdapter (Individual Note)
 Each MIDI note event:
@@ -101,8 +99,8 @@ Each MIDI note event:
 - `.computeCurveValue(ratio)` — velocity at a playCurve ratio
 - `.canConsolidate()` / `.consolidate()` — fold repeat events into separate adapters
 
-There is no `.moveToPosition()` or `.delete()` — move by setting `box.position.setValue()`
-inside `editing.modify()`; delete by unstaging the box (`boxGraph.unstageBox(adapter.box)`).
+Move via `box.position.setValue()` in `editing.modify()`. Delete via
+`boxGraph.unstageBox(adapter.box)`.
 
 ### MIDI Effect Adapters (Pre-Instrument Processing)
 MIDI effects sit between capture and instrument in the signal chain.

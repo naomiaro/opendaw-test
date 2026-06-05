@@ -97,8 +97,8 @@ Beyond `.box`, `.fading`, `.file`:
 - `.canResize` / `.canMirror` / `.isMirrowed` — capability/state flags
 - `.waveformOffset` — `MutableObservableValue<number>` (seconds offset into source audio)
 
-Fade values live on `.fading` (FadingAdapter), not directly on the region. There is no
-`.valueAt(ppqn)` on AudioRegionBoxAdapter — that's a `ValueRegionBoxAdapter` method.
+Fades: use `.fading.in` / `.fading.out`. For automation values at a position, use
+`ValueRegionBoxAdapter.valueAt(position, fallback)`.
 
 ### Audio Play Modes (Time & Pitch)
 `AudioRegionBox.playMode` is `Option<AudioPlayMode>` → either `AudioPitchStretchBox`
