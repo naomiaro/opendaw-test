@@ -548,11 +548,8 @@ direct calls handle mute toggles, finalization, and clear.
   each renamed/changed identifier from the changelog and update method signatures, return
   types, and code examples. Chapter docs describe current contracts — leaving stale
   signatures is worse than no doc at all.
-- Before documenting an SDK method or field signature in any CLAUDE.md, grep it in
-  `node_modules/@opendaw/<pkg>/dist/**/*.d.ts`. Adapters frequently lack the
-  `.value`/`.delete()`/`.moveToPosition()` conveniences naming suggests — read values via
-  `getValue()`/`getUnitValue()`, mutate via `box.<field>.setValue()` inside
-  `editing.modify()`, delete via `project.boxGraph.unstageBox(adapter.box)`.
+- Before documenting an SDK method or field signature in any CLAUDE.md, verify it in
+  `node_modules/@opendaw/<pkg>/dist/**/*.d.ts`.
 - Verify SDK exports: check `node_modules/@opendaw/<package>/dist/*.d.ts` before writing imports
 - SDK version lives in `node_modules/@opendaw/studio-sdk/package.json`, NOT in individual sub-packages (studio-core, studio-boxes, etc.) which have their own independent version numbers
 - `studio-boxes` source tree is empty (publish-only package). Box schema changes live in
