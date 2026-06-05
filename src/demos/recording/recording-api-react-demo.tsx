@@ -22,6 +22,7 @@ import { BpmControl } from "@/components/BpmControl";
 import { TimeSignatureControl } from "@/components/TimeSignatureControl";
 import { RecordingPreferences } from "@/components/RecordingPreferences";
 import { RecordingTapeCard } from "@/components/RecordingTapeCard";
+import { InputLatencyPanel } from "@/components/InputLatencyPanel";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
@@ -91,6 +92,10 @@ const App: React.FC = () => {
   const [countInBars, setCountInBars] = useEnginePreference(
     project,
     ["recording", "countInBars"]
+  );
+  const [inputLatencySec, setInputLatencySec] = useEnginePreference(
+    project,
+    ["recording", "inputLatency"]
   );
 
   // Audio devices and recording tapes
@@ -673,6 +678,15 @@ const App: React.FC = () => {
               )}
             </Flex>
           </Card>
+
+          {audioContext && (
+            <InputLatencyPanel
+              audioContext={audioContext}
+              inputLatencySec={inputLatencySec}
+              onInputLatencySecChange={setInputLatencySec}
+              disabled={isActive}
+            />
+          )}
 
           <Card>
             <Flex direction="column" gap="4">

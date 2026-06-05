@@ -18,3 +18,4 @@ export { MoisesLogo } from "./MoisesLogo";
 export { BpmControl } from "./BpmControl";
 export { TimeSignatureControl } from "./TimeSignatureControl";
 export { RecordingPreferences } from "./RecordingPreferences";
+export { InputLatencyPanel } from "./InputLatencyPanel";

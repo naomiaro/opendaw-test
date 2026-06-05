@@ -19,6 +19,7 @@ interface MutableObservableValue<T> {
  *
  * Recording settings:
  * - ["recording", "countInBars"] - 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8
+ * - ["recording", "inputLatency"] - number (seconds, ≥ -1; -1 = equals outputLatency)
  *
  * Playback settings:
  * - ["playback", "timestampEnabled"] - boolean
@@ -30,6 +31,7 @@ type MetronomeEnabledPath = ["metronome", "enabled"];
 type MetronomeGainPath = ["metronome", "gain"];
 type MetronomeBeatSubDivisionPath = ["metronome", "beatSubDivision"];
 type RecordingCountInBarsPath = ["recording", "countInBars"];
+type RecordingInputLatencyPath = ["recording", "inputLatency"];
 type PlaybackTimestampEnabledPath = ["playback", "timestampEnabled"];
 type PlaybackPauseOnLoopDisabledPath = ["playback", "pauseOnLoopDisabled"];
 type PlaybackTruncateNotesPath = ["playback", "truncateNotesAtRegionEnd"];
@@ -43,6 +45,7 @@ type PreferencePath =
   | MetronomeGainPath
   | MetronomeBeatSubDivisionPath
   | RecordingCountInBarsPath
+  | RecordingInputLatencyPath
   | PlaybackTimestampEnabledPath
   | PlaybackPauseOnLoopDisabledPath
   | PlaybackTruncateNotesPath;
@@ -52,6 +55,7 @@ type PreferenceValue<P extends PreferencePath> =
   P extends MetronomeGainPath ? number :
   P extends MetronomeBeatSubDivisionPath ? 1 | 2 | 4 | 8 :
   P extends RecordingCountInBarsPath ? 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 :
+  P extends RecordingInputLatencyPath ? number :
   P extends PlaybackTimestampEnabledPath ? boolean :
   P extends PlaybackPauseOnLoopDisabledPath ? boolean :
   P extends PlaybackTruncateNotesPath ? boolean :

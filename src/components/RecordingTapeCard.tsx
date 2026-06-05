@@ -1,9 +1,17 @@
 import React, { useState, useCallback, useEffect } from "react";
-import { Flex, Text, Select, Button, Slider, Badge, Card, Separator } from "@radix-ui/themes";
-import { Project, CaptureAudio } from "@opendaw/studio-core";
+import { Flex, Text, Select, Button, Slider, Badge, Card, Separator, TextField, Code } from "@radix-ui/themes";
+import { Project, CaptureAudio, InputLatency } from "@opendaw/studio-core";
 import { Option } from "@opendaw/lib-std";
 import type { MonitoringMode } from "@opendaw/studio-core";
 import { probeDeviceChannels } from "../lib/audioUtils";
+
+type InputLatencyMode = "inherit" | "equals-output" | "custom";
+
+const modeFromValue = (value: number): InputLatencyMode => {
+  if (value === InputLatency.Inherit) return "inherit";
+  if (value === InputLatency.EqualsOutput) return "equals-output";
+  return "custom";
+};
 
 export interface RecordingTape {
   id: string;
@@ -46,6 +54,17 @@ export const RecordingTapeCard: React.FC<RecordingTapeCardProps> = ({
   const [maxChannels, setMaxChannels] = useState<1 | 2>(2);
   const [isArmed, setIsArmed] = useState<boolean>(() => capture.armed.getValue());
 
+  // Per-tape input-latency override (CaptureAudioBox.inputLatency).
+  // -2 = inherit engine preference, -1 = equals outputLatency, ≥0 = explicit seconds.
+  const [inputLatencySec, setInputLatencySec] = useState<number>(() => capture.captureBox.inputLatency.getValue());
+  const inputLatencyMode = modeFromValue(inputLatencySec);
+  const [inputLatencyMsDraft, setInputLatencyMsDraft] = useState<string>(() =>
+    inputLatencyMode === "custom" ? (inputLatencySec * 1000).toFixed(2) : "0.00"
+  );
+
+  // Browser-reported track latency from the captured MediaStreamTrack (read-only diagnostic).
+  const [reportedTrackLatencyMs, setReportedTrackLatencyMs] = useState<number | null>(null);
+
   // Monitor controls (SDK 0.0.133+)
   const [monitorVolumeDb, setMonitorVolumeDb] = useState<number>(() => capture.monitorVolumeDb);
   const [monitorPan, setMonitorPan] = useState<number>(() => capture.monitorPan);
@@ -77,6 +96,23 @@ export const RecordingTapeCard: React.FC<RecordingTapeCardProps> = ({
     return () => sub.terminate();
   }, [capture, tape.id, onArmedChange]);
 
+  // Surface the browser-reported MediaStreamTrack latency (if any) whenever the active stream changes.
+  // MutableObservableOption.catchupAndSubscribe passes the Option directly — no getValue() wrapper.
+  // Driver-reported NaN/negative values are rejected at the source so they never reach the box graph.
+  useEffect(() => {
+    const sub = capture.stream.catchupAndSubscribe(streamOpt => {
+      if (streamOpt.isEmpty()) {
+        setReportedTrackLatencyMs(null);
+        return;
+      }
+      const track = streamOpt.unwrap().getAudioTracks().at(0);
+      const reported = track?.getSettings().latency;
+      const valid = typeof reported === "number" && Number.isFinite(reported) && reported >= 0;
+      setReportedTrackLatencyMs(valid ? reported * 1000 : null);
+    });
+    return () => sub.terminate();
+  }, [capture]);
+
   // Sync box graph fields — require a transaction
   useEffect(() => {
     project.editing.modify(() => {
@@ -87,6 +123,17 @@ export const RecordingTapeCard: React.FC<RecordingTapeCardProps> = ({
       capture.captureBox.gainDb.setValue(inputGainDb);
     });
   }, [project, capture, selectedDeviceId, isMono, inputGainDb]);
+
+  // Sync per-tape inputLatency override — box graph field, requires transaction.
+  // Guard against NaN (NaN === NaN is false, so a no-op compare wouldn't catch it) and
+  // against unrelated re-renders that would open an empty transaction.
+  useEffect(() => {
+    if (!Number.isFinite(inputLatencySec)) return;
+    if (capture.captureBox.inputLatency.getValue() === inputLatencySec) return;
+    project.editing.modify(() => {
+      capture.captureBox.inputLatency.setValue(inputLatencySec);
+    });
+  }, [project, capture, inputLatencySec]);
 
   // Sync monitoring mode — manipulates Web Audio nodes, outside transaction
   useEffect(() => {
@@ -133,6 +180,45 @@ export const RecordingTapeCard: React.FC<RecordingTapeCardProps> = ({
   const handleRemove = useCallback(() => {
     onRemove(tape.id);
   }, [onRemove, tape.id]);
+
+  // Stricter than parseFloat: rejects trailing garbage ("12abc" → NaN, not 12).
+  const parseStrictMs = (raw: string): number => {
+    const trimmed = raw.trim();
+    if (trimmed === "") return NaN;
+    return Number(trimmed);
+  };
+
+  const handleInputLatencyModeChange = useCallback((mode: InputLatencyMode) => {
+    if (mode === "inherit") {
+      setInputLatencySec(InputLatency.Inherit);
+    } else if (mode === "equals-output") {
+      setInputLatencySec(InputLatency.EqualsOutput);
+    } else {
+      // Switching to custom — seed from draft (or 0 if no draft yet).
+      const ms = parseStrictMs(inputLatencyMsDraft);
+      setInputLatencySec(Number.isFinite(ms) ? Math.max(0, ms / 1000) : 0);
+    }
+  }, [inputLatencyMsDraft]);
+
+  const commitInputLatencyMs = useCallback(() => {
+    const ms = parseStrictMs(inputLatencyMsDraft);
+    if (!Number.isFinite(ms)) {
+      // Invalid draft → snap back to current committed value so the user sees the reject.
+      const committedMs = inputLatencySec * 1000;
+      if (modeFromValue(inputLatencySec) === "custom") {
+        setInputLatencyMsDraft(committedMs.toFixed(2));
+      }
+      return;
+    }
+    // Typed custom input is always non-negative — sentinels are reached via the Select, not the field.
+    setInputLatencySec(Math.max(0, ms / 1000));
+  }, [inputLatencyMsDraft, inputLatencySec]);
+
+  const applyReportedLatency = useCallback(() => {
+    if (reportedTrackLatencyMs === null || !Number.isFinite(reportedTrackLatencyMs)) return;
+    setInputLatencyMsDraft(reportedTrackLatencyMs.toFixed(2));
+    setInputLatencySec(Math.max(0, reportedTrackLatencyMs / 1000));
+  }, [reportedTrackLatencyMs]);
 
   return (
     <Card style={{ background: "var(--gray-2)" }}>
@@ -241,6 +327,56 @@ export const RecordingTapeCard: React.FC<RecordingTapeCardProps> = ({
           <Text size="1" color="gray" style={{ minWidth: 55, fontFamily: "monospace" }}>
             {inputGainDb > 0 ? "+" : ""}{inputGainDb.toFixed(1)} dB
           </Text>
+        </Flex>
+
+        <Flex direction="column" gap="2">
+          <Flex align="center" gap="2" wrap="wrap">
+            <Text size="2" weight="medium" style={{ minWidth: 80 }}>Input Latency:</Text>
+            <Select.Root
+              value={inputLatencyMode}
+              onValueChange={value => handleInputLatencyModeChange(value as InputLatencyMode)}
+              disabled={disabled}
+            >
+              <Select.Trigger style={{ width: 180 }} />
+              <Select.Content>
+                <Select.Item value="inherit">Inherit project default</Select.Item>
+                <Select.Item value="equals-output">Match outputLatency</Select.Item>
+                <Select.Item value="custom">Custom</Select.Item>
+              </Select.Content>
+            </Select.Root>
+            {inputLatencyMode === "custom" && (
+              <TextField.Root
+                type="number"
+                step="0.1"
+                value={inputLatencyMsDraft}
+                onChange={e => setInputLatencyMsDraft(e.target.value)}
+                onBlur={commitInputLatencyMs}
+                onKeyDown={e => { if (e.key === "Enter") commitInputLatencyMs(); }}
+                disabled={disabled}
+                style={{ width: 110 }}
+                aria-label="Custom input latency, milliseconds"
+              >
+                <TextField.Slot side="right">
+                  <Text size="1" color="gray">ms</Text>
+                </TextField.Slot>
+              </TextField.Root>
+            )}
+          </Flex>
+          {reportedTrackLatencyMs !== null && (
+            <Flex align="center" gap="2" wrap="wrap">
+              <Text size="1" color="gray">
+                Browser reported: <Code>{reportedTrackLatencyMs.toFixed(2)} ms</Code>
+              </Text>
+              <Button
+                size="1"
+                variant="soft"
+                onClick={applyReportedLatency}
+                disabled={disabled}
+              >
+                Use this value
+              </Button>
+            </Flex>
+          )}
         </Flex>
 
         {monitoringMode !== "off" && (
