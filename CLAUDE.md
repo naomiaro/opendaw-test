@@ -317,7 +317,7 @@ Essential for tempo-aware waveform rendering and position display.
 - `.inSlope` / `.outSlope` — curve shape (0.25=log, 0.5=linear, 0.75=exp)
 - `.inField` / `.outField` / `.inSlopeField` / `.outSlopeField` — settable fields
 - `.hasFading` — boolean, true if any fade is non-zero
-- `.copyTo(targetAdapter)` — copy fade settings to another region
+- `.copyTo(target: Fading)` — copy fade settings. Param is the raw `Fading` box from `@opendaw/studio-boxes`, NOT a `FadingAdapter`. From a region adapter: `srcRegion.fading.copyTo(dstRegion.box.fading)`
 - `.reset()` — clear all fades to zero
 
 ### BoxAdaptersContext (Dependency Injection)
@@ -521,6 +521,7 @@ direct calls handle mute toggles, finalization, and clear.
 ## Build & Verification
 - `npm run build` runs Vite then VitePress — demos go to `dist/`, docs go to `dist/docs/` for `/docs/` on Cloudflare Pages
 - `npm run docs:dev` — local VitePress dev server for documentation
+- typescript-lsp plugin: install `typescript-language-server` and `typescript` **globally** (`npm i -g typescript-language-server typescript`) — the plugin spawns by PATH, NOT from `node_modules/.bin`, so a devDep doesn't satisfy it. LSP `hover` / `goToDefinition` / `documentSymbol` also resolve types in the upstream openDAW checkout (`tsserver` walks up to the nearest tsconfig — handy for SDK drift audits). Prefer file-scoped ops over `workspaceSymbol` (~3.9k symbols / ~135 KB persisted in this repo).
 - Dev server is HTTPS (COOP/COEP) — Playwright/curl must use `https://`, not `http://`. Custom port:
   `npm run dev -- --port 5180 --host 127.0.0.1`, then browse `https://localhost:5180/<demo>.html`.
 - COOP/COEP headers in `public/_headers` exclude `/docs/*` — VitePress assets break under `require-corp`
