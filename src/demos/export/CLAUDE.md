@@ -1,11 +1,26 @@
 # Export Demo — OpenDAW SDK Reference
 
 ### Offline Audio Rendering (Export)
-`OfflineEngineRenderer` throws "Already connected" when passed a live project (due to
-`liveStreamReceiver` conflict). With `Option.None`, `countStems` returns 1 (not 0), routing
-through the stem export branch (no metronome) rather than the mixdown branch.
+With `Option.None`, `ExportConfiguration.countStems(config)` returns 1 (not 0), so the
+mixdown branch is selected (`stemExports.length === 0` inside the engine processor) and
+the metronome is included. Provide a non-empty `ExportConfiguration.stems` map to take
+the stem branch (metronome excluded).
 
-**Working approach for all offline rendering:**
+**Higher-level shortcuts** (when you don't need step-by-step control):
+- `AudioOfflineRenderer.start(source, optConfig, progress, abortSignal?, sampleRate?)` →
+  `Promise<AudioBuffer>` (in `@opendaw/studio-core`) — one-shot mixdown/stems to a
+  ready-to-play AudioBuffer.
+- `OfflineEngineRenderer.start(source, optConfig, progress, abortSignal?, sampleRate?)` →
+  `Promise<AudioData>` — same flow but returns the raw AudioData. Also exposes
+  `.create(source, optConfig, sampleRate?)` for step-by-step (`play`, `step(samples)`,
+  `setPosition`, `waitForLoading`, etc.) and `.render(config, start, end, progress, abortSignal?)`
+  for arbitrary ranges.
+
+Pass a **copy** (not the live project) — both wrappers run inside an
+`OfflineAudioContext` and the live project's `liveStreamReceiver` connection conflicts
+with offline workers if you reuse the live instance.
+
+**Manual approach (full control over the pipeline):**
 ```typescript
 const projectCopy = project.copy();
 projectCopy.boxGraph.beginTransaction();
@@ -52,32 +67,69 @@ project.editing.modify(() => track.audioUnitBox.mute.setValue(saved)); // restor
 The mute window is a single synchronous JS task — no audio blocks process in between.
 
 ### Transfer APIs (Cross-Project Copy)
-`@opendaw/studio-adapters` provides utilities for copying content between projects:
+`@opendaw/studio-adapters` provides namespace utilities for copying content between
+projects. Both work across `BoxGraph`s — shared resources already present in the
+target graph are reused rather than duplicated.
 
-**TransferRegions** — copy regions between tracks:
+**TransferRegions** — copy a single region (with dependencies) to a target track:
 ```typescript
 import { TransferRegions } from "@opendaw/studio-adapters";
-// Copy selected regions from one track to another (same or different project)
+
+const newRegion = TransferRegions.transfer(
+  sourceRegion,     // AnyRegionBox
+  targetTrack,      // TrackBox
+  insertPosition,   // ppqn
+  deleteSource = false,
+);
 ```
 
-**TransferAudioUnits** — copy entire audio units (channels) between projects:
+**TransferAudioUnits** — copy whole mixer channels (effects, routing, automation):
 ```typescript
 import { TransferAudioUnits } from "@opendaw/studio-adapters";
-// Copy mixer channels with all effects, routing, and automation
+
+const newUnits = TransferAudioUnits.transfer(
+  [sourceAudioUnitBox, ...],
+  targetProject.skeleton, // ProjectSkeleton
+  {
+    insertIndex?: int,
+    deleteSource?: boolean,
+    includeAux?: boolean,
+    includeBus?: boolean,
+    excludeTimeline?: boolean,
+  },
+);
 ```
 
-### Preset Encode/Decode (Device State)
-Save and restore device (effect/instrument) state:
+### Preset Encode/Decode (Audio Unit State)
+Save and restore mixer-channel state — the unit of preset is an **audio unit**
+(`AudioUnitBox`, a mixer channel), not an individual device:
 ```typescript
 import { PresetEncoder, PresetDecoder } from "@opendaw/studio-adapters";
+import type { PresetHeader } from "@opendaw/studio-adapters";
 
-// Save device state
-const encoded = PresetEncoder.encode(deviceBox);
+// Encode an audio unit (instrument + effects + optional timeline)
+const bytes = PresetEncoder.encode(audioUnitBox, {
+  excludeEffect?: (box) => boolean, // skip specific effect boxes
+  includeTimeline?: boolean,        // include track regions/events
+});
 
-// Restore device state
-PresetDecoder.decode(deviceBox, encoded);
+// Decode into a target project — returns the new audio unit boxes
+const newUnits = PresetDecoder.decode(bytes, targetProject.skeleton);
+
+// Replace an existing audio unit's contents (preserving the box identity)
+PresetDecoder.replaceAudioUnit(bytes, existingAudioUnitBox, {
+  keepMIDIEffects?: boolean,
+  keepAudioEffects?: boolean,
+  keepTimeline?: boolean,
+}); // returns Attempt<void, string>
+
+// Encode just an effect chain (no audio unit)
+const chainBytes = PresetEncoder.encodeEffects(effectBoxes, PresetHeader.ChainKind.Audio);
+PresetDecoder.insertEffectChain(chainBytes, targetUnit, insertIndex, PresetHeader.ChainKind.Audio);
 ```
-`PresetHeader` contains metadata (name, version, device type).
+`PresetHeader.ChainKind` is `{ Midi, Audio }`. `PresetHeader` also exposes
+`MAGIC_HEADER_OPEN` and `FORMAT_VERSION` constants. `PresetDecoder.peekHasTimeline(buffer)`
+checks whether a preset includes timeline content without fully decoding.
 
 ### Stem Export Configuration
 When exporting individual stems (vs full mixdown), `ExportConfiguration.stems` is a
@@ -91,6 +143,7 @@ const stemConfig: ExportConfiguration = {
       includeAudioEffects: true,   // render with effects
       includeSends: false,         // exclude aux sends
       useInstrumentOutput: true,
+      skipChannelStrip: false,     // optional: bypass the channel-strip volume/pan
       fileName: "drums",
     },
     [UUID.toString(bassUnit.address.uuid)]: {
@@ -100,7 +153,7 @@ const stemConfig: ExportConfiguration = {
       fileName: "bass",
     },
   },
-  // Optional: range?: { start: ppqn, end: ppqn } limits the render to a section
+  // Optional: range?: "full" | { start: ppqn, end: ppqn } — "full" or a section
 };
 
 // Pass to worklets.createEngine({ project: copy, exportConfiguration: stemConfig })

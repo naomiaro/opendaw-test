@@ -11,8 +11,8 @@ signatureTrack.createEvent(position, nominator, denominator);
 // Iterate all events (index -1 is storage signature)
 const events = Array.from(signatureTrack.iterateAll());
 
-// Delete event
-signatureTrack.adapterAt(event.index).ifSome(a => a.box.delete());
+// Delete event — prefer the adapter-level helper over reaching into the box
+signatureTrack.adapterAt(event.index).ifSome(a => signatureTrack.deleteAdapter(a));
 
 // PPQN per bar: PPQN.fromSignature(nom, denom) = Math.floor(3840/denom) * nom
 ```
@@ -95,66 +95,97 @@ Each automatable parameter (volume, pan, effect wet/dry, etc.) is wrapped by an 
 ```typescript
 import { AutomatableParameterFieldAdapter } from "@opendaw/studio-adapters";
 
-// Properties
-parameter.value        // current value
-parameter.anchor       // default/rest value
-parameter.name         // parameter display name
-parameter.address      // box graph address
-parameter.interpolation // automation interpolation mode
+// Identity / mapping
+parameter.name           // string — display name
+parameter.address        // Address — box graph location
+parameter.anchor         // unitValue — default/rest position
+parameter.type           // PrimitiveType — underlying field type
+parameter.field          // PrimitiveField<T, Pointers.Automation>
+parameter.valueMapping   // ValueMapping<T>
+parameter.stringMapping  // StringMapping<T>
+parameter.track          // Option<TrackBoxAdapter> — automation track if any
 
-// Methods
-parameter.subscribe(callback)       // react to value changes
-parameter.createAutomation()        // create automation track for this parameter
-parameter.deleteAutomation()        // remove automation track
-parameter.copyTo(targetParameter)   // copy automation data
-parameter.terminate()               // cleanup
+// Read / write
+parameter.getValue()           // T — current raw value
+parameter.setValue(value)      // write raw value
+parameter.getUnitValue()       // unitValue (0-1) via valueMapping.x()
+parameter.setUnitValue(unit)   // write from unitValue
+parameter.getControlledValue() // T — value after MIDI/automation control sources
+parameter.getControlledUnitValue()
+parameter.getPrintValue()           // StringResult — formatted for display
+parameter.getControlledPrintValue()
+parameter.setPrintValue(text)       // parse + write display string
+parameter.reset()                   // restore to resetValue (or anchor)
+parameter.valueAt(position)         // T — automation value at a PPQN
+
+// Subscriptions / lifecycle
+parameter.subscribe(observer)            // future changes only
+parameter.catchupAndSubscribe(observer)  // current value + future changes
+parameter.catchupAndSubscribeControlSources(observer)
+parameter.registerMidiControl()          // returns Terminable
+parameter.registerTracks(tracks)         // wire to AudioUnitTracks
+parameter.updateMappings(value, string)  // swap mappings (e.g. on schema change)
+parameter.terminate()
 ```
+No `.value` getter, no `.interpolation` field, no `createAutomation`/`deleteAutomation`/
+`copyTo` on the parameter itself — those concepts live on the track-region/event layer.
 
 ### Touch Recording Lifecycle
-Real-time automation recording (recording fader movements during playback):
+Real-time automation recording (recording fader movements during playback). Note the
+split: per-adapter actions are on `AutomatableParameterFieldAdapter`, while the
+**registry-level** lookups (mode, touch-state checks, change notifications across all
+parameters) are on `ParameterFieldAdapters` and addressed by `Address`.
 ```typescript
 import { ParameterFieldAdapters } from "@opendaw/studio-adapters";
+// project.parameterFieldAdapters: ParameterFieldAdapters
 
-// 1. Start touch — begins recording automation for this parameter
+// Per-adapter — UI fader/knob handlers
 adapter.touchStart();
-
-// 2. During touch, set values (typically from UI fader/knob input)
-adapter.setUnitValue(0.5); // unitValue 0-1, mapped through ValueMapping
-
-// 3. End touch — stops recording, finalizes automation events
+adapter.setUnitValue(0.5);  // unitValue 0-1, mapped through ValueMapping
 adapter.touchEnd();
 
-// Subscribe to touch state changes
-parameterFieldAdapters.subscribeTouchEnd(callback);
+// Registry-level — observing across all parameters
+parameterFieldAdapters.isTouched(adapter.address)           // boolean
+parameterFieldAdapters.touchStart(adapter.address)          // same as adapter.touchStart()
+parameterFieldAdapters.touchEnd(adapter.address)
+parameterFieldAdapters.getMode(adapter.address)             // "read" | "touch" | "latch"
+parameterFieldAdapters.setMode(adapter.address, "touch")
+parameterFieldAdapters.subscribeTouchEnd(observer)          // observer: Observer<Address>
+parameterFieldAdapters.subscribeWrites(observer)            // every parameter write
 ```
-Touch state: `adapter.isTouched()` returns whether parameter is being actively recorded.
 
 ### ParameterAdapterSet (Device Parameters)
 Access all automatable parameters on a device:
 ```typescript
 const paramSet = deviceAdapter.parameters;
-paramSet.parameters()           // all AutomatableParameterFieldAdapter[]
-paramSet.parameterAt(index)     // specific parameter by index
+paramSet.parameters()             // ReadonlyArray<AutomatableParameterFieldAdapter>
+paramSet.parameterAt(address)     // lookup by Address (NOT a numeric index)
 ```
 Use this for building generic device UIs that enumerate all knobs/sliders.
 
 ### ValueRegionBoxAdapter Full API
-Beyond `.optCollection` and `.valueAt()`:
-- `.events` — `ValueEventCollectionBoxAdapter` (if collection exists)
-- `.incomingValue()` — value entering the region (from prior region or default)
-- `.outgoingValue()` — value leaving the region (last event value)
+Beyond `.optCollection`:
+- `.events` — `Option<EventCollection<ValueEventBoxAdapter>>` (empty if no collection)
+- `.hasCollection` — boolean guard before reading events
+- `.valueAt(position, fallback)` — unitValue at a region-local PPQN; `fallback` is
+  returned when the region has no events (no implicit default)
+- `.incomingValue(fallback)` — value entering the region
+- `.outgoingValue(fallback)` — value leaving the region
 
 ### ValueEventBoxAdapter Full API
 Each automation point:
 - `.position` — PPQN position (region-local)
-- `.value` — unitValue (0-1)
-- `.index` — ordering index (composite key with position)
-- `.interpolation` — `Interpolation.None`, `.Linear`, or `.Curve(slope)`
+- `.value` — number (raw field value; combine with the adapter's `ValueMapping` for UI)
+- `.index` — `int` ordering index (composite key with position)
+- `.interpolation` — `Interpolation.None`, `.Linear`, or `.Curve(slope)` (settable)
+- `.collection` — `Option<ValueEventCollectionBoxAdapter>` (back-reference)
 - `.isSelected` — selection state
-- `.type` — event type discriminator
-- `.copyTo(target)` — copy event to another collection
-- `.moveToPosition(ppqn)` — move event to new position
-- `.delete()` — remove event from collection
+- `.type` — event type discriminator (`"value-event"`)
+- `.copyTo({ position?, index?, value?, interpolation?, events? })` — copy with overrides
+- `.copyFrom({...})` — write overrides into this event from a partial
+
+There is no `.moveToPosition()` or `.delete()` — move by setting `box.position.setValue()`
+inside `editing.modify()`; delete by unstaging the box.
 
 ## Reference Files
 - Track automation demo: `src/demos/automation/track-automation-demo.tsx`

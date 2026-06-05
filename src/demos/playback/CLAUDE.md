@@ -68,25 +68,37 @@ region property changes (position, duration, loopOffset). No separate transactio
 ### FadingAdapter Convenience Methods
 Beyond field access, `adapter.fading` provides:
 - `.hasFading` — `true` if any fade value is non-zero (quick check before rendering)
-- `.copyTo(targetAdapter)` — copy all fade settings (in, out, slopes) to another region's fading
+- `.copyTo(target: Fading)` — copy all fade settings (in, out, slopes) to another region's
+  fading. Param is the raw `Fading` box from `@opendaw/studio-boxes`, NOT another
+  `FadingAdapter`. From two region adapters: `srcRegion.fading.copyTo(dstRegion.box.fading)`.
 - `.reset()` — clear all fades to zero (in, out, inSlope, outSlope)
 - `.in` / `.out` — current fade values (read-only shorthand)
 - `.inSlope` / `.outSlope` — current slope values (read-only shorthand)
 
 ### Region Adapter Full API (AudioRegionBoxAdapter)
 Beyond `.box`, `.fading`, `.file`:
-- `.playMode` — audio play mode
-- `.offset` — content offset
-- `.loopOffset` / `.loopDuration` — loop boundaries
-- `.fadeIn` / `.fadeOut` — fade values (PPQN)
+- `.offset` / `.loopOffset` / `.loopDuration` — content/loop boundaries (settable)
+- `.position` / `.duration` / `.complete` — timeline placement (settable)
+- `.gain` — `MutableObservableValue<number>` for region gain (dB)
+- `.optFile` — `Option<AudioFileBoxAdapter>` if file is resolvable
+- `.observableOptPlayMode` — `ObservableOption<AudioPlayMode>` for play-mode swaps
+- `.timeBase` — `TimeBase` (Musical or Seconds)
+- `.optCollection` — `Option<ValueEventCollectionBoxAdapter>` for region automation
+- `.asPlayModePitchStretch` / `.asPlayModeTimeStretch` / `.isPlayModeNoStretch` — play-mode checks
+- `.optWarpMarkers` — `Option<EventCollection<WarpMarkerBoxAdapter>>`
 - `.moveContentStart(delta)` — shift content start position
-- `.resolveLoopDuration(ppqn)` — compute duration at position
-- `.valueAt(ppqn)` — read value at position
-- `.copyTo({ target })` — copy region to another track (`target` is the pointer field)
+- `.resolveLoopDuration(ppqn)` / `.resolveDuration(ppqn)` / `.resolveComplete(ppqn)` —
+  compute boundaries at a timeline position (looped regions)
+- `.copyTo({ target, position?, duration?, loopOffset?, loopDuration?, consolidate? })` —
+  copy region (`target` is the destination `RegionCollection` pointer field)
 - `.consolidate()` — bake loop into single region
 - `.mute` / `.label` / `.hue` — region metadata
 - `.isSelected` — selection state
-- `.canResize` / `.canMirror` — capability flags
+- `.canResize` / `.canMirror` / `.isMirrowed` — capability/state flags
+- `.waveformOffset` — `MutableObservableValue<number>` (seconds offset into source audio)
+
+Fade values live on `.fading` (FadingAdapter), not directly on the region. There is no
+`.valueAt(ppqn)` on AudioRegionBoxAdapter — that's a `ValueRegionBoxAdapter` method.
 
 ### Audio Play Modes (Time & Pitch)
 `AudioRegionBox.playMode` is `Option<AudioPlayMode>` → either `AudioPitchStretchBox`

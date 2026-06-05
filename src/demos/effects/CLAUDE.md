@@ -90,7 +90,9 @@ Devices.isMidiEffect(adapter)   // → MidiEffectDeviceAdapter
 Devices.isInstrument(adapter)   // → InstrumentDeviceBoxAdapter
 Devices.isHost(adapter)         // → DeviceHost (AudioUnitBoxAdapter or ModularAdapter)
 ```
-Navigate from device back to parent: `device.deviceHost()` → `device.audioUnitBoxAdapter()`.
+Navigate from device back to parent — both are direct sibling methods on the device
+adapter (not chained): `device.deviceHost()` returns the immediate host (audio unit or
+modular), `device.audioUnitBoxAdapter()` returns the owning `AudioUnitBoxAdapter`.
 
 ### Built-In Audio Effect Adapters
 All adapters implement `DeviceBoxAdapter` with `.type`, `.labelField`, `.enabledField`,
@@ -130,10 +132,12 @@ All adapters implement `DeviceBoxAdapter` with `.type`, `.labelField`, `.enabled
 `ModularDeviceBoxAdapter` wraps a modular synth/effect graph:
 ```typescript
 import { ModularAdapter } from "@opendaw/studio-adapters";
+import type { ModularSystemListener } from "@opendaw/studio-adapters";
 
-modularAdapter.modules      // BoxAdapterCollection of ModuleAdapter
-modularAdapter.connections   // BoxAdapterCollection of ModuleConnectionAdapter
-modularAdapter.catchupAndSubscribe(listener)
+modularAdapter.modules        // ReadonlyArray<ModuleAdapter>
+modularAdapter.connections    // ReadonlyArray<ModuleConnectionAdapter>
+modularAdapter.catchupAndSubscribe(listener) // listener: ModularSystemListener
+// { onModuleAdded?, onModuleRemoved?, onConnectionAdded?, onConnectionRemoved? }
 ```
 Module types: `ModuleGainAdapter`, `ModuleDelayAdapter`, `ModuleMultiplierAdapter`,
 `ModularAudioInputAdapter`, `ModularAudioOutputAdapter`.
