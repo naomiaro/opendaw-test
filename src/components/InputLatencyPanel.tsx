@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Card, Flex, Text, Heading, TextField, Button, Callout, Code, Link, Separator } from "@radix-ui/themes";
+import { Card, Flex, Text, Heading, TextField, Button, Code, Link } from "@radix-ui/themes";
 
 interface InputLatencyPanelProps {
   audioContext: AudioContext;
@@ -10,7 +10,24 @@ interface InputLatencyPanelProps {
   disabled?: boolean;
 }
 
+const PROSE_WIDTH = 560;
 const formatMs = (seconds: number): string => `${(seconds * 1000).toFixed(2)} ms`;
+
+interface StatProps { label: string; value: string }
+const Stat: React.FC<StatProps> = ({ label, value }) => (
+  <Flex direction="column" gap="1" style={{ minWidth: 130 }}>
+    <Text
+      size="1"
+      color="gray"
+      style={{ letterSpacing: "0.06em", textTransform: "uppercase" }}
+    >
+      {label}
+    </Text>
+    <Code size="3" variant="ghost" style={{ fontVariantNumeric: "tabular-nums" }}>
+      {value}
+    </Code>
+  </Flex>
+);
 
 export const InputLatencyPanel: React.FC<InputLatencyPanelProps> = ({
   audioContext,
@@ -34,13 +51,12 @@ export const InputLatencyPanel: React.FC<InputLatencyPanelProps> = ({
     };
   }, [audioContext]);
 
-  // Local state for the millisecond text inputs (so partial typing isn't fought by the SDK round-trip).
+  // Local string state for the millisecond inputs so partial typing isn't fought by the SDK round-trip.
   const [inputLatencyMsDraft, setInputLatencyMsDraft] = useState<string>("");
   const [roundtripMsDraft, setRoundtripMsDraft] = useState<string>("");
 
   useEffect(() => {
     if (inputLatencySec === undefined) return;
-    // Only overwrite the draft when external value changes and differs meaningfully from what's typed.
     const parsedDraft = parseFloat(inputLatencyMsDraft);
     const currentMs = inputLatencySec * 1000;
     if (Number.isNaN(parsedDraft) || Math.abs(parsedDraft - currentMs) > 0.01) {
@@ -52,139 +68,101 @@ export const InputLatencyPanel: React.FC<InputLatencyPanelProps> = ({
   const commitInputLatencyMs = () => {
     const ms = parseFloat(inputLatencyMsDraft);
     if (Number.isNaN(ms)) return;
-    const seconds = ms / 1000;
     // SDK constraint: value must be >= -1. Allow exactly -1 for "equals output latency" sentinel.
-    const clamped = Math.max(-1, seconds);
-    onInputLatencySecChange(clamped);
+    onInputLatencySecChange(Math.max(-1, ms / 1000));
   };
 
   const deriveInputLatencyFromRoundtrip = () => {
-    const roundtripMs = parseFloat(roundtripMsDraft);
-    if (Number.isNaN(roundtripMs)) return;
-    // inputLatency = roundtrip - outputLatency (paper: roundtrip = input + output)
-    const inputMs = Math.max(0, roundtripMs - outputLatencySec * 1000);
+    const rt = parseFloat(roundtripMsDraft);
+    if (Number.isNaN(rt)) return;
+    // inputLatency = roundtrip - outputLatency  (per Gil Panal et al., roundtrip = input + output)
+    const inputMs = Math.max(0, rt - outputLatencySec * 1000);
     setInputLatencyMsDraft(inputMs.toFixed(2));
     onInputLatencySecChange(inputMs / 1000);
   };
 
   const useEqualsOutputSentinel = () => {
-    setInputLatencyMsDraft((-1 * 1000).toFixed(2));
     onInputLatencySecChange(-1);
   };
 
   const resetToZero = () => {
-    setInputLatencyMsDraft("0.00");
     onInputLatencySecChange(0);
   };
 
   const isEqualsOutputSentinel = inputLatencySec !== undefined && inputLatencySec < 0;
-  const appliedMsWhenSentinel = outputLatencySec * 1000;
+  // What the SDK will actually feed into `RecordAudio` right now.
+  const appliedMs = isEqualsOutputSentinel
+    ? outputLatencySec * 1000
+    : Math.max(0, (inputLatencySec ?? 0) * 1000);
 
   return (
     <Card>
       <Flex direction="column" gap="4">
-        <Flex direction="column" gap="1">
+        <Flex direction="column" gap="1" style={{ maxWidth: PROSE_WIDTH }}>
           <Heading size="5">Input Latency Compensation</Heading>
           <Text size="2" color="gray">
-            Pushes the recorded waveform's start offset deeper into the capture buffer so playback lines up
-            with what you heard. Only the mic→engine portion — the engine already compensates the engine→speaker
-            half automatically via <Code>audioContext.outputLatency</Code>.
+            Shifts each take's <Code size="1">waveformOffset</Code> to absorb the mic → engine delay
+            your input adds. The engine → speaker side is already handled by{" "}
+            <Code size="1">audioContext.outputLatency</Code>.
           </Text>
         </Flex>
 
-        <Flex direction="column" gap="2">
-          <Text size="2" weight="medium">Browser-reported latencies (read-only)</Text>
-          <Flex gap="4" wrap="wrap">
-            <Flex direction="column">
-              <Text size="1" color="gray">outputLatency (live)</Text>
-              <Code size="2">{formatMs(outputLatencySec)}</Code>
-            </Flex>
-            <Flex direction="column">
-              <Text size="1" color="gray">baseLatency</Text>
-              <Code size="2">{formatMs(baseLatencySec)}</Code>
-            </Flex>
-          </Flex>
-          <Text size="1" color="gray">
-            Per-input-device latency (browser-reported) is logged at recording start as{" "}
-            <Code>inputLatencyReported</Code> in the <Code>[CaptureAudio] latency report</Code> debug line.
-            It is not auto-applied — set the value below to compensate.
-          </Text>
+        <Flex gap="6" wrap="wrap" align="end">
+          <Stat label="outputLatency (live)" value={formatMs(outputLatencySec)} />
+          <Stat label="baseLatency" value={formatMs(baseLatencySec)} />
+          <Stat label="currently applied" value={formatMs(appliedMs / 1000)} />
         </Flex>
 
-        <Separator size="4" />
-
         <Flex direction="column" gap="2">
-          <Text size="2" weight="medium">Project default input latency</Text>
+          <Text size="2" weight="medium">Project default</Text>
           <Flex gap="2" align="center" wrap="wrap">
             <TextField.Root
               type="number"
               step="0.1"
-              value={inputLatencyMsDraft}
+              value={isEqualsOutputSentinel ? "" : inputLatencyMsDraft}
               onChange={e => setInputLatencyMsDraft(e.target.value)}
               onBlur={commitInputLatencyMs}
               onKeyDown={e => { if (e.key === "Enter") commitInputLatencyMs(); }}
-              disabled={disabled}
-              style={{ width: 110 }}
+              disabled={disabled || isEqualsOutputSentinel}
+              placeholder={isEqualsOutputSentinel ? "(sentinel −1)" : "0.00"}
+              style={{ width: 130 }}
               aria-label="Project default input latency, milliseconds"
             >
               <TextField.Slot side="right">
                 <Text size="1" color="gray">ms</Text>
               </TextField.Slot>
             </TextField.Root>
-            <Button size="1" variant="soft" onClick={resetToZero} disabled={disabled}>
-              Reset to 0
+            <Button size="2" variant="soft" color="gray" onClick={resetToZero} disabled={disabled}>
+              0 ms
             </Button>
             <Button
-              size="1"
+              size="2"
               variant={isEqualsOutputSentinel ? "solid" : "soft"}
               color={isEqualsOutputSentinel ? "blue" : "gray"}
               onClick={useEqualsOutputSentinel}
               disabled={disabled}
             >
-              Use −1 (= outputLatency)
+              = outputLatency
             </Button>
-            {isEqualsOutputSentinel && (
-              <Text size="1" color="gray">
-                Applied: {formatMs(appliedMsWhenSentinel / 1000)} (mirrors outputLatency)
-              </Text>
-            )}
           </Flex>
-          <Text size="1" color="gray">
-            Stored as seconds on <Code>engine.preferences.settings.recording.inputLatency</Code>.
-            Per-tape override below.
+          <Text size="1" color="gray" style={{ maxWidth: PROSE_WIDTH }}>
+            {isEqualsOutputSentinel
+              ? <>Sentinel −1: live <Code size="1">outputLatency</Code> ({formatMs(outputLatencySec)}) is mirrored every recording.</>
+              : <>Stored as seconds on <Code size="1">engine.preferences.settings.recording.inputLatency</Code>. Tapes can override below.</>}
           </Text>
         </Flex>
 
-        <Separator size="4" />
-
-        <Flex direction="column" gap="2">
-          <Text size="2" weight="medium">Measured roundtrip → input latency helper</Text>
-          <Text size="1" color="gray">
-            If you measured your roundtrip with an MLS-based tool (e.g.{" "}
-            <Link href="https://github.com/gilpanal/weblatencytest" target="_blank" rel="noopener noreferrer">
-              gilpanal/weblatencytest
-            </Link>
-            ), enter the measured value below and we'll subtract <Code>outputLatency</Code> for you. Method
-            and reference numbers (Firefox/Chrome/Safari × Ubuntu/Windows/macOS, range ≈ 39–105 ms) are
-            in Gil&nbsp;Panal et&nbsp;al., WAC&nbsp;2025 —{" "}
-            <Link
-              href="https://zenodo.org/records/17642262"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              zenodo:17642262
-            </Link>
-            .
-          </Text>
+        <Flex direction="column" gap="2" style={{ maxWidth: PROSE_WIDTH }}>
+          <Text size="2" weight="medium" color="gray">From a measured roundtrip</Text>
           <Flex gap="2" align="center" wrap="wrap">
             <TextField.Root
               type="number"
               step="0.1"
-              placeholder="Measured roundtrip"
+              placeholder="roundtrip"
               value={roundtripMsDraft}
               onChange={e => setRoundtripMsDraft(e.target.value)}
               disabled={disabled}
-              style={{ width: 160 }}
+              style={{ width: 130 }}
               aria-label="Measured roundtrip latency, milliseconds"
             >
               <TextField.Slot side="right">
@@ -192,23 +170,26 @@ export const InputLatencyPanel: React.FC<InputLatencyPanelProps> = ({
               </TextField.Slot>
             </TextField.Root>
             <Button
-              size="1"
-              variant="solid"
+              size="2"
+              variant="soft"
               onClick={deriveInputLatencyFromRoundtrip}
               disabled={disabled || roundtripMsDraft.trim() === ""}
             >
-              Apply (subtract outputLatency)
+              − outputLatency → input
             </Button>
           </Flex>
+          <Text size="1" color="gray">
+            Measure with{" "}
+            <Link href="https://github.com/gilpanal/weblatencytest" target="_blank" rel="noopener noreferrer">
+              weblatencytest
+            </Link>{" "}
+            (MLS); reference numbers and method in{" "}
+            <Link href="https://zenodo.org/records/17642262" target="_blank" rel="noopener noreferrer">
+              Gil Panal et al., WAC 2025
+            </Link>
+            . Disable echo cancel / noise suppression / AGC before measuring.
+          </Text>
         </Flex>
-
-        <Callout.Root color="amber" size="1">
-          <Callout.Text>
-            For accurate measurement, the source tool should disable browser audio constraints
-            (<Code>echoCancellation</Code>, <Code>noiseSuppression</Code>, <Code>autoGainControl</Code>)
-            and avoid Bluetooth devices. See the paper's Section 3 for full constraints.
-          </Callout.Text>
-        </Callout.Root>
       </Flex>
     </Card>
   );

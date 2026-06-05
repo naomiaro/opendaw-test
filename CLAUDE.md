@@ -385,6 +385,16 @@ not at the Western convention of 440. See
 per section. Expand sections into bars instead of manual PPQN accumulation — see
 `computeBarsFromSDK()` in `src/lib/barLayout.ts` (used by time-signature and drum-scheduling demos).
 
+### MutableObservableOption vs MutableObservableValue: Different Callback Shapes
+`MutableObservableValue<T>.catchupAndSubscribe(obs => obs.getValue())` passes an observable
+wrapper — call `.getValue()` to read.
+`MutableObservableOption<T>.catchupAndSubscribe(opt => ...)` passes the `Option<T>` directly
+— call `.isEmpty()` / `.unwrap()` on the parameter, no wrapper. Calling `opt.getValue()` is
+the failure mode (`TypeError: obs.getValue is not a function`). The signatures diverge by
+type; check `node_modules/@opendaw/lib-std/dist/observables.d.ts` if uncertain.
+Examples in this repo: `capture.armed.catchupAndSubscribe(obs => obs.getValue())` (Value),
+`capture.stream.catchupAndSubscribe(streamOpt => streamOpt.isEmpty() ? ... : streamOpt.unwrap())` (Option).
+
 ### Prefer catchupAndSubscribe Over subscribe
 `subscribe()` fires only for FUTURE changes — misses current state. Use `catchupAndSubscribe()`
 for engine state (isPlaying, isRecording, BPM) and box field observations. Only use `subscribe()`

@@ -101,9 +101,9 @@ export const RecordingTapeCard: React.FC<RecordingTapeCardProps> = ({
   }, [capture, tape.id, onArmedChange]);
 
   // Surface the browser-reported MediaStreamTrack latency (if any) whenever the active stream changes.
+  // MutableObservableOption.catchupAndSubscribe passes the Option directly — no getValue() wrapper.
   useEffect(() => {
-    const sub = capture.stream.catchupAndSubscribe(obs => {
-      const streamOpt = obs.getValue();
+    const sub = capture.stream.catchupAndSubscribe(streamOpt => {
       if (streamOpt.isEmpty()) {
         setReportedTrackLatencyMs(null);
         return;
@@ -324,9 +324,9 @@ export const RecordingTapeCard: React.FC<RecordingTapeCardProps> = ({
             >
               <Select.Trigger style={{ width: 180 }} />
               <Select.Content>
-                <Select.Item value="inherit">Inherit project (−2)</Select.Item>
-                <Select.Item value="equals-output">Equals outputLatency (−1)</Select.Item>
-                <Select.Item value="custom">Custom (ms)</Select.Item>
+                <Select.Item value="inherit">Inherit project default</Select.Item>
+                <Select.Item value="equals-output">Match outputLatency</Select.Item>
+                <Select.Item value="custom">Custom</Select.Item>
               </Select.Content>
             </Select.Root>
             {inputLatencyMode === "custom" && (
