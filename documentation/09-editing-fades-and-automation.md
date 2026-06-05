@@ -32,7 +32,7 @@
   - [Effect Parameter Automation](#effect-parameter-automation)
   - [Server Persistence (JSON Data Model)](#server-persistence-json-data-model)
   - [Differences from Tempo Automation](#differences-from-tempo-automation)
-  - [Live Automation Recording (SDK 0.0.129+)](#live-automation-recording-sdk-00129)
+  - [Live Automation Recording](#live-automation-recording)
 - [Advanced: Clean Edits & Zero Crossings](#advanced-clean-edits--zero-crossings)
   - [Why Edits Click](#why-edits-click)
   - [How DAWs Handle This](#how-daws-handle-this)
@@ -740,7 +740,7 @@ if (fading.hasFading) {
 }
 
 // Copy all fade settings to another region
-fading.copyTo(targetAdapter.fading);
+fading.copyTo(targetAdapter.box.fading);
 
 // Reset all fades to zero (remove fades)
 fading.reset();
@@ -1243,7 +1243,7 @@ Key differences:
 - Tempo uses `tempoTrackEvents` accessor; track automation uses `createAutomationTrack` + `createTrackRegion`
 - Tempo values are BPM; track automation values are unitValue (0..1)
 
-### Live Automation Recording (SDK 0.0.129+)
+### Live Automation Recording
 
 The SDK supports recording parameter changes in real-time during playback. When a user interacts with an automatable parameter (e.g., drags a volume fader) while recording, the engine captures those movements as `ValueEventBox` entries inside a `ValueRegionBox` on an automation track.
 

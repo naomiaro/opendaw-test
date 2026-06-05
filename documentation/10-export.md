@@ -130,17 +130,17 @@ The core offline rendering engine from `@opendaw/studio-core`:
 
 ```typescript
 import { AudioOfflineRenderer } from "@opendaw/studio-core";
-import { Progress } from "@opendaw/lib-std";
+import { Option, Progress } from "@opendaw/lib-std";
 
-// Progress handler (required in 0.0.87+)
+// Progress handler (required)
 const progressHandler: Progress.Handler = (value) => {
   console.log(`${Math.round(value * 100)}%`);
 };
 
-// Render full mix (API changed in 0.0.87)
+// Render full mix
 const audioBuffer = await AudioOfflineRenderer.start(
   project,
-  undefined,        // No stem config = full mix
+  Option.None,      // No stem config = full mix
   progressHandler,  // Progress.Handler (0.0 - 1.0)
   undefined,        // AbortSignal (optional)
   48000             // Sample rate
@@ -149,7 +149,7 @@ const audioBuffer = await AudioOfflineRenderer.start(
 // Render stems
 const audioBuffer = await AudioOfflineRenderer.start(
   project,
-  stemsConfiguration,
+  Option.wrap(stemsConfiguration),
   progressHandler,
   undefined,
   48000
@@ -170,7 +170,7 @@ const audioBuffer = await AudioOfflineRenderer.start(
 
 ### WavFile
 
-WAV file encoding/decoding from `@opendaw/lib-dsp` (moved from `studio-core` in SDK 0.0.129):
+WAV file encoding/decoding from `@opendaw/lib-dsp`:
 
 ```typescript
 import { WavFile } from "@opendaw/lib-dsp";
@@ -185,7 +185,7 @@ const audio = WavFile.decodeFloats(arrayBuffer);
 
 **Supported Formats:**
 - 32-bit IEEE float
-- 24-bit PCM (SDK 0.0.129+)
+- 24-bit PCM
 - 16-bit PCM
 - Stereo or mono
 - Lossless quality
@@ -1017,13 +1017,13 @@ For audio that doesn't need tempo sync (drums, sound effects, ambience), use `Ti
 import { TimeBase } from "@opendaw/lib-dsp";
 import { ValueEventCollectionBox } from "@opendaw/studio-boxes";
 
-// Create events collection (required in 0.0.87+)
+// Create events collection (required)
 const eventsCollectionBox = ValueEventCollectionBox.create(boxGraph, UUID.generate());
 
 const regionBox = AudioRegionBox.create(boxGraph, UUID.generate(), box => {
   box.regions.refer(trackBox.regions);
   box.file.refer(audioFileBox);
-  box.events.refer(eventsCollectionBox.owners); // Required in 0.0.87+
+  box.events.refer(eventsCollectionBox.owners); // Required
   box.timeBase.setValue(TimeBase.Seconds);  // ← Allow overlaps
   box.position.setValue(position);
   box.duration.setValue(clipDurationInPPQN);  // Full natural duration OK
@@ -1051,13 +1051,13 @@ const safeDuration = Math.min(
   spacing  // Cap at spacing to prevent overlap
 );
 
-// Create events collection (required in 0.0.87+)
+// Create events collection (required)
 const eventsCollectionBox = ValueEventCollectionBox.create(boxGraph, UUID.generate());
 
 const regionBox = AudioRegionBox.create(boxGraph, UUID.generate(), box => {
   box.regions.refer(trackBox.regions);
   box.file.refer(audioFileBox);
-  box.events.refer(eventsCollectionBox.owners); // Required in 0.0.87+
+  box.events.refer(eventsCollectionBox.owners); // Required
   box.timeBase.setValue(TimeBase.Musical);  // Default, tempo-aware
   box.duration.setValue(safeDuration);  // ← Capped duration
   // ... other settings
@@ -1195,7 +1195,7 @@ async function renderRange(
       // undefined = mixdown (metronome included), {stems: …} = stem path (no metronome)
       exportConfiguration: exportConfiguration ? { stems: exportConfiguration } : undefined,
     });
-    engineWorklet.connect(context.destination, 0); // output 0 = main audio (worklet has 2 outputs since SDK 0.0.133)
+    engineWorklet.connect(context.destination, 0); // output 0 = main audio (worklet has 2 outputs)
 
     // 4. Set preferences on the worklet (not the project copy)
     engineWorklet.preferences.settings.metronome.enabled = metronomeEnabled;
