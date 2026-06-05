@@ -42,12 +42,17 @@ export const InputLatencyPanel: React.FC<InputLatencyPanelProps> = ({
   const frameRef = useRef<number | null>(null);
 
   useEffect(() => {
+    // A local `cancelled` flag prevents a re-armed tick from outliving the effect cleanup
+    // under React StrictMode's double-mount in dev. Pattern mirrors RecordingTapeCard.tsx.
+    let cancelled = false;
     const tick = () => {
+      if (cancelled) return;
       setOutputLatencySec(audioContext.outputLatency ?? 0);
       frameRef.current = requestAnimationFrame(tick);
     };
     frameRef.current = requestAnimationFrame(tick);
     return () => {
+      cancelled = true;
       if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
     };
   }, [audioContext]);
@@ -72,9 +77,24 @@ export const InputLatencyPanel: React.FC<InputLatencyPanelProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inputLatencySec]);
 
+  // Stricter than parseFloat: rejects trailing garbage ("12abc" → NaN, not 12). Empty string
+  // is treated as invalid even though Number("") === 0, because an empty field on blur means
+  // "user cleared this — keep the committed value", not "set it to zero".
+  const parseStrictMs = (raw: string): number => {
+    const trimmed = raw.trim();
+    if (trimmed === "") return NaN;
+    return Number(trimmed);
+  };
+
+  // Snap the draft back to the committed value so an invalid blur visibly reverts.
+  const revertDraft = () => {
+    if (inputLatencySec === undefined) return;
+    setInputLatencyMsDraft((inputLatencySec * 1000).toFixed(2));
+  };
+
   const commitInputLatencyMs = () => {
-    const ms = parseFloat(inputLatencyMsDraft);
-    if (!Number.isFinite(ms)) return;
+    const ms = parseStrictMs(inputLatencyMsDraft);
+    if (!Number.isFinite(ms)) { revertDraft(); return; }
     // Typed values are always non-negative. The −1 sentinel is reached only via the dedicated
     // button below — clamping typed input to 0 prevents accidental sentinel activation
     // (e.g. typing −2.5 silently flipping into "= outputLatency" mode).
@@ -87,7 +107,7 @@ export const InputLatencyPanel: React.FC<InputLatencyPanelProps> = ({
   };
 
   const deriveInputLatencyFromRoundtrip = () => {
-    const rt = parseFloat(roundtripMsDraft);
+    const rt = parseStrictMs(roundtripMsDraft);
     if (!Number.isFinite(rt)) return;
     // inputLatency = roundtrip - outputLatency  (per Gil Panal et al., roundtrip = input + output)
     const inputMs = Math.max(0, rt - outputLatencySec * 1000);

@@ -615,6 +615,8 @@ project.engine.preferences.settings.recording.inputLatency = inputLatencyMs / 10
 
 Sentinel `-1` means "use the engine's own `outputLatency` as the input latency too" — a rough starting guess when input and output paths share the driver, but the paper's reference numbers show this is rarely the actual ratio. Prefer a real measurement.
 
+The engine-preference schema clamps to `>= -1` (see `EngineSettingsSchema` in `@opendaw/studio-adapters`). Setting `inputLatency = -2` (the per-tape "inherit" sentinel) fails Zod validation at write time — `-2` only makes sense on the per-tape `CaptureAudioBox.inputLatency` field documented below.
+
 ### Per-mic override via `CaptureAudioBox.inputLatency`
 
 Different inputs on the same machine often have different latencies (USB interface vs. built-in mic vs. virtual loopback). Override per tape via the box graph field:

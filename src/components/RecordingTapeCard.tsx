@@ -181,6 +181,13 @@ export const RecordingTapeCard: React.FC<RecordingTapeCardProps> = ({
     onRemove(tape.id);
   }, [onRemove, tape.id]);
 
+  // Stricter than parseFloat: rejects trailing garbage ("12abc" → NaN, not 12).
+  const parseStrictMs = (raw: string): number => {
+    const trimmed = raw.trim();
+    if (trimmed === "") return NaN;
+    return Number(trimmed);
+  };
+
   const handleInputLatencyModeChange = useCallback((mode: InputLatencyMode) => {
     if (mode === "inherit") {
       setInputLatencySec(InputLatency.Inherit);
@@ -188,17 +195,24 @@ export const RecordingTapeCard: React.FC<RecordingTapeCardProps> = ({
       setInputLatencySec(InputLatency.EqualsOutput);
     } else {
       // Switching to custom — seed from draft (or 0 if no draft yet).
-      const ms = parseFloat(inputLatencyMsDraft);
+      const ms = parseStrictMs(inputLatencyMsDraft);
       setInputLatencySec(Number.isFinite(ms) ? Math.max(0, ms / 1000) : 0);
     }
   }, [inputLatencyMsDraft]);
 
   const commitInputLatencyMs = useCallback(() => {
-    const ms = parseFloat(inputLatencyMsDraft);
-    if (!Number.isFinite(ms)) return;
+    const ms = parseStrictMs(inputLatencyMsDraft);
+    if (!Number.isFinite(ms)) {
+      // Invalid draft → snap back to current committed value so the user sees the reject.
+      const committedMs = inputLatencySec * 1000;
+      if (modeFromValue(inputLatencySec) === "custom") {
+        setInputLatencyMsDraft(committedMs.toFixed(2));
+      }
+      return;
+    }
     // Typed custom input is always non-negative — sentinels are reached via the Select, not the field.
     setInputLatencySec(Math.max(0, ms / 1000));
-  }, [inputLatencyMsDraft]);
+  }, [inputLatencyMsDraft, inputLatencySec]);
 
   const applyReportedLatency = useCallback(() => {
     if (reportedTrackLatencyMs === null || !Number.isFinite(reportedTrackLatencyMs)) return;
