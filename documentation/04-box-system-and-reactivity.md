@@ -893,6 +893,10 @@ regionSelection.isSelected(regionAdapter);
 
 `FilteredSelection` automatically stays in sync with the underlying `VertexSelection` — selecting/deselecting in either propagates correctly. The `isVertexOfBox(predicate)` utility lifts a box-level predicate to work with `SelectableVertex`.
 
+#### Multi-user views: RemoteSelections (collaboration only)
+
+For collaborative sessions where other users share the same box graph, `RemoteSelections` exposes a read-only index of every *other* user's selections. The followed user (whose `UserInterfaceBox` is observed via `selection.user`) is excluded — the local `FilteredSelection` already renders it. `RemoteSelections.createFilteredSelection(...)` produces a `FilteredRemoteSelection<T>` that mirrors the local filtered view but emits `(selectable, user)` pairs so painting can ask "who else has this vertex selected?". `Project` instantiates `remoteSelections`, `remoteDeviceSelection`, and `remoteRegionSelection` automatically; single-user apps can ignore them (the index stays empty).
+
 ## Next Steps
 
 - Continue to **[Samples, Peaks & Looping](./05-samples-peaks-and-looping.md)** to learn how to load audio files and render waveforms.

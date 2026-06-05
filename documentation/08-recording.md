@@ -447,11 +447,11 @@ project.editing.modify(() => {
 3. All takes share the same underlying `AudioFileBox` (the continuous recording buffer)
 4. Each take's `position` and `duration` correspond to the loop boundaries
 5. Each take's `waveformOffset` (seconds) indicates where its audio starts in the shared buffer:
-   - Take 1: `waveformOffset` = count-in + `outputLatency` + worklet head-start *(see RecordAudio.ts for exact formula)*
+   - Take 1: `waveformOffset` = count-in + `outputLatency` + `inputLatency` + worklet head-start *(see RecordAudio.ts for exact formula)*
    - Take 2: `waveformOffset` = Take 1's offset + Take 1 duration
    - Take N: `waveformOffset` = previous take's offset + previous take's duration
 
-   Consumers should always read `regionBox.waveformOffset.getValue()` directly rather than recomputing — the SDK accounts for output latency and worklet startup gap.
+   Consumers should always read `regionBox.waveformOffset.getValue()` directly rather than recomputing — the SDK accounts for output latency, input latency, and worklet startup gap.
 
 ### Rendering Take Peaks
 
@@ -539,7 +539,8 @@ All recording preferences are accessed via `project.engine.preferences.settings.
 | `countInBars` | 1-8 | 1 | Number of count-in bars before recording |
 | `allowTakes` | boolean | `isDevOrLocalhost` | Enable loop-based take recording |
 | `olderTakeAction` | `"mute-region"` \| `"disable-track"` | `"mute-region"` | Action on older takes when new take created |
-| `olderTakeScope` | `"all"` \| `"previous-only"` | `"previous-only"` | Which older takes are affected |
+| `olderTakeScope` | `"none"` \| `"all"` \| `"previous-only"` | `"previous-only"` | Which older takes are affected (`"none"` skips older-take management entirely) |
+| `inputLatency` | number (seconds, ≥ -1) | `0` | Compensation added to `outputLatency` for the mic→engine delay. `-1` = use the engine's measured output latency (doubles compensation). Override per track via `captureBox.inputLatency` (`-2` = inherit this preference) |
 
 Other related preferences:
 
