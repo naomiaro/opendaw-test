@@ -1,19 +1,15 @@
 import React, { useState, useCallback, useEffect } from "react";
 import { Flex, Text, Select, Button, Slider, Badge, Card, Separator, TextField, Code } from "@radix-ui/themes";
-import { Project, CaptureAudio } from "@opendaw/studio-core";
+import { Project, CaptureAudio, InputLatency } from "@opendaw/studio-core";
 import { Option } from "@opendaw/lib-std";
 import type { MonitoringMode } from "@opendaw/studio-core";
 import { probeDeviceChannels } from "../lib/audioUtils";
 
-// CaptureAudioBox.inputLatency sentinel values (mirrors InputLatency namespace in studio-core).
-const INPUT_LATENCY_INHERIT = -2.0;       // fall through to engine preference
-const INPUT_LATENCY_EQUALS_OUTPUT = -1.0; // mirror audioContext.outputLatency
-
 type InputLatencyMode = "inherit" | "equals-output" | "custom";
 
 const modeFromValue = (value: number): InputLatencyMode => {
-  if (value <= INPUT_LATENCY_INHERIT) return "inherit";
-  if (value === INPUT_LATENCY_EQUALS_OUTPUT) return "equals-output";
+  if (value === InputLatency.Inherit) return "inherit";
+  if (value === InputLatency.EqualsOutput) return "equals-output";
   return "custom";
 };
 
@@ -102,6 +98,7 @@ export const RecordingTapeCard: React.FC<RecordingTapeCardProps> = ({
 
   // Surface the browser-reported MediaStreamTrack latency (if any) whenever the active stream changes.
   // MutableObservableOption.catchupAndSubscribe passes the Option directly — no getValue() wrapper.
+  // Driver-reported NaN/negative values are rejected at the source so they never reach the box graph.
   useEffect(() => {
     const sub = capture.stream.catchupAndSubscribe(streamOpt => {
       if (streamOpt.isEmpty()) {
@@ -110,7 +107,8 @@ export const RecordingTapeCard: React.FC<RecordingTapeCardProps> = ({
       }
       const track = streamOpt.unwrap().getAudioTracks().at(0);
       const reported = track?.getSettings().latency;
-      setReportedTrackLatencyMs(typeof reported === "number" ? reported * 1000 : null);
+      const valid = typeof reported === "number" && Number.isFinite(reported) && reported >= 0;
+      setReportedTrackLatencyMs(valid ? reported * 1000 : null);
     });
     return () => sub.terminate();
   }, [capture]);
@@ -127,8 +125,10 @@ export const RecordingTapeCard: React.FC<RecordingTapeCardProps> = ({
   }, [project, capture, selectedDeviceId, isMono, inputGainDb]);
 
   // Sync per-tape inputLatency override — box graph field, requires transaction.
-  // Guard with a getValue() compare so unrelated re-renders don't open an empty transaction.
+  // Guard against NaN (NaN === NaN is false, so a no-op compare wouldn't catch it) and
+  // against unrelated re-renders that would open an empty transaction.
   useEffect(() => {
+    if (!Number.isFinite(inputLatencySec)) return;
     if (capture.captureBox.inputLatency.getValue() === inputLatencySec) return;
     project.editing.modify(() => {
       capture.captureBox.inputLatency.setValue(inputLatencySec);
@@ -183,24 +183,25 @@ export const RecordingTapeCard: React.FC<RecordingTapeCardProps> = ({
 
   const handleInputLatencyModeChange = useCallback((mode: InputLatencyMode) => {
     if (mode === "inherit") {
-      setInputLatencySec(INPUT_LATENCY_INHERIT);
+      setInputLatencySec(InputLatency.Inherit);
     } else if (mode === "equals-output") {
-      setInputLatencySec(INPUT_LATENCY_EQUALS_OUTPUT);
+      setInputLatencySec(InputLatency.EqualsOutput);
     } else {
       // Switching to custom — seed from draft (or 0 if no draft yet).
       const ms = parseFloat(inputLatencyMsDraft);
-      setInputLatencySec(Number.isNaN(ms) ? 0 : Math.max(0, ms / 1000));
+      setInputLatencySec(Number.isFinite(ms) ? Math.max(0, ms / 1000) : 0);
     }
   }, [inputLatencyMsDraft]);
 
   const commitInputLatencyMs = useCallback(() => {
     const ms = parseFloat(inputLatencyMsDraft);
-    if (Number.isNaN(ms)) return;
+    if (!Number.isFinite(ms)) return;
+    // Typed custom input is always non-negative — sentinels are reached via the Select, not the field.
     setInputLatencySec(Math.max(0, ms / 1000));
   }, [inputLatencyMsDraft]);
 
   const applyReportedLatency = useCallback(() => {
-    if (reportedTrackLatencyMs === null) return;
+    if (reportedTrackLatencyMs === null || !Number.isFinite(reportedTrackLatencyMs)) return;
     setInputLatencyMsDraft(reportedTrackLatencyMs.toFixed(2));
     setInputLatencySec(Math.max(0, reportedTrackLatencyMs / 1000));
   }, [reportedTrackLatencyMs]);

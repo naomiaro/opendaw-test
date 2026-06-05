@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Card, Flex, Text, Heading, TextField, Button, Code, Link } from "@radix-ui/themes";
+import { InputLatency } from "@opendaw/studio-core";
 
 interface InputLatencyPanelProps {
   audioContext: AudioContext;
@@ -55,8 +56,14 @@ export const InputLatencyPanel: React.FC<InputLatencyPanelProps> = ({
   const [inputLatencyMsDraft, setInputLatencyMsDraft] = useState<string>("");
   const [roundtripMsDraft, setRoundtripMsDraft] = useState<string>("");
 
+  // Sync the millisecond draft from the engine preference. inputLatencyMsDraft is intentionally
+  // omitted from deps — including it would loop (draft change → effect → clobber). The
+  // `Math.abs > 0.01` guard tolerates small typing drift without overwriting the user's input.
+  // Skip the sync entirely while the sentinel is active so the draft doesn't get clobbered with
+  // "-1000.00" and surface stale data when the user switches back to a typed value.
   useEffect(() => {
     if (inputLatencySec === undefined) return;
+    if (inputLatencySec === InputLatency.EqualsOutput) return;
     const parsedDraft = parseFloat(inputLatencyMsDraft);
     const currentMs = inputLatencySec * 1000;
     if (Number.isNaN(parsedDraft) || Math.abs(parsedDraft - currentMs) > 0.01) {
@@ -67,14 +74,21 @@ export const InputLatencyPanel: React.FC<InputLatencyPanelProps> = ({
 
   const commitInputLatencyMs = () => {
     const ms = parseFloat(inputLatencyMsDraft);
-    if (Number.isNaN(ms)) return;
-    // SDK constraint: value must be >= -1. Allow exactly -1 for "equals output latency" sentinel.
-    onInputLatencySecChange(Math.max(-1, ms / 1000));
+    if (!Number.isFinite(ms)) return;
+    // Typed values are always non-negative. The −1 sentinel is reached only via the dedicated
+    // button below — clamping typed input to 0 prevents accidental sentinel activation
+    // (e.g. typing −2.5 silently flipping into "= outputLatency" mode).
+    const clampedSec = Math.max(0, ms / 1000);
+    // Reflect the clamp in the draft so the user sees what was actually committed. The
+    // draft-sync effect can't always do this — if the engine pref was already at the clamped
+    // value (e.g. 0), `inputLatencySec` doesn't change and the effect never fires.
+    setInputLatencyMsDraft((clampedSec * 1000).toFixed(2));
+    onInputLatencySecChange(clampedSec);
   };
 
   const deriveInputLatencyFromRoundtrip = () => {
     const rt = parseFloat(roundtripMsDraft);
-    if (Number.isNaN(rt)) return;
+    if (!Number.isFinite(rt)) return;
     // inputLatency = roundtrip - outputLatency  (per Gil Panal et al., roundtrip = input + output)
     const inputMs = Math.max(0, rt - outputLatencySec * 1000);
     setInputLatencyMsDraft(inputMs.toFixed(2));
@@ -82,18 +96,19 @@ export const InputLatencyPanel: React.FC<InputLatencyPanelProps> = ({
   };
 
   const useEqualsOutputSentinel = () => {
-    onInputLatencySecChange(-1);
+    onInputLatencySecChange(InputLatency.EqualsOutput);
   };
 
   const resetToZero = () => {
     onInputLatencySecChange(0);
   };
 
-  const isEqualsOutputSentinel = inputLatencySec !== undefined && inputLatencySec < 0;
-  // What the SDK will actually feed into `RecordAudio` right now.
-  const appliedMs = isEqualsOutputSentinel
-    ? outputLatencySec * 1000
-    : Math.max(0, (inputLatencySec ?? 0) * 1000);
+  const isEqualsOutputSentinel = inputLatencySec === InputLatency.EqualsOutput;
+  // What the SDK will actually feed into `RecordAudio` right now. Use the SDK resolver so the
+  // panel stays in lock-step with the SDK's precedence logic — no local re-implementation drift.
+  const appliedMs = inputLatencySec === undefined
+    ? 0
+    : InputLatency.resolve(InputLatency.Inherit, inputLatencySec, outputLatencySec) * 1000;
 
   return (
     <Card>
