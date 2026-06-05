@@ -647,6 +647,75 @@ The LFO is a triangle wave that modulates the delay line read position, creating
 
 ---
 
+### Vocoder
+
+**Purpose:** Classic analysis/synthesis vocoder. Splits the carrier signal into a bank of band-pass filters and modulates each band's amplitude with the envelope of the modulator in the corresponding band — the classic "talking instrument" cross-synthesis. Carrier and modulator have independent frequency ranges, and the modulator source can be built-in coloured noise, the carrier itself (multi-band gate), or an external side-chain.
+
+**Factory Reference:** `EffectFactories.AudioNamed.Vocoder`
+
+**Parameters:**
+
+| Parameter | Type | Range | Default | Unit | Automatable | Description |
+|-----------|------|-------|---------|------|-------------|-------------|
+| carrier-min-freq | float32 | 20.0 to 20000.0 | 100.0 | Hz | yes | Lowest carrier band center frequency |
+| carrier-max-freq | float32 | 20.0 to 20000.0 | 12000.0 | Hz | yes | Highest carrier band center frequency |
+| modulator-min-freq | float32 | 20.0 to 20000.0 | 100.0 | Hz | yes | Lowest modulator band center frequency |
+| modulator-max-freq | float32 | 20.0 to 20000.0 | 12000.0 | Hz | yes | Highest modulator band center frequency |
+| q-min | float32 | 1.0 to 60.0 | 2.0 | - | yes | Q applied at the highest band (top of the spectrum) |
+| q-max | float32 | 1.0 to 60.0 | 20.0 | - | yes | Q applied at the lowest band (bottom of the spectrum) |
+| env-attack | float32 | 0.1 to 100.0 | 5.0 | ms | yes | Envelope follower attack time |
+| env-release | float32 | 1.0 to 1000.0 | 30.0 | ms | yes | Envelope follower release time |
+| gain | float32 | -20.0 to 20.0 | 0.0 | dB | yes | Output level trim |
+| mix | float32 | 0.0 to 1.0 | 1.0 | % | yes | Dry/wet blend (equal-power crossfade) |
+| band-count | int32 | 8, 12, 16 | 16 | - | no | Number of analysis/synthesis bands (other values are rejected by the DSP) |
+| modulator-source | string | see notes | "noise-pink" | - | no | Modulator signal source (see Modulator Sources) |
+| side-chain | pointer | - | (none) | - | - | External modulator input (`Pointers.SideChain`) |
+
+**Adapter Value Mappings:**
+
+| Parameter | Mapping | Notes |
+|-----------|---------|-------|
+| carrier-min-freq | `exponential(20, 20000)` | Display label "Carrier Min" |
+| carrier-max-freq | `exponential(20, 20000)` | Display label "Carrier Max" |
+| modulator-min-freq | `exponential(20, 20000)` | Display label "Mod Min" |
+| modulator-max-freq | `exponential(20, 20000)` | Display label "Mod Max" |
+| q-min | `exponential(1, 60)` | Display label "Q Min" |
+| q-max | `exponential(1, 60)` | Display label "Q Max" |
+| env-attack | `exponential(0.1, 100)` | Display label "Attack" |
+| env-release | `exponential(1, 1000)` | Display label "Release" |
+| gain | `linear(-20, 20)` | Display label "Gain" |
+| mix | `unipolar` | Display label "Mix" |
+
+`band-count`, `modulator-source`, and `side-chain` are not wrapped as named parameters — they're configuration fields, not part of the automatable parameter set.
+
+**How Vocoding Works:**
+1. The carrier passes through `band-count` band-pass filters spread geometrically (log-spaced) between `carrier-min-freq` and `carrier-max-freq`
+2. The modulator passes through a parallel filter bank spread geometrically between `modulator-min-freq` and `modulator-max-freq` — independent of the carrier range, so the analysis spectrum can differ from the resynthesis spectrum
+3. Each modulator band drives a peak-following envelope detector with `env-attack` / `env-release` time constants
+4. The corresponding carrier band is multiplied by its modulator band's envelope; all bands are summed into the wet output
+5. Q values interpolate exponentially from `q-max` at the lowest band to `q-min` at the highest band. With defaults (q-max=20, q-min=2), bands are narrow at low frequencies and progressively wider at high frequencies — the typical natural-sounding vocoder layout
+6. Dry/wet uses an equal-power crossfade: `mix = 0` → 100% dry carrier, `mix = 1` → 100% wet vocoded signal, `mix = 0.5` → both at -3dB
+
+**Modulator Sources (`modulator-source` field):**
+
+| Value | Behaviour |
+|-------|-----------|
+| `"noise-white"` | Built-in white noise generator |
+| `"noise-pink"` | Built-in pink noise (default) — `1/f` spectrum |
+| `"noise-brown"` | Built-in brown noise — `1/f²` spectrum |
+| `"self"` | Carrier modulates itself — turns the device into a multi-band gate |
+| `"external"` | Uses the connected side-chain as the modulator (classic vocoder routing) |
+
+When `modulator-source` is `"external"`, connect a side-chain via the `side-chain` pointer (`Pointers.SideChain`) — typically a voice or drum loop. The connection is optional; without a side-chain the DSP falls back to the configured noise source.
+
+**Band-Count Changes:** Switching between 8 / 12 / 16 bands is click-free. Bands fade in or out over ~3 ms, and newly-activated bands snap their filter state to the target frequency layout before the fade begins.
+
+**Coefficient Smoothing:** All band-pass coefficients interpolate geometrically every 64 samples (≈ 4.6 ms time constant at 48 kHz), so automating any of the frequency or Q parameters produces smooth sweeps rather than zipper artefacts.
+
+**Imports:** `VocoderDeviceBox` from `@opendaw/studio-boxes`, `VocoderDeviceBoxAdapter` (plus the `ModulatorMode` type union) from `@opendaw/studio-adapters`
+
+---
+
 ### Maximizer (Limiter)
 
 **Purpose:** Brick-wall limiter for loudness maximization and peak control.
