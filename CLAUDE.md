@@ -337,6 +337,18 @@ Access adapters via `project.boxAdapters.adapterFor(box, TypeAdapter)` or
 `project.boxAdapters.optAdapter(box)` (returns `Option<BoxAdapter>`).
 Adapters are lazily created and cached by box UUID.
 
+### Project Has Direct Adapter Getters (Not Just via BoxAdaptersContext)
+Beyond `project.boxAdapters` / `project.rootBoxAdapter` / `project.sampleManager`,
+several frequently-needed handles are also direct `Project` properties:
+- `project.skeleton: ProjectSkeleton` — needed by `PresetDecoder.decode(bytes, skeleton)`,
+  `TransferAudioUnits.transfer(units, skeleton, options)`, and `AudioBusFactory.create()`.
+- `project.parameterFieldAdapters: ParameterFieldAdapters` — the **registry-level** touch-
+  state API addressed by `Address`: `isTouched(address)`, `getMode/setMode(address)`,
+  `subscribeTouchEnd(observer)`, `subscribeWrites(observer)`. Different surface from the
+  per-parameter adapter (which has `touchStart/End`, `setUnitValue`) — both layers are real.
+- `project.editing: Editing` (from `@opendaw/lib-std`) — what every `editing.modify()` call
+  resolves to. Direct read; no context indirection needed.
+
 ### GrooveBoxAdapter (Swing/Shuffle)
 `project.rootBoxAdapter.groove` wraps a `GrooveShuffleBoxAdapter` for swing quantization:
 ```typescript
@@ -539,6 +551,15 @@ direct calls handle mute toggles, finalization, and clear.
   each renamed/changed identifier from the changelog and update method signatures, return
   types, and code examples. Chapter docs describe current contracts — leaving stale
   signatures is worse than no doc at all.
+- Auditing the CLAUDE.md tree itself: never trust a documented method or field signature
+  without grepping it in `node_modules/@opendaw/<pkg>/dist/**/*.d.ts` first. These docs
+  have a recurring failure mode where authors invent plausible-but-fictional convenience
+  APIs (`.delete()`, `.moveToPosition()`, `.fadeIn`/`.fadeOut`, `parameter.createAutomation()`,
+  `region.events` instead of `.optCollection`, `parameterAt(index)` instead of `(address)`)
+  that read like "what a sensible API would have" but never existed. PR #63 (root) and
+  PR #64 (six demo CLAUDE.mds) cleaned up the SDK 0.0.154 pass; re-run the same
+  grep-against-`.d.ts` recipe after each SDK bump, plus a `getValue`/`setValue` /
+  `getUnitValue`/`setUnitValue` reality check on any claimed `.value` getter.
 - Verify SDK exports: check `node_modules/@opendaw/<package>/dist/*.d.ts` before writing imports
 - SDK version lives in `node_modules/@opendaw/studio-sdk/package.json`, NOT in individual sub-packages (studio-core, studio-boxes, etc.) which have their own independent version numbers
 - `studio-boxes` source tree is empty (publish-only package). Box schema changes live in
