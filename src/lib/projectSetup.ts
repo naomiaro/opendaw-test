@@ -146,7 +146,7 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
 
   // Create sample manager with optional local audio buffer support
   const sampleProvider: SampleProvider = {
-    fetch: async (uuid: UUID.Bytes, progress: Progress.Handler): Promise<[AudioData, SampleMetaData]> => {
+    fetch: async (uuid: UUID.Bytes, _progress: Progress.Handler): Promise<[AudioData, SampleMetaData]> => {
       const uuidString = UUID.toString(uuid);
       console.debug(`Sample manager fetch called for UUID: ${uuidString}`);
 
