@@ -146,16 +146,21 @@ state changes. Instead, let AnimationFrame run unconditionally — when there's 
 render it's a no-op.
 
 ### Finding Recording Regions
+Recording regions are labeled "Take N" (SDK 0.0.91+) or "Recording" (older). Discover
+them via the adapter layer rather than scanning `boxGraph.boxes()` (see
+`src/lib/adapterUtils.ts` and root CLAUDE.md guidance):
 ```typescript
-// Recording regions are labeled "Take N" (SDK 0.0.91+) or "Recording" (older)
-const boxes = project.boxGraph.boxes();
-const recordingRegion = boxes.find((box: any) => {
-  const label = box.label?.getValue?.();
-  return label === "Recording" || (label && label.startsWith("Take "));
+import { getAllAudioRegions } from "@/lib/adapterUtils";
+
+const audioRegions = getAllAudioRegions(project);
+const recordingAdapter = audioRegions.find(adapter => {
+  const label = adapter.label;
+  return label === "Recording" || label.startsWith("Take ");
 });
 
-// Get duration for setting up playback
-const duration = recordingRegion.duration.getValue();
+// Adapter exposes typed getters/setters — no .getValue() on field access
+const durationPpqn = recordingAdapter.duration;
+const regionBox = recordingAdapter.box; // AudioRegionBox (already typed)
 ```
 
 ### Accessing Live Peaks During Recording
@@ -190,10 +195,12 @@ if (!peaksOption.isEmpty()) {
 ```
 
 ### Capture Settings Require editing.modify()
-`captureBox.deviceId`, `captureBox.gainDb`, and `capture.requestChannels` are box graph fields —
-wrap in `editing.modify()`. `capture.monitoringMode` is NOT a box graph field (it manipulates
-Web Audio nodes), so set it outside the transaction. As of SDK 0.0.133, `monitoringMode` is
-properly typed — no `(capture as any)` cast needed.
+`captureBox.deviceId.setValue()` and `captureBox.gainDb.setValue()` write box graph fields
+directly. `capture.requestChannels = 1` is a `CaptureAudio` setter that writes the
+underlying `captureBox.requestChannels` (Int32Field) — also a box graph mutation. All
+three need `editing.modify()`. `capture.monitoringMode` is NOT a box graph field (it
+manipulates Web Audio nodes), so set it outside the transaction. As of SDK 0.0.133,
+`monitoringMode` is properly typed — no `(capture as any)` cast needed.
 
 ### Recording Peaks Include Count-In Frames
 The SDK captures audio during count-in. `waveformOffset` on the region (in seconds)
