@@ -78,12 +78,31 @@ OpenDAW provides a comprehensive audio effects system with both **MIDI Effects**
     - Lookahead mode for transparency
     - Essential for mastering chains
 
-11. **Modular** - Custom audio effect designer
+11. **Gate** - Noise gate / ducker
+    - Attenuates signals below a threshold
+    - Side-chain input support
+    - Inverse (ducking) mode
+
+12. **Tone3000** (NeuralAmp) - Amp / pedal / cab modeling
+    - Runs Neural Amp Modeler (NAM) `.nam` models in the AudioWorklet
+    - Loadable from local files or the Tone 3000 online marketplace
+    - Mono or stereo processing
+
+13. **Vocoder** - Analysis / synthesis vocoder
+    - Independent carrier and modulator inputs
+    - Classic "talking instrument" cross-synthesis
+
+14. **Waveshaper** - Nonlinear distortion
+    - Selectable transfer functions (hardclip, soft, sine, …)
+    - Drive (input gain) and output level compensation
+    - Dry/wet mix
+
+15. **Modular** - Custom audio effect designer
    - Visual modular environment
    - Connect modules together
    - Create custom signal processors
 
-12. **Werkstatt** - Scriptable audio effect (SDK 0.0.129+)
+16. **Werkstatt** - Scriptable audio effect
     - User-written JavaScript DSP code
     - Uses `// @param` and `// @sample` comment declarations for parameters
     - Custom audio signal processing
@@ -94,7 +113,7 @@ OpenDAW provides a comprehensive audio effects system with both **MIDI Effects**
 2. **Pitch** - MIDI note pitch shifting
 3. **Velocity** - MIDI velocity manipulation
 4. **Zeitgeist** - Time/groove distortion
-5. **Spielwerk** - Scriptable MIDI effect (SDK 0.0.129+)
+5. **Spielwerk** - Scriptable MIDI effect
    - User-written JavaScript MIDI processing
    - Uses `// @param` comment declarations for parameters
 
@@ -388,7 +407,7 @@ The LFO is a triangle wave that modulates the delay line read position, creating
 
 ### Reverb (Free Reverb)
 
-**Purpose:** Simulates acoustic spaces by creating reflections and decay. Display name changed from "Cheap Reverb" to "Free Reverb" in SDK 0.0.129.
+**Purpose:** Simulates acoustic spaces by creating reflections and decay. Display name is "Free Reverb".
 
 **Factory Reference:** `EffectFactories.AudioNamed.Reverb`
 
@@ -663,6 +682,7 @@ EffectFactories.AudioNamed.Revamp
 EffectFactories.AudioNamed.Reverb       // display name: "Free Reverb"
 EffectFactories.AudioNamed.StereoTool
 EffectFactories.AudioNamed.Tidal
+EffectFactories.AudioNamed.Vocoder
 EffectFactories.AudioNamed.Waveshaper
 EffectFactories.AudioNamed.Werkstatt    // scriptable audio effect
 
@@ -758,13 +778,13 @@ interface EffectFactory {
     readonly defaultName: string
     readonly defaultIcon: IconSymbol
     readonly description: string
-    readonly briefDescription: string   // SDK 0.0.129+
+    readonly briefDescription: string
     readonly manualPage?: string
     readonly separatorBefore: boolean
-    readonly external: boolean           // SDK 0.0.129+
+    readonly external: boolean
     readonly type: "audio" | "midi"
 
-    create(project: Project, unit: Field<EffectPointerType>, index: int): EffectBox
+    create(project: Project, host: Field<EffectPointerType>, index: int): EffectBox
 }
 ```
 
@@ -1961,7 +1981,7 @@ Declare parameters with comments at the top of the script. Each declaration crea
 | `int` | integer min-max | 0 decimal places |
 | `bool` | 0 or 1 | "On"/"Off" |
 
-#### Label Directive (`// @label`) (SDK 0.0.132+)
+#### Label Directive (`// @label`)
 
 ```
 // @label My Custom Filter
@@ -1969,7 +1989,7 @@ Declare parameters with comments at the top of the script. Each declaration crea
 
 Sets the device label automatically when the script is compiled. Parsed with `ScriptDeclaration.parseLabel(code): Option<string>`.
 
-#### Parameter Groups (`// @group`) (SDK 0.0.132+)
+#### Parameter Groups (`// @group`)
 
 Organize parameters into visual groups on the device panel with optional colors:
 
@@ -2461,7 +2481,7 @@ const effectBox = project.api.insertEffect(audioUnitBox.audioEffects, EffectFact
 const neuralAmpBox = effectBox as NeuralAmpDeviceBox;
 ```
 
-- `defaultName`: "Tone3000" (changed from "Neural Amp" in SDK 0.0.129)
+- `defaultName`: "Tone3000"
 - `defaultIcon`: `IconSymbol.Tone3000` (changed from `IconSymbol.NeuralAmp`)
 - `briefDescription`: "Amp Modeler"
 - `external`: true (only effect with this flag — UI displays it with a logo instead of standard icon)
