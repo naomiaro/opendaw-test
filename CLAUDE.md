@@ -459,6 +459,12 @@ files, create a blob URL: `const url = URL.createObjectURL(file)`, pass to
 
 ## React Integration Tips
 
+### Extending useEnginePreference
+Adding a new path (e.g. `["recording", "inputLatency"]`) requires extending BOTH the
+`PreferencePath` union AND the `PreferenceValue<P>` conditional mapping in
+`src/hooks/useEnginePreference.ts`. The runtime call works without it (the SDK doesn't know
+about the type union) but TS rejects the call site.
+
 ### Using AnimationFrame from OpenDAW
 ```typescript
 import { AnimationFrame } from "@opendaw/lib-dom";
@@ -505,6 +511,8 @@ direct calls handle mute toggles, finalization, and clear.
 ## Build & Verification
 - `npm run build` runs Vite then VitePress — demos go to `dist/`, docs go to `dist/docs/` for `/docs/` on Cloudflare Pages
 - `npm run docs:dev` — local VitePress dev server for documentation
+- Dev server is HTTPS (COOP/COEP) — Playwright/curl must use `https://`, not `http://`. Custom port:
+  `npm run dev -- --port 5180 --host 127.0.0.1`, then browse `https://localhost:5180/<demo>.html`.
 - COOP/COEP headers in `public/_headers` exclude `/docs/*` — VitePress assets break under `require-corp`
 - Vite handles TypeScript transpilation (no standalone `tsc` available)
 - After SDK upgrades, clear Vite dep cache: `rm -rf node_modules/.vite` (dev server pre-bundles old SDK)
@@ -522,6 +530,15 @@ direct calls handle mute toggles, finalization, and clear.
   signatures is worse than no doc at all.
 - Verify SDK exports: check `node_modules/@opendaw/<package>/dist/*.d.ts` before writing imports
 - SDK version lives in `node_modules/@opendaw/studio-sdk/package.json`, NOT in individual sub-packages (studio-core, studio-boxes, etc.) which have their own independent version numbers
+- `studio-boxes` source tree is empty (publish-only package). Box schema changes live in
+  `packages/studio/forge-boxes/src/schema/` upstream and propagate via the published tarball —
+  `git diff` on `studio-boxes/src/` during an SDK audit returns nothing even when boxes changed.
+- Inspect SDK changes by tag in a sibling openDAW checkout (path in `.claude/local.md`):
+  `git show "@opendaw/<pkg>@<version>:<path>"`,
+  `git diff --stat "@opendaw/<pkg>@<v1>..@opendaw/<pkg>@<v2>" -- packages/studio/<pkg>/src/`.
+  The `studio-sdk` meta-package CHANGELOG only carries "Version bump only" notes — real
+  changes are in the sub-packages (`studio-adapters`, `studio-core`, `studio-boxes` via
+  `forge-boxes`, `studio-enums`).
 
 ### Adding a New Demo
 1. Create `<name>-demo.html` at project root (copy existing HTML entry point, update meta tags and script src to point at `src/demos/<category>/`)
