@@ -550,6 +550,133 @@ Other related preferences:
 | Metronome gain | `metronome.gain` | number (dB) | Click volume |
 | Metronome subdivision | `metronome.beatSubDivision` | 1\|2\|4\|8 | Click subdivision |
 
+## Measuring and Applying Input Latency
+
+`audioContext.outputLatency` (engine→speaker) is compensated automatically by `RecordAudio`. The mic→engine portion is *not* — `MediaStreamTrack.getSettings().latency` is reported by the browser at recording start (logged as `inputLatencyReported` in `[CaptureAudio] latency report`), but the SDK does not auto-apply it. You set the compensation explicitly via the engine preference or a per-tape override.
+
+### Why measurement matters
+
+Gil&nbsp;Panal, Richard & David (Web Audio Conference 2025, [zenodo:17642262](https://zenodo.org/records/17642262)) show that browser DAW roundtrip latency varies from ~39 ms to ~105 ms across Firefox / Chrome / Safari × Ubuntu / Windows / macOS, with std. dev. up to ~8 ms on Chromium and ~0 ms on Firefox. The paper makes two practical points:
+
+- `outputLatency` alone is not enough — "[these properties] can never be used as reference to compensate the undergoing round-trip latency in the recording, requiring [...] real audio measurements."
+- Roundtrip decomposes as `roundtrip = input + output`, so once you measure roundtrip you can derive input latency by subtracting `audioContext.outputLatency`.
+
+Their reference numbers from the paper (mean roundtrip, 100 consecutive runs, built-in mic + wired headphones, all browser audio constraints disabled):
+
+| Device | Browser | Mean RT | Std |
+|---|---|---|---|
+| MacBook Pro 2021 | Firefox | 38.9 ms | 0.0 ms |
+| MacBook Pro 2021 | Chrome | 52.3 ms | 1.1 ms |
+| MacBook Pro 2021 | Safari | 100.0 ms | 0.0 ms |
+| HP Ubuntu 22.04 | Firefox | 65.7 ms | 0.0 ms |
+| HP Ubuntu 22.04 | Chrome | 64.5 ms | 7.9 ms |
+| Lenovo Win10 | Firefox | 104.7 ms | 0.0 ms |
+| Lenovo Win10 | Chrome | 62.8 ms | 2.4 ms |
+| Lenovo Win10 | Edge | 60.8 ms | 6.1 ms |
+
+Use these as a *starting point* — your own hardware will differ. Open-source measurement tool: [gilpanal/weblatencytest](https://github.com/gilpanal/weblatencytest) (MLS-based, the same method the paper validates).
+
+### Browser constraints required for accurate measurement
+
+If you build your own measurement, the `getUserMedia` constraints must disable echo cancellation, noise suppression, and AGC — otherwise the test signal is filtered before it reaches your cross-correlation:
+
+```typescript
+// From Gil Panal et al., Section 3
+const stream = await navigator.mediaDevices.getUserMedia({
+  audio: {
+    echoCancellation: false,
+    noiseSuppression: false,
+    autoGainControl: false,
+    latency: 0,         // hint to browser: minimize buffer
+    channelCount: 1     // mono is simpler and more compatible
+  }
+});
+const ctx = new AudioContext({ latencyHint: 0 });
+```
+
+Bluetooth headsets do not work for measurement (lossy codecs distort the test signal). Wired headphones only.
+
+### Applying a measured value at the engine level
+
+Once you have a measured input latency (in seconds), set it on the engine preference. All future recordings on this project inherit it:
+
+```typescript
+// Apply a measured 5.4 ms input latency to all captures in this project.
+const measuredInputLatencyMs = 5.4;
+project.engine.preferences.settings.recording.inputLatency = measuredInputLatencyMs / 1000;
+
+// Or derive from a measured roundtrip — subtract whatever audioContext.outputLatency
+// reports at the moment of measurement (use the same AudioContext you passed to the SDK):
+const measuredRoundtripMs = 52.3;
+const outputLatencyMs = audioContext.outputLatency * 1000;
+const inputLatencyMs = Math.max(0, measuredRoundtripMs - outputLatencyMs);
+project.engine.preferences.settings.recording.inputLatency = inputLatencyMs / 1000;
+```
+
+Sentinel `-1` means "use the engine's own `outputLatency` as the input latency too" — a rough starting guess when input and output paths share the driver, but the paper's reference numbers show this is rarely the actual ratio. Prefer a real measurement.
+
+### Per-mic override via `CaptureAudioBox.inputLatency`
+
+Different inputs on the same machine often have different latencies (USB interface vs. built-in mic vs. virtual loopback). Override per tape via the box graph field:
+
+```typescript
+import { InputLatency } from "@opendaw/studio-core";
+//   InputLatency.Inherit       = -2.0   (default — fall through to engine preference)
+//   InputLatency.EqualsOutput  = -1.0   (mirror audioContext.outputLatency)
+//   value >= 0                            explicit seconds added to outputLatency
+
+// captureBox.inputLatency is a Float32 box field — wrap in editing.modify().
+const captureAudio = project.captureDevices.get(audioUnitBox.address.uuid).unwrap();
+project.editing.modify(() => {
+  captureAudio.captureBox.inputLatency.setValue(measuredInputLatencyMs / 1000);
+});
+```
+
+Resolution at recording start, in `RecordAudio`:
+
+```typescript
+// InputLatency.resolve() — applied per-capture in CaptureAudio.startRecording()
+const value = localOverride <= InputLatency.Inherit
+  ? engineRecordingPreference.inputLatency
+  : localOverride;
+const inputLatency = value === InputLatency.EqualsOutput
+  ? audioContext.outputLatency
+  : Math.max(0, value);
+```
+
+This becomes the `inputLatency` field on `RecordAudioContext` and feeds the take-1 `waveformOffset` formula:
+
+```
+waveformOffset = countInSeconds + outputLatency + inputLatency + workletHeadStart
+```
+
+### Verifying
+
+After starting a recording, the `[CaptureAudio] latency report` debug line in the browser console shows everything that fed the offset:
+
+```
+[CaptureAudio] latency report {
+  outputLatency:        0.0107,         // browser-reported engine→speaker
+  baseLatency:          0.0058,
+  inputLatencyReported: 0.005,          // browser-reported per-track (not applied automatically)
+  inputLatencyApplied:  0.0054,         // resolved from per-tape override or engine pref
+  deviceId:             "...",
+  deviceLabel:          "MacBook Pro Microphone"
+}
+```
+
+If `inputLatencyApplied` doesn't match what you set, the per-tape `captureBox.inputLatency` is overriding the engine preference. Set it to `InputLatency.Inherit` (`-2`) to fall through.
+
+### Try it in the demo
+
+The [Recording API Demo](https://opendaw-test.pages.dev/recording-api-react-demo.html) surfaces both controls live: the **Input Latency Compensation** card shows current `outputLatency` / `baseLatency`, lets you set the engine preference in milliseconds, and provides a "measured roundtrip → input latency" helper that subtracts `outputLatency` for you. Each tape card adds a per-mic override (`inherit` / `equals outputLatency` / explicit ms) plus a one-click "Use this value" button that copies the browser-reported `MediaStreamTrack.latency` into the override.
+
+### Reference
+
+> Gil Panal, J. M., Richard, G., & David, A. (2025). *A Maximum Length Sequence–Based Method for Robust Round-Trip Latency Estimation in online Digital Audio Workstations.* In *Proceedings of the Web Audio Conference (WAC 2025)*, Paris, France, November 19–21, 2025. Zenodo. <https://zenodo.org/records/17642262>
+
+Reference implementation (open-source MLS measurement, runs in any browser): <https://github.com/gilpanal/weblatencytest>. The browser DAW under study, **Hi-Audio**: <https://hiaudio.fr>.
+
 ## Multi-Track Recording
 
 OpenDAW supports recording multiple instruments simultaneously. Each armed capture (one per AudioUnitBox) records independently with its own `MediaStream`, `RecordingWorklet`, and `SharedArrayBuffer`.
