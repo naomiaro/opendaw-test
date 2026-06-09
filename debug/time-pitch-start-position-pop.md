@@ -10,6 +10,8 @@
 
 **Refined 2026-06-09:** The pop reproduces **identically at `transientPlayMode = Once`, `Repeat`, and `Pingpong`** (verified by ear via the demo's SegmentedControl). Segment-replay behaviour at voice creation is therefore NOT the mechanism. The two remaining candidates in the Mechanism section are transient-segment quantization at `setPosition` and stretcher lookback/windowing.
 
+**Refined 2026-06-09:** The pop's pitch **tracks the cents slider** — different `playbackRate` values produce the artifact at different audible pitches, shifted by the corresponding amount. This confirms the artifact is **actual audio content being rendered through the stretcher's pitch-shift pipeline**, not a glitch / discontinuity / sample-step / voice-fade artifact (those would all be rate-independent). The remaining mechanistic question is where the content comes from; both remaining candidates (segment quantization, stretcher lookback) are consistent with this. Rate-independent explanations are ruled out.
+
 ## Symptom
 
 An audible pop fires at the moment playback begins when the engine playhead is positioned inside a silent gap *between* audio sections of a file that has `AudioTimeStretchBox` attached at `playbackRate = 1.0` (no actual stretching applied). The pop is absent when starting playback at the file's head silence — i.e. silence that has no preceding audio.
@@ -43,7 +45,7 @@ Configuration: BPM 124, single Tape track, one `AudioRegionBox` at `position = 0
 
 ## Mechanism
 
-**Not yet identified.** The two-axis asymmetry — head-vs-mid file silence AND TimeStretch-vs-NoStretch — rules out generic voice-creation artifacts (NoStretch fires the same voice path and is clean). The mechanism lives inside `AudioTimeStretchBox`'s processing of a `setPosition` that lands inside a silent window bracketed by audio.
+**Not yet identified.** The two-axis asymmetry — head-vs-mid file silence AND TimeStretch-vs-NoStretch — rules out generic voice-creation artifacts (NoStretch fires the same voice path and is clean). The mechanism lives inside `AudioTimeStretchBox`'s processing of a `setPosition` that lands inside a silent window bracketed by audio. The pitch-tracks-cents finding further constrains it to a code path that emits actual audio content through the stretcher's pitch-shift pipeline — not a glitch, sample-step, or DC discontinuity.
 
 Source-tracing should focus on:
 
@@ -58,6 +60,5 @@ Previously listed candidate-related notes (`fade-out-end-of-file-pop.md`, `voice
 
 Not yet tested at the time of writing this note:
 
-- **Cents off zero:** does the pop persist, change in level, or vanish when `playbackRate != 1.0`? Would isolate whether the artifact is specific to the stretcher's unit-rate branch or rate-independent.
 - **PitchStretch comparison:** does `AudioPitchStretchBox` (varispeed) reproduce the pop, or only `AudioTimeStretchBox` (transient-aware)? Would isolate whether the artifact is unique to the transient-segment processing or shared by both stretchers.
 - **Region-trim variant:** does the pop reproduce on a region whose `duration < fullDurationPpqn` such that the gap sits inside the trimmed region? Would isolate whether `loopOffset` / `loopDuration` interact with the symptom.
