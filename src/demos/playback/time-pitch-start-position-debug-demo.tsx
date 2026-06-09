@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
 import { PPQN, TimeBase } from "@opendaw/lib-dsp";
@@ -21,7 +21,7 @@ import { initializeOpenDAW } from "@/lib/projectSetup";
 import { loadAudioFile, getAudioExtension } from "@/lib/audioUtils";
 import { ensureTransientMarkers } from "@/lib/transientDetection";
 import "@radix-ui/themes/styles.css";
-import { Theme, Container, Heading, Flex, Card, Text, Badge, Button, Slider, Code, Separator, Callout } from "@radix-ui/themes";
+import { Theme, Container, Heading, Flex, Card, Text, Badge, Button, Slider, Code, Separator, Callout, SegmentedControl } from "@radix-ui/themes";
 import { PlayIcon, StopIcon, InfoCircledIcon } from "@radix-ui/react-icons";
 
 const PROJECT_BPM = 124;
@@ -40,6 +40,9 @@ const App: React.FC = () => {
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [cents, setCents] = useState(0);
+  const [playMode, setPlayMode] = useState<"none" | "time">("time");
+  const [switching, setSwitching] = useState(false);
+  const switchingRef = useRef(false);
 
   const audioBufferRef = useRef<AudioBuffer | null>(null);
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
@@ -313,6 +316,72 @@ const App: React.FC = () => {
     setCents(clamped);
   };
 
+  // NoStretch ↔ TimeStretch swap. Single editing.modify per the SDK's
+  // AudioContentModifier pattern: create-then-refer (or defer for none),
+  // then delete the previous box. region.timeBase + duration/loopOffset/
+  // loopDuration are rewritten in the same transaction so the engine sees
+  // a consistent (timeBase, duration-units) pair.
+  const switchMode = useCallback(
+    (next: "none" | "time") => {
+      if (!project || !regionRef.current) return;
+      if (switchingRef.current) return;
+      if (next === playMode) return;
+
+      switchingRef.current = true;
+      setSwitching(true);
+      try {
+        project.editing.modify(() => {
+          const region = regionRef.current!;
+          const prev = stretchBoxRef.current;
+
+          if (next === "none") {
+            region.playMode.defer();
+            if (prev) prev.delete();
+            stretchBoxRef.current = null;
+            region.timeBase.setValue(TimeBase.Seconds);
+            region.duration.setValue(durationSecondsRef.current);
+            region.loopOffset.setValue(0);
+            region.loopDuration.setValue(durationSecondsRef.current);
+            return;
+          }
+
+          // next === "time": atomic refer to new box, then delete prev.
+          const newBox = AudioTimeStretchBox.create(
+            project.boxGraph,
+            UUID.generate(),
+            (b) => {
+              b.transientPlayMode.setValue(TransientPlayMode.Pingpong);
+              b.playbackRate.setValue(1.0);
+            }
+          );
+          WarpMarkerBox.create(project.boxGraph, UUID.generate(), (m) => {
+            m.owner.refer(newBox.warpMarkers);
+            m.position.setValue(0);
+            m.seconds.setValue(0);
+          });
+          WarpMarkerBox.create(project.boxGraph, UUID.generate(), (m) => {
+            m.owner.refer(newBox.warpMarkers);
+            m.position.setValue(durationPpqnRef.current);
+            m.seconds.setValue(durationSecondsRef.current);
+          });
+          region.playMode.refer(newBox);
+          if (prev) prev.delete();
+          stretchBoxRef.current = newBox;
+          region.timeBase.setValue(TimeBase.Musical);
+          region.duration.setValue(durationPpqnRef.current);
+          region.loopOffset.setValue(0);
+          region.loopDuration.setValue(durationPpqnRef.current);
+        });
+        setPlayMode(next);
+        setCents(0);
+      } finally {
+        switchingRef.current = false;
+        setSwitching(false);
+      }
+    },
+    [project, playMode]
+  );
+
   return (
     <Theme appearance="dark" accentColor="amber">
       <Container size="3" style={{ padding: "2rem", minHeight: "100vh" }}>
@@ -391,6 +460,29 @@ const App: React.FC = () => {
             <Flex direction="column" gap="3">
               <Text size="3" weight="bold">Controls</Text>
               <Separator size="4" />
+              <div
+                style={{
+                  opacity: switching ? 0.5 : 1,
+                  pointerEvents: switching ? "none" : "auto",
+                }}
+              >
+                <SegmentedControl.Root
+                  value={playMode}
+                  onValueChange={(v) => {
+                    if (switchingRef.current) return;
+                    switchMode(v as "none" | "time");
+                  }}
+                  size="2"
+                >
+                  <SegmentedControl.Item value="none">NoStretch</SegmentedControl.Item>
+                  <SegmentedControl.Item value="time">TimeStretch</SegmentedControl.Item>
+                </SegmentedControl.Root>
+              </div>
+              <Text size="1" color="gray">
+                {playMode === "none"
+                  ? "No playMode box attached. timeBase = Seconds. Cents slider disabled."
+                  : "AudioTimeStretchBox attached, playbackRate = 1.0. Cents slider active."}
+              </Text>
               <Flex gap="3" align="center">
                 <Button
                   onClick={handlePlay}
@@ -427,7 +519,7 @@ const App: React.FC = () => {
                   min={-1200}
                   max={1200}
                   step={1}
-                  disabled={!project || status !== "Ready"}
+                  disabled={!project || status !== "Ready" || playMode !== "time"}
                 />
               </Flex>
             </Flex>
@@ -446,9 +538,9 @@ Duration:        ${
                       } ch, ${audioBufferRef.current.sampleRate} Hz)`
                     : "..."
                 }
-Play mode:       AudioTimeStretchBox
+Play mode:       ${playMode === "time" ? "AudioTimeStretchBox" : "NoStretch (no playMode box)"}
 Transients:      ${transientCount ?? "..."}
-Playback rate:   ${Math.pow(2, cents / 1200).toFixed(6)} (cents=${cents.toFixed(0)})
+Playback rate:   ${playMode === "time" ? `${Math.pow(2, cents / 1200).toFixed(6)} (cents=${cents.toFixed(0)})` : "n/a (NoStretch)"}
 Start position:  ${startSeconds.toFixed(3)} s`}
               </Code>
             </Flex>
