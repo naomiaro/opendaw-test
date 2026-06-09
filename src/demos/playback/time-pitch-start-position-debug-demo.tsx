@@ -385,35 +385,13 @@ const App: React.FC = () => {
     if (!project) return;
     const box = stretchBoxRef.current;
     if (!box) return;
-
-    // Diagnostic: does writing transientPlayMode reset engine.position
-    // the way writing playbackRate does? If yes, the playback CLAUDE.md
-    // gotcha rule generalizes to "any structural AudioTimeStretchBox
-    // write" rather than playbackRate-specific. Log the delta to
-    // DevTools when running locally so we can see it.
-    const positionBefore = project.engine.position.getValue();
-
+    // Writing transientPlayMode does NOT reset engine.position (verified
+    // 2026-06-09). Unlike playbackRate and the playMode/timeBase swap, no
+    // setPosition recovery is needed. See playback CLAUDE.md.
     project.editing.modify(() => {
       box.transientPlayMode.setValue(mode);
     });
     setTransientMode(mode);
-
-    const positionAfter = project.engine.position.getValue();
-    if (positionBefore !== positionAfter) {
-      console.warn(
-        "[time-pitch-debug] transientPlayMode write changed engine.position",
-        { before: positionBefore, after: positionAfter }
-      );
-    }
-
-    // Symmetric to handleCentsChange: recover position if a write reset
-    // it. Gate on !isPlaying so we don't interrupt live audio with a
-    // position jump.
-    if (!isPlaying) {
-      const bpm = project.timelineBox.bpm.getValue();
-      const ppqn = Math.round(PPQN.secondsToPulses(startSeconds, bpm));
-      project.engine.setPosition(ppqn);
-    }
   };
 
   // NoStretch ↔ TimeStretch swap. Single editing.modify per the SDK's

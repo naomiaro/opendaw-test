@@ -149,6 +149,11 @@ Both observed in `time-pitch-start-position-debug-demo`: writing
 playhead. For mid-playback user controls (e.g. live cents slider), gate on
 `!isPlaying` so the position jump doesn't interrupt audio.
 
+The rule is field-specific, not "any structural write": writing
+`AudioTimeStretchBox.transientPlayMode` does NOT reset position (verified in the same
+demo). When adding a new field write, test position-delta first before assuming a
+recovery call is needed.
+
 ### AudioFileBoxAdapter Audio Data Access
 `.audioData: Promise<AudioData>` (awaits sample loader), `.data: Option<AudioData>`
 (sync, None if not loaded), `.transients: EventCollection<TransientMarkerBoxAdapter>`,
