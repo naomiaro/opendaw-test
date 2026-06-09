@@ -159,7 +159,6 @@ const App: React.FC = () => {
           );
           stretchBoxRef.current = stretchBox;
 
-          // Default warp markers: 0 -> 0, durationPpqn -> durationSeconds.
           WarpMarkerBox.create(newProject.boxGraph, UUID.generate(), (m) => {
             m.owner.refer(stretchBox.warpMarkers);
             m.position.setValue(0);
@@ -181,6 +180,7 @@ const App: React.FC = () => {
         setAudioContext(newAudioContext);
         setStatus("Ready");
       } catch (err) {
+        console.error("[time-pitch-debug] init failed", err);
         if (!cancelled) {
           const message = err instanceof Error ? err.message : String(err);
           setError(message);
@@ -193,8 +193,8 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // One-shot: wait for peaks. sampleLoader.peaks is Option<Peaks> and may
-  // lag queryLoadingComplete by ~120 ms (peaks worker). Same pattern as
+  // One-shot: wait for peaks. sampleLoader.peaks is Option<Peaks> and lags
+  // queryLoadingComplete (peaks compute in a worker). Same pattern as
   // useWaveformRendering and drum-scheduling-demo.
   useEffect(() => {
     if (!project) return;
@@ -218,6 +218,11 @@ const App: React.FC = () => {
           peaksRef.current = opt.unwrap();
           setPeaksReady(true);
         }
+        sub.terminate();
+      } else if (state.type === "error") {
+        const reason = state.reason ?? "unknown error";
+        console.error("[time-pitch-debug] sample loader error", state);
+        setError(`Peaks failed to load: ${reason}`);
         sub.terminate();
       }
     });
@@ -330,7 +335,17 @@ const App: React.FC = () => {
   const handlePlay = async () => {
     if (!project || !audioContext) return;
     if (audioContext.state !== "running") {
-      await audioContext.resume();
+      try {
+        await audioContext.resume();
+      } catch (err) {
+        console.error("[time-pitch-debug] audioContext.resume failed", err);
+        setError(`Audio context resume failed: ${err instanceof Error ? err.message : String(err)}`);
+        return;
+      }
+    }
+    if (audioContext.state !== "running") {
+      setError("Audio context did not reach 'running' after resume");
+      return;
     }
     // Position already set by handleWaveformClick; no need to set again.
     project.engine.play();
