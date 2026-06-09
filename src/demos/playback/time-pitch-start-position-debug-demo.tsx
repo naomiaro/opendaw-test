@@ -411,12 +411,20 @@ const App: React.FC = () => {
         });
         setPlayMode(next);
         setCents(0);
+
+        // The box-graph rewrite (timeBase + duration + playMode swap) invalidates
+        // the engine's prior playback position — it resets to 0. Re-establish
+        // the playhead at the user's chosen start so the amber start-bar and
+        // the engine agree, and pressing Play resumes from the click.
+        const bpm = project.timelineBox.bpm.getValue();
+        const ppqn = Math.round(PPQN.secondsToPulses(startSeconds, bpm));
+        project.engine.setPosition(ppqn);
       } finally {
         switchingRef.current = false;
         setSwitching(false);
       }
     },
-    [project, playMode]
+    [project, playMode, startSeconds]
   );
 
   return (
