@@ -42,6 +42,9 @@ const App: React.FC = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [cents, setCents] = useState(0);
   const [playMode, setPlayMode] = useState<"none" | "time">("time");
+  const [transientMode, setTransientMode] = useState<TransientPlayMode>(
+    TransientPlayMode.Pingpong
+  );
   const [switching, setSwitching] = useState(false);
   const switchingRef = useRef(false);
 
@@ -378,6 +381,41 @@ const App: React.FC = () => {
     }
   };
 
+  const handleTransientModeChange = (mode: TransientPlayMode) => {
+    if (!project) return;
+    const box = stretchBoxRef.current;
+    if (!box) return;
+
+    // Diagnostic: does writing transientPlayMode reset engine.position
+    // the way writing playbackRate does? If yes, the playback CLAUDE.md
+    // gotcha rule generalizes to "any structural AudioTimeStretchBox
+    // write" rather than playbackRate-specific. Log the delta to
+    // DevTools when running locally so we can see it.
+    const positionBefore = project.engine.position.getValue();
+
+    project.editing.modify(() => {
+      box.transientPlayMode.setValue(mode);
+    });
+    setTransientMode(mode);
+
+    const positionAfter = project.engine.position.getValue();
+    if (positionBefore !== positionAfter) {
+      console.warn(
+        "[time-pitch-debug] transientPlayMode write changed engine.position",
+        { before: positionBefore, after: positionAfter }
+      );
+    }
+
+    // Symmetric to handleCentsChange: recover position if a write reset
+    // it. Gate on !isPlaying so we don't interrupt live audio with a
+    // position jump.
+    if (!isPlaying) {
+      const bpm = project.timelineBox.bpm.getValue();
+      const ppqn = Math.round(PPQN.secondsToPulses(startSeconds, bpm));
+      project.engine.setPosition(ppqn);
+    }
+  };
+
   // NoStretch ↔ TimeStretch swap. Single editing.modify per the SDK's
   // AudioContentModifier pattern: create-then-refer (or defer for none),
   // then delete the previous box. region.timeBase + duration/loopOffset/
@@ -412,7 +450,7 @@ const App: React.FC = () => {
             project.boxGraph,
             UUID.generate(),
             (b) => {
-              b.transientPlayMode.setValue(TransientPlayMode.Pingpong);
+              b.transientPlayMode.setValue(transientMode);
               b.playbackRate.setValue(1.0);
             }
           );
@@ -449,7 +487,7 @@ const App: React.FC = () => {
         setSwitching(false);
       }
     },
-    [project, playMode, startSeconds]
+    [project, playMode, startSeconds, transientMode]
   );
 
   return (
@@ -614,6 +652,41 @@ const App: React.FC = () => {
                   disabled={!project || status !== "Ready" || playMode !== "time"}
                 />
               </Flex>
+
+              <Flex direction="column" gap="2">
+                <Flex justify="between" align="center">
+                  <Text size="2">Transient play mode</Text>
+                  <Code size="2">
+                    {transientMode === TransientPlayMode.Once && "Once"}
+                    {transientMode === TransientPlayMode.Repeat && "Repeat"}
+                    {transientMode === TransientPlayMode.Pingpong && "Pingpong"}
+                  </Code>
+                </Flex>
+                <div
+                  style={{
+                    opacity: playMode !== "time" ? 0.5 : 1,
+                    pointerEvents: playMode !== "time" ? "none" : "auto",
+                  }}
+                >
+                  <SegmentedControl.Root
+                    value={String(transientMode)}
+                    onValueChange={(v) =>
+                      handleTransientModeChange(Number(v) as TransientPlayMode)
+                    }
+                    size="2"
+                  >
+                    <SegmentedControl.Item value={String(TransientPlayMode.Once)}>
+                      Once
+                    </SegmentedControl.Item>
+                    <SegmentedControl.Item value={String(TransientPlayMode.Repeat)}>
+                      Repeat
+                    </SegmentedControl.Item>
+                    <SegmentedControl.Item value={String(TransientPlayMode.Pingpong)}>
+                      Pingpong
+                    </SegmentedControl.Item>
+                  </SegmentedControl.Root>
+                </div>
+              </Flex>
             </Flex>
           </Card>
           <Card>
@@ -633,6 +706,15 @@ Duration:        ${
 Play mode:       ${playMode === "time" ? "AudioTimeStretchBox" : "NoStretch (no playMode box)"}
 Transients:      ${transientCount ?? "..."}
 Playback rate:   ${playMode === "time" ? `${Math.pow(2, cents / 1200).toFixed(6)} (cents=${cents.toFixed(0)})` : "n/a (NoStretch)"}
+Transient mode:  ${
+                  playMode === "time"
+                    ? transientMode === TransientPlayMode.Once
+                      ? "Once"
+                      : transientMode === TransientPlayMode.Repeat
+                        ? "Repeat"
+                        : "Pingpong"
+                    : "n/a (NoStretch)"
+                }
 Start position:  ${startSeconds.toFixed(3)} s`}
               </Code>
             </Flex>
