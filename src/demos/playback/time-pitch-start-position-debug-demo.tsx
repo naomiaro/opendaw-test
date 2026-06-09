@@ -48,6 +48,7 @@ const App: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const peaksRef = useRef<Peaks | null>(null);
   const [peaksReady, setPeaksReady] = useState(false);
+  const [startSeconds, setStartSeconds] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -252,7 +253,26 @@ const App: React.FC = () => {
         v1: 1.001,
       });
     }
-  }, [peaksReady]);
+
+    // Playhead marker
+    const x = (startSeconds / audioBuffer.duration) * width;
+    ctx.fillStyle = "#ffb020"; // amber
+    ctx.fillRect(x - 1, 0, 2, WAVEFORM_HEIGHT);
+  }, [peaksReady, startSeconds]);
+
+  const handleWaveformClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!project || !audioBufferRef.current) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const fraction = Math.max(
+      0,
+      Math.min(1, (e.clientX - rect.left) / rect.width)
+    );
+    const seconds = fraction * audioBufferRef.current.duration;
+    setStartSeconds(seconds);
+    const bpm = project.timelineBox.bpm.getValue();
+    const ppqn = Math.round(PPQN.secondsToPulses(seconds, bpm));
+    project.engine.setPosition(ppqn);
+  };
 
   return (
     <Theme appearance="dark" accentColor="amber">
@@ -295,14 +315,19 @@ const App: React.FC = () => {
               <Text size="3" weight="bold">Waveform</Text>
               <canvas
                 ref={canvasRef}
+                onClick={handleWaveformClick}
                 style={{
                   width: "100%",
                   height: WAVEFORM_HEIGHT,
                   display: "block",
                   background: "#111",
                   borderRadius: 4,
+                  cursor: project ? "crosshair" : "default",
                 }}
               />
+              <Text size="2" color="gray">
+                Start: {startSeconds.toFixed(3)} s
+              </Text>
               {!peaksReady && (
                 <Text size="1" color="gray">
                   Waiting for peaks...
