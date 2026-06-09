@@ -351,6 +351,16 @@ const App: React.FC = () => {
       box.playbackRate.setValue(rate);
     });
     setCents(clamped);
+
+    // playbackRate write resets engine.position to 0 — re-establish the
+    // playhead at startSeconds so the amber bar and engine agree, and the
+    // next Play resumes from the click. Skip if currently playing so we
+    // don't interrupt live audio with a position jump.
+    if (!isPlaying) {
+      const bpm = project.timelineBox.bpm.getValue();
+      const ppqn = Math.round(PPQN.secondsToPulses(startSeconds, bpm));
+      project.engine.setPosition(ppqn);
+    }
   };
 
   // NoStretch ↔ TimeStretch swap. Single editing.modify per the SDK's
