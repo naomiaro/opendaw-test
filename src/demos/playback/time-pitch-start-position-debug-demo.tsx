@@ -2,7 +2,10 @@ import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
 import { PPQN, TimeBase } from "@opendaw/lib-dsp";
+import { PeaksPainter } from "@opendaw/lib-fusion";
+import type { Peaks } from "@opendaw/lib-fusion";
 import { InstrumentFactories } from "@opendaw/studio-adapters";
+import { Project } from "@opendaw/studio-core";
 import { TransientPlayMode } from "@opendaw/studio-enums";
 import {
   AudioFileBox,
@@ -24,10 +27,15 @@ const PROJECT_BPM = 124;
 const AUDIO_FILE = `/audio/DarkRide/06_Vox.${getAudioExtension()}`;
 const AUDIO_LABEL = "06_Vox";
 
+const WAVEFORM_HEIGHT = 140;
+const CHANNEL_PADDING = 4;
+const WAVEFORM_COLOR = "#4a9eff";
+
 const App: React.FC = () => {
   const [status, setStatus] = useState("Loading...");
   const [error, setError] = useState<string | null>(null);
   const [transientCount, setTransientCount] = useState<number | null>(null);
+  const [project, setProject] = useState<Project | null>(null);
 
   const audioBufferRef = useRef<AudioBuffer | null>(null);
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
@@ -37,6 +45,9 @@ const App: React.FC = () => {
   const fileUuidRef = useRef<ReturnType<typeof UUID.generate> | null>(null);
   const durationSecondsRef = useRef(0);
   const durationPpqnRef = useRef(0);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const peaksRef = useRef<Peaks | null>(null);
+  const [peaksReady, setPeaksReady] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -156,6 +167,7 @@ const App: React.FC = () => {
         await newProject.engine.queryLoadingComplete();
         if (cancelled) return;
 
+        setProject(newProject);
         setStatus("Ready");
       } catch (err) {
         if (!cancelled) {
@@ -169,6 +181,78 @@ const App: React.FC = () => {
       cancelled = true;
     };
   }, []);
+
+  // One-shot: wait for peaks. sampleLoader.peaks is Option<Peaks> and may
+  // lag queryLoadingComplete by ~120 ms (peaks worker). Same pattern as
+  // useWaveformRendering and drum-scheduling-demo.
+  useEffect(() => {
+    if (!project) return;
+    const fileUuid = fileUuidRef.current;
+    if (!fileUuid) return;
+
+    const sampleLoader = project.sampleManager.getOrCreate(fileUuid);
+
+    // Peaks may already be present — promote synchronously and bail.
+    const peaksOpt = sampleLoader.peaks;
+    if (peaksOpt.nonEmpty()) {
+      peaksRef.current = peaksOpt.unwrap();
+      setPeaksReady(true);
+      return;
+    }
+
+    const sub = sampleLoader.subscribe((state: any) => {
+      if (state.type === "loaded") {
+        const opt = sampleLoader.peaks;
+        if (opt.nonEmpty()) {
+          peaksRef.current = opt.unwrap();
+          setPeaksReady(true);
+        }
+        sub.terminate();
+      }
+    });
+    return () => sub.terminate();
+  }, [project]);
+
+  // Render waveform when peaks are ready, or when the canvas remounts.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const peaks = peaksRef.current;
+    const audioBuffer = audioBufferRef.current;
+    if (!canvas || !peaks || !audioBuffer) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const width = canvas.clientWidth;
+    canvas.width = width * dpr;
+    canvas.height = WAVEFORM_HEIGHT * dpr;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    ctx.scale(dpr, dpr);
+    ctx.fillStyle = "#111";
+    ctx.fillRect(0, 0, width, WAVEFORM_HEIGHT);
+
+    const channels = audioBuffer.numberOfChannels;
+    const numberOfFrames = audioBuffer.length;
+    const channelHeight =
+      (WAVEFORM_HEIGHT - CHANNEL_PADDING * (channels - 1)) / channels;
+
+    ctx.fillStyle = WAVEFORM_COLOR;
+    for (let ch = 0; ch < channels; ch++) {
+      const y0 = ch * (channelHeight + CHANNEL_PADDING);
+      const y1 = y0 + channelHeight;
+      // Float16 unpack quirk: ±1.001 not ±1.0 (see playback CLAUDE.md).
+      PeaksPainter.renderPixelStrips(ctx, peaks, ch, {
+        x0: 0,
+        x1: width,
+        y0,
+        y1,
+        u0: 0,
+        u1: numberOfFrames,
+        v0: -1.001,
+        v1: 1.001,
+      });
+    }
+  }, [peaksReady]);
 
   return (
     <Theme appearance="dark" accentColor="amber">
@@ -205,6 +289,26 @@ const App: React.FC = () => {
                 {error}
               </Text>
             )}
+          </Card>
+          <Card>
+            <Flex direction="column" gap="2">
+              <Text size="3" weight="bold">Waveform</Text>
+              <canvas
+                ref={canvasRef}
+                style={{
+                  width: "100%",
+                  height: WAVEFORM_HEIGHT,
+                  display: "block",
+                  background: "#111",
+                  borderRadius: 4,
+                }}
+              />
+              {!peaksReady && (
+                <Text size="1" color="gray">
+                  Waiting for peaks...
+                </Text>
+              )}
+            </Flex>
           </Card>
         </Flex>
         <MoisesLogo />
