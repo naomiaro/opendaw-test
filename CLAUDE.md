@@ -527,6 +527,14 @@ growth doesn't need re-renders when painters read live values from the box graph
 Also limit AnimationFrame scanning to active recording — idle scanning is redundant when
 direct calls handle mute toggles, finalization, and clear.
 
+### AnimationFrame Overlays: Direct DOM, Not setState
+For continuously-updating overlays (moving playheads, meters, progress bars), avoid
+per-frame `setState` — it re-fires `useEffect` cleanups, which is expensive if any
+effect repaints a canvas. Pattern: absolutely-positioned `<div>` overlay, write
+`style.left` / `style.top` directly inside `AnimationFrame.add(() => {...})`. Parent
+needs `position: relative`, overlay needs `pointer-events: none`. `usePlaybackPosition`'s
+setState-per-frame is only safe if no expensive effect reads its output.
+
 ## Build & Verification
 - `npm run build` runs Vite then VitePress — demos go to `dist/`, docs go to `dist/docs/` for `/docs/` on Cloudflare Pages
 - `npm run docs:dev` — local VitePress dev server for documentation
@@ -535,6 +543,11 @@ direct calls handle mute toggles, finalization, and clear.
   `npm run dev -- --port 5180 --host 127.0.0.1`, then browse `https://localhost:5180/<demo>.html`.
 - COOP/COEP headers in `public/_headers` exclude `/docs/*` — VitePress assets break under `require-corp`
 - Vite handles TypeScript transpilation (no standalone `tsc` available)
+- `noUnusedLocals` is strict, but `npm run build` doesn't surface TS6133 — Vite skips
+  `tsc`. Use the LSP to verify after adding `useState` declarations. `setFoo(...)` does
+  NOT count as a read of `foo` from `const [foo, setFoo] = useState(...)` — TS6133 still
+  fires. When splitting work across commits, introduce state in the commit that first
+  **reads** it.
 - After SDK upgrades, clear Vite dep cache: `rm -rf node_modules/.vite` (dev server pre-bundles old SDK)
 - After **any** `package.json` change (SDK upgrade, devDep add/remove, version bump), **regenerate
   the lockfile cleanly**: `rm -rf node_modules package-lock.json && npm install`, then verify with

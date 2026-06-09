@@ -1,0 +1,61 @@
+# Time/Pitch start-position pop in mid-file silent gaps
+
+**Verified against:** OpenDAW SDK 0.0.154 (`@opendaw/studio-sdk@0.0.154`, `@opendaw/studio-core@0.0.152`, `@opendaw/studio-adapters@0.0.116`).
+
+**Repro page:** [`time-pitch-start-position-debug-demo.html`](../time-pitch-start-position-debug-demo.html) (unlisted).
+
+**Status:** Empirically confirmed by ear on 2026-06-09 against the repro page above. The artifact reproduces on **mid-file silent gaps bracketed by audio**, not on the file's head silence — see the contrast pair below. Mechanism is not yet identified.
+
+**Refined 2026-06-09:** The pop **does not reproduce in NoStretch mode** (same file, same click position, region's `playMode` pointer left empty). The artifact is **TimeStretch-specific** — it requires `AudioTimeStretchBox` to be attached. This rules out the engine voice-management path (which is identical in both modes) and points the mechanism into the `AudioTimeStretchBox` processing path.
+
+## Symptom
+
+An audible pop fires at the moment playback begins when the engine playhead is positioned inside a silent gap *between* audio sections of a file that has `AudioTimeStretchBox` attached at `playbackRate = 1.0` (no actual stretching applied). The pop is absent when starting playback at the file's head silence — i.e. silence that has no preceding audio.
+
+The observed pattern:
+
+| Start position | Play mode | Pop? |
+| --- | --- | --- |
+| Head of file (silence with no preceding audio) | TimeStretch | no |
+| Mid-file silent gap (silence bracketed by audio) | TimeStretch | yes |
+| Mid-file silent gap (same position as above) | NoStretch | no |
+
+The asymmetry along two axes — head vs mid-file silence, and TimeStretch vs NoStretch — is the constraint the mechanism must explain. Silence alone isn't sufficient (head-silence in TimeStretch is clean); the voice path alone isn't sufficient (NoStretch on the same gap is clean). Both conditions must hold: the engine must be reading via `AudioTimeStretchBox` AND landing in a silent window bracketed by audio.
+
+## How to reproduce
+
+```bash
+npm run dev
+# open https://localhost:5173/time-pitch-start-position-debug-demo.html
+```
+
+**HTTPS is required.** Accept the self-signed cert warning on first load.
+
+1. Wait for Status to reach `Ready` (includes transient detection on the full 230 s file).
+2. **Negative control:** click near the start of the waveform (within the first ~1 s — the file's head silence). Press Play. No pop.
+3. **Positive case:** Press Stop. Click into a low-amplitude gap between vocal phrases in the middle of the song (look for a short flat section visually surrounded by tall peaks). Press Play. Pop fires at the start of playback.
+4. Repeat the positive case at multiple gaps to confirm.
+5. **Negative control 2:** Use the **NoStretch / TimeStretch** SegmentedControl above the Play/Stop row to switch to NoStretch. Click the same mid-file silent gap as step 3. Press Play. **No pop** — confirms the artifact is TimeStretch-specific.
+
+Configuration: BPM 124, single Tape track, one `AudioRegionBox` at `position = 0` with `duration = fullDurationPpqn`, `timeBase = Musical`. `AudioTimeStretchBox` attached via `playMode.refer`, with `playbackRate = 1.0`, `transientPlayMode = Pingpong`, and two default warp markers `(0, 0)` and `(durationPpqn, durationSeconds)`. Audio file: `public/audio/DarkRide/06_Vox.opus` (stereo, 48 kHz, 230.59 s).
+
+## Mechanism
+
+**Not yet identified.** The two-axis asymmetry — head-vs-mid file silence AND TimeStretch-vs-NoStretch — rules out generic voice-creation artifacts (NoStretch fires the same voice path and is clean). The mechanism lives inside `AudioTimeStretchBox`'s processing of a `setPosition` that lands inside a silent window bracketed by audio.
+
+Source-tracing should focus on:
+
+- **Transient-segment quantization at voice creation.** `AudioTimeStretchBox` reads via warp markers and segments audio at transient markers (`transientPlayMode = Pingpong` in this configuration). The diagnostic question: when the engine sets position to a PPQN inside a silent gap, does the voice's initial read pull samples from the transient segment *containing* that PPQN — which would put the read window at the transient marker bracketing the gap, i.e. inside the surrounding audio?
+- **Stretcher lookback / windowing.** Many time-stretching DSP paths require a lookback window to seed phase / segment state. If that window straddles the silent gap and pulls from the preceding audio, the first emitted samples would be non-zero where the visual playhead suggests silence.
+- **Pingpong-mode replay at segment start.** `Pingpong` plays a transient-bounded segment forward-then-backward. At voice creation inside a long segment, the entry behaviour may differ from PingPong-Once or Repeat modes. Testing the same configuration with `transientPlayMode = Once` would isolate this.
+
+Previously listed candidate-related notes (`fade-out-end-of-file-pop.md`, `voice-fadein-clip-fadein-product.md`, `splice-click-cross-file.md`) all describe artifacts in the engine's voice path, which is shared by NoStretch and TimeStretch. The NoStretch-clean observation rules them out as direct causes for this artifact.
+
+## Open questions
+
+Not yet tested at the time of writing this note:
+
+- **Cents off zero:** does the pop persist, change in level, or vanish when `playbackRate != 1.0`? Would isolate whether the artifact is specific to the stretcher's unit-rate branch or rate-independent.
+- **Transient play mode:** does the pop change with `transientPlayMode = Once` or `Repeat` instead of `Pingpong`? Would isolate whether the segment-replay behaviour at voice creation is the culprit.
+- **PitchStretch comparison:** does `AudioPitchStretchBox` (varispeed) reproduce the pop, or only `AudioTimeStretchBox` (transient-aware)? Would isolate whether the artifact is unique to the transient-segment processing or shared by both stretchers.
+- **Region-trim variant:** does the pop reproduce on a region whose `duration < fullDurationPpqn` such that the gap sits inside the trimmed region? Would isolate whether `loopOffset` / `loopDuration` interact with the symptom.
