@@ -529,7 +529,7 @@ direct calls handle mute toggles, finalization, and clear.
 
 ### AnimationFrame Overlays: Direct DOM, Not setState
 For continuously-updating overlays (moving playheads, meters, progress bars), avoid
-per-frame `setState` — it re-fires `useEffect` cleanups, which is catastrophic if any
+per-frame `setState` — it re-fires `useEffect` cleanups, which is expensive if any
 effect repaints a canvas. Pattern: absolutely-positioned `<div>` overlay, write
 `style.left` / `style.top` directly inside `AnimationFrame.add(() => {...})`. Parent
 needs `position: relative`, overlay needs `pointer-events: none`. `usePlaybackPosition`'s
