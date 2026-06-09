@@ -111,6 +111,14 @@ Fades: use `.fading.in` / `.fading.out`. For automation values at a position, us
 `observableOptPlayMode`. Names are counterintuitive — PitchStretch is the *simple*
 mode; TimeStretch is the sophisticated one. See `documentation/18-time-and-pitch.md`.
 
+### AudioTimeStretchBox Is Transient-Segmented Even at rate=1.0
+`AudioTimeStretchBox` processes audio in transient-bounded segments regardless of
+`playbackRate` — not a sample-accurate pass-through even at rate=1.0. `transientPlayMode`
+(`Once`, `Repeat`, `Pingpong`) governs segment-replay. `engine.setPosition` may land at
+the containing transient segment rather than sample-accurately at the requested PPQN.
+For sample-accurate file playback or as an A/B baseline ("is this artifact TimeStretch-specific?"),
+use NoStretch (`region.playMode.defer()`, `timeBase = Seconds`, duration in seconds).
+
 ### TimeStretch Without Transients Renders Silence
 `AudioTimeStretchBox` needs `TransientMarkerBox` entries on the *file* box (not
 the region): 0 markers = silence, 1 marker = degenerate single segment to file end,
@@ -132,6 +140,14 @@ SDK pattern (per `AudioContentModifier.toPitchStretch` / `toTimeStretch`):
 Explicitly calling `defer()` then `refer(new)` in the same transaction recreates
 the `createInstrument + output.refer` race; just don't — `refer()` alone does the
 swap.
+
+### Some editing.modify Writes Reset engine.position to 0
+Writing `AudioTimeStretchBox.playbackRate` or the combined `region.timeBase` +
+`duration` + `loopOffset` + `loopDuration` + `playMode` swap (NoStretch ↔ TimeStretch
+toggle) inside `editing.modify` resets `engine.position` to 0. Re-call
+`project.engine.setPosition(ppqn)` immediately after the modify to restore the
+playhead. For mid-playback user controls (e.g. live cents slider), gate on
+`!isPlaying` so the position jump doesn't interrupt audio.
 
 ### AudioFileBoxAdapter Audio Data Access
 `.audioData: Promise<AudioData>` (awaits sample loader), `.data: Option<AudioData>`
