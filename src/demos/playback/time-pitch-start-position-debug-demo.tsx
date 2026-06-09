@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
+import { AnimationFrame } from "@opendaw/lib-dom";
 import { PPQN, TimeBase } from "@opendaw/lib-dsp";
 import { PeaksPainter } from "@opendaw/lib-fusion";
 import type { Peaks } from "@opendaw/lib-fusion";
@@ -54,6 +55,7 @@ const App: React.FC = () => {
   const durationPpqnRef = useRef(0);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const peaksRef = useRef<Peaks | null>(null);
+  const playheadRef = useRef<HTMLDivElement | null>(null);
   const [peaksReady, setPeaksReady] = useState(false);
   const [startSeconds, setStartSeconds] = useState(0);
 
@@ -270,11 +272,46 @@ const App: React.FC = () => {
       });
     }
 
-    // Playhead marker
+    // Start-position marker (static — moves only on click)
     const x = (startSeconds / audioBuffer.duration) * width;
     ctx.fillStyle = "#ffb020"; // amber
     ctx.fillRect(x - 1, 0, 2, WAVEFORM_HEIGHT);
   }, [peaksReady, startSeconds]);
+
+  // Playback bar overlay. Visible only while playing, hidden at rest (the
+  // static amber start-position bar drawn on the canvas marks the rest state).
+  // Writing directly to div.style bypasses React re-renders — a 60Hz setState
+  // would re-trigger the expensive canvas-repaint render effect.
+  useEffect(() => {
+    if (!project) return;
+    const tempoMap = project.tempoMap;
+    const sub = AnimationFrame.add(() => {
+      const playheadEl = playheadRef.current;
+      const canvas = canvasRef.current;
+      const audioBuffer = audioBufferRef.current;
+      if (!playheadEl || !canvas || !audioBuffer) return;
+
+      if (!project.engine.isPlaying.getValue()) {
+        if (playheadEl.style.display !== "none") {
+          playheadEl.style.display = "none";
+        }
+        return;
+      }
+
+      // engine.position is absolute PPQN on the timeline; the region sits at
+      // position 0, so timeline-seconds == region-content-seconds (at rate=1.0
+      // with linear warp markers in TimeStretch, or directly in NoStretch).
+      const ppqn = project.engine.position.getValue();
+      const seconds = tempoMap.ppqnToSeconds(ppqn);
+      const fraction = Math.max(0, Math.min(1, seconds / audioBuffer.duration));
+      const x = fraction * canvas.clientWidth;
+      if (playheadEl.style.display === "none") {
+        playheadEl.style.display = "block";
+      }
+      playheadEl.style.left = `${x - 1}px`;
+    });
+    return () => sub.terminate();
+  }, [project]);
 
   const handleWaveformClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!project || !audioBufferRef.current) return;
@@ -434,21 +471,43 @@ const App: React.FC = () => {
           <Card>
             <Flex direction="column" gap="2">
               <Text size="3" weight="bold">Waveform</Text>
-              <canvas
-                ref={canvasRef}
-                onClick={handleWaveformClick}
-                style={{
-                  width: "100%",
-                  height: WAVEFORM_HEIGHT,
-                  display: "block",
-                  background: "#111",
-                  borderRadius: 4,
-                  cursor: project ? "crosshair" : "default",
-                }}
-              />
-              <Text size="2" color="gray">
-                Start: {startSeconds.toFixed(3)} s
-              </Text>
+              <div style={{ position: "relative", width: "100%", height: WAVEFORM_HEIGHT }}>
+                <canvas
+                  ref={canvasRef}
+                  onClick={handleWaveformClick}
+                  style={{
+                    width: "100%",
+                    height: WAVEFORM_HEIGHT,
+                    display: "block",
+                    background: "#111",
+                    borderRadius: 4,
+                    cursor: project ? "crosshair" : "default",
+                  }}
+                />
+                <div
+                  ref={playheadRef}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    height: WAVEFORM_HEIGHT,
+                    width: 2,
+                    background: "#4dd0e1",
+                    pointerEvents: "none",
+                    display: "none",
+                  }}
+                />
+              </div>
+              <Flex gap="3" align="center">
+                <Text size="2" color="gray">
+                  Start: {startSeconds.toFixed(3)} s
+                </Text>
+                <Text size="1" color="gray">
+                  <span style={{ color: "#ffb020" }}>■</span> start position
+                  {" "}·{" "}
+                  <span style={{ color: "#4dd0e1" }}>■</span> playback (visible while playing)
+                </Text>
+              </Flex>
               {!peaksReady && (
                 <Text size="1" color="gray">
                   Waiting for peaks...
