@@ -21,7 +21,8 @@ import { initializeOpenDAW } from "@/lib/projectSetup";
 import { loadAudioFile, getAudioExtension } from "@/lib/audioUtils";
 import { ensureTransientMarkers } from "@/lib/transientDetection";
 import "@radix-ui/themes/styles.css";
-import { Theme, Container, Heading, Flex, Card, Text, Badge } from "@radix-ui/themes";
+import { Theme, Container, Heading, Flex, Card, Text, Badge, Button, Slider, Code, Separator } from "@radix-ui/themes";
+import { PlayIcon, StopIcon } from "@radix-ui/react-icons";
 
 const PROJECT_BPM = 124;
 const AUDIO_FILE = `/audio/DarkRide/06_Vox.${getAudioExtension()}`;
@@ -36,6 +37,9 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [transientCount, setTransientCount] = useState<number | null>(null);
   const [project, setProject] = useState<Project | null>(null);
+  const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [cents, setCents] = useState(0);
 
   const audioBufferRef = useRef<AudioBuffer | null>(null);
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
@@ -169,6 +173,7 @@ const App: React.FC = () => {
         if (cancelled) return;
 
         setProject(newProject);
+        setAudioContext(newAudioContext);
         setStatus("Ready");
       } catch (err) {
         if (!cancelled) {
@@ -210,6 +215,14 @@ const App: React.FC = () => {
         }
         sub.terminate();
       }
+    });
+    return () => sub.terminate();
+  }, [project]);
+
+  useEffect(() => {
+    if (!project) return;
+    const sub = project.engine.isPlaying.catchupAndSubscribe((obs) => {
+      setIsPlaying(obs.getValue());
     });
     return () => sub.terminate();
   }, [project]);
@@ -274,6 +287,32 @@ const App: React.FC = () => {
     project.engine.setPosition(ppqn);
   };
 
+  const handlePlay = async () => {
+    if (!project || !audioContext) return;
+    if (audioContext.state !== "running") {
+      await audioContext.resume();
+    }
+    // Position already set by handleWaveformClick; no need to set again.
+    project.engine.play();
+  };
+
+  const handleStop = () => {
+    if (!project) return;
+    project.engine.stop(true);
+  };
+
+  const handleCentsChange = (value: number) => {
+    if (!project) return;
+    const box = stretchBoxRef.current;
+    if (!box) return;
+    const clamped = Math.max(-1200, Math.min(1200, value));
+    const rate = Math.max(0.5, Math.min(2.0, Math.pow(2, clamped / 1200)));
+    project.editing.modify(() => {
+      box.playbackRate.setValue(rate);
+    });
+    setCents(clamped);
+  };
+
   return (
     <Theme appearance="dark" accentColor="amber">
       <Container size="3" style={{ padding: "2rem", minHeight: "100vh" }}>
@@ -333,6 +372,51 @@ const App: React.FC = () => {
                   Waiting for peaks...
                 </Text>
               )}
+            </Flex>
+          </Card>
+          <Card>
+            <Flex direction="column" gap="3">
+              <Text size="3" weight="bold">Controls</Text>
+              <Separator size="4" />
+              <Flex gap="3" align="center">
+                <Button
+                  onClick={handlePlay}
+                  disabled={!project || status !== "Ready" || isPlaying}
+                  color="green"
+                  size="3"
+                >
+                  <PlayIcon /> Play
+                </Button>
+                <Button
+                  onClick={handleStop}
+                  disabled={!isPlaying}
+                  variant="soft"
+                  size="3"
+                >
+                  <StopIcon /> Stop
+                </Button>
+                {isPlaying && (
+                  <Badge color="amber">Playing from {startSeconds.toFixed(3)} s</Badge>
+                )}
+              </Flex>
+
+              <Flex direction="column" gap="2">
+                <Flex justify="between" align="center">
+                  <Text size="2">Cents (pitch offset)</Text>
+                  <Code size="2">
+                    {cents.toFixed(0)} c (rate{" "}
+                    {Math.pow(2, cents / 1200).toFixed(4)})
+                  </Code>
+                </Flex>
+                <Slider
+                  value={[cents]}
+                  onValueChange={([v]) => handleCentsChange(v)}
+                  min={-1200}
+                  max={1200}
+                  step={1}
+                  disabled={!project || status !== "Ready"}
+                />
+              </Flex>
             </Flex>
           </Card>
         </Flex>
