@@ -21,8 +21,8 @@ import { initializeOpenDAW } from "@/lib/projectSetup";
 import { loadAudioFile, getAudioExtension } from "@/lib/audioUtils";
 import { ensureTransientMarkers } from "@/lib/transientDetection";
 import "@radix-ui/themes/styles.css";
-import { Theme, Container, Heading, Flex, Card, Text, Badge, Button, Slider, Code, Separator } from "@radix-ui/themes";
-import { PlayIcon, StopIcon } from "@radix-ui/react-icons";
+import { Theme, Container, Heading, Flex, Card, Text, Badge, Button, Slider, Code, Separator, Callout } from "@radix-ui/themes";
+import { PlayIcon, StopIcon, InfoCircledIcon } from "@radix-ui/react-icons";
 
 const PROJECT_BPM = 124;
 const AUDIO_FILE = `/audio/DarkRide/06_Vox.${getAudioExtension()}`;
@@ -322,6 +322,19 @@ const App: React.FC = () => {
           <Heading size="7" align="center">
             Time/Pitch Start-Position Pop
           </Heading>
+          <Callout.Root color="blue">
+            <Callout.Icon>
+              <InfoCircledIcon />
+            </Callout.Icon>
+            <Callout.Text>
+              Hunting for a reported pop when starting playback inside a silent
+              section of <Code>06_Vox.opus</Code> with{" "}
+              <Code>AudioTimeStretchBox</Code> attached at{" "}
+              <Code>playbackRate = 1.0</Code>. Click anywhere on the waveform to
+              set the start position, then press Play. Look for a click/pop at
+              the moment playback begins.
+            </Callout.Text>
+          </Callout.Root>
           <Card>
             <Flex align="center" gap="2">
               <Text size="2" weight="bold">Status:</Text>
@@ -417,6 +430,27 @@ const App: React.FC = () => {
                   disabled={!project || status !== "Ready"}
                 />
               </Flex>
+            </Flex>
+          </Card>
+          <Card>
+            <Flex direction="column" gap="2">
+              <Text size="3" weight="bold">Configuration</Text>
+              <Separator size="4" />
+              <Code size="2" style={{ whiteSpace: "pre-wrap", display: "block", padding: 12 }}>
+                {`BPM:             ${PROJECT_BPM}
+File:            ${AUDIO_FILE}
+Duration:        ${
+                  audioBufferRef.current
+                    ? `${audioBufferRef.current.duration.toFixed(6)} s (${
+                        audioBufferRef.current.numberOfChannels
+                      } ch, ${audioBufferRef.current.sampleRate} Hz)`
+                    : "..."
+                }
+Play mode:       AudioTimeStretchBox
+Transients:      ${transientCount ?? "..."}
+Playback rate:   ${Math.pow(2, cents / 1200).toFixed(6)} (cents=${cents.toFixed(0)})
+Start position:  ${startSeconds.toFixed(3)} s`}
+              </Code>
             </Flex>
           </Card>
         </Flex>
