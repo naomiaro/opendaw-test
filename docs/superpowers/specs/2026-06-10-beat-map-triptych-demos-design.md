@@ -25,7 +25,7 @@ list through two different stretch boxes.
 - **Audio:** `public/audio/Otherside.mp3` (already in repo, 257.7 s).
 - **Beat map:** copy `warp-markers/08-grid-follows-file/public/samples/otherside-repaired.beats`
   → `public/audio/Otherside.beats`. Real beat_this tracker output, repaired per
-  warp-markers ch 06. 510 beats spanning 1.26 s – 249.26 s; average tempo ≈ 123 BPM.
+  warp-markers ch 06. 511 beats spanning 1.26 s – 249.26 s; average tempo ≈ 123 BPM.
   Verified to align with this repo's `Otherside.mp3`.
 - **Format:** text lines `<time-seconds>\t<beatInBar>`, `#` comments. First row is a
   pickup (`beatInBar 4`); first downbeat is row 2.
@@ -123,7 +123,7 @@ conform strategy.
 - **Explanation:** who bends — grid, not file; zero DSP cost; Ableton *Set tempo from
   clip* / Logic ADAPT equivalence; why the region must stay Seconds-timeBase (a Musical
   region would stretch under the new tempo map, defeating the point).
-- **Risk to verify first (spike):** stepped tempo events at every beat (~510 events) is
+- **Risk to verify first (spike):** stepped tempo events at every beat (~511 events) is
   denser than the existing tempo-automation demo. Verify engine behaviour and
   `VaryingTempoMap` performance early; if per-beat density misbehaves, fall back to
   per-downbeat events (one per bar, 4× sparser) and note the simplification on the page.

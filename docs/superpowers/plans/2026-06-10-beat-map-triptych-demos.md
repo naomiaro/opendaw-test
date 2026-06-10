@@ -27,7 +27,7 @@
 - Some `editing.modify` writes reset `engine.position` to 0 (playbackRate, timeBase+duration+playMode combos). Re-call `project.engine.setPosition(...)` after the modify when it matters; gate live controls on `!isPlaying`.
 - `initializeOpenDAW({ localAudioBuffers, bpm, onStatusUpdate })` from `@/lib/projectSetup`; `loadAudioFile(audioContext, path)` from `@/lib/audioUtils`; hooks `usePlaybackPosition(project)` → `{ isPlaying, pausedPositionRef }` and `useTransportControls({ project, audioContext, pausedPositionRef })` → `{ handlePlay, handlePause, handleStop }`.
 - `project.tempoMap` (VaryingTempoMap): `ppqnToSeconds(ppqn)`, `secondsToPPQN(seconds)`, `getTempoAt(ppqn)`.
-- Otherside.mp3 = 257.712 s. `otherside-repaired.beats` = 510 markers, 1.26 s → 249.26 s, first row `beatInBar 4` (1 pickup beat in 4/4), average ≈ 123 BPM.
+- Otherside.mp3 = 257.712 s. `otherside-repaired.beats` = 511 markers (no comment rows), 1.26 s → 249.26 s, first row `beatInBar 4` (1 pickup beat in 4/4), average ≈ 123 BPM.
 
 ## File structure
 
@@ -112,7 +112,7 @@ cp /Users/naomiaro/Code/warp-markers/08-grid-follows-file/public/samples/othersi
 grep -cv '^\s*#\|^\s*$' public/audio/Otherside.beats
 ```
 
-Expected: `510` (data rows).
+Expected: `511` (data rows; the file has no comment or blank lines).
 
 - [ ] **Step 3: Commit**
 
@@ -185,7 +185,7 @@ describe("parseBeatsFile", () => {
       "utf-8"
     );
     const markers = parseBeatsFile(text);
-    expect(markers).toHaveLength(510);
+    expect(markers).toHaveLength(511);
     expect(markers[0]).toEqual({ second: 1.26, beatInBar: 4 });
     expect(markers[markers.length - 1].second).toBeCloseTo(249.26, 5);
   });
@@ -1219,7 +1219,7 @@ git commit -m "feat: varispeed warp demo — beat map conformed to grid via Pitc
 - Create: `warp-grid-follows-file-demo.html`
 - Modify: `vite.config.ts`
 
-**Spike first (Step 1) — this is the plan's riskiest unknown:** ~509 stepped
+**Spike first (Step 1) — this is the plan's riskiest unknown:** ~510 stepped
 tempo events through `VaryingTempoMap`.
 
 - [ ] **Step 1: Write the demo page (spike + final are the same artifact)**
@@ -1525,7 +1525,7 @@ URLs, og-image (`og-image-warp-grid-follows-file.png`), script src
 warpGridFollowsFile: resolve(__dirname, "warp-grid-follows-file-demo.html"),
 ```
 
-- [ ] **Step 3: RUN THE SPIKE — verify 509-event tempo density**
+- [ ] **Step 3: RUN THE SPIKE — verify 510-event tempo density**
 
 With the dev server up, open `https://localhost:5180/warp-grid-follows-file-demo.html`
 via Playwright MCP:
@@ -2060,9 +2060,9 @@ be corrected against reality:
 - Warp anchors are engine-agnostic: `buildWarpAnchors()` output feeds AudioPitchStretchBox
   and AudioTimeStretchBox identically. Only the box type changes between varispeed and
   time-stretch.
-- One `WarpMarkerBox` per tracked beat (~510 for a full song) is fine — creation in a
+- One `WarpMarkerBox` per tracked beat (~511 for a full song) is fine — creation in a
   single `editing.modify()` transaction. [CONFIRM during Task 6]
-- Tempo track accepts ~509 stepped events in one transaction; `VaryingTempoMap` follows
+- Tempo track accepts ~510 stepped events in one transaction; `VaryingTempoMap` follows
   them at audio rate. [CONFIRM during Task 7 spike; replace with the per-downbeat
   fallback note if it failed]
 - Grid-follows-file regions must stay `TimeBase.Seconds` — a Musical region stretches
