@@ -8,8 +8,10 @@ import {
   gridAnchorTicks,
   buildWarpAnchors,
   beatsToTempoEvents,
+  barsToTempoEvents,
   clipStartSeconds,
   warpTickToSeconds,
+  type TempoEvent,
 } from "./beatMapConversions";
 
 const Q = 960; // PPQN.Quarter
@@ -112,6 +114,89 @@ describe("beatsToTempoEvents", () => {
     expect(events[1].tick).toBe(3840); // tempo changes at marker 1 (the downbeat)
     expect(events[1].bpm).toBeCloseTo(60 / 0.52, 6); // ≈ 115.38
     expect(events).toHaveLength(2);
+  });
+});
+
+describe("barsToTempoEvents", () => {
+  // Two full bars after a 1-beat pickup. Pickup at 1.26 s; downbeats at 1.8 s
+  // and 3.8 s (bar of 2.0 s → 120 BPM); steady 0.5 s beats after the first bar.
+  const PICKUP_2BARS: BeatMarker[] = [
+    { second: 1.26, beatInBar: 4 },
+    { second: 1.8, beatInBar: 1 },
+    { second: 2.3, beatInBar: 2 },
+    { second: 2.8, beatInBar: 3 },
+    { second: 3.3, beatInBar: 4 },
+    { second: 3.8, beatInBar: 1 },
+    { second: 4.3, beatInBar: 2 },
+    { second: 4.8, beatInBar: 3 },
+    { second: 5.3, beatInBar: 4 },
+  ];
+
+  // No pickup: file starts on a downbeat at 0.5 s; one full 2.0 s bar → 120 BPM.
+  const NO_PICKUP: BeatMarker[] = [
+    { second: 0.5, beatInBar: 1 },
+    { second: 1.0, beatInBar: 2 },
+    { second: 1.5, beatInBar: 3 },
+    { second: 2.0, beatInBar: 4 },
+    { second: 2.5, beatInBar: 1 },
+  ];
+
+  /** Piecewise integration of stepped tempo events: seconds elapsed at `tick`. */
+  function integrate(events: ReadonlyArray<TempoEvent>, tick: number): number {
+    let seconds = 0;
+    for (let i = 0; i < events.length; i++) {
+      const from = events[i].tick;
+      const to = i + 1 < events.length ? Math.min(events[i + 1].tick, tick) : tick;
+      if (to <= from) break;
+      seconds += ((to - from) / 960) * (60 / events[i].bpm);
+      if (to === tick) break;
+    }
+    return seconds;
+  }
+
+  it("emits audio-start anchor + pickup-span event + per-downbeat bar events", () => {
+    const events = barsToTempoEvents(PICKUP_2BARS, Q);
+    // firstBeatTick = 2880, firstDownbeatTick = 3840.
+    // Event 0: tick 0 anchor — 3 beats over s0 = 1.26 s → 142.857 BPM.
+    expect(events[0].tick).toBe(0);
+    expect(events[0].bpm).toBeCloseTo((2880 / Q) * 60 / 1.26, 3); // ≈ 142.857
+    // Event 1: pickup span — 1 beat over 1.8 − 1.26 = 0.54 s → 111.111 BPM.
+    expect(events[1].tick).toBe(2880);
+    expect(events[1].bpm).toBeCloseTo(60 / 0.54, 3); // ≈ 111.111
+    // Event 2: first bar — 4 beats over 3.8 − 1.8 = 2.0 s → 120 BPM.
+    expect(events[2].tick).toBe(3840);
+    expect(events[2].bpm).toBeCloseTo(120, 6);
+    // Final event: last downbeat (markerIndex 5) repeating the last bar's BPM.
+    const last = events[events.length - 1];
+    expect(last.tick).toBe(2880 + 5 * Q); // 7680
+    expect(last.bpm).toBeCloseTo(120, 6);
+  });
+
+  it("satisfies the alignment invariant by piecewise integration", () => {
+    const events = barsToTempoEvents(PICKUP_2BARS, Q);
+    // ppqnToSeconds(firstBeatTick) = s0
+    expect(integrate(events, 2880)).toBeCloseTo(1.26, 9);
+    // ppqnToSeconds(firstDownbeatTick) = first downbeat second
+    expect(integrate(events, 3840)).toBeCloseTo(1.8, 9);
+    // ppqnToSeconds(second downbeat tick) = 1.8 + 2.0 = 3.8
+    expect(integrate(events, 7680)).toBeCloseTo(3.8, 9);
+  });
+
+  it("emits no lead-in events when the file starts on a downbeat", () => {
+    const events = barsToTempoEvents(NO_PICKUP, Q);
+    expect(events[0].tick).toBe(0);
+    expect(events[0].bpm).toBeCloseTo(120, 6); // first bar: 4 beats over 2.0 s
+    // Only the bar event at tick 0 and the repeat-last-bar event at tick 3840.
+    expect(events).toHaveLength(2);
+    expect(events[1].tick).toBe(4 * Q);
+    expect(events[1].bpm).toBeCloseTo(120, 6);
+  });
+
+  it("falls back to a single averageBpm event with fewer than 2 downbeats", () => {
+    const events = barsToTempoEvents(PICKUP, Q);
+    expect(events).toHaveLength(1);
+    expect(events[0].tick).toBe(0);
+    expect(events[0].bpm).toBeCloseTo(averageBpm(PICKUP), 9);
   });
 });
 

@@ -46,7 +46,8 @@ export default defineConfig({
                 sharedSourceDoubleProcessDebug: resolve(__dirname, "shared-source-double-process-debug-demo.html"),
                 voiceFadeinClipFadeinProductDebug: resolve(__dirname, "voice-fadein-clip-fadein-product-debug-demo.html"),
                 timePitchStartPositionDebug: resolve(__dirname, "time-pitch-start-position-debug-demo.html"),
-                warpVarispeed: resolve(__dirname, "warp-varispeed-demo.html")
+                warpVarispeed: resolve(__dirname, "warp-varispeed-demo.html"),
+                warpGridFollowsFile: resolve(__dirname, "warp-grid-follows-file-demo.html")
             },
             output: {
                 manualChunks: (id) => {

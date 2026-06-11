@@ -105,7 +105,7 @@ export function buildWarpAnchors(
 }
 
 /**
- * One stepped tempo event per segment for the project tempo track.
+ * One stepped tempo event per beat-segment for the project tempo track.
  * The tick-0 event always carries bpms[0] — at tick 0, not firstBeatTick — so
  * any lead-in bars (and the pickup) tick at the incoming tempo. Segments n >= 1
  * fire at marker n's grid tick.
@@ -122,6 +122,97 @@ export function beatsToTempoEvents(
     events.push({ tick: firstBeatTick + n * quarterPpqn, bpm: bpms[n] });
   }
   return events;
+}
+
+/**
+ * One stepped tempo event per bar for the project tempo track (downbeat granularity).
+ * Uses bar-average BPM: 60 * beatsPerBar / (nextDownbeat.second − thisDownbeat.second).
+ * Downbeat markers are those with beatInBar === 1.
+ *
+ * Produces ~4× fewer events than beatsToTempoEvents at the cost of intra-bar
+ * tempo resolution. Suitable when per-beat density causes jank in editing.modify().
+ *
+ * Lead-in anchoring is TWO events (when the file has a pickup):
+ * 1. tick 0 — audio-start anchor: BPM = (firstBeatTick / quarterPpqn) × 60 / s0,
+ *    so the span tick 0 → firstBeatTick integrates to exactly s0 seconds
+ *    (s0 = markers[0].second = clipStartSeconds, where the region places the
+ *    first tracked beat).
+ * 2. tick firstBeatTick — pickup-span event: BPM = p × 60 / (downbeat₀.second − s0),
+ *    covering the p pickup beats so the first downbeat lands exactly.
+ *
+ * Invariant (piecewise integration of the stepped events):
+ *   ppqnToSeconds(firstBeatTick) = s0
+ *   ppqnToSeconds(firstBeatTick + downbeat[b].markerIndex × quarterPpqn)
+ *     = downbeat[b].second   for every downbeat b
+ * With no pickup (p = 0, firstBeatTick = 0), neither lead-in event is emitted
+ * and the first bar event sits at tick 0 — audio before s0 is trimmed (same
+ * degenerate case as buildWarpAnchors).
+ */
+export function barsToTempoEvents(
+  markers: ReadonlyArray<BeatMarker>,
+  quarterPpqn: number,
+  beatsPerBar: number = 4
+): TempoEvent[] {
+  const { firstBeatTick } = gridAnchorTicks(markers, quarterPpqn, beatsPerBar);
+  const p = pickupBeats(markers, beatsPerBar);
+  const s0 = clipStartSeconds(markers);
+
+  // Find all downbeat markers and their index in the full marker list.
+  const downbeats: Array<{ markerIndex: number; second: number }> = [];
+  for (let i = 0; i < markers.length; i++) {
+    if (markers[i].beatInBar === 1) {
+      downbeats.push({ markerIndex: i, second: markers[i].second });
+    }
+  }
+
+  if (downbeats.length < 2) {
+    // Degenerate: fall back to a single steady-tempo event.
+    const bpm = averageBpm(markers);
+    return [{ tick: 0, bpm }];
+  }
+
+  const events: TempoEvent[] = [];
+
+  // 1. Audio-start anchor: tick 0 → firstBeatTick spans exactly s0 seconds,
+  //    making ppqnToSeconds(firstBeatTick) === s0.
+  if (firstBeatTick > 0 && s0 > 0) { // s0 > 0 guards the division; a beat at file position 0 has no lead-in to anchor
+    events.push({ tick: 0, bpm: ((firstBeatTick / quarterPpqn) * 60) / s0 });
+  }
+
+  // 2. Pickup-span event: the p pickup beats between the first tracked beat
+  //    and the first downbeat, so the first downbeat lands exactly.
+  if (p > 0) {
+    events.push({
+      tick: firstBeatTick,
+      bpm: (p * 60) / (downbeats[0].second - s0),
+    });
+  }
+
+  // From the first downbeat onward: one event per downbeat with bar-average BPM.
+  // downbeats[0]'s event tick equals firstDownbeatTick.
+  for (let b = 0; b < downbeats.length - 1; b++) {
+    const barBpm =
+      (beatsPerBar * 60) / (downbeats[b + 1].second - downbeats[b].second);
+    const tick = firstBeatTick + downbeats[b].markerIndex * quarterPpqn;
+    events.push({ tick, bpm: barBpm });
+  }
+
+  // Last downbeat: no "next" downbeat, repeat the previous bar's BPM.
+  const lastIdx = downbeats.length - 1;
+  const lastTick = firstBeatTick + downbeats[lastIdx].markerIndex * quarterPpqn;
+  const lastBpm =
+    (beatsPerBar * 60) /
+    (downbeats[lastIdx].second - downbeats[lastIdx - 1].second);
+  events.push({ tick: lastTick, bpm: lastBpm });
+
+  // Deduplicate consecutive identical ticks (guards against duplicate markers).
+  const deduped: TempoEvent[] = [events[0]];
+  for (let i = 1; i < events.length; i++) {
+    if (events[i].tick !== deduped[deduped.length - 1].tick) {
+      deduped.push(events[i]);
+    }
+  }
+  return deduped;
 }
 
 /**
