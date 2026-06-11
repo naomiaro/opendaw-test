@@ -295,54 +295,57 @@ function WarpTimestretchDemo() {
               </Flex>
               <Separator size="4" />
               {/* Dimmed-div pattern: SegmentedControl.Root lacks a `disabled` prop in
-                  this Radix version. The wrapper div blocks pointer events while
-                  switching is in progress or audio is playing. */}
+                  this Radix version. The two wrappers MUST be siblings — a parent's
+                  pointer-events:none blocks descendants regardless of their own value,
+                  and the transient-mode control must stay interactive during playback
+                  (transientPlayMode writes don't reset engine.position). */}
               <div
                 style={{
                   opacity: switching || isPlaying ? 0.5 : 1,
                   pointerEvents: switching || isPlaying || !setup ? "none" : "auto",
                 }}
               >
-                <Flex direction="column" gap="3">
+                <SegmentedControl.Root
+                  value={mode}
+                  onValueChange={(v) => {
+                    // pointer-events:none on the wrapper is mouse-only — guard
+                    // keyboard activation (Tab + Enter) against the same states.
+                    if (switchingRef.current || isPlaying) return;
+                    void switchMode(v as WarpMode);
+                  }}
+                  size="3"
+                >
+                  <SegmentedControl.Item value="raw">Raw</SegmentedControl.Item>
+                  <SegmentedControl.Item value="varispeed">Varispeed</SegmentedControl.Item>
+                  <SegmentedControl.Item value="timestretch">Time-Stretch</SegmentedControl.Item>
+                </SegmentedControl.Root>
+              </div>
+              <div
+                style={{
+                  opacity: switching || !setup || mode !== "timestretch" ? 0.4 : 1,
+                  pointerEvents:
+                    switching || !setup || mode !== "timestretch" ? "none" : "auto",
+                }}
+              >
+                <Flex align="center" gap="3">
+                  <Text size="2">Transient play mode</Text>
                   <SegmentedControl.Root
-                    value={mode}
-                    onValueChange={(v) => {
-                      if (switchingRef.current) return;
-                      void switchMode(v as WarpMode);
-                    }}
-                    size="3"
+                    value={String(transientMode)}
+                    onValueChange={onTransientModeChange}
                   >
-                    <SegmentedControl.Item value="raw">Raw</SegmentedControl.Item>
-                    <SegmentedControl.Item value="varispeed">Varispeed</SegmentedControl.Item>
-                    <SegmentedControl.Item value="timestretch">Time-Stretch</SegmentedControl.Item>
+                    <SegmentedControl.Item value={String(TransientPlayMode.Once)}>
+                      Once
+                    </SegmentedControl.Item>
+                    <SegmentedControl.Item value={String(TransientPlayMode.Repeat)}>
+                      Repeat
+                    </SegmentedControl.Item>
+                    <SegmentedControl.Item value={String(TransientPlayMode.Pingpong)}>
+                      Pingpong
+                    </SegmentedControl.Item>
                   </SegmentedControl.Root>
-                  <Flex align="center" gap="3">
-                    <Text size="2">Transient play mode</Text>
-                    <div
-                      style={{
-                        opacity: mode !== "timestretch" ? 0.4 : 1,
-                        pointerEvents: mode !== "timestretch" ? "none" : "auto",
-                      }}
-                    >
-                      <SegmentedControl.Root
-                        value={String(transientMode)}
-                        onValueChange={onTransientModeChange}
-                      >
-                        <SegmentedControl.Item value={String(TransientPlayMode.Once)}>
-                          Once
-                        </SegmentedControl.Item>
-                        <SegmentedControl.Item value={String(TransientPlayMode.Repeat)}>
-                          Repeat
-                        </SegmentedControl.Item>
-                        <SegmentedControl.Item value={String(TransientPlayMode.Pingpong)}>
-                          Pingpong
-                        </SegmentedControl.Item>
-                      </SegmentedControl.Root>
-                    </div>
-                    {transientCount !== null && (
-                      <Badge variant="soft">{transientCount} transients</Badge>
-                    )}
-                  </Flex>
+                  {transientCount !== null && (
+                    <Badge variant="soft">{transientCount} transients</Badge>
+                  )}
                 </Flex>
               </div>
               <Text size="2" color="gray">
