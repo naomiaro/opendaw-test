@@ -19,7 +19,7 @@ npm run dev
    The page loads `Otherside.mp3` (top) and `ScarTissue.mp3` (bottom), places a comp boundary at the PPQN equivalent of 2.32 s, assigns Zone 1 → Otherside and Zone 2 → ScarTissue, and switches to splice mode with two consecutive same-track regions: A `[0.00s, 2.32s)` reading Otherside, B `[2.32s, 15.48s)` reading ScarTissue.
 2. Press **Play**. The click is audible at the 2.32 s boundary.
 
-To reproduce manually without the static-setup button: open [`comp-lanes-demo.html`](../comp-lanes-demo.html), drop two distinct audio files, switch to splice mode, uncheck Region overlap, add a boundary, play.
+To reproduce manually without the static-setup button: open [`comp-lanes-demo.html`](../comp-lanes-demo.html), drop two distinct audio files, switch to splice mode (splices are always exact-boundary), add a comp boundary, play.
 
 ## Open question for OpenDAW
 

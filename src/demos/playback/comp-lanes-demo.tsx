@@ -21,6 +21,7 @@ import { loadTracksFromFiles } from "@/lib/trackLoading";
 import { getAudioExtension } from "@/lib/audioUtils";
 import { usePlaybackPosition } from "@/hooks/usePlaybackPosition";
 import { useTransportControls } from "@/hooks/useTransportControls";
+import { CONSOLE_STYLES } from "@/lib/design/consoleTheme";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
@@ -29,10 +30,10 @@ import {
   Text,
   Flex,
   Card,
-  Callout,
   Badge,
   Button,
-  SegmentedControl
+  SegmentedControl,
+  Separator,
 } from "@radix-ui/themes";
 
 
@@ -45,7 +46,6 @@ const App: React.FC = () => {
   const [crossfadeMs, setCrossfadeMs] = useState(20);
   const [crossfadeCurve, setCrossfadeCurve] = useState<CrossfadeCurve>("curve");
   const [compMode, setCompMode] = useState<CompMode>("automation");
-  const [spliceOverlap, setSpliceOverlap] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
@@ -106,13 +106,12 @@ const App: React.FC = () => {
       rebuildSpliceRegions(
         project, spliceTrackRef.current, takes,
         compState.boundaries, compState.assignments,
-        playbackStartRef.current, fullAudioPpqnRef.current,
-        spliceOverlap
+        playbackStartRef.current, fullAudioPpqnRef.current
       );
     } finally {
       isRebuildingRef.current = false;
     }
-  }, [project, takes, compMode, compState, spliceOverlap]);
+  }, [project, takes, compMode, compState]);
 
   // ─── Load takes from audio file(s) ───
   const loadTakes = useCallback(
@@ -235,6 +234,8 @@ const App: React.FC = () => {
         fullAudioPpqnRef.current = firstRegion.loopDuration;
       }
 
+      // Reset canvas ref map so stale entries from a previous load don't linger
+      canvasRefs.current.clear();
       setTakes(takeData);
       setStatus("Ready — Shift+Click to add comp boundaries!");
     },
@@ -296,7 +297,7 @@ const App: React.FC = () => {
         if (pausedPositionRef) pausedPositionRef.current = ppqnPos;
       }
     },
-    [project, takes, isPlaying, compState, crossfadeMs, setCurrentPosition, pausedPositionRef]
+    [project, takes, isPlaying, compState, crossfadeMs, crossfadeCurve, setCurrentPosition, pausedPositionRef]
   );
 
   const setZoneTake = useCallback(
@@ -480,10 +481,16 @@ const App: React.FC = () => {
   // ─── Pre-audio loading screen ───
   if (!project) {
     return (
-      <Theme appearance="dark" accentColor="green" radius="medium">
-        <Container size="4" style={{ padding: "32px" }}>
-          <Heading size="8">OpenDAW Comp Lanes Demo</Heading>
-          <Text size="4">{status}</Text>
+      <Theme appearance="dark" accentColor="amber" radius="medium" style={{ background: "var(--mc-bg)" }}>
+        <style>{CONSOLE_STYLES}</style>
+        <Container size="3" px="4" py="8">
+          <Flex direction="column" align="center" gap="4">
+            <div className="mc-kicker">Playback — Comp Lanes · OpenDAW SDK</div>
+            <h1 className="mc-title" style={{ fontSize: "clamp(28px, 4.5vw, 44px)", textAlign: "center" }}>
+              COMP <span className="mc-q">LANES</span>
+            </h1>
+            <Text size="3" style={{ color: "var(--mc-muted)" }}>{status}</Text>
+          </Flex>
         </Container>
       </Theme>
     );
@@ -495,58 +502,86 @@ const App: React.FC = () => {
   const zoneBounds = [playbackStart, ...compState.boundaries, playbackStart + TOTAL_PPQN];
 
   return (
-    <Theme appearance="dark" accentColor="green" radius="medium">
-      <GitHubCorner />
-      <Container size="3" px="4" py="8">
-        <Flex direction="column" gap="6" style={{ maxWidth: 1200, margin: "0 auto", position: "relative" }}>
+    <Theme appearance="dark" accentColor="amber" radius="medium" style={{ background: "var(--mc-bg)" }}>
+      <style>{CONSOLE_STYLES}</style>
 
-          {/* Loading overlay */}
-          {isLoading && (
-            <div style={{
-              position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
-              backgroundColor: "rgba(0,0,0,0.85)", display: "flex", flexDirection: "column",
-              alignItems: "center", justifyContent: "center", zIndex: 9999, gap: "20px"
-            }}>
-              <div style={{
-                width: "50px", height: "50px", border: "4px solid var(--gray-6)",
-                borderTop: "4px solid var(--green-9)", borderRadius: "50%",
-                animation: "spin 1s linear infinite"
-              }} />
-              <Text size="5" weight="bold">{status}</Text>
-              <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
-            </div>
-          )}
+      {/* Loading overlay */}
+      {isLoading && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: "rgba(0,0,0,0.85)", display: "flex", flexDirection: "column",
+          alignItems: "center", justifyContent: "center", zIndex: 9999, gap: "20px"
+        }}>
+          <div style={{
+            width: "50px", height: "50px",
+            border: "4px solid rgba(232,163,61,0.3)", borderTop: "4px solid #e8a33d",
+            borderRadius: "50%", animation: "spin 1s linear infinite"
+          }} />
+          <Text size="5" weight="bold" style={{ color: "#fff" }}>{status}</Text>
+          <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+        </div>
+      )}
 
-          {/* Header */}
-          <Flex direction="column" gap="4">
-            <BackLink />
-            <Heading size="8">Comp Lanes Demo</Heading>
-            <Text size="4" color="gray">
-              Compare two approaches to take comping: volume automation crossfades vs
-              region splicing with SDK voice management. Drop one file for staggered
-              takes, or multiple files for separate performances. Undo/redo with Cmd+Z.
-            </Text>
-          </Flex>
+      <Container size="3" px={{ initial: "4", sm: "6" }} py="6">
+        <GitHubCorner />
+        <BackLink />
+        <Flex direction="column" gap="5">
+
+          {/* Kicker / title / intro */}
+          <div>
+            <div className="mc-kicker">Playback — Comp Lanes · OpenDAW SDK</div>
+            <h1 className="mc-title" style={{ fontSize: "clamp(28px, 4.5vw, 44px)" }}>
+              COMP <span className="mc-q">LANES</span>
+            </h1>
+            <p className="mc-intro">
+              Compare two approaches to take comping:{" "}
+              <strong>volume automation crossfades</strong> on parallel tracks vs{" "}
+              <strong>region splicing</strong> on a single track. Drop one file
+              for four staggered takes, or up to four files for separate performances.
+              Comp boundaries are undo/redo-safe — state is encoded in box labels
+              and survives Cmd+Z atomically with the audio edits.
+            </p>
+          </div>
+
+          {/* SDK reference block */}
+          <section className="mc-anchors">
+            <h2 className="mc-anchors-head">SDK reference</h2>
+            <p>
+              Comp state (boundaries + zone assignments) is stored as a prefixed JSON
+              string in a <code>ValueRegionBox</code> label
+              (<code>"comp:{'{'}boundaries,assignments{'}'}"</code>) so that{" "}
+              <code>editing.undo()</code> reverts the comp decision atomically with the
+              automation curves it drove (regions via{" "}
+              <code>project.api.createTrackRegion</code>). <code>AudioRegionBox.create</code>{" "}
+              places splice regions at exact zone boundaries — same-track overlaps are
+              invalid by design (<code>project.copy()</code> validation deletes them,
+              breaking export). An <code>editing.subscribe</code> callback derives
+              comp state after every external edit; an <code>isRebuildingRef</code> guard
+              suppresses re-derivation when the splice rebuild itself triggers the callback.
+              Undo/redo round-trips the comp state fully because the label lives inside
+              the transaction.
+            </p>
+          </section>
 
           {/* Audio source selection */}
           {!hasTakes && (
-            <Card>
+            <div className="mc-lattice-frame" style={{ marginTop: 0 }}>
               <Flex direction="column" gap="4" align="center">
-                <Heading size="4">Choose Audio</Heading>
+                <Heading size="4" style={{ color: "var(--mc-text)" }}>Choose Audio</Heading>
                 <div
                   onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
                   onClick={() => fileInputRef.current?.click()}
                   style={{
                     width: "100%", padding: "48px 24px",
-                    border: `2px dashed ${isDragOver ? "var(--green-9)" : "var(--gray-7)"}`,
-                    borderRadius: "var(--radius-3)",
-                    backgroundColor: isDragOver ? "var(--green-2)" : "var(--gray-2)",
+                    border: `2px dashed ${isDragOver ? "#e8a33d" : "var(--mc-line-bright)"}`,
+                    borderRadius: "4px",
+                    backgroundColor: isDragOver ? "rgba(232,163,61,0.05)" : "var(--mc-bg)",
                     cursor: "pointer", textAlign: "center", transition: "all 0.2s ease"
                   }}
                 >
                   <Flex direction="column" gap="2" align="center">
-                    <Text size="6">{isDragOver ? "Drop it!" : "Drop audio file(s) here"}</Text>
-                    <Text size="2" color="gray">Drop 1 file for staggered takes, or 2-4 files for separate performances</Text>
+                    <Text size="6" style={{ color: "var(--mc-text)" }}>{isDragOver ? "Drop it!" : "Drop audio file(s) here"}</Text>
+                    <Text size="2" style={{ color: "var(--mc-muted)" }}>Drop 1 file for staggered takes, or 2–4 files for separate performances</Text>
                   </Flex>
                   <input ref={fileInputRef} type="file" accept="audio/*" multiple style={{ display: "none" }}
                     onChange={(e) => {
@@ -556,126 +591,58 @@ const App: React.FC = () => {
                     }} />
                 </div>
                 <Flex align="center" gap="3" style={{ width: "100%" }}>
-                  <div style={{ flex: 1, height: "1px", backgroundColor: "var(--gray-6)" }} />
-                  <Text size="2" color="gray">or</Text>
-                  <div style={{ flex: 1, height: "1px", backgroundColor: "var(--gray-6)" }} />
+                  <div style={{ flex: 1, height: "1px", backgroundColor: "var(--mc-line)" }} />
+                  <Text size="2" style={{ color: "var(--mc-muted)" }}>or</Text>
+                  <div style={{ flex: 1, height: "1px", backgroundColor: "var(--mc-line)" }} />
                 </Flex>
-                <Button size="3" variant="soft" onClick={handleLoadDemo}>
+                <Button size="3" variant="soft" onClick={handleLoadDemo}
+                  style={{ background: "var(--mc-panel)", border: "1px solid var(--mc-line-bright)", color: "var(--mc-text)" }}>
                   Use demo vocals (Dark Ride)
                 </Button>
               </Flex>
-            </Card>
+            </div>
           )}
 
-          {/* Instructions */}
+          {/* Take lanes + controls — lattice-framed */}
           {hasTakes && (
-            <Card>
-              <Flex direction="column" gap="3">
-                <Heading size="4">How to Use</Heading>
-                <Flex direction="column" gap="2">
-                  <Text size="2"><strong>1. Shift+Click on the lanes</strong> to add a comp boundary</Text>
-                  <Text size="2"><strong>2. Select active take</strong> per zone using the buttons below</Text>
-                  <Text size="2"><strong>3. Press Play</strong> to hear the comp with crossfades</Text>
-                </Flex>
-                <Callout.Root size="1" color="blue">
-                  <Callout.Text>
-                    {compMode === "automation"
-                      ? "Crossfades use volume automation curves between parallel tracks."
-                      : "Consecutive regions on a single track — SDK manages 20ms voice crossfade at boundaries."}
-                    {" "}Cmd+Z to undo, Cmd+Shift+Z to redo.
-                  </Callout.Text>
-                </Callout.Root>
-              </Flex>
-            </Card>
-          )}
-
-          {/* Controls */}
-          {hasTakes && (
-            <Card>
+            <div className="mc-lattice-frame" style={{ marginTop: 0 }}>
               <Flex direction="column" gap="4">
                 <Flex justify="between" align="center" wrap="wrap" gap="3">
-                  <Heading size="4">Transport</Heading>
-                  <Flex gap="3" align="center">
-                    <SegmentedControl.Root value={compMode} onValueChange={handleModeChange}>
-                      <SegmentedControl.Item value="automation">Automation Crossfade</SegmentedControl.Item>
-                      <SegmentedControl.Item value="splice">Region Splice</SegmentedControl.Item>
-                    </SegmentedControl.Root>
-                    {compMode === "automation" ? (
-                      <Flex gap="3" align="center">
-                        <label style={{ fontSize: "14px", color: "var(--gray-11)" }}>
-                          Crossfade:{" "}
-                          <input type="number" value={crossfadeMs} min={0} max={200} step={5}
-                            onChange={(e) => handleCrossfadeChange(Math.max(0, parseInt(e.target.value) || 0))}
-                            style={{ width: "60px", background: "var(--gray-3)", color: "var(--gray-12)",
-                              border: "1px solid var(--gray-7)", padding: "4px 8px", borderRadius: "4px" }}
-                          /> ms
-                        </label>
-                        <SegmentedControl.Root value={crossfadeCurve} onValueChange={(v) => {
-                          setCrossfadeCurve(v as CrossfadeCurve);
-                          if (project && takes.length > 0) {
-                            rebuildAutomation(project, takes, compState.boundaries, compState.assignments, crossfadeMs, playbackStartRef.current, v as CrossfadeCurve);
-                          }
-                        }}>
-                          <SegmentedControl.Item value="curve">Curve</SegmentedControl.Item>
-                          <SegmentedControl.Item value="linear">Linear</SegmentedControl.Item>
-                        </SegmentedControl.Root>
-                      </Flex>
-                    ) : (
-                      <Flex gap="3" align="center">
-                        <Text size="2" color="gray" style={{ fontStyle: "italic" }}>
-                          SDK 20ms voice crossfade
-                        </Text>
-                        <label style={{ fontSize: "14px", color: "var(--gray-11)", display: "flex", alignItems: "center", gap: "6px", cursor: "pointer" }}>
-                          <input
-                            type="checkbox"
-                            checked={spliceOverlap}
-                            onChange={(e) => setSpliceOverlap(e.target.checked)}
-                          />
-                          Region overlap
-                        </label>
-                      </Flex>
-                    )}
+                  <Heading size="4" style={{ color: "var(--mc-text)" }}>Take Lanes</Heading>
+                  <Flex gap="2" align="center">
                     <Badge size="2" color="green" variant="soft">
                       {compState.boundaries.length + 1} zone{compState.boundaries.length > 0 ? "s" : ""}
                     </Badge>
-                    <Flex gap="1" align="center">
-                      <Button size="1" variant="soft" disabled={!canUndo} onClick={handleUndo}>
-                        Undo
-                      </Button>
-                      <Button size="1" variant="soft" disabled={!canRedo} onClick={handleRedo}>
-                        Redo
-                      </Button>
-                    </Flex>
+                    <Button size="1" variant="soft" disabled={!canUndo} onClick={handleUndo}
+                      style={{ background: "var(--mc-panel)", border: "1px solid var(--mc-line)", color: "var(--mc-text)" }}>
+                      Undo
+                    </Button>
+                    <Button size="1" variant="soft" disabled={!canRedo} onClick={handleRedo}
+                      style={{ background: "var(--mc-panel)", border: "1px solid var(--mc-line)", color: "var(--mc-text)" }}>
+                      Redo
+                    </Button>
                   </Flex>
                 </Flex>
-                <TransportControls
-                  isPlaying={isPlaying} currentPosition={currentPosition} bpm={BPM}
-                  onPlay={handlePlay} onPause={handlePause} onStop={handleStop}
-                />
-                <Text size="2" color="gray">
-                  Position: {PPQN.pulsesToSeconds(currentPosition, BPM).toFixed(2)}s ({currentPosition} PPQN)
-                </Text>
-              </Flex>
-            </Card>
-          )}
 
-          {/* Take lanes */}
-          {hasTakes && (
-            <Card>
-              <Flex direction="column" gap="4">
-                <Heading size="4">Take Lanes</Heading>
+                {/* Lane area */}
                 <div
                   onClick={handleLaneClick}
                   style={{ position: "relative", cursor: isPlaying ? "default" : "crosshair",
-                    border: "1px solid var(--gray-6)", borderRadius: "var(--radius-3)", overflow: "hidden" }}
+                    border: "1px solid var(--mc-line)", borderRadius: "4px", overflow: "hidden" }}
                 >
                   {takes.map((take, i) => (
-                    <div key={i} style={{ position: "relative", height: "60px", borderBottom: i < takes.length - 1 ? "1px solid var(--gray-6)" : "none" }}>
+                    <div key={i} style={{ position: "relative", height: "60px", borderBottom: i < takes.length - 1 ? "1px solid var(--mc-line)" : "none" }}>
                       <canvas
-                        ref={(el) => { if (el) canvasRefs.current.set(i, el); }}
+                        ref={(el) => {
+                          if (el) {
+                            canvasRefs.current.set(i, el);
+                          } else {
+                            canvasRefs.current.delete(i);
+                          }
+                        }}
                         style={{ width: "100%", height: "100%", display: "block" }}
                       />
-                      <div style={{ position: "absolute", left: 8, top: 4, fontSize: "11px", color: "rgba(255,255,255,0.7)", pointerEvents: "none" }}>
+                      <div style={{ position: "absolute", left: 8, top: 4, fontSize: "11px", color: "rgba(255,255,255,0.7)", pointerEvents: "none", fontFamily: "var(--mc-mono)" }}>
                         {take.label}
                       </div>
                       {/* Active zone highlights */}
@@ -702,7 +669,7 @@ const App: React.FC = () => {
                     return (
                       <div key={`b-${i}`} style={{
                         position: "absolute", top: 0, bottom: 0, left: `${frac}%`,
-                        width: 0, borderLeft: "1.5px dashed rgba(255, 180, 80, 0.6)",
+                        width: 0, borderLeft: "1.5px dashed rgba(232,163,61,0.6)",
                         pointerEvents: "none", zIndex: 5
                       }} />
                     );
@@ -725,13 +692,16 @@ const App: React.FC = () => {
                     const endSec = PPQN.pulsesToSeconds(zoneBounds[z + 1], BPM).toFixed(2);
                     return (
                       <Flex key={z} gap="2" align="center">
-                        <Text size="1" color="gray" style={{ width: "140px" }}>
+                        <Text size="1" style={{ color: "var(--mc-muted)", width: "140px", fontFamily: "var(--mc-mono)" }}>
                           Zone {z + 1} ({startSec}s–{endSec}s)
                         </Text>
                         {takes.map((take, t) => (
                           <Button
-                            key={t} size="1" variant={compState.assignments[z] === t ? "solid" : "soft"}
-                            style={compState.assignments[z] === t ? { background: take.color, borderColor: take.color } : {}}
+                            key={t} size="1"
+                            variant={compState.assignments[z] === t ? "solid" : "soft"}
+                            style={compState.assignments[z] === t
+                              ? { background: take.color, borderColor: take.color }
+                              : { background: "var(--mc-panel)", border: "1px solid var(--mc-line)", color: "var(--mc-muted)" }}
                             onClick={() => setZoneTake(z, t)}
                           >
                             {take.label}
@@ -741,12 +711,86 @@ const App: React.FC = () => {
                     );
                   })}
                 </Flex>
+
+                <Text size="1" style={{ color: "var(--mc-muted)" }}>
+                  Shift+Click on the lanes to add a comp boundary. Click to position the playhead.
+                </Text>
+              </Flex>
+            </div>
+          )}
+
+          {/* Controls */}
+          {hasTakes && (
+            <Card style={{ background: "var(--mc-panel)", border: "1px solid var(--mc-line)" }}>
+              <Flex direction="column" gap="4">
+                <Flex justify="between" align="center" wrap="wrap" gap="3">
+                  <Heading size="4" style={{ color: "var(--mc-text)" }}>Transport</Heading>
+                  <Flex gap="3" align="center" wrap="wrap">
+                    <SegmentedControl.Root value={compMode} onValueChange={handleModeChange}>
+                      <SegmentedControl.Item value="automation">Automation Crossfade</SegmentedControl.Item>
+                      <SegmentedControl.Item value="splice">Region Splice</SegmentedControl.Item>
+                    </SegmentedControl.Root>
+                    {compMode === "automation" ? (
+                      <Flex gap="3" align="center">
+                        <label style={{ fontSize: "14px", color: "var(--mc-muted)" }}>
+                          Crossfade:{" "}
+                          <input type="number" value={crossfadeMs} min={0} max={200} step={5}
+                            onChange={(e) => handleCrossfadeChange(Math.max(0, parseInt(e.target.value) || 0))}
+                            style={{ width: "60px", background: "var(--mc-bg)", color: "var(--mc-text)",
+                              border: "1px solid var(--mc-line)", padding: "4px 8px", borderRadius: "4px" }}
+                          /> ms
+                        </label>
+                        <SegmentedControl.Root value={crossfadeCurve} onValueChange={(v) => {
+                          setCrossfadeCurve(v as CrossfadeCurve);
+                          if (project && takes.length > 0) {
+                            rebuildAutomation(project, takes, compState.boundaries, compState.assignments, crossfadeMs, playbackStartRef.current, v as CrossfadeCurve);
+                          }
+                        }}>
+                          <SegmentedControl.Item value="curve">Curve</SegmentedControl.Item>
+                          <SegmentedControl.Item value="linear">Linear</SegmentedControl.Item>
+                        </SegmentedControl.Root>
+                      </Flex>
+                    ) : (
+                      <Text size="2" style={{ color: "var(--mc-muted)", fontStyle: "italic" }}>
+                        Exact-boundary splices — see Region Splice mode note below
+                      </Text>
+                    )}
+                  </Flex>
+                </Flex>
+                <Separator size="4" />
+                <TransportControls
+                  isPlaying={isPlaying} currentPosition={currentPosition} bpm={BPM}
+                  onPlay={handlePlay} onPause={handlePause} onStop={handleStop}
+                />
+                <Text size="2" style={{ color: "var(--mc-muted)", fontFamily: "var(--mc-mono)" }}>
+                  Position: {PPQN.pulsesToSeconds(currentPosition, BPM).toFixed(2)}s ({currentPosition} PPQN)
+                </Text>
+              </Flex>
+            </Card>
+          )}
+
+          {/* Splice mode note — shown only in splice mode */}
+          {hasTakes && compMode === "splice" && (
+            <Card style={{ background: "var(--mc-panel)", border: "1px solid var(--mc-line)" }}>
+              <Flex direction="column" gap="2">
+                <Heading size="3" style={{ color: "var(--mc-text)" }}>Region Splice mode</Heading>
+                <Text size="2" style={{ color: "var(--mc-muted)" }}>
+                  Consecutive regions share an exact boundary on a single track. At same-file
+                  seams the transition is typically seamless; at cross-file seams an audible
+                  click can occur because the incoming voice starts at sample 0 and may not
+                  receive the 20 ms SDK fade-in.{" "}
+                  See <a href="comp-lanes-debug-demo.html" style={{ color: "var(--mc-amber)" }}>
+                    comp-lanes-debug-demo
+                  </a>{" "}for the repro. Overlapping regions are intentionally disabled —
+                  they are deleted by <code>project.copy()</code> validation, which breaks
+                  offline export silently.
+                </Text>
               </Flex>
             </Card>
           )}
 
           {/* Footer */}
-          <Flex justify="center" pt="6">
+          <Flex justify="center" pt="4">
             <MoisesLogo />
           </Flex>
         </Flex>
