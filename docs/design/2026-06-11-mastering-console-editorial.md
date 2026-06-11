@@ -1,0 +1,55 @@
+# Design Decision: Mastering-Console Editorial
+
+**Date:** 2026-06-11
+**Status:** Adopted (warp overview); demo pages adopt during the per-demo audit campaign
+**Reference implementation:** `src/demos/warp/warp-overview.tsx` (`warp-demos.html`)
+
+## Decision
+
+Demo and overview pages use the **mastering-console editorial** design language:
+refined-technical instrument-panel restraint, executed with one signature element
+per page that carries information (never decoration for its own sake).
+
+## Tokens
+
+| Token | Value | Use |
+| --- | --- | --- |
+| `--wo-bg` | `#0d0c0a` | page background (warm near-black) |
+| `--wo-panel` | `#151310` | panel/card surfaces |
+| `--wo-line` / `--wo-line-bright` | `#2a2620` / `#3d3729` | hairline rules, borders |
+| `--wo-text` | `#d8d2c8` | primary text (12.3:1 on panel) |
+| `--wo-muted` | `#948c7d` | prose (5.6:1) |
+| `--wo-label` | `#8b8273` | smallest text — micro-labels, indices (4.9:1, the floor) |
+| `--wo-faint` | `#5f594e` | **decorative strokes only — fails AA for text** |
+| `--wo-amber` | `#e8a33d` | the single accent; also "audio file" in diagrams |
+| `--wo-cyan` | `#5fb4c9` | "project grid" in diagrams; scenario chip |
+| `--wo-green` | `#7fbf6a` | scenario chip (time-stretch/slicing) |
+
+## Rules
+
+- **Type:** IBM Plex Mono (400/600) for display, micro-labels, code; Radix default
+  for prose. Load fonts with `crossorigin` on preconnect AND stylesheet links
+  (COOP/COEP). Micro-labels: ≥10px, 600, letter-spaced 0.14–0.22em, uppercase.
+  Tabular numerals for anything numeric.
+- **Color:** one amber accent per page; scenario identity via small DAW-style color
+  chips, never full-surface coloring. Every text/background pair ≥4.5:1 (verify with
+  a contrast computation, not by eye — `--wo-faint` exists precisely because it fails).
+- **Signature element:** one per page, drawn from the page's actual data/concept
+  (the overview's warp lattice plots real-shaped wobbly beats against the grid).
+- **Motion:** one staggered load reveal (`animation-delay`), restrained hovers
+  (border/color + small transform), at most one ambient animation (playhead sweep).
+  Everything gated behind `prefers-reduced-motion: reduce`.
+- **Accessibility floors:** keyboard `:focus-visible` outlines on all interactive
+  elements; `role="img"` + `aria-label` on informational SVGs; rail/axis labels in
+  HTML (fixed px), not SVG text (which scales below legibility on mobile); semantic
+  heading order; prose capped ~62–72ch.
+- **Layout:** panels joined by 1px gap over the line color (engraved-strip look);
+  3-up grids collapse to one column ≤880px; `clamp()` display type.
+
+## Scope
+
+The site shell (GitHubCorner, BackLink, MoisesLogo, Radix Theme wrapper) stays
+unchanged across pages. Interactive demo panels keep their existing
+`InputLatencyPanel`-style restraint; this language governs page chrome, headers,
+explanatory sections, and overview/TOC pages, and is applied per-demo during the
+audit campaign rather than as a big-bang restyle.
