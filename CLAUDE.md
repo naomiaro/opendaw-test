@@ -603,6 +603,8 @@ setState-per-frame is only safe if no expensive effect reads its output.
 5. Add URL to `public/sitemap.xml`
 6. Take 1200x630 screenshot, save as `public/og-image-<name>.png`, add `og:image` + `twitter:image` tags to the HTML
 7. Add GoatCounter script before `</body>` (copy from any existing demo HTML)
+8. Follow the design language in `docs/design/2026-06-11-mastering-console-editorial.md`
+   (tokens, type, motion, accessibility floors) — reference implementation `src/demos/warp/warp-overview.tsx`
 
 ## Demo-Specific SDK Knowledge
 

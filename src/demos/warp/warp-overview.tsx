@@ -64,6 +64,8 @@ const STYLES = `
   --wo-line-bright: #3d3729;
   --wo-text: #d8d2c8;
   --wo-muted: #948c7d;
+  /* label: smallest readable text (4.9:1 on panel); faint: decorative strokes only */
+  --wo-label: #8b8273;
   --wo-faint: #5f594e;
   --wo-amber: #e8a33d;
   --wo-cyan: #5fb4c9;
@@ -108,22 +110,26 @@ body { background: var(--wo-bg); }
 }
 .wo-intro strong { color: var(--wo-text); font-weight: 600; }
 
-.wo-lattice {
-  display: block;
-  width: 100%;
-  height: auto;
+.wo-lattice-frame {
   margin-top: 34px;
   border: 1px solid var(--wo-line);
   border-radius: 4px;
+  padding: 14px 16px 12px;
   background:
     repeating-linear-gradient(90deg, transparent 0 49px, rgba(255,255,255,0.018) 49px 50px),
     var(--wo-panel);
 }
+.wo-lattice {
+  display: block;
+  width: 100%;
+  height: auto;
+}
 .wo-lattice-label {
   font-family: var(--wo-mono);
-  font-size: 9.5px;
+  font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.18em;
+  text-transform: uppercase;
 }
 @keyframes wo-sweep {
   from { transform: translateX(0); }
@@ -175,7 +181,7 @@ body { background: var(--wo-bg); }
   font-family: var(--wo-mono);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
-  color: var(--wo-faint);
+  color: var(--wo-label);
 }
 .wo-name {
   font-family: var(--wo-mono);
@@ -207,10 +213,10 @@ body { background: var(--wo-bg); }
 }
 .wo-row dt {
   font-family: var(--wo-mono);
-  font-size: 9.5px;
+  font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.16em;
-  color: var(--wo-faint);
+  color: var(--wo-label);
   padding-top: 2px;
 }
 .wo-row dd { margin: 0; color: var(--wo-muted); }
@@ -243,6 +249,12 @@ body { background: var(--wo-bg); }
 .wo-open .wo-arrow { transition: transform 160ms ease; }
 .wo-open:hover { border-color: var(--wo-amber); color: var(--wo-amber); }
 .wo-open:hover .wo-arrow { transform: translateX(3px); }
+.wo-open:focus-visible,
+.wo-anchors a:focus-visible {
+  outline: 2px solid var(--wo-amber);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
 
 .wo-anchors {
   margin-top: 56px;
@@ -292,39 +304,41 @@ body { background: var(--wo-bg); }
 
 function Lattice() {
   return (
-    <svg
-      className="wo-lattice"
-      viewBox="0 0 800 132"
-      role="img"
-      aria-label="Diagram: evenly spaced project-grid beats above, irregular audio-file beats below, with warp pins connecting each pair"
-    >
-      <text className="wo-lattice-label" x="14" y="22" fill="var(--wo-cyan)">
-        PROJECT GRID &mdash; 123 BPM
-      </text>
-      <text className="wo-lattice-label" x="14" y="124" fill="var(--wo-amber)">
-        AUDIO FILE &mdash; TRACKED BEATS
-      </text>
-      <line x1="0" y1="34" x2="800" y2="34" stroke="var(--wo-line-bright)" strokeWidth="1" />
-      <line x1="0" y1="100" x2="800" y2="100" stroke="var(--wo-line-bright)" strokeWidth="1" />
-      {FILE_BEATS.map((fileX, n) => {
-        const gridX = 10 + n * GRID_STEP;
-        return (
-          <g key={n}>
-            <path
-              d={`M ${gridX} 38 C ${gridX} 62, ${fileX} 72, ${fileX} 96`}
-              stroke="var(--wo-faint)"
-              strokeWidth="1"
-              fill="none"
-            />
-            <line x1={gridX} y1={28} x2={gridX} y2={40} stroke="var(--wo-cyan)" strokeWidth="2" />
-            <line x1={fileX} y1={94} x2={fileX} y2={106} stroke="var(--wo-amber)" strokeWidth="2" />
-          </g>
-        );
-      })}
-      <g className="wo-playhead">
-        <rect x="9" y="24" width="1.5" height="86" fill="var(--wo-amber)" opacity="0.5" />
-      </g>
-    </svg>
+    <div className="wo-lattice-frame">
+      <div className="wo-lattice-label" style={{ color: "var(--wo-cyan)" }}>
+        Project grid &mdash; 123 BPM
+      </div>
+      <svg
+        className="wo-lattice"
+        viewBox="0 0 800 84"
+        role="img"
+        aria-label="Diagram: evenly spaced project-grid beats above, irregular audio-file beats below, with warp pins connecting each pair"
+      >
+        <line x1="0" y1="18" x2="800" y2="18" stroke="var(--wo-line-bright)" strokeWidth="1" />
+        <line x1="0" y1="66" x2="800" y2="66" stroke="var(--wo-line-bright)" strokeWidth="1" />
+        {FILE_BEATS.map((fileX, n) => {
+          const gridX = 10 + n * GRID_STEP;
+          return (
+            <g key={n}>
+              <path
+                d={`M ${gridX} 22 C ${gridX} 42, ${fileX} 44, ${fileX} 62`}
+                stroke="var(--wo-faint)"
+                strokeWidth="1"
+                fill="none"
+              />
+              <line x1={gridX} y1={12} x2={gridX} y2={24} stroke="var(--wo-cyan)" strokeWidth="2" />
+              <line x1={fileX} y1={60} x2={fileX} y2={72} stroke="var(--wo-amber)" strokeWidth="2" />
+            </g>
+          );
+        })}
+        <g className="wo-playhead">
+          <rect x="9" y="8" width="1.5" height="68" fill="var(--wo-amber)" opacity="0.5" />
+        </g>
+      </svg>
+      <div className="wo-lattice-label" style={{ color: "var(--wo-amber)" }}>
+        Audio file &mdash; tracked beats
+      </div>
+    </div>
   );
 }
 
