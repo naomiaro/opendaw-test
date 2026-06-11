@@ -370,10 +370,10 @@ const App: React.FC = () => {
     });
     setCents(clamped);
 
-    // playbackRate write resets engine.position to 0 — re-establish the
-    // playhead at startSeconds so the amber bar and engine agree, and the
-    // next Play resumes from the click. Skip if currently playing so we
-    // don't interrupt live audio with a position jump.
+    // Defensive playhead restore: playbackRate writes do NOT reset
+    // engine.position (refuted at core 0.0.152 — see playback CLAUDE.md
+    // "engine.position vs Box Writes"); kept so the amber bar and engine
+    // agree after slider scrubs while stopped. Skip while playing.
     if (!isPlaying) {
       const bpm = project.timelineBox.bpm.getValue();
       const ppqn = Math.round(PPQN.secondsToPulses(startSeconds, bpm));
@@ -385,9 +385,9 @@ const App: React.FC = () => {
     if (!project) return;
     const box = stretchBoxRef.current;
     if (!box) return;
-    // Writing transientPlayMode does NOT reset engine.position (verified
-    // 2026-06-09). Unlike playbackRate and the playMode/timeBase swap, no
-    // setPosition recovery is needed. See playback CLAUDE.md.
+    // transientPlayMode (like playbackRate) is read live per render block —
+    // no setPosition recovery needed. See playback CLAUDE.md
+    // "engine.position vs Box Writes".
     project.editing.modify(() => {
       box.transientPlayMode.setValue(mode);
     });

@@ -519,7 +519,7 @@ The `createInstrument` + `output.refer` race documented in Ch. 04 is a different
 | Formant preservation | Not implemented. Vocals will "chipmunk" up and "darken" down. |
 | Real-time interpolation | Linear only. Aliasing audible at extreme rates. |
 | Transient segment crossfade | Fixed at `VOICE_FADE_DURATION = 0.020` (20 ms). On very short segments (<40 ms) the crossfade can soften attacks audibly — choose `Once` mode or thin the transient markers. |
-| TimeStretch without transients | 0 markers → silence. 1 marker → degenerate single segment to file end. ≥2 markers is what musical material wants. |
+| TimeStretch without transients | Fewer than 2 markers → silence (`transients.length() < 2` bails before sequencing). ≥2 markers is what musical material wants. |
 | PitchStretch without warp markers | Needs ≥2 anchors to define a slope; otherwise no output. |
 | Mode flips | Single transaction works if you follow the SDK ordering above; `refer()` replaces the old pointer without a prior `defer()`. |
 
