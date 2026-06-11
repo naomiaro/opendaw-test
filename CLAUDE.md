@@ -563,6 +563,11 @@ setState-per-frame is only safe if no expensive effect reads its output.
 - Trust `npx tsc --noEmit` over LSP diagnostics for `@/` module-resolution and
   Float32Array-generic errors — the global typescript-language-server runs a newer
   TS than the project and reports false positives after tsconfig edits.
+- `npx tsc --noEmit` errors TS5101 (baseUrl deprecated) under the newer global TS —
+  environmental noise, not a project error; keep `baseUrl` (see rule above).
+- If `npm run build` fails with a missing SDK export on a clean tree (e.g. "InputLatency
+  is not exported"), suspect node_modules drift behind package-lock.json (installed SDK
+  version < locked version) — fix with `npm ci`, not code changes.
 - Vite dev-only middleware (`apply: "serve"`): request event handlers run OUTSIDE
   connect's try/catch — wrap sync fs calls in try/catch or a throw kills the dev server.
 - git worktrees: copy `localhost*.pem` in and run `npm ci` there before the dev
@@ -573,6 +578,13 @@ setState-per-frame is only safe if no expensive effect reads its output.
   and stylesheet `<link>`s (verified with Google Fonts on warp-demos.html).
 - Playwright MCP screenshots: omit the `filename` param — custom-named files land
   loose in the project root; default-named files land in `.playwright-mcp/`.
+- Playwright text assertions: JSX expressions split DOM text nodes — XPath
+  `contains(text(),…)` misses strings spanning the split; use
+  `document.body.innerText.includes(…)`.
+- Mobile-clipping checks must be per-element: `overflow:hidden` containers clip without
+  any document scrollbar — compare `el.scrollWidth > el.clientWidth`. Grid items holding
+  unbreakable content (code tokens) need `min-width: 0` or the 1fr track widens past
+  its container.
 - PRs are squash-merged (`gh pr merge <n> --squash`) — main carries one commit per PR.
 - Once a PR is open and its work complete, run the comprehensive PR review
   (`/pr-review-toolkit:review-pr`, applicable aspects) and FIX Critical + Important
