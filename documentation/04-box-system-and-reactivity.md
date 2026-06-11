@@ -202,7 +202,6 @@ Here's how to create a Tape instrument (AudioUnitBox + TrackBox) and place an au
 ```typescript
 import { InstrumentFactories } from "@opendaw/studio-adapters";
 import { AudioFileBox, AudioRegionBox } from "@opendaw/studio-boxes";
-import { AudioPlayback } from "@opendaw/studio-enums";
 import { UUID } from "@opendaw/lib-std";
 import { PPQN } from "@opendaw/lib-dsp";
 
@@ -231,6 +230,7 @@ project.editing.modify(() => {
   );
 
   // 4. Create AudioRegionBox (the clip on the timeline)
+  //    Leave playMode pointer empty → NoStretch (plays at source speed, default)
   const clipDuration = Math.round(PPQN.secondsToPulses(audioBuffer.duration, 120));
 
   AudioRegionBox.create(
@@ -239,7 +239,7 @@ project.editing.modify(() => {
     box => {
       box.regions.refer(trackBox.regions);  // Link to track
       box.file.refer(audioFileBox);         // Link to audio file
-      box.playback.setValue(AudioPlayback.NoSync);
+      // box.playMode is left empty (no refer) — NoStretch by default
       box.position.setValue(0);             // Beat 1
       box.duration.setValue(clipDuration);
       box.loopOffset.setValue(0);

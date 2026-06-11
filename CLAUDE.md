@@ -157,8 +157,12 @@ API: `.isEmpty()`, `.nonEmpty()`, `.unwrap()`, `.unwrapOrNull()`, `.unwrapOrUnde
   channel copy. `OpenSampleAPI.fromAudioBuffer()` does not exist.
 - Progress callback type: `Progress.Handler` (alias for `Procedure<unitValue>`)
 - SampleLoaderState error field: `state.reason` (NOT `state.error`)
-- SampleLoader has `subscribe()` only — NO `catchupAndSubscribe()`. Check `state.type`
-  before subscribing, or use adapter layer + CanvasPainter to avoid subscribing entirely.
+- SampleLoader has `subscribe()` only — NO `catchupAndSubscribe()`. Always read
+  `loader.state` synchronously first and handle terminal states ("loaded"/"error")
+  before subscribing; `subscribe()` invokes the callback synchronously for terminal
+  states, so a one-shot `sub.terminate()` inside the callback would hit the `const sub`
+  binding while it is in the TDZ. Use the adapter layer + CanvasPainter to avoid
+  subscribing entirely when possible.
 
 ### Adapter Layer for Peaks (Preferred)
 `regionAdapter.file.peaks` is a synchronous `Option<Peaks>` read — no subscribe needed.
@@ -381,7 +385,8 @@ arrangement sections, or loop boundaries.
 Consumed **only** by MIDI synth instruments (Vaporisateur uses
 `midiToHz(pitch, baseFrequency)`) — audio file playback is unaffected. To make an
 audio file follow the project tuning, derive `cents = 1200 * Math.log2(refHz / baselineHz)`
-and apply to `AudioTimeStretchBox.playbackRate` (±1200 cents clamp). `baselineHz` should
+and apply via `AudioTimeStretchBoxAdapter.cents` (the setter clamps `playbackRate` to [0.5, 2.0],
+equivalent to ±1200 cents; the raw `playbackRate` field accepts any positive float). `baselineHz` should
 be the value `baseFrequency` had when the project loaded (capture with `.getValue()` once)
 so audio plays at source rate when the slider sits at the project's authored tuning,
 not at the Western convention of 440. See
@@ -412,7 +417,10 @@ Examples in this repo: `capture.armed.catchupAndSubscribe(obs => obs.getValue())
 `subscribe()` fires only for FUTURE changes — misses current state. Use `catchupAndSubscribe()`
 for engine state (isPlaying, isRecording, BPM) and box field observations. Only use `subscribe()`
 when initial state is already known (e.g., mute sync after take creation).
-Exception: `SampleLoader` only has `subscribe()` — check `state.type` before subscribing.
+Exception: `SampleLoader` only has `subscribe()`. Read `loader.state` synchronously before
+subscribing — for terminal states ("loaded"/"error") handle them directly and skip
+`subscribe()`. The sync catch-up on terminal states causes TDZ errors if `sub.terminate()`
+is called inside the callback before `const sub` is bound.
 
 ### DefaultDecibel Value Mapping
 `ValueMapping.DefaultDecibel` = `decibel(-72.0, -12.0, 0.0)` — range -72 to 0 dB,
@@ -506,15 +514,25 @@ terminable.terminate();
 `catchupAndSubscribe()` and `subscribe()` return `Terminable` objects. Store them and call
 `.terminate()` in the React `useEffect` cleanup. Discarding the return value leaks the
 subscription — callbacks continue firing after unmount.
-For one-shot subscriptions (e.g., waiting for `sampleLoader` "loaded"), terminate
-inside the callback on success AND on error — don't rely solely on effect cleanup:
+For one-shot subscriptions (e.g., waiting for `sampleLoader` "loaded"), always read
+`loader.state` first and handle terminal states before subscribing. `subscribe()` invokes
+the callback synchronously for already-terminal states, so calling `sub.terminate()` inside
+the callback hits the `const sub` binding in its TDZ — use a `subscribed` flag or the
+pre-check pattern instead:
 ```typescript
-const sub = sampleLoader.subscribe((state: any) => {
-  if (state.type === "loaded") {
-    // ... handle data
-    sub.terminate(); // terminate immediately, don't wait for unmount
-  }
-});
+// Pre-check pattern (preferred — avoids TDZ risk entirely)
+if (sampleLoader.state.type === "loaded") {
+  // ... handle data directly
+} else {
+  let subscribed = false;
+  const sub = sampleLoader.subscribe((state: any) => {
+    if (state.type === "loaded") {
+      // ... handle data
+      if (subscribed) sub.terminate();
+    }
+  });
+  subscribed = true;
+}
 ```
 
 ### CanvasPainter in React: Use Refs to Avoid Per-Frame Recreation
@@ -562,9 +580,14 @@ setState-per-frame is only safe if no expensive effect reads its output.
   flood the SDK .d.ts files.
 - Trust `npx tsc --noEmit` over LSP diagnostics for `@/` module-resolution and
   Float32Array-generic errors — the global typescript-language-server runs a newer
-  TS than the project and reports false positives after tsconfig edits.
+  TS than the project and reports false positives after tsconfig edits. The same
+  cascade hits relative imports (`./lib/...` TS2307) after rebases/branch switches.
 - `npx tsc --noEmit` errors TS5101 (baseUrl deprecated) under the newer global TS —
-  environmental noise, not a project error; keep `baseUrl` (see rule above).
+  environmental noise, not a project error; keep `baseUrl` (see rule above) and run
+  `npx tsc --noEmit --ignoreDeprecations "6.0"` to get past the hard error.
+- Some older demos carry pre-existing tsc errors (e.g. comp-lanes-demo.tsx TS2739/TS2345
+  box-graph setup lines). Judge "zero new errors" against the parent commit's error set,
+  not absolute zero — extract parent versions via `git show` when unsure.
 - If `npm run build` fails with a missing SDK export on a clean tree (e.g. "InputLatency
   is not exported"), suspect node_modules drift behind package-lock.json (installed SDK
   version < locked version) — fix with `npm ci`, not code changes.

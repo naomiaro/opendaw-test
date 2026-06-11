@@ -45,8 +45,11 @@
   state guard in the handler.
 - `transientPlayMode` AND `playbackRate` are read live per render block
   (`TimeStretchSequencer.ts:39-40` @ core 0.0.152) — neither resets engine.position;
-  both are safe live controls during playback. Keep the defensive `setPosition` only
-  after full mode-swap transactions (see playback CLAUDE.md, unresolved).
+  both are safe live controls during playback.
+- Post-swap `setPosition` (after a full mode-swap transaction) is a convenience
+  reposition for the stopped state only — gate it on `!isPlaying`. Mode swaps do not
+  reset engine.position; calling setPosition mid-playback causes the jump, not the swap.
+  See `debug/time-pitch-start-position-pop.md` and playback CLAUDE.md.
 - TimeStretch renders silence with FEWER THAN 2 transient markers
   (`transients.length() < 2`), not just zero.
 - Outside the warp-marker range `[first.position, last.position)` the engine plays

@@ -176,10 +176,7 @@ export function rebuildAutomation(
         .filter(r => r.isValueRegion());
 
       for (const adapter of existingAdapters) {
-        const collectionOpt = adapter.optCollection;
-        if (collectionOpt.nonEmpty()) {
-          collectionOpt.unwrap().events.asArray().forEach((evt: { box: { delete(): void } }) => evt.box.delete());
-        }
+        // events is a mandatory dependent of the region box — box.delete() cascade-deletes it
         adapter.box.delete();
       }
     }
@@ -230,8 +227,7 @@ export function rebuildSpliceRegions(
   boundaries: number[],
   assignments: number[],
   playbackStart: number,
-  fullAudioPpqn: number,
-  spliceOverlap: boolean = true
+  fullAudioPpqn: number
 ): void {
   project.editing.modify(() => {
     // Delete existing regions on splice track
@@ -240,16 +236,14 @@ export function rebuildSpliceRegions(
       region.box.delete();
     }
 
-    // With overlap enabled, extend each region by 20ms so adjacent regions overlap.
-    // This ensures the old voice is in iterateRange during the boundary block and
-    // gets properly evicted with a crossfade. Without overlap, there's a one-block
-    // gap where the old voice isn't evicted, causing a click.
-    const overlapPpqn = spliceOverlap ? Math.round(PPQN.secondsToPulses(0.020, BPM)) : 0;
+    // Regions use exact zone boundaries (no overlap). Same-track overlaps are invalid by
+    // design: project.copy() validation deletes overlapping pairs, silently breaking export
+    // and offline render. Exact boundaries can click at cross-file seams — see
+    // debug/splice-click-cross-file.md for the open question with the openDAW maintainer.
     const zoneBounds = [playbackStart, ...boundaries, playbackStart + TOTAL_PPQN];
     for (let z = 0; z < assignments.length; z++) {
       const zoneStart = zoneBounds[z];
       const zoneEnd = zoneBounds[z + 1];
-      const isLast = z === assignments.length - 1;
       const take = takes[assignments[z]];
       if (!take || !take.audioFileBox) continue;
 
@@ -259,9 +253,8 @@ export function rebuildSpliceRegions(
         box.regions.refer(spliceTrackBox.regions);
         box.file.refer(take.audioFileBox);
         box.events.refer(eventsCollectionBox.owners);
-        const regionDuration = isLast ? (zoneEnd - zoneStart) : (zoneEnd - zoneStart + overlapPpqn);
         box.position.setValue(zoneStart);
-        box.duration.setValue(regionDuration);
+        box.duration.setValue(zoneEnd - zoneStart);
         box.loopOffset.setValue(zoneStart + take.offset);
         box.loopDuration.setValue(fullAudioPpqn);
         box.label.setValue(take.label);

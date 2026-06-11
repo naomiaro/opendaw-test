@@ -44,7 +44,6 @@ const App: React.FC = () => {
   const [crossfadeMs, setCrossfadeMs] = useState(20);
   const [crossfadeCurve, setCrossfadeCurve] = useState<CrossfadeCurve>("curve");
   const [compMode, setCompMode] = useState<CompMode>("automation");
-  const [spliceOverlap, setSpliceOverlap] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
@@ -108,13 +107,12 @@ const App: React.FC = () => {
       rebuildSpliceRegions(
         project, spliceTrackRef.current, takes,
         compState.boundaries, compState.assignments,
-        playbackStartRef.current, fullAudioPpqnRef.current,
-        spliceOverlap
+        playbackStartRef.current, fullAudioPpqnRef.current
       );
     } finally {
       isRebuildingRef.current = false;
     }
-  }, [project, takes, compMode, compState, spliceOverlap]);
+  }, [project, takes, compMode, compState]);
 
   // ─── Debug: apply static no-overlap config once takes finish loading ───
   // Zone 1 (0.00s–2.32s) → Otherside (take 0)
@@ -142,7 +140,6 @@ const App: React.FC = () => {
     const assignments = [0, 1];
 
     rebuildAutomation(project, takes, boundaries, assignments, crossfadeMs, playbackStartRef.current, crossfadeCurve);
-    setSpliceOverlap(false);
 
     project.editing.modify(() => {
       for (const take of takes) {
@@ -347,7 +344,7 @@ const App: React.FC = () => {
         if (pausedPositionRef) pausedPositionRef.current = ppqnPos;
       }
     },
-    [project, takes, isPlaying, compState, crossfadeMs, setCurrentPosition, pausedPositionRef]
+    [project, takes, isPlaying, compState, crossfadeMs, crossfadeCurve, setCurrentPosition, pausedPositionRef]
   );
 
   const setZoneTake = useCallback(
@@ -634,7 +631,7 @@ const App: React.FC = () => {
                   <Callout.Text>
                     {compMode === "automation"
                       ? "Crossfades use volume automation curves between parallel tracks."
-                      : "Consecutive regions on a single track — SDK manages 20ms voice crossfade at boundaries."}
+                      : "Consecutive regions on a single track. At exact boundaries, the outgoing voice hard-cuts at cycle end and is evicted the next block; the incoming voice fades in over 20 ms only when its read offset is non-zero. Cross-file boundaries can click (this page's raison d'être)."}
                     {" "}Cmd+Z to undo, Cmd+Shift+Z to redo.
                   </Callout.Text>
                 </Callout.Root>
@@ -676,16 +673,8 @@ const App: React.FC = () => {
                     ) : (
                       <Flex gap="3" align="center">
                         <Text size="2" color="gray" style={{ fontStyle: "italic" }}>
-                          SDK 20ms voice crossfade
+                          Exact-boundary splices (no overlap)
                         </Text>
-                        <label style={{ fontSize: "14px", color: "var(--gray-11)", display: "flex", alignItems: "center", gap: "6px", cursor: "pointer" }}>
-                          <input
-                            type="checkbox"
-                            checked={spliceOverlap}
-                            onChange={(e) => setSpliceOverlap(e.target.checked)}
-                          />
-                          Region overlap
-                        </label>
                       </Flex>
                     )}
                     <Badge size="2" color="green" variant="soft">

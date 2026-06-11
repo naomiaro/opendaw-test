@@ -107,7 +107,8 @@ export function applyVarispeed(
 
 /**
  * TimeStretch: beats lock, pitch preserved (rate 1.0). Caller MUST await
- * ensureTransientMarkers on the file box first — zero transients renders silence.
+ * ensureTransientMarkers on the file box first — fewer than two transients
+ * renders silence.
  */
 export function applyTimeStretch(
   ctx: WarpScenarioContext,

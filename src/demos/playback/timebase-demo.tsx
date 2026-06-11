@@ -474,10 +474,10 @@ function TimeBaseDemo() {
               its own Tape track.
             </p>
             <p>
-              With NoSync playback mode (the default when no <code>playMode</code> box is
-              attached), both timeBase values sound identical — the difference is in storage
-              unit and export validation only. Audible differences appear with time-stretching
-              play modes (<code>AudioTimeStretchBox</code>,{" "}
+              With no <code>playMode</code> box attached (NoStretch — the default), both
+              timeBase values sound identical — the difference is in storage unit and export
+              validation only. Audible differences appear with time-stretching play modes
+              (<code>AudioTimeStretchBox</code>,{" "}
               <code>AudioPitchStretchBox</code>).
             </p>
           </section>

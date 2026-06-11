@@ -1,58 +1,50 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-    <!-- Primary Meta Tags -->
-    <title>OpenDAW Comp Lanes Demo - Take Comping with Volume Automation Crossfades</title>
-    <meta name="title" content="OpenDAW Comp Lanes Demo - Take Comping with Volume Automation Crossfades" />
-    <meta name="description"
-        content="Comp between simulated takes using volume automation crossfades. Zero pops — no region splitting needed." />
-    <meta name="keywords" content="OpenDAW, comp lanes, take comping, crossfade, volume automation, audio comping, takes, web audio, DAW" />
-    <meta name="author" content="Moises AI" />
-    <meta name="theme-color" content="#30a46c" />
+  <!-- Primary Meta Tags -->
+  <title>OpenDAW Comp Lanes Demo - Take Comping with Crossfades &amp; Region Splice</title>
+  <meta name="title" content="OpenDAW Comp Lanes Demo - Take Comping with Crossfades &amp; Region Splice" />
+  <meta name="description" content="Compare two take-comping approaches: volume automation crossfades on parallel tracks vs region splicing on a single track. Comp boundaries are undo/redo-safe." />
+  <meta name="keywords" content="OpenDAW, comp lanes, take comping, crossfade, volume automation, region splice, audio comping, takes, web audio, DAW" />
+  <meta name="author" content="Moises AI" />
+  <meta name="theme-color" content="#e8a33d" />
 
-    <!-- Canonical URL -->
-    <link rel="canonical" href="https://opendaw-test.pages.dev/comp-lanes-demo.html" />
+  <!-- Canonical URL -->
+  <link rel="canonical" href="https://opendaw-test.pages.dev/comp-lanes-demo.html" />
 
-    <!-- Open Graph / Facebook -->
-    <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://opendaw-test.pages.dev/comp-lanes-demo.html" />
-    <meta property="og:title" content="OpenDAW Comp Lanes Demo - Take Comping with Crossfades" />
-    <meta property="og:description"
-        content="Comp between simulated takes using volume automation crossfades. Zero pops — no region splitting needed." />
-    <meta property="og:image" content="https://opendaw-test.pages.dev/og-image-comp-lanes.png" />
-    <meta property="og:image:width" content="1200" />
-    <meta property="og:image:height" content="630" />
-    <meta property="og:site_name" content="OpenDAW Demos" />
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://opendaw-test.pages.dev/comp-lanes-demo.html" />
+  <meta property="og:title" content="OpenDAW Comp Lanes Demo - Take Comping with Crossfades &amp; Region Splice" />
+  <meta property="og:description" content="Compare two take-comping approaches: volume automation crossfades on parallel tracks vs region splicing on a single track. Comp boundaries are undo/redo-safe." />
+  <meta property="og:image" content="https://opendaw-test.pages.dev/og-image-comp-lanes.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:site_name" content="OpenDAW Demos" />
 
-    <!-- Twitter -->
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="OpenDAW Comp Lanes Demo - Take Comping with Crossfades" />
-    <meta name="twitter:description"
-        content="Comp between simulated takes using volume automation crossfades. Zero pops — no region splitting needed." />
-    <meta name="twitter:image" content="https://opendaw-test.pages.dev/og-image-comp-lanes.png" />
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:url" content="https://opendaw-test.pages.dev/comp-lanes-demo.html" />
+  <meta name="twitter:title" content="OpenDAW Comp Lanes Demo - Take Comping with Crossfades &amp; Region Splice" />
+  <meta name="twitter:description" content="Compare two take-comping approaches: volume automation crossfades vs region splicing. Undo/redo-safe comp boundaries." />
+  <meta name="twitter:image" content="https://opendaw-test.pages.dev/og-image-comp-lanes.png" />
 
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <style>
-        body {
-            margin: 0;
-            padding: 20px;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-        }
-    </style>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <!-- crossorigin required: the dev server is COOP/COEP cross-origin isolated -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link rel="stylesheet" crossorigin
+        href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&display=swap"/>
+  <style>
+      body { background: #0d0c0a; }
+  </style>
 </head>
-
 <body>
-    <div id="root"></div>
-    <script type="module" src="/src/demos/playback/comp-lanes-demo.tsx"></script>
+<div id="root"></div>
+<script type="module" src="/src/demos/playback/comp-lanes-demo.tsx"></script>
 <script data-goatcounter="https://opendaw-handbook.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
 </body>
-
 </html>

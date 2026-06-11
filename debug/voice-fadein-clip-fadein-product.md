@@ -4,9 +4,9 @@
 
 **Repro pages:**
 - [`voice-fadein-clip-fadein-product-debug-demo.html`](../voice-fadein-clip-fadein-product-debug-demo.html) (unlisted) — A/B between CROSSFADE (40 ms region fades) and HARD-CUT (no region fades, voice fade only) configurations on the same regions.
-- [`pure-webaudio-target-debug-demo.html`](../pure-webaudio-target-debug-demo.html) (unlisted) — three-way A/B/C: pure-Web-Audio ALIGNED target (−0.00 dB through crossfade), pure-Web-Audio UNALIGNED control (−4.57 dB phase-mismatch dip), OpenDAW with phase-corrected `loopOffset` (−1.56 dB dip at τ ≈ −7.5 ms relative to seam). Comparing OpenDAW against the pure-JS ALIGNED case empirically confirms the mechanism — both use the same phase-corrected configuration, both run linear crossfade math, only OpenDAW shows the residual dip on the V2-fadeIn side.
+- [`pure-webaudio-target-debug-demo.html`](../pure-webaudio-target-debug-demo.html) (unlisted) — three-way A/B/C: pure-Web-Audio ALIGNED target (−0.00 dB through crossfade), pure-Web-Audio UNALIGNED control (−4.57 dB phase-mismatch dip), OpenDAW with phase-corrected `loopOffset` (−1.56 dB dip at τ ≈ −7.5 ms relative to seam; pre-fix geometry — see 2026-06-11 addendum, pages at HEAD measure −1.20 dB at τ −10 ms). Comparing OpenDAW against the pure-JS ALIGNED case empirically confirms the mechanism — both use the same phase-corrected configuration, both run linear crossfade math, only OpenDAW shows the residual dip on the V2-fadeIn side.
 
-Audio fixtures: [`public/audio/test-440hz.wav`](../public/audio/test-440hz.wav) and [`public/audio/test-440hz-offset30.wav`](../public/audio/test-440hz-offset30.wav) (the second file is the same 440 Hz sine delayed by 30 samples = ~0.68 ms = ~24° at 440 Hz).
+Audio fixtures: [`public/audio/test-440hz.wav`](../public/audio/test-440hz.wav) and [`public/audio/test-440hz-offset30.wav`](../public/audio/test-440hz-offset30.wav) (the second file is the same 440 Hz sine delayed by 30 samples = ~0.68 ms = ~108° at 440 Hz).
 
 ## Symptom
 
@@ -14,7 +14,7 @@ Crossfading between two `AudioRegionBoxAdapter`s that reference **different `Aud
 
 The dip survives perfect phase alignment of the two regions at the seam. It's not caused by phase mismatch in the source signals — confirmed in the target demo, where the pure-Web-Audio ALIGNED scenario (same phase-corrected configuration, no engine) measures `min/ref = 0.9998` (−0.00 dB) through the crossfade.
 
-**Measured magnitude** (target demo, 40 ms linear crossfade, BPM 120, 48 kHz, sustained 440 Hz sine with 30-sample inter-file delay corrected by phase-correlate shift):
+**Measured magnitude** (target demo, 40 ms linear crossfade, BPM 120, 48 kHz, sustained 440 Hz sine with 30-sample inter-file delay corrected by phase-correlate shift; pre-fix geometry — see 2026-06-11 addendum, pages at HEAD measure −1.20 dB at τ −10 ms):
 
 ```
 ALIGNED  (pure Web Audio):   min/ref = 0.9998  (-0.00 dB)
@@ -125,3 +125,18 @@ Past the voice-fade-in region (`τ ≥ 0`), V2's `amplitude` reaches 1.0, so the
 Is `PitchVoice`'s 20 ms voice-fade-in intended to apply when the consuming region carries its own non-zero `fading.in`? The voice fade is a click-prevention behaviour at voice creation; the clip fade is an authored crossfade. They are currently composed multiplicatively, which corrupts the authored fade shape over the first 20 ms.
 
 Observable on any crossfade between regions whose `sourceUuid`s differ; most audible on sustained pure tones because complex material masks the small amplitude curve.
+
+---
+
+## Addendum 2026-06-11 — discrepancy RESOLVED, mechanism confirmed
+
+The unexplained gap (measured −1.56 dB at τ −7.5 ms vs predicted −1.16 dB at τ −10 ms) was caused by an **Int32 truncation in the test harness**: `regionB.position.setValue(57561.6)` truncated to 57561 while the float `loopOffset` compensation assumed 57561.6 — a 15-sample (~49° at 440 Hz) systematic phase error that shifted the envelope minimum earlier in τ and depressed the measured dip.
+
+After rounding the position assignment and recomputing the `loopOffset` compensation to match (wave-3 fix applied to the debug page at HEAD), **both measurement pages converge to −1.20 dB at τ −10.00 ms** vs the analytic prediction of −1.16 dB at τ −10 ms. τ snapping exactly to the predicted minimum is the strong discriminator: it confirms the quadratic voice-fade × clip-fade product mechanism in source AND empirically.
+
+Residual 0.04 dB narrowed to sample-quantisation biases (all same-direction, each ~0.1%-scale):
+- First fade-in sample exactly 0 (`fadeProgress/fadeLength = 0/960`).
+- `bp0 | 0` truncation offsetting the voice ramp by ~1 sample relative to the clip-gain buffer.
+- `fillGainBuffer` sampling at left edges of each gain step.
+
+Discriminating experiment if anyone wants to isolate the last word: render the crossfade on a constant DC-1.0 fixture; the output IS the realised composite gain curve; diff against the analytic quadratic `((τ + 20 ms) / 20 ms) × ((τ + 20 ms) / 40 ms)`.

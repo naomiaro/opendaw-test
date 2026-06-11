@@ -138,7 +138,7 @@ const App: React.FC = () => {
           setStatus("Loading waveforms...");
         }
       } catch (error) {
-        console.error("Failed to initialize:", JSON.stringify(String(error)));
+        console.error("Failed to initialize:", String(error));
         if (mounted) setStatus(`Error: ${error}`);
       }
     })();

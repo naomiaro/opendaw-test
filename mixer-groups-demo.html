@@ -10,7 +10,7 @@
   <meta name="description" content="Interactive demonstration of mixer group routing in the browser. Route tracks through intermediate group buses (Rhythm, Melodic) before reaching the master output. Control volume, mute, and solo per track and per group." />
   <meta name="keywords" content="OpenDAW, mixer groups, sub-mixing, audio routing, group bus, track routing, web audio, DAW, WebAssembly, SharedArrayBuffer" />
   <meta name="author" content="Moises AI" />
-  <meta name="theme-color" content="#3b82f6" />
+  <meta name="theme-color" content="#e8a33d" />
 
   <!-- Canonical URL -->
   <link rel="canonical" href="https://opendaw-test.pages.dev/mixer-groups-demo.html" />
@@ -64,6 +64,14 @@
   </script>
 
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <!-- crossorigin required: the dev server is COOP/COEP cross-origin isolated -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link rel="stylesheet" crossorigin
+        href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&display=swap"/>
+  <style>
+      body { background: #0d0c0a; }
+  </style>
 </head>
 <body>
 <div id="root"></div>

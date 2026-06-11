@@ -28,7 +28,7 @@ import {
   Code,
   Separator,
 } from "@radix-ui/themes";
-import { InfoCircledIcon, PlayIcon, StopIcon, ActivityLogIcon } from "@radix-ui/react-icons";
+import { InfoCircledIcon, PlayIcon, StopIcon } from "@radix-ui/react-icons";
 
 // Repro for `debug/shared-source-double-process.md`.
 //
@@ -107,7 +107,10 @@ const App: React.FC = () => {
   // no incoming edge at transaction commit, so we cannot keep both
   // configurations alive at once — every `AudioFileBox` must be referenced
   // by at least one region's `file` pointer.
+  // (AudioFileBox has mandatory pointerRules — this is not a universal box
+  // rule; most boxes tolerate zero incoming pointers at commit time.)
   const installedFileBoxesRef = useRef<AudioFileBox[]>([]);
+  const isPlayingSubRef = useRef<{ terminate(): void } | null>(null);
   const regionsRef = useRef<{ a: AudioRegionBox | null; b: AudioRegionBox | null }>({
     a: null,
     b: null,
@@ -127,7 +130,7 @@ const App: React.FC = () => {
         setProject(newProject);
         setAudioContext(newAudioContext);
 
-        newProject.engine.isPlaying.catchupAndSubscribe((obs) => {
+        isPlayingSubRef.current = newProject.engine.isPlaying.catchupAndSubscribe((obs) => {
           if (mounted) setIsPlaying(obs.getValue());
         });
 
@@ -205,7 +208,7 @@ const App: React.FC = () => {
 
           newProject.timelineBox.loopArea.enabled.setValue(false);
           newProject.timelineBox.loopArea.from.setValue(0);
-          newProject.timelineBox.loopArea.to.setValue(fullDurationPPQN);
+          newProject.timelineBox.loopArea.to.setValue(Math.round(fullDurationPPQN));
         });
 
         if (mounted) setStatus("Ready");
@@ -216,6 +219,7 @@ const App: React.FC = () => {
     })();
     return () => {
       mounted = false;
+      isPlayingSubRef.current?.terminate();
     };
   }, []);
 
@@ -477,12 +481,16 @@ const App: React.FC = () => {
             <Callout.Text>
               Two adjacent same-track regions touching at a seam produce a sample-level
               discontinuity 2 samples before the seam, where <Code>max |Δsample|</Code> measures
-              ≈ 2× the clean-sine baseline of <Code>2π·440·0.5/SR</Code>. The discontinuity is
-              independent of mediaId (SHARED vs DISTINCT <Code>AudioFileBox</Code>) AND
-              independent of where the seam falls within the 128-sample render quantum — all four
-              scenarios below produce bit-identical offline output. Live playback sometimes sounds
-              different across seam positions; the offline scan does not reproduce that.
-              Mechanism: open.
+              ≈ 2× the clean-sine baseline of <Code>2π·440·0.5/SR</Code>. All four offline
+              scenarios below produce bit-identical output — this is a harness geometry artefact
+              (<Code>renderOfflineSlice</Code> always starts 0.1 s before the seam, landing both
+              seam positions at offset 64 in the rendered slice). The live block-aligned vs
+              off-boundary audibility gap is real: off-boundary produces a 20 ms destructive
+              crossfade (−9.7 dB at seam+11.25 ms); block-aligned reduces to a single dropped
+              sample (−0.004 dB). Mechanism closed — see{" "}
+              <a href="https://github.com/naomiaro/opendaw-test/blob/main/debug/shared-source-double-process.md">
+                debug/shared-source-double-process.md addendum
+              </a>.
             </Callout.Text>
           </Callout.Root>
 
@@ -674,14 +682,18 @@ const App: React.FC = () => {
 
           <TestStep
             index={4}
-            title="Off-boundary seam + DISTINCT (confirms all four equivalent)"
+            title="Off-boundary seam + DISTINCT (closes 2×2 matrix)"
             description={
               <>
                 <strong>Requires:</strong> seam toggle still at{" "}
                 <strong>30.500 s (off-boundary)</strong>. Two distinct{" "}
-                <Code>AudioFileBox</Code>es with identical on-disk content. Closes the 2×2
-                matrix — all four offline scans return bit-identical numbers, confirming the
-                artifact is independent of both mediaId and seam-position-in-block.
+                <Code>AudioFileBox</Code>es with identical on-disk content. All four offline
+                scans return bit-identical numbers — a harness geometry artefact (
+                <Code>renderOfflineSlice</Code> always starts 0.1 s before seam, landing
+                both positions at offset 64 in the rendered slice). This does{" "}
+                <strong>not</strong> mean the engine treats all seam-in-block offsets
+                equally; the live block-aligned vs off-boundary audibility difference is
+                real (see debug note addendum).
               </>
             }
             actions={

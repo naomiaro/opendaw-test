@@ -62,3 +62,33 @@ Not yet tested at the time of writing this note:
 
 - **PitchStretch comparison:** does `AudioPitchStretchBox` (varispeed) reproduce the pop, or only `AudioTimeStretchBox` (transient-aware)? Would isolate whether the artifact is unique to the transient-segment processing or shared by both stretchers.
 - **Region-trim variant:** does the pop reproduce on a region whose `duration < fullDurationPpqn` such that the gap sits inside the trimmed region? Would isolate whether `loopOffset` / `loopDuration` interact with the symptom.
+
+---
+
+## Addendum 2026-06-11 — mechanism identified; mode-swap reset RESOLVED (core 0.0.152)
+
+### Mode-swap "playhead reset" RESOLVED
+
+`TimeInfo` (`core-processors/src/TimeInfo.ts`) is written only by explicit transport commands (`#play` / `#stop` / `#setPosition` / `#reset` / `#prepareRecordingState` (count-in) / `BlockRenderer` advance); no box-graph subscription writes position. A `postMessage`-interceptor probe over two live swaps (click at 92.14 s, BPM 124, `06_Vox`) captured exactly one position write per swap — the debug page's then-ungated post-swap `setPosition` call (gated on live `isPlaying` as of this branch). The playhead trace over 8027 samples is monotonic except for two jumps landing exactly at the write target. The ungated reset was the confounder: mid-playback it **causes** the jump it was intended to guard against. Removing the mid-playback call (now gated on `!isPlaying`) eliminates the jump. The SDK itself does not reset position on a mode swap.
+
+### Mechanism for the audible "restart" on engaging TimeStretch
+
+`TimeStretchSequencer.#handleTransientBoundary` starts each new voice at:
+
+```
+voiceStartSamples = startSamples − fadeSamplesInFile
+```
+
+where `startSamples = transient.position × sampleRate` — the **segment onset** (the transient marker before the playhead), not the playhead's intra-segment offset. Engaging TimeStretch mid-segment therefore rewinds audio content to the previous transient onset and hard-realigns at the next boundary, producing the audible content-from-earlier-in-the-file effect.
+
+### Likely mechanism for this note's mid-file-silent-gap pop
+
+The same `#handleTransientBoundary` line is the most consistent explanation for the silent-gap pop: starting playback inside a gap makes `floorLastIndex` select the onset **before** the gap, causing the stretcher to replay that phrase's onset through the pitch-shift pipeline where the timeline says silence. This is consistent with all five recorded empirical facts:
+
+1. Pitch tracks the cents slider (audio content, not a glitch).
+2. Identical across `Once` / `Repeat` / `Pingpong` (segment-replay mode is not the variable).
+3. Head silence clean (no preceding transient ⟹ `floorLastIndex < 0` ⟹ no voice emitted).
+4. NoStretch clean (no `AudioTimeStretchBox` path; `floorLastIndex` not consulted).
+5. Mid-file silent gap with TimeStretch: gap has a preceding transient ⟹ voice emits pre-gap content.
+
+**Suggested SDK fix:** clamp voice start to `max(segmentStart, playhead-in-file position)`, or suppress emission until the timeline position catches up to the segment onset — so that starting playback inside a silent gap produces silence rather than the preceding phrase.

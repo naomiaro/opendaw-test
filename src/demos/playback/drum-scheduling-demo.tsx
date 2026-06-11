@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { UUID } from "@opendaw/lib-std";
+import { UUID, type Subscription } from "@opendaw/lib-std";
 import { PPQN } from "@opendaw/lib-dsp";
 import { Project } from "@opendaw/studio-core";
 import { InstrumentFactories } from "@opendaw/studio-adapters";
@@ -15,6 +15,7 @@ import { initializeOpenDAW } from "@/lib/projectSetup";
 import { computeBarsFromSDK } from "@/lib/barLayout";
 import { useAudioExport } from "@/hooks/useAudioExport";
 import { usePlaybackPosition } from "@/hooks/usePlaybackPosition";
+import { CONSOLE_STYLES } from "@/lib/design/consoleTheme";
 import "@radix-ui/themes/styles.css";
 import { Theme, Container, Heading, Text, Button, Flex, Card, Badge, Separator } from "@radix-ui/themes";
 import { ExportProgress } from "@/components/ExportProgress";
@@ -72,6 +73,15 @@ const App: React.FC = () => {
   // Initialize OpenDAW
   useEffect(() => {
     let mounted = true;
+
+    // Reset append-only refs so re-runs (React StrictMode double-mount or
+    // any effect re-run) don't accumulate boxes/buffers from the discarded first
+    // project. The map is cleared before initializeOpenDAW captures it, so the
+    // sample manager only ever sees this run's buffers.
+    audioRegionsRef.current = [];
+    clipTemplatesRef.current = [];
+    trackAudioBoxesRef.current = [];
+    localAudioBuffersRef.current.clear();
 
     (async () => {
       try {
@@ -244,31 +254,62 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Subscribe to sample loader states to track when all samples are fully loaded
+  // Subscribe to sample loader states to track when all samples are fully loaded.
+  // DefaultSampleLoader.subscribe() catches up SYNCHRONOUSLY when the state is
+  // already terminal ("loaded"/"error"): it invokes the observer inline and returns
+  // Terminable.Empty. The pre-check below keeps that synchronous catch-up out of
+  // the subscription callback, whose one-shot `subscription.terminate()` would
+  // otherwise run while `const subscription` is still in TDZ → ReferenceError.
   useEffect(() => {
     if (!project || sampleUUIDsRef.current.length === 0) return undefined;
 
     console.debug("[SampleLoading] Setting up sample loading tracking for", sampleUUIDsRef.current.length, "samples");
 
-    const subscriptions: Array<{ terminate: () => void }> = [];
+    const subscriptions: Subscription[] = [];
     let loadedCount = 0;
+    const total = sampleUUIDsRef.current.length;
+
+    const handleLoaded = () => {
+      loadedCount++;
+      console.debug(`[SampleLoading] ${loadedCount}/${total} samples loaded`);
+      if (loadedCount === total) {
+        console.debug("[SampleLoading] All samples loaded! BPM changes are now safe.");
+        setSamplesLoaded(true);
+        setStatus("Ready - Click Play to hear the drum pattern!");
+      }
+    };
 
     sampleUUIDsRef.current.forEach(uuid => {
       const sampleLoader = project.sampleManager.getOrCreate(uuid);
       const uuidString = UUID.toString(uuid);
 
+      // Handle already-terminal states here, before subscribing.
+      // subscribe() would catch up synchronously for these states, but inside the
+      // callback the one-shot terminate would hit `subscription` before its const
+      // binding initializes. Early-returning keeps the sync path callback-free.
+      const currentState = sampleLoader.state;
+      console.debug(`[SampleLoading] Sample ${uuidString} initial state:`, currentState.type);
+
+      if (currentState.type === "loaded") {
+        handleLoaded();
+        return; // no subscription needed
+      }
+      if (currentState.type === "error") {
+        console.warn(`[SampleLoading] Sample ${uuidString} already errored:`, currentState.reason);
+        setStatus(`Error loading sample: ${currentState.reason}`);
+        return;
+      }
+
       const subscription = sampleLoader.subscribe(state => {
         console.debug(`[SampleLoading] Sample ${uuidString} state:`, state.type);
 
         if (state.type === "loaded") {
-          loadedCount++;
-          console.debug(`[SampleLoading] ${loadedCount}/${sampleUUIDsRef.current.length} samples loaded`);
-
-          if (loadedCount === sampleUUIDsRef.current.length) {
-            console.debug("[SampleLoading] All samples loaded! BPM changes are now safe.");
-            setSamplesLoaded(true);
-            setStatus("Ready - Click Play to hear the drum pattern!");
-          }
+          handleLoaded();
+          subscription.terminate(); // one-shot: terminal state reached
+        } else if (state.type === "error") {
+          console.warn(`[SampleLoading] Sample ${uuidString} error:`, state.reason);
+          setStatus(`Error loading sample: ${state.reason}`);
+          subscription.terminate(); // one-shot: terminal state reached
         }
       });
 
@@ -314,13 +355,16 @@ const App: React.FC = () => {
 
       console.debug(`[BPM Change] Changing from ${bpm} to ${newBpm}`);
 
-      // Update BPM and recalculate region durations
+      // Update BPM and recalculate region durations.
+      // In Musical timeBase, region duration is expressed in PPQN — the number of
+      // pulses a fixed-length audio clip occupies changes with BPM. Recalculate via
+      // PPQN.secondsToPulses(audioDuration, newBpm) so each hit spans the correct
+      // number of pulses at the new tempo.
       project.editing.modify(() => {
         // Update timeline BPM
         project.timelineBox.bpm.setValue(newBpm);
 
         // Recalculate duration in PPQN for all regions
-        // Even with NoSync mode, the duration needs to match the timeline's PPQN units
         audioRegionsRef.current.forEach(({ box, audioDuration }) => {
           const newDurationInPPQN = PPQN.secondsToPulses(audioDuration, newBpm);
           box.duration.setValue(newDurationInPPQN);
@@ -513,16 +557,16 @@ const App: React.FC = () => {
                   left: `${x}px`,
                   width: `${width}px`,
                   height: "100%",
-                  backgroundColor: bar.barNumber % 2 === 1 ? "var(--gray-3)" : "var(--gray-4)",
+                  backgroundColor: bar.barNumber % 2 === 1 ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.08)",
                   display: "flex",
                   alignItems: "center",
                   paddingLeft: "8px",
-                  borderLeft: "2px solid var(--gray-6)",
+                  borderLeft: "2px solid var(--mc-line-bright)",
                   boxSizing: "border-box"
                 }}
               >
-                <span style={{ color: "var(--gray-12)", fontWeight: "bold", fontSize: "12px" }}>
-                  Bar {bar.barNumber}
+                <span style={{ color: "var(--mc-muted)", fontFamily: "var(--mc-mono)", fontSize: "11px", letterSpacing: "0.1em" }}>
+                  BAR {bar.barNumber}
                 </span>
               </div>
             );
@@ -534,11 +578,15 @@ const App: React.FC = () => {
 
   if (!project) {
     return (
-      <Theme appearance="dark" accentColor="blue" radius="large">
+      <Theme appearance="dark" accentColor="amber" radius="medium" style={{ background: "var(--mc-bg)" }}>
+        <style>{CONSOLE_STYLES}</style>
         <Container size="2" px="4" py="8">
           <Flex direction="column" align="center" gap="4">
-            <Heading size="8">Drum Scheduling Demo</Heading>
-            <Text size="3" color="gray">
+            <div className="mc-kicker">Playback — Drum Scheduling · OpenDAW SDK</div>
+            <h1 className="mc-title" style={{ fontSize: "clamp(28px, 4.5vw, 44px)", textAlign: "center" }}>
+              DRUM <span className="mc-q">SCHEDULING</span>
+            </h1>
+            <Text size="3" style={{ color: "var(--mc-muted)" }}>
               {status}
             </Text>
           </Flex>
@@ -548,85 +596,76 @@ const App: React.FC = () => {
   }
 
   return (
-    <Theme appearance="dark" accentColor="blue" radius="large">
-      <GitHubCorner />
-      <Container size="3" px="4" py="8">
-        <Flex direction="column" gap="6" style={{ maxWidth: 1200, margin: "0 auto" }}>
-          <BackLink />
+    <Theme appearance="dark" accentColor="amber" radius="medium" style={{ background: "var(--mc-bg)" }}>
+      <style>{CONSOLE_STYLES}</style>
+      <Container size="3" px={{ initial: "4", sm: "6" }} py="6">
+        <GitHubCorner />
+        <BackLink />
+        <Flex direction="column" gap="5">
 
-          <Flex direction="column" align="center" gap="2">
-            <Heading size="8">Drum Scheduling Demo</Heading>
-            <Text size="3" color="gray">
-              90s-style drum pattern with visual timeline
-            </Text>
-          </Flex>
+          {/* Kicker / title / intro */}
+          <div>
+            <div className="mc-kicker">Playback — Drum Scheduling · OpenDAW SDK</div>
+            <h1 className="mc-title" style={{ fontSize: "clamp(28px, 4.5vw, 44px)" }}>
+              DRUM <span className="mc-q">SCHEDULING</span>
+            </h1>
+            <p className="mc-intro">
+              A 90s-style 4-bar boom-bap pattern built by placing{" "}
+              <strong>AudioRegionBox</strong> instances at PPQN positions derived from{" "}
+              <code>signatureTrack.iterateAll()</code> via{" "}
+              <code>computeBarsFromSDK</code>. Each hit's duration in PPQN is
+              re-derived with <code>PPQN.secondsToPulses(audioDuration, bpm)</code>{" "}
+              whenever tempo changes — Musical-timeBase regions express their length in
+              pulses, which are BPM-dependent. Move the tempo slider to hear the
+              pattern stretch and watch the clips resize on the timeline.
+            </p>
+          </div>
 
-          <Card style={{ width: "100%" }}>
+          {/* SDK reference block */}
+          <section className="mc-anchors">
+            <h2 className="mc-anchors-head">SDK reference</h2>
+            <p>
+              <code>signatureTrack.iterateAll()</code> yields one entry per time-signature
+              section; <code>computeBarsFromSDK(project)</code> expands sections into bar
+              objects with <code>startPpqn</code>, <code>durationPpqn</code>, and{" "}
+              <code>nominator</code> for grid rendering.{" "}
+              <code>PPQN.secondsToPulses(seconds, bpm)</code> converts audio duration to
+              PPQN — call it again on every BPM change so regions stay correctly sized.
+              <code>ValueEventCollectionBox</code> must be created for each{" "}
+              <code>AudioRegionBox</code> even when no automation is needed.
+            </p>
+          </section>
+
+          {/* Pattern grid / timeline — lattice-framed */}
+          <div className="mc-lattice-frame" style={{ marginTop: 0 }}>
             <Flex direction="column" gap="4">
               <Flex justify="between" align="center">
-                <Heading size="5" color="blue">
-                  Pattern Info
-                </Heading>
-                <Badge color="green" size="2">
-                  {bpm} BPM
+                <Heading size="4" style={{ color: "var(--mc-text)" }}>Pattern Grid</Heading>
+                <Badge color={samplesLoaded ? "green" : "orange"} size="2">
+                  {samplesLoaded ? `${bpm} BPM` : "Loading samples…"}
                 </Badge>
               </Flex>
-              <Separator size="4" />
-              <Flex direction="column" gap="2">
-                <Flex justify="between">
-                  <Text size="2" color="gray">
-                    Total Clips:
-                  </Text>
-                  <Text size="2" weight="bold">
-                    {scheduledClips.length}
-                  </Text>
-                </Flex>
-                <Flex justify="between">
-                  <Text size="2" color="gray">
-                    Duration:
-                  </Text>
-                  <Text size="2" weight="bold">
-                    {BARS} bars ({TOTAL_BEATS} beats)
-                  </Text>
-                </Flex>
-                <Flex justify="between">
-                  <Text size="2" color="gray">
-                    Pattern:
-                  </Text>
-                  <Text size="2" weight="bold">
-                    Classic boom-bap with hi-hats
-                  </Text>
-                </Flex>
-              </Flex>
-            </Flex>
-          </Card>
-
-          <Card style={{ width: "100%" }}>
-            <Flex direction="column" gap="4">
-              <Heading size="5" color="blue">
-                Timeline
-              </Heading>
-              <Text size="2" color="gray">
-                Each colored block represents a scheduled drum hit. Watch the white playhead move across the timeline as
-                the pattern plays.
+              <Text size="2" style={{ color: "var(--mc-muted)" }}>
+                Each colored block is a scheduled drum hit. The white playhead tracks
+                the engine position across the 4-bar loop.
               </Text>
               {renderTimeline()}
             </Flex>
-          </Card>
+          </div>
 
-          <Card style={{ width: "100%" }}>
+          {/* Transport + BPM */}
+          <Card style={{ background: "var(--mc-panel)", border: "1px solid var(--mc-line)" }}>
             <Flex direction="column" gap="4">
-              <Heading size="5" color="blue">
-                Transport Controls
-              </Heading>
+              <Heading size="4" style={{ color: "var(--mc-text)" }}>Transport</Heading>
+              <Separator size="4" />
 
               <Flex direction="column" gap="3">
                 <Flex direction="column" gap="2">
                   <Flex justify="between" align="center">
-                    <Text size="2" weight="bold">
+                    <Text size="2" weight="bold" style={{ color: "var(--mc-text)" }}>
                       Tempo
                     </Text>
-                    <Text size="2" color="gray">
+                    <Text size="2" style={{ color: "var(--mc-muted)", fontFamily: "var(--mc-mono)" }}>
                       {bpm} BPM
                     </Text>
                   </Flex>
@@ -639,21 +678,21 @@ const App: React.FC = () => {
                     disabled={!samplesLoaded}
                     style={{
                       width: "100%",
-                      accentColor: "var(--accent-9)",
+                      accentColor: "var(--mc-amber)",
                       opacity: samplesLoaded ? 1 : 0.5,
                       cursor: samplesLoaded ? "pointer" : "not-allowed"
                     }}
                   />
                   {!samplesLoaded && (
-                    <Text size="1" color="orange" style={{ textAlign: "center" }}>
-                      Loading samples...
+                    <Text size="1" style={{ color: "var(--mc-amber)", textAlign: "center" }}>
+                      Loading samples…
                     </Text>
                   )}
                   <Flex justify="between">
-                    <Text size="1" color="gray">
+                    <Text size="1" style={{ color: "var(--mc-label)", fontFamily: "var(--mc-mono)" }}>
                       80 BPM
                     </Text>
-                    <Text size="1" color="gray">
+                    <Text size="1" style={{ color: "var(--mc-label)", fontFamily: "var(--mc-mono)" }}>
                       160 BPM
                     </Text>
                   </Flex>
@@ -670,73 +709,66 @@ const App: React.FC = () => {
                   </Button>
                 </Flex>
               </Flex>
-              <Text size="2" align="center" color="gray">
+              <Text size="2" align="center" style={{ color: "var(--mc-muted)" }}>
                 {status}
               </Text>
             </Flex>
           </Card>
 
-          {/* Export Audio Card */}
-          <Card style={{ width: "100%" }}>
+          {/* Export Audio */}
+          <Card style={{ background: "var(--mc-panel)", border: "1px solid var(--mc-line)" }}>
             <Flex direction="column" gap="4">
-              <Heading size="5" color="purple">
-                Export Audio
-              </Heading>
+              <Heading size="4" style={{ color: "var(--mc-text)" }}>Export Audio</Heading>
+              <Separator size="4" />
+              <Text size="2" style={{ color: "var(--mc-muted)" }}>
+                Export the drum pattern as audio files. Choose full mix or individual stems
+                (Kick, Snare, Hi-Hats).
+              </Text>
 
-              <Flex direction="column" gap="3">
-                <Text size="2" color="gray">
-                  Export your drum pattern as audio files. Choose full mix or individual stems (Kick, Snare, Hi-Hats).
-                </Text>
-
-                <Separator size="4" />
-
-                <Flex gap="3" wrap="wrap" justify="center">
-                  <Button
-                    onClick={handleExportMix}
-                    disabled={!samplesLoaded || isExporting}
-                    color="purple"
-                    size="3"
-                    variant="solid"
-                  >
-                    Export Full Mix
-                  </Button>
-                  <Button
-                    onClick={handleDrumStems}
-                    disabled={!samplesLoaded || isExporting}
-                    color="purple"
-                    size="3"
-                    variant="outline"
-                  >
-                    Export Stems (4 files)
-                  </Button>
-                </Flex>
-
-                {/* Export status */}
-                <ExportProgress
-                  isExporting={isExporting}
-                  status={exportStatus}
-                  progress={exportProgress}
-                  onCancel={handleAbortExport}
-                />
+              <Flex gap="3" wrap="wrap" justify="center">
+                <Button
+                  onClick={handleExportMix}
+                  disabled={!samplesLoaded || isExporting}
+                  color="amber"
+                  size="3"
+                  variant="solid"
+                >
+                  Export Full Mix
+                </Button>
+                <Button
+                  onClick={handleDrumStems}
+                  disabled={!samplesLoaded || isExporting}
+                  color="amber"
+                  size="3"
+                  variant="outline"
+                >
+                  Export Stems (4 files)
+                </Button>
               </Flex>
+
+              <ExportProgress
+                isExporting={isExporting}
+                status={exportStatus}
+                progress={exportProgress}
+                onCancel={handleAbortExport}
+              />
             </Flex>
           </Card>
 
-          <Card style={{ width: "100%", background: "var(--gray-2)" }}>
-            <Flex direction="column" gap="2">
-              <Text size="2" color="gray" align="center">
-                Samples from{" "}
-                <a
-                  href="https://soundpacks.com/free-sound-packs/90s-mpc-sample-pack/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{ color: "var(--accent-9)", textDecoration: "none" }}
-                >
-                  90s MPC Sample Pack
-                </a>{" "}
-                by SoundPacks.com
-              </Text>
-            </Flex>
+          {/* Attribution */}
+          <Card style={{ background: "var(--mc-panel)", border: "1px solid var(--mc-line)" }}>
+            <Text size="2" style={{ color: "var(--mc-muted)", textAlign: "center" }}>
+              Samples from{" "}
+              <a
+                href="https://soundpacks.com/free-sound-packs/90s-mpc-sample-pack/"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: "var(--mc-amber)", textDecoration: "none" }}
+              >
+                90s MPC Sample Pack
+              </a>{" "}
+              by SoundPacks.com
+            </Text>
           </Card>
 
           <MoisesLogo />

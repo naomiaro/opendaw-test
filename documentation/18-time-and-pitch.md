@@ -275,13 +275,14 @@ The internals chapter has the full algorithm: weighted multi-band onset detectio
 Because markers belong to the `AudioFileBox`, every region that references that file shares the same detection result. Detecting twice for the same file is pure work, so always guard with the idempotency check:
 
 ```typescript
-if (audioFileBox.transientMarkers.pointerHub.incoming().length > 0) {
+// Engine minimum is two markers — treat 0 or 1 as "not yet detected".
+if (audioFileBox.transientMarkers.pointerHub.incoming().length >= 2) {
   // Already detected — nothing to do.
   return;
 }
 ```
 
-The SDK's own `AudioContentModifier.toTimeStretch` does this check before calling `Workers.Transients.detect()`. So does the demo's `ensureTransientMarkers` helper. The cost of *checking* is negligible; the cost of re-detecting a 4-minute track every time a user flips a region mode is not.
+The SDK's own `AudioContentModifier.toTimeStretch` guards the same way before calling `Workers.Transients.detect()`, though with a looser threshold — it skips when *any* markers exist. The demo's `ensureTransientMarkers` helper requires at least two (the engine's minimum) and re-detects a file carrying a single stale marker. The cost of *checking* is negligible; the cost of re-detecting a 4-minute track every time a user flips a region mode is not.
 
 
 
@@ -364,16 +365,28 @@ export async function ensureTransientMarkers(
   audioFileBox: AudioFileBox,
   buffer: AudioBuffer
 ): Promise<number[]> {
-  // Idempotent: already-populated files are returned as-is.
+  // Idempotent: files that already meet the engine's two-marker minimum are
+  // returned as-is. A single stale marker falls through to re-detection —
+  // the engine renders silence below two markers anyway.
   const existing = audioFileBox.transientMarkers.pointerHub.incoming();
-  if (existing.length > 0) {
+  if (existing.length >= 2) {
     return existing.map(p => (p.box as TransientMarkerBox).position.getValue());
   }
 
   const audioData = audioBufferToAudioData(buffer);
   const positions = await Workers.Transients.detect(audioData);
+  if (positions.length < 2) {
+    throw new Error(
+      "Transient detection returned fewer than two positions — " +
+      "TimeStretch renders silence below the engine's two-marker minimum."
+    );
+  }
 
   project.editing.modify(() => {
+    // True replace: remove any stale marker first. Re-detection is
+    // deterministic, so a surviving old marker would collide position-for-
+    // position with a fresh one — and EventCollection panics on duplicates.
+    existing.forEach(p => project.boxGraph.unstageBox(p.box));
     positions.forEach(seconds => {
       TransientMarkerBox.create(project.boxGraph, UUID.generate(), m => {
         m.owner.refer(audioFileBox.transientMarkers);
@@ -386,7 +399,7 @@ export async function ensureTransientMarkers(
 }
 ```
 
-Call it once per file — after the upload completes, or lazily on the first TimeStretch mode switch. The demo wraps exactly this pattern in `src/lib/transientDetection.ts` and calls it on every mode-flip; the idempotency check means subsequent flips skip detection.
+Call it once per file — after the upload completes, or lazily on the first TimeStretch mode switch. The demo wraps this pattern in `src/lib/transientDetection.ts` and calls it on every mode-flip; the idempotency check means subsequent flips skip detection.
 
 #### Reading existing markers via the adapter
 

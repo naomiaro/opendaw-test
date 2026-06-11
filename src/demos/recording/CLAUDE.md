@@ -118,12 +118,17 @@ completes asynchronously while the engine keeps playing. Only call `stop(true)` 
 - Resetting position before `play()` for playback
 
 ### SampleLoader Has subscribe() Only (Not catchupAndSubscribe)
-`sampleLoader.subscribe()` fires only for future state changes. Check `loader.state.type`
-before subscribing — short recordings may already be `"loaded"` by the time you subscribe.
+`sampleLoader.subscribe()` invokes the callback synchronously when the loader is
+already in a terminal state ("loaded"/"error") and returns `Terminable.Empty`.
+Always read `loader.state.type` synchronously first and handle terminal states
+directly — short recordings may be `"loaded"` before `subscribe()` is called.
 `loader.state` is typed as `SampleLoaderState` with
 `.type: "idle" | "record" | "progress" | "error" | "loaded"`.
 Always handle both `"loaded"` and `"error"` in finalization barriers — ignoring
 `"error"` leaves the state machine stuck in "finalizing" permanently.
+Inside the subscribe callback, a one-shot `sub.terminate()` call will hit the
+`const sub` binding in its TDZ if the callback fires synchronously; use the
+pre-check pattern (handle terminal state before subscribing) to avoid this.
 
 ### AnimationFrame Is for Rendering Only
 Use `AnimationFrame.add()` exclusively for continuous visual updates (waveform peaks,
@@ -245,7 +250,8 @@ artifact where each take's waveform shows ~2-3ms of extra audio at the tail.
 
 **20ms voice crossfade at loop boundaries:** At loop wrap, the engine sets
 `BlockFlag.discontinuous`, which fades out old voices over `VOICE_FADE_DURATION = 0.020s`
-(20ms) and fades in new voices over the same duration. During this window, both the
+(20ms) and fades in new voices when the read offset is non-zero (typical loop-wrap takes
+have `waveformOffset > 0`, so the 20 ms voice fade-in applies). During this window, both the
 outgoing and incoming take audio overlap briefly. The fade-out starts from the current
 amplitude level, making these transitions smooth and click-free.
 

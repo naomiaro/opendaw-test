@@ -157,8 +157,18 @@ function WarpTimestretchDemo() {
             : next === "varispeed"
               ? applyVarispeed(ctx, anchors)
               : applyTimeStretch(ctx, anchors, transientMode);
-        project.engine.setPosition(0);
-        pausedPositionRef.current = 0;
+        // Convenience reposition for the stopped state: resets the playhead
+        // to bar 1 so the next Play starts cleanly.
+        // Mode swaps do NOT reset engine.position (TimeInfo is written only by
+        // transport commands); calling setPosition mid-playback would itself
+        // cause an audible jump — gate on stopped state only.
+        // Read live engine state (not the React var, which may be stale in the
+        // closure) to avoid a position jump when Play is active during switching.
+        // See debug/time-pitch-start-position-pop.md for resolution.
+        if (!setup.project.engine.isPlaying.getValue()) {
+          project.engine.setPosition(0);
+          pausedPositionRef.current = 0;
+        }
         modeRef.current = next;
         setMode(next);
         setRepaintKey((k) => k + 1);
