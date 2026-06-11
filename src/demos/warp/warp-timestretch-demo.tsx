@@ -39,9 +39,9 @@ import {
   Badge,
   Separator,
   SegmentedControl,
-  Link,
   Button,
 } from "@radix-ui/themes";
+import { CONSOLE_STYLES } from "@/lib/design/consoleTheme";
 
 const QUARTER = PPQN.Quarter; // 960
 const BAR = PPQN.fromSignature(4, 4); // 3840
@@ -248,13 +248,15 @@ function WarpTimestretchDemo() {
   }, [setup]);
 
   return (
-    <Theme appearance="dark" accentColor="iris">
+    <Theme appearance="dark" accentColor="amber" style={{ background: "var(--mc-bg)" }}>
+      <style>{CONSOLE_STYLES}</style>
       <Container size="3" py="6">
         <GitHubCorner />
         <BackLink />
         <Flex direction="column" gap="4">
-          <Heading size="7">Warp to Grid: Time-Stretch</Heading>
-          <Text color="gray">
+          <div className="mc-kicker">Warp 03 — Time-Stretch · OpenDAW SDK</div>
+          <h1 className="mc-title" style={{ fontSize: "clamp(28px, 4.5vw, 44px)" }}>WARP TO GRID: TIME-STRETCH</h1>
+          <p className="mc-intro">
             The triptych on one page. <em>Raw</em> drifts off the metronome.{" "}
             <em>Varispeed</em> locks the beats and changes the key.{" "}
             <em>Time-stretch</em> locks the beats and keeps it — the{" "}
@@ -262,7 +264,7 @@ function WarpTimestretchDemo() {
             <code>AudioTimeStretchBox</code>, which plays transient-bounded segments at
             rate 1.0 and resynchronizes at each transient (closer to Ableton&apos;s{" "}
             <em>Beats</em> mode than to a granular engine).
-          </Text>
+          </p>
           {error && (
             <Card>
               <Text color="red">{error}</Text>
@@ -335,7 +337,7 @@ function WarpTimestretchDemo() {
             </Flex>
           </Card>
           {setup && (
-            <Card>
+            <div className="mc-lattice-frame">
               <WarpWaveform
                 project={setup.project}
                 fileUuid={setup.fileUuid}
@@ -345,7 +347,7 @@ function WarpTimestretchDemo() {
                 repaintKey={repaintKey}
                 onError={setError}
               />
-            </Card>
+            </div>
           )}
           <Card>
             <Flex direction="column" gap="3" p="3">
@@ -372,24 +374,22 @@ function WarpTimestretchDemo() {
               </Flex>
             </Flex>
           </Card>
-          <Card>
-            <Flex direction="column" gap="2">
-              <Heading size="4">The thesis (warp-markers ch 09)</Heading>
-              <Text size="2" color="gray">
-                The warp math does not change. The same anchors driving{" "}
-                <Link href="/warp-varispeed-demo.html">varispeed</Link> drive this engine
-                untouched — swapping the stretch algorithm never moves a marker, which is
-                why Ableton lets you change a clip&apos;s warp <em>mode</em> without touching
-                its warp <em>markers</em>. Honest limits apply: transients can smear or
-                double under heavy stretching, and extreme rates expose segment looping.
-                The third direction —{" "}
-                <Link href="/warp-grid-follows-file-demo.html">bend the grid instead</Link>{" "}
-                — costs no DSP at all. See the{" "}
-                <Link href="/warp-demos.html">warp overview</Link> for which DAWs use each
-                approach and who reaches for it.
-              </Text>
-            </Flex>
-          </Card>
+          <section className="mc-anchors">
+            <h2 className="mc-anchors-head">The thesis (warp-markers ch 09)</h2>
+            <p>
+              The warp math does not change. The same anchors driving{" "}
+              <a href="/warp-varispeed-demo.html">varispeed</a> drive this engine
+              untouched — swapping the stretch algorithm never moves a marker, which is
+              why Ableton lets you change a clip&apos;s warp <em>mode</em> without touching
+              its warp <em>markers</em>. Honest limits apply: transients can smear or
+              double under heavy stretching, and extreme rates expose segment looping.
+              The third direction —{" "}
+              <a href="/warp-grid-follows-file-demo.html">bend the grid instead</a>{" "}
+              — costs no DSP at all. See the{" "}
+              <a href="/warp-demos.html">warp overview</a> for which DAWs use each
+              approach and who reaches for it.
+            </p>
+          </section>
           <MoisesLogo />
         </Flex>
       </Container>

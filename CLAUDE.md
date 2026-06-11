@@ -141,7 +141,9 @@ API: `.isEmpty()`, `.nonEmpty()`, `.unwrap()`, `.unwrapOrNull()`, `.unwrapOrUnde
   exceptions — they describe SDK behaviour and industry concept respectively.
 
 ### Box Graph API Names
-- Delete box: `project.boxGraph.unstageBox(box)` — takes box object, NOT UUID
+- Delete box: `project.boxGraph.unstageBox(box)` — takes box object, NOT UUID. Bare
+  `unstageBox` does NOT cascade; `box.delete()` cascade-deletes mandatory dependents
+  (e.g. a stretch box's warp markers) — use `.delete()` when dependents must go too
 - Find box: `project.boxGraph.findBox(uuid)` — returns `Option<Box>`, NOT raw box
 - AudioRegionBox gain: field is `gain` (dB, decibel constraint), NOT `volume`, NOT a 0-1 range
 - Option API: `isEmpty()` / `nonEmpty()` — NOT `isSome()` / `isNone()`
@@ -565,9 +567,12 @@ setState-per-frame is only safe if no expensive effect reads its output.
   remove worktrees (or add a vitest exclude) before trusting `npm test` totals.
 - Web fonts under the COOP/COEP dev server need `crossorigin` on BOTH the preconnect
   and stylesheet `<link>`s (verified with Google Fonts on warp-demos.html).
-- Playwright MCP screenshots: omit the `filename` param — custom names can write
-  outside the repo; default-named files land in `.playwright-mcp/`.
+- Playwright MCP screenshots: omit the `filename` param — custom-named files land
+  loose in the project root; default-named files land in `.playwright-mcp/`.
 - PRs are squash-merged (`gh pr merge <n> --squash`) — main carries one commit per PR.
+- Once a PR is open and its work complete, run the comprehensive PR review
+  (`/pr-review-toolkit:review-pr`, applicable aspects) and FIX Critical + Important
+  findings before merge; push fixes to the PR branch and note them in a PR comment.
 - After SDK upgrades, clear Vite dep cache: `rm -rf node_modules/.vite` (dev server pre-bundles old SDK)
 - After **any** `package.json` change (SDK upgrade, devDep add/remove, version bump), **regenerate
   the lockfile cleanly**: `rm -rf node_modules package-lock.json && npm install`, then verify with
@@ -637,6 +642,9 @@ Each demo category folder has its own CLAUDE.md with SDK knowledge scoped to tho
 - Export & offline rendering: `documentation/10-export.md`
 - SDK changelogs: `changelogs/`
 - SDK investigations & open questions: `debug/` (see `debug/README.md` for convention)
+- `docs/superpowers/{specs,plans}` hold in-flight work only — delete a spec/plan in the
+  PR that completes its work (git history preserves them). Durable decisions graduate to
+  `docs/design/`, CLAUDE.md, or `documentation/` before deletion.
 - Unlisted debug demo pages: HTML at repo root with `<meta name="robots" content="noindex">`,
   not added to `src/index.tsx` or `public/sitemap.xml`. See `comp-lanes-debug-demo.tsx` as reference.
 - OpenDAW source code locations: see `.claude/local.md`

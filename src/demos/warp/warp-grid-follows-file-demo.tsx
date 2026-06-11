@@ -33,9 +33,9 @@ import {
   Badge,
   Separator,
   Switch,
-  Link,
   Button,
 } from "@radix-ui/themes";
+import { CONSOLE_STYLES } from "@/lib/design/consoleTheme";
 
 const QUARTER = PPQN.Quarter; // 960
 const BAR = PPQN.fromSignature(4, 4); // 3840
@@ -205,20 +205,22 @@ function WarpGridFollowsFileDemo() {
   }, [setup, totalSeconds]);
 
   return (
-    <Theme appearance="dark" accentColor="iris">
+    <Theme appearance="dark" accentColor="amber" style={{ background: "var(--mc-bg)" }}>
+      <style>{CONSOLE_STYLES}</style>
       <Container size="3" py="6">
         <GitHubCorner />
         <BackLink />
         <Flex direction="column" gap="4">
-          <Heading size="7">Warp the Grid: Set Tempo from Clip</Heading>
-          <Text color="gray">
+          <div className="mc-kicker">Warp 02 — Set Tempo from Clip · OpenDAW SDK</div>
+          <h1 className="mc-title" style={{ fontSize: "clamp(28px, 4.5vw, 44px)" }}>WARP THE GRID: SET TEMPO FROM CLIP</h1>
+          <p className="mc-intro">
             The inverse of warping audio: the project&apos;s <em>tempo map</em> becomes the
             file&apos;s beat map — one stepped tempo event per bar on OpenDAW&apos;s tempo
             track. The audio is scheduled once and never touched; it plays raw at rate
             1.0, bit-identical in both states. Only the metronome, the bar ruler, and the
             grid bend (Ableton <em>Set tempo from clip</em>, Logic Smart Tempo{" "}
             <em>ADAPT</em>).
-          </Text>
+          </p>
           {error && (
             <Card>
               <Text color="red">{error}</Text>
@@ -245,7 +247,7 @@ function WarpGridFollowsFileDemo() {
             </Flex>
           </Card>
           {setup && (
-            <Card>
+            <div className="mc-lattice-frame">
               <WarpWaveform
                 project={setup.project}
                 fileUuid={setup.fileUuid}
@@ -255,7 +257,7 @@ function WarpGridFollowsFileDemo() {
                 repaintKey={repaintKey}
                 onError={setError}
               />
-            </Card>
+            </div>
           )}
           <Card>
             <Flex direction="column" gap="3" p="3">
@@ -282,27 +284,25 @@ function WarpGridFollowsFileDemo() {
               </Flex>
             </Flex>
           </Card>
-          <Card>
-            <Flex direction="column" gap="2">
-              <Heading size="4">The math (warp-markers ch 08)</Heading>
-              <Text size="2" color="gray">
-                One stepped tempo event per bar — BPM computed as{" "}
-                <code>60 × 4 / (nextDownbeat − thisDownbeat)</code> in seconds, placed at
-                each downbeat&apos;s grid tick. Bar-level granularity (130 events for this
-                file, ~150 ms per rewrite) is roughly 4× faster than per-beat events
-                (510 events, ~600 ms) while capturing
-                the song&apos;s real tempo drift bar-by-bar. The file&apos;s pickup fills the end of
-                the lead-in bar (the full-bars rule), and the region stays in Seconds
-                timeBase — a Musical region would stretch under the new tempo map,
-                defeating the point. Compare{" "}
-                <Link href="/warp-varispeed-demo.html">varispeed</Link> (bends the sound)
-                and <Link href="/warp-timestretch-demo.html">time-stretch</Link> (bends
-                neither — it slices). See the{" "}
-                <Link href="/warp-demos.html">warp overview</Link> for which DAWs use each
-                approach and who reaches for it.
-              </Text>
-            </Flex>
-          </Card>
+          <section className="mc-anchors">
+            <h2 className="mc-anchors-head">The math (warp-markers ch 08)</h2>
+            <p>
+              One stepped tempo event per bar — BPM computed as{" "}
+              <code>60 × 4 / (nextDownbeat − thisDownbeat)</code> in seconds, placed at
+              each downbeat&apos;s grid tick. Bar-level granularity (130 events for this
+              file, ~150 ms per rewrite) is roughly 4× faster than per-beat events
+              (510 events, ~600 ms) while capturing
+              the song&apos;s real tempo drift bar-by-bar. The file&apos;s pickup fills the end of
+              the lead-in bar (the full-bars rule), and the region stays in Seconds
+              timeBase — a Musical region would stretch under the new tempo map,
+              defeating the point. Compare{" "}
+              <a href="/warp-varispeed-demo.html">varispeed</a> (bends the sound)
+              and <a href="/warp-timestretch-demo.html">time-stretch</a> (bends
+              neither — it slices). See the{" "}
+              <a href="/warp-demos.html">warp overview</a> for which DAWs use each
+              approach and who reaches for it.
+            </p>
+          </section>
           <MoisesLogo />
         </Flex>
       </Container>

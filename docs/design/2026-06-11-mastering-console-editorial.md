@@ -14,16 +14,16 @@ per page that carries information (never decoration for its own sake).
 
 | Token | Value | Use |
 | --- | --- | --- |
-| `--wo-bg` | `#0d0c0a` | page background (warm near-black) |
-| `--wo-panel` | `#151310` | panel/card surfaces |
-| `--wo-line` / `--wo-line-bright` | `#2a2620` / `#3d3729` | hairline rules, borders |
-| `--wo-text` | `#d8d2c8` | primary text (12.3:1 on panel) |
-| `--wo-muted` | `#948c7d` | prose (5.6:1) |
-| `--wo-label` | `#8b8273` | smallest text — micro-labels, indices (4.9:1, the floor) |
-| `--wo-faint` | `#5f594e` | **decorative strokes only — fails AA for text** |
-| `--wo-amber` | `#e8a33d` | the single accent; also "audio file" in diagrams |
-| `--wo-cyan` | `#5fb4c9` | "project grid" in diagrams; scenario chip |
-| `--wo-green` | `#7fbf6a` | scenario chip (time-stretch/slicing) |
+| `--mc-bg` | `#0d0c0a` | page background (warm near-black) |
+| `--mc-panel` | `#151310` | panel/card surfaces |
+| `--mc-line` / `--mc-line-bright` | `#2a2620` / `#3d3729` | hairline rules, borders |
+| `--mc-text` | `#d8d2c8` | primary text (12.3:1 on panel) |
+| `--mc-muted` | `#948c7d` | prose (5.6:1) |
+| `--mc-label` | `#8b8273` | smallest text — micro-labels, indices (4.9:1, the floor) |
+| `--mc-faint` | `#5f594e` | **decorative strokes only — fails AA for text** |
+| `--mc-amber` | `#e8a33d` | the single accent; also "audio file" in diagrams |
+| `--mc-cyan` | `#5fb4c9` | "project grid" in diagrams; scenario chip |
+| `--mc-green` | `#7fbf6a` | scenario chip (time-stretch/slicing) |
 
 ## Rules
 
@@ -33,7 +33,7 @@ per page that carries information (never decoration for its own sake).
   Tabular numerals for anything numeric.
 - **Color:** one amber accent per page; scenario identity via small DAW-style color
   chips, never full-surface coloring. Every text/background pair ≥4.5:1 (verify with
-  a contrast computation, not by eye — `--wo-faint` exists precisely because it fails).
+  a contrast computation, not by eye — `--mc-faint` exists precisely because it fails).
 - **Signature element:** one per page, drawn from the page's actual data/concept
   (the overview's warp lattice plots real-shaped wobbly beats against the grid).
 - **Motion:** one staggered load reveal (`animation-delay`), restrained hovers

@@ -36,8 +36,20 @@
   cannot re-enable). Disabled-state wrappers for sibling controls with different conditions must
   be siblings, and keyboard activation (Tab + Enter fires onValueChange) needs an explicit
   state guard in the handler.
-- `transientPlayMode` writes do not reset engine.position — safe live control during playback.
-  `playbackRate` writes do reset it.
+- `transientPlayMode` AND `playbackRate` are read live per render block
+  (`TimeStretchSequencer.ts:39-40` @ core 0.0.152) — neither resets engine.position;
+  both are safe live controls during playback. Keep the defensive `setPosition` only
+  after full mode-swap transactions (see playback CLAUDE.md, unresolved).
+- TimeStretch renders silence with FEWER THAN 2 transient markers
+  (`transients.length() < 2`), not just zero.
+- Outside the warp-marker range `[first.position, last.position)` the engine plays
+  silence — PitchStretch evicts its voice with a 20 ms fade; TimeStretch stops
+  rendering outright. No extrapolation: the engine gates out-of-range blocks before
+  the mapping's endpoint clamp (internals ch08) is consulted. Lead-in and outro
+  anchors are required, and the range is half-open: the last marker's tick is
+  already outside.
+- Before the first tempo event, the FIRST event's value back-extends;
+  `timelineBox.bpm` applies only when the tempo collection is empty.
 
 ### Audio Verification (audio-verify skill)
 - Run `/audio-verify` after changes to the beat math, warp scenarios, or engine behavior —
