@@ -207,28 +207,30 @@ const sampleLoader = project.sampleManager.getOrCreate(fileUUID);
 // Check current state first — subscribe() fires synchronously when the loader
 // is already in a terminal state ("loaded" or "error"), but calling
 // sub.terminate() inside that synchronous callback would fire before const sub
-// is bound (TDZ crash). Guard by checking state.type here instead.
+// is bound (TDZ crash). Handle terminal states directly; subscribe only for
+// the non-terminal case.
 if (sampleLoader.state.type === "loaded") {
   const peaks = sampleLoader.peaks;
   if (!peaks.isEmpty()) {
     // Already loaded
   }
-}
-
-const subscription = sampleLoader.subscribe(state => {
-  if (state.type === "loaded") {
-    const peaksOption = sampleLoader.peaks;
-    if (!peaksOption.isEmpty()) {
-      // Peaks now available
+} else if (sampleLoader.state.type === "error") {
+  console.error("Failed to load:", sampleLoader.state.reason);
+} else {
+  const subscription = sampleLoader.subscribe(state => {
+    if (state.type === "loaded") {
+      const peaksOption = sampleLoader.peaks;
+      if (!peaksOption.isEmpty()) {
+        // Peaks now available
+      }
+      subscription.terminate();
     }
-  }
-  if (state.type === "error") {
-    console.error("Failed to load:", state.reason);
-  }
-});
-
-// Clean up when done
-subscription.terminate();
+    if (state.type === "error") {
+      console.error("Failed to load:", state.reason);
+      subscription.terminate();
+    }
+  });
+}
 ```
 
 **Important:** `SampleLoader` only has `subscribe()`, NOT `catchupAndSubscribe()`. `subscribe()` invokes the callback synchronously when the loader is already in a terminal state (`"loaded"` or `"error"`). Always check `sampleLoader.state.type` first and handle terminal states directly — this avoids a TDZ crash when a one-shot `sub.terminate()` inside the callback would fire before `const sub` is bound.

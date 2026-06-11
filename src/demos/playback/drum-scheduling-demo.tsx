@@ -74,7 +74,7 @@ const App: React.FC = () => {
   useEffect(() => {
     let mounted = true;
 
-    // 1b fix: reset append-only refs so re-runs (React StrictMode double-mount or
+    // Reset append-only refs so re-runs (React StrictMode double-mount or
     // any effect re-run) don't accumulate boxes/buffers from the discarded first
     // project. The map is cleared before initializeOpenDAW captures it, so the
     // sample manager only ever sees this run's buffers.
@@ -283,7 +283,7 @@ const App: React.FC = () => {
       const sampleLoader = project.sampleManager.getOrCreate(uuid);
       const uuidString = UUID.toString(uuid);
 
-      // 1a fix: handle already-terminal states here, before subscribing.
+      // Handle already-terminal states here, before subscribing.
       // subscribe() would catch up synchronously for these states, but inside the
       // callback the one-shot terminate would hit `subscription` before its const
       // binding initializes. Early-returning keeps the sync path callback-free.

@@ -1,6 +1,9 @@
 // Exact transcription of TapeDeviceProcessor pitch path @ studio-core 0.0.152
 // for the touching-seam scenario of shared-source-double-process-debug-demo.tsx.
 // Two NoStretch regions, same 60s 440Hz 0.5-amp sine (decoded to 48k), BPM 120.
+// Note: the `isFadingOut()` keep-guard branch added in core 0.0.145 (fixes the
+// fade-out-end-of-file pop) is omitted here — it is unreachable in this scenario
+// because neither region ends at the file boundary during the simulated window.
 "use strict";
 
 const SR = 48000;

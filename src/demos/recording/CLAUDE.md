@@ -250,7 +250,8 @@ artifact where each take's waveform shows ~2-3ms of extra audio at the tail.
 
 **20ms voice crossfade at loop boundaries:** At loop wrap, the engine sets
 `BlockFlag.discontinuous`, which fades out old voices over `VOICE_FADE_DURATION = 0.020s`
-(20ms) and fades in new voices over the same duration. During this window, both the
+(20ms) and fades in new voices when the read offset is non-zero (typical loop-wrap takes
+have `waveformOffset > 0`, so the 20 ms voice fade-in applies). During this window, both the
 outgoing and incoming take audio overlap briefly. The fade-out starts from the current
 amplitude level, making these transitions smooth and click-free.
 

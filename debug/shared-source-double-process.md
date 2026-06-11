@@ -108,13 +108,13 @@ What we do see consistently:
 
 **(2) Offline bit-identicality across the 2 × 2 matrix — a render-harness geometry artefact.**
 
-`renderOfflineSlice` (`src/lib/offlineScan.ts:46`) starts transport exactly 0.1 s = 4800 samples = 37.5 quanta before the seam. Both seam positions (block-aligned = seam at 30.000 s; off-boundary = seam at 30.500 s) therefore land exactly 0.5 quanta = 64 samples into the offline-rendered slice, regardless of the page's seam-position toggle. The offline render never exercises the block-aligned geometry (seam at quantum 0). The note's earlier inference that "the artifact is independent of seam-in-block offset" holds only within the range of offsets the harness actually tests; it does not generalise to all offsets. This is a **harness artefact**, not an engine invariant.
+The scan geometry (`shared-source-double-process-debug-demo.tsx:345`) passes `startSeconds = seamSeconds − 0.1` to `renderOfflineSlice`, starting transport exactly 0.1 s = 4800 samples = 37.5 quanta before the seam. Both seam positions (block-aligned = seam at 30.000 s; off-boundary = seam at 30.500 s) therefore land exactly 0.5 quanta = 64 samples into the offline-rendered slice, regardless of the page's seam-position toggle. The offline render never exercises the block-aligned geometry (seam at quantum 0). The note's earlier inference that "the artifact is independent of seam-in-block offset" holds only within the range of offsets the harness actually tests; it does not generalise to all offsets. This is a **harness artefact**, not an engine invariant.
 
 **(3) Live audibility gap — geometry-dependent composite.**
 
 At **offset 0** (seam falls on a block boundary), the outgoing voice's next-block eviction fade is exactly complementary to the incoming 20 ms fade-in (sum = 1 over the fade window). The audible artefact reduces to the single dropped sample at `seam − 1` — a faint tick (−0.004 dB dip in a 2.5 ms envelope window).
 
-At **offset 64** (seam falls 64 samples into a block, the live geometry for the 30.500 s case), the incoming voice alone covers the quantum remainder at ≤ 6.7% gain (1.33 ms near-silent hole at seam), then the outgoing voice returns one quantum later, 65 samples late in phase (218° at 440 Hz), producing a 20 ms destructive crossfade that dips to −9.7 dB at seam + 11.25 ms with a mid-fade polarity inversion.
+At **offset 64** (seam falls 64 samples into a block, the live geometry for the 30.500 s case), the incoming voice alone covers the quantum remainder at ≤ 6.7% gain (1.33 ms near-silent hole at seam), then the outgoing voice returns one quantum later, 65 samples late in phase (65 × 440 / 48000 × 360° = 214.5° at 440 Hz), producing a 20 ms destructive crossfade that dips to −9.7 dB at seam + 11.25 ms with a mid-fade polarity inversion.
 
 **Empirical probe values** (engine vs simulation, 48 kHz, BPM 120, 440 Hz / 0.5-amplitude sine):
 

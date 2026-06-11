@@ -370,11 +370,12 @@ const App: React.FC = () => {
     });
     setCents(clamped);
 
-    // Defensive playhead restore: playbackRate writes do NOT reset
+    // Convenience reposition: keeps the amber bar and engine in agreement
+    // after slider scrubs while stopped. playbackRate writes do NOT reset
     // engine.position (refuted at core 0.0.152 — see playback CLAUDE.md
-    // "engine.position vs Box Writes"); kept so the amber bar and engine
-    // agree after slider scrubs while stopped. Skip while playing.
-    if (!isPlaying) {
+    // "engine.position vs Box Writes"). Read live engine state (not the
+    // React var, which may be stale in the closure) — same pattern as ~line 464.
+    if (!project.engine.isPlaying.getValue()) {
       const bpm = project.timelineBox.bpm.getValue();
       const ppqn = Math.round(PPQN.secondsToPulses(startSeconds, bpm));
       project.engine.setPosition(ppqn);
