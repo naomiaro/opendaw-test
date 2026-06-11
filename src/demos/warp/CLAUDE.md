@@ -39,7 +39,23 @@
 - `transientPlayMode` writes do not reset engine.position — safe live control during playback.
   `playbackRate` writes do reset it.
 
+### Audio Verification (audio-verify skill)
+- Run `/audio-verify` after changes to the beat math, warp scenarios, or engine behavior —
+  it renders all five scenarios offline and asserts beat alignment numerically. Thresholds
+  and the full workflow live in `.claude/skills/audio-verify/SKILL.md`.
+- Full-song offline render ≈ 15–30 s (much faster than realtime). One render fits in
+  ~99 MB float32 WAV at 48 kHz.
+- Onset-median floor on rendered audio is ~30–40 ms; nearest-distance misalignment
+  saturates at half the beat period (~244 ms at 123 BPM). Pick analysis windows that are
+  musically dense (tracker stability ≥ 0.8) and away from file-vs-grid divergence
+  zero-crossings — the drift is non-monotonic and re-converges where the song crosses
+  its average tempo.
+- Beat trackers follow the music's pulse, not metronome clicks mixed into a render —
+  assert click alignment against the click list explicitly, never via "union fits better".
+
 ## Reference Files
 - Beat math: `src/lib/beats/beatMapConversions.ts` (anchors, tempo events, integration invariant tests)
+- Expected verify times: `src/lib/beats/expectedTimes.ts`; comparison: `scripts/compare-beats.py`
+- Scenario builders: `src/demos/warp/lib/warpScenarios.ts` (shared by demos + verify harness)
 - Shared setup: `src/demos/warp/lib/setupWarpDemo.ts`; waveform: `src/demos/warp/lib/WarpWaveform.tsx`
 - Source tutorial: warp-markers repo (chapters 07-09 + in-the-wild appendix), local checkout path in `.claude/local.md` if present
