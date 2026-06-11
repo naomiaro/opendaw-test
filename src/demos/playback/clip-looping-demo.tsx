@@ -270,9 +270,6 @@ const LoopedWaveformCanvas: React.FC<{
     const canvas = playheadCanvasRef.current;
     if (!canvas) return;
 
-    let prevWidth = 0;
-    let prevHeight = 0;
-
     const af = AnimationFrame.add(() => {
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
@@ -288,8 +285,6 @@ const LoopedWaveformCanvas: React.FC<{
       if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
         canvas.width = targetWidth;
         canvas.height = targetHeight;
-        prevWidth = width;
-        prevHeight = height;
       }
 
       // Reset transform and clear (clearRect is cheap, no reflow)
@@ -359,7 +354,7 @@ const App: React.FC = () => {
   const [peaks, setPeaks] = useState<Peaks | null>(null);
 
   const { currentPosition, isPlaying, pausedPositionRef } = usePlaybackPosition(project);
-  const { handlePlay, handlePause, handleStop } = useTransportControls({
+  const { handlePlay, handleStop } = useTransportControls({
     project,
     audioContext,
     pausedPositionRef,
@@ -398,7 +393,7 @@ const App: React.FC = () => {
           newAudioContext,
           [{ name: "Drums", file: `/audio/DarkRide/02_Drums.${ext}` }],
           localAudioBuffers,
-          { onProgress: (c, t, name) => { if (mounted) setStatus(`Loading ${name}...`); } }
+          { onProgress: (_c, _t, name) => { if (mounted) setStatus(`Loading ${name}...`); } }
         );
 
         if (!mounted) return;
@@ -434,7 +429,7 @@ const App: React.FC = () => {
             }
             sampleSub?.terminate();
             sampleSub = null;
-          } else if (state.type === "error" || state.type === "failed") {
+          } else if (state.type === "error") {
             console.error("Sample loader failed:", state);
             if (mounted) setStatus("Waveform peaks failed to load.");
             sampleSub?.terminate();
