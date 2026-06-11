@@ -130,7 +130,8 @@ render hangs (check `data-verify-state` and browser console via Playwright).
 ## Error handling
 
 - Harness: every failure path lands in `data-verify-state="error:<msg>"`.
-- Middleware: rejects non-PUT, oversized (> 100 MB), or bad-name requests with 4xx.
+- Middleware: rejects non-PUT, oversized (> 150 MB — a full-song float32 WAV is
+  ~99 MB), or bad-name requests with 4xx.
 - Skill: stops at the first failed scenario with the numbers collected so far.
 
 ## Testing the skill itself
