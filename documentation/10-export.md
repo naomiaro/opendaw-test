@@ -990,54 +990,35 @@ const { isExporting, exportStatus, handleExportMix } = useAudioExport(project);
 
 **Problem:** Console shows warnings like "Overlapping regions" followed by "Deleting 16 invalid boxes", and export is incomplete (missing some tracks)
 
-**Cause:** OpenDAW has strict validation rules for AudioRegionBox instances depending on their `timeBase` setting:
-
-- **Musical TimeBase (default):** Overlapping regions are **forbidden** and will be automatically deleted
-- **Seconds TimeBase:** Overlapping regions are **allowed** and supported
+**Cause:** Overlapping regions on one track are invalid by design — in **both** timeBases. The validation that `project.copy()` runs (`ProjectValidation.validate()`) emits a console warning and a `RuntimeNotifier.info("Some data is corrupt")` notification, then deletes overlapping pairs. Export and offline render are built on `project.copy()`, so overlapping regions are deleted before any audio is rendered.
 
 **Background:**
 
-OpenDAW's `ProjectValidation.ts` validates regions when loading/exporting projects. For regions using `TimeBase.Musical` (the default), overlapping is treated as data corruption because:
-- Musical time regions recalculate duration when tempo changes
-- Overlapping regions would create ambiguity during tempo adjustments
-- The validation automatically deletes overlapping regions as "invalid boxes"
+The confusion comes from two different validators:
 
-From OpenDAW's `RegionClipResolver.ts`:
+- `ProjectValidation.ts` — runs on load and on `project.copy()` (so: export, offline render). It compares raw box values: `right.position < left.position + left.duration`. For Seconds regions, `duration` is stored in seconds while `position` is PPQN — the arithmetic uses mixed units. Musically-offset Seconds overlaps may therefore survive `copy()` undetected, while near-identical-position duplicates are deleted. Do not rely on `ProjectValidation` to catch Seconds overlaps.
+- `RegionClipResolver.validateTrack()` — the **live arrangement** probe. It contains the carve-out below, which means the *live* probe skips Seconds-timeBase regions entirely — Seconds overlaps produce **no warning while editing**:
+
 ```typescript
-// AudioRegions in absolute time-domain are allowed to overlap.
+// AudioRegions in absolute time-domain are allowed to overlap. (LIVE resolver only)
 const allowOverlap = (region: AnyRegionBoxAdapter) =>
     region instanceof AudioRegionBoxAdapter && region.timeBase !== TimeBase.Musical
 ```
 
-**Solution 1: Use Seconds TimeBase (Recommended for one-shot samples)**
+`TimeBase.Seconds` changes how *duration* is stored (seconds instead of PPQN) — it does **not** make overlaps design-safe, but the mixed-unit comparison means Seconds overlaps may go undetected by `ProjectValidation`. Prevent them at write time regardless.
 
-For audio that doesn't need tempo sync (drums, sound effects, ambience), use `TimeBase.Seconds`:
+**Solution 1: Use Separate Tracks (Recommended for overlapping one-shots)**
+
+Create individual tracks for each audio source whose decay must overlap the next hit:
 
 ```typescript
-import { TimeBase } from "@opendaw/lib-dsp";
-import { ValueEventCollectionBox } from "@opendaw/studio-boxes";
-
-// Create events collection (required)
-const eventsCollectionBox = ValueEventCollectionBox.create(boxGraph, UUID.generate());
-
-const regionBox = AudioRegionBox.create(boxGraph, UUID.generate(), box => {
-  box.regions.refer(trackBox.regions);
-  box.file.refer(audioFileBox);
-  box.events.refer(eventsCollectionBox.owners); // Required
-  box.timeBase.setValue(TimeBase.Seconds);  // ← Allow overlaps
-  box.position.setValue(position);
-  box.duration.setValue(clipDurationInPPQN);  // Full natural duration OK
-  // ... other settings
+samples.forEach(sample => {
+  const { audioUnitBox, trackBox } = api.createInstrument(InstrumentFactories.Tape);
+  // Each sample gets its own track — overlap happens between tracks, which is fine
 });
 ```
 
-**Benefits:**
-- Natural audio decay tails can overlap
-- Full sample duration preserved
-- No artificial truncation
-- Perfect for drums, percussion, sound effects
-
-**Solution 2: Keep Musical TimeBase + Prevent Overlaps**
+**Solution 2: Prevent Overlaps by Capping Duration**
 
 If you need tempo-synced regions, ensure they don't overlap by limiting duration:
 
@@ -1078,13 +1059,13 @@ samples.forEach(sample => {
 
 **When to Use Each Approach:**
 
-| Use Case | Recommended TimeBase | Overlaps? |
-|----------|---------------------|-----------|
-| Drums, percussion | `TimeBase.Seconds` | Allowed |
-| Sound effects, ambience | `TimeBase.Seconds` | Allowed |
-| Loops that need tempo sync | `TimeBase.Musical` | Must prevent |
+| Use Case | Recommended TimeBase | Overlaps on one track? |
+|----------|---------------------|------------------------|
+| Drums, percussion | `TimeBase.Seconds` (constant duration) | Must prevent — use separate tracks for decay tails |
+| Sound effects, ambience | `TimeBase.Seconds` | Must prevent |
+| Loops that need tempo sync | `TimeBase.Musical` (the default) | Must prevent |
 | Melodic/harmonic content | `TimeBase.Musical` | Must prevent |
-| Vocal recordings | Either (depends on workflow) | Varies |
+| Vocal recordings | Either (depends on workflow) | Must prevent |
 
 **Validation Details:**
 
@@ -1093,13 +1074,16 @@ OpenDAW runs validation at these points:
 2. Before export (`AudioOfflineRenderer.start()`)
 3. During editing (`RegionClipResolver.validateTrack()`)
 
-When overlapping Musical regions are detected:
+Points 1–2 (`ProjectValidation`): when overlapping regions are detected:
 - Console warnings appear for each overlap
-- All overlapping regions are marked invalid
-- Invalid boxes are deleted
-- User sees: "Some data is corrupt" message
+- All overlapping regions are marked invalid and deleted
+- User sees: "Some data is corrupt" notification
+- Seconds-region detection is unreliable (mixed-unit comparison) — overlaps may survive undetected
 
-This is **not a bug** - it's intentional data integrity checking to prevent tempo-related issues.
+Point 3 (`RegionClipResolver.validateTrack()`): warns only, never deletes. It skips
+Seconds-timeBase tracks entirely — no warning surfaces for Seconds overlaps during editing.
+
+This is **not a bug** — overlapping regions on one track are invalid by design in both timeBases.
 
 ---
 

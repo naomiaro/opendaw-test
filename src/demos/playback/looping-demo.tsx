@@ -24,17 +24,16 @@ import "@radix-ui/themes/styles.css";
 import {
   Theme,
   Container,
-  Heading,
   Text,
   Flex,
   Card,
   Button,
-  Callout,
   Badge,
   Switch,
   Separator,
 } from "@radix-ui/themes";
-import { InfoCircledIcon, LoopIcon } from "@radix-ui/react-icons";
+import { LoopIcon } from "@radix-ui/react-icons";
+import { CONSOLE_STYLES } from "@/lib/design/consoleTheme";
 
 /**
  * Looping Demo App Component
@@ -80,6 +79,7 @@ const App: React.FC = () => {
   // Initialize OpenDAW
   useEffect(() => {
     let mounted = true;
+    const subs: Array<{ terminate: () => void }> = [];
 
     (async () => {
       try {
@@ -138,25 +138,26 @@ const App: React.FC = () => {
         });
         console.debug("Loop area configured successfully");
 
-        // Subscribe to loop area changes using catchupAndSubscribe to get initial values
-        loopArea.enabled.catchupAndSubscribe(obs => {
+        // Subscribe to loop area changes using catchupAndSubscribe to get initial
+        // values; terminables collected for effect cleanup.
+        subs.push(loopArea.enabled.catchupAndSubscribe(obs => {
           if (mounted) {
             console.debug("Loop enabled changed:", obs.getValue());
             setLoopEnabled(obs.getValue());
           }
-        });
-        loopArea.from.catchupAndSubscribe(obs => {
+        }));
+        subs.push(loopArea.from.catchupAndSubscribe(obs => {
           if (mounted) {
             console.debug("Loop start changed:", obs.getValue());
             setLoopStart(obs.getValue());
           }
-        });
-        loopArea.to.catchupAndSubscribe(obs => {
+        }));
+        subs.push(loopArea.to.catchupAndSubscribe(obs => {
           if (mounted) {
             console.debug("Loop end changed:", obs.getValue());
             setLoopEnd(obs.getValue());
           }
-        });
+        }));
         console.debug("Loop area subscriptions complete");
       } catch (error) {
         console.error("Failed to initialize:", error);
@@ -166,6 +167,7 @@ const App: React.FC = () => {
 
     return () => {
       mounted = false;
+      subs.forEach((s) => s.terminate());
     };
   }, []);
 
@@ -300,25 +302,22 @@ const App: React.FC = () => {
   const maxDurationInPPQN = PPQN.secondsToPulses(maxDurationInSeconds, BPM);
 
   return (
-    <Theme appearance="dark" accentColor="violet">
+    <Theme appearance="dark" accentColor="amber" style={{ background: "var(--mc-bg)" }}>
+      <style>{CONSOLE_STYLES}</style>
       <Container size="4" style={{ padding: "2rem", minHeight: "100vh" }}>
         <GitHubCorner />
         <BackLink />
 
         <Flex direction="column" gap="4">
-          <Heading size="8" align="center">
-            <LoopIcon style={{ verticalAlign: "middle", marginRight: "0.5rem" }} />
-            Looping Capabilities Demo
-          </Heading>
-
-          <Callout.Root color="blue">
-            <Callout.Icon>
-              <InfoCircledIcon />
-            </Callout.Icon>
-            <Callout.Text>
-              This demo showcases OpenDAW's comprehensive looping features including timeline loop areas with visual boundaries, enable/disable functionality, interactive boundary controls, loop iteration tracking, and quick navigation to loop positions.
-            </Callout.Text>
-          </Callout.Root>
+          <div className="mc-kicker">Playback — Looping · OpenDAW SDK</div>
+          <h1 className="mc-title" style={{ fontSize: "clamp(28px, 4.5vw, 44px)" }}>LOOP AREA CONTROL</h1>
+          <p className="mc-intro">
+            The OpenDAW engine exposes a <code>loopArea</code> field on the timeline box — set{" "}
+            <code>from</code>, <code>to</code>, and <code>enabled</code> in one{" "}
+            <code>editing.modify()</code> transaction. When enabled, the engine wraps the playhead
+            back to <code>from</code> each time it crosses <code>to</code>. Use{" "}
+            <code>catchupAndSubscribe</code> on all three fields to keep UI in sync with engine state.
+          </p>
 
           {/* Status */}
           <Card>
@@ -434,7 +433,7 @@ const App: React.FC = () => {
                 </Flex>
                 <Flex align="center" justify="between">
                   <Text size="2" color="gray">Loop Iterations:</Text>
-                  <Badge size="2" color="violet">
+                  <Badge size="2" color="amber">
                     {loopCount}x
                   </Badge>
                 </Flex>
@@ -586,32 +585,23 @@ const App: React.FC = () => {
             </Flex>
           </Card>
 
-          {/* Instructions */}
-          <Card>
-            <Flex direction="column" gap="3">
-              <Text size="3" weight="bold">How to Use</Text>
-              <Flex direction="column" gap="2" style={{ fontSize: "0.9rem" }}>
-                <Text size="2">
-                  <strong>1. Basic Looping:</strong> Enable the loop switch and press Play to hear the music loop between bars 8-12
-                </Text>
-                <Text size="2">
-                  <strong>2. Adjust Loop Boundaries:</strong> Use the Loop Start/End buttons to move the loop to different sections of the song
-                </Text>
-                <Text size="2">
-                  <strong>3. Enable/Disable:</strong> Toggle the loop switch to enable or disable looping during playback
-                </Text>
-                <Text size="2">
-                  <strong>4. Jump to Position:</strong> Use the "Jump to" buttons to instantly move the playhead to loop boundaries
-                </Text>
-                <Text size="2">
-                  <strong>5. Watch Loop Counter:</strong> The iteration counter shows how many times you've looped through the section
-                </Text>
-                <Text size="2" color="gray" style={{ marginTop: "0.5rem" }}>
-                  💡 The loop starts at bar 8 where the music begins (the first 8 bars are silent)
-                </Text>
-              </Flex>
-            </Flex>
-          </Card>
+          <section className="mc-anchors">
+            <h2 className="mc-anchors-head">How to use</h2>
+            <p>
+              <strong>Basic looping:</strong> enable the loop switch and press Play to hear the music
+              wrap between bars 8–12. <strong>Adjust boundaries:</strong> the Loop Start/End buttons
+              move the loop region to different sections. <strong>Jump to position:</strong> click
+              &ldquo;Loop Start&rdquo; / &ldquo;Loop End&rdquo; to move the playhead instantly.
+              The iteration counter shows how many times the playhead has wrapped. The loop begins at
+              bar 8 — the first 8 bars are silent in the Dark Ride stems.
+            </p>
+            <p>
+              SDK reference:{" "}
+              <a href="/docs/04-box-system-and-reactivity.html">Box system &amp; reactivity</a>{" "}
+              &middot;{" "}
+              <a href="/docs/09-editing-fades-and-automation.html">Timeline &amp; loop area</a>
+            </p>
+          </section>
         </Flex>
         <MoisesLogo />
       </Container>

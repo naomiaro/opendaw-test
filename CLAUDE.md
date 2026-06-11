@@ -316,11 +316,13 @@ Essential for tempo-aware waveform rendering and position display.
 ### FadingAdapter API
 `AudioRegionBoxAdapter.fading` provides the full fade envelope:
 - `.in` / `.out` — current fade values (PPQN)
-- `.inSlope` / `.outSlope` — curve shape (0.25=log, 0.5=linear, 0.75=exp)
+- `.inSlope` / `.outSlope` — slope = curve height at the fade midpoint (0.5 = exact
+  linear); out-gain = `1 − normalizedAt(t, outSlope)`. Pair by direction: natural/log
+  pair = in 0.75 / out 0.25 (SDK defaults), exp pair = in 0.25 / out 0.75
 - `.inField` / `.outField` / `.inSlopeField` / `.outSlopeField` — settable fields
 - `.hasFading` — boolean, true if any fade is non-zero
 - `.copyTo(target: Fading)` — copy fade settings. Param is the raw `Fading` box from `@opendaw/studio-boxes`, NOT a `FadingAdapter`. From a region adapter: `srcRegion.fading.copyTo(dstRegion.box.fading)`
-- `.reset()` — clear all fades to zero
+- `.reset()` — set `in`/`out` to 0; slopes go to defaults (`inSlope` 0.75, `outSlope` 0.25), NOT zero
 
 ### BoxAdaptersContext (Dependency Injection)
 All adapters receive a `BoxAdaptersContext` that provides access to shared infrastructure:
@@ -468,8 +470,10 @@ Safari can't decode Ogg Opus via `decodeAudioData` (even though `canPlayType` re
 See `src/lib/audioUtils.ts` `getAudioExtension()`.
 
 ### PPQN Values Must Be Integer
-`position` on AudioRegionBox is Int32. `duration`, `loopDuration`, `loopOffset` are Float32
+`position` on AudioRegionBox is Int32. `duration` and `loopDuration` are Float32
 with `unit: "mixed"` (PPQN in Musical timeBase, seconds in Seconds timeBase).
+`loopOffset` is also Float32 with `unit: "mixed"` in the schema, but the runtime
+treats it as PPQN in **both** timeBases — always write it in PPQN regardless of timeBase.
 `PPQN.secondsToPulses()` returns float — always wrap with `Math.round()` before passing
 to Int32 fields like `position`, or to `RegionEditing.cut()` / `createTrackRegion()`.
 

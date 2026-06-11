@@ -119,7 +119,8 @@ const App: React.FC = () => {
                   </Flex>
                   <Text size="2" color="gray">
                     Understand Musical vs Seconds TimeBase. See how Musical regions change duration with BPM while Seconds
-                    regions stay constant. Learn when overlaps are allowed and which TimeBase to use for different scenarios.
+                    regions stay constant. Learn why overlapping regions are invalid in both TimeBases and which to use
+                    for different scenarios.
                   </Text>
                 </Flex>
               </Link>

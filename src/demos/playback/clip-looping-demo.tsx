@@ -1,12 +1,10 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { PPQN, TimeBase } from "@opendaw/lib-dsp";
-import type { ppqn } from "@opendaw/lib-dsp";
 import { Project } from "@opendaw/studio-core";
 import { AudioRegionBox } from "@opendaw/studio-boxes";
 import { PeaksPainter } from "@opendaw/lib-fusion";
 import type { Peaks } from "@opendaw/lib-fusion";
-import { UUID } from "@opendaw/lib-std";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
@@ -18,10 +16,10 @@ import { usePlaybackPosition } from "@/hooks/usePlaybackPosition";
 import { useTransportControls } from "@/hooks/useTransportControls";
 import "@radix-ui/themes/styles.css";
 import {
-  Theme, Container, Heading, Text, Flex, Card, Button,
-  Callout, Badge, Separator, Slider, Code, SegmentedControl
+  Theme, Container, Text, Flex, Card, Button,
+  Badge, Separator, Slider, Code, SegmentedControl
 } from "@radix-ui/themes";
-import { InfoCircledIcon } from "@radix-ui/react-icons";
+import { CONSOLE_STYLES } from "@/lib/design/consoleTheme";
 
 const BPM = 124;
 const BAR = PPQN.fromSignature(4, 4); // 3840
@@ -112,6 +110,12 @@ function applyLoopSettings(
   // The loopOffset parameter here is a PPQN offset used to compute waveformOffset
   // and the peaks frame range for rendering — it is NOT set on regionBox.loopOffset
   // (which stays 0, since it only controls loop cycle alignment, not audio position).
+  //
+  // NOTE on AudioRegionBoxAdapter.loopOffset: the adapter's loopOffset getter is a RAW
+  // box value read (box.loopOffset.getValue()) — no TimeBase conversion, unlike duration
+  // and loopDuration which both go through a TimeBaseConverter.toPPQN() call. The stored
+  // value is treated as PPQN by locateLoops in BOTH timeBases — always write it in PPQN
+  // (see playback CLAUDE.md). This demo always stores 0 here and uses waveformOffset instead.
   const bpm = project.timelineBox.bpm.getValue();
   const waveformOffsetSeconds = PPQN.pulsesToSeconds(loopOffset, bpm);
 
@@ -266,9 +270,6 @@ const LoopedWaveformCanvas: React.FC<{
     const canvas = playheadCanvasRef.current;
     if (!canvas) return;
 
-    let prevWidth = 0;
-    let prevHeight = 0;
-
     const af = AnimationFrame.add(() => {
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
@@ -284,8 +285,6 @@ const LoopedWaveformCanvas: React.FC<{
       if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
         canvas.width = targetWidth;
         canvas.height = targetHeight;
-        prevWidth = width;
-        prevHeight = height;
       }
 
       // Reset transform and clear (clearRect is cheap, no reflow)
@@ -355,7 +354,7 @@ const App: React.FC = () => {
   const [peaks, setPeaks] = useState<Peaks | null>(null);
 
   const { currentPosition, isPlaying, pausedPositionRef } = usePlaybackPosition(project);
-  const { handlePlay, handlePause, handleStop } = useTransportControls({
+  const { handlePlay, handleStop } = useTransportControls({
     project,
     audioContext,
     pausedPositionRef,
@@ -394,7 +393,7 @@ const App: React.FC = () => {
           newAudioContext,
           [{ name: "Drums", file: `/audio/DarkRide/02_Drums.${ext}` }],
           localAudioBuffers,
-          { onProgress: (c, t, name) => { if (mounted) setStatus(`Loading ${name}...`); } }
+          { onProgress: (_c, _t, name) => { if (mounted) setStatus(`Loading ${name}...`); } }
         );
 
         if (!mounted) return;
@@ -430,7 +429,7 @@ const App: React.FC = () => {
             }
             sampleSub?.terminate();
             sampleSub = null;
-          } else if (state.type === "error" || state.type === "failed") {
+          } else if (state.type === "error") {
             console.error("Sample loader failed:", state);
             if (mounted) setStatus("Waveform peaks failed to load.");
             sampleSub?.terminate();
@@ -532,26 +531,22 @@ const App: React.FC = () => {
   const isReady = status === "Ready";
 
   return (
-    <Theme appearance="dark" accentColor="orange" radius="large">
+    <Theme appearance="dark" accentColor="amber" radius="large" style={{ background: "var(--mc-bg)" }}>
+      <style>{CONSOLE_STYLES}</style>
       <Container size="3" px="4" py="8">
         <GitHubCorner />
         <BackLink />
         <Flex direction="column" gap="6" style={{ maxWidth: 900, margin: "0 auto" }}>
-          <Flex direction="column" align="center" gap="2">
-            <Heading size="8">Clip Looping</Heading>
-            <Text size="3" color="gray">
-              Set a loop region within a clip and extend it to tile automatically
-            </Text>
-          </Flex>
-
-          <Callout.Root color="blue">
-            <Callout.Icon><InfoCircledIcon /></Callout.Icon>
-            <Callout.Text>
-              Every region has a <Code>loopDuration</Code> (content that repeats) and a <Code>duration</Code> (total
-              visible length). When duration exceeds loopDuration, the content tiles automatically.
-              Use <Code>waveformOffset</Code> (seconds) to shift which part of the audio file plays.
-            </Callout.Text>
-          </Callout.Root>
+          <div>
+            <div className="mc-kicker">Playback — Clip Looping · OpenDAW SDK</div>
+            <h1 className="mc-title" style={{ fontSize: "clamp(28px, 4.5vw, 44px)" }}>CLIP LOOPING</h1>
+            <p className="mc-intro">
+              Every region has a <code>loopDuration</code> (content that repeats) and a{" "}
+              <code>duration</code> (total visible length). When <code>duration</code> exceeds{" "}
+              <code>loopDuration</code>, the engine tiles the content automatically. Use{" "}
+              <code>waveformOffset</code> (seconds) to shift which part of the audio file plays.
+            </p>
+          </div>
 
           {!isReady ? (
             <Text align="center">{status}</Text>
@@ -599,7 +594,7 @@ const App: React.FC = () => {
               </Card>
 
               {/* Waveform */}
-              <Card>
+              <div className="mc-lattice-frame">
                 <Flex direction="column" gap="2">
                   <Text size="2" weight="bold" color="gray">Waveform</Text>
                   <LoopedWaveformCanvas
@@ -612,7 +607,7 @@ const App: React.FC = () => {
                     isPlaying={isPlaying}
                   />
                 </Flex>
-              </Card>
+              </div>
 
               {/* Sliders + Info */}
               <Card>
@@ -680,7 +675,7 @@ const App: React.FC = () => {
                   <Flex gap="4" wrap="wrap">
                     <Flex direction="column" gap="1">
                       <Text size="1" color="gray">Tiles</Text>
-                      <Badge size="2" color="orange">{tileCount} repetition{tileCount !== 1 ? "s" : ""}</Badge>
+                      <Badge size="2" color="amber">{tileCount} repetition{tileCount !== 1 ? "s" : ""}</Badge>
                     </Flex>
                     <Flex direction="column" gap="1">
                       <Text size="1" color="gray">Loop Duration</Text>
@@ -700,7 +695,7 @@ const App: React.FC = () => {
                     </Flex>
                     <Flex direction="column" gap="1">
                       <Text size="1" color="gray">TimeBase</Text>
-                      <Badge size="2" variant="outline" color={timeBase === TimeBase.Seconds ? "blue" : "orange"}>
+                      <Badge size="2" variant="outline" color={timeBase === TimeBase.Seconds ? "blue" : "amber"}>
                         {timeBase === TimeBase.Musical ? "Musical" : "Seconds"}
                       </Badge>
                     </Flex>
@@ -730,21 +725,25 @@ const App: React.FC = () => {
                 </Flex>
               </Card>
 
-              {/* API Reference */}
-              <Card>
-                <Flex direction="column" gap="3">
-                  <Text size="4" weight="bold">API Reference</Text>
-                  <Separator size="4" />
-                  <Code
-                    size="2"
-                    style={{
-                      display: "block",
-                      padding: "12px",
-                      backgroundColor: "var(--gray-3)",
-                      borderRadius: "4px",
-                      whiteSpace: "pre-wrap",
-                    }}
-                  >
+              <section className="mc-anchors">
+                <h2 className="mc-anchors-head">SDK reference</h2>
+                <p>
+                  Region looping: when <code>duration</code> exceeds <code>loopDuration</code>, the
+                  engine tiles the content. <code>waveformOffset</code> (seconds) shifts the audio
+                  read position into the source file. <code>loopOffset</code> controls loop cycle
+                  alignment (always stored as a raw box value — no TimeBase conversion).
+                </p>
+                <Code
+                  size="2"
+                  style={{
+                    display: "block",
+                    padding: "12px",
+                    backgroundColor: "var(--gray-3)",
+                    borderRadius: "4px",
+                    whiteSpace: "pre-wrap",
+                    marginTop: "12px",
+                  }}
+                >
 {`// Region looping: when duration > loopDuration, content tiles
 project.editing.modify(() => {
   // Content that repeats (e.g., 2 bars of drums)
@@ -758,18 +757,16 @@ project.editing.modify(() => {
   // loopOffset (PPQN) only controls loop cycle alignment
   regionBox.waveformOffset.setValue(30.0);
 });`}
-                  </Code>
-                </Flex>
-              </Card>
-
-              {/* Attribution */}
-              <Card>
-                <Text size="2" color="gray">
-                  Drum stems from Dark Ride's 'Deny Control'. Provided for educational purposes. See{" "}
-                  <a href="https://www.cambridge-mt.com" target="_blank" rel="noopener noreferrer"
-                    style={{ color: "var(--accent-9)" }}>cambridge-mt.com</a> for details.
-                </Text>
-              </Card>
+                </Code>
+                <p>
+                  <a href="/docs/09-editing-fades-and-automation.html">Editing, fades &amp; automation</a>
+                  {" "}&middot;{" "}
+                  <a href="/docs/04-box-system-and-reactivity.html">Box system &amp; reactivity</a>
+                  {" "}&middot;{" "}
+                  Drum stems from Dark Ride&rsquo;s &lsquo;Deny Control&rsquo; via{" "}
+                  <a href="https://www.cambridge-mt.com" target="_blank" rel="noopener noreferrer">cambridge-mt.com</a>
+                </p>
+              </section>
             </>
           )}
         </Flex>

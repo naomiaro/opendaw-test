@@ -719,9 +719,10 @@ project.editing.modify(() => {
   adapter.fading.inField.setValue(1920);       // 2 beats fade-in
   adapter.fading.outField.setValue(1920);      // 2 beats fade-out
 
-  // Slope controls curve shape
-  adapter.fading.inSlopeField.setValue(0.75);  // Exponential
-  adapter.fading.outSlopeField.setValue(0.25); // Logarithmic
+  // Slope = curve height at the fade midpoint (0.5 = exact linear).
+  // 0.75 in / 0.25 out is the matched natural ("logarithmic") pair — the SDK default.
+  adapter.fading.inSlopeField.setValue(0.75);
+  adapter.fading.outSlopeField.setValue(0.25);
 });
 ```
 
@@ -742,7 +743,8 @@ if (fading.hasFading) {
 // Copy all fade settings to another region
 fading.copyTo(targetAdapter.box.fading);
 
-// Reset all fades to zero (remove fades)
+// Remove fades: in/out lengths reset to 0; slopes reset to the
+// DEFAULTS (inSlope 0.75, outSlope 0.25), not to zero
 fading.reset();
 
 // Read-only shorthand for current values
@@ -756,13 +758,19 @@ Use `.hasFading` as a rendering guard — skip fade curve drawing when false. Us
 
 ### Slope Values and Curve Types
 
-The slope parameter (0.0 to 1.0) controls the shape of the fade curve using an exponential formula:
+The slope parameter (0.0 to 1.0) is the curve's height at the fade midpoint:
 
-| Slope | Curve Type | Character | Best For |
-|-------|-----------|-----------|----------|
-| 0.25 | Logarithmic | Slow start, fast end | Fade-outs (SDK default for `outSlope`) |
-| 0.50 | Linear | Even progression | Neutral, technical fades |
-| 0.75 | Exponential | Fast start, slow end | Fade-ins (SDK default for `inSlope`) |
+| Slope | Shape | Character | Best For |
+|-------|-------|-----------|----------|
+| 0.25 | Slow start, most change late | Fade-out gain holds high then drops (perceived midpoint gain = 1 − 0.25 = 0.75) | Fade-outs (SDK default for `outSlope`) |
+| 0.50 | Exact linear | Even progression | Neutral, technical fades |
+| 0.75 | Fast start, most change early | Fade-in rises quickly then eases | Fade-ins (SDK default for `inSlope`) |
+
+Pair slopes by *direction*, not by a single value: the default pair (`inSlope 0.75` /
+`outSlope 0.25`) is the matched "logarithmic" family — both ends hold energy high
+through their midpoints, the natural-sounding choice. Its mirror (`inSlope 0.25` /
+`outSlope 0.75`) is the "exponential" family: slow swell in, early drop out. A single
+slope applied to both directions mixes the two characters.
 
 The three curves drawn at the same length:
 
@@ -783,7 +791,7 @@ The three curves drawn at the same length:
   </g>
 </svg>
 
-The same shape is used for fade-in and fade-out — the SDK reflects it horizontally when applying to the end of a region. So `inSlope = 0.75` and `outSlope = 0.25` produce a *symmetric* "fade up gently, hold, fade down gently" envelope when both ends are set, which is the SDK's default and matches what most editors expect.
+For fade-outs the SDK flips the curve *vertically*: out-gain = `1 − normalizedAt(progress, outSlope)` (`fading.ts`). That is why `inSlope = 0.75` and `outSlope = 0.25` produce the symmetric "fade up gently, hold, fade down gently" envelope — both ends share the same midpoint-gain character — which is the SDK's default and matches what most editors expect.
 
 #### Curve Formula
 

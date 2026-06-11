@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
 import { PPQN, TimeBase } from "@opendaw/lib-dsp";
@@ -23,10 +23,10 @@ import {
   Flex,
   Card,
   Badge,
-  Separator,
   Slider,
   Callout
 } from "@radix-ui/themes";
+import { CONSOLE_STYLES } from "@/lib/design/consoleTheme";
 
 const { Quarter } = PPQN;
 
@@ -34,14 +34,19 @@ const { Quarter } = PPQN;
  * TimeBase Demo
  *
  * Demonstrates the difference between Musical TimeBase and Seconds TimeBase:
- * - Musical: Duration changes with BPM, overlaps forbidden
- * - Seconds: Duration stays constant, overlaps allowed
+ * - Musical: duration stored in PPQN — changes with BPM
+ * - Seconds: duration stored in seconds — constant regardless of BPM
+ * Overlap rules are identical in both: overlapping regions on one track are
+ * invalid by design. Musical overlaps are detected and deleted by ProjectValidation
+ * inside project.copy(). Seconds overlap detection is unreliable (mixed-unit
+ * arithmetic) — overlaps may survive export; prevent them at write time.
  */
 function TimeBaseDemo() {
   const [project, setProject] = useState<Project | null>(null);
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
   const [bpm, setBpm] = useState(120);
   const [sampleLoaded, setSampleLoaded] = useState(false);
+  const [addNotice, setAddNotice] = useState<string | null>(null);
 
   const { currentPosition, isPlaying, pausedPositionRef } = usePlaybackPosition(project);
   const { handlePlay, handlePause, handleStop } = useTransportControls({ project, audioContext, pausedPositionRef });
@@ -60,7 +65,9 @@ function TimeBaseDemo() {
   } | null>(null);
 
   const [audioFileUUID, setAudioFileUUID] = useState<UUID.Bytes | null>(null);
-  const [audioFileBox, setAudioFileBox] = useState<AudioFileBox | null>(null);
+  // Ref (not state): rapid-click handlers must see the already-staged box
+  // synchronously without waiting for React state to flush.
+  const audioFileBoxRef = useRef<AudioFileBox | null>(null);
   const [sampleDurationInSeconds, setSampleDurationInSeconds] = useState(0);
 
   // Create audio buffers map for sample manager
@@ -108,9 +115,7 @@ function TimeBaseDemo() {
 
     const sampleLoader = project.sampleManager.getOrCreate(audioFileUUID);
     const subscription = sampleLoader.subscribe((state) => {
-      console.log('Sample loader state:', state.type);
       if (state.type === 'loaded') {
-        console.log('Sample fully loaded by sample manager');
         setSampleLoaded(true); // Mark as loaded only when sample manager confirms
       }
     });
@@ -122,20 +127,14 @@ function TimeBaseDemo() {
 
   // Load sample and create tracks
   const loadSample = useCallback(async () => {
-    console.log("loadSample called, project:", !!project, "audioContext:", !!audioContext);
-    if (!project || !audioContext) {
-      console.error("Cannot load sample - missing project or audioContext");
-      return;
-    }
+    if (!project || !audioContext) return;
 
     try {
-      console.log("Loading audio file...");
       // Load a short kick drum sample for TimeBase demonstration
       const audioBuffer = await loadAudioFile(
         audioContext,
         "/audio/90sSamplePack/Kick/Kick 1.wav"
       );
-      console.log("Audio file loaded successfully, duration:", audioBuffer.duration);
 
       const duration = audioBuffer.duration;
       setSampleDurationInSeconds(duration);
@@ -195,17 +194,42 @@ function TimeBaseDemo() {
     (beatPosition: number) => {
       if (!project || !musicalTrackInfo || !audioFileUUID) return;
 
+      // Overlapping regions on one track are invalid by design (all timeBases);
+      // project.copy() (export, offline render) runs ProjectValidation which deletes
+      // Musical overlapping pairs. Read existing regions from the box graph
+      // (synchronous snapshot), not React state — batched rapid clicks would
+      // otherwise see stale region lists.
+      const newStart = beatPosition * Quarter;
+      const newEnd = newStart + PPQN.secondsToPulses(sampleDurationInSeconds, bpm);
+      const existingRegions = musicalTrackInfo.trackBox.regions.pointerHub
+        .incoming()
+        .map((pointer) => pointer.box as AudioRegionBox);
+      const overlap = existingRegions.find((box) => {
+        const start = box.position.getValue();
+        const end = start + box.duration.getValue(); // Musical: duration already PPQN
+        return newStart < end && newEnd > start;
+      });
+      if (overlap) {
+        const overlapBeat = overlap.position.getValue() / Quarter + 1;
+        setAddNotice(
+          `Skipped: would overlap the region at beat ${overlapBeat.toFixed(2)} — ` +
+          `overlapping regions on one track are invalid by design.`
+        );
+        return;
+      }
+      setAddNotice(null);
+
       project.editing.modify(() => {
         const boxGraph = project.boxGraph;
 
-        // Create AudioFileBox if it doesn't exist yet
-        let fileBox = audioFileBox;
+        // Use ref for synchronous lookup so rapid clicks see the already-staged box
+        let fileBox = audioFileBoxRef.current;
         if (!fileBox) {
           fileBox = AudioFileBox.create(boxGraph, audioFileUUID, (box) => {
             box.fileName.setValue("Kick 1.wav");
             box.endInSeconds.setValue(sampleDurationInSeconds);
           });
-          setAudioFileBox(fileBox);
+          audioFileBoxRef.current = fileBox;
         }
 
         const clipDuration = PPQN.secondsToPulses(sampleDurationInSeconds, bpm);
@@ -245,7 +269,7 @@ function TimeBaseDemo() {
         }));
       });
     },
-    [project, musicalTrackInfo, audioFileUUID, audioFileBox, bpm, sampleDurationInSeconds]
+    [project, musicalTrackInfo, audioFileUUID, bpm, sampleDurationInSeconds]
   );
 
   // Add region to Seconds track
@@ -253,17 +277,44 @@ function TimeBaseDemo() {
     (beatPosition: number) => {
       if (!project || !secondsTrackInfo || !audioFileUUID) return;
 
+      // Overlapping regions on one track are invalid by design (all timeBases).
+      // The live Project.invalid() probe skips Seconds tracks — no warning during editing.
+      // ProjectValidation (inside copy()) uses mixed-unit arithmetic for Seconds regions
+      // (duration in seconds, position in PPQN), so Seconds overlaps may silently survive
+      // export. Prevent them here. Read from the box graph (synchronous snapshot), not
+      // React state — batched rapid clicks would otherwise see stale region lists.
+      const newStart = beatPosition * Quarter;
+      const newEnd = newStart + PPQN.secondsToPulses(sampleDurationInSeconds, bpm);
+      const existingRegions = secondsTrackInfo.trackBox.regions.pointerHub
+        .incoming()
+        .map((pointer) => pointer.box as AudioRegionBox);
+      const overlap = existingRegions.find((box) => {
+        const start = box.position.getValue();
+        // Seconds: duration is stored in seconds — convert to PPQN at current BPM
+        const end = start + PPQN.secondsToPulses(box.duration.getValue(), bpm);
+        return newStart < end && newEnd > start;
+      });
+      if (overlap) {
+        const overlapBeat = overlap.position.getValue() / Quarter + 1;
+        setAddNotice(
+          `Skipped: would overlap the region at beat ${overlapBeat.toFixed(2)} — ` +
+          `overlapping regions on one track are invalid by design.`
+        );
+        return;
+      }
+      setAddNotice(null);
+
       project.editing.modify(() => {
         const boxGraph = project.boxGraph;
 
-        // Create AudioFileBox if it doesn't exist yet
-        let fileBox = audioFileBox;
+        // Use ref for synchronous lookup so rapid clicks see the already-staged box
+        let fileBox = audioFileBoxRef.current;
         if (!fileBox) {
           fileBox = AudioFileBox.create(boxGraph, audioFileUUID, (box) => {
             box.fileName.setValue("Kick 1.wav");
             box.endInSeconds.setValue(sampleDurationInSeconds);
           });
-          setAudioFileBox(fileBox);
+          audioFileBoxRef.current = fileBox;
         }
 
         // For Seconds TimeBase, duration is in seconds (not PPQN!)
@@ -304,7 +355,7 @@ function TimeBaseDemo() {
         }));
       });
     },
-    [project, secondsTrackInfo, audioFileUUID, audioFileBox, bpm, sampleDurationInSeconds]
+    [project, secondsTrackInfo, audioFileUUID, bpm, sampleDurationInSeconds]
   );
 
   // Update BPM
@@ -345,14 +396,14 @@ function TimeBaseDemo() {
       });
 
       // If both tracks are empty after clearing, delete the AudioFileBox
-      if (secondsTrackInfo && secondsTrackInfo.regions.length === 0 && audioFileBox) {
-        audioFileBox.delete();
-        setAudioFileBox(null);
+      if (secondsTrackInfo && secondsTrackInfo.regions.length === 0 && audioFileBoxRef.current) {
+        audioFileBoxRef.current.delete();
+        audioFileBoxRef.current = null;
       }
     });
 
     setMusicalTrackInfo((prev) => ({ ...prev!, regions: [] }));
-  }, [project, musicalTrackInfo, secondsTrackInfo, audioFileBox]);
+  }, [project, musicalTrackInfo, secondsTrackInfo]);
 
   const clearSecondsTrack = useCallback(() => {
     if (!project || !secondsTrackInfo) return;
@@ -363,14 +414,14 @@ function TimeBaseDemo() {
       });
 
       // If both tracks are empty after clearing, delete the AudioFileBox
-      if (musicalTrackInfo && musicalTrackInfo.regions.length === 0 && audioFileBox) {
-        audioFileBox.delete();
-        setAudioFileBox(null);
+      if (musicalTrackInfo && musicalTrackInfo.regions.length === 0 && audioFileBoxRef.current) {
+        audioFileBoxRef.current.delete();
+        audioFileBoxRef.current = null;
       }
     });
 
     setSecondsTrackInfo((prev) => ({ ...prev!, regions: [] }));
-  }, [project, secondsTrackInfo, musicalTrackInfo, audioFileBox]);
+  }, [project, secondsTrackInfo, musicalTrackInfo]);
 
   // Playback controls provided by useTransportControls hook
 
@@ -383,61 +434,53 @@ function TimeBaseDemo() {
   const secondsDurationSeconds = sampleDurationInSeconds;
 
   return (
-    <Theme accentColor="purple" appearance="dark">
+    <Theme accentColor="amber" appearance="dark" style={{ background: "var(--mc-bg)" }}>
+      <style>{CONSOLE_STYLES}</style>
       <GitHubCorner />
       <Container size="4" style={{ paddingTop: "2rem", paddingBottom: "4rem" }}>
         <BackLink />
 
         <Flex direction="column" gap="4">
-          <Flex direction="column" gap="2" align="center">
-            
-            <Heading size="8" align="center">
-              TimeBase Demo
-            </Heading>
-            <Text size="3" color="gray" align="center">
-              Musical vs Seconds TimeBase Comparison
-            </Text>
-          </Flex>
+          <div>
+            <div className="mc-kicker">Playback — TimeBase · OpenDAW SDK</div>
+            <h1 className="mc-title" style={{ fontSize: "clamp(28px, 4.5vw, 44px)" }}>TIMEBASE</h1>
+            <p className="mc-intro">
+              <code>timeBase</code> determines how the SDK stores and interprets audio region{" "}
+              durations. <strong>Musical</strong>: <code>duration</code> and{" "}
+              <code>loopDuration</code> are stored in PPQN — they scale automatically when BPM
+              changes. <strong>Seconds</strong>: <code>duration</code> and{" "}
+              <code>loopDuration</code> are stored in seconds — they stay constant regardless of
+              BPM. In both modes, <code>position</code> is always PPQN (Int32), and overlapping
+              regions on one track are invalid by design.
+            </p>
+          </div>
 
-          {/* Introduction */}
-          <Card>
-            <Flex direction="column" gap="3">
-              <Heading size="5">Understanding TimeBase</Heading>
-              <Text>
-                TimeBase determines how OpenDAW stores and interprets audio region durations. This affects export validation and how your project behaves when you change BPM.
-              </Text>
-
-              <Flex direction="column" gap="2">
-                <Flex gap="2" align="center">
-                  <Badge color="blue" size="2">
-                    Musical
-                  </Badge>
-                  <Text size="2">
-                    Duration stored in <strong>beats</strong>. A 0.14s kick at 120 BPM = 0.28 beats.
-                    Overlaps cause <strong>export errors</strong>. Use for loops and melodic content.
-                  </Text>
-                </Flex>
-
-                <Flex gap="2" align="center">
-                  <Badge color="green" size="2">
-                    Seconds
-                  </Badge>
-                  <Text size="2">
-                    Duration stored in <strong>seconds</strong>. A 0.14s kick = 0.14s always.
-                    Overlaps <strong>allowed</strong> (for natural decay). Use for drums and one-shots.
-                  </Text>
-                </Flex>
-              </Flex>
-
-              <Callout.Root size="1">
-                <Callout.Text>
-                  <strong>Note:</strong> With NoSync playback mode, both TimeBase options sound identical.
-                  The difference is in how durations are stored and validated during export.
-                  With time-stretching modes (not shown here), there would be audible differences.
-                </Callout.Text>
-              </Callout.Root>
-            </Flex>
-          </Card>
+          {/* SDK context */}
+          <section className="mc-anchors">
+            <h2 className="mc-anchors-head">SDK reference</h2>
+            <p>
+              Set <code>box.timeBase.setValue(TimeBase.Musical)</code> and pass{" "}
+              <code>duration</code> in PPQN — computed via{" "}
+              <code>PPQN.secondsToPulses(seconds, bpm)</code>. For Seconds timeBase pass{" "}
+              <code>duration</code> directly in seconds. Both modes use{" "}
+              <code>box.position.setValue(beatPosition * Quarter)</code> — position is always
+              PPQN. Overlapping regions on one track are invalid by design in both timeBases.
+              The live <code>Project.invalid()</code> probe skips Seconds tracks — no warning
+              during editing. <code>ProjectValidation</code> (inside{" "}
+              <code>project.copy()</code>, so: export and offline render) detects and deletes
+              Musical overlapping pairs. For Seconds regions it uses mixed-unit arithmetic
+              (duration in seconds, position in PPQN) — overlaps may survive undetected.
+              Prevent overlaps at write time. For overlapping one-shots, put each region on
+              its own Tape track.
+            </p>
+            <p>
+              With NoSync playback mode (the default when no <code>playMode</code> box is
+              attached), both timeBase values sound identical — the difference is in storage
+              unit and export validation only. Audible differences appear with time-stretching
+              play modes (<code>AudioTimeStretchBox</code>,{" "}
+              <code>AudioPitchStretchBox</code>).
+            </p>
+          </section>
 
           {/* Load Sample */}
           <Card>
@@ -525,9 +568,15 @@ function TimeBaseDemo() {
                     Add at Beat 3
                   </Button>
                   <Button onClick={() => addMusicalRegion(0.5)} size="2">
-                    Add at Beat 1.5 (overlap test)
+                    Add at Beat 1.5
                   </Button>
                 </Flex>
+
+                {addNotice && (
+                  <Text size="2" style={{ color: "var(--mc-amber)" }}>
+                    {addNotice}
+                  </Text>
+                )}
 
                 <Text size="2" color="gray">
                   Regions: {musicalTrackInfo?.regions.length || 0}
@@ -581,9 +630,15 @@ function TimeBaseDemo() {
                     Add at Beat 3
                   </Button>
                   <Button onClick={() => addSecondsRegion(0.5)} size="2">
-                    Add at Beat 1.5 (overlap allowed!)
+                    Add at Beat 1.5
                   </Button>
                 </Flex>
+
+                {addNotice && (
+                  <Text size="2" style={{ color: "var(--mc-amber)" }}>
+                    {addNotice}
+                  </Text>
+                )}
 
                 <Text size="2" color="gray">
                   Regions: {secondsTrackInfo?.regions.length || 0}
@@ -593,7 +648,6 @@ function TimeBaseDemo() {
                   <Callout.Root color="green" size="1">
                     <Callout.Text>
                       Try changing BPM - Seconds regions stay the same duration!
-                      Overlaps are allowed for natural audio decay.
                     </Callout.Text>
                   </Callout.Root>
                 )}
@@ -625,44 +679,25 @@ function TimeBaseDemo() {
           )}
 
           {/* Key Takeaways */}
-          {sampleLoaded && (
-            <Card>
-              <Flex direction="column" gap="3">
-                <Heading size="4">Key Takeaways</Heading>
-
-                <Flex direction="column" gap="2">
-                  <Text size="2">
-                    <strong>Musical TimeBase:</strong>
-                  </Text>
-                  <ul style={{ marginLeft: "1.5rem", marginTop: "0.25rem" }}>
-                    <li>Duration in beats - automatically adjusts when BPM changes</li>
-                    <li>Overlapping regions are forbidden on export (validation error)</li>
-                    <li>Perfect for loops that need to stay in sync with tempo</li>
-                    <li>Use for: melodic content, loops, tempo-synced samples</li>
-                  </ul>
-
-                  <Text size="2" style={{ marginTop: "1rem" }}>
-                    <strong>Seconds TimeBase:</strong>
-                  </Text>
-                  <ul style={{ marginLeft: "1.5rem", marginTop: "0.25rem" }}>
-                    <li>Duration in seconds - stays constant regardless of BPM</li>
-                    <li>Overlapping regions are allowed</li>
-                    <li>Perfect for one-shot samples with natural decay</li>
-                    <li>Use for: drums, percussion, sound effects, vocals</li>
-                  </ul>
-                </Flex>
-
-                <Separator size="4" />
-
-                <Callout.Root color="red" size="1">
-                  <Callout.Text>
-                    <strong>Warning:</strong> If you see "Overlapping regions" errors
-                    during export, switch Musical regions to Seconds TimeBase!
-                  </Callout.Text>
-                </Callout.Root>
-              </Flex>
-            </Card>
-          )}
+          <section className="mc-anchors">
+            <h2 className="mc-anchors-head">When to use each timeBase</h2>
+            <p>
+              <strong>Musical</strong> — duration tracks tempo. Use for melodic content, loops,
+              and samples that must stay grid-aligned.
+            </p>
+            <p>
+              <strong>Seconds</strong> — duration is constant. Use for drums, percussion, sound
+              effects, and one-shots whose length must not change with BPM.
+            </p>
+            <p>
+              Overlapping regions on one track are invalid by design in both timeBases.
+              Musical overlaps are detected and deleted by <code>ProjectValidation</code>{" "}
+              inside <code>project.copy()</code> (export, offline render). Seconds overlap
+              detection is unreliable (mixed-unit arithmetic) — overlaps may silently survive
+              export. Prevent overlaps at write time and put overlapping one-shots on separate
+              Tape tracks.
+            </p>
+          </section>
         </Flex>
         <MoisesLogo />
       </Container>
