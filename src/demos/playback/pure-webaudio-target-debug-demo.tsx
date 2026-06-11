@@ -819,7 +819,7 @@ const App: React.FC = () => {
               // loopOffset computed from the rounded value). Pre-fix geometry
               // measured 0.8352 (−1.56 dB) at τ ≈ −7.5 ms; the truncation
               // error was the gap to the −1.16 dB / −10 ms prediction.
-              { label: "min / reference", value: "≈ 0.8707  (−1.20 dB)" },
+              { label: "min / reference", value: "≈ 0.8707  (−1.20 dB, this page's scan)" },
               { label: "dip τ (ms relative to seam)", value: "≈ −10 ms (before seam)" },
               { label: "sample rate", value: `${audioContextRef.current?.sampleRate ?? "—"} Hz` },
             ]}

@@ -6,7 +6,7 @@
 - [`voice-fadein-clip-fadein-product-debug-demo.html`](../voice-fadein-clip-fadein-product-debug-demo.html) (unlisted) — A/B between CROSSFADE (40 ms region fades) and HARD-CUT (no region fades, voice fade only) configurations on the same regions.
 - [`pure-webaudio-target-debug-demo.html`](../pure-webaudio-target-debug-demo.html) (unlisted) — three-way A/B/C: pure-Web-Audio ALIGNED target (−0.00 dB through crossfade), pure-Web-Audio UNALIGNED control (−4.57 dB phase-mismatch dip), OpenDAW with phase-corrected `loopOffset` (−1.56 dB dip at τ ≈ −7.5 ms relative to seam). Comparing OpenDAW against the pure-JS ALIGNED case empirically confirms the mechanism — both use the same phase-corrected configuration, both run linear crossfade math, only OpenDAW shows the residual dip on the V2-fadeIn side.
 
-Audio fixtures: [`public/audio/test-440hz.wav`](../public/audio/test-440hz.wav) and [`public/audio/test-440hz-offset30.wav`](../public/audio/test-440hz-offset30.wav) (the second file is the same 440 Hz sine delayed by 30 samples = ~0.68 ms = ~24° at 440 Hz).
+Audio fixtures: [`public/audio/test-440hz.wav`](../public/audio/test-440hz.wav) and [`public/audio/test-440hz-offset30.wav`](../public/audio/test-440hz-offset30.wav) (the second file is the same 440 Hz sine delayed by 30 samples = ~0.68 ms = ~108° at 440 Hz).
 
 ## Symptom
 

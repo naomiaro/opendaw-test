@@ -28,7 +28,7 @@ npm run dev
 
 **HTTPS is required.** The dev server uses the local `localhost.pem` / `localhost-key.pem` certificates and does not respond on plain `http://` (the browser shows `ERR_EMPTY_RESPONSE`). Accept the self-signed cert warning on first load.
 
-1. Click **Play (BUG)**. Playback starts at `t = 20 s` and the pop is audible after ~10 s, at the end of the fade-out.
+1. Click **Play (BUG)**. Playback starts at `t = 20 s` and the pop is audible after ~10 s (pre-0.0.145), at the end of the fade-out.
 2. Click **Play (WORKAROUND)**. Same starting position, same fade. No click.
 
 Audio: `public/audio/Vocals30.mp3`. Configuration: BPM 120, single Tape track, one `AudioRegionBox` at position 0 with the file's full PPQN duration, `fading.in = 0`, `fading.out` = 0.7766 s converted to PPQN, slope 0.5 (linear).

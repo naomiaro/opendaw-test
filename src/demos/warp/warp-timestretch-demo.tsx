@@ -162,8 +162,10 @@ function WarpTimestretchDemo() {
         // Mode swaps do NOT reset engine.position (TimeInfo is written only by
         // transport commands); calling setPosition mid-playback would itself
         // cause an audible jump — gate on stopped state only.
+        // Read live engine state (not the React var, which may be stale in the
+        // closure) to avoid a position jump when Play is active during switching.
         // See debug/time-pitch-start-position-pop.md for resolution.
-        if (!isPlaying) {
+        if (!setup.project.engine.isPlaying.getValue()) {
           project.engine.setPosition(0);
           pausedPositionRef.current = 0;
         }

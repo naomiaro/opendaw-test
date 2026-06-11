@@ -98,7 +98,7 @@ What we do see consistently:
 
 ## Addendum 2026-06-11 — mechanism CLOSED (core 0.0.152 / SDK 0.0.154)
 
-**Simulation artefacts** (scripts at [`debug/seam-sim.js`](./seam-sim.js) and [`debug/seam-sim2.js`](./seam-sim2.js), currently untracked — included in this commit): exact-arithmetic reimplementation of the `TapeDeviceProcessor`/`PitchVoice` pitch path against the 440 Hz sine fixture. The simulation matches the engine's offline render to 4 decimal places on every probe point, including two exact-zero samples, confirming the mechanism below is complete.
+**Simulation artefacts** (script at [`debug/seam-sim.js`](./seam-sim.js)): exact-arithmetic reimplementation of the `TapeDeviceProcessor`/`PitchVoice` pitch path against the 440 Hz sine fixture. The simulation matches the engine's offline render to 4 decimal places on every probe point, including two exact-zero samples, confirming the mechanism below is complete.
 
 ### Three stacked effects
 

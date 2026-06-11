@@ -385,7 +385,8 @@ arrangement sections, or loop boundaries.
 Consumed **only** by MIDI synth instruments (Vaporisateur uses
 `midiToHz(pitch, baseFrequency)`) — audio file playback is unaffected. To make an
 audio file follow the project tuning, derive `cents = 1200 * Math.log2(refHz / baselineHz)`
-and apply to `AudioTimeStretchBox.playbackRate` (±1200 cents clamp). `baselineHz` should
+and apply via `AudioTimeStretchBoxAdapter.cents` (the setter clamps `playbackRate` to [0.5, 2.0],
+equivalent to ±1200 cents; the raw `playbackRate` field accepts any positive float). `baselineHz` should
 be the value `baseFrequency` had when the project loaded (capture with `.getValue()` once)
 so audio plays at source rate when the slider sits at the project's authored tuning,
 not at the Western convention of 440. See

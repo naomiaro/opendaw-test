@@ -776,9 +776,12 @@ const App: React.FC = () => {
                 <Heading size="3" style={{ color: "var(--mc-text)" }}>Region Splice mode</Heading>
                 <Text size="2" style={{ color: "var(--mc-muted)" }}>
                   Consecutive regions share an exact boundary on a single track. At same-file
-                  seams the transition is typically seamless; at cross-file seams an audible
-                  click can occur because the incoming voice starts at sample 0 and may not
-                  receive the 20 ms SDK fade-in.{" "}
+                  seams the transition is typically seamless. At cross-file seams, the outgoing
+                  voice writes one sample short (truncation in the block partition) and, at
+                  off-boundary seam positions, returns a quantum later out of phase — fighting
+                  the incoming voice&apos;s fade-in in a destructive crossfade (measured
+                  −9.7 dB on the 440 Hz fixture at one seam geometry; depth and lateness vary
+                  with material and seam position).{" "}
                   See <a href="comp-lanes-debug-demo.html" style={{ color: "var(--mc-amber)" }}>
                     comp-lanes-debug-demo
                   </a>{" "}for the repro. Overlapping regions are intentionally disabled —

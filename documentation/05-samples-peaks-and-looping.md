@@ -204,7 +204,10 @@ For cases where you need to react to loading state changes (e.g., showing a prog
 ```typescript
 const sampleLoader = project.sampleManager.getOrCreate(fileUUID);
 
-// Check current state first — subscribe() only fires for FUTURE changes
+// Check current state first — subscribe() fires synchronously when the loader
+// is already in a terminal state ("loaded" or "error"), but calling
+// sub.terminate() inside that synchronous callback would fire before const sub
+// is bound (TDZ crash). Guard by checking state.type here instead.
 if (sampleLoader.state.type === "loaded") {
   const peaks = sampleLoader.peaks;
   if (!peaks.isEmpty()) {

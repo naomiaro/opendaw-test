@@ -193,10 +193,6 @@ function simulate(startSeconds, seamSeconds, renderSeconds, verboseWindow) {
 
   // metrics (mirror page math)
   const seamIdxFloat = (seamSeconds - startSeconds) * SR;
-  const win = (a, b) => [Math.max(1, Math.floor(a * SR)), Math.min(numSamples, Math.ceil(b * SR))];
-  const maxDelta = (a, b) => {
-    const [i0, i1] = win(a - startSeconds + startSeconds - startSeconds + (a - 0), 0)[0] !== undefined ? [0, 0] : [0, 0];
-  };
   function maxDeltaInWindow(aSec, bSec) {
     const i0 = Math.max(1, Math.floor((aSec - startSeconds) * SR));
     const i1 = Math.min(numSamples, Math.ceil((bSec - startSeconds) * SR));
