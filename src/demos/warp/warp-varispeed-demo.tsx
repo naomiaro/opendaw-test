@@ -129,7 +129,9 @@ function WarpVarispeedDemo() {
         stretchBoxRef.current = next
           ? applyVarispeed(ctx, anchorsRef.current)
           : applyRaw(ctx);
-        // timeBase+duration+playMode writes reset engine.position to 0 — restore.
+        // Defensive playhead reset after the mode-swap transaction (no SDK reset
+        // mechanism found in source, but swap effects are hard to isolate —
+        // see playback CLAUDE.md "engine.position vs Box Writes").
         project.engine.setPosition(0);
         pausedPositionRef.current = 0;
         warpedRef.current = next;

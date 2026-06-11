@@ -141,7 +141,9 @@ API: `.isEmpty()`, `.nonEmpty()`, `.unwrap()`, `.unwrapOrNull()`, `.unwrapOrUnde
   exceptions — they describe SDK behaviour and industry concept respectively.
 
 ### Box Graph API Names
-- Delete box: `project.boxGraph.unstageBox(box)` — takes box object, NOT UUID
+- Delete box: `project.boxGraph.unstageBox(box)` — takes box object, NOT UUID. Bare
+  `unstageBox` does NOT cascade; `box.delete()` cascade-deletes mandatory dependents
+  (e.g. a stretch box's warp markers) — use `.delete()` when dependents must go too
 - Find box: `project.boxGraph.findBox(uuid)` — returns `Option<Box>`, NOT raw box
 - AudioRegionBox gain: field is `gain` (dB, decibel constraint), NOT `volume`, NOT a 0-1 range
 - Option API: `isEmpty()` / `nonEmpty()` — NOT `isSome()` / `isNone()`
@@ -565,8 +567,8 @@ setState-per-frame is only safe if no expensive effect reads its output.
   remove worktrees (or add a vitest exclude) before trusting `npm test` totals.
 - Web fonts under the COOP/COEP dev server need `crossorigin` on BOTH the preconnect
   and stylesheet `<link>`s (verified with Google Fonts on warp-demos.html).
-- Playwright MCP screenshots: omit the `filename` param — custom names can write
-  outside the repo; default-named files land in `.playwright-mcp/`.
+- Playwright MCP screenshots: omit the `filename` param — custom-named files land
+  loose in the project root; default-named files land in `.playwright-mcp/`.
 - PRs are squash-merged (`gh pr merge <n> --squash`) — main carries one commit per PR.
 - After SDK upgrades, clear Vite dep cache: `rm -rf node_modules/.vite` (dev server pre-bundles old SDK)
 - After **any** `package.json` change (SDK upgrade, devDep add/remove, version bump), **regenerate

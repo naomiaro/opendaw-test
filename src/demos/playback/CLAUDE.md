@@ -140,19 +140,19 @@ Explicitly calling `defer()` then `refer(new)` in the same transaction recreates
 the `createInstrument + output.refer` race; just don't — `refer()` alone does the
 swap.
 
-### Some editing.modify Writes Reset engine.position to 0
-Both observed in `time-pitch-start-position-debug-demo`: writing
-`AudioTimeStretchBox.playbackRate`, and the combined `region.timeBase` + `duration` +
-`loopOffset` + `loopDuration` + `playMode` swap (NoStretch ↔ TimeStretch toggle) inside
-`editing.modify`, each reset `engine.position` to 0. Re-call
-`project.engine.setPosition(ppqn)` immediately after the modify to restore the
-playhead. For mid-playback user controls (e.g. live cents slider), gate on
-`!isPlaying` so the position jump doesn't interrupt audio.
-
-The rule is field-specific, not "any structural write": writing
-`AudioTimeStretchBox.transientPlayMode` does NOT reset position (verified in the same
-demo). When adding a new field write, test position-delta first before assuming a
-recovery call is needed.
+### engine.position vs Box Writes (audited at core 0.0.152 / SDK 0.0.154)
+- `AudioTimeStretchBox.playbackRate` writes do NOT reset `engine.position` — refuted
+  empirically (live write during playback, position advanced monotonically) and by
+  source: the sequencer reads `playbackRate` per render block
+  (`TimeStretchSequencer.ts:39-40`), and no SDK write path mutates the playhead.
+  `transientPlayMode` likewise live-reads with no reset. Live cents/pitch controls do
+  not need an `!isPlaying` gate for position safety.
+- The combined `region.timeBase` + `duration` + `loopOffset` + `loopDuration` +
+  `playMode` swap (NoStretch ↔ TimeStretch) remains UNRESOLVED: no reset mechanism
+  exists in source, but every empirical probe is confounded by page-level corrective
+  `setPosition` calls. Keep an explicit `project.engine.setPosition(ppqn)` after
+  mode-swap transactions as a cheap invariant, and treat any newly observed reset as
+  a bug to isolate, not a rule to extend.
 
 ### AudioFileBoxAdapter Audio Data Access
 `.audioData: Promise<AudioData>` (awaits sample loader), `.data: Option<AudioData>`
