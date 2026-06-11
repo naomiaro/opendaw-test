@@ -332,6 +332,10 @@ function WarpTimestretchDemo() {
                 </Flex>
               </div>
               <Text size="2" color="gray">
+                Project grid: {setup?.projectBpm ?? "..."} BPM — varispeed and
+                time-stretch lock to it; raw drifts.
+              </Text>
+              <Text size="2" color="gray">
                 Current segment: <span ref={segmentReadoutRef}>—</span>
               </Text>
             </Flex>

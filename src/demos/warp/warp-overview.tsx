@@ -321,9 +321,9 @@ function WarpOverview() {
                 </dl>
                 <p>
                   Beat tracking supplies the seconds half of every pin; the grid
-                  supplies the ticks. Even the 123 BPM above is beat-map arithmetic:
-                  510 beats over 248 s averages 123.39, rounded to the rigid project
-                  tempo.
+                  supplies the ticks. These demos derive ~513 pins from a 511-row
+                  beat map — one per tracked beat, plus a lead-in and an outro
+                  anchor.
                 </p>
               </article>
             </div>

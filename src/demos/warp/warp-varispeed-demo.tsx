@@ -287,7 +287,10 @@ function WarpVarispeedDemo() {
             <p>
               Each segment&apos;s rate is <code>projectBpm / segmentBpm</code> — the ratio of
               what the file supplies to what the grid allots. A rate above 1 plays the
-              source faster (and sharper, by <code>1200·log₂(rate)</code> cents).
+              source faster (and sharper, by <code>1200·log₂(rate)</code> cents). The
+              project tempo itself is beat-map arithmetic — <code>round(averageBpm)</code>:
+              510 beats over the map&apos;s 248 s span average 123.39, so the grid above
+              runs at 123 BPM.
               PitchStretch reads the <a href="/warp-demos.html#two-kinds-of-markers">warp
               markers</a> alone — no transient detection runs in this mode, and with no
               splice boundaries there is nothing to introduce artifacts. The
