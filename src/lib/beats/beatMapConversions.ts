@@ -126,7 +126,12 @@ export function beatsToTempoEvents(
 
 /**
  * One stepped tempo event per bar for the project tempo track (downbeat granularity).
- * Uses bar-average BPM: 60 * beatsPerBar / (nextDownbeat.second − thisDownbeat.second).
+ * Bar BPM is derived from the actual number of tracked beats in the bar:
+ *   barBpm = (downbeats[b+1].markerIndex − downbeats[b].markerIndex) × 60
+ *            / (downbeats[b+1].second − downbeats[b].second)
+ * Irregular bars (meter changes, tracker glitches) therefore stay aligned at
+ * every downbeat without drifting off the grid.
+ *
  * Downbeat markers are those with beatInBar === 1.
  *
  * Produces ~4× fewer events than beatsToTempoEvents at the cost of intra-bar
@@ -189,30 +194,49 @@ export function barsToTempoEvents(
   }
 
   // From the first downbeat onward: one event per downbeat with bar-average BPM.
-  // downbeats[0]'s event tick equals firstDownbeatTick.
+  // BPM is derived from the actual number of tracked beats in this bar
+  // (markerIndex delta), not from beatsPerBar — so irregular bars (meter
+  // changes, tracker glitches) stay aligned at every downbeat.
   for (let b = 0; b < downbeats.length - 1; b++) {
-    const barBpm =
-      (beatsPerBar * 60) / (downbeats[b + 1].second - downbeats[b].second);
+    const actualBeats = downbeats[b + 1].markerIndex - downbeats[b].markerIndex;
+    const barBpm = (actualBeats * 60) / (downbeats[b + 1].second - downbeats[b].second);
     const tick = firstBeatTick + downbeats[b].markerIndex * quarterPpqn;
     events.push({ tick, bpm: barBpm });
   }
 
-  // Last downbeat: no "next" downbeat, repeat the previous bar's BPM.
+  // Last downbeat: no "next" downbeat, repeat the previous bar's BPM using
+  // the same actual-beats formula over the previous downbeat pair.
   const lastIdx = downbeats.length - 1;
   const lastTick = firstBeatTick + downbeats[lastIdx].markerIndex * quarterPpqn;
+  const prevActualBeats = downbeats[lastIdx].markerIndex - downbeats[lastIdx - 1].markerIndex;
   const lastBpm =
-    (beatsPerBar * 60) /
+    (prevActualBeats * 60) /
     (downbeats[lastIdx].second - downbeats[lastIdx - 1].second);
   events.push({ tick: lastTick, bpm: lastBpm });
 
-  // Deduplicate consecutive identical ticks (guards against duplicate markers).
-  const deduped: TempoEvent[] = [events[0]];
-  for (let i = 1; i < events.length; i++) {
-    if (events[i].tick !== deduped[deduped.length - 1].tick) {
-      deduped.push(events[i]);
-    }
-  }
-  return deduped;
+  return events;
+}
+
+/**
+ * The rigid project tempo: round(averageBpm(markers)).
+ * Oracle and renderer must agree — use this instead of inline Math.round(averageBpm(...)).
+ */
+export function projectBpmOf(markers: ReadonlyArray<BeatMarker>): number {
+  return Math.round(averageBpm(markers));
+}
+
+/**
+ * Grid demo timeline end: firstBeatTick + (markers.length - 1) * quarterPpqn
+ * + beatsPerBar * quarterPpqn (one bar of outro headroom).
+ * Pure function — no SDK imports.
+ */
+export function gridEndTick(
+  markers: ReadonlyArray<BeatMarker>,
+  quarterPpqn: number,
+  beatsPerBar: number = 4
+): number {
+  const { firstBeatTick } = gridAnchorTicks(markers, quarterPpqn, beatsPerBar);
+  return firstBeatTick + (markers.length - 1) * quarterPpqn + beatsPerBar * quarterPpqn;
 }
 
 /**

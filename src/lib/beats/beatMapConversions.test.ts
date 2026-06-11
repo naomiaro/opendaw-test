@@ -11,6 +11,8 @@ import {
   barsToTempoEvents,
   clipStartSeconds,
   warpTickToSeconds,
+  projectBpmOf,
+  gridEndTick,
   type TempoEvent,
 } from "./beatMapConversions";
 
@@ -198,11 +200,81 @@ describe("barsToTempoEvents", () => {
     expect(events[0].tick).toBe(0);
     expect(events[0].bpm).toBeCloseTo(averageBpm(PICKUP), 9);
   });
+
+  // Irregular-bar fixture: bars of 4 then 3 then 4 beats at 0.5 s/beat.
+  // beatInBar: 1,2,3,4, 1,2,3, 1,2,3,4
+  // seconds:   0.0,0.5,1.0,1.5, 2.0,2.5,3.0, 3.5,4.0,4.5,5.0
+  // No pickup (first beatInBar === 1 → firstBeatTick 0).
+  // Downbeats at markerIndex 0 (0.0s), 4 (2.0s), 7 (3.5s).
+  // Expected BPMs: bar0→4: 4*60/2.0=120; bar4→7: 3*60/1.5=120 (happens to be 120).
+  // Expected ticks: {0, bpm120}, {4*960=3840, bpm120}, {7*960=6720, bpm120 (repeat)}.
+  // The key correctness invariant: integrate(3840)=2.0s, integrate(6720)=3.5s.
+  // Old code uses beatsPerBar=4 for bar BPM even for 3-beat bars →
+  //   bar at index 4: bpm = 4*60/1.5 ≈ 160 (WRONG), causing misalignment.
+  const IRREGULAR: BeatMarker[] = [
+    { second: 0.0, beatInBar: 1 },
+    { second: 0.5, beatInBar: 2 },
+    { second: 1.0, beatInBar: 3 },
+    { second: 1.5, beatInBar: 4 },
+    { second: 2.0, beatInBar: 1 },
+    { second: 2.5, beatInBar: 2 },
+    { second: 3.0, beatInBar: 3 },
+    { second: 3.5, beatInBar: 1 },
+    { second: 4.0, beatInBar: 2 },
+    { second: 4.5, beatInBar: 3 },
+    { second: 5.0, beatInBar: 4 },
+  ];
+
+  it("derives bar BPM from actual beats per bar for irregular bars", () => {
+    const events = barsToTempoEvents(IRREGULAR, Q);
+    // Downbeats: indices 0, 4, 7 → ticks 0, 3840, 6720.
+    // Event 0 (no pickup → no lead-in anchor): first bar event at tick 0.
+    expect(events[0].tick).toBe(0);
+    expect(events[0].bpm).toBeCloseTo(120, 6); // 4 beats / 2.0 s
+    // Event 1: 3-beat bar. Correct: 3*60/1.5=120. Old code: 4*60/1.5≈160 (WRONG).
+    expect(events[1].tick).toBe(4 * Q); // 3840
+    expect(events[1].bpm).toBeCloseTo(120, 6); // 3 beats / 1.5 s
+    // Final event: last downbeat repeating previous bar's BPM.
+    expect(events[2].tick).toBe(7 * Q); // 6720
+    expect(events[2].bpm).toBeCloseTo(120, 6); // repeat: 3*60/1.5=120
+  });
+
+  it("satisfies the alignment invariant for irregular bars", () => {
+    const events = barsToTempoEvents(IRREGULAR, Q);
+    // ppqnToSeconds(3840) should equal 2.0 (start of 3-beat bar).
+    expect(integrate(events, 3840)).toBeCloseTo(2.0, 9);
+    // ppqnToSeconds(6720) should equal 3.5 (last downbeat).
+    expect(integrate(events, 6720)).toBeCloseTo(3.5, 9);
+  });
 });
 
 describe("clipStartSeconds", () => {
   it("is the first marker's second", () => {
     expect(clipStartSeconds(PICKUP)).toBe(1.26);
+  });
+});
+
+describe("projectBpmOf", () => {
+  it("returns round(averageBpm) — CH07 fixture ≈ 109", () => {
+    expect(projectBpmOf(CH07)).toBe(109);
+  });
+  it("returns 120 for a uniform-120-BPM fixture", () => {
+    // NO_PICKUP: 4 beats over 2.0 s → averageBpm = 4*60/2.0 = 120.
+    const NO_PICKUP: BeatMarker[] = [
+      { second: 0.5, beatInBar: 1 },
+      { second: 1.0, beatInBar: 2 },
+      { second: 1.5, beatInBar: 3 },
+      { second: 2.0, beatInBar: 4 },
+      { second: 2.5, beatInBar: 1 },
+    ];
+    expect(projectBpmOf(NO_PICKUP)).toBe(120);
+  });
+});
+
+describe("gridEndTick", () => {
+  it("is firstBeatTick + (N-1)*quarter + beatsPerBar*quarter", () => {
+    // CH07: no pickup → firstBeatTick 0; 3 markers → (3-1)*960 + 4*960 = 5760.
+    expect(gridEndTick(CH07, Q)).toBe(5760);
   });
 });
 
