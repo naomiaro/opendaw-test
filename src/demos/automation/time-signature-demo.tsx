@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "@radix-ui/themes/styles.css";
-import { Theme, Container, Heading, Text, Flex, Button } from "@radix-ui/themes";
+import { Theme, Container, Heading, Text, Flex, Button, Callout } from "@radix-ui/themes";
+import { InfoCircledIcon } from "@radix-ui/react-icons";
 import { Project } from "@opendaw/studio-core";
 import { PPQN } from "@opendaw/lib-dsp";
 import type { ppqn } from "@opendaw/lib-dsp";
@@ -24,6 +25,9 @@ type SignatureChange = {
 type SignaturePattern = {
   name: string;
   description: string;
+  initialSignature: [number, number];
+  /** Bars held by the final signature section (after the last change event, before loop end). */
+  lastSectionBars: number;
   changes: SignatureChange[];
 };
 
@@ -31,6 +35,8 @@ const PATTERNS: SignaturePattern[] = [
   {
     name: "Standard \u2192 Waltz",
     description: "4/4 for 4 bars, then 3/4 for 4 bars",
+    initialSignature: [4, 4],
+    lastSectionBars: 4,
     changes: [
       { barOffset: 4, nominator: 3, denominator: 4 },
     ],
@@ -38,6 +44,8 @@ const PATTERNS: SignaturePattern[] = [
   {
     name: "Prog Rock",
     description: "4/4 \u2192 7/8 \u2192 5/4 \u2192 4/4, each for 2 bars",
+    initialSignature: [4, 4],
+    lastSectionBars: 2,
     changes: [
       { barOffset: 2, nominator: 7, denominator: 8 },
       { barOffset: 2, nominator: 5, denominator: 4 },
@@ -47,6 +55,8 @@ const PATTERNS: SignaturePattern[] = [
   {
     name: "Film Score",
     description: "6/8 \u2192 4/4 \u2192 3/4 \u2192 6/8, each for 2 bars",
+    initialSignature: [6, 8],
+    lastSectionBars: 2,
     changes: [
       { barOffset: 2, nominator: 4, denominator: 4 },
       { barOffset: 2, nominator: 3, denominator: 4 },
@@ -56,6 +66,8 @@ const PATTERNS: SignaturePattern[] = [
   {
     name: "Alternating",
     description: "Alternates 4/4 and 7/8 every 2 bars",
+    initialSignature: [4, 4],
+    lastSectionBars: 2,
     changes: [
       { barOffset: 2, nominator: 7, denominator: 8 },
       { barOffset: 2, nominator: 4, denominator: 4 },
@@ -66,19 +78,8 @@ const PATTERNS: SignaturePattern[] = [
 
 // --- Bar computation ---
 
-function getInitialSignature(pattern: SignaturePattern): [number, number] {
-  if (pattern.name === "Film Score") return [6, 8];
-  return [4, 4];
-}
-
-function getLastSectionBars(pattern: SignaturePattern): number {
-  // Standard -> Waltz: 4 bars for last section, others: 2
-  if (pattern.changes.length === 1 && pattern.changes[0].barOffset === 4) return 4;
-  return 2;
-}
-
 function applyPattern(project: Project, pattern: SignaturePattern): void {
-  const [initNom, initDenom] = getInitialSignature(pattern);
+  const [initNom, initDenom] = pattern.initialSignature;
   const signatureTrack = project.timelineBoxAdapter.signatureTrack;
 
   // Clear existing signature events — each deletion in its own modify
@@ -86,7 +87,7 @@ function applyPattern(project: Project, pattern: SignaturePattern): void {
   const existingEvents = Array.from(signatureTrack.iterateAll()).slice(1);
   for (let i = existingEvents.length - 1; i >= 0; i--) {
     project.editing.modify(() => {
-      signatureTrack.adapterAt(existingEvents[i].index).ifSome(a => a.box.delete());
+      signatureTrack.adapterAt(existingEvents[i].index).ifSome(a => signatureTrack.deleteAdapter(a));
     });
   }
 
@@ -105,7 +106,6 @@ function applyPattern(project: Project, pattern: SignaturePattern): void {
   const firstChangeOffset = pattern.changes[0]?.barOffset ?? 8;
   ppqnAccum = (firstChangeOffset * PPQN.fromSignature(currentNom, currentDenom)) as ppqn;
 
-  const lastSectionBars = getLastSectionBars(pattern);
   for (let i = 0; i < pattern.changes.length; i++) {
     const change = pattern.changes[i];
     const position = ppqnAccum;
@@ -116,7 +116,7 @@ function applyPattern(project: Project, pattern: SignaturePattern): void {
     currentNom = change.nominator;
     currentDenom = change.denominator;
 
-    const numBars = (i + 1 < pattern.changes.length) ? pattern.changes[i + 1].barOffset : lastSectionBars;
+    const numBars = (i + 1 < pattern.changes.length) ? pattern.changes[i + 1].barOffset : pattern.lastSectionBars;
     ppqnAccum = (ppqnAccum + numBars * PPQN.fromSignature(currentNom, currentDenom)) as ppqn;
   }
 
@@ -250,6 +250,7 @@ const TimelineCanvas: React.FC<TimelineCanvasProps> = ({ bars, playheadPosition,
 
 const App: React.FC = () => {
   const [status, setStatus] = useState("Loading...");
+  const [initError, setInitError] = useState<string | null>(null);
   const [project, setProject] = useState<Project | null>(null);
   const projectRef = useRef<Project | null>(null);
   const [isReady, setIsReady] = useState(false);
@@ -260,19 +261,29 @@ const App: React.FC = () => {
   const { currentPosition: playheadPosition, isPlaying } = usePlaybackPosition(project);
 
   useEffect(() => {
-    initializeOpenDAW({ onStatusUpdate: setStatus }).then(({ project: newProject }) => {
-      projectRef.current = newProject;
-      setProject(newProject);
+    let cancelled = false;
+    initializeOpenDAW({ onStatusUpdate: setStatus })
+      .then(({ project: newProject }) => {
+        if (cancelled) return;
+        projectRef.current = newProject;
+        setProject(newProject);
 
-      const settings = newProject.engine.preferences.settings;
-      settings.metronome.enabled = true;
-      settings.metronome.gain = -6;
+        const settings = newProject.engine.preferences.settings;
+        settings.metronome.enabled = true;
+        settings.metronome.gain = -6;
 
-      applyPattern(newProject, PATTERNS[0]);
-      setBars(computeBarsFromSDK(newProject));
-      setStatus("Ready");
-      setIsReady(true);
-    });
+        applyPattern(newProject, PATTERNS[0]);
+        setBars(computeBarsFromSDK(newProject));
+        setStatus("Ready");
+        setIsReady(true);
+      })
+      .catch((error) => {
+        console.error("Time signature demo initialization failed:", error);
+        if (!cancelled) setInitError(error instanceof Error ? error.message : String(error));
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handlePatternSelect = (index: number) => {
@@ -320,7 +331,14 @@ const App: React.FC = () => {
             </Text>
           </Flex>
 
-          {!isReady ? (
+          {initError ? (
+            <Callout.Root color="red">
+              <Callout.Icon>
+                <InfoCircledIcon />
+              </Callout.Icon>
+              <Callout.Text>{initError}</Callout.Text>
+            </Callout.Root>
+          ) : !isReady ? (
             <Text align="center">{status}</Text>
           ) : (
             <Flex direction="column" gap="5">
