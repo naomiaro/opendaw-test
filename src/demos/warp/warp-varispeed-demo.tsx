@@ -129,11 +129,16 @@ function WarpVarispeedDemo() {
         stretchBoxRef.current = next
           ? applyVarispeed(ctx, anchorsRef.current)
           : applyRaw(ctx);
-        // Defensive playhead reset after the mode-swap transaction (no SDK reset
-        // mechanism found in source, but swap effects are hard to isolate —
-        // see playback CLAUDE.md "engine.position vs Box Writes").
-        project.engine.setPosition(0);
-        pausedPositionRef.current = 0;
+        // Convenience reposition for the stopped state: resets the playhead
+        // to bar 1 so the next Play starts cleanly.
+        // Mode swaps do NOT reset engine.position (TimeInfo is written only by
+        // transport commands); calling setPosition mid-playback would itself
+        // cause an audible jump — gate on stopped state only.
+        // See debug/time-pitch-start-position-pop.md for resolution.
+        if (!isPlaying) {
+          project.engine.setPosition(0);
+          pausedPositionRef.current = 0;
+        }
         warpedRef.current = next;
         setWarped(next);
         setStatus(

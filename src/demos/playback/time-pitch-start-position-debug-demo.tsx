@@ -453,13 +453,17 @@ const App: React.FC = () => {
         setPlayMode(next);
         setCents(0);
 
-        // Defensive playhead reset after the mode-swap transaction (no SDK
-        // reset mechanism found in source; swap effects are hard to isolate) —
-        // see playback CLAUDE.md "engine.position vs Box Writes". Keeps the
-        // amber start-bar and the engine agreeing for the next Play.
-        const bpm = project.timelineBox.bpm.getValue();
-        const ppqn = Math.round(PPQN.secondsToPulses(startSeconds, bpm));
-        project.engine.setPosition(ppqn);
+        // Convenience reposition for the stopped state: keeps the amber
+        // start-bar and the engine in agreement for the next Play.
+        // Mode swaps do NOT reset engine.position (TimeInfo is written only by
+        // transport commands); calling setPosition mid-playback would itself
+        // cause an audible jump — gate on stopped state only.
+        // See debug/time-pitch-start-position-pop.md for resolution.
+        if (!isPlaying) {
+          const bpm = project.timelineBox.bpm.getValue();
+          const ppqn = Math.round(PPQN.secondsToPulses(startSeconds, bpm));
+          project.engine.setPosition(ppqn);
+        }
       } finally {
         switchingRef.current = false;
         setSwitching(false);

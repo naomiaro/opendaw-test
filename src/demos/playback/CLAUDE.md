@@ -151,12 +151,14 @@ swap.
   (`TimeStretchSequencer.ts:39-40`), and no SDK write path mutates the playhead.
   `transientPlayMode` likewise live-reads with no reset. Live cents/pitch controls do
   not need an `!isPlaying` gate for position safety.
-- The combined `region.timeBase` + `duration` + `loopOffset` + `loopDuration` +
-  `playMode` swap (NoStretch ↔ TimeStretch) remains UNRESOLVED: no reset mechanism
-  exists in source, but every empirical probe is confounded by page-level corrective
-  `setPosition` calls. Keep an explicit `project.engine.setPosition(ppqn)` after
-  mode-swap transactions as a cheap invariant, and treat any newly observed reset as
-  a bug to isolate, not a rule to extend.
+- Play-mode swaps (`region.timeBase` + `duration` + `loopOffset` + `loopDuration` +
+  `playMode`) do NOT reset `engine.position` — TimeInfo is written only by transport
+  commands (`play`, `stop`, `setPosition`). The audible "restart" heard on mid-playback
+  swaps is the TimeStretchSequencer starting a new segment voice at the current position
+  (SDK-side, not fixable from app code). A post-swap `setPosition` call is appropriate
+  when stopped (convenience reposition for the next Play), but calling it mid-playback
+  is itself the source of an audible jump. Gate post-swap `setPosition` on `!isPlaying`.
+  See `debug/time-pitch-start-position-pop.md` for the full resolution.
 
 ### AudioFileBoxAdapter Audio Data Access
 `.audioData: Promise<AudioData>` (awaits sample loader), `.data: Option<AudioData>`
