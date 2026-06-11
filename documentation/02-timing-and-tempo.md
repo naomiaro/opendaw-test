@@ -346,7 +346,7 @@ Position and duration are both stored in PPQN ticks. The clip occupies a fixed n
 
 **Behavior when BPM changes:** A 4-beat clip always occupies 4 beats. At 120 BPM that's 2 seconds; at 60 BPM it's 4 seconds. Without a play-mode attached, the audio still plays back at its source speed — it just finishes sooner or later relative to the grid. To make the audio actually follow the tempo (so a 4-beat loop fills 4 beats at any BPM), attach an `AudioPitchStretchBox` or `AudioTimeStretchBox` to the region's `playMode` pointer. See [Ch. 18 — Time & Pitch](./18-time-and-pitch.md).
 
-**Overlap rule:** Musical timebase regions are **not allowed to overlap** on the same track. The engine validates this during export.
+**Overlap rule:** Regions on one track must not overlap — in **either** timebase. The live engine tolerates overlaps at runtime, but `project.copy()` (export, offline render) deletes the overlapping pair with only a console warning. Put intentionally overlapping audio on separate tracks.
 
 ### Seconds Timebase
 
@@ -360,7 +360,7 @@ Position is in PPQN (for grid alignment), but duration is in real-time seconds. 
 
 **Behavior when BPM changes:** A 4-second clip always plays for 4 seconds. At 120 BPM it spans 8 beats; at 60 BPM it spans 4 beats. The clip's tick-duration is recalculated.
 
-**Overlap rule:** Seconds timebase regions **are allowed to overlap** (e.g., a drum hit's decay can extend into the next hit).
+**Overlap rule:** The same as Musical — overlapping regions on one track are invalid by design, and `project.copy()` deletes the pair. The live validity probe skips Seconds tracks, so Seconds overlaps surface **no warning** before a copy silently deletes them. For overlapping decays (e.g. drum-hit tails into the next hit), put each one-shot on its own track.
 
 ### Choosing Between Them
 

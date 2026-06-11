@@ -719,9 +719,10 @@ project.editing.modify(() => {
   adapter.fading.inField.setValue(1920);       // 2 beats fade-in
   adapter.fading.outField.setValue(1920);      // 2 beats fade-out
 
-  // Slope controls curve shape
-  adapter.fading.inSlopeField.setValue(0.75);  // Exponential
-  adapter.fading.outSlopeField.setValue(0.25); // Logarithmic
+  // Slope = curve height at the fade midpoint (0.5 = exact linear).
+  // 0.75 in / 0.25 out is the matched natural ("logarithmic") pair — the SDK default.
+  adapter.fading.inSlopeField.setValue(0.75);
+  adapter.fading.outSlopeField.setValue(0.25);
 });
 ```
 
@@ -742,7 +743,8 @@ if (fading.hasFading) {
 // Copy all fade settings to another region
 fading.copyTo(targetAdapter.box.fading);
 
-// Reset all fades to zero (remove fades)
+// Remove fades: in/out lengths reset to 0; slopes reset to the
+// DEFAULTS (inSlope 0.75, outSlope 0.25), not to zero
 fading.reset();
 
 // Read-only shorthand for current values

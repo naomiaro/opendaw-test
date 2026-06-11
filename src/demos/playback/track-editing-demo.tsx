@@ -282,12 +282,25 @@ const App: React.FC = () => {
       const trackAdapter = project.boxAdapters.adapterFor(track.trackBox, TrackBoxAdapter);
       const regionAdapters = trackAdapter.regions.adapters.values().filter(r => r.isAudioRegion());
 
+      // All-regions move: clamp the DELTA to the leftmost region's position so
+      // every region translates uniformly. Per-region Math.max(0, ...) clamping
+      // would compress the leftmost region into its neighbour — a reachable
+      // overlap, which is invalid by design (project.copy() deletes the pair).
+      let effectiveDelta = moveAmount;
+      if (!selectedRegionUuid) {
+        const minPos = Math.min(
+          ...regionAdapters.map(r => r.box.position.getValue())
+        );
+        effectiveDelta = Math.min(moveAmount, minPos);
+        if (effectiveDelta <= 0) return;
+      }
+
       regionAdapters.forEach(regionAdapter => {
         const regionUuid = UUID.toString(regionAdapter.box.address.uuid);
         if (selectedRegionUuid && regionUuid !== selectedRegionUuid) return;
 
         const currentPos = regionAdapter.box.position.getValue();
-        const newPosition = Math.max(0, currentPos - moveAmount);
+        const newPosition = Math.max(0, currentPos - effectiveDelta);
         regionAdapter.box.position.setValue(newPosition);
       });
     });

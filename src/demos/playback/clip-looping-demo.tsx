@@ -113,9 +113,9 @@ function applyLoopSettings(
   //
   // NOTE on AudioRegionBoxAdapter.loopOffset: the adapter's loopOffset getter is a RAW
   // box value read (box.loopOffset.getValue()) — no TimeBase conversion, unlike duration
-  // and loopDuration which both go through a TimeBaseConverter.toPPQN() call.
-  // loopOffset is always stored and read as raw box units (PPQN in Musical, seconds in
-  // Seconds timeBase). This demo always stores 0 here and uses waveformOffset instead.
+  // and loopDuration which both go through a TimeBaseConverter.toPPQN() call. The stored
+  // value is treated as PPQN by locateLoops in BOTH timeBases — always write it in PPQN
+  // (see playback CLAUDE.md). This demo always stores 0 here and uses waveformOffset instead.
   const bpm = project.timelineBox.bpm.getValue();
   const waveformOffsetSeconds = PPQN.pulsesToSeconds(loopOffset, bpm);
 
