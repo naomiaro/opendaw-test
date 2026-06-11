@@ -1,10 +1,9 @@
 // src/demos/warp/warp-varispeed-demo.tsx
 import { useEffect, useRef, useState, useCallback } from "react";
 import { createRoot } from "react-dom/client";
-import { UUID } from "@opendaw/lib-std";
-import { PPQN, TimeBase } from "@opendaw/lib-dsp";
+import { PPQN } from "@opendaw/lib-dsp";
 import { AnimationFrame } from "@opendaw/lib-dom";
-import { AudioPitchStretchBox, WarpMarkerBox } from "@opendaw/studio-boxes";
+import { AudioPitchStretchBox } from "@opendaw/studio-boxes";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
@@ -15,6 +14,11 @@ import {
   type WarpAnchor,
 } from "@/lib/beats/beatMapConversions";
 import { setupWarpDemo, type WarpDemoSetup } from "./lib/setupWarpDemo";
+import {
+  applyRaw,
+  applyVarispeed,
+  type WarpScenarioContext,
+} from "./lib/warpScenarios";
 import { WarpWaveform, type WaveformSegment } from "./lib/WarpWaveform";
 import { usePlaybackPosition } from "@/hooks/usePlaybackPosition";
 import { useTransportControls } from "@/hooks/useTransportControls";
@@ -111,44 +115,18 @@ function WarpVarispeedDemo() {
   const toggleWarp = useCallback(
     (next: boolean) => {
       if (!setup) return;
-      const { project, region, audioBuffer } = setup;
-      const anchors = anchorsRef.current;
-      const endTick = anchors[anchors.length - 1].tick;
-      // Loop area end follows the active mode's timeline length: warped ticks
-      // come from the anchor list, raw ticks from seconds at the rigid tempo.
-      const rawEndPpqn = Math.round(
-        PPQN.secondsToPulses(audioBuffer.duration, setup.projectBpm)
-      );
-      // Single transaction per the SDK's AudioContentModifier pattern.
-      project.editing.modify(() => {
-        const prev = stretchBoxRef.current;
-        project.timelineBox.loopArea.to.setValue(next ? endTick : rawEndPpqn);
-        if (!next) {
-          region.playMode.defer();
-          if (prev) prev.delete();
-          stretchBoxRef.current = null;
-          region.timeBase.setValue(TimeBase.Seconds);
-          region.duration.setValue(audioBuffer.duration);
-          region.loopOffset.setValue(0);
-          region.loopDuration.setValue(audioBuffer.duration);
-          return;
-        }
-        const stretch = AudioPitchStretchBox.create(project.boxGraph, UUID.generate());
-        for (const anchor of anchors) {
-          WarpMarkerBox.create(project.boxGraph, UUID.generate(), (m) => {
-            m.owner.refer(stretch.warpMarkers);
-            m.position.setValue(anchor.tick);
-            m.seconds.setValue(anchor.second);
-          });
-        }
-        region.playMode.refer(stretch);
-        if (prev) prev.delete();
-        stretchBoxRef.current = stretch;
-        region.timeBase.setValue(TimeBase.Musical);
-        region.duration.setValue(endTick);
-        region.loopOffset.setValue(0);
-        region.loopDuration.setValue(endTick);
-      });
+      const { project } = setup;
+      const ctx: WarpScenarioContext = {
+        project,
+        region: setup.region,
+        audioBuffer: setup.audioBuffer,
+        markers: setup.markers,
+        projectBpm: setup.projectBpm,
+        prevStretchBox: stretchBoxRef.current,
+      };
+      stretchBoxRef.current = next
+        ? applyVarispeed(ctx, anchorsRef.current)
+        : applyRaw(ctx);
       // timeBase+duration+playMode writes reset engine.position to 0 — restore.
       project.engine.setPosition(0);
       pausedPositionRef.current = 0;

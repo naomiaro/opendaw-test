@@ -1,14 +1,12 @@
 // src/demos/warp/warp-timestretch-demo.tsx
 import { useEffect, useRef, useState, useCallback } from "react";
 import { createRoot } from "react-dom/client";
-import { UUID } from "@opendaw/lib-std";
-import { PPQN, TimeBase } from "@opendaw/lib-dsp";
+import { PPQN } from "@opendaw/lib-dsp";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { TransientPlayMode } from "@opendaw/studio-enums";
 import {
   AudioPitchStretchBox,
   AudioTimeStretchBox,
-  WarpMarkerBox,
 } from "@opendaw/studio-boxes";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
@@ -21,6 +19,12 @@ import {
 } from "@/lib/beats/beatMapConversions";
 import { ensureTransientMarkers } from "@/lib/transientDetection";
 import { setupWarpDemo, type WarpDemoSetup } from "./lib/setupWarpDemo";
+import {
+  applyRaw,
+  applyVarispeed,
+  applyTimeStretch,
+  type WarpScenarioContext,
+} from "./lib/warpScenarios";
 import { WarpWaveform, type WaveformSegment } from "./lib/WarpWaveform";
 import { usePlaybackPosition } from "@/hooks/usePlaybackPosition";
 import { useTransportControls } from "@/hooks/useTransportControls";
@@ -130,7 +134,6 @@ function WarpTimestretchDemo() {
       if (!setup || switchingRef.current) return;
       const { project, region, audioBuffer, audioFileBox } = setup;
       const anchors = anchorsRef.current;
-      const endTick = anchors[anchors.length - 1].tick;
       switchingRef.current = true;
       setSwitching(true);
       try {
@@ -139,49 +142,20 @@ function WarpTimestretchDemo() {
           const positions = await ensureTransientMarkers(project, audioFileBox, audioBuffer);
           setTransientCount(positions.length);
         }
-        // Loop area end follows the active mode's timeline length: warped ticks
-        // come from the anchor list, raw ticks from seconds at the rigid tempo.
-        const rawEndPpqn = Math.round(
-          PPQN.secondsToPulses(audioBuffer.duration, setup.projectBpm)
-        );
-        // Single transaction per the SDK's AudioContentModifier pattern:
-        // create new → refer (replaces atomically) → delete old → flip timeBase.
-        project.editing.modify(() => {
-          const prev = stretchBoxRef.current;
-          project.timelineBox.loopArea.to.setValue(next === "raw" ? rawEndPpqn : endTick);
-          if (next === "raw") {
-            region.playMode.defer();
-            if (prev) prev.delete();
-            stretchBoxRef.current = null;
-            region.timeBase.setValue(TimeBase.Seconds);
-            region.duration.setValue(audioBuffer.duration);
-            region.loopOffset.setValue(0);
-            region.loopDuration.setValue(audioBuffer.duration);
-            return;
-          }
-          const nextBox =
-            next === "varispeed"
-              ? AudioPitchStretchBox.create(project.boxGraph, UUID.generate())
-              : AudioTimeStretchBox.create(project.boxGraph, UUID.generate(), (b) => {
-                  b.transientPlayMode.setValue(transientMode);
-                  b.playbackRate.setValue(1.0); // pitch preserved: rate 1, timing from markers
-                });
-          // The identical anchor list both engines consume — the ch09 thesis.
-          for (const anchor of anchors) {
-            WarpMarkerBox.create(project.boxGraph, UUID.generate(), (m) => {
-              m.owner.refer(nextBox.warpMarkers);
-              m.position.setValue(anchor.tick);
-              m.seconds.setValue(anchor.second);
-            });
-          }
-          region.playMode.refer(nextBox);
-          if (prev) prev.delete();
-          stretchBoxRef.current = nextBox;
-          region.timeBase.setValue(TimeBase.Musical);
-          region.duration.setValue(endTick);
-          region.loopOffset.setValue(0);
-          region.loopDuration.setValue(endTick);
-        });
+        const ctx: WarpScenarioContext = {
+          project,
+          region,
+          audioBuffer,
+          markers: setup.markers,
+          projectBpm: setup.projectBpm,
+          prevStretchBox: stretchBoxRef.current,
+        };
+        stretchBoxRef.current =
+          next === "raw"
+            ? applyRaw(ctx)
+            : next === "varispeed"
+              ? applyVarispeed(ctx, anchors)
+              : applyTimeStretch(ctx, anchors, transientMode);
         project.engine.setPosition(0);
         pausedPositionRef.current = 0;
         modeRef.current = next;

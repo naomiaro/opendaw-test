@@ -1,8 +1,7 @@
 // src/demos/warp/warp-grid-follows-file-demo.tsx
 import { useEffect, useRef, useState, useCallback } from "react";
 import { createRoot } from "react-dom/client";
-import { PPQN, Interpolation } from "@opendaw/lib-dsp";
-import type { ppqn } from "@opendaw/lib-dsp";
+import { PPQN } from "@opendaw/lib-dsp";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
@@ -14,6 +13,12 @@ import {
   type TempoEvent,
 } from "@/lib/beats/beatMapConversions";
 import { setupWarpDemo, type WarpDemoSetup } from "./lib/setupWarpDemo";
+import {
+  applyGridPlacement,
+  applyGridTempoEvents,
+  gridEndTick,
+  type WarpScenarioContext,
+} from "./lib/warpScenarios";
 import { WarpWaveform, type WaveformSegment } from "./lib/WarpWaveform";
 import { usePlaybackPosition } from "@/hooks/usePlaybackPosition";
 import { useTransportControls } from "@/hooks/useTransportControls";
@@ -68,23 +73,22 @@ function WarpGridFollowsFileDemo() {
         const { firstBeatTick } = gridAnchorTicks(markers, QUARTER);
         firstBeatTickRef.current = firstBeatTick;
         tempoEventsRef.current = barsToTempoEvents(markers, QUARTER);
-        const s0 = clipStartSeconds(markers);
-        // End tick: last tracked beat + one bar of outro headroom.
-        endTickRef.current = firstBeatTick + (markers.length - 1) * QUARTER + BAR;
+        // End tick: last tracked beat + one bar of outro headroom (single source of truth).
+        endTickRef.current = gridEndTick(markers);
 
         // The whole point: the audio NEVER changes. NoStretch, Seconds timeBase,
         // placed so the file's first tracked beat sounds exactly at firstBeatTick.
         // waveformOffset trims the file's pre-beat lead-in (a raw seconds shift
         // on the engine read position).
-        project.editing.modify(() => {
-          region.position.setValue(firstBeatTick);
-          region.duration.setValue(audioBuffer.duration - s0);
-          region.loopDuration.setValue(audioBuffer.duration - s0);
-          region.waveformOffset.setValue(s0);
-          // Loop the full song; the tick end is valid under both tempo maps
-          // (loopArea is PPQN — its seconds position bends with the conform).
-          project.timelineBox.loopArea.to.setValue(endTickRef.current);
-        });
+        const ctx: WarpScenarioContext = {
+          project,
+          region,
+          audioBuffer,
+          markers,
+          projectBpm: result.projectBpm,
+          prevStretchBox: null,
+        };
+        applyGridPlacement(ctx);
         project.engine.setPosition(0);
         setSetup(result);
         setStatus("Ready — grid is RIGID, the metronome fights the music");
@@ -138,24 +142,10 @@ function WarpGridFollowsFileDemo() {
     (next: boolean) => {
       if (!setup) return;
       const { project, projectBpm } = setup;
-      const adapter = project.timelineBoxAdapter;
-      project.editing.modify(() => {
-        // any — ValueEventCollectionBoxAdapter is not exported from @opendaw/studio-adapters
-        adapter.tempoTrackEvents.ifSome((collection: any) => {
-          collection.events.asArray().forEach((event: any) => event.box.delete());
-          const events: TempoEvent[] = next
-            ? tempoEventsRef.current
-            : [{ tick: 0, bpm: projectBpm }];
-          for (const event of events) {
-            collection.createEvent({
-              position: event.tick as ppqn,
-              index: 0,
-              value: event.bpm,
-              interpolation: Interpolation.None,
-            });
-          }
-        });
-      });
+      applyGridTempoEvents(
+        { project },
+        next ? tempoEventsRef.current : [{ tick: 0, bpm: projectBpm }]
+      );
       conformedRef.current = next;
       setConformed(next);
       setEventCount(next ? tempoEventsRef.current.length : 1);
