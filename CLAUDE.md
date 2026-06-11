@@ -580,9 +580,14 @@ setState-per-frame is only safe if no expensive effect reads its output.
   flood the SDK .d.ts files.
 - Trust `npx tsc --noEmit` over LSP diagnostics for `@/` module-resolution and
   Float32Array-generic errors — the global typescript-language-server runs a newer
-  TS than the project and reports false positives after tsconfig edits.
+  TS than the project and reports false positives after tsconfig edits. The same
+  cascade hits relative imports (`./lib/...` TS2307) after rebases/branch switches.
 - `npx tsc --noEmit` errors TS5101 (baseUrl deprecated) under the newer global TS —
-  environmental noise, not a project error; keep `baseUrl` (see rule above).
+  environmental noise, not a project error; keep `baseUrl` (see rule above) and run
+  `npx tsc --noEmit --ignoreDeprecations "6.0"` to get past the hard error.
+- Some older demos carry pre-existing tsc errors (e.g. comp-lanes-demo.tsx TS2739/TS2345
+  box-graph setup lines). Judge "zero new errors" against the parent commit's error set,
+  not absolute zero — extract parent versions via `git show` when unsure.
 - If `npm run build` fails with a missing SDK export on a clean tree (e.g. "InputLatency
   is not exported"), suspect node_modules drift behind package-lock.json (installed SDK
   version < locked version) — fix with `npm ci`, not code changes.

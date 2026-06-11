@@ -8,6 +8,11 @@ Documented bugs and open questions from working with the OpenDAW SDK. Each file 
 - **Each note states the SDK version it was verified against.** Code citations (file:line) are point-in-time and decay — re-verify before quoting.
 - **Focus on evidence and repro, not advocacy.** Document what's observed and how to reproduce it; label what's inferred from source-tracing as inferred. The goal is to make the symptom reproducible by anyone reading the note — diagnosis, recommendations, and contract questions are out of scope.
 - **Repro pages are unlisted.** They live alongside the regular demos but are not added to `src/index.tsx` or `public/sitemap.xml`. The HTML carries `<meta name="robots" content="noindex, nofollow">`. They're reachable only by direct URL and are intentionally minimal — one button, one configuration, one thing to listen for.
+- **Proven browser-probe techniques** (no SDK or page changes needed): patch
+  `OfflineAudioContext.prototype.startRendering` to capture rendered buffers; intercept
+  `MessagePort.prototype.postMessage` to log engine transport commands; pull `project`
+  from a mounted component's React fiber. All three were used to close the seam and
+  mode-swap investigations.
 - **Claims about runtime behaviour must be empirically verified, not inferred.** Tracing through SDK source produces plausible-looking explanations but can include unverified steps. If the doc states "X happens because Y," `Y` must be confirmed by logging the relevant value at runtime, stepping through with a debugger, or otherwise observing it directly. Citation of file:line for `Y` is not verification of `Y` — it's verification that the code at that location *exists*. When in doubt, present the symptom and repro without the mechanism, and let the maintainer diagnose.
 
 ## Index
