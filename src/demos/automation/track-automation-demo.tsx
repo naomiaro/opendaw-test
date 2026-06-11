@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "@radix-ui/themes/styles.css";
-import { Theme, Container, Heading, Text, Flex, Button, Card } from "@radix-ui/themes";
+import { Theme, Container, Heading, Text, Flex, Button, Card, Callout } from "@radix-ui/themes";
+import { InfoCircledIcon } from "@radix-ui/react-icons";
 import { Project, EffectFactories } from "@opendaw/studio-core";
 import { AudioUnitBox, ReverbDeviceBox, TrackBox, ValueRegionBox } from "@opendaw/studio-boxes";
 import { PPQN, Interpolation } from "@opendaw/lib-dsp";
@@ -173,7 +174,7 @@ const TRACK_CONFIGS: AutomationTrackConfig[] = [
     color: "#34d399",
     yLabels: [
       { value: 1.0, label: "Wet" },
-      { value: 0.5, label: "50%" },
+      { value: 0.5, label: "−12 dB" },
       { value: 0.0, label: "Dry" }
     ],
     presets: reverbWetPresets
@@ -182,7 +183,12 @@ const TRACK_CONFIGS: AutomationTrackConfig[] = [
 
 // ─── Helper: Apply Automation Events to a Track ─────────────────────────
 
-function applyAutomationEvents(project: Project, trackBox: TrackBox, events: AutomationEvent[]): void {
+/**
+ * Creates a new automation region with the given events, then deletes any
+ * pre-existing regions on the track. Returns true on success; returns false
+ * if region creation failed (old regions are preserved unchanged).
+ */
+function applyAutomationEvents(project: Project, trackBox: TrackBox, events: AutomationEvent[]): boolean {
   // Snapshot existing automation regions via the adapter layer
   const trackAdapter = project.boxAdapters.adapterFor(trackBox, TrackBoxAdapter);
   const existingRegions = trackAdapter.regions.adapters.values()
@@ -232,6 +238,8 @@ function applyAutomationEvents(project: Project, trackBox: TrackBox, events: Aut
       }
     });
   }
+
+  return newRegionCreated;
 }
 
 // ─── Helper: Convert Events to JSON for Server Persistence ──────────────
@@ -551,6 +559,8 @@ const App: React.FC = () => {
   const audioContextRef = useRef<AudioContext | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [targetUnitId, setTargetUnitId] = useState("");
+  const [runtimeError, setRuntimeError] = useState<string | null>(null);
+  const [initWarning, setInitWarning] = useState<string | null>(null);
 
   // Per-section active preset indices
   const [activePresets, setActivePresets] = useState([0, 0, 0]);
@@ -617,6 +627,9 @@ const App: React.FC = () => {
           });
         } else {
           console.warn('Could not find AudioRegionBox with label "Guitar" — audio may play from wrong position');
+          if (!cancelled) {
+            setInitWarning('Could not find the "Guitar" audio region — playback may start from the wrong position');
+          }
         }
 
         // Insert a Reverb effect with exaggerated settings for demo
@@ -657,7 +670,13 @@ const App: React.FC = () => {
 
         // Apply default preset for volume only (one automation at a time)
         if (trackBoxes[0]) {
-          applyAutomationEvents(newProject, trackBoxes[0], TRACK_CONFIGS[0].presets[0].events);
+          const ok = applyAutomationEvents(newProject, trackBoxes[0], TRACK_CONFIGS[0].presets[0].events);
+          if (!ok) {
+            console.warn("Failed to apply initial automation preset — demo may start without automation");
+            if (!cancelled) {
+              setInitWarning("Initial automation preset could not be applied — select a preset to retry");
+            }
+          }
         }
 
         // Set loop area to bar 17–25 and position engine at bar 17
@@ -689,9 +708,17 @@ const App: React.FC = () => {
     const trackBox = automationTrackBoxesRef.current[sectionIndex];
     if (!p || !trackBox) return;
 
+    setRuntimeError(null);
+
     if (isPlaying) {
       p.engine.stop(true);
       setPlayingSectionIndex(null);
+    }
+
+    const ok = applyAutomationEvents(p, trackBox, TRACK_CONFIGS[sectionIndex].presets[presetIndex].events);
+    if (!ok) {
+      setRuntimeError("Could not write the automation region — the preset was not applied. Try selecting it again.");
+      return;
     }
 
     setActivePresets(prev => {
@@ -699,8 +726,6 @@ const App: React.FC = () => {
       next[sectionIndex] = presetIndex;
       return next;
     });
-
-    applyAutomationEvents(p, trackBox, TRACK_CONFIGS[sectionIndex].presets[presetIndex].events);
   };
 
   const clearAutomationForSection = (sectionIndex: number) => {
@@ -732,6 +757,8 @@ const App: React.FC = () => {
     const p = projectRef.current;
     const ac = audioContextRef.current;
     if (!p || !ac) return;
+
+    setRuntimeError(null);
 
     try {
       // Stop if currently playing
@@ -770,13 +797,18 @@ const App: React.FC = () => {
       // Ensure the active section's automation is applied
       const trackBox = automationTrackBoxesRef.current[sectionIndex];
       const presetIndex = activePresets[sectionIndex];
-      applyAutomationEvents(p, trackBox, TRACK_CONFIGS[sectionIndex].presets[presetIndex].events);
+      const ok = applyAutomationEvents(p, trackBox, TRACK_CONFIGS[sectionIndex].presets[presetIndex].events);
+      if (!ok) {
+        setRuntimeError("Could not write the automation region — the preset was not applied. Try selecting it again.");
+        return;
+      }
 
       setPlayingSectionIndex(sectionIndex);
       p.engine.setPosition(PLAYBACK_START);
       p.engine.play();
     } catch (error) {
       console.error("Failed to start playback:", error);
+      setRuntimeError(error instanceof Error ? error.message : String(error));
       setPlayingSectionIndex(null);
     }
   };
@@ -840,6 +872,25 @@ const App: React.FC = () => {
             <Text align="center">{status}</Text>
           ) : (
             <Flex direction="column" gap="5">
+              {runtimeError && (
+                <Callout.Root color="red">
+                  <Callout.Icon>
+                    <InfoCircledIcon />
+                  </Callout.Icon>
+                  <Callout.Text>{runtimeError}</Callout.Text>
+                </Callout.Root>
+              )}
+
+              {/* Persistent init warning — not cleared by user actions, unlike runtimeError */}
+              {initWarning && (
+                <Callout.Root color="yellow">
+                  <Callout.Icon>
+                    <InfoCircledIcon />
+                  </Callout.Icon>
+                  <Callout.Text>{initWarning}</Callout.Text>
+                </Callout.Root>
+              )}
+
               {/* Automation Sections */}
               {TRACK_CONFIGS.map((config, sectionIndex) => (
                 <AutomationSection
