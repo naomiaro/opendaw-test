@@ -79,6 +79,7 @@ const App: React.FC = () => {
   // Initialize OpenDAW
   useEffect(() => {
     let mounted = true;
+    const subs: Array<{ terminate: () => void }> = [];
 
     (async () => {
       try {
@@ -137,25 +138,27 @@ const App: React.FC = () => {
         });
         console.debug("Loop area configured successfully");
 
-        // Subscribe to loop area changes using catchupAndSubscribe to get initial values
-        loopArea.enabled.catchupAndSubscribe(obs => {
+        // Subscribe to loop area changes using catchupAndSubscribe to get initial
+        // values; terminables collected for effect cleanup (CLAUDE.md rule:
+        // always terminate observable subscriptions).
+        subs.push(loopArea.enabled.catchupAndSubscribe(obs => {
           if (mounted) {
             console.debug("Loop enabled changed:", obs.getValue());
             setLoopEnabled(obs.getValue());
           }
-        });
-        loopArea.from.catchupAndSubscribe(obs => {
+        }));
+        subs.push(loopArea.from.catchupAndSubscribe(obs => {
           if (mounted) {
             console.debug("Loop start changed:", obs.getValue());
             setLoopStart(obs.getValue());
           }
-        });
-        loopArea.to.catchupAndSubscribe(obs => {
+        }));
+        subs.push(loopArea.to.catchupAndSubscribe(obs => {
           if (mounted) {
             console.debug("Loop end changed:", obs.getValue());
             setLoopEnd(obs.getValue());
           }
-        });
+        }));
         console.debug("Loop area subscriptions complete");
       } catch (error) {
         console.error("Failed to initialize:", error);
@@ -165,6 +168,7 @@ const App: React.FC = () => {
 
     return () => {
       mounted = false;
+      subs.forEach((s) => s.terminate());
     };
   }, []);
 

@@ -56,8 +56,11 @@ project.editing.modify(() => {
 
   adapter.fading.inField.setValue(fadeInPPQN);
   adapter.fading.outField.setValue(fadeOutPPQN);
-  adapter.fading.inSlopeField.setValue(slope);  // 0.25=log, 0.5=linear, 0.75=exp
-  adapter.fading.outSlopeField.setValue(slope);
+  // slope = curve height at the fade midpoint; 0.5 = exact linear.
+  // Pair by DIRECTION: natural/log pair = in 0.75 / out 0.25 (SDK defaults);
+  // exp pair = in 0.25 / out 0.75. Out-gain = 1 − normalizedAt(t, outSlope).
+  adapter.fading.inSlopeField.setValue(inSlope);
+  adapter.fading.outSlopeField.setValue(outSlope);
 });
 ```
 
@@ -164,6 +167,10 @@ swap.
 - `loopOffset` (PPQN) — controls which audio content maps to which timeline position. Affects audio read position indirectly through the `LoopableRegion.locateLoops()` formula: `offset = position - loopOffset` changes `rawStart`, which changes `elapsedSeconds`, which changes which samples are read. Used by `RegionEditing.cut()`, `clip-fades-demo`, and `comp-lanes-demo` to position audio within regions.
 - `waveformOffset` (seconds, field 7 on AudioRegionBox) — a direct seconds offset added to the audio read position: `sampleIndex = (elapsedSeconds + waveformOffset) * sampleRate`. Used to skip count-in audio during recording finalization.
 - Both fields affect which audio is heard. `loopOffset` works in PPQN within the loop coordinate system; `waveformOffset` is a raw seconds shift applied after PPQN-to-seconds conversion.
+- `AudioRegionBoxAdapter.loopOffset` is a RAW box read with no TimeBase conversion —
+  unlike `duration`/`loopDuration` (which convert seconds → PPQN in Seconds timeBase),
+  the stored loopOffset value is treated as PPQN by `locateLoops` in BOTH timeBases,
+  despite the schema's `unit:"mixed"` label. Always write it in PPQN.
 - For waveform rendering, use `loopOffset` to compute the peaks frame range (visual), and `waveformOffset` for the engine read position offset (audio).
 
 ### Waveform Rendering (SDK 0.0.126+)
@@ -258,9 +265,11 @@ silently bail through a re-entry guard. Reference pattern: the Play Mode and
 Reference Pitch cards in `time-pitch-demo.tsx`.
 
 ### Voice Crossfade on Region Boundaries
-`RegionEditing.cut()` creates a new `PitchVoice` per region. Each voice has a
-20ms fade-in/fade-out (`VOICE_FADE_DURATION` in `Tape/constants.ts`). The fade-out starts
-from the current amplitude level, so transitions between consecutive regions are smooth.
+`RegionEditing.cut()` creates a new `PitchVoice` per region. Voices fade in/out over
+20 ms (`VOICE_FADE_DURATION` in `Tape/constants.ts`); the fade-IN applies only when the
+voice starts at a non-zero read offset — a voice starting at sample 0 begins at full
+amplitude. The fade-out starts from the current amplitude level, so transitions between
+consecutive regions are smooth.
 
 Multi-track volume automation crossfades (`comp-lanes-demo.tsx`) remain a valid alternative
 technique for complex comp workflows.
