@@ -94,6 +94,7 @@ export default defineConfig({
                 warpVarispeed: resolve(__dirname, "warp-varispeed-demo.html"),
                 warpGridFollowsFile: resolve(__dirname, "warp-grid-follows-file-demo.html"),
                 warpTimestretch: resolve(__dirname, "warp-timestretch-demo.html"),
+                warpOverview: resolve(__dirname, "warp-demos.html"),
                 werkstatt: resolve(__dirname, "werkstatt-demo.html"),
                 export: resolve(__dirname, "export-demo.html"),
                 compLanes: resolve(__dirname, "comp-lanes-demo.html"),

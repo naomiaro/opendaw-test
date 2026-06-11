@@ -382,7 +382,9 @@ function WarpTimestretchDemo() {
                 double under heavy stretching, and extreme rates expose segment looping.
                 The third direction —{" "}
                 <Link href="/warp-grid-follows-file-demo.html">bend the grid instead</Link>{" "}
-                — costs no DSP at all.
+                — costs no DSP at all. See the{" "}
+                <Link href="/warp-demos.html">warp overview</Link> for which DAWs use each
+                approach and who reaches for it.
               </Text>
             </Flex>
           </Card>

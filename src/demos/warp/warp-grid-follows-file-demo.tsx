@@ -289,7 +289,9 @@ function WarpGridFollowsFileDemo() {
                 defeating the point. Compare{" "}
                 <Link href="/warp-varispeed-demo.html">varispeed</Link> (bends the sound)
                 and <Link href="/warp-timestretch-demo.html">time-stretch</Link> (bends
-                neither — it slices).
+                neither — it slices). See the{" "}
+                <Link href="/warp-demos.html">warp overview</Link> for which DAWs use each
+                approach and who reaches for it.
               </Text>
             </Flex>
           </Card>

@@ -279,7 +279,9 @@ function WarpVarispeedDemo() {
                 <Link href="/warp-timestretch-demo.html">time-stretch demo</Link> consumes
                 the identical anchors with pitch preserved, and the{" "}
                 <Link href="/warp-grid-follows-file-demo.html">grid-follows-file demo</Link>{" "}
-                inverts the direction entirely.
+                inverts the direction entirely. See the{" "}
+                <Link href="/warp-demos.html">warp overview</Link> for which DAWs use each
+                approach and who reaches for it.
               </Text>
             </Flex>
           </Card>
