@@ -290,18 +290,28 @@ const App: React.FC = () => {
   const { currentPosition: playheadPosition, isPlaying } = usePlaybackPosition(project);
 
   useEffect(() => {
-    initializeOpenDAW({ onStatusUpdate: setStatus }).then(({ project: newProject }) => {
-      projectRef.current = newProject;
-      setProject(newProject);
+    let cancelled = false;
+    initializeOpenDAW({ onStatusUpdate: setStatus })
+      .then(({ project: newProject }) => {
+        if (cancelled) return;
+        projectRef.current = newProject;
+        setProject(newProject);
 
-      const settings = newProject.engine.preferences.settings;
-      settings.metronome.enabled = true;
-      settings.metronome.gain = -6;
+        const settings = newProject.engine.preferences.settings;
+        settings.metronome.enabled = true;
+        settings.metronome.gain = -6;
 
-      applyPattern(newProject, PATTERNS[0]);
-      setStatus("Ready");
-      setIsReady(true);
-    });
+        applyPattern(newProject, PATTERNS[0]);
+        setStatus("Ready");
+        setIsReady(true);
+      })
+      .catch((error) => {
+        console.error("Tempo automation demo initialization failed:", error);
+        if (!cancelled) setStatus(`Error: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handlePatternSelect = (index: number) => {
