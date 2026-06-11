@@ -262,6 +262,38 @@ export async function exportStemsRange(
 }
 
 /**
+ * Render a plain mixdown of the live project for a tick range — no track
+ * muting, optional metronome. Used by the audio-verify harness.
+ *
+ * metronomeGain defaults to 0 dB (not this file's usual -6): the verify
+ * harness needs full-level clicks for onset detection.
+ */
+export async function renderMixdownRange(options: {
+  project: Project;
+  startPpqn: ppqn;
+  endPpqn: ppqn;
+  sampleRate?: number;
+  metronomeEnabled?: boolean;
+  metronomeGain?: number;
+}): Promise<ExportResult> {
+  const {
+    project, startPpqn, endPpqn,
+    sampleRate = 48000, metronomeEnabled = false, metronomeGain = 0,
+  } = options;
+  const channels = await renderRange(
+    project, startPpqn, endPpqn, sampleRate,
+    undefined, undefined, undefined,
+    metronomeEnabled, metronomeGain
+  );
+  return {
+    label: "Mixdown",
+    channels,
+    sampleRate,
+    durationSeconds: project.tempoMap.intervalToSeconds(startPpqn, endPpqn),
+  };
+}
+
+/**
  * Create an AudioBuffer from Float32Array channels for in-browser preview.
  */
 export function channelsToAudioBuffer(
