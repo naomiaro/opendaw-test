@@ -120,8 +120,8 @@ or as an A/B baseline ("is this artifact TimeStretch-specific?"), use NoStretch
 
 ### TimeStretch Without Transients Renders Silence
 `AudioTimeStretchBox` needs `TransientMarkerBox` entries on the *file* box (not
-the region): 0 markers = silence, 1 marker = degenerate single segment to file end,
-≥2 = normal musical use. Detect with `Workers.Transients.detect(audioData): Promise<number[]>`
+the region): fewer than 2 markers render silence (`transients.length() < 2` bails
+before sequencing); ≥2 = normal musical use. Detect with `Workers.Transients.detect(audioData): Promise<number[]>`
 from `@opendaw/studio-core` (worker, non-blocking) or `TransientDetector.detect(audioData):
 number[]` from `@opendaw/lib-dsp` (sync, main thread). Reusable helper at
 `src/lib/transientDetection.ts` — `ensureTransientMarkers` throws if detection

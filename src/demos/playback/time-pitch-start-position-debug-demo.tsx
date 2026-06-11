@@ -453,10 +453,10 @@ const App: React.FC = () => {
         setPlayMode(next);
         setCents(0);
 
-        // The box-graph rewrite (timeBase + duration + playMode swap) invalidates
-        // the engine's prior playback position — it resets to 0. Re-establish
-        // the playhead at the user's chosen start so the amber start-bar and
-        // the engine agree, and pressing Play resumes from the click.
+        // Defensive playhead reset after the mode-swap transaction (no SDK
+        // reset mechanism found in source; swap effects are hard to isolate) —
+        // see playback CLAUDE.md "engine.position vs Box Writes". Keeps the
+        // amber start-bar and the engine agreeing for the next Play.
         const bpm = project.timelineBox.bpm.getValue();
         const ppqn = Math.round(PPQN.secondsToPulses(startSeconds, bpm));
         project.engine.setPosition(ppqn);

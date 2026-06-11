@@ -43,8 +43,10 @@
 - TimeStretch renders silence with FEWER THAN 2 transient markers
   (`transients.length() < 2`), not just zero.
 - Outside the warp-marker range `[first.position, last.position)` the engine plays
-  silence (voice evicted with a 20 ms fade) — no extrapolation or clamp. Lead-in and
-  outro anchors are required, and the range is half-open: the last marker's tick is
+  silence — PitchStretch evicts its voice with a 20 ms fade; TimeStretch stops
+  rendering outright. No extrapolation: the engine gates out-of-range blocks before
+  the mapping's endpoint clamp (internals ch08) is consulted. Lead-in and outro
+  anchors are required, and the range is half-open: the last marker's tick is
   already outside.
 - Before the first tempo event, the FIRST event's value back-extends;
   `timelineBox.bpm` applies only when the tempo collection is empty.

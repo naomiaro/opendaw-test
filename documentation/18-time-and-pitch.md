@@ -249,7 +249,7 @@ If you need to read the raw rate (e.g. when persisting a project), use `timeStre
 
 ### Transient Markers Are Required
 
-The engine needs `TransientMarkerBox` entries on the `AudioFileBox` (not on the region) to know where it can splice without clicks. With zero markers the engine produces no output for TimeStretch regions; one marker creates a single segment from that position to the end of the file (so technically renderable, but degenerate); **for any musical material you want ≥2 markers** — typically dozens, one per onset.
+The engine needs `TransientMarkerBox` entries on the `AudioFileBox` (not on the region) to know where it can splice without clicks. With fewer than two markers the engine produces no output for TimeStretch regions; **for any musical material you want ≥2 markers** — typically dozens, one per onset.
 
 Markers are stored on the *file* box, so they're shared by every region that references the same audio file. You have three ways to populate them.
 
