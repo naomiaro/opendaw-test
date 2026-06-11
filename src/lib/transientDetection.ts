@@ -82,14 +82,15 @@ export function setTransientMarkers(
  * Skips detection (returns the existing positions) if the file already has
  * markers, so calling it on every TimeStretch mode-switch is cheap.
  *
- * **Throws** if detection completes with zero positions. The engine renders
- * silence for TimeStretch regions whose file has no transients, so an empty
+ * **Throws** if detection completes with fewer than two positions. The engine
+ * renders silence for TimeStretch regions whose file has fewer than two
+ * transients (`transients.length() < 2` bails before sequencing), so a sparse
  * result is a real failure rather than something the caller should silently
  * pass through. Catch this and either pick a different play-mode or set markers
  * manually via {@link setTransientMarkers}.
  *
  * @returns the positions that were written (or were already present). At least
- *          one position; throws otherwise.
+ *          two positions; throws otherwise.
  */
 export async function ensureTransientMarkers(
   project: Project,
@@ -97,7 +98,7 @@ export async function ensureTransientMarkers(
   buffer: AudioBuffer
 ): Promise<number[]> {
   const existing = audioFileBox.transientMarkers.pointerHub.incoming();
-  if (existing.length > 0) {
+  if (existing.length >= 2) {
     const positions: number[] = [];
     for (const pointer of existing) {
       if (pointer.box instanceof TransientMarkerBox) {
@@ -107,11 +108,12 @@ export async function ensureTransientMarkers(
     return positions;
   }
   const positions = await detectTransients(buffer);
-  if (positions.length === 0) {
+  if (positions.length < 2) {
     throw new Error(
-      "Transient detection returned no positions. TimeStretch needs at least " +
-        "one transient on the file or the engine renders silence. The audio " +
-        "may be silent, featureless, or too short for the onset detector."
+      "Transient detection returned fewer than two positions. TimeStretch " +
+        "needs at least two transients on the file or the engine renders " +
+        "silence. The audio may be silent, featureless, or too short for " +
+        "the onset detector."
     );
   }
   setTransientMarkers(project, audioFileBox, positions);

@@ -392,9 +392,9 @@ function WarpTimestretchDemo() {
             <p>
               Two marker populations drive this engine, and only one is musical. The
               transient count badged above is SDK analysis —{" "}
-              <code>Workers.Transients.detect()</code> writes acoustic attack points
-              onto the <code>AudioFileBox</code>, the places the engine may splice
-              (fewer than two renders silence). The ~513 warp markers pinning beats
+              <code>Workers.Transients.detect()</code> finds acoustic attack points,
+              which the demo writes onto the <code>AudioFileBox</code>: the places
+              the engine may splice (fewer than two renders silence). The ~513 warp markers pinning beats
               to the grid are authored from the beat map; OpenDAW never detects
               those. The full distinction:{" "}
               <a href="/warp-demos.html#two-kinds-of-markers">two kinds of markers</a>.

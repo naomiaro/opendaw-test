@@ -684,7 +684,8 @@ function TimePitchDemo() {
                 {PROJECT_BPM} BPM is the mapping's identity tempo: the two warp
                 markers pin the file's full length to the PPQN span those seconds
                 occupy at {PROJECT_BPM} BPM, so the stretch modes play at rate{" "}
-                <Code>bpm ÷ {PROJECT_BPM}</Code>. No individual beat is pinned —
+                <Code>bpm ÷ {PROJECT_BPM}</Code> (TimeStretch additionally
+                multiplies in any tuning offset). No individual beat is pinned —
                 that takes a beat map. See{" "}
                 <a href="/warp-demos.html#two-kinds-of-markers">two kinds of markers</a>.
               </Text>

@@ -239,7 +239,8 @@ body { background: var(--mc-bg); }
 .mc-anchors a:hover { border-bottom-color: var(--mc-amber); }
 
 /* Two-up definition panels (engraved-strip look) inside an .mc-anchors section.
-   Inner panels sit on --mc-bg so the 1px --mc-line gap reads against --mc-panel. */
+   Inner panels use --mc-bg (darker than the section's --mc-panel) so the 1px
+   --mc-line gaps stay visible. */
 .mc-markers {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -256,7 +257,7 @@ body { background: var(--mc-bg); }
 .mc-marker-panel {
   background: var(--mc-bg);
   padding: 18px 20px 16px;
-  min-width: 0; /* grid item: don't let the nowrap head widen the 1fr track past the container */
+  min-width: 0; /* grid item: min-width:auto would let long unbreakable content (code tokens) widen the 1fr track past the container */
 }
 .mc-marker-head {
   display: flex;

@@ -299,7 +299,10 @@ function WarpOverview() {
                   </div>
                   <div className="mc-row">
                     <dt>SOURCE</dt>
-                    <dd>Authored from the beat map. The SDK never computes them.</dd>
+                    <dd>
+                      Authored from the beat map (or trivial endpoint defaults).
+                      The SDK never derives them from audio.
+                    </dd>
                   </div>
                   <div className="mc-row">
                     <dt>OWNER</dt>

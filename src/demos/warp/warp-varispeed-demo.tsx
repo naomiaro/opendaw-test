@@ -289,8 +289,8 @@ function WarpVarispeedDemo() {
               what the file supplies to what the grid allots. A rate above 1 plays the
               source faster (and sharper, by <code>1200·log₂(rate)</code> cents).
               PitchStretch reads the <a href="/warp-demos.html#two-kinds-of-markers">warp
-              markers</a> alone — no transient detection runs in this mode, which is why
-              the conform is artifact-free. The
+              markers</a> alone — no transient detection runs in this mode, and with no
+              splice boundaries there is nothing to introduce artifacts. The
               marker list itself is engine-agnostic: the{" "}
               <a href="/warp-timestretch-demo.html">time-stretch demo</a> consumes
               the identical anchors with pitch preserved, and the{" "}
