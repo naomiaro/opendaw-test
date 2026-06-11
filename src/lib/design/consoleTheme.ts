@@ -13,6 +13,8 @@ export const CONSOLE_STYLES = `
   /* label: smallest readable text (4.9:1 on panel); faint: decorative strokes only */
   --mc-label: #8b8273;
   --mc-faint: #5f594e;
+  /* shade: alternating region fill on data canvases (panel is too close to bg) */
+  --mc-shade: #221d15;
   --mc-amber: #e8a33d;
   --mc-cyan: #5fb4c9;
   --mc-green: #7fbf6a;
