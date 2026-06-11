@@ -344,7 +344,7 @@ const App: React.FC = () => {
         if (pausedPositionRef) pausedPositionRef.current = ppqnPos;
       }
     },
-    [project, takes, isPlaying, compState, crossfadeMs, setCurrentPosition, pausedPositionRef]
+    [project, takes, isPlaying, compState, crossfadeMs, crossfadeCurve, setCurrentPosition, pausedPositionRef]
   );
 
   const setZoneTake = useCallback(
@@ -631,7 +631,7 @@ const App: React.FC = () => {
                   <Callout.Text>
                     {compMode === "automation"
                       ? "Crossfades use volume automation curves between parallel tracks."
-                      : "Consecutive regions on a single track — SDK manages 20ms voice crossfade at boundaries."}
+                      : "Consecutive regions on a single track. At exact boundaries, the outgoing voice hard-cuts at cycle end and is evicted the next block; the incoming voice fades in over 20 ms only when its read offset is non-zero. Cross-file boundaries can click (this page's raison d'être)."}
                     {" "}Cmd+Z to undo, Cmd+Shift+Z to redo.
                   </Callout.Text>
                 </Callout.Root>

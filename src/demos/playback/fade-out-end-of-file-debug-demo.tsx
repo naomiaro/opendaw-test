@@ -4,7 +4,7 @@ import { UUID } from "@opendaw/lib-std";
 import { PPQN } from "@opendaw/lib-dsp";
 import { Project } from "@opendaw/studio-core";
 import { AudioFileBox, AudioRegionBox, ValueEventCollectionBox } from "@opendaw/studio-boxes";
-import { AudioRegionBoxAdapter, InstrumentFactories } from "@opendaw/studio-adapters";
+import { InstrumentFactories } from "@opendaw/studio-adapters";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
@@ -31,14 +31,34 @@ import { InfoCircledIcon, PlayIcon, StopIcon } from "@radix-ui/react-icons";
 //   BPM 120, single Vocals30.mp3 region playing the full file, fade-out
 //   that ends exactly at the file's end. The fade math itself is clean
 //   (endProgress reaches 1.0, gain reaches 0 at region end), but a pop
-//   is audible at the end of playback.
+//   was audible at the end of playback (through studio-core 0.0.144).
 //
-// VOICE_FADE_DURATION in @opendaw/studio-core is 20 ms. PitchVoice triggers
-// its own end-of-file fade-out when `readPosition >= numberOfFrames -
-// VOICE_FADE_DURATION * sampleRate`. The old voice is moved to
-// `lane.fadingVoices`, which is processed with `#unitGainBuffer` (1.0) —
-// the region's fading gain buffer is NOT applied to it. So the loud audio
-// in the last 20 ms of the file plays at full level over the user's fade.
+// HISTORICAL MECHANISM (studio-core ≤ 0.0.144, repro pinned at 0.0.136):
+//   VOICE_FADE_DURATION in @opendaw/studio-core was 20 ms. PitchVoice
+//   triggered its own end-of-file fade-out when
+//   `readPosition >= numberOfFrames - VOICE_FADE_DURATION * sampleRate * playbackRate`.
+//   The old voice was moved to `lane.fadingVoices`, which is processed with
+//   `#unitGainBuffer` (1.0) — the region's fading gain buffer was NOT applied
+//   to it. So the loud audio in the last 20 ms of the file played at full
+//   level over the user's fade.
+//
+// FIXED in studio-core 0.0.145 (commits 3a243e7b + e55c12c8):
+//   `#updateOrCreatePitchVoice` received a keep-guard —
+//   `else if (existing.isFadingOut()) { /* keep the voice so the region's
+//   fade buffer keeps applying — evicting it … produces an audible pop */ }`.
+//   The voice is no longer evicted to fadingVoices; the region's fade gain
+//   buffer continues to apply.
+//
+// RE-TESTED at SDK 0.0.154 (studio-core 0.0.152):
+//   BUG mode: no audible pop detected. Offline scan of the last 20 ms
+//   (48 kHz): peak amplitude 0.01056 in the fade window (the bug case
+//   measured ~0.1 — near-full vocal level); max sample-to-sample delta
+//   0.00193 vs pre-window baseline noise 0.00142 — no anomalous step.
+//   The previously characteristic one-sample step near
+//   numberOfFrames − 960 is absent; the waveform descends monotonically
+//   to ~0 through the fade window.
+//   WORKAROUND mode: also clean (unchanged from before). The 21 ms trim
+//   workaround is kept as a documented fallback in case regression recurs.
 const BPM = 120;
 const AUDIO_FILE = "/audio/Vocals30.mp3";
 const FADE_OUT_SECONDS = 0.7766286581569116; // matches original repro
@@ -46,7 +66,7 @@ const VOICE_FADE_DURATION_SECONDS = 0.020; // SDK constant in core-processors/Ta
 // 21 ms of headroom: 20 ms VOICE_FADE_DURATION + 1 ms safety margin.
 const WORKAROUND_HEADROOM_SECONDS = 0.021;
 // Skip the first 20 s of the file so the listener only needs to wait
-// ~10 s before the fade-out (and the click, in BUG mode).
+// ~10 s before the fade-out (where the click fired in BUG mode, pre-0.0.145).
 const PLAYBACK_START_SECONDS = 20;
 
 type Scenario = "bug" | "workaround";
@@ -60,6 +80,7 @@ const App: React.FC = () => {
 
   const audioBufferRef = useRef<AudioBuffer | null>(null);
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
+  const isPlayingSubRef = useRef<{ terminate(): void } | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -75,7 +96,7 @@ const App: React.FC = () => {
         setProject(newProject);
         setAudioContext(newAudioContext);
 
-        newProject.engine.isPlaying.catchupAndSubscribe((obs) => {
+        isPlayingSubRef.current = newProject.engine.isPlaying.catchupAndSubscribe((obs) => {
           if (mounted) setIsPlaying(obs.getValue());
         });
 
@@ -123,7 +144,7 @@ const App: React.FC = () => {
           // playback runs continuously from 0 to the fade-out (no wrap-around).
           newProject.timelineBox.loopArea.enabled.setValue(false);
           newProject.timelineBox.loopArea.from.setValue(0);
-          newProject.timelineBox.loopArea.to.setValue(fullDurationPPQN);
+          newProject.timelineBox.loopArea.to.setValue(Math.round(fullDurationPPQN));
         });
 
         if (mounted) setStatus("Ready");
@@ -134,15 +155,20 @@ const App: React.FC = () => {
     })();
     return () => {
       mounted = false;
+      isPlayingSubRef.current?.terminate();
     };
   }, []);
 
   // Adjust the region's duration to match the selected scenario, then play.
-  // - bug:        region end coincides with audio file end -> voice's internal
-  //               end-of-file fade triggers in the last 20 ms, bypassing the
-  //               region fade. Loud burst -> pop on playback end.
+  // - bug:        region end coincides with audio file end. Through
+  //               studio-core 0.0.144 this reproduced the pop (voice's
+  //               internal end-of-file fade triggered in the last 20 ms,
+  //               bypassing the region fade -> loud burst at playback end).
+  //               Fixed by the 0.0.145 keep-guard; retained as the
+  //               regression scenario.
   // - workaround: shorten region by 21 ms so playback stops before the voice
   //               crosses its internal threshold. Region fade applies cleanly.
+  //               Historical mitigation, kept as the control scenario.
   const applyScenarioAndPlay = useCallback(
     async (next: Scenario) => {
       if (!project || !audioContext || !audioBufferRef.current) return;
@@ -161,7 +187,7 @@ const App: React.FC = () => {
       const fullDurationPPQN = PPQN.secondsToPulses(effectiveDurationSeconds, bpm);
       const fadeOutPPQN = PPQN.secondsToPulses(FADE_OUT_SECONDS, bpm);
 
-      const [region] = getAllAudioRegions(project) as AudioRegionBoxAdapter[];
+      const [region] = getAllAudioRegions(project);
       if (!region) return;
 
       project.editing.modify(() => {
@@ -197,11 +223,15 @@ const App: React.FC = () => {
               <InfoCircledIcon />
             </Callout.Icon>
             <Callout.Text>
-              An audible pop fires at the end of a clip whose fade-out ends exactly at the audio
-              file's end. The fade math is clean (gain reaches 0 at region end), but{" "}
-              <Code>PitchVoice</Code>'s internal end-of-file fade-out kicks in during the last 20 ms
-              and bypasses the region's fade gain — the old voice plays at full level into{" "}
-              <Code>lane.fadingVoices</Code>, which is processed with a unit gain buffer.
+              <strong>Historical investigation (mechanism fixed in studio-core 0.0.145).</strong>{" "}
+              Through studio-core 0.0.144, an audible pop fired at the end of a clip whose
+              fade-out ended exactly at the audio file's end. The fade math was clean (gain
+              reached 0 at region end), but <Code>PitchVoice</Code>'s internal end-of-file
+              fade-out kicked in during the last 20 ms and bypassed the region's fade gain —
+              the old voice was evicted to <Code>lane.fadingVoices</Code>, which is processed
+              with a unit gain buffer. Fixed in 0.0.145 via a keep-guard in{" "}
+              <Code>#updateOrCreatePitchVoice</Code> that retains the fading voice so the
+              region's fade buffer continues to apply. Re-tested clean at SDK 0.0.154.
             </Callout.Text>
           </Callout.Root>
 
@@ -222,7 +252,7 @@ const App: React.FC = () => {
           <Card>
             <Flex direction="column" gap="3">
               <Text size="3" weight="bold">
-                Reproduce
+                Regression check
               </Text>
               <Separator size="4" />
               <Flex direction="column" gap="2">
@@ -231,19 +261,22 @@ const App: React.FC = () => {
                   listen for ~10 s before the fade-out ends.
                 </Text>
                 <Text size="2">
-                  <strong>Bug:</strong> region duration = full file duration (
+                  <strong>Bug scenario (historical):</strong> region duration = full file
+                  duration (
                   {audioBufferRef.current
                     ? audioBufferRef.current.duration.toFixed(6)
                     : "..."}{" "}
-                  s). Fade-out of {FADE_OUT_SECONDS.toFixed(4)} s ends at region end. Play and
-                  listen for a click at the end.
+                  s). Fade-out of {FADE_OUT_SECONDS.toFixed(4)} s ends at region end. Through
+                  studio-core 0.0.144 this clicked at the end; since 0.0.145 it should be
+                  clean. Play and verify the pop stays absent.
                 </Text>
                 <Text size="2">
-                  <strong>Workaround:</strong> region duration trimmed by{" "}
+                  <strong>Workaround scenario (control):</strong> region duration trimmed by{" "}
                   {(WORKAROUND_HEADROOM_SECONDS * 1000).toFixed(0)} ms (
                   {VOICE_FADE_DURATION_SECONDS * 1000}
                   &nbsp;ms <Code>VOICE_FADE_DURATION</Code> + 1 ms safety). Voice's internal
-                  end-of-file fade never triggers. No click.
+                  end-of-file fade never triggers — clean on all SDK versions. Should sound
+                  identical to the bug scenario on a fixed SDK.
                 </Text>
               </Flex>
               <Flex gap="3">
@@ -303,11 +336,13 @@ Playback start:    ${PLAYBACK_START_SECONDS} s (≈10 s before fade-out ends)`}
               <Separator size="4" />
               <Text size="2">
                 Render the project to an <Code>AudioBuffer</Code> and scan the last 20 ms with a
-                sample-to-sample delta detector. In the bug case, you'll find a one-sample step on
-                the order of 0.1 around sample{" "}
-                <Code>numberOfFrames − VOICE_FADE_DURATION × sampleRate</Code>, followed by
-                near-full-amplitude audio until region end. In the workaround case, the same window
-                is monotonically descending to ~0.
+                sample-to-sample delta detector. In the historical bug case (studio-core ≤ 0.0.144),
+                a one-sample step on the order of 0.1 appeared around sample{" "}
+                <Code>numberOfFrames − VOICE_FADE_DURATION × sampleRate × playbackRate</Code>{" "}
+                (the threshold scales by <Code>playbackRate</Code>; at rate 1.0 the formula
+                simplifies to <Code>numberOfFrames − VOICE_FADE_DURATION × sampleRate</Code>),
+                followed by near-full-amplitude audio until region end. At SDK 0.0.154 the same
+                window is monotonically descending to ~0 in both BUG and WORKAROUND modes.
               </Text>
             </Flex>
           </Card>

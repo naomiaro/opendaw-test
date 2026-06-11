@@ -28,7 +28,7 @@ import {
   Code,
   Separator,
 } from "@radix-ui/themes";
-import { InfoCircledIcon, PlayIcon, StopIcon, ActivityLogIcon } from "@radix-ui/react-icons";
+import { InfoCircledIcon, PlayIcon, StopIcon } from "@radix-ui/react-icons";
 
 // Repro for `debug/shared-source-double-process.md`.
 //
@@ -107,7 +107,10 @@ const App: React.FC = () => {
   // no incoming edge at transaction commit, so we cannot keep both
   // configurations alive at once — every `AudioFileBox` must be referenced
   // by at least one region's `file` pointer.
+  // (AudioFileBox has mandatory pointerRules — this is not a universal box
+  // rule; most boxes tolerate zero incoming pointers at commit time.)
   const installedFileBoxesRef = useRef<AudioFileBox[]>([]);
+  const isPlayingSubRef = useRef<{ terminate(): void } | null>(null);
   const regionsRef = useRef<{ a: AudioRegionBox | null; b: AudioRegionBox | null }>({
     a: null,
     b: null,
@@ -127,7 +130,7 @@ const App: React.FC = () => {
         setProject(newProject);
         setAudioContext(newAudioContext);
 
-        newProject.engine.isPlaying.catchupAndSubscribe((obs) => {
+        isPlayingSubRef.current = newProject.engine.isPlaying.catchupAndSubscribe((obs) => {
           if (mounted) setIsPlaying(obs.getValue());
         });
 
@@ -205,7 +208,7 @@ const App: React.FC = () => {
 
           newProject.timelineBox.loopArea.enabled.setValue(false);
           newProject.timelineBox.loopArea.from.setValue(0);
-          newProject.timelineBox.loopArea.to.setValue(fullDurationPPQN);
+          newProject.timelineBox.loopArea.to.setValue(Math.round(fullDurationPPQN));
         });
 
         if (mounted) setStatus("Ready");
@@ -216,6 +219,7 @@ const App: React.FC = () => {
     })();
     return () => {
       mounted = false;
+      isPlayingSubRef.current?.terminate();
     };
   }, []);
 

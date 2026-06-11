@@ -28,14 +28,14 @@ import {
   Code,
   Separator,
 } from "@radix-ui/themes";
-import { InfoCircledIcon, PlayIcon, StopIcon, ActivityLogIcon } from "@radix-ui/react-icons";
+import { InfoCircledIcon, PlayIcon, StopIcon } from "@radix-ui/react-icons";
 
 // Repro for `debug/voice-fadein-clip-fadein-product.md`.
 //
 // Two distinct AudioFileBoxes (different UUIDs) on the same Tape track so
 // the shared-source path in `shared-source-double-process.md` does NOT
 // apply. They reference two on-disk WAVs that are the same 440 Hz sine
-// shifted in time by 30 samples (~0.680 ms ~24° at 440 Hz); we
+// shifted in time by 30 samples (~0.680 ms ~108° at 440 Hz); we
 // compensate via loopOffset on Region B so both regions play
 // phase-aligned audio through the crossfade region.
 //
@@ -48,23 +48,34 @@ import { InfoCircledIcon, PlayIcon, StopIcon, ActivityLogIcon } from "@radix-ui/
 //
 //   HARD-CUT  — no clip fades, regions touch at the seam.
 //               OpenDAW's voice-level fade (VOICE_FADE_DURATION=20ms)
-//               applies on its own to the outgoing/incoming voices via
-//               lane.fadingVoices + #unitGainBuffer.
+//               applies to the outgoing voice: it is evicted to
+//               lane.fadingVoices and processed with #unitGainBuffer.
+//               The incoming voice's 20 ms fade-in happens in-place
+//               in pitchVoices WITH the region's gain buffer applied
+//               (only when read offset ≠ 0 — a voice at offset 0
+//               starts at full amplitude, no fade-in).
 //
 // Working hypothesis for the audible dip on a sustained tone in the
-// CROSSFADE configuration: PitchVoice puts every new voice in
-// `Fading`/`fadeDirection=1` for 20 ms, and process() multiplies that
-// internal voice-fade by the region's clip-fade gain buffer — so the
-// incoming voice's effective gain over the first 20 ms of the
-// crossfade is `voice_fadeIn × clip_fadeIn`, a quadratic ramp rather
-// than the linear ramp the crossfade math assumes. Sum at τ = −10 ms
-// ≈ 0.875 ⇒ ~−1.16 dB dip predicted.
+// CROSSFADE configuration: PitchVoice puts a new voice in
+// `Fading`/`fadeDirection=1` for 20 ms WHEN its read offset is non-zero
+// (this page's scenario: Region B starts at offset seamPPQN − halfFadePPQN,
+// which is non-zero). process() multiplies that internal voice-fade by the
+// region's clip-fade gain buffer — so the incoming voice's effective gain
+// over the first 20 ms of the crossfade is
+// `voice_fadeIn × clip_fadeIn`, a quadratic ramp rather than the linear
+// ramp the crossfade math assumes. Sum at τ = −10 ms ≈ 0.875 ⇒ ~−1.16 dB
+// dip predicted.
 //
-// Empirical verification: click "Scan current scenario" after each
-// Play to render the seam region offline and report the min envelope
-// peak across the crossfade window. Mechanism is treated as suspected
-// until the scan confirms; this is a debug investigation, not a
-// solved bug.
+// Empirical result: under the original (pre-fix) geometry the scan measured
+// −1.56 dB at τ ≈ −7.5 ms — a ~0.4 dB / 2.5 ms gap from the prediction that
+// stayed unexplained. The gap was the Int32 position truncation bug (see
+// regionB.position comment): position truncated to 57561 while loopOffset
+// assumed 57561.6 — a ~15-sample / ~49°@440 Hz phase error. Re-measured
+// after rounding the position and recomputing loopOffset from the rounded
+// value: −1.20 dB at τ = −10.0 ms, matching the −1.16 dB / −10 ms
+// quadratic-product prediction within 0.04 dB. Mechanism confirmed in
+// source (`finalAmplitude = amplitude * fadingGainBuffer[i]`) AND now
+// empirically.
 const BPM = 120;
 const FILE_A = "/audio/test-440hz.wav";
 const FILE_B = "/audio/test-440hz-offset30.wav";
@@ -74,7 +85,7 @@ const FILE_B = "/audio/test-440hz-offset30.wav";
 // content lands ~32.65 samples late, but the TIME offset is unchanged.
 // We use the time-offset (in seconds) for loopOffset compensation, not a
 // sample count tied to the playback rate.
-const SOURCE_OFFSET_SECONDS = 30 / 44100; // ≈ 0.000680 s, ~24° at 440 Hz
+const SOURCE_OFFSET_SECONDS = 30 / 44100; // ≈ 0.000680 s, ~108° at 440 Hz
 const SEAM_SECONDS = 30;
 const TOTAL_DURATION_SECONDS = 60;
 const PLAYBACK_START_SECONDS = 28;
@@ -101,6 +112,7 @@ const App: React.FC = () => {
     a: null,
     b: null,
   });
+  const isPlayingSubRef = useRef<{ terminate(): void } | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -116,7 +128,7 @@ const App: React.FC = () => {
         setProject(newProject);
         setAudioContext(newAudioContext);
 
-        newProject.engine.isPlaying.catchupAndSubscribe((obs) => {
+        isPlayingSubRef.current = newProject.engine.isPlaying.catchupAndSubscribe((obs) => {
           if (mounted) setIsPlaying(obs.getValue());
         });
 
@@ -195,11 +207,11 @@ const App: React.FC = () => {
               box.regions.refer((trackBoxB as any).regions);
               box.file.refer(fileBoxB);
               box.events.refer(eventsB.owners);
-              box.position.setValue(seamPPQN);
+              box.position.setValue(Math.round(seamPPQN));
               box.duration.setValue(fullDurationPPQN - seamPPQN);
               box.loopOffset.setValue(seamPlusOffsetPPQN);
               box.loopDuration.setValue(fullDurationPPQN);
-              box.label.setValue("B (file B, loopOffset −30 samples)");
+              box.label.setValue("B (file B, loopOffset +30 samples)");
               box.mute.setValue(false);
               box.fading.in.setValue(0);
               box.fading.out.setValue(0);
@@ -212,7 +224,7 @@ const App: React.FC = () => {
 
           newProject.timelineBox.loopArea.enabled.setValue(false);
           newProject.timelineBox.loopArea.from.setValue(0);
-          newProject.timelineBox.loopArea.to.setValue(fullDurationPPQN);
+          newProject.timelineBox.loopArea.to.setValue(Math.round(fullDurationPPQN));
         });
 
         if (mounted) setStatus("Ready");
@@ -223,6 +235,7 @@ const App: React.FC = () => {
     })();
     return () => {
       mounted = false;
+      isPlayingSubRef.current?.terminate();
     };
   }, []);
 
@@ -251,23 +264,32 @@ const App: React.FC = () => {
         if (next === "crossfade") {
           regionA.duration.setValue(seamPPQN + halfFadePPQN);
           regionA.fading.out.setValue(fadePPQN);
-          regionB.position.setValue(seamPPQN - halfFadePPQN);
+          // Round to integer PPQN — position is Int32 and silently truncates
+          // fractional values. halfFadePPQN at BPM 120 = 38.4 PPQN, so
+          // seamPPQN − halfFadePPQN = 57561.6 → truncated to 57561 without
+          // rounding, a 0.6 PPQN (≈15 samples @48 kHz) error vs the float
+          // loopOffset compensation. Pre-fix measurements carried this offset
+          // (~15 samples ≈ 49° @440 Hz) and measured −1.56 dB at τ −7.5 ms;
+          // post-fix re-measurement reads −1.20 dB at τ −10.0 ms — matching
+          // the −1.16 dB / −10 ms prediction. The truncation WAS the gap.
+          const roundedPositionB = Math.round(seamPPQN - halfFadePPQN);
+          regionB.position.setValue(roundedPositionB);
           regionB.duration.setValue(fullDurationPPQN - seamPPQN + halfFadePPQN);
           // loopOffset on B compensates for (1) the ~0.680 ms source delay
           // (read File B at a position 0.680 ms LATER in source) AND (2)
-          // the 20 ms backward position shift (read 20 ms EARLIER in
-          // source). Net: +0.680 ms − 20 ms.
-          const newLoopOffsetPPQN = PPQN.secondsToPulses(
-            SEAM_SECONDS + SOURCE_OFFSET_SECONDS - CROSSFADE_MS / 2000,
-            bpm
-          );
+          // the actual position shift — computed from the rounded position
+          // so the loopOffset and position agree to the sample.
+          // The loopOffset sits (seamPPQN − roundedPositionB) PPQN earlier
+          // in source than the hard-cut value.
+          const newLoopOffsetPPQN = PPQN.secondsToPulses(SOURCE_OFFSET_SECONDS, bpm)
+            + roundedPositionB;
           regionB.loopOffset.setValue(newLoopOffsetPPQN);
           regionB.fading.in.setValue(fadePPQN);
         } else {
           // Hard cut — no overlap, no fades.
           regionA.duration.setValue(seamPPQN);
           regionA.fading.out.setValue(0);
-          regionB.position.setValue(seamPPQN);
+          regionB.position.setValue(Math.round(seamPPQN));
           regionB.duration.setValue(fullDurationPPQN - seamPPQN);
           const newLoopOffsetPPQN = PPQN.secondsToPulses(
             SEAM_SECONDS + SOURCE_OFFSET_SECONDS,
@@ -432,11 +454,16 @@ const App: React.FC = () => {
               <Code>sourceUuid</Code>s — placed on <strong>separate</strong> Tape tracks so the
               mix happens at the master (overlapping regions on a single track are disallowed by
               design and get deleted by <Code>project.copy()</Code>) — produces a measurable dip
-              on the incoming voice's fade-in side. Cause: <Code>PitchVoice</Code> starts every
-              new voice in <Code>Fading</Code>/<Code>fadeDirection=1</Code> for{" "}
-              <Code>VOICE_FADE_DURATION</Code> (20 ms), and <Code>process()</Code> multiplies
-              that voice-fade by the region's clip-fade gain buffer — turning a linear clip
-              fade-in into a quadratic ramp over the first 20 ms.
+              on the incoming voice's fade-in side. Cause (confirmed):{" "}
+              <Code>PitchVoice</Code> starts new voices in{" "}
+              <Code>Fading</Code>/<Code>fadeDirection=1</Code> for{" "}
+              <Code>VOICE_FADE_DURATION</Code> (20 ms) when read offset ≠ 0, and{" "}
+              <Code>process()</Code> multiplies that voice-fade by the region's clip-fade gain
+              buffer — turning a linear clip fade-in into a quadratic ramp over the first 20 ms.
+              Mechanism confirmed in source AND empirically: after fixing an Int32 position
+              truncation in this page's seam geometry, the scan measures −1.20 dB at
+              τ = −10.0 ms vs −1.16 dB predicted at τ = −10 ms (see header comment; earlier
+              pre-fix measurements read −1.56 dB at τ ≈ −7.5 ms).
             </Callout.Text>
           </Callout.Root>
 
@@ -527,10 +554,15 @@ const App: React.FC = () => {
               </>
             }
             expected={[
+              // Re-measured after the Int32 position fix (position rounded,
+              // loopOffset computed from the rounded value). Pre-fix geometry
+              // measured 0.418 / 0.8352 (−1.56 dB) at τ ≈ −7.5 ms; the
+              // truncation error was the gap to the −1.16 dB / −10 ms
+              // quadratic-product prediction.
               { label: "reference peak", value: "≈ 0.5000" },
-              { label: "min envelope peak", value: "≈ 0.418 (dipped)" },
-              { label: "min / reference", value: "≈ 0.8352  (−1.56 dB)" },
-              { label: "dip τ (ms relative to seam)", value: "≈ −7.5 ms (before seam)" },
+              { label: "min envelope peak", value: "≈ 0.435 (dipped)" },
+              { label: "min / reference", value: "≈ 0.8706  (−1.20 dB)" },
+              { label: "dip τ (ms relative to seam)", value: "≈ −10 ms (before seam)" },
               { label: "sample rate", value: `${audioContext?.sampleRate ?? "—"} Hz` },
             ]}
             got={gotByStep[2] ?? null}
@@ -543,7 +575,7 @@ const App: React.FC = () => {
               <Code size="2" style={{ whiteSpace: "pre-wrap", display: "block", padding: 12 }}>
                 {`BPM:                 ${BPM}
 File A:              test-440hz.wav
-File B:              test-440hz-offset30.wav (delayed by ${(SOURCE_OFFSET_SECONDS * 1000).toFixed(3)} ms = ~24° at 440 Hz; preserved through any decode resample)
+File B:              test-440hz-offset30.wav (delayed by ${(SOURCE_OFFSET_SECONDS * 1000).toFixed(3)} ms = ~108° at 440 Hz; preserved through any decode resample)
 Track layout:        2 Tape tracks, 1 AudioRegionBox each (mix at master)
 Region A:            position=0, duration=${SEAM_SECONDS}s (+20ms in CROSSFADE)
 Region B:            position=${SEAM_SECONDS}s (−20ms in CROSSFADE), loopOffset compensates source delay

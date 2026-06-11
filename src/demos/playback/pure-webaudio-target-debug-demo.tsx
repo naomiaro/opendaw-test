@@ -26,7 +26,7 @@ import {
   Code,
   Separator,
 } from "@radix-ui/themes";
-import { InfoCircledIcon, PlayIcon, StopIcon, ActivityLogIcon } from "@radix-ui/react-icons";
+import { InfoCircledIcon, PlayIcon, StopIcon } from "@radix-ui/react-icons";
 import { TestStep, TestStepRow } from "@/components/TestStep";
 import { DebugLinkBar } from "@/components/DebugLinkBar";
 
@@ -64,17 +64,18 @@ import { DebugLinkBar } from "@/components/DebugLinkBar";
 //
 // Audio fixtures: test-440hz.wav and test-440hz-offset30.wav. File B
 // is file A delayed by 30 samples at the WAV's authored 44.1 kHz
-// (~0.680 ms ~24° at 440 Hz) — a deliberately phase-offset pair so
+// (~0.680 ms ~108° at 440 Hz) — a deliberately phase-offset pair so
 // the alignment shift is non-trivial and the without-alignment dip is
 // audible.
 
 const FILE_A = "/audio/test-440hz.wav";
 const FILE_B = "/audio/test-440hz-offset30.wav";
 const BPM = 120;
-// File B is file A delayed by 30 samples at the WAV's authored 44.1 kHz.
-// In time, that's 0.680 ms — preserved through decodeAudioData's resample
-// to AudioContext rate, regardless of the runtime rate.
-const SOURCE_OFFSET_SECONDS = 30 / 44100;
+// File B is file A delayed by 30 samples at the WAV's authored 44.1 kHz
+// (30/44100 ≈ 0.680 ms) — preserved through decodeAudioData's resample to
+// AudioContext rate, regardless of the runtime rate. No constant for it
+// here on purpose: the phase-correlate shift already encodes this delay
+// (see the loopOffset comment below), so the code never needs the value.
 const TOTAL_DURATION_SECONDS = 60;
 const SEAM_SECONDS = 30;
 const PLAYBACK_START_SECONDS = 28;
@@ -93,11 +94,10 @@ const MAX_SHIFT_SEC = 0.005; // ±5 ms, well under half a 440 Hz period
 type Scenario = "aligned" | "unaligned" | "opendaw";
 
 /**
- * Pure-JS normalized cross-correlation; ported from the same algorithm
- * used by the Studio (`phaseCorrelate.js`). Returns the integer sample
- * shift in `[-maxShiftSamples, +maxShiftSamples]` that maximises the
- * correlation between the fixed reference window and a sliding window
- * inside target.
+ * Pure-JS normalized cross-correlation (standard algorithm). Returns the
+ * integer sample shift in `[-maxShiftSamples, +maxShiftSamples]` that
+ * maximises the correlation between the fixed reference window and a
+ * sliding window inside target.
  */
 function phaseCorrelate(
   reference: Float32Array,
@@ -204,6 +204,10 @@ const App: React.FC = () => {
     startTime: 0,
   });
   const animationFrameRef = useRef<number | null>(null);
+  // Ref mirrors the scenario state so the isPlaying subscription (created
+  // once in the init effect, deps []) can read the current scenario without
+  // capturing a stale closure value.
+  const scenarioRef = useRef<Scenario>("aligned");
 
   // OpenDAW-side state. We use the SAME AudioContext that initializeOpenDAW
   // creates so pure-Web-Audio playback and OpenDAW playback share an audio
@@ -211,6 +215,7 @@ const App: React.FC = () => {
   const [openDawProject, setOpenDawProject] = useState<Project | null>(null);
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
   const openDawPlayheadSubRef = useRef<{ terminate(): void } | null>(null);
+  const isPlayingSubRef = useRef<{ terminate(): void } | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -273,12 +278,19 @@ const App: React.FC = () => {
         // that aligns file B's buffer with file A's at the seam — it
         // operates on the raw resampled AudioBuffers, so it implicitly
         // accounts for the 30-sample authored delay in file B. Adding a
-        // separate `SOURCE_OFFSET_SECONDS` term on top of `shiftSeconds`
+        // separate source-offset term (30/44100 s) on top of `shiftSeconds`
         // double-counts the delay and produces a phase mismatch in OpenDAW
         // playback (≈ −13.9 dB dip in the offline scan vs the ≈ 1.0 ratio
         // the pure-JS ALIGNED case achieves).
-        const loopOffsetBSec = SEAM_SECONDS - halfFadeSec + shiftSeconds;
-        const loopOffsetBPPQN = PPQN.secondsToPulses(loopOffsetBSec, bpm);
+        // Round the B position to integer PPQN before computing the loopOffset
+        // so they agree. (position is Int32 — fractional PPQN is silently
+        // truncated; computing loopOffset from the unrounded float while
+        // position truncates leaves the two disagreeing by the truncated
+        // fraction — a systematic phase error at the seam.)
+        const positionBFloat = seamPPQN - halfFadePPQN;
+        const positionBRounded = Math.round(positionBFloat);
+        // loopOffset = rounded position + shift in PPQN
+        const loopOffsetBPPQN = positionBRounded + PPQN.secondsToPulses(shiftSeconds, bpm);
 
         // Use SEPARATE tracks for the two regions so they can overlap in
         // timeline (crossfade) without violating the per-track no-overlap
@@ -337,7 +349,7 @@ const App: React.FC = () => {
             box.regions.refer((trackBoxB as any).regions);
             box.file.refer(fileBoxB);
             box.events.refer(eventsB.owners);
-            box.position.setValue(seamPPQN - halfFadePPQN);
+            box.position.setValue(positionBRounded);
             box.duration.setValue(fullDurationPPQN - seamPPQN + halfFadePPQN);
             box.loopOffset.setValue(loopOffsetBPPQN);
             box.loopDuration.setValue(fullDurationPPQN);
@@ -350,15 +362,18 @@ const App: React.FC = () => {
           });
           newProject.timelineBox.loopArea.enabled.setValue(false);
           newProject.timelineBox.loopArea.from.setValue(0);
-          newProject.timelineBox.loopArea.to.setValue(fullDurationPPQN);
+          newProject.timelineBox.loopArea.to.setValue(Math.round(fullDurationPPQN));
         });
 
-        newProject.engine.isPlaying.catchupAndSubscribe((obs) => {
+        isPlayingSubRef.current = newProject.engine.isPlaying.catchupAndSubscribe((obs) => {
           if (!mounted) return;
           const playing = obs.getValue();
           // Mirror OpenDAW's play state into the demo's isPlaying. Pure-Web-
           // Audio playback manages isPlaying separately via source.onended.
-          if (scenario === "opendaw" || playing) {
+          // Use scenarioRef (not the captured scenario) to read the current
+          // scenario — the subscription is created once (deps []), so closing
+          // over the state variable would always read "aligned".
+          if (scenarioRef.current === "opendaw" || playing) {
             setIsPlaying(playing);
           }
         });
@@ -373,6 +388,7 @@ const App: React.FC = () => {
       mounted = false;
       if (animationFrameRef.current !== null) cancelAnimationFrame(animationFrameRef.current);
       if (openDawPlayheadSubRef.current) openDawPlayheadSubRef.current.terminate();
+      isPlayingSubRef.current?.terminate();
       if (playbackRef.current.source) {
         try {
           playbackRef.current.source.stop();
@@ -428,6 +444,7 @@ const App: React.FC = () => {
       if (ctx.state === "suspended") await ctx.resume();
       stopAllPlayback();
       setScenario(next);
+      scenarioRef.current = next;
 
       if (next === "opendaw") {
         if (!openDawProject) return;
@@ -798,8 +815,12 @@ const App: React.FC = () => {
               </>
             }
             expected={[
-              { label: "min / reference", value: "≈ 0.8352  (−1.56 dB)" },
-              { label: "dip τ (ms relative to seam)", value: "≈ −7.5 ms (before seam)" },
+              // Re-measured after the Int32 position fix (position rounded,
+              // loopOffset computed from the rounded value). Pre-fix geometry
+              // measured 0.8352 (−1.56 dB) at τ ≈ −7.5 ms; the truncation
+              // error was the gap to the −1.16 dB / −10 ms prediction.
+              { label: "min / reference", value: "≈ 0.8707  (−1.20 dB)" },
+              { label: "dip τ (ms relative to seam)", value: "≈ −10 ms (before seam)" },
               { label: "sample rate", value: `${audioContextRef.current?.sampleRate ?? "—"} Hz` },
             ]}
             got={gotByStep[3] ?? null}
@@ -830,7 +851,7 @@ const App: React.FC = () => {
               <Separator size="4" />
               <Code size="2" style={{ whiteSpace: "pre-wrap", display: "block", padding: 12 }}>
                 {`File A:              test-440hz.wav (${TOTAL_DURATION_SECONDS} s, 440 Hz sine)
-File B:              test-440hz-offset30.wav (B delayed ~0.680 ms / ~24° at 440 Hz)
+File B:              test-440hz-offset30.wav (B delayed ~0.680 ms / ~108° at 440 Hz)
 ALIGNED engine:      pure Web Audio (AudioBufferSourceNode → destination)
 UNALIGNED engine:    pure Web Audio (shift = 0)
 OPENDAW engine:      OpenDAW TapeDeviceProcessor (2 Tape tracks, 1 AudioRegionBox each)
