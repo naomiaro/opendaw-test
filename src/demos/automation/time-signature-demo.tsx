@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "@radix-ui/themes/styles.css";
-import { Theme, Container, Heading, Text, Flex, Button, Callout } from "@radix-ui/themes";
+import { Theme, Container, Text, Flex, Card, Button, Callout, Code } from "@radix-ui/themes";
 import { InfoCircledIcon } from "@radix-ui/react-icons";
 import { Project } from "@opendaw/studio-core";
 import { PPQN } from "@opendaw/lib-dsp";
 import type { ppqn } from "@opendaw/lib-dsp";
+import { AnimationFrame } from "@opendaw/lib-dom";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
@@ -13,6 +14,7 @@ import { initializeOpenDAW } from "@/lib/projectSetup";
 import { computeBarsFromSDK } from "@/lib/barLayout";
 import type { BarInfo } from "@/lib/barLayout";
 import { usePlaybackPosition } from "@/hooks/usePlaybackPosition";
+import { CONSOLE_STYLES } from "@/lib/design/consoleTheme";
 
 // --- Pattern Types & Data ---
 
@@ -134,6 +136,21 @@ function applyPattern(project: Project, pattern: SignaturePattern): void {
 // --- Timeline Canvas ---
 
 const CANVAS_HEIGHT = 120;
+const CANVAS_HEADER_H = 30; // signature-label header row above the bar lanes
+
+// Canvas palette — mastering-console data-canvas tiers
+// (docs/design/2026-06-11-mastering-console-editorial.md; canvas needs literal hexes)
+// Bar boundaries ARE the data on this page, so they use the structural tier
+// (--mc-faint, ≈2.8:1), not the quiet supporting-grid tier tempo-automation uses.
+const CANVAS_BG = "#0d0c0a"; // --mc-bg
+const CANVAS_BAR_SHADE = "#221d15"; // --mc-shade (alternating region fill; --mc-panel at ≈1.05:1 reads flat on canvas — don't use it here)
+const CANVAS_BEAT_LINE = "#2a2620"; // --mc-line (tertiary grid)
+const CANVAS_BAR_LINE = "#5f594e"; // --mc-faint (structural separators, ≈2.8:1)
+const CANVAS_SIGNATURE = "#e8a33d"; // --mc-amber (meter CHANGES only — emphasis marks transitions)
+const CANVAS_LABEL = "#8b8273"; // --mc-label (4.9:1 floor)
+const CANVAS_PLAYHEAD = "#fff";
+const CANVAS_FONT = '600 12px "IBM Plex Mono", ui-monospace, monospace';
+const CANVAS_FONT_SMALL = '10px "IBM Plex Mono", ui-monospace, monospace';
 
 interface TimelineCanvasProps {
   bars: BarInfo[];
@@ -142,10 +159,20 @@ interface TimelineCanvasProps {
 }
 
 const TimelineCanvas: React.FC<TimelineCanvasProps> = ({ bars, playheadPosition, isPlaying }) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const barsCanvasRef = useRef<HTMLCanvasElement>(null);
+  const playheadCanvasRef = useRef<HTMLCanvasElement>(null);
+  // Store per-frame values in refs so the AnimationFrame overlay reads live data
+  // without the static bar effect re-running every frame.
+  const playheadRef = useRef(playheadPosition);
+  const isPlayingRef = useRef(isPlaying);
+  const totalPpqnRef = useRef(0);
+  playheadRef.current = playheadPosition;
+  isPlayingRef.current = isPlaying;
+  totalPpqnRef.current = bars.reduce((sum, b) => sum + b.durationPpqn, 0);
 
+  // Static bar rendering — re-runs only when the bar layout changes
   useEffect(() => {
-    const canvas = canvasRef.current;
+    const canvas = barsCanvasRef.current;
     if (!canvas || bars.length === 0) return;
 
     const ctx = canvas.getContext("2d");
@@ -160,7 +187,7 @@ const TimelineCanvas: React.FC<TimelineCanvasProps> = ({ bars, playheadPosition,
     ctx.scale(dpr, dpr);
 
     ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = "#1a1a2e";
+    ctx.fillStyle = CANVAS_BG;
     ctx.fillRect(0, 0, width, height);
 
     const totalPpqn = bars.reduce((sum, b) => sum + b.durationPpqn, 0);
@@ -174,75 +201,137 @@ const TimelineCanvas: React.FC<TimelineCanvasProps> = ({ bars, playheadPosition,
 
       // Alternate bar background
       if (i % 2 === 0) {
-        ctx.fillStyle = "#1e1e3a";
-        ctx.fillRect(barX, 30, barWidth, height - 30);
+        ctx.fillStyle = CANVAS_BAR_SHADE;
+        ctx.fillRect(barX, CANVAS_HEADER_H, barWidth, height - CANVAS_HEADER_H);
       }
 
       // Beat grid lines within bar
       const beatPpqn = PPQN.fromSignature(1, bar.denominator);
       const numBeats = bar.nominator;
-      ctx.strokeStyle = "#333";
+      ctx.strokeStyle = CANVAS_BEAT_LINE;
       ctx.lineWidth = 0.5;
       for (let beat = 1; beat < numBeats; beat++) {
         const beatX = barX + (beat * beatPpqn / bar.durationPpqn) * barWidth;
         ctx.beginPath();
-        ctx.moveTo(beatX, 30);
+        ctx.moveTo(beatX, CANVAS_HEADER_H);
         ctx.lineTo(beatX, height);
         ctx.stroke();
       }
 
       // Bar separator (left edge)
-      ctx.strokeStyle = "#555";
+      ctx.strokeStyle = CANVAS_BAR_LINE;
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(barX, 0);
       ctx.lineTo(barX, height);
       ctx.stroke();
 
-      // Signature label above bar
-      ctx.fillStyle = "#aaa";
-      ctx.font = "bold 12px sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText(`${bar.nominator}/${bar.denominator}`, barX + barWidth / 2, 15);
+      // Signature label only where the meter changes (DAW convention) —
+      // amber marks transitions instead of repeating on every bar
+      const meterChanged = i === 0
+        || bar.nominator !== bars[i - 1].nominator
+        || bar.denominator !== bars[i - 1].denominator;
+      if (meterChanged) {
+        ctx.strokeStyle = CANVAS_SIGNATURE;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(barX + 1, 0);
+        ctx.lineTo(barX + 1, CANVAS_HEADER_H);
+        ctx.stroke();
+
+        ctx.fillStyle = CANVAS_SIGNATURE;
+        ctx.font = CANVAS_FONT;
+        ctx.textAlign = "center";
+        ctx.fillText(`${bar.nominator}/${bar.denominator}`, barX + barWidth / 2, 15);
+      }
 
       // Bar number
-      ctx.fillStyle = "#666";
-      ctx.font = "10px sans-serif";
+      ctx.fillStyle = CANVAS_LABEL;
+      ctx.font = CANVAS_FONT_SMALL;
+      ctx.textAlign = "center";
       ctx.fillText(`${bar.barNumber}`, barX + barWidth / 2, 27);
     }
 
     // Right edge
     const lastBar = bars[bars.length - 1];
     const rightX = toX(lastBar.startPpqn + lastBar.durationPpqn);
-    ctx.strokeStyle = "#555";
+    ctx.strokeStyle = CANVAS_BAR_LINE;
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(rightX, 0);
     ctx.lineTo(rightX, height);
     ctx.stroke();
+  }, [bars]);
 
-    // Playhead
-    if (isPlaying && playheadPosition >= 0) {
-      const px = toX(playheadPosition);
-      ctx.strokeStyle = "#fff";
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(px, 0);
-      ctx.lineTo(px, height);
-      ctx.stroke();
-    }
-  }, [bars, playheadPosition, isPlaying]);
+  // Playhead overlay — AnimationFrame-driven so the bar canvas never repaints per frame
+  useEffect(() => {
+    const canvas = playheadCanvasRef.current;
+    if (!canvas) return;
+
+    const af = AnimationFrame.add(() => {
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      const dpr = window.devicePixelRatio || 1;
+      const width = canvas.clientWidth;
+      if (width === 0) return;
+      const height = CANVAS_HEIGHT;
+
+      // Only resize canvas when dimensions actually change
+      const targetWidth = width * dpr;
+      const targetHeight = height * dpr;
+      if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+      }
+
+      // Reset transform and clear (clearRect is cheap, no reflow)
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+
+      const pos = playheadRef.current;
+      const totalPpqn = totalPpqnRef.current;
+      if (isPlayingRef.current && pos >= 0 && totalPpqn > 0) {
+        const px = (pos / totalPpqn) * width;
+        ctx.strokeStyle = CANVAS_PLAYHEAD;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(px, 0);
+        ctx.lineTo(px, height);
+        ctx.stroke();
+      }
+    });
+
+    return () => af.terminate();
+  }, []);
 
   return (
-    <canvas
-      ref={canvasRef}
-      style={{
-        width: "100%",
-        height: CANVAS_HEIGHT,
-        borderRadius: "var(--radius-3)",
-        border: "1px solid var(--gray-6)",
-      }}
-    />
+    <div style={{ position: "relative", width: "100%", height: CANVAS_HEIGHT }}>
+      <canvas
+        ref={barsCanvasRef}
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          width: "100%",
+          height: CANVAS_HEIGHT,
+          boxSizing: "border-box",
+          borderRadius: "4px",
+          border: "1px solid var(--mc-line)",
+        }}
+      />
+      <canvas
+        ref={playheadCanvasRef}
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          width: "100%",
+          height: CANVAS_HEIGHT,
+          pointerEvents: "none",
+        }}
+      />
+    </div>
   );
 };
 
@@ -319,17 +408,24 @@ const App: React.FC = () => {
   };
 
   return (
-    <Theme appearance="dark" accentColor="blue" radius="large">
+    <Theme appearance="dark" accentColor="amber" radius="large" style={{ background: "var(--mc-bg)" }}>
+      <style>{CONSOLE_STYLES}</style>
       <Container size="3" px="4" py="8">
         <GitHubCorner />
         <BackLink />
         <Flex direction="column" gap="6" style={{ maxWidth: 900, margin: "0 auto" }}>
-          <Flex direction="column" align="center" gap="2">
-            <Heading size="8">Time Signature Changes</Heading>
-            <Text size="3" color="gray">
-              Apply preset time signature sequences and hear the metronome adapt in real-time
-            </Text>
-          </Flex>
+          <div>
+            <div className="mc-kicker">Automation — Time Signature · OpenDAW SDK</div>
+            <h1 className="mc-title" style={{ fontSize: "clamp(28px, 4.5vw, 44px)" }}>
+              TIME SIGNATURE CHANGES
+            </h1>
+            <p className="mc-intro">
+              Apply preset meter sequences — waltz, prog rock, film score — and hear the
+              metronome adapt in real time. Each change writes an event into the timeline&apos;s
+              signature track via <code>signatureTrack.createEvent(position, nominator, denominator)</code>,
+              one transaction per event.
+            </p>
+          </div>
 
           {initError ? (
             <Callout.Root color="red">
@@ -341,43 +437,94 @@ const App: React.FC = () => {
           ) : !isReady ? (
             <Text align="center">{status}</Text>
           ) : (
-            <Flex direction="column" gap="5">
-              <Flex direction="column" gap="2">
-                <Text size="2" weight="bold" color="gray">Signature Pattern</Text>
-                <Flex gap="2" wrap="wrap">
-                  {PATTERNS.map((pattern, index) => (
-                    <Button
-                      key={pattern.name}
-                      variant={activePatternIndex === index ? "solid" : "outline"}
-                      onClick={() => handlePatternSelect(index)}
-                    >
-                      {pattern.name}
-                    </Button>
-                  ))}
+            <>
+              {/* Patterns */}
+              <Card>
+                <Flex direction="column" gap="3">
+                  <Text size="2" weight="bold" color="gray">Signature Pattern</Text>
+                  <Flex gap="2" wrap="wrap">
+                    {PATTERNS.map((pattern, index) => (
+                      <Button
+                        key={pattern.name}
+                        variant={activePatternIndex === index ? "solid" : "outline"}
+                        onClick={() => handlePatternSelect(index)}
+                      >
+                        {pattern.name}
+                      </Button>
+                    ))}
+                  </Flex>
+                  <Text size="2" color="gray">{PATTERNS[activePatternIndex].description}</Text>
                 </Flex>
-                <Text size="2" color="gray">{PATTERNS[activePatternIndex].description}</Text>
-              </Flex>
+              </Card>
 
-              <TimelineCanvas
-                bars={bars}
-                playheadPosition={playheadPosition as ppqn}
-                isPlaying={isPlaying}
-              />
+              {/* Bar structure */}
+              <div className="mc-lattice-frame" style={{ marginTop: 0 }}>
+                <Flex direction="column" gap="2">
+                  <Text size="2" weight="bold" color="gray">Bar Structure</Text>
+                  <TimelineCanvas
+                    bars={bars}
+                    playheadPosition={playheadPosition as ppqn}
+                    isPlaying={isPlaying}
+                  />
+                </Flex>
+              </div>
 
-              <Flex gap="3" align="center">
-                {!isPlaying ? (
-                  <Button size="3" onClick={handlePlay}>Play</Button>
-                ) : (
-                  <Button size="3" color="red" onClick={handleStop}>Stop</Button>
-                )}
-                <Button
-                  variant={metronomeEnabled ? "solid" : "outline"}
-                  onClick={handleMetronomeToggle}
+              {/* Transport */}
+              <Card>
+                <Flex gap="3" align="center">
+                  {!isPlaying ? (
+                    <Button size="3" onClick={handlePlay}>Play</Button>
+                  ) : (
+                    <Button size="3" color="red" onClick={handleStop}>Stop</Button>
+                  )}
+                  <Button
+                    variant={metronomeEnabled ? "solid" : "outline"}
+                    onClick={handleMetronomeToggle}
+                  >
+                    Metronome {metronomeEnabled ? "On" : "Off"}
+                  </Button>
+                </Flex>
+              </Card>
+
+              <section className="mc-anchors">
+                <h2 className="mc-anchors-head">SDK reference</h2>
+                <p>
+                  The signature track is an event list on the timeline; index -1 holds the
+                  storage signature. <code>createEvent</code> reads the adapter collection
+                  internally, and collection notifications are deferred inside a transaction —
+                  so each <code>createEvent</code> and each deletion needs its own{" "}
+                  <code>editing.modify()</code>. The canvas above expands the resulting
+                  sections into bars with <code>computeBarsFromSDK</code>{" "}
+                  (<code>src/lib/barLayout.ts</code>), which walks{" "}
+                  <code>signatureTrack.iterateAll()</code>.
+                </p>
+                <Code
+                  size="2"
+                  style={{
+                    display: "block",
+                    padding: "12px",
+                    backgroundColor: "var(--gray-3)",
+                    borderRadius: "4px",
+                    whiteSpace: "pre-wrap",
+                    marginTop: "12px",
+                  }}
                 >
-                  Metronome {metronomeEnabled ? "On" : "Off"}
-                </Button>
-              </Flex>
-            </Flex>
+{`const signatureTrack = project.timelineBoxAdapter.signatureTrack;
+
+// One editing.modify() per event — createEvent calls iterateAll()
+// internally and the adapter collection only syncs between transactions
+project.editing.modify(() => {
+  signatureTrack.createEvent(position, 7, 8); // PPQN, nominator, denominator
+});
+
+// Expand signature sections into bars for rendering
+const bars = computeBarsFromSDK(project); // src/lib/barLayout.ts`}
+                </Code>
+                <p>
+                  <a href="/docs/02-timing-and-tempo.html">Timing &amp; tempo</a>
+                </p>
+              </section>
+            </>
           )}
         </Flex>
         <MoisesLogo />
