@@ -238,6 +238,45 @@ const App: React.FC = () => {
               </Link>
             </Card>
             <Card asChild>
+              <Link href="/warp-varispeed-demo.html" style={{ textDecoration: "none", padding: "var(--space-5)" }}>
+                <Flex direction="column" gap="3">
+                  <Flex direction="column" align="center" gap="2">
+                    <Text size="8">📌</Text>
+                    <Heading size="5">Warp: Varispeed</Heading>
+                  </Flex>
+                  <Text size="2" color="gray">
+                    Pin every tracked beat of a real song to the project grid with warp markers. Beats lock to the metronome; pitch follows rate, tape-style.
+                  </Text>
+                </Flex>
+              </Link>
+            </Card>
+            <Card asChild>
+              <Link href="/warp-grid-follows-file-demo.html" style={{ textDecoration: "none", padding: "var(--space-5)" }}>
+                <Flex direction="column" gap="3">
+                  <Flex direction="column" align="center" gap="2">
+                    <Text size="8">📐</Text>
+                    <Heading size="5">Warp: Set Tempo from Clip</Heading>
+                  </Flex>
+                  <Text size="2" color="gray">
+                    Conform the project tempo map to a song's beat map — one stepped tempo event per bar. The audio plays untouched while the grid bends to it.
+                  </Text>
+                </Flex>
+              </Link>
+            </Card>
+            <Card asChild>
+              <Link href="/warp-timestretch-demo.html" style={{ textDecoration: "none", padding: "var(--space-5)" }}>
+                <Flex direction="column" gap="3">
+                  <Flex direction="column" align="center" gap="2">
+                    <Text size="8">🧩</Text>
+                    <Heading size="5">Warp: Time-Stretch</Heading>
+                  </Flex>
+                  <Text size="2" color="gray">
+                    The triptych on one page: raw drifts, varispeed detunes, time-stretch locks the beats and keeps the key — identical warp markers throughout.
+                  </Text>
+                </Flex>
+              </Link>
+            </Card>
+            <Card asChild>
               <Link href="/track-automation-demo.html" style={{ textDecoration: "none", padding: "var(--space-5)" }}>
                 <Flex direction="column" gap="3">
                   <Flex direction="column" align="center" gap="2">

@@ -594,6 +594,7 @@ Each demo category folder has its own CLAUDE.md with SDK knowledge scoped to tho
 - `src/demos/automation/CLAUDE.md` — time signatures, tempo, track automation, curves, effects params
 - `src/demos/effects/CLAUDE.md` — EffectBox, scriptable devices, ScriptCompiler, Werkstatt
 - `src/demos/export/CLAUDE.md` — offline rendering, mutate-copy-restore pattern
+- `src/demos/warp/CLAUDE.md` — beat maps, warp markers, tempo-map conform, time-stretch
 
 ## Reference Files
 - Project setup: `src/lib/projectSetup.ts`

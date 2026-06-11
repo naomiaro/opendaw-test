@@ -37,6 +37,9 @@ export default defineConfig({
                 trackAutomation: resolve(__dirname, "track-automation-demo.html"),
                 clipLooping: resolve(__dirname, "clip-looping-demo.html"),
                 timePitch: resolve(__dirname, "time-pitch-demo.html"),
+                warpVarispeed: resolve(__dirname, "warp-varispeed-demo.html"),
+                warpGridFollowsFile: resolve(__dirname, "warp-grid-follows-file-demo.html"),
+                warpTimestretch: resolve(__dirname, "warp-timestretch-demo.html"),
                 werkstatt: resolve(__dirname, "werkstatt-demo.html"),
                 export: resolve(__dirname, "export-demo.html"),
                 compLanes: resolve(__dirname, "comp-lanes-demo.html"),
@@ -45,10 +48,7 @@ export default defineConfig({
                 pureWebaudioTargetDebug: resolve(__dirname, "pure-webaudio-target-debug-demo.html"),
                 sharedSourceDoubleProcessDebug: resolve(__dirname, "shared-source-double-process-debug-demo.html"),
                 voiceFadeinClipFadeinProductDebug: resolve(__dirname, "voice-fadein-clip-fadein-product-debug-demo.html"),
-                timePitchStartPositionDebug: resolve(__dirname, "time-pitch-start-position-debug-demo.html"),
-                warpVarispeed: resolve(__dirname, "warp-varispeed-demo.html"),
-                warpGridFollowsFile: resolve(__dirname, "warp-grid-follows-file-demo.html"),
-                warpTimestretch: resolve(__dirname, "warp-timestretch-demo.html")
+                timePitchStartPositionDebug: resolve(__dirname, "time-pitch-start-position-debug-demo.html")
             },
             output: {
                 manualChunks: (id) => {
