@@ -637,6 +637,9 @@ Each demo category folder has its own CLAUDE.md with SDK knowledge scoped to tho
 - Export & offline rendering: `documentation/10-export.md`
 - SDK changelogs: `changelogs/`
 - SDK investigations & open questions: `debug/` (see `debug/README.md` for convention)
+- `docs/superpowers/{specs,plans}` hold in-flight work only — delete a spec/plan in the
+  PR that completes its work (git history preserves them). Durable decisions graduate to
+  `docs/design/`, CLAUDE.md, or `documentation/` before deletion.
 - Unlisted debug demo pages: HTML at repo root with `<meta name="robots" content="noindex">`,
   not added to `src/index.tsx` or `public/sitemap.xml`. See `comp-lanes-debug-demo.tsx` as reference.
 - OpenDAW source code locations: see `.claude/local.md`
