@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
 import { PPQN, TimeBase } from "@opendaw/lib-dsp";
@@ -34,14 +34,17 @@ const { Quarter } = PPQN;
  * TimeBase Demo
  *
  * Demonstrates the difference between Musical TimeBase and Seconds TimeBase:
- * - Musical: Duration changes with BPM, overlaps forbidden
- * - Seconds: Duration stays constant, overlaps allowed
+ * - Musical: duration stored in PPQN — changes with BPM
+ * - Seconds: duration stored in seconds — constant regardless of BPM
+ * Overlap rules are identical in both: overlapping regions on one track are
+ * invalid by design (runtime-tolerated; project.copy() deletes the pair).
  */
 function TimeBaseDemo() {
   const [project, setProject] = useState<Project | null>(null);
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
   const [bpm, setBpm] = useState(120);
   const [sampleLoaded, setSampleLoaded] = useState(false);
+  const [addNotice, setAddNotice] = useState<string | null>(null);
 
   const { currentPosition, isPlaying, pausedPositionRef } = usePlaybackPosition(project);
   const { handlePlay, handlePause, handleStop } = useTransportControls({ project, audioContext, pausedPositionRef });
@@ -60,8 +63,7 @@ function TimeBaseDemo() {
   } | null>(null);
 
   const [audioFileUUID, setAudioFileUUID] = useState<UUID.Bytes | null>(null);
-  const [audioFileBox, setAudioFileBox] = useState<AudioFileBox | null>(null);
-  // Ref mirrors audioFileBox so rapid-click handlers see the already-staged box
+  // Ref (not state): rapid-click handlers must see the already-staged box
   // synchronously without waiting for React state to flush.
   const audioFileBoxRef = useRef<AudioFileBox | null>(null);
   const [sampleDurationInSeconds, setSampleDurationInSeconds] = useState(0);
@@ -190,6 +192,30 @@ function TimeBaseDemo() {
     (beatPosition: number) => {
       if (!project || !musicalTrackInfo || !audioFileUUID) return;
 
+      // Overlapping regions on one track are invalid by design (all timeBases);
+      // project.copy() (export, offline render) deletes the overlapping pair.
+      // Read existing regions from the box graph (synchronous snapshot), not React
+      // state — batched rapid clicks would otherwise see stale empty region lists.
+      const newStart = beatPosition * Quarter;
+      const newEnd = newStart + PPQN.secondsToPulses(sampleDurationInSeconds, bpm);
+      const existingRegions = musicalTrackInfo.trackBox.regions.pointerHub
+        .incoming()
+        .map((pointer) => pointer.box as AudioRegionBox);
+      const overlap = existingRegions.find((box) => {
+        const start = box.position.getValue();
+        const end = start + box.duration.getValue(); // Musical: duration already PPQN
+        return newStart < end && newEnd > start;
+      });
+      if (overlap) {
+        const overlapBeat = overlap.position.getValue() / Quarter + 1;
+        setAddNotice(
+          `Skipped: would overlap the region at beat ${overlapBeat.toFixed(2)} — ` +
+          `overlapping regions are invalid by design and project.copy() deletes them.`
+        );
+        return;
+      }
+      setAddNotice(null);
+
       project.editing.modify(() => {
         const boxGraph = project.boxGraph;
 
@@ -201,7 +227,6 @@ function TimeBaseDemo() {
             box.endInSeconds.setValue(sampleDurationInSeconds);
           });
           audioFileBoxRef.current = fileBox;
-          setAudioFileBox(fileBox);
         }
 
         const clipDuration = PPQN.secondsToPulses(sampleDurationInSeconds, bpm);
@@ -249,6 +274,32 @@ function TimeBaseDemo() {
     (beatPosition: number) => {
       if (!project || !secondsTrackInfo || !audioFileUUID) return;
 
+      // Overlapping regions on one track are invalid by design (all timeBases);
+      // project.copy() (export, offline render) deletes the overlapping pair.
+      // Note: only the live Project.invalid() probe skips Seconds tracks — copy() does not.
+      // Read existing regions from the box graph (synchronous snapshot), not React
+      // state — batched rapid clicks would otherwise see stale empty region lists.
+      const newStart = beatPosition * Quarter;
+      const newEnd = newStart + PPQN.secondsToPulses(sampleDurationInSeconds, bpm);
+      const existingRegions = secondsTrackInfo.trackBox.regions.pointerHub
+        .incoming()
+        .map((pointer) => pointer.box as AudioRegionBox);
+      const overlap = existingRegions.find((box) => {
+        const start = box.position.getValue();
+        // Seconds: duration is stored in seconds — convert to PPQN at current BPM
+        const end = start + PPQN.secondsToPulses(box.duration.getValue(), bpm);
+        return newStart < end && newEnd > start;
+      });
+      if (overlap) {
+        const overlapBeat = overlap.position.getValue() / Quarter + 1;
+        setAddNotice(
+          `Skipped: would overlap the region at beat ${overlapBeat.toFixed(2)} — ` +
+          `overlapping regions are invalid by design and project.copy() deletes them.`
+        );
+        return;
+      }
+      setAddNotice(null);
+
       project.editing.modify(() => {
         const boxGraph = project.boxGraph;
 
@@ -260,7 +311,6 @@ function TimeBaseDemo() {
             box.endInSeconds.setValue(sampleDurationInSeconds);
           });
           audioFileBoxRef.current = fileBox;
-          setAudioFileBox(fileBox);
         }
 
         // For Seconds TimeBase, duration is in seconds (not PPQN!)
@@ -345,7 +395,6 @@ function TimeBaseDemo() {
       if (secondsTrackInfo && secondsTrackInfo.regions.length === 0 && audioFileBoxRef.current) {
         audioFileBoxRef.current.delete();
         audioFileBoxRef.current = null;
-        setAudioFileBox(null);
       }
     });
 
@@ -364,7 +413,6 @@ function TimeBaseDemo() {
       if (musicalTrackInfo && musicalTrackInfo.regions.length === 0 && audioFileBoxRef.current) {
         audioFileBoxRef.current.delete();
         audioFileBoxRef.current = null;
-        setAudioFileBox(null);
       }
     });
 
@@ -396,11 +444,10 @@ function TimeBaseDemo() {
               <code>timeBase</code> determines how the SDK stores and interprets audio region{" "}
               durations. <strong>Musical</strong>: <code>duration</code> and{" "}
               <code>loopDuration</code> are stored in PPQN — they scale automatically when BPM
-              changes, and overlapping regions cause export validation errors.{" "}
-              <strong>Seconds</strong>: <code>duration</code> and <code>loopDuration</code> are
-              stored in seconds — they stay constant regardless of BPM, and overlaps are allowed
-              for natural audio decay. In both modes, <code>position</code> is always PPQN
-              (Int32).
+              changes. <strong>Seconds</strong>: <code>duration</code> and{" "}
+              <code>loopDuration</code> are stored in seconds — they stay constant regardless of
+              BPM. In both modes, <code>position</code> is always PPQN (Int32), and overlapping
+              regions on one track are invalid by design.
             </p>
           </div>
 
@@ -413,10 +460,13 @@ function TimeBaseDemo() {
               <code>PPQN.secondsToPulses(seconds, bpm)</code>. For Seconds timeBase pass{" "}
               <code>duration</code> directly in seconds. Both modes use{" "}
               <code>box.position.setValue(beatPosition * Quarter)</code> — position is always
-              PPQN. The <code>project.copy()</code> validator deletes both regions when Musical
-              regions overlap; the live engine tolerates overlaps at runtime but offline render
-              and export produce silence with no error. Use Seconds timeBase (or separate Tape
-              tracks) for one-shots that need natural decay overlap.
+              PPQN. Overlapping regions on one track are invalid by design in BOTH timeBases:
+              the live engine tolerates them at runtime, but the <code>project.copy()</code>{" "}
+              validator (export, offline render) deletes the overlapping pair —{" "}
+              &ldquo;Overlapping regions&rdquo; in the console, no error thrown. Only the live{" "}
+              <code>Project.invalid()</code> probe skips Seconds tracks, so Seconds overlaps
+              surface no warning before <code>copy()</code> silently deletes them. For
+              overlapping one-shots, put each region on its own Tape track.
             </p>
             <p>
               With NoSync playback mode (the default when no <code>playMode</code> box is
@@ -513,9 +563,15 @@ function TimeBaseDemo() {
                     Add at Beat 3
                   </Button>
                   <Button onClick={() => addMusicalRegion(0.5)} size="2">
-                    Add at Beat 1.5 (overlap test)
+                    Add at Beat 1.5
                   </Button>
                 </Flex>
+
+                {addNotice && (
+                  <Text size="2" style={{ color: "var(--mc-amber)" }}>
+                    {addNotice}
+                  </Text>
+                )}
 
                 <Text size="2" color="gray">
                   Regions: {musicalTrackInfo?.regions.length || 0}
@@ -569,9 +625,15 @@ function TimeBaseDemo() {
                     Add at Beat 3
                   </Button>
                   <Button onClick={() => addSecondsRegion(0.5)} size="2">
-                    Add at Beat 1.5 (overlap allowed!)
+                    Add at Beat 1.5
                   </Button>
                 </Flex>
+
+                {addNotice && (
+                  <Text size="2" style={{ color: "var(--mc-amber)" }}>
+                    {addNotice}
+                  </Text>
+                )}
 
                 <Text size="2" color="gray">
                   Regions: {secondsTrackInfo?.regions.length || 0}
@@ -581,7 +643,6 @@ function TimeBaseDemo() {
                   <Callout.Root color="green" size="1">
                     <Callout.Text>
                       Try changing BPM - Seconds regions stay the same duration!
-                      Overlaps are allowed for natural audio decay.
                     </Callout.Text>
                   </Callout.Root>
                 )}
@@ -617,16 +678,18 @@ function TimeBaseDemo() {
             <h2 className="mc-anchors-head">When to use each timeBase</h2>
             <p>
               <strong>Musical</strong> — duration tracks tempo. Use for melodic content, loops,
-              and samples that must stay grid-aligned. Overlapping Musical regions on the same
-              track are forbidden on export (<code>project.copy()</code> deletes both with
-              &ldquo;Overlapping regions&rdquo; in the console and no error thrown).
+              and samples that must stay grid-aligned.
             </p>
             <p>
               <strong>Seconds</strong> — duration is constant. Use for drums, percussion, sound
-              effects, and one-shots whose natural decay should ring out regardless of BPM.
-              Overlaps are allowed. If you see &ldquo;Overlapping regions&rdquo; errors on
-              export, switch those regions to Seconds timeBase or move them to separate Tape
-              tracks.
+              effects, and one-shots whose length must not change with BPM.
+            </p>
+            <p>
+              Overlap rules do not differ by timeBase: overlapping regions on one track are
+              invalid by design. The live engine tolerates them at runtime, but{" "}
+              <code>project.copy()</code> (export, offline render) deletes the overlapping
+              pair — &ldquo;Overlapping regions&rdquo; in the console, no error thrown. Put
+              overlapping one-shots on separate Tape tracks.
             </p>
           </section>
         </Flex>
