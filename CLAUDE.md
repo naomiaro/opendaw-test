@@ -570,6 +570,9 @@ setState-per-frame is only safe if no expensive effect reads its output.
 - Playwright MCP screenshots: omit the `filename` param — custom-named files land
   loose in the project root; default-named files land in `.playwright-mcp/`.
 - PRs are squash-merged (`gh pr merge <n> --squash`) — main carries one commit per PR.
+- Once a PR is open and its work complete, run the comprehensive PR review
+  (`/pr-review-toolkit:review-pr`, applicable aspects) and FIX Critical + Important
+  findings before merge; push fixes to the PR branch and note them in a PR comment.
 - After SDK upgrades, clear Vite dep cache: `rm -rf node_modules/.vite` (dev server pre-bundles old SDK)
 - After **any** `package.json` change (SDK upgrade, devDep add/remove, version bump), **regenerate
   the lockfile cleanly**: `rm -rf node_modules package-lock.json && npm install`, then verify with
