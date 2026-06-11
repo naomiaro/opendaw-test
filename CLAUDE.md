@@ -320,7 +320,7 @@ Essential for tempo-aware waveform rendering and position display.
 - `.inField` / `.outField` / `.inSlopeField` / `.outSlopeField` — settable fields
 - `.hasFading` — boolean, true if any fade is non-zero
 - `.copyTo(target: Fading)` — copy fade settings. Param is the raw `Fading` box from `@opendaw/studio-boxes`, NOT a `FadingAdapter`. From a region adapter: `srcRegion.fading.copyTo(dstRegion.box.fading)`
-- `.reset()` — clear all fades to zero
+- `.reset()` — set `in`/`out` to 0; slopes go to defaults (`inSlope` 0.75, `outSlope` 0.25), NOT zero
 
 ### BoxAdaptersContext (Dependency Injection)
 All adapters receive a `BoxAdaptersContext` that provides access to shared infrastructure:

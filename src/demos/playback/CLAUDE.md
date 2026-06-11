@@ -71,7 +71,8 @@ Beyond field access, `adapter.fading` provides:
 - `.copyTo(target: Fading)` — copy all fade settings (in, out, slopes) to another region's
   fading. Param is the raw `Fading` box from `@opendaw/studio-boxes`, NOT another
   `FadingAdapter`. From two region adapters: `srcRegion.fading.copyTo(dstRegion.box.fading)`.
-- `.reset()` — clear all fades to zero (in, out, inSlope, outSlope)
+- `.reset()` — set `in`/`out` to 0; slopes go to the schema defaults (`inSlope` 0.75,
+  `outSlope` 0.25), NOT zero
 - `.in` / `.out` — current fade values (read-only shorthand)
 - `.inSlope` / `.outSlope` — current slope values (read-only shorthand)
 
