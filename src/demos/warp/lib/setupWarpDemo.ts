@@ -1,5 +1,5 @@
 import { UUID } from "@opendaw/lib-std";
-import { TimeBase } from "@opendaw/lib-dsp";
+import { PPQN, TimeBase } from "@opendaw/lib-dsp";
 import { Project } from "@opendaw/studio-core";
 import { InstrumentFactories } from "@opendaw/studio-adapters";
 import {
@@ -83,6 +83,13 @@ export async function setupWarpDemo(opts: {
       box.timeBase.setValue(TimeBase.Seconds);
       box.label.setValue(SAMPLE_NAME);
     });
+    // Default loopArea.to is 15360 PPQN (~16 beats) — playback would wrap after
+    // ~8 s. Loop the full file instead; demos update `to` when their end tick
+    // changes (warp mode switches, conform repositioning).
+    const endPpqn = Math.round(PPQN.secondsToPulses(audioBuffer.duration, projectBpm));
+    project.timelineBox.loopArea.from.setValue(0);
+    project.timelineBox.loopArea.to.setValue(endPpqn);
+    project.timelineBox.loopArea.enabled.setValue(true);
   });
 
   // Plain setter — not a box field, must NOT be inside editing.modify().

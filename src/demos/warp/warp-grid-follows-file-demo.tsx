@@ -81,6 +81,9 @@ function WarpGridFollowsFileDemo() {
           region.duration.setValue(audioBuffer.duration - s0);
           region.loopDuration.setValue(audioBuffer.duration - s0);
           region.waveformOffset.setValue(s0);
+          // Loop the full song; the tick end is valid under both tempo maps
+          // (loopArea is PPQN — its seconds position bends with the conform).
+          project.timelineBox.loopArea.to.setValue(endTickRef.current);
         });
         project.engine.setPosition(0);
         setSetup(result);

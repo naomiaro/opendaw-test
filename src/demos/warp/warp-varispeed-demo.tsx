@@ -114,9 +114,15 @@ function WarpVarispeedDemo() {
       const { project, region, audioBuffer } = setup;
       const anchors = anchorsRef.current;
       const endTick = anchors[anchors.length - 1].tick;
+      // Loop area end follows the active mode's timeline length: warped ticks
+      // come from the anchor list, raw ticks from seconds at the rigid tempo.
+      const rawEndPpqn = Math.round(
+        PPQN.secondsToPulses(audioBuffer.duration, setup.projectBpm)
+      );
       // Single transaction per the SDK's AudioContentModifier pattern.
       project.editing.modify(() => {
         const prev = stretchBoxRef.current;
+        project.timelineBox.loopArea.to.setValue(next ? endTick : rawEndPpqn);
         if (!next) {
           region.playMode.defer();
           if (prev) prev.delete();

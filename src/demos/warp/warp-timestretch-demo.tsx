@@ -139,10 +139,16 @@ function WarpTimestretchDemo() {
           const positions = await ensureTransientMarkers(project, audioFileBox, audioBuffer);
           setTransientCount(positions.length);
         }
+        // Loop area end follows the active mode's timeline length: warped ticks
+        // come from the anchor list, raw ticks from seconds at the rigid tempo.
+        const rawEndPpqn = Math.round(
+          PPQN.secondsToPulses(audioBuffer.duration, setup.projectBpm)
+        );
         // Single transaction per the SDK's AudioContentModifier pattern:
         // create new → refer (replaces atomically) → delete old → flip timeBase.
         project.editing.modify(() => {
           const prev = stretchBoxRef.current;
+          project.timelineBox.loopArea.to.setValue(next === "raw" ? rawEndPpqn : endTick);
           if (next === "raw") {
             region.playMode.defer();
             if (prev) prev.delete();
