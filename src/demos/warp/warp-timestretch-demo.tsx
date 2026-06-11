@@ -187,7 +187,13 @@ function WarpTimestretchDemo() {
         modeRef.current = next;
         setMode(next);
         setRepaintKey((k) => k + 1);
-        setStatus("Ready");
+        setStatus(
+          next === "raw"
+            ? "Ready — raw playback drifts off the click"
+            : next === "varispeed"
+              ? "Ready — varispeed: beats lock, pitch follows rate"
+              : "Ready — time-stretch: beats lock, pitch preserved"
+        );
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
         setStatus("Failed");

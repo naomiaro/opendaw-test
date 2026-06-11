@@ -159,6 +159,11 @@ function WarpGridFollowsFileDemo() {
       conformedRef.current = next;
       setConformed(next);
       setEventCount(next ? tempoEventsRef.current.length : 1);
+      setStatus(
+        next
+          ? "Ready — CONFORMED: the grid bends to the file"
+          : "Ready — grid is RIGID, the metronome fights the music"
+      );
       setRepaintKey((k) => k + 1);
     },
     [setup]

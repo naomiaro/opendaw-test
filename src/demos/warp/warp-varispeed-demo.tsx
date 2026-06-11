@@ -154,6 +154,11 @@ function WarpVarispeedDemo() {
       pausedPositionRef.current = 0;
       warpedRef.current = next;
       setWarped(next);
+      setStatus(
+        next
+          ? "Ready — warped: beats lock to the click, pitch follows rate"
+          : "Ready — warp is OFF, the file will drift off the click"
+      );
       setRepaintKey((k) => k + 1);
     },
     [setup, pausedPositionRef]
