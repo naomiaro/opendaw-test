@@ -6,6 +6,7 @@ import { UUID } from "@opendaw/lib-std";
 import { PPQN } from "@opendaw/lib-dsp";
 import { Project } from "@opendaw/studio-core";
 import { RegionEditing, TrackBoxAdapter } from "@opendaw/studio-adapters";
+import { AudioRegionBox } from "@opendaw/studio-boxes";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
@@ -21,7 +22,19 @@ import { usePlaybackPosition } from "@/hooks/usePlaybackPosition";
 import { useTransportControls } from "@/hooks/useTransportControls";
 import type { TrackData } from "@/lib/types";
 import "@radix-ui/themes/styles.css";
-import { Theme, Container, Heading, Text, Flex, Card, Button, Callout, Badge, Box as RadixBox } from "@radix-ui/themes";
+import {
+  Theme,
+  Container,
+  Heading,
+  Text,
+  Flex,
+  Card,
+  Button,
+  Callout,
+  Badge,
+  Box as RadixBox
+} from "@radix-ui/themes";
+import { CONSOLE_STYLES } from "@/lib/design/consoleTheme";
 
 /**
  * Track Editing Demo App Component
@@ -40,6 +53,7 @@ const App: React.FC = () => {
   const [selectedTrackIndex, setSelectedTrackIndex] = useState<number | null>(null);
   const [selectedRegionUuid, setSelectedRegionUuid] = useState<string | null>(null);
   const [updateTrigger, setUpdateTrigger] = useState({});
+  const [moveNotice, setMoveNotice] = useState<string | null>(null);
 
   // Playback position and transport hooks
   const { currentPosition, setCurrentPosition, isPlaying, pausedPositionRef } = usePlaybackPosition(project);
@@ -124,7 +138,7 @@ const App: React.FC = () => {
           setStatus("Loading waveforms...");
         }
       } catch (error) {
-        console.error("Failed to initialize:", error);
+        console.error("Failed to initialize:", JSON.stringify(String(error)));
         if (mounted) setStatus(`Error: ${error}`);
       }
     })();
@@ -170,10 +184,42 @@ const App: React.FC = () => {
     if (!project || selectedTrackIndex === null) return;
 
     const track = tracks[selectedTrackIndex];
-    const moveAmount = PPQN.secondsToPulses(1, BPM); // Move by 1 second
+    // PPQN.secondsToPulses returns float; position is Int32 — must round.
+    const moveAmount = Math.round(PPQN.secondsToPulses(1, BPM));
 
     const regionDesc = selectedRegionUuid ? "selected region" : "all regions";
     console.debug(`Moving ${regionDesc} in track "${track.name}" forward by ${moveAmount} PPQN`);
+
+    // Overlap guard: when moving a single selected region, check it won't collide
+    // with a sibling. Read from box graph (synchronous snapshot) not React state
+    // so rapid clicks see the already-committed position.
+    if (selectedRegionUuid) {
+      const existingRegions = track.trackBox.regions.pointerHub
+        .incoming()
+        .map(p => p.box as AudioRegionBox);
+      const movingBox = existingRegions.find(
+        b => UUID.toString(b.address.uuid) === selectedRegionUuid
+      );
+      if (movingBox) {
+        const newStart = movingBox.position.getValue() + moveAmount;
+        const newEnd = newStart + movingBox.duration.getValue();
+        const collision = existingRegions.find(b => {
+          if (UUID.toString(b.address.uuid) === selectedRegionUuid) return false;
+          const s = b.position.getValue();
+          const e = s + b.duration.getValue();
+          return newStart < e && newEnd > s;
+        });
+        if (collision) {
+          const collisionSec = PPQN.pulsesToSeconds(collision.position.getValue(), BPM).toFixed(1);
+          setMoveNotice(
+            `Skipped: would overlap the region at ${collisionSec}s — ` +
+            `overlapping regions on one track are invalid by design and project.copy() deletes them.`
+          );
+          return;
+        }
+      }
+    }
+    setMoveNotice(null);
 
     project.editing.modify(() => {
       const trackAdapter = project.boxAdapters.adapterFor(track.trackBox, TrackBoxAdapter);
@@ -183,8 +229,8 @@ const App: React.FC = () => {
         const regionUuid = UUID.toString(regionAdapter.box.address.uuid);
         if (selectedRegionUuid && regionUuid !== selectedRegionUuid) return;
 
-        const currentPosition = regionAdapter.box.position.getValue();
-        regionAdapter.box.position.setValue(currentPosition + moveAmount);
+        const currentPos = regionAdapter.box.position.getValue();
+        regionAdapter.box.position.setValue(currentPos + moveAmount);
       });
     });
 
@@ -196,10 +242,41 @@ const App: React.FC = () => {
     if (!project || selectedTrackIndex === null) return;
 
     const track = tracks[selectedTrackIndex];
-    const moveAmount = PPQN.secondsToPulses(1, BPM); // Move by 1 second
+    // PPQN.secondsToPulses returns float; position is Int32 — must round.
+    const moveAmount = Math.round(PPQN.secondsToPulses(1, BPM));
 
     const regionDesc = selectedRegionUuid ? "selected region" : "all regions";
     console.debug(`Moving ${regionDesc} in track "${track.name}" backward by ${moveAmount} PPQN`);
+
+    // Overlap guard: when moving a single selected region, check it won't collide
+    // with a sibling. Read from box graph (synchronous snapshot) not React state.
+    if (selectedRegionUuid) {
+      const existingRegions = track.trackBox.regions.pointerHub
+        .incoming()
+        .map(p => p.box as AudioRegionBox);
+      const movingBox = existingRegions.find(
+        b => UUID.toString(b.address.uuid) === selectedRegionUuid
+      );
+      if (movingBox) {
+        const newStart = Math.max(0, movingBox.position.getValue() - moveAmount);
+        const newEnd = newStart + movingBox.duration.getValue();
+        const collision = existingRegions.find(b => {
+          if (UUID.toString(b.address.uuid) === selectedRegionUuid) return false;
+          const s = b.position.getValue();
+          const e = s + b.duration.getValue();
+          return newStart < e && newEnd > s;
+        });
+        if (collision) {
+          const collisionSec = PPQN.pulsesToSeconds(collision.position.getValue(), BPM).toFixed(1);
+          setMoveNotice(
+            `Skipped: would overlap the region at ${collisionSec}s — ` +
+            `overlapping regions on one track are invalid by design and project.copy() deletes them.`
+          );
+          return;
+        }
+      }
+    }
+    setMoveNotice(null);
 
     project.editing.modify(() => {
       const trackAdapter = project.boxAdapters.adapterFor(track.trackBox, TrackBoxAdapter);
@@ -209,8 +286,8 @@ const App: React.FC = () => {
         const regionUuid = UUID.toString(regionAdapter.box.address.uuid);
         if (selectedRegionUuid && regionUuid !== selectedRegionUuid) return;
 
-        const currentPosition = regionAdapter.box.position.getValue();
-        const newPosition = Math.max(0, currentPosition - moveAmount);
+        const currentPos = regionAdapter.box.position.getValue();
+        const newPosition = Math.max(0, currentPos - moveAmount);
         regionAdapter.box.position.setValue(newPosition);
       });
     });
@@ -221,9 +298,9 @@ const App: React.FC = () => {
 
   if (!project) {
     return (
-      <Theme appearance="dark" accentColor="green" radius="medium">
+      <Theme appearance="dark" accentColor="amber" style={{ background: "var(--mc-bg)" }}>
+        <style>{CONSOLE_STYLES}</style>
         <Container size="4" style={{ padding: "32px" }}>
-          <Heading size="8">OpenDAW Track Editing Demo</Heading>
           <Text size="4">{status}</Text>
         </Container>
       </Theme>
@@ -237,7 +314,8 @@ const App: React.FC = () => {
   const maxDuration = Math.max(...Array.from(localAudioBuffersRef.current.values()).map(buf => buf.duration), 30);
 
   return (
-    <Theme appearance="dark" accentColor="green" radius="medium">
+    <Theme appearance="dark" accentColor="amber" style={{ background: "var(--mc-bg)" }}>
+      <style>{CONSOLE_STYLES}</style>
       <GitHubCorner />
       <Container size="3" px="4" py="8">
         <Flex direction="column" gap="6" style={{ maxWidth: 1200, margin: "0 auto", position: "relative" }}>
@@ -250,7 +328,7 @@ const App: React.FC = () => {
                 left: 0,
                 right: 0,
                 bottom: 0,
-                backgroundColor: "rgba(0, 0, 0, 0.85)",
+                backgroundColor: "rgba(13, 12, 10, 0.92)",
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
@@ -263,13 +341,13 @@ const App: React.FC = () => {
                 style={{
                   width: "50px",
                   height: "50px",
-                  border: "4px solid var(--gray-6)",
-                  borderTop: "4px solid var(--green-9)",
+                  border: "4px solid var(--mc-line)",
+                  borderTop: `4px solid var(--mc-amber)`,
                   borderRadius: "50%",
                   animation: "spin 1s linear infinite"
                 }}
               />
-              <Text size="5" weight="bold">
+              <Text size="5" weight="bold" style={{ color: "var(--mc-text)" }}>
                 {status}
               </Text>
               <style>
@@ -284,43 +362,19 @@ const App: React.FC = () => {
           )}
 
           {/* Header */}
-          <Flex direction="column" gap="4">
+          <div>
             <BackLink />
-            <Heading size="8">Track Editing Demo</Heading>
-            <Text size="4" color="gray">
-              Interactive audio region editing with Dark Ride stems (124 BPM). Split regions at the playhead, move
-              regions around the timeline, and experiment with non-destructive editing.
-            </Text>
-          </Flex>
-
-          {/* Instructions */}
-          <Card>
-            <Flex direction="column" gap="3">
-              <Heading size="4">How to Use</Heading>
-              <Flex direction="column" gap="2">
-                <Text size="2">
-                  <strong>1. Select a track</strong> by clicking on it (highlighted in blue)
-                </Text>
-                <Text size="2">
-                  <strong>2. Select a region</strong> (optional) by clicking on a region badge below the track
-                </Text>
-                <Text size="2">
-                  <strong>3. Use transport controls</strong> to play, pause, or stop the audio
-                </Text>
-                <Text size="2">
-                  <strong>4. Split regions</strong> - Click on waveform to position playhead, then click "Split at
-                  Playhead"
-                </Text>
-                <Text size="2">
-                  <strong>5. Move regions</strong> - Use "Move Forward" / "Move Backward" to move selected region (or
-                  all if none selected)
-                </Text>
-              </Flex>
-              <Callout.Root size="1" color="blue">
-                <Callout.Text>All edits are non-destructive! The original audio files remain unchanged.</Callout.Text>
-              </Callout.Root>
-            </Flex>
-          </Card>
+            <div className="mc-kicker">Playback — Track Editing · OpenDAW SDK</div>
+            <h1 className="mc-title" style={{ fontSize: "clamp(28px, 4.5vw, 44px)" }}>TRACK EDITING</h1>
+            <p className="mc-intro">
+              Non-destructive region editing with Dark Ride stems at 124 BPM.{" "}
+              <strong>Split</strong> regions at the playhead via{" "}
+              <code>RegionEditing.cut()</code>, <strong>move</strong> them forward or backward
+              in 1-second steps. Each track holds one region per lane — overlapping regions on
+              a single track are invalid by design and removed by{" "}
+              <code>project.copy()</code> (export / offline render).
+            </p>
+          </div>
 
           {/* Transport Controls */}
           <Card>
@@ -355,7 +409,7 @@ const App: React.FC = () => {
                       Selected track: <strong>{tracks[selectedTrackIndex]?.name}</strong>
                     </Text>
                     {selectedRegionUuid && (
-                      <Text size="2" color="blue">
+                      <Text size="2" color="amber">
                         Selected region:{" "}
                         <strong>
                           Region{" "}
@@ -380,6 +434,11 @@ const App: React.FC = () => {
                       Move {selectedRegionUuid ? "Selected" : "All"} Forward (1s) →
                     </Button>
                   </Flex>
+                  {moveNotice && (
+                    <Callout.Root size="1" color="amber">
+                      <Callout.Text>{moveNotice}</Callout.Text>
+                    </Callout.Root>
+                  )}
                 </>
               )}
             </Flex>
@@ -407,10 +466,10 @@ const App: React.FC = () => {
                         onClick={() => setSelectedTrackIndex(index)}
                         style={{
                           cursor: "pointer",
-                          boxShadow: selectedTrackIndex === index ? "0 0 0 2px var(--blue-9)" : "none",
+                          boxShadow: selectedTrackIndex === index ? "0 0 0 2px var(--mc-amber)" : "none",
                           borderRadius: "4px",
                           marginBottom: "8px",
-                          backgroundColor: selectedTrackIndex === index ? "var(--blue-2)" : "transparent",
+                          backgroundColor: selectedTrackIndex === index ? "var(--mc-panel)" : "transparent",
                           transition: "all 0.2s ease"
                         }}
                       >
@@ -440,7 +499,7 @@ const App: React.FC = () => {
                                   <Badge
                                     key={region.uuid}
                                     size="1"
-                                    color={isSelected ? "blue" : "gray"}
+                                    color={isSelected ? "amber" : "gray"}
                                     variant={isSelected ? "solid" : "soft"}
                                     style={{ cursor: "pointer" }}
                                     onClick={e => {
@@ -464,6 +523,29 @@ const App: React.FC = () => {
               </TracksContainer>
             </Flex>
           </Card>
+
+          {/* SDK reference */}
+          <section className="mc-anchors">
+            <h2 className="mc-anchors-head">SDK reference</h2>
+            <p>
+              <code>RegionEditing.cut(regionAdapter, ppqn, true)</code> splits a region at the
+              given PPQN position and creates a new voice per region with a 20 ms crossfade
+              (<code>VOICE_FADE_DURATION</code>). The second argument must be an integer PPQN
+              value — use <code>Math.round(PPQN.secondsToPulses(seconds, bpm))</code> at every
+              call site; the underlying <code>position</code> field is{" "}
+              <code>Int32</code>. Overlapping regions on one track are invalid by design:{" "}
+              the live engine tolerates them, but <code>project.copy()</code> (export,
+              offline render) deletes both regions with &ldquo;Overlapping regions&rdquo; in
+              the console and no error thrown. Move operations guard against this by reading
+              sibling positions from the box graph directly before committing.
+            </p>
+            <p>
+              SDK docs:{" "}
+              <a href="/docs/09-editing-fades-and-automation.html">Editing, fades &amp; automation</a>
+              {" · "}
+              <a href="/docs/04-box-system-and-reactivity.html">Box system &amp; reactivity</a>
+            </p>
+          </section>
 
           {/* Footer */}
           <Flex justify="center" pt="6">

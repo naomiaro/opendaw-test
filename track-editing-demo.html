@@ -10,7 +10,7 @@
   <meta name="description" content="Interactive demonstration of audio track editing in the browser. Split, move, trim, and rearrange audio regions in real-time using Dark Ride's stems. Experience DAW-style editing with cut, copy, and paste operations." />
   <meta name="keywords" content="OpenDAW, track editing, audio editing, web audio, DAW, cut, split, move, trim, regions, timeline, WebAssembly, SharedArrayBuffer, non-destructive editing" />
   <meta name="author" content="Moises AI" />
-  <meta name="theme-color" content="#30a46c" />
+  <meta name="theme-color" content="#e8a33d" />
 
   <!-- Canonical URL -->
   <link rel="canonical" href="https://opendaw-test.pages.dev/track-editing-demo.html" />
@@ -66,6 +66,14 @@
   </script>
 
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <!-- crossorigin required: the dev server is COOP/COEP cross-origin isolated -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link rel="stylesheet" crossorigin
+        href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&display=swap"/>
+  <style>
+    body { background: #0d0c0a; }
+  </style>
 </head>
 <body>
 <div id="root"></div>
