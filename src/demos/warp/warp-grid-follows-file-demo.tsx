@@ -216,7 +216,7 @@ function WarpGridFollowsFileDemo() {
           <Heading size="7">Warp the Grid: Set Tempo from Clip</Heading>
           <Text color="gray">
             The inverse of warping audio: the project&apos;s <em>tempo map</em> becomes the
-            file&apos;s beat map — one stepped tempo event per tracked beat on OpenDAW&apos;s tempo
+            file&apos;s beat map — one stepped tempo event per bar on OpenDAW&apos;s tempo
             track. The audio is scheduled once and never touched; it plays raw at rate
             1.0, bit-identical in both states. Only the metronome, the bar ruler, and the
             grid bend (Ableton <em>Set tempo from clip</em>, Logic Smart Tempo{" "}
@@ -237,7 +237,9 @@ function WarpGridFollowsFileDemo() {
               <Flex align="center" gap="3">
                 <Switch checked={conformed} onCheckedChange={toggleConform} disabled={!setup} />
                 <Text>Conform grid to file</Text>
-                <Badge variant="soft">{eventCount} tempo events</Badge>
+                <Badge variant="soft">
+                  {eventCount} tempo event{eventCount === 1 ? "" : "s"}
+                </Badge>
               </Flex>
               <Text size="2" color="gray">
                 Tempo at playhead: <span ref={bpmReadoutRef}>—</span> BPM · Bar residual:{" "}
@@ -288,8 +290,9 @@ function WarpGridFollowsFileDemo() {
               <Text size="2" color="gray">
                 One stepped tempo event per bar — BPM computed as{" "}
                 <code>60 × 4 / (nextDownbeat − thisDownbeat)</code> in seconds, placed at
-                each downbeat&apos;s grid tick. Bar-level granularity (~128 events for this
-                file) keeps the SDK&apos;s transaction time well under 100 ms while capturing
+                each downbeat&apos;s grid tick. Bar-level granularity (130 events for this
+                file, ~150 ms per rewrite) is roughly 4× faster than per-beat events
+                (510 events, ~600 ms) while capturing
                 the song&apos;s real tempo drift bar-by-bar. The file&apos;s pickup fills the end of
                 the lead-in bar (the full-bars rule), and the region stays in Seconds
                 timeBase — a Musical region would stretch under the new tempo map,

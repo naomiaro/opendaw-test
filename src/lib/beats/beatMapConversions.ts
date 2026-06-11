@@ -216,8 +216,9 @@ export function barsToTempoEvents(
 }
 
 /**
- * Evaluate the piecewise-linear warp map at a tick (for playhead → file-second
- * mapping in the demos). Clamps outside the anchor range.
+ * Evaluate the piecewise-linear warp map at a tick (playhead → file-second
+ * mapping for externally constructed anchor lists). Clamps outside the anchor
+ * range.
  */
 export function warpTickToSeconds(
   anchors: ReadonlyArray<WarpAnchor>,
