@@ -13,6 +13,7 @@ import { getAudioExtension } from "@/lib/audioUtils";
 import { usePlaybackPosition } from "@/hooks/usePlaybackPosition";
 import { useTransportControls } from "@/hooks/useTransportControls";
 import type { TrackData } from "@/lib/types";
+import { CONSOLE_STYLES } from "@/lib/design/consoleTheme";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
@@ -22,13 +23,11 @@ import {
   Flex,
   Card,
   Button,
-  Callout,
   Badge,
   Slider,
   Separator,
   Code,
 } from "@radix-ui/themes";
-import { InfoCircledIcon } from "@radix-ui/react-icons";
 
 const BPM = 124;
 
@@ -362,7 +361,7 @@ const App: React.FC = () => {
           setStatus("Ready to play!");
         }
       } catch (error) {
-        console.error("Failed to initialize:", error);
+        console.error("Failed to initialize:", JSON.stringify(String(error)));
         if (mounted) setStatus(`Error: ${error}`);
       }
     })();
@@ -385,7 +384,9 @@ const App: React.FC = () => {
   const isLoading = status !== "Ready to play!";
 
   return (
-    <Theme appearance="dark" accentColor="blue" radius="large">
+    <Theme appearance="dark" accentColor="amber" radius="medium" style={{ background: "var(--mc-bg)" }}>
+      <style>{CONSOLE_STYLES}</style>
+
       {/* Loading Overlay */}
       {isLoading && (
         <div style={{
@@ -395,7 +396,7 @@ const App: React.FC = () => {
         }}>
           <div style={{
             width: 50, height: 50,
-            border: "4px solid rgba(59,130,246,0.3)", borderTop: "4px solid #3b82f6",
+            border: "4px solid rgba(232,163,61,0.3)", borderTop: "4px solid #e8a33d",
             borderRadius: "50%", animation: "spin 1s linear infinite",
           }} />
           <Text size="5" weight="medium" style={{ color: "#fff" }}>{status}</Text>
@@ -403,50 +404,49 @@ const App: React.FC = () => {
         </div>
       )}
 
-      <Container size="3" px="4" py="8">
+      <Container size="3" px={{ initial: "4", sm: "6" }} py="6">
         <GitHubCorner />
-        <Flex direction="column" gap="6" style={{ maxWidth: 900, margin: "0 auto" }}>
-          <BackLink />
+        <BackLink />
+        <Flex direction="column" gap="5">
 
-          {/* Header */}
-          <Flex direction="column" gap="2" align="center">
-            <Heading size="8" align="center">Mixer Groups Demo</Heading>
-            <Text size="3" color="gray" align="center">
-              Route tracks through group buses for sub-mixing before the master output
-            </Text>
-          </Flex>
+          {/* Kicker / title / intro */}
+          <div>
+            <div className="mc-kicker">Playback — Mixer Groups · OpenDAW SDK</div>
+            <h1 className="mc-title" style={{ fontSize: "clamp(28px, 4.5vw, 44px)" }}>
+              MIXER <span className="mc-q">&amp;</span> GROUPS
+            </h1>
+            <p className="mc-intro">
+              Route tracks through group buses for sub-mixing before the master output.
+              Two groups — <strong>Rhythm</strong> (Drums + Bass) and{" "}
+              <strong>Melodic</strong> (Intro + Vocals + Guitars + Effects) — sit between
+              the individual channels and the master.
+            </p>
+          </div>
 
-          <Callout.Root color="blue">
-            <Callout.Icon><InfoCircledIcon /></Callout.Icon>
-            <Callout.Text>
-              This demo shows how to create <strong>group buses</strong> (sub-mixes) in OpenDAW.
-              Tracks are routed through intermediate group buses — <strong>Rhythm</strong> (Drums + Bass)
-              and <strong>Melodic</strong> (Intro + Vocals + Guitars + Effects) — before reaching the
-              master output. Each track and group has independent volume, mute, and solo controls.
-              Soloing a group solos all its child tracks automatically.
-            </Callout.Text>
-          </Callout.Root>
+          {/* SDK reference block */}
+          <section className="mc-anchors">
+            <h2 className="mc-anchors-head">SDK reference</h2>
+            <p>
+              <code>AudioBusFactory.create(skeleton, name, icon, type, color)</code> adds a
+              group bus to the box graph. Route a channel into it with{" "}
+              <code>audioUnitBox.output.refer(audioBusBox.input)</code> in a{" "}
+              <strong>separate</strong> transaction from <code>createInstrument()</code> — same-transaction
+              re-routing causes dual routing to both the group and master simultaneously.
+              Soloing a group triggers the engine's{" "}
+              <strong>virtual-solo</strong> mechanism (<code>Mixer.updateSolo()</code> recursively adds
+              every channel feeding the bus to an engine-side <code>#virtualSolo</code> set);
+              the child channels' own <code>solo</code> box fields are never written — you
+              cannot observe the virtual-solo state from box subscriptions.
+            </p>
+          </section>
 
-          {/* Transport */}
-          <Card>
-            <Flex direction="column" gap="3">
-              <Heading size="4">Transport</Heading>
-              <Separator size="4" />
-              <TransportControls
-                isPlaying={isPlaying}
-                currentPosition={currentPosition}
-                bpm={bpmRef.current}
-                onPlay={handlePlay}
-                onPause={handlePause}
-                onStop={handleStop}
-              />
-            </Flex>
-          </Card>
-
-          {/* Mixer */}
-          <Card>
+          {/* Mixer — lattice-framed */}
+          <div className="mc-lattice-frame" style={{ marginTop: 0 }}>
             <Flex direction="column" gap="4">
-              <Heading size="4">Mixer</Heading>
+              <Flex justify="between" align="center">
+                <Heading size="4">Mixer</Heading>
+                <Badge color={isLoading ? "gray" : "green"}>{isLoading ? status : "Ready"}</Badge>
+              </Flex>
               <Separator size="4" />
 
               {/* Rhythm Group */}
@@ -481,6 +481,22 @@ const App: React.FC = () => {
                   <MasterStrip masterBox={masterAudioBox} project={project} />
                 </div>
               </div>
+            </Flex>
+          </div>
+
+          {/* Transport */}
+          <Card>
+            <Flex direction="column" gap="3">
+              <Heading size="4">Transport</Heading>
+              <Separator size="4" />
+              <TransportControls
+                isPlaying={isPlaying}
+                currentPosition={currentPosition}
+                bpm={bpmRef.current}
+                onPlay={handlePlay}
+                onPause={handlePause}
+                onStop={handleStop}
+              />
             </Flex>
           </Card>
 
@@ -531,7 +547,8 @@ const { audioUnitBox } = project.api.createInstrument(
 );
 
 // Reroute from master to the group bus
-audioUnitBox.output.refer(groupBusBox.input);`}
+// (separate transaction — same-tx re-route causes dual routing)
+audioUnitBox.output.refer(audioBusBox.input);`}
                 </Code>
 
                 <Text size="2" weight="bold" style={{ marginTop: 8 }}>Accessing Group Controls:</Text>
@@ -543,6 +560,7 @@ const audioUnitBox = audioBusBox.output
 // Control group volume, mute, solo
 audioUnitBox.volume.setValue(-6);  // dB
 audioUnitBox.mute.setValue(true);
+// Solo engages virtual-solo — child channel box fields unchanged
 audioUnitBox.solo.setValue(true);`}
                 </Code>
               </Flex>
