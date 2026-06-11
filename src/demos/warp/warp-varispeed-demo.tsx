@@ -33,9 +33,9 @@ import {
   Badge,
   Separator,
   Switch,
-  Link,
   Button,
 } from "@radix-ui/themes";
+import { CONSOLE_STYLES } from "@/lib/design/consoleTheme";
 
 const QUARTER = PPQN.Quarter; // 960
 const BAR = PPQN.fromSignature(4, 4); // 3840
@@ -199,20 +199,22 @@ function WarpVarispeedDemo() {
   }, [setup]);
 
   return (
-    <Theme appearance="dark" accentColor="iris">
+    <Theme appearance="dark" accentColor="amber" style={{ background: "var(--mc-bg)" }}>
+      <style>{CONSOLE_STYLES}</style>
       <Container size="3" py="6">
         <GitHubCorner />
         <BackLink />
         <Flex direction="column" gap="4">
-          <Heading size="7">Warp to Grid: Varispeed</Heading>
-          <Text color="gray">
+          <div className="mc-kicker">Warp 01 — Varispeed · OpenDAW SDK</div>
+          <h1 className="mc-title" style={{ fontSize: "clamp(28px, 4.5vw, 44px)" }}>WARP TO GRID: VARISPEED</h1>
+          <p className="mc-intro">
             A beat map pins every tracked beat of <em>Otherside</em> to the project grid
             with one <code>WarpMarkerBox</code> per beat on an{" "}
             <code>AudioPitchStretchBox</code>. Between markers the engine reads the file
             at the rate the pins imply — beats lock to the metronome, and pitch scales
             with rate (Ableton&apos;s <em>Re-Pitch</em>). Where the source ran slower than the
             project, it plays sharp; faster, flat.
-          </Text>
+          </p>
           {error && (
             <Card>
               <Text color="red">{error}</Text>
@@ -241,7 +243,7 @@ function WarpVarispeedDemo() {
             </Flex>
           </Card>
           {setup && (
-            <Card>
+            <div className="mc-lattice-frame">
               <WarpWaveform
                 project={setup.project}
                 fileUuid={setup.fileUuid}
@@ -251,7 +253,7 @@ function WarpVarispeedDemo() {
                 repaintKey={repaintKey}
                 onError={setError}
               />
-            </Card>
+            </div>
           )}
           <Card>
             <Flex direction="column" gap="3" p="3">
@@ -278,23 +280,21 @@ function WarpVarispeedDemo() {
               </Flex>
             </Flex>
           </Card>
-          <Card>
-            <Flex direction="column" gap="2">
-              <Heading size="4">The math (warp-markers ch 07)</Heading>
-              <Text size="2" color="gray">
-                Each segment&apos;s rate is <code>projectBpm / segmentBpm</code> — the ratio of
-                what the file supplies to what the grid allots. A rate above 1 plays the
-                source faster (and sharper, by <code>1200·log₂(rate)</code> cents). The
-                marker list itself is engine-agnostic: the{" "}
-                <Link href="/warp-timestretch-demo.html">time-stretch demo</Link> consumes
-                the identical anchors with pitch preserved, and the{" "}
-                <Link href="/warp-grid-follows-file-demo.html">grid-follows-file demo</Link>{" "}
-                inverts the direction entirely. See the{" "}
-                <Link href="/warp-demos.html">warp overview</Link> for which DAWs use each
-                approach and who reaches for it.
-              </Text>
-            </Flex>
-          </Card>
+          <section className="mc-anchors">
+            <h2 className="mc-anchors-head">The math (warp-markers ch 07)</h2>
+            <p>
+              Each segment&apos;s rate is <code>projectBpm / segmentBpm</code> — the ratio of
+              what the file supplies to what the grid allots. A rate above 1 plays the
+              source faster (and sharper, by <code>1200·log₂(rate)</code> cents). The
+              marker list itself is engine-agnostic: the{" "}
+              <a href="/warp-timestretch-demo.html">time-stretch demo</a> consumes
+              the identical anchors with pitch preserved, and the{" "}
+              <a href="/warp-grid-follows-file-demo.html">grid-follows-file demo</a>{" "}
+              inverts the direction entirely. See the{" "}
+              <a href="/warp-demos.html">warp overview</a> for which DAWs use each
+              approach and who reaches for it.
+            </p>
+          </section>
           <MoisesLogo />
         </Flex>
       </Container>
