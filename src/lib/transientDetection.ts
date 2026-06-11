@@ -79,15 +79,18 @@ export function setTransientMarkers(
  * it in your API endpoint and you get format-agnostic transient analysis for
  * any uploaded audio.
  *
- * Skips detection (returns the existing positions) if the file already has
- * markers, so calling it on every TimeStretch mode-switch is cheap.
+ * Skips detection (returns the existing positions) if the file already has at
+ * least two markers, so calling it on every TimeStretch mode-switch is cheap.
+ * A file with a single stale marker is re-detected — one marker is below the
+ * engine's minimum and would render silence anyway.
  *
  * **Throws** if detection completes with fewer than two positions. The engine
- * renders silence for TimeStretch regions whose file has fewer than two
- * transients (`transients.length() < 2` bails before sequencing), so a sparse
- * result is a real failure rather than something the caller should silently
- * pass through. Catch this and either pick a different play-mode or set markers
- * manually via {@link setTransientMarkers}.
+ * renders silence for TimeStretch regions whose file has fewer than 2 transient
+ * markers (`transients.length() < 2` bails before sequencing in
+ * `TapeDeviceProcessor`), so a result with 0 or 1 marker is a real failure
+ * rather than something the caller should silently pass through. Catch this and
+ * either pick a different play-mode or set markers manually via
+ * {@link setTransientMarkers}.
  *
  * @returns the positions that were written (or were already present). At least
  *          two positions; throws otherwise.

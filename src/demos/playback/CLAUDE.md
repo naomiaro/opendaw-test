@@ -129,7 +129,7 @@ before sequencing); ≥2 = normal musical use. Detect with `Workers.Transients.d
 from `@opendaw/studio-core` (worker, non-blocking) or `TransientDetector.detect(audioData):
 number[]` from `@opendaw/lib-dsp` (sync, main thread). Reusable helper at
 `src/lib/transientDetection.ts` — `ensureTransientMarkers` throws if detection
-returns 0 positions so callers can't silently end up with a silent region.
+returns fewer than 2 positions so callers can't silently end up with a silent region.
 
 ### Play-Mode Swap Works in One Transaction
 SDK pattern (per `AudioContentModifier.toPitchStretch` / `toTimeStretch`):

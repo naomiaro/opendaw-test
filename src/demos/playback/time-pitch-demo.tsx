@@ -1,9 +1,10 @@
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
 import { PPQN, TimeBase } from "@opendaw/lib-dsp";
 import { Project } from "@opendaw/studio-core";
 import {
+  AudioTimeStretchBoxAdapter,
   BaseFrequencyRange,
   InstrumentFactories,
 } from "@opendaw/studio-adapters";
@@ -41,6 +42,7 @@ import {
   SegmentedControl,
 } from "@radix-ui/themes";
 import { InfoCircledIcon } from "@radix-ui/react-icons";
+import { CONSOLE_STYLES } from "@/lib/design/consoleTheme";
 
 type PlayMode = "none" | "pitch" | "time";
 
@@ -48,14 +50,16 @@ const SAMPLE_PATH = "/audio/BassDrums30.mp3";
 const SAMPLE_NAME = "BassDrums30";
 const PROJECT_BPM = 120;
 
-// Cents offset from the project's starting concert pitch. The TimeStretch
-// box's playbackRate is the multiplier we need: 2^(cents/1200). The baseline
-// is whatever the project loaded with (typically 440, but a project saved at
+// Cents offset from the project's starting concert pitch. The baseline is
+// whatever the project loaded with (typically 440, but a project saved at
 // e.g. 443 is honoured) so audio plays at source rate when the slider matches
-// the baseline.
+// the baseline. Writes go through AudioTimeStretchBoxAdapter.cents, whose
+// setter applies 2^(cents/1200) and clamps playbackRate to [0.5, 2.0].
 function computeTuningCents(refHz: number, baselineHz: number): number {
   return 1200 * Math.log2(refHz / baselineHz);
 }
+// Display-only mirror of the adapter's cents setter (same exponential, same
+// clamp) — used so the readout can show the applied rate without a box read.
 function computePlaybackRate(
   userCents: number,
   refHz: number,
@@ -73,7 +77,9 @@ function TimePitchDemo() {
 
   const [playMode, setPlayMode] = useState<PlayMode>("none");
   const [cents, setCents] = useState(0);
-  const [referencePitch, setReferencePitch] = useState(
+  // <number> annotation: BaseFrequencyRange.default is a literal type (440);
+  // without it the state narrows to 440 and number writes fail to typecheck.
+  const [referencePitch, setReferencePitch] = useState<number>(
     BaseFrequencyRange.default
   );
   const [bpm, setBpm] = useState(PROJECT_BPM);
@@ -103,7 +109,7 @@ function TimePitchDemo() {
   centsRef.current = cents;
   // The project's starting baseFrequency — captured once at init, used as the
   // "cents = 0" baseline so audio plays at source rate when the slider matches.
-  const initialPitchRef = useRef(BaseFrequencyRange.default);
+  const initialPitchRef = useRef<number>(BaseFrequencyRange.default);
 
   const { isPlaying, pausedPositionRef } = usePlaybackPosition(project);
   const { handlePlay, handlePause, handleStop } = useTransportControls({
@@ -220,7 +226,8 @@ function TimePitchDemo() {
       try {
         // For TimeStretch, make sure the file has transient markers BEFORE we
         // attach the play-mode box. ensureTransientMarkers throws if detection
-        // returns 0 positions, so the engine never silently renders nothing.
+        // returns fewer than 2 positions (the engine's minimum — below 2 it
+        // bails and renders silence), so we never silently render nothing.
         if (nextMode === "time") {
           setStatus("Detecting transients...");
           const positions = await ensureTransientMarkers(
@@ -256,16 +263,19 @@ function TimePitchDemo() {
               ? AudioPitchStretchBox.create(boxGraph, UUID.generate())
               : AudioTimeStretchBox.create(boxGraph, UUID.generate(), (b) => {
                   b.transientPlayMode.setValue(transientMode);
-                  // userCents is 0 on mode switch (setCents below); only the
-                  // active tuning offset contributes to the initial rate.
-                  b.playbackRate.setValue(
-                    computePlaybackRate(
-                      0,
-                      referencePitchRef.current,
-                      initialPitchRef.current
-                    )
-                  );
                 });
+          if (nextBox instanceof AudioTimeStretchBox) {
+            // userCents is 0 on mode switch (setCents below); only the active
+            // tuning offset contributes to the initial rate. The adapter's
+            // cents setter does 2^(cents/1200) and clamps the rate [0.5, 2.0].
+            project.boxAdapters.adapterFor(
+              nextBox,
+              AudioTimeStretchBoxAdapter
+            ).cents = computeTuningCents(
+              referencePitchRef.current,
+              initialPitchRef.current
+            );
+          }
 
           // Default warp markers: 0 → 0, durationPpqn → durationSeconds.
           // The studio app's AudioContentModifier preserves the old box's markers
@@ -320,13 +330,15 @@ function TimePitchDemo() {
       if (!project) return;
       const box = stretchBoxRef.current;
       if (!box || !(box instanceof AudioTimeStretchBox)) return;
-      const rate = computePlaybackRate(
-        value,
-        referencePitchRef.current,
-        initialPitchRef.current
+      const adapter = project.boxAdapters.adapterFor(
+        box,
+        AudioTimeStretchBoxAdapter
       );
       project.editing.modify(() => {
-        box.playbackRate.setValue(rate);
+        // Adapter setter applies 2^(cents/1200) and clamps rate to [0.5, 2.0].
+        adapter.cents =
+          value +
+          computeTuningCents(referencePitchRef.current, initialPitchRef.current);
       });
       setCents(value);
     },
@@ -352,13 +364,13 @@ function TimePitchDemo() {
       project.editing.modify(() => {
         project.rootBox.baseFrequency.setValue(clamped);
         if (currentBox instanceof AudioTimeStretchBox) {
-          currentBox.playbackRate.setValue(
-            computePlaybackRate(
-              centsRef.current,
-              clamped,
-              initialPitchRef.current
-            )
-          );
+          // Adapter setter applies 2^(cents/1200), clamps rate to [0.5, 2.0].
+          project.boxAdapters.adapterFor(
+            currentBox,
+            AudioTimeStretchBoxAdapter
+          ).cents =
+            centsRef.current +
+            computeTuningCents(clamped, initialPitchRef.current);
         }
       });
 
@@ -369,12 +381,11 @@ function TimePitchDemo() {
         await switchMode("time");
         // If auto-engage failed (switchMode caught and surfaced its own error),
         // add A4 context so the user knows the saved tuning is silent on audio.
+        // Always set the message — even when switchMode's own error somehow
+        // didn't land, the A4 context must not be silently dropped.
         if (stretchBoxRef.current === null) {
-          setError((prev) =>
-            prev
-              ? `${prev} A4 saved as ${clamped} Hz, but TimeStretch did not engage to retune the audio.`
-              : prev
-          );
+          const a4Context = `A4 saved as ${clamped} Hz, but TimeStretch did not engage to retune the audio.`;
+          setError((prev) => (prev ? `${prev} ${a4Context}` : a4Context));
         }
       }
     },
@@ -423,22 +434,55 @@ function TimePitchDemo() {
   const isCentsClamped = Math.abs(appliedCents - (cents + tuningCents)) > 0.01;
 
   return (
-    <Theme appearance="dark" accentColor="iris" radius="medium">
+    <Theme
+      appearance="dark"
+      accentColor="amber"
+      radius="medium"
+      style={{ background: "var(--mc-bg)" }}
+    >
+      <style>{CONSOLE_STYLES}</style>
       <Container size="3" px={{ initial: "4", sm: "6" }} py="6">
         <GitHubCorner />
+        <BackLink />
         <Flex direction="column" gap="5">
-          <Flex direction="column" gap="2">
-            <BackLink />
-            <Heading size="7">Time &amp; Pitch Demo</Heading>
-            <Text color="gray">
+          <div>
+            <div className="mc-kicker">Playback — Time &amp; Pitch · OpenDAW SDK</div>
+            <h1
+              className="mc-title"
+              style={{ fontSize: "clamp(28px, 4.5vw, 44px)" }}
+            >
+              TIME <span className="mc-q">&amp;</span> PITCH
+            </h1>
+            <p className="mc-intro">
               Switch a region between the three audio play modes and hear what
               changes. Source for the chapter at{" "}
-              <a href="https://opendaw-test.pages.dev/docs/18-time-and-pitch.html">
+              <a
+                href="https://opendaw-test.pages.dev/docs/18-time-and-pitch.html"
+                style={{ color: "var(--mc-amber)" }}
+              >
                 docs/18-time-and-pitch
               </a>
               .
-            </Text>
-          </Flex>
+            </p>
+          </div>
+
+          <section className="mc-anchors">
+            <h2 className="mc-anchors-head">SDK reference</h2>
+            <p>
+              <code>AudioRegionBox.playMode</code> is an optional pointer: empty
+              = NoStretch (source-speed playback),{" "}
+              <code>AudioPitchStretchBox</code> = varispeed via warp markers
+              (pitch follows tempo), <code>AudioTimeStretchBox</code> =
+              transient-aware stretch with independent pitch. Pitch writes go
+              through <code>AudioTimeStretchBoxAdapter.cents</code> — the setter
+              applies <code>2^(cents/1200)</code> and clamps{" "}
+              <code>playbackRate</code> to <code>[0.5, 2.0]</code>; the raw{" "}
+              <code>playbackRate</code> field accepts any positive float.
+              TimeStretch needs at least two <code>TransientMarkerBox</code>{" "}
+              entries on the file box — fewer than two and the engine renders
+              silence.
+            </p>
+          </section>
 
           {error && (
             <Callout.Root color="red">
@@ -449,7 +493,7 @@ function TimePitchDemo() {
             </Callout.Root>
           )}
 
-          <Card>
+          <div className="mc-lattice-frame" style={{ marginTop: 0 }}>
             <Flex direction="column" gap="4" p="3">
               <Flex justify="between" align="center">
                 <Heading size="4">Play Mode</Heading>
@@ -548,8 +592,10 @@ function TimePitchDemo() {
                       step={50}
                     />
                     <Text size="1" color="gray">
-                      Range ±1200 cents (±1 octave). The setter clamps <Code>playbackRate</Code>
-                      to <Code>[0.5, 2.0]</Code>.
+                      Range ±1200 cents (±1 octave). The{" "}
+                      <Code>AudioTimeStretchBoxAdapter.cents</Code> setter clamps{" "}
+                      <Code>playbackRate</Code> to <Code>[0.5, 2.0]</Code> — the raw{" "}
+                      <Code>playbackRate</Code> field itself accepts any positive float.
                     </Text>
                   </Flex>
 
@@ -575,7 +621,7 @@ function TimePitchDemo() {
                 </>
               )}
             </Flex>
-          </Card>
+          </div>
 
           <Card>
             <Flex direction="column" gap="3" p="3">
@@ -729,12 +775,13 @@ function TimePitchDemo() {
             <Callout.Text>
               First TimeStretch switch runs <Code>Workers.Transients.detect()</Code>{" "}
               on the loaded <Code>AudioBuffer</Code> and writes the detected attack
-              points to the <Code>AudioFileBox</Code> (reusable helper:{" "}
-              <Code>src/lib/transientDetection.ts</Code>). These are not warp
+              points to the <Code>AudioFileBox</Code>. These are not warp
               markers — detection finds where the engine may splice; the two warp
               markers this demo writes (file start, file end) are the entire
-              musical mapping. Beat-aligned warping derives hundreds more from a
-              beat map — see the{" "}
+              musical mapping. The helper throws if detection returns fewer than two
+              transients — the engine's minimum — so it never silently renders nothing.
+              Reusable at <Code>src/lib/transientDetection.ts</Code>. Beat-aligned
+              warping derives hundreds more from a beat map — see the{" "}
               <a href="/warp-demos.html#two-kinds-of-markers">warp overview</a> and{" "}
               <a href="https://opendaw-test.pages.dev/docs/18-time-and-pitch.html#transient-markers-are-required">
                 Ch. 18 → Transient Markers Are Required

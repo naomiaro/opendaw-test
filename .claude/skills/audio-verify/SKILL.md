@@ -87,8 +87,9 @@ the numbers collected so far.
 - **`error:verify sink rejected upload`**: the middleware only exists in dev mode
   (`apply: "serve"`); a preview/production server has no `/__verify`. HTTP 413 =
   render exceeded the 150 MB cap.
-- **`error:Transient detection returned no positions`**: timestretch needs
-  transients; the audio file is silent/featureless — wrong file or broken load.
+- **`error:Transient detection returned fewer than two positions`**: timestretch
+  needs at least two transients (the engine's minimum); the audio file is
+  silent/featureless — wrong file or broken load.
 - **State stuck at `rendering`**: check the browser console via Playwright; if
   > 5 min, capture console messages and report.
 - **Onset medians ~120 ms for ALL scenarios including raw-vs-file**: the windows
