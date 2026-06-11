@@ -561,6 +561,13 @@ setState-per-frame is only safe if no expensive effect reads its output.
   connect's try/catch — wrap sync fs calls in try/catch or a throw kills the dev server.
 - git worktrees: copy `localhost*.pem` in and run `npm ci` there before the dev
   server — certs and node_modules don't follow the checkout.
+- vitest scans `.claude/worktrees/**` — test counts double while a worktree exists;
+  remove worktrees (or add a vitest exclude) before trusting `npm test` totals.
+- Web fonts under the COOP/COEP dev server need `crossorigin` on BOTH the preconnect
+  and stylesheet `<link>`s (verified with Google Fonts on warp-demos.html).
+- Playwright MCP screenshots: omit the `filename` param — custom names can write
+  outside the repo; default-named files land in `.playwright-mcp/`.
+- PRs are squash-merged (`gh pr merge <n> --squash`) — main carries one commit per PR.
 - After SDK upgrades, clear Vite dep cache: `rm -rf node_modules/.vite` (dev server pre-bundles old SDK)
 - After **any** `package.json` change (SDK upgrade, devDep add/remove, version bump), **regenerate
   the lockfile cleanly**: `rm -rf node_modules package-lock.json && npm install`, then verify with
