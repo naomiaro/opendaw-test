@@ -680,6 +680,15 @@ function TimePitchDemo() {
                   </>
                 )}
               </Text>
+              <Text size="1" color="gray">
+                {PROJECT_BPM} BPM is the mapping's identity tempo: the two warp
+                markers pin the file's full length to the PPQN span those seconds
+                occupy at {PROJECT_BPM} BPM, so the stretch modes play at rate{" "}
+                <Code>bpm ÷ {PROJECT_BPM}</Code> (TimeStretch additionally
+                multiplies in any tuning offset). No individual beat is pinned —
+                that takes a beat map. See{" "}
+                <a href="/warp-demos.html#two-kinds-of-markers">two kinds of markers</a>.
+              </Text>
             </Flex>
           </Card>
 
@@ -719,11 +728,14 @@ function TimePitchDemo() {
             </Callout.Icon>
             <Callout.Text>
               First TimeStretch switch runs <Code>Workers.Transients.detect()</Code>{" "}
-              on the loaded <Code>AudioBuffer</Code> and writes the detected
-              positions to the <Code>AudioFileBox</Code>. Reusable helper at{" "}
-              <Code>src/lib/transientDetection.ts</Code> — drop it into any
-              project to get a format-agnostic "any file → ready for TimeStretch"
-              pipeline. See{" "}
+              on the loaded <Code>AudioBuffer</Code> and writes the detected attack
+              points to the <Code>AudioFileBox</Code> (reusable helper:{" "}
+              <Code>src/lib/transientDetection.ts</Code>). These are not warp
+              markers — detection finds where the engine may splice; the two warp
+              markers this demo writes (file start, file end) are the entire
+              musical mapping. Beat-aligned warping derives hundreds more from a
+              beat map — see the{" "}
+              <a href="/warp-demos.html#two-kinds-of-markers">warp overview</a> and{" "}
               <a href="https://opendaw-test.pages.dev/docs/18-time-and-pitch.html#transient-markers-are-required">
                 Ch. 18 → Transient Markers Are Required
               </a>

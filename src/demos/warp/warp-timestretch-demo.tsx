@@ -377,7 +377,7 @@ function WarpTimestretchDemo() {
           <section className="mc-anchors">
             <h2 className="mc-anchors-head">The thesis (warp-markers ch 09)</h2>
             <p>
-              The warp math does not change. The same anchors driving{" "}
+              The same anchors driving{" "}
               <a href="/warp-varispeed-demo.html">varispeed</a> drive this engine
               untouched — swapping the stretch algorithm never moves a marker, which is
               why Ableton lets you change a clip&apos;s warp <em>mode</em> without touching
@@ -388,6 +388,16 @@ function WarpTimestretchDemo() {
               — costs no DSP at all. See the{" "}
               <a href="/warp-demos.html">warp overview</a> for which DAWs use each
               approach and who reaches for it.
+            </p>
+            <p>
+              Two marker populations drive this engine, and only one is musical. The
+              transient count badged above is SDK analysis —{" "}
+              <code>Workers.Transients.detect()</code> finds acoustic attack points,
+              which the demo writes onto the <code>AudioFileBox</code>: the places
+              the engine may splice (fewer than two renders silence). The ~513 warp markers pinning beats
+              to the grid are authored from the beat map; OpenDAW never detects
+              those. The full distinction:{" "}
+              <a href="/warp-demos.html#two-kinds-of-markers">two kinds of markers</a>.
             </p>
           </section>
           <MoisesLogo />

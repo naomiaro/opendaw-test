@@ -162,15 +162,177 @@ function WarpOverview() {
           <section className="mc-anchors mc-reveal" style={{ animationDelay: "360ms" }}>
             <h2 className="mc-anchors-head">Engine-agnostic anchors</h2>
             <p>
-              The warp-marker list is identical for varispeed and time-stretch. The same{" "}
-              <code>&#123;tick, second&#125;</code> pins (the beat map&apos;s{" "}
-              <code>&#123;second, beat&#125;</code> rows mapped onto grid ticks) drive an{" "}
-              <code>AudioPitchStretchBox</code> and an <code>AudioTimeStretchBox</code>{" "}
-              without modification. This is why Ableton lets you switch a clip&apos;s
-              warp mode without touching its markers &mdash; the anchors describe the
-              beat map, not the stretch algorithm. The{" "}
+              The same <code>&#123;tick, second&#125;</code> pins &mdash; the beat
+              map&apos;s <code>&#123;second, beat&#125;</code> rows mapped onto grid
+              ticks &mdash; drive an <code>AudioPitchStretchBox</code> and an{" "}
+              <code>AudioTimeStretchBox</code> without modification. That is why
+              Ableton can switch a clip&apos;s warp mode without touching its markers:
+              the anchors describe the beat map, not the stretch algorithm. The{" "}
               <a href="/warp-timestretch-demo.html">time-stretch demo</a> makes the A/B
-              audible with raw, varispeed, and time-stretch all available on one page.
+              audible with raw, varispeed, and time-stretch on one page.
+            </p>
+          </section>
+
+          <section
+            id="two-kinds-of-markers"
+            className="mc-anchors mc-reveal"
+            style={{ animationDelay: "480ms" }}
+          >
+            <h2 className="mc-anchors-head">Two kinds of markers</h2>
+            <p>
+              OpenDAW does run its own audio analysis &mdash; but it detects{" "}
+              <strong>transients</strong>, never beats. The two marker types are easy
+              to conflate and do different jobs: one is acoustic, detected, and owned
+              by the file; the other is musical, authored, and owned by the stretch
+              box. Only the second ever sees the beat map.
+            </p>
+            <div className="mc-markers">
+              <article className="mc-marker-panel">
+                <div className="mc-marker-head">
+                  <svg
+                    className="mc-marker-glyph"
+                    width="56"
+                    height="18"
+                    viewBox="0 0 56 18"
+                    aria-hidden="true"
+                  >
+                    {[3, 9, 13, 22, 30, 34, 45, 52].map((x) => (
+                      <line
+                        key={x}
+                        x1={x}
+                        y1="3"
+                        x2={x}
+                        y2="15"
+                        stroke="var(--mc-amber)"
+                        strokeWidth="1.5"
+                      />
+                    ))}
+                  </svg>
+                  <h3 className="mc-marker-name">Transient</h3>
+                  <span className="mc-marker-box">TransientMarkerBox</span>
+                </div>
+                <dl className="mc-rows">
+                  <div className="mc-row">
+                    <dt>WHAT</dt>
+                    <dd>
+                      Onsets &mdash; physically detectable attacks in the waveform.
+                      No musical meaning.
+                    </dd>
+                  </div>
+                  <div className="mc-row">
+                    <dt>SOURCE</dt>
+                    <dd>
+                      Detected by the SDK: <code>Workers.Transients.detect()</code>
+                    </dd>
+                  </div>
+                  <div className="mc-row">
+                    <dt>OWNER</dt>
+                    <dd>
+                      The <code>AudioFileBox</code> &mdash; one set per file
+                    </dd>
+                  </div>
+                  <div className="mc-row">
+                    <dt>ROLE</dt>
+                    <dd>
+                      Splice boundaries for time-stretch. Fewer than two: silence.
+                    </dd>
+                  </div>
+                </dl>
+                <p>
+                  An onset is acoustic evidence, not interpretation: ghost notes and
+                  vocal consonants onset without being beats; a sustained pad may
+                  never onset at all. Detection tells the engine where it may cut
+                  &mdash; not which attack is beat one of bar twelve.
+                </p>
+              </article>
+              <article className="mc-marker-panel">
+                <div className="mc-marker-head">
+                  <svg
+                    className="mc-marker-glyph"
+                    width="56"
+                    height="18"
+                    viewBox="0 0 56 18"
+                    aria-hidden="true"
+                  >
+                    {[
+                      [6, 8],
+                      [21, 17],
+                      [35, 38],
+                      [50, 48],
+                    ].map(([gridX, fileX]) => (
+                      <g key={gridX}>
+                        <path
+                          d={`M ${gridX} 4 C ${gridX} 9, ${fileX} 9, ${fileX} 14`}
+                          stroke="var(--mc-faint)"
+                          strokeWidth="1"
+                          fill="none"
+                        />
+                        <line
+                          x1={gridX}
+                          y1="1"
+                          x2={gridX}
+                          y2="5"
+                          stroke="var(--mc-cyan)"
+                          strokeWidth="1.5"
+                        />
+                        <line
+                          x1={fileX}
+                          y1="13"
+                          x2={fileX}
+                          y2="17"
+                          stroke="var(--mc-amber)"
+                          strokeWidth="1.5"
+                        />
+                      </g>
+                    ))}
+                  </svg>
+                  <h3 className="mc-marker-name">Warp</h3>
+                  <span className="mc-marker-box">WarpMarkerBox</span>
+                </div>
+                <dl className="mc-rows">
+                  <div className="mc-row">
+                    <dt>WHAT</dt>
+                    <dd>
+                      Musical pins &mdash; <code>&#123;tick, second&#125;</code>{" "}
+                      pairs: this file moment <em>is</em> this grid position.
+                    </dd>
+                  </div>
+                  <div className="mc-row">
+                    <dt>SOURCE</dt>
+                    <dd>
+                      Authored from the beat map (or trivial endpoint defaults).
+                      The SDK never derives them from audio.
+                    </dd>
+                  </div>
+                  <div className="mc-row">
+                    <dt>OWNER</dt>
+                    <dd>
+                      The stretch box &mdash; <code>AudioPitchStretchBox</code> /{" "}
+                      <code>AudioTimeStretchBox</code>
+                    </dd>
+                  </div>
+                  <div className="mc-row">
+                    <dt>ROLE</dt>
+                    <dd>
+                      Linear interpolation between consecutive pins maps playhead
+                      tick to file second.
+                    </dd>
+                  </div>
+                </dl>
+                <p>
+                  Beat tracking supplies the seconds half of every pin; the grid
+                  supplies the ticks. Even the 123 BPM above is beat-map arithmetic:
+                  510 beats over 248 s averages 123.39, rounded to the rigid project
+                  tempo.
+                </p>
+              </article>
+            </div>
+            <p>
+              The two populations meet in the{" "}
+              <a href="/time-pitch-demo.html">time &amp; pitch demo</a>: hundreds of
+              detected transients, but only two default warp pins (file start, file
+              end). Analysis without a beat map yields places to cut &mdash; not a
+              map of where each beat belongs.
             </p>
           </section>
 

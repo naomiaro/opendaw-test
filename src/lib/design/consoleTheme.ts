@@ -238,6 +238,50 @@ body { background: var(--mc-bg); }
 .mc-anchors a { color: var(--mc-amber); text-decoration: none; border-bottom: 1px solid transparent; }
 .mc-anchors a:hover { border-bottom-color: var(--mc-amber); }
 
+/* Two-up definition panels (engraved-strip look) inside an .mc-anchors section.
+   Inner panels use --mc-bg (darker than the section's --mc-panel) so the 1px
+   --mc-line gaps stay visible. */
+.mc-markers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--mc-line);
+  border: 1px solid var(--mc-line);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 16px;
+}
+@media (max-width: 880px) {
+  .mc-markers { grid-template-columns: 1fr; }
+}
+.mc-marker-panel {
+  background: var(--mc-bg);
+  padding: 18px 20px 16px;
+  min-width: 0; /* grid item: min-width:auto would let long unbreakable content (code tokens) widen the 1fr track past the container */
+}
+.mc-marker-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+.mc-marker-glyph { flex: none; display: block; }
+.mc-marker-name {
+  font-family: var(--mc-mono);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mc-text);
+  margin: 0;
+}
+.mc-marker-box {
+  font-family: var(--mc-mono);
+  font-size: 10px;
+  color: var(--mc-label);
+  margin-left: auto;
+}
+
 @keyframes mc-rise {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }

@@ -8,6 +8,13 @@
 - ~513 WarpMarkerBox creations in one `editing.modify()` are fine. WarpMarkerBox.owner is a
   mandatory pointer — deleting the stretch box cascades to its markers; repeated mode toggles
   do not accumulate boxes.
+- The SDK never DERIVES warp markers from audio. Its only audio analysis is
+  `Workers.Transients.detect()` (returns positions; caller writes TransientMarkerBoxes
+  onto the AudioFileBox — see `src/lib/transientDetection.ts`). SDK-created warp markers
+  are only trivial endpoint defaults (`AudioContentHelpers.addDefaultWarpMarkers`) or
+  migration copies; beat-aligned markers always come from the beat map. Engine bails
+  below TWO transient markers, not one. Reader-facing version: warp overview
+  `#two-kinds-of-markers`.
 
 ### Tempo-Event Density Limit
 - Box creation in `editing.modify()` costs ~1.2 ms/box, deletion ~1.5 ms/box. 510 tempo events
