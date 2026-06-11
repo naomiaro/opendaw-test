@@ -470,8 +470,10 @@ Safari can't decode Ogg Opus via `decodeAudioData` (even though `canPlayType` re
 See `src/lib/audioUtils.ts` `getAudioExtension()`.
 
 ### PPQN Values Must Be Integer
-`position` on AudioRegionBox is Int32. `duration`, `loopDuration`, `loopOffset` are Float32
+`position` on AudioRegionBox is Int32. `duration` and `loopDuration` are Float32
 with `unit: "mixed"` (PPQN in Musical timeBase, seconds in Seconds timeBase).
+`loopOffset` is also Float32 with `unit: "mixed"` in the schema, but the runtime
+treats it as PPQN in **both** timeBases — always write it in PPQN regardless of timeBase.
 `PPQN.secondsToPulses()` returns float — always wrap with `Math.round()` before passing
 to Int32 fields like `position`, or to `RegionEditing.cut()` / `createTrackRegion()`.
 

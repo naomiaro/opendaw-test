@@ -293,7 +293,10 @@ Overlapping regions` → `Deleting 2 invalid boxes`. Anything that depends on `c
 (export, offline render via the standard `project.copy() → OfflineAudioContext →
 AudioWorklets.createFor(...) → createEngine(...)` pattern) will produce silence with
 no error. Any UI path that lets a user position two regions to overlap on one lane is
-the bug, not the deletion.
+the bug, not the deletion. Note: for Seconds-timeBase regions, `ProjectValidation`
+compares mixed units (duration in seconds, position in PPQN) — Seconds overlaps
+may survive `copy()` undetected; prevent them at write time rather than relying on
+validation to catch them.
 
 For crossfade-via-overlap (e.g. linear crossfade between two regions that overlap by
 the fade duration), put each region on its **own** Tape track. Each track has its own

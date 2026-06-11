@@ -213,7 +213,7 @@ const App: React.FC = () => {
           const collisionSec = PPQN.pulsesToSeconds(collision.position.getValue(), BPM).toFixed(1);
           setMoveNotice(
             `Skipped: would overlap the region at ${collisionSec}s — ` +
-            `overlapping regions on one track are invalid by design and project.copy() deletes them.`
+            `overlapping regions on one track are invalid by design.`
           );
           return;
         }
@@ -270,7 +270,7 @@ const App: React.FC = () => {
           const collisionSec = PPQN.pulsesToSeconds(collision.position.getValue(), BPM).toFixed(1);
           setMoveNotice(
             `Skipped: would overlap the region at ${collisionSec}s — ` +
-            `overlapping regions on one track are invalid by design and project.copy() deletes them.`
+            `overlapping regions on one track are invalid by design.`
           );
           return;
         }
@@ -284,8 +284,8 @@ const App: React.FC = () => {
 
       // All-regions move: clamp the DELTA to the leftmost region's position so
       // every region translates uniformly. Per-region Math.max(0, ...) clamping
-      // would compress the leftmost region into its neighbour — a reachable
-      // overlap, which is invalid by design (project.copy() deletes the pair).
+      // would stop the leftmost at 0 while its right neighbour keeps moving into
+      // it — a reachable overlap, which is invalid by design.
       let effectiveDelta = moveAmount;
       if (!selectedRegionUuid) {
         const minPos = Math.min(

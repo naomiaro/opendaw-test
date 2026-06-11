@@ -990,14 +990,14 @@ const { isExporting, exportStatus, handleExportMix } = useAudioExport(project);
 
 **Problem:** Console shows warnings like "Overlapping regions" followed by "Deleting 16 invalid boxes", and export is incomplete (missing some tracks)
 
-**Cause:** Overlapping regions on one track are invalid by design — in **both** timeBases. The validation that `project.copy()` runs (`ProjectValidation.validate()`) deletes every overlapping pair with only a console warning, and export/offline render is built on `project.copy()`.
+**Cause:** Overlapping regions on one track are invalid by design — in **both** timeBases. The validation that `project.copy()` runs (`ProjectValidation.validate()`) emits a console warning and a `RuntimeNotifier.info("Some data is corrupt")` notification, then deletes overlapping pairs. Export and offline render are built on `project.copy()`, so overlapping regions are deleted before any audio is rendered.
 
 **Background:**
 
 The confusion comes from two different validators:
 
-- `ProjectValidation.ts` — runs on load and on `project.copy()` (so: export, offline render). It deletes overlapping regions in **both** timeBases, no exceptions.
-- `RegionClipResolver.ts` — the **live arrangement** resolver. It contains the often-quoted carve-out below, which only means the *live* probe skips Seconds-timeBase regions — i.e. Seconds overlaps produce **no warning while editing**, then get silently deleted on copy:
+- `ProjectValidation.ts` — runs on load and on `project.copy()` (so: export, offline render). It compares raw box values: `right.position < left.position + left.duration`. For Seconds regions, `duration` is stored in seconds while `position` is PPQN — the arithmetic uses mixed units. Musically-offset Seconds overlaps may therefore survive `copy()` undetected, while near-identical-position duplicates are deleted. Do not rely on `ProjectValidation` to catch Seconds overlaps.
+- `RegionClipResolver.validateTrack()` — the **live arrangement** probe. It contains the carve-out below, which means the *live* probe skips Seconds-timeBase regions entirely — Seconds overlaps produce **no warning while editing**:
 
 ```typescript
 // AudioRegions in absolute time-domain are allowed to overlap. (LIVE resolver only)
@@ -1005,7 +1005,7 @@ const allowOverlap = (region: AnyRegionBoxAdapter) =>
     region instanceof AudioRegionBoxAdapter && region.timeBase !== TimeBase.Musical
 ```
 
-`TimeBase.Seconds` changes how *duration* is stored (seconds instead of PPQN) — it does **not** make overlaps export-safe.
+`TimeBase.Seconds` changes how *duration* is stored (seconds instead of PPQN) — it does **not** make overlaps design-safe, but the mixed-unit comparison means Seconds overlaps may go undetected by `ProjectValidation`. Prevent them at write time regardless.
 
 **Solution 1: Use Separate Tracks (Recommended for overlapping one-shots)**
 
@@ -1074,15 +1074,16 @@ OpenDAW runs validation at these points:
 2. Before export (`AudioOfflineRenderer.start()`)
 3. During editing (`RegionClipResolver.validateTrack()`)
 
-When overlapping regions are detected (either timeBase):
+Points 1–2 (`ProjectValidation`): when overlapping regions are detected:
 - Console warnings appear for each overlap
-- All overlapping regions are marked invalid
-- Invalid boxes are deleted
-- User sees: "Some data is corrupt" message
+- All overlapping regions are marked invalid and deleted
+- User sees: "Some data is corrupt" notification
+- Seconds-region detection is unreliable (mixed-unit comparison) — overlaps may survive undetected
 
-This is **not a bug** — overlapping regions on one track are invalid by design. Note
-that the live editing probe (`RegionClipResolver`) skips Seconds-timeBase tracks, so
-Seconds overlaps surface no warning until a `copy()`-based operation deletes them.
+Point 3 (`RegionClipResolver.validateTrack()`): warns only, never deletes. It skips
+Seconds-timeBase tracks entirely — no warning surfaces for Seconds overlaps during editing.
+
+This is **not a bug** — overlapping regions on one track are invalid by design in both timeBases.
 
 ---
 

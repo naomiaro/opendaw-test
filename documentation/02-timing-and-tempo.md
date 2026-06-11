@@ -99,7 +99,7 @@ Every division except 7 (rare in practice) produces a clean integer. No floating
 
 ### PPQN Values Are Integers
 
-The `position` field on `AudioRegionBox` is Int32 — it must receive integer values. The `duration`, `loopOffset`, and `loopDuration` fields are Float32 with `unit: "mixed"`, but in Musical timeBase they store PPQN ticks, which should be integers to avoid fractional pulse misalignment.
+The `position` field on `AudioRegionBox` is Int32 — it must receive integer values. The `duration` and `loopDuration` fields are Float32 with `unit: "mixed"` — they store PPQN ticks in Musical timeBase and seconds in Seconds timeBase, and should be integers (or rounded) in Musical timeBase to avoid fractional pulse misalignment. The `loopOffset` field is also Float32 with `unit: "mixed"` in the schema, but the runtime treats it as PPQN in **both** timeBases — always write it in PPQN regardless of the region's timeBase.
 
 Since `PPQN.secondsToPulses()` returns a float, always wrap the result with `Math.round()`:
 
@@ -111,7 +111,7 @@ region.position.setValue(PPQN.secondsToPulses(seconds, bpm));
 region.position.setValue(Math.round(PPQN.secondsToPulses(seconds, bpm)));
 ```
 
-This applies to `position` (Int32, always needs rounding) and `duration`, `loopOffset`, `loopDuration` (Float32, need rounding in Musical timeBase).
+This applies to `position` (Int32, always needs rounding), `duration` and `loopDuration` (Float32, need rounding in Musical timeBase), and `loopOffset` (Float32, always write as PPQN — runtime ignores the schema's "mixed" label for this field).
 
 ## PPQN vs BPM: The Key Difference
 
@@ -360,7 +360,7 @@ Position is in PPQN (for grid alignment), but duration is in real-time seconds. 
 
 **Behavior when BPM changes:** A 4-second clip always plays for 4 seconds. At 120 BPM it spans 8 beats; at 60 BPM it spans 4 beats. The clip's tick-duration is recalculated.
 
-**Overlap rule:** The same as Musical — overlapping regions on one track are invalid by design, and `project.copy()` deletes the pair. The live validity probe skips Seconds tracks, so Seconds overlaps surface **no warning** before a copy silently deletes them. For overlapping decays (e.g. drum-hit tails into the next hit), put each one-shot on its own track.
+**Overlap rule:** Overlapping regions on one track are invalid by design in both timeBases. The live probe (`Project.invalid()`) skips Seconds tracks — so no warning surfaces during editing. `ProjectValidation.validate()` (runs on load and inside `project.copy()`) compares raw box values; because Seconds regions store `duration` in seconds while `position` is in PPQN, its overlap arithmetic uses mixed units — musically-offset overlaps may survive `copy()` undetected while near-identical-position duplicates are deleted. Do not rely on validation in either direction for Seconds regions; prevent overlaps at write time and use separate tracks for decays that must overlap (e.g. drum-hit tails).
 
 ### Choosing Between Them
 
@@ -440,7 +440,7 @@ project.editing.modify(() => {
 |------|--------|
 | `Interpolation.None` | Stepped — instant jump to new value |
 | `Interpolation.Linear` | Straight-line ramp between values |
-| `Interpolation.Curve(slope)` | Curved ramp — `slope` is 0–1 where 0.5 = linear, < 0.5 = slow start (logarithmic), > 0.5 = fast start (exponential) |
+| `Interpolation.Curve(slope)` | Curved ramp — `slope` is 0–1 where 0.5 = linear, < 0.5 = slow start (most change late), > 0.5 = fast start (most change early) |
 
 All imported from `@opendaw/lib-dsp`.
 

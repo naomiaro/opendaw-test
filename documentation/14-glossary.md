@@ -68,7 +68,7 @@ A take-management lane that holds alternates of the same recorded segment so the
 `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`. Together they enable cross-origin isolation, which is required for `SharedArrayBuffer` — which the entire engine state-sync mechanism depends on. See [Ch. 12](./12-browser-compatibility.md).
 
 ### `Curve.normalizedAt`
-The shared interpolation formula used by automation curves and fades. Single `slope` parameter in [0, 1] (0.5 is linear, < 0.5 logarithmic, > 0.5 exponential). See [Ch. 09](./09-editing-fades-and-automation.md).
+The shared interpolation formula used by automation curves and fades. Single `slope` parameter in [0, 1]: 0.5 = exact linear; < 0.5 = slow start, most change late; > 0.5 = fast start, most change early. See [Ch. 09](./09-editing-fades-and-automation.md).
 
 ## D
 
@@ -229,7 +229,7 @@ A clip mode in which the clip's duration is measured in seconds — stays consta
 A typed-array buffer shared between threads. Used by `SyncStream`, the HRClock, `RingBuffer`, and the engine state ring. Requires the page to be cross-origin isolated. See [Ch. 12](./12-browser-compatibility.md), [internals/03](./internals/03-cross-thread-protocols.md).
 
 ### Slope
-The single parameter that shapes a `Curve` between linear (`0.5`), logarithmic (< `0.5`), and exponential (> `0.5`). See [Ch. 09](./09-editing-fades-and-automation.md).
+The single parameter that shapes a `Curve`: `0.5` = exact linear; < `0.5` = slow start (most change late); > `0.5` = fast start (most change early). See [Ch. 09](./09-editing-fades-and-automation.md).
 
 ### Stem
 A single track or sub-mix rendered to its own output file during export, instead of bouncing everything to one stereo mix. Configured via `ExportConfiguration.stems`. See [Ch. 10](./10-export.md).

@@ -139,8 +139,7 @@ const App: React.FC = () => {
         console.debug("Loop area configured successfully");
 
         // Subscribe to loop area changes using catchupAndSubscribe to get initial
-        // values; terminables collected for effect cleanup (CLAUDE.md rule:
-        // always terminate observable subscriptions).
+        // values; terminables collected for effect cleanup.
         subs.push(loopArea.enabled.catchupAndSubscribe(obs => {
           if (mounted) {
             console.debug("Loop enabled changed:", obs.getValue());
