@@ -28,6 +28,8 @@ interface WarpWaveformProps {
   getPlayheadFrac: () => number;
   /** Bump to request a repaint (e.g. after a conform toggle). */
   repaintKey?: unknown;
+  /** Called when peaks fail to load (e.g. to surface an error card). */
+  onError?: (reason: string) => void;
 }
 
 export function WarpWaveform({
@@ -38,17 +40,21 @@ export function WarpWaveform({
   getBarLines,
   getPlayheadFrac,
   repaintKey,
+  onError,
 }: WarpWaveformProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const playheadRef = useRef<HTMLDivElement | null>(null);
   const painterRef = useRef<CanvasPainter | null>(null);
   const peaksRef = useRef<Peaks | null>(null);
+  const errorRef = useRef<string | null>(null);
   const getSegmentsRef = useRef(getSegments);
   getSegmentsRef.current = getSegments;
   const getBarLinesRef = useRef(getBarLines);
   getBarLinesRef.current = getBarLines;
   const getPlayheadFracRef = useRef(getPlayheadFrac);
   getPlayheadFracRef.current = getPlayheadFrac;
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -61,6 +67,11 @@ export function WarpWaveform({
       ctx.fillRect(0, 0, width, h);
 
       const peaks = peaksRef.current;
+      if (!peaks && errorRef.current) {
+        ctx.fillStyle = "#888";
+        ctx.font = "12px monospace";
+        ctx.fillText("peaks unavailable", 8, 16);
+      }
       if (peaks) {
         ctx.fillStyle = "#4a9eff";
         const channelHeight = h / peaks.numChannels;
@@ -113,7 +124,11 @@ export function WarpWaveform({
           }
         }
       } else if (state.type === "error") {
-        console.warn("[WarpWaveform] Peaks load failed:", state.reason);
+        const reason = String(state.reason);
+        console.warn("[WarpWaveform] Peaks load failed:", reason);
+        errorRef.current = reason;
+        painter.requestUpdate();
+        onErrorRef.current?.(reason);
         if (subscribed) {
           subscribed = false;
           sub.terminate();

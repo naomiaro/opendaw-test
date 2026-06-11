@@ -137,6 +137,7 @@ function WarpTimestretchDemo() {
       switchingRef.current = true;
       setSwitching(true);
       try {
+        setError(null);
         if (next === "timestretch") {
           setStatus("Detecting transients...");
           const positions = await ensureTransientMarkers(project, audioFileBox, audioBuffer);
@@ -342,6 +343,7 @@ function WarpTimestretchDemo() {
                 getBarLines={getBarLines}
                 getPlayheadFrac={getPlayheadFrac}
                 repaintKey={repaintKey}
+                onError={setError}
               />
             </Card>
           )}

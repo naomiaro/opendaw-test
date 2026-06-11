@@ -41,14 +41,16 @@ const verifySink = (): Plugin => ({
                     writeFileSync(resolve(__dirname, ".verify-output", name), Buffer.concat(chunks))
                     res.statusCode = 200
                     res.end("ok")
-                } catch {
+                } catch (err) {
+                    console.error("[verify-sink] write failed:", String(err))
                     if (!res.writableEnded) {
                         res.statusCode = 500
-                        res.end("write error")
+                        res.end(`write error: ${String(err)}`)
                     }
                 }
             })
-            req.on("error", () => {
+            req.on("error", (err: unknown) => {
+                console.error("[verify-sink] read failed:", String(err))
                 if (!res.writableEnded) {
                     res.statusCode = 500
                     res.end("read error")

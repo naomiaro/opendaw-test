@@ -13,12 +13,12 @@ import type { BeatMarker } from "@/lib/beats/beatsParser";
 import {
   gridAnchorTicks,
   clipStartSeconds,
+  gridEndTick as libGridEndTick,
   type WarpAnchor,
   type TempoEvent,
 } from "@/lib/beats/beatMapConversions";
 
 const QUARTER = PPQN.Quarter;
-const BAR = PPQN.fromSignature(4, 4);
 
 /** Everything an apply-function needs. Demos pass their setup + current stretch box. */
 export interface WarpScenarioContext {
@@ -38,8 +38,7 @@ export function rawEndPpqn(ctx: Pick<WarpScenarioContext, "audioBuffer" | "proje
 
 /** Grid demo timeline end: last tracked beat + one bar of outro headroom. */
 export function gridEndTick(markers: ReadonlyArray<BeatMarker>): number {
-  const { firstBeatTick } = gridAnchorTicks(markers, QUARTER);
-  return firstBeatTick + (markers.length - 1) * QUARTER + BAR;
+  return libGridEndTick(markers, QUARTER);
 }
 
 /**
@@ -153,16 +152,19 @@ export function applyGridTempoEvents(
   const adapter = project.timelineBoxAdapter;
   project.editing.modify(() => {
     // ValueEventCollectionBoxAdapter is not exported from @opendaw/studio-adapters.
-    adapter.tempoTrackEvents.ifSome((collection: any) => {
-      collection.events.asArray().forEach((event: any) => event.box.delete());
-      for (const event of events) {
-        collection.createEvent({
-          position: event.tick as ppqn,
-          index: 0,
-          value: event.bpm,
-          interpolation: Interpolation.None,
-        });
-      }
-    });
+    const collectionOpt = adapter.tempoTrackEvents;
+    if (collectionOpt.isEmpty()) {
+      throw new Error("No tempo track on timeline — cannot rewrite tempo events");
+    }
+    const collection: any = collectionOpt.unwrap();
+    collection.events.asArray().forEach((event: any) => event.box.delete());
+    for (const event of events) {
+      collection.createEvent({
+        position: event.tick as ppqn,
+        index: 0,
+        value: event.bpm,
+        interpolation: Interpolation.None,
+      });
+    }
   });
 }

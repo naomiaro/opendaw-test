@@ -3,7 +3,7 @@
 // file under Node type-stripping, which does no extension remapping for VALUE
 // imports. (Type-only imports are erased and could be extension-less.)
 import type { BeatMarker } from "./beatsParser.ts";
-import { averageBpm, gridAnchorTicks, clipStartSeconds } from "./beatMapConversions.ts";
+import { projectBpmOf, gridAnchorTicks, clipStartSeconds, gridEndTick } from "./beatMapConversions.ts";
 
 /** Per-scenario expected onset times (render-relative seconds, render from tick 0). */
 export interface ExpectedTimes {
@@ -27,7 +27,7 @@ export function computeExpectedTimes(
   quarterPpqn: number,
   beatsPerBar: number = 4
 ): ExpectedTimes {
-  const projectBpm = Math.round(averageBpm(markers));
+  const projectBpm = projectBpmOf(markers);
   const { firstBeatTick } = gridAnchorTicks(markers, quarterPpqn, beatsPerBar);
   const s0 = clipStartSeconds(markers);
   const secondsPerTick = 60 / projectBpm / quarterPpqn;
@@ -37,8 +37,8 @@ export function computeExpectedTimes(
   const regionStartRigid = firstBeatTick * secondsPerTick;
   const fileTimesRigid = markers.map((m) => regionStartRigid + (m.second - s0));
 
-  const ticksPerBar = beatsPerBar * quarterPpqn;
-  const gridEnd = firstBeatTick + (markers.length - 1) * quarterPpqn + ticksPerBar;
+  // gridEndTick single-sources the formula shared with warpScenarios.ts.
+  const gridEnd = gridEndTick(markers, quarterPpqn, beatsPerBar);
   const rigidClickTimes: number[] = [];
   for (let tick = 0; tick <= gridEnd; tick += quarterPpqn) {
     rigidClickTimes.push(tick * secondsPerTick);

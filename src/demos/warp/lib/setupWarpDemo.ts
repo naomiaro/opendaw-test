@@ -11,7 +11,7 @@ import {
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { loadAudioFile } from "@/lib/audioUtils";
 import { parseBeatsFile, type BeatMarker } from "@/lib/beats/beatsParser";
-import { averageBpm } from "@/lib/beats/beatMapConversions";
+import { projectBpmOf } from "@/lib/beats/beatMapConversions";
 
 const AUDIO_PATH = "/audio/Otherside.mp3";
 const BEATS_PATH = "/audio/Otherside.beats";
@@ -48,7 +48,7 @@ export async function setupWarpDemo(opts: {
     throw new Error(`Failed to fetch ${BEATS_PATH}: HTTP ${beatsResponse.status}`);
   }
   const markers = parseBeatsFile(await beatsResponse.text());
-  const projectBpm = Math.round(averageBpm(markers));
+  const projectBpm = projectBpmOf(markers);
 
   const { project, audioContext } = await initializeOpenDAW({
     localAudioBuffers,

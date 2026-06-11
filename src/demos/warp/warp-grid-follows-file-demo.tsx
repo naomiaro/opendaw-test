@@ -141,20 +141,27 @@ function WarpGridFollowsFileDemo() {
   const toggleConform = useCallback(
     (next: boolean) => {
       if (!setup) return;
+      setError(null);
       const { project, projectBpm } = setup;
-      applyGridTempoEvents(
-        { project },
-        next ? tempoEventsRef.current : [{ tick: 0, bpm: projectBpm }]
-      );
-      conformedRef.current = next;
-      setConformed(next);
-      setEventCount(next ? tempoEventsRef.current.length : 1);
-      setStatus(
-        next
-          ? "Ready — CONFORMED: the grid bends to the file"
-          : "Ready — grid is RIGID, the metronome fights the music"
-      );
-      setRepaintKey((k) => k + 1);
+      try {
+        applyGridTempoEvents(
+          { project },
+          next ? tempoEventsRef.current : [{ tick: 0, bpm: projectBpm }]
+        );
+        conformedRef.current = next;
+        setConformed(next);
+        setEventCount(next ? tempoEventsRef.current.length : 1);
+        setStatus(
+          next
+            ? "Ready — CONFORMED: the grid bends to the file"
+            : "Ready — grid is RIGID, the metronome fights the music"
+        );
+        setRepaintKey((k) => k + 1);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+        setStatus("Failed");
+        // Tempo state is unknown after a failed rewrite — surface the error only.
+      }
     },
     [setup]
   );
@@ -246,6 +253,7 @@ function WarpGridFollowsFileDemo() {
                 getBarLines={getBarLines}
                 getPlayheadFrac={getPlayheadFrac}
                 repaintKey={repaintKey}
+                onError={setError}
               />
             </Card>
           )}

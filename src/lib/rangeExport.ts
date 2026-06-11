@@ -164,7 +164,9 @@ export async function exportMixdown(
   if (includeMetronome) parts.push("Metronome");
   const label = parts.length > 0 ? parts.join(" + ") : "Empty";
 
-  const durationSeconds = project.tempoMap.intervalToSeconds(startPpqn, endPpqn);
+  // Derive duration from rendered data — avoids re-querying the tempo map after
+  // the await, where a mid-render tempo mutation could skew the result.
+  const durationSeconds = channels[0] != null ? channels[0].length / sampleRate : 0;
   return { label, channels, sampleRate, durationSeconds };
 }
 
@@ -209,7 +211,12 @@ export async function exportStemsRange(
     );
   }
 
-  const durationSeconds = project.tempoMap.intervalToSeconds(startPpqn, endPpqn);
+  // Derive duration from rendered data — avoids re-querying the tempo map after
+  // the await, where a mid-render tempo mutation could skew the result.
+  // Fall back to tempo-map value when no tracks were rendered.
+  const durationSeconds = channels[0] != null
+    ? channels[0].length / sampleRate
+    : project.tempoMap.intervalToSeconds(startPpqn, endPpqn);
   const results: ExportResult[] = [];
   for (let i = 0; i < selectedTracks.length; i++) {
     const left = channels[i * 2];
@@ -250,11 +257,15 @@ export async function exportStemsRange(
       },
       true, metronomeGain
     );
+    // Derive metronome stem duration from its rendered data.
+    const metronomeDuration = metronomeChannels[0] != null
+      ? metronomeChannels[0].length / sampleRate
+      : durationSeconds;
     results.push({
       label: "Metronome",
       channels: metronomeChannels,
       sampleRate,
-      durationSeconds,
+      durationSeconds: metronomeDuration,
     });
   }
 
@@ -285,11 +296,14 @@ export async function renderMixdownRange(options: {
     undefined, undefined, undefined,
     metronomeEnabled, metronomeGain
   );
+  // Derive duration from rendered data — avoids re-querying the tempo map after
+  // the await, where a mid-render tempo mutation could skew the result.
+  const durationSeconds = channels[0] != null ? channels[0].length / sampleRate : 0;
   return {
     label: "Mixdown",
     channels,
     sampleRate,
-    durationSeconds: project.tempoMap.intervalToSeconds(startPpqn, endPpqn),
+    durationSeconds,
   };
 }
 

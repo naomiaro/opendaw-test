@@ -115,6 +115,7 @@ function WarpVarispeedDemo() {
   const toggleWarp = useCallback(
     (next: boolean) => {
       if (!setup) return;
+      setError(null);
       const { project } = setup;
       const ctx: WarpScenarioContext = {
         project,
@@ -124,20 +125,28 @@ function WarpVarispeedDemo() {
         projectBpm: setup.projectBpm,
         prevStretchBox: stretchBoxRef.current,
       };
-      stretchBoxRef.current = next
-        ? applyVarispeed(ctx, anchorsRef.current)
-        : applyRaw(ctx);
-      // timeBase+duration+playMode writes reset engine.position to 0 — restore.
-      project.engine.setPosition(0);
-      pausedPositionRef.current = 0;
-      warpedRef.current = next;
-      setWarped(next);
-      setStatus(
-        next
-          ? "Ready — warped: beats lock to the click, pitch follows rate"
-          : "Ready — warp is OFF, the file will drift off the click"
-      );
-      setRepaintKey((k) => k + 1);
+      try {
+        stretchBoxRef.current = next
+          ? applyVarispeed(ctx, anchorsRef.current)
+          : applyRaw(ctx);
+        // timeBase+duration+playMode writes reset engine.position to 0 — restore.
+        project.engine.setPosition(0);
+        pausedPositionRef.current = 0;
+        warpedRef.current = next;
+        setWarped(next);
+        setStatus(
+          next
+            ? "Ready — warped: beats lock to the click, pitch follows rate"
+            : "Ready — warp is OFF, the file will drift off the click"
+        );
+        setRepaintKey((k) => k + 1);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+        setStatus("Failed");
+        // editing.modify is atomic — reconcile UI to actual box state on throw.
+        warpedRef.current = stretchBoxRef.current !== null;
+        setWarped(stretchBoxRef.current !== null);
+      }
     },
     [setup, pausedPositionRef]
   );
@@ -240,6 +249,7 @@ function WarpVarispeedDemo() {
                 getBarLines={getBarLines}
                 getPlayheadFrac={getPlayheadFrac}
                 repaintKey={repaintKey}
+                onError={setError}
               />
             </Card>
           )}

@@ -133,6 +133,7 @@ function AudioVerifyHarness() {
       return;
     }
     runScenario(scenario, update).catch((err) => {
+      console.error("[audio-verify]", err);
       update(`error:${err instanceof Error ? err.message : String(err)}`);
     });
   }, []);
