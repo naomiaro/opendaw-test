@@ -10,3 +10,4 @@ documentation/.vitepress/cache
 .playwright-mcp/
 .claude/local.md
 .superpowers/
+.verify-output/

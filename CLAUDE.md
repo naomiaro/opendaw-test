@@ -548,6 +548,19 @@ setState-per-frame is only safe if no expensive effect reads its output.
   NOT count as a read of `foo` from `const [foo, setFoo] = useState(...)` — TS6133 still
   fires. When splitting work across commits, introduce state in the commit that first
   **reads** it.
+- Node CLI scripts: `node scripts/<name>.ts` runs directly (Node ≥23 type stripping).
+  VALUE imports in the script's import chain need explicit `.ts` extensions
+  (`allowImportingTsExtensions` is enabled); type-only imports may stay extension-less.
+- Keep `baseUrl` in tsconfig.json. `paths` resolves without it, but global
+  File-System-Access types (SaveFilePickerOptions etc.) stop resolving and TS2304s
+  flood the SDK .d.ts files.
+- Trust `npx tsc --noEmit` over LSP diagnostics for `@/` module-resolution and
+  Float32Array-generic errors — the global typescript-language-server runs a newer
+  TS than the project and reports false positives after tsconfig edits.
+- Vite dev-only middleware (`apply: "serve"`): request event handlers run OUTSIDE
+  connect's try/catch — wrap sync fs calls in try/catch or a throw kills the dev server.
+- git worktrees: copy `localhost*.pem` in and run `npm ci` there before the dev
+  server — certs and node_modules don't follow the checkout.
 - After SDK upgrades, clear Vite dep cache: `rm -rf node_modules/.vite` (dev server pre-bundles old SDK)
 - After **any** `package.json` change (SDK upgrade, devDep add/remove, version bump), **regenerate
   the lockfile cleanly**: `rm -rf node_modules package-lock.json && npm install`, then verify with
@@ -594,6 +607,7 @@ Each demo category folder has its own CLAUDE.md with SDK knowledge scoped to tho
 - `src/demos/automation/CLAUDE.md` — time signatures, tempo, track automation, curves, effects params
 - `src/demos/effects/CLAUDE.md` — EffectBox, scriptable devices, ScriptCompiler, Werkstatt
 - `src/demos/export/CLAUDE.md` — offline rendering, mutate-copy-restore pattern
+- `src/demos/warp/CLAUDE.md` — beat maps, warp markers, tempo-map conform, time-stretch
 
 ## Reference Files
 - Project setup: `src/lib/projectSetup.ts`

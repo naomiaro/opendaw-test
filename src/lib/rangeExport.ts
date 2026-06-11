@@ -164,7 +164,9 @@ export async function exportMixdown(
   if (includeMetronome) parts.push("Metronome");
   const label = parts.length > 0 ? parts.join(" + ") : "Empty";
 
-  const durationSeconds = project.tempoMap.intervalToSeconds(startPpqn, endPpqn);
+  // Derive duration from rendered data — avoids re-querying the tempo map after
+  // the await, where a mid-render tempo mutation could skew the result.
+  const durationSeconds = channels[0] != null ? channels[0].length / sampleRate : 0;
   return { label, channels, sampleRate, durationSeconds };
 }
 
@@ -209,7 +211,12 @@ export async function exportStemsRange(
     );
   }
 
-  const durationSeconds = project.tempoMap.intervalToSeconds(startPpqn, endPpqn);
+  // Derive duration from rendered data — avoids re-querying the tempo map after
+  // the await, where a mid-render tempo mutation could skew the result.
+  // Fall back to tempo-map value when no tracks were rendered.
+  const durationSeconds = channels[0] != null
+    ? channels[0].length / sampleRate
+    : project.tempoMap.intervalToSeconds(startPpqn, endPpqn);
   const results: ExportResult[] = [];
   for (let i = 0; i < selectedTracks.length; i++) {
     const left = channels[i * 2];
@@ -250,15 +257,54 @@ export async function exportStemsRange(
       },
       true, metronomeGain
     );
+    // Derive metronome stem duration from its rendered data.
+    const metronomeDuration = metronomeChannels[0] != null
+      ? metronomeChannels[0].length / sampleRate
+      : durationSeconds;
     results.push({
       label: "Metronome",
       channels: metronomeChannels,
       sampleRate,
-      durationSeconds,
+      durationSeconds: metronomeDuration,
     });
   }
 
   return results;
+}
+
+/**
+ * Render a plain mixdown of the live project for a tick range — no track
+ * muting, optional metronome. Used by the audio-verify harness.
+ *
+ * metronomeGain defaults to 0 dB (not this file's usual -6): the verify
+ * harness needs full-level clicks for onset detection.
+ */
+export async function renderMixdownRange(options: {
+  project: Project;
+  startPpqn: ppqn;
+  endPpqn: ppqn;
+  sampleRate?: number;
+  metronomeEnabled?: boolean;
+  metronomeGain?: number;
+}): Promise<ExportResult> {
+  const {
+    project, startPpqn, endPpqn,
+    sampleRate = 48000, metronomeEnabled = false, metronomeGain = 0,
+  } = options;
+  const channels = await renderRange(
+    project, startPpqn, endPpqn, sampleRate,
+    undefined, undefined, undefined,
+    metronomeEnabled, metronomeGain
+  );
+  // Derive duration from rendered data — avoids re-querying the tempo map after
+  // the await, where a mid-render tempo mutation could skew the result.
+  const durationSeconds = channels[0] != null ? channels[0].length / sampleRate : 0;
+  return {
+    label: "Mixdown",
+    channels,
+    sampleRate,
+    durationSeconds,
+  };
 }
 
 /**

@@ -65,6 +65,11 @@ project.editing.modify(() => track.audioUnitBox.mute.setValue(saved)); // restor
 ```
 The mute window is a single synchronous JS task — no audio blocks process in between.
 
+### WavFile.encodeFloats Accepts Duck-Typed Input
+`WavFile.encodeFloats` takes any `{sampleRate, length, numberOfChannels, getChannelData}`
+— wrap `ExportResult.channels` directly instead of copying through `channelsToAudioBuffer`
+when encoding render output for upload/download.
+
 ### Transfer APIs (Cross-Project Copy)
 `@opendaw/studio-adapters` provides namespace utilities for copying content between
 projects. Both work across `BoxGraph`s — shared resources already present in the
