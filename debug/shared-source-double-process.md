@@ -93,3 +93,46 @@ What we do see consistently:
 1. What produces the ~2× sample-to-sample first difference 2 samples before a touching region seam, given that voices are per-region and `bp0`/`bp1` math correctly partitions the block at the seam sample?
 2. Why does the offline scan show identical `seam-band max |Δ|` for block-aligned vs off-boundary seams while live playback sounds audibly different? Is there a live-only signal path (output-device buffering, sample-rate conversion, peak-cache writes) that doesn't run through `OfflineAudioContext + AudioWorklets.createFor`?
 3. Is the audible "snap is louder in the shared-`AudioFileBox` case than in the two-distinct-`AudioFileBox` case" perception (which the offline render does *not* reproduce — both cases render bit-identical) a live-only artifact, or a perceptual artifact from playback context differences (timing, buffering, AudioContext output device)?
+
+---
+
+## Addendum 2026-06-11 — mechanism CLOSED (core 0.0.152 / SDK 0.0.154)
+
+**Simulation artefacts** (scripts at [`debug/seam-sim.js`](./seam-sim.js) and [`debug/seam-sim2.js`](./seam-sim2.js), currently untracked — included in this commit): exact-arithmetic reimplementation of the `TapeDeviceProcessor`/`PitchVoice` pitch path against the 440 Hz sine fixture. The simulation matches the engine's offline render to 4 decimal places on every probe point, including two exact-zero samples, confirming the mechanism below is complete.
+
+### Three stacked effects
+
+**(1) The −2-sample 2× slope jump — truncation in the block partition.**
+
+`bpn = (bp1 − bp0) | 0` (integer truncation) and `voice.process(bp0 | 0, bpn, …)` together truncate the fractional block partition that arises because `BlockRenderer` accumulates `p0` in non-exact `+5.12 PPQN` steps (128 samples at 48 kHz, BPM 120 = exactly 5.12 PPQN, not a round number). The outgoing region's voice therefore writes **one sample short**: its last rendered sample lands at `seam − 2`, leaving `seam − 1` zero-forced in the output buffer. The incoming voice's first sample carries fade-in amplitude exactly 0 (its `blockOffset = 0` and `readPosition = loopOffset` so the constructor enters `Fading/fadeDirection=+1`, and `fadeProgress/fadeLength = 0/960 = 0`). A second exactly-zero sample lands at `seam + 63` for the same reason on the next quantum boundary.
+
+**(2) Offline bit-identicality across the 2 × 2 matrix — a render-harness geometry artefact.**
+
+`renderOfflineSlice` (`src/lib/offlineScan.ts:46`) starts transport exactly 0.1 s = 4800 samples = 37.5 quanta before the seam. Both seam positions (block-aligned = seam at 30.000 s; off-boundary = seam at 30.500 s) therefore land exactly 0.5 quanta = 64 samples into the offline-rendered slice, regardless of the page's seam-position toggle. The offline render never exercises the block-aligned geometry (seam at quantum 0). The note's earlier inference that "the artifact is independent of seam-in-block offset" holds only within the range of offsets the harness actually tests; it does not generalise to all offsets. This is a **harness artefact**, not an engine invariant.
+
+**(3) Live audibility gap — geometry-dependent composite.**
+
+At **offset 0** (seam falls on a block boundary), the outgoing voice's next-block eviction fade is exactly complementary to the incoming 20 ms fade-in (sum = 1 over the fade window). The audible artefact reduces to the single dropped sample at `seam − 1` — a faint tick (−0.004 dB dip in a 2.5 ms envelope window).
+
+At **offset 64** (seam falls 64 samples into a block, the live geometry for the 30.500 s case), the incoming voice alone covers the quantum remainder at ≤ 6.7% gain (1.33 ms near-silent hole at seam), then the outgoing voice returns one quantum later, 65 samples late in phase (218° at 440 Hz), producing a 20 ms destructive crossfade that dips to −9.7 dB at seam + 11.25 ms with a mid-fade polarity inversion.
+
+**Empirical probe values** (engine vs simulation, 48 kHz, BPM 120, 440 Hz / 0.5-amplitude sine):
+
+| Sample position | Engine | Sim |
+|---|---|---|
+| `out[seam − 1]` | 0 (exact) | 0 (exact) |
+| `out[seam]` | 0.0000300081 | 0.000030 |
+| `out[seam + 63]` | 0 (exact) | 0 (exact) |
+| `out[seam + 64]` | −0.04603 | −0.04605 |
+| `out[seam + 960]` | −0.44350 | −0.44357 |
+| envelope min | 0.16398 (−9.68 dB) at +11.25 ms | 0.1640 / −9.7 dB / +11.25 ms |
+| `max |Δsample|` | 0.05746985 at τ − 2 | 0.05747 at τ − 2 |
+
+### Metric / method note
+
+`max |Δsample|` is blind to the near-silent hole and to the envelope collapse (both are ramped transitions, not sharp steps). A sliding-envelope metric (implemented in `seam-sim.js` `minEnvelope()`) captures the −9.68 dB collapse. The offline harness must also start transport at the live play position (e.g. 28.0 s) to exercise the correct seam-in-block geometry, not at `seam − 0.1 s`.
+
+### Suggested SDK fixes
+
+- **Evict ended-region voices at their cycle end within the same block** (pass `bp1` as `fadeOutBlockOffset` to `startFadeOut` inside `#processPassPitch`) instead of deferring to `removeByPredicate` on the next block. This prevents the outgoing voice from returning 65 samples late in the off-boundary case.
+- **Round rather than truncate the block partition** (`bpn = Math.round(bp1 − bp0)` instead of `(bp1 − bp0) | 0`), or carry the residual forward, to prevent the one-sample short-write that forces `seam − 1` to zero.

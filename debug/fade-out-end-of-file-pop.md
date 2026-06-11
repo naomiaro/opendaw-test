@@ -59,3 +59,17 @@ for (const voice of lane.fadingVoices) {
 `#unitGainBuffer` is filled with 1.0 — the region's fade gain (`#fadingGainBuffer`) is applied only to voices in `lane.pitchVoices`. Result: the old voice plays its remaining ~20 ms of file content at unit amplitude, attenuated only by its own short internal fade. The new voice in `pitchVoices` does receive the region fade gain, but at this point the region fade is near 0, so its contribution is tiny. Sum ≈ old voice ≈ near-full amplitude. Region then ends, audio drops to 0 → click.
 
 The mechanism is **inferred from source-tracing**; the empirical verification at the sample level is the step at `numberOfFrames − VOICE_FADE_DURATION × sampleRate` and the fact that trimming the region by 21 ms eliminates the artifact.
+
+---
+
+## Addendum 2026-06-11 — fixed upstream; re-verified clean at SDK 0.0.154 / core 0.0.152
+
+Fixed in core 0.0.145: a keep-guard was added to `#updateOrCreatePitchVoice` (commits `3a243e7b` + `e55c12c8`; the guard's comment names the pop). Re-verified clean at SDK 0.0.154 / core 0.0.152:
+
+```
+peak in 20 ms fade window:           0.01056   (bug-era: ~0.1, near-full vocal level)
+max sample-to-sample delta in window: 0.00193
+pre-window baseline noise:            0.00142
+```
+
+No anomalous step is present; the max delta in the fade window is within noise of the pre-window baseline. The page is reframed as a **regression check** for this fix.

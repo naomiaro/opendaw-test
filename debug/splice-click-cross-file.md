@@ -24,3 +24,16 @@ To reproduce manually without the static-setup button: open [`comp-lanes-demo.ht
 ## Open question for OpenDAW
 
 We hear a click at this boundary. Is this intended behaviour — i.e. the caller is responsible for adding fades on each region to crossfade across cross-file splice points — or is there an automatic voice-management path in the SDK that should be handling this and isn't firing for this case?
+
+---
+
+## Addendum 2026-06-11 — voice-routing facts corrected; question remains OPEN
+
+Corrected understanding of the voice routing at offset ≠ 0 (from wave-3 source audit, core 0.0.152):
+
+- **Incoming voice** fades in-place in `pitchVoices` with the region gain buffer when `offset ≠ 0`. The `PitchVoice` constructor enters `Fading / fadeDirection = +1` for any `readPosition > 0` (not just `loopOffset = 0`), so the 20 ms voice fade-in applies even when the new region starts mid-file. The voice-fade-in × clip-gain product documented in [`voice-fadein-clip-fadein-product.md`](./voice-fadein-clip-fadein-product.md) is therefore active at cross-file splice points when the incoming region has a non-zero `fading.in`.
+- **Outgoing voice** hard-cuts at its cycle end (the last sample written is at `seam − 1` due to `bpn = (bp1 − bp0) | 0` truncation), then is evicted from `pitchVoices` on the **next** block via `removeByPredicate` — it is NOT processed through `fadingVoices` with the region gain buffer; it receives `unitGain` during that final block. This is the same eviction mechanic as described in the seam addendum above.
+
+The offset-geometry findings in [`shared-source-double-process.md`](./shared-source-double-process.md) (2026-06-11 addendum) are directly relevant: the one-quantum late eviction and the resulting constructive/destructive interference are the structural reason cross-file splices click at offset 64 but only tick faintly at offset 0.
+
+The open question for the maintainer remains: **caller-managed fades or automatic SDK handling?** The geometry analysis above suggests automatic same-block eviction (passing `bp1` as the fade-out block offset) would substantially reduce the click at offset ≠ 0 even without caller-added fades.
