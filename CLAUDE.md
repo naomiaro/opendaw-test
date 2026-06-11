@@ -157,8 +157,12 @@ API: `.isEmpty()`, `.nonEmpty()`, `.unwrap()`, `.unwrapOrNull()`, `.unwrapOrUnde
   channel copy. `OpenSampleAPI.fromAudioBuffer()` does not exist.
 - Progress callback type: `Progress.Handler` (alias for `Procedure<unitValue>`)
 - SampleLoaderState error field: `state.reason` (NOT `state.error`)
-- SampleLoader has `subscribe()` only — NO `catchupAndSubscribe()`. Check `state.type`
-  before subscribing, or use adapter layer + CanvasPainter to avoid subscribing entirely.
+- SampleLoader has `subscribe()` only — NO `catchupAndSubscribe()`. Always read
+  `loader.state` synchronously first and handle terminal states ("loaded"/"error")
+  before subscribing; `subscribe()` invokes the callback synchronously for terminal
+  states, so a one-shot `sub.terminate()` inside the callback would hit the `const sub`
+  binding while it is in the TDZ. Use the adapter layer + CanvasPainter to avoid
+  subscribing entirely when possible.
 
 ### Adapter Layer for Peaks (Preferred)
 `regionAdapter.file.peaks` is a synchronous `Option<Peaks>` read — no subscribe needed.
@@ -412,7 +416,10 @@ Examples in this repo: `capture.armed.catchupAndSubscribe(obs => obs.getValue())
 `subscribe()` fires only for FUTURE changes — misses current state. Use `catchupAndSubscribe()`
 for engine state (isPlaying, isRecording, BPM) and box field observations. Only use `subscribe()`
 when initial state is already known (e.g., mute sync after take creation).
-Exception: `SampleLoader` only has `subscribe()` — check `state.type` before subscribing.
+Exception: `SampleLoader` only has `subscribe()`. Read `loader.state` synchronously before
+subscribing — for terminal states ("loaded"/"error") handle them directly and skip
+`subscribe()`. The sync catch-up on terminal states causes TDZ errors if `sub.terminate()`
+is called inside the callback before `const sub` is bound.
 
 ### DefaultDecibel Value Mapping
 `ValueMapping.DefaultDecibel` = `decibel(-72.0, -12.0, 0.0)` — range -72 to 0 dB,
@@ -506,15 +513,25 @@ terminable.terminate();
 `catchupAndSubscribe()` and `subscribe()` return `Terminable` objects. Store them and call
 `.terminate()` in the React `useEffect` cleanup. Discarding the return value leaks the
 subscription — callbacks continue firing after unmount.
-For one-shot subscriptions (e.g., waiting for `sampleLoader` "loaded"), terminate
-inside the callback on success AND on error — don't rely solely on effect cleanup:
+For one-shot subscriptions (e.g., waiting for `sampleLoader` "loaded"), always read
+`loader.state` first and handle terminal states before subscribing. `subscribe()` invokes
+the callback synchronously for already-terminal states, so calling `sub.terminate()` inside
+the callback hits the `const sub` binding in its TDZ — use a `subscribed` flag or the
+pre-check pattern instead:
 ```typescript
-const sub = sampleLoader.subscribe((state: any) => {
-  if (state.type === "loaded") {
-    // ... handle data
-    sub.terminate(); // terminate immediately, don't wait for unmount
-  }
-});
+// Pre-check pattern (preferred — avoids TDZ risk entirely)
+if (sampleLoader.state.type === "loaded") {
+  // ... handle data directly
+} else {
+  let subscribed = false;
+  const sub = sampleLoader.subscribe((state: any) => {
+    if (state.type === "loaded") {
+      // ... handle data
+      if (subscribed) sub.terminate();
+    }
+  });
+  subscribed = true;
+}
 ```
 
 ### CanvasPainter in React: Use Refs to Avoid Per-Frame Recreation

@@ -361,7 +361,7 @@ const App: React.FC = () => {
           setStatus("Ready to play!");
         }
       } catch (error) {
-        console.error("Failed to initialize:", JSON.stringify(String(error)));
+        console.error("Failed to initialize:", String(error));
         if (mounted) setStatus(`Error: ${error}`);
       }
     })();

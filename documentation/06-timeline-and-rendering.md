@@ -511,7 +511,7 @@ function handleBpmChange(newBpm: number) {
     // Update timeline BPM
     project.timelineBox.bpm.setValue(newBpm);
 
-    // Recalculate clip durations (NoSync mode)
+    // Recalculate clip durations (NoStretch — no playMode box attached)
     clips.forEach(clip => {
       const newDuration = Math.round(PPQN.secondsToPulses(clip.audioDuration, newBpm));
       clip.region.duration.setValue(newDuration);

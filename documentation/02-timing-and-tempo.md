@@ -320,7 +320,7 @@ The ratio `(position / totalDuration)` gives you the percentage of the timeline,
 4. **Audio durations** use `PPQN.secondsToPulses()` and DO change with BPM
 5. When BPM changes:
    - Clip positions stay the same ✓
-   - Clip durations need recalculation (NoSync mode — without a play-mode box attached, audio plays at source speed; see [Ch. 18 — Time & Pitch](./18-time-and-pitch.md) to opt in to PitchStretch or TimeStretch) ✓
+   - Clip durations need recalculation (NoStretch — no play-mode box attached, audio plays at source speed; see [Ch. 18 — Time & Pitch](./18-time-and-pitch.md) to opt in to PitchStretch or TimeStretch) ✓
 
 ---
 

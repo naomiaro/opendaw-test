@@ -228,7 +228,7 @@ const subscription = sampleLoader.subscribe(state => {
 subscription.terminate();
 ```
 
-**Important:** `SampleLoader` only has `subscribe()` (future changes), NOT `catchupAndSubscribe()`. Always check `sampleLoader.state.type` before subscribing — samples may already be `"loaded"` by the time you subscribe.
+**Important:** `SampleLoader` only has `subscribe()`, NOT `catchupAndSubscribe()`. `subscribe()` invokes the callback synchronously when the loader is already in a terminal state (`"loaded"` or `"error"`). Always check `sampleLoader.state.type` first and handle terminal states directly — this avoids a TDZ crash when a one-shot `sub.terminate()` inside the callback would fire before `const sub` is bound.
 
 ### PeaksWriter vs Peaks
 
