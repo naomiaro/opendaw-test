@@ -102,7 +102,8 @@ export default defineConfig({
                 pureWebaudioTargetDebug: resolve(__dirname, "pure-webaudio-target-debug-demo.html"),
                 sharedSourceDoubleProcessDebug: resolve(__dirname, "shared-source-double-process-debug-demo.html"),
                 voiceFadeinClipFadeinProductDebug: resolve(__dirname, "voice-fadein-clip-fadein-product-debug-demo.html"),
-                timePitchStartPositionDebug: resolve(__dirname, "time-pitch-start-position-debug-demo.html")
+                timePitchStartPositionDebug: resolve(__dirname, "time-pitch-start-position-debug-demo.html"),
+                audioVerifyDebug: resolve(__dirname, "audio-verify-debug.html")
             },
             output: {
                 manualChunks: (id) => {
