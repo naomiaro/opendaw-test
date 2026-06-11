@@ -15,18 +15,15 @@ import "@radix-ui/themes/styles.css";
 import {
   Theme,
   Container,
-  Heading,
   Text,
   Flex,
   Card,
-  Callout,
   Badge,
-  Separator,
   Code,
-  Table,
   Button,
 } from "@radix-ui/themes";
-import { InfoCircledIcon, PlayIcon, StopIcon } from "@radix-ui/react-icons";
+import { PlayIcon, StopIcon } from "@radix-ui/react-icons";
+import { CONSOLE_STYLES } from "@/lib/design/consoleTheme";
 
 /**
  * Fade curve types with their slope values
@@ -346,25 +343,23 @@ const App: React.FC = () => {
   );
 
   return (
-    <Theme appearance="dark" accentColor="amber">
+    <Theme appearance="dark" accentColor="amber" style={{ background: "var(--mc-bg)" }}>
+      <style>{CONSOLE_STYLES}</style>
       <Container size="3" style={{ padding: "2rem", minHeight: "100vh" }}>
         <GitHubCorner />
         <BackLink />
 
         <Flex direction="column" gap="4">
-          <Heading size="8" align="center">
-            Audio Clip Fades Demo
-          </Heading>
-
-          <Callout.Root color="blue">
-            <Callout.Icon>
-              <InfoCircledIcon />
-            </Callout.Icon>
-            <Callout.Text>
-              Listen to how different fade curve types affect the sound. Each track has a 2-beat fade-in and 2-beat
-              fade-out using the same curve type. Click individual tracks to compare.
-            </Callout.Text>
-          </Callout.Root>
+          <div>
+            <div className="mc-kicker">Playback — Clip Fades · OpenDAW SDK</div>
+            <h1 className="mc-title" style={{ fontSize: "clamp(28px, 4.5vw, 44px)" }}>CLIP FADES</h1>
+            <p className="mc-intro">
+              Listen to how different fade curve shapes affect the sound. Each track has a{" "}
+              2-beat fade-in and 2-beat fade-out using the same curve type. Clips are trimmed
+              to bar 18 so the region start falls at playback position — making fades audible
+              from the first beat. Click individual tracks to compare.
+            </p>
+          </div>
 
           {/* Status */}
           <Card>
@@ -456,123 +451,53 @@ const App: React.FC = () => {
             })}
           </Flex>
 
-          {/* Technical Reference */}
-          <Card>
-            <Flex direction="column" gap="3">
-              <Text size="4" weight="bold">
-                API Reference
-              </Text>
-              <Separator size="4" />
+          {/* SDK reference + attribution */}
+          <section className="mc-anchors">
+            <h2 className="mc-anchors-head">SDK reference</h2>
+            <p>
+              Fades are region-relative: the engine computes{" "}
+              <code>startPpqn = cycle.resultStart − regionPosition</code>. Set{" "}
+              <code>loopOffset = clipStartPPQN</code> so the region reads audio from the
+              correct file position without shifting <code>startPpqn</code> away from the
+              fade-in zone. Slope values: <code>0.25</code> = logarithmic (SDK{" "}
+              <code>outSlope</code> default), <code>0.5</code> = linear,{" "}
+              <code>0.75</code> = exponential (SDK <code>inSlope</code> default).
+              OpenDAW&rsquo;s single-parameter curve is monotonic — S-curves require gain
+              automation with multiple control points.
+            </p>
+            <Code
+              size="2"
+              style={{
+                display: "block",
+                padding: "12px",
+                backgroundColor: "var(--gray-3)",
+                borderRadius: "4px",
+                whiteSpace: "pre-wrap",
+                marginTop: "12px",
+              }}
+            >
+              {`project.editing.modify(() => {
+  // Trim region to the section with audio content
+  regionBox.position.setValue(clipStartPPQN);
+  regionBox.duration.setValue(clipDurationPPQN);
+  regionBox.loopOffset.setValue(clipStartPPQN);   // audio read offset
 
-              <Text size="2" weight="bold">
-                Setting fades on an AudioRegionBox:
-              </Text>
-              <Code
-                size="2"
-                style={{
-                  display: "block",
-                  padding: "12px",
-                  backgroundColor: "var(--gray-3)",
-                  borderRadius: "4px",
-                  whiteSpace: "pre-wrap",
-                }}
-              >
-                {`project.editing.modify(() => {
   // Fade durations in PPQN (960 = 1 beat at any BPM)
-  regionBox.fading.in.setValue(1920);      // 2 beats fade-in
-  regionBox.fading.out.setValue(1920);     // 2 beats fade-out
-
-  // Slope controls curve shape (0.0 to 1.0)
-  regionBox.fading.inSlope.setValue(0.75); // Exponential curve
-  regionBox.fading.outSlope.setValue(0.25);// Logarithmic curve
+  regionBox.fading.in.setValue(1920);       // 2-beat fade-in
+  regionBox.fading.out.setValue(1920);      // 2-beat fade-out
+  regionBox.fading.inSlope.setValue(0.75);  // exponential (SDK default)
+  regionBox.fading.outSlope.setValue(0.25); // logarithmic (SDK default)
 });`}
-              </Code>
-
-              <Separator size="4" />
-
-              <Text size="2" weight="bold">
-                Slope Values Reference:
-              </Text>
-              <Table.Root size="1">
-                <Table.Header>
-                  <Table.Row>
-                    <Table.ColumnHeaderCell>Curve Type</Table.ColumnHeaderCell>
-                    <Table.ColumnHeaderCell>Slope</Table.ColumnHeaderCell>
-                    <Table.ColumnHeaderCell>Best For</Table.ColumnHeaderCell>
-                  </Table.Row>
-                </Table.Header>
-                <Table.Body>
-                  <Table.Row>
-                    <Table.Cell>Logarithmic</Table.Cell>
-                    <Table.Cell>
-                      <Code>0.25</Code>
-                    </Table.Cell>
-                    <Table.Cell>Fade-outs (SDK default for outSlope)</Table.Cell>
-                  </Table.Row>
-                  <Table.Row>
-                    <Table.Cell>Linear</Table.Cell>
-                    <Table.Cell>
-                      <Code>0.5</Code>
-                    </Table.Cell>
-                    <Table.Cell>Neutral, technical fades</Table.Cell>
-                  </Table.Row>
-                  <Table.Row>
-                    <Table.Cell>Exponential</Table.Cell>
-                    <Table.Cell>
-                      <Code>0.75</Code>
-                    </Table.Cell>
-                    <Table.Cell>Fade-ins (SDK default for inSlope)</Table.Cell>
-                  </Table.Row>
-                </Table.Body>
-              </Table.Root>
-            </Flex>
-          </Card>
-
-          {/* S-Curve Note */}
-          <Card>
-            <Flex direction="column" gap="3">
-              <Flex align="center" gap="2">
-                <InfoCircledIcon />
-                <Text size="3" weight="bold">
-                  Why No S-Curve?
-                </Text>
-              </Flex>
-              <Separator size="4" />
-              <Text size="2">
-                OpenDAW's fade system uses a single <Code>slope</Code> parameter (0.0-1.0) that controls curve shape via
-                an exponential formula. This produces <strong>monotonic curves</strong> that only increase or decrease.
-              </Text>
-              <Text size="2">
-                An S-curve requires an <strong>inflection point</strong> where the curve changes direction (concave to
-                convex). The current formula cannot produce this with a single parameter.
-              </Text>
-              <Text size="2" color="gray">
-                To achieve S-curve fades, you would need gain automation with multiple control points, or an SDK
-                enhancement for additional curve types like smoothstep (3x² - 2x³).
-              </Text>
-            </Flex>
-          </Card>
-
-          {/* Audio Attribution */}
-          <Card>
-            <Flex direction="column" gap="2">
-              <Text size="2" weight="bold">
-                Audio Attribution
-              </Text>
-              <Text size="2" color="gray">
-                Guitar stems from Dark Ride's 'Deny Control'. Provided for educational purposes. See{" "}
-                <a
-                  href="https://www.cambridge-mt.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{ color: "var(--accent-9)" }}
-                >
-                  cambridge-mt.com
-                </a>{" "}
-                for details.
-              </Text>
-            </Flex>
-          </Card>
+            </Code>
+            <p>
+              <a href="/docs/09-editing-fades-and-automation.html">Editing, fades &amp; automation</a>
+              {" "}&middot;{" "}
+              <a href="/docs/04-box-system-and-reactivity.html">Box system &amp; reactivity</a>
+              {" "}&middot;{" "}
+              Guitar stems from Dark Ride&rsquo;s &lsquo;Deny Control&rsquo; via{" "}
+              <a href="https://www.cambridge-mt.com" target="_blank" rel="noopener noreferrer">cambridge-mt.com</a>
+            </p>
+          </section>
         </Flex>
 
         <MoisesLogo />
