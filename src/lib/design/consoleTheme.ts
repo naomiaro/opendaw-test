@@ -16,6 +16,18 @@ export const CANVAS_COLORS = {
   green: "#7fbf6a",         // --mc-green
   playhead: "#fff",
 } as const;
+// Shared style for multi-line <Code> reference blocks on console pages.
+export const CODE_BLOCK_STYLE = {
+  display: "block",
+  whiteSpace: "pre",
+  padding: 12,
+  overflowX: "auto",
+  background: "var(--mc-bg)",
+  border: "1px solid var(--mc-line)",
+  borderRadius: 4,
+  marginTop: 8,
+} as const;
+
 export const CANVAS_FONT = '11px "IBM Plex Mono", ui-monospace, monospace';
 export const CANVAS_FONT_BOLD = '600 12px "IBM Plex Mono", ui-monospace, monospace';
 export const CANVAS_FONT_SMALL = '10px "IBM Plex Mono", ui-monospace, monospace';

@@ -53,10 +53,11 @@ Key classes in the pipeline:
 
 The high-level `project.startRecording(countIn)` is a convenience wrapper. Under the hood, it calls `Recording.start()`, which:
 1. Queries `captureDevices.filterArmed()` to get all armed captures
-2. Creates a Tape instrument if no tracks exist (audio recording)
-3. Calls `prepareRecording()` on each capture (sets up streams)
-4. Calls `startRecording()` on each capture (begins data capture)
-5. Starts the engine (with count-in if requested)
+2. Calls `prepareRecording()` on each capture (sets up streams)
+3. Calls `startRecording()` on each capture (begins data capture)
+4. Starts the engine (with count-in if requested)
+
+Recording records only armed captures — with zero armed captures the engine enters recording state but nothing is recorded and no instrument is created (see [Capture Arming](#capture-arming)).
 
 ### AudioUnit, Tape, and Track: The Recording Hierarchy
 
@@ -185,30 +186,39 @@ Like all box-graph mutations, both `defer()` and `delete()` must run inside `edi
 
 **CRITICAL: Use `engine.stopRecording()` to stop recording, NOT `engine.stop(true)`.**
 
-`engine.stop(true)` kills the audio graph immediately, which prevents `RecordingProcessor.process()` from writing remaining audio data to the RingBuffer. It also resets the playback position to 0, which in loop recording mode triggers spurious loop-wrap detection — this mutes the last recorded take via `olderTakeAction`.
+Both stop paths trip the same main-thread teardown that finalizes the recording, but `engine.stop(true)` adds two hazards: it resets the playback position to 0 — which in loop recording mode triggers spurious loop-wrap detection, muting the last recorded take via `olderTakeAction` — and it resets all processors, racing the in-flight asynchronous finalization.
 
 The correct pattern:
 
 ```typescript
-// 1. Stop recording — keeps the engine alive for finalization
+// 1. Stop recording — stops transport without resetting position/processors;
+//    finalization completes asynchronously on the main thread
 project.engine.stopRecording();
 
-// 2. Wait for finalization via sampleLoader.subscribe, then reset engine.
+// 2. Wait for finalization, then reset the engine.
 //    The sampleLoader is the RecordingWorklet during recording — get it via
 //    project.sampleManager.getOrCreate(audioFileBox.address.uuid).
 //    When #finalize() completes, it sets state to "loaded" and notifies.
-const sub = sampleLoader.subscribe((state) => {
-  if (state.type === "loaded") {
-    sub.terminate();
-    // Audio data is now available — safe to stop engine
-    project.engine.stop(true);
-  }
-});
+//    Pre-check loader.state before subscribing: subscribe() fires the callback
+//    SYNCHRONOUSLY for terminal states, so sub.terminate() inside that callback
+//    would hit the `const sub` binding in its TDZ.
+if (sampleLoader.state.type === "loaded") {
+  // Short recording — already finalized
+  project.engine.stop(true);
+} else {
+  const sub = sampleLoader.subscribe((state) => {
+    if (state.type === "loaded") {
+      sub.terminate();
+      // Audio data is now available — safe to stop engine
+      project.engine.stop(true);
+    }
+  });
+}
 ```
 
 **Important notes**:
 - Subscribe during recording (when the sampleLoader is first discovered) for most reliable results.
-- If already loaded (short recording), the subscribe callback fires immediately.
+- Pair the wait with a safety timeout — a `RecordingWorklet` finalization failure produces no terminal state (the loader stays in `"record"` forever).
 - `queryLoadingComplete()` resolves before `sampleLoader.data` is set — do NOT use it to detect recording data availability.
 - Do NOT call `setPosition(0)` after `engine.stop(true)` — `stop(true)` already resets position and calling `setPosition` separately can interfere with OpenDAW's internal finalization chain.
 
@@ -226,11 +236,16 @@ const captureOpt = project.captureDevices.get(audioUnitBox.address.uuid);
 if (captureOpt.nonEmpty()) {
   const capture = captureOpt.unwrap();
 
-  // Arm exclusively (disarms all other captures)
-  project.captureDevices.setArm(capture, true);
+  // Arm or disarm deterministically — armed is a runtime observable
+  capture.armed.setValue(true);
+  capture.armed.setValue(false);
 
-  // Arm non-exclusively (lets multiple instruments record at once)
-  project.captureDevices.setArm(capture, false);
+  // setArm() TOGGLES the armed state (arming = !armed.getValue()). The second
+  // parameter controls exclusivity only: when the toggle lands on armed and
+  // exclusive is true, all other captures are disarmed. Calling setArm on an
+  // already-armed capture disarms it — use it for radio-button arm UX, not
+  // as a setter.
+  project.captureDevices.setArm(capture, true);
 
   // Check armed state
   const isArmed = capture.armed.getValue();
@@ -240,7 +255,7 @@ if (captureOpt.nonEmpty()) {
 const armedCaptures = project.captureDevices.filterArmed();
 ```
 
-**Auto-arming behavior**: When you call `project.startRecording()` with no captures armed, `Recording.start()` automatically creates a Tape instrument and arms its capture.
+**No captures armed**: When you call `project.startRecording()` with no captures armed, the engine enters recording state but nothing is recorded and no instrument is created. Arm at least one capture first.
 
 ## Audio Input Configuration
 
@@ -290,7 +305,7 @@ project.editing.modify(() => {
 
 > **See also:** [Ch. 16 — MIDI Deep Dive](./16-midi.md) is the dedicated reference for the MIDI data model, programmatic note creation, MIDI effects, and note auditioning. This chapter covers MIDI specifically in the context of recording.
 
-Arming a MIDI instrument's capture uses the **same** `project.captureDevices.setArm()` API as audio (see [Capture Arming](#capture-arming)). `project.captureDevices.get(audioUnitBox.address.uuid)` returns a `CaptureMidi` for MIDI instruments and a `CaptureAudio` for Tape — both extend the same `Capture` base class and share the arm/disarm interface. Channel filtering and software-keyboard input are MIDI-specific and configured below.
+Arming a MIDI instrument's capture uses the **same** arm/disarm surface as audio: `capture.armed.setValue(true)` for deterministic arming (see [Capture Arming](#capture-arming) — `setArm()` is a toggle). `project.captureDevices.get(audioUnitBox.address.uuid)` returns a `CaptureMidi` for MIDI instruments and a `CaptureAudio` for Tape — both extend the same `Capture` base class. Channel filtering and software-keyboard input are MIDI-specific and configured below.
 
 ### Device Enumeration
 
@@ -387,7 +402,7 @@ When loop mode is enabled and `allowTakes` is `true`, each loop iteration create
 ```typescript
 const settings = project.engine.preferences.settings;
 
-// Enable takes (defaults to true only in dev/localhost)
+// Enable takes (defaults to true)
 settings.recording.allowTakes = true;
 
 // What to do with older takes when a new one is created
@@ -399,6 +414,8 @@ settings.recording.olderTakeAction = "disable-track"; // disables the entire tra
 settings.recording.olderTakeScope = "previous-only"; // only the immediately previous take
 // OR
 settings.recording.olderTakeScope = "all";           // all previous takes
+// OR
+settings.recording.olderTakeScope = "none";          // skip older-take muting/disabling
 ```
 
 ### Loop Area Configuration
@@ -421,18 +438,16 @@ project.editing.modify(() => {
 // Start recording (loop must be enabled)
 project.startRecording(useCountIn);
 
-// After recording, find all takes
-const takes = project.boxGraph.boxes()
-  .filter(box => box.name === "AudioRegionBox")
-  .filter(box => {
-    const label = (box as any).label?.getValue();
-    return label && label.startsWith("Take ");
-  });
+// After recording, find all takes via the adapter layer (typed — no casts)
+const takes = project.rootBoxAdapter.audioUnits.adapters()
+  .flatMap(unit => unit.tracks.values())
+  .flatMap(track => [...track.regions.adapters.values()])
+  .filter(region => region.isAudioRegion() && region.label.startsWith("Take "));
 
 // Toggle mute on a take to compare performances
 project.editing.modify(() => {
-  const currentMute = takeRegionBox.mute.getValue();
-  takeRegionBox.mute.setValue(!currentMute);
+  const takeRegionBox = takes[0].box; // AudioRegionBox — already typed
+  takeRegionBox.mute.setValue(!takeRegionBox.mute.getValue());
 });
 ```
 
@@ -537,7 +552,7 @@ All recording preferences are accessed via `project.engine.preferences.settings.
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
 | `countInBars` | 1-8 | 1 | Number of count-in bars before recording |
-| `allowTakes` | boolean | `isDevOrLocalhost` | Enable loop-based take recording |
+| `allowTakes` | boolean | `true` | Enable loop-based take recording |
 | `olderTakeAction` | `"mute-region"` \| `"disable-track"` | `"mute-region"` | Action on older takes when new take created |
 | `olderTakeScope` | `"none"` \| `"all"` \| `"previous-only"` | `"previous-only"` | Which older takes are affected (`"none"` skips older-take management entirely) |
 | `inputLatency` | number (seconds, ≥ -1) | `0` | Compensation added to `outputLatency` for the mic→engine delay. `-1` = use the engine's measured output latency (doubles compensation). Override per track via `captureBox.inputLatency` (`-2` = inherit this preference) |
@@ -694,33 +709,31 @@ let audioUnitBox: any = null;
 project.editing.modify(() => {
   const result = project.api.createInstrument(InstrumentFactories.Tape);
   audioUnitBox = result.audioUnitBox;
-  // Can also configure capture inside the same transaction:
-  const captureOpt = project.captureDevices.get(result.audioUnitBox.address.uuid);
-  if (!captureOpt.isEmpty()) {
-    const cap = captureOpt.unwrap();
-    cap.captureBox.deviceId.setValue(deviceId);
-    cap.requestChannels = 1; // 1 = mono, 2 = stereo
-  }
 });
 
-// 2. Get the CaptureAudio after transaction commits
+// 2. Resolve the capture and configure it in a SEPARATE transaction —
+//    captureDevices.get() on a unit created in the same transaction returns stale data
 const captureOpt = project.captureDevices.get(audioUnitBox.address.uuid);
 if (captureOpt.isEmpty()) return;
 const capture = captureOpt.unwrap();
+project.editing.modify(() => {
+  capture.captureBox.deviceId.setValue(deviceId);
+  capture.requestChannels = 1; // 1 = mono, 2 = stereo
+});
 
-// 3. Arm non-exclusively (keeps other captures armed)
-project.captureDevices.setArm(capture, false);
+// 3. Arm (armed is a runtime observable — deterministic, keeps other captures armed)
+capture.armed.setValue(true);
 ```
 
 ### Recording Multiple Devices Simultaneously
 
 ```typescript
-// Arm multiple captures (non-exclusive)
+// Arm multiple captures
 const audioCapture1 = project.captureDevices.get(uuid1).unwrap();
 const audioCapture2 = project.captureDevices.get(uuid2).unwrap();
 
-project.captureDevices.setArm(audioCapture1, false); // non-exclusive
-project.captureDevices.setArm(audioCapture2, false);  // both stay armed
+audioCapture1.armed.setValue(true);
+audioCapture2.armed.setValue(true); // both armed
 
 // Start recording — ALL armed captures record simultaneously
 project.startRecording(useCountIn);
@@ -739,23 +752,38 @@ project.engine.stopRecording();
 
 // Collect all sampleLoaders discovered during recording
 const loaders: SampleLoader[] = [...allDiscoveredLoaders];
+const subs: Terminable[] = [];
 
 let finalized = 0;
+const countTerminal = () => {
+  finalized++;
+  // Only reset engine after ALL tracks have reached a terminal state
+  if (finalized === loaders.length) {
+    for (const sub of subs) sub.terminate();
+    project.engine.stop(true);
+  }
+};
+
 for (const loader of loaders) {
-  const sub = loader.subscribe((state) => {
-    if (state.type === "loaded") {
-      sub.terminate();
-      finalized++;
-      // Only reset engine after ALL tracks have finalized
-      if (finalized === loaders.length) {
-        project.engine.stop(true);
-      }
-    }
-  });
+  // Pre-check: handle already-terminal loaders without subscribing —
+  // subscribe() fires synchronously for terminal states, and a
+  // sub.terminate() inside that synchronous callback would hit the
+  // `const sub` binding in its TDZ (ReferenceError).
+  const state = loader.state;
+  if (state.type === "loaded" || state.type === "error") {
+    countTerminal();
+    continue;
+  }
+  subs.push(
+    loader.subscribe((state) => {
+      if (state.type !== "loaded" && state.type !== "error") return;
+      countTerminal();
+    })
+  );
 }
 ```
 
-**Why a barrier?** Calling `engine.stop(true)` kills the audio graph. If any track's `RecordingWorklet` hasn't finished writing to its `RingBuffer`, that track's audio data is lost.
+**Why a barrier?** Calling `engine.stop(true)` resets the playback position and all processors, racing any in-flight asynchronous finalization — a track whose `RecordingWorklet` hasn't finished importing can lose its audio data. Pair the barrier with a safety timeout: a `RecordingWorklet` finalization failure produces no terminal state at all (the loader stays in `"record"`), so a stuck loader would otherwise block the barrier forever.
 
 ## Accessing Live Recording Peaks
 
@@ -810,7 +838,7 @@ audioUnitAdapter.tracks.catchupAndSubscribe({
     trackAdapter.regions.catchupAndSubscribe({
       onAdded: (regionAdapter) => {
         if (!regionAdapter.isAudioRegion()) return;
-        if (regionAdapter.label !== "Recording") return;
+        if (!regionAdapter.label.startsWith("Take ")) return;
 
         // Adapter resolves loader internally — no manual UUID lookup
         const loader = regionAdapter.file.getOrCreateLoader();
@@ -868,10 +896,10 @@ Instead, use `waveformOffset` + `duration` (see [Rendering Take Peaks](#renderin
 | Mono/stereo | `capture.requestChannels` | `recording-api-react-demo.html` |
 | Input gain | `capture.captureBox.gainDb` | `recording-api-react-demo.html` |
 | Input monitoring | `capture.monitoringMode` | `recording-api-react-demo.html` |
-| Multi-device recording | `setArm(capture, false)` | `recording-api-react-demo.html` |
+| Multi-device recording | `capture.armed.setValue(true)` | `recording-api-react-demo.html` |
 | MIDI recording | `MidiDevices`, `CaptureMidi` | `midi-recording-demo.html` |
 | Software keyboard | `MidiDevices.softwareMIDIInput` | `midi-recording-demo.html` |
-| Step recording | `NoteEventBox.create()` | `midi-recording-demo.html` |
+| Step recording | `collection.createEvent()` | `midi-recording-demo.html` |
 | Loop recording | `allowTakes` preference | `loop-recording-demo.html` |
 | Take management | region `.mute` field | `loop-recording-demo.html` |
 

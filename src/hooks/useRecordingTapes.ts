@@ -78,7 +78,10 @@ export function useRecordingTapes({
       });
     }
 
-    project.captureDevices.setArm(capture, false);
+    // Arm deterministically. captureDevices.setArm() TOGGLES the armed state
+    // (its second param is exclusivity only), so set the observable directly.
+    // capture.armed is runtime-only, not a box field — no transaction needed.
+    capture.armed.setValue(true);
 
     setRecordingTapes((prev) => [
       ...prev,

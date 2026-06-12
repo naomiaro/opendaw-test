@@ -1,59 +1,76 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { createRoot } from "react-dom/client";
-import { UUID } from "@opendaw/lib-std";
 import type { Terminable } from "@opendaw/lib-std";
 import { Project } from "@opendaw/studio-core";
-import type { SampleLoader, AudioRegionBoxAdapter } from "@opendaw/studio-adapters";
+import type { SampleLoaderState } from "@opendaw/studio-adapters";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { PPQN } from "@opendaw/lib-dsp";
-import { AudioRegionBox } from "@opendaw/studio-boxes";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { getAllRegions } from "@/lib/adapterUtils";
+import { waitForLoadingComplete } from "@/lib/engineLoading";
 import { useEnginePreference } from "@/hooks/useEnginePreference";
+import { FINALIZATION_TIMEOUT_MS } from "@/hooks/useRecordingSession";
 import { useAudioDevicePermission } from "@/hooks/useAudioDevicePermission";
 import { useRecordingTapes } from "@/hooks/useRecordingTapes";
+import { useTakeDiscovery } from "./useTakeDiscovery";
+import { LoopSetupPanel } from "./LoopSetupPanel";
+import { TakesPreferencesPanel } from "./TakesPreferencesPanel";
+import type { OlderTakeAction, OlderTakeScope } from "./TakesPreferencesPanel";
+import { LoopRecordingReference } from "./LoopRecordingReference";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
-import { BpmControl } from "@/components/BpmControl";
-import { RecordingPreferences } from "@/components/RecordingPreferences";
 import { RecordingTapeCard } from "@/components/RecordingTapeCard";
-import type { RecordingTape } from "@/components/RecordingTapeCard";
-import { TakeTimeline } from "@/components/TakeTimeline";
-import type { TakeRegion, TakeIteration } from "@/components/TakeTimeline";
+import { TakeTimeline } from "./TakeTimeline";
+import { CONSOLE_STYLES } from "@/lib/design/consoleTheme";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
   Container,
-  Heading,
   Text,
   Button,
   Flex,
   Card,
-  Checkbox,
-  Select,
   Callout,
-  Separator,
   Badge,
-  Code,
 } from "@radix-ui/themes";
 
-// --- Types ---
+// --- Constants ---
 
 const MAX_TAPES = 4;
 const BAR_PPQN = PPQN.Quarter * 4; // one bar in 4/4 time
 
-const codeStyle = {
-  display: "block" as const,
-  whiteSpace: "pre" as const,
-  padding: 12,
-  overflowX: "auto" as const,
-};
+// Loop progress bar — the width transition is smoothing only, so it is
+// dropped (not the bar itself) under prefers-reduced-motion.
+const PAGE_STYLES = `
+.lr-progress {
+  width: 100%;
+  height: 6px;
+  background: var(--mc-line);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.lr-progress-fill {
+  height: 100%;
+  transition: width 0.05s linear;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lr-progress-fill { transition: none; }
+}
+`;
 
 // --- Main App ---
 
 const App: React.FC = () => {
   const [status, setStatus] = useState("Loading...");
+  const [initError, setInitError] = useState<string | null>(null);
+  // Post-init failures (add tape, start recording/playback). The `status`
+  // string is only rendered on the pre-init screen, so errors must not go there.
+  const [uiError, setUiError] = useState<string | null>(null);
+  // Finalization-barrier failures (loader "error" state or 30s timeout).
+  const [finalizationError, setFinalizationError] = useState<string | null>(
+    null
+  );
   const [project, setProject] = useState<Project | null>(null);
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
 
@@ -63,9 +80,6 @@ const App: React.FC = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentPosition, setCurrentPosition] = useState(0);
 
-  // Takes
-  const [takeIterations, setTakeIterations] = useState<TakeIteration[]>([]);
-
   // Audio input/output configuration
   const { audioInputDevices, audioOutputDevices, hasPermission, requestPermission } =
     useAudioDevicePermission();
@@ -74,7 +88,7 @@ const App: React.FC = () => {
       project,
       audioInputDevices,
       maxTapes: MAX_TAPES,
-      onError: (msg) => setStatus(`Add tape failed: ${msg}`),
+      onError: (msg) => setUiError(`Add tape failed: ${msg}`),
     });
 
   // Settings
@@ -85,39 +99,37 @@ const App: React.FC = () => {
 
   // Takes preferences
   const [allowTakes, setAllowTakes] = useState(true);
-  const [olderTakeAction, setOlderTakeAction] = useState<
-    "mute-region" | "disable-track"
-  >("mute-region");
-  const [olderTakeScope, setOlderTakeScope] = useState<
-    "all" | "previous-only"
-  >("previous-only");
+  const [olderTakeAction, setOlderTakeAction] =
+    useState<OlderTakeAction>("mute-region");
+  const [olderTakeScope, setOlderTakeScope] =
+    useState<OlderTakeScope>("previous-only");
 
   // Engine preferences
   const [metronomeEnabled, setMetronomeEnabled] = useEnginePreference(
     project,
     ["metronome", "enabled"]
   );
-  const [countInBars, setCountInBars] = useEnginePreference(project, [
-    "recording",
-    "countInBars",
-  ]);
+  // Reactive take discovery (adapter-layer subscriptions while recording)
+  const {
+    takeIterations,
+    setTakeIterations,
+    updateTakeMuteInState,
+    terminateDiscovery,
+    snapshotLoaders,
+  } = useTakeDiscovery({
+    project,
+    audioContext,
+    isRecording,
+    recordingTapes,
+    leadInBars,
+  });
 
   // Finalization subscriptions for cleanup
   const finalizationSubsRef = useRef<Terminable[]>([]);
-  // Pointer hub subscriptions for reactive take discovery
-  const pointerHubSubsRef = useRef<Terminable[]>([]);
-  // SampleLoaders discovered during recording — ref avoids stale closure in handleStopRecording
-  const sampleLoadersRef = useRef<Set<SampleLoader>>(new Set());
-  // Ref for recordingTapes to avoid restarting pointerHub subscriptions when tapes change
-  const recordingTapesRef = useRef<RecordingTape[]>([]);
 
-  // Cleanup subscriptions on unmount (but NOT sampleLoadersRef — handleStopRecording owns that)
+  // Cleanup finalization subscriptions on unmount
   useEffect(() => {
     return () => {
-      for (const sub of pointerHubSubsRef.current) {
-        sub.terminate();
-      }
-      pointerHubSubsRef.current = [];
       for (const sub of finalizationSubsRef.current) {
         sub.terminate();
       }
@@ -184,7 +196,8 @@ const App: React.FC = () => {
         setMetronomeEnabled(true);
       } catch (error) {
         console.error("Init error:", error);
-        if (mounted) setStatus(`Error: ${error}`);
+        if (!mounted) return;
+        setInitError(error instanceof Error ? error.message : String(error));
       }
     })();
 
@@ -223,186 +236,28 @@ const App: React.FC = () => {
     settings.recording.olderTakeScope = olderTakeScope;
   }, [project, allowTakes, olderTakeAction, olderTakeScope]);
 
-  // Keep recordingTapes ref in sync with state
-  useEffect(() => {
-    recordingTapesRef.current = recordingTapes;
-  }, [recordingTapes]);
-
-  // --- Reactive take discovery via pointerHub subscriptions ---
-
-  // Build a TakeRegion from a region adapter, using the typed adapter layer
-  // for sampleLoader resolution and tape matching.
-  const buildTakeRegion = useCallback(
-    (regionAdapter: AudioRegionBoxAdapter): TakeRegion | null => {
-      if (!audioContext) return null;
-
-      const label = regionAdapter.label;
-      if (!label.startsWith("Take ")) return null;
-
-      const takeNumber = parseInt(label.replace("Take ", ""), 10);
-      if (isNaN(takeNumber)) return null;
-
-      const isMuted = regionAdapter.mute;
-      const sampleRate = audioContext.sampleRate;
-      const waveformOffsetSec = regionAdapter.waveformOffset.getValue();
-      const waveformOffsetFrames = Math.round(waveformOffsetSec * sampleRate);
-      const regionBox = regionAdapter.box;
-      const durationSec = regionBox.duration.getValue();
-      const durationFrames = Math.round(durationSec * sampleRate);
-
-      // Adapter resolves sampleLoader via file → getOrCreateLoader()
-      const loader = regionAdapter.file.getOrCreateLoader();
-
-      // Match region to input tape via typed adapter path
-      let inputTapeId = "";
-      const trackAdapterOpt = regionAdapter.trackBoxAdapter;
-      if (!trackAdapterOpt.isEmpty()) {
-        inputTapeId = UUID.toString(trackAdapterOpt.unwrap().audioUnit.address.uuid);
-      }
-
-      // Fallback for single tape
-      const tapes = recordingTapesRef.current;
-      if (!inputTapeId && tapes.length === 1) {
-        inputTapeId = tapes[0].id;
-      }
-
-      return {
-        regionBox,
-        inputTapeId,
-        takeNumber,
-        isMuted,
-        sampleLoader: loader,
-        waveformOffsetFrames,
-        durationFrames,
-      };
-    },
-    [audioContext]
-  );
-
-  // Insert a TakeRegion into takeIterations state incrementally
-  const addTakeRegionToState = useCallback(
-    (region: TakeRegion) => {
-      setTakeIterations((prev) => {
-        const existing = prev.find((t) => t.takeNumber === region.takeNumber);
-        if (existing) {
-          // Skip if this exact regionBox is already tracked (prevents duplicates on re-subscribe)
-          if (existing.regions.some((r) => r.regionBox === region.regionBox)) {
-            return prev;
-          }
-          // Add region to existing take (multi-track: same take, different tape)
-          const updatedRegions = [...existing.regions, region];
-          return prev.map((t) =>
-            t.takeNumber === region.takeNumber
-              ? {
-                  ...t,
-                  regions: updatedRegions,
-                  isMuted: updatedRegions.every((r) => r.isMuted),
-                }
-              : t
-          );
-        }
-        // New take iteration
-        const newIteration: TakeIteration = {
-          takeNumber: region.takeNumber,
-          isLeadIn: region.takeNumber === 1 && leadInBars > 0,
-          regions: [region],
-          isMuted: region.isMuted,
-        };
-        return [...prev, newIteration].sort(
-          (a, b) => a.takeNumber - b.takeNumber
-        );
-      });
-    },
-    [leadInBars]
-  );
-
-  // Update mute state in takeIterations reactively
-  const updateTakeMuteInState = useCallback(
-    (regionBox: AudioRegionBox, isMuted: boolean) => {
-      setTakeIterations((prev) =>
-        prev.map((t) => {
-          if (!t.regions.some((r) => r.regionBox === regionBox)) return t;
-          const updatedRegions = t.regions.map((r) =>
-            r.regionBox === regionBox ? { ...r, isMuted } : r
-          );
-          return {
-            ...t,
-            regions: updatedRegions,
-            isMuted: updatedRegions.every((r) => r.isMuted),
-          };
-        })
-      );
-    },
-    []
-  );
-
-  // Set up adapter subscriptions when recording starts — typed alternative to raw pointerHub.
-  useEffect(() => {
-    if (!project || !isRecording || recordingTapes.length === 0) return;
-
-    const subs: Terminable[] = [];
-    const allAudioUnits = project.rootBoxAdapter.audioUnits.adapters();
-
-    for (const tape of recordingTapes) {
-      const audioUnitAdapter = allAudioUnits.find(
-        (au) => au.box === tape.capture.audioUnitBox
-      );
-      if (!audioUnitAdapter) continue;
-
-      const tracksSub = audioUnitAdapter.tracks.catchupAndSubscribe({
-        onAdd: (trackAdapter) => {
-          const regionsSub = trackAdapter.regions.catchupAndSubscribe({
-            onAdded: (regionAdapter) => {
-              if (!regionAdapter.isAudioRegion()) return;
-              const takeRegion = buildTakeRegion(regionAdapter);
-              if (!takeRegion) return;
-
-              addTakeRegionToState(takeRegion);
-
-              if (takeRegion.sampleLoader) {
-                sampleLoadersRef.current.add(takeRegion.sampleLoader);
-              }
-
-              // Subscribe to mute changes for reactive UI updates
-              const muteSub = takeRegion.regionBox.mute.subscribe((obs: any) => {
-                updateTakeMuteInState(takeRegion.regionBox, obs.getValue());
-              });
-              subs.push(muteSub);
-            },
-            onRemoved: () => {},
-          });
-          subs.push(regionsSub);
-        },
-        onRemove: () => {},
-        onReorder: () => {},
-      });
-      subs.push(tracksSub);
-    }
-
-    pointerHubSubsRef.current = subs;
-
-    return () => {
-      for (const sub of subs) {
-        sub.terminate();
-      }
-      pointerHubSubsRef.current = [];
-      // Do NOT clear sampleLoadersRef here — handleStopRecording owns its lifecycle
-      // and may still be using the Set reference for the finalization barrier.
-    };
-  }, [
-    project,
-    isRecording,
-    recordingTapes,
-    buildTakeRegion,
-    addTakeRegionToState,
-    updateTakeMuteInState,
-  ]);
-
   // --- Recording handlers ---
+
+  // Standalone permission button — AudioDevices.requestPermission() THROWS on
+  // denial, so a bare onClick={requestPermission} is an unhandled rejection.
+  const handleRequestPermission = useCallback(async () => {
+    setUiError(null);
+    try {
+      await requestPermission();
+    } catch (error) {
+      console.error("Microphone permission denied: " + String(error));
+      setUiError(
+        "Microphone access was denied — recording needs an input device. " +
+          "Allow microphone access in the browser's site settings and try again."
+      );
+    }
+  }, [requestPermission]);
 
   const handleStartRecording = useCallback(async () => {
     if (!project || !audioContext || armedCount === 0) return;
 
+    setUiError(null);
+    setFinalizationError(null);
     try {
       if (audioContext.state === "suspended") await audioContext.resume();
 
@@ -425,6 +280,9 @@ const App: React.FC = () => {
       project.startRecording(useCountIn);
     } catch (error) {
       console.error("Failed to start recording:", error);
+      setUiError(
+        `Failed to start recording: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }, [
     project,
@@ -442,12 +300,12 @@ const App: React.FC = () => {
 
     // 1. Terminate pointer hub subs before stopRecording() to prevent late
     //    SDK events from adding stale regions to state
-    for (const sub of pointerHubSubsRef.current) {
-      sub.terminate();
-    }
-    pointerHubSubsRef.current = [];
+    terminateDiscovery();
 
-    // 2. Stop recording (NOT stop(true) which kills the audio graph)
+    // 2. Stop recording. stop(true) would reset position/processors while
+    //    finalization is still in flight — the position reset also triggers
+    //    spurious loop-wrap detection that mutes the last take. Reset only
+    //    after all loaders reach a terminal state (barrier below).
     project.engine.stopRecording();
 
     // 3. Cleanup old finalization subscriptions
@@ -456,74 +314,78 @@ const App: React.FC = () => {
     }
     finalizationSubsRef.current = [];
 
-    // 4. Snapshot sampleLoaders from ref (copy to avoid race with useEffect cleanup)
-    const loaders = new Set(sampleLoadersRef.current);
-    sampleLoadersRef.current = new Set();
+    // 4. Snapshot discovered sampleLoaders (the hook copies and clears its set)
+    const loaders = snapshotLoaders();
 
     if (loaders.size > 0) {
       let finalized = 0;
       const total = loaders.size;
       let timedOut = false;
 
-      // Safety timeout: if loaders haven't emitted "loaded" within 10s, give up and reset
+      // Safety timeout: a RecordingWorklet failure produces NO terminal state
+      // (the loader stays in "record" forever), so this timeout is the only
+      // net that catches it — it must surface to the UI, not just the console.
       const timeout = window.setTimeout(() => {
         if (finalized < total) {
           timedOut = true;
-          console.warn(`Finalization timed out (${finalized}/${total} loaded)`);
-          setStatus(`Warning: Recording finalization timed out. Some audio may be incomplete.`);
+          console.warn(`Finalization timed out (${finalized}/${total} terminal)`);
+          setFinalizationError(
+            `Finalization timed out after ${FINALIZATION_TIMEOUT_MS / 1000}s — ` +
+              "engine reset; the recording may be incomplete"
+          );
           for (const sub of finalizationSubsRef.current) sub.terminate();
           finalizationSubsRef.current = [];
           project.engine.stop(true);
         }
-      }, 10_000);
+      }, FINALIZATION_TIMEOUT_MS);
+
+      // Errored loaders still count toward the barrier so the engine reset
+      // always runs; the error is surfaced separately.
+      const countTerminal = (state: SampleLoaderState) => {
+        if (state.type === "error") {
+          setFinalizationError(
+            `Recording finalization failed: ${state.reason || "unknown"}`
+          );
+        }
+        finalized++;
+        if (finalized === total) {
+          clearTimeout(timeout);
+          for (const sub of finalizationSubsRef.current) sub.terminate();
+          finalizationSubsRef.current = [];
+          project.engine.stop(true);
+        }
+      };
 
       for (const loader of loaders) {
+        // Pre-check: handle already-terminal loaders without subscribing —
+        // subscribe() fires synchronously for terminal states.
+        const initialState = loader.state;
+        if (initialState.type === "loaded" || initialState.type === "error") {
+          countTerminal(initialState);
+          continue;
+        }
         finalizationSubsRef.current.push(
           loader.subscribe((state) => {
             if (timedOut) return;
-            if (state.type === "loaded") {
-              finalized++;
-              if (finalized === total) {
-                clearTimeout(timeout);
-                for (const sub of finalizationSubsRef.current) sub.terminate();
-                finalizationSubsRef.current = [];
-                project.engine.stop(true);
-              }
-            }
+            if (state.type !== "loaded" && state.type !== "error") return;
+            countTerminal(state);
           })
         );
       }
     } else {
       project.engine.stop(true);
     }
-  }, [project]);
+  }, [project, terminateDiscovery, snapshotLoaders]);
 
   const handlePlay = useCallback(async () => {
     if (!project || !audioContext) return;
 
+    setUiError(null);
     try {
       if (audioContext.state === "suspended") await audioContext.resume();
 
       // Wait for audio to load with timeout
-      const isLoaded = await project.engine.queryLoadingComplete();
-      if (!isLoaded) {
-        const LOADING_TIMEOUT_MS = 10_000;
-        await new Promise<void>((resolve, reject) => {
-          const timeout = setTimeout(
-            () => reject(new Error("Audio loading timed out")),
-            LOADING_TIMEOUT_MS
-          );
-          const checkLoaded = async () => {
-            if (await project.engine.queryLoadingComplete()) {
-              clearTimeout(timeout);
-              resolve();
-            } else {
-              requestAnimationFrame(checkLoaded);
-            }
-          };
-          checkLoaded();
-        });
-      }
+      await waitForLoadingComplete(project);
 
       // Keep loop area enabled so playback loops over takes
       project.editing.modify(() => {
@@ -534,6 +396,9 @@ const App: React.FC = () => {
       project.engine.play();
     } catch (error) {
       console.error("Failed to start playback:", error);
+      setUiError(
+        `Failed to start playback: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }, [project, audioContext]);
 
@@ -582,7 +447,7 @@ const App: React.FC = () => {
       }
     });
     setTakeIterations([]);
-  }, [project]);
+  }, [project, setTakeIterations]);
 
   // --- Derived values ---
 
@@ -600,456 +465,295 @@ const App: React.FC = () => {
 
   // --- Render ---
 
-  if (!project) {
-    return (
-      <Theme appearance="dark" accentColor="amber" radius="large">
-        <Container size="2" px="4" py="8">
-          <Flex direction="column" align="center" gap="4">
-            <Heading size="8">Loop Recording & Takes</Heading>
-            <Text size="3" color="gray">
-              {status}
-            </Text>
-          </Flex>
-        </Container>
-      </Theme>
-    );
-  }
-
   return (
-    <Theme appearance="dark" accentColor="amber" radius="large">
-      <GitHubCorner />
+    <Theme
+      appearance="dark"
+      accentColor="amber"
+      radius="large"
+      style={{ background: "var(--mc-bg)" }}
+    >
+      <style>{CONSOLE_STYLES}</style>
+      <style>{PAGE_STYLES}</style>
       <Container size="3" px="4" py="8">
+        <GitHubCorner />
+        <BackLink />
         <Flex
           direction="column"
           gap="6"
           style={{ maxWidth: 1200, margin: "0 auto" }}
         >
-          <BackLink />
+          <div>
+            <div className="mc-kicker">Recording — Loop &amp; Takes · OpenDAW SDK</div>
+            <h1 className="mc-title" style={{ fontSize: "clamp(28px, 4.5vw, 44px)" }}>
+              LOOP RECORDING
+            </h1>
+            <p className="mc-intro">
+              Multi-track loop recording with takes and a pre-loop lead-in. Add
+              audio input tapes, configure the lead-in and loop region, then
+              record — each time the loop wraps, the SDK creates a new take
+              across all armed tapes. Compare and mute takes in the timeline
+              below.
+            </p>
+          </div>
 
-          <Flex direction="column" align="center" gap="2">
-            <Heading size="8">Loop Recording & Takes</Heading>
-            <Text size="3" color="gray">
-              Multi-track loop recording with pre-loop lead-in and timeline
-              comping
+          {initError ? (
+            <Callout.Root color="red" role="alert">
+              <Callout.Text>
+                <strong>Initialization failed:</strong> {initError}
+              </Callout.Text>
+            </Callout.Root>
+          ) : !project ? (
+            <Text align="center" color="gray">
+              {status}
             </Text>
-          </Flex>
+          ) : (
+            <>
+              {/* Audio Inputs */}
+              <Card>
+                <Flex direction="column" gap="4">
+                  <Flex justify="between" align="center">
+                    <Text size="2" weight="bold" color="gray">
+                      Audio Inputs
+                    </Text>
+                    {hasPermission && (
+                      <Badge color="gray" size="1">
+                        {armedCount} of {recordingTapes.length} tape
+                        {recordingTapes.length !== 1 ? "s" : ""} armed
+                      </Badge>
+                    )}
+                  </Flex>
 
-          <Callout.Root color="amber">
-            <Callout.Text>
-              This demo shows <strong>loop recording with takes</strong>,{" "}
-              <strong>multi-track input</strong>, and{" "}
-              <strong>pre-loop lead-in</strong> recording. Add audio input
-              tapes, configure the lead-in and loop region, then record. Each
-              loop iteration creates takes across all armed tapes. Compare
-              takes in the timeline below.
-            </Callout.Text>
-          </Callout.Root>
+                  {!hasPermission ? (
+                    <Flex direction="column" gap="3" align="center">
+                      <Text size="2" color="gray">
+                        Grant microphone access to see available audio input
+                        devices.
+                      </Text>
+                      <Button
+                        onClick={handleRequestPermission}
+                        color="amber"
+                        size="2"
+                        variant="soft"
+                      >
+                        Request Microphone Permission
+                      </Button>
+                    </Flex>
+                  ) : (
+                    <Flex direction="column" gap="3">
+                      {recordingTapes.length === 0 && (
+                        <Text
+                          size="2"
+                          color="gray"
+                          style={{ fontStyle: "italic" }}
+                        >
+                          No recording tapes. Click "Add Tape" to create one.
+                        </Text>
+                      )}
 
-          {/* Audio Inputs */}
-          <Card>
-            <Flex direction="column" gap="4">
-              <Flex justify="between" align="center">
-                <Heading size="5">Audio Inputs</Heading>
-                {hasPermission && (
-                  <Badge color="gray" size="1">
-                    {armedCount} of {recordingTapes.length} tape
-                    {recordingTapes.length !== 1 ? "s" : ""} armed
-                  </Badge>
-                )}
-              </Flex>
+                      {recordingTapes.map((tape, index) => (
+                        <RecordingTapeCard
+                          key={tape.id}
+                          tape={tape}
+                          tapeIndex={index}
+                          project={project}
+                          audioInputDevices={audioInputDevices}
+                          audioOutputDevices={audioOutputDevices}
+                          disabled={isRecording || isCountingIn}
+                          onRemove={removeTape}
+                          onArmedChange={handleArmedChange}
+                        />
+                      ))}
 
-              {!hasPermission ? (
-                <Flex direction="column" gap="3" align="center">
-                  <Text size="2" color="gray">
-                    Grant microphone access to see available audio input
-                    devices.
-                  </Text>
-                  <Button
-                    onClick={requestPermission}
-                    color="amber"
-                    size="2"
-                    variant="soft"
-                  >
-                    Request Microphone Permission
-                  </Button>
+                      <Button
+                        onClick={addTape}
+                        color="amber"
+                        variant="soft"
+                        disabled={
+                          isRecording ||
+                          isCountingIn ||
+                          recordingTapes.length >= MAX_TAPES
+                        }
+                      >
+                        + Add Tape{" "}
+                        {recordingTapes.length >= MAX_TAPES ? "(max 4)" : ""}
+                      </Button>
+                    </Flex>
+                  )}
                 </Flex>
-              ) : (
-                <Flex direction="column" gap="3">
-                  {recordingTapes.length === 0 && (
+              </Card>
+
+              {/* Setup */}
+              <LoopSetupPanel
+                bpm={bpm}
+                onBpmChange={setBpm}
+                leadInBars={leadInBars}
+                onLeadInBarsChange={setLeadInBars}
+                loopLengthBars={loopLengthBars}
+                onLoopLengthBarsChange={setLoopLengthBars}
+                useCountIn={useCountIn}
+                onUseCountInChange={setUseCountIn}
+                metronomeEnabled={metronomeEnabled}
+                onMetronomeEnabledChange={setMetronomeEnabled}
+                disabled={isRecording}
+              />
+
+              {/* Takes Preferences */}
+              <TakesPreferencesPanel
+                allowTakes={allowTakes}
+                onAllowTakesChange={setAllowTakes}
+                olderTakeAction={olderTakeAction}
+                onOlderTakeActionChange={setOlderTakeAction}
+                olderTakeScope={olderTakeScope}
+                onOlderTakeScopeChange={setOlderTakeScope}
+                disabled={isRecording}
+              />
+
+              {/* Transport */}
+              <Card>
+                <Flex direction="column" gap="4">
+                  <Text size="2" weight="bold" color="gray">
+                    Transport
+                  </Text>
+
+                  <Callout.Root color="amber">
+                    <Callout.Text>
+                      Press <strong>Record</strong> and perform over the loop.
+                      Each time the loop wraps, a new take is created across all
+                      armed tapes. Stop recording when satisfied and compare
+                      takes below.
+                    </Callout.Text>
+                  </Callout.Root>
+
+                  <Flex gap="3" wrap="wrap" justify="center">
+                    <Button
+                      onClick={handleStartRecording}
+                      color="red"
+                      size="3"
+                      variant="solid"
+                      disabled={
+                        isRecording ||
+                        isCountingIn ||
+                        isPlaying ||
+                        armedCount === 0
+                      }
+                    >
+                      Record
+                      {armedCount > 0
+                        ? ` (${armedCount} tape${armedCount !== 1 ? "s" : ""})`
+                        : ""}
+                    </Button>
+                    <Button
+                      onClick={handlePlay}
+                      disabled={
+                        isRecording ||
+                        isCountingIn ||
+                        isPlaying ||
+                        takeCount === 0
+                      }
+                      color="green"
+                      size="3"
+                      variant="solid"
+                    >
+                      Play
+                    </Button>
+                    <Button
+                      onClick={isRecording ? handleStopRecording : handleStop}
+                      color="gray"
+                      size="3"
+                      variant="solid"
+                    >
+                      Stop
+                    </Button>
+                    <Button
+                      onClick={handleClearTakes}
+                      color="red"
+                      size="1"
+                      variant="ghost"
+                      disabled={isRecording || takeCount === 0}
+                    >
+                      Clear All Takes
+                    </Button>
+                  </Flex>
+
+                  <Flex justify="center" gap="3" align="center">
+                    {isRecording && (
+                      <Badge color="red" size="2">
+                        Recording
+                      </Badge>
+                    )}
+                    {isCountingIn && (
+                      <Badge color="amber" size="2">
+                        Count-in
+                      </Badge>
+                    )}
+                    {isPlaying && !isRecording && (
+                      <Badge color="green" size="2">
+                        Playing
+                      </Badge>
+                    )}
+                    <Badge color="gray" size="1">
+                      {takeCount} take{takeCount !== 1 ? "s" : ""}
+                    </Badge>
                     <Text
                       size="2"
-                      color="gray"
-                      style={{ fontStyle: "italic" }}
+                      style={{
+                        fontFamily: "var(--mc-mono)",
+                        fontVariantNumeric: "tabular-nums",
+                      }}
                     >
-                      No recording tapes. Click "Add Tape" to create one.
+                      {timeInSeconds.toFixed(2)}s
                     </Text>
+                  </Flex>
+
+                  {finalizationError && (
+                    <Callout.Root color="red" role="alert">
+                      <Callout.Text>{finalizationError}</Callout.Text>
+                    </Callout.Root>
                   )}
 
-                  {recordingTapes.map((tape, index) => (
-                    <RecordingTapeCard
-                      key={tape.id}
-                      tape={tape}
-                      tapeIndex={index}
-                      project={project}
-                      audioInputDevices={audioInputDevices}
-                      audioOutputDevices={audioOutputDevices}
-                      disabled={isRecording || isCountingIn}
-                      onRemove={removeTape}
-                      onArmedChange={handleArmedChange}
-                    />
-                  ))}
+                  {uiError && (
+                    <Callout.Root color="red" role="alert">
+                      <Callout.Text>{uiError}</Callout.Text>
+                    </Callout.Root>
+                  )}
 
-                  <Button
-                    onClick={addTape}
-                    color="amber"
-                    variant="soft"
-                    disabled={
-                      isRecording ||
-                      isCountingIn ||
-                      recordingTapes.length >= MAX_TAPES
-                    }
-                  >
-                    + Add Tape{" "}
-                    {recordingTapes.length >= MAX_TAPES ? "(max 4)" : ""}
-                  </Button>
+                  {/* Loop progress bar */}
+                  {(isRecording || isPlaying) && (
+                    <div className="lr-progress">
+                      <div
+                        className="lr-progress-fill"
+                        style={{
+                          width: `${loopProgress * 100}%`,
+                          background: isRecording
+                            ? "var(--red-9)"
+                            : "var(--green-9)",
+                        }}
+                      />
+                    </div>
+                  )}
                 </Flex>
-              )}
-            </Flex>
-          </Card>
+              </Card>
 
-          {/* Setup */}
-          <Card>
-            <Flex direction="column" gap="4">
-              <Heading size="5">Setup</Heading>
-              <Flex gap="4" wrap="wrap" align="center">
-                <BpmControl
-                  value={bpm}
-                  onChange={setBpm}
-                  disabled={isRecording}
+              {/* TakeTimeline */}
+              {takeCount > 0 && (
+                <TakeTimeline
+                  takeIterations={takeIterations}
+                  recordingTapeLabels={recordingTapeLabels}
+                  currentPosition={currentPosition}
+                  leadInBars={leadInBars}
+                  loopLengthBars={loopLengthBars}
+                  isRecording={isRecording}
+                  isPlaying={isPlaying}
+                  sampleRate={audioContext?.sampleRate ?? 44100}
+                  onToggleMute={handleToggleTakeMute}
                 />
-                <Flex align="center" gap="2">
-                  <Text size="2" weight="medium">
-                    Lead-in:
-                  </Text>
-                  <Select.Root
-                    value={leadInBars.toString()}
-                    onValueChange={(v) => setLeadInBars(Number(v))}
-                    disabled={isRecording}
-                  >
-                    <Select.Trigger style={{ width: 100 }} />
-                    <Select.Content>
-                      <Select.Item value="0">None</Select.Item>
-                      <Select.Item value="1">1 bar</Select.Item>
-                      <Select.Item value="2">2 bars</Select.Item>
-                      <Select.Item value="3">3 bars</Select.Item>
-                      <Select.Item value="4">4 bars</Select.Item>
-                    </Select.Content>
-                  </Select.Root>
-                </Flex>
-                <Flex align="center" gap="2">
-                  <Text size="2" weight="medium">
-                    Loop Length:
-                  </Text>
-                  <Select.Root
-                    value={loopLengthBars.toString()}
-                    onValueChange={(v) => setLoopLengthBars(Number(v))}
-                    disabled={isRecording}
-                  >
-                    <Select.Trigger style={{ width: 100 }} />
-                    <Select.Content>
-                      <Select.Item value="1">1 bar</Select.Item>
-                      <Select.Item value="2">2 bars</Select.Item>
-                      <Select.Item value="4">4 bars</Select.Item>
-                      <Select.Item value="8">8 bars</Select.Item>
-                    </Select.Content>
-                  </Select.Root>
-                </Flex>
-                <RecordingPreferences
-                  useCountIn={useCountIn}
-                  onUseCountInChange={setUseCountIn}
-                  metronomeEnabled={metronomeEnabled}
-                  onMetronomeEnabledChange={setMetronomeEnabled}
-                />
-              </Flex>
-              {leadInBars > 0 && (
-                <Text size="1" color="gray">
-                  Take 1 records from bar 1 through bar {totalBars} (
-                  {leadInBars} bar lead-in + {loopLengthBars} bar loop).
-                  Subsequent takes record only the {loopLengthBars}-bar loop
-                  region.
-                </Text>
               )}
-            </Flex>
-          </Card>
 
-          {/* Takes Preferences */}
-          <Card>
-            <Flex direction="column" gap="4">
-              <Heading size="5">Takes Preferences</Heading>
-              <Flex gap="4" wrap="wrap" align="center">
-                <Flex asChild align="center" gap="2">
-                  <Text as="label" size="2">
-                    <Checkbox
-                      checked={allowTakes}
-                      onCheckedChange={(c) => setAllowTakes(c === true)}
-                      disabled={isRecording}
-                    />
-                    Allow takes (loop recording)
-                  </Text>
-                </Flex>
-                <Flex align="center" gap="2">
-                  <Text size="2" weight="medium">
-                    Older Take Action:
-                  </Text>
-                  <Select.Root
-                    value={olderTakeAction}
-                    onValueChange={(v) =>
-                      setOlderTakeAction(
-                        v as "mute-region" | "disable-track"
-                      )
-                    }
-                    disabled={isRecording}
-                  >
-                    <Select.Trigger style={{ width: 150 }} />
-                    <Select.Content>
-                      <Select.Item value="mute-region">
-                        Mute Region
-                      </Select.Item>
-                      <Select.Item value="disable-track">
-                        Disable Track
-                      </Select.Item>
-                    </Select.Content>
-                  </Select.Root>
-                </Flex>
-                <Flex align="center" gap="2">
-                  <Text size="2" weight="medium">
-                    Scope:
-                  </Text>
-                  <Select.Root
-                    value={olderTakeScope}
-                    onValueChange={(v) =>
-                      setOlderTakeScope(v as "all" | "previous-only")
-                    }
-                    disabled={isRecording}
-                  >
-                    <Select.Trigger style={{ width: 150 }} />
-                    <Select.Content>
-                      <Select.Item value="previous-only">
-                        Previous Only
-                      </Select.Item>
-                      <Select.Item value="all">All Previous</Select.Item>
-                    </Select.Content>
-                  </Select.Root>
-                </Flex>
-              </Flex>
-              <Text size="1" color="gray">
-                {olderTakeScope === "previous-only"
-                  ? "Only the most recent take is affected when a new take is recorded. Use this for layering — unmute an older take and it stays audible through subsequent recordings."
-                  : "All older takes are affected each time a new take is recorded. Use this for comping — keeps a clean slate so you only hear the latest take."}
-              </Text>
-            </Flex>
-          </Card>
-
-          {/* Transport */}
-          <Card>
-            <Flex direction="column" gap="4">
-              <Heading size="5">Transport</Heading>
-
-              <Callout.Root color="orange">
-                <Callout.Text>
-                  Press <strong>Record</strong> and perform over the loop. Each
-                  time the loop wraps, a new take is created across all armed
-                  tapes. Stop recording when satisfied and compare takes below.
-                </Callout.Text>
-              </Callout.Root>
-
-              <Flex gap="3" wrap="wrap" justify="center">
-                <Button
-                  onClick={handleStartRecording}
-                  color="red"
-                  size="3"
-                  variant="solid"
-                  disabled={
-                    isRecording ||
-                    isCountingIn ||
-                    isPlaying ||
-                    armedCount === 0
-                  }
-                >
-                  Record
-                  {armedCount > 0
-                    ? ` (${armedCount} tape${armedCount !== 1 ? "s" : ""})`
-                    : ""}
-                </Button>
-                <Button
-                  onClick={handlePlay}
-                  disabled={
-                    isRecording ||
-                    isCountingIn ||
-                    isPlaying ||
-                    takeCount === 0
-                  }
-                  color="green"
-                  size="3"
-                  variant="solid"
-                >
-                  Play
-                </Button>
-                <Button
-                  onClick={isRecording ? handleStopRecording : handleStop}
-                  color="gray"
-                  size="3"
-                  variant="solid"
-                >
-                  Stop
-                </Button>
-                <Button
-                  onClick={handleClearTakes}
-                  color="red"
-                  size="1"
-                  variant="ghost"
-                  disabled={isRecording || takeCount === 0}
-                >
-                  Clear All Takes
-                </Button>
-              </Flex>
-
-              <Flex justify="center" gap="3" align="center">
-                {isRecording && (
-                  <Badge color="red" size="2">
-                    Recording
-                  </Badge>
-                )}
-                {isCountingIn && (
-                  <Badge color="amber" size="2">
-                    Count-in
-                  </Badge>
-                )}
-                {isPlaying && !isRecording && (
-                  <Badge color="green" size="2">
-                    Playing
-                  </Badge>
-                )}
-                <Badge color="blue" size="1">
-                  {takeCount} take{takeCount !== 1 ? "s" : ""}
-                </Badge>
-                <Text size="2" style={{ fontFamily: "monospace" }}>
-                  {timeInSeconds.toFixed(2)}s
-                </Text>
-              </Flex>
-
-              {/* Loop progress bar */}
-              {(isRecording || isPlaying) && (
-                <div
-                  style={{
-                    width: "100%",
-                    height: 6,
-                    background: "var(--gray-4)",
-                    borderRadius: 3,
-                    overflow: "hidden",
-                  }}
-                >
-                  <div
-                    style={{
-                      width: `${loopProgress * 100}%`,
-                      height: "100%",
-                      background: isRecording
-                        ? "var(--red-9)"
-                        : "var(--green-9)",
-                      transition: "width 0.05s linear",
-                    }}
-                  />
-                </div>
-              )}
-            </Flex>
-          </Card>
-
-          {/* TakeTimeline */}
-          {takeCount > 0 && (
-            <TakeTimeline
-              takeIterations={takeIterations}
-              recordingTapeLabels={recordingTapeLabels}
-              currentPosition={currentPosition}
-              leadInBars={leadInBars}
-              loopLengthBars={loopLengthBars}
-              isRecording={isRecording}
-              isPlaying={isPlaying}
-              sampleRate={audioContext?.sampleRate ?? 44100}
-              onToggleMute={handleToggleTakeMute}
-            />
+              <LoopRecordingReference />
+            </>
           )}
-
-          {/* API Reference */}
-          <Card>
-            <Flex direction="column" gap="3">
-              <Heading size="5">API Reference</Heading>
-              <Separator size="4" />
-
-              <Text size="2" weight="bold">
-                Pre-Loop Lead-In Recording:
-              </Text>
-              <Code size="2" style={codeStyle}>
-                {`// Set loop area with lead-in
-const barPPQN = PPQN.Quarter * 4;
-const loopFrom = leadInBars * barPPQN;
-const loopTo = loopFrom + loopLengthBars * barPPQN;
-
-project.editing.modify(() => {
-  project.timelineBox.loopArea.from.setValue(loopFrom);
-  project.timelineBox.loopArea.to.setValue(loopTo);
-  project.timelineBox.loopArea.enabled.setValue(true);
-});
-
-// Start at position 0 — Take 1 includes lead-in
-project.engine.setPosition(0);
-project.startRecording(useCountIn);`}
-              </Code>
-
-              <Text size="2" weight="bold" style={{ marginTop: 8 }}>
-                Multi-Track Loop Recording:
-              </Text>
-              <Code size="2" style={codeStyle}>
-                {`// Create and arm multiple tracks
-const { audioUnitBox } = project.api
-  .createInstrument(InstrumentFactories.Tape);
-const capture = project.captureDevices
-  .get(audioUnitBox.address.uuid).unwrap();
-
-// Arm non-exclusively (keeps other tracks armed)
-project.captureDevices.setArm(capture, false);
-
-// startRecording() records ALL armed captures
-project.startRecording(useCountIn);
-
-// Multi-track finalization barrier
-const loaders = new Set<SampleLoader>();
-// ... collect loaders from take regions ...
-let finalized = 0;
-for (const loader of loaders) {
-  loader.subscribe(state => {
-    if (state.type === "loaded") {
-      if (++finalized === loaders.size) {
-        project.engine.stop(true);
-      }
-    }
-  });
-}`}
-              </Code>
-
-              <Text size="2" weight="bold" style={{ marginTop: 8 }}>
-                Takes Preferences:
-              </Text>
-              <Code size="2" style={codeStyle}>
-                {`const settings = project.engine.preferences.settings;
-settings.recording.allowTakes = true;
-settings.recording.olderTakeAction = "mute-region";
-settings.recording.olderTakeScope = "previous-only";`}
-              </Code>
-            </Flex>
-          </Card>
-
-          <MoisesLogo />
         </Flex>
+        <MoisesLogo />
       </Container>
     </Theme>
   );

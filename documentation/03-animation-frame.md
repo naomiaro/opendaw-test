@@ -143,8 +143,9 @@ Frameworks that batch state updates (React, Vue, Solid) can skip intermediate re
 // ❌ BAD — the framework may batch "finalizing"→"ready"→"recording" into one render,
 // so the ref goes from true → true (never false). The AnimationFrame misses
 // the transition and never renders peaks on the second recording.
-const shouldRenderRef = useRef(session.shouldMonitorPeaks);
-shouldRenderRef.current = session.shouldMonitorPeaks; // assigned during render
+const isRecordingActive = state === "recording" || state === "finalizing";
+const shouldRenderRef = useRef(isRecordingActive);
+shouldRenderRef.current = isRecordingActive; // assigned during render
 
 const sub = AnimationFrame.add(() => {
   if (!shouldRenderRef.current) return; // may stay false due to batching

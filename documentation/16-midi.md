@@ -140,24 +140,20 @@ The adapter builds the box and wires the `events.refer` for you.
 The reverse: iterate the notes in an existing region for piano-roll rendering, statistics, etc.
 
 ```typescript
-import { NoteEventRegionBoxAdapter } from "@opendaw/studio-adapters";
-
-// Get the region adapter (e.g. from a track's region list)
+// Get the region adapter (e.g. from a track's region list).
+// isNoteRegion() is a type guard — narrows to NoteRegionBoxAdapter, no cast needed.
 const regionAdapter = trackAdapter.regions.adapters.values()[0];
-if (!regionAdapter.isAudioRegion()) {
-  const noteRegion = regionAdapter as NoteEventRegionBoxAdapter;
+if (regionAdapter.isNoteRegion() && regionAdapter.hasCollection) {
+  const collection = regionAdapter.optCollection.unwrap(); // NoteEventCollectionBoxAdapter
 
-  // Iterate notes
-  for (const noteAdapter of noteRegion.events.selectable()) {
-    const pitch = noteAdapter.box.pitch.getValue();
-    const velocity = noteAdapter.box.velocity.getValue();
-    const position = noteAdapter.box.position.getValue();
-    const duration = noteAdapter.box.duration.getValue();
+  // Iterate notes — adapters expose typed getters, no .getValue() needed
+  for (const noteAdapter of collection.selectable()) {
+    const { pitch, velocity, position, duration } = noteAdapter;
     console.log({ pitch, velocity, position, duration });
   }
 
   // React to changes (note added / removed / mutated)
-  noteRegion.events.subscribeChange(() => {
+  collection.subscribeChange(() => {
     // re-draw the piano roll
   });
 }
@@ -219,7 +215,10 @@ project.editing.modify(() => {
   cap.captureBox.channel.setValue(-1); // -1 = any channel; 0–15 = specific
 });
 
-project.captureDevices.setArm(cap, true);
+// armed is a runtime observable — set it directly, outside editing.modify().
+// (captureDevices.setArm() TOGGLES the armed state; its second parameter only
+// controls whether other captures are disarmed — see Ch. 08.)
+cap.armed.setValue(true);
 ```
 
 When armed and the engine is recording, notes received from the matching channel land in a new `NoteRegionBox` on the track. The full lifecycle (count-in, takes, comp lanes) is detailed in [Ch. 08](./08-recording.md).
@@ -248,7 +247,7 @@ If you need to slave external gear to openDAW's transport today, the practical w
 
 ## MIDI effects
 
-Five MIDI effects ship with the SDK, inserted into a track's MIDI device chain (before the instrument). Use the `MidiEffectFactories` from `@opendaw/studio-adapters` to add them in a transaction — same pattern as audio effects, see [Ch. 11](./11-effects.md#adding-an-effect).
+Five MIDI effects ship with the SDK, inserted into a track's MIDI device chain (before the instrument). Use `EffectFactories` from `@opendaw/studio-core` (the MIDI factories live in `EffectFactories.MidiNamed`) to add them in a transaction — `project.api.insertEffect(audioUnitBox.midiEffects, EffectFactories.Arpeggio)` — same pattern as audio effects, see [Ch. 11](./11-effects.md#adding-an-effect).
 
 ### Arpeggio
 
@@ -350,13 +349,13 @@ A quick map of the SDK surfaces this chapter touches:
 | Concept | Surface | Where |
 |---|---|---|
 | Note data | `NoteEventBox`, `NoteEventCollectionBox`, `NoteRegionBox` | `@opendaw/studio-boxes` |
-| Note iteration | `NoteEventCollectionBoxAdapter`, `NoteEventRegionBoxAdapter` | `@opendaw/studio-adapters` |
+| Note iteration | `NoteEventCollectionBoxAdapter`, `NoteRegionBoxAdapter` | `@opendaw/studio-adapters` |
 | Hardware input | `MidiDevices` | `@opendaw/studio-core` |
 | Recording | `CaptureMidi`, `project.captureDevices` | `@opendaw/studio-core` |
 | Note signals (audition) | `NoteSignal` | `@opendaw/studio-adapters` |
 | Engine note input | `project.engine.noteSignal(signal)` | `@opendaw/studio-core` |
 | MIDI effects | `ArpeggioDeviceBox`, `PitchDeviceBox`, `VelocityDeviceBox`, `ZeitgeistDeviceBox`, `SpielwerkDeviceBox` | `@opendaw/studio-boxes` |
-| Add an effect | `MidiEffectFactories` | `@opendaw/studio-adapters` |
+| Add an effect | `EffectFactories.MidiNamed`, `project.api.insertEffect` | `@opendaw/studio-core` |
 | MIDI output to hardware | Not yet exposed publicly | (internals only) |
 | MIDI Clock | Not yet exposed publicly | (internals only) |
 

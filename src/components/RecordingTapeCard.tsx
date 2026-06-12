@@ -18,6 +18,18 @@ export interface RecordingTape {
   capture: CaptureAudio;
 }
 
+/** Uppercase micro-label for panel fields (matches InputLatencyPanel's Stat idiom) */
+const FieldLabel: React.FC<{ children: React.ReactNode; minWidth?: number }> = ({ children, minWidth }) => (
+  <Text
+    size="1"
+    color="gray"
+    weight="medium"
+    style={{ letterSpacing: "0.06em", textTransform: "uppercase", minWidth }}
+  >
+    {children}
+  </Text>
+);
+
 interface RecordingTapeCardProps {
   tape: RecordingTape;
   tapeIndex: number;
@@ -168,14 +180,11 @@ export const RecordingTapeCard: React.FC<RecordingTapeCardProps> = ({
   }, [capture, monitorOutputDeviceId]);
 
   const handleToggleArm = useCallback(() => {
-    if (isArmed) {
-      // Disarm: set armed to false directly
-      capture.armed.setValue(false);
-    } else {
-      // Arm non-exclusively so other tapes stay armed
-      project.captureDevices.setArm(capture, false);
-    }
-  }, [project, capture, isArmed]);
+    // Deterministic arm/disarm. captureDevices.setArm() TOGGLES the armed
+    // state (its second param is exclusivity only), so set the observable
+    // directly — other tapes stay armed. Reserve setArm for exclusive-arm UX.
+    capture.armed.setValue(!isArmed);
+  }, [capture, isArmed]);
 
   const handleRemove = useCallback(() => {
     onRemove(tape.id);
@@ -225,7 +234,9 @@ export const RecordingTapeCard: React.FC<RecordingTapeCardProps> = ({
       <Flex direction="column" gap="3">
         <Flex justify="between" align="center">
           <Flex align="center" gap="2">
-            <Text size="2" weight="bold">Tape {tapeIndex + 1}</Text>
+            <Text size="2" weight="bold" style={{ fontVariantNumeric: "tabular-nums" }}>
+              Tape {tapeIndex + 1}
+            </Text>
             {isArmed && <Badge color="red" size="1">Capture armed</Badge>}
           </Flex>
           <Flex gap="2">
@@ -252,7 +263,7 @@ export const RecordingTapeCard: React.FC<RecordingTapeCardProps> = ({
 
         <Flex gap="4" wrap="wrap" align="end">
           <Flex direction="column" gap="1" style={{ flex: 1, minWidth: 200 }}>
-            <Text size="2" weight="medium">Input Device:</Text>
+            <FieldLabel>Input Device</FieldLabel>
             <Select.Root
               value={selectedDeviceId}
               onValueChange={setSelectedDeviceId}
@@ -271,14 +282,14 @@ export const RecordingTapeCard: React.FC<RecordingTapeCardProps> = ({
 
           <Flex direction="column" gap="1">
             <Flex align="center" gap="1">
-              <Text size="2" weight="medium">Channels:</Text>
+              <FieldLabel>Channels</FieldLabel>
               {maxChannels === 1 && <Text size="1" color="gray">(mono only)</Text>}
             </Flex>
             <Flex gap="2">
               <Button
                 size="1"
                 variant={isMono ? "soft" : "solid"}
-                color={isMono ? "gray" : "blue"}
+                color={isMono ? "gray" : undefined}
                 onClick={() => setIsMono(false)}
                 disabled={disabled || maxChannels === 1}
               >
@@ -287,7 +298,7 @@ export const RecordingTapeCard: React.FC<RecordingTapeCardProps> = ({
               <Button
                 size="1"
                 variant={isMono ? "solid" : "soft"}
-                color={isMono ? "blue" : "gray"}
+                color={isMono ? undefined : "gray"}
                 onClick={() => setIsMono(true)}
                 disabled={disabled}
               >
@@ -297,7 +308,7 @@ export const RecordingTapeCard: React.FC<RecordingTapeCardProps> = ({
           </Flex>
 
           <Flex direction="column" gap="1">
-            <Text size="2" weight="medium">Monitoring:</Text>
+            <FieldLabel>Monitoring</FieldLabel>
             <Select.Root
               value={monitoringMode}
               onValueChange={value => setMonitoringModeState(value as MonitoringMode)}
@@ -314,7 +325,7 @@ export const RecordingTapeCard: React.FC<RecordingTapeCardProps> = ({
         </Flex>
 
         <Flex align="center" gap="3">
-          <Text size="2" weight="medium" style={{ minWidth: 80 }}>Input Gain:</Text>
+          <FieldLabel minWidth={80}>Input Gain</FieldLabel>
           <Slider
             value={[inputGainDb + 60]}
             onValueChange={values => setInputGainDb(values[0] - 60)}
@@ -331,7 +342,7 @@ export const RecordingTapeCard: React.FC<RecordingTapeCardProps> = ({
 
         <Flex direction="column" gap="2">
           <Flex align="center" gap="2" wrap="wrap">
-            <Text size="2" weight="medium" style={{ minWidth: 80 }}>Input Latency:</Text>
+            <FieldLabel minWidth={80}>Input Latency</FieldLabel>
             <Select.Root
               value={inputLatencyMode}
               onValueChange={value => handleInputLatencyModeChange(value as InputLatencyMode)}
@@ -384,7 +395,7 @@ export const RecordingTapeCard: React.FC<RecordingTapeCardProps> = ({
             <Separator size="4" />
             <Flex direction="column" gap="3">
               <Flex align="center" gap="2">
-                <Text size="2" weight="medium">Monitor</Text>
+                <FieldLabel>Monitor</FieldLabel>
                 <Button
                   size="1"
                   variant={monitorMuted ? "solid" : "soft"}
@@ -396,7 +407,7 @@ export const RecordingTapeCard: React.FC<RecordingTapeCardProps> = ({
               </Flex>
 
               <Flex align="center" gap="3">
-                <Text size="2" weight="medium" style={{ minWidth: 80 }}>Volume:</Text>
+                <FieldLabel minWidth={80}>Volume</FieldLabel>
                 <Slider
                   value={[monitorVolumeDb + 60]}
                   onValueChange={values => setMonitorVolumeDb(values[0] - 60)}
@@ -412,7 +423,7 @@ export const RecordingTapeCard: React.FC<RecordingTapeCardProps> = ({
               </Flex>
 
               <Flex align="center" gap="3">
-                <Text size="2" weight="medium" style={{ minWidth: 80 }}>Pan:</Text>
+                <FieldLabel minWidth={80}>Pan</FieldLabel>
                 <Slider
                   value={[monitorPan * 50 + 50]}
                   onValueChange={values => setMonitorPan((values[0] - 50) / 50)}
@@ -429,7 +440,7 @@ export const RecordingTapeCard: React.FC<RecordingTapeCardProps> = ({
 
               {canSwitchOutput && audioOutputDevices.length > 0 && (
                 <Flex align="center" gap="3">
-                  <Text size="2" weight="medium" style={{ minWidth: 80 }}>Output:</Text>
+                  <FieldLabel minWidth={80}>Output</FieldLabel>
                   <Select.Root
                     value={monitorOutputDeviceId}
                     onValueChange={setMonitorOutputDeviceId}
