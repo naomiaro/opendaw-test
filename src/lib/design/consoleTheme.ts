@@ -1,6 +1,25 @@
 // Governing decision: docs/design/2026-06-11-mastering-console-editorial.md
 // Usage: pages add <style>{CONSOLE_STYLES}</style> inside their Radix Theme.
 
+// Data-canvas palette — canvas 2D contexts can't read CSS variables, so the
+// design-doc tiers (docs/design/2026-06-11-mastering-console-editorial.md,
+// "Data canvases") are mirrored here as literals.
+export const CANVAS_COLORS = {
+  bg: "#0d0c0a",            // --mc-bg
+  shade: "#221d15",         // --mc-shade (alternating region fill)
+  gridTertiary: "#2a2620",  // --mc-line (beat subdivisions)
+  gridSupporting: "#3d3729",// --mc-line-bright (grid under a drawn data line)
+  structural: "#5f594e",    // --mc-faint (lines that ARE the data; strokes only)
+  label: "#8b8273",         // --mc-label (5.2:1 on canvas bg; 4.9:1 design floor on panel)
+  amber: "#e8a33d",         // --mc-amber
+  cyan: "#5fb4c9",          // --mc-cyan
+  green: "#7fbf6a",         // --mc-green
+  playhead: "#fff",
+} as const;
+export const CANVAS_FONT = '11px "IBM Plex Mono", ui-monospace, monospace';
+export const CANVAS_FONT_BOLD = '600 12px "IBM Plex Mono", ui-monospace, monospace';
+export const CANVAS_FONT_SMALL = '10px "IBM Plex Mono", ui-monospace, monospace';
+
 export const CONSOLE_STYLES = `
 :root {
   --mc-bg: #0d0c0a;
@@ -13,6 +32,8 @@ export const CONSOLE_STYLES = `
   /* label: smallest readable text (4.9:1 on panel); faint: decorative strokes only */
   --mc-label: #8b8273;
   --mc-faint: #5f594e;
+  /* shade: alternating region fill on data canvases (panel is too close to bg) */
+  --mc-shade: #221d15;
   --mc-amber: #e8a33d;
   --mc-cyan: #5fb4c9;
   --mc-green: #7fbf6a;

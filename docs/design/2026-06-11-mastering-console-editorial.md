@@ -20,7 +20,8 @@ per page that carries information (never decoration for its own sake).
 | `--mc-text` | `#d8d2c8` | primary text (12.3:1 on panel) |
 | `--mc-muted` | `#948c7d` | prose (5.6:1) |
 | `--mc-label` | `#8b8273` | smallest text — micro-labels, indices (4.9:1, the floor) |
-| `--mc-faint` | `#5f594e` | **decorative strokes only — fails AA for text** |
+| `--mc-faint` | `#5f594e` | **decorative strokes only — fails AA for text**; structural canvas lines |
+| `--mc-shade` | `#221d15` | alternating region fill on data canvases (≈1.17:1 on bg) |
 | `--mc-amber` | `#e8a33d` | the single accent; also "audio file" in diagrams |
 | `--mc-cyan` | `#5fb4c9` | "project grid" in diagrams; scenario chip |
 | `--mc-green` | `#7fbf6a` | scenario chip (time-stretch/slicing) |
@@ -34,6 +35,7 @@ per page that carries information (never decoration for its own sake).
 - **Color:** one amber accent per page; scenario identity via small DAW-style color
   chips, never full-surface coloring. Every text/background pair ≥4.5:1 (verify with
   a contrast computation, not by eye — `--mc-faint` exists precisely because it fails).
+  Multi-lane pages may carry a lane's chip color into that lane's drawn data line and its small controls.
 - **Signature element:** one per page, drawn from the page's actual data/concept
   (the overview's warp lattice plots real-shaped wobbly beats against the grid).
 - **Motion:** one staggered load reveal (`animation-delay`), restrained hovers
@@ -45,6 +47,18 @@ per page that carries information (never decoration for its own sake).
   heading order; prose capped ~62–72ch.
 - **Layout:** panels joined by 1px gap over the line color (engraved-strip look);
   3-up grids collapse to one column ≤880px; `clamp()` display type.
+- **Data canvases (timeline/bar layouts):** pick line weight by what the line *means*,
+  not by a single grid color. Three tiers on a `--mc-bg` canvas:
+  - tertiary grid (beat subdivisions): `--mc-line` — texture, may sit near-invisible;
+  - supporting grid (bar lines under a drawn data line, e.g. the tempo curve):
+    `--mc-line-bright`;
+  - structural lines (when the layout itself IS the data, e.g. a bar-structure
+    timeline): `--mc-faint` (≈2.8:1) — canvas strokes only, never text.
+  Alternating region fills use `--mc-shade`; `--mc-panel` reads as flat black on
+  canvas (≈1.05:1) and must not be used as a region fill. Amber on a data canvas
+  marks **transitions** (meter changes, markers) — never repeated per-cell labels;
+  repetition dilutes the accent until nothing reads as a change. Canvas text is
+  IBM Plex Mono ≥10px at the `--mc-label` floor.
 
 ## Scope
 

@@ -785,16 +785,17 @@ project.editing.modify(() => {
 
 ### Clearing Existing Signature Events
 
-When switching between patterns, clear existing events before creating new ones. Delete in reverse order, each in its own transaction:
+When switching between patterns, clear existing events before creating new ones. Use `signatureTrack.deleteAdapter(adapter)` — beyond deleting the box it recalculates `relativePosition` for every subsequent event (positions are stored bar-relative to the previous event), preserving their absolute positions. Bare `box.delete()` shifts all subsequent events earlier; deleting in reverse order is only equivalent for a full clear.
 
 ```typescript
 // Get all events (slice(1) skips the storage signature at index -1)
 const existingEvents = Array.from(signatureTrack.iterateAll()).slice(1);
 
-// Delete in reverse order, each in its own transaction
+// Delete in reverse order (the snapshot's indices stay valid), each in its own transaction
 for (let i = existingEvents.length - 1; i >= 0; i--) {
   project.editing.modify(() => {
-    signatureTrack.adapterAt(existingEvents[i].index).ifSome(a => a.box.delete());
+    signatureTrack.adapterAt(existingEvents[i].index)
+      .ifSome(a => signatureTrack.deleteAdapter(a));
   });
 }
 ```
@@ -896,7 +897,7 @@ const progRock: SignatureChange[] = [
 
 #### Applying a Pattern
 
-1. Clear existing signature events (reverse order, separate transactions)
+1. Clear existing signature events via `deleteAdapter` (separate transactions)
 2. Set the storage signature (initial time signature)
 3. Create each change event at the correct PPQN position (separate transactions)
 4. Set timeline duration and loop area

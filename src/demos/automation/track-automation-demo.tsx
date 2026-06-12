@@ -1,13 +1,13 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "@radix-ui/themes/styles.css";
-import { Theme, Container, Heading, Text, Flex, Button, Card } from "@radix-ui/themes";
+import { Theme, Container, Text, Flex, Button, Card, Callout, Code } from "@radix-ui/themes";
+import { InfoCircledIcon } from "@radix-ui/react-icons";
 import { Project, EffectFactories } from "@opendaw/studio-core";
 import { AudioUnitBox, ReverbDeviceBox, TrackBox, ValueRegionBox } from "@opendaw/studio-boxes";
-import { PPQN, Interpolation } from "@opendaw/lib-dsp";
 import type { ppqn } from "@opendaw/lib-dsp";
-import { Curve, UUID } from "@opendaw/lib-std";
-import { AudioUnitBoxAdapter, ValueRegionBoxAdapter, TrackBoxAdapter } from "@opendaw/studio-adapters";
+import { UUID } from "@opendaw/lib-std";
+import { ValueRegionBoxAdapter, TrackBoxAdapter } from "@opendaw/studio-adapters";
 import { getAllRegions } from "@/lib/adapterUtils";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
@@ -16,173 +16,38 @@ import { initializeOpenDAW } from "@/lib/projectSetup";
 import { loadTracksFromFiles } from "@/lib/trackLoading";
 import { getAudioExtension } from "@/lib/audioUtils";
 import { usePlaybackPosition } from "@/hooks/usePlaybackPosition";
+import { CONSOLE_STYLES } from "@/lib/design/consoleTheme";
+import { AutomationCanvas } from "./AutomationCanvas";
+import { BAR, NUM_BARS, TOTAL_PPQN, TRACK_CONFIGS, eventsToJson } from "./trackAutomationPresets";
+import type { AutomationEvent, AutomationTrackConfig } from "./trackAutomationPresets";
 
-// 4/4 time: one bar = 3840 PPQN
-const BAR = PPQN.fromSignature(4, 4); // 3840
 const BPM = 124; // Match Dark Ride BPM
-const NUM_BARS = 8;
-const TOTAL_PPQN = BAR * NUM_BARS; // 30720
 
 // Start at bar 17 of the guitar track (skip silence at the beginning)
 const PLAYBACK_START = (BAR * 16) as ppqn; // bar 17 = 16 bars in
 const PLAYBACK_END = (PLAYBACK_START + TOTAL_PPQN) as ppqn;
 
-// ─── Automation Event Types ──────────────────────────────────────────────
-
-type AutomationEvent = {
-  position: ppqn;
-  value: number; // unitValue 0..1
-  interpolation: Interpolation;
-};
-
-type AutomationPreset = {
-  name: string;
-  events: AutomationEvent[];
-};
-
-type AutomationTrackConfig = {
-  label: string;
-  parameterName: string;
-  color: string;
-  yLabels: { value: number; label: string }[];
-  presets: AutomationPreset[];
-};
-
-// unitValue that maps to 0 dB through the VolumeMapper
-const VOLUME_0DB = AudioUnitBoxAdapter.VolumeMapper.x(0);
-
-// ─── Preset Definitions ─────────────────────────────────────────────────
-
-const volumePresets: AutomationPreset[] = [
-  {
-    name: "Fade In",
-    events: [
-      { position: 0 as ppqn, value: 0.0, interpolation: Interpolation.Curve(0.25) },
-      { position: (BAR * 4) as ppqn, value: VOLUME_0DB, interpolation: Interpolation.None }
-    ]
-  },
-  {
-    name: "Fade Out",
-    events: [
-      { position: 0 as ppqn, value: VOLUME_0DB, interpolation: Interpolation.Curve(0.75) },
-      { position: (BAR * 8) as ppqn, value: 0.0, interpolation: Interpolation.None }
-    ]
-  },
-  {
-    name: "Swell",
-    events: [
-      { position: 0 as ppqn, value: 0.2, interpolation: Interpolation.Curve(0.75) },
-      { position: (BAR * 4) as ppqn, value: 1.0, interpolation: Interpolation.Curve(0.25) },
-      { position: (BAR * 8) as ppqn, value: 0.2, interpolation: Interpolation.None }
-    ]
-  },
-  {
-    name: "Ducking",
-    events: [
-      { position: 0 as ppqn, value: VOLUME_0DB, interpolation: Interpolation.Linear },
-      { position: (BAR * 2) as ppqn, value: VOLUME_0DB, interpolation: Interpolation.Curve(0.75) },
-      { position: (BAR * 3) as ppqn, value: 0.2, interpolation: Interpolation.None },
-      { position: (BAR * 5) as ppqn, value: 0.2, interpolation: Interpolation.Curve(0.25) },
-      { position: (BAR * 6) as ppqn, value: VOLUME_0DB, interpolation: Interpolation.Linear },
-      { position: (BAR * 8) as ppqn, value: VOLUME_0DB, interpolation: Interpolation.None }
-    ]
-  }
-];
-
-const panPresets: AutomationPreset[] = [
-  {
-    name: "L-R Sweep",
-    events: [
-      { position: 0 as ppqn, value: 0.0, interpolation: Interpolation.Linear },
-      { position: (BAR * 8) as ppqn, value: 1.0, interpolation: Interpolation.Linear }
-    ]
-  },
-  {
-    name: "Ping-Pong",
-    events: [
-      { position: 0 as ppqn, value: 0.0, interpolation: Interpolation.Linear },
-      { position: (BAR * 2) as ppqn, value: 1.0, interpolation: Interpolation.Linear },
-      { position: (BAR * 4) as ppqn, value: 0.0, interpolation: Interpolation.Linear },
-      { position: (BAR * 6) as ppqn, value: 1.0, interpolation: Interpolation.Linear },
-      { position: (BAR * 8) as ppqn, value: 0.0, interpolation: Interpolation.Linear }
-    ]
-  },
-  {
-    name: "Center Hold",
-    events: [
-      { position: 0 as ppqn, value: 0.5, interpolation: Interpolation.None },
-      { position: (BAR * 8) as ppqn, value: 0.5, interpolation: Interpolation.None }
-    ]
-  }
-];
-
-const reverbWetPresets: AutomationPreset[] = [
-  {
-    name: "Dry to Wet",
-    events: [
-      { position: 0 as ppqn, value: 0.0, interpolation: Interpolation.Curve(0.25) },
-      { position: (BAR * 8) as ppqn, value: 1.0, interpolation: Interpolation.Linear }
-    ]
-  },
-  {
-    name: "Wet to Dry",
-    events: [
-      { position: 0 as ppqn, value: 1.0, interpolation: Interpolation.Curve(0.75) },
-      { position: (BAR * 8) as ppqn, value: 0.0, interpolation: Interpolation.Linear }
-    ]
-  },
-  {
-    name: "Pulse",
-    events: [
-      { position: 0 as ppqn, value: 0.0, interpolation: Interpolation.None },
-      { position: (BAR * 2) as ppqn, value: 0.8, interpolation: Interpolation.None },
-      { position: (BAR * 4) as ppqn, value: 0.0, interpolation: Interpolation.None },
-      { position: (BAR * 6) as ppqn, value: 0.8, interpolation: Interpolation.None },
-      { position: (BAR * 8) as ppqn, value: 0.0, interpolation: Interpolation.None }
-    ]
-  }
-];
-
-const TRACK_CONFIGS: AutomationTrackConfig[] = [
-  {
-    label: "Volume",
-    parameterName: "volume",
-    color: "#a855f7",
-    yLabels: [
-      { value: 1.0, label: "+6 dB" },
-      { value: VOLUME_0DB, label: "0 dB" },
-      { value: 0.5, label: "-9 dB" },
-      { value: 0.0, label: "-∞ dB" }
-    ],
-    presets: volumePresets
-  },
-  {
-    label: "Pan",
-    parameterName: "panning",
-    color: "#38bdf8",
-    yLabels: [
-      { value: 1.0, label: "R" },
-      { value: 0.5, label: "C" },
-      { value: 0.0, label: "L" }
-    ],
-    presets: panPresets
-  },
-  {
-    label: "Reverb Wet",
-    parameterName: "wet",
-    color: "#34d399",
-    yLabels: [
-      { value: 1.0, label: "Wet" },
-      { value: 0.5, label: "50%" },
-      { value: 0.0, label: "Dry" }
-    ],
-    presets: reverbWetPresets
-  }
-];
+// Page-local styles — the <details> summary is keyboard-focusable but not covered
+// by CONSOLE_STYLES' focus rules (which target .mc-open and .mc-anchors a)
+const PAGE_STYLES = `
+.mc-data summary:focus-visible {
+  outline: 2px solid var(--mc-amber);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+`;
 
 // ─── Helper: Apply Automation Events to a Track ─────────────────────────
 
-function applyAutomationEvents(project: Project, trackBox: TrackBox, events: AutomationEvent[]): void {
+/**
+ * Creates a new automation region with the given events, then deletes any
+ * pre-existing regions on the track. Returns true on success; returns false
+ * if the new region or its event collection could not be obtained — old
+ * regions are kept either way, but in the collection-failure case an empty
+ * new region may remain committed (early return inside editing.modify()
+ * commits the transaction; only a throw aborts it).
+ */
+function applyAutomationEvents(project: Project, trackBox: TrackBox, events: AutomationEvent[]): boolean {
   // Snapshot existing automation regions via the adapter layer
   const trackAdapter = project.boxAdapters.adapterFor(trackBox, TrackBoxAdapter);
   const existingRegions = trackAdapter.regions.adapters.values()
@@ -207,15 +72,16 @@ function applyAutomationEvents(project: Project, trackBox: TrackBox, events: Aut
     }
     const collection = collectionOpt.unwrap();
 
-    // Event positions are LOCAL to the region (0 to duration)
-    for (const evt of events) {
+    // Event positions are LOCAL to the region (0 to duration).
+    // Use (position, index) composite key: same position → index 1 (matching eventsToJson).
+    events.forEach((evt, i) => {
       collection.createEvent({
         position: evt.position,
-        index: 0,
+        index: i > 0 && events[i - 1].position === evt.position ? 1 : 0,
         value: evt.value,
         interpolation: evt.interpolation
       });
-    }
+    });
     newRegionCreated = true;
   });
 
@@ -232,188 +98,9 @@ function applyAutomationEvents(project: Project, trackBox: TrackBox, events: Aut
       }
     });
   }
+
+  return newRegionCreated;
 }
-
-// ─── Helper: Convert Events to JSON for Server Persistence ──────────────
-
-function interpolationToJson(interp: Interpolation): Record<string, unknown> {
-  if (interp.type === "none") return { type: "none" };
-  if (interp.type === "linear") return { type: "linear" };
-  return { type: "curve", slope: (interp as { type: "curve"; slope: number }).slope };
-}
-
-function eventsToJson(events: AutomationEvent[], parameterName: string, targetUnitId: string): Record<string, unknown> {
-  return {
-    automationTrack: {
-      targetParameter: parameterName,
-      targetUnitId,
-      enabled: true,
-      events: events.map((evt, i) => ({
-        position: evt.position,
-        value: evt.value,
-        index: i > 0 && events[i - 1].position === evt.position ? 1 : 0,
-        interpolation: interpolationToJson(evt.interpolation)
-      }))
-    }
-  };
-}
-
-// ─── Canvas Component ───────────────────────────────────────────────────
-
-const CANVAS_HEIGHT = 150;
-
-interface AutomationCanvasProps {
-  events: AutomationEvent[];
-  color: string;
-  yLabels: { value: number; label: string }[];
-  playheadPosition: ppqn;
-  isPlaying: boolean;
-}
-
-const AutomationCanvas: React.FC<AutomationCanvasProps> = ({ events, color, yLabels, playheadPosition, isPlaying }) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    const dpr = window.devicePixelRatio || 1;
-    const width = canvas.clientWidth;
-    const height = CANVAS_HEIGHT;
-    if (width <= 0 || height <= 0) return;
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
-    ctx.scale(dpr, dpr);
-
-    const padLeft = 48;
-    const padRight = 8;
-    const padTop = 14;
-    const padBottom = 18;
-    const drawWidth = width - padLeft - padRight;
-    const drawHeight = height - padTop - padBottom;
-
-    // Clear and draw background
-    ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = "#1a1a2e";
-    ctx.fillRect(0, 0, width, height);
-
-    const toX = (ppqnPos: number) => padLeft + (ppqnPos / TOTAL_PPQN) * drawWidth;
-    const toY = (value: number) => padTop + drawHeight - value * drawHeight;
-
-    // Grid lines (bar lines)
-    ctx.strokeStyle = "#333";
-    ctx.lineWidth = 1;
-    for (let bar = 0; bar <= NUM_BARS; bar++) {
-      const x = toX(bar * BAR);
-      ctx.beginPath();
-      ctx.moveTo(x, padTop);
-      ctx.lineTo(x, height - padBottom);
-      ctx.stroke();
-
-      if (bar < NUM_BARS) {
-        ctx.fillStyle = "#666";
-        ctx.font = "11px sans-serif";
-        ctx.textAlign = "left";
-        ctx.fillText(`${bar + 1}`, x + 4, height - 4);
-      }
-    }
-
-    // Y-axis labels and horizontal guide lines
-    ctx.font = "10px sans-serif";
-    ctx.textAlign = "right";
-    for (const yl of yLabels) {
-      const y = toY(yl.value);
-      ctx.fillStyle = "#888";
-      ctx.fillText(yl.label, padLeft - 6, y + 4);
-      // horizontal guide line
-      ctx.strokeStyle = "#222";
-      ctx.beginPath();
-      ctx.moveTo(padLeft, y);
-      ctx.lineTo(width - padRight, y);
-      ctx.stroke();
-    }
-
-    // Draw automation curve
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-
-    if (events.length > 0) {
-      for (let i = 0; i < events.length; i++) {
-        const evt = events[i];
-        const x = toX(evt.position);
-        const y = toY(evt.value);
-
-        if (i === 0) {
-          ctx.moveTo(x, y);
-        } else {
-          const prev = events[i - 1];
-          const prevX = toX(prev.position);
-          const prevY = toY(prev.value);
-
-          if (prev.interpolation.type === "none") {
-            // Step: horizontal then vertical
-            ctx.lineTo(x, prevY);
-            ctx.lineTo(x, y);
-          } else if (prev.interpolation.type === "linear") {
-            ctx.lineTo(x, y);
-          } else if (prev.interpolation.type === "curve") {
-            // Use SDK's Curve.normalizedAt for pixel-accurate rendering
-            const slope = prev.interpolation.slope;
-            const segments = Math.max(20, Math.round(x - prevX));
-            for (let s = 1; s <= segments; s++) {
-              const t = s / segments;
-              const normalized = Curve.normalizedAt(t, slope);
-              const val = prev.value + normalized * (evt.value - prev.value);
-              ctx.lineTo(prevX + (x - prevX) * t, toY(val));
-            }
-          }
-        }
-      }
-
-      // Extend last event value to end of timeline
-      const lastEvt = events[events.length - 1];
-      if (lastEvt.position < TOTAL_PPQN) {
-        const lastY = toY(lastEvt.value);
-        ctx.lineTo(toX(TOTAL_PPQN), lastY);
-      }
-    }
-    ctx.stroke();
-
-    // Dots at event points
-    ctx.fillStyle = color;
-    for (const evt of events) {
-      ctx.beginPath();
-      ctx.arc(toX(evt.position), toY(evt.value), 4, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // Playhead (offset from PLAYBACK_START to match canvas 0-based positions)
-    const relativePlayhead = playheadPosition - PLAYBACK_START;
-    if (isPlaying && relativePlayhead >= 0) {
-      const px = toX(relativePlayhead);
-      ctx.strokeStyle = "#fff";
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(px, padTop);
-      ctx.lineTo(px, height - padBottom);
-      ctx.stroke();
-    }
-  }, [events, color, yLabels, playheadPosition, isPlaying]);
-
-  return (
-    <canvas
-      ref={canvasRef}
-      style={{
-        width: "100%",
-        height: CANVAS_HEIGHT,
-        border: "1px solid var(--gray-6)"
-      }}
-    />
-  );
-};
 
 // ─── Server Data Block Component ────────────────────────────────────────
 
@@ -424,12 +111,16 @@ interface ServerDataBlockProps {
 
 const ServerDataBlock: React.FC<ServerDataBlockProps> = ({ data, label }) => {
   return (
-    <details style={{ marginTop: 4 }}>
+    <details className="mc-data" style={{ marginTop: 4 }}>
       <summary
         style={{
           cursor: "pointer",
-          color: "var(--gray-9)",
-          fontSize: 13,
+          fontFamily: "var(--mc-mono)",
+          fontSize: 11,
+          fontWeight: 600,
+          letterSpacing: "0.14em",
+          textTransform: "uppercase",
+          color: "var(--mc-label)",
           userSelect: "none"
         }}
       >
@@ -437,15 +128,18 @@ const ServerDataBlock: React.FC<ServerDataBlockProps> = ({ data, label }) => {
       </summary>
       <pre
         style={{
-          background: "#0d0d1a",
-          border: "1px solid var(--gray-6)",
-          borderRadius: "var(--radius-2)",
+          background: "var(--mc-bg)",
+          border: "1px solid var(--mc-line)",
+          borderRadius: "4px",
           padding: 12,
+          fontFamily: "var(--mc-mono)",
           fontSize: 12,
+          lineHeight: 1.6,
           overflow: "auto",
           maxHeight: 300,
-          color: "var(--gray-11)",
-          marginTop: 4
+          color: "var(--mc-muted)",
+          marginTop: 8,
+          marginBottom: 0
         }}
       >
         {JSON.stringify(data, null, 2)}
@@ -480,7 +174,12 @@ const AutomationSection: React.FC<AutomationSectionProps> = ({
   targetUnitId
 }) => {
   const activePreset = config.presets[activePresetIndex];
-  const jsonData = eventsToJson(activePreset.events, config.parameterName, targetUnitId);
+  // activePreset object identity is stable (TRACK_CONFIGS is module-level constant);
+  // targetUnitId changes once on init then is stable.
+  const jsonData = useMemo(
+    () => eventsToJson(activePreset.events, config.parameterName, targetUnitId),
+    [activePreset, config.parameterName, targetUnitId]
+  );
   const showPlayhead = isActiveSection && isPlaying;
 
   return (
@@ -488,16 +187,8 @@ const AutomationSection: React.FC<AutomationSectionProps> = ({
       <Flex direction="column" gap="3">
         <Flex align="center" justify="between">
           <Flex align="center" gap="2">
-            <div
-              style={{
-                width: 12,
-                height: 12,
-                borderRadius: "50%",
-                backgroundColor: config.color,
-                flexShrink: 0
-              }}
-            />
-            <Heading size="4">{config.label} Automation</Heading>
+            <span className="mc-chip" style={{ backgroundColor: config.color }} />
+            <h2 className="mc-name">{config.label} Automation</h2>
           </Flex>
           {!(isActiveSection && isPlaying) ? (
             <Button size="2" onClick={onPlay}>
@@ -519,7 +210,7 @@ const AutomationSection: React.FC<AutomationSectionProps> = ({
               onClick={() => onPresetSelect(index)}
               style={
                 activePresetIndex === index
-                  ? { backgroundColor: config.color, color: "#000" }
+                  ? { backgroundColor: config.color, color: "var(--mc-bg)" }
                   : { borderColor: config.color, color: config.color }
               }
             >
@@ -533,7 +224,8 @@ const AutomationSection: React.FC<AutomationSectionProps> = ({
           color={config.color}
           yLabels={config.yLabels}
           playheadPosition={playheadPosition}
-          isPlaying={showPlayhead}
+          showPlayhead={showPlayhead}
+          playbackStart={PLAYBACK_START}
         />
 
         <ServerDataBlock data={jsonData} label="Server persistence data" />
@@ -546,11 +238,14 @@ const AutomationSection: React.FC<AutomationSectionProps> = ({
 
 const App: React.FC = () => {
   const [status, setStatus] = useState("Loading...");
+  const [initError, setInitError] = useState<string | null>(null);
   const [project, setProject] = useState<Project | null>(null);
   const projectRef = useRef<Project | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [targetUnitId, setTargetUnitId] = useState("");
+  const [runtimeError, setRuntimeError] = useState<string | null>(null);
+  const [initWarning, setInitWarning] = useState<string | null>(null);
 
   // Per-section active preset indices
   const [activePresets, setActivePresets] = useState([0, 0, 0]);
@@ -597,7 +292,7 @@ const App: React.FC = () => {
 
         if (cancelled) return;
         if (tracks.length === 0) {
-          setStatus("Error: Failed to load audio track. Check the browser console.");
+          setInitError("Failed to load audio track — check the browser console");
           return;
         }
 
@@ -617,6 +312,9 @@ const App: React.FC = () => {
           });
         } else {
           console.warn('Could not find AudioRegionBox with label "Guitar" — audio may play from wrong position');
+          if (!cancelled) {
+            setInitWarning('Could not find the "Guitar" audio region — playback may start from the wrong position');
+          }
         }
 
         // Insert a Reverb effect with exaggerated settings for demo
@@ -646,18 +344,25 @@ const App: React.FC = () => {
           newProject.editing.modify(() => {
             trackBox = newProject.api.createAutomationTrack(audioUnitBox, automationTargets[i]);
           });
-          if (trackBox) {
-            trackBoxes.push(trackBox);
-          } else {
-            console.warn(`Failed to create automation track for ${TRACK_CONFIGS[i].parameterName}`);
+          if (!trackBox) {
+            // Throwing keeps trackBoxes index-aligned with TRACK_CONFIGS — a
+            // skipped push would write later sections' presets onto the wrong lane
+            throw new Error(`Failed to create automation track for ${TRACK_CONFIGS[i].parameterName}`);
           }
+          trackBoxes.push(trackBox);
         }
 
         automationTrackBoxesRef.current = trackBoxes;
 
         // Apply default preset for volume only (one automation at a time)
         if (trackBoxes[0]) {
-          applyAutomationEvents(newProject, trackBoxes[0], TRACK_CONFIGS[0].presets[0].events);
+          const ok = applyAutomationEvents(newProject, trackBoxes[0], TRACK_CONFIGS[0].presets[0].events);
+          if (!ok) {
+            console.warn("Failed to apply initial automation preset — demo may start without automation");
+            if (!cancelled) {
+              setInitWarning("Initial automation preset could not be applied");
+            }
+          }
         }
 
         // Set loop area to bar 17–25 and position engine at bar 17
@@ -673,7 +378,7 @@ const App: React.FC = () => {
       } catch (error) {
         console.error("Track automation demo initialization failed:", error);
         if (!cancelled) {
-          setStatus(`Error: ${error instanceof Error ? error.message : String(error)}`);
+          setInitError(error instanceof Error ? error.message : String(error));
         }
       }
     }
@@ -686,21 +391,36 @@ const App: React.FC = () => {
 
   const handlePresetSelect = (sectionIndex: number, presetIndex: number) => {
     const p = projectRef.current;
+    if (!p) return;
     const trackBox = automationTrackBoxesRef.current[sectionIndex];
-    if (!p || !trackBox) return;
-
-    if (isPlaying) {
-      p.engine.stop(true);
-      setPlayingSectionIndex(null);
+    if (!trackBox) {
+      setRuntimeError("Automation track for this section is missing — reload the page.");
+      return;
     }
 
-    setActivePresets(prev => {
-      const next = [...prev];
-      next[sectionIndex] = presetIndex;
-      return next;
-    });
+    setRuntimeError(null);
 
-    applyAutomationEvents(p, trackBox, TRACK_CONFIGS[sectionIndex].presets[presetIndex].events);
+    try {
+      if (isPlaying) {
+        p.engine.stop(true);
+        setPlayingSectionIndex(null);
+      }
+
+      const ok = applyAutomationEvents(p, trackBox, TRACK_CONFIGS[sectionIndex].presets[presetIndex].events);
+      if (!ok) {
+        setRuntimeError("Could not write the automation region — the preset was not applied. Try selecting it again.");
+        return;
+      }
+
+      setActivePresets(prev => {
+        const next = [...prev];
+        next[sectionIndex] = presetIndex;
+        return next;
+      });
+    } catch (error) {
+      console.error("Failed to apply automation preset:", error);
+      setRuntimeError(error instanceof Error ? error.message : String(error));
+    }
   };
 
   const clearAutomationForSection = (sectionIndex: number) => {
@@ -732,6 +452,8 @@ const App: React.FC = () => {
     const p = projectRef.current;
     const ac = audioContextRef.current;
     if (!p || !ac) return;
+
+    setRuntimeError(null);
 
     try {
       // Stop if currently playing
@@ -769,14 +491,23 @@ const App: React.FC = () => {
 
       // Ensure the active section's automation is applied
       const trackBox = automationTrackBoxesRef.current[sectionIndex];
+      if (!trackBox) {
+        setRuntimeError("Automation track for this section is missing — reload the page.");
+        return;
+      }
       const presetIndex = activePresets[sectionIndex];
-      applyAutomationEvents(p, trackBox, TRACK_CONFIGS[sectionIndex].presets[presetIndex].events);
+      const ok = applyAutomationEvents(p, trackBox, TRACK_CONFIGS[sectionIndex].presets[presetIndex].events);
+      if (!ok) {
+        setRuntimeError("Could not write the automation region — the preset was not applied. Try selecting it again.");
+        return;
+      }
 
       setPlayingSectionIndex(sectionIndex);
       p.engine.setPosition(PLAYBACK_START);
       p.engine.play();
     } catch (error) {
       console.error("Failed to start playback:", error);
+      setRuntimeError(error instanceof Error ? error.message : String(error));
       setPlayingSectionIndex(null);
     }
   };
@@ -788,8 +519,9 @@ const App: React.FC = () => {
     setPlayingSectionIndex(null);
   };
 
-  // Build full project JSON
-  const buildFullProjectJson = () => {
+  // Build full project JSON — memoized so it doesn't re-run per frame during playback
+  // (usePlaybackPosition re-renders per frame; this only needs recompute on preset changes).
+  const fullProjectJson = useMemo(() => {
     const trackData = TRACK_CONFIGS.map((config, i) => {
       const preset = config.presets[activePresets[i]];
       return eventsToJson(preset.events, config.parameterName, targetUnitId);
@@ -811,35 +543,59 @@ const App: React.FC = () => {
         automation: trackData.map(d => d.automationTrack)
       }
     };
-  };
+  }, [activePresets, targetUnitId]);
 
   return (
-    <Theme appearance="dark" accentColor="purple" radius="large">
+    <Theme appearance="dark" accentColor="amber" radius="large" style={{ background: "var(--mc-bg)" }}>
+      <style>{CONSOLE_STYLES}</style>
+      <style>{PAGE_STYLES}</style>
       <Container size="3" px="4" py="8">
         <GitHubCorner />
         <BackLink />
         <Flex direction="column" gap="6" style={{ maxWidth: 900, margin: "0 auto" }}>
-          <Flex direction="column" align="center" gap="2">
-            <Heading
-              size="8"
-              style={{
-                background: "linear-gradient(135deg, #a855f7 0%, #38bdf8 100%)",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-                backgroundClip: "text"
-              }}
-            >
-              Track Automation
-            </Heading>
-            <Text size="3" color="gray" align="center">
-              Automate volume, pan, and reverb parameters with visual envelopes
-            </Text>
-          </Flex>
+          <div>
+            <div className="mc-kicker">Automation — Track Parameters · OpenDAW SDK</div>
+            <h1 className="mc-title" style={{ fontSize: "clamp(28px, 4.5vw, 44px)" }}>
+              TRACK AUTOMATION
+            </h1>
+            <p className="mc-intro">
+              Automate volume, pan, and reverb wet on a real guitar stem. Each preset writes
+              a value region onto a lane made with <code>createAutomationTrack</code> — the
+              canvases plot <code>Curve.normalizedAt</code>, the same math the engine
+              evaluates, and each section shows the JSON a server would store to restore it.
+            </p>
+          </div>
 
-          {!isReady ? (
+          {initError ? (
+            <Callout.Root color="red">
+              <Callout.Icon>
+                <InfoCircledIcon />
+              </Callout.Icon>
+              <Callout.Text>{initError}</Callout.Text>
+            </Callout.Root>
+          ) : !isReady ? (
             <Text align="center">{status}</Text>
           ) : (
             <Flex direction="column" gap="5">
+              {runtimeError && (
+                <Callout.Root color="red">
+                  <Callout.Icon>
+                    <InfoCircledIcon />
+                  </Callout.Icon>
+                  <Callout.Text>{runtimeError}</Callout.Text>
+                </Callout.Root>
+              )}
+
+              {/* Persistent init warning — not cleared by user actions, unlike runtimeError */}
+              {initWarning && (
+                <Callout.Root color="yellow">
+                  <Callout.Icon>
+                    <InfoCircledIcon />
+                  </Callout.Icon>
+                  <Callout.Text>{initWarning}</Callout.Text>
+                </Callout.Root>
+              )}
+
               {/* Automation Sections */}
               {TRACK_CONFIGS.map((config, sectionIndex) => (
                 <AutomationSection
@@ -859,13 +615,58 @@ const App: React.FC = () => {
               {/* Full Project Data */}
               <Card size="3">
                 <Flex direction="column" gap="3">
-                  <Heading size="4">Full Project Data</Heading>
+                  <h2 className="mc-name">Full Project Data</h2>
                   <Text size="2" color="gray">
                     Combined automation data for all tracks, ready for server persistence.
                   </Text>
-                  <ServerDataBlock data={buildFullProjectJson()} label="Full project JSON" />
+                  <ServerDataBlock data={fullProjectJson} label="Full project JSON" />
                 </Flex>
               </Card>
+
+              <section className="mc-anchors">
+                <h2 className="mc-anchors-head">SDK reference</h2>
+                <p>
+                  <code>project.api.createAutomationTrack(audioUnitBox, parameterField)</code>{" "}
+                  adds a value lane targeting any automatable field — unit volume and pan,
+                  or an effect parameter like reverb <code>wet</code>.{" "}
+                  <code>createTrackRegion</code> then holds the events; event positions are
+                  LOCAL to the region (0 to duration), not absolute timeline PPQN. Event
+                  values are unitValue 0–1 — <code>AudioUnitBoxAdapter.VolumeMapper</code>{" "}
+                  converts between unitValue and dB (<code>.x(0)</code> ≈ 0.734 is 0 dB).
+                </p>
+                <Code
+                  size="2"
+                  style={{
+                    display: "block",
+                    padding: "12px",
+                    backgroundColor: "var(--gray-3)",
+                    borderRadius: "4px",
+                    whiteSpace: "pre-wrap",
+                    marginTop: "12px",
+                  }}
+                >
+{`let trackBox: TrackBox | null = null;
+project.editing.modify(() => {
+  trackBox = project.api.createAutomationTrack(audioUnitBox, audioUnitBox.volume);
+});
+
+project.editing.modify(() => {
+  const regionBox = project.api.createTrackRegion(trackBox, position, duration)
+    .unwrap() as ValueRegionBox;
+  const collection = project.boxAdapters
+    .adapterFor(regionBox, ValueRegionBoxAdapter).optCollection.unwrap();
+  collection.createEvent({
+    position: 0,  // region-LOCAL PPQN, not absolute
+    index: 0,
+    value: AudioUnitBoxAdapter.VolumeMapper.x(0), // unitValue for 0 dB
+    interpolation: Interpolation.Curve(0.25),
+  });
+});`}
+                </Code>
+                <p>
+                  <a href="/docs/09-editing-fades-and-automation.html">Editing, fades &amp; automation</a>
+                </p>
+              </section>
             </Flex>
           )}
         </Flex>
