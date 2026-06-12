@@ -3,9 +3,11 @@ import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
 import { Project, MidiDevices } from "@opendaw/studio-core";
 import { NoteSignal, InstrumentFactories } from "@opendaw/studio-adapters";
+import type { NoteEventCollectionBoxAdapter } from "@opendaw/studio-adapters";
 import { PPQN } from "@opendaw/lib-dsp";
 import { AnimationFrame } from "@opendaw/lib-dom";
-import { NoteEventBox, NoteEventCollectionBox, NoteRegionBox, AudioUnitBox } from "@opendaw/studio-boxes";
+import { NoteEventCollectionBox, NoteRegionBox } from "@opendaw/studio-boxes";
+import type { AudioUnitBox } from "@opendaw/studio-boxes";
 import type { TrackBox } from "@opendaw/studio-boxes";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { useEnginePreference, CountInBarsValue, MetronomeBeatSubDivisionValue } from "@/hooks/useEnginePreference";
@@ -189,6 +191,30 @@ const NoteDisplay: React.FC<{
   );
 };
 
+type StepRecordingTarget = {
+  collection: NoteEventCollectionBoxAdapter;
+  regionOffset: number; // region position in PPQN
+};
+
+/**
+ * Find the "Step Recording" note region via the adapter layer.
+ * Cast-free: isNoteRegion() narrows the adapter, optCollection yields the
+ * typed NoteEventCollectionBoxAdapter.
+ */
+const findStepRecordingTarget = (project: Project): StepRecordingTarget | null => {
+  for (const unit of project.rootBoxAdapter.audioUnits.adapters()) {
+    for (const track of unit.tracks.values()) {
+      for (const region of track.regions.adapters.values()) {
+        if (region.label !== "Step Recording" || !region.isNoteRegion()) continue;
+        const collectionOption = region.optCollection;
+        if (collectionOption.isEmpty()) continue;
+        return { collection: collectionOption.unwrap(), regionOffset: region.position };
+      }
+    }
+  }
+  return null;
+};
+
 /**
  * Step Recording Section
  */
@@ -226,31 +252,11 @@ const StepRecordingSection: React.FC<{
     const velocity = stepVelocity / 127;
 
     // Find the "Step Recording" note region via the adapter layer
-    const audioUnitAdapters = project.rootBoxAdapter.audioUnits.adapters();
-    let eventsCollection: NoteEventCollectionBox | null = null;
-    let regionOffset = 0;
-
-    for (const unit of audioUnitAdapters) {
-      for (const track of unit.tracks.values()) {
-        for (const region of track.regions.adapters.values()) {
-          if (region.label === "Step Recording" && !region.isAudioRegion()) {
-            const noteBox = region.box as NoteRegionBox;
-            const eventsVertex = noteBox.events.targetVertex;
-            if (!eventsVertex.isEmpty()) {
-              eventsCollection = eventsVertex.unwrap().box as NoteEventCollectionBox;
-            }
-            regionOffset = noteBox.position.getValue();
-            break;
-          }
-        }
-        if (eventsCollection) break;
-      }
-      if (eventsCollection) break;
-    }
+    let target = findStepRecordingTarget(project);
 
     // Create a step recording region if none exists
-    if (!eventsCollection) {
-      const firstUnit = audioUnitAdapters[0];
+    if (!target) {
+      const firstUnit = project.rootBoxAdapter.audioUnits.adapters()[0];
       if (!firstUnit) return;
       const firstTrack = firstUnit.tracks.values()[0];
       if (!firstTrack) return;
@@ -259,42 +265,29 @@ const StepRecordingSection: React.FC<{
       project.editing.modify(() => {
         const collection = NoteEventCollectionBox.create(project.boxGraph, UUID.generate());
         NoteRegionBox.create(project.boxGraph, UUID.generate(), (box: NoteRegionBox) => {
-          box.regions.refer(trackBox!.regions);
+          box.regions.refer(trackBox.regions);
           box.events.refer(collection.owners);
           box.position.setValue(0);
           box.label.setValue("Step Recording");
         });
       });
 
-      // Re-find the created region via the adapter layer
-      for (const unit of project.rootBoxAdapter.audioUnits.adapters()) {
-        for (const track of unit.tracks.values()) {
-          for (const region of track.regions.adapters.values()) {
-            if (region.label === "Step Recording" && !region.isAudioRegion()) {
-              const noteBox = region.box as NoteRegionBox;
-              const eventsVertex = noteBox.events.targetVertex;
-              if (!eventsVertex.isEmpty()) {
-                eventsCollection = eventsVertex.unwrap().box as NoteEventCollectionBox;
-              }
-              regionOffset = noteBox.position.getValue();
-              break;
-            }
-          }
-          if (eventsCollection) break;
-        }
-        if (eventsCollection) break;
-      }
+      // Re-find after the transaction commits (adapters exist post-commit)
+      target = findStepRecordingTarget(project);
     }
 
-    if (!eventsCollection) return;
+    if (!target) return;
+    const { collection, regionOffset } = target;
 
     project.editing.modify(() => {
-      NoteEventBox.create(project.boxGraph, UUID.generate(), (box: NoteEventBox) => {
-        box.events.refer(eventsCollection!.events);
-        box.position.setValue(Math.max(0, position - regionOffset));
-        box.duration.setValue(duration);
-        box.pitch.setValue(note);
-        box.velocity.setValue(velocity);
+      collection.createEvent({
+        position: Math.round(Math.max(0, position - regionOffset)),
+        duration,
+        pitch: note,
+        cent: 0,
+        velocity,
+        chance: 100,
+        playCount: 1,
       });
     });
 
@@ -394,11 +387,13 @@ const StepRecordingSection: React.FC<{
  */
 const App: React.FC = () => {
   const [status, setStatus] = useState("Loading...");
+  const [initError, setInitError] = useState<string | null>(null);
   const [project, setProject] = useState<Project | null>(null);
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
 
   // MIDI state
   const [midiAvailable, setMidiAvailable] = useState(false);
+  const [midiError, setMidiError] = useState<string | null>(null);
   const [midiDevices, setMidiDevices] = useState<MIDIInput[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>("");
   const [filterChannel, setFilterChannel] = useState(-1); // -1 = all
@@ -434,9 +429,9 @@ const App: React.FC = () => {
         setAudioContext(ctx);
 
         // Create a synth instrument so MIDI notes produce sound on playback.
-        // startRecording() auto-creates a Tape (audio-only) if no instruments exist,
-        // which can't play back MIDI. Vaporisateur is a built-in subtractive synth.
-        let audioUnitBox: any = null;
+        // With no armed captures, recording records nothing — no instrument is
+        // auto-created. Vaporisateur is a built-in subtractive synth.
+        let audioUnitBox: AudioUnitBox | null = null;
         newProject.editing.modify(() => {
           const result = newProject.api.createInstrument(InstrumentFactories.Vaporisateur);
           audioUnitBox = result.audioUnitBox;
@@ -444,12 +439,18 @@ const App: React.FC = () => {
 
         // Arm the CaptureMidi so it listens to software keyboard and external MIDI
         // devices. Must resolve capture outside the creation transaction (pointer
-        // re-routing guideline). Arming enables both live monitoring (hearing notes
-        // as you play) and recording (CaptureMidi captures notes into NoteEventBoxes).
+        // re-routing guideline). armed.setValue(true) is deterministic — setArm()
+        // TOGGLES (its second param is exclusivity, not the target state). armed is
+        // a runtime observable, not a box field, so no editing.modify() here.
+        // Arming enables both live monitoring (hearing notes as you play) and
+        // recording (CaptureMidi captures notes into NoteEventBoxes).
         if (audioUnitBox) {
-          const captureOption = newProject.captureDevices.get(audioUnitBox.address.uuid);
+          // Cast defeats TS closure-narrowing to never (same pattern as useRecordingTapes)
+          const captureOption = newProject.captureDevices.get(
+            (audioUnitBox as AudioUnitBox).address.uuid
+          );
           if (!captureOption.isEmpty()) {
-            newProject.captureDevices.setArm(captureOption.unwrap(), true);
+            captureOption.unwrap().armed.setValue(true);
           }
         }
 
@@ -467,8 +468,10 @@ const App: React.FC = () => {
           if (mounted) setIsCountingIn(obs.getValue());
         });
       } catch (error) {
-        console.error("Init error:", error);
-        if (mounted) setStatus(`Error: ${error}`);
+        console.error("Init error: " + String(error));
+        if (mounted) {
+          setInitError(error instanceof Error ? error.message : String(error));
+        }
       }
     })();
 
@@ -482,17 +485,23 @@ const App: React.FC = () => {
 
   // Request MIDI permission
   const handleRequestMidi = useCallback(async () => {
+    setMidiError(null);
     try {
       await MidiDevices.requestPermission();
-      const devices = MidiDevices.inputDevices();
-      setMidiDevices([...devices]);
-      if (devices.length > 0) {
-        // Default to Software Keyboard
-        const softwareKb = devices.find(d => d.id === "software-midi-input");
-        setSelectedDeviceId(softwareKb?.id ?? devices[0].id);
-      }
     } catch (error) {
-      console.error("MIDI permission error:", error);
+      console.error("MIDI permission error: " + String(error));
+      setMidiError(
+        "MIDI access was denied, so external MIDI controllers are unavailable. " +
+        "The on-screen Software Keyboard still works for note input and recording."
+      );
+    }
+    // inputDevices() always includes the Software Keyboard, even without permission
+    const devices = MidiDevices.inputDevices();
+    setMidiDevices([...devices]);
+    if (devices.length > 0) {
+      // Default to Software Keyboard
+      const softwareKb = devices.find(d => d.id === "software-midi-input");
+      setSelectedDeviceId(softwareKb?.id ?? devices[0].id);
     }
   }, []);
 
@@ -554,12 +563,12 @@ const App: React.FC = () => {
 
   const handleStopRecording = useCallback(() => {
     if (!project) return;
-    // Use stopRecording() to keep the engine alive while Recording.ts
-    // processes the isRecording=false state change and creates final
-    // NoteEventBoxes. MIDI finalization is synchronous (no audio to write),
-    // so one animation frame is sufficient for the observable chain.
+    // MIDI finalization writes NoteEventBoxes on the main thread — there are
+    // no sample loaders to wait for (RecordMidi has no worklet), so an
+    // immediate stop(true) after stopRecording() is safe. The audio demos'
+    // deferred-stop pattern is not needed here.
     project.engine.stopRecording();
-    requestAnimationFrame(() => project.engine.stop(true));
+    project.engine.stop(true);
   }, [project]);
 
   const handlePlay = useCallback(async () => {
@@ -587,7 +596,13 @@ const App: React.FC = () => {
         <Container size="2" px="4" py="8">
           <Flex direction="column" align="center" gap="4">
             <Heading size="8">MIDI Recording Demo</Heading>
-            <Text size="3" color="gray">{status}</Text>
+            {initError ? (
+              <Callout.Root color="red">
+                <Callout.Text>Initialization failed: {initError}</Callout.Text>
+              </Callout.Root>
+            ) : (
+              <Text size="3" color="gray">{status}</Text>
+            )}
           </Flex>
         </Container>
       </Theme>
@@ -621,6 +636,12 @@ const App: React.FC = () => {
           <Card>
             <Flex direction="column" gap="4">
               <Heading size="5">MIDI Devices</Heading>
+
+              {midiError && (
+                <Callout.Root color="red">
+                  <Callout.Text>{midiError}</Callout.Text>
+                </Callout.Root>
+              )}
 
               {!midiAvailable ? (
                 <Callout.Root color="red">
@@ -790,16 +811,18 @@ MidiDevices.softwareMIDIInput.channel = 0; // 0-15`}
 
                 <Text size="2" weight="bold" style={{ marginTop: 8 }}>Step Recording (headless):</Text>
                 <Code size="2" style={{ display: "block", whiteSpace: "pre", padding: 12, overflowX: "auto" }}>
-{`import { NoteEventBox, NoteEventCollectionBox }
-  from "@opendaw/studio-boxes";
+{`// noteRegionAdapter.optCollection is Option<NoteEventCollectionBoxAdapter>
+const collection = noteRegionAdapter.optCollection.unwrap();
 
 project.editing.modify(() => {
-  NoteEventBox.create(boxGraph, UUID.generate(), box => {
-    box.events.refer(collection.events);
-    box.position.setValue(positionPPQN);
-    box.duration.setValue(PPQN.Quarter);
-    box.pitch.setValue(60);  // Middle C
-    box.velocity.setValue(0.8);
+  collection.createEvent({
+    position: positionPPQN,  // region-local, int
+    duration: PPQN.Quarter,
+    pitch: 60,               // Middle C
+    cent: 0,                 // microtuning, -50..+50
+    velocity: 0.8,           // 0-1
+    chance: 100,             // playback probability, 0-100
+    playCount: 1,
   });
 });
 engine.setPosition(positionPPQN + PPQN.Quarter);`}
