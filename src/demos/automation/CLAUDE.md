@@ -31,8 +31,19 @@ project.timelineBoxAdapter.tempoTrackEvents.ifSome(collection => {
   // Create event
   collection.createEvent({ position, index: 0, value: bpm, interpolation });
 });
-// Interpolation: Interpolation.Linear, Interpolation.None from @opendaw/lib-dsp
+// Interpolation: Interpolation.None, Interpolation.Linear, Interpolation.Curve(slope) from @opendaw/lib-dsp
 ```
+
+The engine honors `Interpolation.Curve` on tempo events — `VaryingTempoMap` (from
+`@opendaw/studio-adapters`) evaluates curve segments via `Curve.valueAt`. Curve BPM
+values are exact at any position. PPQN↔seconds integration is quantized to the
+80-PPQN `TempoChangeGrid` (`PPQN.fromSignature(1, 48)`), so seconds-domain
+conversions are stepwise between grid points.
+
+Delete + create of tempo/value events in a single `editing.modify()` is safe:
+`ValueEventCollectionBoxAdapter.createEvent` guards stale cached adapters with
+`existing.box.isAttached()`. The one-modify-per-event rule applies to the
+signature track only.
 
 ### Track Automation (Volume, Pan, Effects)
 ```typescript
@@ -115,7 +126,7 @@ parameter.getControlledUnitValue()
 parameter.getPrintValue()           // StringResult — formatted for display
 parameter.getControlledPrintValue()
 parameter.setPrintValue(text)       // parse + write display string
-parameter.reset()                   // restore to resetValue (or anchor)
+parameter.reset()                   // restore to resetValue (or the field's initValue)
 parameter.valueAt(position)         // T — automation value at a PPQN
 
 // Subscriptions / lifecycle
@@ -164,8 +175,10 @@ Use this for building generic device UIs that enumerate all knobs/sliders.
 Beyond `.optCollection`:
 - `.events` — `Option<EventCollection<ValueEventBoxAdapter>>` (empty if no collection)
 - `.hasCollection` — boolean guard before reading events
-- `.valueAt(position, fallback)` — unitValue at a region-local PPQN; `fallback` is
-  returned when the region has no events (no implicit default)
+- `.valueAt(position, fallback)` — unitValue at a GLOBAL timeline PPQN (converted to
+  region-local via `LoopableRegion.globalToLocal` internally; compare `.position` on
+  events, which is region-local); `fallback` is returned when the region has no
+  events (no implicit default)
 - `.incomingValue(fallback)` — value entering the region
 - `.outgoingValue(fallback)` — value leaving the region
 
@@ -182,7 +195,9 @@ Each automation point:
 - `.copyFrom({...})` — write overrides into this event from a partial
 
 Move via `box.position.setValue()` in `editing.modify()`. Delete via
-`boxGraph.unstageBox(adapter.box)`.
+`adapter.box.delete()` — `Interpolation.Curve(slope)` is persisted as a separate
+`ValueEventCurveBox` with a mandatory back-pointer, and only `box.delete()`
+cascade-deletes it; bare `unstageBox` strands the curve box.
 
 ## Reference Files
 - Track automation demo: `src/demos/automation/track-automation-demo.tsx`
