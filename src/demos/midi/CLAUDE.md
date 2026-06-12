@@ -20,21 +20,25 @@ const sub = MidiDevices.subscribeMessageEvents(event => { ... }, channel?);
 // Unlike CaptureAudio (which auto-arms when monitoringMode is set), CaptureMidi
 // has no implicit arming. Without arming, softwareMIDIInput notes never reach
 // the synth (no live monitoring) and Recording.start() skips the capture (no recording).
+// armed.setValue() is the deterministic arm/disarm; setArm() TOGGLES
+// (second param = exclusivity only) — see src/demos/recording/CLAUDE.md.
 const capture = project.captureDevices.get(audioUnitBox.address.uuid).unwrap();
-project.captureDevices.setArm(capture, true);
+capture.armed.setValue(true);
 
 // MIDI capture channel filter: set on CaptureMidiBox
 captureMidiBox.channel.setValue(-1); // -1=all, 0-15=specific channel
 ```
 
 ### MIDI Recording Requires a Synth Instrument
-`startRecording()` auto-creates a Tape (audio-only) when no instruments exist. Tape can't play
-MIDI notes. For MIDI recording, pre-create a synth instrument before recording:
+`startRecording()` records only ARMED captures — with zero armed captures the engine
+enters recording state but records nothing and creates no instrument. Tape can't play
+MIDI notes. For MIDI recording, pre-create a synth instrument and arm its capture:
 ```typescript
 project.editing.modify(() => {
   project.api.createInstrument(InstrumentFactories.Vaporisateur); // built-in synth, no files needed
 });
-// startRecording() will find and arm this instrument's CaptureMidiBox
+// Then arm its capture (separate transaction not needed — armed is runtime-only):
+project.captureDevices.get(audioUnitBox.address.uuid).unwrap().armed.setValue(true);
 ```
 Available MIDI instruments: `Vaporisateur` (synth), `Soundfont` (sf2 player), `Nano` (sampler), `Playfield` (drums), `Apparat` (scriptable DSP).
 
@@ -65,28 +69,33 @@ Container for MIDI note events within a region:
 const collection = region.optCollection.unwrap(); // or: if (!region.hasCollection) return
 collection.events         // EventCollection<NoteEventBoxAdapter>
 
+// All seven params are REQUIRED; call inside editing.modify() (createEvent
+// does not open a transaction itself). Returns NoteEventBoxAdapter.
 collection.createEvent({
   position: 0 as ppqn,    // region-local
   duration: 480 as ppqn,  // 480 = quarter note at 960 PPQN
   pitch: 60,              // MIDI note number (60 = middle C)
-  cent: 0,                // microtuning offset in cents
+  cent: 0,                // microtuning offset, -50..+50 cents
   velocity: 0.8,          // float, 0-1
   chance: 100,            // playback probability (0-100)
   playCount: 1,           // note-repeat count
 });
 collection.copy()                              // copy all events into a new collection
 collection.overlapping(from, to, pitch)        // events touching a PPQN range at a pitch
-collection.selectableAt({ x: ppqn, y: pitch }) // events at a (position, pitch) coordinate
+collection.selectableAt({ u: ppqn, v: pitch }) // events at a (position, pitch) coordinate — Coordinates<U, V> is { u, v }
 ```
-Remove events via `boxGraph.unstageBox(adapter.box)`. Query position-bound events via
-`collection.overlapping()` or `region.iterateActiveNotesAt(position)`.
+`createEvent` is the prescribed creation path — manual `NoteEventBox.create` +
+`box.events.refer(collection.events)` mirrors the SDK internals but adds a box-class
+import and pointer wiring for no gain. Remove events via `adapter.box.delete()`
+(cascade-deletes mandatory dependents), not bare `unstageBox`. Query position-bound
+events via `collection.overlapping()` or `region.iterateActiveNotesAt(position)`.
 
 ### NoteEventBoxAdapter (Individual Note)
 Each MIDI note event:
 - `.position` — PPQN position (region-local)
 - `.duration` — note length (PPQN)
 - `.pitch` — MIDI note number (`int`, 0-127)
-- `.cent` — microtuning offset in cents
+- `.cent` — microtuning offset (-50..+50 cents)
 - `.velocity` — note velocity (`float`, 0-1)
 - `.chance` — playback probability (0-100)
 - `.playCount` — note-repeat count
@@ -100,7 +109,8 @@ Each MIDI note event:
 - `.canConsolidate()` / `.consolidate()` — fold repeat events into separate adapters
 
 Move via `box.position.setValue()` in `editing.modify()`. Delete via
-`boxGraph.unstageBox(adapter.box)`.
+`adapter.box.delete()` — `NoteEventBox` accepts a mandatory `NoteEventRepeatBox`
+dependent, which bare `unstageBox` would orphan.
 
 ### MIDI Effect Adapters (Pre-Instrument Processing)
 MIDI effects sit between capture and instrument in the signal chain.
@@ -129,3 +139,5 @@ Available instrument adapters (each implements `InstrumentDeviceBoxAdapter`):
 
 ## Reference Files
 - MIDI recording demo: `src/demos/midi/midi-recording-demo.tsx`
+- On-screen keyboard: `src/demos/midi/PianoKeyboard.tsx`
+- Step recording (createEvent path): `src/demos/midi/StepRecordingSection.tsx`

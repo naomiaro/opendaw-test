@@ -219,7 +219,10 @@ project.editing.modify(() => {
   cap.captureBox.channel.setValue(-1); // -1 = any channel; 0–15 = specific
 });
 
-project.captureDevices.setArm(cap, true);
+// armed is a runtime observable — set it directly, outside editing.modify().
+// (captureDevices.setArm() TOGGLES the armed state; its second parameter only
+// controls whether other captures are disarmed — see Ch. 08.)
+cap.armed.setValue(true);
 ```
 
 When armed and the engine is recording, notes received from the matching channel land in a new `NoteRegionBox` on the track. The full lifecycle (count-in, takes, comp lanes) is detailed in [Ch. 08](./08-recording.md).

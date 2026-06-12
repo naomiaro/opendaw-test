@@ -6,12 +6,15 @@
 project.startRecording(useCountIn: boolean);
 
 // CRITICAL: Use stopRecording() to stop recording, NOT stop(true).
-// stop(true) kills the audio graph, preventing RecordingProcessor from
-// writing remaining data to the RingBuffer. It also resets position to 0,
-// which triggers spurious loop-wrap detection in loop recording (muting
-// the last take). Call stop(true) only AFTER finalization completes.
+// stopRecording() stops transport and clears the recording flags without
+// resetting position or processors; finalization (sample import, peaks)
+// completes asynchronously on the main thread. stop(true) additionally
+// resets position to 0 — triggering spurious loop-wrap detection in loop
+// recording (muting the last take) — and resets all processors, racing the
+// in-flight async finalization. Call stop(true) only AFTER finalization completes.
 project.engine.stopRecording();
-// Wait for finalization via sampleLoader.subscribe, then reset engine:
+// Wait for finalization via sampleLoader.subscribe, then reset engine
+// (barriers also count "error" and keep a timeout — see SampleLoader section):
 const sub = sampleLoader.subscribe((state: any) => {
   if (state.type === "loaded") {
     sub.terminate();
@@ -56,24 +59,42 @@ if (capture instanceof CaptureAudio) {
   // Option.None = system default destination
 }
 
-// Track arming
-project.captureDevices.setArm(capture, true); // exclusive=true disarms others
+// Track arming — capture.armed.setValue() is the deterministic arm/disarm
+capture.armed.setValue(true);
+capture.armed.setValue(false);
+
+// setArm() is a TOGGLE: arming = !capture.armed.getValue(). The second param
+// is exclusivity only — when the toggle lands on armed AND exclusive=true,
+// all other captures are disarmed. Calling setArm on an already-armed capture
+// DISARMS it. Reserve setArm for exclusive-arm (radio-button) UX.
+project.captureDevices.setArm(capture, true);
+
+// filterArmed() returns captures that are armed AND have an instrument/input
+// connected AND whose audio unit is not frozen
 const armed = project.captureDevices.filterArmed();
 
-// Multi-device recording: arm multiple captures non-exclusively
-project.captureDevices.setArm(capture1, false); // false = keep others armed
-project.captureDevices.setArm(capture2, false);
-// startRecording() uses filterArmed() internally — records ALL armed captures in parallel
+// Multi-device recording: arm multiple captures
+capture1.armed.setValue(true);
+capture2.armed.setValue(true);
+// startRecording() uses filterArmed() internally — records ALL armed captures
+// in parallel. With ZERO armed captures the engine enters recording state but
+// records nothing and creates no instrument.
 ```
 
 ### Recording Preferences (Takes)
 ```typescript
 const settings = project.engine.preferences.settings;
-settings.recording.allowTakes = true;        // enable loop-based takes (default: true since SDK 0.0.109)
+settings.recording.allowTakes = true;        // enable loop-based takes (default: true)
 settings.recording.olderTakeAction = "mute-region"; // or "disable-track"
-settings.recording.olderTakeScope = "previous-only"; // or "all"
+settings.recording.olderTakeScope = "previous-only"; // "none" | "all" | "previous-only"
 settings.recording.countInBars = 1;          // 1-8
+settings.recording.inputLatency = 0;         // seconds, ≥ -1; engine-wide mic→engine compensation
+settings.recording.automationEnabled = true; // record parameter automation (RecordAutomation)
 ```
+`olderTakeScope: "none"` skips older-take muting/disabling entirely. Allowed-value
+constants are exported as `EngineSettings.RecordingCountInBars`,
+`EngineSettings.OlderTakeActionOptions`, `EngineSettings.OlderTakeScopeOptions`
+(`@opendaw/studio-adapters`) — prefer them over hard-coded literal unions.
 
 **How takes work:** Takes are driven by the timeline loop area (`timelineBox.loopArea`).
 When `allowTakes` is true AND `loopArea.enabled` is true, each time playback wraps past
@@ -86,6 +107,17 @@ When `allowTakes` is true AND `loopArea.enabled` is true, each time playback wra
   single continuous region regardless of the setting.
 - Loop-wrap detection uses `currentPosition < lastPosition` (position jumped backward),
   then calls `startNewTake(loopFrom)` to begin the next take at the loop start.
+- Zero-duration takes are deleted at the wrap instead of being finalized.
+
+### Input Latency Compensation
+`settings.recording.inputLatency` (seconds, ≥ -1) is the engine-wide default;
+`captureBox.inputLatency` (Float32 box graph field — needs `editing.modify()`)
+overrides it per capture. Sentinels from `InputLatency` (`@opendaw/studio-core`):
+- `InputLatency.Inherit` (-2, field default) — use the engine preference
+- `InputLatency.EqualsOutput` (-1) — equal to output latency (doubles the compensation)
+- values ≥ 0 — seconds added to output latency
+`InputLatency.resolve(localOverride, preference, outputLatency)` returns the
+resolved seconds; the result feeds take 1's `waveformOffset`.
 
 ### capture.armed Is Not a Box Graph Field
 - `capture.armed` is a `MutableObservableValue<boolean>`, not a box graph field
@@ -109,10 +141,11 @@ sourceNode → monitorGainNode → monitorPanNode → destination (or custom out
   for `kind === "audiooutput"` (not handled by `AudioDevices` class)
 
 ### Never Call stop(true) During Recording Finalization
-After `stopRecording()`, the SDK finalizes internally (imports sample, generates peaks).
-Calling `stop(true)` during this window kills the audio graph and prevents finalization.
-OpenDAW's transport never calls `stop(true)` after `stopRecording()` — finalization
-completes asynchronously while the engine keeps playing. Only call `stop(true)` for:
+`stopRecording()` stops transport; the SDK then finalizes asynchronously on the main
+thread (imports sample, generates peaks). Calling `stop(true)` during this window
+resets position (spurious loop-wrap muting) and resets all processors, racing the
+in-flight finalization. OpenDAW's record button calls `stopRecording()` only —
+`stop(true)` is a separate user action. Only call `stop(true)` for:
 - Cancelling count-in (no loaders to finalize)
 - Stopping playback (state is "ready" or "playing")
 - Resetting position before `play()` for playback
@@ -124,8 +157,12 @@ Always read `loader.state.type` synchronously first and handle terminal states
 directly — short recordings may be `"loaded"` before `subscribe()` is called.
 `loader.state` is typed as `SampleLoaderState` with
 `.type: "idle" | "record" | "progress" | "error" | "loaded"`.
-Always handle both `"loaded"` and `"error"` in finalization barriers — ignoring
-`"error"` leaves the state machine stuck in "finalizing" permanently.
+Finalization barriers must count `"error"` as terminal AND keep a safety timeout:
+`RecordingWorklet` (the loader during recording) emits only `"loaded"` — a
+finalization failure produces NO terminal state (the loader stays in `"record"`),
+so the timeout is the only safety net on that path. `"error"` fires on
+`DefaultSampleLoader` paths (post-reload loads, decode failures) and must still
+be handled there.
 Inside the subscribe callback, a one-shot `sub.terminate()` call will hit the
 `const sub` binding in its TDZ if the callback fires synchronously; use the
 pre-check pattern (handle terminal state before subscribing) to avoid this.
@@ -151,16 +188,14 @@ state changes. Instead, let AnimationFrame run unconditionally — when there's 
 render it's a no-op.
 
 ### Finding Recording Regions
-Recording regions are labeled "Take N" (SDK 0.0.91+) or "Recording" (older). Discover
-via `getAllAudioRegions(project)` from `src/lib/adapterUtils.ts`:
+Every audio recording region is labeled `"Take N"` starting at N=1, including single
+non-loop recordings (`RecordMidi` labels MIDI takes the same way). Discover via
+`getAllAudioRegions(project)` from `src/lib/adapterUtils.ts`:
 ```typescript
 import { getAllAudioRegions } from "@/lib/adapterUtils";
 
 const audioRegions = getAllAudioRegions(project);
-const recordingAdapter = audioRegions.find(adapter => {
-  const label = adapter.label;
-  return label === "Recording" || label.startsWith("Take ");
-});
+const recordingAdapter = audioRegions.find(adapter => adapter.label.startsWith("Take "));
 
 // Adapter exposes typed getters/setters — no .getValue() on field access
 const durationPpqn = recordingAdapter.duration;
@@ -205,6 +240,9 @@ underlying `captureBox.requestChannels` (Int32Field) — also a box graph mutati
 three need `editing.modify()`. `capture.monitoringMode` is NOT a box graph field (it
 manipulates Web Audio nodes), so set it outside the transaction. As of SDK 0.0.133,
 `monitoringMode` is properly typed — no `(capture as any)` cast needed.
+Setting any non-`"off"` monitoring mode auto-arms the capture (`armed.setValue(true)`).
+`captureBox.recordMode` (`"normal" | "replace" | "punch"`) exists in the schema but
+has no runtime consumer — don't build on it.
 
 ### Recording Peaks Include Count-In Frames
 The SDK captures audio during count-in. `waveformOffset` on the region (in seconds)
@@ -234,7 +272,7 @@ explicitly set for take 1; subsequent takes inherit it transitively through accu
 ```
 Buffer: [count-in frames | Take 1 audio | Take 2 audio | Take 3 audio ...]
 
-Take 1: waveformOffset = countInSeconds + outputLatency + workletHeadStart (set by SDK)
+Take 1: waveformOffset = workletHeadStart + countInSeconds + outputLatency + inputLatency (set by SDK)
 Take 2: waveformOffset = take1.waveformOffset + take1.duration
 Take 3: waveformOffset = take2.waveformOffset + take2.duration
 ```
@@ -242,14 +280,17 @@ The count-in frames sit at the start of the buffer and are never referenced afte
 skips past them. Each take's `waveformOffset` is set once at creation time in
 `RecordAudio.ts` and never modified afterward.
 
-**Duration overshoot (~2-3ms):** Loop-wrap detection (`currentPosition < lastPosition`)
-fires at audio block boundaries (~128 frames), so each take's `duration` includes a few
-extra frames past the exact loop boundary. The next take's `waveformOffset` compensates
-(starts after those frames), so audio reads stay aligned. This causes a minor visual
-artifact where each take's waveform shows ~2-3ms of extra audio at the tail.
+**Take durations:** Wrap-finalized takes get deterministic tempo-map durations —
+at each loop wrap the SDK sets the finalized take's duration to
+`tempoMap.intervalToSeconds(regionBox.position, loopTo)`, so there is no overshoot
+past the loop boundary. The FINAL take (teardown-finalized at stop) keeps the last
+live duration write (`numberOfFrames / sampleRate - waveformOffset`), which is
+RenderQuantum-granular — expect up to one audio block of extra tail on that take only.
 
-**20ms voice crossfade at loop boundaries:** At loop wrap, the engine sets
-`BlockFlag.discontinuous`, which fades out old voices over `VOICE_FADE_DURATION = 0.020s`
+**20ms voice crossfade at loop boundaries:** When the loop action proceeds (i.e.
+`playback.pauseOnLoopDisabled` is off — with it enabled the engine pauses at the wrap
+and no crossfade occurs), the engine sets `BlockFlag.discontinuous`, which fades out
+old voices over `VOICE_FADE_DURATION = 0.020s`
 (20ms) and fades in new voices when the read offset is non-zero (typical loop-wrap takes
 have `waveformOffset > 0`, so the 20 ms voice fade-in applies). During this window, both the
 outgoing and incoming take audio overlap briefly. The fade-out starts from the current
@@ -266,15 +307,19 @@ where `elapsedSeconds = tempoMap.intervalToSeconds(cycle.rawStart, cycle.resultS
 4. Subscribe to `sampleLoader.subscribe()` — wait for `state.type === "loaded"`
 5. Call `engine.stop(true)` to reset, then `engine.play()`
 **Multi-device**: When recording multiple tracks, subscribe to ALL sampleLoaders and only call
-`stop(true)` after all have emitted `"loaded"` (counting barrier pattern). Add a safety
-timeout (~10s) to force-finalize if any loader fails to emit.
+`stop(true)` after all have reached a terminal state — `"loaded"` or `"error"` (counting
+barrier pattern). Keep a safety timeout: a RecordingWorklet finalization failure emits
+no terminal state at all (see the SampleLoader section).
 **Note**: `queryLoadingComplete()` resolves before `sampleLoader.data` is set — do NOT use it to detect recording data availability.
 
 ### Stop Button Behavior
-- `stopRecording()` - Stops recording but keeps engine alive for finalization
+- `stopRecording()` - Stops transport and clears recording flags; does not reset
+  position or processors — finalization completes asynchronously
 - `stop(true)` - Resets position to 0, clears all voices, resets processors (like DAW stop button)
 - `stop(false)` - Pauses without resetting position
-- **NEVER call `stop(true)` while recording** — kills the audio graph and prevents finalization
+- **NEVER call `stop(true)` while recording or before loaders reach a terminal state** —
+  the position reset triggers spurious loop-wrap muting and the processor reset races
+  the async finalization
 
 ### Monitoring Peaks Across Recording Lifecycle
 Use state (not refs) to track monitoring status, since refs don't trigger effect re-runs:
@@ -307,8 +352,12 @@ useEffect(() => {
 - Recording tape card: `src/components/RecordingTapeCard.tsx`
 - Take timeline: `src/components/TakeTimeline.tsx`
 - Engine preferences hook: `src/hooks/useEnginePreference.ts`
+- Takes preferences panel: `src/demos/recording/TakesPreferencesPanel.tsx`
+- Loop setup panel: `src/demos/recording/LoopSetupPanel.tsx`
 
 ## Shared Recording Hooks
 - `src/hooks/useRecordingSession.ts` — state machine (idle → counting-in → recording → finalizing → ready → playing), engine subscriptions, eager sampleLoader finalization barrier
 - `src/hooks/useAudioDevicePermission.ts` — mic permission + input/output device enumeration
 - `src/hooks/useRecordingTapes.ts` — Tape instrument creation, capture config, arming, tape add/remove
+- `src/demos/recording/useTapePeaks.ts` — live + finalized peaks rendering per tape (CanvasPainter lifecycle)
+- `src/demos/recording/useTakeDiscovery.ts` — reactive take discovery/grouping via pointerHub subscriptions
