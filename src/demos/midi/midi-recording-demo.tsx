@@ -597,7 +597,7 @@ const App: React.FC = () => {
           <Flex direction="column" align="center" gap="4">
             <Heading size="8">MIDI Recording Demo</Heading>
             {initError ? (
-              <Callout.Root color="red">
+              <Callout.Root color="red" role="alert">
                 <Callout.Text>Initialization failed: {initError}</Callout.Text>
               </Callout.Root>
             ) : (
@@ -638,13 +638,13 @@ const App: React.FC = () => {
               <Heading size="5">MIDI Devices</Heading>
 
               {midiError && (
-                <Callout.Root color="red">
+                <Callout.Root color="red" role="alert">
                   <Callout.Text>{midiError}</Callout.Text>
                 </Callout.Root>
               )}
 
               {!midiAvailable ? (
-                <Callout.Root color="red">
+                <Callout.Root color="red" role="alert">
                   <Callout.Text>
                     WebMIDI is not available in this browser. The on-screen Software Keyboard
                     will still work for note input.
