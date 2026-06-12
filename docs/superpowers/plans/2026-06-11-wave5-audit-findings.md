@@ -555,3 +555,8 @@ Key facts established:
   loader stays in `"record"` forever. Upstream issue candidate: recording finalization
   failures are silent at the SDK level; consumers can only timeout. (Feeds the Task 2/4
   timeout+error-surface work; could be reported upstream.)
+
+## Wave-review follow-up candidates (from task-level quality reviews)
+
+- **[Task 9 — integration round decision] getCanvasRef ref-callback churn (pre-existing, preserved by the Task-3 move):** `ref={getCanvasRef(index)}` creates a new closure identity every render, so React runs detach(null)→attach(el) per render — the null branch terminates the painter and rebuilds it (useTapePeaks.ts:67-74, call site recording-api-react-demo.tsx:586). Not per-frame (renders are event-driven), so works in practice; the fix is a stable per-index callback map. Cheap — apply in the wave-integration round if low-risk, else PR follow-up.
+- **[Task 9 — PR follow-up] useTapePeaks cohesion:** the hook carries a ~77-line finalization-drift debug logger (useTapePeaks.ts:214-290) unrelated to peaks rendering; candidate extraction `useRecordingDriftLog` or rename. Naming judgment, not a defect.
