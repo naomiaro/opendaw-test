@@ -168,14 +168,11 @@ export const RecordingTapeCard: React.FC<RecordingTapeCardProps> = ({
   }, [capture, monitorOutputDeviceId]);
 
   const handleToggleArm = useCallback(() => {
-    if (isArmed) {
-      // Disarm: set armed to false directly
-      capture.armed.setValue(false);
-    } else {
-      // Arm non-exclusively so other tapes stay armed
-      project.captureDevices.setArm(capture, false);
-    }
-  }, [project, capture, isArmed]);
+    // Deterministic arm/disarm. captureDevices.setArm() TOGGLES the armed
+    // state (its second param is exclusivity only), so set the observable
+    // directly — other tapes stay armed. Reserve setArm for exclusive-arm UX.
+    capture.armed.setValue(!isArmed);
+  }, [capture, isArmed]);
 
   const handleRemove = useCallback(() => {
     onRemove(tape.id);

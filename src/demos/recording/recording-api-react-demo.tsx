@@ -64,6 +64,10 @@ function getStatusMessage(state: RecordingState, countInBeats: number): string {
  */
 const App: React.FC = () => {
   const [status, setStatus] = useState("Loading...");
+  const [initError, setInitError] = useState<string | null>(null);
+  // Post-init failures (add tape, start recording/playback). The `status`
+  // string is only rendered on the pre-init screen, so errors must not go there.
+  const [uiError, setUiError] = useState<string | null>(null);
   const [project, setProject] = useState<Project | null>(null);
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
 
@@ -105,7 +109,7 @@ const App: React.FC = () => {
     useRecordingTapes({
       project,
       audioInputDevices,
-      onError: (msg) => setStatus(`Add tape failed: ${msg}`),
+      onError: (msg) => setUiError(`Add tape failed: ${msg}`),
     });
 
   // Keep ref in sync to avoid tearing down pointerHub subscriptions on tape changes
@@ -203,8 +207,10 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!project || session.state !== "ready") return;
 
+    // Recording regions are always labeled "Take N" — no legacy
+    // "Recording" label exists.
     for (const region of getAllRegions(project)) {
-      if (region.label === "Recording" || region.label.startsWith("Take ")) {
+      if (region.label.startsWith("Take ")) {
         const duration = region.box.duration.getValue();
         project.editing.modify(() => {
           project.timelineBox.loopArea.from.setValue(0);
@@ -238,8 +244,7 @@ const App: React.FC = () => {
           const regionsSub = trackAdapter.regions.catchupAndSubscribe({
             onAdded: (regionAdapter) => {
               if (!regionAdapter.isAudioRegion()) return;
-              const label = regionAdapter.label;
-              if (label !== "Recording" && !label.startsWith("Take ")) return;
+              if (!regionAdapter.label.startsWith("Take ")) return;
 
               if (!tapePeaksRef.current.has(i)) {
                 tapePeaksRef.current.set(i, {
@@ -438,7 +443,8 @@ const App: React.FC = () => {
         setStatus("Ready!");
       } catch (error) {
         console.error("Initialization error:", error);
-        setStatus(`Error: ${error}`);
+        if (!mounted) return;
+        setInitError(error instanceof Error ? error.message : String(error));
       }
     })();
 
@@ -450,6 +456,7 @@ const App: React.FC = () => {
   const handleStartRecording = useCallback(async () => {
     if (!project || !audioContext) return;
 
+    setUiError(null);
     try {
       // Resume AudioContext if needed
       if (audioContext.state === "suspended") {
@@ -464,7 +471,7 @@ const App: React.FC = () => {
       // Delete any previous recording regions before starting a new one
       project.editing.modify(() => {
         for (const region of getAllRegions(project)) {
-          if (region.label === "Recording" || region.label.startsWith("Take ")) {
+          if (region.label.startsWith("Take ")) {
             region.box.delete();
           }
         }
@@ -473,6 +480,7 @@ const App: React.FC = () => {
       // Reset peaks state for all tapes
       tapePeaksRef.current.clear();
       session.resetLoaders();
+      session.clearError();
 
       // Cleanup old painters
       for (const [, painter] of canvasPaintersMap.current) {
@@ -484,12 +492,16 @@ const App: React.FC = () => {
       project.startRecording(useCountIn);
     } catch (error) {
       console.error("Failed to start recording:", error);
+      setUiError(
+        `Failed to start recording: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
-  }, [project, audioContext, useCountIn, hasPermission, requestPermission, session.resetLoaders]);
+  }, [project, audioContext, useCountIn, hasPermission, requestPermission, session.resetLoaders, session.clearError]);
 
   const handlePlayRecording = useCallback(async () => {
     if (!project || !audioContext) return;
 
+    setUiError(null);
     // Save user's metronome preference before disabling
     userMetronomePreferenceRef.current = metronomeEnabled ?? false;
 
@@ -525,6 +537,9 @@ const App: React.FC = () => {
       project.engine.play();
     } catch (error) {
       console.error("Failed to start playback:", error);
+      setUiError(
+        `Failed to start playback: ${error instanceof Error ? error.message : String(error)}`
+      );
       // Restore metronome preference on failure
       setMetronomeEnabled(userMetronomePreferenceRef.current);
     }
@@ -554,9 +569,17 @@ const App: React.FC = () => {
         <Container size="2" px="4" py="8">
           <Flex direction="column" align="center" gap="4">
             <Heading size="8">Recording API Demo</Heading>
-            <Text size="3" color="gray">
-              {status}
-            </Text>
+            {initError ? (
+              <Callout.Root color="red" role="alert">
+                <Callout.Text>
+                  <strong>Initialization failed:</strong> {initError}
+                </Callout.Text>
+              </Callout.Root>
+            ) : (
+              <Text size="3" color="gray">
+                {status}
+              </Text>
+            )}
           </Flex>
         </Container>
       </Theme>
@@ -795,6 +818,18 @@ const App: React.FC = () => {
               <Text size="2" align="center" color="gray">
                 {statusMessage}
               </Text>
+
+              {session.error && (
+                <Callout.Root color="red" role="alert">
+                  <Callout.Text>{session.error}</Callout.Text>
+                </Callout.Root>
+              )}
+
+              {uiError && (
+                <Callout.Root color="red" role="alert">
+                  <Callout.Text>{uiError}</Callout.Text>
+                </Callout.Root>
+              )}
 
               {/* Waveform canvases — one per recording tape */}
               {recordingTapes.length > 0 && (
