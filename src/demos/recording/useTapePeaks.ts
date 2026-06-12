@@ -59,9 +59,18 @@ export function useTapePeaks({
   // Per-tape peaks state — keyed by tape index
   const tapePeaksRef = useRef<Map<number, TapePeaksState>>(new Map());
 
-  // Canvas ref callback for a given tape index
+  // Memoized per-index ref callbacks — a fresh closure per render would make
+  // React detach/reattach the ref each render, tearing down the painter.
+  const canvasRefCallbacksMap = useRef<
+    Map<number, (el: HTMLCanvasElement | null) => void>
+  >(new Map());
+
+  // Canvas ref callback for a given tape index — one stable callback per index
   const getCanvasRef = useCallback((tapeIndex: number) => {
-    return (el: HTMLCanvasElement | null) => {
+    const existing = canvasRefCallbacksMap.current.get(tapeIndex);
+    if (existing) return existing;
+
+    const callback = (el: HTMLCanvasElement | null) => {
       if (el) {
         canvasRefsMap.current.set(tapeIndex, el);
       } else {
@@ -74,6 +83,8 @@ export function useTapePeaks({
         canvasRefsMap.current.delete(tapeIndex);
       }
     };
+    canvasRefCallbacksMap.current.set(tapeIndex, callback);
+    return callback;
   }, []);
 
   // Initialize CanvasPainter for a specific tape canvas

@@ -5,8 +5,8 @@ import { AnimationFrame } from "@opendaw/lib-dom";
 import { PeaksPainter } from "@opendaw/lib-fusion";
 import { PPQN } from "@opendaw/lib-dsp";
 import { AudioRegionBox } from "@opendaw/studio-boxes";
-import { CanvasPainter } from "../lib/CanvasPainter";
-import { CANVAS_COLORS } from "../lib/design/consoleTheme";
+import { CanvasPainter } from "@/lib/CanvasPainter";
+import { CANVAS_COLORS } from "@/lib/design/consoleTheme";
 
 // --- Types ---
 

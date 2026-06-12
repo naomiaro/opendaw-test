@@ -1,16 +1,6 @@
 import React from "react";
 import { Code, Text } from "@radix-ui/themes";
-
-const codeStyle = {
-  display: "block" as const,
-  whiteSpace: "pre" as const,
-  padding: 12,
-  overflowX: "auto" as const,
-  background: "var(--mc-bg)",
-  border: "1px solid var(--mc-line)",
-  borderRadius: 4,
-  marginTop: 8,
-};
+import { CODE_BLOCK_STYLE } from "@/lib/design/consoleTheme";
 
 /** Static SDK-reference section for the loop-recording demo. */
 export const LoopRecordingReference: React.FC = () => (
@@ -20,7 +10,7 @@ export const LoopRecordingReference: React.FC = () => (
     <Text size="2" weight="bold" style={{ display: "block", marginTop: 16 }}>
       Pre-Loop Lead-In Recording:
     </Text>
-    <Code size="2" style={codeStyle}>
+    <Code size="2" style={CODE_BLOCK_STYLE}>
       {`// Set loop area with lead-in
 const barPPQN = PPQN.Quarter * 4;
 const loopFrom = leadInBars * barPPQN;
@@ -40,7 +30,7 @@ project.startRecording(useCountIn);`}
     <Text size="2" weight="bold" style={{ display: "block", marginTop: 16 }}>
       Multi-Track Loop Recording:
     </Text>
-    <Code size="2" style={codeStyle}>
+    <Code size="2" style={CODE_BLOCK_STYLE}>
       {`// Create and arm multiple tracks
 const { audioUnitBox } = project.api
   .createInstrument(InstrumentFactories.Tape);
@@ -73,7 +63,7 @@ for (const loader of loaders) {
     <Text size="2" weight="bold" style={{ display: "block", marginTop: 16 }}>
       Takes Preferences:
     </Text>
-    <Code size="2" style={codeStyle}>
+    <Code size="2" style={CODE_BLOCK_STYLE}>
       {`const settings = project.engine.preferences.settings;
 settings.recording.allowTakes = true;
 settings.recording.olderTakeAction = "mute-region";

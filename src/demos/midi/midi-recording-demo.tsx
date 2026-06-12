@@ -13,7 +13,7 @@ import { RecordingPreferences } from "@/components/RecordingPreferences";
 import { PianoKeyboard, PIANO_STYLES, noteName } from "./PianoKeyboard";
 import { StepRecordingSection } from "./StepRecordingSection";
 import type { RecordedNote } from "./StepRecordingSection";
-import { CONSOLE_STYLES } from "@/lib/design/consoleTheme";
+import { CONSOLE_STYLES, CODE_BLOCK_STYLE } from "@/lib/design/consoleTheme";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
@@ -465,7 +465,7 @@ const App: React.FC = () => {
                   <Separator size="4" />
                   <Flex direction="column" gap="2">
                     <Text size="2" weight="bold">MIDI Device Access:</Text>
-                    <Code size="2" style={{ display: "block", whiteSpace: "pre", padding: 12, overflowX: "auto" }}>
+                    <Code size="2" style={CODE_BLOCK_STYLE}>
 {`import { MidiDevices } from "@opendaw/studio-core";
 
 await MidiDevices.requestPermission();
@@ -474,14 +474,14 @@ const devices = MidiDevices.inputDevices();
                     </Code>
 
                     <Text size="2" weight="bold" style={{ marginTop: 8 }}>Software Keyboard:</Text>
-                    <Code size="2" style={{ display: "block", whiteSpace: "pre", padding: 12, overflowX: "auto" }}>
+                    <Code size="2" style={CODE_BLOCK_STYLE}>
 {`MidiDevices.softwareMIDIInput.sendNoteOn(60, 0.8);
 MidiDevices.softwareMIDIInput.sendNoteOff(60);
 MidiDevices.softwareMIDIInput.channel = 0; // 0-15`}
                     </Code>
 
                     <Text size="2" weight="bold" style={{ marginTop: 8 }}>Step Recording (headless):</Text>
-                    <Code size="2" style={{ display: "block", whiteSpace: "pre", padding: 12, overflowX: "auto" }}>
+                    <Code size="2" style={CODE_BLOCK_STYLE}>
 {`// noteRegionAdapter.optCollection is Option<NoteEventCollectionBoxAdapter>
 const collection = noteRegionAdapter.optCollection.unwrap();
 

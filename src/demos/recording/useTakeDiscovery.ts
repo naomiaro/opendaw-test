@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Dispatch, RefObject, SetStateAction } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import { UUID } from "@opendaw/lib-std";
 import type { Terminable } from "@opendaw/lib-std";
 import type { Project } from "@opendaw/studio-core";
@@ -9,7 +9,7 @@ import type {
 } from "@opendaw/studio-adapters";
 import type { AudioRegionBox } from "@opendaw/studio-boxes";
 import type { RecordingTape } from "@/components/RecordingTapeCard";
-import type { TakeRegion, TakeIteration } from "@/components/TakeTimeline";
+import type { TakeRegion, TakeIteration } from "./TakeTimeline";
 
 interface UseTakeDiscoveryOptions {
   project: Project | null;
@@ -25,12 +25,12 @@ export interface UseTakeDiscoveryResult {
   /** Sync a region's mute flag into takeIterations (used after recording stops,
    *  when the reactive mute subscriptions have been terminated) */
   updateTakeMuteInState: (regionBox: AudioRegionBox, isMuted: boolean) => void;
-  /** Adapter-layer subscriptions — the demo terminates these BEFORE
+  /** Terminate (and clear) the adapter-layer subscriptions — call BEFORE
    *  stopRecording() to prevent late SDK events adding stale regions */
-  pointerHubSubsRef: RefObject<Terminable[]>;
-  /** SampleLoaders discovered during recording — consumed (and cleared) by the
-   *  demo's finalization barrier in handleStopRecording */
-  sampleLoadersRef: RefObject<Set<SampleLoader>>;
+  terminateDiscovery: () => void;
+  /** SampleLoaders discovered during recording — returns a snapshot and clears
+   *  the internal set; consumed by the finalization barrier in handleStopRecording */
+  snapshotLoaders: () => Set<SampleLoader>;
 }
 
 /**
@@ -240,11 +240,28 @@ export function useTakeDiscovery({
     updateTakeMuteInState,
   ]);
 
+  // Terminate the adapter-layer subscriptions (idempotent) — the demo calls
+  // this before stopRecording() so late SDK events can't add stale regions.
+  const terminateDiscovery = useCallback(() => {
+    for (const sub of pointerHubSubsRef.current) {
+      sub.terminate();
+    }
+    pointerHubSubsRef.current = [];
+  }, []);
+
+  // Snapshot the discovered loaders and clear the internal set — the copy
+  // avoids a race with the subscription effect's cleanup.
+  const snapshotLoaders = useCallback(() => {
+    const loaders = new Set(sampleLoadersRef.current);
+    sampleLoadersRef.current = new Set();
+    return loaders;
+  }, []);
+
   return {
     takeIterations,
     setTakeIterations,
     updateTakeMuteInState,
-    pointerHubSubsRef,
-    sampleLoadersRef,
+    terminateDiscovery,
+    snapshotLoaders,
   };
 }

@@ -358,7 +358,7 @@ useEffect(() => {
 - Recording demo: `src/demos/recording/recording-api-react-demo.tsx`
 - Loop recording demo: `src/demos/recording/loop-recording-demo.tsx`
 - Recording tape card: `src/components/RecordingTapeCard.tsx`
-- Take timeline: `src/components/TakeTimeline.tsx`
+- Take timeline: `src/demos/recording/TakeTimeline.tsx`
 - Engine preferences hook: `src/hooks/useEnginePreference.ts`
 - Takes preferences panel: `src/demos/recording/TakesPreferencesPanel.tsx`
 - Loop setup panel: `src/demos/recording/LoopSetupPanel.tsx`

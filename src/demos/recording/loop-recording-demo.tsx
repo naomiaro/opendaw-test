@@ -19,7 +19,7 @@ import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
 import { RecordingTapeCard } from "@/components/RecordingTapeCard";
-import { TakeTimeline } from "@/components/TakeTimeline";
+import { TakeTimeline } from "./TakeTimeline";
 import { CONSOLE_STYLES } from "@/lib/design/consoleTheme";
 import "@radix-ui/themes/styles.css";
 import {
@@ -37,6 +37,9 @@ import {
 
 const MAX_TAPES = 4;
 const BAR_PPQN = PPQN.Quarter * 4; // one bar in 4/4 time
+// Matches useRecordingSession — long multi-take finalizations can exceed 10s,
+// so the barrier shares the hook's 30s safety net.
+const FINALIZATION_TIMEOUT_MS = 30_000;
 
 // Loop progress bar — the width transition is smoothing only, so it is
 // dropped (not the bar itself) under prefers-reduced-motion.
@@ -65,7 +68,7 @@ const App: React.FC = () => {
   // Post-init failures (add tape, start recording/playback). The `status`
   // string is only rendered on the pre-init screen, so errors must not go there.
   const [uiError, setUiError] = useState<string | null>(null);
-  // Finalization-barrier failures (loader "error" state or 10s timeout).
+  // Finalization-barrier failures (loader "error" state or 30s timeout).
   const [finalizationError, setFinalizationError] = useState<string | null>(
     null
   );
@@ -112,8 +115,8 @@ const App: React.FC = () => {
     takeIterations,
     setTakeIterations,
     updateTakeMuteInState,
-    pointerHubSubsRef,
-    sampleLoadersRef,
+    terminateDiscovery,
+    snapshotLoaders,
   } = useTakeDiscovery({
     project,
     audioContext,
@@ -283,10 +286,7 @@ const App: React.FC = () => {
 
     // 1. Terminate pointer hub subs before stopRecording() to prevent late
     //    SDK events from adding stale regions to state
-    for (const sub of pointerHubSubsRef.current) {
-      sub.terminate();
-    }
-    pointerHubSubsRef.current = [];
+    terminateDiscovery();
 
     // 2. Stop recording. stop(true) would reset position/processors while
     //    finalization is still in flight — the position reset also triggers
@@ -300,9 +300,8 @@ const App: React.FC = () => {
     }
     finalizationSubsRef.current = [];
 
-    // 4. Snapshot sampleLoaders from ref (copy to avoid race with useEffect cleanup)
-    const loaders = new Set(sampleLoadersRef.current);
-    sampleLoadersRef.current = new Set();
+    // 4. Snapshot discovered sampleLoaders (the hook copies and clears its set)
+    const loaders = snapshotLoaders();
 
     if (loaders.size > 0) {
       let finalized = 0;
@@ -317,20 +316,21 @@ const App: React.FC = () => {
           timedOut = true;
           console.warn(`Finalization timed out (${finalized}/${total} terminal)`);
           setFinalizationError(
-            "Recording finalization timed out — engine reset; some audio may be incomplete."
+            `Finalization timed out after ${FINALIZATION_TIMEOUT_MS / 1000}s — ` +
+              "engine reset; the recording may be incomplete"
           );
           for (const sub of finalizationSubsRef.current) sub.terminate();
           finalizationSubsRef.current = [];
           project.engine.stop(true);
         }
-      }, 10_000);
+      }, FINALIZATION_TIMEOUT_MS);
 
       // Errored loaders still count toward the barrier so the engine reset
       // always runs; the error is surfaced separately.
       const countTerminal = (state: SampleLoaderState) => {
         if (state.type === "error") {
           setFinalizationError(
-            `A take failed to finalize: ${state.reason || "unknown"}`
+            `Recording finalization failed: ${state.reason || "unknown"}`
           );
         }
         finalized++;
@@ -361,7 +361,7 @@ const App: React.FC = () => {
     } else {
       project.engine.stop(true);
     }
-  }, [project, pointerHubSubsRef, sampleLoadersRef]);
+  }, [project, terminateDiscovery, snapshotLoaders]);
 
   const handlePlay = useCallback(async () => {
     if (!project || !audioContext) return;
