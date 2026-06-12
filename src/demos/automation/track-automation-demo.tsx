@@ -42,7 +42,10 @@ const PAGE_STYLES = `
 /**
  * Creates a new automation region with the given events, then deletes any
  * pre-existing regions on the track. Returns true on success; returns false
- * if region creation failed (old regions are preserved unchanged).
+ * if the new region or its event collection could not be obtained — old
+ * regions are kept either way, but in the collection-failure case an empty
+ * new region may remain committed (early return inside editing.modify()
+ * commits the transaction; only a throw aborts it).
  */
 function applyAutomationEvents(project: Project, trackBox: TrackBox, events: AutomationEvent[]): boolean {
   // Snapshot existing automation regions via the adapter layer
@@ -341,11 +344,12 @@ const App: React.FC = () => {
           newProject.editing.modify(() => {
             trackBox = newProject.api.createAutomationTrack(audioUnitBox, automationTargets[i]);
           });
-          if (trackBox) {
-            trackBoxes.push(trackBox);
-          } else {
-            console.warn(`Failed to create automation track for ${TRACK_CONFIGS[i].parameterName}`);
+          if (!trackBox) {
+            // Throwing keeps trackBoxes index-aligned with TRACK_CONFIGS — a
+            // skipped push would write later sections' presets onto the wrong lane
+            throw new Error(`Failed to create automation track for ${TRACK_CONFIGS[i].parameterName}`);
           }
+          trackBoxes.push(trackBox);
         }
 
         automationTrackBoxesRef.current = trackBoxes;
@@ -387,27 +391,36 @@ const App: React.FC = () => {
 
   const handlePresetSelect = (sectionIndex: number, presetIndex: number) => {
     const p = projectRef.current;
+    if (!p) return;
     const trackBox = automationTrackBoxesRef.current[sectionIndex];
-    if (!p || !trackBox) return;
-
-    setRuntimeError(null);
-
-    if (isPlaying) {
-      p.engine.stop(true);
-      setPlayingSectionIndex(null);
-    }
-
-    const ok = applyAutomationEvents(p, trackBox, TRACK_CONFIGS[sectionIndex].presets[presetIndex].events);
-    if (!ok) {
-      setRuntimeError("Could not write the automation region — the preset was not applied. Try selecting it again.");
+    if (!trackBox) {
+      setRuntimeError("Automation track for this section is missing — reload the page.");
       return;
     }
 
-    setActivePresets(prev => {
-      const next = [...prev];
-      next[sectionIndex] = presetIndex;
-      return next;
-    });
+    setRuntimeError(null);
+
+    try {
+      if (isPlaying) {
+        p.engine.stop(true);
+        setPlayingSectionIndex(null);
+      }
+
+      const ok = applyAutomationEvents(p, trackBox, TRACK_CONFIGS[sectionIndex].presets[presetIndex].events);
+      if (!ok) {
+        setRuntimeError("Could not write the automation region — the preset was not applied. Try selecting it again.");
+        return;
+      }
+
+      setActivePresets(prev => {
+        const next = [...prev];
+        next[sectionIndex] = presetIndex;
+        return next;
+      });
+    } catch (error) {
+      console.error("Failed to apply automation preset:", error);
+      setRuntimeError(error instanceof Error ? error.message : String(error));
+    }
   };
 
   const clearAutomationForSection = (sectionIndex: number) => {

@@ -10,7 +10,7 @@ export const CANVAS_COLORS = {
   gridTertiary: "#2a2620",  // --mc-line (beat subdivisions)
   gridSupporting: "#3d3729",// --mc-line-bright (grid under a drawn data line)
   structural: "#5f594e",    // --mc-faint (lines that ARE the data; strokes only)
-  label: "#8b8273",         // --mc-label (4.9:1 floor)
+  label: "#8b8273",         // --mc-label (5.2:1 on canvas bg; 4.9:1 design floor on panel)
   amber: "#e8a33d",         // --mc-amber
   cyan: "#5fb4c9",          // --mc-cyan
   green: "#7fbf6a",         // --mc-green

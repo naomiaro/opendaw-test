@@ -791,7 +791,7 @@ When switching between patterns, clear existing events before creating new ones.
 // Get all events (slice(1) skips the storage signature at index -1)
 const existingEvents = Array.from(signatureTrack.iterateAll()).slice(1);
 
-// Delete in reverse order, each in its own transaction
+// Delete in reverse order (the snapshot's indices stay valid), each in its own transaction
 for (let i = existingEvents.length - 1; i >= 0; i--) {
   project.editing.modify(() => {
     signatureTrack.adapterAt(existingEvents[i].index)
