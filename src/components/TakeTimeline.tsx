@@ -6,6 +6,7 @@ import { PeaksPainter } from "@opendaw/lib-fusion";
 import { PPQN } from "@opendaw/lib-dsp";
 import { AudioRegionBox } from "@opendaw/studio-boxes";
 import { CanvasPainter } from "../lib/CanvasPainter";
+import { CANVAS_COLORS } from "../lib/design/consoleTheme";
 
 // --- Types ---
 
@@ -72,7 +73,7 @@ const TakeWaveformCanvas: React.FC<{
       const r = regionRef.current;
       const muted = isMutedRef.current;
 
-      context.fillStyle = muted ? "#1a1a2e" : "#0a0a1a";
+      context.fillStyle = muted ? CANVAS_COLORS.shade : CANVAS_COLORS.bg;
       context.fillRect(0, 0, w, h);
 
       if (!r.sampleLoader) return;
@@ -99,7 +100,9 @@ const TakeWaveformCanvas: React.FC<{
 
       if (u1 <= u0) return;
 
-      context.fillStyle = muted ? "#555577" : "#f59e0b";
+      // Amber marks the live/active take only — muted takes recede to a
+      // faint structural stroke (canvas strokes only, never text).
+      context.fillStyle = muted ? CANVAS_COLORS.structural : CANVAS_COLORS.amber;
       const numChannels = peaks.numChannels;
       const channelHeight = h / numChannels;
 
@@ -155,7 +158,7 @@ const BarRuler: React.FC<{
       style={{
         display: "flex",
         marginLeft: CONTROLS_WIDTH,
-        borderBottom: "1px solid var(--gray-6)",
+        borderBottom: "1px solid var(--mc-line-bright)",
       }}
     >
       {Array.from({ length: totalBars }, (_, i) => {
@@ -168,22 +171,32 @@ const BarRuler: React.FC<{
             style={{
               flex: 1,
               height: 24,
+              // Bar lines ARE the layout here (structural tier); amber marks
+              // the one transition — the lead-in → loop boundary.
               borderLeft: isBoundary
-                ? "2px solid var(--amber-9)"
+                ? "2px solid var(--mc-amber)"
                 : i > 0
-                  ? "1px solid var(--gray-6)"
+                  ? "1px solid var(--mc-faint)"
                   : undefined,
               background: isLeadIn
                 ? "repeating-linear-gradient(45deg, transparent, transparent 3px, rgba(255,255,255,0.03) 3px, rgba(255,255,255,0.03) 6px)"
-                : "rgba(245, 158, 11, 0.08)",
+                : "rgba(232, 163, 61, 0.08)",
               padding: "4px 6px",
               display: "flex",
               alignItems: "center",
             }}
           >
-            <Text size="1" color="gray" style={{ fontSize: 10 }}>
+            <span
+              style={{
+                fontFamily: "var(--mc-mono)",
+                fontSize: 10,
+                fontWeight: 600,
+                fontVariantNumeric: "tabular-nums",
+                color: "var(--mc-label)",
+              }}
+            >
               {i + 1}
-            </Text>
+            </span>
           </div>
         );
       })}
@@ -220,7 +233,7 @@ const TakeIterationLane: React.FC<{
     <div
       style={{
         display: "flex",
-        borderBottom: "1px solid var(--gray-5)",
+        borderBottom: "1px solid var(--mc-line)",
         minHeight: totalHeight + 16,
       }}
     >
@@ -231,10 +244,10 @@ const TakeIterationLane: React.FC<{
           minWidth: CONTROLS_WIDTH,
           boxSizing: "border-box",
           padding: "8px 8px",
-          borderRight: "1px solid var(--gray-5)",
+          borderRight: "1px solid var(--mc-line)",
           borderLeft: take.isMuted
             ? "3px solid transparent"
-            : "3px solid var(--amber-9)",
+            : "3px solid var(--mc-amber)",
           display: "flex",
           flexDirection: "column",
           justifyContent: "center",
@@ -247,7 +260,7 @@ const TakeIterationLane: React.FC<{
           </Text>
           <Button
             size="1"
-            color={take.isMuted ? "gray" : "red"}
+            color={take.isMuted ? "gray" : "amber"}
             variant={take.isMuted ? "soft" : "solid"}
             onClick={onToggleMute}
             style={{
@@ -262,7 +275,7 @@ const TakeIterationLane: React.FC<{
           </Button>
         </Flex>
         <Badge
-          color={take.isMuted ? "gray" : "green"}
+          color={take.isMuted ? "gray" : "amber"}
           size="1"
           style={{ width: "fit-content" }}
         >
@@ -282,25 +295,27 @@ const TakeIterationLane: React.FC<{
             <div
               key={region.inputTapeId}
               style={{
-                borderTop: i > 0 ? "1px solid var(--gray-6)" : undefined,
+                borderTop: i > 0 ? "1px solid var(--mc-line)" : undefined,
                 position: "relative",
               }}
             >
               {tapeLabels.length > 1 && (
-                <Text
-                  size="1"
-                  color="gray"
+                <span
                   style={{
                     position: "absolute",
                     left: 4,
                     top: 2,
                     zIndex: 1,
-                    fontSize: 9,
-                    opacity: 0.7,
+                    fontFamily: "var(--mc-mono)",
+                    fontSize: 10,
+                    fontWeight: 600,
+                    letterSpacing: "0.14em",
+                    textTransform: "uppercase",
+                    color: "var(--mc-label)",
                   }}
                 >
                   {tapeLabels.find((t) => t.id === region.inputTapeId)?.label}
-                </Text>
+                </span>
               )}
               <TakeWaveformCanvas
                 region={region}
@@ -357,10 +372,10 @@ export const TakeTimeline: React.FC<TakeTimelineProps> = ({
   return (
     <div
       style={{
-        border: "1px solid var(--gray-5)",
-        borderRadius: 8,
+        border: "1px solid var(--mc-line)",
+        borderRadius: 4,
         overflow: "hidden",
-        background: "var(--gray-2)",
+        background: "var(--mc-panel)",
       }}
     >
       {/* Bar ruler */}
@@ -399,7 +414,7 @@ export const TakeTimeline: React.FC<TakeTimelineProps> = ({
                 bottom: 0,
                 left: `${playheadPercent}%`,
                 width: 2,
-                background: "var(--amber-9)",
+                background: "var(--mc-amber)",
                 zIndex: 10,
               }}
             />
