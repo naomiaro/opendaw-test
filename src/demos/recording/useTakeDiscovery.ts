@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Dispatch, MutableRefObject, SetStateAction } from "react";
+import type { Dispatch, RefObject, SetStateAction } from "react";
 import { UUID } from "@opendaw/lib-std";
 import type { Terminable } from "@opendaw/lib-std";
 import type { Project } from "@opendaw/studio-core";
@@ -27,10 +27,10 @@ export interface UseTakeDiscoveryResult {
   updateTakeMuteInState: (regionBox: AudioRegionBox, isMuted: boolean) => void;
   /** Adapter-layer subscriptions — the demo terminates these BEFORE
    *  stopRecording() to prevent late SDK events adding stale regions */
-  pointerHubSubsRef: MutableRefObject<Terminable[]>;
+  pointerHubSubsRef: RefObject<Terminable[]>;
   /** SampleLoaders discovered during recording — consumed (and cleared) by the
    *  demo's finalization barrier in handleStopRecording */
-  sampleLoadersRef: MutableRefObject<Set<SampleLoader>>;
+  sampleLoadersRef: RefObject<Set<SampleLoader>>;
 }
 
 /**

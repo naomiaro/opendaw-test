@@ -107,11 +107,6 @@ const App: React.FC = () => {
     project,
     ["metronome", "enabled"]
   );
-  const [countInBars, setCountInBars] = useEnginePreference(project, [
-    "recording",
-    "countInBars",
-  ]);
-
   // Reactive take discovery (adapter-layer subscriptions while recording)
   const {
     takeIterations,
