@@ -53,10 +53,11 @@ Key classes in the pipeline:
 
 The high-level `project.startRecording(countIn)` is a convenience wrapper. Under the hood, it calls `Recording.start()`, which:
 1. Queries `captureDevices.filterArmed()` to get all armed captures
-2. Creates a Tape instrument if no tracks exist (audio recording)
-3. Calls `prepareRecording()` on each capture (sets up streams)
-4. Calls `startRecording()` on each capture (begins data capture)
-5. Starts the engine (with count-in if requested)
+2. Calls `prepareRecording()` on each capture (sets up streams)
+3. Calls `startRecording()` on each capture (begins data capture)
+4. Starts the engine (with count-in if requested)
+
+Recording records only armed captures — with zero armed captures the engine enters recording state but nothing is recorded and no instrument is created (see [Capture Arming](#capture-arming)).
 
 ### AudioUnit, Tape, and Track: The Recording Hierarchy
 
@@ -194,22 +195,30 @@ The correct pattern:
 //    finalization completes asynchronously on the main thread
 project.engine.stopRecording();
 
-// 2. Wait for finalization via sampleLoader.subscribe, then reset engine.
+// 2. Wait for finalization, then reset the engine.
 //    The sampleLoader is the RecordingWorklet during recording — get it via
 //    project.sampleManager.getOrCreate(audioFileBox.address.uuid).
 //    When #finalize() completes, it sets state to "loaded" and notifies.
-const sub = sampleLoader.subscribe((state) => {
-  if (state.type === "loaded") {
-    sub.terminate();
-    // Audio data is now available — safe to stop engine
-    project.engine.stop(true);
-  }
-});
+//    Pre-check loader.state before subscribing: subscribe() fires the callback
+//    SYNCHRONOUSLY for terminal states, so sub.terminate() inside that callback
+//    would hit the `const sub` binding in its TDZ.
+if (sampleLoader.state.type === "loaded") {
+  // Short recording — already finalized
+  project.engine.stop(true);
+} else {
+  const sub = sampleLoader.subscribe((state) => {
+    if (state.type === "loaded") {
+      sub.terminate();
+      // Audio data is now available — safe to stop engine
+      project.engine.stop(true);
+    }
+  });
+}
 ```
 
 **Important notes**:
 - Subscribe during recording (when the sampleLoader is first discovered) for most reliable results.
-- If already loaded (short recording), the subscribe callback fires immediately.
+- Pair the wait with a safety timeout — a `RecordingWorklet` finalization failure produces no terminal state (the loader stays in `"record"` forever).
 - `queryLoadingComplete()` resolves before `sampleLoader.data` is set — do NOT use it to detect recording data availability.
 - Do NOT call `setPosition(0)` after `engine.stop(true)` — `stop(true)` already resets position and calling `setPosition` separately can interfere with OpenDAW's internal finalization chain.
 
@@ -429,18 +438,16 @@ project.editing.modify(() => {
 // Start recording (loop must be enabled)
 project.startRecording(useCountIn);
 
-// After recording, find all takes
-const takes = project.boxGraph.boxes()
-  .filter(box => box.name === "AudioRegionBox")
-  .filter(box => {
-    const label = (box as any).label?.getValue();
-    return label && label.startsWith("Take ");
-  });
+// After recording, find all takes via the adapter layer (typed — no casts)
+const takes = project.rootBoxAdapter.audioUnits.adapters()
+  .flatMap(unit => unit.tracks.values())
+  .flatMap(track => [...track.regions.adapters.values()])
+  .filter(region => region.isAudioRegion() && region.label.startsWith("Take "));
 
 // Toggle mute on a take to compare performances
 project.editing.modify(() => {
-  const currentMute = takeRegionBox.mute.getValue();
-  takeRegionBox.mute.setValue(!currentMute);
+  const takeRegionBox = takes[0].box; // AudioRegionBox — already typed
+  takeRegionBox.mute.setValue(!takeRegionBox.mute.getValue());
 });
 ```
 
@@ -545,7 +552,7 @@ All recording preferences are accessed via `project.engine.preferences.settings.
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
 | `countInBars` | 1-8 | 1 | Number of count-in bars before recording |
-| `allowTakes` | boolean | `isDevOrLocalhost` | Enable loop-based take recording |
+| `allowTakes` | boolean | `true` | Enable loop-based take recording |
 | `olderTakeAction` | `"mute-region"` \| `"disable-track"` | `"mute-region"` | Action on older takes when new take created |
 | `olderTakeScope` | `"none"` \| `"all"` \| `"previous-only"` | `"previous-only"` | Which older takes are affected (`"none"` skips older-take management entirely) |
 | `inputLatency` | number (seconds, ≥ -1) | `0` | Compensation added to `outputLatency` for the mic→engine delay. `-1` = use the engine's measured output latency (doubles compensation). Override per track via `captureBox.inputLatency` (`-2` = inherit this preference) |
@@ -702,19 +709,17 @@ let audioUnitBox: any = null;
 project.editing.modify(() => {
   const result = project.api.createInstrument(InstrumentFactories.Tape);
   audioUnitBox = result.audioUnitBox;
-  // Can also configure capture inside the same transaction:
-  const captureOpt = project.captureDevices.get(result.audioUnitBox.address.uuid);
-  if (!captureOpt.isEmpty()) {
-    const cap = captureOpt.unwrap();
-    cap.captureBox.deviceId.setValue(deviceId);
-    cap.requestChannels = 1; // 1 = mono, 2 = stereo
-  }
 });
 
-// 2. Get the CaptureAudio after transaction commits
+// 2. Resolve the capture and configure it in a SEPARATE transaction —
+//    captureDevices.get() on a unit created in the same transaction returns stale data
 const captureOpt = project.captureDevices.get(audioUnitBox.address.uuid);
 if (captureOpt.isEmpty()) return;
 const capture = captureOpt.unwrap();
+project.editing.modify(() => {
+  capture.captureBox.deviceId.setValue(deviceId);
+  capture.requestChannels = 1; // 1 = mono, 2 = stereo
+});
 
 // 3. Arm (armed is a runtime observable — deterministic, keeps other captures armed)
 capture.armed.setValue(true);
@@ -818,7 +823,7 @@ audioUnitAdapter.tracks.catchupAndSubscribe({
     trackAdapter.regions.catchupAndSubscribe({
       onAdded: (regionAdapter) => {
         if (!regionAdapter.isAudioRegion()) return;
-        if (regionAdapter.label !== "Recording") return;
+        if (!regionAdapter.label.startsWith("Take ")) return;
 
         // Adapter resolves loader internally — no manual UUID lookup
         const loader = regionAdapter.file.getOrCreateLoader();

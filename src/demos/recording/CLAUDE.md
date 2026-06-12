@@ -2,7 +2,9 @@
 
 ### Recording
 ```typescript
-// Start recording (handles everything: Tape instrument, track arming, microphone, regions, peaks)
+// Start recording — records ALL armed captures (streams, regions, peaks, takes).
+// Arming is explicit (see Track arming below); with zero armed captures the
+// engine enters recording state but records nothing.
 project.startRecording(useCountIn: boolean);
 
 // CRITICAL: Use stopRecording() to stop recording, NOT stop(true).
@@ -13,14 +15,20 @@ project.startRecording(useCountIn: boolean);
 // recording (muting the last take) — and resets all processors, racing the
 // in-flight async finalization. Call stop(true) only AFTER finalization completes.
 project.engine.stopRecording();
-// Wait for finalization via sampleLoader.subscribe, then reset engine
-// (barriers also count "error" and keep a timeout — see SampleLoader section):
-const sub = sampleLoader.subscribe((state: any) => {
-  if (state.type === "loaded") {
-    sub.terminate();
-    project.engine.stop(true);
-  }
-});
+// Wait for finalization, then reset engine. Pre-check loader.state —
+// subscribe() fires synchronously for terminal states, so sub.terminate()
+// inside the callback would hit `const sub` in its TDZ. Barriers also
+// count "error" and keep a timeout — see SampleLoader section.
+if (sampleLoader.state.type === "loaded") {
+  project.engine.stop(true);
+} else {
+  const sub = sampleLoader.subscribe((state: any) => {
+    if (state.type === "loaded") {
+      sub.terminate();
+      project.engine.stop(true);
+    }
+  });
+}
 
 // Stop everything and reset position to 0
 project.engine.stop(true);

@@ -4,7 +4,6 @@
 ```typescript
 import { MidiDevices } from "@opendaw/studio-core";
 import { NoteSignal } from "@opendaw/studio-adapters";  // NoteSignalOn, NoteSignalOff
-import { NoteEventBox, NoteEventCollectionBox, NoteRegionBox } from "@opendaw/studio-boxes";
 
 await MidiDevices.requestPermission();
 const devices = MidiDevices.inputDevices(); // includes Software Keyboard
@@ -34,10 +33,13 @@ captureMidiBox.channel.setValue(-1); // -1=all, 0-15=specific channel
 enters recording state but records nothing and creates no instrument. Tape can't play
 MIDI notes. For MIDI recording, pre-create a synth instrument and arm its capture:
 ```typescript
+// editing.modify() doesn't forward return values — capture via outer variable
+let audioUnitBox: any = null;
 project.editing.modify(() => {
-  project.api.createInstrument(InstrumentFactories.Vaporisateur); // built-in synth, no files needed
+  // Vaporisateur = built-in synth, no files needed
+  audioUnitBox = project.api.createInstrument(InstrumentFactories.Vaporisateur).audioUnitBox;
 });
-// Then arm its capture (separate transaction not needed — armed is runtime-only):
+// Then arm its capture (armed is runtime-only — no transaction):
 project.captureDevices.get(audioUnitBox.address.uuid).unwrap().armed.setValue(true);
 ```
 Available MIDI instruments: `Vaporisateur` (synth), `Soundfont` (sf2 player), `Nano` (sampler), `Playfield` (drums), `Apparat` (scriptable DSP).
