@@ -17,6 +17,10 @@ Recording CLAUDE.md:251-256. Sub-claims verified separately:
   `"loop"` action (`p0 = action.target; discontinuous = true`) and on marker jumps; the
   flag is packed via `BlockFlags.create(transporting, discontinuous, playing, bpmChanged)`.
   `@opendaw/studio-core@0.0.152:packages/studio/core-processors/src/BlockRenderer.ts:218` (loop), `:230` (marker), `:180` (pack).
+  **Scoping:** the loop action sets the flag only on the `else` arm of `pauseOnLoopDisabled`
+  (BlockRenderer.ts:213-219) — with `playback.pauseOnLoopDisabled` enabled the engine pauses
+  at the wrap instead and no crossfade occurs. The CLAUDE.md graduation must not state the
+  mechanism as universal.
 - **Who consumes:** `TapeDeviceProcessor.#processBlock`: `if (Bits.some(flags, BlockFlag.discontinuous)) { this.#fadeOutAllPitchVoices(lane); lane.sequencer.reset() }`.
   `@opendaw/studio-core@0.0.152:packages/studio/core-processors/src/devices/instruments/TapeDeviceProcessor.ts:122-125`.
 - **Fade duration:** `VOICE_FADE_DURATION: number = 0.020` (20 ms); voices use
@@ -47,7 +51,7 @@ Recording CLAUDE.md:8-12,111-118.
   `Recording.start` subscribes `engine.isRecording`/`isCountingIn` and on false runs
   `terminator.terminate()` → RecordAudio teardown → `recordingWorklet.limit(...)` →
   `#finalize()` merges the ring buffer and imports the sample
-  (`Recording.ts:38-48`, `RecordAudio.ts` teardown Terminable, `RecordingWorklet.ts:64-69,101-119`).
+  (`Recording.ts:38-48`, `RecordAudio.ts:168-191` teardown Terminable, `RecordingWorklet.ts:64-69,100-118`).
   Both `stop(true)` and `stopRecording()` trip the same teardown; the danger of `stop(true)`
   is the position reset + processor `#reset()` racing the in-flight async finalization, not a
   separate kill switch. Demo-observed flush failures are consistent with this but the "kills
@@ -60,6 +64,9 @@ Recording CLAUDE.md:8-12,111-118.
   at 0.0.152 stopping recording also STOPS transport. CLAUDE.md:114-115 "finalization
   completes asynchronously while the engine keeps playing" is stale: finalization is async,
   but playback does not continue. `EngineProcessor.ts:547-556`.
+  Severity: this sub-claim is WRONG-level in isolation — the sentence is flatly false at
+  0.0.152 (the doc-corrections table below already carries the fix); do not deprioritize it
+  under this section's NUANCED header.
 
 NUANCED (practical rule stands — never `stop(true)` until loaders are terminal; but (a) the flush-prevention wording overstates the mechanism (it is a race with async finalization, both paths trip the same teardown), and (b) `stopRecording()` now also stops transport, so "engine keeps playing" is stale)
 `@opendaw/studio-core@0.0.152:packages/studio/core-processors/src/EngineProcessor.ts:498-513,547-556`; `packages/studio/core/src/capture/Recording.ts:38-48`; `packages/app/studio/src/ui/header/TransportGroup.tsx:34-39`
@@ -68,10 +75,10 @@ NUANCED (practical rule stands — never `stop(true)` until loaders are terminal
 Recording CLAUDE.md:69-88.
 - Gate: `if (loopEnabled && allowTakes && currentTake.nonEmpty() && currentPosition < lastPosition)` —
   requires `loopArea.enabled` AND `allowTakes` AND backward position jump. CONFIRMED.
-  `@opendaw/studio-core@0.0.152:packages/studio/core/src/capture/RecordAudio.ts:223` (gate), `:248` (`startNewTake(loopFrom)`).
+  `@opendaw/studio-core@0.0.152:packages/studio/core/src/capture/RecordAudio.ts:210` (gate), `:233` (`startNewTake(loopFrom)`).
 - Take 1 records from the start position through first wrap: first region is created at
   `currentPosition` when recording starts (`createTakeRegion(currentPosition, waveformOffset, null)`);
-  at wrap its duration is computed `position → loopTo`. CONFIRMED. `RecordAudio.ts:282-285,236-241`.
+  at wrap its duration is computed `position → loopTo`. CONFIRMED. `RecordAudio.ts:269,227-229`.
 - `olderTakeAction` ∈ {"disable-track", "mute-region"} CONFIRMED; **`olderTakeScope` is a
   THREE-value union: {"none", "all", "previous-only"}** — CLAUDE.md omits `"none"` (skip
   any muting/disabling). `@opendaw/studio-core@0.0.152:packages/studio/adapters/src/engine/EnginePreferencesSchema.ts:5-6`;
@@ -79,12 +86,13 @@ Recording CLAUDE.md:69-88.
 - Defaults: `allowTakes: true`, `olderTakeAction: "mute-region"`, `olderTakeScope: "previous-only"`,
   `countInBars: 1` (allowed values 1-8). `EnginePreferencesSchema.ts:4,41-48`.
 - New at 0.0.152: zero-duration takes are deleted at wrap (`take.regionBox.delete()`),
-  and a take's finalized duration is the DETERMINISTIC tempo-map interval
+  and a WRAP-finalized take's duration is the DETERMINISTIC tempo-map interval
   `tempoMap.intervalToSeconds(take.regionBox.position.getValue(), loopTo)` — not the live
-  frame count. `RecordAudio.ts:226-241`.
+  frame count. `RecordAudio.ts:221-233`. (Scope: wrap path only — see Claim 4 for the
+  teardown-finalized last take.)
 
 NUANCED (mechanism confirmed; add `olderTakeScope: "none"` to the documented union)
-`@opendaw/studio-core@0.0.152:packages/studio/core/src/capture/RecordAudio.ts:223-248`; `packages/studio/adapters/src/engine/EnginePreferencesSchema.ts:4-6,41-48`
+`@opendaw/studio-core@0.0.152:packages/studio/core/src/capture/RecordAudio.ts:210-233`; `packages/studio/adapters/src/engine/EnginePreferencesSchema.ts:4-6,41-48`
 
 ### Claim 4 — waveformOffset accumulation + playback read formula [Task 4]
 Recording CLAUDE.md:231-260.
@@ -93,18 +101,28 @@ Recording CLAUDE.md:231-260.
 - Take 1 offset: `waveformOffset = headStartSeconds + countInSeconds + outputLatency + inputLatency` —
   CLAUDE.md:237 omits **`inputLatency`** (manual mic→engine compensation, resolved via
   `InputLatency.resolve(captureBox.inputLatency, prefs.recording.inputLatency, outputLatency)`).
-  `@opendaw/studio-core@0.0.152:packages/studio/core/src/capture/RecordAudio.ts:276` (formula), `packages/studio/core/src/capture/CaptureAudio.ts:213-217` (resolution).
+  `@opendaw/studio-core@0.0.152:packages/studio/core/src/capture/RecordAudio.ts:266` (formula), `packages/studio/core/src/capture/CaptureAudio.ts:213-217` (resolution).
 - "Set once at creation, never modified" CONFIRMED — `box.waveformOffset.setValue(waveformOffset)`
-  only inside `createTakeRegion`. `RecordAudio.ts:80`.
+  only inside `createTakeRegion`. `RecordAudio.ts:78`.
 - Accumulation: `currentWaveformOffset += takeDurationSeconds` at each wrap, where
   `takeDurationSeconds = tempoMap.intervalToSeconds(take.regionBox.position.getValue(), loopTo)`.
   CONFIRMED structurally, BUT:
-- **Drift: "duration overshoot ≈ one audio block" is STALE at 0.0.152.** Finalized take
-  duration is now the deterministic tempo-map interval to `loopTo` (commit comment in source:
-  "Stays deterministic (avoids the latency-lagged live regionBox.duration that previously
-  caused peak drift)"). No ~2-3 ms tail overshoot in the finalized values; the live duration
-  during recording still tracks `numberOfFrames/sampleRate - currentWaveformOffset`.
-  `RecordAudio.ts:225-241,287-296`.
+- **Drift: "duration overshoot ≈ one audio block" is STALE at 0.0.152 — but only for
+  WRAP-finalized takes.** At each loop wrap the take's duration is set to the deterministic
+  tempo-map interval to `loopTo` (source comment: "Stays deterministic (avoids the
+  latency-lagged live regionBox.duration that previously caused peak drift)") — no ~2-3 ms
+  tail overshoot for those takes. `RecordAudio.ts:221-233`.
+  **The LAST take is teardown-finalized, not tempo-map-derived:** the stop teardown
+  (`RecordAudio.ts:179-191`) reads `regionBox.duration.getValue()` — i.e. the last live
+  `numberOfFrames/sampleRate - currentWaveformOffset` write, which is RenderQuantum-granular
+  — and uses it for `recordingWorklet.limit(...)`. So the final take's duration remains
+  quantum-granular. Task 8's CLAUDE.md rewrite must say: "wrap-finalized takes are
+  deterministic tempo-map intervals; the final take (teardown-finalized) remains
+  quantum-granular". Context: the `onSaved` comment (`RecordAudio.ts:142-150`) documents a
+  residual up-to-one-quantum ring-buffer overshoot on `endInSeconds`, corrected at import
+  from the imported sample's actual frame count.
+  The live duration during recording still tracks
+  `numberOfFrames/sampleRate - currentWaveformOffset`. `RecordAudio.ts:273-283`.
 - Read formula: `#processPass` (no-stretch path):
   `elapsedSeconds = this.context.tempoMap.intervalToSeconds(cycle.rawStart, cycle.resultStart)`;
   `offset = (elapsedSeconds + waveformOffset) * data.sampleRate` — the offset seeds a
@@ -114,8 +132,8 @@ Recording CLAUDE.md:231-260.
   structure (elapsed + waveformOffset, file sample rate, truncation) is right.
   `@opendaw/studio-core@0.0.152:packages/studio/core-processors/src/devices/instruments/TapeDeviceProcessor.ts:216-222` and `Tape/PitchVoice.ts:100-108`.
 
-NUANCED (layout + set-once + formula confirmed; ADD inputLatency to the take-1 offset; DROP the duration-overshoot paragraph — finalized durations are deterministic at 0.0.152)
-`@opendaw/studio-core@0.0.152:packages/studio/core/src/capture/RecordAudio.ts:225-296`; `packages/studio/core-processors/src/devices/instruments/TapeDeviceProcessor.ts:216-222`
+NUANCED (layout + set-once + formula confirmed; ADD inputLatency to the take-1 offset; REWORD the duration-overshoot paragraph — wrap-finalized takes are deterministic tempo-map intervals at 0.0.152, while the final take (teardown-finalized) remains quantum-granular)
+`@opendaw/studio-core@0.0.152:packages/studio/core/src/capture/RecordAudio.ts:179-191,210-283`; `packages/studio/core-processors/src/devices/instruments/TapeDeviceProcessor.ts:216-222`
 
 ### Claim 5 — PeaksWriter discrimination [Task 2]
 - `PeaksWriter` lives in **studio-core** (`packages/studio/core/src/PeaksWriter.ts`), implements
@@ -131,7 +149,7 @@ NUANCED (layout + set-once + formula confirmed; ADD inputLatency to the take-1 o
   position tick. ("Every frame" = every engine position update.) CONFIRMED.
 
 CONFIRMED
-`@opendaw/studio-core@0.0.152:packages/studio/core/src/PeaksWriter.ts:5-26`; `packages/studio/core/src/RecordingWorklet.ts:75,78-80`; `packages/studio/core/src/capture/RecordAudio.ts:287-296`
+`@opendaw/studio-core@0.0.152:packages/studio/core/src/PeaksWriter.ts:5-26`; `packages/studio/core/src/RecordingWorklet.ts:75-79`; `packages/studio/core/src/capture/RecordAudio.ts:273-283`
 
 ### Claim 6 — Capture field taxonomy [Task 2]
 - `CaptureAudioBox` schema fields: `device-id` (string), `record-mode` (string, "normal" |
@@ -203,7 +221,7 @@ WRONG (two fixes: `setArm` is a toggle — demos/docs that treat it as "arm = tr
     recording the loader IS the RecordingWorklet, so an `"error"` state will never be
     emitted by it at 0.0.152; the error-handling requirement still applies to
     `DefaultSampleLoader` (post-reload loads, decode failures).
-    `packages/studio/core/src/RecordingWorklet.ts:86-92,101-119`.
+    `packages/studio/core/src/RecordingWorklet.ts:84-90,100-118`.
 - `state.type` union: `"idle" | "record" | "progress" | "error" | "loaded"`; error carries
   `reason: string` (NOT `.error`). CONFIRMED.
   `@opendaw/studio-core@0.0.152:packages/studio/adapters/src/sample/SampleLoaderState.ts:3-8`.
@@ -215,7 +233,7 @@ WRONG (two fixes: `setArm` is a toggle — demos/docs that treat it as "arm = tr
   source alone: depends on subscription timing across the box swap).
 
 NUANCED (contract confirmed; correction: RecordingWorklet emits only "loaded" — "error" handling matters for DefaultSampleLoader paths, and barriers still need the timeout because a worklet failure produces NO terminal state at all)
-`@opendaw/studio-core@0.0.152:packages/studio/core/src/samples/DefaultSampleLoader.ts:20-26`; `packages/studio/core/src/RecordingWorklet.ts:86-119`; `packages/studio/adapters/src/sample/SampleLoaderState.ts:3-8`
+`@opendaw/studio-core@0.0.152:packages/studio/core/src/samples/DefaultSampleLoader.ts:20-26`; `packages/studio/core/src/RecordingWorklet.ts:84-118`; `packages/studio/adapters/src/sample/SampleLoaderState.ts:3-8`
 
 ### Claim 10 — Take labels [Task 2/4]
 `RecordAudio.createTakeRegion`: `box.label.setValue(\`Take ${takeNumber}\`)` — every audio
@@ -309,6 +327,9 @@ Deviations only:
   `export type Coordinates<U, V> = { u: U, v: V }`
   (`@opendaw/lib-std@0.0.78:packages/lib/std/src/selection.ts:4`). CLAUDE.md:79 writes
   `{ x: ppqn, y: pitch }` — WRONG field names; must be `{ u: position, v: pitch }`.
+  Severity: this entry is WRONG-level in isolation — code copying `{x, y}` is structurally
+  rejected (`coordinates.u` reads `undefined` at runtime); do not deprioritize it under
+  this section's NUANCED header.
 - `NoteRegionBoxAdapter.offset` is a COMPUTED getter `position - loopOffset`
   (NoteRegionBoxAdapter.ts:145), not a box field — doc wording "content offset" is fine.
 - `NoteEventBoxAdapter.playCount` upstream inline comment says "1...16" but the schema says
@@ -389,9 +410,10 @@ this repo). Deviations:
 ## Changelog sweep (entries newer than the demos; candidates, not mandates)
 
 - **0.0.140→0.0.147:** recording timing fixes — worklet head-start recovery (~30 ms bias
-  removed), no `quantizeFloor` snap of take position, deterministic take duration via
-  `tempoMap.intervalToSeconds` (matches Claims 3/4 drift findings). Demos read
-  `waveformOffset` directly, so no code change; CLAUDE.md duration-overshoot paragraph must go.
+  removed), no `quantizeFloor` snap of take position, deterministic WRAP-finalized take
+  duration via `tempoMap.intervalToSeconds` (matches Claims 3/4 drift findings; the final,
+  teardown-finalized take stays quantum-granular). Demos read `waveformOffset` directly, so
+  no code change; CLAUDE.md duration-overshoot paragraph must be reworded per Claim 4.
 - **0.0.147→0.0.150:** `olderTakeScope: "none"` added end-to-end. Candidate: surface "none"
   in loop-recording-demo's scope select (currently `"all" | "previous-only"` only). [Task 4 optional]
 - **0.0.150→0.0.154:** `recording.inputLatency` engine preference + `CaptureAudioBox.inputLatency`
