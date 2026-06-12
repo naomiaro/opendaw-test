@@ -35,6 +35,7 @@ per page that carries information (never decoration for its own sake).
 - **Color:** one amber accent per page; scenario identity via small DAW-style color
   chips, never full-surface coloring. Every text/background pair ≥4.5:1 (verify with
   a contrast computation, not by eye — `--mc-faint` exists precisely because it fails).
+  Multi-lane pages may carry a lane's chip color into that lane's drawn data line and its small controls.
 - **Signature element:** one per page, drawn from the page's actual data/concept
   (the overview's warp lattice plots real-shaped wobbly beats against the grid).
 - **Motion:** one staggered load reveal (`animation-delay`), restrained hovers

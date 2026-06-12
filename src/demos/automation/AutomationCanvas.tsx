@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from "react";
 import type { ppqn } from "@opendaw/lib-dsp";
 import { Curve } from "@opendaw/lib-std";
 import { AnimationFrame } from "@opendaw/lib-dom";
+import { CANVAS_COLORS, CANVAS_FONT, CANVAS_FONT_SMALL } from "@/lib/design/consoleTheme";
 import { BAR, NUM_BARS, TOTAL_PPQN } from "./trackAutomationPresets";
 import type { AutomationEvent } from "./trackAutomationPresets";
 
@@ -13,17 +14,13 @@ const PAD_RIGHT = 8;
 const PAD_TOP = 14;
 const PAD_BOTTOM = 18;
 
-// Canvas palette — mastering-console data-canvas tiers
-// (docs/design/2026-06-11-mastering-console-editorial.md; canvas needs literal hexes)
-// Bar lines sit under the drawn envelope curve, so they use the supporting tier
-// (--mc-line-bright), same as tempo-automation; y-axis guides are tertiary texture.
-const CANVAS_BG = "#0d0c0a"; // --mc-bg
-const CANVAS_BAR_LINE = "#3d3729"; // --mc-line-bright (supporting grid under the envelope)
-const CANVAS_GUIDE_LINE = "#2a2620"; // --mc-line (tertiary y-axis guides)
-const CANVAS_LABEL = "#8b8273"; // --mc-label (4.9:1 floor)
-const CANVAS_PLAYHEAD = "#fff";
-const CANVAS_FONT = '11px "IBM Plex Mono", ui-monospace, monospace';
-const CANVAS_FONT_SMALL = '10px "IBM Plex Mono", ui-monospace, monospace';
+// Canvas semantic aliases — bar lines sit under the drawn envelope curve (supporting tier);
+// y-axis guide lines are tertiary texture below the curve. Both from CANVAS_COLORS.
+const CANVAS_BG = CANVAS_COLORS.bg;
+const CANVAS_BAR_LINE = CANVAS_COLORS.gridSupporting;  // --mc-line-bright (supporting grid under the envelope)
+const CANVAS_GUIDE_LINE = CANVAS_COLORS.gridTertiary;  // --mc-line (tertiary y-axis guides)
+const CANVAS_LABEL = CANVAS_COLORS.label;
+const CANVAS_PLAYHEAD = CANVAS_COLORS.playhead;
 
 interface AutomationCanvasProps {
   events: AutomationEvent[];

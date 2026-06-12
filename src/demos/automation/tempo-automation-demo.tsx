@@ -13,7 +13,7 @@ import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { usePlaybackPosition } from "@/hooks/usePlaybackPosition";
-import { CONSOLE_STYLES } from "@/lib/design/consoleTheme";
+import { CONSOLE_STYLES, CANVAS_COLORS, CANVAS_FONT, CANVAS_FONT_SMALL } from "@/lib/design/consoleTheme";
 
 // 4/4 time: one bar = 3840 PPQN
 const BAR = PPQN.fromSignature(4, 4); // 3840
@@ -136,16 +136,14 @@ const CANVAS_HEIGHT = 150;
 const BPM_MIN = 60;
 const BPM_MAX = 200;
 
-// Canvas palette — mastering-console tokens
-// (docs/design/2026-06-11-mastering-console-editorial.md; canvas needs literal hexes)
-const CANVAS_BG = "#0d0c0a"; // --mc-bg
-const CANVAS_BAR_LINE = "#3d3729"; // --mc-line-bright
-const CANVAS_BPM_LINE = "#2a2620"; // --mc-line
-const CANVAS_LABEL = "#8b8273"; // --mc-label (4.9:1 floor)
-const CANVAS_CURVE = "#e8a33d"; // --mc-amber
-const CANVAS_PLAYHEAD = "#fff";
-const CANVAS_FONT = '11px "IBM Plex Mono", ui-monospace, monospace';
-const CANVAS_FONT_SMALL = '10px "IBM Plex Mono", ui-monospace, monospace';
+// Canvas semantic aliases — bar lines sit under the drawn tempo curve (supporting tier);
+// BPM grid lines are tertiary texture below the curve. Both from CANVAS_COLORS.
+const CANVAS_BG = CANVAS_COLORS.bg;
+const CANVAS_BAR_LINE = CANVAS_COLORS.gridSupporting; // --mc-line-bright (supporting grid)
+const CANVAS_BPM_LINE = CANVAS_COLORS.gridTertiary;   // --mc-line (tertiary y-axis texture)
+const CANVAS_LABEL = CANVAS_COLORS.label;
+const CANVAS_CURVE = CANVAS_COLORS.amber;
+const CANVAS_PLAYHEAD = CANVAS_COLORS.playhead;
 
 interface TempoCanvasProps {
   pattern: TempoPattern;
@@ -341,6 +339,10 @@ const TempoCanvas: React.FC<TempoCanvasProps> = ({ pattern, playheadPosition, is
           left: 0,
           width: "100%",
           height: CANVAS_HEIGHT,
+          // transparent border matches the curve canvas's box model so both
+          // clientWidths agree and the playhead doesn't drift at the right edge
+          boxSizing: "border-box",
+          border: "1px solid transparent",
           pointerEvents: "none",
         }}
       />

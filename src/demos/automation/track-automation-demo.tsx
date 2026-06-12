@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "@radix-ui/themes/styles.css";
 import { Theme, Container, Text, Flex, Button, Card, Callout, Code } from "@radix-ui/themes";
@@ -69,15 +69,16 @@ function applyAutomationEvents(project: Project, trackBox: TrackBox, events: Aut
     }
     const collection = collectionOpt.unwrap();
 
-    // Event positions are LOCAL to the region (0 to duration)
-    for (const evt of events) {
+    // Event positions are LOCAL to the region (0 to duration).
+    // Use (position, index) composite key: same position → index 1 (matching eventsToJson).
+    events.forEach((evt, i) => {
       collection.createEvent({
         position: evt.position,
-        index: 0,
+        index: i > 0 && events[i - 1].position === evt.position ? 1 : 0,
         value: evt.value,
         interpolation: evt.interpolation
       });
-    }
+    });
     newRegionCreated = true;
   });
 
@@ -170,7 +171,12 @@ const AutomationSection: React.FC<AutomationSectionProps> = ({
   targetUnitId
 }) => {
   const activePreset = config.presets[activePresetIndex];
-  const jsonData = eventsToJson(activePreset.events, config.parameterName, targetUnitId);
+  // activePreset object identity is stable (TRACK_CONFIGS is module-level constant);
+  // targetUnitId changes once on init then is stable.
+  const jsonData = useMemo(
+    () => eventsToJson(activePreset.events, config.parameterName, targetUnitId),
+    [activePreset, config.parameterName, targetUnitId]
+  );
   const showPlayhead = isActiveSection && isPlaying;
 
   return (
@@ -229,6 +235,7 @@ const AutomationSection: React.FC<AutomationSectionProps> = ({
 
 const App: React.FC = () => {
   const [status, setStatus] = useState("Loading...");
+  const [initError, setInitError] = useState<string | null>(null);
   const [project, setProject] = useState<Project | null>(null);
   const projectRef = useRef<Project | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -282,7 +289,7 @@ const App: React.FC = () => {
 
         if (cancelled) return;
         if (tracks.length === 0) {
-          setStatus("Error: Failed to load audio track. Check the browser console.");
+          setInitError("Failed to load audio track — check the browser console");
           return;
         }
 
@@ -367,7 +374,7 @@ const App: React.FC = () => {
       } catch (error) {
         console.error("Track automation demo initialization failed:", error);
         if (!cancelled) {
-          setStatus(`Error: ${error instanceof Error ? error.message : String(error)}`);
+          setInitError(error instanceof Error ? error.message : String(error));
         }
       }
     }
@@ -495,8 +502,9 @@ const App: React.FC = () => {
     setPlayingSectionIndex(null);
   };
 
-  // Build full project JSON
-  const buildFullProjectJson = () => {
+  // Build full project JSON — memoized so it doesn't re-run per frame during playback
+  // (usePlaybackPosition re-renders per frame; this only needs recompute on preset changes).
+  const fullProjectJson = useMemo(() => {
     const trackData = TRACK_CONFIGS.map((config, i) => {
       const preset = config.presets[activePresets[i]];
       return eventsToJson(preset.events, config.parameterName, targetUnitId);
@@ -518,7 +526,7 @@ const App: React.FC = () => {
         automation: trackData.map(d => d.automationTrack)
       }
     };
-  };
+  }, [activePresets, targetUnitId]);
 
   return (
     <Theme appearance="dark" accentColor="amber" radius="large" style={{ background: "var(--mc-bg)" }}>
@@ -542,7 +550,17 @@ const App: React.FC = () => {
           </div>
 
           {!isReady ? (
-            <Text align="center">{status}</Text>
+            <>
+              <Text align="center">{status}</Text>
+              {initError && (
+                <Callout.Root color="red">
+                  <Callout.Icon>
+                    <InfoCircledIcon />
+                  </Callout.Icon>
+                  <Callout.Text>{initError}</Callout.Text>
+                </Callout.Root>
+              )}
+            </>
           ) : (
             <Flex direction="column" gap="5">
               {runtimeError && (
@@ -587,7 +605,7 @@ const App: React.FC = () => {
                   <Text size="2" color="gray">
                     Combined automation data for all tracks, ready for server persistence.
                   </Text>
-                  <ServerDataBlock data={buildFullProjectJson()} label="Full project JSON" />
+                  <ServerDataBlock data={fullProjectJson} label="Full project JSON" />
                 </Flex>
               </Card>
 

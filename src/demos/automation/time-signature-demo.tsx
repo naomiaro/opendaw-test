@@ -14,7 +14,7 @@ import { initializeOpenDAW } from "@/lib/projectSetup";
 import { computeBarsFromSDK } from "@/lib/barLayout";
 import type { BarInfo } from "@/lib/barLayout";
 import { usePlaybackPosition } from "@/hooks/usePlaybackPosition";
-import { CONSOLE_STYLES } from "@/lib/design/consoleTheme";
+import { CONSOLE_STYLES, CANVAS_COLORS, CANVAS_FONT_BOLD, CANVAS_FONT_SMALL } from "@/lib/design/consoleTheme";
 
 // --- Pattern Types & Data ---
 
@@ -138,19 +138,17 @@ function applyPattern(project: Project, pattern: SignaturePattern): void {
 const CANVAS_HEIGHT = 120;
 const CANVAS_HEADER_H = 30; // signature-label header row above the bar lanes
 
-// Canvas palette — mastering-console data-canvas tiers
-// (docs/design/2026-06-11-mastering-console-editorial.md; canvas needs literal hexes)
-// Bar boundaries ARE the data on this page, so they use the structural tier
-// (--mc-faint, ≈2.8:1), not the quiet supporting-grid tier tempo-automation uses.
-const CANVAS_BG = "#0d0c0a"; // --mc-bg
-const CANVAS_BAR_SHADE = "#221d15"; // --mc-shade (alternating region fill; --mc-panel at ≈1.05:1 reads flat on canvas — don't use it here)
-const CANVAS_BEAT_LINE = "#2a2620"; // --mc-line (tertiary grid)
-const CANVAS_BAR_LINE = "#5f594e"; // --mc-faint (structural separators, ≈2.8:1)
-const CANVAS_SIGNATURE = "#e8a33d"; // --mc-amber (meter CHANGES only — emphasis marks transitions)
-const CANVAS_LABEL = "#8b8273"; // --mc-label (4.9:1 floor)
-const CANVAS_PLAYHEAD = "#fff";
-const CANVAS_FONT = '600 12px "IBM Plex Mono", ui-monospace, monospace';
-const CANVAS_FONT_SMALL = '10px "IBM Plex Mono", ui-monospace, monospace';
+// Canvas semantic aliases — bar boundaries ARE the data on this page, so they use the
+// structural tier (--mc-faint, ≈2.8:1), not the quiet supporting-grid tier tempo uses.
+const CANVAS_BG = CANVAS_COLORS.bg;
+const CANVAS_BAR_SHADE = CANVAS_COLORS.shade;       // --mc-shade (alternating region fill; --mc-panel at ≈1.05:1 reads flat on canvas — don't use it here)
+const CANVAS_BEAT_LINE = CANVAS_COLORS.gridTertiary; // --mc-line (tertiary grid)
+const CANVAS_BAR_LINE = CANVAS_COLORS.structural;    // --mc-faint (bar boundaries ARE the data; strokes only)
+const CANVAS_SIGNATURE = CANVAS_COLORS.amber;        // meter CHANGES only — emphasis marks transitions
+const CANVAS_LABEL = CANVAS_COLORS.label;
+const CANVAS_PLAYHEAD = CANVAS_COLORS.playhead;
+// CANVAS_FONT_BOLD and CANVAS_FONT_SMALL imported from consoleTheme; no local re-declaration needed.
+const CANVAS_FONT = CANVAS_FONT_BOLD;
 
 interface TimelineCanvasProps {
   bars: BarInfo[];
@@ -328,6 +326,10 @@ const TimelineCanvas: React.FC<TimelineCanvasProps> = ({ bars, playheadPosition,
           left: 0,
           width: "100%",
           height: CANVAS_HEIGHT,
+          // transparent border matches the bar canvas's box model so both
+          // clientWidths agree and the playhead doesn't drift at the right edge
+          boxSizing: "border-box",
+          border: "1px solid transparent",
           pointerEvents: "none",
         }}
       />
