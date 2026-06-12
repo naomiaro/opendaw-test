@@ -3,7 +3,11 @@ import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
 import type { Terminable } from "@opendaw/lib-std";
 import { Project } from "@opendaw/studio-core";
-import type { SampleLoader, AudioRegionBoxAdapter } from "@opendaw/studio-adapters";
+import type {
+  SampleLoader,
+  SampleLoaderState,
+  AudioRegionBoxAdapter,
+} from "@opendaw/studio-adapters";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { PPQN } from "@opendaw/lib-dsp";
 import { AudioRegionBox } from "@opendaw/studio-boxes";
@@ -54,6 +58,14 @@ const codeStyle = {
 
 const App: React.FC = () => {
   const [status, setStatus] = useState("Loading...");
+  const [initError, setInitError] = useState<string | null>(null);
+  // Post-init failures (add tape, start recording/playback). The `status`
+  // string is only rendered on the pre-init screen, so errors must not go there.
+  const [uiError, setUiError] = useState<string | null>(null);
+  // Finalization-barrier failures (loader "error" state or 10s timeout).
+  const [finalizationError, setFinalizationError] = useState<string | null>(
+    null
+  );
   const [project, setProject] = useState<Project | null>(null);
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
 
@@ -74,7 +86,7 @@ const App: React.FC = () => {
       project,
       audioInputDevices,
       maxTapes: MAX_TAPES,
-      onError: (msg) => setStatus(`Add tape failed: ${msg}`),
+      onError: (msg) => setUiError(`Add tape failed: ${msg}`),
     });
 
   // Settings
@@ -89,7 +101,7 @@ const App: React.FC = () => {
     "mute-region" | "disable-track"
   >("mute-region");
   const [olderTakeScope, setOlderTakeScope] = useState<
-    "all" | "previous-only"
+    "none" | "all" | "previous-only"
   >("previous-only");
 
   // Engine preferences
@@ -184,7 +196,8 @@ const App: React.FC = () => {
         setMetronomeEnabled(true);
       } catch (error) {
         console.error("Init error:", error);
-        if (mounted) setStatus(`Error: ${error}`);
+        if (!mounted) return;
+        setInitError(error instanceof Error ? error.message : String(error));
       }
     })();
 
@@ -364,7 +377,8 @@ const App: React.FC = () => {
               }
 
               // Subscribe to mute changes for reactive UI updates
-              const muteSub = takeRegion.regionBox.mute.subscribe((obs: any) => {
+              // (BooleanField.subscribe passes ObservableValue<boolean>)
+              const muteSub = takeRegion.regionBox.mute.subscribe((obs) => {
                 updateTakeMuteInState(takeRegion.regionBox, obs.getValue());
               });
               subs.push(muteSub);
@@ -403,6 +417,8 @@ const App: React.FC = () => {
   const handleStartRecording = useCallback(async () => {
     if (!project || !audioContext || armedCount === 0) return;
 
+    setUiError(null);
+    setFinalizationError(null);
     try {
       if (audioContext.state === "suspended") await audioContext.resume();
 
@@ -425,6 +441,9 @@ const App: React.FC = () => {
       project.startRecording(useCountIn);
     } catch (error) {
       console.error("Failed to start recording:", error);
+      setUiError(
+        `Failed to start recording: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }, [
     project,
@@ -447,7 +466,10 @@ const App: React.FC = () => {
     }
     pointerHubSubsRef.current = [];
 
-    // 2. Stop recording (NOT stop(true) which kills the audio graph)
+    // 2. Stop recording. stop(true) would reset position/processors while
+    //    finalization is still in flight — the position reset also triggers
+    //    spurious loop-wrap detection that mutes the last take. Reset only
+    //    after all loaders reach a terminal state (barrier below).
     project.engine.stopRecording();
 
     // 3. Cleanup old finalization subscriptions
@@ -465,31 +487,52 @@ const App: React.FC = () => {
       const total = loaders.size;
       let timedOut = false;
 
-      // Safety timeout: if loaders haven't emitted "loaded" within 10s, give up and reset
+      // Safety timeout: a RecordingWorklet failure produces NO terminal state
+      // (the loader stays in "record" forever), so this timeout is the only
+      // net that catches it — it must surface to the UI, not just the console.
       const timeout = window.setTimeout(() => {
         if (finalized < total) {
           timedOut = true;
-          console.warn(`Finalization timed out (${finalized}/${total} loaded)`);
-          setStatus(`Warning: Recording finalization timed out. Some audio may be incomplete.`);
+          console.warn(`Finalization timed out (${finalized}/${total} terminal)`);
+          setFinalizationError(
+            "Recording finalization timed out — engine reset; some audio may be incomplete."
+          );
           for (const sub of finalizationSubsRef.current) sub.terminate();
           finalizationSubsRef.current = [];
           project.engine.stop(true);
         }
       }, 10_000);
 
+      // Errored loaders still count toward the barrier so the engine reset
+      // always runs; the error is surfaced separately.
+      const countTerminal = (state: SampleLoaderState) => {
+        if (state.type === "error") {
+          setFinalizationError(
+            `A take failed to finalize: ${state.reason || "unknown"}`
+          );
+        }
+        finalized++;
+        if (finalized === total) {
+          clearTimeout(timeout);
+          for (const sub of finalizationSubsRef.current) sub.terminate();
+          finalizationSubsRef.current = [];
+          project.engine.stop(true);
+        }
+      };
+
       for (const loader of loaders) {
+        // Pre-check: handle already-terminal loaders without subscribing —
+        // subscribe() fires synchronously for terminal states.
+        const initialState = loader.state;
+        if (initialState.type === "loaded" || initialState.type === "error") {
+          countTerminal(initialState);
+          continue;
+        }
         finalizationSubsRef.current.push(
           loader.subscribe((state) => {
             if (timedOut) return;
-            if (state.type === "loaded") {
-              finalized++;
-              if (finalized === total) {
-                clearTimeout(timeout);
-                for (const sub of finalizationSubsRef.current) sub.terminate();
-                finalizationSubsRef.current = [];
-                project.engine.stop(true);
-              }
-            }
+            if (state.type !== "loaded" && state.type !== "error") return;
+            countTerminal(state);
           })
         );
       }
@@ -501,6 +544,7 @@ const App: React.FC = () => {
   const handlePlay = useCallback(async () => {
     if (!project || !audioContext) return;
 
+    setUiError(null);
     try {
       if (audioContext.state === "suspended") await audioContext.resume();
 
@@ -534,6 +578,9 @@ const App: React.FC = () => {
       project.engine.play();
     } catch (error) {
       console.error("Failed to start playback:", error);
+      setUiError(
+        `Failed to start playback: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }, [project, audioContext]);
 
@@ -606,9 +653,17 @@ const App: React.FC = () => {
         <Container size="2" px="4" py="8">
           <Flex direction="column" align="center" gap="4">
             <Heading size="8">Loop Recording & Takes</Heading>
-            <Text size="3" color="gray">
-              {status}
-            </Text>
+            {initError ? (
+              <Callout.Root color="red" role="alert">
+                <Callout.Text>
+                  <strong>Initialization failed:</strong> {initError}
+                </Callout.Text>
+              </Callout.Root>
+            ) : (
+              <Text size="3" color="gray">
+                {status}
+              </Text>
+            )}
           </Flex>
         </Container>
       </Theme>
@@ -828,7 +883,7 @@ const App: React.FC = () => {
                   <Select.Root
                     value={olderTakeScope}
                     onValueChange={(v) =>
-                      setOlderTakeScope(v as "all" | "previous-only")
+                      setOlderTakeScope(v as "none" | "all" | "previous-only")
                     }
                     disabled={isRecording}
                   >
@@ -838,6 +893,7 @@ const App: React.FC = () => {
                         Previous Only
                       </Select.Item>
                       <Select.Item value="all">All Previous</Select.Item>
+                      <Select.Item value="none">None</Select.Item>
                     </Select.Content>
                   </Select.Root>
                 </Flex>
@@ -845,7 +901,9 @@ const App: React.FC = () => {
               <Text size="1" color="gray">
                 {olderTakeScope === "previous-only"
                   ? "Only the most recent take is affected when a new take is recorded. Use this for layering — unmute an older take and it stays audible through subsequent recordings."
-                  : "All older takes are affected each time a new take is recorded. Use this for comping — keeps a clean slate so you only hear the latest take."}
+                  : olderTakeScope === "all"
+                    ? "All older takes are affected each time a new take is recorded. Use this for comping — keeps a clean slate so you only hear the latest take."
+                    : "Older takes are left untouched — every take stays audible as recorded. Mute takes manually in the timeline below."}
               </Text>
             </Flex>
           </Card>
@@ -938,6 +996,18 @@ const App: React.FC = () => {
                 </Text>
               </Flex>
 
+              {finalizationError && (
+                <Callout.Root color="red" role="alert">
+                  <Callout.Text>{finalizationError}</Callout.Text>
+                </Callout.Root>
+              )}
+
+              {uiError && (
+                <Callout.Root color="red" role="alert">
+                  <Callout.Text>{uiError}</Callout.Text>
+                </Callout.Root>
+              )}
+
               {/* Loop progress bar */}
               {(isRecording || isPlaying) && (
                 <div
@@ -1015,19 +1085,21 @@ const { audioUnitBox } = project.api
 const capture = project.captureDevices
   .get(audioUnitBox.address.uuid).unwrap();
 
-// Arm non-exclusively (keeps other tracks armed)
-project.captureDevices.setArm(capture, false);
+// Arm deterministically — captureDevices.setArm() is a
+// TOGGLE (its second param is exclusivity, not the value)
+capture.armed.setValue(true);
 
 // startRecording() records ALL armed captures
 project.startRecording(useCountIn);
 
-// Multi-track finalization barrier
+// Multi-track finalization barrier — count BOTH terminal
+// states ("loaded" and "error") or the barrier can hang
 const loaders = new Set<SampleLoader>();
 // ... collect loaders from take regions ...
 let finalized = 0;
 for (const loader of loaders) {
   loader.subscribe(state => {
-    if (state.type === "loaded") {
+    if (state.type === "loaded" || state.type === "error") {
       if (++finalized === loaders.size) {
         project.engine.stop(true);
       }
