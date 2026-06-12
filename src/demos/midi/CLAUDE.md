@@ -80,7 +80,7 @@ collection.events         // EventCollection<NoteEventBoxAdapter>
 // does not open a transaction itself). Returns NoteEventBoxAdapter.
 collection.createEvent({
   position: 0 as ppqn,    // region-local
-  duration: 480 as ppqn,  // 480 = quarter note at 960 PPQN
+  duration: 960 as ppqn,  // quarter note (PPQN.Quarter = 960)
   pitch: 60,              // MIDI note number (60 = middle C)
   cent: 0,                // microtuning offset, -50..+50 cents
   velocity: 0.8,          // float, 0-1

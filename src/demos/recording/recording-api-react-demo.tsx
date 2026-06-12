@@ -120,8 +120,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!project || session.state !== "ready") return;
 
-    // Recording regions are always labeled "Take N" — no legacy
-    // "Recording" label exists.
+    // Recording regions are always labeled "Take N"
     for (const region of getAllRegions(project)) {
       if (region.label.startsWith("Take ")) {
         const duration = region.box.duration.getValue();
@@ -205,6 +204,21 @@ const App: React.FC = () => {
       mounted = false;
     };
   }, []);
+
+  // Standalone permission button — AudioDevices.requestPermission() THROWS on
+  // denial, so a bare onClick={requestPermission} is an unhandled rejection.
+  const handleRequestPermission = useCallback(async () => {
+    setUiError(null);
+    try {
+      await requestPermission();
+    } catch (error) {
+      console.error("Microphone permission denied: " + String(error));
+      setUiError(
+        "Microphone access was denied — recording needs an input device. " +
+          "Allow microphone access in the browser's site settings and try again."
+      );
+    }
+  }, [requestPermission]);
 
   const handleStartRecording = useCallback(async () => {
     if (!project || !audioContext) return;
@@ -377,7 +391,7 @@ const App: React.FC = () => {
                       <Text size="2" color="gray">
                         Grant microphone access to see available audio input devices.
                       </Text>
-                      <Button onClick={requestPermission} size="2" variant="soft">
+                      <Button onClick={handleRequestPermission} size="2" variant="soft">
                         Request Microphone Permission
                       </Button>
                     </Flex>

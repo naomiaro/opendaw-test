@@ -364,4 +364,4 @@ Reference implementation: `src/demos/recording/useTapePeaks.ts`.
 - `src/hooks/useAudioDevicePermission.ts` — mic permission + input/output device enumeration
 - `src/hooks/useRecordingTapes.ts` — Tape instrument creation, capture config, arming, tape add/remove
 - `src/demos/recording/useTapePeaks.ts` — live + finalized peaks rendering per tape (CanvasPainter lifecycle)
-- `src/demos/recording/useTakeDiscovery.ts` — reactive take discovery/grouping via pointerHub subscriptions
+- `src/demos/recording/useTakeDiscovery.ts` — reactive take discovery/grouping via adapter-layer subscriptions

@@ -129,15 +129,21 @@ const App: React.FC = () => {
         // a runtime observable, not a box field, so no editing.modify() here.
         // Arming enables both live monitoring (hearing notes as you play) and
         // recording (CaptureMidi captures notes into NoteEventBoxes).
-        if (audioUnitBox) {
-          // Cast defeats TS closure-narrowing to never
-          const captureOption = newProject.captureDevices.get(
-            (audioUnitBox as AudioUnitBox).address.uuid
+        // An unarmed CaptureMidi makes recording a silent no-op (zero armed
+        // captures records nothing) — fail loudly instead of falling through.
+        const captureOption = audioUnitBox
+          ? // Cast defeats TS closure-narrowing to never
+            newProject.captureDevices.get(
+              (audioUnitBox as AudioUnitBox).address.uuid
+            )
+          : null;
+        if (!captureOption || captureOption.isEmpty()) {
+          setInitError(
+            "Could not arm the MIDI capture device — recording would capture no notes."
           );
-          if (!captureOption.isEmpty()) {
-            captureOption.unwrap().armed.setValue(true);
-          }
+          return;
         }
+        captureOption.unwrap().armed.setValue(true);
 
         setProject(newProject);
         setStatus("Ready!");
@@ -281,6 +287,7 @@ const App: React.FC = () => {
     try {
       if (audioContext.state === "suspended") await audioContext.resume();
       project.engine.stop(true);
+      // No timeout/poll net needed: a MIDI-only project has no samples to load
       await project.engine.queryLoadingComplete();
       project.engine.play();
     } catch (error) {

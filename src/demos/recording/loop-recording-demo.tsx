@@ -238,6 +238,21 @@ const App: React.FC = () => {
 
   // --- Recording handlers ---
 
+  // Standalone permission button — AudioDevices.requestPermission() THROWS on
+  // denial, so a bare onClick={requestPermission} is an unhandled rejection.
+  const handleRequestPermission = useCallback(async () => {
+    setUiError(null);
+    try {
+      await requestPermission();
+    } catch (error) {
+      console.error("Microphone permission denied: " + String(error));
+      setUiError(
+        "Microphone access was denied — recording needs an input device. " +
+          "Allow microphone access in the browser's site settings and try again."
+      );
+    }
+  }, [requestPermission]);
+
   const handleStartRecording = useCallback(async () => {
     if (!project || !audioContext || armedCount === 0) return;
 
@@ -515,7 +530,7 @@ const App: React.FC = () => {
                         devices.
                       </Text>
                       <Button
-                        onClick={requestPermission}
+                        onClick={handleRequestPermission}
                         color="amber"
                         size="2"
                         variant="soft"

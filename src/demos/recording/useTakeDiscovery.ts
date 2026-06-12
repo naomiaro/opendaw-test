@@ -49,20 +49,20 @@ export function useTakeDiscovery({
   // Takes
   const [takeIterations, setTakeIterations] = useState<TakeIteration[]>([]);
 
-  // Pointer hub subscriptions for reactive take discovery
-  const pointerHubSubsRef = useRef<Terminable[]>([]);
+  // Adapter-layer subscriptions for reactive take discovery
+  const adapterSubsRef = useRef<Terminable[]>([]);
   // SampleLoaders discovered during recording — ref avoids stale closure in handleStopRecording
   const sampleLoadersRef = useRef<Set<SampleLoader>>(new Set());
-  // Ref for recordingTapes to avoid restarting pointerHub subscriptions when tapes change
+  // Ref for recordingTapes to avoid restarting adapter subscriptions when tapes change
   const recordingTapesRef = useRef<RecordingTape[]>([]);
 
   // Cleanup subscriptions on unmount (but NOT sampleLoadersRef — handleStopRecording owns that)
   useEffect(() => {
     return () => {
-      for (const sub of pointerHubSubsRef.current) {
+      for (const sub of adapterSubsRef.current) {
         sub.terminate();
       }
-      pointerHubSubsRef.current = [];
+      adapterSubsRef.current = [];
     };
   }, []);
 
@@ -188,7 +188,15 @@ export function useTakeDiscovery({
       const audioUnitAdapter = allAudioUnits.find(
         (au) => au.box === tape.capture.audioUnitBox
       );
-      if (!audioUnitAdapter) continue;
+      if (!audioUnitAdapter) {
+        // Skipped tape = its loader never joins the finalization barrier
+        console.error(
+          "[useTakeDiscovery] No audioUnit adapter for tape " +
+            tape.id +
+            " — take discovery skipped for this tape"
+        );
+        continue;
+      }
 
       const tracksSub = audioUnitAdapter.tracks.catchupAndSubscribe({
         onAdd: (trackAdapter) => {
@@ -221,13 +229,13 @@ export function useTakeDiscovery({
       subs.push(tracksSub);
     }
 
-    pointerHubSubsRef.current = subs;
+    adapterSubsRef.current = subs;
 
     return () => {
       for (const sub of subs) {
         sub.terminate();
       }
-      pointerHubSubsRef.current = [];
+      adapterSubsRef.current = [];
       // Do NOT clear sampleLoadersRef here — handleStopRecording owns its lifecycle
       // and may still be using the Set reference for the finalization barrier.
     };
@@ -243,10 +251,10 @@ export function useTakeDiscovery({
   // Terminate the adapter-layer subscriptions (idempotent) — the demo calls
   // this before stopRecording() so late SDK events can't add stale regions.
   const terminateDiscovery = useCallback(() => {
-    for (const sub of pointerHubSubsRef.current) {
+    for (const sub of adapterSubsRef.current) {
       sub.terminate();
     }
-    pointerHubSubsRef.current = [];
+    adapterSubsRef.current = [];
   }, []);
 
   // Snapshot the discovered loaders and clear the internal set — the copy

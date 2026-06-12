@@ -155,7 +155,15 @@ export function useTapePeaks({
       const audioUnitAdapter = allAudioUnits.find(
         (au) => au.box === tape.capture.audioUnitBox
       );
-      if (!audioUnitAdapter) continue;
+      if (!audioUnitAdapter) {
+        // Skipped tape = its loader is never registered with the session barrier
+        console.error(
+          "[useTapePeaks] No audioUnit adapter for tape " +
+            tape.id +
+            " — peaks monitoring skipped for this tape"
+        );
+        continue;
+      }
 
       const tracksSub = audioUnitAdapter.tracks.catchupAndSubscribe({
         onAdd: (trackAdapter) => {
