@@ -11,7 +11,7 @@ interface RecordingPreferencesProps {
 
 export const RecordingPreferences: React.FC<RecordingPreferencesProps> = React.memo(
   ({ useCountIn, onUseCountInChange, metronomeEnabled, onMetronomeEnabledChange, disabled = false }) => (
-    <>
+    <Flex gap="5" wrap="wrap" align="center">
       <Flex asChild align="center" gap="2">
         <Text as="label" size="2">
           <Checkbox checked={useCountIn} onCheckedChange={c => onUseCountInChange(c === true)} disabled={disabled} />
@@ -28,7 +28,7 @@ export const RecordingPreferences: React.FC<RecordingPreferencesProps> = React.m
           Metronome
         </Text>
       </Flex>
-    </>
+    </Flex>
   )
 );
 
