@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { createRoot } from "react-dom/client";
+import type { Terminable } from "@opendaw/lib-std";
 import { Project, MidiDevices } from "@opendaw/studio-core";
 import { InstrumentFactories } from "@opendaw/studio-adapters";
 import type { AudioUnitBox } from "@opendaw/studio-boxes";
@@ -100,6 +101,7 @@ const App: React.FC = () => {
   // Initialize OpenDAW
   useEffect(() => {
     let mounted = true;
+    const subs: Terminable[] = [];
 
     (async () => {
       try {
@@ -141,15 +143,21 @@ const App: React.FC = () => {
         setStatus("Ready!");
 
         // Subscribe to engine state
-        newProject.engine.isRecording.catchupAndSubscribe(obs => {
-          if (mounted) setIsRecording(obs.getValue());
-        });
-        newProject.engine.isPlaying.catchupAndSubscribe(obs => {
-          if (mounted) setIsPlaying(obs.getValue());
-        });
-        newProject.engine.isCountingIn.catchupAndSubscribe(obs => {
-          if (mounted) setIsCountingIn(obs.getValue());
-        });
+        subs.push(
+          newProject.engine.isRecording.catchupAndSubscribe(obs => {
+            if (mounted) setIsRecording(obs.getValue());
+          })
+        );
+        subs.push(
+          newProject.engine.isPlaying.catchupAndSubscribe(obs => {
+            if (mounted) setIsPlaying(obs.getValue());
+          })
+        );
+        subs.push(
+          newProject.engine.isCountingIn.catchupAndSubscribe(obs => {
+            if (mounted) setIsCountingIn(obs.getValue());
+          })
+        );
       } catch (error) {
         console.error("Init error: " + String(error));
         if (mounted) {
@@ -158,7 +166,10 @@ const App: React.FC = () => {
       }
     })();
 
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+      subs.forEach(s => s.terminate());
+    };
   }, []);
 
   // Check MIDI availability

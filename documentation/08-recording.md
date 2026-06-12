@@ -305,7 +305,7 @@ project.editing.modify(() => {
 
 > **See also:** [Ch. 16 — MIDI Deep Dive](./16-midi.md) is the dedicated reference for the MIDI data model, programmatic note creation, MIDI effects, and note auditioning. This chapter covers MIDI specifically in the context of recording.
 
-Arming a MIDI instrument's capture uses the **same** `project.captureDevices.setArm()` API as audio (see [Capture Arming](#capture-arming)). `project.captureDevices.get(audioUnitBox.address.uuid)` returns a `CaptureMidi` for MIDI instruments and a `CaptureAudio` for Tape — both extend the same `Capture` base class and share the arm/disarm interface. Channel filtering and software-keyboard input are MIDI-specific and configured below.
+Arming a MIDI instrument's capture uses the **same** arm/disarm surface as audio: `capture.armed.setValue(true)` for deterministic arming (see [Capture Arming](#capture-arming) — `setArm()` is a toggle). `project.captureDevices.get(audioUnitBox.address.uuid)` returns a `CaptureMidi` for MIDI instruments and a `CaptureAudio` for Tape — both extend the same `Capture` base class. Channel filtering and software-keyboard input are MIDI-specific and configured below.
 
 ### Device Enumeration
 
@@ -752,19 +752,34 @@ project.engine.stopRecording();
 
 // Collect all sampleLoaders discovered during recording
 const loaders: SampleLoader[] = [...allDiscoveredLoaders];
+const subs: Terminable[] = [];
 
 let finalized = 0;
+const countTerminal = () => {
+  finalized++;
+  // Only reset engine after ALL tracks have reached a terminal state
+  if (finalized === loaders.length) {
+    for (const sub of subs) sub.terminate();
+    project.engine.stop(true);
+  }
+};
+
 for (const loader of loaders) {
-  const sub = loader.subscribe((state) => {
-    if (state.type === "loaded" || state.type === "error") {
-      sub.terminate();
-      finalized++;
-      // Only reset engine after ALL tracks have reached a terminal state
-      if (finalized === loaders.length) {
-        project.engine.stop(true);
-      }
-    }
-  });
+  // Pre-check: handle already-terminal loaders without subscribing —
+  // subscribe() fires synchronously for terminal states, and a
+  // sub.terminate() inside that synchronous callback would hit the
+  // `const sub` binding in its TDZ (ReferenceError).
+  const state = loader.state;
+  if (state.type === "loaded" || state.type === "error") {
+    countTerminal();
+    continue;
+  }
+  subs.push(
+    loader.subscribe((state) => {
+      if (state.type !== "loaded" && state.type !== "error") return;
+      countTerminal();
+    })
+  );
 }
 ```
 

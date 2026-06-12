@@ -81,7 +81,7 @@ const TakeWaveformCanvas: React.FC<{
       if (!r.sampleLoader) return;
 
       const peaksOption = r.sampleLoader.peaks;
-      if (!peaksOption || peaksOption.isEmpty()) return;
+      if (peaksOption.isEmpty()) return;
 
       // During recording the loader's peaks is a PeaksWriter (SDK types it
       // as Peaks) — the union lets the "dataIndex" in-check narrow

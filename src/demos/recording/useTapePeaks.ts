@@ -208,7 +208,7 @@ export function useTapePeaks({
         if (!tapeState?.sampleLoader) continue;
 
         const peaksOption = tapeState.sampleLoader.peaks;
-        if (peaksOption && !peaksOption.isEmpty()) {
+        if (!peaksOption.isEmpty()) {
           tapeState.peaks = peaksOption.unwrap();
           canvasPaintersMap.current.get(i)?.requestUpdate();
         }

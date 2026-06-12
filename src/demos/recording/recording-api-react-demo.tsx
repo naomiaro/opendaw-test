@@ -513,7 +513,7 @@ const App: React.FC = () => {
                       variant="solid"
                       disabled={!canRecord}
                     >
-                      ⏺ Record{armedCount > 0 ? ` (${armedCount} tape${armedCount !== 1 ? "s" : ""})` : ""}
+                      Record{armedCount > 0 ? ` (${armedCount} tape${armedCount !== 1 ? "s" : ""})` : ""}
                     </Button>
                     <Button
                       onClick={handlePlayRecording}
@@ -522,10 +522,10 @@ const App: React.FC = () => {
                       size="3"
                       variant="solid"
                     >
-                      ▶ Play
+                      Play
                     </Button>
                     <Button onClick={handleStop} disabled={!canStop} color="gray" size="3" variant="solid">
-                      ⏹ Stop
+                      Stop
                     </Button>
                   </Flex>
                   <Text size="2" align="center" color="gray">
