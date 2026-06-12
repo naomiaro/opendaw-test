@@ -434,6 +434,9 @@ project.editing.modify(() => {
   project.timelineBox.bpm.setValue(120);
 });
 ```
+Early `return` inside the callback still COMMITS the transaction — only a throw
+aborts it. Bailing out mid-build leaves partial state committed; throw instead,
+or document the partial state the early return leaves behind.
 
 ### Pointer Re-Routing: Separate Transaction from Creation
 `createInstrument()` internally routes `audioUnitBox.output` to master. Re-routing with
@@ -558,6 +561,12 @@ effect repaints a canvas. Pattern: absolutely-positioned `<div>` overlay, write
 `style.left` / `style.top` directly inside `AnimationFrame.add(() => {...})`. Parent
 needs `position: relative`, overlay needs `pointer-events: none`. `usePlaybackPosition`'s
 setState-per-frame is only safe if no expensive effect reads its output.
+Canvas playhead overlays (second canvas over a static data canvas): import palette
+from `CANVAS_COLORS` in `src/lib/design/consoleTheme.ts` (canvas 2D can't read CSS
+vars), and give the overlay the static canvas's exact box model — `boxSizing:
+"border-box"` plus `border: "1px solid transparent"` matching the bordered layer.
+A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
+2px mobile overflow on bordered `width:100%` canvases.
 
 ## Build & Verification
 - `npm run build` runs Vite then VitePress — demos go to `dist/`, docs go to `dist/docs/` for `/docs/` on Cloudflare Pages
@@ -613,6 +622,8 @@ setState-per-frame is only safe if no expensive effect reads its output.
   (`/pr-review-toolkit:review-pr`, applicable aspects) and FIX Critical + Important
   findings before merge; push fixes to the PR branch and note them in a PR comment.
 - After SDK upgrades, clear Vite dep cache: `rm -rf node_modules/.vite` (dev server pre-bundles old SDK)
+- Vite HMR remount throws "Workers are already installed" (SDK assert) — dev-only
+  artifact now surfaced by init error cards; judge error states on a fresh page load.
 - After **any** `package.json` change (SDK upgrade, devDep add/remove, version bump), **regenerate
   the lockfile cleanly**: `rm -rf node_modules package-lock.json && npm install`, then verify with
   `npm ci` (not just `npm run build`) before pushing. In-place `npm install`/`uninstall` can leave
