@@ -97,8 +97,8 @@ Each MIDI note event:
 - `.pitch` — MIDI note number (`int`, 0-127)
 - `.cent` — microtuning offset (-50..+50 cents)
 - `.velocity` — note velocity (`float`, 0-1)
-- `.chance` — playback probability (0-100)
-- `.playCount` — note-repeat count
+- `.chance` — playback probability (`int`, 0-100)
+- `.playCount` — note-repeat count (`int`, 1-128)
 - `.playCurve` — repeat-velocity curve
 - `.collection` — `Option<NoteEventCollectionBoxAdapter>` (back-reference)
 - `.isSelected` — selection state
