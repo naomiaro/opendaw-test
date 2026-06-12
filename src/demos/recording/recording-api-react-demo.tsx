@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { Project } from "@opendaw/studio-core";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { getAllRegions } from "@/lib/adapterUtils";
+import { waitForLoadingComplete } from "@/lib/engineLoading";
 import { useEnginePreference, CountInBarsValue, MetronomeBeatSubDivisionValue } from "@/hooks/useEnginePreference";
 import { useRecordingSession } from "@/hooks/useRecordingSession";
 import type { RecordingState } from "@/hooks/useRecordingSession";
@@ -32,7 +33,6 @@ import {
   Slider,
   Badge
 } from "@radix-ui/themes";
-import { InfoCircledIcon } from "@radix-ui/react-icons";
 
 function getStatusMessage(state: RecordingState, countInBeats: number): string {
   switch (state) {
@@ -260,25 +260,7 @@ const App: React.FC = () => {
       setMetronomeEnabled(false);
 
       // Wait for audio to be fully loaded before playing (with timeout)
-      const isLoaded = await project.engine.queryLoadingComplete();
-      if (!isLoaded) {
-        const LOADING_TIMEOUT_MS = 10_000;
-        await new Promise<void>((resolve, reject) => {
-          const timeout = setTimeout(
-            () => reject(new Error("Audio loading timed out")),
-            LOADING_TIMEOUT_MS
-          );
-          const checkLoaded = async () => {
-            if (await project.engine.queryLoadingComplete()) {
-              clearTimeout(timeout);
-              resolve();
-            } else {
-              requestAnimationFrame(checkLoaded);
-            }
-          };
-          checkLoaded();
-        });
-      }
+      await waitForLoadingComplete(project);
 
       project.engine.stop(true);
       project.engine.play();
@@ -332,9 +314,6 @@ const App: React.FC = () => {
 
           {initError ? (
             <Callout.Root color="red" role="alert">
-              <Callout.Icon>
-                <InfoCircledIcon />
-              </Callout.Icon>
               <Callout.Text>
                 <strong>Initialization failed:</strong> {initError}
               </Callout.Text>
@@ -450,9 +429,6 @@ const App: React.FC = () => {
                   <Text size="2" weight="bold" color="gray">Record Audio</Text>
 
                   <Callout.Root color="amber">
-                    <Callout.Icon>
-                      <InfoCircledIcon />
-                    </Callout.Icon>
                     <Callout.Text>
                       <strong>Use headphones when recording with metronome enabled!</strong> Without headphones, your
                       microphone will pick up the metronome sound from your speakers, causing echo/doubling during playback.
@@ -558,18 +534,12 @@ const App: React.FC = () => {
 
                   {session.error && (
                     <Callout.Root color="red" role="alert">
-                      <Callout.Icon>
-                        <InfoCircledIcon />
-                      </Callout.Icon>
                       <Callout.Text>{session.error}</Callout.Text>
                     </Callout.Root>
                   )}
 
                   {uiError && (
                     <Callout.Root color="red" role="alert">
-                      <Callout.Icon>
-                        <InfoCircledIcon />
-                      </Callout.Icon>
                       <Callout.Text>{uiError}</Callout.Text>
                     </Callout.Root>
                   )}

@@ -34,13 +34,18 @@ enters recording state but records nothing and creates no instrument. Tape can't
 MIDI notes. For MIDI recording, pre-create a synth instrument and arm its capture:
 ```typescript
 // editing.modify() doesn't forward return values — capture via outer variable
-let audioUnitBox: any = null;
+let audioUnitBox: AudioUnitBox | null = null;
 project.editing.modify(() => {
   // Vaporisateur = built-in synth, no files needed
   audioUnitBox = project.api.createInstrument(InstrumentFactories.Vaporisateur).audioUnitBox;
 });
-// Then arm its capture (armed is runtime-only — no transaction):
-project.captureDevices.get(audioUnitBox.address.uuid).unwrap().armed.setValue(true);
+// Then arm its capture (armed is runtime-only — no transaction).
+// Cast defeats TS closure-narrowing to never:
+if (audioUnitBox) {
+  project.captureDevices
+    .get((audioUnitBox as AudioUnitBox).address.uuid)
+    .unwrap().armed.setValue(true);
+}
 ```
 Available MIDI instruments: `Vaporisateur` (synth), `Soundfont` (sf2 player), `Nano` (sampler), `Playfield` (drums), `Apparat` (scriptable DSP).
 

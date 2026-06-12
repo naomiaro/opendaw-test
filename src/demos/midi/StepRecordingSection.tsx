@@ -60,6 +60,8 @@ export const StepRecordingSection: React.FC<{
   const [stepVelocity, setStepVelocity] = useState(100);
   const [currentPosition, setCurrentPosition] = useState(0);
   const [createdNotes, setCreatedNotes] = useState<RecordedNote[]>([]);
+  // Region/target resolution failures — cleared on the next successful note
+  const [stepError, setStepError] = useState<string | null>(null);
 
   const durationMap: Record<string, number> = {
     "whole": PPQN.Quarter * 4,
@@ -90,9 +92,15 @@ export const StepRecordingSection: React.FC<{
     // Create a step recording region if none exists
     if (!target) {
       const firstUnit = project.rootBoxAdapter.audioUnits.adapters()[0];
-      if (!firstUnit) return;
+      if (!firstUnit) {
+        setStepError("No audio unit available to host the step recording region.");
+        return;
+      }
       const firstTrack = firstUnit.tracks.values()[0];
-      if (!firstTrack) return;
+      if (!firstTrack) {
+        setStepError("The instrument has no track to hold the step recording region.");
+        return;
+      }
       const trackBox = firstTrack.box;
 
       project.editing.modify(() => {
@@ -109,7 +117,11 @@ export const StepRecordingSection: React.FC<{
       target = findStepRecordingTarget(project);
     }
 
-    if (!target) return;
+    if (!target) {
+      setStepError("Could not create or find the step recording region.");
+      return;
+    }
+    setStepError(null);
     const { collection, regionOffset } = target;
 
     project.editing.modify(() => {
@@ -195,6 +207,12 @@ export const StepRecordingSection: React.FC<{
             </Text>
           </Flex>
         </Flex>
+
+        {stepError && (
+          <Callout.Root color="red" role="alert">
+            <Callout.Text>{stepError}</Callout.Text>
+          </Callout.Root>
+        )}
 
         {stepEnabled && (
           <>

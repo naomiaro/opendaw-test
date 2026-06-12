@@ -7,7 +7,9 @@ import { AnimationFrame } from "@opendaw/lib-dom";
 import { PPQN } from "@opendaw/lib-dsp";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { getAllRegions } from "@/lib/adapterUtils";
+import { waitForLoadingComplete } from "@/lib/engineLoading";
 import { useEnginePreference } from "@/hooks/useEnginePreference";
+import { FINALIZATION_TIMEOUT_MS } from "@/hooks/useRecordingSession";
 import { useAudioDevicePermission } from "@/hooks/useAudioDevicePermission";
 import { useRecordingTapes } from "@/hooks/useRecordingTapes";
 import { useTakeDiscovery } from "./useTakeDiscovery";
@@ -37,9 +39,6 @@ import {
 
 const MAX_TAPES = 4;
 const BAR_PPQN = PPQN.Quarter * 4; // one bar in 4/4 time
-// Matches useRecordingSession — long multi-take finalizations can exceed 10s,
-// so the barrier shares the hook's 30s safety net.
-const FINALIZATION_TIMEOUT_MS = 30_000;
 
 // Loop progress bar — the width transition is smoothing only, so it is
 // dropped (not the bar itself) under prefers-reduced-motion.
@@ -371,25 +370,7 @@ const App: React.FC = () => {
       if (audioContext.state === "suspended") await audioContext.resume();
 
       // Wait for audio to load with timeout
-      const isLoaded = await project.engine.queryLoadingComplete();
-      if (!isLoaded) {
-        const LOADING_TIMEOUT_MS = 10_000;
-        await new Promise<void>((resolve, reject) => {
-          const timeout = setTimeout(
-            () => reject(new Error("Audio loading timed out")),
-            LOADING_TIMEOUT_MS
-          );
-          const checkLoaded = async () => {
-            if (await project.engine.queryLoadingComplete()) {
-              clearTimeout(timeout);
-              resolve();
-            } else {
-              requestAnimationFrame(checkLoaded);
-            }
-          };
-          checkLoaded();
-        });
-      }
+      await waitForLoadingComplete(project);
 
       // Keep loop area enabled so playback loops over takes
       project.editing.modify(() => {

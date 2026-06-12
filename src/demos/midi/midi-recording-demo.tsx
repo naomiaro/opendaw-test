@@ -24,7 +24,6 @@ import {
   Card,
   Select,
   Callout,
-  Separator,
   Badge,
   Code,
 } from "@radix-ui/themes";
@@ -70,6 +69,9 @@ const NoteDisplay: React.FC<{
 const App: React.FC = () => {
   const [status, setStatus] = useState("Loading...");
   const [initError, setInitError] = useState<string | null>(null);
+  // Post-init failures (start recording/playback). The `status` string is
+  // only rendered on the pre-init screen, so errors must not go there.
+  const [uiError, setUiError] = useState<string | null>(null);
   const [project, setProject] = useState<Project | null>(null);
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
 
@@ -235,11 +237,20 @@ const App: React.FC = () => {
   // Recording handlers
   const handleStartRecording = useCallback(async () => {
     if (!project || !audioContext) return;
-    if (audioContext.state === "suspended") await audioContext.resume();
 
-    setRecordedNotes([]);
-    project.engine.setPosition(0);
-    project.startRecording(useCountIn);
+    setUiError(null);
+    try {
+      if (audioContext.state === "suspended") await audioContext.resume();
+
+      setRecordedNotes([]);
+      project.engine.setPosition(0);
+      project.startRecording(useCountIn);
+    } catch (error) {
+      console.error("Failed to start recording: " + String(error));
+      setUiError(
+        `Failed to start recording: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
   }, [project, audioContext, useCountIn]);
 
   const handleStopRecording = useCallback(() => {
@@ -254,10 +265,19 @@ const App: React.FC = () => {
 
   const handlePlay = useCallback(async () => {
     if (!project || !audioContext) return;
-    if (audioContext.state === "suspended") await audioContext.resume();
-    project.engine.stop(true);
-    await project.engine.queryLoadingComplete();
-    project.engine.play();
+
+    setUiError(null);
+    try {
+      if (audioContext.state === "suspended") await audioContext.resume();
+      project.engine.stop(true);
+      await project.engine.queryLoadingComplete();
+      project.engine.play();
+    } catch (error) {
+      console.error("Failed to start playback: " + String(error));
+      setUiError(
+        `Failed to start playback: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
   }, [project, audioContext]);
 
   const handleStop = useCallback(() => {
@@ -449,6 +469,12 @@ const App: React.FC = () => {
                     {isPlaying && !isRecording && <Badge color="green" size="2">Playing</Badge>}
                     {!isRecording && !isPlaying && !isCountingIn && <Badge color="gray" size="2">Stopped</Badge>}
                   </Flex>
+
+                  {uiError && (
+                    <Callout.Root color="red" role="alert">
+                      <Callout.Text>{uiError}</Callout.Text>
+                    </Callout.Root>
+                  )}
                 </Flex>
               </Card>
 
@@ -458,30 +484,34 @@ const App: React.FC = () => {
                 onNotesCreated={(notes) => setRecordedNotes(prev => [...prev, ...notes])}
               />
 
-              {/* API Reference */}
-              <Card>
-                <Flex direction="column" gap="3">
-                  <Text size="2" weight="bold" color="gray">API Reference</Text>
-                  <Separator size="4" />
-                  <Flex direction="column" gap="2">
-                    <Text size="2" weight="bold">MIDI Device Access:</Text>
-                    <Code size="2" style={CODE_BLOCK_STYLE}>
+              {/* SDK reference */}
+              <section className="mc-anchors">
+                <h2 className="mc-anchors-head">SDK reference</h2>
+
+                <Text size="2" weight="bold" style={{ display: "block", marginTop: 16 }}>
+                  MIDI Device Access:
+                </Text>
+                <Code size="2" style={CODE_BLOCK_STYLE}>
 {`import { MidiDevices } from "@opendaw/studio-core";
 
 await MidiDevices.requestPermission();
 const devices = MidiDevices.inputDevices();
 // Includes Software Keyboard + external devices`}
-                    </Code>
+                </Code>
 
-                    <Text size="2" weight="bold" style={{ marginTop: 8 }}>Software Keyboard:</Text>
-                    <Code size="2" style={CODE_BLOCK_STYLE}>
+                <Text size="2" weight="bold" style={{ display: "block", marginTop: 16 }}>
+                  Software Keyboard:
+                </Text>
+                <Code size="2" style={CODE_BLOCK_STYLE}>
 {`MidiDevices.softwareMIDIInput.sendNoteOn(60, 0.8);
 MidiDevices.softwareMIDIInput.sendNoteOff(60);
 MidiDevices.softwareMIDIInput.channel = 0; // 0-15`}
-                    </Code>
+                </Code>
 
-                    <Text size="2" weight="bold" style={{ marginTop: 8 }}>Step Recording (headless):</Text>
-                    <Code size="2" style={CODE_BLOCK_STYLE}>
+                <Text size="2" weight="bold" style={{ display: "block", marginTop: 16 }}>
+                  Step Recording (headless):
+                </Text>
+                <Code size="2" style={CODE_BLOCK_STYLE}>
 {`// noteRegionAdapter.optCollection is Option<NoteEventCollectionBoxAdapter>
 const collection = noteRegionAdapter.optCollection.unwrap();
 
@@ -497,10 +527,8 @@ project.editing.modify(() => {
   });
 });
 engine.setPosition(positionPPQN + PPQN.Quarter);`}
-                    </Code>
-                  </Flex>
-                </Flex>
-              </Card>
+                </Code>
+              </section>
             </>
           )}
         </Flex>

@@ -195,9 +195,10 @@ export function useTapePeaks({
       subs.push(tracksSub);
     }
 
-    // AnimationFrame for continuous peaks rendering — no shouldMonitorPeaks guard.
+    // AnimationFrame for continuous peaks rendering — no session-state guard.
     // Runs every frame; when no sampleLoaders exist it's a no-op. This avoids
-    // React batching issues where the ref stays false across recording cycles.
+    // React batching issues where a state-derived gate stays false across
+    // recording cycles.
     const animationFrameTerminable = AnimationFrame.add(() => {
       const tapes = recordingTapesRef.current;
       for (let i = 0; i < tapes.length; i++) {

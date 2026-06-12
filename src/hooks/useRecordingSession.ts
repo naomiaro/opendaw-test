@@ -18,7 +18,6 @@ interface UseRecordingSessionOptions {
 export interface RecordingSessionResult {
   state: RecordingState;
   countInBeatsRemaining: number;
-  shouldMonitorPeaks: boolean;
   /** User-facing finalization failure (loader "error" state or 30s timeout).
    *  Errored loaders still count toward the barrier, so the state machine
    *  reaches "ready" — this message explains what went wrong. */
@@ -32,7 +31,10 @@ export interface RecordingSessionResult {
   resetLoaders: () => void;
 }
 
-const FINALIZATION_TIMEOUT_MS = 30_000;
+/** Safety net for recording finalization barriers — long multi-take
+ *  finalizations can exceed 10s, and a RecordingWorklet failure emits no
+ *  terminal state at all, so the timeout is the only net on that path. */
+export const FINALIZATION_TIMEOUT_MS = 30_000;
 
 /**
  * Manages the recording/playback lifecycle as an explicit state machine.
@@ -246,13 +248,9 @@ export function useRecordingSession({
     };
   }, [project, resetLoaders]);
 
-  const shouldMonitorPeaks =
-    state === "counting-in" || state === "recording" || state === "finalizing";
-
   return {
     state,
     countInBeatsRemaining,
-    shouldMonitorPeaks,
     error,
     clearError,
     registerLoader,

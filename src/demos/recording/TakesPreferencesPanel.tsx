@@ -1,8 +1,12 @@
 import React from "react";
 import { Card, Checkbox, Flex, Select, Text } from "@radix-ui/themes";
+import { EngineSettings } from "@opendaw/studio-adapters";
 
-export type OlderTakeAction = "mute-region" | "disable-track";
-export type OlderTakeScope = "none" | "all" | "previous-only";
+// Derived from the SDK's allowed-value constants — stays in sync with the schema
+export type OlderTakeAction =
+  (typeof EngineSettings.OlderTakeActionOptions)[number];
+export type OlderTakeScope =
+  (typeof EngineSettings.OlderTakeScopeOptions)[number];
 
 interface TakesPreferencesPanelProps {
   allowTakes: boolean;

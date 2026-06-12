@@ -3,6 +3,8 @@ import { Flex, Text, Button, Badge } from "@radix-ui/themes";
 import type { SampleLoader } from "@opendaw/studio-adapters";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { PeaksPainter } from "@opendaw/lib-fusion";
+import type { Peaks } from "@opendaw/lib-fusion";
+import type { PeaksWriter } from "@opendaw/studio-core";
 import { PPQN } from "@opendaw/lib-dsp";
 import { AudioRegionBox } from "@opendaw/studio-boxes";
 import { CanvasPainter } from "@/lib/CanvasPainter";
@@ -81,7 +83,9 @@ const TakeWaveformCanvas: React.FC<{
       const peaksOption = r.sampleLoader.peaks;
       if (!peaksOption || peaksOption.isEmpty()) return;
 
-      const peaks = peaksOption.unwrap();
+      // During recording the loader's peaks is a PeaksWriter (SDK types it
+      // as Peaks) — the union lets the "dataIndex" in-check narrow
+      const peaks = peaksOption.unwrap() as Peaks | PeaksWriter;
       const isPeaksWriter = "dataIndex" in peaks;
 
       const u0 = r.waveformOffsetFrames;

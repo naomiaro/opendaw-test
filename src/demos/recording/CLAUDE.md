@@ -330,29 +330,25 @@ no terminal state at all (see the SampleLoader section).
   the async finalization
 
 ### Monitoring Peaks Across Recording Lifecycle
-Use state (not refs) to track monitoring status, since refs don't trigger effect re-runs:
+Run the peaks AnimationFrame unconditionally for the component's lifetime — do NOT
+gate it on recording/session state. A state gate can miss batched transitions (see
+"Don't Gate AnimationFrame on React State via Refs"), and an idle frame is a no-op:
 ```typescript
-const [shouldMonitorPeaks, setShouldMonitorPeaks] = useState(false);
-
-// Start monitoring when recording starts
 useEffect(() => {
-  if (isRecording && !shouldMonitorPeaks) {
-    setShouldMonitorPeaks(true);
-  }
-}, [isRecording, shouldMonitorPeaks]);
-
-// Effect runs while shouldMonitorPeaks is true
-useEffect(() => {
-  if (!project || !shouldMonitorPeaks) return;
+  if (!project) return;
 
   const animationFrame = AnimationFrame.add(() => {
-    // Monitor peaks here...
-    // When final peaks received, call setShouldMonitorPeaks(false)
+    const loader = tapeStateRef.current?.sampleLoader; // resolved via discovery subs
+    if (!loader) return; // nothing recorded yet — no-op frame
+
+    const peaksOption = loader.peaks;
+    if (!peaksOption.isEmpty()) painter.requestUpdate();
   });
 
   return () => animationFrame.terminate();
-}, [project, shouldMonitorPeaks]);
+}, [project]);
 ```
+Reference implementation: `src/demos/recording/useTapePeaks.ts`.
 
 ## Reference Files
 - Recording demo: `src/demos/recording/recording-api-react-demo.tsx`
