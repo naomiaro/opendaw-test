@@ -147,7 +147,6 @@ const CANVAS_BAR_LINE = CANVAS_COLORS.structural;    // --mc-faint (bar boundari
 const CANVAS_SIGNATURE = CANVAS_COLORS.amber;        // meter CHANGES only — emphasis marks transitions
 const CANVAS_LABEL = CANVAS_COLORS.label;
 const CANVAS_PLAYHEAD = CANVAS_COLORS.playhead;
-// CANVAS_FONT_BOLD and CANVAS_FONT_SMALL imported from consoleTheme; no local re-declaration needed.
 const CANVAS_FONT = CANVAS_FONT_BOLD;
 
 interface TimelineCanvasProps {

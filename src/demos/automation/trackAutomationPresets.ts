@@ -1,6 +1,7 @@
 import { PPQN, Interpolation } from "@opendaw/lib-dsp";
 import type { ppqn } from "@opendaw/lib-dsp";
 import { AudioUnitBoxAdapter } from "@opendaw/studio-adapters";
+import { CANVAS_COLORS } from "@/lib/design/consoleTheme";
 
 // 4/4 time: one bar = 3840 PPQN
 export const BAR = PPQN.fromSignature(4, 4); // 3840
@@ -129,7 +130,7 @@ export const TRACK_CONFIGS: AutomationTrackConfig[] = [
   {
     label: "Volume",
     parameterName: "volume",
-    color: "#e8a33d", // --mc-amber
+    color: CANVAS_COLORS.amber,
     yLabels: [
       { value: 1.0, label: "+6 dB" },
       { value: VOLUME_0DB, label: "0 dB" },
@@ -141,7 +142,7 @@ export const TRACK_CONFIGS: AutomationTrackConfig[] = [
   {
     label: "Pan",
     parameterName: "panning",
-    color: "#5fb4c9", // --mc-cyan
+    color: CANVAS_COLORS.cyan,
     yLabels: [
       { value: 1.0, label: "R" },
       { value: 0.5, label: "C" },
@@ -152,7 +153,7 @@ export const TRACK_CONFIGS: AutomationTrackConfig[] = [
   {
     label: "Reverb Wet",
     parameterName: "wet",
-    color: "#7fbf6a", // --mc-green
+    color: CANVAS_COLORS.green,
     yLabels: [
       { value: 1.0, label: "Wet" },
       { value: 0.5, label: "−12 dB" },

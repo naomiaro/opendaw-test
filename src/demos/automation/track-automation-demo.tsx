@@ -478,6 +478,10 @@ const App: React.FC = () => {
 
       // Ensure the active section's automation is applied
       const trackBox = automationTrackBoxesRef.current[sectionIndex];
+      if (!trackBox) {
+        setRuntimeError("Automation track for this section is missing — reload the page.");
+        return;
+      }
       const presetIndex = activePresets[sectionIndex];
       const ok = applyAutomationEvents(p, trackBox, TRACK_CONFIGS[sectionIndex].presets[presetIndex].events);
       if (!ok) {
@@ -549,18 +553,15 @@ const App: React.FC = () => {
             </p>
           </div>
 
-          {!isReady ? (
-            <>
-              <Text align="center">{status}</Text>
-              {initError && (
-                <Callout.Root color="red">
-                  <Callout.Icon>
-                    <InfoCircledIcon />
-                  </Callout.Icon>
-                  <Callout.Text>{initError}</Callout.Text>
-                </Callout.Root>
-              )}
-            </>
+          {initError ? (
+            <Callout.Root color="red">
+              <Callout.Icon>
+                <InfoCircledIcon />
+              </Callout.Icon>
+              <Callout.Text>{initError}</Callout.Text>
+            </Callout.Root>
+          ) : !isReady ? (
+            <Text align="center">{status}</Text>
           ) : (
             <Flex direction="column" gap="5">
               {runtimeError && (
