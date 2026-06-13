@@ -106,7 +106,8 @@ export default defineConfig({
                 sharedSourceDoubleProcessDebug: resolve(__dirname, "shared-source-double-process-debug-demo.html"),
                 voiceFadeinClipFadeinProductDebug: resolve(__dirname, "voice-fadein-clip-fadein-product-debug-demo.html"),
                 timePitchStartPositionDebug: resolve(__dirname, "time-pitch-start-position-debug-demo.html"),
-                audioVerifyDebug: resolve(__dirname, "audio-verify-debug.html")
+                audioVerifyDebug: resolve(__dirname, "audio-verify-debug.html"),
+                recordingFinalizeDebug: resolve(__dirname, "recording-finalize-debug-demo.html")
             },
             output: {
                 manualChunks: (id) => {
