@@ -8,6 +8,9 @@ or `dist:path` (node_modules).
 
 Verdicts: **confirmed** / **nuanced** (true in spirit, detail off or caveat missing) / **wrong**.
 
+Totals: 56 table rows → 36 confirmed / 9 nuanced / 8 wrong / 3 other (E23 historical,
+X14 partially verified, D13 inventory). §5 lists the explicitly-unverified details.
+
 ---
 
 ## 1. Verdict table — `src/demos/effects/CLAUDE.md`
@@ -37,6 +40,10 @@ Verdicts: **confirmed** / **nuanced** (true in spirit, detail off or caveat miss
 | E21 | WavFile in lib-dsp, 24-bit PCM decode support | confirmed | dist:lib-dsp/dist/wav-file.js:60 (`audioFormat === 1 && bitsPerSample === 24`) | None |
 | E22 | Apparat/Werkstatt/Spielwerk factories + box types | confirmed | dist:studio-core/dist/EffectFactories.d.ts (Werkstatt, Spielwerk); dist:studio-adapters/dist/factories/InstrumentFactories.d.ts:21 (Apparat). Note `InstrumentFactories` lives in **studio-adapters**, not studio-core | None (package note optional) |
 | E23 | Effect display-name changes (0.0.129 history) | not re-verified | Historical claim predating the audit range | None |
+| E24 | Crusher adapter — "crush (...), downsample" (CLAUDE.md:123) | **wrong** | @opendaw/studio-adapters@0.0.116:…/CrusherDeviceBoxAdapter.ts `#wrapParameters` wraps exactly `crush, bits, boost, mix`; @opendaw/studio-boxes@0.0.94:…/CrusherDeviceBox.ts schema fields 10-13 agree. No `downsample` parameter exists (sample-rate reduction IS the `crush` param) | Fix CLAUDE.md line: list crush/bits/boost/mix |
+| E25 | Device type discriminators (`Devices.isAudioEffect/isMidiEffect/isInstrument/isHost`) + `deviceHost()` / `audioUnitBoxAdapter()` sibling navigation (CLAUDE.md:83-95) | confirmed | dist:studio-adapters/dist/DeviceAdapter.d.ts:66-69 (all four `AssertType` guards) and :49-50, :60-61 (`deviceHost(): DeviceHost`, `audioUnitBoxAdapter(): AudioUnitBoxAdapter` on the device adapter interfaces) | None |
+| E26 | All adapters implement `DeviceBoxAdapter` with `.type`, `.labelField`, `.enabledField`, `.minimizedField`, `.host`, `.terminate()` (CLAUDE.md:98-99) | confirmed | Every adapter source read at adapters@0.0.116 (Compressor/Crusher/StereoTool/Tidal/Delay/Dattorro/Reverb/Fold/Maximizer/Gate/Modular) exposes exactly these getters + `terminate()` | None |
+| E27 | One-liners: Fold "waveshaper fold amount", Waveshaper "custom waveshaper curve", Vocoder "carrier/modulator routing", NeuralAmp ("Tone3000") (CLAUDE.md:124-129) | confirmed | Fold adapter verified (drive/volume, see D9); dist:studio-adapters/dist/devices/audio-effects/ contains WaveshaperDeviceBoxAdapter.d.ts, VocoderDeviceBoxAdapter.d.ts, NeuralAmpDeviceBoxAdapter.d.ts. The Crusher line in the same list is the one exception — see E24 | None |
 
 ## 2. Verdict table — `src/demos/export/CLAUDE.md`
 
@@ -56,6 +63,8 @@ Verdicts: **confirmed** / **nuanced** (true in spirit, detail off or caveat miss
 | X12 | PresetEncoder/PresetDecoder/PresetHeader surface (encode, encodeEffects, decode, replaceAudioUnit, insertEffectChain, peekHasTimeline, ChainKind, MAGIC_HEADER_OPEN, FORMAT_VERSION) | confirmed | dist:studio-adapters/dist/preset/*.d.ts — all signatures match incl. `Attempt<void, string>` returns | None |
 | X13 | Metronome gain `z.number().min(-Infinity).max(0)`, default −6 | confirmed | dist:studio-adapters/dist/engine/EnginePreferencesSchema.js:7-15 — also has undocumented `monophonic: boolean` field | None (optionally mention monophonic) |
 | X14 | Mutate-copy-restore: copy is synchronous; "Modification only prohibited in transaction mode" | partially verified | `copy()` is synchronous (X7). The exact error string + "no audio blocks process in between" reasoning not re-verified (behavioral) | UNVERIFIED detail — leave as-is |
+| X15 | "Pass a copy (not the live project) — both wrappers create an OfflineAudioContext that conflicts with the live liveStreamReceiver" | confirmed | dist:studio-core/dist/project/Project.d.ts:47 — `readonly liveStreamReceiver: LiveStreamReceiver` is per-Project; both renderers run engines against a project instance (AudioOfflineRenderer.js even calls `source.copy()` internally for this reason). Independently spot-verified by spec review | None |
+| X16 | `skipChannelStrip` — bypass the channel-strip volume/pan (CLAUDE.md:149) | confirmed | @opendaw/studio-core@0.0.152:…/AudioUnit.ts:57-60 — `skipChannelStrip && preChannelStripSource` returns the post-effects, pre-strip buffer; AudioDeviceChain.ts:183-190 wires the post-effects source to the bus with the strip skipped (spot-verified by spec review) | None |
 
 ## 3. Demo-code findings
 
@@ -70,7 +79,7 @@ Verdicts: **confirmed** / **nuanced** (true in spirit, detail off or caveat miss
 | D7 | audioExport.ts:174 — `{stems: stemsConfig}` where local `StemExportConfig` lacks required `useInstrumentOutput` | confirmed latent TS error | `npx tsc --noEmit --ignoreDeprecations "6.0"` → `src/lib/audioExport.ts(174,49): error TS2322` (pre-existing on main; Vite build doesn't run tsc). Runtime is FINE — undefined → falsy → channel-strip output, which is exactly what openDAW's own dialog ships (it also omits the flag) | Fix task: add `useInstrumentOutput: false` to `StemExportConfig` (or type the field optional to match SDK dialog usage via cast) — do NOT set true (see X3) |
 | D8 | useAudioExport.ts:146 — `unit.input.label.unwrap() \|\| fallback` | nuanced | `label` is an Option; `.unwrap()` throws when empty — the `\|\|` only covers empty string. Upstream uses the identical idiom (ProjectDialogs.tsx:96), so severity low | Optional: `unwrapOrNull() ?? fallback` in fix task |
 | D9 | useDynamicEffect.ts — all 10 effect configs: field names + ranges vs adapters/schemas | confirmed (3 minor nuances) | Verified per adapter+schema at tags: Reverb (wet/decay/preDelay/damp ✓, preDelay in seconds ✓), Compressor ✓, Delay (delayMusical index 0-20 ✓, hard-coded fraction list matches adapter ✓), Crusher (bits 1-16 ✓, boost 0-24 dB ✓ — the "NOT 0-1" comment is right; crush labeling correct), StereoTool (`stereo`/`panning` ✓), Revamp EQ (lowBell/midBell/highBell + gain ±24, freq 20-20k, q 0.01-10 ✓), Fold (drive 0-30, volume −18..0, overSampling {length:3} ✓), Dattorro ✓, Tidal (rate index 0-16 ✓, offset ±180° ✓), Maximizer (lookahead ✓). Nuances: (a) Dattorro **dry slider max +6 dB** exceeds the `decibel` (≤0) constraint and DefaultDecibel mapping — boosts unclamped, same mechanism as D2; (b) Maximizer slider min −30 matches box schema but exceeds the adapter UI mapping (−24..0); (c) Reverb preDelay slider min 0 is below the schema's exponential min 0.001 s (harmless, no clamp) | Fix task: clamp Dattorro dry to ≤0 (or document); the Maximizer/Reverb edges are cosmetic |
-| D10 | effectPresets.ts — every preset value vs SDK ranges | confirmed | All 76 preset entries checked against adapter mappings/schemas: every value in range (Compressor ratio ≤20 < 24, release ≥30 ≥ 5, Crusher boost ≤16 ≤ 24, Delay feedback ≤0.7 ≤1, Dattorro dry ≤0, Maximizer ≥−15 ≥ −30, etc.) | None |
+| D10 | effectPresets.ts — every preset value vs SDK ranges | confirmed | All 78 presets (310 parameter values) checked against adapter mappings/schemas: every value in range (Compressor ratio ≤20 < 24, release ≥30 ≥ 5, Crusher boost ≤16 ≤ 24, Delay feedback ≤0.7 ≤1, Dattorro dry ≤0, Maximizer ≥−15 ≥ −30, etc.) | None |
 | D11 | werkstattScripts.ts generator scripts: `block.flags & 4` check + manual output zeroing | confirmed | Matches verified BlockFlag.playing=4 (E6) and no-clear behavior (E7) | None |
 | D12 | rangeExport.ts render pipeline (createFor, createEngine, connect(dest,0), worklet preferences, setPosition/isReady/play/queryLoadingComplete) | confirmed | dist:studio-core/dist/AudioWorklets.d.ts:11-20; EngineWorklet.d.ts:11,13,30,34,35; matches deprecated AudioOfflineRenderer.js internals step-for-step | None |
 | D13 | Pre-existing tsc errors in wave-6 files | inventory | effects-demo.tsx (TS2322 ×3, TS6133, TS2345), werkstatt-demo.tsx (TS6133 ×2 line 295), useDynamicEffect.ts (TS2339 'enabled' on never at 431 — narrowing artifact of assigning effectRef.current inside the modify callback; TS7006; TS2352 at 483), audioExport.ts (D7). All pre-exist on main | Fix tasks: judge "zero new errors" against this baseline; cheap ones (TS6133) can be cleaned in restyle commits |
@@ -91,6 +100,11 @@ Verdicts: **confirmed** / **nuanced** (true in spirit, detail off or caveat miss
 | `metronome.monophonic` schema field | (present at 0.0.154) | **Cheap improvement (doc)**: add to metronome preference docs if touched in fix tasks |
 | inputLatency pipeline, ProjectMetaBox, RemoteSelections, Colors palette | 0.0.154 | Irrelevant to wave 6 (recording / P2P / app-UI) |
 | `AudioOfflineRenderer` `@deprecated` | long-standing (studio-core@0.0.93, predates audit range) | **Cheap improvement (doc)** + follow-up code migration (D6/X5) |
+
+All six changelog files in scope were read in full. Two contained nothing effects/scriptable/export-relevant
+and contribute no rows above: `sdk-0.0.135-to-0.0.138-changes.md` (MIDI permission, RegionEditing.cut/clip
+return types, warp-marker duration panic) and `sdk-0.0.139-to-0.0.140-changes.md` (capture-path
+`{exact}`-with-fallback revert, VertexSelection guard) — examined, nothing applicable.
 
 ## 5. Unverified
 
