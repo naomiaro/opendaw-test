@@ -1,6 +1,5 @@
 import React, { useState, memo } from "react";
 import { Flex, Text, Select, Button, Separator } from "@radix-ui/themes";
-import { EffectPanel } from "./EffectPanel";
 import type { EffectType } from "../lib/types";
 
 export type { EffectType };
@@ -16,12 +15,13 @@ interface EffectChainProps {
   trackName: string;
   effects: EffectInstance[];
   onAddEffect: (type: EffectType) => void;
-  onRemoveEffect: (id: string) => void;
+  // Removal is handled per-effect inside renderEffect (the EffectPanel
+  // "Remove" button) — the chain itself never removes effects
   renderEffect: (effect: EffectInstance) => React.ReactNode;
 }
 
 export const EffectChain: React.FC<EffectChainProps> = memo(
-  ({ trackName, effects, onAddEffect, onRemoveEffect, renderEffect }) => {
+  ({ trackName, effects, onAddEffect, renderEffect }) => {
     const [selectedEffectType, setSelectedEffectType] = useState<string>("");
 
     const handleAddEffect = () => {

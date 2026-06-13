@@ -105,7 +105,8 @@ const EFFECT_CONFIGS: Record<EffectType, EffectConfig> = {
     getParameterDefinitions: (params) => [
       { name: "wet", label: "Wet/Dry Mix", value: params.wet || -18, min: -60, max: 0, step: 0.1, unit: " dB" },
       { name: "decay", label: "Decay Time", value: params.decay || 0.5, min: 0, max: 1, step: 0.01, format: v => `${(v * 100).toFixed(0)}%` },
-      { name: "preDelay", label: "Pre-Delay", value: params.preDelay || 0.02, min: 0, max: 0.5, step: 0.001, format: v => `${(v * 1000).toFixed(0)} ms` },
+      // Field mapping is exponential 0.001-0.5 s — keep the slider min at the schema floor
+      { name: "preDelay", label: "Pre-Delay", value: params.preDelay || 0.02, min: 0.001, max: 0.5, step: 0.001, format: v => `${(v * 1000).toFixed(0)} ms` },
       { name: "damp", label: "Damping", value: params.damp || 0.5, min: 0, max: 1, step: 0.01, format: v => `${(v * 100).toFixed(0)}%` }
     ],
     presets: REVERB_PRESETS
@@ -322,7 +323,8 @@ const EFFECT_CONFIGS: Record<EffectType, EffectConfig> = {
     },
     getParameterDefinitions: (params) => [
       { name: "wet", label: "Wet", value: params.wet || -12, min: -60, max: 0, step: 0.1, unit: " dB" },
-      { name: "dry", label: "Dry", value: params.dry || 0, min: -60, max: 6, step: 0.1, unit: " dB" },
+      // dry uses ValueMapping.DefaultDecibel (-72..0 dB) — values above 0 boost unclamped
+      { name: "dry", label: "Dry", value: params.dry || 0, min: -60, max: 0, step: 0.1, unit: " dB" },
       { name: "decay", label: "Decay", value: params.decay || 0.5, min: 0, max: 1, step: 0.01, format: (v: number) => `${(v * 100).toFixed(0)}%` },
       { name: "damping", label: "Damping", value: params.damping || 0.5, min: 0, max: 1, step: 0.01, format: (v: number) => `${(v * 100).toFixed(0)}%` },
       { name: "preDelay", label: "Pre-Delay", value: params.preDelay || 20, min: 0, max: 1000, step: 1, format: (v: number) => `${v.toFixed(0)} ms` },
@@ -395,13 +397,15 @@ const EFFECT_CONFIGS: Record<EffectType, EffectConfig> = {
 // Hook
 // ---------------------------------------------------------------------------
 
+// Public surface uses Record<string, number> (the EffectPanel contract);
+// the per-effect param aliases are assignable to it without casts.
 interface DynamicEffectResult {
   isBypassed: boolean;
   parameters: EffectParameter[];
-  presets: EffectPreset<EffectParams>[];
+  presets: EffectPreset<Record<string, number>>[];
   handleBypass: () => void;
   handleParameterChange: (paramName: string, value: number) => void;
-  loadPreset: (preset: EffectPreset<EffectParams>) => void;
+  loadPreset: (preset: EffectPreset<Record<string, number>>) => void;
 }
 
 export const useDynamicEffect = (config: DynamicEffectConfig): DynamicEffectResult => {
@@ -417,21 +421,25 @@ export const useDynamicEffect = (config: DynamicEffectConfig): DynamicEffectResu
     const effectConfig = EFFECT_CONFIGS[type];
     const label = `${trackName} ${type}`;
 
+    let createdBox: EffectBox | null = null;
     project.editing.modify(() => {
       const effectBox = project.api.insertEffect(audioBox.audioEffects, effectConfig.factory);
       effectBox.label.setValue(label);
       const defaults = effectConfig.initDefaults(effectBox);
       setParameters(defaults);
-      effectRef.current = effectBox;
+      createdBox = effectBox;
     });
+    // Cast defeats TS closure-narrowing: the assignment happens inside the
+    // modify callback, which TS does not track (it narrows createdBox to null here)
+    const effectBox = createdBox as EffectBox | null;
+    effectRef.current = effectBox;
 
     // Subscribe to enabled state OUTSIDE the modify transaction
-    let subscription: Terminable | null = null;
-    if (effectRef.current) {
-      subscription = effectRef.current.enabled.catchupAndSubscribe((obs) => {
-        setIsBypassed(!obs.getValue());
-      });
-    }
+    const subscription: Terminable | null = effectBox
+      ? effectBox.enabled.catchupAndSubscribe(obs => {
+          setIsBypassed(!obs.getValue());
+        })
+      : null;
 
     return () => {
       if (subscription) {
@@ -441,6 +449,9 @@ export const useDynamicEffect = (config: DynamicEffectConfig): DynamicEffectResu
         project.editing.modify(() => {
           effectRef.current!.delete();
         });
+        // Clear the ref so a re-run (deps change) inserts a fresh effect
+        // instead of skipping on the stale, deleted box
+        effectRef.current = null;
       }
     };
   }, [project, audioBox, type, trackName]);
@@ -470,17 +481,17 @@ export const useDynamicEffect = (config: DynamicEffectConfig): DynamicEffectResu
   );
 
   const loadPreset = useCallback(
-    (preset: EffectPreset<EffectParams>) => {
+    (preset: EffectPreset<Record<string, number>>) => {
       if (!project || !effectRef.current) return;
 
       project.editing.modify(() => {
         const effect = effectRef.current!;
         Object.entries(preset.params).forEach(([key, value]) => {
-          EFFECT_CONFIGS[type].applyParam(effect, key, value as number);
+          EFFECT_CONFIGS[type].applyParam(effect, key, value);
         });
       });
 
-      setParameters(preset.params as Record<string, number>);
+      setParameters(preset.params);
     },
     [project, type]
   );

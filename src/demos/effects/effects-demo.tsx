@@ -1,5 +1,3 @@
-// noinspection PointlessArithmeticExpressionJS
-
 import React, { useEffect, useState, useCallback, useRef, memo } from "react";
 import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
@@ -23,12 +21,46 @@ import { useDynamicEffect } from "@/hooks/useDynamicEffect";
 import { useAudioExport } from "@/hooks/useAudioExport";
 import { usePlaybackPosition } from "@/hooks/usePlaybackPosition";
 import { useTransportControls } from "@/hooks/useTransportControls";
+import { CONSOLE_STYLES, CODE_BLOCK_STYLE } from "@/lib/design/consoleTheme";
 import type { TrackData } from "@/lib/types";
 import "@radix-ui/themes/styles.css";
-import { Theme, Container, Heading, Text, Flex, Card, Separator, Callout, Slider, Button } from "@radix-ui/themes";
+import { Theme, Container, Text, Flex, Card, Separator, Callout, Slider, Button, Code } from "@radix-ui/themes";
+
+// AudioUnit volume schema is decibel(-96, -9, +6) and box constraints are
+// no-ops — out-of-schema values really render as gain, so the UI must not
+// offer values past +6 dB.
+const MASTER_VOLUME_MIN_DB = -60;
+const MASTER_VOLUME_MAX_DB = 6;
+
+const DARK_RIDE_STEMS = [
+  { name: "Intro", file: "01_Intro" },
+  { name: "Vocals", file: "06_Vox" },
+  { name: "Guitar Lead", file: "05_ElecGtrsLead" },
+  { name: "Guitar", file: "04_ElecGtrs" },
+  { name: "Drums", file: "02_Drums" },
+  { name: "Bass", file: "03_Bass" },
+  { name: "Effect Returns", file: "07_EffectReturns" }
+] as const;
+
+// Loading spinner — amber ring on console tokens, gated for reduced motion
+// (the status text below the ring carries the same information).
+const PAGE_STYLES = `
+.fx-spinner {
+  width: 44px;
+  height: 44px;
+  border: 3px solid var(--mc-line-bright);
+  border-top-color: var(--mc-amber);
+  border-radius: 50%;
+  animation: fx-spin 1s linear infinite;
+}
+@keyframes fx-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .fx-spinner { animation: none; }
+}
+`;
 
 /**
- * Component to render individual effect instances (memoized to prevent re-renders)
+ * Renders one effect instance (memoized — EffectPanel sliders are the heavy part)
  */
 const EffectRenderer: React.FC<{
   effect: EffectInstance;
@@ -69,161 +101,71 @@ EffectRenderer.displayName = "EffectRenderer";
  */
 const App: React.FC = () => {
   const [status, setStatus] = useState("Loading...");
+  const [initError, setInitError] = useState<string | null>(null);
   const [project, setProject] = useState<Project | null>(null);
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
   const [tracks, setTracks] = useState<TrackData[]>([]);
-
-  // Playback position and transport hooks
-  const { currentPosition, setCurrentPosition, isPlaying, currentPositionRef, pausedPositionRef } = usePlaybackPosition(project);
-  const { handlePlay, handlePause, handleStop } = useTransportControls({ project, audioContext, pausedPositionRef });
-
-  // Get audio boxes for effects
-  const vocalsAudioBox = tracks.find(t => t.name === "Vocals")?.audioUnitBox || null;
-  const guitarLeadAudioBox = tracks.find(t => t.name === "Guitar Lead")?.audioUnitBox || null;
-  const guitarAudioBox = tracks.find(t => t.name === "Guitar")?.audioUnitBox || null;
-  const drumsAudioBox = tracks.find(t => t.name === "Drums")?.audioUnitBox || null;
-  const bassAudioBox = tracks.find(t => t.name === "Bass")?.audioUnitBox || null;
-  const masterAudioBox = project?.rootBoxAdapter.audioUnits.adapters().find(u => u.isOutput)?.box ?? null;
-
-  // Master volume state
   const [masterVolume, setMasterVolume] = useState(0); // dB
 
+  // Playback position and transport hooks
+  const { currentPosition, setCurrentPosition, isPlaying, pausedPositionRef } = usePlaybackPosition(project);
+  const { handlePlay, handlePause, handleStop } = useTransportControls({ project, audioContext, pausedPositionRef });
+
+  // Audio boxes for effect targets
+  const boxFor = (name: string): AudioUnitBox | null => tracks.find(t => t.name === name)?.audioUnitBox ?? null;
+  const introBox = boxFor("Intro");
+  const vocalsBox = boxFor("Vocals");
+  const guitarLeadBox = boxFor("Guitar Lead");
+  const guitarBox = boxFor("Guitar");
+  const drumsBox = boxFor("Drums");
+  const bassBox = boxFor("Bass");
+  const effectReturnsBox = boxFor("Effect Returns");
+  const masterAudioBox = project?.rootBoxAdapter.audioUnits.adapters().find(u => u.isOutput)?.box ?? null;
+
   // Audio export hook
-  const {
-    isExporting,
-    exportStatus,
-    handleExportMix,
-    handleExportStems
-  } = useAudioExport(project, {
+  const { isExporting, exportStatus, handleExportMix, handleExportStems } = useAudioExport(project, {
     sampleRate: 48000,
     mixFileName: "dark-ride-mix"
   });
+  const exportFailed = exportStatus.toLowerCase().includes("failed");
 
-  // Effect chain hooks for each track and master
-  const introEffects = useEffectChain(project, tracks.find(t => t.name === "Intro")?.audioUnitBox || null, "Intro");
-  const vocalsEffects = useEffectChain(project, vocalsAudioBox, "Vocals");
-  const guitarLeadEffects = useEffectChain(project, guitarLeadAudioBox, "Guitar Lead");
-  const guitarEffects = useEffectChain(project, guitarAudioBox, "Guitar");
-  const drumsEffects = useEffectChain(project, drumsAudioBox, "Drums");
-  const bassEffects = useEffectChain(project, bassAudioBox, "Bass");
-  const effectReturnsEffects = useEffectChain(
-    project,
-    tracks.find(t => t.name === "Effect Returns")?.audioUnitBox || null,
-    "Effect Returns"
-  );
+  // Effect chain hooks — the track list is static, so eight explicit hook
+  // calls satisfy the Rules of Hooks; everything downstream is data-driven.
+  const introEffects = useEffectChain(project, introBox, "Intro");
+  const vocalsEffects = useEffectChain(project, vocalsBox, "Vocals");
+  const guitarLeadEffects = useEffectChain(project, guitarLeadBox, "Guitar Lead");
+  const guitarEffects = useEffectChain(project, guitarBox, "Guitar");
+  const drumsEffects = useEffectChain(project, drumsBox, "Drums");
+  const bassEffects = useEffectChain(project, bassBox, "Bass");
+  const effectReturnsEffects = useEffectChain(project, effectReturnsBox, "Effect Returns");
   const masterEffects = useEffectChain(project, masterAudioBox, "Master");
 
-  // Memoized render functions to prevent unnecessary re-renders
-  const renderIntroEffect = useCallback(
-    (effect: EffectInstance) => (
-      <EffectRenderer
-        key={effect.id}
-        effect={effect}
-        trackName="Intro"
-        audioBox={tracks.find(t => t.name === "Intro")?.audioUnitBox}
-        onRemove={introEffects.removeEffect}
-        project={project}
-      />
-    ),
-    [project, tracks, introEffects.removeEffect]
-  );
+  const trackChains = [
+    { name: "Intro", audioBox: introBox, chain: introEffects },
+    { name: "Vocals", audioBox: vocalsBox, chain: vocalsEffects },
+    { name: "Guitar Lead", audioBox: guitarLeadBox, chain: guitarLeadEffects },
+    { name: "Guitar", audioBox: guitarBox, chain: guitarEffects },
+    { name: "Drums", audioBox: drumsBox, chain: drumsEffects },
+    { name: "Bass", audioBox: bassBox, chain: bassEffects },
+    { name: "Effect Returns", audioBox: effectReturnsBox, chain: effectReturnsEffects }
+  ];
+  const masterChain = { name: "Master", audioBox: masterAudioBox, chain: masterEffects };
 
-  const renderVocalsEffect = useCallback(
-    (effect: EffectInstance) => (
-      <EffectRenderer
-        key={effect.id}
-        effect={effect}
-        trackName="Vocals"
-        audioBox={vocalsAudioBox}
-        onRemove={vocalsEffects.removeEffect}
-        project={project}
-      />
-    ),
-    [project, vocalsAudioBox, vocalsEffects.removeEffect]
-  );
-
-  const renderGuitarLeadEffect = useCallback(
-    (effect: EffectInstance) => (
-      <EffectRenderer
-        key={effect.id}
-        effect={effect}
-        trackName="Guitar Lead"
-        audioBox={guitarLeadAudioBox}
-        onRemove={guitarLeadEffects.removeEffect}
-        project={project}
-      />
-    ),
-    [project, guitarLeadAudioBox, guitarLeadEffects.removeEffect]
-  );
-
-  const renderGuitarEffect = useCallback(
-    (effect: EffectInstance) => (
-      <EffectRenderer
-        key={effect.id}
-        effect={effect}
-        trackName="Guitar"
-        audioBox={guitarAudioBox}
-        onRemove={guitarEffects.removeEffect}
-        project={project}
-      />
-    ),
-    [project, guitarAudioBox, guitarEffects.removeEffect]
-  );
-
-  const renderDrumsEffect = useCallback(
-    (effect: EffectInstance) => (
-      <EffectRenderer
-        key={effect.id}
-        effect={effect}
-        trackName="Drums"
-        audioBox={drumsAudioBox}
-        onRemove={drumsEffects.removeEffect}
-        project={project}
-      />
-    ),
-    [project, drumsAudioBox, drumsEffects.removeEffect]
-  );
-
-  const renderBassEffect = useCallback(
-    (effect: EffectInstance) => (
-      <EffectRenderer
-        key={effect.id}
-        effect={effect}
-        trackName="Bass"
-        audioBox={bassAudioBox}
-        onRemove={bassEffects.removeEffect}
-        project={project}
-      />
-    ),
-    [project, bassAudioBox, bassEffects.removeEffect]
-  );
-
-  const renderEffectReturnsEffect = useCallback(
-    (effect: EffectInstance) => (
-      <EffectRenderer
-        key={effect.id}
-        effect={effect}
-        trackName="Effect Returns"
-        audioBox={tracks.find(t => t.name === "Effect Returns")?.audioUnitBox}
-        onRemove={effectReturnsEffects.removeEffect}
-        project={project}
-      />
-    ),
-    [project, tracks, effectReturnsEffects.removeEffect]
-  );
-
-  const renderMasterEffect = useCallback(
-    (effect: EffectInstance) => (
-      <EffectRenderer
-        key={effect.id}
-        effect={effect}
-        trackName="Master"
-        audioBox={masterAudioBox}
-        onRemove={masterEffects.removeEffect}
-        project={project}
-      />
-    ),
-    [project, masterAudioBox, masterEffects.removeEffect]
+  // One shared render factory replaces the eight copy-pasted callbacks.
+  // EffectRenderer is memoized, so the per-render closure identity is cheap.
+  const renderEffectFor = useCallback(
+    (trackName: string, audioBox: AudioUnitBox | null, onRemove: (id: string) => void) =>
+      (effect: EffectInstance) => (
+        <EffectRenderer
+          key={effect.id}
+          effect={effect}
+          trackName={trackName}
+          audioBox={audioBox}
+          onRemove={onRemove}
+          project={project}
+        />
+      ),
+    [project]
   );
 
   // Refs for non-reactive values
@@ -231,7 +173,7 @@ const App: React.FC = () => {
   const canvasRefs = useRef<Map<string, HTMLCanvasElement>>(new Map());
   const bpmRef = useRef<number>(120);
 
-  // Calculate max duration for timeline
+  // Max duration for the timeline — computed once, shared by ruler/container/rows
   const maxDuration = Math.max(...Array.from(localAudioBuffersRef.current.values()).map(buf => buf.duration), 1);
 
   // Use shared waveform rendering hook with region-aware rendering
@@ -268,15 +210,7 @@ const App: React.FC = () => {
         const loadedTracks = await loadTracksFromFiles(
           newProject,
           newAudioContext,
-          [
-            { name: "Intro", file: `/audio/DarkRide/01_Intro.${ext}` },
-            { name: "Vocals", file: `/audio/DarkRide/06_Vox.${ext}` },
-            { name: "Guitar Lead", file: `/audio/DarkRide/05_ElecGtrsLead.${ext}` },
-            { name: "Guitar", file: `/audio/DarkRide/04_ElecGtrs.${ext}` },
-            { name: "Drums", file: `/audio/DarkRide/02_Drums.${ext}` },
-            { name: "Bass", file: `/audio/DarkRide/03_Bass.${ext}` },
-            { name: "Effect Returns", file: `/audio/DarkRide/07_EffectReturns.${ext}` }
-          ],
+          DARK_RIDE_STEMS.map(({ name, file }) => ({ name, file: `/audio/DarkRide/${file}.${ext}` })),
           localAudioBuffers,
           {
             onProgress: (current, total, trackName) => {
@@ -290,8 +224,8 @@ const App: React.FC = () => {
           setStatus("Loading waveforms...");
         }
       } catch (error) {
-        console.error("Failed to initialize:", error);
-        if (mounted) setStatus(`Error: ${error}`);
+        console.error("Failed to initialize: " + String(error));
+        if (mounted) setInitError(error instanceof Error ? error.message : String(error));
       }
     })();
 
@@ -326,457 +260,338 @@ const App: React.FC = () => {
     };
   }, [masterAudioBox]);
 
-  // Export full mix with all effects rendered
-  // Wrapper for stems export with effects enabled
+  // Stems export with per-track effects rendered in
   const handleEffectsStems = useCallback(async () => {
     await handleExportStems({
-      includeAudioEffects: true, // IMPORTANT: Include effects to hear them in the export!
+      includeAudioEffects: true,
       includeSends: false
     });
   }, [handleExportStems]);
 
-  if (!project) {
-    return (
-      <Theme appearance="dark" accentColor="green" radius="medium">
-        <Container size="4" style={{ padding: "32px" }}>
-          <Heading size="8">OpenDAW Effects Demo</Heading>
-          <Text size="4">{status}</Text>
-        </Container>
-      </Theme>
-    );
-  }
-
-  // Show loading overlay while status is not "Ready to play!"
+  // Keep the overlay up while waveforms render; an init error replaces it
   const isLoading = status !== "Ready to play!";
 
   return (
-    <Theme appearance="dark" accentColor="green" radius="medium">
+    <Theme appearance="dark" accentColor="amber" radius="medium" style={{ background: "var(--mc-bg)" }}>
+      <style>{CONSOLE_STYLES}</style>
+      <style>{PAGE_STYLES}</style>
       <GitHubCorner />
       <Container size="3" px="4" py="8">
+        <BackLink />
         <Flex direction="column" gap="6" style={{ maxWidth: 1200, margin: "0 auto", position: "relative" }}>
-          {/* Loading Overlay */}
-          {isLoading && (
-            <div
-              style={{
-                position: "fixed",
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                backgroundColor: "rgba(0, 0, 0, 0.85)",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                zIndex: 9999,
-                gap: "20px"
-              }}
-            >
-              <div
-                style={{
-                  width: "50px",
-                  height: "50px",
-                  border: "4px solid rgba(74, 158, 255, 0.3)",
-                  borderTop: "4px solid #4a9eff",
-                  borderRadius: "50%",
-                  animation: "spin 1s linear infinite"
-                }}
-              />
-              <Text size="5" weight="medium" style={{ color: "#fff" }}>
-                {status}
-              </Text>
-              <style>{`
-                @keyframes spin {
-                  0% { transform: rotate(0deg); }
-                  100% { transform: rotate(360deg); }
-                }
-              `}</style>
-            </div>
-          )}
-
-          <BackLink />
-
           {/* Header */}
-          <Flex direction="column" gap="3">
-            <Heading size="8">OpenDAW Effects Demo</Heading>
-            <Text size="4" color="gray">
-              Multi-track mixer featuring DarkRide stems with 10 professional audio effects (Reverb, Dattorro Reverb,
-              Compressor, EQ, Delay, Lo-Fi Crusher, Wavefolder, Stereo Width, Tidal LFO, Maximizer)
+          <div>
+            <div className="mc-kicker">Effects &mdash; Insert Chains &amp; Mixdown &middot; OpenDAW SDK</div>
+            <h1 className="mc-title" style={{ fontSize: "clamp(28px, 4.5vw, 44px)" }}>
+              EFFECT CHAINS
+            </h1>
+            <p className="mc-intro">
+              Ten insert effects on the seven unmastered stems of Dark Ride&apos;s &lsquo;Deny
+              Control&rsquo;. Build per-track chains &mdash; compressors to tighten the drums
+              and bass, reverb and compression on the vocal, delay on the lead &mdash; or
+              process the master bus, then render the result offline with every effect baked
+              in. Each effect ships with presets, a bypass, and parameters that respond in
+              real time during playback.
+            </p>
+          </div>
+
+          {initError ? (
+            <Callout.Root color="red" role="alert">
+              <Callout.Text>
+                <strong>Initialization failed:</strong> {initError}
+              </Callout.Text>
+            </Callout.Root>
+          ) : !project ? (
+            <Text align="center" color="gray">
+              {status}
             </Text>
-          </Flex>
-
-          {/* Info callout */}
-          <Callout.Root color="blue">
-            <Callout.Text>
-              💡 This demo shows OpenDAW's mixer controls and 10 professional audio effects with all 7 unmastered tracks
-              from Dark Ride's 'Deny Control'. Each track has independent volume, pan, mute, and solo controls. Add
-              studio-quality effects to individual tracks (Compressors to tighten Drums/Bass, Reverb + Compressor on
-              Vocals, Delay on Guitar Lead, Lo-Fi Crusher for creative effects) or the master output (Compressor for mix
-              glue, Stereo Width for spaciousness).
-              <br />
-              <br />✨ <strong>New:</strong> Each effect now includes presets! Try loading presets like "Drum Punch",
-              "Bass Control", "Vocal Smooth", "Slap Back Delay", and more to hear how different parameter combinations
-              sound.
-            </Callout.Text>
-          </Callout.Root>
-
-          {/* Transport controls */}
-          <Card>
-            <Flex direction="column" gap="3">
-              <Heading size="4">Transport</Heading>
-              <Separator size="4" />
-              <TransportControls
-                isPlaying={isPlaying}
-                currentPosition={currentPosition}
-                bpm={bpmRef.current}
-                onPlay={handlePlay}
-                onPause={handlePause}
-                onStop={handleStop}
-              />
-            </Flex>
-          </Card>
-
-          {/* Mixer section */}
-          <Card>
-            <Flex direction="column" gap="4">
-              <Flex justify="between" align="center" gap="4">
-                <Heading size="4">Mixer</Heading>
-                {/* Master Volume Control */}
-                <Flex align="center" gap="3" style={{ minWidth: "300px" }}>
-                  <Text size="2" weight="bold" style={{ whiteSpace: "nowrap" }}>
-                    Master Volume
-                  </Text>
-                  <Slider
-                    value={[masterVolume]}
-                    onValueChange={values => handleMasterVolumeChange(values[0])}
-                    min={-60}
-                    max={12}
-                    step={0.1}
-                    style={{ flex: 1 }}
-                  />
-                  <Text size="2" color="gray" style={{ minWidth: "50px", textAlign: "right" }}>
-                    {masterVolume.toFixed(1)} dB
-                  </Text>
-                </Flex>
-              </Flex>
-              <Separator size="4" />
-
-              {/* Timeline and tracks container with playhead overlay */}
-              <TracksContainer
-                currentPosition={currentPosition}
-                bpm={bpmRef.current}
-                maxDuration={Math.max(...Array.from(localAudioBuffersRef.current.values()).map(buf => buf.duration), 1)}
-                leftOffset={200}
-                playheadColor="#fff"
-                showBorder={true}
-              >
-                {/* Timeline - Dynamically calculated duration */}
-                <TimelineRuler
-                  maxDuration={Math.max(
-                    ...Array.from(localAudioBuffersRef.current.values()).map(buf => buf.duration),
-                    1
-                  )}
-                />
-                {(() => {
-                  // Calculate max duration once for all tracks
-                  const maxDuration = Math.max(
-                    ...Array.from(localAudioBuffersRef.current.values()).map(buf => buf.duration),
-                    1
-                  );
-
-                  return tracks.map(track => (
-                    <TrackRow
-                      key={UUID.toString(track.uuid)}
-                      track={track}
-                      project={project}
-                      allTracks={tracks}
-                      canvasRef={el => {
-                        if (el) {
-                          canvasRefs.current.set(UUID.toString(track.uuid), el);
-                        }
-                      }}
-                      currentPosition={currentPosition}
-                      isPlaying={isPlaying}
-                      bpm={bpmRef.current}
-                      audioBuffer={localAudioBuffersRef.current.get(UUID.toString(track.uuid))}
-                      setCurrentPosition={setCurrentPosition}
-                      pausedPositionRef={pausedPositionRef}
-                      maxDuration={maxDuration}
-                    />
-                  ));
-                })()}
-              </TracksContainer>
-            </Flex>
-          </Card>
-
-          {/* Audio Effects */}
-          <Card>
-            <Flex direction="column" gap="4">
-              <Heading size="4">Audio Effects</Heading>
-              <Separator size="4" />
-
-              <Callout.Root color="purple">
-                <Callout.Text>
-                  ✨ Add professional audio effects to individual tracks or the master output. These are the same
-                  effects used in professional DAWs! Each effect includes preset options - try loading presets to
-                  quickly explore different sounds, then fine-tune the parameters to your liking. Try adding Compressors
-                  to Drums and Bass to tighten up these unmastered stems, or add Reverb to Vocals with Compressor for a
-                  polished vocal chain.
-                </Callout.Text>
-              </Callout.Root>
-
-              {/* Per-Track Effects */}
-              <Flex direction="column" gap="3">
-                <Heading size="3">Per-Track Effects</Heading>
-
-                <div style={{ padding: "12px", backgroundColor: "var(--gray-2)", borderRadius: "var(--radius-2)" }}>
-                  <EffectChain
-                    trackName="Intro"
-                    effects={introEffects.effects}
-                    onAddEffect={introEffects.addEffect}
-                    onRemoveEffect={introEffects.removeEffect}
-                    renderEffect={renderIntroEffect}
-                  />
-                </div>
-
-                <div style={{ padding: "12px", backgroundColor: "var(--gray-4)", borderRadius: "var(--radius-2)" }}>
-                  <EffectChain
-                    trackName="Vocals"
-                    effects={vocalsEffects.effects}
-                    onAddEffect={vocalsEffects.addEffect}
-                    onRemoveEffect={vocalsEffects.removeEffect}
-                    renderEffect={renderVocalsEffect}
-                  />
-                </div>
-
-                <div style={{ padding: "12px", backgroundColor: "var(--gray-2)", borderRadius: "var(--radius-2)" }}>
-                  <EffectChain
-                    trackName="Guitar Lead"
-                    effects={guitarLeadEffects.effects}
-                    onAddEffect={guitarLeadEffects.addEffect}
-                    onRemoveEffect={guitarLeadEffects.removeEffect}
-                    renderEffect={renderGuitarLeadEffect}
-                  />
-                </div>
-
-                <div style={{ padding: "12px", backgroundColor: "var(--gray-4)", borderRadius: "var(--radius-2)" }}>
-                  <EffectChain
-                    trackName="Guitar"
-                    effects={guitarEffects.effects}
-                    onAddEffect={guitarEffects.addEffect}
-                    onRemoveEffect={guitarEffects.removeEffect}
-                    renderEffect={renderGuitarEffect}
-                  />
-                </div>
-
-                <div style={{ padding: "12px", backgroundColor: "var(--gray-2)", borderRadius: "var(--radius-2)" }}>
-                  <EffectChain
-                    trackName="Drums"
-                    effects={drumsEffects.effects}
-                    onAddEffect={drumsEffects.addEffect}
-                    onRemoveEffect={drumsEffects.removeEffect}
-                    renderEffect={renderDrumsEffect}
-                  />
-                </div>
-
-                <div style={{ padding: "12px", backgroundColor: "var(--gray-4)", borderRadius: "var(--radius-2)" }}>
-                  <EffectChain
-                    trackName="Bass"
-                    effects={bassEffects.effects}
-                    onAddEffect={bassEffects.addEffect}
-                    onRemoveEffect={bassEffects.removeEffect}
-                    renderEffect={renderBassEffect}
-                  />
-                </div>
-
-                <div style={{ padding: "12px", backgroundColor: "var(--gray-2)", borderRadius: "var(--radius-2)" }}>
-                  <EffectChain
-                    trackName="Effect Returns"
-                    effects={effectReturnsEffects.effects}
-                    onAddEffect={effectReturnsEffects.addEffect}
-                    onRemoveEffect={effectReturnsEffects.removeEffect}
-                    renderEffect={renderEffectReturnsEffect}
-                  />
-                </div>
-              </Flex>
-
-              {/* Master Effects */}
-              <Flex direction="column" gap="3">
-                <Heading size="3">Master Output Effects</Heading>
-
-                <div style={{ padding: "12px", backgroundColor: "var(--accent-3)", borderRadius: "var(--radius-2)" }}>
-                  <EffectChain
-                    trackName="Master"
-                    effects={masterEffects.effects}
-                    onAddEffect={masterEffects.addEffect}
-                    onRemoveEffect={masterEffects.removeEffect}
-                    renderEffect={renderMasterEffect}
-                  />
-                </div>
-              </Flex>
-
-              <Text size="2" color="gray" style={{ fontStyle: "italic" }}>
-                💡 Tip: Adjust effect parameters while playback is active to hear the changes in real-time!
-              </Text>
-            </Flex>
-          </Card>
-
-          {/* Technical details */}
-          <Card>
-            <Flex direction="column" gap="3">
-              <Heading size="4">Technical Details</Heading>
-              <Separator size="4" />
-              <Flex direction="column" gap="2">
-                <Text size="2" weight="bold">
-                  Dynamic Effect Chain System:
-                </Text>
-                <Text size="2">• Dynamic effect system allows adding multiple effects of any type to each track</Text>
-                <Text size="2">
-                  • Effects are managed via <code>useEffectChain</code> hook per track/master
-                </Text>
-                <Text size="2">
-                  • Individual effects use <code>useDynamicEffect</code> for full lifecycle management
-                </Text>
-                <Separator size="1" />
-                <Text size="2" weight="bold">
-                  Available Effects (10 Total):
-                </Text>
-                <Text size="2">
-                  • <strong>Reverb:</strong> Space simulation with decay, pre-delay, and damping controls
-                </Text>
-                <Text size="2">
-                  • <strong>Compressor:</strong> Dynamic range control with threshold, ratio, attack, release, and
-                  makeup gain
-                </Text>
-                <Text size="2">
-                  • <strong>Parametric EQ:</strong> 3-band EQ (Low 250Hz, Mid 1kHz, High 4kHz) with ±24dB gain range
-                </Text>
-                <Text size="2">
-                  • <strong>Delay:</strong> Tempo-synced echo with feedback, cross-feedback, and filtering
-                </Text>
-                <Text size="2">
-                  • <strong>Lo-Fi Crusher:</strong> Bit-crushing and sample rate reduction for digital degradation
-                </Text>
-                <Text size="2">
-                  • <strong>Wavefolder:</strong> Distortion/saturation with drive and oversampling for harmonic
-                  generation
-                </Text>
-                <Text size="2">
-                  • <strong>Stereo Width:</strong> Stereo imaging with width, panning, and phase controls
-                </Text>
-                <Text size="2">
-                  • <strong>Dattorro Reverb:</strong> High-quality plate reverb with modulation and diffusion controls
-                </Text>
-                <Text size="2">
-                  • <strong>Tidal LFO:</strong> Tempo-synced amplitude modulation, tremolo, and auto-pan
-                </Text>
-                <Text size="2">
-                  • <strong>Maximizer:</strong> Brick-wall limiter for loudness maximization and peak control
-                </Text>
-                <Separator size="1" />
-                <Text size="2" weight="bold">
-                  Implementation:
-                </Text>
-                <Text size="2">
-                  • Effect insertion:{" "}
-                  <code>project.api.insertEffect(audioBox.audioEffects, EffectFactories.AudioNamed.*)</code>
-                </Text>
-                <Text size="2">
-                  • All modifications within <code>project.editing.modify()</code> transactions
-                </Text>
-                <Text size="2">
-                  • State observation via <code>catchupAndSubscribe()</code>
-                </Text>
-                <Text size="2">• Each effect includes presets and bypass functionality</Text>
-              </Flex>
-            </Flex>
-          </Card>
-
-          {/* Export Audio */}
-          <Card>
-            <Flex direction="column" gap="4">
-              <Heading size="4">Export Audio</Heading>
-              <Separator size="4" />
-
-              <Callout.Root color="purple">
-                <Callout.Text>
-                  🎵 Export your mix with all effects fully rendered! This is perfect for hearing how your effect chains
-                  (Reverb, Compressor, Lo-Fi Crusher, etc.) sound in the final audio. The "Export Full Mix" renders
-                  everything together, while "Export Stems" gives you individual tracks with their effects baked in.
-                </Callout.Text>
-              </Callout.Root>
-
-              <Flex direction="column" gap="3">
-                <Flex gap="3" wrap="wrap" justify="center">
-                  <Button
-                    onClick={handleExportMix}
-                    disabled={tracks.length === 0 || isExporting}
-                    color="purple"
-                    size="3"
-                    variant="solid"
-                  >
-                    Export Full Mix (with Effects)
-                  </Button>
-                  <Button
-                    onClick={handleEffectsStems}
-                    disabled={tracks.length === 0 || isExporting}
-                    color="purple"
-                    size="3"
-                    variant="outline"
-                  >
-                    Export Stems ({tracks.length} tracks with Effects)
-                  </Button>
-                </Flex>
-
-                {/* Export status */}
-                {(exportStatus || isExporting) && (
-                  <>
-                    <Separator size="4" />
-                    <Flex direction="column" gap="2" align="center">
-                      <Text size="2" weight="medium">
-                        {exportStatus}
-                      </Text>
-                      {isExporting && (
-                        <Text size="1" color="gray" align="center">
-                          Rendering offline (may take a moment for long tracks)
-                        </Text>
-                      )}
-                    </Flex>
-                  </>
-                )}
-
-                <Text size="2" color="gray" style={{ fontStyle: "italic" }}>
-                  💡 Tip: Add effects to tracks first, then export to hear them in the final audio. The effects are
-                  rendered offline at high quality (48kHz, 32-bit float WAV).
-                </Text>
-              </Flex>
-            </Flex>
-          </Card>
-
-          {/* Audio Attribution */}
-          <Card>
-            <Flex direction="column" gap="3">
-              <Heading size="4">Audio Attribution</Heading>
-              <Separator size="4" />
-              <Text size="2">
-                Mix stems from Dark Ride's 'Deny Control'. This file is provided for educational purposes only, and the
-                material contained in it should not be used for any commercial purpose without the express permission of
-                the copyright holders. Please refer to{" "}
-                <a
-                  href="https://www.cambridge-mt.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{ color: "var(--accent-9)" }}
+          ) : (
+            <>
+              {/* Loading overlay (waveform rendering phase) */}
+              {isLoading && (
+                <div
+                  role="status"
+                  style={{
+                    position: "fixed",
+                    inset: 0,
+                    backgroundColor: "rgba(13, 12, 10, 0.88)",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    zIndex: 9999,
+                    gap: 20
+                  }}
                 >
-                  www.cambridge-mt.com
-                </a>{" "}
-                for further details.
-              </Text>
-            </Flex>
-          </Card>
+                  <div className="fx-spinner" aria-hidden="true" />
+                  <Text size="4" weight="medium" style={{ color: "var(--mc-text)" }}>
+                    {status}
+                  </Text>
+                </div>
+              )}
 
-          <MoisesLogo />
+              {/* Transport */}
+              <Card>
+                <Flex direction="column" gap="3">
+                  <Text size="2" weight="bold" color="gray">
+                    Transport
+                  </Text>
+                  <Separator size="4" />
+                  <TransportControls
+                    isPlaying={isPlaying}
+                    currentPosition={currentPosition}
+                    bpm={bpmRef.current}
+                    onPlay={handlePlay}
+                    onPause={handlePause}
+                    onStop={handleStop}
+                  />
+                </Flex>
+              </Card>
+
+              {/* Mixer */}
+              <Card>
+                <Flex direction="column" gap="4">
+                  <Flex justify="between" align="center" gap="4" wrap="wrap">
+                    <Text size="2" weight="bold" color="gray">
+                      Mixer
+                    </Text>
+                    <Flex align="center" gap="3" style={{ minWidth: "300px" }}>
+                      <Text size="2" weight="bold" style={{ whiteSpace: "nowrap" }}>
+                        Master Volume
+                      </Text>
+                      <Slider
+                        value={[masterVolume]}
+                        onValueChange={values => handleMasterVolumeChange(values[0])}
+                        min={MASTER_VOLUME_MIN_DB}
+                        max={MASTER_VOLUME_MAX_DB}
+                        step={0.1}
+                        style={{ flex: 1 }}
+                      />
+                      <Text size="2" color="gray" style={{ minWidth: "50px", textAlign: "right" }}>
+                        {masterVolume.toFixed(1)} dB
+                      </Text>
+                    </Flex>
+                  </Flex>
+                  <Separator size="4" />
+
+                  <TracksContainer
+                    currentPosition={currentPosition}
+                    bpm={bpmRef.current}
+                    maxDuration={maxDuration}
+                    leftOffset={200}
+                    playheadColor="#fff"
+                    showBorder={true}
+                  >
+                    <TimelineRuler maxDuration={maxDuration} />
+                    {tracks.map(track => (
+                      <TrackRow
+                        key={UUID.toString(track.uuid)}
+                        track={track}
+                        project={project}
+                        allTracks={tracks}
+                        canvasRef={el => {
+                          if (el) {
+                            canvasRefs.current.set(UUID.toString(track.uuid), el);
+                          }
+                        }}
+                        currentPosition={currentPosition}
+                        isPlaying={isPlaying}
+                        bpm={bpmRef.current}
+                        audioBuffer={localAudioBuffersRef.current.get(UUID.toString(track.uuid))}
+                        setCurrentPosition={setCurrentPosition}
+                        pausedPositionRef={pausedPositionRef}
+                        maxDuration={maxDuration}
+                      />
+                    ))}
+                  </TracksContainer>
+                </Flex>
+              </Card>
+
+              {/* Effect chains */}
+              <Card>
+                <Flex direction="column" gap="4">
+                  <Text size="2" weight="bold" color="gray">
+                    Effect Chains
+                  </Text>
+                  <Separator size="4" />
+                  <Text size="2" color="gray">
+                    Pick an effect, add it to a chain, and tweak while the transport runs &mdash; every
+                    slider writes an automatable box field inside an editing transaction. Presets are
+                    useful starting points; Bypass toggles the box&apos;s enabled field without removing it.
+                  </Text>
+
+                  <Flex direction="column" gap="3">
+                    <Text size="2" weight="bold" color="gray">
+                      Per-Track Effects
+                    </Text>
+                    {trackChains.map(({ name, audioBox, chain }, index) => (
+                      <div
+                        key={name}
+                        style={{
+                          padding: "12px",
+                          backgroundColor: index % 2 ? "var(--gray-4)" : "var(--gray-2)",
+                          borderRadius: "var(--radius-2)"
+                        }}
+                      >
+                        <EffectChain
+                          trackName={name}
+                          effects={chain.effects}
+                          onAddEffect={chain.addEffect}
+                          renderEffect={renderEffectFor(name, audioBox, chain.removeEffect)}
+                        />
+                      </div>
+                    ))}
+                  </Flex>
+
+                  <Flex direction="column" gap="3">
+                    <Text size="2" weight="bold" color="gray">
+                      Master Output Effects
+                    </Text>
+                    <div style={{ padding: "12px", backgroundColor: "var(--accent-3)", borderRadius: "var(--radius-2)" }}>
+                      <EffectChain
+                        trackName={masterChain.name}
+                        effects={masterChain.chain.effects}
+                        onAddEffect={masterChain.chain.addEffect}
+                        renderEffect={renderEffectFor(masterChain.name, masterChain.audioBox, masterChain.chain.removeEffect)}
+                      />
+                    </div>
+                  </Flex>
+                </Flex>
+              </Card>
+
+              {/* Export */}
+              <Card>
+                <Flex direction="column" gap="4">
+                  <Text size="2" weight="bold" color="gray">
+                    Export Audio
+                  </Text>
+                  <Separator size="4" />
+                  <Text size="2" color="gray">
+                    Renders offline at 48 kHz into 32-bit float WAV with every effect chain baked in
+                    &mdash; the full mix as one stereo file, or one stem per track with its own effects.
+                  </Text>
+
+                  <Flex gap="3" wrap="wrap" justify="center">
+                    <Button
+                      onClick={handleExportMix}
+                      disabled={tracks.length === 0 || isExporting}
+                      color="amber"
+                      size="3"
+                      variant="solid"
+                    >
+                      Export Full Mix (with Effects)
+                    </Button>
+                    <Button
+                      onClick={handleEffectsStems}
+                      disabled={tracks.length === 0 || isExporting}
+                      color="amber"
+                      size="3"
+                      variant="outline"
+                    >
+                      Export Stems ({tracks.length} tracks with Effects)
+                    </Button>
+                  </Flex>
+
+                  {exportFailed ? (
+                    <Callout.Root color="red" role="alert">
+                      <Callout.Text>{exportStatus}</Callout.Text>
+                    </Callout.Root>
+                  ) : (
+                    (exportStatus || isExporting) && (
+                      <Flex direction="column" gap="2" align="center">
+                        <Text size="2" weight="medium">
+                          {exportStatus}
+                        </Text>
+                        {isExporting && (
+                          <Text size="1" color="gray" align="center">
+                            Rendering offline (may take a moment for long tracks)
+                          </Text>
+                        )}
+                      </Flex>
+                    )
+                  )}
+                </Flex>
+              </Card>
+
+              {/* SDK reference */}
+              <section className="mc-anchors">
+                <h2 className="mc-anchors-head">SDK reference</h2>
+                <p>
+                  Ten audio effects, all inserted with the same call: Reverb, Dattorro Reverb,
+                  Compressor, Parametric EQ (Revamp), Delay, Lo-Fi Crusher, Wavefolder, Stereo
+                  Width (StereoTool), Tidal LFO, and Maximizer. Chains are per-track UI state
+                  (<code>useEffectChain</code>); each instance owns its box lifecycle
+                  (<code>useDynamicEffect</code>) &mdash; insert on mount, <code>box.delete()</code> on
+                  removal.
+                </p>
+
+                <Text size="2" weight="bold" style={{ display: "block", marginTop: 16 }}>
+                  Effect insertion:
+                </Text>
+                <Code size="2" style={CODE_BLOCK_STYLE}>
+                  {`// insertEffect returns the EffectBox union — cast to the device type
+project.editing.modify(() => {
+  const effectBox = project.api.insertEffect(
+    audioUnitBox.audioEffects,
+    EffectFactories.AudioNamed.Compressor
+  );
+  effectBox.label.setValue("Drums Compressor");
+  (effectBox as CompressorDeviceBox).threshold.setValue(-20); // dB
+});`}
+                </Code>
+
+                <Text size="2" weight="bold" style={{ display: "block", marginTop: 16 }}>
+                  Bypass and parameter changes:
+                </Text>
+                <Code size="2" style={CODE_BLOCK_STYLE}>
+                  {`// Every effect box has an enabled BooleanField (the bypass)
+project.editing.modify(() => {
+  effectBox.enabled.setValue(!effectBox.enabled.getValue());
+});
+
+// Observe it outside the transaction
+effectBox.enabled.catchupAndSubscribe(obs => {
+  const bypassed = !obs.getValue();
+});`}
+                </Code>
+
+                <p>
+                  All box-graph writes go through <code>project.editing.modify()</code>; state
+                  observation uses <code>catchupAndSubscribe()</code>. The offline render uses{" "}
+                  <code>AudioOfflineRenderer.start()</code> &mdash; stems pass{" "}
+                  <code>useInstrumentOutput: false</code> so effects, sends, and the channel strip
+                  stay in the render path.
+                </p>
+              </section>
+
+              {/* Audio Attribution */}
+              <Card>
+                <Flex direction="column" gap="3">
+                  <Text size="2" weight="bold" color="gray">
+                    Audio Attribution
+                  </Text>
+                  <Separator size="4" />
+                  <Text size="2">
+                    Mix stems from Dark Ride&apos;s &lsquo;Deny Control&rsquo;. This file is provided for
+                    educational purposes only, and the material contained in it should not be used for
+                    any commercial purpose without the express permission of the copyright holders.
+                    Please refer to{" "}
+                    <a
+                      href="https://www.cambridge-mt.com"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: "var(--accent-9)" }}
+                    >
+                      www.cambridge-mt.com
+                    </a>{" "}
+                    for further details.
+                  </Text>
+                </Flex>
+              </Card>
+            </>
+          )}
         </Flex>
+        <MoisesLogo />
       </Container>
     </Theme>
   );

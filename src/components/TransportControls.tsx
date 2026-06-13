@@ -40,7 +40,7 @@ export const TransportControls: React.FC<TransportControlsProps> = ({
   const formattedTime = formatTime(timeInSeconds);
 
   return (
-    <Flex gap="3" align="center">
+    <Flex gap="3" align="center" wrap="wrap">
       <Button color="green" variant={isPlaying ? "solid" : "soft"} onClick={onPlay} disabled={isPlaying}>
         ▶ Play
       </Button>

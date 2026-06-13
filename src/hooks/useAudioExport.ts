@@ -143,7 +143,9 @@ export function useAudioExport(
         if (unit.isOutput) return;
 
         const uuid = UUID.toString(unit.uuid);
-        const trackName = unit.input.label.unwrap() || `Track ${index + 1}`;
+        // label is Option<string> — unwrapOrNull avoids the throw on empty Option;
+        // || (not ??) also covers the empty-string label
+        const trackName = unit.input.label.unwrapOrNull() || `Track ${index + 1}`;
 
         stemsConfig[uuid] = {
           includeAudioEffects: config.includeAudioEffects,

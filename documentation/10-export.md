@@ -28,7 +28,7 @@ Comprehensive guide to exporting audio from OpenDAW projects, including full mix
   - [Range Selection: Bars to PPQN](#range-selection-bars-to-ppqn)
   - [Encoding and Download](#encoding-and-download)
   - [In-Browser Preview](#in-browser-preview)
-  - [Future: Worker-Based Rendering with Mixdown Support](#future-worker-based-rendering-with-mixdown-support)
+  - [Future: Worker-Based Rendering](#future-worker-based-rendering)
   - [Reference](#reference)
 
 ---
@@ -126,7 +126,8 @@ await exportStems(project, stemsConfig);
 
 ### AudioOfflineRenderer
 
-The core offline rendering engine from `@opendaw/studio-core`:
+The original offline rendering engine from `@opendaw/studio-core`. It is `@deprecated`
+(since studio-core@0.0.93) — prefer `OfflineEngineRenderer` for new code:
 
 ```typescript
 import { AudioOfflineRenderer } from "@opendaw/studio-core";
@@ -1123,13 +1124,14 @@ OpenDAW has two offline renderers, but both have limitations when used from a li
 
 | Renderer | Status | Limitation |
 |----------|--------|------------|
-| `AudioOfflineRenderer` | Deprecated | Uses `OfflineAudioContext` on main thread. `Option.None` → `countStems` returns 1, routing through stem path (no metronome). No range support (always renders 0 to last region). |
-| `OfflineEngineRenderer` | Current | Worker-based custom render loop. `Option.None` → same `countStems=1` stem routing. Throws "Already connected" on live project's `liveStreamReceiver`. |
+| `AudioOfflineRenderer` | Deprecated | Uses `OfflineAudioContext` on main thread. No range support (always renders 0 to last region). |
+| `OfflineEngineRenderer` | Current | Worker-based custom render loop. Throws "Already connected" on live project's `liveStreamReceiver`. |
 
-**Key clarification:** `ExportConfiguration.countStems(Option.None)` returns **1** (not 0). The `numStems === 0` panic guard only fires for `Option.Some({stems: {}})` (an empty stems map). With `Option.None`, the renderer creates 2 channels (`1 * 2`) and routes through the **stem export branch** — which excludes metronome. This is the fundamental reason neither renderer supports mixdown-with-metronome, not the panic guard.
+**Path selection:** `ExportConfiguration.countStems(Option.None)` returns **1** (not 0), so the `numStems === 0` panic guard only fires for `Option.Some({stems: {}})` (an empty stems map). The `EngineProcessor` then branches on the **stems array** (`stemExports.length === 0`), which is empty for `Option.None`/undefined config — so it takes the **mixdown branch** and mixes the metronome into the main output. A non-empty `stems` map takes the **stem branch** (per-unit stereo pairs, metronome excluded). So:
+- `Option.None` / undefined `exportConfiguration` = **mixdown path, metronome included**
+- non-empty `stems` map = **stem path, metronome excluded**
 
 Neither renderer supports:
-- Rendering the **mixdown path** (which includes metronome) — `Option.None` routes through the stem branch
 - **Range-bounded** export (start position + exact sample count) via the `start()` convenience method
 - Both rely on silence detection or `maxDurationSeconds` for end bounds
 
@@ -1238,7 +1240,7 @@ if (this.#stemExports.length === 0) {
 
 There is no way to get metronome in the stem path or individual stems in the mixdown path. This is a fundamental SDK design decision.
 
-**Note:** This is different from passing `Option.None` to `OfflineEngineRenderer.create()`. The renderer's `countStems(Option.None)` returns 1, which still populates `stemExports` — routing through the stem branch. Our approach bypasses the renderer entirely and passes `undefined` to `createEngine()`, which leaves `stemExports` empty.
+**Note:** `OfflineEngineRenderer` selects the same branch the same way. `countStems(Option.None)` returns 1 only to size the output (`numStems * 2` channels); the renderer then forwards `optExportConfiguration.unwrapOrUndefined()` — `undefined` for `Option.None` — so `stemExports` stays empty and it takes the mixdown branch (metronome included), exactly like the manual `createEngine(undefined)` path. The demo bypasses the renderer for the `liveStreamReceiver` conflict (and, historically, range support), not for path selection.
 
 #### Mutate-Copy-Restore Pattern
 
@@ -1305,9 +1307,11 @@ The gain max is **0 dB** (unity), not +6 dB like track volume. There is no boost
 
 Click sounds are built into the processor — no `loadClickSound()` call is needed for default clicks.
 
-#### Why OfflineEngineRenderer Doesn't Work for Mixdown
+#### Why the Demo Doesn't Use OfflineEngineRenderer
 
-1. **Stem-path routing with `Option.None`**: `countStems(Option.None)` returns 1, creating 2 channels routed through the stem export branch. The metronome lives in the mixdown branch (`stemExports.length === 0`), which is never reached.
+`Option.None` already takes the mixdown branch in `OfflineEngineRenderer` (it forwards `unwrapOrUndefined()` → `undefined` → empty `stemExports`), so path routing is not the obstacle. The blockers are:
+
+1. **No metronome-preference forwarding**: the offline worker builds fresh `EnginePreferences` from defaults (metronome disabled). `project.toArrayBuffer()` carries the box graph but not preferences, and `OfflineEngineRenderer` exposes no way to enable the metronome — so the mixdown branch runs but the metronome is silent.
 
 2. **`liveStreamReceiver` conflict**: `create()` calls `source.liveStreamReceiver.connect()` on the source project. If the live engine already has it connected, this throws "Already connected". Using `project.copy()` avoids this, but introduces issue #3.
 
@@ -1358,7 +1362,7 @@ for (const track of selectedTracks) {
   exportConfig[uuid] = {
     includeAudioEffects: true,
     includeSends: true,
-    useInstrumentOutput: true,
+    useInstrumentOutput: false,  // true bypasses effects, sends, and the channel strip
     fileName: track.name,
   };
 }
@@ -1451,11 +1455,11 @@ source.disconnect();
 
 This is completely separate from the OpenDAW engine — no interference with live playback.
 
-### Future: Worker-Based Rendering with Mixdown Support
+### Future: Worker-Based Rendering
 
 #### Current Limitation
 
-Our `OfflineAudioContext` approach works but runs on the main thread. The SDK's `OfflineEngineRenderer` runs in a dedicated Web Worker using a custom render loop (no Web Audio API), which is faster and non-blocking.
+Our `OfflineAudioContext` approach works but runs on the main thread. The SDK's `OfflineEngineRenderer` runs in a dedicated Web Worker using a custom render loop (no Web Audio API), which is faster and non-blocking. Adopting it is blocked by the `liveStreamReceiver` conflict and the worker's inability to forward metronome preferences (see below).
 
 #### How the SDK Worker Actually Renders
 
@@ -1471,20 +1475,13 @@ while (offset < numSamples) {
 }
 ```
 
-The metronome is already wired into `EngineProcessor.process()` — it runs in the mixdown branch (`stemExports.length === 0`) and would produce audio if the engine were configured for mixdown. Sample fetching, script device loading, and preference syncing all work over MessageChannel between main thread and worker.
+The metronome is already wired into `EngineProcessor.process()` — it runs in the mixdown branch (`stemExports.length === 0`), which `Option.None` already selects. The only reason it stays silent in the worker is that the offline worker builds fresh `EnginePreferences` with the metronome disabled (see #1 below). Sample fetching, script device loading, and preference syncing all work over MessageChannel between main thread and worker.
 
 #### SDK Changes Requested
 
-**1. Support mixdown path in `OfflineEngineRenderer`**
+**1. Accept engine preferences in `OfflineEngineInitializeConfig`**
 
-Currently, `Option.None` → `countStems` returns 1 → stem path (no metronome). To enable the mixdown path, the renderer needs a way to set `stemExports` to empty while still creating 2 output channels. Options:
-- Add an explicit `mixdown: boolean` flag to the config
-- Treat `Option.None` differently (set `numberOfChannels = 2` without populating `stemExports`)
-- Add a new `ExportConfiguration` variant (alongside the existing `stems` / `range` fields) that means "mixdown"
-
-**2. Accept engine preferences in `OfflineEngineInitializeConfig`**
-
-`project.toArrayBuffer()` serializes the box graph but not engine preferences. The offline worker creates fresh `EnginePreferences` with defaults (metronome disabled). Adding an optional `engineSettings` field would let the caller pass metronome state:
+`OfflineEngineRenderer` already takes the mixdown path for `Option.None` (so a metronome would mix in), but `project.toArrayBuffer()` serializes the box graph, not engine preferences — the offline worker creates fresh `EnginePreferences` with defaults (metronome disabled), and there is no way to enable it. Adding an optional `engineSettings` field would let the caller pass metronome state:
 
 ```typescript
 export interface OfflineEngineInitializeConfig {
@@ -1493,11 +1490,11 @@ export interface OfflineEngineInitializeConfig {
 }
 ```
 
-**3. Range-bounded rendering** *(resolved upstream)*
+**2. Range-bounded rendering** *(resolved upstream)*
 
-`ExportConfiguration.range` is now a first-class field on the SDK config object — `range: "full" | { start: ppqn, end: ppqn }`. When set, `OfflineEngineRenderer.start()` seeks to `range.start` before playing and bounds the render at `tempoMap.intervalToSeconds(start, end)`. Our `renderRange()` helper predates this, still uses `setPosition` + `OfflineAudioContext` length for the same effect, and is retained because the mixdown path issue (#1 above) is not yet fixed.
+`ExportConfiguration.range` is now a first-class field on the SDK config object — `range: "full" | { start: ppqn, end: ppqn }`. When set, `OfflineEngineRenderer.start()` seeks to `range.start` before playing and bounds the render at `tempoMap.intervalToSeconds(start, end)`. Our `renderRange()` helper predates this, still uses `setPosition` + `OfflineAudioContext` length for the same effect, and is retained because the `liveStreamReceiver` conflict (#3 below) and the missing metronome-preference forwarding (#1 above) remain.
 
-**4. Resolve `liveStreamReceiver` conflict**
+**3. Resolve `liveStreamReceiver` conflict**
 
 `OfflineEngineRenderer.create()` calls `source.liveStreamReceiver.connect()` on the passed project, which throws "Already connected" if the live engine is running. Either:
 - Use `project.copy()` internally (like `AudioOfflineRenderer` does), or
