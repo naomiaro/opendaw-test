@@ -90,7 +90,7 @@ type AudioData = {
     sampleRate: number
     numberOfFrames: number
     numberOfChannels: number
-    frames: Float32Array[]   // one per channel, length === numberOfFrames
+    frames: ReadonlyArray<Float32Array<SharedArrayBuffer>>   // one per channel, length === numberOfFrames
 }
 ```
 

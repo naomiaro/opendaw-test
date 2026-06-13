@@ -67,7 +67,7 @@ process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
 Three behaviours to notice:
 
 1. **Invalidity is permanent.** Returning `false` from `process()` tells the Web Audio API to release the processor — the node never wakes up again. The engine sets `#valid = false` only on unrecoverable error.
-2. **Sleep is cooperative.** When the main thread sets the control-flag word to `1`, the processor returns `true` without rendering. This is how `Engine.suspend()` is implemented without tearing down the AudioContext.
+2. **Sleep is cooperative.** When the main thread sets the control-flag word to `1`, the processor returns `true` without rendering. This is how `Engine.sleep()` is implemented without tearing down the AudioContext.
 3. **Errors are caught.** Any exception out of `render()` invalidates the engine, reports back to the main thread, and terminates. There is no retry.
 
 ### `render()` — what happens each tick

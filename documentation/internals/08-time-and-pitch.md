@@ -331,12 +331,14 @@ The `@Lazy` decorator means the sender is constructed on first access only — p
 
 ## Mode-flip transactions
 
-`AudioContentModifier` (`packages/studio/core/src/project/audio/AudioContentModifier.ts`) is the single entry point for changing a region's play mode. Three exported async functions, all returning `Promise<Exec>`:
+`AudioContentModifier` (`packages/studio/core/src/project/audio/AudioContentModifier.ts`) is the single entry point for changing a region's play mode. It is a namespace exposing three async members, all returning `Promise<Exec>`:
 
 ```typescript
-export const toNotStretched: (adapters) => Promise<Exec>
-export const toPitchStretch: (adapters) => Promise<Exec>
-export const toTimeStretch:  (adapters) => Promise<Exec>
+export namespace AudioContentModifier {
+  const toNotStretched: (adapters) => Promise<Exec>
+  const toPitchStretch: (adapters) => Promise<Exec>
+  const toTimeStretch:  (adapters) => Promise<Exec>
+}
 ```
 
 Each takes a batch of `AudioContentBoxAdapter` (so flipping ten regions at once is one transaction) and returns an `Exec` callback that performs all the box-graph writes. The caller wraps that callback in `editing.modify()`.
@@ -723,7 +725,7 @@ Three things this does:
 2. **`cents` setter** — `2^(cents/1200)` for the inverse, then `clamp(..., 0.5, 2.0)` for the ±1 octave limit. The clamp lives in the *adapter*, not the box schema — the box's `playbackRate` field has only a `"positive"` constraint:
 
    ```typescript
-   // packages/studio/boxes/src/AudioTimeStretchBox.ts
+   // packages/studio/forge-boxes/src/schema/std/timeline/AudioTimeStretchBox.ts
    3: Float32Field.create(
      {parent: this, fieldKey: 3, fieldName: "playbackRate", ...},
      "positive",   // ← box-level constraint, no upper bound
@@ -747,12 +749,12 @@ get warpMarkers(): EventCollection<WarpMarkerBoxAdapter> {return this.#warpMarke
 The three play-mode-related boxes summarised:
 
 ```typescript
-// packages/studio/boxes/src/AudioPitchStretchBox.ts
+// packages/studio/forge-boxes/src/schema/std/timeline/AudioPitchStretchBox.ts
 export type AudioPitchStretchBoxFields = {
   1: Field<Pointers.WarpMarkers>;   // warpMarkers — collection target for WarpMarkerBox.owner
 };
 
-// packages/studio/boxes/src/AudioTimeStretchBox.ts
+// packages/studio/forge-boxes/src/schema/std/timeline/AudioTimeStretchBox.ts
 export type AudioTimeStretchBoxFields = {
   1: Field<Pointers.WarpMarkers>;   // warpMarkers — same shape as PitchStretch
   2: Int32Field;                    // transientPlayMode — enum value, default 2 (Pingpong)

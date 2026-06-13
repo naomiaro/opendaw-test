@@ -232,8 +232,8 @@ constructor(context: BoxAdaptersContext, box: CompressorDeviceBox) {
             box.threshold, ValueMapping.linear(-60.0, 0.0),
             StringMapping.decible, "Threshold"),
         ratio: this.#parametric.createParameter(
-            box.ratio, ValueMapping.linear(1.0, 20.0),
-            StringMapping.ratio, "Ratio"),
+            box.ratio, ValueMapping.exponential(1.0, 24.0),
+            StringMapping.numeric({fractionDigits: 1}), "Ratio"),
         // ...
     }
 }

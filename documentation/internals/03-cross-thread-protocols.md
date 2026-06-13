@@ -239,7 +239,7 @@ export type EngineState = ReturnType<typeof EngineStateSchema>["object"]
 
 `Schema.createBuilder` builds a typed view over a `SharedArrayBuffer` with fixed offsets per field. The reader and writer agree on the layout because they share the same `Schema` factory.
 
-Total buffer size: 7 floats × 4 bytes + 1 int32 + 512 floats × 4 bytes = **2080 bytes**.
+Total buffer size: 4 floats × 4 bytes + 3 bools × 1 byte + 1 int32 × 4 bytes + 512 floats × 4 bytes = **2071 bytes** of schema data, plus a 1-byte state header allocated by `SyncStream.reader` = **2072 bytes**.
 
 The `perfBuffer` field is a circular ring of DSP load measurements written by `HRClock`; `perfIndex` is the write pointer the main thread uses to find the most recent samples.
 
@@ -342,7 +342,7 @@ The `checksum()` method is a debug round-trip: send the local graph's checksum t
 
 ### Target (worklet)
 
-`SyncTarget` (`packages/lib/box/src/sync-target.ts`) is the executor side. It applies every batch inside a single transaction:
+`createSyncTarget` (`packages/lib/box/src/sync-target.ts`) builds the executor side. It applies every batch inside a single transaction:
 
 ```typescript
 sendUpdates(updates: ReadonlyArray<UpdateTask<M>>): void {
@@ -420,7 +420,7 @@ sleep(): void {
 wake(): void {Atomics.store(this.#controlFlags, 0, 0)}
 ```
 
-This is the entire mechanism behind `Engine.suspend()`. No RPC, no audio glitch — the next `process()` reads the flag and returns immediately. The `AudioContext` keeps running so no node graph teardown is needed.
+This is the entire mechanism behind `Engine.sleep()`. No RPC, no audio glitch — the next `process()` reads the flag and returns immediately. The `AudioContext` keeps running so no node graph teardown is needed.
 
 Today only slot `[0]` is used. The buffer is sized for future flags; any new ones would be added at higher slot indices to preserve compatibility.
 
@@ -708,7 +708,7 @@ Like the engine and box chapters, here are the rules that, if you violate them, 
 4. **Args go through structured clone.** Don't send class instances with private fields or methods; they lose their prototype. Plain data objects only. Use `Communicator.makeTransferable()` to mark transferables explicitly when auto-detection isn't enough.
 5. **Never write to the SyncStream from the main thread.** It's worklet-only; main-thread writes would race.
 6. **`Atomics.wait` is forbidden on the main thread.** The `RingBuffer` reader self-detects (`canBlock` check); if you write similar code, do the same.
-7. **One `BoxGraph` change becomes one `SyncTarget` transaction.** Don't try to apply individual `UpdateTask`s outside a transaction — pointer constraints will trip.
+7. **One `BoxGraph` change becomes one sync-target transaction.** Don't try to apply individual `UpdateTask`s outside a transaction — pointer constraints will trip.
 8. **The control-flag SAB is one Int32Array, single-slot today.** Adding new flags? Use higher indices. Don't repurpose `[0]`.
 9. **`SharedArrayBuffer` requires COOP+COEP.** Every deployment needs the headers. The first thing to check when "engine won't start" is the response headers of `index.html`.
 10. **`fetchAudio` resolves once.** The Promise is correlated by `returnId`. Don't try to "re-fetch" by calling the same Promise — make a new RPC call.
