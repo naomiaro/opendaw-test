@@ -630,12 +630,18 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
 - After SDK upgrades, clear Vite dep cache: `rm -rf node_modules/.vite` (dev server pre-bundles old SDK)
 - Vite HMR remount throws "Workers are already installed" (SDK assert) — dev-only
   artifact now surfaced by init error cards; judge error states on a fresh page load.
+- Playwright `browser_console_messages` with `all: true` returns history across prior agent
+  sessions on the same browser context (HMR `createRoot` errors, other agents' test output) —
+  judge your run on the per-navigation "Console: N errors" count, not the `all: true` log.
 - After **any** `package.json` change (SDK upgrade, devDep add/remove, version bump), **regenerate
   the lockfile cleanly**: `rm -rf node_modules package-lock.json && npm install`, then verify with
   `npm ci` (not just `npm run build`) before pushing. In-place `npm install`/`uninstall` can leave
   stale transitive entries that local `npm@11+` tolerates but Cloudflare's older `npm ci` rejects
   with "package.json and package-lock.json … are in sync". This has bitten the project on both an
   SDK upgrade (PR #25) and a devDep churn (PR #26) — same failure mode, same fix.
+- `npm ci` prints "Some issues need review … Run `npm audit` for details" on **success** — that's
+  an audit advisory, NOT a lockfile-sync failure (the sync failure is a distinct hard error naming
+  package.json/package-lock as out of sync). Don't treat the advisory as a CI blocker.
 - SDK upgrades specifically: bump `@opendaw/studio-sdk` only — sub-packages resolve transitively
   from the registry. NEVER install sub-packages as local `file:` references (breaks Cloudflare CI).
 - After an SDK upgrade, audit `documentation/*.md` chapter docs for stale API signatures: grep
