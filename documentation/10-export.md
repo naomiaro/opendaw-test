@@ -5,13 +5,13 @@
 
 Comprehensive guide to exporting audio from OpenDAW projects, including full mix exports and individual stems with effects, plus advanced offline rendering patterns.
 
+Everything below uses the OpenDAW SDK directly: `AudioOfflineRenderer` / `OfflineEngineRenderer` from `@opendaw/studio-core`, `WavFile` from `@opendaw/lib-dsp`, and the `ExportConfiguration` type from `@opendaw/studio-adapters`. The only browser API involved is the anchor-click used to save the encoded bytes.
+
 ## Table of Contents
 
 - [Overview](#overview)
 - [Quick Start](#quick-start)
 - [Core API](#core-api)
-- [Export Utility Functions](#export-utility-functions)
-- [React Hook](#react-hook)
 - [Full Mix Export](#full-mix-export)
 - [Stems Export](#stems-export)
 - [Export Options](#export-options)
@@ -82,43 +82,69 @@ flowchart TD
 
 The worker runs the same `EngineProcessor` class as the realtime audio worklet — same effects, same automation, same DSP. The only difference is the driver: in realtime, the audio thread calls `process()` 375 times a second; offline, the worker calls `step()` as quickly as possible until the silence detector says the mix has finished decaying. That's why export is *bit-exact* with realtime playback: it's literally the same code path.
 
+The diagram above depicts `OfflineEngineRenderer`, the current worker-based path. The simpler one-shot calls that lead the examples below use the deprecated `AudioOfflineRenderer`, which drives the same `EngineProcessor` through a main-thread `OfflineAudioContext` instead of a worker — same DSP, same bit-exact result, different driver. See [Core API](#core-api) for both.
+
 ---
 
 ## Quick Start
 
-### Basic Full Mix Export
+The SDK exposes two one-shot renderers — pick one, encode the result with `WavFile`, and save it with a small anchor-click helper. Both take the same arguments; they differ in their `progress` type and return type (see [Core API](#core-api)).
+
+### Render a full mix to WAV
 
 ```typescript
-import { exportFullMix } from "./lib/audioExport";
+import { AudioOfflineRenderer } from "@opendaw/studio-core";
+import { WavFile } from "@opendaw/lib-dsp";
+import { Option, Progress } from "@opendaw/lib-std";
 
-// Export entire project to a single WAV file
-await exportFullMix(project, {
-  fileName: "my-mix",
-  onStatus: (s) => console.log(s)
-});
+// Render the whole project to a stereo AudioBuffer.
+// Option.None = full mix (the metronome is included on this path).
+const progress: Progress.Handler = (value) => console.log(`${Math.round(value * 100)}%`);
+
+const audioBuffer = await AudioOfflineRenderer.start(
+  project,
+  Option.None,   // no stem config → full mix
+  progress,
+  undefined,     // optional AbortSignal
+  48000          // sample rate
+);
+
+// Encode to 32-bit float WAV and download.
+downloadWav(WavFile.encodeFloats(audioBuffer), "my-mix.wav");
 ```
 
-### Basic Stems Export
+### Render stems to WAV
 
 ```typescript
-import { exportStems } from "./lib/audioExport";
+import { AudioOfflineRenderer } from "@opendaw/studio-core";
+import { WavFile } from "@opendaw/lib-dsp";
+import { Option } from "@opendaw/lib-std";
+import type { ExportConfiguration } from "@opendaw/studio-adapters";
 
-// Export individual tracks with effects
-const stemsConfig = {
-  [drumsUUID]: {
-    includeAudioEffects: true,
-    includeSends: false,
-    fileName: "drums"
+// A non-empty `stems` map takes the stem branch: one stereo pair per track.
+// `fileName` is required on each entry; the other flags control what's baked in.
+const exportConfig: ExportConfiguration = {
+  stems: {
+    [drumsUUID]: { includeAudioEffects: true, includeSends: false, useInstrumentOutput: false, fileName: "drums" },
+    [bassUUID]:  { includeAudioEffects: true, includeSends: false, useInstrumentOutput: false, fileName: "bass" },
   },
-  [bassUUID]: {
-    includeAudioEffects: true,
-    includeSends: false,
-    fileName: "bass"
-  }
 };
 
-await exportStems(project, stemsConfig);
+const audioBuffer = await AudioOfflineRenderer.start(
+  project,
+  Option.wrap(exportConfig),
+  (value) => console.log(`${Math.round(value * 100)}%`),
+  undefined,
+  48000
+);
+
+// Channels are interleaved by stem order: [s1_L, s1_R, s2_L, s2_R, ...]
+Object.values(exportConfig.stems!).forEach((stem, i) =>
+  downloadWav(WavFile.encodeFloats(sliceStem(audioBuffer, i)), `${stem.fileName}.wav`)
+);
 ```
+
+The `downloadWav` and `sliceStem` helpers are defined in [Core API](#core-api).
 
 ---
 
@@ -126,36 +152,39 @@ await exportStems(project, stemsConfig);
 
 ### AudioOfflineRenderer
 
-The original offline rendering engine from `@opendaw/studio-core`. It is `@deprecated`
-(since studio-core@0.0.93) — prefer `OfflineEngineRenderer` for new code:
+The original offline rendering entry point from `@opendaw/studio-core`. It is `@deprecated`
+(since studio-core@0.0.93) — prefer `OfflineEngineRenderer` for new code — but it remains
+the simplest one-shot call, returning a ready-to-play `AudioBuffer`:
 
 ```typescript
 import { AudioOfflineRenderer } from "@opendaw/studio-core";
 import { Option, Progress } from "@opendaw/lib-std";
 
-// Progress handler (required)
+// progress is a Progress.Handler: (value: number) => void, value in 0.0–1.0
 const progressHandler: Progress.Handler = (value) => {
   console.log(`${Math.round(value * 100)}%`);
 };
 
-// Render full mix
+// Full mix
 const audioBuffer = await AudioOfflineRenderer.start(
   project,
   Option.None,      // No stem config = full mix
-  progressHandler,  // Progress.Handler (0.0 - 1.0)
+  progressHandler,
   undefined,        // AbortSignal (optional)
   48000             // Sample rate
 );
 
-// Render stems
+// Stems
 const audioBuffer = await AudioOfflineRenderer.start(
   project,
-  Option.wrap(stemsConfiguration),
+  Option.wrap(exportConfiguration),
   progressHandler,
   undefined,
   48000
 );
 ```
+
+**Signature:** `AudioOfflineRenderer.start(source, optExportConfiguration, progress, abortSignal?, sampleRate?)` → `Promise<AudioBuffer>`.
 
 **How it works:**
 1. Creates an `OfflineAudioContext` with the specified sample rate
@@ -169,6 +198,59 @@ const audioBuffer = await AudioOfflineRenderer.start(
 - Channel layout: `[stem1_L, stem1_R, stem2_L, stem2_R, ...]`
 - Effects are optionally included per stem
 
+### OfflineEngineRenderer
+
+The current, non-deprecated renderer. It runs the engine in a dedicated worker rather than
+on a main-thread `OfflineAudioContext`. Install its worker once at startup, then call `start`
+with the same `(source, optExportConfiguration, progress, abortSignal?, sampleRate?)` shape:
+
+```typescript
+import { OfflineEngineRenderer } from "@opendaw/studio-core";
+import { WavFile } from "@opendaw/lib-dsp";
+import { DefaultObservableValue, Option } from "@opendaw/lib-std";
+import type { AudioData } from "@opendaw/lib-dsp";
+
+// Once, during bootstrap (the worker URL is provided by your bundler):
+OfflineEngineRenderer.install(offlineEngineWorkerUrl);
+
+// progress is a DefaultObservableValue<number> (NOT a Progress.Handler) — subscribe to it
+const progress = new DefaultObservableValue(0);
+const sub = progress.subscribe((o) => console.log(`${Math.round(o.getValue() * 100)}%`));
+
+const audioData: AudioData = await OfflineEngineRenderer.start(
+  project,
+  Option.None,        // or Option.wrap(exportConfiguration) for stems
+  progress,
+  undefined,          // AbortSignal (optional)
+  48000
+);
+sub.terminate();
+
+// WavFile.encodeFloats accepts AudioData directly (AudioData | AudioBufferLike)
+downloadWav(WavFile.encodeFloats(audioData), "my-mix.wav");
+```
+
+**Differences from `AudioOfflineRenderer`:**
+
+| | `AudioOfflineRenderer` (deprecated) | `OfflineEngineRenderer` (current) |
+|---|---|---|
+| Returns | `Promise<AudioBuffer>` | `Promise<AudioData>` |
+| `progress` arg | `Progress.Handler` (a function) | `DefaultObservableValue<number>` (subscribe) |
+| Driver | main-thread `OfflineAudioContext` | dedicated worker |
+| Range export | not supported by `start()` | `ExportConfiguration.range` is honored |
+| Setup | none | `OfflineEngineRenderer.install(url)` at startup |
+
+`OfflineEngineRenderer` also exposes lower-level entry points for full control:
+`.create(source, optConfig, sampleRate?)` (then `play()`, `step(samples)`, `setPosition`,
+`waitForLoading`, `terminate`) and `.render(config, startPosition, endPosition, progress, abortSignal?)`
+for arbitrary ranges (where `config` is an `OfflineEngineRenderConfig`, not an `ExportConfiguration`).
+
+> **Live-project caveat:** both renderers create their own audio context and connect the
+> source project's `liveStreamReceiver`, which throws "Already connected" if the live engine
+> already holds it. Render from a `project.copy()`, or use the manual pipeline in
+> [Advanced: Offline Rendering Patterns](#advanced-offline-rendering-patterns), which also
+> covers metronome forwarding and range-bounded export.
+
 ### WavFile
 
 WAV file encoding/decoding from `@opendaw/lib-dsp`:
@@ -176,238 +258,58 @@ WAV file encoding/decoding from `@opendaw/lib-dsp`:
 ```typescript
 import { WavFile } from "@opendaw/lib-dsp";
 
-// Convert AudioBuffer to WAV ArrayBuffer
+// Convert AudioBuffer or AudioData to a WAV ArrayBuffer (32-bit float)
 const wavArrayBuffer = WavFile.encodeFloats(audioBuffer);
 
-// Decode WAV to float arrays
+// Decode a WAV ArrayBuffer to AudioData
 const audio = WavFile.decodeFloats(arrayBuffer);
-// Returns: { channels: Float32Array[], sampleRate: number, numFrames: number }
+// Returns AudioData: { sampleRate: number, numberOfFrames: number, numberOfChannels: number, frames: Float32Array[] }
 ```
 
-**Supported Formats:**
-- 32-bit IEEE float
-- 24-bit PCM
-- 16-bit PCM
-- Stereo or mono
-- Lossless quality
+`WavFile.encodeFloats(audio: AudioData | AudioBufferLike, maxLength?)` returns the encoded
+bytes, so it works with the `AudioBuffer` from `AudioOfflineRenderer` and the `AudioData`
+from `OfflineEngineRenderer` alike.
 
----
+**Encoders:**
+- `encodeFloats` — 32-bit IEEE float (lossless, the default used throughout this chapter)
+- `encodeInts16` — 16-bit PCM (same input shape; float samples clamped to [-1, 1])
 
-## Export Utility Functions
+Both accept `AudioData | AudioBufferLike`, mono or stereo. There is no 24-bit encoder.
 
-The `src/lib/audioExport.ts` utility provides high-level export functions:
+### Saving and slicing the result
 
-### exportFullMix()
-
-Export the entire project to a single stereo WAV file.
+The renderers return audio in memory; these two small helpers turn it into downloads. They
+use only standard Web Audio + DOM APIs — no SDK or framework dependency:
 
 ```typescript
-export async function exportFullMix(
-  project: Project,
-  options?: ExportOptions
-): Promise<void>
-```
-
-**Parameters:**
-- `project` - The OpenDAW project to export
-- `options` - Optional export configuration
-
-**Options:**
-```typescript
-interface ExportOptions {
-  sampleRate?: number;      // Default: 48000
-  fileName?: string;         // Default: "mix"
-  onProgress?: (p: number) => void;  // Limited milestone updates (not recommended)
-  onStatus?: (s: string) => void;    // Status messages (recommended)
+// Save an encoded WAV ArrayBuffer as a browser download.
+function downloadWav(bytes: ArrayBuffer, fileName: string): void {
+  const blob = new Blob([bytes], { type: "audio/wav" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
 }
-```
 
-**Example:**
-```typescript
-await exportFullMix(project, {
-  fileName: "my-song-master",
-  sampleRate: 48000,
-  onStatus: (status) => {
-    setStatusText(status);
+// Extract stem `index` (a stereo pair) from a multi-channel stems render.
+function sliceStem(audioBuffer: AudioBuffer, index: number): AudioBuffer {
+  const left = index * 2;
+  const right = index * 2 + 1;
+  if (right >= audioBuffer.numberOfChannels) {
+    throw new Error(`Stem ${index} needs channel ${right}, buffer has ${audioBuffer.numberOfChannels}`);
   }
-});
-```
-
-**What gets exported:**
-- All tracks mixed together
-- All audio effects rendered
-- All automation applied
-- Master output effects included
-- Final stereo mixdown
-
-### exportStems()
-
-Export individual tracks as separate WAV files.
-
-```typescript
-export async function exportStems(
-  project: Project,
-  stemsConfig: Record<string, StemExportConfig>,
-  options?: ExportOptions
-): Promise<void>
-```
-
-**Parameters:**
-- `project` - The OpenDAW project
-- `stemsConfig` - Configuration for each stem (keyed by track UUID)
-- `options` - Optional export configuration
-
-**Stem Configuration:**
-```typescript
-interface StemExportConfig {
-  includeAudioEffects: boolean;  // Include effects on this stem
-  includeSends: boolean;          // Include send/aux effects
-  fileName: string;               // Output filename (without extension)
-}
-```
-
-**Example:**
-```typescript
-const stemsConfig = {
-  [vocalsUUID]: {
-    includeAudioEffects: true,  // Export with Reverb, Compressor, etc.
-    includeSends: false,
-    fileName: "vocals"
-  },
-  [drumsUUID]: {
-    includeAudioEffects: true,  // Export with compression
-    includeSends: false,
-    fileName: "drums"
-  },
-  [guitarUUID]: {
-    includeAudioEffects: false, // Export dry (no effects)
-    includeSends: false,
-    fileName: "guitar-dry"
-  }
-};
-
-await exportStems(project, stemsConfig, {
-  sampleRate: 48000,
-  onStatus: setStatus
-});
-```
-
-**What gets exported:**
-- One WAV file per stem
-- Individual stereo files automatically downloaded
-- Effects optionally included per stem
-- Each file named according to `fileName`
-
----
-
-## React Hook
-
-### useAudioExport()
-
-The demo codebase includes a React hook that wraps the export API for convenience. If you're using a different framework, see the [Core API](#core-export-api) section above for the framework-agnostic approach.
-
-**Location:** `src/hooks/useAudioExport.ts`
-
-```typescript
-import { useAudioExport } from "./hooks/useAudioExport";
-
-const {
-  isExporting,
-  exportStatus,
-  handleExportMix,
-  handleExportStems
-} = useAudioExport(project, {
-  sampleRate: 48000,
-  mixFileName: "my-mix"
-});
-```
-
-**Parameters:**
-- `project` - The OpenDAW project instance (or `null`)
-- `options` - Optional configuration:
-  - `sampleRate?: number` - Sample rate for export (default: 48000)
-  - `mixFileName?: string` - Base filename for full mix export (default: "mix")
-
-**Returns:**
-- `isExporting: boolean` - Whether an export is currently in progress
-- `exportStatus: string` - Current status message
-- `handleExportMix: () => Promise<void>` - Export full mix handler
-- `handleExportStems: (config: StemConfigBuilder) => Promise<void>` - Export stems handler
-
-**Note:** Progress tracking is not available because OpenDAW's offline renderer doesn't provide progress callbacks. The export will show status messages and a note that it may take time for long tracks.
-
-**Stem Configuration:**
-```typescript
-interface StemConfigBuilder {
-  includeAudioEffects: boolean;  // Include effects in stems
-  includeSends: boolean;          // Include send/aux effects
-}
-```
-
-**Complete Example:**
-
-```typescript
-import { useAudioExport } from "./hooks/useAudioExport";
-import { Button, Progress, Text } from "@radix-ui/themes";
-
-const ExportControls = ({ project }: { project: Project | null }) => {
-  const {
-    isExporting,
-    exportStatus,
-    handleExportMix,
-    handleExportStems
-  } = useAudioExport(project, {
-    sampleRate: 48000,
-    mixFileName: "my-song"
+  const stem = new AudioBuffer({
+    length: audioBuffer.length,
+    numberOfChannels: 2,
+    sampleRate: audioBuffer.sampleRate,
   });
-
-  // Wrapper for stems with specific configuration
-  const handleStemsWithEffects = useCallback(async () => {
-    await handleExportStems({
-      includeAudioEffects: true,
-      includeSends: false
-    });
-  }, [handleExportStems]);
-
-  return (
-    <div>
-      <Button onClick={handleExportMix} disabled={!project || isExporting}>
-        Export Mix
-      </Button>
-
-      <Button onClick={handleStemsWithEffects} disabled={!project || isExporting}>
-        Export Stems (with FX)
-      </Button>
-
-      {(exportStatus || isExporting) && (
-        <div>
-          <Text>{exportStatus}</Text>
-          {isExporting && (
-            <Text size="1" color="gray">
-              Rendering offline (may take a moment for long tracks)
-            </Text>
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
+  stem.copyToChannel(audioBuffer.getChannelData(left), 0);
+  stem.copyToChannel(audioBuffer.getChannelData(right), 1);
+  return stem;
+}
 ```
-
-**Benefits:**
-- ✅ Automatic state management (status, isExporting flag)
-- ✅ Built-in error handling
-- ✅ Consistent API across demos
-- ✅ Less boilerplate code
-- ✅ Type-safe stem configuration
-
-**When to use:**
-- React applications with multiple export buttons/features
-
-**When to use the core API instead:**
-- Non-React applications
-- Custom state management needs
-- Special error handling requirements
 
 ---
 
@@ -422,31 +324,34 @@ const ExportControls = ({ project }: { project: Project | null }) => {
 - Creating reference mixes
 - Testing mix decisions
 
-### Example Integration
+### Example
 
-**React users:** See the [`useAudioExport` hook](#react-hook) for a convenient wrapper.
+`Option.None` selects the mixdown branch — all tracks, all effects, all automation, and the
+metronome (if enabled in preferences) are mixed into one stereo buffer:
 
 ```typescript
-import { useAudioExport } from "./hooks/useAudioExport";
+import { AudioOfflineRenderer } from "@opendaw/studio-core";
+import { WavFile } from "@opendaw/lib-dsp";
+import { Option } from "@opendaw/lib-std";
 
-const App = () => {
-  const [project, setProject] = useState<Project | null>(null);
-
-  const { isExporting, exportStatus, handleExportMix } = useAudioExport(project, {
-    sampleRate: 48000,
-    mixFileName: "final-mix"
-  });
-
-  return (
-    <div>
-      <button onClick={handleExportMix} disabled={isExporting}>
-        {isExporting ? "Exporting..." : "Export Mix"}
-      </button>
-      {exportStatus && <p>{exportStatus}</p>}
-    </div>
+async function exportMix(project: Project, fileName = "mix"): Promise<void> {
+  const audioBuffer = await AudioOfflineRenderer.start(
+    project,
+    Option.None,
+    (value) => console.log(`Rendering ${Math.round(value * 100)}%`),
+    undefined,
+    48000
   );
-};
+  downloadWav(WavFile.encodeFloats(audioBuffer), `${fileName}.wav`);
+}
 ```
+
+**What gets exported:**
+- All tracks mixed together
+- All audio effects rendered
+- All automation applied
+- Master output effects included
+- Final stereo mixdown
 
 ---
 
@@ -464,66 +369,84 @@ const App = () => {
 
 ### Effect Inclusion Control
 
-The key feature of stems export is **per-stem control** of effects inclusion:
+A stems export is driven by an `ExportConfiguration` whose `stems` map is keyed by audio-unit
+UUID. Each entry controls what gets baked into that stem:
 
 ```typescript
-// Export with different effect settings per track
-const stemsConfig = {
-  // Vocals: Include all effects (Reverb + Compressor)
-  [vocalsUUID]: {
-    includeAudioEffects: true,
-    includeSends: false,
-    fileName: "vocals-wet"
-  },
+import type { ExportConfiguration } from "@opendaw/studio-adapters";
 
-  // Drums: Include compression, export tight sound
-  [drumsUUID]: {
-    includeAudioEffects: true,
-    includeSends: false,
-    fileName: "drums-compressed"
+const exportConfig: ExportConfiguration = {
+  stems: {
+    // Vocals: include all audio effects (Reverb + Compressor)
+    [vocalsUUID]: { includeAudioEffects: true,  includeSends: false, useInstrumentOutput: false, fileName: "vocals" },
+    // Drums: include compression, export a tight sound
+    [drumsUUID]:  { includeAudioEffects: true,  includeSends: false, useInstrumentOutput: false, fileName: "drums" },
+    // Guitar: export dry for re-amping later
+    [guitarUUID]: { includeAudioEffects: false, includeSends: false, useInstrumentOutput: false, fileName: "guitar" },
   },
-
-  // Guitar: Export dry for re-amping later
-  [guitarUUID]: {
-    includeAudioEffects: false,
-    includeSends: false,
-    fileName: "guitar-dry"
-  }
 };
 ```
 
-### Example Integration
+**Per-stem flags** (the `ExportStemConfiguration` type):
+- `fileName` *(required)* — display name for the stem; the SDK also uses it when naming output
+- `includeAudioEffects` — bake the track's audio-effect chain into the stem
+- `includeSends` — include aux/send returns (reverb/delay buses) in the stem
+- `useInstrumentOutput` — **keep this `false`.** `true` wires the raw instrument output
+  straight to the bus and returns early, bypassing audio effects, sends, **and** the channel
+  strip — which makes `includeAudioEffects`/`includeSends` dead. (openDAW's own export dialog
+  omits the flag for this reason.)
+- `skipChannelStrip` *(optional)* — bypasses the channel-strip volume/pan/mute and, as a
+  side effect of the same early return, drops aux sends regardless of `includeSends`.
 
-**React users:** See the [`useAudioExport` hook](#react-hook) for a convenient wrapper.
+### Channel layout and extraction
+
+A stems render returns a single multi-channel buffer with one stereo pair per stem, **in the
+order the `stems` map was iterated**:
+
+```
+channel:  0     1     2     3     4     5    ...
+stem:     s1_L  s1_R  s2_L  s2_R  s3_L  s3_R ...
+```
+
+Slice each pair into its own stereo file (see `sliceStem` in [Core API](#saving-and-slicing-the-result)):
 
 ```typescript
-import { useAudioExport } from "./hooks/useAudioExport";
+const audioBuffer = await AudioOfflineRenderer.start(
+  project, Option.wrap(exportConfig),
+  (value) => console.log(`${Math.round(value * 100)}%`), undefined, 48000
+);
 
-const App = () => {
-  const [project, setProject] = useState<Project | null>(null);
-
-  const { isExporting, exportStatus, handleExportStems } = useAudioExport(project, {
-    sampleRate: 48000
-  });
-
-  // Wrapper with your desired configuration
-  const handleStemsWithEffects = useCallback(async () => {
-    await handleExportStems({
-      includeAudioEffects: true,
-      includeSends: false
-    });
-  }, [handleExportStems]);
-
-  return (
-    <div>
-      <button onClick={handleStemsWithEffects} disabled={isExporting}>
-        {isExporting ? "Exporting..." : "Export Stems"}
-      </button>
-      {exportStatus && <p>{exportStatus}</p>}
-    </div>
-  );
-};
+// `Object.values` preserves insertion order, which matches the channel layout
+Object.values(exportConfig.stems!).forEach((stem, i) =>
+  downloadWav(WavFile.encodeFloats(sliceStem(audioBuffer, i)), `${stem.fileName}.wav`)
+);
 ```
+
+### Example
+
+```typescript
+const exportConfig: ExportConfiguration = {
+  stems: {
+    [vocalsUUID]: { includeAudioEffects: true,  includeSends: false, useInstrumentOutput: false, fileName: "vocals" },
+    [drumsUUID]:  { includeAudioEffects: true,  includeSends: false, useInstrumentOutput: false, fileName: "drums" },
+    [guitarUUID]: { includeAudioEffects: false, includeSends: false, useInstrumentOutput: false, fileName: "guitar-dry" },
+  },
+};
+
+const audioBuffer = await AudioOfflineRenderer.start(
+  project, Option.wrap(exportConfig),
+  (value) => console.log(`${Math.round(value * 100)}%`), undefined, 48000
+);
+
+Object.values(exportConfig.stems!).forEach((stem, i) =>
+  downloadWav(WavFile.encodeFloats(sliceStem(audioBuffer, i)), `${stem.fileName}.wav`)
+);
+```
+
+**What gets exported:**
+- One WAV file per stem
+- Each rendered to its own stereo pair
+- Effects optionally included per stem (via the flags above)
 
 ---
 
@@ -531,75 +454,74 @@ const App = () => {
 
 ### Sample Rate
 
-**Default:** 48000 Hz (48 kHz)
+The fifth argument to `start()` sets the render sample rate.
 
-**Options:**
+**Common values:**
 - `44100` - CD quality
-- `48000` - Professional standard (recommended)
+- `48000` - Professional standard (recommended, the SDK default)
 - `96000` - High resolution (larger files)
 
 ```typescript
-await exportFullMix(project, {
-  sampleRate: 48000  // 48 kHz
-});
+await AudioOfflineRenderer.start(project, Option.None, progress, undefined, 48000);
 ```
 
 ### Progress Tracking
 
-**Note:** Real-time progress tracking is not available during the offline rendering phase because OpenDAW's `AudioOfflineRenderer` doesn't provide progress callbacks. The export functions support an `onProgress` callback parameter for compatibility, but progress updates are limited to milestone events rather than continuous progress.
-
-**Milestone events:**
-- `50` - Rendering complete, encoding started
-- `75` - Encoding complete, preparing download (full mix only)
-- `100` - Export complete
-
-**Recommendation:** Use status messages (`onStatus`) and show an indeterminate loading indicator rather than a progress bar, with a note that export may take time for long tracks.
-
-### Status Messages
-
-Receive detailed status messages during export:
+Both renderers report progress as a normalized `0.0–1.0` value, but through different types:
 
 ```typescript
-await exportFullMix(project, {
-  onStatus: (status) => {
-    console.log(status);
-    setStatusText(status);
-  }
-});
+// AudioOfflineRenderer: a Progress.Handler callback
+import { Progress } from "@opendaw/lib-std";
+const handler: Progress.Handler = (value) => setPercent(Math.round(value * 100));
+await AudioOfflineRenderer.start(project, Option.None, handler, undefined, 48000);
+
+// OfflineEngineRenderer: a DefaultObservableValue<number> you subscribe to
+import { DefaultObservableValue } from "@opendaw/lib-std";
+const progress = new DefaultObservableValue(0);
+const sub = progress.subscribe((o) => setPercent(Math.round(o.getValue() * 100)));
+await OfflineEngineRenderer.start(project, Option.None, progress, undefined, 48000);
+sub.terminate();
 ```
 
-**Example status messages:**
-- "Preparing offline render..."
-- "Rendering audio..."
-- "Encoding WAV file..."
-- "Preparing download..."
-- "Export complete!"
+Offline rendering runs as fast as the CPU allows and the end is determined by silence
+detection, so the rate of progress updates is not uniform. For long renders, an
+indeterminate indicator with a "may take a moment" note often reads better than a precise bar.
 
-### Filename Customization
+### Cancellation
 
-Specify custom filenames (without extension):
+Pass an `AbortSignal` as the fourth argument and abort it to cancel a render. The promise
+rejects with an abort error — detect it with `Errors.isAbort`:
 
 ```typescript
-// Full mix
-await exportFullMix(project, {
-  fileName: "my-song-final-v3"
-  // Downloads as: my-song-final-v3.wav
-});
+import { Errors } from "@opendaw/lib-std";
 
-// Stems
-const stemsConfig = {
-  [uuid1]: {
-    includeAudioEffects: true,
-    includeSends: false,
-    fileName: "Lead_Vocals_with_FX"
-    // Downloads as: Lead_Vocals_with_FX.wav
+const controller = new AbortController();
+try {
+  const audioBuffer = await AudioOfflineRenderer.start(
+    project, Option.None, progress, controller.signal, 48000
+  );
+  downloadWav(WavFile.encodeFloats(audioBuffer), "mix.wav");
+} catch (error) {
+  if (Errors.isAbort(error)) {
+    console.log("Export cancelled");
+  } else {
+    throw error;
   }
-};
+}
 ```
 
-**Filename sanitization:**
-- Invalid characters automatically replaced with underscores
-- Use `sanitizeFileName()` helper for manual sanitization
+### Filenames
+
+`downloadWav` takes whatever filename you pass. For names that come from user input, the SDK
+ships a sanitizer — `ExportConfiguration.sanitizeFileName(name)`, plus
+`ExportConfiguration.sanitizeExportNamesInPlace(config)` to fix every stem `fileName` in a
+config at once:
+
+```typescript
+import { ExportConfiguration } from "@opendaw/studio-adapters";
+
+downloadWav(WavFile.encodeFloats(audioBuffer), `${ExportConfiguration.sanitizeFileName(userTitle)}.wav`);
+```
 
 ---
 
@@ -620,67 +542,36 @@ When exporting, OpenDAW renders all effects **offline** (non-real-time):
 - ✓ Audio effect automation
 - ✓ Volume and pan automation
 - ✓ Master output effects
-- ✗ Send effects (optional, controlled via `includeSends`)
+- ✗ Send effects (optional, controlled per stem via `includeSends`)
 
-### Hearing Your Effects in Exports
+### Full mix — all effects always included
 
-**Full Mix Export:**
+The mixdown branch renders the project exactly as it sounds in realtime, so every effect is
+baked in automatically:
+
 ```typescript
-// All effects are automatically included
-await exportFullMix(project, {
-  fileName: "mix-with-all-effects"
-});
-// Result: Single stereo file with all effects rendered
+const audioBuffer = await AudioOfflineRenderer.start(project, Option.None, progress, undefined, 48000);
+downloadWav(WavFile.encodeFloats(audioBuffer), "mix-with-all-effects.wav");
 ```
 
-**Stems Export with Effects:**
+### Per-stem effect control
+
+For stems, the `includeAudioEffects` flag decides whether each track's effect chain is baked in:
+
 ```typescript
-const stemsConfig = {
-  [vocalsUUID]: {
-    includeAudioEffects: true,  // ← Include Reverb, Compressor, etc.
-    includeSends: false,
-    fileName: "vocals-processed"
-  }
+const exportConfig: ExportConfiguration = {
+  stems: {
+    // Wet: Reverb, Compressor, EQ rendered in order
+    [vocalsUUID]: { includeAudioEffects: true,  includeSends: false, useInstrumentOutput: false, fileName: "vocals" },
+    // Dry: instrument/clip signal only, no effects
+    [guitarUUID]: { includeAudioEffects: false, includeSends: false, useInstrumentOutput: false, fileName: "guitar" },
+  },
 };
-
-await exportStems(project, stemsConfig);
-// Result: vocals-processed.wav with all effects baked in
+const audioBuffer = await AudioOfflineRenderer.start(project, Option.wrap(exportConfig), progress, undefined, 48000);
 ```
 
-**Stems Export without Effects (Dry):**
-```typescript
-const stemsConfig = {
-  [vocalsUUID]: {
-    includeAudioEffects: false,  // ← Export dry signal
-    includeSends: false,
-    fileName: "vocals-dry"
-  }
-};
-
-await exportStems(project, stemsConfig);
-// Result: vocals-dry.wav with no effects
-```
-
-### Effect Chain Example
-
-```typescript
-// Setup: Vocals track with Compressor → Reverb → EQ
-vocalsEffects.addEffect("Compressor");
-vocalsEffects.addEffect("Reverb");
-vocalsEffects.addEffect("EQ");
-
-// Export with effects
-const stemsConfig = {
-  [vocalsUUID]: {
-    includeAudioEffects: true,  // All 3 effects rendered in order
-    includeSends: false,
-    fileName: "vocals-with-chain"
-  }
-};
-
-await exportStems(project, stemsConfig);
-// Result: vocals-with-chain.wav has Compressor → Reverb → EQ applied
-```
+When `includeAudioEffects` is `true`, the full chain renders in order — a vocals track with
+Compressor → Reverb → EQ produces a stem with Compressor → Reverb → EQ applied.
 
 ---
 
@@ -694,19 +585,20 @@ await exportStems(project, stemsConfig);
 **File size:** Large (~10 MB/minute stereo)
 
 ```typescript
-// WAV export (automatic via exportFullMix/exportStems)
-await exportFullMix(project, { fileName: "mix" });
-// Downloads: mix.wav
+import { WavFile } from "@opendaw/lib-dsp";
+
+const audioBuffer = await AudioOfflineRenderer.start(project, Option.None, progress, undefined, 48000);
+downloadWav(WavFile.encodeFloats(audioBuffer), "mix.wav");
 ```
 
 ### MP3 and FLAC (Via OpenDAW Studio)
 
-**Note:** The demo utilities (`exportFullMix`, `exportStems`) only support WAV. For MP3/FLAC, use OpenDAW Studio's `Mixdowns` service:
+`WavFile` only encodes WAV. For MP3/FLAC, use OpenDAW Studio's `Mixdowns` service:
 
 ```typescript
 import { Mixdowns } from "@opendaw/studio/service/Mixdowns";
 
-// MP3 export (requires FFmpeg)
+// MP3/FLAC export (requires FFmpeg)
 await Mixdowns.exportMixdown({ project, meta });
 // User selects format in dialog: WAV, MP3, or FLAC
 ```
@@ -725,172 +617,91 @@ await Mixdowns.exportMixdown({ project, meta });
 
 ## Examples
 
-### Example 1: Drum Scheduling Demo
-
-Export a programmatic drum pattern using the `useAudioExport` hook:
+### Example 1: Full mix with a generated filename
 
 ```typescript
-import { useAudioExport } from "./hooks/useAudioExport";
-
-// Use the hook (automatically names file based on BPM)
-const { handleExportMix, handleExportStems } = useAudioExport(project, {
-  sampleRate: 48000,
-  mixFileName: `drum-pattern-${bpm}bpm`
-});
-
-// Export full drum pattern (just call it!)
-await handleExportMix();
-
-// Export individual drum sounds (no effects for dry samples)
-const handleDrumStems = useCallback(async () => {
-  await handleExportStems({
-    includeAudioEffects: false,  // Drums are dry samples
-    includeSends: false
-  });
-  // Result: Separate files for "Kick", "Snare", "Hi-Hat Closed", etc.
-}, [handleExportStems]);
+const audioBuffer = await AudioOfflineRenderer.start(
+  project, Option.None,
+  (value) => console.log(`${Math.round(value * 100)}%`), undefined, 48000
+);
+downloadWav(WavFile.encodeFloats(audioBuffer), `drum-pattern-${bpm}bpm.wav`);
 ```
 
-### Example 2: Effects Demo
-
-Export with audio effects rendered using the `useAudioExport` hook:
+### Example 2: Stems with effects baked in
 
 ```typescript
-import { useAudioExport } from "./hooks/useAudioExport";
-
-// Use the hook
-const { handleExportMix, handleExportStems } = useAudioExport(project, {
-  sampleRate: 48000,
-  mixFileName: "dark-ride-mix"
-});
-
-// Export full mix with all effects (just call it!)
-await handleExportMix();
-// Result: All track effects + master effects rendered
-
-// Export stems with effects
-const handleEffectsStems = useCallback(async () => {
-  await handleExportStems({
-    includeAudioEffects: true,  // ← Export with effects!
-    includeSends: false
-  });
-  // Result: 7 WAV files (Intro, Vocals, Guitar Lead, Guitar, Drums, Bass, Effect Returns)
-  // Each with their effects baked in!
-}, [handleExportStems]);
-```
-
-### Example 3: Custom UI Integration
-
-Complete React component with export UI using the hook:
-
-```typescript
-import { useAudioExport } from "./hooks/useAudioExport";
-import { Button, Text } from "@radix-ui/themes";
-
-const ExportPanel = ({ project }: { project: Project | null }) => {
-  const { isExporting, exportStatus, handleExportMix } = useAudioExport(project, {
-    sampleRate: 48000,
-    mixFileName: "my-export"
-  });
-
-  return (
-    <div>
-      <Button onClick={handleExportMix} disabled={!project || isExporting}>
-        {isExporting ? "Exporting..." : "Export Mix"}
-      </Button>
-
-      {(exportStatus || isExporting) && (
-        <div>
-          <Text>{exportStatus}</Text>
-          {isExporting && (
-            <Text size="1" color="gray">
-              Rendering offline (may take a moment for long tracks)
-            </Text>
-          )}
-        </div>
-      )}
-    </div>
-  );
+const exportConfig: ExportConfiguration = {
+  stems: Object.fromEntries(
+    tracks.map((t) => [t.uuid, { includeAudioEffects: true, includeSends: false, useInstrumentOutput: false, fileName: t.name }])
+  ),
 };
+const audioBuffer = await AudioOfflineRenderer.start(project, Option.wrap(exportConfig), progress, undefined, 48000);
+tracks.forEach((t, i) => downloadWav(WavFile.encodeFloats(sliceStem(audioBuffer, i)), `${t.name}.wav`));
+// Result: one WAV per track, each with its effects rendered
 ```
+
+### Runnable demos
+
+These concepts ship as runnable demos in this handbook's companion app — see the
+[Export Demo](https://opendaw-test.pages.dev/export-demo.html) for full-mix, stems, and
+range export wired up to a UI.
 
 ---
 
 ## Best Practices
 
-### 1. Disable Playback During Export
+### 1. Stop playback before exporting
+
+The renderer works on a copy, but stopping the live transport first avoids contention for
+audio resources:
 
 ```typescript
-const handleExport = async () => {
-  // Stop playback before exporting
-  if (project.engine.isPlaying.getValue()) {
-    project.engine.stop();
-  }
-
-  await exportFullMix(project, {
-    fileName: "mix"
-  });
-};
+if (project.engine.isPlaying.getValue()) {
+  project.engine.stop();
+}
+const audioBuffer = await AudioOfflineRenderer.start(project, Option.None, progress, undefined, 48000);
 ```
 
-### 2. Provide User Feedback
-
-**Recommended:** Use the `useAudioExport` hook which handles feedback automatically:
+### 2. Show progress and a long-render hint
 
 ```typescript
-const { isExporting, exportStatus, handleExportMix } = useAudioExport(project);
-
-// Display status to user
-{exportStatus && <Text>{exportStatus}</Text>}
-{isExporting && <Text>Rendering offline (may take a moment)...</Text>}
-```
-
-**Alternative (low-level API):** Use status callbacks:
-
-```typescript
-await exportFullMix(project, {
-  onStatus: (s) => {
-    setStatusMessage(s);
-    console.log(s);
-  }
-});
-```
-
-### 3. Handle Errors Gracefully
-
-```typescript
+const progress = new DefaultObservableValue(0);
+const sub = progress.subscribe((o) => setPercent(Math.round(o.getValue() * 100)));
 try {
-  await exportFullMix(project, { fileName: "mix" });
-} catch (error) {
-  console.error("Export failed:", error);
-  alert("Export failed. Please try again.");
+  const audioData = await OfflineEngineRenderer.start(project, Option.None, progress, undefined, 48000);
+  downloadWav(WavFile.encodeFloats(audioData), "mix.wav");
+} finally {
+  sub.terminate();
 }
 ```
 
-### 4. Sanitize Filenames
+### 3. Handle errors (and aborts) gracefully
 
 ```typescript
-import { sanitizeFileName } from "./lib/audioExport";
+import { Errors } from "@opendaw/lib-std";
 
-const safeName = sanitizeFileName("My Song (Final) v2.3");
-// Result: "My_Song__Final__v2_3"
-
-await exportFullMix(project, { fileName: safeName });
+try {
+  const audioBuffer = await AudioOfflineRenderer.start(project, Option.None, progress, undefined, 48000);
+  downloadWav(WavFile.encodeFloats(audioBuffer), "mix.wav");
+} catch (error) {
+  if (Errors.isAbort(error)) return; // user cancelled
+  console.error("Export failed:", error);
+}
 ```
 
-### 5. Use Descriptive Names
+### 4. Use descriptive filenames
 
 ```typescript
 // Good
-fileName: "darkride-master-v3-with-compression"
-fileName: "vocals-dry-for-reamping"
+"darkride-master-v3-with-compression.wav"
+"vocals-dry-for-reamping.wav"
 
 // Less helpful
-fileName: "mix"
-fileName: "export1"
+"mix.wav"
+"export1.wav"
 ```
 
-### 6. Consider File Sizes
+### 5. Consider file sizes
 
 **WAV files are large:**
 - Stereo, 48kHz, 32-bit: ~10 MB per minute
@@ -899,192 +710,67 @@ fileName: "export1"
 
 **Recommendations:**
 - Use WAV for archival and processing
-- Convert to MP3/FLAC for sharing (use OpenDAW Studio's Mixdowns service)
+- Convert to MP3/FLAC for sharing (use OpenDAW Studio's `Mixdowns` service)
 - Warn users about file sizes for long exports
 
 ---
 
 ## Troubleshooting
 
-### Export Fails with "undefined is not a function"
+### Render throws "Already connected"
 
-**Problem:** Missing imports or undefined project
+**Problem:** Rendering directly from the live project — both renderers connect the source
+project's `liveStreamReceiver`, which the live engine already holds.
+
+**Solution:** Render from a copy, or use the manual pipeline in
+[Advanced: Offline Rendering Patterns](#advanced-offline-rendering-patterns).
+
+```typescript
+const audioBuffer = await AudioOfflineRenderer.start(project.copy(), Option.None, progress, undefined, 48000);
+```
+
+### No download triggered
+
+**Problem:** Browser blocked the download.
+
+**Solution:**
+- A user gesture is required — trigger the export from a click handler
+- Check the console for errors and verify a popup/download blocker isn't interfering
+
+### Effects not rendered in a stem
+
+**Problem:** `includeAudioEffects: false`, or `useInstrumentOutput: true` (which bypasses the
+effect chain, sends, and channel strip entirely).
 
 **Solution:**
 ```typescript
-// Ensure correct imports
-import { exportFullMix } from "./lib/audioExport";
-import { Project } from "@opendaw/studio-core";
-
-// Check project is defined
-if (!project) {
-  console.error("Project is not initialized");
-  return;
-}
-
-await exportFullMix(project, { fileName: "mix" });
+[uuid]: { includeAudioEffects: true, includeSends: false, useInstrumentOutput: false }
 ```
 
-### No Download Triggered
+### Export takes a long time
 
-**Problem:** Browser blocked download
-
-**Solution:**
-- User gesture required (must be in response to button click)
-- Check browser console for errors
-- Verify popup blocker isn't blocking downloads
-
-```typescript
-// Ensure export is triggered from user interaction
-<button onClick={handleExport}>Export</button>
-```
-
-### Effects Not Rendered in Export
-
-**Problem:** `includeAudioEffects` set to `false`
+**Explanation:** Offline rendering still processes every sample through the full DSP graph;
+long tracks and heavy effect chains take proportionally longer. This is expected and is what
+makes the export bit-exact with realtime.
 
 **Solution:**
-```typescript
-// For stems with effects
-const stemsConfig = {
-  [uuid]: {
-    includeAudioEffects: true,  // ← Make sure this is true
-    includeSends: false,
-    fileName: "stem-with-fx"
-  }
-};
-```
+- Subscribe to the renderer's progress and show status to the user
+- Test with a short range first (see [Range Selection](#range-selection-bars-to-ppqn))
 
-### Export Takes Too Long
+### Volume too low/high in export
 
-**Problem:** Long audio files or many effects
-
-**Explanation:**
-- Offline rendering is slower than real-time
-- Multiple effects increase processing time
-- This is normal and ensures quality
+**Problem:** Gain staging or effect parameters.
 
 **Solution:**
-- Use the `useAudioExport` hook to show status messages
-- Display a note that export may take time for long tracks
-- Consider exporting shorter sections for testing
-
-```typescript
-const { isExporting, exportStatus, handleExportMix } = useAudioExport(project);
-
-// Show status to user
-{exportStatus && <Text>{exportStatus}</Text>}
-{isExporting && <Text>Rendering offline (may take a moment for long tracks)</Text>}
-```
-
-### Volume Too Low/High in Export
-
-**Problem:** Gain staging or effect parameters
-
-**Solution:**
-- Check master volume level
+- Check the master volume level
 - Verify effect parameters (especially Crushers and Compressors)
-- Adjust levels before exporting
-- Test with a short export first
+- Adjust levels before exporting and test with a short export first
 
-### "Overlapping regions" Warning and Incomplete Export
+### "Overlapping regions" warning and incomplete export
 
-**Problem:** Console shows warnings like "Overlapping regions" followed by "Deleting 16 invalid boxes", and export is incomplete (missing some tracks)
-
-**Cause:** Overlapping regions on one track are invalid by design — in **both** timeBases. The validation that `project.copy()` runs (`ProjectValidation.validate()`) emits a console warning and a `RuntimeNotifier.info("Some data is corrupt")` notification, then deletes overlapping pairs. Export and offline render are built on `project.copy()`, so overlapping regions are deleted before any audio is rendered.
-
-**Background:**
-
-The confusion comes from two different validators:
-
-- `ProjectValidation.ts` — runs on load and on `project.copy()` (so: export, offline render). It compares raw box values: `right.position < left.position + left.duration`. For Seconds regions, `duration` is stored in seconds while `position` is PPQN — the arithmetic uses mixed units. Musically-offset Seconds overlaps may therefore survive `copy()` undetected, while near-identical-position duplicates are deleted. Do not rely on `ProjectValidation` to catch Seconds overlaps.
-- `RegionClipResolver.validateTrack()` — the **live arrangement** probe. It contains the carve-out below, which means the *live* probe skips Seconds-timeBase regions entirely — Seconds overlaps produce **no warning while editing**:
-
-```typescript
-// AudioRegions in absolute time-domain are allowed to overlap. (LIVE resolver only)
-const allowOverlap = (region: AnyRegionBoxAdapter) =>
-    region instanceof AudioRegionBoxAdapter && region.timeBase !== TimeBase.Musical
-```
-
-`TimeBase.Seconds` changes how *duration* is stored (seconds instead of PPQN) — it does **not** make overlaps design-safe, but the mixed-unit comparison means Seconds overlaps may go undetected by `ProjectValidation`. Prevent them at write time regardless.
-
-**Solution 1: Use Separate Tracks (Recommended for overlapping one-shots)**
-
-Create individual tracks for each audio source whose decay must overlap the next hit:
-
-```typescript
-samples.forEach(sample => {
-  const { audioUnitBox, trackBox } = api.createInstrument(InstrumentFactories.Tape);
-  // Each sample gets its own track — overlap happens between tracks, which is fine
-});
-```
-
-**Solution 2: Prevent Overlaps by Capping Duration**
-
-If you need tempo-synced regions, ensure they don't overlap by limiting duration:
-
-```typescript
-// Calculate spacing between hits
-const spacing = Quarter * 2; // e.g., every 2 quarter notes
-
-// Limit duration to prevent overlaps
-const safeDuration = Math.min(
-  PPQN.secondsToPulses(audioBuffer.duration, bpm),
-  spacing  // Cap at spacing to prevent overlap
-);
-
-// Create events collection (required)
-const eventsCollectionBox = ValueEventCollectionBox.create(boxGraph, UUID.generate());
-
-const regionBox = AudioRegionBox.create(boxGraph, UUID.generate(), box => {
-  box.regions.refer(trackBox.regions);
-  box.file.refer(audioFileBox);
-  box.events.refer(eventsCollectionBox.owners); // Required
-  box.timeBase.setValue(TimeBase.Musical);  // Default, tempo-aware
-  box.duration.setValue(safeDuration);  // ← Capped duration
-  // ... other settings
-});
-```
-
-**Solution 3: Use Separate Tracks**
-
-Create individual tracks for each audio source to avoid overlaps entirely:
-
-```typescript
-// Instead of multiple regions on one track:
-samples.forEach(sample => {
-  const { audioUnitBox, trackBox } = api.createInstrument(InstrumentFactories.Tape);
-  // Each sample gets its own track - no overlaps possible
-});
-```
-
-**When to Use Each Approach:**
-
-| Use Case | Recommended TimeBase | Overlaps on one track? |
-|----------|---------------------|------------------------|
-| Drums, percussion | `TimeBase.Seconds` (constant duration) | Must prevent — use separate tracks for decay tails |
-| Sound effects, ambience | `TimeBase.Seconds` | Must prevent |
-| Loops that need tempo sync | `TimeBase.Musical` (the default) | Must prevent |
-| Melodic/harmonic content | `TimeBase.Musical` | Must prevent |
-| Vocal recordings | Either (depends on workflow) | Must prevent |
-
-**Validation Details:**
-
-OpenDAW runs validation at these points:
-1. Project load (`ProjectValidation.validate()`)
-2. Before export (`AudioOfflineRenderer.start()`)
-3. During editing (`RegionClipResolver.validateTrack()`)
-
-Points 1–2 (`ProjectValidation`): when overlapping regions are detected:
-- Console warnings appear for each overlap
-- All overlapping regions are marked invalid and deleted
-- User sees: "Some data is corrupt" notification
-- Seconds-region detection is unreliable (mixed-unit comparison) — overlaps may survive undetected
-
-Point 3 (`RegionClipResolver.validateTrack()`): warns only, never deletes. It skips
-Seconds-timeBase tracks entirely — no warning surfaces for Seconds overlaps during editing.
-
-This is **not a bug** — overlapping regions on one track are invalid by design in both timeBases.
+Overlapping regions on a single track are invalid by design in both timeBases. The
+Seconds-timeBase path surfaces no warning for overlaps during editing — this is **not a bug**,
+but it can truncate an export. Keep one region per position per track.
 
 ---
 
@@ -1092,15 +778,16 @@ This is **not a bug** — overlapping regions on one track are invalid by design
 
 ### Related Files
 
-- **Export Utility:** `src/lib/audioExport.ts`
-- **React Hook:** `src/hooks/useAudioExport.ts`
 - **Drum Demo Integration:** `src/demos/playback/drum-scheduling-demo.tsx`
 - **Effects Demo Integration:** `src/demos/effects/effects-demo.tsx`
+- **Export Demo:** [opendaw-test.pages.dev/export-demo.html](https://opendaw-test.pages.dev/export-demo.html)
 
 ### OpenDAW Core Files
 
-- **Offline Renderer:** `@opendaw/studio-core/AudioOfflineRenderer.ts`
+- **Offline Renderer (deprecated):** `@opendaw/studio-core/AudioOfflineRenderer.ts`
+- **Offline Renderer (current):** `@opendaw/studio-core/OfflineEngineRenderer.ts`
 - **WAV Encoding:** `@opendaw/lib-dsp/WavFile.ts`
+- **Export Configuration type:** `@opendaw/studio-adapters/ExportConfiguration.ts`
 - **Mixdowns Service:** `@opendaw/studio/service/Mixdowns.ts`
 - **Engine Integration:** `@opendaw/studio-core-processors/EngineProcessor.ts`
 

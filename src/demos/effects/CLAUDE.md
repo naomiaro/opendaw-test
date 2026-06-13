@@ -136,6 +136,11 @@ All adapters implement `DeviceBoxAdapter` with `.type`, `.labelField`, `.enabled
 - `TidalDeviceBoxAdapter` — 17-entry RateFractions (1/1→1/128), different from Delay
 - `NeuralAmpDeviceBoxAdapter` ("Tone3000") — neural amp modeling with NAM files
 
+### Live Metering (Per-Device Meter Data)
+`project.liveStreamReceiver.subscribeFloats(adapter.address, (data: Float32Array) => …)` streams
+a device's live meter values, keyed by the device `adapter.address`. Returns a `Subscription` —
+terminate on cleanup. `LiveStreamReceiver` is from `@opendaw/lib-fusion`, `Address` from `@opendaw/lib-box`.
+
 ### Modular Synth System (ModularAdapter)
 `ModularDeviceBoxAdapter` wraps a modular synth/effect graph:
 ```typescript

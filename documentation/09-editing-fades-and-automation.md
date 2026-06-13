@@ -446,27 +446,6 @@ See `src/hooks/useWaveformRendering.ts` for a complete React hook implementation
 - Handles canvas resizing and repainting
 - Shows gaps when regions are moved
 
-#### TracksContainer Component
-
-For building timeline-based UIs, use a container with absolute-positioned playhead overlay:
-
-```typescript
-<TracksContainer
-  currentPosition={currentPosition}
-  bpm={120}
-  maxDuration={maxDuration}
-  leftOffset={200}  // Width of track controls area
->
-  <TimelineRuler maxDuration={maxDuration} />
-  {tracks.map(track => <TrackRow {...track} />)}
-</TracksContainer>
-```
-
-This ensures:
-- Playhead aligns correctly with waveforms
-- Timeline ruler matches waveform positions
-- Consistent positioning across all visual elements
-
 ---
 
 ## Complete Editing Workflow Examples

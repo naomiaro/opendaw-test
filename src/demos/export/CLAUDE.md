@@ -72,6 +72,9 @@ The mute window is a single synchronous JS task — no audio blocks process in b
 `WavFile.encodeFloats` takes any `{sampleRate, length, numberOfChannels, getChannelData}`
 — wrap `ExportResult.channels` directly instead of copying through `channelsToAudioBuffer`
 when encoding render output for upload/download.
+Encoders: `encodeFloats` (32-bit float) and `encodeInts16` (16-bit PCM, clamps to [-1,1]) —
+no 24-bit encoder. `decodeFloats(buffer)` returns `AudioData`
+(`{sampleRate, numberOfFrames, numberOfChannels, frames: Float32Array[]}`), NOT `{channels, numFrames}`.
 
 ### Transfer APIs (Cross-Project Copy)
 `@opendaw/studio-adapters` provides namespace utilities for copying content between
