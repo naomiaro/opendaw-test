@@ -12,19 +12,19 @@ import { loadTracksFromFiles } from "@/lib/trackLoading";
 import { getAudioExtension } from "@/lib/audioUtils";
 import { usePlaybackPosition } from "@/hooks/usePlaybackPosition";
 import { useTransportControls } from "@/hooks/useTransportControls";
+import { CONSOLE_STYLES, CODE_BLOCK_STYLE } from "@/lib/design/consoleTheme";
 import {
   exportStemsRange,
   exportMixdown,
   channelsToAudioBuffer,
   downloadAsWav,
-  type ExportResult,
 } from "@/lib/rangeExport";
+import { ExportResultsList, formatDuration, type PreviewResult } from "./ExportResultsList";
 import type { TrackData } from "@/lib/types";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
   Container,
-  Heading,
   Text,
   Flex,
   Card,
@@ -33,39 +33,86 @@ import {
   Switch,
   TextField,
   Separator,
-  Badge,
   Callout,
   CheckboxGroup,
+  Code,
 } from "@radix-ui/themes";
 
 const BPM = 124;
 const BAR = PPQN.fromSignature(4, 4); // 3840
 
-interface PreviewResult extends ExportResult {
-  id: number;
-  audioBuffer: AudioBuffer;
+// Loading spinner — amber ring on console tokens, gated for reduced motion
+// (the status text below the ring carries the same information).
+const PAGE_STYLES = `
+.ex-spinner {
+  width: 44px;
+  height: 44px;
+  border: 3px solid var(--mc-line-bright);
+  border-top-color: var(--mc-amber);
+  border-radius: 50%;
+  animation: ex-spin 1s linear infinite;
 }
-
-let nextResultId = 0;
+@keyframes ex-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .ex-spinner { animation: none; }
+}
+.ex-results {
+  margin-top: 8px;
+  border: 1px solid var(--mc-line);
+  border-left: 2px solid var(--mc-amber);
+  border-radius: 4px;
+  background: var(--mc-panel);
+  padding: 20px 22px;
+}
+.ex-results-head { margin-bottom: 14px; }
+.ex-results-title {
+  font-family: var(--mc-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--mc-amber);
+}
+.ex-results-list {
+  display: grid;
+  gap: 1px;
+  background: var(--mc-line);
+  border: 1px solid var(--mc-line);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.ex-result-row {
+  background: var(--mc-bg);
+  padding: 14px 16px;
+  min-width: 0;
+}
+.ex-result-label {
+  font-family: var(--mc-mono);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--mc-text);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ex-result-badges { flex: none; }
+`;
 
 const App: React.FC = () => {
   // --- Initialization state ---
   const [status, setStatus] = useState("Loading...");
+  const [initError, setInitError] = useState<string | null>(null);
   const [project, setProject] = useState<Project | null>(null);
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
   const [tracks, setTracks] = useState<TrackData[]>([]);
 
   // --- Transport ---
   const { currentPosition, isPlaying, pausedPositionRef } = usePlaybackPosition(project);
-  const { handlePlay, handlePause, handleStop: baseHandleStop } = useTransportControls({
+  const { handlePlay, handlePause, handleStop } = useTransportControls({
     project,
     audioContext,
     pausedPositionRef,
   });
-  const handleStop = useCallback(() => {
-    baseHandleStop();
-    setLoopingRange(false);
-  }, [baseHandleStop]);
 
   // --- Metronome settings ---
   const [metronomeEnabled, setMetronomeEnabled] = useState(false);
@@ -87,6 +134,10 @@ const App: React.FC = () => {
   const [isExporting, setIsExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState("");
   const [results, setResults] = useState<PreviewResult[]>([]);
+  const exportFailed = exportStatus.toLowerCase().includes("failed");
+  // Result IDs come from a ref, not module state: module-level counters survive
+  // HMR remounts / StrictMode double-mounts and collide across remounts.
+  const nextResultIdRef = useRef(0);
 
   // --- Preview playback ---
   const previewSourceRef = useRef<AudioBufferSourceNode | null>(null);
@@ -144,8 +195,8 @@ const App: React.FC = () => {
         setTracks(loadedTracks);
         setStatus("Ready");
       } catch (error) {
-        if (mounted) setStatus(`Error: ${error}`);
-        console.error(error);
+        console.error("Failed to initialize:", error);
+        if (mounted) setInitError(error instanceof Error ? error.message : String(error));
       }
     })();
 
@@ -183,6 +234,13 @@ const App: React.FC = () => {
     });
   }, [project, startPpqn, endPpqn, loopingRange, validRange]);
 
+  // Derive the "Play Range" toggle from the engine: if playback stops by any
+  // path (engine reaches end, transport Stop, etc.), reset the range loop so
+  // the button never shows "Stop" while idle.
+  useEffect(() => {
+    if (!isPlaying) setLoopingRange(false);
+  }, [isPlaying]);
+
   const handleLoopRange = useCallback(async () => {
     if (!project || !audioContext || !validRange) return;
     if (audioContext.state !== "running") {
@@ -215,7 +273,7 @@ const App: React.FC = () => {
         metronomeGain,
       });
       const audioBuffer = channelsToAudioBuffer(result.channels, result.sampleRate);
-      setResults((prev) => [...prev, { ...result, id: nextResultId++, audioBuffer }]);
+      setResults((prev) => [...prev, { ...result, id: nextResultIdRef.current++, audioBuffer }]);
       setExportStatus("Mixdown export complete");
     } catch (error) {
       console.error("Export failed:", error);
@@ -242,7 +300,7 @@ const App: React.FC = () => {
       });
       const previewResults = stemResults.map((r) => ({
         ...r,
-        id: nextResultId++,
+        id: nextResultIdRef.current++,
         audioBuffer: channelsToAudioBuffer(r.channels, r.sampleRate),
       }));
       setResults((prev) => [...prev, ...previewResults]);
@@ -310,351 +368,368 @@ const App: React.FC = () => {
     [audioContext, results, stopPreview]
   );
 
-  // --- Format helpers ---
-  const formatDuration = (seconds: number) => {
-    const m = Math.floor(seconds / 60);
-    const s = (seconds % 60).toFixed(1);
-    return `${m}:${s.padStart(4, "0")}`;
-  };
+  const handleDownload = useCallback((result: PreviewResult) => {
+    try {
+      downloadAsWav(
+        result.channels,
+        result.sampleRate,
+        result.label.replace(/[^a-zA-Z0-9-_]/g, "_")
+      );
+    } catch (e) {
+      console.error("Download failed:", e);
+      const msg = e instanceof Error ? e.message : String(e);
+      setExportStatus(`Download failed: ${msg}`);
+    }
+  }, []);
 
-  const formatFileSize = (channels: Float32Array[]) => {
-    // WAV: 44 byte header + samples * 4 bytes (32-bit float) * channels
-    const bytes = 44 + (channels[0]?.length ?? 0) * 4 * channels.length;
-    return bytes > 1024 * 1024
-      ? `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-      : `${(bytes / 1024).toFixed(0)} KB`;
-  };
-
-  // --- Loading state ---
-  if (!project) {
-    return (
-      <Theme appearance="dark" accentColor="blue" radius="large">
-        <Container size="3" px="4" py="8">
-          <Flex direction="column" align="center" gap="4" style={{ paddingTop: 100 }}>
-            <Heading size="6">{status}</Heading>
-          </Flex>
-        </Container>
-      </Theme>
-    );
-  }
-
-  const currentBar = Math.floor(currentPosition / BAR) + 1;
+  const currentBar = project ? Math.floor(currentPosition / BAR) + 1 : 1;
 
   return (
-    <Theme appearance="dark" accentColor="blue" radius="large">
+    <Theme appearance="dark" accentColor="amber" radius="medium" style={{ background: "var(--mc-bg)" }}>
+      <style>{CONSOLE_STYLES}</style>
+      <style>{PAGE_STYLES}</style>
       <GitHubCorner />
       <Container size="3" px="4" py="8">
         <BackLink />
-        <Flex direction="column" gap="6" style={{ maxWidth: 800, margin: "0 auto" }}>
+        <Flex direction="column" gap="6" style={{ maxWidth: 800, margin: "0 auto", position: "relative" }}>
           {/* Header */}
-          <Flex direction="column" gap="3">
-            <Heading size="8">Audio Export Demo</Heading>
-            <Text size="4" color="gray">
-              Export audio with range selection and metronome control using OpenDAW's offline
-              rendering API
-            </Text>
-          </Flex>
+          <div>
+            <div className="mc-kicker">Export &mdash; Offline Render &middot; OpenDAW SDK</div>
+            <h1 className="mc-title" style={{ fontSize: "clamp(28px, 4.5vw, 44px)" }}>
+              AUDIO EXPORT
+            </h1>
+            <p className="mc-intro">
+              Render any bar range of Dark Ride&apos;s &lsquo;Deny Control&rsquo; offline to
+              32-bit float WAV &mdash; the full mix as one stereo file, clean stems one per
+              track, or a metronome-only click. Each export runs on a throwaway copy of the
+              project through an <code>OfflineAudioContext</code>, so the live transport keeps
+              playing while the renderer works ahead of real time. Preview the result in the
+              browser, then download.
+            </p>
+          </div>
 
-          {/* Transport */}
-          <Card>
-            <Flex direction="column" gap="3" p="4">
-              <Heading size="4">Transport</Heading>
-              <Flex align="center" gap="3">
-                <TransportControls
-                  isPlaying={isPlaying}
-                  currentPosition={currentPosition}
-                  bpm={BPM}
-                  onPlay={handlePlay}
-                  onPause={handlePause}
-                  onStop={handleStop}
-                />
-                <Text size="2" color="gray">
-                  Bar {currentBar} | {BPM} BPM
-                </Text>
-              </Flex>
-            </Flex>
-          </Card>
-
-          {/* Metronome Settings */}
-          <Card>
-            <Flex direction="column" gap="3" p="4">
-              <Heading size="4">Metronome</Heading>
-              <Flex align="center" gap="3">
-                <Text as="label" size="2">
-                  <Flex gap="2" align="center">
-                    <Switch
-                      checked={metronomeEnabled}
-                      onCheckedChange={setMetronomeEnabled}
-                    />
-                    Enable Metronome
-                  </Flex>
-                </Text>
-              </Flex>
-              <Flex align="center" gap="3">
-                <Text size="2" style={{ minWidth: 80 }}>
-                  Gain: {metronomeGain} dB
-                </Text>
-                <Slider
-                  min={-60}
-                  max={0}
-                  step={1}
-                  value={[metronomeGain]}
-                  onValueChange={([v]) => setMetronomeGain(v)}
-                  style={{ flex: 1 }}
-                />
-              </Flex>
-            </Flex>
-          </Card>
-
-          {/* Range Selection */}
-          <Card>
-            <Flex direction="column" gap="3" p="4">
-              <Heading size="4">Range Selection</Heading>
-              <Flex align="center" gap="3">
-                <Text size="2">Start Bar:</Text>
-                <TextField.Root
-                  type="number"
-                  min={1}
-                  max={endBar}
-                  value={String(startBar)}
-                  onChange={(e) => {
-                    const parsed = parseInt(e.target.value);
-                    if (!isNaN(parsed)) setStartBar(parsed);
-                  }}
-                  onBlur={() => {
-                    setStartBar((v) => Math.max(1, Math.min(endBar, v)));
-                  }}
-                  style={{ width: 80 }}
-                />
-                <Text size="2">End Bar:</Text>
-                <TextField.Root
-                  type="number"
-                  min={startBar}
-                  max={maxBar}
-                  value={String(endBar)}
-                  onChange={(e) => {
-                    const parsed = parseInt(e.target.value);
-                    if (!isNaN(parsed)) setEndBar(parsed);
-                  }}
-                  onBlur={() => {
-                    setEndBar((v) => Math.max(startBar, Math.min(maxBar, v)));
-                  }}
-                  style={{ width: 80 }}
-                />
-                <Text size="2" color="gray">
-                  / {maxBar} bars
-                </Text>
-              </Flex>
-              <Flex align="center" gap="3">
-                <Text size="2" color="gray">
-                  Duration: {formatDuration(rangeDurationSeconds)} | Bars {startBar}-{endBar} (
-                  {endBar - startBar + 1} bars)
-                </Text>
-                <Button
-                  size="1"
-                  variant="solid"
-                  color={loopingRange ? "red" : "green"}
-                  onClick={handleLoopRange}
-                  disabled={!validRange}
-                >
-                  {loopingRange ? "Stop" : "Play Range"}
-                </Button>
-              </Flex>
-            </Flex>
-          </Card>
-
-          <Separator size="4" />
-
-          {/* Export Mixdown */}
-          <Card>
-            <Flex direction="column" gap="3" p="4">
-              <Heading size="4">Export Mixdown</Heading>
-              <Text size="2" color="gray">
-                Mix selected tracks and metronome into a single stereo file.
-              </Text>
-              <CheckboxGroup.Root
-                value={mixdownUuids}
-                onValueChange={setMixdownUuids}
-              >
-                <Flex direction="column" gap="2">
-                  {tracks.map((track) => {
-                    const uuid = UUID.toString(track.audioUnitBox.address.uuid);
-                    return (
-                      <CheckboxGroup.Item key={uuid} value={uuid}>
-                        {track.name}
-                      </CheckboxGroup.Item>
-                    );
-                  })}
-                </Flex>
-              </CheckboxGroup.Root>
-              <Flex gap="2">
-                <Button
-                  variant="soft"
-                  size="1"
-                  onClick={() =>
-                    setMixdownUuids(
-                      tracks.map((t) => UUID.toString(t.audioUnitBox.address.uuid))
-                    )
-                  }
-                >
-                  Select All
-                </Button>
-                <Button variant="soft" size="1" onClick={() => setMixdownUuids([])}>
-                  Deselect All
-                </Button>
-              </Flex>
-              <Text as="label" size="2">
-                <Flex gap="2" align="center">
-                  <Switch
-                    checked={mixdownMetronome}
-                    onCheckedChange={setMixdownMetronome}
-                  />
-                  Include Metronome
-                </Flex>
-              </Text>
-              <Button
-                onClick={handleExportMixdown}
-                disabled={isExporting || !validRange || (mixdownUuids.length === 0 && !mixdownMetronome)}
-              >
-                Export Mixdown
-              </Button>
-            </Flex>
-          </Card>
-
-          {/* Export Stems */}
-          <Card>
-            <Flex direction="column" gap="3" p="4">
-              <Heading size="4">Export Stems</Heading>
-              <Text size="2" color="gray">
-                Renders selected tracks as individual stem files. Optionally includes a
-                separate metronome stem.
-              </Text>
-              <CheckboxGroup.Root
-                value={selectedStemUuids}
-                onValueChange={setSelectedStemUuids}
-              >
-                <Flex direction="column" gap="2">
-                  {tracks.map((track) => {
-                    const uuid = UUID.toString(track.audioUnitBox.address.uuid);
-                    return (
-                      <CheckboxGroup.Item key={uuid} value={uuid}>
-                        {track.name}
-                      </CheckboxGroup.Item>
-                    );
-                  })}
-                </Flex>
-              </CheckboxGroup.Root>
-              <Flex gap="2">
-                <Button
-                  variant="soft"
-                  size="1"
-                  onClick={() =>
-                    setSelectedStemUuids(
-                      tracks.map((t) => UUID.toString(t.audioUnitBox.address.uuid))
-                    )
-                  }
-                >
-                  Select All
-                </Button>
-                <Button variant="soft" size="1" onClick={() => setSelectedStemUuids([])}>
-                  Deselect All
-                </Button>
-              </Flex>
-              <Text as="label" size="2">
-                <Flex gap="2" align="center">
-                  <Switch
-                    checked={stemsMetronome}
-                    onCheckedChange={setStemsMetronome}
-                  />
-                  Include Metronome Stem
-                </Flex>
-              </Text>
-              <Button
-                onClick={handleExportStems}
-                disabled={isExporting || !validRange || (selectedStemUuids.length === 0 && !stemsMetronome)}
-              >
-                Export {selectedStemUuids.length + (stemsMetronome ? 1 : 0)} Stem(s)
-              </Button>
-            </Flex>
-          </Card>
-
-          {/* Export Status */}
-          {exportStatus && (
-            <Callout.Root>
-              <Callout.Text>{exportStatus}</Callout.Text>
+          {initError ? (
+            <Callout.Root color="red" role="alert">
+              <Callout.Text>
+                <strong>Initialization failed:</strong> {initError}
+              </Callout.Text>
             </Callout.Root>
-          )}
-
-          <Separator size="4" />
-
-          {/* Results */}
-          {results.length > 0 && (
-            <Flex direction="column" gap="3">
-              <Flex justify="between" align="center">
-                <Heading size="4">Export Results</Heading>
-                <Button
-                  variant="soft"
-                  color="red"
-                  size="1"
-                  onClick={() => {
-                    stopPreview();
-                    setResults([]);
-                  }}
-                >
-                  Clear All
-                </Button>
-              </Flex>
-              {results.map((result, index) => (
-                <Card key={result.id}>
-                  <Flex direction="column" gap="2" p="3">
-                    <Flex justify="between" align="center">
-                      <Text weight="bold">{result.label}</Text>
-                      <Flex gap="2">
-                        <Badge size="1" variant="soft">
-                          {formatDuration(result.durationSeconds)}
-                        </Badge>
-                        <Badge size="1" variant="soft">
-                          {result.sampleRate / 1000}kHz
-                        </Badge>
-                        <Badge size="1" variant="soft">
-                          {formatFileSize(result.channels)}
-                        </Badge>
-                      </Flex>
-                    </Flex>
-                    <Flex gap="2">
-                      <Button
-                        size="1"
-                        variant="soft"
-                        onClick={() =>
-                          playingPreviewIndex === index ? stopPreview() : playPreview(index)
-                        }
-                      >
-                        {playingPreviewIndex === index ? "Stop" : "Play"}
-                      </Button>
-                      <Button
-                        size="1"
-                        variant="soft"
-                        onClick={() => {
-                          try {
-                            downloadAsWav(
-                              result.channels,
-                              result.sampleRate,
-                              result.label.replace(/[^a-zA-Z0-9-_]/g, "_")
-                            );
-                          } catch (e) {
-                            console.error("Download failed:", e);
-                            const msg = e instanceof Error ? e.message : String(e);
-                            setExportStatus(`Download failed: ${msg}`);
-                          }
-                        }}
-                      >
-                        Download WAV
-                      </Button>
-                    </Flex>
-                  </Flex>
-                </Card>
-              ))}
+          ) : !project ? (
+            <Flex direction="column" align="center" gap="4" style={{ paddingTop: 80 }}>
+              <div className="ex-spinner" aria-hidden="true" />
+              <Text size="4" weight="medium" style={{ color: "var(--mc-text)" }} role="status">
+                {status}
+              </Text>
             </Flex>
+          ) : (
+            <>
+              {/* Transport */}
+              <Card>
+                <Flex direction="column" gap="3">
+                  <Text size="2" weight="bold" color="gray">
+                    Transport
+                  </Text>
+                  <Separator size="4" />
+                  <Flex align="center" gap="3" wrap="wrap">
+                    <TransportControls
+                      isPlaying={isPlaying}
+                      currentPosition={currentPosition}
+                      bpm={BPM}
+                      onPlay={handlePlay}
+                      onPause={handlePause}
+                      onStop={handleStop}
+                    />
+                    <Text size="2" color="gray">
+                      Bar {currentBar} | {BPM} BPM
+                    </Text>
+                  </Flex>
+                </Flex>
+              </Card>
+
+              {/* Metronome Settings */}
+              <Card>
+                <Flex direction="column" gap="3">
+                  <Text size="2" weight="bold" color="gray">
+                    Metronome
+                  </Text>
+                  <Separator size="4" />
+                  <Text as="label" size="2">
+                    <Flex gap="2" align="center">
+                      <Switch checked={metronomeEnabled} onCheckedChange={setMetronomeEnabled} />
+                      Enable Metronome
+                    </Flex>
+                  </Text>
+                  <Flex align="center" gap="3">
+                    <Text size="2" style={{ minWidth: 80 }}>
+                      Gain: {metronomeGain} dB
+                    </Text>
+                    <Slider
+                      min={-60}
+                      max={0}
+                      step={1}
+                      value={[metronomeGain]}
+                      onValueChange={([v]) => setMetronomeGain(v)}
+                      style={{ flex: 1 }}
+                    />
+                  </Flex>
+                </Flex>
+              </Card>
+
+              {/* Range Selection */}
+              <Card>
+                <Flex direction="column" gap="3">
+                  <Text size="2" weight="bold" color="gray">
+                    Range Selection
+                  </Text>
+                  <Separator size="4" />
+                  <Flex align="center" gap="3" wrap="wrap">
+                    <Text size="2">Start Bar:</Text>
+                    <TextField.Root
+                      type="number"
+                      min={1}
+                      max={endBar}
+                      value={String(startBar)}
+                      onChange={(e) => {
+                        const parsed = parseInt(e.target.value);
+                        if (!isNaN(parsed)) setStartBar(parsed);
+                      }}
+                      onBlur={() => {
+                        setStartBar((v) => Math.max(1, Math.min(endBar, v)));
+                      }}
+                      style={{ width: 80 }}
+                    />
+                    <Text size="2">End Bar:</Text>
+                    <TextField.Root
+                      type="number"
+                      min={startBar}
+                      max={maxBar}
+                      value={String(endBar)}
+                      onChange={(e) => {
+                        const parsed = parseInt(e.target.value);
+                        if (!isNaN(parsed)) setEndBar(parsed);
+                      }}
+                      onBlur={() => {
+                        setEndBar((v) => Math.max(startBar, Math.min(maxBar, v)));
+                      }}
+                      style={{ width: 80 }}
+                    />
+                    <Text size="2" color="gray">
+                      / {maxBar} bars
+                    </Text>
+                  </Flex>
+                  <Flex align="center" gap="3" wrap="wrap">
+                    <Text size="2" color="gray">
+                      Duration: {formatDuration(rangeDurationSeconds)} | Bars {startBar}-{endBar} (
+                      {endBar - startBar + 1} bars)
+                    </Text>
+                    <Button
+                      size="1"
+                      variant="solid"
+                      color={loopingRange ? "red" : "amber"}
+                      onClick={handleLoopRange}
+                      disabled={!validRange}
+                    >
+                      {loopingRange ? "Stop" : "Play Range"}
+                    </Button>
+                  </Flex>
+                </Flex>
+              </Card>
+
+              <Separator size="4" />
+
+              {/* Export Mixdown */}
+              <Card>
+                <Flex direction="column" gap="3">
+                  <Text size="2" weight="bold" color="gray">
+                    Export Mixdown
+                  </Text>
+                  <Separator size="4" />
+                  <Text size="2" color="gray">
+                    Mix selected tracks and metronome into a single stereo file.
+                  </Text>
+                  <CheckboxGroup.Root value={mixdownUuids} onValueChange={setMixdownUuids}>
+                    <Flex direction="column" gap="2">
+                      {tracks.map((track) => {
+                        const uuid = UUID.toString(track.audioUnitBox.address.uuid);
+                        return (
+                          <CheckboxGroup.Item key={uuid} value={uuid}>
+                            {track.name}
+                          </CheckboxGroup.Item>
+                        );
+                      })}
+                    </Flex>
+                  </CheckboxGroup.Root>
+                  <Flex gap="2">
+                    <Button
+                      variant="soft"
+                      size="1"
+                      onClick={() =>
+                        setMixdownUuids(tracks.map((t) => UUID.toString(t.audioUnitBox.address.uuid)))
+                      }
+                    >
+                      Select All
+                    </Button>
+                    <Button variant="soft" size="1" onClick={() => setMixdownUuids([])}>
+                      Deselect All
+                    </Button>
+                  </Flex>
+                  <Text as="label" size="2">
+                    <Flex gap="2" align="center">
+                      <Switch checked={mixdownMetronome} onCheckedChange={setMixdownMetronome} />
+                      Include Metronome
+                    </Flex>
+                  </Text>
+                  <Button
+                    color="amber"
+                    onClick={handleExportMixdown}
+                    disabled={isExporting || !validRange || (mixdownUuids.length === 0 && !mixdownMetronome)}
+                  >
+                    Export Mixdown
+                  </Button>
+                </Flex>
+              </Card>
+
+              {/* Export Stems */}
+              <Card>
+                <Flex direction="column" gap="3">
+                  <Text size="2" weight="bold" color="gray">
+                    Export Stems
+                  </Text>
+                  <Separator size="4" />
+                  <Text size="2" color="gray">
+                    Renders selected tracks as individual stem files. Optionally includes a
+                    separate metronome stem.
+                  </Text>
+                  <CheckboxGroup.Root value={selectedStemUuids} onValueChange={setSelectedStemUuids}>
+                    <Flex direction="column" gap="2">
+                      {tracks.map((track) => {
+                        const uuid = UUID.toString(track.audioUnitBox.address.uuid);
+                        return (
+                          <CheckboxGroup.Item key={uuid} value={uuid}>
+                            {track.name}
+                          </CheckboxGroup.Item>
+                        );
+                      })}
+                    </Flex>
+                  </CheckboxGroup.Root>
+                  <Flex gap="2">
+                    <Button
+                      variant="soft"
+                      size="1"
+                      onClick={() =>
+                        setSelectedStemUuids(tracks.map((t) => UUID.toString(t.audioUnitBox.address.uuid)))
+                      }
+                    >
+                      Select All
+                    </Button>
+                    <Button variant="soft" size="1" onClick={() => setSelectedStemUuids([])}>
+                      Deselect All
+                    </Button>
+                  </Flex>
+                  <Text as="label" size="2">
+                    <Flex gap="2" align="center">
+                      <Switch checked={stemsMetronome} onCheckedChange={setStemsMetronome} />
+                      Include Metronome Stem
+                    </Flex>
+                  </Text>
+                  <Button
+                    color="amber"
+                    onClick={handleExportStems}
+                    disabled={isExporting || !validRange || (selectedStemUuids.length === 0 && !stemsMetronome)}
+                  >
+                    Export {selectedStemUuids.length + (stemsMetronome ? 1 : 0)} Stem(s)
+                  </Button>
+                </Flex>
+              </Card>
+
+              {/* Export Status */}
+              {exportStatus &&
+                (exportFailed ? (
+                  <Callout.Root color="red" role="alert">
+                    <Callout.Text>{exportStatus}</Callout.Text>
+                  </Callout.Root>
+                ) : (
+                  <Callout.Root>
+                    <Callout.Text>{exportStatus}</Callout.Text>
+                  </Callout.Root>
+                ))}
+
+              {/* Results */}
+              <ExportResultsList
+                results={results}
+                playingPreviewIndex={playingPreviewIndex}
+                onPlay={playPreview}
+                onStop={stopPreview}
+                onDownload={handleDownload}
+                onClearAll={() => {
+                  stopPreview();
+                  setResults([]);
+                }}
+              />
+
+              {/* SDK reference */}
+              <section className="mc-anchors">
+                <h2 className="mc-anchors-head">SDK reference</h2>
+                <p>
+                  Each export renders on a <code>project.copy()</code> &mdash; a throwaway clone
+                  that shares the sample manager (samples stay loaded) but not the live{" "}
+                  <code>liveStreamReceiver</code>, so the renderer&apos;s{" "}
+                  <code>OfflineAudioContext</code> never collides with playback. The mixdown
+                  path (no <code>exportConfiguration</code>) mixes every unit plus the metronome;
+                  the stem path passes a per-unit config and writes one stereo pair per track,
+                  metronome excluded. Stems route through the channel strip
+                  (<code>useInstrumentOutput: false</code>) so effects, aux sends, and the
+                  strip&apos;s volume/pan all reach the render.
+                </p>
+
+                <Text size="2" weight="bold" style={{ display: "block", marginTop: 16 }}>
+                  Offline render (manual worklet path):
+                </Text>
+                <Code size="2" style={CODE_BLOCK_STYLE}>
+                  {`const copy = project.copy();
+const context = new OfflineAudioContext(numChannels, numSamples, sampleRate);
+const worklets = await AudioWorklets.createFor(context);
+const engine = worklets.createEngine({
+  project: copy,
+  exportConfiguration, // undefined = mixdown (metronome in); config = stems
+});
+// Engine worklet has 2 outputs — connect output 0 only.
+engine.connect(context.destination, 0);
+engine.preferences.settings.metronome.enabled = true; // doesn't travel with copy()
+engine.setPosition(startPpqn);
+await engine.isReady();
+engine.play();
+while (!(await engine.queryLoadingComplete())) { /* wait for samples */ }
+const audioBuffer = await context.startRendering();
+copy.terminate();`}
+                </Code>
+              </section>
+
+              {/* Audio Attribution */}
+              <Card>
+                <Flex direction="column" gap="3">
+                  <Text size="2" weight="bold" color="gray">
+                    Audio Attribution
+                  </Text>
+                  <Separator size="4" />
+                  <Text size="2">
+                    Mix stems from Dark Ride&apos;s &lsquo;Deny Control&rsquo;. This file is provided
+                    for educational purposes only, and the material contained in it should not be
+                    used for any commercial purpose without the express permission of the copyright
+                    holders. Please refer to{" "}
+                    <a
+                      href="https://www.cambridge-mt.com"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: "var(--accent-9)" }}
+                    >
+                      www.cambridge-mt.com
+                    </a>{" "}
+                    for further details.
+                  </Text>
+                </Flex>
+              </Card>
+            </>
           )}
 
           <MoisesLogo />
