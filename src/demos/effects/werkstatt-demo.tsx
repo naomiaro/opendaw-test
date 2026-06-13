@@ -217,6 +217,11 @@ const App: React.FC = () => {
       // Read parameter values after compilation creates the WerkstattParameterBoxes
       setHasLoadedEffect(true);
       setEffectParams(readWerkstattParams(newBox));
+    } catch (err) {
+      // Box-graph failures (insert/delete) surface here; compile failures are
+      // handled inline above with effect-specific rollback.
+      console.error("Failed to load showcase effect: " + String(err));
+      setActionError(err instanceof Error ? err.message : String(err));
     } finally {
       endAction();
     }
@@ -240,9 +245,15 @@ const App: React.FC = () => {
 
   const clearShowcaseEffect = useCallback(() => {
     if (!project || !werkstattBoxRef.current || busyRef.current) return;
-    project.editing.modify(() => {
-      werkstattBoxRef.current!.delete();
-    });
+    try {
+      project.editing.modify(() => {
+        werkstattBoxRef.current!.delete();
+      });
+    } catch (err) {
+      console.error("Failed to clear effect: " + String(err));
+      setActionError(err instanceof Error ? err.message : String(err));
+      return;
+    }
     werkstattBoxRef.current = null;
     activeScriptRef.current = null;
     setActiveEffect(null);
@@ -314,6 +325,11 @@ const App: React.FC = () => {
 
       lastAudioSourceRef.current = source;
       setAudioSource(source);
+    } catch (err) {
+      // Box-graph failures (delete/insert/mute) surface here; compile failures
+      // are handled inline above with drum-restore rollback.
+      console.error("Failed to switch source: " + String(err));
+      setActionError(err instanceof Error ? err.message : String(err));
     } finally {
       endAction();
     }
@@ -363,6 +379,11 @@ const App: React.FC = () => {
       // Read params after compilation
       setHasLoadedEffect(true);
       setEffectParams(readWerkstattParams(newBox));
+    } catch (err) {
+      // Box-graph failures (delete/insert) surface here; compile failures are
+      // handled inline above with effect-specific rollback.
+      console.error("Failed to load API example: " + String(err));
+      setActionError(err instanceof Error ? err.message : String(err));
     } finally {
       endAction();
     }
