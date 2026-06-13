@@ -679,8 +679,10 @@ If you're doing something custom — say, stepping a playhead frame by frame acr
 import { TempoGridCursor } from "@opendaw/studio-adapters";
 
 const cursor = new TempoGridCursor();
-const events = tempoMap.events; // ReadonlyArray<ValueEvent>
-const storageBpm = tempoMap.box.bpm.getValue();
+// Tempo-automation events live on the timeline adapter; the base ("storage") BPM on the box.
+const events = project.timelineBoxAdapter.tempoTrackEvents
+  .mapOr(collection => collection.events.asArray(), []); // ReadonlyArray<ValueEvent>
+const storageBpm = project.timelineBox.bpm.getValue();
 
 // Integrate a range incrementally
 const seconds = cursor.integrate(events, fromPpqn, toPpqn, storageBpm);

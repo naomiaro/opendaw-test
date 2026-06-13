@@ -1280,8 +1280,8 @@ const adapter: AutomatableParameterFieldAdapter = /* ... */;
 // 2. Register tracks so RecordAutomation can find/create automation tracks
 adapter.registerTracks(audioUnitTracks);
 
-// 3. Start recording
-await project.startRecording(false);
+// 3. Start recording (synchronous — returns void, not a Promise)
+project.startRecording(false);
 
 // 4. Simulate "touching" the parameter
 adapter.touchStart();

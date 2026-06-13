@@ -109,7 +109,9 @@ export function HelloOpenDAW() {
       });
 
       // 4. Subscribe to engine state so the UI knows when audio is playing.
-      project.engine.isPlaying.subscribe((obs) => setIsPlaying(obs.getValue()));
+      //    catchupAndSubscribe fires immediately with the current value (subscribe
+      //    would miss it). This one-time setup subscription lives for the app session.
+      project.engine.isPlaying.catchupAndSubscribe((obs) => setIsPlaying(obs.getValue()));
 
       setProject(project);
     })();

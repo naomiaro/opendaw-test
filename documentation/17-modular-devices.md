@@ -73,14 +73,17 @@ The compiler rejects scripts missing the header.
 
 ### Parameters (`// @param`)
 
-A parameter declaration looks like a JSDoc-style comment:
+A parameter declaration is a single-line comment with space-separated tokens:
 
 ```javascript
-// @param("Cutoff", linear, 0, 1, 0.5, "Hz", "Filter cutoff")
-const cutoff = 0.5;
+// @param cutoff 1000 20 20000 exp Hz
+const cutoff = 1000;
 ```
 
-Roughly: `@param(label, mapping, min, max, default, unit, description)`. The compiler registers one `*ParameterBox` per declaration (`WerkstattParameterBox`, `ApparatParameterBox`, etc.) on the device, which:
+Format: `// @param <name> <default> <min> <max> [mapping] [unit]`. `mapping` is one of
+`unipolar | linear | exp | int | bool`; `min`/`max`/`mapping`/`unit` are optional — a bare
+`// @param depth 0.5` defaults to a 0–1 unipolar control. The compiler registers one
+`*ParameterBox` per declaration (`WerkstattParameterBox`, `ApparatParameterBox`, etc.) on the device, which:
 
 - Appears in the device's parameter list (visible to the UI inspector).
 - Is *automatable* — automation lanes wire up against the box, same as built-in effect parameters.
@@ -302,17 +305,21 @@ Practical Spielwerk use cases: custom arpeggios (more flexible than the built-in
 
 ## Hot reload
 
-All three modular devices recompile their script when the `code` field's value changes:
+Recompiling is **not** done by writing `code` directly — `apparatBox.code.setValue(src)` stores
+the string but never registers a worklet module, so the processor keeps running the old code.
+Use `ScriptCompiler.compile()`, which wraps the source, registers it via `audioWorklet.addModule()`,
+and writes the numbered header back to `code`. It is async — call it **outside** `editing.modify()`:
 
 ```typescript
-project.editing.modify(() => {
-  apparatBox.code.setValue(newScriptText);
-});
+import { ScriptCompiler } from "@opendaw/studio-adapters";
+
+const compiler = ScriptCompiler.create({ /* headerTag, registryName, functionName */ });
+await compiler.compile(audioContext, project.editing, apparatBox, newScriptText);
 ```
 
-On commit, the `ScriptCompiler` parses the new header, reconciles parameter and sample boxes (added / removed / renamed), and the audio thread swaps the running processor without dropping audio. If the script throws or has a header parse error, the device falls silent and a console error appears on the main thread.
+On compile, the `ScriptCompiler` reconciles parameter and sample boxes (added / removed / renamed), and the audio thread swaps the running processor without dropping audio. If the script throws or has a header parse error, the device falls silent and a console error appears on the main thread.
 
-This means you can build iterative-editor UIs: a code editor in your app, a "compile" button that writes the editor's contents to `apparatBox.code`, and the engine just keeps running while the user iterates.
+This means you can build iterative-editor UIs: a code editor in your app, a "compile" button that calls `compiler.compile(...)` with the editor's contents, and the engine just keeps running while the user iterates.
 
 ## Parameter automation
 
