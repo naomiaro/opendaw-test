@@ -49,6 +49,11 @@ export const CONSOLE_STYLES = `
   --mc-amber: #e8a33d;
   --mc-cyan: #5fb4c9;
   --mc-green: #7fbf6a;
+  /* Category accents (index listing): small DAW-style chips + tinted group labels.
+     All ≥7:1 on --mc-bg, so they pass as label text, not just decorative chips. */
+  --mc-rose: #df8a76;
+  --mc-violet: #ab92db;
+  --mc-slate: #7fa0d4;
   --mc-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 body { background: var(--mc-bg); }
@@ -322,5 +327,56 @@ body { background: var(--mc-bg); }
 .mc-reveal {
   opacity: 0;
   animation: mc-rise 600ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Index listing: category groups of console cards. Each .mc-group sets its
+   category color inline via --mc-cat (falls back to amber); the group label and
+   the cards' chips read from it. Amber stays the single page accent (focus ring,
+   OPEN hover) per the design doc's "one accent per page". */
+.mc-group {
+  --mc-cat: var(--mc-amber);
+  margin-top: 52px;
+}
+.mc-group-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-family: var(--mc-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--mc-cat);
+  margin: 0 0 16px;
+}
+.mc-group-rule {
+  flex: 1;
+  height: 1px;
+  background: var(--mc-line-bright);
+}
+.mc-group-count {
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: var(--mc-label);
+}
+.mc-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+/* Reuse .mc-panel anatomy, but a responsive (variable-count) grid can't use the
+   engraved-strip shared-background trick, so each card carries its own border. */
+.mc-cards .mc-panel {
+  border: 1px solid var(--mc-line);
+  border-radius: 4px;
+  text-decoration: none;
+}
+.mc-cards .mc-panel:hover { border-color: var(--mc-line-bright); }
+.mc-cards .mc-panel .mc-chip { background: var(--mc-cat); }
+.mc-cards .mc-panel:hover .mc-open { border-color: var(--mc-amber); color: var(--mc-amber); }
+.mc-cards .mc-panel:hover .mc-open .mc-arrow { transform: translateX(3px); }
+.mc-cards .mc-panel:focus-visible {
+  outline: 2px solid var(--mc-amber);
+  outline-offset: 2px;
 }
 `;
