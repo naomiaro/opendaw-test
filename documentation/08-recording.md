@@ -135,8 +135,8 @@ import { UUID } from "@opendaw/lib-std";
 
 // Compute next index from existing TrackBoxes in this AudioUnit.
 let maxIndex = 0;
-for (const tb of audioUnitBox.tracks.pointerHub.incoming().map(({ box }) => box)) {
-  maxIndex = Math.max(maxIndex, tb.index?.getValue?.() ?? 0);
+for (const tb of audioUnitBox.tracks.pointerHub.incoming().map(({ box }) => box as TrackBox)) {
+  maxIndex = Math.max(maxIndex, tb.index.getValue());
 }
 
 project.editing.modify(() => {
@@ -503,9 +503,11 @@ import { NoteEventBox, NoteEventCollectionBox, NoteRegionBox } from "@opendaw/st
 import { UUID } from "@opendaw/lib-std";
 import { PPQN } from "@opendaw/lib-dsp";
 
-// 1. Create a note region on a track (if one doesn't exist)
+// 1. Create a note region on a track (if one doesn't exist).
+//    Hoist `collection` so step 2 (a separate transaction) can reference it.
+let collection!: NoteEventCollectionBox;
 project.editing.modify(() => {
-  const collection = NoteEventCollectionBox.create(boxGraph, UUID.generate());
+  collection = NoteEventCollectionBox.create(boxGraph, UUID.generate());
   NoteRegionBox.create(boxGraph, UUID.generate(), box => {
     box.regions.refer(trackBox.regions);
     box.events.refer(collection.owners);
@@ -520,7 +522,7 @@ const duration = PPQN.Quarter; // quarter note
 
 project.editing.modify(() => {
   NoteEventBox.create(boxGraph, UUID.generate(), box => {
-    box.events.refer(eventsCollection.events);
+    box.events.refer(collection.events);
     box.position.setValue(position);
     box.duration.setValue(duration);
     box.pitch.setValue(60);        // Middle C

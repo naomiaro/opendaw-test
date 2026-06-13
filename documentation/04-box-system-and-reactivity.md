@@ -214,9 +214,9 @@ project.editing.modify(() => {
     InstrumentFactories.Tape
   );
 
-  // 2. Set channel and track properties
+  // 2. Set channel properties
   audioUnitBox.volume.setValue(-3);  // -3 dB (on the channel strip)
-  trackBox.label.setValue("Drums");
+  audioUnitBox.panning.setValue(0);  // centered
 
   // 3. Create AudioFileBox (metadata about the audio file)
   const fileUUID = UUID.generate();
@@ -296,10 +296,9 @@ console.log(clips); // Array of AudioRegionBox
 
 // With transactions, all changes are atomic:
 project.editing.modify(() => {
-  // These 3 changes happen together
+  // These changes happen together
   audioUnitBox.volume.setValue(-6);
-  audioUnitBox.pan.setValue(0.5);
-  trackBox.label.setValue("Updated");
+  audioUnitBox.panning.setValue(0.5);
 }); // One undo point created here
 ```
 
@@ -310,7 +309,7 @@ Transactions can be nested (though it's rarely needed):
 ```typescript
 project.editing.modify(() => {
   // Outer transaction
-  trackBox.label.setValue("Drums");
+  audioUnitBox.panning.setValue(0.5);
 
   project.editing.modify(() => {
     // Inner transaction (merged with outer)
@@ -456,8 +455,6 @@ project.editing.modify(() => {
   const { audioUnitBox, trackBox } = project.api.createInstrument(
     InstrumentFactories.Tape
   );
-
-  trackBox.label.setValue("Drums");
 
   // Create multiple clips
   const positions = [0, Quarter * 2, Quarter * 4];

@@ -840,7 +840,7 @@ interface EffectFactory {
     readonly defaultIcon: IconSymbol
     readonly description: string
     readonly briefDescription: string
-    readonly manualPage?: string
+    readonly manualPage: string
     readonly separatorBefore: boolean
     readonly external: boolean
     readonly type: "audio" | "midi"
@@ -1006,7 +1006,7 @@ Each box contains:
 
 ```typescript
 import { Project, EffectFactories } from "@opendaw/studio-core";
-import { InstrumentFactories } from "@opendaw/studio-core";
+import { InstrumentFactories } from "@opendaw/studio-adapters";
 
 async function createInstrumentWithEffects(project: Project) {
     project.editing.modify(() => {
@@ -1069,7 +1069,8 @@ The **AudioUnitBox** is where effects are added.
 ### Basic Example
 
 ```typescript
-import { Project, EffectFactories, InstrumentFactories } from "@opendaw/studio-core";
+import { Project, EffectFactories } from "@opendaw/studio-core";
+import { InstrumentFactories } from "@opendaw/studio-adapters";
 
 const project = /* ... */;
 
@@ -1127,8 +1128,8 @@ const audioUnitAdapter = project.boxAdapters.adapterFor(
     AudioUnitBoxAdapter
 );
 
-// Get all audio effect adapters
-const effectAdapters = project.boxAdapters.audioEffects(audioUnitBox);
+// Get all audio effect adapters (IndexedBoxAdapterCollection → .adapters() for the array)
+const effectAdapters = audioUnitAdapter.audioEffects.adapters();
 
 effectAdapters.forEach(effectAdapter => {
     console.log("Effect:", effectAdapter.labelField.getValue());
@@ -1160,7 +1161,8 @@ project.editing.modify(() => {
 const { audioUnitBox } = /* ... */;
 
 // Subscribe to effect chain changes
-const subscription = project.boxAdapters.audioEffects(audioUnitBox)
+const subscription = project.boxAdapters
+    .adapterFor(audioUnitBox, AudioUnitBoxAdapter).audioEffects
     .catchupAndSubscribe({
         onAdd: (effectAdapter) => {
             console.log("Effect added:", effectAdapter.labelField.getValue());
@@ -1441,9 +1443,9 @@ threshold: this.#parametric.createParameter(
 
 // From DelayDeviceBoxAdapter
 delay: this.#parametric.createParameter(
-    box.delay,
+    box.delayMusical,
     ValueMapping.linearInteger(0, 16),    // Storage as integer index
-    DelayDeviceBoxAdapter.OffsetStringMapping,  // Display as fraction
+    DelayDeviceBoxAdapter.FractionsStringMapping,  // Display as fraction
     "delay"
 )
 ```
@@ -1696,7 +1698,8 @@ async function createInteractiveEffects(
     });
     
     // Subscribe to effect chain changes
-    const effectAdapters = project.boxAdapters.audioEffects(audioUnitBox);
+    const effectAdapters = project.boxAdapters
+        .adapterFor(audioUnitBox, AudioUnitBoxAdapter).audioEffects;
     const chainSubscription = effectAdapters.catchupAndSubscribe({
         onAdd: (effectAdapter) => {
             const effectName = effectAdapter.labelField.getValue();
@@ -1776,7 +1779,8 @@ async function addEffectByName(
 
 ```typescript
 function analyzeEffectChain(project: Project, audioUnitBox: any) {
-    const effectAdapters = project.boxAdapters.audioEffects(audioUnitBox);
+    const effectAdapters = project.boxAdapters
+        .adapterFor(audioUnitBox, AudioUnitBoxAdapter).audioEffects.adapters();
     
     console.log("=== Effect Chain Analysis ===");
     console.log(`Total effects: ${effectAdapters.length}`);
@@ -1791,7 +1795,8 @@ function analyzeEffectChain(project: Project, audioUnitBox: any) {
 }
 
 function disableAllEffects(project: Project, audioUnitBox: any) {
-    const effectAdapters = project.boxAdapters.audioEffects(audioUnitBox);
+    const effectAdapters = project.boxAdapters
+        .adapterFor(audioUnitBox, AudioUnitBoxAdapter).audioEffects.adapters();
     
     project.editing.modify(() => {
         effectAdapters.forEach(adapter => {
@@ -1805,7 +1810,8 @@ function reorderEffectChain(
     audioUnitBox: any,
     newOrder: number[]  // Array of current indices in new order
 ) {
-    const effectAdapters = project.boxAdapters.audioEffects(audioUnitBox);
+    const effectAdapters = project.boxAdapters
+        .adapterFor(audioUnitBox, AudioUnitBoxAdapter).audioEffects.adapters();
     
     project.editing.modify(() => {
         newOrder.forEach((currentIndex, newIndex) => {
@@ -1835,7 +1841,8 @@ project.editing.modify(() => {
 
 #### Getting All Effects of Specific Type
 ```typescript
-const effectAdapters = project.boxAdapters.audioEffects(audioUnitBox);
+const effectAdapters = project.boxAdapters
+    .adapterFor(audioUnitBox, AudioUnitBoxAdapter).audioEffects.adapters();
 const compressors = effectAdapters.filter(
     a => a.box instanceof CompressorDeviceBox
 );

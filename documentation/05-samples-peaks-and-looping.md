@@ -240,10 +240,13 @@ if (sampleLoader.state.type === "loaded") {
 During recording, `sampleLoader.peaks` returns a **PeaksWriter** (live, growing peaks). After finalization, it returns final **Peaks** (static). Both implement the same rendering interface, but you can distinguish them:
 
 ```typescript
-const peaks = sampleLoader.peaks.unwrap();
-const isLive = "dataIndex" in peaks; // PeaksWriter has dataIndex
+import { PeaksWriter } from "@opendaw/studio-core";
 
-if (isLive) {
+const peaks = sampleLoader.peaks.unwrap();
+
+// instanceof narrows the type — `"dataIndex" in peaks` would not, since the
+// static type is `Peaks` and `dataIndex`/`unitsEachPeak()` live on `PeaksWriter`.
+if (peaks instanceof PeaksWriter) {
   // Live recording — total frames = dataIndex[0] * unitsEachPeak()
   const unitsToRender = peaks.dataIndex[0] * peaks.unitsEachPeak();
 } else {
