@@ -30,7 +30,7 @@ static load(env: ProjectEnv, arrayBuffer: ArrayBuffer): Project
 static async loadAnyVersion(env: ProjectEnv, arrayBuffer: ArrayBuffer): Promise<Project>
 ```
 
-`new()` builds an empty project from a `ProjectSkeleton.empty()`. `load()` decodes a current-format `.od` buffer. `loadAnyVersion()` runs the buffer through `ProjectMigration.migrate()` first, so older files keep opening as the format evolves.
+`new()` builds an empty project from a `ProjectSkeleton.empty()`. `load()` decodes a current-format `.od` buffer. `loadAnyVersion()` decodes the buffer with `ProjectSkeleton.decode()` first, then runs `ProjectMigration.migrate()` on the resulting skeleton to upgrade box-graph contents, so older files keep opening as the format evolves.
 
 ### What it composes
 
@@ -58,7 +58,7 @@ A `Terminator` (`#terminator`) owns the lifetime of every subsystem. When the pr
 ```typescript
 toArrayBuffer(): ArrayBufferLike       // serialize the project to a .od buffer
 copy(env?: Partial<ProjectEnv>): Project  // deep clone: encode + decode through ProjectSkeleton
-startAudioWorklet(restart?, options?): Promise<void>  // construct the EngineWorklet
+startAudioWorklet(restart?, options?): EngineWorklet  // construct the EngineWorklet (synchronous)
 ```
 
 `copy()` is what powers freeze and offline render — both run a *separate* project (modified in some way) through an offline `EngineProcessor` without touching the live one.
@@ -324,7 +324,10 @@ Status: importable + exportable, but the format-mapping table is still being fil
 freeze(audioUnitBoxAdapter: AudioUnitBoxAdapter): Promise<void> {
     // 1. Refuse if this unit is a sidechain source — freezing would break the dependent.
     if (this.hasSidechainDependents(audioUnitBoxAdapter)) {
-        alert("Cannot freeze; this unit is a sidechain source")
+        await RuntimeNotifier.info({
+            headline: "Cannot Freeze",
+            message: "This audio unit is used as a sidechain source by another device."
+        })
         return
     }
 
