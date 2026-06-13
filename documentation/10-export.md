@@ -82,6 +82,8 @@ flowchart TD
 
 The worker runs the same `EngineProcessor` class as the realtime audio worklet — same effects, same automation, same DSP. The only difference is the driver: in realtime, the audio thread calls `process()` 375 times a second; offline, the worker calls `step()` as quickly as possible until the silence detector says the mix has finished decaying. That's why export is *bit-exact* with realtime playback: it's literally the same code path.
 
+The diagram above depicts `OfflineEngineRenderer`, the current worker-based path. The simpler one-shot calls that lead the examples below use the deprecated `AudioOfflineRenderer`, which drives the same `EngineProcessor` through a main-thread `OfflineAudioContext` instead of a worker — same DSP, same bit-exact result, different driver. See [Core API](#core-api) for both.
+
 ---
 
 ## Quick Start
@@ -259,21 +261,20 @@ import { WavFile } from "@opendaw/lib-dsp";
 // Convert AudioBuffer or AudioData to a WAV ArrayBuffer (32-bit float)
 const wavArrayBuffer = WavFile.encodeFloats(audioBuffer);
 
-// Decode WAV to float arrays
+// Decode a WAV ArrayBuffer to AudioData
 const audio = WavFile.decodeFloats(arrayBuffer);
-// Returns: { channels: Float32Array[], sampleRate: number, numFrames: number }
+// Returns AudioData: { sampleRate: number, numberOfFrames: number, numberOfChannels: number, frames: Float32Array[] }
 ```
 
 `WavFile.encodeFloats(audio: AudioData | AudioBufferLike, maxLength?)` returns the encoded
 bytes, so it works with the `AudioBuffer` from `AudioOfflineRenderer` and the `AudioData`
 from `OfflineEngineRenderer` alike.
 
-**Supported Formats:**
-- 32-bit IEEE float
-- 24-bit PCM
-- 16-bit PCM
-- Stereo or mono
-- Lossless quality
+**Encoders:**
+- `encodeFloats` — 32-bit IEEE float (lossless, the default used throughout this chapter)
+- `encodeInts16` — 16-bit PCM (same input shape; float samples clamped to [-1, 1])
+
+Both accept `AudioData | AudioBufferLike`, mono or stereo. There is no 24-bit encoder.
 
 ### Saving and slicing the result
 
