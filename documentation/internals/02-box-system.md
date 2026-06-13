@@ -174,7 +174,7 @@ findVertex(address: Address): Option<Vertex>           // graph.ts:195
 
 ### Walking dependencies
 
-`dependenciesOf()` (`graph.ts:355`) walks the graph from a starting set and collects every transitively reachable box and pointer field. It takes a single `{stopAtResources: boolean}` option (not a per-`ResourceType` dispatch): with `stopAtResources: true`, any box that has a `resource` value is treated as a boundary — the walk stops descending into that box's outgoing edges, but still back-traces mandatory incoming pointers (except for `"shared"` boxes, where ownership-field mandatory pointers are also excluded).
+`dependenciesOf()` (`graph.ts:355`) walks the graph from a starting set and collects every transitively reachable box and pointer field. It takes an options object — `{excludeBox?, alwaysFollowMandatory?, stopAtResources?}` — rather than a per-`ResourceType` dispatch. The resource-boundary behaviour is driven by `stopAtResources`: with `stopAtResources: true`, any box that has a `resource` value is treated as a boundary — the walk stops descending into that box's outgoing edges, but still back-traces mandatory incoming pointers (except for `"shared"` boxes, where ownership-field mandatory pointers are also excluded).
 
 The per-`ResourceType` UUID policy — `"preserved"` keeps the original UUID; `"internal"`/`"shared"` regenerate — is applied afterward by the copy/paste layer (`TransferUtils.generateMap` in `packages/studio/adapters/src/transfer/`), not inside `dependenciesOf()` itself. Together they are the foundation of copy/paste and clip cloning: `dependenciesOf` decides what gets collected, and the transfer layer decides what gets cloned versus shared.
 
