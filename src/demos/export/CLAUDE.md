@@ -9,12 +9,14 @@ the stem branch (metronome excluded).
 **Higher-level shortcuts** (when you don't need step-by-step control):
 - `AudioOfflineRenderer.start(source, optConfig, progress, abortSignal?, sampleRate?)` →
   `Promise<AudioBuffer>` (in `@opendaw/studio-core`) — one-shot mixdown/stems to a
-  ready-to-play AudioBuffer.
+  ready-to-play AudioBuffer. `@deprecated` since studio-core@0.0.93; prefer
+  `OfflineEngineRenderer` for new code (`progress` here is a `Progress.Handler`).
 - `OfflineEngineRenderer.start(source, optConfig, progress, abortSignal?, sampleRate?)` →
-  `Promise<AudioData>` — same flow but returns the raw AudioData. Also exposes
-  `.create(source, optConfig, sampleRate?)` for step-by-step (`play`, `step(samples)`,
+  `Promise<AudioData>` — same flow but returns the raw AudioData. `progress` is a
+  `DefaultObservableValue<number>` (NOT a `Progress.Handler`). Also exposes
+  `.create(source, optConfig, sampleRate?)` for step-by-step (`play(): Promise<void>`, `step(samples)`,
   `setPosition`, `waitForLoading`, etc.) and `.render(config, start, end, progress, abortSignal?)`
-  for arbitrary ranges.
+  for arbitrary ranges (config is `OfflineEngineRenderConfig`, not `ExportConfiguration`).
 
 Pass a copy (not the live project) — both wrappers create an `OfflineAudioContext`
 that conflicts with the live `liveStreamReceiver`.
@@ -50,6 +52,7 @@ projectCopy.terminate();
 - Stem path (`exportConfiguration` provided) = per-track channels, metronome excluded
 - `project.copy()` shares the same `sampleManager` (samples stay loaded) but NOT engine preferences
 - Metronome gain: `z.number().min(-Infinity).max(0)` — default `-6` dB, max `0` dB (no boost, unlike track volume which goes to +6)
+- Metronome schema also carries a `monophonic: boolean` field
 
 ### Mutate-Copy-Restore Pattern for Offline Rendering
 `project.copy()` creates new box instances — you cannot modify the original project's
@@ -145,23 +148,31 @@ const stemConfig: ExportConfiguration = {
     [UUID.toString(drumUnit.address.uuid)]: {
       includeAudioEffects: true,   // render with effects
       includeSends: false,         // exclude aux sends
-      useInstrumentOutput: true,
-      skipChannelStrip: false,     // optional: bypass the channel-strip volume/pan
+      useInstrumentOutput: false,  // see below — true bypasses effects/sends/strip
+      skipChannelStrip: false,     // optional: bypass channel-strip volume/pan (and drops sends)
       fileName: "drums",
     },
     [UUID.toString(bassUnit.address.uuid)]: {
       includeAudioEffects: true,
       includeSends: true,          // include reverb/delay sends
-      useInstrumentOutput: true,
+      useInstrumentOutput: false,
       fileName: "bass",
     },
   },
-  // Optional: range?: "full" | { start: ppqn, end: ppqn } — "full" or a section
+  // range is honored ONLY by OfflineEngineRenderer.start/create — see below
 };
 
 // Pass to worklets.createEngine({ project: copy, exportConfiguration: stemConfig })
 // Each stem renders to a stereo pair in the output buffer (interleaved by stem order)
 ```
+`useInstrumentOutput: true` wires the raw instrument output directly to the bus and returns
+early — audio effects, aux sends, AND the channel strip are all bypassed, so
+`includeAudioEffects` / `includeSends` are dead. Set it `false` (or omit) for an
+effects-inclusive stem; openDAW's own export dialog omits the flag.
+`skipChannelStrip: true` also drops aux sends regardless of `includeSends` (same
+early-return-before-sends mechanism) — it bypasses the channel-strip volume/pan/mute.
+`ExportConfiguration.range` is read ONLY by `OfflineEngineRenderer`; the manual
+`worklets.createEngine` path (`EngineProcessor`) never reads it.
 - Mixdown path (`exportConfiguration` = undefined): all audio mixed, metronome included
 - Stem path (`exportConfiguration` provided): per-track isolation, metronome excluded
 

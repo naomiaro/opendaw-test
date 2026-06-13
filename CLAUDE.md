@@ -427,6 +427,12 @@ is called inside the callback before `const sub` is bound.
 midpoint -12 dB. Used by Reverb wet/dry, Dattorro wet/dry, and other effect dB fields.
 AudioUnit volume uses a different mapping: `decibel(-96, -9, +6)`.
 
+### Box Numeric Constraints Do Not Clamp
+`clampInt32` / `clampFloat32` in `lib-box` are no-ops (bodies commented out), and
+`AutomatableParameterFieldAdapter.getValue()` returns the raw stored value. A field's
+declared range (e.g. `decibel(-96,-9,+6)`) is NOT enforced — `volume.setValue(12)` stores 12
+and renders ~3.98× gain. Clamp at the UI/setter level; never assume the schema bounds the value.
+
 ### Always Use editing.modify() for State Changes
 ```typescript
 project.editing.modify(() => {

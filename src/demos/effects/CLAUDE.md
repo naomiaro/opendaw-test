@@ -1,10 +1,13 @@
 # Effects Demos — OpenDAW SDK Reference
 
 ### EffectBox Is a Union Type
-`project.api.insertEffect()` returns `EffectBox` which is a union of device box types
+`project.api.insertEffect(field, factory, insertIndex?: int)` returns `EffectBox` which is a union of device box types
 (`ReverbDeviceBox | CompressorDeviceBox | WerkstattDeviceBox | SpielwerkDeviceBox | ...`), not a wrapper. Cast directly:
 `const reverbBox = effectBox as ReverbDeviceBox;`
 Automatable fields: `reverbBox.wet`, `reverbBox.dry`, etc.
+Pass `insertIndex` to position the effect — it renumbers existing devices via
+`IndexedBox.insertOrder`. Raw `box.index.setValue(0)` leaves an already-loaded effect ALSO
+at index 0 (duplicate index, ambiguous order in `audioEffects.adapters()`).
 
 ### WavFile Moved to lib-dsp (SDK 0.0.129+)
 `WavFile` was removed from `@opendaw/studio-core` and moved to `@opendaw/lib-dsp`.
@@ -30,7 +33,8 @@ SDK 0.0.132 adds `// @label <name>` (auto-sets device label) and `// @group <nam
 **CRITICAL:** `deviceBox.code.setValue(script)` does NOT execute the script. You must use
 `ScriptCompiler.compile()` which wraps the code, registers it via `audioWorklet.addModule()`,
 and writes back a header (`// @werkstatt js 1 <update-number>`) that the processor detects.
-Without compilation, the processor sees `update === 0` and stays silent.
+Without compilation, headerless code stays silent — the processor's `parseUpdate` yields `-1`
+and gates on `newUpdate > 0`; the compiler-side `parseHeader` yields `0` and `load()` early-returns.
 ```typescript
 import { ScriptCompiler } from "@opendaw/studio-adapters";
 
@@ -50,6 +54,8 @@ project.editing.modify(() => {
 await compiler.compile(audioContext, project.editing, werkstattBox, userCode);
 // Parameters are now available via werkstattBox.parameters.pointerHub.incoming()
 ```
+`compile(audioContext, editing, deviceBox, source, append?: boolean)` — `append` adds the
+compiled module to the existing registry instead of replacing it.
 `compiler.stripHeader(code)` removes the `// @werkstatt ...` header to recover user code.
 `compiler.load(audioContext, deviceBox)` reloads already-compiled code (e.g., on page load).
 
@@ -73,6 +79,8 @@ process({src, out}, block) {
   // ... generate audio
 }
 ```
+The SDK validates output each block: a NaN or `|sample| > 1000` (~60 dB) silences the device
+and posts a `deviceMessage` to the client.
 
 ### Parsing Werkstatt Script Declarations (SDK 0.0.132+)
 Use `ScriptDeclaration.parseGroups(code)` from `@opendaw/studio-adapters` to get structured
@@ -116,11 +124,11 @@ All adapters implement `DeviceBoxAdapter` with `.type`, `.labelField`, `.enabled
 
 **Other audio effect adapters** (each with typed parameter sets):
 - `DelayDeviceBoxAdapter` — 21-entry Fractions array (Off→1/1)
-- `ReverbDeviceBoxAdapter` ("Free Reverb") — wet, dry, roomSize, damping, width
+- `ReverbDeviceBoxAdapter` ("Free Reverb") — decay (UI "Room-Size"), preDelay (exp, 0.001–0.5 s), damp, filter (bipolar), dry, wet (DefaultDecibel)
 - `DattorroReverbDeviceBoxAdapter` — preDelay (ms, 0-1000), wet/dry use DefaultDecibel
-- `GateDeviceBoxAdapter` — threshold, attack, hold, release, range
-- `MaximizerDeviceBoxAdapter` — ceiling, release
-- `CrusherDeviceBoxAdapter` — crush (inverted: higher value = MORE crushing), downsample
+- `GateDeviceBoxAdapter` — inverse, threshold (−80..0), return (0..24), attack (0..1000 ms), hold (0..500 ms), release (1..2000 ms), floor (decibel −72,−12,0)
+- `MaximizerDeviceBoxAdapter` — threshold (adapter UI −24..0; box schema −30..0), lookahead (bool)
+- `CrusherDeviceBoxAdapter` — crush (inverted: higher value = MORE crushing; sample-rate reduction IS this param), bits, boost, mix
 - `FoldDeviceBoxAdapter` — waveshaper fold amount
 - `WaveshaperDeviceBoxAdapter` — custom waveshaper curve
 - `StereoToolDeviceBoxAdapter` — stereo width is bipolar (-1..1), NOT 0-2
