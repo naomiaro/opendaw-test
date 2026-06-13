@@ -146,14 +146,6 @@ Effects use the Adapter pattern to provide reactive properties:
   - Provides string representations (dB, %, Hz, etc.)
   - Supports automation and MIDI learning
 
-### UI Rendering
-
-- **Device Editors** - UI components for effect controls
-  - Located in: `@opendaw/app/studio/src/ui/devices/audio-effects/`
-  - Examples: `CompressorDeviceEditor.tsx`, `DelayDeviceEditor.tsx`
-  - Use `ControlBuilder` to create parameter controls
-  - Include meters for real-time parameter visualization
-
 ### Integration - Effect Chain Processing
 
 - **InsertReturnAudioChain** - Audio effect chain processor
@@ -232,7 +224,7 @@ Effect Box created in BoxGraph
          ↓
 Box Adapter wraps box with reactive properties
          ↓
-Device Editor renders parameter controls
+Your UI renders parameter controls
          ↓
 User adjusts parameters in editing.modify() transaction
          ↓
@@ -1385,11 +1377,10 @@ Audio Interface Output
 
 ## UI Controls
 
-OpenDAW effects use a reactive UI pattern where:
-1. **Device Adapters** wrap effect boxes with observable properties
-2. **Device Editors** render UI components for effect controls
-3. **Parameter Controls** provide interactive knobs, sliders, and buttons
-4. **Control Builders** create standardized UI components
+OpenDAW effects expose a reactive binding surface you can drive any UI from:
+1. **Device Adapters** wrap effect boxes with typed, observable parameters
+2. **Parameter adapters** carry value/string mappings for storage and display formatting
+3. **Live metering** streams per-device meter data through `project.liveStreamReceiver`
 
 ### Device Adapter Pattern
 
@@ -1433,70 +1424,9 @@ Each adapter provides typed parameters:
 }
 ```
 
-### Parameter Control Components
-
-#### ControlBuilder - Knob Component
-
-```typescript
-import { ControlBuilder } from "@/ui/devices/ControlBuilder.tsx";
-import { SnapCommonDecibel } from "@/ui/configs.ts";
-
-{ControlBuilder.createKnob({
-    lifecycle,
-    editing,
-    midiLearning: midiLearning,
-    adapter,
-    parameter: delay,
-    options: SnapCommonDecibel  // Optional snap points
-})}
-```
-
-#### ParameterToggleButton - Boolean Controls
-
-```typescript
-import { ParameterToggleButton } from "@/ui/devices/ParameterToggleButton";
-
-{[automakeup, autoattack, autorelease, lookahead]
-    .map((parameter) => (
-        <ParameterToggleButton
-            lifecycle={lifecycle}
-            editing={editing}
-            parameter={parameter}
-        />
-    ))
-}
-```
-
-### Control Builder API
-
-#### createKnob()
-
-```typescript
-ControlBuilder.createKnob({
-    lifecycle: Lifecycle,        // Required: lifecycle management
-    editing: Editing,            // Required: transaction management
-    midiLearning: MidiLearning,  // Required: MIDI learning context
-    adapter: DeviceAdapter,      // Required: device adapter
-    parameter: ParameterAdapter, // Required: the parameter
-    options?: SnapArray,         // Optional: snap points
-    anchor?: number              // Optional: center value (0-1)
-})
-```
-
-#### Common Snap Options
-
-```typescript
-import { SnapCommonDecibel } from "@/ui/configs.ts";
-
-// Decibel values: -60, -48, -36, -24, -12, -6, 0, +6
-SnapCommonDecibel
-
-// Custom snap array
-[0, 0.25, 0.5, 0.75, 1.0]
-
-// No snapping
-undefined
-```
+Read and write a parameter through its adapter: `adapter.namedParameter.threshold.setValue(...)`
+inside an `editing.modify()` transaction, and subscribe for reactive updates. Each parameter
+carries the value/string mappings below, which define its storage range and display formatting.
 
 ### Parameter Value Mapping
 
@@ -1547,14 +1477,23 @@ StringMapping.indices(                 // Indexed values
 
 ### Real-Time Metering
 
-```typescript
-import { DevicePeakMeter } from "@/ui/devices/panel/DevicePeakMeter.tsx";
+Per-device meter data streams through `project.liveStreamReceiver` (a `LiveStreamReceiver`
+from `@opendaw/lib-fusion`), addressed by the device `adapter.address`. Subscribe to drive
+your own meter UI; `subscribeFloats` returns a `Subscription` — call `.terminate()` on unmount:
 
-<DevicePeakMeter
-    lifecycle={lifecycle}
-    receiver={project.liveStreamReceiver}
-    address={adapter.address}
-/>
+```typescript
+import type { Address } from "@opendaw/lib-box";
+
+const subscription = project.liveStreamReceiver.subscribeFloats(
+    adapter.address,
+    (data: Float32Array) => {
+        // data carries the device's live meter values (per channel)
+        updateMeter(data);
+    }
+);
+
+// later
+subscription.terminate();
 ```
 
 ---
