@@ -11,11 +11,16 @@ export interface EffectPreset<T> {
   params: T;
 }
 
+// Param shapes are type aliases (not interfaces) so they satisfy the
+// Record<string, number> surface of EffectPanel / useDynamicEffect without
+// casts — all-number object-literal type aliases get an implicit index
+// signature; interfaces do not.
+
 // ============================================================================
 // REVERB PRESETS
 // ============================================================================
 
-export interface ReverbParams {
+export type ReverbParams = {
   wet: number; // dB: -60 to 0
   decay: number; // 0-1: decay time
   preDelay: number; // seconds: 0-0.5
@@ -69,7 +74,7 @@ export const REVERB_PRESETS: EffectPreset<ReverbParams>[] = [
 // COMPRESSOR PRESETS
 // ============================================================================
 
-export interface CompressorParams {
+export type CompressorParams = {
   threshold: number; // dB: -60 to 0
   ratio: number; // 1-20:1
   attack: number; // ms: 0.1-100
@@ -124,7 +129,7 @@ export const COMPRESSOR_PRESETS: EffectPreset<CompressorParams>[] = [
 // DELAY PRESETS
 // ============================================================================
 
-export interface DelayParams {
+export type DelayParams = {
   wet: number; // dB: -60 to 0
   feedback: number; // 0-0.95: amount of feedback
   delayMusical: number; // 0-20: index into Delay Fractions array (0=Off, 11=1/8, 14=1/4, 20=1/1)
@@ -178,7 +183,7 @@ export const DELAY_PRESETS: EffectPreset<DelayParams>[] = [
 // CRUSHER (LO-FI) PRESETS
 // ============================================================================
 
-export interface CrusherParams {
+export type CrusherParams = {
   bits: number; // 1-16: bit depth reduction
   crush: number; // 0-1: sample rate reduction (0 = clean, 1 = max crush)
   boost: number; // 0-24 dB: pre-emphasis gain (NOT 0-1!)
@@ -232,7 +237,7 @@ export const CRUSHER_PRESETS: EffectPreset<CrusherParams>[] = [
 // STEREO WIDTH PRESETS
 // ============================================================================
 
-export interface StereoWidthParams {
+export type StereoWidthParams = {
   width: number; // -1 to 1: stereo width (0 = normal, -1 = mono, 1 = max wide)
   pan: number; // -1 to 1: pan position
 }
@@ -284,7 +289,7 @@ export const STEREO_WIDTH_PRESETS: EffectPreset<StereoWidthParams>[] = [
 // EQ PRESETS (3-Band Parametric EQ)
 // ============================================================================
 
-export interface EQParams {
+export type EQParams = {
   lowGain: number; // dB: -24 to 24 (250 Hz)
   midGain: number; // dB: -24 to 24 (1 kHz)
   highGain: number; // dB: -24 to 24 (4 kHz)
@@ -337,7 +342,7 @@ export const EQ_PRESETS: EffectPreset<EQParams>[] = [
 // WAVEFOLDER PRESETS
 // ============================================================================
 
-export interface FoldParams {
+export type FoldParams = {
   drive: number; // dB: 0 to 30 (input drive)
   volume: number; // dB: -18 to 0 (output level)
 }
@@ -389,7 +394,7 @@ export const FOLD_PRESETS: EffectPreset<FoldParams>[] = [
 // DATTORRO REVERB PRESETS
 // ============================================================================
 
-export interface DattorroReverbParams {
+export type DattorroReverbParams = {
   preDelay: number; // ms: 0-1000 (NOTE: milliseconds, not seconds — unlike standard Reverb)
   bandwidth: number; // 0-1: input bandwidth
   decay: number; // 0-1: decay time
@@ -447,7 +452,7 @@ export const DATTORRO_REVERB_PRESETS: EffectPreset<DattorroReverbParams>[] = [
 // TIDAL (LFO) PRESETS
 // ============================================================================
 
-export interface TidalParams {
+export type TidalParams = {
   slope: number; // -1 to 1: waveform slope (bipolar)
   symmetry: number; // 0-1: waveform symmetry
   rate: number; // 0-16: fraction index (0=1/1, 3=1/4, 6=1/8, etc.)
@@ -503,7 +508,7 @@ export const TIDAL_PRESETS: EffectPreset<TidalParams>[] = [
 // MAXIMIZER PRESETS
 // ============================================================================
 
-export interface MaximizerParams {
+export type MaximizerParams = {
   threshold: number; // dB: -30 to 0
 }
 

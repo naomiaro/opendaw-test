@@ -5,6 +5,10 @@
  * - Full mix export (all tracks mixed down)
  * - Individual stems export (separate files per track)
  * - WAV format with 32-bit float encoding
+ *
+ * Note: AudioOfflineRenderer is deprecated upstream (since studio-core 0.0.93)
+ * but still functional — it wraps the same project.copy() + OfflineAudioContext
+ * + createEngine pipeline that src/lib/rangeExport.ts implements manually.
  */
 
 import { Project, AudioOfflineRenderer } from "@opendaw/studio-core";
@@ -170,8 +174,18 @@ export async function exportStems(
 
     onStatus?.(`Preparing to export ${stemCount} stems...`);
 
-    // Wrap our flat stem map into SDK ExportConfiguration shape ({stems: ...})
-    const exportConfig: ExportConfiguration = { stems: stemsConfig };
+    // Wrap our flat stem map into SDK ExportConfiguration shape ({stems: ...}).
+    // useInstrumentOutput must stay false: true wires the instrument output
+    // straight to the bus, silently bypassing effects, sends, AND the channel
+    // strip (openDAW's own export dialog omits the flag for the same reason).
+    const exportConfig: ExportConfiguration = {
+      stems: Object.fromEntries(
+        Object.entries(stemsConfig).map(([uuid, stem]) => [
+          uuid,
+          { ...stem, useInstrumentOutput: false }
+        ])
+      )
+    };
 
     onStatus?.("Rendering stems offline...");
 

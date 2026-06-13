@@ -78,7 +78,9 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(({ maxDura
                   position: "absolute",
                   left: `${percent}%`,
                   top: "-6px",
-                  transform: "translateX(-50%)"
+                  // Right-align labels near the edge so the last one does not
+                  // overhang the ruler (clips under the Card's overflow:hidden)
+                  transform: percent > 92 ? "translateX(-100%)" : "translateX(-50%)"
                 }}
               >
                 <Text size="1" color="gray" style={{ fontWeight: "500" }}>
