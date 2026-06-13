@@ -80,9 +80,10 @@ A parameter declaration is a single-line comment with space-separated tokens:
 const cutoff = 1000;
 ```
 
-Format: `// @param <name> <default> <min> <max> [mapping] [unit]`. `mapping` is one of
-`unipolar | linear | exp | int | bool`; `min`/`max`/`mapping`/`unit` are optional — a bare
-`// @param depth 0.5` defaults to a 0–1 unipolar control. The compiler registers one
+Format: `// @param <name> <default> <min> <max> [mapping] [unit]`. Tokens are positional:
+`mapping` (when supplied) must be one of `linear | exp | int | bool`, optionally followed by
+`unit`. Omit `min`/`max` for a 0–1 control — a bare `// @param depth 0.5` defaults to a
+unipolar (0–1) mapping (which can't be named explicitly). The compiler registers one
 `*ParameterBox` per declaration (`WerkstattParameterBox`, `ApparatParameterBox`, etc.) on the device, which:
 
 - Appears in the device's parameter list (visible to the UI inspector).
