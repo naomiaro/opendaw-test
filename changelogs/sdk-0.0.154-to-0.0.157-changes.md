@@ -197,6 +197,27 @@ taper, EqualPower = constant-perceived-loudness); at center (the demo default `p
 two are identical. Left as-is to track upstream's intended default; set
 `b["panning-mixing"].setValue(Mixing.EqualPower)` in `initDefaults` if the old law is wanted.
 
+### Dattorro reverb excursion-LFO fix (subtle sound change)
+
+`DattorroReverbDsp.ts` (in `@opendaw/studio-core-processors`, the built-in TS engine's DSP)
+rewrote the excursion LFO to mirror the Rust/WASM engine bit-for-bit. The old code evaluated
+`Math.cos(excPhase * 6.28)` / `Math.sin(excPhase * 6.2847)` **per sample** — constants that
+were both slightly off from `TAU` (6.2831853…) and asymmetric between cos and sin. The new
+code uses exact `TAU` and an angle-sum rotation recurrence (two trig calls per block instead
+of per sample). Net effect: the reverb-tail modulation runs at the corrected rate with
+symmetric cos/sin — a **subtle change to the Dattorro reverb's sound**, applied on the TS
+engine opendaw-headless uses (commit `2bb87532b "fixes dattorro"`).
+
+**opendaw-headless impact:** none code-wise. Dattorro-reverb renders will sound marginally
+different (corrected). No API, field, or default changed — only the internal DSP.
+
+### Effects API surface otherwise unchanged
+
+`EffectFactory`, `EffectFactories`, `EffectBox`, and every effect adapter have **zero** diff
+in this range. No effect boxes were added or removed (Vocoder already shipped in 0.0.154). The
+only effect-schema change is the `StereoToolDeviceBox` default above; the only effect-DSP
+change is the Dattorro fix above.
+
 ### Muted value clips no longer contribute automation
 
 `TrackBoxAdapter`'s value read at a section boundary now checks `!clip.mute` before returning
