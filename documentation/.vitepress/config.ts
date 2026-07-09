@@ -76,6 +76,7 @@ export default withMermaid(defineConfig({
           { text: "MIDI Deep Dive", link: "/16-midi" },
           { text: "Modular Devices", link: "/17-modular-devices" },
           { text: "Time & Pitch", link: "/18-time-and-pitch" },
+          { text: "Swappable Audio Engine (WASM)", link: "/19-wasm-engine" },
         ],
       },
       {
