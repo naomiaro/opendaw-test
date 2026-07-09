@@ -55,6 +55,16 @@ Dropout counts come from the **browser**, not the SDK: `audioContext.playbackSta
 value but exposes no public getter and writes nothing to the console, so we read the browser
 value directly.
 
+**Performance reporting is itself an engine cost** and is gated by a real SDK switch:
+`project.engine.preferences.settings.debug.dspLoadMeasurement` (a `debug.dspLoadMeasurement`
+boolean, **schema default `false`**). Verified both engines consume it **live**: the TS engine
+(`EngineProcessor.render`) reads it each render cycle; the WASM engine (`processor.ts`) subscribes
+to the `["debug","dspLoadMeasurement"]` path and updates its internal `#measureLoad` flag
+reactively — so toggling mid-session takes effect immediately on whichever engine is booted.
+Measuring DSP load adds audio-thread work (an observer effect on the very metric we display), so
+it stays **off by default**; the demo exposes it as an explicit opt-in toggle. This mirrors
+upstream's own `PerformanceStats.tsx`, which flips the same flag.
+
 ## Components
 
 ### 1. `src/lib/wasmEngine.ts` (new) — engine wiring helper
@@ -154,12 +164,21 @@ with `GitHubCorner`, `BackLink`, `MoisesLogo`.
 - **TS ↔ WASM toggle switch** — calls `switchEngine`; disabled while `isSwitchingRef` is set.
 - **Transport Play/Stop** — **must be a real pointer click** (untrusted `.click()` won't start the
   AudioContext, per repo rule). Stop resets to loop start.
-- **Performance readout:**
+- **Performance reporting toggle (off by default):** a switch that drives
+  `settings.debug.dspLoadMeasurement`. When **off** (default) the engine skips DSP-load
+  measurement *and* the UI runs none of the perf machinery below — no `cpuLoad` subscription, no
+  `playbackStats` poll, no sparkline `AnimationFrame`. Copy notes *why*: measuring load perturbs
+  the load, so the A/B-by-ear comparison stays clean until you opt in. Turning it **on** sets the
+  flag `true` and mounts the readout; turning it off tears the readout down and resets the flag.
+- **Performance readout (only mounted while reporting is on):**
   - Live **CPU load** number + **sparkline** from `engine.cpuLoad` / `engine.perfBuffer`.
   - **Dropouts: N** from `audioContext.playbackStats.underrunEvents`, feature-gated — shows
     `n/a (Chromium only)` where `playbackStats` is undefined.
   - Painted via `AnimationFrame.add(...)` writing DOM/canvas directly — **no per-frame `setState`**
-    (repo perf rule); AnimationFrame scanning limited to when playing.
+    (repo perf rule); AnimationFrame scanning limited to when playing **and** reporting is on.
+  - The `dspLoadMeasurement` flag and the perf readout persist across a TS↔WASM swap (the facade
+    and preferences outlive the worklet); re-assert the flag after `startAudioWorklet` if the new
+    worklet reads it only at first render.
 - Short explanatory copy: what the WASM engine is, that output is identical by design, and that
   CPU load is the leading indicator (dropouts the lagging symptom, usually 0).
 
@@ -183,8 +202,10 @@ with `GitHubCorner`, `BackLink`, `MoisesLogo`.
 - **Concurrent reboots** blocked by `isSwitchingRef`.
 - **Non-Chromium browsers**: dropout counter reads `n/a`; CPU load + everything else works.
 - **AudioContext suspended / iOS re-suspend**: resume on the real Play click before `engine.play()`.
-- **Cleanup**: terminate `cpuLoad` subscription + `AnimationFrame` on unmount; the facade owns the
-  worklet lifecycle.
+- **Cleanup**: terminate the `cpuLoad` subscription + perf `AnimationFrame` both on unmount **and**
+  whenever reporting is toggled off (so nothing keeps polling); the facade owns the worklet lifecycle.
+- **Reporting toggle is independent of the engine toggle**: either can be flipped without disturbing
+  the other, and the demo starts with reporting off regardless of which engine boots first.
 
 ## Non-goals (YAGNI)
 
@@ -204,6 +225,10 @@ with `GitHubCorner`, `BackLink`, `MoisesLogo`.
   - Toggle to **WASM** → badge = WASM/ready, playback continues seamlessly mid-loop, CPU meter
     live, **network 200s** for `/wasm-engine/wasm/engine.wasm` + device plugins.
   - Toggle back to **TS** → badge = TypeScript, still seamless.
+  - **Reporting starts off** (no perf numbers shown). Flip it **on** → CPU meter + sparkline appear
+    and update live on both engines (toggle TS↔WASM with reporting on and confirm the readout keeps
+    working); flip it **off** → readout unmounts and polling stops. Confirm `dspLoadMeasurement` is
+    `false` in `settings` at load.
   - Per-navigation **"Console: 0 errors"** (judge on the fresh load, not `all:true` history).
 - Confirm existing demos still boot on the TS engine (no `EngineVariant` leakage — install is
   per-page, so this holds by construction; spot-check one demo).
