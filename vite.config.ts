@@ -2,7 +2,7 @@ import {defineConfig, type Plugin} from "vite"
 import react from "@vitejs/plugin-react"
 import crossOriginIsolation from "vite-plugin-cross-origin-isolation"
 import {readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, statSync} from "fs"
-import {resolve, join, extname} from "path"
+import {resolve, join, extname, sep} from "path"
 
 // Dev-only sink for the audio-verify harness: PUT /__verify/<name>.wav writes
 // the body to .verify-output/ so the audio-analyzer MCP can read it from disk.
@@ -76,7 +76,7 @@ const wasmEngineAssets = (): Plugin => ({
             try {
                 const rel = (req.url ?? "/").split("?")[0].replace(/^\/+/, "")
                 const file = resolve(WASM_DIST, rel)
-                if (!file.startsWith(WASM_DIST) || !existsSync(file) || !statSync(file).isFile()) {
+                if (!(file === WASM_DIST || file.startsWith(WASM_DIST + sep)) || !existsSync(file) || !statSync(file).isFile()) {
                     return next()
                 }
                 res.setHeader("Content-Type", MIME[extname(file)] ?? "application/octet-stream")
