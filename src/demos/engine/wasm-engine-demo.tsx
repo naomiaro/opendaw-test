@@ -126,8 +126,12 @@ const App: React.FC = () => {
     const cpuSub = engine.cpuLoad.catchupAndSubscribe((obs) =>
       setCpuPct(Math.round(obs.getValue())),
     );
+    let lastDropouts = stats ? stats.underrunEvents : null;
     const frame = AnimationFrame.add(() => {
-      if (stats) { setDropouts(stats.underrunEvents); }
+      if (stats && stats.underrunEvents !== lastDropouts) {
+        lastDropouts = stats.underrunEvents;
+        setDropouts(stats.underrunEvents);
+      }
     });
     perfLifeRef.current = { terminate: () => { cpuSub.terminate(); frame.terminate(); } };
   }, [project]);
