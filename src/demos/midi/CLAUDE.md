@@ -70,6 +70,15 @@ region.iterateActiveNotesAt(position)    // IterableIterator<NoteEvent> at a PPQ
 ```
 Read events via `region.optCollection.unwrap().events` (or guard with `hasCollection`).
 
+### Programmatic Note Regions Need loopDuration (or they play silently)
+A hand-built `NoteRegionBox` schedules events within `[loopOffset, loopOffset+loopDuration]`;
+with the default `loopDuration:0` the engine plays ZERO notes (silent) even though the events,
+collection, note track and output routing all look correct and `iterateActiveNotesAt` yields
+nothing. Setting `box.duration` + the timeline `loopArea` is NOT enough. Set
+`box.loopOffset.setValue(0)` + `box.loopDuration.setValue(contentLenPPQN)`, or use
+`project.api.createNoteRegion({ ..., loopOffset, loopDuration })`. `StepRecordingSection` omits
+loopDuration (its regions are recording-driven), so don't copy it as a playing-region template.
+
 ### NoteEventCollectionBoxAdapter (Event Container)
 Container for MIDI note events within a region:
 ```typescript
