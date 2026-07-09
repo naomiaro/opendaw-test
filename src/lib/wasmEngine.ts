@@ -65,17 +65,29 @@ export async function switchEngine(
   const wasPlaying = engine.isPlaying.getValue();
   const position = engine.position.getValue();
 
-  engine.releaseWorklet();
-  const worklet: EngineWorklet = project.startAudioWorklet(
-    { unload: async () => {}, load: (w: EngineWorklet) => engine.setWorklet(w) },
-    {},
-  );
-  engine.setWorklet(worklet);
-  await worklet.isReady();
+  // Reboot the EngineWorklet (re-reads EngineVariant.current()) and restore transport state.
+  const boot = async (): Promise<void> => {
+    engine.releaseWorklet();
+    const worklet: EngineWorklet = project.startAudioWorklet(
+      { unload: async () => {}, load: (w: EngineWorklet) => engine.setWorklet(w) },
+      {},
+    );
+    engine.setWorklet(worklet);
+    await worklet.isReady();
+    engine.setPosition(position);
+    if (wasPlaying) { engine.play(); }
+  };
 
-  engine.setPosition(position);
-  if (wasPlaying) { engine.play(); }
-
-  const active: "wasm" | "ts" = wasm && isWasmReady() ? "wasm" : "ts";
-  return { requested: wasm ? "wasm" : "ts", active, fellBack: wasm && !ready };
+  try {
+    await boot();
+    const active: "wasm" | "ts" = wasm && isWasmReady() ? "wasm" : "ts";
+    return { requested: wasm ? "wasm" : "ts", active, fellBack: wasm && !ready };
+  } catch (err) {
+    // The chosen engine failed to boot and releaseWorklet() already emptied the slot —
+    // recover on the built-in TypeScript engine so audio isn't left dead.
+    console.warn("[wasmEngine] engine boot failed; falling back to the TypeScript engine:", String(err));
+    setWasmEnabled(false);
+    await boot(); // if this also throws it is genuinely unrecoverable — let it reject
+    return { requested: wasm ? "wasm" : "ts", active: "ts", fellBack: true };
+  }
 }
