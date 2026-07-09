@@ -329,6 +329,19 @@ no terminal state at all (see the SampleLoader section).
   the position reset triggers spurious loop-wrap muting and the processor reset races
   the async finalization
 
+### Loop Recording Finalizes Takes Only on Loop Wrap
+A take finalizes each time the loop **wraps**, not continuously — recording must run
+through the count-in AND ≥1 full loop before the first take exists (1-bar count-in +
+2-bar loop @120 BPM ≈ 6s minimum). Too-short recordings finalize 0 takes. Watch for
+`[RecordAudio] createTakeRegion → finalizeTake` per wrap in the console.
+
+### Don't Synthesize Input to Verify Recording — Use the Real Mic
+A `getUserMedia` override returning a `MediaStreamAudioDestinationNode` stream reads
+as SILENT when the engine consumes it cross-AudioContext (the oscillator taps fine
+directly, but no signal reaches capture), and a shared dest stream dies once any
+consumer calls `track.stop()` (tape disarm/remove). Verify capture with the real mic;
+the engine faithfully renders silence as flat peaks (that's correct, not a bug).
+
 ### Monitoring Peaks Across Recording Lifecycle
 Run the peaks AnimationFrame unconditionally for the component's lifetime — do NOT
 gate it on recording/session state. A state gate can miss batched transitions (see

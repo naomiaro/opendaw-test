@@ -510,7 +510,11 @@ interface SampleProvider {
 2. Pass your provider when constructing `GlobalSampleLoaderManager`: `new GlobalSampleLoaderManager(myProvider)`. Or wrap an existing one to chain fallbacks: `(uuid, p) => primary.fetch(uuid, p).catch(() => secondary.fetch(uuid, p))`.
 3. That's it. The cache + ref counting + dedup behaviour all stays. If your provider is slow, advance the `progress` handler so UIs can show a meaningful spinner.
 
-The built-in `OpenSampleAPI` (`packages/studio/core/src/samples/OpenSampleAPI.ts`) is a working example — it serves the stock samples that ship with openDAW Studio.
+openDAW Studio's own stock-sample provider (`OpenSampleAPI`) is a working example. As of SDK
+0.0.155 it lives in the app-studio package (`packages/app/studio/src/opendaw-api/OpenSampleAPI.ts`),
+not in `@opendaw/studio-core` — it's no longer part of the published SDK surface. Read
+`packages/studio/core/src/samples/SampleProvider.ts` (the one-method interface) before writing
+your own; opendaw-headless implements its provider inline in `src/lib/projectSetup.ts`.
 
 To add a new *kind* of sample (say, a SoundFont preset), look at how `SoundfontLoaderManager` mirrors `GlobalSampleLoaderManager` instead — different resource, same shape.
 
@@ -539,8 +543,8 @@ To add a new *kind* of sample (say, a SoundFont preset), look at how `SoundfontL
 
 ## Further reading
 
-- **`packages/studio/core/src/samples/OpenSampleAPI.ts`** — the bundled stock-sample provider. Shortest possible `SampleProvider` implementation; read it before writing your own.
-- **`packages/studio/core/src/samples/SampleProvider.ts`** — the one-method interface contract.
+- **`packages/studio/core/src/samples/SampleProvider.ts`** — the one-method interface contract. Read this before writing your own provider.
+- **`packages/app/studio/src/opendaw-api/OpenSampleAPI.ts`** — openDAW Studio's stock-sample provider, a full `SampleProvider` example. Moved here from `@opendaw/studio-core` in SDK 0.0.155 (no longer published SDK surface).
 - **`packages/lib/fusion/src/peaks/`** — `Peaks.ts`, `SamplePeakWorker.ts`, `SamplePeakProtocol.ts`, `PeaksPainter.ts`. The full peaks-format spec, the worker implementation, and the canvas renderer.
 - **`packages/lib/dsp/src/transient-detection.ts`** — the onset detector algorithm. Standalone, no dependencies on the rest of the SDK.
 - **`packages/studio/core/src/Storage.ts`** — the generic OPFS-backed storage base class that `SampleStorage` extends. Same pattern is reused for projects and presets.

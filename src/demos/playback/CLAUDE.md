@@ -242,8 +242,10 @@ project.editing.modify(() => {
 ### localAudioBuffers Must Be Passed to initializeOpenDAW
 The sample manager's fetch callback checks `localAudioBuffers` map at init time.
 Create the map BEFORE calling `initializeOpenDAW`, pass it in, then pass the same
-map to `loadTracksFromFiles`. Without this, the sample manager falls back to
-OpenSampleAPI (CORS error in dev).
+map to `loadTracksFromFiles`. Without this, the sample manager's fetch callback finds
+no local buffer and throws `"Sample not found locally"` (our provider deliberately does
+not hit any remote API — the old `OpenSampleAPI` fallback was removed from the SDK in
+0.0.155 anyway).
 ```typescript
 const localAudioBuffers = new Map<string, AudioBuffer>();
 const { project, audioContext } = await initializeOpenDAW({ localAudioBuffers, bpm: 124 });

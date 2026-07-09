@@ -603,6 +603,10 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
 - Some older demos carry pre-existing tsc errors (e.g. comp-lanes-demo.tsx TS2739/TS2345
   box-graph setup lines). Judge "zero new errors" against the parent commit's error set,
   not absolute zero — extract parent versions via `git show` when unsure.
+- Concrete "zero new errors" recipe: `git worktree add <tmp> <parent> && cd <tmp> &&
+  npm ci && npx tsc --noEmit --ignoreDeprecations "6.0" 2>&1 | grep '^src/' | sort`,
+  then `comm -13 baseline.txt branch.txt`. Filter to `^src/` — the node_modules
+  TS2304s (`FilePickerOptions`/`AudioPlaybackStats` DOM-lib cascade) are environmental.
 - If `npm run build` fails with a missing SDK export on a clean tree (e.g. "InputLatency
   is not exported"), suspect node_modules drift behind package-lock.json (installed SDK
   version < locked version) — fix with `npm ci`, not code changes.
@@ -614,6 +618,11 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   remove worktrees (or add a vitest exclude) before trusting `npm test` totals.
 - Web fonts under the COOP/COEP dev server need `crossorigin` on BOTH the preconnect
   and stylesheet `<link>`s (verified with Google Fonts on warp-demos.html).
+- In-browser audio demos: start the transport (Record/Play) with a REAL click
+  (Playwright/claude-in-chrome `computer` click) — a programmatic `button.click()`
+  or dispatched event is UNTRUSTED and silently fails to start the AudioContext/
+  transport (UI may toggle but 0 takes/no playback). Untrusted `.click()` is fine
+  for non-audio buttons (Add Tape, config, Stop).
 - Playwright MCP screenshots: omit the `filename` param — custom-named files land
   loose in the project root; default-named files land in `.playwright-mcp/`.
 - Playwright text assertions: JSX expressions split DOM text nodes — XPath
