@@ -224,6 +224,20 @@ change is the Dattorro fix above.
 `clip.valueAt(...)`. A muted value clip previously still drove its automation target at the
 clip's start position; it now correctly contributes nothing.
 
+### MIDIOutput device now broadcasts its active notes
+
+`MIDIOutputDeviceProcessor` (in `@opendaw/studio-core-processors`, the TS engine) now wires in
+a `NoteBroadcaster` and fires `noteOn`/`noteOff` as notes pass through, publishing the
+currently-sounding notes on the audio-unit address (live UI feedback, e.g. an on-screen
+keyboard reflecting what the device sends downstream). `NoteBroadcaster` already existed; the
+MIDIOutput processor just adopts it, clearing on reset / note-source detach. The MIDIOutput
+*device* itself is unchanged and predates 0.0.154. The larger MIDIOutput work this cycle
+(`crates/engine/src/midi_output.rs`, ~674 lines, + app-studio glue) is the **WASM engine**
+learning to drain MIDI to hardware — not in any package opendaw-headless consumes.
+
+**opendaw-headless impact:** none. No demo uses the MIDIOutput device; the broadcaster is
+additive and fires only when such a device processes notes.
+
 ### Transaction / undo integrity hardening (#1014, #1019, #1020, #1023)
 
 Fixes in `@opendaw/lib-box` and `@opendaw/lib-std` (the box `0.0.86 → 0.0.88` and std
@@ -271,14 +285,14 @@ Unlike the previous two cycles, the `@opendaw/lib-*` packages **did** move this 
 |---|---|---|---|
 | `@opendaw/lib-std` | `^0.0.78` | `^0.0.80` | `RuntimeNotifier.notify`, `Option.unwrap(message?)`, `Range` NaN clamp (#1019) |
 | `@opendaw/lib-box` | `^0.0.86` | `^0.0.88` | transaction-abort/rollback integrity (#1014/#1023), `optimizeUpdates` re-export |
-| `@opendaw/lib-dsp` | `^0.0.84` | `^0.0.86` | WASM-engine / tempo-edge DSP support |
-| `@opendaw/lib-dom` | `^0.0.83` | `^0.0.85` | — |
-| `@opendaw/lib-jsx` | `^0.0.83` | `^0.0.85` | — |
-| `@opendaw/lib-fusion` | `^0.0.94` | `^0.0.96` | — |
-| `@opendaw/lib-runtime` | `^0.0.79` | `^0.0.81` | — |
-| `@opendaw/lib-midi` | `^0.0.66` | `^0.0.68` | MIDIOutput groundwork |
-| `@opendaw/lib-xml` | `^0.0.64` | `^0.0.66` | — |
-| `@opendaw/lib-dawproject` | `^0.0.70` | `^0.0.72` | — |
+| `@opendaw/lib-dsp` | `^0.0.84` | `^0.0.86` | new `fast-math` helpers + `osc`/`lfo`/`ppqn`/`constants` tweaks |
+| `@opendaw/lib-dom` | `^0.0.83` | `^0.0.85` | minor (1 file) |
+| `@opendaw/lib-jsx` | `^0.0.83` | `^0.0.85` | minor (1 file) |
+| `@opendaw/lib-fusion` | `^0.0.94` | `^0.0.96` | minor (1 file) |
+| `@opendaw/lib-runtime` | `^0.0.79` | `^0.0.81` | version bump only (no src change) |
+| `@opendaw/lib-midi` | `^0.0.66` | `^0.0.68` | version bump only (no src change) — the MIDIOutput work is in the WASM engine + `core-processors`, NOT here |
+| `@opendaw/lib-xml` | `^0.0.64` | `^0.0.66` | version bump only (no src change) |
+| `@opendaw/lib-dawproject` | `^0.0.70` | `^0.0.72` | version bump only (no src change) |
 | `@opendaw/studio-enums` | `^0.0.77` | `^0.0.79` | palette, IconSymbols, `Pointers.CompositeCell` |
 | `@opendaw/studio-boxes` | `^0.0.94` | `^0.0.96` | Composite boxes, StereoTool default |
 | `@opendaw/studio-adapters` | `^0.0.116` | `^0.0.119` | `optFile`, muted-value-clip fix, `unwrap` labels, preset fixes |
