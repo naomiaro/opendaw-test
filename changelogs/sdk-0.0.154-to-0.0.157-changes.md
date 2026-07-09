@@ -224,6 +224,30 @@ change is the Dattorro fix above.
 `clip.valueAt(...)`. A muted value clip previously still drove its automation target at the
 clip's start position; it now correctly contributes nothing.
 
+### Recording: non-positive-duration takes are dropped (fix)
+
+`RecordAudio.finalizeTake` (in `@opendaw/studio-core`, the recording path) now guards against
+persisting a zero/negative-duration region. The finalized length is recomputed against the loop
+boundary, so — unlike the live duration update — it can come out `<= 0` for a take that started
+at or after `loopTo`. Previously such a region was kept and later tripped `validateTrack`'s
+"duration must be positive"; now `finalizeTake` `delete()`s it and returns early (logs
+`[RecordAudio] finalizeTake: dropping non-positive take`).
+
+**opendaw-headless impact:** none code-wise — the recording demos don't change. This only
+removes spurious zero-length takes that could appear when a loop-record take lands exactly on
+the loop boundary. **Not** a latency change: the input-latency compensation feature
+(`recording.inputLatency` preference, `CaptureAudioBox.inputLatency`, the `InputLatency`
+namespace) shipped in the *previous* cycle — see `sdk-0.0.150-to-0.0.154-changes.md`; nothing
+latency-related changed in this range.
+
+### Recording: output-device error is now a non-blocking toast
+
+`CaptureAudio`'s monitor-output-device failure switched from a blocking
+`RuntimeNotifier.info({headline: "Output Device Error", ...})` to `console.warn(reason)` +
+non-blocking `RuntimeNotifier.notify({message: "Output device error.", icon: "Warning"})` —
+the same `info → notify` move as `Project.handleCpuOverload` above. Affects only the monitoring
+path when a chosen output device fails; opendaw-headless is unaffected.
+
 ### MIDIOutput device now broadcasts its active notes
 
 `MIDIOutputDeviceProcessor` (in `@opendaw/studio-core-processors`, the TS engine) now wires in
