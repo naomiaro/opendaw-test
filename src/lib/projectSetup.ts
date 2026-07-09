@@ -183,7 +183,11 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
   // clear message, mirroring how sampleProvider handles the no-local case.
   const soundfontProvider: SoundfontProvider = {
     fetch: async (uuid: UUID.Bytes, _progress: Progress.Handler): Promise<[ArrayBuffer, SoundfontMetaData]> => {
-      throw new Error(`Soundfont not available locally: ${UUID.toString(uuid)}. Soundfont loading is disabled in opendaw-headless.`);
+      const uuidString = UUID.toString(uuid);
+      // Warn before throwing (matches sampleProvider) — the SDK loader also logs the rejection,
+      // but a descriptive pre-throw line keeps both providers symmetric.
+      console.warn(`No soundfont available for UUID: ${uuidString}. Soundfont loading is disabled in opendaw-headless.`);
+      throw new Error(`Soundfont not available locally: ${uuidString}. Soundfont loading is disabled in opendaw-headless.`);
     }
   };
   const soundfontManager = new GlobalSoundfontLoaderManager(soundfontProvider);
