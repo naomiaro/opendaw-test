@@ -7,7 +7,6 @@ import {
   AudioWorklets,
   GlobalSampleLoaderManager,
   GlobalSoundfontLoaderManager,
-  OpenSoundfontAPI,
   Project,
   Workers,
   SampleProvider,
@@ -177,10 +176,15 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
   };
   const sampleManager = new GlobalSampleLoaderManager(sampleProvider);
 
-  // Create soundfont manager
+  // Create soundfont manager.
+  // OpenSoundfontAPI was removed from @opendaw/studio-core in SDK 0.0.155 (moved into the
+  // app-studio package). It fetched from api.opendaw.studio (CORS issues in dev) and none of
+  // the demos use soundfont instruments, so this provider is never exercised — reject with a
+  // clear message, mirroring how sampleProvider handles the no-local case.
   const soundfontProvider: SoundfontProvider = {
-    fetch: async (uuid: UUID.Bytes, progress: Progress.Handler): Promise<[ArrayBuffer, SoundfontMetaData]> =>
-      OpenSoundfontAPI.get().load(uuid, progress)
+    fetch: async (uuid: UUID.Bytes, _progress: Progress.Handler): Promise<[ArrayBuffer, SoundfontMetaData]> => {
+      throw new Error(`Soundfont not available locally: ${UUID.toString(uuid)}. Soundfont loading is disabled in opendaw-headless.`);
+    }
   };
   const soundfontManager = new GlobalSoundfontLoaderManager(soundfontProvider);
 
