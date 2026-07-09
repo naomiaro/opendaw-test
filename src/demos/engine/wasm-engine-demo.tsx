@@ -87,7 +87,7 @@ const App: React.FC = () => {
     if (!project || !ctx || isSwitchingRef.current) { return; }
     isSwitchingRef.current = true;
     setIsSwitching(true);
-    setStatus(`Switching to ${wantWasm ? "WASM" : "TypeScript"} engine…`);
+    setStatus(`Switching to ${wantWasm ? "WASM" : "TypeScript"} engine… (rebuilds the engine, a few seconds)`);
     try {
       const result = await switchEngine(project, ctx, wantWasm);
       setEngineStatus(result);
@@ -198,7 +198,7 @@ const App: React.FC = () => {
                   Off by default — measuring DSP load perturbs the load it measures.
                 </Text>
               </Flex>
-              <Switch checked={reporting} disabled={!project}
+              <Switch checked={reporting} disabled={isSwitching || !project}
                       onCheckedChange={(v) => onToggleReporting(v)} />
             </Flex>
             {reporting && (

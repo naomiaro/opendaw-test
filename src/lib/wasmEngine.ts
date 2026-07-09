@@ -72,6 +72,7 @@ export async function switchEngine(
       { unload: async () => {}, load: (w: EngineWorklet) => engine.setWorklet(w) },
       {},
     );
+    // Belt-and-suspenders: startAudioWorklet already sets the worklet internally; restart.load only fires on the SDK's error-restart path. Explicit set matches upstream's restart pattern.
     engine.setWorklet(worklet);
     await worklet.isReady();
     engine.setPosition(position);
@@ -88,6 +89,6 @@ export async function switchEngine(
     console.warn("[wasmEngine] engine boot failed; falling back to the TypeScript engine:", String(err));
     setWasmEnabled(false);
     await boot(); // if this also throws it is genuinely unrecoverable — let it reject
-    return { requested: wasm ? "wasm" : "ts", active: "ts", fellBack: true };
+    return { requested: wasm ? "wasm" : "ts", active: "ts", fellBack: wasm };
   }
 }

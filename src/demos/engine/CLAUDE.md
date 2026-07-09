@@ -35,7 +35,8 @@ so no `Content-Type` is required.
 DSP-load measurement runs in the audio thread and perturbs the load it measures, so it is
 **off by default** (`settings.debug.dspLoadMeasurement`, schema default `false`). Both engines read
 it live: the TS engine per render; the WASM engine via a preference-path subscription. Read the
-result from `project.engine.cpuLoad` (`ObservableValue<number>`, swap-safe on the facade) and
+result from `project.engine.cpuLoad` (`ObservableValue<number>` — already a 0–100 integer
+percentage, do NOT multiply by 100; swap-safe on the facade) and
 `project.engine.perfBuffer`. Dropout counts come from the **browser**: `audioContext.playbackStats.underrunEvents`
 (Chromium-only — guard with a feature check); the SDK's `BufferUnderrunDetector` exposes no public
 getter and logs nothing to the console.
