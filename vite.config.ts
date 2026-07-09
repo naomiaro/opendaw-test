@@ -1,8 +1,8 @@
 import {defineConfig, type Plugin} from "vite"
 import react from "@vitejs/plugin-react"
 import crossOriginIsolation from "vite-plugin-cross-origin-isolation"
-import {readFileSync, existsSync, mkdirSync, writeFileSync} from "fs"
-import {resolve} from "path"
+import {readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, statSync} from "fs"
+import {resolve, join, extname} from "path"
 
 // Dev-only sink for the audio-verify harness: PUT /__verify/<name>.wav writes
 // the body to .verify-output/ so the audio-analyzer MCP can read it from disk.
@@ -60,6 +60,58 @@ const verifySink = (): Plugin => ({
     },
 })
 
+// Serves the WASM engine artifacts shipped in @opendaw/studio-core-wasm's dist/ under
+// /wasm-engine (dev: middleware straight from node_modules; build: emitFile the wasm/ tree).
+// Nothing binary is committed; loadEngineModules(base="/wasm-engine") fetches
+// /wasm-engine/wasm/engine.wasm + /wasm-engine/wasm/plugins/device_*.wasm.
+const WASM_DIST = resolve(__dirname, "node_modules/@opendaw/studio-core-wasm/dist")
+const MIME: Record<string, string> = {".wasm": "application/wasm", ".js": "text/javascript", ".map": "application/json"}
+
+const wasmEngineAssets = (): Plugin => ({
+    name: "wasm-engine-assets",
+    apply: "serve",
+    configureServer(server) {
+        server.middlewares.use("/wasm-engine", (req, res, next) => {
+            // Runs outside connect's try/catch — a sync throw kills the dev server.
+            try {
+                const rel = (req.url ?? "/").split("?")[0].replace(/^\/+/, "")
+                const file = resolve(WASM_DIST, rel)
+                if (!file.startsWith(WASM_DIST) || !existsSync(file) || !statSync(file).isFile()) {
+                    return next()
+                }
+                res.setHeader("Content-Type", MIME[extname(file)] ?? "application/octet-stream")
+                res.end(readFileSync(file))
+            } catch (err) {
+                console.error("[wasm-engine-assets] serve failed:", String(err))
+                next()
+            }
+        })
+    }
+})
+
+// Build-time counterpart: emit the wasm/ subtree so production serves /wasm-engine/wasm/**.
+const wasmEngineEmit = (): Plugin => ({
+    name: "wasm-engine-emit",
+    apply: "build",
+    buildStart() {
+        const root = resolve(WASM_DIST, "wasm")
+        if (!existsSync(root)) {
+            this.warn("wasm-engine-emit: no artifacts in node_modules/@opendaw/studio-core-wasm/dist/wasm — WASM engine will be unavailable in the build")
+            return
+        }
+        const walk = (dir: string): string[] =>
+            readdirSync(dir).flatMap(name => {
+                const full = join(dir, name)
+                return statSync(full).isDirectory() ? walk(full) : [full]
+            })
+        for (const full of walk(root)) {
+            if (extname(full) !== ".wasm") continue
+            const rel = full.slice(WASM_DIST.length + 1).split("\\").join("/") // e.g. wasm/plugins/device_x.wasm
+            this.emitFile({type: "asset", fileName: `wasm-engine/${rel}`, source: readFileSync(full)})
+        }
+    }
+})
+
 // Only load SSL certs if they exist (for local dev)
 const certKeyPath = "localhost-key.pem"
 const certPath = "localhost.pem"
@@ -107,7 +159,8 @@ export default defineConfig({
                 voiceFadeinClipFadeinProductDebug: resolve(__dirname, "voice-fadein-clip-fadein-product-debug-demo.html"),
                 timePitchStartPositionDebug: resolve(__dirname, "time-pitch-start-position-debug-demo.html"),
                 audioVerifyDebug: resolve(__dirname, "audio-verify-debug.html"),
-                recordingFinalizeDebug: resolve(__dirname, "recording-finalize-debug-demo.html")
+                recordingFinalizeDebug: resolve(__dirname, "recording-finalize-debug-demo.html"),
+                wasmEngine: resolve(__dirname, "wasm-engine-demo.html")
             },
             output: {
                 manualChunks: (id) => {
@@ -155,6 +208,8 @@ export default defineConfig({
     plugins: [
         react(),
         crossOriginIsolation(),
-        verifySink()
+        verifySink(),
+        wasmEngineAssets(),
+        wasmEngineEmit()
     ]
 })
