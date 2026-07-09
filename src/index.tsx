@@ -170,6 +170,18 @@ const GROUPS: Group[] = [
       },
     ],
   },
+  {
+    label: "Engine",
+    color: "var(--mc-violet)",
+    demos: [
+      {
+        href: "/wasm-engine-demo.html",
+        title: "WASM Engine A/B",
+        blurb:
+          "Toggle OpenDAW's audio backend between the built-in TypeScript engine and the WASM (Rust) engine live during playback, with an opt-in DSP-load readout.",
+      },
+    ],
+  },
 ];
 
 const App: React.FC = () => {

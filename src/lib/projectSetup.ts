@@ -59,6 +59,13 @@ export interface ProjectSetupOptions {
    * Optional status update callback for progress messages
    */
   onStatusUpdate?: (status: string) => void;
+
+  /**
+   * Optional async hook run AFTER worklets/project are created but immediately BEFORE
+   * project.startAudioWorklet(). Use it to install an EngineVariant (e.g. the WASM engine)
+   * so the very first EngineWorklet boots the chosen backend. Receives the live AudioContext.
+   */
+  onBeforeEngineStart?: (audioContext: AudioContext) => Promise<void>;
 }
 
 /**
@@ -100,7 +107,7 @@ export interface ProjectSetupResult {
  * ```
  */
 export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Promise<ProjectSetupResult> {
-  const { localAudioBuffers, bpm = 120, onStatusUpdate } = options;
+  const { localAudioBuffers, bpm = 120, onStatusUpdate, onBeforeEngineStart } = options;
 
   console.log("========================================");
   console.log("openDAW -> headless -> initializing");
@@ -230,6 +237,11 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
     project.editing.modify(() => {
       project.timelineBox.bpm.setValue(bpm);
     });
+  }
+
+  // Optional engine-variant install (e.g. WASM) — must run before the first worklet boots.
+  if (onBeforeEngineStart) {
+    await onBeforeEngineStart(audioContext);
   }
 
   // Start audio worklet and wait for engine to be ready

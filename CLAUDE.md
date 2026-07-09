@@ -623,6 +623,14 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   or dispatched event is UNTRUSTED and silently fails to start the AudioContext/
   transport (UI may toggle but 0 takes/no playback). Untrusted `.click()` is fine
   for non-audio buttons (Add Tape, config, Stop).
+- Verify in-browser AUDIO demos by measuring the actual OUTPUT SIGNAL, not `isPlaying`/a
+  disabled Play button — a transport reports "playing" while the engine renders silence
+  (e.g. a note region with `loopDuration:0`). Tap output: monkeypatch
+  `AudioNode.prototype.connect` to tee any `AudioDestinationNode` connection through an
+  `AnalyserNode`, read `getFloatTimeDomainData` → RMS over ~2s (RMS≈0 = silent). Inspect the
+  live box graph by pulling `project` from the React fiber (`root.__reactContainer$…` → walk
+  `memoizedState` hooks for the obj with `.engine` + `.rootBoxAdapter`). For an engine-swap
+  demo the tap only catches a worklet's `connect`, so toggle the engine to force a fresh reconnect.
 - Playwright MCP screenshots: omit the `filename` param — custom-named files land
   loose in the project root; default-named files land in `.playwright-mcp/`.
 - Playwright text assertions: JSX expressions split DOM text nodes — XPath
@@ -693,6 +701,7 @@ Each demo category folder has its own CLAUDE.md with SDK knowledge scoped to tho
 - `src/demos/effects/CLAUDE.md` — EffectBox, scriptable devices, ScriptCompiler, Werkstatt
 - `src/demos/export/CLAUDE.md` — offline rendering, mutate-copy-restore pattern
 - `src/demos/warp/CLAUDE.md` — beat maps, warp markers, tempo-map conform, time-stretch
+- `src/demos/engine/CLAUDE.md` — WASM (Rust) engine: EngineVariant/WasmEngine wiring, live engine swap, DSP-load reporting
 
 ## Reference Files
 - Project setup: `src/lib/projectSetup.ts`
