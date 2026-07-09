@@ -65,6 +65,9 @@ const verifySink = (): Plugin => ({
 // Nothing binary is committed; loadEngineModules(base="/wasm-engine") fetches
 // /wasm-engine/wasm/engine.wasm + /wasm-engine/wasm/plugins/device_*.wasm.
 const WASM_DIST = resolve(__dirname, "node_modules/@opendaw/studio-core-wasm/dist")
+// Dev serves ONLY the wasm/ subtree the build emits, so dev and prod expose the same surface
+// (the processor/offline-worker URLs are handled by Vite's own ?url pipeline, not this middleware).
+const WASM_SERVE_ROOT = resolve(WASM_DIST, "wasm")
 const MIME: Record<string, string> = {".wasm": "application/wasm", ".js": "text/javascript", ".map": "application/json"}
 
 const wasmEngineAssets = (): Plugin => ({
@@ -76,7 +79,7 @@ const wasmEngineAssets = (): Plugin => ({
             try {
                 const rel = (req.url ?? "/").split("?")[0].replace(/^\/+/, "")
                 const file = resolve(WASM_DIST, rel)
-                if (!(file === WASM_DIST || file.startsWith(WASM_DIST + sep)) || !existsSync(file) || !statSync(file).isFile()) {
+                if (!(file === WASM_SERVE_ROOT || file.startsWith(WASM_SERVE_ROOT + sep)) || !existsSync(file) || !statSync(file).isFile()) {
                     return next()
                 }
                 res.setHeader("Content-Type", MIME[extname(file)] ?? "application/octet-stream")

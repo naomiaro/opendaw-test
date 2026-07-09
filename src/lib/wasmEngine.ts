@@ -43,11 +43,30 @@ export function describeEngineStatus(s: EngineStatus): { label: string; sub: str
   return { label, sub };
 }
 
+// A worklet reboot (release + reconstruct + full box-graph re-sync) legitimately takes ~10-15s,
+// so this ceiling is generous — it exists only to catch a boot that NEVER settles (e.g. a WASM
+// processor that errors at construction: EngineWorklet.isReady() resolves-or-hangs, it never
+// rejects). Without it, `await worklet.isReady()` could hang forever, leaving the switch UI stuck
+// on "Switching…". A timeout throws → the catch below recovers on the TS engine.
+const REBOOT_TIMEOUT_MS = 30_000;
+
+function withTimeout(promise: Promise<void>, ms: number, label: string): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    promise.then(
+      () => { clearTimeout(timer); resolve(); },
+      (err) => { clearTimeout(timer); reject(err); },
+    );
+  });
+}
+
 /**
  * Swap the audio backend live. Sets the WasmEngine flag, (re)compiles wasm if enabling,
  * then reboots ONLY the EngineWorklet — EngineWorklet reads EngineVariant.current() at
  * construction. Playback position (and play state) are captured and restored so the swap
- * is seamless mid-loop. Returns the engine that ACTUALLY booted.
+ * is seamless mid-loop. Returns the engine that ACTUALLY booted. If the chosen engine fails
+ * to boot (synchronous throw OR a never-settling isReady, caught by REBOOT_TIMEOUT_MS), it
+ * recovers on the built-in TS engine rather than leaving audio dead or the UI hung.
  */
 export async function switchEngine(
   project: Project,
@@ -74,7 +93,7 @@ export async function switchEngine(
     );
     // Belt-and-suspenders: startAudioWorklet already sets the worklet internally; restart.load only fires on the SDK's error-restart path. Explicit set matches upstream's restart pattern.
     engine.setWorklet(worklet);
-    await worklet.isReady();
+    await withTimeout(worklet.isReady(), REBOOT_TIMEOUT_MS, "engine boot");
     engine.setPosition(position);
     if (wasPlaying) { engine.play(); }
   };

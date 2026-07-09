@@ -33,6 +33,9 @@ const App: React.FC = () => {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const isSwitchingRef = useRef(false);
   const perfLifeRef = useRef<{ terminate: () => void } | null>(null);
+  // Dropout count read at the moment reporting turned on / the engine last switched, so the
+  // displayed figure is dropouts on the CURRENT engine, not the AudioContext's lifetime total.
+  const dropoutBaseRef = useRef(0);
 
   // ---- Init ----
   useEffect(() => {
@@ -91,8 +94,14 @@ const App: React.FC = () => {
     try {
       const result = await switchEngine(project, ctx, wantWasm);
       setEngineStatus(result);
-      // Re-assert perf flag on the fresh worklet if reporting is on.
-      if (reporting) { project.engine.preferences.settings.debug.dspLoadMeasurement = true; }
+      // Re-assert perf flag on the fresh worklet if reporting is on, and re-baseline the dropout
+      // counter so it reflects the newly-booted engine rather than carrying over the previous one's.
+      if (reporting) {
+        project.engine.preferences.settings.debug.dspLoadMeasurement = true;
+        const stats = (audioCtxRef.current as unknown as { playbackStats?: { underrunEvents: number } } | null)?.playbackStats;
+        dropoutBaseRef.current = stats ? stats.underrunEvents : 0;
+        setDropouts(stats ? 0 : null);
+      }
       setStatus("Ready");
     } catch (err) {
       console.error("[wasm-engine-demo] engine switch failed:", String(err));
@@ -117,21 +126,24 @@ const App: React.FC = () => {
 
     const engine = project.engine;
     const ctx = audioCtxRef.current;
-    // Chromium-only dropout counter.
+    // Chromium-only dropout counter. Display dropouts on the CURRENT engine since reporting
+    // turned on (baseline re-captured on each engine switch), not the AudioContext lifetime total.
     const stats = (ctx as unknown as { playbackStats?: { underrunEvents: number } } | null)?.playbackStats;
-    setDropouts(stats ? stats.underrunEvents : null);
+    dropoutBaseRef.current = stats ? stats.underrunEvents : 0;
+    setDropouts(stats ? 0 : null);
 
     // engine.cpuLoad already stores a rounded percentage (0-100+), NOT a 0-1 fraction —
     // see node_modules/@opendaw/studio-core/dist/EngineWorklet.js: cpuLoad.setValue(Math.round((maxMs/budgetMs)*100)).
     const cpuSub = engine.cpuLoad.catchupAndSubscribe((obs) =>
       setCpuPct(Math.round(obs.getValue())),
     );
-    let lastDropouts = stats ? stats.underrunEvents : null;
+    let lastShown: number | null = stats ? 0 : null;
     const frame = AnimationFrame.add(() => {
-      if (stats && stats.underrunEvents !== lastDropouts) {
-        lastDropouts = stats.underrunEvents;
-        setDropouts(stats.underrunEvents);
-      }
+      // Dropouts only accrue during playback — skip the read/setState while stopped (and only
+      // setState on change, never per frame).
+      if (!stats || !engine.isPlaying.getValue()) { return; }
+      const delta = stats.underrunEvents - dropoutBaseRef.current;
+      if (delta !== lastShown) { lastShown = delta; setDropouts(delta); }
     });
     perfLifeRef.current = { terminate: () => { cpuSub.terminate(); frame.terminate(); } };
   }, [project]);
@@ -140,6 +152,9 @@ const App: React.FC = () => {
 
   const desc = describeEngineStatus(engineStatus);
   const isWasm = engineStatus.active === "wasm";
+  // Until init completes (project set) the engine hasn't actually booted — don't claim an active
+  // engine yet (it boots WASM, but engineStatus starts at a placeholder). Show a booting state.
+  const booting = !project;
 
   return (
     <Theme appearance="dark" accentColor="amber" style={{ background: "var(--mc-bg)" }}>
@@ -166,8 +181,8 @@ const App: React.FC = () => {
               <Flex direction="column" gap="1">
                 <Text size="1" color="gray">ACTIVE ENGINE</Text>
                 <Flex align="center" gap="2">
-                  <Badge color={isWasm ? "amber" : "gray"} size="2">{desc.label}</Badge>
-                  <Text size="1" color={engineStatus.fellBack ? "red" : "gray"}>{desc.sub}</Text>
+                  <Badge color={booting ? "gray" : isWasm ? "amber" : "gray"} size="2">{booting ? "Booting…" : desc.label}</Badge>
+                  <Text size="1" color={engineStatus.fellBack ? "red" : "gray"}>{booting ? "compiling WASM…" : desc.sub}</Text>
                 </Flex>
               </Flex>
               <Flex align="center" gap="2">
