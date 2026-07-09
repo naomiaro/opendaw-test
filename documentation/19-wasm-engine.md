@@ -84,7 +84,7 @@ if (!ready) {
 }
 ```
 
-`isEnabled()` reads a persisted `localStorage` flag; the WASM engine is enabled by **default** and the flag records only an explicit opt-out. Toggle it with `setEnabled(true | false)`. While the engine is disabled or its modules are not yet compiled, the `EngineVariant` provider yields `null`, so the next boot uses the TypeScript engine.
+Enabling the WASM engine is opt-in at the **integration** level — nothing happens until you call `install` and serve the binaries. But *once installed*, the **runtime** flag is opt-out: `isEnabled()` reads a persisted `localStorage` flag that defaults to enabled and records only an explicit opt-out. Toggle it with `setEnabled(true | false)`. While the engine is disabled or its modules are not yet compiled, the `EngineVariant` provider yields `null`, so the next boot uses the TypeScript engine.
 
 ### Serving the WASM Binaries
 
@@ -126,10 +126,13 @@ The provider is a function, re-evaluated on every engine construction, so return
 ```typescript
 import type { EngineWorklet, RestartWorklet } from "@opendaw/studio-core";
 
-async function swapEngine(project: Project, wasm: boolean): Promise<void> {
+async function swapEngine(project: Project, ctx: BaseAudioContext, wasm: boolean): Promise<void> {
   WasmEngine.setEnabled(wasm);            // change which variant current() will yield
-  const engine = project.engine;
+  // Enabling WASM boots the TS engine until the modules are compiled — ensure they are ready
+  // first, or the provider yields null and the swap silently stays on TypeScript.
+  if (wasm) { await WasmEngine.ensureReady(ctx); }
 
+  const engine = project.engine;
   const wasPlaying = engine.isPlaying.getValue();
   const position = engine.position.getValue();
 
@@ -139,8 +142,8 @@ async function swapEngine(project: Project, wasm: boolean): Promise<void> {
   };
 
   engine.releaseWorklet();                        // terminate the current worklet
-  const worklet = project.startAudioWorklet(restart, {}); // re-reads EngineVariant.current()
-  engine.setWorklet(worklet);
+  // startAudioWorklet re-reads EngineVariant.current() and sets the new worklet on the facade.
+  const worklet = project.startAudioWorklet(restart, {});
   await worklet.isReady();
 
   engine.setPosition(position);                   // restore transport state
@@ -169,7 +172,7 @@ class OfflineEngineRenderer {
 }
 ```
 
-`WasmEngine.install` also calls `OfflineEngineRenderer.installVariant(offlineWorkerUrl, { wasmUrl })` and sets a variant policy of `WasmEngine.useForExports()`, so freeze and consolidation renders follow the same toggle as live playback. The trailing `variant?` parameter on `start`/`create` is **optional** and defaults through the installed policy — existing call sites that omit it are unaffected and keep using the TypeScript engine unless you opt a render in. See Ch. 10 (Export) for the render protocol and per-stem `AudioData` output.
+`WasmEngine.install` also calls `OfflineEngineRenderer.installVariant(offlineWorkerUrl, { wasmUrl })` and sets a variant policy of `WasmEngine.useForExports()`, so freeze and consolidation renders follow the same toggle as live playback. The trailing `variant?` parameter on `start`/`create` is **optional** and resolves through the installed policy (`variant ??= variantPolicy()`). The default policy is `() => false` (TypeScript engine), but once you call `WasmEngine.install` and `ensureReady` succeeds, the policy is `useForExports()` — true whenever the engine is enabled, ready, and a variant is installed. **So after the setup above, an offline render that omits `variant` defaults to the WASM worker**, matching live playback; pass `variant: false` explicitly to force a render onto the TypeScript engine. See Ch. 10 (Export) for the render protocol and per-stem `AudioData` output.
 
 ## Configuring the Engine
 
@@ -221,12 +224,15 @@ settings.debug.dspLoadMeasurement = true;
 With it enabled, read the engine's load and recent history from the facade — both survive an engine swap because they live on the persistent `EngineFacade`:
 
 ```typescript
-// cpuLoad is ALREADY a rounded 0–100 integer percentage — do NOT multiply by 100.
+// cpuLoad is ALREADY a rounded integer percentage — do NOT multiply by 100. It can exceed
+// 100 under overload, and updates at most ~once per second.
 const cpuSub = project.engine.cpuLoad.catchupAndSubscribe((obs) => {
   showLoad(obs.getValue());       // e.g. 14 → "14%"
 });
 
-const history = project.engine.perfBuffer; // Float32Array ring buffer of recent samples
+// perfBuffer is a Float32Array ring buffer of recent per-render-quantum processing times (ms);
+// perfIndex is the write cursor.
+const history = project.engine.perfBuffer;
 ```
 
 Actual audio **dropouts** are reported by the browser, not the engine, via `AudioContext.playbackStats.underrunEvents` (a running count; Chromium-only — feature-detect it):
@@ -240,12 +246,19 @@ const dropouts = stats?.underrunEvents ?? null; // null where unsupported
 
 ### CPU Overload Handling
 
-When the audio thread can't keep up, `project.handleCpuOverload()` is the SDK's response hook (it surfaces a non-blocking notification). The engine preference `debug` group and the `stop-playback-when-overloading` behavior govern whether sustained underruns stop playback rather than glitch indefinitely.
+When the audio thread can't keep up, `project.handleCpuOverload()` puts the engine to sleep — it calls `engine.sleep()` (which **stops playback**) and posts a non-blocking notification. It is gated on `StudioPreferences.settings.engine["stop-playback-when-overloading"]` (default `true`); when that flag is off, `handleCpuOverload()` returns without stopping. Note that `StudioPreferences` (from `@opendaw/studio-core`) is a **separate** preferences object from `project.engine.preferences` — this behavior lives with the studio settings, not the engine settings.
+
+Two independent triggers escalate to that handler:
+
+- **Engine-side load:** while `debug.dspLoadMeasurement` is on, the engine tracks sustained over-budget render blocks (the perf buffer only advances when measurement is enabled).
+- **Browser dropouts:** `BufferUnderrunDetector` watches `AudioContext.playbackStats.underrunEvents` and escalates sustained growth.
+
+Both call `engine.sleep()` + notify under the same `stop-playback-when-overloading` flag, so sustained overload stops playback rather than glitching indefinitely.
 
 ## Fallback, Isolation, and Cost
 
 - **Fallback is graceful.** `ensureReady` returning `false` (missing artifacts, an unsupported environment) leaves the `EngineVariant` provider yielding `null`, so the engine boots on TypeScript with no error. Derive your "active engine" label from `WasmEngine.isReady()` after boot, not from the request, so the UI reflects what actually booted.
-- **Selection is per page.** `EngineVariant.install` registers a provider in the current page's module scope. Code that never installs a variant always gets the TypeScript engine, regardless of the persisted `localStorage` flag — so one page opting into WASM never affects another.
+- **The provider is per page; the enable flag is per origin.** `EngineVariant.install` registers a provider in the current page's module scope, so code that never installs a variant always gets the TypeScript engine regardless of the persisted flag. The `WasmEngine` enable flag, however, is a single `localStorage` key (`"opendaw-wasm-engine"`) shared across the whole origin — so two pages that both call `WasmEngine.install` share the toggle, and `setEnabled(false)` in one affects the other's next boot.
 - **A swap has a cost.** A live swap terminates the worklet, constructs a new one, and re-syncs the full box graph, which takes on the order of seconds. Disable the toggle and show a "switching…" affordance while `startAudioWorklet` → `isReady()` completes, and restore transport state afterward.
 
 ## Demo
