@@ -61,6 +61,11 @@ export function buildWasmDemoContent(project: Project): void {
       box.events.refer(collection.owners);
       box.position.setValue(0);
       box.duration.setValue(PATTERN_LEN);
+      // A note region schedules its events within its loop window [loopOffset, loopOffset+loopDuration].
+      // loopDuration MUST be set (non-zero) or the engine plays NO notes — the timeline loopArea alone
+      // does not drive note scheduling. Match the content length so the whole pattern sounds.
+      box.loopOffset.setValue(0);
+      box.loopDuration.setValue(PATTERN_LEN);
       box.label.setValue("WASM A/B Pattern");
     });
   });

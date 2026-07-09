@@ -41,6 +41,17 @@ percentage, do NOT multiply by 100; swap-safe on the facade) and
 (Chromium-only — guard with a feature check); the SDK's `BufferUnderrunDetector` exposes no public
 getter and logs nothing to the console.
 
+## Programmatic Note Regions Need loopDuration (or they play silently)
+A `NoteRegionBox` schedules its events within its loop window `[loopOffset, loopOffset+loopDuration]`.
+If `loopDuration` is left at its default **0**, the engine schedules **zero notes** — the region
+looks correct (events present, `hasCollection` true, on the right note track, output routed) but is
+completely silent, and `region.iterateActiveNotesAt(pos)` yields nothing at every position. Setting
+`box.duration` and the timeline `loopArea` is **not** enough; the timeline loop does not drive note
+scheduling. Always set `box.loopOffset.setValue(0)` and `box.loopDuration.setValue(contentLenPPQN)`
+when building a note region by hand (or use `project.api.createNoteRegion({ ..., loopOffset, loopDuration })`,
+which sets them for you). See `patternContent.ts` step 3. NB: verify audio demos by measuring actual
+output signal — an `isPlaying === true` transport and a disabled Play button do NOT prove sound.
+
 ## Reference Files
 - WASM wiring + live swap: `src/lib/wasmEngine.ts`
 - Content builder: `src/demos/engine/patternContent.ts`
