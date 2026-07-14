@@ -12,7 +12,7 @@ Three devices in openDAW are **modular** — their behaviour is defined by a use
 | **Werkstatt** | Scriptable **audio effect** — receives stereo audio, produces stereo audio | You want a custom effect (filter, distortion, anything DSP) |
 | **Spielwerk** | Scriptable **MIDI effect** — receives notes, produces notes | You want a custom MIDI transformer (algorithmic patterns, custom arpeggios, generative sequences) |
 
-This chapter is the cross-cutting reference. The deep dives for Werkstatt and Spielwerk live in [Ch. 11](./11-effects.md#werkstatt) and [Ch. 11](./11-effects.md#spielwerk); the Apparat coverage that's missing from Ch. 11 (because Apparat is an instrument, not an effect) lives here.
+This chapter is the cross-cutting reference. The deep dives live elsewhere: Werkstatt and Spielwerk in [Ch. 11](./11-effects.md#werkstatt) / [Ch. 11](./11-effects.md#spielwerk), and Apparat in [Ch. 20](./20-apparat.md) (it's an instrument, not an effect, so it gets its own chapter).
 
 ## Picking the right one
 
@@ -57,19 +57,15 @@ The compiler lives in `@opendaw/studio-adapters` (`ScriptCompiler.create({...})`
 
 ### Headers
 
-Each device requires a header on the first line of its `code`:
+The first line of a *compiled* device's `code` is a header the **compiler writes** — you never author it, and the source you pass to `compile()` needs none (an existing header is stripped and replaced):
 
 ```javascript
-// @werkstatt <name> <version> <updateRate>   // audio effects
-// @apparat   <name> <version> <updateRate>   // instruments
-// @spielwerk <name> <version> <updateRate>   // MIDI effects
+// @werkstatt js <compilerVersion> <update>   // audio effects
+// @apparat   js <compilerVersion> <update>   // instruments
+// @spielwerk js <compilerVersion> <update>   // MIDI effects
 ```
 
-- `<name>` — any identifier, used for the compiled processor's registry slot.
-- `<version>` — integer; bumping forces a recompile.
-- `<updateRate>` — how often the engine calls back into the script for parameter updates, in samples (e.g. `64` for sub-block updates, `128` for once per quantum).
-
-The compiler rejects scripts missing the header.
+`<update>` is a monotonically increasing compile counter: the runtime processor watches the `code` field, and a new update number is its cue to swap to the freshly registered script. Headerless code in the field is simply *uncompiled* — the processor ignores it (this is why writing `code` directly does nothing audible; see [Hot reload](#hot-reload)).
 
 ### Parameters (`// @param`)
 
@@ -84,23 +80,24 @@ Format: `// @param <name> <default> <min> <max> [mapping] [unit]`. Tokens are po
 `mapping` (when supplied) must be one of `linear | exp | int | bool`, optionally followed by
 `unit`. Omit `min`/`max` for a 0–1 control — a bare `// @param depth 0.5` defaults to a
 unipolar (0–1) mapping (which can't be named explicitly). The compiler registers one
-`*ParameterBox` per declaration (`WerkstattParameterBox`, `ApparatParameterBox`, etc.) on the device, which:
+parameter box per declaration on the device — all three devices share the same
+`WerkstattParameterBox` class (there are no Apparat/Spielwerk-specific parameter boxes) — which:
 
 - Appears in the device's parameter list (visible to the UI inspector).
 - Is *automatable* — automation lanes wire up against the box, same as built-in effect parameters.
 - Reaches your script via `paramChanged(label, value)` and/or a per-call object (depending on device).
 
-The exact arg shape varies per device — see [Ch. 11 — Werkstatt parameters](./11-effects.md#werkstatt) for the audio side, the Apparat example below for instruments.
+The exact arg shape varies per device — see [Ch. 11 — Werkstatt parameters](./11-effects.md#werkstatt) for the audio side, [Ch. 20](./20-apparat.md#parameters) for instruments.
 
 ### Samples (`// @sample`)
 
-A sample declaration registers a drop-target on the device's UI panel and makes the loaded audio available to the script:
+A sample declaration is a plain-token line comment (same style as `@param`, not a function call). It registers a sample slot on the device and makes the loaded audio available to the script:
 
 ```javascript
-// @sample("kick")
+// @sample kick
 ```
 
-In the script, you access loaded samples via `this.samples.kick` — a `Nullable<AudioData>` (the result is `null` until the user drops a file). The audio is `Float32Array[]` per channel with a known `sampleRate` and `numberOfFrames`.
+In the script, you access loaded samples via `this.samples.kick` — `null` until audio is loaded, then an `AudioData` with `frames` (one `Float32Array` per channel), `sampleRate`, `numberOfFrames`, and `numberOfChannels`.
 
 Status in current SDK:
 
@@ -110,184 +107,20 @@ Status in current SDK:
 
 ## Apparat — scriptable instrument
 
-Apparat is the synth slot. You write a script that responds to MIDI note events and produces stereo audio per render block.
+Covered in detail at [Ch. 20 — Apparat](./20-apparat.md). Summary of where Apparat differs from the other two:
 
-### The user-processor contract
+- **Slot:** the instrument slot of an `AudioUnit` — created with `project.api.createInstrument(InstrumentFactories.Apparat)`, not `insertEffect`.
+- **Input:** MIDI note events. The script's `Processor` class implements `noteOn(pitch, velocity, cent, id)` / `noteOff(id)` alongside `process(output, block)`, and manages its own voices.
+- **Output:** stereo audio. The output buffers arrive zero-filled each block; voices *add* into them.
+- **Samples:** `@sample` is fully wired — `this.samples.<name>` returns the loaded audio data.
 
-Your script must export a default class implementing this shape:
-
-```typescript
-interface UserProcessor {
-  process(output: ReadonlyArray<Float32Array>, block: Block): void
-  noteOn?(pitch: number, velocity: number, cent: number, id: number): void
-  noteOff?(id: number): void
-  reset?(): void
-  paramChanged?(label: string, value: number): void
-  samples: Record<string, Nullable<AudioData>>
-}
-```
-
-| Method | Required? | When called |
-|---|---|---|
-| `process(output, block)` | yes | Once per render block; write audio into `output[channel][sample]` |
-| `noteOn(pitch, velocity, cent, id)` | no | When a MIDI note-on arrives. `pitch` is 0–127, `velocity` is 0–1, `cent` is fine-tune in cents, `id` is a unique ID for the note-off pairing |
-| `noteOff(id)` | no | When the matching note-off arrives. Use the `id` to find the voice to release |
-| `reset()` | no | On transport stop or panic — clear voices, reset state |
-| `paramChanged(label, value)` | no | When a `@param` value changes (interactive or automation) |
-
-`block` exposes:
-
-- `block.s0`, `block.s1` — start and end sample indices within the output buffer (you write to `output[ch][s0..s1]`).
-- `block.bpm` — the current BPM (for tempo-synced effects).
-- `block.flags` — bitfield: transporting / playing / discontinuous / bpmChanged.
-
-### Anatomy of a minimal Apparat synth
-
-A two-voice sine synth:
-
-```javascript
-// @apparat sine 1 64
-// @param("Decay", linear, 0.01, 2.0, 0.5, "s", "Note decay time")
-
-class Voice {
-  constructor(pitch, velocity) {
-    this.freq = 440 * Math.pow(2, (pitch - 69) / 12);
-    this.phase = 0;
-    this.amp = velocity;
-    this.released = false;
-    this.envelope = 1.0;
-  }
-
-  step(decay, sampleRate) {
-    this.phase += (this.freq / sampleRate) * Math.PI * 2;
-    if (this.released) this.envelope -= 1.0 / (decay * sampleRate);
-    return Math.sin(this.phase) * this.amp * Math.max(0, this.envelope);
-  }
-}
-
-export default class SineSynth {
-  constructor() {
-    this.voices = new Map();
-    this.decay = 0.5;
-  }
-
-  noteOn(pitch, velocity, cent, id) {
-    this.voices.set(id, new Voice(pitch, velocity));
-  }
-
-  noteOff(id) {
-    const v = this.voices.get(id);
-    if (v) v.released = true;
-  }
-
-  paramChanged(label, value) {
-    if (label === "Decay") this.decay = value;
-  }
-
-  process(output, block) {
-    const sr = sampleRate; // global from the worklet
-    for (let i = block.s0; i < block.s1; i++) {
-      let sum = 0;
-      for (const [id, voice] of this.voices) {
-        const sample = voice.step(this.decay, sr);
-        sum += sample;
-        if (voice.envelope <= 0) this.voices.delete(id);
-      }
-      output[0][i] = sum;
-      output[1][i] = sum;
-    }
-  }
-}
-```
-
-The header is `// @apparat sine 1 64` — name `sine`, version `1`, update rate `64` samples. Adjust the update rate down for high-rate parameter automation, up for less overhead.
-
-### Apparat performance constraints
-
-Apparat scripts run in the AudioWorklet, on the audio thread. That means:
-
-- **No allocations in `process()`.** `new` and array literals trigger GC, which causes audio dropouts. Allocate voice slots up front, reuse them. The example above uses a `Map<id, Voice>` — fine because allocations only happen on `noteOn`, not in the hot loop.
-- **No async or Promises.** The worklet has no `await`.
-- **No DOM access.** You're not in a browser context — `document`, `window`, etc. are unavailable.
-- **Heavy DSP is your problem.** A 32-voice oscillator with cubic interpolation per sample is going to spike the DSP load. Profile with the load meter (see [Ch. 15](./15-performance-and-debugging.md)).
-
-The SDK does its part: it pre-instantiates your class, schedules `noteOn`/`noteOff` sample-accurately, and clamps your output if you produce NaN or out-of-range samples (it'll log a warning to the main-thread console).
-
-### Adding an Apparat to a track
-
-Same shape as any other instrument — `project.api.createInstrument(InstrumentFactories.Apparat)`:
-
-```typescript
-import { InstrumentFactories } from "@opendaw/studio-adapters";
-
-project.editing.modify(() => {
-  const { audioUnitBox, trackBox } = project.api.createInstrument(
-    InstrumentFactories.Apparat,
-  );
-  trackBox.label.setValue("Synth Lead");
-  // ... place note regions on trackBox as usual (Ch. 16 — MIDI)
-});
-```
-
-You then assign code to the device via its `ApparatDeviceBox.code` field — same as setting any string field, inside a transaction. The `ScriptCompiler` machinery compiles it on demand; once compiled, the processor is hot-swapped on the audio thread without a click.
-
-### Apparat sample handling
-
-When you declare `// @sample("kick")`, an `ApparatSampleBox` gets added to the device. The user (or your UI) drops an audio file into that slot, and the engine loads it asynchronously (see [Ch. 05 — Sample loading](./05-samples-peaks-and-looping.md)). On the audio thread, your script accesses it via `this.samples.kick`:
-
-```javascript
-// @apparat sampler 1 64
-// @sample("kick")
-
-export default class Sampler {
-  constructor() {
-    this.voices = new Map();
-  }
-
-  noteOn(pitch, velocity, cent, id) {
-    if (!this.samples.kick) return;     // sample not loaded yet
-    this.voices.set(id, {
-      sample: this.samples.kick,
-      position: 0,
-      rate: Math.pow(2, (pitch - 60) / 12),  // C4 = original pitch
-      gain: velocity,
-    });
-  }
-
-  noteOff(id) {
-    this.voices.delete(id);
-  }
-
-  process(output, block) {
-    for (let i = block.s0; i < block.s1; i++) {
-      let l = 0, r = 0;
-      for (const [id, voice] of this.voices) {
-        const data = voice.sample;
-        const pos = voice.position;
-        if (pos >= data.numberOfFrames) {
-          this.voices.delete(id);
-          continue;
-        }
-        const left = data.frames[0][Math.floor(pos)] || 0;
-        const right = data.frames[1]?.[Math.floor(pos)] ?? left;
-        l += left * voice.gain;
-        r += right * voice.gain;
-        voice.position += voice.rate;
-      }
-      output[0][i] = l;
-      output[1][i] = r;
-    }
-  }
-}
-```
-
-This is a one-shot pitch-shifted sampler — no envelope, no looping, no interpolation. Real-world samplers add all of those, but the contract is the same.
+Practical Apparat use cases: custom synths (subtractive, FM, physical modelling), experimental samplers, generative sound sources — anything where notes go in and audio comes out. See the [Apparat Demo](https://opendaw-test.pages.dev/apparat-demo.html) for four working synth engines.
 
 ## Werkstatt — scriptable audio effect
 
 Covered in detail at [Ch. 11 — Werkstatt](./11-effects.md#werkstatt). Summary of where Werkstatt differs from Apparat:
 
-- **Header:** `// @werkstatt <name> <version> <updateRate>`
+- **Header:** compiler-written `// @werkstatt js <compilerVersion> <update>` (see [Headers](#headers)).
 - **Input:** receives audio (no MIDI). Your script's `process()` reads from the input buffer and writes to the output.
 - **No `noteOn`/`noteOff`.** Audio in, audio out.
 - **Sample data:** the `@sample` drop target works but, as noted above, the data isn't currently routed to the processor. Plan around this until upstream fixes it.
@@ -298,7 +131,7 @@ Practical Werkstatt use cases: custom filters, wave-shapers, distortion, granula
 
 Covered in detail at [Ch. 11 — Spielwerk](./11-effects.md#spielwerk). Summary:
 
-- **Header:** `// @spielwerk <name> <version> <updateRate>`
+- **Header:** compiler-written `// @spielwerk js <compilerVersion> <update>` (see [Headers](#headers)).
 - **Input/output:** notes only. The engine routes incoming note events (from the region or upstream MIDI effects) through your script, which decides what notes to emit.
 - **No audio.** Spielwerk doesn't produce audio; its output feeds the next stage of the MIDI chain (or the instrument).
 
@@ -318,7 +151,7 @@ const compiler = ScriptCompiler.create({ /* headerTag, registryName, functionNam
 await compiler.compile(audioContext, project.editing, apparatBox, newScriptText);
 ```
 
-On compile, the `ScriptCompiler` reconciles parameter and sample boxes (added / removed / renamed), and the audio thread swaps the running processor without dropping audio. If the script throws or has a header parse error, the device falls silent and a console error appears on the main thread.
+On compile, the `ScriptCompiler` validates the source, writes the new code + reconciled parameter/sample boxes in one transaction, and registers the worklet module; the runtime processor swaps to the new script between blocks (held voices are cut, current parameter values are re-pushed). Failure modes differ by stage: a **syntax error** throws before the box is touched — the previous script keeps playing; a **post-validation failure** (e.g. a top-level runtime error in the script body) rejects *after* the box was mutated and leaves the device silent until the next successful compile. See [Ch. 20 — compiling, hot-swap, and failure modes](./20-apparat.md#compiling-hot-swap-and-failure-modes) for the details and a recovery pattern.
 
 This means you can build iterative-editor UIs: a code editor in your app, a "compile" button that calls `compiler.compile(...)` with the editor's contents, and the engine just keeps running while the user iterates.
 
@@ -328,7 +161,7 @@ Same as any other automatable parameter ([Ch. 09](./09-editing-fades-and-automat
 
 ## Persistence and project-file shape
 
-When a project saves, the modular device's `code`, `parameters`, and `samples` go into the `.od` file alongside the rest of the box graph. Loading the project recompiles the script on demand. There's no "compiled bytecode" cached — the script is the source of truth and is re-evaluated each open.
+When a project saves, the modular device's `code` (including the compiler-written header), `parameters`, and `samples` go into the `.od` file alongside the rest of the box graph. There's no "compiled bytecode" cached — the script is the source of truth. After loading a project, call `compiler.load(audioContext, deviceBox)` to re-register already-compiled code with the worklet (it's a no-op for never-compiled code); nothing recompiles automatically.
 
 Two practical consequences:
 
@@ -351,9 +184,10 @@ Reach for modular devices when the built-ins genuinely don't cover what you need
 
 ## Further reading
 
+- [Ch. 20 — Apparat](./20-apparat.md) — full Apparat programming model: the `Processor` class, voices, live MIDI input, compile/hot-swap semantics.
 - [Ch. 11 — Werkstatt](./11-effects.md#werkstatt) — full Werkstatt programming model, parameter declarations, the `Processor` class shape for audio effects.
 - [Ch. 11 — Spielwerk](./11-effects.md#spielwerk) — full Spielwerk programming model for MIDI effects.
 - [Ch. 15 — Performance & Debugging](./15-performance-and-debugging.md) — DSP-load profiling for "is my Apparat script too heavy?"
 - [Ch. 16 — MIDI Deep Dive](./16-midi.md) — how notes reach Apparat (and how Spielwerk gets between regions and the instrument).
 - [internals/05 — Devices and Effects](./internals/05-devices-and-effects.md#modular-devices) — for the implementation side of modular devices.
-- [`src/demos/effects/werkstatt-demo.tsx`](https://github.com/naomiaro/opendaw-test/tree/main/src/demos/effects) — runnable Werkstatt examples in this repo.
+- [Werkstatt Demo](https://opendaw-test.pages.dev/werkstatt-demo.html) and [Apparat Demo](https://opendaw-test.pages.dev/apparat-demo.html) — runnable examples in this repo.
