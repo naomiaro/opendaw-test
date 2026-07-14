@@ -1,5 +1,7 @@
 # Voice fade-in multiplies clip fade-in at crossfade entry
 
+**Upstream issue:** [andremichelle/openDAW#312](https://github.com/andremichelle/openDAW/issues/312) (filed 2026-07-14).
+
 **Verified against:** OpenDAW SDK 0.0.158 (`@opendaw/studio-sdk@0.0.158`, `@opendaw/studio-core@0.0.156`); re-verified 2026-07-14 via the target demo's three-way scan — UNALIGNED −4.57 dB, ALIGNED −0.00 dB, OPENDAW −1.21 dB at τ −10.02 ms, unchanged from 0.0.147/0.0.154. First verified at SDK 0.0.147.
 
 **Repro pages:**

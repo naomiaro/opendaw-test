@@ -437,6 +437,11 @@ const App: React.FC = () => {
               href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/voice-fadein-clip-fadein-product.md",
               kind: "note",
             },
+            {
+              label: "Upstream issue: openDAW#312",
+              href: "https://github.com/andremichelle/openDAW/issues/312",
+              kind: "note",
+            },
           ]}
         />
 
