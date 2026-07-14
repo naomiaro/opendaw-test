@@ -191,7 +191,10 @@ Every sub-package moved exactly one patch:
 - [x] `npm run build` (Vite + VitePress) succeeds.
 - [x] `npx tsc --noEmit --ignoreDeprecations "6.0"` shows **zero new errors** vs the parent
       commit (same 14 pre-existing `src/` errors as the 0.0.157 baseline).
-- [ ] Smoke-test a recording demo in the browser — recording now drains via a blob-URL
-      worker; verify takes finalize normally under our COOP/COEP headers.
+- [x] Smoke-test a recording demo in the browser — recorded ~20s of live mic audio in
+      `recording-api-react-demo`: waveform painted live during capture (worker-based ring
+      drain delivered chunks), take finalized with positive duration, sample imported with
+      peaks, playback advanced in real time. Blob-URL reader worker works under our
+      COOP/COEP headers.
 - [ ] Re-check the two open SDK issues (touching-seam discontinuity, voice fade-in product)
       at 0.0.158 — last verified at 0.0.147.
