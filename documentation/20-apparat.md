@@ -108,11 +108,11 @@ The engine instantiates the class and calls:
 | `process(output, block)` | yes | Once per render block. `output` is `[outL, outR]` (`Float32Array`s); render `[block.s0, block.s1)`. The buffers arrive **zero-filled** — voices **add** into them. |
 | `noteOn(pitch, velocity, cent, id)` | no | A note starts. `pitch` 0–127, `velocity` 0–1, `cent` is microtuning (−50…+50), `id` is unique per note — key your voice on it. |
 | `noteOff(id)` | no | The note with that `id` releases. Fade the voice out; never cut it hard. |
-| `reset()` | no | Transport reset/stop. **Fast-fade contract:** collapse envelopes to a few milliseconds and drop pending state — a lazy `reset()` leaves tails ringing after Stop. |
+| `reset()` | no | Transport **reset** — `engine.stop(true)`, Stop pressed while already stopped (rewind), or the device being disabled. A plain Stop while playing does *not* call it; held notes end via `noteOff` and decay through their release. **Fast-fade contract:** collapse envelopes to a few milliseconds and drop pending state — a lazy `reset()` leaves tails ringing after a rewind/reset. |
 | `paramChanged(label, value)` | no | A `// @param` value changed. Values arrive already mapped to the declared range. The engine also pushes **every current value once after (re)instantiation**, which is how a hot-swapped script picks up existing slider/automation positions. |
 | `samples` | assigned by engine | Object mapping each `// @sample` label to its audio data (`null` until loaded) — see below. |
 
-`sampleRate` is a global in the worklet scope. `block` carries `{index, p0, p1, s0, s1, bpm, flags}` — the same shape Werkstatt receives; see [Ch. 11 — the Block object](./11-effects.md#werkstatt) for the field and flag tables. Unlike a Werkstatt generator, an Apparat script normally doesn't need to check `block.flags & 4` (playing): it only sounds when notes arrive, and `reset()` handles Stop.
+`sampleRate` is a global in the worklet scope. `block` carries `{index, p0, p1, s0, s1, bpm, flags}` — the same shape Werkstatt receives; see [Ch. 11 — the Block object](./11-effects.md#werkstatt) for the field and flag tables. Unlike a Werkstatt generator, an Apparat script normally doesn't need to check `block.flags & 4` (playing): it only sounds when notes arrive — Stop releases every held note via `noteOff`, and `reset()` covers transport reset.
 
 ### Output validation and the limiter
 
@@ -172,7 +172,7 @@ type AudioData = {
   sampleRate: number;
   numberOfFrames: number;
   numberOfChannels: number;
-  frames: ReadonlyArray<Float32Array>; // one per channel
+  frames: ReadonlyArray<Float32Array>; // one per channel, backed by shared memory (Float32Array<SharedArrayBuffer>)
 };
 ```
 
@@ -208,7 +208,7 @@ The header — e.g. `// @apparat js 1 7` — is **written by the compiler**, nev
 Consequences worth designing around:
 
 - **Hot-swap cuts held voices.** The old `Processor` instance is discarded; the engine re-pushes all current parameter values to the new one. Expect a brief gap, not seamless voice continuity.
-- **A post-validation failure leaves the box mutated.** If `addModule` rejects (e.g. a top-level runtime error in the script body — the wrapper executes it at module load), the code field and parameter boxes already reflect the *failed* script, while the audible processor is silenced waiting for a registry update that never arrives. Recover by recompiling the last-known-good source — a fresh update number reloads it. (`editing.undo()` is **not** a fix: it restores the old code and update number without registering a module, so the processor stays silent.)
+- **A post-validation failure leaves the box mutated.** If `addModule` rejects (e.g. a top-level runtime error in the script body — the wrapper executes it at module load), the code field and parameter boxes already reflect the *failed* script, while the audible processor is silenced waiting for a registry update that never arrives. Recover by recompiling the last-known-good source — a fresh update number reloads it. (`editing.undo()` is **not** a fix: it restores the old code at the update number the processor already has, so the swap subscription never re-fires and the processor keeps waiting for the failed update — it stays silent.)
 - **Persistence:** the compiled header travels with the project inside `code`. On load, the processor sees a header whose update number has no registry entry yet — call `compiler.load(audioContext, deviceBox)` to re-register already-compiled code without bumping the update.
 
 The [Apparat demo](https://opendaw-test.pages.dev/apparat-demo.html) exercises all of this: its instrument cards recompile onto one box while the pattern plays, and its error path restores the previous script when a compile fails after mutation.
