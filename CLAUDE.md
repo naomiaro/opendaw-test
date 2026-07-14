@@ -636,7 +636,8 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   `memoizedState` hooks for the obj with `.engine` + `.rootBoxAdapter`). For an engine-swap
   demo the tap only catches a worklet's `connect`, so toggle the engine to force a fresh reconnect.
 - Playwright MCP screenshots: omit the `filename` param — custom-named files land
-  loose in the project root; default-named files land in `.playwright-mcp/`.
+  loose in the MCP server's CWD (which may be a DIFFERENT repo than the one you're
+  working in); default-named files land in `.playwright-mcp/`.
 - Playwright text assertions: JSX expressions split DOM text nodes — XPath
   `contains(text(),…)` misses strings spanning the split; use
   `document.body.innerText.includes(…)`.
@@ -651,6 +652,9 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
 - After SDK upgrades, clear Vite dep cache: `rm -rf node_modules/.vite` (dev server pre-bundles old SDK)
 - Vite HMR remount throws "Workers are already installed" (SDK assert) — dev-only
   artifact now surfaced by init error cards; judge error states on a fresh page load.
+  A mid-audio HMR reload can also leave MIDI→engine routing silently broken in that
+  tab session (notes reach the capture, output stays silent) — re-verify audio
+  behavior on a fresh load before debugging it as a code bug.
 - Playwright `browser_console_messages` with `all: true` returns history across prior agent
   sessions on the same browser context (HMR `createRoot` errors, other agents' test output) —
   judge your run on the per-navigation "Console: N errors" count, not the `all: true` log.

@@ -153,6 +153,9 @@ Available instrument adapters (each implements `InstrumentDeviceBoxAdapter`):
 - `ApparatDeviceBoxAdapter` — scriptable instrument (JavaScript DSP)
 - `MIDIOutputDeviceBoxAdapter` — routes to external MIDI hardware
 
+### Diagnosing "keyboard plays but no sound"
+`capture.captureNoteOnCount` (observable) increments when an armed capture receives a note-on outside recording — read it before/after a key press to prove MIDI reached the capture without any audio tap. If it increments but output RMS is 0, the fault is engine-side rendering, not MIDI routing.
+
 ## Cross-References
 - For recording preferences (takes, count-in), see `src/demos/recording/CLAUDE.md`
 - For general recording flow (startRecording, stopRecording), see `src/demos/recording/CLAUDE.md`
