@@ -76,8 +76,12 @@ with the default `loopDuration:0` the engine plays ZERO notes (silent) even thou
 collection, note track and output routing all look correct and `iterateActiveNotesAt` yields
 nothing. Setting `box.duration` + the timeline `loopArea` is NOT enough. Set
 `box.loopOffset.setValue(0)` + `box.loopDuration.setValue(contentLenPPQN)`, or use
-`project.api.createNoteRegion({ ..., loopOffset, loopDuration })`. `StepRecordingSection` omits
-loopDuration (its regions are recording-driven), so don't copy it as a playing-region template.
+`project.api.createNoteRegion(...)`, which defaults `loopDuration` to `duration` when omitted
+(only raw `NoteRegionBox.create` leaves it at 0). Caveat (verified in studio-core
+`ProjectApi.js`): `createNoteRegion` never writes `loopOffset` — the implementation writes
+`loopDuration` twice — so a non-zero `loopOffset` param is silently ignored; set it on the box
+afterwards if needed. `StepRecordingSection` omits loopDuration (its regions are
+recording-driven), so don't copy it as a playing-region template.
 
 ### NoteEventCollectionBoxAdapter (Event Container)
 Container for MIDI note events within a region:
