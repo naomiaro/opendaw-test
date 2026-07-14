@@ -387,7 +387,7 @@ const EFFECT_CONFIGS: Record<EffectType, EffectConfig> = {
       }
     },
     getParameterDefinitions: (params) => [
-      { name: "threshold", label: "Threshold", value: params.threshold || -3, min: -30, max: 0, step: 0.1, unit: " dB" }
+      { name: "threshold", label: "Threshold", value: params.threshold || -3, min: -24, max: 0, step: 0.1, unit: " dB" }
     ],
     presets: MAXIMIZER_PRESETS
   }

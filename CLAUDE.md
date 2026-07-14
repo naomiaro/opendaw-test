@@ -627,6 +627,14 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   or dispatched event is UNTRUSTED and silently fails to start the AudioContext/
   transport (UI may toggle but 0 takes/no playback). Untrusted `.click()` is fine
   for non-audio buttons (Add Tape, config, Stop).
+- Browser-automation verification: if a demo's transport/UI freezes (position stuck,
+  `isRecording` never flips, takes never appear) while the AudioContext keeps running,
+  check `document.visibilityState` FIRST — an occluded/hidden Chrome window suspends
+  `requestAnimationFrame`, which freezes OpenDAW's entire main-thread sync
+  (`SyncStream reader.tryRead()`, position/isPlaying observables, RecordAudio take
+  management). The engine keeps running on the audio thread; the main thread just never
+  observes it. Fix: `resize_window` (claude-in-chrome) raises the window to visible.
+  Not an SDK bug — don't debug it as one.
 - Verify in-browser AUDIO demos by measuring the actual OUTPUT SIGNAL, not `isPlaying`/a
   disabled Play button — a transport reports "playing" while the engine renders silence
   (e.g. a note region with `loopDuration:0`). Tap output: monkeypatch
