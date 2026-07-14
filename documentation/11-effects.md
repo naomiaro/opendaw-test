@@ -1865,7 +1865,7 @@ const compressors = effectAdapters.filter(
 
 ### Werkstatt
 
-> **See also:** [Ch. 17 — Modular Devices](./17-modular-devices.md) is the cross-cutting overview that covers Werkstatt alongside Apparat (scriptable instrument) and Spielwerk (scriptable MIDI effect). Read that chapter first if you're choosing between modular devices.
+> **See also:** [Ch. 17 — Modular Devices](./17-modular-devices.md) is the cross-cutting overview that covers Werkstatt alongside Apparat (scriptable instrument, deep dive in [Ch. 20](./20-apparat.md)) and Spielwerk (scriptable MIDI effect). Read that chapter first if you're choosing between modular devices.
 
 Werkstatt is a scriptable audio effect that lets users write custom DSP code in plain JavaScript. The code runs inside an AudioWorklet. Users define a `Processor` class with a `process()` method that receives stereo audio buffers and outputs processed audio sample by sample.
 

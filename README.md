@@ -32,6 +32,8 @@ Visit http://localhost:5173 to explore the demos.
 | **Mixer Groups** | Sub-mixing with group buses: Track → Group → Master signal flow |
 | **Comp Lanes** | Comp between simulated takes using volume automation crossfades with configurable duration |
 | **Werkstatt** | Write custom audio effects in JavaScript with pre-built examples and runnable code |
+| **[Apparat](https://opendaw-test.pages.dev/apparat-demo.html)** | Write custom polyphonic instruments in JavaScript — hot-swap synth engines (sine, supersaw, FM bell, Karplus pluck) over a looping chord pattern and play live |
+| **[WASM Engine](https://opendaw-test.pages.dev/wasm-engine-demo.html)** | Swap the TypeScript audio engine for the Rust/WASM engine live, with DSP-load comparison |
 | **Audio Export** | Export audio with range selection, metronome control, and offline rendering |
 
 ## Documentation
@@ -69,7 +71,9 @@ The chapter list below links to the rendered markdown on GitHub:
 
 - [MIDI Deep Dive](./documentation/16-midi.md) — Notes, hardware input, MIDI effects, synth tuning
 - [Modular Devices](./documentation/17-modular-devices.md) — Apparat, Vaporisateur, Playfield, Werkstatt
+- [Apparat (Scriptable Instrument)](./documentation/20-apparat.md) — the Processor contract, voices, live MIDI, compile/hot-swap
 - [Time & Pitch](./documentation/18-time-and-pitch.md) — NoStretch / PitchStretch / TimeStretch, transients, concert pitch
+- [Swappable Audio Engine (WASM)](./documentation/19-wasm-engine.md) — running the Rust/WASM engine, engine variants, offline renders
 
 **Appendix**
 
@@ -132,7 +136,10 @@ src/
     │   └── time-signature-demo.tsx    # Time signature changes
     ├── effects/                       # Effects demos
     │   ├── effects-demo.tsx           # Multi-track mixer with effects
-    │   └── werkstatt-demo.tsx         # Custom scriptable audio effects
+    │   ├── werkstatt-demo.tsx         # Custom scriptable audio effects
+    │   └── apparat-demo.tsx           # Custom scriptable instruments
+    ├── engine/                        # Engine demos
+    │   └── wasm-engine-demo.tsx       # Live TypeScript ↔ WASM engine swap
     └── export/                        # Export demos
         └── export-demo.tsx            # Audio export with range selection
 ```
