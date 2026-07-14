@@ -646,6 +646,13 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
 - Playwright MCP screenshots: omit the `filename` param — custom-named files land
   loose in the MCP server's CWD (which may be a DIFFERENT repo than the one you're
   working in); default-named files land in `.playwright-mcp/`.
+- claude-in-chrome `read_console_messages`: timestamps are backfilled to when console
+  tracking attached, and message blocks can appear duplicated across reads — trust only
+  relative message order, never elapsed time between entries.
+- claude-in-chrome ref-based clicks (from `find`) can silently fail to trigger React
+  handlers on these demos — click by coordinates from a screenshot instead. Also:
+  `javascript_tool` results dumping page text can trip the extension's
+  "[BLOCKED: Cookie/query string data]" filter — read results via screenshot.
 - Playwright text assertions: JSX expressions split DOM text nodes — XPath
   `contains(text(),…)` misses strings spanning the split; use
   `document.body.innerText.includes(…)`.
@@ -677,6 +684,14 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   package.json/package-lock as out of sync). Don't treat the advisory as a CI blocker.
 - SDK upgrades specifically: bump `@opendaw/studio-sdk` only — sub-packages resolve transitively
   from the registry. NEVER install sub-packages as local `file:` references (breaks Cloudflare CI).
+- SDK-upgrade changelog audits: verify every claim against the INSTALLED tarball
+  (`node_modules/@opendaw/*/dist`), not the upstream git tag diff — a release tag can
+  contain commits the npm publish was built without (0.0.158: `migrateCaptureTrackMismatch`
+  in the tag, absent from the published studio-core@0.0.156).
+- Report SDK bugs as GitHub issues on `andremichelle/openDAW` (tracker is actively worked —
+  filed bugs have been fixed within one release cycle). Body: live repro page URL +
+  `debug/*.md` write-up link + measured signature + suggested fix. Cross-link the issue
+  number back into the repro page's DebugLinkBar and the debug note's header.
 - After an SDK upgrade, audit `documentation/*.md` chapter docs for stale API signatures: grep
   each renamed/changed identifier from the changelog and update method signatures, return
   types, and code examples. Chapter docs describe current contracts — leaving stale
