@@ -466,6 +466,11 @@ const App: React.FC = () => {
               href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/shared-source-double-process.md",
               kind: "note",
             },
+            {
+              label: "Upstream issue: openDAW#311",
+              href: "https://github.com/andremichelle/openDAW/issues/311",
+              kind: "note",
+            },
           ]}
         />
 

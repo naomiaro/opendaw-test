@@ -1,5 +1,7 @@
 # Sample-level discontinuity at touching region seams
 
+**Upstream issue:** [andremichelle/openDAW#311](https://github.com/andremichelle/openDAW/issues/311) (filed 2026-07-14).
+
 **Verified against:** OpenDAW SDK 0.0.158 (`@opendaw/studio-sdk@0.0.158`, `@opendaw/studio-core@0.0.156`); re-verified 2026-07-14 via the repro page's offline scan — seam-Δ/pre-Δ = 2.00 (max |Δ| 0.05745 at τ −0.042 ms), SHARED and DISTINCT cells identical, unchanged from 0.0.147. The addendum's suggested fixes are not in the 0.0.158 diff. First verified at SDK 0.0.147.
 
 **Repro page:** [`shared-source-double-process-debug-demo.html`](../shared-source-double-process-debug-demo.html) (unlisted; filename preserved for history, but the artifact is NOT shared-source-specific and NOT block-alignment-specific — see "Mechanism" below). Audio fixture: [`public/audio/test-440hz.wav`](../public/audio/test-440hz.wav) (60 s, 440 Hz sine, mono, 44.1 kHz, 16-bit).
