@@ -261,7 +261,7 @@ class Processor {
       lp += filter * (Math.random() * 2 - 1 - lp)
       buffer[i] = lp * velocity
     }
-    this.voices.push({ id, buffer, pos: 0, gate: true })
+    this.voices.push({ id, buffer, pos: 0, gate: true, killed: false, peak: 1, heard: 0 })
   }
 
   noteOff(id) {
@@ -270,14 +270,15 @@ class Processor {
   }
 
   reset() {
-    for (const voice of this.voices) voice.gate = false
+    // Fast-fade contract: pin the feedback low so the string dies in milliseconds.
+    for (const voice of this.voices) voice.killed = true
   }
 
   process(output, block) {
     const [outL, outR] = output
     for (let i = this.voices.length - 1; i >= 0; i--) {
       const voice = this.voices[i]
-      const feedback = voice.gate ? 0.999 - this.damping * 0.02 : 0.98
+      const feedback = voice.killed ? 0.5 : voice.gate ? 0.999 - this.damping * 0.02 : 0.98
       const buffer = voice.buffer
       const length = buffer.length
       let peak = 0
@@ -291,7 +292,14 @@ class Processor {
         outL[s] += current * 0.8
         outR[s] += current * 0.8
       }
-      if (peak < 0.0005) this.voices.splice(i, 1)
+      // The engine splits quanta at event boundaries, so a block can be a few
+      // samples long (or empty). Judge removal on a decaying running peak over
+      // real samples, never on one short block sitting near a zero-crossing.
+      if (block.s1 > block.s0) {
+        voice.heard += block.s1 - block.s0
+        voice.peak = Math.max(peak, voice.peak * 0.5)
+      }
+      if (voice.heard >= length * 3 && voice.peak < 0.0005) this.voices.splice(i, 1)
     }
   }
 }`,

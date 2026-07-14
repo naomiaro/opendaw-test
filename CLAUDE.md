@@ -460,16 +460,20 @@ the createInstrument-style race. Use `defer()` standalone (when removing a refer
 `AudioContentModifier.toPitchStretch` / `toTimeStretch` which swap play-mode in a single
 transaction this way.
 
-### createInstrument Must Be Destructured Inside editing.modify()
-`project.api.createInstrument()` returns `{ audioUnitBox, trackBox }` directly — no `.unwrap()`.
-But `editing.modify()` does NOT forward return values, so capture via outer variable:
+### createInstrument Inside editing.modify()
+`project.api.createInstrument()` returns `{ audioUnitBox, instrumentBox, trackBox }` directly — no `.unwrap()`.
+`editing.modify<R>(modifier)` DOES forward the modifier's return value as `Option<R>`
+(verified: lib-std `Editing.d.ts` + lib-box `editing.js` `return Option.wrap(result.value)`), so both styles work:
 ```typescript
-let audioUnitBox: any = null;
+// Return-value style
+const { audioUnitBox } = project.editing
+  .modify(() => project.api.createInstrument(InstrumentFactories.Tape))
+  .unwrap();
+// Outer-variable style (readable when several products are needed)
+let audioUnitBox: AudioUnitBox | null = null;
 project.editing.modify(() => {
-  const result = project.api.createInstrument(InstrumentFactories.Tape);
-  audioUnitBox = result.audioUnitBox;
+  audioUnitBox = project.api.createInstrument(InstrumentFactories.Tape).audioUnitBox;
 });
-// audioUnitBox is now available outside the transaction
 ```
 
 ### monitoringMode Is Not a Box Graph Field

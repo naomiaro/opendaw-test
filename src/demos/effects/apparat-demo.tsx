@@ -8,7 +8,8 @@ import {
   ScriptCompiler,
   ScriptDeclaration,
 } from "@opendaw/studio-adapters";
-import { ApparatDeviceBox, AudioUnitBox, NoteRegionBox, TrackBox } from "@opendaw/studio-boxes";
+import { ApparatDeviceBox, AudioUnitBox, NoteRegionBox, TrackBox, WerkstattParameterBox } from "@opendaw/studio-boxes";
+import { asInstanceOf } from "@opendaw/lib-std";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
@@ -29,14 +30,9 @@ import { PlayIcon, PauseIcon, StopIcon } from "@radix-ui/react-icons";
 /** Read Apparat parameter values from the box's pointerHub (WerkstattParameterBox children). */
 function readApparatParams(apparatBox: ApparatDeviceBox): Record<string, number> {
   const params: Record<string, number> = {};
-  const paramPointers = apparatBox.parameters.pointerHub.incoming();
-  for (const pointer of paramPointers) {
-    const paramBox = pointer.box as { label?: { getValue(): string }; value?: { getValue(): number } };
-    const label = paramBox.label?.getValue?.();
-    const value = paramBox.value?.getValue?.();
-    if (label != null && value != null) {
-      params[label] = value;
-    }
+  for (const pointer of apparatBox.parameters.pointerHub.incoming()) {
+    const paramBox = asInstanceOf(pointer.box, WerkstattParameterBox);
+    params[paramBox.label.getValue()] = paramBox.value.getValue();
   }
   return params;
 }
@@ -135,7 +131,7 @@ const PROCESSOR_API: ReadonlyArray<[string, string]> = [
   ["noteOn(pitch, velocity, cent, id)", "A note starts. id is unique per note — key your voice on it."],
   ["noteOff(id)", "The note with that id releases. Fade the voice out; never cut it hard."],
   ["process(output, block)", "Render [block.s0, block.s1) into output ([outL, outR]). Buffers arrive zeroed — ADD your voices in."],
-  ["paramChanged(label, value)", "A // @param value changed. Values arrive already mapped to the declared range."],
+  ["paramChanged(label, value)", "A // @param value changed. Values arrive already mapped to the declared range; the engine also pushes every current value once after (re)instantiation, so a hot-swapped script picks up the slider positions."],
   ["reset()", "Transport reset. Fade everything out fast and drop pending state."],
   ["samples", "Object holding AudioData for each // @sample slot (label → data or null while loading)."],
 ];
@@ -201,19 +197,39 @@ const App: React.FC = () => {
   // --- Instrument management (hot-swap: recompile onto the SAME Apparat box) ---
   const loadInstrument = useCallback(async (instrument: ShowcaseInstrument) => {
     if (!project || !audioContext || !apparatBoxRef.current || busyRef.current) return;
+    const apparatBox = apparatBoxRef.current;
     beginAction();
     try {
-      // compile() wraps the script, registers it on the AudioWorklet and writes
-      // the // @apparat header back into the box's code field — the processor
-      // swaps to the new script between blocks. A failed compile leaves the
-      // previous script playing.
-      await compilerRef.current!.compile(audioContext, project.editing, apparatBoxRef.current, instrument.script);
+      // compile() validates the script (a syntax error throws BEFORE the box is
+      // touched — the previous script keeps playing), then writes the new code +
+      // reconciled parameter boxes in ONE transaction and awaits addModule.
+      // The processor swaps between blocks: held voices are cut, and the engine
+      // re-pushes every current parameter value to the fresh Processor.
+      const codeBefore = apparatBox.code.getValue();
+      try {
+        await compilerRef.current!.compile(audioContext, project.editing, apparatBox, instrument.script);
+      } catch (err) {
+        console.error(`Failed to compile instrument "${instrument.name}":`, err);
+        setActionError(`Failed to load instrument "${instrument.name}": ${err instanceof Error ? err.message : String(err)}`);
+        // An addModule failure rejects AFTER the box was mutated, and the
+        // processor silences itself waiting for a registry update that never
+        // arrives. Recompile the previous script to recover (a fresh update
+        // number reloads it) — editing.undo() would revert the code field
+        // without re-registering a worklet module, leaving the device silent.
+        if (apparatBox.code.getValue() !== codeBefore && activeScriptRef.current) {
+          try {
+            await compilerRef.current!.compile(audioContext, project.editing, apparatBox, activeScriptRef.current);
+          } catch (restoreErr) {
+            console.error("Failed to restore the previous instrument:", restoreErr);
+            setActionError(`Failed to load "${instrument.name}" and could not restore the previous instrument — the device stays silent until a script compiles.`);
+          }
+        }
+        setInstrumentParams(readApparatParams(apparatBox));
+        return;
+      }
       activeScriptRef.current = instrument.script;
       setActiveInstrument(instrument.name);
-      setInstrumentParams(readApparatParams(apparatBoxRef.current));
-    } catch (err) {
-      console.error(`Failed to compile instrument "${instrument.name}": ` + String(err));
-      setActionError(`Failed to load instrument "${instrument.name}": ${err instanceof Error ? err.message : String(err)}`);
+      setInstrumentParams(readApparatParams(apparatBox));
     } finally {
       endAction();
     }
@@ -221,18 +237,19 @@ const App: React.FC = () => {
 
   const updateInstrumentParam = useCallback((paramName: string, value: number) => {
     if (!project || !apparatBoxRef.current) return;
-
-    const paramPointers = apparatBoxRef.current.parameters.pointerHub.incoming();
-    const paramBox = paramPointers.find(
-      p => (p.box as { label?: { getValue(): string } }).label?.getValue?.() === paramName
-    )?.box as { value?: { setValue(v: number): void } } | undefined;
-
-    if (paramBox?.value) {
-      project.editing.modify(() => {
-        paramBox.value!.setValue(value);
-      });
-      setInstrumentParams(prev => ({ ...prev, [paramName]: value }));
+    const paramBox = apparatBoxRef.current.parameters.pointerHub.incoming()
+      .map(pointer => asInstanceOf(pointer.box, WerkstattParameterBox))
+      .find(box => box.label.getValue() === paramName);
+    if (!paramBox) {
+      // Reachable when the box's params were reconciled away (e.g. a failed
+      // compile) while the sliders still render the old script — never swallow it.
+      console.warn(`Apparat parameter "${paramName}" not found on the device — slider write dropped.`);
+      return;
     }
+    project.editing.modify(() => {
+      paramBox.value.setValue(value);
+    });
+    setInstrumentParams(prev => ({ ...prev, [paramName]: value }));
   }, [project]);
 
   const togglePattern = useCallback((on: boolean) => {
@@ -266,11 +283,13 @@ const App: React.FC = () => {
     setInitError(null);
     setStatus("Initializing audio engine...");
 
+    let createdContext: AudioContext | null = null;
     try {
       const { project: newProject, audioContext: newAudioContext } = await initializeOpenDAW({
         bpm: BPM,
         onStatusUpdate: setStatus,
       });
+      createdContext = newAudioContext;
 
       setAudioContext(newAudioContext);
       setProject(newProject);
@@ -279,8 +298,9 @@ const App: React.FC = () => {
       settings.metronome.enabled = false;
 
       // Create the Apparat instrument. createInstrument returns the audio unit,
-      // the instrument box AND its note track — capture via outer variables
-      // (editing.modify does not forward return values).
+      // the instrument box AND its note track. editing.modify forwards the
+      // modifier's return value as Option<R>; outer variables just keep the
+      // three products readable without unwrapping.
       setStatus("Creating Apparat instrument...");
       let audioUnitBox: AudioUnitBox | null = null;
       let apparatBox: ApparatDeviceBox | null = null;
@@ -308,8 +328,10 @@ const App: React.FC = () => {
       }
       captureOption.unwrap().armed.setValue(true);
 
-      // A looping 4-bar chord pattern drives the instrument. loopDuration is
-      // REQUIRED — a note region with the default loopDuration:0 plays silently.
+      // A looping 4-bar chord pattern drives the instrument. createNoteRegion
+      // defaults loopDuration to the region duration (set explicitly only when
+      // the loop should differ); only a raw NoteRegionBox.create leaves it at
+      // 0, which plays silently.
       let regionBox: NoteRegionBox | null = null;
       newProject.editing.modify(() => {
         regionBox = newProject.api.createNoteRegion({
@@ -326,8 +348,9 @@ const App: React.FC = () => {
       }
       regionBoxRef.current = regionBox;
 
-      // Fill the pattern in a second transaction: the region's adapter (and its
-      // event collection) exists only after the creation transaction commits.
+      // Fill the pattern in a second transaction: the region's `events` pointer
+      // resolves only when the creation transaction commits, so optCollection
+      // is empty until then.
       const regionAdapter = newProject.boxAdapters.adapterFor(
         regionBox as NoteRegionBox,
         NoteRegionBoxAdapter
@@ -375,7 +398,12 @@ const App: React.FC = () => {
       setIsInitialized(true);
       setStatus("Ready");
     } catch (err) {
-      console.error("Apparat demo initialization failed: " + String(err));
+      console.error("Apparat demo initialization failed:", err);
+      // A retry re-creates everything; close this context so repeated retries
+      // don't exhaust the browser's AudioContext limit.
+      void createdContext?.close();
+      setAudioContext(null);
+      setProject(null);
       setInitError(err instanceof Error ? err.message : String(err));
       setStatus("Click Start to retry...");
       initStartedRef.current = false;
@@ -637,7 +665,8 @@ const App: React.FC = () => {
                   AudioWorklet, and writes an <code>// @apparat</code> header back into the
                   box&apos;s code field. Recompiling onto the same box hot-swaps the
                   instrument between blocks &mdash; that is what the showcase cards do while
-                  the pattern plays.
+                  the pattern plays. The swap cuts held voices and the engine re-pushes the
+                  current parameter values to the fresh <code>Processor</code>.
                 </p>
 
                 <Code size="2" style={CODE_BLOCK_STYLE}>
@@ -652,8 +681,9 @@ await compiler.compile(audioContext, project.editing, product.instrumentBox, scr
 project.captureDevices.get(product.audioUnitBox.address.uuid)
   .unwrap().armed.setValue(true);
 
-// Drive it from the timeline: a note region with loopDuration set (REQUIRED —
-// a region with the default loopDuration:0 plays silently)
+// Drive it from the timeline. createNoteRegion defaults loopDuration to
+// duration; only a raw NoteRegionBox.create leaves it at 0, which plays
+// silently.
 const regionBox = project.api.createNoteRegion({
   trackBox: product.trackBox, position: 0, duration: length,
   loopOffset: 0, loopDuration: length, name: "Pattern",
