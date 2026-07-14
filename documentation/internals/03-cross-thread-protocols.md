@@ -527,37 +527,43 @@ write: (channels) => {
 
 Copy, advance the write pointer, notify. Single-producer single-consumer means no CAS — just relaxed loads on the writer's own pointer, atomic store on increment, and `Atomics.notify` to wake the reader.
 
-### Reader (main thread or worker, single-consumer)
+### Reader (dedicated worker, single-consumer)
+
+`RingBuffer.reader(config, append)` spawns a **dedicated worker from a blob URL** that
+blocks on `Atomics.wait` (woken by the writer's `Atomics.notify`), drains every available
+chunk into a batch, and `postMessage`s the batch back (buffers transferred). The caller's
+`append` callback still runs on the main thread, once per drained chunk:
 
 ```typescript
-// RingBuffer.ts:17
-const step = () => {
-    if (!running) return
+// RingBuffer.ts — worker source, inlined as a blob
+while (true) {
     let readPtr = Atomics.load(pointers, 1)
     let writePtr = Atomics.load(pointers, 0)
     if (readPtr === writePtr) {
-        if (canBlock) {
-            Atomics.wait(pointers, 0, writePtr)   // block until writer notifies
-        } else {
-            setTimeout(step, 1)                   // poll fallback for main thread
-            return
-        }
+        Atomics.wait(pointers, 0, writePtr)     // block until writer notifies
         writePtr = Atomics.load(pointers, 0)
     }
+    const batch = []                            // drain everything available
     while (readPtr !== writePtr) {
-        // copy chunk into planarChunk, split per channel, callback
+        // slice each channel out of the SAB, collect transferables
         readPtr = (readPtr + 1) % numChunks
         Atomics.store(pointers, 1, readPtr)
-        if (!running) return
-        append(channels)
+        batch.push(channels)
     }
-    step()
+    postMessage(batch, transfer)
 }
 ```
 
-`canBlock` is `typeof document === "undefined"` — `Atomics.wait` is forbidden on the main browser thread, allowed in workers. So the reader self-detects: when run inside a worker, it blocks; when run on the main thread, it polls via `setTimeout(step, 1)`.
+`Reader.stop()` terminates the worker and revokes the blob URL.
 
-The recording processor writes; the main thread reads chunks for WAV export.
+The reader lives on a dedicated worker (rather than the main thread) because Chrome
+throttles main-thread timers in hidden tabs to ~1s — any polling reader would overrun
+the ring and silently drop recorded audio. A blocking `Atomics.wait` worker drains in
+real time regardless of tab visibility. `CaptureAudio.prepareRecording` allocates the
+recording ring with 1024 chunks (~3 s at 48 kHz) of headroom, covering the worker's
+async boot and transient stalls.
+
+The recording processor writes; the worker drains; the main thread receives chunks for WAV export.
 
 ## fetchAudio — the async resource pattern
 
@@ -707,7 +713,7 @@ Like the engine and box chapters, here are the rules that, if you violate them, 
 3. **`dispatchAndReturn` allocates a return slot.** Failing to send a matching `resolve`/`reject` leaks the Promise. The executor side always sends one or the other — don't skip it.
 4. **Args go through structured clone.** Don't send class instances with private fields or methods; they lose their prototype. Plain data objects only. Use `Communicator.makeTransferable()` to mark transferables explicitly when auto-detection isn't enough.
 5. **Never write to the SyncStream from the main thread.** It's worklet-only; main-thread writes would race.
-6. **`Atomics.wait` is forbidden on the main thread.** The `RingBuffer` reader self-detects (`canBlock` check); if you write similar code, do the same.
+6. **`Atomics.wait` is forbidden on the main thread.** The `RingBuffer` reader runs it on a dedicated worker; if you write similar code, block only in a worker.
 7. **One `BoxGraph` change becomes one sync-target transaction.** Don't try to apply individual `UpdateTask`s outside a transaction — pointer constraints will trip.
 8. **The control-flag SAB is one Int32Array, single-slot today.** Adding new flags? Use higher indices. Don't repurpose `[0]`.
 9. **`SharedArrayBuffer` requires COOP+COEP.** Every deployment needs the headers. The first thing to check when "engine won't start" is the response headers of `index.html`.

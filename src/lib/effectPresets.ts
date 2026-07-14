@@ -509,7 +509,7 @@ export const TIDAL_PRESETS: EffectPreset<TidalParams>[] = [
 // ============================================================================
 
 export type MaximizerParams = {
-  threshold: number; // dB: -30 to 0
+  threshold: number; // dB: -24 to 0
 }
 
 export const MAXIMIZER_PRESETS: EffectPreset<MaximizerParams>[] = [

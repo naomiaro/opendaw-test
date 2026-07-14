@@ -266,7 +266,7 @@ Output generated
 
 | Parameter | Type | Range | Default | Unit | Automatable | Description |
 |-----------|------|-------|---------|------|-------------|-------------|
-| lookahead | boolean | - | false | - | yes | Enable lookahead mode for pre-processing |
+| lookahead | boolean | - | false | - | yes | Enable lookahead mode for pre-processing. Toggling crossfades over 15 ms, click-free |
 | automakeup | boolean | - | true | - | yes | Automatically adjust makeup gain |
 | autoattack | boolean | - | false | - | yes | Automatically adjust attack time |
 | autorelease | boolean | - | false | - | yes | Automatically adjust release time |
@@ -361,9 +361,9 @@ The LFO is a triangle wave that modulates the delay line read position, creating
 
 | Parameter | Type | Range | Default | Unit | Automatable | Description |
 |-----------|------|-------|---------|------|-------------|-------------|
-| threshold | float32 | -60.0 to 0.0 | -6.0 | dB | yes | Level above which the gate opens |
+| threshold | float32 | -80.0 to 0.0 | -6.0 | dB | yes | Level above which the gate opens |
 | return | float32 | 0.0 to 24.0 | 0.0 | dB | yes | Hysteresis — gate closes at `threshold - return` dB |
-| attack | float32 | 0.0 to 50.0 | 1.0 | ms | yes | Time for gate to fully open |
+| attack | float32 | 0.0 to 1000.0 | 1.0 | ms | yes | Time for gate to fully open |
 | hold | float32 | 0.0 to 500.0 | 50.0 | ms | yes | Time gate stays open after signal drops below threshold |
 | release | float32 | 1.0 to 2000.0 | 100.0 | ms | yes | Time for gate to fully close |
 | floor | float32 | -72.0 to 0.0 | -72.0 | dB | yes | Minimum gain when gate is closed (-72dB ≈ silence, 0dB = no attenuation) |
@@ -374,9 +374,9 @@ The LFO is a triangle wave that modulates the delay line read position, creating
 
 | Parameter | Mapping | Notes |
 |-----------|---------|-------|
-| threshold | `linear(-80, 0)` | Adapter range wider than box constraint |
+| threshold | `linear(-80, 0)` | |
 | return | `linear(0, 24)` | |
-| attack | `linear(0, 50)` | |
+| attack | `linear(0, 1000)` | |
 | hold | `linear(0, 500)` | |
 | release | `linear(1, 2000)` | |
 | floor | `decibel(-72, -12, 0)` | 3-point: unitValue 0.0=-inf, 0.5=-12dB, 1.0=0dB |
@@ -486,7 +486,7 @@ The LFO is a triangle wave that modulates the delay line read position, creating
 | crush | float32 | 0.0 to 1.0 | 0.0 | unipolar | yes | Sample rate reduction (0=clean, 1=max crush) |
 | bits | int32 | 1 to 16 | 16 | bits | yes | Target bit depth for reduction |
 | boost | float32 | 0.0 to 24.0 | 0.0 | dB | yes | Pre-emphasis gain before quantization |
-| mix | float32 | 0.0 to 1.0 | 1.0 | % | yes | Dry/Wet mix (adapter uses exponential mapping) |
+| mix | float32 | 0.001 to 1.0 | 1.0 | % | yes | Dry/Wet mix (adapter uses exponential mapping) |
 
 **Important — Crush inversion:** The processor inverts the crush value internally (`setCrush(1.0 - value)`) before applying exponential mapping to compute the crushed sample rate: `exponential(20, 20000, invertedValue)`. This means small box values produce subtle effects and large values produce extreme crushing:
 
@@ -616,7 +616,7 @@ The LFO is a triangle wave that modulates the delay line read position, creating
 |-----------|------|-------|---------|------|-------------|-------------|
 | slope | float32 | -1.0 to 1.0 | -0.25 | bipolar | yes | Waveform slope (-1=ramp down, 0=triangle/sine, 1=square) |
 | symmetry | float32 | 0.0 to 1.0 | 0.5 | % | yes | Waveform symmetry (0.5=symmetric) |
-| rate | int32 | 0 to 16 | 3 | index | yes | Rate fraction index into RateFractions array (see table below) |
+| rate | float32 | 0 to 16 | 3 | index | yes | Rate fraction index into RateFractions array (see table below) |
 | depth | float32 | 0.0 to 1.0 | 1.0 | % | yes | Modulation depth |
 | offset | float32 | -180.0 to 180.0 | 0.0 | degrees | yes | Phase offset |
 | channelOffset | float32 | -180.0 to 180.0 | 0.0 | degrees | yes | Stereo phase offset for auto-pan |
@@ -718,8 +718,8 @@ When `modulator-source` is `"external"`, connect a side-chain via the `side-chai
 
 | Parameter | Type | Range | Default | Unit | Automatable | Description |
 |-----------|------|-------|---------|------|-------------|-------------|
-| threshold | float32 | -30.0 to 0.0 | 0.0 | dB | yes | Limiting threshold |
-| lookahead | boolean | - | true | - | **no** | Enable lookahead for transparent limiting (not automatable) |
+| threshold | float32 | -24.0 to 0.0 | 0.0 | dB | yes | Limiting threshold |
+| lookahead | boolean | - | true | - | **no** | Enable lookahead for transparent limiting (not automatable). Toggling crossfades over 15 ms, click-free |
 
 ---
 
