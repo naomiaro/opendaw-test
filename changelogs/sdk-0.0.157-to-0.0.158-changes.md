@@ -196,5 +196,10 @@ Every sub-package moved exactly one patch:
       drain delivered chunks), take finalized with positive duration, sample imported with
       peaks, playback advanced in real time. Blob-URL reader worker works under our
       COOP/COEP headers.
-- [ ] Re-check the two open SDK issues (touching-seam discontinuity, voice fade-in product)
-      at 0.0.158 — last verified at 0.0.147.
+- [x] Re-check the two open SDK issues at 0.0.158 — **both still open, signatures unchanged**
+      from 0.0.147. Touching-seam discontinuity: seam-Δ/pre-Δ = 2.00 (max |Δ| 0.05745 at
+      τ −0.042 ms), SHARED/DISTINCT identical; the fixes suggested in
+      `debug/shared-source-double-process.md`'s addendum are not in this release. Voice
+      fade-in × clip fade-in product: OpenDAW −1.21 dB at τ −10.02 ms vs pure-Web-Audio
+      ALIGNED −0.00 dB (UNALIGNED control −4.57 dB ✓). Expected — the diff doesn't touch
+      `TapeDeviceProcessor`/`PitchVoice`.
