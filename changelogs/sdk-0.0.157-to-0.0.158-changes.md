@@ -2,7 +2,7 @@
 
 A single point release, but a substantive one: a **recording reliability fix** (ring-buffer
 reader moved to a blocking worker — hidden-tab recording no longer drops audio), a
-**zero-duration-sample eradication campaign** (import guards + storage purge + three new
+**zero-duration-sample eradication campaign** (import guards + storage purge + two new
 project-load migrations), **box-schema constraint alignment** for five effect parameters,
 **click-free lookahead toggles** on Compressor and Maximizer, and lib-box fixes to undo
 grouping and `PointerHub` removal balance.
@@ -28,9 +28,9 @@ on `Atomics.wait`, drains all available chunks per wake-up, and transfers them b
 terminates the worker and revokes the blob URL.
 
 **Why:** Chrome throttles main-thread timers in hidden tabs to ~1s. The old ring held only
-~0.37s of audio (128 chunks), so recording in a backgrounded tab overran the ring and
-**silently dropped audio**. Alongside the worker move, `CaptureAudio.prepareRecording` now
-allocates the recording worklet with **1024 ring chunks (~3s at 48kHz)** instead of
+~0.34s of audio at 48kHz (128 chunks), so recording in a backgrounded tab overran the ring
+and **silently dropped audio**. Alongside the worker move, `CaptureAudio.prepareRecording`
+now allocates the recording worklet with **1024 ring chunks (~2.7s at 48kHz)** instead of
 `RenderQuantum` (128).
 
 **opendaw-headless impact:** none code-wise — `prepareRecording` injects everything
@@ -44,17 +44,23 @@ unchanged.
 A historical bug let zero-length audio become duration-0 samples → duration-0 regions →
 `validateTrack` panics. 0.0.158 attacks it at every layer:
 
-- `SampleService.importRecording` / `importSample` now **`panic` on 0-frame audio**
-  ("Cannot import …: the audio is empty (0 frames)").
+- `SampleService.importRecording` / `importFile` now **`panic` on 0-frame audio**
+  ("Cannot import recording '…': the take is empty (0 frames)" /
+  "Cannot import '…': the audio is empty (0 frames)").
 - `SampleService.collectAllFiles` **purges already-stored samples with `!(duration > 0)`**
   (also catches NaN) from `SampleStorage` on every list — self-healing, logs
   `Purging N zero-duration sample(s)`.
-- `ProjectMigration` gains three new passes that run on **every project load**:
-  1. `migrateCaptureTrackMismatch` — drops content tracks whose type no longer matches
-     their unit's capture device (fixes upstream "No CaptureMidi available" crash).
-  2. `migrateZeroDurationRegions` — drops regions with non-positive derived duration.
-  3. `migrateAudioRegionOverlaps` — heals sub-PPQN overlaps between seconds-based audio
+- `ProjectMigration` gains two new passes that run on **every project load**:
+  1. `migrateZeroDurationRegions` — drops regions with non-positive derived duration.
+  2. `migrateAudioRegionOverlaps` — heals sub-PPQN overlaps between seconds-based audio
      regions left by Int32 position truncation.
+
+> **Tag vs. tarball:** the upstream release tag also contains a third pass,
+> `migrateCaptureTrackMismatch` (drops content tracks whose type no longer matches their
+> unit's capture device — fixes the "No CaptureMidi available" crash), but the **published
+> `studio-core@0.0.156` tarball was built without it** (verified: not in
+> `dist/project/migration/`, not run by `dist/project/ProjectMigration.js`). Expect it in
+> the next release.
 
 **opendaw-headless impact:** none expected — our recording path can't produce 0-frame takes
 (0.0.157 already dropped non-positive-duration takes in `finalizeTake`). Note for tests and
@@ -134,8 +140,8 @@ gained a few points of lightness (e.g. `background` L 7 → 9). Only matters if 
 - **`fastLog2(x)`** (`@opendaw/lib-dsp` `fast-math`) — IEEE-754 exponent extraction +
   atanh-series mantissa, max error ~1e-8. `fastExp2` internals rewritten allocation-free
   (bit-twiddled scale instead of a multiply loop); same results bit-for-bit.
-- **`ProjectMigration`** now exports `migrateAudioRegionOverlaps`,
-  `migrateCaptureTrackMismatch`, `migrateZeroDurationRegions` from `migration/index`.
+- **`ProjectMigration`** now exports `migrateAudioRegionOverlaps` and
+  `migrateZeroDurationRegions` from `migration/index`.
 - **YSync `Reconcile`** — prototype deterministic reconciliation for collab constraint
   conflicts + a large multi-peer convergence test suite. Not in our surface.
 
@@ -165,7 +171,7 @@ Every sub-package moved exactly one patch:
 | `@opendaw/studio-enums` | 0.0.79 | 0.0.80 | palette brightness |
 | `@opendaw/studio-boxes` | 0.0.96 | 0.0.97 | schema constraint alignment, `duration` positive |
 | `@opendaw/studio-adapters` | 0.0.119 | 0.0.120 | RingBuffer worker reader, Vocoder adapter tweak |
-| `@opendaw/studio-core` | 0.0.155 | 0.0.156 | recording ring size, SampleService guards, 3 new migrations, RegionClipResolver rework |
+| `@opendaw/studio-core` | 0.0.155 | 0.0.156 | recording ring size, SampleService guards, 2 new migrations, RegionClipResolver rework |
 | `@opendaw/studio-core-wasm` | 0.0.2 | 0.0.3 | engine fixes (#287, #305), offline worker |
 
 ## opendaw-headless changes made alongside this upgrade

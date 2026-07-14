@@ -560,7 +560,7 @@ The reader lives on a dedicated worker (rather than the main thread) because Chr
 throttles main-thread timers in hidden tabs to ~1s — any polling reader would overrun
 the ring and silently drop recorded audio. A blocking `Atomics.wait` worker drains in
 real time regardless of tab visibility. `CaptureAudio.prepareRecording` allocates the
-recording ring with 1024 chunks (~3 s at 48 kHz) of headroom, covering the worker's
+recording ring with 1024 chunks (~2.7 s at 48 kHz) of headroom, covering the worker's
 async boot and transient stalls.
 
 The recording processor writes; the worker drains; the main thread receives chunks for WAV export.
