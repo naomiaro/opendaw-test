@@ -85,6 +85,12 @@ const GROUPS: Group[] = [
           "Write custom audio effects in JavaScript. Browse pre-built effects (tremolo, ring mod, filter, chorus, phaser) or explore the Werkstatt API with runnable examples.",
       },
       {
+        href: "/apparat-demo.html",
+        title: "Apparat",
+        blurb:
+          "Write custom polyphonic instruments in JavaScript. Hot-swap synth engines (sine, supersaw, FM bell, Karplus pluck) over a looping chord pattern and play live on an on-screen keyboard.",
+      },
+      {
         href: "/comp-lanes-demo.html",
         title: "Comp Lanes",
         blurb:

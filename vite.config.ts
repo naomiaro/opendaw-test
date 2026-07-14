@@ -153,6 +153,7 @@ export default defineConfig({
                 warpTimestretch: resolve(__dirname, "warp-timestretch-demo.html"),
                 warpOverview: resolve(__dirname, "warp-demos.html"),
                 werkstatt: resolve(__dirname, "werkstatt-demo.html"),
+                apparat: resolve(__dirname, "apparat-demo.html"),
                 export: resolve(__dirname, "export-demo.html"),
                 compLanes: resolve(__dirname, "comp-lanes-demo.html"),
                 compLanesDebug: resolve(__dirname, "comp-lanes-debug-demo.html"),
