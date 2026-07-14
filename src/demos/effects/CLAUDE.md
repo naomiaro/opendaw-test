@@ -169,11 +169,21 @@ Available MIDI effect adapters (process MIDI before instruments):
 - `EffectFactories.NeuralAmp` display name changed to "Tone3000" (`IconSymbol.Tone3000`)
 - `EffectFactories.AudioNamed` now alphabetically ordered; `includeNeuralAmp` flag removed
 
+### Apparat (Scriptable Instrument) Specifics
+- Create via `project.api.createInstrument(InstrumentFactories.Apparat)` (returns `{audioUnitBox, instrumentBox, trackBox}`), NOT `insertEffect`; compile onto `instrumentBox`.
+- `@param` grammar trap: a unit REQUIRES an explicit mapping first — `// @param detune 14 0 50 linear ct` compiles, `... 50 ct` fails ("unknown mapping 'ct'").
+- Compile failure semantics: a syntax error throws BEFORE the box is touched (old script keeps playing); an `addModule` failure rejects AFTER the code+params were written and SILENCES the device. Recover by recompiling the last-good script — `editing.undo()` bricks it (reverted update number never re-triggers the swap).
+- `reset()` is NOT called on a plain transport Stop (engine gates on `reset || !wasTransporting`); held notes end via `noteOff`. `reset()` fires on stop-while-stopped (rewind), `stop(true)`, or device disable — honor the fast-fade contract there.
+- The engine splits render quanta at event boundaries: `process()` blocks can be a few samples or empty. Never judge voice removal (or any decision) on one block's samples — accumulate across blocks.
+- Apparat demo: `src/demos/effects/apparat-demo.tsx`, scripts in `src/lib/apparatScripts.ts`, deep-dive docs in `documentation/20-apparat.md`.
+
 ## Reference Files
 - Effects demo: `src/demos/effects/effects-demo.tsx`
 - Werkstatt demo: `src/demos/effects/werkstatt-demo.tsx`
+- Apparat demo: `src/demos/effects/apparat-demo.tsx`
 - Effect hook: `src/hooks/useDynamicEffect.ts`
 - Effect chain hook: `src/hooks/useEffectChain.ts`
 - Effect presets: `src/lib/effectPresets.ts`
 - Werkstatt DSP scripts: `src/lib/werkstattScripts.ts`
-- Effects docs: `documentation/11-effects.md`
+- Apparat DSP scripts: `src/lib/apparatScripts.ts`
+- Effects docs: `documentation/11-effects.md`, `documentation/20-apparat.md`
