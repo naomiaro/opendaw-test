@@ -164,6 +164,7 @@ export default defineConfig({
                 timePitchStartPositionDebug: resolve(__dirname, "time-pitch-start-position-debug-demo.html"),
                 audioVerifyDebug: resolve(__dirname, "audio-verify-debug.html"),
                 recordingFinalizeDebug: resolve(__dirname, "recording-finalize-debug-demo.html"),
+                wasmEnsureReadySecondContextDebug: resolve(__dirname, "wasm-ensure-ready-second-context-debug-demo.html"),
                 wasmEngine: resolve(__dirname, "wasm-engine-demo.html")
             },
             output: {

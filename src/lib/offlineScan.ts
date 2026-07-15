@@ -55,10 +55,13 @@ export async function renderOfflineSlice(
     const bpm = projectCopy.timelineBox.bpm.getValue();
     const startPPQN = PPQN.secondsToPulses(startSeconds, bpm);
 
-    // WASM (Rust) engine: OfflineAudioContext + createEngine does not work (worklet
-    // never reports ready — observed at SDK 0.0.159; see src/demos/engine/CLAUDE.md).
-    // The working offline path is OfflineEngineRenderer with `variant: true`, which
-    // runs the WASM offline worker registered by WasmEngine.install's offlineWorkerUrl.
+    // WASM (Rust) engine: OfflineAudioContext + createEngine fails here because
+    // WasmEngine.ensureReady registers the processor module only on the FIRST context
+    // it ever sees — with the live WASM engine booted, a fresh offline context gets
+    // `true` back but no registration, and createEngine throws InvalidStateError
+    // (see debug/wasm-ensure-ready-second-context.md). The immune offline path is
+    // OfflineEngineRenderer with `variant: true`, which runs the WASM offline worker
+    // (self-loads the wasm artifacts) registered by WasmEngine.install's offlineWorkerUrl.
     // Gate mirrors WasmEngine.useForExports (enabled && ready) so the scan can never
     // run a different engine than the page's live engine/badge — `isWasmEnabled` alone
     // is a default-true opt-out flag, not a "wasm actually booted" signal.
