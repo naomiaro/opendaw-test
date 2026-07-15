@@ -14,6 +14,9 @@ Key facts behind the split (verified SDK 0.0.159):
   `"engine-preferences"` channel. `EngineWorklet` hosts the sync (`worklet.preferences`);
   `OfflineEngineRenderer` never attaches the host side — its processor keeps
   `EngineSettingsSchema` defaults (metronome disabled) with NO way to change them.
+  Feature request filed upstream as
+  [openDAW#316](https://github.com/andremichelle/openDAW/issues/316) — if it lands,
+  the worklet path (and this split) can be retired.
 - **`renderer.render(config, start, end, progress)` does NOT stop at `end`** — the worker
   loop runs until silence detection or `config.maxDurationSeconds`; `endPosition` only
   drives the progress observable. For exact ranges always use `step(numSamples)`.

@@ -45,7 +45,8 @@ const RENDER_TIMEOUT_MS = 300_000;
  *   port's "engine-preferences" channel; `EngineWorklet` hosts that sync
  *   (`worklet.preferences`), but `OfflineEngineRenderer` never attaches the host side,
  *   so its processor keeps the schema defaults (metronome disabled) with no way to
- *   change them. Until upstream exposes preferences on the offline renderer, metronome
+ *   change them. Until upstream exposes preferences on the offline renderer
+ *   (requested: https://github.com/andremichelle/openDAW/issues/316), metronome
  *   renders must stay on the worklet path. (This path breaks if a WASM engine booted
  *   on another context first — WasmEngine.ensureReady registers the processor module
  *   only on the first context, see debug/wasm-ensure-ready-second-context.md. No
