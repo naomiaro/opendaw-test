@@ -15,8 +15,8 @@ Versioning note: `studio-adapters` (0.0.120 → **0.1.0**) and `studio-core`
 ## Tape engine fixes (openDAW#311 / #312) — core-processors 0.0.127
 
 Both issues were closed by Andre with "Fixed in SDK 0.0.159. Make sure to run the wasm
-audio engine." All three TS-path commits are present in the published tarball (verified
-in `@opendaw/studio-core@0.1.0/dist/processors.js`):
+audio engine." All three TS-path fixes (two commits) are present in the published tarball
+(verified in `@opendaw/studio-core@0.1.0/dist/processors.js`):
 
 - **#311a** (`dbc7f9c`): `TapeDeviceProcessor` floors the block-partition **endpoints**
   (`(bp1|0) − (bp0|0)`) instead of the span, so touching regions tile with no dropped
@@ -77,8 +77,8 @@ non-finite range. Relevant to anyone driving SDK `Range` objects from UI code.
 
 ## Misc
 
-- `PresetDecoder.decode` guards against truncated input (`byteLength < 8` →
-  "Invalid preset header" error instead of a throw).
+- `PresetDecoder.insertEffectChain` guards against truncated input (`byteLength < 8` →
+  `Attempts.err("Invalid preset header")` instead of a throw).
 - `ysync/Reconcile` gains logic for reconciling collaborative edits (p2p path — not used
   by this repo).
 - Upstream repo additions not in the npm SDK: a new `packages/app/transient` playground,

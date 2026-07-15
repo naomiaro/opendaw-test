@@ -14,7 +14,8 @@ Documented bugs and open questions from working with the OpenDAW SDK. Each file 
   from a mounted component's React fiber. All three were used to close the seam and
   mode-swap investigations.
 - **Engine-scoped verification:** the seam and voice-fade repro pages accept `?engine=wasm`
-  to boot the WASM (Rust) engine (upstream fixes for #311/#312 are scoped to it). Their
+  to boot the WASM (Rust) engine (upstream scoped the #311/#312 fixes to it; #312 measured
+  fixed on both engines, #311 on WASM only). Their
   offline scan routes through `OfflineEngineRenderer` with `variant: true` in that mode —
   `OfflineAudioContext` + `createEngine` does NOT work with the WASM `EngineVariant` (the
   worklet never reports ready). The live WASM transport can take 20–30 s+ after `play()`

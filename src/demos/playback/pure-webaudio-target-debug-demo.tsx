@@ -193,6 +193,7 @@ function buildCrossfadedOutput(
 const App: React.FC = () => {
   const [status, setStatus] = useState("Loading...");
   const [engineActive, setEngineActive] = useState<"wasm" | "ts">("ts");
+  const [engineFellBack, setEngineFellBack] = useState(false);
   const [scenario, setScenario] = useState<Scenario>("aligned");
   const [isPlaying, setIsPlaying] = useState(false);
   const [positionSec, setPositionSec] = useState(0);
@@ -238,16 +239,18 @@ const App: React.FC = () => {
           installWasmEngine();
           setWasmEnabled(true);
         }
+        let wasmBooted = false;
         const { project: newProject, audioContext: newAudioContext } = await initializeOpenDAW({
           localAudioBuffers: localAudioBuffersRef.current,
           bpm: BPM,
           onStatusUpdate: setStatus,
           onBeforeEngineStart: wasmRequested
-            ? async (ctx) => { await ensureWasmReady(ctx); }
+            ? async (ctx) => { wasmBooted = await ensureWasmReady(ctx); }
             : undefined,
         });
         if (!mounted) return;
-        setEngineActive(wasmRequested && isWasmReady() ? "wasm" : "ts");
+        setEngineActive(wasmRequested && wasmBooted && isWasmReady() ? "wasm" : "ts");
+        setEngineFellBack(wasmRequested && !wasmBooted);
         audioContextRef.current = newAudioContext;
         setOpenDawProject(newProject);
 
@@ -634,6 +637,7 @@ const App: React.FC = () => {
       ];
       setGotByStep((prev) => ({ ...prev, [stepIndex]: rows }));
     } catch (error) {
+      console.error("scan failed:", error);
       setGotByStep((prev) => ({
         ...prev,
         [stepIndex]: [{ label: "error", value: String(error) }],
@@ -719,10 +723,10 @@ const App: React.FC = () => {
               target — sums to unity through the crossfade, no dip.{" "}
               <strong>Step 3 OPENDAW</strong> renders the same phase-corrected configuration as
               step 2 through OpenDAW's <Code>TapeDeviceProcessor</Code> on two Tape tracks (one
-              region per track, mixed at master). It should sound identical to step 2; it
-              doesn't — there's a residual dip on the incoming voice's side caused by{" "}
-              <Code>PitchVoice</Code> multiplying its 20 ms voice-fade-in by the region's
-              clip-fade gain buffer.
+              region per track, mixed at master). It should sound identical to step 2 — and
+              since SDK 0.0.159 it does. Pre-fix there was a residual dip on the incoming
+              voice's side caused by <Code>PitchVoice</Code> multiplying its 20 ms
+              voice-fade-in by the region's clip-fade gain buffer.
             </Callout.Text>
           </Callout.Root>
 
@@ -756,8 +760,13 @@ const App: React.FC = () => {
                       : "OPENDAW"}
                 </Badge>
               )}
-              <Badge color={engineActive === "wasm" ? "purple" : "gray"}>
-                Engine: {engineActive === "wasm" ? "WASM (Rust)" : "TypeScript"}
+              <Badge color={engineFellBack ? "red" : engineActive === "wasm" ? "purple" : "gray"}>
+                Engine:{" "}
+                {engineFellBack
+                  ? "WASM unavailable — using TypeScript"
+                  : engineActive === "wasm"
+                    ? "WASM (Rust)"
+                    : "TypeScript"}
               </Badge>
             </Flex>
           </Card>
@@ -835,12 +844,13 @@ const App: React.FC = () => {
               <>
                 Same phase-corrected configuration as step 2 (ALIGNED) but rendered through
                 OpenDAW's <Code>TapeDeviceProcessor</Code> on two Tape tracks.{" "}
-                <strong>It should sound identical to step 2 — no dip.</strong> It does not:
-                listen for a subtler dip on the incoming voice's side, ~10 ms <em>before</em>{" "}
-                the seam — smaller than UNALIGNED's obvious dip but clearly bigger than
-                ALIGNED's zero. Mechanism: <Code>PitchVoice</Code> multiplies its 20 ms
-                voice-fade-in by the region's clip-fade gain, turning the first 20 ms of a
-                linear fade-in into a quadratic ramp.
+                <strong>It should sound identical to step 2 — no dip.</strong> Since SDK
+                0.0.159 it does (scan ≈ −0.05 dB). Pre-fix it did not: a subtler dip on the
+                incoming voice's side, ~10 ms <em>before</em> the seam — smaller than
+                UNALIGNED's obvious dip but clearly bigger than ALIGNED's zero. Mechanism
+                was: <Code>PitchVoice</Code> multiplied its 20 ms voice-fade-in by the
+                region's clip-fade gain, turning the first 20 ms of a linear fade-in into a
+                quadratic ramp. The Expected column documents that pre-fix signature.
               </>
             }
             actions={

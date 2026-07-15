@@ -42,8 +42,9 @@ try {
 ```
 
 `Option.None` for the export configuration = 1 stereo master stem. NOTE: `variant` defaults
-to `variantPolicy()` — `WasmEngine.install` registers `useForExports()` as the policy, so an
-installed+enabled WASM engine makes `variant`-less renders default to WASM. See
+to `variantPolicy()` — `WasmEngine.install` registers `useForExports()` (= enabled && ready
+&& hasVariant) as the policy, so an installed+enabled+**ready** WASM engine makes
+`variant`-less renders default to WASM. See
 `src/lib/offlineScan.ts` for the dual-path (TS OfflineAudioContext / WASM renderer) example.
 
 Live WASM transport quirk (observed on the debug repro pages at 0.0.159): after

@@ -100,6 +100,7 @@ const App: React.FC = () => {
   const [seamPosition, setSeamPosition] = useState<SeamPosition>(INITIAL_SEAM_POSITION);
   const [isPlaying, setIsPlaying] = useState(false);
   const [engineActive, setEngineActive] = useState<"wasm" | "ts">("ts");
+  const [engineFellBack, setEngineFellBack] = useState(false);
   // Seam in seconds is BPM-derived (PPQN integer for both positions), not
   // SR-derived. The in-block offset for display IS SR-derived.
   const seamSeconds = SEAM_SECONDS_BY_POSITION[seamPosition];
@@ -136,16 +137,18 @@ const App: React.FC = () => {
           installWasmEngine();
           setWasmEnabled(true);
         }
+        let wasmBooted = false;
         const { project: newProject, audioContext: newAudioContext } = await initializeOpenDAW({
           localAudioBuffers: localAudioBuffersRef.current,
           bpm: BPM,
           onStatusUpdate: setStatus,
           onBeforeEngineStart: wasmRequested
-            ? async (ctx) => { await ensureWasmReady(ctx); }
+            ? async (ctx) => { wasmBooted = await ensureWasmReady(ctx); }
             : undefined,
         });
         if (!mounted) return;
-        setEngineActive(wasmRequested && isWasmReady() ? "wasm" : "ts");
+        setEngineActive(wasmRequested && wasmBooted && isWasmReady() ? "wasm" : "ts");
+        setEngineFellBack(wasmRequested && !wasmBooted);
         setProject(newProject);
         setAudioContext(newAudioContext);
 
@@ -412,6 +415,7 @@ const App: React.FC = () => {
       ];
       setGotByStep((prev) => ({ ...prev, [stepIndex]: rows }));
     } catch (error) {
+      console.error("scan failed:", error);
       setGotByStep((prev) => ({
         ...prev,
         [stepIndex]: [{ label: "error", value: String(error) }],
@@ -526,8 +530,9 @@ const App: React.FC = () => {
               <strong>Fixed in SDK 0.0.159 on the WASM (Rust) engine</strong> (openDAW#311
               closed upstream). Load this page with <Code>?engine=wasm</Code> to run it: all
               four cells scan at seam-Δ/pre-Δ = 1.00 (clean baseline). The default TypeScript
-              engine still measures ≈1.87× at 0.0.159 — the Expected column below documents
-              that residual TS-engine signature. This page is retained as a regression check.
+              engine still shows the artifact at 0.0.159, reduced to ≈1.87× (seam-band max |Δ|
+              ≈ 0.05374). The Expected columns below document the <em>pre-fix</em> signature
+              (≈1.99×). This page is retained as a regression check.
             </Callout.Text>
           </Callout.Root>
 
@@ -545,8 +550,13 @@ const App: React.FC = () => {
               <Badge color={seamPosition === "block-aligned" ? "green" : "amber"}>
                 Seam: {seamPosition === "block-aligned" ? "block-aligned" : "off-boundary"}
               </Badge>
-              <Badge color={engineActive === "wasm" ? "purple" : "gray"}>
-                Engine: {engineActive === "wasm" ? "WASM (Rust)" : "TypeScript"}
+              <Badge color={engineFellBack ? "red" : engineActive === "wasm" ? "purple" : "gray"}>
+                Engine:{" "}
+                {engineFellBack
+                  ? "WASM unavailable — using TypeScript"
+                  : engineActive === "wasm"
+                    ? "WASM (Rust)"
+                    : "TypeScript"}
               </Badge>
             </Flex>
           </Card>
