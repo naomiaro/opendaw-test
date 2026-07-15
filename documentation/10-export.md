@@ -864,7 +864,8 @@ try {
 sync over the engine port's `"engine-preferences"` channel. `EngineWorklet` hosts that sync
 (`worklet.preferences`); `OfflineEngineRenderer` never attaches the host side, so its
 processor keeps the schema defaults — **metronome permanently disabled, no API to change
-it**. Metronome renders must use the `OfflineAudioContext` approach below.
+it** ([openDAW#316](https://github.com/andremichelle/openDAW/issues/316) requests one).
+Metronome renders must use the `OfflineAudioContext` approach below.
 
 ### The OfflineAudioContext Approach (metronome renders)
 
