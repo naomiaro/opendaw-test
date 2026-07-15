@@ -23,6 +23,35 @@ served under `/wasm-engine` by the `wasm-engine-assets` (dev) / `wasm-engine-emi
 plugins — nothing binary is committed. `loadEngineModules` uses `fetch` + `WebAssembly.compile`,
 so no `Content-Type` is required.
 
+## Offline rendering with the WASM engine
+
+`OfflineAudioContext` + `AudioWorklets.createFor(ctx)` + `createEngine(...)` does NOT work
+with the WASM `EngineVariant` — after `ensureWasmReady(offlineCtx)` the created engine
+worklet never reports ready (execution stalls, no error). The supported offline path is
+`OfflineEngineRenderer` from `@opendaw/studio-core` with `variant: true`, which runs the
+WASM offline **worker** registered by `WasmEngine.install`'s `offlineWorkerUrl`:
+
+```typescript
+const renderer = await OfflineEngineRenderer.create(project, Option.None, sampleRate, true);
+try {
+  renderer.setPosition(startPPQN);
+  await renderer.play();            // starts transport + one queryLoadingComplete
+  await renderer.waitForLoading();  // loops until samples are loaded
+  const channels = await renderer.step(numSamples); // Float32Array[] slice
+} finally { renderer.stop(); renderer.terminate(); }
+```
+
+`Option.None` for the export configuration = 1 stereo master stem. NOTE: `variant` defaults
+to `variantPolicy()` — `WasmEngine.install` registers `useForExports()` (= enabled && ready
+&& hasVariant) as the policy, so an installed+enabled+**ready** WASM engine makes
+`variant`-less renders default to WASM. See
+`src/lib/offlineScan.ts` for the dual-path (TS OfflineAudioContext / WASM renderer) example.
+
+Live WASM transport quirk (observed on the debug repro pages at 0.0.159): after
+`engine.play()` the position can take 20–30 s+ to start advancing (occasionally not at all
+until a re-play) while `isPlaying` flips true immediately. Offline renders don't depend on
+the live transport — prefer them for measurements.
+
 ## Live engine swap (no reload)
 
 `project.engine` is a persistent `EngineFacade` that outlives worklets. Swap engines with

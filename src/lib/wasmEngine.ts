@@ -26,6 +26,18 @@ export function ensureWasmReady(ctx: BaseAudioContext): Promise<boolean> {
   return WasmEngine.ensureReady(ctx);
 }
 
+export function isWasmInstalled(): boolean { return installed; }
+
+/**
+ * True when the page was loaded with `?engine=wasm`. The debug/repro pages use this
+ * to opt into the WASM (Rust) engine for re-verifying upstream fixes that upstream
+ * scoped to it (openDAW#311/#312 were closed with "make sure to run the wasm audio
+ * engine"; #312 measured fixed on both engines, #311 on WASM only).
+ */
+export function wasmRequestedByUrl(): boolean {
+  return new URLSearchParams(window.location.search).get("engine") === "wasm";
+}
+
 export function setWasmEnabled(enabled: boolean): void { WasmEngine.setEnabled(enabled); }
 export function isWasmEnabled(): boolean { return WasmEngine.isEnabled(); }
 export function isWasmReady(): boolean { return WasmEngine.isReady(); }
