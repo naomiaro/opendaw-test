@@ -1,6 +1,6 @@
 # `WasmEngine.ensureReady` registers the processor only on the first context
 
-**Upstream issue:** (to be filed — see PR that adds this note)
+**Upstream issue:** [andremichelle/openDAW#315](https://github.com/andremichelle/openDAW/issues/315) (filed 2026-07-15).
 
 **Verified against:** OpenDAW SDK 0.0.159 (`@opendaw/studio-core-wasm@0.0.4`), 2026-07-15.
 
