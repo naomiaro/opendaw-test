@@ -30,10 +30,12 @@ const LOADING_TIMEOUT_MS = 30_000;
  * renderers select the same export branch — undefined config takes the mixdown
  * path (metronome included). See documentation/10-export.md.
  *
- * NOTE: this combination does not work with the WASM EngineVariant (the offline
- * worklet never reports ready — observed at SDK 0.0.159). None of the export
- * callers install the WASM engine, so this path always renders on the TS engine;
- * if that changes, switch to OfflineEngineRenderer like offlineScan.ts does.
+ * NOTE: this combination breaks once any WASM engine has booted on another context:
+ * WasmEngine.ensureReady registers the processor module only on the first context it
+ * ever sees, so createEngine on a later OfflineAudioContext throws InvalidStateError
+ * (see debug/wasm-ensure-ready-second-context.md). None of the export callers install
+ * the WASM engine, so this path always renders on the TS engine; if that changes,
+ * switch to OfflineEngineRenderer like offlineScan.ts does.
  *
  * @param exportConfiguration - undefined = mixdown path (includes metronome),
  *   Record<uuid, ExportStemConfiguration> = stem path (excludes metronome).
