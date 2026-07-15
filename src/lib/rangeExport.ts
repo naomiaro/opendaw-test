@@ -23,8 +23,9 @@ interface RangeExportOptions {
 const LOADING_TIMEOUT_MS = 30_000;
 // Offline renders run faster than realtime but are still real compute (the Dark Ride
 // full song is ~235 s of audio). This ceiling only exists so a wedged worker fails
-// loudly instead of hanging the export forever.
-const RENDER_TIMEOUT_MS = 120_000;
+// loudly instead of hanging the export forever — sized generously (~realtime+) so a
+// legitimate full-song render on a slow machine never false-trips it.
+const RENDER_TIMEOUT_MS = 300_000;
 
 /**
  * Core render function.
