@@ -364,6 +364,11 @@ const App: React.FC = () => {
               href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/wasm-ensure-ready-second-context.md",
               kind: "note",
             },
+            {
+              label: "Upstream issue: openDAW#315",
+              href: "https://github.com/andremichelle/openDAW/issues/315",
+              kind: "note",
+            },
           ]}
         />
 
