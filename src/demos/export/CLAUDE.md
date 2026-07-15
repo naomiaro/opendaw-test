@@ -1,9 +1,47 @@
 # Export Demo — OpenDAW SDK Reference
 
+### Which Offline Render Path to Use (decision table)
+`src/lib/rangeExport.ts` renders on two paths; pick by ONE question — does the render
+need the metronome?
+
+| Need | Path | Why |
+|---|---|---|
+| Exact-range mixdown/stems, no metronome | `OfflineEngineRenderer` `create → setPosition → play → waitForLoading → step(numSamples)` with `variant: false` | Current API, worker-based, exact frame count |
+| Anything with the metronome | `OfflineAudioContext` + `AudioWorklets.createFor` + `createEngine` (EngineWorklet) | The ONLY path that reaches engine preferences |
+
+Key facts behind the split (verified SDK 0.0.159):
+- **Metronome enable/gain are engine PREFERENCES**, synced over the engine port's
+  `"engine-preferences"` channel. `EngineWorklet` hosts the sync (`worklet.preferences`);
+  `OfflineEngineRenderer` never attaches the host side — its processor keeps
+  `EngineSettingsSchema` defaults (metronome disabled) with NO way to change them.
+- **`renderer.render(config, start, end, progress)` does NOT stop at `end`** — the worker
+  loop runs until silence detection or `config.maxDurationSeconds`; `endPosition` only
+  drives the progress observable. For exact ranges always use `step(numSamples)`.
+- **`step(numSamples)` returns exactly numSamples frames** per channel
+  (`numChannels = countStems × 2`), assembled from 128-frame quanta. Validate
+  `channels.length` and `channels[0].length` anyway — a wedged worker returns garbage.
+- **Pass `variant: false` explicitly** — `variant` defaults to
+  `WasmEngine.useForExports()` (enabled && ready && hasVariant), so an installed+booted
+  WASM engine silently flips variant-less renders to the WASM worker.
+- **Pass a `project.copy()`, never the live project** — `create()` connects the source's
+  `liveStreamReceiver` (throws "Already connected" against a live engine). The copy also
+  isolates loopArea/mute mutations.
+- **`play()` + `waitForLoading()` poll with no ceiling** — wrap them (and `step`) in a
+  deadline (`src/lib/deadline.ts` `withDeadline`) or a wedged worker hangs the export
+  forever with no error.
+- **Do NOT use the deprecated `AudioOfflineRenderer`** — beyond deprecation it throws
+  `InvalidStateError` once any WASM engine booted (openDAW#315, ensureReady registers the
+  processor module only on the first context).
+- Both paths verified to produce the SAME program material and identical frame counts
+  (A/B: byte-identical WAV sizes; spectral bands ~same; metronome render differs by
+  exactly the click content: +4.2 dB peak, +3.5 dB low-mid, tempo detector locks to
+  project BPM from the clicks).
+
 ### Offline Audio Rendering (Export)
 With `Option.None`, `ExportConfiguration.countStems(config)` returns 1 (not 0), so the
 mixdown branch is selected (`stemExports.length === 0` inside the engine processor) and
-the metronome is included. Provide a non-empty `ExportConfiguration.stems` map to take
+the metronome bus is mixed in — when enabled, which on `OfflineEngineRenderer` it never
+is (see above). Provide a non-empty `ExportConfiguration.stems` map to take
 the stem branch (metronome excluded).
 
 **Higher-level shortcuts** (when you don't need step-by-step control):
@@ -18,10 +56,10 @@ the stem branch (metronome excluded).
   `setPosition`, `waitForLoading`, etc.) and `.render(config, start, end, progress, abortSignal?)`
   for arbitrary ranges (config is `OfflineEngineRenderConfig`, not `ExportConfiguration`).
 
-Pass a copy (not the live project) — both wrappers create an `OfflineAudioContext`
-that conflicts with the live `liveStreamReceiver`.
+Pass a copy (not the live project) — both wrappers connect the source's
+`liveStreamReceiver`, which conflicts with a live engine.
 
-**Manual approach (full control over the pipeline):**
+**Manual approach (metronome renders — the one thing only this path can do):**
 ```typescript
 const projectCopy = project.copy();
 projectCopy.boxGraph.beginTransaction();

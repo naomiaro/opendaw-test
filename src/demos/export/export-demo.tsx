@@ -402,9 +402,10 @@ const App: React.FC = () => {
               Render any bar range of Dark Ride&apos;s &lsquo;Deny Control&rsquo; offline to
               32-bit float WAV &mdash; the full mix as one stereo file, clean stems one per
               track, or a metronome-only click. Each export runs on a throwaway copy of the
-              project through an <code>OfflineAudioContext</code>, so the live transport keeps
-              playing while the renderer works ahead of real time. Preview the result in the
-              browser, then download.
+              project through <code>OfflineEngineRenderer</code> (a dedicated worker) &mdash;
+              or the manual <code>OfflineAudioContext</code> worklet when the metronome is
+              enabled &mdash; so the live transport keeps playing while the renderer works
+              ahead of real time. Preview the result in the browser, then download.
             </p>
           </div>
 
@@ -673,26 +674,44 @@ const App: React.FC = () => {
                 <p>
                   Each export renders on a <code>project.copy()</code> &mdash; a throwaway clone
                   that shares the sample manager (samples stay loaded) but not the live{" "}
-                  <code>liveStreamReceiver</code>, so the renderer&apos;s{" "}
-                  <code>OfflineAudioContext</code> never collides with playback. The mixdown
-                  path (no <code>exportConfiguration</code>) mixes every unit plus the metronome;
-                  the stem path passes a per-unit config and writes one stereo pair per track,
-                  metronome excluded. Stems route through the channel strip
+                  <code>liveStreamReceiver</code>, so the offline renderer never collides with
+                  playback. The mixdown path (no <code>exportConfiguration</code>) mixes every
+                  unit; the stem path passes a per-unit config and writes one stereo pair per
+                  track, metronome excluded. Stems route through the channel strip
                   (<code>useInstrumentOutput: false</code>) so effects, aux sends, and the
-                  strip&apos;s volume/pan all reach the render.
+                  strip&apos;s volume/pan all reach the render. Metronome-enabled renders take
+                  the manual worklet path &mdash; the metronome flag is an engine{" "}
+                  <em>preference</em>, reachable only through{" "}
+                  <code>EngineWorklet.preferences</code>; <code>OfflineEngineRenderer</code>{" "}
+                  exposes no preferences surface.
                 </p>
 
                 <Text size="2" weight="bold" style={{ display: "block", marginTop: 16 }}>
-                  Offline render (manual worklet path):
+                  Offline render (current API — exact range via step):
                 </Text>
                 <Code size="2" style={CODE_BLOCK_STYLE}>
                   {`const copy = project.copy();
-const context = new OfflineAudioContext(numChannels, numSamples, sampleRate);
+const renderer = await OfflineEngineRenderer.create(
+  copy,
+  stems ? Option.wrap({ stems }) : Option.None, // undefined config = mixdown branch
+  sampleRate,
+  false, // pin the TS worker (variant defaults to WasmEngine.useForExports())
+);
+renderer.setPosition(startPpqn);
+await renderer.play();           // transport + first queryLoadingComplete
+await renderer.waitForLoading(); // bound with a deadline — polls forever otherwise
+// render(config, start, end, …) runs to SILENCE, not to end — step() is exact:
+const channels = await renderer.step(numSamples);
+renderer.stop(); renderer.terminate(); copy.terminate();`}
+                </Code>
+
+                <Text size="2" weight="bold" style={{ display: "block", marginTop: 16 }}>
+                  Metronome render (manual worklet path):
+                </Text>
+                <Code size="2" style={CODE_BLOCK_STYLE}>
+                  {`const context = new OfflineAudioContext(numChannels, numSamples, sampleRate);
 const worklets = await AudioWorklets.createFor(context);
-const engine = worklets.createEngine({
-  project: copy,
-  exportConfiguration, // undefined = mixdown (metronome in); config = stems
-});
+const engine = worklets.createEngine({ project: copy, exportConfiguration });
 // Engine worklet has 2 outputs — connect output 0 only.
 engine.connect(context.destination, 0);
 engine.preferences.settings.metronome.enabled = true; // doesn't travel with copy()

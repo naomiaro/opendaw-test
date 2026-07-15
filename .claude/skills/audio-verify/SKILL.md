@@ -69,6 +69,17 @@ rigid-vs-fileRigid —/33, rigid-vs-clicks —/153. ("—" = [60,80] not yet
 measured for that scenario; the [120,140] margins suggest similar values, but
 the first run that fills those cells should not be surprised by small drift.)
 
+Re-measured 2026-07-15 at SDK 0.0.159 (same windows): raw-vs-file 30/40,
+raw-vs-grid 174/118, varispeed 33/32, timestretch 43/**68**, conform 30/35,
+rigid-vs-fileRigid —/33, rigid-vs-clicks —/153; pitch ordering 0.983 > 0.953.
+**timestretch [120,140] measures ~68 ms at 0.0.159** — over the nominal 60 ms
+line. This is NOT a harness/render-path artifact: renders from the legacy
+OfflineAudioContext path and the OfflineEngineRenderer path are byte-identical
+(same SHA-256), so the drift comes from the SDK's 0.0.159 Tape/PitchVoice
+changes shifting onset content at that window. Treat timestretch [120,140]
+medians up to ~70 ms as the current expected value; the [60,80] window remains
+the discriminating ≤60 ms assertion.
+
 **Pitch (relative check):** `harmonic_analysis` pitch-class distributions on
 [120, 140] s; Pearson-correlate each against raw's. Require
 `corr(raw, timestretch) > corr(raw, varispeed)` — timestretch preserves pitch,

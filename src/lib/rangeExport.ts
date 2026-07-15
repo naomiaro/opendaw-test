@@ -1,9 +1,10 @@
-import { Project, AudioWorklets } from "@opendaw/studio-core";
+import { Project, AudioWorklets, OfflineEngineRenderer } from "@opendaw/studio-core";
 import { WavFile, ppqn } from "@opendaw/lib-dsp";
-import { UUID, TimeSpan } from "@opendaw/lib-std";
+import { UUID, TimeSpan, Option } from "@opendaw/lib-std";
 import { Wait } from "@opendaw/lib-runtime";
 import type { ExportStemConfiguration } from "@opendaw/studio-adapters";
 import type { TrackData } from "./types";
+import { withDeadline } from "./deadline";
 
 export interface ExportResult {
   label: string;
@@ -20,29 +21,47 @@ interface RangeExportOptions {
 }
 
 const LOADING_TIMEOUT_MS = 30_000;
+// Offline renders run faster than realtime but are still real compute (the Dark Ride
+// full song is ~235 s of audio). This ceiling only exists so a wedged worker fails
+// loudly instead of hanging the export forever.
+const RENDER_TIMEOUT_MS = 120_000;
 
 /**
- * Core render function using OfflineAudioContext.
+ * Core render function.
  *
- * Uses project.copy() + OfflineAudioContext + AudioWorklets.createEngine()
- * for all export modes. This avoids OfflineEngineRenderer, which connects the
- * source project's liveStreamReceiver (throws against a live engine). Both
- * renderers select the same export branch — undefined config takes the mixdown
- * path (metronome included). See documentation/10-export.md.
+ * Renders a project copy for an exact PPQN range on one of two paths:
  *
- * NOTE: this combination breaks once any WASM engine has booted on another context:
- * WasmEngine.ensureReady registers the processor module only on the first context it
- * ever sees, so createEngine on a later OfflineAudioContext throws InvalidStateError
- * (see debug/wasm-ensure-ready-second-context.md). None of the export callers install
- * the WASM engine, so this path always renders on the TS engine; if that changes,
- * switch to OfflineEngineRenderer like offlineScan.ts does.
+ * - **No metronome** (default): `OfflineEngineRenderer` (the current, non-deprecated
+ *   offline API) with `variant: false` — a dedicated Worker, no OfflineAudioContext.
+ *   Uses `create → setPosition → play → waitForLoading → step(numSamples)` for an
+ *   exact frame count. `renderer.render(config, start, end, …)` is NOT used for
+ *   range exports: its worker loop stops on silence detection / maxDurationSeconds,
+ *   not at endPosition (end only drives the progress bar), so it would render past
+ *   the range while content continues.
  *
- * @param exportConfiguration - undefined = mixdown path (includes metronome),
- *   Record<uuid, ExportStemConfiguration> = stem path (excludes metronome).
+ * - **Metronome enabled**: the legacy OfflineAudioContext + `createEngine` path.
+ *   The engine's metronome flag/gain live in engine PREFERENCES, which sync over the
+ *   port's "engine-preferences" channel; `EngineWorklet` hosts that sync
+ *   (`worklet.preferences`), but `OfflineEngineRenderer` never attaches the host side,
+ *   so its processor keeps the schema defaults (metronome disabled) with no way to
+ *   change them. Until upstream exposes preferences on the offline renderer, metronome
+ *   renders must stay on the worklet path. (This path breaks if a WASM engine booted
+ *   on another context first — WasmEngine.ensureReady registers the processor module
+ *   only on the first context, see debug/wasm-ensure-ready-second-context.md. No
+ *   export caller installs the WASM engine.)
+ *
+ * Both paths select the same engine export branch — undefined config takes the
+ * mixdown branch (metronome bus mixed in when enabled), a stems config takes the
+ * stem branch (metronome excluded). See documentation/10-export.md. Verified
+ * equivalent 2026-07-15: full-song timestretch renders from both paths are
+ * byte-identical (same SHA-256).
+ *
+ * @param exportConfiguration - undefined = mixdown path,
+ *   Record<uuid, ExportStemConfiguration> = stem path.
  *   When provided, returned channels are interleaved: [stem1_L, stem1_R, stem2_L, ...].
- * @param prepareCopy - optional callback to mutate the project copy before rendering
- *   (e.g., muting tracks). Applied to the copy, never the live project.
- * @param metronomeEnabled - set on the worklet's preferences before rendering
+ * @param mutateBeforeCopy/restoreAfterCopy - mutate the LIVE project (e.g. mutes),
+ *   copy synchronously, restore — the copy captures the mutated state.
+ * @param metronomeEnabled - selects the worklet path and enables the metronome there
  * @param metronomeGain - dB value for metronome gain (max 0)
  */
 async function renderRange(
@@ -85,42 +104,110 @@ async function renderRange(
       projectCopy.timelineBox.loopArea.enabled.setValue(false);
     });
 
-    const context = new OfflineAudioContext(numChannels, numSamples, sampleRate);
-    const worklets = await AudioWorklets.createFor(context);
-    const engineWorklet = worklets.createEngine({
-      project: projectCopy,
-      exportConfiguration: exportConfiguration ? { stems: exportConfiguration } : undefined,
-    });
-    engineWorklet.connect(context.destination, 0);
-
-    // Engine preferences don't travel with project.copy() — set on worklet directly
-    engineWorklet.preferences.settings.metronome.enabled = metronomeEnabled;
-    engineWorklet.preferences.settings.metronome.gain = metronomeGain;
-
-    engineWorklet.setPosition(startPpqn);
-    await engineWorklet.isReady();
-    engineWorklet.play();
-
-    const startTime = Date.now();
-    while (!(await engineWorklet.queryLoadingComplete())) {
-      if (Date.now() - startTime > LOADING_TIMEOUT_MS) {
-        throw new Error(
-          `Sample loading timed out after ${LOADING_TIMEOUT_MS / 1000}s`
+    return metronomeEnabled
+      ? await renderViaEngineWorklet(
+          projectCopy, startPpqn, numSamples, numChannels, sampleRate,
+          exportConfiguration, metronomeGain
+        )
+      : await renderViaOfflineEngineRenderer(
+          projectCopy, startPpqn, numSamples, numChannels, sampleRate,
+          exportConfiguration
         );
-      }
-      await Wait.timeSpan(TimeSpan.millis(100));
-    }
-
-    const audioBuffer = await context.startRendering();
-
-    const channels: Float32Array[] = [];
-    for (let i = 0; i < audioBuffer.numberOfChannels; i++) {
-      channels.push(audioBuffer.getChannelData(i));
-    }
-    return channels;
   } finally {
     projectCopy.terminate();
   }
+}
+
+/** Current offline path — OfflineEngineRenderer worker, exact frame count via step(). */
+async function renderViaOfflineEngineRenderer(
+  projectCopy: Project,
+  startPpqn: ppqn,
+  numSamples: number,
+  numChannels: number,
+  sampleRate: number,
+  exportConfiguration?: Record<string, ExportStemConfiguration>
+): Promise<Float32Array[]> {
+  const renderer = await OfflineEngineRenderer.create(
+    projectCopy,
+    exportConfiguration ? Option.wrap({ stems: exportConfiguration }) : Option.None,
+    sampleRate,
+    // Pin the TS offline worker. `variant` defaults to WasmEngine.useForExports(),
+    // which flips to the WASM worker once any page installs+boots the WASM engine.
+    false
+  );
+  try {
+    renderer.setPosition(startPpqn);
+    await withDeadline(
+      (async () => {
+        await renderer.play(); // starts transport + one queryLoadingComplete round-trip
+        await renderer.waitForLoading();
+      })(),
+      LOADING_TIMEOUT_MS,
+      "Offline render: sample loading"
+    );
+    const channels = await withDeadline(
+      renderer.step(numSamples),
+      RENDER_TIMEOUT_MS,
+      "Offline render: step"
+    );
+    if (channels.length !== numChannels || channels[0]?.length !== numSamples) {
+      throw new Error(
+        `Offline render returned ${channels.length} channel(s) of ` +
+          `${channels[0]?.length ?? 0} frames, expected ${numChannels}×${numSamples}`
+      );
+    }
+    return channels;
+  } finally {
+    // Cleanup must not mask an in-flight error or skip terminate().
+    try { renderer.stop(); } catch (e) { console.error("renderer.stop() failed: " + String(e)); }
+    try { renderer.terminate(); } catch (e) { console.error("renderer.terminate() failed: " + String(e)); }
+  }
+}
+
+/** Legacy path — kept ONLY because engine preferences (metronome) are unreachable
+ *  through OfflineEngineRenderer; EngineWorklet hosts the preferences sync. */
+async function renderViaEngineWorklet(
+  projectCopy: Project,
+  startPpqn: ppqn,
+  numSamples: number,
+  numChannels: number,
+  sampleRate: number,
+  exportConfiguration: Record<string, ExportStemConfiguration> | undefined,
+  metronomeGain: number
+): Promise<Float32Array[]> {
+  const context = new OfflineAudioContext(numChannels, numSamples, sampleRate);
+  const worklets = await AudioWorklets.createFor(context);
+  const engineWorklet = worklets.createEngine({
+    project: projectCopy,
+    exportConfiguration: exportConfiguration ? { stems: exportConfiguration } : undefined,
+  });
+  engineWorklet.connect(context.destination, 0);
+
+  // Engine preferences don't travel with project.copy() — set on worklet directly
+  engineWorklet.preferences.settings.metronome.enabled = true;
+  engineWorklet.preferences.settings.metronome.gain = metronomeGain;
+
+  engineWorklet.setPosition(startPpqn);
+  await engineWorklet.isReady();
+  engineWorklet.play();
+
+  const startTime = Date.now();
+  while (!(await engineWorklet.queryLoadingComplete())) {
+    if (Date.now() - startTime > LOADING_TIMEOUT_MS) {
+      throw new Error(
+        `Sample loading timed out after ${LOADING_TIMEOUT_MS / 1000}s`
+      );
+    }
+    await Wait.timeSpan(TimeSpan.millis(100));
+  }
+
+  const audioBuffer = await context.startRendering();
+
+  const channels: Float32Array[] = [];
+  for (let i = 0; i < audioBuffer.numberOfChannels; i++) {
+    channels.push(audioBuffer.getChannelData(i));
+  }
+  return channels;
 }
 
 /**
