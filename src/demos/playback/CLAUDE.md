@@ -105,15 +105,19 @@ Fades: use `.fading.in` / `.fading.out`. For automation values at a position, us
 `ValueRegionBoxAdapter.valueAt(position, fallback)`.
 
 ### Audio Play Modes (Time & Pitch)
-`AudioRegionBox.playMode` is `Option<AudioPlayMode>` → either `AudioPitchStretchBox`
-(varispeed — warp markers only, pitch follows tempo) or `AudioTimeStretchBox`
+`AudioRegionBox.playMode` is `Option<AudioPlayMode>` → `AudioPitchStretchBox`
+(varispeed — warp markers only, pitch follows tempo), `AudioTimeStretchBox`
 (transient-aware + independent pitch via `cents`, clamped ±1200 by
 `AudioTimeStretchBoxAdapter.cents` only — the underlying `playbackRate` field has
-`"positive"` constraint and accepts any value). Empty pointer = NoStretch
-(default, plays at source speed). Adapter accessors: `isPlayModeNoStretch`,
-`asPlayModePitchStretch`, `asPlayModeTimeStretch`, `optWarpMarkers`,
-`observableOptPlayMode`. Names are counterintuitive — PitchStretch is the *simple*
-mode; TimeStretch is the sophisticated one. See `documentation/18-time-and-pitch.md`.
+`"positive"` constraint and accepts any value), or `AudioSignalsmithBox` (SDK 0.0.159+:
+Signalsmith phase-vocoder spectral stretch — warp markers + `transpose` float field
+±24 st, no transient markers needed; adapter exposes `transpose`/`cents`). Empty
+pointer = NoStretch (default, plays at source speed). Adapter accessors:
+`isPlayModeNoStretch`, `asPlayModePitchStretch`, `asPlayModeTimeStretch`,
+`asPlayModeSignalsmith`, `optWarpMarkers`, `observableOptPlayMode`. Names are
+counterintuitive — PitchStretch is the *simple* mode; TimeStretch is the
+sophisticated one. Mode-swap helpers: `AudioContentModifier.toPitchStretch` /
+`toTimeStretch` / `toSignalsmith`. See `documentation/18-time-and-pitch.md`.
 
 ### AudioTimeStretchBox Is Transient-Segmented Even at rate=1.0
 `AudioTimeStretchBox` processes audio in transient-bounded segments regardless of
@@ -277,6 +281,21 @@ consecutive regions are smooth.
 
 Multi-track volume automation crossfades (`comp-lanes-demo.tsx`) remain a valid alternative
 technique for complex comp workflows.
+
+### Seam/Crossfade Artifact Status (openDAW#311 / #312, SDK 0.0.159)
+Both upstream issues this repo filed are closed as of 0.0.159 ("Fixed in SDK 0.0.159.
+Make sure to run the wasm audio engine"):
+- **#312 (voice-fade × clip-fade product)** — fixed on BOTH engines. `PitchVoice.process`
+  combines its 20 ms declick fade with the region clip-fade by `Math.min` instead of by
+  product. Authored linear crossfades between distinct sources now sum to −0.05 dB of the
+  pure-Web-Audio target (was −1.21 dB). Regression page: `pure-webaudio-target-debug-demo.html`.
+- **#311 (touching-seam discontinuity)** — fixed on the WASM engine ONLY (all 4 cells scan
+  at seam-Δ/pre-Δ = 1.00 with `?engine=wasm`); the default TS engine still measures ≈1.87×
+  at 0.0.159. Touching same-track regions remain clicky on the TS engine — keep the
+  volume-automation-crossfade workaround there. Regression page:
+  `shared-source-double-process-debug-demo.html`.
+Both repro pages accept `?engine=wasm` (boots the WASM engine and routes the offline scan
+through `OfflineEngineRenderer` `variant: true` — see `src/lib/offlineScan.ts`).
 
 ### Fade-In on Newly Created Regions May Not Apply
 Setting `adapter.fading.inField.setValue()` on regions created by `RegionEditing.cut()`

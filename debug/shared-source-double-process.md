@@ -1,8 +1,15 @@
 # Sample-level discontinuity at touching region seams
 
-**Upstream issue:** [andremichelle/openDAW#311](https://github.com/andremichelle/openDAW/issues/311) (filed 2026-07-14).
+**Upstream issue:** [andremichelle/openDAW#311](https://github.com/andremichelle/openDAW/issues/311) (filed 2026-07-14; **closed 2026-07-15** — "Fixed in SDK 0.0.159. Make sure to run the wasm audio engine").
 
-**Verified against:** OpenDAW SDK 0.0.158 (`@opendaw/studio-sdk@0.0.158`, `@opendaw/studio-core@0.0.156`); re-verified 2026-07-14 via the repro page's offline scan — seam-Δ/pre-Δ = 2.00 (max |Δ| 0.05745 at τ −0.042 ms), SHARED and DISTINCT cells identical, unchanged from 0.0.147. The addendum's suggested fixes are not in the 0.0.158 diff. First verified at SDK 0.0.147.
+**Status at SDK 0.0.159 (re-verified 2026-07-15): FIXED on the WASM (Rust) engine; still present on the TypeScript engine.**
+
+- **WASM engine** (repro page with `?engine=wasm`, offline scan via `OfflineEngineRenderer` variant worker): all four cells (SHARED/DISTINCT × block-aligned/off-boundary) measure seam-band max |Δ| = 0.02878 = the clean-sine baseline, **seam-Δ/pre-Δ = 1.00**, largest jump at a benign zero-crossing (τ +3.375 ms), not the 2-samples-before-seam artifact position.
+- **TypeScript engine** (default, no URL param): seam-band max |Δ| = 0.05374, **seam-Δ/pre-Δ = 1.87** at τ −0.042 ms — improved from 2.00/0.05745 at 0.0.158 (the 0.0.159 TS diff floors the block-partition endpoints per #311a, removing the dropped sample) but the ~2× discontinuity signature remains audible on the TS path.
+
+The repro page is retained as a regression check; run it with `?engine=wasm` for the fixed path and without for the TS-path residual.
+
+**Verified against (previous):** OpenDAW SDK 0.0.158 (`@opendaw/studio-sdk@0.0.158`, `@opendaw/studio-core@0.0.156`); re-verified 2026-07-14 via the repro page's offline scan — seam-Δ/pre-Δ = 2.00 (max |Δ| 0.05745 at τ −0.042 ms), SHARED and DISTINCT cells identical, unchanged from 0.0.147. First verified at SDK 0.0.147.
 
 **Repro page:** [`shared-source-double-process-debug-demo.html`](../shared-source-double-process-debug-demo.html) (unlisted; filename preserved for history, but the artifact is NOT shared-source-specific and NOT block-alignment-specific — see "Mechanism" below). Audio fixture: [`public/audio/test-440hz.wav`](../public/audio/test-440hz.wav) (60 s, 440 Hz sine, mono, 44.1 kHz, 16-bit).
 

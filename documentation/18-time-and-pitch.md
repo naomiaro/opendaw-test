@@ -24,7 +24,7 @@
 
 ---
 
-## The Three Audio Play Modes
+## The Four Audio Play Modes
 
 Every `AudioRegionBox` (and `AudioClipBox`) has an optional `playMode` pointer field that selects how the engine interprets the audio file relative to the timeline:
 
@@ -32,7 +32,8 @@ Every `AudioRegionBox` (and `AudioClipBox`) has an optional `playMode` pointer f
 |-----------|--------------|----------|--------------|---------|
 | **NoStretch** | none (`playMode` is empty) | Seconds | Both fixed at source | Default — plays the file at original speed and pitch |
 | **PitchStretch** | `AudioPitchStretchBox` | Musical (PPQN) | Coupled (varispeed) | Tape-style time warps where pitch follows tempo |
-| **TimeStretch** | `AudioTimeStretchBox` | Musical (PPQN) | Decoupled | Musical time-stretching with independent pitch (±1 octave) |
+| **TimeStretch** | `AudioTimeStretchBox` | Musical (PPQN) | Decoupled | Musical time-stretching with independent pitch (±1 octave), transient-segment playback |
+| **Signalsmith** | `AudioSignalsmithBox` | Musical (PPQN) | Decoupled | Spectral time-stretch (Signalsmith phase vocoder) with independent pitch (±24 st) — no transient markers needed |
 
 The play-mode pointer is mandatory-not-mandatory: it's a `pointer` with `mandatory: false`. Leaving it empty *is* a mode — the default — not an error state.
 
@@ -57,7 +58,7 @@ Need audio to sync to BPM changes?
 
 ### Box-Graph Shape
 
-The three modes are all built from the same set of boxes; what differs is which box is wired into `region.playMode` and how many markers exist on each side.
+The modes are all built from the same set of boxes; what differs is which box is wired into `region.playMode` and how many markers exist on each side. `AudioSignalsmithBox` has the same shape as `AudioPitchStretchBox` (warp markers, no transient play-modes) plus a `transpose` float field (−24 to +24 semitones) that drives the phase vocoder's spectral pitch shift.
 
 ```mermaid
 graph LR
@@ -110,9 +111,16 @@ region.asPlayModeTimeStretch.ifSome(adapter => {
   const markers = adapter.warpMarkers.asArray();
 });
 
+region.asPlayModeSignalsmith.ifSome(adapter => {
+  // adapter: AudioSignalsmithBoxAdapter
+  const st = adapter.transpose;                // -24..+24 semitones (box field)
+  const cents = adapter.cents;                 // transpose expressed in cents
+  const markers = adapter.warpMarkers.asArray();
+});
+
 // Mode-agnostic warp markers (Option<EventCollection<WarpMarkerBoxAdapter>>):
 region.optWarpMarkers.ifSome(markers => {
-  // Works for both PitchStretch and TimeStretch.
+  // Works for PitchStretch, TimeStretch, and Signalsmith.
 });
 
 // React to mode changes:
@@ -511,7 +519,7 @@ project.editing.modify(() => {
 });
 ```
 
-**One transaction is fine — order matters.** Mode flips work in a single `editing.modify()` if you follow the SDK's own ordering (used by `AudioContentModifier.toPitchStretch` / `toTimeStretch` in `@opendaw/studio-core`):
+**One transaction is fine — order matters.** Mode flips work in a single `editing.modify()` if you follow the SDK's own ordering (used by `AudioContentModifier.toPitchStretch` / `toTimeStretch` / `toSignalsmith` in `@opendaw/studio-core` — all three now share an `adoptWarpMarkers` helper that re-owns or clones the old mode's markers):
 
 1. Create the new stretch box.
 2. `region.playMode.refer(newBox)` — `refer` replaces the existing target cleanly; **no `defer()` first**.
@@ -619,7 +627,7 @@ One transaction = one undo entry, and the engine never sees an intermediate stat
 
 ## Cross-References
 
-- **Ch. 02** — Tempo automation. Tempo changes interact with all three play modes: NoStretch ignores them (audio plays in real time), PitchStretch and TimeStretch follow the tempo because their durations are stored in PPQN.
+- **Ch. 02** — Tempo automation. Tempo changes interact with all play modes: NoStretch ignores them (audio plays in real time); PitchStretch, TimeStretch, and Signalsmith follow the tempo because their durations are stored in PPQN.
 - **Ch. 05** — `loopOffset` / `loopDuration` semantics; both are interpreted as PPQN when a play-mode is attached (Musical timebase), or as seconds in NoStretch.
 - **Ch. 09** — Region editing and fades. `loopOffset` is region-local in both timebases, but the underlying file-position math differs: NoStretch uses `waveformOffset` directly; PitchStretch / TimeStretch use the warp-marker mapping.
 - **Ch. 16** — MIDI note pitch and the MIDI Pitch effect.

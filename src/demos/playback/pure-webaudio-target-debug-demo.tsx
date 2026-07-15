@@ -10,6 +10,13 @@ import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
 import { initializeOpenDAW } from "@/lib/projectSetup";
+import {
+  ensureWasmReady,
+  installWasmEngine,
+  isWasmReady,
+  setWasmEnabled,
+  wasmRequestedByUrl,
+} from "@/lib/wasmEngine";
 import { loadAudioFile } from "@/lib/audioUtils";
 import { renderOfflineSlice } from "@/lib/offlineScan";
 import "@radix-ui/themes/styles.css";
@@ -185,6 +192,7 @@ function buildCrossfadedOutput(
 
 const App: React.FC = () => {
   const [status, setStatus] = useState("Loading...");
+  const [engineActive, setEngineActive] = useState<"wasm" | "ts">("ts");
   const [scenario, setScenario] = useState<Scenario>("aligned");
   const [isPlaying, setIsPlaying] = useState(false);
   const [positionSec, setPositionSec] = useState(0);
@@ -222,12 +230,24 @@ const App: React.FC = () => {
     (async () => {
       try {
         setStatus("Initializing OpenDAW…");
+        // ?engine=wasm boots the WASM (Rust) engine — the scope of the upstream
+        // fixes for openDAW#311/#312. Default stays on the TS engine. Only the
+        // OPENDAW scenario is affected; UNALIGNED/ALIGNED are pure Web Audio.
+        const wasmRequested = wasmRequestedByUrl();
+        if (wasmRequested) {
+          installWasmEngine();
+          setWasmEnabled(true);
+        }
         const { project: newProject, audioContext: newAudioContext } = await initializeOpenDAW({
           localAudioBuffers: localAudioBuffersRef.current,
           bpm: BPM,
           onStatusUpdate: setStatus,
+          onBeforeEngineStart: wasmRequested
+            ? async (ctx) => { await ensureWasmReady(ctx); }
+            : undefined,
         });
         if (!mounted) return;
+        setEngineActive(wasmRequested && isWasmReady() ? "wasm" : "ts");
         audioContextRef.current = newAudioContext;
         setOpenDawProject(newProject);
 
@@ -643,7 +663,7 @@ const App: React.FC = () => {
           handleStop();
           void handleScan();
         }}
-        disabled={!isPlaying}
+        disabled={status !== "Ready" || scanning}
         variant="soft"
         size="2"
       >
@@ -706,6 +726,20 @@ const App: React.FC = () => {
             </Callout.Text>
           </Callout.Root>
 
+          <Callout.Root color="green">
+            <Callout.Icon>
+              <InfoCircledIcon />
+            </Callout.Icon>
+            <Callout.Text>
+              <strong>Fixed in SDK 0.0.159 on both engines</strong> (openDAW#312 closed
+              upstream — <Code>PitchVoice</Code> now combines the fades by{" "}
+              <Code>Math.min</Code> instead of by product). OPENDAW scans at −0.05 dB vs the
+              −0.00 dB ALIGNED target, on the default TypeScript engine and with{" "}
+              <Code>?engine=wasm</Code>. Step 3's Expected column documents the pre-fix
+              signature; this page is retained as a regression check.
+            </Callout.Text>
+          </Callout.Root>
+
           <Card>
             <Flex align="center" gap="3" wrap="wrap">
               <Text size="2" weight="bold">Status:</Text>
@@ -722,6 +756,9 @@ const App: React.FC = () => {
                       : "OPENDAW"}
                 </Badge>
               )}
+              <Badge color={engineActive === "wasm" ? "purple" : "gray"}>
+                Engine: {engineActive === "wasm" ? "WASM (Rust)" : "TypeScript"}
+              </Badge>
             </Flex>
           </Card>
 

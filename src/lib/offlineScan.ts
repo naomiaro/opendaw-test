@@ -1,7 +1,8 @@
-import { Project, AudioWorklets } from "@opendaw/studio-core";
+import { Project, AudioWorklets, OfflineEngineRenderer } from "@opendaw/studio-core";
 import { PPQN } from "@opendaw/lib-dsp";
-import { TimeSpan } from "@opendaw/lib-std";
+import { Option, TimeSpan } from "@opendaw/lib-std";
 import { Wait } from "@opendaw/lib-runtime";
+import { isWasmEnabled, isWasmInstalled } from "@/lib/wasmEngine";
 
 const LOADING_TIMEOUT_MS = 30_000;
 
@@ -37,13 +38,38 @@ export async function renderOfflineSlice(
       );
     }
     const numSamples = Math.ceil(durationSeconds * sampleRate);
+    const bpm = projectCopy.timelineBox.bpm.getValue();
+    const startPPQN = PPQN.secondsToPulses(startSeconds, bpm);
+
+    // WASM (Rust) engine: OfflineAudioContext + createEngine is NOT a supported
+    // combination (the worklet never reports ready). The supported offline path is
+    // OfflineEngineRenderer with `variant: true`, which runs the WASM offline worker
+    // registered by WasmEngine.install's offlineWorkerUrl.
+    if (isWasmInstalled() && isWasmEnabled()) {
+      const renderer = await OfflineEngineRenderer.create(
+        projectCopy,
+        Option.None,
+        sampleRate,
+        true
+      );
+      try {
+        renderer.setPosition(startPPQN);
+        await renderer.play();
+        await renderer.waitForLoading();
+        const channels = await renderer.step(numSamples);
+        return { channels: channels.slice(0, 2), sampleRate };
+      } finally {
+        renderer.stop();
+        renderer.terminate();
+      }
+    }
+
     const context = new OfflineAudioContext(2, numSamples, sampleRate);
     const worklets = await AudioWorklets.createFor(context);
     const engineWorklet = worklets.createEngine({ project: projectCopy });
     engineWorklet.connect(context.destination, 0);
 
-    const bpm = projectCopy.timelineBox.bpm.getValue();
-    engineWorklet.setPosition(PPQN.secondsToPulses(startSeconds, bpm));
+    engineWorklet.setPosition(startPPQN);
     await engineWorklet.isReady();
     engineWorklet.play();
 
