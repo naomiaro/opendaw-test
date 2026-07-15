@@ -3,21 +3,9 @@ import { PPQN } from "@opendaw/lib-dsp";
 import { Option, TimeSpan } from "@opendaw/lib-std";
 import { Wait } from "@opendaw/lib-runtime";
 import { isWasmEnabled, isWasmInstalled, isWasmReady } from "@/lib/wasmEngine";
+import { withDeadline } from "@/lib/deadline";
 
 const LOADING_TIMEOUT_MS = 30_000;
-
-function withDeadline<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error(`${label} timed out after ${ms / 1000}s`)),
-      ms
-    );
-    promise.then(
-      (value) => { clearTimeout(timer); resolve(value); },
-      (err) => { clearTimeout(timer); reject(err); }
-    );
-  });
-}
 
 /**
  * Render a slice of the live project to a stereo `Float32Array[]` — via

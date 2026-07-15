@@ -51,7 +51,13 @@ try {
 `Option.None` for the export configuration = 1 stereo master stem. NOTE: `variant` defaults
 to `variantPolicy()` — `WasmEngine.install` registers `useForExports()` (= enabled && ready
 && hasVariant) as the policy, so an installed+enabled+**ready** WASM engine makes
-`variant`-less renders default to WASM. See
+`variant`-less renders default to WASM. Two more contract facts (verified 0.0.159):
+`renderer.render(config, start, end, progress)` does NOT stop at `end` (worker loop runs to
+silence/`maxDurationSeconds`; `end` only drives progress) — use `step(numSamples)` for exact
+ranges; and the renderer exposes NO engine-preferences surface (the processor's
+`PreferencesClient` on the `"engine-preferences"` channel has no host attached), so the
+metronome can never be enabled on it — metronome renders need the EngineWorklet path
+(`src/lib/rangeExport.ts` `renderViaEngineWorklet`). See
 `src/lib/offlineScan.ts` for the dual-path (TS OfflineAudioContext / WASM renderer) example.
 
 Live WASM transport quirk (observed on the debug repro pages at 0.0.159): after
