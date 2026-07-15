@@ -2,7 +2,7 @@
 
 **Upstream issue:** (to be filed — see PR that adds this note)
 
-**Verified against:** OpenDAW SDK 0.0.159 (`@opendaw/studio-core-wasm@0.1.0`), 2026-07-15.
+**Verified against:** OpenDAW SDK 0.0.159 (`@opendaw/studio-core-wasm@0.0.4`), 2026-07-15.
 
 **Repro page:** [`wasm-ensure-ready-second-context-debug-demo.html`](../wasm-ensure-ready-second-context-debug-demo.html) (unlisted). Audio fixture: [`public/audio/test-440hz.wav`](../public/audio/test-440hz.wav).
 
@@ -29,7 +29,9 @@ Measured matrix (repro page, 2 s / 96,000-frame render of a 440 Hz sine region):
 
 ## Mechanism (verified in shipped source)
 
-`@opendaw/studio-core-wasm/dist/WasmEngine.js`:
+`@opendaw/studio-core-wasm/dist/WasmEngine.js` (simplified — the real code wraps the two
+calls in a `Promises.tryCatch` and returns `true` after `modules.wrap(value)`; the
+load-bearing part is that the short-circuit skips `addModule`):
 
 ```js
 WasmEngine.ensureReady = async (context) => {
@@ -38,7 +40,6 @@ WasmEngine.ensureReady = async (context) => {
     }
     ...
     await context.audioWorklet.addModule(processorUrl); // ← only ever runs for the FIRST context
-    return loadEngineModules(wasmUrl);
     ...
 };
 ```

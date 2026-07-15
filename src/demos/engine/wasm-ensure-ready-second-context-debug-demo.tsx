@@ -468,7 +468,8 @@ const App: React.FC = () => {
                 <Code>AudioOfflineRenderer.start</Code>. Its internal OfflineAudioContext is a
                 second context — <Code>ensureReady</Code>'s one-and-only registration went
                 elsewhere — so the same <Code>InvalidStateError</Code> surfaces through a
-                public API.
+                public API. (Note: this step compiles the global modules, so running it
+                BEFORE step 2 pre-arms the bug and makes step 2's first run throw too.)
               </>
             }
             actions={runButton("Run (deprecated API)", runStep3)}
