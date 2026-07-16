@@ -1,6 +1,6 @@
 # `WasmEngine.ensureReady` registers the processor only on the first context
 
-**Upstream issue:** [andremichelle/openDAW#315](https://github.com/andremichelle/openDAW/issues/315) (filed 2026-07-15).
+**Upstream issue:** [andremichelle/openDAW#315](https://github.com/andremichelle/openDAW/issues/315) (filed 2026-07-15; **closed 2026-07-16 as wontfix** — "Please use `OfflineEngineRenderer` instead of the deprecated `AudioOfflineRenderer`. The Typescript audio-engine will be removed soon."). The `ensureReady` second-context behavior stands as-is; the supported answer for every offline render is `OfflineEngineRenderer`, which this repo already uses (`src/lib/rangeExport.ts`, `src/lib/offlineScan.ts`). This note remains as the reference for WHY the manual `OfflineAudioContext` + wasm combination throws.
 
 **Verified against:** OpenDAW SDK 0.0.159 (`@opendaw/studio-core-wasm@0.0.4`), 2026-07-15.
 

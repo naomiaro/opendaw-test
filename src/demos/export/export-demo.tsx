@@ -675,52 +675,37 @@ const App: React.FC = () => {
                   Each export renders on a <code>project.copy()</code> &mdash; a throwaway clone
                   that shares the sample manager (samples stay loaded) but not the live{" "}
                   <code>liveStreamReceiver</code>, so the offline renderer never collides with
-                  playback. The mixdown path (no <code>exportConfiguration</code>) mixes every
-                  unit; the stem path passes a per-unit config and writes one stereo pair per
-                  track, metronome excluded. Stems route through the channel strip
+                  playback. The mixdown path (no stems) mixes every unit; the stem path writes
+                  one stereo pair per track. Stems route through the channel strip
                   (<code>useInstrumentOutput: false</code>) so effects, aux sends, and the
-                  strip&apos;s volume/pan all reach the render. Metronome-enabled renders take
-                  the manual worklet path &mdash; the metronome flag is an engine{" "}
-                  <em>preference</em>, reachable only through{" "}
-                  <code>EngineWorklet.preferences</code>; <code>OfflineEngineRenderer</code>{" "}
-                  exposes no preferences surface.
+                  strip&apos;s volume/pan all reach the render. The metronome travels in the
+                  export configuration &mdash; mixed into the mixdown or appended as its own
+                  stem pair &mdash; and is honored by the WASM offline worker, so
+                  click-including renders pass <code>variant: true</code>.
                 </p>
 
                 <Text size="2" weight="bold" style={{ display: "block", marginTop: 16 }}>
-                  Offline render (current API — exact range via step):
+                  Offline render (exact range via step; metronome in the config):
                 </Text>
                 <Code size="2" style={CODE_BLOCK_STYLE}>
-                  {`const copy = project.copy();
+                  {`const config = {
+  stems,                                               // omit for a stereo mixdown
+  metronome: { includeInMixdown: true,                 // or stem: { fileName: "Metronome" }
+               settings: { gain: -6 } },               // enabled is implied by presence
+};
+const metronomeAudible = ExportConfiguration.isMetronomeAudible(Option.wrap(config));
+if (metronomeAudible) installWasmEngine();             // registers the worker; no live boot
+const copy = project.copy();
 const renderer = await OfflineEngineRenderer.create(
-  copy,
-  stems ? Option.wrap({ stems }) : Option.None, // undefined config = mixdown branch
-  sampleRate,
-  false, // pin the TS worker (variant defaults to WasmEngine.useForExports())
+  copy, Option.wrap(config), sampleRate,
+  metronomeAudible,  // WASM offline worker renders the click; TS worker ignores it
 );
 renderer.setPosition(startPpqn);
 await renderer.play();           // transport + first queryLoadingComplete
 await renderer.waitForLoading(); // bound with a deadline — polls forever otherwise
 // render(config, start, end, …) runs to SILENCE, not to end — step() is exact:
-const channels = await renderer.step(numSamples);
+const channels = await renderer.step(numSamples);      // metronome stem pair comes LAST
 renderer.stop(); renderer.terminate(); copy.terminate();`}
-                </Code>
-
-                <Text size="2" weight="bold" style={{ display: "block", marginTop: 16 }}>
-                  Metronome render (manual worklet path):
-                </Text>
-                <Code size="2" style={CODE_BLOCK_STYLE}>
-                  {`const context = new OfflineAudioContext(numChannels, numSamples, sampleRate);
-const worklets = await AudioWorklets.createFor(context);
-const engine = worklets.createEngine({ project: copy, exportConfiguration });
-// Engine worklet has 2 outputs — connect output 0 only.
-engine.connect(context.destination, 0);
-engine.preferences.settings.metronome.enabled = true; // doesn't travel with copy()
-engine.setPosition(startPpqn);
-await engine.isReady();
-engine.play();
-while (!(await engine.queryLoadingComplete())) { /* wait for samples */ }
-const audioBuffer = await context.startRendering();
-copy.terminate();`}
                 </Code>
               </section>
 
