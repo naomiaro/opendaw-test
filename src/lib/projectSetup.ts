@@ -263,6 +263,23 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
     document.addEventListener("keydown", resume);
   }
 
+  // First-click fix: the document-level resume listener above fires AFTER React's
+  // click handler (bubble order), so a demo's very first Play click calls
+  // engine.play() while the context is still suspended — and that transport command
+  // is LOST (verified: fresh load, first Play click leaves the position at 0.000;
+  // the second click plays). Wrap the persistent facade's play() to resume the
+  // context first — one central guarantee instead of `await resume()` at every
+  // demo call site. resume() here always runs inside a user gesture (the click
+  // that invoked the handler), so autoplay policy is satisfied.
+  const facadePlay = project.engine.play.bind(project.engine);
+  project.engine.play = (): void => {
+    if (audioContext.state === "running") {
+      facadePlay();
+      return;
+    }
+    void audioContext.resume().then(facadePlay);
+  };
+
   return { project, audioContext };
 }
 

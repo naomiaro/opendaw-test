@@ -627,6 +627,12 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   or dispatched event is UNTRUSTED and silently fails to start the AudioContext/
   transport (UI may toggle but 0 takes/no playback). Untrusted `.click()` is fine
   for non-audio buttons (Add Tape, config, Stop).
+- `engine.play()` issued while the AudioContext is still SUSPENDED is silently lost
+  (the document-level resume listener fires after React's click handler). Fixed
+  centrally: `initializeOpenDAW` wraps the persistent engine facade's `play()` to
+  `await audioContext.resume()` first, so the first Play click works on every demo.
+  Anything bypassing the facade (raw `worklet.play()`, custom transports) must apply
+  the same resume-before-play guard.
 - Browser-automation verification: if a demo's transport/UI freezes (position stuck,
   `isRecording` never flips, takes never appear) while the AudioContext keeps running,
   check `document.visibilityState` FIRST — an occluded/hidden Chrome window suspends
@@ -648,7 +654,12 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   working in); default-named files land in `.playwright-mcp/`.
 - claude-in-chrome `read_console_messages`: timestamps are backfilled to when console
   tracking attached, and message blocks can appear duplicated across reads — trust only
-  relative message order, never elapsed time between entries.
+  relative message order, never elapsed time between entries. Missing console lines are
+  NOT evidence of a hang — the tracker drops messages. Before diagnosing "hung", check
+  the page's own error surface (e.g. a Got/error table row you haven't scrolled to).
+  Debug pages should self-classify failures: record a stage trail and race every await
+  against a deadline so the verdict is OK/HUNG/THREW with the last stage named (see
+  `wasm-ensure-ready-second-context-debug-demo.tsx` `raceHang`).
 - claude-in-chrome ref-based clicks (from `find`) can silently fail to trigger React
   handlers on these demos — click by coordinates from a screenshot instead. Also:
   `javascript_tool` results dumping page text can trip the extension's
@@ -665,6 +676,8 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   (`/pr-review-toolkit:review-pr`, applicable aspects) and FIX Critical + Important
   findings before merge; push fixes to the PR branch and note them in a PR comment.
 - After SDK upgrades, clear Vite dep cache: `rm -rf node_modules/.vite` (dev server pre-bundles old SDK)
+- `rm -rf node_modules` (clean lockfile regen) kills a running dev server — expect exit
+  143 and restart it before browser verification.
 - Vite HMR remount throws "Workers are already installed" (SDK assert) — dev-only
   artifact now surfaced by init error cards; judge error states on a fresh page load.
   A mid-audio HMR reload can also leave MIDI→engine routing silently broken in that
@@ -688,6 +701,15 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   (`node_modules/@opendaw/*/dist`), not the upstream git tag diff — a release tag can
   contain commits the npm publish was built without (0.0.158: `migrateCaptureTrackMismatch`
   in the tag, absent from the published studio-core@0.0.156).
+- Upstream fixes/features may land in ONE engine only (WASM vs TS — e.g. the #311 seam
+  fix, `ExportConfiguration.metronome`). Verify closed-issue claims and new features per
+  engine: the seam/voice-fade repro pages take `?engine=wasm`, and grep the TS dists
+  (`studio-core/dist/processors.js`, `offline-engine.js`) for the new identifiers before
+  assuming the TS path has them.
+- Proving a render-path migration didn't change audio: render the same scenario through
+  old and new code and compare WAV SHA-256 — byte-identical beats any threshold argument.
+  Commit (or stash) work-in-progress BEFORE `git checkout main -- <file>` A/B swaps: the
+  checkout silently clobbers uncommitted edits to that file.
 - Report SDK bugs as GitHub issues on `andremichelle/openDAW` (tracker is actively worked —
   filed bugs have been fixed within one release cycle). Body: live repro page URL +
   `debug/*.md` write-up link + measured signature + suggested fix. Cross-link the issue
