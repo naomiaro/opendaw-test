@@ -680,8 +680,8 @@ const App: React.FC = () => {
                   (<code>useInstrumentOutput: false</code>) so effects, aux sends, and the
                   strip&apos;s volume/pan all reach the render. The metronome travels in the
                   export configuration &mdash; mixed into the mixdown or appended as its own
-                  stem pair &mdash; and is honored by the WASM offline worker, so
-                  click-including renders pass <code>variant: true</code>.
+                  stem pair. Since the WASM offline worker is the only engine, all renders pass{" "}
+                  <code>variant: true</code>.
                 </p>
 
                 <Text size="2" weight="bold" style={{ display: "block", marginTop: 16 }}>
