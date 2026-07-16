@@ -453,7 +453,13 @@ Recording and MIDI demos have never run on the WASM engine in this repo; this ta
   - `wasm-ensure-ready-second-context-debug-demo.html`: steps match the Task 4 expected values.
 - [ ] **Step 3: Export renders.** On `export-demo.html`, render (a) full mixdown, (b) stems, (c) mixdown + metronome; download WAVs to the scratchpad and analyze each with audio-analyzer (`full_analysis` low resolution; `rhythm_analysis` on the metronome render to confirm click grid at project BPM): assert non-silent (RMS > −60 dBFS), no full-scale clipping, stems sum ≈ mixdown (compare tool), metronome clicks on the beat grid.
 - [ ] **Step 4: MIDI synth.** On the wasm-engine-demo (Vaporisateur pattern): capture ~5 s of output via the analyser tap → assert RMS > 0.01 and, via a spectral read (or audio-analyzer on a recorded WAV if easy), energy concentrated at musical pitches rather than broadband noise.
-- [ ] **Step 5: Write up results** as a table (feature × metric × expected × measured × verdict) in the PR description draft. Any FAIL rows go to Task 10.
+- [ ] **Step 5: Count-in timing analysis (user-requested — external testing at SDK 0.0.158 suggested count-in was "slightly off").** On `recording-api-react-demo.html` (BPM known, metronome enabled, real clicks), measure on the WASM engine:
+  1. **Count-in duration**: wall-clock from the Record click (or from `isCountingIn` flipping true) to `isRecording` flipping true. Expected `bars × beatsPerBar × 60/BPM` (e.g. 1 bar of 4/4 at 120 BPM = 2.000 s). Test `countInBars` = 1 and 2, and a second BPM (e.g. 90) for one of them. Instrument via `catchupAndSubscribe` on `engine.isCountingIn`/`engine.isRecording` + `performance.now()` logged as strings.
+  2. **Click spacing during count-in**: analyser-tap onset times of the metronome clicks — expect exactly `60/BPM` apart, first click at count-in start.
+  3. **`countInBeatsRemaining` sequence**: values and flip times vs the beat grid (4→3→2→1 at 120 BPM should flip every 0.5 s).
+  4. **Post-count-in alignment**: record ~3 s of signal, stop, and check the finalized take — the region must start at the punch-in position with count-in audio skipped (`waveformOffset` mechanism; see `recording-finalize-debug-demo.html` and `src/demos/recording/CLAUDE.md`). A systematic start offset in the recorded region is exactly the "slightly off" symptom to hunt.
+  Tolerances: flag anything beyond ~30 ms systematic (one audio block at 128 frames/48 kHz ≈ 2.7 ms; scheduling jitter allows a few ms — tens of ms is a defect). A wrong beat COUNT or duration off by a whole beat/bar is an unambiguous defect. If off: re-measure twice, capture numbers, and add an issue draft per Task 10 Step 1.
+- [ ] **Step 6: Write up results** as a table (feature × metric × expected × measured × verdict) in the PR description draft. Any FAIL rows go to Task 10.
 
 ---
 
