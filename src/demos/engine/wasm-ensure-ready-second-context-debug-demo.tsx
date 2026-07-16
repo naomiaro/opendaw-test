@@ -17,13 +17,7 @@ import { DebugLinkBar } from "@/components/DebugLinkBar";
 import { TestStep, TestStepRow } from "@/components/TestStep";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { loadAudioFile } from "@/lib/audioUtils";
-import {
-  ensureWasmReady,
-  installWasmEngine,
-  isWasmReady,
-  setWasmEnabled,
-  wasmRequestedByUrl,
-} from "@/lib/wasmEngine";
+import { ensureWasmReady, setWasmEnabled } from "@/lib/wasmEngine";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
@@ -125,28 +119,19 @@ const App: React.FC = () => {
     (async () => {
       try {
         setStatus("Initializing OpenDAW...");
-        // Default: the live engine boots on the TS path and only the offline
-        // steps below flip the WASM flag — step 2's FIRST run is then the
-        // first-ever ensureReady call and works. `?engine=wasm` boots a LIVE
-        // WASM engine instead, consuming the one-and-only processor
-        // registration, so step 2 throws on its first run.
-        const wasmRequested = wasmRequestedByUrl();
-        if (wasmRequested) {
-          installWasmEngine();
-          setWasmEnabled(true);
-        }
-        let wasmBooted = false;
+        // initializeOpenDAW now boots the WASM (Rust) engine centrally (or throws) —
+        // the live engine is always WASM here. Step 2's FIRST offline run is still the
+        // first-ever ensureReady call for its own OfflineAudioContext, so it still works;
+        // later runs (or steps 3/4) still exercise the second-context registration bug
+        // on THEIR contexts, independent of the live engine's boot.
         const { project: newProject, audioContext: newAudioContext } = await initializeOpenDAW({
           localAudioBuffers: localAudioBuffersRef.current,
           bpm: BPM,
           onStatusUpdate: setStatus,
-          onBeforeEngineStart: wasmRequested
-            ? async (ctx) => { wasmBooted = await ensureWasmReady(ctx); }
-            : undefined,
         });
         if (!mounted) return;
-        setEngineActive(wasmRequested && wasmBooted && isWasmReady() ? "wasm" : "ts");
-        setEngineFellBack(wasmRequested && !wasmBooted);
+        setEngineActive("wasm");
+        setEngineFellBack(false);
 
         setStatus("Loading test-440hz.wav...");
         const audioBuffer = await loadAudioFile(newAudioContext, AUDIO_FILE);
@@ -180,7 +165,6 @@ const App: React.FC = () => {
           newProject.timelineBox.durationInPulses.setValue(regionPPQN);
         });
 
-        installWasmEngine();
         setProject(newProject);
         setStatus("Ready");
       } catch (error) {

@@ -182,9 +182,9 @@ const GROUPS: Group[] = [
     demos: [
       {
         href: "/wasm-engine-demo.html",
-        title: "WASM Engine A/B",
+        title: "WASM Engine",
         blurb:
-          "Toggle OpenDAW's audio backend between the built-in TypeScript engine and the WASM (Rust) engine live during playback, with an opt-in DSP-load readout.",
+          "A Vaporisateur synth loop playing through the WASM (Rust) audio engine — the only engine these demos run — with an opt-in DSP-load readout.",
       },
     ],
   },

@@ -17,6 +17,7 @@ import {
 import type { SoundfontService } from "@opendaw/studio-core";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { testFeatures } from "../features";
+import { installWasmEngine, ensureWasmReady } from "./wasmEngine";
 
 import WorkersUrl from "@opendaw/studio-core/workers-main.js?worker&url";
 import WorkletsUrl from "@opendaw/studio-core/processors.js?url";
@@ -59,13 +60,6 @@ export interface ProjectSetupOptions {
    * Optional status update callback for progress messages
    */
   onStatusUpdate?: (status: string) => void;
-
-  /**
-   * Optional async hook run AFTER worklets/project are created but immediately BEFORE
-   * project.startAudioWorklet(). Use it to install an EngineVariant (e.g. the WASM engine)
-   * so the very first EngineWorklet boots the chosen backend. Receives the live AudioContext.
-   */
-  onBeforeEngineStart?: (audioContext: AudioContext) => Promise<void>;
 }
 
 /**
@@ -107,7 +101,7 @@ export interface ProjectSetupResult {
  * ```
  */
 export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Promise<ProjectSetupResult> {
-  const { localAudioBuffers, bpm = 120, onStatusUpdate, onBeforeEngineStart } = options;
+  const { localAudioBuffers, bpm = 120, onStatusUpdate } = options;
 
   console.log("========================================");
   console.log("openDAW -> headless -> initializing");
@@ -239,9 +233,18 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
     });
   }
 
-  // Optional engine-variant install (e.g. WASM) — must run before the first worklet boots.
-  if (onBeforeEngineStart) {
-    await onBeforeEngineStart(audioContext);
+  // WASM (Rust) engine only — the TypeScript engine is being removed upstream and this
+  // repo no longer wires it. Must run BEFORE the first startAudioWorklet():
+  // EngineWorklet reads EngineVariant.current() at construction time.
+  installWasmEngine();
+  onStatusUpdate?.("Compiling WASM engine...");
+  const wasmReady = await ensureWasmReady(audioContext);
+  if (!wasmReady) {
+    throw new Error(
+      "WASM engine failed to initialize (artifacts missing or compilation failed). " +
+        "There is no TypeScript fallback — check that /wasm-engine assets are served " +
+        "(wasm-engine-assets Vite plugin) and that the browser supports WebAssembly."
+    );
   }
 
   // Start audio worklet and wait for engine to be ready

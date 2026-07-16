@@ -12,6 +12,11 @@ let installed = false;
 
 /** Register the EngineVariant provider + offline variant. Safe to call more than once. */
 export function installWasmEngine(): void {
+  // Force-enable on every call: `opendaw-wasm-engine` in localStorage is a persisted
+  // opt-out shared across the whole origin (the retired A/B demo could leave it false),
+  // and a stale `false` makes EngineVariant.current() return null — the boot would
+  // silently come up with no engine variant.
+  WasmEngine.setEnabled(true);
   if (installed) { return; }
   installed = true;
   WasmEngine.install({
