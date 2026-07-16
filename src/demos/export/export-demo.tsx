@@ -693,12 +693,10 @@ const App: React.FC = () => {
   metronome: { includeInMixdown: true,                 // or stem: { fileName: "Metronome" }
                settings: { gain: -6 } },               // enabled is implied by presence
 };
-const metronomeAudible = ExportConfiguration.isMetronomeAudible(Option.wrap(config));
-if (metronomeAudible) installWasmEngine();             // registers the worker; no live boot
 const copy = project.copy();
 const renderer = await OfflineEngineRenderer.create(
   copy, Option.wrap(config), sampleRate,
-  metronomeAudible,  // WASM offline worker renders the click; TS worker ignores it
+  true,  // WASM offline worker — the only engine; it also renders the click
 );
 renderer.setPosition(startPpqn);
 await renderer.play();           // transport + first queryLoadingComplete
