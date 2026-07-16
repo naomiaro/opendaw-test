@@ -5,8 +5,10 @@ The release that closes **openDAW#316** (filed by this repo): the metronome is n
 own stem — with no renderer wiring. Also: `IconSymbol` additions, an OPFS worker fix, and
 lib-jsx router changes.
 
-Sub-package versions: `studio-adapters` 0.1.1, `studio-core` 0.1.1, `studio-core-wasm`
-0.0.5, `studio-core-processors` 0.0.128 (bump only), `studio-boxes` 0.0.99.
+Sub-package versions (installed): `studio-adapters` 0.1.1, `studio-core` 0.1.1,
+`studio-core-wasm` 0.0.5, `studio-boxes` 0.0.99, `studio-enums` 0.0.82
+(`studio-core-processors` is bundled into `studio-core`'s dist, not independently
+installed — version bump only per its upstream CHANGELOG).
 
 **No breaking changes for opendaw-headless.** All API changes are additive — but see the
 roadmap note at the bottom.

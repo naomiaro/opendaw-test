@@ -1054,26 +1054,26 @@ The gain max is **0 dB** (unity), not +6 dB like track volume. There is no boost
 
 Click sounds are built into the processor — no `loadClickSound()` call is needed for default clicks.
 
-#### Why the Demo Doesn't Use OfflineEngineRenderer
+#### Rendering from a Copy
 
-`Option.None` already takes the mixdown branch in `OfflineEngineRenderer` (it forwards `unwrapOrUndefined()` → `undefined` → empty `stemExports`), so path routing is not the obstacle. The blockers are:
+Two practical notes on driving `OfflineEngineRenderer` from an app with a live engine:
 
-1. **No metronome-preference forwarding**: the offline worker builds fresh `EnginePreferences` from defaults (metronome disabled). `project.toArrayBuffer()` carries the box graph but not preferences, and `OfflineEngineRenderer` exposes no way to enable the metronome — so the mixdown branch runs but the metronome is silent.
+1. **`liveStreamReceiver` conflict**: `create()` calls `source.liveStreamReceiver.connect()` on the source project. If the live engine already has it connected, this throws "Already connected" — always render from a `project.copy()`.
 
-2. **`liveStreamReceiver` conflict**: `create()` calls `source.liveStreamReceiver.connect()` on the source project. If the live engine already has it connected, this throws "Already connected". Using `project.copy()` avoids this, but introduces issue #3.
-
-3. **Worker sample fetching with `project.copy()`**: The worker's `fetchAudio` callbacks use `source.sampleManager.getOrCreate(uuid)`. While `project.copy()` shares the same `sampleManager` reference, the worker communicates via `MessageChannel` — the sample loading callbacks need to resolve through the message passing layer, which may not work correctly with the copy's context.
+2. **Worker sample fetching works through the copy**: the worker's `fetchAudio` callbacks resolve via `source.sampleManager.getOrCreate(uuid)` over the `MessageChannel`, and `project.copy()` shares the same `sampleManager` reference — samples stay loaded and resolve normally (the export demo renders Dark Ride stems this way).
 
 ### Export Modes
 
 #### Export Mixdown (selected tracks + optional metronome)
 
-Mute unselected tracks on the original, copy, restore, render via mixdown path.
+Mute unselected tracks on the original, copy, restore, render the mixdown branch — with the click expressed in the export configuration.
 
 ```typescript
 const channels = await renderRange(
   project, startPpqn, endPpqn, 48000,
-  undefined,  // mixdown path
+  includeMetronome
+    ? { metronome: { includeInMixdown: true, settings: { gain: -6 } } }
+    : undefined, // mixdown branch either way; the click mixes into the stereo pair
   () => {
     project.editing.modify(() => {
       for (const track of tracks) {
@@ -1088,21 +1088,16 @@ const channels = await renderRange(
         track.audioUnitBox.mute.setValue(wasMuted);
       }
     });
-  },
-  true,  // metronome enabled
-  -6     // metronome gain dB
+  }
 );
-// Result: stereo mixdown of selected tracks + metronome
+// Result: stereo mixdown of selected tracks (+ metronome when configured)
 ```
-
-This replaces the original Mode 1 (metronome only) and Mode 3 (single stem + metronome) — select any combination of tracks and metronome.
 
 #### Export Stems (individual files + optional metronome stem)
 
-Render via stem path for per-track files. If metronome is requested, run a second render pass via mixdown path with all tracks muted.
+One render for everything: per-track stereo pairs, and — when requested — the metronome as its own stem pair appended LAST (a metronome-only export is `{stems: {}, metronome: {stem}}`).
 
 ```typescript
-// Pass 1: Stem export (per-track channels, no metronome)
 const exportConfig: Record<string, ExportStemConfiguration> = {};
 for (const track of selectedTracks) {
   const uuid = UUID.toString(track.audioUnitBox.address.uuid);
@@ -1114,25 +1109,14 @@ for (const track of selectedTracks) {
   };
 }
 
-const channels = await renderRange(
-  project, startPpqn, endPpqn, 48000,
-  exportConfig,  // stem path
-  undefined, undefined,
-  false  // no metronome in stem path
-);
-// Split interleaved channels: [stem1_L, stem1_R, stem2_L, stem2_R, ...]
-
-// Pass 2 (optional): Metronome-only stem via mixdown path
-if (includeMetronome) {
-  const metronomeChannels = await renderRange(
-    project, startPpqn, endPpqn, 48000,
-    undefined,  // mixdown path
-    () => { /* mute all tracks */ },
-    () => { /* restore mutes */ },
-    true, -6    // metronome enabled
-  );
-  // Append as additional "Metronome" stem
-}
+const channels = await renderRange(project, startPpqn, endPpqn, 48000, {
+  stems: exportConfig,
+  ...(includeMetronome
+    ? { metronome: { stem: { fileName: "Metronome" }, settings: { gain: -6 } } }
+    : {}),
+});
+// Split interleaved channels: [stem1_L, stem1_R, ..., metronome_L, metronome_R]
+// (metronome pair LAST — matching ExportConfiguration.stemFileNames order)
 ```
 
 ### Range Selection: Bars to PPQN
