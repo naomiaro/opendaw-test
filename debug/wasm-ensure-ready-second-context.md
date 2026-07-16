@@ -1,5 +1,7 @@
 # `WasmEngine.ensureReady` registers the processor only on the first context
 
+**Update 2026-07-16:** this repo now boots the WASM engine on every page (TypeScript engine removed). The "fresh page first run OK" row below is historical — the live boot always consumes the registration, so the second-context throw reproduces on the first click.
+
 **Upstream issue:** [andremichelle/openDAW#315](https://github.com/andremichelle/openDAW/issues/315) (filed 2026-07-15; **closed 2026-07-16 as wontfix** — "Please use `OfflineEngineRenderer` instead of the deprecated `AudioOfflineRenderer`. The Typescript audio-engine will be removed soon."). The `ensureReady` second-context behavior stands as-is; the supported answer for every offline render is `OfflineEngineRenderer`, which this repo already uses (`src/lib/rangeExport.ts`, `src/lib/offlineScan.ts`). This note remains as the reference for WHY the manual `OfflineAudioContext` + wasm combination throws.
 
 **Verified against:** OpenDAW SDK 0.0.159 (`@opendaw/studio-core-wasm@0.0.4`), 2026-07-15.
@@ -21,9 +23,9 @@ Measured matrix (repro page, 2 s / 96,000-frame render of a 440 Hz sine region):
 
 | Scenario | Outcome |
 |---|---|
-| TS engine, manual `OfflineAudioContext` + `createEngine` (control) | OK — peak 0.4999 |
-| WASM variant, **first-ever** `ensureReady` on the offline context | OK — peak 0.4999 |
-| WASM variant, any **second** context (re-run the step, or `?engine=wasm` so the live boot consumed the registration) | **THREW** after `ensureWasmReady=true` |
+| TS engine, manual `OfflineAudioContext` + `createEngine` (control) *(historical — TS engine no longer wired in this repo)* | OK — peak 0.4999 |
+| WASM variant, **first-ever** `ensureReady` on the offline context *(historical — unreachable now that the live engine always boots WASM first)* | OK — peak 0.4999 |
+| WASM variant, any **second** context (now every run, since the live engine's boot always consumes the registration first) | **THREW** after `ensureWasmReady=true` |
 | Deprecated **public** `AudioOfflineRenderer.start` with wasm compiled+enabled | **THREW** (same error — its internal context is a second context) |
 | `OfflineEngineRenderer` with `variant: true` | OK — peak 0.4999 (worker self-loads artifacts; immune) |
 
@@ -78,13 +80,13 @@ was not the failing step here.
 - Or keep manual `OfflineAudioContext` renders on the TS engine (`setWasmEnabled(false)`
   around the render re-registration doesn't help — the flag doesn't fix registration, it
   just routes `EngineVariant.current()` back to the TS processor, which `AudioWorklets.createFor`
-  registers per-context correctly).
+  registers per-context correctly). *(historical — TS engine no longer wired in this repo)*
 
 ## How to reproduce
 
 ```bash
 npm run dev
 # open https://localhost:5173/wasm-ensure-ready-second-context-debug-demo.html
-# Step 2: click "Run (WASM variant)" twice — first OK, second THREW.
-# Or open with ?engine=wasm — step 2 throws on the first click.
+# Step 2: click "Run (WASM variant)".
+# The live engine is always WASM — step 2 throws on the first click.
 ```

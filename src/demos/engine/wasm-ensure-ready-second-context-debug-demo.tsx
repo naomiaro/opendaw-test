@@ -17,7 +17,7 @@ import { DebugLinkBar } from "@/components/DebugLinkBar";
 import { TestStep, TestStepRow } from "@/components/TestStep";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { loadAudioFile } from "@/lib/audioUtils";
-import { ensureWasmReady, setWasmEnabled } from "@/lib/wasmEngine";
+import { ensureWasmReady } from "@/lib/wasmEngine";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
@@ -54,8 +54,9 @@ const BPM = 120;
 const AUDIO_FILE = "/audio/test-440hz.wav";
 const REGION_SECONDS = 2;
 const SAMPLE_RATE = 48000;
-// A hung await is indistinguishable from a slow one except by ceiling; the TS
-// control completes in well under this, so a 15 s timeout is a safe verdict.
+// A hung await is indistinguishable from a slow one except by ceiling; every
+// step below settles (OK or THREW) well under this, so a 15 s timeout is a
+// safe verdict.
 const HANG_TIMEOUT_MS = 15_000;
 
 type Outcome = "OK" | "HUNG" | "THREW";
@@ -110,8 +111,6 @@ const App: React.FC = () => {
   const [project, setProject] = useState<Project | null>(null);
   const [running, setRunning] = useState<number | null>(null);
   const [gotByStep, setGotByStep] = useState<Record<number, TestStepRow[]>>({});
-  const [engineActive, setEngineActive] = useState<"wasm" | "ts">("ts");
-  const [engineFellBack, setEngineFellBack] = useState(false);
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
 
   useEffect(() => {
@@ -119,19 +118,18 @@ const App: React.FC = () => {
     (async () => {
       try {
         setStatus("Initializing OpenDAW...");
-        // initializeOpenDAW now boots the WASM (Rust) engine centrally (or throws) —
-        // the live engine is always WASM here. Step 2's FIRST offline run is still the
-        // first-ever ensureReady call for its own OfflineAudioContext, so it still works;
-        // later runs (or steps 3/4) still exercise the second-context registration bug
-        // on THEIR contexts, independent of the live engine's boot.
+        // initializeOpenDAW boots the live WASM (Rust) engine centrally (or throws) —
+        // its AudioContext is the FIRST context WasmEngine.ensureReady ever sees, so it
+        // consumes the one-and-only processor registration right here. Every step below
+        // that builds its own context (step 2's OfflineAudioContext, step 3's throwaway
+        // + AudioOfflineRenderer's internal context) is therefore always a SECOND
+        // context — the bug reproduces on the first click, not just later ones.
         const { project: newProject, audioContext: newAudioContext } = await initializeOpenDAW({
           localAudioBuffers: localAudioBuffersRef.current,
           bpm: BPM,
           onStatusUpdate: setStatus,
         });
         if (!mounted) return;
-        setEngineActive("wasm");
-        setEngineFellBack(false);
 
         setStatus("Loading test-440hz.wav...");
         const audioBuffer = await loadAudioFile(newAudioContext, AUDIO_FILE);
@@ -217,21 +215,19 @@ const App: React.FC = () => {
 
   const numSamples = REGION_SECONDS * SAMPLE_RATE;
 
-  // Manual OfflineAudioContext render, shared by steps 1 and 2. The wasm flag
-  // is what differs: step 2 registers the WASM processor module on the offline
-  // context first, so EngineWorklet boots the WASM variant.
+  // Manual OfflineAudioContext render used by step 2. Registers the WASM processor
+  // module on the offline context first, so EngineWorklet boots the WASM variant —
+  // and throws, since the live engine's boot already consumed the one-and-only
+  // registration on a different context (see the init comment above).
   const manualOfflineRender = useCallback(
-    async (stage: (s: string) => void, wasm: boolean): Promise<string> => {
+    async (stage: (s: string) => void): Promise<string> => {
       if (!project) throw new Error("no project");
-      setWasmEnabled(wasm);
       const projectCopy = project.copy();
       try {
         stage("copy");
         const context = new OfflineAudioContext(2, numSamples, SAMPLE_RATE);
-        if (wasm) {
-          const ok = await ensureWasmReady(context);
-          stage(`ensureWasmReady=${ok}`);
-        }
+        const ok = await ensureWasmReady(context);
+        stage(`ensureWasmReady=${ok}`);
         const worklets = await AudioWorklets.createFor(context);
         stage("worklets");
         const engineWorklet = worklets.createEngine({ project: projectCopy });
@@ -257,13 +253,8 @@ const App: React.FC = () => {
     [project, numSamples]
   );
 
-  const runStep1 = useCallback(
-    () => void runStep(1, (stage) => manualOfflineRender(stage, false)),
-    [runStep, manualOfflineRender]
-  );
-
   const runStep2 = useCallback(
-    () => void runStep(2, (stage) => manualOfflineRender(stage, true)),
+    () => void runStep(2, (stage) => manualOfflineRender(stage)),
     [runStep, manualOfflineRender]
   );
 
@@ -271,7 +262,6 @@ const App: React.FC = () => {
     () =>
       void runStep(3, async (stage) => {
         if (!project) throw new Error("no project");
-        setWasmEnabled(true);
         // Compile the wasm modules globally (throwaway context) WITHOUT
         // registering them on the context AudioOfflineRenderer creates
         // internally — exactly the state a consumer is in after booting the
@@ -292,7 +282,6 @@ const App: React.FC = () => {
     () =>
       void runStep(4, async (stage) => {
         if (!project) throw new Error("no project");
-        setWasmEnabled(true);
         const projectCopy = project.copy();
         try {
           stage("copy");
@@ -375,10 +364,11 @@ const App: React.FC = () => {
               <Code>EngineWorklet</Code> on any <em>second</em> BaseAudioContext then throws{" "}
               <Code>InvalidStateError: 'engine-wasm-processor' is not defined in
               AudioWorkletGlobalScope</Code> — right after <Code>ensureReady</Code> reported
-              ready for that very context. Step 2 demonstrates it: the first run on a fresh
-              page works, the second run (new OfflineAudioContext) throws. Load with{" "}
-              <Code>?engine=wasm</Code> and even the first run throws — the live engine boot
-              consumed the one-and-only registration. The deprecated but still-exported{" "}
+              ready for that very context. Step 2 demonstrates it: this page always boots a
+              live WASM engine on init, which consumes the one-and-only registration on its
+              own AudioContext, so step 2's OfflineAudioContext is already a{" "}
+              <em>second</em> context — it throws on every run, including the first. The
+              deprecated but still-exported{" "}
               <Code>AudioOfflineRenderer.start</Code> hits the same wall;{" "}
               <Code>OfflineEngineRenderer</Code> (<Code>variant: true</Code>, a Worker) is
               immune. Each step is bounded by a {HANG_TIMEOUT_MS / 1000} s ceiling.
@@ -392,57 +382,34 @@ const App: React.FC = () => {
                 {status}
               </Badge>
               {running !== null && <Badge color="amber">Running step {running}…</Badge>}
-              <Badge color={engineFellBack ? "red" : engineActive === "wasm" ? "purple" : "gray"}>
-                Live engine:{" "}
-                {engineFellBack
-                  ? "WASM unavailable — using TypeScript"
-                  : engineActive === "wasm"
-                    ? "WASM (Rust)"
-                    : "TypeScript"}
-              </Badge>
+              <Badge color="amber" size="2">WASM (Rust)</Badge>
             </Flex>
           </Card>
 
           <TestStep
-            index={1}
-            title="Control: TS engine renders the slice"
-            description={
-              <>
-                <Code>setWasmEnabled(false)</Code>, then the manual pattern on a 2 s slice.
-                Establishes that the project, the pattern, and the timeout harness are all
-                sound.
-              </>
-            }
-            actions={runButton("Run (TS engine)", runStep1)}
-            expected={[
-              { label: "outcome", value: "OK (well under the ceiling)" },
-              { label: "stages reached", value: "copy → … → rendered" },
-              { label: "detail", value: `${numSamples} frames, peak ≈ 0.5` },
-            ]}
-            got={gotByStep[1] ?? null}
-          />
-
-          <TestStep
             index={2}
-            title="WASM variant on an OfflineAudioContext — run it twice"
+            title="WASM variant on an OfflineAudioContext"
             description={
               <>
-                Same pattern, but <Code>ensureWasmReady(offlineCtx)</Code> first, so{" "}
-                <Code>createEngine</Code> boots the WASM variant.{" "}
-                <strong>Run this twice on a fresh page load (TypeScript live engine):</strong>{" "}
-                the first run is the first-ever <Code>ensureReady</Code> call, registers the
-                processor on its context, and renders fine; the second run gets a{" "}
-                <em>new</em> OfflineAudioContext, <Code>ensureWasmReady</Code> short-circuits
-                to <Code>true</Code> without registering, and <Code>createEngine</Code>{" "}
-                throws. With <Code>?engine=wasm</Code> the live boot already consumed the
-                registration, so even the first run throws.
+                <Code>ensureWasmReady(offlineCtx)</Code> first, so <Code>createEngine</Code>{" "}
+                boots the WASM variant. The live engine booted during page init already
+                registered the wasm processor on its own AudioContext — the one-and-only
+                registration <Code>WasmEngine.ensureReady</Code> ever grants — so this
+                OfflineAudioContext is always a <em>second</em> context:{" "}
+                <Code>ensureWasmReady</Code> short-circuits to <Code>true</Code> without
+                registering, and <Code>createEngine</Code> throws. This reproduces on every
+                click, including the very first.
               </>
             }
             actions={runButton("Run (WASM variant)", runStep2)}
             expected={[
-              { label: "outcome", value: "1st run on fresh page: OK · any later run (or with ?engine=wasm): THREW" },
-              { label: "stages reached", value: "OK run: … → rendered · THREW run: … → ensureWasmReady=true → worklets" },
-              { label: "detail", value: "THREW run: InvalidStateError — 'engine-wasm-processor' is not defined in AudioWorkletGlobalScope" },
+              {
+                label: "outcome",
+                value:
+                  "THREW on every run — the live WASM boot consumed the one-and-only processor registration (ensureWasmReady still returns true)",
+              },
+              { label: "stages reached", value: "copy → ensureWasmReady=true → worklets" },
+              { label: "detail", value: "InvalidStateError — 'engine-wasm-processor' is not defined in AudioWorkletGlobalScope" },
             ]}
             got={gotByStep[2] ?? null}
           />
@@ -452,13 +419,12 @@ const App: React.FC = () => {
             title="Public API: deprecated AudioOfflineRenderer.start with WASM enabled"
             description={
               <>
-                The wasm modules are compiled globally (as they are after any live WASM boot),
-                the flag is on, and the consumer calls the deprecated-but-exported{" "}
+                The wasm modules are compiled globally (as they always are after the live
+                WASM boot at page init), and the consumer calls the deprecated-but-exported{" "}
                 <Code>AudioOfflineRenderer.start</Code>. Its internal OfflineAudioContext is a
                 second context — <Code>ensureReady</Code>'s one-and-only registration went
                 elsewhere — so the same <Code>InvalidStateError</Code> surfaces through a
-                public API. (Note: this step compiles the global modules, so running it
-                BEFORE step 2 pre-arms the bug and makes step 2's first run throw too.)
+                public API.
               </>
             }
             actions={runButton("Run (deprecated API)", runStep3)}
@@ -497,9 +463,9 @@ const App: React.FC = () => {
 File:           test-440hz.wav (60 s, 440 Hz sine), one 2 s region on one Tape track
 Render:         ${REGION_SECONDS} s at ${SAMPLE_RATE} Hz = ${numSamples} frames
 Hang ceiling:   ${HANG_TIMEOUT_MS / 1000} s
-Live engine:    TypeScript by default; ?engine=wasm boots a live WASM engine
-                (consumes ensureReady's one-and-only registration, so step 2
-                throws on its first run)`}
+Live engine:    WASM (always — the only engine)
+                (its boot consumes ensureReady's one-and-only registration,
+                so step 2 throws on its first run)`}
             </pre>
           </Card>
         </Flex>
