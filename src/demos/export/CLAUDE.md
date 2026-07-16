@@ -1,44 +1,57 @@
 # Export Demo — OpenDAW SDK Reference
 
-### Which Offline Render Path to Use (decision table)
-`src/lib/rangeExport.ts` renders on two paths; pick by ONE question — does the render
-need the metronome?
+### Offline Rendering: One Path (decision table retired at SDK 0.0.160)
+`src/lib/rangeExport.ts` renders EVERYTHING through `OfflineEngineRenderer`
+(`create → setPosition → play → waitForLoading → step(numSamples)`). The metronome —
+formerly the reason for a legacy `EngineWorklet` path — travels in the export
+configuration since 0.0.160 (openDAW#316, filed by this repo):
 
-| Need | Path | Why |
-|---|---|---|
-| Exact-range mixdown/stems, no metronome | `OfflineEngineRenderer` `create → setPosition → play → waitForLoading → step(numSamples)` with `variant: false` | Current API, worker-based, exact frame count |
-| Anything with the metronome | `OfflineAudioContext` + `AudioWorklets.createFor` + `createEngine` (EngineWorklet) | The ONLY path that reaches engine preferences |
+```ts
+// click mixed into a (no-stems) stereo mixdown
+{ metronome: { includeInMixdown: true, settings: { gain: -6 } } }
+// click as its own stem, appended AFTER the unit stems (countStems counts the extra pair)
+{ stems, metronome: { stem: { fileName: "Metronome" }, settings: { gain: -6 } } }
+// metronome-ONLY stem render (every unit deselected)
+{ stems: {}, metronome: { stem: { fileName: "Metronome" } } }
+```
 
-Key facts behind the split (verified SDK 0.0.159):
-- **Metronome enable/gain are engine PREFERENCES**, synced over the engine port's
-  `"engine-preferences"` channel. `EngineWorklet` hosts the sync (`worklet.preferences`);
-  `OfflineEngineRenderer` never attaches the host side — its processor keeps
-  `EngineSettingsSchema` defaults (metronome disabled) with NO way to change them.
-  Feature request filed upstream as
-  [openDAW#316](https://github.com/andremichelle/openDAW/issues/316) — if it lands,
-  the worklet path (and this split) can be retired.
+Key facts (verified SDK 0.0.160):
+- **Enabled is implied by presence** — `ExportConfiguration.isMetronomeAudible(config)`:
+  `includeInMixdown === true` (no stems) or `metronome.stem` defined (with stems). No
+  metronome key = silent. `settings` is `Partial<Omit<EngineSettings["metronome"],
+  "enabled">>` (gain/beatSubDivision/monophonic, schema defaults otherwise);
+  `clickSounds: {downbeat?, beat?}` replaces the synthesized 880/440 Hz defaults.
+- **`config.metronome` is consumed by the WASM offline worker ONLY** — the TS
+  `EngineProcessor`/TS offline worker ignore it (no click, no error). Drive `variant`
+  with `isMetronomeAudible`: metronome renders → `variant: true`; others stay on the TS
+  worker (`variant: false` — calibrated by audio-verify). `installWasmEngine()` before a
+  `variant: true` render: it only registers the worker URL, it does NOT boot the live
+  WASM engine (`EngineVariant.current()` stays null until `ensureReady`).
+- **Metronome stem channel order**: unit stems in `stems` key order, click pair LAST —
+  matches `ExportConfiguration.stemFileNames`; `sanitizeExportNamesInPlace` renames the
+  click (not a project stem) on filename collision.
 - **`renderer.render(config, start, end, progress)` does NOT stop at `end`** — the worker
   loop runs until silence detection or `config.maxDurationSeconds`; `endPosition` only
   drives the progress observable. For exact ranges always use `step(numSamples)`.
 - **`step(numSamples)` returns exactly numSamples frames** per channel
-  (`numChannels = countStems × 2`), assembled from 128-frame quanta. Validate
-  `channels.length` and `channels[0].length` anyway — a wedged worker returns garbage.
-- **Pass `variant: false` explicitly** — `variant` defaults to
-  `WasmEngine.useForExports()` (enabled && ready && hasVariant), so an installed+booted
-  WASM engine silently flips variant-less renders to the WASM worker.
+  (`numChannels = countStems × 2`). Validate `channels.length` and `channels[0].length`
+  anyway — a wedged worker returns garbage.
 - **Pass a `project.copy()`, never the live project** — `create()` connects the source's
   `liveStreamReceiver` (throws "Already connected" against a live engine). The copy also
   isolates loopArea/mute mutations.
 - **`play()` + `waitForLoading()` poll with no ceiling** — wrap them (and `step`) in a
   deadline (`src/lib/deadline.ts` `withDeadline`) or a wedged worker hangs the export
   forever with no error.
-- **Do NOT use the deprecated `AudioOfflineRenderer`** — beyond deprecation it throws
-  `InvalidStateError` once any WASM engine booted (openDAW#315, ensureReady registers the
-  processor module only on the first context).
-- Both paths verified to produce the SAME program material and identical frame counts
-  (A/B: byte-identical WAV sizes; spectral bands ~same; metronome render differs by
-  exactly the click content: +4.2 dB peak, +3.5 dB low-mid, tempo detector locks to
-  project BPM from the clicks).
+- **Do NOT use the deprecated `AudioOfflineRenderer`** — it throws `InvalidStateError`
+  once any WASM engine booted (openDAW#315, closed wontfix: use `OfflineEngineRenderer`).
+- **Roadmap (openDAW#315 closing comment): "The Typescript audio-engine will be removed
+  soon"** — expect `variant: false`, the TS residual of #311, and the manual
+  OfflineAudioContext pattern below to disappear; audio-verify will need a WASM
+  recalibration when that lands.
+- Verified at 0.0.160: new-API metronome mixdown is metric-identical to the 0.0.159
+  preferences-path render; metronome stem is a pure click track (project-BPM lock,
+  stability 0.989); audio-verify grid scenarios (metronome → WASM worker) match every
+  calibrated median exactly.
 
 ### Offline Audio Rendering (Export)
 With `Option.None`, `ExportConfiguration.countStems(config)` returns 1 (not 0), so the
@@ -62,7 +75,9 @@ the stem branch (metronome excluded).
 Pass a copy (not the live project) — both wrappers connect the source's
 `liveStreamReceiver`, which conflicts with a live engine.
 
-**Manual approach (metronome renders — the one thing only this path can do):**
+**Manual approach (reference only — superseded at 0.0.160 by `ExportConfiguration.metronome`;
+the sole remaining use is a metronome render pinned to the TS engine, and the TS engine is
+slated for removal):**
 ```typescript
 const projectCopy = project.copy();
 projectCopy.boxGraph.beginTransaction();

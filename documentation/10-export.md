@@ -251,7 +251,7 @@ for arbitrary ranges (where `config` is an `OfflineEngineRenderConfig`, not an `
 > it. Render from a `project.copy()`. See
 > [Advanced: Offline Rendering Patterns](#advanced-offline-rendering-patterns) for
 > exact-range export via `step()`, `render()`'s silence-bounded (not end-bounded) loop,
-> and why metronome renders still need the manual `OfflineAudioContext` pipeline.
+> and the metronome export configuration (WASM offline worker only).
 
 ### WavFile
 
@@ -813,8 +813,8 @@ OpenDAW has two offline renderers:
 
 | Renderer | Status | Limitation |
 |----------|--------|------------|
-| `AudioOfflineRenderer` | Deprecated | Uses `OfflineAudioContext` on main thread. No range support (always renders 0 to last region). Throws once the WASM engine has booted anywhere (its internal context is never registered — `WasmEngine.ensureReady` registers the processor only on the first context). |
-| `OfflineEngineRenderer` | Current | Worker-based custom render loop. Connects the source's `liveStreamReceiver` — throws "Already connected" on a live project, so render from a `project.copy()`. No access to engine preferences (see metronome note below). |
+| `AudioOfflineRenderer` | Deprecated — do not use ([openDAW#315](https://github.com/andremichelle/openDAW/issues/315) closed wontfix: use `OfflineEngineRenderer`; the TypeScript audio engine is slated for removal) | Uses `OfflineAudioContext` on main thread. No range support (always renders 0 to last region). Throws once the WASM engine has booted anywhere (its internal context is never registered — `WasmEngine.ensureReady` registers the processor only on the first context). |
+| `OfflineEngineRenderer` | Current | Worker-based custom render loop. Connects the source's `liveStreamReceiver` — throws "Already connected" on a live project, so render from a `project.copy()`. Metronome config is honored by the WASM worker only — pass `variant: true` for click renders. |
 
 **Path selection:** `ExportConfiguration.countStems(Option.None)` returns **1** (not 0), so the `numStems === 0` panic guard only fires for `Option.Some({stems: {}})` (an empty stems map). The `EngineProcessor` then branches on the **stems array** (`stemExports.length === 0`), which is empty for `Option.None`/undefined config — so it takes the **mixdown branch** and mixes the metronome into the main output. A non-empty `stems` map takes the **stem branch** (per-unit stereo pairs, metronome excluded). So:
 - `Option.None` / undefined `exportConfiguration` = **mixdown path, metronome included**
@@ -860,16 +860,31 @@ try {
 }
 ```
 
-**Metronome caveat:** the engine's metronome flag/gain live in engine *preferences*, which
-sync over the engine port's `"engine-preferences"` channel. `EngineWorklet` hosts that sync
-(`worklet.preferences`); `OfflineEngineRenderer` never attaches the host side, so its
-processor keeps the schema defaults — **metronome permanently disabled, no API to change
-it** ([openDAW#316](https://github.com/andremichelle/openDAW/issues/316) requests one).
-Metronome renders must use the `OfflineAudioContext` approach below.
+**Metronome:** the click travels in the export configuration — no renderer wiring
+([openDAW#316](https://github.com/andremichelle/openDAW/issues/316)):
+
+```typescript
+// click mixed into a (no-stems) stereo mixdown
+{ metronome: { includeInMixdown: true, settings: { gain: -6 } } }
+// click as its own stem, appended AFTER the unit stems (countStems counts the extra pair)
+{ stems, metronome: { stem: { fileName: "Metronome" }, settings: { gain: -6 } } }
+```
+
+Enabled is implied by presence (`ExportConfiguration.isMetronomeAudible`); `settings`
+overrides gain/beatSubDivision/monophonic; `clickSounds: {downbeat?, beat?}` supplies
+custom PCM in place of the synthesized 880/440 Hz defaults. **Only the WASM offline worker
+consumes `config.metronome`** — the TS worker ignores it silently — so metronome renders
+must run `variant: true` (the `useForExports()` default in the studio). A metronome render
+on the TS engine remains possible only via the `OfflineAudioContext` approach below, and
+per upstream the TypeScript audio engine will be removed soon.
 
 ### The OfflineAudioContext Approach (metronome renders)
 
-This approach bypasses both renderers and uses the same building blocks they use internally: `project.copy()`, `OfflineAudioContext`, and `AudioWorklets.createEngine()`. Its `EngineWorklet` exposes `preferences`, which is what makes the metronome reachable.
+> **Superseded** by `ExportConfiguration.metronome` (see above). This pattern remains
+> only for a metronome render pinned to the TS engine — and upstream has announced the
+> TypeScript audio engine's removal, so treat it as reference material.
+
+This approach bypasses both renderers and uses the same building blocks they use internally: `project.copy()`, `OfflineAudioContext`, and `AudioWorklets.createEngine()`. Its `EngineWorklet` exposes `preferences`, which is what makes the metronome reachable on the TS engine.
 
 ```typescript
 import { Project, AudioWorklets } from "@opendaw/studio-core";
@@ -972,7 +987,7 @@ if (this.#stemExports.length === 0) {
 
 There is no way to get metronome in the stem path or individual stems in the mixdown path. This is a fundamental SDK design decision.
 
-**Note:** `OfflineEngineRenderer` selects the same branch the same way. `countStems(Option.None)` returns 1 only to size the output (`numStems * 2` channels); the renderer then forwards `optExportConfiguration.unwrapOrUndefined()` — `undefined` for `Option.None` — so `stemExports` stays empty and it takes the mixdown branch, exactly like the manual `createEngine(undefined)` path. "Metronome included" on that branch means the metronome bus is mixed in *when enabled* — and on `OfflineEngineRenderer` it never can be (no preferences access), so its mixdowns are always click-free. The demo now uses `OfflineEngineRenderer.step()` for all non-metronome renders and keeps the manual `OfflineAudioContext` pipeline only for metronome-enabled ones (see `src/lib/rangeExport.ts`).
+**Note:** `OfflineEngineRenderer` selects the same branch the same way. `countStems(Option.None)` returns 1 only to size the output (`numStems * 2` channels; with a `metronome.stem` the click pair counts too). Enabling the click is a property of the export configuration (`isMetronomeAudible`), not of engine preferences — honored by the WASM offline worker only. The demo renders everything through `OfflineEngineRenderer.step()` and drives `variant` with `isMetronomeAudible` (see `src/lib/rangeExport.ts`).
 
 #### Mutate-Copy-Restore Pattern
 
