@@ -459,7 +459,7 @@ Recording and MIDI demos have never run on the WASM engine in this repo; this ta
 
 ### Task 10: Regression triage → upstream issues; open PR
 
-- [ ] **Step 1: For each confirmed regression from Tasks 8-9** (reproduced twice, measured signature captured): file a GitHub issue on `andremichelle/openDAW` via `gh issue create --repo andremichelle/openDAW` with: live repro page URL, link to a new/updated `debug/<topic>.md` write-up (follow `debug/README.md` convention), the measured signature (numbers, not adjectives), and a suggested fix if the mechanism is identifiable. Cross-link the issue number into the repro page's DebugLinkBar and the debug note header (commit those edits).
+- [ ] **Step 1: For each confirmed regression from Tasks 8-9** (reproduced twice, measured signature captured): DRAFT the issue content into `.superpowers/sdd/issue-drafts.md` — one section per issue with proposed title and full body (live repro page URL, link to a new/updated `debug/<topic>.md` write-up per `debug/README.md` convention, the measured signature — numbers, not adjectives — and a suggested fix if the mechanism is identifiable). **Present the drafts to the user and WAIT for their approval before running any `gh issue create` (user directive 2026-07-16).** After filing approved issues, cross-link the issue numbers into the repro page's DebugLinkBar and the debug note header (commit those edits).
 - [ ] **Step 2: Delete in-flight docs** (they're completed by this PR): `git rm docs/superpowers/specs/2026-07-16-wasm-engine-only-design.md docs/superpowers/plans/2026-07-16-wasm-engine-only.md` and commit.
 - [ ] **Step 3: Open the PR.**
 
