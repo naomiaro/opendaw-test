@@ -701,11 +701,9 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   (`node_modules/@opendaw/*/dist`), not the upstream git tag diff — a release tag can
   contain commits the npm publish was built without (0.0.158: `migrateCaptureTrackMismatch`
   in the tag, absent from the published studio-core@0.0.156).
-- Upstream fixes/features may land in ONE engine only (WASM vs TS — e.g. the #311 seam
-  fix, `ExportConfiguration.metronome`). Verify closed-issue claims and new features per
-  engine: the seam/voice-fade repro pages take `?engine=wasm`, and grep the TS dists
-  (`studio-core/dist/processors.js`, `offline-engine.js`) for the new identifiers before
-  assuming the TS path has them.
+- The demos run the WASM engine exclusively (TS engine deprecated upstream and unwired
+  here) — verify upstream fixes/features against the WASM dists (`studio-core-wasm`);
+  TS-dist greps are only for historical comparison.
 - Proving a render-path migration didn't change audio: render the same scenario through
   old and new code and compare WAV SHA-256 — byte-identical beats any threshold argument.
   Commit (or stash) work-in-progress BEFORE `git checkout main -- <file>` A/B swaps: the

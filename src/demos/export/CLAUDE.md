@@ -22,11 +22,9 @@ Key facts (verified SDK 0.0.160):
   "enabled">>` (gain/beatSubDivision/monophonic, schema defaults otherwise);
   `clickSounds: {downbeat?, beat?}` replaces the synthesized 880/440 Hz defaults.
 - **`config.metronome` is consumed by the WASM offline worker ONLY** — the TS
-  `EngineProcessor`/TS offline worker ignore it (no click, no error). Drive `variant`
-  with `isMetronomeAudible`: metronome renders → `variant: true`; others stay on the TS
-  worker (`variant: false` — calibrated by audio-verify). `installWasmEngine()` before a
-  `variant: true` render: it only registers the worker URL, it does NOT boot the live
-  WASM engine (`EngineVariant.current()` stays null until `ensureReady`).
+  `EngineProcessor`/TS offline worker ignore it (no click, no error). This is moot for
+  the render path itself: every render passes `variant: true` — the WASM offline worker
+  is the only render path in this project (see `src/lib/rangeExport.ts`).
 - **Metronome stem channel order**: unit stems in `stems` key order, click pair LAST —
   matches `ExportConfiguration.stemFileNames`; `sanitizeExportNamesInPlace` renames the
   click (not a project stem) on filename collision.
@@ -44,10 +42,11 @@ Key facts (verified SDK 0.0.160):
   forever with no error.
 - **Do NOT use the deprecated `AudioOfflineRenderer`** — it throws `InvalidStateError`
   once any WASM engine booted (openDAW#315, closed wontfix: use `OfflineEngineRenderer`).
-- **Roadmap (openDAW#315 closing comment): "The Typescript audio-engine will be removed
-  soon"** — expect `variant: false`, the TS residual of #311, and the manual
-  OfflineAudioContext pattern below to disappear; audio-verify will need a WASM
-  recalibration when that lands.
+- **This repo has already removed its TypeScript-engine render paths** — every offline
+  render passes `variant: true` and runs on the WASM offline worker exclusively (upstream
+  roadmap per the openDAW#315 closing comment: "The Typescript audio-engine will be
+  removed soon" from the SDK too). No claim is made here about audio-verify's calibrated
+  numbers under this change — that recalibration is tracked separately.
 - Verified at 0.0.160: new-API metronome mixdown is metric-identical to the 0.0.159
   preferences-path render; metronome stem is a pure click track (project-BPM lock,
   stability 0.989); audio-verify grid scenarios (metronome → WASM worker) match every
@@ -74,41 +73,6 @@ the stem branch (metronome excluded).
 
 Pass a copy (not the live project) — both wrappers connect the source's
 `liveStreamReceiver`, which conflicts with a live engine.
-
-**Manual approach (reference only — superseded at 0.0.160 by `ExportConfiguration.metronome`;
-the sole remaining use is a metronome render pinned to the TS engine, and the TS engine is
-slated for removal):**
-```typescript
-const projectCopy = project.copy();
-projectCopy.boxGraph.beginTransaction();
-projectCopy.timelineBox.loopArea.enabled.setValue(false);
-projectCopy.boxGraph.endTransaction();
-
-const context = new OfflineAudioContext(numChannels, numSamples, sampleRate);
-const worklets = await AudioWorklets.createFor(context);
-const engineWorklet = worklets.createEngine({
-  project: projectCopy,
-  exportConfiguration, // undefined = mixdown (metronome included), config = stems (no metronome)
-});
-engineWorklet.connect(context.destination, 0);
-
-// Engine preferences don't travel with project.copy() — set on worklet directly
-engineWorklet.preferences.settings.metronome.enabled = true;
-engineWorklet.preferences.settings.metronome.gain = -6; // dB, max 0
-
-engineWorklet.setPosition(startPpqn);
-await engineWorklet.isReady();
-engineWorklet.play();
-while (!(await engineWorklet.queryLoadingComplete())) { await Wait.timeSpan(TimeSpan.millis(100)); }
-const audioBuffer = await context.startRendering();
-projectCopy.terminate();
-```
-
-- Mixdown path (no `exportConfiguration`) = `EngineProcessor` branch `stemExports.length === 0` = metronome included
-- Stem path (`exportConfiguration` provided) = per-track channels, metronome excluded
-- `project.copy()` shares the same `sampleManager` (samples stay loaded) but NOT engine preferences
-- Metronome gain: `z.number().min(-Infinity).max(0)` — default `-6` dB, max `0` dB (no boost, unlike track volume which goes to +6)
-- Metronome schema also carries a `monophonic: boolean` field
 
 ### Mutate-Copy-Restore Pattern for Offline Rendering
 `project.copy()` creates new box instances — you cannot modify the original project's
