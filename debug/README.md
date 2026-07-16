@@ -20,6 +20,8 @@ Documented bugs and open questions from working with the OpenDAW SDK. Each file 
   context — see [wasm-ensure-ready-second-context.md](./wasm-ensure-ready-second-context.md)).
   The live WASM transport can take 20–30 s+ after `play()`
   before position advances on these pages; the offline scan does not depend on it.
+  **Update 2026-07-16:** observed at SDK 0.0.159; re-tested at 0.0.160 and the delay did
+  NOT reproduce — position advanced in ~3.3 s.
 - **Claims about runtime behaviour must be empirically verified, not inferred.** Tracing through SDK source produces plausible-looking explanations but can include unverified steps. If the doc states "X happens because Y," `Y` must be confirmed by logging the relevant value at runtime, stepping through with a debugger, or otherwise observing it directly. Citation of file:line for `Y` is not verification of `Y` — it's verification that the code at that location *exists*. When in doubt, present the symptom and repro without the mechanism, and let the maintainer diagnose.
 
 ## Index

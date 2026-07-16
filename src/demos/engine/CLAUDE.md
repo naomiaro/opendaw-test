@@ -70,7 +70,8 @@ engine will be removed soon.
 Live WASM transport quirk (observed on the debug repro pages at 0.0.159): after
 `engine.play()` the position can take 20–30 s+ to start advancing (occasionally not at all
 until a re-play) while `isPlaying` flips true immediately. Offline renders don't depend on
-the live transport — prefer them for measurements.
+the live transport — prefer them for measurements. Re-tested at 0.0.160 (2026-07-16): did
+not reproduce — position advanced in ~3.3 s.
 
 ## Performance reporting is itself a cost
 

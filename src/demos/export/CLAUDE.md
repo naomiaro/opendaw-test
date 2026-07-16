@@ -45,8 +45,9 @@ Key facts (verified SDK 0.0.160):
 - **This repo has already removed its TypeScript-engine render paths** — every offline
   render passes `variant: true` and runs on the WASM offline worker exclusively (upstream
   roadmap per the openDAW#315 closing comment: "The Typescript audio-engine will be
-  removed soon" from the SDK too). No claim is made here about audio-verify's calibrated
-  numbers under this change — that recalibration is tracked separately.
+  removed soon" from the SDK too). audio-verify was re-run and recalibrated on the WASM
+  worker — see `.claude/skills/audio-verify/SKILL.md` (2026-07-16 entry) for the updated
+  medians.
 - Verified at 0.0.160: new-API metronome mixdown is metric-identical to the 0.0.159
   preferences-path render; metronome stem is a pure click track (project-BPM lock,
   stability 0.989); audio-verify grid scenarios (metronome → WASM worker) match every

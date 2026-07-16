@@ -752,7 +752,7 @@ Each demo category folder has its own CLAUDE.md with SDK knowledge scoped to tho
 - `src/demos/effects/CLAUDE.md` — EffectBox, scriptable devices, ScriptCompiler, Werkstatt
 - `src/demos/export/CLAUDE.md` — offline rendering, mutate-copy-restore pattern
 - `src/demos/warp/CLAUDE.md` — beat maps, warp markers, tempo-map conform, time-stretch
-- `src/demos/engine/CLAUDE.md` — WASM (Rust) engine: EngineVariant/WasmEngine wiring, live engine swap, DSP-load reporting
+- `src/demos/engine/CLAUDE.md` — WASM (Rust) engine: EngineVariant/WasmEngine wiring and boot, offline rendering notes, DSP-load reporting
 
 ## Reference Files
 - Project setup: `src/lib/projectSetup.ts`
