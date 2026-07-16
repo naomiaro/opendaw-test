@@ -101,4 +101,22 @@ Present-tense updates (no version pins in `documentation/*.md`):
    `wasmEngine.test.ts`.
 3. Browser (real clicks, measure output RMS, not UI state): playback demo,
    one recording demo, MIDI demo, repurposed wasm-engine-demo, one debug page.
-4. `audio-verify` skill for offline/warp render numeric assertions.
+4. **Full audio analysis across features** — since every feature now renders on the
+   WASM engine for the first time, verify actual audio per feature area, not just
+   boot success:
+   - `audio-verify` skill: offline-render the warp demo scenarios, assert beat
+     alignment numerically.
+   - Offline renders (rangeExport / export demo, incl. metronome via
+     `ExportConfiguration.metronome`) analyzed with the audio-analyzer MCP
+     (RMS/peaks, spectral sanity, silence detection).
+   - Re-run the debug-page measured signatures on WASM: touching-seam ratio
+     (#311 — expect 1.00), voice-fade × clip-fade product (#312 — expect ≈0 dB dip),
+     shared-source double-process peak, fades/crossfade envelopes.
+   - MIDI synth (Vaporisateur) and playback demos: output RMS + rough spectral
+     check (non-silent, no clipping).
+5. **Regressions → upstream issues:** any behavior that regressed vs the recorded
+   TS-engine or 0.0.159-WASM measurements gets a GitHub issue on
+   `andremichelle/openDAW` (live repro page URL + `debug/*.md` write-up + measured
+   signature + suggested fix, per repo convention), cross-linked back into the
+   repro page's DebugLinkBar and the debug note header. Known candidate to check:
+   the live-transport position-start delay quirk.
