@@ -680,8 +680,8 @@ const App: React.FC = () => {
                   (<code>useInstrumentOutput: false</code>) so effects, aux sends, and the
                   strip&apos;s volume/pan all reach the render. The metronome travels in the
                   export configuration &mdash; mixed into the mixdown or appended as its own
-                  stem pair &mdash; and is honored by the WASM offline worker, so
-                  click-including renders pass <code>variant: true</code>.
+                  stem pair. Since the WASM offline worker is the only engine, all renders pass{" "}
+                  <code>variant: true</code>.
                 </p>
 
                 <Text size="2" weight="bold" style={{ display: "block", marginTop: 16 }}>
@@ -693,12 +693,10 @@ const App: React.FC = () => {
   metronome: { includeInMixdown: true,                 // or stem: { fileName: "Metronome" }
                settings: { gain: -6 } },               // enabled is implied by presence
 };
-const metronomeAudible = ExportConfiguration.isMetronomeAudible(Option.wrap(config));
-if (metronomeAudible) installWasmEngine();             // registers the worker; no live boot
 const copy = project.copy();
 const renderer = await OfflineEngineRenderer.create(
   copy, Option.wrap(config), sampleRate,
-  metronomeAudible,  // WASM offline worker renders the click; TS worker ignores it
+  true,  // WASM offline worker — the only engine; it also renders the click
 );
 renderer.setPosition(startPpqn);
 await renderer.play();           // transport + first queryLoadingComplete

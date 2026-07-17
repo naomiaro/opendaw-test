@@ -17,6 +17,8 @@ import {
 import type { SoundfontService } from "@opendaw/studio-core";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { testFeatures } from "../features";
+import { installWasmEngine, ensureWasmReady } from "./wasmEngine";
+import { withDeadline } from "./deadline";
 
 import WorkersUrl from "@opendaw/studio-core/workers-main.js?worker&url";
 import WorkletsUrl from "@opendaw/studio-core/processors.js?url";
@@ -59,13 +61,6 @@ export interface ProjectSetupOptions {
    * Optional status update callback for progress messages
    */
   onStatusUpdate?: (status: string) => void;
-
-  /**
-   * Optional async hook run AFTER worklets/project are created but immediately BEFORE
-   * project.startAudioWorklet(). Use it to install an EngineVariant (e.g. the WASM engine)
-   * so the very first EngineWorklet boots the chosen backend. Receives the live AudioContext.
-   */
-  onBeforeEngineStart?: (audioContext: AudioContext) => Promise<void>;
 }
 
 /**
@@ -107,7 +102,7 @@ export interface ProjectSetupResult {
  * ```
  */
 export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Promise<ProjectSetupResult> {
-  const { localAudioBuffers, bpm = 120, onStatusUpdate, onBeforeEngineStart } = options;
+  const { localAudioBuffers, bpm = 120, onStatusUpdate } = options;
 
   console.log("========================================");
   console.log("openDAW -> headless -> initializing");
@@ -203,7 +198,14 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
 
   // Clear persisted engine preferences before project creation so demos start fresh.
   // This prevents settings from a previous session affecting the current demo.
-  localStorage.removeItem("engine-preferences");
+  try {
+    localStorage.removeItem("engine-preferences");
+  } catch (error) {
+    // Storage-blocked contexts (sandboxed iframe, storage disabled) throw a raw
+    // SecurityError here. A stale persisted flag can't exist in such a context
+    // either, so there is nothing to clear — warn and continue.
+    console.warn("localStorage unavailable — cannot clear persisted engine preferences: " + String(error));
+  }
 
   // Create sample service (0.0.124+: required for recording finalization)
   const sampleService = new SampleService(audioContext);
@@ -239,14 +241,41 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
     });
   }
 
-  // Optional engine-variant install (e.g. WASM) — must run before the first worklet boots.
-  if (onBeforeEngineStart) {
-    await onBeforeEngineStart(audioContext);
+  // WASM (Rust) engine only — the TypeScript engine is being removed upstream and this
+  // repo no longer wires it. Must run BEFORE the first startAudioWorklet():
+  // EngineWorklet reads EngineVariant.current() at construction time.
+  installWasmEngine();
+  onStatusUpdate?.("Compiling WASM engine...");
+  // Compile + fetch of the wasm binaries has no ceiling of its own — a processor that
+  // compiles but errors at worklet construction would otherwise hang every page load
+  // at "Compiling WASM engine..." forever. Generous budget: this covers first-visit
+  // cold fetch of the wasm binaries, not just compilation.
+  const wasmReady = await withDeadline(
+    ensureWasmReady(audioContext),
+    60_000,
+    "WASM engine compile"
+  );
+  if (!wasmReady) {
+    // WasmEngine.ensureReady() (@opendaw/studio-core-wasm) already logs
+    // `console.warn("WASM engine unavailable:", error)` on the failure path — no need to
+    // duplicate it here, just point the thrown error at it.
+    throw new Error(
+      "WASM engine failed to initialize (artifacts missing or compilation failed). " +
+        "There is no TypeScript fallback — check that /wasm-engine assets are served " +
+        "(wasm-engine-assets Vite plugin) and that the browser supports WebAssembly. " +
+        "See the 'WASM engine unavailable' console warning for the underlying error."
+    );
   }
+
+  onStatusUpdate?.("Starting engine...");
 
   // Start audio worklet and wait for engine to be ready
   project.startAudioWorklet();
-  await project.engine.isReady();
+  // engine.isReady() resolves once the worklet reports ready, or HANGS forever — it never
+  // rejects. A processor that compiles cleanly but throws during worklet construction
+  // (e.g. inside processorOptions handling) would otherwise stick every page at "Starting
+  // engine..." with no error surfaced. 30s matches the previous switchEngine() REBOOT_TIMEOUT_MS.
+  await withDeadline(project.engine.isReady(), 30_000, "engine boot");
 
   console.debug("Engine is ready!");
   onStatusUpdate?.("Loading tracks...");

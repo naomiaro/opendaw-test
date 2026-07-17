@@ -1,18 +1,16 @@
-import { Project, AudioWorklets, OfflineEngineRenderer } from "@opendaw/studio-core";
+import { Project, OfflineEngineRenderer } from "@opendaw/studio-core";
 import { PPQN } from "@opendaw/lib-dsp";
-import { Option, TimeSpan } from "@opendaw/lib-std";
-import { Wait } from "@opendaw/lib-runtime";
-import { isWasmEnabled, isWasmInstalled, isWasmReady } from "@/lib/wasmEngine";
+import { Option } from "@opendaw/lib-std";
+import { isWasmReady } from "@/lib/wasmEngine";
 import { withDeadline } from "@/lib/deadline";
 
 const LOADING_TIMEOUT_MS = 30_000;
 
 /**
  * Render a slice of the live project to a stereo `Float32Array[]` — via
- * `OfflineAudioContext` (TS engine) or `OfflineEngineRenderer` with
- * `variant: true` (WASM engine active). Used by the debug demos to scan
- * rendered audio for amplitude artifacts that confirm (or refute) the
- * suspected mechanism documented in the sibling markdown notes.
+ * `OfflineEngineRenderer` with `variant: true` (WASM engine). Used by the
+ * debug demos to scan rendered audio for amplitude artifacts that confirm
+ * (or refute) the suspected mechanism documented in the sibling markdown notes.
  *
  * Operates on `project.copy()` so live playback state and the live engine
  * are untouched — same pattern as `lib/rangeExport.ts`'s `renderRange`.
@@ -27,6 +25,18 @@ export async function renderOfflineSlice(
   endSeconds: number,
   sampleRate: number = 48000
 ): Promise<{ channels: Float32Array[]; sampleRate: number }> {
+  // WASM offline worker is the only render path (the TS engine is removed from this
+  // repo). OfflineAudioContext + createEngine is NOT usable here: ensureReady
+  // registers the processor module only on the FIRST context it ever sees
+  // (see debug/wasm-ensure-ready-second-context.md), and the live engine already
+  // consumed that registration at initializeOpenDAW time.
+  // Checked BEFORE project.copy() so the error path doesn't pay for an unnecessary clone.
+  if (!isWasmReady()) {
+    throw new Error(
+      "WASM engine is not ready — initializeOpenDAW() must complete before renderOfflineSlice()."
+    );
+  }
+
   const projectCopy = project.copy();
   try {
     projectCopy.editing.modify(() => {
@@ -43,79 +53,41 @@ export async function renderOfflineSlice(
     const bpm = projectCopy.timelineBox.bpm.getValue();
     const startPPQN = PPQN.secondsToPulses(startSeconds, bpm);
 
-    // WASM (Rust) engine: OfflineAudioContext + createEngine fails here because
-    // WasmEngine.ensureReady registers the processor module only on the FIRST context
-    // it ever sees — with the live WASM engine booted, a fresh offline context gets
-    // `true` back but no registration, and createEngine throws InvalidStateError
-    // (see debug/wasm-ensure-ready-second-context.md). The immune offline path is
-    // OfflineEngineRenderer with `variant: true`, which runs the WASM offline worker
-    // (self-loads the wasm artifacts) registered by WasmEngine.install's offlineWorkerUrl.
-    // Gate mirrors WasmEngine.useForExports (enabled && ready) so the scan can never
-    // run a different engine than the page's live engine/badge — `isWasmEnabled` alone
-    // is a default-true opt-out flag, not a "wasm actually booted" signal.
-    if (isWasmInstalled() && isWasmEnabled() && isWasmReady()) {
-      const renderer = await OfflineEngineRenderer.create(
-        projectCopy,
-        Option.None,
-        sampleRate,
-        true
+    const renderer = await OfflineEngineRenderer.create(
+      projectCopy,
+      Option.None,
+      sampleRate,
+      true
+    );
+    try {
+      renderer.setPosition(startPPQN);
+      // waitForLoading/play poll queryLoadingComplete with no ceiling — bound them
+      // with a deadline, or a broken worker hangs the scan forever.
+      await withDeadline(
+        (async () => {
+          await renderer.play();
+          await renderer.waitForLoading();
+        })(),
+        LOADING_TIMEOUT_MS,
+        "WASM offline render: sample loading"
       );
-      try {
-        renderer.setPosition(startPPQN);
-        // waitForLoading/play poll queryLoadingComplete with no ceiling — bound them
-        // like the TS path below, or a broken worker hangs the scan forever.
-        await withDeadline(
-          (async () => {
-            await renderer.play();
-            await renderer.waitForLoading();
-          })(),
-          LOADING_TIMEOUT_MS,
-          "WASM offline render: sample loading"
-        );
-        const channels = await withDeadline(
-          renderer.step(numSamples),
-          LOADING_TIMEOUT_MS,
-          "WASM offline render: step"
-        );
-        if (channels.length < 2 || channels[0].length !== numSamples) {
-          throw new Error(
-            `WASM offline render returned ${channels.length} channel(s) of ` +
-              `${channels[0]?.length ?? 0} frames, expected 2×${numSamples}`
-          );
-        }
-        return { channels: channels.slice(0, 2), sampleRate };
-      } finally {
-        // Cleanup must not mask an in-flight error or skip terminate().
-        try { renderer.stop(); } catch (e) { console.error("renderer.stop() failed: " + String(e)); }
-        try { renderer.terminate(); } catch (e) { console.error("renderer.terminate() failed: " + String(e)); }
-      }
-    }
-
-    const context = new OfflineAudioContext(2, numSamples, sampleRate);
-    const worklets = await AudioWorklets.createFor(context);
-    const engineWorklet = worklets.createEngine({ project: projectCopy });
-    engineWorklet.connect(context.destination, 0);
-
-    engineWorklet.setPosition(startPPQN);
-    await engineWorklet.isReady();
-    engineWorklet.play();
-
-    const startedAt = Date.now();
-    while (!(await engineWorklet.queryLoadingComplete())) {
-      if (Date.now() - startedAt > LOADING_TIMEOUT_MS) {
+      const channels = await withDeadline(
+        renderer.step(numSamples),
+        LOADING_TIMEOUT_MS,
+        "WASM offline render: step"
+      );
+      if (channels.length < 2 || channels[0].length !== numSamples) {
         throw new Error(
-          `Sample loading timed out after ${LOADING_TIMEOUT_MS / 1000}s`
+          `WASM offline render returned ${channels.length} channel(s) of ` +
+            `${channels[0]?.length ?? 0} frames, expected 2×${numSamples}`
         );
       }
-      await Wait.timeSpan(TimeSpan.millis(100));
+      return { channels: channels.slice(0, 2), sampleRate };
+    } finally {
+      // Cleanup must not mask an in-flight error or skip terminate().
+      try { renderer.stop(); } catch (e) { console.error("renderer.stop() failed: " + String(e)); }
+      try { renderer.terminate(); } catch (e) { console.error("renderer.terminate() failed: " + String(e)); }
     }
-
-    const buffer = await context.startRendering();
-    const channels: Float32Array[] = [];
-    for (let i = 0; i < buffer.numberOfChannels; i++) {
-      channels.push(buffer.getChannelData(i));
-    }
-    return { channels, sampleRate: buffer.sampleRate };
   } finally {
     projectCopy.terminate();
   }

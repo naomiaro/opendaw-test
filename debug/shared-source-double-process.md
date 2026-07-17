@@ -9,6 +9,11 @@
 
 The repro page is retained as a regression check; run it with `?engine=wasm` for the fixed path and without for the TS-path residual.
 
+**Update 2026-07-16 (historical):** the app now boots the WASM engine unconditionally and
+the repro page no longer has a `?engine=wasm` param — the TS-path residual measurement above
+(seam-Δ/pre-Δ = 1.87) is no longer reachable from the page. Both measurements are kept for
+the record; only the WASM-engine result (seam-Δ/pre-Δ = 1.00) reflects current behavior.
+
 **Verified against (previous):** OpenDAW SDK 0.0.158 (`@opendaw/studio-sdk@0.0.158`, `@opendaw/studio-core@0.0.156`); re-verified 2026-07-14 via the repro page's offline scan — seam-Δ/pre-Δ = 2.00 (max |Δ| 0.05745 at τ −0.042 ms), SHARED and DISTINCT cells identical, unchanged from 0.0.147. First verified at SDK 0.0.147.
 
 **Repro page:** [`shared-source-double-process-debug-demo.html`](../shared-source-double-process-debug-demo.html) (unlisted; filename preserved for history, but the artifact is NOT shared-source-specific and NOT block-alignment-specific — see "Mechanism" below). Audio fixture: [`public/audio/test-440hz.wav`](../public/audio/test-440hz.wav) (60 s, 440 Hz sine, mono, 44.1 kHz, 16-bit).

@@ -1,7 +1,13 @@
 # Swappable Audio Engine (WASM)
 
-> **Skip if:** the built-in TypeScript engine meets your needs — every demo works on it unchanged, and the WASM engine is entirely opt-in.
 > **Prerequisites:** Ch. 00 (System Architecture) for the worklet/engine model, Ch. 15 (Performance & Debugging) for DSP-load context.
+
+The SDK ships this engine choice as a runtime switch — `EngineVariant` defaults to the
+built-in TypeScript engine and only boots WASM once a variant provider is installed. This
+project takes a narrower stance than the SDK allows: it installs the WASM variant
+unconditionally at startup and treats a failed `ensureReady` as **fatal** (it throws rather
+than silently continuing on the TypeScript engine). The sections below describe the SDK
+mechanism as the SDK exposes it, noting where this project's policy is stricter.
 
 ## Table of Contents
 
@@ -10,7 +16,6 @@
   - [The WasmEngine Façade](#the-wasmengine-facade)
   - [Serving the WASM Binaries](#serving-the-wasm-binaries)
   - [Low-Level: EngineVariant.install](#low-level-enginevariantinstall)
-- [Swapping Engines Live](#swapping-engines-live)
 - [Offline Renders Through the Variant](#offline-renders-through-the-variant)
 - [Configuring the Engine](#configuring-the-engine)
   - [Engine Preferences](#engine-preferences)
@@ -76,15 +81,16 @@ import offlineWorkerUrl from "@opendaw/studio-core-wasm/wasm-offline-worker.js?w
 
 WasmEngine.install({ processorUrl, offlineWorkerUrl, wasmUrl: "/wasm-engine" });
 
-// ensureReady needs the AudioContext the engine will run on. It returns false when the
-// artifacts are unavailable (e.g. a deploy without them) — fall back to the TS engine.
+// ensureReady needs the AudioContext the engine will run on. It resolves false when the
+// artifacts are unavailable (e.g. a deploy without them) or compilation fails. The SDK
+// leaves what happens next up to you; this project treats it as fatal — no fallback:
 const ready = await WasmEngine.ensureReady(audioContext);
 if (!ready) {
-  console.warn("WASM engine unavailable — using the TypeScript engine.");
+  throw new Error("WASM engine failed to initialize — this project has no TypeScript fallback.");
 }
 ```
 
-Enabling the WASM engine is opt-in at the **integration** level — nothing happens until you call `install` and serve the binaries. But *once installed*, the **runtime** flag is opt-out: `isEnabled()` reads a persisted `localStorage` flag that defaults to enabled and records only an explicit opt-out. Toggle it with `setEnabled(true | false)`. While the engine is disabled or its modules are not yet compiled, the `EngineVariant` provider yields `null`, so the next boot uses the TypeScript engine.
+Enabling the WASM engine is opt-in at the **integration** level — nothing happens until you call `install` and serve the binaries. But *once installed*, the **runtime** flag is opt-out: `isEnabled()` reads a persisted `localStorage` flag that defaults to enabled and records only an explicit opt-out. Toggle it with `setEnabled(true | false)`. While the engine is disabled or its modules are not yet compiled, the `EngineVariant` provider yields `null`, so the SDK's own next boot would fall through to the TypeScript engine — this project instead throws before that boot happens (see above).
 
 ### Serving the WASM Binaries
 
@@ -97,7 +103,7 @@ ${wasmUrl}/wasm/plugins/device_reverb.wasm
 … (one per device box type)
 ```
 
-The binaries ship inside the package at `@opendaw/studio-core-wasm/dist/wasm/`, and are fetched with plain `fetch` + `WebAssembly.compile` (no streaming), so no special `Content-Type` is required. Serve that `wasm/` subtree at your chosen `wasmUrl` base — copy it into your static assets at build time, or serve it straight from the package in development. If a binary is missing, `ensureReady` resolves to `false` and the engine falls back to TypeScript.
+The binaries ship inside the package at `@opendaw/studio-core-wasm/dist/wasm/`, and are fetched with plain `fetch` + `WebAssembly.compile` (no streaming), so no special `Content-Type` is required. Serve that `wasm/` subtree at your chosen `wasmUrl` base — copy it into your static assets at build time, or serve it straight from the package in development. If a binary is missing, `ensureReady` resolves to `false` — the SDK's own fallback path would boot TypeScript here, but this project treats it as fatal instead (see [Enabling the WASM Engine](#enabling-the-wasm-engine)).
 
 ### Low-Level: EngineVariant.install
 
@@ -119,40 +125,6 @@ EngineVariant.install((): EngineWorkletVariant | null => {
 
 The provider is a function, re-evaluated on every engine construction, so returning `null` under some condition (a feature flag, an unsupported browser) transparently keeps that boot on the TypeScript engine.
 
-## Swapping Engines Live
-
-`project.engine` is a persistent `EngineFacade` that **outlives individual worklets** — its observable state (`position`, `isPlaying`, `bpm`, `cpuLoad`, `preferences`) is re-fed from each worklet as it attaches. That is what makes a live swap possible: flip the selection, then reboot only the `EngineWorklet`.
-
-```typescript
-import type { EngineWorklet, RestartWorklet } from "@opendaw/studio-core";
-
-async function swapEngine(project: Project, ctx: BaseAudioContext, wasm: boolean): Promise<void> {
-  WasmEngine.setEnabled(wasm);            // change which variant current() will yield
-  // Enabling WASM boots the TS engine until the modules are compiled — ensure they are ready
-  // first, or the provider yields null and the swap silently stays on TypeScript.
-  if (wasm) { await WasmEngine.ensureReady(ctx); }
-
-  const engine = project.engine;
-  const wasPlaying = engine.isPlaying.getValue();
-  const position = engine.position.getValue();
-
-  const restart: RestartWorklet = {
-    unload: async () => {},                       // called on the SDK's error-restart path
-    load: (w: EngineWorklet) => engine.setWorklet(w),
-  };
-
-  engine.releaseWorklet();                        // terminate the current worklet
-  // startAudioWorklet re-reads EngineVariant.current() and sets the new worklet on the facade.
-  const worklet = project.startAudioWorklet(restart, {});
-  await worklet.isReady();
-
-  engine.setPosition(position);                   // restore transport state
-  if (wasPlaying) { engine.play(); }
-}
-```
-
-`releaseWorklet()` empties the facade's worklet slot before the new one is constructed, so guard the reboot: if `startAudioWorklet` throws (or `isReady()` never settles), recover by re-enabling the TypeScript engine and rebooting, rather than leaving the engine with no worklet. Capturing and restoring `position`/`isPlaying` keeps playback continuous across the swap.
-
 ## Offline Renders Through the Variant
 
 Background renders (mixdown, stems, freeze, consolidation) run in a worker, and `OfflineEngineRenderer` mirrors the engine toggle into them:
@@ -172,7 +144,9 @@ class OfflineEngineRenderer {
 }
 ```
 
-`WasmEngine.install` also calls `OfflineEngineRenderer.installVariant(offlineWorkerUrl, { wasmUrl })` and sets a variant policy of `WasmEngine.useForExports()`, so freeze and consolidation renders follow the same toggle as live playback. The trailing `variant?` parameter on `start`/`create` is **optional** and resolves through the installed policy (`variant ??= variantPolicy()`). The default policy is `() => false` (TypeScript engine), but once you call `WasmEngine.install` and `ensureReady` succeeds, the policy is `useForExports()` — true whenever the engine is enabled, ready, and a variant is installed. **So after the setup above, an offline render that omits `variant` defaults to the WASM worker**, matching live playback; pass `variant: false` explicitly to force a render onto the TypeScript engine. See Ch. 10 (Export) for the render protocol and per-stem `AudioData` output.
+`WasmEngine.install` also calls `OfflineEngineRenderer.installVariant(offlineWorkerUrl, { wasmUrl })` and sets a variant policy of `WasmEngine.useForExports()`, so freeze and consolidation renders follow the same toggle as live playback. The trailing `variant?` parameter on `start`/`create` is **optional** and resolves through the installed policy (`variant ??= variantPolicy()`). The default policy is `() => false` (TypeScript engine), but once you call `WasmEngine.install` and `ensureReady` succeeds, the policy is `useForExports()` — true whenever the engine is enabled, ready, and a variant is installed. So an offline render that omits `variant` defaults to the WASM worker once that setup has run; pass `variant: false` explicitly to force a render onto the TypeScript engine.
+
+This project doesn't rely on the policy default — every render passes `variant: true` explicitly (see Ch. 10 / Export, and `src/lib/rangeExport.ts`), matching its unconditional-WASM policy for live playback.
 
 ## Configuring the Engine
 
@@ -257,10 +231,10 @@ Both call `engine.sleep()` + notify under the same `stop-playback-when-overloadi
 
 ## Fallback, Isolation, and Cost
 
-- **Fallback is graceful.** `ensureReady` returning `false` (missing artifacts, an unsupported environment) leaves the `EngineVariant` provider yielding `null`, so the engine boots on TypeScript with no error. Derive your "active engine" label from `WasmEngine.isReady()` after boot, not from the request, so the UI reflects what actually booted.
-- **The provider is per page; the enable flag is per origin.** `EngineVariant.install` registers a provider in the current page's module scope, so code that never installs a variant always gets the TypeScript engine regardless of the persisted flag. The `WasmEngine` enable flag, however, is a single `localStorage` key (`"opendaw-wasm-engine"`) shared across the whole origin — so two pages that both call `WasmEngine.install` share the toggle, and `setEnabled(false)` in one affects the other's next boot.
-- **A swap has a cost.** A live swap terminates the worklet, constructs a new one, and re-syncs the full box graph, which takes on the order of seconds. Disable the toggle and show a "switching…" affordance while `startAudioWorklet` → `isReady()` completes, and restore transport state afterward.
+- **Fallback is graceful, by SDK design.** `ensureReady` returning `false` (missing artifacts, an unsupported environment) leaves the `EngineVariant` provider yielding `null`, so the SDK's own boot path falls through to TypeScript with no error. This project doesn't take that path: it treats a failed `ensureReady` as fatal and throws instead of silently continuing on a different engine (see [Enabling the WASM Engine](#enabling-the-wasm-engine)). If you do want graceful fallback, derive your "active engine" label from `WasmEngine.isReady()` after boot, not from the request, so the UI reflects what actually booted.
+- **The provider is per page; the enable flag is per origin.** `EngineVariant.install` registers a provider in the current page's module scope, so code that never installs a variant always gets the TypeScript engine regardless of the persisted flag. The `WasmEngine` enable flag, however, is a single `localStorage` key (`"opendaw-wasm-engine"`) shared across the whole origin — so two pages that both call `WasmEngine.install` share the toggle, and `setEnabled(false)` in one affects the other's next boot. This is exactly why this project's WASM installer force-calls `WasmEngine.setEnabled(true)` on every install, rather than trusting the persisted flag: a page that previously opted out (or a stale flag left by an earlier build) must not silently leave the next boot on TypeScript.
+- **A swap has a cost.** The SDK's `EngineFacade` supports a live engine swap — terminate the worklet, construct a new one, and re-sync the full box graph, which takes on the order of seconds — but this project doesn't perform one: it selects WASM once, before the first worklet, and never revisits the choice at runtime.
 
 ## Demo
 
-[WASM Engine A/B Demo](https://opendaw-test.pages.dev/wasm-engine-demo.html) — the same Vaporisateur synth loop through either backend, with a live TypeScript ↔ WASM toggle and an opt-in DSP-load / dropout readout.
+[WASM Engine](https://opendaw-test.pages.dev/wasm-engine-demo.html) — a Vaporisateur synth loop running on the WASM engine, with WASM readiness status and an opt-in DSP-load / dropout readout. No TypeScript ↔ WASM toggle — the WASM engine is the only engine this project runs.

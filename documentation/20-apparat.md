@@ -4,7 +4,7 @@
 >
 > **Prerequisites:** [Ch. 16 (MIDI)](./16-midi.md) for how notes reach an instrument, [Ch. 17 (Modular Devices)](./17-modular-devices.md) for the shared scripting model, [Ch. 11 — Werkstatt](./11-effects.md#werkstatt) if you're coming from the audio-effect side.
 
-Apparat is the scriptable **instrument**: a device that occupies the instrument slot of an `AudioUnit` (same slot as Vaporisateur or Soundfont), receives MIDI note events, and produces stereo audio from a JavaScript `Processor` class you supply. The script runs on the AudioWorklet thread inside the engine — both on the TypeScript engine and on the [WASM engine](./19-wasm-engine.md), where a thin wasm bridge calls the same JavaScript once per block over shared memory.
+Apparat is the scriptable **instrument**: a device that occupies the instrument slot of an `AudioUnit` (same slot as Vaporisateur or Soundfont), receives MIDI note events, and produces stereo audio from a JavaScript `Processor` class you supply. The script runs on the AudioWorklet thread inside the engine — a thin wasm bridge calls the same JavaScript once per block over shared memory ([WASM engine](./19-wasm-engine.md)).
 
 Its siblings are [Werkstatt](./11-effects.md#werkstatt) (scriptable audio effect) and [Spielwerk](./11-effects.md#spielwerk) (scriptable MIDI effect). All three share the compiler, the `// @param` declaration system, and the parameter/sample box machinery — this chapter covers what is specific to writing an *instrument*.
 

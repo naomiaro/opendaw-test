@@ -23,13 +23,12 @@ Everything below uses the OpenDAW SDK directly: `AudioOfflineRenderer` / `Offlin
 - [Advanced: Offline Rendering Patterns](#advanced-offline-rendering-patterns)
   - [Background: Two Offline Render Paths in OpenDAW](#background-two-offline-render-paths-in-opendaw)
   - [Range-Bounded Export with OfflineEngineRenderer (current API)](#range-bounded-export-with-offlineenginerenderer-current-api)
-  - [The OfflineAudioContext Approach (metronome renders)](#the-offlineaudiocontext-approach-metronome-renders)
   - [Key Concepts](#key-concepts)
   - [Export Modes](#export-modes)
   - [Range Selection: Bars to PPQN](#range-selection-bars-to-ppqn)
   - [Encoding and Download](#encoding-and-download)
   - [In-Browser Preview](#in-browser-preview)
-  - [Future: Worker-Based Rendering](#future-worker-based-rendering)
+  - [Worker-Based Rendering Background](#worker-based-rendering-background)
   - [Reference](#reference)
 
 ---
@@ -153,9 +152,19 @@ The `downloadWav` and `sliceStem` helpers are defined in [Core API](#core-api).
 
 ### AudioOfflineRenderer
 
+> **This call throws once any WASM engine has booted anywhere on the page.** Its internal
+> `OfflineAudioContext` is never the *first* context `WasmEngine.ensureReady` registered the
+> processor module on (`ensureReady` only ever `addModule`s for the first context it sees),
+> so once a live WASM engine has booted — which happens unconditionally in an app that
+> always boots WASM — this call throws `InvalidStateError`. Use
+> [`OfflineEngineRenderer.start`](#offlineenginerenderer) instead; it runs in a dedicated
+> worker that self-loads its own WASM artifacts and isn't subject to this per-context
+> limitation. The description below documents the SDK's API surface for reference.
+
 The original offline rendering entry point from `@opendaw/studio-core`. It is `@deprecated`
-(since studio-core@0.0.93) — prefer `OfflineEngineRenderer` for new code — but it remains
-the simplest one-shot call, returning a ready-to-play `AudioBuffer`:
+— prefer `OfflineEngineRenderer` for new code — and, in any app that boots a WASM engine
+(see warning above), it is not just discouraged but non-functional. Historically it was
+pitched as the simplest one-shot call, returning a ready-to-play `AudioBuffer`:
 
 ```typescript
 import { AudioOfflineRenderer } from "@opendaw/studio-core";
@@ -805,7 +814,7 @@ but it can truncate an export. Keep one region per position per track.
 
 > **Skip if:** the basic export API meets your needs
 
-Range-bounded export, metronome rendering, and the OfflineAudioContext approach.
+Range-bounded export and metronome rendering.
 
 ### Background: Two Offline Render Paths in OpenDAW
 
@@ -829,34 +838,53 @@ For an **exact** range (precise sample count, stems of equal length), use the st
 ### Range-Bounded Export with OfflineEngineRenderer (current API)
 
 `create → setPosition → play → waitForLoading → step(numSamples)` renders exactly the
-requested frame count on the worker — no `OfflineAudioContext` involved:
+requested frame count on the worker — no `OfflineAudioContext` involved. Wrapped as a
+reusable helper (the two export-mode examples below both call it), combined with the
+mutate-copy-restore pattern for muting tracks before the copy:
 
 ```typescript
 import { OfflineEngineRenderer } from "@opendaw/studio-core";
 import { Option } from "@opendaw/lib-std";
+import type { ExportConfiguration } from "@opendaw/studio-adapters";
 
-const durationSeconds = project.tempoMap.intervalToSeconds(startPpqn, endPpqn);
-const numSamples = Math.ceil(durationSeconds * sampleRate);
-const projectCopy = project.copy(); // never the live project — liveStreamReceiver conflict
-try {
-  const renderer = await OfflineEngineRenderer.create(
-    projectCopy,
-    exportConfiguration ? Option.wrap({ stems: exportConfiguration }) : Option.None,
-    sampleRate,
-    false // pin the TS worker; `variant` defaults to WasmEngine.useForExports()
-  );
+async function renderRange(
+  project: Project,
+  startPpqn: ppqn,
+  endPpqn: ppqn,
+  sampleRate: number,
+  exportConfiguration?: ExportConfiguration,
+  mutateBeforeCopy?: () => void,
+  restoreAfterCopy?: () => void
+): Promise<Float32Array[]> {
+  const durationSeconds = project.tempoMap.intervalToSeconds(startPpqn, endPpqn);
+  const numSamples = Math.ceil(durationSeconds * sampleRate);
+
+  // Mutate the original project (e.g., mute tracks), copy synchronously to capture
+  // the state, then restore immediately — see Mutate-Copy-Restore Pattern below.
+  if (mutateBeforeCopy) mutateBeforeCopy();
+  const projectCopy = project.copy(); // never the live project — liveStreamReceiver conflict
+  if (restoreAfterCopy) restoreAfterCopy();
+
   try {
-    renderer.setPosition(startPpqn);
-    await renderer.play();          // starts transport + one queryLoadingComplete
-    await renderer.waitForLoading(); // NOTE: polls with no ceiling — add your own deadline
-    const channels = await renderer.step(numSamples); // Float32Array[], exact length
-    // stems config → channels interleaved [stem1_L, stem1_R, stem2_L, ...]
+    const renderer = await OfflineEngineRenderer.create(
+      projectCopy,
+      exportConfiguration ? Option.wrap(exportConfiguration) : Option.None,
+      sampleRate,
+      true // the WASM offline worker — the only engine wired in this project
+    );
+    try {
+      renderer.setPosition(startPpqn);
+      await renderer.play();           // starts transport + one queryLoadingComplete
+      await renderer.waitForLoading(); // NOTE: polls with no ceiling — add your own deadline
+      return await renderer.step(numSamples); // Float32Array[], exact length
+      // stems config → channels interleaved [stem1_L, stem1_R, stem2_L, ...]
+    } finally {
+      renderer.stop();
+      renderer.terminate();
+    }
   } finally {
-    renderer.stop();
-    renderer.terminate();
+    projectCopy.terminate();
   }
-} finally {
-  projectCopy.terminate();
 }
 ```
 
@@ -872,94 +900,9 @@ try {
 
 Enabled is implied by presence (`ExportConfiguration.isMetronomeAudible`); `settings`
 overrides gain/beatSubDivision/monophonic; `clickSounds: {downbeat?, beat?}` supplies
-custom PCM in place of the synthesized 880/440 Hz defaults. **Only the WASM offline worker
-consumes `config.metronome`** — the TS worker ignores it silently — so metronome renders
-must run `variant: true` (the `useForExports()` default in the studio). A metronome render
-on the TS engine remains possible only via the `OfflineAudioContext` approach below, and
-per upstream the TypeScript audio engine will be removed soon.
-
-### The OfflineAudioContext Approach (metronome renders)
-
-> **Superseded** by `ExportConfiguration.metronome` (see above). This pattern remains
-> only for a metronome render pinned to the TS engine — and upstream has announced the
-> TypeScript audio engine's removal, so treat it as reference material.
-
-This approach bypasses both renderers and uses the same building blocks they use internally: `project.copy()`, `OfflineAudioContext`, and `AudioWorklets.createEngine()`. Its `EngineWorklet` exposes `preferences`, which is what makes the metronome reachable on the TS engine.
-
-```typescript
-import { Project, AudioWorklets } from "@opendaw/studio-core";
-import { ppqn } from "@opendaw/lib-dsp";
-import { TimeSpan } from "@opendaw/lib-std";
-import { Wait } from "@opendaw/lib-runtime";
-
-async function renderRange(
-  project: Project,
-  startPpqn: ppqn,
-  endPpqn: ppqn,
-  sampleRate: number,
-  exportConfiguration?: Record<string, ExportStemConfiguration>,
-  mutateBeforeCopy?: () => void,
-  restoreAfterCopy?: () => void,
-  metronomeEnabled: boolean = false,
-  metronomeGain: number = -6
-): Promise<Float32Array[]> {
-  // 1. Calculate exact sample count from PPQN range
-  const durationSeconds = project.tempoMap.intervalToSeconds(startPpqn, endPpqn);
-  const numChannels = exportConfiguration
-    ? Object.keys(exportConfiguration).length * 2
-    : 2;
-  const numSamples = Math.ceil(durationSeconds * sampleRate);
-
-  // 2. Mutate original (e.g., mute tracks), copy synchronously, restore immediately
-  if (mutateBeforeCopy) mutateBeforeCopy();
-  const projectCopy = project.copy();
-  if (restoreAfterCopy) restoreAfterCopy();
-
-  try {
-    projectCopy.boxGraph.beginTransaction();
-    projectCopy.timelineBox.loopArea.enabled.setValue(false);
-    projectCopy.boxGraph.endTransaction();
-
-    // 3. Create OfflineAudioContext with exact bounds
-    const context = new OfflineAudioContext(numChannels, numSamples, sampleRate);
-    const worklets = await AudioWorklets.createFor(context);
-    const engineWorklet = worklets.createEngine({
-      project: projectCopy,
-      // undefined = mixdown (metronome included), {stems: …} = stem path (no metronome)
-      exportConfiguration: exportConfiguration ? { stems: exportConfiguration } : undefined,
-    });
-    engineWorklet.connect(context.destination, 0); // output 0 = main audio (worklet has 2 outputs)
-
-    // 4. Set preferences on the worklet (not the project copy)
-    engineWorklet.preferences.settings.metronome.enabled = metronomeEnabled;
-    engineWorklet.preferences.settings.metronome.gain = metronomeGain;
-
-    // 5. Set position and render
-    engineWorklet.setPosition(startPpqn);
-    await engineWorklet.isReady();
-    engineWorklet.play();
-
-    const startTime = Date.now();
-    while (!(await engineWorklet.queryLoadingComplete())) {
-      if (Date.now() - startTime > 30_000) {
-        throw new Error("Sample loading timed out after 30s");
-      }
-      await Wait.timeSpan(TimeSpan.millis(100));
-    }
-
-    const audioBuffer = await context.startRendering();
-
-    // 6. Extract channels
-    const channels: Float32Array[] = [];
-    for (let i = 0; i < audioBuffer.numberOfChannels; i++) {
-      channels.push(audioBuffer.getChannelData(i));
-    }
-    return channels;
-  } finally {
-    projectCopy.terminate();
-  }
-}
-```
+custom PCM in place of the synthesized 880/440 Hz defaults. Only the WASM offline worker
+consumes `config.metronome` (the TS worker ignores it silently), which is why every
+render above runs with `variant: true`.
 
 ### Key Concepts
 
@@ -982,12 +925,12 @@ if (this.#stemExports.length === 0) {
 }
 ```
 
-- **No `exportConfiguration`** passed to `createEngine()` → `stemExports.length === 0` → mixdown path → metronome included
-- **With `exportConfiguration`** → per-track channels → metronome excluded
+- **No `exportConfiguration`** passed to the renderer → `stemExports.length === 0` → mixdown path → metronome included
+- **With `exportConfiguration`** (a non-empty `stems` map) → per-track channels → metronome excluded
 
 There is no way to get metronome in the stem path or individual stems in the mixdown path. This is a fundamental SDK design decision.
 
-**Note:** `OfflineEngineRenderer` selects the same branch the same way. `countStems(Option.None)` returns 1 only to size the output (`numStems * 2` channels; with a `metronome.stem` the click pair counts too). Enabling the click is a property of the export configuration (`isMetronomeAudible`), not of engine preferences — honored by the WASM offline worker only. The demo renders everything through `OfflineEngineRenderer.step()` and drives `variant` with `isMetronomeAudible` (see `src/lib/rangeExport.ts`).
+**Note:** `OfflineEngineRenderer` selects the same branch the same way. `countStems(Option.None)` returns 1 only to size the output (`numStems * 2` channels; with a `metronome.stem` the click pair counts too). Enabling the click is a property of the export configuration (`isMetronomeAudible`), not of engine preferences — honored by the WASM offline worker only. Every render in this project runs `OfflineEngineRenderer.step()` with `variant: true` unconditionally (see `src/lib/rangeExport.ts`) — the WASM offline worker is the only render path here.
 
 #### Mutate-Copy-Restore Pattern
 
@@ -1034,7 +977,11 @@ The mute window is a single synchronous JS task — no audio blocks process in b
 - Live stream receiver connections
 - Box instances (the copy has new instances with the same UUIDs)
 
-Preferences must be set on `engineWorklet.preferences` after `createEngine()`.
+Engine preferences don't travel with the copy, so metronome state can't ride along with
+them either: the metronome for an offline render travels in the export configuration
+instead — `ExportConfiguration.metronome` (see [Metronome Preferences](#metronome-preferences)
+below and [Range-Bounded Export](#range-bounded-export-with-offlineenginerenderer-current-api)) —
+not through any preferences object set after the fact.
 
 #### Metronome Preferences
 
@@ -1186,11 +1133,11 @@ source.disconnect();
 
 This is completely separate from the OpenDAW engine — no interference with live playback.
 
-### Future: Worker-Based Rendering
+### Worker-Based Rendering Background
 
-#### Current Limitation
+#### Current Approach
 
-Our `OfflineAudioContext` approach works but runs on the main thread. The SDK's `OfflineEngineRenderer` runs in a dedicated Web Worker using a custom render loop (no Web Audio API), which is faster and non-blocking. Adopting it is blocked by the `liveStreamReceiver` conflict and the worker's inability to forward metronome preferences (see below).
+The `renderRange` helper above already renders through `OfflineEngineRenderer`'s dedicated Web Worker (a custom render loop, no Web Audio API) rather than a main-thread `OfflineAudioContext`, which is faster and non-blocking. The historical blockers below — the `liveStreamReceiver` conflict and forwarding metronome state into the worker — are both resolved in the current implementation (`project.copy()` sidesteps the conflict; metronome state travels through `ExportConfiguration.metronome` instead of engine preferences). The rest of this section is kept for background on how the worker itself renders.
 
 #### How the SDK Worker Actually Renders
 
@@ -1206,37 +1153,24 @@ while (offset < numSamples) {
 }
 ```
 
-The metronome is already wired into `EngineProcessor.process()` — it runs in the mixdown branch (`stemExports.length === 0`), which `Option.None` already selects. The only reason it stays silent in the worker is that the offline worker builds fresh `EnginePreferences` with the metronome disabled (see #1 below). Sample fetching, script device loading, and preference syncing all work over MessageChannel between main thread and worker.
+The metronome is wired into `EngineProcessor.process()` — it runs in the mixdown branch (`stemExports.length === 0`), which `Option.None` already selects. Sample fetching, script device loading, and preference syncing all work over MessageChannel between main thread and worker.
 
-#### SDK Changes Requested
+#### SDK Changes Requested (historical — all three resolved upstream)
 
-**1. Accept engine preferences in `OfflineEngineInitializeConfig`**
+**1. Accept engine preferences in `OfflineEngineInitializeConfig`** *(resolved upstream)* —
+`ExportConfiguration.metronome` (openDAW#316) now lets the caller pass metronome state
+directly in the export configuration, so this request is moot: the metronome no longer
+needs to travel through engine preferences at all.
 
-`OfflineEngineRenderer` already takes the mixdown path for `Option.None` (so a metronome would mix in), but `project.toArrayBuffer()` serializes the box graph, not engine preferences — the offline worker creates fresh `EnginePreferences` with defaults (metronome disabled), and there is no way to enable it. Adding an optional `engineSettings` field would let the caller pass metronome state:
+**2. Range-bounded rendering** *(resolved upstream)* — `ExportConfiguration.range` is now a
+first-class field on the SDK config object — `range: "full" | { start: ppqn, end: ppqn }`.
+`renderRange()` above still uses `setPosition` + `step(numSamples)` for the same effect,
+matching the demo's need for an exact frame count.
 
-```typescript
-export interface OfflineEngineInitializeConfig {
-  // ... existing fields ...
-  engineSettings?: Partial<EngineSettings>  // metronome, playback, recording prefs
-}
-```
-
-**2. Range-bounded rendering** *(resolved upstream)*
-
-`ExportConfiguration.range` is now a first-class field on the SDK config object — `range: "full" | { start: ppqn, end: ppqn }`. When set, `OfflineEngineRenderer.start()` seeks to `range.start` before playing and bounds the render at `tempoMap.intervalToSeconds(start, end)`. Our `renderRange()` helper predates this, still uses `setPosition` + `OfflineAudioContext` length for the same effect, and is retained because the `liveStreamReceiver` conflict (#3 below) and the missing metronome-preference forwarding (#1 above) remain.
-
-**3. Resolve `liveStreamReceiver` conflict**
-
-`OfflineEngineRenderer.create()` calls `source.liveStreamReceiver.connect()` on the passed project, which throws "Already connected" if the live engine is running. Either:
-- Use `project.copy()` internally (like `AudioOfflineRenderer` does), or
-- Guard the connect call, or
-- Allow multiple connections on `liveStreamReceiver`
-
-#### Workaround: Custom Worker Fork
-
-Until SDK changes land, a custom worker could be created by forking `offline-engine-main.ts` (~120 lines). The main thread coordinator (`OfflineEngineRenderer.create()` setup — MessageChannel, Communicator, fetchAudio, script device loading) would need to be replicated (~60 lines), but the EngineProcessor, Metronome, and all DSP code are reused as-is from the SDK.
-
-This is a meaningful chunk of work (~200 lines + worker bundling) and probably warrants a separate PR if pursued.
+**3. Resolve `liveStreamReceiver` conflict** *(resolved — render from a copy)* —
+`OfflineEngineRenderer.create()` calls `source.liveStreamReceiver.connect()` on the passed
+project, which throws "Already connected" if the live engine is running. `renderRange()`
+above already renders from `project.copy()`, which sidesteps the conflict.
 
 ### Reference
 

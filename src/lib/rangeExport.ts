@@ -4,7 +4,6 @@ import { UUID, Option } from "@opendaw/lib-std";
 import { ExportConfiguration } from "@opendaw/studio-adapters";
 import type { ExportStemConfiguration } from "@opendaw/studio-adapters";
 import type { TrackData } from "./types";
-import { installWasmEngine } from "./wasmEngine";
 import { withDeadline } from "./deadline";
 
 export interface ExportResult {
@@ -38,17 +37,13 @@ const RENDER_TIMEOUT_MS = 300_000;
  * not at endPosition (end only drives the progress bar), so it would render past
  * the range while content continues.
  *
- * **Metronome** (SDK 0.0.160+, openDAW#316): expressed in the export configuration —
+ * **Metronome** (openDAW#316): expressed in the export configuration —
  * `{metronome: {includeInMixdown: true}}` mixes the click into a mixdown;
  * `{stems, metronome: {stem: {fileName}}}` appends a click stem AFTER the unit stems
  * (`countStems` counts the extra pair). `settings` overrides gain/beatSubDivision/
  * monophonic (schema defaults otherwise); enabled is implied by presence.
- * At 0.0.160 only the WASM offline worker consumes `config.metronome` — the TS
- * worker/EngineProcessor ignore it — so `variant` is driven by
- * `ExportConfiguration.isMetronomeAudible`: metronome renders run the WASM offline
- * worker (the studio's own export default), everything else stays on the TS worker.
- * `installWasmEngine()` only registers the worker URL + variant — it does NOT boot
- * the live WASM engine (`EngineVariant.current()` stays null until `ensureReady`).
+ * Every render runs the WASM offline worker (`variant: true`) — the only engine in
+ * this repo; the worker is registered by initializeOpenDAW's installWasmEngine().
  *
  * @param exportConfiguration - undefined = plain stereo mixdown; otherwise a full
  *   `ExportConfiguration` (stems and/or metronome). With stems, returned channels are
@@ -70,7 +65,6 @@ async function renderRange(
     ? Option.wrap(exportConfiguration)
     : Option.None;
   const numChannels = ExportConfiguration.countStems(optConfig) * 2;
-  const metronomeAudible = ExportConfiguration.isMetronomeAudible(optConfig);
   const numSamples = Math.ceil(durationSeconds * sampleRate);
 
   if (startPpqn >= endPpqn) {
@@ -78,10 +72,6 @@ async function renderRange(
       `Invalid export range: start (${startPpqn}) must be before end (${endPpqn})`
     );
   }
-
-  // Metronome renders need the WASM offline worker (see doc comment). install() is
-  // idempotent and registers the variant worker URL without booting anything live.
-  if (metronomeAudible) installWasmEngine();
 
   // Mutate the original project (e.g., mute tracks), copy synchronously to
   // capture the state, then restore immediately. The mute window is a single
@@ -104,7 +94,7 @@ async function renderRange(
       projectCopy,
       optConfig,
       sampleRate,
-      metronomeAudible
+      true
     );
     try {
       renderer.setPosition(startPpqn);
