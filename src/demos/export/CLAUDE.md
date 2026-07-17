@@ -62,9 +62,10 @@ the stem branch (metronome excluded).
 
 **Higher-level shortcuts** (when you don't need step-by-step control):
 - `AudioOfflineRenderer.start(source, optConfig, progress, abortSignal?, sampleRate?)` →
-  `Promise<AudioBuffer>` (in `@opendaw/studio-core`) — one-shot mixdown/stems to a
-  ready-to-play AudioBuffer. `@deprecated` since studio-core@0.0.93; prefer
-  `OfflineEngineRenderer` for new code (`progress` here is a `Progress.Handler`).
+  `Promise<AudioBuffer>` (in `@opendaw/studio-core`) — **do not use this**: it throws
+  `InvalidStateError` once any WASM engine has booted anywhere on the page (see "Do NOT
+  use the deprecated `AudioOfflineRenderer`" above), which in this project is always.
+  `@deprecated`; use `OfflineEngineRenderer` for new code.
 - `OfflineEngineRenderer.start(source, optConfig, progress, abortSignal?, sampleRate?)` →
   `Promise<AudioData>` — same flow but returns the raw AudioData. `progress` is a
   `DefaultObservableValue<number>` (NOT a `Progress.Handler`). Also exposes

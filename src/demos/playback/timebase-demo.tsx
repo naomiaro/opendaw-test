@@ -47,6 +47,7 @@ function TimeBaseDemo() {
   const [bpm, setBpm] = useState(120);
   const [sampleLoaded, setSampleLoaded] = useState(false);
   const [addNotice, setAddNotice] = useState<string | null>(null);
+  const [initError, setInitError] = useState<string | null>(null);
 
   const { currentPosition, isPlaying, pausedPositionRef } = usePlaybackPosition(project);
   const { handlePlay, handlePause, handleStop } = useTransportControls({ project, audioContext, pausedPositionRef });
@@ -86,6 +87,7 @@ function TimeBaseDemo() {
 
         if (!newProject) {
           console.error("Failed to initialize project - returned null/undefined");
+          if (mounted) setInitError("Failed to initialize project - returned null/undefined");
           return;
         }
 
@@ -98,6 +100,7 @@ function TimeBaseDemo() {
         });
       } catch (error) {
         console.error("Failed to initialize OpenDAW:", error);
+        if (mounted) setInitError(error instanceof Error ? error.message : String(error));
       }
     };
 
@@ -454,6 +457,14 @@ function TimeBaseDemo() {
               regions on one track are invalid by design.
             </p>
           </div>
+
+          {initError && (
+            <Callout.Root color="red" role="alert">
+              <Callout.Text>
+                <strong>Initialization failed:</strong> {initError}
+              </Callout.Text>
+            </Callout.Root>
+          )}
 
           {/* SDK context */}
           <section className="mc-anchors">

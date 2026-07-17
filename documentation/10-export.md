@@ -152,9 +152,19 @@ The `downloadWav` and `sliceStem` helpers are defined in [Core API](#core-api).
 
 ### AudioOfflineRenderer
 
+> **This call throws once any WASM engine has booted anywhere on the page.** Its internal
+> `OfflineAudioContext` is never the *first* context `WasmEngine.ensureReady` registered the
+> processor module on (`ensureReady` only ever `addModule`s for the first context it sees),
+> so once a live WASM engine has booted — which happens unconditionally in an app that
+> always boots WASM — this call throws `InvalidStateError`. Use
+> [`OfflineEngineRenderer.start`](#offlineenginerenderer) instead; it runs in a dedicated
+> worker that self-loads its own WASM artifacts and isn't subject to this per-context
+> limitation. The description below documents the SDK's API surface for reference.
+
 The original offline rendering entry point from `@opendaw/studio-core`. It is `@deprecated`
-— prefer `OfflineEngineRenderer` for new code — but it remains the simplest one-shot call,
-returning a ready-to-play `AudioBuffer`:
+— prefer `OfflineEngineRenderer` for new code — and, in any app that boots a WASM engine
+(see warning above), it is not just discouraged but non-functional. Historically it was
+pitched as the simplest one-shot call, returning a ready-to-play `AudioBuffer`:
 
 ```typescript
 import { AudioOfflineRenderer } from "@opendaw/studio-core";
@@ -915,8 +925,8 @@ if (this.#stemExports.length === 0) {
 }
 ```
 
-- **No `exportConfiguration`** passed to `createEngine()` → `stemExports.length === 0` → mixdown path → metronome included
-- **With `exportConfiguration`** → per-track channels → metronome excluded
+- **No `exportConfiguration`** passed to the renderer → `stemExports.length === 0` → mixdown path → metronome included
+- **With `exportConfiguration`** (a non-empty `stems` map) → per-track channels → metronome excluded
 
 There is no way to get metronome in the stem path or individual stems in the mixdown path. This is a fundamental SDK design decision.
 
@@ -967,7 +977,11 @@ The mute window is a single synchronous JS task — no audio blocks process in b
 - Live stream receiver connections
 - Box instances (the copy has new instances with the same UUIDs)
 
-Preferences must be set on `engineWorklet.preferences` after `createEngine()`.
+Engine preferences don't travel with the copy, so metronome state can't ride along with
+them either: the metronome for an offline render travels in the export configuration
+instead — `ExportConfiguration.metronome` (see [Metronome Preferences](#metronome-preferences)
+below and [Range-Bounded Export](#range-bounded-export-with-offlineenginerenderer-current-api)) —
+not through any preferences object set after the fact.
 
 #### Metronome Preferences
 

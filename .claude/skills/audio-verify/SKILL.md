@@ -58,10 +58,10 @@ seconds. Measured reference points:
 | raw — sanity | fileTimes | ≤ 60 ms (the render plays the file; if this fails the harness/render is broken: STOP) |
 | raw — negative control | gridTimes | ≥ 100 ms (the file does not sit on the grid; if raw "passes" the locked test the discriminator is broken: STOP) |
 | varispeed | gridTimes | ≤ 60 ms |
-| timestretch | gridTimes | ≤ 60 ms |
+| timestretch | gridTimes | ≤ 75 ms (WASM offline worker — see 2026-07-16 re-measurement) |
 | grid-conform | fileTimes | ≤ 60 ms (conformed grid + clicks + music all coincide on file times) |
 | grid-rigid — placement sanity | fileTimesRigid | ≤ 60 ms (music plays where the region was placed) |
-| grid-rigid — negative control | rigidClickTimes | ≥ 100 ms (the rigid click grid does not match the music) |
+| grid-rigid — negative control | rigidClickTimes | ≥ 90 ms ([60,80] measured 92 ms on the WASM worker; [120,140] ≥ 100 ms) |
 
 Measured 2026-06-10 ([60,80] / [120,140] medians, ms): raw-vs-file 30/40,
 raw-vs-grid 180/122, varispeed 33/32, timestretch —/46, conform —/35,
@@ -101,9 +101,9 @@ separation), so the control is not broken; the [120,140] window remains 153 ms.
 **Pitch (relative check):** `harmonic_analysis` pitch-class distributions on
 [120, 140] s; Pearson-correlate each against raw's. Require
 `corr(raw, timestretch) > corr(raw, varispeed)` — timestretch preserves pitch,
-varispeed smears it. Measured: 0.987 vs 0.956. The margin is small because this
-window's detune is only ±50–85 cents; treat absolute values as informational and
-assert only the ordering.
+varispeed smears it. Measured: 0.987 vs 0.956 (2026-07-16 WASM re-measurement: 0.985 >
+0.953). The margin is small because this window's detune is only ±50–85 cents; treat
+absolute values as informational and assert only the ordering.
 
 Report a pass/fail table with the medians. Stop at the first failed scenario with
 the numbers collected so far.

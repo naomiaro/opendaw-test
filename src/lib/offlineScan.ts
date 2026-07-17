@@ -25,6 +25,18 @@ export async function renderOfflineSlice(
   endSeconds: number,
   sampleRate: number = 48000
 ): Promise<{ channels: Float32Array[]; sampleRate: number }> {
+  // WASM offline worker is the only render path (the TS engine is removed from this
+  // repo). OfflineAudioContext + createEngine is NOT usable here: ensureReady
+  // registers the processor module only on the FIRST context it ever sees
+  // (see debug/wasm-ensure-ready-second-context.md), and the live engine already
+  // consumed that registration at initializeOpenDAW time.
+  // Checked BEFORE project.copy() so the error path doesn't pay for an unnecessary clone.
+  if (!isWasmReady()) {
+    throw new Error(
+      "WASM engine is not ready — initializeOpenDAW() must complete before renderOfflineSlice()."
+    );
+  }
+
   const projectCopy = project.copy();
   try {
     projectCopy.editing.modify(() => {
@@ -40,17 +52,6 @@ export async function renderOfflineSlice(
     const numSamples = Math.ceil(durationSeconds * sampleRate);
     const bpm = projectCopy.timelineBox.bpm.getValue();
     const startPPQN = PPQN.secondsToPulses(startSeconds, bpm);
-
-    // WASM offline worker is the only render path (the TS engine is removed from this
-    // repo). OfflineAudioContext + createEngine is NOT usable here: ensureReady
-    // registers the processor module only on the FIRST context it ever sees
-    // (see debug/wasm-ensure-ready-second-context.md), and the live engine already
-    // consumed that registration at initializeOpenDAW time.
-    if (!isWasmReady()) {
-      throw new Error(
-        "WASM engine is not ready — initializeOpenDAW() must complete before renderOfflineSlice()."
-      );
-    }
 
     const renderer = await OfflineEngineRenderer.create(
       projectCopy,

@@ -38,7 +38,8 @@ is ever called with (`if (modules.nonEmpty()) return true` — no `addModule` fo
 contexts), so `createEngine` on a second context throws
 `InvalidStateError: 'engine-wasm-processor' is not defined in AudioWorkletGlobalScope`
 right after `ensureReady` returned `true`. A single first-boot wasm render on an
-OfflineAudioContext DOES work. Repro: `wasm-ensure-ready-second-context-debug-demo.html`;
+OfflineAudioContext DOES work (unreachable here — `initializeOpenDAW`'s live boot always
+consumes the first-context registration). Repro: `wasm-ensure-ready-second-context-debug-demo.html`;
 write-up: `debug/wasm-ensure-ready-second-context.md`. The immune offline path is
 `OfflineEngineRenderer` from `@opendaw/studio-core` with `variant: true`, which runs the
 WASM offline **worker** (self-loads the wasm artifacts) registered by `WasmEngine.install`'s

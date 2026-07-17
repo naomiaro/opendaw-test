@@ -13,6 +13,7 @@ import { CONSOLE_STYLES } from "@/lib/design/consoleTheme";
 
 const App: React.FC = () => {
   const [status, setStatus] = useState("Booting…");
+  const [initError, setInitError] = useState(false);
   const [project, setProject] = useState<Project | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [reporting, setReporting] = useState(false);
@@ -39,6 +40,7 @@ const App: React.FC = () => {
       } catch (err) {
         console.error("[wasm-engine-demo] init failed:", String(err));
         setStatus(`Init error: ${String(err)}`);
+        setInitError(true);
       }
     })();
     return () => { disposed = true; };
@@ -125,11 +127,15 @@ const App: React.FC = () => {
             <Flex direction="column" gap="1">
               <Text size="1" color="gray">ACTIVE ENGINE</Text>
               <Flex align="center" gap="2">
-                <Badge color={project ? "amber" : "gray"} size="2">
-                  {project ? "WASM (Rust)" : "Booting…"}
+                <Badge color={initError ? "red" : project ? "amber" : "gray"} size="2">
+                  {initError ? "Init failed" : project ? "WASM (Rust)" : "Booting…"}
                 </Badge>
                 <Text size="1" color="gray">
-                  {project ? "the only engine — TypeScript engine removed" : "compiling WASM…"}
+                  {initError
+                    ? "see status line below"
+                    : project
+                      ? "the only engine — TypeScript engine removed"
+                      : "compiling WASM…"}
                 </Text>
               </Flex>
             </Flex>
