@@ -672,6 +672,19 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   handlers on these demos — click by coordinates from a screenshot instead. Also:
   `javascript_tool` results dumping page text can trip the extension's
   "[BLOCKED: Cookie/query string data]" filter — read results via screenshot.
+- After `resize_window`, screenshot pixel coordinates can stop mapping 1:1 to the
+  viewport (screenshot 1456×814 vs a 1400×900 window) — coordinate clicks then miss
+  silently (button looks clicked, handler never fires; reads as "transport dead" while
+  `engine.play()` from the console works). Re-screenshot after any resize and verify one
+  click took effect (state change) before trusting a click sequence. For handler-only
+  tests with the AudioContext already running, DOM `.click()` is a valid cross-check.
+- If a listener reports audio behaving inconsistently from a dev-server page WHILE files
+  are being edited, suspect Vite HMR first: every save remounts the demo, and hooks that
+  own box lifecycles (e.g. useDynamicEffect: insert-on-mount, delete-on-unmount) delete
+  and re-insert their boxes with DEFAULT params on each remount — audibly "effects
+  inconsistent / not always applied". Verify on a fresh load with editing paused before
+  debugging engine or SDK code (measured clean at 0.0.162: insert/bypass/solo all apply
+  mid-playback).
 - Playwright text assertions: JSX expressions split DOM text nodes — XPath
   `contains(text(),…)` misses strings spanning the split; use
   `document.body.innerText.includes(…)`.
