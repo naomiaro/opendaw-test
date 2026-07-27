@@ -56,8 +56,8 @@ import { InfoCircledIcon, PlayIcon, StopIcon } from "@radix-ui/react-icons";
 //               starts at full amplitude, no fade-in).
 //
 // Working hypothesis for the audible dip on a sustained tone in the
-// CROSSFADE configuration: PitchVoice puts a new voice in
-// `Fading`/`fadeDirection=1` for 20 ms WHEN its read offset is non-zero
+// CROSSFADE configuration: the Tape playback puts a new voice in
+// a 20 ms fade-in state WHEN its read offset is non-zero
 // (this page's scenario: Region B starts at offset seamPPQN − halfFadePPQN,
 // which is non-zero). process() multiplies that internal voice-fade by the
 // region's clip-fade gain buffer — so the incoming voice's effective gain
@@ -459,11 +459,10 @@ const App: React.FC = () => {
               <Code>sourceUuid</Code>s — placed on <strong>separate</strong> Tape tracks so the
               mix happens at the master (overlapping regions on a single track are disallowed by
               design and get deleted by <Code>project.copy()</Code>) — produces a measurable dip
-              on the incoming voice's fade-in side. Cause (confirmed):{" "}
-              <Code>PitchVoice</Code> starts new voices in{" "}
-              <Code>Fading</Code>/<Code>fadeDirection=1</Code> for{" "}
-              <Code>VOICE_FADE_DURATION</Code> (20 ms) when read offset ≠ 0, and{" "}
-              <Code>process()</Code> multiplies that voice-fade by the region's clip-fade gain
+              on the incoming voice's fade-in side. Cause (confirmed): the Tape playback
+              starts new voices in a fade-in state for{" "}
+              <Code>VOICE_FADE_DURATION</Code> (20 ms) when read offset ≠ 0, and the render
+              multiplied that voice-fade by the region's clip-fade gain
               buffer — turning a linear clip fade-in into a quadratic ramp over the first 20 ms.
               Mechanism confirmed in source AND empirically: after fixing an Int32 position
               truncation in this page's seam geometry, the scan measures −1.20 dB at

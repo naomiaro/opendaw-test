@@ -126,32 +126,35 @@ The dispatcher scans args and auto-detects transferables (`MessagePort`, `ImageB
 
 ## The engine's RPC channels
 
-`EngineWorklet` (`packages/studio/core/src/EngineWorklet.ts:119–237`) creates one `Messenger` over the worklet's `port` and multiplexes five named channels:
+The audio-thread end of these channels is the WASM engine's worklet processor — `engine-wasm-processor`, registered by `@opendaw/studio-core-wasm` (source: `packages/studio/core-wasm/src/processor.ts`; the constant is `WASM_ENGINE_PROCESSOR_NAME` in `packages/studio/core-wasm/src/protocol.ts`). `EngineWorklet` does not name it directly: it constructs itself against `EngineVariant.current().processorName`, and `WasmEngine.install` is what registers that variant.
+
+Worth knowing when you go looking for it: the engine is **not** in the worklet module the studio adds to every `AudioContext`. `packages/studio/core-processors/src/register.ts` registers exactly two processors — `meter-processor` and `recording-processor` — both engine-independent. The engine's module is added separately, by `WasmEngine.ensureReady`.
+
+`EngineWorklet` (`packages/studio/core/src/EngineWorklet.ts`) creates one `Messenger` over the worklet's `port`. Four channels are opened by the worklet pair itself; the installed engine variant opens two more on the same messenger:
 
 | Channel | Direction | Protocol |
 |---|---|---|
-| `engine-commands` | Main → Worklet | `EngineCommands` (typed in `protocols.ts:9`) |
-| `engine-to-client` | Worklet → Main | `EngineToClient` (typed in `protocols.ts:33`) |
-| `engine-sync` | Main → Worklet | `Synchronization<BoxIO.TypeMap>` (box graph diffs) |
-| `engine-live-data` | Worklet → Main | live broadcaster data (meters, spectrum, waveform) |
-| `engine-preferences` | Main ↔ Worklet | preferences sync |
+| `engine-commands` | Main → Worklet | `EngineCommands` (`packages/studio/adapters/src/protocols.ts`) |
+| `engine-to-client` | Worklet → Main | `EngineToClient` (same file) |
+| `engine-live-data` | Worklet → Main | `LiveStreamBroadcaster` payloads (peaks, spectrum, waveform, meters) |
+| `engine-preferences` | Main ↔ Worklet | `PreferencesHost` ↔ `PreferencesClient` settings sync |
+| `engine-sync-bytes` | Main → Worklet | `WasmSyncProtocol` — serialized box-graph transactions |
+| `engine-frozen-audio` | Main ↔ Worklet | `WasmFrozenProtocol` — frozen-track PCM staging |
+
+The last two are named by `packages/studio/core-wasm/src/protocol.ts` (`WASM_SYNC_CHANNEL`, `WASM_FROZEN_CHANNEL`) and wired by `WasmEngine.install`'s `connectSync` / `connectFrozenAudio` hooks on `EngineWorkletVariant`.
 
 Visually:
 
 ```mermaid
 flowchart LR
-    subgraph Main["Main Thread"]
-        Facade["EngineFacade"]
-        Project["Project"]
-        Prefs["PreferencesHost"]
-    end
-    subgraph Worklet["AudioWorklet"]
-        EP["EngineProcessor"]
-    end
+    Facade["EngineFacade — main"]
+    Project["Project — main"]
+    Prefs["PreferencesHost — main"]
+    EP["engine-wasm-processor — AudioWorklet"]
 
     Facade -- "engine-commands" --> EP
     EP -- "engine-to-client" --> Facade
-    Project -- "engine-sync" --> EP
+    Project -- "engine-sync-bytes" --> EP
     EP -- "engine-live-data" --> Facade
     Prefs <-- "engine-preferences" --> EP
 
@@ -161,12 +164,12 @@ flowchart LR
     class EP rt
 ```
 
-One `MessagePort` underneath, five logical channels multiplexed over it by the `"__id__"` filter trick in `Channel`.
+One `MessagePort` underneath, six logical channels multiplexed over it by the `"__id__"` filter trick in `Channel`.
 
 ### `EngineCommands` (main → worklet)
 
 ```typescript
-// packages/studio/adapters/src/protocols.ts:9
+// packages/studio/adapters/src/protocols.ts
 export interface EngineCommands extends Terminable {
     play(): void
     stop(reset: boolean): void
@@ -190,10 +193,12 @@ Most methods are `void` — fire-and-forget commands. `queryLoadingComplete()` i
 
 `setupMIDI(port, buffer)` is interesting: it transfers a `MessagePort` *and* a `SharedArrayBuffer` to the worklet so MIDI input events from a separate worker can land directly in the audio thread without going through the main thread.
 
+On the worklet side every one of these is a thin marshalling step into the WASM engine's `extern "C"` surface. The processor writes any argument bytes into the engine's input buffer (`engine.input_reserve(n)` returns a pointer into the shared `WebAssembly.Memory`) and then calls the export — `setPosition` becomes `engine.set_position(position)`, `scheduleClipPlay` writes each 16-byte UUID and calls `engine.schedule_clip_play()`, `updateMonitoringMap` packs `[uuid 16][left i32][right i32]` per entry and calls `engine.set_monitoring_map(count)`. The exports are defined in `crates/engine/src/lib.rs`.
+
 ### `EngineToClient` (worklet → main)
 
 ```typescript
-// packages/studio/adapters/src/protocols.ts:33
+// packages/studio/adapters/src/protocols.ts
 export interface EngineToClient {
     log(message: string): void
     error(reason: unknown): void
@@ -245,38 +250,34 @@ The `perfBuffer` field is a circular ring of DSP load measurements written by `H
 
 ### Writer (worklet)
 
-The writer is created once during `EngineProcessor` construction and called from `render()` every quantum:
+The writer is created once in the worklet processor's constructor and published from `render()` every quantum. The engine itself keeps the authoritative transport state inside its own linear memory and exposes it as a flat record; the writer's job is to decode that record into the schema's typed fields:
 
 ```typescript
-// EngineProcessor.ts:143 (in constructor)
-this.#stateSender = SyncStream.writer(EngineStateSchema(), syncStreamBuffer, x => {
-    const {transporting, isCountingIn, isRecording, position} = this.#timeInfo
-    const denominator = this.#timelineBoxAdapter.box.signature.denominator.getValue()
-    x.position = position
-    x.bpm = this.#renderer.bpm
-    x.playbackTimestamp = this.#playbackTimestamp
-    x.countInBeatsRemaining = isCountingIn
-        ? (this.#recordingStartTime - position) / PPQN.fromSignature(1, denominator)
-        : 0
-    x.isPlaying = transporting
-    x.isRecording = isRecording
-    x.isCountingIn = isCountingIn
-    if (this.#preferences.settings.debug.dspLoadMeasurement) {
-        x.perfBuffer.set(this.#perfBuffer)
-        x.perfIndex = this.#perfWriteIndex
+// packages/studio/core-wasm/src/processor.ts (in constructor)
+this.#stateSender = SyncStream.writer(EngineStateSchema(), syncStreamBuffer, state => {
+    const view = new DataView(this.#memory.buffer, engine.engine_state_ptr(), engine.engine_state_len())
+    state.position = view.getFloat32(0)
+    state.bpm = view.getFloat32(4)
+    state.playbackTimestamp = this.#playbackTimestamp
+    state.countInBeatsRemaining = view.getFloat32(12)
+    state.isPlaying = view.getUint8(16) === 1
+    state.isCountingIn = view.getUint8(17) === 1
+    state.isRecording = view.getUint8(18) === 1
+    if (this.#measureLoad) {
+        state.perfBuffer.set(this.#perfBuffer)
+        state.perfIndex = this.#perfWriteIndex
     }
 })
-
-// EngineProcessor.ts:414 (in render())
-this.#stateSender.tryWrite()
 ```
+
+`engine_state_ptr()` / `engine_state_len()` are exports of `crates/engine/src/lib.rs` — the byte offsets above are that record's layout, so the two sides must be changed together. `playbackTimestamp` is the exception: it's a host-side value the processor tracks across `setPosition` / `stop`, not something the engine owns.
 
 `tryWrite()` is the publish step. The exact ordering (whether each field uses `Atomics.store` or a relaxed write, and whether there's a generation counter for torn-read detection) lives in `@opendaw/lib-std`'s `SyncStream` — read that if you need bit-level certainty.
 
 ### Reader (main thread)
 
 ```typescript
-// EngineWorklet.ts:88
+// packages/studio/core/src/EngineWorklet.ts (in the constructor's pre-super() setup)
 const reader = SyncStream.reader<EngineState>(EngineStateSchema(), state => {
     this.#isPlaying.setValue(state.isPlaying)
     this.#isRecording.setValue(state.isRecording)
@@ -294,15 +295,15 @@ const reader = SyncStream.reader<EngineState>(EngineStateSchema(), state => {
 The trailing comment matters: `position` is set last so that any subscriber listening to `position` and reading other state via cross-observables sees a coherent snapshot. The reader is then polled every animation frame:
 
 ```typescript
-// EngineWorklet.ts:233
+// packages/studio/core/src/EngineWorklet.ts
 AnimationFrame.add(() => reader.tryRead())
 ```
 
 `tryRead()` reads the buffer atomically, decodes into the typed `state` object, and calls the callback. If the buffer hasn't changed since the last read, the callback isn't fired.
 
-## SyncSource / SyncTarget — graph synchronization
+## SyncSource — graph synchronization
 
-The box graph lives on the main thread; the audio thread needs a copy. The initial state is shipped as a serialized `ArrayBuffer` in `processorOptions` (see [EngineProcessorAttachment](#engineprocessorattachment)). After that, every commit on the main-thread graph is shipped to the worklet as a stream of `UpdateTask`s.
+The box graph lives on the main thread; the audio thread needs a copy. Every commit on the main-thread graph is shipped to the worklet as a stream of `UpdateTask`s, and the engine's mirror is populated by the same mechanism: the sync source opens with a full dump of the graph, so the first batch *is* the initial state.
 
 ### `UpdateTask`
 
@@ -310,7 +311,7 @@ The box graph lives on the main thread; the audio thread needs a copy. The initi
 // packages/lib/box/src/sync.ts
 export type UpdateTask<M> =
     | { type: "new", name: keyof M, uuid: UUID.Bytes, buffer: ArrayBufferLike }
-    | { type: "update-primitive", address: AddressLayout, value: unknown }
+    | { type: "update-primitive", address: AddressLayout, primitiveType: PrimitiveType, value: unknown }
     | { type: "update-pointer", address: AddressLayout, target: Maybe<AddressLayout> }
     | { type: "delete", uuid: UUID.Bytes }
 
@@ -322,61 +323,73 @@ export interface Synchronization<M> {
 
 Each task is the minimum information needed to replay a graph mutation. The `address` field is a flattened `AddressLayout` (UUID + integer field keys), not a `Vertex` reference, so it survives serialization.
 
+These four tag strings are a **wire contract with the Rust engine**, decoded by `decode_forward` in `crates/boxgraph/src/updates.rs`. `sync.ts` says so in a comment for a reason: renaming one is a silent cross-language break that TypeScript cannot catch.
+
+`primitiveType` exists for the same reason: it carries the field's codec captured at emission time, so a batch stays self-contained even when a later task in it deletes the box an earlier task wrote to.
+
 ### Source (main thread)
 
-`SyncSource` (`packages/lib/box/src/sync-source.ts`) subscribes to the graph's transactions. On `onEndTransaction`, it serializes the accumulated updates and sends them as one batched RPC call:
+`SyncSource` (`packages/lib/box/src/sync-source.ts`) subscribes to the graph's transactions and, on `onEndTransaction`, emits the accumulated updates as one batch.
+
+The engine's mirror is not a JavaScript `BoxGraph`, so the batch cannot simply be structured-cloned across the port — it has to become bytes the Rust decoder understands. `WasmEngine.install`'s `connectSync` (`packages/studio/core-wasm/src/WasmEngine.ts`) arranges exactly that, and the ordering is the point:
 
 ```typescript
-this.#caller = Communicator.sender(messenger, ({dispatchAndForget, dispatchAndReturn}) =>
-    new class implements Synchronization<M> {
-        sendUpdates(updates: ReadonlyArray<UpdateTask<M>>): void {
-            dispatchAndForget(this.sendUpdates, updates)
-        }
-        checksum(value: Int8Array): Promise<void> {
-            return dispatchAndReturn(this.checksum, value)
-        }
-    })
+const target: Synchronization<BoxIO.TypeMap> = {
+    sendUpdates: (tasks: ReadonlyArray<UpdateTask<BoxIO.TypeMap>>): void => {
+        sender.applyUpdates(serializeUpdateTasks(tasks))
+        verifyChecksum()
+    },
+    checksum: (value: Int8Array): Promise<void> => sender.checksum(value)
+}
+const loopback = createSyncLoopback()
+const executor = Communicator.executor<Synchronization<BoxIO.TypeMap>>(loopback.target, target)
+const syncSource = new SyncSource<BoxIO.TypeMap>(project.boxGraph, loopback.source, true)
 ```
 
-The `checksum()` method is a debug round-trip: send the local graph's checksum to the worklet and confirm it matches. Used when investigating sync drift.
+`createSyncLoopback()` (`packages/studio/core-wasm/src/sync/loopback.ts`) is a *synchronous* in-process messenger pair. That matters: serialization has to happen at emission time, while the source graph still holds the boxes the batch refers to. A real `MessageChannel` hop would let a later transaction delete a box before the batch resolved its field codecs.
 
-### Target (worklet)
+The `true` on `SyncSource` means "initialize" — it opens with a full dump of the graph, which is how the engine receives the project in the first place.
 
-`createSyncTarget` (`packages/lib/box/src/sync-target.ts`) builds the executor side. It applies every batch inside a single transaction:
+`serializeUpdateTasks` (`packages/studio/core-wasm/src/sync/serialize-update-tasks.ts`) writes a self-contained stream: a task count, then per task a type string and its payload. Each `update-primitive` carries the field's codec (`primitiveType`) captured at emission time rather than a reference to be re-resolved later, for the same reason.
+
+The `checksum()` round-trip is no longer only a debug aid. `connectSync` throttles one to roughly a second and sends the source graph's checksum after the batches on the same ordered channel; the worklet compares it against the engine's rolling checksum and escalates a divergence.
+
+### Target (worklet and engine)
+
+The executor side lives in the worklet processor and is deliberately thin — it copies the bytes into the engine's input buffer and hands off:
 
 ```typescript
-sendUpdates(updates: ReadonlyArray<UpdateTask<M>>): void {
-    graph.beginTransaction()
-    updates.forEach(update => {
-        if (update.type === "new") {
-            graph.createBox(update.name, update.uuid, box =>
-                box.read(new ByteArrayInput(update.buffer)))
-        } else if (update.type === "update-primitive") {
-            (graph.findVertex(Address.reconstruct(update.address)) as PrimitiveField)
-                .setValue(update.value)
-        } else if (update.type === "update-pointer") {
-            (graph.findVertex(Address.reconstruct(update.address)) as PointerField)
-                .targetAddress = isDefined(update.target)
-                    ? Option.wrap(Address.reconstruct(update.target))
-                    : Option.None
-        } else if (update.type === "delete") {
-            graph.unstageBox(graph.findBox(update.uuid).unwrap())
-        }
-    })
-    graph.endTransaction()
+// packages/studio/core-wasm/src/processor.ts
+#applyUpdates(bytes: ArrayBuffer): void {
+    const array = new Uint8Array(bytes)
+    const pointer = this.#engine.input_reserve(array.length)
+    new Uint8Array(this.#memory.buffer, pointer, array.length).set(array)
+    const rejected = this.#engine.apply_updates(array.length)
+    if (rejected !== 0) {
+        this.#engineToClient.error(new Error(`apply_updates rejected a transaction (code ${rejected})`))
+        return
+    }
+    if (!this.#bound && this.#engine.bind() === 0) {this.#bound = true}
+    drainResourceRequests(...)
 }
 ```
 
-One main-thread `modify()` becomes one worklet-thread transaction. The deferred pointer notifications, constraint validation, and ordering guarantees from [Ch. 02](./02-box-system.md#editing--mutations-with-undoredo) apply on the worklet side too — both graphs are real `BoxGraph` instances, just kept in lock-step.
+The decode and apply are Rust. `apply_updates` (`crates/engine/src/lib.rs`) runs `decode_forward` from `crates/boxgraph/src/updates.rs` and applies the resulting `Update` values to the mirror `BoxGraph` in `crates/boxgraph/src/graph.rs`. The wire format is documented at the top of `updates.rs`:
 
-`EngineWorklet` sets this up in its constructor:
-
-```typescript
-// EngineWorklet.ts:236
-new SyncSource<BoxIO.TypeMap>(project.boxGraph, messenger.channel("engine-sync"), false)
+```
+new/delete : uuid(16) + name(string) + settingsLen(int) + settings(FLDS bytes)
+pointer    : address + optional oldAddress + optional newAddress
+primitive  : address + valueType(string) + oldValue + newValue
 ```
 
-The `false` means "don't initialize" — the worklet already received the initial snapshot via `processorOptions.project`. Subsequent transactions stream through this channel.
+Carrying the *old* value alongside the new is what lets `updates.rs` implement `revert`, so a partially-applied transaction can be undone rather than leaving the mirror wedged.
+
+Two consequences worth internalizing:
+
+- **A rejected transaction is fatal, not recoverable in place.** Once `apply_updates` returns non-zero the mirror has permanently diverged from the source, so the processor escalates through `EngineToClient.error` and the studio's restart flow reboots the worklet from a fresh full dump. There is no partial-repair path.
+- **A transaction can create work.** New `AudioFileBox` / `SoundfontFileBox` targets make the engine queue resource requests, which is why `#applyUpdates` ends by draining them (see [the fetchAudio flow](#fetchaudio--the-async-resource-pattern)).
+
+The deferred pointer notifications, constraint validation, and ordering guarantees from [Ch. 02](./02-box-system.md#editing--mutations-with-undoredo) still hold — the Rust mirror is a real box graph with its own subscription hub (`crates/boxgraph/src/subscription.rs`), kept in lock-step with the source rather than re-deriving anything.
 
 ## Control flags SharedArrayBuffer
 
@@ -385,7 +398,7 @@ A 4-byte `SharedArrayBuffer` holds a single `Int32Array` that the main thread us
 ### Allocation (main thread)
 
 ```typescript
-// EngineWorklet.ts:101
+// packages/studio/core/src/EngineWorklet.ts
 const controlFlagsSAB = new SharedArrayBuffer(4)  // 4 bytes minimum
 // ...
 this.#controlFlags = new Int32Array(controlFlagsSAB)
@@ -396,21 +409,30 @@ It's passed to the processor in `processorOptions.controlFlagsBuffer`.
 ### Reader (audio thread)
 
 ```typescript
-// EngineProcessor.ts:350
+// packages/studio/core-wasm/src/processor.ts
 process(inputs, outputs): boolean {
-    if (!this.#valid) {return false}
-    if (Atomics.load(this.#controlFlags, 0) === 1) {return true}   // sleep
-    try { return this.render(inputs, outputs) }
-    catch (reason) { ... }
+    if (!this.#valid) {return false} // will not revive
+    if (Atomics.load(this.#controlFlags, 0) === 1) {
+        this.#stateSender.tryWrite() // keep the UI in sync (stopped transport) while asleep, no DSP
+        return true
+    }
+    const {status, error} = tryCatch(() => this.#render(inputs, outputs))
+    if (status === "failure") {
+        this.#fail(error)
+        return false
+    }
+    return true
 }
 ```
 
-Slot `[0]` is the sleep flag. Set to `1`, the processor returns `true` (silent) on every `process()` until the main thread clears it. Set to `0`, normal operation.
+Slot `[0]` is the sleep flag. Set to `1`, the processor skips the render entirely — no call into the WASM engine — but still publishes the state stream so the UI doesn't freeze on a stale playhead. Set to `0`, normal operation.
+
+Note the asymmetry between the two early returns: `#valid` is latched off permanently by a fatal engine error (a WASM trap surfaces through `#fail`), and returning `false` from `process()` tells the browser to tear the node down. Sleep is the reversible one.
 
 ### Writer (main thread)
 
 ```typescript
-// EngineWorklet.ts:249
+// packages/studio/core/src/EngineWorklet.ts
 sleep(): void {
     Atomics.store(this.#controlFlags, 0, 1)
     this.#isPlaying.setValue(false)
@@ -472,7 +494,9 @@ Counter parity (odd / even) tells the worker whether to write a start or end tim
 
 ### Audio-thread API
 
-`packages/studio/core-processors/src/HRClock.ts` is the consumer side. `start()` increments the counter and reads back the *previous* round's timestamps to compute elapsed time. `end()` increments again. The key correctness check:
+`packages/studio/core-processors/src/HRClock.ts` is the consumer side. It is engine-independent — it knows only about the 32-byte SAB layout above — which is why it outlived the engine rewrite: the WASM worklet processor constructs one from `processorOptions.hrClockBuffer` and brackets its render with it.
+
+`start()` increments the counter and reads back the *previous* round's timestamps to compute elapsed time. `end()` increments again. The key correctness check:
 
 ```typescript
 if (this.#prevStartCounter > 0 && this.#prevEndCounter === this.#prevStartCounter + 1) {
@@ -569,34 +593,47 @@ The recording processor writes; the worker drains; the main thread receives chun
 
 How does the audio thread get a decoded `AudioData`? It needs the main thread's `sampleManager`, but it can't block on a Promise — yet, somehow, it does.
 
-The trick is two-fold: the request is launched asynchronously and the result is *cached* synchronously when it arrives.
+The trick is two-fold: the request is launched asynchronously and the result is written into the engine's memory synchronously when it arrives.
 
 ### Worklet side
 
-`packages/studio/core-processors/src/SampleManagerWorklet.ts`:
+The audio thread cannot hold a Promise, so the WASM engine doesn't. It **queues requests** and the host drains them. `drainResourceRequests` (`packages/studio/core-wasm/src/boot.ts`) pops the queue after every applied transaction and after every render:
 
 ```typescript
-class SampleLoaderWorklet implements SampleLoader, Terminable {
-    readonly uuid: UUID.Bytes
-    #data: Option<AudioData> = Option.None
-
-    constructor(uuid: UUID.Bytes, engineToClient: EngineToClient) {
-        engineToClient.fetchAudio(uuid).then(
-            data => this.#data = Option.wrap(data),
-            console.warn
-        )
-    }
-
-    get data(): Option<AudioData> { return this.#data }
+for (; ;) {
+    const outPtr = engine.input_reserve(16)
+    const handle = engine.sample_take_request(outPtr)
+    if (handle < 0) {break}                       // queue empty
+    const uuid = new Uint8Array(memory.buffer, outPtr, 16).slice() as UUID.Bytes
+    track(engineToClient.fetchAudio(uuid).then(data => {
+        const {numberOfFrames, numberOfChannels, sampleRate: dataRate, frames} = data
+        const bytesPerChannel = numberOfFrames * Float32Array.BYTES_PER_ELEMENT
+        const pointer = engine.sample_allocate(handle, numberOfChannels * bytesPerChannel)
+        if (pointer === 0) {return}               // dead handle — see below
+        for (let channel = 0; channel < numberOfChannels; channel++) {
+            new Float32Array(memory.buffer, pointer + channel * bytesPerChannel, numberOfFrames)
+                .set(frames[channel])
+        }
+        engine.sample_set_ready(handle, numberOfFrames, numberOfChannels, dataRate)
+    }, reason => {
+        engine.sample_allocate(handle, 4)
+        engine.sample_set_ready(handle, 1, 1, fallbackSampleRate)   // 1 frame of silence
+        engineToClient.log(`sample load failed: ${reason}`)
+    }))
 }
 ```
 
-The first time a processor asks for a sample, a `SampleLoaderWorklet` is created. It immediately fires `engineToClient.fetchAudio(uuid)` — a `dispatchAndReturn` Promise. While the Promise is pending, `data` is `Option.None` and the processor either waits or plays silence. When the Promise resolves, `#data` becomes the loaded `AudioData` and subsequent ticks see it synchronously.
+So the handshake is: **take a request → fetch over RPC → allocate inside the engine → copy frames → mark ready.** Until `sample_set_ready` lands, the engine renders that sample as not-yet-loaded. Soundfonts follow the identical shape (`soundfont_take_request` / `soundfont_allocate` / `soundfont_set_ready`), with the SoundFont2 first reduced by `simplifySoundfont`.
+
+Two details that look like paranoia and aren't:
+
+- **A zero pointer means the handle died.** Handle slots are freed and generation-bumped, so a request can be answered after its slot was recycled — the `AudioFileBox` delete/recreate churn when a recorded take is finalized does exactly this. Writing frames at address `0` would corrupt the engine's own memory, so the continuation bails; the engine re-requests against the fresh handle when the new box syncs.
+- **A failed load resolves as one frame of silence, not as nothing.** Leaving the handle unresolved would hang `queryLoadingComplete()` forever.
 
 ### Main-thread side
 
 ```typescript
-// EngineWorklet.ts:183
+// packages/studio/core/src/EngineWorklet.ts
 fetchAudio: (uuid: UUID.Bytes): Promise<AudioData> => {
     return new Promise((resolve, reject) => {
         const handler = project.sampleManager.getOrCreate(uuid)
@@ -617,33 +654,53 @@ fetchAudio: (uuid: UUID.Bytes): Promise<AudioData> => {
 
 ### Tracking pending resources
 
+Every chain started by `drainResourceRequests` is registered in a set the processor owns, via the `track` helper in `boot.ts`:
+
 ```typescript
-// EngineProcessor.ts:446
-awaitResource(promise: Promise<unknown>): void {
-    this.#pendingResources.add(promise)
-    promise.finally(() => this.#pendingResources.delete(promise))
+const track = (promise: Promise<unknown>): void => {
+    const guarded = promise.catch(onError)
+    pending.add(guarded)
+    guarded.finally(() => pending.delete(guarded))
 }
 ```
 
-Processors that load resources (e.g. soundfonts) register their promises here. `queryLoadingComplete()` (an `EngineCommands` RPC method) waits for the set to clear — so the UI can show a "loading…" state and only enable play once all resources are ready.
+`queryLoadingComplete()` (an `EngineCommands` RPC method) is then just `Promise.all(this.#pendingResources).then(() => true)` — so the UI can show a "loading…" state and only enable play once every queued sample and soundfont has been written into the engine.
+
+Note that `track` wraps the promise in a `.catch(onError)` *before* storing it. A throw inside one of these continuations is an engine trap while writing into WASM memory; without the guard it would vanish as an unhandled rejection in the worklet's global scope, where nothing is listening.
 
 ## EngineProcessorAttachment
 
 The full configuration passed in `processorOptions` when `EngineWorklet` is constructed:
 
 ```typescript
-// packages/studio/adapters/src/EngineProcessorAttachment.ts:7
+// packages/studio/adapters/src/EngineProcessorAttachment.ts
 export type EngineProcessorAttachment = {
-    syncStreamBuffer: SharedArrayBuffer  // SyncStream state ring
+    syncStreamBuffer: SharedArrayBuffer   // SyncStream state ring
     controlFlagsBuffer: SharedArrayBuffer // sleep / future flags
     hrClockBuffer: SharedArrayBuffer      // HR timing ring
-    project: ArrayBufferLike              // serialized BoxGraph snapshot
+    project: ArrayBufferLike
     exportConfiguration?: ExportConfiguration
     options?: ProcessorOptions
+    variant?: Record<string, unknown>     // structured-clonable extras for the engine processor
 }
 ```
 
-`project` is a one-shot snapshot — the worklet reconstructs the box graph from it, then keeps in sync via the `engine-sync` channel for all subsequent changes.
+The first three are the `SharedArrayBuffer`s this chapter has been describing. `variant` is the interesting one: it's an opaque bag the `EngineVariant` provider fills in, and it is how the engine's own artifacts reach the audio thread. For the WASM engine it is a `WasmEngineAttachment` (`packages/studio/core-wasm/src/protocol.ts`):
+
+```typescript
+export type WasmEngineAttachment = {
+    engineModule: WebAssembly.Module
+    deviceModules: ReadonlyArray<WebAssembly.Module>
+    deviceBoxTypes: ReadonlyArray<string>
+    composites: ReadonlyArray<CompositeSpec>
+    effectComposites: ReadonlyArray<EffectCompositeSpec>
+    memory: WebAssembly.Memory
+}
+```
+
+`WebAssembly.Module` and `WebAssembly.Memory` are both structured-cloneable, so the compiled engine, the per-device plugin modules, and the shared linear memory travel through `processorOptions` without a second fetch on the audio thread. `WasmEngine.install` mints a **fresh** `WebAssembly.Memory` per boot — re-instantiating the engine re-applies its data segments, so a recycled heap would leak every allocation of the previous instance.
+
+`project` is a serialized snapshot of the box graph. The WASM engine does not consume it: its mirror is built from the sync stream's opening full dump instead (see [SyncSource](#syncsource--graph-synchronization)).
 
 ## EngineAddresses — live broadcast slots
 
@@ -661,9 +718,9 @@ export namespace EngineAddresses {
 
 The live broadcaster is its own subsystem — separate from `SyncStream` — and lives in `@opendaw/lib-fusion`. The cross-thread mechanism is the same MessagePort channel multiplexing pattern.
 
-## Offline renderer — same processor, different driver
+## Offline renderer — same engine, different driver
 
-`packages/studio/adapters/src/offline-renderer.ts` runs the same `EngineProcessor` in a Web Worker (not an AudioWorklet) and drives it with explicit `step()` calls:
+An export doesn't run in an AudioWorklet. `OfflineEngineRenderer` (`packages/studio/core/src/OfflineEngineRenderer.ts`) drives the *same* WASM engine inside a plain Web Worker (`packages/studio/core-wasm/src/offline-worker.ts`) with explicit `step()` calls, over the protocol declared in `packages/studio/adapters/src/offline-renderer.ts`:
 
 ```typescript
 export interface OfflineEngineProtocol {
@@ -675,9 +732,17 @@ export interface OfflineEngineProtocol {
 }
 ```
 
-The `SyncStream` and control-flag SABs are still passed in `initialize`, but the rendered audio comes back as return values from `step()` — not through a Web Audio destination. Resource loading uses the same `fetchAudio` RPC because the worker still needs the main thread's `sampleManager`.
+The reuse is real, not approximate: `instantiateWasmEngine` and `drainResourceRequests` in `boot.ts` are written to serve both hosts, which is why an offline render and a live render produce the same audio from the same project.
 
-This is how export works: render the project to a `Float32Array[]` array, save as WAV/FLAC/MP3 via the FFmpeg worker.
+Three things change relative to the realtime path:
+
+- **Audio comes back as return values.** `step(samples)` resolves with a `Float32Array[]`, rather than the engine writing into a Web Audio destination.
+- **The engine artifacts are fetched by the worker.** `OfflineEngineRenderer.install` is handed the worker URL plus a `variant` attachment carrying the wasm base URL, and the worker self-loads from there — no `WebAssembly.Module` is transferred.
+- **`enginePort` is a real `MessagePort`.** The worker still needs the main thread's `sampleManager`, so `fetchAudio` / `fetchSoundfont` run over the unchanged `EngineToClient` RPC.
+
+The `SyncStream` and control-flag SABs are still passed in `initialize`, so transport state is observable during a render exactly as it is live.
+
+This is how export works: render the project to a `Float32Array[]`, save as WAV/FLAC/MP3 via the FFmpeg worker. See [Ch. 10 — Export](../10-export.md) for the API-level view.
 
 ## SyncLog — persistent transaction history
 
@@ -714,15 +779,21 @@ Like the engine and box chapters, here are the rules that, if you violate them, 
 4. **Args go through structured clone.** Don't send class instances with private fields or methods; they lose their prototype. Plain data objects only. Use `Communicator.makeTransferable()` to mark transferables explicitly when auto-detection isn't enough.
 5. **Never write to the SyncStream from the main thread.** It's worklet-only; main-thread writes would race.
 6. **`Atomics.wait` is forbidden on the main thread.** The `RingBuffer` reader runs it on a dedicated worker; if you write similar code, block only in a worker.
-7. **One `BoxGraph` change becomes one sync-target transaction.** Don't try to apply individual `UpdateTask`s outside a transaction — pointer constraints will trip.
-8. **The control-flag SAB is one Int32Array, single-slot today.** Adding new flags? Use higher indices. Don't repurpose `[0]`.
-9. **`SharedArrayBuffer` requires COOP+COEP.** Every deployment needs the headers. The first thing to check when "engine won't start" is the response headers of `index.html`.
-10. **`fetchAudio` resolves once.** The Promise is correlated by `returnId`. Don't try to "re-fetch" by calling the same Promise — make a new RPC call.
+7. **One main-thread transaction becomes one `apply_updates` batch.** Don't split a batch or reorder tasks within it — pointer constraints and the `revert` path both assume the batch is atomic.
+8. **Serialize sync updates at emission time, never after a port hop.** A later transaction can delete the boxes an earlier batch refers to. This is why `connectSync` uses a synchronous loopback rather than a `MessageChannel`.
+9. **A rejected `apply_updates` is unrecoverable.** The engine's mirror has diverged; escalate through `EngineToClient.error` so the worklet reboots from a fresh dump. Never try to patch it up in place.
+10. **The control-flag SAB is one Int32Array, single-slot today.** Adding new flags? Use higher indices. Don't repurpose `[0]`.
+11. **`SharedArrayBuffer` requires COOP+COEP.** Every deployment needs the headers. The first thing to check when "engine won't start" is the response headers of `index.html`.
+12. **`fetchAudio` resolves once.** The Promise is correlated by `returnId`. Don't try to "re-fetch" by calling the same Promise — make a new RPC call.
+13. **Check for a zero pointer before writing into engine memory.** `sample_allocate` / `frozen_allocate` return `0` for a handle that died while the fetch was in flight. Writing there corrupts the engine's heap.
 
 ## Further reading
 
 - **`packages/lib/runtime/src/communicator.test.ts`** — the unit tests for `Communicator` are the most concrete spec for the wire format and serialization rules. Read these before changing anything about the RPC layer.
 - **`@opendaw/lib-std`'s `SyncStream`** (in `packages/lib/std/src/` — search for `SyncStream` and `Schema`) — the bit-level layout, atomic ordering, and torn-read prevention for SAB-backed state.
-- **`packages/studio/core/src/MIDIReceiver.ts`** and **`MonitoringRouter.ts`** — both transfer a `MessagePort` and a `SharedArrayBuffer` into the worklet for sub-RPC-latency event streams. Good worked examples of mixing the two primitives.
+- **`packages/studio/core/src/midi/MIDIReceiver.ts`** and **`packages/studio/core/src/MonitoringRouter.ts`** — both transfer a `MessagePort` and a `SharedArrayBuffer` into the worklet for sub-RPC-latency event streams. Good worked examples of mixing the two primitives.
+- **`packages/studio/core-wasm/src/processor.ts`** — the audio-thread end of every channel in this chapter, in one file. The most useful single read if you want to see the protocols land.
+- **`packages/studio/core-wasm/src/boot.ts`** — engine instantiation and the sample/soundfont handshakes, shared by the realtime worklet and the offline worker.
+- **`crates/boxgraph/src/updates.rs`** and **`crates/boxgraph/src/graph.rs`** — the engine-side decode and the mirror graph. Read `updates.rs`'s header comment for the authoritative wire format.
 - **[Ch. 12 — Browser Compatibility](../12-browser-compatibility.md)** — the COOP/COEP story, including iframe embedding and resource fetching gotchas.
 - **[Ch. 01 — Engine Processor](./01-engine-processor.md)** — where these channels are *used*. Read with this chapter for a complete picture.

@@ -6,15 +6,31 @@
  * - Individual stems export (separate files per track)
  * - WAV format with 32-bit float encoding
  *
- * Note: AudioOfflineRenderer is deprecated upstream (since studio-core 0.0.93)
- * but still functional — it wraps the same project.copy() + OfflineAudioContext
- * + createEngine pipeline that src/lib/rangeExport.ts implements manually.
+ * Renders via `OfflineEngineRenderer.start` — the WASM offline worker, the only
+ * engine (the deprecated `AudioOfflineRenderer` was removed upstream along with
+ * the TypeScript engine). `start` renders [0, lastRegionAction()] — but the worker
+ * loop actually ENDS on silence detection (or maxDurationSeconds), not at the end
+ * position, so the WAV's tail length is decided by the silence detector (e.g. a
+ * reverb tail rings past the last region). It connects the source's
+ * `liveStreamReceiver` (held by the live engine) and does NOT copy internally, so
+ * we render from a `project.copy()` — same pattern as `src/lib/rangeExport.ts`,
+ * which also covers range-bounded (exact-frame-count) renders.
  */
 
-import { Project, AudioOfflineRenderer } from "@opendaw/studio-core";
+import { Project, OfflineEngineRenderer } from "@opendaw/studio-core";
 import { WavFile } from "@opendaw/lib-dsp";
-import { Errors, Option, Progress } from "@opendaw/lib-std";
+import type { AudioData } from "@opendaw/lib-dsp";
+import { DefaultObservableValue, Errors, Option } from "@opendaw/lib-std";
 import type { ExportConfiguration } from "@opendaw/studio-adapters";
+import { withDeadline } from "./deadline";
+
+// The worker loop has no internal ceiling (queryLoadingComplete polls forever) — this
+// deadline only exists so a wedged worker fails loudly instead of hanging the export.
+// Sized like rangeExport's: generous enough that a legitimate full-song render on a
+// slow machine never false-trips it. NOTE: a deadline trip rejects our await but the
+// worker keeps rendering — `start()` exposes no terminate handle; only the abort
+// signal reaches it.
+const RENDER_TIMEOUT_MS = 300_000;
 
 export interface ExportOptions {
   /**
@@ -61,6 +77,43 @@ export interface StemExportConfig {
 }
 
 /**
+ * Render the full project through `OfflineEngineRenderer.start`, forwarding
+ * worker progress (unit 0-1) to the 0-100 callback the demos expect.
+ */
+async function renderProject(
+  project: Project,
+  optConfig: Option<ExportConfiguration>,
+  sampleRate: number,
+  onProgress?: (progress: number) => void,
+  abortSignal?: AbortSignal
+): Promise<AudioData> {
+  const progress = new DefaultObservableValue(0);
+  const progressSub = progress.subscribe((obs) => {
+    onProgress?.(Math.round(obs.getValue() * 100));
+  });
+  // The renderer connects the source's liveStreamReceiver — the live engine already
+  // holds it ("Already connected"), so always render from a copy.
+  const projectCopy = project.copy();
+  try {
+    return await withDeadline(
+      OfflineEngineRenderer.start(
+        projectCopy,
+        optConfig,
+        progress,
+        abortSignal,
+        sampleRate
+      ),
+      RENDER_TIMEOUT_MS,
+      "Offline render: full project"
+    );
+  } finally {
+    // Cleanup must not mask an in-flight error or skip terminate().
+    try { progressSub.terminate(); } catch (e) { console.error("progressSub.terminate() failed: " + String(e)); }
+    try { projectCopy.terminate(); } catch (e) { console.error("projectCopy.terminate() failed: " + String(e)); }
+  }
+}
+
+/**
  * Export the full mix (all tracks mixed down to a single stereo file)
  *
  * @param project - The OpenDAW project to export
@@ -91,26 +144,22 @@ export async function exportFullMix(
   try {
     onStatus?.("Preparing offline render...");
 
-    // Render the project offline to AudioBuffer
+    // Render the project offline to AudioData
     // Pass Option.None for exportConfiguration to render the full mix
     onStatus?.("Rendering audio...");
 
-    const progressHandler: Progress.Handler = (value) => {
-      onProgress?.(Math.round(value * 100));
-    };
-
-    const audioBuffer = await AudioOfflineRenderer.start(
+    const audioData = await renderProject(
       project,
       Option.None, // No stem configuration = full mix
-      progressHandler,
-      abortSignal,
-      sampleRate
+      sampleRate,
+      onProgress,
+      abortSignal
     );
 
     onStatus?.("Encoding WAV file...");
 
-    // Convert AudioBuffer to WAV format (32-bit float)
-    const wavArrayBuffer = WavFile.encodeFloats(audioBuffer);
+    // Convert AudioData to WAV format (32-bit float)
+    const wavArrayBuffer = WavFile.encodeFloats(audioData);
 
     onStatus?.("Preparing download...");
 
@@ -119,8 +168,10 @@ export async function exportFullMix(
 
     onStatus?.("Export complete!");
   } catch (error) {
-    // Check if this was an abort
-    if (Errors.isAbort(error)) {
+    // Only treat an AbortError as cancellation when OUR signal fired — Errors.isAbort
+    // matches any DOMException named "AbortError", including ones raised by internal
+    // worker fetches; those are genuine failures, not the user clicking Cancel.
+    if (Errors.isAbort(error) && abortSignal?.aborted) {
       onStatus?.("Export cancelled");
       return;
     }
@@ -189,19 +240,15 @@ export async function exportStems(
 
     onStatus?.("Rendering stems offline...");
 
-    const progressHandler: Progress.Handler = (value) => {
-      onProgress?.(Math.round(value * 100));
-    };
-
-    const audioBuffer = await AudioOfflineRenderer.start(
+    const audioData = await renderProject(
       project,
       Option.wrap(exportConfig),
-      progressHandler,
-      abortSignal,
-      sampleRate
+      sampleRate,
+      onProgress,
+      abortSignal
     );
 
-    // AudioBuffer contains interleaved stereo pairs for each stem
+    // AudioData contains interleaved stereo pairs for each stem
     // Channel layout: [stem1_L, stem1_R, stem2_L, stem2_R, ...]
     const stems = Object.values(stemsConfig);
     const totalStems = stems.length;
@@ -211,29 +258,22 @@ export async function exportStems(
       const leftChannelIndex = i * 2;
       const rightChannelIndex = i * 2 + 1;
 
-      if (rightChannelIndex >= audioBuffer.numberOfChannels) {
+      if (rightChannelIndex >= audioData.numberOfChannels) {
         throw new Error(
           `Insufficient channels for stem "${stem.fileName}": ` +
-          `expected channel ${rightChannelIndex} but buffer only has ${audioBuffer.numberOfChannels} channels`
+          `expected channel ${rightChannelIndex} but render only has ${audioData.numberOfChannels} channels`
         );
       }
 
-      const leftChannel = audioBuffer.getChannelData(leftChannelIndex);
-      const rightChannel = audioBuffer.getChannelData(rightChannelIndex);
-
       onStatus?.(`Encoding ${stem.fileName}.wav (${i + 1}/${totalStems})...`);
 
-      // Create a new AudioBuffer for this stem
-      const stemBuffer = new AudioBuffer({
-        length: audioBuffer.length,
+      // Encode this stem's stereo pair to WAV
+      const wavArrayBuffer = WavFile.encodeFloats({
+        sampleRate: audioData.sampleRate,
+        numberOfFrames: audioData.numberOfFrames,
         numberOfChannels: 2,
-        sampleRate: audioBuffer.sampleRate
+        frames: [audioData.frames[leftChannelIndex], audioData.frames[rightChannelIndex]]
       });
-      stemBuffer.copyToChannel(leftChannel, 0);
-      stemBuffer.copyToChannel(rightChannel, 1);
-
-      // Encode to WAV
-      const wavArrayBuffer = WavFile.encodeFloats(stemBuffer);
 
       // Download
       downloadArrayBuffer(wavArrayBuffer, `${stem.fileName}.wav`, "audio/wav");
@@ -241,8 +281,8 @@ export async function exportStems(
 
     onStatus?.(`Successfully exported ${totalStems} stems!`);
   } catch (error) {
-    // Check if this was an abort
-    if (Errors.isAbort(error)) {
+    // Only treat an AbortError as cancellation when OUR signal fired (see exportFullMix).
+    if (Errors.isAbort(error) && abortSignal?.aborted) {
       onStatus?.("Export cancelled");
       return;
     }

@@ -34,20 +34,18 @@ import { InfoCircledIcon, PlayIcon, StopIcon } from "@radix-ui/react-icons";
 //   was audible at the end of playback (through studio-core 0.0.144).
 //
 // HISTORICAL MECHANISM (studio-core ≤ 0.0.144, repro pinned at 0.0.136):
-//   VOICE_FADE_DURATION in @opendaw/studio-core was 20 ms. PitchVoice
+//   the voice declick duration was 20 ms, and the playback voice
 //   triggered its own end-of-file fade-out when
 //   `readPosition >= numberOfFrames - VOICE_FADE_DURATION * sampleRate * playbackRate`.
-//   The old voice was moved to `lane.fadingVoices`, which is processed with
-//   `#unitGainBuffer` (1.0) — the region's fading gain buffer was NOT applied
-//   to it. So the loud audio in the last 20 ms of the file played at full
-//   level over the user's fade.
+//   The old voice was moved to a fading-voices lane processed with a unit
+//   gain buffer — the region's fading gain buffer was NOT applied to it.
+//   So the loud audio in the last 20 ms of the file played at full level
+//   over the user's fade.
 //
 // FIXED in studio-core 0.0.145 (commits 3a243e7b + e55c12c8):
-//   `#updateOrCreatePitchVoice` received a keep-guard —
-//   `else if (existing.isFadingOut()) { /* keep the voice so the region's
-//   fade buffer keeps applying — evicting it … produces an audible pop */ }`.
-//   The voice is no longer evicted to fadingVoices; the region's fade gain
-//   buffer continues to apply.
+//   the voice-update path received a keep-guard that retains a fading-out
+//   voice so the region's fade buffer keeps applying (evicting it produced
+//   the audible pop). The voice is no longer evicted to the fading lane.
 //
 // RE-TESTED at SDK 0.0.154 (studio-core 0.0.152):
 //   BUG mode: no audible pop detected. Offline scan of the last 20 ms
@@ -62,7 +60,7 @@ import { InfoCircledIcon, PlayIcon, StopIcon } from "@radix-ui/react-icons";
 const BPM = 120;
 const AUDIO_FILE = "/audio/Vocals30.mp3";
 const FADE_OUT_SECONDS = 0.7766286581569116; // matches original repro
-const VOICE_FADE_DURATION_SECONDS = 0.020; // SDK constant in core-processors/Tape/constants.ts
+const VOICE_FADE_DURATION_SECONDS = 0.020; // engine voice-declick constant (Rust: VOICE_FADE_DURATION in crates/engine/src/audio_region_player.rs)
 // 21 ms of headroom: 20 ms VOICE_FADE_DURATION + 1 ms safety margin.
 const WORKAROUND_HEADROOM_SECONDS = 0.021;
 // Skip the first 20 s of the file so the listener only needs to wait
@@ -226,12 +224,12 @@ const App: React.FC = () => {
               <strong>Historical investigation (mechanism fixed in studio-core 0.0.145).</strong>{" "}
               Through studio-core 0.0.144, an audible pop fired at the end of a clip whose
               fade-out ended exactly at the audio file's end. The fade math was clean (gain
-              reached 0 at region end), but <Code>PitchVoice</Code>'s internal end-of-file
+              reached 0 at region end), but the playback voice's internal end-of-file
               fade-out kicked in during the last 20 ms and bypassed the region's fade gain —
-              the old voice was evicted to <Code>lane.fadingVoices</Code>, which is processed
-              with a unit gain buffer. Fixed in 0.0.145 via a keep-guard in{" "}
-              <Code>#updateOrCreatePitchVoice</Code> that retains the fading voice so the
-              region's fade buffer continues to apply. Re-tested clean at SDK 0.0.154.
+              the old voice was evicted to a fading-voices lane processed with a unit gain
+              buffer. Fixed in 0.0.145 via a keep-guard in the voice-update path that
+              retains the fading voice so the region's fade buffer continues to apply.
+              Re-tested clean at SDK 0.0.154.
             </Callout.Text>
           </Callout.Root>
 

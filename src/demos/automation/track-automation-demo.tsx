@@ -8,7 +8,7 @@ import { AudioUnitBox, ReverbDeviceBox, TrackBox, ValueRegionBox } from "@openda
 import type { ppqn } from "@opendaw/lib-dsp";
 import { UUID } from "@opendaw/lib-std";
 import { ValueRegionBoxAdapter, TrackBoxAdapter } from "@opendaw/studio-adapters";
-import { getAllRegions } from "@/lib/adapterUtils";
+import { getAllRegions, audioEffectsFieldOf } from "@/lib/adapterUtils";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
@@ -318,10 +318,12 @@ const App: React.FC = () => {
         }
 
         // Insert a Reverb effect with exaggerated settings for demo
+        // (chain field via the adapter layer, resolved outside the transaction)
         setStatus("Setting up automation tracks...");
+        const reverbField = audioEffectsFieldOf(newProject, audioUnitBox);
         let reverbBox: ReverbDeviceBox | null = null;
         newProject.editing.modify(() => {
-          const effectBox = newProject.api.insertEffect(audioUnitBox.audioEffects, EffectFactories.Reverb);
+          const effectBox = newProject.api.insertEffect(reverbField, EffectFactories.Reverb);
           reverbBox = effectBox as ReverbDeviceBox;
           // Large hall: long decay, low damping, noticeable wet level
           reverbBox.decay.setValue(0.85);     // long tail (0-1)

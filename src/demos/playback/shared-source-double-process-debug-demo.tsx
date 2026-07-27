@@ -40,7 +40,7 @@ import { InfoCircledIcon, PlayIcon, StopIcon } from "@radix-ui/react-icons";
 //              UUIDs but identical on-disk content).
 //
 // The original report framed the artifact as caused by voice sharing
-// (one PitchVoice keyed by AudioFileBox UUID, processed twice per block
+// (one playback voice keyed by AudioFileBox UUID, processed twice per block
 // at a seam). That mechanism was wrong: voices are keyed by region UUID
 // (AudioRegionBoxAdapter.uuid → box.address.uuid), so SHARED and
 // DISTINCT yield two independent voices either way.

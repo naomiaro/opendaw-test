@@ -21,10 +21,9 @@ Key facts (verified SDK 0.0.160):
   metronome key = silent. `settings` is `Partial<Omit<EngineSettings["metronome"],
   "enabled">>` (gain/beatSubDivision/monophonic, schema defaults otherwise);
   `clickSounds: {downbeat?, beat?}` replaces the synthesized 880/440 Hz defaults.
-- **`config.metronome` is consumed by the WASM offline worker ONLY** — the TS
-  `EngineProcessor`/TS offline worker ignore it (no click, no error). This is moot for
-  the render path itself: every render passes `variant: true` — the WASM offline worker
-  is the only render path in this project (see `src/lib/rangeExport.ts`).
+- **`config.metronome` is consumed by the WASM offline worker** — the only offline
+  render path the SDK ships (the TS engine and its offline worker were removed in
+  0.0.161; `OfflineEngineRenderer` has no engine-selection parameter anymore).
 - **Metronome stem channel order**: unit stems in `stems` key order, click pair LAST —
   matches `ExportConfiguration.stemFileNames`; `sanitizeExportNamesInPlace` renames the
   click (not a project stem) on filename collision.
@@ -40,14 +39,16 @@ Key facts (verified SDK 0.0.160):
 - **`play()` + `waitForLoading()` poll with no ceiling** — wrap them (and `step`) in a
   deadline (`src/lib/deadline.ts` `withDeadline`) or a wedged worker hangs the export
   forever with no error.
-- **Do NOT use the deprecated `AudioOfflineRenderer`** — it throws `InvalidStateError`
-  once any WASM engine booted (openDAW#315, closed wontfix: use `OfflineEngineRenderer`).
-- **This repo has already removed its TypeScript-engine render paths** — every offline
-  render passes `variant: true` and runs on the WASM offline worker exclusively (upstream
-  roadmap per the openDAW#315 closing comment: "The Typescript audio-engine will be
-  removed soon" from the SDK too). audio-verify was re-run and recalibrated on the WASM
-  worker — see `.claude/skills/audio-verify/SKILL.md` (2026-07-16 entry) for the updated
-  medians.
+- **`AudioOfflineRenderer` no longer exists** — deleted in SDK 0.0.161 together with the
+  whole TypeScript engine (the openDAW#315 closing comment made good on "The Typescript
+  audio-engine will be removed soon"). Before deletion it was already non-functional here
+  (threw `InvalidStateError` once any WASM engine booted). `audioExport.ts` now renders
+  through `OfflineEngineRenderer.start` — from a `project.copy()`, because unlike the old
+  API it does NOT copy internally.
+- **Every offline render runs the WASM offline worker** — the only engine in the SDK;
+  `create`/`start` take no engine-selection (`variant`) parameter. audio-verify was
+  re-run and recalibrated on the WASM worker — see `.claude/skills/audio-verify/SKILL.md`
+  (2026-07-16 entry) for the medians.
 - Verified at 0.0.160: new-API metronome mixdown is metric-identical to the 0.0.159
   preferences-path render; metronome stem is a pure click track (project-BPM lock,
   stability 0.989); audio-verify grid scenarios (metronome → WASM worker) match every
@@ -55,25 +56,22 @@ Key facts (verified SDK 0.0.160):
 
 ### Offline Audio Rendering (Export)
 With `Option.None`, `ExportConfiguration.countStems(config)` returns 1 (not 0), so the
-mixdown branch is selected (`stemExports.length === 0` inside the engine processor) and
-the metronome bus is mixed in — when enabled, which on `OfflineEngineRenderer` it never
-is (see above). Provide a non-empty `ExportConfiguration.stems` map to take
-the stem branch (metronome excluded).
+mixdown branch is selected (empty stems list inside the engine) and the metronome is
+mixed in only when the export configuration asks for it (`metronome.includeInMixdown` —
+see above; engine preferences never travel into an offline render). Provide a non-empty
+`ExportConfiguration.stems` map to take the stem branch (click stem only via
+`metronome.stem`).
 
-**Higher-level shortcuts** (when you don't need step-by-step control):
-- `AudioOfflineRenderer.start(source, optConfig, progress, abortSignal?, sampleRate?)` →
-  `Promise<AudioBuffer>` (in `@opendaw/studio-core`) — **do not use this**: it throws
-  `InvalidStateError` once any WASM engine has booted anywhere on the page (see "Do NOT
-  use the deprecated `AudioOfflineRenderer`" above), which in this project is always.
-  `@deprecated`; use `OfflineEngineRenderer` for new code.
+**Higher-level shortcut** (when you don't need step-by-step control):
 - `OfflineEngineRenderer.start(source, optConfig, progress, abortSignal?, sampleRate?)` →
-  `Promise<AudioData>` — same flow but returns the raw AudioData. `progress` is a
-  `DefaultObservableValue<number>` (NOT a `Progress.Handler`). Also exposes
-  `.create(source, optConfig, sampleRate?)` for step-by-step (`play(): Promise<void>`, `step(samples)`,
-  `setPosition`, `waitForLoading`, etc.) and `.render(config, start, end, progress, abortSignal?)`
-  for arbitrary ranges (config is `OfflineEngineRenderConfig`, not `ExportConfiguration`).
+  `Promise<AudioData>` — renders `[0, lastRegionAction()]` (or `config.range`). `progress`
+  is a `DefaultObservableValue<number>` (NOT a `Progress.Handler`). Also exposes
+  `.create(source, optConfig, sampleRate?, abortSignal?)` for step-by-step
+  (`play(): Promise<void>`, `step(samples)`, `setPosition`, `waitForLoading`, etc.) and
+  `.render(config, start, end, progress, abortSignal?)` for arbitrary ranges (config is
+  `OfflineEngineRenderConfig`, not `ExportConfiguration`).
 
-Pass a copy (not the live project) — both wrappers connect the source's
+Pass a copy (not the live project) — the renderer connects the source's
 `liveStreamReceiver`, which conflicts with a live engine.
 
 ### Mutate-Copy-Restore Pattern for Offline Rendering
@@ -197,9 +195,11 @@ effects-inclusive stem; openDAW's own export dialog omits the flag.
 `skipChannelStrip: true` also drops aux sends regardless of `includeSends` (same
 early-return-before-sends mechanism) — it bypasses the channel-strip volume/pan/mute.
 `ExportConfiguration.range` is read ONLY by `OfflineEngineRenderer`; the manual
-`worklets.createEngine` path (`EngineProcessor`) never reads it.
-- Mixdown path (`exportConfiguration` = undefined): all audio mixed, metronome included
-- Stem path (`exportConfiguration` provided): per-track isolation, metronome excluded
+`worklets.createEngine` path (live `EngineWorklet`) never reads it.
+- Mixdown path (`exportConfiguration` = undefined): all audio mixed; click only via
+  `metronome.includeInMixdown` in a config
+- Stem path (`exportConfiguration` provided): per-track isolation; click only as its own
+  stem via `metronome.stem` (appended LAST)
 
 ## Reference Files
 - Export demo: `src/demos/export/export-demo.tsx`

@@ -184,8 +184,12 @@ Use raw `sampleLoader.subscribe()` only when you need state change callbacks wit
 Beyond `.volume`, `.panning`, `.mute`, `.solo`, `.tracks`:
 - `.input` — audio input routing
 - `.output` — pointer to routing target (master, bus, etc.)
-- `.midiEffects` — `IndexedBoxAdapterCollection` of MIDI effect adapters
-- `.audioEffects` — `IndexedBoxAdapterCollection` of audio effect adapters
+- `.midiEffects` — `Option<IndexedBoxAdapterCollection>` of MIDI effect adapters
+- `.audioEffects` — `Option<IndexedBoxAdapterCollection>` of audio effect adapters
+  (the `DeviceHost` chain getters are `Option`-wrapped — `None` means "hosts no such
+  chain kind", e.g. an effect-composite branch has no midi chain; unwrap before use.
+  Also `.audioEffectsField`/`.midiEffectsField` return `Option<Field<…>>` — unwrap to
+  get the field `project.api.insertEffect()` takes)
 - `.auxSends` — `BoxAdapterCollection<AuxSendBoxAdapter>` (sends to buses)
 - `.isBus`, `.isInstrument`, `.isOutput` — type checks
 - `.label` — display name
@@ -247,6 +251,10 @@ utility from `src/lib/adapterUtils.ts`.
 `src/lib/adapterUtils.ts` provides `getAllRegions(project)` and `getAllAudioRegions(project)`
 for full project traversal. Use these instead of inline `rootBoxAdapter.audioUnits.adapters()
 .flatMap(u => u.tracks.values()).flatMap(t => t.regions.adapters.values())` chains.
+It also provides `audioEffectsFieldOf(project, audioUnitBox)` / `midiEffectsFieldOf(...)` /
+`audioUnitAdapterFor(...)` — the repo convention is to reach effect chains through the
+adapter layer (NOT raw `audioUnitBox.audioEffects` box fields) and pass the unwrapped
+field to `project.api.insertEffect()`. Resolve the field OUTSIDE `editing.modify()`.
 
 ### Master Bus Access (Adapter Layer)
 Use `project.rootBoxAdapter.audioUnits.adapters().find(u => u.isOutput)?.box` instead of
@@ -664,6 +672,19 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   handlers on these demos — click by coordinates from a screenshot instead. Also:
   `javascript_tool` results dumping page text can trip the extension's
   "[BLOCKED: Cookie/query string data]" filter — read results via screenshot.
+- After `resize_window`, screenshot pixel coordinates can stop mapping 1:1 to the
+  viewport (screenshot 1456×814 vs a 1400×900 window) — coordinate clicks then miss
+  silently (button looks clicked, handler never fires; reads as "transport dead" while
+  `engine.play()` from the console works). Re-screenshot after any resize and verify one
+  click took effect (state change) before trusting a click sequence. For handler-only
+  tests with the AudioContext already running, DOM `.click()` is a valid cross-check.
+- If a listener reports audio behaving inconsistently from a dev-server page WHILE files
+  are being edited, suspect Vite HMR first: every save remounts the demo, and hooks that
+  own box lifecycles (e.g. useDynamicEffect: insert-on-mount, delete-on-unmount) delete
+  and re-insert their boxes with DEFAULT params on each remount — audibly "effects
+  inconsistent / not always applied". Verify on a fresh load with editing paused before
+  debugging engine or SDK code (measured clean at 0.0.162: insert/bypass/solo all apply
+  mid-playback).
 - Playwright text assertions: JSX expressions split DOM text nodes — XPath
   `contains(text(),…)` misses strings spanning the split; use
   `document.body.innerText.includes(…)`.
@@ -701,9 +722,10 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   (`node_modules/@opendaw/*/dist`), not the upstream git tag diff — a release tag can
   contain commits the npm publish was built without (0.0.158: `migrateCaptureTrackMismatch`
   in the tag, absent from the published studio-core@0.0.156).
-- The demos run the WASM engine exclusively (TS engine deprecated upstream and unwired
-  here) — verify upstream fixes/features against the WASM dists (`studio-core-wasm`);
-  TS-dist greps are only for historical comparison.
+- The demos run the WASM engine exclusively — it is the SDK's ONLY engine (TS engine
+  removed upstream in 0.0.161; `AudioOfflineRenderer` deleted with it). Verify upstream
+  fixes/features against the WASM dists (`studio-core-wasm`); TS-dist greps are only for
+  historical comparison.
 - Proving a render-path migration didn't change audio: render the same scenario through
   old and new code and compare WAV SHA-256 — byte-identical beats any threshold argument.
   Commit (or stash) work-in-progress BEFORE `git checkout main -- <file>` A/B swaps: the

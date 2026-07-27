@@ -4,6 +4,7 @@ import { Project, EffectFactories } from "@opendaw/studio-core";
 import { InstrumentFactories, NoteEventCollectionBoxAdapter } from "@opendaw/studio-adapters";
 import { NoteEventCollectionBox, NoteRegionBox } from "@opendaw/studio-boxes";
 import type { AudioUnitBox, TrackBox } from "@opendaw/studio-boxes";
+import { audioEffectsFieldOf } from "@/lib/adapterUtils";
 
 const QUARTER = PPQN.Quarter;   // 960 ticks
 const BAR = QUARTER * 4;        // 4/4
@@ -44,10 +45,12 @@ export function buildWasmDemoContent(project: Project): void {
   const unit = audioUnitBox as AudioUnitBox;
   const track = trackBox as TrackBox;
 
-  // 2) Audio effects (reverb then delay) on the instrument's audio-effect chain.
+  // 2) Audio effects (reverb then delay) on the instrument's audio-effect chain
+  //    (chain field via the adapter layer, resolved outside the transaction).
+  const effectsField = audioEffectsFieldOf(project, unit);
   project.editing.modify(() => {
-    project.api.insertEffect(unit.audioEffects, EffectFactories.AudioNamed.Reverb);
-    project.api.insertEffect(unit.audioEffects, EffectFactories.AudioNamed.Delay);
+    project.api.insertEffect(effectsField, EffectFactories.AudioNamed.Reverb);
+    project.api.insertEffect(effectsField, EffectFactories.AudioNamed.Delay);
   });
 
   // 3) A note region holding the pattern, spanning PATTERN_LEN ticks (box path mirrors

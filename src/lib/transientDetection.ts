@@ -86,10 +86,10 @@ export function setTransientMarkers(
  *
  * **Throws** if detection completes with fewer than two positions. The engine
  * renders silence for TimeStretch regions whose file has fewer than 2 transient
- * markers (`transients.length() < 2` bails before sequencing in
- * `TapeDeviceProcessor`), so a result with 0 or 1 marker is a real failure
- * rather than something the caller should silently pass through. Catch this and
- * either pick a different play-mode or set markers manually via
+ * markers (the Rust audio-region player only engages its time-stretch sequencer
+ * when `region.transients.len() >= 2`), so a result with 0 or 1 marker is a real
+ * failure rather than something the caller should silently pass through. Catch
+ * this and either pick a different play-mode or set markers manually via
  * {@link setTransientMarkers}.
  *
  * @returns the positions that were written (or were already present). At least

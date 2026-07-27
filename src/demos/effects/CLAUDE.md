@@ -44,10 +44,12 @@ const compiler = ScriptCompiler.create({
   functionName: "werkstatt",    // or "apparat" or "spielwerk"
 });
 
-// Insert the effect first (in editing.modify), then compile OUTSIDE the transaction:
+// Insert the effect first (in editing.modify), then compile OUTSIDE the transaction.
+// Chain field via the adapter layer (audioEffectsFieldOf from src/lib/adapterUtils.ts):
+const field = audioEffectsFieldOf(project, audioBox);
 let werkstattBox: WerkstattDeviceBox;
 project.editing.modify(() => {
-  const effectBox = project.api.insertEffect(audioBox.audioEffects, EffectFactories.Werkstatt);
+  const effectBox = project.api.insertEffect(field, EffectFactories.Werkstatt);
   werkstattBox = effectBox as WerkstattDeviceBox;
   werkstattBox.label.setValue("My Effect");
 });

@@ -184,11 +184,11 @@ flowchart TB
     subgraph WorkletCtx["AudioWorklet (real-time)"]
         direction LR
         EW["EngineWorklet"]
-        EP["EngineProcessor"]
-        BR["BlockRenderer"]
-        CS["ClipSequencing"]
-        AU["AudioUnits"]
-        DC["DeviceChains"]
+        EP["WASM engine processor"]
+        BR["Timeline advance"]
+        CS["Clip sequencing"]
+        AU["Audio units"]
+        DC["Device chains"]
     end
 
     subgraph Workers["Web Workers (non-realtime)"]
@@ -233,7 +233,7 @@ flowchart TB
 **Inside each thread:**
 
 - **Main** — `UI` components, the `Project` box graph, `EngineFacade` observables, and `SampleManager` for decoding.
-- **AudioWorklet** — `EngineWorklet` (an `AudioWorkletNode`) owns `EngineProcessor` (the `AudioWorkletProcessor`). The processor runs `BlockRenderer` → `ClipSequencing` → per-channel `AudioUnits` → effect `DeviceChains` once per 128-frame render quantum.
+- **AudioWorklet** — `EngineWorklet` (an `AudioWorkletNode`) owns the WASM (Rust) engine processor (the `AudioWorkletProcessor`). The processor runs timeline advance → clip sequencing → per-channel audio units → effect device chains once per 128-frame render quantum.
 - **Workers** — `Peaks Worker` for min/max waveform compression, `HRClock Worker` for high-resolution perf timing, `FFmpeg Worker` for import/export encode/decode.
 
 **Threads at a glance:**
@@ -241,7 +241,7 @@ flowchart TB
 | Thread | What lives there | Allowed to block? |
 |---|---|---|
 | **Main** | UI, `Project`, `EngineFacade`, sample decoding kickoff | No (jank kills UX) |
-| **AudioWorklet** | `EngineProcessor` and its graph of `AudioUnits`, `BlockRenderer`, `ClipSequencing` | Never (drops audio) |
+| **AudioWorklet** | The WASM engine processor and its graph of audio units, timeline advance, clip sequencing | Never (drops audio) |
 | **Workers** | Peaks generation, HR clock, FFmpeg, OPFS I/O | Yes — they exist precisely so audio doesn't have to wait |
 
 **Communication channels:**
@@ -250,12 +250,12 @@ flowchart TB
 - **`SharedArrayBuffer`** — AudioWorklet → Main for high-frequency state (playhead position, meters). The main thread polls these via `AnimationFrame` (see [Ch. 3](./03-animation-frame.md)). Requires the page to be cross-origin isolated (COOP/COEP headers — see [Ch. 12](./12-browser-compatibility.md)).
 - **Snapshot serialization** — When you press play, `Project` serializes its box graph to an `ArrayBuffer` and the AudioWorklet rebuilds the audio graph from it.
 
-**The process loop (inside `EngineProcessor`):**
+**The process loop (inside the engine processor):**
 
 1. **Block tick** — every 128 audio frames (one render quantum), the processor wakes up.
-2. **Timeline advance** — `BlockRenderer` advances the PPQN position, handling loop boundaries and tempo automation.
-3. **Clip sequencing** — `ClipSequencing` decides which regions are active at the new position.
-4. **Per-unit processing** — each `AudioUnit` runs its device chain (instruments → effects → sends) in topological order.
+2. **Timeline advance** — the engine advances the PPQN position, handling loop boundaries and tempo automation.
+3. **Clip sequencing** — the engine decides which regions are active at the new position.
+4. **Per-unit processing** — each audio unit runs its device chain (instruments → effects → sends) in topological order.
 5. **Mix and output** — channels sum into the master and are handed back to the Web Audio graph.
 6. **State publish** — the processor writes position, meters, and perf data to the `SharedArrayBuffer` for the UI to pick up next animation frame.
 

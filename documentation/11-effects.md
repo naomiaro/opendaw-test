@@ -148,16 +148,10 @@ Effects use the Adapter pattern to provide reactive properties:
 
 ### Integration - Effect Chain Processing
 
-- **InsertReturnAudioChain** - Audio effect chain processor
-  - Located in: `@opendaw/studio-core-processors`
-  - Manages ordering of effects in a chain
-  - Handles audio routing through effects
-  - Subscribes to effect enable/disable state
-  - Invalidates wiring when effects are added/removed
-
-- **DeviceChain** - Abstract interface for effect chains
-- **AudioEffectDeviceProcessor** - Runtime processor for individual effects
-- **DeviceProcessorFactory** - Creates runtime processors from boxes
+The runtime side lives in the WASM engine (`@opendaw/studio-core-wasm`): it links one wasm
+module per device box type, orders each chain by the boxes' `index` fields, routes audio
+through the enabled effects, and rewires when effects are added/removed. The box graph and
+the adapters above are the only surface an application touches — the engine mirrors them.
 
 ### Key Concepts
 
@@ -247,7 +241,7 @@ Output generated
 
 ### Performance Considerations
 
-- Effects are processed in order within the InsertReturnAudioChain
+- Effects are processed in order within the audio unit's effect chain (ordered by the boxes' `index` fields)
 - Disabled effects are automatically bypassed (not wired into chain)
 - Effect state synchronization uses subscription-based updates
 - Real-time processors run in audio thread with proper synchronization
@@ -877,15 +871,22 @@ The recommended approach using the ProjectAPI:
 
 ```typescript
 import { Project, EffectFactories } from "@opendaw/studio-core";
+import { AudioUnitBoxAdapter } from "@opendaw/studio-adapters";
 
 // Assuming you have a project and audioUnitBox
 const project: Project = /* ... */;
 const audioUnitBox = /* ... */;
 
+// Resolve the chain's host field through the adapter. An audio unit always hosts
+// an audio-effect chain, so unwrapping the Option is safe here.
+const audioEffectsField = project.boxAdapters
+    .adapterFor(audioUnitBox, AudioUnitBoxAdapter)
+    .audioEffectsField.unwrap("audio unit hosts an audio chain");
+
 // Add an effect to the audio unit's effect chain
 project.editing.modify(() => {
     const effectBox = project.api.insertEffect(
-        audioUnitBox.audioEffects,  // Field<EffectPointerType>
+        audioEffectsField,  // Field<EffectPointerType>
         EffectFactories.AudioNamed.Delay,
         0  // Insert at beginning (optional, defaults to end)
     );
@@ -903,7 +904,7 @@ For more control over parameters during creation:
 const factory = EffectFactories.AudioNamed.Compressor;
 
 project.editing.modify(() => {
-    const effectBox = factory.create(project, audioUnitBox.audioEffects, 0);
+    const effectBox = factory.create(project, audioEffectsField, 0);
     
     // Customize after creation
     effectBox.label.setValue("My Compressor");
@@ -948,7 +949,7 @@ Some effects have specialized default initialization:
 import { EffectParameterDefaults } from "@opendaw/studio-core";
 
 project.editing.modify(() => {
-    const revampBox = factory.create(project, audioUnitBox.audioEffects, 0);
+    const revampBox = factory.create(project, audioEffectsField, 0);
     
     // Apply professional default EQ curve
     EffectParameterDefaults.defaultRevampDeviceBox(revampBox);
@@ -960,7 +961,7 @@ project.editing.modify(() => {
 ```typescript
 project.editing.modify(() => {
     const compressorBox = EffectFactories.AudioNamed.Compressor
-        .create(project, audioUnitBox.audioEffects, 0);
+        .create(project, audioEffectsField, 0);
     
     // Customize parameters
     compressorBox.threshold.setInitValue(-20.0);
@@ -1006,7 +1007,7 @@ Each box contains:
 
 ```typescript
 import { Project, EffectFactories } from "@opendaw/studio-core";
-import { InstrumentFactories } from "@opendaw/studio-adapters";
+import { AudioUnitBoxAdapter, InstrumentFactories } from "@opendaw/studio-adapters";
 
 async function createInstrumentWithEffects(project: Project) {
     project.editing.modify(() => {
@@ -1014,10 +1015,15 @@ async function createInstrumentWithEffects(project: Project) {
         const { audioUnitBox } = project.api.createInstrument(
             InstrumentFactories.Tape
         );
+
+        // Resolve the chain field once, then reuse it for every insertion
+        const audioEffectsField = project.boxAdapters
+            .adapterFor(audioUnitBox, AudioUnitBoxAdapter)
+            .audioEffectsField.unwrap("audio unit hosts an audio chain");
         
         // Add reverb (3rd position)
         const reverb = project.api.insertEffect(
-            audioUnitBox.audioEffects,
+            audioEffectsField,
             EffectFactories.AudioNamed.Reverb,
             2
         );
@@ -1025,7 +1031,7 @@ async function createInstrumentWithEffects(project: Project) {
         
         // Add delay (2nd position)
         const delay = project.api.insertEffect(
-            audioUnitBox.audioEffects,
+            audioEffectsField,
             EffectFactories.AudioNamed.Delay,
             1
         );
@@ -1034,7 +1040,7 @@ async function createInstrumentWithEffects(project: Project) {
         
         // Add compressor (1st position)
         const compressor = project.api.insertEffect(
-            audioUnitBox.audioEffects,
+            audioEffectsField,
             EffectFactories.AudioNamed.Compressor,
             0
         );
@@ -1050,7 +1056,9 @@ async function createInstrumentWithEffects(project: Project) {
 
 ## Track Integration
 
-In OpenDAW, effects are added to tracks by attaching them to the track's **AudioUnitBox**. Each AudioUnit has an `audioEffects` field that stores the chain of audio effects.
+In OpenDAW, effects are added to tracks by attaching them to the track's **AudioUnitBox**. The chain of audio effects is stored on the box's `audioEffects` field, but reach it through the adapter layer: `AudioUnitBoxAdapter.audioEffectsField` (and `midiEffectsField` for the MIDI chain) returns the same field with the host's typing applied.
+
+Both are `Option`s, because not every device host has both chains. An audio unit always has both, so `.unwrap()` is safe there — but the `Option` is what stops you handing the wrong chain to `insertEffect` on a host that doesn't have one.
 
 ### Track Structure
 
@@ -1070,7 +1078,7 @@ The **AudioUnitBox** is where effects are added.
 
 ```typescript
 import { Project, EffectFactories } from "@opendaw/studio-core";
-import { InstrumentFactories } from "@opendaw/studio-adapters";
+import { AudioUnitBoxAdapter, InstrumentFactories } from "@opendaw/studio-adapters";
 
 const project = /* ... */;
 
@@ -1079,10 +1087,14 @@ project.editing.modify(() => {
     const { audioUnitBox, trackBox } = project.api.createInstrument(
         InstrumentFactories.Tape
     );
+
+    const audioEffectsField = project.boxAdapters
+        .adapterFor(audioUnitBox, AudioUnitBoxAdapter)
+        .audioEffectsField.unwrap("audio unit hosts an audio chain");
     
     // Add a reverb effect to the track
     const reverb = project.api.insertEffect(
-        audioUnitBox.audioEffects,
+        audioEffectsField,
         EffectFactories.AudioNamed.Reverb
     );
 
@@ -1095,22 +1107,26 @@ project.editing.modify(() => {
 Effects are processed in index order, from 0 to N. You can control insertion position:
 
 ```typescript
+const audioEffectsField = project.boxAdapters
+    .adapterFor(audioUnitBox, AudioUnitBoxAdapter)
+    .audioEffectsField.unwrap("audio unit hosts an audio chain");
+
 project.editing.modify(() => {
     // Add effects in specific order
     const compressor = project.api.insertEffect(
-        audioUnitBox.audioEffects,
+        audioEffectsField,
         EffectFactories.AudioNamed.Compressor,
         0  // First position
     );
 
     const delay = project.api.insertEffect(
-        audioUnitBox.audioEffects,
+        audioEffectsField,
         EffectFactories.AudioNamed.Delay,
         1  // Second position
     );
 
     const reverb = project.api.insertEffect(
-        audioUnitBox.audioEffects,
+        audioEffectsField,
         EffectFactories.AudioNamed.Reverb,
         2  // Third position
     );
@@ -1122,14 +1138,19 @@ project.editing.modify(() => {
 ### Accessing Track Effects
 
 ```typescript
+import { AudioUnitBoxAdapter } from "@opendaw/studio-adapters";
+
 // Get the adapter for the audio unit
 const audioUnitAdapter = project.boxAdapters.adapterFor(
     audioUnitBox,
     AudioUnitBoxAdapter
 );
 
-// Get all audio effect adapters (IndexedBoxAdapterCollection → .adapters() for the array)
-const effectAdapters = audioUnitAdapter.audioEffects.adapters();
+// `audioEffects` is an Option — unwrap it, then .adapters() for the array.
+// An audio unit always hosts an audio chain, so this never throws.
+const effectAdapters = audioUnitAdapter.audioEffects
+    .unwrap("audio unit hosts an audio chain")
+    .adapters();
 
 effectAdapters.forEach(effectAdapter => {
     console.log("Effect:", effectAdapter.labelField.getValue());
@@ -1162,7 +1183,8 @@ const { audioUnitBox } = /* ... */;
 
 // Subscribe to effect chain changes
 const subscription = project.boxAdapters
-    .adapterFor(audioUnitBox, AudioUnitBoxAdapter).audioEffects
+    .adapterFor(audioUnitBox, AudioUnitBoxAdapter)
+    .audioEffects.unwrap("audio unit hosts an audio chain")
     .catchupAndSubscribe({
         onAdd: (effectAdapter) => {
             console.log("Effect added:", effectAdapter.labelField.getValue());
@@ -1219,36 +1241,42 @@ Master effects are global effects applied to the entire mix after all tracks hav
 
 ### Master Bus Structure
 
-The master bus is accessed through the root box's output device:
+The master is the one audio unit whose `isOutput` flag is set. Find it through the root adapter rather than by walking the root box's output pointer:
 
 ```typescript
-// Access the root box
-const rootBox = project.rootBox;
+// The master audio unit adapter — typed, no cast, no pointer-hub walk
+const masterUnit = project.rootBoxAdapter.audioUnits
+    .adapters()
+    .find(unit => unit.isOutput);
 
-// The master audio unit is the first AudioUnitBox connected to the output device
-const masterAudioUnit = rootBox.outputDevice.pointerHub.incoming().at(0)?.box;
-
-if (!masterAudioUnit) {
+if (!masterUnit) {
     console.error("Could not find master audio unit");
 }
 ```
+
+`masterUnit.box` gives you the underlying `AudioUnitBox` when you need it (for `volume`, `mute`, and so on), and `masterUnit.audioEffectsField` gives you the master effect chain.
 
 ### Adding Effects to Master
 
 ```typescript
 import { Project, EffectFactories } from "@opendaw/studio-core";
 
+const masterUnit = project.rootBoxAdapter.audioUnits
+    .adapters()
+    .find(unit => unit.isOutput);
+
+if (!masterUnit) {
+    console.error("Could not find master audio unit");
+    return;
+}
+
+const masterEffectsField = masterUnit.audioEffectsField
+    .unwrap("audio unit hosts an audio chain");
+
 project.editing.modify(() => {
-    const masterAudioUnit = project.rootBox.outputDevice.pointerHub.incoming().at(0)?.box;
-
-    if (!masterAudioUnit) {
-        console.error("Could not find master audio unit");
-        return;
-    }
-
     // Add a reverb effect to the master
     const masterReverb = project.api.insertEffect(
-        masterAudioUnit.audioEffects,  // Master effect chain
+        masterEffectsField,  // Master effect chain
         EffectFactories.AudioNamed.Reverb
     );
 
@@ -1260,14 +1288,16 @@ project.editing.modify(() => {
 ### Master Volume Control
 
 ```typescript
-project.editing.modify(() => {
-    const masterAudioUnit = project.rootBox.outputDevice.pointerHub.incoming().at(0)?.box;
+const masterUnit = project.rootBoxAdapter.audioUnits
+    .adapters()
+    .find(unit => unit.isOutput)!;
 
+project.editing.modify(() => {
     // Set master volume
-    masterAudioUnit.volume.setValue(-3.0);  // -3dB
+    masterUnit.box.volume.setValue(-3.0);  // -3dB
 
     // Mute master (mutes entire mix)
-    masterAudioUnit.mute.setValue(true);
+    masterUnit.box.mute.setValue(true);
 });
 ```
 
@@ -1277,20 +1307,25 @@ project.editing.modify(() => {
 import { Project, EffectFactories } from "@opendaw/studio-core";
 
 async function setupMasterBus(project: Project) {
+    const masterUnit = project.rootBoxAdapter.audioUnits
+        .adapters()
+        .find(unit => unit.isOutput);
+
+    if (!masterUnit) {
+        console.error("Could not find master audio unit");
+        return;
+    }
+
+    const masterEffectsField = masterUnit.audioEffectsField
+        .unwrap("audio unit hosts an audio chain");
+
     project.editing.modify(() => {
-        const masterAudioUnit = project.rootBox.outputDevice.pointerHub.incoming().at(0)?.box;
-
-        if (!masterAudioUnit) {
-            console.error("Could not find master audio unit");
-            return;
-        }
-
         // Set overall master volume
-        masterAudioUnit.volume.setValue(-6.0);
+        masterUnit.box.volume.setValue(-6.0);
 
         // 1. Parametric EQ for tone shaping
         const eq = project.api.insertEffect(
-            masterAudioUnit.audioEffects,
+            masterEffectsField,
             EffectFactories.AudioNamed.Revamp,
             0
         );
@@ -1298,7 +1333,7 @@ async function setupMasterBus(project: Project) {
 
         // 2. Compressor for glue
         const compressor = project.api.insertEffect(
-            masterAudioUnit.audioEffects,
+            masterEffectsField,
             EffectFactories.AudioNamed.Compressor,
             1
         );
@@ -1311,7 +1346,7 @@ async function setupMasterBus(project: Project) {
 
         // 3. Limiter for peak protection
         const limiter = project.api.insertEffect(
-            masterAudioUnit.audioEffects,
+            masterEffectsField,
             EffectFactories.AudioNamed.Compressor,
             2
         );
@@ -1323,7 +1358,7 @@ async function setupMasterBus(project: Project) {
 
         // 4. Stereo enhancement
         const stereoTool = project.api.insertEffect(
-            masterAudioUnit.audioEffects,
+            masterEffectsField,
             EffectFactories.AudioNamed.StereoTool,
             3
         );
@@ -1506,7 +1541,7 @@ subscription.terminate();
 
 ```typescript
 import { Project, EffectFactories } from "@opendaw/studio-core";
-import { InstrumentFactories } from "@opendaw/studio-adapters";
+import { AudioUnitBoxAdapter, InstrumentFactories } from "@opendaw/studio-adapters";
 
 async function addReverbToTrack(project: Project) {
     project.editing.modify(() => {
@@ -1514,10 +1549,14 @@ async function addReverbToTrack(project: Project) {
         const { audioUnitBox } = project.api.createInstrument(
             InstrumentFactories.Tape
         );
+
+        const audioEffectsField = project.boxAdapters
+            .adapterFor(audioUnitBox, AudioUnitBoxAdapter)
+            .audioEffectsField.unwrap("audio unit hosts an audio chain");
         
         // Add reverb to the track
         const reverb = project.api.insertEffect(
-            audioUnitBox.audioEffects,
+            audioEffectsField,
             EffectFactories.AudioNamed.Reverb
         );
 
@@ -1537,9 +1576,13 @@ async function createTrackWithEffectChain(project: Project) {
         const { audioUnitBox } = project.api.createInstrument(
             InstrumentFactories.Tape
         );
+
+        const audioEffectsField = project.boxAdapters
+            .adapterFor(audioUnitBox, AudioUnitBoxAdapter)
+            .audioEffectsField.unwrap("audio unit hosts an audio chain");
         
         const compressor = project.api.insertEffect(
-            audioUnitBox.audioEffects,
+            audioEffectsField,
             EffectFactories.AudioNamed.Compressor,
             0
         );
@@ -1548,7 +1591,7 @@ async function createTrackWithEffectChain(project: Project) {
         compressor.ratio.setValue(4.0);
 
         const delay = project.api.insertEffect(
-            audioUnitBox.audioEffects,
+            audioEffectsField,
             EffectFactories.AudioNamed.Delay,
             1
         );
@@ -1557,7 +1600,7 @@ async function createTrackWithEffectChain(project: Project) {
         delay.feedback.setValue(0.4);
 
         const reverb = project.api.insertEffect(
-            audioUnitBox.audioEffects,
+            audioEffectsField,
             EffectFactories.AudioNamed.Reverb,
             2
         );
@@ -1573,25 +1616,30 @@ async function createTrackWithEffectChain(project: Project) {
 
 ```typescript
 async function setupMasterEffects(project: Project) {
+    const masterUnit = project.rootBoxAdapter.audioUnits
+        .adapters()
+        .find(unit => unit.isOutput);
+
+    if (!masterUnit) {
+        console.error("Could not find master audio unit");
+        return;
+    }
+
+    const masterEffectsField = masterUnit.audioEffectsField
+        .unwrap("audio unit hosts an audio chain");
+
     project.editing.modify(() => {
-        const masterAudioUnit = project.rootBox.outputDevice.pointerHub.incoming().at(0)?.box;
-
-        if (!masterAudioUnit) {
-            console.error("Could not find master audio unit");
-            return;
-        }
-
-        masterAudioUnit.volume.setValue(-6.0);
+        masterUnit.box.volume.setValue(-6.0);
 
         const eq = project.api.insertEffect(
-            masterAudioUnit.audioEffects,
+            masterEffectsField,
             EffectFactories.AudioNamed.Revamp,
             0
         );
         eq.label.setValue("Master EQ");
 
         const compressor = project.api.insertEffect(
-            masterAudioUnit.audioEffects,
+            masterEffectsField,
             EffectFactories.AudioNamed.Compressor,
             1
         );
@@ -1602,7 +1650,7 @@ async function setupMasterEffects(project: Project) {
         compressor.release.setValue(200.0);
 
         const limiter = project.api.insertEffect(
-            masterAudioUnit.audioEffects,
+            masterEffectsField,
             EffectFactories.AudioNamed.Compressor,
             2
         );
@@ -1619,14 +1667,18 @@ async function setupMasterEffects(project: Project) {
 ```typescript
 async function createMultiTrackSetup(project: Project) {
     project.editing.modify(() => {
+        // Each unit has its own chain, so resolve a field per unit as it is created
         // Track 1: Drums with compression and reverb
         const { audioUnitBox: drumsUnit } = project.api.createInstrument(
             InstrumentFactories.Tape
         );
         drumsUnit.volume.setValue(-3.0);
+        const drumsEffects = project.boxAdapters
+            .adapterFor(drumsUnit, AudioUnitBoxAdapter)
+            .audioEffectsField.unwrap("audio unit hosts an audio chain");
         
         const drumsCompressor = project.api.insertEffect(
-            drumsUnit.audioEffects,
+            drumsEffects,
             EffectFactories.AudioNamed.Compressor,
             0
         );
@@ -1635,7 +1687,7 @@ async function createMultiTrackSetup(project: Project) {
         drumsCompressor.ratio.setValue(6.0);
 
         const drumsReverb = project.api.insertEffect(
-            drumsUnit.audioEffects,
+            drumsEffects,
             EffectFactories.AudioNamed.Reverb,
             1
         );
@@ -1647,9 +1699,12 @@ async function createMultiTrackSetup(project: Project) {
             InstrumentFactories.Tape
         );
         bassUnit.volume.setValue(-6.0);
+        const bassEffects = project.boxAdapters
+            .adapterFor(bassUnit, AudioUnitBoxAdapter)
+            .audioEffectsField.unwrap("audio unit hosts an audio chain");
 
         const bassCompressor = project.api.insertEffect(
-            bassUnit.audioEffects,
+            bassEffects,
             EffectFactories.AudioNamed.Compressor,
             0
         );
@@ -1662,9 +1717,12 @@ async function createMultiTrackSetup(project: Project) {
             InstrumentFactories.Tape
         );
         vocalsUnit.volume.setValue(-3.0);
+        const vocalsEffects = project.boxAdapters
+            .adapterFor(vocalsUnit, AudioUnitBoxAdapter)
+            .audioEffectsField.unwrap("audio unit hosts an audio chain");
 
         const vocalsDelay = project.api.insertEffect(
-            vocalsUnit.audioEffects,
+            vocalsEffects,
             EffectFactories.AudioNamed.Delay,
             0
         );
@@ -1673,7 +1731,7 @@ async function createMultiTrackSetup(project: Project) {
         vocalsDelay.feedback.setValue(0.3);
 
         const vocalsReverb = project.api.insertEffect(
-            vocalsUnit.audioEffects,
+            vocalsEffects,
             EffectFactories.AudioNamed.Reverb,
             1
         );
@@ -1696,10 +1754,15 @@ async function createInteractiveEffects(
         const result = project.api.createInstrument(InstrumentFactories.Tape);
         audioUnitBox = result.audioUnitBox;
     });
+
+    const audioUnitAdapter = project.boxAdapters
+        .adapterFor(audioUnitBox, AudioUnitBoxAdapter);
+    const audioEffectsField = audioUnitAdapter.audioEffectsField
+        .unwrap("audio unit hosts an audio chain");
     
     // Subscribe to effect chain changes
-    const effectAdapters = project.boxAdapters
-        .adapterFor(audioUnitBox, AudioUnitBoxAdapter).audioEffects;
+    const effectAdapters = audioUnitAdapter.audioEffects
+        .unwrap("audio unit hosts an audio chain");
     const chainSubscription = effectAdapters.catchupAndSubscribe({
         onAdd: (effectAdapter) => {
             const effectName = effectAdapter.labelField.getValue();
@@ -1719,7 +1782,7 @@ async function createInteractiveEffects(
     // Add an effect
     project.editing.modify(() => {
         const delay = project.api.insertEffect(
-            audioUnitBox.audioEffects,
+            audioEffectsField,
             EffectFactories.AudioNamed.Delay
         );
         delay.label.setValue("Interactive Delay");
@@ -1757,12 +1820,16 @@ async function addEffectByName(
         return false;
     }
     
+    const audioEffectsField = project.boxAdapters
+        .adapterFor(audioUnitBox, AudioUnitBoxAdapter)
+        .audioEffectsField.unwrap("audio unit hosts an audio chain");
+
     let success = false;
     project.editing.modify(() => {
         try {
             const effect = position >= 0
-                ? project.api.insertEffect(audioUnitBox.audioEffects, factory, position)
-                : project.api.insertEffect(audioUnitBox.audioEffects, factory);
+                ? project.api.insertEffect(audioEffectsField, factory, position)
+                : project.api.insertEffect(audioEffectsField, factory);
             
             effect.label.setValue(`${factory.defaultName}`);
             success = true;
@@ -1780,7 +1847,9 @@ async function addEffectByName(
 ```typescript
 function analyzeEffectChain(project: Project, audioUnitBox: any) {
     const effectAdapters = project.boxAdapters
-        .adapterFor(audioUnitBox, AudioUnitBoxAdapter).audioEffects.adapters();
+        .adapterFor(audioUnitBox, AudioUnitBoxAdapter)
+        .audioEffects.unwrap("audio unit hosts an audio chain")
+        .adapters();
     
     console.log("=== Effect Chain Analysis ===");
     console.log(`Total effects: ${effectAdapters.length}`);
@@ -1796,7 +1865,9 @@ function analyzeEffectChain(project: Project, audioUnitBox: any) {
 
 function disableAllEffects(project: Project, audioUnitBox: any) {
     const effectAdapters = project.boxAdapters
-        .adapterFor(audioUnitBox, AudioUnitBoxAdapter).audioEffects.adapters();
+        .adapterFor(audioUnitBox, AudioUnitBoxAdapter)
+        .audioEffects.unwrap("audio unit hosts an audio chain")
+        .adapters();
     
     project.editing.modify(() => {
         effectAdapters.forEach(adapter => {
@@ -1811,7 +1882,9 @@ function reorderEffectChain(
     newOrder: number[]  // Array of current indices in new order
 ) {
     const effectAdapters = project.boxAdapters
-        .adapterFor(audioUnitBox, AudioUnitBoxAdapter).audioEffects.adapters();
+        .adapterFor(audioUnitBox, AudioUnitBoxAdapter)
+        .audioEffects.unwrap("audio unit hosts an audio chain")
+        .adapters();
     
     project.editing.modify(() => {
         newOrder.forEach((currentIndex, newIndex) => {
@@ -1842,7 +1915,9 @@ project.editing.modify(() => {
 #### Getting All Effects of Specific Type
 ```typescript
 const effectAdapters = project.boxAdapters
-    .adapterFor(audioUnitBox, AudioUnitBoxAdapter).audioEffects.adapters();
+    .adapterFor(audioUnitBox, AudioUnitBoxAdapter)
+    .audioEffects.unwrap("audio unit hosts an audio chain")
+    .adapters();
 const compressors = effectAdapters.filter(
     a => a.box instanceof CompressorDeviceBox
 );
@@ -1875,8 +1950,13 @@ Werkstatt is a scriptable audio effect that lets users write custom DSP code in 
 
 ```typescript
 import { EffectFactories } from "@opendaw/studio-core";
+import { AudioUnitBoxAdapter } from "@opendaw/studio-adapters";
 
-const effectBox = project.api.insertEffect(audioUnitBox.audioEffects, EffectFactories.Werkstatt);
+const audioEffectsField = project.boxAdapters
+    .adapterFor(audioUnitBox, AudioUnitBoxAdapter)
+    .audioEffectsField.unwrap("audio unit hosts an audio chain");
+
+const effectBox = project.api.insertEffect(audioEffectsField, EffectFactories.Werkstatt);
 const werkstattBox = effectBox as WerkstattDeviceBox;
 ```
 
@@ -2051,9 +2131,13 @@ const compiler = ScriptCompiler.create({
 });
 
 // 1. Insert effect inside editing.modify()
+const audioEffectsField = project.boxAdapters
+    .adapterFor(audioBox, AudioUnitBoxAdapter)
+    .audioEffectsField.unwrap("audio unit hosts an audio chain");
+
 let werkstattBox: WerkstattDeviceBox;
 project.editing.modify(() => {
-    const effectBox = project.api.insertEffect(audioBox.audioEffects, EffectFactories.Werkstatt);
+    const effectBox = project.api.insertEffect(audioEffectsField, EffectFactories.Werkstatt);
     werkstattBox = effectBox as WerkstattDeviceBox;
     werkstattBox.label.setValue("My Effect");
 });
@@ -2230,8 +2314,14 @@ Spielwerk is a scriptable MIDI effect where users write a JavaScript `Processor`
 
 ```typescript
 import { EffectFactories } from "@opendaw/studio-core";
+import { AudioUnitBoxAdapter } from "@opendaw/studio-adapters";
 
-const effectBox = project.api.insertEffect(audioUnitBox.midiEffects, EffectFactories.Spielwerk);
+// The MIDI chain, not the audio one — Spielwerk sits before the instrument
+const midiEffectsField = project.boxAdapters
+    .adapterFor(audioUnitBox, AudioUnitBoxAdapter)
+    .midiEffectsField.unwrap("audio unit hosts a midi chain");
+
+const effectBox = project.api.insertEffect(midiEffectsField, EffectFactories.Spielwerk);
 const spielwerkBox = effectBox as SpielwerkDeviceBox;
 ```
 
@@ -2491,8 +2581,13 @@ Tone3000 (internally `NeuralAmp`, formerly "Neural Amp") is an AI-powered amplif
 
 ```typescript
 import { EffectFactories } from "@opendaw/studio-core";
+import { AudioUnitBoxAdapter } from "@opendaw/studio-adapters";
 
-const effectBox = project.api.insertEffect(audioUnitBox.audioEffects, EffectFactories.NeuralAmp);
+const audioEffectsField = project.boxAdapters
+    .adapterFor(audioUnitBox, AudioUnitBoxAdapter)
+    .audioEffectsField.unwrap("audio unit hosts an audio chain");
+
+const effectBox = project.api.insertEffect(audioEffectsField, EffectFactories.NeuralAmp);
 const neuralAmpBox = effectBox as NeuralAmpDeviceBox;
 ```
 

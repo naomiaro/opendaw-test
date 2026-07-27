@@ -10,26 +10,13 @@ const WASM_BASE_URL = "/wasm-engine";
 let installed = false;
 
 /**
- * Register the EngineVariant provider + offline variant. Safe to call more than once.
- * The WASM (Rust) engine is the ONLY engine these demos run — the TypeScript engine
- * is deprecated upstream and no longer wired here; initializeOpenDAW() calls this and
- * throws if the engine cannot compile.
+ * Register the EngineVariant provider + offline engine worker. Safe to call more than
+ * once. The WASM (Rust) engine is the ONLY engine — upstream removed the TypeScript
+ * engine in SDK 0.0.161, so there is no fallback; initializeOpenDAW() calls this and
+ * throws if the engine cannot compile. (The old `WasmEngine.setEnabled` localStorage
+ * opt-out is gone with it — nothing to force-enable anymore.)
  */
 export function installWasmEngine(): void {
-  // Force-enable on every call: `opendaw-wasm-engine` in localStorage is a persisted
-  // opt-out shared across the whole origin (the retired A/B demo could leave it false),
-  // and a stale `false` makes EngineVariant.current() return null — the boot would
-  // silently come up with no engine variant.
-  try {
-    WasmEngine.setEnabled(true);
-  } catch (error) {
-    // WasmEngine.setEnabled does a bare localStorage.setItem — in storage-blocked
-    // contexts (sandboxed iframe, storage disabled) this throws a raw
-    // SecurityError/QuotaExceededError. A stale "false" flag cannot exist in such a
-    // context either (nothing ever wrote it), so isEnabled() already defaults to
-    // enabled — swallow and continue instead of killing init on a cryptic error.
-    console.warn("localStorage unavailable — WasmEngine enable flag defaults to on: " + String(error));
-  }
   if (installed) { return; }
   installed = true;
   WasmEngine.install({

@@ -4,7 +4,7 @@
 >
 > **Prereqs:** all five prior internals chapters. This chapter is the integration layer above them.
 
-So far we've documented surfaces: the engine processor that runs audio, the box graph that stores state, the cross-thread protocols that wire them up, the sample loader that feeds them, the device system that fills the chains. What we *haven't* documented is the thing that owns all of those — the `Project` — and the persistence story: how a project becomes bytes on disk, comes back from bytes, syncs across multiple users, exports as `.dawproject`, freezes a track to audio, or renders the whole mix offline.
+So far we've documented surfaces: the engine that runs audio, the box graph that stores state, the cross-thread protocols that wire them up, the sample loader that feeds them, the device system that fills the chains. What we *haven't* documented is the thing that owns all of those — the `Project` — and the persistence story: how a project becomes bytes on disk, comes back from bytes, syncs across multiple users, exports as `.dawproject`, freezes a track to audio, or renders the whole mix offline.
 
 This chapter is all of that.
 
@@ -61,7 +61,7 @@ copy(env?: Partial<ProjectEnv>): Project  // deep clone: encode + decode through
 startAudioWorklet(restart?, options?): EngineWorklet  // construct the EngineWorklet (synchronous)
 ```
 
-`copy()` is what powers freeze and offline render — both run a *separate* project (modified in some way) through an offline `EngineProcessor` without touching the live one.
+`copy()` is what powers freeze and offline render — both run a *separate* project (modified in some way) through an offline instance of the engine without touching the live one.
 
 ## `ProjectSkeleton` — the bootstrap payload
 
@@ -123,10 +123,12 @@ The version check is strict — old-format buffers throw `"Deprecated Format"`. 
 ### Where the skeleton is used
 
 - **Project file on disk** — exactly the encoded skeleton, see [Project file format](#project-file-format) below.
-- **Worklet bootstrap** — `EngineProcessor.constructor` ([ch. 01](./01-engine-processor.md#the-process-loop)) receives `processorOptions.project: ArrayBufferLike`, which is exactly this format.
+- **Offline render bootstrap** — `OfflineEngineInitializeConfig.project: ArrayBufferLike` (`@opendaw/studio-adapters`) is exactly this format. The render worker decodes it and replays the boxes into the engine as one full-dump transaction, see [Offline rendering](#offline-rendering) below.
 - **SyncLog `Init` commit payload** — the very first commit in a log carries a full skeleton.
 - **Preset files** (`.odp`) — same encoding, stripped down to just an `AudioUnitBox` and its devices.
 - **`Project.copy()`** — encode + decode + new project instance.
+
+The realtime worklet is the notable *non*-consumer. It never receives a skeleton: `WasmEngine` opens a `SyncSource` over the live project's box graph, and a `SyncSource` opens with a full dump of every box as serialized `UpdateTask`s (`packages/studio/core-wasm/src/WasmEngine.ts`, `sync/serialize-update-tasks.ts`). That dump *is* how the engine receives the project, and every later transaction rides the same channel. The skeleton format is for the paths that need a self-contained byte blob — disk, presets, the offline worker.
 
 The same magic header on disk and in memory means a `.od` file and a memory buffer are interchangeable. A test that writes a buffer with `encode()` and reads it back with `decode()` covers the on-disk format too.
 
@@ -363,7 +365,7 @@ Key choices:
 
 - **Copy the project, don't render the live one.** The render needs to mute everything except this unit, configure stem export, and run the engine offline. Doing that on the live project would have visible side effects.
 - **Render via `OfflineEngineRenderer`** (next section), not on the audio thread.
-- **Hand the result to `engine.setFrozenAudio(uuid, audioData)`**, which is an `EngineCommands` RPC. The worklet stores the buffer and `FrozenPlaybackProcessor` ([ch. 05](./05-devices-and-effects.md#special-processors)) starts playing it instead of running the chain.
+- **Hand the result to `engine.setFrozenAudio(uuid, audioData)`**, which is an `EngineCommands` RPC. The engine stores the PCM and `FrozenPlayback` (`crates/engine/src/frozen.rs`) plays it back transport-aligned instead of running the unit's instrument + effects. The unit's *live* channel strip (fader, mute, panning) still applies afterwards — that's what `skipChannelStrip: true` in the export config buys: the freeze renders everything up to, but not including, the strip. The read position re-seats from the tempo map on any discontinuity, so seeks, loops and tempo automation stay sample-exact.
 
 ### What invalidates a freeze
 
@@ -371,47 +373,70 @@ Key choices:
 
 ## Offline rendering
 
-`OfflineEngineRenderer` (`packages/studio/core/src/OfflineEngineRenderer.ts:38`) is what freeze and export both go through. It spins up a Web Worker, loads the AudioWorkletProcessor module *into the worker* (not as an actual audio worklet), and drives it with explicit `step()` calls.
+`OfflineEngineRenderer` (`packages/studio/core/src/OfflineEngineRenderer.ts`) is what freeze and export both go through. It spins up a plain Web Worker holding its own instance of the engine — no `AudioContext`, no audio worklet — and drives it with explicit `step()` / `render()` calls.
 
-### How the worker runs `EngineProcessor`
+### How the worker hosts the engine
 
-`packages/studio/core-workers/src/offline-engine-main.ts` exposes the `OfflineEngineProtocol` ([ch. 03](./03-cross-thread-protocols.md#offline-renderer--same-processor-different-driver)):
-
-```typescript
-Communicator.executor<OfflineEngineProtocol>(
-    Messenger.for(self).channel("offline-engine"), {
-        async initialize(enginePort: MessagePort, config: OfflineEngineInitializeConfig) {
-            setupWorkletGlobals({sampleRate: config.sampleRate})
-            await import(config.processorsUrl)
-            const ProcessorClass = globals.__registeredProcessors__["engine-processor"]
-            state = Option.wrap({
-                processor: new ProcessorClass({
-                    processorOptions: {
-                        project: config.project,
-                        exportConfiguration: config.exportConfiguration
-                    }
-                }),
-                ...
-            })
-        }
-    })
-```
-
-Two clever bits:
-
-1. **`setupWorkletGlobals`** — pre-populates `sampleRate`, `currentFrame`, etc. globals that AudioWorklet code expects. This lets the *same* `EngineProcessor` class run in a vanilla Worker.
-2. **Dynamic `import(config.processorsUrl)`** — loads the worklet bundle, which calls `registerProcessor("engine-processor", EngineProcessor)`. The worker captures that via a stubbed global `registerProcessor`.
-
-After that, the worker has a real `EngineProcessor` instance. `step(samples)` is a tight loop:
+`studio-core` can't import `studio-core-wasm` (that package depends on *this* one), so the worker URL is injected instead of imported. `WasmEngine.install(urls)` calls `OfflineEngineRenderer.install(offlineWorkerUrl, {wasmUrl})`, and the attachment travels to the worker as `config.variant`:
 
 ```typescript
-while (engine.running && engine.totalFrames < maxFrames) {
-    const outputs = Arrays.create(() => new Float32Array(RenderQuantum), numberOfChannels)
-    updateFrameTime(engine.totalFrames, engine.sampleRate)
-    const keepRunning = engine.processor.process([[]], outputs)
-    // accumulate samples; detect silence to break early
+// packages/studio/core/src/OfflineEngineRenderer.ts
+static install(url: string, attachment: Record<string, unknown>): void {
+    engineWorker = Option.wrap({url, attachment})
 }
 ```
+
+The worker itself is `packages/studio/core-wasm/src/offline-worker.ts`, which exposes the `OfflineEngineProtocol` ([ch. 03](./03-cross-thread-protocols.md)) — the same protocol the realtime host would speak, so `OfflineEngineRenderer` doesn't care that it's talking to a worker rather than a worklet:
+
+```typescript
+export interface OfflineEngineProtocol {
+    initialize(enginePort: MessagePort, config: OfflineEngineInitializeConfig): Promise<void>
+    addModule(code: string): Promise<void>
+    render(config: OfflineEngineRenderConfig): Promise<Float32Array[]>
+    step(samples: number): Promise<Float32Array[]>
+    stop(): void
+}
+```
+
+`initialize` does four things in order:
+
+1. **Load the engine modules** — `loadEngineModules(variant.wasmUrl)` fetches `engine.wasm` plus the device side modules, and `createEngineMemory()` allocates the shared linear memory they all link against.
+2. **Wire the `EngineToClient` RPC** over `enginePort` — `fetchAudio`, `fetchSoundfont`, `fetchNamWasm`, log/error, clip-sequencing notifications. Samples, soundfonts and NAM models arrive over this channel exactly as they do for the realtime host.
+3. **Settle the metronome.** The live engine reads metronome settings off the `engine-preferences` channel, which an offline render has no host for, so they're resolved once here from `ExportConfiguration.metronome`. A mixdown is silent-by-default: the click is off unless the export config asks for it.
+4. **Apply the project snapshot** as one full-dump transaction — the `SyncSource`-initialize analog:
+
+```typescript
+// packages/studio/core-wasm/src/offline-worker.ts
+const {boxGraph} = ProjectSkeleton.decode(config.project)
+const tasks: Array<UpdateTask<BoxIO.TypeMap>> = boxGraph.boxes().map(box =>
+    ({type: "new", name: box.name as keyof BoxIO.TypeMap, uuid: box.address.uuid, buffer: box.toArrayBuffer()}))
+const bytes = new Uint8Array(serializeUpdateTasks(tasks))
+const pointer = engine.input_reserve(bytes.length)
+new Uint8Array(memory.buffer, pointer, bytes.length).set(bytes)
+if (engine.apply_updates(bytes.length) !== 0) {
+    throw new Error("apply_updates rejected the project snapshot")
+}
+```
+
+`step(numSamples)` then renders quantum by quantum into a preallocated result and stays deliberately **synchronous** — every resource was resolved during `initialize`, and a per-second yield would cost more than the render itself (`setTimeout(0)` clamps to ~4 ms; measured at 260 ms of a 297 ms empty render). `render()` is the long-form driver and *does* yield once per second of rendered audio so the UI stays responsive.
+
+Reading the output differs by export shape. A mixdown copies the engine's master output pointer; a stem export reads the stem staging area, where stem *i* lands planar in channels `2i` / `2i+1`:
+
+```typescript
+if (stems > 0) {
+    const staging = new Float32Array(buffer, engine.stem_output_ptr(), stems * 2 * RenderQuantum)
+    for (let channel = 0; channel < out.length && channel < stems * 2; channel++) {
+        out[channel].set(staging.subarray(channel * RenderQuantum, (channel + 1) * RenderQuantum))
+    }
+    return
+}
+const pointer = engine.output_ptr()
+out[0].set(new Float32Array(buffer, pointer, RenderQuantum))
+```
+
+Note `const buffer = memory.buffer` is re-read every block: the engine's allocator may have grown the memory, which detaches the previous `ArrayBuffer`. Caching it across quanta is a live bug waiting to happen.
+
+The offline worker also feeds a `LiveStreamBroadcaster` + `AudioAnalyser` every quantum, mirroring the realtime processor, so a live-stream consumer of an offline render (the video export's shadertoy reads `SPECTRUM` / `WAVEFORM`) still receives data.
 
 ### Silence detection
 
@@ -452,7 +477,7 @@ The "open project" call stack:
 1. UI: user picks a project from the list (`ProjectStorage.listProjects()` → `meta.json` for each).
 2. `ProjectStorage.loadProject(uuid)` → `Workers.Opfs.read(projectFile(uuid))` → `ArrayBuffer`.
 3. `Project.loadAnyVersion(env, arrayBuffer)` → `ProjectMigration.migrate()` → `ProjectSkeleton.decode()` → `Project` instance.
-4. The new `Project` constructs `EngineFacade`, and when the user clicks play, `Project.startAudioWorklet()` instantiates the `EngineWorklet`. The worklet receives `processorOptions.project` — the same `.od` bytes — and reconstructs its own copy of the graph.
+4. The new `Project` constructs `EngineFacade`, and when the user clicks play, `Project.startAudioWorklet()` instantiates the `EngineWorklet`. The worklet does *not* get the `.od` bytes: a `SyncSource` opens over the project's box graph and its opening full dump — every box as a serialized `UpdateTask` — is what builds the engine's replica of the graph.
 
 The "save project" call stack:
 
@@ -528,6 +553,7 @@ The migrations operate on raw bytes — at minimum each one reads the old format
 - **`packages/studio/core/src/project/ProjectMigration.ts`** and the `migration/` subfolder — the canonical pattern for version bumps.
 - **`packages/lib/dawproject/`** — the DAW Project schema and serializer; self-contained, useful for understanding the import/export boundary.
 - **`packages/studio/core/src/dawproject/DawProjectExporter.test.ts`** and **`DawProjectImporter.test.ts`** — round-trip tests covering supported subsets of the format.
+- **`packages/studio/core-wasm/src/offline-worker.ts`** — the offline render worker end-to-end: module loading, snapshot apply, stem staging, silence detection.
+- **`crates/engine/src/frozen.rs`** — the engine side of freeze: transport-aligned playback of the pre-rendered PCM.
 - **[Ch. 02 — Box System](./02-box-system.md#serialization)** for the box graph serialization that `ProjectSkeleton` wraps.
-- **[Ch. 05 — Devices and Effects](./05-devices-and-effects.md#special-processors)** for `FrozenPlaybackProcessor`, the worklet side of freeze.
-- **[Ch. 03 — Cross-Thread Protocols](./03-cross-thread-protocols.md#offline-renderer--same-processor-different-driver)** for how the offline-renderer worker reuses `EngineProcessor`.
+- **[Ch. 03 — Cross-Thread Protocols](./03-cross-thread-protocols.md)** for the `Communicator` / `SyncSource` machinery both the realtime and offline hosts are built on.

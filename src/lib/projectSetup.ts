@@ -12,7 +12,6 @@ import {
   SampleProvider,
   SoundfontProvider,
   SampleService,
-  OfflineEngineRenderer,
 } from "@opendaw/studio-core";
 import type { SoundfontService } from "@opendaw/studio-core";
 import { AnimationFrame } from "@opendaw/lib-dom";
@@ -22,7 +21,6 @@ import { withDeadline } from "./deadline";
 
 import WorkersUrl from "@opendaw/studio-core/workers-main.js?worker&url";
 import WorkletsUrl from "@opendaw/studio-core/processors.js?url";
-import OfflineEngineUrl from "@opendaw/studio-core/offline-engine.js?worker&url";
 
 /**
  * Convert a browser AudioBuffer to OpenDAW's AudioData format.
@@ -122,10 +120,11 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
 
   onStatusUpdate?.("Booting...");
 
-  // Install workers and worklets
+  // Install workers and worklets. The offline engine worker is registered by
+  // installWasmEngine() below — WasmEngine.install wires its own worker into
+  // OfflineEngineRenderer (the TS offline worker was removed with the TS engine).
   await Workers.install(WorkersUrl);
   AudioWorklets.install(WorkletsUrl);
-  OfflineEngineRenderer.install(OfflineEngineUrl);
 
   // Test browser features
   const { status: testStatus, error: testError } = await Promises.tryCatch(testFeatures());

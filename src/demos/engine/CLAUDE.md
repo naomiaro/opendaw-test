@@ -4,25 +4,25 @@ Demos about the audio engine backend itself (as opposed to musical content).
 
 ## WASM (Rust) engine — EngineVariant / WasmEngine
 
-The WASM engine is a switchable `AudioWorkletProcessor` that speaks the same message contract
-as the built-in TS `"engine-processor"`. `EngineWorklet` reads `EngineVariant.current()` at
-**construction time**: null ⇒ built-in TS engine; non-null ⇒ boots the WASM processor. This
-repo installs the WASM variant unconditionally and never lets `EngineVariant.current()` resolve
-to null in practice — see below.
+The WASM engine is the SDK's ONLY engine (the TypeScript engine was removed upstream in
+SDK 0.0.161). `EngineVariant` is the injection seam — studio-core cannot import
+studio-core-wasm (circular), so `WasmEngine.install` registers a provider and
+`EngineWorklet` resolves it at **construction time**. `EngineVariant.current()` is
+non-nullable: a missing provider is a boot error ("No engine installed"), not a fallback.
 
 Wire it via the `WasmEngine` façade from `@opendaw/studio-core-wasm` (see `src/lib/wasmEngine.ts`):
 - `WasmEngine.install({ processorUrl, offlineWorkerUrl, wasmUrl })` — registers the EngineVariant
-  provider (once). `wasmUrl` is a base dir; `loadEngineModules` fetches `${wasmUrl}/wasm/engine.wasm`
+  provider AND the offline engine worker (`OfflineEngineRenderer.install(offlineWorkerUrl,
+  {wasmUrl})`). `wasmUrl` is a base dir; `loadEngineModules` fetches `${wasmUrl}/wasm/engine.wasm`
   + `${wasmUrl}/wasm/plugins/device_*.wasm`.
 - `WasmEngine.ensureReady(ctx)` — `ctx.audioWorklet.addModule(processorUrl)` + compile; returns
   `false` when artifacts are missing. `initializeOpenDAW()` (`src/lib/projectSetup.ts`) calls
   `installWasmEngine()` then `ensureWasmReady(audioContext)` BEFORE the first
-  `startAudioWorklet()` (`EngineWorklet` reads `EngineVariant.current()` at construction time)
-  and THROWS if `ensureWasmReady` resolves false — there is no TS fallback and no pre-boot
-  hook to install one; `initializeOpenDAW()`'s options no longer expose any such hook.
-- `WasmEngine.setEnabled(bool)` persists a localStorage flag (`opendaw-wasm-engine`, default on);
-  `installWasmEngine()` force-calls `setEnabled(true)` on every call to guard against a stale
-  opt-out left in localStorage from a prior page.
+  `startAudioWorklet()` and THROWS if `ensureWasmReady` resolves false — there is no
+  fallback engine anywhere.
+- The full façade is `install` / `ensureReady` / `isReady` — the old
+  `setEnabled`/`isEnabled` localStorage flag (`opendaw-wasm-engine`) and `useForExports()`
+  are gone from the SDK (nothing to toggle to).
 
 **Serving the binaries:** the `.wasm` files ship in `@opendaw/studio-core-wasm/dist/wasm/` and are
 served under `/wasm-engine` by the `wasm-engine-assets` (dev) / `wasm-engine-emit` (build) Vite
@@ -41,12 +41,12 @@ right after `ensureReady` returned `true`. A single first-boot wasm render on an
 OfflineAudioContext DOES work (unreachable here — `initializeOpenDAW`'s live boot always
 consumes the first-context registration). Repro: `wasm-ensure-ready-second-context-debug-demo.html`;
 write-up: `debug/wasm-ensure-ready-second-context.md`. The immune offline path is
-`OfflineEngineRenderer` from `@opendaw/studio-core` with `variant: true`, which runs the
-WASM offline **worker** (self-loads the wasm artifacts) registered by `WasmEngine.install`'s
+`OfflineEngineRenderer` from `@opendaw/studio-core`, which runs the WASM offline
+**worker** (self-loads the wasm artifacts) registered by `WasmEngine.install`'s
 `offlineWorkerUrl`:
 
 ```typescript
-const renderer = await OfflineEngineRenderer.create(project, Option.None, sampleRate, true);
+const renderer = await OfflineEngineRenderer.create(project, Option.None, sampleRate);
 try {
   renderer.setPosition(startPPQN);
   await renderer.play();            // starts transport + one queryLoadingComplete
@@ -55,18 +55,14 @@ try {
 } finally { renderer.stop(); renderer.terminate(); }
 ```
 
-`Option.None` for the export configuration = 1 stereo master stem. NOTE: `variant` defaults
-to `variantPolicy()` — `WasmEngine.install` registers `useForExports()` (= enabled && ready
-&& hasVariant) as the policy, so an installed+enabled+**ready** WASM engine makes
-`variant`-less renders default to WASM. Two more contract facts:
-`renderer.render(config, start, end, progress)` does NOT stop at `end` (worker loop runs to
-silence/`maxDurationSeconds`; `end` only drives progress) — use `step(numSamples)` for exact
-ranges; and the renderer exposes NO engine-preferences surface. Since SDK 0.0.160 the
-metronome travels in `ExportConfiguration.metronome` instead (openDAW#316) — every render in
-this repo passes `variant: true` (see `src/lib/rangeExport.ts` and `src/demos/export/CLAUDE.md`),
-so the metronome-consumption question is moot here: the WASM offline worker is the only render
-path this project drives. Upstream roadmap (openDAW#315 closing comment): the TypeScript audio
-engine will be removed soon.
+`Option.None` for the export configuration = 1 stereo master stem. There is no
+engine-selection (`variant`) parameter — the removed TS engine took the
+`installVariant`/`installVariantPolicy`/`useForExports` machinery with it. Two more
+contract facts: `renderer.render(config, start, end, progress)` does NOT stop at `end`
+(worker loop runs to silence/`maxDurationSeconds`; `end` only drives progress) — use
+`step(numSamples)` for exact ranges; and the renderer exposes NO engine-preferences
+surface — the metronome travels in `ExportConfiguration.metronome` (openDAW#316; see
+`src/lib/rangeExport.ts` and `src/demos/export/CLAUDE.md`).
 
 Live WASM transport quirk (observed on the debug repro pages at 0.0.159): after
 `engine.play()` the position can take 20–30 s+ to start advancing (occasionally not at all
@@ -77,8 +73,8 @@ not reproduce — position advanced in ~3.3 s.
 ## Performance reporting is itself a cost
 
 DSP-load measurement runs in the audio thread and perturbs the load it measures, so it is
-**off by default** (`settings.debug.dspLoadMeasurement`, schema default `false`). Both engines read
-it live: the TS engine per render; the WASM engine via a preference-path subscription. Read the
+**off by default** (`settings.debug.dspLoadMeasurement`, schema default `false`). The
+engine reads it live via a preference-path subscription. Read the
 result from `project.engine.cpuLoad` (`ObservableValue<number>` — already a 0–100 integer
 percentage, do NOT multiply by 100; swap-safe on the facade) and
 `project.engine.perfBuffer`. Dropout counts come from the **browser**: `audioContext.playbackStats.underrunEvents`

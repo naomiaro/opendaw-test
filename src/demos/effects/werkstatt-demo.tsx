@@ -4,6 +4,7 @@ import { PPQN } from "@opendaw/lib-dsp";
 import { Project, EffectFactories } from "@opendaw/studio-core";
 import { AudioRegionBox, AudioUnitBox, WerkstattDeviceBox } from "@opendaw/studio-boxes";
 import { ScriptCompiler, ScriptDeclaration } from "@opendaw/studio-adapters";
+import { audioEffectsFieldOf } from "@/lib/adapterUtils";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
@@ -183,11 +184,12 @@ const App: React.FC = () => {
         werkstattBoxRef.current = null;
       }
 
-      // Insert new Werkstatt effect
+      // Insert new Werkstatt effect (chain field via the adapter layer)
+      const effectsField = audioEffectsFieldOf(project, audioBoxRef.current!);
       let newBox: WerkstattDeviceBox | null = null;
       project.editing.modify(() => {
         const effectBox = project.api.insertEffect(
-          audioBoxRef.current!.audioEffects,
+          effectsField,
           EffectFactories.Werkstatt
         );
         newBox = effectBox as WerkstattDeviceBox;
@@ -287,10 +289,11 @@ const App: React.FC = () => {
         // IndexedBox.insertOrder, which renumbers an already-loaded showcase
         // effect (a raw index.setValue(0) would leave two devices at index 0).
         const script = source === "sine" ? SINE_GENERATOR_SCRIPT : NOISE_GENERATOR_SCRIPT;
+        const generatorField = audioEffectsFieldOf(project, audioBoxRef.current!);
         let genBox: WerkstattDeviceBox | null = null;
         project.editing.modify(() => {
           const effectBox = project.api.insertEffect(
-            audioBoxRef.current!.audioEffects,
+            generatorField,
             EffectFactories.Werkstatt,
             0
           );
@@ -348,10 +351,11 @@ const App: React.FC = () => {
       }
 
       // Insert the API example as a Werkstatt effect
+      const exampleField = audioEffectsFieldOf(project, audioBoxRef.current!);
       let newBox: WerkstattDeviceBox | null = null;
       project.editing.modify(() => {
         const effectBox = project.api.insertEffect(
-          audioBoxRef.current!.audioEffects,
+          exampleField,
           EffectFactories.Werkstatt
         );
         newBox = effectBox as WerkstattDeviceBox;
@@ -748,11 +752,15 @@ const App: React.FC = () => {
                 </p>
 
                 <Code size="2" style={CODE_BLOCK_STYLE}>
-                  {`// Insert (optionally at a chain position), then compile OUTSIDE the transaction
+                  {`// Resolve the chain field via the adapter layer (Option-wrapped on DeviceHost),
+// insert (optionally at a chain position), then compile OUTSIDE the transaction
+const field = project.boxAdapters
+  .adapterFor(audioUnitBox, AudioUnitBoxAdapter)
+  .audioEffectsField.unwrap(); // an audio unit always hosts an audio chain
 let box: WerkstattDeviceBox;
 project.editing.modify(() => {
   box = project.api.insertEffect(
-    audioUnitBox.audioEffects,
+    field,
     EffectFactories.Werkstatt,
     0 // insertIndex — renumbers existing devices in the chain
   ) as WerkstattDeviceBox;

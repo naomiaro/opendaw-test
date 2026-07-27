@@ -115,8 +115,8 @@ const App: React.FC = () => {
           <h1 className="mc-title" style={{ fontSize: "clamp(28px, 4.5vw, 44px)" }}>WASM ENGINE</h1>
           <p className="mc-intro">
             A Vaporisateur synth loop playing through the WASM (Rust) audio engine — the only
-            engine these demos run; the TypeScript engine is deprecated upstream and no longer
-            wired here. <code>initializeOpenDAW</code> installs and compiles the engine before
+            engine the SDK ships; upstream removed the TypeScript engine
+            entirely. <code>initializeOpenDAW</code> installs and compiles the engine before
             the first <code>EngineWorklet</code> boots. Toggle{" "}
             <code>settings.debug.dspLoadMeasurement</code> below to watch DSP load live; it is
             off by default because measuring load perturbs the load it measures.

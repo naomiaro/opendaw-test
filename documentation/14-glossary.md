@@ -28,7 +28,7 @@ The real-time audio thread where the engine processor actually runs. Constrained
 A typed wrapper around a box that exposes its fields with `ValueMapping` / `StringMapping`, plus derived state. `AudioRegionBoxAdapter`, `AudioFileBoxAdapter`, etc. See [internals/02](./internals/02-box-system.md).
 
 ### Aux bus
-A bus (`AudioBusBox` + `AudioBusProcessor`) that receives audio from one or more aux sends and mixes it. Typically used for reverb/delay returns. See [Ch. 11](./11-effects.md), [internals/05](./internals/05-devices-and-effects.md).
+A bus (`AudioBusBox`, summed by the engine's `AudioBusProcessor`) that receives audio from one or more aux sends and mixes it. Typically used for reverb/delay returns. See [Ch. 11](./11-effects.md), [internals/05](./internals/05-devices-and-effects.md).
 
 ### Aux send
 A processor that taps a copy of an `AudioUnit`'s signal (post-effects, pre-channel-strip) and routes it to an aux bus. See [internals/05](./internals/05-devices-and-effects.md).
@@ -56,7 +56,7 @@ Beats per minute. The playback speed. Live BPM lives in `project.timelineBox.bpm
 The `Observable` subscription pattern that fires the callback once immediately with the current value, then again on every change. Use this when late subscribers must not miss the initial state. See [Ch. 03](./03-animation-frame.md).
 
 ### Channel strip
-The volume / pan / mute / solo stage at the end of an `AudioUnit`'s effect chain. Implemented by `ChannelStripProcessor`. See [internals/05](./internals/05-devices-and-effects.md).
+The volume / pan / mute / solo stage at the end of an `AudioUnit`'s effect chain. Implemented by the engine's `ChannelStripProcessor`. See [internals/05](./internals/05-devices-and-effects.md).
 
 ### Clip
 The user-facing name for a region the user can click and drag in a UI. In the box graph, a clip is an `AudioRegionBox` or `NoteRegionBox` — *region* and *clip* are nearly synonyms; *clip* is the UI word, *region* is the box word. See [Ch. 04](./04-box-system-and-reactivity.md).
@@ -76,7 +76,7 @@ The shared interpolation formula used by automation curves and fades. Single `sl
 The Bitwig-standard interchange format (ZIP of XML plus audio resources). OpenDAW can import and export it via `DawProjectService`. See [internals/06](./internals/06-project-and-persistence.md).
 
 ### Device chain
-The ordered set of devices on an `AudioUnit` — `MidiDeviceChain` (MIDI effects → instrument) and `AudioDeviceChain` (effects → sends → channel strip → output). Rewires during `ProcessPhase.Before`. See [internals/05](./internals/05-devices-and-effects.md).
+The ordered set of devices on an `AudioUnit` — the MIDI chain (MIDI effects → instrument) and the audio chain (effects → sends → channel strip → output). Rewires during `ProcessPhase.Before`. See [internals/05](./internals/05-devices-and-effects.md).
 
 ## E
 
@@ -84,7 +84,7 @@ The ordered set of devices on an `AudioUnit` — `MidiDeviceChain` (MIDI effects
 A processor inserted in the audio chain that transforms its input — Compressor, Reverb, Delay, etc. Built from a box + adapter + processor triple. See [Ch. 11](./11-effects.md), [internals/05](./internals/05-devices-and-effects.md).
 
 ### Engine
-The audio brain: the `EngineProcessor` running in the `AudioWorklet` plus the supporting workers. Exposed to the main thread through `EngineFacade`. See [internals/01](./internals/01-engine-processor.md).
+The audio brain: the WASM (Rust) engine processor running in the `AudioWorklet` plus the supporting workers. Exposed to the main thread through `EngineFacade`. See [internals/01](./internals/01-engine-processor.md).
 
 ### `EngineFacade`
 The main-thread observable wrapper around the engine — `isPlaying`, `position`, `bpm`, `play()`, `stop()`, `setPosition()`. What your UI subscribes to. See [Quick Start](./quick-start.md), [internals/03](./internals/03-cross-thread-protocols.md).
@@ -257,9 +257,6 @@ A reusable cursor that holds integration state for incremental tempo-map calls. 
 ### Timebase
 The unit a clip's `duration` is measured in — *Musical* (PPQN, BPM-dependent in seconds) or *Seconds* (constant in seconds, varies in PPQN). See [Ch. 02](./02-timing-and-tempo.md).
 
-### `TimeInfo`
-The tiny mutable struct on the audio thread holding the current position, transporting flag, recording flag, count-in flag, leap flag. Source of truth for "where is the playhead". See [internals/01](./internals/01-engine-processor.md).
-
 ### `TrackBox`
 A lane inside an `AudioUnit` that holds regions. One `AudioUnit` can contain several `TrackBox`es (e.g. for take-based recording). See [Ch. 04](./04-box-system-and-reactivity.md).
 
@@ -270,7 +267,7 @@ A `BoxEditing.modify(callback)` call. Every mutation must happen inside one. Seq
 An onset (drum hit, note attack) in audio. Detected per file via the three-band Linkwitz-Riley detector and stored as `TransientMarkerBox`es on the `AudioFileBox`. See [internals/04](./internals/04-sample-loading.md).
 
 ### Transport
-The playback controller — play, stop, record, position, count-in. `project.engine` is the SDK surface; `TimeInfo` is the worklet state. See [internals/01](./internals/01-engine-processor.md).
+The playback controller — play, stop, record, position, count-in. `project.engine` is the SDK surface; on the audio thread the engine's transport (Rust `Transport`, `crates/transport`) owns the playhead position, playing flag, loop area, and the leap/discontinuity flag consumed by the next render quantum. See [internals/01](./internals/01-engine-processor.md).
 
 ## U
 

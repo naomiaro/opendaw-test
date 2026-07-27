@@ -11,9 +11,9 @@ Time-stretching is the only place in the SDK where a single audio file gets read
 | Detect | `TransientDetector.detect` | Worker | `AudioData` → onset positions in seconds |
 | Persist | `TransientMarkerBox` children of `AudioFileBox` | Main | Onset positions live in the box graph |
 | Trigger | `AudioContentModifier.toTimeStretch` | Main | Calls the worker on mode flip, writes markers |
-| Render | `TimeStretchSequencer` | Worklet | Picks segments per transient, manages voices |
-| Voice | `OnceVoice` / `RepeatVoice` / `PingpongVoice` | Worklet | Plays one segment with crossfade in/out |
-| Interpolate | `warpPositionToSeconds` / `#secondsToPpqn` | Main + Worklet | PPQN ↔ file-seconds via linear warp-marker mapping |
+| Render | `TimeStretchSequencer` (`crates/engine/src/time_stretch.rs`) | Engine | Picks segments per transient, manages voices |
+| Voice | `OnceVoice` / `RepeatVoice` / `PingpongVoice` | Engine | Plays one segment with crossfade in/out |
+| Interpolate | `warpPositionToSeconds` / `seconds_to_ppqn` | Main + Engine | PPQN ↔ file-seconds via linear warp-marker mapping |
 | Rate | `AudioTimeStretchBoxAdapter.cents` | Main | Cents ↔ `playbackRate` with ±1 octave clamp |
 
 ## Transient detection algorithm
@@ -487,9 +487,11 @@ Each of the three functions does its full set of pointer updates and box mutatio
 
 The general rule: **don't `defer()` first and then `refer(newBox)` later in the same transaction.** That recreates the createInstrument race. `refer()` alone is the atomic swap.
 
-## TimeStretchSequencer — the engine processor
+## TimeStretchSequencer — the engine side
 
-`TimeStretchSequencer` (`packages/studio/core-processors/src/devices/instruments/Tape/TimeStretchSequencer.ts`) is the audio-thread component that consumes warp markers and transient markers to produce stretched output. It lives inside the Tape instrument processor; non-TimeStretch playback (NoStretch and PitchStretch) takes a different code path entirely.
+`TimeStretchSequencer` (`crates/engine/src/time_stretch.rs`) is the audio-thread component that consumes warp markers and transient markers to produce stretched output. It's driven by `crates/engine/src/audio_region_player.rs`, one sequencer per playing region. Native and PitchStretch playback take a different path entirely: those are a **stateless read head**, where time-stretch is stateful — it walks the source's transient markers and spawns a short granular voice at each boundary the timeline crosses.
+
+The crate is `no_std`. Voice spawning allocates only by pushing into pre-reserved `Vec`s (a handful of voices); the steady-state render path never grows the heap.
 
 The high-level shape per render block:
 
@@ -510,62 +512,53 @@ flowchart TB
 
 ### Segment selection
 
-```typescript
-const transientIndexShifted = transients.floorLastIndex(shiftedFileSeconds)
-if (transientIndexShifted < this.#currentTransientIndex) {this.reset()}
-if (transientIndexShifted > this.#currentTransientIndex && transientIndexShifted >= 0) {
-    const transient = transients.optAt(transientIndexShifted)
-    if (isNotNull(transient)) {
-        this.#handleTransientBoundary(
-            output, data, transients, warpMarkers, transientPlayMode, effectivePlaybackRate,
-            waveformOffset, bpm, sampleRate, transientIndexShifted, transient.position
-        )
-        this.#currentTransientIndex = transientIndexShifted
+```rust
+let transient_index_shifted = floor_last_index(transients, shifted_file_seconds);
+if transient_index_shifted < self.current_transient_index {
+    self.reset();
+}
+if transient_index_shifted > self.current_transient_index && transient_index_shifted >= 0 {
+    if let Some(&transient_seconds) = transients.get(transient_index_shifted as usize) {
+        self.handle_transient_boundary(
+            source, transients, warp, config.transient_play_mode, effective_playback_rate, waveform_offset,
+            block.bpm, engine_rate, file_rate, transient_index_shifted, transient_seconds, file_seconds_start
+        );
+        self.current_transient_index = transient_index_shifted;
     }
 }
 ```
 
-`transients.floorLastIndex(shiftedFileSeconds)` returns the index of the latest transient at or before the current file position — the segment we're currently inside. Two transitions matter:
+`floor_last_index(transients, shifted_file_seconds)` returns the index of the latest transient at or before the current file position — the segment we're currently inside — or `-1` when every marker is later. It's a `partition_point` binary search, not a scan. Two transitions matter:
 
-- **Going backwards (timeline scrub, loop wrap)** → `reset()`, drop all voices, start fresh on the next iteration.
-- **Going forward across a transient boundary** → call `#handleTransientBoundary` to spawn a voice for the new segment and fade out the previous one.
+- **Going backwards (timeline scrub, loop wrap)** → `reset()`, drop all voices, start fresh on the next iteration. A `discontinuous()` block flag resets too, before the index is even computed.
+- **Going forward across a transient boundary** → call `handle_transient_boundary` to spawn a voice for the new segment and fade out the previous one.
 
-`shiftedFileSeconds` accounts for the `VOICE_FADE_DURATION` lookahead — see "voice crossfading" below.
+`shifted_file_seconds` accounts for the `VOICE_FADE_DURATION` lookahead — see "voice crossfading" below.
+
+Before any of this runs, the sequencer bails out early on two conditions: fewer than two warp markers, and a content position outside the warp markers' PPQN range. Both produce *no output at all* rather than a clamped read — a region scrubbed past the end of its warp curve is silent, not stuck on its last sample.
 
 ### transientPlayMode branching
 
-```typescript
-if (transientPlayMode !== TransientPlayMode.Once) {
-    const segmentInfo = this.#getSegmentInfo(transients, this.#currentTransientIndex, data)
-    if (isNotNull(segmentInfo)) {
-        const {startSamples, endSamples, hasNext, nextTransientFileSeconds} = segmentInfo
-        const segmentLengthSamples = endSamples - startSamples
-        let outputSamplesUntilNext: number = Number.POSITIVE_INFINITY
-        if (hasNext) {
-            const currentTransient = transients.optAt(this.#currentTransientIndex)
-            if (isNotNull(currentTransient)) {
-                const transientWarpSeconds = currentTransient.position - waveformOffset
-                const transientPpqn = this.#secondsToPpqn(transientWarpSeconds, warpMarkers)
-                const nextWarpSeconds = nextTransientFileSeconds - waveformOffset
-                const nextPpqn = this.#secondsToPpqn(nextWarpSeconds, warpMarkers)
-                const ppqnDelta = nextPpqn - transientPpqn
-                const secondsUntilNext = PPQN.pulsesToSeconds(ppqnDelta, bpm)
-                outputSamplesUntilNext = secondsUntilNext * sampleRate
+```rust
+if mode != TransientPlayMode::Once {
+    if let Some(info) = segment_info(transients, self.current_transient_index, source.num_frames, file_rate) {
+        let segment_length = info.end_samples - info.start_samples;
+        let output_samples_until_next =
+            self.output_samples_until_next(&info, transients, warp, waveform_offset, bpm, engine_rate);
+        let audio_samples_needed = output_samples_until_next * effective_playback_rate;
+        let speed_ratio = segment_length / audio_samples_needed;
+        let close_to_unity = (0.99..=1.01).contains(&speed_ratio);
+        let needs_looping = !close_to_unity && audio_samples_needed > segment_length;
+        if needs_looping {
+            self.voices[index].start_fade_out(0);
+            if let Some(voice) = create_voice(
+                info.start_samples, info.end_samples, effective_playback_rate,
+                engine_rate, mode, true, Some(read_pos)
+            ) {
+                self.spawn.push(voice);
             }
-        }
-        const audioSamplesNeeded = outputSamplesUntilNext * effectivePlaybackRate
-        const speedRatio = segmentLengthSamples / audioSamplesNeeded
-        const closeToUnity = speedRatio >= 0.99 && speedRatio <= 1.01
-        const needsLooping = !closeToUnity && audioSamplesNeeded > segmentLengthSamples
-        if (needsLooping) {
-            voice.startFadeOut(0)
-            const newVoice = this.#createVoice(
-                output, data, startSamples, endSamples,
-                effectivePlaybackRate, 0, sampleRate,
-                transientPlayMode, true, readPos
-            )
-            if (isNotNull(newVoice)) {this.#voices.push(newVoice)}
-            continue
+            index += 1;
+            continue;
         }
     }
 }
@@ -573,58 +566,93 @@ if (transientPlayMode !== TransientPlayMode.Once) {
 
 The "do we need looping?" check is the crux of TimeStretch. Per segment, the engine computes:
 
-- **`segmentLengthSamples`** — how many sample frames the source segment contains (transient[i+1] - transient[i] in file samples).
-- **`outputSamplesUntilNext`** — how many sample frames must be produced before the next transient on the timeline (derived from the warp-marker-mapped PPQN delta between consecutive transients).
-- **`audioSamplesNeeded`** — how many *source* sample frames the current `playbackRate` would consume to produce that output.
-- **`speedRatio`** — `segmentLength / audioSamplesNeeded`. A ratio of 1.0 means source rate matches needed rate (no stretching needed); >1 means the segment is longer than needed; <1 means shorter.
+- **`segment_length`** — how many sample frames the source segment contains (transient[i+1] − transient[i] in file samples, or to EOF for the last one).
+- **`output_samples_until_next`** — how many sample frames must be produced before the next transient on the timeline. `output_samples_until_next` maps both transients' file-seconds through `seconds_to_ppqn`, takes the PPQN delta, and converts with `pulses_to_seconds(delta, bpm) * engine_rate`. With no next transient it's `f64::INFINITY`, which makes `needs_looping` false — the last segment never loops.
+- **`audio_samples_needed`** — how many *source* sample frames the current playback rate would consume to produce that output.
+- **`speed_ratio`** — `segment_length / audio_samples_needed`. A ratio of 1.0 means source rate matches needed rate (no stretching needed); >1 means the segment is longer than needed; <1 means shorter.
 
-If `speedRatio` is within 1% of unity, the segment plays through once at the requested rate — no looping. If it's outside that window *and* the segment is too short to fill the time-until-next, the segment needs to loop, and the voice is recreated with `needsLooping = true`. The 1% tolerance is what avoids spurious loop voices on segments where rate and length already match — common at `playbackRate = 1.0` with no warp slope.
+If `speed_ratio` is within 1% of unity, the segment plays through once at the requested rate — no looping. If it's outside that window *and* the segment is too short to fill the time-until-next, the segment needs to loop, and the voice is replaced with `needs_looping = true`, handing over its current read position so the crossfade is seamless. The 1% tolerance is what avoids spurious loop voices on segments where rate and length already match — common at `playbackRate = 1.0` with no warp slope.
+
+Note `effective_playback_rate = playback_rate * file_rate / engine_rate`: the user's rate multiplied by the sample-rate conversion. A 44.1 kHz file in a 48 kHz project reads at 0.919× before the user touches anything.
+
+### Boundary continuation and drift
+
+`handle_transient_boundary` doesn't unconditionally spawn. First it looks for an in-flight `OnceVoice` whose read head — projected forward by the fade lookahead — is already within `VOICE_FADE_DURATION` worth of samples of the new segment's start. If it finds one, it *extends* that voice's `segment_end` instead of re-attacking, and fades out everything else. This is what keeps a transient that's already sounding from being struck twice when the timeline crosses its marker.
+
+The catch is that each continuation carries a small positional error, and those errors accumulate. The sequencer sums them in `accumulated_drift`; once the running total reaches the same fade-duration threshold, it refuses to continue, resets the accumulator to zero, and spawns fresh — paying one audible re-attack to bring the read head back into alignment rather than letting the region slide out of time indefinitely.
+
+### The start-position clamp
+
+One deliberate deviation from a naive segment spawn, worth understanding because it looks wrong until you know why it's there:
+
+```rust
+let playhead_file_samples = file_seconds_start * file_rate as f64;
+let voice_start_samples = pre_roll_start.max(playhead_file_samples);
+```
+
+A new voice never reads *earlier* in the file than the current playhead. Starting playback inside a silent gap makes `floor_last_index` select the **preceding** phrase's transient — the last marker at or before the playhead, which can be seconds behind. Without the clamp the voice would spawn at that marker and replay the whole preceding phrase, which is heard as a pop or a brief burst of the wrong material. Clamping the read start up to the playhead makes a gap-start read silence, and leaves normal boundary spawns — where the playhead sits right at the onset — effectively unchanged.
 
 ### Voice instantiation by mode
 
-```typescript
-if (transientPlayMode === TransientPlayMode.Once || !needsLooping) {
-    return new OnceVoice(output, data, startSamples, endSamples, playbackRate, blockOffset, sampleRate)
+```rust
+fn create_voice(start_samples: f64, end_samples: f64, playback_rate: f64, sample_rate: f32,
+                mode: TransientPlayMode, needs_looping: bool,
+                initial_read_position: Option<f64>) -> Option<Voice> {
+    if start_samples >= end_samples {
+        return None;
+    }
+    if mode == TransientPlayMode::Once || !needs_looping {
+        return Some(Voice::Once(OnceVoice::new(start_samples, end_samples, playback_rate, 0, sample_rate)));
+    }
+    if mode == TransientPlayMode::Repeat {
+        return Some(Voice::Repeat(RepeatVoice::new(
+            start_samples, end_samples, playback_rate, 0, sample_rate, initial_read_position)));
+    }
+    let initial = initial_read_position.map(|position| (position, 1.0));
+    Some(Voice::Pingpong(PingpongVoice::new(
+        start_samples, end_samples, playback_rate, 0, sample_rate, initial)))
 }
-if (transientPlayMode === TransientPlayMode.Repeat) {
-    return new RepeatVoice(output, data, startSamples, endSamples, playbackRate, blockOffset, sampleRate, initialReadPosition)
-}
-if (isDefined(initialReadPosition)) {
-    return new PingpongVoice(output, data, startSamples, endSamples, playbackRate, blockOffset, sampleRate, {
-        position: initialReadPosition,
-        direction: 1.0
-    })
-}
-return new PingpongVoice(output, data, startSamples, endSamples, playbackRate, blockOffset, sampleRate)
 ```
 
-Three voice classes, all in the same Tape instrument processor folder. They differ only in how they handle the end of a segment:
+Three voice variants of one `Voice` enum, all in `time_stretch.rs`. A degenerate segment (`start >= end`) yields `None` and simply isn't spawned. They differ only in how they handle the end of a segment:
 
-- **`OnceVoice`** — play `startSamples` → `endSamples` at `playbackRate`, then output silence. Used for `Once` mode and for any mode when `!needsLooping` (which is the common case at `playbackRate = 1.0` with no time stretch).
-- **`RepeatVoice`** — same range, but on hitting `endSamples`, wrap back to `startSamples` and continue. Used for `Repeat` mode when looping is needed.
-- **`PingpongVoice`** — same range, but reverse direction at `endSamples` and again at `startSamples`. The optional `initialReadPosition` and `direction: 1.0` argument is used when handing off mid-segment (e.g. a voice spawned by `needsLooping` reuses the previous voice's read head so the crossfade is seamless).
+- **`OnceVoice`** — play `start_samples` → `end_samples` at the playback rate, then output silence. Used for `Once` mode and for any mode when `!needs_looping` (which is the common case at `playbackRate = 1.0` with no time stretch).
+- **`RepeatVoice`** — same range, but on hitting `end_samples`, wrap back to `start_samples` and continue. Used for `Repeat` mode when looping is needed.
+- **`PingpongVoice`** — same range, but reverse direction at `end_samples` and again at `start_samples`. The optional `(position, direction)` pair is used when handing off mid-segment: a voice spawned because `needs_looping` became true reuses the previous voice's read head, so the crossfade is seamless.
+
+Repeat and Pingpong add a loop region *inside* the segment — `[start + LOOP_MARGIN_START, end − LOOP_MARGIN_END]` with margins of 10 ms and 20 ms — plus their own 10 ms `LOOP_FADE_DURATION` crossfade at the wrap point. The margins keep the loop off the segment's own attack and tail, where a wrap would be most audible.
+
+Unlike the voices they were ported from, these don't own the output or source buffers. Rust ownership makes that awkward across a `Vec<Voice>`, so the buffers are threaded into `process` per call instead.
 
 ### Voice crossfading: `VOICE_FADE_DURATION = 0.020`
 
-```typescript
-// packages/studio/core-processors/src/devices/instruments/Tape/constants.ts:1
-export const VOICE_FADE_DURATION: number = 0.020
+```rust
+// crates/engine/src/time_stretch.rs
+const VOICE_FADE_DURATION: f64 = 0.020;
 ```
 
-20 ms is the fixed crossfade length applied when voices hand off at a transient boundary. It shows up in two places in `TimeStretchSequencer`:
+20 ms is the fixed crossfade length applied when voices hand off at a transient boundary. It shows up in three places in `TimeStretchSequencer`:
 
-```typescript
+```rust
 // Shift the segment lookup forward by the fade length so the new voice
 // has time to fade in before it should be audible.
-const transientShiftSeconds = VOICE_FADE_DURATION * fileToOutputRatio * playbackRate * (data.sampleRate / sampleRate)
+let transient_shift_seconds =
+    VOICE_FADE_DURATION * file_to_output_ratio * playback_rate * (file_rate as f64 / engine_rate as f64);
 
 // When creating a voice, back its read position up by the fade length
 // so the fade-in covers material that would otherwise be missed.
-const fadeSamplesInFile = VOICE_FADE_DURATION * sampleRate * playbackRate
-const voiceStartSamples = transientIndex === 0
-    ? startSamples
-    : Math.max(0, startSamples - fadeSamplesInFile)
+let fade_samples_in_file = VOICE_FADE_DURATION * engine_rate as f64 * playback_rate;
+let pre_roll_start = if transient_index == 0 {
+    info.start_samples
+} else {
+    (info.start_samples - fade_samples_in_file).max(0.0)
+};
+
+// And as the drift budget for boundary continuation.
+let drift_threshold = VOICE_FADE_DURATION * file_rate as f64;
 ```
+
+The fade itself is a shared `Fade` state machine (`Fading` → `Active` → `Done`) reused by all three voice variants. It has one property worth knowing: a fade-out requested *during* a fade-in doesn't restart from full gain — it resumes from the current amplitude (`fade_progress = length * (1 - current_amplitude)`), so a voice that's cut short mid-fade-in still decays smoothly instead of jumping up first.
 
 The pattern: every voice has a 20 ms fade-in *and* the segment lookup is shifted forward by 20 ms (scaled by playback rate and sample rate conversion) so the fade-in completes before the new segment should actually start being heard. The previous voice plays through that same 20 ms with a fade-out, so the sum stays at unity gain. The fade is linear; it's short enough that the linearity vs equal-power distinction is inaudible on real material.
 
@@ -666,42 +694,39 @@ Endpoint clamping plus linear interpolation between consecutive markers. The "en
 
 ### File seconds → PPQN (inverse)
 
-Used by the worklet — every render block needs to know "how many PPQN does this transient (at known file seconds) correspond to on the timeline?" so it can compute `secondsUntilNext` for the segment loop check.
+Used by the engine — every render block needs to know "how many PPQN does this transient (at known file seconds) correspond to on the timeline?" so it can compute the output samples until the next transient for the segment loop check. The engine holds the warp curve as a flat sorted `&[(f64, f64)]` of `(ppqn, seconds)` pairs rather than an `EventCollection`, so both directions are a `windows(2)` walk:
 
-```typescript
-// TimeStretchSequencer.ts
-#ppqnToSeconds(ppqn: number, warpMarkers: EventCollection<WarpMarkerBoxAdapter>): Nullable<number> {
-    for (let i = 0; i < warpMarkers.length() - 1; i++) {
-        const left = warpMarkers.optAt(i)
-        const right = warpMarkers.optAt(i + 1)
-        if (!isNotNull(left) || !isNotNull(right)) {continue}
-        if (ppqn >= left.position && ppqn < right.position) {
-            const alpha = (ppqn - left.position) / (right.position - left.position)
-            return left.seconds + alpha * (right.seconds - left.seconds)
+```rust
+// crates/engine/src/time_stretch.rs
+fn ppqn_to_seconds(warp: &[(f64, f64)], ppqn: f64) -> Option<f64> {
+    for window in warp.windows(2) {
+        let (left, right) = (window[0], window[1]);
+        if ppqn >= left.0 && ppqn < right.0 {
+            let alpha = (ppqn - left.0) / (right.0 - left.0);
+            return Some(left.1 + alpha * (right.1 - left.1));
         }
     }
-    return null
+    None
 }
 
-#secondsToPpqn(seconds: number, warpMarkers: EventCollection<WarpMarkerBoxAdapter>): number {
-    for (let i = 0; i < warpMarkers.length() - 1; i++) {
-        const left = warpMarkers.optAt(i)
-        const right = warpMarkers.optAt(i + 1)
-        if (!isNotNull(left) || !isNotNull(right)) {continue}
-        if (seconds >= left.seconds && seconds < right.seconds) {
-            const alpha = (seconds - left.seconds) / (right.seconds - left.seconds)
-            return left.position + alpha * (right.position - left.position)
+fn seconds_to_ppqn(warp: &[(f64, f64)], seconds: f64) -> f64 {
+    for window in warp.windows(2) {
+        let (left, right) = (window[0], window[1]);
+        if seconds >= left.1 && seconds < right.1 {
+            let alpha = (seconds - left.1) / (right.1 - left.1);
+            return left.0 + alpha * (right.0 - left.0);
         }
     }
-    const last = warpMarkers.last()
-    if (isNotNull(last) && seconds >= last.seconds) {return last.position}
-    return 0.0
+    match warp.last() {
+        Some(last) if seconds >= last.1 => last.0,
+        _ => 0.0
+    }
 }
 ```
 
-Same linear-interp shape, sample-equivalent on both sides of the boundary. The worklet copy is `#`-prefixed because it's a per-sequencer state container, but the math is identical to the main-thread `warpPositionToSeconds`.
+Same linear-interp shape as the main-thread `warpPositionToSeconds`, but note the asymmetry in what happens off the end of the curve. `ppqn_to_seconds` returns `None` — no bracketing pair, no answer, and the sequencer's caller returns early and renders nothing. `seconds_to_ppqn` clamps: past the last marker it returns that marker's position, before the first it returns 0. That difference is deliberate. The forward direction decides *whether to render at all*, so it must be able to say "out of range"; the inverse is only ever used to measure a distance between two transients, where a clamped answer is harmless.
 
-**Two markers minimum** is the invariant both functions depend on: without a left + right pair, the for-loop never executes a single iteration, and the function falls through to its boundary return (0, or `last.seconds`). That's why the Core handbook says PitchStretch and TimeStretch both need ≥2 warp markers — anything less is degenerate at this layer.
+**Two markers minimum** is the invariant both functions depend on: without a left + right pair, `windows(2)` yields nothing, and each falls through to its boundary result. The sequencer checks `warp.len() < 2` up front and returns rather than relying on that fallthrough. That's why the Core handbook says PitchStretch and TimeStretch both need ≥2 warp markers — anything less is degenerate at this layer.
 
 ## Adapter math: cents ↔ playbackRate
 
@@ -788,20 +813,22 @@ Blue: per-region — `AudioRegionBox`, its stretch box, and the `WarpMarkerBox` 
 2. **Strict-increasing positions.** The detector itself filters duplicates before returning; downstream code never has to defend against `position[i] === position[i+1]`. `EventCollection`'s panic on equal-position siblings is the contract being protected.
 3. **Idempotency check before detection.** Both the SDK's `toTimeStretch` and the demo's `ensureTransientMarkers` guard before calling the worker: the SDK tests `file.transients.length() === 0`, while the demo helper skips only when the file already has ≥ 2 markers (the engine minimum) and re-detects past a single stale marker. Re-detection produces identical results but wastes seconds on long files.
 4. **Markers are file-scoped, not region-scoped.** `TransientMarkerBox.owner` points at `AudioFileBox.transientMarkers`. Every region using that file shares the markers; deleting one region's stretch doesn't invalidate them.
-5. **Warp-marker minimum is two.** PPQN ↔ seconds interpolation needs a left + right pair to compute an alpha. Without it the functions return their boundary defaults (0 or `last.seconds`) and the engine produces no useful output.
+5. **Warp-marker minimum is two.** PPQN ↔ seconds interpolation needs a left + right pair to compute an alpha. The engine checks `warp.len() < 2` and returns before rendering anything.
 6. **`refer()` is atomic.** Mode flips work in a single transaction because pointer replacement doesn't pass through a "no target" state. Don't pre-`defer()` before a swap — that recreates the `createInstrument` race.
 7. **`cents` clamp lives in the adapter.** Writing `playbackRate` through the box bypasses the ±1 octave limit. Studio UI always goes through the adapter; SDK consumers should too unless they explicitly want extreme rates.
 8. **`VOICE_FADE_DURATION` is fixed at 20 ms.** Not user-tunable, not project-scoped, not per-region. Every voice handoff at every transient pays this 20 ms. Segments shorter than 40 ms therefore have audible attack softening.
-9. **Segment-rate ±1% deadband.** `speedRatio` between 0.99 and 1.01 plays a segment through once at request rate without looping. Outside that band, the segment loops to fill the time until the next transient. This is what avoids spurious loop voices at `playbackRate ≈ 1.0` with mostly-flat warp.
-10. **Backwards transient-index transitions reset the sequencer.** Scrubbing the timeline or looping back to an earlier point drops all in-flight voices. The user never hears a partially-stale segment after a seek.
+9. **Segment-rate ±1% deadband.** `speed_ratio` between 0.99 and 1.01 plays a segment through once at request rate without looping. Outside that band, the segment loops to fill the time until the next transient. This is what avoids spurious loop voices at `playbackRate ≈ 1.0` with mostly-flat warp.
+10. **Backwards transient-index transitions reset the sequencer.** Scrubbing the timeline or looping back to an earlier point drops all in-flight voices, as does a `discontinuous()` block flag. The user never hears a partially-stale segment after a seek.
+11. **A voice never reads earlier in the file than the playhead.** Starting inside a silent gap selects the preceding phrase's transient; the start clamp makes that read silence instead of replaying the phrase.
+12. **Out-of-warp-range positions render nothing.** `ppqn_to_seconds` returning `None` — or a content position outside the markers' PPQN span, or a file position outside the file's duration — produces silence, not a clamped read.
 
 ## Further reading
 
 - **`packages/lib/dsp/src/transient-detection.ts`** — the standalone detector. No SDK dependencies; safe to read in isolation.
 - **`packages/lib/dsp/src/biquad-coeff.ts`** + **`biquad-processor.ts`** — the LR-48 filter primitives used by band splitting.
 - **`packages/studio/core/src/project/audio/AudioContentModifier.ts`** — all three mode-flip functions plus the `warpPositionToSeconds` helper.
-- **`packages/studio/core-processors/src/devices/instruments/Tape/TimeStretchSequencer.ts`** — segment selection, voice handoff, the looping decision.
-- **`packages/studio/core-processors/src/devices/instruments/Tape/`** — sibling files: `OnceVoice.ts`, `RepeatVoice.ts`, `PingpongVoice.ts`, `constants.ts`.
+- **`crates/engine/src/time_stretch.rs`** — the whole engine side in one file: segment selection, the three voices, the fade state machine, the looping decision, the warp interpolation, plus unit tests covering the silent-gap and out-of-range cases.
+- **`crates/engine/src/audio_region_player.rs`** — the caller: how a playing region gets its sequencer, its source buffers, and its per-block position.
 - **`packages/studio/adapters/src/audio/AudioTimeStretchBoxAdapter.ts`** — the cents↔playbackRate math.
 - **[Core Handbook Ch. 18](../18-time-and-pitch.md)** — the SDK-surface view: when to use each play mode, how to write transient markers from app code, how to flip modes through `editing.modify()`.
 - **[Ch. 03 — Cross-Thread Protocols](./03-cross-thread-protocols.md)** — the `Communicator` pattern that `Workers.Transients` uses.

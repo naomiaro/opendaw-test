@@ -118,7 +118,7 @@ Every TrackBox inside an AudioUnitBox carries a numeric `index` field. The namin
 - Is computed as `max(existingIndexes) + 1` when a new TrackBox is created.
 
 **What `index` does NOT do:**
-- Does NOT drive lane render order. `TapeDeviceProcessor` keys its lanes by TrackBox UUID via `SortedSet<UUID.Bytes, Lane>`, then iterates them in UUID-encounter order — not index order.
+- Does NOT drive lane render order. The engine's Tape device keys its lanes by TrackBox UUID, then iterates them in UUID-encounter order — not index order.
 - Does NOT participate in mute/solo masking or take selection (those work off `regionBox.mute` and `olderTakeAction` directly).
 - Is NOT an array position. After deletions, gaps are normal: a Tape with three lanes deleted in the middle can have indexes `1, 2, 4` permanently. The next `findOrCreate` will assign `5`, not `3`.
 
@@ -163,7 +163,7 @@ Once a Tape AudioUnitBox holds multiple TrackBoxes, a few invariants apply:
 - Per-lane volume/effects aren't possible inside one Tape — use separate Tapes if you need that.
 
 **Two ways to silence a lane:**
-- `trackBox.enabled.setValue(false)` — disables the whole lane. The engine skips it in `TapeDeviceProcessor` (the same path `olderTakeAction: "disable-track"` uses).
+- `trackBox.enabled.setValue(false)` — disables the whole lane. The engine's Tape device skips it (the same path `olderTakeAction: "disable-track"` uses).
 - `regionBox.mute.setValue(true)` — mutes individual regions on a lane (the path `olderTakeAction: "mute-region"` uses, which is the default).
 
 `audioUnitBox.mute` mutes the entire Tape (every lane) — don't reach for it for per-lane control.

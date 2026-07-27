@@ -70,12 +70,13 @@ Browse to `https://localhost:5173` (or whatever port). Accept the cert prompt on
 
 ### Symptom: `Failed to fetch worker`
 
-The studio-core ships its workers as separate ESM files (`workers-main.js`, `processors.js`, `offline-engine.js`) loaded by URL. The setup helper uses Vite's `?worker&url` import syntax:
+The studio-core ships its workers as separate ESM files (`workers-main.js`, `processors.js`) loaded by URL, and `@opendaw/studio-core-wasm` ships the engine's processor and offline worker the same way. The setup helper uses Vite's `?worker&url` import syntax:
 
 ```typescript
 import WorkersUrl from "@opendaw/studio-core/workers-main.js?worker&url";
 import WorkletsUrl from "@opendaw/studio-core/processors.js?url";
-import OfflineEngineUrl from "@opendaw/studio-core/offline-engine.js?worker&url";
+import wasmProcessorUrl from "@opendaw/studio-core-wasm/wasm-processor.js?url";
+import wasmOfflineWorkerUrl from "@opendaw/studio-core-wasm/wasm-offline-worker.js?worker&url";
 ```
 
 If you're not using Vite, you'll need an equivalent for your bundler (webpack's `new URL(...)`, esbuild's plugin, etc.). The URLs must end up reachable by the browser.

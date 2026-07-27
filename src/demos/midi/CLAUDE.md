@@ -134,14 +134,18 @@ dependent, which bare `unstageBox` would orphan.
 
 ### MIDI Effect Adapters (Pre-Instrument Processing)
 MIDI effects sit between capture and instrument in the signal chain.
-Access via `audioUnitBoxAdapter.midiEffects` (IndexedBoxAdapterCollection):
+Access via `audioUnitBoxAdapter.midiEffects` — an
+`Option<IndexedBoxAdapterCollection>` (unwrap first; `None` means the host has no
+midi chain, e.g. an effect-composite branch):
 - **ArpeggioDeviceBoxAdapter** — arpeggiator patterns (up, down, random, etc.)
 - **PitchDeviceBoxAdapter** — pitch transpose/shift
 - **VelocityDeviceBoxAdapter** — velocity curve mapping
 - **SpielwerkDeviceBoxAdapter** — scriptable MIDI effect (JavaScript)
 - **ZeitgeistDeviceBoxAdapter** — step sequencer/pattern generator
 
-Insert via: `project.api.insertEffect(audioUnitBox.midiEffects, EffectFactories.Arpeggio)`
+Insert via the adapter layer: `project.api.insertEffect(midiEffectsFieldOf(project,
+audioUnitBox), EffectFactories.Arpeggio)` (`midiEffectsFieldOf` from
+`src/lib/adapterUtils.ts` unwraps `AudioUnitBoxAdapter.midiEffectsField`)
 
 ### Instrument Adapters
 Available instrument adapters (each implements `InstrumentDeviceBoxAdapter`):
