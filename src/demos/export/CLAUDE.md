@@ -56,10 +56,11 @@ Key facts (verified SDK 0.0.160):
 
 ### Offline Audio Rendering (Export)
 With `Option.None`, `ExportConfiguration.countStems(config)` returns 1 (not 0), so the
-mixdown branch is selected (`stemExports.length === 0` inside the engine processor) and
-the metronome bus is mixed in — when enabled, which on `OfflineEngineRenderer` it never
-is (see above). Provide a non-empty `ExportConfiguration.stems` map to take
-the stem branch (metronome excluded).
+mixdown branch is selected (empty stems list inside the engine) and the metronome is
+mixed in only when the export configuration asks for it (`metronome.includeInMixdown` —
+see above; engine preferences never travel into an offline render). Provide a non-empty
+`ExportConfiguration.stems` map to take the stem branch (click stem only via
+`metronome.stem`).
 
 **Higher-level shortcut** (when you don't need step-by-step control):
 - `OfflineEngineRenderer.start(source, optConfig, progress, abortSignal?, sampleRate?)` →
@@ -195,8 +196,10 @@ effects-inclusive stem; openDAW's own export dialog omits the flag.
 early-return-before-sends mechanism) — it bypasses the channel-strip volume/pan/mute.
 `ExportConfiguration.range` is read ONLY by `OfflineEngineRenderer`; the manual
 `worklets.createEngine` path (live `EngineWorklet`) never reads it.
-- Mixdown path (`exportConfiguration` = undefined): all audio mixed, metronome included
-- Stem path (`exportConfiguration` provided): per-track isolation, metronome excluded
+- Mixdown path (`exportConfiguration` = undefined): all audio mixed; click only via
+  `metronome.includeInMixdown` in a config
+- Stem path (`exportConfiguration` provided): per-track isolation; click only as its own
+  stem via `metronome.stem` (appended LAST)
 
 ## Reference Files
 - Export demo: `src/demos/export/export-demo.tsx`

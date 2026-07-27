@@ -699,10 +699,10 @@ const App: React.FC = () => {
               <strong>Step 2 ALIGNED</strong> (pure Web Audio + phase correlation) is the audible
               target — sums to unity through the crossfade, no dip.{" "}
               <strong>Step 3 OPENDAW</strong> renders the same phase-corrected configuration as
-              step 2 through OpenDAW's <Code>TapeDeviceProcessor</Code> on two Tape tracks (one
+              step 2 through OpenDAW's Tape playback on two Tape tracks (one
               region per track, mixed at master). It should sound identical to step 2 — and
               since SDK 0.0.159 it does. Pre-fix there was a residual dip on the incoming
-              voice's side caused by <Code>PitchVoice</Code> multiplying its 20 ms
+              voice's side caused by the playback voice multiplying its 20 ms
               voice-fade-in by the region's clip-fade gain buffer.
             </Callout.Text>
           </Callout.Root>
@@ -712,11 +712,11 @@ const App: React.FC = () => {
               <InfoCircledIcon />
             </Callout.Icon>
             <Callout.Text>
-              <strong>Fixed in SDK 0.0.159 on both engines</strong> (openDAW#312 closed
-              upstream — <Code>PitchVoice</Code> now combines the fades by{" "}
-              <Code>Math.min</Code> instead of by product). These demos now run the WASM
-              (Rust) engine exclusively; the openDAW#312 fix measures −0.05 dB vs the
-              −0.00 dB pure-Web-Audio target here. Step 3's Expected column documents the
+              <strong>Fixed in SDK 0.0.159</strong> (openDAW#312 closed upstream — the
+              engine now combines the fades by min instead of by product; in the WASM
+              engine see <Code>fade_gain</Code> in the Rust audio-region player). These
+              demos run the WASM (Rust) engine exclusively; the openDAW#312 fix measures
+              −0.05 dB vs the −0.00 dB pure-Web-Audio target here. Step 3's Expected column documents the
               pre-fix signature; this page is retained as a regression check.
             </Callout.Text>
           </Callout.Root>
@@ -813,12 +813,12 @@ const App: React.FC = () => {
             description={
               <>
                 Same phase-corrected configuration as step 2 (ALIGNED) but rendered through
-                OpenDAW's <Code>TapeDeviceProcessor</Code> on two Tape tracks.{" "}
+                OpenDAW's Tape playback on two Tape tracks.{" "}
                 <strong>It should sound identical to step 2 — no dip.</strong> Since SDK
                 0.0.159 it does (scan ≈ −0.05 dB). Pre-fix it did not: a subtler dip on the
                 incoming voice's side, ~10 ms <em>before</em> the seam — smaller than
                 UNALIGNED's obvious dip but clearly bigger than ALIGNED's zero. Mechanism
-                was: <Code>PitchVoice</Code> multiplied its 20 ms voice-fade-in by the
+                was: the playback voice multiplied its 20 ms voice-fade-in by the
                 region's clip-fade gain, turning the first 20 ms of a linear fade-in into a
                 quadratic ramp. The Expected column documents that pre-fix signature.
               </>
@@ -876,7 +876,7 @@ const App: React.FC = () => {
 File B:              test-440hz-offset30.wav (B delayed ~0.680 ms / ~108° at 440 Hz)
 ALIGNED engine:      pure Web Audio (AudioBufferSourceNode → destination)
 UNALIGNED engine:    pure Web Audio (shift = 0)
-OPENDAW engine:      OpenDAW TapeDeviceProcessor (2 Tape tracks, 1 AudioRegionBox each)
+OPENDAW engine:      OpenDAW Tape playback, WASM engine (2 Tape tracks, 1 AudioRegionBox each)
 Seam:                ${SEAM_SECONDS} s
 Crossfade:           ${CROSSFADE_MS} ms linear (equal-gain), symmetric around seam
 Phase window:        ${WINDOW_SEC * 1000} ms straddling the seam

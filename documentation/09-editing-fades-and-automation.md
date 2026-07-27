@@ -795,7 +795,7 @@ This produces monotonic curves only. S-curves are not possible with a single slo
    - Provides `inField`, `outField`, `inSlopeField`, `outSlopeField` accessors
 
 2. **FadingEnvelope.fillGainBuffer** (`@opendaw/lib-dsp`)
-   - Called by `TapeDeviceProcessor` during audio rendering
+   - Reference implementation of the fade envelope; the engine's Tape device evaluates the same curve during rendering
    - Fills a gain buffer that is multiplied with the audio output
    - Computes position relative to region start: `startPpqn = cycle.resultStart - regionPosition`
 
@@ -1147,15 +1147,19 @@ To automate an effect parameter, first insert the effect, then create an automat
 
 ```typescript
 import { EffectFactories } from "@opendaw/studio-core";
+import { AudioUnitBoxAdapter } from "@opendaw/studio-adapters";
 import { ReverbDeviceBox } from "@opendaw/studio-boxes";
+
+// Resolve the chain field via the adapter layer (DeviceHost chain getters are
+// Option-wrapped; an audio unit always hosts an audio chain, so unwrap is safe)
+const field = project.boxAdapters
+  .adapterFor(audioUnitBox, AudioUnitBoxAdapter)
+  .audioEffectsField.unwrap();
 
 // Insert effect (EffectBox is a union type — cast directly to device box)
 let reverbBox: ReverbDeviceBox;
 project.editing.modify(() => {
-  const effectBox = project.api.insertEffect(
-    audioUnitBox.audioEffects,
-    EffectFactories.Reverb
-  );
+  const effectBox = project.api.insertEffect(field, EffectFactories.Reverb);
   reverbBox = effectBox as ReverbDeviceBox;
 });
 
@@ -1389,7 +1393,7 @@ See the [Comp Lanes demo](https://opendaw-test.pages.dev/comp-lanes-demo.html) f
 
 #### Voice Fade Behavior
 
-The SDK's `TapeDeviceProcessor` creates a separate voice per region with a built-in 20ms crossfade on creation and eviction. The fade-out starts from the current amplitude level, so transitions between consecutive regions are smooth.
+The engine's Tape device creates a separate voice per region with a built-in 20ms crossfade on creation and eviction. The fade-out starts from the current amplitude level, so transitions between consecutive regions are smooth.
 
 #### Automation Events at Same Position
 

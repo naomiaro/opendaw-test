@@ -242,7 +242,9 @@ const App: React.FC = () => {
         const peak = peakOf(buffer.getChannelData(0));
         return `${buffer.length} frames, peak |sample| = ${peak.toFixed(4)}`;
       } finally {
-        projectCopy.terminate();
+        // Guarded so a throwing cleanup can't replace the reproduced SDK error
+        // in the step's report (this step exists to report that error accurately).
+        try { projectCopy.terminate(); } catch (e) { console.error("projectCopy.terminate() failed: " + String(e)); }
       }
     },
     [project, numSamples]

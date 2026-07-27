@@ -43,9 +43,10 @@
   cannot re-enable). Disabled-state wrappers for sibling controls with different conditions must
   be siblings, and keyboard activation (Tab + Enter fires onValueChange) needs an explicit
   state guard in the handler.
-- `transientPlayMode` AND `playbackRate` are read live per render block
-  (`TimeStretchSequencer.ts:39-40` @ core 0.0.152) — neither resets engine.position;
-  both are safe live controls during playback.
+- `transientPlayMode` AND `playbackRate` are read live per render block (the engine's
+  time-stretch sequencer — Rust `TimeStretchSequencer`, upstream
+  `crates/engine/src/time_stretch.rs`; originally audited at core 0.0.152) — neither
+  resets engine.position; both are safe live controls during playback.
 - Post-swap `setPosition` (after a full mode-swap transaction) is a convenience
   reposition for the stopped state only — gate it on `!isPlaying`. Mode swaps do not
   reset engine.position; calling setPosition mid-playback causes the jump, not the swap.

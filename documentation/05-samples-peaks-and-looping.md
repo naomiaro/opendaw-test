@@ -547,7 +547,7 @@ To read from a different point in the audio file, use `waveformOffset`:
 | `loopOffset` | PPQN | Controls which loop cycle maps to which timeline position |
 | `waveformOffset` | seconds | Shifts the audio buffer read position |
 
-The TapeDeviceProcessor reads audio with:
+The engine's Tape device reads audio with:
 ```
 sampleIndex = (elapsedSeconds + waveformOffset) * sampleRate
 ```
@@ -601,7 +601,7 @@ The formula for converting a timeline position to a local position within the lo
 globalToLocal(region, ppqn) = mod(ppqn - region.position + region.loopOffset, region.loopDuration)
 ```
 
-This is used by automation (`ValueRegionBoxAdapter.valueAt()`) and MIDI (`NoteSequencer`) to find the correct event within a looped region.
+This is used by automation (`ValueRegionBoxAdapter.valueAt()`) and MIDI (the engine's `NoteSequencer`) to find the correct event within a looped region.
 
 ## Basic Setup
 
@@ -833,6 +833,6 @@ project.editing.modify(() => {
 
 - Demo: `src/clip-looping-demo.tsx`
 - SDK loop math: `@opendaw/lib-dsp` → `events.ts` → `LoopableRegion.locateLoops()`
-- SDK playback: `@opendaw/studio-core` → `TapeDeviceProcessor.ts`
+- SDK playback: the engine's Tape device (`@opendaw/studio-core-wasm`)
 - SDK adapter: `@opendaw/studio-adapters` → `AudioRegionBoxAdapter.ts`
 - Region schema: `@opendaw/studio-boxes` → `AudioRegionBox.ts`

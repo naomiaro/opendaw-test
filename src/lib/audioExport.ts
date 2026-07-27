@@ -8,10 +8,13 @@
  *
  * Renders via `OfflineEngineRenderer.start` — the WASM offline worker, the only
  * engine (the deprecated `AudioOfflineRenderer` was removed upstream along with
- * the TypeScript engine). `start` renders [0, lastRegionAction()]. It connects
- * the source's `liveStreamReceiver` (held by the live engine) and does NOT copy
- * internally, so we render from a `project.copy()` — same pattern as
- * `src/lib/rangeExport.ts`, which also covers range-bounded renders.
+ * the TypeScript engine). `start` renders [0, lastRegionAction()] — but the worker
+ * loop actually ENDS on silence detection (or maxDurationSeconds), not at the end
+ * position, so the WAV's tail length is decided by the silence detector (e.g. a
+ * reverb tail rings past the last region). It connects the source's
+ * `liveStreamReceiver` (held by the live engine) and does NOT copy internally, so
+ * we render from a `project.copy()` — same pattern as `src/lib/rangeExport.ts`,
+ * which also covers range-bounded (exact-frame-count) renders.
  */
 
 import { Project, OfflineEngineRenderer } from "@opendaw/studio-core";
@@ -19,6 +22,15 @@ import { WavFile } from "@opendaw/lib-dsp";
 import type { AudioData } from "@opendaw/lib-dsp";
 import { DefaultObservableValue, Errors, Option } from "@opendaw/lib-std";
 import type { ExportConfiguration } from "@opendaw/studio-adapters";
+import { withDeadline } from "./deadline";
+
+// The worker loop has no internal ceiling (queryLoadingComplete polls forever) — this
+// deadline only exists so a wedged worker fails loudly instead of hanging the export.
+// Sized like rangeExport's: generous enough that a legitimate full-song render on a
+// slow machine never false-trips it. NOTE: a deadline trip rejects our await but the
+// worker keeps rendering — `start()` exposes no terminate handle; only the abort
+// signal reaches it.
+const RENDER_TIMEOUT_MS = 300_000;
 
 export interface ExportOptions {
   /**
@@ -83,16 +95,21 @@ async function renderProject(
   // holds it ("Already connected"), so always render from a copy.
   const projectCopy = project.copy();
   try {
-    return await OfflineEngineRenderer.start(
-      projectCopy,
-      optConfig,
-      progress,
-      abortSignal,
-      sampleRate
+    return await withDeadline(
+      OfflineEngineRenderer.start(
+        projectCopy,
+        optConfig,
+        progress,
+        abortSignal,
+        sampleRate
+      ),
+      RENDER_TIMEOUT_MS,
+      "Offline render: full project"
     );
   } finally {
-    progressSub.terminate();
-    projectCopy.terminate();
+    // Cleanup must not mask an in-flight error or skip terminate().
+    try { progressSub.terminate(); } catch (e) { console.error("progressSub.terminate() failed: " + String(e)); }
+    try { projectCopy.terminate(); } catch (e) { console.error("projectCopy.terminate() failed: " + String(e)); }
   }
 }
 
@@ -151,8 +168,10 @@ export async function exportFullMix(
 
     onStatus?.("Export complete!");
   } catch (error) {
-    // Check if this was an abort
-    if (Errors.isAbort(error)) {
+    // Only treat an AbortError as cancellation when OUR signal fired — Errors.isAbort
+    // matches any DOMException named "AbortError", including ones raised by internal
+    // worker fetches; those are genuine failures, not the user clicking Cancel.
+    if (Errors.isAbort(error) && abortSignal?.aborted) {
       onStatus?.("Export cancelled");
       return;
     }
@@ -262,8 +281,8 @@ export async function exportStems(
 
     onStatus?.(`Successfully exported ${totalStems} stems!`);
   } catch (error) {
-    // Check if this was an abort
-    if (Errors.isAbort(error)) {
+    // Only treat an AbortError as cancellation when OUR signal fired (see exportFullMix).
+    if (Errors.isAbort(error) && abortSignal?.aborted) {
       onStatus?.("Export cancelled");
       return;
     }

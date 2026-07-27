@@ -304,7 +304,8 @@ have `waveformOffset > 0`, so the 20 ms voice fade-in applies). During this wind
 outgoing and incoming take audio overlap briefly. The fade-out starts from the current
 amplitude level, making these transitions smooth and click-free.
 
-**Playback audio read formula** (TapeDeviceProcessor.ts):
+**Playback audio read formula** (engine audio-region playback — Rust `render_region`
+in `crates/engine/src/audio_region_player.rs`):
 `sampleIndex = ((elapsedSeconds + waveformOffset) * sampleRate) | 0`
 where `elapsedSeconds = tempoMap.intervalToSeconds(cycle.rawStart, cycle.resultStart)`
 

@@ -11,7 +11,7 @@ When something feels slow, the question is *which thread is the bottleneck*: the
 A 30-second video of a working DAW UI typically spends about:
 
 - **~50% on the main thread** rendering React/canvas, dispatching observable callbacks, handling input.
-- **~30% on the audio thread** in the `EngineProcessor`'s render loop.
+- **~30% on the audio thread** in the engine's render loop.
 - **~15% on workers** decoding samples, generating peaks, doing OPFS reads.
 - **~5% on disk and network** I/O.
 

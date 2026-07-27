@@ -4,416 +4,533 @@
 >
 > **Prereqs:** read [`00-system-architecture`](../00-system-architecture.md) for the thread model and [`03-animation-frame`](../03-animation-frame.md) for how the main thread observes state. This chapter assumes you know what an `AudioWorkletProcessor` is.
 
-The engine processor is the real-time audio brain of openDAW. It lives in `packages/studio/core-processors/` and runs in the AudioWorklet thread, ticking once every 128 samples and producing a stereo output buffer. Everything else — clip sequencing, MIDI dispatch, effects, automation — is structured to feed that one render loop.
+The engine is a Rust program compiled to WebAssembly. Everything that makes sound — transport, clip sequencing, note scheduling, audio-region playback, the metronome, the mixer — is Rust. The AudioWorkletProcessor around it is a thin host that owns the browser-side plumbing and contains no DSP.
 
-## Registration
+So there are two halves you will move between constantly:
 
-Three processors are registered with the Web Audio API when the worklet module loads (`packages/studio/core-processors/src/register.ts`):
+| Half | Where | What it owns |
+|---|---|---|
+| **Host** | `packages/studio/core-wasm/src/processor.ts` | the worklet, message channels, `SharedArrayBuffer`s, resource fetching, meters and analysers |
+| **Engine** | `crates/engine/src/lib.rs` | one `Engine` struct behind a C ABI; `render()` fills a 128-frame stereo quantum |
 
-```typescript
-registerProcessor("meter-processor", MeterProcessor)
-registerProcessor("engine-processor", EngineProcessor)
-registerProcessor("recording-processor", RecordingProcessor)
-```
-
-`engine-processor` is the one this chapter is about. The other two are siblings: `meter-processor` writes peak meters to a `SharedArrayBuffer` for the UI, and `recording-processor` captures input audio.
-
-The main thread instantiates the worklet via `EngineWorklet` (an `AudioWorkletNode`) which passes `processorOptions` containing the serialized project, three `SharedArrayBuffer`s (sync stream, control flags, HR clock), and an optional stem-export configuration.
-
-## The Process Loop
-
-The audio thread invokes `process()` once per render quantum (128 frames). Each invocation walks a fixed sequence — wiring phase, topological-sort cache, block rendering, state publication:
+Devices (instruments and effects) are a third piece: each is its own position-independent wasm *side module* under `crates/stock-devices/`, loaded at runtime and called through the engine's shared function table.
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant AW as AudioWorklet
-    participant EP as EngineProcessor
-    participant N as ProcessPhase Notifier
-    participant BR as BlockRenderer
-    participant P as Processors (sorted)
-    participant SAB as SyncStream SAB
+    participant H as Host processor (TS)
+    participant E as Engine (wasm)
+    participant G as Processor graph
+    participant SAB as EngineState SAB
 
-    AW->>EP: process(inputs, outputs)
-    EP->>N: notify(Before)
-    Note over EP: topological sort if dirty
-    EP->>BR: process(callback)
-    loop per Block in quantum
-        BR->>P: processor.process(info)
-    end
-    EP->>N: notify(After)
-    EP->>SAB: stateSender.tryWrite()
-    EP-->>AW: true
+    AW->>H: process(inputs, outputs)
+    H->>E: render()
+    E->>E: transport.render_quantum() → blocks
+    E->>G: context.process(ProcessInfo{blocks})
+    G-->>E: output bus filled
+    E-->>H: output_ptr() / engine_state_ptr()
+    H->>SAB: stateSender.tryWrite()
+    H-->>AW: true
 ```
 
-The implementation is a thin wrapper around `render()`:
+## Registration
+
+Two worklet modules are added to every `AudioContext`, and they register three processors between them.
+
+The engine-independent pair lives in `packages/studio/core-processors/src/register.ts`:
 
 ```typescript
-// packages/studio/core-processors/src/EngineProcessor.ts:350
-process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
-    if (!this.#valid) {return false}                               // dead processor
-    if (Atomics.load(this.#controlFlags, 0) === 1) {return true}   // sleeping
-    try {
-        return this.render(inputs, outputs)
-    } catch (reason: any) {
-        this.#valid = false
-        this.#engineToClient.error(reason)
-        this.terminate()
+registerProcessor("meter-processor", MeterProcessor)
+registerProcessor("recording-processor", RecordingProcessor)
+```
+
+`meter-processor` writes per-channel peak and RMS values into a `SyncStream` over a `SharedArrayBuffer` for the UI; `recording-processor` captures input audio. Neither depends on the engine, which is why they live in their own module.
+
+The engine registers itself from `packages/studio/core-wasm/src/processor.ts` under the name `WASM_ENGINE_PROCESSOR_NAME` — the string `"engine-wasm-processor"`, defined in `packages/studio/core-wasm/src/protocol.ts`.
+
+The dependency runs one way between those two modules. The engine's worklet imports two engine-agnostic helpers out of the meter/recording package — `HRClock` for DSP-load timing and `PeakBroadcaster` for the master peak meter:
+
+```typescript
+// packages/studio/core-wasm/src/processor.ts:30
+import {HRClock} from "../../core-processors/src/HRClock"
+import {PeakBroadcaster} from "../../core-processors/src/PeakBroadcaster"
+```
+
+`HRClock` exists because an AudioWorklet has no `performance.now()` and cannot block: a Worker publishes timestamps through a `SharedArrayBuffer`, and the clock only accepts a measurement when the start and end responses carry consecutive counters, so a torn pair is dropped rather than reported as a spike.
+
+The main thread never hardcodes that name. `EngineWorklet` (`packages/studio/core/src/EngineWorklet.ts`) asks `EngineVariant.current()` for it:
+
+```typescript
+// packages/studio/core/src/EngineWorklet.ts:110
+const variant: EngineWorkletVariant = EngineVariant.current()
+
+super(context, variant.processorName, {
+    numberOfInputs: 1,
+    numberOfOutputs: 2,
+    outputChannelCount: [numberOfChannels, 8],
+    processorOptions: {
+        syncStreamBuffer: reader.buffer,
+        controlFlagsBuffer: controlFlagsSAB,
+        hrClockBuffer: HRClockWorker.get().sab,
+        project: project.toArrayBuffer(),
+        exportConfiguration,
+        options,
+        variant: variant.attachment
+    } satisfies EngineProcessorAttachment
+})
+```
+
+`EngineVariant` (`packages/studio/core/src/EngineVariant.ts`) exists because `studio-core` cannot import `studio-core-wasm` — that dependency runs the other way. `WasmEngine.install()` registers the provider; `EngineVariant.current()` resolves it at construction time. There is no built-in engine to fall back to, so a missing provider is a boot error, not a silent downgrade.
+
+`variant.attachment` carries the compiled wasm:
+
+```typescript
+// packages/studio/core-wasm/src/engine-modules.ts:56
+export type EngineModules = {
+    engineModule: WebAssembly.Module
+    deviceModules: ReadonlyArray<WebAssembly.Module> // PIC side modules, in load order
+    deviceBoxTypes: ReadonlyArray<string>            // parallel: the device-box type each plugin realizes
+    composites: ReadonlyArray<CompositeSpec>
+    effectComposites: ReadonlyArray<EffectCompositeSpec>
+}
+```
+
+plus a `WebAssembly.Memory` created fresh per boot. `WasmEngine.ensureReady(context)` (`packages/studio/core-wasm/src/WasmEngine.ts`) does the two one-time steps: `context.audioWorklet.addModule(processorUrl)` and `loadEngineModules(wasmUrl)`, which fetches and compiles `${wasmUrl}/wasm/engine.wasm` plus each `/wasm/plugins/device_*.wasm`.
+
+Two consequences worth internalizing:
+
+- **The memory is `shared: true`.** The main thread can see the wasm heap and write decoded sample data straight into it. That requires cross-origin isolation (COOP + COEP); without those headers the engine cannot boot at all. `createEngineMemory()` requests the wasm32 ceiling (65536 pages) and falls back through smaller maxima, because a shared memory reserves its whole maximum as virtual address space up front and low-memory devices reject that.
+- **The project does not arrive through `processorOptions`.** The `project` field is part of the attachment type, but the wasm host ignores it. The box graph arrives as a stream of serialized transactions over the `WASM_SYNC_CHANNEL`, described under [state publication](#state-publication-to-the-main-thread).
+
+## The Process Loop
+
+The audio thread invokes `process()` once per render quantum (128 frames). The host half is deliberately small:
+
+```typescript
+// packages/studio/core-wasm/src/processor.ts:288
+process(inputs: Array<Array<Float32Array>>, outputs: Array<Array<Float32Array>>): boolean {
+    if (!this.#valid) {return false} // will not revive
+    if (Atomics.load(this.#controlFlags, 0) === 1) {
+        this.#stateSender.tryWrite() // keep the UI in sync (stopped transport) while asleep, no DSP
+        return true
+    }
+    const {status, error} = tryCatch(() => this.#render(inputs, outputs))
+    if (status === "failure") {
+        this.#fail(error)
         return false
     }
+    return true
 }
 ```
 
 Three behaviours to notice:
 
-1. **Invalidity is permanent.** Returning `false` from `process()` tells the Web Audio API to release the processor — the node never wakes up again. The engine sets `#valid = false` only on unrecoverable error.
-2. **Sleep is cooperative.** When the main thread sets the control-flag word to `1`, the processor returns `true` without rendering. This is how `Engine.sleep()` is implemented without tearing down the AudioContext.
-3. **Errors are caught.** Any exception out of `render()` invalidates the engine, reports back to the main thread, and terminates. There is no retry.
+1. **Invalidity is permanent.** Returning `false` tells the Web Audio API to release the processor — the node never wakes up again. `#valid` is only ever cleared on unrecoverable error or explicit `terminate`.
+2. **Sleep is cooperative.** When the main thread sets the control-flag word to `1`, the processor skips all DSP but still publishes state, so a sleeping engine doesn't leave the UI showing a stale playhead.
+3. **Errors are caught and translated.** `#fail` runs `describeEngineTrap(engine, memory, error)` (`packages/studio/core-wasm/src/boot.ts`), which pulls the Rust panic message out of the engine's panic buffer and attaches it to the raw `RuntimeError` before reporting through `engineToClient.error`. Devices trap rather than hang: each device's `#[panic_handler]` delegates to `abi::panic_to_host`, which deposits the formatted panic and then traps — never `loop {}`, which would be a silent audio-thread hang.
 
-### `render()` — what happens each tick
+### The host tick
 
-`render()` (`EngineProcessor.ts:364`) is the actual work. Stripped of metrics and exports, the flow is:
+`#render()` (`processor.ts:331`) does, in order:
 
-```typescript
-this.#notifier.notify(ProcessPhase.Before)              // wiring phase
+1. If DSP-load measurement is on, read the previous quantum's validated elapsed time from `HRClock`.
+2. Stage live input channels into the engine's monitor-input buffer, if any unit is in effects-monitoring mode.
+3. **`engine.render()`** — the entire audio computation, one call.
+4. Copy the engine's monitor outputs onto the worklet's second output (the monitoring return).
+5. Copy the engine's planar stereo output into the worklet's first output. The wasm buffer is re-read every quantum: the allocator may have grown linear memory, which detaches previously obtained views.
+6. Feed the peak broadcaster and any active analysers (spectrum, waveform, stereo, goniometer, loudness) — each gated on whether the UI is actually subscribed.
+7. `#syncBroadcasts()`, `broadcaster.flush()`, `stateSender.tryWrite()`, then drain the engine's queued clip-transition, marker-state and MIDI-output records.
 
-if (this.#processQueue.isEmpty()) {
-    this.#audioGraphSorting.update()
-    this.#processQueue = Option.wrap(
-        this.#audioGraphSorting.sorted().concat()
-    )
+### The engine tick
+
+`Engine::render(&mut self, output: &mut [f32], state: &mut [u8])` (`crates/engine/src/lib.rs:1304`) is where the real work is. Stripped to its spine:
+
+```rust
+// clear the output, then apply the latest timeline values the box subscriptions recorded
+self.transport.set_bpm(self.controls.bpm.get());
+let loop_gate = (self.controls.loop_enabled.get() && !self.is_counting_in
+    && (!self.is_recording || self.allow_takes)) || self.pause_on_loop_disabled;
+self.transport.set_loop_enabled(loop_gate);
+...
+self.tempo_map.borrow_mut().update(self.controls.bpm.get(), tempo_curve);
+
+// count-in flip: reaching the recording start turns counting-in into recording
+if self.is_counting_in && self.transport.position() >= self.recording_start { ... }
+
+blocks.clear();
+if transport.is_playing() {
+    transport.render_quantum(active_tempo, marker_slice, markers_enabled, |block| {
+        metronome.process(block, signature_slice, left, right);
+        blocks.push(Block { ... });
+    });
+} else {
+    blocks.push(/* one free-running, non-playing block */);
 }
-const processors = this.#processQueue.unwrap()
 
-this.#renderer.process(processInfo => {                 // BlockRenderer
-    processors.forEach(p => p.process(processInfo))
-    if (metronomeEnabled) this.#metronome.process(processInfo)
-})
-
-this.#notifier.notify(ProcessPhase.After)               // cleanup phase
-this.#clipSequencing.changes().ifSome(c => this.#engineToClient.notifyClipSequenceChanges(c))
-this.#stateSender.tryWrite()                            // publish to UI
-this.#liveStreamBroadcaster.flush()
+context.process(&ProcessInfo {blocks: blocks.as_slice()});
+// mix the output bus into `output`
+write_engine_state(transport, state, is_recording, is_counting_in, recording_start, denominator);
 ```
 
-In words:
+Note what the box graph is *not* doing here: nothing reads boxes during render. Box-graph subscriptions record scalar edits into a shared `Controls` struct of `Cell`s (bpm, signature, loop area, tempo-automation enable), and `render` applies them at the top of the quantum. That is a hard constraint of the design — a subscription running during render would alias the `&mut self` the render already holds.
 
-1. **Phase: Before.** Anything that needs to rewire (a device chain reacting to a new effect insertion) listens here. The phase is broadcast via `subscribeProcessPhase()` on `EngineContext`.
-2. **Topological sort, cached.** The audio graph is a `Graph<Processor>` with vertices for every processor and edges for every connection. `registerProcessor()` and `registerEdge()` invalidate `#processQueue`, forcing a re-sort on the next tick. Steady-state, the same array is reused.
-3. **BlockRenderer drives time.** `#renderer.process(callback)` subdivides the 128-frame quantum by timeline events and calls `callback` once per sub-block (see [BlockRenderer](#blockrenderer) below). Each processor's `process()` runs once per sub-block, in topo order.
-4. **Phase: After.** Used by processors that need to publish state at the end of a tick.
-5. **State publication.** `#stateSender.tryWrite()` writes the new playhead position, meter levels, and other observable state into the sync `SharedArrayBuffer`. `#liveStreamBroadcaster.flush()` sends spectrum/waveform broadcasts.
+The metronome renders into its own staging buffer rather than straight into `output`, so the same signal can be mixed into the mixdown *and* copied out as its own stem.
+
+## Blocks
+
+A render quantum is not necessarily one span of musical time. Tempo automation, loop wraps and marker jumps all split it. The unit of that split is a `Block`, and it is part of the device ABI — host and devices read the identical struct out of shared memory:
+
+```rust
+// crates/abi/src/lib.rs:136
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct Block {
+    pub index: u32,
+    pub flags: BlockFlags,
+    pub p0: f64,
+    pub p1: f64,
+    pub s0: u32,
+    pub s1: u32,
+    pub bpm: f32
+}
+```
+
+`[p0, p1)` is the pulse (PPQN) range, `[s0, s1)` the sample range inside the quantum, `bpm` the tempo for this slice. `BlockFlags` (`crates/abi/src/lib.rs:82`) is a `u32` bitfield with four bits:
+
+| Flag | Meaning |
+|---|---|
+| `TRANSPORTING` | the transport is advancing song position |
+| `PLAYING` | playback is active |
+| `DISCONTINUOUS` | first block after a position jump (loop wrap, marker jump, seek) |
+| `BPM_CHANGED` | tempo changed at this block boundary |
+
+The first two are *state* flags that persist across a block's sub-chunks. The last two are *event* flags, cleared after the first chunk via `clear_event_flags()` / `EVENT_MASK`. `DISCONTINUOUS` is the cue for any stateful device or sequencer to release what it holds — it is why scrubbing and looping don't leave stuck notes.
+
+### How the quantum is split
+
+`Transport::render_quantum` (`crates/transport/src/transport.rs:192`) is the loop. Per iteration it computes the candidate `p1` assuming the whole remaining quantum runs at the current bpm, then looks for the earliest of three actions inside `[p0, p1)`, in a strict precedence:
+
+1. **Marker** — evaluated first. Crossing a section boundary either repeats the section (jump back to its start, `discontinuous = true`) or falls through to the next one once `plays` is exhausted. `plays == 0` means forever.
+2. **Loop end** — takes over only when strictly earlier than the marker action. Wraps to `loop_from`, or, when `pauseOnLoopDisabled` is set, pauses the transport *at* the loop end and returns; the engine then renders the quantum's remainder as a non-playing tail so voices release and tails ring out instead of hard-cutting.
+3. **Tempo automation** — evaluated last, strictly-earlier only. Tempo is re-evaluated on a fixed grid: `TEMPO_CHANGE_GRID = 80.0` pulses, which is `PPQN.fromSignature(1, 48)`, roughly a 10 ms window.
+
+With no markers, no loop and a fixed tempo this emits exactly one block spanning the whole quantum — the common case, and the cheapest.
+
+`Block` values are pushed into a `Vec` pre-sized to `MAX_BLOCKS_PER_QUANTUM` (16), so the render path never reallocates.
+
+### When the transport is stopped
+
+A paused quantum still renders. `Transport::render_paused` returns a block whose `p0`/`p1` come from a *free-running* pulse counter that keeps advancing while the song position stays frozen, with `TRANSPORTING` and `PLAYING` both clear. The graph therefore gets one more real block: held notes flush into note-offs, voices go to release, and effect tails ring out — while the sequencer, seeing no `PLAYING` flag, reads no new notes. The metronome stays silent because it only ticks on a moving block.
+
+## The processor graph
+
+Inside a quantum, audio flows through a directed graph of nodes. The node contract is two methods:
+
+```rust
+// crates/engine-env/src/processor.rs
+pub trait Processor: EventReceiver {
+    fn reset(&mut self);
+    fn process(&mut self, info: &ProcessInfo);
+}
+```
+
+`ProcessInfo` is just the quantum's blocks:
+
+```rust
+// crates/engine-env/src/process_info.rs
+pub struct ProcessInfo<'a> {
+    pub blocks: &'a [Block]
+}
+```
+
+`EngineContext` (`crates/engine-env/src/engine_context.rs`) owns the graph and drives it. It is the merge of what used to be two separate concerns — the registration surface processors call, and the render loop over the sorted graph — because Rust ownership wants the graph and the processors in one place:
+
+```rust
+// crates/engine-env/src/engine_context.rs:196
+pub fn process(&mut self, info: &ProcessInfo) {
+    self.emit(ProcessPhase::Before);
+    if self.needs_sort {
+        self.sort.update(&self.graph);
+        self.queue.clear();
+        for &id in self.sort.sorted() {
+            if let Some(processor) = self.processors.get(&id) {
+                self.queue.push((id, processor.clone()));
+            }
+        }
+        self.needs_sort = false;
+    }
+    for (_, processor) in &self.queue {
+        processor.borrow_mut().process(info);
+    }
+    self.emit(ProcessPhase::After);
+}
+```
 
 ### Why a topological sort?
 
-Audio flows through a directed graph: instrument → effect → effect → channel strip → master. Each processor reads its inputs and writes its output, so dependencies must be processed before their consumers. `registerEdge(source, target)` declares "source must run before target". The cached `#processQueue` is just that order linearized.
+Audio flows instrument → effect → effect → channel strip → master. Each node reads its input buffer and writes its output, so dependencies must run before their consumers. `register_edge(source, target)` declares "source before target"; `register_processor` and `register_edge` set `needs_sort`, and the next `process` re-sorts and rebuilds the cached queue. Steady-state, the loop is a linear walk over `Vec<(NodeId, SharedProcessor)>` with no map lookups and no allocation.
 
-When you add a new processor in a contribution, you almost never sort manually — you register vertices and edges and let `audioGraphSorting.update()` do the rest. Topology changes invalidate the cache (`this.#processQueue = Option.None`) and the sort recomputes on the next tick.
+Nodes are addressed by `NodeId` (a `u64`) rather than by object identity, and processors are shared single-threaded handles (`Rc<RefCell<dyn Processor>>`) so a parent chain can keep a typed handle for wiring while the context keeps a clone for driving.
 
-## BlockRenderer
+`would_cycle(source, target)` rejects a feedback loop in output/send routing up front, rather than letting the topological sort silently drop a back-edge.
 
-`packages/studio/core-processors/src/BlockRenderer.ts` advances the timeline. Its job: turn one render quantum (128 samples) into a sequence of `Block`s — contiguous spans of audio inside which tempo, marker, loop, and callback state is constant.
+`ProcessPhase` still exists, with the same two values and the same rule:
 
-A `Block` carries the four numbers a processor needs to do its work:
+```rust
+// crates/engine-env/src/process_phase.rs
+pub enum ProcessPhase {
+    Before,
+    After
+}
+```
 
-| Field | Meaning |
-|---|---|
-| `p0`, `p1` | start and end position in PPQN (musical time) |
-| `s0`, `s1` | start and end index in samples (within the 128-frame quantum) |
-| `bpm` | tempo for this sub-block |
-| `flags` | bitfield: transporting, playing, discontinuous, bpmChanged |
+Wiring is (re)built in `Before`, never mid-render; cleanup happens in `After`.
 
-The block production logic (`BlockRenderer.process()`, line 77 onward) is a loop that consumes the 128 frames by finding the *next* timeline event and slicing the block at that point. Events, in evaluation order:
+### Profiling
 
-1. **Markers** — labelled timeline points; advancing past one may set a new active marker and trigger repeat counts.
-2. **Loop boundary** — when playback crosses `loopArea.to`, jump back to `loopArea.from` (or pause, if `pauseOnLoopDisabled` is set).
-3. **Callbacks** — anything registered via `setCallback(position, fn)` runs at exactly the given PPQN.
-4. **Tempo automation** — sampled on a `TempoChangeGrid` quantization; emits a `tempo` action whenever the BPM at the next grid boundary differs from the current.
+`EngineContext` carries an optional per-node profiler, off by default. `profile_enable(now)` installs a micros clock and zeroes the accumulators (pre-grown at registration, so timing adds two clock calls per node and no allocation); `profile_report()` returns `(label, micros)` per node plus the profiled quantum count. Labels are recorded at reconcile time regardless — a device node is labelled with its box type plus a short uuid — so enabling the profiler later still names things meaningfully.
 
-For each iteration:
+## Clip sequencing
 
-- Compute the candidate `p1` assuming the full remaining quantum runs at the current BPM (`p1 = p0 + PPQN.samplesToPulses(remainingSamples, bpm, sampleRate)`).
-- Check the four event categories above; the earliest event in `[p0, p1)` "wins".
-- If no event: emit a Block spanning the full remainder and finish.
-- If an event: emit a Block up to the event position, advance `s0`/`p0` past it, apply the event (loop = jump, marker = update state, tempo = change BPM), and loop.
+`ClipSequencer` (`crates/engine-env/src/clip_sequencer.rs`) answers one question per track: *which clip should be playing right now, and when does it stop?* The state per track is two slots — a `playing` clip and a `waiting` one (a scheduled clip, or a scheduled stop).
 
-The output is a `ProcessInfo` containing an array of these `Block`s, which is what every processor's `process()` receives.
+External callers move clips through `schedule_play(track, clip)` and `schedule_stop(track)`. Neither takes effect immediately: `iterate(track, p0, p1, info, ...)` splits the block's pulse range into `Section`s at the quantized handover point — the playing clip's own duration, or `BAR` (3840 pulses) when nothing is playing on that track yet — and swaps `waiting` into `playing` there. A non-looping clip stops itself at its own duration boundary. That quantized handover is what gives clip-launching its musical feel.
 
-### When `transporting` is false
+The sequencer stores only clip **UUIDs**. Duration and loop flag are resolved live through a `ClipInfo` trait implemented against the reactive box binding, so editing a clip while it is scheduled or playing stays correct.
 
-If transport is stopped, no PPQN advance happens. `BlockRenderer.process()` does not iterate; it still calls the procedure once with a zero-duration block so that processors get a chance to run their non-musical work (input monitoring, manual parameter changes). The `#freeRunningPosition` field tracks where playback *would* be if transport were on — relevant for click-track behaviour and for some input-monitoring features.
+Every start / stop / obsolete transition queues the clip uuid. `take_changes` drains that queue, and the host forwards it as `notifyClipSequenceChanges({started, stopped, obsolete})` — see `#drainClipChanges` in `processor.ts`, which reads 20-byte `[uuid 16][kind u32]` records out of shared memory.
 
-## ClipSequencing
+Launching a clip also *starts* the transport if it was stopped (`Engine::schedule_clip_play`, `crates/engine/src/lib.rs:1565`), so hitting a clip from a stopped studio plays immediately.
 
-`packages/studio/core-processors/src/ClipSequencingAudioContext.ts` answers a single question per track: *which clip should be playing right now, and when does it stop?*
+## Note scheduling {#notesequencer}
 
-The state per track is two slots:
+`NoteSequencer` (`crates/engine-env/src/note_sequencer.rs`) is the per-audio-unit note source. Per block it reads the unit's note regions through a `NoteContentSource`, resolves region looping with `locate_loops`, and emits globally-positioned note events. It has three inputs:
 
-- **`playing`** — the clip currently active on this track (or `None` if silence).
-- **`waiting`** — a clip scheduled to take over at the next quantization boundary (or `None` to schedule a stop).
+1. **Raw notes** — live MIDI and on-screen keys.
+2. **Audition notes** — fixed-duration one-shot previews.
+3. **Clip and region notes** — sequenced from note regions, gated by the shared `ClipSequencer`.
 
-External callers move clips into these slots via `schedulePlay(clipAdapter)` and `scheduleStop(trackAdapter)`. They don't take effect immediately — the transition happens at the next boundary aligned to the previous clip's duration. This is what gives you "launch quantization" in clip-launching DAWs.
+Raw and audition notes are emitted **before** the transport gate, so they sound while the transport is stopped too — which works precisely because the paused quantum still advances a free-running pulse range.
 
-The audio thread reads the result through `iterate(trackKey, p0, p1)`, a generator that yields `Section`s — `{from, to, clip | None}` spans covering `[p0, p1)`. Most code just iterates and does the right thing for each section.
+Notes that outlast a block are held in a retainer (one per unit, so ids never collide across the unit's regions) and emit their completion when their span ends — or immediately on a transport stop or a `DISCONTINUOUS` block.
 
-Internally `iterate()`:
+The event vocabulary is `Event::NoteStart`, `Event::NoteComplete` and `Event::Update` (a parameter-automation tick). Where several land on the same position, the engine imposes a total order (`compare_lifecycle`, `crates/engine/src/lib.rs:605`):
 
-- If a clip is `waiting` and the playing clip has a duration, the transition position is `quantizeFloor(p1, duration)` — i.e. round down to the previous bar of the playing clip.
-- If `playing` is set and looping is on, the section runs to the end of the request range with no stop.
-- If `playing` is set and looping is off, the section ends at `clip.position + duration`, and the slot transitions to `None` automatically.
+```rust
+fn lifecycle_rank(event: &Event) -> u8 {
+    match event {
+        Event::NoteComplete {..} => 0, // note-off first
+        Event::Update {..} => 1,       // then the param-update (clock tick)
+        Event::NoteStart {..} => 2     // then note-on, so it sees the updated parameter
+    }
+}
+```
 
-The `changes()` accessor returns and clears three lists (`started`, `stopped`, `obsolete`) so the main thread can sync clip-launch UI state. Called once per render quantum from `EngineProcessor.render()`.
+A note ending at a position releases before the automated parameter updates, and a note starting there sees the new value. The tiebreak on note id makes the order total, which lets the engine use a non-allocating `sort_unstable_by` inside render.
+
+Devices do not *receive* events; they **pull** them. A device calls the engine's `host_pull_events(from, to, flags, out_ptr, max)` export (`crates/engine/src/lib.rs:634`) for a pulse range and gets back sample-offset `EventRecord`s. The pull resolves the current link in a chain: a leaf sequencer converts directly; a MIDI-effect link descends into that effect's `process_events` with its own upstream swapped in, so a chain of MIDI effects (a groove device warping positions, an arpeggiator generating them) composes without the engine knowing anything about the specific devices.
+
+Resolved note-ons and note-offs also set and clear bits in the unit's 128-bit note-activity slot, which is how the UI's held-note indicators light up.
+
+## Audio region playback
+
+`crates/engine/src/audio_region_player.rs` is the audio-track counterpart of the note sequencer, and it *is* the source for a tape-style unit. Per quantum it clears its output, then for each enabled audio track range-queries the track's sorted region collection, resolves each region's sample, and renders it:
+
+- A read head that free-runs at native speed (`read += sourceRate / engineRate` per output sample) and persists across blocks, locked to the output clock. Deriving the read position per block from the tempo map instead would make the read rate jitter, which is audible as ring modulation.
+- The head is reseated from the tempo map **only** at a discontinuity — region entry, loop wrap, transport jump — where the absolute file offset is exact even at a mid-file start.
+- Linear interpolation when source and engine sample rates differ.
+- Region gain plus a fade envelope, and a short boundary declick at un-faded region edges so adjacent regions don't click. The declick and an authored fade never multiply into a doubled fade.
+
+Clip launching runs through the same passes: each track's pulse range is split into sections by the shared `ClipSequencer`, a clip section plays the clip's virtual region (position 0, looping at the clip duration), and the timeline's own regions play only in the clip-free sections.
+
+Time-stretched playback (the granular play mode) lives in `crates/engine/src/time_stretch.rs`; see [Ch. 08 — Time and Pitch](./08-time-and-pitch.md).
+
+## Metronome and count-in
+
+`Metronome` (`crates/engine/src/metronome.rs`) schedules beats per block over the signature track's accumulated events, with beat indices resetting at each signature change. It honours three preferences pushed from the host — `beatSubDivision`, `gain` (dB) and `monophonic` (a new click fades every sounding one out over 5 ms) — and has two click sounds: synthesized defaults at 880 Hz for the downbeat and 440 Hz otherwise, replaceable by uploaded PCM via `load_click_sound`, resampled with linear interpolation from the sound's own rate.
+
+Count-in is transport arithmetic, not a separate mode. `Engine::prepare_recording_state(count_in, count_in_bars)` (`crates/engine/src/lib.rs:1473`), when the transport is stopped and a count-in is wanted:
+
+1. Resolves the time signature *in effect at the recording start* from the signature track.
+2. Computes the offset as `PPQN.fromSignature(count_in_bars * nominator, denominator)`.
+3. Records `recording_start`, sets `is_counting_in`, forces the metronome on, seeks to `recording_start - offset`, and plays.
+
+The flip from counting-in to recording happens at the top of `render` when the playhead reaches `recording_start` — quantum-granular, so within about 2.7 ms — and restores the metronome preference at the same moment. `write_engine_state` reports `countInBeatsRemaining` as `(recording_start - position) / PPQN.fromSignature(1, denominator)`.
 
 ## AudioUnit
 
-`packages/studio/core-processors/src/AudioUnit.ts` is the per-channel processor — one `AudioUnit` per `AudioUnitBox`. It bundles three things:
+`crates/engine/src/audio_unit/` mirrors the box hierarchy `AudioUnitBox → TrackBox → RegionBox → NoteEventCollection` and holds everything beneath the root's audio units. It is split by concern: `mod.rs` (shared types and the unit lifecycle), `wiring.rs` (chain and cluster builders), `routing.rs` (sends, outputs, sidechains), `tracks/` (the track/region/clip cascade) and `params.rs` (device parameter automation).
 
-- **`#midiDeviceChain`** — MIDI scheduling (`NoteSequencer`, MIDI effects, MIDI send/route).
-- **`#audioDeviceChain`** — audio effects, sends, channel strip.
-- **`#input`** — the source: an `InstrumentDeviceProcessor` (synth, sampler, etc.) for instrument units, or an `AudioBusProcessor` for bus inputs.
+The per-unit type is `AudioUnitBinding`. It holds three ordered device collections read from the box — the `input` instrument, the MIDI-effect chain and the audio-effect chain, each sorted by the device's `index` field — plus the shared region set the sequencer reads and the wired processor cluster.
 
-The chain wires up as:
+`build_cluster` (`crates/engine/src/audio_unit/wiring.rs:1029`) assembles a unit in two directions at once:
 
-```
-input → [audio effects] → [aux sends] → channel strip → output
-```
+- **Upstream, as a pull chain.** Starting from the note source, each enabled MIDI effect wraps the chain in a `PullLink::MidiFx`, so the instrument's `host_pull_events` walks back through the whole MIDI chain.
+- **Downstream, as graph edges.** The instrument node registers first; each enabled audio effect takes the previous node's output buffer as its input, publishes its own, and gets `register_edge(previous, this)`.
 
-The exact wiring depends on three flags on `AudioUnitOptions`:
+The unit's signal path is therefore `instrument → fx0 → fx1 → … → channel strip → output bus`. The channel strip (`crates/engine-env/src/channel_strip.rs`) applies volume (dB), panning and mute, reading them from a shared `StripParams` the engine keeps in sync with the box fields — the strip itself has no box knowledge. Per-sample gains ride `LinearRamp`s so parameter moves don't click.
 
-- `useInstrumentOutput` — bypass effects and channel strip entirely; instrument output is the AudioUnit output. Used for freeze and stem export.
-- `skipChannelStrip` — skip the channel strip when frozen audio is present.
-- `includeAudioEffects` / `includeSends` — set false for certain bus configurations.
+A **disabled** effect is not built and not wired: it is skipped entirely, rather than processed and bypassed.
 
-`audioOutput()` returns the right buffer depending on which mode the unit is in:
+Solo is a mixer-wide concern and cannot ride a single strip's per-block automation, because it silences *other* strips. It resolves once per quantum, at the quantum's start position and only while transporting, into per-strip forced-silent flags (`resolve_automated_solo`, called from `render`). A paused quantum therefore holds the last resolved solo state.
 
-```typescript
-// AudioUnit.ts:53
-audioOutput(): AudioBuffer {
-    if (this.#useInstrumentOutput) {
-        return this.#input.unwrap().audioOutput
-    }
-    if (this.#skipChannelStrip && this.#preChannelStripSource.nonEmpty()) {
-        return this.#preChannelStripSource.unwrap()
-    }
-    return this.#audioDeviceChain.channelStrip.audioOutput
-}
-```
+Every effect's output is also published into an `AudioOutputBufferRegistry` keyed by its box address, which is how a sidechain pointer resolves to both the buffer to read and the node to depend on.
 
-### DeviceChain rewiring
+### Rewiring
 
-When you add or remove an effect, the underlying `AudioDeviceChain` (`packages/studio/core-processors/src/AudioDeviceChain.ts`) must rewire the graph. Rewiring is **not** allowed mid-tick — it's done in the `Before` phase.
+Rewiring never happens mid-render. A box edit that touches a unit records the unit's uuid into `dirty_units`; the reconcile pass that runs after a transaction rewires **only** those units, not all of them. The unit's cluster is rebuilt only when a chain reports dirty, and `remove_processor` clears the cached render queue immediately so a removed processor's `Rc` clone cannot keep it alive past the reconcile — a stale clone would leave the broadcast table serving a pointer into freed heap.
 
-`invalidateWiring()` marks the chain dirty; the next `ProcessPhase.Before` notification triggers `#wire()`, which terminates the old edges (the `Terminable` returned by `registerEdge()`) and registers new ones in the right order. Topological sort then picks up the new layout on the next tick.
+Because a Rust closure cannot hold `&mut` on the context it lives in, phase observers here are self-contained hooks over their own shared state, and context-mutating rewiring is an explicit engine step rather than something a `Before` observer performs.
 
-This phase-based rewiring is why you never see "torn" audio when toggling effects: the AudioWorklet thread is either fully in the old graph or fully in the new one, never half-and-half.
+## Devices
 
-## NoteSequencer
+Every device is a separate wasm module. The engine is built with `--import-table`; each device is a position-independent side module installed into the one shared `__indirect_function_table`, and the engine calls the device's `process` by table slot via `call_indirect` — wasm to wasm, zero copy.
 
-`packages/studio/core-processors/src/NoteSequencer.ts` produces MIDI note start/stop events for each block. It has three sources:
+`packages/studio/core-wasm/src/device-linker.ts` owns the whole linking ritual: the `dylink.0` parse, allocating the device's data region and a 256 KiB stack from the engine's allocator, building the import environment, applying relocations, installing into the table, and registering the device.
 
-1. **Raw keyboard notes** — `pushRawNoteOn(pitch, velocity)` / `pushRawNoteOff(pitch)`. Held in a `Set<RawNote>` with a gate flag; emitted on the first frame they appear.
-2. **Audition notes** — `auditionNote(pitch, duration, velocity)`. One-shots used by piano-roll preview and inspector clicks.
-3. **Clip and region notes** — sequenced from `NoteRegionBox` events when transport is running, gated by `ClipSequencing`.
-
-The main entry is a generator:
+That file also holds the **single authoritative host-import list** — the exports a device may import from `env`:
 
 ```typescript
-* processNotes(from: ppqn, to: ppqn, flags: int): IterableIterator<NoteLifecycleEvent>
+const HOST_IMPORTS: ReadonlyArray<string> = [
+    "host_pull_events", "host_pulse_to_offset",
+    "host_bind_parameter", "host_bind_broadcast", "host_broadcast_ptr", "host_broadcast_active",
+    "host_update_parameters", "host_first_update_position", "host_next_update_position",
+    "host_resolve_sample", "host_observe_sample",
+    "host_resolve_soundfont", "host_observe_soundfont",
+    "host_observe_field", "host_observe_target_string",
+    "host_bind_sidechain", "host_resolve_input", "host_self_uuid", "host_panic",
+    "host_base_frequency"
+]
 ```
 
-It iterates active sections from `context.clipSequencing.iterate()`, then per section walks the `NoteEventCollection` for active clips, applying:
+Extend it there when the engine gains a host export, never in an individual loader — a loader that misses one fails loudly at link time with the import's name instead of a cryptic `LinkError`.
 
-- Clip-loop offset arithmetic (clip start vs. loop offset vs. loop duration).
-- Note `chance` (probabilistic skip).
-- `playCount` (a single stored note can repeat N times across its duration with a curve transform applied to velocity/pitch).
-- Truncation at region end.
+A device declares what it is through its `kind` export (`crates/abi/src/lib.rs:70`):
 
-The output is a sequence of `NoteLifecycleEvent`s — either a *start* (with pitch, velocity, duration) or a *completion* (release). Downstream `InstrumentDeviceProcessor`s consume these and drive their voicing engines.
+| Kind | Meaning |
+|---|---|
+| `DEVICE_KIND_INSTRUMENT` | voices notes into audio; exports `process` |
+| `DEVICE_KIND_AUDIO_EFFECT` | transforms an input buffer; exports `process` |
+| `DEVICE_KIND_MIDI_EFFECT` | transforms an upstream event stream; exports `process_events`, no audio |
 
-Two retainers track which notes are currently held:
+and the rest of its surface is optional exports the linker looks for: `init`, `parameter_changed`, `field_changed`, `sample_changed`, `soundfont_changed`, `reset`, `terminate`, plus `state_size(sampleRate)` so the engine can allocate the device's zeroed state block.
 
-- `#retainer: EventSpanRetainer<Id<NoteEvent>>` for clip/region notes.
-- `#auditionRetainer: EventSpanRetainer<Id<NoteEvent>>` for one-shot auditions.
+### Parameter automation
 
-When transport stops or the playhead jumps (the `discontinuous` flag), all retained notes are released immediately. This is why scrubbing doesn't leave stuck notes.
+There is no per-parameter wrapper object. A device calls `host_bind_parameter(path)` once to bind a box field, getting an id back, and then per block asks `host_update_parameters(position, out_ptr, max)` for the changes. The engine writes `ParamChange` records — `{id, kind, value}` — where `kind` says how to read the single `f32`: `PARAM_KIND_UNIT` is the uniform 0..1 automation value the device maps with its own mapping, while `INT` / `FLOAT` / `BOOL` carry a box field's already-real value. The device SDK decodes `(kind, value)` into a typed `ParamValue`, so device code never inspects a raw tag.
 
-## AutomatableParameter and AbstractProcessor
+Sample-accurate automation comes from fragmenting the block on a fixed grid. `UPDATE_CLOCK_RATE` is 10 pulses (`crates/dsp/src/ppqn.rs:15`) — `PPQN.fromSignature(1, 384)` — and everything that fragments on it switches parameters together. A device seeds its fragment loop with `host_first_update_position(at)`, which returns the first grid point at or after `at`, then walks with `host_next_update_position`. Both return `f64::INFINITY` when the current device has **no** automated parameter or the quantum is not transporting, which collapses the fragment loop back to one span — you pay for automation only where automation exists.
 
-`AutomatableParameter<T>` (`packages/studio/core-processors/src/AutomatableParameter.ts`) wraps a single field whose value can be driven by an automation curve. The contract is one method:
+The channel strip and aux sends fragment on the same grid for their own automated gains.
 
-```typescript
-updateAutomation(position: ppqn): boolean
-```
+### How to add a device
 
-It samples the underlying `AutomatableParameterFieldAdapter` at `position`. If the resulting value differs from the cached one, it stores the new value and returns `true`. That `true` tells the owning processor "your parameter changed — re-derive any cached coefficients".
+1. **Add the box** under `packages/studio/forge-boxes/src/schema/` — the persistent data shape, which generates into `@opendaw/studio-boxes`.
+2. **Add the adapter** under `packages/studio/adapters/src/devices/`, exposing typed parameter accessors.
+3. **Write the device crate** under `crates/stock-devices/device-<name>/`, exporting `kind`, `state_size`, `process` (or `process_events`), and whichever of `init` / `parameter_changed` / `reset` it needs. Bind automatable fields with `bind_parameter` in `init`; do the DSP in `process`.
+4. **Register the mapping** in the `DEVICES` table in `packages/studio/core-wasm/src/engine-modules.ts`:
+   ```typescript
+   {url: "/wasm/plugins/device_revamp.wasm", boxType: "RevampDeviceBox"}
+   ```
+   This is the entire device glue. When the box graph presents a `RevampDeviceBox`, the engine looks up the type here (`Engine::device_for_type`) to find the plugin that realizes it. Load order is irrelevant — chains are read from the box, ordered by each device's `index`.
+5. **Optional: register a UI** — a separate concern, in the studio app.
 
-`AbstractProcessor` (`packages/studio/core-processors/src/AbstractProcessor.ts`) is the base class every processor extends. It owns the parameter machinery:
-
-```typescript
-// AbstractProcessor.ts:37
-bindParameter<T extends PrimitiveValues>(
-    adapter: AutomatableParameterFieldAdapter<T>
-): AutomatableParameter<T>
-```
-
-The interesting thing this does is subscribe to the field's pointer hub (`Pointers.Automation`). When an automation lane is connected, the processor automatically:
-
-1. Hooks into the engine-wide `UpdateClock` so it gets per-grid automation update events.
-2. Pushes the parameter onto `#automatedParameters`.
-3. Calls `parameter.onStartAutomation()` (which enables live streaming for the UI to draw the automation curve playhead).
-
-When the last automation lane is removed, the inverse happens — the processor unsubscribes from the update clock.
-
-`updateParameters(position, relativeBlockTimeInSeconds)` is then called by the processor's own `process()`. It iterates `#automatedParameters`, samples each, and notifies `parameterChanged()` for any that changed.
-
-### AudioProcessor — event-aware block processing
-
-Most concrete processors extend `AudioProcessor` (`packages/studio/core-processors/src/AudioProcessor.ts`), which implements `process(processInfo)` and exposes a simpler contract:
-
-```typescript
-abstract processAudio(block: Block): void
-introduceBlock(_block: Block): void {}      // optional: called once per Block
-handleEvent(_event: Event): void { panic(...) } // optional: receive events
-finishProcess(): void {}                    // optional: per-quantum cleanup
-```
-
-`AudioProcessor.process()` subdivides each `Block` further by *events* in the processor's event buffer:
-
-1. For each block, copy block parameters into a mutable chunk.
-2. For each event in the block's event buffer (ordered by position):
-   - Compute the sample index where the event happens (using `PPQN.pulsesToSamples`).
-   - Call `processAudio(chunk)` for the audio leading up to it.
-   - If it's an `UpdateEvent`, call `updateParameters(event.position, relativeBlockTime)`.
-   - Otherwise, call `handleEvent(event)`.
-   - Advance the chunk start to the event position.
-3. Call `processAudio(chunk)` for any remaining audio after the last event.
-
-This is the layer that makes sample-accurate parameter automation possible: you don't get one cutoff value per 128-frame block, you get the cutoff applied right at the sample where automation said it should change.
-
-## EngineContext and TimeInfo
-
-`EngineContext` (`packages/studio/core-processors/src/EngineContext.ts`) is the **dependency injection bag** for processors. Every processor that needs to call into the engine takes a `context: EngineContext` in its constructor. The interface:
-
-```typescript
-interface EngineContext extends BoxAdaptersContext, Terminable {
-    get broadcaster(): LiveStreamBroadcaster
-    get updateClock(): UpdateClock
-    get timeInfo(): TimeInfo
-    get mixer(): Mixer
-    get engineToClient(): EngineToClient
-    get audioOutputBufferRegistry(): AudioOutputBufferRegistry
-    get preferences(): PreferencesClient<EngineSettings>
-    get baseFrequency(): number
-
-    getAudioUnit(uuid: UUID.Bytes): AudioUnit
-    registerProcessor(processor: Processor): Terminable
-    registerEdge(source: Processor, target: Processor): Terminable
-    subscribeProcessPhase(observer: Observer<ProcessPhase>): Subscription
-    awaitResource(promise: Promise<unknown>): void
-    ignoresRegion(uuid: UUID.Bytes): boolean
-    sendMIDIData(midiDeviceId, data, relativeTimeInMs): void
-    getMonitoringChannel(channelIndex: int): Option<Float32Array>
-}
-```
-
-`EngineProcessor` implements this interface itself, so processors get a back-channel to the engine without circular imports.
-
-`TimeInfo` (`packages/studio/core-processors/src/TimeInfo.ts`) is deliberately tiny — 36 lines:
-
-```typescript
-class TimeInfo {
-    #position: number = 0.0
-    #transporting: boolean = false
-    #leap: boolean = false
-    isRecording: boolean = false
-    isCountingIn: boolean = false
-    metronomeEnabled: boolean = false
-
-    set position(value: ppqn) { this.#position = value; this.#leap = true }
-    advanceTo(position: ppqn) { this.#position = position }  // no leap flag
-    getLeapStateAndReset(): boolean { ... }
-    pause(): void { ... }
-}
-```
-
-Notice the difference between `position = x` (sets `#leap = true`) and `advanceTo(x)` (doesn't). The first is for jumps — clicking the timeline, jumping to a marker — and tells consumers via `getLeapStateAndReset()` that they need to re-evaluate state (release stuck notes, re-pick active clips). `advanceTo()` is what `BlockRenderer` uses during normal forward playback: a smooth advance with no leap flag.
+A device box that hosts a *collection* of child instruments (Playfield) or parallel effect entries is registered as **data** rather than code: `CompositeSpec` / `EffectCompositeSpec` in the same file declare the field keys, and no engine code is composite-specific.
 
 ## State publication to the main thread
 
-The engine pushes data back to the main thread two ways:
+Four channels run between the worklet and the main thread, and it is worth knowing which is which.
 
-1. **`SharedArrayBuffer` sync state** — `#stateSender.tryWrite()` packs the new `EngineState` (position, transport flags, BPM, etc.) into a `SyncStream`. The main thread reads this via `SyncStream.reader<EngineState>` in `EngineWorklet`, and polls it from `AnimationFrame.add(...)` in `EngineFacade`. This is the hot path — every render quantum, sub-millisecond.
+**1. Box graph, main thread → engine.** `WasmEngine.connectSync` (`packages/studio/core-wasm/src/WasmEngine.ts:129`) puts a `SyncSource` over a synchronous loopback, serializes each transaction at emission time, and ships the bytes over `WASM_SYNC_CHANNEL` to `engine.apply_updates(len)`. Opening the source with a full dump is how the engine receives the project in the first place. Serializing at emission rather than after a `MessageChannel` hop matters: a later transaction could delete boxes before a deferred batch resolved its codecs.
 
-2. **`MessagePort` notifications** — `#engineToClient` (typed `EngineToClient`) is the RPC channel for events that aren't read-every-frame: clip-launch transitions, errors, log messages, MIDI device events. `notifyClipSequenceChanges(changes)` is the most frequent caller (once per quantum, but only when something changed).
+A rejected transaction permanently desyncs the mirror, so it escalates as an engine error and the studio reboots the worklet from a fresh dump. As a second line of defence, the engine keeps a rolling 32-byte graph checksum, and roughly once a second the main thread sends the source graph's checksum for comparison. The checksum is computed only on that throttled path — it is a full-graph walk, and hashing per transaction dropped audio during marquee selection.
 
-Both channels are set up in `EngineWorklet` (main thread side) and the AudioWorkletNode `port` on the processor side. The sync `SharedArrayBuffer` requires the page to be cross-origin isolated (COOP + COEP headers); without them, `SharedArrayBuffer` constructor throws and the engine can't initialize. See [Ch. 12 — Browser Compatibility](../12-browser-compatibility.md).
+**2. Transport state, engine → main thread.** Every quantum the engine writes a fixed-layout, big-endian state record, and the host copies it into a `SyncStream` over a `SharedArrayBuffer`:
+
+```typescript
+// packages/studio/core-wasm/src/processor.ts:113
+this.#stateSender = SyncStream.writer(EngineStateSchema(), syncStreamBuffer, state => {
+    const view = new DataView(this.#memory.buffer, engine.engine_state_ptr(), engine.engine_state_len())
+    state.position = view.getFloat32(0)
+    state.bpm = view.getFloat32(4)
+    state.playbackTimestamp = this.#playbackTimestamp
+    state.countInBeatsRemaining = view.getFloat32(12)
+    state.isPlaying = view.getUint8(16) === 1
+    state.isCountingIn = view.getUint8(17) === 1
+    state.isRecording = view.getUint8(18) === 1
+    if (this.#measureLoad) {
+        state.perfBuffer.set(this.#perfBuffer)
+        state.perfIndex = this.#perfWriteIndex
+    }
+})
+```
+
+The main thread reads it from `AnimationFrame` and drives the observables the UI subscribes to. This is the hot path — every quantum, sub-millisecond.
+
+**3. Live telemetry, engine → main thread.** Meters, automation values and per-unit note bits live in *slots* — boxed `f32` slices inside the engine (`crates/engine-env/src/telemetry.rs`) whose addresses never move. The engine registers each slot in a broadcast table under a box address (`crates/engine/src/broadcast.rs`). The host mirrors that table onto the studio's `LiveStreamBroadcaster` as `Float32Array` / `Int32Array` **views over wasm memory**, so the render path never copies telemetry.
+
+The table carries a generation counter, bumped whenever entries register or are swept. `#syncBroadcasts()` re-reads the table only when the generation moved. Validity is self-healing: each entry holds a `Weak` reference to its slot, and a sweep at the end of every reconcile drops entries whose owner died — a dead entry's pointer would otherwise read freed heap as meter floats.
+
+**4. RPC, both ways.** `EngineToClient` over `MessagePort` handles everything that isn't read every frame: `log`, `error`, `deviceMessage`, `fetchAudio`, `fetchSoundfont`, `fetchNamWasm`, `notifyClipSequenceChanges`, `switchMarkerState`, `ready`. In the other direction, `EngineCommands` carries `play`, `stop`, `setPosition`, `prepareRecordingState`, `stopRecording`, `queryLoadingComplete`, `panic`, `loadClickSound`, `setFrozenAudio`, `updateMonitoringMap`, `noteSignal`, `ignoreNoteRegion`, `scheduleClipPlay`, `scheduleClipStop`, `setupMIDI` and `terminate`.
+
+The engine's own preferences (metronome enable/gain/subdivision/monophonic, `allowTakes`, `pauseOnLoopDisabled`, `truncateNotesAtRegionEnd`, `dspLoadMeasurement`) arrive on a fifth channel, `engine-preferences`, and are pushed straight into the corresponding wasm setters.
+
+The sync `SharedArrayBuffer` requires cross-origin isolation (COOP + COEP); without those headers `SharedArrayBuffer` throws and the engine cannot initialize. See [Ch. 12 — Browser Compatibility](../12-browser-compatibility.md), and [Ch. 03 — Cross-thread protocols](./03-cross-thread-protocols.md) for the channel machinery itself.
+
+Bulk PCM never travels as a message. Freeze audio is written by the **main thread** straight into the shared engine memory between an `allocate` RPC and an `attach` RPC — copying megabytes inside the worklet's message handler would stall the audio thread.
 
 ## Offline rendering
 
-The same `EngineProcessor` runs in two contexts:
-
-- **Real-time** — instantiated in an `AudioWorkletGlobalScope` via `registerProcessor("engine-processor", EngineProcessor)`. Driven by the audio thread.
-- **Offline** — instantiated in a Web Worker by `packages/studio/core-workers/src/offline-engine-main.ts`. Driven by an explicit `step(numSamples)` API.
-
-The offline worker exposes:
+The same wasm engine renders offline, but not through an AudioWorklet. `packages/studio/core-wasm/src/offline-worker.ts` is a plain Web Worker that instantiates the engine itself and speaks `OfflineEngineProtocol`:
 
 ```typescript
-initialize(enginePort, config)       // build the processor with the project
-step(numSamples)                     // render N samples synchronously
-render(config)                       // run step() in a loop until silence
+initialize(enginePort, config)   // decode the project snapshot, stream it in as one full-dump transaction
+step(numSamples)                 // render N samples synchronously, return Float32Array[] channels
+render(config)                   // run the step loop
 stop()
 ```
 
-This is what mix and stem export use. Because it's the same processor, anything that works in real-time works in export — the difference is purely how time is driven (audio thread vs. worker `step()` calls).
+`OfflineEngineRenderer` (studio-core) drives it, and `WasmEngine.install` registers the worker URL. The worker self-loads the wasm artifacts from the same `wasmUrl`, so nothing needs preloading on the main thread.
 
-The one wrinkle: offline rendering can't rely on `SharedArrayBuffer` polling because the consumer is a different thread without access to those buffers. The export pipeline reads completed frames from the worker's `step()` return value directly.
+The step loop is deliberately fully synchronous: every resource is resolved during `initialize`, and yielding per second would cost more than the render itself (a clamped `setTimeout(0)` measured as 260 ms of a 297 ms empty render).
+
+Two things settle at `initialize` rather than arriving as commands, because the render loop never yields and a racing command would only be dequeued after the render had finished:
+
+- **Metronome configuration.** Off unless the export configuration asks for it, so a mixdown can never pick up a click by accident. `includeInMixdown` mixes it into the stereo mixdown; `stem` appends it as an additional stem after the unit stems.
+- **Custom click PCM**, if any.
+
+**Stem export** is per-unit wiring options handed to the engine before `bind`, in export order. Each `StemEntry` (`crates/engine/src/lib.rs:86`) carries `include_audio_effects`, `include_sends`, `use_instrument_output` and `skip_channel_strip`; the engine renders each entry's unit with its options and copies that unit's tap into planar stem staging (stem *i* → channels 2*i* / 2*i*+1). A stems render never reads the main output.
+
+See [Ch. 10 — Export](../10-export.md) for the consumer-facing API.
 
 ## Worker pool
 
-The non-audio Web Workers live in `packages/studio/core-workers/src/workers-main.ts`. They expose three protocols:
+The non-audio Web Workers live in `packages/studio/core-workers/src/workers-main.ts` and are unrelated to the engine:
 
-- **`OpfsWorker`** — OPFS (Origin Private File System) reads and writes for the persistent cache.
-- **`SamplePeakWorker`** — generates peak data (min/max per chunk) from audio frames for waveform rendering.
+- **`OpfsWorker`** — OPFS reads and writes for the persistent cache.
+- **`SamplePeakWorker`** — peak data (min/max per chunk) for waveform rendering.
 - **`TransientProtocol`** — onset detection for analysis.
 
-These are plain Web Workers, not AudioWorklets. They're free to allocate, block, and use the standard async APIs — the only constraint is that they don't run on the audio thread.
+These are plain Web Workers. They may allocate, block and use async APIs freely; the only rule is that they don't run on the audio thread.
 
-The audio thread asks for samples via `fetchAudio(uuid)` over `MessagePort` RPC; the main thread routes that to the sample manager, which loads or decodes via these workers, and ships the decoded `AudioData` back to the worklet.
-
-## How to add a new processor
-
-A worked example: suppose you want to add a side-chain compressor as a new audio effect device.
-
-1. **Add the box** — define `SidechainCompressorDeviceBox` under `packages/studio/boxes/`. This is the persistent data shape: fields for threshold, ratio, attack, release, side-chain source pointer.
-2. **Add the adapter** — under `packages/studio/adapters/src/devices/effects/`, write a `SidechainCompressorDeviceBoxAdapter` that wraps the box and exposes typed parameter accessors via `AutomatableParameterFieldAdapter`.
-3. **Add the processor** — under `packages/studio/core-processors/src/devices/effects/`, write a `SidechainCompressorProcessor` that:
-    - Extends `AudioProcessor`.
-    - Takes `(context: EngineContext, adapter: SidechainCompressorDeviceBoxAdapter)`.
-    - Calls `bindParameter()` for each automatable field in the constructor.
-    - Implements `processAudio(block: Block): void` doing the DSP.
-    - Implements `parameterChanged(parameter, relativeBlockTime)` to recompute filter coefficients when parameters change mid-block.
-    - Optionally `introduceBlock()` / `finishProcess()` for per-block setup/teardown.
-    - Registers itself with the engine via `context.registerProcessor(this)` and declares edges with the upstream/downstream processors via `context.registerEdge(prev, this)` + `context.registerEdge(this, next)`.
-4. **Register in `DeviceProcessorFactory`** — the engine maps adapter types to processor constructors here. Without this entry, your processor will never be instantiated.
-5. **Optional: register a UI** — separate concern, lives in the studio app, not the engine.
-
-The processor will then be picked up by `AudioDeviceChain.#wire()` like any other effect: dropped into the topological sort, processed in dependency order, ready to participate in automation and sub-block events.
+Sample data reaches the engine by the audio thread asking for it over RPC (`fetchAudio(uuid)`), the main thread routing that to the sample manager, and the decoded frames being written into the engine's shared memory.
 
 ## Performance constraints (read these before you write DSP)
 
-The audio thread runs at 44.1 kHz with a 128-sample render quantum, giving you about **2.9 ms** of wall-clock time per `process()` call before you drop audio. Some practical rules from the codebase:
+The audio thread has roughly **2.9 ms** of wall-clock time per 128-frame quantum at 44.1 kHz before it drops audio. Practical rules the codebase already follows:
 
-- **Don't allocate.** No `new`, no array literals, no closures created in `processAudio()`. The codebase uses object pools and pre-allocated typed arrays heavily. `MutableBlock` is a single reused object on `AudioProcessor.#chunk`.
-- **Don't await.** AudioWorklets can't await Promises in their process loop. Async work happens via `awaitResource(promise)` on the context, which runs on the main thread.
-- **No console logging.** Even guarded with `if (DEBUG)`, `console.log` runs and serializes on the audio thread. Use the existing `engineToClient.log()` channel which dispatches via MessagePort.
-- **Pre-compute coefficients in `parameterChanged()`, not `processAudio()`.** If you have an IIR filter, derive the coefficients when a parameter changes; the audio loop should be a tight stream of multiplies and adds.
-- **Profile with `HRClock`.** When `preferences.settings.debug.dspLoadMeasurement` is on, the engine times each `render()` call into a circular buffer that the UI displays as DSP load. Look there before optimizing.
-
-These are the patterns the rest of the codebase already uses — match them when you add new processors and your code will fit in.
+- **Don't allocate on the render path.** `Vec`s that render touches are pre-reserved at registration or reconcile time (`blocks` to `MAX_BLOCKS_PER_QUANTUM`, the sort's scratch, the profiler's accumulator, the event scratch). Where sorting is needed inside render, the code uses `sort_unstable_by` with a *total* order, because the stable sort heap-allocates past about 25 elements.
+- **Don't touch the box graph.** Subscriptions record into `Cell`s that `render` reads; a subscription running during render would alias the `&mut self` render holds. Anything reactive is a reconcile-time step, not a render-time one.
+- **Don't await, don't log.** Resource loading goes through the `EngineToClient` RPC and is awaited on the main thread. There is no console in the engine — use `engineToClient.log()` from the host half, or the panic path for genuine faults.
+- **Precompute in `parameter_changed`, not in `process`.** Derive filter coefficients when a parameter actually changes; the audio loop should be a tight stream of multiplies and adds. The update-clock fragmentation is what makes this cheap: with no automated parameter the grid returns `INFINITY` and there is no fragmentation at all.
+- **Re-read `memory.buffer` after any call that can grow it.** The allocator grows linear memory on demand, which detaches every previously created typed-array view. The host re-reads the buffer each quantum for exactly this reason.
+- **Profile before optimizing.** Turn on `preferences.settings.debug.dspLoadMeasurement` for the `HRClock`-based DSP-load meter the UI shows, and use the engine's own `profile_enable` / `profile_report` for a per-node breakdown sorted by accumulated time.
 
 ## Further reading
 
-- **`packages/studio/core-processors/src/processing.ts`** — the `Block`, `BlockFlags`, `BlockFlag`, `ProcessInfo`, `ProcessPhase`, `Processor` definitions. Worth reading; it's the small file that defines the engine's data shapes.
-- **`packages/studio/core-processors/src/UpdateClock.ts`** — how the automation event clock generates `UpdateEvent`s and dispatches them to processors with bound parameters.
-- **`packages/studio/core-processors/src/EventBuffer.ts`** — the per-processor event input buffer used by `AudioProcessor.process()`.
-- **`packages/studio/core/src/Engine.ts`** and **`EngineFacade.ts`** — the main-thread side that hosts the worklet and exposes Observables to the UI.
+- **`crates/abi/src/lib.rs`** — the device ABI: `Block`, `BlockFlags`, `EventRecord`, `ParamChange`, `ParamValue`, the device kinds and the host imports. The small file that defines the engine's data shapes; read it first.
+- **`crates/engine-env/src/`** — the engine's shared standard library, one declaration per module: the `Processor` trait, `ProcessInfo`, `ProcessPhase`, the topological sort, event buffers, the channel strip, aux sends, the clip and note sequencers.
+- **`crates/transport/src/transport.rs`** — the block loop, marker sections, loop wrapping and the tempo grid.
+- **`packages/studio/core-wasm/src/boot.ts`** — engine instantiation, resource-request draining and trap description.
+- **`packages/studio/core/src/Engine.ts`** and **`EngineFacade.ts`** — the main-thread side that hosts the worklet and exposes observables to the UI.

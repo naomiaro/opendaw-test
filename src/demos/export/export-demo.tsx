@@ -694,8 +694,7 @@ const App: React.FC = () => {
 };
 const copy = project.copy();
 const renderer = await OfflineEngineRenderer.create(
-  copy, Option.wrap(config), sampleRate,
-  true,  // WASM offline worker — the only engine; it also renders the click
+  copy, Option.wrap(config), sampleRate,  // WASM offline worker — the only engine
 );
 renderer.setPosition(startPpqn);
 await renderer.play();           // transport + first queryLoadingComplete

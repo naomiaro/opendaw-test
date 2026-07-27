@@ -210,8 +210,8 @@ export async function exportStemsRange(
       includeSends: true,
       // false routes through the channel strip so effects, aux sends, and the
       // strip's volume/pan all reach the render. `useInstrumentOutput: true`
-      // wires the raw instrument output to the bus and returns early
-      // (core@0.0.152 AudioDeviceChain), bypassing all three.
+      // wires the raw instrument output straight to the bus in the engine's
+      // audio chain, bypassing all three.
       useInstrumentOutput: false,
       fileName: track.name,
     };

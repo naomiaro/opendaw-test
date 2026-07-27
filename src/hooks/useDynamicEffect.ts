@@ -14,6 +14,7 @@ import {
   AudioUnitBox
 } from "@opendaw/studio-boxes";
 import type { Terminable } from "@opendaw/lib-std";
+import { audioEffectsFieldOf } from "../lib/adapterUtils";
 import type { EffectParameter } from "../components/EffectPanel";
 import type { EffectType } from "../lib/types";
 import {
@@ -422,8 +423,10 @@ export const useDynamicEffect = (config: DynamicEffectConfig): DynamicEffectResu
     const label = `${trackName} ${type}`;
 
     let createdBox: EffectBox | null = null;
+    // Adapter layer: resolve the chain field outside the transaction.
+    const audioEffectsField = audioEffectsFieldOf(project, audioBox);
     project.editing.modify(() => {
-      const effectBox = project.api.insertEffect(audioBox.audioEffects, effectConfig.factory);
+      const effectBox = project.api.insertEffect(audioEffectsField, effectConfig.factory);
       effectBox.label.setValue(label);
       const defaults = effectConfig.initDefaults(effectBox);
       setParameters(defaults);

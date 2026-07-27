@@ -184,8 +184,12 @@ Use raw `sampleLoader.subscribe()` only when you need state change callbacks wit
 Beyond `.volume`, `.panning`, `.mute`, `.solo`, `.tracks`:
 - `.input` — audio input routing
 - `.output` — pointer to routing target (master, bus, etc.)
-- `.midiEffects` — `IndexedBoxAdapterCollection` of MIDI effect adapters
-- `.audioEffects` — `IndexedBoxAdapterCollection` of audio effect adapters
+- `.midiEffects` — `Option<IndexedBoxAdapterCollection>` of MIDI effect adapters
+- `.audioEffects` — `Option<IndexedBoxAdapterCollection>` of audio effect adapters
+  (the `DeviceHost` chain getters are `Option`-wrapped — `None` means "hosts no such
+  chain kind", e.g. an effect-composite branch has no midi chain; unwrap before use.
+  Also `.audioEffectsField`/`.midiEffectsField` return `Option<Field<…>>` — unwrap to
+  get the field `project.api.insertEffect()` takes)
 - `.auxSends` — `BoxAdapterCollection<AuxSendBoxAdapter>` (sends to buses)
 - `.isBus`, `.isInstrument`, `.isOutput` — type checks
 - `.label` — display name
@@ -247,6 +251,10 @@ utility from `src/lib/adapterUtils.ts`.
 `src/lib/adapterUtils.ts` provides `getAllRegions(project)` and `getAllAudioRegions(project)`
 for full project traversal. Use these instead of inline `rootBoxAdapter.audioUnits.adapters()
 .flatMap(u => u.tracks.values()).flatMap(t => t.regions.adapters.values())` chains.
+It also provides `audioEffectsFieldOf(project, audioUnitBox)` / `midiEffectsFieldOf(...)` /
+`audioUnitAdapterFor(...)` — the repo convention is to reach effect chains through the
+adapter layer (NOT raw `audioUnitBox.audioEffects` box fields) and pass the unwrapped
+field to `project.api.insertEffect()`. Resolve the field OUTSIDE `editing.modify()`.
 
 ### Master Bus Access (Adapter Layer)
 Use `project.rootBoxAdapter.audioUnits.adapters().find(u => u.isOutput)?.box` instead of

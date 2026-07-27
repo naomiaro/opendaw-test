@@ -529,10 +529,14 @@ const App: React.FC = () => {
                   Effect insertion:
                 </Text>
                 <Code size="2" style={CODE_BLOCK_STYLE}>
-                  {`// insertEffect returns the EffectBox union — cast to the device type
+                  {`// Chain field via the adapter layer (DeviceHost getters are Option-wrapped);
+// insertEffect returns the EffectBox union — cast to the device type
+const field = project.boxAdapters
+  .adapterFor(audioUnitBox, AudioUnitBoxAdapter)
+  .audioEffectsField.unwrap();
 project.editing.modify(() => {
   const effectBox = project.api.insertEffect(
-    audioUnitBox.audioEffects,
+    field,
     EffectFactories.AudioNamed.Compressor
   );
   effectBox.label.setValue("Drums Compressor");

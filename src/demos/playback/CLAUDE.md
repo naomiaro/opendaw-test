@@ -151,8 +151,9 @@ swap.
 ### engine.position vs Box Writes (audited at core 0.0.152 / SDK 0.0.154)
 - `AudioTimeStretchBox.playbackRate` writes do NOT reset `engine.position` — refuted
   empirically (live write during playback, position advanced monotonically) and by
-  source: the sequencer reads `playbackRate` per render block
-  (`TimeStretchSequencer.ts:39-40`), and no SDK write path mutates the playhead.
+  source: the time-stretch sequencer reads `playbackRate` per render block (Rust
+  `TimeStretchSequencer`, upstream `crates/engine/src/time_stretch.rs`), and no SDK
+  write path mutates the playhead.
   `transientPlayMode` likewise live-reads with no reset. Live cents/pitch controls do
   not need an `!isPlaying` gate for position safety.
 - Play-mode swaps (`region.timeBase` + `duration` + `loopOffset` + `loopDuration` +
@@ -273,11 +274,12 @@ silently bail through a re-entry guard. Reference pattern: the Play Mode and
 Reference Pitch cards in `time-pitch-demo.tsx`.
 
 ### Voice Crossfade on Region Boundaries
-`RegionEditing.cut()` creates a new `PitchVoice` per region. Voices fade in/out over
-20 ms (`VOICE_FADE_DURATION` in `Tape/constants.ts`); the fade-IN applies only when the
-voice starts at a non-zero read offset — a voice starting at sample 0 begins at full
-amplitude. The fade-out starts from the current amplitude level, so transitions between
-consecutive regions are smooth.
+`RegionEditing.cut()` gives each region its own playback voice in the engine. Voices
+declick over 20 ms (`VOICE_FADE_DURATION` in the Rust engine's
+`crates/engine/src/audio_region_player.rs` `fade_gain`); the declick fade-IN applies
+only when the voice starts at a non-zero read offset — a voice starting at sample 0
+begins at full amplitude. The fade-out starts from the current amplitude level, so
+transitions between consecutive regions are smooth.
 
 Multi-track volume automation crossfades (`comp-lanes-demo.tsx`) remain a valid alternative
 technique for complex comp workflows.
@@ -286,10 +288,11 @@ technique for complex comp workflows.
 Both upstream issues this repo filed are closed as of 0.0.159 ("Fixed in SDK 0.0.159.
 Make sure to run the wasm audio engine"), and both fixes are in effect here since this
 project runs the WASM engine exclusively:
-- **#312 (voice-fade × clip-fade product)** — fixed on BOTH engines. `PitchVoice.process`
-  combines its 20 ms declick fade with the region clip-fade by `Math.min` instead of by
-  product. Authored linear crossfades between distinct sources now sum to −0.05 dB of the
-  pure-Web-Audio target (was −1.21 dB). Regression page: `pure-webaudio-target-debug-demo.html`.
+- **#312 (voice-fade × clip-fade product)** — fixed: the engine combines its 20 ms
+  declick fade with the region clip-fade by min instead of by product (Rust: `fade_gain`
+  in `crates/engine/src/audio_region_player.rs` — authored fade OR declick, never
+  multiplied). Authored linear crossfades between distinct sources now sum to −0.05 dB of
+  the pure-Web-Audio target (was −1.21 dB). Regression page: `pure-webaudio-target-debug-demo.html`.
 - **#311 (touching-seam discontinuity)** — fixed on the WASM engine (all 4 cells scan
   at seam-Δ/pre-Δ = 1.00). Regression page: `shared-source-double-process-debug-demo.html`.
 Both repro pages always boot the WASM engine and route the offline scan through

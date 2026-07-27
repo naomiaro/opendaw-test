@@ -241,13 +241,13 @@ If your app needs this, file an issue upstream or work around it by listening to
 
 ## MIDI Clock to external gear
 
-The engine has a `MIDITransportClock` that, when active, sends standard MIDI Clock pulses at 24 PPQ (24 pulses per quarter note) to any registered MIDI output, plus Start / Stop / Continue messages on transport state changes. Same caveat as MIDI output: **the consumer-facing toggle isn't currently part of the documented SDK surface.** It works internally; the API to enable it from your app isn't exposed in the public API surface yet.
+The engine has a MIDI transport clock that, when active, sends standard MIDI Clock pulses at 24 PPQ (24 pulses per quarter note) to any registered MIDI output, plus Start / Stop / Song Position messages on transport state changes. Same caveat as MIDI output: **the consumer-facing toggle isn't currently part of the documented SDK surface.** It works internally; the API to enable it from your app isn't exposed in the public API surface yet.
 
 If you need to slave external gear to openDAW's transport today, the practical workaround is to derive timing on the consumer side: subscribe to `project.engine.isPlaying` and `project.engine.position`, compute clock pulses yourself, send them via a Web MIDI `MIDIOutput` you manage independently of the SDK.
 
 ## MIDI effects
 
-Five MIDI effects ship with the SDK, inserted into a track's MIDI device chain (before the instrument). Use `EffectFactories` from `@opendaw/studio-core` (the MIDI factories live in `EffectFactories.MidiNamed`) to add them in a transaction — `project.api.insertEffect(audioUnitBox.midiEffects, EffectFactories.Arpeggio)` — same pattern as audio effects, see [Ch. 11](./11-effects.md#adding-an-effect).
+Five MIDI effects ship with the SDK, inserted into a track's MIDI device chain (before the instrument). Use `EffectFactories` from `@opendaw/studio-core` (the MIDI factories live in `EffectFactories.MidiNamed`) to add them in a transaction — resolve the chain field via the adapter layer (`audioUnitAdapter.midiEffectsField.unwrap()`; the `DeviceHost` chain getters are `Option`-wrapped) and pass it to `project.api.insertEffect(field, EffectFactories.Arpeggio)` — same pattern as audio effects, see [Ch. 11](./11-effects.md#adding-an-effect).
 
 ### Arpeggio
 
