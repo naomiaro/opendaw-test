@@ -558,7 +558,7 @@ effectBox.enabled.catchupAndSubscribe(obs => {
                 <p>
                   All box-graph writes go through <code>project.editing.modify()</code>; state
                   observation uses <code>catchupAndSubscribe()</code>. The offline render uses{" "}
-                  <code>AudioOfflineRenderer.start()</code> &mdash; stems pass{" "}
+                  <code>OfflineEngineRenderer.start()</code> &mdash; stems pass{" "}
                   <code>useInstrumentOutput: false</code> so effects, sends, and the channel strip
                   stay in the render path.
                 </p>

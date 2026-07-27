@@ -42,8 +42,8 @@ const RENDER_TIMEOUT_MS = 300_000;
  * `{stems, metronome: {stem: {fileName}}}` appends a click stem AFTER the unit stems
  * (`countStems` counts the extra pair). `settings` overrides gain/beatSubDivision/
  * monophonic (schema defaults otherwise); enabled is implied by presence.
- * Every render runs the WASM offline worker (`variant: true`) — the only engine in
- * this repo; the worker is registered by initializeOpenDAW's installWasmEngine().
+ * Every render runs the WASM offline worker — the only engine (upstream removed the
+ * TS engine); the worker is registered by initializeOpenDAW's installWasmEngine().
  *
  * @param exportConfiguration - undefined = plain stereo mixdown; otherwise a full
  *   `ExportConfiguration` (stems and/or metronome). With stems, returned channels are
@@ -93,8 +93,7 @@ async function renderRange(
     const renderer = await OfflineEngineRenderer.create(
       projectCopy,
       optConfig,
-      sampleRate,
-      true
+      sampleRate
     );
     try {
       renderer.setPosition(startPpqn);

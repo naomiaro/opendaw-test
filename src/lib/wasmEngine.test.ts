@@ -8,7 +8,6 @@ vi.mock("@opendaw/studio-core-wasm", () => ({
   WasmEngine: {
     install: vi.fn(),
     ensureReady: vi.fn(async () => true),
-    setEnabled: vi.fn(),
     isReady: vi.fn(() => true),
   },
 }));
@@ -17,11 +16,9 @@ import { WasmEngine } from "@opendaw/studio-core-wasm";
 import { installWasmEngine } from "./wasmEngine";
 
 describe("installWasmEngine", () => {
-  it("installs the variant once but force-enables on every call", () => {
+  it("installs the engine once across repeated calls", () => {
     installWasmEngine();
     installWasmEngine();
     expect(vi.mocked(WasmEngine.install)).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(WasmEngine.setEnabled)).toHaveBeenCalledTimes(2);
-    expect(vi.mocked(WasmEngine.setEnabled)).toHaveBeenCalledWith(true);
   });
 });

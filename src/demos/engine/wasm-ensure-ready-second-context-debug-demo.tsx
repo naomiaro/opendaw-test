@@ -5,7 +5,6 @@ import { PPQN } from "@opendaw/lib-dsp";
 import {
   Project,
   AudioWorklets,
-  AudioOfflineRenderer,
   OfflineEngineRenderer,
 } from "@opendaw/studio-core";
 import { AudioFileBox, AudioRegionBox, ValueEventCollectionBox } from "@opendaw/studio-boxes";
@@ -42,10 +41,10 @@ import { InfoCircledIcon, PlayIcon } from "@radix-ui/react-icons";
 // a WASM EngineWorklet on any SECOND context therefore throws
 // `InvalidStateError: The node name 'engine-wasm-processor' is not defined in
 // AudioWorkletGlobalScope` — after ensureReady reported `true` for that very
-// context. The deprecated — but still exported — `AudioOfflineRenderer.start`
-// hits the same wall (its internal OfflineAudioContext is never registered).
-// `OfflineEngineRenderer` with `variant: true` (a dedicated Worker that
-// self-loads the wasm artifacts) is immune.
+// context. `OfflineEngineRenderer` (a dedicated Worker that self-loads the
+// wasm artifacts) is immune. A former step 3 reproduced the same wall through
+// the deprecated `AudioOfflineRenderer.start`; SDK 0.0.161 removed that API
+// together with the whole TypeScript engine, so the step is gone.
 //
 // Each step reports the last stage reached, the outcome (OK / HUNG / THREW),
 // elapsed wall time, and — for successful renders — frames + peak amplitude
@@ -120,10 +119,9 @@ const App: React.FC = () => {
         setStatus("Initializing OpenDAW...");
         // initializeOpenDAW boots the live WASM (Rust) engine centrally (or throws) —
         // its AudioContext is the FIRST context WasmEngine.ensureReady ever sees, so it
-        // consumes the one-and-only processor registration right here. Every step below
-        // that builds its own context (step 2's OfflineAudioContext, step 3's throwaway
-        // + AudioOfflineRenderer's internal context) is therefore always a SECOND
-        // context — the bug reproduces on the first click, not just later ones.
+        // consumes the one-and-only processor registration right here. Step 2's
+        // OfflineAudioContext is therefore always a SECOND context — the bug
+        // reproduces on the first click, not just later ones.
         const { project: newProject, audioContext: newAudioContext } = await initializeOpenDAW({
           localAudioBuffers: localAudioBuffersRef.current,
           bpm: BPM,
@@ -158,9 +156,6 @@ const App: React.FC = () => {
             box.loopDuration.setValue(fullDurationPPQN);
             box.label.setValue("2 s sine");
           });
-          // AudioOfflineRenderer.start renders [0, timelineBox.durationInPulses]
-          // — pin it to the region so the deprecated-path render stays small.
-          newProject.timelineBox.durationInPulses.setValue(regionPPQN);
         });
 
         setProject(newProject);
@@ -258,26 +253,6 @@ const App: React.FC = () => {
     [runStep, manualOfflineRender]
   );
 
-  const runStep3 = useCallback(
-    () =>
-      void runStep(3, async (stage) => {
-        if (!project) throw new Error("no project");
-        // Compile the wasm modules globally (throwaway context) WITHOUT
-        // registering them on the context AudioOfflineRenderer creates
-        // internally — exactly the state a consumer is in after booting the
-        // live WASM engine and then calling the deprecated export API.
-        const throwaway = new OfflineAudioContext(2, 128, SAMPLE_RATE);
-        const ok = await ensureWasmReady(throwaway);
-        stage(`ensureWasmReady(throwaway)=${ok}`);
-        stage("awaiting AudioOfflineRenderer.start");
-        const buffer = await AudioOfflineRenderer.start(project, Option.None, () => {});
-        stage("rendered");
-        const peak = peakOf(buffer.getChannelData(0));
-        return `${buffer.length} frames, peak |sample| = ${peak.toFixed(4)}`;
-      }),
-    [runStep, project]
-  );
-
   const runStep4 = useCallback(
     () =>
       void runStep(4, async (stage) => {
@@ -288,8 +263,7 @@ const App: React.FC = () => {
           const renderer = await OfflineEngineRenderer.create(
             projectCopy,
             Option.None,
-            SAMPLE_RATE,
-            true
+            SAMPLE_RATE
           );
           stage("renderer created");
           try {
@@ -367,11 +341,12 @@ const App: React.FC = () => {
               ready for that very context. Step 2 demonstrates it: this page always boots a
               live WASM engine on init, which consumes the one-and-only registration on its
               own AudioContext, so step 2's OfflineAudioContext is already a{" "}
-              <em>second</em> context — it throws on every run, including the first. The
-              deprecated but still-exported{" "}
-              <Code>AudioOfflineRenderer.start</Code> hits the same wall;{" "}
-              <Code>OfflineEngineRenderer</Code> (<Code>variant: true</Code>, a Worker) is
-              immune. Each step is bounded by a {HANG_TIMEOUT_MS / 1000} s ceiling.
+              <em>second</em> context — it throws on every run, including the first.{" "}
+              <Code>OfflineEngineRenderer</Code> (a dedicated Worker) is immune. A former
+              step 3 hit the same wall through the deprecated{" "}
+              <Code>AudioOfflineRenderer.start</Code>; SDK 0.0.161 removed that API with
+              the TypeScript engine, so the step is retired. Each step is bounded by a{" "}
+              {HANG_TIMEOUT_MS / 1000} s ceiling.
             </Callout.Text>
           </Callout.Root>
 
@@ -415,30 +390,8 @@ const App: React.FC = () => {
           />
 
           <TestStep
-            index={3}
-            title="Public API: deprecated AudioOfflineRenderer.start with WASM enabled"
-            description={
-              <>
-                The wasm modules are compiled globally (as they always are after the live
-                WASM boot at page init), and the consumer calls the deprecated-but-exported{" "}
-                <Code>AudioOfflineRenderer.start</Code>. Its internal OfflineAudioContext is a
-                second context — <Code>ensureReady</Code>'s one-and-only registration went
-                elsewhere — so the same <Code>InvalidStateError</Code> surfaces through a
-                public API.
-              </>
-            }
-            actions={runButton("Run (deprecated API)", runStep3)}
-            expected={[
-              { label: "outcome", value: "THREW" },
-              { label: "stages reached", value: "… → awaiting AudioOfflineRenderer.start" },
-              { label: "detail", value: "InvalidStateError — 'engine-wasm-processor' is not defined in AudioWorkletGlobalScope" },
-            ]}
-            got={gotByStep[3] ?? null}
-          />
-
-          <TestStep
             index={4}
-            title="Workaround: OfflineEngineRenderer with variant: true"
+            title="Workaround: OfflineEngineRenderer (dedicated Worker)"
             description={
               <>
                 The supported WASM offline path — a dedicated Worker that self-loads the wasm

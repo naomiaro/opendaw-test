@@ -13,8 +13,8 @@ Documented bugs and open questions from working with the OpenDAW SDK. Each file 
   `MessagePort.prototype.postMessage` to log engine transport commands; pull `project`
   from a mounted component's React fiber. All three were used to close the seam and
   mode-swap investigations.
-- **All demo pages boot the WASM engine (the only engine wired in this repo).** Their
-  offline scan always routes through `OfflineEngineRenderer` with `variant: true` —
+- **All demo pages boot the WASM engine (the only engine).** Their
+  offline scan always routes through `OfflineEngineRenderer` —
   `OfflineAudioContext` + `createEngine` throws with the WASM `EngineVariant` once any wasm
   engine booted on another context (`ensureReady` registers the processor only on the first
   context — see [wasm-ensure-ready-second-context.md](./wasm-ensure-ready-second-context.md)).

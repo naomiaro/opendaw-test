@@ -799,9 +799,9 @@ This produces monotonic curves only. S-curves are not possible with a single slo
    - Fills a gain buffer that is multiplied with the audio output
    - Computes position relative to region start: `startPpqn = cycle.resultStart - regionPosition`
 
-3. **TapeDeviceProcessor** (internal — `@opendaw/studio-core-processors`)
+3. **The engine's Tape device** (internal — the WASM engine in `@opendaw/studio-core-wasm`)
    - Checks `hasFading` flag on the region
-   - Calls `fillGainBuffer()` to get per-sample gain values
+   - Evaluates the same envelope to get per-sample gain values
    - Multiplies audio output by the gain buffer
 
 #### The Gain Buffer Algorithm

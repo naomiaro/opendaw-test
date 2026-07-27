@@ -8,7 +8,7 @@ const LOADING_TIMEOUT_MS = 30_000;
 
 /**
  * Render a slice of the live project to a stereo `Float32Array[]` — via
- * `OfflineEngineRenderer` with `variant: true` (WASM engine). Used by the
+ * `OfflineEngineRenderer` (WASM offline worker, the only engine). Used by the
  * debug demos to scan rendered audio for amplitude artifacts that confirm
  * (or refute) the suspected mechanism documented in the sibling markdown notes.
  *
@@ -56,8 +56,7 @@ export async function renderOfflineSlice(
     const renderer = await OfflineEngineRenderer.create(
       projectCopy,
       Option.None,
-      sampleRate,
-      true
+      sampleRate
     );
     try {
       renderer.setPosition(startPPQN);

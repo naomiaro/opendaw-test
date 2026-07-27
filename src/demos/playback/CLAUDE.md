@@ -293,7 +293,7 @@ project runs the WASM engine exclusively:
 - **#311 (touching-seam discontinuity)** — fixed on the WASM engine (all 4 cells scan
   at seam-Δ/pre-Δ = 1.00). Regression page: `shared-source-double-process-debug-demo.html`.
 Both repro pages always boot the WASM engine and route the offline scan through
-`OfflineEngineRenderer` `variant: true` (see `src/lib/offlineScan.ts`).
+`OfflineEngineRenderer` (see `src/lib/offlineScan.ts`).
 
 ### Fade-In on Newly Created Regions May Not Apply
 Setting `adapter.fading.inField.setValue()` on regions created by `RegionEditing.cut()`

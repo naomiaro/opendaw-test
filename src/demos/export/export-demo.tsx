@@ -402,10 +402,9 @@ const App: React.FC = () => {
               Render any bar range of Dark Ride&apos;s &lsquo;Deny Control&rsquo; offline to
               32-bit float WAV &mdash; the full mix as one stereo file, clean stems one per
               track, or a metronome-only click. Each export runs on a throwaway copy of the
-              project through <code>OfflineEngineRenderer</code> (a dedicated worker) &mdash;
-              or the manual <code>OfflineAudioContext</code> worklet when the metronome is
-              enabled &mdash; so the live transport keeps playing while the renderer works
-              ahead of real time. Preview the result in the browser, then download.
+              project through <code>OfflineEngineRenderer</code> (a dedicated worker), so
+              the live transport keeps playing while the renderer works ahead of real time.
+              Preview the result in the browser, then download.
             </p>
           </div>
 
@@ -680,8 +679,8 @@ const App: React.FC = () => {
                   (<code>useInstrumentOutput: false</code>) so effects, aux sends, and the
                   strip&apos;s volume/pan all reach the render. The metronome travels in the
                   export configuration &mdash; mixed into the mixdown or appended as its own
-                  stem pair. Since the WASM offline worker is the only engine, all renders pass{" "}
-                  <code>variant: true</code>.
+                  stem pair. Every render runs the WASM offline worker &mdash; the only
+                  engine the SDK ships.
                 </p>
 
                 <Text size="2" weight="bold" style={{ display: "block", marginTop: 16 }}>

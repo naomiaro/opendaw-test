@@ -148,16 +148,10 @@ Effects use the Adapter pattern to provide reactive properties:
 
 ### Integration - Effect Chain Processing
 
-- **InsertReturnAudioChain** - Audio effect chain processor
-  - Located in: `@opendaw/studio-core-processors`
-  - Manages ordering of effects in a chain
-  - Handles audio routing through effects
-  - Subscribes to effect enable/disable state
-  - Invalidates wiring when effects are added/removed
-
-- **DeviceChain** - Abstract interface for effect chains
-- **AudioEffectDeviceProcessor** - Runtime processor for individual effects
-- **DeviceProcessorFactory** - Creates runtime processors from boxes
+The runtime side lives in the WASM engine (`@opendaw/studio-core-wasm`): it links one wasm
+module per device box type, orders each chain by the boxes' `index` fields, routes audio
+through the enabled effects, and rewires when effects are added/removed. The box graph and
+the adapters above are the only surface an application touches — the engine mirrors them.
 
 ### Key Concepts
 
