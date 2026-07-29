@@ -2,7 +2,7 @@
 
 > **Audience:** contributors to openDAW. This chapter is the device layer — instruments, audio effects, MIDI effects — and how they wire into the audio graph established in [Ch. 01](./01-engine-processor.md).
 >
-> **Prereqs:** [`01-engine-processor`](./01-engine-processor.md) for the `AudioUnit` / device chain frame, [`02-box-system`](./02-box-system.md) for box generation and adapters, [`03-cross-thread-protocols`](./03-cross-thread-protocols.md) for the engine's RPC and the shared WASM memory. Chapter 04 is helpful but not required.
+> **Prereqs:** [`01-engine-processor`](./01-engine-processor.md) for the `AudioUnit` / device chain frame, [`02-box-system`](./02-box-system.md) for box generation and adapters, [`03-cross-thread-protocols`](./03-cross-thread-protocols.md) for the engine's RPC and the engine's linear memory. Chapter 04 is helpful but not required.
 
 A "device" in openDAW is anything that processes audio or MIDI inside an `AudioUnit`: instruments (Vaporisateur, Nano, Soundfont, …), audio effects (Compressor, Reverb, Delay, …), and MIDI effects (Arpeggio, Pitch, Velocity, …). Each one is a three-layer triple:
 
@@ -10,7 +10,7 @@ A "device" in openDAW is anything that processes audio or MIDI inside an `AudioU
 2. **Adapter** — typed TypeScript wrapper around the box; exposes parameters with `ValueMapping`/`StringMapping` for the UI and for automation. Main thread.
 3. **Plugin** — a Rust crate compiled to a position-independent WebAssembly side module, linked into the engine and run on the audio thread.
 
-The third layer is the one that changed shape: device DSP is Rust, shipped as `dist/wasm/plugins/device_*.wasm`, and the engine loads it as a side module against its own shared linear memory. There is no per-device TypeScript on the audio thread any more, and no visitor dispatch — a device box type is mapped to its plugin by a data table.
+The third layer is the one that changed shape: device DSP is Rust, shipped as `dist/wasm/plugins/device_*.wasm`, and the engine loads it as a side module against its own linear memory (one memory, common to the engine and every plugin). There is no per-device TypeScript on the audio thread any more, and no visitor dispatch — a device box type is mapped to its plugin by a data table.
 
 Adding a new device means adding all three layers plus three registration entries (the build script, the plugin table, and the menu factory). The rest of the system — wiring, automation, save/load, undo — just works because every device follows the same shape.
 
@@ -438,13 +438,13 @@ Three devices — **Werkstatt** (audio effect), **Apparat** (instrument), **Spie
 
 `crates/engine/src/script_device.rs` is the engine's side of the dynamic declaration. It enumerates each hub's children and binds them through the *ordinary* parameter and sample machinery, keyed by declaration index — so automation, value mappings and sample residency behave identically to a fixed device. The only difference is the binding source: child boxes rather than the device's own field paths.
 
-Execution is the interesting part. The three Rust device crates do **no DSP**. Per block they call `host_script_*` env imports implemented by `packages/studio/core-wasm/src/script-bridge.ts`, which runs the user's `Processor` — registered by the app at `globalThis.openDAW.<registry>[uuid]` — directly over the engine's shared linear memory. The bridge hot-swaps on the registry's `update` counter and validates output (NaN or overflow becomes silence).
+Execution is the interesting part. The three Rust device crates do **no DSP**. Per block they call `host_script_*` env imports implemented by `packages/studio/core-wasm/src/script-bridge.ts`, which runs the user's `Processor` — registered by the app at `globalThis.openDAW.<registry>[uuid]` — directly over the engine's linear memory. The bridge hot-swaps on the registry's `update` counter and validates output (NaN or overflow becomes silence).
 
 This is the one place the engine's zero-JS-in-render rule is relaxed, and it is contained entirely to the bridge plus three thin device crates. If you are adding anything else that wants to call into JavaScript from the render path, this is the precedent to argue against, not the one to copy.
 
 ## NAM (Neural Amp Modeler)
 
-`crates/stock-devices/device-neural-amp/src/lib.rs` does the wrapper DSP — input/output gains, mono downmix, dry/wet mix — and calls `host_nam_*` imports implemented by `packages/studio/core-wasm/src/nam-bridge.ts`. The bridge runs `@opendaw/nam-wasm` (NeuralAmpModelerCore) as its **own** WebAssembly instance beside the engine, because an Emscripten build cannot join the engine's shared memory. Per chunk it copies at most 128 samples per channel between the two memories — negligible against the inference cost.
+`crates/stock-devices/device-neural-amp/src/lib.rs` does the wrapper DSP — input/output gains, mono downmix, dry/wet mix — and calls `host_nam_*` imports implemented by `packages/studio/core-wasm/src/nam-bridge.ts`. The bridge runs `@opendaw/nam-wasm` (NeuralAmpModelerCore) as its **own** WebAssembly instance beside the engine, because an Emscripten build cannot link against the engine's own linear memory. Per chunk it copies at most 128 samples per channel between the two memories — negligible against the inference cost.
 
 Four patterns worth copying if you integrate other heavy WASM:
 
@@ -457,7 +457,7 @@ Four patterns worth copying if you integrate other heavy WASM:
 
 A few nodes don't fit the "device in a chain" model but are worth knowing:
 
-**Frozen playback** (`crates/engine/src/frozen.rs`). A frozen unit plays pre-rendered PCM instead of running its instrument and effects. The freeze itself is a one-stem offline render with `skipChannelStrip`, so the unit's *live* channel strip still applies afterwards — you can keep riding the fader on a frozen track. The read position re-seats from the tempo map on any discontinuity, so seeks, loops and tempo automation stay sample-exact. The PCM is delivered over the `engine-frozen-audio` channel described in [Ch. 03](./03-cross-thread-protocols.md#the-engines-rpc-channels).
+**Frozen playback** (`crates/engine/src/frozen.rs`). A frozen unit plays pre-rendered PCM instead of running its instrument and effects. The freeze itself is a one-stem offline render with `skipChannelStrip`, so the unit's *live* channel strip still applies afterwards — you can keep riding the fader on a frozen track. The read position re-seats from the tempo map on any discontinuity, so seeks, loops and tempo automation stay sample-exact. The PCM is delivered via the `setFrozenAudio` engine command described in [Ch. 03](./03-cross-thread-protocols.md#the-engines-rpc-channels) and copied into the wasm heap worklet-side.
 
 **Input monitoring** (`crates/engine/src/monitor.rs`). The worklet stages up to 8 live input channels into a shared buffer before each render. A unit in the monitoring map carries a `MonitorMix` node that adds its mapped channels into the unit's chain-*start* buffer — post-instrument, pre-effects — so the monitored input runs through the unit's own effect chain and strip. After the render the engine copies each mapped unit's strip output into a monitor output buffer, which the worklet forwards on its **second** output back to the main thread's `MonitoringRouter`.
 
