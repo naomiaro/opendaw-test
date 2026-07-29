@@ -1,5 +1,4 @@
-/localhost.pem
-/localhost-key.pem
+/localhost*.pem*
 /.idea/
 /dist
 /dist-docs

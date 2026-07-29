@@ -692,10 +692,10 @@ const regionBox = project.api.createNoteRegion({
 
                 <p>
                   Each <code>// @param</code> declaration becomes an automatable parameter box
-                  the sliders above write inside <code>editing.modify()</code>. The same user
-                  script runs unchanged on the TypeScript engine and on the WASM (Rust)
-                  engine &mdash; there the Apparat device is a thin wasm bridge that calls the
-                  script once per block over shared memory.
+                  the sliders above write inside <code>editing.modify()</code>. The user
+                  script runs inside the WASM (Rust) engine &mdash; the Apparat device is a
+                  thin wasm bridge that calls the script once per block over the
+                  engine&apos;s linear memory.
                 </p>
               </section>
             </>

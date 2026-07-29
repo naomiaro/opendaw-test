@@ -2,7 +2,7 @@
 
 > **Audience:** contributors to openDAW. This chapter is the device layer — instruments, audio effects, MIDI effects — and how they wire into the audio graph established in [Ch. 01](./01-engine-processor.md).
 >
-> **Prereqs:** [`01-engine-processor`](./01-engine-processor.md) for the `AudioUnit` / device chain frame, [`02-box-system`](./02-box-system.md) for box generation and adapters, [`03-cross-thread-protocols`](./03-cross-thread-protocols.md) for the engine's RPC and the shared WASM memory. Chapter 04 is helpful but not required.
+> **Prereqs:** [`01-engine-processor`](./01-engine-processor.md) for the `AudioUnit` / device chain frame, [`02-box-system`](./02-box-system.md) for box generation and adapters, [`03-cross-thread-protocols`](./03-cross-thread-protocols.md) for the engine's RPC and the engine's linear memory. Chapter 04 is helpful but not required.
 
 A "device" in openDAW is anything that processes audio or MIDI inside an `AudioUnit`: instruments (Vaporisateur, Nano, Soundfont, …), audio effects (Compressor, Reverb, Delay, …), and MIDI effects (Arpeggio, Pitch, Velocity, …). Each one is a three-layer triple:
 
@@ -444,7 +444,7 @@ This is the one place the engine's zero-JS-in-render rule is relaxed, and it is 
 
 ## NAM (Neural Amp Modeler)
 
-`crates/stock-devices/device-neural-amp/src/lib.rs` does the wrapper DSP — input/output gains, mono downmix, dry/wet mix — and calls `host_nam_*` imports implemented by `packages/studio/core-wasm/src/nam-bridge.ts`. The bridge runs `@opendaw/nam-wasm` (NeuralAmpModelerCore) as its **own** WebAssembly instance beside the engine, because an Emscripten build cannot join the engine's shared memory. Per chunk it copies at most 128 samples per channel between the two memories — negligible against the inference cost.
+`crates/stock-devices/device-neural-amp/src/lib.rs` does the wrapper DSP — input/output gains, mono downmix, dry/wet mix — and calls `host_nam_*` imports implemented by `packages/studio/core-wasm/src/nam-bridge.ts`. The bridge runs `@opendaw/nam-wasm` (NeuralAmpModelerCore) as its **own** WebAssembly instance beside the engine, because an Emscripten build cannot link against the engine's own linear memory. Per chunk it copies at most 128 samples per channel between the two memories — negligible against the inference cost.
 
 Four patterns worth copying if you integrate other heavy WASM:
 

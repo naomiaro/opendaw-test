@@ -716,7 +716,7 @@ export namespace EngineAddresses {
 }
 ```
 
-Each analyser behind these runs lazily — the worklet only computes spectrum, waveform, stereo, goniometer or loudness data while a UI subscription to that address is active. `HEAP` publishes the engine's `heap_used()` / `heap_claimed()`, a live meter over the wasm heap.
+Each analyser behind these runs lazily — the worklet only computes spectrum, waveform, stereo, goniometer or loudness data while a UI subscription to that address is active. `HEAP` publishes three floats — the engine's `heap_used()`, `heap_claimed()`, and the committed memory (`memory.buffer.byteLength`) — a live meter over the wasm heap.
 
 `UUID.Lowest` (all-zero UUID) doesn't correspond to a real box. These are virtual addresses the broadcaster uses to publish data over the `engine-live-data` channel without involving a box. The UI subscribes to these addresses and gets the broadcast payload as if it were a box update.
 

@@ -16,9 +16,9 @@ All `lib-*` packages unchanged.
 
 The old design: `WasmEngine.install` minted a `shared: true` `WebAssembly.Memory` on the
 main thread and shipped it to the worklet via `processorOptions`, probing maxima
-4 GiB → 2 → 1 → 512 MiB because a shared memory reserves its entire `maximum` as virtual
-address space at creation — the reservation ladder that failed outright on low-memory
-devices.
+4 GiB → 2 → 1 → 512 MiB (guarded) with an **unguarded** 256 MiB last resort — a shared
+memory reserves its entire `maximum` as virtual address space at creation, and that
+final unguarded rung is what actually threw on low-memory devices.
 
 The new design (`engine-modules.ts`): `createEngineMemory()` is now just
 `new WebAssembly.Memory({initial: 256})` — **non-shared, no maximum, created INSIDE the
@@ -46,9 +46,9 @@ buffer on grow. Consequences, all verified against the installed dist:
 This lands the direction of the upstream `plans/wasm-audio/memory-ceiling.md` plan by
 dissolving its premise: with a non-shared memory there is no ceiling to reserve, so the
 "boot ceiling" and reservation-failure phases no longer apply (upstream marked those
-plans current in the same release).
+sections historical/resolved in the same release — "the address-space ceiling is GONE").
 
-## Regions-overlap panic: silent creator fixed (core 0.1.4)
+## ⚠ Breaking: `calculateDuration` takes a tempo map — regions-overlap silent creator fixed (core 0.1.4)
 
 `AudioContentFactory.calculateDuration` **signature changed**:
 
@@ -85,7 +85,7 @@ output channel strip). Ships with convergence and quality tests upstream.
 `PlayfieldSampleBox` gains field 50 `volume` (Float32, decibel constraint, default 0 dB)
 and field 51 `panning` (Float32, bipolar) — a channel strip between a slot's output
 (post its own fx chain) and the composite sum. `PlayfieldSampleBoxAdapter` exposes both
-as named automatable parameters and includes them in `reset()`/`copyToIndex()`.
+as named automatable parameters and includes them in `resetParameters()`/`copyToIndex()`.
 `CompositeSpec` grew `childVolumeKey`/`childPanKey` (0 = no per-child strip), threaded
 through `composite_register` down to the Rust engine.
 
@@ -96,9 +96,10 @@ PEAKS/SPECTRUM/WAVEFORM: `STEREO`, `GONIO`, `LOUDNESS`, `HEAP`. The worklet comp
 them via a new `analysis-dsp.ts` (`StereoAnalyser`, `GonioCapture`, `LoudnessMeter`) —
 **lazily**: each analyser only runs while a UI subscription is active (the spectrum and
 waveform analysers are now gated the same way, a small render-path win for headless
-consumers that never subscribe). `HEAP` publishes the engine's `heap_used()` /
-`heap_claimed()` — a live memory meter over the wasm heap. Upstream these feed the new
-mixer Analysis panel and a footer memory readout.
+consumers that never subscribe). `HEAP` publishes three floats — `heap_used()`,
+`heap_claimed()`, and the committed memory (`memory.buffer.byteLength`) — a live memory
+meter over the wasm heap. Upstream these feed the new mixer Analysis panel and a footer
+memory readout.
 
 ## Misc
 

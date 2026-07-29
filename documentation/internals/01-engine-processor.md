@@ -179,7 +179,7 @@ The metronome renders into its own staging buffer rather than straight into `out
 
 ## Blocks
 
-A render quantum is not necessarily one span of musical time. Tempo automation, loop wraps and marker jumps all split it. The unit of that split is a `Block`, and it is part of the device ABI — host and devices read the identical struct out of shared memory:
+A render quantum is not necessarily one span of musical time. Tempo automation, loop wraps and marker jumps all split it. The unit of that split is a `Block`, and it is part of the device ABI — host and devices read the identical struct out of the engine's linear memory:
 
 ```rust
 // crates/abi/src/lib.rs:136
@@ -299,7 +299,7 @@ External callers move clips through `schedule_play(track, clip)` and `schedule_s
 
 The sequencer stores only clip **UUIDs**. Duration and loop flag are resolved live through a `ClipInfo` trait implemented against the reactive box binding, so editing a clip while it is scheduled or playing stays correct.
 
-Every start / stop / obsolete transition queues the clip uuid. `take_changes` drains that queue, and the host forwards it as `notifyClipSequenceChanges({started, stopped, obsolete})` — see `#drainClipChanges` in `processor.ts`, which reads 20-byte `[uuid 16][kind u32]` records out of shared memory.
+Every start / stop / obsolete transition queues the clip uuid. `take_changes` drains that queue, and the host forwards it as `notifyClipSequenceChanges({started, stopped, obsolete})` — see `#drainClipChanges` in `processor.ts`, which reads 20-byte `[uuid 16][kind u32]` records out of engine memory.
 
 Launching a clip also *starts* the transport if it was stopped (`Engine::schedule_clip_play`, `crates/engine/src/lib.rs:1565`), so hitting a clip from a stopped studio plays immediately.
 

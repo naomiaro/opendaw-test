@@ -121,7 +121,7 @@ EngineVariant.install((): EngineWorkletVariant => ({
   processorName: "engine-wasm-processor",       // processor to instantiate
   attachment: { /* structured-clone extras */ }, // handed to processorOptions.variant
   connectSync: (messenger, project) => wireSync(messenger, project), // returns Terminable
-  connectFrozenAudio: (messenger) => makeFrozenWriter(messenger),    // optional freeze-PCM path
+  connectFrozenAudio: (messenger) => makeFrozenWriter(messenger),    // optional; omit it and freeze PCM routes through the setFrozenAudio engine command
 }));
 ```
 
