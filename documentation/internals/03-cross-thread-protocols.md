@@ -130,7 +130,7 @@ The audio-thread end of these channels is the WASM engine's worklet processor �
 
 Worth knowing when you go looking for it: the engine is **not** in the worklet module the studio adds to every `AudioContext`. `packages/studio/core-processors/src/register.ts` registers exactly two processors — `meter-processor` and `recording-processor` — both engine-independent. The engine's module is added separately, by `WasmEngine.ensureReady`.
 
-`EngineWorklet` (`packages/studio/core/src/EngineWorklet.ts`) creates one `Messenger` over the worklet's `port`. Four channels are opened by the worklet pair itself; the installed engine variant opens two more on the same messenger:
+`EngineWorklet` (`packages/studio/core/src/EngineWorklet.ts`) creates one `Messenger` over the worklet's `port`. Four channels are opened by the worklet pair itself; the installed engine variant opens one more on the same messenger:
 
 | Channel | Direction | Protocol |
 |---|---|---|
@@ -139,9 +139,8 @@ Worth knowing when you go looking for it: the engine is **not** in the worklet m
 | `engine-live-data` | Worklet → Main | `LiveStreamBroadcaster` payloads (peaks, spectrum, waveform, meters) |
 | `engine-preferences` | Main ↔ Worklet | `PreferencesHost` ↔ `PreferencesClient` settings sync |
 | `engine-sync-bytes` | Main → Worklet | `WasmSyncProtocol` — serialized box-graph transactions |
-| `engine-frozen-audio` | Main ↔ Worklet | `WasmFrozenProtocol` — frozen-track PCM staging |
 
-The last two are named by `packages/studio/core-wasm/src/protocol.ts` (`WASM_SYNC_CHANNEL`, `WASM_FROZEN_CHANNEL`) and wired by `WasmEngine.install`'s `connectSync` / `connectFrozenAudio` hooks on `EngineWorkletVariant`.
+The last one is named by `packages/studio/core-wasm/src/protocol.ts` (`WASM_SYNC_CHANNEL`) and wired by `WasmEngine.install`'s `connectSync` hook on `EngineWorkletVariant`. Frozen-track PCM needs no channel of its own: it rides the `setFrozenAudio` engine command and is copied into the wasm heap worklet-side (the engine memory is non-shared, so no other thread can write into it).
 
 Visually:
 
@@ -164,7 +163,7 @@ flowchart LR
     class EP rt
 ```
 
-One `MessagePort` underneath, six logical channels multiplexed over it by the `"__id__"` filter trick in `Channel`.
+One `MessagePort` underneath, five logical channels multiplexed over it by the `"__id__"` filter trick in `Channel`.
 
 ### `EngineCommands` (main → worklet)
 
@@ -193,7 +192,7 @@ Most methods are `void` — fire-and-forget commands. `queryLoadingComplete()` i
 
 `setupMIDI(port, buffer)` is interesting: it transfers a `MessagePort` *and* a `SharedArrayBuffer` to the worklet so MIDI input events from a separate worker can land directly in the audio thread without going through the main thread.
 
-On the worklet side every one of these is a thin marshalling step into the WASM engine's `extern "C"` surface. The processor writes any argument bytes into the engine's input buffer (`engine.input_reserve(n)` returns a pointer into the shared `WebAssembly.Memory`) and then calls the export — `setPosition` becomes `engine.set_position(position)`, `scheduleClipPlay` writes each 16-byte UUID and calls `engine.schedule_clip_play()`, `updateMonitoringMap` packs `[uuid 16][left i32][right i32]` per entry and calls `engine.set_monitoring_map(count)`. The exports are defined in `crates/engine/src/lib.rs`.
+On the worklet side every one of these is a thin marshalling step into the WASM engine's `extern "C"` surface. The processor writes any argument bytes into the engine's input buffer (`engine.input_reserve(n)` returns a pointer into the engine's `WebAssembly.Memory`) and then calls the export — `setPosition` becomes `engine.set_position(position)`, `scheduleClipPlay` writes each 16-byte UUID and calls `engine.schedule_clip_play()`, `updateMonitoringMap` packs `[uuid 16][left i32][right i32]` per entry and calls `engine.set_monitoring_map(count)`. The exports are defined in `crates/engine/src/lib.rs`.
 
 ### `EngineToClient` (worklet → main)
 
@@ -694,25 +693,30 @@ export type WasmEngineAttachment = {
     deviceBoxTypes: ReadonlyArray<string>
     composites: ReadonlyArray<CompositeSpec>
     effectComposites: ReadonlyArray<EffectCompositeSpec>
-    memory: WebAssembly.Memory
 }
 ```
 
-`WebAssembly.Module` and `WebAssembly.Memory` are both structured-cloneable, so the compiled engine, the per-device plugin modules, and the shared linear memory travel through `processorOptions` without a second fetch on the audio thread. `WasmEngine.install` mints a **fresh** `WebAssembly.Memory` per boot — re-instantiating the engine re-applies its data segments, so a recycled heap would leak every allocation of the previous instance.
+`WebAssembly.Module` is structured-cloneable, so the compiled engine and the per-device plugin modules travel through `processorOptions` without a second fetch on the audio thread. The engine's linear memory is **not** in the attachment: a non-shared memory cannot be cloned, so the processor constructs its own fresh `WebAssembly.Memory` per boot — re-instantiating the engine re-applies its data segments, and a recycled heap would leak every allocation of the previous instance anyway.
 
 `project` is a serialized snapshot of the box graph. The WASM engine does not consume it: its mirror is built from the sync stream's opening full dump instead (see [SyncSource](#syncsource--graph-synchronization)).
 
 ## EngineAddresses — live broadcast slots
 
-Three reserved addresses for the live stream broadcaster (`packages/studio/adapters/src/EngineAddresses.ts`):
+Reserved addresses for the live stream broadcaster (`packages/studio/adapters/src/EngineAddresses.ts`):
 
 ```typescript
 export namespace EngineAddresses {
     export const PEAKS    = Address.compose(UUID.Lowest).append(0)
     export const SPECTRUM = Address.compose(UUID.Lowest).append(1)
     export const WAVEFORM = Address.compose(UUID.Lowest).append(2)
+    export const STEREO   = Address.compose(UUID.Lowest).append(3)
+    export const GONIO    = Address.compose(UUID.Lowest).append(4)
+    export const LOUDNESS = Address.compose(UUID.Lowest).append(5)
+    export const HEAP     = Address.compose(UUID.Lowest).append(6)
 }
 ```
+
+Each analyser behind these runs lazily — the worklet only computes spectrum, waveform, stereo, goniometer or loudness data while a UI subscription to that address is active. `HEAP` publishes the engine's `heap_used()` / `heap_claimed()`, a live meter over the wasm heap.
 
 `UUID.Lowest` (all-zero UUID) doesn't correspond to a real box. These are virtual addresses the broadcaster uses to publish data over the `engine-live-data` channel without involving a box. The UI subscribes to these addresses and gets the broadcast payload as if it were a box update.
 
@@ -758,7 +762,7 @@ When you read a project file off disk, you're replaying a `SyncLog`. When you sa
 
 ## COOP / COEP — required browser headers
 
-Every cross-thread channel in this chapter — `SyncStream`, control flags, HRClock, `RingBuffer`, the `processorOptions` attachment — uses `SharedArrayBuffer`. The browser only lets you construct a `SharedArrayBuffer` if the page is cross-origin isolated:
+Every cross-thread channel in this chapter — `SyncStream`, control flags, HRClock, `RingBuffer` — uses `SharedArrayBuffer` (the engine's own wasm heap does not; it is non-shared and worklet-owned). The browser only lets you construct a `SharedArrayBuffer` if the page is cross-origin isolated:
 
 ```
 Cross-Origin-Opener-Policy: same-origin

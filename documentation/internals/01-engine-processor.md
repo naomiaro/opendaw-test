@@ -96,11 +96,11 @@ export type EngineModules = {
 }
 ```
 
-plus a `WebAssembly.Memory` created fresh per boot. `WasmEngine.ensureReady(context)` (`packages/studio/core-wasm/src/WasmEngine.ts`) does the two one-time steps: `context.audioWorklet.addModule(processorUrl)` and `loadEngineModules(wasmUrl)`, which fetches and compiles `${wasmUrl}/wasm/engine.wasm` plus each `/wasm/plugins/device_*.wasm`.
+`WasmEngine.ensureReady(context)` (`packages/studio/core-wasm/src/WasmEngine.ts`) does the two one-time steps: `context.audioWorklet.addModule(processorUrl)` and `loadEngineModules(wasmUrl)`, which fetches and compiles `${wasmUrl}/wasm/engine.wasm` plus each `/wasm/plugins/device_*.wasm`.
 
 Two consequences worth internalizing:
 
-- **The memory is `shared: true`.** The main thread can see the wasm heap and write decoded sample data straight into it. That requires cross-origin isolation (COOP + COEP); without those headers the engine cannot boot at all. `createEngineMemory()` requests the wasm32 ceiling (65536 pages) and falls back through smaller maxima, because a shared memory reserves its whole maximum as virtual address space up front and low-memory devices reject that.
+- **The memory is non-shared and worklet-owned.** The processor constructs its own `WebAssembly.Memory` in its constructor (`createEngineMemory()` in `engine-modules.ts` — `{initial: 256}`, no maximum, no `shared` flag; a non-shared memory cannot be postMessaged, so it never travels through `processorOptions`). Without the shared flag there is no up-front virtual-address-space reservation — talc grows the memory on demand and the runtime may *relocate* the buffer on grow, which detaches every previously created typed-array view. The main thread never sees the wasm heap; bulk data (samples, freeze PCM) reaches the engine through RPC and is copied into the memory worklet-side.
 - **The project does not arrive through `processorOptions`.** The `project` field is part of the attachment type, but the wasm host ignores it. The box graph arrives as a stream of serialized transactions over the `WASM_SYNC_CHANNEL`, described under [state publication](#state-publication-to-the-main-thread).
 
 ## The Process Loop
@@ -478,7 +478,7 @@ The engine's own preferences (metronome enable/gain/subdivision/monophonic, `all
 
 The sync `SharedArrayBuffer` requires cross-origin isolation (COOP + COEP); without those headers `SharedArrayBuffer` throws and the engine cannot initialize. See [Ch. 12 — Browser Compatibility](../12-browser-compatibility.md), and [Ch. 03 — Cross-thread protocols](./03-cross-thread-protocols.md) for the channel machinery itself.
 
-Bulk PCM never travels as a message. Freeze audio is written by the **main thread** straight into the shared engine memory between an `allocate` RPC and an `attach` RPC — copying megabytes inside the worklet's message handler would stall the audio thread.
+Bulk PCM travels over these same channels: freeze audio arrives as a `setFrozenAudio(uuid, audioData)` engine command and is copied into the wasm heap on the worklet side — the memory is worklet-owned and non-shared, so no other thread *can* write into it.
 
 ## Offline rendering
 
@@ -514,7 +514,7 @@ The non-audio Web Workers live in `packages/studio/core-workers/src/workers-main
 
 These are plain Web Workers. They may allocate, block and use async APIs freely; the only rule is that they don't run on the audio thread.
 
-Sample data reaches the engine by the audio thread asking for it over RPC (`fetchAudio(uuid)`), the main thread routing that to the sample manager, and the decoded frames being written into the engine's shared memory.
+Sample data reaches the engine by the audio thread asking for it over RPC (`fetchAudio(uuid)`), the main thread routing that to the sample manager, and the decoded frames coming back over the port for the worklet to copy into the engine's memory.
 
 ## Performance constraints (read these before you write DSP)
 

@@ -400,7 +400,7 @@ export interface OfflineEngineProtocol {
 
 `initialize` does four things in order:
 
-1. **Load the engine modules** — `loadEngineModules(variant.wasmUrl)` fetches `engine.wasm` plus the device side modules, and `createEngineMemory()` allocates the shared linear memory they all link against.
+1. **Load the engine modules** — `loadEngineModules(variant.wasmUrl)` fetches `engine.wasm` plus the device side modules, and `createEngineMemory()` allocates the single linear memory they all link against (the worker owns it — non-shared).
 2. **Wire the `EngineToClient` RPC** over `enginePort` — `fetchAudio`, `fetchSoundfont`, `fetchNamWasm`, log/error, clip-sequencing notifications. Samples, soundfonts and NAM models arrive over this channel exactly as they do for the realtime host.
 3. **Settle the metronome.** The live engine reads metronome settings off the `engine-preferences` channel, which an offline render has no host for, so they're resolved once here from `ExportConfiguration.metronome`. A mixdown is silent-by-default: the click is off unless the export config asks for it.
 4. **Apply the project snapshot** as one full-dump transaction — the `SyncSource`-initialize analog:
