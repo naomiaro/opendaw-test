@@ -3,8 +3,16 @@
 ### Beat Maps → SDK Machinery
 - `.beats` parsing and beat-map math live in `src/lib/beats/` (pure, no SDK imports, vitest-covered).
   Demos only create boxes from the results — keep new beat-map math there, not in demo files.
-- Warp anchors are engine-agnostic: `buildWarpAnchors()` output feeds AudioPitchStretchBox and
-  AudioTimeStretchBox identically. Only the box type changes between varispeed and time-stretch.
+- Warp anchors are engine-agnostic: `buildWarpAnchors()` output feeds AudioPitchStretchBox,
+  AudioTimeStretchBox, and AudioSignalsmithBox identically — only the box type changes between
+  varispeed, time-stretch, and signalsmith. Scenario builders: `applyVarispeed` /
+  `applyTimeStretch` / `applySignalsmith` in `warpScenarios.ts` share one `applyWarpToGrid` body.
+- `AudioSignalsmithBoxAdapter.cents` = `transpose * 100`, NO clamp (unlike
+  `AudioTimeStretchBoxAdapter.cents` which clamps rate to [0.5, 2.0] = ±1200 cents) — clamp
+  ±24 st at the UI. Signalsmith needs no transient markers; TimeStretch silences below 2.
+- Signalsmith `transpose` is a safe LIVE control during playback (verified: write via adapter
+  mid-playback → engine.position stays monotonic, no reset; spectral centroid shifts within
+  ~1 s — 400→901 Hz measured for 0→+12 st). No `!isPlaying` gate needed on transpose writes.
 - ~513 WarpMarkerBox creations in one `editing.modify()` are fine. WarpMarkerBox.owner is a
   mandatory pointer — deleting the stretch box cascades to its markers; repeated mode toggles
   do not accumulate boxes.
@@ -64,7 +72,7 @@
 
 ### Audio Verification (audio-verify skill)
 - Run `/audio-verify` after changes to the beat math, warp scenarios, or engine behavior —
-  it renders all five scenarios offline and asserts beat alignment numerically. Thresholds
+  it renders all seven scenarios offline and asserts beat alignment numerically. Thresholds
   and the full workflow live in `.claude/skills/audio-verify/SKILL.md`.
 - Full-song offline render ≈ 15–30 s (much faster than realtime). One render fits in
   ~99 MB float32 WAV at 48 kHz.

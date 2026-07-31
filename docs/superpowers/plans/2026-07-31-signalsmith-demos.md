@@ -1154,7 +1154,7 @@ git commit -m "feat(playback): signalsmith as fourth mode in time-pitch demo"
 
 **Interfaces:** none — docs only.
 
-- [ ] **Step 1: Extend the Decision Matrix tree in doc 18 (~line 40)**
+- [x] **Step 1: Extend the Decision Matrix tree in doc 18 (~line 40)**
 
 Replace the final `└── Yes …` branch of the tree with:
 
@@ -1177,7 +1177,7 @@ cents range. Add a demo link for the warp-signalsmith page next to the existing 
 demo links if the chapter has a demo-links block. Grep the edited file for
 `0\.0\.[0-9]` — must return nothing new (present-tense rule).
 
-- [ ] **Step 2: CLAUDE.md notes**
+- [x] **Step 2: CLAUDE.md notes**
 
 `src/demos/warp/CLAUDE.md` — extend the "Warp anchors are engine-agnostic" bullet to
 name all three boxes and `applySignalsmith`; add one bullet:
@@ -1189,7 +1189,7 @@ Add the live-transpose finding from Task 4 Step 5 (whichever way it landed).
 update only if Task 6 contradicted anything written there (e.g. the clamp note:
 "adapter exposes `transpose`/`cents`" should gain "(unclamped)").
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add documentation/18-time-and-pitch.md src/demos/warp/CLAUDE.md src/demos/playback/CLAUDE.md
