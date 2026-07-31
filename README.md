@@ -15,26 +15,27 @@ Visit http://localhost:5173 to explore the demos.
 
 | Demo | Description |
 |------|-------------|
-| **Effects & Mixer** | Multi-track mixer with reverb, compressor, delay, lo-fi crusher, and stereo width effects |
-| **Track Editing** | Split, move, and rearrange audio regions on a timeline |
-| **Recording API** | Microphone recording with live 60fps waveform, device selection, mono/stereo, input gain, and monitoring modes |
-| **MIDI Recording** | Record MIDI notes with device/channel selection, on-screen piano keyboard, and step recording |
-| **Loop Recording & Takes** | Record multiple takes over a loop region with per-take waveforms and mute controls |
-| **Drum Pattern Scheduling** | Schedule drum samples across a timeline with visual playback |
-| **Looping** | Timeline loop areas, adjustable boundaries, and real-time loop iteration tracking |
-| **TimeBase Comparison** | Musical vs Seconds TimeBase and how regions behave with BPM changes |
-| **Tempo Automation** | Preset tempo patterns (accelerando, ritardando, stepped) with real-time metronome response |
-| **Time Signature Changes** | Preset signature sequences (waltz, prog rock, film score) with adaptive metronome |
-| **Track Automation** | Volume, pan, and effect parameter automation with preset patterns and canvas visualization |
-| **Clip Looping** | Set loop regions within audio clips and extend to tile automatically with waveform visualization |
-| **Clip Fades** | Logarithmic, linear, and exponential fade curves with visual representations |
-| **Time & Pitch** | Switch a region between NoStretch / PitchStretch / TimeStretch, retune in cents, and adjust the project reference pitch (A4) with audible auto-engage |
-| **Mixer Groups** | Sub-mixing with group buses: Track → Group → Master signal flow |
-| **Comp Lanes** | Comp between simulated takes using volume automation crossfades with configurable duration |
-| **Werkstatt** | Write custom audio effects in JavaScript with pre-built examples and runnable code |
+| **[Effects & Mixer](https://opendaw-test.pages.dev/effects-demo.html)** | Multi-track mixer with reverb, compressor, delay, lo-fi crusher, and stereo width effects |
+| **[Track Editing](https://opendaw-test.pages.dev/track-editing-demo.html)** | Split, move, and rearrange audio regions on a timeline |
+| **[Recording API](https://opendaw-test.pages.dev/recording-api-react-demo.html)** | Microphone recording with live 60fps waveform, device selection, mono/stereo, input gain, and monitoring modes |
+| **[MIDI Recording](https://opendaw-test.pages.dev/midi-recording-demo.html)** | Record MIDI notes with device/channel selection, on-screen piano keyboard, and step recording |
+| **[Loop Recording & Takes](https://opendaw-test.pages.dev/loop-recording-demo.html)** | Record multiple takes over a loop region with per-take waveforms and mute controls |
+| **[Drum Pattern Scheduling](https://opendaw-test.pages.dev/drum-scheduling-demo.html)** | Schedule drum samples across a timeline with visual playback |
+| **[Looping](https://opendaw-test.pages.dev/looping-demo.html)** | Timeline loop areas, adjustable boundaries, and real-time loop iteration tracking |
+| **[TimeBase Comparison](https://opendaw-test.pages.dev/timebase-demo.html)** | Musical vs Seconds TimeBase and how regions behave with BPM changes |
+| **[Tempo Automation](https://opendaw-test.pages.dev/tempo-automation-demo.html)** | Preset tempo patterns (accelerando, ritardando, stepped) with real-time metronome response |
+| **[Time Signature Changes](https://opendaw-test.pages.dev/time-signature-demo.html)** | Preset signature sequences (waltz, prog rock, film score) with adaptive metronome |
+| **[Track Automation](https://opendaw-test.pages.dev/track-automation-demo.html)** | Volume, pan, and effect parameter automation with preset patterns and canvas visualization |
+| **[Clip Looping](https://opendaw-test.pages.dev/clip-looping-demo.html)** | Set loop regions within audio clips and extend to tile automatically with waveform visualization |
+| **[Clip Fades](https://opendaw-test.pages.dev/clip-fades-demo.html)** | Logarithmic, linear, and exponential fade curves with visual representations |
+| **[Warp: Who Bends?](https://opendaw-test.pages.dev/warp-demos.html)** | Four ways to reconcile a song's beat map with the project grid, each with its own sub-demo: varispeed, grid-follows-file, transient-aware time-stretch, and Signalsmith spectral stretch with ±24 st live transpose |
+| **[Time & Pitch](https://opendaw-test.pages.dev/time-pitch-demo.html)** | Switch a region between NoStretch / PitchStretch / TimeStretch / Signalsmith, retune in cents (±1 octave transient-aware, ±2 octaves spectral), and adjust the project reference pitch (A4) with audible auto-engage |
+| **[Mixer Groups](https://opendaw-test.pages.dev/mixer-groups-demo.html)** | Sub-mixing with group buses: Track → Group → Master signal flow |
+| **[Comp Lanes](https://opendaw-test.pages.dev/comp-lanes-demo.html)** | Comp between simulated takes using volume automation crossfades with configurable duration |
+| **[Werkstatt](https://opendaw-test.pages.dev/werkstatt-demo.html)** | Write custom audio effects in JavaScript with pre-built examples and runnable code |
 | **[Apparat](https://opendaw-test.pages.dev/apparat-demo.html)** | Write custom polyphonic instruments in JavaScript — hot-swap synth engines (sine, supersaw, FM bell, Karplus pluck) over a looping chord pattern and play live |
-| **[WASM Engine](https://opendaw-test.pages.dev/wasm-engine-demo.html)** | Swap the TypeScript audio engine for the Rust/WASM engine live, with DSP-load comparison |
-| **Audio Export** | Export audio with range selection, metronome control, and offline rendering |
+| **[WASM Engine](https://opendaw-test.pages.dev/wasm-engine-demo.html)** | A Vaporisateur synth loop playing through the WASM (Rust) audio engine — the only engine these demos run — with an opt-in DSP-load readout |
+| **[Audio Export](https://opendaw-test.pages.dev/export-demo.html)** | Export audio with range selection, metronome control, and offline rendering |
 
 ## Documentation
 
@@ -138,8 +139,15 @@ src/
     │   ├── effects-demo.tsx           # Multi-track mixer with effects
     │   ├── werkstatt-demo.tsx         # Custom scriptable audio effects
     │   └── apparat-demo.tsx           # Custom scriptable instruments
+    ├── warp/                          # Beat-map warping demos
+    │   ├── warp-overview.tsx          # Who Bends? — the four conform strategies
+    │   ├── warp-varispeed-demo.tsx    # File → grid, pitch follows rate
+    │   ├── warp-grid-follows-file-demo.tsx  # Grid → file tempo conform
+    │   ├── warp-timestretch-demo.tsx  # Raw / varispeed / time-stretch / signalsmith A/B
+    │   ├── warp-signalsmith-demo.tsx  # Spectral conform with live ±24 st transpose
+    │   └── lib/                       # Shared setup, scenario builders, waveform
     ├── engine/                        # Engine demos
-    │   └── wasm-engine-demo.tsx       # Live TypeScript ↔ WASM engine swap
+    │   └── wasm-engine-demo.tsx       # WASM (Rust) engine — the only engine — with DSP-load readout
     └── export/                        # Export demos
         └── export-demo.tsx            # Audio export with range selection
 ```
