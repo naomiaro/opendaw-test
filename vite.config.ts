@@ -152,6 +152,7 @@ export default defineConfig({
                 warpGridFollowsFile: resolve(__dirname, "warp-grid-follows-file-demo.html"),
                 warpTimestretch: resolve(__dirname, "warp-timestretch-demo.html"),
                 warpOverview: resolve(__dirname, "warp-demos.html"),
+                warpSignalsmith: resolve(__dirname, "warp-signalsmith-demo.html"),
                 werkstatt: resolve(__dirname, "werkstatt-demo.html"),
                 apparat: resolve(__dirname, "apparat-demo.html"),
                 export: resolve(__dirname, "export-demo.html"),

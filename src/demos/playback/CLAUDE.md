@@ -111,7 +111,8 @@ Fades: use `.fading.in` / `.fading.out`. For automation values at a position, us
 `AudioTimeStretchBoxAdapter.cents` only — the underlying `playbackRate` field has
 `"positive"` constraint and accepts any value), or `AudioSignalsmithBox` (SDK 0.0.159+:
 Signalsmith phase-vocoder spectral stretch — warp markers + `transpose` float field
-±24 st, no transient markers needed; adapter exposes `transpose`/`cents`). Empty
+±24 st, no transient markers needed; adapter exposes `transpose`/`cents` — both
+UNCLAMPED, unlike the TimeStretch adapter's cents clamp; enforce ±24 st at the UI). Empty
 pointer = NoStretch (default, plays at source speed). Adapter accessors:
 `isPlayModeNoStretch`, `asPlayModePitchStretch`, `asPlayModeTimeStretch`,
 `asPlayModeSignalsmith`, `optWarpMarkers`, `observableOptPlayMode`. Names are

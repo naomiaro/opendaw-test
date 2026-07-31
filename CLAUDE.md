@@ -655,8 +655,16 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   `AudioNode.prototype.connect` to tee any `AudioDestinationNode` connection through an
   `AnalyserNode`, read `getFloatTimeDomainData` → RMS over ~2s (RMS≈0 = silent). Inspect the
   live box graph by pulling `project` from the React fiber (`root.__reactContainer$…` → walk
-  `memoizedState` hooks for the obj with `.engine` + `.rootBoxAdapter`). For an engine-swap
-  demo the tap only catches a worklet's `connect`, so toggle the engine to force a fresh reconnect.
+  `memoizedState` hooks for the obj with `.engine` + `.rootBoxAdapter`). The engine's `connect`
+  fires seconds AFTER page load (during "Starting engine…") — inject the patch immediately
+  after navigation and the race is winnable on a fresh load; claude-in-chrome's post-load
+  round-trip usually loses it. If the race is lost, don't reload-and-retry: swap in a fresh
+  receiver and restart the worklet via the SDK's own crash-recovery path —
+  `project.liveStreamReceiver = new (project.liveStreamReceiver.constructor)();
+  const w = project.startAudioWorklet(); await w.isReady()` — the new (tapped) worklet
+  re-points the engine facade via `setWorklet`; the old worklet idles stopped. The receiver
+  swap is required: `LiveStreamReceiver.connect` asserts "Already connected" and aborts the
+  EngineWorklet constructor mid-build without it. (Verified on warp/time-pitch demos.)
 - Playwright MCP screenshots: omit the `filename` param — custom-named files land
   loose in the MCP server's CWD (which may be a DIFFERENT repo than the one you're
   working in); default-named files land in `.playwright-mcp/`.

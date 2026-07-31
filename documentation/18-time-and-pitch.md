@@ -51,9 +51,16 @@ Need audio to sync to BPM changes?
          │   Cheaper, no transient detection. Good for loops, drones, FX,
          │   or when the tape-stop sound is the point.
          │
-         └── Yes (musical time-stretch) → TimeStretch
-             Independent pitch via cents (±1200). Transient-aware segment
-             playback preserves attacks. Requires transient markers on the file.
+         └── Yes (musical time-stretch) → two engines:
+             │
+             ├── Percussive / rhythmic material, pitch within ±1 octave
+             │   → TimeStretch. Transient-segmented playback preserves
+             │     attacks. Requires ≥2 transient markers on the file
+             │     (fewer renders silence).
+             │
+             └── Sustained / harmonic material, big transposes (±24 st),
+                 or no usable transients → Signalsmith. Spectral
+                 phase-vocoder stretch; no transient markers needed.
 ```
 
 ### Box-Graph Shape
@@ -621,7 +628,9 @@ One transaction = one undo entry, and the engine never sees an intermediate stat
 
 ## Demo
 
-[**Time & Pitch Demo →**](https://opendaw-test.pages.dev/time-pitch-demo.html) — switch a region between the three play modes, adjust cents on the TimeStretch path, and retune the project reference pitch (A4) from 400 to 480 Hz. Source: `src/demos/playback/time-pitch-demo.tsx`.
+[**Time & Pitch Demo →**](https://opendaw-test.pages.dev/time-pitch-demo.html) — switch a region between the four play modes, adjust cents on the TimeStretch path (±1200) or the Signalsmith path (±2400, spectral), and retune the project reference pitch (A4) from 400 to 480 Hz. Source: `src/demos/playback/time-pitch-demo.tsx`.
+
+[**Warp Signalsmith Demo →**](https://opendaw-test.pages.dev/warp-signalsmith-demo.html) — conform a full song to the grid with the Signalsmith spectral stretch and transpose it live ±24 semitones while the tempo stays put; A/B against transient-aware TimeStretch. Source: `src/demos/warp/warp-signalsmith-demo.tsx`.
 
 ---
 

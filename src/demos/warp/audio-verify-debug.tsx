@@ -1,7 +1,8 @@
 // src/demos/warp/audio-verify-debug.tsx
 // Unlisted offline-render harness for the audio-verify skill. Renders one warp
-// scenario (?scenario=raw|varispeed|timestretch|grid-conform|grid-rigid) to a
-// full-song WAV and PUTs it to the dev server's /__verify sink.
+// scenario (?scenario=raw|varispeed|timestretch|signalsmith|signalsmith-transposed|
+// grid-conform|grid-rigid) to a full-song WAV and PUTs it to the dev server's
+// /__verify sink.
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { PPQN, WavFile } from "@opendaw/lib-dsp";
@@ -18,6 +19,7 @@ import {
   applyRaw,
   applyVarispeed,
   applyTimeStretch,
+  applySignalsmith,
   applyGridPlacement,
   applyGridTempoEvents,
   rawEndPpqn,
@@ -26,7 +28,15 @@ import {
 } from "./lib/warpScenarios";
 
 const QUARTER = PPQN.Quarter;
-const SCENARIOS = ["raw", "varispeed", "timestretch", "grid-conform", "grid-rigid"] as const;
+const SCENARIOS = [
+  "raw",
+  "varispeed",
+  "timestretch",
+  "signalsmith",
+  "signalsmith-transposed",
+  "grid-conform",
+  "grid-rigid",
+] as const;
 type Scenario = (typeof SCENARIOS)[number];
 
 function isScenario(value: string | null): value is Scenario {
@@ -69,6 +79,15 @@ async function runScenario(
       setState("setup", "Detecting transients...");
       await ensureTransientMarkers(project, setup.audioFileBox, audioBuffer);
       applyTimeStretch(ctx, anchors, TransientPlayMode.Pingpong);
+      endPpqn = anchors[anchors.length - 1].tick;
+      break;
+    case "signalsmith":
+      applySignalsmith(ctx, anchors);
+      endPpqn = anchors[anchors.length - 1].tick;
+      break;
+    case "signalsmith-transposed":
+      // +3 st: verify pitch does not move time (beat alignment must still hold).
+      applySignalsmith(ctx, anchors, 3);
       endPpqn = anchors[anchors.length - 1].tick;
       break;
     case "grid-conform":

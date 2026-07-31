@@ -129,7 +129,9 @@ body { background: var(--mc-bg); }
 
 .mc-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* 2x2 for the four warp scenarios — every cell filled, no exposed
+     grid background (a 3-column layout strands the fourth panel). */
+  grid-template-columns: repeat(2, 1fr);
   gap: 1px;
   background: var(--mc-line);
   border: 1px solid var(--mc-line);

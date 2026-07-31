@@ -154,13 +154,13 @@ const GROUPS: Group[] = [
         href: "/warp-demos.html",
         title: "Warp: Who Bends?",
         blurb:
-          "Three ways to reconcile a song's beat map with the project grid — varispeed, set tempo from clip, and time-stretch — with the DAW features they correspond to.",
+          "Three ways to reconcile a song's beat map with the project grid — varispeed, set tempo from clip, and time-stretch, where two engines answer: slice at transients or stretch the spectrum (Signalsmith, ±24 st live transpose).",
       },
       {
         href: "/time-pitch-demo.html",
         title: "Time & Pitch",
         blurb:
-          "Switch a region between NoStretch, PitchStretch (varispeed), and TimeStretch (transient-aware) play modes. Pitch-shift up to ±1 octave in cents.",
+          "Switch a region between NoStretch, PitchStretch (varispeed), TimeStretch (transient-aware), and Signalsmith (spectral) play modes. Independent pitch in cents on both decoupled modes.",
       },
     ],
   },
