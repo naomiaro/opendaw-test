@@ -154,13 +154,7 @@ const GROUPS: Group[] = [
         href: "/warp-demos.html",
         title: "Warp: Who Bends?",
         blurb:
-          "Three ways to reconcile a song's beat map with the project grid — varispeed, set tempo from clip, and time-stretch — with the DAW features they correspond to.",
-      },
-      {
-        href: "/warp-signalsmith-demo.html",
-        title: "Warp: Signalsmith",
-        blurb:
-          "Conform a song to the grid with the Signalsmith spectral stretch and transpose it ±24 semitones live — no transient markers needed. A/B against transient-aware time-stretch.",
+          "Three ways to reconcile a song's beat map with the project grid — varispeed, set tempo from clip, and time-stretch, where two engines answer: slice at transients or stretch the spectrum (Signalsmith, ±24 st live transpose).",
       },
       {
         href: "/time-pitch-demo.html",
