@@ -362,7 +362,7 @@ git commit -m "feat(warp): signalsmith joins the timestretch demo A/B"
 - Consumes: `applySignalsmith`, `applyTimeStretch`, `applyRaw`, `WarpStretchBox`, `setupWarpDemo`, `WarpWaveform`, `usePlaybackPosition`, `useTransportControls`, `ensureTransientMarkers`.
 - Produces: the page Task 5 wires into index/sitemap/overview.
 
-- [ ] **Step 1: Create `src/demos/warp/warp-signalsmith-demo.tsx`**
+- [x] **Step 1: Create `src/demos/warp/warp-signalsmith-demo.tsx`**
 
 Full file (modeled on warp-timestretch-demo; three modes — raw baseline, signalsmith,
 timestretch-for-A/B — plus a transpose slider that persists across mode switches):
@@ -833,7 +833,7 @@ the existing `<style>` block pattern (borders `var(--mc-line-bright)`, header in
 kicker type style) — do NOT edit the shared theme for one page unless a table style
 already half-exists there.
 
-- [ ] **Step 2: Create `warp-signalsmith-demo.html`**
+- [x] **Step 2: Create `warp-signalsmith-demo.html`**
 
 Copy `warp-timestretch-demo.html` exactly, then change: `<title>`/meta titles to
 "OpenDAW Warp Demo — Signalsmith: Lock the Beats, Change the Key"; descriptions to
@@ -845,7 +845,7 @@ transient-aware time-stretch."; canonical/og:url to
 `/src/demos/warp/warp-signalsmith-demo.tsx`. Keep the GoatCounter script line and the
 crossorigin font links verbatim.
 
-- [ ] **Step 3: Add the Vite entry**
+- [x] **Step 3: Add the Vite entry**
 
 In `vite.config.ts` after the `warpOverview` line (~154):
 
@@ -853,7 +853,7 @@ In `vite.config.ts` after the `warpOverview` line (~154):
                 warpSignalsmith: resolve(__dirname, "warp-signalsmith-demo.html"),
 ```
 
-- [ ] **Step 4: Typecheck + build**
+- [x] **Step 4: Typecheck + build**
 
 ```bash
 npx tsc --noEmit --ignoreDeprecations "6.0" 2>&1 | grep '^src/' | sort > /private/tmp/claude-501/-Users-naomiaro-Code-opendaw-test/83cbd9ad-e452-4ae7-aa93-08bd3ad9ec71/scratchpad/tsc-task4.txt
@@ -863,7 +863,7 @@ npm run build 2>&1 | tail -5
 
 Expected: no new tsc errors; build succeeds.
 
-- [ ] **Step 5: Browser verification — the three spec verify-items land here**
+- [x] **Step 5: Browser verification — the three spec verify-items land here**
 
 Fresh load of `https://localhost:5181/warp-signalsmith-demo.html` (claude-in-chrome,
 window visible):
@@ -883,7 +883,7 @@ window visible):
    horizontally (`el.scrollWidth > el.clientWidth` on the wrapper is OK, on `body` is
    not).
 
-- [ ] **Step 6: Listen and true-up the copy (spec verify-item 3)**
+- [x] **Step 6: Listen and true-up the copy (spec verify-item 3)**
 
 Play 20–30 s in each of signalsmith and timestretch at +3 st and at −12 st. If the
 "percussive favors time-stretch / sustained favors spectral" claim does NOT match what
@@ -891,7 +891,7 @@ the WASM engine actually sounds like on Otherside, rewrite those copy sentences 
 and in Task 3's intro) to describe the actual audible difference. Record what you heard
 in the task summary.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/demos/warp/warp-signalsmith-demo.tsx warp-signalsmith-demo.html vite.config.ts

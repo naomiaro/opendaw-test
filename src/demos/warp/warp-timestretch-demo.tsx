@@ -312,6 +312,7 @@ function WarpTimestretchDemo() {
                 style={{
                   opacity: switching || isPlaying ? 0.5 : 1,
                   pointerEvents: switching || isPlaying || !setup ? "none" : "auto",
+                  overflowX: "auto",
                 }}
               >
                 <SegmentedControl.Root
