@@ -5,7 +5,7 @@ description: Verify warp/audio-engine behavior by offline-rendering the warp dem
 
 # audio-verify
 
-Renders the five warp scenarios full-song through the OpenDAW offline engine and
+Renders the seven warp scenarios full-song through the OpenDAW offline engine and
 asserts beat alignment against expected times computed from the beat map. Replaces
 "needs human ears" with numbers. Requires: the dev server (HTTPS certs present),
 Playwright MCP, audio-analyzer MCP.
@@ -20,7 +20,8 @@ All thresholds below are calibrated from a full end-to-end run on 2026-06-10
 2. **Render each scenario** (sequentially; measured ~15–30 s per full-song render
    on an M-series Mac — budget minutes only for slower machines): navigate
    Playwright to `https://localhost:5181/audio-verify-debug.html?scenario=<s>` for
-   `raw`, `varispeed`, `timestretch`, `grid-conform`, `grid-rigid`.
+   `raw`, `varispeed`, `timestretch`, `signalsmith`, `signalsmith-transposed`,
+   `grid-conform`, `grid-rigid`.
    Poll the `#verify-state` element's `data-verify-state` attribute:
    `setup → rendering → uploading → done`. On `error:<msg>`: stop, report the
    message. WAVs land at `.verify-output/verify-<scenario>.wav`.
@@ -59,6 +60,8 @@ seconds. Measured reference points:
 | raw — negative control | gridTimes | ≥ 100 ms (the file does not sit on the grid; if raw "passes" the locked test the discriminator is broken: STOP) |
 | varispeed | gridTimes | ≤ 60 ms |
 | timestretch | gridTimes | ≤ 75 ms (WASM offline worker — see 2026-07-16 re-measurement) |
+| signalsmith | gridTimes | [60,80] ≤ 60 ms; [120,140] is tracker-artifact-prone on this render — do NOT assert the raw median there, use the cross-render envelope-lag check (see 2026-07-31 note) |
+| signalsmith-transposed (+3 st) | gridTimes | ≤ 60 ms (both windows); envelope lag vs untransposed must peak at 0 ms (pitch must not move time); pitch-class rotation corr must peak at −3 st |
 | grid-conform | fileTimes | ≤ 60 ms (conformed grid + clicks + music all coincide on file times) |
 | grid-rigid — placement sanity | fileTimesRigid | ≤ 60 ms (music plays where the region was placed) |
 | grid-rigid — negative control | rigidClickTimes | ≥ 90 ms ([60,80] measured 92 ms on the WASM worker; [120,140] ≥ 100 ms) |
@@ -97,6 +100,24 @@ windows. (2) **rigid-vs-clicks [60,80] first-measured at 91.5 ms** — nominally
 under the ≥100 ms negative-control line, but it still discriminates cleanly (the
 music sits 33 ms from `fileTimesRigid` vs 92 ms from the rigid click grid, a ~2.7×
 separation), so the control is not broken; the [120,140] window remains 153 ms.
+
+Measured 2026-07-31 (first run of the signalsmith scenarios, SDK 0.0.163 WASM
+offline worker; same two windows, medians ms vs gridTimes): signalsmith
+**17.9**/121.3*, signalsmith-transposed (+3 st) **35.6/24.0**. Both renders are
+grid-locked; the starred [120,140] cell is a **beat-tracker phase-slip artifact**,
+not misalignment — the tracker reads the untransposed render's pulse there at
+~131 BPM median (vs project 123) and weaves between on-grid hits (8–30 ms) and
+offbeats (200+ ms). Proven by amplitude-envelope cross-correlation (10 ms RMS
+hops, pure python — no numpy in this env): untransposed-vs-transposed peak lag
+**0 ms** on BOTH windows (corr 0.69/0.73), untransposed-vs-varispeed (locked
+control) lag −20 ms corr 0.71, untransposed-vs-raw (off-grid control) lag −390 ms
+corr 0.14. Method validity: timestretch [120,140] measured the same day with the
+identical procedure reproduces its calibration exactly (67.9 vs 68 ms). If a
+future signalsmith run reads ~120 ms on one window, run the envelope-lag check
+before declaring a regression. Transpose pitch check: key detection reads
+E minor → G minor (+3 st); pitch-class rotation correlation peaks at −3 st
+(**0.672**, vs **−0.327** at lag 0) — the required ordering holds with a wide
+margin.
 
 **Pitch (relative check):** `harmonic_analysis` pitch-class distributions on
 [120, 140] s; Pearson-correlate each against raw's. Require

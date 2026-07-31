@@ -183,12 +183,12 @@ git commit -m "feat(warp): applySignalsmith scenario builder + verify-harness sc
 - Consumes: Task 1's rendered `verify-signalsmith.wav` + `verify-signalsmith-transposed.wav`, `scripts/expected-beats.ts`, `scripts/compare-beats.py`, audio-analyzer MCP.
 - Produces: measured medians recorded in SKILL.md; later tasks rely on nothing from this task.
 
-- [ ] **Step 1: Render the transposed scenario**
+- [x] **Step 1: Render the transposed scenario**
 
 Navigate Playwright to
 `https://localhost:5181/audio-verify-debug.html?scenario=signalsmith-transposed`, poll to `done`.
 
-- [ ] **Step 2: Generate expected times and analyze both WAVs**
+- [x] **Step 2: Generate expected times and analyze both WAVs**
 
 ```bash
 node scripts/expected-beats.ts > /private/tmp/claude-501/-Users-naomiaro-Code-opendaw-test/83cbd9ad-e452-4ae7-aa93-08bd3ad9ec71/scratchpad/expected.json
@@ -209,7 +209,7 @@ correlate best with the untransposed one at lag 0 — a +3 st shift rotates pitc
 assert `corr(untransposed, transposed rotated by −3)` > `corr(untransposed, transposed)`.
 If any criterion fails: STOP, report numbers.
 
-- [ ] **Step 3: Update SKILL.md**
+- [x] **Step 3: Update SKILL.md**
 
 In `.claude/skills/audio-verify/SKILL.md`: change "five warp scenarios" to "seven";
 add `signalsmith`, `signalsmith-transposed` to the `?scenario=` list in the Workflow
@@ -217,7 +217,7 @@ section; add two assertion-table rows with the criteria above **and the medians 
 actually measured** (follow the existing "Measured YYYY-MM-DD" convention, dated
 2026-07-31).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add .claude/skills/audio-verify/SKILL.md
