@@ -4,6 +4,7 @@ import { UUID } from "@opendaw/lib-std";
 import { PPQN, TimeBase } from "@opendaw/lib-dsp";
 import { Project } from "@opendaw/studio-core";
 import {
+  AudioSignalsmithBoxAdapter,
   AudioTimeStretchBoxAdapter,
   BaseFrequencyRange,
   InstrumentFactories,
@@ -13,6 +14,7 @@ import {
   AudioFileBox,
   AudioRegionBox,
   AudioPitchStretchBox,
+  AudioSignalsmithBox,
   AudioTimeStretchBox,
   ValueEventCollectionBox,
   WarpMarkerBox,
@@ -44,7 +46,7 @@ import {
 import { InfoCircledIcon } from "@radix-ui/react-icons";
 import { CONSOLE_STYLES } from "@/lib/design/consoleTheme";
 
-type PlayMode = "none" | "pitch" | "time";
+type PlayMode = "none" | "pitch" | "time" | "smith";
 
 const SAMPLE_PATH = "/audio/BassDrums30.mp3";
 const SAMPLE_NAME = "BassDrums30";
@@ -93,7 +95,7 @@ function TimePitchDemo() {
   const audioFileBoxRef = useRef<AudioFileBox | null>(null);
   const audioBufferRef = useRef<AudioBuffer | null>(null);
   const stretchBoxRef = useRef<
-    AudioPitchStretchBox | AudioTimeStretchBox | null
+    AudioPitchStretchBox | AudioTimeStretchBox | AudioSignalsmithBox | null
   >(null);
   const durationSecondsRef = useRef(0);
   const durationPpqnRef = useRef(0);
@@ -261,9 +263,11 @@ function TimePitchDemo() {
           const nextBox =
             nextMode === "pitch"
               ? AudioPitchStretchBox.create(boxGraph, UUID.generate())
-              : AudioTimeStretchBox.create(boxGraph, UUID.generate(), (b) => {
-                  b.transientPlayMode.setValue(transientMode);
-                });
+              : nextMode === "smith"
+                ? AudioSignalsmithBox.create(boxGraph, UUID.generate())
+                : AudioTimeStretchBox.create(boxGraph, UUID.generate(), (b) => {
+                    b.transientPlayMode.setValue(transientMode);
+                  });
           if (nextBox instanceof AudioTimeStretchBox) {
             // userCents is 0 on mode switch (setCents below); only the active
             // tuning offset contributes to the initial rate. The adapter's
@@ -271,6 +275,17 @@ function TimePitchDemo() {
             project.boxAdapters.adapterFor(
               nextBox,
               AudioTimeStretchBoxAdapter
+            ).cents = computeTuningCents(
+              referencePitchRef.current,
+              initialPitchRef.current
+            );
+          }
+          if (nextBox instanceof AudioSignalsmithBox) {
+            // Same tuning carry-over; Signalsmith cents = transpose*100, unclamped
+            // by the adapter — the UI clamp (±2400) lives in onCentsChange.
+            project.boxAdapters.adapterFor(
+              nextBox,
+              AudioSignalsmithBoxAdapter
             ).cents = computeTuningCents(
               referencePitchRef.current,
               initialPitchRef.current
@@ -314,6 +329,7 @@ function TimePitchDemo() {
         // actually in by reading stretchBoxRef (untouched on throw).
         const current = stretchBoxRef.current;
         if (current === null) setPlayMode("none");
+        else if (current instanceof AudioSignalsmithBox) setPlayMode("smith");
         else if (current instanceof AudioTimeStretchBox) setPlayMode("time");
         else setPlayMode("pitch");
       } finally {
@@ -324,22 +340,36 @@ function TimePitchDemo() {
     [project, transientMode]
   );
 
-  // ---- Cents slider (TimeStretch only)
+  // ---- Cents slider (either decoupled mode: TimeStretch or Signalsmith)
   const onCentsChange = useCallback(
     (value: number) => {
       if (!project) return;
       const box = stretchBoxRef.current;
-      if (!box || !(box instanceof AudioTimeStretchBox)) return;
-      const adapter = project.boxAdapters.adapterFor(
-        box,
-        AudioTimeStretchBoxAdapter
-      );
-      project.editing.modify(() => {
-        // Adapter setter applies 2^(cents/1200) and clamps rate to [0.5, 2.0].
-        adapter.cents =
-          value +
-          computeTuningCents(referencePitchRef.current, initialPitchRef.current);
-      });
+      if (!box) return;
+      const total =
+        value +
+        computeTuningCents(referencePitchRef.current, initialPitchRef.current);
+      if (box instanceof AudioTimeStretchBox) {
+        const adapter = project.boxAdapters.adapterFor(
+          box,
+          AudioTimeStretchBoxAdapter
+        );
+        project.editing.modify(() => {
+          // Adapter setter applies 2^(cents/1200) and clamps rate to [0.5, 2.0].
+          adapter.cents = total;
+        });
+      } else if (box instanceof AudioSignalsmithBox) {
+        const adapter = project.boxAdapters.adapterFor(
+          box,
+          AudioSignalsmithBoxAdapter
+        );
+        project.editing.modify(() => {
+          // No adapter clamp — enforce ±2400 cents (±24 st) here.
+          adapter.cents = Math.max(-2400, Math.min(2400, total));
+        });
+      } else {
+        return;
+      }
       setCents(value);
     },
     [project]
@@ -372,9 +402,28 @@ function TimePitchDemo() {
             centsRef.current +
             computeTuningCents(clamped, initialPitchRef.current);
         }
+        if (currentBox instanceof AudioSignalsmithBox) {
+          // Spectral retune on the same box; UI enforces the ±2400 clamp.
+          project.boxAdapters.adapterFor(
+            currentBox,
+            AudioSignalsmithBoxAdapter
+          ).cents = Math.max(
+            -2400,
+            Math.min(
+              2400,
+              centsRef.current +
+                computeTuningCents(clamped, initialPitchRef.current)
+            )
+          );
+        }
       });
 
-      if (currentBox instanceof AudioTimeStretchBox) return;
+      // Already-decoupled modes carry the retune themselves — no engage needed.
+      if (
+        currentBox instanceof AudioTimeStretchBox ||
+        currentBox instanceof AudioSignalsmithBox
+      )
+        return;
 
       // Not in TimeStretch — engage it so the retune is audible.
       if (!switchingRef.current) {
@@ -454,7 +503,7 @@ function TimePitchDemo() {
               TIME <span className="mc-q">&amp;</span> PITCH
             </h1>
             <p className="mc-intro">
-              Switch a region between the three audio play modes and hear what
+              Switch a region between the four audio play modes and hear what
               changes. Source for the chapter at{" "}
               <a
                 href="https://opendaw-test.pages.dev/docs/18-time-and-pitch.html"
@@ -480,7 +529,13 @@ function TimePitchDemo() {
               <code>playbackRate</code> field accepts any positive float.
               TimeStretch needs at least two <code>TransientMarkerBox</code>{" "}
               entries on the file box — fewer than two and the engine renders
-              silence.
+              silence. <code>AudioSignalsmithBox</code> = spectral phase-vocoder
+              stretch; <code>AudioSignalsmithBoxAdapter.cents</code> maps to its{" "}
+              <code>transpose</code> field (semitones × 100) and — unlike the
+              TimeStretch adapter — applies <strong>no clamp</strong>, so this
+              demo enforces ±2400 cents at the UI. No transient markers needed.
+              The <a href="/warp-signalsmith-demo.html">signalsmith demo</a>{" "}
+              tells the musical story.
             </p>
           </section>
 
@@ -519,6 +574,7 @@ function TimePitchDemo() {
                   <SegmentedControl.Item value="none">NoStretch</SegmentedControl.Item>
                   <SegmentedControl.Item value="pitch">PitchStretch</SegmentedControl.Item>
                   <SegmentedControl.Item value="time">TimeStretch</SegmentedControl.Item>
+                  <SegmentedControl.Item value="smith">Signalsmith</SegmentedControl.Item>
                 </SegmentedControl.Root>
               </div>
               {isPlaying && (
@@ -555,9 +611,16 @@ function TimePitchDemo() {
                     don't shift pitch.
                   </>
                 )}
+                {playMode === "smith" && (
+                  <>
+                    <Code>AudioSignalsmithBox</Code> attached with two warp markers.
+                    Spectral phase-vocoder stretch — pitch is independent (±24 st)
+                    and no transient markers are needed.
+                  </>
+                )}
               </Text>
 
-              {playMode === "time" && (
+              {(playMode === "time" || playMode === "smith") && (
                 <>
                   <Separator size="4" />
                   <Flex direction="column" gap="2">
@@ -571,34 +634,57 @@ function TimePitchDemo() {
                             {" "}
                             {tuningCents > 0 ? "+" : ""}
                             {tuningCents.toFixed(2)} tuning ={" "}
-                            {appliedCents > 0 ? "+" : ""}
-                            {appliedCents.toFixed(2)}
+                            {playMode === "smith"
+                              ? (cents + tuningCents).toFixed(2)
+                              : `${appliedCents > 0 ? "+" : ""}${appliedCents.toFixed(2)}`}
                           </>
                         )}
-                        {isCentsClamped && (
+                        {playMode === "time" && isCentsClamped && (
                           <>
                             {" "}
                             <strong>(clamped)</strong>
                           </>
                         )}{" "}
-                        · rate {playbackRate.toFixed(3)}×
+                        {playMode === "smith" ? (
+                          <>
+                            · transpose {((cents + tuningCents) / 100).toFixed(2)} st ·
+                            tempo unchanged
+                          </>
+                        ) : (
+                          <>· rate {playbackRate.toFixed(3)}×</>
+                        )}
                       </Text>
                     </Flex>
                     <Slider
                       value={[cents]}
                       onValueChange={([v]) => onCentsChange(v)}
-                      min={-1200}
-                      max={1200}
+                      min={playMode === "smith" ? -2400 : -1200}
+                      max={playMode === "smith" ? 2400 : 1200}
                       step={50}
                     />
                     <Text size="1" color="gray">
-                      Range ±1200 cents (±1 octave). The{" "}
-                      <Code>AudioTimeStretchBoxAdapter.cents</Code> setter clamps{" "}
-                      <Code>playbackRate</Code> to <Code>[0.5, 2.0]</Code> — the raw{" "}
-                      <Code>playbackRate</Code> field itself accepts any positive float.
+                      {playMode === "smith" ? (
+                        <>
+                          Range ±2400 cents (±2 octaves). The{" "}
+                          <Code>AudioSignalsmithBoxAdapter.cents</Code> setter maps to{" "}
+                          <Code>transpose</Code> (semitones × 100) and applies{" "}
+                          <strong>no clamp</strong> — this UI enforces ±2400 itself.
+                        </>
+                      ) : (
+                        <>
+                          Range ±1200 cents (±1 octave). The{" "}
+                          <Code>AudioTimeStretchBoxAdapter.cents</Code> setter clamps{" "}
+                          <Code>playbackRate</Code> to <Code>[0.5, 2.0]</Code> — the raw{" "}
+                          <Code>playbackRate</Code> field itself accepts any positive float.
+                        </>
+                      )}
                     </Text>
                   </Flex>
+                </>
+              )}
 
+              {playMode === "time" && (
+                <>
                   <Flex direction="column" gap="2">
                     <Text weight="medium">Transient play mode</Text>
                     <SegmentedControl.Root
@@ -680,7 +766,9 @@ function TimePitchDemo() {
                   {tuningCents > 0 ? "+" : ""}
                   {tuningCents.toFixed(2)} cents
                 </strong>{" "}
-                to the box's <Code>playbackRate</Code>.
+                to the box's <Code>playbackRate</Code>. In Signalsmith mode the
+                retune is applied spectrally to the same box; auto-engage (from
+                NoStretch/PitchStretch) still targets TimeStretch.
               </Text>
             </Flex>
           </Card>
@@ -723,6 +811,13 @@ function TimePitchDemo() {
                     <strong>TimeStretch:</strong> the file follows the BPM but
                     pitch stays at whatever cents you set — transients are spliced
                     to fill the new wall-clock time.
+                  </>
+                )}
+                {playMode === "smith" && (
+                  <>
+                    <strong>Signalsmith:</strong> the file follows the BPM; pitch
+                    stays where you set it — the spectrum is stretched rather than
+                    sliced, so no transient markers are involved.
                   </>
                 )}
               </Text>

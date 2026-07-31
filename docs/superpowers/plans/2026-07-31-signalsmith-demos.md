@@ -1009,7 +1009,7 @@ TimeStretch when no decoupled mode is active — minimal diff, existing copy sta
 When the active mode is already Signalsmith, the tuning offset is applied to the
 Signalsmith box instead (no mode change). State this in the Reference Pitch card copy.
 
-- [ ] **Step 1: Extend the mode union, imports, and refs**
+- [x] **Step 1: Extend the mode union, imports, and refs**
 
 ```typescript
 type PlayMode = "none" | "pitch" | "time" | "smith";
@@ -1019,7 +1019,7 @@ Add `AudioSignalsmithBox` to the `@opendaw/studio-boxes` import and
 `AudioSignalsmithBoxAdapter` to the `@opendaw/studio-adapters` import. Widen
 `stretchBoxRef` to `useRef<AudioPitchStretchBox | AudioTimeStretchBox | AudioSignalsmithBox | null>(null)`.
 
-- [ ] **Step 2: Extend switchMode**
+- [x] **Step 2: Extend switchMode**
 
 In the transient-detection guard, `nextMode === "time"` stays the only detection case
 ("smith" needs none). In the box-creation ternary:
@@ -1057,7 +1057,7 @@ In the error-reconciliation branch add before the TimeStretch check:
         else if (current instanceof AudioSignalsmithBox) setPlayMode("smith");
 ```
 
-- [ ] **Step 3: Extend onCentsChange to drive whichever decoupled box is active**
+- [x] **Step 3: Extend onCentsChange to drive whichever decoupled box is active**
 
 Replace the body's early-return + adapter write with:
 
@@ -1085,7 +1085,7 @@ Replace the body's early-return + adapter write with:
       setCents(value);
 ```
 
-- [ ] **Step 4: Extend onReferencePitchChange**
+- [x] **Step 4: Extend onReferencePitchChange**
 
 Inside the existing `editing.modify`, after the TimeStretch branch, add a Signalsmith
 branch with the same `centsRef.current + computeTuningCents(...)` write via
@@ -1093,7 +1093,7 @@ branch with the same `centsRef.current + computeTuningCents(...)` write via
 `if (currentBox instanceof AudioTimeStretchBox) return;` to also return for
 `AudioSignalsmithBox` (already-decoupled — no engage needed).
 
-- [ ] **Step 5: UI — fourth segment, cents slider in smith mode, readouts**
+- [x] **Step 5: UI — fourth segment, cents slider in smith mode, readouts**
 
 - Add `<SegmentedControl.Item value="smith">Signalsmith</SegmentedControl.Item>`.
 - The cents/transient block is gated `playMode === "time"` — change the gate to
@@ -1121,13 +1121,13 @@ branch with the same `centsRef.current + computeTuningCents(...)` write via
   applied spectrally to the same box; auto-engage (from NoStretch/PitchStretch) still
   targets TimeStretch."
 
-- [ ] **Step 6: HTML meta copy**
+- [x] **Step 6: HTML meta copy**
 
 In `time-pitch-demo.html`, update title/description metas mentioning "three play
 modes" to four, adding "Signalsmith (spectral)". (Read the file first; it was not
 inspected during planning.)
 
-- [ ] **Step 7: Typecheck + browser verification**
+- [x] **Step 7: Typecheck + browser verification**
 
 tsc baseline diff (output `tsc-task6.txt`) — expect empty. Fresh load of
 `https://localhost:5181/time-pitch-demo.html`: click Signalsmith (mode switch works
@@ -1136,7 +1136,7 @@ octaves up audibly/spectrally; switch to TimeStretch and confirm slider range dr
 ±1200 with cents reset to 0; drag A4 slider in smith mode and confirm no mode change
 occurs and pitch shifts by the tuning offset. No console errors on fresh load.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/demos/playback/time-pitch-demo.tsx time-pitch-demo.html
