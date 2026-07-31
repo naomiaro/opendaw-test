@@ -54,6 +54,17 @@ const SCENARIOS = [
     prose:
       "Remixing and beatmatching where the key must survive: acapellas dropped over new beats, sample-pack loops brought to project tempo, stem imports from a different session. The algorithm slices the file at transient boundaries and stretches each slice independently, locking beats to the grid while the pitch stays fixed. This is the modern DAW default.",
   },
+  {
+    index: "04",
+    chip: "var(--mc-violet)",
+    name: "Signalsmith",
+    direction: "FILE → GRID, SPECTRAL",
+    hear: "Beats lock, key is yours to choose",
+    daws: ["Ableton Complex/Complex Pro", "Serato Pitch 'n Time"],
+    href: "/warp-signalsmith-demo.html",
+    prose:
+      "The second pitch-preserving answer, built for what defeats the slicer: sustained pads, drones, and sparse material where transient detection has nothing to find — and for big transposes, up to ±24 semitones while the tempo stays put. A phase vocoder stretches the spectrum rather than slicing at attacks, so the trade runs the other way on drums.",
+  },
 ] as const;
 
 
@@ -117,7 +128,8 @@ function WarpOverview() {
               where each beat lands. Once that map exists, the file and the project grid
               must be reconciled. Every DAW surfaces exactly three answers:{" "}
               <strong>bend the file</strong>, <strong>bend the grid</strong>, or{" "}
-              <strong>slice and stretch</strong>.
+              <strong>slice and stretch</strong> &mdash; and the third answer ships two
+              engines: slice at transients, or stretch the spectrum.
             </p>
           </header>
 
@@ -164,12 +176,15 @@ function WarpOverview() {
             <p>
               The same <code>&#123;tick, second&#125;</code> pins &mdash; the beat
               map&apos;s <code>&#123;second, beat&#125;</code> rows mapped onto grid
-              ticks &mdash; drive an <code>AudioPitchStretchBox</code> and an{" "}
-              <code>AudioTimeStretchBox</code> without modification. That is why
-              Ableton can switch a clip&apos;s warp mode without touching its markers:
-              the anchors describe the beat map, not the stretch algorithm. The{" "}
+              ticks &mdash; drive an <code>AudioPitchStretchBox</code>, an{" "}
+              <code>AudioTimeStretchBox</code>, and an <code>AudioSignalsmithBox</code>{" "}
+              without modification. That is why Ableton can switch a clip&apos;s warp
+              mode without touching its markers: the anchors describe the beat map, not
+              the stretch algorithm. The{" "}
               <a href="/warp-timestretch-demo.html">time-stretch demo</a> makes the A/B
-              audible with raw, varispeed, and time-stretch on one page.
+              audible with raw, varispeed, time-stretch, and signalsmith on one page,
+              and the <a href="/warp-signalsmith-demo.html">signalsmith demo</a> adds
+              the live-transpose story.
             </p>
           </section>
 

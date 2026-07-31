@@ -157,10 +157,16 @@ const GROUPS: Group[] = [
           "Three ways to reconcile a song's beat map with the project grid — varispeed, set tempo from clip, and time-stretch — with the DAW features they correspond to.",
       },
       {
+        href: "/warp-signalsmith-demo.html",
+        title: "Warp: Signalsmith",
+        blurb:
+          "Conform a song to the grid with the Signalsmith spectral stretch and transpose it ±24 semitones live — no transient markers needed. A/B against transient-aware time-stretch.",
+      },
+      {
         href: "/time-pitch-demo.html",
         title: "Time & Pitch",
         blurb:
-          "Switch a region between NoStretch, PitchStretch (varispeed), and TimeStretch (transient-aware) play modes. Pitch-shift up to ±1 octave in cents.",
+          "Switch a region between NoStretch, PitchStretch (varispeed), TimeStretch (transient-aware), and Signalsmith (spectral) play modes. Independent pitch in cents on both decoupled modes.",
       },
     ],
   },

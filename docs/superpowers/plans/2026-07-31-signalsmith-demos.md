@@ -912,7 +912,7 @@ git commit -m "feat(warp): signalsmith demo — spectral grid conform with live 
 - Consumes: Task 4's live page.
 - Produces: nothing downstream.
 
-- [ ] **Step 1: Index card**
+- [x] **Step 1: Index card**
 
 In `src/index.tsx`, in the "Warp & Pitch" section after the "Warp: Who Bends?" entry:
 
@@ -932,7 +932,7 @@ Also update the "Time & Pitch" card blurb in the same section to:
           "Switch a region between NoStretch, PitchStretch (varispeed), TimeStretch (transient-aware), and Signalsmith (spectral) play modes. Independent pitch in cents on both decoupled modes.",
 ```
 
-- [ ] **Step 2: Sitemap**
+- [x] **Step 2: Sitemap**
 
 In `public/sitemap.xml`, next to the other warp URLs:
 
@@ -940,7 +940,7 @@ In `public/sitemap.xml`, next to the other warp URLs:
   <url><loc>https://opendaw-test.pages.dev/warp-signalsmith-demo.html</loc></url>
 ```
 
-- [ ] **Step 3: Fourth panel + copy updates in warp-overview.tsx**
+- [x] **Step 3: Fourth panel + copy updates in warp-overview.tsx**
 
 Append to the `SCENARIOS` array:
 
@@ -971,7 +971,7 @@ signalsmith demo alongside the timestretch demo link. Check whether the `mc-grid
 handles 4 panels acceptably at desktop and mobile widths (screenshot both); adjust
 only if a panel overflows.
 
-- [ ] **Step 4: og-image**
+- [x] **Step 4: og-image**
 
 With the dev server running, screenshot the loaded warp-signalsmith page at 1200×630
 (Playwright `browser_resize` to 1200×630 then screenshot; or claude-in-chrome
@@ -979,13 +979,13 @@ resize_window — re-screenshot after resize per the known coordinate-drift issu
 Save as `public/og-image-warp-signalsmith.png`. Verify file size is reasonable
 (`ls -la public/og-image-warp-signalsmith.png`, expect > 50 KB).
 
-- [ ] **Step 5: Typecheck + visual check**
+- [x] **Step 5: Typecheck + visual check**
 
 tsc baseline diff (same command pattern as Task 4 Step 4, output to `tsc-task5.txt`) —
 expect empty. Load `https://localhost:5181/` and `https://localhost:5181/warp-demos.html`,
 screenshot both, confirm the new card and fourth panel render without layout breakage.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/index.tsx public/sitemap.xml src/demos/warp/warp-overview.tsx public/og-image-warp-signalsmith.png
