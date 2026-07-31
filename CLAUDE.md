@@ -647,8 +647,12 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   `requestAnimationFrame`, which freezes OpenDAW's entire main-thread sync
   (`SyncStream reader.tryRead()`, position/isPlaying observables, RecordAudio take
   management). The engine keeps running on the audio thread; the main thread just never
-  observes it. Fix: `resize_window` (claude-in-chrome) raises the window to visible.
-  Not an SDK bug — don't debug it as one.
+  observes it. `resize_window` does NOT reliably unhide a fully occluded window
+  (verified: visibility stayed hidden after resize + screenshot). Audio and
+  setInterval keep running while hidden — analyser RMS taps still measure fine;
+  move position/isPlaying/UI-state verification to the Playwright browser (rAF
+  ticks there). Beware: frozen React isPlaying=false leaves "disabled during
+  playback" guards open. Not an SDK bug — don't debug it as one.
 - Verify in-browser AUDIO demos by measuring the actual OUTPUT SIGNAL, not `isPlaying`/a
   disabled Play button — a transport reports "playing" while the engine renders silence
   (e.g. a note region with `loopDuration:0`). Tap output: monkeypatch
@@ -680,6 +684,8 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   handlers on these demos — click by coordinates from a screenshot instead. Also:
   `javascript_tool` results dumping page text can trip the extension's
   "[BLOCKED: Cookie/query string data]" filter — read results via screenshot.
+- Radix Slider in browser tests: click the slider, then send the `End`/`Home` key —
+  jumps to max/min through the real onValueChange path (no fragile drag math).
 - After `resize_window`, screenshot pixel coordinates can stop mapping 1:1 to the
   viewport (screenshot 1456×814 vs a 1400×900 window) — coordinate clicks then miss
   silently (button looks clicked, handler never fires; reads as "transport dead" while

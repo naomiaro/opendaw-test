@@ -30,6 +30,11 @@ All thresholds below are calibrated from a full end-to-end run on 2026-06-10
    `rigidClickTimes` (render-relative seconds).
 4. **Analyze** each WAV with audio-analyzer `rhythm_analysis` on two 20 s windows:
    **[60, 80] s and [120, 140] s**. Collect the detected beat lists.
+   The tool prints only the FIRST 20 beats per window — every calibrated median
+   in this file is computed from that first-20 list (validated: the same
+   procedure reproduces timestretch [120,140] at 67.9 vs calibrated 68 ms).
+   Don't chase the full list; medians from a different beat count aren't
+   comparable to the table.
    Window choice matters: both windows must be musically dense (the tracker needs
    stability ≥ ~0.8; Otherside's first ~30 s is sparse guitar and unusable) and
    away from divergence zero-crossings (file-vs-grid drift is NOT monotonic — it
