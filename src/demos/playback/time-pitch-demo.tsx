@@ -282,13 +282,20 @@ function TimePitchDemo() {
           }
           if (nextBox instanceof AudioSignalsmithBox) {
             // Same tuning carry-over; Signalsmith cents = transpose*100, unclamped
-            // by the adapter — the UI clamp (±2400) lives in onCentsChange.
+            // by the adapter — every UI write site clamps ±2400, this one included
+            // (tuning alone is bounded ±165, but keep the clamp uniform).
             project.boxAdapters.adapterFor(
               nextBox,
               AudioSignalsmithBoxAdapter
-            ).cents = computeTuningCents(
-              referencePitchRef.current,
-              initialPitchRef.current
+            ).cents = Math.max(
+              -2400,
+              Math.min(
+                2400,
+                computeTuningCents(
+                  referencePitchRef.current,
+                  initialPitchRef.current
+                )
+              )
             );
           }
 
@@ -376,7 +383,9 @@ function TimePitchDemo() {
   );
 
   // ---- Reference pitch (A4): writes baseFrequency project-wide AND auto-engages
-  // TimeStretch the first time the value diverges from the loaded baseline.
+  // TimeStretch the first time the value diverges from the loaded baseline —
+  // unless the region is already in a decoupled mode (TimeStretch or
+  // Signalsmith), which carries the retune itself.
   // baseFrequency itself only affects MIDI synths in the SDK — to retune an
   // audio file we need a TimeStretch box whose playbackRate can carry the
   // cents offset, so we attach one on demand.
@@ -425,17 +434,23 @@ function TimePitchDemo() {
       )
         return;
 
-      // Not in TimeStretch — engage it so the retune is audible.
+      // Not in a decoupled mode (NoStretch/PitchStretch) — engage TimeStretch
+      // so the retune is audible.
       if (!switchingRef.current) {
         await switchMode("time");
         // If auto-engage failed (switchMode caught and surfaced its own error),
         // add A4 context so the user knows the saved tuning is silent on audio.
-        // Always set the message — even when switchMode's own error somehow
-        // didn't land, the A4 context must not be silently dropped.
-        if (stretchBoxRef.current === null) {
+        // Check the box TYPE, not just null — a failed engage from PitchStretch
+        // leaves the old (retune-less) box in place, not an empty pointer.
+        if (!(stretchBoxRef.current instanceof AudioTimeStretchBox)) {
           const a4Context = `A4 saved as ${clamped} Hz, but TimeStretch did not engage to retune the audio.`;
           setError((prev) => (prev ? `${prev} ${a4Context}` : a4Context));
         }
+      } else {
+        // A mode switch is in flight — engaging now would re-enter it. Don't
+        // drop the outcome silently: tell the user what state they may land in.
+        const a4Context = `A4 saved as ${clamped} Hz while a mode switch was in progress — if the final mode is not TimeStretch or Signalsmith, the retune is inaudible until you pick one.`;
+        setError((prev) => (prev ? `${prev} ${a4Context}` : a4Context));
       }
     },
     [project, switchMode]
@@ -481,6 +496,11 @@ function TimePitchDemo() {
   // disagrees with the audible playback at the ±1200 boundary.
   const appliedCents = 1200 * Math.log2(playbackRate);
   const isCentsClamped = Math.abs(appliedCents - (cents + tuningCents)) > 0.01;
+  // Same principle for Signalsmith: display the ±2400-clamped value every
+  // write site applies, never the raw sum (slider ±2400 + tuning ±165 can
+  // exceed the clamp).
+  const smithApplied = Math.max(-2400, Math.min(2400, cents + tuningCents));
+  const isSmithClamped = Math.abs(smithApplied - (cents + tuningCents)) > 0.01;
 
   return (
     <Theme
@@ -564,9 +584,10 @@ function TimePitchDemo() {
                 <SegmentedControl.Root
                   value={playMode}
                   onValueChange={(v) => {
-                    // Belt-and-braces: the ref guards against re-entry even if
-                    // the parent's pointer-events block is bypassed.
-                    if (switchingRef.current) return;
+                    // Belt-and-braces: pointer-events:none is mouse-only, so
+                    // keyboard activation needs the same guards as the wrapper
+                    // (re-entry AND mid-playback swaps).
+                    if (switchingRef.current || isPlaying) return;
                     void switchMode(v as PlayMode);
                   }}
                   size="3"
@@ -635,11 +656,11 @@ function TimePitchDemo() {
                             {tuningCents > 0 ? "+" : ""}
                             {tuningCents.toFixed(2)} tuning ={" "}
                             {playMode === "smith"
-                              ? (cents + tuningCents).toFixed(2)
+                              ? `${smithApplied > 0 ? "+" : ""}${smithApplied.toFixed(2)}`
                               : `${appliedCents > 0 ? "+" : ""}${appliedCents.toFixed(2)}`}
                           </>
                         )}
-                        {playMode === "time" && isCentsClamped && (
+                        {(playMode === "smith" ? isSmithClamped : isCentsClamped) && (
                           <>
                             {" "}
                             <strong>(clamped)</strong>
@@ -647,7 +668,7 @@ function TimePitchDemo() {
                         )}{" "}
                         {playMode === "smith" ? (
                           <>
-                            · transpose {((cents + tuningCents) / 100).toFixed(2)} st ·
+                            · transpose {(smithApplied / 100).toFixed(2)} st ·
                             tempo unchanged
                           </>
                         ) : (

@@ -43,7 +43,8 @@ import { CONSOLE_STYLES } from "@/lib/design/consoleTheme";
 
 const QUARTER = PPQN.Quarter;
 const BAR = PPQN.fromSignature(4, 4);
-// Adapter/box do NOT clamp transpose — the UI is the only clamp (±24 st).
+// Adapter/box do NOT clamp transpose — the UI is the only clamp in the write
+// path; ±24 st mirrors the schema's declared (unenforced) range.
 const TRANSPOSE_MIN = -24;
 const TRANSPOSE_MAX = 24;
 // TimeStretch cents clamp is ±1200 → the A/B pitch-match only holds within ±12 st.
@@ -188,20 +189,20 @@ function WarpSignalsmithDemo() {
           projectBpm: setup.projectBpm,
           prevStretchBox: stretchBoxRef.current,
         };
+        // A/B pitch match is folded into applyTimeStretch's creation transaction
+        // (initialCents), so every switch is a single atomic editing.modify —
+        // the catch below can trust stretchBoxRef as ground truth.
         stretchBoxRef.current =
           next === "raw"
             ? applyRaw(ctx)
             : next === "signalsmith"
               ? applySignalsmith(ctx, anchors, transposeRef.current)
-              : applyTimeStretch(ctx, anchors, TransientPlayMode.Pingpong);
-        if (next === "timestretch") {
-          // Match the A/B pitch to the transpose value, within TimeStretch's clamp.
-          const box = stretchBoxRef.current as AudioTimeStretchBox;
-          setup.project.editing.modify(() => {
-            setup.project.boxAdapters.adapterFor(box, AudioTimeStretchBoxAdapter).cents =
-              clampTranspose(transposeRef.current) * 100;
-          });
-        }
+              : applyTimeStretch(
+                  ctx,
+                  anchors,
+                  TransientPlayMode.Pingpong,
+                  clampTranspose(transposeRef.current) * 100
+                );
         // Convenience reposition for the stopped state only — mode swaps don't
         // reset engine.position; setPosition mid-playback would itself jump.
         if (!setup.project.engine.isPlaying.getValue()) {
@@ -222,10 +223,18 @@ function WarpSignalsmithDemo() {
         setError(err instanceof Error ? err.message : String(err));
         setStatus("Failed");
         // editing.modify is atomic — reconcile UI to actual box state on throw.
+        // modeRef drives the readout and waveform mapping, so it must be
+        // reconciled alongside the React state.
         const current = stretchBoxRef.current;
-        if (current === null) setMode("raw");
-        else if (current instanceof AudioSignalsmithBox) setMode("signalsmith");
-        else setMode("timestretch");
+        const actual: WarpMode =
+          current === null
+            ? "raw"
+            : current instanceof AudioSignalsmithBox
+              ? "signalsmith"
+              : "timestretch";
+        modeRef.current = actual;
+        setMode(actual);
+        setRepaintKey((k) => k + 1);
       } finally {
         switchingRef.current = false;
         setSwitching(false);
@@ -234,9 +243,13 @@ function WarpSignalsmithDemo() {
     [setup, pausedPositionRef]
   );
 
-  // Transpose writes are live controls — the engine reads the fields per render block.
+  // Transpose writes are live controls — verified live (see warp CLAUDE.md);
+  // the TimeStretch fields are additionally source-audited per-render-block reads.
   const onTransposeChange = useCallback(
     (value: number) => {
+      // Keyboard events reach this handler even under the pointer-events
+      // wrapper — mirror the SegmentedControl's explicit state guard.
+      if (switchingRef.current || modeRef.current === "raw") return;
       const st = clampTranspose(Math.round(value));
       setTranspose(st);
       if (!setup) return;

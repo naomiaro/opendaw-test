@@ -115,17 +115,22 @@ export function applyVarispeed(
 /**
  * TimeStretch: beats lock, pitch preserved (rate 1.0). Caller MUST await
  * ensureTransientMarkers on the file box first — fewer than two transients
- * renders silence.
+ * renders silence. `initialCents` folds a pitch offset into the creation
+ * transaction (mirror of AudioTimeStretchBoxAdapter.cents: rate =
+ * 2^(cents/1200) clamped to [0.5, 2.0]) so a mode swap plus pitch match
+ * stays a single atomic transaction.
  */
 export function applyTimeStretch(
   ctx: WarpScenarioContext,
   anchors: ReadonlyArray<WarpAnchor>,
-  transientPlayMode: TransientPlayMode
+  transientPlayMode: TransientPlayMode,
+  initialCents: number = 0
 ): AudioTimeStretchBox {
+  const rate = Math.min(2.0, Math.max(0.5, Math.pow(2, initialCents / 1200)));
   return applyWarpToGrid(ctx, anchors, (project) =>
     AudioTimeStretchBox.create(project.boxGraph, UUID.generate(), (b) => {
       b.transientPlayMode.setValue(transientPlayMode);
-      b.playbackRate.setValue(1.0);
+      b.playbackRate.setValue(rate);
     })
   ) as AudioTimeStretchBox;
 }
@@ -133,7 +138,8 @@ export function applyTimeStretch(
 /**
  * Signalsmith: beats lock via the same anchors, spectral phase-vocoder stretch,
  * independent pitch via `transpose` (semitones). No transient markers needed.
- * Neither the box nor the adapter clamps transpose — clamp here (±24 st).
+ * Neither the box nor the adapter clamps transpose — clamp here; ±24 st mirrors
+ * the schema's declared (unenforced) range.
  */
 export function applySignalsmith(
   ctx: WarpScenarioContext,

@@ -191,11 +191,18 @@ function WarpTimestretchDemo() {
         setError(err instanceof Error ? err.message : String(err));
         setStatus("Failed");
         // editing.modify is atomic — reconcile UI to actual box state on throw.
+        // modeRef drives the readout and waveform mapping — reconcile it too.
         const current = stretchBoxRef.current;
-        if (current === null) setMode("raw");
-        else if (current instanceof AudioSignalsmithBox) setMode("signalsmith");
-        else if (current instanceof AudioTimeStretchBox) setMode("timestretch");
-        else setMode("varispeed");
+        const actual: WarpMode =
+          current === null
+            ? "raw"
+            : current instanceof AudioSignalsmithBox
+              ? "signalsmith"
+              : current instanceof AudioTimeStretchBox
+                ? "timestretch"
+                : "varispeed";
+        modeRef.current = actual;
+        setMode(actual);
       } finally {
         switchingRef.current = false;
         setSwitching(false);
