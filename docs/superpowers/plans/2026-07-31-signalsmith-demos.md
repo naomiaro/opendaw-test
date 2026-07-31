@@ -236,7 +236,7 @@ git commit -m "docs(audio-verify): signalsmith scenarios, measured assertions"
 - Consumes: `applySignalsmith`, `WarpStretchBox` from Task 1.
 - Produces: nothing later tasks depend on.
 
-- [ ] **Step 1: Extend the mode union and refs**
+- [x] **Step 1: Extend the mode union and refs**
 
 In `src/demos/warp/warp-timestretch-demo.tsx`:
 
@@ -248,7 +248,7 @@ Import `applySignalsmith` and `type WarpStretchBox` from `./lib/warpScenarios`;
 import `AudioSignalsmithBox` from `@opendaw/studio-boxes`. Change
 `stretchBoxRef`'s type to `useRef<WarpStretchBox | null>(null)`.
 
-- [ ] **Step 2: Wire the mode into switchMode**
+- [x] **Step 2: Wire the mode into switchMode**
 
 In the `switchMode` ternary chain (no transient detection needed for signalsmith):
 
@@ -277,7 +277,7 @@ In the error-reconciliation branch add before the AudioTimeStretchBox check:
         else if (current instanceof AudioSignalsmithBox) setMode("signalsmith");
 ```
 
-- [ ] **Step 3: Extend the segment readout and the segmented control**
+- [x] **Step 3: Extend the segment readout and the segmented control**
 
 Segment readout: extend the mode ternary so signalsmith reads like timestretch but names
 the algorithm — `` `segment ${n + 1}/${bpms.length} · rate ${rate.toFixed(3)} · pitch unchanged (spectral)` ``.
@@ -292,7 +292,7 @@ Add the fourth item to the mode SegmentedControl:
 The transient-play-mode wrapper already gates on `mode !== "timestretch"` — signalsmith
 correctly leaves it dimmed. No change needed there.
 
-- [ ] **Step 4: Update copy — intro + thesis section carry the "why choose what" contrast**
+- [x] **Step 4: Update copy — intro + thesis section carry the "why choose what" contrast**
 
 Replace the intro `<p className="mc-intro">` content: keep the existing triptych
 sentences, then extend the final sentence about `AudioTimeStretchBox`, and append:
@@ -317,7 +317,7 @@ og:description, twitter:description) from "the identical warp markers through
 OpenDAW's transient-aware stretch engine" to "…through OpenDAW's transient-aware and
 spectral stretch engines".
 
-- [ ] **Step 5: Typecheck**
+- [x] **Step 5: Typecheck**
 
 ```bash
 npx tsc --noEmit --ignoreDeprecations "6.0" 2>&1 | grep '^src/' | sort > /private/tmp/claude-501/-Users-naomiaro-Code-opendaw-test/83cbd9ad-e452-4ae7-aa93-08bd3ad9ec71/scratchpad/tsc-task3.txt
@@ -326,7 +326,7 @@ comm -13 /private/tmp/claude-501/-Users-naomiaro-Code-opendaw-test/83cbd9ad-e452
 
 Expected: empty.
 
-- [ ] **Step 6: Browser verification (real click, RMS tap)**
+- [x] **Step 6: Browser verification (real click, RMS tap)**
 
 Load `https://localhost:5181/warp-timestretch-demo.html` fresh (claude-in-chrome).
 Click "Signalsmith" (mode switches only when stopped — that's by design here), then
@@ -342,7 +342,7 @@ Play **by coordinates from a screenshot** (real click). Verify:
 If the window is occluded and the UI freezes, `resize_window` first (known rAF
 suspension, not a bug).
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/demos/warp/warp-timestretch-demo.tsx warp-timestretch-demo.html

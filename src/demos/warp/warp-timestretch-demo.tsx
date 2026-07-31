@@ -5,7 +5,7 @@ import { PPQN } from "@opendaw/lib-dsp";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { TransientPlayMode } from "@opendaw/studio-enums";
 import {
-  AudioPitchStretchBox,
+  AudioSignalsmithBox,
   AudioTimeStretchBox,
 } from "@opendaw/studio-boxes";
 import { GitHubCorner } from "@/components/GitHubCorner";
@@ -23,7 +23,9 @@ import {
   applyRaw,
   applyVarispeed,
   applyTimeStretch,
+  applySignalsmith,
   type WarpScenarioContext,
+  type WarpStretchBox,
 } from "./lib/warpScenarios";
 import { WarpWaveform, type WaveformSegment } from "./lib/WarpWaveform";
 import { usePlaybackPosition } from "@/hooks/usePlaybackPosition";
@@ -46,7 +48,7 @@ import { CONSOLE_STYLES } from "@/lib/design/consoleTheme";
 const QUARTER = PPQN.Quarter; // 960
 const BAR = PPQN.fromSignature(4, 4); // 3840
 
-type WarpMode = "raw" | "varispeed" | "timestretch";
+type WarpMode = "raw" | "varispeed" | "timestretch" | "signalsmith";
 
 function WarpTimestretchDemo() {
   const [setup, setSetup] = useState<WarpDemoSetup | null>(null);
@@ -62,7 +64,7 @@ function WarpTimestretchDemo() {
 
   const anchorsRef = useRef<WarpAnchor[]>([]);
   const modeRef = useRef<WarpMode>("raw");
-  const stretchBoxRef = useRef<AudioPitchStretchBox | AudioTimeStretchBox | null>(null);
+  const stretchBoxRef = useRef<WarpStretchBox | null>(null);
   // Re-entrancy guard for the async transient-detection path (stale-closure-proof).
   const switchingRef = useRef(false);
   const segmentReadoutRef = useRef<HTMLSpanElement | null>(null);
@@ -124,7 +126,9 @@ function WarpTimestretchDemo() {
         modeRef.current === "varispeed"
           ? `segment ${n + 1}/${bpms.length} · rate ${rate.toFixed(3)} · ` +
             `${cents >= 0 ? "+" : ""}${cents.toFixed(0)} cents pitch shift`
-          : `segment ${n + 1}/${bpms.length} · rate ${rate.toFixed(3)} · pitch unchanged`;
+          : modeRef.current === "timestretch"
+            ? `segment ${n + 1}/${bpms.length} · rate ${rate.toFixed(3)} · pitch unchanged`
+            : `segment ${n + 1}/${bpms.length} · rate ${rate.toFixed(3)} · pitch unchanged (spectral)`;
     });
     return () => terminable.terminate();
   }, [setup]);
@@ -156,7 +160,9 @@ function WarpTimestretchDemo() {
             ? applyRaw(ctx)
             : next === "varispeed"
               ? applyVarispeed(ctx, anchors)
-              : applyTimeStretch(ctx, anchors, transientMode);
+              : next === "timestretch"
+                ? applyTimeStretch(ctx, anchors, transientMode)
+                : applySignalsmith(ctx, anchors);
         // Convenience reposition for the stopped state: resets the playhead
         // to bar 1 so the next Play starts cleanly.
         // Mode swaps do NOT reset engine.position (TimeInfo is written only by
@@ -177,7 +183,9 @@ function WarpTimestretchDemo() {
             ? "Ready — raw playback drifts off the click"
             : next === "varispeed"
               ? "Ready — varispeed: beats lock, pitch follows rate"
-              : "Ready — time-stretch: beats lock, pitch preserved"
+              : next === "timestretch"
+                ? "Ready — time-stretch: beats lock, pitch preserved (transient-segmented)"
+                : "Ready — signalsmith: beats lock, pitch preserved (spectral)"
         );
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
@@ -185,6 +193,7 @@ function WarpTimestretchDemo() {
         // editing.modify is atomic — reconcile UI to actual box state on throw.
         const current = stretchBoxRef.current;
         if (current === null) setMode("raw");
+        else if (current instanceof AudioSignalsmithBox) setMode("signalsmith");
         else if (current instanceof AudioTimeStretchBox) setMode("timestretch");
         else setMode("varispeed");
       } finally {
@@ -274,6 +283,13 @@ function WarpTimestretchDemo() {
             <code>AudioTimeStretchBox</code>, which plays transient-bounded segments at
             rate 1.0 and resynchronizes at each transient (closer to Ableton&apos;s{" "}
             <em>Beats</em> mode than to a granular engine).
+            {" "}<em>Signalsmith</em> is the second pitch-preserving answer: the same
+            markers through a spectral phase vocoder (<code>AudioSignalsmithBox</code>)
+            — no transient markers required, pitch shiftable ±24 st. Percussive
+            material tends to favor time-stretch&apos;s preserved attacks; sustained and
+            harmonic material tends to favor the spectral path. A/B them here, and see
+            the <a href="/warp-signalsmith-demo.html">signalsmith demo</a> for the
+            transpose story.
           </p>
           {error && (
             <Card>
@@ -311,6 +327,7 @@ function WarpTimestretchDemo() {
                   <SegmentedControl.Item value="raw">Raw</SegmentedControl.Item>
                   <SegmentedControl.Item value="varispeed">Varispeed</SegmentedControl.Item>
                   <SegmentedControl.Item value="timestretch">Time-Stretch</SegmentedControl.Item>
+                  <SegmentedControl.Item value="signalsmith">Signalsmith</SegmentedControl.Item>
                 </SegmentedControl.Root>
               </div>
               <div
@@ -342,8 +359,8 @@ function WarpTimestretchDemo() {
                 </Flex>
               </div>
               <Text size="2" color="gray">
-                Project grid: {setup?.projectBpm ?? "..."} BPM — varispeed and
-                time-stretch lock to it; raw drifts.
+                Project grid: {setup?.projectBpm ?? "..."} BPM — varispeed, time-stretch,
+                and signalsmith lock to it; raw drifts.
               </Text>
               <Text size="2" color="gray">
                 Current segment: <span ref={segmentReadoutRef}>—</span>
@@ -393,7 +410,8 @@ function WarpTimestretchDemo() {
             <p>
               The same anchors driving{" "}
               <a href="/warp-varispeed-demo.html">varispeed</a> drive this engine
-              untouched — swapping the stretch algorithm never moves a marker, which is
+              untouched — and the spectral Signalsmith engine consumes the identical
+              list — swapping the stretch algorithm never moves a marker, which is
               why Ableton lets you change a clip&apos;s warp <em>mode</em> without touching
               its warp <em>markers</em>. Honest limits apply: transients can smear or
               double under heavy stretching, and extreme rates expose segment looping.
