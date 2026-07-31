@@ -40,7 +40,7 @@ This task retires the biggest risk first: proving the WASM engine actually rende
 - Produces: `export type WarpStretchBox = AudioPitchStretchBox | AudioTimeStretchBox | AudioSignalsmithBox` and `export function applySignalsmith(ctx: WarpScenarioContext, anchors: ReadonlyArray<WarpAnchor>, transposeSemitones?: number): AudioSignalsmithBox` from `src/demos/warp/lib/warpScenarios.ts`. `WarpScenarioContext.prevStretchBox` widens to `WarpStretchBox | null`. Tasks 3, 4 consume these.
 - Consumes: existing `applyWarpToGrid`, `buildWarpAnchors`, verify sink.
 
-- [ ] **Step 1: Create the working branch; move the spec commits off local main**
+- [x] **Step 1: Create the working branch; move the spec commits off local main**
 
 The two spec commits (`docs(specs): …`) were made on local `main`. Carry them onto the feature branch and reset local main to origin:
 
@@ -52,7 +52,7 @@ git branch -f main origin/main
 git log --oneline main..HEAD   # expect exactly the two docs(specs) commits
 ```
 
-- [ ] **Step 2: Capture the tsc baseline for the parent commit**
+- [x] **Step 2: Capture the tsc baseline for the parent commit**
 
 ```bash
 npx tsc --noEmit --ignoreDeprecations "6.0" 2>&1 | grep '^src/' | sort > /private/tmp/claude-501/-Users-naomiaro-Code-opendaw-test/83cbd9ad-e452-4ae7-aa93-08bd3ad9ec71/scratchpad/tsc-baseline.txt
@@ -61,7 +61,7 @@ wc -l /private/tmp/claude-501/-Users-naomiaro-Code-opendaw-test/83cbd9ad-e452-4a
 
 (TS5101 without the flag is environmental noise; `^src/` filters node_modules DOM-lib cascades.)
 
-- [ ] **Step 3: Add `WarpStretchBox` union + `applySignalsmith` to warpScenarios.ts**
+- [x] **Step 3: Add `WarpStretchBox` union + `applySignalsmith` to warpScenarios.ts**
 
 In `src/demos/warp/lib/warpScenarios.ts`:
 
@@ -106,7 +106,7 @@ export function applySignalsmith(
 }
 ```
 
-- [ ] **Step 4: Add `signalsmith` + `signalsmith-transposed` scenarios to the verify harness**
+- [x] **Step 4: Add `signalsmith` + `signalsmith-transposed` scenarios to the verify harness**
 
 In `src/demos/warp/audio-verify-debug.tsx`:
 
@@ -138,7 +138,7 @@ Import `applySignalsmith` from `./lib/warpScenarios`. Add to the `switch`:
 
 Also update the file's header comment scenario list.
 
-- [ ] **Step 5: Typecheck against baseline**
+- [x] **Step 5: Typecheck against baseline**
 
 ```bash
 npx tsc --noEmit --ignoreDeprecations "6.0" 2>&1 | grep '^src/' | sort > /private/tmp/claude-501/-Users-naomiaro-Code-opendaw-test/83cbd9ad-e452-4ae7-aa93-08bd3ad9ec71/scratchpad/tsc-task1.txt
@@ -147,7 +147,7 @@ comm -13 /private/tmp/claude-501/-Users-naomiaro-Code-opendaw-test/83cbd9ad-e452
 
 Expected: empty output (zero NEW errors).
 
-- [ ] **Step 6: Spot-check — render the signalsmith scenario and prove it is non-silent and beat-locked**
+- [x] **Step 6: Spot-check — render the signalsmith scenario and prove it is non-silent and beat-locked**
 
 Start (or reuse) the dev server: `npm run dev -- --port 5181 --host 127.0.0.1` (background). Navigate Playwright to
 `https://localhost:5181/audio-verify-debug.html?scenario=signalsmith`, poll
@@ -165,7 +165,7 @@ Use audio-analyzer `spectral_features` on `.verify-output/verify-signalsmith.wav
 against `studio-core-wasm` dists before building any UI (this is spec verify-item 1's
 hard gate).
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/demos/warp/lib/warpScenarios.ts src/demos/warp/audio-verify-debug.tsx

@@ -6,6 +6,7 @@ import {
   AudioRegionBox,
   AudioPitchStretchBox,
   AudioTimeStretchBox,
+  AudioSignalsmithBox,
   WarpMarkerBox,
 } from "@opendaw/studio-boxes";
 import { TransientPlayMode } from "@opendaw/studio-enums";
@@ -20,6 +21,12 @@ import {
 
 const QUARTER = PPQN.Quarter;
 
+/** Any of the three warp-marker play-mode boxes. */
+export type WarpStretchBox =
+  | AudioPitchStretchBox
+  | AudioTimeStretchBox
+  | AudioSignalsmithBox;
+
 /** Everything an apply-function needs. Demos pass their setup + current stretch box. */
 export interface WarpScenarioContext {
   project: Project;
@@ -28,7 +35,7 @@ export interface WarpScenarioContext {
   markers: BeatMarker[];
   projectBpm: number;
   /** Stretch box from a previous apply call; deleted inside the next transaction. */
-  prevStretchBox: AudioPitchStretchBox | AudioTimeStretchBox | null;
+  prevStretchBox: WarpStretchBox | null;
 }
 
 /** Raw-mode timeline end: file duration in ticks at the rigid project tempo. */
@@ -69,12 +76,12 @@ export function applyRaw(ctx: WarpScenarioContext): null {
 function applyWarpToGrid(
   ctx: WarpScenarioContext,
   anchors: ReadonlyArray<WarpAnchor>,
-  createBox: (project: Project) => AudioPitchStretchBox | AudioTimeStretchBox
-): AudioPitchStretchBox | AudioTimeStretchBox {
+  createBox: (project: Project) => WarpStretchBox
+): WarpStretchBox {
   const { project, region } = ctx;
   const endTick = anchors[anchors.length - 1].tick;
   // Definite assignment: editing.modify callbacks run synchronously.
-  let created!: AudioPitchStretchBox | AudioTimeStretchBox;
+  let created!: WarpStretchBox;
   project.editing.modify(() => {
     project.timelineBox.loopArea.to.setValue(endTick);
     created = createBox(project);
@@ -121,6 +128,24 @@ export function applyTimeStretch(
       b.playbackRate.setValue(1.0);
     })
   ) as AudioTimeStretchBox;
+}
+
+/**
+ * Signalsmith: beats lock via the same anchors, spectral phase-vocoder stretch,
+ * independent pitch via `transpose` (semitones). No transient markers needed.
+ * Neither the box nor the adapter clamps transpose — clamp here (±24 st).
+ */
+export function applySignalsmith(
+  ctx: WarpScenarioContext,
+  anchors: ReadonlyArray<WarpAnchor>,
+  transposeSemitones: number = 0
+): AudioSignalsmithBox {
+  const transpose = Math.max(-24, Math.min(24, transposeSemitones));
+  return applyWarpToGrid(ctx, anchors, (project) =>
+    AudioSignalsmithBox.create(project.boxGraph, UUID.generate(), (b) => {
+      b.transpose.setValue(transpose);
+    })
+  ) as AudioSignalsmithBox;
 }
 
 /**
