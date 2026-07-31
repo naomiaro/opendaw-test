@@ -6,9 +6,10 @@
 ## Goal
 
 `AudioSignalsmithBox` (spectral phase-vocoder play mode, in the SDK since 0.0.159) is the
-only audio play mode with no demo coverage. Add demo coverage in the warp category, with
-demo copy that explicitly tells readers **when to choose Signalsmith over the other play
-modes** — the differentiation story is a first-class deliverable, not a caption.
+only audio play mode with no demo coverage. Add demo coverage in the warp category and
+complete the `time-pitch-demo` mode switcher, with demo copy that explicitly tells
+readers **when to choose Signalsmith over the other play modes** — the differentiation
+story is a first-class deliverable, not a caption.
 
 ## Deliverables
 
@@ -34,13 +35,32 @@ Three sections, one narrative: *conform → transpose → why this mode exists*.
 Signalsmith joins the existing raw / varispeed / time-stretch A/B as a fourth playback
 mode. No transpose UI there — just the stretch comparison.
 
-### 3. Shared lib: `applySignalsmith(ctx)`
+### 3. Extend `time-pitch-demo` (playback category) to four modes
+
+The page is the API-mechanics companion to `documentation/18-time-and-pitch.md` and the
+only home of the reference-pitch (A4) story — it stays standalone. Add Signalsmith as a
+fourth mode button:
+
+- Mode swap follows the same transaction pattern as the existing modes
+  (`AudioContentModifier.toSignalsmith` ordering).
+- The cents slider drives Signalsmith too — `AudioSignalsmithBoxAdapter` exposes both
+  `transpose` and `cents` (verified in the installed d.ts), so the existing slider
+  pattern extends without new UI concepts. Range widens to Signalsmith's ±2400 cents
+  when that mode is active (TimeStretch keeps its ±1200 clamp).
+- A4 tuning: the tuning offset applies to the active decoupled mode; whether the
+  auto-engage path keeps choosing TimeStretch or prefers Signalsmith is an
+  implementation-time decision (verify item 4).
+- Page copy updates from "three play modes" to four, and cross-links the new
+  warp-signalsmith demo for the musical story. The "why choose what" guidance (below)
+  appears here too.
+
+### 4. Shared lib: `applySignalsmith(ctx)`
 
 Added to `src/demos/warp/lib/warpScenarios.ts`, riding on the existing `applyWarpToGrid`
 body (same warp anchors, different box type — `AudioSignalsmithBox` has the same shape as
 `AudioPitchStretchBox` plus `transpose`). Both demos and the verify harness consume it.
 
-### 4. Audio verify (same PR)
+### 5. Audio verify (same PR)
 
 Add a Signalsmith grid-conform scenario to the `/audio-verify` offline-render harness
 with the same numeric beat-alignment assertions as varispeed/timestretch. Expected beat
@@ -48,14 +68,15 @@ times are identical to the other grid-conform modes (same anchors). Additionally
 one transposed variant (e.g. +3 st) and assert it still beat-aligns — pitch must not
 move time.
 
-### 5. Documentation: extend the decision matrix
+### 6. Documentation: extend the decision matrix
 
 `documentation/18-time-and-pitch.md` lists Signalsmith in the play-mode table but the
 Decision Matrix tree still terminates at TimeStretch. Extend the tree with the
-TimeStretch-vs-Signalsmith branch (mirroring the demo copy below). Chapter docs stay
-present-tense — no SDK version qualifiers.
+TimeStretch-vs-Signalsmith branch (mirroring the demo copy below), and update the
+chapter's demo link text ("switch a region between the three play modes" → four).
+Chapter docs stay present-tense — no SDK version qualifiers.
 
-## The "why choose what" copy (core content, both demos)
+## The "why choose what" copy (core content, all three demo pages)
 
 Grounded in `documentation/18-time-and-pitch.md`; claims about audible character must be
 verified by ear against the actual WASM engine during implementation before shipping:
@@ -87,6 +108,9 @@ Key contrasts to make explicit in the demo text:
    transaction, `adoptWarpMarkers` helper) for the A/B toggle.
 3. **Audible character claims:** listen before writing copy that asserts smearing or
    smoothness; describe what the WASM engine actually does.
+4. **A4 auto-engage target:** decide whether the tuning path in `time-pitch-demo`
+   keeps auto-engaging TimeStretch or prefers Signalsmith when no decoupled mode is
+   active (either works within ±80 Hz of 440; pick one and state it in the demo copy).
 
 ## Standard new-demo checklist (applies to deliverable 1)
 
@@ -98,6 +122,6 @@ Vite `rollupOptions.input` entry, card in `src/index.tsx`, `public/sitemap.xml`,
 ## Out of scope
 
 - Synthetic no-transients demo clip (dropped — see above).
-- Signalsmith coverage in `time-pitch-demo` (playback category) — the warp pages carry
-  the story; the playback mode-switcher stays as-is.
+- Removing or retitling `time-pitch-demo` — considered and rejected; it stays as the
+  standalone API-mechanics/A4-tuning page, now covering all four modes.
 - Any engine/SDK changes.
