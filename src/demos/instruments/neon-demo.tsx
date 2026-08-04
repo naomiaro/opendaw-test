@@ -11,7 +11,8 @@ import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
 import { PianoKeyboard, PIANO_STYLES } from "@/demos/midi/PianoKeyboard";
-import { CONSOLE_STYLES } from "@/lib/design/consoleTheme";
+import { CANVAS_COLORS, CONSOLE_STYLES } from "@/lib/design/consoleTheme";
+import { CanvasPainter } from "@/lib/CanvasPainter";
 import { NEON_PRESETS } from "./neonPresets";
 import "@radix-ui/themes/styles.css";
 import {
@@ -251,15 +252,150 @@ const NeonParamPanel: React.FC<NeonParamPanelProps> = ({
         </Flex>
       </Card>
 
-      <Card>
-        <Flex direction="column" gap="2">
-          <Text size="2" weight="bold" color="gray">Envelopes</Text>
-          <Text size="1" color="gray">Visualizer coming soon.</Text>
-        </Flex>
-      </Card>
+      <NeonEnvelopeViz project={project} neonBox={neonBox} />
     </div>
   );
 };
+
+type EnvKind = "pitch" | "dcw" | "dca";
+
+/**
+ * Read-only 8-stage envelope visualizer. The painter reads the selected envelope's
+ * 18 fields directly from the box graph each repaint; repaints are driven by
+ * `editing.subscribe` (fires after every transaction — preset applies and parameter
+ * writes both land there) plus the selector effect. CanvasPainter debounces to
+ * `requestUpdate()`, so idle frames cost nothing.
+ */
+const NeonEnvelopeViz: React.FC<{ project: Project; neonBox: NeonDeviceBox }> = ({
+  project, neonBox,
+}) => {
+  const [envLine, setEnvLine] = useState<0 | 1>(0);
+  const [envKind, setEnvKind] = useState<EnvKind>("dca");
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const painterRef = useRef<CanvasPainter | null>(null);
+  const selRef = useRef<{ line: 0 | 1; kind: EnvKind }>({ line: envLine, kind: envKind });
+  selRef.current = { line: envLine, kind: envKind };
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const painter = new CanvasPainter(canvas, (_painter, context) => {
+      const { line, kind } = selRef.current;
+      const envelope = neonBox.envelopes.fields()[Neon.envelopeIndex(line, kind)];
+      const rates = [
+        envelope.rate1, envelope.rate2, envelope.rate3, envelope.rate4,
+        envelope.rate5, envelope.rate6, envelope.rate7, envelope.rate8,
+      ].map((f) => f.getValue());
+      const levels = [
+        envelope.level1, envelope.level2, envelope.level3, envelope.level4,
+        envelope.level5, envelope.level6, envelope.level7, envelope.level8,
+      ].map((f) => f.getValue());
+      drawEnvelope(
+        context, canvas.clientWidth, canvas.clientHeight,
+        rates, levels, envelope.sustain.getValue(), envelope.end.getValue(),
+      );
+    });
+    painterRef.current = painter;
+    const editSub = project.editing.subscribe(() => painter.requestUpdate());
+    return () => {
+      editSub.terminate();
+      painter.terminate();
+      painterRef.current = null;
+    };
+  }, [project, neonBox]);
+
+  useEffect(() => {
+    painterRef.current?.requestUpdate();
+  }, [envLine, envKind]);
+
+  return (
+    <Card>
+      <Flex direction="column" gap="3">
+        <Text size="2" weight="bold" color="gray">Envelopes</Text>
+        <Flex gap="2" wrap="wrap">
+          <SegmentedControl.Root
+            size="1"
+            value={String(envLine)}
+            onValueChange={(v) => setEnvLine(Number(v) as 0 | 1)}
+          >
+            <SegmentedControl.Item value="0">Line 1</SegmentedControl.Item>
+            <SegmentedControl.Item value="1">Line 2</SegmentedControl.Item>
+          </SegmentedControl.Root>
+          <SegmentedControl.Root
+            size="1"
+            value={envKind}
+            onValueChange={(v) => setEnvKind(v as EnvKind)}
+          >
+            <SegmentedControl.Item value="pitch">Pitch</SegmentedControl.Item>
+            <SegmentedControl.Item value="dcw">DCW</SegmentedControl.Item>
+            <SegmentedControl.Item value="dca">DCA</SegmentedControl.Item>
+          </SegmentedControl.Root>
+        </Flex>
+        <canvas
+          ref={canvasRef}
+          style={{
+            display: "block", width: "100%", height: 180,
+            background: CANVAS_COLORS.bg, borderRadius: 4,
+          }}
+        />
+        <Text size="1" color="gray">
+          Schematic shape — stage width grows as its rate slows; dashed line marks the
+          sustain stage. The DSP's hardware rate tables own real timing.
+        </Text>
+      </Flex>
+    </Card>
+  );
+};
+
+/**
+ * Schematic stage polyline: x-advance per stage ∝ (100 − rate), floored so
+ * instant stages stay visible; y maps level 0–99 bottom-to-top.
+ */
+function drawEnvelope(
+  context: CanvasRenderingContext2D, width: number, height: number,
+  rates: number[], levels: number[], sustain: number, end: number,
+): void {
+  const pad = 12;
+  const plotW = width - pad * 2;
+  const plotH = height - pad * 2;
+  const stageCount = Math.max(1, Math.min(8, end));
+  const widths = Array.from({ length: stageCount }, (_, i) => Math.max(8, 100 - rates[i]));
+  const total = widths.reduce((a, b) => a + b, 0);
+  const y = (level: number) => pad + plotH * (1 - level / 99);
+
+  context.clearRect(0, 0, width, height);
+  context.strokeStyle = CANVAS_COLORS.amber;
+  context.lineWidth = 2;
+  context.beginPath();
+  context.moveTo(pad, y(0));
+  let x = pad;
+  const stageX: number[] = [];
+  for (let i = 0; i < stageCount; i++) {
+    x += (widths[i] / total) * plotW;
+    stageX.push(x);
+    context.lineTo(x, y(levels[i]));
+  }
+  context.stroke();
+
+  // Sustain marker: vertical dashed line at the sustain stage (sustain 0 = none).
+  if (sustain >= 1 && sustain <= stageCount) {
+    const sx = stageX[sustain - 1];
+    context.strokeStyle = CANVAS_COLORS.structural;
+    context.setLineDash([3, 3]);
+    context.beginPath();
+    context.moveTo(sx, pad);
+    context.lineTo(sx, pad + plotH);
+    context.stroke();
+    context.setLineDash([]);
+  }
+
+  context.fillStyle = CANVAS_COLORS.label;
+  stageX.forEach((dotX, i) => {
+    context.beginPath();
+    context.arc(dotX, y(levels[i]), 3, 0, Math.PI * 2);
+    context.fill();
+  });
+}
 
 /** Wave1 / Wave2 selects + DCW/DCA key-follow sliders — shared by both line cards. */
 const NeonWaveControls: React.FC<{
