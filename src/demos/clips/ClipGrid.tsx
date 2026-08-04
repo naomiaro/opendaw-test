@@ -108,7 +108,7 @@ export function ClipGrid({ project, tracks, clipStates, onLaunch }: {
         <span className="clip-grid__corner" />
         {CLIP_COLUMNS.map((bars, column) => (
           <button
-            key={bars}
+            key={column}
             type="button"
             className="clip-grid__btn"
             onClick={() => launchScene(column)}
@@ -230,8 +230,11 @@ export const CLIP_GRID_STYLES = `
   left: 0;
   bottom: 0;
   height: 3px;
-  width: calc(var(--progress, 0) * 100%);
+  width: 0;
   background: var(--cell-color, var(--mc-amber));
+}
+.clip-cell--playing .clip-cell__progress {
+  width: calc(var(--progress, 0) * 100%);
 }
 .clip-cell--playing {
   border-color: var(--cell-color, var(--mc-amber));
