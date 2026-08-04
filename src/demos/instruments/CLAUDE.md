@@ -20,6 +20,11 @@
 - `octave` and `tune` are global pitch (octave ±1 audibly doubles/halves frequency).
 - UI labels come from the SDK: `Neon.Waves` / `Neon.LineSelect` / `Neon.Modulation` /
   `Neon.VibratoWaves` — don't hand-write wave names.
+- **Envelope rate → time is hardware-table exponential** (measured on the WASM engine):
+  rate 99 = instant, 75 ≲ 0.1 s, 50 ≈ 0.4 s, 35 ≈ 2 s. Author DCA attack rates ≥ ~55
+  for click-playable patches — a mouse click holds a key ~150 ms, and a rate-35 attack
+  reaches <1 % amplitude by release (reads as "keyboard doesn't work"). Decay rates
+  ≥ ~70 collapse to an inaudible tick; key follow shortens times further up the keyboard.
 - `CzSysex` is a LOSSY quantizing codec (panel 0-99 ↔ hardware bytes):
   `decode(encode(tone))` is a projection, not identity — it IS a fixpoint (second
   round-trip is exact). Test round-trips as fixpoint + ±1 closeness, never deep-equal
@@ -51,3 +56,9 @@
   by coordinates.
 - Radix Slider/Switch thumbs legitimately report `scrollWidth > clientWidth` (~24>12) in
   mobile overflow scans — filter them out; they're by-design overhang, not clipping.
+- Playwright locator clicks AUTO-SCROLL the page — cached piano-key coordinates go stale
+  after any `getByText(...).click()`, and a stale-coordinate "tap" can land on a Radix
+  Select trigger, leaving its dropdown overlay open: every later click is swallowed and
+  the page reads as "engine dead" (taps measure 0 RMS in every mode). Re-fetch
+  `boundingBox()` immediately before each mouse gesture; if taps suddenly measure 0,
+  screenshot FIRST and look for an open dropdown before debugging audio.

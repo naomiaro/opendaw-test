@@ -63,6 +63,9 @@ export const NEON_PRESETS: ReadonlyArray<NeonPresetDef> = [
   {
     name: "Hollow Pad",
     description: "Slow square pad — gentle DCW bloom, both lines, slow release",
+    // Envelope rates are hardware-table exponential (measured on the WASM engine:
+    // rate 35 ≈ 2 s, rate 50 ≈ 0.4 s, rate 75 ≲ 0.1 s). Attack sits near 60 so a
+    // short key CLICK still sounds; the pad character lives in the release tail.
     tone: {
       lineSelect: 2, modulation: 0, octave: 0, detuneNote: 0, detuneFine: 12,
       vibratoWave: 0, vibratoDelay: 40, vibratoRate: 30, vibratoDepth: 12,
@@ -70,14 +73,14 @@ export const NEON_PRESETS: ReadonlyArray<NeonPresetDef> = [
         {
           wave1: 1, wave2: 0, dcwKeyFollow: 1, dcaKeyFollow: 0,
           pitchEnv: FLAT_PITCH,
-          dcwEnv: env([28, 18], [70, 45], 2, 3),
-          dcaEnv: env([35, 30, 18], [99, 90, 0], 2, 3),
+          dcwEnv: env([58, 42], [70, 45], 2, 3),
+          dcaEnv: env([62, 45, 34], [99, 90, 0], 2, 3),
         },
         {
           wave1: 1, wave2: 0, dcwKeyFollow: 1, dcaKeyFollow: 0,
           pitchEnv: FLAT_PITCH,
-          dcwEnv: env([25, 15], [60, 40], 2, 3),
-          dcaEnv: env([30, 28, 16], [99, 88, 0], 2, 3),
+          dcwEnv: env([55, 40], [60, 40], 2, 3),
+          dcaEnv: env([58, 44, 32], [99, 88, 0], 2, 3),
         },
       ],
     },
@@ -105,21 +108,24 @@ export const NEON_PRESETS: ReadonlyArray<NeonPresetDef> = [
   {
     name: "Noise Perc",
     description: "Noise-modulated percussive hit — instant attack, no sustain",
+    // Decay rates near 55 give a ~0.4 s hit; the originally-authored 75+ decayed
+    // in under 100 ms (an inaudible tick — see the rate calibration note above).
+    // Key follow kept moderate so upper keys don't shorten to nothing.
     tone: {
       lineSelect: 3, modulation: 2, octave: 1, detuneNote: 0, detuneFine: 0,
       vibratoWave: 0, vibratoDelay: 0, vibratoRate: 0, vibratoDepth: 0,
       lines: [
         {
-          wave1: 2, wave2: 0, dcwKeyFollow: 7, dcaKeyFollow: 5,
+          wave1: 2, wave2: 0, dcwKeyFollow: 3, dcaKeyFollow: 2,
           pitchEnv: FLAT_PITCH,
-          dcwEnv: env([99, 70], [99, 0], 0, 2),
-          dcaEnv: env([99, 75], [99, 0], 0, 2),
+          dcwEnv: env([99, 58], [99, 0], 0, 2),
+          dcaEnv: env([99, 54], [99, 0], 0, 2),
         },
         {
-          wave1: 7, wave2: 0, dcwKeyFollow: 7, dcaKeyFollow: 5,
+          wave1: 7, wave2: 0, dcwKeyFollow: 3, dcaKeyFollow: 2,
           pitchEnv: FLAT_PITCH,
-          dcwEnv: env([99, 72], [90, 0], 0, 2),
-          dcaEnv: env([99, 78], [99, 0], 0, 2),
+          dcwEnv: env([99, 56], [90, 0], 0, 2),
+          dcaEnv: env([99, 52], [99, 0], 0, 2),
         },
       ],
     },
