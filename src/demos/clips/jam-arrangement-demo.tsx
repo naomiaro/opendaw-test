@@ -117,6 +117,7 @@ const App: React.FC = () => {
           box.duration.setValue(SECTION_PPQN);      // region spans the 4-bar section
           box.loopOffset.setValue(0);
           box.loopDuration.setValue(clip.bars * PPQN.Bar); // loops tile the section
+          box.waveformOffset.setValue(track.contentStartSeconds); // skip lead-in, matches the clip
           box.label.setValue(`${track.name} · ${clip.bars} bar`);
           box.mute.setValue(false);
         });

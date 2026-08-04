@@ -13,6 +13,7 @@ import {
 } from "@opendaw/studio-boxes";
 import { InstrumentFactories } from "@opendaw/studio-adapters";
 import { getAudioExtension, loadAudioFile } from "@/lib/audioUtils";
+import { findContentStart } from "./waveform";
 
 export const CLIP_COLUMNS = [1, 2, 4] as const;
 
@@ -29,6 +30,7 @@ export type JamTrack = {
   audioUnitBox: AudioUnitBox;
   fileBox: AudioFileBox;
   audioBuffer: AudioBuffer;
+  contentStartSeconds: number; // skips the stem's silent lead-in — see findContentStart
   clips: JamClip[];
 };
 
@@ -59,6 +61,9 @@ export async function createJamSession(
       const fileUUID = UUID.generate();
       const fileUUIDString = UUID.toString(fileUUID);
       localAudioBuffers.set(fileUUIDString, audioBuffer);
+      // Raw Cambridge-MT stems share a session start well before the first note —
+      // skip it so launcher clips loop actual content, not studio silence.
+      const contentStartSeconds = findContentStart(audioBuffer);
 
       project.editing.modify(() => {
         const { audioUnitBox, trackBox } = project.api.createInstrument(
@@ -81,6 +86,7 @@ export async function createJamSession(
             clip.duration.setValue(bars * PPQN.Bar);
             clip.index.setValue(column);
             clip.label.setValue(`${stem.name} ${bars} bar${bars > 1 ? "s" : ""}`);
+            clip.waveformOffset.setValue(contentStartSeconds);
           });
           return { box, uuidString: UUID.toString(clipUUID), bars };
         });
@@ -92,6 +98,7 @@ export async function createJamSession(
           audioUnitBox,
           fileBox,
           audioBuffer,
+          contentStartSeconds,
           clips,
         });
       });

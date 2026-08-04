@@ -22,6 +22,19 @@ export const computePeaks = (
   return peaks;
 };
 
+/** First timestamp (seconds) where channel 0 exceeds `threshold` — raw multitrack
+ *  stems commonly carry several seconds of silent studio lead-in before the first
+ *  note, and clips/regions built from file offset 0 would otherwise loop that
+ *  silence instead of the stem's actual content. Falls back to 0 (start of file)
+ *  if the whole buffer is at or below the threshold. */
+export const findContentStart = (buffer: AudioBuffer, threshold = 0.01): number => {
+  const channel = buffer.getChannelData(0);
+  for (let i = 0; i < channel.length; i++) {
+    if (Math.abs(channel[i]) > threshold) return i / buffer.sampleRate;
+  }
+  return 0;
+};
+
 export const drawWaveform = (
   ctx: CanvasRenderingContext2D,
   buffer: AudioBuffer,

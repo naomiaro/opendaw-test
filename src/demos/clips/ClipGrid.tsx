@@ -33,7 +33,7 @@ function ClipCell({ project, track, clip, state, onLaunch }: {
     drawWaveform(ctx, track.audioBuffer, {
       x: 0, y: 0, width: canvas.width, height: canvas.height,
       color: track.color,
-      startSeconds: 0,
+      startSeconds: track.contentStartSeconds,
       durationSeconds: clip.bars * barSeconds(BPM),
     });
   }, [track, clip]);

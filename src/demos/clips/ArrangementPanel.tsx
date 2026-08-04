@@ -146,7 +146,7 @@ export function ArrangementPanel({ project, tracks }: {
               width: Math.max(1, tileDuration * xScale),
               height: blockHeight,
               color: track.color,
-              startSeconds: 0,
+              startSeconds: track.contentStartSeconds,
               durationSeconds: PPQN.pulsesToSeconds(tileDuration, BPM),
             });
           }

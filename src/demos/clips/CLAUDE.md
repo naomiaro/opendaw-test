@@ -114,6 +114,23 @@ correctly across the whole section with no gaps or seams. This mirrors the full
 OpenDAW studio's clip context-menu **Convert to Region** action, applied to every
 playing clip at once.
 
+### Raw stems need waveformOffset to skip the silent lead-in
+Cambridge-MT multitrack stems (this demo's Dark Ride source) share a session start
+well before the song's first note — Drums/Bass/Guitars start at file offset 0 but
+carry no signal above noise floor until ~9.7s in, and Vox not until ~24.6s (verified
+via `AudioBuffer.getChannelData(0)` scan, SDK 0.0.164). A clip or region built from
+file offset 0 therefore loops pure studio silence — audibly silent despite the engine
+reporting `"playing"`/`"sequencing"` correctly (verified via RMS: analyser tap showed
+noise floor for both clip AND committed-region playback until this was fixed). Both
+`AudioClipBox.waveformOffset` and `AudioRegionBox.waveformOffset` (seconds, field 7 on
+each — see `documentation/05-samples-peaks-and-looping.md`) shift the engine's read
+position within the file and must be set to the stem's actual content start. This
+demo computes it once per stem with `findContentStart()` (`waveform.ts`, first sample
+past a 0.01 amplitude threshold) and stores it on `JamTrack.contentStartSeconds`,
+applied to every launcher clip (`jamSetup.ts`) and every committed region
+(`commit()` in `jam-arrangement-demo.tsx`) — and to the waveform preview draws in
+`ClipGrid.tsx`/`ArrangementPanel.tsx` so what's drawn matches what plays.
+
 ### Gotchas hit during implementation
 - `flatMap` over a `SortedSet` doesn't flatten (see root CLAUDE.md) — region traversal
   in `ArrangementPanel.tsx` goes through `getAllAudioRegions()` / adapter `.values()`,
