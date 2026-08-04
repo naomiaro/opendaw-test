@@ -155,6 +155,7 @@ export default defineConfig({
                 warpSignalsmith: resolve(__dirname, "warp-signalsmith-demo.html"),
                 werkstatt: resolve(__dirname, "werkstatt-demo.html"),
                 apparat: resolve(__dirname, "apparat-demo.html"),
+                neon: resolve(__dirname, "neon-demo.html"),
                 export: resolve(__dirname, "export-demo.html"),
                 compLanes: resolve(__dirname, "comp-lanes-demo.html"),
                 compLanesDebug: resolve(__dirname, "comp-lanes-debug-demo.html"),
