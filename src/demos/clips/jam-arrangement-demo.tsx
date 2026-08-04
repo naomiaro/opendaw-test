@@ -134,7 +134,10 @@ const App: React.FC = () => {
 
   const playArrangement = useCallback(() => {
     if (project === null) return;
-    project.engine.stop(); // resets the clip sequencer — all clips stop
+    // reset=true — a bare stop() is pause-only while transporting and leaves
+    // the clip sequencer's "playing" state intact, so launched clips would
+    // resume and keep owning their tracks instead of the committed regions.
+    project.engine.stop(true); // resets the clip sequencer — all clips stop
     project.engine.setPosition(0);
     project.engine.play(); // facade resumes the AudioContext
     setMode("arrangement");
@@ -142,19 +145,25 @@ const App: React.FC = () => {
 
   const stopTransport = useCallback(() => {
     if (project === null) return;
-    project.engine.stop();
+    project.engine.stop(true);
     setMode("idle");
   }, [project]);
 
   const clearArrangement = useCallback(() => {
     if (project === null) return;
-    if (mode === "arrangement") project.engine.stop();
+    if (mode === "arrangement") project.engine.stop(true);
     project.editing.modify(() => {
       getAllAudioRegions(project).forEach(r => r.box.delete());
     });
     setLastCommit(null);
-    setMode("idle");
-  }, [project, mode]);
+    // Recompute fresh (not the outer hasPlayingClip, which callbacks below
+    // this one haven't captured yet) — clearing during a jam must keep mode
+    // "jam" so a later launch doesn't re-trigger enterJam's idle-only park.
+    const stillJamming = tracks.some(track =>
+      track.clips.some(clip => clipStates.get(clip.uuidString) === "playing"),
+    );
+    setMode(stillJamming ? "jam" : "idle");
+  }, [project, mode, tracks, clipStates]);
 
   const hasPlayingClip = tracks.some(track =>
     track.clips.some(clip => clipStates.get(clip.uuidString) === "playing"),
