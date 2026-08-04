@@ -88,9 +88,12 @@ const App: React.FC = () => {
     return () => sub.terminate();
   }, [project]);
 
+  // Only parks the transport when coming from a cold stop. Launching a clip while
+  // the arrangement is already playing must NOT reset position — that would kill
+  // linear playback on every other track, not just take over the clicked track's.
   const enterJam = useCallback(() => {
     if (project === null) return;
-    if (mode !== "jam") {
+    if (mode === "idle") {
       project.engine.setPosition(JAM_PARK_POSITION);
       setMode("jam");
     }
