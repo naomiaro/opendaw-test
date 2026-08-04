@@ -14,6 +14,10 @@ import { drawWaveform } from "./waveform";
 
 const CELL_WIDTH = 132;
 const CELL_HEIGHT = 56;
+// .clip-cell is border-box with a 1px border + 4px padding on each side, so
+// the canvas's rendered content box is CELL_WIDTH minus that 10px — draw at
+// that size or the backing store (CELL_WIDTH) gets squeezed down to fit.
+const CELL_CANVAS_WIDTH = CELL_WIDTH - 2 * (1 + 4);
 
 function ClipCell({ project, track, clip, state, onLaunch }: {
   project: Project;
@@ -57,7 +61,7 @@ function ClipCell({ project, track, clip, state, onLaunch }: {
       aria-label={`${track.name} ${clip.bars}-bar clip: ${
         state === "playing" ? "stop track" : "launch"}`}
     >
-      <canvas ref={canvasRef} width={CELL_WIDTH} height={CELL_HEIGHT} />
+      <canvas ref={canvasRef} width={CELL_CANVAS_WIDTH} height={CELL_HEIGHT} />
       <span className="clip-cell__bars">{clip.bars} bar{clip.bars > 1 ? "s" : ""}</span>
       <span className="clip-cell__progress" />
     </button>
