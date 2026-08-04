@@ -2,7 +2,7 @@
 // jam session (4 Dark Ride stems, 3 launcher clips each), lets clips play
 // freely while parked past any arrangement content, and turns whatever's
 // playing into timeline regions on Commit.
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
 import { PPQN } from "@opendaw/lib-dsp";
@@ -35,6 +35,10 @@ const App: React.FC = () => {
   const [regionCount, setRegionCount] = useState(0);
 
   const clipStates = useClipStates(project);
+  // Set on every launch, consumed by the jam-idle effect below — guards the
+  // one render where mode has flipped to "jam" but the launch's "waiting"
+  // notification hasn't landed in clipStates yet (see enterJam / that effect).
+  const launchingRef = useRef(false);
 
   useEffect(() => {
     let mounted = true;
@@ -93,11 +97,45 @@ const App: React.FC = () => {
   // linear playback on every other track, not just take over the clicked track's.
   const enterJam = useCallback(() => {
     if (project === null) return;
+    launchingRef.current = true;
     if (mode === "idle") {
       project.engine.setPosition(JAM_PARK_POSITION);
       setMode("jam");
     }
   }, [project, mode]);
+
+  // Auto-return to idle once jamming fully drains, covering both the "Stop
+  // clips" button and a clip naturally reaching a non-looping end. Counts
+  // BOTH "waiting" and "playing" as active: a clip armed for the next bar
+  // hasn't reached "playing" yet, but the jam is still very much live —
+  // checking "playing" alone would stop the transport during that arm
+  // window. Clip stops are quantized, so clipStates only empties once the
+  // musical stop actually completes — this effect firing then is correct,
+  // not a race.
+  useEffect(() => {
+    if (project === null || mode !== "jam") return;
+    const hasActiveClip = tracks.some(track =>
+      track.clips.some(clip => clipStates.get(clip.uuidString) !== undefined),
+    );
+    if (hasActiveClip) {
+      // A real active clip clears the guard — it must only ever suppress the
+      // one transient render right after a launch, never a later genuine
+      // drain (a stale `true` left over from an earlier launch would
+      // otherwise swallow this jam's actual stop-all transition).
+      launchingRef.current = false;
+      return;
+    }
+    if (launchingRef.current) {
+      // enterJam() and the launch's "waiting" notification land in the same
+      // click handler and batch into one render, so this shouldn't actually
+      // fire empty — skip once as a safety net rather than stopping a
+      // transport that's about to have a clip on it.
+      launchingRef.current = false;
+      return;
+    }
+    project.engine.stop(true);
+    setMode("idle");
+  }, [project, mode, tracks, clipStates]);
 
   const commit = useCallback(() => {
     if (project === null) return;
@@ -185,19 +223,21 @@ const App: React.FC = () => {
             </h1>
             <p className="mc-intro">
               A clip has no timeline position — only a loop length and a track it belongs
-              to. Launching one arms it for the next bar (quantized, so every clip you fire
-              lands in time with the others already running), and once it starts it loops
-              forever until you stop it or launch a different clip on the same track — the
-              new one takes over instantly, so a track ever plays at most one clip.
+              to. Launching one quantizes it in: to the next bar if the track's idle, or to
+              the loop grid of whatever clip is already playing there if it's not — so every
+              clip you fire lands in time with the others already running. Once it starts it
+              loops forever until you stop it or launch a different clip on the same track —
+              the new one takes over instantly, so a track only ever plays one clip at a time.
             </p>
             <p className="mc-intro">
               A region is the opposite: fixed to a timeline position, playing back exactly
               once, in order — linear. <strong>Commit</strong> below turns whatever clips are
               currently playing into regions parked at the next open 4-bar section, so
-              jamming and arranging can interleave freely. It's the same move the full
-              OpenDAW studio offers from a clip's context menu as{" "}
-              <code>Convert to Region</code> — Commit just applies it to every playing clip
-              at once.
+              jamming and arranging can interleave freely. It's the same idea as the full
+              OpenDAW studio's clip context-menu action{" "}
+              <code>Convert to Region</code>, applied to every playing clip at once — though
+              the studio appends each region after that track's last one, while Commit parks
+              them all together at one shared next-free section.
             </p>
           </div>
 
