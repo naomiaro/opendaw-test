@@ -34,4 +34,22 @@ describe("applyClipNotification", () => {
     applyClipNotification(prev, { type: "waiting", clips: [a] });
     expect(prev.size).toBe(0);
   });
+  it("clears a waiting clip via a non-empty obsolete list", () => {
+    const prev: ClipStateMap = new Map([[key(a), "waiting"]]);
+    const n: ClipNotification = {
+      type: "sequencing",
+      changes: { started: [], stopped: [], obsolete: [a] },
+    };
+    const next = applyClipNotification(prev, n);
+    expect(next.has(key(a))).toBe(false);
+  });
+  it("resolves the same uuid in both stopped and started to playing (delete-then-set ordering)", () => {
+    const prev: ClipStateMap = new Map([[key(a), "playing"]]);
+    const n: ClipNotification = {
+      type: "sequencing",
+      changes: { started: [a], stopped: [a], obsolete: [] },
+    };
+    const next = applyClipNotification(prev, n);
+    expect(next.get(key(a))).toBe("playing");
+  });
 });
