@@ -48,50 +48,74 @@ export async function createJamSession(
   const ext = getAudioExtension();
   const boxGraph = project.boxGraph;
   const tracks: JamTrack[] = [];
+  const committedFileUUIDs: string[] = [];
 
-  for (const stem of STEMS) {
-    const audioBuffer = await loadAudioFile(
-      audioContext,
-      `/audio/DarkRide/${stem.file}.${ext}`,
-    );
-    const fileUUID = UUID.generate();
-    localAudioBuffers.set(UUID.toString(fileUUID), audioBuffer);
-
-    project.editing.modify(() => {
-      const { audioUnitBox, trackBox } = project.api.createInstrument(
-        InstrumentFactories.Tape,
+  try {
+    for (const stem of STEMS) {
+      const audioBuffer = await loadAudioFile(
+        audioContext,
+        `/audio/DarkRide/${stem.file}.${ext}`,
       );
-      audioUnitBox.volume.setValue(0);
+      const fileUUID = UUID.generate();
+      const fileUUIDString = UUID.toString(fileUUID);
+      localAudioBuffers.set(fileUUIDString, audioBuffer);
 
-      const fileBox = AudioFileBox.create(boxGraph, fileUUID, box => {
-        box.fileName.setValue(stem.name);
-        box.endInSeconds.setValue(audioBuffer.duration);
-      });
+      project.editing.modify(() => {
+        const { audioUnitBox, trackBox } = project.api.createInstrument(
+          InstrumentFactories.Tape,
+        );
+        audioUnitBox.volume.setValue(0);
 
-      const clips: JamClip[] = CLIP_COLUMNS.map((bars, column) => {
-        const eventsBox = ValueEventCollectionBox.create(boxGraph, UUID.generate());
-        const clipUUID = UUID.generate();
-        const box = AudioClipBox.create(boxGraph, clipUUID, clip => {
-          clip.clips.refer(trackBox.clips);
-          clip.file.refer(fileBox);
-          clip.events.refer(eventsBox.owners);
-          clip.duration.setValue(bars * PPQN.Bar);
-          clip.index.setValue(column);
-          clip.label.setValue(`${stem.name} ${bars} bar${bars > 1 ? "s" : ""}`);
+        const fileBox = AudioFileBox.create(boxGraph, fileUUID, box => {
+          box.fileName.setValue(stem.name);
+          box.endInSeconds.setValue(audioBuffer.duration);
         });
-        return { box, uuidString: UUID.toString(clipUUID), bars };
-      });
 
-      tracks.push({
-        name: stem.name,
-        color: stem.color,
-        trackBox,
-        audioUnitBox,
-        fileBox,
-        audioBuffer,
-        clips,
+        const clips: JamClip[] = CLIP_COLUMNS.map((bars, column) => {
+          const eventsBox = ValueEventCollectionBox.create(boxGraph, UUID.generate());
+          const clipUUID = UUID.generate();
+          const box = AudioClipBox.create(boxGraph, clipUUID, clip => {
+            clip.clips.refer(trackBox.clips);
+            clip.file.refer(fileBox);
+            clip.events.refer(eventsBox.owners);
+            clip.duration.setValue(bars * PPQN.Bar);
+            clip.index.setValue(column);
+            clip.label.setValue(`${stem.name} ${bars} bar${bars > 1 ? "s" : ""}`);
+          });
+          return { box, uuidString: UUID.toString(clipUUID), bars };
+        });
+
+        tracks.push({
+          name: stem.name,
+          color: stem.color,
+          trackBox,
+          audioUnitBox,
+          fileBox,
+          audioBuffer,
+          clips,
+        });
       });
-    });
+      committedFileUUIDs.push(fileUUIDString);
+    }
+  } catch (error) {
+    // Each stem above is its own committed transaction — a load failure on a
+    // later stem must not leave earlier stems' boxes dangling with no
+    // caller-visible handle (the rejected promise gives the caller nothing to
+    // clean up). Roll back everything built so far in a fresh transaction,
+    // separate from the creation transactions above. audioUnitBox.delete()
+    // cascades through its mandatory dependents — TrackBox (mandatory
+    // "tracks" pointer), the Tape instrument box (mandatory "host" pointer),
+    // every AudioClipBox (mandatory "clips" pointer into trackBox.clips),
+    // each clip's private ValueEventCollectionBox (mandatory "events"
+    // pointer) — and once the last referencing clip is swept, the shared
+    // AudioFileBox too (AudioFileBox itself declares pointerRules.mandatory).
+    if (tracks.length > 0) {
+      project.editing.modify(() => {
+        tracks.forEach(track => track.audioUnitBox.delete());
+      });
+    }
+    committedFileUUIDs.forEach(uuid => localAudioBuffers.delete(uuid));
+    throw error;
   }
 
   // Arrangement playback must run linearly — kill the default timeline loop.
