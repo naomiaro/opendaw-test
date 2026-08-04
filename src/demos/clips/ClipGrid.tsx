@@ -153,6 +153,8 @@ export const CLIP_GRID_STYLES = `
   display: flex;
   flex-direction: column;
   gap: 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .clip-grid__header,
 .clip-grid__row {
