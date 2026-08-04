@@ -61,6 +61,11 @@ export async function createJamSession(
       const fileUUID = UUID.generate();
       const fileUUIDString = UUID.toString(fileUUID);
       localAudioBuffers.set(fileUUIDString, audioBuffer);
+      // Recorded before the modify below (not after) so a throw inside it still
+      // leaves this stem's uuid in the rollback list — otherwise the buffer set
+      // above leaks: it's in localAudioBuffers but the catch below only cleans
+      // uuids that made it into committedFileUUIDs.
+      committedFileUUIDs.push(fileUUIDString);
       // Raw Cambridge-MT stems share a session start well before the first note —
       // skip it so launcher clips loop actual content, not studio silence.
       const contentStartSeconds = findContentStart(audioBuffer);
@@ -102,8 +107,15 @@ export async function createJamSession(
           clips,
         });
       });
-      committedFileUUIDs.push(fileUUIDString);
     }
+
+    // Arrangement playback must run linearly — kill the default timeline loop.
+    // Inside the try: a failure here still needs the rollback below, same as
+    // a per-stem load/modify failure above.
+    project.editing.modify(() => {
+      project.timelineBox.loopArea.enabled.setValue(false);
+    });
+    await project.engine.queryLoadingComplete();
   } catch (error) {
     // Each stem above is its own committed transaction — a load failure on a
     // later stem must not leave earlier stems' boxes dangling with no
@@ -125,12 +137,6 @@ export async function createJamSession(
     throw error;
   }
 
-  // Arrangement playback must run linearly — kill the default timeline loop.
-  project.editing.modify(() => {
-    project.timelineBox.loopArea.enabled.setValue(false);
-  });
-
-  await project.engine.queryLoadingComplete();
   project.engine.setPosition(0);
   return tracks;
 }
