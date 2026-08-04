@@ -311,6 +311,8 @@ Arming a MIDI instrument's capture uses the **same** arm/disarm surface as audio
 
 `MidiDevices.requestPermission()` must be called explicitly before `CaptureMidi.prepareRecording()` or before subscribing a `MIDILearning` instance to its controllers field — those paths do not auto-request. (`MIDILearning.learnMIDIControls()` is the exception: it self-handles permission since it's invoked from a user gesture.) Call it once at app startup or on the user gesture that initiates MIDI usage.
 
+An armed `CaptureMidi` follows device availability: when MIDI access is granted after arming, or an input device is hot-plugged (a `statechange` on the `MIDIAccess`), the capture rebuilds its input stream automatically — arming before granting permission or before connecting the controller still records.
+
 ```typescript
 import { MidiDevices } from "@opendaw/studio-core";
 
