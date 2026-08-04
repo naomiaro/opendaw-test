@@ -147,6 +147,18 @@ const GROUPS: Group[] = [
     ],
   },
   {
+    label: "Instruments",
+    color: "var(--mc-amber)",
+    demos: [
+      {
+        href: "/neon-demo.html",
+        title: "Neon: CZ-101 Phase Distortion",
+        blurb:
+          "Play OpenDAW's Casio CZ-101 phase-distortion synth. Five original patches round-tripped through real .syx bytes, a sysex drop zone, live wave/modulation controls, and an 8-stage envelope visualizer.",
+      },
+    ],
+  },
+  {
     label: "Warp & Pitch",
     color: "var(--mc-violet)",
     demos: [

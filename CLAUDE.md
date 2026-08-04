@@ -166,7 +166,11 @@ API: `.isEmpty()`, `.nonEmpty()`, `.unwrap()`, `.unwrapOrNull()`, `.unwrapOrUnde
 
 ### Adapter Layer for Peaks (Preferred)
 `regionAdapter.file.peaks` is a synchronous `Option<Peaks>` read — no subscribe needed.
-Combined with CanvasPainter (repaints every frame), peaks render automatically when ready.
+Combined with CanvasPainter, peaks render automatically once ready — but note the repo's
+`src/lib/CanvasPainter.ts` DEBOUNCES: it repaints only after `requestUpdate()` (or resize),
+NOT every frame. Drive invalidation explicitly (e.g. `requestUpdate()` from an
+AnimationFrame loop while recording, or `project.editing.subscribe(() =>
+painter.requestUpdate())` for box-graph-driven canvases — see the Neon envelope visualizer).
 Use raw `sampleLoader.subscribe()` only when you need state change callbacks without a painter.
 
 ### RootBoxAdapter: Project Entry Point
