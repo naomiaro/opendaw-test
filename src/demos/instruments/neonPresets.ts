@@ -28,8 +28,10 @@ export const NEON_PRESETS: ReadonlyArray<NeonPresetDef> = [
         {
           wave1: 0, wave2: 2, dcwKeyFollow: 2, dcaKeyFollow: 0,
           pitchEnv: FLAT_PITCH,
-          dcwEnv: env([99, 45], [99, 20], 2, 3),
-          dcaEnv: env([99, 60], [99, 0], 0, 2),
+          // Pluck decays into a HELD body (sustain 72) with a tight ~0.15 s release —
+          // the original sustain-less rate-60 decay died in ~0.25 s even under a held key.
+          dcwEnv: env([99, 55], [99, 25], 2, 3),
+          dcaEnv: env([99, 52, 68], [99, 72, 0], 2, 3),
         },
         {
           wave1: 0, wave2: 0, dcwKeyFollow: 0, dcaKeyFollow: 0,
