@@ -14,6 +14,9 @@
   In modes "1" and "2" it is inaudible by design — matches CZ hardware architecture.
   Verified by spectrum: line "1" solo low-band ratio 0.012 vs "1+1'" detuned −4800ct
   ratio 0.417. Don't debug a "detune does nothing" report without checking Line Select.
+- Line-param activity per mode: "1" reads line 1 only; "2" reads line 2 only; "1+1'"
+  reads line 1 only (the primed line is a detuned COPY of line 1 — line 2's params are
+  unused); "1+2'" reads both. The demo dims whichever line card is out of the signal path.
 - `octave` and `tune` are global pitch (octave ±1 audibly doubles/halves frequency).
 - UI labels come from the SDK: `Neon.Waves` / `Neon.LineSelect` / `Neon.Modulation` /
   `Neon.VibratoWaves` — don't hand-write wave names.

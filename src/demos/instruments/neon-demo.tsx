@@ -61,7 +61,7 @@ interface NeonParamPanelProps {
 /**
  * Parameter panel bound directly to Neon's box graph fields. Every control reads
  * and writes through `useNeonField` — moving a slider commits a transaction, and
- * loading a preset (Task 3's `applyTone`) flows back through the same subscriptions,
+ * loading a preset (`applyTone`) flows back through the same subscriptions,
  * snapping every control to the patch's values.
  */
 const NeonParamPanel: React.FC<NeonParamPanelProps> = ({
@@ -71,6 +71,8 @@ const NeonParamPanel: React.FC<NeonParamPanelProps> = ({
   // label still reads "Init") from flipping the patch label to "Custom".
   // Declared as the LAST effect below — React runs a component's effects in
   // declaration order, so it commits after every field hook's initial catch-up.
+  // (Relies on no StrictMode double-effect: the ref is never reset, so a dev-mode
+  // re-run of the field effects after mount would mark Custom.)
   const mountedRef = useRef(false);
   const markCustom = useCallback(() => {
     if (!mountedRef.current || suppressCustomRef.current) return;
@@ -106,12 +108,20 @@ const NeonParamPanel: React.FC<NeonParamPanelProps> = ({
     mountedRef.current = true;
   }, []);
 
-  const line2Deemphasized = lineSelect === 0; // "1" — line 2 not in the active signal path
+  // Which line cards feed the DSP: mode "2" plays line 2 only; "1" and "1+1'"
+  // never read line 2's params (the primed line in 1+1' is a detuned copy of line 1).
+  const line1Inert = lineSelect === 1;
+  const line2Inert = lineSelect === 0 || lineSelect === 2;
+  // Detune only reaches the primed line of the dual modes (1+1' / 1+2').
+  const detuneInert = lineSelect === 0 || lineSelect === 1;
   // Presets write fractional cents (sysex fine steps don't land on integers) — round
-  // the total before splitting or the readout shows float dust.
+  // the total before splitting, and format from the absolute value so sub-semitone
+  // negatives don't render as "+0st -50ct" (Math.trunc(-0.5) is -0).
   const detuneRounded = Math.round(detune);
-  const detuneSemitones = Math.trunc(detuneRounded / 100);
-  const detuneCents = detuneRounded % 100;
+  const detuneSign = detuneRounded < 0 ? "−" : "+";
+  const detuneAbs = Math.abs(detuneRounded);
+  const detuneSemitones = Math.trunc(detuneAbs / 100);
+  const detuneCents = detuneAbs % 100;
 
   return (
     <div className="ne-param-layout">
@@ -148,9 +158,14 @@ const NeonParamPanel: React.FC<NeonParamPanelProps> = ({
           </Flex>
 
           <div className="ne-param-grid">
-            <Card className="ne-line-card">
+            <Card className="ne-line-card" style={line1Inert ? { opacity: 0.45 } : undefined}>
               <Flex direction="column" gap="3">
                 <Text size="2" weight="bold" color="gray">Line 1</Text>
+                {line1Inert && (
+                  <Text size="1" color="gray">
+                    not in the signal path — Line Select is "{Neon.LineSelect[lineSelect]}"
+                  </Text>
+                )}
                 <NeonWaveControls
                   wave1={line0Wave1} setWave1={setLine0Wave1}
                   wave2={line0Wave2} setWave2={setLine0Wave2}
@@ -160,12 +175,12 @@ const NeonParamPanel: React.FC<NeonParamPanelProps> = ({
               </Flex>
             </Card>
 
-            <Card className="ne-line-card" style={line2Deemphasized ? { opacity: 0.45 } : undefined}>
+            <Card className="ne-line-card" style={line2Inert ? { opacity: 0.45 } : undefined}>
               <Flex direction="column" gap="3">
                 <Text size="2" weight="bold" color="gray">Line 2</Text>
-                {line2Deemphasized && (
+                {line2Inert && (
                   <Text size="1" color="gray">
-                    line 1 only — Line Select is "{Neon.LineSelect[lineSelect]}"
+                    not in the signal path — Line Select is "{Neon.LineSelect[lineSelect]}"
                   </Text>
                 )}
                 <NeonWaveControls
@@ -222,14 +237,19 @@ const NeonParamPanel: React.FC<NeonParamPanelProps> = ({
                     </Button>
                   </Flex>
                 </Flex>
-                <Flex direction="column" gap="1">
+                <Flex direction="column" gap="1" style={detuneInert ? { opacity: 0.45 } : undefined}>
                   <Flex justify="between">
                     <Text size="1" color="gray">Detune</Text>
                     <Text size="1" color="gray" style={{ fontFamily: "var(--mc-mono)" }}>
-                      {detuneSemitones >= 0 ? "+" : ""}{detuneSemitones}st {detuneCents >= 0 ? "+" : ""}{detuneCents}ct
+                      {detuneSign}{detuneSemitones}st {detuneCents}ct
                     </Text>
                   </Flex>
                   <Slider min={-4800} max={4800} step={1} value={[detune]} onValueChange={([v]) => setDetune(v)} />
+                  {detuneInert && (
+                    <Text size="1" color="gray">
+                      detunes the primed line — audible in 1+1' / 1+2' only
+                    </Text>
+                  )}
                 </Flex>
                 <NeonSliderRow label="Tune" value={tune} onChange={setTune} min={-1200} max={1200} step={1} />
                 <NeonSliderRow label="Glide" value={glideTime} onChange={setGlideTime} min={0} max={1} step={0.01} decimals={2} />
@@ -488,6 +508,7 @@ const PAGE_STYLES = `
   border-color: var(--mc-amber);
   background: rgba(232, 163, 61, 0.05);
 }
+.ne-dropzone:focus-visible { outline: 2px solid var(--mc-amber); outline-offset: 2px; }
 .ne-param-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
@@ -518,7 +539,7 @@ const App: React.FC = () => {
   const [activePatch, setActivePatch] = useState("Init");
   const [syxError, setSyxError] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
-  const suppressCustomRef = useRef(false); // Task 4 reads this to skip "Custom" during preset apply
+  const suppressCustomRef = useRef(false); // read during preset apply to skip "Custom"
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Initialize OpenDAW
@@ -550,7 +571,11 @@ const App: React.FC = () => {
           ? newProject.captureDevices.get((audioUnitBox as AudioUnitBox).address.uuid)
           : null;
         if (!captureOption || captureOption.isEmpty()) {
-          setInitError("Could not arm the MIDI capture — keys would make no sound.");
+          console.error(
+            "Neon demo: captureDevices.get() returned " +
+            (audioUnitBox ? "empty Option for the created audio unit" : "nothing — createInstrument produced no audioUnitBox"),
+          );
+          if (mounted) setInitError("Could not arm the MIDI capture — keys would make no sound.");
           return;
         }
         captureOption.unwrap().armed.setValue(true);
@@ -559,7 +584,10 @@ const App: React.FC = () => {
         setProject(newProject);
         setStatus("Ready — play the keyboard");
       } catch (error) {
-        console.error("Init error: " + String(error));
+        console.error(
+          "Init error: " + String(error) +
+          (error instanceof Error && error.stack ? "\n" + error.stack : ""),
+        );
         if (mounted) {
           setInitError(error instanceof Error ? error.message : String(error));
         }
@@ -571,8 +599,14 @@ const App: React.FC = () => {
     };
   }, []);
 
-  const handleNoteOn = useCallback(async (note: number) => {
-    if (audioContext && audioContext.state !== "running") await audioContext.resume();
+  const handleNoteOn = useCallback((note: number) => {
+    // Send synchronously so a quick press-release can't deliver Off before On
+    // (an awaited resume() reorders them and hangs the voice). The context resume
+    // races the first note either way; state stays consistent.
+    if (audioContext && audioContext.state !== "running") {
+      audioContext.resume().catch((error) =>
+        console.error("Neon demo: AudioContext resume failed: " + String(error)));
+    }
     MidiDevices.softwareMIDIInput.sendNoteOn(note, 0.8);
     setActiveNotes(prev => new Set(prev).add(note));
   }, [audioContext]);
@@ -587,25 +621,41 @@ const App: React.FC = () => {
   }, []);
 
   const applyTone = useCallback((tone: CzTone, label: string) => {
-    if (!project || !neonBox) return;
+    if (!project || !neonBox) {
+      // Reachable only if the instrument never finished booting (e.g. capture-arm
+      // failure) — say so instead of silently swallowing a validated tone.
+      setSyxError("Neon isn't ready yet — the instrument didn't finish initializing.");
+      return;
+    }
     // Deliberately through both codec directions: the applied patch is the projection
     // real hardware would receive, and encode/decode are exercised on every click.
     const roundTripped = CzSysex.decode(CzSysex.encode(tone));
     suppressCustomRef.current = true;
-    project.editing.modify(() => NeonPreset.apply(neonBox, roundTripped));
-    suppressCustomRef.current = false;
+    try {
+      project.editing.modify(() => NeonPreset.apply(neonBox, roundTripped));
+    } finally {
+      // A throw inside the transaction must not leave "Custom" detection disabled
+      // for the rest of the session.
+      suppressCustomRef.current = false;
+    }
     setActivePatch(label);
     setSyxError(null);
   }, [project, neonBox]);
 
   const handleSyxFile = useCallback(async (file: File) => {
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    if (!CzSysex.isToneDump(bytes)) {
-      console.log(`Neon demo: rejected ${file.name} — not a CZ-101 tone dump`);
-      setSyxError(`"${file.name}" is not a CZ-101 tone dump (.syx single-tone format).`);
-      return;
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      if (!CzSysex.isToneDump(bytes)) {
+        console.log(`Neon demo: rejected ${file.name} — not a CZ-101 tone dump`);
+        setSyxError(`"${file.name}" is not a CZ-101 tone dump (.syx single-tone format).`);
+        return;
+      }
+      applyTone(CzSysex.decode(bytes), `Imported: ${file.name}`);
+    } catch (error) {
+      // file.arrayBuffer() rejects if the file changed/vanished between pick and read.
+      console.error(`Neon demo: failed to read ${file.name}: ` + String(error));
+      setSyxError(`Could not read "${file.name}" — ${error instanceof Error ? error.message : String(error)}`);
     }
-    applyTone(CzSysex.decode(bytes), `Imported: ${file.name}`);
   }, [applyTone]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -622,12 +672,13 @@ const App: React.FC = () => {
     e.preventDefault();
     setIsDragOver(false);
     const file = e.dataTransfer.files[0];
-    if (file) handleSyxFile(file);
+    if (file) void handleSyxFile(file);
+    else setSyxError("Nothing droppable — drop a .syx file.");
   }, [handleSyxFile]);
 
   const handleFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) handleSyxFile(file);
+    if (file) void handleSyxFile(file);
     e.target.value = "";
   }, [handleSyxFile]);
 
@@ -668,14 +719,15 @@ const App: React.FC = () => {
                   {neonBox && <Badge color="green" size="1">Neon loaded</Badge>}
                 </Flex>
                 <Text size="2" color="gray">
-                  Click keys to play Neon's built-in init tone (line-1 saw, organ DCA).
+                  {activePatch === "Init"
+                    ? "Click keys to play Neon's built-in init tone (line-1 saw, organ DCA)."
+                    : `Click keys to play the loaded patch (${activePatch}).`}
                 </Text>
                 <Flex justify="center" style={{ overflow: "auto", padding: "8px 0" }}>
                   <PianoKeyboard
                     activeNotes={activeNotes}
                     onNoteOn={handleNoteOn}
                     onNoteOff={handleNoteOff}
-                    disabled={!project}
                   />
                 </Flex>
               </Flex>
@@ -723,11 +775,20 @@ const App: React.FC = () => {
                 </Text>
                 <div
                   className="ne-dropzone"
+                  role="button"
+                  tabIndex={0}
+                  aria-label="Load a .syx tone dump"
                   data-active={isDragOver || undefined}
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
                   onDrop={handleDrop}
                   onClick={() => fileInputRef.current?.click()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      fileInputRef.current?.click();
+                    }
+                  }}
                 >
                   <Text size="2" color="gray">Drop .syx file here or click to browse</Text>
                 </div>
