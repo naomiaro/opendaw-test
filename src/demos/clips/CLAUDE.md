@@ -46,16 +46,23 @@ project.engine.scheduleClipStop([track.trackBox.address.uuid]);      // TRACK uu
 should stop — there's no "stop this specific clip" call, because only one clip can
 play per track at a time (see takeover, below).
 
-### Launching starts the transport; stopping it resets the sequencer
+### Launching starts the transport; stopping it resets the sequencer — only with reset=true
 `scheduleClipPlay` resumes the AudioContext and starts the engine transport if it
 isn't already running — there's no separate "arm" step before a clip can play.
-Conversely, `project.engine.stop()` resets the clip sequencer: every playing clip
-stops and its state is forgotten (no "resume where the clips left off" on the next
-`play()`). The demo's `playArrangement()` calls `stop()` before `setPosition(0)` and
-`play()` specifically to guarantee no jam-mode clip keeps sounding under linear
-arrangement playback.
+`project.engine.stop(reset?: boolean)` only resets the clip sequencer (every
+playing clip stops, state forgotten, no "resume where the clips left off" on the
+next `play()`) when `reset` is `true`, or when the transport wasn't already
+playing/recording. A bare `stop()` (reset defaults to `false`) while the engine is
+transporting is pause-only — the sequencer's "playing" clips stay marked playing,
+so a later `play()` resumes them instead of leaving them stopped (verified against
+the installed `EngineWorklet` stop-command handler, SDK 0.0.164: it always calls
+`pause()`, but only calls the hard `stop()` — the one that resets the clip
+sequencer — when passed `reset` or when the engine wasn't already transporting).
+The demo's `playArrangement()`, `stopTransport()`, and `clearArrangement()` all
+call `stop(true)` specifically to guarantee no jam-mode clip keeps sounding under
+linear arrangement playback.
 
-### subscribeClipNotification: payload shapes and no catchup
+### subscribeClipNotification: payload shapes and partial catchup
 ```typescript
 const sub = project.engine.subscribeClipNotification(notification => {
   if (notification.type === "waiting") {
@@ -70,10 +77,13 @@ const sub = project.engine.subscribeClipNotification(notification => {
   before the engine has actually reached the quantize boundary.
 - `"sequencing"` fires from the engine once the boundary is crossed and carries the
   authoritative `started`/`stopped`/`obsolete` UUID lists.
-- **No catchup**: unlike most box-graph subscriptions in this repo,
-  `subscribeClipNotification` has no `catchupAndSubscribe` — it only fires for future
-  notifications. Subscribe before the first launch, or you'll miss "waiting" for any
-  clip already scheduled by the time you subscribe.
+- **Partial catchup**: unlike a `catchupAndSubscribe` naming, but not "future only"
+  either. `subscribeClipNotification` synchronously invokes the observer once, at
+  subscribe time, with a `"sequencing"` notification whose `started` list holds every
+  clip currently playing (`obsolete`/`stopped` empty) — verified against the
+  installed `EngineWorklet` (SDK 0.0.164). Only the **"waiting"** state is not
+  replayed: subscribe before the first launch, or you'll miss "waiting" for any clip
+  already scheduled (but not yet confirmed) by the time you subscribe.
 
 ### One clip plays per track; takeover silences only that track's regions
 A `TrackBox` can hold many `AudioClipBox`es (one per launcher column), but at most one
