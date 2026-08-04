@@ -1,7 +1,7 @@
 # Clips Demos — OpenDAW SDK Reference
 
 ### Minimal audible AudioClipBox recipe
-A launcher clip needs exactly four things wired up inside one `editing.modify()`:
+A launcher clip needs exactly five things wired up inside one `editing.modify()`:
 ```typescript
 const eventsBox = ValueEventCollectionBox.create(boxGraph, UUID.generate());
 const clip = AudioClipBox.create(boxGraph, UUID.generate(), clip => {
@@ -19,15 +19,23 @@ below).
 
 ### Engine reads only `loop` of ClipPlaybackFields
 `AudioClipBox.triggerMode` (a `ClipPlaybackFields`) also exposes `reverse`, `speed`,
-`quantise`, and `trigger`, but the WASM engine's clip playback path (verified against
-SDK 0.0.164) only consults `.loop`. Leaving it at its schema default plays the clip
-once and stops — the launcher clips in this demo never set it, and instead rely on
-the demo re-launching the same clip to keep it going. Don't spend time wiring
-`quantise`/`trigger` per-clip expecting them to change playback — they're schema
-surface, not yet read.
+`quantise`, and `trigger`, but the WASM engine's clip playback path only consults
+`.loop` — verified against the upstream Rust engine source (openDAW checkout, see
+`.claude/local.md`), `crates/engine/src/audio_unit/tracks/audio.rs`
+(`read_audio_clip`), which reads field path `[4, 1]` (`triggerMode` → `loop`) and
+nothing else off `ClipPlaybackFields`. This can't be verified from the installed npm
+dist — `engine.wasm` is a compiled binary, not greppable source.
+`loop`'s schema default is **true** (`BooleanField.create(..., true)` in the
+installed `studio-boxes` dist), so clips loop forever without the demo ever setting
+the field — a clip only plays once and stops if something explicitly sets `loop` to
+`false`. Don't spend time wiring `quantise`/`trigger` per-clip expecting them to
+change playback — they're schema surface, not yet read.
 
 ### Quantization rules
-Clip launches quantize to a grid, not to an absolute time:
+Clip launches quantize to a grid, not to an absolute time — verified against the
+upstream Rust engine source (openDAW checkout), `crates/engine-env/src/
+clip_sequencer.rs` (`quantize_floor`, `BAR` constant); not verifiable from the
+installed dist, same caveat as above:
 - With nothing else playing, a launch quantizes to the next **bar** boundary.
 - With another clip already playing, a launch quantizes to that **playing clip's own
   duration** grid (its loop length), so a newly-launched 1-bar clip on another track
@@ -87,11 +95,18 @@ const sub = project.engine.subscribeClipNotification(notification => {
 
 ### One clip plays per track; takeover silences only that track's regions
 A `TrackBox` can hold many `AudioClipBox`es (one per launcher column), but at most one
-plays at a time. Launching a second clip on a track that already has one playing
-doesn't stop-then-start — the new clip takes over at the quantize boundary and the old
-one stops the same instant. While any clip is active on a track, that track's timeline
-regions go silent for as long as the clip owns it; other tracks' regions are
-unaffected — a clip playing on Drums has no bearing on Bass, Guitars, or Vox.
+plays at a time — this is an **engine-runtime rule**, not a schema invariant: the
+`clips` pointer field on `TrackBox` is `exclusive: false` in the installed
+`studio-boxes` dist, so nothing stops multiple `AudioClipBox`es from referring to the
+same track at the box-graph level. The one-at-a-time behavior comes from the clip
+sequencer's per-track slots — verified against the upstream Rust engine source
+(openDAW checkout), `crates/engine-env/src/clip_sequencer.rs` (`TrackState` holds one
+`waiting` and one `playing` slot per track UUID). Launching a second clip on a track
+that already has one playing doesn't stop-then-start — the new clip takes over at the
+quantize boundary and the old one stops the same instant. While any clip is active on
+a track, that track's timeline regions go silent for as long as the clip owns it;
+other tracks' regions are unaffected — a clip playing on Drums has no bearing on Bass,
+Guitars, or Vox.
 
 ### AudioClipBox cascade delete
 `clips`, `file`, and `events` pointers on `AudioClipBox` are all `mandatory: true`.
