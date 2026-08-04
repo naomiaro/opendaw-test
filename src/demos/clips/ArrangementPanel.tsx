@@ -47,6 +47,10 @@ export function ArrangementPanel({ project, tracks }: {
   const playheadRef = useRef<HTMLDivElement>(null);
   const tracksRef = useRef(tracks);
   tracksRef.current = tracks;
+  // Full region traversal is only cheap once per box-graph change, not once
+  // per rAF tick — the playhead loop below reads this cache instead of
+  // calling visiblePpqn() itself every frame.
+  const visiblePpqnRef = useRef(4 * SECTION_PPQN);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -62,6 +66,7 @@ export function ArrangementPanel({ project, tracks }: {
     const painter = new CanvasPainter(canvas, (_painter, context) => {
       const width = canvas.clientWidth;
       const height = canvas.clientHeight;
+      visiblePpqnRef.current = visiblePpqn();
 
       context.fillStyle = CANVAS_COLORS.bg;
       context.fillRect(0, 0, width, height);
@@ -81,7 +86,7 @@ export function ArrangementPanel({ project, tracks }: {
         return;
       }
 
-      const totalPpqn = visiblePpqn();
+      const totalPpqn = visiblePpqnRef.current;
       const xScale = width / totalPpqn;
       const laneHeight = height / LANE_COUNT;
       const totalBars = totalPpqn / PPQN.Bar;
@@ -167,7 +172,7 @@ export function ArrangementPanel({ project, tracks }: {
       const playhead = playheadRef.current;
       if (playhead === null) return;
       const position = project.engine.position.getValue();
-      const total = visiblePpqn();
+      const total = visiblePpqnRef.current;
       if (position < 0 || position > total) {
         playhead.style.display = "none";
         return;

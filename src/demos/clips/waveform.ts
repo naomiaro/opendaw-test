@@ -32,6 +32,7 @@ export const findContentStart = (buffer: AudioBuffer, threshold = 0.01): number 
   for (let i = 0; i < channel.length; i++) {
     if (Math.abs(channel[i]) > threshold) return i / buffer.sampleRate;
   }
+  console.warn("findContentStart: buffer never exceeded threshold " + threshold + " — treating as silent and using file start (possible load problem)");
   return 0;
 };
 
