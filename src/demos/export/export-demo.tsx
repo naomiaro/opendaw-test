@@ -5,6 +5,7 @@ import { UUID } from "@opendaw/lib-std";
 import { Project } from "@opendaw/studio-core";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
+import { AudioAttribution } from "@/components/AudioAttribution";
 import { BackLink } from "@/components/BackLink";
 import { TransportControls } from "@/components/TransportControls";
 import { initializeOpenDAW } from "@/lib/projectSetup";
@@ -704,36 +705,11 @@ const channels = await renderer.step(numSamples);      // metronome stem pair co
 renderer.stop(); renderer.terminate(); copy.terminate();`}
                 </Code>
               </section>
-
-              {/* Audio Attribution */}
-              <Card>
-                <Flex direction="column" gap="3">
-                  <Text size="2" weight="bold" color="gray">
-                    Audio Attribution
-                  </Text>
-                  <Separator size="4" />
-                  <Text size="2">
-                    Mix stems from Dark Ride&apos;s &lsquo;Deny Control&rsquo;. This file is provided
-                    for educational purposes only, and the material contained in it should not be
-                    used for any commercial purpose without the express permission of the copyright
-                    holders. Please refer to{" "}
-                    <a
-                      href="https://www.cambridge-mt.com"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ color: "var(--accent-9)" }}
-                    >
-                      www.cambridge-mt.com
-                    </a>{" "}
-                    for further details.
-                  </Text>
-                </Flex>
-              </Card>
             </>
           )}
-
-          <MoisesLogo />
         </Flex>
+        <AudioAttribution stems="Mix" />
+        <MoisesLogo />
       </Container>
     </Theme>
   );

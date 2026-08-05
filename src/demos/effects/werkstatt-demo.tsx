@@ -7,6 +7,7 @@ import { ScriptCompiler, ScriptDeclaration } from "@opendaw/studio-adapters";
 import { audioEffectsFieldOf } from "@/lib/adapterUtils";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
+import { AudioAttribution } from "@/components/AudioAttribution";
 import { BackLink } from "@/components/BackLink";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { loadTracksFromFiles } from "@/lib/trackLoading";
@@ -779,8 +780,8 @@ await compiler.compile(audioContext, project.editing, box, script);`}
               </section>
             </>
           )}
-
         </Flex>
+        <AudioAttribution stems="Drum" />
         <MoisesLogo />
       </Container>
     </Theme>

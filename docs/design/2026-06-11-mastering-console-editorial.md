@@ -62,8 +62,31 @@ per page that carries information (never decoration for its own sake).
 
 ## Scope
 
-The site shell (GitHubCorner, BackLink, MoisesLogo, Radix Theme wrapper) stays
-unchanged across pages. Interactive demo panels keep their existing
-`InputLatencyPanel`-style restraint; this language governs page chrome, headers,
-explanatory sections, and overview/TOC pages, and is applied per-demo during the
-audit campaign rather than as a big-bang restyle.
+The site shell (GitHubCorner, MoisesLogo, Radix Theme wrapper) stays unchanged
+across pages. BackLink and AudioAttribution are shell components that carry the
+console language themselves (see below). Interactive demo panels keep their
+existing `InputLatencyPanel`-style restraint; this language governs page chrome,
+headers, explanatory sections, and overview/TOC pages, and is applied per-demo
+during the audit campaign rather than as a big-bang restyle.
+
+## Shell Components in the Console Language
+
+Two shell components render the console tokens on every page, including pages
+not yet audited. Both hardcode the palette (hex values, not `--mc-*` vars) —
+they must work on pages whose `<style>` blocks don't define the tokens.
+
+- **BackLink** (`src/components/BackLink.tsx`) — a console transport key: a
+  22px hairline-bordered square holding the `←` glyph (return-to-zero key)
+  beside an uppercase mono micro-label per the micro-label spec. Muted at rest
+  (`#948c7d` label, `#3d3729` border); hover brightens the label and turns the
+  key amber with a 2px left nudge (gated behind `prefers-reduced-motion`);
+  amber `:focus-visible` outline.
+- **AudioAttribution** (`src/components/AudioAttribution.tsx`) — the
+  Cambridge-MT credit with its full educational-use notice, styled as the
+  back-panel fine-print plate on studio hardware: hairline-bordered panel
+  (`#2a2620` on `#151310`), mono uppercase "Audio Attribution" eyebrow, 12px
+  muted body with the song title lifted to `--mc-text`, amber link hover.
+  Takes a required `stems` prop — a singular noun interpolated as
+  "{stems} stems from …" (e.g. "Drum", "Guitar", "Vocal", "Mix").
+  Placement rule: directly above `<MoisesLogo />` on every demo that plays
+  Dark Ride stems — never inline in an SDK reference section.

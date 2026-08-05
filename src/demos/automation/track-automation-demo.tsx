@@ -11,6 +11,7 @@ import { ValueRegionBoxAdapter, TrackBoxAdapter } from "@opendaw/studio-adapters
 import { getAllRegions, audioEffectsFieldOf } from "@/lib/adapterUtils";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
+import { AudioAttribution } from "@/components/AudioAttribution";
 import { BackLink } from "@/components/BackLink";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { loadTracksFromFiles } from "@/lib/trackLoading";
@@ -672,6 +673,7 @@ project.editing.modify(() => {
             </Flex>
           )}
         </Flex>
+        <AudioAttribution stems="Guitar" />
         <MoisesLogo />
       </Container>
     </Theme>
