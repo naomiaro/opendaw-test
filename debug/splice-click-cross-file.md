@@ -37,3 +37,21 @@ Corrected understanding of the voice routing at offset ≠ 0 (from wave-3 source
 The offset-geometry findings in [`shared-source-double-process.md`](./shared-source-double-process.md) (2026-06-11 addendum) are directly relevant: the one-quantum late eviction and the resulting constructive/destructive interference are the structural reason cross-file splices click at offset 64 but only tick faintly at offset 0.
 
 The open question for the maintainer remains: **caller-managed fades or automatic SDK handling?** The geometry analysis above suggests automatic same-block eviction (passing `bp1` as the fade-out block offset) would substantially reduce the click at offset ≠ 0 even without caller-added fades.
+
+---
+
+## Resolution 2026-08-05 — automatic SDK handling shipped in 0.0.165
+
+The open question is answered: **automatic SDK handling.** SDK 0.0.165 (Rust engine,
+`crates/engine/src/audio_region_player.rs`, upstream commit "fix click/dip at
+audio-region cut seams and on pause (all play modes)") unifies every play mode on:
+play the region fully to its end, then fade out over ~20 ms by continuing to read the
+source past the region end (a `ReleaseTail`), and fade in whenever a region starts
+partway into its source — the fade-in guard now consults `loop_offset`, which was
+exactly the ignored field this note's regions use (`loopOffset === position`). The
+outgoing region's tail and the incoming region's fade-in overlap, so a cross-file
+splice gets a genuine ~20 ms crossfade instead of a hard step, and same-source cuts
+sum back to the original (measured seam-Δ/pre-Δ = 1.00 on
+`shared-source-double-process-debug-demo.html`, all 4 cells, 2026-08-05). Transport
+stop seeds the same release (the pause click is gone too). See
+`changelogs/sdk-0.0.164-to-0.0.165-changes.md`.

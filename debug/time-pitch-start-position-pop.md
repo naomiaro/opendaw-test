@@ -92,3 +92,15 @@ The same `#handleTransientBoundary` line is the most consistent explanation for 
 5. Mid-file silent gap with TimeStretch: gap has a preceding transient ⟹ voice emits pre-gap content.
 
 **Suggested SDK fix:** clamp voice start to `max(segmentStart, playhead-in-file position)`, or suppress emission until the timeline position catches up to the segment onset — so that starting playback inside a silent gap produces silence rather than the preceding phrase.
+
+---
+
+## Note 2026-08-05 — SDK 0.0.165 adds a fade-in on mid-source starts (re-verify)
+
+SDK 0.0.165's engine declick rework fades IN every voice whose region starts partway
+into its source (and rings voices out past region ends / transport stops). Whatever
+content the stretcher emits at a mid-gap `setPosition` start now enters under a
+~20 ms fade-in ramp instead of at full amplitude, so the audible pop this note
+documents is expected to be masked or eliminated. NOT yet re-verified by ear against
+the repro page — the underlying "where does the content come from" mechanism question
+also remains open.

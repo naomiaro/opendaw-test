@@ -1371,7 +1371,20 @@ Professional DAWs use two complementary techniques:
 1. **Snap to zero crossing** — the edit tool automatically finds the nearest zero crossing to the user's click position, so the cut lands where the waveform is already at zero
 2. **Short crossfade** — a brief (~10-20ms) overlap crossfade smooths out any remaining discontinuity at the edit point
 
-The SDK does not currently provide either mechanism automatically.
+The SDK's engine provides the second mechanism automatically: every region plays
+fully to its end, then fades out over ~20 ms by *continuing to read its source past
+the region end* (each play mode continues in its own way — native and varispeed keep
+reading at the current rate, time-stretch rings its granular voices out, Signalsmith
+continues the spectral stream with frozen parameters), and every region that starts
+partway into its source fades in over the same window. At a cut, the outgoing half's
+read-past-the-end tail overlaps the incoming half's fade-in over the *same source
+frames*, so the two linear ramps sum back to the original signal — a transparent
+self-crossfade (measured: seam-band max |Δsample| equals the clean-signal baseline,
+ratio 1.00, on the `shared-source-double-process` regression page). Cross-file
+splices get a genuine ~20 ms crossfade instead of a step. Transport stop seeds the
+same release for every live voice, so pausing rings out cleanly instead of
+hard-cutting. Zero-crossing snapping is not provided — and is no longer needed for
+click-free cuts.
 
 ### Non-Overlapping Fades Make It Worse
 
@@ -1379,7 +1392,11 @@ Adding a fade-out and fade-in without overlap creates a V-shaped volume dip at t
 
 ### Volume Automation Crossfades
 
-For seamless transitions between different audio sections (e.g., take comping), use multiple tracks with volume automation instead of splitting regions:
+The engine's automatic ~20 ms edit-point crossfade makes plain region splits
+click-free, but it is a fixed-length declick, not a musical crossfade. For
+*authorable* transitions between different audio sections (e.g., take comping with
+crossfades longer than 20 ms), use multiple tracks with volume automation instead of
+splitting regions:
 
 1. Each section is a separate instrument track with its own audio region
 2. Each track has a volume automation track targeting `audioUnitBox.volume`
@@ -1393,7 +1410,12 @@ See the [Comp Lanes demo](https://opendaw-test.pages.dev/comp-lanes-demo.html) f
 
 #### Voice Fade Behavior
 
-The engine's Tape device creates a separate voice per region with a built-in 20ms crossfade on creation and eviction. The fade-out starts from the current amplitude level, so transitions between consecutive regions are smooth.
+The engine's Tape device creates a separate voice per region. A voice plays its
+region fully to the end, then renders a ~20 ms *release tail* that keeps reading the
+source past the region boundary while ramping to zero; a voice whose region starts
+partway into its source (non-zero `loopOffset` or waveform offset) fades in over the
+same window. The release also runs on transport stop, seeded from each live voice's
+last state. These fades are linear, equal-length, and not configurable.
 
 #### Automation Events at Same Position
 
