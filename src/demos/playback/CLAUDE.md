@@ -274,16 +274,28 @@ uses elsewhere — `style={{ opacity: switching ? 0.5 : 1, pointerEvents: switch
 silently bail through a re-entry guard. Reference pattern: the Play Mode and
 Reference Pitch cards in `time-pitch-demo.tsx`.
 
-### Voice Crossfade on Region Boundaries
-`RegionEditing.cut()` gives each region its own playback voice in the engine. Voices
-declick over 20 ms (`VOICE_FADE_DURATION` in the Rust engine's
-`crates/engine/src/audio_region_player.rs` `fade_gain`); the declick fade-IN applies
-only when the voice starts at a non-zero read offset — a voice starting at sample 0
-begins at full amplitude. The fade-out starts from the current amplitude level, so
-transitions between consecutive regions are smooth.
+### Voice Crossfade on Region Boundaries (SDK 0.0.165+)
+`RegionEditing.cut()` gives each region its own playback voice in the engine. Since
+SDK 0.0.165 every play mode follows one rule (Rust
+`crates/engine/src/audio_region_player.rs`): play the region fully to its end, then
+fade OUT over ~20 ms (`VOICE_FADE_DURATION`) by continuing to produce audio in that
+mode's own way (native/varispeed: a read-past-the-end `ReleaseTail`; granular:
+`render_release` rings voices out; Signalsmith: the stream continues with frozen
+params), and fade IN whenever a region starts partway into its source (the guard
+consults `loop_offset`, not just `waveform_offset`). At a cut seam the tail and the
+fade-in read the SAME source frames and their complementary linear ramps sum to the
+original — a transparent self-crossfade. Transport stop seeds the same release per
+live voice (no more pause click). Cut-seam pops are FIXED — don't recommend the old
+volume-automation workaround as a necessity. Measurement scope: the seam scan on
+`shared-source-double-process-debug-demo.html` reads seam-Δ/pre-Δ = 1.00 on 0.0.165
+(all 4 cells) but ALREADY read 1.00 at 0.0.159 — that metric sees sample-step
+discontinuities, not the ~20 ms level dip this release removes; use it as a
+no-regression check, not as proof of the 0.0.165 summation behavior (which rests on
+the upstream implementation + regression tests).
 
-Multi-track volume automation crossfades (`comp-lanes-demo.tsx`) remain a valid alternative
-technique for complex comp workflows.
+Multi-track volume automation crossfades (`comp-lanes-demo.tsx`) remain the right
+technique when the crossfade must be longer than the fixed 20 ms declick (musical
+comp transitions).
 
 ### Seam/Crossfade Artifact Status (openDAW#311 / #312, SDK 0.0.159)
 Both upstream issues this repo filed are closed as of 0.0.159 ("Fixed in SDK 0.0.159.
