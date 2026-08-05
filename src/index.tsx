@@ -200,6 +200,18 @@ const GROUPS: Group[] = [
       },
     ],
   },
+  {
+    label: "Clips & Arrangement",
+    color: "var(--mc-violet)",
+    demos: [
+      {
+        href: "/jam-arrangement-demo.html",
+        title: "Jam to Arrangement",
+        blurb:
+          "Jam with a clip launcher — launch-quantized, looping audio clips on four Dark Ride stems — then commit the combos you like to a region timeline and play the arrangement back linearly.",
+      },
+    ],
+  },
 ];
 
 const App: React.FC = () => {

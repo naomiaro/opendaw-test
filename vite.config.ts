@@ -147,6 +147,7 @@ export default defineConfig({
                 loopRecording: resolve(__dirname, "loop-recording-demo.html"),
                 trackAutomation: resolve(__dirname, "track-automation-demo.html"),
                 clipLooping: resolve(__dirname, "clip-looping-demo.html"),
+                jamArrangement: resolve(__dirname, "jam-arrangement-demo.html"),
                 timePitch: resolve(__dirname, "time-pitch-demo.html"),
                 warpVarispeed: resolve(__dirname, "warp-varispeed-demo.html"),
                 warpGridFollowsFile: resolve(__dirname, "warp-grid-follows-file-demo.html"),

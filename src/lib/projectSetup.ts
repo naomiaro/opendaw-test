@@ -308,6 +308,29 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
     void audioContext.resume().then(facadePlay);
   };
 
+  // Same fix, same reason: clip-launcher demos have no Play button — the
+  // first user gesture on a fresh load is a clip-cell click, and
+  // scheduleClipPlay forwards straight to the worklet with no resume of its
+  // own (unlike play(), which the SDK's EngineFacade already resumes
+  // internally). Wrap scheduleClipStop too for symmetry, though stopping a
+  // clip can't itself be the first gesture in practice.
+  const facadeScheduleClipPlay = project.engine.scheduleClipPlay.bind(project.engine);
+  project.engine.scheduleClipPlay = (clipIds): void => {
+    if (audioContext.state === "running") {
+      facadeScheduleClipPlay(clipIds);
+      return;
+    }
+    void audioContext.resume().then(() => facadeScheduleClipPlay(clipIds));
+  };
+  const facadeScheduleClipStop = project.engine.scheduleClipStop.bind(project.engine);
+  project.engine.scheduleClipStop = (trackIds): void => {
+    if (audioContext.state === "running") {
+      facadeScheduleClipStop(trackIds);
+      return;
+    }
+    void audioContext.resume().then(() => facadeScheduleClipStop(trackIds));
+  };
+
   return { project, audioContext };
 }
 
