@@ -3,7 +3,8 @@ import React from "react";
 /**
  * BackLink component - navigation back to the demo index, styled as a
  * mastering-console transport key: hairline-bordered arrow key plus a
- * letter-spaced mono micro-label. Quiet at rest, amber on hover/focus.
+ * letter-spaced mono micro-label. Quiet at rest; hover brightens the label
+ * and turns the key amber; amber focus-visible outline.
  */
 export const BackLink: React.FC = () => {
   return (
@@ -13,7 +14,7 @@ export const BackLink: React.FC = () => {
           display: inline-flex;
           align-items: center;
           gap: 10px;
-          font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+          font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
           font-size: 11px;
           font-weight: 600;
           letter-spacing: 0.18em;

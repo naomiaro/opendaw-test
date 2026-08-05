@@ -568,9 +568,9 @@ audioUnitBox.solo.setValue(true);`}
             </Flex>
           </Card>
 
-          <AudioAttribution stems="Mix" />
-          <MoisesLogo />
         </Flex>
+        <AudioAttribution stems="Mix" />
+        <MoisesLogo />
       </Container>
     </Theme>
   );

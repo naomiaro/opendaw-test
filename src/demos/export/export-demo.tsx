@@ -705,13 +705,11 @@ const channels = await renderer.step(numSamples);      // metronome stem pair co
 renderer.stop(); renderer.terminate(); copy.terminate();`}
                 </Code>
               </section>
-
             </>
           )}
-
-          <AudioAttribution stems="Mix" />
-          <MoisesLogo />
         </Flex>
+        <AudioAttribution stems="Mix" />
+        <MoisesLogo />
       </Container>
     </Theme>
   );

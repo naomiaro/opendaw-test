@@ -14,6 +14,7 @@ import {
 } from "@/lib/compLaneUtils";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
+import { AudioAttribution } from "@/components/AudioAttribution";
 import { BackLink } from "@/components/BackLink";
 import { TransportControls } from "@/components/TransportControls";
 import { initializeOpenDAW } from "@/lib/projectSetup";
@@ -792,11 +793,9 @@ const App: React.FC = () => {
             </Card>
           )}
 
-          {/* Footer */}
-          <Flex justify="center" pt="4">
-            <MoisesLogo />
-          </Flex>
         </Flex>
+        <AudioAttribution stems="Vocal" />
+        <MoisesLogo />
       </Container>
     </Theme>
   );

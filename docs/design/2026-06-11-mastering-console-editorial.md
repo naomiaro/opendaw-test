@@ -86,6 +86,7 @@ they must work on pages whose `<style>` blocks don't define the tokens.
   back-panel fine-print plate on studio hardware: hairline-bordered panel
   (`#2a2620` on `#151310`), mono uppercase "Audio Attribution" eyebrow, 12px
   muted body with the song title lifted to `--mc-text`, amber link hover.
-  Takes a `stems` prop ("Drum" / "Guitar" / "Mix"). Placement rule: directly
-  above `<MoisesLogo />` on every demo that plays Dark Ride stems — never
-  inline in an SDK reference section.
+  Takes a required `stems` prop — a singular noun interpolated as
+  "{stems} stems from …" (e.g. "Drum", "Guitar", "Vocal", "Mix").
+  Placement rule: directly above `<MoisesLogo />` on every demo that plays
+  Dark Ride stems — never inline in an SDK reference section.

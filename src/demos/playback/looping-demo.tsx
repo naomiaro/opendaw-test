@@ -8,6 +8,7 @@ import { AnimationFrame } from "@opendaw/lib-dom";
 import { Project } from "@opendaw/studio-core";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
+import { AudioAttribution } from "@/components/AudioAttribution";
 import { BackLink } from "@/components/BackLink";
 import { TrackRow } from "@/components/TrackRow";
 import { TransportControls } from "@/components/TransportControls";
@@ -603,6 +604,7 @@ const App: React.FC = () => {
             </p>
           </section>
         </Flex>
+        <AudioAttribution stems="Mix" />
         <MoisesLogo />
       </Container>
     </Theme>

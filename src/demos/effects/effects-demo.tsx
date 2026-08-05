@@ -568,7 +568,6 @@ effectBox.enabled.catchupAndSubscribe(obs => {
                   stay in the render path.
                 </p>
               </section>
-
             </>
           )}
         </Flex>

@@ -4,8 +4,11 @@ import React from "react";
  * AudioAttribution component - the Cambridge-MT source-audio credit with its
  * full educational-use notice, styled as console fine print (the back-panel
  * plate on a piece of studio hardware). Place directly above <MoisesLogo />.
+ *
+ * `stems` is a singular noun interpolated as "{stems} stems from ..."
+ * (e.g. "Drum", "Guitar", "Vocal", "Mix" — never "Drums").
  */
-export const AudioAttribution: React.FC<{ stems?: string }> = ({ stems = "Drum" }) => {
+export const AudioAttribution: React.FC<{ stems: string }> = ({ stems }) => {
   return (
     <>
       <style>{`
@@ -19,7 +22,7 @@ export const AudioAttribution: React.FC<{ stems?: string }> = ({ stems = "Drum" 
         }
         .audio-attribution-eyebrow {
           margin: 0 0 8px;
-          font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+          font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
           font-size: 10px;
           font-weight: 600;
           letter-spacing: 0.18em;
@@ -37,14 +40,13 @@ export const AudioAttribution: React.FC<{ stems?: string }> = ({ stems = "Drum" 
           color: #d8d2c8;
         }
         .audio-attribution-text a {
-          color: inherit;
+          color: #e8a33d;
           text-decoration: underline;
           text-underline-offset: 3px;
           text-decoration-color: #5f594e;
-          transition: color 120ms ease, text-decoration-color 120ms ease;
+          transition: text-decoration-color 120ms ease;
         }
         .audio-attribution-text a:hover {
-          color: #e8a33d;
           text-decoration-color: #e8a33d;
         }
         .audio-attribution-text a:focus-visible {
