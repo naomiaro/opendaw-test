@@ -8,6 +8,7 @@ import type { Peaks } from "@opendaw/lib-fusion";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
+import { AudioAttribution } from "@/components/AudioAttribution";
 import { BackLink } from "@/components/BackLink";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { loadTracksFromFiles } from "@/lib/trackLoading";
@@ -762,14 +763,12 @@ project.editing.modify(() => {
                   <a href="/docs/09-editing-fades-and-automation.html">Editing, fades &amp; automation</a>
                   {" "}&middot;{" "}
                   <a href="/docs/04-box-system-and-reactivity.html">Box system &amp; reactivity</a>
-                  {" "}&middot;{" "}
-                  Drum stems from Dark Ride&rsquo;s &lsquo;Deny Control&rsquo; via{" "}
-                  <a href="https://www.cambridge-mt.com" target="_blank" rel="noopener noreferrer">cambridge-mt.com</a>
                 </p>
               </section>
             </>
           )}
         </Flex>
+        <AudioAttribution stems="Drum" />
         <MoisesLogo />
       </Container>
     </Theme>

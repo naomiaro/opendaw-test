@@ -12,6 +12,7 @@ import { initializeOpenDAW } from "@/lib/projectSetup";
 import { getAllAudioRegions } from "@/lib/adapterUtils";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
+import { AudioAttribution } from "@/components/AudioAttribution";
 import { BackLink } from "@/components/BackLink";
 import { CONSOLE_STYLES } from "@/lib/design/consoleTheme";
 import { BPM, SECTION_BARS, SECTION_PPQN, JAM_PARK_POSITION, nextFreeSectionStart } from "./arrangement";
@@ -319,14 +320,12 @@ const App: React.FC = () => {
                   <a href="/docs/09-editing-fades-and-automation.html">Editing, fades &amp; automation</a>
                   {" "}&middot;{" "}
                   <a href="/docs/04-box-system-and-reactivity.html">Box system &amp; reactivity</a>
-                  {" "}&middot;{" "}
-                  Drum stems from Dark Ride&rsquo;s &lsquo;Deny Control&rsquo; via{" "}
-                  <a href="https://www.cambridge-mt.com" target="_blank" rel="noopener noreferrer">cambridge-mt.com</a>
                 </p>
               </section>
             </>
           )}
         </Flex>
+        <AudioAttribution stems="Drum" />
         <MoisesLogo />
       </Container>
     </Theme>

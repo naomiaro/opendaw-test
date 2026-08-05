@@ -5,6 +5,7 @@ import { AudioUnitBox } from "@opendaw/studio-boxes";
 import { Colors } from "@opendaw/studio-enums";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
+import { AudioAttribution } from "@/components/AudioAttribution";
 import { BackLink } from "@/components/BackLink";
 import { TransportControls } from "@/components/TransportControls";
 import { initializeOpenDAW } from "@/lib/projectSetup";
@@ -567,23 +568,7 @@ audioUnitBox.solo.setValue(true);`}
             </Flex>
           </Card>
 
-          {/* Attribution */}
-          <Card>
-            <Flex direction="column" gap="3">
-              <Heading size="4">Audio Attribution</Heading>
-              <Separator size="4" />
-              <Text size="2">
-                Mix stems from Dark Ride's 'Deny Control'. This file is provided for educational purposes only, and the
-                material contained in it should not be used for any commercial purpose without the express permission of
-                the copyright holders. Please refer to{" "}
-                <a href="https://www.cambridge-mt.com" target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent-9)" }}>
-                  www.cambridge-mt.com
-                </a>{" "}
-                for further details.
-              </Text>
-            </Flex>
-          </Card>
-
+          <AudioAttribution stems="Mix" />
           <MoisesLogo />
         </Flex>
       </Container>
