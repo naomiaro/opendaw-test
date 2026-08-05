@@ -19,6 +19,7 @@ Visit http://localhost:5173 to explore the demos.
 | **[Track Editing](https://opendaw-test.pages.dev/track-editing-demo.html)** | Split, move, and rearrange audio regions on a timeline |
 | **[Recording API](https://opendaw-test.pages.dev/recording-api-react-demo.html)** | Microphone recording with live 60fps waveform, device selection, mono/stereo, input gain, and monitoring modes |
 | **[MIDI Recording](https://opendaw-test.pages.dev/midi-recording-demo.html)** | Record MIDI notes with device/channel selection, on-screen piano keyboard, and step recording |
+| **[Neon: CZ-101 Phase Distortion](https://opendaw-test.pages.dev/neon-demo.html)** | Play OpenDAW's Casio CZ-101 phase-distortion synth — five original patches round-tripped through real `.syx` bytes, a sysex drop zone, live wave/modulation controls, and an 8-stage envelope visualizer |
 | **[Loop Recording & Takes](https://opendaw-test.pages.dev/loop-recording-demo.html)** | Record multiple takes over a loop region with per-take waveforms and mute controls |
 | **[Drum Pattern Scheduling](https://opendaw-test.pages.dev/drum-scheduling-demo.html)** | Schedule drum samples across a timeline with visual playback |
 | **[Looping](https://opendaw-test.pages.dev/looping-demo.html)** | Timeline loop areas, adjustable boundaries, and real-time loop iteration tracking |
@@ -28,6 +29,7 @@ Visit http://localhost:5173 to explore the demos.
 | **[Track Automation](https://opendaw-test.pages.dev/track-automation-demo.html)** | Volume, pan, and effect parameter automation with preset patterns and canvas visualization |
 | **[Clip Looping](https://opendaw-test.pages.dev/clip-looping-demo.html)** | Set loop regions within audio clips and extend to tile automatically with waveform visualization |
 | **[Clip Fades](https://opendaw-test.pages.dev/clip-fades-demo.html)** | Logarithmic, linear, and exponential fade curves with visual representations |
+| **[Jam to Arrangement](https://opendaw-test.pages.dev/jam-arrangement-demo.html)** | Jam with a clip launcher — launch-quantized, looping audio clips on four Dark Ride stems — then commit the combos you like to a region timeline and play the arrangement back linearly |
 | **[Warp: Who Bends?](https://opendaw-test.pages.dev/warp-demos.html)** | Four ways to reconcile a song's beat map with the project grid, each with its own sub-demo: varispeed, grid-follows-file, transient-aware time-stretch, and Signalsmith spectral stretch with ±24 st live transpose |
 | **[Time & Pitch](https://opendaw-test.pages.dev/time-pitch-demo.html)** | Switch a region between NoStretch / PitchStretch / TimeStretch / Signalsmith, retune in cents (±1 octave transient-aware, ±2 octaves spectral), and adjust the project reference pitch (A4) with audible auto-engage |
 | **[Mixer Groups](https://opendaw-test.pages.dev/mixer-groups-demo.html)** | Sub-mixing with group buses: Track → Group → Master signal flow |
@@ -131,6 +133,10 @@ src/
     │   └── loop-recording-demo.tsx    # Loop recording with takes
     ├── midi/                          # MIDI demos
     │   └── midi-recording-demo.tsx    # MIDI recording + step recording
+    ├── instruments/                   # Stock instrument demos
+    │   └── neon-demo.tsx              # Neon (CZ-101 phase distortion) + .syx presets
+    ├── clips/                         # Clip launcher demos
+    │   └── jam-arrangement-demo.tsx   # Clip jamming → committed region arrangement
     ├── automation/                    # Automation demos
     │   ├── track-automation-demo.tsx  # Volume/pan/effect automation
     │   ├── tempo-automation-demo.tsx  # Tempo automation patterns
