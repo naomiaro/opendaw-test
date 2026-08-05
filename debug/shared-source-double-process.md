@@ -4,6 +4,8 @@
 
 **Status at SDK 0.0.159 (re-verified 2026-07-15): FIXED on the WASM (Rust) engine; still present on the TypeScript engine.**
 
+**Re-verified 2026-08-05 at SDK 0.0.165** (after the engine's declick rework replaced hard voice fades with read-past-the-end release tails in all play modes): all four cells still scan at seam-band max |Δ| = 0.02878 ≈ clean baseline 0.02880, **seam-Δ/pre-Δ = 1.00**. Note this metric detects sample-step discontinuities only — it does not see the ~20 ms level dip that 0.0.165 additionally removed.
+
 - **WASM engine** (repro page with `?engine=wasm`, offline scan via `OfflineEngineRenderer` variant worker): all four cells (SHARED/DISTINCT × block-aligned/off-boundary) measure seam-band max |Δ| = 0.02878 = the clean-sine baseline, **seam-Δ/pre-Δ = 1.00**, largest jump at a benign zero-crossing (τ +3.375 ms), not the 2-samples-before-seam artifact position.
 - **TypeScript engine** (default, no URL param): seam-band max |Δ| = 0.05374, **seam-Δ/pre-Δ = 1.87** at τ −0.042 ms — improved from 2.00/0.05745 at 0.0.158 (the 0.0.159 TS diff floors the block-partition endpoints per #311a, removing the dropped sample) but the ~2× discontinuity signature remains audible on the TS path.
 

@@ -283,11 +283,15 @@ mode's own way (native/varispeed: a read-past-the-end `ReleaseTail`; granular:
 `render_release` rings voices out; Signalsmith: the stream continues with frozen
 params), and fade IN whenever a region starts partway into its source (the guard
 consults `loop_offset`, not just `waveform_offset`). At a cut seam the tail and the
-fade-in read the SAME source frames and sum to the original — a transparent
-self-crossfade (measured seam-Δ/pre-Δ = 1.00 on
-`shared-source-double-process-debug-demo.html`, all 4 cells). Transport stop seeds
-the same release per live voice (no more pause click). Cut-seam pops are FIXED —
-don't recommend the old volume-automation workaround as a necessity.
+fade-in read the SAME source frames and their complementary linear ramps sum to the
+original — a transparent self-crossfade. Transport stop seeds the same release per
+live voice (no more pause click). Cut-seam pops are FIXED — don't recommend the old
+volume-automation workaround as a necessity. Measurement scope: the seam scan on
+`shared-source-double-process-debug-demo.html` reads seam-Δ/pre-Δ = 1.00 on 0.0.165
+(all 4 cells) but ALREADY read 1.00 at 0.0.159 — that metric sees sample-step
+discontinuities, not the ~20 ms level dip this release removes; use it as a
+no-regression check, not as proof of the 0.0.165 summation behavior (which rests on
+the upstream implementation + regression tests).
 
 Multi-track volume automation crossfades (`comp-lanes-demo.tsx`) remain the right
 technique when the crossfade must be longer than the fixed 20 ms declick (musical

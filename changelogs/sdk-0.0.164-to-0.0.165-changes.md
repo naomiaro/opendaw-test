@@ -2,8 +2,9 @@
 
 One release, one headline for this repo: the Rust engine now **fades every play mode out
 past a region end and in from a mid-source start, making cut seams a transparent
-self-crossfade and transport stops a clean release** — the "`RegionEditing.cut()` pops"
-limitation we have documented since 0.0.144 is fixed upstream. Alongside it: the
+self-crossfade and transport stops a clean release** — the long-documented
+"`RegionEditing.cut()` pops" limitation (see the voice-pop memory note and the
+comp-lanes volume-automation workaround) is fixed upstream. Alongside it: the
 **`TrackType.Undefined` placeholder track is gone** (buses no longer carry a dummy track;
 a migration deletes stored ones), new **`AudioContentFactory.createSignalsmith{Region,Clip}`**
 factories, a new **`AudioUnitBox.userInterface.automationCollapsed`** schema field, and
@@ -47,9 +48,11 @@ Idle players (not visited, not ringing a release) now get their `cycle_id` clear
 prune block, so the next play re-primes from the region start. Upstream regression tests
 cover native seam transparency, the region-end tail, the stop release, and the replay.
 
-Repo impact: `changelogs/sdk-0.0.140-to-0.0.147-changes.md` and the comp-lanes demo
-docs describe the cut pop as a known limitation with volume-automation crossfades as the
-workaround — the workaround is no longer required (still valid, just not necessary).
+Repo impact: the voice-pop memory note, `debug/splice-click-cross-file.md`, and
+`documentation/09-editing-fades-and-automation.md` described the cut/splice pop as a
+known limitation with volume-automation crossfades as the workaround — the workaround
+is no longer required for click-free edits (still the right tool for musical-length
+crossfades longer than the fixed ~20 ms declick).
 
 ## TrackType.Undefined placeholder tracks removed (adapters 0.1.6, core 0.1.6)
 
@@ -112,22 +115,35 @@ engine (it rejects the transaction).
   `AudioBusFactory.create`'s dropped placeholder track does not affect
   `groupTrackLoading.ts` (verified: it never reads bus tracks). `npm ci`,
   `npx tsc --noEmit` (0 src errors), `npm run build`, and all 63 tests pass unchanged.
-- `engine.wasm` binary verified changed vs 0.0.9 (SHA-256 differs) — the seam/pause fix
-  ships in the installed dist. Every API claim above verified against the installed
+- `engine.wasm` binary verified changed vs 0.0.9 (SHA-256 differs — proves a rebuild
+  shipped, not by itself which commits are in it; cf. the 0.0.158 tag-vs-publish
+  caution). Behavioral evidence the new Signalsmith code is in the binary: the
+  signalsmith-transposed alignment improvement measured below. Every API claim above
+  verified against the installed
   tarballs (`automationCollapsed`, `migrateUndefinedTracks`, `createSignalsmithRegion`,
   the `deleteAudioUnit` guard, `AudioUnitUserInterface`, `DevicesClipboard.duplicate`,
   and the removed `TrackBox.create` in `AudioBusFactory`).
 - **Seam regression measured on 0.0.165** (`shared-source-double-process-debug-demo`,
   2026-08-05): all four cells (shared/distinct × block-aligned/off-boundary) scan at
   seam-Δ/pre-Δ = **1.00**, seam-band max |Δ| 0.02878 ≈ the clean-sine baseline 0.02880
-  — touching seams stay transparent under the new release-tail implementation.
-- **Full audio-verify suite re-run on 0.0.165** (seven scenarios, calibrated windows):
-  raw 30/40 ms vs file (negative control vs grid 174/118 ms), varispeed 33/32 ms,
-  timestretch 71/68 ms, signalsmith 17.9 ms, signalsmith-transposed 19.6/20.4 ms,
-  grid-conform 30/35 ms, grid-rigid 33/33 ms vs placement (negative control vs clicks
-  92/153 ms); pitch ordering 0.985 > 0.953; transpose rotation corr peaks at the
-  3-semitone lag (0.682 vs −0.292 at 0). Cell-for-cell identical to the 2026-07-16
-  WASM calibration — the engine declick rewrite regressed nothing.
+  — the release-tail implementation introduces no sample-step discontinuity at
+  touching seams. Scope note: this metric detects sample steps only and already read
+  1.00 pre-0.0.165 (the openDAW#311 fix at 0.0.159 removed the step for NoStretch);
+  what 0.0.165 changes at seams — removing the ~20 ms level dip and extending the
+  rule to all play modes and transport stop — is below this metric's sensitivity and
+  rests on the upstream implementation + its regression tests, not on this scan.
+- **Full audio-verify suite re-run on 0.0.165.** The five scenarios calibrated
+  2026-07-16 reproduce cell-for-cell: raw 30/40 ms vs file (negative control vs grid
+  174/118 ms), varispeed 33/32 ms, timestretch 71/68 ms, grid-conform 30/35 ms,
+  grid-rigid 33/33 ms vs placement (negative control vs clicks 92/153 ms); pitch
+  ordering 0.985 > 0.953 (same values). The signalsmith scenarios baseline separately
+  (first measured 2026-07-31 at 0.0.163): signalsmith [60,80] 17.9 ms (identical;
+  the [120,140] cell is the known beat-tracker-artifact window and is not asserted),
+  signalsmith-transposed **19.6/20.4 ms vs 35.6/24.0 ms at 0.0.163** — an
+  improvement, plausibly from this release's Signalsmith release/re-prime fixes;
+  transpose rotation corr peaks at the 3-semitone lag (0.682 vs −0.292 at lag 0;
+  baseline 0.672/−0.327). No cell regressed; every assertion in the audio-verify
+  skill passes.
 - Docs updated: `documentation/09-editing-fades-and-automation.md` clean-edits section
   now describes the automatic edit-point crossfade; playback `CLAUDE.md` voice-crossfade
   section rewritten; resolution addendum added to `debug/splice-click-cross-file.md`

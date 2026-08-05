@@ -124,6 +124,18 @@ E minor → G minor (+3 st); pitch-class rotation correlation peaks at −3 st
 (**0.672**, vs **−0.327** at lag 0) — the required ordering holds with a wide
 margin.
 
+Re-measured 2026-08-05 at SDK 0.0.165 (the engine declick rework: release tails
+replace hard voice fades in all play modes; same two windows, medians ms): the five
+2026-07-16-calibrated scenarios reproduce cell-for-cell — raw-vs-file 30/40,
+raw-vs-grid 174/118, varispeed 33/32, timestretch 71/68, conform 30/35,
+rigid-vs-fileRigid 33/33, rigid-vs-clicks 92/153; pitch ordering 0.985 > 0.953
+(same values). Signalsmith cells vs their 2026-07-31 baseline: signalsmith [60,80]
+**17.9** (identical; [120,140] not asserted per the tracker-artifact note),
+signalsmith-transposed **19.6/20.4 vs baseline 35.6/24.0** — an improvement,
+plausibly from 0.0.165's Signalsmith release/re-prime fixes; rotation corr peak
+0.682 at the 3-semitone lag vs −0.292 at lag 0 (baseline 0.672/−0.327). Treat
+transposed medians ~20-36 ms as in-family until a fresh calibration supersedes this.
+
 **Pitch (relative check):** `harmonic_analysis` pitch-class distributions on
 [120, 140] s; Pearson-correlate each against raw's. Require
 `corr(raw, timestretch) > corr(raw, varispeed)` — timestretch preserves pitch,

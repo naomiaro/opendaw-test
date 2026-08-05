@@ -51,7 +51,14 @@ partway into its source — the fade-in guard now consults `loop_offset`, which 
 exactly the ignored field this note's regions use (`loopOffset === position`). The
 outgoing region's tail and the incoming region's fade-in overlap, so a cross-file
 splice gets a genuine ~20 ms crossfade instead of a hard step, and same-source cuts
-sum back to the original (measured seam-Δ/pre-Δ = 1.00 on
-`shared-source-double-process-debug-demo.html`, all 4 cells, 2026-08-05). Transport
-stop seeds the same release (the pause click is gone too). See
+sum back to the original (equal complementary linear windows over the same frames).
+Transport stop seeds the same release (the pause click is gone too).
+
+Measurement scope: the 2026-08-05 seam scan (seam-Δ/pre-Δ = 1.00, all 4 cells on
+`shared-source-double-process-debug-demo.html`) confirms the new implementation
+introduces no sample-step discontinuity, but does not discriminate this fix — the
+same page read 1.00 at 0.0.159 (that fix removed the NoStretch seam step; this one
+removes the ~20 ms level dip and covers all play modes + stop, which sit below that
+metric's sensitivity). The summation claim rests on the upstream implementation and
+its regression tests (native seam transparency, region-end tail, stop release). See
 `changelogs/sdk-0.0.164-to-0.0.165-changes.md`.

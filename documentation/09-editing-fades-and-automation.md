@@ -1379,8 +1379,9 @@ continues the spectral stream with frozen parameters), and every region that sta
 partway into its source fades in over the same window. At a cut, the outgoing half's
 read-past-the-end tail overlaps the incoming half's fade-in over the *same source
 frames*, so the two linear ramps sum back to the original signal — a transparent
-self-crossfade (measured: seam-band max |Δsample| equals the clean-signal baseline,
-ratio 1.00, on the `shared-source-double-process` regression page). Cross-file
+self-crossfade (the equal complementary linear windows are what make the sum exact;
+the `shared-source-double-process` regression page confirms no sample-step
+discontinuity at touching seams). Cross-file
 splices get a genuine ~20 ms crossfade instead of a step. Transport stop seeds the
 same release for every live voice, so pausing rings out cleanly instead of
 hard-cutting. Zero-crossing snapping is not provided — and is no longer needed for

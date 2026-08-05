@@ -300,7 +300,8 @@ RenderQuantum-granular — expect up to one audio block of extra tail on that ta
 and no crossfade occurs), the engine sets `BlockFlag.discontinuous`, which fades out
 old voices over `VOICE_FADE_DURATION = 0.020s`
 (20ms) and fades in new voices when the read offset is non-zero (typical loop-wrap takes
-have `waveformOffset > 0`, so the 20 ms voice fade-in applies). During this window, both the
+have `waveformOffset > 0`, so the 20 ms voice fade-in applies; since SDK 0.0.165 the
+guard also consults `loopOffset`, so mid-source region starts fade in too). During this window, both the
 outgoing and incoming take audio overlap briefly. The fade-out starts from the current
 amplitude level, making these transitions smooth and click-free.
 
