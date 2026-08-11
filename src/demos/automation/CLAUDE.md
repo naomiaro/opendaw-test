@@ -53,15 +53,33 @@ project.editing.modify(() => {
   trackBox = project.api.createAutomationTrack(audioUnitBox, audioUnitBox.volume);
 });
 
-// Create a region and add events
+// Create a region, then add events in a SECOND transaction (see rule below)
+let regionBox: ValueRegionBox;
 project.editing.modify(() => {
-  const regionOpt = project.api.createTrackRegion(trackBox, position, duration);
-  const regionBox = regionOpt.unwrap() as ValueRegionBox;
+  regionBox = project.api.createTrackRegion(trackBox, position, duration).unwrap() as ValueRegionBox;
+});
+project.editing.modify(() => {
   const adapter = project.boxAdapters.adapterFor(regionBox, ValueRegionBoxAdapter);
   const collection = adapter.optCollection.unwrap();
+  // createTrackRegion seeds one inherited node at position 0 — clear it before
+  // writing your own position-0 event (duplicate (position, index) keys panic)
+  collection.events.asArray().forEach(evt => evt.box.delete());
   collection.createEvent({ position: 0 as ppqn, index: 0, value: 0.5, interpolation: Interpolation.Linear });
 });
 ```
+
+### createTrackRegion: Seed Node + Overlap Resolution
+`createTrackRegion` on a Value track seeds the new region with one inherited node at
+region-local position 0 (preceding region's outgoing value, else following region's
+incoming value, else the parameter's dial value), and resolves overlaps against existing
+regions (default behaviour clips: fully-covered regions are DELETED, then validateTrack
+asserts). Consequences:
+- Clear the seed in a **separate follow-up transaction** — inside the creating
+  transaction the adapter's event collection doesn't see the seed box yet, so
+  `events.asArray()` misses it and the clear is a silent no-op.
+- Don't delete "replaced" regions yourself after creating over them — guard with
+  `project.boxGraph.findBox(box.address.uuid).nonEmpty()` (the resolver may have
+  deleted them already).
 
 **Automation event positions are REGION-LOCAL, not absolute.**
 `ValueRegionBoxAdapter.valueAt()` calls `LoopableRegion.globalToLocal(region, ppqn)` =

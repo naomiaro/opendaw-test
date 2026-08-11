@@ -995,14 +995,27 @@ project.editing.modify(() => {
   trackBox = project.api.createAutomationTrack(audioUnitBox, audioUnitBox.volume);
 });
 
-// Step 2: Create a region and populate with events
+// Step 2: Create the region. createTrackRegion resolves overlaps against
+// existing regions (the default behaviour clips: fully-covered regions are
+// deleted, partially-covered ones trimmed) and seeds the new value region with
+// one inherited node at region-local position 0 — the preceding region's
+// outgoing value, else the following region's incoming value, else the
+// parameter's current dial value.
+let regionBox: ValueRegionBox;
 project.editing.modify(() => {
-  const regionOpt = project.api.createTrackRegion(trackBox, startPosition, duration);
-  if (regionOpt.isEmpty()) return;
+  regionBox = project.api.createTrackRegion(trackBox, startPosition, duration)
+    .unwrap() as ValueRegionBox;
+});
 
-  const regionBox = regionOpt.unwrap() as ValueRegionBox;
+// Step 3: Populate events in a SEPARATE transaction. The seed node must be
+// cleared before writing your own position-0 event (two events at the same
+// (position, index) panic), and the clearing cannot happen in the creating
+// transaction — the adapter's event collection does not see the seed box until
+// that transaction commits, so an in-transaction clear silently misses it.
+project.editing.modify(() => {
   const adapter = project.boxAdapters.adapterFor(regionBox, ValueRegionBoxAdapter);
   const collection = adapter.optCollection.unwrap();
+  collection.events.asArray().forEach(event => event.box.delete());
 
   collection.createEvent({
     position: 0 as ppqn,       // region-local position

@@ -166,7 +166,14 @@ export function rebuildAutomation(
     perTakeEvents.push(indexedEvents);
   }
 
-  // Single atomic transaction: delete all old regions, then create all new ones
+  // Transaction 1: delete all old regions, then create all new ones.
+  // 0.0.167: createTrackRegion seeds each new value region with one inherited
+  // node at position 0. The seed must be cleared (indexedEvents carries its own
+  // (0, 0) event and duplicate (position, index) keys panic), and the clearing
+  // has to happen in a SEPARATE transaction: the adapter's event collection
+  // doesn't see the seed box until the creating transaction commits, so an
+  // in-transaction asArray() misses it and the seed survives.
+  const createdRegions: (ValueRegionBox | null)[] = [];
   project.editing.modify(() => {
     // Delete existing automation regions for all takes
     for (let t = 0; t < takes.length; t++) {
@@ -181,10 +188,9 @@ export function rebuildAutomation(
       }
     }
 
-    // Create new automation regions and events for all takes
+    // Create new automation regions for all takes
     for (let t = 0; t < takes.length; t++) {
       const take = takes[t];
-      const indexedEvents = perTakeEvents[t];
 
       const regionOpt = project.api.createTrackRegion(
         take.automationTrackBox,
@@ -193,6 +199,7 @@ export function rebuildAutomation(
       );
       if (regionOpt.isEmpty()) {
         console.error(`rebuildAutomation: createTrackRegion failed for take ${t}`);
+        createdRegions.push(null);
         continue;
       }
       const regionBox = regionOpt.unwrap() as ValueRegionBox;
@@ -200,6 +207,17 @@ export function rebuildAutomation(
       if (t === 0) {
         regionBox.label.setValue(encodeCompStateToLabel({ boundaries, assignments }));
       }
+      createdRegions.push(regionBox);
+    }
+  });
+
+  // Transaction 2: clear the seed nodes, then write the take-mute events.
+  project.editing.modify(() => {
+    for (let t = 0; t < createdRegions.length; t++) {
+      const regionBox = createdRegions[t];
+      if (regionBox === null) continue;
+      const indexedEvents = perTakeEvents[t];
+
       const adapter = project.boxAdapters.adapterFor(regionBox, ValueRegionBoxAdapter);
       const collectionOpt = adapter.optCollection;
       if (collectionOpt.isEmpty()) {
@@ -207,6 +225,9 @@ export function rebuildAutomation(
         continue;
       }
       const collection = collectionOpt.unwrap();
+
+      // Clear the 0.0.167 seed node (see above).
+      collection.events.asArray().forEach((evt) => evt.box.delete());
 
       for (const evt of indexedEvents) {
         collection.createEvent({

@@ -796,6 +796,9 @@ for (const loader of loaders) {
 During recording, `project.sampleManager.getOrCreate(uuid)` returns the `RecordingWorklet` itself — it IS the SampleLoader. Key properties:
 - `peaks` → `Option<Peaks>` — PeaksWriter during recording, SamplePeaks after finalization
 - `data` → `Option<AudioData>` — set by `#finalize()` before SamplePeaks are generated
+- `meta` → `Option<SampleMetaData>` — always `Option.None` while recording (a take in
+  progress is not a stored sample yet; metadata exists once `importRecording` finalizes
+  it and a `DefaultSampleLoader` serves it)
 - `state` → `{ type: "record" | "loaded" | ... }` — tracks lifecycle
 - `subscribe(observer)` — observe state changes (fires with `{type: "loaded"}` when finalization completes)
 

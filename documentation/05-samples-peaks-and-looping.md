@@ -235,6 +235,8 @@ if (sampleLoader.state.type === "loaded") {
 
 **Important:** `SampleLoader` only has `subscribe()`, NOT `catchupAndSubscribe()`. `subscribe()` invokes the callback synchronously when the loader is already in a terminal state (`"loaded"` or `"error"`). Always check `sampleLoader.state.type` first and handle terminal states directly — this avoids a TDZ crash when a one-shot `sub.terminate()` inside the callback would fire before `const sub` is bound.
 
+Besides `data`, `peaks`, and `state`, a loader exposes `meta: Option<SampleMetaData>` — synchronous access to the loaded sample's metadata (name, duration, sample rate, and tempo) from the copy already in memory, without a round-trip to storage. A `bpm` of 0 means the tempo is unknown and the material is treated as seconds-based (unwarped).
+
 ### PeaksWriter vs Peaks
 
 During recording, `sampleLoader.peaks` returns a **PeaksWriter** (live, growing peaks). After finalization, it returns final **Peaks** (static). Both implement the same rendering interface, but you can distinguish them:
@@ -592,6 +594,8 @@ rawStart = offset + passIndex * loopDuration
 ```
 
 Each cycle covers `loopDuration` PPQN on the timeline. The engine reads audio from `elapsedSeconds = tempoMap.intervalToSeconds(rawStart, resultStart)` within each cycle — this resets to 0 at each tile boundary, so every tile reads from the same point in the audio file (offset by `waveformOffset`).
+
+A degenerate `loopDuration` (0, negative, or NaN) yields **no cycles** — both `locateLoop` and `locateLoops` guard it and return nothing, so a region built with `loopDuration: 0` plays silently rather than looping or hanging. Always set `loopDuration` (and `loopOffset`) when hand-building region boxes.
 
 ### globalToLocal
 

@@ -55,41 +55,61 @@ function applyAutomationEvents(project: Project, trackBox: TrackBox, events: Aut
     .filter(r => r.isValueRegion())
     .map(r => r.box);
 
-  // Create new region first (don't delete old ones until this succeeds)
-  let newRegionCreated = false;
+  // Create new region first (don't delete old ones until this succeeds).
+  // 0.0.167: createTrackRegion seeds a new value region with one inherited node
+  // at position 0. It must be cleared (the events below are the full curve, and
+  // a leftover seed at (0, 0) collides with our own position-0 event —
+  // (position, index) is a composite key; duplicates panic), and the clearing
+  // has to happen in a SEPARATE transaction: the adapter's event collection
+  // doesn't see the seed box until the creating transaction commits, so an
+  // in-transaction asArray() misses it and the seed survives.
+  let regionBox: ValueRegionBox | null = null;
   project.editing.modify(() => {
     const regionOpt = project.api.createTrackRegion(trackBox, PLAYBACK_START, TOTAL_PPQN as ppqn);
     if (regionOpt.isEmpty()) {
       console.warn("Failed to create automation region");
       return;
     }
-    const regionBox = regionOpt.unwrap() as ValueRegionBox;
-
-    const adapter = project.boxAdapters.adapterFor(regionBox, ValueRegionBoxAdapter);
-    const collectionOpt = adapter.optCollection;
-    if (collectionOpt.isEmpty()) {
-      console.warn("Failed to get event collection from automation region");
-      return;
-    }
-    const collection = collectionOpt.unwrap();
-
-    // Event positions are LOCAL to the region (0 to duration).
-    // Use (position, index) composite key: same position → index 1 (matching eventsToJson).
-    events.forEach((evt, i) => {
-      collection.createEvent({
-        position: evt.position,
-        index: i > 0 && events[i - 1].position === evt.position ? 1 : 0,
-        value: evt.value,
-        interpolation: evt.interpolation
-      });
-    });
-    newRegionCreated = true;
+    regionBox = regionOpt.unwrap() as ValueRegionBox;
   });
 
-  // Only delete old regions after new one was successfully created
+  let newRegionCreated = false;
+  if (regionBox !== null) {
+    project.editing.modify(() => {
+      const adapter = project.boxAdapters.adapterFor(regionBox!, ValueRegionBoxAdapter);
+      const collectionOpt = adapter.optCollection;
+      if (collectionOpt.isEmpty()) {
+        console.warn("Failed to get event collection from automation region");
+        return;
+      }
+      const collection = collectionOpt.unwrap();
+
+      // Clear the 0.0.167 seed node (see above).
+      collection.events.asArray().forEach((evt) => evt.box.delete());
+
+      // Event positions are LOCAL to the region (0 to duration).
+      // Use (position, index) composite key: same position → index 1 (matching eventsToJson).
+      events.forEach((evt, i) => {
+        collection.createEvent({
+          position: evt.position,
+          index: i > 0 && events[i - 1].position === evt.position ? 1 : 0,
+          value: evt.value,
+          interpolation: evt.interpolation
+        });
+      });
+      newRegionCreated = true;
+    });
+  }
+
+  // Only delete old regions after new one was successfully created.
+  // 0.0.167: createTrackRegion resolves overlaps itself (default "clip" mode
+  // deletes fully-covered regions and validateTrack asserts no overlap
+  // remains), so old regions spanning the same range are usually gone already —
+  // skip any box the resolver removed to avoid a double delete.
   if (newRegionCreated && existingRegions.length > 0) {
     project.editing.modify(() => {
       for (const region of existingRegions) {
+        if (project.boxGraph.findBox(region.address.uuid).isEmpty()) continue;
         const adapter = project.boxAdapters.adapterFor(region, ValueRegionBoxAdapter);
         const collectionOpt = adapter.optCollection;
         if (collectionOpt.nonEmpty()) {

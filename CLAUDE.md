@@ -48,8 +48,11 @@ subs.push(trackSub);
 - We pass a Proxy that throws a clear error if a future SDK version accesses it
 - None of the demos use soundfont instruments (MIDI demo uses Vaporisateur built-in synth)
 
-### SampleService (SDK 0.0.124+)
-- `new SampleService(audioContext)` required in `ProjectEnv` for recording finalization
+### SampleService (SDK 0.0.124+; BpmDetector arg since 0.0.167)
+- `new SampleService(audioContext, BpmDetector.Unknown)` required in `ProjectEnv` for
+  recording finalization. The detector only runs in `importFile` when no bpm is given —
+  this repo never calls `importFile`, so the no-op detector is correct. Real detection:
+  `new WasmBpmDetector(<stretch_wasm.wasm url>)` (needs `Workers.install` first).
 - `CaptureAudio.prepareRecording()` injects it into `RecordingWorklet` automatically
 
 ### Engine State Observables
@@ -464,6 +467,12 @@ connection, causing dual routing. Always re-route in a separate transaction. Sim
 This also applies to `captureDevices.get(uuid)` — resolve captures and set their fields
 (deviceId, requestChannels) in a **separate** transaction after `createInstrument` commits.
 
+The same staleness applies to **event/adapter collections**: a box created inside a
+transaction (e.g. the `ValueEventBox` seed `createTrackRegion` adds since 0.0.167) is
+NOT visible to `adapter.optCollection…events.asArray()` until the transaction commits —
+an in-transaction "clear then repopulate" silently skips it. Create the region in one
+transaction, clear/populate events in a second.
+
 **The positive rule:** `pointerField.refer(target)` replaces the existing target atomically.
 Do NOT call `defer()` first in the same transaction unless you mean to leave the pointer
 empty — combining `defer()` + later `refer(new)` within one `editing.modify()` recreates
@@ -487,6 +496,17 @@ project.editing.modify(() => {
   audioUnitBox = project.api.createInstrument(InstrumentFactories.Tape).audioUnitBox;
 });
 ```
+
+### createTrackRegion Resolves Overlaps and Seeds Value Regions (SDK 0.0.167+)
+`project.api.createTrackRegion` (Notes/Value tracks) clips or pushes existing regions in
+the target range per the studio `overlapping-regions-behaviour` setting (default
+`"clip"`: covered regions are DELETED, then `validateTrack` hard-asserts — outside the
+studio app `RegionClipResolver.fatal` defaults to true). Don't delete "replaced" regions
+yourself afterwards without a `boxGraph.findBox(uuid).nonEmpty()` guard. Value regions
+are additionally seeded with one inherited node at region-local position 0; clear it in
+a FOLLOW-UP transaction before writing your own position-0 event — two events at the
+same (position, index) panic, and an in-transaction clear misses the seed (see the
+transaction-staleness rule above).
 
 ### monitoringMode Is Not a Box Graph Field
 `capture.monitoringMode` is a plain getter/setter on `CaptureAudio`, not a box graph field.

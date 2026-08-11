@@ -337,6 +337,7 @@ The `@Lazy` decorator means the sender is constructed on first access only — p
 export namespace AudioContentModifier {
   const toNotStretched: (adapters) => Promise<Exec>
   const toPitchStretch: (adapters) => Promise<Exec>
+  const toSignalsmith:  (adapters) => Promise<Exec>
   const toTimeStretch:  (adapters) => Promise<Exec>
 }
 ```
@@ -363,29 +364,11 @@ export const toTimeStretch = async (adapters: ReadonlyArray<AudioContentBoxAdapt
     }))
     handler.terminate()
     return () => tasks.forEach(({adapter, transients}) => {
-        const optPitchStretch = adapter.asPlayModePitchStretch
+        const optPrev: Option<AudioPlayMode> = adapter.observableOptPlayMode.map(mode => mode)
         const boxGraph = adapter.box.graph
         const timeStretch = AudioTimeStretchBox.create(boxGraph, UUID.generate())
         adapter.box.playMode.refer(timeStretch)
-        if (optPitchStretch.nonEmpty()) {
-            const pitchStretch = optPitchStretch.unwrap()
-            const numPointers = pitchStretch.box.pointerHub.filter(Pointers.AudioPlayMode).length
-            if (numPointers === 0) {
-                pitchStretch.warpMarkers.asArray()
-                    .forEach(({box: {owner}}) => owner.refer(timeStretch.warpMarkers))
-                pitchStretch.box.delete()
-            } else {
-                pitchStretch.warpMarkers.asArray()
-                    .forEach(({box: source}) => WarpMarkerBox.create(boxGraph, UUID.generate(), box => {
-                        box.position.setValue(source.position.getValue())
-                        box.seconds.setValue(source.seconds.getValue())
-                        box.owner.refer(timeStretch.warpMarkers)
-                    }))
-            }
-        } else {
-            const {ppqn, seconds} = sampleExtent(adapter)
-            AudioContentHelpers.addDefaultWarpMarkers(boxGraph, timeStretch, ppqn, seconds)
-        }
+        const optMeasured = adoptWarpMarkers(optPrev, timeStretch, boxGraph, adapter)
         if (isDefined(transients) && adapter.file.transients.length() === 0) {
             const markersField = adapter.file.box.transientMarkers
             transients.forEach(position => TransientMarkerBox.create(boxGraph, UUID.generate(), box => {
@@ -393,7 +376,7 @@ export const toTimeStretch = async (adapters: ReadonlyArray<AudioContentBoxAdapt
                 box.position.setValue(position)
             }))
         }
-        switchTimeBaseToMusical(adapter)
+        switchTimeBaseToMusical(adapter, optMeasured)
     })
 }
 ```
@@ -404,47 +387,37 @@ Six things this function does, in order:
 2. **Open a progress notification.** Transient detection can take several seconds on long files.
 3. **Resolve detection promises in parallel.** Each adapter without existing transients gets a `Workers.Transients.detect` call; existing-transients adapters skip the worker round trip entirely. This is the first idempotency check.
 4. **Return a synchronous `Exec` callback.** The caller does `editing.modify(() => exec())`.
-5. **Per adapter inside the transaction:** create the `AudioTimeStretchBox`, point the region at it, migrate warp markers from any prior PitchStretch (re-own if exclusive, copy if shared), seed default markers if there was no prior stretch.
+5. **Per adapter inside the transaction:** create the `AudioTimeStretchBox`, point the region at it, and let the shared `adoptWarpMarkers` helper migrate warp markers from any prior stretch mode (re-own if exclusive, copy if shared) or seed defaults if there was none (see below).
 6. **Write transient markers** *only if the file still has none* — second idempotency check, defending against a race where two `toTimeStretch` calls for the same file ran in parallel and both wrote markers. The double-check is cheap and the alternative (duplicate-position panic from `EventCollection`) is fatal.
 
 The `RuntimeNotifier.progress({headline: "Detecting Transients..."})` toast is studio-app surface; if you call `toTimeStretch` from another context the toast still fires through the notifier. If you don't want it, call `Workers.Transients.detect` directly and write `TransientMarkerBox` entries yourself — the chapter 18 demo does exactly this in `src/lib/transientDetection.ts`.
 
-### `toPitchStretch` — no detection needed
+### `adoptWarpMarkers` — shared marker migration + tempo-aware seeding
+
+All three musical modes (`toPitchStretch`, `toSignalsmith`, `toTimeStretch`) route through one helper, `adoptWarpMarkers(optPrev, newBox, boxGraph, adapter): Option<ppqn>`:
+
+- **Prior stretch mode exists:** the old mode's warp markers move to the new box — re-owned if the old box has no other `AudioPlayMode` pointers (then the old box is deleted), cloned if it is shared. The user's warp edits survive every mode switch. Returns `Option.None`.
+- **No prior stretch (was NoWarp):** a default marker pair is seeded as (musical span, audio length in seconds). The audio length is the *audible* extent — `file.endInSeconds − file.startInSeconds − waveformOffset` — not the region span, so a region enlarged past its audio no longer seeds a marker pointing into silence. Which musical span is used depends on the sample's own tempo, read synchronously from the loader (`file.getOrCreateLoader().meta`): when `meta.bpm > 0`, the span is the sample's own musical length at that tempo (quantized to a semiquaver above one semiquaver); when the tempo is unknown (`bpm` 0), the region's current span stands in. Returns the measured span when the region should be resized to it.
+
+The return value feeds `switchTimeBaseToMusical(adapter, optMeasured)`: a region that still *exactly covers its audio* (±1 ms) is resized to the measured span — `loopDuration` set to it, `loopOffset` scaled proportionally, `duration` scaled but clamped to the gap before the next region so the resize can never create an overlap. A region the user has trimmed or extended keeps its span (the converted seconds values are carried over 1:1).
+
+### `toPitchStretch` / `toSignalsmith` — no detection needed
 
 ```typescript
 export const toPitchStretch = async (adapters: ReadonlyArray<AudioContentBoxAdapter>): Promise<Exec> => {
     const audioAdapters = adapters.filter(adapter => adapter.asPlayModePitchStretch.isEmpty())
     if (audioAdapters.length === 0) {return EmptyExec}
     return () => audioAdapters.forEach((adapter) => {
-        const optTimeStretch = adapter.asPlayModeTimeStretch
+        const optPrev: Option<AudioPlayMode> = adapter.observableOptPlayMode.map(mode => mode)
         const boxGraph = adapter.box.graph
         const pitchStretch = AudioPitchStretchBox.create(boxGraph, UUID.generate())
         adapter.box.playMode.refer(pitchStretch)
-        if (optTimeStretch.nonEmpty()) {
-            const timeStretch = optTimeStretch.unwrap()
-            const numPointers = timeStretch.box.pointerHub.filter(Pointers.AudioPlayMode).length
-            if (numPointers === 0) {
-                timeStretch.warpMarkers.asArray()
-                    .forEach(({box: {owner}}) => owner.refer(pitchStretch.warpMarkers))
-                timeStretch.box.delete()
-            } else {
-                timeStretch.warpMarkers.asArray()
-                    .forEach(({box: source}) => WarpMarkerBox.create(boxGraph, UUID.generate(), box => {
-                        box.position.setValue(source.position.getValue())
-                        box.seconds.setValue(source.seconds.getValue())
-                        box.owner.refer(pitchStretch.warpMarkers)
-                    }))
-            }
-        } else {
-            const {ppqn, seconds} = sampleExtent(adapter)
-            AudioContentHelpers.addDefaultWarpMarkers(boxGraph, pitchStretch, ppqn, seconds)
-        }
-        switchTimeBaseToMusical(adapter)
+        switchTimeBaseToMusical(adapter, adoptWarpMarkers(optPrev, pitchStretch, boxGraph, adapter))
     })
 }
 ```
 
-Symmetric to `toTimeStretch` minus the transient detection: PitchStretch uses warp markers only, so the only async-able work is missing. The function is synchronous-in-spirit but still returns a `Promise<Exec>` to match the shared signature.
+Symmetric to `toTimeStretch` minus the transient detection: PitchStretch uses warp markers only, so the only async-able work is missing. The function is synchronous-in-spirit but still returns a `Promise<Exec>` to match the shared signature. `toSignalsmith` is identical with `AudioSignalsmithBox` in place of `AudioPitchStretchBox`.
 
 ### `toNotStretched` — restore source playback
 
