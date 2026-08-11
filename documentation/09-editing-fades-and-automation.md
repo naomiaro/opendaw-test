@@ -1001,18 +1001,20 @@ project.editing.modify(() => {
 // one inherited node at region-local position 0 — the preceding region's
 // outgoing value, else the following region's incoming value, else the
 // parameter's current dial value.
-let regionBox: ValueRegionBox;
-project.editing.modify(() => {
-  regionBox = project.api.createTrackRegion(trackBox, startPosition, duration)
-    .unwrap() as ValueRegionBox;
-});
+const createdOpt = project.editing
+  .modify(() => project.api.createTrackRegion(trackBox, startPosition, duration))
+  .unwrap(); // Option<AnyRegionBox> — None for a non-positive duration or unsupported track type
+if (createdOpt.isEmpty()) throw new Error("createTrackRegion failed");
+const regionBox = createdOpt.unwrap() as ValueRegionBox;
 
-// Step 3: Populate events in a SEPARATE transaction. The seed node must be
-// cleared before writing your own position-0 event (two events at the same
+// Step 3: Populate events in a SEPARATE commit. The seed node must be cleared
+// before writing your own position-0 event (two events at the same
 // (position, index) panic), and the clearing cannot happen in the creating
 // transaction — the adapter's event collection does not see the seed box until
 // that transaction commits, so an in-transaction clear silently misses it.
-project.editing.modify(() => {
+// editing.append() commits separately but folds into the previous
+// transaction's undo entry, so one editing.undo() still reverts both steps.
+project.editing.append(() => {
   const adapter = project.boxAdapters.adapterFor(regionBox, ValueRegionBoxAdapter);
   const collection = adapter.optCollection.unwrap();
   collection.events.asArray().forEach(event => event.box.delete());

@@ -170,10 +170,15 @@ export function rebuildAutomation(
   // 0.0.167: createTrackRegion seeds each new value region with one inherited
   // node at position 0. The seed must be cleared (indexedEvents carries its own
   // (0, 0) event and duplicate (position, index) keys panic), and the clearing
-  // has to happen in a SEPARATE transaction: the adapter's event collection
-  // doesn't see the seed box until the creating transaction commits, so an
-  // in-transaction asArray() misses it and the seed survives.
-  const createdRegions: (ValueRegionBox | null)[] = [];
+  // has to happen in a SEPARATE commit: the adapter's event collection doesn't
+  // see the seed box until the creating transaction commits, so an
+  // in-transaction asArray() misses it and the seed survives
+  // (ValueEventCollectionBoxAdapter.createEvent de-duplicates only via
+  // existing.box.isAttached(), which cannot see uncommitted boxes either).
+  // A creation failure THROWS: only a throw aborts the transaction, and
+  // aborting is what preserves the old regions deleted at the top of it —
+  // an early return would commit the deletion with no replacement.
+  const createdRegions: ValueRegionBox[] = [];
   project.editing.modify(() => {
     // Delete existing automation regions for all takes
     for (let t = 0; t < takes.length; t++) {
@@ -198,9 +203,9 @@ export function rebuildAutomation(
         TOTAL_PPQN as ppqn
       );
       if (regionOpt.isEmpty()) {
-        console.error(`rebuildAutomation: createTrackRegion failed for take ${t}`);
-        createdRegions.push(null);
-        continue;
+        throw new Error(
+          `rebuildAutomation: createTrackRegion failed for take ${t} — aborting (old automation preserved)`
+        );
       }
       const regionBox = regionOpt.unwrap() as ValueRegionBox;
       // Encode comp state in first take's region label for undo/redo derivation
@@ -212,16 +217,21 @@ export function rebuildAutomation(
   });
 
   // Transaction 2: clear the seed nodes, then write the take-mute events.
-  project.editing.modify(() => {
+  // editing.append() commits separately (so the adapter collections now see the
+  // seeds) but folds into transaction 1's undo entry — one editing.undo()
+  // reverts the comp decision atomically, as the demo promises.
+  project.editing.append(() => {
     for (let t = 0; t < createdRegions.length; t++) {
       const regionBox = createdRegions[t];
-      if (regionBox === null) continue;
       const indexedEvents = perTakeEvents[t];
 
       const adapter = project.boxAdapters.adapterFor(regionBox, ValueRegionBoxAdapter);
       const collectionOpt = adapter.optCollection;
       if (collectionOpt.isEmpty()) {
-        console.error(`rebuildAutomation: optCollection is empty for take ${t}`);
+        // Tx1 already committed, so the old curve is gone; drop the seed-only
+        // region rather than leave a flat curve silently un-muting take t.
+        console.error(`rebuildAutomation: optCollection is empty for take ${t} — deleting its region (take plays unmuted)`);
+        regionBox.delete();
         continue;
       }
       const collection = collectionOpt.unwrap();

@@ -208,10 +208,11 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
 
   // Create sample service (0.0.124+: required for recording finalization).
   // 0.0.167 requires a BpmDetector: it only runs in importFile when no bpm is
-  // given, and this repo never calls importFile (recordings pass bpm explicitly
-  // via importRecording), so the no-op detector is correct. To get real tempo
-  // detection for imports, mirror the studio app: new WasmBpmDetector(<url of
-  // studio-core-wasm/dist/wasm/stretch_wasm.wasm>).
+  // given, and every path that reaches importFile in this repo supplies an
+  // explicit bpm (recording finalization via importRecording, which delegates
+  // to importFile with the capture bpm), so the no-op detector never runs. To
+  // get real tempo detection for bpm-less imports, mirror the studio app:
+  // new WasmBpmDetector(<url of studio-core-wasm/dist/wasm/stretch_wasm.wasm>).
   const sampleService = new SampleService(audioContext, BpmDetector.Unknown);
   // Skip SoundfontService — its constructor fetches from api.opendaw.studio (CORS issues
   // in dev, and none of the demos use soundfont instruments). The SDK declares

@@ -43,10 +43,13 @@ const PAGE_STYLES = `
 /**
  * Creates a new automation region with the given events, then deletes any
  * pre-existing regions on the track. Returns true on success; returns false
- * if the new region or its event collection could not be obtained — old
- * regions are kept either way, but in the collection-failure case an empty
- * new region may remain committed (early return inside editing.modify()
- * commits the transaction; only a throw aborts it).
+ * if the new region or its event collection could not be obtained. Failure
+ * states: if creation itself fails, nothing has changed (old regions kept);
+ * if the event collection cannot be resolved afterwards, the old curve is
+ * ALREADY gone — createTrackRegion's overlap resolver deletes the exactly
+ * covered old region inside the creating transaction — so the fresh region
+ * is deleted too, leaving the track with no automation rather than a wrong
+ * flat curve.
  */
 function applyAutomationEvents(project: Project, trackBox: TrackBox, events: AutomationEvent[]): boolean {
   // Snapshot existing automation regions via the adapter layer
@@ -55,51 +58,55 @@ function applyAutomationEvents(project: Project, trackBox: TrackBox, events: Aut
     .filter(r => r.isValueRegion())
     .map(r => r.box);
 
-  // Create new region first (don't delete old ones until this succeeds).
-  // 0.0.167: createTrackRegion seeds a new value region with one inherited node
-  // at position 0. It must be cleared (the events below are the full curve, and
-  // a leftover seed at (0, 0) collides with our own position-0 event —
-  // (position, index) is a composite key; duplicates panic), and the clearing
-  // has to happen in a SEPARATE transaction: the adapter's event collection
-  // doesn't see the seed box until the creating transaction commits, so an
-  // in-transaction asArray() misses it and the seed survives.
-  let regionBox: ValueRegionBox | null = null;
-  project.editing.modify(() => {
-    const regionOpt = project.api.createTrackRegion(trackBox, PLAYBACK_START, TOTAL_PPQN as ppqn);
-    if (regionOpt.isEmpty()) {
-      console.warn("Failed to create automation region");
+  // Create the new region first. 0.0.167: createTrackRegion seeds a new value
+  // region with one inherited node at position 0. It must be cleared (the
+  // events below are the full curve, and a leftover seed at (0, 0) collides
+  // with our own position-0 event — (position, index) is a composite key;
+  // duplicates panic), and the clearing has to happen in a SEPARATE commit:
+  // the adapter's event collection doesn't see the seed box until the creating
+  // transaction commits, so an in-transaction asArray() misses it and the seed
+  // survives. Note the create itself resolves overlaps — the exactly covered
+  // old region is deleted here, not by our cleanup pass below.
+  const createdOpt = project.editing
+    .modify(() => project.api.createTrackRegion(trackBox, PLAYBACK_START, TOTAL_PPQN as ppqn))
+    .unwrap();
+  if (createdOpt.isEmpty()) {
+    console.warn("Failed to create automation region");
+    return false;
+  }
+  const regionBox = createdOpt.unwrap() as ValueRegionBox;
+
+  // editing.append() commits separately (the adapter collection now sees the
+  // seed) but folds into the creating transaction's undo entry.
+  let newRegionCreated = false;
+  project.editing.append(() => {
+    const adapter = project.boxAdapters.adapterFor(regionBox, ValueRegionBoxAdapter);
+    const collectionOpt = adapter.optCollection;
+    if (collectionOpt.isEmpty()) {
+      // The overlap resolver already deleted the old curve in the creating
+      // transaction; drop the seed-only region too so failure means "no
+      // automation", not a wrong flat curve.
+      console.warn("Failed to get event collection from automation region — removing the empty region");
+      regionBox.delete();
       return;
     }
-    regionBox = regionOpt.unwrap() as ValueRegionBox;
-  });
+    const collection = collectionOpt.unwrap();
 
-  let newRegionCreated = false;
-  if (regionBox !== null) {
-    project.editing.modify(() => {
-      const adapter = project.boxAdapters.adapterFor(regionBox!, ValueRegionBoxAdapter);
-      const collectionOpt = adapter.optCollection;
-      if (collectionOpt.isEmpty()) {
-        console.warn("Failed to get event collection from automation region");
-        return;
-      }
-      const collection = collectionOpt.unwrap();
+    // Clear the 0.0.167 seed node (see above).
+    collection.events.asArray().forEach((evt) => evt.box.delete());
 
-      // Clear the 0.0.167 seed node (see above).
-      collection.events.asArray().forEach((evt) => evt.box.delete());
-
-      // Event positions are LOCAL to the region (0 to duration).
-      // Use (position, index) composite key: same position → index 1 (matching eventsToJson).
-      events.forEach((evt, i) => {
-        collection.createEvent({
-          position: evt.position,
-          index: i > 0 && events[i - 1].position === evt.position ? 1 : 0,
-          value: evt.value,
-          interpolation: evt.interpolation
-        });
+    // Event positions are LOCAL to the region (0 to duration).
+    // Use (position, index) composite key: same position → index 1 (matching eventsToJson).
+    events.forEach((evt, i) => {
+      collection.createEvent({
+        position: evt.position,
+        index: i > 0 && events[i - 1].position === evt.position ? 1 : 0,
+        value: evt.value,
+        interpolation: evt.interpolation
       });
-      newRegionCreated = true;
     });
-  }
+    newRegionCreated = true;
+  });
 
   // Only delete old regions after new one was successfully created.
   // 0.0.167: createTrackRegion resolves overlaps itself (default "clip" mode

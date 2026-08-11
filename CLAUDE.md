@@ -51,7 +51,8 @@ subs.push(trackSub);
 ### SampleService (SDK 0.0.124+; BpmDetector arg since 0.0.167)
 - `new SampleService(audioContext, BpmDetector.Unknown)` required in `ProjectEnv` for
   recording finalization. The detector only runs in `importFile` when no bpm is given —
-  this repo never calls `importFile`, so the no-op detector is correct. Real detection:
+  every path that reaches `importFile` here supplies one (`importRecording` delegates to
+  it with the capture bpm), so the no-op detector never runs. Real detection:
   `new WasmBpmDetector(<stretch_wasm.wasm url>)` (needs `Workers.install` first).
 - `CaptureAudio.prepareRecording()` injects it into `RecordingWorklet` automatically
 
@@ -471,7 +472,10 @@ The same staleness applies to **event/adapter collections**: a box created insid
 transaction (e.g. the `ValueEventBox` seed `createTrackRegion` adds since 0.0.167) is
 NOT visible to `adapter.optCollection…events.asArray()` until the transaction commits —
 an in-transaction "clear then repopulate" silently skips it. Create the region in one
-transaction, clear/populate events in a second.
+transaction, clear/populate events in a second — and make the second one
+`project.editing.append()`, which commits separately but folds into the previous
+transaction's undo entry (two `modify` calls = two undo steps and breaks undo
+atomicity).
 
 **The positive rule:** `pointerField.refer(target)` replaces the existing target atomically.
 Do NOT call `defer()` first in the same transaction unless you mean to leave the pointer
@@ -504,9 +508,10 @@ the target range per the studio `overlapping-regions-behaviour` setting (default
 studio app `RegionClipResolver.fatal` defaults to true). Don't delete "replaced" regions
 yourself afterwards without a `boxGraph.findBox(uuid).nonEmpty()` guard. Value regions
 are additionally seeded with one inherited node at region-local position 0; clear it in
-a FOLLOW-UP transaction before writing your own position-0 event — two events at the
-same (position, index) panic, and an in-transaction clear misses the seed (see the
-transaction-staleness rule above).
+a FOLLOW-UP `editing.append()` before writing your own position-0 event — two events at
+the same (position, index) panic, and an in-transaction clear misses the seed (see the
+transaction-staleness rule above). In delete-old-then-recreate flows, THROW on a
+creation failure so the whole transaction (deletions included) aborts.
 
 ### monitoringMode Is Not a Box Graph Field
 `capture.monitoringMode` is a plain getter/setter on `CaptureAudio`, not a box graph field.

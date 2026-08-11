@@ -47,9 +47,10 @@ unchanged. `AssetService.ImportArgs` carries `bpm?`, and `importFile` gains an o
 its flatten-import (a render knows its tempo). `estimateBpm` itself is still exported
 from `lib-dsp`, just no longer called here.
 
-**This repo:** `projectSetup.ts` now passes `BpmDetector.Unknown` — nothing here calls
-`importFile` (recording finalization goes through `importRecording` with an explicit
-bpm), so the no-op detector preserves existing behavior exactly.
+**This repo:** `projectSetup.ts` now passes `BpmDetector.Unknown` — every path that
+reaches `importFile` here supplies an explicit bpm (recording finalization goes through
+`importRecording`, which delegates to `importFile` with the capture bpm), so the no-op
+detector never runs and existing behavior is preserved exactly.
 
 ## New: offline tempo + material analysis stack (lib-dsp, core-workers, core, core-wasm)
 
@@ -100,17 +101,24 @@ panic "are identical in terms of comparison"), and the overlap resolver deletes 
 regions the demos then tried to delete again. One subtlety cost a browser-verified
 iteration: clearing the seed via `adapter.optCollection …events.asArray()` **inside the
 creating transaction is a no-op** — the adapter's event collection doesn't see the seed
-box until the transaction commits, so the clear must run in a separate follow-up
-transaction (the create/configure split CLAUDE.md already prescribes for captures and
-pointer re-routing):
+box until the transaction commits (`ValueEventCollectionBoxAdapter.createEvent`'s own
+de-dup guard checks `existing.box.isAttached()`, which cannot see uncommitted boxes
+either — the sharpest proof the split is required, not stylistic), so the clear must run
+in a separate follow-up commit. `project.editing.append()` is the right primitive: it
+commits separately but folds into the previous transaction's undo entry, keeping one
+`editing.undo()` atomic (the create/configure split CLAUDE.md already prescribes for
+captures and pointer re-routing):
 
-- `track-automation-demo.tsx`: creates the region in one transaction; clears the seed and
-  writes the preset curve in a second; skips old-region deletion for boxes the clip
-  resolver already removed (verified: all 10 presets across 3 tracks apply with a clean
-  console).
+- `track-automation-demo.tsx`: creates the region in one `modify`, clears the seed and
+  writes the preset curve in a following `append`; skips old-region deletion for boxes
+  the clip resolver already removed; a collection failure deletes the seed-only region
+  so "preset not applied" never leaves a wrong flat curve playing (verified: all 10
+  presets across 3 tracks apply with a clean console).
 - `compLaneUtils.ts` (comp lanes): splits rebuildAutomation into delete-old+create-regions
-  then clear-seeds+write-events transactions (verified: demo-vocals load and lane
-  reassignment clicks run with a clean console).
+  (`modify` — a creation failure THROWS so the whole transaction aborts and the old
+  automation survives) then clear-seeds+write-events (`append`, keeping one undo entry —
+  the demo's "undo reverts the comp decision atomically" promise still holds). Verified:
+  demo-vocals load and lane reassignment clicks run with a clean console.
 
 ## SampleLoader.meta + tempo-aware stretch conversions (adapters 0.2.x, core 0.2.x)
 
@@ -187,10 +195,10 @@ Covers note, audio, and nested-clip content; tests added.
   no-op detector, behavior-preserving (nothing here calls `importFile`; the comment
   documents the `WasmBpmDetector` upgrade path).
 - `src/demos/automation/track-automation-demo.tsx` and `src/lib/compLaneUtils.ts`:
-  two-transaction restructure around `createTrackRegion` — create regions first, then
-  clear the seeded node and write events in a follow-up transaction (see the
-  createTrackRegion section above for why one transaction cannot work); the
-  track-automation demo also skips deleting regions the overlap resolver removed.
+  two-commit restructure around `createTrackRegion` — create regions in `modify`, then
+  clear the seeded node and write events in `editing.append` (separate commit, same undo
+  entry; see the createTrackRegion section above for why one transaction cannot work);
+  the track-automation demo also skips deleting regions the overlap resolver removed.
 - Every API claim above verified against the installed tarballs
   (`node_modules/@opendaw/*/dist`): `SampleService` constructor, `BpmDetector.Unknown`,
   `WasmBpmDetector`, `Workers.Bpm`/`Workers.Material`, `SampleLoader.meta`,
