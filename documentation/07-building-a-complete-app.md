@@ -66,6 +66,7 @@ This document combines all the concepts (PPQN, Box System, Sample Management, Ti
 // src/lib/projectSetup.ts
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { AudioWorklets, GlobalSampleLoaderManager, Project, Workers, SampleProvider, SampleService } from "@opendaw/studio-core";
+import { BpmDetector } from "@opendaw/studio-adapters";
 import { PPQN, AudioData } from "@opendaw/lib-dsp";
 import { UUID, Progress } from "@opendaw/lib-std";
 
@@ -90,7 +91,7 @@ export async function initializeOpenDAW(localAudioBuffers: Map<string, AudioBuff
   // Create AudioContext
   const audioContext = new AudioContext({ latencyHint: 0 });
 
-  // Configure sample manager (API changed in 0.0.87)
+  // Configure sample manager
   const sampleProvider: SampleProvider = {
     fetch: async (uuid: UUID.Bytes, progress: Progress.Handler) => {
       const uuidString = UUID.toString(uuid);
@@ -116,10 +117,14 @@ export async function initializeOpenDAW(localAudioBuffers: Map<string, AudioBuff
   // Create worklets
   await AudioWorklets.createFor(audioContext);
 
-  // Create services (0.0.124+)
-  const sampleService = new SampleService(audioContext);
+  // Create services. SampleService takes a BpmDetector that runs when a sample
+  // is imported without a known tempo: BpmDetector.Unknown never guesses
+  // (imports store bpm 0 = "unknown", material stays in seconds), while
+  // new WasmBpmDetector(<stretch_wasm.wasm url>) measures the tempo in the
+  // core worker (requires Workers.install to have run).
+  const sampleService = new SampleService(audioContext, BpmDetector.Unknown);
   // SoundfontService skipped — constructor fetches from api.opendaw.studio (CORS issues).
-  // SDK declares soundfontService in ProjectEnv but never reads it (verified in 0.0.128).
+  // The SDK declares soundfontService in ProjectEnv but never reads it.
 
   // Create project (soundfontManager/soundfontService omitted — not used in headless demos)
   const project = Project.new({
@@ -237,7 +242,7 @@ function App() {
               120
             ));
 
-            // Create events collection (required in 0.0.87+)
+            // Create events collection (required)
             const eventsCollectionBox = ValueEventCollectionBox.create(boxGraph, UUID.generate());
 
             const regionBox = AudioRegionBox.create(
@@ -246,7 +251,7 @@ function App() {
               box => {
                 box.regions.refer(trackBox.regions);
                 box.file.refer(audioFileBox);
-                box.events.refer(eventsCollectionBox.owners); // Required in 0.0.87+
+                box.events.refer(eventsCollectionBox.owners); // Required
                 box.position.setValue(position);
                 box.duration.setValue(clipDuration);
                 box.loopOffset.setValue(0);
@@ -701,7 +706,7 @@ project.timelineBox.bpm.subscribe(field => {
 ### 3. Sample Manager for Audio
 
 ```typescript
-// Configure sample manager with local buffers (API changed in 0.0.87)
+// Configure sample manager with local buffers
 const sampleProvider: SampleProvider = {
   fetch: async (uuid, progress) => {
     const audioBuffer = localBuffers.get(UUID.toString(uuid));

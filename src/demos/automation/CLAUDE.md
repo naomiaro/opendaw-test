@@ -53,15 +53,42 @@ project.editing.modify(() => {
   trackBox = project.api.createAutomationTrack(audioUnitBox, audioUnitBox.volume);
 });
 
-// Create a region and add events
-project.editing.modify(() => {
-  const regionOpt = project.api.createTrackRegion(trackBox, position, duration);
-  const regionBox = regionOpt.unwrap() as ValueRegionBox;
+// Create a region, then add events in a SECOND commit (see rule below).
+// modify<R> forwards the modifier's return as Option<R>; the inner Option is
+// createTrackRegion's own result.
+const regionBox = project.editing
+  .modify(() => project.api.createTrackRegion(trackBox, position, duration))
+  .unwrap()
+  .unwrap() as ValueRegionBox;
+project.editing.append(() => {  // append: separate commit, SAME undo entry
   const adapter = project.boxAdapters.adapterFor(regionBox, ValueRegionBoxAdapter);
   const collection = adapter.optCollection.unwrap();
+  // createTrackRegion seeds one inherited node at position 0 — clear it before
+  // writing your own position-0 event (duplicate (position, index) keys panic)
+  collection.events.asArray().forEach(evt => evt.box.delete());
   collection.createEvent({ position: 0 as ppqn, index: 0, value: 0.5, interpolation: Interpolation.Linear });
 });
 ```
+
+### createTrackRegion: Seed Node + Overlap Resolution
+`createTrackRegion` on a Value track seeds the new region with one inherited node at
+region-local position 0 (preceding region's outgoing value, else following region's
+incoming value, else the parameter's dial value; skipped only when the track's target
+parameter can't be resolved — always present in practice), and resolves overlaps against
+existing regions (default behaviour clips: fully-covered regions are DELETED, then
+validateTrack asserts). Consequences:
+- Clear the seed in a **separate follow-up commit** — inside the creating transaction
+  the adapter's event collection doesn't see the seed box yet, so `events.asArray()`
+  misses it and the clear is a silent no-op (createEvent's own de-dup guard checks
+  `isAttached()` and can't see it either). Use `project.editing.append()` for the
+  follow-up: it commits separately but folds into the previous transaction's undo
+  entry, so one `editing.undo()` reverts both steps atomically.
+- Don't delete "replaced" regions yourself after creating over them — guard with
+  `project.boxGraph.findBox(box.address.uuid).nonEmpty()` (the resolver may have
+  deleted them already).
+- When a rebuild deletes old regions and creates replacements in ONE transaction,
+  THROW on a creation failure — only a throw aborts the transaction; an early return
+  commits the deletion with no replacement.
 
 **Automation event positions are REGION-LOCAL, not absolute.**
 `ValueRegionBoxAdapter.valueAt()` calls `LoopableRegion.globalToLocal(region, ppqn)` =
