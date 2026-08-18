@@ -1481,7 +1481,7 @@ delay: this.#parametric.createParameter(
     box.delayMusical,
     ValueMapping.linearInteger(0, 16),    // Storage as integer index
     DelayDeviceBoxAdapter.FractionsStringMapping,  // Display as fraction
-    "delay"
+    "Delay"
 )
 ```
 
