@@ -94,10 +94,12 @@ name via the new `TrackBoxAdapter.targetControlName`). A new migration,
 `migrateDefaultLabels`, clears the stored literal `"Notes"`/`"Automation"` labels from
 old projects (they would otherwise read as user-chosen names).
 
-**This repo:** audited — no demo reads note/value region labels; all label reads target
-custom labels the demos wrote themselves (audio regions named "Guitar", clip-fade type
-names, `comp:`-prefixed metadata labels). The label-metadata pattern in CLAUDE.md is
-unaffected (custom prefixes never collide with the cleared literals).
+**This repo:** audited — no demo depends on the default `"Notes"`/`"Automation"`
+labels; every region label read targets a custom label the demo wrote itself (audio
+regions named "Guitar", clip-fade type names, `comp:`-prefixed metadata labels, and
+`StepRecordingSection.tsx` matching its own `"Step Recording"` note-region label). The
+label-metadata pattern in CLAUDE.md is unaffected (custom prefixes never collide with
+the cleared literals).
 
 ## Observable, display-cased parameter names (#342)
 
@@ -200,7 +202,9 @@ backup.
   `PlayfieldDeviceBoxAdapter.chop`, `InstrumentFactories.Cubed` +
   `CubedDeviceBoxAdapter` pattern ops, `AutomationSeed` +
   `InterpolationFieldAdapter.map/Plain`, `label.setValue(name ?? "")` in the four
-  ProjectApi creators, `migrateDefaultLabels`, `catchupAndSubscribeName` +
+  ProjectApi creators, `migrateDefaultLabels` (runs inside `ProjectMigration.migrate`;
+  present in `dist/project/migration/` but NOT re-exported from the package root),
+  `catchupAndSubscribeName` +
   `targetControlName`, `Strings.capitalize`, `StringMapping.oneBasedIndex`,
   `ScriptDeclaration.parsePassThrough`, `StructureFile`, and the shipped
   `device_cubed.wasm`.
