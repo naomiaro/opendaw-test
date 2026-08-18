@@ -1481,7 +1481,7 @@ delay: this.#parametric.createParameter(
     box.delayMusical,
     ValueMapping.linearInteger(0, 16),    // Storage as integer index
     DelayDeviceBoxAdapter.FractionsStringMapping,  // Display as fraction
-    "delay"
+    "Delay"
 )
 ```
 
@@ -2308,7 +2308,9 @@ class Processor {
 
 > **See also:** [Ch. 17 — Modular Devices](./17-modular-devices.md) covers Spielwerk in the context of the other two scriptable devices (Apparat instrument, Werkstatt audio effect). Read that chapter first if you want the cross-cutting picture before diving into MIDI-specific Spielwerk patterns.
 
-Spielwerk is a scriptable MIDI effect where users write a JavaScript `Processor` class that receives incoming note events and yields transformed or new notes. It sits in the MIDI effect chain before the instrument (e.g., Vaporisateur). Parameters declared via `// @param` comments appear as automatable knobs.
+Spielwerk is a scriptable MIDI effect where users write a JavaScript `Processor` class that receives incoming note events and yields notes. It sits in the MIDI effect chain before the instrument (e.g., Vaporisateur). Parameters declared via `// @param` comments appear as automatable knobs.
+
+By default Spielwerk **passes every incoming note through unchanged**, and the notes the generator yields are **added on top**. A device with no script, an empty `process`, or a script that failed to compile is therefore transparent — it never swallows the notes of the track it sits on. Declare `// @no-pass` to suppress the incoming notes so the device emits **only** what the generator yields (see [Note Routing](#note-routing--no-pass) below).
 
 #### Factory Reference
 
@@ -2349,11 +2351,13 @@ The user must define a `class Processor` with a generator `* process()` method:
 
 ```javascript
 class Processor {
-    // REQUIRED: Generator function called every audio block
+    // REQUIRED: Generator function called every audio block.
+    // Incoming notes pass through automatically (unless // @no-pass);
+    // everything yielded here is ADDED on top of them.
     * process(block, events) {
         for (const event of events) {
             if (event.gate) {
-                yield event  // pass through note-ons
+                yield { ...event, pitch: event.pitch + 12 }  // add an octave layer
             }
         }
     }
@@ -2411,6 +2415,23 @@ yield { position, duration, pitch, velocity, cent }
 - `position >= block.to` — held in internal scheduler, emitted in future block
 - `position < block.from` — **ERROR**, processor silenced
 
+#### Note Routing (`// @no-pass`)
+
+Incoming notes are forwarded verbatim and the generator's yields are added on top. A
+`// @no-pass` line (exact form — trailing text throws at compile) suppresses the input
+so the script owns the output alone. Which one you want follows from what the
+processor does:
+
+| Processor | Directive |
+|---|---|
+| Transform (velocity, pitch, timing) | `// @no-pass`, otherwise the original note sounds alongside your version |
+| Filter (probability gate, range filter) | `// @no-pass`, otherwise the rejected notes still pass |
+| Replace (sequencer, arpeggiator) | `// @no-pass` |
+| Add (harmonizer, echo tail, ghost notes) | no directive — the original is kept for you |
+
+Passed-through notes keep their identity: position, duration, pitch, velocity, cent and
+their note-off arrive downstream exactly as they came in.
+
 #### Parameter Declarations (`// @param`)
 
 Same syntax as Werkstatt. See the [Werkstatt parameter declarations section](#parameter-declarations--param) for full reference.
@@ -2438,27 +2459,23 @@ Types: `linear`, `exp`, `int`, `bool` (or omit for unipolar 0-1).
 - `MAX_SCHEDULED_NOTES = 128` — silences if scheduler queue overflows
 - All yielded notes validated: pitch 0-127, velocity 0.0-1.0, positive duration, position not in past, NaN detection
 - Runtime errors caught and reported via `engine.subscribeDeviceMessage(uuid, listener)`
+- When silenced, the incoming notes keep flowing through the device until the next
+  successful compile, so a broken script never mutes the track. A processor that
+  declared `// @no-pass` stays silent instead — suppressing the input is what its
+  author asked for.
 - On transport discontinuity or play-to-pause: all retained notes released, scheduler cleared, `reset()` called
 
 #### Examples
 
-**Default — Passthrough:**
+**Passthrough is the default** — a script that yields nothing (or no script at all) is
+transparent. There is no need to re-yield incoming events; doing so plays each note
+twice.
+
+**Chord Generator** (`// @no-pass` — the root is yielded as interval 0, so the
+forwarded original would double it):
 
 ```javascript
-class Processor {
-    * process(block, events) {
-        for (const event of events) {
-            if (event.gate) {
-                yield event
-            }
-        }
-    }
-}
-```
-
-**Chord Generator:**
-
-```javascript
+// @no-pass
 // @param mode 0 0 3 int
 
 class Processor {
@@ -2471,19 +2488,18 @@ class Processor {
     * process(block, events) {
         for (const event of events) {
             if (event.gate) {
-                yield event  // root note
                 const intervals = [
-                    [4, 7],       // major
-                    [3, 7],       // minor
-                    [4, 7, 11],   // major 7th
-                    [3, 7, 10],   // minor 7th
+                    [0, 4, 7],       // major
+                    [0, 3, 7],       // minor
+                    [0, 4, 7, 11],   // major 7th
+                    [0, 3, 7, 10],   // minor 7th
                 ][this.mode]
                 for (const interval of intervals) {
                     yield {
                         position: event.position,
                         duration: event.duration,
                         pitch: event.pitch + interval,
-                        velocity: event.velocity * 0.8,
+                        velocity: interval === 0 ? event.velocity : event.velocity * 0.8,
                         cent: 0
                     }
                 }
@@ -2493,9 +2509,11 @@ class Processor {
 }
 ```
 
-**Probability Gate:**
+**Probability Gate** (`// @no-pass` — a filter must own the output, or the rejected
+notes still pass):
 
 ```javascript
+// @no-pass
 // @param chance 0.5
 
 class Processor {
@@ -2515,7 +2533,8 @@ class Processor {
 }
 ```
 
-**Echo / Note Delay:**
+**Echo / Note Delay** (no directive — the dry note passes through automatically; the
+script yields only the repeats):
 
 ```javascript
 // @param repeats 3 1 8 int
@@ -2536,7 +2555,6 @@ class Processor {
     * process(block, events) {
         for (const event of events) {
             if (event.gate) {
-                yield event  // original note
                 let vel = event.velocity
                 for (let r = 1; r <= this.repeats; r++) {
                     vel *= this.decay

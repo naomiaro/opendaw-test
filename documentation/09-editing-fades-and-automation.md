@@ -1000,7 +1000,8 @@ project.editing.modify(() => {
 // deleted, partially-covered ones trimmed) and seeds the new value region with
 // one inherited node at region-local position 0 — the preceding region's
 // outgoing value, else the following region's incoming value, else the
-// parameter's current dial value.
+// parameter's current dial value. The seed's interpolation matches the
+// parameter: linear for float parameters, step (none) for bool/int parameters.
 const createdOpt = project.editing
   .modify(() => project.api.createTrackRegion(trackBox, startPosition, duration))
   .unwrap(); // Option<AnyRegionBox> — None for a non-positive duration or unsupported track type
