@@ -132,7 +132,7 @@ Practical Werkstatt use cases: custom filters, wave-shapers, distortion, granula
 Covered in detail at [Ch. 11 — Spielwerk](./11-effects.md#spielwerk). Summary:
 
 - **Header:** compiler-written `// @spielwerk js <compilerVersion> <update>` (see [Headers](#headers)).
-- **Input/output:** notes only. The engine routes incoming note events (from the region or upstream MIDI effects) through your script, which decides what notes to emit.
+- **Input/output:** notes only. Incoming note events (from the region or upstream MIDI effects) pass through the device unchanged by default, and your script's yielded notes are added on top; a `// @no-pass` declaration suppresses the input so the script owns the output alone (details in [Ch. 11](./11-effects.md#note-routing--no-pass)).
 - **No audio.** Spielwerk doesn't produce audio; its output feeds the next stage of the MIDI chain (or the instrument).
 
 Practical Spielwerk use cases: custom arpeggios (more flexible than the built-in Arpeggio), algorithmic sequencers (Euclidean rhythms, fractal patterns), generative composition rules ("turn every minor third into a perfect fifth"), live randomisers.
