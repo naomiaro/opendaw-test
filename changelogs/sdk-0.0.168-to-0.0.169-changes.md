@@ -1,6 +1,6 @@
 # OpenDAW SDK Changelog: 0.0.168 → 0.0.169
 
-One small release (8 commits). The headline is **#360: tolerate and repair pointers whose
+One small release (10 commits tag-to-tag, 8 substantive). The headline is **#360: tolerate and repair pointers whose
 target is gone** — a generic, box-type-agnostic repair for documents where a pointer names
 a box the graph no longer holds (a Yjs merge, or a host app replaying its own undo into
 the document, can produce this; nothing rejected it because the graph validates that a
@@ -16,7 +16,7 @@ Sub-package versions (installed): `studio-adapters` 0.3.1 (was 0.3.0), `studio-c
 0.0.106 — version bump only, **no schema changes**: upstream `forge-boxes` diff touches
 only package metadata), `studio-enums` 0.1.0 (unchanged), `lib-box` 0.0.92 (was 0.0.91 —
 carries the new graph APIs). `engine.wasm` SHA-256 changed (`50d534ed…` → `495f7d89…`)
-and `device_neon.wasm` changed (`dd2d0c34…` after) — both rebuilds from warning/dead-code
+and `device_neon.wasm` changed (`17ec1305…` → `dd2d0c34…`) — both rebuilds from warning/dead-code
 cleanup, no behavioral diff (see Misc); the other 27 device plugins and
 `stretch_wasm.wasm` are byte-identical.
 
@@ -47,7 +47,7 @@ collab batches:
   `Box.delete` defers it (unstage rejects a box with live edges). This unwedges the
   repair code itself.
 
-### studio-core: `migrateUnsatisfiedMandatory` (new), `migrateSelectionBox` + `migrateDanglingPointers` (gone)
+### studio-core: `migrateUnsatisfiedMandatory` (new), `migrateSelectionBox` (gone)
 
 `ProjectMigration.migrate` now:
 
@@ -68,9 +68,12 @@ collab batches:
    `RuntimeNotifier.info` ("Some data is corrupt…"). Exported from
    `studio-core` `project/migration` index.
 
-`migrateSelectionBox` and `migrateDanglingPointers` are deleted — both were the generic
-rule hand-coded for one box type. (A stale `MigrateSelectionBox.js` still sits in the
-published dist but is no longer referenced from the migration index.)
+`migrateSelectionBox` is deleted — it was both new generic rules hand-coded for one box
+type (checked its two pointers for unset/unresolvable targets and deleted the box). The
+upstream commit message also names a `migrateDanglingPointers`, but no such function
+ever existed in the released tree — the tag diff deletes only `MigrateSelectionBox.ts`.
+(A stale `MigrateSelectionBox.js` still sits in the published dist but is no longer
+referenced from the migration index.)
 
 ### ysync: live batches assert resolvability; reconcile gains the same two rules
 
@@ -107,7 +110,8 @@ Three URL constants fixed to match the actual manual site paths:
 ## Misc
 
 - **Rust/WASM rebuilds without behavior change:** "fixes test warnings" cleaned
-  test-only code — `cfg(test)`-gated `PanicWriter`/`UnsafeCell` import in the engine,
+  test-only code — the engine's `PanicWriter`/`UnsafeCell` import excluded from test
+  builds via `#[cfg(not(test))]`,
   removed a test-only `pooled_sequencers` helper and unused `mut`s/imports in
   device tests, removed Neon's unused `MOD_NONE` const. Neon's `pd.rs` added an explicit
   `WAVE_RES_TRAPEZOID` match arm that is identical to the existing `_` fallback —
