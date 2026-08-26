@@ -1,0 +1,572 @@
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createRoot } from "react-dom/client";
+import { AnimationFrame } from "@opendaw/lib-dom";
+import type { Project } from "@opendaw/studio-core";
+import type { AutomationMode } from "@opendaw/studio-adapters";
+import { initializeOpenDAW } from "@/lib/projectSetup";
+import { GitHubCorner } from "@/components/GitHubCorner";
+import { MoisesLogo } from "@/components/MoisesLogo";
+import { BackLink } from "@/components/BackLink";
+import { CANVAS_COLORS, CONSOLE_STYLES } from "@/lib/design/consoleTheme";
+import { BAR, DEMO_BPM, LOOP_PPQN, WINDOW_PPQN, presetGhost } from "./laneRenderModel";
+import type { LanePoint } from "./laneRenderModel";
+import { buildLiveAutomationContent } from "./liveAutomationContent";
+import type { LaneId, LaneSpec, LiveAutomationSetup } from "./liveAutomationContent";
+import { LiveAutomationLane } from "./LiveAutomationLane";
+import { TRACK_CONFIGS } from "./trackAutomationPresets";
+import "@radix-ui/themes/styles.css";
+import {
+  Theme, Container, Flex, Grid, Text, Card, Button, Badge, Switch, Select,
+  SegmentedControl, Separator, Callout,
+} from "@radix-ui/themes";
+
+// The playhead overlay sits over the CANVAS column only: it must clear the lane
+// header (LiveAutomationLane's HEADER_WIDTH) plus the Radix gap="3" between the
+// header and the canvas. Kept in sync by hand — the lane component owns the
+// header width, and a mismatch only skews the playhead, never the data.
+const LANE_HEADER_OFFSET = 180 + 12;
+
+const LANE_IDS: ReadonlyArray<LaneId> = ["volume", "pan", "wet"];
+
+type LaneStats = { captured: number; kept: number };
+
+const NO_OVERRIDES: Record<LaneId, boolean> = { volume: false, pan: false, wet: false };
+const NO_STATS: Record<LaneId, LaneStats> = {
+  volume: { captured: 0, kept: 0 },
+  pan: { captured: 0, kept: 0 },
+  wet: { captured: 0, kept: 0 },
+};
+const NO_GHOSTS: Record<LaneId, string> = { volume: "none", pan: "none", wet: "none" };
+
+/** Copy one lane slot without a computed-key spread (keeps the Record<LaneId, T> type exact). */
+function withLane<T>(record: Record<LaneId, T>, id: LaneId, value: T): Record<LaneId, T> {
+  const next: Record<LaneId, T> = { ...record };
+  next[id] = value;
+  return next;
+}
+
+// ---------------------------------------------------------------------------
+// Ghost overlays: the very shapes track-automation-demo writes into the box
+// graph, drawn here as dashed comparison lines only — no boxes are created.
+// The volume presets are normalized unit-value shapes spanning 8 bars, which is
+// exactly this page's window, so all three lanes reuse them.
+// ---------------------------------------------------------------------------
+
+const GHOST_NAMES: ReadonlyArray<string> = ["Fade In", "Fade Out", "Swell"];
+
+const GHOST_PRESETS: ReadonlyArray<{ name: string; points: LanePoint[] }> = GHOST_NAMES.flatMap(name => {
+  const preset = TRACK_CONFIGS[0].presets.find(p => p.name === name);
+  if (preset === undefined) {
+    console.error(`[live-automation-recording-demo] preset "${name}" is gone from TRACK_CONFIGS — ghost omitted`);
+    return [];
+  }
+  return [{ name, points: presetGhost(preset.events, WINDOW_PPQN) }];
+});
+
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
+
+const App: React.FC = () => {
+  const [status, setStatus] = useState("Booting…");
+  const [initError, setInitError] = useState<string | null>(null);
+  const [project, setProject] = useState<Project | null>(null);
+  const [setup, setSetup] = useState<LiveAutomationSetup | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [loopEnabled, setLoopEnabled] = useState(false);
+  const [mode, setMode] = useState<AutomationMode>("latch");
+  const [sliderValues, setSliderValues] = useState<Record<LaneId, number>>({ volume: 0, pan: 0.5, wet: 0 });
+  const [overridden, setOverridden] = useState<Record<LaneId, boolean>>(NO_OVERRIDES);
+  const [stats, setStats] = useState<Record<LaneId, LaneStats>>(NO_STATS);
+  const [ghostNames, setGhostNames] = useState<Record<LaneId, string>>(NO_GHOSTS);
+
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const playheadRef = useRef<HTMLDivElement>(null);
+  // True only while a slider's own write is in flight — the follow loop must not
+  // fight the hand that is moving the fader.
+  const gestureRef = useRef<Record<LaneId, boolean>>({ volume: false, pan: false, wet: false });
+  // Mirror of sliderValues so the AnimationFrame loop can compare without a dep.
+  const sliderValuesRef = useRef(sliderValues);
+  sliderValuesRef.current = sliderValues;
+
+  // --- Boot -----------------------------------------------------------------
+
+  useEffect(() => {
+    let disposed = false;
+    let bootProject: Project | null = null;
+    (async () => {
+      try {
+        const localAudioBuffers = new Map<string, AudioBuffer>();
+        const { project: newProject, audioContext } = await initializeOpenDAW({
+          localAudioBuffers,
+          bpm: DEMO_BPM,
+          onStatusUpdate: setStatus,
+        });
+        bootProject = newProject;
+        if (disposed) { newProject.terminate(); return; }
+        audioCtxRef.current = audioContext;
+        const built = await buildLiveAutomationContent(newProject, audioContext, localAudioBuffers, setStatus);
+        if (disposed) { newProject.terminate(); return; }
+        const initial: Record<LaneId, number> = { volume: 0, pan: 0.5, wet: 0 };
+        built.lanes.forEach(lane => { initial[lane.id] = lane.adapter.getUnitValue(); });
+        setSliderValues(initial);
+        setProject(newProject);
+        setSetup(built);
+        setStatus("Ready — press Record");
+      } catch (error) {
+        // Without the terminate, a failed content build leaves the engine
+        // worklet running behind the error card.
+        bootProject?.terminate();
+        console.error("[live-automation-recording-demo] init failed: " + String(error) +
+          (error instanceof Error && error.stack ? "\n" + error.stack : ""));
+        if (!disposed) setInitError(error instanceof Error ? error.message : String(error));
+      }
+    })();
+    return () => { disposed = true; };
+  }, []);
+
+  // --- Transport state ------------------------------------------------------
+
+  useEffect(() => {
+    if (!project) return undefined;
+    // Suspensions are runtime-only and dropped by the engine on pause/stop/
+    // stopRecording — mirror that on the falling edge of either flag.
+    const clearOverrides = () =>
+      setOverridden(prev => (LANE_IDS.some(id => prev[id]) ? NO_OVERRIDES : prev));
+    let wasPlaying = false;
+    let wasRecording = false;
+    const playingSub = project.engine.isPlaying.catchupAndSubscribe(obs => {
+      const playing = obs.getValue();
+      setIsPlaying(playing);
+      if (wasPlaying && !playing) clearOverrides();
+      wasPlaying = playing;
+    });
+    const recordingSub = project.engine.isRecording.catchupAndSubscribe(obs => {
+      const recording = obs.getValue();
+      setIsRecording(recording);
+      // A new take counts its own writes; kept counts come from the box graph.
+      if (recording && !wasRecording) {
+        setStats(prev => {
+          const next: Record<LaneId, LaneStats> = { ...prev };
+          LANE_IDS.forEach(id => { next[id] = { captured: 0, kept: prev[id].kept }; });
+          return next;
+        });
+      }
+      if (wasRecording && !recording) clearOverrides();
+      wasRecording = recording;
+    });
+    return () => {
+      playingSub.terminate();
+      recordingSub.terminate();
+    };
+  }, [project]);
+
+  // --- Write plumbing: captured counts + AutomationSuspension inference ------
+
+  useEffect(() => {
+    if (!project || !setup) return undefined;
+    // The registry hands back the very adapter instances the lanes hold, so
+    // reference identity is the correct (and cheapest) lane lookup.
+    const sub = project.parameterFieldAdapters.subscribeWrites(({ adapter }) => {
+      const lane = setup.lanes.find(l => l.adapter === adapter);
+      if (lane === undefined) return;
+      if (project.engine.isRecording.getValue()) {
+        setStats(prev => withLane(prev, lane.id, { ...prev[lane.id], captured: prev[lane.id].captured + 1 }));
+      } else if (project.engine.isPlaying.getValue() && lane.adapter.track.nonEmpty()) {
+        // A write during plain playback is what triggers the engine's
+        // AutomationSuspension — there is no observable for it, so infer it here.
+        setOverridden(prev => (prev[lane.id] ? prev : withLane(prev, lane.id, true)));
+      }
+    });
+    return () => sub.terminate();
+  }, [project, setup]);
+
+  // --- Kept counts: one subscription, recomputed from the box graph ----------
+
+  useEffect(() => {
+    if (!project || !setup) return undefined;
+    const recompute = () => {
+      setStats(prev => {
+        const next: Record<LaneId, LaneStats> = { ...prev };
+        let changed = false;
+        for (const lane of setup.lanes) {
+          let kept = 0;
+          const trackOption = lane.adapter.track;
+          if (trackOption.nonEmpty()) {
+            for (const region of trackOption.unwrap().regions.adapters.values()) {
+              if (!region.isValueRegion()) continue;
+              const eventsOption = region.events;
+              if (eventsOption.nonEmpty()) kept += eventsOption.unwrap().asArray().length;
+            }
+          }
+          if (next[lane.id].kept !== kept) {
+            next[lane.id] = { ...next[lane.id], kept };
+            changed = true;
+          }
+        }
+        // Returning prev unchanged lets React bail out — a recording take commits
+        // a transaction per write, and re-rendering on each would be a storm.
+        return changed ? next : prev;
+      });
+    };
+    recompute();
+    const sub = project.editing.subscribe(recompute);
+    return () => sub.terminate();
+  }, [project, setup]);
+
+  // --- Fader-follows-curve + playhead (one frame loop, no per-frame setState
+  //     for the playhead) -----------------------------------------------------
+
+  useEffect(() => {
+    if (!project || !setup) return undefined;
+    const frame = AnimationFrame.add(() => {
+      const engine = project.engine;
+      const playing = engine.isPlaying.getValue();
+      const position = engine.position.getValue();
+      const head = playheadRef.current;
+      if (head !== null) {
+        const visible = playing && position >= 0 && position <= WINDOW_PPQN;
+        head.style.visibility = visible ? "visible" : "hidden";
+        if (visible) head.style.left = `${(position / WINDOW_PPQN) * 100}%`;
+      }
+      if (!playing) return;
+      // The plain field observable does not fire while automation plays back —
+      // the controlled value (automation + modulation) is the honest read.
+      const current = sliderValuesRef.current;
+      const next: Record<LaneId, number> = { ...current };
+      let changed = false;
+      for (const lane of setup.lanes) {
+        if (gestureRef.current[lane.id]) continue;
+        const value = lane.adapter.getControlledUnitValue();
+        if (Math.abs(value - current[lane.id]) > 0.001) {
+          next[lane.id] = value;
+          changed = true;
+        }
+      }
+      if (changed) {
+        sliderValuesRef.current = next;
+        setSliderValues(next);
+      }
+    });
+    return () => frame.terminate();
+  }, [project, setup]);
+
+  // --- Handlers -------------------------------------------------------------
+
+  const onRecord = useCallback(async () => {
+    if (!project) return;
+    // startRecording does not resume the context itself (only the engine
+    // facade's play() does) — a suspended context would record silence.
+    const audioContext = audioCtxRef.current;
+    if (audioContext !== null && audioContext.state !== "running") await audioContext.resume();
+    project.startRecording(false); // no count-in: the first write is the take
+  }, [project]);
+
+  const onPlay = useCallback(() => {
+    // initializeOpenDAW's engine facade resumes a suspended AudioContext first.
+    project?.engine.play();
+  }, [project]);
+
+  const onStop = useCallback(() => {
+    if (!project) return;
+    project.engine.stopRecording();
+    project.engine.stop(true);
+  }, [project]);
+
+  const onSliderChange = useCallback((lane: LaneSpec, value: number) => {
+    if (!project) return;
+    gestureRef.current[lane.id] = true;
+    try {
+      // mark=false: a fader drag is one gesture, not fifty undo entries.
+      project.editing.modify(() => lane.adapter.setUnitValue(value), false);
+    } finally {
+      gestureRef.current[lane.id] = false;
+    }
+    setSliderValues(prev => withLane(prev, lane.id, value));
+  }, [project]);
+
+  const onLoopToggle = useCallback((next: boolean) => {
+    if (!project) return;
+    project.editing.modify(() => {
+      const loopArea = project.timelineBox.loopArea;
+      loopArea.from.setValue(0);
+      loopArea.to.setValue(LOOP_PPQN);
+      loopArea.enabled.setValue(next);
+    });
+    setLoopEnabled(next);
+  }, [project]);
+
+  const onModeChange = useCallback((next: AutomationMode) => {
+    if (!project || !setup) return;
+    // Registry state, not box graph — never inside editing.modify().
+    setup.lanes.forEach(lane => project.parameterFieldAdapters.setMode(lane.adapter.address, next));
+    setMode(next);
+  }, [project, setup]);
+
+  const ghosts = useMemo(() => {
+    const resolve = (name: string): LanePoint[] | null => {
+      const preset = GHOST_PRESETS.find(p => p.name === name);
+      return preset === undefined ? null : preset.points;
+    };
+    const result: Record<LaneId, LanePoint[] | null> = { volume: null, pan: null, wet: null };
+    LANE_IDS.forEach(id => { result[id] = resolve(ghostNames[id]); });
+    return result;
+  }, [ghostNames]);
+
+  const transportLabel = isRecording ? "Recording" : isPlaying ? "Playing" : status;
+
+  return (
+    <Theme appearance="dark" accentColor="amber" radius="large" style={{ background: "var(--mc-bg)" }}>
+      <style>{CONSOLE_STYLES}</style>
+      <Container size="4" px="4" py="8">
+        <GitHubCorner />
+        <BackLink />
+        <Flex direction="column" gap="5" style={{ maxWidth: 1100, margin: "0 auto" }}>
+          <div>
+            <div className="mc-kicker">Automation — Live Recording · OpenDAW SDK</div>
+            <h1 className="mc-title" style={{ fontSize: "clamp(28px, 4.5vw, 44px)" }}>LATCH</h1>
+            <p className="mc-intro">
+              Hit Record, then move a fader. OpenDAW's automation recording is{" "}
+              <strong>latch-based</strong>: while the engine is recording, the{" "}
+              <em>first</em> write to a parameter opens a take — no arming, no touch
+              gate — and every write after it extends the same value region. Only a
+              transport stop or a loop wrap closes it. The three lanes below are the
+              audio unit's <code>volume</code> and <code>panning</code> plus the
+              Delay's <code>wet</code>, each resolved to its{" "}
+              <code>AutomatableParameterFieldAdapter</code>. Nothing is pre-created:
+              the automation track and its region appear on the first gesture.
+            </p>
+          </div>
+
+          {initError ? (
+            <Callout.Root color="red" role="alert">
+              <Callout.Text><strong>Initialization failed:</strong> {initError}</Callout.Text>
+            </Callout.Root>
+          ) : !project || !setup ? (
+            <Text align="center" color="gray">{status}</Text>
+          ) : (
+            <>
+              <Card>
+                <Flex direction="column" gap="3">
+                  <Flex align="center" gap="3" wrap="wrap">
+                    <Button color="red" onClick={() => { void onRecord(); }} disabled={isRecording}>● Record</Button>
+                    <Button onClick={onPlay} disabled={isPlaying}>▶ Play</Button>
+                    <Button variant="soft" onClick={onStop}>■ Stop</Button>
+                    <Separator orientation="vertical" />
+                    <Flex align="center" gap="2">
+                      <Switch checked={loopEnabled} onCheckedChange={onLoopToggle} />
+                      <Text size="2" color="gray">Loop 4 bars</Text>
+                    </Flex>
+                    <Separator orientation="vertical" />
+                    <Text size="1" color="gray" style={{ fontFamily: "var(--mc-mono)" }}>
+                      {DEMO_BPM} BPM · window {WINDOW_PPQN / BAR} bars
+                    </Text>
+                    <Badge color={isRecording ? "red" : isPlaying ? "green" : "amber"}>{transportLabel}</Badge>
+                  </Flex>
+                  <Text size="2" color="gray">
+                    Recording starts immediately — <code>startRecording(false)</code>, no
+                    count-in. With Loop on, a take is finalized at the wrap and the next
+                    pass opens a fresh region, so you can overdub one lane per pass and
+                    watch the outlines stack up across the first four bars.
+                  </Text>
+                </Flex>
+              </Card>
+
+              <Card>
+                <Flex direction="column" gap="4">
+                  <Flex align="center" justify="between" wrap="wrap" gap="3">
+                    <Text size="2" weight="bold" color="gray">Automation Lanes</Text>
+                    <Flex align="center" gap="2">
+                      <Badge color="red">REC</Badge>
+                      <Text size="1" color="gray">writing a take</Text>
+                      <Badge color="amber">OVERRIDE</Badge>
+                      <Text size="1" color="gray">automation suspended by hand</Text>
+                    </Flex>
+                  </Flex>
+
+                  {/* Lane stack + one playhead overlay across all three lanes. */}
+                  <div style={{ position: "relative" }}>
+                    <Flex direction="column" gap="3">
+                      {setup.lanes.map(lane => (
+                        <LiveAutomationLane
+                          key={lane.id}
+                          project={project}
+                          spec={lane}
+                          sliderValue={sliderValues[lane.id]}
+                          onSliderChange={value => onSliderChange(lane, value)}
+                          overridden={overridden[lane.id]}
+                          recording={isRecording}
+                          stats={stats[lane.id]}
+                          ghost={ghosts[lane.id]}
+                        />
+                      ))}
+                    </Flex>
+                    <div
+                      aria-hidden="true"
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        bottom: 0,
+                        left: LANE_HEADER_OFFSET,
+                        right: 0,
+                        pointerEvents: "none",
+                      }}
+                    >
+                      <div
+                        ref={playheadRef}
+                        style={{
+                          position: "absolute",
+                          top: 0,
+                          bottom: 0,
+                          width: 2,
+                          left: 0,
+                          background: CANVAS_COLORS.playhead,
+                          visibility: "hidden",
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <Text size="1" color="gray">
+                    Each lane draws the value regions on its parameter's automation
+                    track over an eight-bar window; the brighter grid line at bar 4 is
+                    the loop boundary. Fader writes go through{" "}
+                    <code>editing.modify(() =&gt; adapter.setUnitValue(v), false)</code> —
+                    the <code>false</code> skips the undo mark so a drag is one gesture,
+                    not fifty entries on the undo stack.
+                  </Text>
+                </Flex>
+              </Card>
+
+              <Card>
+                <Flex direction="column" gap="3">
+                  <Text size="2" weight="bold" color="gray">How a take is made</Text>
+                  <Grid columns={{ initial: "1", sm: "2", md: "4" }} gap="3">
+                    <Flex direction="column" gap="1">
+                      <div className="mc-lattice-label" style={{ color: "var(--mc-amber)" }}>1 · Write</div>
+                      <Text size="2" color="gray">
+                        The fader calls <code>setUnitValue</code> inside a transaction.
+                        Every parameter write — fader, MIDI, or a checkbox — is broadcast
+                        by <code>parameterFieldAdapters.subscribeWrites</code>, which is
+                        how this page counts them.
+                      </Text>
+                    </Flex>
+                    <Flex direction="column" gap="1">
+                      <div className="mc-lattice-label" style={{ color: "var(--mc-amber)" }}>2 · Latch</div>
+                      <Text size="2" color="gray">
+                        While <code>engine.isRecording</code>, that first write opens the
+                        take. <code>RecordAutomation</code> resolves the lane owner via{" "}
+                        <code>optTracks()</code> and creates the automation track on
+                        demand — nothing had to exist beforehand.
+                      </Text>
+                    </Flex>
+                    <Flex direction="column" gap="1">
+                      <div className="mc-lattice-label" style={{ color: "var(--mc-amber)" }}>3 · Region</div>
+                      <Text size="2" color="gray">
+                        Further writes extend the same <code>ValueRegionBox</code>, its
+                        events at region-local positions. A loop wrap finalizes it and
+                        opens the next; stop closes it for good.
+                      </Text>
+                    </Flex>
+                    <Flex direction="column" gap="1">
+                      <div className="mc-lattice-label" style={{ color: "var(--mc-amber)" }}>4 · Simplify</div>
+                      <Text size="2" color="gray">
+                        On finalize the raw stream is thinned by a Ramer–Douglas–Peucker
+                        pass with ε = 0.01: points that lie within that tolerance of the
+                        line through their neighbours are dropped. Each lane header shows{" "}
+                        <em>kept / captured</em> — hundreds of writes typically survive as
+                        a handful of events.
+                      </Text>
+                    </Flex>
+                  </Grid>
+                </Flex>
+              </Card>
+
+              <Grid columns={{ initial: "1", md: "2" }} gap="5">
+                <Card>
+                  <Flex direction="column" gap="3">
+                    <Text size="2" weight="bold" color="gray">Automation Mode</Text>
+                    <SegmentedControl.Root value={mode} onValueChange={v => onModeChange(v as AutomationMode)}>
+                      <SegmentedControl.Item value="read">read</SegmentedControl.Item>
+                      <SegmentedControl.Item value="touch">touch</SegmentedControl.Item>
+                      <SegmentedControl.Item value="latch">latch</SegmentedControl.Item>
+                    </SegmentedControl.Root>
+                    <Text size="2" color="gray">
+                      This writes for real through{" "}
+                      <code>parameterFieldAdapters.setMode(address, mode)</code> — plain
+                      registry state, deliberately outside <code>editing.modify()</code>{" "}
+                      because it is not box graph data.
+                    </Text>
+                    <Callout.Root color="amber" size="1">
+                      <Callout.Text>
+                        The engine never reads the stored mode yet — recording always
+                        behaves latch-like: the first write opens a take, only transport
+                        stop or a loop wrap closes it.
+                      </Callout.Text>
+                    </Callout.Root>
+                  </Flex>
+                </Card>
+
+                <Card>
+                  <Flex direction="column" gap="3">
+                    <Text size="2" weight="bold" color="gray">Manual Override</Text>
+                    <Text size="2" color="gray">
+                      Move a fader during plain playback — not recording — and the engine
+                      suspends that lane's automation so your hand wins:{" "}
+                      <code>AutomationSuspension</code>, started per project, runtime-only,
+                      no box graph write. The recorded curve stays exactly where it was and
+                      dims on the lane while the badge reads OVERRIDE. Pause, stop, or
+                      <code>stopRecording()</code> drops every suspension and the faders go
+                      back to riding the curves. There is no observable for it, so this page
+                      infers the badge from the write plus the transport state.
+                    </Text>
+                  </Flex>
+                </Card>
+              </Grid>
+
+              <Card>
+                <Flex direction="column" gap="3">
+                  <Text size="2" weight="bold" color="gray">Preset Comparison</Text>
+                  <Text size="2" color="gray">
+                    Overlay a dashed reference shape on any lane — these are the same
+                    curves <code>track-automation-demo</code> writes into the box graph
+                    programmatically. Here they are drawing only: no regions, no events,
+                    nothing recorded. Handy for judging how close a performed move lands
+                    to an authored one.
+                  </Text>
+                  <Grid columns={{ initial: "1", sm: "3" }} gap="3">
+                    {setup.lanes.map(lane => (
+                      <Flex key={lane.id} direction="column" gap="1">
+                        <Text size="1" color="gray">{lane.label}</Text>
+                        <Select.Root
+                          value={ghostNames[lane.id]}
+                          onValueChange={value => setGhostNames(prev => withLane(prev, lane.id, value))}
+                        >
+                          <Select.Trigger aria-label={`Ghost curve for ${lane.label}`} />
+                          <Select.Content>
+                            <Select.Item value="none">None</Select.Item>
+                            {GHOST_PRESETS.map(preset => (
+                              <Select.Item key={preset.name} value={preset.name}>{preset.name}</Select.Item>
+                            ))}
+                          </Select.Content>
+                        </Select.Root>
+                      </Flex>
+                    ))}
+                  </Grid>
+                </Flex>
+              </Card>
+            </>
+          )}
+        </Flex>
+        <MoisesLogo />
+      </Container>
+    </Theme>
+  );
+};
+
+const rootElement = document.getElementById("root");
+if (rootElement) {
+  const root = createRoot(rootElement);
+  root.render(<App />);
+}
