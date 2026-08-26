@@ -5,7 +5,7 @@ import { EffectFactories, type Project } from "@opendaw/studio-core";
 import { audioEffectsFieldOf, audioUnitAdapterFor } from "@/lib/adapterUtils";
 import { loadAudioFile } from "@/lib/audioUtils";
 import { CANVAS_COLORS } from "@/lib/design/consoleTheme";
-import { LOOP_PPQN } from "./laneRenderModel";
+import { LOOP_PPQN, WINDOW_PPQN } from "./laneRenderModel";
 
 const DRUM_FILE = "/audio/BassDrums30.mp3";
 
@@ -42,12 +42,19 @@ export async function buildLiveAutomationContent(
       box.endInSeconds.setValue(drumBuffer.duration);
     });
     const eventsBox = ValueEventCollectionBox.create(boxGraph, UUID.generate());
+    // The arrangement window is 8 bars, but the drum loop is only 4 bars long.
+    // Span the region across the whole window (duration = WINDOW_PPQN) while
+    // keeping loopDuration at the 4-bar loop — the SDK region-loops the audio
+    // content internally, repeating the drum loop twice over the full 8 bars.
+    // This is independent of the transport Loop switch (timelineBox.loopArea,
+    // set up below), which only controls whether the transport itself wraps
+    // after the first 4 bars.
     AudioRegionBox.create(boxGraph, UUID.generate(), box => {
       box.regions.refer(tape.trackBox.regions);
       box.file.refer(fileBox);
       box.events.refer(eventsBox.owners);
       box.position.setValue(0);
-      box.duration.setValue(LOOP_PPQN);
+      box.duration.setValue(WINDOW_PPQN);
       box.loopOffset.setValue(0);
       box.loopDuration.setValue(LOOP_PPQN);
       box.label.setValue("Drums");
