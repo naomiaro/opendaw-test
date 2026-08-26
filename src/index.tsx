@@ -162,6 +162,12 @@ const GROUPS: Group[] = [
         blurb:
           "Play OpenDAW's Casio CZ-101 phase-distortion synth. Five original patches round-tripped through real .syx bytes, a sysex drop zone, live wave/modulation controls, and an 8-stage envelope visualizer.",
       },
+      {
+        href: "/cubed-demo.html",
+        title: "Cubed: 303-Style Acid Bassline",
+        blurb:
+          "Program Cubed's built-in step sequencer live — notes, gates, slides and accents on a 64-step grid, a random pattern generator, JSON and ABL .pat pattern exchange, and a synced LFO sweeping the filter.",
+      },
     ],
   },
   {
