@@ -522,6 +522,11 @@ const App: React.FC = () => {
               href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/automation-simplifier-flattening.md",
               kind: "note",
             },
+            {
+              label: "Upstream issue: openDAW#363",
+              href: "https://github.com/andremichelle/openDAW/issues/363",
+              kind: "note",
+            },
           ]}
         />
 
