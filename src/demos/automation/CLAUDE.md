@@ -161,33 +161,36 @@ parameter.subscribe(observer)            // future changes only
 parameter.catchupAndSubscribe(observer)  // current value + future changes
 parameter.catchupAndSubscribeControlSources(observer)
 parameter.registerMidiControl()          // returns Terminable
-parameter.registerTracks(tracks)         // wire to AudioUnitTracks
+parameter.registerTracks(tracks)         // wire to a ParameterTracks (e.g. AudioUnitTracks)
+parameter.optTracks()                    // Option<ParameterTracks> — lane owner (registered, else audio unit)
 parameter.updateMappings(value, string)  // swap mappings (e.g. on schema change)
 parameter.terminate()
 ```
 
-### Touch Recording Lifecycle
-Real-time automation recording (fader movements during playback). Per-adapter actions
-on `AutomatableParameterFieldAdapter`; registry-level lookups on `ParameterFieldAdapters`
-by `Address`.
+### Latch Recording Lifecycle (touch API removed in SDK 0.0.170)
+Real-time automation recording is latch-based: while `engine.isRecording`, ANY
+parameter write (`setUnitValue`, MIDI, checkbox) opens or extends the automation take —
+no touch gate. Only the transport (stop) or a loop wrap closes it. The former touch API
+(`touchStart/End`, `isTouched`, `subscribeTouchEnd` on both the adapter and the
+registry) no longer exists.
 ```typescript
 import { ParameterFieldAdapters } from "@opendaw/studio-adapters";
 // project.parameterFieldAdapters: ParameterFieldAdapters
 
-// Per-adapter — UI fader/knob handlers
-adapter.touchStart();
+// Per-adapter — UI fader/knob handlers just write
 adapter.setUnitValue(0.5);  // unitValue 0-1, mapped through ValueMapping
-adapter.touchEnd();
 
-// Registry-level — observing across all parameters
-parameterFieldAdapters.isTouched(adapter.address)           // boolean
-parameterFieldAdapters.touchStart(adapter.address)          // same as adapter.touchStart()
-parameterFieldAdapters.touchEnd(adapter.address)
+// Registry-level
 parameterFieldAdapters.getMode(adapter.address)             // "read" | "touch" | "latch"
 parameterFieldAdapters.setMode(adapter.address, "touch")
-parameterFieldAdapters.subscribeTouchEnd(observer)          // observer: Observer<Address>
 parameterFieldAdapters.subscribeWrites(observer)            // every parameter write
+parameterFieldAdapters.registerTracks(address, tracks)      // ParameterTracks lane owner
+parameterFieldAdapters.getTracks(address)                   // Option<ParameterTracks>
 ```
+During playback (not recording), a manual/MIDI write suspends that lane's automation
+until the transport stops (`AutomationSuspension`, auto-started per Project; engine-side
+`engine.suspendAutomation(uuid)`; cleared on pause/stop). Runtime-only — no box graph
+writes.
 
 ### ParameterAdapterSet (Device Parameters)
 Access all automatable parameters on a device:

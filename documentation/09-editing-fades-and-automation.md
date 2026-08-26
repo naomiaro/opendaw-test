@@ -1266,17 +1266,15 @@ type AutomationMode = "read" | "touch" | "latch"
 | **Touch** | User interaction overrides and records. On release, returns to automated value. |
 | **Latch** | Like touch, but holds the last value after release instead of returning. |
 
-**Current state:** Only touch mode has behavioral implementation. Latch and read have type definitions and storage (`setMode`/`getMode` on `ParameterFieldAdapters`) but `getMode()` is never called — no behavioral distinction yet. The plan documents state mode differentiation is a separate implementation step.
+**Current state:** The mode values have type definitions and storage (`setMode`/`getMode` on `ParameterFieldAdapters`) but `getMode()` is never called — recording always behaves latch-like, with no behavioral distinction between modes yet.
 
-#### How Touch Recording Works
+#### How Automation Recording Works
 
-The recording flow uses a "touch" metaphor — the user presses (touches) a parameter control, moves it, then releases:
+Recording is **latch-based** — there is no touch gate:
 
-1. **Touch start** — `adapter.touchStart()` marks the parameter as "touched" and emits the current value
-2. **Value changes** — each `setValue()` call triggers `notifyWrite()`, which `RecordAutomation` captures as events at the current timeline position
-3. **Touch end** — `adapter.touchEnd()` finalizes the automation region (sets duration, adds hold event, runs simplification)
-
-In the OpenDAW app, every automatable knob/slider is wrapped in an `AutomationControl` component that binds `pointerdown` → `touchStart()` and `pointerup` → `touchEnd()`.
+1. **Any write opens the take** — while `engine.isRecording` is true, each `setValue()`/`setUnitValue()` call triggers `notifyWrite()`, which `RecordAutomation` captures as events at the current timeline position. A knob drag, a MIDI controller and a checkbox all record alike.
+2. **Subsequent writes extend it** — events accumulate on the same automation region.
+3. **Only the transport closes it** — stopping the transport (or a loop wrap) finalizes the region (sets duration, adds hold event, runs simplification). The producer of the writes never closes the take itself.
 
 #### Enabling Automation Recording
 
@@ -1286,41 +1284,40 @@ Automation recording is controlled by a recording preference (default: `true`):
 project.engine.preferences.settings.recording.automationEnabled = true;
 ```
 
-When enabled, `Recording.start()` subscribes `RecordAutomation` to parameter write events. Only parameters that are "touched" (via `touchStart()`) are recorded — untouched parameter changes are ignored.
+When enabled, `Recording.start()` subscribes `RecordAutomation` to parameter write events. Every parameter write during recording is captured — there is no per-parameter arming step.
 
 #### Programmatic API
 
-The touch/record cycle can be driven programmatically without UI:
+The record cycle can be driven programmatically without UI:
 
 ```typescript
 // 1. Get the AutomatableParameterFieldAdapter for a parameter
 //    (created by device box adapters, e.g., AudioUnitBoxAdapter for .volume)
 const adapter: AutomatableParameterFieldAdapter = /* ... */;
 
-// 2. Register tracks so RecordAutomation can find/create automation tracks
+// 2. (Optional) Register a lane owner. Without registration, RecordAutomation
+//    falls back to the parameter's audio unit via adapter.optTracks().
 adapter.registerTracks(audioUnitTracks);
 
 // 3. Start recording (synchronous — returns void, not a Promise)
 project.startRecording(false);
 
-// 4. Simulate "touching" the parameter
-adapter.touchStart();
-
-// 5. Change the value over time
+// 4. Change the value over time — the first write opens the take
 project.editing.modify(() => adapter.setUnitValue(0.3));
 // ... time passes (AnimationFrame, setTimeout, etc.) ...
 project.editing.modify(() => adapter.setUnitValue(0.7));
 
-// 6. Release the "touch" — finalizes the automation region
-adapter.touchEnd();
-
-// 7. Stop recording
+// 5. Stop recording — finalizes the automation region
 project.engine.stopRecording();
 ```
 
 #### Post-Recording Simplification
 
-After `touchEnd()`, the engine runs a Ramer-Douglas-Peucker simplifier (epsilon = 0.01) on the recorded events to remove redundant linear points. This reduces event count while preserving the automation curve shape.
+When a take is finalized (transport stop or loop wrap), the engine runs a Ramer-Douglas-Peucker simplifier (epsilon = 0.01) on the recorded events to remove redundant linear points. This reduces event count while preserving the automation curve shape.
+
+#### Manual Override During Playback (AutomationSuspension)
+
+Outside of recording, a parameter changed by hand or by MIDI while the transport is playing takes over from its own automation for as long as the transport runs — the manual value is heard at once instead of fighting the curve. Each `Project` starts an `AutomationSuspension` rule that reacts to parameter writes by calling `engine.suspendAutomation(trackUuid)`; the engine drops every suspension on pause, stop and `stopRecording`, so the next play reads the curve again. This is runtime-only — nothing is written to the box graph — and modulation still applies on top of a suspended lane.
 
 #### Loop Recording
 
@@ -1335,13 +1332,11 @@ During loop recording, `RecordAutomation` handles loop-wrap detection. When the 
 import { AutomationMode } from "@opendaw/studio-adapters";
 
 // ParameterFieldAdapters (on project context)
-parameterFieldAdapters.touchStart(address)      // Mark parameter as touched
-parameterFieldAdapters.touchEnd(address)        // Release touch, finalize recording
-parameterFieldAdapters.isTouched(address)       // Check if currently touched
 parameterFieldAdapters.setMode(address, mode)   // Set automation mode (infrastructure only)
 parameterFieldAdapters.getMode(address)         // Get automation mode (not yet used by engine)
-parameterFieldAdapters.registerTracks(address, tracks)  // Register tracks for recording
-parameterFieldAdapters.subscribeTouchEnd(observer)      // Observe touch-end events
+parameterFieldAdapters.registerTracks(address, tracks)  // Register a ParameterTracks lane owner
+parameterFieldAdapters.getTracks(address)       // Option<ParameterTracks>
+parameterFieldAdapters.subscribeWrites(observer)        // Observe every parameter write
 ```
 
 #### Standalone Demo (Future)

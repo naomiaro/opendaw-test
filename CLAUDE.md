@@ -352,7 +352,7 @@ All adapters receive a `BoxAdaptersContext` that provides access to shared infra
 - `soundfontManager` — `SoundfontLoaderManager` for soundfont loading
 - `rootBoxAdapter` — project root adapter
 - `timelineBoxAdapter` — timeline adapter
-- `parameterFieldAdapters` — `ParameterFieldAdapters` for automation touch recording
+- `parameterFieldAdapters` — `ParameterFieldAdapters` for automation-write recording
 - `tempoMap` — `TempoMap` for tempo-aware conversions
 - `clipSequencing` — clip sequencing logic
 - `isMainThread` / `isAudioContext` — threading context checks
@@ -365,9 +365,11 @@ Adapters are lazily created and cached by box UUID.
 Beyond `boxAdapters` / `rootBoxAdapter` / `sampleManager`, `Project` exposes:
 - `project.skeleton: ProjectSkeleton` — pass to `PresetDecoder.decode`,
   `TransferAudioUnits.transfer`, `AudioBusFactory.create`.
-- `project.parameterFieldAdapters: ParameterFieldAdapters` — registry-level touch API by
-  `Address`: `isTouched`, `getMode/setMode`, `subscribeTouchEnd`, `subscribeWrites`.
-  Per-parameter adapter holds the user-action surface (`touchStart/End`, `setUnitValue`).
+- `project.parameterFieldAdapters: ParameterFieldAdapters` — registry by `Address`:
+  `get/opt`, `getMode/setMode`, `subscribeWrites`, `registerTracks/getTracks`. The touch
+  API (`touchStart/End`, `isTouched`, `subscribeTouchEnd`) was REMOVED in SDK 0.0.170 —
+  automation recording is latch-based (any write while `engine.isRecording` records);
+  per-parameter adapter keeps `setUnitValue` and gains `optTracks()` (lane owner).
 - `project.editing: Editing` — target of every `editing.modify()`.
 
 ### GrooveBoxAdapter (Swing/Shuffle)
@@ -635,17 +637,17 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   File-System-Access types (SaveFilePickerOptions etc.) stop resolving and TS2304s
   flood the SDK .d.ts files.
 - Trust `npx tsc --noEmit` over LSP diagnostics for `@/` module-resolution and
-  Float32Array-generic errors — the global typescript-language-server runs a newer
-  TS than the project and reports false positives after tsconfig edits. The same
+  Float32Array-generic errors — a globally-installed typescript-language-server may run
+  a newer TS than the project and report false positives after tsconfig edits. The same
   cascade hits relative imports (`./lib/...` TS2307) after rebases/branch switches.
-- `npx tsc --noEmit` errors TS5101 (baseUrl deprecated) under the newer global TS —
-  environmental noise, not a project error; keep `baseUrl` (see rule above) and run
-  `npx tsc --noEmit --ignoreDeprecations "6.0"` to get past the hard error.
+- `typescript` is a devDependency (`^5.9.2`, matching the upstream openDAW monorepo pin),
+  so `npx tsc --noEmit` runs the project-local TS — no `--ignoreDeprecations` flag needed.
+  Don't jump to TS 7.x: it removes `baseUrl` outright (hard error TS5102).
 - Some older demos carry pre-existing tsc errors (e.g. comp-lanes-demo.tsx TS2739/TS2345
   box-graph setup lines). Judge "zero new errors" against the parent commit's error set,
   not absolute zero — extract parent versions via `git show` when unsure.
 - Concrete "zero new errors" recipe: `git worktree add <tmp> <parent> && cd <tmp> &&
-  npm ci && npx tsc --noEmit --ignoreDeprecations "6.0" 2>&1 | grep '^src/' | sort`,
+  npm ci && npx tsc --noEmit 2>&1 | grep '^src/' | sort`,
   then `comm -13 baseline.txt branch.txt`. Filter to `^src/` — the node_modules
   TS2304s (`FilePickerOptions`/`AudioPlaybackStats` DOM-lib cascade) are environmental.
 - If `npm run build` fails with a missing SDK export on a clean tree (e.g. "InputLatency
