@@ -62,6 +62,17 @@ export async function buildLiveAutomationContent(
     delayBox = project.api.insertEffect(effectsField, EffectFactories.Delay) as DelayDeviceBox;
   });
 
+  // The LoopArea schema defaults to enabled=true, from=0, to=15360 — so a fresh
+  // project already loops over the first four bars. The page's Loop switch starts
+  // OFF, so without this the switch would lie and every first take would be split
+  // at an invisible wrap. Pin the range to this page's loop and start it disabled.
+  project.editing.modify(() => {
+    const { loopArea } = project.timelineBox;
+    loopArea.from.setValue(0);
+    loopArea.to.setValue(LOOP_PPQN);
+    loopArea.enabled.setValue(false);
+  });
+
   // Subject of the demo — explicit even though it defaults to true.
   project.engine.preferences.settings.recording.automationEnabled = true;
 
