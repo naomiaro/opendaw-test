@@ -4,12 +4,14 @@ import type { Project } from "@opendaw/studio-core";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { CanvasPainter } from "@/lib/CanvasPainter";
 import { CANVAS_COLORS } from "@/lib/design/consoleTheme";
-import { BAR, buildRegionRender, HEADER_WIDTH, LOOP_PPQN, NUM_BARS, WINDOW_PPQN } from "./laneRenderModel";
+import { BAR, buildRegionRender, HEADER_WIDTH, DRUM_CYCLE_PPQN, NUM_BARS, WINDOW_PPQN } from "./laneRenderModel";
 import type { LanePoint, LaneRegionModel } from "./laneRenderModel";
 import type { LaneSpec } from "./liveAutomationContent";
 
 const CANVAS_HEIGHT = 110;
-const LOOP_BAR = LOOP_PPQN / BAR; // 4 — loop boundary drawn distinctly
+// 4 — where the drum audio repeats inside the window, drawn distinctly. NOT the
+// transport loop boundary: that is the window edge (the transport loops all 8 bars).
+const DRUM_CYCLE_BAR = DRUM_CYCLE_PPQN / BAR;
 
 export interface LiveAutomationLaneProps {
   project: Project;
@@ -79,11 +81,12 @@ export const LiveAutomationLane: React.FC<LiveAutomationLaneProps> = ({
       ctx.fillStyle = CANVAS_COLORS.bg;
       ctx.fillRect(0, 0, width, height);
 
-      // Bar grid — every bar across the 8-bar window, loop boundary picked out brighter.
+      // Bar grid — every bar across the 8-bar window, the drum-cycle repeat at
+      // bar 4 picked out brighter. The transport loop wraps at the window edge.
       ctx.lineWidth = 1;
       for (let bar = 0; bar <= NUM_BARS; bar++) {
         const x = ((bar * BAR) / WINDOW_PPQN) * width;
-        ctx.strokeStyle = bar === LOOP_BAR ? CANVAS_COLORS.gridSupporting : CANVAS_COLORS.gridTertiary;
+        ctx.strokeStyle = bar === DRUM_CYCLE_BAR ? CANVAS_COLORS.gridSupporting : CANVAS_COLORS.gridTertiary;
         ctx.beginPath();
         ctx.moveTo(x, 0);
         ctx.lineTo(x, height);

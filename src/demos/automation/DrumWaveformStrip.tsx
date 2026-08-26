@@ -6,18 +6,19 @@ import { PPQN } from "@opendaw/lib-dsp";
 import type { AudioRegionBoxAdapter } from "@opendaw/studio-adapters";
 import { CanvasPainter } from "@/lib/CanvasPainter";
 import { CANVAS_COLORS, CANVAS_FONT_SMALL } from "@/lib/design/consoleTheme";
-import { BAR, DEMO_BPM, HEADER_WIDTH, LOOP_PPQN, NUM_BARS, WINDOW_PPQN } from "./laneRenderModel";
+import { BAR, DEMO_BPM, HEADER_WIDTH, DRUM_CYCLE_PPQN, NUM_BARS, WINDOW_PPQN } from "./laneRenderModel";
 
 const CANVAS_HEIGHT = 64;
-const LOOP_BAR = LOOP_PPQN / BAR; // 4 — loop boundary drawn distinctly
-const CYCLES = WINDOW_PPQN / LOOP_PPQN; // 2 — the drum loop repeats twice across the window
+// 4 — where the drum audio repeats inside the window (not a transport boundary).
+const DRUM_CYCLE_BAR = DRUM_CYCLE_PPQN / BAR;
+const CYCLES = WINDOW_PPQN / DRUM_CYCLE_PPQN; // 2 — the drum loop repeats twice across the window
 // Backstop for the peaks-nudge loop: ~10 s at 60 fps. Peaks that have not
 // arrived by then are not going to, and a 60 fps repaint for the life of the
 // mount is far too expensive to leave running on the off chance.
 const NUDGE_FRAME_BUDGET = 600;
 
 export interface DrumWaveformStripProps {
-  /** The drum AudioRegionBox's adapter — region-loops LOOP_PPQN of audio across WINDOW_PPQN. */
+  /** The drum AudioRegionBox's adapter — region-loops DRUM_CYCLE_PPQN of audio across WINDOW_PPQN. */
   regionAdapter: AudioRegionBoxAdapter;
 }
 
@@ -56,11 +57,12 @@ export const DrumWaveformStrip: React.FC<DrumWaveformStripProps> = ({ regionAdap
       ctx.fillStyle = CANVAS_COLORS.bg;
       ctx.fillRect(0, 0, width, height);
 
-      // Bar grid — every bar across the 8-bar window, loop boundary picked out brighter.
+      // Bar grid — every bar across the 8-bar window, the drum-cycle repeat at
+      // bar 4 picked out brighter (the transport loops the whole window).
       ctx.lineWidth = 1;
       for (let bar = 0; bar <= NUM_BARS; bar++) {
         const x = ((bar * BAR) / WINDOW_PPQN) * width;
-        ctx.strokeStyle = bar === LOOP_BAR ? CANVAS_COLORS.gridSupporting : CANVAS_COLORS.gridTertiary;
+        ctx.strokeStyle = bar === DRUM_CYCLE_BAR ? CANVAS_COLORS.gridSupporting : CANVAS_COLORS.gridTertiary;
         ctx.beginPath();
         ctx.moveTo(x, 0);
         ctx.lineTo(x, height);
@@ -80,11 +82,11 @@ export const DrumWaveformStrip: React.FC<DrumWaveformStripProps> = ({ regionAdap
       }
       const peaks = peaksOption.unwrap();
 
-      // The region reads only the first LOOP_PPQN worth of the (30 s) source
-      // file each cycle (loopOffset 0, loopDuration LOOP_PPQN) — map that to a
+      // The region reads only the first DRUM_CYCLE_PPQN worth of the (30 s) source
+      // file each cycle (loopOffset 0, loopDuration DRUM_CYCLE_PPQN) — map that to a
       // peaks-frame fraction of the whole file, then paint it once per cycle.
       const fileDurationSeconds = regionAdapter.file.endInSeconds - regionAdapter.file.startInSeconds;
-      const loopSeconds = PPQN.pulsesToSeconds(LOOP_PPQN, DEMO_BPM);
+      const loopSeconds = PPQN.pulsesToSeconds(DRUM_CYCLE_PPQN, DEMO_BPM);
       const u1Frac = fileDurationSeconds > 0 ? Math.min(1, loopSeconds / fileDurationSeconds) : 1;
       const u0 = 0;
       const u1 = Math.max(0, Math.min(peaks.numFrames, Math.floor(u1Frac * peaks.numFrames)));
@@ -92,8 +94,8 @@ export const DrumWaveformStrip: React.FC<DrumWaveformStripProps> = ({ regionAdap
       ctx.fillStyle = CANVAS_COLORS.structural;
       const channelHeight = height / peaks.numChannels;
       for (let cycle = 0; cycle < CYCLES; cycle++) {
-        const x0 = Math.floor((((cycle * LOOP_PPQN) / WINDOW_PPQN)) * width);
-        const x1 = Math.floor((((cycle + 1) * LOOP_PPQN) / WINDOW_PPQN) * width);
+        const x0 = Math.floor((((cycle * DRUM_CYCLE_PPQN) / WINDOW_PPQN)) * width);
+        const x1 = Math.floor((((cycle + 1) * DRUM_CYCLE_PPQN) / WINDOW_PPQN) * width);
         for (let channel = 0; channel < peaks.numChannels; channel++) {
           PeaksPainter.renderPixelStrips(ctx, peaks, channel, {
             x0,

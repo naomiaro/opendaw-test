@@ -5,7 +5,7 @@ import { EffectFactories, type EffectBox, type Project } from "@opendaw/studio-c
 import { audioEffectsFieldOf, audioUnitAdapterFor } from "@/lib/adapterUtils";
 import { loadAudioFile } from "@/lib/audioUtils";
 import { CANVAS_COLORS } from "@/lib/design/consoleTheme";
-import { LOOP_PPQN, WINDOW_PPQN } from "./laneRenderModel";
+import { DRUM_CYCLE_PPQN, WINDOW_PPQN } from "./laneRenderModel";
 
 const DRUM_FILE = "/audio/BassDrums30.mp3";
 
@@ -49,8 +49,8 @@ export async function buildLiveAutomationContent(
     // keeping loopDuration at the 4-bar loop — the SDK region-loops the audio
     // content internally, repeating the drum loop twice over the full 8 bars.
     // This is independent of the transport Loop switch (timelineBox.loopArea,
-    // set up below), which only controls whether the transport itself wraps
-    // after the first 4 bars.
+    // set up below), which wraps the transport at the END of the window — so a
+    // transport pass is one screenful and contains two drum cycles.
     drumRegionBox = AudioRegionBox.create(boxGraph, UUID.generate(), box => {
       box.regions.refer(tape.trackBox.regions);
       box.file.refer(fileBox);
@@ -58,7 +58,7 @@ export async function buildLiveAutomationContent(
       box.position.setValue(0);
       box.duration.setValue(WINDOW_PPQN);
       box.loopOffset.setValue(0);
-      box.loopDuration.setValue(LOOP_PPQN);
+      box.loopDuration.setValue(DRUM_CYCLE_PPQN);
       box.label.setValue("Drums");
     });
   });
@@ -74,11 +74,13 @@ export async function buildLiveAutomationContent(
   // The LoopArea schema defaults to enabled=true, from=0, to=15360 — so a fresh
   // project already loops over the first four bars. The page's Loop switch starts
   // OFF, so without this the switch would lie and every first take would be split
-  // at an invisible wrap. Pin the range to this page's loop and start it disabled.
+  // at an invisible wrap. Pin the range to the whole window — one transport pass
+  // is exactly one screenful of lane, so the wrap lands on the right-hand edge —
+  // and start it disabled.
   project.editing.modify(() => {
     const { loopArea } = project.timelineBox;
     loopArea.from.setValue(0);
-    loopArea.to.setValue(LOOP_PPQN);
+    loopArea.to.setValue(WINDOW_PPQN);
     loopArea.enabled.setValue(false);
   });
 

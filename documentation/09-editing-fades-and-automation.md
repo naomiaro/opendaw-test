@@ -1351,7 +1351,7 @@ single-pass greedy collinearity filter that drops a point when it sits within ε
 line through its neighbours — so the effect of that pass is visible on real input rather than
 asserted in prose. It runs at every finalize, a loop wrap included, so a looping take visibly
 re-thins its curve each pass. With loop recording on, each pass overdubs its own region and the
-canvas renders every pass's outline stacked across the four bars. Recording itself always leaves
+canvas renders every pass's outline stacked across the window. Recording itself always leaves
 `loopOffset` at 0 (`loopDuration` is set to the region's own duration); the non-zero `loopOffset`
 the lane renderer has to honour comes from `RegionClipResolver`'s start-trim, when a later pass
 grows over an older region and front-trims it.

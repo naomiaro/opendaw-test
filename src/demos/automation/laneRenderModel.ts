@@ -4,7 +4,12 @@ import { BAR, NUM_BARS, TOTAL_PPQN } from "./trackAutomationPresets";
 
 export { BAR, NUM_BARS };
 export const DEMO_BPM = 122;
-export const LOOP_PPQN = 4 * BAR;
+/**
+ * How much of the drum file the audio region replays per pass — the AUDIO
+ * cycle, not the transport loop. The transport loop is the whole window
+ * (`WINDOW_PPQN`), so the drums repeat once inside every transport pass.
+ */
+export const DRUM_CYCLE_PPQN = 4 * BAR;
 /**
  * The arrangement window this page draws — the presets' 8-bar `TOTAL_PPQN`
  * under the demo's own vocabulary (every lane maps ppqn onto `[0, 1]` by it).

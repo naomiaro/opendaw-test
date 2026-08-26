@@ -9,7 +9,7 @@ import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
 import { CANVAS_COLORS, CONSOLE_STYLES } from "@/lib/design/consoleTheme";
-import { DEMO_BPM, HEADER_WIDTH, LOOP_PPQN, NUM_BARS, WINDOW_PPQN, presetGhost } from "./laneRenderModel";
+import { DEMO_BPM, HEADER_WIDTH, NUM_BARS, WINDOW_PPQN, presetGhost } from "./laneRenderModel";
 import type { LanePoint } from "./laneRenderModel";
 import { buildLiveAutomationContent } from "./liveAutomationContent";
 import type { LaneId, LaneSpec, LiveAutomationSetup } from "./liveAutomationContent";
@@ -357,7 +357,9 @@ const App: React.FC = () => {
     project.editing.modify(() => {
       const loopArea = project.timelineBox.loopArea;
       loopArea.from.setValue(0);
-      loopArea.to.setValue(LOOP_PPQN);
+      // The transport loops the WHOLE window: one pass is one screenful of lane,
+      // so the wrap lands on the right-hand edge instead of mid-canvas.
+      loopArea.to.setValue(WINDOW_PPQN);
       loopArea.enabled.setValue(next);
     });
     setLoopEnabled(next);
@@ -424,7 +426,7 @@ const App: React.FC = () => {
                     <Separator orientation="vertical" />
                     <Flex align="center" gap="2">
                       <Switch checked={loopEnabled} onCheckedChange={onLoopToggle} />
-                      <Text size="2" color="gray">Loop 4 bars</Text>
+                      <Text size="2" color="gray">Loop {NUM_BARS} bars</Text>
                     </Flex>
                     <Separator orientation="vertical" />
                     <Text size="1" color="gray" style={{ fontFamily: "var(--mc-mono)" }}>
@@ -435,13 +437,13 @@ const App: React.FC = () => {
                   <Text size="2" color="gray">
                     The drum loop plays across the whole eight-bar window — the region
                     itself region-loops the four-bar audio, so it repeats once at bar 4
-                    with or without the Loop switch. That switch only controls the{" "}
-                    <em>transport</em>: recording starts immediately —{" "}
-                    <code>startRecording(false)</code>, no count-in. With Loop on, each
-                    lane's automation take is finalized at the wrap and the next pass
-                    opens a fresh region, so you can overdub one lane per pass and watch
-                    the outlines stack up
-                    across the first four bars.
+                    (that is the brighter grid line) with or without the Loop switch.
+                    The switch controls the <em>transport</em>, and it wraps the whole
+                    window: one pass is one screenful, about 15.7 s at {DEMO_BPM} BPM,
+                    and the wrap lands on the right-hand edge of every lane. Recording
+                    starts immediately — <code>startRecording(false)</code>, no count-in.
+                    At each wrap every lane's automation take is finalized and a fresh
+                    region opens for the next pass.
                   </Text>
                 </Flex>
               </Card>
@@ -506,7 +508,8 @@ const App: React.FC = () => {
                   <Text size="1" color="gray">
                     Each lane draws the value regions on its parameter's automation
                     track over an eight-bar window; the brighter grid line at bar 4 is
-                    the loop boundary. Fader writes go through{" "}
+                    where the drum audio repeats, not a transport boundary — the loop
+                    wraps at the far edge. Fader writes go through{" "}
                     <code>editing.modify(() =&gt; adapter.setUnitValue(v), false)</code> —
                     the <code>false</code> skips the undo mark so a drag is one gesture,
                     not fifty entries on the undo stack.
