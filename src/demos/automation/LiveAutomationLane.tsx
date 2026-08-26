@@ -185,6 +185,18 @@ export const LiveAutomationLane: React.FC<LiveAutomationLaneProps> = ({
           value={[sliderValue]}
           onValueChange={([v]) => onSliderChange(v)}
           onValueCommit={() => onSliderCommit?.()}
+          // Tie the fader to its lane's curve colour. Radix Themes paints the
+          // filled range from --accent-track (a mix of --accent-8/--accent-9),
+          // so all three are pinned to the exact token rather than approximated
+          // with a named accent. The thumb stays Radix's white puck — it reads
+          // against every lane colour. Verified: the range computes to the exact
+          // spec.color rgb in the live DOM.
+          style={{
+            "--accent-track": spec.color,
+            "--accent-indicator": spec.color,
+            "--accent-8": spec.color,
+            "--accent-9": spec.color,
+          } as React.CSSProperties}
         />
         <Flex justify="between" align="center">
           <Text size="1" color="gray" style={{ fontFamily: "var(--mc-mono)" }}>
