@@ -67,6 +67,12 @@ const GROUPS: Group[] = [
     color: "var(--mc-cyan)",
     demos: [
       {
+        href: "/convolver-demo.html",
+        title: "Convolver",
+        blurb:
+          "Convolution reverb on the WASM engine: six synthesized impulse responses (hall, plate, gated, reverse…), drag-and-drop your own IR, and wet/dry/pre-delay controls with seamless IR swaps.",
+      },
+      {
         href: "/effects-demo.html",
         title: "Effects & Mixer",
         blurb:

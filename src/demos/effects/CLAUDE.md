@@ -138,6 +138,28 @@ All adapters implement `DeviceBoxAdapter` with `.type`, `.labelField`, `.enabled
 - `TidalDeviceBoxAdapter` — 17-entry RateFractions (1/1→1/128), different from Delay
 - `NeuralAmpDeviceBoxAdapter` ("Tone3000") — neural amp modeling with NAM files
 
+### Convolver (SDK 0.0.170+)
+`EffectFactories.Convolver` → `ConvolverDeviceBox`. Parameters: `wet` (DefaultDecibel,
+default −3 dB), `dry` (DefaultDecibel, 0 dB), `preDelay` (0–500 ms) — automatable via
+`ConvolverDeviceBoxAdapter.namedParameter`. `normalize` (default true) and `reverse` are
+plain BooleanFields, deliberately NOT automatable (each toggle retransforms the IR; the
+engine crossfades to the new tail without a dropout).
+- **IR loading**: `box.file` is a `PointerField<Pointers.AudioFile>` → `AudioFileBox`.
+  Headless: register the IR `AudioBuffer` in the `localAudioBuffers` map under the UUID
+  BEFORE creating/referring the `AudioFileBox` (the sample manager fetches by UUID).
+- **Swap semantics** (mirrors studio `SampleSelectStrategy.changePointer`): resolve
+  `boxGraph.findBox<AudioFileBox>(uuid).unwrapOrElse(create)`, then if the pointer has a
+  target and `existingFile.pointerHub.size() === 1`, `refer(newFile)` + `existingFile.delete()`.
+  Remove = `filePointer.defer()` + delete orphan — the DEVICE survives with an empty slot
+  (verified: no IR = dry path only, output tail exactly 0 after stop).
+- Stable UUIDs per gallery IR let re-selection reuse the cached sample loader.
+- `ConvolverDeviceBoxAdapter.MAX_IR_FRAMES` (770048 ≈ 16 s at 48 kHz) — IRs longer than
+  that are truncated by the engine; surface a warning like the studio's device editor.
+- Gain staging: wet −3 dB sums ON TOP of dry 0 dB — full-scale sources clip the master
+  (measured peak 1.11); give source channels ~−6 dB headroom.
+- Verified via output-analyser tap: hall IR tail rings ~2.5 s after Stop, 0.45 s room IR
+  dead by 600 ms — decay envelope tracks the loaded IR.
+
 ### Live Metering (Per-Device Meter Data)
 `project.liveStreamReceiver.subscribeFloats(adapter.address, (data: Float32Array) => …)` streams
 a device's live meter values, keyed by the device `adapter.address`. Returns a `Subscription` —
@@ -181,6 +203,8 @@ Available MIDI effect adapters (process MIDI before instruments):
 
 ## Reference Files
 - Effects demo: `src/demos/effects/effects-demo.tsx`
+- Convolver demo: `src/demos/effects/convolver-demo.tsx` (content: `convolverContent.ts`,
+  IR synthesis: `src/lib/impulseResponses.ts`)
 - Werkstatt demo: `src/demos/effects/werkstatt-demo.tsx`
 - Apparat demo: `src/demos/effects/apparat-demo.tsx`
 - Effect hook: `src/hooks/useDynamicEffect.ts`

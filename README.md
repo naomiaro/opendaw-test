@@ -34,6 +34,7 @@ Visit http://localhost:5173 to explore the demos.
 | **[Time & Pitch](https://opendaw-test.pages.dev/time-pitch-demo.html)** | Switch a region between NoStretch / PitchStretch / TimeStretch / Signalsmith, retune in cents (±1 octave transient-aware, ±2 octaves spectral), and adjust the project reference pitch (A4) with audible auto-engage |
 | **[Mixer Groups](https://opendaw-test.pages.dev/mixer-groups-demo.html)** | Sub-mixing with group buses: Track → Group → Master signal flow |
 | **[Comp Lanes](https://opendaw-test.pages.dev/comp-lanes-demo.html)** | Comp between simulated takes using volume automation crossfades with configurable duration |
+| **[Convolver](https://opendaw-test.pages.dev/convolver-demo.html)** | Convolution reverb on the WASM engine: six synthesized impulse responses (hall, plate, gated, reverse…), drag-and-drop your own IR, and wet/dry/pre-delay controls with seamless IR swaps |
 | **[Werkstatt](https://opendaw-test.pages.dev/werkstatt-demo.html)** | Write custom audio effects in JavaScript with pre-built examples and runnable code |
 | **[Apparat](https://opendaw-test.pages.dev/apparat-demo.html)** | Write custom polyphonic instruments in JavaScript — hot-swap synth engines (sine, supersaw, FM bell, Karplus pluck) over a looping chord pattern and play live |
 | **[WASM Engine](https://opendaw-test.pages.dev/wasm-engine-demo.html)** | A Vaporisateur synth loop playing through the WASM (Rust) audio engine — the only engine these demos run — with an opt-in DSP-load readout |
@@ -144,6 +145,8 @@ src/
     │   └── time-signature-demo.tsx    # Time signature changes
     ├── effects/                       # Effects demos
     │   ├── effects-demo.tsx           # Multi-track mixer with effects
+    │   ├── convolver-demo.tsx         # Convolution reverb with synthesized IR gallery
+    │   ├── convolverContent.ts        # Bus + tracks + Convolver insert + IR swap logic
     │   ├── werkstatt-demo.tsx         # Custom scriptable audio effects
     │   └── apparat-demo.tsx           # Custom scriptable instruments
     ├── warp/                          # Beat-map warping demos
