@@ -260,6 +260,13 @@ just keeps growing until the take closes, so its end is wherever **Stop** happen
 necessarily the boundary again. The newer pass's region clips the older pass where they overlap
 (trimmed, not duplicated).
 
+**Kept-count readout must scope to the current take, not the whole lane.** Naively summing every
+event across all of a lane's regions makes the "kept" side of a `kept/captured` readout read
+backwards on an overdub — measured `15/2` (more kept than captured), because it counted the
+*previous* take's already-simplified events on top of the new one. Fix: snapshot the lane's
+existing region UUIDs when Record starts, then count kept events only from regions created after
+that snapshot — the readout then describes just the take in progress.
+
 **Gesture writes skip the undo mark, and the gesture guard must span the whole drag.**
 `project.editing.modify(() => adapter.setUnitValue(v), false)` — the `false` means a fader drag
 commits as one gesture instead of one undo entry per sample. A `gestureRef`-style guard that a
