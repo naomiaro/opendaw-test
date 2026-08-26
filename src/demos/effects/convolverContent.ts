@@ -16,12 +16,7 @@ import { AudioUnitType, IconSymbol, Colors } from "@opendaw/studio-enums";
 import type { AudioBusBox, AudioUnitBox } from "@opendaw/studio-boxes";
 import { loadAudioFile } from "@/lib/audioUtils";
 import { audioEffectsFieldOf } from "@/lib/adapterUtils";
-import {
-  IMPULSE_RESPONSES,
-  channelsToAudioBuffer,
-  renderOneShot,
-  type ImpulseResponseSpec,
-} from "@/lib/impulseResponses";
+import { IMPULSE_RESPONSES, channelsToAudioBuffer, renderOneShot } from "@/lib/impulseResponses";
 
 // BassDrums30.mp3 measured at ~122 BPM (audio-analyzer rhythm_analysis, two
 // windows: median 122.3, mean 121.5–122.0, stability 0.97+) — keeps the clave
@@ -33,23 +28,27 @@ const ONE_SHOT_BARS = 2;
 /** The IR currently loaded in the convolver, as shown in the UI */
 export interface CurrentIR {
   /** Gallery spec id, or null for a user-dropped file */
-  specId: string | null;
-  name: string;
-  seconds: number;
+  readonly specId: string | null;
+  readonly name: string;
+  readonly seconds: number;
   /** Envelope source for the drop-zone preview */
-  channel: Float32Array;
+  readonly channel: Float32Array;
 }
 
+/** Reports asynchronous IR sample-load failures (the pointer swap itself is synchronous) */
+export type IRLoadErrorHandler = (message: string) => void;
+
 export interface ConvolverDemoSetup {
-  convolverBox: ConvolverDeviceBox;
-  adapter: ConvolverDeviceBoxAdapter;
-  drumUnitBox: AudioUnitBox;
-  oneShotUnitBox: AudioUnitBox;
+  readonly convolverBox: ConvolverDeviceBox;
+  readonly adapter: ConvolverDeviceBoxAdapter;
+  readonly drumUnitBox: AudioUnitBox;
+  readonly oneShotUnitBox: AudioUnitBox;
   /** Rendered gallery IR channel data (by spec id) for the card envelopes */
-  galleryChannels: ReadonlyMap<string, Float32Array>;
-  selectGalleryIR: (spec: ImpulseResponseSpec) => CurrentIR;
-  setCustomIR: (name: string, buffer: AudioBuffer) => CurrentIR;
-  removeIR: () => void;
+  readonly galleryChannels: ReadonlyMap<string, Float32Array>;
+  readonly selectGalleryIR: (specId: string, onLoadError?: IRLoadErrorHandler) => CurrentIR;
+  readonly setCustomIR: (name: string, buffer: AudioBuffer, onLoadError?: IRLoadErrorHandler) => CurrentIR;
+  /** Returns null so all three mutators hand back the new CurrentIR state */
+  readonly removeIR: () => null;
 }
 
 // Stable per-page-load UUIDs so re-selecting a gallery IR reuses its cached
@@ -68,6 +67,8 @@ const galleryUUID = (specId: string): UUID.Bytes => {
  * Swap the convolver's IR pointer with the studio's SampleSelectStrategy
  * semantics: refer the new AudioFileBox, and delete the old one when the
  * convolver was its only pointer. Runs inside its own transaction.
+ * Returns the UUID string of a deleted AudioFileBox (so its decoded buffer
+ * can be dropped from the shared sample map) or null.
  */
 function referImpulseFile(
   project: Project,
@@ -75,8 +76,9 @@ function referImpulseFile(
   uuid: UUID.Bytes,
   name: string,
   durationSeconds: number
-): void {
+): string | null {
   const { boxGraph } = project;
+  let deletedUUID: string | null = null;
   project.editing.modify(() => {
     const newFile = boxGraph
       .findBox<AudioFileBox>(uuid)
@@ -93,10 +95,38 @@ function referImpulseFile(
         if (UUID.equals(newFile.address.uuid, existingFile.address.uuid)) return;
         const mustDelete = existingFile.pointerHub.size() === 1;
         filePointer.refer(newFile);
-        if (mustDelete) existingFile.delete();
+        if (mustDelete) {
+          deletedUUID = UUID.toString(existingFile.address.uuid);
+          existingFile.delete();
+        }
       },
     });
   });
+  return deletedUUID;
+}
+
+/**
+ * Observe the sample loader for a just-referred IR and report a load failure.
+ * Without this a failed fetch shows "Loaded" in the UI while the device plays
+ * dry. Pre-check pattern per repo convention: `subscribe()` fires synchronously
+ * for terminal states, so read `state` first and never terminate inside the
+ * callback before the subscription binding exists.
+ */
+function watchIRLoad(project: Project, uuid: UUID.Bytes, name: string, onLoadError?: IRLoadErrorHandler): void {
+  if (!onLoadError) return;
+  const loader = project.sampleManager.getOrCreate(uuid);
+  const state = loader.state;
+  if (state.type === "error") {
+    onLoadError(`Impulse "${name}" failed to load: ${state.reason}`);
+    return;
+  }
+  if (state.type === "loaded") return;
+  let subscribed = false;
+  const sub = loader.subscribe(next => {
+    if (next.type === "error") onLoadError(`Impulse "${name}" failed to load: ${next.reason}`);
+    if ((next.type === "error" || next.type === "loaded") && subscribed) sub.terminate();
+  });
+  subscribed = true;
 }
 
 /**
@@ -212,24 +242,32 @@ export async function buildConvolverDemoContent(
   const convolver: ConvolverDeviceBox = convolverBox!;
   const adapter = project.boxAdapters.adapterFor(convolver, ConvolverDeviceBoxAdapter);
 
-  const selectGalleryIR = (spec: ImpulseResponseSpec): CurrentIR => {
-    const buffer = galleryBuffers.get(spec.id);
-    if (buffer === undefined) throw new Error(`Unknown IR spec: ${spec.id}`);
-    const uuid = galleryUUID(spec.id);
-    audioBuffers.set(UUID.toString(uuid), buffer);
-    referImpulseFile(project, convolver, uuid, spec.name, buffer.duration);
-    return {
-      specId: spec.id,
-      name: spec.name,
-      seconds: buffer.duration,
-      channel: galleryChannels.get(spec.id)!,
-    };
+  // Drop the decoded buffer of a deleted AudioFileBox from the shared sample
+  // map — repeated custom-IR drops would otherwise pin PCM for the page's
+  // lifetime. Gallery entries are safe to drop too: selection re-sets them.
+  const releaseDeleted = (deletedUUID: string | null): void => {
+    if (deletedUUID !== null) audioBuffers.delete(deletedUUID);
   };
 
-  const setCustomIR = (name: string, buffer: AudioBuffer): CurrentIR => {
+  const selectGalleryIR = (specId: string, onLoadError?: IRLoadErrorHandler): CurrentIR => {
+    const spec = IMPULSE_RESPONSES.find(candidate => candidate.id === specId);
+    const buffer = galleryBuffers.get(specId);
+    const channel = galleryChannels.get(specId);
+    if (spec === undefined || buffer === undefined || channel === undefined) {
+      throw new Error(`Unknown IR spec: ${specId}`);
+    }
+    const uuid = galleryUUID(specId);
+    audioBuffers.set(UUID.toString(uuid), buffer);
+    releaseDeleted(referImpulseFile(project, convolver, uuid, spec.name, buffer.duration));
+    watchIRLoad(project, uuid, spec.name, onLoadError);
+    return { specId, name: spec.name, seconds: buffer.duration, channel };
+  };
+
+  const setCustomIR = (name: string, buffer: AudioBuffer, onLoadError?: IRLoadErrorHandler): CurrentIR => {
     const uuid = UUID.generate();
     audioBuffers.set(UUID.toString(uuid), buffer);
-    referImpulseFile(project, convolver, uuid, name, buffer.duration);
+    releaseDeleted(referImpulseFile(project, convolver, uuid, name, buffer.duration));
+    watchIRLoad(project, uuid, name, onLoadError);
     return {
       specId: null,
       name,
@@ -238,15 +276,21 @@ export async function buildConvolverDemoContent(
     };
   };
 
-  const removeIR = (): void => {
+  const removeIR = (): null => {
+    let deletedUUID: string | null = null;
     project.editing.modify(() => {
       const filePointer = convolver.file;
       filePointer.targetVertex.ifSome(({ box: existingFile }) => {
         const mustDelete = existingFile.pointerHub.size() === 1;
         filePointer.defer();
-        if (mustDelete) existingFile.delete();
+        if (mustDelete) {
+          deletedUUID = UUID.toString(existingFile.address.uuid);
+          existingFile.delete();
+        }
       });
     });
+    releaseDeleted(deletedUUID);
+    return null;
   };
 
   // Loop the timeline over the drum loop
@@ -255,7 +299,8 @@ export async function buildConvolverDemoContent(
   });
 
   onStatus?.("Waiting for samples...");
-  await project.engine.queryLoadingComplete();
+  const loadingComplete = await project.engine.queryLoadingComplete();
+  if (!loadingComplete) throw new Error("Sample loading did not complete cleanly");
   project.engine.setPosition(0);
 
   return {

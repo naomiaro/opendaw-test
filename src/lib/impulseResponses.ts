@@ -7,14 +7,14 @@
  */
 
 export interface ImpulseResponseSpec {
-  /** Stable slug, used for stable AudioFileBox UUIDs and React keys */
-  id: string;
-  name: string;
-  description: string;
+  /** Stable slug — keys the per-page-load AudioFileBox UUID cache and React keys */
+  readonly id: string;
+  readonly name: string;
+  readonly description: string;
   /** Rendered duration in seconds */
-  seconds: number;
+  readonly seconds: number;
   /** Render stereo channel data at the given sample rate */
-  render: (sampleRate: number) => [Float32Array, Float32Array];
+  readonly render: (sampleRate: number) => [Float32Array, Float32Array];
 }
 
 /** Deterministic PRNG (mulberry32) — the gallery must render identically every load */
@@ -61,7 +61,7 @@ function combResonate(samples: Float32Array, periodSamples: number, feedback: nu
   }
 }
 
-/** Short raised-cosine fade-out ending at `endIndex`; hard zeros after it */
+/** Raised-cosine fade-out starting at `cutIndex`, lasting `fadeSamples` samples; hard zeros after the fade */
 function gateAt(samples: Float32Array, cutIndex: number, fadeSamples: number): void {
   const fadeEnd = Math.min(samples.length, cutIndex + fadeSamples);
   for (let i = cutIndex; i < fadeEnd; i++) {
@@ -214,10 +214,12 @@ export const IMPULSE_RESPONSES: ReadonlyArray<ImpulseResponseSpec> = [
         decayingNoise(length, sampleRate, 0.12, 0xc0143),
         decayingNoise(length, sampleRate, 0.12, 0xc0144),
       ];
-      // Slightly detuned periods per side keep the ring wide instead of mono
+      // Slightly detuned periods per side keep the ring wide instead of mono.
+      // Feedback 0.987 ≈ −25 dB/s at 220 Hz — the ring stays audible across the
+      // full 2.4 s (0.93 decayed ~−140 dB/s, leaving 80% of the IR digital silence).
       const periods = [Math.round(sampleRate / 220), Math.round(sampleRate / 222)];
       channels.forEach((channel, index) => {
-        combResonate(channel, periods[index], 0.93);
+        combResonate(channel, periods[index], 0.987);
         fadeOutTail(channel, Math.round(0.2 * sampleRate));
       });
       return normalizeStereo(channels);

@@ -22,12 +22,14 @@ describe("IMPULSE_RESPONSES gallery", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it.each(IMPULSE_RESPONSES.map(spec => [spec.id, spec] as const))(
-    "%s renders stereo channels of the declared duration",
-    (_id, spec) => {
-      const channels = spec.render(SAMPLE_RATE);
+  // Production renders at audioContext.sampleRate — 44100 on most hardware —
+  // so the structural contract must hold beyond the 48k the rest of the suite pins.
+  it.each(IMPULSE_RESPONSES.flatMap(spec => [44100, 48000].map(rate => [spec.id, rate, spec] as const)))(
+    "%s renders stereo channels of the declared duration at %d Hz",
+    (_id, rate, spec) => {
+      const channels = spec.render(rate);
       expect(channels.length).toBe(2);
-      const expectedLength = Math.round(spec.seconds * SAMPLE_RATE);
+      const expectedLength = Math.round(spec.seconds * rate);
       expect(channels[0].length).toBe(expectedLength);
       expect(channels[1].length).toBe(expectedLength);
     }
@@ -44,12 +46,13 @@ describe("IMPULSE_RESPONSES gallery", () => {
   );
 
   it.each(IMPULSE_RESPONSES.map(spec => [spec.id, spec] as const))(
-    "%s is peak-normalized with headroom",
+    "%s is jointly peak-normalized to 0.9",
     (_id, spec) => {
       const channels = spec.render(SAMPLE_RATE);
+      // Exactly 0.9 on the louder channel guards against a silent switch to
+      // per-channel normalization, which would destroy inter-channel balance
       const overall = Math.max(peak(channels[0]), peak(channels[1]));
-      expect(overall).toBeLessThanOrEqual(1);
-      expect(overall).toBeGreaterThan(0.5);
+      expect(overall).toBeCloseTo(0.9, 3);
     }
   );
 
@@ -57,11 +60,25 @@ describe("IMPULSE_RESPONSES gallery", () => {
     "%s decorrelates the stereo channels",
     (_id, spec) => {
       const [left, right] = spec.render(SAMPLE_RATE);
-      let differs = false;
+      // Normalized cross-correlation near zero — sample-inequality alone would
+      // pass a 1.000001× copy that collapses the stereo image
+      let dot = 0, energyL = 0, energyR = 0;
       for (let i = 0; i < left.length; i++) {
-        if (left[i] !== right[i]) { differs = true; break; }
+        dot += left[i] * right[i];
+        energyL += left[i] * left[i];
+        energyR += right[i] * right[i];
       }
-      expect(differs).toBe(true);
+      const correlation = dot / Math.sqrt(energyL * energyR);
+      expect(Math.abs(correlation)).toBeLessThan(0.1);
+    }
+  );
+
+  it.each(IMPULSE_RESPONSES.map(spec => [spec.id, spec] as const))(
+    "%s ends click-free (terminal fade reaches silence)",
+    (_id, spec) => {
+      const [left, right] = spec.render(SAMPLE_RATE);
+      expect(Math.abs(left[left.length - 1])).toBeLessThan(1e-3);
+      expect(Math.abs(right[right.length - 1])).toBeLessThan(1e-3);
     }
   );
 
@@ -82,8 +99,8 @@ describe("IMPULSE_RESPONSES gallery", () => {
     const [left] = spec.render(SAMPLE_RATE);
     const tenth = Math.floor(left.length / 10);
     const head = rms(left, 0, tenth);
-    // The very tail holds the swell peak; compare the last tenth before the
-    // terminating fade (the fade keeps the IR from clicking at its end).
+    // Compare the second-to-last tenth, safely clear of the 40 ms terminating
+    // fade (the fade keeps the IR from clicking at its end).
     const tail = rms(left, left.length - 2 * tenth, left.length - tenth);
     expect(tail).toBeGreaterThan(head * 2);
   });
@@ -96,6 +113,24 @@ describe("IMPULSE_RESPONSES gallery", () => {
       expect(left[i]).toBe(0);
       expect(right[i]).toBe(0);
     }
+  });
+
+  it("gated is still loud at the cut — it chops a ringing decay, not silence", () => {
+    const spec = IMPULSE_RESPONSES.find(s => s.id === "gated")!;
+    const [left] = spec.render(SAMPLE_RATE);
+    const tenth = Math.floor(left.length / 10);
+    const head = rms(left, 0, tenth);
+    const cutIndex = Math.round(0.5 * SAMPLE_RATE);
+    const beforeCut = rms(left, cutIndex - Math.round(0.05 * SAMPLE_RATE), cutIndex);
+    expect(beforeCut).toBeGreaterThan(head * 0.05);
+  });
+
+  it("comb rings audibly at the buffer midpoint — the feedback sustains past the noise burst", () => {
+    const spec = IMPULSE_RESPONSES.find(s => s.id === "comb")!;
+    const [left] = spec.render(SAMPLE_RATE);
+    const mid = Math.floor(left.length / 2);
+    // Without combResonate the 0.12 s noise burst is ~-300 dB here
+    expect(rms(left, mid, mid + Math.floor(left.length / 10))).toBeGreaterThan(1e-3);
   });
 });
 

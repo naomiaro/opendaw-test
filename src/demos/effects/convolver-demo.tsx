@@ -20,9 +20,14 @@ import {
 } from "./convolverContent";
 import "@radix-ui/themes/styles.css";
 import {
-  Theme, Container, Flex, Grid, Text, Card, Button, Badge, Switch, Slider, Separator,
+  Theme, Container, Flex, Grid, Text, Card, Button, Badge, Switch, Slider, Separator, Callout,
 } from "@radix-ui/themes";
 import { CONSOLE_STYLES, CANVAS_COLORS } from "@/lib/design/consoleTheme";
+
+const CONVOLVER_STYLES = `
+.cv-ir-card:focus-visible { outline: 2px solid var(--mc-amber); outline-offset: 2px; }
+.cv-dropzone:focus-visible { outline: 2px solid var(--mc-amber); outline-offset: 2px; }
+`;
 
 // ---------------------------------------------------------------------------
 // Static IR envelope: min/max per pixel column of the rendered channel data.
@@ -127,7 +132,9 @@ const FieldSwitch: React.FC<{
   label: string;
   invert?: boolean;
 }> = ({ project, field, label, invert = false }) => {
-  const [checked, setChecked] = useState(false);
+  // Initialize from the field — a false default paints every switch "off" for
+  // one frame before the catch-up subscription runs after first paint
+  const [checked, setChecked] = useState(() => (invert ? !field.getValue() : field.getValue()));
 
   useEffect(() => {
     const sub = field.catchupAndSubscribe(obs => setChecked(invert ? !obs.getValue() : obs.getValue()));
@@ -159,9 +166,11 @@ const App: React.FC = () => {
   const [dropActive, setDropActive] = useState(false);
   const [dropError, setDropError] = useState<string | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let disposed = false;
+    let bootProject: Project | null = null;
     (async () => {
       try {
         const localAudioBuffers = new Map<string, AudioBuffer>();
@@ -170,15 +179,19 @@ const App: React.FC = () => {
           bpm: DEMO_BPM,
           onStatusUpdate: setStatus,
         });
+        bootProject = project;
         if (disposed) { project.terminate(); return; }
         audioCtxRef.current = audioContext;
         const built = await buildConvolverDemoContent(project, audioContext, localAudioBuffers, setStatus);
         if (disposed) { project.terminate(); return; }
-        setCurrentIR(built.selectGalleryIR(IMPULSE_RESPONSES[0]));
+        setCurrentIR(built.selectGalleryIR(IMPULSE_RESPONSES[0].id, setDropError));
         setProject(project);
         setSetup(built);
         setStatus("Ready");
       } catch (err) {
+        // Without the terminate, a failed content build leaves the engine
+        // worklet running behind the error card
+        bootProject?.terminate();
         console.error("[convolver-demo] init failed: " + String(err));
         setStatus(`Init error: ${String(err)}`);
         setInitError(true);
@@ -201,44 +214,77 @@ const App: React.FC = () => {
 
   const onSelectIR = useCallback((specId: string) => {
     if (!setup) return;
-    const spec = IMPULSE_RESPONSES.find(s => s.id === specId);
-    if (!spec) return;
     setDropError(null);
-    setCurrentIR(setup.selectGalleryIR(spec));
+    try {
+      setCurrentIR(setup.selectGalleryIR(specId, setDropError));
+    } catch (err) {
+      console.error("[convolver-demo] could not select IR: " + String(err));
+      setDropError(`Could not load that impulse response: ${String(err)}`);
+    }
   }, [setup]);
 
   const onRemoveIR = useCallback(() => {
     if (!setup) return;
     setDropError(null);
-    setup.removeIR();
-    setCurrentIR(null);
-  }, [setup]);
-
-  const onDrop = useCallback(async (event: React.DragEvent) => {
-    event.preventDefault();
-    setDropActive(false);
-    const audioContext = audioCtxRef.current;
-    if (!setup || !audioContext) return;
-    const file = event.dataTransfer.files.item(0);
-    if (!file) return;
     try {
-      const arrayBuffer = await file.arrayBuffer();
-      const buffer = await audioContext.decodeAudioData(arrayBuffer);
-      setDropError(null);
-      setCurrentIR(setup.setCustomIR(file.name, buffer));
+      setCurrentIR(setup.removeIR());
     } catch (err) {
-      console.warn("[convolver-demo] could not decode dropped file: " + String(err));
-      setDropError(`Could not decode "${file.name}" — drop a wav/mp3/m4a audio file.`);
+      console.error("[convolver-demo] could not remove IR: " + String(err));
+      setDropError(`Could not remove the impulse response: ${String(err)}`);
     }
   }, [setup]);
 
-  const sampleRate = audioCtxRef.current?.sampleRate ?? 48000;
-  const maxSeconds = ConvolverDeviceBoxAdapter.MAX_IR_FRAMES / sampleRate;
-  const truncated = currentIR !== null && currentIR.seconds > maxSeconds;
+  const loadCustomIR = useCallback(async (file: File) => {
+    const audioContext = audioCtxRef.current;
+    if (!setup || !audioContext) return;
+    let buffer: AudioBuffer;
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      buffer = await audioContext.decodeAudioData(arrayBuffer);
+    } catch (err) {
+      console.warn("[convolver-demo] could not decode dropped file: " + String(err));
+      setDropError(`Could not decode "${file.name}" — drop a wav/mp3/m4a audio file.`);
+      return;
+    }
+    // Separate try: a box-graph failure here is not the user's file's fault
+    try {
+      setDropError(null);
+      setCurrentIR(setup.setCustomIR(file.name, buffer, setDropError));
+    } catch (err) {
+      console.error("[convolver-demo] could not load impulse response into the engine: " + String(err));
+      setDropError(`Failed to load "${file.name}" into the engine: ${String(err)}`);
+    }
+  }, [setup]);
+
+  const onDrop = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    setDropActive(false);
+    const file = event.dataTransfer.files.item(0);
+    if (!file) {
+      setDropError("Drop an audio file (not a link, image or text selection).");
+      return;
+    }
+    void loadCustomIR(file);
+  }, [loadCustomIR]);
+
+  const onBrowse = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.item(0);
+    event.target.value = "";
+    if (file) void loadCustomIR(file);
+  }, [loadCustomIR]);
+
+  // The ref is always set before currentIR can be non-null (init order) — no
+  // fallback rate, so a wrong threshold can't silently mask an ordering bug
+  const sampleRate = audioCtxRef.current?.sampleRate;
+  const maxSeconds = sampleRate !== undefined
+    ? ConvolverDeviceBoxAdapter.MAX_IR_FRAMES / sampleRate
+    : null;
+  const truncated = currentIR !== null && maxSeconds !== null && currentIR.seconds > maxSeconds;
 
   return (
     <Theme appearance="dark" accentColor="amber" style={{ background: "var(--mc-bg)" }}>
       <style>{CONSOLE_STYLES}</style>
+      <style>{CONVOLVER_STYLES}</style>
       <Container size="4" style={{ padding: "2rem", minHeight: "100vh" }}>
         <GitHubCorner />
         <BackLink />
@@ -282,7 +328,18 @@ const App: React.FC = () => {
                   return (
                     <Card
                       key={spec.id}
+                      className="cv-ir-card"
+                      role="button"
+                      tabIndex={0}
+                      aria-pressed={selected}
+                      aria-label={`Load impulse response: ${spec.name}`}
                       onClick={() => onSelectIR(spec.id)}
+                      onKeyDown={event => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          onSelectIR(spec.id);
+                        }
+                      }}
                       style={{
                         cursor: "pointer",
                         outline: selected ? "2px solid var(--mc-amber)" : undefined,
@@ -307,10 +364,26 @@ const App: React.FC = () => {
 
               <Grid columns={{ initial: "1", sm: "2" }} gap="4">
                 <Card
+                  className="cv-dropzone"
+                  role="button"
+                  tabIndex={0}
+                  aria-label="Load a custom impulse response — drop an audio file or press Enter to browse"
                   onDragOver={event => { event.preventDefault(); setDropActive(true); }}
                   onDragLeave={() => setDropActive(false)}
                   onDrop={onDrop}
-                  style={{ outline: dropActive ? "2px dashed var(--mc-amber)" : undefined }}
+                  onClick={event => {
+                    // The Remove button inside this card must not open the picker
+                    if ((event.target as HTMLElement).closest("button") === null) {
+                      fileInputRef.current?.click();
+                    }
+                  }}
+                  onKeyDown={event => {
+                    if ((event.key === "Enter" || event.key === " ") && event.target === event.currentTarget) {
+                      event.preventDefault();
+                      fileInputRef.current?.click();
+                    }
+                  }}
+                  style={{ cursor: "pointer", outline: dropActive ? "2px dashed var(--mc-amber)" : undefined }}
                 >
                   <Flex direction="column" gap="2">
                     <Flex align="center" justify="between">
@@ -325,7 +398,7 @@ const App: React.FC = () => {
                         <Flex justify="between">
                           <Text size="1" color="gray">{currentIR.name}</Text>
                           <Text size="1" color={truncated ? "red" : "gray"}>
-                            {truncated
+                            {truncated && maxSeconds !== null
                               ? `Truncated (max ${maxSeconds.toFixed(1)} s)`
                               : `${currentIR.seconds.toFixed(2)} s`}
                           </Text>
@@ -339,11 +412,23 @@ const App: React.FC = () => {
                         </Text>
                       </Flex>
                     )}
-                    {dropError && <Text size="1" color="red">{dropError}</Text>}
+                    {dropError && (
+                      <Callout.Root color="red" role="alert" size="1">
+                        <Callout.Text>{dropError}</Callout.Text>
+                      </Callout.Root>
+                    )}
                     <Text size="1" color="gray">
-                      Drop any audio file to use it as the impulse response — try a clap
-                      recording, a synth stab, or a whole drum break.
+                      Drop any audio file here (or click to browse) to use it as the
+                      impulse response — try a clap recording, a synth stab, or a whole
+                      drum break.
                     </Text>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="audio/*,.wav,.mp3,.m4a,.ogg,.flac,.aif,.aiff"
+                      style={{ display: "none" }}
+                      onChange={onBrowse}
+                    />
                   </Flex>
                 </Card>
 
