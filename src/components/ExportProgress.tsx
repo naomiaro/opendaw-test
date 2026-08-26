@@ -1,4 +1,3 @@
-import React from "react";
 import { Flex, Text, Progress, Button, Separator } from "@radix-ui/themes";
 
 export interface ExportProgressProps {

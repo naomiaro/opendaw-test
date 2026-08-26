@@ -6,6 +6,8 @@ import { InfoCircledIcon } from "@radix-ui/react-icons";
 import { Project, EffectFactories } from "@opendaw/studio-core";
 import { AudioUnitBox, ReverbDeviceBox, TrackBox, ValueRegionBox } from "@opendaw/studio-boxes";
 import type { ppqn } from "@opendaw/lib-dsp";
+import type { Field } from "@opendaw/lib-box";
+import type { Pointers } from "@opendaw/studio-enums";
 import { UUID } from "@opendaw/lib-std";
 import { ValueRegionBoxAdapter, TrackBoxAdapter } from "@opendaw/studio-adapters";
 import { getAllRegions, audioEffectsFieldOf } from "@/lib/adapterUtils";
@@ -365,8 +367,12 @@ const App: React.FC = () => {
         }
         reverbDeviceBoxRef.current = reverbBox;
 
-        // Create 3 automation tracks: volume, pan, reverb wet
-        const automationTargets = [audioUnitBox.volume, audioUnitBox.panning, reverbBox.wet];
+        // Create 3 automation tracks: volume, pan, reverb wet. The fields' pointer unions
+        // include MIDIControl/Modulation, so narrow to the Automation-typed Field the API takes
+        // (same cast the SDK uses internally, e.g. AutomatableParameterFieldAdapter.modulationTarget).
+        const automationTargets = [
+          audioUnitBox.volume, audioUnitBox.panning, reverbBox.wet,
+        ] as unknown as Field<Pointers.Automation>[];
 
         const trackBoxes: TrackBox[] = [];
         for (let i = 0; i < automationTargets.length; i++) {
@@ -494,7 +500,8 @@ const App: React.FC = () => {
       // Ensure AudioContext is running (with 5s timeout for iOS)
       if (ac.state !== "running") {
         await ac.resume();
-        if (ac.state !== "running") {
+        // fresh read — resume() may have changed the state TS narrowed above
+        if ((ac.state as AudioContextState) !== "running") {
           await Promise.race([
             new Promise<void>(resolve => {
               const handler = () => {

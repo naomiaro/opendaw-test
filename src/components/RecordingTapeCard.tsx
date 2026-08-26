@@ -88,7 +88,7 @@ export const RecordingTapeCard: React.FC<RecordingTapeCardProps> = ({
 
   // Probe device channel capabilities when device changes
   useEffect(() => {
-    if (!selectedDeviceId) return;
+    if (!selectedDeviceId) return undefined;
     let cancelled = false;
     probeDeviceChannels(selectedDeviceId).then(channels => {
       if (cancelled) return;
@@ -118,7 +118,8 @@ export const RecordingTapeCard: React.FC<RecordingTapeCardProps> = ({
         return;
       }
       const track = streamOpt.unwrap().getAudioTracks().at(0);
-      const reported = track?.getSettings().latency;
+      // `latency` is a Chrome-only MediaTrackSettings extension, absent from the DOM lib types
+      const reported = (track?.getSettings() as (MediaTrackSettings & { latency?: number }) | undefined)?.latency;
       const valid = typeof reported === "number" && Number.isFinite(reported) && reported >= 0;
       setReportedTrackLatencyMs(valid ? reported * 1000 : null);
     });

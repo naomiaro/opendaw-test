@@ -67,7 +67,7 @@ const TakeWaveformCanvas: React.FC<{
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas) return undefined;
 
     const painter = new CanvasPainter(canvas, (_, context) => {
       const w = canvas.clientWidth;

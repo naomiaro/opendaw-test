@@ -79,7 +79,7 @@ export function ClipGrid({ project, tracks, clipStates, onLaunch }: {
   // One frame loop drives every playing cell's --progress (direct DOM, no setState).
   useEffect(() => {
     const grid = gridRef.current;
-    if (grid === null) return;
+    if (grid === null) return undefined;
     const clipByUuid = new Map<string, JamClip>(
       tracks.flatMap(t => t.clips.map(c => [c.uuidString, c] as const)),
     );
@@ -110,7 +110,7 @@ export function ClipGrid({ project, tracks, clipStates, onLaunch }: {
     <div className="clip-grid" ref={gridRef}>
       <div className="clip-grid__header">
         <span className="clip-grid__corner" />
-        {CLIP_COLUMNS.map((bars, column) => (
+        {CLIP_COLUMNS.map((_bars, column) => (
           <button
             key={column}
             type="button"

@@ -174,7 +174,7 @@ const App: React.FC = () => {
 
   // Loop wraparound detection (separate from usePlaybackPosition)
   useEffect(() => {
-    if (!project || !isPlaying) return;
+    if (!project || !isPlaying) return undefined;
 
     const terminable = AnimationFrame.add(() => {
       const position = project.engine.position.getValue();

@@ -48,7 +48,7 @@ const App: React.FC = () => {
 
   // Reflect transport state.
   useEffect(() => {
-    if (!project) { return; }
+    if (!project) { return undefined; }
     const sub = project.engine.isPlaying.catchupAndSubscribe((obs) => setIsPlaying(obs.getValue()));
     return () => sub.terminate();
   }, [project]);

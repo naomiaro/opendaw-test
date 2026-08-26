@@ -200,9 +200,9 @@ const App: React.FC = () => {
   // queryLoadingComplete (peaks compute in a worker). Same pattern as
   // useWaveformRendering and drum-scheduling-demo.
   useEffect(() => {
-    if (!project) return;
+    if (!project) return undefined;
     const fileUuid = fileUuidRef.current;
-    if (!fileUuid) return;
+    if (!fileUuid) return undefined;
 
     const sampleLoader = project.sampleManager.getOrCreate(fileUuid);
 
@@ -211,7 +211,7 @@ const App: React.FC = () => {
     if (peaksOpt.nonEmpty()) {
       peaksRef.current = peaksOpt.unwrap();
       setPeaksReady(true);
-      return;
+      return undefined;
     }
 
     const sub = sampleLoader.subscribe((state: any) => {
@@ -233,7 +233,7 @@ const App: React.FC = () => {
   }, [project]);
 
   useEffect(() => {
-    if (!project) return;
+    if (!project) return undefined;
     const sub = project.engine.isPlaying.catchupAndSubscribe((obs) => {
       setIsPlaying(obs.getValue());
     });
@@ -291,7 +291,7 @@ const App: React.FC = () => {
   // Writing directly to div.style bypasses React re-renders — a 60Hz setState
   // would re-trigger the expensive canvas-repaint render effect.
   useEffect(() => {
-    if (!project) return;
+    if (!project) return undefined;
     const tempoMap = project.tempoMap;
     const sub = AnimationFrame.add(() => {
       const playheadEl = playheadRef.current;

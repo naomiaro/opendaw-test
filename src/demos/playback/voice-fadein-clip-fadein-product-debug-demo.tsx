@@ -374,7 +374,7 @@ const App: React.FC = () => {
   // Live playhead readout: convert engine PPQN to seconds via the timeline's
   // BPM each frame. Helps the listener time the dip relative to the seam.
   useEffect(() => {
-    if (!project) return;
+    if (!project) return undefined;
     const sub = AnimationFrame.add(() => {
       const bpm = project.timelineBox.bpm.getValue();
       const positionPpqn = project.engine.position.getValue();

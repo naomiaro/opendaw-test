@@ -1,7 +1,7 @@
 // Arrangement timeline: bar/section grid, one lane per track, region blocks
 // with tiled waveforms, and a playhead overlay. Canvas + overlay only —
 // transport controls live in the page (Task 8).
-import React, { useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { Project } from "@opendaw/studio-core";
 import type { AudioRegionBoxAdapter } from "@opendaw/studio-adapters";
 import { AnimationFrame } from "@opendaw/lib-dom";
@@ -54,7 +54,7 @@ export function ArrangementPanel({ project, tracks }: {
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (canvas === null) return;
+    if (canvas === null) return undefined;
 
     // Total visible ppqn: at least 4 sections, growing to cover every region's end.
     const visiblePpqn = (): number => {

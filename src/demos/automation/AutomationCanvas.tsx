@@ -168,7 +168,7 @@ export const AutomationCanvas: React.FC<AutomationCanvasProps> = ({
   // Playhead overlay — AnimationFrame-driven so the envelope canvas never repaints per frame
   useEffect(() => {
     const canvas = playheadCanvasRef.current;
-    if (!canvas) return;
+    if (!canvas) return undefined;
 
     const af = AnimationFrame.add(() => {
       const ctx = canvas.getContext("2d");
