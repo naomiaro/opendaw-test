@@ -143,6 +143,7 @@ type TrimStripData = {
   after: RegionSnap;
   heldValue: number | null;
   axisMax: number;
+  trimmed: boolean;
 };
 
 /** Derive the two canvases' draw props from an already-measured run — no new measurements. */
@@ -179,7 +180,7 @@ function buildCanvasData(evidence: Evidence): { simplifier: SimplifierCanvasData
 
   return {
     simplifier: { rawCurve, keptCurve, deviation },
-    trim: { before, after, heldValue, axisMax },
+    trim: { before, after, heldValue, axisMax, trimmed: evidence.trimmed },
   };
 }
 
@@ -615,7 +616,20 @@ const App: React.FC = () => {
                           />
                         </Flex>
                       </Card>
-                    ) : null}
+                    ) : (
+                      <Card>
+                        <Flex direction="column" gap="2">
+                          <Text size="2" weight="bold">
+                            A — simplifier collapse (step {scenario.index})
+                          </Text>
+                          <Text size="2" color="amber">
+                            No simplifier evidence captured for this run — no gesture region on
+                            this lane ever had its event count drop, so there is nothing to
+                            compare raw vs. kept.
+                          </Text>
+                        </Flex>
+                      </Card>
+                    )}
                     {canvasData.trim ? (
                       <Card>
                         <Flex direction="column" gap="2">
@@ -633,10 +647,24 @@ const App: React.FC = () => {
                             after={canvasData.trim.after}
                             heldValue={canvasData.trim.heldValue}
                             axisMax={canvasData.trim.axisMax}
+                            trimmed={canvasData.trim.trimmed}
                           />
                         </Flex>
                       </Card>
-                    ) : null}
+                    ) : (
+                      <Card>
+                        <Flex direction="column" gap="2">
+                          <Text size="2" weight="bold">
+                            B — latch overdub front-trim (step {scenario.index})
+                          </Text>
+                          <Text size="2" color="amber">
+                            No trim evidence captured for this run — the finalize-time
+                            thinning pass never dropped an event on this lane, so there is
+                            no gesture-region history to compare before vs. after.
+                          </Text>
+                        </Flex>
+                      </Card>
+                    )}
                   </>
                 );
               })() : null}
