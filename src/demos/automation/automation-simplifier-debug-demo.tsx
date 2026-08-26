@@ -10,6 +10,7 @@ import { BackLink } from "@/components/BackLink";
 import { DebugLinkBar } from "@/components/DebugLinkBar";
 import { TestStep, type TestStepRow } from "@/components/TestStep";
 import { audioUnitAdapterFor } from "@/lib/adapterUtils";
+import { SimplifierCanvas, LatchTrimStrip, type CurvePoint, type DeviationMarker } from "@/demos/automation/SimplifierDebugCanvases";
 import "@radix-ui/themes/styles.css";
 import {
   Theme, Container, Heading, Text, Flex, Card, Callout, Badge, Button, Code,
@@ -78,11 +79,12 @@ type RegionHistory = {
 
 type Evidence = {
   verdict: Verdict;
-  writes: number;
+  writes: Array<[number, number]>; // [absolute ppqn, unitValue] — every write the page injected
   arcRegion: RegionHistory | null;
   rawN: number;
   keptN: number;
   simplifierDeviation: number;
+  deviationMarker: { position: number; rawValue: number; keptValue: number } | null;
   endToEndDeviation: number;
   uncoveredWrites: number;
   finalRegions: RegionSnap[];
@@ -130,6 +132,57 @@ function geometry(snap: RegionSnap): string {
   return `pos ${snap.position} · dur ${snap.duration} · loopOffset ${snap.loopOffset} · loopDuration ${snap.loopDuration}`;
 }
 
+type SimplifierCanvasData = {
+  rawCurve: CurvePoint[];
+  keptCurve: CurvePoint[];
+  deviation: DeviationMarker | null;
+};
+
+type TrimStripData = {
+  before: RegionSnap;
+  after: RegionSnap;
+  heldValue: number | null;
+  axisMax: number;
+};
+
+/** Derive the two canvases' draw props from an already-measured run — no new measurements. */
+function buildCanvasData(evidence: Evidence): { simplifier: SimplifierCanvasData | null; trim: TrimStripData | null } {
+  const arc = evidence.arcRegion;
+  if (arc === null || arc.afterDrop === null) return { simplifier: null, trim: null };
+
+  const rawCurve: CurvePoint[] = evidence.writes.map(([position, value]) => ({ x: position, y: value }));
+  // Region-local → absolute: global = position - loopOffset + local (afterDrop precedes any front-trim).
+  const regionBase = arc.afterDrop.position - arc.afterDrop.loopOffset;
+  const keptCurve: CurvePoint[] = [...arc.afterDrop.events]
+    .sort((a, b) => a[0] - b[0])
+    .map(([position, value]) => ({ x: regionBase + position, y: value }));
+
+  const deviation: DeviationMarker | null =
+    evidence.deviationMarker === null
+      ? null
+      : {
+          x: evidence.deviationMarker.position,
+          rawY: evidence.deviationMarker.rawValue,
+          keptY: evidence.deviationMarker.keptValue,
+          label: `${fmt(evidence.simplifierDeviation)} (${(evidence.simplifierDeviation / EPSILON).toFixed(1)}× ε)`,
+        };
+
+  const before = arc.afterDrop;
+  const after = arc.last;
+  // The sibling region latch opened after the wrap — its own held value is the most direct
+  // reading of what the eaten range now plays; fall back to this region's own tail otherwise.
+  const holdRegion = evidence.finalRegions.find(r => r.key !== after.key) ?? null;
+  const heldSource = holdRegion !== null && holdRegion.events.length > 0 ? holdRegion : after;
+  const sortedHeld = [...heldSource.events].sort((a, b) => a[0] - b[0]);
+  const heldValue = sortedHeld.length > 0 ? sortedHeld[sortedHeld.length - 1][1] : null;
+  const axisMax = Math.max(before.position + before.duration, after.position + after.duration, 1);
+
+  return {
+    simplifier: { rawCurve, keptCurve, deviation },
+    trim: { before, after, heldValue, axisMax },
+  };
+}
+
 const SCENARIOS = [
   {
     index: 1,
@@ -162,6 +215,7 @@ const App: React.FC = () => {
   const [running, setRunning] = useState<number | null>(null);
   const [gotByStep, setGotByStep] = useState<Record<number, TestStepRow[]>>({});
   const [dumpByStep, setDumpByStep] = useState<Record<number, string>>({});
+  const [evidenceByStep, setEvidenceByStep] = useState<Record<number, Evidence>>({});
   const audioCtxRef = useRef<AudioContext | null>(null);
   const laneRef = useRef<AutomatableParameterFieldAdapter<number> | null>(null);
 
@@ -314,16 +368,23 @@ const App: React.FC = () => {
       // (A) How far the finalize-time thinning moved the curve, in the region's
       // own local coordinates — independent of any later trimming.
       let simplifierDeviation = Number.NaN;
+      let deviationMarker: Evidence["deviationMarker"] = null;
       let rawN = 0;
       let keptN = 0;
       if (arcRegion?.rawBeforeDrop != null && arcRegion.afterDrop != null) {
         rawN = arcRegion.rawBeforeDrop.events.length;
         keptN = arcRegion.afterDrop.events.length;
         simplifierDeviation = 0;
+        // Convert region-local positions to absolute ppqn so the marker lines
+        // up with `writes` (already absolute) on the simplifier canvas.
+        const regionBase = arcRegion.afterDrop.position - arcRegion.afterDrop.loopOffset;
         for (const [position, value] of arcRegion.rawBeforeDrop.events) {
           const kept = evalLocal(arcRegion.afterDrop.events, position);
           const deviation = Math.abs(value - kept);
-          if (deviation > simplifierDeviation) simplifierDeviation = deviation;
+          if (deviation > simplifierDeviation) {
+            simplifierDeviation = deviation;
+            deviationMarker = { position: regionBase + position, rawValue: value, keptValue: kept };
+          }
         }
       }
 
@@ -366,8 +427,8 @@ const App: React.FC = () => {
               : "Neither mechanism fired in this run.";
 
       return {
-        verdict, writes: writes.length, arcRegion, rawN, keptN,
-        simplifierDeviation, endToEndDeviation, uncoveredWrites, finalRegions, trimmed, note,
+        verdict, writes, arcRegion, rawN, keptN,
+        simplifierDeviation, deviationMarker, endToEndDeviation, uncoveredWrites, finalRegions, trimmed, note,
       };
     },
     [project],
@@ -378,19 +439,22 @@ const App: React.FC = () => {
       if (project === null || running !== null) return;
       setRunning(index);
       setGotByStep(prev => { const next = { ...prev }; delete next[index]; return next; });
+      setEvidenceByStep(prev => { const next = { ...prev }; delete next[index]; return next; });
       const stages: string[] = [];
       const stage = (s: string) => { stages.push(s); };
       const startedAt = performance.now();
       void (async () => {
         let rows: TestStepRow[];
         let dump = "";
+        let evidenceResult: Evidence | null = null;
         try {
           const evidence = await raceHang(runScenario(shape, stage), () => stages[stages.length - 1] ?? "(none)");
+          evidenceResult = evidence;
           const arc = evidence.arcRegion;
           rows = [
             { label: "outcome", value: "OK" as Outcome },
             { label: "verdict", value: `${evidence.verdict} — ${evidence.note}` },
-            { label: "writes injected", value: String(evidence.writes) },
+            { label: "writes injected", value: String(evidence.writes.length) },
             {
               label: "events raw → kept",
               value: `${evidence.rawN} → ${evidence.keptN}` +
@@ -406,7 +470,7 @@ const App: React.FC = () => {
             { label: "max deviation (end to end)", value: `${fmt(evidence.endToEndDeviation)} unitValue` },
             { label: "gesture region at finalize", value: arc?.afterDrop ? geometry(arc.afterDrop) : "—" },
             { label: "gesture region at stop", value: arc ? geometry(arc.last) : "—" },
-            { label: "writes no longer covered", value: `${evidence.uncoveredWrites} / ${evidence.writes}` },
+            { label: "writes no longer covered", value: `${evidence.uncoveredWrites} / ${evidence.writes.length}` },
             { label: "stages", value: stages.join(" → ") },
             { label: "elapsed", value: `${((performance.now() - startedAt) / 1000).toFixed(1)} s` },
           ];
@@ -429,6 +493,14 @@ const App: React.FC = () => {
         }
         setGotByStep(prev => ({ ...prev, [index]: rows }));
         setDumpByStep(prev => ({ ...prev, [index]: dump }));
+        setEvidenceByStep(prev => {
+          if (evidenceResult === null) {
+            const next = { ...prev };
+            delete next[index];
+            return next;
+          }
+          return { ...prev, [index]: evidenceResult };
+        });
       })();
     },
     [project, running, runScenario],
@@ -520,6 +592,54 @@ const App: React.FC = () => {
                 ]}
                 got={gotByStep[scenario.index] ?? null}
               />
+              {evidenceByStep[scenario.index] ? (() => {
+                const canvasData = buildCanvasData(evidenceByStep[scenario.index]);
+                return (
+                  <>
+                    {canvasData.simplifier ? (
+                      <Card>
+                        <Flex direction="column" gap="2">
+                          <Text size="2" weight="bold">
+                            A — simplifier collapse (step {scenario.index})
+                          </Text>
+                          <Text size="1" color="gray">
+                            Faint line: every write injected. Solid amber: what survived the
+                            finalize-time thinning pass — that polyline is what actually plays.
+                            The tick marks the single largest gap between them.
+                          </Text>
+                          <SimplifierCanvas
+                            rawCurve={canvasData.simplifier.rawCurve}
+                            keptCurve={canvasData.simplifier.keptCurve}
+                            epsilon={EPSILON}
+                            deviation={canvasData.simplifier.deviation}
+                          />
+                        </Flex>
+                      </Card>
+                    ) : null}
+                    {canvasData.trim ? (
+                      <Card>
+                        <Flex direction="column" gap="2">
+                          <Text size="2" weight="bold">
+                            B — latch overdub front-trim (step {scenario.index})
+                          </Text>
+                          <Text size="1" color="gray">
+                            Amber row: the gesture region's own extent right after the finalize-time
+                            simplifier ran. Cyan row: the same region at Stop, after the next
+                            hands-off pass grew over it — the hatched span is what it no longer
+                            covers.
+                          </Text>
+                          <LatchTrimStrip
+                            before={canvasData.trim.before}
+                            after={canvasData.trim.after}
+                            heldValue={canvasData.trim.heldValue}
+                            axisMax={canvasData.trim.axisMax}
+                          />
+                        </Flex>
+                      </Card>
+                    ) : null}
+                  </>
+                );
+              })() : null}
               {dumpByStep[scenario.index] ? (
                 <Card>
                   <Flex direction="column" gap="2">

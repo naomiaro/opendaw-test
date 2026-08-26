@@ -128,5 +128,14 @@ sit entirely outside its own visible span — see `src/demos/automation/CLAUDE.m
    the trim, and the full kept-event dump.
 3. Click **Run** on step 2 for the fast/jagged control.
 
+Each run also draws two canvases below its table, built from the same measured data (no
+extra passes): **(A)** the injected write curve overlaid with what actually survived the
+finalize-time thinning pass, with a marker at the point of largest deviation and a
+shaded band showing what ε = 0.01 would look like at that scale — on step 1 the arc's
+curvature visibly collapses into the amber straight line; on step 2 the amber line still
+traces the zig-zag closely. **(B)** a mini timeline strip showing the gesture region's own
+extent right after finalize versus the same region's extent at Stop, with the range the
+next pass ate hatched out and the value it now holds flat labeled numerically.
+
 Expected columns show what a faithful ε = 0.01 pass with no overdub trim would report; the
 Got column is the measurement.
