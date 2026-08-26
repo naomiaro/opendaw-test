@@ -2,6 +2,7 @@
 
 **Verified against:** `@opendaw/studio-sdk` 0.0.170 (`studio-core` 0.2.4, `studio-adapters` 0.3.2), WASM engine, Chrome.
 **Repro page:** [`automation-simplifier-debug-demo.html`](../automation-simplifier-debug-demo.html) (unlisted).
+**Upstream issue:** [openDAW#363](https://github.com/andremichelle/openDAW/issues/363).
 **Related demo:** [`live-automation-recording-demo.html`](../live-automation-recording-demo.html).
 
 ## Symptom
