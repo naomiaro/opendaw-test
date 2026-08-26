@@ -222,8 +222,8 @@ its values would otherwise land in the first project's sink.
 
 ## AudioContexts.resume hardening (live error 1108)
 
-New `AudioContexts` class (studio-core): `resume(context)` returns `boolean` instead of
-letting `AudioContext.resume()` rejections propagate — on failure it logs the state +
+New `AudioContexts` class (studio-core): `resume(context)` resolves to a `boolean`
+(`Promise<boolean>`) instead of letting `AudioContext.resume()` rejections propagate — on failure it logs the state +
 the hardware sample rate (probed via a throwaway `AudioContext`, to tell a device
 failure from a refused 48 kHz request) and raises a one-shot `RuntimeNotifier.info`
 ("Audio Device Unavailable"). `EngineFacade.play()` now routes its suspended-context
