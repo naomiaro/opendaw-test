@@ -164,7 +164,13 @@ export const LiveAutomationLane: React.FC<LiveAutomationLaneProps> = ({
     painterRef.current?.requestUpdate();
   }, [overridden, ghost]);
 
-  const printed = spec.adapter.getPrintValue();
+  // Printed from the very unitValue the thumb is drawn at, so the two can never
+  // disagree. Neither adapter getter works here: getPrintValue() reads the raw
+  // field and lags behind the fader during playback, while
+  // getControlledPrintValue() evaluates automation at the playhead and so
+  // contradicts the thumb once the transport stops. valueMapping.y turns the
+  // unitValue into the field's own units, stringMapping.x formats it.
+  const printed = spec.adapter.stringMapping.x(spec.adapter.valueMapping.y(sliderValue));
 
   return (
     <Flex gap="3" align="stretch">
