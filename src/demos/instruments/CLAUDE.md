@@ -1,5 +1,57 @@
 # Instruments Demos — OpenDAW SDK Reference
 
+### Cubed (303-style acid bassline)
+- Create: `project.api.createInstrument(InstrumentFactories.Cubed)`. No armed capture
+  needed for the demo — the built-in step sequencer follows the transport (plays while
+  the project plays); MIDI input is only for live-note layering on the same mono voice.
+- Pattern data lives ON the device box: 16 `CubedPattern` array entries (`length` Int32
+  1–64 + 64 packed Int32 `steps`). `CubedStep.pack/unpack` converts
+  `{note, active, slide, accent}` ↔ packed int. All adapter pattern ops
+  (`writeCurrentPattern`, `clearCurrentPattern`, `randomizeCurrentPattern`,
+  `rotateCurrentPattern`) and per-step field writes are PLAIN field writes — wrap every
+  call in `editing.modify()`.
+- `currentPattern()` reads `patternIndex.getValue()` — the TARGET pattern. A manual
+  `patternIndex` write switches audio at the next bar line WHILE PLAYING (stopped, it
+  applies at once; re-selecting the playing pattern disarms a pending switch — engine
+  `pattern.rs` tests), but the grid should render the target immediately (matches the
+  studio editor).
+- `readCurrentPattern()` slices steps to `length` — JSON export via
+  `CubedPatternData.toJSON` only carries `length` steps. For a grid showing all 64,
+  read `currentPattern().steps.getField(absIndex)` directly. Steps beyond length
+  survive length changes and `rotateCurrentPattern` ONLY — `writeCurrentPattern`
+  (presets, JSON/ABL apply) and `randomizeCurrentPattern` reset them to the default
+  step, and `clearCurrentPattern` clears all 64. `writeCurrentPattern` also clamps
+  `length` to 1–64 and truncates >64-step input silently — report the applied count.
+- Playhead: the device streams its current step as
+  `liveStreamReceiver.subscribeIntegers(adapter.address.append(0), array => array[0])`.
+  Toggle DOM classes directly in the callback (no setState per packet).
+- Grid refresh: one `project.editing.subscribe(() => setVersion(v => v + 1))` in the
+  parent + synchronous box reads during render covers every write path (step toggles,
+  presets, randomize, rotate, JSON/ABL import, pattern switch) — no per-field subs.
+- Note-cell drag: commit the FIRST change of a gesture with `editing.modify()` and
+  every further change with `editing.append()` — one undo entry per drag instead of
+  one per semitone. Clear the drag ref in `onPointerCancel`/`onLostPointerCapture`
+  too, not just `onPointerUp` — a stale anchor makes later hovers transpose notes.
+- `--mc-faint` is strokes-only (fails AA). Dim beyond-length cells with a darker
+  ground (`--mc-bg`) + `--mc-label` text, NOT `opacity` on the live buttons — 0.35
+  over `--mc-text` blends to ≈2.6:1.
+- Unipolar params (`cutoff`/`resonance`/`envMod`/`decay`/`accent`) are declared
+  `AutomatableParameterFieldAdapter<PrimitiveValues>` (not `<number>`) — type UI
+  binding helpers with the bare `AutomatableParameterFieldAdapter` (unit-value API is
+  type-independent) or TS2322s appear.
+- `CubedRandomize.Default.octave` is 1 with base `(octave+2)*12+root` (≈C1); density,
+  accent, slide are probabilities 0..1; `Motifs = [0,2,3,4,8]` (0 = off);
+  `randomizeCurrentPattern` fills only up to the CURRENT length.
+- `CubedPatternData.parseNote` accepts `60`, `C3`, `C#3` (octave convention matches
+  `MidiKeys.toFullString`, 60 = C3) — returns `Option<int>`.
+- `AblPattern.parse(text)` reads ABL2/ABL3 `.pat` dialects; check
+  `parsed.steps.length === 0` for "not a pattern" (it doesn't throw on garbage);
+  `AblPattern.BASE_NOTE` = 36 (C1), NOT the Cubed step default 60.
+- Verified end-to-end 2026-08-26 (SDK 0.0.170): pattern plays on transport Play
+  (master RMS 0.064/peak 0.52 via analyser tap), ABL fixture round-trips
+  (pitch/gate/slide/accent/length), JSON export→apply round-trips, LFO on
+  `cutoff.modulationTarget` sweeps (scope on `getControlledUnitValue()`).
+
 ### Neon (CZ-101 phase distortion)
 - Create: `project.api.createInstrument(InstrumentFactories.Neon)`; arm its CaptureMidi
   (resolved AFTER the creation transaction) or keys are silent.

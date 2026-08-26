@@ -20,6 +20,7 @@ Visit http://localhost:5173 to explore the demos.
 | **[Recording API](https://opendaw-test.pages.dev/recording-api-react-demo.html)** | Microphone recording with live 60fps waveform, device selection, mono/stereo, input gain, and monitoring modes |
 | **[MIDI Recording](https://opendaw-test.pages.dev/midi-recording-demo.html)** | Record MIDI notes with device/channel selection, on-screen piano keyboard, and step recording |
 | **[Neon: CZ-101 Phase Distortion](https://opendaw-test.pages.dev/neon-demo.html)** | Play OpenDAW's Casio CZ-101 phase-distortion synth — five original patches round-tripped through real `.syx` bytes, a sysex drop zone, live wave/modulation controls, and an 8-stage envelope visualizer |
+| **[Cubed: 303-Style Acid Bassline](https://opendaw-test.pages.dev/cubed-demo.html)** | Program Cubed's built-in step sequencer live — notes, gates, slides and accents on a 64-step grid, a random pattern generator, JSON and ABL `.pat` pattern exchange, and a synced LFO sweeping the filter |
 | **[Loop Recording & Takes](https://opendaw-test.pages.dev/loop-recording-demo.html)** | Record multiple takes over a loop region with per-take waveforms and mute controls |
 | **[Drum Pattern Scheduling](https://opendaw-test.pages.dev/drum-scheduling-demo.html)** | Schedule drum samples across a timeline with visual playback |
 | **[Looping](https://opendaw-test.pages.dev/looping-demo.html)** | Timeline loop areas, adjustable boundaries, and real-time loop iteration tracking |
@@ -136,7 +137,9 @@ src/
     ├── midi/                          # MIDI demos
     │   └── midi-recording-demo.tsx    # MIDI recording + step recording
     ├── instruments/                   # Stock instrument demos
-    │   └── neon-demo.tsx              # Neon (CZ-101 phase distortion) + .syx presets
+    │   ├── neon-demo.tsx              # Neon (CZ-101 phase distortion) + .syx presets
+    │   ├── cubed-demo.tsx             # Cubed (303-style acid bassline) step sequencer
+    │   └── cubedPatterns.ts           # Hand-authored acid pattern + sound presets
     ├── clips/                         # Clip launcher demos
     │   └── jam-arrangement-demo.tsx   # Clip jamming → committed region arrangement
     ├── automation/                    # Automation demos
