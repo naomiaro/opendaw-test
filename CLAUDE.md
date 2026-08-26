@@ -807,6 +807,7 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
 7. Add GoatCounter script before `</body>` (copy from any existing demo HTML)
 8. Follow the design language in `docs/design/2026-06-11-mastering-console-editorial.md`
    (tokens, type, motion, accessibility floors) — reference implementation `src/demos/warp/warp-overview.tsx`
+9. Add a row to the README demo table and an entry to its source-tree listing
 
 ## Demo-Specific SDK Knowledge
 
@@ -820,6 +821,7 @@ Each demo category folder has its own CLAUDE.md with SDK knowledge scoped to tho
 - `src/demos/export/CLAUDE.md` — offline rendering, mutate-copy-restore pattern
 - `src/demos/warp/CLAUDE.md` — beat maps, warp markers, tempo-map conform, time-stretch
 - `src/demos/engine/CLAUDE.md` — WASM (Rust) engine: EngineVariant/WasmEngine wiring and boot, offline rendering notes, DSP-load reporting
+- `src/demos/modulation/CLAUDE.md` — modulation system: ProjectModulation transaction rules, engine depth/amount/bipolar math, free-running behavior, modulator adapter constants
 - `src/demos/clips/CLAUDE.md` — clip launcher boxes, quantization, clip notifications, convert-to-region
 
 ## Reference Files
