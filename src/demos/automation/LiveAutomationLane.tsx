@@ -103,6 +103,11 @@ export const LiveAutomationLane: React.FC<LiveAutomationLaneProps> = ({
           const model: LaneRegionModel = {
             start: region.position,
             duration: region.duration,
+            // A take finalized at a loop wrap carries a non-zero loopOffset —
+            // without these the curve is drawn shifted right by that amount and
+            // runs straight out past the region outline.
+            loopOffset: region.loopOffset,
+            loopDuration: region.loopDuration,
             events: eventsOption.unwrap().asArray().map(evt => ({
               position: evt.position,
               value: evt.value,
