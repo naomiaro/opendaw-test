@@ -11,18 +11,30 @@
   `rotateCurrentPattern`) and per-step field writes are PLAIN field writes — wrap every
   call in `editing.modify()`.
 - `currentPattern()` reads `patternIndex.getValue()` — the TARGET pattern. A manual
-  `patternIndex` write switches audio at the next bar line, but the grid should render
-  the target immediately (matches the studio editor).
+  `patternIndex` write switches audio at the next bar line WHILE PLAYING (stopped, it
+  applies at once; re-selecting the playing pattern disarms a pending switch — engine
+  `pattern.rs` tests), but the grid should render the target immediately (matches the
+  studio editor).
 - `readCurrentPattern()` slices steps to `length` — JSON export via
-  `CubedPatternData.toJSON` only carries `length` steps. For a grid showing all 64
-  (steps beyond length keep their notes, render dimmed), read
-  `currentPattern().steps.getField(absIndex)` directly.
+  `CubedPatternData.toJSON` only carries `length` steps. For a grid showing all 64,
+  read `currentPattern().steps.getField(absIndex)` directly. Steps beyond length
+  survive length changes and `rotateCurrentPattern` ONLY — `writeCurrentPattern`
+  (presets, JSON/ABL apply) and `randomizeCurrentPattern` reset them to the default
+  step, and `clearCurrentPattern` clears all 64. `writeCurrentPattern` also clamps
+  `length` to 1–64 and truncates >64-step input silently — report the applied count.
 - Playhead: the device streams its current step as
   `liveStreamReceiver.subscribeIntegers(adapter.address.append(0), array => array[0])`.
   Toggle DOM classes directly in the callback (no setState per packet).
 - Grid refresh: one `project.editing.subscribe(() => setVersion(v => v + 1))` in the
   parent + synchronous box reads during render covers every write path (step toggles,
   presets, randomize, rotate, JSON/ABL import, pattern switch) — no per-field subs.
+- Note-cell drag: commit the FIRST change of a gesture with `editing.modify()` and
+  every further change with `editing.append()` — one undo entry per drag instead of
+  one per semitone. Clear the drag ref in `onPointerCancel`/`onLostPointerCapture`
+  too, not just `onPointerUp` — a stale anchor makes later hovers transpose notes.
+- `--mc-faint` is strokes-only (fails AA). Dim beyond-length cells with a darker
+  ground (`--mc-bg`) + `--mc-label` text, NOT `opacity` on the live buttons — 0.35
+  over `--mc-text` blends to ≈2.6:1.
 - Unipolar params (`cutoff`/`resonance`/`envMod`/`decay`/`accent`) are declared
   `AutomatableParameterFieldAdapter<PrimitiveValues>` (not `<number>`) — type UI
   binding helpers with the bare `AutomatableParameterFieldAdapter` (unit-value API is

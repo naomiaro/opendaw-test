@@ -32,7 +32,13 @@ import {
 
 const STEPS_PER_PAGE = 16;
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-const LFO_RATE_1_BAR = LfoModulatorBoxAdapter.RateStrings.indexOf("1 bar");
+// indexOf guards against a future label rename; fields don't clamp, so a raw -1
+// would be stored silently (repo rule: box numeric constraints do not clamp).
+const LFO_RATE_1_BAR = (() => {
+  const index = LfoModulatorBoxAdapter.RateStrings.indexOf("1 bar");
+  if (index < 0) console.error("Cubed demo: RateStrings no longer contains '1 bar' — falling back to index 4");
+  return index >= 0 ? index : 4;
+})();
 
 // ---------------------------------------------------------------------------
 // Page styles — mastering-console editorial (docs/design/2026-06-11-…md).
@@ -68,7 +74,7 @@ const PAGE_STYLES = `
   text-align: center;
   padding: 4px 0;
 }
-.cb-index.beyond { color: var(--mc-faint); }
+.cb-index.beyond { background: var(--mc-bg); }
 .cb-play { height: 6px; background: var(--mc-bg); }
 .cb-play.on { background: ${CANVAS_COLORS.playhead}; }
 .cb-cell {
@@ -83,12 +89,14 @@ const PAGE_STYLES = `
 }
 .cb-cell:focus-visible { outline: 2px solid var(--mc-amber); outline-offset: -2px; }
 .cb-note { cursor: ns-resize; user-select: none; touch-action: none; }
-.cb-toggle { color: var(--mc-faint); }
+.cb-toggle { color: var(--mc-label); }
 .cb-toggle.on { color: var(--mc-bg); font-weight: 600; }
 .cb-toggle.gate.on { background: var(--mc-amber); }
 .cb-toggle.slide.on { background: var(--mc-cyan); }
 .cb-toggle.accent.on { background: var(--mc-rose); }
-.cb-col-beyond { opacity: 0.35; }
+/* Beyond-length cells dim via a darker ground, not opacity — the buttons stay
+   live, so their text must hold the 4.5:1 floor (label on bg = 5.2:1). */
+.cb-col-beyond { background: var(--mc-bg); color: var(--mc-label); }
 .cb-note-input {
   width: 100%;
   box-sizing: border-box;
@@ -264,19 +272,26 @@ const NoteCell: React.FC<{
   beyond: boolean;
   stepNumber: number;
   onTranspose: (semitones: number) => void;
-  onSet: (note: number) => void;
+  /** fold: true = commit via editing.append() so a whole drag is ONE undo entry */
+  onSet: (note: number, fold: boolean) => void;
 }> = ({ note, beyond, stepNumber, onTranspose, onSet }) => {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState("");
-  // Drag state lives in refs — a pointermove must not re-render mid-gesture.
-  const dragRef = useRef<{ startY: number; startNote: number; pointerId: number } | null>(null);
+  // Drag bookkeeping lives in refs — only an actual note change commits (and
+  // re-renders via the parent's version bump), not every pointermove. `committed`
+  // folds all but the first change of a gesture into one undo entry.
+  const dragRef = useRef<{ startY: number; startNote: number; pointerId: number; committed: boolean } | null>(null);
+  // Escape must not commit: unmounting a focused input fires blur in some
+  // browsers, which would apply the typed text anyway.
+  const cancelledRef = useRef(false);
 
   const commitText = useCallback(() => {
     setEditing(false);
+    if (cancelledRef.current) return;
     const trimmed = text.trim();
     if (trimmed.length === 0) return;
     const parsed = CubedPatternData.parseNote(trimmed);
-    if (parsed.nonEmpty()) onSet(parsed.unwrap());
+    if (parsed.nonEmpty()) onSet(parsed.unwrap(), false);
   }, [text, onSet]);
 
   if (editing) {
@@ -291,7 +306,10 @@ const NoteCell: React.FC<{
         onBlur={commitText}
         onKeyDown={(e) => {
           if (e.key === "Enter") commitText();
-          if (e.key === "Escape") setEditing(false);
+          if (e.key === "Escape") {
+            cancelledRef.current = true;
+            setEditing(false);
+          }
         }}
       />
     );
@@ -304,7 +322,7 @@ const NoteCell: React.FC<{
       aria-label={`Step ${stepNumber} note ${MidiKeys.toFullString(note)} — drag or use arrow keys to transpose, double-click to type`}
       onPointerDown={(e) => {
         if (e.button !== 0) return;
-        dragRef.current = { startY: e.clientY, startNote: note, pointerId: e.pointerId };
+        dragRef.current = { startY: e.clientY, startNote: note, pointerId: e.pointerId, committed: false };
         e.currentTarget.setPointerCapture(e.pointerId);
       }}
       onPointerMove={(e) => {
@@ -312,19 +330,33 @@ const NoteCell: React.FC<{
         if (!drag || drag.pointerId !== e.pointerId) return;
         const semitones = Math.round((drag.startY - e.clientY) / 6);
         const next = Math.max(0, Math.min(127, drag.startNote + semitones));
-        if (next !== note) onSet(next);
+        if (next !== note) {
+          onSet(next, drag.committed);
+          drag.committed = true;
+        }
       }}
       onPointerUp={(e) => {
         if (dragRef.current?.pointerId === e.pointerId) dragRef.current = null;
       }}
+      // A cancelled gesture (touch takeover, system gesture) must clear the drag
+      // anchor, or the next plain hover keeps transposing off the stale start note.
+      onPointerCancel={(e) => {
+        if (dragRef.current?.pointerId === e.pointerId) dragRef.current = null;
+      }}
+      onLostPointerCapture={() => { dragRef.current = null; }}
       onDoubleClick={() => {
+        cancelledRef.current = false;
         setText(MidiKeys.toFullString(note));
         setEditing(true);
       }}
       onKeyDown={(e) => {
         if (e.key === "ArrowUp") { e.preventDefault(); onTranspose(e.shiftKey ? 12 : 1); }
         else if (e.key === "ArrowDown") { e.preventDefault(); onTranspose(e.shiftKey ? -12 : -1); }
-        else if (e.key === "Enter") { setText(MidiKeys.toFullString(note)); setEditing(true); }
+        else if (e.key === "Enter") {
+          cancelledRef.current = false;
+          setText(MidiKeys.toFullString(note));
+          setEditing(true);
+        }
       }}
     >
       {MidiKeys.toFullString(note)}
@@ -336,7 +368,9 @@ const StepGrid: React.FC<{
   project: Project;
   adapter: CubedDeviceBoxAdapter;
   page: number;
-}> = ({ project, adapter, page }) => {
+  /** any hand edit un-marks the active preset highlight */
+  onPatternEdited: () => void;
+}> = ({ project, adapter, page, onPatternEdited }) => {
   const playCellsRef = useRef<Array<HTMLDivElement | null>>([]);
   const playStepRef = useRef(-1);
   const pageRef = useRef(page);
@@ -364,14 +398,20 @@ const StepGrid: React.FC<{
 
   useEffect(applyPlayhead, [page, applyPlayhead]);
 
-  const writeStep = useCallback((absIndex: number, mutate: (step: CubedStep) => void) => {
-    project.editing.modify(() => {
+  // fold: editing.append() commits separately but folds into the previous
+  // transaction's undo entry — a note drag becomes ONE undo step, not one per pixel.
+  const writeStep = useCallback((absIndex: number, mutate: (step: CubedStep) => void, fold = false) => {
+    const commit = fold
+      ? (fn: () => void) => project.editing.append(fn)
+      : (fn: () => void) => project.editing.modify(fn);
+    commit(() => {
       const field = adapter.currentPattern().steps.getField(absIndex);
       const step = CubedStep.unpack(field.getValue());
       mutate(step);
       field.setValue(CubedStep.pack(step));
     });
-  }, [project, adapter]);
+    onPatternEdited();
+  }, [project, adapter, onPatternEdited]);
 
   // Rendered synchronously from the box graph; the parent re-renders this
   // subtree after every committed transaction (editing.subscribe version bump).
@@ -435,7 +475,7 @@ const StepGrid: React.FC<{
             onTranspose={(semitones) => writeStep(absIndex, (s) => {
               s.note = Math.max(0, Math.min(127, s.note + semitones));
             })}
-            onSet={(note) => writeStep(absIndex, (s) => { s.note = note; })}
+            onSet={(note, fold) => writeStep(absIndex, (s) => { s.note = note; }, fold)}
           />
         ))}
         {toggleRow("Gate", "active", "gate")}
@@ -575,7 +615,8 @@ const GeneratorPanel: React.FC<{ onRandomize: (options: CubedRandomizeOptions) =
 const ExchangePanel: React.FC<{
   project: Project;
   adapter: CubedDeviceBoxAdapter;
-}> = ({ project, adapter }) => {
+  onPatternEdited: () => void;
+}> = ({ project, adapter, onPatternEdited }) => {
   const [text, setText] = useState("");
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -584,12 +625,13 @@ const ExchangePanel: React.FC<{
   const exportJson = useCallback(() => {
     const json = CubedPatternData.toJSON(adapter.readCurrentPattern());
     setText(json);
-    setMessage(null);
     if (navigator.clipboard?.writeText) {
       navigator.clipboard.writeText(json).then(
         () => setMessage({ kind: "ok", text: "Pattern exported — also copied to the clipboard." }),
         () => setMessage({ kind: "ok", text: "Pattern exported to the text box (clipboard unavailable)." }),
       );
+    } else {
+      setMessage({ kind: "ok", text: "Pattern exported to the text box." });
     }
   }, [adapter]);
 
@@ -600,8 +642,9 @@ const ExchangePanel: React.FC<{
       return;
     }
     project.editing.modify(() => adapter.writeCurrentPattern(parsed.unwrap()));
+    onPatternEdited();
     setMessage({ kind: "ok", text: "Pattern applied from JSON." });
-  }, [project, adapter, text]);
+  }, [project, adapter, text, onPatternEdited]);
 
   const loadAblFile = useCallback(async (file: File) => {
     try {
@@ -612,12 +655,16 @@ const ExchangePanel: React.FC<{
         return;
       }
       project.editing.modify(() => adapter.writeCurrentPattern(parsed));
-      setMessage({ kind: "ok", text: `Loaded ${file.name} (${parsed.length} steps) into the current pattern.` });
+      onPatternEdited();
+      // writeCurrentPattern clamps to 64 steps — report what was actually written.
+      const applied = Math.min(parsed.length, 64);
+      const truncated = parsed.length > 64 ? `, truncated from ${parsed.length}` : "";
+      setMessage({ kind: "ok", text: `Loaded ${file.name} (${applied} steps${truncated}) into the current pattern.` });
     } catch (error) {
       console.error(`Cubed demo: failed to read ${file.name}: ` + String(error));
       setMessage({ kind: "error", text: `Could not read "${file.name}" — ${error instanceof Error ? error.message : String(error)}` });
     }
-  }, [project, adapter]);
+  }, [project, adapter, onPatternEdited]);
 
   return (
     <Flex direction="column" gap="3">
@@ -708,6 +755,7 @@ const LfoPanel: React.FC<{
   const [enabled, setEnabled] = useState(false);
   const [rate, setRate] = useState(LFO_RATE_1_BAR);
   const [depth, setDepth] = useState(0.35);
+  const [lfoError, setLfoError] = useState<string | null>(null);
   const cutoff = adapter.namedParameter.cutoff;
 
   useEffect(() => {
@@ -728,17 +776,30 @@ const LfoPanel: React.FC<{
       return;
     }
     if (!on) return;
+    // Created once, page-lifetime — the panel never unmounts, so the modulator
+    // boxes are deliberately not deleted; later toggles flip `enabled` only.
     let box: LfoModulatorBox | null = null;
     let assignment: ModulationBox | null = null;
-    project.editing.modify(() => {
-      box = asInstanceOf(project.api.modulation.createLfo("Acid Sweep"), LfoModulatorBox);
-      box.rateSync.setValue(LFO_RATE_1_BAR);
-      assignment = project.api.modulation.assign(box, cutoff.modulationTarget, 0.35);
-    });
-    if (!box || !assignment) {
-      console.error("Cubed demo: LFO modulator creation produced no box/assignment");
+    try {
+      // editing.modify RETHROWS after aborting the transaction, so a failure
+      // here (asInstanceOf mismatch, assign invariant) commits nothing — but it
+      // must be caught and surfaced, or the switch just silently stays off.
+      project.editing.modify(() => {
+        box = asInstanceOf(project.api.modulation.createLfo("Acid Sweep"), LfoModulatorBox);
+        box.rateSync.setValue(LFO_RATE_1_BAR);
+        assignment = project.api.modulation.assign(box, cutoff.modulationTarget, 0.35);
+      });
+    } catch (error) {
+      console.error("Cubed demo: LFO creation failed: " + String(error));
+      setLfoError(error instanceof Error ? error.message : String(error));
       return;
     }
+    if (!box || !assignment) {
+      console.error("Cubed demo: LFO modulator creation produced no box/assignment");
+      setLfoError("The LFO modulator was not created.");
+      return;
+    }
+    setLfoError(null);
     // Casts defeat TS closure-narrowing to never after the modify() callback.
     setSetup({ box: box as LfoModulatorBox, assignment: assignment as ModulationBox });
     setEnabled(true);
@@ -783,6 +844,11 @@ const LfoPanel: React.FC<{
         </Grid>
       )}
       {setup && <CutoffScope param={cutoff} />}
+      {lfoError && (
+        <Callout.Root color="red" size="1" role="alert">
+          <Callout.Text>Could not create the LFO: {lfoError}</Callout.Text>
+        </Callout.Root>
+      )}
     </Flex>
   );
 };
@@ -863,6 +929,9 @@ const App: React.FC = () => {
     setActivePreset(preset.name);
   }, [project, adapter]);
 
+  // Any non-preset pattern change makes the preset highlight a lie — clear it.
+  const markPatternEdited = useCallback(() => setActivePreset(null), []);
+
   const patternIndex = cubedBox?.patternIndex.getValue() ?? 0;
   const patternLength = adapter?.currentPattern().length.getValue() ?? 16;
   const waveform = cubedBox?.waveform.getValue() ?? 0;
@@ -925,7 +994,10 @@ const App: React.FC = () => {
                         <Text size="1" color="gray">Pattern</Text>
                         <Select.Root
                           value={String(patternIndex)}
-                          onValueChange={(v) => project.editing.modify(() => cubedBox.patternIndex.setValue(Number(v)))}
+                          onValueChange={(v) => {
+                            project.editing.modify(() => cubedBox.patternIndex.setValue(Number(v)));
+                            markPatternEdited();
+                          }}
                         >
                           <Select.Trigger />
                           <Select.Content>
@@ -946,7 +1018,7 @@ const App: React.FC = () => {
                     </Flex>
                   </Flex>
 
-                  <StepGrid project={project} adapter={adapter} page={page} />
+                  <StepGrid project={project} adapter={adapter} page={page} onPatternEdited={markPatternEdited} />
 
                   <Flex align="center" gap="3" wrap="wrap">
                     <Flex align="center" gap="2" style={{ minWidth: 200 }} flexGrow="1">
@@ -954,22 +1026,25 @@ const App: React.FC = () => {
                       <Slider
                         min={1} max={64} step={1}
                         value={[patternLength]}
-                        onValueChange={([v]) => project.editing.modify(() =>
-                          adapter.currentPattern().length.setValue(v))}
+                        onValueChange={([v]) => {
+                          project.editing.modify(() => adapter.currentPattern().length.setValue(v));
+                          markPatternEdited();
+                        }}
                         style={{ flexGrow: 1 }}
                       />
                       <Text size="1" style={{ fontFamily: "var(--mc-mono)", minWidth: 40 }}>{patternLength} st</Text>
                     </Flex>
                     <Separator orientation="vertical" />
-                    <Button variant="soft" onClick={() => project.editing.modify(() => adapter.rotateCurrentPattern(-1))}>◀ Shift</Button>
-                    <Button variant="soft" onClick={() => project.editing.modify(() => adapter.rotateCurrentPattern(1))}>Shift ▶</Button>
-                    <Button variant="soft" color="red" onClick={() => project.editing.modify(() => adapter.clearCurrentPattern())}>Clear</Button>
+                    <Button variant="soft" onClick={() => { project.editing.modify(() => adapter.rotateCurrentPattern(-1)); markPatternEdited(); }}>◀ Shift</Button>
+                    <Button variant="soft" onClick={() => { project.editing.modify(() => adapter.rotateCurrentPattern(1)); markPatternEdited(); }}>Shift ▶</Button>
+                    <Button variant="soft" color="red" onClick={() => { project.editing.modify(() => adapter.clearCurrentPattern()); markPatternEdited(); }}>Clear</Button>
                   </Flex>
 
                   <Text size="1" color="gray">
-                    A hand-picked pattern switch waits for the next bar line; an automated
-                    switch takes effect immediately. Steps beyond the length are dimmed but
-                    keep their notes.
+                    A hand-picked pattern switch waits for the next bar line while playing;
+                    an automated switch takes effect immediately. Steps beyond the length are
+                    dimmed and keep their notes across length changes and shifts — presets,
+                    Randomize, JSON/ABL apply, and Clear reset them.
                   </Text>
                 </Flex>
               </Card>
@@ -1022,8 +1097,10 @@ const App: React.FC = () => {
                     <Flex direction="column" gap="3">
                       <Text size="2" weight="bold" color="gray">Random Generator</Text>
                       <GeneratorPanel
-                        onRandomize={(options) => project.editing.modify(() =>
-                          adapter.randomizeCurrentPattern(options))}
+                        onRandomize={(options) => {
+                          project.editing.modify(() => adapter.randomizeCurrentPattern(options));
+                          markPatternEdited();
+                        }}
                       />
                     </Flex>
                   </Card>
@@ -1039,7 +1116,7 @@ const App: React.FC = () => {
               <Card>
                 <Flex direction="column" gap="3">
                   <Text size="2" weight="bold" color="gray">Pattern Exchange</Text>
-                  <ExchangePanel project={project} adapter={adapter} />
+                  <ExchangePanel project={project} adapter={adapter} onPatternEdited={markPatternEdited} />
                 </Flex>
               </Card>
             </>
