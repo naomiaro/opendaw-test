@@ -14,6 +14,7 @@ import type { LanePoint } from "./laneRenderModel";
 import { buildLiveAutomationContent } from "./liveAutomationContent";
 import type { LaneId, LaneSpec, LiveAutomationSetup } from "./liveAutomationContent";
 import { LiveAutomationLane } from "./LiveAutomationLane";
+import { DrumWaveformStrip } from "./DrumWaveformStrip";
 import { TRACK_CONFIGS } from "./trackAutomationPresets";
 import "@radix-ui/themes/styles.css";
 import {
@@ -438,9 +439,10 @@ const App: React.FC = () => {
                     </Flex>
                   </Flex>
 
-                  {/* Lane stack + one playhead overlay across all three lanes. */}
+                  {/* Waveform strip + lane stack + one playhead overlay across all four rows. */}
                   <div style={{ position: "relative" }}>
                     <Flex direction="column" gap="3">
+                      <DrumWaveformStrip regionAdapter={setup.drumRegionAdapter} />
                       {setup.lanes.map(lane => (
                         <LiveAutomationLane
                           key={lane.id}

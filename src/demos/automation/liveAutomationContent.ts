@@ -1,6 +1,6 @@
 import { UUID } from "@opendaw/lib-std";
 import { AudioFileBox, AudioRegionBox, AudioUnitBox, DelayDeviceBox, ValueEventCollectionBox } from "@opendaw/studio-boxes";
-import { DelayDeviceBoxAdapter, InstrumentFactories, type AutomatableParameterFieldAdapter } from "@opendaw/studio-adapters";
+import { AudioRegionBoxAdapter, DelayDeviceBoxAdapter, InstrumentFactories, type AutomatableParameterFieldAdapter } from "@opendaw/studio-adapters";
 import { EffectFactories, type Project } from "@opendaw/studio-core";
 import { audioEffectsFieldOf, audioUnitAdapterFor } from "@/lib/adapterUtils";
 import { loadAudioFile } from "@/lib/audioUtils";
@@ -15,6 +15,7 @@ export type LiveAutomationSetup = {
   audioUnitBox: AudioUnitBox;
   delayBox: DelayDeviceBox;
   lanes: ReadonlyArray<LaneSpec>;
+  drumRegionAdapter: AudioRegionBoxAdapter;
 };
 
 export async function buildLiveAutomationContent(
@@ -33,6 +34,7 @@ export async function buildLiveAutomationContent(
   onStatus?.("Building project...");
   // Transaction 1: instrument + region. −6 dB headroom (Delay wet sums on top).
   let audioUnitBox: AudioUnitBox | null = null;
+  let drumRegionBox: AudioRegionBox | null = null;
   project.editing.modify(() => {
     const tape = project.api.createInstrument(InstrumentFactories.Tape);
     audioUnitBox = tape.audioUnitBox;
@@ -49,7 +51,7 @@ export async function buildLiveAutomationContent(
     // This is independent of the transport Loop switch (timelineBox.loopArea,
     // set up below), which only controls whether the transport itself wraps
     // after the first 4 bars.
-    AudioRegionBox.create(boxGraph, UUID.generate(), box => {
+    drumRegionBox = AudioRegionBox.create(boxGraph, UUID.generate(), box => {
       box.regions.refer(tape.trackBox.regions);
       box.file.refer(fileBox);
       box.events.refer(eventsBox.owners);
@@ -86,10 +88,11 @@ export async function buildLiveAutomationContent(
   // Adapters resolved AFTER commits (same-transaction traversal is stale).
   const unitAdapter = audioUnitAdapterFor(project, unitBox);
   const delayAdapter = project.boxAdapters.adapterFor(delayBox!, DelayDeviceBoxAdapter);
+  const drumRegionAdapter = project.boxAdapters.adapterFor(drumRegionBox!, AudioRegionBoxAdapter);
   const lanes: LaneSpec[] = [
     { id: "volume", label: "Volume", color: CANVAS_COLORS.amber, adapter: unitAdapter.namedParameter.volume },
     { id: "pan", label: "Pan", color: CANVAS_COLORS.cyan, adapter: unitAdapter.namedParameter.panning },
     { id: "wet", label: "Delay Wet", color: CANVAS_COLORS.green, adapter: delayAdapter.namedParameter.wet },
   ];
-  return { audioUnitBox: unitBox, delayBox: delayBox!, lanes };
+  return { audioUnitBox: unitBox, delayBox: delayBox!, lanes, drumRegionAdapter };
 }
