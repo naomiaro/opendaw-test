@@ -5,7 +5,7 @@ import { PeaksPainter } from "@opendaw/lib-fusion";
 import { PPQN } from "@opendaw/lib-dsp";
 import type { AudioRegionBoxAdapter } from "@opendaw/studio-adapters";
 import { CanvasPainter } from "@/lib/CanvasPainter";
-import { CANVAS_COLORS } from "@/lib/design/consoleTheme";
+import { CANVAS_COLORS, CANVAS_FONT_SMALL } from "@/lib/design/consoleTheme";
 import { BAR, DEMO_BPM, LOOP_PPQN, WINDOW_PPQN } from "./laneRenderModel";
 
 const CANVAS_HEIGHT = 64;
@@ -13,6 +13,10 @@ export const HEADER_WIDTH = 180; // must match LiveAutomationLane's HEADER_WIDTH
 const NUM_BARS = WINDOW_PPQN / BAR; // 8
 const LOOP_BAR = LOOP_PPQN / BAR; // 4 — loop boundary drawn distinctly
 const CYCLES = WINDOW_PPQN / LOOP_PPQN; // 2 — the drum loop repeats twice across the window
+// Backstop for the peaks-nudge loop: ~10 s at 60 fps. Peaks that have not
+// arrived by then are not going to, and a 60 fps repaint for the life of the
+// mount is far too expensive to leave running on the off chance.
+const NUDGE_FRAME_BUDGET = 600;
 
 export interface DrumWaveformStripProps {
   /** The drum AudioRegionBox's adapter — region-loops LOOP_PPQN of audio across WINDOW_PPQN. */
@@ -32,6 +36,20 @@ export const DrumWaveformStrip: React.FC<DrumWaveformStripProps> = ({ regionAdap
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return undefined;
+
+    // Terminal-state pre-check: SampleLoader has no catchupAndSubscribe, and
+    // subscribe() fires synchronously for terminal states — so read `state`
+    // first and never terminate the subscription from inside its own callback
+    // (root CLAUDE.md, TDZ warning).
+    const loader = regionAdapter.file.getOrCreateLoader();
+    // "Stop waiting and say so": the loader failed, or the nudge budget below
+    // ran out. Either way the strip draws a label instead of staying blank
+    // forever behind a 60 fps repaint loop that can never succeed.
+    const initialState = loader.state;
+    let unavailable = initialState.type === "error";
+    if (initialState.type === "error") {
+      console.error("[DrumWaveformStrip] sample loader failed: " + String(initialState.reason));
+    }
 
     const painter = new CanvasPainter(canvas, (_painter, ctx) => {
       const width = canvas.clientWidth;
@@ -53,7 +71,15 @@ export const DrumWaveformStrip: React.FC<DrumWaveformStripProps> = ({ regionAdap
 
       // Adapter layer — synchronous Option read, never `?.`/`??` (see root CLAUDE.md).
       const peaksOption = regionAdapter.file.peaks;
-      if (peaksOption.isEmpty()) return;
+      if (peaksOption.isEmpty()) {
+        if (unavailable) {
+          ctx.fillStyle = CANVAS_COLORS.label;
+          ctx.font = CANVAS_FONT_SMALL;
+          ctx.textBaseline = "middle";
+          ctx.fillText("waveform unavailable", 8, height / 2);
+        }
+        return;
+      }
       const peaks = peaksOption.unwrap();
 
       // The region reads only the first LOOP_PPQN worth of the (30 s) source
@@ -86,16 +112,39 @@ export const DrumWaveformStrip: React.FC<DrumWaveformStripProps> = ({ regionAdap
       }
     });
 
+    // A loader that fails after mount has to stop the nudge loop too — without
+    // this the strip stays blank AND repaints at 60 fps forever. Never
+    // terminates itself from inside the callback (see the pre-check above);
+    // the nudge loop below notices the flag on its next tick.
+    const loaderSub = unavailable ? null : loader.subscribe(state => {
+      if (state.type !== "error") return;
+      console.error("[DrumWaveformStrip] sample loader failed: " + String(state.reason));
+      unavailable = true;
+      painter.requestUpdate();
+    });
+
     // Peaks load asynchronously off the SamplePeaks worker — CanvasPainter only
     // repaints on requestUpdate(), so keep nudging it until the adapter's
-    // synchronous peaks Option turns non-empty, then stop.
+    // synchronous peaks Option turns non-empty, then stop. Also stops on a
+    // loader error, and on a frame budget so no failure mode leaves it running.
+    let frames = 0;
     const frame = AnimationFrame.add(() => {
       painter.requestUpdate();
-      if (regionAdapter.file.peaks.nonEmpty()) frame.terminate();
+      if (regionAdapter.file.peaks.nonEmpty() || unavailable) {
+        frame.terminate();
+        return;
+      }
+      if (++frames >= NUDGE_FRAME_BUDGET) {
+        console.error("[DrumWaveformStrip] peaks never arrived within the nudge budget — giving up");
+        unavailable = true;
+        painter.requestUpdate();
+        frame.terminate();
+      }
     });
 
     return () => {
       frame.terminate();
+      loaderSub?.terminate();
       painter.terminate();
     };
   }, [regionAdapter]);

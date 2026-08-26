@@ -63,7 +63,10 @@ function withLane<T>(record: Record<LaneId, T>, id: LaneId, value: T): Record<La
 const GHOST_NAMES: ReadonlyArray<string> = ["Fade In", "Fade Out", "Swell"];
 
 const GHOST_PRESETS: ReadonlyArray<{ name: string; points: LanePoint[] }> = GHOST_NAMES.flatMap(name => {
-  const preset = TRACK_CONFIGS[0].presets.find(p => p.name === name);
+  // Module-level: a throw here happens before createRoot and would blank the page
+  // with nothing but a console trace, so an empty/renamed config degrades to
+  // "no ghosts offered" instead.
+  const preset = TRACK_CONFIGS[0]?.presets?.find(p => p.name === name);
   if (preset === undefined) {
     console.error(`[live-automation-recording-demo] preset "${name}" is gone from TRACK_CONFIGS — ghost omitted`);
     return [];
@@ -139,12 +142,19 @@ const App: React.FC = () => {
         setSetup(built);
         setStatus("Ready — press Record");
       } catch (error) {
-        // Without the terminate, a failed content build leaves the engine
-        // worklet running behind the error card.
-        bootProject?.terminate();
+        // Report FIRST: a throwing teardown below must not swallow the real
+        // cause and leave the page stuck on "Booting…" with no error card.
         console.error("[live-automation-recording-demo] init failed: " + String(error) +
           (error instanceof Error && error.stack ? "\n" + error.stack : ""));
         if (!disposed) setInitError(error instanceof Error ? error.message : String(error));
+        // Without the terminate, a failed content build leaves the engine
+        // worklet running behind the error card.
+        try {
+          bootProject?.terminate();
+        } catch (terminateError) {
+          console.error("[live-automation-recording-demo] terminate after init failure threw: " +
+            String(terminateError));
+        }
       }
     })();
     return () => { disposed = true; };
@@ -289,22 +299,30 @@ const App: React.FC = () => {
 
   const onRecord = useCallback(async () => {
     if (!project || !setup) return;
-    // Freeze what the lanes already hold so the kept counts that follow describe
-    // only the take about to start.
-    const baseline: Record<LaneId, Set<string>> = { volume: new Set(), pan: new Set(), wet: new Set() };
-    for (const lane of setup.lanes) {
-      const trackOption = lane.adapter.track;
-      if (!trackOption.nonEmpty()) continue;
-      for (const region of trackOption.unwrap().regions.adapters.values()) {
-        if (region.isValueRegion()) baseline[lane.id].add(UUID.toString(region.box.address.uuid));
+    // The click handler fires this as `void onRecord()`, so an unhandled
+    // rejection (a refused resume, a failing startRecording) would be an
+    // invisible no-op — report it on the status channel instead.
+    try {
+      // Freeze what the lanes already hold so the kept counts that follow describe
+      // only the take about to start.
+      const baseline: Record<LaneId, Set<string>> = { volume: new Set(), pan: new Set(), wet: new Set() };
+      for (const lane of setup.lanes) {
+        const trackOption = lane.adapter.track;
+        if (!trackOption.nonEmpty()) continue;
+        for (const region of trackOption.unwrap().regions.adapters.values()) {
+          if (region.isValueRegion()) baseline[lane.id].add(UUID.toString(region.box.address.uuid));
+        }
       }
+      takeBaselineRef.current = baseline;
+      // startRecording does not resume the context itself (only the engine
+      // facade's play() does) — a suspended context would record silence.
+      const audioContext = audioCtxRef.current;
+      if (audioContext !== null && audioContext.state !== "running") await audioContext.resume();
+      project.startRecording(false); // no count-in: the first write is the take
+    } catch (error) {
+      console.error("[live-automation-recording-demo] record failed: " + String(error));
+      setStatus("Record failed: " + String(error));
     }
-    takeBaselineRef.current = baseline;
-    // startRecording does not resume the context itself (only the engine
-    // facade's play() does) — a suspended context would record silence.
-    const audioContext = audioCtxRef.current;
-    if (audioContext !== null && audioContext.state !== "running") await audioContext.resume();
-    project.startRecording(false); // no count-in: the first write is the take
   }, [project, setup]);
 
   const onPlay = useCallback(() => {
@@ -625,4 +643,6 @@ const rootElement = document.getElementById("root");
 if (rootElement) {
   const root = createRoot(rootElement);
   root.render(<App />);
+} else {
+  console.error("[live-automation-recording-demo] #root is missing — nothing rendered");
 }
