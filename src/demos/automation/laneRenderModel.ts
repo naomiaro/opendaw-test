@@ -131,10 +131,20 @@ export function buildRegionRender(region: LaneRegionModel, windowPpqn: number): 
   }
 
   const clipped = clipMonotone(path, x0, x1);
-  if (clipped.length > 0) {
-    const last = clipped[clipped.length - 1];
-    if (last.x < x1) clipped.push({ x: x1, y: last.y });
+  if (clipped.length === 0) {
+    // Every point landed before x0 with no crossing — reachable for a region
+    // the overdub start-trim moved past its own last event (loopOffset then
+    // exceeds the last event position, and only one cycle intersects the span).
+    // The engine holds the last value in that case (`valueAt` reads the
+    // preceding event), so draw the hold rather than an empty outline.
+    const lastBefore = path.length > 0 ? path[path.length - 1] : undefined;
+    if (lastBefore !== undefined && lastBefore.x <= x0) {
+      return { x0, x1, path: [{ x: x0, y: lastBefore.y }, { x: x1, y: lastBefore.y }] };
+    }
+    return { x0, x1, path: [] };
   }
+  const last = clipped[clipped.length - 1];
+  if (last.x < x1) clipped.push({ x: x1, y: last.y });
   return { x0, x1, path: clipped };
 }
 
