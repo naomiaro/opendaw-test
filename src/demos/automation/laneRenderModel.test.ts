@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Interpolation } from "@opendaw/lib-dsp";
 import { Curve } from "@opendaw/lib-std";
-import { BAR, buildRegionRender, presetGhost, WINDOW_PPQN } from "./laneRenderModel";
+import { BAR, buildLaneCurve, buildRegionRender, presetGhost, WINDOW_PPQN } from "./laneRenderModel";
 
 describe("buildRegionRender", () => {
   it("normalizes region bounds to the window", () => {
@@ -154,6 +154,65 @@ describe("buildRegionRender", () => {
     // 24 samples per curve segment: midpoint sample matches the SDK curve
     const mid = r.path.find(p => Math.abs(p.x - 1 / 16) < 1e-9)!;
     expect(mid.y).toBeCloseTo(Curve.normalizedAt(0.5, slope));
+  });
+});
+
+describe("buildLaneCurve", () => {
+  it("returns nothing for a lane with no regions", () => {
+    expect(buildLaneCurve([], WINDOW_PPQN)).toEqual([]);
+  });
+
+  it("holds the first region's starting value back to the window edge (gap-before-first-region)", () => {
+    const segments = buildLaneCurve([
+      {
+        start: 2 * BAR, duration: BAR,
+        events: [
+          { position: 0, value: 0.3, interpolation: Interpolation.Linear },
+          { position: BAR, value: 0.9, interpolation: Interpolation.Linear },
+        ],
+      },
+    ], WINDOW_PPQN);
+    expect(segments[0].solid).toBe(false);
+    expect(segments[0].path).toEqual([{ x: 0, y: 0.3 }, { x: 2 / 8, y: 0.3 }]);
+    expect(segments[1].solid).toBe(true);
+  });
+
+  it("holds the earlier region's outgoing value across the gap to the next region (gap-between-regions)", () => {
+    const segments = buildLaneCurve([
+      {
+        start: 0, duration: BAR,
+        events: [{ position: 0, value: 0.2, interpolation: Interpolation.None }],
+      },
+      {
+        start: 3 * BAR, duration: BAR,
+        events: [{ position: 0, value: 0.8, interpolation: Interpolation.None }],
+      },
+    ], WINDOW_PPQN);
+    const gap = segments.find(s => !s.solid && s.path[0].x > 0)!;
+    expect(gap.path).toEqual([{ x: 1 / 8, y: 0.2 }, { x: 3 / 8, y: 0.2 }]);
+  });
+
+  it("holds the last region's outgoing value to the end of the window (gap-after-last-region)", () => {
+    const segments = buildLaneCurve([
+      {
+        start: 0, duration: BAR,
+        events: [{ position: 0, value: 0.6, interpolation: Interpolation.None }],
+      },
+    ], WINDOW_PPQN);
+    const last = segments[segments.length - 1];
+    expect(last.solid).toBe(false);
+    expect(last.path).toEqual([{ x: 1 / 8, y: 0.6 }, { x: 1, y: 0.6 }]);
+  });
+
+  it("produces one unbroken curve (no gap segments) when a region spans the whole window", () => {
+    const segments = buildLaneCurve([
+      {
+        start: 0, duration: WINDOW_PPQN,
+        events: [{ position: 0, value: 0.5, interpolation: Interpolation.None }],
+      },
+    ], WINDOW_PPQN);
+    expect(segments).toHaveLength(1);
+    expect(segments[0].solid).toBe(true);
   });
 });
 

@@ -157,3 +157,52 @@ export function buildRegionRender(region: LaneRegionModel, windowPpqn: number): 
 export function presetGhost(events: LaneEventModel[], windowPpqn: number): LanePoint[] {
   return eventsToPath(events, windowPpqn);
 }
+
+export type LaneCurveSegment = { path: ReadonlyArray<LanePoint>; solid: boolean };
+
+/**
+ * One continuous polyline across the whole [0, windowPpqn] window: SOLID
+ * where a recorded region defines the curve, QUIET across the gaps — before
+ * the first region, between regions, and after the last one — held flat at
+ * whatever value the engine actually plays there.
+ *
+ * Gap rule verified against `TrackBoxAdapter.valueAt` (the engine's own
+ * lookup), `node_modules/@opendaw/studio-adapters/dist/timeline/TrackBoxAdapter.js`:
+ * outside every region it does NOT fall back to the parameter's anchor value —
+ * it holds a NEIGHBORING region's boundary value flat.
+ *   - Before the first region (`regions.collection.lowerEqual` finds nothing):
+ *     `firstRegion.incomingValue(fallback)` — the first region's OWN starting
+ *     value, extended backward.
+ *   - From a region's end onward (`position >= region.complete`, i.e. between
+ *     it and the next region, or past the last region): that region's own
+ *     `outgoingValue(fallback)` — its last value, extended forward.
+ * Both `incomingValue`/`outgoingValue` (`ValueRegionBoxAdapter.js`) reduce to
+ * values already sitting on that region's own rendered path (its first/last
+ * point), so every gap is a flat hold at the adjacent region's edge value —
+ * `fallback` only matters with zero regions on the lane, which this function
+ * renders as no curve at all (nothing recorded yet).
+ */
+export function buildLaneCurve(regions: ReadonlyArray<LaneRegionModel>, windowPpqn: number): LaneCurveSegment[] {
+  const renders = regions
+    .map(r => buildRegionRender(r, windowPpqn))
+    .filter(r => r.path.length > 0)
+    .sort((a, b) => a.x0 - b.x0);
+  if (renders.length === 0) return [];
+
+  const segments: LaneCurveSegment[] = [];
+  const first = renders[0];
+  if (first.x0 > 0) {
+    const y = first.path[0].y;
+    segments.push({ path: [{ x: 0, y }, { x: first.x0, y }], solid: false });
+  }
+  renders.forEach((render, i) => {
+    segments.push({ path: render.path, solid: true });
+    const next = renders[i + 1];
+    const gapEnd = next !== undefined ? next.x0 : 1;
+    if (gapEnd > render.x1) {
+      const y = render.path[render.path.length - 1].y;
+      segments.push({ path: [{ x: render.x1, y }, { x: gapEnd, y }], solid: false });
+    }
+  });
+  return segments;
+}

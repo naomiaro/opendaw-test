@@ -4,7 +4,7 @@ import type { Project } from "@opendaw/studio-core";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { CanvasPainter } from "@/lib/CanvasPainter";
 import { CANVAS_COLORS } from "@/lib/design/consoleTheme";
-import { BAR, buildRegionRender, HEADER_WIDTH, DRUM_CYCLE_PPQN, NUM_BARS, WINDOW_PPQN } from "./laneRenderModel";
+import { BAR, buildLaneCurve, buildRegionRender, HEADER_WIDTH, DRUM_CYCLE_PPQN, NUM_BARS, WINDOW_PPQN } from "./laneRenderModel";
 import type { LanePoint, LaneRegionModel } from "./laneRenderModel";
 import type { LaneSpec } from "./liveAutomationContent";
 
@@ -97,11 +97,12 @@ export const LiveAutomationLane: React.FC<LiveAutomationLaneProps> = ({
       const trackOption = spec.adapter.track;
       if (trackOption.nonEmpty()) {
         const track = trackOption.unwrap();
+        const models: LaneRegionModel[] = [];
         for (const region of track.regions.adapters.values()) {
           if (!region.isValueRegion()) continue;
           const eventsOption = region.events;
           if (eventsOption.isEmpty()) continue;
-          const model: LaneRegionModel = {
+          models.push({
             start: region.position,
             duration: region.duration,
             // A region front-trimmed by a later overdub pass carries a non-zero
@@ -115,23 +116,31 @@ export const LiveAutomationLane: React.FC<LiveAutomationLaneProps> = ({
               value: evt.value,
               interpolation: evt.interpolation,
             })),
-          };
+          });
+        }
+
+        // Translucent fill under the curve, one rect per recorded region — a
+        // quiet "recorded here" highlight, no border (a full-height stroke
+        // read as a broken segment in the curve, especially at the stop edge).
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = withAlpha(spec.color, 0.12);
+        for (const model of models) {
           const render = buildRegionRender(model, WINDOW_PPQN);
           const x0 = render.x0 * width;
           const x1 = render.x1 * width;
-
-          ctx.globalAlpha = alpha;
-          ctx.fillStyle = withAlpha(spec.color, 0.12);
           ctx.fillRect(x0, 0, x1 - x0, height);
-          ctx.strokeStyle = spec.color;
-          ctx.lineWidth = 1;
-          ctx.strokeRect(x0 + 0.5, 0.5, Math.max(0, x1 - x0 - 1), Math.max(0, height - 1));
-
-          ctx.strokeStyle = spec.color;
-          ctx.lineWidth = 2;
-          strokePath(ctx, render.path, width, height);
-          ctx.globalAlpha = 1;
         }
+
+        // One continuous curve across the whole window — solid where a region
+        // defines the value, quieter across the gaps where the engine holds
+        // the neighboring region's boundary value flat (see buildLaneCurve).
+        ctx.strokeStyle = spec.color;
+        ctx.lineWidth = 2;
+        for (const segment of buildLaneCurve(models, WINDOW_PPQN)) {
+          ctx.globalAlpha = alpha * (segment.solid ? 1 : 0.4);
+          strokePath(ctx, segment.path, width, height);
+        }
+        ctx.globalAlpha = 1;
       }
 
       const ghostPoints = ghostRef.current;
