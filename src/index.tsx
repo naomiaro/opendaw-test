@@ -201,6 +201,18 @@ const GROUPS: Group[] = [
     ],
   },
   {
+    label: "Modulation",
+    color: "var(--mc-amber)",
+    demos: [
+      {
+        href: "/modulation-demo.html",
+        title: "Modulators",
+        blurb:
+          "The project-global modulation system: LFO, step-sequencer, random and macro modulators wobbling a synth's cutoff, volume and panning — with live scopes that keep moving while the transport is paused.",
+      },
+    ],
+  },
+  {
     label: "Clips & Arrangement",
     color: "var(--mc-violet)",
     demos: [
