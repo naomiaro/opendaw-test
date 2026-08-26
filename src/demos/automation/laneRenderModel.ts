@@ -1,8 +1,9 @@
 import { Curve } from "@opendaw/lib-std";
-import { Interpolation, PPQN } from "@opendaw/lib-dsp";
+import { Interpolation } from "@opendaw/lib-dsp";
+import { BAR } from "./trackAutomationPresets";
 
+export { BAR };
 export const DEMO_BPM = 122;
-export const BAR = PPQN.fromSignature(4, 4); // 3840
 export const LOOP_PPQN = 4 * BAR;
 export const WINDOW_PPQN = 8 * BAR;
 

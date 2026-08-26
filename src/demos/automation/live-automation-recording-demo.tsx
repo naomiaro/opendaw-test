@@ -43,6 +43,7 @@ const NO_STATS: Record<LaneId, LaneStats> = {
   wet: { captured: 0, kept: 0 },
 };
 const NO_GHOSTS: Record<LaneId, string> = { volume: "none", pan: "none", wet: "none" };
+const INITIAL_SLIDER_VALUES: Record<LaneId, number> = { volume: 0, pan: 0.5, wet: 0 };
 
 /** Copy one lane slot without a computed-key spread (keeps the Record<LaneId, T> type exact). */
 function withLane<T>(record: Record<LaneId, T>, id: LaneId, value: T): Record<LaneId, T> {
@@ -82,7 +83,7 @@ const App: React.FC = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [loopEnabled, setLoopEnabled] = useState(false);
   const [mode, setMode] = useState<AutomationMode>(INITIAL_MODE);
-  const [sliderValues, setSliderValues] = useState<Record<LaneId, number>>({ volume: 0, pan: 0.5, wet: 0 });
+  const [sliderValues, setSliderValues] = useState<Record<LaneId, number>>(INITIAL_SLIDER_VALUES);
   const [overridden, setOverridden] = useState<Record<LaneId, boolean>>(NO_OVERRIDES);
   const [stats, setStats] = useState<Record<LaneId, LaneStats>>(NO_STATS);
   const [ghostNames, setGhostNames] = useState<Record<LaneId, string>>(NO_GHOSTS);
@@ -125,7 +126,7 @@ const App: React.FC = () => {
         audioCtxRef.current = audioContext;
         const built = await buildLiveAutomationContent(newProject, audioContext, localAudioBuffers, setStatus);
         if (disposed) { newProject.terminate(); return; }
-        const initial: Record<LaneId, number> = { volume: 0, pan: 0.5, wet: 0 };
+        const initial: Record<LaneId, number> = { ...INITIAL_SLIDER_VALUES };
         built.lanes.forEach(lane => {
           initial[lane.id] = lane.adapter.getUnitValue();
           // Registry state, not box graph — deliberately outside editing.modify().
@@ -374,9 +375,11 @@ const App: React.FC = () => {
             <p className="mc-intro">
               Hit Record, then move a fader. OpenDAW's automation recording is{" "}
               <strong>latch-based</strong>: while the engine is recording, the{" "}
-              <em>first</em> write to a parameter opens a take — no arming, no touch
-              gate — and every write after it extends the same value region. Only a
-              transport stop or a loop wrap closes it. The three lanes below are the
+              <em>first</em> write to a parameter opens an automation take for that
+              parameter alone — a value region on its own lane, no audio recorded — no
+              arming, no touch gate. Every parameter you touch gets its own independent
+              take, and every write after the first extends the same value region. Only
+              a transport stop or a loop wrap closes it. The three lanes below are the
               audio unit's <code>volume</code> and <code>panning</code> plus the
               Delay's <code>wet</code>, each resolved to its{" "}
               <code>AutomatableParameterFieldAdapter</code>. Nothing is pre-created:
@@ -395,7 +398,7 @@ const App: React.FC = () => {
               <Card>
                 <Flex direction="column" gap="3">
                   <Flex align="center" gap="3" wrap="wrap">
-                    <Button color="red" onClick={() => { void onRecord(); }} disabled={isRecording}>● Record</Button>
+                    <Button color="red" onClick={() => { void onRecord(); }} disabled={isRecording || isPlaying}>● Record</Button>
                     <Button onClick={onPlay} disabled={isPlaying}>▶ Play</Button>
                     <Button variant="soft" onClick={onStop}>■ Stop</Button>
                     <Separator orientation="vertical" />
@@ -410,10 +413,15 @@ const App: React.FC = () => {
                     <Badge color={isRecording ? "red" : isPlaying ? "green" : "amber"}>{transportLabel}</Badge>
                   </Flex>
                   <Text size="2" color="gray">
-                    Recording starts immediately — <code>startRecording(false)</code>, no
-                    count-in. With Loop on, a take is finalized at the wrap and the next
-                    pass opens a fresh region, so you can overdub one lane per pass and
-                    watch the outlines stack up across the first four bars.
+                    The drum loop plays across the whole eight-bar window — the region
+                    itself region-loops the four-bar audio, so it repeats once at bar 4
+                    with or without the Loop switch. That switch only controls the{" "}
+                    <em>transport</em>: recording starts immediately —{" "}
+                    <code>startRecording(false)</code>, no count-in. With Loop on, each
+                    lane's automation take is finalized at the wrap and the next pass
+                    opens a fresh region, so you can overdub one lane per pass and watch
+                    the outlines stack up
+                    across the first four bars.
                   </Text>
                 </Flex>
               </Card>
@@ -424,7 +432,7 @@ const App: React.FC = () => {
                     <Text size="2" weight="bold" color="gray">Automation Lanes</Text>
                     <Flex align="center" gap="2">
                       <Badge color="red">REC</Badge>
-                      <Text size="1" color="gray">writing a take</Text>
+                      <Text size="1" color="gray">writing an automation take</Text>
                       <Badge color="amber">OVERRIDE</Badge>
                       <Text size="1" color="gray">automation suspended by hand</Text>
                     </Flex>
@@ -487,7 +495,7 @@ const App: React.FC = () => {
 
               <Card>
                 <Flex direction="column" gap="3">
-                  <Text size="2" weight="bold" color="gray">How a take is made</Text>
+                  <Text size="2" weight="bold" color="gray">How an automation take is made</Text>
                   <Grid columns={{ initial: "1", sm: "2", md: "4" }} gap="3">
                     <Flex direction="column" gap="1">
                       <div className="mc-lattice-label" style={{ color: "var(--mc-amber)" }}>1 · Write</div>
@@ -502,7 +510,7 @@ const App: React.FC = () => {
                       <div className="mc-lattice-label" style={{ color: "var(--mc-amber)" }}>2 · Latch</div>
                       <Text size="2" color="gray">
                         While <code>engine.isRecording</code>, that first write opens the
-                        take. <code>RecordAutomation</code> resolves the lane owner via{" "}
+                        automation take. <code>RecordAutomation</code> resolves the lane owner via{" "}
                         <code>optTracks()</code> and creates the automation track on
                         demand — nothing had to exist beforehand.
                       </Text>
@@ -547,8 +555,8 @@ const App: React.FC = () => {
                     <Callout.Root color="amber" size="1">
                       <Callout.Text>
                         The engine never reads the stored mode yet — recording always
-                        behaves latch-like: the first write opens a take, only transport
-                        stop or a loop wrap closes it.
+                        behaves latch-like: the first write opens an automation take, only
+                        transport stop or a loop wrap closes it.
                       </Callout.Text>
                     </Callout.Root>
                   </Flex>

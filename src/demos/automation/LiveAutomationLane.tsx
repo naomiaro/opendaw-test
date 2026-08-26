@@ -189,6 +189,7 @@ export const LiveAutomationLane: React.FC<LiveAutomationLaneProps> = ({
           max={1}
           step={0.001}
           value={[sliderValue]}
+          aria-label={spec.label}
           onValueChange={([v]) => onSliderChange(v)}
           onValueCommit={() => onSliderCommit?.()}
           // Tie the fader to its lane's curve colour. Radix Themes paints the
