@@ -191,7 +191,10 @@ export const LiveAutomationLane: React.FC<LiveAutomationLaneProps> = ({
             {printed.value}
             {printed.unit}
           </Text>
-          {recording && stats.captured > 0 && (
+          {/* Kept outside the `recording` gate on purpose: the RDP pass runs on
+              finalize, so the interesting number — how few events survived — only
+              exists after Stop. Gating this on `recording` hid the punchline. */}
+          {stats.captured > 0 && (
             <Text size="1" color="gray" style={{ fontFamily: "var(--mc-mono)" }}>
               {stats.kept}/{stats.captured}
             </Text>
