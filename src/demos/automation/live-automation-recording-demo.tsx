@@ -31,6 +31,11 @@ const LANE_IDS: ReadonlyArray<LaneId> = ["volume", "pan", "wet"];
 
 type LaneStats = { captured: number; kept: number };
 
+// ParameterFieldAdapters defaults every address to "read". The selector below
+// starts on "latch" to match what recording actually does, so the registry has
+// to be pushed there at boot — otherwise the control reports a mode nothing set.
+const INITIAL_MODE: AutomationMode = "latch";
+
 const NO_OVERRIDES: Record<LaneId, boolean> = { volume: false, pan: false, wet: false };
 const NO_STATS: Record<LaneId, LaneStats> = {
   volume: { captured: 0, kept: 0 },
@@ -76,7 +81,7 @@ const App: React.FC = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [loopEnabled, setLoopEnabled] = useState(false);
-  const [mode, setMode] = useState<AutomationMode>("latch");
+  const [mode, setMode] = useState<AutomationMode>(INITIAL_MODE);
   const [sliderValues, setSliderValues] = useState<Record<LaneId, number>>({ volume: 0, pan: 0.5, wet: 0 });
   const [overridden, setOverridden] = useState<Record<LaneId, boolean>>(NO_OVERRIDES);
   const [stats, setStats] = useState<Record<LaneId, LaneStats>>(NO_STATS);
@@ -121,7 +126,11 @@ const App: React.FC = () => {
         const built = await buildLiveAutomationContent(newProject, audioContext, localAudioBuffers, setStatus);
         if (disposed) { newProject.terminate(); return; }
         const initial: Record<LaneId, number> = { volume: 0, pan: 0.5, wet: 0 };
-        built.lanes.forEach(lane => { initial[lane.id] = lane.adapter.getUnitValue(); });
+        built.lanes.forEach(lane => {
+          initial[lane.id] = lane.adapter.getUnitValue();
+          // Registry state, not box graph — deliberately outside editing.modify().
+          newProject.parameterFieldAdapters.setMode(lane.adapter.address, INITIAL_MODE);
+        });
         sliderValuesRef.current = initial;
         setSliderValues(initial);
         setProject(newProject);
