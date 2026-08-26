@@ -265,13 +265,28 @@ the region that opens after the wrap just keeps growing until the take closes, s
 wherever **Stop** happened — not necessarily the boundary again. The newer pass's region clips
 the older pass where they overlap (trimmed, not duplicated).
 
-**The finalize-time simplifier is a greedy collinearity filter, not Ramer–Douglas–Peucker.**
-`RecordAutomation.simplifyRecordedEvents` walks the events once, keeping a stack: it drops the
-middle point `b` of the last kept pair whenever `b.value` is within ε = 0.01 of the linear
-interpolation between `a` and the incoming event. No recursive worst-point split, no global
-error bound — error can compound along a long smooth ramp in a way RDP would not allow. It only
-runs on **floating** parameters (`adapter.valueMapping.floating()`), and it runs at every
-finalize — a loop wrap as well as Stop, so a looping take visibly re-thins its curve each pass.
+**The finalize-time simplifier is a greedy collinearity filter, not Ramer–Douglas–Peucker —
+and ε does not bound the error.** `RecordAutomation.simplifyRecordedEvents` walks the events
+once, keeping a stack: it drops the middle point `b` of the last kept pair whenever `b.value`
+is within ε = 0.01 of the linear interpolation between `a` and the incoming event. No recursive
+worst-point split, no global error bound. `b` is always the point *adjacent to the incoming
+event* — the far end of the chord — where a smooth arc's error against its chord vanishes by
+construction, so the chord keeps growing and the admissible sagitta grows with it
+(≈ `ε · span / (4 · sample spacing)`). Measured: a two-bar parabolic pan arc thinned 116 events
+→ 4, max deviation **0.198 unitValue = 19.8× ε**; a fast zig-zag control retained 81 % of its
+points but still measured 15× ε. It only runs on **floating** parameters
+(`adapter.valueMapping.floating()`), and it runs at every finalize — a loop wrap as well as
+Stop, so a looping take visibly re-thins its curve each pass. Repro + numbers:
+`automation-simplifier-debug-demo.html` / `debug/automation-simplifier-flattening.md`.
+
+**Latch + loop = a hands-off pass overwrites the previous one.** Latch never lifts off, so
+`handleLoopWrap` finalizes the take and immediately opens a new region holding `lastValue` —
+and `updateRegionDurations` grows that region with the playhead *with no further writes at
+all*. As it grows it front-trims the previous pass's region (`RegionClipResolver.#trimStart`),
+so a performed curve is replaced by the next lap's flat hold unless the performer keeps
+playing. Measured end-to-end deviation at the original write positions: 0.79 unitValue. This is
+by-design latch behaviour (touch mode, which the engine does not implement yet, is what would
+preserve the earlier pass) — don't debug it as region-rendering breakage.
 
 **Kept-count readout must scope to the current take, not the whole lane.** Naively summing every
 event across all of a lane's regions makes the "kept" side of a `kept/captured` readout read

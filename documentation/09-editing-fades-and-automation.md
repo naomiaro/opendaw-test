@@ -1313,7 +1313,7 @@ project.engine.stopRecording();
 
 #### Post-Recording Simplification
 
-When a take is finalized (transport stop or loop wrap), the engine thins the recorded events with a single-pass greedy collinearity filter (epsilon = 0.01). It walks the take once, dropping the middle point of the last kept pair whenever that point sits within epsilon of the linear interpolation between its neighbours. This reduces event count while preserving the automation curve shape. It is not a Ramer-Douglas-Peucker pass: there is no recursive worst-point split and no global error bound, so deviation can compound along a long smooth ramp. Only parameters with a floating value mapping are simplified.
+When a take is finalized (transport stop or loop wrap), the engine thins the recorded events with a single-pass greedy collinearity filter (epsilon = 0.01). It walks the take once, dropping the middle point of the last kept pair whenever that point sits within epsilon of the linear interpolation between its neighbours. This reduces event count sharply. It is not a Ramer-Douglas-Peucker pass: there is no recursive worst-point split and no global error bound, and epsilon is not a bound on the resulting error. The point being tested is always the one adjacent to the far end of the chord, where a smooth arc sits closest to that chord anyway, so the chord keeps growing and the admissible deviation grows with it. A slow, gradual gesture can therefore flatten almost to a straight line, while a fast, jagged one — whose direction changes break the chord — survives largely intact. Only parameters with a floating value mapping are simplified.
 
 #### Manual Override During Playback (AutomationSuspension)
 
@@ -1354,7 +1354,10 @@ re-thins its curve each pass. With loop recording on, each pass overdubs its own
 canvas renders every pass's outline stacked across the window. Recording itself always leaves
 `loopOffset` at 0 (`loopDuration` is set to the region's own duration); the non-zero `loopOffset`
 the lane renderer has to honour comes from `RegionClipResolver`'s start-trim, when a later pass
-grows over an older region and front-trims it.
+grows over an older region and front-trims it. That start-trim is also what makes a hands-off
+loop pass overwrite the one before it: latch never lifts off, so the region opened at the wrap
+holds the last value and grows with the playhead whether or not anything is played, and the
+previous pass's curve is trimmed away behind it.
 Moving a fader during plain playback raises an `AutomationSuspension` override badge on that lane
 (inferred from `subscribeWrites` plus transport state, since the suspension itself has no public
 observable) and the recorded curve dims underneath it. A preset-comparison panel overlays a

@@ -443,7 +443,10 @@ const App: React.FC = () => {
                     and the wrap lands on the right-hand edge of every lane. Recording
                     starts immediately — <code>startRecording(false)</code>, no count-in.
                     At each wrap every lane's automation take is finalized and a fresh
-                    region opens for the next pass.
+                    region opens for the next pass — holding your last value, and growing
+                    with the playhead whether or not you play anything, so a hands-off lap
+                    overwrites the lap before it. Overdub a different lane each pass and
+                    the outlines stack up; leave one alone and it gets flattened.
                   </Text>
                 </Flex>
               </Card>
@@ -557,7 +560,13 @@ const App: React.FC = () => {
                         typically survive as a handful of events. With Loop on you can
                         watch it happen: the curve visibly snaps to its thinned form at{" "}
                         <em>every</em> loop wrap as well as at Stop. That is the take
-                        being finalized, not a glitch.
+                        being finalized, not a glitch. Worth knowing before you judge a
+                        take: ε does not bound what you see. The pass only ever tests the
+                        point next to the far end of its growing chord, where a smooth
+                        arc is closest to that chord anyway — so a slow, gradual move can
+                        flatten almost to a straight line (measured here: a two-bar arc
+                        thinned from 116 events to 4, twenty times ε off its performed
+                        shape) while a fast, jagged one survives nearly intact.
                       </Text>
                     </Flex>
                   </Grid>
@@ -583,7 +592,16 @@ const App: React.FC = () => {
                       <Callout.Text>
                         The engine never reads the stored mode yet — recording always
                         behaves latch-like: the first write opens an automation take, only
-                        transport stop or a loop wrap closes it.
+                        transport stop or a loop wrap closes it. That has teeth with Loop
+                        on. Latch never lifts off, so each wrap opens a fresh region
+                        holding your last value and that region keeps growing with the
+                        playhead <em>even if you never touch anything again</em> — growing
+                        straight over the previous pass, which is front-trimmed out of the
+                        way. Take your hands off after a pass and the next lap quietly
+                        replaces your curve with a flat hold. Keep performing, or stop
+                        before the wrap. Real <em>touch</em> mode is exactly the missing
+                        behaviour: it would lift off at the end of the gesture and leave
+                        the earlier pass standing.
                       </Callout.Text>
                     </Callout.Root>
                   </Flex>
