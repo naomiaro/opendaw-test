@@ -1313,7 +1313,7 @@ project.engine.stopRecording();
 
 #### Post-Recording Simplification
 
-When a take is finalized (transport stop or loop wrap), the engine runs a Ramer-Douglas-Peucker simplifier (epsilon = 0.01) on the recorded events to remove redundant linear points. This reduces event count while preserving the automation curve shape.
+When a take is finalized (transport stop or loop wrap), the engine thins the recorded events with a single-pass greedy collinearity filter (epsilon = 0.01). It walks the take once, dropping the middle point of the last kept pair whenever that point sits within epsilon of the linear interpolation between its neighbours. This reduces event count sharply. It is not a Ramer-Douglas-Peucker pass: there is no recursive worst-point split and no global error bound, and epsilon is not a bound on the resulting error. The point being tested is always the one adjacent to the far end of the chord, where a smooth arc sits closest to that chord anyway, so the chord keeps growing and the admissible deviation grows with it. A slow, gradual gesture can therefore flatten almost to a straight line, while a fast, jagged one — whose direction changes break the chord — survives largely intact. Only parameters with a floating value mapping are simplified.
 
 #### Manual Override During Playback (AutomationSuspension)
 
@@ -1339,18 +1339,34 @@ parameterFieldAdapters.getTracks(address)       // Option<ParameterTracks>
 parameterFieldAdapters.subscribeWrites(observer)        // Observe every parameter write
 ```
 
-#### Standalone Demo (Future)
+#### Demo
 
-A standalone automation recording demo could show:
-- Live parameter recording during playback (volume fade via programmatic touch)
-- Visualizing recorded events on a canvas after recording stops
-- Comparing hand-drawn automation curves vs preset curves
-- Loop recording with automation overdubs
-
-This would complement the existing track-automation-demo which creates automation events purely through code.
+`src/demos/automation/live-automation-recording-demo.tsx` drives the record cycle from real
+fader gestures instead of scripted events. Three lanes — an audio unit's `volume` and `panning`
+plus a Delay effect's `wet` — start with no automation track at all; the first gesture after
+Record creates the value track and region on demand. Hitting Record and dragging a Radix Slider
+latches a take exactly as described above (no touch gate, transport stop or loop wrap closes it);
+each lane's header shows a live `kept / captured` readout from the finalize-time simplifier — a
+single-pass greedy collinearity filter that drops a point when it sits within ε = 0.01 of the
+line through its neighbours — so the effect of that pass is visible on real input rather than
+asserted in prose. It runs at every finalize, a loop wrap included, so a looping take visibly
+re-thins its curve each pass. With loop recording on, each pass overdubs its own region and the
+canvas renders every pass's outline stacked across the window. Recording itself always leaves
+`loopOffset` at 0 (`loopDuration` is set to the region's own duration); the non-zero `loopOffset`
+the lane renderer has to honour comes from `RegionClipResolver`'s start-trim, when a later pass
+grows over an older region and front-trims it. That start-trim is also what makes a hands-off
+loop pass overwrite the one before it: latch never lifts off, so the region opened at the wrap
+holds the last value and grows with the playhead whether or not anything is played, and the
+previous pass's curve is trimmed away behind it.
+Moving a fader during plain playback raises an `AutomationSuspension` override badge on that lane
+(inferred from `subscribeWrites` plus transport state, since the suspension itself has no public
+observable) and the recorded curve dims underneath it. A preset-comparison panel overlays a
+dashed ghost curve — the same shapes `track-automation-demo` writes into the box graph
+programmatically — purely for drawing, so a performed move can be judged against an authored one.
 
 **Reference:**
 
+- Demo: `src/demos/automation/live-automation-recording-demo.tsx`
 - Demo: `src/demos/automation/track-automation-demo.tsx`
 - SDK curve algorithm: `@opendaw/lib-std` → `Curve.normalizedAt`
 - SDK interpolation: `@opendaw/lib-dsp` → `value.ts` → `interpolate()`

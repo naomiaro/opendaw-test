@@ -126,6 +126,12 @@ const GROUPS: Group[] = [
         blurb:
           "Automate volume, pan, and effect parameters with preset patterns. Visualize automation envelopes and see the JSON a server would store to save and restore state.",
       },
+      {
+        href: "/live-automation-recording-demo.html",
+        title: "Live Automation Recording",
+        blurb:
+          "Perform volume, pan and delay-wet moves while the transport records — the SDK's latch model captures every write into value regions, simplifies the curve, and lets you overdub across loop wraps or override playback by hand.",
+      },
     ],
   },
   {

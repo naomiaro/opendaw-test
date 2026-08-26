@@ -229,8 +229,110 @@ Move via `box.position.setValue()` in `editing.modify()`. Delete via
 `ValueEventCurveBox` with a mandatory back-pointer, and only `box.delete()`
 cascade-deletes it; bare `unstageBox` strands the curve box.
 
+### Live Automation Recording (`live-automation-recording-demo.tsx`)
+
+**Lane auto-creation, no pre-creation needed.** `RecordAutomation` resolves the lane owner via
+`adapter.optTracks()`, which falls back to the parameter's audio unit when nothing was registered.
+The first `setUnitValue` while `engine.isRecording` creates the value `TrackBox` *and* its
+`ValueRegionBox` on demand — verified per-parameter: in a three-fader take each lane's track
+appeared independently, and each region started at *that* lane's own first write, not a shared
+start time.
+
+**`LoopArea.enabled` schema-defaults to `true`.** `LoopArea.initializeFields()`
+(`node_modules/@opendaw/studio-boxes/dist/LoopArea.js`) sets `enabled: true`, `from: 0`,
+`to: 15360` (4 bars) on a fresh box. A demo with a Loop control must explicitly set it `false` at
+boot, or the UI and the engine disagree from the first frame — every "non-looping" first take
+silently splits at the invisible wrap otherwise.
+
+**Non-zero `loopOffset` comes from the overdub trim, not from wrap finalization; event positions
+are loop-cycle-relative.** `RecordAutomation` never writes `loopOffset` — every path it takes
+(`finalizeState`, `handleLoopWrap`, `updateRegionDurations`) sets `loopDuration` to the region's
+own `duration` and leaves the offset at the schema default 0. Non-zero offsets appear afterwards,
+from `RegionClipResolver.#trimStart`: when the NEXT overdub pass grows over an older region, the
+older one is front-trimmed with `position += delta; duration -= delta; loopOffset =
+mod(oldLoopOffset + delta, oldLoopDuration)`. That is what produced the measured shape
+`{position 4560, duration 10800, loopOffset 4560, loopDuration 15360}` holding events at local
+positions `0, 3837, 9452, 15360` — spanning the whole 0–15360 cycle even though the region's
+visible span is only 4560–15360. (The `loopOffset == position` and `loopDuration == loop length`
+equalities there are coincidences of that particular take, not invariants.) Rendering (or
+otherwise interpreting) these positions must invert `LoopableRegion.globalToLocal` (`global =
+position − loopOffset + local + k·loopDuration`) rather than assume `position + local` —
+`buildRegionRender` in `laneRenderModel.ts` is the reference implementation, and it also clips
+the polyline to `[x0, x1]` since nothing else bounds it. The invariant that does hold: a
+**wrap-truncated** region ends exactly at the loop boundary (`position + duration ==
+loopArea.to`, from `handleLoopWrap`'s `finalDuration = quantizeCeil(loopTo - startPosition)`);
+the region that opens after the wrap just keeps growing until the take closes, so its end is
+wherever **Stop** happened — not necessarily the boundary again. The newer pass's region clips
+the older pass where they overlap (trimmed, not duplicated).
+
+**The finalize-time simplifier is a greedy collinearity filter, not Ramer–Douglas–Peucker —
+and ε does not bound the error.** `RecordAutomation.simplifyRecordedEvents` walks the events
+once, keeping a stack: it drops the middle point `b` of the last kept pair whenever `b.value`
+is within ε = 0.01 of the linear interpolation between `a` and the incoming event. No recursive
+worst-point split, no global error bound. `b` is always the point *adjacent to the incoming
+event* — the far end of the chord — where a smooth arc's error against its chord vanishes by
+construction, so the chord keeps growing and the admissible sagitta grows with it
+(≈ `ε · span / (4 · sample spacing)`). Measured: a two-bar parabolic pan arc thinned 116 events
+→ 4, max deviation **0.198 unitValue = 19.8× ε**; a fast zig-zag control retained 81 % of its
+points but still measured 15× ε. It only runs on **floating** parameters
+(`adapter.valueMapping.floating()`), and it runs at every finalize — a loop wrap as well as
+Stop, so a looping take visibly re-thins its curve each pass. Repro + numbers:
+`automation-simplifier-debug-demo.html` / `debug/automation-simplifier-flattening.md`.
+
+**Latch + loop = a hands-off pass overwrites the previous one.** Latch never lifts off, so
+`handleLoopWrap` finalizes the take and immediately opens a new region holding `lastValue` —
+and `updateRegionDurations` grows that region with the playhead *with no further writes at
+all*. As it grows it front-trims the previous pass's region (`RegionClipResolver.#trimStart`),
+so a performed curve is replaced by the next lap's flat hold unless the performer keeps
+playing. Measured end-to-end deviation at the original write positions: 0.79 unitValue. This is
+by-design latch behaviour (touch mode, which the engine does not implement yet, is what would
+preserve the earlier pass) — don't debug it as region-rendering breakage.
+
+**Kept-count readout must scope to the current take, not the whole lane.** Naively summing every
+event across all of a lane's regions makes the "kept" side of a `kept/captured` readout read
+backwards on an overdub — measured `15/2` (more kept than captured), because it counted the
+*previous* take's already-simplified events on top of the new one. Fix: snapshot the lane's
+existing region UUIDs when Record starts, then count kept events only from regions created after
+that snapshot — the readout then describes just the take in progress.
+
+**Gesture writes skip the undo mark, and the gesture guard must span the whole drag.**
+`project.editing.modify(() => adapter.setUnitValue(v), false)` — the `false` means a fader drag
+commits as one gesture instead of one undo entry per sample. A `gestureRef`-style guard that a
+slider's change handler raises and lowers in the same synchronous callback never actually
+suppresses anything, because the guard needs to be read by code that runs on a later tick (e.g.
+an `AnimationFrame` follow loop) — raise it on the first change and clear it from Radix's
+`onValueCommit` (fires once, on pointer-up/key-up), not from the per-tick change handler.
+
+**Fader-follow needs polling, not a field subscription.** During playback, an automated
+parameter's stored field value doesn't change — only `getControlledUnitValue()` reflects where
+automation currently has it. Follow the curve by polling that getter from an `AnimationFrame`
+loop, gated per-lane by the gesture guard so a manual drag isn't fought. Print the fader's label
+from the same source the thumb rides: `getPrintValue()` reads the raw field (frozen during
+playback) and `getControlledPrintValue()` evaluates automation **at the current playhead** (so
+it can read "6.00db" while the transport is stopped at position 0, contradicting a fader parked
+at −∞) — neither matches the thumb in every transport state. Format the displayed value directly
+from the same `unitValue` the thumb uses (`valueMapping.y` + `stringMapping.x`).
+
+**`subscribeWrites` and suspension inference.** `parameterFieldAdapters.subscribeWrites(observer)`
+delivers `{ adapter, previousUnitValue }` for every write; match against known adapters by
+reference (adapters are cached per address, not recreated). `AutomationSuspension` has no public
+observable — infer an "overridden" badge locally from a write arriving while playing-not-recording
+on a lane that already has a track, and clear it on the transport's falling edge (suspensions drop
+on pause, stop, and `stopRecording`, matching the engine's own behavior).
+
+**Boot must push the initial automation mode into the registry.** `ParameterFieldAdapters`
+defaults every address's mode to `"read"` regardless of what a UI control displays; if a page's
+mode selector defaults to e.g. `"latch"` in React state alone, `getMode()` returns `"read"` for
+every lane until something calls `setMode()` at setup time to match.
+
+**Analyser-tap gotcha when verifying audio in-browser.** An `AnalyserNode` teed off a monkeypatched
+destination `connect()` reads all zeros if it dead-ends at a dangling node — it must stay inside
+the pull graph, e.g. `analyser.connect(zeroGain); zeroGain.connect(ctx.destination)`. Without the
+onward connection this looks exactly like silence even when the mix is healthy.
+
 ## Reference Files
 - Track automation demo: `src/demos/automation/track-automation-demo.tsx`
 - Tempo automation demo: `src/demos/automation/tempo-automation-demo.tsx`
 - Time signature demo: `src/demos/automation/time-signature-demo.tsx`
+- Live automation recording demo: `src/demos/automation/live-automation-recording-demo.tsx`
 - Track automation docs: `documentation/09-editing-fades-and-automation.md#advanced-track-automation`

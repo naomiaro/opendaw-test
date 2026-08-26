@@ -311,7 +311,9 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
       facadePlay();
       return;
     }
-    void audioContext.resume().then(facadePlay);
+    void audioContext.resume()
+      .then(facadePlay)
+      .catch(e => console.error("[projectSetup] play resume failed: " + String(e)));
   };
 
   // Same fix, same reason: clip-launcher demos have no Play button — the

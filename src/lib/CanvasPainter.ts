@@ -9,6 +9,7 @@ import { Terminable } from "@opendaw/lib-std";
  */
 export class CanvasPainter implements Terminable {
   private needsUpdate = true;
+  private hasLoggedError = false;
   private isResized = false;
   private lastWidth = 0;
   private lastHeight = 0;
@@ -84,8 +85,20 @@ export class CanvasPainter implements Terminable {
     // Scale context for HiDPI
     context.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
 
-    // Call user's render function
-    this.render(this, context);
+    // Call user's render function. AnimationFrame in lib-dom runs its queue as
+    // `queue.forEach(exec => exec())` with no try/catch and rebuilds the queue
+    // AFTER the loop — so one throwing paint callback would take down every
+    // other frame consumer on the page. Contain it here: skip the frame, and
+    // log once per painter so a broken renderer isn't a 60 Hz console flood.
+    try {
+      this.render(this, context);
+    } catch (error) {
+      if (!this.hasLoggedError) {
+        this.hasLoggedError = true;
+        console.error("[CanvasPainter] render callback threw (frame skipped; logged once): " +
+          String(error) + (error instanceof Error && error.stack ? "\n" + error.stack : ""));
+      }
+    }
   }
 
   terminate(): void {
