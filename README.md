@@ -37,6 +37,7 @@ Visit http://localhost:5173 to explore the demos.
 | **[Werkstatt](https://opendaw-test.pages.dev/werkstatt-demo.html)** | Write custom audio effects in JavaScript with pre-built examples and runnable code |
 | **[Apparat](https://opendaw-test.pages.dev/apparat-demo.html)** | Write custom polyphonic instruments in JavaScript — hot-swap synth engines (sine, supersaw, FM bell, Karplus pluck) over a looping chord pattern and play live |
 | **[WASM Engine](https://opendaw-test.pages.dev/wasm-engine-demo.html)** | A Vaporisateur synth loop playing through the WASM (Rust) audio engine — the only engine these demos run — with an opt-in DSP-load readout |
+| **[Modulators](https://opendaw-test.pages.dev/modulation-demo.html)** | The project-global modulation system: LFO, step-sequencer, random and macro modulators wobbling a synth's cutoff, volume and panning — with live scopes that keep moving while the transport is paused |
 | **[Audio Export](https://opendaw-test.pages.dev/export-demo.html)** | Export audio with range selection, metronome control, and offline rendering |
 
 ## Documentation
@@ -154,6 +155,9 @@ src/
     │   └── lib/                       # Shared setup, scenario builders, waveform
     ├── engine/                        # Engine demos
     │   └── wasm-engine-demo.tsx       # WASM (Rust) engine — the only engine — with DSP-load readout
+    ├── modulation/                    # Modulation demos
+    │   ├── modulation-demo.tsx        # LFO / Steps / Random / Macro modulators with live scopes
+    │   └── modulationContent.ts       # Synth loop + modulator/assignment builder
     └── export/                        # Export demos
         └── export-demo.tsx            # Audio export with range selection
 ```

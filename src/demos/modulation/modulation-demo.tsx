@@ -129,6 +129,8 @@ const ModulatorCard: React.FC<{
     project.editing.modify(() => adapter.box.enabled.setValue(on));
   }, [project, adapter]);
 
+  // One transaction per slider sample is deliberate: this page has no undo UI, and
+  // nothing subscribes to editing — the simplicity beats an append-folding scheme here.
   const onDepth = useCallback((value: number) => {
     project.editing.modify(() => assignment.depth.setValue(value));
   }, [project, assignment]);
@@ -215,21 +217,24 @@ const LfoControls: React.FC<{ project: Project; adapter: LfoModulatorBoxAdapter 
 };
 
 const StepsControls: React.FC<{ project: Project; adapter: StepsModulatorBoxAdapter }> = ({ project, adapter }) => {
-  // Bump to re-read the step fields after a randomize/edit.
-  const [version, setVersion] = useState(0);
+  // Any committed edit re-reads the step fields (randomize here, or any other writer).
+  const [, setVersion] = useState(0);
   const [direction, setDirection] = useState(0);
 
   useEffect(() => {
     const directionSub = adapter.box.direction.catchupAndSubscribe(obs => setDirection(obs.getValue()));
-    return () => directionSub.terminate();
-  }, [adapter]);
+    // setVersion is NOT an editing.modify — safe inside editing.subscribe.
+    const editSub = project.editing.subscribe(() => setVersion(v => v + 1));
+    return () => {
+      directionSub.terminate();
+      editSub.terminate();
+    };
+  }, [project, adapter]);
 
-  const steps = adapter.box.steps.fields().slice(0, adapter.count).map(field => field.getValue());
-  void version;
+  const steps = adapter.steps.slice(0, adapter.count).map(field => field.getValue());
 
   const onRandomize = useCallback(() => {
     project.editing.modify(() => adapter.randomize());
-    setVersion(v => v + 1);
   }, [project, adapter]);
 
   return (
@@ -388,7 +393,7 @@ const App: React.FC = () => {
             <Flex align="center" gap="3" wrap="wrap">
               <Button onClick={onPlay} disabled={!setup || isPlaying}>▶ Play</Button>
               <Button variant="soft" onClick={onPause} disabled={!setup || !isPlaying}>⏸ Pause</Button>
-              <Button variant="soft" onClick={onStop} disabled={!setup || !isPlaying}>■ Stop</Button>
+              <Button variant="soft" onClick={onStop} disabled={!setup}>■ Stop</Button>
               <Separator orientation="vertical" />
               <Badge color={initError ? "red" : setup ? "amber" : "gray"}>
                 {initError ? "Init failed" : setup ? "Ready" : "Booting…"}

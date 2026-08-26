@@ -807,6 +807,7 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
 7. Add GoatCounter script before `</body>` (copy from any existing demo HTML)
 8. Follow the design language in `docs/design/2026-06-11-mastering-console-editorial.md`
    (tokens, type, motion, accessibility floors) — reference implementation `src/demos/warp/warp-overview.tsx`
+9. Add a row to the README demo table and an entry to its source-tree listing
 
 ## Demo-Specific SDK Knowledge
 

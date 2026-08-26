@@ -48,9 +48,15 @@ Practical recipes measured in this demo:
 - `LfoModulatorBoxAdapter.ShapeStrings` / `.RateStrings` / `.RatePPQNs` (index 0 = off;
   4 = 1 bar, 6 = 1/4, 8 = 1/8, 10 = 1/16), `LfoShape` enum.
 - `StepsModulatorBoxAdapter.DirectionStrings`, `StepsDirection` enum; step fields via
-  `box.steps.fields()` (ArrayField, 64 × Float32Field storing unitValues 0..1 —
-  raw emitted is `stored*2−1`); helpers `randomize()`, `clear()`, `rotate()`.
-- `ModulatorBoxAdapter` base: `label`, `enabled`, `bipolarField`, `amount`,
+  `adapter.steps` (= `box.steps.fields()`: ArrayField, 64 × Float32Field storing
+  unitValues 0..1 — the ENGINE's raw is `stored*2−1` unconditionally); helpers
+  `randomize()`, `clear()`, `rotate()`. **`emitted()`/`stored()`/`neutral` are
+  display-only helpers** — `emitted()` applies the ×2−1 only when `bipolar` is true, so
+  for a unipolar Steps modulator it disagrees with what the engine computes (the fold to
+  0..1 happens at the modulator level AFTER the unconditional ×2−1). Don't use them to
+  predict audible output.
+- `ModulatorBoxAdapter` base: `label`/`enabled` (read-only getters — write through
+  `box.label`/`box.enabled` or `labelField`), `bipolarField`, `indexField`, `amount`,
   `assignments: ReadonlyArray<ModulationBoxAdapter>` (each has `.target:
   Option<AutomatableParameterFieldAdapter>` — Option, unwrap it).
 

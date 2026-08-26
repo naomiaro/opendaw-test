@@ -19,6 +19,7 @@ import {
   LfoModulatorBox,
   StepsModulatorBox,
   RandomModulatorBox,
+  MacroModulatorBox,
   type ModulationBox,
 } from "@opendaw/studio-boxes";
 import type { AudioUnitBox, TrackBox } from "@opendaw/studio-boxes";
@@ -43,9 +44,11 @@ const GATE_PATTERN: ReadonlyArray<number> = [
   1, 0, 0.7, 0, 1, 0.4, 0, 0.7,
 ];
 
-// LfoModulatorBoxAdapter.RatePPQNs indices (0 = off, then slowest → fastest).
-const RATE_1_4 = 6;
-const RATE_1_8 = 8;
+// The synced-rate table is SHARED across modulator kinds (Steps and Random build their
+// rateSync from LfoModulatorBoxAdapter.RateStrings too). Derive the indices so they
+// cannot drift from the table.
+const RATE_1_4 = LfoModulatorBoxAdapter.RateStrings.indexOf("1/4");
+const RATE_1_8 = LfoModulatorBoxAdapter.RateStrings.indexOf("1/8");
 
 export type ModulatorSlot<A> = {
   readonly adapter: A;
@@ -139,7 +142,9 @@ export function buildModulationDemoContent(project: Project): ModulationDemoSetu
   }
   const collectionAdapter = boxAdapters.adapterFor(
     collectionBox as NoteEventCollectionBox, NoteEventCollectionBoxAdapter);
-  editing.modify(() => {
+  // append(): commits separately (the adapter collection can't see in-transaction boxes)
+  // but folds into the region-creation transaction's undo entry.
+  editing.append(() => {
     for (const note of PATTERN) {
       collectionAdapter.createEvent({
         position: note.position,
@@ -168,16 +173,19 @@ export function buildModulationDemoContent(project: Project): ModulationDemoSetu
   const panning = unitAdapter.namedParameter.panning;
 
   // LFO → cutoff: synced 1/8 sine wobble around the patch's base cutoff.
+  let lfoBox: LfoModulatorBox | null = null;
   let lfoAssignment: ModulationBox | null = null;
   editing.modify(() => {
     // api.modulation's create* return the ModulatorBox union — narrow to the concrete class.
     const box = asInstanceOf(modulation.createLfo("Wobble"), LfoModulatorBox);
     box.rateSync.setValue(RATE_1_8);
+    lfoBox = box;
     lfoAssignment = modulation.assign(box, cutoff.modulationTarget, 0.3);
   });
 
   // Steps → volume: unipolar 16-step pattern with NEGATIVE depth = rhythmic ducking
   // (channel volume already sits near the top of its dB range, so lifting it would clamp).
+  let stepsBox: StepsModulatorBox | null = null;
   let stepsAssignment: ModulationBox | null = null;
   editing.modify(() => {
     const box = asInstanceOf(modulation.createSteps("Gate"), StepsModulatorBox);
@@ -185,53 +193,57 @@ export function buildModulationDemoContent(project: Project): ModulationDemoSetu
     box.smooth.setValue(0.15);
     box.steps.fields().forEach((field, index) =>
       field.setValue(GATE_PATTERN[index % GATE_PATTERN.length]));
+    stepsBox = box;
     stepsAssignment = modulation.assign(box, volume.modulationTarget, -0.55);
   });
 
   // Random → panning: smoothed continuous drift, bipolar so it swings both ways.
+  let randomBox: RandomModulatorBox | null = null;
   let randomAssignment: ModulationBox | null = null;
   editing.modify(() => {
     const box = asInstanceOf(modulation.createRandom("Drift"), RandomModulatorBox);
     box.rateSync.setValue(RATE_1_4);
     box.smooth.setValue(0.6);
+    randomBox = box;
     randomAssignment = modulation.assign(box, panning.modulationTarget, 0.5);
   });
 
   // Macro → cutoff (STACKED with the LFO): a hand knob that shifts the wobble's center.
   // Bipolar with the default value 0.5 = zero offset at rest.
+  let macroBox: MacroModulatorBox | null = null;
   let macroAssignment: ModulationBox | null = null;
   editing.modify(() => {
-    const box = modulation.createMacro("Center");
+    const box = asInstanceOf(modulation.createMacro("Center"), MacroModulatorBox);
+    macroBox = box;
     macroAssignment = modulation.assign(box, cutoff.modulationTarget, 0.45);
   });
 
-  if (!lfoAssignment || !stepsAssignment || !randomAssignment || !macroAssignment) {
-    throw new Error("buildModulationDemoContent: a modulator assignment was not created");
+  if (!lfoBox || !stepsBox || !randomBox || !macroBox
+    || !lfoAssignment || !stepsAssignment || !randomAssignment || !macroAssignment) {
+    throw new Error("buildModulationDemoContent: a modulator or assignment was not created");
   }
 
-  // Resolve the modulator adapters AFTER their transactions committed (the collection
-  // only sees committed boxes).
-  const [lfoAdapter, stepsAdapter, randomAdapter, macroAdapter] = (() => {
-    const adapters = project.rootBoxAdapter.modulators.adapters();
-    const byLabel = (label: string) => {
-      const found = adapters.find(adapter => adapter.label === label);
-      if (!found) throw new Error(`buildModulationDemoContent: modulator "${label}" not found`);
-      return found;
-    };
-    return [
-      byLabel("Wobble") as LfoModulatorBoxAdapter,
-      byLabel("Gate") as StepsModulatorBoxAdapter,
-      byLabel("Drift") as RandomModulatorBoxAdapter,
-      byLabel("Center") as MacroModulatorBoxAdapter,
-    ] as const;
-  })();
-
+  // Resolve the modulator adapters from the captured boxes AFTER their transactions
+  // committed — typed via adapterFor, no label lookup (labels are de-duplicated by
+  // Strings.getUniqueName upstream, so they are not stable keys), no casts.
   return {
     audioUnitAdapter: unitAdapter,
     cutoff, volume, panning,
-    lfo: { adapter: lfoAdapter, assignment: lfoAssignment as ModulationBox },
-    steps: { adapter: stepsAdapter, assignment: stepsAssignment as ModulationBox },
-    random: { adapter: randomAdapter, assignment: randomAssignment as ModulationBox },
-    macro: { adapter: macroAdapter, assignment: macroAssignment as ModulationBox },
+    lfo: {
+      adapter: boxAdapters.adapterFor(lfoBox as LfoModulatorBox, LfoModulatorBoxAdapter),
+      assignment: lfoAssignment as ModulationBox,
+    },
+    steps: {
+      adapter: boxAdapters.adapterFor(stepsBox as StepsModulatorBox, StepsModulatorBoxAdapter),
+      assignment: stepsAssignment as ModulationBox,
+    },
+    random: {
+      adapter: boxAdapters.adapterFor(randomBox as RandomModulatorBox, RandomModulatorBoxAdapter),
+      assignment: randomAssignment as ModulationBox,
+    },
+    macro: {
+      adapter: boxAdapters.adapterFor(macroBox as MacroModulatorBox, MacroModulatorBoxAdapter),
+      assignment: macroAssignment as ModulationBox,
+    },
   };
 }
