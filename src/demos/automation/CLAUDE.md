@@ -229,8 +229,75 @@ Move via `box.position.setValue()` in `editing.modify()`. Delete via
 `ValueEventCurveBox` with a mandatory back-pointer, and only `box.delete()`
 cascade-deletes it; bare `unstageBox` strands the curve box.
 
+### Live Automation Recording (`live-automation-recording-demo.tsx`)
+
+**Lane auto-creation, no pre-creation needed.** `RecordAutomation` resolves the lane owner via
+`adapter.optTracks()`, which falls back to the parameter's audio unit when nothing was registered.
+The first `setUnitValue` while `engine.isRecording` creates the value `TrackBox` *and* its
+`ValueRegionBox` on demand — verified per-parameter: in a three-fader take each lane's track
+appeared independently, and each region started at *that* lane's own first write, not a shared
+start time.
+
+**`LoopArea.enabled` schema-defaults to `true`.** `LoopArea.initializeFields()`
+(`node_modules/@opendaw/studio-boxes/dist/LoopArea.js`) sets `enabled: true`, `from: 0`,
+`to: 15360` (4 bars) on a fresh box. A demo with a Loop control must explicitly set it `false` at
+boot, or the UI and the engine disagree from the first frame — every "non-looping" first take
+silently splits at the invisible wrap otherwise.
+
+**Wrap-finalized regions carry non-zero `loopOffset`; event positions are loop-cycle-relative.**
+A take split by a loop wrap gets `loopOffset == its position` and `loopDuration == the loop
+length`, and its event collection is stored relative to the *loop cycle*, not the region — events
+can fall outside the region's own `[position, position+duration)` window entirely. Measured: a
+region `{position 4560, duration 10800, loopOffset 4560, loopDuration 15360}` held events at
+local positions `0, 3837, 9452, 15360` — spanning the whole 0–15360 cycle even though the
+region's visible span is only 4560–15360. Rendering (or otherwise interpreting) these positions
+must invert `LoopableRegion.globalToLocal` (`global = position − loopOffset + local +
+k·loopDuration`) rather than assume `position + local` — `buildRegionRender` in
+`laneRenderModel.ts` is the reference implementation, and it also clips the polyline to
+`[x0, x1]` since nothing else bounds it. Only the **wrap-truncated** region's end is pinned to
+the loop boundary (`position + duration == loopDuration`); the region that opens after the wrap
+just keeps growing until the take closes, so its end is wherever **Stop** happened — not
+necessarily the boundary again. The newer pass's region clips the older pass where they overlap
+(trimmed, not duplicated).
+
+**Gesture writes skip the undo mark, and the gesture guard must span the whole drag.**
+`project.editing.modify(() => adapter.setUnitValue(v), false)` — the `false` means a fader drag
+commits as one gesture instead of one undo entry per sample. A `gestureRef`-style guard that a
+slider's change handler raises and lowers in the same synchronous callback never actually
+suppresses anything, because the guard needs to be read by code that runs on a later tick (e.g.
+an `AnimationFrame` follow loop) — raise it on the first change and clear it from Radix's
+`onValueCommit` (fires once, on pointer-up/key-up), not from the per-tick change handler.
+
+**Fader-follow needs polling, not a field subscription.** During playback, an automated
+parameter's stored field value doesn't change — only `getControlledUnitValue()` reflects where
+automation currently has it. Follow the curve by polling that getter from an `AnimationFrame`
+loop, gated per-lane by the gesture guard so a manual drag isn't fought. Print the fader's label
+from the same source the thumb rides: `getPrintValue()` reads the raw field (frozen during
+playback) and `getControlledPrintValue()` evaluates automation **at the current playhead** (so
+it can read "6.00db" while the transport is stopped at position 0, contradicting a fader parked
+at −∞) — neither matches the thumb in every transport state. Format the displayed value directly
+from the same `unitValue` the thumb uses (`valueMapping.y` + `stringMapping.x`).
+
+**`subscribeWrites` and suspension inference.** `parameterFieldAdapters.subscribeWrites(observer)`
+delivers `{ adapter, previousUnitValue }` for every write; match against known adapters by
+reference (adapters are cached per address, not recreated). `AutomationSuspension` has no public
+observable — infer an "overridden" badge locally from a write arriving while playing-not-recording
+on a lane that already has a track, and clear it on the transport's falling edge (suspensions drop
+on pause, stop, and `stopRecording`, matching the engine's own behavior).
+
+**Boot must push the initial automation mode into the registry.** `ParameterFieldAdapters`
+defaults every address's mode to `"read"` regardless of what a UI control displays; if a page's
+mode selector defaults to e.g. `"latch"` in React state alone, `getMode()` returns `"read"` for
+every lane until something calls `setMode()` at setup time to match.
+
+**Analyser-tap gotcha when verifying audio in-browser.** An `AnalyserNode` teed off a monkeypatched
+destination `connect()` reads all zeros if it dead-ends at a dangling node — it must stay inside
+the pull graph, e.g. `analyser.connect(zeroGain); zeroGain.connect(ctx.destination)`. Without the
+onward connection this looks exactly like silence even when the mix is healthy.
+
 ## Reference Files
 - Track automation demo: `src/demos/automation/track-automation-demo.tsx`
 - Tempo automation demo: `src/demos/automation/tempo-automation-demo.tsx`
 - Time signature demo: `src/demos/automation/time-signature-demo.tsx`
+- Live automation recording demo: `src/demos/automation/live-automation-recording-demo.tsx`
 - Track automation docs: `documentation/09-editing-fades-and-automation.md#advanced-track-automation`

@@ -1339,18 +1339,26 @@ parameterFieldAdapters.getTracks(address)       // Option<ParameterTracks>
 parameterFieldAdapters.subscribeWrites(observer)        // Observe every parameter write
 ```
 
-#### Standalone Demo (Future)
+#### Demo
 
-A standalone automation recording demo could show:
-- Live parameter recording during playback (volume fade via programmatic touch)
-- Visualizing recorded events on a canvas after recording stops
-- Comparing hand-drawn automation curves vs preset curves
-- Loop recording with automation overdubs
-
-This would complement the existing track-automation-demo which creates automation events purely through code.
+`src/demos/automation/live-automation-recording-demo.tsx` drives the record cycle from real
+fader gestures instead of scripted events. Three lanes — an audio unit's `volume` and `panning`
+plus a Delay effect's `wet` — start with no automation track at all; the first gesture after
+Record creates the value track and region on demand. Hitting Record and dragging a Radix Slider
+latches a take exactly as described above (no touch gate, transport stop or loop wrap closes it);
+each lane's header shows a live `kept / captured` readout from the finalize-time RDP simplifier,
+so the effect of the ε = 0.01 pass is visible on real input rather than asserted in prose. With
+loop recording on, each pass overdubs its own region and the canvas renders every pass's outline
+stacked across the four bars, including the loop-wrap-truncated region's non-zero `loopOffset`.
+Moving a fader during plain playback raises an `AutomationSuspension` override badge on that lane
+(inferred from `subscribeWrites` plus transport state, since the suspension itself has no public
+observable) and the recorded curve dims underneath it. A preset-comparison panel overlays a
+dashed ghost curve — the same shapes `track-automation-demo` writes into the box graph
+programmatically — purely for drawing, so a performed move can be judged against an authored one.
 
 **Reference:**
 
+- Demo: `src/demos/automation/live-automation-recording-demo.tsx`
 - Demo: `src/demos/automation/track-automation-demo.tsx`
 - SDK curve algorithm: `@opendaw/lib-std` → `Curve.normalizedAt`
 - SDK interpolation: `@opendaw/lib-dsp` → `value.ts` → `interpolate()`
