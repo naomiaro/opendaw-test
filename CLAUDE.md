@@ -643,10 +643,9 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
 - `typescript` is a devDependency (`^5.9.2`, matching the upstream openDAW monorepo pin),
   so `npx tsc --noEmit` runs the project-local TS — no `--ignoreDeprecations` flag needed.
   Don't jump to TS 7.x: it removes `baseUrl` outright (hard error TS5102).
-- `src/` is tsc-clean (the historical 70 pre-existing demo errors were fixed in one
-  sweep). "Zero new errors" now means literally zero `^src/` lines from
-  `npx tsc --noEmit`; if unsure whether an error pre-dates a branch, diff against the
-  parent commit's error set (`git show` + the worktree recipe below).
+- `src/` is tsc-clean: `npx tsc --noEmit` must report zero `^src/` lines before a
+  commit. If unsure whether an error pre-dates a branch, diff against the parent
+  commit's error set (`git show` + the worktree recipe below).
 - Concrete "zero new errors" recipe: `git worktree add <tmp> <parent> && cd <tmp> &&
   npm ci && npx tsc --noEmit 2>&1 | grep '^src/' | sort`,
   then `comm -13 baseline.txt branch.txt`. Filter to `^src/` — the node_modules
