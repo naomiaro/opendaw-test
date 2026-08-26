@@ -1,7 +1,7 @@
 import { UUID } from "@opendaw/lib-std";
-import { AudioFileBox, AudioRegionBox, AudioUnitBox, DelayDeviceBox, ValueEventCollectionBox } from "@opendaw/studio-boxes";
+import { AudioFileBox, AudioRegionBox, AudioUnitBox, ValueEventCollectionBox } from "@opendaw/studio-boxes";
 import { AudioRegionBoxAdapter, DelayDeviceBoxAdapter, InstrumentFactories, type AutomatableParameterFieldAdapter } from "@opendaw/studio-adapters";
-import { EffectFactories, type Project } from "@opendaw/studio-core";
+import { EffectFactories, type EffectBox, type Project } from "@opendaw/studio-core";
 import { audioEffectsFieldOf, audioUnitAdapterFor } from "@/lib/adapterUtils";
 import { loadAudioFile } from "@/lib/audioUtils";
 import { CANVAS_COLORS } from "@/lib/design/consoleTheme";
@@ -12,8 +12,6 @@ const DRUM_FILE = "/audio/BassDrums30.mp3";
 export type LaneId = "volume" | "pan" | "wet";
 export type LaneSpec = { id: LaneId; label: string; color: string; adapter: AutomatableParameterFieldAdapter<number> };
 export type LiveAutomationSetup = {
-  audioUnitBox: AudioUnitBox;
-  delayBox: DelayDeviceBox;
   lanes: ReadonlyArray<LaneSpec>;
   drumRegionAdapter: AudioRegionBoxAdapter;
 };
@@ -68,9 +66,9 @@ export async function buildLiveAutomationContent(
 
   // Transaction 2: insert the Delay (field resolved OUTSIDE, after tx 1 committed).
   const effectsField = audioEffectsFieldOf(project, unitBox);
-  let delayBox: DelayDeviceBox | null = null;
+  let delayBox: EffectBox | null = null;
   project.editing.modify(() => {
-    delayBox = project.api.insertEffect(effectsField, EffectFactories.Delay) as DelayDeviceBox;
+    delayBox = project.api.insertEffect(effectsField, EffectFactories.Delay);
   });
 
   // The LoopArea schema defaults to enabled=true, from=0, to=15360 — so a fresh
@@ -96,5 +94,5 @@ export async function buildLiveAutomationContent(
     { id: "pan", label: "Pan", color: CANVAS_COLORS.cyan, adapter: unitAdapter.namedParameter.panning },
     { id: "wet", label: "Delay Wet", color: CANVAS_COLORS.green, adapter: delayAdapter.namedParameter.wet },
   ];
-  return { audioUnitBox: unitBox, delayBox: delayBox!, lanes, drumRegionAdapter };
+  return { lanes, drumRegionAdapter };
 }

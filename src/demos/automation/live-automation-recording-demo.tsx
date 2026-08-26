@@ -9,7 +9,7 @@ import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
 import { CANVAS_COLORS, CONSOLE_STYLES } from "@/lib/design/consoleTheme";
-import { BAR, DEMO_BPM, LOOP_PPQN, WINDOW_PPQN, presetGhost } from "./laneRenderModel";
+import { DEMO_BPM, HEADER_WIDTH, LOOP_PPQN, NUM_BARS, WINDOW_PPQN, presetGhost } from "./laneRenderModel";
 import type { LanePoint } from "./laneRenderModel";
 import { buildLiveAutomationContent } from "./liveAutomationContent";
 import type { LaneId, LaneSpec, LiveAutomationSetup } from "./liveAutomationContent";
@@ -23,10 +23,9 @@ import {
 } from "@radix-ui/themes";
 
 // The playhead overlay sits over the CANVAS column only: it must clear the lane
-// header (LiveAutomationLane's HEADER_WIDTH) plus the Radix gap="3" between the
-// header and the canvas. Kept in sync by hand — the lane component owns the
-// header width, and a mismatch only skews the playhead, never the data.
-const LANE_HEADER_OFFSET = 180 + 12;
+// header (the shared HEADER_WIDTH) plus the Radix gap="3" between the header and
+// the canvas.
+const LANE_HEADER_OFFSET = HEADER_WIDTH + 12; // 12 = Radix gap="3"
 
 const LANE_IDS: ReadonlyArray<LaneId> = ["volume", "pan", "wet"];
 
@@ -429,7 +428,7 @@ const App: React.FC = () => {
                     </Flex>
                     <Separator orientation="vertical" />
                     <Text size="1" color="gray" style={{ fontFamily: "var(--mc-mono)" }}>
-                      {DEMO_BPM} BPM · window {WINDOW_PPQN / BAR} bars
+                      {DEMO_BPM} BPM · window {NUM_BARS} bars
                     </Text>
                     <Badge color={isRecording ? "red" : isPlaying ? "green" : "amber"}>{transportLabel}</Badge>
                   </Flex>

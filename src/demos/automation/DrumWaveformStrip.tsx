@@ -6,11 +6,9 @@ import { PPQN } from "@opendaw/lib-dsp";
 import type { AudioRegionBoxAdapter } from "@opendaw/studio-adapters";
 import { CanvasPainter } from "@/lib/CanvasPainter";
 import { CANVAS_COLORS, CANVAS_FONT_SMALL } from "@/lib/design/consoleTheme";
-import { BAR, DEMO_BPM, LOOP_PPQN, WINDOW_PPQN } from "./laneRenderModel";
+import { BAR, DEMO_BPM, HEADER_WIDTH, LOOP_PPQN, NUM_BARS, WINDOW_PPQN } from "./laneRenderModel";
 
 const CANVAS_HEIGHT = 64;
-export const HEADER_WIDTH = 180; // must match LiveAutomationLane's HEADER_WIDTH for column alignment
-const NUM_BARS = WINDOW_PPQN / BAR; // 8
 const LOOP_BAR = LOOP_PPQN / BAR; // 4 — loop boundary drawn distinctly
 const CYCLES = WINDOW_PPQN / LOOP_PPQN; // 2 — the drum loop repeats twice across the window
 // Backstop for the peaks-nudge loop: ~10 s at 60 fps. Peaks that have not

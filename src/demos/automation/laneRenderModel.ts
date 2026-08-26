@@ -1,11 +1,22 @@
 import { Curve } from "@opendaw/lib-std";
 import { Interpolation } from "@opendaw/lib-dsp";
-import { BAR } from "./trackAutomationPresets";
+import { BAR, NUM_BARS, TOTAL_PPQN } from "./trackAutomationPresets";
 
-export { BAR };
+export { BAR, NUM_BARS };
 export const DEMO_BPM = 122;
 export const LOOP_PPQN = 4 * BAR;
-export const WINDOW_PPQN = 8 * BAR;
+/**
+ * The arrangement window this page draws — the presets' 8-bar `TOTAL_PPQN`
+ * under the demo's own vocabulary (every lane maps ppqn onto `[0, 1]` by it).
+ */
+export const WINDOW_PPQN = TOTAL_PPQN;
+/**
+ * Width of the lane header column (label + fader + readout). Single-sourced
+ * here because three separate things have to agree on it: the automation
+ * lanes, the waveform strip above them, and the page's playhead overlay, which
+ * is offset by this plus the flex gap between header and canvas.
+ */
+export const HEADER_WIDTH = 180;
 
 export type LanePoint = { x: number; y: number };
 export type LaneEventModel = { position: number; value: number; interpolation: Interpolation };

@@ -4,13 +4,11 @@ import type { Project } from "@opendaw/studio-core";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { CanvasPainter } from "@/lib/CanvasPainter";
 import { CANVAS_COLORS } from "@/lib/design/consoleTheme";
-import { BAR, buildRegionRender, LOOP_PPQN, WINDOW_PPQN } from "./laneRenderModel";
+import { BAR, buildRegionRender, HEADER_WIDTH, LOOP_PPQN, NUM_BARS, WINDOW_PPQN } from "./laneRenderModel";
 import type { LanePoint, LaneRegionModel } from "./laneRenderModel";
 import type { LaneSpec } from "./liveAutomationContent";
 
 const CANVAS_HEIGHT = 110;
-const HEADER_WIDTH = 180;
-const NUM_BARS = WINDOW_PPQN / BAR; // 8
 const LOOP_BAR = LOOP_PPQN / BAR; // 4 — loop boundary drawn distinctly
 
 export interface LiveAutomationLaneProps {
