@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { AnimationFrame } from "@opendaw/lib-dom";
+import { UUID } from "@opendaw/lib-std";
 import type { Project } from "@opendaw/studio-core";
 import type { AutomationMode } from "@opendaw/studio-adapters";
 import { initializeOpenDAW } from "@/lib/projectSetup";
@@ -94,6 +95,12 @@ const App: React.FC = () => {
   // back over the move. Never assigned from the render body — that would let a
   // render triggered by other state clobber a fresher value.
   const sliderValuesRef = useRef(sliderValues);
+  // Region UUIDs that already existed when the current take started. `captured`
+  // counts one take's writes, so `kept` has to be scoped the same way — counting
+  // every event on the lane makes an overdub read backwards (kept 15 / captured 2).
+  const takeBaselineRef = useRef<Record<LaneId, ReadonlySet<string>>>({
+    volume: new Set(), pan: new Set(), wet: new Set(),
+  });
 
   // --- Boot -----------------------------------------------------------------
 
@@ -204,8 +211,11 @@ const App: React.FC = () => {
           let kept = 0;
           const trackOption = lane.adapter.track;
           if (trackOption.nonEmpty()) {
+            const baseline = takeBaselineRef.current[lane.id];
             for (const region of trackOption.unwrap().regions.adapters.values()) {
               if (!region.isValueRegion()) continue;
+              // Regions that predate the take belong to an earlier one.
+              if (baseline.has(UUID.toString(region.box.address.uuid))) continue;
               const eventsOption = region.events;
               if (eventsOption.nonEmpty()) kept += eventsOption.unwrap().asArray().length;
             }
@@ -267,13 +277,24 @@ const App: React.FC = () => {
   // --- Handlers -------------------------------------------------------------
 
   const onRecord = useCallback(async () => {
-    if (!project) return;
+    if (!project || !setup) return;
+    // Freeze what the lanes already hold so the kept counts that follow describe
+    // only the take about to start.
+    const baseline: Record<LaneId, Set<string>> = { volume: new Set(), pan: new Set(), wet: new Set() };
+    for (const lane of setup.lanes) {
+      const trackOption = lane.adapter.track;
+      if (!trackOption.nonEmpty()) continue;
+      for (const region of trackOption.unwrap().regions.adapters.values()) {
+        if (region.isValueRegion()) baseline[lane.id].add(UUID.toString(region.box.address.uuid));
+      }
+    }
+    takeBaselineRef.current = baseline;
     // startRecording does not resume the context itself (only the engine
     // facade's play() does) — a suspended context would record silence.
     const audioContext = audioCtxRef.current;
     if (audioContext !== null && audioContext.state !== "running") await audioContext.resume();
     project.startRecording(false); // no count-in: the first write is the take
-  }, [project]);
+  }, [project, setup]);
 
   const onPlay = useCallback(() => {
     // initializeOpenDAW's engine facade resumes a suspended AudioContext first.
