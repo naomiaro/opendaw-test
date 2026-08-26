@@ -783,8 +783,12 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   each renamed/changed identifier from the changelog and update method signatures, return
   types, and code examples. Chapter docs describe current contracts — leaving stale
   signatures is worse than no doc at all.
+- READ SDK internals in the sibling openDAW checkout (`/Users/naomiaro/Code/openDAWOriginal`,
+  see `.claude/local.md`) — readable TypeScript with comments beats compiled dist JS. Reach for
+  `node_modules/@opendaw/<pkg>/dist` only to confirm what the INSTALLED version actually ships
+  (exports, signatures, tag-vs-publish drift) — not as the default place to read code.
 - Before documenting an SDK method or field signature in any CLAUDE.md, verify it in
-  `node_modules/@opendaw/<pkg>/dist/**/*.d.ts`.
+  `node_modules/@opendaw/<pkg>/dist/**/*.d.ts` (installed surface is the authority).
 - Verify SDK exports: check `node_modules/@opendaw/<package>/dist/*.d.ts` before writing imports
 - SDK version lives in `node_modules/@opendaw/studio-sdk/package.json`, NOT in individual sub-packages (studio-core, studio-boxes, etc.) which have their own independent version numbers
 - `studio-boxes` source tree is empty (publish-only package). Box schema changes live in
