@@ -407,7 +407,7 @@ const App: React.FC = () => {
   // BPM each frame. Lets the listener visually correlate any audio artifact
   // with the seam.
   useEffect(() => {
-    if (!project) return;
+    if (!project) return undefined;
     const sub = AnimationFrame.add(() => {
       const bpm = project.timelineBox.bpm.getValue();
       const positionPpqn = project.engine.position.getValue();

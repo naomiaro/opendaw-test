@@ -179,7 +179,7 @@ export function useTakeDiscovery({
 
   // Set up adapter subscriptions when recording starts — typed alternative to raw pointerHub.
   useEffect(() => {
-    if (!project || !isRecording || recordingTapes.length === 0) return;
+    if (!project || !isRecording || recordingTapes.length === 0) return undefined;
 
     const subs: Terminable[] = [];
     const allAudioUnits = project.rootBoxAdapter.audioUnits.adapters();

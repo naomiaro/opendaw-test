@@ -218,7 +218,7 @@ const App: React.FC = () => {
 
   // --- Discover the RecordingWorklet loader while recording ---
   useEffect(() => {
-    if (!project || !isRecording || recordingTapes.length === 0) return;
+    if (!project || !isRecording || recordingTapes.length === 0) return undefined;
 
     const subs: Terminable[] = [];
     const tape = recordingTapes[0];
@@ -257,7 +257,7 @@ const App: React.FC = () => {
 
   // --- Live readout of loader.numberOfFrames + state while recording ---
   useEffect(() => {
-    if (!project) return;
+    if (!project) return undefined;
     const frame = AnimationFrame.add(() => {
       const loader = loaderRef.current;
       if (!loader) return;

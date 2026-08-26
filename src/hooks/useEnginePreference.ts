@@ -100,7 +100,7 @@ export function useEnginePreference<P extends PreferencePath>(
   const observableRef = useRef<MutableObservableValue<PreferenceValue<P>> | null>(null);
 
   useEffect(() => {
-    if (!project) return;
+    if (!project) return undefined;
 
     // Create mutable observable value for this preference path
     // The path is spread as arguments: ["metronome", "enabled"] -> ("metronome", "enabled")

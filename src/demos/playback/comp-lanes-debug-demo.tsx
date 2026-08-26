@@ -2,6 +2,9 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { PeaksPainter } from "@opendaw/lib-fusion";
 import { PPQN } from "@opendaw/lib-dsp";
+import { asInstanceOf } from "@opendaw/lib-std";
+import type { Field } from "@opendaw/lib-box";
+import type { Pointers } from "@opendaw/studio-enums";
 import { Project } from "@opendaw/studio-core";
 import { AudioFileBox, AudioUnitBox, TrackBox } from "@opendaw/studio-boxes";
 import { InstrumentFactories, TrackBoxAdapter } from "@opendaw/studio-adapters";
@@ -72,7 +75,7 @@ const App: React.FC = () => {
 
   // ─── Derive comp state from box graph whenever editing commits ───
   useEffect(() => {
-    if (!project) return;
+    if (!project) return undefined;
     const updateUndoRedo = () => {
       setCanUndo(project.editing.canUndo());
       setCanRedo(project.editing.canRedo());
@@ -206,7 +209,7 @@ const App: React.FC = () => {
               r.box.duration.setValue(TOTAL_PPQN);
               r.box.loopOffset.setValue(playbackStart + offset);
               if (audioFileBox === null) {
-                audioFileBox = r.box.file.targetVertex.unwrap().box;
+                audioFileBox = asInstanceOf(r.box.file.targetVertex.unwrap().box, AudioFileBox);
               }
             });
         });
@@ -216,7 +219,7 @@ const App: React.FC = () => {
         project.editing.modify(() => {
           automationTrackBox = project.api.createAutomationTrack(
             track.audioUnitBox,
-            track.audioUnitBox.volume
+            track.audioUnitBox.volume as unknown as Field<Pointers.Automation>
           );
         });
 
@@ -473,7 +476,7 @@ const App: React.FC = () => {
 
   // Draw waveforms when takes change
   useEffect(() => {
-    if (takes.length === 0) return;
+    if (takes.length === 0) return undefined;
     const draw = () => {
       requestAnimationFrame(() => {
         for (let i = 0; i < takes.length; i++) {

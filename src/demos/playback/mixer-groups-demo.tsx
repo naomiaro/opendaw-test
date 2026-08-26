@@ -182,7 +182,7 @@ const MasterStrip: React.FC<{
   const [volume, setVolume] = useState(0);
 
   useEffect(() => {
-    if (!masterBox) return;
+    if (!masterBox) return undefined;
     const sub = masterBox.volume.catchupAndSubscribe((obs: { getValue: () => number }) => setVolume(obs.getValue()));
     return () => sub.terminate();
   }, [masterBox]);

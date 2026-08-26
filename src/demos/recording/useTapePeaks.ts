@@ -145,7 +145,7 @@ export function useTapePeaks({
   // for typed, reactive region discovery. Re-subscribes when tapes change.
   // Peaks rendering is done by CanvasPainter (via AnimationFrame internally).
   useEffect(() => {
-    if (!project || !audioContext || recordingTapes.length === 0) return;
+    if (!project || !audioContext || recordingTapes.length === 0) return undefined;
 
     const subs: Terminable[] = [];
     const allAudioUnits = project.rootBoxAdapter.audioUnits.adapters();

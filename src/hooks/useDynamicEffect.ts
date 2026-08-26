@@ -417,7 +417,7 @@ export const useDynamicEffect = (config: DynamicEffectConfig): DynamicEffectResu
 
   // Initialize effect when component mounts
   useEffect(() => {
-    if (!project || !audioBox || effectRef.current) return;
+    if (!project || !audioBox || effectRef.current) return undefined;
 
     const effectConfig = EFFECT_CONFIGS[type];
     const label = `${trackName} ${type}`;

@@ -1,6 +1,6 @@
 import React from "react";
 import { Flex } from "@radix-ui/themes";
-import { Playhead, type PlayheadProps } from "./Playhead";
+import { Playhead } from "./Playhead";
 
 export interface TracksContainerProps {
   /**

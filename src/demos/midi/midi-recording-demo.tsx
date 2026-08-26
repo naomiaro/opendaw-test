@@ -207,7 +207,7 @@ const App: React.FC = () => {
 
   // Subscribe to MIDI note events for real-time display
   useEffect(() => {
-    if (midiDevices.length === 0) return;
+    if (midiDevices.length === 0) return undefined;
 
     const sub = MidiDevices.subscribeMessageEvents((event: MIDIMessageEvent) => {
       if (!event.data || event.data.length < 3) return;

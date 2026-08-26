@@ -24,9 +24,7 @@ interface TrackRowProps {
 export const TrackRow: React.FC<TrackRowProps> = ({
   track,
   project,
-  allTracks,
   canvasRef,
-  currentPosition,
   isPlaying,
   bpm,
   audioBuffer,

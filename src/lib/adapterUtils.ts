@@ -1,5 +1,5 @@
 import type { Project } from "@opendaw/studio-core";
-import type { AudioRegionBoxAdapter, ValueRegionBoxAdapter } from "@opendaw/studio-adapters";
+import type { AnyRegionBoxAdapter, AudioRegionBoxAdapter, ValueRegionBoxAdapter } from "@opendaw/studio-adapters";
 import { AudioUnitBoxAdapter } from "@opendaw/studio-adapters";
 import type { AudioUnitBox } from "@opendaw/studio-boxes";
 import type { Field } from "@opendaw/lib-box";

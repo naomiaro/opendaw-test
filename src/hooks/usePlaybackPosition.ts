@@ -38,7 +38,7 @@ export function usePlaybackPosition(project: Project | null): PlaybackPositionRe
   const pausedPositionRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!project) return;
+    if (!project) return undefined;
 
     const playingSub = project.engine.isPlaying.catchupAndSubscribe((obs) => {
       setIsPlaying(obs.getValue());

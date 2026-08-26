@@ -315,7 +315,7 @@ export function channelsToAudioBuffer(
     sampleRate,
   });
   for (let i = 0; i < channels.length; i++) {
-    buffer.copyToChannel(channels[i], i);
+    buffer.copyToChannel(channels[i] as Float32Array<ArrayBuffer>, i);
   }
   return buffer;
 }

@@ -181,7 +181,7 @@ export function useRecordingSession({
 
   // Subscribe to engine state — depends only on [project]
   useEffect(() => {
-    if (!project) return;
+    if (!project) return undefined;
 
     const subs: Terminable[] = [];
 

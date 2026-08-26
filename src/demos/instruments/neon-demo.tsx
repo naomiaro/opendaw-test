@@ -28,14 +28,14 @@ import {
  */
 function useNeonField(
   project: Project | null,
-  field: Int32Field | Float32Field | null,
+  field: Int32Field<any> | Float32Field<any> | null,
   onExternalChange?: () => void,
 ): [number, (v: number) => void] {
   const [value, setValue] = useState(0);
   const onExternalChangeRef = useRef(onExternalChange);
   onExternalChangeRef.current = onExternalChange;
   useEffect(() => {
-    if (!field) return;
+    if (!field) return undefined;
     const sub = field.catchupAndSubscribe((obs) => {
       setValue(obs.getValue());
       onExternalChangeRef.current?.();
@@ -298,7 +298,7 @@ const NeonEnvelopeViz: React.FC<{ project: Project; neonBox: NeonDeviceBox }> = 
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas) return undefined;
     const painter = new CanvasPainter(canvas, (_painter, context) => {
       const { line, kind } = selRef.current;
       const envelope = neonBox.envelopes.fields()[Neon.envelopeIndex(line, kind)];

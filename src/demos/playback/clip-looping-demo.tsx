@@ -269,7 +269,7 @@ const LoopedWaveformCanvas: React.FC<{
   // Playhead overlay — uses AnimationFrame to avoid redrawing waveform every frame
   useEffect(() => {
     const canvas = playheadCanvasRef.current;
-    if (!canvas) return;
+    if (!canvas) return undefined;
 
     const af = AnimationFrame.add(() => {
       const ctx = canvas.getContext("2d");

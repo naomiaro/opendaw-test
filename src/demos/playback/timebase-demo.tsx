@@ -114,7 +114,7 @@ function TimeBaseDemo() {
 
   // Subscribe to sample loading state
   useEffect(() => {
-    if (!project || !audioFileUUID) return;
+    if (!project || !audioFileUUID) return undefined;
 
     const sampleLoader = project.sampleManager.getOrCreate(audioFileUUID);
     const subscription = sampleLoader.subscribe((state) => {

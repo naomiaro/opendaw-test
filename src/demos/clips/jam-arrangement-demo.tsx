@@ -86,7 +86,7 @@ const App: React.FC = () => {
   // Region count is a structural fact of the box graph — resync from an
   // editing subscription rather than polling every frame.
   useEffect(() => {
-    if (project === null) return;
+    if (project === null) return undefined;
     const sync = () => setRegionCount(getAllAudioRegions(project).length);
     sync();
     const sub = project.editing.subscribe(sync);

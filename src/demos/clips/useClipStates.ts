@@ -9,7 +9,7 @@ export function useClipStates(project: Project | null): ClipStateMap {
   const [states, setStates] = useState<ClipStateMap>(new Map());
 
   useEffect(() => {
-    if (project === null) return;
+    if (project === null) return undefined;
     const subscription = project.engine.subscribeClipNotification(notification => {
       setStates(prev => applyClipNotification(prev, notification));
     });
