@@ -83,12 +83,17 @@ const App: React.FC = () => {
 
   const audioCtxRef = useRef<AudioContext | null>(null);
   const playheadRef = useRef<HTMLDivElement>(null);
-  // True only while a slider's own write is in flight — the follow loop must not
-  // fight the hand that is moving the fader.
+  // True for the WHOLE of a drag — set on the first onValueChange, cleared on
+  // Radix's onValueCommit. Setting and clearing it inside one handler would be
+  // useless: JS is single-threaded, so the frame loop can never observe a flag
+  // that is raised and lowered without yielding.
   const gestureRef = useRef<Record<LaneId, boolean>>({ volume: false, pan: false, wet: false });
-  // Mirror of sliderValues so the AnimationFrame loop can compare without a dep.
+  // Authoritative, synchronously-updated mirror of sliderValues: the frame loop
+  // reads and writes it without a React dep, and the drag handler updates it
+  // BEFORE setState so a frame landing mid-drag cannot write a stale snapshot
+  // back over the move. Never assigned from the render body — that would let a
+  // render triggered by other state clobber a fresher value.
   const sliderValuesRef = useRef(sliderValues);
-  sliderValuesRef.current = sliderValues;
 
   // --- Boot -----------------------------------------------------------------
 
@@ -110,6 +115,7 @@ const App: React.FC = () => {
         if (disposed) { newProject.terminate(); return; }
         const initial: Record<LaneId, number> = { volume: 0, pan: 0.5, wet: 0 };
         built.lanes.forEach(lane => { initial[lane.id] = lane.adapter.getUnitValue(); });
+        sliderValuesRef.current = initial;
         setSliderValues(initial);
         setProject(newProject);
         setSetup(built);
@@ -132,8 +138,12 @@ const App: React.FC = () => {
     if (!project) return undefined;
     // Suspensions are runtime-only and dropped by the engine on pause/stop/
     // stopRecording — mirror that on the falling edge of either flag.
-    const clearOverrides = () =>
+    const clearOverrides = () => {
       setOverridden(prev => (LANE_IDS.some(id => prev[id]) ? NO_OVERRIDES : prev));
+      // Safety net for a drag whose onValueCommit never arrived (cancelled
+      // pointer): nothing is following while stopped, so releasing here is free.
+      gestureRef.current = { volume: false, pan: false, wet: false };
+    };
     let wasPlaying = false;
     let wasRecording = false;
     const playingSub = project.engine.isPlaying.catchupAndSubscribe(obs => {
@@ -233,6 +243,8 @@ const App: React.FC = () => {
       if (!playing) return;
       // The plain field observable does not fire while automation plays back —
       // the controlled value (automation + modulation) is the honest read.
+      // Built from the ref (kept fresh by the drag handler), so a frame that
+      // lands before React commits a drag cannot revert the other lanes.
       const current = sliderValuesRef.current;
       const next: Record<LaneId, number> = { ...current };
       let changed = false;
@@ -276,15 +288,18 @@ const App: React.FC = () => {
 
   const onSliderChange = useCallback((lane: LaneSpec, value: number) => {
     if (!project) return;
+    // Raised for the rest of the drag; onSliderCommit lowers it.
     gestureRef.current[lane.id] = true;
-    try {
-      // mark=false: a fader drag is one gesture, not fifty undo entries.
-      project.editing.modify(() => lane.adapter.setUnitValue(value), false);
-    } finally {
-      gestureRef.current[lane.id] = false;
-    }
+    // mark=false: a fader drag is one gesture, not fifty undo entries.
+    project.editing.modify(() => lane.adapter.setUnitValue(value), false);
+    // Ref first, state second — the frame loop reads the ref.
+    sliderValuesRef.current = withLane(sliderValuesRef.current, lane.id, value);
     setSliderValues(prev => withLane(prev, lane.id, value));
   }, [project]);
+
+  const onSliderCommit = useCallback((lane: LaneSpec) => {
+    gestureRef.current[lane.id] = false;
+  }, []);
 
   const onLoopToggle = useCallback((next: boolean) => {
     if (!project) return;
@@ -395,6 +410,7 @@ const App: React.FC = () => {
                           spec={lane}
                           sliderValue={sliderValues[lane.id]}
                           onSliderChange={value => onSliderChange(lane, value)}
+                          onSliderCommit={() => onSliderCommit(lane)}
                           overridden={overridden[lane.id]}
                           recording={isRecording}
                           stats={stats[lane.id]}

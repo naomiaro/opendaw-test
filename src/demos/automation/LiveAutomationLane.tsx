@@ -19,6 +19,8 @@ export interface LiveAutomationLaneProps {
   /** unitValue 0..1 shown on the slider (page owns the state) */
   sliderValue: number;
   onSliderChange: (unitValue: number) => void; // fires per gesture sample
+  /** end of a drag (Radix onValueCommit) — lets the page release its gesture guard */
+  onSliderCommit?: () => void;
   overridden: boolean; // AutomationSuspension badge
   recording: boolean; // gates REC badge + live repaint loop
   stats: { captured: number; kept: number }; // RDP readout
@@ -51,6 +53,7 @@ export const LiveAutomationLane: React.FC<LiveAutomationLaneProps> = ({
   spec,
   sliderValue,
   onSliderChange,
+  onSliderCommit,
   overridden,
   recording,
   stats,
@@ -170,7 +173,14 @@ export const LiveAutomationLane: React.FC<LiveAutomationLaneProps> = ({
             {overridden && <Badge color="amber">OVERRIDE</Badge>}
           </Flex>
         </Flex>
-        <Slider min={0} max={1} step={0.001} value={[sliderValue]} onValueChange={([v]) => onSliderChange(v)} />
+        <Slider
+          min={0}
+          max={1}
+          step={0.001}
+          value={[sliderValue]}
+          onValueChange={([v]) => onSliderChange(v)}
+          onValueCommit={() => onSliderCommit?.()}
+        />
         <Flex justify="between" align="center">
           <Text size="1" color="gray" style={{ fontFamily: "var(--mc-mono)" }}>
             {printed.value}
