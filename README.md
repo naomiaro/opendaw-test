@@ -28,6 +28,7 @@ Visit http://localhost:5173 to explore the demos.
 | **[Tempo Automation](https://opendaw-test.pages.dev/tempo-automation-demo.html)** | Preset tempo patterns (accelerando, ritardando, stepped) with real-time metronome response |
 | **[Time Signature Changes](https://opendaw-test.pages.dev/time-signature-demo.html)** | Preset signature sequences (waltz, prog rock, film score) with adaptive metronome |
 | **[Track Automation](https://opendaw-test.pages.dev/track-automation-demo.html)** | Volume, pan, and effect parameter automation with preset patterns and canvas visualization |
+| **[Live Automation Recording](https://opendaw-test.pages.dev/live-automation-recording-demo.html)** | Perform volume, pan and delay-wet moves while the transport records — the SDK's latch model captures every write into value regions, simplifies the curve, and lets you overdub across loop wraps or override playback by hand |
 | **[Clip Looping](https://opendaw-test.pages.dev/clip-looping-demo.html)** | Set loop regions within audio clips and extend to tile automatically with waveform visualization |
 | **[Clip Fades](https://opendaw-test.pages.dev/clip-fades-demo.html)** | Logarithmic, linear, and exponential fade curves with visual representations |
 | **[Jam to Arrangement](https://opendaw-test.pages.dev/jam-arrangement-demo.html)** | Jam with a clip launcher — launch-quantized, looping audio clips on four Dark Ride stems — then commit the combos you like to a region timeline and play the arrangement back linearly |
@@ -144,6 +145,7 @@ src/
     │   └── jam-arrangement-demo.tsx   # Clip jamming → committed region arrangement
     ├── automation/                    # Automation demos
     │   ├── track-automation-demo.tsx  # Volume/pan/effect automation
+    │   ├── live-automation-recording-demo.tsx  # Latch-model automation recording
     │   ├── tempo-automation-demo.tsx  # Tempo automation patterns
     │   └── time-signature-demo.tsx    # Time signature changes
     ├── effects/                       # Effects demos

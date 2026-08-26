@@ -146,6 +146,7 @@ export default defineConfig({
                 midiRecording: resolve(__dirname, "midi-recording-demo.html"),
                 loopRecording: resolve(__dirname, "loop-recording-demo.html"),
                 trackAutomation: resolve(__dirname, "track-automation-demo.html"),
+                liveAutomationRecording: resolve(__dirname, "live-automation-recording-demo.html"),
                 clipLooping: resolve(__dirname, "clip-looping-demo.html"),
                 jamArrangement: resolve(__dirname, "jam-arrangement-demo.html"),
                 timePitch: resolve(__dirname, "time-pitch-demo.html"),
