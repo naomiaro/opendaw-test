@@ -23,7 +23,7 @@ export interface LiveAutomationLaneProps {
   onSliderCommit?: () => void;
   overridden: boolean; // AutomationSuspension badge
   recording: boolean; // gates REC badge + live repaint loop
-  stats: { captured: number; kept: number }; // RDP readout
+  stats: { captured: number; kept: number }; // simplifier readout (kept / captured)
   ghost: LanePoint[] | null; // dashed preset overlay, null = off
 }
 
@@ -103,9 +103,10 @@ export const LiveAutomationLane: React.FC<LiveAutomationLaneProps> = ({
           const model: LaneRegionModel = {
             start: region.position,
             duration: region.duration,
-            // A take finalized at a loop wrap carries a non-zero loopOffset —
-            // without these the curve is drawn shifted right by that amount and
-            // runs straight out past the region outline.
+            // A region front-trimmed by a later overdub pass carries a non-zero
+            // loopOffset (RegionClipResolver's start-trim; recording itself
+            // never writes one) — without these the curve is drawn shifted
+            // right by that amount and runs straight out past the outline.
             loopOffset: region.loopOffset,
             loopDuration: region.loopDuration,
             events: eventsOption.unwrap().asArray().map(evt => ({
@@ -210,9 +211,10 @@ export const LiveAutomationLane: React.FC<LiveAutomationLaneProps> = ({
             {printed.value}
             {printed.unit}
           </Text>
-          {/* Kept outside the `recording` gate on purpose: the RDP pass runs on
-              finalize, so the interesting number — how few events survived — only
-              exists after Stop. Gating this on `recording` hid the punchline. */}
+          {/* Kept outside the `recording` gate on purpose: the greedy
+              collinearity pass runs on finalize, so the interesting number — how
+              few events survived — only exists after a take is finalized (Stop,
+              or a loop wrap). Gating this on `recording` hid the punchline. */}
           {stats.captured > 0 && (
             <Text size="1" color="gray" style={{ fontFamily: "var(--mc-mono)" }}>
               {stats.kept}/{stats.captured}

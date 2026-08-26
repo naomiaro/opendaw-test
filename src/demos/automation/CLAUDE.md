@@ -244,21 +244,34 @@ start time.
 boot, or the UI and the engine disagree from the first frame — every "non-looping" first take
 silently splits at the invisible wrap otherwise.
 
-**Wrap-finalized regions carry non-zero `loopOffset`; event positions are loop-cycle-relative.**
-A take split by a loop wrap gets `loopOffset == its position` and `loopDuration == the loop
-length`, and its event collection is stored relative to the *loop cycle*, not the region — events
-can fall outside the region's own `[position, position+duration)` window entirely. Measured: a
-region `{position 4560, duration 10800, loopOffset 4560, loopDuration 15360}` held events at
-local positions `0, 3837, 9452, 15360` — spanning the whole 0–15360 cycle even though the
-region's visible span is only 4560–15360. Rendering (or otherwise interpreting) these positions
-must invert `LoopableRegion.globalToLocal` (`global = position − loopOffset + local +
-k·loopDuration`) rather than assume `position + local` — `buildRegionRender` in
-`laneRenderModel.ts` is the reference implementation, and it also clips the polyline to
-`[x0, x1]` since nothing else bounds it. Only the **wrap-truncated** region's end is pinned to
-the loop boundary (`position + duration == loopDuration`); the region that opens after the wrap
-just keeps growing until the take closes, so its end is wherever **Stop** happened — not
-necessarily the boundary again. The newer pass's region clips the older pass where they overlap
-(trimmed, not duplicated).
+**Non-zero `loopOffset` comes from the overdub trim, not from wrap finalization; event positions
+are loop-cycle-relative.** `RecordAutomation` never writes `loopOffset` — every path it takes
+(`finalizeState`, `handleLoopWrap`, `updateRegionDurations`) sets `loopDuration` to the region's
+own `duration` and leaves the offset at the schema default 0. Non-zero offsets appear afterwards,
+from `RegionClipResolver.#trimStart`: when the NEXT overdub pass grows over an older region, the
+older one is front-trimmed with `position += delta; duration -= delta; loopOffset =
+mod(oldLoopOffset + delta, oldLoopDuration)`. That is what produced the measured shape
+`{position 4560, duration 10800, loopOffset 4560, loopDuration 15360}` holding events at local
+positions `0, 3837, 9452, 15360` — spanning the whole 0–15360 cycle even though the region's
+visible span is only 4560–15360. (The `loopOffset == position` and `loopDuration == loop length`
+equalities there are coincidences of that particular take, not invariants.) Rendering (or
+otherwise interpreting) these positions must invert `LoopableRegion.globalToLocal` (`global =
+position − loopOffset + local + k·loopDuration`) rather than assume `position + local` —
+`buildRegionRender` in `laneRenderModel.ts` is the reference implementation, and it also clips
+the polyline to `[x0, x1]` since nothing else bounds it. The invariant that does hold: a
+**wrap-truncated** region ends exactly at the loop boundary (`position + duration ==
+loopArea.to`, from `handleLoopWrap`'s `finalDuration = quantizeCeil(loopTo - startPosition)`);
+the region that opens after the wrap just keeps growing until the take closes, so its end is
+wherever **Stop** happened — not necessarily the boundary again. The newer pass's region clips
+the older pass where they overlap (trimmed, not duplicated).
+
+**The finalize-time simplifier is a greedy collinearity filter, not Ramer–Douglas–Peucker.**
+`RecordAutomation.simplifyRecordedEvents` walks the events once, keeping a stack: it drops the
+middle point `b` of the last kept pair whenever `b.value` is within ε = 0.01 of the linear
+interpolation between `a` and the incoming event. No recursive worst-point split, no global
+error bound — error can compound along a long smooth ramp in a way RDP would not allow. It only
+runs on **floating** parameters (`adapter.valueMapping.floating()`), and it runs at every
+finalize — a loop wrap as well as Stop, so a looping take visibly re-thins its curve each pass.
 
 **Kept-count readout must scope to the current take, not the whole lane.** Naively summing every
 event across all of a lane's regions makes the "kept" side of a `kept/captured` readout read

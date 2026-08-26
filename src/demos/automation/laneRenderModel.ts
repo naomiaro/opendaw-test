@@ -17,9 +17,12 @@ export type LaneRegionModel = {
    * LoopableRegion fields. The SDK reads a region's events through
    * `globalToLocal = mod(global - position + loopOffset, loopDuration)`, so
    * region-local position p is heard at `position - loopOffset + p` and repeats
-   * every `loopDuration`. A take finalized at a loop wrap carries a NON-ZERO
-   * loopOffset, so ignoring these shifts the whole curve right by that amount.
-   * Omitted = a plain non-looping region (offset 0, one cycle over `duration`).
+   * every `loopDuration`. `RecordAutomation` itself always leaves loopOffset 0
+   * (it only ever writes `loopDuration = duration`) — a NON-ZERO loopOffset
+   * comes from `RegionClipResolver`'s start-trim, when a later overdub pass
+   * grows over an older region and front-trims it. Ignoring these fields shifts
+   * the whole curve right by loopOffset. Omitted = a plain non-looping region
+   * (offset 0, one cycle over `duration`).
    */
   loopOffset?: number;
   loopDuration?: number;

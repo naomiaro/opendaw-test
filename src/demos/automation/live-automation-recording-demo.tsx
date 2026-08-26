@@ -56,8 +56,10 @@ function withLane<T>(record: Record<LaneId, T>, id: LaneId, value: T): Record<La
 // ---------------------------------------------------------------------------
 // Ghost overlays: the very shapes track-automation-demo writes into the box
 // graph, drawn here as dashed comparison lines only — no boxes are created.
-// The volume presets are normalized unit-value shapes spanning 8 bars, which is
-// exactly this page's window, so all three lanes reuse them.
+// The volume presets are normalized unit-value shapes authored on the same
+// 8-bar grid as this page's window, so all three lanes reuse them as-is. Only
+// Fade Out and Swell actually span the whole window — Fade In's last event is at
+// bar 4, and the ghost is drawn with no hold extension, so it simply ends there.
 // ---------------------------------------------------------------------------
 
 const GHOST_NAMES: ReadonlyArray<string> = ["Fade In", "Fade Out", "Swell"];
@@ -546,11 +548,14 @@ const App: React.FC = () => {
                     <Flex direction="column" gap="1">
                       <div className="mc-lattice-label" style={{ color: "var(--mc-amber)" }}>4 · Simplify</div>
                       <Text size="2" color="gray">
-                        On finalize the raw stream is thinned by a Ramer–Douglas–Peucker
-                        pass with ε = 0.01: points that lie within that tolerance of the
-                        line through their neighbours are dropped. Each lane header shows{" "}
-                        <em>kept / captured</em> — hundreds of writes typically survive as
-                        a handful of events.
+                        On finalize the raw stream is thinned by a single-pass greedy
+                        collinearity pass with ε = 0.01: points that lie within that
+                        tolerance of the line through their neighbours are dropped. Each
+                        lane header shows <em>kept / captured</em> — hundreds of writes
+                        typically survive as a handful of events. With Loop on you can
+                        watch it happen: the curve visibly snaps to its thinned form at{" "}
+                        <em>every</em> loop wrap as well as at Stop. That is the take
+                        being finalized, not a glitch.
                       </Text>
                     </Flex>
                   </Grid>
@@ -586,14 +591,19 @@ const App: React.FC = () => {
                   <Flex direction="column" gap="3">
                     <Text size="2" weight="bold" color="gray">Manual Override</Text>
                     <Text size="2" color="gray">
-                      Move a fader during plain playback — not recording — and the engine
-                      suspends that lane's automation so your hand wins:{" "}
+                      Move a fader while the transport is playing and the engine suspends
+                      that lane's automation so your hand wins:{" "}
                       <code>AutomationSuspension</code>, started per project, runtime-only,
-                      no box graph write. The recorded curve stays exactly where it was and
-                      dims on the lane while the badge reads OVERRIDE. Pause, stop, or
+                      no box graph write. The engine's only conditions are{" "}
+                      <code>engine.isPlaying</code> and the lane already having a track — a
+                      write <em>during</em> a take suspends it too. The OVERRIDE badge here
+                      is deliberately narrower: this page lights it only when playing and{" "}
+                      <em>not</em> recording, because during a take the write is the take.
+                      That is our inference, not an engine rule — there is no observable
+                      for the suspension itself. The recorded curve stays exactly where it
+                      was and dims on the lane while the badge is up. Pause, stop, or{" "}
                       <code>stopRecording()</code> drops every suspension and the faders go
-                      back to riding the curves. There is no observable for it, so this page
-                      infers the badge from the write plus the transport state.
+                      back to riding the curves.
                     </Text>
                   </Flex>
                 </Card>

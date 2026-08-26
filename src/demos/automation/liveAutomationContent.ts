@@ -44,7 +44,9 @@ export async function buildLiveAutomationContent(
       box.endInSeconds.setValue(drumBuffer.duration);
     });
     const eventsBox = ValueEventCollectionBox.create(boxGraph, UUID.generate());
-    // The arrangement window is 8 bars, but the drum loop is only 4 bars long.
+    // The arrangement window is 8 bars; the region plays a 4-bar slice of the
+    // (~30 s) source file — that 4-bar length is imposed here by loopDuration,
+    // not a property of the file.
     // Span the region across the whole window (duration = WINDOW_PPQN) while
     // keeping loopDuration at the 4-bar loop — the SDK region-loops the audio
     // content internally, repeating the drum loop twice over the full 8 bars.
