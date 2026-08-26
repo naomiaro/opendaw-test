@@ -170,6 +170,7 @@ export default defineConfig({
                 audioVerifyDebug: resolve(__dirname, "audio-verify-debug.html"),
                 recordingFinalizeDebug: resolve(__dirname, "recording-finalize-debug-demo.html"),
                 wasmEnsureReadySecondContextDebug: resolve(__dirname, "wasm-ensure-ready-second-context-debug-demo.html"),
+                automationSimplifierDebug: resolve(__dirname, "automation-simplifier-debug-demo.html"),
                 wasmEngine: resolve(__dirname, "wasm-engine-demo.html"),
                 modulation: resolve(__dirname, "modulation-demo.html"),
                 convolver: resolve(__dirname, "convolver-demo.html")
