@@ -22,6 +22,7 @@ Visit http://localhost:5173 to explore the demos.
 | **[Neon: CZ-101 Phase Distortion](https://opendaw-test.pages.dev/neon-demo.html)** | Play OpenDAW's Casio CZ-101 phase-distortion synth — five original patches round-tripped through real `.syx` bytes, a sysex drop zone, live wave/modulation controls, and an 8-stage envelope visualizer |
 | **[Cubed: 303-Style Acid Bassline](https://opendaw-test.pages.dev/cubed-demo.html)** | Program Cubed's built-in step sequencer live — notes, gates, slides and accents on a 64-step grid, a random pattern generator, JSON and ABL `.pat` pattern exchange, and a synced LFO sweeping the filter |
 | **[Loop Recording & Takes](https://opendaw-test.pages.dev/loop-recording-demo.html)** | Record multiple takes over a loop region with per-take waveforms and mute controls |
+| **[Quick Swipe Comping](https://opendaw-test.pages.dev/swipe-comping-demo.html)** | Loop-record takes on a single tape, then swipe across take lanes to splice a comp — Logic-style comping with transparent engine crossfades at every seam, undo per swipe |
 | **[Drum Pattern Scheduling](https://opendaw-test.pages.dev/drum-scheduling-demo.html)** | Schedule drum samples across a timeline with visual playback |
 | **[Looping](https://opendaw-test.pages.dev/looping-demo.html)** | Timeline loop areas, adjustable boundaries, and real-time loop iteration tracking |
 | **[TimeBase Comparison](https://opendaw-test.pages.dev/timebase-demo.html)** | Musical vs Seconds TimeBase and how regions behave with BPM changes |
@@ -135,7 +136,9 @@ src/
     │   └── track-editing-demo.tsx     # Region split/move editing
     ├── recording/                     # Recording demos
     │   ├── recording-api-react-demo.tsx   # Audio recording with live peaks
-    │   └── loop-recording-demo.tsx    # Loop recording with takes
+    │   ├── loop-recording-demo.tsx    # Loop recording with takes
+    │   ├── swipe-comping-demo.tsx     # Quick Swipe Comping
+    │   └── SwipeCompLanes.tsx         # Swipe comp lane component
     ├── midi/                          # MIDI demos
     │   └── midi-recording-demo.tsx    # MIDI recording + step recording
     ├── instruments/                   # Stock instrument demos

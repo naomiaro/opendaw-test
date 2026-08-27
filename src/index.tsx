@@ -157,6 +157,12 @@ const GROUPS: Group[] = [
           "Record multiple takes over a loop region. Each loop iteration creates a new take with independent waveforms. Compare and manage takes with mute controls.",
       },
       {
+        href: "/swipe-comping-demo.html",
+        title: "Quick Swipe Comping",
+        blurb:
+          "Loop-record takes on a single tape, then swipe across take lanes to splice a comp — Logic-style comping with transparent engine crossfades at every seam, undo per swipe.",
+      },
+      {
         href: "/midi-recording-demo.html",
         title: "MIDI Recording",
         blurb:

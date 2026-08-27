@@ -1,9 +1,9 @@
-import { PPQN, Interpolation } from "@opendaw/lib-dsp";
+import { PPQN, Interpolation, TimeBase } from "@opendaw/lib-dsp";
 import type { ppqn } from "@opendaw/lib-dsp";
 import { UUID } from "@opendaw/lib-std";
-import { AudioUnitBoxAdapter, TrackBoxAdapter, ValueRegionBoxAdapter } from "@opendaw/studio-adapters";
-import { AudioFileBox, AudioRegionBox, ValueEventCollectionBox } from "@opendaw/studio-boxes";
-import type { TrackBox, ValueRegionBox } from "@opendaw/studio-boxes";
+import { AudioUnitBoxAdapter, TrackBoxAdapter, ValueRegionBoxAdapter, TrackType } from "@opendaw/studio-adapters";
+import { AudioFileBox, AudioRegionBox, ValueEventCollectionBox, TrackBox as TrackBoxClass } from "@opendaw/studio-boxes";
+import type { TrackBox, ValueRegionBox, AudioUnitBox } from "@opendaw/studio-boxes";
 import type { Project } from "@opendaw/studio-core";
 import type { TrackData } from "./types";
 
@@ -46,6 +46,9 @@ export interface TakeData {
 export interface CompState {
   boundaries: number[];
   assignments: number[];
+  /** Per-zone content shift in PPQN (positive = audio plays later). Present
+   *  only when some zone is nudged — omitted when all zero. */
+  nudges?: number[];
 }
 
 /**
@@ -251,6 +254,188 @@ export function rebuildAutomation(
   });
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Swipe comping (recorded takes) — pure zone math
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface CompSpan {
+  start: number;
+  end: number;
+  take: number;
+  nudge: number; // content shift in PPQN (positive = audio plays later)
+}
+
+/** Expand a CompState into consecutive [start, end) spans over [0, totalLength]. */
+export function compSpans(state: CompState, totalLength: number): CompSpan[] {
+  const bounds = [0, ...state.boundaries, totalLength];
+  return state.assignments.map((take, i) => ({
+    start: bounds[i],
+    end: bounds[i + 1],
+    take,
+    nudge: state.nudges?.[i] ?? 0,
+  }));
+}
+
+/** Build a CompState from spans, omitting `nudges` when all zero. */
+function spansToStateRaw(spans: CompSpan[]): CompState {
+  if (spans.length === 0) return { boundaries: [], assignments: [0] };
+  const nudges = spans.map((s) => s.nudge);
+  return {
+    boundaries: spans.slice(1).map((s) => s.start),
+    assignments: spans.map((s) => s.take),
+    ...(nudges.some((n) => n !== 0) ? { nudges } : {}),
+  };
+}
+
+/** Merge-normalize: drop empty spans, merge neighbors with equal take AND
+ *  equal nudge (a nudged section must keep its own region). */
+function spansToState(spans: CompSpan[]): CompState {
+  const merged: CompSpan[] = [];
+  for (const span of spans) {
+    if (span.end - span.start <= 0) continue;
+    const prev = merged[merged.length - 1];
+    if (prev !== undefined && prev.take === span.take && prev.nudge === span.nudge) {
+      prev.end = span.end;
+    } else {
+      merged.push({ ...span });
+    }
+  }
+  return spansToStateRaw(merged);
+}
+
+/** Swipe: assign [from, to] to takeIndex, splitting/merging zones as needed. */
+export function assignRange(
+  state: CompState,
+  takeIndex: number,
+  from: number,
+  to: number,
+  totalLength: number
+): CompState {
+  const a = Math.max(0, Math.min(totalLength, Math.round(Math.min(from, to))));
+  const b = Math.max(0, Math.min(totalLength, Math.round(Math.max(from, to))));
+  if (b - a <= 0) return state;
+  const spans: CompSpan[] = [];
+  for (const span of compSpans(state, totalLength)) {
+    if (span.end <= a || span.start >= b) {
+      spans.push(span);
+      continue;
+    }
+    if (span.start < a) spans.push({ start: span.start, end: a, take: span.take, nudge: span.nudge });
+    if (span.end > b) spans.push({ start: b, end: span.end, take: span.take, nudge: span.nudge });
+  }
+  spans.push({ start: a, end: b, take: takeIndex, nudge: 0 });
+  spans.sort((x, y) => x.start - y.start);
+  return spansToState(spans);
+}
+
+/** Edge drag: move boundary `boundaryIndex` to a new position, clamped between
+ *  its neighboring boundaries. Landing exactly on a neighbor collapses the
+ *  zone between them (equal-take, equal-nudge neighbors then merge). */
+export function moveBoundary(
+  state: CompState,
+  boundaryIndex: number,
+  newPosition: number,
+  totalLength: number
+): CompState {
+  const { boundaries } = state;
+  if (boundaryIndex < 0 || boundaryIndex >= boundaries.length) return state;
+  const prev = boundaryIndex === 0 ? 0 : boundaries[boundaryIndex - 1];
+  const next =
+    boundaryIndex === boundaries.length - 1
+      ? totalLength
+      : boundaries[boundaryIndex + 1];
+  const pos = Math.max(prev, Math.min(next, Math.round(newPosition)));
+  if (pos === boundaries[boundaryIndex]) return state;
+  const spans = compSpans(state, totalLength);
+  // Boundary k separates span k from span k+1.
+  return spansToState(
+    spans.map((s, i) => {
+      if (i === boundaryIndex) return { ...s, end: pos };
+      if (i === boundaryIndex + 1) return { ...s, start: pos };
+      return s;
+    })
+  );
+}
+
+/** Zone click: reassign the whole zone containing `position` to takeIndex.
+ *  Also resets the zone's nudge (clicking the zone's own lane is therefore a
+ *  nudge-reset gesture). */
+export function assignZoneAt(
+  state: CompState,
+  takeIndex: number,
+  position: number,
+  totalLength: number
+): CompState {
+  const spans = compSpans(state, totalLength);
+  const hit = spans.find((s) => position >= s.start && position < s.end);
+  if (hit === undefined || (hit.take === takeIndex && hit.nudge === 0)) return state;
+  return spansToState(
+    spans.map((s) => (s === hit ? { ...s, take: takeIndex, nudge: 0 } : s))
+  );
+}
+
+/** Marquee cut: insert boundaries at [from, to] without changing any
+ *  assignment or nudge. Deliberately NOT merge-normalized — the cut
+ *  boundaries must survive even between equal zones. */
+export function splitRange(
+  state: CompState,
+  from: number,
+  to: number,
+  totalLength: number
+): CompState {
+  const a = Math.max(0, Math.min(totalLength, Math.round(Math.min(from, to))));
+  const b = Math.max(0, Math.min(totalLength, Math.round(Math.max(from, to))));
+  if (b - a <= 0) return state;
+  const pieces: CompSpan[] = [];
+  for (const span of compSpans(state, totalLength)) {
+    const cuts = [
+      span.start,
+      ...[a, b].filter((c) => c > span.start && c < span.end),
+      span.end,
+    ];
+    for (let i = 0; i < cuts.length - 1; i++) {
+      pieces.push({ ...span, start: cuts[i], end: cuts[i + 1] });
+    }
+  }
+  const kept = pieces.filter((s) => s.end > s.start);
+  if (kept.length === state.assignments.length) return state; // nothing new cut
+  return spansToStateRaw(kept);
+}
+
+/** Nudge: shift zone `zoneIndex`'s audio content by deltaPpqn, accumulated
+ *  and clamped to [minNudge, maxNudge] (caller derives the limits from the
+ *  take's recorded extent). Boundaries and assignments are untouched. */
+export function nudgeZone(
+  state: CompState,
+  zoneIndex: number,
+  deltaPpqn: number,
+  minNudge: number,
+  maxNudge: number
+): CompState {
+  if (zoneIndex < 0 || zoneIndex >= state.assignments.length) return state;
+  if (minNudge > maxNudge) return state;
+  const current = state.nudges?.[zoneIndex] ?? 0;
+  const next = Math.max(
+    minNudge,
+    Math.min(maxNudge, Math.round(current + deltaPpqn))
+  );
+  if (next === current) return state;
+  const nudges = state.assignments.map((_, i) =>
+    i === zoneIndex ? next : state.nudges?.[i] ?? 0
+  );
+  return {
+    boundaries: state.boundaries,
+    assignments: state.assignments,
+    ...(nudges.some((n) => n !== 0) ? { nudges } : {}),
+  };
+}
+
+/** Snap a PPQN value to the grid (gridPpqn 0 = off, plain rounding). */
+export function snapToGrid(ppqnValue: number, gridPpqn: number): number {
+  if (gridPpqn <= 0) return Math.round(ppqnValue);
+  return Math.round(ppqnValue / gridPpqn) * gridPpqn;
+}
+
 export function rebuildSpliceRegions(
   project: Project,
   spliceTrackBox: TrackBox,
@@ -293,4 +478,243 @@ export function rebuildSpliceRegions(
       });
     }
   });
+}
+
+/** Buffer read offset (seconds) for a comp region starting at zoneStartPpqn
+ *  playing a take whose buffer offset is takeWaveformOffsetSec. Assumes the
+ *  loop starts at PPQN 0 (this demo has no lead-in). */
+export function compRegionWaveformOffset(
+  takeWaveformOffsetSec: number,
+  zoneStartPpqn: number,
+  bpm: number
+): number {
+  return takeWaveformOffsetSec + PPQN.pulsesToSeconds(zoneStartPpqn, bpm);
+}
+
+/** The take's recorded extent in loop-relative PPQN, clamped to the loop.
+ *  A take stopped mid-pass is shorter than the loop; the final take can be
+ *  up to one audio block longer. */
+export function takeExtentPpqn(
+  takeDurationSec: number,
+  bpm: number,
+  totalLength: number
+): number {
+  return Math.min(
+    totalLength,
+    Math.round(PPQN.secondsToPulses(takeDurationSec, bpm))
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Box-graph comp engine (comp track, rebuild, derive)
+// ─────────────────────────────────────────────────────────────────────────
+
+export const COMP_REGION_LABEL = "Comp";
+
+export interface RecordedTakeSource {
+  regionBox: AudioRegionBox;
+  audioFileBox: AudioFileBox;
+  waveformOffsetSec: number;
+  durationSec: number;
+}
+
+/** Find the Tape's comp track (regions carrying the comp-state label or
+ *  "Comp"), or create a new TrackBox under the audio unit. Creation uses an
+ *  UNMARKED modify so it folds into the first rebuild's undo entry. */
+export function ensureCompTrack(
+  project: Project,
+  audioUnitBox: AudioUnitBox
+): TrackBox {
+  const unitAdapter = project.boxAdapters.adapterFor(
+    audioUnitBox,
+    AudioUnitBoxAdapter
+  );
+  let maxIndex = -1;
+  for (const track of unitAdapter.tracks.values()) {
+    const isComp = track.regions.adapters
+      .values()
+      .some(
+        (r) =>
+          r.label === COMP_REGION_LABEL || r.label.startsWith("comp:")
+      );
+    if (isComp) return track.box;
+    maxIndex = Math.max(maxIndex, track.box.index.getValue());
+  }
+  return project.editing
+    .modify(
+      () =>
+        TrackBoxClass.create(project.boxGraph, UUID.generate(), (box) => {
+          box.type.setValue(TrackType.Audio);
+          box.index.setValue(maxIndex + 1);
+          box.tracks.refer(audioUnitBox.tracks);
+          box.target.refer(audioUnitBox);
+        }),
+      false
+    )
+    .unwrap();
+}
+
+/** Rebuild the comp track from the comp state: one butt-jointed Seconds-
+ *  timeBase AudioRegionBox per zone, reading the winning take's frames via
+ *  waveformOffset (zones entirely past the take's recorded extent are
+ *  dropped). Mutes every take region (the comp is the audible path).
+ *  One marked modify = one undo step per swipe. */
+export function rebuildCompRegions(
+  project: Project,
+  compTrackBox: TrackBox,
+  takes: RecordedTakeSource[],
+  state: CompState,
+  loopPpqn: number,
+  bpm: number
+): void {
+  project.editing.modify(() => {
+    const trackAdapter = project.boxAdapters.adapterFor(
+      compTrackBox,
+      TrackBoxAdapter
+    );
+    for (const region of trackAdapter.regions.adapters.values()) {
+      region.box.delete();
+    }
+    for (const take of takes) {
+      take.regionBox.mute.setValue(true);
+    }
+
+    let labelWritten = false;
+    for (const span of compSpans(state, loopPpqn)) {
+      const take = takes[span.take];
+      if (take === undefined) {
+        throw new Error(
+          `rebuildCompRegions: zone references missing take ${span.take} — aborting`
+        );
+      }
+      const zoneStart = Math.round(span.start);
+      // Clamp the nudge itself to zoneStart — after a boundary drag lowers a
+      // nudged zone's start, an unclamped span.nudge could push the content
+      // window's read start before the take's own audio (into the previous
+      // take's tail in the shared recording buffer). The content window
+      // [zoneStart-nudge, zoneEnd-nudge] must stay inside the take's audio.
+      const nudge = Math.min(span.nudge, zoneStart);
+      // Clamp to the take's recorded extent (short final takes). A positive
+      // nudge shifts content later, freeing that much room at the tail.
+      const zoneEnd = Math.min(
+        Math.round(span.end),
+        Math.max(
+          zoneStart,
+          takeExtentPpqn(take.durationSec, bpm, loopPpqn) + nudge
+        )
+      );
+      if (zoneEnd <= zoneStart) continue;
+      if (!Number.isFinite(zoneStart) || !Number.isFinite(zoneEnd)) {
+        throw new Error("rebuildCompRegions: non-finite zone bounds — aborting");
+      }
+
+      const durationSec = PPQN.pulsesToSeconds(zoneEnd - zoneStart, bpm);
+      const eventsCollectionBox = ValueEventCollectionBox.create(
+        project.boxGraph,
+        UUID.generate()
+      );
+      AudioRegionBox.create(project.boxGraph, UUID.generate(), (box) => {
+        box.regions.refer(compTrackBox.regions);
+        box.file.refer(take.audioFileBox);
+        box.events.refer(eventsCollectionBox.owners);
+        box.position.setValue(zoneStart);
+        box.timeBase.setValue(TimeBase.Seconds);
+        box.duration.setValue(durationSec);
+        box.loopDuration.setValue(durationSec);
+        // Nudge shifts the content read position: positive nudge = audio
+        // plays later = read earlier frames.
+        box.waveformOffset.setValue(
+          compRegionWaveformOffset(take.waveformOffsetSec, zoneStart - nudge, bpm)
+        );
+        // Comp state rides the first created region's label (undo-atomic).
+        box.label.setValue(
+          labelWritten ? COMP_REGION_LABEL : encodeCompStateToLabel(state)
+        );
+        box.mute.setValue(false);
+      });
+      labelWritten = true;
+    }
+    if (!labelWritten) {
+      throw new Error(
+        "rebuildCompRegions: no comp regions were created — aborting"
+      );
+    }
+  });
+}
+
+/** Validate a parsed comp-state-shaped object against every invariant the
+ *  pure zone-math functions assume — boundaries/assignments length parity,
+ *  strictly-increasing positive boundaries, finite numbers throughout, and
+ *  (if present) a nudges array matching assignments length. Returns null
+ *  (logging the specific reason) on any violation instead of a shallow
+ *  "looks array-shaped" check — a corrupted or hand-edited label must never
+ *  reach the zone math with NaN/negative/out-of-order values. */
+function validateCompState(parsed: unknown, source: string): CompState | null {
+  if (typeof parsed !== "object" || parsed === null) {
+    console.error(`${source}: parsed label is not an object`);
+    return null;
+  }
+  const { boundaries, assignments, nudges } = parsed as Record<string, unknown>;
+  if (!Array.isArray(boundaries) || !boundaries.every((b) => Number.isFinite(b))) {
+    console.error(`${source}: boundaries is not an array of finite numbers`);
+    return null;
+  }
+  if (!Array.isArray(assignments) || !assignments.every((a) => Number.isFinite(a))) {
+    console.error(`${source}: assignments is not an array of finite numbers`);
+    return null;
+  }
+  if (assignments.length !== boundaries.length + 1) {
+    console.error(
+      `${source}: assignments.length (${assignments.length}) !== boundaries.length + 1 (${boundaries.length + 1})`
+    );
+    return null;
+  }
+  for (let i = 0; i < boundaries.length; i++) {
+    if (boundaries[i] <= 0) {
+      console.error(`${source}: boundary[${i}] is not > 0`);
+      return null;
+    }
+    if (i > 0 && boundaries[i] <= boundaries[i - 1]) {
+      console.error(`${source}: boundaries are not strictly increasing at index ${i}`);
+      return null;
+    }
+  }
+  if (nudges !== undefined) {
+    if (!Array.isArray(nudges) || !nudges.every((n) => Number.isFinite(n))) {
+      console.error(`${source}: nudges is not an array of finite numbers`);
+      return null;
+    }
+    if (nudges.length !== assignments.length) {
+      console.error(
+        `${source}: nudges.length (${nudges.length}) !== assignments.length (${assignments.length})`
+      );
+      return null;
+    }
+  }
+  return parsed as CompState;
+}
+
+/** Read the persisted comp state back from the comp track (after undo/redo). */
+export function deriveCompStateFromCompTrack(
+  project: Project,
+  compTrackBox: TrackBox
+): CompState | null {
+  const trackAdapter = project.boxAdapters.adapterFor(
+    compTrackBox,
+    TrackBoxAdapter
+  );
+  for (const region of trackAdapter.regions.adapters.values()) {
+    const label = region.label;
+    if (!label.startsWith("comp:")) continue;
+    try {
+      const parsed = JSON.parse(label.slice("comp:".length));
+      const validated = validateCompState(parsed, "deriveCompStateFromCompTrack");
+      if (validated) return validated;
+    } catch (e) {
+      console.error(
+        "deriveCompStateFromCompTrack: bad label: " + JSON.stringify(String(e))
+      );
+    }
+  }
+  return null;
 }
