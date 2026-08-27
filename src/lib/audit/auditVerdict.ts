@@ -25,79 +25,124 @@ export interface CellVerdict {
 const PAIRING_THRESHOLD_SEC = 0.05; // 50 ms
 
 /**
- * Find optimal one-to-one matching that minimizes maximum deviation.
+ * Kuhn's algorithm (augmenting paths): find a maximum bipartite matching
+ * restricted to the given adjacency list. `adjacency[e]` is the sorted list
+ * of detected indices expected[e] may pair with, already filtered to a
+ * distance threshold by the caller. Deterministic: expected indices are
+ * tried in ascending order, and each expected's candidate list is iterated
+ * in the order the caller provides (sorted by (dist, detectedIdx) — see
+ * `findOptimalMatching`), so ties resolve the same way on every call.
  *
- * Uses recursive backtracking to explore all possible matchings.
- * For each expected onset, decides which detected onset to pair it with (or skip).
- * Prioritizes by: (1) maximize number of matched pairs, (2) minimize max deviation.
+ * O(V * E) — V = expected.length, E = total adjacency entries.
+ */
+function maxBipartiteMatching(
+  expectedCount: number,
+  adjacency: number[][]
+): Map<number, number> {
+  const matchOfDetected = new Map<number, number>(); // detectedIdx -> expectedIdx
+
+  function tryAugment(eIdx: number, visited: Set<number>): boolean {
+    for (const dIdx of adjacency[eIdx]) {
+      if (visited.has(dIdx)) continue;
+      visited.add(dIdx);
+      const currentOwner = matchOfDetected.get(dIdx);
+      if (currentOwner === undefined || tryAugment(currentOwner, visited)) {
+        matchOfDetected.set(dIdx, eIdx);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  for (let e = 0; e < expectedCount; e++) {
+    tryAugment(e, new Set());
+  }
+
+  const matching = new Map<number, number>(); // expectedIdx -> detectedIdx
+  for (const [dIdx, eIdx] of matchOfDetected) {
+    matching.set(eIdx, dIdx);
+  }
+  return matching;
+}
+
+/**
+ * Find the one-to-one matching that (1) maximizes the number of matched
+ * pairs, then (2) minimizes the maximum deviation among matched pairs —
+ * in polynomial time.
  *
- * Order-independent: result depends only on the onsets and expected values, not their order.
+ * Algorithm:
+ * 1. Collect all candidate (expectedIdx, detectedIdx, dist) pairs with
+ *    dist <= tolerance.
+ * 2. Compute the size of the maximum matching (M_max) over ALL candidates
+ *    via Kuhn's augmenting-path algorithm.
+ * 3. Binary-search the smallest threshold t (among the sorted unique
+ *    candidate distances) such that the maximum matching restricted to
+ *    pairs with dist <= t still has size M_max. Any smaller threshold
+ *    must drop below M_max matches, so this t is exactly the minimum
+ *    achievable maximum deviation for a max-size matching.
+ * 4. Return the maximum matching computed at that threshold.
+ *
+ * Order-independent: candidate pairs and per-expected adjacency lists are
+ * sorted by (dist, detectedIdx) before matching, so the result depends
+ * only on the onset values, never on input array order. Note: when
+ * multiple max-size, min-max-deviation matchings exist, this deterministic
+ * tie-break order can affect which one is chosen (and therefore
+ * meanDeviationSec) — max matched count and minimized max deviation are
+ * guaranteed, mean deviation among equally-optimal matchings is not.
  */
 function findOptimalMatching(
   expected: number[],
   detected: number[],
   tolerance: number
 ): Map<number, number> {
-  // Build adjacency: for each expected, list valid detected indices
-  const validDetected: number[][] = [];
+  type Candidate = { e: number; d: number; dist: number };
+  const candidates: Candidate[] = [];
   for (let e = 0; e < expected.length; e++) {
-    validDetected[e] = [];
     for (let d = 0; d < detected.length; d++) {
-      if (Math.abs(detected[d] - expected[e]) <= tolerance) {
-        validDetected[e].push(d);
-      }
+      const dist = Math.abs(detected[d] - expected[e]);
+      if (dist <= tolerance) candidates.push({ e, d, dist });
+    }
+  }
+  if (candidates.length === 0) return new Map();
+
+  candidates.sort((a, b) => a.dist - b.dist || a.d - b.d);
+
+  const buildAdjacency = (cands: Candidate[]): number[][] => {
+    const adjacency: number[][] = Array.from({ length: expected.length }, () => []);
+    for (const c of cands) adjacency[c.e].push(c.d);
+    return adjacency;
+  };
+
+  // Step 2: maximum matching size over all candidates.
+  const fullMatching = maxBipartiteMatching(expected.length, buildAdjacency(candidates));
+  const maxMatchCount = fullMatching.size;
+  if (maxMatchCount === 0) return new Map();
+
+  // Step 3: binary search the smallest distance threshold that still
+  // achieves maxMatchCount, over the sorted unique candidate distances.
+  const uniqueDists = Array.from(new Set(candidates.map((c) => c.dist))).sort((a, b) => a - b);
+
+  const matchCountAtThreshold = (t: number): Map<number, number> => {
+    const restricted = candidates.filter((c) => c.dist <= t);
+    return maxBipartiteMatching(expected.length, buildAdjacency(restricted));
+  };
+
+  let lo = 0;
+  let hi = uniqueDists.length - 1;
+  let best = fullMatching; // threshold = uniqueDists[uniqueDists.length - 1] (all candidates)
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const t = uniqueDists[mid];
+    const matching = matchCountAtThreshold(t);
+    if (matching.size >= maxMatchCount) {
+      best = matching;
+      hi = mid - 1;
+    } else {
+      lo = mid + 1;
     }
   }
 
-  let bestMatching: Map<number, number> = new Map();
-  let bestMatchCount = 0;
-  let bestMaxDev = Infinity;
-
-  function backtrack(
-    eIdx: number,
-    currentMatching: Map<number, number>,
-    usedDetected: Set<number>,
-    currentMaxDev: number
-  ) {
-    if (eIdx === expected.length) {
-      // All expected processed
-      const matchCount = currentMatching.size;
-
-      // Prefer: more matches, or same matches but lower max deviation
-      if (
-        matchCount > bestMatchCount ||
-        (matchCount === bestMatchCount && currentMaxDev < bestMaxDev)
-      ) {
-        bestMatchCount = matchCount;
-        bestMaxDev = currentMaxDev;
-        bestMatching = new Map(currentMatching);
-      }
-      return;
-    }
-
-    // Try matching expected[eIdx] with each valid detected
-    for (const dIdx of validDetected[eIdx]) {
-      if (!usedDetected.has(dIdx)) {
-        const distance = Math.abs(detected[dIdx] - expected[eIdx]);
-        const newMaxDev = Math.max(currentMaxDev, distance);
-
-        currentMatching.set(eIdx, dIdx);
-        usedDetected.add(dIdx);
-
-        backtrack(eIdx + 1, currentMatching, usedDetected, newMaxDev);
-
-        currentMatching.delete(eIdx);
-        usedDetected.delete(dIdx);
-      }
-    }
-
-    // Also try not matching this expected (skip it)
-    backtrack(eIdx + 1, currentMatching, usedDetected, currentMaxDev);
-  }
-
-  backtrack(0, new Map(), new Set(), 0);
-
-  return bestMatching;
+  return best;
 }
 
 /**

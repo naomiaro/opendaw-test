@@ -56,6 +56,21 @@ describe("judgeCell pairing order-independence", () => {
   });
 });
 
+describe("judgeCell scale", () => {
+  it("handles audit-scale cells (32 expected, dense candidates) in milliseconds", () => {
+    const expected = Array.from({ length: 32 }, (_, k) => k * 0.5);
+    // two detected candidates near every expected onset (transient + ringing)
+    const onsets = expected.flatMap((t) => [t + 0.001, t + 0.02]);
+    const t0 = performance.now();
+    const v = judgeCell({ family: "metronome", bpm: 120, rate: 48000, expected, onsets }, 0.01);
+    const elapsed = performance.now() - t0;
+    expect(elapsed).toBeLessThan(200);
+    expect(v.matched).toBe(32);
+    expect(v.extra).toBe(32);
+    expect(v.maxDeviationSec).toBeCloseTo(0.001, 6);
+  });
+});
+
 describe("assessRateConsistency", () => {
   const mk = (rate: number, dev: number) =>
     judgeCell({ ...base, rate, onsets: base.expected.map((t) => t + dev) }, 1);
