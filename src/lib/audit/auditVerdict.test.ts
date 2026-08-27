@@ -34,6 +34,28 @@ describe("judgeCell", () => {
   });
 });
 
+describe("judgeCell pairing order-independence", () => {
+  it("pairing is independent of expected-array order (reviewer's adversarial case)", () => {
+    const detected = [0.0009, 0.0027];
+    const a = judgeCell({ family: "metronome", bpm: 120, rate: 48000,
+      expected: [0, -0.045], onsets: detected }, 0.047);
+    const b = judgeCell({ family: "metronome", bpm: 120, rate: 48000,
+      expected: [-0.045, 0], onsets: detected }, 0.047);
+    expect(a.status).toBe("pass");
+    expect(b.status).toBe("pass");
+    expect(a.maxDeviationSec).toBeCloseTo(b.maxDeviationSec, 9);
+    expect(a.maxDeviationSec).toBeCloseTo(0.0459, 4);
+  });
+
+  it("scarce detections pair with the truly nearest expected onset", () => {
+    const v = judgeCell({ family: "metronome", bpm: 120, rate: 48000,
+      expected: [0, 0.01], onsets: [0.011] }, 0.05);
+    expect(v.matched).toBe(1);
+    expect(v.missing).toBe(1);
+    expect(v.maxDeviationSec).toBeCloseTo(0.001, 6);
+  });
+});
+
 describe("assessRateConsistency", () => {
   const mk = (rate: number, dev: number) =>
     judgeCell({ ...base, rate, onsets: base.expected.map((t) => t + dev) }, 1);

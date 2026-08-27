@@ -25,64 +25,128 @@ export interface CellVerdict {
 const PAIRING_THRESHOLD_SEC = 0.05; // 50 ms
 
 /**
- * Judge a cell's audio alignment using nearest-neighbor pairing.
+ * Find optimal one-to-one matching that minimizes maximum deviation.
+ *
+ * Uses recursive backtracking to explore all possible matchings.
+ * For each expected onset, decides which detected onset to pair it with (or skip).
+ * Prioritizes by: (1) maximize number of matched pairs, (2) minimize max deviation.
+ *
+ * Order-independent: result depends only on the onsets and expected values, not their order.
+ */
+function findOptimalMatching(
+  expected: number[],
+  detected: number[],
+  tolerance: number
+): Map<number, number> {
+  // Build adjacency: for each expected, list valid detected indices
+  const validDetected: number[][] = [];
+  for (let e = 0; e < expected.length; e++) {
+    validDetected[e] = [];
+    for (let d = 0; d < detected.length; d++) {
+      if (Math.abs(detected[d] - expected[e]) <= tolerance) {
+        validDetected[e].push(d);
+      }
+    }
+  }
+
+  let bestMatching: Map<number, number> = new Map();
+  let bestMatchCount = 0;
+  let bestMaxDev = Infinity;
+
+  function backtrack(
+    eIdx: number,
+    currentMatching: Map<number, number>,
+    usedDetected: Set<number>,
+    currentMaxDev: number
+  ) {
+    if (eIdx === expected.length) {
+      // All expected processed
+      const matchCount = currentMatching.size;
+
+      // Prefer: more matches, or same matches but lower max deviation
+      if (
+        matchCount > bestMatchCount ||
+        (matchCount === bestMatchCount && currentMaxDev < bestMaxDev)
+      ) {
+        bestMatchCount = matchCount;
+        bestMaxDev = currentMaxDev;
+        bestMatching = new Map(currentMatching);
+      }
+      return;
+    }
+
+    // Try matching expected[eIdx] with each valid detected
+    for (const dIdx of validDetected[eIdx]) {
+      if (!usedDetected.has(dIdx)) {
+        const distance = Math.abs(detected[dIdx] - expected[eIdx]);
+        const newMaxDev = Math.max(currentMaxDev, distance);
+
+        currentMatching.set(eIdx, dIdx);
+        usedDetected.add(dIdx);
+
+        backtrack(eIdx + 1, currentMatching, usedDetected, newMaxDev);
+
+        currentMatching.delete(eIdx);
+        usedDetected.delete(dIdx);
+      }
+    }
+
+    // Also try not matching this expected (skip it)
+    backtrack(eIdx + 1, currentMatching, usedDetected, currentMaxDev);
+  }
+
+  backtrack(0, new Map(), new Set(), 0);
+
+  return bestMatching;
+}
+
+/**
+ * Judge a cell's audio alignment using optimal min-max pairing.
  *
  * Algorithm:
  * 1. Subtract calibrationSec from each detected onset if provided.
- * 2. Pair each expected onset with the closest detected onset within PAIRING_THRESHOLD_SEC.
- * 3. Each detected onset pairs with at most one expected.
- * 4. Count matched, missing (unpaired expected), and extra (unpaired detected).
- * 5. Calculate max and mean deviations for matched pairs.
- * 6. Status logic:
+ * 2. Find optimal one-to-one matching that minimizes maximum deviation (≤ PAIRING_THRESHOLD_SEC).
+ * 3. Count matched, missing (unpaired expected), and extra (unpaired detected).
+ * 4. Calculate max and mean deviations for matched pairs.
+ * 5. Status logic:
  *    - If seamStep is defined: status = "investigate" iff seamStep > toleranceSec
  *    - Otherwise: status = "pass" if no missing/extra and maxDeviation <= tolerance
  *    - Otherwise: status = "investigate"
+ *
+ * Order-independent: the pairing result depends only on the onsets and expected values,
+ * not the order they appear in the input arrays.
  */
 export function judgeCell(m: CellMeasurement, toleranceSec: number): CellVerdict {
   // Step 1: Apply calibration bias subtraction
   const calibration = m.calibrationSec ?? 0;
   const adjustedOnsets = m.onsets.map((o) => o - calibration);
 
-  // Step 2-3: Nearest-neighbor pairing
-  const usedDetected = new Set<number>();
-  const deviations: number[] = [];
-  let matched = 0;
+  // Step 2: Optimal matching that minimizes maximum deviation
+  const matching = findOptimalMatching(
+    m.expected,
+    adjustedOnsets,
+    PAIRING_THRESHOLD_SEC
+  );
 
-  for (const expectedTime of m.expected) {
-    let closestDetectedIdx = -1;
-    let closestDistance = PAIRING_THRESHOLD_SEC;
-
-    // Find the closest unused detected onset
-    for (let i = 0; i < adjustedOnsets.length; i++) {
-      if (usedDetected.has(i)) continue;
-      const distance = Math.abs(adjustedOnsets[i] - expectedTime);
-      if (distance < closestDistance) {
-        closestDistance = distance;
-        closestDetectedIdx = i;
-      }
-    }
-
-    // If found a match within threshold, record it
-    if (closestDetectedIdx !== -1) {
-      usedDetected.add(closestDetectedIdx);
-      matched++;
-      deviations.push(closestDistance);
-    }
-  }
-
-  // Step 4: Count unpaired
+  // Step 3: Count matches
+  const matched = matching.size;
   const missing = m.expected.length - matched;
   const extra = adjustedOnsets.length - matched;
 
-  // Step 5: Calculate statistics
-  const maxDeviationSec =
-    deviations.length > 0 ? Math.max(...deviations) : 0;
+  // Step 4: Calculate deviations
+  const deviations: number[] = [];
+  for (const [eIdx, dIdx] of matching) {
+    const deviation = Math.abs(adjustedOnsets[dIdx] - m.expected[eIdx]);
+    deviations.push(deviation);
+  }
+
+  const maxDeviationSec = deviations.length > 0 ? Math.max(...deviations) : 0;
   const meanDeviationSec =
     deviations.length > 0
       ? deviations.reduce((a, b) => a + b, 0) / deviations.length
       : 0;
 
-  // Step 6: Determine status
+  // Step 5: Determine status
   let status: "pass" | "investigate";
 
   if (m.seamStep !== undefined) {
