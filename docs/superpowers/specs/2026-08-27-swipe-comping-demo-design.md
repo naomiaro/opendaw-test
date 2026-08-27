@@ -63,6 +63,10 @@ crossfades. It completes the missing third piece between two existing demos:
 - **Zone click:** a plain click on a take lane moves the existing swipe window (the
   zone at that position, same boundaries) to the clicked take — Logic's quick-compare
   click.
+- **Edge drag:** pointer-down within a few pixels of an existing boundary starts a
+  resize instead of a swipe (cursor shows `ew-resize` on hover). Dragging moves that
+  boundary between its neighbors; dragging it all the way into a neighboring seam
+  collapses the zone (adjacent same-take zones then merge). One undo step per drag.
 - **Lane rendering:** take lanes stack newest-first under the comp lane (Logic's
   take-folder order); take indices in the comp state stay chronological. Unselected
   ranges dim, selected ranges lit in the take's accent

@@ -42,6 +42,7 @@
   - `compSpans(state: CompState, totalLength: number): CompSpan[]`
   - `assignRange(state: CompState, takeIndex: number, from: number, to: number, totalLength: number): CompState`
   - `assignZoneAt(state: CompState, takeIndex: number, position: number, totalLength: number): CompState`
+  - `moveBoundary(state: CompState, boundaryIndex: number, newPosition: number, totalLength: number): CompState`
 
 - [ ] **Step 1: Create the feature branch**
 
@@ -59,6 +60,7 @@ import {
   compSpans,
   assignRange,
   assignZoneAt,
+  moveBoundary,
   type CompState,
 } from "./compLaneUtils";
 
@@ -140,6 +142,51 @@ describe("assignRange", () => {
   it("returns the state unchanged for a zero-length range", () => {
     const state: CompState = { boundaries: [4000], assignments: [0, 1] };
     expect(assignRange(state, 1, 5000, 5000.4, TOTAL)).toBe(state);
+  });
+});
+
+describe("moveBoundary", () => {
+  it("moves a boundary between its neighbors", () => {
+    const state: CompState = { boundaries: [4000, 9000], assignments: [0, 1, 0] };
+    expect(moveBoundary(state, 0, 5000, TOTAL)).toEqual({
+      boundaries: [5000, 9000],
+      assignments: [0, 1, 0],
+    });
+  });
+
+  it("clamps to the neighboring boundaries", () => {
+    const state: CompState = { boundaries: [4000, 9000], assignments: [0, 1, 2] };
+    // Dragging boundary 1 far left clamps at boundary 0 (4000) — the middle
+    // zone collapses and the different-take neighbors keep their seam.
+    expect(moveBoundary(state, 1, 2000, TOTAL)).toEqual({
+      boundaries: [4000],
+      assignments: [0, 2],
+    });
+  });
+
+  it("collapsing a zone removes it and merges equal-take neighbors", () => {
+    const state: CompState = { boundaries: [4000, 9000], assignments: [0, 1, 0] };
+    // Drag boundary 1 down onto boundary 0 — the middle zone collapses,
+    // and the two take-0 zones merge into one full-length zone.
+    expect(moveBoundary(state, 1, 4000, TOTAL)).toEqual({
+      boundaries: [],
+      assignments: [0],
+    });
+  });
+
+  it("collapsing between different-take neighbors keeps the seam", () => {
+    const state: CompState = { boundaries: [4000, 9000], assignments: [0, 1, 2] };
+    expect(moveBoundary(state, 1, 4000, TOTAL)).toEqual({
+      boundaries: [4000],
+      assignments: [0, 2],
+    });
+  });
+
+  it("is a no-op for an unchanged position or invalid index", () => {
+    const state: CompState = { boundaries: [4000], assignments: [0, 1] };
+    expect(moveBoundary(state, 0, 4000.2, TOTAL)).toBe(state);
+    expect(moveBoundary(state, 5, 6000, TOTAL)).toBe(state);
+    expect(moveBoundary(state, -1, 6000, TOTAL)).toBe(state);
   });
 });
 
@@ -243,6 +290,35 @@ export function assignRange(
   spans.push({ start: a, end: b, take: takeIndex });
   spans.sort((x, y) => x.start - y.start);
   return spansToState(spans);
+}
+
+/** Edge drag: move boundary `boundaryIndex` to a new position, clamped between
+ *  its neighboring boundaries. Landing exactly on a neighbor collapses the
+ *  zone between them (equal-take neighbors then merge). */
+export function moveBoundary(
+  state: CompState,
+  boundaryIndex: number,
+  newPosition: number,
+  totalLength: number
+): CompState {
+  const { boundaries } = state;
+  if (boundaryIndex < 0 || boundaryIndex >= boundaries.length) return state;
+  const prev = boundaryIndex === 0 ? 0 : boundaries[boundaryIndex - 1];
+  const next =
+    boundaryIndex === boundaries.length - 1
+      ? totalLength
+      : boundaries[boundaryIndex + 1];
+  const pos = Math.max(prev, Math.min(next, Math.round(newPosition)));
+  if (pos === boundaries[boundaryIndex]) return state;
+  const spans = compSpans(state, totalLength);
+  // Boundary k separates span k from span k+1.
+  return spansToState(
+    spans.map((s, i) => {
+      if (i === boundaryIndex) return { ...s, end: pos };
+      if (i === boundaryIndex + 1) return { ...s, start: pos };
+      return s;
+    })
+  );
 }
 
 /** Zone click: reassign the whole zone containing `position` to takeIndex. */
@@ -599,6 +675,7 @@ interface SwipeCompLanesProps {
   onToggleAudition: (takeIndex: number) => void;
   onSwipe: (takeIndex: number, fromPpqn: number, toPpqn: number) => void;
   onZoneClick: (takeIndex: number, positionPpqn: number) => void;
+  onEdgeDrag: (boundaryIndex: number, newPpqn: number) => void;
   getPositionPpqn: () => number;      // read engine position (PPQN)
   showPlayhead: boolean;
 }
@@ -638,6 +715,7 @@ const LANE_HEIGHT = 48;
 const COMP_LANE_HEIGHT = 56;
 const HEADER_WIDTH = 120;
 const CLICK_TOLERANCE_PX = 4;
+const EDGE_TOLERANCE_PX = 6;
 
 export interface SwipeTakeLane {
   regionBox: AudioRegionBox;
@@ -662,6 +740,7 @@ interface SwipeCompLanesProps {
   onToggleAudition: (takeIndex: number) => void;
   onSwipe: (takeIndex: number, fromPpqn: number, toPpqn: number) => void;
   onZoneClick: (takeIndex: number, positionPpqn: number) => void;
+  onEdgeDrag: (boundaryIndex: number, newPpqn: number) => void;
   getPositionPpqn: () => number;
   showPlayhead: boolean;
 }
@@ -846,10 +925,12 @@ const CompLaneCanvas: React.FC<{
 };
 
 interface DragState {
+  mode: "swipe" | "edge";
   takeIndex: number;
   startX: number;
   currentX: number;
   laneWidth: number;
+  boundaryIndex: number | null; // set in "edge" mode
 }
 
 export const SwipeCompLanes: React.FC<SwipeCompLanesProps> = ({
@@ -866,6 +947,7 @@ export const SwipeCompLanes: React.FC<SwipeCompLanesProps> = ({
   onToggleAudition,
   onSwipe,
   onZoneClick,
+  onEdgeDrag,
   getPositionPpqn,
   showPlayhead,
 }) => {
@@ -894,28 +976,53 @@ export const SwipeCompLanes: React.FC<SwipeCompLanesProps> = ({
     [loopPpqn]
   );
 
+  /** Index of the boundary within EDGE_TOLERANCE_PX of x, or null. */
+  const boundaryNear = useCallback(
+    (x: number, width: number): number | null => {
+      for (let k = 0; k < compState.boundaries.length; k++) {
+        const bx = (compState.boundaries[k] / loopPpqn) * width;
+        if (Math.abs(bx - x) <= EDGE_TOLERANCE_PX) return k;
+      }
+      return null;
+    },
+    [compState.boundaries, loopPpqn]
+  );
+
   const handlePointerDown = useCallback(
     (takeIndex: number) => (e: React.PointerEvent<HTMLDivElement>) => {
       if (!interactive) return;
       const rect = e.currentTarget.getBoundingClientRect();
+      const x = e.clientX - rect.left;
       e.currentTarget.setPointerCapture(e.pointerId);
+      const boundaryIndex = boundaryNear(x, rect.width);
       setDrag({
+        mode: boundaryIndex !== null ? "edge" : "swipe",
         takeIndex,
-        startX: e.clientX - rect.left,
-        currentX: e.clientX - rect.left,
+        startX: x,
+        currentX: x,
         laneWidth: rect.width,
+        boundaryIndex,
       });
     },
-    [interactive]
+    [interactive, boundaryNear]
   );
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
-      if (drag === null) return;
       const rect = e.currentTarget.getBoundingClientRect();
-      setDrag({ ...drag, currentX: e.clientX - rect.left });
+      const x = e.clientX - rect.left;
+      if (drag === null) {
+        // Hover feedback only — direct DOM, no re-render.
+        e.currentTarget.style.cursor = !interactive
+          ? "default"
+          : boundaryNear(x, rect.width) !== null
+            ? "ew-resize"
+            : "crosshair";
+        return;
+      }
+      setDrag({ ...drag, currentX: x });
     },
-    [drag]
+    [drag, interactive, boundaryNear]
   );
 
   const handlePointerUp = useCallback(
@@ -924,7 +1031,9 @@ export const SwipeCompLanes: React.FC<SwipeCompLanesProps> = ({
       const rect = e.currentTarget.getBoundingClientRect();
       const endX = e.clientX - rect.left;
       setDrag(null);
-      if (Math.abs(endX - drag.startX) < CLICK_TOLERANCE_PX) {
+      if (drag.mode === "edge" && drag.boundaryIndex !== null) {
+        onEdgeDrag(drag.boundaryIndex, xToPpqn(endX, rect.width));
+      } else if (Math.abs(endX - drag.startX) < CLICK_TOLERANCE_PX) {
         onZoneClick(drag.takeIndex, xToPpqn(endX, rect.width));
       } else {
         onSwipe(
@@ -934,7 +1043,7 @@ export const SwipeCompLanes: React.FC<SwipeCompLanesProps> = ({
         );
       }
     },
-    [drag, onSwipe, onZoneClick, xToPpqn]
+    [drag, onSwipe, onZoneClick, onEdgeDrag, xToPpqn]
   );
 
   const spans = compSpans(compState, loopPpqn);
@@ -1106,7 +1215,7 @@ export const SwipeCompLanes: React.FC<SwipeCompLanesProps> = ({
                 bpm={bpm}
                 sampleRate={sampleRate}
               />
-              {drag !== null && drag.takeIndex === i && (
+              {drag !== null && drag.takeIndex === i && drag.mode === "swipe" && (
                 <div
                   style={{
                     position: "absolute",
@@ -1118,6 +1227,19 @@ export const SwipeCompLanes: React.FC<SwipeCompLanesProps> = ({
                     border: `1.5px dashed ${lane.color}`,
                     borderRadius: 2,
                     boxSizing: "border-box",
+                    pointerEvents: "none",
+                  }}
+                />
+              )}
+              {drag !== null && drag.takeIndex === i && drag.mode === "edge" && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    bottom: 0,
+                    left: drag.currentX - 1,
+                    width: 2,
+                    background: "rgba(216, 210, 200, 0.7)",
                     pointerEvents: "none",
                   }}
                 />
@@ -1248,6 +1370,8 @@ import { SwipeCompLanes, LANE_COLORS, type SwipeTakeLane } from "./SwipeCompLane
 import {
   assignRange,
   assignZoneAt,
+  moveBoundary,
+  compSpans,
   takeExtentPpqn,
   ensureCompTrack,
   rebuildCompRegions,
@@ -1742,6 +1866,28 @@ const App: React.FC = () => {
     [compState, loopPpqn]
   );
 
+  const handleEdgeDrag = useCallback(
+    (boundaryIndex: number, newPpqn: number) => {
+      if (compState === null) return;
+      setAuditionTake(null);
+      // Extending the left zone rightward is limited by its take's recorded
+      // extent (same clamp rule as swipes).
+      const spans = compSpans(compState, loopPpqn);
+      const leftLane = compLanes[spans[boundaryIndex]?.take ?? -1];
+      const maxPpqn = leftLane
+        ? takeExtentPpqn(leftLane.source.durationSec, bpm, loopPpqn)
+        : loopPpqn;
+      const next = moveBoundary(
+        compState,
+        boundaryIndex,
+        Math.min(newPpqn, maxPpqn),
+        loopPpqn
+      );
+      if (next !== compState) setCompState(next);
+    },
+    [compState, compLanes, bpm, loopPpqn]
+  );
+
   // Audition: unmarked mutes — never their own undo step.
   const handleToggleAudition = useCallback(
     (takeIndex: number) => {
@@ -1961,6 +2107,7 @@ const App: React.FC = () => {
                   onToggleAudition={handleToggleAudition}
                   onSwipe={handleSwipe}
                   onZoneClick={handleZoneClick}
+                  onEdgeDrag={handleEdgeDrag}
                   getPositionPpqn={getPositionPpqn}
                   showPlayhead={isPlaying || isRecording}
                 />
@@ -2148,7 +2295,8 @@ Browse `https://localhost:5180/swipe-comping-demo.html`.
 
 - [ ] **Step 4: Verify zone click, audition, undo/redo, collapse**
 
-- Single-click another lane inside an existing zone → whole zone reassigns.
+- Single-click another lane inside an existing zone → whole zone reassigns (the swipe window moves to that lane).
+- Hover near a seam → cursor becomes `ew-resize`; drag the seam → vertical preview line follows, on release the boundary moves (comp lane + lanes update, one undo step). Drag a seam all the way into its neighbor → the zone collapses (equal-take neighbors merge, seam disappears).
 - Undo → comp lane reverts to the previous state (derived from the label); Redo restores. One undo step per swipe (audition toggles must NOT consume undo steps).
 - 🎧 on a lane → that take audible alone during Play (comp lane shows the bypass scrim); toggling off restores the comp.
 - Collapse chevron → lanes slide shut, comp lane + seam ticks remain; expand restores. Swipe attempts while collapsed do nothing.
