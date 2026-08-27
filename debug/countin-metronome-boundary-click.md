@@ -7,12 +7,21 @@
 ## Symptom
 
 With the metronome **preference disabled** and a 1-bar count-in, starting a recording
-plays **five** clicks — `1 2 3 4` and then one more click exactly at the punch-in
+can play **five** clicks — `1 2 3 4` and then one more click exactly at the punch-in
 downbeat — instead of four. Audibly: "1,2,3,4,1". The recording itself is then
 click-free, so the leak is exactly one click at the boundary.
 
+**Audibility is quantum-alignment dependent** (mechanism deterministic, occurrence
+conditional): the click leaks iff `recording_start` falls strictly inside a render
+quantum. At 44.1 kHz / 120 BPM a bar is 88 200 samples = 689.0625 quanta — always
+mid-quantum, always leaks. At 48 kHz / 120 BPM a bar is exactly 750 quanta, but the
+transport accumulates position in float pulses (5.12/quantum, not binary-exact), so
+the rounding direction of 750 additions decides it. Expect intermittence across
+machines/sample rates.
+
 The pre-WASM TS engine behaved correctly: `1 2 3 4`, then silence at punch-in.
-(TS engine removed upstream in 0.0.161; the regression rides the Rust port.)
+The responsible code is unchanged from 0.0.161 (first WASM-only release) through
+upstream main — the regression window is the TS→WASM transition, not a recent update.
 
 ## Cause (source level, `crates/engine/src/lib.rs` @ 0.0.170 = upstream main)
 
