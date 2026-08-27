@@ -2,7 +2,8 @@ import { assert, Progress, UUID } from "@opendaw/lib-std";
 import { Promises } from "@opendaw/lib-runtime";
 import { PPQN } from "@opendaw/lib-dsp";
 import { BpmDetector, SampleMetaData, SoundfontMetaData } from "@opendaw/studio-adapters";
-import { AudioData } from "@opendaw/lib-dsp";
+import type { AudioData } from "@opendaw/lib-dsp";
+import { audioBufferToAudioData } from "./audioUtils";
 import {
   AudioWorklets,
   GlobalSampleLoaderManager,
@@ -21,24 +22,6 @@ import { withDeadline } from "./deadline";
 
 import WorkersUrl from "@opendaw/studio-core/workers-main.js?worker&url";
 import WorkletsUrl from "@opendaw/studio-core/processors.js?url";
-
-/**
- * Convert a browser AudioBuffer to OpenDAW's AudioData format.
- * AudioData uses SharedArrayBuffer for efficient cross-thread communication.
- */
-function audioBufferToAudioData(audioBuffer: AudioBuffer): AudioData {
-  const { numberOfChannels, length: numberOfFrames, sampleRate } = audioBuffer;
-
-  // Use AudioData.create which properly allocates SharedArrayBuffer
-  const audioData = AudioData.create(sampleRate, numberOfFrames, numberOfChannels);
-
-  // Copy channel data from browser AudioBuffer to AudioData frames
-  for (let channel = 0; channel < numberOfChannels; channel++) {
-    audioData.frames[channel].set(audioBuffer.getChannelData(channel));
-  }
-
-  return audioData;
-}
 
 /**
  * Configuration options for custom sample loading

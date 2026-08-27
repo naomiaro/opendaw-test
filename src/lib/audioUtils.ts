@@ -1,3 +1,5 @@
+import { AudioData } from "@opendaw/lib-dsp";
+
 /**
  * Returns the preferred audio file extension for the current browser.
  * Safari (including iOS) doesn't reliably decode Ogg Opus via decodeAudioData,
@@ -63,4 +65,35 @@ export async function loadAudioFile(audioContext: AudioContext, url: string): Pr
   }
   const arrayBuffer = await response.arrayBuffer();
   return await audioContext.decodeAudioData(arrayBuffer);
+}
+
+/**
+ * Format a duration in seconds for display: "3:41 min" above one minute,
+ * "30.0 s" below. Rounds the total before splitting so 119.6 s renders
+ * "2:00 min", never "1:60 min".
+ *
+ * Note: some components keep their own formatters on purpose — the export
+ * list shows tenths ("1:05.3") and the transport shows "mm:ss.ms".
+ */
+export function formatDuration(seconds: number): string {
+  const total = Math.round(seconds);
+  const minutes = Math.floor(total / 60);
+  const rest = total % 60;
+  return minutes > 0 ? `${minutes}:${String(rest).padStart(2, "0")} min` : `${seconds.toFixed(1)} s`;
+}
+
+/**
+ * Convert a browser AudioBuffer into OpenDAW's AudioData (SharedArrayBuffer-backed).
+ *
+ * AudioData is what the SDK's DSP layer consumes — workers, processors, transient
+ * detection, bpm detection, peak generation all take AudioData, not AudioBuffer.
+ * The conversion is a per-channel copy; cost is O(frames * channels).
+ */
+export function audioBufferToAudioData(buffer: AudioBuffer): AudioData {
+  const { numberOfChannels, length: numberOfFrames, sampleRate } = buffer;
+  const audioData = AudioData.create(sampleRate, numberOfFrames, numberOfChannels);
+  for (let channel = 0; channel < numberOfChannels; channel++) {
+    audioData.frames[channel].set(buffer.getChannelData(channel));
+  }
+  return audioData;
 }

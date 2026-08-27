@@ -173,7 +173,8 @@ export default defineConfig({
                 automationSimplifierDebug: resolve(__dirname, "automation-simplifier-debug-demo.html"),
                 wasmEngine: resolve(__dirname, "wasm-engine-demo.html"),
                 modulation: resolve(__dirname, "modulation-demo.html"),
-                convolver: resolve(__dirname, "convolver-demo.html")
+                convolver: resolve(__dirname, "convolver-demo.html"),
+                bpmDetect: resolve(__dirname, "bpm-detect-demo.html")
             },
             output: {
                 manualChunks: (id) => {

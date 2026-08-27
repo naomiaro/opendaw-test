@@ -94,6 +94,28 @@ body { background: var(--mc-bg); }
 }
 .mc-intro strong { color: var(--mc-text); font-weight: 600; }
 
+/* Shared drag-and-drop target (src/components/DropZone.tsx): dashed frame that
+   brightens to amber while a drag hovers it. */
+.mc-dropzone {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  cursor: pointer;
+  border: 1px dashed var(--mc-line-bright);
+  border-radius: 4px;
+  background: var(--mc-panel);
+  padding: 16px;
+  color: var(--mc-text);
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.mc-dropzone:hover { background: var(--mc-panel-hover); }
+.mc-dropzone--active {
+  border-color: var(--mc-amber);
+  background: var(--mc-panel-hover);
+}
+.mc-dropzone--disabled { cursor: wait; opacity: 0.75; }
+.mc-dropzone:focus-visible { outline: 2px solid var(--mc-amber); outline-offset: 2px; }
+
 .mc-lattice-frame {
   margin-top: 34px;
   border: 1px solid var(--mc-line);

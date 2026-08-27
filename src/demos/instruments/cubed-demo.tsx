@@ -22,6 +22,7 @@ import { CanvasPainter } from "@/lib/CanvasPainter";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
+import { DropZone } from "@/components/DropZone";
 import { CANVAS_COLORS, CONSOLE_STYLES } from "@/lib/design/consoleTheme";
 import { CUBED_PRESETS, type CubedPreset } from "./cubedPatterns";
 import "@radix-ui/themes/styles.css";
@@ -108,15 +109,6 @@ const PAGE_STYLES = `
   border: 1px solid var(--mc-amber);
   padding: 6px 0;
 }
-.cb-dropzone {
-  border: 1px dashed var(--mc-line-bright);
-  border-radius: 6px;
-  padding: 14px;
-  text-align: center;
-  cursor: pointer;
-}
-.cb-dropzone[data-active] { border-color: var(--mc-amber); background: var(--mc-panel-hover); }
-.cb-dropzone:focus-visible { outline: 2px solid var(--mc-amber); outline-offset: 2px; }
 .cb-preset {
   background: var(--mc-panel);
   border: 1px solid var(--mc-line);
@@ -619,8 +611,6 @@ const ExchangePanel: React.FC<{
 }> = ({ project, adapter, onPatternEdited }) => {
   const [text, setText] = useState("");
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
-  const [isDragOver, setIsDragOver] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const exportJson = useCallback(() => {
     const json = CubedPatternData.toJSON(adapter.readCurrentPattern());
@@ -691,42 +681,16 @@ const ExchangePanel: React.FC<{
         Or import an AudioRealism Bass Line <code>.pat</code> file — the SDK's{" "}
         <code>AblPattern.parse</code> reads both the ABL2 and ABL3 dialects.
       </Text>
-      <div
-        className="cb-dropzone"
-        role="button"
-        tabIndex={0}
-        aria-label="Load an ABL .pat pattern file"
-        data-active={isDragOver || undefined}
-        onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
-        onDragLeave={(e) => { e.preventDefault(); setIsDragOver(false); }}
-        onDrop={(e) => {
-          e.preventDefault();
-          setIsDragOver(false);
-          const file = e.dataTransfer.files[0];
-          if (file) void loadAblFile(file);
-          else setMessage({ kind: "error", text: "Nothing droppable — drop a .pat file." });
-        }}
-        onClick={() => fileInputRef.current?.click()}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            fileInputRef.current?.click();
-          }
-        }}
-      >
-        <Text size="2" color="gray">Drop an ABL .pat file here or click to browse</Text>
-      </div>
-      <input
-        ref={fileInputRef}
-        type="file"
+      <DropZone
+        ariaLabel="Load an ABL .pat pattern file"
         accept=".pat"
-        style={{ display: "none" }}
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) void loadAblFile(file);
-          e.target.value = "";
-        }}
-      />
+        onFile={file => void loadAblFile(file)}
+        onInvalidDrop={() => setMessage({ kind: "error", text: "Nothing droppable — drop a .pat file." })}
+      >
+        <Text size="2" color="gray" align="center" as="div">
+          Drop an ABL .pat file here or click to browse
+        </Text>
+      </DropZone>
       {message && (
         <Callout.Root color={message.kind === "error" ? "red" : "green"} size="1" role={message.kind === "error" ? "alert" : "status"}>
           <Callout.Text>{message.text}</Callout.Text>

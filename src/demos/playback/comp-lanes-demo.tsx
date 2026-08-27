@@ -19,6 +19,7 @@ import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { AudioAttribution } from "@/components/AudioAttribution";
 import { BackLink } from "@/components/BackLink";
+import { DropZone } from "@/components/DropZone";
 import { TransportControls } from "@/components/TransportControls";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { loadTracksFromFiles } from "@/lib/trackLoading";
@@ -50,7 +51,6 @@ const App: React.FC = () => {
   const [crossfadeMs, setCrossfadeMs] = useState(20);
   const [crossfadeCurve, setCrossfadeCurve] = useState<CrossfadeCurve>("curve");
   const [compMode, setCompMode] = useState<CompMode>("automation");
-  const [isDragOver, setIsDragOver] = useState(false);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
 
@@ -63,7 +63,6 @@ const App: React.FC = () => {
   });
 
   const localAudioBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const canvasRefs = useRef<Map<number, HTMLCanvasElement>>(new Map());
   const spliceTrackRef = useRef<TrackBox | null>(null);
   const spliceAudioUnitRef = useRef<AudioUnitBox | null>(null);
@@ -446,18 +445,6 @@ const App: React.FC = () => {
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [takes, drawWaveform]);
 
-  // ─── Drag and drop ───
-  const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragOver(true); }, []);
-  const handleDragLeave = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragOver(false); }, []);
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault(); setIsDragOver(false);
-    const fileList = Array.from(e.dataTransfer.files)
-      .filter(f => f.type.startsWith("audio/"))
-      .slice(0, MAX_TAKES);
-    if (fileList.length === 0) return;
-    handleFiles(fileList);
-  }, [handleFiles]);
-
   // ─── Initialize OpenDAW ───
   useEffect(() => {
     let mounted = true;
@@ -572,28 +559,19 @@ const App: React.FC = () => {
             <div className="mc-lattice-frame" style={{ marginTop: 0 }}>
               <Flex direction="column" gap="4" align="center">
                 <Heading size="4" style={{ color: "var(--mc-text)" }}>Choose Audio</Heading>
-                <div
-                  onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
-                  onClick={() => fileInputRef.current?.click()}
-                  style={{
-                    width: "100%", padding: "48px 24px",
-                    border: `2px dashed ${isDragOver ? "#e8a33d" : "var(--mc-line-bright)"}`,
-                    borderRadius: "4px",
-                    backgroundColor: isDragOver ? "rgba(232,163,61,0.05)" : "var(--mc-bg)",
-                    cursor: "pointer", textAlign: "center", transition: "all 0.2s ease"
+                <DropZone
+                  ariaLabel="Load audio takes — drop 1 to 4 audio files or press Enter to browse"
+                  accept="audio/*"
+                  onFiles={files => {
+                    const audioFiles = files.filter(f => f.type.startsWith("audio/")).slice(0, MAX_TAKES);
+                    if (audioFiles.length > 0) handleFiles(audioFiles);
                   }}
                 >
-                  <Flex direction="column" gap="2" align="center">
-                    <Text size="6" style={{ color: "var(--mc-text)" }}>{isDragOver ? "Drop it!" : "Drop audio file(s) here"}</Text>
+                  <Flex direction="column" gap="2" align="center" style={{ padding: "32px 8px" }}>
+                    <Text size="6" style={{ color: "var(--mc-text)" }}>Drop audio file(s) here</Text>
                     <Text size="2" style={{ color: "var(--mc-muted)" }}>Drop 1 file for staggered takes, or 2–4 files for separate performances</Text>
                   </Flex>
-                  <input ref={fileInputRef} type="file" accept="audio/*" multiple style={{ display: "none" }}
-                    onChange={(e) => {
-                      const files = e.target.files;
-                      if (!files || files.length === 0) return;
-                      handleFiles(Array.from(files));
-                    }} />
-                </div>
+                </DropZone>
                 <Flex align="center" gap="3" style={{ width: "100%" }}>
                   <div style={{ flex: 1, height: "1px", backgroundColor: "var(--mc-line)" }} />
                   <Text size="2" style={{ color: "var(--mc-muted)" }}>or</Text>
