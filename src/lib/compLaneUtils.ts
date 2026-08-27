@@ -46,6 +46,9 @@ export interface TakeData {
 export interface CompState {
   boundaries: number[];
   assignments: number[];
+  /** Per-zone content shift in PPQN (positive = audio plays later). Present
+   *  only when some zone is nudged — omitted when all zero. */
+  nudges?: number[];
 }
 
 /**
@@ -249,6 +252,188 @@ export function rebuildAutomation(
       }
     }
   });
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Swipe comping (recorded takes) — pure zone math
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface CompSpan {
+  start: number;
+  end: number;
+  take: number;
+  nudge: number; // content shift in PPQN (positive = audio plays later)
+}
+
+/** Expand a CompState into consecutive [start, end) spans over [0, totalLength]. */
+export function compSpans(state: CompState, totalLength: number): CompSpan[] {
+  const bounds = [0, ...state.boundaries, totalLength];
+  return state.assignments.map((take, i) => ({
+    start: bounds[i],
+    end: bounds[i + 1],
+    take,
+    nudge: state.nudges?.[i] ?? 0,
+  }));
+}
+
+/** Build a CompState from spans, omitting `nudges` when all zero. */
+function spansToStateRaw(spans: CompSpan[]): CompState {
+  if (spans.length === 0) return { boundaries: [], assignments: [0] };
+  const nudges = spans.map((s) => s.nudge);
+  return {
+    boundaries: spans.slice(1).map((s) => s.start),
+    assignments: spans.map((s) => s.take),
+    ...(nudges.some((n) => n !== 0) ? { nudges } : {}),
+  };
+}
+
+/** Merge-normalize: drop empty spans, merge neighbors with equal take AND
+ *  equal nudge (a nudged section must keep its own region). */
+function spansToState(spans: CompSpan[]): CompState {
+  const merged: CompSpan[] = [];
+  for (const span of spans) {
+    if (span.end - span.start <= 0) continue;
+    const prev = merged[merged.length - 1];
+    if (prev !== undefined && prev.take === span.take && prev.nudge === span.nudge) {
+      prev.end = span.end;
+    } else {
+      merged.push({ ...span });
+    }
+  }
+  return spansToStateRaw(merged);
+}
+
+/** Swipe: assign [from, to] to takeIndex, splitting/merging zones as needed. */
+export function assignRange(
+  state: CompState,
+  takeIndex: number,
+  from: number,
+  to: number,
+  totalLength: number
+): CompState {
+  const a = Math.max(0, Math.min(totalLength, Math.round(Math.min(from, to))));
+  const b = Math.max(0, Math.min(totalLength, Math.round(Math.max(from, to))));
+  if (b - a <= 0) return state;
+  const spans: CompSpan[] = [];
+  for (const span of compSpans(state, totalLength)) {
+    if (span.end <= a || span.start >= b) {
+      spans.push(span);
+      continue;
+    }
+    if (span.start < a) spans.push({ start: span.start, end: a, take: span.take, nudge: span.nudge });
+    if (span.end > b) spans.push({ start: b, end: span.end, take: span.take, nudge: span.nudge });
+  }
+  spans.push({ start: a, end: b, take: takeIndex, nudge: 0 });
+  spans.sort((x, y) => x.start - y.start);
+  return spansToState(spans);
+}
+
+/** Edge drag: move boundary `boundaryIndex` to a new position, clamped between
+ *  its neighboring boundaries. Landing exactly on a neighbor collapses the
+ *  zone between them (equal-take neighbors then merge). */
+export function moveBoundary(
+  state: CompState,
+  boundaryIndex: number,
+  newPosition: number,
+  totalLength: number
+): CompState {
+  const { boundaries } = state;
+  if (boundaryIndex < 0 || boundaryIndex >= boundaries.length) return state;
+  const prev = boundaryIndex === 0 ? 0 : boundaries[boundaryIndex - 1];
+  const next =
+    boundaryIndex === boundaries.length - 1
+      ? totalLength
+      : boundaries[boundaryIndex + 1];
+  const pos = Math.max(prev, Math.min(next, Math.round(newPosition)));
+  if (pos === boundaries[boundaryIndex]) return state;
+  const spans = compSpans(state, totalLength);
+  // Boundary k separates span k from span k+1.
+  return spansToState(
+    spans.map((s, i) => {
+      if (i === boundaryIndex) return { ...s, end: pos };
+      if (i === boundaryIndex + 1) return { ...s, start: pos };
+      return s;
+    })
+  );
+}
+
+/** Zone click: reassign the whole zone containing `position` to takeIndex.
+ *  Also resets the zone's nudge (clicking the zone's own lane is therefore a
+ *  nudge-reset gesture). */
+export function assignZoneAt(
+  state: CompState,
+  takeIndex: number,
+  position: number,
+  totalLength: number
+): CompState {
+  const spans = compSpans(state, totalLength);
+  const hit = spans.find((s) => position >= s.start && position < s.end);
+  if (hit === undefined || (hit.take === takeIndex && hit.nudge === 0)) return state;
+  return spansToState(
+    spans.map((s) => (s === hit ? { ...s, take: takeIndex, nudge: 0 } : s))
+  );
+}
+
+/** Marquee cut: insert boundaries at [from, to] without changing any
+ *  assignment or nudge. Deliberately NOT merge-normalized — the cut
+ *  boundaries must survive even between equal zones. */
+export function splitRange(
+  state: CompState,
+  from: number,
+  to: number,
+  totalLength: number
+): CompState {
+  const a = Math.max(0, Math.min(totalLength, Math.round(Math.min(from, to))));
+  const b = Math.max(0, Math.min(totalLength, Math.round(Math.max(from, to))));
+  if (b - a <= 0) return state;
+  const pieces: CompSpan[] = [];
+  for (const span of compSpans(state, totalLength)) {
+    const cuts = [
+      span.start,
+      ...[a, b].filter((c) => c > span.start && c < span.end),
+      span.end,
+    ];
+    for (let i = 0; i < cuts.length - 1; i++) {
+      pieces.push({ ...span, start: cuts[i], end: cuts[i + 1] });
+    }
+  }
+  const kept = pieces.filter((s) => s.end > s.start);
+  if (kept.length === state.assignments.length) return state; // nothing new cut
+  return spansToStateRaw(kept);
+}
+
+/** Nudge: shift zone `zoneIndex`'s audio content by deltaPpqn, accumulated
+ *  and clamped to [minNudge, maxNudge] (caller derives the limits from the
+ *  take's recorded extent). Boundaries and assignments are untouched. */
+export function nudgeZone(
+  state: CompState,
+  zoneIndex: number,
+  deltaPpqn: number,
+  minNudge: number,
+  maxNudge: number
+): CompState {
+  if (zoneIndex < 0 || zoneIndex >= state.assignments.length) return state;
+  if (minNudge > maxNudge) return state;
+  const current = state.nudges?.[zoneIndex] ?? 0;
+  const next = Math.max(
+    minNudge,
+    Math.min(maxNudge, Math.round(current + deltaPpqn))
+  );
+  if (next === current) return state;
+  const nudges = state.assignments.map((_, i) =>
+    i === zoneIndex ? next : state.nudges?.[i] ?? 0
+  );
+  return {
+    boundaries: state.boundaries,
+    assignments: state.assignments,
+    ...(nudges.some((n) => n !== 0) ? { nudges } : {}),
+  };
+}
+
+/** Snap a PPQN value to the grid (gridPpqn 0 = off, plain rounding). */
+export function snapToGrid(ppqnValue: number, gridPpqn: number): number {
+  if (gridPpqn <= 0) return Math.round(ppqnValue);
+  return Math.round(ppqnValue / gridPpqn) * gridPpqn;
 }
 
 export function rebuildSpliceRegions(
