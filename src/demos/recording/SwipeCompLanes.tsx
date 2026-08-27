@@ -75,26 +75,18 @@ function paintTakeStrips(
 ): void {
   // frames-per-pixel is constant across the lane; u range follows x range.
   const loopFrames = loopSeconds * sampleRate;
+  const takeFrames = Math.min(durationSec * sampleRate, loopFrames);
+  const xEnd = (takeFrames / loopFrames) * width; // pixel where the take's audio ends
+  const clampedX1 = Math.min(x1, xEnd);
+  if (clampedX1 <= x0) return;
   const u0 = lane.waveformOffsetFrames + (x0 / width) * loopFrames;
-  const laneEndFrames =
-    lane.waveformOffsetFrames +
-    Math.min(durationSec * sampleRate, loopFrames);
-  const u1 = Math.min(
-    lane.waveformOffsetFrames + (x1 / width) * loopFrames,
-    laneEndFrames
-  );
-  if (u1 <= u0) return;
-  // Shrink x1 proportionally when the take ends before the zone does.
-  const effX1 =
-    x0 + ((u1 - u0) / ((x1 - x0 === 0 ? 1 : x1 - x0) * (loopFrames / width))) *
-      (x1 - x0) *
-      (loopFrames / width);
+  const u1 = lane.waveformOffsetFrames + (clampedX1 / width) * loopFrames;
   const numChannels = peaks.numChannels;
   const channelHeight = height / numChannels;
   for (let ch = 0; ch < numChannels; ch++) {
     PeaksPainter.renderPixelStrips(context, peaks, ch, {
       x0,
-      x1: Math.min(x1, effX1),
+      x1: clampedX1,
       y0: ch * channelHeight + 1,
       y1: (ch + 1) * channelHeight - 1,
       u0,
