@@ -320,11 +320,11 @@ const App: React.FC = () => {
   // ── Rebuild comp regions when compState changes (guarded) ──
   useEffect(() => {
     if (!project || compState === null) return;
-    if (isRecording || isCountingIn || isFinalizing) return; // recording view: no rebuilds
     if (skipNextRebuildRef.current) {
       skipNextRebuildRef.current = false; // state came from the graph (undo/redo)
       return;
     }
+    if (isRecording || isCountingIn || isFinalizing) return; // recording view: no rebuilds
     const compTrack = compTrackRef.current;
     if (!compTrack || compLanes.length === 0) return;
     isRebuildingRef.current = true;
@@ -371,11 +371,16 @@ const App: React.FC = () => {
       const compTrack = compTrackRef.current;
       if (compTrack) {
         const adapter = project.boxAdapters.adapterFor(compTrack, TrackBoxAdapter);
-        project.editing.modify(() => {
-          for (const region of adapter.regions.adapters.values()) {
-            region.box.mute.setValue(true);
-          }
-        }, false);
+        isRebuildingRef.current = true;
+        try {
+          project.editing.modify(() => {
+            for (const region of adapter.regions.adapters.values()) {
+              region.box.mute.setValue(true);
+            }
+          }, false);
+        } finally {
+          isRebuildingRef.current = false;
+        }
       }
       project.engine.setPosition(0);
       project.startRecording(useCountIn);
@@ -479,6 +484,8 @@ const App: React.FC = () => {
   const handleClearAll = useCallback(() => {
     if (!project) return;
     setAuditionTake(null);
+    const compTrack = compTrackRef.current;
+    compTrackRef.current = null;
     project.editing.modify(() => {
       for (const region of getAllRegions(project)) {
         if (
@@ -489,10 +496,8 @@ const App: React.FC = () => {
           region.box.delete();
         }
       }
-      const compTrack = compTrackRef.current;
       if (compTrack) compTrack.delete();
     });
-    compTrackRef.current = null;
     setCompLanes([]);
     setCompState(null);
     setSelectedZone(null);
