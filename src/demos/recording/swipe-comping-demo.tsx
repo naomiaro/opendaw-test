@@ -160,6 +160,8 @@ const App: React.FC = () => {
   const skipNextRebuildRef = useRef(false);
   const tapeCreatedRef = useRef(false);
   const finalizationSubsRef = useRef<Terminable[]>([]);
+  // Generation token to cancel stale comp-init polls from previous recording cycles
+  const compInitTokenRef = useRef(0);
   compLanesRef.current = compLanes;
 
   const { audioInputDevices, audioOutputDevices, hasPermission, requestPermission } =
@@ -276,15 +278,21 @@ const App: React.FC = () => {
   // Poll across animation frames (bounded) instead of trusting the first scan.
   const initializeComp = useCallback(() => {
     if (!project || !audioContext || !tapeUnitBox) return;
+    const token = ++compInitTokenRef.current;
     let attempt = 0;
     const MAX_ATTEMPTS = 90; // ~1.5s at 60fps — generous margin over the observed 1-frame lag
     const tryScan = () => {
+      // Bail if this poll was invalidated (new recording or clear-all started)
+      if (compInitTokenRef.current !== token) return;
+
       const lanes = scanCompLanes(project, tapeUnitBox, audioContext.sampleRate);
       if (lanes.length === 0) {
         attempt++;
         if (attempt < MAX_ATTEMPTS) {
           requestAnimationFrame(tryScan);
         } else {
+          // Bail before error if poll was invalidated
+          if (compInitTokenRef.current !== token) return;
           console.error(
             "[SwipeComping] initializeComp: scanCompLanes still returned 0 lanes " +
               `after ${MAX_ATTEMPTS} frames — giving up`
@@ -293,6 +301,9 @@ const App: React.FC = () => {
         }
         return;
       }
+      // Bail before applying state if poll was invalidated
+      if (compInitTokenRef.current !== token) return;
+
       const compTrack = ensureCompTrack(project, tapeUnitBox);
       compTrackRef.current = compTrack;
       // Keep an existing comp; default a new one to the LAST take (Logic's default).
@@ -388,6 +399,7 @@ const App: React.FC = () => {
     // arm UI). The single tape is armed unconditionally in addTape(), so
     // recordingTapes.length is the correct readiness check.
     if (!project || !audioContext || recordingTapes.length === 0) return;
+    compInitTokenRef.current++;
     setUiError(null);
     setFinalizationError(null);
     setAuditionTake(null);
@@ -510,6 +522,7 @@ const App: React.FC = () => {
 
   const handleClearAll = useCallback(() => {
     if (!project) return;
+    compInitTokenRef.current++;
     setAuditionTake(null);
     const compTrack = compTrackRef.current;
     compTrackRef.current = null;
