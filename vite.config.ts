@@ -145,6 +145,7 @@ export default defineConfig({
                 mixerGroups: resolve(__dirname, "mixer-groups-demo.html"),
                 midiRecording: resolve(__dirname, "midi-recording-demo.html"),
                 loopRecording: resolve(__dirname, "loop-recording-demo.html"),
+                swipeComping: resolve(__dirname, "swipe-comping-demo.html"),
                 trackAutomation: resolve(__dirname, "track-automation-demo.html"),
                 liveAutomationRecording: resolve(__dirname, "live-automation-recording-demo.html"),
                 clipLooping: resolve(__dirname, "clip-looping-demo.html"),
