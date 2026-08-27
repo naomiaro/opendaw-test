@@ -16,6 +16,13 @@ export const AUDIT_BPMS = [120, 90, 124, 133, 97.3] as const;
 
 export const BAR_PPQN = PPQN.Quarter * 4; // 3840
 
+// Scenario-specific constants derived from renderBars
+const LOOP_WRAP_BARS = 2;
+const LOOP_WRAP_PASSES = 8;
+
+const SIGNATURE_BARS_3_4 = 2;
+const SIGNATURE_BARS_4_4 = 5;
+
 export interface AuditScenario {
   family: AuditFamily;
   renderBars: number;
@@ -30,7 +37,7 @@ export const AUDIT_SCENARIOS: Record<AuditFamily, AuditScenario> = {
   },
   "loop-wrap": {
     family: "loop-wrap",
-    renderBars: 16,
+    renderBars: LOOP_WRAP_BARS * LOOP_WRAP_PASSES,
     description: "2-bar loop rendered 8 times (8 wraps), one note per wrap",
   },
   seam: {
@@ -65,7 +72,7 @@ export const AUDIT_SCENARIOS: Record<AuditFamily, AuditScenario> = {
   },
   signature: {
     family: "signature",
-    renderBars: 7,
+    renderBars: SIGNATURE_BARS_3_4 + SIGNATURE_BARS_4_4,
     description:
       "7 mixed-meter bars: 2 bars of 3/4 then 5 bars of 4/4 (26 quarter onsets), metronome quarters",
   },
@@ -87,8 +94,9 @@ export function expectedOnsets(family: AuditFamily, bpm: number): number[] {
   switch (family) {
     case "metronome": {
       // 8 bars = 32 quarters, one click per quarter
+      const quarters = AUDIT_SCENARIOS.metronome.renderBars * 4;
       const onsets: number[] = [];
-      for (let k = 0; k < 32; k++) {
+      for (let k = 0; k < quarters; k++) {
         onsets.push(k * beat);
       }
       return onsets;
@@ -96,11 +104,11 @@ export function expectedOnsets(family: AuditFamily, bpm: number): number[] {
 
     case "loop-wrap": {
       // 2-bar loop, 8 wraps (16 bars total), one note per wrap at loop start
-      // Loop duration = 2 bars = 2 * 4 quarters = 8 quarters = 8 * beat seconds
-      const loopDuration = 2 * BAR_PPQN;
+      // Loop duration = LOOP_WRAP_BARS bars = LOOP_WRAP_BARS * 4 quarters
+      const loopDuration = LOOP_WRAP_BARS * BAR_PPQN;
       const loopDurationSeconds = (loopDuration / PPQN.Quarter) * beat;
       const onsets: number[] = [];
-      for (let n = 0; n < 8; n++) {
+      for (let n = 0; n < LOOP_WRAP_PASSES; n++) {
         onsets.push(n * loopDurationSeconds);
       }
       return onsets;
@@ -117,9 +125,9 @@ export function expectedOnsets(family: AuditFamily, bpm: number): number[] {
       // Clicks every quarter starting from 7/4 quarter position
       // Click positions: 7/4, 11/4, 15/4 quarters (all within 4 bars)
       const startBeats = (7 * PPQN.Quarter) / 4 / PPQN.Quarter; // 1.75 beats
-      const maxBeats = 4 * 4; // 4 bars = 16 beats
+      const maxBeats = AUDIT_SCENARIOS["region-fencepost"].renderBars * 4; // 4 bars = 16 beats
       const onsets: number[] = [];
-      for (let k = 0; k * 1 < maxBeats - startBeats; k++) {
+      for (let k = 0; k < maxBeats - startBeats; k++) {
         onsets.push((startBeats + k) * beat);
       }
       return onsets;
@@ -141,12 +149,12 @@ export function expectedOnsets(family: AuditFamily, bpm: number): number[] {
 
     case "tempo-ramp": {
       // 8 bars = 32 quarters, tempo ramps from bpm to 0.75*bpm linearly
-      // For beat i, tempo(i) = bpm * (1 - i/(32-1)) = bpm * (1 - i/31)
+      // For beat i, tempo(i) = bpm * (1 - i/(K-1)) = bpm * (1 - i/31)
       // Actually, the brief says "tempo linear in *beat index*", so:
-      // bpm(i) = bpm + (0.75*bpm - bpm) * (i/K) where K = 32 (total beats)
-      // bpm(i) = bpm * (1 - 0.25*i/32)
+      // bpm(i) = bpm + (0.75*bpm - bpm) * (i/K) where K = total beats
+      // bpm(i) = bpm * (1 - 0.25*i/K)
       // Time of beat i = sum_{j<i} 60/bpm(j)
-      const K = 32; // 8 bars = 32 beats
+      const K = AUDIT_SCENARIOS["tempo-ramp"].renderBars * 4; // renderBars = 8 beats
       const onsets: number[] = [];
       let currentTime = 0;
       for (let i = 0; i < K; i++) {
@@ -160,9 +168,10 @@ export function expectedOnsets(family: AuditFamily, bpm: number): number[] {
 
     case "signature": {
       // 7 mixed-meter bars: 2 bars of 3/4, then 5 bars of 4/4
-      // Total quarters: 2*3 + 5*4 = 6 + 20 = 26 quarters
+      // Total quarters: SIGNATURE_BARS_3_4*3 + SIGNATURE_BARS_4_4*4 = 2*3 + 5*4 = 26 quarters
+      const quarters = SIGNATURE_BARS_3_4 * 3 + SIGNATURE_BARS_4_4 * 4;
       const onsets: number[] = [];
-      for (let k = 0; k < 26; k++) {
+      for (let k = 0; k < quarters; k++) {
         onsets.push(k * beat);
       }
       return onsets;
@@ -172,9 +181,9 @@ export function expectedOnsets(family: AuditFamily, bpm: number): number[] {
       // 2 bars rendered after setPosition to 5*960 + 240 PPQN
       // Next quarter boundary: 6*960 PPQN
       // Offset from render start: (6*960 - (5*960 + 240)) / 960 = 0.75 beats
-      // Then every beat after: 0.75, 1.75, 2.75, ..., up to 2 bars (8 beats)
+      // Then every beat after: 0.75, 1.75, 2.75, ..., up to renderBars beats
       const startOffsetBeats = 0.75; // 3/4 beat after transport-pos
-      const maxBeats = 2 * 4; // 2 bars
+      const maxBeats = AUDIT_SCENARIOS["transport-pos"].renderBars * 4; // 2 bars
       const onsets: number[] = [];
       for (let k = 0; startOffsetBeats + k < maxBeats; k++) {
         onsets.push((startOffsetBeats + k) * beat);
@@ -187,6 +196,7 @@ export function expectedOnsets(family: AuditFamily, bpm: number): number[] {
 /**
  * Expected downbeat indices in the onset list for families with time signatures.
  * Only "signature" family exports downbeat indices.
+ * @param _family Type-only parameter to enforce caller passes "signature" (never used at runtime).
  */
 export function expectedDownbeatIndices(_family: "signature"): number[] {
   // 7 mixed-meter bars: 2 bars of 3/4, then 5 bars of 4/4
