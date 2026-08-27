@@ -1,6 +1,7 @@
 import React from "react";
 import { PPQN } from "@opendaw/lib-dsp";
 import { Button, Flex, Text, Badge, Separator } from "@radix-ui/themes";
+import { formatDuration } from "@/lib/audioUtils";
 
 interface TransportControlsProps {
   isPlaying: boolean;
@@ -10,22 +11,6 @@ interface TransportControlsProps {
   onPause: () => void;
   onStop: () => void;
 }
-
-/**
- * Format seconds to mm:ss.ms format
- */
-const formatTime = (seconds: number): string => {
-  // Handle invalid values
-  if (!isFinite(seconds) || isNaN(seconds)) {
-    return "00:00.00";
-  }
-
-  const minutes = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  const ms = Math.floor((seconds % 1) * 100);
-
-  return `${minutes.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}.${ms.toString().padStart(2, "0")}`;
-};
 
 export const TransportControls: React.FC<TransportControlsProps> = ({
   isPlaying,
@@ -37,7 +22,8 @@ export const TransportControls: React.FC<TransportControlsProps> = ({
 }) => {
   // Convert PPQN position to seconds
   const timeInSeconds = PPQN.pulsesToSeconds(currentPosition, bpm);
-  const formattedTime = formatTime(timeInSeconds);
+  // "floor": a live clock must never display a time the playhead hasn't reached
+  const formattedTime = formatDuration(timeInSeconds, "mm:ss.cc", "floor");
 
   return (
     <Flex gap="3" align="center" wrap="wrap">

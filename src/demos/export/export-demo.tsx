@@ -20,7 +20,8 @@ import {
   channelsToAudioBuffer,
   downloadAsWav,
 } from "@/lib/rangeExport";
-import { ExportResultsList, formatDuration, type PreviewResult } from "./ExportResultsList";
+import { ExportResultsList, type PreviewResult } from "./ExportResultsList";
+import { formatDuration } from "@/lib/audioUtils";
 import type { TrackData } from "@/lib/types";
 import "@radix-ui/themes/styles.css";
 import {
@@ -520,7 +521,7 @@ const App: React.FC = () => {
                   </Flex>
                   <Flex align="center" gap="3" wrap="wrap">
                     <Text size="2" color="gray">
-                      Duration: {formatDuration(rangeDurationSeconds)} | Bars {startBar}-{endBar} (
+                      Duration: {formatDuration(rangeDurationSeconds, "m:ss.t")} | Bars {startBar}-{endBar} (
                       {endBar - startBar + 1} bars)
                     </Text>
                     <Button
