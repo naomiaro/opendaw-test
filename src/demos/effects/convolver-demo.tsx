@@ -9,6 +9,7 @@ import type { BooleanField } from "@opendaw/lib-box";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
+import { DropZone } from "@/components/DropZone";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { CanvasPainter } from "@/lib/CanvasPainter";
 import { IMPULSE_RESPONSES } from "@/lib/impulseResponses";
@@ -26,7 +27,6 @@ import { CONSOLE_STYLES, CANVAS_COLORS } from "@/lib/design/consoleTheme";
 
 const CONVOLVER_STYLES = `
 .cv-ir-card:focus-visible { outline: 2px solid var(--mc-amber); outline-offset: 2px; }
-.cv-dropzone:focus-visible { outline: 2px solid var(--mc-amber); outline-offset: 2px; }
 `;
 
 // ---------------------------------------------------------------------------
@@ -163,10 +163,8 @@ const App: React.FC = () => {
   const [setup, setSetup] = useState<ConvolverDemoSetup | null>(null);
   const [currentIR, setCurrentIR] = useState<CurrentIR | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [dropActive, setDropActive] = useState(false);
   const [dropError, setDropError] = useState<string | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let disposed = false;
@@ -255,23 +253,6 @@ const App: React.FC = () => {
       setDropError(`Failed to load "${file.name}" into the engine: ${String(err)}`);
     }
   }, [setup]);
-
-  const onDrop = useCallback((event: React.DragEvent) => {
-    event.preventDefault();
-    setDropActive(false);
-    const file = event.dataTransfer.files.item(0);
-    if (!file) {
-      setDropError("Drop an audio file (not a link, image or text selection).");
-      return;
-    }
-    void loadCustomIR(file);
-  }, [loadCustomIR]);
-
-  const onBrowse = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.item(0);
-    event.target.value = "";
-    if (file) void loadCustomIR(file);
-  }, [loadCustomIR]);
 
   // The ref is always set before currentIR can be non-null (init order) — no
   // fallback rate, so a wrong threshold can't silently mask an ordering bug
@@ -363,27 +344,10 @@ const App: React.FC = () => {
               </Grid>
 
               <Grid columns={{ initial: "1", sm: "2" }} gap="4">
-                <Card
-                  className="cv-dropzone"
-                  role="button"
-                  tabIndex={0}
-                  aria-label="Load a custom impulse response — drop an audio file or press Enter to browse"
-                  onDragOver={event => { event.preventDefault(); setDropActive(true); }}
-                  onDragLeave={() => setDropActive(false)}
-                  onDrop={onDrop}
-                  onClick={event => {
-                    // The Remove button inside this card must not open the picker
-                    if ((event.target as HTMLElement).closest("button") === null) {
-                      fileInputRef.current?.click();
-                    }
-                  }}
-                  onKeyDown={event => {
-                    if ((event.key === "Enter" || event.key === " ") && event.target === event.currentTarget) {
-                      event.preventDefault();
-                      fileInputRef.current?.click();
-                    }
-                  }}
-                  style={{ cursor: "pointer", outline: dropActive ? "2px dashed var(--mc-amber)" : undefined }}
+                <DropZone
+                  ariaLabel="Load a custom impulse response — drop an audio file or press Enter to browse"
+                  onFile={file => void loadCustomIR(file)}
+                  onInvalidDrop={() => setDropError("Drop an audio file (not a link, image or text selection).")}
                 >
                   <Flex direction="column" gap="2">
                     <Flex align="center" justify="between">
@@ -422,15 +386,8 @@ const App: React.FC = () => {
                       impulse response — try a clap recording, a synth stab, or a whole
                       drum break.
                     </Text>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="audio/*,.wav,.mp3,.m4a,.ogg,.flac,.aif,.aiff"
-                      style={{ display: "none" }}
-                      onChange={onBrowse}
-                    />
                   </Flex>
-                </Card>
+                </DropZone>
 
                 <Card>
                   <Flex direction="column" gap="3">

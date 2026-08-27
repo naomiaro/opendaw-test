@@ -803,7 +803,7 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
 
 ### Adding a New Demo
 1. Create `<name>-demo.html` at project root (copy existing HTML entry point, update meta tags and script src to point at `src/demos/<category>/`)
-2. Create `src/demos/<category>/<name>-demo.tsx` (use Radix UI Theme, GitHubCorner, BackLink, MoisesLogo; import shared code via `@/` alias)
+2. Create `src/demos/<category>/<name>-demo.tsx` (use Radix UI Theme, GitHubCorner, BackLink, MoisesLogo; import shared code via `@/` alias; file-drop UIs use the shared `DropZone` from `src/components/DropZone.tsx` — styles live in `CONSOLE_STYLES` `.mc-dropzone`, so the page must include the console theme)
 3. Add build entry in `vite.config.ts` → `rollupOptions.input`
 4. Add card in `src/index.tsx`
 5. Add URL to `public/sitemap.xml`
@@ -827,6 +827,7 @@ Each demo category folder has its own CLAUDE.md with SDK knowledge scoped to tho
 - `src/demos/engine/CLAUDE.md` — WASM (Rust) engine: EngineVariant/WasmEngine wiring and boot, offline rendering notes, DSP-load reporting
 - `src/demos/modulation/CLAUDE.md` — modulation system: ProjectModulation transaction rules, engine depth/amount/bipolar math, free-running behavior, modulator adapter constants
 - `src/demos/clips/CLAUDE.md` — clip launcher boxes, quantization, clip notifications, convert-to-region
+- `src/demos/analysis/CLAUDE.md` — WasmBpmDetector wiring, detection limits (60 s window, period-only), metronome verification pattern
 
 ## Reference Files
 - Project setup: `src/lib/projectSetup.ts`

@@ -68,6 +68,21 @@ export async function loadAudioFile(audioContext: AudioContext, url: string): Pr
 }
 
 /**
+ * Format a duration in seconds for display: "3:41 min" above one minute,
+ * "30.0 s" below. Rounds the total before splitting so 119.6 s renders
+ * "2:00 min", never "1:60 min".
+ *
+ * Note: some components keep their own formatters on purpose — the export
+ * list shows tenths ("1:05.3") and the transport shows "mm:ss.ms".
+ */
+export function formatDuration(seconds: number): string {
+  const total = Math.round(seconds);
+  const minutes = Math.floor(total / 60);
+  const rest = total % 60;
+  return minutes > 0 ? `${minutes}:${String(rest).padStart(2, "0")} min` : `${seconds.toFixed(1)} s`;
+}
+
+/**
  * Convert a browser AudioBuffer into OpenDAW's AudioData (SharedArrayBuffer-backed).
  *
  * AudioData is what the SDK's DSP layer consumes — workers, processors, transient

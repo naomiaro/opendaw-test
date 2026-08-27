@@ -10,6 +10,7 @@ import { initializeOpenDAW } from "@/lib/projectSetup";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
+import { DropZone } from "@/components/DropZone";
 import { PianoKeyboard, PIANO_STYLES } from "@/demos/midi/PianoKeyboard";
 import { CANVAS_COLORS, CONSOLE_STYLES } from "@/lib/design/consoleTheme";
 import { CanvasPainter } from "@/lib/CanvasPainter";
@@ -495,20 +496,6 @@ const PAGE_STYLES = `
 .ne-card:focus-visible { outline: 2px solid var(--mc-amber); outline-offset: 2px; }
 .ne-card-name { font-family: var(--mc-mono); font-size: 13px; font-weight: 600; }
 .ne-card-desc { font-size: 11.5px; line-height: 1.45; color: var(--mc-muted); }
-.ne-dropzone {
-  padding: 28px 20px;
-  border: 2px dashed var(--mc-line-bright);
-  border-radius: 4px;
-  text-align: center;
-  cursor: pointer;
-  background: var(--mc-bg);
-  transition: border-color 160ms ease, background 160ms ease;
-}
-.ne-dropzone[data-active] {
-  border-color: var(--mc-amber);
-  background: rgba(232, 163, 61, 0.05);
-}
-.ne-dropzone:focus-visible { outline: 2px solid var(--mc-amber); outline-offset: 2px; }
 .ne-param-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
@@ -538,9 +525,7 @@ const App: React.FC = () => {
   const [activeNotes, setActiveNotes] = useState<Set<number>>(new Set());
   const [activePatch, setActivePatch] = useState("Init");
   const [syxError, setSyxError] = useState<string | null>(null);
-  const [isDragOver, setIsDragOver] = useState(false);
   const suppressCustomRef = useRef(false); // read during preset apply to skip "Custom"
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Initialize OpenDAW
   useEffect(() => {
@@ -658,30 +643,6 @@ const App: React.FC = () => {
     }
   }, [applyTone]);
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(true);
-  }, []);
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-  }, []);
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-    const file = e.dataTransfer.files[0];
-    if (file) void handleSyxFile(file);
-    else setSyxError("Nothing droppable — drop a .syx file.");
-  }, [handleSyxFile]);
-
-  const handleFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) void handleSyxFile(file);
-    e.target.value = "";
-  }, [handleSyxFile]);
-
   return (
     <Theme appearance="dark" accentColor="amber" radius="large" style={{ background: "var(--mc-bg)" }}>
       <style>{CONSOLE_STYLES}</style>
@@ -773,32 +734,16 @@ const App: React.FC = () => {
                   Bank dumps are read as their last tone if the sysex framing matches;
                   anything else is rejected.
                 </Text>
-                <div
-                  className="ne-dropzone"
-                  role="button"
-                  tabIndex={0}
-                  aria-label="Load a .syx tone dump"
-                  data-active={isDragOver || undefined}
-                  onDragOver={handleDragOver}
-                  onDragLeave={handleDragLeave}
-                  onDrop={handleDrop}
-                  onClick={() => fileInputRef.current?.click()}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      fileInputRef.current?.click();
-                    }
-                  }}
-                >
-                  <Text size="2" color="gray">Drop .syx file here or click to browse</Text>
-                </div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
+                <DropZone
+                  ariaLabel="Load a .syx tone dump"
                   accept=".syx"
-                  style={{ display: "none" }}
-                  onChange={handleFileInputChange}
-                />
+                  onFile={file => void handleSyxFile(file)}
+                  onInvalidDrop={() => setSyxError("Nothing droppable — drop a .syx file.")}
+                >
+                  <Text size="2" color="gray" align="center" as="div" style={{ padding: "12px 4px" }}>
+                    Drop .syx file here or click to browse
+                  </Text>
+                </DropZone>
                 {syxError && (
                   <Callout.Root color="red" role="alert" size="1">
                     <Callout.Text>{syxError}</Callout.Text>

@@ -23,7 +23,8 @@ const bpmOption = await detector.detect(audioData, progress); // Promise<Option<
   Worker/module failures degrade to `None` with a console.warn, never a throw.
 
 ### Detection Is One Global Tempo — First 60 Seconds Only
-The algorithm (`crates/stretch/src/tempo.rs`, `detect_bpm` export): spectral-flux
+The algorithm (`crates/stretch/src/tempo.rs`, exported as `detect_bpm` from
+`crates/stretch-wasm`): spectral-flux
 onset function → smoothed → autocorrelation with a harmonic comb (multiples up to 8)
 → log-normal tempo prior centered at 120 BPM → parabolic peak refinement → bar snap.
 Hard limits to surface in UI copy and never design around:
@@ -35,15 +36,20 @@ Hard limits to surface in UI copy and never design around:
 - Search range 70–200 BPM. Octave errors are the benign, expected failure mode
   (a half-time backbeat at 87 may report 174 — still grid-aligned).
 - Bar snap: a grid-cut loop measuring 127.94 snaps to exactly 128 when the file
-  duration is within 0.05 bars of a whole bar count (`snapped_to_grid`).
+  duration is within 0.05 bars of a whole bar count (`snapped_to_grid`; plus a
+  looser ±5% ratio guard so the snap never moves the estimate far). The snap uses
+  the FULL file duration — do NOT slice the buffer to the 60 s window before
+  detection, it changes results for long files.
 - The richer Rust-side `TempoEstimate` (correlation, snapped_to_grid) is discarded
-  at the WASM boundary — JS receives a bare f64 (0 = None).
+  at the WASM boundary — JS receives a bare number (an f32 at the ABI; 0 = None).
 - `min_duration_seconds: 1.5` — shorter files are refused.
 
 ### Metronome Verification Pattern
 To prove a detected tempo by ear: set `timelineBox.bpm` to the detected value in its
-OWN transaction BEFORE creating the track (region PPQN math and the metronome click
-both read it), then create Tape instrument + AudioFileBox + AudioRegionBox exactly as
+OWN transaction BEFORE creating the track (per the separate-transaction rule; the PPQN
+durations computed from the detected bpm only map back to the file's real length at
+playback when the project bpm matches, and the metronome click reads it live), then
+create Tape instrument + AudioFileBox + AudioRegionBox exactly as
 `loadTracksFromFiles` does, enable `settings.metronome.enabled = true`, and play with
 `loopArea` spanning the region. On replace: `audioUnitBox.delete()` cascades to track
 lane and region, but AudioFileBox and ValueEventCollectionBox are freestanding

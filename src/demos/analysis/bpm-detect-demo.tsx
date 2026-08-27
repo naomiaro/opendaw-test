@@ -8,8 +8,10 @@ import { InstrumentFactories } from "@opendaw/studio-adapters";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
+import { DropZone } from "@/components/DropZone";
 import { initializeOpenDAW } from "@/lib/projectSetup";
-import { audioBufferToAudioData, loadAudioFile } from "@/lib/audioUtils";
+import { waitForLoadingComplete } from "@/lib/engineLoading";
+import { audioBufferToAudioData, formatDuration, loadAudioFile } from "@/lib/audioUtils";
 import "@radix-ui/themes/styles.css";
 import {
   Theme, Container, Flex, Grid, Text, Card, Button, Badge, Separator, Callout,
@@ -18,7 +20,6 @@ import { CONSOLE_STYLES } from "@/lib/design/consoleTheme";
 
 const BPM_STYLES = `
 .bpm-file-card:focus-visible { outline: 2px solid var(--mc-amber); outline-offset: 2px; }
-.bpm-dropzone:focus-visible { outline: 2px solid var(--mc-amber); outline-offset: 2px; }
 `;
 
 // Same URL scheme the studio app uses (STRETCH_WASM_URL in StudioService.ts) — the
@@ -89,6 +90,8 @@ const GALLERY: GalleryFile[] = [
 ];
 
 interface DetectionResult {
+  /** Gallery id, or "drop" for a user file — keys the card highlight exactly. */
+  sourceId: string;
   name: string;
   seconds: number;
   sampleRate: number;
@@ -107,12 +110,6 @@ interface VerifyTrack {
   name: string;
 }
 
-function formatDuration(seconds: number): string {
-  const minutes = Math.floor(seconds / 60);
-  const rest = Math.round(seconds % 60);
-  return minutes > 0 ? `${minutes}:${String(rest).padStart(2, "0")} min` : `${seconds.toFixed(1)} s`;
-}
-
 const App: React.FC = () => {
   const [status, setStatus] = useState("Booting…");
   const [initError, setInitError] = useState(false);
@@ -120,15 +117,15 @@ const App: React.FC = () => {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [result, setResult] = useState<DetectionResult | null>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
-  const [dropActive, setDropActive] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [verifyBusy, setVerifyBusy] = useState(false);
   const [verifyName, setVerifyName] = useState<string | null>(null);
+  const [detectorUnavailable, setDetectorUnavailable] = useState(false);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const detectorRef = useRef<WasmBpmDetector | null>(null);
   const localBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
   const verifyTrackRef = useRef<VerifyTrack | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const analyzeBusyRef = useRef(false);
 
   useEffect(() => {
     let disposed = false;
@@ -145,13 +142,24 @@ const App: React.FC = () => {
         // Mirrors the studio app: SampleService gets `new WasmBpmDetector(url)` so
         // bpm-less imports are measured. Here the demo drives the detector directly.
         detectorRef.current = new WasmBpmDetector(STRETCH_WASM_URL);
+        // The SDK deliberately degrades any detector failure to Option.None — which
+        // this demo would then present as a confident "no measurable tempo". Probe
+        // the module URL once so a missing/unserved wasm gets its own error state
+        // instead of masquerading as an honest negative on every file.
+        try {
+          const probe = await fetch(STRETCH_WASM_URL);
+          if (!probe.ok) setDetectorUnavailable(true);
+        } catch {
+          setDetectorUnavailable(true);
+        }
         // The whole point of the verification lane: the click must be audible.
         const settings = project.engine.preferences.settings;
         settings.metronome.enabled = true;
         setProject(project);
         setStatus("Ready — pick a file to analyze");
       } catch (err) {
-        bootProject?.terminate();
+        // terminate() can itself throw — never let it eat the original error
+        try { bootProject?.terminate(); } catch { /* already failing */ }
         console.error("[bpm-detect-demo] init failed: " + String(err));
         setStatus(`Init error: ${String(err)}`);
         setInitError(true);
@@ -168,11 +176,21 @@ const App: React.FC = () => {
 
   const analyze = useCallback(async (id: string, name: string, buffer: AudioBuffer) => {
     const detector = detectorRef.current;
-    if (!detector) return;
+    if (!detector) {
+      setAnalysisError("Detector not initialized — reload the page.");
+      return;
+    }
     setBusyId(id);
     setAnalysisError(null);
+    // The result card must describe ONE file: clear the previous result, and
+    // disarm Play — the verification track (if any) still holds the old file.
+    setResult(null);
+    setVerifyName(null);
     setStatus(`Analyzing ${name}…`);
     try {
+      // Deliberately NOT sliced to the 60 s analysis window: the engine's bar
+      // snap uses the FULL duration it receives, so truncating the buffer here
+      // would change results for long files.
       const audioData = audioBufferToAudioData(buffer);
       const started = performance.now();
       // Runs in the SDK's core worker (stretch_wasm.wasm) — main thread stays free.
@@ -180,6 +198,7 @@ const App: React.FC = () => {
       const bpmOption = await detector.detect(audioData, () => {});
       const elapsedMs = performance.now() - started;
       setResult({
+        sourceId: id,
         name,
         seconds: buffer.duration,
         sampleRate: buffer.sampleRate,
@@ -197,91 +216,100 @@ const App: React.FC = () => {
     }
   }, []);
 
+  /** Ref-based reentrancy guard — state alone can double-fire before a re-render. */
+  const beginAnalysis = useCallback((): boolean => {
+    if (analyzeBusyRef.current) return false;
+    analyzeBusyRef.current = true;
+    return true;
+  }, []);
+
   const onSelectGallery = useCallback(async (spec: GalleryFile) => {
     const audioContext = audioCtxRef.current;
-    if (!audioContext || busyId !== null) return;
-    setBusyId(spec.id);
-    setAnalysisError(null);
-    setStatus(`Loading ${spec.name}…`);
-    let buffer: AudioBuffer;
+    if (!audioContext || !beginAnalysis()) return;
     try {
-      buffer = await loadAudioFile(audioContext, spec.file);
-    } catch (err) {
-      console.error("[bpm-detect-demo] could not load gallery file: " + String(err));
-      setAnalysisError(`Could not load ${spec.name}: ${String(err)}`);
-      setBusyId(null);
-      setStatus("Ready");
-      return;
+      setBusyId(spec.id);
+      setAnalysisError(null);
+      setStatus(`Loading ${spec.name}…`);
+      let buffer: AudioBuffer;
+      try {
+        buffer = await loadAudioFile(audioContext, spec.file);
+      } catch (err) {
+        console.error("[bpm-detect-demo] could not load gallery file: " + String(err));
+        setAnalysisError(`Could not load ${spec.name}: ${String(err)}`);
+        setBusyId(null);
+        setStatus("Ready");
+        return;
+      }
+      await analyze(spec.id, spec.name, buffer);
+    } finally {
+      analyzeBusyRef.current = false;
     }
-    await analyze(spec.id, spec.name, buffer);
-  }, [analyze, busyId]);
+  }, [analyze, beginAnalysis]);
 
-  const onCustomFile = useCallback(async (file: File) => {
+  const onCustomFile = useCallback(async (file: File, skippedCount = 0) => {
     const audioContext = audioCtxRef.current;
-    if (!audioContext || busyId !== null) return;
-    setBusyId("drop");
-    setAnalysisError(null);
-    setStatus(`Decoding ${file.name}…`);
-    let buffer: AudioBuffer;
+    if (!audioContext || !beginAnalysis()) return;
     try {
-      const arrayBuffer = await file.arrayBuffer();
-      buffer = await audioContext.decodeAudioData(arrayBuffer);
-    } catch (err) {
-      console.warn("[bpm-detect-demo] could not decode dropped file: " + String(err));
-      setAnalysisError(`Could not decode "${file.name}" — drop a wav/mp3/m4a audio file.`);
-      setBusyId(null);
-      setStatus("Ready");
-      return;
+      setBusyId("drop");
+      setAnalysisError(null);
+      setStatus(
+        skippedCount > 0
+          ? `${skippedCount + 1} files dropped — analyzing "${file.name}" (one at a time)…`
+          : `Decoding ${file.name}…`
+      );
+      let buffer: AudioBuffer;
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        buffer = await audioContext.decodeAudioData(arrayBuffer);
+      } catch (err) {
+        console.warn("[bpm-detect-demo] could not decode dropped file: " + String(err));
+        setAnalysisError(`Could not decode "${file.name}" — drop a wav/mp3/m4a audio file.`);
+        setBusyId(null);
+        setStatus("Ready");
+        return;
+      }
+      await analyze("drop", file.name, buffer);
+    } finally {
+      analyzeBusyRef.current = false;
     }
-    await analyze("drop", file.name, buffer);
-  }, [analyze, busyId]);
-
-  const onDrop = useCallback((event: React.DragEvent) => {
-    event.preventDefault();
-    setDropActive(false);
-    const file = event.dataTransfer.files.item(0);
-    if (!file) {
-      setAnalysisError("Drop an audio file (not a link, image or text selection).");
-      return;
-    }
-    void onCustomFile(file);
-  }, [onCustomFile]);
-
-  const onBrowse = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.item(0);
-    event.target.value = "";
-    if (file) void onCustomFile(file);
-  }, [onCustomFile]);
+  }, [analyze, beginAnalysis]);
 
   const onVerify = useCallback(async () => {
     if (!project || !result || result.bpm === null || verifyBusy) return;
     const detectedBpm = result.bpm;
     setVerifyBusy(true);
     setStatus(`Loading ${result.name} at ${detectedBpm.toFixed(2)} BPM…`);
+    let uuidString: string | null = null;
     try {
       project.engine.stop(true);
       // Replace any previous verification track. audioUnitBox.delete() cascades to
       // its track lane and region; the file and events boxes are freestanding
-      // (referenced by the region, not owned) so they go explicitly.
+      // (referenced by the region, not owned) so they go explicitly. Ref and
+      // buffer-map cleanup happen AFTER the transaction commits — a throw aborts
+      // the whole delete, and the surviving track must stay recoverable.
       const previous = verifyTrackRef.current;
       if (previous) {
-        verifyTrackRef.current = null;
-        localBuffersRef.current.delete(previous.uuidString);
         project.editing.modify(() => {
           previous.audioUnitBox.delete();
           previous.audioFileBox.delete();
           previous.eventsBox.delete();
         });
+        verifyTrackRef.current = null;
+        localBuffersRef.current.delete(previous.uuidString);
       }
-      // Tempo first, in its own transaction: the region math below and the
-      // metronome click both read it.
+      // Tempo first, in its own transaction (separate-transaction rule): the
+      // PPQN durations computed from detectedBpm below only map back to the
+      // file's real length at playback if the project bpm matches, and the
+      // metronome click reads it live.
       project.editing.modify(() => {
         project.timelineBox.bpm.setValue(detectedBpm);
       });
       const fileUUID = UUID.generate();
-      const uuidString = UUID.toString(fileUUID);
-      localBuffersRef.current.set(uuidString, result.buffer);
+      uuidString = UUID.toString(fileUUID);
       const durationPPQN = PPQN.secondsToPulses(result.buffer.duration, detectedBpm);
+      // Loop end snapped UP to a whole bar: wrapping mid-beat would jump the
+      // metronome's click phase, which is exactly what the ear is judging here.
+      const loopEndPPQN = Math.ceil(durationPPQN / PPQN.Bar) * PPQN.Bar;
       let created: VerifyTrack | null = null;
       project.editing.modify(() => {
         const { audioUnitBox, trackBox } = project.api.createInstrument(InstrumentFactories.Tape);
@@ -305,19 +333,31 @@ const App: React.FC = () => {
         });
         const { loopArea } = project.timelineBox;
         loopArea.from.setValue(0);
-        loopArea.to.setValue(Math.round(durationPPQN));
+        loopArea.to.setValue(loopEndPPQN);
         loopArea.enabled.setValue(true);
-        created = { audioUnitBox, audioFileBox, eventsBox, uuidString, name: result.name };
+        created = { audioUnitBox, audioFileBox, eventsBox, uuidString: uuidString!, name: result.name };
       });
       verifyTrackRef.current = created;
-      await project.engine.queryLoadingComplete();
+      // Register the buffer only after the create transaction commits, so a
+      // transaction throw doesn't strand an unreferenced AudioBuffer in the map.
+      localBuffersRef.current.set(uuidString, result.buffer);
+      // One-shot queryLoadingComplete can resolve false while the sample is
+      // still in flight — the poll helper rejects with the real error/timeout.
+      await waitForLoadingComplete(project);
       project.engine.setPosition(0);
       setVerifyName(result.name);
-      setStatus(`Playing ${result.name} with the metronome at ${detectedBpm.toFixed(2)} BPM`);
       project.engine.play();
+      setStatus(`Playing ${result.name} with the metronome at ${detectedBpm.toFixed(2)} BPM`);
     } catch (err) {
       console.error("[bpm-detect-demo] verify failed: " + String(err));
-      setStatus(`Could not start verification: ${String(err)}`);
+      // The graph may hold partial state (tempo changed, old track deleted,
+      // new one absent or unloaded) — disarm Play and say so prominently.
+      setVerifyName(null);
+      if (uuidString !== null && verifyTrackRef.current === null) {
+        localBuffersRef.current.delete(uuidString);
+      }
+      setAnalysisError(`Could not start verification: ${String(err)}`);
+      setStatus("Ready");
     } finally {
       setVerifyBusy(false);
     }
@@ -352,7 +392,7 @@ const App: React.FC = () => {
           <Card>
             <Flex align="center" gap="3" wrap="wrap">
               <Button onClick={onPlay} disabled={verifyName === null || isPlaying}>▶ Play</Button>
-              <Button variant="soft" onClick={onStop} disabled={verifyName === null}>■ Stop</Button>
+              <Button variant="soft" onClick={onStop} disabled={!project}>■ Stop</Button>
               <Separator orientation="vertical" />
               <Badge color={initError ? "red" : project ? "amber" : "gray"}>
                 {initError ? "Init failed" : project ? "Ready" : "Booting…"}
@@ -363,6 +403,17 @@ const App: React.FC = () => {
 
           {project && (
             <>
+              {detectorUnavailable && (
+                <Callout.Root color="red" role="alert" size="1">
+                  <Callout.Text>
+                    The analysis module (<code>{STRETCH_WASM_URL}</code>) could not be
+                    fetched. The SDK degrades detector failures to &ldquo;no tempo&rdquo;
+                    rather than throwing, so every result below would read as
+                    &ldquo;No measurable tempo&rdquo; regardless of the material — treat
+                    them as unavailable, not as answers.
+                  </Callout.Text>
+                </Callout.Root>
+              )}
               <Card>
                 <Flex direction="column" gap="3">
                   <Text size="2" weight="bold">Result</Text>
@@ -395,7 +446,8 @@ const App: React.FC = () => {
                           The detector answered <code>Option.None</code> — no onsets, or no
                           periodic pulse above its correlation gate. The SDK stores bpm 0
                           for such samples and leaves them in seconds rather than warping
-                          them to a fabricated tempo.
+                          them to a fabricated tempo. (A broken analysis module degrades to
+                          the same answer — if every file reports this, check the console.)
                         </Text>
                       )}
                       {truncated && (
@@ -440,7 +492,7 @@ const App: React.FC = () => {
 
               <Grid columns={{ initial: "1", xs: "2", sm: "4" }} gap="3">
                 {GALLERY.map(spec => {
-                  const selected = result?.name === spec.name;
+                  const selected = result?.sourceId === spec.id;
                   const busy = busyId === spec.id;
                   return (
                     <Card
@@ -448,7 +500,7 @@ const App: React.FC = () => {
                       className="bpm-file-card"
                       role="button"
                       tabIndex={0}
-                      aria-pressed={selected}
+                      aria-busy={busy}
                       aria-label={`Analyze ${spec.name}`}
                       onClick={() => void onSelectGallery(spec)}
                       onKeyDown={event => {
@@ -474,70 +526,48 @@ const App: React.FC = () => {
                 })}
               </Grid>
 
-              <Grid columns={{ initial: "1", sm: "2" }} gap="4">
-                <Card
-                  className="bpm-dropzone"
-                  role="button"
-                  tabIndex={0}
-                  aria-label="Analyze your own file — drop an audio file or press Enter to browse"
-                  onDragOver={event => { event.preventDefault(); setDropActive(true); }}
-                  onDragLeave={() => setDropActive(false)}
-                  onDrop={onDrop}
-                  onClick={() => fileInputRef.current?.click()}
-                  onKeyDown={event => {
-                    if ((event.key === "Enter" || event.key === " ") && event.target === event.currentTarget) {
-                      event.preventDefault();
-                      fileInputRef.current?.click();
-                    }
-                  }}
-                  style={{ cursor: "pointer", outline: dropActive ? "2px dashed var(--mc-amber)" : undefined }}
-                >
-                  <Flex direction="column" gap="2" align="center" justify="center" style={{ minHeight: 96 }}>
-                    <Text size="2" weight="bold">
-                      {busyId === "drop" ? "Analyzing…" : "Drop your own audio file"}
-                    </Text>
-                    <Text size="1" color="gray" align="center">
-                      wav / mp3 / m4a — decoded in the browser, analyzed in the worker.
-                      Nothing is uploaded.
-                    </Text>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="audio/*,.wav,.mp3,.m4a,.ogg,.flac,.aif,.aiff"
-                      style={{ display: "none" }}
-                      onChange={onBrowse}
-                    />
-                  </Flex>
-                </Card>
+              <DropZone
+                ariaLabel="Analyze your own file — drop an audio file or press Enter to browse"
+                onFile={(file, skipped) => void onCustomFile(file, skipped)}
+                onInvalidDrop={() => setAnalysisError("Drop an audio file (not a link, image or text selection).")}
+                disabled={busyId !== null}
+              >
+                <Flex direction="column" gap="2" align="center" justify="center" style={{ minHeight: 96 }}>
+                  <Text size="2" weight="bold">
+                    {busyId === "drop" ? "Analyzing…" : "Drop your own audio file"}
+                  </Text>
+                  <Text size="1" color="gray" align="center">
+                    wav / mp3 / m4a — decoded in the browser, analyzed in the worker.
+                    Nothing is uploaded.
+                  </Text>
+                </Flex>
+              </DropZone>
 
-                <Card>
-                  <Flex direction="column" gap="2">
-                    <Text size="2" weight="bold">What the detector can — and can&apos;t — do</Text>
-                    <Text size="1" color="gray">
-                      Search range 70–200 BPM with a preference centered at 120. Octave
-                      ambiguity is real and benign: a half-time backbeat at 87 may report
-                      as 174 — every beat still lands on a grid line. If a grid-cut loop
-                      measures a hair off (127.94), the estimate snaps so the file spans a
-                      whole number of bars (128).
-                    </Text>
-                    <Text size="1" color="gray">
-                      It analyzes only the first {ANALYSIS_WINDOW_SECONDS} seconds and
-                      reports a single tempo for the whole file — there is no segment or
-                      tempo-map output, so rubato and mid-file tempo changes are invisible
-                      to it. It also reports no beat <em>phase</em>: how often beats occur,
-                      not where beat one falls. Files shorter than 1.5 s are refused
-                      outright.
-                    </Text>
-                    <Text size="1" color="gray">
-                      In the SDK this detector plugs into <code>SampleService</code>: any
-                      import that arrives without a known tempo gets measured, and
-                      &ldquo;unknown&rdquo; is stored as bpm 0 so the sample stays in
-                      seconds. A recording already knows its tempo, so a caller-supplied
-                      bpm always wins over detection.
-                    </Text>
-                  </Flex>
-                </Card>
-              </Grid>
+              <section style={{ marginTop: 24 }}>
+                <div className="mc-kicker">What the detector can — and can&apos;t — do</div>
+                <p className="mc-intro">
+                  Search range <strong>70–200 BPM</strong> with a preference centered at
+                  120. Octave ambiguity is real and benign: a half-time backbeat at 87
+                  may report as 174 — every beat still lands on a grid line. If a
+                  grid-cut loop measures a hair off (127.94), the estimate snaps so the
+                  file spans a whole number of bars (128).
+                </p>
+                <p className="mc-intro">
+                  It analyzes only the <strong>first {ANALYSIS_WINDOW_SECONDS} seconds</strong>{" "}
+                  and reports a single tempo for the whole file — there is no segment or
+                  tempo-map output, so rubato and mid-file tempo changes are invisible to
+                  it. It also reports no beat <strong>phase</strong>: how often beats
+                  occur, not where beat one falls. Files shorter than 1.5 s are refused
+                  outright.
+                </p>
+                <p className="mc-intro">
+                  In the SDK this detector plugs into <code>SampleService</code>: any
+                  import that arrives without a known tempo gets measured, and
+                  &ldquo;unknown&rdquo; is stored as bpm 0 so the sample stays in seconds.
+                  A recording already knows its tempo, so a caller-supplied bpm always
+                  wins over detection.
+                </p>
+              </section>
             </>
           )}
         </Flex>
