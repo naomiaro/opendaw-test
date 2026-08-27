@@ -16,12 +16,22 @@ export const AUDIT_BPMS = [120, 90, 124, 133, 97.3] as const;
 
 export const BAR_PPQN = PPQN.Quarter * 4; // 3840
 
-// Scenario-specific constants derived from renderBars
-const LOOP_WRAP_BARS = 2;
-const LOOP_WRAP_PASSES = 8;
+// Scenario-specific constants derived from renderBars. Exported (widened from
+// module-private) so auditBuilders.ts can build the matching box-graph content
+// from the same single source of truth instead of re-deriving these numbers —
+// see task-4-report.md deviations.
+export const LOOP_WRAP_BARS = 2;
+export const LOOP_WRAP_PASSES = 8;
 
-const SIGNATURE_BARS_3_4 = 2;
-const SIGNATURE_BARS_4_4 = 5;
+export const SIGNATURE_BARS_3_4 = 2;
+export const SIGNATURE_BARS_4_4 = 5;
+
+/** PPQN positions for the note-onsets family (mix of on-grid and off-grid
+ *  positions within the 4-bar render window). Shared by `expectedOnsets` and
+ *  `auditBuilders.ts`'s note-onsets builder — single source of truth. */
+export const NOTE_ONSET_POSITIONS = [
+  0, 960, 1920, 2400, 3840, 5040, 7680, 9600, 11520, 13200,
+];
 
 export interface AuditScenario {
   family: AuditFamily;
@@ -135,8 +145,7 @@ export function expectedOnsets(family: AuditFamily, bpm: number): number[] {
 
     case "note-onsets": {
       // Notes at specific PPQN positions
-      const positions = [0, 960, 1920, 2400, 3840, 5040, 7680, 9600, 11520, 13200];
-      const onsets = positions.map((ppqn) => (ppqn / PPQN.Quarter) * beat);
+      const onsets = NOTE_ONSET_POSITIONS.map((ppqn) => (ppqn / PPQN.Quarter) * beat);
       return onsets;
     }
 
