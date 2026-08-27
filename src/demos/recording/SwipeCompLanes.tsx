@@ -108,7 +108,6 @@ const TakeLaneCanvas: React.FC<{
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const laneRef = useRef(lane);
   const spansRef = useRef(spans);
-  const painterRef = useRef<CanvasPainter | null>(null);
   laneRef.current = lane;
   spansRef.current = spans;
 
@@ -142,12 +141,10 @@ const TakeLaneCanvas: React.FC<{
         paintTakeStrips(context, peaks, l, liveDurationSec, xa, xb, w, h, loopSeconds, sampleRate);
       }
     });
-    painterRef.current = painter;
     const animSub = AnimationFrame.add(() => painter.requestUpdate());
     return () => {
       animSub.terminate();
       painter.terminate();
-      painterRef.current = null;
     };
   }, [loopPpqn, bpm, sampleRate]);
 
@@ -244,7 +241,6 @@ interface DragState {
   takeIndex: number;
   startX: number;
   currentX: number;
-  laneWidth: number;
   boundaryIndex: number | null; // set in "edge" mode
 }
 
@@ -327,7 +323,6 @@ export const SwipeCompLanes: React.FC<SwipeCompLanesProps> = ({
         takeIndex,
         startX: x,
         currentX: x,
-        laneWidth: rect.width,
         boundaryIndex,
       });
     },
@@ -373,6 +368,13 @@ export const SwipeCompLanes: React.FC<SwipeCompLanesProps> = ({
     [drag, onSwipe, onZoneClick, onEdgeDrag, xToPpqn, xToPpqnSnapped]
   );
 
+  // A cancelled pointer (browser gesture interruption, e.g. a system dialog
+  // or the pointer leaving the window mid-drag) never fires pointerup — drop
+  // the in-progress drag instead of leaving a stale drag preview on screen.
+  const handlePointerCancel = useCallback(() => {
+    setDrag(null);
+  }, []);
+
   // ── Comp-lane pointer handlers: click = select section, drag = marquee cut ──
   const handleCompPointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
@@ -415,6 +417,11 @@ export const SwipeCompLanes: React.FC<SwipeCompLanesProps> = ({
     },
     [compDrag, compState, loopPpqn, selectedZone, onSelectZone, onCut, xToPpqn, xToPpqnSnapped]
   );
+
+  // Same cancellation guard as the take lanes (see handlePointerCancel).
+  const handleCompPointerCancel = useCallback(() => {
+    setCompDrag(null);
+  }, []);
 
   const spans = compSpans(compState, loopPpqn);
   const lanesHeight = takes.length * (LANE_HEIGHT + 1);
@@ -476,6 +483,7 @@ export const SwipeCompLanes: React.FC<SwipeCompLanesProps> = ({
           onPointerDown={handleCompPointerDown}
           onPointerMove={handleCompPointerMove}
           onPointerUp={handleCompPointerUp}
+          onPointerCancel={handleCompPointerCancel}
           style={{
             flex: 1,
             position: "relative",
@@ -613,6 +621,7 @@ export const SwipeCompLanes: React.FC<SwipeCompLanesProps> = ({
               onPointerDown={handlePointerDown(i)}
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerCancel}
               style={{
                 flex: 1,
                 position: "relative",

@@ -330,7 +330,7 @@ export function assignRange(
 
 /** Edge drag: move boundary `boundaryIndex` to a new position, clamped between
  *  its neighboring boundaries. Landing exactly on a neighbor collapses the
- *  zone between them (equal-take neighbors then merge). */
+ *  zone between them (equal-take, equal-nudge neighbors then merge). */
 export function moveBoundary(
   state: CompState,
   boundaryIndex: number,
@@ -556,7 +556,8 @@ export function ensureCompTrack(
 
 /** Rebuild the comp track from the comp state: one butt-jointed Seconds-
  *  timeBase AudioRegionBox per zone, reading the winning take's frames via
- *  waveformOffset. Mutes every take region (the comp is the audible path).
+ *  waveformOffset (zones entirely past the take's recorded extent are
+ *  dropped). Mutes every take region (the comp is the audible path).
  *  One marked modify = one undo step per swipe. */
 export function rebuildCompRegions(
   project: Project,
@@ -587,16 +588,25 @@ export function rebuildCompRegions(
         );
       }
       const zoneStart = Math.round(span.start);
+      // Clamp the nudge itself to zoneStart — after a boundary drag lowers a
+      // nudged zone's start, an unclamped span.nudge could push the content
+      // window's read start before the take's own audio (into the previous
+      // take's tail in the shared recording buffer). The content window
+      // [zoneStart-nudge, zoneEnd-nudge] must stay inside the take's audio.
+      const nudge = Math.min(span.nudge, zoneStart);
       // Clamp to the take's recorded extent (short final takes). A positive
       // nudge shifts content later, freeing that much room at the tail.
       const zoneEnd = Math.min(
         Math.round(span.end),
         Math.max(
           zoneStart,
-          takeExtentPpqn(take.durationSec, bpm, loopPpqn) + span.nudge
+          takeExtentPpqn(take.durationSec, bpm, loopPpqn) + nudge
         )
       );
       if (zoneEnd <= zoneStart) continue;
+      if (!Number.isFinite(zoneStart) || !Number.isFinite(zoneEnd)) {
+        throw new Error("rebuildCompRegions: non-finite zone bounds — aborting");
+      }
 
       const durationSec = PPQN.pulsesToSeconds(zoneEnd - zoneStart, bpm);
       const eventsCollectionBox = ValueEventCollectionBox.create(
@@ -614,7 +624,7 @@ export function rebuildCompRegions(
         // Nudge shifts the content read position: positive nudge = audio
         // plays later = read earlier frames.
         box.waveformOffset.setValue(
-          compRegionWaveformOffset(take.waveformOffsetSec, zoneStart - span.nudge, bpm)
+          compRegionWaveformOffset(take.waveformOffsetSec, zoneStart - nudge, bpm)
         );
         // Comp state rides the first created region's label (undo-atomic).
         box.label.setValue(
@@ -632,6 +642,58 @@ export function rebuildCompRegions(
   });
 }
 
+/** Validate a parsed comp-state-shaped object against every invariant the
+ *  pure zone-math functions assume — boundaries/assignments length parity,
+ *  strictly-increasing positive boundaries, finite numbers throughout, and
+ *  (if present) a nudges array matching assignments length. Returns null
+ *  (logging the specific reason) on any violation instead of a shallow
+ *  "looks array-shaped" check — a corrupted or hand-edited label must never
+ *  reach the zone math with NaN/negative/out-of-order values. */
+function validateCompState(parsed: unknown, source: string): CompState | null {
+  if (typeof parsed !== "object" || parsed === null) {
+    console.error(`${source}: parsed label is not an object`);
+    return null;
+  }
+  const { boundaries, assignments, nudges } = parsed as Record<string, unknown>;
+  if (!Array.isArray(boundaries) || !boundaries.every((b) => Number.isFinite(b))) {
+    console.error(`${source}: boundaries is not an array of finite numbers`);
+    return null;
+  }
+  if (!Array.isArray(assignments) || !assignments.every((a) => Number.isFinite(a))) {
+    console.error(`${source}: assignments is not an array of finite numbers`);
+    return null;
+  }
+  if (assignments.length !== boundaries.length + 1) {
+    console.error(
+      `${source}: assignments.length (${assignments.length}) !== boundaries.length + 1 (${boundaries.length + 1})`
+    );
+    return null;
+  }
+  for (let i = 0; i < boundaries.length; i++) {
+    if (boundaries[i] <= 0) {
+      console.error(`${source}: boundary[${i}] is not > 0`);
+      return null;
+    }
+    if (i > 0 && boundaries[i] <= boundaries[i - 1]) {
+      console.error(`${source}: boundaries are not strictly increasing at index ${i}`);
+      return null;
+    }
+  }
+  if (nudges !== undefined) {
+    if (!Array.isArray(nudges) || !nudges.every((n) => Number.isFinite(n))) {
+      console.error(`${source}: nudges is not an array of finite numbers`);
+      return null;
+    }
+    if (nudges.length !== assignments.length) {
+      console.error(
+        `${source}: nudges.length (${nudges.length}) !== assignments.length (${assignments.length})`
+      );
+      return null;
+    }
+  }
+  return parsed as CompState;
+}
+
 /** Read the persisted comp state back from the comp track (after undo/redo). */
 export function deriveCompStateFromCompTrack(
   project: Project,
@@ -646,9 +708,8 @@ export function deriveCompStateFromCompTrack(
     if (!label.startsWith("comp:")) continue;
     try {
       const parsed = JSON.parse(label.slice("comp:".length));
-      if (Array.isArray(parsed.boundaries) && Array.isArray(parsed.assignments)) {
-        return parsed as CompState;
-      }
+      const validated = validateCompState(parsed, "deriveCompStateFromCompTrack");
+      if (validated) return validated;
     } catch (e) {
       console.error(
         "deriveCompStateFromCompTrack: bad label: " + JSON.stringify(String(e))

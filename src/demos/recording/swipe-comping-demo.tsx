@@ -72,10 +72,12 @@ interface CompLaneData {
   source: RecordedTakeSource;
 }
 
-/** Scan the Tape's take regions in chronological order (track index, then
- *  region position). Labels are re-derived from scan order so takes from a
- *  second recording session (whose SDK take numbers restart at 1) still get
- *  unique lane labels. */
+/** Scan the Tape's take regions in chronological order: by track index, then
+ *  by region position within a track (today there is one take per track, so
+ *  the intra-track sort is future-proofing — it doesn't affect current
+ *  output). Labels are re-derived from scan order so takes from a second
+ *  recording session (whose SDK take numbers restart at 1) still get unique
+ *  lane labels. */
 function scanCompLanes(
   project: Project,
   audioUnitBox: AudioUnitBox,
@@ -93,10 +95,16 @@ function scanCompLanes(
     const regions = track.regions.adapters
       .values()
       .filter((r): r is AudioRegionBoxAdapter => r.isAudioRegion())
-      .filter((r) => r.label.startsWith("Take "));
+      .filter((r) => r.label.startsWith("Take "))
+      .sort((a, b) => a.box.position.getValue() - b.box.position.getValue());
     for (const regionAdapter of regions) {
       const fileOpt = regionAdapter.optFile;
-      if (fileOpt.isEmpty()) continue;
+      if (fileOpt.isEmpty()) {
+        console.error(
+          "scanCompLanes: take region without file skipped: " + regionAdapter.label
+        );
+        continue;
+      }
       const fileAdapter = fileOpt.unwrap();
       const index = lanes.length;
       const waveformOffsetSec = regionAdapter.waveformOffset.getValue();
@@ -258,6 +266,10 @@ const App: React.FC = () => {
       subs.forEach((s) => s.terminate());
       finalizationSubsRef.current.forEach((s) => s.terminate());
       finalizationSubsRef.current = [];
+      // Invalidate any in-flight comp-init rAF poll — its tryScan closure
+      // captured this render's project/tapeUnitBox and must not touch state
+      // after unmount.
+      compInitTokenRef.current++;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -277,11 +289,32 @@ const App: React.FC = () => {
     setSelectedDeviceId(audioInputDevices[0]?.deviceId ?? "");
   }, [recordingTapes.length, audioInputDevices, selectedDeviceId]);
 
+  // Restore comp-audible mutes (comp unmuted, all takes muted) without an
+  // undo entry — used wherever audition is cleared outside a rebuild.
+  const restoreAuditionMutes = useCallback(() => {
+    if (!project) return;
+    // Revert the audition's unmarked mute writes and empty the pending set —
+    // a compensating modify would leave pending non-empty, which disables
+    // Redo and makes the next Undo consume the mutes instead of the last swipe.
+    isRebuildingRef.current = true;
+    try {
+      project.editing.revertPending();
+    } finally {
+      isRebuildingRef.current = false;
+    }
+  }, [project]);
+
   const handleDeviceChange = useCallback(
     (newDeviceId: string) => {
       if (!project) return;
       const capture = recordingTapes[0]?.capture;
       if (!capture) return;
+      // revertPending() only ever reverts audition mutes — no other unmarked
+      // write may happen while auditioning. Restore before switching devices.
+      if (auditionTake !== null) {
+        restoreAuditionMutes();
+        setAuditionTake(null);
+      }
       // Unmarked modify: switching the input device is not an undo step.
       isRebuildingRef.current = true;
       try {
@@ -293,7 +326,7 @@ const App: React.FC = () => {
       }
       setSelectedDeviceId(newDeviceId);
     },
-    [project, recordingTapes]
+    [project, recordingTapes, auditionTake, restoreAuditionMutes]
   );
 
   // ── Sync BPM / loop area ──
@@ -330,9 +363,9 @@ const App: React.FC = () => {
 
   // ── Comp initialization (runs after the finalization barrier) ──
   // The barrier resolves as soon as every sampleLoader reaches "loaded" —
-  // but the box-graph AudioRegionBox for the just-finalized take syncs to
-  // the main-thread adapter layer via the engine's own message channel,
-  // which can lag the loader's "loaded" event by a frame or more. Scanning
+  // but take finalization (the box-graph AudioRegionBox reaching the
+  // main-thread adapter layer) is driven by the engine's own sync messages,
+  // and can land a frame or more after the loader's "loaded" event. Scanning
   // immediately can observe 0 lanes even though the take truly finalized.
   // Poll across animation frames (bounded) instead of trusting the first scan.
   // isFinalizing is cleared here, at every terminal path (NOT by the caller) —
@@ -349,54 +382,64 @@ const App: React.FC = () => {
     let attempt = 0;
     const MAX_ATTEMPTS = 90; // ~1.5s at 60fps — generous margin over the observed 1-frame lag
     const tryScan = () => {
-      // Bail if this poll was invalidated (new recording or clear-all started)
-      if (compInitTokenRef.current !== token) {
-        setIsFinalizing(false);
-        return;
-      }
-
-      const lanes = scanCompLanes(project, tapeUnitBox, audioContext.sampleRate);
-      if (lanes.length === 0) {
-        attempt++;
-        if (attempt < MAX_ATTEMPTS) {
-          requestAnimationFrame(tryScan);
-        } else {
-          // Bail before error if poll was invalidated
-          if (compInitTokenRef.current !== token) {
-            setIsFinalizing(false);
-            return;
-          }
-          console.error(
-            "[SwipeComping] initializeComp: scanCompLanes still returned 0 lanes " +
-              `after ${MAX_ATTEMPTS} frames — giving up`
-          );
-          setUiError("Couldn't find the recorded takes to build the comp. Try Clear All and record again.");
+      try {
+        // Bail if this poll was invalidated (new recording or clear-all started)
+        if (compInitTokenRef.current !== token) {
           setIsFinalizing(false);
+          return;
         }
-        return;
-      }
-      // Bail before applying state if poll was invalidated
-      if (compInitTokenRef.current !== token) {
+
+        const lanes = scanCompLanes(project, tapeUnitBox, audioContext.sampleRate);
+        if (lanes.length === 0) {
+          attempt++;
+          if (attempt < MAX_ATTEMPTS) {
+            requestAnimationFrame(tryScan);
+          } else {
+            // Bail before error if poll was invalidated
+            if (compInitTokenRef.current !== token) {
+              setIsFinalizing(false);
+              return;
+            }
+            console.error(
+              "[SwipeComping] initializeComp: scanCompLanes still returned 0 lanes " +
+                `after ${MAX_ATTEMPTS} frames — giving up`
+            );
+            setUiError("Couldn't find the recorded takes to build the comp. Try Clear All and record again.");
+            setIsFinalizing(false);
+          }
+          return;
+        }
+        // Bail before applying state if poll was invalidated
+        if (compInitTokenRef.current !== token) {
+          setIsFinalizing(false);
+          return;
+        }
+
+        const compTrack = ensureCompTrack(project, tapeUnitBox);
+        compTrackRef.current = compTrack;
+        // Keep an existing comp; default a new one to the LAST take (Logic's default).
+        const existing = deriveCompStateFromCompTrack(project, compTrack);
+        const state: CompState =
+          existing ?? { boundaries: [], assignments: [lanes.length - 1] };
+        // No inline rebuild here — setting state triggers the rebuild effect
+        // exactly once (an inline rebuild + the effect would double-rebuild and
+        // create two undo entries). The rebuild also re-unmutes a comp that was
+        // muted for a "record more takes" pass.
+        setCompLanes(lanes);
+        setCompState({ ...state });
+        setAuditionTake(null);
+        setSelectedZone(null);
+        setCollapsed(false);
+        setIsFinalizing(false);
+      } catch (e) {
+        // Any throw in this rAF-scheduled body (scanCompLanes, ensureCompTrack,
+        // deriveCompStateFromCompTrack) must not leave isFinalizing stuck true —
+        // there is no other path back to a live transport.
+        console.error("Comp init failed: " + String(e));
+        setUiError(`Comp initialization failed: ${e instanceof Error ? e.message : String(e)}`);
         setIsFinalizing(false);
         return;
       }
-
-      const compTrack = ensureCompTrack(project, tapeUnitBox);
-      compTrackRef.current = compTrack;
-      // Keep an existing comp; default a new one to the LAST take (Logic's default).
-      const existing = deriveCompStateFromCompTrack(project, compTrack);
-      const state: CompState =
-        existing ?? { boundaries: [], assignments: [lanes.length - 1] };
-      // No inline rebuild here — setting state triggers the rebuild effect
-      // exactly once (an inline rebuild + the effect would double-rebuild and
-      // create two undo entries). The rebuild also re-unmutes a comp that was
-      // muted for a "record more takes" pass.
-      setCompLanes(lanes);
-      setCompState({ ...state });
-      setAuditionTake(null);
-      setSelectedZone(null);
-      setCollapsed(false);
-      setIsFinalizing(false);
     };
     tryScan();
   }, [project, audioContext, tapeUnitBox]);
@@ -461,6 +504,14 @@ const App: React.FC = () => {
     } catch (e) {
       console.error("Comp rebuild failed: " + String(e));
       setUiError(`Comp rebuild failed: ${e instanceof Error ? e.message : String(e)}`);
+      // The transaction aborted — React's compState still holds the failed
+      // gesture, which would silently replay on the next state change. Roll
+      // it back to what the graph actually holds.
+      const derived = deriveCompStateFromCompTrack(project, compTrack);
+      if (derived) {
+        skipNextRebuildRef.current = true;
+        setCompState(derived);
+      }
     } finally {
       isRebuildingRef.current = false;
     }
@@ -479,28 +530,6 @@ const App: React.FC = () => {
       );
     }
   }, [requestPermission]);
-
-  // Restore comp-audible mutes (comp unmuted, all takes muted) without an
-  // undo entry — used wherever audition is cleared outside a rebuild.
-  const restoreAuditionMutes = useCallback(() => {
-    if (!project) return;
-    const compTrack = compTrackRef.current;
-    if (!compTrack) return;
-    const adapter = project.boxAdapters.adapterFor(compTrack, TrackBoxAdapter);
-    isRebuildingRef.current = true;
-    try {
-      project.editing.modify(() => {
-        for (const region of adapter.regions.adapters.values()) {
-          region.box.mute.setValue(false);
-        }
-        for (const l of compLanesRef.current) {
-          l.source.regionBox.mute.setValue(true);
-        }
-      }, false);
-    } finally {
-      isRebuildingRef.current = false;
-    }
-  }, [project]);
 
   const handleStartRecording = useCallback(async () => {
     // useRecordingTapes.armedCount only updates via RecordingTapeCard's
@@ -649,20 +678,31 @@ const App: React.FC = () => {
     if (!project) return;
     compInitTokenRef.current++;
     setAuditionTake(null);
+    // Don't null the ref before the modify — a throw mid-delete would leave
+    // compTrackRef pointing at nothing while the graph still (partially)
+    // holds the track, with no error surfaced. The undo/redo subscribe
+    // effect's findBox(...).isEmpty() guard already handles a deleted comp
+    // track safely, so it's fine to only clear the ref on success.
     const compTrack = compTrackRef.current;
-    compTrackRef.current = null;
-    project.editing.modify(() => {
-      for (const region of getAllRegions(project)) {
-        if (
-          region.label.startsWith("Take ") ||
-          region.label.startsWith("comp:") ||
-          region.label === "Comp"
-        ) {
-          region.box.delete();
+    try {
+      project.editing.modify(() => {
+        for (const region of getAllRegions(project)) {
+          if (
+            region.label.startsWith("Take ") ||
+            region.label.startsWith("comp:") ||
+            region.label === "Comp"
+          ) {
+            region.box.delete();
+          }
         }
-      }
-      if (compTrack) compTrack.delete();
-    });
+        if (compTrack) compTrack.delete();
+      });
+    } catch (e) {
+      console.error("Clear All failed: " + String(e));
+      setUiError(`Clear failed: ${e instanceof Error ? e.message : String(e)}`);
+      return;
+    }
+    compTrackRef.current = null;
     setCompLanes([]);
     setCompState(null);
     setSelectedZone(null);
@@ -711,6 +751,9 @@ const App: React.FC = () => {
   const handleEdgeDrag = useCallback(
     (boundaryIndex: number, newPpqn: number) => {
       if (compState === null) return;
+      // Restore before clearing — a no-op drag (next === compState) never
+      // triggers the rebuild effect, so the mute-restore has to happen here.
+      if (auditionTake !== null) restoreAuditionMutes();
       setAuditionTake(null);
       setSelectedZone(null);
       // Extending the left zone rightward is limited by its take's recorded
@@ -728,7 +771,7 @@ const App: React.FC = () => {
       );
       if (next !== compState) setCompState(next);
     },
-    [compState, compLanes, bpm, loopPpqn]
+    [compState, compLanes, bpm, loopPpqn, auditionTake, restoreAuditionMutes]
   );
 
   // Marquee cut: carve the range into its own section, then select it.
@@ -755,6 +798,10 @@ const App: React.FC = () => {
   const handleNudge = useCallback(
     (deltaMs: number) => {
       if (compState === null || selectedZone === null) return;
+      // Restore before clearing — a no-op nudge (next === compState) never
+      // triggers the rebuild effect, so the mute-restore has to happen here.
+      if (auditionTake !== null) restoreAuditionMutes();
+      setAuditionTake(null);
       const spans = compSpans(compState, loopPpqn);
       const span = spans[selectedZone];
       if (!span) return;
@@ -770,7 +817,7 @@ const App: React.FC = () => {
       const next = nudgeZone(compState, selectedZone, deltaPpqn, minNudge, maxNudge);
       if (next !== compState) setCompState(next);
     },
-    [compState, selectedZone, compLanes, bpm, loopPpqn]
+    [compState, selectedZone, compLanes, bpm, loopPpqn, auditionTake, restoreAuditionMutes]
   );
 
   // Audition: unmarked mutes — never their own undo step.
@@ -780,16 +827,22 @@ const App: React.FC = () => {
       const compTrack = compTrackRef.current;
       if (!compTrack) return;
       const next = auditionTake === takeIndex ? null : takeIndex;
+      if (next === null) {
+        // Toggling off: revertPending() undoes exactly the audition's
+        // unmarked mutes and empties the pending set (see restoreAuditionMutes).
+        restoreAuditionMutes();
+        setAuditionTake(null);
+        return;
+      }
       const adapter = project.boxAdapters.adapterFor(compTrack, TrackBoxAdapter);
       isRebuildingRef.current = true;
       try {
         project.editing.modify(() => {
-          const auditioning = next !== null;
           for (const region of adapter.regions.adapters.values()) {
-            region.box.mute.setValue(auditioning);
+            region.box.mute.setValue(true);
           }
           compLanes.forEach((l, i) => {
-            l.source.regionBox.mute.setValue(!(auditioning && i === next));
+            l.source.regionBox.mute.setValue(i !== next);
           });
         }, false);
       } finally {
@@ -797,7 +850,7 @@ const App: React.FC = () => {
       }
       setAuditionTake(next);
     },
-    [project, auditionTake, compLanes]
+    [project, auditionTake, compLanes, restoreAuditionMutes]
   );
 
   const handleUndo = useCallback(() => {
@@ -973,7 +1026,7 @@ const App: React.FC = () => {
                     <Button
                       size="2"
                       variant="soft"
-                      disabled={!canUndo || !interactive}
+                      disabled={!canUndo || !interactive || auditionTake !== null}
                       onClick={handleUndo}
                     >
                       ↩ Undo
@@ -981,7 +1034,7 @@ const App: React.FC = () => {
                     <Button
                       size="2"
                       variant="soft"
-                      disabled={!canRedo || !interactive}
+                      disabled={!canRedo || !interactive || auditionTake !== null}
                       onClick={handleRedo}
                     >
                       ↪ Redo

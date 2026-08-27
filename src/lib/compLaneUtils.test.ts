@@ -246,6 +246,33 @@ describe("nudge-aware merging", () => {
   });
 });
 
+describe("nudge preservation through swipe and cut", () => {
+  it("assignRange preserves remainder nudges, resets the swiped range, and merges only equal-nudge neighbors", () => {
+    const state: CompState = {
+      boundaries: [4000, 9000],
+      assignments: [0, 0, 0],
+      nudges: [0, 240, 0],
+    };
+    // Swipe take 0 over [3000, 5000]: splits the first zone, truncates the
+    // nudged middle zone (its 240 nudge must survive), and the fresh nudge-0
+    // range merges with the leading nudge-0 zone but NOT the nudged remainder.
+    expect(assignRange(state, 0, 3000, 5000, TOTAL)).toEqual({
+      boundaries: [5000, 9000],
+      assignments: [0, 0, 0],
+      nudges: [0, 240, 0],
+    });
+  });
+
+  it("splitRange keeps the same nudge on both halves of a cut zone", () => {
+    const state: CompState = { boundaries: [], assignments: [1], nudges: [120] };
+    expect(splitRange(state, 4000, 9000, TOTAL)).toEqual({
+      boundaries: [4000, 9000],
+      assignments: [1, 1, 1],
+      nudges: [120, 120, 120],
+    });
+  });
+});
+
 describe("snapToGrid", () => {
   it("rounds to the nearest grid line", () => {
     expect(snapToGrid(1150, 960)).toBe(960);

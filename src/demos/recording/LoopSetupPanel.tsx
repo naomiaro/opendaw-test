@@ -25,7 +25,7 @@ interface LoopSetupPanelProps {
   showMetronome?: boolean;
 }
 
-/** Setup card: BPM, pre-loop lead-in, loop length, count-in/metronome prefs. */
+/** Setup card: BPM, optional pre-loop lead-in, loop length, count-in prefs, optional metronome. */
 export const LoopSetupPanel: React.FC<LoopSetupPanelProps> = ({
   bpm,
   onBpmChange,
