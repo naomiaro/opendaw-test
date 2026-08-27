@@ -592,6 +592,7 @@ interface SwipeCompLanesProps {
   bpm: number;
   sampleRate: number;
   interactive: boolean;               // false while recording/finalizing
+  recordingLive: boolean;             // recording view: comp bypassed, lanes grow live
   collapsed: boolean;
   onToggleCollapsed: () => void;
   auditionTake: number | null;        // index into takes, null = comp audible
@@ -654,6 +655,7 @@ interface SwipeCompLanesProps {
   bpm: number;
   sampleRate: number;
   interactive: boolean;
+  recordingLive: boolean;
   collapsed: boolean;
   onToggleCollapsed: () => void;
   auditionTake: number | null;
@@ -670,6 +672,7 @@ function paintTakeStrips(
   context: CanvasRenderingContext2D,
   peaks: Peaks | PeaksWriter,
   lane: SwipeTakeLane,
+  durationSec: number, // read LIVE from the region box each paint — grows during recording
   x0: number,
   x1: number,
   width: number,
@@ -682,7 +685,7 @@ function paintTakeStrips(
   const u0 = lane.waveformOffsetFrames + (x0 / width) * loopFrames;
   const laneEndFrames =
     lane.waveformOffsetFrames +
-    Math.min(lane.durationSec * sampleRate, loopFrames);
+    Math.min(durationSec * sampleRate, loopFrames);
   const u1 = Math.min(
     lane.waveformOffsetFrames + (x1 / width) * loopFrames,
     laneEndFrames
@@ -738,9 +741,12 @@ const TakeLaneCanvas: React.FC<{
       if (peaksOption.isEmpty()) return;
       const peaks = peaksOption.unwrap() as Peaks | PeaksWriter;
       const loopSeconds = PPQN.pulsesToSeconds(loopPpqn, bpm);
+      // Live duration: the SDK updates regionBox.duration every frame while
+      // recording, so the top lane grows without any React re-render.
+      const liveDurationSec = l.regionBox.duration.getValue();
       // Dim base waveform across the whole lane.
       context.fillStyle = CANVAS_COLORS.structural;
-      paintTakeStrips(context, peaks, l, 0, w, w, h, loopSeconds, sampleRate);
+      paintTakeStrips(context, peaks, l, liveDurationSec, 0, w, w, h, loopSeconds, sampleRate);
       // Lit spans owned by this take.
       for (const span of spansRef.current) {
         const xa = (span.start / loopPpqn) * w;
@@ -748,7 +754,7 @@ const TakeLaneCanvas: React.FC<{
         context.fillStyle = l.color + "26"; // ~15% tint
         context.fillRect(xa, 0, xb - xa, h);
         context.fillStyle = l.color;
-        paintTakeStrips(context, peaks, l, xa, xb, w, h, loopSeconds, sampleRate);
+        paintTakeStrips(context, peaks, l, liveDurationSec, xa, xb, w, h, loopSeconds, sampleRate);
       }
     });
     painterRef.current = painter;
@@ -775,12 +781,15 @@ const CompLaneCanvas: React.FC<{
   loopPpqn: number;
   bpm: number;
   sampleRate: number;
-}> = ({ takes, compState, loopPpqn, bpm, sampleRate }) => {
+  bypassed: boolean; // recording view: comp is muted — render in neutral color
+}> = ({ takes, compState, loopPpqn, bpm, sampleRate, bypassed }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const takesRef = useRef(takes);
   const stateRef = useRef(compState);
+  const bypassedRef = useRef(bypassed);
   takesRef.current = takes;
   stateRef.current = compState;
+  bypassedRef.current = bypassed;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -799,13 +808,19 @@ const CompLaneCanvas: React.FC<{
         const peaks = peaksOption.unwrap() as Peaks | PeaksWriter;
         const xa = (span.start / loopPpqn) * w;
         const xb = (span.end / loopPpqn) * w;
-        context.fillStyle = lane.color + "22";
+        const dimmed = bypassedRef.current;
+        // Bypassed (recording view): neutral color, no take tints — the comp
+        // is muted while recording, and the different color says so.
+        context.fillStyle = dimmed ? CANVAS_COLORS.shade : lane.color + "22";
         context.fillRect(xa, 0, xb - xa, h);
-        context.fillStyle = CANVAS_COLORS.label;
-        paintTakeStrips(context, peaks, lane, xa, xb, w, h, loopSeconds, sampleRate);
+        context.fillStyle = dimmed ? CANVAS_COLORS.structural : CANVAS_COLORS.label;
+        paintTakeStrips(
+          context, peaks, lane, lane.regionBox.duration.getValue(),
+          xa, xb, w, h, loopSeconds, sampleRate
+        );
         // Seam tick at each zone start (skip x=0).
         if (span.start > 0) {
-          context.fillStyle = CANVAS_COLORS.amber;
+          context.fillStyle = dimmed ? CANVAS_COLORS.structural : CANVAS_COLORS.amber;
           context.beginPath();
           context.moveTo(xa - 4, 0);
           context.lineTo(xa + 4, 0);
@@ -844,6 +859,7 @@ export const SwipeCompLanes: React.FC<SwipeCompLanesProps> = ({
   bpm,
   sampleRate,
   interactive,
+  recordingLive,
   collapsed,
   onToggleCollapsed,
   auditionTake,
@@ -984,8 +1000,9 @@ export const SwipeCompLanes: React.FC<SwipeCompLanesProps> = ({
             loopPpqn={loopPpqn}
             bpm={bpm}
             sampleRate={sampleRate}
+            bypassed={recordingLive}
           />
-          {auditionTake !== null && (
+          {(auditionTake !== null || recordingLive) && (
             <div
               style={{
                 position: "absolute",
@@ -994,10 +1011,13 @@ export const SwipeCompLanes: React.FC<SwipeCompLanesProps> = ({
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
+                pointerEvents: "none",
               }}
             >
               <Text size="1" color="gray">
-                auditioning {takes[auditionTake]?.label ?? ""} — comp bypassed
+                {recordingLive
+                  ? "recording — comp bypassed"
+                  : `auditioning ${takes[auditionTake ?? 0]?.label ?? ""} — comp bypassed`}
               </Text>
             </div>
           )}
@@ -1348,6 +1368,10 @@ const App: React.FC = () => {
   const compTrackRef = useRef<TrackBox | null>(null);
   const compLanesRef = useRef<CompLaneData[]>([]);
   const isRebuildingRef = useRef(false);
+  // Set when compState was just derived FROM the box graph (undo/redo) — the
+  // graph already holds those regions, so the next rebuild must be skipped
+  // (rebuilding would add a redundant undo entry and kill the redo stack).
+  const skipNextRebuildRef = useRef(false);
   const tapeCreatedRef = useRef(false);
   const finalizationSubsRef = useRef<Terminable[]>([]);
   compLanesRef.current = compLanes;
@@ -1468,24 +1492,15 @@ const App: React.FC = () => {
     const existing = deriveCompStateFromCompTrack(project, compTrack);
     const state: CompState =
       existing ?? { boundaries: [], assignments: [lanes.length - 1] };
-    isRebuildingRef.current = true;
-    try {
-      rebuildCompRegions(
-        project,
-        compTrack,
-        lanes.map((l) => l.source),
-        state,
-        loopPpqn,
-        bpm
-      );
-    } finally {
-      isRebuildingRef.current = false;
-    }
+    // No inline rebuild here — setting state triggers the rebuild effect
+    // exactly once (an inline rebuild + the effect would double-rebuild and
+    // create two undo entries). The rebuild also re-unmutes a comp that was
+    // muted for a "record more takes" pass.
     setCompLanes(lanes);
-    setCompState(state);
+    setCompState({ ...state });
     setAuditionTake(null);
     setCollapsed(false);
-  }, [project, tapeUnitBox, loopPpqn, bpm]);
+  }, [project, tapeUnitBox]);
 
   // ── Undo/redo tracking + comp-state re-derivation after undo/redo ──
   useEffect(() => {
@@ -1501,14 +1516,28 @@ const App: React.FC = () => {
       const compTrack = compTrackRef.current;
       if (!compTrack || compLanesRef.current.length === 0) return;
       const derived = deriveCompStateFromCompTrack(project, compTrack);
-      if (derived) setCompState(derived);
+      if (derived) {
+        skipNextRebuildRef.current = true; // graph already holds this comp
+        setCompState(derived);
+      }
     });
     return () => sub.terminate();
   }, [project]);
 
+  // ── Live lane rescan while recording (recording view: new takes on top) ──
+  useEffect(() => {
+    if (!project || !tapeUnitBox || !isRecording) return;
+    setCompLanes(scanCompLanes(project, tapeUnitBox));
+  }, [project, tapeUnitBox, isRecording, takeIterations]);
+
   // ── Rebuild comp regions when compState changes (guarded) ──
   useEffect(() => {
     if (!project || compState === null) return;
+    if (isRecording || isCountingIn || isFinalizing) return; // recording view: no rebuilds
+    if (skipNextRebuildRef.current) {
+      skipNextRebuildRef.current = false; // state came from the graph (undo/redo)
+      return;
+    }
     const compTrack = compTrackRef.current;
     if (!compTrack || compLanes.length === 0) return;
     isRebuildingRef.current = true;
@@ -1527,7 +1556,7 @@ const App: React.FC = () => {
     } finally {
       isRebuildingRef.current = false;
     }
-  }, [project, compState, compLanes, loopPpqn, bpm]);
+  }, [project, compState, compLanes, loopPpqn, bpm, isRecording, isCountingIn, isFinalizing]);
 
   // ── Recording handlers (single-tape variant of the loop demo's flow) ──
   const handleRequestPermission = useCallback(async () => {
@@ -1914,15 +1943,18 @@ const App: React.FC = () => {
                 </Flex>
               </Card>
 
-              {/* Lanes */}
-              {hasComp && compState !== null && (
+              {/* Lanes — visible while comping AND while recording (recording view).
+                  assignments: [-1] is a no-take sentinel for the first session's
+                  live view: no zone lights up, the comp lane stays empty. */}
+              {(compState !== null || compLanes.length > 0) && (
                 <SwipeCompLanes
                   takes={compLanes.map((l) => l.lane)}
-                  compState={compState}
+                  compState={compState ?? { boundaries: [], assignments: [-1] }}
                   loopPpqn={loopPpqn}
                   bpm={bpm}
                   sampleRate={audioContext?.sampleRate ?? 44100}
                   interactive={interactive}
+                  recordingLive={isRecording || isCountingIn}
                   collapsed={collapsed}
                   onToggleCollapsed={() => setCollapsed((c) => !c)}
                   auditionTake={auditionTake}
@@ -1933,10 +1965,10 @@ const App: React.FC = () => {
                   showPlayhead={isPlaying || isRecording}
                 />
               )}
-              {!hasComp && takeCount > 0 && (
+              {compLanes.length === 0 && (isRecording || isCountingIn) && (
                 <Text align="center" color="gray" size="2">
-                  Recording… each loop pass lands in its own take lane. Stop to
-                  start comping.
+                  Recording… the first take lane appears after the first loop
+                  pass. Stop to start comping.
                 </Text>
               )}
 
@@ -2120,7 +2152,8 @@ Browse `https://localhost:5180/swipe-comping-demo.html`.
 - Undo → comp lane reverts to the previous state (derived from the label); Redo restores. One undo step per swipe (audition toggles must NOT consume undo steps).
 - 🎧 on a lane → that take audible alone during Play (comp lane shows the bypass scrim); toggling off restores the comp.
 - Collapse chevron → lanes slide shut, comp lane + seam ticks remain; expand restores. Swipe attempts while collapsed do nothing.
-- "Record More Takes" → count-in, new pass lands as a new lane; existing comp zones survive; comp is silent during recording.
+- "Record More Takes" → count-in; the lane stack STAYS VISIBLE in recording view: comp lane dims to the neutral bypassed color with the "recording — comp bypassed" scrim, each new pass appears as a new lane ON TOP with a live-growing waveform, and swipes are inert until finalization. Existing comp zones survive; comp is silent during recording.
+- First recording session: lanes appear live as passes complete (recording view with an empty comp lane), newest on top.
 - "Clear All" → lanes and comp disappear, Record shows "Record" again.
 
 - [ ] **Step 5: Mobile clip check**
@@ -2179,5 +2212,5 @@ Run `/pr-review-toolkit:review-pr` (applicable aspects) per repo rule; fix Criti
 ## Self-Review Notes
 
 - **Spec coverage:** take source/recording flow (Task 5), splice engine + seams (Task 3), swipe/zone/audition/collapse interactions (Tasks 4–5), comp-state persistence + undo (Tasks 3, 5), console styling (Tasks 4–5), testing (Tasks 1, 2, 7, 8), demo checklist (Tasks 5, 6, 8), short-take clamp rule (Tasks 2, 5). The Comp Lanes retirement is explicitly out of scope (spec: separate PR).
-- **Known judgment calls encoded here:** lanes derive from a box-graph scan ordered by track index (SDK take numbers restart per session — scan order keeps labels unique across "Record More Takes"); comp-track creation and audition mutes use unmarked `modify(fn, false)` so undo steps map 1:1 to swipes; `olderTakeScope: "all"` so every finished take arrives muted.
+- **Known judgment calls encoded here:** lanes derive from a box-graph scan ordered by track index (SDK take numbers restart per session — scan order keeps labels unique across "Record More Takes"); comp-track creation and audition mutes use unmarked `modify(fn, false)` so undo steps map 1:1 to swipes; `olderTakeScope: "all"` so every finished take arrives muted; recording view (lanes rescan live, comp lane bypassed-neutral, `assignments: [-1]` no-take sentinel) with rebuilds suppressed while recording; `skipNextRebuildRef` prevents the undo/redo derivation path from re-rebuilding (which would add a redundant undo entry and clear the redo stack).
 - **Type consistency check:** `CompSpan`/`compSpans`/`assignRange`/`assignZoneAt` (T1) match usage in T4/T5; `RecordedTakeSource`/`rebuildCompRegions`/`ensureCompTrack`/`deriveCompStateFromCompTrack` (T3) match T5; `SwipeTakeLane`/`SwipeCompLanesProps` (T4) match T5's construction in `scanCompLanes`. `project.sampleRate` in `scanCompLanes` — if `Project` does not expose `sampleRate`, thread `audioContext.sampleRate` in as a parameter instead (T5 owns that call).

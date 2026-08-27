@@ -71,6 +71,10 @@ crossfades. It completes the missing third piece between two existing demos:
   boundary (hover: "~20 ms engine crossfade").
 - **Audition:** headphone toggle per lane header solos that take (unmute its region,
   mute the comp track), dims the comp lane; flips back on the next swipe.
+- **Recording view:** while recording with lanes expanded, the stack stays live — each
+  new take appears at the top as it is created (growing waveform), and the comp lane
+  renders in a neutral bypassed color (it is muted during recording) with a "bypassed
+  while recording" hint. Swiping is disabled until recording finalizes.
 - **Take-folder collapse:** disclosure triangle on the Comp lane header collapses the
   take lanes (~160 ms height animation). Collapsed = review/playback mode (comp zones +
   seam ticks still visible); swiping requires expanded lanes. Auto-expand when new
