@@ -1,9 +1,9 @@
-import { PPQN, Interpolation } from "@opendaw/lib-dsp";
+import { PPQN, Interpolation, TimeBase } from "@opendaw/lib-dsp";
 import type { ppqn } from "@opendaw/lib-dsp";
 import { UUID } from "@opendaw/lib-std";
-import { AudioUnitBoxAdapter, TrackBoxAdapter, ValueRegionBoxAdapter } from "@opendaw/studio-adapters";
-import { AudioFileBox, AudioRegionBox, ValueEventCollectionBox } from "@opendaw/studio-boxes";
-import type { TrackBox, ValueRegionBox } from "@opendaw/studio-boxes";
+import { AudioUnitBoxAdapter, TrackBoxAdapter, ValueRegionBoxAdapter, TrackType } from "@opendaw/studio-adapters";
+import { AudioFileBox, AudioRegionBox, ValueEventCollectionBox, TrackBox as TrackBoxClass } from "@opendaw/studio-boxes";
+import type { TrackBox, ValueRegionBox, AudioUnitBox } from "@opendaw/studio-boxes";
 import type { Project } from "@opendaw/studio-core";
 import type { TrackData } from "./types";
 
@@ -503,4 +503,157 @@ export function takeExtentPpqn(
     totalLength,
     Math.round(PPQN.secondsToPulses(takeDurationSec, bpm))
   );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Box-graph comp engine (comp track, rebuild, derive)
+// ─────────────────────────────────────────────────────────────────────────
+
+export const COMP_REGION_LABEL = "Comp";
+
+export interface RecordedTakeSource {
+  regionBox: AudioRegionBox;
+  audioFileBox: AudioFileBox;
+  waveformOffsetSec: number;
+  durationSec: number;
+}
+
+/** Find the Tape's comp track (regions carrying the comp-state label or
+ *  "Comp"), or create a new TrackBox under the audio unit. Creation uses an
+ *  UNMARKED modify so it folds into the first rebuild's undo entry. */
+export function ensureCompTrack(
+  project: Project,
+  audioUnitBox: AudioUnitBox
+): TrackBox {
+  const unitAdapter = project.boxAdapters.adapterFor(
+    audioUnitBox,
+    AudioUnitBoxAdapter
+  );
+  let maxIndex = -1;
+  for (const track of unitAdapter.tracks.values()) {
+    const isComp = track.regions.adapters
+      .values()
+      .some(
+        (r) =>
+          r.label === COMP_REGION_LABEL || r.label.startsWith("comp:")
+      );
+    if (isComp) return track.box;
+    maxIndex = Math.max(maxIndex, track.box.index.getValue());
+  }
+  return project.editing
+    .modify(
+      () =>
+        TrackBoxClass.create(project.boxGraph, UUID.generate(), (box) => {
+          box.type.setValue(TrackType.Audio);
+          box.index.setValue(maxIndex + 1);
+          box.tracks.refer(audioUnitBox.tracks);
+          box.target.refer(audioUnitBox);
+        }),
+      false
+    )
+    .unwrap();
+}
+
+/** Rebuild the comp track from the comp state: one butt-jointed Seconds-
+ *  timeBase AudioRegionBox per zone, reading the winning take's frames via
+ *  waveformOffset. Mutes every take region (the comp is the audible path).
+ *  One marked modify = one undo step per swipe. */
+export function rebuildCompRegions(
+  project: Project,
+  compTrackBox: TrackBox,
+  takes: RecordedTakeSource[],
+  state: CompState,
+  loopPpqn: number,
+  bpm: number
+): void {
+  project.editing.modify(() => {
+    const trackAdapter = project.boxAdapters.adapterFor(
+      compTrackBox,
+      TrackBoxAdapter
+    );
+    for (const region of trackAdapter.regions.adapters.values()) {
+      region.box.delete();
+    }
+    for (const take of takes) {
+      take.regionBox.mute.setValue(true);
+    }
+
+    let labelWritten = false;
+    for (const span of compSpans(state, loopPpqn)) {
+      const take = takes[span.take];
+      if (take === undefined) {
+        throw new Error(
+          `rebuildCompRegions: zone references missing take ${span.take} — aborting`
+        );
+      }
+      const zoneStart = Math.round(span.start);
+      // Clamp to the take's recorded extent (short final takes). A positive
+      // nudge shifts content later, freeing that much room at the tail.
+      const zoneEnd = Math.min(
+        Math.round(span.end),
+        Math.max(
+          zoneStart,
+          takeExtentPpqn(take.durationSec, bpm, loopPpqn) + span.nudge
+        )
+      );
+      if (zoneEnd <= zoneStart) continue;
+
+      const durationSec = PPQN.pulsesToSeconds(zoneEnd - zoneStart, bpm);
+      const eventsCollectionBox = ValueEventCollectionBox.create(
+        project.boxGraph,
+        UUID.generate()
+      );
+      AudioRegionBox.create(project.boxGraph, UUID.generate(), (box) => {
+        box.regions.refer(compTrackBox.regions);
+        box.file.refer(take.audioFileBox);
+        box.events.refer(eventsCollectionBox.owners);
+        box.position.setValue(zoneStart);
+        box.timeBase.setValue(TimeBase.Seconds);
+        box.duration.setValue(durationSec);
+        box.loopDuration.setValue(durationSec);
+        // Nudge shifts the content read position: positive nudge = audio
+        // plays later = read earlier frames.
+        box.waveformOffset.setValue(
+          compRegionWaveformOffset(take.waveformOffsetSec, zoneStart - span.nudge, bpm)
+        );
+        // Comp state rides the first created region's label (undo-atomic).
+        box.label.setValue(
+          labelWritten ? COMP_REGION_LABEL : encodeCompStateToLabel(state)
+        );
+        box.mute.setValue(false);
+      });
+      labelWritten = true;
+    }
+    if (!labelWritten) {
+      throw new Error(
+        "rebuildCompRegions: no comp regions were created — aborting"
+      );
+    }
+  });
+}
+
+/** Read the persisted comp state back from the comp track (after undo/redo). */
+export function deriveCompStateFromCompTrack(
+  project: Project,
+  compTrackBox: TrackBox
+): CompState | null {
+  const trackAdapter = project.boxAdapters.adapterFor(
+    compTrackBox,
+    TrackBoxAdapter
+  );
+  for (const region of trackAdapter.regions.adapters.values()) {
+    const label = region.label;
+    if (!label.startsWith("comp:")) continue;
+    try {
+      const parsed = JSON.parse(label.slice("comp:".length));
+      if (Array.isArray(parsed.boundaries) && Array.isArray(parsed.assignments)) {
+        return parsed as CompState;
+      }
+    } catch (e) {
+      console.error(
+        "deriveCompStateFromCompTrack: bad label: " + JSON.stringify(String(e))
+      );
+    }
+  }
+  return null;
 }
