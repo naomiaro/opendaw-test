@@ -67,6 +67,18 @@ crossfades. It completes the missing third piece between two existing demos:
   resize instead of a swipe (cursor shows `ew-resize` on hover). Dragging moves that
   boundary between its neighbors; dragging it all the way into a neighboring seam
   collapses the zone (adjacent same-take zones then merge). One undo step per drag.
+- **Marquee cut & nudge (Logic's marquee trick):** dragging on the COMP lane cuts the
+  exact range into its own section without changing take assignments (`splitRange` —
+  cut boundaries survive merge-normalization); clicking the comp lane selects a
+  section. A selected section can be **nudged**: ◀/▶ buttons shift its audio content
+  in ±10 ms steps while its timeline boundaries stay put. Data model: `CompState`
+  gains optional per-zone `nudges: number[]` (PPQN, default 0, label-encoding stays
+  backward-compatible); a nudged zone's region reads the buffer at
+  `takeOffset + seconds(zoneStart − nudge)`, clamped so the read range stays inside
+  the take's own audio; zones merge only when take AND nudge match. One undo step per
+  cut and per nudge step.
+- **Snap:** a Snap control (Off / 1/4 / 1/8 / 1/16) quantizes swipe, edge-drag, and
+  marquee-cut endpoints to the grid at the current BPM.
 - **Lane rendering:** take lanes stack newest-first under the comp lane (Logic's
   take-folder order); take indices in the comp state stay chronological. Unselected
   ranges dim, selected ranges lit in the take's accent

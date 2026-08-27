@@ -43,6 +43,10 @@
   - `assignRange(state: CompState, takeIndex: number, from: number, to: number, totalLength: number): CompState`
   - `assignZoneAt(state: CompState, takeIndex: number, position: number, totalLength: number): CompState`
   - `moveBoundary(state: CompState, boundaryIndex: number, newPosition: number, totalLength: number): CompState`
+  - `splitRange(state: CompState, from: number, to: number, totalLength: number): CompState` — marquee cut
+  - `nudgeZone(state: CompState, zoneIndex: number, deltaPpqn: number, minNudge: number, maxNudge: number): CompState`
+  - `snapToGrid(ppqnValue: number, gridPpqn: number): number`
+  - `CompState` gains `nudges?: number[]` (per-zone content shift in PPQN; the field is OMITTED whenever every nudge is 0, so labels and old tests stay compact/compatible)
 
 - [ ] **Step 1: Create the feature branch**
 
@@ -61,6 +65,9 @@ import {
   assignRange,
   assignZoneAt,
   moveBoundary,
+  splitRange,
+  nudgeZone,
+  snapToGrid,
   type CompState,
 } from "./compLaneUtils";
 
@@ -217,6 +224,97 @@ describe("assignZoneAt", () => {
     expect(assignZoneAt(state, 0, TOTAL + 1, TOTAL)).toBe(state);
   });
 });
+
+describe("splitRange (marquee cut)", () => {
+  it("cuts a section without changing assignments", () => {
+    const state: CompState = { boundaries: [], assignments: [1] };
+    expect(splitRange(state, 4000, 9000, TOTAL)).toEqual({
+      boundaries: [4000, 9000],
+      assignments: [1, 1, 1],
+    });
+  });
+
+  it("cut boundaries survive across existing seams", () => {
+    const state: CompState = { boundaries: [8000], assignments: [0, 1] };
+    expect(splitRange(state, 6000, 10000, TOTAL)).toEqual({
+      boundaries: [6000, 8000, 10000],
+      assignments: [0, 0, 1, 1],
+    });
+  });
+
+  it("is a no-op for a zero-length range and for existing boundaries", () => {
+    const state: CompState = { boundaries: [4000, 9000], assignments: [0, 1, 0] };
+    expect(splitRange(state, 5000, 5000, TOTAL)).toBe(state);
+    expect(splitRange(state, 4000, 9000, TOTAL)).toBe(state);
+  });
+});
+
+describe("nudgeZone", () => {
+  it("sets a zone's nudge and keeps the others at 0", () => {
+    const state: CompState = { boundaries: [4000, 9000], assignments: [0, 1, 0] };
+    expect(nudgeZone(state, 1, 120, -500, 4000)).toEqual({
+      boundaries: [4000, 9000],
+      assignments: [0, 1, 0],
+      nudges: [0, 120, 0],
+    });
+  });
+
+  it("accumulates and clamps to [minNudge, maxNudge]", () => {
+    const state: CompState = {
+      boundaries: [4000],
+      assignments: [0, 1],
+      nudges: [0, 100],
+    };
+    expect(nudgeZone(state, 1, 10000, -500, 300)).toEqual({
+      boundaries: [4000],
+      assignments: [0, 1],
+      nudges: [0, 300],
+    });
+  });
+
+  it("drops the nudges array when everything returns to 0", () => {
+    const state: CompState = {
+      boundaries: [4000],
+      assignments: [0, 1],
+      nudges: [0, 100],
+    };
+    expect(nudgeZone(state, 1, -100, -500, 500)).toEqual({
+      boundaries: [4000],
+      assignments: [0, 1],
+    });
+  });
+
+  it("is a no-op for an invalid zone index or inverted limits", () => {
+    const state: CompState = { boundaries: [], assignments: [0] };
+    expect(nudgeZone(state, 3, 100, -500, 500)).toBe(state);
+    expect(nudgeZone(state, 0, 100, 500, -500)).toBe(state);
+  });
+});
+
+describe("nudge-aware merging", () => {
+  it("keeps equal-take neighbors separate while their nudges differ", () => {
+    const cut = splitRange({ boundaries: [], assignments: [0] }, 4000, 9000, TOTAL);
+    const nudged = nudgeZone(cut, 1, 240, -500, 4000);
+    // Boundary move must NOT merge the nudged middle into its neighbors.
+    expect(moveBoundary(nudged, 0, 3000, TOTAL).boundaries).toEqual([3000, 9000]);
+    // Clicking the zone's own lane resets the nudge — then everything merges.
+    expect(assignZoneAt(nudged, 0, 5000, TOTAL)).toEqual({
+      boundaries: [],
+      assignments: [0],
+    });
+  });
+});
+
+describe("snapToGrid", () => {
+  it("rounds to the nearest grid line", () => {
+    expect(snapToGrid(1150, 960)).toBe(960);
+    expect(snapToGrid(1450, 960)).toBe(1920);
+  });
+
+  it("grid 0 = off, plain rounding", () => {
+    expect(snapToGrid(1150.4, 0)).toBe(1150);
+  });
+});
 ```
 
 - [ ] **Step 3: Run tests to verify they fail**
@@ -226,7 +324,19 @@ Expected: FAIL — `compSpans`, `assignRange`, `assignZoneAt` are not exported.
 
 - [ ] **Step 4: Implement the zone math**
 
-Append to `src/lib/compLaneUtils.ts`:
+First extend the existing `CompState` interface in `src/lib/compLaneUtils.ts` (used by the old comp-lanes demo too — the new field is optional and omitted-when-all-zero, so existing labels and behavior are untouched):
+
+```typescript
+export interface CompState {
+  boundaries: number[];
+  assignments: number[];
+  /** Per-zone content shift in PPQN (positive = audio plays later). Present
+   *  only when some zone is nudged — omitted when all zero. */
+  nudges?: number[];
+}
+```
+
+Then append:
 
 ```typescript
 // ─────────────────────────────────────────────────────────────────────────
@@ -237,6 +347,7 @@ export interface CompSpan {
   start: number;
   end: number;
   take: number;
+  nudge: number; // content shift in PPQN (positive = audio plays later)
 }
 
 /** Expand a CompState into consecutive [start, end) spans over [0, totalLength]. */
@@ -246,25 +357,35 @@ export function compSpans(state: CompState, totalLength: number): CompSpan[] {
     start: bounds[i],
     end: bounds[i + 1],
     take,
+    nudge: state.nudges?.[i] ?? 0,
   }));
 }
 
+/** Build a CompState from spans, omitting `nudges` when all zero. */
+function spansToStateRaw(spans: CompSpan[]): CompState {
+  if (spans.length === 0) return { boundaries: [], assignments: [0] };
+  const nudges = spans.map((s) => s.nudge);
+  return {
+    boundaries: spans.slice(1).map((s) => s.start),
+    assignments: spans.map((s) => s.take),
+    ...(nudges.some((n) => n !== 0) ? { nudges } : {}),
+  };
+}
+
+/** Merge-normalize: drop empty spans, merge neighbors with equal take AND
+ *  equal nudge (a nudged section must keep its own region). */
 function spansToState(spans: CompSpan[]): CompState {
   const merged: CompSpan[] = [];
   for (const span of spans) {
     if (span.end - span.start <= 0) continue;
     const prev = merged[merged.length - 1];
-    if (prev !== undefined && prev.take === span.take) {
+    if (prev !== undefined && prev.take === span.take && prev.nudge === span.nudge) {
       prev.end = span.end;
     } else {
       merged.push({ ...span });
     }
   }
-  if (merged.length === 0) return { boundaries: [], assignments: [0] };
-  return {
-    boundaries: merged.slice(1).map((s) => s.start),
-    assignments: merged.map((s) => s.take),
-  };
+  return spansToStateRaw(merged);
 }
 
 /** Swipe: assign [from, to] to takeIndex, splitting/merging zones as needed. */
@@ -287,7 +408,7 @@ export function assignRange(
     if (span.start < a) spans.push({ start: span.start, end: a, take: span.take });
     if (span.end > b) spans.push({ start: b, end: span.end, take: span.take });
   }
-  spans.push({ start: a, end: b, take: takeIndex });
+  spans.push({ start: a, end: b, take: takeIndex, nudge: 0 });
   spans.sort((x, y) => x.start - y.start);
   return spansToState(spans);
 }
@@ -321,7 +442,9 @@ export function moveBoundary(
   );
 }
 
-/** Zone click: reassign the whole zone containing `position` to takeIndex. */
+/** Zone click: reassign the whole zone containing `position` to takeIndex.
+ *  Also resets the zone's nudge (clicking the zone's own lane is therefore a
+ *  nudge-reset gesture). */
 export function assignZoneAt(
   state: CompState,
   takeIndex: number,
@@ -330,10 +453,72 @@ export function assignZoneAt(
 ): CompState {
   const spans = compSpans(state, totalLength);
   const hit = spans.find((s) => position >= s.start && position < s.end);
-  if (hit === undefined || hit.take === takeIndex) return state;
+  if (hit === undefined || (hit.take === takeIndex && hit.nudge === 0)) return state;
   return spansToState(
-    spans.map((s) => (s === hit ? { ...s, take: takeIndex } : s))
+    spans.map((s) => (s === hit ? { ...s, take: takeIndex, nudge: 0 } : s))
   );
+}
+
+/** Marquee cut: insert boundaries at [from, to] without changing any
+ *  assignment or nudge. Deliberately NOT merge-normalized — the cut
+ *  boundaries must survive even between equal zones. */
+export function splitRange(
+  state: CompState,
+  from: number,
+  to: number,
+  totalLength: number
+): CompState {
+  const a = Math.max(0, Math.min(totalLength, Math.round(Math.min(from, to))));
+  const b = Math.max(0, Math.min(totalLength, Math.round(Math.max(from, to))));
+  if (b - a <= 0) return state;
+  const pieces: CompSpan[] = [];
+  for (const span of compSpans(state, totalLength)) {
+    const cuts = [
+      span.start,
+      ...[a, b].filter((c) => c > span.start && c < span.end),
+      span.end,
+    ];
+    for (let i = 0; i < cuts.length - 1; i++) {
+      pieces.push({ ...span, start: cuts[i], end: cuts[i + 1] });
+    }
+  }
+  const kept = pieces.filter((s) => s.end > s.start);
+  if (kept.length === state.assignments.length) return state; // nothing new cut
+  return spansToStateRaw(kept);
+}
+
+/** Nudge: shift zone `zoneIndex`'s audio content by deltaPpqn, accumulated
+ *  and clamped to [minNudge, maxNudge] (caller derives the limits from the
+ *  take's recorded extent). Boundaries and assignments are untouched. */
+export function nudgeZone(
+  state: CompState,
+  zoneIndex: number,
+  deltaPpqn: number,
+  minNudge: number,
+  maxNudge: number
+): CompState {
+  if (zoneIndex < 0 || zoneIndex >= state.assignments.length) return state;
+  if (minNudge > maxNudge) return state;
+  const current = state.nudges?.[zoneIndex] ?? 0;
+  const next = Math.max(
+    minNudge,
+    Math.min(maxNudge, Math.round(current + deltaPpqn))
+  );
+  if (next === current) return state;
+  const nudges = state.assignments.map((_, i) =>
+    i === zoneIndex ? next : state.nudges?.[i] ?? 0
+  );
+  return {
+    boundaries: state.boundaries,
+    assignments: state.assignments,
+    ...(nudges.some((n) => n !== 0) ? { nudges } : {}),
+  };
+}
+
+/** Snap a PPQN value to the grid (gridPpqn 0 = off, plain rounding). */
+export function snapToGrid(ppqnValue: number, gridPpqn: number): number {
+  if (gridPpqn <= 0) return Math.round(ppqnValue);
+  return Math.round(ppqnValue / gridPpqn) * gridPpqn;
 }
 ```
 
@@ -557,10 +742,14 @@ export function rebuildCompRegions(
         );
       }
       const zoneStart = Math.round(span.start);
-      // Clamp to the take's recorded extent (short final takes).
+      // Clamp to the take's recorded extent (short final takes). A positive
+      // nudge shifts content later, freeing that much room at the tail.
       const zoneEnd = Math.min(
         Math.round(span.end),
-        Math.max(zoneStart, takeExtentPpqn(take.durationSec, bpm, loopPpqn))
+        Math.max(
+          zoneStart,
+          takeExtentPpqn(take.durationSec, bpm, loopPpqn) + span.nudge
+        )
       );
       if (zoneEnd <= zoneStart) continue;
 
@@ -577,8 +766,10 @@ export function rebuildCompRegions(
         box.timeBase.setValue(TimeBase.Seconds);
         box.duration.setValue(durationSec);
         box.loopDuration.setValue(durationSec);
+        // Nudge shifts the content read position: positive nudge = audio
+        // plays later = read earlier frames.
         box.waveformOffset.setValue(
-          compRegionWaveformOffset(take.waveformOffsetSec, zoneStart, bpm)
+          compRegionWaveformOffset(take.waveformOffsetSec, zoneStart - span.nudge, bpm)
         );
         // Comp state rides the first created region's label (undo-atomic).
         box.label.setValue(
@@ -676,6 +867,10 @@ interface SwipeCompLanesProps {
   onSwipe: (takeIndex: number, fromPpqn: number, toPpqn: number) => void;
   onZoneClick: (takeIndex: number, positionPpqn: number) => void;
   onEdgeDrag: (boundaryIndex: number, newPpqn: number) => void;
+  onCut: (fromPpqn: number, toPpqn: number) => void;        // marquee cut (comp lane drag)
+  selectedZone: number | null;                              // comp-lane section selection
+  onSelectZone: (zoneIndex: number | null) => void;         // comp lane click
+  snapPpqn: number;                                         // 0 = snap off
   getPositionPpqn: () => number;      // read engine position (PPQN)
   showPlayhead: boolean;
 }
@@ -699,7 +894,7 @@ import type { PeaksWriter } from "@opendaw/studio-core";
 import { PPQN } from "@opendaw/lib-dsp";
 import { CanvasPainter } from "@/lib/CanvasPainter";
 import { CANVAS_COLORS } from "@/lib/design/consoleTheme";
-import { compSpans, type CompState, type CompSpan } from "@/lib/compLaneUtils";
+import { compSpans, snapToGrid, type CompState, type CompSpan } from "@/lib/compLaneUtils";
 
 // Console accent rotation for take lanes (from the mastering-console palette).
 export const LANE_COLORS = [
@@ -741,6 +936,10 @@ interface SwipeCompLanesProps {
   onSwipe: (takeIndex: number, fromPpqn: number, toPpqn: number) => void;
   onZoneClick: (takeIndex: number, positionPpqn: number) => void;
   onEdgeDrag: (boundaryIndex: number, newPpqn: number) => void;
+  onCut: (fromPpqn: number, toPpqn: number) => void;
+  selectedZone: number | null;
+  onSelectZone: (zoneIndex: number | null) => void;
+  snapPpqn: number;
   getPositionPpqn: () => number;
   showPlayhead: boolean;
 }
@@ -893,8 +1092,17 @@ const CompLaneCanvas: React.FC<{
         context.fillStyle = dimmed ? CANVAS_COLORS.shade : lane.color + "22";
         context.fillRect(xa, 0, xb - xa, h);
         context.fillStyle = dimmed ? CANVAS_COLORS.structural : CANVAS_COLORS.label;
+        // A nudged section reads shifted content — shift the drawn frames the
+        // same way (positive nudge = content later = read earlier frames).
+        const nudgeFrames = Math.round(
+          PPQN.pulsesToSeconds(span.nudge, bpm) * sampleRate
+        );
+        const drawLane =
+          nudgeFrames !== 0
+            ? { ...lane, waveformOffsetFrames: lane.waveformOffsetFrames - nudgeFrames }
+            : lane;
         paintTakeStrips(
-          context, peaks, lane, lane.regionBox.duration.getValue(),
+          context, peaks, drawLane, lane.regionBox.duration.getValue(),
           xa, xb, w, h, loopSeconds, sampleRate
         );
         // Seam tick at each zone start (skip x=0).
@@ -948,10 +1156,16 @@ export const SwipeCompLanes: React.FC<SwipeCompLanesProps> = ({
   onSwipe,
   onZoneClick,
   onEdgeDrag,
+  onCut,
+  selectedZone,
+  onSelectZone,
+  snapPpqn,
   getPositionPpqn,
   showPlayhead,
 }) => {
   const [drag, setDrag] = useState<DragState | null>(null);
+  // Marquee cut / section select on the comp lane.
+  const [compDrag, setCompDrag] = useState<{ startX: number; currentX: number } | null>(null);
   const playheadRef = useRef<HTMLDivElement | null>(null);
 
   // Direct-DOM playhead (loop-relative), no per-frame setState.
@@ -970,10 +1184,16 @@ export const SwipeCompLanes: React.FC<SwipeCompLanesProps> = ({
     return () => sub.terminate();
   }, [showPlayhead, loopPpqn, getPositionPpqn]);
 
+  // Raw conversion for hit tests (zone click, selection).
   const xToPpqn = useCallback(
     (x: number, width: number) =>
       Math.round((Math.min(Math.max(x, 0), width) / width) * loopPpqn),
     [loopPpqn]
+  );
+  // Snapped conversion for range endpoints (swipe, edge drag, marquee cut).
+  const xToPpqnSnapped = useCallback(
+    (x: number, width: number) => snapToGrid(xToPpqn(x, width), snapPpqn),
+    [xToPpqn, snapPpqn]
   );
 
   /** Index of the boundary within EDGE_TOLERANCE_PX of x, or null. */
@@ -1032,18 +1252,61 @@ export const SwipeCompLanes: React.FC<SwipeCompLanesProps> = ({
       const endX = e.clientX - rect.left;
       setDrag(null);
       if (drag.mode === "edge" && drag.boundaryIndex !== null) {
-        onEdgeDrag(drag.boundaryIndex, xToPpqn(endX, rect.width));
+        onEdgeDrag(drag.boundaryIndex, xToPpqnSnapped(endX, rect.width));
       } else if (Math.abs(endX - drag.startX) < CLICK_TOLERANCE_PX) {
         onZoneClick(drag.takeIndex, xToPpqn(endX, rect.width));
       } else {
         onSwipe(
           drag.takeIndex,
-          xToPpqn(drag.startX, rect.width),
-          xToPpqn(endX, rect.width)
+          xToPpqnSnapped(drag.startX, rect.width),
+          xToPpqnSnapped(endX, rect.width)
         );
       }
     },
-    [drag, onSwipe, onZoneClick, onEdgeDrag, xToPpqn]
+    [drag, onSwipe, onZoneClick, onEdgeDrag, xToPpqn, xToPpqnSnapped]
+  );
+
+  // ── Comp-lane pointer handlers: click = select section, drag = marquee cut ──
+  const handleCompPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!interactive) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      e.currentTarget.setPointerCapture(e.pointerId);
+      const x = e.clientX - rect.left;
+      setCompDrag({ startX: x, currentX: x });
+    },
+    [interactive]
+  );
+
+  const handleCompPointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (compDrag === null) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      setCompDrag({ ...compDrag, currentX: e.clientX - rect.left });
+    },
+    [compDrag]
+  );
+
+  const handleCompPointerUp = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (compDrag === null) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      const endX = e.clientX - rect.left;
+      setCompDrag(null);
+      if (Math.abs(endX - compDrag.startX) < CLICK_TOLERANCE_PX) {
+        // Click: toggle-select the section under the pointer.
+        const pos = xToPpqn(endX, rect.width);
+        const spansNow = compSpans(compState, loopPpqn);
+        const idx = spansNow.findIndex((s) => pos >= s.start && pos < s.end);
+        onSelectZone(idx >= 0 && idx !== selectedZone ? idx : null);
+      } else {
+        onCut(
+          xToPpqnSnapped(compDrag.startX, rect.width),
+          xToPpqnSnapped(endX, rect.width)
+        );
+      }
+    },
+    [compDrag, compState, loopPpqn, selectedZone, onSelectZone, onCut, xToPpqn, xToPpqnSnapped]
   );
 
   const spans = compSpans(compState, loopPpqn);
@@ -1102,7 +1365,17 @@ export const SwipeCompLanes: React.FC<SwipeCompLanesProps> = ({
             </Text>
           </Flex>
         </button>
-        <div style={{ flex: 1, position: "relative" }}>
+        <div
+          onPointerDown={handleCompPointerDown}
+          onPointerMove={handleCompPointerMove}
+          onPointerUp={handleCompPointerUp}
+          style={{
+            flex: 1,
+            position: "relative",
+            touchAction: "none",
+            cursor: interactive ? "text" : "default",
+          }}
+        >
           <CompLaneCanvas
             takes={takes}
             compState={compState}
@@ -1111,6 +1384,38 @@ export const SwipeCompLanes: React.FC<SwipeCompLanesProps> = ({
             sampleRate={sampleRate}
             bypassed={recordingLive}
           />
+          {/* Selected section outline */}
+          {selectedZone !== null && spans[selectedZone] !== undefined && (
+            <div
+              style={{
+                position: "absolute",
+                top: 0,
+                bottom: 0,
+                left: `${(spans[selectedZone].start / loopPpqn) * 100}%`,
+                width: `${((spans[selectedZone].end - spans[selectedZone].start) / loopPpqn) * 100}%`,
+                border: "1.5px solid var(--mc-amber)",
+                boxSizing: "border-box",
+                pointerEvents: "none",
+              }}
+            />
+          )}
+          {/* Marquee-cut preview */}
+          {compDrag !== null &&
+            Math.abs(compDrag.currentX - compDrag.startX) >= CLICK_TOLERANCE_PX && (
+            <div
+              style={{
+                position: "absolute",
+                top: 0,
+                bottom: 0,
+                left: Math.min(compDrag.startX, compDrag.currentX),
+                width: Math.abs(compDrag.currentX - compDrag.startX),
+                background: "rgba(216, 210, 200, 0.10)",
+                border: "1.5px dashed var(--mc-text)",
+                boxSizing: "border-box",
+                pointerEvents: "none",
+              }}
+            />
+          )}
           {(auditionTake !== null || recordingLive) && (
             <div
               style={{
@@ -1371,6 +1676,8 @@ import {
   assignRange,
   assignZoneAt,
   moveBoundary,
+  splitRange,
+  nudgeZone,
   compSpans,
   takeExtentPpqn,
   ensureCompTrack,
@@ -1393,9 +1700,18 @@ import {
   Card,
   Callout,
   Badge,
+  Select,
 } from "@radix-ui/themes";
 
 const BAR_PPQN = PPQN.Quarter * 4; // one bar in 4/4
+
+type SnapGrid = "off" | "1/4" | "1/8" | "1/16";
+const SNAP_PPQN: Record<SnapGrid, number> = {
+  off: 0,
+  "1/4": PPQN.Quarter,
+  "1/8": PPQN.Quarter / 2,
+  "1/16": PPQN.Quarter / 4,
+};
 
 const PAGE_STYLES = `
 .scl-lanes { transition: max-height 160ms ease; }
@@ -1486,6 +1802,8 @@ const App: React.FC = () => {
   const [compState, setCompState] = useState<CompState | null>(null);
   const [collapsed, setCollapsed] = useState(false);
   const [auditionTake, setAuditionTake] = useState<number | null>(null);
+  const [selectedZone, setSelectedZone] = useState<number | null>(null);
+  const [snapGrid, setSnapGrid] = useState<SnapGrid>("off");
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
 
@@ -1623,6 +1941,7 @@ const App: React.FC = () => {
     setCompLanes(lanes);
     setCompState({ ...state });
     setAuditionTake(null);
+    setSelectedZone(null);
     setCollapsed(false);
   }, [project, tapeUnitBox]);
 
@@ -1832,6 +2151,7 @@ const App: React.FC = () => {
     compTrackRef.current = null;
     setCompLanes([]);
     setCompState(null);
+    setSelectedZone(null);
     setTakeIterations([]);
   }, [project, setTakeIterations]);
 
@@ -1840,6 +2160,7 @@ const App: React.FC = () => {
     (takeIndex: number, fromPpqn: number, toPpqn: number) => {
       if (compState === null) return;
       setAuditionTake(null);
+      setSelectedZone(null);
       const lane = compLanes[takeIndex];
       if (!lane) return;
       // Clamp the swipe to the take's recorded extent (spec rule).
@@ -1860,6 +2181,7 @@ const App: React.FC = () => {
     (takeIndex: number, positionPpqn: number) => {
       if (compState === null) return;
       setAuditionTake(null);
+      setSelectedZone(null);
       const next = assignZoneAt(compState, takeIndex, positionPpqn, loopPpqn);
       if (next !== compState) setCompState(next);
     },
@@ -1870,6 +2192,7 @@ const App: React.FC = () => {
     (boundaryIndex: number, newPpqn: number) => {
       if (compState === null) return;
       setAuditionTake(null);
+      setSelectedZone(null);
       // Extending the left zone rightward is limited by its take's recorded
       // extent (same clamp rule as swipes).
       const spans = compSpans(compState, loopPpqn);
@@ -1886,6 +2209,42 @@ const App: React.FC = () => {
       if (next !== compState) setCompState(next);
     },
     [compState, compLanes, bpm, loopPpqn]
+  );
+
+  // Marquee cut: carve the range into its own section, then select it.
+  const handleCut = useCallback(
+    (fromPpqn: number, toPpqn: number) => {
+      if (compState === null) return;
+      const next = splitRange(compState, fromPpqn, toPpqn, loopPpqn);
+      if (next === compState) return;
+      setCompState(next);
+      const a = Math.max(0, Math.round(Math.min(fromPpqn, toPpqn)));
+      const bIdx = next.boundaries.indexOf(a);
+      setSelectedZone(a === 0 ? 0 : bIdx >= 0 ? bIdx + 1 : null);
+    },
+    [compState, loopPpqn]
+  );
+
+  // Nudge the selected section's content in ±deltaMs steps.
+  const handleNudge = useCallback(
+    (deltaMs: number) => {
+      if (compState === null || selectedZone === null) return;
+      const spans = compSpans(compState, loopPpqn);
+      const span = spans[selectedZone];
+      if (!span) return;
+      const lane = compLanes[span.take];
+      if (!lane) return;
+      const deltaPpqn = PPQN.secondsToPulses(deltaMs / 1000, bpm);
+      const extent = takeExtentPpqn(lane.source.durationSec, bpm, loopPpqn);
+      // The content window [start−nudge, end−nudge] must stay inside the
+      // take's own audio [0, extent] — no bleeding into neighboring takes
+      // in the shared recording buffer.
+      const minNudge = span.end - extent;
+      const maxNudge = span.start;
+      const next = nudgeZone(compState, selectedZone, deltaPpqn, minNudge, maxNudge);
+      if (next !== compState) setCompState(next);
+    },
+    [compState, selectedZone, compLanes, bpm, loopPpqn]
   );
 
   // Audition: unmarked mutes — never their own undo step.
@@ -2055,6 +2414,23 @@ const App: React.FC = () => {
                     >
                       ↪ Redo
                     </Button>
+                    <Flex align="center" gap="2">
+                      <Text size="1" color="gray">
+                        Snap
+                      </Text>
+                      <Select.Root
+                        value={snapGrid}
+                        onValueChange={(v) => setSnapGrid(v as SnapGrid)}
+                      >
+                        <Select.Trigger style={{ width: 90 }} />
+                        <Select.Content>
+                          <Select.Item value="off">Off</Select.Item>
+                          <Select.Item value="1/4">1/4</Select.Item>
+                          <Select.Item value="1/8">1/8</Select.Item>
+                          <Select.Item value="1/16">1/16</Select.Item>
+                        </Select.Content>
+                      </Select.Root>
+                    </Flex>
                     <Button
                       onClick={handleClearAll}
                       color="red"
@@ -2108,10 +2484,45 @@ const App: React.FC = () => {
                   onSwipe={handleSwipe}
                   onZoneClick={handleZoneClick}
                   onEdgeDrag={handleEdgeDrag}
+                  onCut={handleCut}
+                  selectedZone={selectedZone}
+                  onSelectZone={setSelectedZone}
+                  snapPpqn={SNAP_PPQN[snapGrid]}
                   getPositionPpqn={getPositionPpqn}
                   showPlayhead={isPlaying || isRecording}
                 />
               )}
+
+              {/* Nudge panel — marquee trick: cut on the comp lane, then nudge */}
+              {selectedZone !== null && compState !== null && (() => {
+                const spans = compSpans(compState, loopPpqn);
+                const span = spans[selectedZone];
+                if (!span) return null;
+                const lane = compLanes[span.take];
+                const nudgeMs = PPQN.pulsesToSeconds(span.nudge, bpm) * 1000;
+                return (
+                  <Card>
+                    <Flex align="center" gap="3" justify="center" wrap="wrap">
+                      <Text size="2" style={{ fontVariantNumeric: "tabular-nums" }}>
+                        Section {selectedZone + 1} · {lane?.lane.label ?? "?"} ·
+                        nudge {nudgeMs >= 0 ? "+" : ""}{nudgeMs.toFixed(0)} ms
+                      </Text>
+                      <Button size="1" variant="soft" disabled={!interactive}
+                        onClick={() => handleNudge(-10)}>
+                        ◀ −10 ms
+                      </Button>
+                      <Button size="1" variant="soft" disabled={!interactive}
+                        onClick={() => handleNudge(10)}>
+                        +10 ms ▶
+                      </Button>
+                      <Button size="1" variant="ghost"
+                        onClick={() => setSelectedZone(null)}>
+                        Done
+                      </Button>
+                    </Flex>
+                  </Card>
+                );
+              })()}
               {compLanes.length === 0 && (isRecording || isCountingIn) && (
                 <Text align="center" color="gray" size="2">
                   Recording… the first take lane appears after the first loop
@@ -2297,6 +2708,8 @@ Browse `https://localhost:5180/swipe-comping-demo.html`.
 
 - Single-click another lane inside an existing zone → whole zone reassigns (the swipe window moves to that lane).
 - Hover near a seam → cursor becomes `ew-resize`; drag the seam → vertical preview line follows, on release the boundary moves (comp lane + lanes update, one undo step). Drag a seam all the way into its neighbor → the zone collapses (equal-take neighbors merge, seam disappears).
+- **Marquee cut & nudge:** drag on the COMP lane → dashed marquee preview; release cuts the range into its own section (take assignments unchanged) and selects it (amber outline + nudge panel appears). ◀/▶ nudge by ±10 ms: the section's waveform visibly shifts inside its unmoved boundaries, and on playback the content is audibly earlier/later. Nudge clamps at the take's audio limits. Click the comp lane on a section → selects it; click again → deselects. Undo reverts one cut or one nudge step at a time. A nudged section does NOT merge with equal-take neighbors; clicking the section's own take lane resets the nudge (then it merges).
+- **Snap:** set Snap to 1/4 → swipe/edge-drag/cut endpoints land exactly on beat lines (verify a swiped zone's seam ticks align with the bar ruler grid); Off restores freehand.
 - Undo → comp lane reverts to the previous state (derived from the label); Redo restores. One undo step per swipe (audition toggles must NOT consume undo steps).
 - 🎧 on a lane → that take audible alone during Play (comp lane shows the bypass scrim); toggling off restores the comp.
 - Collapse chevron → lanes slide shut, comp lane + seam ticks remain; expand restores. Swipe attempts while collapsed do nothing.
@@ -2360,5 +2773,5 @@ Run `/pr-review-toolkit:review-pr` (applicable aspects) per repo rule; fix Criti
 ## Self-Review Notes
 
 - **Spec coverage:** take source/recording flow (Task 5), splice engine + seams (Task 3), swipe/zone/audition/collapse interactions (Tasks 4–5), comp-state persistence + undo (Tasks 3, 5), console styling (Tasks 4–5), testing (Tasks 1, 2, 7, 8), demo checklist (Tasks 5, 6, 8), short-take clamp rule (Tasks 2, 5). The Comp Lanes retirement is explicitly out of scope (spec: separate PR).
-- **Known judgment calls encoded here:** lanes derive from a box-graph scan ordered by track index (SDK take numbers restart per session — scan order keeps labels unique across "Record More Takes"); comp-track creation and audition mutes use unmarked `modify(fn, false)` so undo steps map 1:1 to swipes; `olderTakeScope: "all"` so every finished take arrives muted; recording view (lanes rescan live, comp lane bypassed-neutral, `assignments: [-1]` no-take sentinel) with rebuilds suppressed while recording; `skipNextRebuildRef` prevents the undo/redo derivation path from re-rebuilding (which would add a redundant undo entry and clear the redo stack).
+- **Known judgment calls encoded here:** lanes derive from a box-graph scan ordered by track index (SDK take numbers restart per session — scan order keeps labels unique across "Record More Takes"); comp-track creation and audition mutes use unmarked `modify(fn, false)` so undo steps map 1:1 to swipes; `olderTakeScope: "all"` so every finished take arrives muted; recording view (lanes rescan live, comp lane bypassed-neutral, `assignments: [-1]` no-take sentinel) with rebuilds suppressed while recording; `skipNextRebuildRef` prevents the undo/redo derivation path from re-rebuilding (which would add a redundant undo entry and clear the redo stack); marquee cut/nudge extend `CompState` with omitted-when-all-zero `nudges` (labels stay backward-compatible), zones merge only on equal take AND nudge, `splitRange` skips merge-normalization so cuts survive, and nudge limits keep the content window inside the take's own audio in the shared buffer.
 - **Type consistency check:** `CompSpan`/`compSpans`/`assignRange`/`assignZoneAt` (T1) match usage in T4/T5; `RecordedTakeSource`/`rebuildCompRegions`/`ensureCompTrack`/`deriveCompStateFromCompTrack` (T3) match T5; `SwipeTakeLane`/`SwipeCompLanesProps` (T4) match T5's construction in `scanCompLanes`. `project.sampleRate` in `scanCompLanes` — if `Project` does not expose `sampleRate`, thread `audioContext.sampleRate` in as a parameter instead (T5 owns that call).
