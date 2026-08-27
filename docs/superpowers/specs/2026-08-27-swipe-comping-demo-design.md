@@ -60,9 +60,12 @@ crossfades. It completes the missing third piece between two existing demos:
   boundaries inserted at *a* and *b*, covered zones assigned to take *i*, adjacent
   zones with equal assignments merged. During the drag only a dashed highlight overlay
   renders; the box-graph rebuild happens once on pointer-up.
-- **Zone click:** a plain click on a take lane assigns that whole existing zone to the
-  clicked take.
-- **Lane rendering:** unselected ranges dim, selected ranges lit in the take's accent
+- **Zone click:** a plain click on a take lane moves the existing swipe window (the
+  zone at that position, same boundaries) to the clicked take — Logic's quick-compare
+  click.
+- **Lane rendering:** take lanes stack newest-first under the comp lane (Logic's
+  take-folder order); take indices in the comp state stay chronological. Unselected
+  ranges dim, selected ranges lit in the take's accent
   color; seam lines run vertically through the whole stack; the comp lane shows the
   assembled waveform with per-zone tint matching the source take and seam ticks at each
   boundary (hover: "~20 ms engine crossfade").
