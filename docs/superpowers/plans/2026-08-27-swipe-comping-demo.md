@@ -1733,7 +1733,8 @@ interface CompLaneData {
  *  unique lane labels. */
 function scanCompLanes(
   project: Project,
-  audioUnitBox: AudioUnitBox
+  audioUnitBox: AudioUnitBox,
+  sampleRate: number
 ): CompLaneData[] {
   const unitAdapter = project.boxAdapters.adapterFor(
     audioUnitBox,
@@ -1754,7 +1755,6 @@ function scanCompLanes(
       const fileAdapter = fileOpt.unwrap();
       const index = lanes.length;
       const waveformOffsetSec = regionAdapter.waveformOffset.getValue();
-      const sampleRate = project.sampleRate;
       lanes.push({
         lane: {
           regionBox: regionAdapter.box,
@@ -1925,8 +1925,8 @@ const App: React.FC = () => {
 
   // ── Comp initialization (runs after the finalization barrier) ──
   const initializeComp = useCallback(() => {
-    if (!project || !tapeUnitBox) return;
-    const lanes = scanCompLanes(project, tapeUnitBox);
+    if (!project || !audioContext || !tapeUnitBox) return;
+    const lanes = scanCompLanes(project, tapeUnitBox, audioContext.sampleRate);
     if (lanes.length === 0) return;
     const compTrack = ensureCompTrack(project, tapeUnitBox);
     compTrackRef.current = compTrack;
@@ -1943,7 +1943,7 @@ const App: React.FC = () => {
     setAuditionTake(null);
     setSelectedZone(null);
     setCollapsed(false);
-  }, [project, tapeUnitBox]);
+  }, [project, audioContext, tapeUnitBox]);
 
   // ── Undo/redo tracking + comp-state re-derivation after undo/redo ──
   useEffect(() => {
@@ -1969,9 +1969,9 @@ const App: React.FC = () => {
 
   // ── Live lane rescan while recording (recording view: new takes on top) ──
   useEffect(() => {
-    if (!project || !tapeUnitBox || !isRecording) return;
-    setCompLanes(scanCompLanes(project, tapeUnitBox));
-  }, [project, tapeUnitBox, isRecording, takeIterations]);
+    if (!project || !audioContext || !tapeUnitBox || !isRecording) return;
+    setCompLanes(scanCompLanes(project, tapeUnitBox, audioContext.sampleRate));
+  }, [project, audioContext, tapeUnitBox, isRecording, takeIterations]);
 
   // ── Rebuild comp regions when compState changes (guarded) ──
   useEffect(() => {
@@ -2774,4 +2774,4 @@ Run `/pr-review-toolkit:review-pr` (applicable aspects) per repo rule; fix Criti
 
 - **Spec coverage:** take source/recording flow (Task 5), splice engine + seams (Task 3), swipe/zone/audition/collapse interactions (Tasks 4–5), comp-state persistence + undo (Tasks 3, 5), console styling (Tasks 4–5), testing (Tasks 1, 2, 7, 8), demo checklist (Tasks 5, 6, 8), short-take clamp rule (Tasks 2, 5). The Comp Lanes retirement is explicitly out of scope (spec: separate PR).
 - **Known judgment calls encoded here:** lanes derive from a box-graph scan ordered by track index (SDK take numbers restart per session — scan order keeps labels unique across "Record More Takes"); comp-track creation and audition mutes use unmarked `modify(fn, false)` so undo steps map 1:1 to swipes; `olderTakeScope: "all"` so every finished take arrives muted; recording view (lanes rescan live, comp lane bypassed-neutral, `assignments: [-1]` no-take sentinel) with rebuilds suppressed while recording; `skipNextRebuildRef` prevents the undo/redo derivation path from re-rebuilding (which would add a redundant undo entry and clear the redo stack); marquee cut/nudge extend `CompState` with omitted-when-all-zero `nudges` (labels stay backward-compatible), zones merge only on equal take AND nudge, `splitRange` skips merge-normalization so cuts survive, and nudge limits keep the content window inside the take's own audio in the shared buffer.
-- **Type consistency check:** `CompSpan`/`compSpans`/`assignRange`/`assignZoneAt` (T1) match usage in T4/T5; `RecordedTakeSource`/`rebuildCompRegions`/`ensureCompTrack`/`deriveCompStateFromCompTrack` (T3) match T5; `SwipeTakeLane`/`SwipeCompLanesProps` (T4) match T5's construction in `scanCompLanes`. `project.sampleRate` in `scanCompLanes` — if `Project` does not expose `sampleRate`, thread `audioContext.sampleRate` in as a parameter instead (T5 owns that call).
+- **Type consistency check:** `CompSpan`/`compSpans`/`assignRange`/`assignZoneAt` (T1) match usage in T4/T5; `RecordedTakeSource`/`rebuildCompRegions`/`ensureCompTrack`/`deriveCompStateFromCompTrack` (T3) match T5; `SwipeTakeLane`/`SwipeCompLanesProps` (T4) match T5's construction in `scanCompLanes` (which takes `sampleRate` as a parameter — verified `Project` does not expose one).
