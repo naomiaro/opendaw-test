@@ -48,7 +48,7 @@ import {
 
 const BAR_PPQN = PPQN.Quarter * 4; // one bar in 4/4
 
-type ClickMode = "count-in" | "count-in-recording" | "off";
+type ClickMode = "count-in" | "count-in-recording";
 
 type SnapGrid = "off" | "1/4" | "1/8" | "1/16";
 const SNAP_PPQN: Record<SnapGrid, number> = {
@@ -236,9 +236,12 @@ const App: React.FC = () => {
           newProject.engine.countInBeatsRemaining.catchupAndSubscribe((obs) => {
             const beats = obs.getValue();
             if (mounted) setCountInBeatsRemaining(Math.ceil(beats));
-            // "Count-in only" mode: pre-disarm the click just before the bar
-            // boundary — waiting for isCountingIn to flip false arrives a
-            // frame late and would leak the punch-in downbeat click.
+            // "Count-in only" mode: pre-disarm the preference just before the
+            // bar boundary so the engine's count-in→recording flip restores a
+            // FALSE preference (waiting for isCountingIn arrives a frame late).
+            // This keeps the recording itself click-free; it cannot suppress
+            // the punch-in downbeat click — the engine forces the metronome on
+            // through the boundary block (upstream issue, see debug note).
             if (clickModeRef.current === "count-in" && beats > 0 && beats < 0.2) {
               newProject.engine.preferences.settings.metronome.enabled = false;
             }
@@ -310,16 +313,19 @@ const App: React.FC = () => {
     });
   }, [project, loopPpqn]);
 
-  // ── Click (metronome) mode — app-side gating of the engine metronome ──
+  // ── Click (metronome) mode — app-side gating of the engine metronome.
+  // The engine FORCES the metronome on while counting in (metronome_pref ||
+  // is_counting_in), so count-in clicks always sound; this effect governs
+  // what happens outside the count-in. Known SDK issue: the count-in →
+  // recording flip is quantum-granular, so the punch-in downbeat click leaks
+  // even with the preference off (see debug/countin-metronome-boundary-click.md).
   useEffect(() => {
     if (!project) return;
     const settings = project.engine.preferences.settings;
     settings.metronome.enabled =
-      clickMode === "off"
-        ? false
-        : clickMode === "count-in-recording"
-          ? isCountingIn || isRecording
-          : isCountingIn; // "count-in": clicks stop at the punch-in boundary
+      clickMode === "count-in-recording"
+        ? isCountingIn || isRecording
+        : isCountingIn; // "count-in": clicks stop at the punch-in boundary
   }, [project, clickMode, isCountingIn, isRecording]);
 
   // ── Comp initialization (runs after the finalization barrier) ──
@@ -918,7 +924,6 @@ const App: React.FC = () => {
                           <Select.Item value="count-in-recording">
                             Count-in + recording
                           </Select.Item>
-                          <Select.Item value="off">Off</Select.Item>
                         </Select.Content>
                       </Select.Root>
                     </Flex>
