@@ -67,19 +67,50 @@ export async function loadAudioFile(audioContext: AudioContext, url: string): Pr
   return await audioContext.decodeAudioData(arrayBuffer);
 }
 
+export type DurationFormat = "m:ss" | "mm:ss" | "m:ss.t" | "mm:ss.cc";
+
+const DURATION_FORMATS: Record<DurationFormat, { fractionDigits: number; padMinutes: boolean }> = {
+  "m:ss": { fractionDigits: 0, padMinutes: false },     // "1:05"
+  "mm:ss": { fractionDigits: 0, padMinutes: true },     // "01:05"
+  "m:ss.t": { fractionDigits: 1, padMinutes: false },   // "1:05.3"
+  "mm:ss.cc": { fractionDigits: 2, padMinutes: true },  // "01:05.30"
+};
+
 /**
- * Format a duration in seconds for display: "3:41 min" above one minute,
- * "30.0 s" below. Rounds the total before splitting so 119.6 s renders
- * "2:00 min", never "1:60 min".
+ * Format a duration in seconds. By default rounds at the displayed
+ * precision and carries — 119.6 s as "m:ss" is "2:00" (never "1:60") —
+ * while `mode: "floor"` truncates instead, which is what a live position
+ * clock wants (it must never display a time the playhead hasn't reached).
+ * Minutes do not roll into hours ("90:00"). Non-finite input renders as
+ * zeros in the requested format (live clocks pass NaN before the engine
+ * reports a position).
  *
- * Note: some components keep their own formatters on purpose — the export
- * list shows tenths ("1:05.3") and the transport shows "mm:ss.ms".
+ * Hand-rolled on purpose: Intl.DurationFormat's digital style force-pads
+ * minutes to two digits, so the compact forms are unproducible with it,
+ * and Intl.DateTimeFormat formats dates, not durations.
  */
-export function formatDuration(seconds: number): string {
-  const total = Math.round(seconds);
-  const minutes = Math.floor(total / 60);
-  const rest = total % 60;
-  return minutes > 0 ? `${minutes}:${String(rest).padStart(2, "0")} min` : `${seconds.toFixed(1)} s`;
+export function formatDuration(
+  seconds: number,
+  format: DurationFormat = "m:ss",
+  mode: "round" | "floor" = "round"
+): string {
+  const { fractionDigits, padMinutes } = DURATION_FORMATS[format];
+  const scale = 10 ** fractionDigits;
+  // The relative epsilon counters binary-float droop on decimally-exact
+  // inputs: 1.005 * 100 is 100.49999999999999 and would round DOWN.
+  const scaled = seconds * scale;
+  const nudged = scaled + Math.abs(scaled) * 1e-12;
+  const units = Number.isFinite(seconds)
+    ? Math.max(0, mode === "floor" ? Math.floor(nudged) : Math.round(nudged))
+    : 0;
+  const totalSeconds = Math.floor(units / scale);
+  const minutes = Math.floor(totalSeconds / 60);
+  const minutesText = padMinutes ? String(minutes).padStart(2, "0") : String(minutes);
+  const secondsText = String(totalSeconds % 60).padStart(2, "0");
+  const fractionText = fractionDigits > 0
+    ? "." + String(units % scale).padStart(fractionDigits, "0")
+    : "";
+  return `${minutesText}:${secondsText}${fractionText}`;
 }
 
 /**

@@ -453,7 +453,7 @@ const App: React.FC = () => {
                       {truncated && (
                         <Callout.Root color="amber" size="1">
                           <Callout.Text>
-                            This file is {formatDuration(result.seconds)} long, but detection
+                            This file runs {formatDuration(result.seconds)}, but detection
                             reads only the <strong>first {ANALYSIS_WINDOW_SECONDS} seconds</strong>{" "}
                             (<code>max_analysis_seconds</code>). Tempo is treated as a global
                             property: a tempo change later in the file is never seen, and one

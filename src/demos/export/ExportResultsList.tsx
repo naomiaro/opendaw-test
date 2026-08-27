@@ -1,17 +1,12 @@
 import React from "react";
 import { Flex, Button, Badge } from "@radix-ui/themes";
 import type { ExportResult } from "@/lib/rangeExport";
+import { formatDuration } from "@/lib/audioUtils";
 
 export interface PreviewResult extends ExportResult {
   id: number;
   audioBuffer: AudioBuffer;
 }
-
-export const formatDuration = (seconds: number) => {
-  const m = Math.floor(seconds / 60);
-  const s = (seconds % 60).toFixed(1);
-  return `${m}:${s.padStart(4, "0")}`;
-};
 
 const formatFileSize = (channels: Float32Array[]) => {
   // WAV: 44 byte header + samples * 4 bytes (32-bit float) * channels
@@ -62,7 +57,7 @@ export const ExportResultsList: React.FC<ExportResultsListProps> = ({
                 <span className="ex-result-label">{result.label}</span>
                 <Flex gap="2" className="ex-result-badges">
                   <Badge size="1" variant="soft" color="amber">
-                    {formatDuration(result.durationSeconds)}
+                    {formatDuration(result.durationSeconds, "m:ss.t")}
                   </Badge>
                   <Badge size="1" variant="soft" color="gray">
                     {result.sampleRate / 1000}kHz

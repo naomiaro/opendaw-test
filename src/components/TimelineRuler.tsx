@@ -1,5 +1,6 @@
 import React, { useMemo } from "react";
 import { Text } from "@radix-ui/themes";
+import { formatDuration } from "@/lib/audioUtils";
 
 interface TimelineRulerProps {
   maxDuration: number;
@@ -9,13 +10,6 @@ interface TimelineRulerProps {
 export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(({ maxDuration, controlsWidth = 200 }) => {
   const totalSeconds = Math.ceil(maxDuration);
   const tickInterval = 30; // Tick every 30 seconds
-
-  // Format seconds as mm:ss
-  const formatTime = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
-  };
 
   const tickSeconds = useMemo(
     () => Array.from({ length: Math.floor(totalSeconds / tickInterval) + 1 }, (_, i) => i * tickInterval),
@@ -84,7 +78,7 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = React.memo(({ maxDura
                 }}
               >
                 <Text size="1" color="gray" style={{ fontWeight: "500" }}>
-                  {formatTime(seconds)}
+                  {formatDuration(seconds)}
                 </Text>
               </div>
             </React.Fragment>
