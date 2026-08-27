@@ -6,7 +6,7 @@ The pre-WASM TS engine behaved correctly (1 2 3 4, then silence at punch-in). Th
 
 ## Repro
 
-https://opendaw.studio/ — disable the metronome, keep a 1-bar count-in, arm a track, record (reproduced 2026-08-27 at default settings). Also reproducible from the SDK at 0.0.170.
+https://opendaw.studio/ — disable the metronome, keep a 1-bar count-in, arm a track, record (reproduced 2026-08-27 at default settings). Also reproducible from the SDK at 0.0.170 — e.g. https://opendaw-test.pages.dev/swipe-comping-demo.html with Click set to "Count-in only" (the mode disables the preference outside the count-in; the boundary click still sounds).
 
 Note: whether the click audibly leaks depends on quantum alignment (below), so it can appear intermittent across machines/sample rates — e.g. it always leaks at 44.1 kHz / 120 BPM, while some 48 kHz configurations can mask it.
 
@@ -33,12 +33,8 @@ If `recording_start` happens to land exactly on a quantum boundary, the flip fir
 
 The TS engine split the render block at `recording_start` (`renderer.setCallback(...)`), so the boundary beat fell in the post-flip half and was suppressed when the preference was off.
 
-## Suggested fix
-
-While counting in with the preference off, clamp metronome scheduling to `position < recording_start` — e.g. pass an optional pulse limit into `Metronome::process` for the count-in case, or evaluate the flip against the block **end** before scheduling. Either removes the alignment dependence and restores the TS behavior without re-introducing block splitting.
-
 ## Notes
 
 - Count-in *duration* is unaffected (measures exactly N bars — verified separately); only the forced-metronome *window* extends one block past the boundary.
 - No app-side workaround exists, since the forced-on window ignores `settings.metronome.enabled`.
-- Write-up with full details: https://github.com/naomiaro/opendaw-test/blob/main/debug/countin-metronome-boundary-click.md (lands on main shortly; currently on the feat/swipe-comping-demo branch)
+- Write-up with full details: https://github.com/naomiaro/opendaw-test/blob/main/debug/countin-metronome-boundary-click.md

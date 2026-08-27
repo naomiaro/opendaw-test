@@ -777,7 +777,10 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   checkout silently clobbers uncommitted edits to that file.
 - Report SDK bugs as GitHub issues on `andremichelle/openDAW` (tracker is actively worked —
   filed bugs have been fixed within one release cycle). Body: live repro page URL +
-  `debug/*.md` write-up link + measured signature + suggested fix. Cross-link the issue
+  `debug/*.md` write-up link + measured signature. NO suggested-fix section — describe
+  the cause precisely and let the maintainer choose the remedy (fix ideas belong in the
+  internal debug note, not the issue). Draft the issue body as an md file for user
+  review BEFORE posting. Cross-link the issue
   number back into the repro page's DebugLinkBar and the debug note's header.
 - After an SDK upgrade, audit `documentation/*.md` chapter docs for stale API signatures: grep
   each renamed/changed identifier from the changelog and update method signatures, return
