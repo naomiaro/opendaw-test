@@ -398,7 +398,7 @@ project.editing.modify(() => {
 // editing.undo() fires → same callback → UI reverts
 ```
 
-This pattern makes undo/redo work natively — the box graph is the single source of truth, and the UI is a derived view. See the [Comp Lanes demo](https://opendaw-test.pages.dev/comp-lanes-demo.html) for a working example.
+This pattern makes undo/redo work natively — the box graph is the single source of truth, and the UI is a derived view. See the [Quick Swipe Comping demo](https://opendaw-test.pages.dev/swipe-comping-demo.html) for a working example.
 
 #### Pattern: Custom Metadata via Box Labels
 

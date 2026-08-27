@@ -96,12 +96,6 @@ const GROUPS: Group[] = [
         blurb:
           "Write custom polyphonic instruments in JavaScript. Hot-swap synth engines (sine, supersaw, FM bell, Karplus pluck) over a looping chord pattern and play live on an on-screen keyboard.",
       },
-      {
-        href: "/comp-lanes-demo.html",
-        title: "Comp Lanes",
-        blurb:
-          "Comp between simulated takes using volume-automation crossfades. Select which take is active per zone with seamless crossfade transitions.",
-      },
     ],
   },
   {

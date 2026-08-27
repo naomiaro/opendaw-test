@@ -161,7 +161,6 @@ export default defineConfig({
                 neon: resolve(__dirname, "neon-demo.html"),
                 cubed: resolve(__dirname, "cubed-demo.html"),
                 export: resolve(__dirname, "export-demo.html"),
-                compLanes: resolve(__dirname, "comp-lanes-demo.html"),
                 compLanesDebug: resolve(__dirname, "comp-lanes-debug-demo.html"),
                 fadeOutEndOfFileDebug: resolve(__dirname, "fade-out-end-of-file-debug-demo.html"),
                 pureWebaudioTargetDebug: resolve(__dirname, "pure-webaudio-target-debug-demo.html"),

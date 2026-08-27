@@ -37,7 +37,6 @@ Visit http://localhost:5173 to explore the demos.
 | **[Warp: Who Bends?](https://opendaw-test.pages.dev/warp-demos.html)** | Four ways to reconcile a song's beat map with the project grid, each with its own sub-demo: varispeed, grid-follows-file, transient-aware time-stretch, and Signalsmith spectral stretch with ±24 st live transpose |
 | **[Time & Pitch](https://opendaw-test.pages.dev/time-pitch-demo.html)** | Switch a region between NoStretch / PitchStretch / TimeStretch / Signalsmith, retune in cents (±1 octave transient-aware, ±2 octaves spectral), and adjust the project reference pitch (A4) with audible auto-engage |
 | **[Mixer Groups](https://opendaw-test.pages.dev/mixer-groups-demo.html)** | Sub-mixing with group buses: Track → Group → Master signal flow |
-| **[Comp Lanes](https://opendaw-test.pages.dev/comp-lanes-demo.html)** | Comp between simulated takes using volume automation crossfades with configurable duration |
 | **[Convolver](https://opendaw-test.pages.dev/convolver-demo.html)** | Convolution reverb on the WASM engine: six synthesized impulse responses (hall, plate, gated, reverse…), drag-and-drop your own IR, and wet/dry/pre-delay controls with seamless IR swaps |
 | **[Werkstatt](https://opendaw-test.pages.dev/werkstatt-demo.html)** | Write custom audio effects in JavaScript with pre-built examples and runnable code |
 | **[Apparat](https://opendaw-test.pages.dev/apparat-demo.html)** | Write custom polyphonic instruments in JavaScript — hot-swap synth engines (sine, supersaw, FM bell, Karplus pluck) over a looping chord pattern and play live |
@@ -125,7 +124,6 @@ src/
 │   └── CanvasPainter.ts              # Canvas rendering helper
 └── demos/
     ├── playback/                      # Playback, editing, and mixing demos
-    │   ├── comp-lanes-demo.tsx        # Take comping with volume automation crossfades
     │   ├── clip-fades-demo.tsx        # Fade curve types
     │   ├── clip-looping-demo.tsx      # Region loop tiling
     │   ├── drum-scheduling-demo.tsx   # Drum pattern scheduling

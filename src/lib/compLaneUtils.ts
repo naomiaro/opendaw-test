@@ -56,7 +56,7 @@ export interface CompState {
  * first take's automation region. This persists comp decisions in the box
  * graph so undo/redo reverts them atomically with the automation changes.
  */
-const COMP_STATE_PREFIX = "comp:";
+export const COMP_STATE_PREFIX = "comp:";
 
 export function encodeCompStateToLabel(state: CompState): string {
   return COMP_STATE_PREFIX + JSON.stringify(state);
@@ -535,7 +535,7 @@ export function ensureCompTrack(
       .values()
       .some(
         (r) =>
-          r.label === COMP_REGION_LABEL || r.label.startsWith("comp:")
+          r.label === COMP_REGION_LABEL || r.label.startsWith(COMP_STATE_PREFIX)
       );
     if (isComp) return track.box;
     maxIndex = Math.max(maxIndex, track.box.index.getValue());
@@ -705,9 +705,9 @@ export function deriveCompStateFromCompTrack(
   );
   for (const region of trackAdapter.regions.adapters.values()) {
     const label = region.label;
-    if (!label.startsWith("comp:")) continue;
+    if (!label.startsWith(COMP_STATE_PREFIX)) continue;
     try {
-      const parsed = JSON.parse(label.slice("comp:".length));
+      const parsed = JSON.parse(label.slice(COMP_STATE_PREFIX.length));
       const validated = validateCompState(parsed, "deriveCompStateFromCompTrack");
       if (validated) return validated;
     } catch (e) {

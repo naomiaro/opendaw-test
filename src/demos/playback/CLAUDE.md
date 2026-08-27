@@ -172,7 +172,7 @@ swap.
 `.peaks: Option<Peaks>`. Prefer these over holding raw `AudioBuffer` refs.
 
 ### waveformOffset vs loopOffset
-- `loopOffset` (PPQN) — controls which audio content maps to which timeline position. Affects audio read position indirectly through the `LoopableRegion.locateLoops()` formula: `offset = position - loopOffset` changes `rawStart`, which changes `elapsedSeconds`, which changes which samples are read. Used by `RegionEditing.cut()`, `clip-fades-demo`, and `comp-lanes-demo` to position audio within regions.
+- `loopOffset` (PPQN) — controls which audio content maps to which timeline position. Affects audio read position indirectly through the `LoopableRegion.locateLoops()` formula: `offset = position - loopOffset` changes `rawStart`, which changes `elapsedSeconds`, which changes which samples are read. Used by `RegionEditing.cut()`, `clip-fades-demo`, and `comp-lanes-debug-demo` to position audio within regions.
 - `waveformOffset` (seconds, field 7 on AudioRegionBox) — a direct seconds offset added to the audio read position: `sampleIndex = (elapsedSeconds + waveformOffset) * sampleRate`. Used to skip count-in audio during recording finalization.
 - Both fields affect which audio is heard. `loopOffset` works in PPQN within the loop coordinate system; `waveformOffset` is a raw seconds shift applied after PPQN-to-seconds conversion.
 - `AudioRegionBoxAdapter.loopOffset` is a RAW box read with no TimeBase conversion —
@@ -293,7 +293,7 @@ discontinuities, not the ~20 ms level dip this release removes; use it as a
 no-regression check, not as proof of the 0.0.165 summation behavior (which rests on
 the upstream implementation + regression tests).
 
-Multi-track volume automation crossfades (`comp-lanes-demo.tsx`) remain the right
+Multi-track volume automation crossfades (`comp-lanes-debug-demo.tsx`, unlisted) remain the right
 technique when the crossfade must be longer than the fixed 20 ms declick (musical
 comp transitions).
 
@@ -362,7 +362,7 @@ phase mismatch at the seam (we measured −13.92 dB instead of the expected ~−
 in `pure-webaudio-target-debug-demo.tsx` until this was fixed).
 
 ## Reference Files
-- Comp lanes demo: `src/demos/playback/comp-lanes-demo.tsx`
+- Comp lanes debug demo (unlisted): `src/demos/playback/comp-lanes-debug-demo.tsx`
 - Looping demo: `src/demos/playback/looping-demo.tsx`
 - Clip looping demo: `src/demos/playback/clip-looping-demo.tsx`
 - Clip fades demo: `src/demos/playback/clip-fades-demo.tsx`
