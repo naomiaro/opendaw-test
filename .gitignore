@@ -10,4 +10,3 @@ documentation/.vitepress/cache
 .claude/local.md
 .superpowers/
 .verify-output/
-debug/sdk-issue-draft.md
