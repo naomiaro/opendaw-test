@@ -7,6 +7,8 @@ import {
   splitRange,
   nudgeZone,
   snapToGrid,
+  compRegionWaveformOffset,
+  takeExtentPpqn,
   type CompState,
 } from "./compLaneUtils";
 
@@ -252,5 +254,27 @@ describe("snapToGrid", () => {
 
   it("grid 0 = off, plain rounding", () => {
     expect(snapToGrid(1150.4, 0)).toBe(1150);
+  });
+});
+
+describe("compRegionWaveformOffset", () => {
+  it("adds the zone start (as seconds at the bpm) to the take's buffer offset", () => {
+    // 3840 pulses = 4 quarters = 2.0 s at 120 BPM
+    expect(compRegionWaveformOffset(1.25, 3840, 120)).toBeCloseTo(3.25, 6);
+  });
+
+  it("returns the take's own offset at zone start 0", () => {
+    expect(compRegionWaveformOffset(0.8, 0, 90)).toBeCloseTo(0.8, 6);
+  });
+});
+
+describe("takeExtentPpqn", () => {
+  it("converts the take duration to integer PPQN", () => {
+    // 2.0 s at 120 BPM = 3840 pulses
+    expect(takeExtentPpqn(2.0, 120, 15360)).toBe(3840);
+  });
+
+  it("clamps to the loop length (final takes carry an extra audio-block tail)", () => {
+    expect(takeExtentPpqn(60, 120, 15360)).toBe(15360);
   });
 });

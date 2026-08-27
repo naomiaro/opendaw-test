@@ -479,3 +479,28 @@ export function rebuildSpliceRegions(
     }
   });
 }
+
+/** Buffer read offset (seconds) for a comp region starting at zoneStartPpqn
+ *  playing a take whose buffer offset is takeWaveformOffsetSec. Assumes the
+ *  loop starts at PPQN 0 (this demo has no lead-in). */
+export function compRegionWaveformOffset(
+  takeWaveformOffsetSec: number,
+  zoneStartPpqn: number,
+  bpm: number
+): number {
+  return takeWaveformOffsetSec + PPQN.pulsesToSeconds(zoneStartPpqn, bpm);
+}
+
+/** The take's recorded extent in loop-relative PPQN, clamped to the loop.
+ *  A take stopped mid-pass is shorter than the loop; the final take can be
+ *  up to one audio block longer. */
+export function takeExtentPpqn(
+  takeDurationSec: number,
+  bpm: number,
+  totalLength: number
+): number {
+  return Math.min(
+    totalLength,
+    Math.round(PPQN.secondsToPulses(takeDurationSec, bpm))
+  );
+}
