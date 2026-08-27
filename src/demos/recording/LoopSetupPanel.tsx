@@ -20,6 +20,9 @@ interface LoopSetupPanelProps {
    *  UI path to change it — an always-enabled-looking control that snaps
    *  back is worse than no control. */
   showLeadIn?: boolean;
+  /** Hide the metronome checkbox when the page owns its own click control.
+   *  Default true. */
+  showMetronome?: boolean;
 }
 
 /** Setup card: BPM, pre-loop lead-in, loop length, count-in/metronome prefs. */
@@ -36,6 +39,7 @@ export const LoopSetupPanel: React.FC<LoopSetupPanelProps> = ({
   onMetronomeEnabledChange,
   disabled,
   showLeadIn = true,
+  showMetronome = true,
 }) => {
   const totalBars = leadInBars + loopLengthBars;
 
@@ -91,6 +95,7 @@ export const LoopSetupPanel: React.FC<LoopSetupPanelProps> = ({
             onUseCountInChange={onUseCountInChange}
             metronomeEnabled={metronomeEnabled}
             onMetronomeEnabledChange={onMetronomeEnabledChange}
+            showMetronome={showMetronome}
           />
         </Flex>
         {showLeadIn && leadInBars > 0 && (

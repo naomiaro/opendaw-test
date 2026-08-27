@@ -7,10 +7,12 @@ interface RecordingPreferencesProps {
   metronomeEnabled: boolean | undefined;
   onMetronomeEnabledChange: (value: boolean) => void;
   disabled?: boolean;
+  /** Hide the metronome checkbox when the page owns its own click control. */
+  showMetronome?: boolean;
 }
 
 export const RecordingPreferences: React.FC<RecordingPreferencesProps> = React.memo(
-  ({ useCountIn, onUseCountInChange, metronomeEnabled, onMetronomeEnabledChange, disabled = false }) => (
+  ({ useCountIn, onUseCountInChange, metronomeEnabled, onMetronomeEnabledChange, disabled = false, showMetronome = true }) => (
     <Flex gap="5" wrap="wrap" align="center">
       <Flex asChild align="center" gap="2">
         <Text as="label" size="2">
@@ -18,16 +20,18 @@ export const RecordingPreferences: React.FC<RecordingPreferencesProps> = React.m
           Count-in
         </Text>
       </Flex>
-      <Flex asChild align="center" gap="2">
-        <Text as="label" size="2">
-          <Checkbox
-            checked={metronomeEnabled ?? false}
-            onCheckedChange={c => onMetronomeEnabledChange(c === true)}
-            disabled={disabled}
-          />
-          Metronome
-        </Text>
-      </Flex>
+      {showMetronome && (
+        <Flex asChild align="center" gap="2">
+          <Text as="label" size="2">
+            <Checkbox
+              checked={metronomeEnabled ?? false}
+              onCheckedChange={c => onMetronomeEnabledChange(c === true)}
+              disabled={disabled}
+            />
+            Metronome
+          </Text>
+        </Flex>
+      )}
     </Flex>
   )
 );

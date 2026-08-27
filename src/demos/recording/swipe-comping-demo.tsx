@@ -9,7 +9,6 @@ import { PPQN } from "@opendaw/lib-dsp";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { getAllRegions } from "@/lib/adapterUtils";
 import { waitForLoadingComplete } from "@/lib/engineLoading";
-import { useEnginePreference } from "@/hooks/useEnginePreference";
 import { FINALIZATION_TIMEOUT_MS } from "@/hooks/useRecordingSession";
 import { useAudioDevicePermission } from "@/hooks/useAudioDevicePermission";
 import { useRecordingTapes } from "@/hooks/useRecordingTapes";
@@ -48,6 +47,8 @@ import {
 } from "@radix-ui/themes";
 
 const BAR_PPQN = PPQN.Quarter * 4; // one bar in 4/4
+
+type ClickMode = "count-in" | "count-in-recording" | "off";
 
 type SnapGrid = "off" | "1/4" | "1/8" | "1/16";
 const SNAP_PPQN: Record<SnapGrid, number> = {
@@ -130,16 +131,18 @@ const App: React.FC = () => {
 
   const [isRecording, setIsRecording] = useState(false);
   const [isCountingIn, setIsCountingIn] = useState(false);
+  const [countInBeatsRemaining, setCountInBeatsRemaining] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isFinalizing, setIsFinalizing] = useState(false);
 
   const [useCountIn, setUseCountIn] = useState(true);
   const [bpm, setBpm] = useState(120);
   const [loopLengthBars, setLoopLengthBars] = useState(4);
-  const [metronomeEnabled, setMetronomeEnabled] = useEnginePreference(project, [
-    "metronome",
-    "enabled",
-  ]);
+  // Click behavior — Logic's metronome modes, app-side (the installed SDK has
+  // no count-in-only setting). "count-in": 1-2-3-4 then silence at punch-in.
+  const [clickMode, setClickMode] = useState<ClickMode>("count-in");
+  const clickModeRef = useRef<ClickMode>("count-in");
+  clickModeRef.current = clickMode;
 
   // Comp state
   const [compLanes, setCompLanes] = useState<CompLaneData[]>([]);
@@ -229,7 +232,18 @@ const App: React.FC = () => {
             if (mounted) setIsCountingIn(obs.getValue());
           })
         );
-        setMetronomeEnabled(true);
+        subs.push(
+          newProject.engine.countInBeatsRemaining.catchupAndSubscribe((obs) => {
+            const beats = obs.getValue();
+            if (mounted) setCountInBeatsRemaining(Math.ceil(beats));
+            // "Count-in only" mode: pre-disarm the click just before the bar
+            // boundary — waiting for isCountingIn to flip false arrives a
+            // frame late and would leak the punch-in downbeat click.
+            if (clickModeRef.current === "count-in" && beats > 0 && beats < 0.2) {
+              newProject.engine.preferences.settings.metronome.enabled = false;
+            }
+          })
+        );
       } catch (error) {
         console.error("Init error: " + String(error));
         if (mounted)
@@ -295,6 +309,18 @@ const App: React.FC = () => {
       project.timelineBox.loopArea.enabled.setValue(true);
     });
   }, [project, loopPpqn]);
+
+  // ── Click (metronome) mode — app-side gating of the engine metronome ──
+  useEffect(() => {
+    if (!project) return;
+    const settings = project.engine.preferences.settings;
+    settings.metronome.enabled =
+      clickMode === "off"
+        ? false
+        : clickMode === "count-in-recording"
+          ? isCountingIn || isRecording
+          : isCountingIn; // "count-in": clicks stop at the punch-in boundary
+  }, [project, clickMode, isCountingIn, isRecording]);
 
   // ── Comp initialization (runs after the finalization barrier) ──
   // The barrier resolves as soon as every sampleLoader reaches "loaded" —
@@ -848,32 +874,54 @@ const App: React.FC = () => {
                 onLoopLengthBarsChange={setLoopLengthBars}
                 useCountIn={useCountIn}
                 onUseCountInChange={setUseCountIn}
-                metronomeEnabled={metronomeEnabled}
-                onMetronomeEnabledChange={setMetronomeEnabled}
+                metronomeEnabled={undefined}
+                onMetronomeEnabledChange={() => {}}
                 disabled={setupLocked}
                 showLeadIn={false}
+                showMetronome={false}
               />
 
               {hasPermission && recordingTapes.length > 0 && (
                 <Card>
-                  <Flex align="center" gap="2">
-                    <Text size="2" weight="medium">
-                      Input Device:
-                    </Text>
-                    <Select.Root
-                      value={selectedDeviceId}
-                      onValueChange={handleDeviceChange}
-                      disabled={isRecording || isCountingIn || isFinalizing}
-                    >
-                      <Select.Trigger style={{ width: 220 }} />
-                      <Select.Content>
-                        {audioInputDevices.map((d, index) => (
-                          <Select.Item key={d.deviceId} value={d.deviceId}>
-                            {d.label || `Input ${index + 1}`}
+                  <Flex align="center" gap="5" wrap="wrap">
+                    <Flex align="center" gap="2">
+                      <Text size="2" weight="medium">
+                        Input Device:
+                      </Text>
+                      <Select.Root
+                        value={selectedDeviceId}
+                        onValueChange={handleDeviceChange}
+                        disabled={isRecording || isCountingIn || isFinalizing}
+                      >
+                        <Select.Trigger style={{ width: 220 }} />
+                        <Select.Content>
+                          {audioInputDevices.map((d, index) => (
+                            <Select.Item key={d.deviceId} value={d.deviceId}>
+                              {d.label || `Input ${index + 1}`}
+                            </Select.Item>
+                          ))}
+                        </Select.Content>
+                      </Select.Root>
+                    </Flex>
+                    <Flex align="center" gap="2">
+                      <Text size="2" weight="medium">
+                        Click:
+                      </Text>
+                      <Select.Root
+                        value={clickMode}
+                        onValueChange={(v) => setClickMode(v as ClickMode)}
+                        disabled={isRecording || isCountingIn || isFinalizing}
+                      >
+                        <Select.Trigger style={{ width: 190 }} />
+                        <Select.Content>
+                          <Select.Item value="count-in">Count-in only</Select.Item>
+                          <Select.Item value="count-in-recording">
+                            Count-in + recording
                           </Select.Item>
-                        ))}
-                      </Select.Content>
-                    </Select.Root>
+                          <Select.Item value="off">Off</Select.Item>
+                        </Select.Content>
+                      </Select.Root>
+                    </Flex>
                   </Flex>
                 </Card>
               )}
@@ -961,12 +1009,23 @@ const App: React.FC = () => {
                     </Button>
                   </Flex>
                   <Flex justify="center" gap="3" align="center">
-                    {isCountingIn && <Badge color="amber" size="2">Count-in</Badge>}
+                    {isCountingIn && (
+                      <Badge color="amber" size="2">
+                        Count-in · beat {Math.max(1, 5 - countInBeatsRemaining)} of 4
+                      </Badge>
+                    )}
                     {isRecording && <Badge color="red" size="2">Recording</Badge>}
                     {isFinalizing && <Badge color="amber" size="2">Finalizing…</Badge>}
                     {isPlaying && !isRecording && (
                       <Badge color="green" size="2">Playing</Badge>
                     )}
+                    <Badge
+                      color="gray"
+                      size="1"
+                      title="Count-in is one 4/4 bar (4 clicks); recording punches in on the next downbeat. With Click set to 'Count-in only' the metronome stops at the punch-in; 'Count-in + recording' keeps it clicking while you record."
+                    >
+                      4/4 · {useCountIn ? "1-bar count-in" : "no count-in"}
+                    </Badge>
                     <Badge color="gray" size="1">
                       {takeCount} take{takeCount !== 1 ? "s" : ""}
                     </Badge>
