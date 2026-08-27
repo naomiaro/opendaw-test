@@ -1432,7 +1432,8 @@ splitting regions:
 4. `Interpolation.Curve(0.25)` for fade-out, `Interpolation.Curve(0.75)` for fade-in produces a smooth sigmoid crossfade
 5. All tracks play continuously — no region splitting needed
 
-See the [Comp Lanes demo](https://opendaw-test.pages.dev/comp-lanes-demo.html) for a working example.
+For splice-based comping with the engine's automatic seam crossfades, see the
+[Quick Swipe Comping demo](https://opendaw-test.pages.dev/swipe-comping-demo.html).
 
 ### SDK Notes
 

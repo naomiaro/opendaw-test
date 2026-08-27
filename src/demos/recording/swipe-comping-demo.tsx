@@ -26,6 +26,7 @@ import {
   ensureCompTrack,
   rebuildCompRegions,
   deriveCompStateFromCompTrack,
+  COMP_STATE_PREFIX,
   type CompState,
   type RecordedTakeSource,
 } from "@/lib/compLaneUtils";
@@ -689,7 +690,7 @@ const App: React.FC = () => {
         for (const region of getAllRegions(project)) {
           if (
             region.label.startsWith("Take ") ||
-            region.label.startsWith("comp:") ||
+            region.label.startsWith(COMP_STATE_PREFIX) ||
             region.label === "Comp"
           ) {
             region.box.delete();
@@ -1181,9 +1182,11 @@ const App: React.FC = () => {
                     Comp decisions persist in the box graph (a label on the first
                     comp region), so undo reverts a swipe and its regions
                     atomically. For longer, musical crossfades between takes,
-                    volume automation remains the right tool — see the{" "}
-                    <a href="/comp-lanes-demo.html">Comp Lanes demo</a>. For
-                    multi-track loop recording, see the{" "}
+                    volume-automation crossfades remain the right tool (see{" "}
+                    <a href="/docs/09-editing-fades-and-automation.html">
+                      Editing, Fades &amp; Automation
+                    </a>
+                    ). For multi-track loop recording, see the{" "}
                     <a href="/loop-recording-demo.html">Loop Recording demo</a>.
                   </Text>
                 </Flex>
