@@ -12,10 +12,10 @@ to assemble a composite, with the engine's transparent seam behavior doing the
 crossfades. It completes the missing third piece between two existing demos:
 
 - **Loop Recording & Takes** (`loop-recording-demo.tsx`) — records takes, no comping.
+  Stays untouched; the new demo cross-links it.
 - **Comp Lanes** (`comp-lanes-demo.tsx`) — comps simulated takes via clicks and
-  volume-automation crossfades.
-
-Both existing demos stay untouched; the new demo cross-links them.
+  volume-automation crossfades. **Retired after this demo ships** (see Retirement
+  below).
 
 ## Decisions (settled during brainstorming)
 
@@ -104,7 +104,8 @@ Interactive mockups from the brainstorming session are in
 
 - Generalize the splice rebuild in `src/lib/compLaneUtils.ts` for recorded takes
   (per-take offsets from `waveformOffset` + recorded durations instead of staggered
-  constants); the comp-lanes demo keeps working through the same utility.
+  constants); the comp-lanes demo keeps working through the same utility until its
+  retirement PR removes it.
 - Zone math (boundary insert, range assignment, merge-adjacent) lives in
   `compLaneUtils.ts` as pure functions.
 - New reusable pieces that emerge (lane waveform painter, swipe surface) go to
@@ -129,7 +130,23 @@ GoatCounter script, README table row + source-tree entry.
 - No checkerboard/two-track crossfades, no adjustable crossfade time.
 - No multi-Tape comping (one Tape only).
 - No comp alternatives (Logic's "Comp A/B/…" duplicates) — single comp.
-- No changes to the loop-recording or comp-lanes demos beyond cross-links.
+- No changes to the loop-recording demo beyond cross-links.
+
+## Retirement of the Comp Lanes demo
+
+After this demo ships and its browser verification passes, a **separate follow-up PR**
+deletes the listed Comp Lanes demo:
+
+- Remove `comp-lanes-demo.html`, `src/demos/playback/comp-lanes-demo.tsx`, its vite
+  input entry, index card, sitemap URL, og-image, and README table/source-tree rows.
+- Trim `compLaneUtils.ts` paths only that demo used (automation-crossfade rebuild,
+  stagger constants, multi-file take loading) — the swipe demo keeps the zone math and
+  splice rebuild.
+- **Keep all debug pages** (user decision 2026-08-27) — in particular
+  `comp-lanes-debug-demo.{html,tsx}` (unlisted): it is the regression check for the
+  resolved cross-file splice-click issue (`debug/splice-click-cross-file.md`) and works
+  standalone via its static-setup button. Update that debug note's manual repro
+  paragraph, which currently points at the deleted `comp-lanes-demo.html`.
 
 ## Risks / notes
 
