@@ -109,6 +109,12 @@ const GROUPS: Group[] = [
     color: "var(--mc-green)",
     demos: [
       {
+        href: "/bpm-detect-demo.html",
+        title: "BPM Detect",
+        blurb:
+          "WASM tempo detection: analyze bundled loops or drop your own file, get one global BPM (or an honest “no tempo” for pads and speech), then verify the result by ear against the metronome.",
+      },
+      {
         href: "/tempo-automation-demo.html",
         title: "Tempo Automation",
         blurb:

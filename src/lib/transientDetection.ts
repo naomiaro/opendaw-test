@@ -1,23 +1,7 @@
 import { UUID } from "@opendaw/lib-std";
-import { AudioData } from "@opendaw/lib-dsp";
 import { Project, Workers } from "@opendaw/studio-core";
 import { AudioFileBox, TransientMarkerBox } from "@opendaw/studio-boxes";
-
-/**
- * Convert a browser AudioBuffer into OpenDAW's AudioData (SharedArrayBuffer-backed).
- *
- * AudioData is what the SDK's DSP layer consumes — workers, processors, transient
- * detection, peak generation all take AudioData, not AudioBuffer. The conversion
- * is a per-channel copy; cost is O(frames * channels).
- */
-export function audioBufferToAudioData(buffer: AudioBuffer): AudioData {
-  const { numberOfChannels, length: numberOfFrames, sampleRate } = buffer;
-  const audioData = AudioData.create(sampleRate, numberOfFrames, numberOfChannels);
-  for (let channel = 0; channel < numberOfChannels; channel++) {
-    audioData.frames[channel].set(buffer.getChannelData(channel));
-  }
-  return audioData;
-}
+import { audioBufferToAudioData } from "./audioUtils";
 
 /**
  * Detect transients in an AudioBuffer using OpenDAW's worker-based onset detector.

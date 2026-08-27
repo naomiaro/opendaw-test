@@ -27,6 +27,7 @@ Visit http://localhost:5173 to explore the demos.
 | **[TimeBase Comparison](https://opendaw-test.pages.dev/timebase-demo.html)** | Musical vs Seconds TimeBase and how regions behave with BPM changes |
 | **[Tempo Automation](https://opendaw-test.pages.dev/tempo-automation-demo.html)** | Preset tempo patterns (accelerando, ritardando, stepped) with real-time metronome response |
 | **[Time Signature Changes](https://opendaw-test.pages.dev/time-signature-demo.html)** | Preset signature sequences (waltz, prog rock, film score) with adaptive metronome |
+| **[BPM Detect](https://opendaw-test.pages.dev/bpm-detect-demo.html)** | WASM tempo detection: analyze bundled loops or your own file, get one global BPM (or an honest "no tempo" for pads and speech), then verify the result by ear against the metronome |
 | **[Track Automation](https://opendaw-test.pages.dev/track-automation-demo.html)** | Volume, pan, and effect parameter automation with preset patterns and canvas visualization |
 | **[Live Automation Recording](https://opendaw-test.pages.dev/live-automation-recording-demo.html)** | Perform volume, pan and delay-wet moves while the transport records — the SDK's latch model captures every write into value regions, simplifies the curve, and lets you overdub across loop wraps or override playback by hand |
 | **[Clip Looping](https://opendaw-test.pages.dev/clip-looping-demo.html)** | Set loop regions within audio clips and extend to tile automatically with waveform visualization |
@@ -148,6 +149,8 @@ src/
     │   ├── live-automation-recording-demo.tsx  # Latch-model automation recording
     │   ├── tempo-automation-demo.tsx  # Tempo automation patterns
     │   └── time-signature-demo.tsx    # Time signature changes
+    ├── analysis/                      # Audio analysis demos
+    │   └── bpm-detect-demo.tsx        # WASM tempo detection with metronome verification
     ├── effects/                       # Effects demos
     │   ├── effects-demo.tsx           # Multi-track mixer with effects
     │   ├── convolver-demo.tsx         # Convolution reverb with synthesized IR gallery
