@@ -165,7 +165,7 @@ const App: React.FC = () => {
   const { audioInputDevices, audioOutputDevices, hasPermission, requestPermission } =
     useAudioDevicePermission();
   void audioOutputDevices;
-  const { recordingTapes, armedCount, addTape } = useRecordingTapes({
+  const { recordingTapes, addTape } = useRecordingTapes({
     project,
     audioInputDevices,
     maxTapes: 1,
@@ -268,25 +268,48 @@ const App: React.FC = () => {
   }, [project, loopPpqn]);
 
   // ── Comp initialization (runs after the finalization barrier) ──
+  // The barrier resolves as soon as every sampleLoader reaches "loaded" —
+  // but the box-graph AudioRegionBox for the just-finalized take syncs to
+  // the main-thread adapter layer via the engine's own message channel,
+  // which can lag the loader's "loaded" event by a frame or more. Scanning
+  // immediately can observe 0 lanes even though the take truly finalized.
+  // Poll across animation frames (bounded) instead of trusting the first scan.
   const initializeComp = useCallback(() => {
     if (!project || !audioContext || !tapeUnitBox) return;
-    const lanes = scanCompLanes(project, tapeUnitBox, audioContext.sampleRate);
-    if (lanes.length === 0) return;
-    const compTrack = ensureCompTrack(project, tapeUnitBox);
-    compTrackRef.current = compTrack;
-    // Keep an existing comp; default a new one to the LAST take (Logic's default).
-    const existing = deriveCompStateFromCompTrack(project, compTrack);
-    const state: CompState =
-      existing ?? { boundaries: [], assignments: [lanes.length - 1] };
-    // No inline rebuild here — setting state triggers the rebuild effect
-    // exactly once (an inline rebuild + the effect would double-rebuild and
-    // create two undo entries). The rebuild also re-unmutes a comp that was
-    // muted for a "record more takes" pass.
-    setCompLanes(lanes);
-    setCompState({ ...state });
-    setAuditionTake(null);
-    setSelectedZone(null);
-    setCollapsed(false);
+    let attempt = 0;
+    const MAX_ATTEMPTS = 90; // ~1.5s at 60fps — generous margin over the observed 1-frame lag
+    const tryScan = () => {
+      const lanes = scanCompLanes(project, tapeUnitBox, audioContext.sampleRate);
+      if (lanes.length === 0) {
+        attempt++;
+        if (attempt < MAX_ATTEMPTS) {
+          requestAnimationFrame(tryScan);
+        } else {
+          console.error(
+            "[SwipeComping] initializeComp: scanCompLanes still returned 0 lanes " +
+              `after ${MAX_ATTEMPTS} frames — giving up`
+          );
+          setUiError("Couldn't find the recorded takes to build the comp. Try Clear All and record again.");
+        }
+        return;
+      }
+      const compTrack = ensureCompTrack(project, tapeUnitBox);
+      compTrackRef.current = compTrack;
+      // Keep an existing comp; default a new one to the LAST take (Logic's default).
+      const existing = deriveCompStateFromCompTrack(project, compTrack);
+      const state: CompState =
+        existing ?? { boundaries: [], assignments: [lanes.length - 1] };
+      // No inline rebuild here — setting state triggers the rebuild effect
+      // exactly once (an inline rebuild + the effect would double-rebuild and
+      // create two undo entries). The rebuild also re-unmutes a comp that was
+      // muted for a "record more takes" pass.
+      setCompLanes(lanes);
+      setCompState({ ...state });
+      setAuditionTake(null);
+      setSelectedZone(null);
+      setCollapsed(false);
+    };
+    tryScan();
   }, [project, audioContext, tapeUnitBox]);
 
   // ── Undo/redo tracking + comp-state re-derivation after undo/redo ──
@@ -360,7 +383,11 @@ const App: React.FC = () => {
   }, [requestPermission]);
 
   const handleStartRecording = useCallback(async () => {
-    if (!project || !audioContext || armedCount === 0) return;
+    // useRecordingTapes.armedCount only updates via RecordingTapeCard's
+    // onArmedChange callback (not rendered here — this demo has no per-tape
+    // arm UI). The single tape is armed unconditionally in addTape(), so
+    // recordingTapes.length is the correct readiness check.
+    if (!project || !audioContext || recordingTapes.length === 0) return;
     setUiError(null);
     setFinalizationError(null);
     setAuditionTake(null);
@@ -390,7 +417,7 @@ const App: React.FC = () => {
         `Failed to start recording: ${error instanceof Error ? error.message : String(error)}`
       );
     }
-  }, [project, audioContext, armedCount, useCountIn]);
+  }, [project, audioContext, recordingTapes, useCountIn]);
 
   const handleStopRecording = useCallback(() => {
     if (!project) return;
@@ -722,7 +749,7 @@ const App: React.FC = () => {
                       variant="solid"
                       disabled={
                         isRecording || isCountingIn || isFinalizing ||
-                        isPlaying || armedCount === 0
+                        isPlaying || recordingTapes.length === 0
                       }
                     >
                       {takeCount > 0 ? "Record More Takes" : "Record"}
