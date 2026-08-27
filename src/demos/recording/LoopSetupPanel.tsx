@@ -15,6 +15,11 @@ interface LoopSetupPanelProps {
   metronomeEnabled: boolean | undefined;
   onMetronomeEnabledChange: (value: boolean) => void;
   disabled: boolean;
+  /** Show the Lead-in select + its explainer text. Default true. Pass false
+   *  for demos (e.g. Quick Swipe Comping) that pin leadInBars=0 and have no
+   *  UI path to change it — an always-enabled-looking control that snaps
+   *  back is worse than no control. */
+  showLeadIn?: boolean;
 }
 
 /** Setup card: BPM, pre-loop lead-in, loop length, count-in/metronome prefs. */
@@ -30,6 +35,7 @@ export const LoopSetupPanel: React.FC<LoopSetupPanelProps> = ({
   metronomeEnabled,
   onMetronomeEnabledChange,
   disabled,
+  showLeadIn = true,
 }) => {
   const totalBars = leadInBars + loopLengthBars;
 
@@ -41,25 +47,27 @@ export const LoopSetupPanel: React.FC<LoopSetupPanelProps> = ({
         </Text>
         <Flex gap="4" wrap="wrap" align="center">
           <BpmControl value={bpm} onChange={onBpmChange} disabled={disabled} />
-          <Flex align="center" gap="2">
-            <Text size="2" weight="medium">
-              Lead-in:
-            </Text>
-            <Select.Root
-              value={leadInBars.toString()}
-              onValueChange={(v) => onLeadInBarsChange(Number(v))}
-              disabled={disabled}
-            >
-              <Select.Trigger style={{ width: 100 }} />
-              <Select.Content>
-                <Select.Item value="0">None</Select.Item>
-                <Select.Item value="1">1 bar</Select.Item>
-                <Select.Item value="2">2 bars</Select.Item>
-                <Select.Item value="3">3 bars</Select.Item>
-                <Select.Item value="4">4 bars</Select.Item>
-              </Select.Content>
-            </Select.Root>
-          </Flex>
+          {showLeadIn && (
+            <Flex align="center" gap="2">
+              <Text size="2" weight="medium">
+                Lead-in:
+              </Text>
+              <Select.Root
+                value={leadInBars.toString()}
+                onValueChange={(v) => onLeadInBarsChange(Number(v))}
+                disabled={disabled}
+              >
+                <Select.Trigger style={{ width: 100 }} />
+                <Select.Content>
+                  <Select.Item value="0">None</Select.Item>
+                  <Select.Item value="1">1 bar</Select.Item>
+                  <Select.Item value="2">2 bars</Select.Item>
+                  <Select.Item value="3">3 bars</Select.Item>
+                  <Select.Item value="4">4 bars</Select.Item>
+                </Select.Content>
+              </Select.Root>
+            </Flex>
+          )}
           <Flex align="center" gap="2">
             <Text size="2" weight="medium">
               Loop Length:
@@ -85,7 +93,7 @@ export const LoopSetupPanel: React.FC<LoopSetupPanelProps> = ({
             onMetronomeEnabledChange={onMetronomeEnabledChange}
           />
         </Flex>
-        {leadInBars > 0 && (
+        {showLeadIn && leadInBars > 0 && (
           <Text size="1" color="gray">
             Take 1 records from bar 1 through bar {totalBars} ({leadInBars} bar
             lead-in + {loopLengthBars} bar loop). Subsequent takes record only
