@@ -46,6 +46,17 @@ const TAIL_PADDING_SEC = 0.5;
 const CLICK_DURATION_SEC = 0.008;
 const CLICK_FREQ_HZ = 2000;
 
+// region-fencepost scenario constants (derived from expectedOnsets logic).
+// The region starts at beat 1.75 (7 sixteenths) within a 16-beat render window;
+// clicks are generated only while (start + k < max), yielding 15 onsets (k=0..14).
+// Shrink both buffer and region to this predicted span so no content extends into
+// tail padding (which would add spurious onsets unaccounted for by expectedOnsets).
+const REGION_FENCEPOST_START_PPQN = 7 * SIXTEENTH_PPQN; // 1680: region starts at 7 sixteenths
+const REGION_FENCEPOST_MAX_BEATS = AUDIT_SCENARIOS["region-fencepost"].renderBars * 4; // 16 beats total window
+const REGION_FENCEPOST_START_BEATS = REGION_FENCEPOST_START_PPQN / PPQN.Quarter; // 1.75 beats
+const REGION_FENCEPOST_MAX_CONTENT_BEATS = REGION_FENCEPOST_MAX_BEATS - REGION_FENCEPOST_START_BEATS; // 14.25 beats
+const REGION_FENCEPOST_MAX_CONTENT_PPQN = Math.round(REGION_FENCEPOST_MAX_CONTENT_BEATS * PPQN.Quarter);
+
 function quartersToSeconds(quarters: number, bpm: number): number {
   return quarters * (60 / bpm);
 }
@@ -198,19 +209,28 @@ function buildRegionFencepost(
   localAudioBuffers: Map<string, AudioBuffer>,
   audioContext: AudioContext
 ): BuiltScenario {
-  const totalBars = AUDIT_SCENARIOS["region-fencepost"].renderBars; // 4
-  const contentSeconds = quartersToSeconds(totalBars * 4, bpm);
-  const contentPpqn = totalBars * BAR_PPQN;
+  // Cap buffer and region to the predicted span (1.75..15.75 beats) so the last
+  // click's decay doesn't extend into tail padding. This matches expectedOnsets's
+  // rule: clicks at (start + k) where k < (maxBeats - startBeats) = 0..14 (15 onsets).
+  const contentSeconds = quartersToSeconds(REGION_FENCEPOST_MAX_CONTENT_BEATS, bpm);
   const buffer = createClickTrainBuffer(audioContext, contentSeconds, bpm);
 
   const { trackBox } = project.editing
     .modify(() => project.api.createInstrument(InstrumentFactories.Tape))
     .unwrap();
 
-  const position = Math.round((7 * PPQN.Quarter) / 4); // 1680 — 7 sixteenths
   project.editing.modify(() => {
     const fileBox = registerAudioFile(project, localAudioBuffers, buffer, "click-train.wav");
-    createTapeRegion(project, trackBox, fileBox, position, contentPpqn, 0, contentPpqn, "Click Train");
+    createTapeRegion(
+      project,
+      trackBox,
+      fileBox,
+      REGION_FENCEPOST_START_PPQN,
+      REGION_FENCEPOST_MAX_CONTENT_PPQN,
+      0,
+      REGION_FENCEPOST_MAX_CONTENT_PPQN,
+      "Click Train"
+    );
   });
 
   return { renderSeconds: contentSeconds + TAIL_PADDING_SEC, startPositionPpqn: 0, needsMetronome: false };
@@ -296,7 +316,11 @@ function buildAutomation(
   // transaction commits (root CLAUDE.md transaction-staleness rule).
   project.editing.append(() => {
     const adapter = project.boxAdapters.adapterFor(regionBox, ValueRegionBoxAdapter);
-    const collection = adapter.optCollection.unwrap();
+    const collectionOpt = adapter.optCollection;
+    if (collectionOpt.isEmpty()) {
+      throw new Error("buildAutomation: value region has no event collection — aborting");
+    }
+    const collection = collectionOpt.unwrap();
     collection.events.asArray().forEach((evt) => evt.box.delete());
     for (const step of steps) {
       collection.createEvent({
