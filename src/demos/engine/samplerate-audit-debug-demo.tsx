@@ -3,9 +3,10 @@
 // (`.superpowers/sdd/2026-08-27-samplerate-alignment-audit/`). Runs the
 // selected AuditFamily x bpm x rate cells sequentially:
 //   buildAuditScenario -> renderOfflineSlice -> detectOnsets (+ maxStepAround
-//   for seam) -> judgeCell -> table row.
-// Renders a verdict table and uploads a JSON summary (all rows) plus one WAV
-// per "investigate" cell to the dev server's /__verify sink.
+//   for seam) -> judgeCell -> per-cell WAV upload (if investigate, deadline-bounded) ->
+//   table row.
+// Completes even if individual cells error; at run end uploads a JSON summary
+// (all rows including errors) to the dev server's /__verify sink.
 //
 // URL contract:
 //   ?family=<AuditFamily|all>   default "all" — runs every family in
@@ -22,7 +23,8 @@
 //                                audit run.
 //
 // DOM contract: #audit-state carries data-audit-state walking
-// setup -> running:<cell> -> uploading -> done (or error:<message>).
+// setup -> running:<cell> -> running:<next> -> done (or error:<message>).
+// Batch continues on per-cell errors; error rows carry status "error" and errorMessage.
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Option } from "@opendaw/lib-std";
@@ -62,14 +64,20 @@ interface AuditRow {
   family: AuditFamily;
   bpm: number;
   rate: number;
-  expected: number[];
-  onsets: number[];
-  calibrationSec: number;
+  /** "pass" | "investigate" on success, "error" on per-cell failure. */
+  status: "pass" | "investigate" | "error";
+  expected?: number[];
+  onsets?: number[];
+  calibrationSec?: number;
   seamStep?: number;
-  toleranceSec: number;
-  verdict: CellVerdict;
+  toleranceSec?: number;
+  verdict?: CellVerdict;
   /** Signature family only — recorded for future use, not judged (design ruling). */
   downbeatIndices?: number[];
+  /** Error message if status === "error". */
+  errorMessage?: string;
+  /** True if this cell's WAV was successfully uploaded (investigate cells only). */
+  wavUploaded?: boolean;
 }
 
 interface RenderedCell {
@@ -128,9 +136,8 @@ async function runCell(
   bpm: number,
   rate: number,
   calibrationMap: Partial<Record<AuditFamily, number>>,
-  shiftExpectedMs: number,
-  wavStash: Map<string, RenderedCell>
-): Promise<AuditRow> {
+  shiftExpectedMs: number
+): Promise<{ row: AuditRow; rendered?: RenderedCell }> {
   // Fresh scenario project per cell, built on a copy of the pristine base
   // project (never mutated itself) — see task-5-brief.md's cell-execution
   // order. localAudioBuffers is the page-lifetime map initializeOpenDAW was
@@ -170,11 +177,25 @@ async function runCell(
     const verdict = judgeCell(measurement, toleranceSec);
     const downbeatIndices = family === "signature" ? expectedDownbeatIndices("signature") : undefined;
 
-    if (verdict.status === "investigate") {
-      wavStash.set(cellKey(family, bpm, rate), rendered);
-    }
+    const row: AuditRow = {
+      family,
+      bpm,
+      rate,
+      status: verdict.status,
+      expected,
+      onsets,
+      calibrationSec,
+      seamStep,
+      toleranceSec,
+      verdict,
+      downbeatIndices,
+    };
 
-    return { family, bpm, rate, expected, onsets, calibrationSec, seamStep, toleranceSec, verdict, downbeatIndices };
+    // Return rendered channels for investigate cells so caller can upload WAV
+    return {
+      row,
+      rendered: verdict.status === "investigate" ? rendered : undefined,
+    };
   } finally {
     // renderOfflineSlice copies scenarioProject again internally and
     // terminates ITS copy — this terminates the outer copy we made here.
@@ -182,30 +203,50 @@ async function runCell(
   }
 }
 
-async function uploadResults(rows: AuditRow[], wavStash: Map<string, RenderedCell>): Promise<void> {
+/** Upload a single investigate cell's WAV with a 30s deadline. On failure, records the
+ *  error in the row's wavUploaded field but does NOT throw — the run continues. */
+async function uploadCellWav(row: AuditRow, rendered: RenderedCell): Promise<void> {
+  if (row.status !== "investigate") return; // should not happen, but guard
+  const wavBuffer = WavFile.encodeInts16({
+    sampleRate: rendered.sampleRate,
+    length: rendered.channels[0].length,
+    numberOfChannels: rendered.channels.length,
+    getChannelData: (i: number) => rendered.channels[i],
+  });
+  const name = `audit-${row.family}-${bpmToken(row.bpm)}-${row.rate}.wav`;
+  try {
+    await withDeadline(
+      (async () => {
+        const res = await fetch(`/__verify/${name}`, { method: "PUT", body: wavBuffer });
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+      })(),
+      30_000,
+      `audit WAV upload ${name}`
+    );
+    row.wavUploaded = true;
+  } catch (err) {
+    // Record the failure on the row but don't abort the run
+    row.wavUploaded = false;
+    console.warn(`[audit] WAV upload failed for ${name}:`, err);
+  }
+}
+
+/** Upload the JSON summary with a 30s deadline. Throws on failure — this is run-level. */
+async function uploadSummary(rows: AuditRow[]): Promise<void> {
   const timestamp = Date.now();
   const jsonBody = JSON.stringify(rows, null, 2);
-  const jsonRes = await fetch(`/__verify/audit-${timestamp}.json`, { method: "PUT", body: jsonBody });
-  if (!jsonRes.ok) {
-    throw new Error(`verify sink rejected JSON upload: HTTP ${jsonRes.status}`);
-  }
-
-  for (const row of rows) {
-    if (row.verdict.status !== "investigate") continue;
-    const rendered = wavStash.get(cellKey(row.family, row.bpm, row.rate));
-    if (!rendered) continue; // stashed at judge time in runCell — should always be present
-    const wavBuffer = WavFile.encodeInts16({
-      sampleRate: rendered.sampleRate,
-      length: rendered.channels[0].length,
-      numberOfChannels: rendered.channels.length,
-      getChannelData: (i: number) => rendered.channels[i],
-    });
-    const name = `audit-${row.family}-${bpmToken(row.bpm)}-${row.rate}.wav`;
-    const res = await fetch(`/__verify/${name}`, { method: "PUT", body: wavBuffer });
-    if (!res.ok) {
-      throw new Error(`verify sink rejected wav upload (${name}): HTTP ${res.status}`);
-    }
-  }
+  await withDeadline(
+    (async () => {
+      const res = await fetch(`/__verify/audit-${timestamp}.json`, { method: "PUT", body: jsonBody });
+      if (!res.ok) {
+        throw new Error(`verify sink rejected JSON: HTTP ${res.status}`);
+      }
+    })(),
+    30_000,
+    "audit JSON summary upload"
+  );
 }
 
 async function runAudit(
@@ -228,7 +269,6 @@ async function runAudit(
     throw new Error(`invalid ?shiftExpectedMs= "${shiftExpectedMsParam}"`);
   }
 
-  const wavStash = new Map<string, RenderedCell>();
   const rows: AuditRow[] = [];
 
   for (const family of families) {
@@ -236,29 +276,53 @@ async function runAudit(
       for (const rate of rates) {
         const label = cellKey(family, bpm, rate);
         setAuditState(`running:${label}`);
-        const row = await withDeadline(
-          runCell(
-            baseProject,
-            localAudioBuffers,
-            audioContext,
+        try {
+          const { row, rendered } = await withDeadline(
+            runCell(
+              baseProject,
+              localAudioBuffers,
+              audioContext,
+              family,
+              bpm,
+              rate,
+              calibrationMap,
+              shiftExpectedMs
+            ),
+            CELL_DEADLINE_MS,
+            `audit cell ${label}`
+          );
+          rows.push(row);
+          onRow(row);
+
+          // Immediately upload investigate cell's WAV (with deadline, non-fatal on failure)
+          if (rendered) {
+            await uploadCellWav(row, rendered);
+          }
+        } catch (err) {
+          // Cell failed: create an error row and continue to next cell
+          const errorRow: AuditRow = {
             family,
             bpm,
             rate,
-            calibrationMap,
-            shiftExpectedMs,
-            wavStash
-          ),
-          CELL_DEADLINE_MS,
-          `audit cell ${label}`
-        );
-        rows.push(row);
-        onRow(row);
+            status: "error",
+            errorMessage: err instanceof Error ? err.message : String(err),
+          };
+          rows.push(errorRow);
+          onRow(errorRow);
+          console.error(`[audit] Cell ${label} failed:`, err);
+        }
       }
     }
   }
 
+  // Upload the complete summary (with deadline, fatal on failure)
   setAuditState("uploading");
-  await uploadResults(rows, wavStash);
+  try {
+    await uploadSummary(rows);
+  } catch (err) {
+    // Summary upload failed — throw to set error:<message> state
+    throw new Error(`Summary upload failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
   setAuditState("done");
 }
 
@@ -276,8 +340,9 @@ function AuditHarness() {
     });
   }, []);
 
-  const passCount = rows.filter((r) => r.verdict.status === "pass").length;
-  const investigateCount = rows.length - passCount;
+  const passCount = rows.filter((r) => r.verdict?.status === "pass").length;
+  const investigateCount = rows.filter((r) => r.verdict?.status === "investigate").length;
+  const errorCount = rows.filter((r) => r.status === "error").length;
 
   return (
     <Theme appearance="dark" accentColor="amber">
@@ -303,6 +368,7 @@ function AuditHarness() {
               </Badge>
               <Text size="2" color="gray">
                 {rows.length} cell{rows.length === 1 ? "" : "s"} — {passCount} pass, {investigateCount} investigate
+                {errorCount > 0 && `, ${errorCount} error`}
               </Text>
             </Flex>
           </Card>
@@ -328,12 +394,20 @@ function AuditHarness() {
                       <Table.Cell>{row.family}</Table.Cell>
                       <Table.Cell>{row.bpm}</Table.Cell>
                       <Table.Cell>{row.rate}</Table.Cell>
-                      <Table.Cell>{row.verdict.matched}</Table.Cell>
-                      <Table.Cell>{row.verdict.missing}</Table.Cell>
-                      <Table.Cell>{row.verdict.extra}</Table.Cell>
-                      <Table.Cell>{(row.verdict.maxDeviationSec * 1000).toFixed(2)}</Table.Cell>
+                      <Table.Cell>{row.status === "error" ? "—" : row.verdict?.matched}</Table.Cell>
+                      <Table.Cell>{row.status === "error" ? "—" : row.verdict?.missing}</Table.Cell>
+                      <Table.Cell>{row.status === "error" ? "—" : row.verdict?.extra}</Table.Cell>
                       <Table.Cell>
-                        <Badge color={row.verdict.status === "pass" ? "green" : "amber"}>{row.verdict.status}</Badge>
+                        {row.status === "error" ? "—" : ((row.verdict?.maxDeviationSec ?? 0) * 1000).toFixed(2)}
+                      </Table.Cell>
+                      <Table.Cell>
+                        {row.status === "error" ? (
+                          <Badge color="red" title={row.errorMessage}>
+                            error
+                          </Badge>
+                        ) : (
+                          <Badge color={row.verdict?.status === "pass" ? "green" : "amber"}>{row.verdict?.status}</Badge>
+                        )}
                       </Table.Cell>
                     </Table.Row>
                   ))}
