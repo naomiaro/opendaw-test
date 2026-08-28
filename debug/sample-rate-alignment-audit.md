@@ -141,6 +141,21 @@ truncates at 44.1kHz), but the measured magnitude (~0.47ms ≈ 21 samples @44.1k
 likely dominated by `AUDIT_CALIBRATION`'s single per-family scalar (measured at the 48k control
 row) leaving a larger uncorrected residual at 44.1k. Flagged as open/inconclusive, not confirmed.
 
+### automation (JSON: `audit-1787880112075.json`)
+
+- bpm=90: 44100:pass(0.921ms) 48000:pass(0.931ms) 88200:investigate(0.933ms,extra=124) 96000:investigate(0.941ms,extra=81) — investigate at 88.2k/96k
+- bpm=97.3: 44100:pass(0.921ms) 48000:pass(0.931ms) 88200:investigate(0.933ms,extra=114) 96000:investigate(0.941ms,extra=75) — investigate at 88.2k/96k
+- bpm=120: 44100:pass(0.921ms) 48000:pass(0.931ms) 88200:investigate(0.933ms,extra=92) 96000:investigate(0.941ms,extra=60) — investigate at 88.2k/96k
+- bpm=124: 44100:pass(0.921ms) 48000:pass(0.931ms) 88200:investigate(0.933ms,extra=89) 96000:investigate(0.941ms,extra=58) — investigate at 88.2k/96k
+- bpm=133: 44100:pass(0.921ms) 48000:pass(0.931ms) 88200:investigate(0.933ms,extra=83) 96000:investigate(0.941ms,extra=55) — investigate at 88.2k/96k
+
+Rate-triggered (not bpm-triggered — identical pattern at every bpm): 88200/96000 investigate,
+44100/48000 pass, in all 5 bpms. All 20 cells matched the 3 real onset transitions with 0
+missing/extra confusion on the REAL events (matched=3 always); the huge `extra` counts (55-124)
+are spurious re-triggers during the sustained-tone ON windows only (verified: 0 extras land in
+the OFF/silent windows). Deep-dived — see triage: harness detector artifact (not SDK), root-caused
+analytically.
+
 ## Live recording-path results
 
 (populated by Task 9 — production multi-take loop recording at hardware timecode reference)
