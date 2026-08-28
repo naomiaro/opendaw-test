@@ -8,6 +8,87 @@
 
 **Design Spec:** [2026-08-27 sample-rate alignment audit design](../docs/superpowers/specs/2026-08-27-samplerate-alignment-audit-design.md)
 
+## Outcome summary
+
+**Matrix:** 180/180 offline cells pass — 9 families (metronome, loop-wrap, seam,
+region-fencepost, note-onsets, automation, tempo-ramp, signature, transport-pos) x 5
+BPMs (90, 97.3, 120, 124, 133) x 4 rates (44100, 48000, 88200, 96000), 0 errors, 0
+run-failed families. Reached clean only after two harness-artifact fixes mid-campaign
+(register S27, S28: a rate-dependent onset-detector hop size and a bpm-dependent
+refractory window vs. Vaporisateur's release ring — both isolated to
+`src/lib/audit/onsetDetection.ts`/the demo's `ONSET_OPTIONS_BY_FAMILY`, never to engine
+or SDK code, and both re-run 40/40 clean). Tolerances are calibrated per family, not a
+single fixed number: a 2 ms floor for 8 of the 9 families (`AUDIT_TOLERANCES`), 4.236 ms
+for `tempo-ramp` (2x the signed post-calibration residual, which grows toward a ramp's
+end by design — the engine applying a continuous tempo curve at finite block
+granularity, not a bug). `seam` is judged separately, against per-rate amplitude
+thresholds (`SEAM_THRESHOLDS`: 1.12–2.46 ms, 5x the measured 0.0.165-transparent
+clean-splice step at that rate) rather than the tolerance table.
+
+**Live recording path:** clean. All three multi-take loop-recording cells (44.1 kHz/120
+BPM, 48 kHz/120 BPM, 44.1 kHz/97.3 BPM) show consecutive `waveformOffset` deltas and the
+final-take buffer-overshoot within <0.1 sample of the ideal tempo-math/RenderQuantum
+bound, with no growth by take number.
+
+**#367 (known exemplar):** confirmed live at 44.1 kHz (5-click count-in boundary leak,
+matches the predicted signature exactly); already filed upstream, not re-reported here.
+48 kHz attempt was inconclusive due to browser-automation tooling limits, not a negative
+finding.
+
+**Register tally (28 numbered suspects + the #367 exemplar), final status:**
+- **cleared** — 3: S8, S9 (matrix — `quantize_ceil`/position-summation confirmed
+  by-design), S26 (live — `audioContext.sampleRate` matched the requested rate exactly
+  in every session, no context/engine mismatch)
+- **confirmed (nominal case only)** — 1: S24 (final-take buffer-overshoot bounded under
+  1.1 samples in both nominal cells measured; the adversarial main-thread-jank scenario
+  the register itself calls out remains untested)
+- **harness-artifact (fixed this commit)** — 2: S27, S28 (see Matrix note above)
+- **open (not exercised)** — 22: S1–S7, S10–S23 (excluding S24), S25 — including one
+  partial match (S15: right rate, ~40x off on magnitude — held to `open` per the "predict
+  rate + BPM + magnitude" evidence bar) and S22 (mechanism consistent with the live
+  measurements, but the specific predicted divergence needs audio-content
+  cross-correlation this campaign did not perform)
+- **known exemplar, confirmed + filed** — 1: #367 (not a numbered suspect)
+
+**Zero new confirmed engine bugs — no new upstream issues met the evidence bar.** Every
+`investigate` cell the matrix produced traced to a harness detector artifact (S27/S28),
+not an SDK bug; the one register suspect a live measurement could have confirmed as a
+genuine defect (S24) instead confirmed the nominal-case bound the code's own comment
+already assumes, and S26 confirmed a by-design invariant. S15's rate-direction match
+falls short of the magnitude bar. What WOULD change this: the 22 open suspects are open
+because their specific provoking scenarios were never exercised by this campaign's 9
+offline families or 3 live cells — not because they were tested and passed. New
+scenario families targeting degenerate loop/marker widths (the S5/S6 hang suspects) and
+forced tempo/loop/marker split-block placement (the S14/S16/S17 divergence suspects)
+would be the concrete next step to actually exercise the highest-risk open items; see
+below.
+
+### Open questions / future scenario ideas
+
+- **S5/S6** — transport hang risk on sub-sample-width loop/marker sections
+  (`transport.rs:252-260`/`284-306`): `emit_until`'s floored `s1` can equal `s0` forever
+  on a loop or `plays==0` marker section narrower than one sample-in-pulses, with no
+  de-dup guard (unlike the `Tempo` action). Needs a scripted loop/marker scenario with a
+  sub-sample pulse-width region, run under a per-call render deadline/watchdog — the
+  harness itself would hang without one, which is why this was never exercised offline.
+- **S14/S16** — audio-region-vs-note-onset placement divergence inside a block a
+  tempo-automation grid tick, loop wrap, or marker jump also splits (`emit_until`'s
+  floored sample span vs. the block-local ratio formula in
+  `audio_region_player.rs:879-884`). Needs a scenario that deliberately forces a region
+  start or note-on to land inside a split block — the current families place events
+  independent of split-tick timing, so this path was never hit.
+- **S15** — sub-sample truncation bias in note-on placement (`lib.rs:1174-1184`);
+  directionally confirmed (44.1 kHz shows the largest residual in `note-onsets` at 4 of 5
+  bpms) but ~40x too large in magnitude to attribute to this mechanism alone. Needs a
+  finer-resolution, per-cell (not per-family-scalar) calibration to isolate this specific
+  bias from what `AUDIT_CALIBRATION`'s single 48 kHz-control-row scalar leaves
+  uncorrected at 44.1 kHz.
+- **S20/S21/S23/S25** — recording-glue C5 paths Task 9's 3 live cells didn't isolate.
+  S20 needs a `settings.recording.inputLatency=0` control to separate `headStartSeconds`
+  from `inputLatency`; S21 needs a live output-device switch (e.g. Bluetooth handoff)
+  mid-session; S23/S25 are cosmetic-only (live waveform-painter jitter, no persisted
+  artifact) and would need frame-by-frame canvas inspection during/just after recording.
+
 ## Known exemplar (filed, not re-reported)
 
 **openDAW#367** — count-in→recording boundary click at `crates/engine/src/lib.rs:1468-1471` (if-guard on quantum-start position) + forced metronome restoration at `lib.rs:1799`. Static audit confirms present and unchanged at 0.0.170. See also: [countin-metronome-boundary-click.md](countin-metronome-boundary-click.md).
