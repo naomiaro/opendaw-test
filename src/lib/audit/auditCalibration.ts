@@ -26,27 +26,44 @@ import type { AuditFamily } from "./auditExpectations";
 /**
  * Per-family onset-detector bias (seconds), subtracted from every detected
  * onset before judging — see `CellMeasurement.calibrationSec` in
- * `auditVerdict.ts`. Measured as the MEAN matched-pair deviation on the
- * bpm=120/rate=48000 control row, run id 1787877588459 (post onset-detector
- * and tail-artifact fixes, pre this calibration file). The harness page's
- * `?calibration=<json-url-encoded>` URL param (a `{family: seconds}` map)
- * overrides these per-run without a code change.
+ * `auditVerdict.ts`. Measured as the SIGNED mean of (detected onset −
+ * expected onset) over matched pairs on the bpm=120/rate=48000 control row,
+ * run id 1787877588459 (post onset-detector and tail-artifact fixes, pre
+ * this calibration file). A signed mean is required (not a mean of absolute
+ * deviations) because a family whose residual isn't single-sign — e.g.
+ * tempo-ramp, whose per-beat deviation drifts from positive to negative
+ * across the ramp — would otherwise get a biased/wrong-signed correction;
+ * see task-6-report.md's "Part A" addendum for the recomputation. 7 of the
+ * 9 families happen to be single-sign, so their signed mean equals the
+ * absolute mean already measured in Task 6 (values unchanged below). The
+ * harness page's `?calibration=<json-url-encoded>` URL param (a
+ * `{family: seconds}` map) overrides these per-run without a code change.
  */
 export const AUDIT_CALIBRATION: Partial<Record<AuditFamily, number>> = {
-  metronome: 0.0013242187500000953, // measured 2026-08-27, run 1787877588459: mean of 32 matched pairs
-  "loop-wrap": 0.003770833333333952, // measured 2026-08-27, run 1787877588459: mean of 8 matched pairs (identical to maxDev — no spread)
+  metronome: 0.0013242187500000953, // signed mean, measured 2026-08-27, run 1787877588459 (single-sign, 32 matched pairs)
+  "loop-wrap": 0.003770833333333952, // signed mean, measured 2026-08-27, run 1787877588459 (single-sign, 8 matched pairs)
   // seam: no calibrationSec entry — the seam family's pass/fail reads
   // `seamStep` directly (see judgeCell's seam special case), calibration
   // never affects its verdict. Left out of this map (falls back to 0 bias).
-  "region-fencepost": 0.0000208333333333181158, // measured 2026-08-27, run 1787877588459: mean of 15 matched pairs (~1 sample at 48kHz)
-  // note-onsets: BLOCKED, see AUDIT_TOLERANCES comment below — bias recorded
-  // for reference only, NOT a validated calibration (one of its 10 onsets is
-  // a known detector-ambiguity outlier, so this mean is skewed by it).
-  "note-onsets": 0.003945833333333282, // measured 2026-08-27, run 1787877588459: mean of 10 matched pairs (9 clean + 1 outlier, see task-6-report.md)
-  automation: 0.00103472222222226, // measured 2026-08-27, run 1787877588459: mean of 3 matched pairs
-  "tempo-ramp": 0.0012139978521957598, // measured 2026-08-27, run 1787877588459: mean of 32 matched pairs (post closed-form expectation fix)
-  signature: 0.0013205128205128502, // measured 2026-08-27, run 1787877588459: mean of 26 matched pairs
-  "transport-pos": 0.001320312499999976, // measured 2026-08-27, run 1787877588459: mean of 8 matched pairs
+  "region-fencepost": 0.0000208333333333181158, // signed mean, measured 2026-08-27, run 1787877588459 (single-sign, 15 matched pairs, ~1 sample at 48kHz)
+  // note-onsets: RESPACED (controller ruling, Task 6 follow-up, 2026-08-27)
+  // — `NOTE_ONSET_POSITIONS` widened to a 1200-tick (625ms @120) minimum
+  // gap, replacing the old 480-tick (250ms @120) gap that collided with
+  // Vaporisateur's ~350-400ms release ring. Re-measured against the NEW
+  // scenario, run id 1787878787720: all 10 onsets are now single-sign
+  // (+4.25..4.27ms raw), no outlier — the old BLOCKED status (see
+  // task-6-report.md) is superseded.
+  "note-onsets": 0.004262499999999924, // signed mean, measured 2026-08-27, run 1787878787720 (single-sign, 10 matched pairs, 0 missing/extra)
+  automation: 0.00103472222222226, // signed mean, measured 2026-08-27, run 1787877588459 (single-sign, 3 matched pairs)
+  // tempo-ramp: NOT single-sign — deviation is +1.27ms at beat 0, crosses
+  // zero around beat 10, and reaches -2.85ms at beat 31 (post closed-form
+  // expectation fix). The mean-of-absolute-deviations value previously here
+  // (0.0012139978521957598, Task 6) was the WRONG statistic for a bias
+  // correction on a signed-varying residual; recomputed as the true signed
+  // mean of (onset - expected) over all 32 matched pairs.
+  "tempo-ramp": -0.0007328430372989456, // signed mean, measured 2026-08-27, run 1787877588459
+  signature: 0.0013205128205128502, // signed mean, measured 2026-08-27, run 1787877588459 (single-sign, 26 matched pairs)
+  "transport-pos": 0.001320312499999976, // signed mean, measured 2026-08-27, run 1787877588459 (single-sign, 8 matched pairs)
 };
 
 /**
@@ -58,40 +75,30 @@ export const AUDIT_CALIBRATION: Partial<Record<AuditFamily, number>> = {
  * bpm=120/rate=48000, `?calibration=` set to the exact map above). Every
  * family's post-calibration max deviation was under 0.002s (the floor) EXCEPT
  * `tempo-ramp` (residual ramp-integration error grows toward the end of the
- * ramp — expected, see the file-header note) and `note-onsets` (BLOCKED,
- * see below) — both documented individually.
+ * ramp — expected, see the file-header note) — documented individually.
+ * `note-onsets` was recalibrated separately after a scenario respacing (see
+ * its own entry below); no longer an exception.
  */
 export const AUDIT_TOLERANCES: Record<AuditFamily, number> = {
   metronome: 0.002, // post-cal max dev 0.0000742s -> floor
   "loop-wrap": 0.002, // post-cal max dev ~0 (8.9e-16, float noise) -> floor
   seam: 0.002, // unused directly by the seam judging path — kept for Record<AuditFamily, …> completeness
   "region-fencepost": 0.002, // post-cal max dev 0 (exact) -> floor
-  // note-onsets: BLOCKED (Task 6, 2026-08-27) — NOT calibrated via the
-  // formula above. Control-row post-calibration max deviation is 6.3ms,
-  // over the 5ms STOP-and-investigate line. Root cause diagnosed precisely:
-  // of the 10 onsets, 9 share the family's normal +4.2..4.3ms raw bias, but
-  // the onset at expected=1.25s (NOTE_ONSET_POSITIONS 1920->2400 PPQN, only
-  // 250ms after the previous note at 1.0s) measures -2.4ms raw — sign-
-  // flipped versus every other onset in the same cell. Vaporisateur's voice
-  // rings for ~350-400ms after an attack (see ONSET_OPTIONS_BY_FAMILY's
-  // comment in the demo); the prior note's decay tail is still present when
-  // the 1.25s note attacks, and biases the onset detector's local-peak
-  // refinement early. This is a real detector/content ambiguity specific to
-  // that one closely-spaced pair, not an engine timing bug (the other 9
-  // onsets align to within 0.3ms of each other post-calibration — as clean
-  // as any passing family). No detector-parameter retune found in the Task 6
-  // sweep resolves it without either missing a real onset elsewhere or
-  // reintroducing the ripple false-positives (see ONSET_OPTIONS_BY_FAMILY).
-  // Leaving this at the floor keeps the family honestly reporting
-  // "investigate" rather than masking the gap behind a widened tolerance;
-  // widening to cover it (~12.6ms) would meaningfully reduce this family's
-  // sensitivity to a real rate-dependent bug. Fix belongs in the SCENARIO
-  // (e.g. widen that one gap, or use a percussive click-train like
-  // region-fencepost instead of a sustained synth voice) — out of scope for
-  // this calibration task. See task-6-report.md for the full per-onset table.
-  "note-onsets": 0.002,
+  // note-onsets: RESPACED (Task 6 follow-up, 2026-08-27) — the old 250ms
+  // gap that collided with Vaporisateur's release ring and produced a
+  // sign-flipped outlier (see task-6-report.md for that BLOCKED analysis)
+  // is superseded; `NOTE_ONSET_POSITIONS` now has a 625ms (@120) minimum
+  // gap. Post-signed-cal residual (run 1787878787720) is a max abs
+  // 0.0000125s (0.0125ms) — comfortably under the floor, so per the formula
+  // tolerance = max(0.002, 2*0.0000125) = 0.002 (floor).
+  "note-onsets": 0.002, // post-cal max abs residual 0.0000125s -> floor
   automation: 0.002, // post-cal max dev 0.00093s -> floor
-  "tempo-ramp": 0.00813, // post-cal max dev 0.004065s (2x = 0.00813) — residual grows toward the ramp's end (largest at the last beat), consistent with the engine applying the continuous tempo curve at finite block granularity rather than a bug; still small relative to the family's own event spacing
+  // tempo-ramp: recomputed against the SIGNED-mean calibration above (not
+  // the old mean-of-absolute-deviations value). Post-signed-cal residual
+  // ranges from +2.00ms (beat 0) to -2.12ms (beat 31) around the new
+  // (near-)zero-centered bias — max abs 0.0021180902683671583s, so
+  // tolerance = max(0.002, 2*0.0021180902683671583) = 0.0042361805367343...
+  "tempo-ramp": 0.004236180536734316, // 2x post-signed-cal max abs residual (0.002118090268367158s); residual grows toward the ramp's end, consistent with the engine applying the continuous tempo curve at finite block granularity rather than a bug
   signature: 0.002, // post-cal max dev 0.0000705s -> floor
   "transport-pos": 0.002, // post-cal max dev 0.0000703s -> floor
 };

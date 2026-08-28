@@ -105,14 +105,15 @@ const TAIL_GUARD_SEC = 0.15;
  *   loop period), so a 0.2s refractory has enormous margin and cleanly
  *   removes every spurious onset without risking a merged real one
  *   (verified: 0.2-2.0s refractory all give the same clean 8/8 match).
- * - `note-onsets`: same ripple issue, but the tightest REAL inter-onset
- *   gap is only 250ms (`NOTE_ONSET_POSITIONS` 1920->2400 PPQN at bpm>=120),
- *   which is inside the ripple's ~350-400ms decay tail — refractory alone
- *   can't separate them without risking a missed close-together pair.
- *   Raising `thresholdRatio` to ignore the (lower-amplitude) ripple rises
- *   works instead: verified clean 10/10 matches, 0 extra, across
- *   thresholdRatio in [0.5, 0.8] x refractorySec in [0.15, 0.2] — 0.6/0.15
- *   is comfortably centered in that working range.
+ * - `note-onsets`: same ripple issue. `NOTE_ONSET_POSITIONS` was respaced in
+ *   Task 6 follow-up (2026-08-27, controller ruling) to a 1200-tick minimum
+ *   gap (625ms at bpm=120) — comfortably outside the ~350-400ms ripple decay
+ *   tail, replacing the old 480-tick (250ms @120) gap that collided with it.
+ *   The `thresholdRatio`/`refractorySec` override is kept from the original
+ *   sweep (verified clean 10/10 matches, 0 extra, across thresholdRatio in
+ *   [0.5, 0.8] x refractorySec in [0.15, 0.2] — 0.6/0.15 centered in that
+ *   working range) since it's still correct and gives extra margin now that
+ *   the real gap is wider.
  */
 const ONSET_OPTIONS_BY_FAMILY: Partial<Record<AuditFamily, OnsetOptions>> = {
   "loop-wrap": { refractorySec: 0.2 },

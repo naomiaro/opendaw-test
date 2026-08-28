@@ -30,7 +30,7 @@ export const SIGNATURE_BARS_4_4 = 5;
  *  positions within the 4-bar render window). Shared by `expectedOnsets` and
  *  `auditBuilders.ts`'s note-onsets builder — single source of truth. */
 export const NOTE_ONSET_POSITIONS = [
-  0, 960, 1920, 2400, 3840, 5040, 7680, 9600, 11520, 13200,
+  0, 1200, 2640, 3840, 5040, 7680, 9600, 11520, 12720, 14400,
 ];
 
 export interface AuditScenario {

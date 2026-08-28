@@ -48,8 +48,8 @@ describe("expectedOnsets", () => {
   });
   it("note-onsets maps PPQN to seconds at 90 BPM", () => {
     const onsets = expectedOnsets("note-onsets", 90);
-    expect(onsets[1]).toBeCloseTo((960 / 960) * (60 / 90), 9);
-    expect(onsets[3]).toBeCloseTo((2400 / 960) * (60 / 90), 9);
+    expect(onsets[1]).toBeCloseTo((1200 / 960) * (60 / 90), 9);
+    expect(onsets[3]).toBeCloseTo((3840 / 960) * (60 / 90), 9);
   });
   it("automation rising edges at bars 0, 2, 3", () => {
     const bar = 4 * (60 / 124);
