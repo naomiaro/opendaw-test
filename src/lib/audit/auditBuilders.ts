@@ -233,7 +233,7 @@ function buildRegionFencepost(
     );
   });
 
-  return { renderSeconds: contentSeconds + TAIL_PADDING_SEC, startPositionPpqn: 0, needsMetronome: false };
+  return { renderSeconds: quartersToSeconds(REGION_FENCEPOST_MAX_BEATS, bpm) + TAIL_PADDING_SEC, startPositionPpqn: 0, needsMetronome: false };
 }
 
 function buildNoteOnsets(project: Project, bpm: number): BuiltScenario {
