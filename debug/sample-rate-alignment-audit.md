@@ -85,6 +85,18 @@ S10/S11/S12's predicted sub-sample floor biases (tens of µs, one-sided) are con
 residuals in magnitude but the matrix's 2 ms pass tolerance and single-scalar calibration can't
 isolate a signed, rate-varying bias at this resolution — inconclusive, not cleared (see triage).
 
+### loop-wrap (JSON: `audit-1787880081585.json`)
+
+- bpm=90: 44100:investigate(0.007ms,extra=7) 48000:investigate(0.146ms,extra=7) 88200:investigate(0.538ms,extra=7) 96000:investigate(0.542ms,extra=7) — spread=0.535ms — investigate all 4 rates
+- bpm=97.3: 44100:investigate(0.159ms,extra=3) 48000:investigate(0.062ms,extra=3) 88200:investigate(0.538ms,extra=7) 96000:investigate(0.542ms,extra=5) — spread=0.480ms — investigate all 4 rates
+- bpm=120: 44100:pass(0.165ms) 48000:pass(0.000ms) 88200:pass(0.538ms) 96000:pass(0.542ms) — spread=0.542ms — rate-consistent (pass)
+- bpm=124: 44100:pass(0.114ms) 48000:pass(0.066ms) 88200:pass(0.538ms) 96000:pass(0.542ms) — spread=0.476ms — rate-consistent (pass)
+- bpm=133: 44100:pass(0.149ms) 48000:pass(0.012ms) 88200:pass(0.538ms) 96000:pass(0.542ms) — spread=0.530ms — rate-consistent (pass)
+
+bpm=90 and bpm=97.3 investigate at all 4 rates (bpm-triggered, not rate-triggered — see triage:
+harness detector artifact, not an SDK bug). All 8 real onsets matched with 0 missing at every
+cell; "extra" hits are a second re-trigger ~0.35-0.4s after each real note-on.
+
 ## Live recording-path results
 
 (populated by Task 9 — production multi-take loop recording at hardware timecode reference)
