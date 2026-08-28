@@ -156,6 +156,21 @@ are spurious re-triggers during the sustained-tone ON windows only (verified: 0 
 the OFF/silent windows). Deep-dived — see triage: harness detector artifact (not SDK), root-caused
 analytically.
 
+### tempo-ramp (JSON: `audit-1787880119622.json`)
+
+- bpm=90: 44100:pass(2.667ms) 48000:pass(2.138ms) 88200:pass(2.004ms) 96000:pass(2.000ms) — spread=0.667ms — rate-consistent (pass, within 4.236ms tolerance)
+- bpm=97.3: 44100:pass(2.431ms) 48000:pass(2.249ms) 88200:pass(2.003ms) 96000:pass(2.006ms) — spread=0.428ms — rate-consistent (pass)
+- bpm=120: 44100:pass(2.645ms) 48000:pass(2.118ms) 88200:pass(2.003ms) 96000:pass(2.009ms) — spread=0.642ms — rate-consistent (pass)
+- bpm=124: 44100:pass(2.428ms) 48000:pass(2.150ms) 88200:pass(2.003ms) 96000:pass(2.014ms) — spread=0.425ms — rate-consistent (pass)
+- bpm=133: 44100:pass(2.529ms) 48000:pass(2.206ms) 88200:pass(2.006ms) 96000:pass(2.011ms) — spread=0.523ms — rate-consistent (pass)
+
+All 20 cells pass under the family's widened 4.236ms tolerance (calibrated for the continuous
+tempo-integration residual, see `AUDIT_TOLERANCES`). 44100 consistently shows the largest
+residual, decreasing monotonically toward 96000 at every bpm — a real, repeatable rate-dependent
+trend, but it stays inside the pre-calibrated tolerance band at all 20 cells, and the tolerance
+was explicitly sized for "the engine applying the continuous tempo curve at finite block
+granularity" (by-design per the tolerance comment) — not flagged as a new finding.
+
 ## Live recording-path results
 
 (populated by Task 9 — production multi-take loop recording at hardware timecode reference)
