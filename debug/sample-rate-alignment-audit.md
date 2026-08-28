@@ -499,13 +499,13 @@ predicted `[0,128)`-sample/2.9 ms bound. No main-thread jank was induced this se
 this confirms only the nominal case — the register's adversarial jank scenario (heavy
 synchronous JS or an occluded tab right at the Stop click) remains untested.
 
-### Register status updates (S20–S26)
+### Task 9 register status updates (S20–S26)
 
 | ID | status | note |
 |---|---|---|
 | S20 | open (not exercised) | take1 `waveformOffset` values (2.08 s@44100/120bpm, 2.07 s@48000/120bpm, 2.53 s@44100/97.3bpm) decompose plausibly into count-in + `outputLatency` (0.023 s, both rates) + a small remainder (~30–60 ms) attributable to `headStartSeconds`+`inputLatency`; no anomaly, but headStart wasn't isolated from inputLatency independently — would need `settings.recording.inputLatency=0` control to isolate. |
 | S21 | open (not exercised) | no live output-device switch was performed mid-session; `outputLatency` read as the same `0.023s` at both rates, consistent with a single stable snapshot. |
-| S22 | **mechanism confirmed; magnitude not independently measurable via this method** | 3 cells (A, B, C above) show declared `waveformOffset` deltas match pure tempo-math to <0.1 sample, no compounding by take number — consistent with the register's own description of the code (pure float addition, no RenderQuantum coupling in the *declared* value). Does not confirm or refute the predicted declared-vs-true-audio-content divergence, which needs audio-content cross-correlation (not performed — see above). Left `open` rather than `confirmed`/`cleared`; a future pass with an injected reference tone/click and WAV cross-correlation is the concrete next step. |
+| S22 | open (mechanism consistent w/ code; magnitude unmeasured) | 3 cells (A, B, C above) show declared `waveformOffset` deltas match pure tempo-math to <0.1 sample, no compounding by take number — consistent with the register's own description of the code (pure float addition, no RenderQuantum coupling in the *declared* value). Does not confirm or refute the predicted declared-vs-true-audio-content divergence, which needs audio-content cross-correlation (not performed — see above). Left `open` rather than `confirmed`/`cleared`; a future pass with an injected reference tone/click and WAV cross-correlation is the concrete next step. |
 | S23 | open (not exercised) | cosmetic-only per register (live waveform painter jitter); not pursued — would need frame-by-frame canvas inspection during recording. |
 | S24 | **confirmed (nominal case)** | cells A and B both show buffer-length-mod-128 and final-take declared-end-vs-actual-buffer-end gaps under 1.1 samples (~20–23 µs), deep inside the predicted `[0,128)`/2.9 ms bound. The register's adversarial jank scenario (heavy main-thread work or an occluded tab right at Stop) was not tested — nominal-case confirmation only, jank case remains open. |
 | S25 | open (not exercised) | would need a waveform-canvas screenshot in the stop→`onSaved` async gap; not attempted. |

@@ -54,6 +54,7 @@ const BAR_PPQN = PPQN.Quarter * 4; // one bar in 4/4
 // debug/sample-rate-alignment-audit.md). Parsed once at module load — no UI,
 // audit tooling only. Invalid/missing values fall back to the device-native rate.
 const AUDIT_SAMPLE_RATE: number | undefined = (() => {
+  // Browser-only module; do not import outside a page context.
   const raw = new URLSearchParams(window.location.search).get("sampleRate");
   if (!raw) return undefined;
   const parsed = Number(raw);
