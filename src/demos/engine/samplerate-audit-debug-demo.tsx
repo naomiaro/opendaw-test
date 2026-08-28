@@ -317,7 +317,7 @@ async function uploadCellWav(row: AuditRow, rendered: RenderedCell): Promise<voi
   } catch (err) {
     // Record the failure on the row but don't abort the run
     row.wavUploaded = false;
-    console.warn(`[audit] WAV upload failed for ${name}:`, err);
+    console.warn(`[audit] WAV upload failed for ${name}: ${String(err)}`);
   }
 }
 
@@ -397,7 +397,7 @@ async function runAudit(
           };
           rows.push(errorRow);
           onRow(errorRow);
-          console.error(`[audit] Cell ${label} failed:`, err);
+          console.error(`[audit] Cell ${label} failed: ${String(err)}`);
         }
       }
     }
