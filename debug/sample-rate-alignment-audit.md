@@ -182,6 +182,23 @@ granularity" (by-design per the tolerance comment) — not flagged as a new find
 All 20 cells pass, clean matches, flat ~10µs spread — no rate/bpm-dependent signature above
 detector noise.
 
+### transport-pos (JSON: `audit-1787880133114.json`)
+
+- bpm=90: 44100:pass(0.073ms) 48000:pass(0.070ms) 88200:pass(0.062ms) 96000:pass(0.070ms) — spread=0.011ms — rate-consistent
+- bpm=97.3: 44100:pass(0.054ms) 48000:pass(0.065ms) 88200:pass(0.054ms) 96000:pass(0.069ms) — spread=0.015ms — rate-consistent
+- bpm=120: 44100:pass(0.062ms) 48000:pass(0.070ms) 88200:pass(0.050ms) 96000:pass(0.070ms) — spread=0.020ms — rate-consistent
+- bpm=124: 44100:pass(0.061ms) 48000:pass(0.070ms) 88200:pass(0.061ms) 96000:pass(0.070ms) — spread=0.009ms — rate-consistent
+- bpm=133: 44100:pass(0.062ms) 48000:pass(0.068ms) 88200:pass(0.061ms) 96000:pass(0.069ms) — spread=0.007ms — rate-consistent
+
+All 20 cells pass, clean matches, flat ~10-20µs spread — no rate/bpm-dependent signature above
+detector noise. Long-run accumulation (S9) is by-design/cleared per the register already; this
+matrix's 8-16s render windows are far too short to exercise the "many thousands of quanta" S9's
+own note says is needed to see summation drift, but the flat spread here is at least consistent
+with no gross divergence over this window.
+
+### Summary: 180/180 cells run, 0 errors, 0 run-failed families, 18 investigate cells (all in
+`loop-wrap` and `automation`), 0 confirmed engine bugs — see Triage below.
+
 ## Live recording-path results
 
 (populated by Task 9 — production multi-take loop recording at hardware timecode reference)
