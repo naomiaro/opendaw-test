@@ -63,6 +63,28 @@ All five audits identified cleared sites (no Cn risk). Listed by area for refere
 
 (populated by Task 8 — cross-rate/cross-BPM systematic measurement harness)
 
+Run: `samplerate-audit-debug-demo.html?family=<f>&bpm=all&rate=all`, 9 families x 5 bpms x
+4 rates = 180 cells, all fresh page loads 2026-08-27, all completed `data-audit-state=done`
+(no run-failed families, no per-cell `status:"error"` rows). Format per line: rate:status(maxDeviationSec
+in ms); seam's metric is `seamStep` (a discontinuity amplitude, ms-scale label kept for readability,
+not a duration) judged against `SEAM_THRESHOLDS`, not `maxDeviationSec`. "spread" = max−min of that
+metric across the 4 rates; "verdict" = rate-dependent iff spread exceeds the family's `AUDIT_TOLERANCES`
+entry (n/a for seam, judged per-rate already).
+
+### metronome (JSON: `audit-1787880069621.json`)
+
+- bpm=90: 44100:pass(0.077ms) 48000:pass(0.074ms) 88200:pass(0.066ms) 96000:pass(0.074ms) — spread=0.011ms — rate-consistent
+- bpm=97.3: 44100:pass(0.077ms) 48000:pass(0.074ms) 88200:pass(0.065ms) 96000:pass(0.074ms) — spread=0.011ms — rate-consistent
+- bpm=120: 44100:pass(0.077ms) 48000:pass(0.074ms) 88200:pass(0.066ms) 96000:pass(0.074ms) — spread=0.011ms — rate-consistent
+- bpm=124: 44100:pass(0.074ms) 48000:pass(0.072ms) 88200:pass(0.063ms) 96000:pass(0.073ms) — spread=0.011ms — rate-consistent
+- bpm=133: 44100:pass(0.076ms) 48000:pass(0.070ms) 88200:pass(0.065ms) 96000:pass(0.070ms) — spread=0.011ms — rate-consistent
+
+All 20 cells pass, all clean 32/32 matched (0 missing/extra). Post-calibration residual is
+flat (~11 µs spread) across every bpm — no rate- or bpm-dependent signature above detector noise.
+S10/S11/S12's predicted sub-sample floor biases (tens of µs, one-sided) are consistent with these
+residuals in magnitude but the matrix's 2 ms pass tolerance and single-scalar calibration can't
+isolate a signed, rate-varying bias at this resolution — inconclusive, not cleared (see triage).
+
 ## Live recording-path results
 
 (populated by Task 9 — production multi-take loop recording at hardware timecode reference)
