@@ -1,10 +1,26 @@
 import { Project, OfflineEngineRenderer } from "@opendaw/studio-core";
 import { PPQN } from "@opendaw/lib-dsp";
 import { Option } from "@opendaw/lib-std";
+import type { ExportConfiguration } from "@opendaw/studio-adapters";
 import { isWasmReady } from "@/lib/wasmEngine";
 import { withDeadline } from "@/lib/deadline";
 
 const LOADING_TIMEOUT_MS = 30_000;
+
+export interface RenderOfflineSliceOptions {
+  /** Export configuration passed through to `OfflineEngineRenderer.create` —
+   *  e.g. `Option.wrap({ metronome: { includeInMixdown: true } })` to make the
+   *  metronome click audible in the render. Defaults to `Option.None`. */
+  exportConfig?: Option<ExportConfiguration>;
+  /** Skip the loop-disable modify — needed when the scenario relies on the
+   *  timeline's own loop area to repeat content (e.g. the loop-wrap audit
+   *  family). Defaults to false (current behavior: loop is always disabled). */
+  keepLoopEnabled?: boolean;
+  /** Override the renderer's start position instead of deriving it from
+   *  `startSeconds` — needed when the scenario must start exactly on a
+   *  non-seconds-aligned PPQN (e.g. the transport-pos audit family). */
+  startPositionPpqn?: number;
+}
 
 /**
  * Render a slice of the live project to a stereo `Float32Array[]` — via
@@ -18,13 +34,19 @@ const LOADING_TIMEOUT_MS = 30_000;
  * @param sampleRate defaults to 48 kHz (typical AudioContext rate). The
  *   returned channels are at that rate regardless of the source file's
  *   authored rate — `decodeAudioData` already resampled on load.
+ * @param opts see `RenderOfflineSliceOptions`. Every field is optional and
+ *   defaults to the pre-existing behavior — existing call sites passing only
+ *   the first four positional args are unaffected.
  */
 export async function renderOfflineSlice(
   project: Project,
   startSeconds: number,
   endSeconds: number,
-  sampleRate: number = 48000
+  sampleRate: number = 48000,
+  opts: RenderOfflineSliceOptions = {}
 ): Promise<{ channels: Float32Array[]; sampleRate: number }> {
+  const { exportConfig = Option.None, keepLoopEnabled = false, startPositionPpqn } = opts;
+
   // WASM offline worker is the only render path (the TS engine is removed from this
   // repo). OfflineAudioContext + createEngine is NOT usable here: ensureReady
   // registers the processor module only on the FIRST context it ever sees
@@ -39,9 +61,11 @@ export async function renderOfflineSlice(
 
   const projectCopy = project.copy();
   try {
-    projectCopy.editing.modify(() => {
-      projectCopy.timelineBox.loopArea.enabled.setValue(false);
-    });
+    if (!keepLoopEnabled) {
+      projectCopy.editing.modify(() => {
+        projectCopy.timelineBox.loopArea.enabled.setValue(false);
+      });
+    }
 
     const durationSeconds = endSeconds - startSeconds;
     if (durationSeconds <= 0) {
@@ -51,11 +75,11 @@ export async function renderOfflineSlice(
     }
     const numSamples = Math.ceil(durationSeconds * sampleRate);
     const bpm = projectCopy.timelineBox.bpm.getValue();
-    const startPPQN = PPQN.secondsToPulses(startSeconds, bpm);
+    const startPPQN = startPositionPpqn ?? PPQN.secondsToPulses(startSeconds, bpm);
 
     const renderer = await OfflineEngineRenderer.create(
       projectCopy,
-      Option.None,
+      exportConfig,
       sampleRate
     );
     try {

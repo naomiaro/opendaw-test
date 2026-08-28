@@ -618,6 +618,10 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
 2px mobile overflow on bordered `width:100%` canvases.
 
 ## Build & Verification
+- After SDK upgrades, re-run the standing sample-rate/quantum-alignment regression sweep:
+  `samplerate-audit-debug-demo.html?family=all&bpm=all&rate=all` (calibration in
+  `src/lib/audit/auditCalibration.ts`, campaign register in
+  `debug/sample-rate-alignment-audit.md`).
 - `npm run build` runs Vite then VitePress — demos go to `dist/`, docs go to `dist/docs/` for `/docs/` on Cloudflare Pages
 - `npm run docs:dev` — local VitePress dev server for documentation
 - typescript-lsp plugin: install `typescript-language-server` and `typescript` **globally** (`npm i -g typescript-language-server typescript`) — the plugin spawns by PATH, NOT from `node_modules/.bin`, so a devDep doesn't satisfy it. LSP `hover` / `goToDefinition` / `documentSymbol` also resolve types in the upstream openDAW checkout (`tsserver` walks up to the nearest tsconfig — handy for SDK drift audits). Prefer file-scoped ops over `workspaceSymbol` (~3.9k symbols / ~135 KB persisted in this repo).
