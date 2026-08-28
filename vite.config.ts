@@ -14,7 +14,10 @@ const verifySink = (): Plugin => ({
     configureServer(server) {
         server.middlewares.use("/__verify", (req, res) => {
             const name = (req.url ?? "").replace(/^\//, "")
-            if (req.method !== "PUT" || !/^[a-z0-9-]+\.wav$/.test(name)) {
+            // .json accepted alongside .wav for the samplerate-audit harness's
+            // per-run summary upload (audit-<timestamp>.json) — everything else
+            // about the sink (write path, size cap) is unchanged for either kind.
+            if (req.method !== "PUT" || !/^[a-z0-9-]+\.(wav|json)$/.test(name)) {
                 res.statusCode = req.method !== "PUT" ? 405 : 400
                 res.end(req.method !== "PUT" ? "PUT only" : "bad name")
                 return
@@ -171,6 +174,7 @@ export default defineConfig({
                 recordingFinalizeDebug: resolve(__dirname, "recording-finalize-debug-demo.html"),
                 wasmEnsureReadySecondContextDebug: resolve(__dirname, "wasm-ensure-ready-second-context-debug-demo.html"),
                 automationSimplifierDebug: resolve(__dirname, "automation-simplifier-debug-demo.html"),
+                samplerateAudit: resolve(__dirname, "samplerate-audit-debug-demo.html"),
                 wasmEngine: resolve(__dirname, "wasm-engine-demo.html"),
                 modulation: resolve(__dirname, "modulation-demo.html"),
                 convolver: resolve(__dirname, "convolver-demo.html"),
