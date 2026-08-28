@@ -43,7 +43,7 @@ import {
   type AuditFamily,
 } from "@/lib/audit/auditExpectations";
 import { buildAuditScenario } from "@/lib/audit/auditBuilders";
-import { detectOnsets, maxStepAround } from "@/lib/audit/onsetDetection";
+import { detectOnsets, maxStepAround, type OnsetOptions } from "@/lib/audit/onsetDetection";
 import { judgeCell, type CellMeasurement, type CellVerdict } from "@/lib/audit/auditVerdict";
 import { AUDIT_CALIBRATION, AUDIT_TOLERANCES, SEAM_THRESHOLDS } from "@/lib/audit/auditCalibration";
 import { GitHubCorner } from "@/components/GitHubCorner";
@@ -59,6 +59,65 @@ const CELL_DEADLINE_MS = 90_000;
 /** Seam-family amplitude threshold when SEAM_THRESHOLDS has no entry for the
  *  cell's rate — generous placeholder, tightened by Task 6. */
 const SEAM_THRESHOLD_FALLBACK = 0.05;
+/**
+ * Families whose content keeps generating audible events past the scenario's
+ * last *listed* onset, into `auditBuilders.ts`'s `TAIL_PADDING_SEC` render
+ * tail (added so a real click/note's own decay isn't cut off):
+ *  - `needsMetronome: true` families (metronome, tempo-ramp, signature,
+ *    transport-pos) get a continuous per-beat metronome click that isn't
+ *    bounded to the content window at all.
+ *  - `loop-wrap`'s timeline loop keeps wrapping through the tail too (one
+ *    more note-on at the start of pass 9).
+ * At bpm >= 120 (beat <= 500ms, well under `TAIL_PADDING_SEC`=0.5s), that
+ * tail is long enough to contain one more full beat/loop, so `detectOnsets`
+ * picks up an event `expectedOnsets` never lists — an "extra" onset that
+ * fails `judgeCell`'s `missing === 0 && extra === 0` pass condition
+ * unconditionally, regardless of tolerance (Task 6 finding, 2026-08-27:
+ * reproduced on metronome@120/44100, metronome@120/48000, and
+ * loop-wrap@120/48000 — see task-6-report.md). Fix: drop detected onsets
+ * beyond the last *unshifted* expected onset (i.e. ignoring
+ * `shiftExpectedMs`, a validation-only knob — see module header) plus this
+ * guard — comfortably above onset-detector jitter (~1-4 ms measured) and
+ * comfortably below the shortest audit beat interval (60/133 bpm =~
+ * 451 ms) or loop period (4s at bpm 120), so it only ever strips the
+ * tail-padding event, never a real one.
+ */
+const TAIL_ARTIFACT_FAMILIES: ReadonlySet<AuditFamily> = new Set([
+  "metronome",
+  "tempo-ramp",
+  "signature",
+  "transport-pos",
+  "loop-wrap",
+]);
+const TAIL_GUARD_SEC = 0.15;
+
+/**
+ * Per-family `detectOnsets` option overrides, empirically tuned in Task 6
+ * (2026-08-27, run id 1787877170546) against the plain WASM-engine WAVs —
+ * see task-6-report.md for the parameter sweeps.
+ *
+ * - `loop-wrap`: Vaporisateur's note voice isn't a clean percussive
+ *   transient — its envelope keeps rippling above the default `0.05`s
+ *   refractory window for ~350-400ms after the true attack (measured on
+ *   the note-onsets/loop-wrap content, same instrument/pitch/velocity),
+ *   so the default detector re-triggers ~6-7 spurious onsets per real
+ *   note. loop-wrap's own onsets are always >= 4s apart (`LOOP_WRAP_BARS`
+ *   loop period), so a 0.2s refractory has enormous margin and cleanly
+ *   removes every spurious onset without risking a merged real one
+ *   (verified: 0.2-2.0s refractory all give the same clean 8/8 match).
+ * - `note-onsets`: same ripple issue, but the tightest REAL inter-onset
+ *   gap is only 250ms (`NOTE_ONSET_POSITIONS` 1920->2400 PPQN at bpm>=120),
+ *   which is inside the ripple's ~350-400ms decay tail — refractory alone
+ *   can't separate them without risking a missed close-together pair.
+ *   Raising `thresholdRatio` to ignore the (lower-amplitude) ripple rises
+ *   works instead: verified clean 10/10 matches, 0 extra, across
+ *   thresholdRatio in [0.5, 0.8] x refractorySec in [0.15, 0.2] — 0.6/0.15
+ *   is comfortably centered in that working range.
+ */
+const ONSET_OPTIONS_BY_FAMILY: Partial<Record<AuditFamily, OnsetOptions>> = {
+  "loop-wrap": { refractorySec: 0.2 },
+  "note-onsets": { thresholdRatio: 0.6, refractorySec: 0.15 },
+};
 
 interface AuditRow {
   family: AuditFamily;
@@ -158,8 +217,15 @@ async function runCell(
 
     // Mono analysis: channel 0 only (design ruling).
     const channel0 = rendered.channels[0];
-    const onsets = detectOnsets(channel0, rendered.sampleRate);
-    const expected = expectedOnsets(family, bpm).map((t) => t + shiftExpectedMs / 1000);
+    const rawExpected = expectedOnsets(family, bpm);
+    const detected = detectOnsets(channel0, rendered.sampleRate, ONSET_OPTIONS_BY_FAMILY[family]);
+    // Drop the tail-padding event for TAIL_ARTIFACT_FAMILIES — see comment
+    // above. Bound is the unshifted schedule so the shiftExpectedMs
+    // validation knob can't move the cutoff.
+    const onsets = TAIL_ARTIFACT_FAMILIES.has(family)
+      ? detected.filter((t) => t <= Math.max(...rawExpected) + TAIL_GUARD_SEC)
+      : detected;
+    const expected = rawExpected.map((t) => t + shiftExpectedMs / 1000);
     const calibrationSec = calibrationMap[family] ?? 0;
 
     let seamStep: number | undefined;

@@ -157,20 +157,32 @@ export function expectedOnsets(family: AuditFamily, bpm: number): number[] {
     }
 
     case "tempo-ramp": {
-      // 8 bars = 32 quarters, tempo ramps from bpm to 0.75*bpm linearly
-      // For beat i, tempo(i) = bpm * (1 - i/(K-1)) = bpm * (1 - i/31)
-      // Actually, the brief says "tempo linear in *beat index*", so:
-      // bpm(i) = bpm + (0.75*bpm - bpm) * (i/K) where K = total beats
-      // bpm(i) = bpm * (1 - 0.25*i/K)
-      // Time of beat i = sum_{j<i} 60/bpm(j)
+      // 8 bars = 32 quarters. The tempo track (`buildTempoRamp` in
+      // auditBuilders.ts) places two Linear-interpolated automation points:
+      // bpm at ppqn=0, 0.75*bpm at ppqn=totalPpqn — so the ENGINE ramps tempo
+      // continuously and linearly in PPQN (equivalently in beat index x,
+      // since ppqn = x * PPQN.Quarter is itself linear in x):
+      //   tempo(x) = bpm * (1 - c*x), c = (1 - TEMPO_RAMP_RATIO) / K
+      // Real elapsed time to beat x is the CONTINUOUS integral of
+      // 60/tempo(u) du from 0 to x — not a discrete per-beat step sum using
+      // tempo(i) held constant for that beat's whole duration (the previous
+      // formula here). The step-sum approximation under-estimates elapsed
+      // time whenever tempo is decreasing (it uses the beat's *faster*
+      // starting tempo for the whole beat), and the error accumulates beat
+      // over beat: measured against the WASM engine on 2026-08-25T17-42-50Z
+      // (Task 6, family=tempo-ramp bpm=120 rate=48000 — see task-6-report.md)
+      // the old formula drifted from ~1ms at beat 0 to ~47ms by beat 21.
+      // Closed form (∫ 1/(1-c*u) du = -(1/c)ln(1-c*u)):
+      //   Time(x) = -(60*K / (bpm*(1-TEMPO_RAMP_RATIO))) * ln(1 - c*x)
+      // Verified against the same run: residual now -2.9ms..+1.3ms across
+      // all 32 beats — matching the ~1-3ms detector bias measured on every
+      // other family, not a family-specific drift.
       const K = AUDIT_SCENARIOS["tempo-ramp"].renderBars * 4; // renderBars = 8 beats
+      const TEMPO_RAMP_RATIO = 0.75; // end tempo = bpm * this ratio (matches buildTempoRamp)
+      const c = (1 - TEMPO_RAMP_RATIO) / K;
       const onsets: number[] = [];
-      let currentTime = 0;
       for (let i = 0; i < K; i++) {
-        onsets.push(currentTime);
-        // Tempo at beat i
-        const tempoAtBeat = bpm * (1 - (0.25 * i) / K);
-        currentTime += 60 / tempoAtBeat;
+        onsets.push(-((60 * K) / (bpm * (1 - TEMPO_RAMP_RATIO))) * Math.log(1 - c * i));
       }
       return onsets;
     }

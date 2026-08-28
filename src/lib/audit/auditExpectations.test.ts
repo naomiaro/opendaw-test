@@ -62,7 +62,13 @@ describe("expectedOnsets", () => {
     const onsets = expectedOnsets("tempo-ramp", 120);
     const d0 = onsets[1] - onsets[0];
     const dEnd = onsets[onsets.length - 1] - onsets[onsets.length - 2];
-    expect(d0).toBeCloseTo(0.5, 3);
+    // First beat's interval is slightly MORE than 60/bpm (0.5s) because the
+    // continuous tempo ramp is already slowing within that beat — a real DAW
+    // integrates the ramp continuously, it doesn't hold bpm constant for one
+    // whole beat then step. Task 6 measured d0 ~0.502s against the WASM
+    // engine (see the "tempo-ramp" case comment in auditExpectations.ts).
+    expect(d0).toBeGreaterThan(0.5);
+    expect(d0).toBeCloseTo(0.5, 2);
     expect(dEnd).toBeGreaterThan(d0);
   });
   it("transport-pos first onset is 3/4 beat after the odd start", () => {
