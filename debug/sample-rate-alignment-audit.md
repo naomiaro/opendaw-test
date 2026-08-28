@@ -125,6 +125,22 @@ All 20 cells pass, clean matches. Sub-30µs residuals throughout — no rate-dep
 above detector floor. S7/S14/S15/S16's predicted ≤1-sample floor biases (µs-scale) are again
 below what this matrix's calibration/tolerance can isolate — inconclusive, not cleared.
 
+### note-onsets (JSON: `audit-1787880104330.json`)
+
+- bpm=90: 44100:pass(0.476ms) 48000:pass(0.013ms) 88200:pass(0.046ms) 96000:pass(0.050ms) — spread=0.463ms — rate-consistent (pass)
+- bpm=97.3: 44100:pass(0.475ms) 48000:pass(0.012ms) 88200:pass(0.046ms) 96000:pass(0.050ms) — spread=0.463ms — rate-consistent (pass)
+- bpm=120: 44100:pass(0.476ms) 48000:pass(0.013ms) 88200:pass(0.046ms) 96000:pass(0.050ms) — spread=0.463ms — rate-consistent (pass)
+- bpm=124: 44100:pass(0.468ms) 48000:pass(0.032ms) 88200:pass(0.046ms) 96000:pass(0.050ms) — spread=0.436ms — rate-consistent (pass)
+- bpm=133: 44100:pass(0.473ms) 48000:pass(0.066ms) 88200:pass(0.119ms) 96000:pass(0.132ms) — spread=0.407ms — rate-consistent (pass)
+
+All 20 cells pass, 10/10 matched every cell. 44100 consistently shows the largest residual
+(~0.47-0.48ms) of the 4 rates at every bpm except 133 — directionally consistent with S15's
+predicted 44.1kHz-specific truncation bias (0.875s musical position lands exact at 48kHz,
+truncates at 44.1kHz), but the measured magnitude (~0.47ms ≈ 21 samples @44.1k) is roughly
+40x S15's predicted ~0.5-sample (~11µs) bias — too large to be that mechanism alone; more
+likely dominated by `AUDIT_CALIBRATION`'s single per-family scalar (measured at the 48k control
+row) leaving a larger uncorrected residual at 44.1k. Flagged as open/inconclusive, not confirmed.
+
 ## Live recording-path results
 
 (populated by Task 9 — production multi-take loop recording at hardware timecode reference)
