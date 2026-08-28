@@ -113,6 +113,18 @@ onset arrays — this is the SAME hop-envelope-ripple artifact seen in `automati
 `verdict.extra`/`missing` (it judges `seamStep` directly per the demo's `judgeCell` special case),
 so it has zero effect on this family's verdicts — noted for completeness, not a finding.
 
+### region-fencepost (JSON: `audit-1787880096503.json`)
+
+- bpm=90: 44100:pass(0.021ms) 48000:pass(0.000ms) 88200:pass(0.009ms) 96000:pass(0.010ms) — spread=0.021ms — rate-consistent
+- bpm=97.3: 44100:pass(0.030ms) 48000:pass(0.022ms) 88200:pass(0.019ms) 96000:pass(0.014ms) — spread=0.016ms — rate-consistent
+- bpm=120: 44100:pass(0.009ms) 48000:pass(0.000ms) 88200:pass(0.002ms) 96000:pass(0.000ms) — spread=0.009ms — rate-consistent
+- bpm=124: 44100:pass(0.024ms) 48000:pass(0.024ms) 88200:pass(0.013ms) 96000:pass(0.014ms) — spread=0.011ms — rate-consistent
+- bpm=133: 44100:pass(0.027ms) 48000:pass(0.023ms) 88200:pass(0.015ms) 96000:pass(0.012ms) — spread=0.015ms — rate-consistent
+
+All 20 cells pass, clean matches. Sub-30µs residuals throughout — no rate-dependent divergence
+above detector floor. S7/S14/S15/S16's predicted ≤1-sample floor biases (µs-scale) are again
+below what this matrix's calibration/tolerance can isolate — inconclusive, not cleared.
+
 ## Live recording-path results
 
 (populated by Task 9 — production multi-take loop recording at hardware timecode reference)
