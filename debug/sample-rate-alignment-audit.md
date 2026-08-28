@@ -171,6 +171,17 @@ trend, but it stays inside the pre-calibrated tolerance band at all 20 cells, an
 was explicitly sized for "the engine applying the continuous tempo curve at finite block
 granularity" (by-design per the tolerance comment) — not flagged as a new finding.
 
+### signature (JSON: `audit-1787880126387.json`)
+
+- bpm=90: 44100:pass(0.073ms) 48000:pass(0.071ms) 88200:pass(0.062ms) 96000:pass(0.071ms) — spread=0.011ms — rate-consistent
+- bpm=97.3: 44100:pass(0.067ms) 48000:pass(0.069ms) 88200:pass(0.061ms) 96000:pass(0.070ms) — spread=0.009ms — rate-consistent
+- bpm=120: 44100:pass(0.073ms) 48000:pass(0.071ms) 88200:pass(0.062ms) 96000:pass(0.071ms) — spread=0.011ms — rate-consistent
+- bpm=124: 44100:pass(0.072ms) 48000:pass(0.067ms) 88200:pass(0.061ms) 96000:pass(0.069ms) — spread=0.011ms — rate-consistent
+- bpm=133: 44100:pass(0.060ms) 48000:pass(0.070ms) 88200:pass(0.060ms) 96000:pass(0.070ms) — spread=0.010ms — rate-consistent
+
+All 20 cells pass, clean matches, flat ~10µs spread — no rate/bpm-dependent signature above
+detector noise.
+
 ## Live recording-path results
 
 (populated by Task 9 — production multi-take loop recording at hardware timecode reference)
