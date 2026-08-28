@@ -97,6 +97,22 @@ bpm=90 and bpm=97.3 investigate at all 4 rates (bpm-triggered, not rate-triggere
 harness detector artifact, not an SDK bug). All 8 real onsets matched with 0 missing at every
 cell; "extra" hits are a second re-trigger ~0.35-0.4s after each real note-on.
 
+### seam (JSON: `audit-1787880088826.json`)
+
+- bpm=90: 44100:pass(0.908ms-step) 48000:pass(0.801ms-step) 88200:pass(0.246ms-step) 96000:pass(0.225ms-step)
+- bpm=97.3: 44100:pass(0.842ms-step) 48000:pass(0.630ms-step) 88200:pass(0.246ms-step) 96000:pass(0.222ms-step)
+- bpm=120: 44100:pass(0.491ms-step) 48000:pass(0.448ms-step) 88200:pass(0.246ms-step) 96000:pass(0.224ms-step)
+- bpm=124: 44100:pass(0.911ms-step) 48000:pass(0.497ms-step) 88200:pass(0.246ms-step) 96000:pass(0.225ms-step)
+- bpm=133: 44100:pass(0.492ms-step) 48000:pass(0.448ms-step) 88200:pass(0.246ms-step) 96000:pass(0.224ms-step)
+
+All 20 cells pass — every `seamStep` is well under its rate's `SEAM_THRESHOLDS` entry (5x the
+clean-splice measurement from Task 6). Every seam row also carries a large `onsets`/`extra` count
+(45-100) from the plain `detectOnsets` call the harness runs on every family for informational
+onset arrays — this is the SAME hop-envelope-ripple artifact seen in `automation` (a sustained
+220 Hz tone re-triggers the 64-sample-hop RMS detector), but seam's pass/fail path never reads
+`verdict.extra`/`missing` (it judges `seamStep` directly per the demo's `judgeCell` special case),
+so it has zero effect on this family's verdicts — noted for completeness, not a finding.
+
 ## Live recording-path results
 
 (populated by Task 9 — production multi-take loop recording at hardware timecode reference)
