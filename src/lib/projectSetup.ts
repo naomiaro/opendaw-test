@@ -42,6 +42,15 @@ export interface ProjectSetupOptions {
    * Optional status update callback for progress messages
    */
   onStatusUpdate?: (status: string) => void;
+
+  /**
+   * Optional forced AudioContext sample rate, e.g. for sample-rate-alignment
+   * audit sessions (see debug/sample-rate-alignment-audit.md). Threaded into
+   * `new AudioContext({ sampleRate })`. Omit for default (device-native) rate —
+   * browsers reject unsupported rates by throwing from the AudioContext
+   * constructor, which surfaces as an initialization failure.
+   */
+  audioContextSampleRate?: number;
 }
 
 /**
@@ -83,7 +92,7 @@ export interface ProjectSetupResult {
  * ```
  */
 export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Promise<ProjectSetupResult> {
-  const { localAudioBuffers, bpm = 120, onStatusUpdate } = options;
+  const { localAudioBuffers, bpm = 120, onStatusUpdate, audioContextSampleRate } = options;
 
   console.log("========================================");
   console.log("openDAW -> headless -> initializing");
@@ -116,7 +125,11 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
   }
 
   // Create AudioContext
-  const audioContext = new AudioContext({ latencyHint: 0 });
+  const audioContext = new AudioContext(
+    audioContextSampleRate !== undefined
+      ? { latencyHint: 0, sampleRate: audioContextSampleRate }
+      : { latencyHint: 0 }
+  );
   console.debug(`AudioContext state: ${audioContext.state}, sampleRate: ${audioContext.sampleRate}`);
 
   onStatusUpdate?.("Installing audio worklets...");

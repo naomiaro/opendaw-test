@@ -49,6 +49,17 @@ import {
 
 const BAR_PPQN = PPQN.Quarter * 4; // one bar in 4/4
 
+// Dev-only sample-rate audit knob: ?sampleRate=44100 forces the AudioContext's
+// sample rate for forced-rate audit sessions (see
+// debug/sample-rate-alignment-audit.md). Parsed once at module load — no UI,
+// audit tooling only. Invalid/missing values fall back to the device-native rate.
+const AUDIT_SAMPLE_RATE: number | undefined = (() => {
+  const raw = new URLSearchParams(window.location.search).get("sampleRate");
+  if (!raw) return undefined;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+})();
+
 type ClickMode = "count-in" | "count-in-recording";
 
 type SnapGrid = "off" | "1/4" | "1/8" | "1/16";
@@ -209,6 +220,7 @@ const App: React.FC = () => {
       try {
         const { project: newProject, audioContext: ctx } = await initializeOpenDAW({
           onStatusUpdate: setStatus,
+          audioContextSampleRate: AUDIT_SAMPLE_RATE,
         });
         if (!mounted) return;
         setAudioContext(ctx);
