@@ -114,10 +114,31 @@ const TAIL_GUARD_SEC = 0.15;
  *   [0.5, 0.8] x refractorySec in [0.15, 0.2] — 0.6/0.15 centered in that
  *   working range) since it's still correct and gives extra margin now that
  *   the real gap is wider.
+ *
+ * Task 8 follow-up (register S27/S28, `debug/sample-rate-alignment-audit.md`
+ * Triage section) — two harness detector artifacts found by the matrix run,
+ * fixed here:
+ * - `loop-wrap`: `refractorySec: 0.2` was tuned against a bpm where
+ *   Vaporisateur's ~350-400ms release ring stayed under 200ms; at the
+ *   matrix's two slowest bpms (90, 97.3) the ring's absolute-time duration
+ *   crosses 400ms and clears the old 0.2s gate once per loop, producing a
+ *   spurious extra onset. Widened to 0.6s — still far under loop-wrap's
+ *   >=3.6s loop-period floor (`LOOP_WRAP_BARS`), so no risk of merging two
+ *   real note-on events.
+ * - `automation`: the default detector's fixed 64-*sample* hop is
+ *   rate-DEPENDENT — hop duration halves at 88.2k/96k (from ~1.45ms @44.1k
+ *   to ~0.73ms/0.67ms), which raises the sustained-440Hz-tone RMS-envelope
+ *   ripple ratio above the trigger threshold only at those two rates
+ *   (analytically reproduced: ripple ratio 0.18@44.1k/0.13@48k vs
+ *   0.39@88.2k/0.44@96k — the exact rate split the matrix showed as
+ *   pass/investigate). Switched to `hopSeconds: 64/44100` (~1.45ms, the
+ *   44.1k baseline) so the hop DURATION — and therefore the ripple ratio —
+ *   is the same at every rate.
  */
 const ONSET_OPTIONS_BY_FAMILY: Partial<Record<AuditFamily, OnsetOptions>> = {
-  "loop-wrap": { refractorySec: 0.2 },
+  "loop-wrap": { refractorySec: 0.6 },
   "note-onsets": { thresholdRatio: 0.6, refractorySec: 0.15 },
+  automation: { hopSeconds: 64 / 44100 },
 };
 
 interface AuditRow {

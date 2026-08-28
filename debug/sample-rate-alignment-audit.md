@@ -44,6 +44,8 @@ Merged from five static audits (2026-08-27), grouped by source area. All status 
 | S24 | `RecordAudio.ts:198` + `RecordingWorklet.ts:64-69,103-119` | recording-glue | **C5 + C3 (primary)** | `recordingWorklet.limit(Math.ceil((currentWaveformOffset + duration) * sampleRate))` sets the target frame count that `#finalize()`'s `mergeChunkPlanes(...).map(frame => frame.slice(-totalSamples))` trims the **entire shared recording** down to — this is what determines the persisted length of the FINAL (non-wrapped, stop-terminated) take's backing audio | `duration = regionBox.duration.getValue()` is the **last value written by the position-tick handler above** (RenderQuantum-granular, and — because it's set on a *different* update cadence than the moment `terminate()`/`disconnect()` fires — potentially stale relative to `recordingWorklet.numberOfFrames` read one line earlier in the *same* cleanup callback, which reflects the ring buffer's current state as continuously drained by the dedicated `Atomics.wait`-driven worker in `RingBuffer.ts` (independent of main-thread `engine.position` polling cadence, not bounded to a single render quantum). `Math.ceil` itself is a harmless <1-sample epsilon guard, not the risk — the risk is that `totalSamples` (derived from the stale `duration`) can under-shoot the buffer's true current length by more than the code comment's claimed "up to one quantum," in which case `slice(-totalSamples)` (which keeps the **tail**, i.e. discards from the **front** of the whole-session buffer) trims more than the intended trailing overshoot. In the common case (disconnect happens promptly after the last tick, and any backlog is only the render quanta produced between the tick and disconnect) this stays within roughly one RenderQuantum as the comment assumes; the live phase should confirm the bound, not just accept the comment. | Stop recording (not wrap) immediately after inducing main-thread jank (heavy synchronous JS, occluded/backgrounded tab per the CLAUDE.md `visibilityState` note) right at the stop click, at 44100 vs 48000; compare the finalized `AudioFileBox.endInSeconds`/`audioData.numberOfFrames` against a hardware-timed reference, and verify the *start* of take 1's content is bit-identical to a non-jank control run (confirms trimming came from the tail, not the head). | Nominal case: overshoot bounded to `[0,128)` samples per the code's own assumption — **2.90 ms @44100, 2.67 ms @48000** trimmed off the tail, invisible. Jank case: a measurable, non-quantum-bounded gap between expected and actual final sample count, and (if the front-trim theory is right) a detectable shift/loss at the very start of take 1's audio rather than at the stop point. | open (not exercised) |
 | S25 | `RecordAudio.ts:139-172` | recording-glue | C5 (cosmetic) | `oldFileBox.endInSeconds` (visible between stop-time and the async `importRecording` completing) vs the corrected `newFileBox.endInSeconds = audioData.numberOfFrames / audioData.sampleRate` | Documented in-code: the pre-correction value uses the live/possibly-overshot `recordingWorklet.numberOfFrames` (line 203, set at stop-cleanup, *before* `#finalize()`'s slice), so any waveform painter reading it in that narrow async window sees a linearly-stretched-by-overshoot picture. Self-corrects once `onSaved` fires. | Screenshot/sample the waveform canvas in the stop→onSaved async gap at both rates; confirm the window width and its correction. | Transient visual stretch only, bounded by the same RenderQuantum overshoot as the row above; no persisted/audible effect once `onSaved` completes. | open (not exercised) |
 | S26 | `RecordingWorklet.ts:110` vs `RecordAudio.ts:51` | recording-glue | C5 (provenance, cleared as app-invariant) | Which `sampleRate` value backs the persisted `AudioData` vs which one all of `RecordAudio.ts`'s float-seconds math uses | Both derive from `BaseAudioContext.sampleRate` read off what should be the *same* `AudioContext` object — `RecordingWorklet` is constructed via `AudioWorklets.createRecording()` → `new RecordingWorklet(this.#context, …)`, and `AudioWorklets` is looked up/created keyed by `project.env.audioContext` (`AudioWorklets.createFor`/`.get`, `AudioWorklets.ts:17-27`). Nothing in these files *enforces* identity (types are `BaseAudioContext`), it's an app-bootstrap invariant (single `AudioContext` per project) outside this glue's files. | Not independently provoke-able from this layer; would require an app-boot bug that constructs two contexts. | None expected under normal boot; flagging only because the audit brief explicitly asked where `sampleRate` comes from and whether context/engine could mismatch. | open (not exercised) |
+| S27 | `src/lib/audit/onsetDetection.ts:56` (hop RMS envelope) | harness-artifact | harness-C1 (detector-only, not engine) | Whether `detectOnsets`'s hop-quantized RMS envelope sees a real energy rise vs. phase-dependent ripple on a sustained tone | Fixed 64-*sample* hop is rate-DEPENDENT: hop duration halves at 88.2k/96k vs. 44.1k/48k, so the RMS-envelope ripple ratio on a sustained 440Hz tone crosses the 25%-of-max-rise trigger threshold only at the two higher rates (analytic repro: ripple ratio 0.18@44.1k/0.13@48k vs. 0.39@88.2k/0.44@96k) | `automation` family @ rate ∈ {88200, 96000}, all 5 bpms | 55-124 spurious "extra" onsets per cell, all confined to the sustained-tone ON windows (0 in the silent OFF windows) — matches the analytic rate split exactly | harness-artifact (fixed this commit) |
+| S28 | harness detector refractory vs. Vaporisateur release ring (`ONSET_OPTIONS_BY_FAMILY["loop-wrap"]`, `src/demos/engine/samplerate-audit-debug-demo.tsx:119`) | harness-artifact | harness-C1 (detector-only, not engine) | Whether a second detector trigger inside a note's release ring counts as a genuine extra onset | Vaporisateur's release ring extends ~0.35-0.4s after the true attack; the family's old `refractorySec: 0.2` was tuned against a bpm where the ring's absolute-time duration stayed under 200ms — at the two SLOWEST matrix bpms (90, 97.3) the ring crosses 400ms and clears the 0.2s gate exactly once per loop pass | `loop-wrap` family @ bpm ∈ {90, 97.3}, all 4 rates | one extra re-trigger ~0.35-0.4s after each real note-on, every loop pass, only at the two slowest bpms (0 extras at bpm 120/124/133) | harness-artifact (fixed this commit) |
 
 ## Cleared sites
 
@@ -85,17 +87,25 @@ S10/S11/S12's predicted sub-sample floor biases (tens of µs, one-sided) are con
 residuals in magnitude but the matrix's 2 ms pass tolerance and single-scalar calibration can't
 isolate a signed, rate-varying bias at this resolution — inconclusive, not cleared (see triage).
 
-### loop-wrap (JSON: `audit-1787880081585.json`)
+### loop-wrap (JSON: `audit-1787880081585.json` original run; **RE-RUN after detector fix**,
+JSON: `audit-1787881458893.json`, run id 1787881458893, 2026-08-27 — see Triage/S28)
 
-- bpm=90: 44100:investigate(0.007ms,extra=7) 48000:investigate(0.146ms,extra=7) 88200:investigate(0.538ms,extra=7) 96000:investigate(0.542ms,extra=7) — spread=0.535ms — investigate all 4 rates
-- bpm=97.3: 44100:investigate(0.159ms,extra=3) 48000:investigate(0.062ms,extra=3) 88200:investigate(0.538ms,extra=7) 96000:investigate(0.542ms,extra=5) — spread=0.480ms — investigate all 4 rates
+**Re-run results (post-fix, `refractorySec: 0.6`): 20/20 pass, 0 investigate.**
+
+- bpm=90: 44100:pass(0.007ms) 48000:pass(0.146ms) 88200:pass(0.538ms) 96000:pass(0.542ms) — spread=0.535ms — rate-consistent (pass)
+- bpm=97.3: 44100:pass(0.159ms) 48000:pass(0.062ms) 88200:pass(0.538ms) 96000:pass(0.542ms) — spread=0.480ms — rate-consistent (pass)
 - bpm=120: 44100:pass(0.165ms) 48000:pass(0.000ms) 88200:pass(0.538ms) 96000:pass(0.542ms) — spread=0.542ms — rate-consistent (pass)
 - bpm=124: 44100:pass(0.114ms) 48000:pass(0.066ms) 88200:pass(0.538ms) 96000:pass(0.542ms) — spread=0.476ms — rate-consistent (pass)
 - bpm=133: 44100:pass(0.149ms) 48000:pass(0.012ms) 88200:pass(0.538ms) 96000:pass(0.542ms) — spread=0.530ms — rate-consistent (pass)
 
-bpm=90 and bpm=97.3 investigate at all 4 rates (bpm-triggered, not rate-triggered — see triage:
-harness detector artifact, not an SDK bug). All 8 real onsets matched with 0 missing at every
-cell; "extra" hits are a second re-trigger ~0.35-0.4s after each real note-on.
+All 8 real onsets matched with 0 missing/extra at every one of the 20 cells (`matched=8` always).
+The per-cell `maxDeviationSec` values are UNCHANGED from the original run (widening the
+refractory window only suppresses the spurious release-ring re-trigger; it does not move the
+real onsets' detected times) — the only change is bpm=90/97.3 now read `extra=0` instead of
+`extra=3-7` and therefore pass. Original run (pre-fix) for reference: bpm=90 and bpm=97.3
+investigated at all 4 rates (bpm-triggered, not rate-triggered); all 8 real onsets matched with
+0 missing at every cell even then — "extra" hits were a second re-trigger ~0.35-0.4s after each
+real note-on. Root cause and fix: see Triage (S28) below.
 
 ### seam (JSON: `audit-1787880088826.json`)
 
@@ -141,20 +151,25 @@ truncates at 44.1kHz), but the measured magnitude (~0.47ms ≈ 21 samples @44.1k
 likely dominated by `AUDIT_CALIBRATION`'s single per-family scalar (measured at the 48k control
 row) leaving a larger uncorrected residual at 44.1k. Flagged as open/inconclusive, not confirmed.
 
-### automation (JSON: `audit-1787880112075.json`)
+### automation (JSON: `audit-1787880112075.json` original run; **RE-RUN after detector fix**,
+JSON: `audit-1787881446952.json`, run id 1787881446952, 2026-08-27 — see Triage/S27)
 
-- bpm=90: 44100:pass(0.921ms) 48000:pass(0.931ms) 88200:investigate(0.933ms,extra=124) 96000:investigate(0.941ms,extra=81) — investigate at 88.2k/96k
-- bpm=97.3: 44100:pass(0.921ms) 48000:pass(0.931ms) 88200:investigate(0.933ms,extra=114) 96000:investigate(0.941ms,extra=75) — investigate at 88.2k/96k
-- bpm=120: 44100:pass(0.921ms) 48000:pass(0.931ms) 88200:investigate(0.933ms,extra=92) 96000:investigate(0.941ms,extra=60) — investigate at 88.2k/96k
-- bpm=124: 44100:pass(0.921ms) 48000:pass(0.931ms) 88200:investigate(0.933ms,extra=89) 96000:investigate(0.941ms,extra=58) — investigate at 88.2k/96k
-- bpm=133: 44100:pass(0.921ms) 48000:pass(0.931ms) 88200:investigate(0.933ms,extra=83) 96000:investigate(0.941ms,extra=55) — investigate at 88.2k/96k
+**Re-run results (post-fix, `hopSeconds: 64/44100`): 20/20 pass, 0 investigate.**
 
-Rate-triggered (not bpm-triggered — identical pattern at every bpm): 88200/96000 investigate,
-44100/48000 pass, in all 5 bpms. All 20 cells matched the 3 real onset transitions with 0
-missing/extra confusion on the REAL events (matched=3 always); the huge `extra` counts (55-124)
-are spurious re-triggers during the sustained-tone ON windows only (verified: 0 extras land in
-the OFF/silent windows). Deep-dived — see triage: harness detector artifact (not SDK), root-caused
-analytically.
+- bpm=90: 44100:pass(0.921ms) 48000:pass(0.931ms) 88200:pass(0.933ms) 96000:pass(0.941ms) — spread=0.020ms — rate-consistent (pass)
+- bpm=97.3: 44100:pass(0.921ms) 48000:pass(0.931ms) 88200:pass(0.933ms) 96000:pass(0.941ms) — spread=0.020ms — rate-consistent (pass)
+- bpm=120: 44100:pass(0.921ms) 48000:pass(0.931ms) 88200:pass(0.933ms) 96000:pass(0.941ms) — spread=0.020ms — rate-consistent (pass)
+- bpm=124: 44100:pass(0.921ms) 48000:pass(0.931ms) 88200:pass(0.933ms) 96000:pass(0.941ms) — spread=0.020ms — rate-consistent (pass)
+- bpm=133: 44100:pass(0.921ms) 48000:pass(0.931ms) 88200:pass(0.933ms) 96000:pass(0.941ms) — spread=0.020ms — rate-consistent (pass)
+
+All 20 cells matched the 3 real onset transitions with 0 missing/extra (`matched=3` always,
+identical `maxDeviationSec` per rate at every bpm — the family's content doesn't vary with bpm).
+Switching to a rate-independent hop duration (`hopSeconds: 64/44100`, same ~1.45ms hop at every
+rate) eliminated every spurious re-trigger at 88.2k/96k with zero effect on the real onsets'
+detected times. Original run (pre-fix) for reference: 88200/96000 investigated at all 5 bpms
+(rate-triggered, not bpm-triggered) with 55-124 spurious "extra" onsets per cell, all confined
+to the sustained-tone ON windows (0 in the OFF/silent windows). Root cause and fix: see Triage
+(S27) below.
 
 ### tempo-ramp (JSON: `audit-1787880119622.json`)
 
@@ -197,7 +212,11 @@ own note says is needed to see summation drift, but the flat spread here is at l
 with no gross divergence over this window.
 
 ### Summary: 180/180 cells run, 0 errors, 0 run-failed families, 18 investigate cells (all in
-`loop-wrap` and `automation`), 0 confirmed engine bugs — see Triage below.
+`loop-wrap` and `automation`), 0 confirmed engine bugs — see Triage below. **Both clusters
+resolved after the detector fix (Task 8 follow-up, register S27/S28): re-run of both families
+(40/40 cells, run ids 1787881446952 automation / 1787881458893 loop-wrap) is 40/40 pass, 0
+investigate — see the updated `automation`/`loop-wrap` Matrix results subsections above and
+Triage below.**
 
 ## Triage (Task 8)
 
@@ -205,6 +224,10 @@ Every `investigate` cell (18 total, all in `loop-wrap` and `automation`) was tra
 root cause. **Neither cluster matches any register suspect's predicted signature — both are
 harness detector artifacts, not SDK engine bugs.** 0 confirmed bugs; fixed-on-main gate is
 therefore not applicable (nothing to diff against `origin/main`).
+
+**Resolution (Task 8 follow-up, same commit as this note's edit):** both artifacts were fixed
+in the detector/harness (never in engine or SDK code) and both families were re-run clean —
+see the end of each cluster's writeup below, and register rows S27/S28.
 
 ### Cluster 1 — `automation` @ rate ∈ {88200, 96000}, all 5 bpms (10 cells)
 
@@ -239,6 +262,15 @@ scale `hopSize` in `onsetDetection.ts` by sample rate (e.g. a fixed hop *duratio
 rather than samples), or raise `thresholdRatio` for sustained-tone families. Do not touch
 `onsetDetection.ts` in Task 8; re-run `automation` after the fix lands.
 
+**RESOLVED (Task 8 follow-up, register S27):** `OnsetOptions` gained a `hopSeconds?: number`
+field (`Math.round(hopSeconds * sampleRate)` when set, `hopSize` behavior unchanged otherwise —
+`src/lib/audit/onsetDetection.ts`); `ONSET_OPTIONS_BY_FAMILY.automation` now sets
+`hopSeconds: 64/44100` (the 44.1k baseline hop duration, ~1.45ms) so the hop DURATION — and
+therefore the ripple ratio — is identical at every rate. `AUDIT_CALIBRATION.automation` and
+`AUDIT_TOLERANCES.automation` were re-measured on the control row (unchanged to float noise —
+see `src/lib/audit/auditCalibration.ts`). Re-run (run id 1787881446952, all 5 bpms x 4 rates):
+20/20 pass, 0 investigate, `matched=3`/`missing=0`/`extra=0` at every cell.
+
 ### Cluster 2 — `loop-wrap` @ bpm ∈ {90, 97.3}, all 4 rates (8 cells)
 
 **Measurement:** all 8 real note-on onsets matched with 0 missing at every cell, all 5 bpms, all
@@ -268,6 +300,14 @@ widen `refractorySec` for `loop-wrap` beyond 0.4s (still far under the family's 
 loop-period floor, so no risk of merging two real onsets), or make it bpm-aware. Do not touch
 `onsetDetection.ts`/`ONSET_OPTIONS_BY_FAMILY` in Task 8; re-run `loop-wrap` after the fix lands.
 
+**RESOLVED (Task 8 follow-up, register S28):** `ONSET_OPTIONS_BY_FAMILY["loop-wrap"]`'s
+`refractorySec` widened from 0.2s to 0.6s (`src/demos/engine/samplerate-audit-debug-demo.tsx`)
+— safely under the family's ≥3.6s loop-period floor, well past the ~0.4s measured release-ring
+duration. `AUDIT_CALIBRATION["loop-wrap"]` and `AUDIT_TOLERANCES["loop-wrap"]` were re-measured
+on the control row (unchanged to float noise — see `src/lib/audit/auditCalibration.ts`). Re-run
+(run id 1787881458893, all 5 bpms x 4 rates): 20/20 pass, 0 investigate, `matched=8`/`missing=0`/
+`extra=0` at every cell, including bpm=90/97.3.
+
 ### Register status updates
 
 All 26 suspects' `status` column updated in the table above:
@@ -294,6 +334,12 @@ All 26 suspects' `status` column updated in the table above:
   (predicted ~11µs / measured ~470µs) — per the task's "must predict rates/BPMs/magnitude"
   standard this does not count as a confirmed match; left `open (not exercised)` rather than
   promoted to `confirmed`.
+- **S27, S28 → `harness-artifact (fixed this commit)`** — new register rows added this task
+  (Task 8 follow-up) for the two `investigate` clusters' actual root cause: both are bugs in the
+  audit harness's own `onsetDetection.ts`/`ONSET_OPTIONS_BY_FAMILY` calibration, not the SDK.
+  S27 (rate-dependent hop size) and S28 (refractory vs. release-ring duration) are fixed in this
+  same commit (see the "RESOLVED" notes on each cluster above); both `automation` and
+  `loop-wrap` re-run 40/40 pass with 0 investigate cells.
 
 ### Fixed-on-main gate
 

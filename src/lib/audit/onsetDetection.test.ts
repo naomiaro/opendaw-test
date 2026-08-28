@@ -32,6 +32,38 @@ describe("detectOnsets", () => {
   it("silence yields no onsets", () => {
     expect(detectOnsets(new Float32Array(48000), 48000)).toHaveLength(0);
   });
+  it("hopSeconds yields the same onset times at 48k vs 96k for identical physical content", () => {
+    const truth = [0.2, 0.9, 1.75321];
+    const hopSeconds = 64 / 44100;
+    const found48k = detectOnsets(clickTrain(48000, truth, 48000 * 2), 48000, { hopSeconds });
+    const found96k = detectOnsets(clickTrain(96000, truth, 96000 * 2), 96000, { hopSeconds });
+    expect(found48k).toHaveLength(truth.length);
+    expect(found96k).toHaveLength(truth.length);
+    for (let i = 0; i < truth.length; i++) {
+      expect(Math.abs(found48k[i] - found96k[i])).toBeLessThan(0.001);
+    }
+  });
+  it("refractorySec of 0.6 detects only the primary click of a decaying-ring click train", () => {
+    // Primary click + a decayed "ring" echo at +0.4s, 40% amplitude — mimics
+    // Vaporisateur's ~350-400ms release ring re-triggering the detector at
+    // the default 0.05s (or the old loop-wrap 0.2s) refractory window.
+    const sampleRate = 48000;
+    const primaries = [0.5, 4.5, 8.5];
+    const buf = new Float32Array(sampleRate * 12);
+    for (const t of primaries) {
+      const start = Math.round(t * sampleRate);
+      for (let i = 0; i < Math.min(480, buf.length - start); i++) {
+        buf[start + i] += Math.sin((i / 480) * Math.PI) * Math.exp(-i / 160);
+      }
+      const ringStart = Math.round((t + 0.4) * sampleRate);
+      for (let i = 0; i < Math.min(480, buf.length - ringStart); i++) {
+        buf[ringStart + i] += 0.4 * Math.sin((i / 480) * Math.PI) * Math.exp(-i / 160);
+      }
+    }
+    const found = detectOnsets(buf, sampleRate, { refractorySec: 0.6 });
+    expect(found).toHaveLength(primaries.length);
+    primaries.forEach((t, i) => expect(Math.abs(found[i] - t)).toBeLessThan(0.001));
+  });
 });
 
 describe("maxStepAround", () => {

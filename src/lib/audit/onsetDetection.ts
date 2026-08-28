@@ -19,8 +19,21 @@
  */
 
 export interface OnsetOptions {
-  /** Envelope hop size in samples. Default 64. */
+  /** Envelope hop size in samples. Default 64. Ignored when `hopSeconds` is set. */
   hopSize?: number;
+  /**
+   * Envelope hop duration in seconds — rate-INDEPENDENT alternative to `hopSize`.
+   * When set, the effective hop size is `Math.round(hopSeconds * sampleRate)`,
+   * so the same physical hop duration (and therefore the same RMS-envelope
+   * phase-averaging behavior on a sustained tone) applies at every sample
+   * rate. Takes precedence over `hopSize` when both are given. See the
+   * `automation` family's calibration note in
+   * `src/demos/engine/samplerate-audit-debug-demo.tsx` for why a fixed
+   * *sample-count* hop is rate-dependent (hop duration halves at 2x rates,
+   * changing the RMS ripple ratio on a sustained tone) while a fixed
+   * *duration* hop is not.
+   */
+  hopSeconds?: number;
   /** Fraction of the buffer's max hop-to-hop envelope rise that counts as an onset. Default 0.25. */
   thresholdRatio?: number;
   /** Minimum gap between accepted onsets, in seconds. Default 0.05. */
@@ -53,7 +66,8 @@ export function detectOnsets(
   sampleRate: number,
   options: OnsetOptions = {}
 ): number[] {
-  const hopSize = options.hopSize ?? 64;
+  const hopSize =
+    options.hopSeconds !== undefined ? Math.round(options.hopSeconds * sampleRate) : options.hopSize ?? 64;
   const thresholdRatio = options.thresholdRatio ?? 0.25;
   const refractorySec = options.refractorySec ?? 0.05;
   const refractorySamples = Math.round(refractorySec * sampleRate);

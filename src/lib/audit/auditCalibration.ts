@@ -41,7 +41,14 @@ import type { AuditFamily } from "./auditExpectations";
  */
 export const AUDIT_CALIBRATION: Partial<Record<AuditFamily, number>> = {
   metronome: 0.0013242187500000953, // signed mean, measured 2026-08-27, run 1787877588459 (single-sign, 32 matched pairs)
-  "loop-wrap": 0.003770833333333952, // signed mean, measured 2026-08-27, run 1787877588459 (single-sign, 8 matched pairs)
+  // loop-wrap: RECALIBRATED (Task 8 follow-up, register S28) after widening
+  // ONSET_OPTIONS_BY_FAMILY's refractorySec to 0.6s (fixes the harness's
+  // spurious release-ring re-trigger at bpm 90/97.3 — see debug/
+  // sample-rate-alignment-audit.md Triage). Re-measured on the control row
+  // (bpm=120/rate=48000, run id 1787881393241): value is unchanged to float
+  // noise (the refractory widening only suppresses the spurious extra
+  // trigger, it doesn't move the real onsets' detected time).
+  "loop-wrap": 0.0037708333333333335, // signed mean, measured 2026-08-27, run 1787881393241 (single-sign, 8 matched pairs)
   // seam: no calibrationSec entry — the seam family's pass/fail reads
   // `seamStep` directly (see judgeCell's seam special case), calibration
   // never affects its verdict. Left out of this map (falls back to 0 bias).
@@ -54,7 +61,15 @@ export const AUDIT_CALIBRATION: Partial<Record<AuditFamily, number>> = {
   // (+4.25..4.27ms raw), no outlier — the old BLOCKED status (see
   // task-6-report.md) is superseded.
   "note-onsets": 0.004262499999999924, // signed mean, measured 2026-08-27, run 1787878787720 (single-sign, 10 matched pairs, 0 missing/extra)
-  automation: 0.00103472222222226, // signed mean, measured 2026-08-27, run 1787877588459 (single-sign, 3 matched pairs)
+  // automation: RECALIBRATED (Task 8 follow-up, register S27) after
+  // switching ONSET_OPTIONS_BY_FAMILY's automation entry from the default
+  // fixed-64-sample hop to `hopSeconds: 64/44100` (rate-independent hop
+  // duration — fixes the harness's sustained-tone false onsets at
+  // 88.2k/96k, see debug/sample-rate-alignment-audit.md Triage). Re-measured
+  // on the control row (bpm=120/rate=48000, run id 1787881384541): value is
+  // unchanged to float noise (the hop-duration change only affects
+  // sustained-tone ripple sensitivity, not the real onsets' detected time).
+  automation: 0.0010347222222222222, // signed mean, measured 2026-08-27, run 1787881384541 (single-sign, 3 matched pairs)
   // tempo-ramp: NOT single-sign — deviation is +1.27ms at beat 0, crosses
   // zero around beat 10, and reaches -2.85ms at beat 31 (post closed-form
   // expectation fix). The mean-of-absolute-deviations value previously here
@@ -81,6 +96,9 @@ export const AUDIT_CALIBRATION: Partial<Record<AuditFamily, number>> = {
  */
 export const AUDIT_TOLERANCES: Record<AuditFamily, number> = {
   metronome: 0.002, // post-cal max dev 0.0000742s -> floor
+  // loop-wrap: re-verified against the recalibrated value above (run
+  // 1787881393241, Task 8 follow-up) — still ~0 (8.9e-16, float noise),
+  // formula unchanged: max(0.002, 2*8.9e-16) -> floor.
   "loop-wrap": 0.002, // post-cal max dev ~0 (8.9e-16, float noise) -> floor
   seam: 0.002, // unused directly by the seam judging path — kept for Record<AuditFamily, …> completeness
   "region-fencepost": 0.002, // post-cal max dev 0 (exact) -> floor
@@ -92,6 +110,9 @@ export const AUDIT_TOLERANCES: Record<AuditFamily, number> = {
   // 0.0000125s (0.0125ms) — comfortably under the floor, so per the formula
   // tolerance = max(0.002, 2*0.0000125) = 0.002 (floor).
   "note-onsets": 0.002, // post-cal max abs residual 0.0000125s -> floor
+  // automation: re-verified against the recalibrated value above (run
+  // 1787881384541, Task 8 follow-up, `hopSeconds` fix) — post-cal max dev
+  // 0.00093s (unchanged), formula: max(0.002, 2*0.00093) -> floor.
   automation: 0.002, // post-cal max dev 0.00093s -> floor
   // tempo-ramp: recomputed against the SIGNED-mean calibration above (not
   // the old mean-of-absolute-deviations value). Post-signed-cal residual
