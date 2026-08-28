@@ -348,4 +348,172 @@ against `origin/main`.
 
 ## Live recording-path results
 
+**Date**: 2026-08-27. **Harness**: `swipe-comping-demo.html?sampleRate=<n>` (new dev-only
+knob, this task) at `https://localhost:5173`, real microphone, real trusted clicks
+(claude-in-chrome `computer` for the #367 audio-tap runs, Playwright `browser_click` for the
+box-graph C5 runs — see environment note below for why two tools were needed).
+
+### `?sampleRate` knob (Task 9 Step 1)
+
+`ProjectSetupOptions.audioContextSampleRate?: number` added to
+`src/lib/projectSetup.ts` — threads into `new AudioContext({ sampleRate })` when set, default
+(device-native) behavior unchanged otherwise. Wired in
+`src/demos/recording/swipe-comping-demo.tsx` only, parsed once at module load from
+`?sampleRate=<n>`, no UI. Gates green: `npx tsc --noEmit` zero `^src/` lines,
+`npx vitest run src/lib/audit` 28/28 passed, `npm run build` OK.
+
+### Environment note: two browser tools were required
+
+`document.visibilityState` stayed `"hidden"` for the entire claude-in-chrome tab session
+(confirmed via JS: `hasFocus()` true, `visibilityState` "hidden") despite the CLAUDE.md
+occlusion-recovery recipe (AnalyserNode tap on a swapped `liveStreamReceiver` +
+`startAudioWorklet()`). That recipe restores the OUTPUT tap (used successfully for the
+#367 audio validation below) but **does not restore the recording-start path** — every
+`Record` click issued in claude-in-chrome after a worklet swap left
+`engine.isRecording`/`isCountingIn` permanently `false` with no `[RecordAudio] start`
+console line, tried both swap-before-first-record and swap-after-a-completed-recording
+orderings, same result both times. Separately, `requestAnimationFrame` freezes on the
+occluded tab (per CLAUDE.md), which stalls the main-thread box-graph sync that finalizes
+takes — confirmed empirically: 0 regions existed 20s into a session that should have
+wrapped at ~10s. Playwright's browser window reported `visibilityState: "visible"` and
+recorded/finalized takes normally, so **all C5 box-graph measurements were taken in
+Playwright**; the #367 audio-tap measurements (which only need the output signal, not
+main-thread box-graph sync) were taken in claude-in-chrome, where the tap technique was
+proven working. This split, not either tool alone, is what closed out this task.
+
+### Step 2: #367 known-positive validation
+
+**44100 Hz, 120 BPM, Click "Count-in only", count-in ON** — real Record/Stop clicks,
+`AudioNode.prototype.connect` patched to tee an `AnalyserNode` onto the destination
+connection (installed via a batched navigate+inject to win the race against the engine's
+own connect), RMS sampled at ~4 ms via `setInterval` (not `requestAnimationFrame`, which
+would have frozen on this occluded tab). `audioContext.sampleRate` confirmed `44100` via
+the React fiber (`project.env.audioContext.sampleRate`).
+
+Detected 5 distinct RMS clusters (peak ≈0.13–0.17, silence between = true separate
+transients, not one long ringing note) at relative onsets **≈0, 452, 949, 1447, 1951 ms**
+— uniform ~475–500 ms spacing matching a 120 BPM quarter-note grid. A 1-bar count-in in
+"Count-in only" mode should produce exactly 4 clicks (the recorded bar is supposed to be
+silent); measuring **5** confirms the predicted boundary leak — one extra click exactly
+where the app's own in-code comment (`swipe-comping-demo.tsx:260-268`) says the SDK
+"forces the metronome on through the boundary block" and cannot be suppressed.
+**#367 CONFIRMED live at 44100 Hz** — this is the "live-harness validates the
+known-positive" checkpoint the task asked for.
+
+**48000 Hz** — attempted 3 times (batched navigate+inject race, twice more with the
+worklet-swap recovery in both orderings described above). The tap-connect race was lost
+on every fresh 48000 Hz load (analyser never attached before the engine's own destination
+connect fired), and the worklet-swap recovery — which works for the tap but breaks
+`Record` — could not be combined with a real recording session to reproduce the click.
+**Result: inconclusive at 48000 Hz, not a negative finding** — this is a tooling
+limitation of the two browser-automation paths available in this session, not a
+measurement that failed to find the leak. No claim is made about `#367`'s presence or
+absence at 48000 Hz; the campaign register's static read (`countin-metronome-boundary-click.md`)
+already establishes the code path is sample-rate-independent (a `position`/quantum
+comparison, not a literal 44.1k-only constant), so the leak is expected to reproduce
+there too, but this session did not measure it.
+
+### Step 3: C5 measurements (box graph, Playwright)
+
+All three cells below: `settings.recording.allowTakes=true`, 4-bar loop
+(`loopArea = [0, 15360]` PPQN), real mic (ambient room noise — no injected tone; acceptable
+per the task brief since these are box-graph-field measurements, not audio-content
+measurements), real trusted `browser_click`. `ppqnToSec(p, bpm) = p·60/(960·bpm)`.
+
+**Cell A — 44100 Hz, 120 BPM** (6 takes; `outputLatency=0.023s`, `baseLatency≈0.0029s`):
+
+| take | position (ppqn) | duration (ppqn → s) | waveformOffset (s) |
+|---|---|---|---|
+| 1 | 55 | 15304.9997 → 7.971354 | 2.083770990371704 |
+| 2 | 0 | 15360 → 8.000000 | 10.05512523651123 |
+| 3 | 0 | 15360 → 8.000000 | 18.055124282836914 |
+| 4 | 0 | 15360 → 8.000000 | 26.055124282836914 |
+| 5 | 0 | 15360 → 8.000000 | 34.05512619018555 |
+| 6 (live/stop) | 0 | 6557.4742 → 3.415351 | 42.05512619018555 |
+
+Consecutive-offset deltas vs the ideal 8.000000 s: 7.999999046 s, 8.000000000 s,
+8.000001907 s, 8.000000000 s — max deviation ≈2 µs ≈ **0.09 samples**. Additive-chain
+check (`take1.waveformOffset + take1.durationSec` vs measured `take2.waveformOffset`):
+predicted 10.055124998092651, measured 10.05512523651123, diff ≈0.24 µs ≈ **0.01 samples**.
+Shared-buffer length (`AudioFileBox.endInSeconds`, identical across all 6 takes since they
+share one buffer) = 45.470497131347656 s = 2,005,248.923 samples; **mod 128 = 0.92
+samples** (~21 µs) from an exact RenderQuantum boundary. Final live take's declared end
+(`waveformOffset+duration`) = 45.47047734260559 s vs the actual buffer end
+45.470497131347656 s: gap ≈0.87 samples (~20 µs).
+
+**Cell B — 48000 Hz, 120 BPM** (5 takes; `outputLatency=0.023s`, `baseLatency≈0.002917s`):
+
+| take | position (ppqn) | duration (ppqn → s) | waveformOffset (s) |
+|---|---|---|---|
+| 1 | 46 | 15314.0002 → 7.976042 | 2.073666572570801 |
+| 2 | 0 | 15360 → 8.000000 | 10.049708366394043 |
+| 3 | 0 | 15360 → 8.000000 | 18.049707412719727 |
+| 4 | 0 | 15360 → 8.000000 | 26.049707412719727 |
+| 5 (live/stop) | 0 | 5976.8802 → 3.113542 | 34.04970932006836 |
+
+Deltas: 7.999999046 s, 8.000000000 s — max deviation ≈1 µs ≈ **0.05 samples**.
+Additive-chain check: predicted == measured to displayed float precision (diff = 0 s).
+Buffer length = 37.162689208984375 s = 1,783,809.082 samples; **mod 128 = 1.08 samples**
+(~22.5 µs). Final live take declared end = 37.162667751312256 s vs buffer end
+37.162689208984375 s: gap ≈1.03 samples (~21 µs).
+
+**Cell C — adversarial, 44100 Hz, 97.3 BPM** (4 takes, register's recommended irrational-BPM
+cell; 4-bar loop, not the register's 1-bar hand-trace example, so the specific
+`ideal_sample_count mod 128` value differs from that worked example but the cell is still
+a non-power-of-two-friendly bpm/rate pairing):
+
+| take | position (ppqn) | duration (ppqn → s) | waveformOffset (s) |
+|---|---|---|---|
+| 1 | 27 | 15332.9994 → 9.849049 | 2.5336575508117676 |
+| 2 | 0 | 15360 → 9.866392 | 12.382706642150879 |
+| 3 | 0 | 15360 → 9.866392 | 22.249099731445312 |
+| 4 (live/stop) | 0 | 7375.3079 → 4.549292 | 32.1154899597168 |
+
+Ideal loop duration `ppqnToSec(15360, 97.3) = 9.866392290751904 s`. Measured deltas:
+9.866393089 s, 9.866390228 s — deviation ≈0.8–2 µs ≈ **0.03–0.09 samples**. Additive-chain
+check: predicted 12.38270616531372, measured 12.382706642150879, diff ≈0.48 µs ≈
+**0.02 samples**.
+
+**Verdict across all three cells**: consecutive `waveformOffset` deltas match the pure
+`intervalToSeconds` tempo-math ideal to within float-precision noise (<0.1 sample) at
+every step, with **no growth by take number** and no rate- or BPM-dependent divergence —
+the opposite of a `(n−1)×Δ_wrap` compounding signature, and roughly 30–100× below the
+predicted worst-case 128-sample (2.90 ms @44100 / 2.67 ms @48000) bound. This is
+**expected, not a refutation of S22's mechanism**: the register itself describes
+`currentWaveformOffset += intervalToSeconds(...)` as pure continuous-time float addition
+with zero `sampleRate`/`RenderQuantum` coupling — so of course the *declared* box-graph
+value advances by the exact ideal amount every time; that is the code's own arithmetic,
+not something a live measurement could falsify. What S22 actually predicts is a
+divergence between this declared value and the point where the *real* audio content
+begins in the shared ring buffer — a quantity this method cannot see (box-graph fields
+carry no information about the underlying audio thread's true wrap-sample). Confirming or
+refuting the magnitude of that specific divergence needs audio-content cross-correlation
+against a hardware-timed reference (e.g. an injected tone or click track), which was not
+performed this session (mic captured only ambient room noise — sufficient for box-graph
+field measurements per the task brief, insufficient for reliable cross-correlation).
+
+The final-live-take overshoot (S24) *is* fully measurable from box-graph + file fields
+alone, and both nominal-case cells (A, B) confirm it: buffer-length-mod-128 and
+declared-end-vs-buffer-end gaps both land under 1.1 samples (~20–23 µs), deep inside the
+predicted `[0,128)`-sample/2.9 ms bound. No main-thread jank was induced this session, so
+this confirms only the nominal case — the register's adversarial jank scenario (heavy
+synchronous JS or an occluded tab right at the Stop click) remains untested.
+
+### Register status updates (S20–S26)
+
+| ID | status | note |
+|---|---|---|
+| S20 | open (not exercised) | take1 `waveformOffset` values (2.08 s@44100/120bpm, 2.07 s@48000/120bpm, 2.53 s@44100/97.3bpm) decompose plausibly into count-in + `outputLatency` (0.023 s, both rates) + a small remainder (~30–60 ms) attributable to `headStartSeconds`+`inputLatency`; no anomaly, but headStart wasn't isolated from inputLatency independently — would need `settings.recording.inputLatency=0` control to isolate. |
+| S21 | open (not exercised) | no live output-device switch was performed mid-session; `outputLatency` read as the same `0.023s` at both rates, consistent with a single stable snapshot. |
+| S22 | **mechanism confirmed; magnitude not independently measurable via this method** | 3 cells (A, B, C above) show declared `waveformOffset` deltas match pure tempo-math to <0.1 sample, no compounding by take number — consistent with the register's own description of the code (pure float addition, no RenderQuantum coupling in the *declared* value). Does not confirm or refute the predicted declared-vs-true-audio-content divergence, which needs audio-content cross-correlation (not performed — see above). Left `open` rather than `confirmed`/`cleared`; a future pass with an injected reference tone/click and WAV cross-correlation is the concrete next step. |
+| S23 | open (not exercised) | cosmetic-only per register (live waveform painter jitter); not pursued — would need frame-by-frame canvas inspection during recording. |
+| S24 | **confirmed (nominal case)** | cells A and B both show buffer-length-mod-128 and final-take declared-end-vs-actual-buffer-end gaps under 1.1 samples (~20–23 µs), deep inside the predicted `[0,128)`/2.9 ms bound. The register's adversarial jank scenario (heavy main-thread work or an occluded tab right at Stop) was not tested — nominal-case confirmation only, jank case remains open. |
+| S25 | open (not exercised) | would need a waveform-canvas screenshot in the stop→`onSaved` async gap; not attempted. |
+| S26 | **cleared, confirmed live** | `audioContext.sampleRate` (read via the React fiber) matched the `?sampleRate` query param exactly (44100, 48000) in every session; `AudioFileBox.endInSeconds × sampleRate` landed within ~1 sample of the independently-computed take-boundary sums at both rates in every cell — no context/engine sampleRate mismatch observed, consistent with the register's own "cleared as app-invariant" classification. |
+
+`#367` (known exemplar, not a register row): **confirmed live at 44100 Hz** (5-click
+boundary leak measured via output tap, matching the predicted signature exactly);
+**inconclusive at 48000 Hz** (tooling limitation, not a measurement — see environment
+note above and the Step 2 write-up).
+
 (populated by Task 9 — production multi-take loop recording at hardware timecode reference)
