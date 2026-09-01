@@ -314,6 +314,10 @@ interface AuditRow {
   repeat: number;
   takeIndex: number;
   medianBeatErrorMs: number | null;
+  // Task 7 recast: raw + harnessPathBiasSec*1000 (audioContext.outputLatency) —
+  // classifyCell's verdict runs on this field; the raw field above is unmodified
+  // and always persisted alongside it (see recordingAlignment.ts measureTakeAlignment).
+  medianBeatErrorMsAdjusted: number | null;
   matchedBeats: number;
   missingBeats: number;
   headMissingMs: number | null; // baseline-corrected (HEAD_MISSING_BASELINE_MS already subtracted)
@@ -598,7 +602,13 @@ async function runCellRepeat(
   bpm: number,
   rate: number,
   repeat: number,
-  onStage: (stage: string) => void
+  onStage: (stage: string) => void,
+  // Task 7 recast: audioContext.outputLatency — the register's "term 1" harness-path
+  // bias (see debug/recording-start-alignment-audit.md "Bring-up calibration"),
+  // passed through to measureTakeAlignment so classifyCell's verdicts run on the
+  // adjusted median rather than the raw one. Captured once per run (identical at
+  // both sample rates per the register), not per-cell.
+  harnessPathBiasSec: number
 ): Promise<CellRepeatResult> {
   onStage("prefs");
   project.editing.modify(() => {
@@ -786,6 +796,7 @@ async function runCellRepeat(
       recordRequestContextTime,
       stopRequestContextTime,
       headMissingBaselineMs: HEAD_MISSING_BASELINE_MS,
+      harnessPathBiasSec,
     });
     alignments.push({ takeIndex, alignment });
     // Fix round 1 (I3): raw (uncorrected) head-missing, so both the corrected
@@ -807,6 +818,7 @@ async function runCellRepeat(
       " anchorT0Sec=" + String(alignment.anchorT0Sec) +
       " recordRequestContextTime=" + String(recordRequestContextTime) +
       " medianBeatErrorMs=" + String(alignment.medianBeatErrorMs) +
+      " medianBeatErrorMsAdjusted=" + String(alignment.medianBeatErrorMsAdjusted) +
       " headMissingMs=" + String(alignment.headMissingMs) +
       " headMissingRawMs=" + String(headMissingRawMs)
     );
@@ -817,6 +829,7 @@ async function runCellRepeat(
       repeat,
       takeIndex,
       medianBeatErrorMs: alignment.medianBeatErrorMs,
+      medianBeatErrorMsAdjusted: alignment.medianBeatErrorMsAdjusted,
       matchedBeats: alignment.matchedBeats,
       missingBeats: alignment.missingBeats,
       headMissingMs: alignment.headMissingMs,
@@ -943,6 +956,11 @@ async function uploadSummary(
     // every row this run produced.
     outputLatency,
     baseLatency,
+    // Task 7 recast: the value actually wired into every row's harnessPathBiasSec
+    // this run (== outputLatency, captured once at run start) — recorded explicitly
+    // so a register/offline reader never has to assume outputLatency was the value
+    // live rows were adjusted by.
+    harnessPathBiasSec: outputLatency,
     headMissingBaselineMs: HEAD_MISSING_BASELINE_MS,
     repeatsPerCell: REPEATS_PER_CELL,
     jankMs: JANK_MS,
@@ -1021,7 +1039,7 @@ async function runAudit(
           result = await withDeadline(
             runCellRepeat(project, audioContext, unitAdapter, scenario, bpm, rate, repeat, (s) => {
               stage = s;
-            }),
+            }, audioContext.outputLatency),
             120_000,
             label
           );
@@ -1051,6 +1069,7 @@ async function runAudit(
             repeat,
             takeIndex: 0,
             medianBeatErrorMs: null,
+            medianBeatErrorMsAdjusted: null,
             matchedBeats: 0,
             missingBeats: 0,
             headMissingMs: null,
@@ -1185,6 +1204,7 @@ function ScenarioRunnerHarness() {
                     <Table.ColumnHeaderCell>repeat</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>take</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>medianErr (ms)</Table.ColumnHeaderCell>
+                    <Table.ColumnHeaderCell>adjErr (ms)</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>matched</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>missing</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>headMiss (ms)</Table.ColumnHeaderCell>
@@ -1200,6 +1220,7 @@ function ScenarioRunnerHarness() {
                       <Table.Cell>{row.repeat}</Table.Cell>
                       <Table.Cell>{row.takeIndex}</Table.Cell>
                       <Table.Cell>{row.medianBeatErrorMs === null ? "—" : row.medianBeatErrorMs.toFixed(2)}</Table.Cell>
+                      <Table.Cell>{row.medianBeatErrorMsAdjusted === null ? "—" : row.medianBeatErrorMsAdjusted.toFixed(2)}</Table.Cell>
                       <Table.Cell>{row.matchedBeats}</Table.Cell>
                       <Table.Cell>{row.missingBeats}</Table.Cell>
                       <Table.Cell>{row.headMissingMs === null ? "—" : row.headMissingMs.toFixed(2)}</Table.Cell>

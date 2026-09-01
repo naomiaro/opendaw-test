@@ -116,6 +116,37 @@ describe("measureTakeAlignment", () => {
     });
     expect(a.tailMissingMs).toBeCloseTo(50, 0);
   });
+
+  // Task 7 recast: audioContext.outputLatency is a harness-path term (see
+  // debug/recording-start-alignment-audit.md "Bring-up calibration" decomposition
+  // term 1) — a real hardware round-trip cost this harness's digital loopback never
+  // incurs, baked uncompensated into every no-count-in waveformOffset. Content that
+  // lands exactly harnessPathBiasSec early is content the SDK actually placed
+  // correctly once that unearned compensation is netted back out.
+  it("computes medianBeatErrorMsAdjusted by adding harnessPathBiasSec back onto the raw median", () => {
+    const biasSec = 0.023; // measured audioContext.outputLatency, both rates (register)
+    const early = perfectLow.map((t) => t - biasSec);
+    const a = measureTakeAlignment({
+      ...base, lowOnsets: early, highOnsets: [], harnessPathBiasSec: biasSec,
+    });
+    // Raw signature is untouched — still reports the harness-path-inflated bias.
+    expect(a.medianBeatErrorMs!).toBeCloseTo(-biasSec * 1000, 1);
+    // Adjusted nets the bias out: content early by exactly the bias reads as ~0.
+    expect(a.medianBeatErrorMsAdjusted!).toBeCloseTo(0, 1);
+  });
+
+  it("defaults harnessPathBiasSec to 0 so medianBeatErrorMsAdjusted equals the raw median", () => {
+    const a = measureTakeAlignment({ ...base, lowOnsets: perfectLow, highOnsets: [] });
+    expect(a.medianBeatErrorMsAdjusted).toBeCloseTo(a.medianBeatErrorMs!, 6);
+  });
+
+  it("medianBeatErrorMsAdjusted is null when no beats matched, same as the raw median", () => {
+    const a = measureTakeAlignment({
+      ...base, lowOnsets: [], highOnsets: [], harnessPathBiasSec: 0.023,
+    });
+    expect(a.medianBeatErrorMs).toBeNull();
+    expect(a.medianBeatErrorMsAdjusted).toBeNull();
+  });
 });
 
 describe("classifyCell", () => {
@@ -124,9 +155,12 @@ describe("classifyCell", () => {
     { id: "C", kind: "constant-late", minAbsMs: 50, maxAbsMs: 235 },
     { id: "D", kind: "constant-late", minAbsMs: 15, maxAbsMs: 30 },
   ];
+  // medianBeatErrorMsAdjusted defaults to the raw median (harnessPathBiasSec=0 is
+  // the implicit default) so every pre-existing test below is unaffected by the
+  // Task 7 adjustment — classifyCell reads the adjusted field for its verdict math.
   const take = (medianMs: number): TakeAlignment => ({
-    beatErrors: [], medianBeatErrorMs: medianMs, anchorT0Sec: null,
-    firstRefIndex: 0, headMissingMs: null, tailMissingMs: null,
+    beatErrors: [], medianBeatErrorMs: medianMs, medianBeatErrorMsAdjusted: medianMs,
+    anchorT0Sec: null, firstRefIndex: 0, headMissingMs: null, tailMissingMs: null,
     matchedBeats: 8, missingBeats: 0, extraLowOnsets: 0,
   });
   it("aligned when every repeat is within tolerance", () => {
@@ -191,6 +225,29 @@ describe("classifyCell", () => {
     ];
     const broken = { ...take(0.3), tailMissingMs: 50 };
     const c = classifyCell([broken, take(0.2), take(0.4)], bandsWithHeadLoss, 2);
+    expect(c.status).toBe("investigate");
+  });
+
+  // Task 7 recast: classification runs on medianBeatErrorMsAdjusted (raw +
+  // harnessPathBiasSec·1000), not the raw median — see recordingAlignment.ts's
+  // measureTakeAlignment. classifyCell itself only ever sees the already-adjusted
+  // field; these mocks set raw and adjusted independently to prove classifyCell
+  // reads the adjusted one.
+  it("classifies aligned from the adjusted median even when the raw median is outside tolerance", () => {
+    const withAdjusted = (rawMs: number, adjustedMs: number): TakeAlignment => ({
+      ...take(rawMs), medianBeatErrorMsAdjusted: adjustedMs,
+    });
+    const c = classifyCell(
+      [withAdjusted(-23, 0.4), withAdjusted(-23, -0.5), withAdjusted(-23, 0.2)],
+      bands,
+      2
+    );
+    expect(c.status).toBe("aligned");
+  });
+
+  it("still requires a real (non-null) raw measurement — a null raw median is unusable regardless of adjustment", () => {
+    const unusable: TakeAlignment = { ...take(0), medianBeatErrorMs: null, medianBeatErrorMsAdjusted: null };
+    const c = classifyCell([unusable, take(0.2), take(0.4)], bands, 2);
     expect(c.status).toBe("investigate");
   });
 });

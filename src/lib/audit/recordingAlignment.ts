@@ -253,11 +253,31 @@ export interface TakeMeasurementInput {
    * baseline.
    */
   headMissingBaselineMs?: number;
+  /**
+   * Task 7 recast: harness-path bias (seconds), added onto every beat's raw
+   * signed error before computing `medianBeatErrorMsAdjusted` — the runtime
+   * value is `audioContext.outputLatency`, the register's "term 1" (a real
+   * hardware round-trip cost this harness's digital loopback never incurs, but
+   * which the SDK's waveformOffset math bakes in uncompensated for every
+   * no-count-in take — see debug/recording-start-alignment-audit.md "Bring-up
+   * calibration"). Content that lands exactly `harnessPathBiasSec` early nets
+   * to ~0 adjusted error. Default 0 (adjusted equals raw) when the caller has
+   * no measured bias. The raw median is NEVER modified — both are always
+   * available on the result.
+   */
+  harnessPathBiasSec?: number;
 }
 
 export interface TakeAlignment {
   beatErrors: { beat: number; errorMs: number }[]; // signed; beat 0 = region start
   medianBeatErrorMs: number | null; // null when no beats matched
+  /**
+   * `medianBeatErrorMs + harnessPathBiasSec * 1000` — null exactly when the
+   * raw median is null (no beats matched). `classifyCell` verdicts run on
+   * THIS field, not the raw one; the raw field is preserved unmodified so it
+   * stays independently auditable. See `TakeMeasurementInput.harnessPathBiasSec`.
+   */
+  medianBeatErrorMsAdjusted: number | null;
   anchorT0Sec: number | null;
   firstRefIndex: number | null;
   headMissingMs: number | null; // signal after the record request that never entered the buffer, in ms; null when not computable
@@ -282,7 +302,7 @@ export function measureTakeAlignment(input: TakeMeasurementInput): TakeAlignment
   const {
     lowOnsets, highOnsets, regionStartSec, waveformOffsetSec, regionDurationSec,
     bufferDurationSec, bpm, schedule, recordRequestContextTime, stopRequestContextTime,
-    headMissingBaselineMs = 0,
+    headMissingBaselineMs = 0, harnessPathBiasSec = 0,
   } = input;
 
   const beatPeriodSec = 60 / bpm;
@@ -327,6 +347,8 @@ export function measureTakeAlignment(input: TakeMeasurementInput): TakeAlignment
   }
 
   const medianBeatErrorMs = median(beatErrors.map((e) => e.errorMs));
+  const medianBeatErrorMsAdjusted =
+    medianBeatErrorMs === null ? null : medianBeatErrorMs + harnessPathBiasSec * 1000;
 
   const identified = identifyReferenceClicks(highOnsets, schedule);
   const anchorT0Sec = estimateAnchorT0(identified, schedule);
@@ -345,6 +367,7 @@ export function measureTakeAlignment(input: TakeMeasurementInput): TakeAlignment
   return {
     beatErrors,
     medianBeatErrorMs,
+    medianBeatErrorMsAdjusted,
     anchorT0Sec,
     firstRefIndex,
     headMissingMs,
@@ -393,6 +416,14 @@ export interface CellClassification {
  * - Only once both are clear does classification fall to the median-based
  *   verdict: `aligned` when every repeat is within tolerance, else the
  *   `random-band`/`constant-late` bands in caller order, else `investigate`.
+ *
+ * Task 7 recast: the median-based verdict (aligned / random-band / constant-late)
+ * runs on each repeat's `medianBeatErrorMsAdjusted` (raw + harnessPathBiasSec·1000
+ * — see `TakeMeasurementInput.harnessPathBiasSec`), NOT `medianBeatErrorMs`. The
+ * "unusable measurement" check above still gates on the RAW field being null
+ * (structural — no beats matched at all, independent of any bias adjustment).
+ * Head/tail deficit gating is unaffected — those run on headMissingMs/tailMissingMs,
+ * which the harness-path adjustment does not touch.
  */
 export function classifyCell(
   repeats: TakeAlignment[],
@@ -409,7 +440,7 @@ export function classifyCell(
     }
   }
 
-  const medians = repeats.map((r) => r.medianBeatErrorMs!);
+  const medians = repeats.map((r) => r.medianBeatErrorMsAdjusted!);
   const detailMedians = medians.map((m) => m.toFixed(2)).join(", ");
   const headDeficits = repeats.map((r) => r.headMissingMs).join(", ");
   const tailDeficits = repeats.map((r) => r.tailMissingMs).join(", ");
