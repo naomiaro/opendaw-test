@@ -820,3 +820,177 @@ gap and the anchor-position residual) remain, unadjusted, in every cell's `inves
 verdict. This sets the baseline the candidate-build comparison below is measured
 against: any candidate improvement has to beat the SAME adjusted-classification bar,
 not the easier raw one.
+
+## Task 7: candidate-build verification
+
+A candidate-fix build (a separate, non-origin-named build — see repo convention)
+was swapped in via `SDK_DIST_OVERRIDE` (dev-server-only mechanism, `vite.config.ts`,
+Task 5) and both matrices (48000 Hz, then 44100 Hz — fresh page load each,
+`?scenario=all&bpm=all&rate=<n>`, real click) were re-run against it, using the SAME
+harness, SAME `SIGNATURE_BANDS`/`ALIGNED_TOLERANCE_MS`, and the SAME adjusted
+classification introduced above. `sdkBuildProbe` read `"candidate"` on every run
+(verified via `engine.syncContextTime` being present as a number — see caveat below)
+and `"upstream"` again after the restore.
+
+**N3 precondition (closes a Task 6 open item):** one live `janked-start`/120/48000
+smoke cell was run BEFORE the override swap, on the upstream build with the new
+adjustment fields wired — 3 clean repeats (no errors), `medianBeatErrorMsAdjusted`
+correctly offset from the raw median by exactly +23.00 ms on every repeat (54.12,
+-65.23, -66.54 ms from raw 31.12, -88.23, -89.54 ms — `recaudit-summary-1788295321703.json`).
+This is the first fully successful live confirmation of the C1 jank-provocation fix
+under this exact code (Task 6's own attempts were blocked by session-level browser
+window-visibility freezing, documented there as an open item).
+
+### Build/swap methodology (non-origin-identifying summary)
+
+Full build commands, package layout, and one important build-time caveat are recorded
+in `.claude/local.md` (gitignored, never committed) per the campaign's privacy
+convention. Summary safe for this public register: the candidate JS/TS packages
+(`studio-core` and its full transitive dependency chain — 13 `@opendaw/*` packages,
+no Rust/wasm packages among them) were built from the candidate repo and laid out at
+`<override-dir>/@opendaw/<pkg>`; the WASM engine package
+(`@opendaw/studio-core-wasm`) and an unrelated Neural Amp Modeler asset package
+(`@opendaw/nam-wasm`) were copied UPSTREAM, unbuilt, wholesale — **this campaign
+verifies only the JS/TS timing-alignment fix, not any Rust/wasm-side change** (the
+audited fix — `RecordAudio.ts`/`CaptureAudio.ts`/`RecordingWorklet.ts`/
+`RecordingProcessor.ts`/`EngineWorklet.ts`/`EngineFacade.ts` — is confirmed to be
+entirely JS/TS, no Rust involvement, by direct source inspection before this
+decision was made).
+
+**Caveat, flagged DONE_WITH_CONCERNS-worthy but does not block the verdict below:**
+the JS/TS fix adds a `contextTime` field to the shared-memory engine-state schema
+(`EngineStateSchema.ts`) that the Rust WASM engine's own serializer was never updated
+to write (confirmed by direct source inspection — no matching constant exists on the
+Rust side, in the candidate repo OR upstream). Because the schema reader
+(`packages/lib/std/src/schema.ts`) decodes fields **sequentially** from a byte
+stream, this makes `engine.syncContextTime` decode misread bytes (not a clean zero) —
+this field is one of the fix's TWO anchor mechanisms (the other,
+`recordingWorklet.firstQuantumTime`, is a pure JS/AudioWorkletProcessor postMessage
+path, entirely unaffected by this schema gap, and remained functional throughout).
+Every downstream field after `contextTime` in the same packet (`perfIndex`,
+`perfBuffer` — the CPU-load meter) is also shifted/misread; `position`, `bpm`,
+`isPlaying`, `isCountingIn`, `isRecording` all precede `contextTime` in the schema
+and decode correctly regardless. **This means the candidate build's own
+`syncContextTime` anchor branch runs on partially garbled data — a defect in the
+candidate repo's own JS/Rust contract, discovered during this verification, not
+introduced by any choice made in this campaign** (using upstream's wasm wholesale,
+vs. building the candidate's own unmodified-for-this-schema Rust, makes no
+difference — neither wasm binary writes the field). It is reported here because it
+plausibly explains part of the noisier/regressed results below (specifically
+`janked-start`, whose provocation is most likely to interact with an anchor read at
+an unlucky moment) — but the `firstQuantumTime`/`wasStartingAt()` mechanisms most
+directly responsible for the register's headline findings do NOT depend on this
+schema field, so the verdict below is not invalidated by it, only qualified.
+
+### Candidate matrix results — 48000 Hz
+
+`recaudit-summary-1788296570300.json` (40 rows, `sdkBuildProbe: "candidate"`). Means
+below are the arithmetic mean of each successful repeat's `medianBeatErrorMsAdjusted`;
+"upstream (adjusted)" repeats the "Harness-path bias adjustment" section's per-cell
+mean above, for direct comparison — same source data, same adjustment, same
+classification code, only the SDK build differs.
+
+| scenario | bpm | candidate mean adj (ms) | upstream mean adj (ms) | Δ | missing-beat repeats | status |
+|---|---|---|---|---|---|---|
+| nominal-start | 120 | -50.3 | -66.1 | 24% smaller | 0/3 | investigate |
+| nominal-start | 97.3 | -50.1 | -71.7 | 30% smaller | 0/3 | investigate |
+| janked-start | 120 | -201.7 | -74.4 | **2.7x WORSE** | 1/3 | investigate |
+| janked-start | 97.3 | -196.5 | -57.2 | **3.4x WORSE** | 0/3 | investigate |
+| midtimeline-start | 120 | -93.0 | -141.2 | 34% smaller | **3/3 (unchanged)** | investigate |
+| midtimeline-start | 97.3 | -76.5 | -132.0 | 42% smaller | **3/3 (unchanged)** | investigate |
+| countin-start | 120 | -52.1 | -72.1 | 28% smaller | 0/3 | investigate |
+| countin-start | 97.3 | -49.0 | -63.5 | 23% smaller | 0/3 | investigate |
+| loop-wrap | 120 | -63.8 (1/3 repeats failed) | -48.2 | worse (thin data) | 0/3 succeeded | investigate |
+| loop-wrap | 97.3 | **3/3 repeats failed** — no data | -47.9 | n/a | n/a | run-failed |
+
+### Candidate matrix results — 44100 Hz
+
+`recaudit-summary-1788297229626.json` (35 rows, `sdkBuildProbe: "candidate"`).
+
+| scenario | bpm | candidate mean adj (ms) | upstream mean adj (ms) | Δ | missing-beat repeats | status |
+|---|---|---|---|---|---|---|
+| nominal-start | 120 | -38.3 | -55.8 | 31% smaller | 0/3 | investigate |
+| nominal-start | 97.3 | -48.5 | -69.4 | 30% smaller | **1/3 (new)** | investigate |
+| janked-start | 120 | -195.2 | -62.1 | **3.1x WORSE** | 0/3 | investigate |
+| janked-start | 97.3 | -194.2 | -59.3 | **3.3x WORSE** | 0/3 | investigate |
+| midtimeline-start | 120 | -66.5 | -134.2 | 50% smaller | **3/3 (unchanged)** | investigate |
+| midtimeline-start | 97.3 | -73.6 | -181.9 | 60% smaller | **3/3 (unchanged)** | investigate |
+| countin-start | 120 | -55.0 | -72.2 | 24% smaller | 0/3 | investigate |
+| countin-start | 97.3 | -43.5 | -69.8 | 38% smaller | 0/3 | investigate |
+| loop-wrap | 120 | -47.9 (2/3 repeats failed) | -43.1 | ~similar (thin data) | 0/3 succeeded | investigate |
+| loop-wrap | 97.3 | **3/3 repeats failed** — no data | -44.2 | n/a | n/a | run-failed |
+
+`headMissingMs` was 0 on nearly every candidate row at both rates (a handful of
+sub-14 ms residuals, e.g. `nominal-start`/97.3/48k/r1 at 4.37 ms, all well under the
+scenarios' predicted head-loss bands where applicable) and no `tailMissingMs`
+deficit was observed anywhere — head/tail integrity is clean on the candidate build,
+matching upstream.
+
+### Verdict against the recast criteria
+
+**(a) Candidate cells whose root causes the candidate fixes address read `aligned`
+under adjusted classification with no missing beats — NOT MET.** Zero of the 18
+successfully-measured non-`loop-wrap` cells (9 per rate × 2 rates) reached `aligned`
+at either rate; every one remains `investigate`. Two of the three targeted
+mechanisms show real, substantial improvement in MAGNITUDE (`nominal-start`/
+`countin-start`: 23-38% smaller adjusted bias at every bpm/rate; `midtimeline-start`:
+34-60% smaller) but none crosses the 2 ms tolerance. The third targeted mechanism
+(`midtimeline-start`'s A-mechanism missing-beat signature) is **structurally
+unchanged**: `matched=15/16, missing=1` on all 6 candidate repeats measured (both
+rates, both bpms) — identical in pattern to all 12 upstream repeats. The
+`Recording.wasStartingAt()` position walk-back this fix introduces specifically for
+that mechanism does not eliminate it in this harness's measurement.
+
+**(b) No cell regresses — NOT MET.** `janked-start` regresses substantially and
+consistently: adjusted bias magnitude is 2.7-3.4x WORSE than the upstream-adjusted
+baseline at every bpm/rate combination measured (4 of 4 cells). This is not noise —
+the effect is large, consistent in sign and rough magnitude across both rates and
+both bpms, and one candidate repeat additionally shows a genuine content-skip
+(`missing=1`, `janked-start`/120/48000/r3) that upstream's fix-round data also
+showed intermittently (1 of 12 repeats there too), so the mechanism is not brand
+new, but its typical-case magnitude is markedly worse on the candidate build. A
+plausible mechanism (not confirmed, offered as a lead for follow-up): the position
+walk-back (`backToStartSeconds`, keyed off `currentPosition` read at the delayed
+post-jank callback) and the reduced `waveformOffset` it produces may not fully
+cancel under jank the way they do under the clean gap `nominal-start`/`countin-start`
+target, compounding rather than correcting the existing bias. `nominal-start`/
+`countin-start`/`midtimeline-start` (magnitude) do not regress — see (a).
+
+**(c) `loop-wrap` finalization-hang failure rate — UNCHANGED, not fixed.** Candidate:
+9 of 12 repeat attempts failed with the identical `"finalizing: finalization timed
+out after 30s"` error across both rates (48k: 4/6 = 67%; 44.1k: 5/6 = 83%; combined
+75%) — statistically the same order of magnitude as the register's previously
+measured upstream rate (18/27 = 67% across 5 separate campaign runs; see "C2"). Both
+97.3 bpm cells failed 3-for-3 on the candidate build at both rates (0 successful
+repeats, `run-failed`). The candidate fixes under test do not touch the finalization
+pipeline (`RecordAudio.ts`'s take-creation/anchor logic, not whatever governs
+`SampleLoader` reaching a terminal state) and this data is consistent with that —
+this remains a separate, still-open finding, not resolved by this candidate build.
+
+**(d) Head/tail integrity — MET, clean at both rates.** No head or tail deficit
+observed on the candidate build beyond ordinary setup-lag noise (see above) — matches
+upstream's own clean head/tail integrity.
+
+**Overall: the candidate build does not pass the recast verdict.** It measurably
+improves bias MAGNITUDE on 3 of 5 scenario families (`nominal-start`, `countin-start`,
+`midtimeline-start`) without eliminating any of them (none reach `aligned`), leaves
+`midtimeline-start`'s specific content-skip defect structurally unchanged, introduces
+a substantial, consistent regression on `janked-start` (violating "no cell
+regresses" directly), and does not fix (or measurably improve) `loop-wrap`'s
+finalization-hang failure rate. Per the schema-mismatch caveat above, this
+verification is flagged **DONE_WITH_CONCERNS**: the `syncContextTime` anchor path
+ran on partially garbled data throughout, which may be contributing to the
+`janked-start` regression specifically — a corrected build (with the Rust
+`write_engine_state` updated to match the extended schema) might perform
+differently on that one scenario. The `nominal-start`/`countin-start`/
+`midtimeline-start` magnitude improvements and the `loop-wrap`/finalization-hang
+non-improvement do not depend on that field and are not qualified by this caveat.
+
+### Restore verification
+
+Dev server restarted WITHOUT the override (`rm -rf node_modules/.vite` first), one
+upstream smoke cell (`nominal-start`/120/48000, `recaudit-summary-1788297319085.json`):
+`sdkBuildProbe: "upstream"`, medians -76.23, -91.56, -89.54 ms — same range as the
+original matrix run's own -97.56, -94.88, -74.90 ms for this exact cell, confirming
+no cache bleed from the override swap. The `SDK_DIST_OVERRIDE` directory used for
+this run was a local, gitignored scratch directory, not committed at any point.
