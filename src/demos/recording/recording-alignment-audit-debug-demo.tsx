@@ -78,18 +78,35 @@ const RMS_PASS_THRESHOLD = 0.005;
 const RECORD_WINDOW_MS = 4000;
 const FINALIZE_DEADLINE_MS = 30_000;
 
+// Build probe: identifies which SDK build is live, for A/B runs against an
+// alternate dist tree (see SDK_DIST_OVERRIDE in vite.config.ts). A module-surface
+// check (e.g. a static import of an internal class) isn't reliable here — the
+// capability under test isn't guaranteed to be a class member every build exposes
+// the same way — so this probes the LIVE `project.engine` instance returned by
+// `initializeOpenDAW()` instead: a fixed build's EngineFacade exposes a numeric
+// `syncContextTime` getter, the installed build does not. Call once init has
+// resolved; "unknown" is reserved for the case where the probe never ran at all
+// (init itself failed), never as a steady-state verdict once the engine is up.
+type SdkBuildProbe = "candidate" | "upstream" | "unknown";
+
+function detectSdkBuildProbe(engine: unknown): SdkBuildProbe {
+  const facade = engine as { syncContextTime?: unknown };
+  return typeof facade?.syncContextTime === "number" ? "candidate" : "upstream";
+}
+
 // Installed at module scope, BEFORE any SDK code can touch mediaDevices.
 const loopback = installLoopbackCapture();
 
 type ProbeRow = { label: string; value: string };
 
-async function runProbe(onRow: (row: ProbeRow) => void): Promise<string> {
+async function runProbe(onRow: (row: ProbeRow) => void, onBuildProbe: (probe: SdkBuildProbe) => void): Promise<string> {
   console.log("[recording-alignment-audit] probe: booting engine, rate=" + rate);
   const { project, audioContext } = await initializeOpenDAW({
     bpm: 120,
     audioContextSampleRate: rate,
     engineTap: (node) => loopback.engineTap(node),
   });
+  onBuildProbe(detectSdkBuildProbe(project.engine));
   loopback.attach(audioContext);
   onRow({ label: "context rate", value: String(audioContext.sampleRate) });
 
@@ -177,6 +194,7 @@ function ProbeHarness() {
   const [rows, setRows] = useState<ProbeRow[]>([]);
   const [verdict, setVerdict] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
+  const [buildProbe, setBuildProbe] = useState<SdkBuildProbe>("unknown");
 
   const handleRunProbe = useCallback(() => {
     if (running) return;
@@ -185,7 +203,10 @@ function ProbeHarness() {
     setVerdict(null);
     setAuditState("setup");
     setAuditState("running:probe");
-    runProbe((row) => setRows((prev) => [...prev, row]))
+    runProbe(
+      (row) => setRows((prev) => [...prev, row]),
+      (probe) => setBuildProbe(probe)
+    )
       .then((result) => {
         console.log("[recording-alignment-audit] verdict: " + result);
         setVerdict(result);
@@ -210,6 +231,9 @@ function ProbeHarness() {
           <Heading size="7" align="center">
             Recording Start-Alignment Audit — Feasibility Probe
           </Heading>
+          <Text size="1" color="gray" align="center">
+            build: {buildProbe}
+          </Text>
 
           <Card>
             <Flex align="center" gap="3" wrap="wrap">
@@ -747,10 +771,11 @@ async function uploadRepeatWav(
 }
 
 /** Upload the JSON summary. Throws on failure (run-level, fatal -> error state). */
-async function uploadSummary(rows: AuditRow[], rate: number): Promise<void> {
+async function uploadSummary(rows: AuditRow[], rate: number, sdkBuildProbe: SdkBuildProbe): Promise<void> {
   const timestamp = Date.now();
   const summary = {
     rate,
+    sdkBuildProbe,
     repeatsPerCell: REPEATS_PER_CELL,
     jankMs: JANK_MS,
     loopWrapTakes: LOOP_WRAP_TAKES,
@@ -769,7 +794,11 @@ async function uploadSummary(rows: AuditRow[], rate: number): Promise<void> {
   );
 }
 
-async function runAudit(setAuditState: (s: string) => void, onRow: (row: AuditRow) => void): Promise<void> {
+async function runAudit(
+  setAuditState: (s: string) => void,
+  onRow: (row: AuditRow) => void,
+  onBuildProbe: (probe: SdkBuildProbe) => void
+): Promise<void> {
   setAuditState("setup");
   const scenarios = resolveScenarios(params.get("scenario"));
   const bpms = resolveBpms(params.get("bpm"));
@@ -780,6 +809,8 @@ async function runAudit(setAuditState: (s: string) => void, onRow: (row: AuditRo
     audioContextSampleRate: rate,
     engineTap: (node) => loopback.engineTap(node),
   });
+  const sdkBuildProbe = detectSdkBuildProbe(project.engine);
+  onBuildProbe(sdkBuildProbe);
   loopback.attach(audioContext);
 
   // ONE tape, created once, reused across every cell.
@@ -897,7 +928,7 @@ async function runAudit(setAuditState: (s: string) => void, onRow: (row: AuditRo
   }
 
   setAuditState("uploading");
-  await uploadSummary(allRows, rate);
+  await uploadSummary(allRows, rate, sdkBuildProbe);
   setAuditState("done");
 }
 
@@ -913,13 +944,18 @@ function ScenarioRunnerHarness() {
   const [rows, setRows] = useState<AuditRow[]>([]);
   const [running, setRunning] = useState(false);
   const [started, setStarted] = useState(false);
+  const [buildProbe, setBuildProbe] = useState<SdkBuildProbe>("unknown");
 
   const handleRun = useCallback(() => {
     if (running) return;
     setRunning(true);
     setStarted(true);
     setRows([]);
-    runAudit(setAuditState, (row) => setRows((prev) => [...prev, row]))
+    runAudit(
+      setAuditState,
+      (row) => setRows((prev) => [...prev, row]),
+      (probe) => setBuildProbe(probe)
+    )
       .catch((err: unknown) => {
         const message = err instanceof Error ? err.message : String(err);
         console.error("[recording-alignment-audit] run error: " + message);
@@ -942,6 +978,9 @@ function ScenarioRunnerHarness() {
           <Heading size="7" align="center">
             Recording Start-Alignment Audit — Scenario Matrix
           </Heading>
+          <Text size="1" color="gray" align="center">
+            build: {buildProbe}
+          </Text>
 
           <Card>
             <Flex align="center" gap="3" wrap="wrap">
