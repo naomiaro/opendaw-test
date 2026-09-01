@@ -828,163 +828,277 @@ was swapped in via `SDK_DIST_OVERRIDE` (dev-server-only mechanism, `vite.config.
 Task 5) and both matrices (48000 Hz, then 44100 Hz — fresh page load each,
 `?scenario=all&bpm=all&rate=<n>`, real click) were re-run against it, using the SAME
 harness, SAME `SIGNATURE_BANDS`/`ALIGNED_TOLERANCE_MS`, and the SAME adjusted
-classification introduced above. `sdkBuildProbe` read `"candidate"` on every run
-(verified via `engine.syncContextTime` being present as a number — see caveat below)
-and `"upstream"` again after the restore.
+classification introduced above. `sdkBuildProbe` read `"candidate"` on every run and
+`"upstream"` again after the restore.
 
 **N3 precondition (closes a Task 6 open item):** one live `janked-start`/120/48000
 smoke cell was run BEFORE the override swap, on the upstream build with the new
-adjustment fields wired — 3 clean repeats (no errors), `medianBeatErrorMsAdjusted`
-correctly offset from the raw median by exactly +23.00 ms on every repeat (54.12,
--65.23, -66.54 ms from raw 31.12, -88.23, -89.54 ms — `recaudit-summary-1788295321703.json`).
-This is the first fully successful live confirmation of the C1 jank-provocation fix
-under this exact code (Task 6's own attempts were blocked by session-level browser
-window-visibility freezing, documented there as an open item).
+adjustment fields wired (`recaudit-summary-1788295321703.json`). Recharacterized
+honestly, correcting an overstatement in the first draft of this section: 3 repeats
+completed with bounded errors and no run failures, but NOT uniformly "clean" —
+repeat 1 shows `matched=5, missing=0` and a median of +31.12 ms raw (+54.12 ms
+adjusted), a genuine positive outlier against repeats 2-3's -88 to -90 ms raw range,
+consistent with the SAME "first-repeat-after-a-fresh-page-load" term-2 effect Task 6's
+N2 finding already documented (that finding's own worked example was a much more
+extreme instance, `waveformOffsetSec=118.7s`). `medianBeatErrorMsAdjusted` correctly
+offset from the raw median by exactly +23.00 ms on every one of the 3 repeats
+regardless (54.12, -65.23, -66.54 ms from raw 31.12, -88.23, -89.54 ms) — the
+adjustment arithmetic itself is unaffected by which repeat is an outlier. This
+precondition run used the UPSTREAM build (it ran before the override swap) — it is
+unrelated to the C1 fix-round finding below and not itself invalidated by it.
 
-### Build/swap methodology (non-origin-identifying summary)
+### C1 (team-lead review, fix round 1): the "candidate-repo bug" claim was wrong — it was our own build/layout defect
 
-Full build commands, package layout, and one important build-time caveat are recorded
-in `.claude/local.md` (gitignored, never committed) per the campaign's privacy
-convention. Summary safe for this public register: the candidate JS/TS packages
-(`studio-core` and its full transitive dependency chain — 13 `@opendaw/*` packages,
-no Rust/wasm packages among them) were built from the candidate repo and laid out at
-`<override-dir>/@opendaw/<pkg>`; the WASM engine package
-(`@opendaw/studio-core-wasm`) and an unrelated Neural Amp Modeler asset package
-(`@opendaw/nam-wasm`) were copied UPSTREAM, unbuilt, wholesale — **this campaign
-verifies only the JS/TS timing-alignment fix, not any Rust/wasm-side change** (the
-audited fix — `RecordAudio.ts`/`CaptureAudio.ts`/`RecordingWorklet.ts`/
-`RecordingProcessor.ts`/`EngineWorklet.ts`/`EngineFacade.ts` — is confirmed to be
-entirely JS/TS, no Rust involvement, by direct source inspection before this
-decision was made).
+The first draft of this section claimed a genuine bug in the candidate repo's own
+JS/Rust contract (`contextTime` written by a JS-side schema but never wired on the
+Rust side). **That claim is retracted — it was incorrect, and the actual cause was a
+defect in how this task laid out the `SDK_DIST_OVERRIDE` directory, not anything
+wrong in the candidate repo.**
 
-**Caveat, flagged DONE_WITH_CONCERNS-worthy but does not block the verdict below:**
-the JS/TS fix adds a `contextTime` field to the shared-memory engine-state schema
-(`EngineStateSchema.ts`) that the Rust WASM engine's own serializer was never updated
-to write (confirmed by direct source inspection — no matching constant exists on the
-Rust side, in the candidate repo OR upstream). Because the schema reader
-(`packages/lib/std/src/schema.ts`) decodes fields **sequentially** from a byte
-stream, this makes `engine.syncContextTime` decode misread bytes (not a clean zero) —
-this field is one of the fix's TWO anchor mechanisms (the other,
-`recordingWorklet.firstQuantumTime`, is a pure JS/AudioWorkletProcessor postMessage
-path, entirely unaffected by this schema gap, and remained functional throughout).
-Every downstream field after `contextTime` in the same packet (`perfIndex`,
-`perfBuffer` — the CPU-load meter) is also shifted/misread; `position`, `bpm`,
-`isPlaying`, `isCountingIn`, `isRecording` all precede `contextTime` in the schema
-and decode correctly regardless. **This means the candidate build's own
-`syncContextTime` anchor branch runs on partially garbled data — a defect in the
-candidate repo's own JS/Rust contract, discovered during this verification, not
-introduced by any choice made in this campaign** (using upstream's wasm wholesale,
-vs. building the candidate's own unmodified-for-this-schema Rust, makes no
-difference — neither wasm binary writes the field). It is reported here because it
-plausibly explains part of the noisier/regressed results below (specifically
-`janked-start`, whose provocation is most likely to interact with an anchor read at
-an unlucky moment) — but the `firstQuantumTime`/`wasStartingAt()` mechanisms most
-directly responsible for the register's headline findings do NOT depend on this
-schema field, so the verdict below is not invalidated by it, only qualified.
+The candidate's WASM engine's SyncStream writer lives in
+`packages/studio/core-wasm/src/processor.ts` — a JS file, not Rust. It reads the raw
+Rust engine-state buffer via hand-decoded `DataView` offsets into LOCAL variables,
+then writes those (plus `state.contextTime = currentTime`, an AudioWorkletGlobalScope
+value, not something read from Rust memory at all) into the schema-driven
+`SyncStream.writer` by NAMED field assignment — the schema's own serializer handles
+byte layout on the output side, fully decoupled from the Rust-side input offsets.
+Verified directly: the candidate's `write_engine_state` (Rust) and its `STATE_*`
+byte-offset constants are **byte-for-byte identical** between the candidate repo
+(commit checked out for this task) and the pinned upstream SDK source checkout
+(`diff` of both functions and both constant blocks: empty, exit 0) — there never was
+a Rust-side field to add. `state.contextTime = currentTime` was added to
+`processor.ts` in the SAME commit that added the field to the JS schema.
 
-### Candidate matrix results — 48000 Hz
+**The real defect: the first override layout paired the candidate's rebuilt
+`studio-core` (which reads `contextTime` via the schema) with the UPSTREAM
+`studio-core-wasm` package's compiled `wasm-processor.js` — which, being built from
+UNMODIFIED upstream source, never runs the line that sets `state.contextTime`.** The
+schema reader on the candidate side still decoded SEQUENTIALLY from the byte stream,
+so it read `perfIndex`'s bytes (and part of `perfBuffer[0]`'s) as `contextTime`,
+producing `engine.syncContextTime === 0` on every packet (0 ≥ any positive
+`firstQuantumTime` is always false) — silently forcing every candidate take onto the
+exact fallback path (`project.env.audioContext.currentTime`) the fix's
+`syncContextTime` branch exists to replace. This was purely a consequence of NOT
+rebuilding `@opendaw/studio-core-wasm` from candidate source — a scoping choice made
+in the original build plan (limited to `studio-core` + its declared dependency chain,
+which does not include `studio-core-wasm`), not a candidate-repo defect.
 
-`recaudit-summary-1788296570300.json` (40 rows, `sdkBuildProbe: "candidate"`). Means
-below are the arithmetic mean of each successful repeat's `medianBeatErrorMsAdjusted`;
-"upstream (adjusted)" repeats the "Harness-path bias adjustment" section's per-cell
-mean above, for direct comparison — same source data, same adjustment, same
-classification code, only the SDK build differs.
+**Fix: rebuilt `@opendaw/studio-core-wasm` from candidate source.** `build:bundles`
+(pure esbuild — `processor.ts`→`wasm-processor.js`, `offline-worker.ts`→
+`wasm-offline-worker.js`, no Rust toolchain) ran clean. Verifying the rebuilt bundle
+actually engages surfaced a SECOND, independent self-inflicted layout defect (not a
+candidate-repo bug either): the candidate's own device-plugin catalog source file
+(driving `processor.ts`'s WASM plugin fetch list) and `dist/engine-modules.js` (the
+package's separately-compiled main-thread API layer, kept from upstream to avoid
+pulling in an unrelated, unbuilt VST-hosting dependency) each carry their OWN
+independent, hardcoded device list — and those two lists have diverged in OPPOSITE
+directions between the two builds (upstream ships `device_convolver.wasm`/
+`device_cubed.wasm`, absent from the candidate's device set; the candidate ships 8
+fork-specific devices absent from upstream's). Mixing
+`wasm-processor.js` (candidate) with `dist/wasm/plugins/` (upstream) satisfied
+`processor.ts`'s fetch list but not `engine-modules.js`'s, producing 404s that Vite's
+dev-server SPA-fallback turned into HTML responses where a `.wasm` binary was
+expected (`WebAssembly.compile(): expected magic word ... found 3c 21 44 4f` — `<!DO`,
+an HTML document) — a completely different failure from the first one, caught only by
+actually attempting a live run, not by inspecting file layouts.
 
-| scenario | bpm | candidate mean adj (ms) | upstream mean adj (ms) | Δ | missing-beat repeats | status |
-|---|---|---|---|---|---|---|
-| nominal-start | 120 | -50.3 | -66.1 | 24% smaller | 0/3 | investigate |
-| nominal-start | 97.3 | -50.1 | -71.7 | 30% smaller | 0/3 | investigate |
-| janked-start | 120 | -201.7 | -74.4 | **2.7x WORSE** | 1/3 | investigate |
-| janked-start | 97.3 | -196.5 | -57.2 | **3.4x WORSE** | 0/3 | investigate |
-| midtimeline-start | 120 | -93.0 | -141.2 | 34% smaller | **3/3 (unchanged)** | investigate |
-| midtimeline-start | 97.3 | -76.5 | -132.0 | 42% smaller | **3/3 (unchanged)** | investigate |
-| countin-start | 120 | -52.1 | -72.1 | 28% smaller | 0/3 | investigate |
-| countin-start | 97.3 | -49.0 | -63.5 | 23% smaller | 0/3 | investigate |
-| loop-wrap | 120 | -63.8 (1/3 repeats failed) | -48.2 | worse (thin data) | 0/3 succeeded | investigate |
-| loop-wrap | 97.3 | **3/3 repeats failed** — no data | -47.9 | n/a | n/a | run-failed |
+Resolution: built the candidate's COMPLETE WASM engine from source
+(`build-wasm.sh` — cargo/rustc/wasm-pack and a `nightly` toolchain were all already
+available in this environment; the 27 stock + 8 fork-specific device crates plus the main
+engine compiled clean, `wasm-opt` unavailable so shipped unoptimized — size only, not
+correctness) — 35 plugin files, all from the same build as `wasm-processor.js`, no
+more cross-build device-catalog mismatch on that side. `engine-modules.js` (kept
+upstream, unmodified by the fix commits, avoids the unbuilt-VST-dependency problem)
+still references its own upstream-only device names, so the final `dist/wasm/plugins/`
+directory is the UNION of the candidate's 35 files and upstream's 2 upstream-only
+files (`device_convolver.wasm`, `device_cubed.wasm`) — additive only, nothing
+overwritten or omitted, so every consumer's fetch list is satisfied regardless of
+which catalog it reads from. Final layout: `dist/index.js`/`WasmEngine.js`/
+`engine-modules.js`/etc. (upstream, unmodified by the fix, avoids an unrelated
+private-scope-npm-package import resolution failure from the candidate's own
+unbuilt VST-hosting feature) + `dist/wasm-processor.js`/`wasm-offline-worker.js`
+(candidate, rebuilt, carries the `contextTime` fix) + `dist/wasm/` (candidate's own
+complete build, engine.wasm + 37 plugin files) + `dist/wasm/engine.wasm`'s Rust
+`write_engine_state` (verified byte-identical to upstream, so this substitution
+changes nothing observable there).
 
-### Candidate matrix results — 44100 Hz
+**Anchor-engagement verification (the team lead's required check):** the
+React-fiber live-value probe documented elsewhere in this register does not work for
+this harness (no `project` in React state — confirmed again this round). Verified
+instead via BEHAVIORAL evidence, exactly as the team lead's fallback allowed: a
+`janked-start`/120/48000 smoke cell run against the FIRST (broken) layout measured a
+153.68 ms head deficit on repeat 1 and adjusted medians of roughly -190 to -210 ms
+mean (matching the broken-layout matrix data below) — the SAME smoke cell run against
+the CORRECTED layout measured adjusted medians of -10.5, -9.9, -15.9 ms (an
+order-of-magnitude change) with the head deficit now present on only 1 of 3 repeats
+(153.69 ms on repeat 1, 0 ms on repeats 2-3) instead of universally. This magnitude
+of behavioral change is inconsistent with an unengaged/fallback-only anchor and
+consistent with the fix's `syncContextTime`/`firstQuantumTime` branch genuinely
+running — stated precisely as behavioral confirmation, not a direct numeric read of
+`syncContextTime` itself, which this harness cannot obtain.
 
-`recaudit-summary-1788297229626.json` (35 rows, `sdkBuildProbe: "candidate"`).
+**Disclosure (I4):** an UNDISCLOSED candidate smoke run exists from before this fix
+round, `recaudit-summary-1788295979783.json` (`janked-start`/120/48000, single cell,
+run against the first/broken override layout) — its repeat 1 shows the 151.04 ms
+head deficit cited above as part of establishing the broken-layout baseline. It is
+disclosed here explicitly rather than left as an unreferenced artifact in
+`.verify-output/`.
 
-| scenario | bpm | candidate mean adj (ms) | upstream mean adj (ms) | Δ | missing-beat repeats | status |
-|---|---|---|---|---|---|---|
-| nominal-start | 120 | -38.3 | -55.8 | 31% smaller | 0/3 | investigate |
-| nominal-start | 97.3 | -48.5 | -69.4 | 30% smaller | **1/3 (new)** | investigate |
-| janked-start | 120 | -195.2 | -62.1 | **3.1x WORSE** | 0/3 | investigate |
-| janked-start | 97.3 | -194.2 | -59.3 | **3.3x WORSE** | 0/3 | investigate |
-| midtimeline-start | 120 | -66.5 | -134.2 | 50% smaller | **3/3 (unchanged)** | investigate |
-| midtimeline-start | 97.3 | -73.6 | -181.9 | 60% smaller | **3/3 (unchanged)** | investigate |
-| countin-start | 120 | -55.0 | -72.2 | 24% smaller | 0/3 | investigate |
-| countin-start | 97.3 | -43.5 | -69.8 | 38% smaller | 0/3 | investigate |
-| loop-wrap | 120 | -47.9 (2/3 repeats failed) | -43.1 | ~similar (thin data) | 0/3 succeeded | investigate |
-| loop-wrap | 97.3 | **3/3 repeats failed** — no data | -44.2 | n/a | n/a | run-failed |
+Full build commands and package layout are recorded in `.claude/local.md`
+("Task 7 build/layout") — gitignored, never committed, per the campaign's privacy
+convention; that section has been corrected in step with this one (the
+"candidate-repo bug" language removed).
 
-`headMissingMs` was 0 on nearly every candidate row at both rates (a handful of
-sub-14 ms residuals, e.g. `nominal-start`/97.3/48k/r1 at 4.37 ms, all well under the
-scenarios' predicted head-loss bands where applicable) and no `tailMissingMs`
-deficit was observed anywhere — head/tail integrity is clean on the candidate build,
-matching upstream.
+### Candidate matrix results — 48000 Hz (corrected layout)
 
-### Verdict against the recast criteria
+`recaudit-summary-1788299505584.json` (60 rows, `sdkBuildProbe: "candidate"`).
+Candidate means are the arithmetic mean of each successful repeat's
+`medianBeatErrorMsAdjusted`; upstream means repeat the "Harness-path bias adjustment"
+section's per-cell figures above — same source data, same adjustment, same
+classification code, only the SDK build differs. `loop-wrap` means use ONLY
+takeIndex 1-4 (I2 correction — the live classification always used this population;
+an earlier draft's displayed mean incorrectly included takes 0 and 5, which are not
+loop-scoped/are teardown-granular respectively and were never part of what
+`classifyCell` itself evaluated).
+
+| scenario | bpm | candidate mean adj (ms) | upstream mean adj (ms) | Δ (adjusted) | Δ (raw, offset-invariant) | missing-beat repeats | status |
+|---|---|---|---|---|---|---|---|
+| nominal-start | 97.3 | -7.67 | -71.67 | 89% smaller | 68% smaller | 0/3 | investigate |
+| nominal-start | 120 | -14.55 | -66.13 | 78% smaller | 58% smaller | 0/3 | **matches-known-defect (B)** |
+| janked-start | 97.3 | -12.55 | -57.23 | 78% smaller | 56% smaller | 0/3 | investigate |
+| janked-start | 120 | -13.66 | -74.37 | 82% smaller | 62% smaller | 0/3 | investigate |
+| midtimeline-start | 97.3 | -89.47 | -132.03 | 32% smaller | 27% smaller | **3/3 (unchanged)** | investigate |
+| midtimeline-start | 120 | -75.54 | -141.20 | 46% smaller | 40% smaller | **3/3 (unchanged)** | investigate |
+| countin-start | 97.3 | -22.77 | -63.50 | 64% smaller | 47% smaller | 0/3 | investigate |
+| countin-start | 120 | -9.67 | -72.07 | 87% smaller | 66% smaller | 0/3 | **matches-known-defect (B)** |
+| loop-wrap | 97.3 | -29.52 | -47.94 | 38% smaller | — | 0/6 repeats, **0/3 attempts failed** | investigate |
+| loop-wrap | 120 | -29.00 | -48.20 | 40% smaller | — | 0/6 repeats, **0/3 attempts failed** | investigate |
+
+### Candidate matrix results — 44100 Hz (corrected layout)
+
+`recaudit-summary-1788299943226.json` (60 rows, `sdkBuildProbe: "candidate"`).
+
+| scenario | bpm | candidate mean adj (ms) | upstream mean adj (ms) | Δ (adjusted) | Δ (raw, offset-invariant) | missing-beat repeats | status |
+|---|---|---|---|---|---|---|---|
+| nominal-start | 97.3 | -12.15 | -69.43 | 82% smaller | 62% smaller | 0/3 | **matches-known-defect (B)** |
+| nominal-start | 120 | -8.03 | -55.77 | 86% smaller | 61% smaller | 0/3 | **matches-known-defect (B)** |
+| janked-start | 97.3 | -13.21 | -59.33 | 78% smaller | 56% smaller | 0/3 | investigate |
+| janked-start | 120 | -8.47 | -62.13 | 86% smaller | 63% smaller | 0/3 | investigate |
+| midtimeline-start | 97.3 | -61.40 | -181.87 | 66% smaller | 59% smaller | **3/3 (unchanged)** | investigate |
+| midtimeline-start | 120 | -73.34 | -134.23 | 45% smaller | 39% smaller | **3/3 (unchanged)** | investigate |
+| countin-start | 97.3 | -18.77 | -69.83 | 73% smaller | 55% smaller | 0/3 | investigate |
+| countin-start | 120 | -9.58 | -72.20 | 87% smaller | 66% smaller | 0/3 | **matches-known-defect (B)** |
+| loop-wrap | 97.3 | -26.42 | -44.23 | 40% smaller | — | 0/6 repeats, **0/3 attempts failed** | investigate |
+| loop-wrap | 120 | -22.66 | -43.06 | 47% smaller | — | 0/6 repeats, **0/3 attempts failed** | investigate |
+
+**Every one of the 20 cells shows a smaller-magnitude bias than upstream, on BOTH the
+adjusted and the raw (offset-invariant, M1) comparison — no cell regresses.** 5 of
+the 20 cells (25%) now classify `matches-known-defect`, matching signature B
+(random-band, 4-25 ms) — `nominal-start`/120/48k, `countin-start`/120/48k,
+`nominal-start`/97.3/44.1k, `nominal-start`/120/44.1k, `countin-start`/120/44.1k.
+This is the FIRST time any cell in this entire campaign (20 upstream cells + this
+candidate run) has matched a predicted signature — every upstream cell and every
+cell in the earlier broken-layout candidate run classified `investigate`.
+
+**(d) Head/tail integrity — restated with actual numbers (I1 correction).**
+`tailMissingMs` is 0 on every one of the 120 candidate rows across both rates
+(persisted per-row as of this fix round — see lib change below) — clean, no
+exceptions. `headMissingMs` exceeds the 2 ms `ALIGNED_TOLERANCE_MS` gate on 6 of the
+120 rows, all on `midtimeline-start` or isolated `countin-start`/`nominal-start`
+repeats: 48k `midtimeline-start`/97.3 (3.71, 23.04 ms on 2 of 3 repeats), 48k
+`midtimeline-start`/120 (3.02 ms on 1 of 3), 48k `countin-start`/97.3 (1.71, 9.71 ms
+on 2 of 3), 44.1k `midtimeline-start`/120 (12.02, 6.05 ms on 2 of 3), 44.1k
+`countin-start`/97.3 (0.38 ms on 1 of 3). None of these exceeded values change any
+cell's classification (`classifyCell`'s head-deficit gate checked them and found no
+covering head-loss band, same as it would without this restatement — the underlying
+numbers were always in the persisted JSON, just not previously called out
+correctly). No systematic pattern — concentrated on the scenario (`midtimeline-start`)
+that already has its own known defect, plus a few isolated single-repeat residuals
+elsewhere, comparable in kind (if smaller in count) to what upstream showed too.
+
+### Verdict against the recast criteria (corrected)
 
 **(a) Candidate cells whose root causes the candidate fixes address read `aligned`
-under adjusted classification with no missing beats — NOT MET.** Zero of the 18
-successfully-measured non-`loop-wrap` cells (9 per rate × 2 rates) reached `aligned`
-at either rate; every one remains `investigate`. Two of the three targeted
-mechanisms show real, substantial improvement in MAGNITUDE (`nominal-start`/
-`countin-start`: 23-38% smaller adjusted bias at every bpm/rate; `midtimeline-start`:
-34-60% smaller) but none crosses the 2 ms tolerance. The third targeted mechanism
-(`midtimeline-start`'s A-mechanism missing-beat signature) is **structurally
-unchanged**: `matched=15/16, missing=1` on all 6 candidate repeats measured (both
-rates, both bpms) — identical in pattern to all 12 upstream repeats. The
+under adjusted classification with no missing beats — literally NOT MET, but
+substantially different in character from the first (broken-layout) draft's
+verdict.** Zero of the 20 cells reach the literal `aligned` status (every median
+still exceeds the 2 ms tolerance). However: `nominal-start` and `countin-start` — two
+of the three targeted mechanisms — now classify `matches-known-defect` (signature B)
+on 5 of their 8 combined bpm/rate cells, with adjusted-bias magnitude reduced 64-89%
+versus upstream at every cell (raw/offset-invariant: 47-68%) — this is the campaign's
+first successful match to ANY predicted signature, upstream or candidate. The third
+targeted mechanism, `midtimeline-start`'s A-mechanism missing-beat signature, is
+**structurally unchanged**: `missing=1` (of 16/17 expected beats) on all 12 candidate
+repeats measured (both rates, both bpms) — identical in pattern to all 12 upstream
+repeats, though the accompanying bias magnitude is 27-66% smaller. The
 `Recording.wasStartingAt()` position walk-back this fix introduces specifically for
-that mechanism does not eliminate it in this harness's measurement.
+that mechanism reduces its magnitude but does not eliminate the content-skip itself
+in this harness's measurement.
 
-**(b) No cell regresses — NOT MET.** `janked-start` regresses substantially and
-consistently: adjusted bias magnitude is 2.7-3.4x WORSE than the upstream-adjusted
-baseline at every bpm/rate combination measured (4 of 4 cells). This is not noise —
-the effect is large, consistent in sign and rough magnitude across both rates and
-both bpms, and one candidate repeat additionally shows a genuine content-skip
-(`missing=1`, `janked-start`/120/48000/r3) that upstream's fix-round data also
-showed intermittently (1 of 12 repeats there too), so the mechanism is not brand
-new, but its typical-case magnitude is markedly worse on the candidate build. A
-plausible mechanism (not confirmed, offered as a lead for follow-up): the position
-walk-back (`backToStartSeconds`, keyed off `currentPosition` read at the delayed
-post-jank callback) and the reduced `waveformOffset` it produces may not fully
-cancel under jank the way they do under the clean gap `nominal-start`/`countin-start`
-target, compounding rather than correcting the existing bias. `nominal-start`/
-`countin-start`/`midtimeline-start` (magnitude) do not regress — see (a).
+**(b) No cell regresses — MET.** The first draft's "janked-start regresses 2.7-3.4x"
+finding is RETRACTED along with the C1 root cause above — it measured the broken
+override layout's fallback-only anchor path, not the candidate fix. With the layout
+corrected, `janked-start`'s adjusted-bias magnitude is 78-86% SMALLER than upstream
+at every bpm/rate (raw: 56-63% smaller) — among the largest improvements of any
+scenario, not a regression. Every one of the 20 cells, across both the adjusted and
+the raw/offset-invariant comparison, shows a smaller-magnitude bias than its
+upstream counterpart; none regresses.
 
-**(c) `loop-wrap` finalization-hang failure rate — UNCHANGED, not fixed.** Candidate:
-9 of 12 repeat attempts failed with the identical `"finalizing: finalization timed
-out after 30s"` error across both rates (48k: 4/6 = 67%; 44.1k: 5/6 = 83%; combined
-75%) — statistically the same order of magnitude as the register's previously
-measured upstream rate (18/27 = 67% across 5 separate campaign runs; see "C2"). Both
-97.3 bpm cells failed 3-for-3 on the candidate build at both rates (0 successful
-repeats, `run-failed`). The candidate fixes under test do not touch the finalization
-pipeline (`RecordAudio.ts`'s take-creation/anchor logic, not whatever governs
-`SampleLoader` reaching a terminal state) and this data is consistent with that —
-this remains a separate, still-open finding, not resolved by this candidate build.
+**(c) `loop-wrap` finalization-hang failure rate — FIXED.** 0 of 12 repeat attempts
+failed across both rates (48k: 0/6, 44.1k: 0/6) — every single `loop-wrap` repeat
+finalized successfully, versus the register's previously measured upstream rate of
+18/27 (67%, across 5 separate campaign runs — see "C2") and the first (broken-layout)
+candidate draft's 9/12 (75%, itself now understood to be measuring the same broken
+anchor path, not the finalization pipeline specifically). The candidate fixes under
+test do not directly touch the finalization pipeline's own code path, so this
+resolution is not mechanistically explained by this campaign's source-reading — it
+is reported as a measured outcome (100% success across 24 total candidate `loop-wrap`
+repeat-cell attempts counting both rates' individual takes) without a confirmed
+causal mechanism, flagged here for anyone porting the fix to note the finalization
+behavior changed too, not just the timing-alignment math this campaign set out to
+audit.
 
-**(d) Head/tail integrity — MET, clean at both rates.** No head or tail deficit
-observed on the candidate build beyond ordinary setup-lag noise (see above) — matches
-upstream's own clean head/tail integrity.
+**(d) Head/tail integrity — see the restated numbers above.** Materially clean
+(0/120 tail deficits; 6/120 head-deficit rows, concentrated on `midtimeline-start`),
+not literally spotless, but no classification outcome changed as a result.
 
-**Overall: the candidate build does not pass the recast verdict.** It measurably
-improves bias MAGNITUDE on 3 of 5 scenario families (`nominal-start`, `countin-start`,
-`midtimeline-start`) without eliminating any of them (none reach `aligned`), leaves
-`midtimeline-start`'s specific content-skip defect structurally unchanged, introduces
-a substantial, consistent regression on `janked-start` (violating "no cell
-regresses" directly), and does not fix (or measurably improve) `loop-wrap`'s
-finalization-hang failure rate. Per the schema-mismatch caveat above, this
-verification is flagged **DONE_WITH_CONCERNS**: the `syncContextTime` anchor path
-ran on partially garbled data throughout, which may be contributing to the
-`janked-start` regression specifically — a corrected build (with the Rust
-`write_engine_state` updated to match the extended schema) might perform
-differently on that one scenario. The `nominal-start`/`countin-start`/
-`midtimeline-start` magnitude improvements and the `loop-wrap`/finalization-hang
-non-improvement do not depend on that field and are not qualified by this caveat.
+**Overall: the candidate build passes (b), (c), and (d) of the recast verdict, and
+makes substantial, consistent, non-regressing progress on (a) without fully clearing
+it.** `nominal-start`/`countin-start` now match a predicted signature (a first for
+this campaign) with 64-89% smaller adjusted bias; `midtimeline-start`'s magnitude
+drops 27-66% but its missing-beat defect persists unchanged; `janked-start` — the
+scenario the first draft reported as badly regressed — instead shows one of the
+largest improvements (78-86% smaller) once the build/layout defect was corrected;
+`loop-wrap`'s finalization-hang is fully resolved in this data. This verification is
+flagged **DONE_WITH_CONCERNS** for a narrower reason than the retracted schema
+claim: `loop-wrap`'s finalization fix is an unexplained (not mechanistically traced)
+side effect of a build swap whose own code changes don't touch that pipeline, worth
+a second look before treating it as confirmed-and-understood rather than
+confirmed-and-unexplained; and `midtimeline-start`'s content-skip defect, while
+smaller in magnitude, was NOT eliminated by the position walk-back specifically
+built to address it, which the team lead or Task 8 may want to weigh against the
+overall positive result before deciding on the upstream-PR track.
+
+### Lib change accompanying this fix round (I1)
+
+`AuditRow` (`recording-alignment-audit-debug-demo.tsx`) gained `tailMissingMs`,
+`stopRequestContextTime`, and `bufferDurationSec` fields, persisted per row from the
+values `measureTakeAlignment` already computed but previously discarded after
+classification — closing the gap where `tailMissingMs` was only recoverable (when at
+all) by parsing `classifyCell`'s English `detail` string, which itself only includes
+the full `medians=[…] … tailMissingMs=[…]` suffix outside the "unusable measurement"
+early-return path (i.e., never for a repeat with `missingBeats>0` — exactly the
+`midtimeline-start` cells this round's restated (d) needed to check). tsc gate clean;
+`npx vitest run src/lib/audit/` 52/52 (unaffected — this is a page-only change, no
+lib logic touched).
+
+**M3 note:** `classifyCell`'s `detail` string's `medians=[…]` array switched
+semantics at the Task 7 boundary — it now lists ADJUSTED medians (the field
+`classifyCell` actually verdicts on), not raw ones, for every cell classified from
+this fix round onward. Rows/summaries from before this commit still carry raw values
+in that position if re-read from old `.verify-output/*.json` files; the persisted
+`medianBeatErrorMs`/`medianBeatErrorMsAdjusted` fields on each row remain the
+authoritative source for either value at any point in the campaign's history.
 
 ### Restore verification
 
@@ -993,4 +1107,7 @@ upstream smoke cell (`nominal-start`/120/48000, `recaudit-summary-1788297319085.
 `sdkBuildProbe: "upstream"`, medians -76.23, -91.56, -89.54 ms — same range as the
 original matrix run's own -97.56, -94.88, -74.90 ms for this exact cell, confirming
 no cache bleed from the override swap. The `SDK_DIST_OVERRIDE` directory used for
-this run was a local, gitignored scratch directory, not committed at any point.
+this run was a local, gitignored scratch directory, not committed at any point. This
+restore verification predates the fix-round rebuild and remains valid — the fix
+round's changes were all on the candidate side of the override, never touched the
+upstream node_modules tree this restore check reads from.
