@@ -114,9 +114,12 @@ After a take finalizes:
 3. Map each onset's file time to timeline time:
    `timelineSeconds = regionStartSeconds + (fileTime − waveformOffset)`.
 4. Match metronome onsets to their nearest beat (error = signed distance, ms) and
-   reference clicks to the retained schedule (identity by index; error = signed
-   distance from the click's expected timeline time, derived from the context-time ↔
-   transport mapping the harness records while the transport runs).
+   reference clicks to the retained schedule. The schedule uses unique growing gaps
+   (gap between click *i* and *i+1* = base + *i*·increment), so any two consecutive
+   recovered clicks identify their schedule indices, which recovers the capture
+   buffer's context-time anchor T0 = scheduled time − file time. Head/tail integrity
+   compares T0 and T0 + buffer duration against the context times recorded at the
+   record/stop requests.
 5. Telemetry recorded per take: `position`, `waveformOffset`, per-take
    `waveformOffset` deltas (loop-wrap), final-take buffer overshoot, first/last
    recovered click indices.
@@ -190,10 +193,14 @@ named in committed or posted text.
   provocation produced each measurement.
 - **Metronome-band overlap:** if the metronome click's spectrum bleeds into the 4 kHz
   reference band, the reference moves higher (6–8 kHz) during bring-up calibration.
-- **Context-time ↔ transport mapping** on upstream lacks an audio-thread-timestamped
-  sync anchor; the harness derives the mapping from repeated position observations
-  with rAF timestamps and reports the mapping's own uncertainty band alongside every
-  measurement (expected ≪ the defect magnitudes of interest).
+- **Injection feasibility (known prior failure):** `src/demos/recording/CLAUDE.md`
+  records that a `getUserMedia` override returning a `MediaStreamAudioDestinationNode`
+  stream read as SILENT when consumed **cross-AudioContext**, and that a shared dest
+  stream dies when a consumer stops its track. This campaign uses the same-context
+  topology (dest node created in the SDK's own AudioContext, `stream.clone()` handed
+  out per call) and gates all harness work behind an explicit feasibility probe
+  (implementation plan Task 1). Probe failure stops the campaign for a fallback
+  decision (real-mic loopback protocol, or a virtual audio device).
 - **Candidate-build API drift** vs the 0.0.170 demo glue (see 3.7).
 
 ## 6. Success criteria
