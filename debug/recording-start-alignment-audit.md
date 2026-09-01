@@ -732,3 +732,91 @@ before posting). `janked-start`'s A-mechanism confirmation and `loop-wrap`'s
 D-flatness are confirmations of already-predicted signatures, not new findings on
 their own, though both are worth folding into the write-ups above rather than filed
 standalone.
+
+## Task 7: harness-path bias adjustment
+
+The team lead's Task 7 ruling recast the campaign's A/B verdict: zero upstream cells
+ever reached `matches-known-defect` (see "Outcome summary"), so "every defect cell
+flips aligned" is vacuous, and the bring-up decomposition's term 1
+(`audioContext.outputLatency`, 23 ms, identical at both rates — see "Bring-up
+calibration") is a genuine, harness-attributable additive term baked uncompensated
+into every no-count-in `waveformOffset`. This section nets that one term out of the
+classification math (NOT out of the published raw signature — both stay available)
+and re-checks whether doing so changes any upstream verdict, before the candidate-build
+comparison below.
+
+### Lib change
+
+`measureTakeAlignment` (`src/lib/audit/recordingAlignment.ts`) gained an optional
+`harnessPathBiasSec` input (seconds, default 0) and a new `TakeAlignment` field,
+`medianBeatErrorMsAdjusted = medianBeatErrorMs + harnessPathBiasSec * 1000` — content
+that lands exactly `harnessPathBiasSec` early (raw median = `-harnessPathBiasSec*1000`
+ms) nets to ~0 adjusted. The raw field is never modified. `classifyCell` now verdicts
+on `medianBeatErrorMsAdjusted` (falling back to the raw field only for the structural
+"no beats matched" unusable-check, which is bias-independent) — both raw and adjusted
+values are persisted on every row and at the run's top level (`harnessPathBiasSec`,
+set to `audioContext.outputLatency`, captured once per run). TDD coverage in
+`recordingAlignment.test.ts`: 24/24 passing (4 new cases), including an explicit sign
+proof (content early by exactly the bias classifies `aligned` under the adjustment)
+and a classifyCell case where the adjusted median crosses the tolerance boundary while
+the raw one doesn't. `npx vitest run src/lib/audit/`: 52/52 passing. tsc gate clean
+before and after.
+
+### Offline recompute — upstream matrix, adjusted classification
+
+Recomputed adjusted classifications for all 20 upstream matrix cells (10
+scenario/bpm combinations × 2 rates) directly from the persisted
+`.verify-output/recaudit-summary-*.json` files this campaign already produced — **no
+new upstream browser runs**. Methodology: for each cell, reconstruct the same
+`TakeAlignment[]` the live page classified with (same source file, same take-index
+filtering for `loop-wrap`, error rows excluded) with `medianBeatErrorMsAdjusted =
+medianBeatErrorMs + outputLatency*1000` (`outputLatency` read from that file's own
+top-level field), then call the SAME `classifyCell`/`SIGNATURE_BANDS`/
+`ALIGNED_TOLERANCE_MS` the live page uses. Source file per cell mirrors exactly what
+"Matrix results — 48000 Hz" / "Matrix results — 44100 Hz" above cite as that cell's
+population (including the `janked-start` fix-round and `loop-wrap` split-provenance
+exceptions). Two source files (`…1788287951691.json`, `…1788288625777.json`, the two
+ORIGINAL matrix runs) predate the `outputLatency` top-level persistence (fix round 1,
+I3) and lack the field entirely — those 12 cells use the documented 0.023 s constant
+as a fallback (identical value independently confirmed in every OTHER source file
+this recompute touches), flagged per-cell. As a self-consistency check, the "before"
+column is independently re-derived the same way with the adjustment forced to 0 and
+compared against the register's own already-published verdicts above — it matches on
+all 20 cells (see raw script output, not committed —
+`.superpowers/sdd/2026-09-01-recording-start-alignment-audit/scripts/
+task7-adjusted-classification.ts`, session-internal per the task's scope).
+
+| scenario | bpm | rate | before | after (adjusted) | adjusted medians (ms) |
+|---|---|---|---|---|---|
+| nominal-start | 120 | 48000 | investigate | investigate | -74.6, -71.9, -51.9 |
+| nominal-start | 97.3 | 48000 | investigate | investigate | -85.2, -49.9, -79.9 |
+| janked-start | 120 | 48000 | investigate | investigate | -47.9, -76.6, -98.6 |
+| janked-start | 97.3 | 48000 | investigate | investigate | -50.6, -66.6, -54.5 |
+| midtimeline-start | 120 | 48000 | investigate | investigate | -129.2, -131.9, -162.5 |
+| midtimeline-start | 97.3 | 48000 | investigate | investigate | -143.4, -124.7, -128.0 |
+| countin-start | 120 | 48000 | investigate | investigate | -78.5, -76.5, -61.2 |
+| countin-start | 97.3 | 48000 | investigate | investigate | -54.6, -77.3, -58.6 |
+| loop-wrap | 120 | 48000 | investigate | investigate | -48.2, -48.2, -48.2, null |
+| loop-wrap | 97.3 | 48000 | investigate | investigate | -45.1, -45.1, -45.2, -45.2, -50.7, -50.7, -50.7, -50.8 |
+| nominal-start | 120 | 44100 | investigate | investigate | -49.2, -41.9, -76.2 |
+| nominal-start | 97.3 | 44100 | investigate | investigate | -75.4, -78.9, -54.0 |
+| janked-start | 120 | 44100 | investigate | investigate | -56.3, -66.4, -63.7 |
+| janked-start | 97.3 | 44100 | investigate | investigate | -46.4, -66.0, -65.6 |
+| midtimeline-start | 120 | 44100 | investigate | investigate | -144.2, -124.6, -133.9 |
+| midtimeline-start | 97.3 | 44100 | investigate | investigate | -185.1, -178.5, -182.0 |
+| countin-start | 120 | 44100 | investigate | investigate | -76.5, -73.9, -66.2 |
+| countin-start | 97.3 | 44100 | investigate | investigate | -70.1, -60.7, -78.7 |
+| loop-wrap | 120 | 44100 | investigate | investigate | -48.0, -48.0, -48.1, null, -39.3, -39.3, -39.3, -39.4 |
+| loop-wrap | 97.3 | 44100 | investigate | investigate | -44.2, -44.2, -44.2, -44.3 |
+
+**Result: 20/20 cells unchanged (0 flips) — every upstream cell that was
+`investigate` before the adjustment remains `investigate` after it.** This is
+consistent with, not a refutation of, the bring-up section's own three-term
+decomposition: term 1 (`outputLatency`, 23 ms) was always characterized as "small
+enough (23 of ~90 ms, ~25%) that subtracting it would not materially change the
+classification" — this recompute confirms that stated expectation numerically rather
+than assuming it. The dominant terms (2 and 3 — the uncompensated worklet-connect
+gap and the anchor-position residual) remain, unadjusted, in every cell's `investigate`
+verdict. This sets the baseline the candidate-build comparison below is measured
+against: any candidate improvement has to beat the SAME adjusted-classification bar,
+not the easier raw one.
