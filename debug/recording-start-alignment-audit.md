@@ -1106,8 +1106,12 @@ Dev server restarted WITHOUT the override (`rm -rf node_modules/.vite` first), o
 upstream smoke cell (`nominal-start`/120/48000, `recaudit-summary-1788297319085.json`):
 `sdkBuildProbe: "upstream"`, medians -76.23, -91.56, -89.54 ms — same range as the
 original matrix run's own -97.56, -94.88, -74.90 ms for this exact cell, confirming
-no cache bleed from the override swap. The `SDK_DIST_OVERRIDE` directory used for
-this run was a local, gitignored scratch directory, not committed at any point. This
-restore verification predates the fix-round rebuild and remains valid — the fix
-round's changes were all on the candidate side of the override, never touched the
-upstream node_modules tree this restore check reads from.
+no cache bleed from the override swap. Repeated AFTER the fix round's rebuild (a
+second, independent restore — the fix round's own changes were entirely on the
+candidate side of the override and never touched the upstream `node_modules` tree
+this check reads from, but re-running it costs little and removes any doubt):
+`recaudit-summary-1788300424628.json`, same cell, `sdkBuildProbe: "upstream"`,
+medians -86.88, -88.90, -113.56 ms — same range again. The `SDK_DIST_OVERRIDE`
+directory used for this task was a local, gitignored scratch directory, not
+committed at any point (verified via `git status` before and after every commit in
+this task).
