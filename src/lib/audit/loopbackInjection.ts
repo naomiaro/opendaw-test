@@ -23,6 +23,15 @@ export interface LoopbackHandle {
   engineTap(engineNode: AudioNode): void;
   /** Schedule one tone burst per schedule time (absolute context seconds). */
   scheduleReferenceClicks(times: number[]): void;
+  /**
+   * Stop and disconnect every oscillator scheduled by scheduleReferenceClicks
+   * that hasn't already finished. Call between repeats/cells — a fresh
+   * schedule (~65s span) is issued every repeat, so without this an earlier
+   * repeat's still-sounding clicks can leak stray onsets into the NEXT
+   * repeat's captured buffer, breaking `identifyReferenceClicks`' gap
+   * adjacency. Safe to call with nothing pending (no-op).
+   */
+  cancelReferenceClicks(): void;
   uninstall(): void;
 }
 
@@ -35,6 +44,7 @@ export function installLoopbackCapture(): LoopbackHandle {
   let dest: MediaStreamAudioDestinationNode | null = null;
   let lowpass: BiquadFilterNode | null = null;
   let pendingEngineNode: AudioNode | null = null;
+  const pendingClickNodes: { osc: OscillatorNode; gain: GainNode }[] = [];
 
   navigator.mediaDevices.getUserMedia = async (_constraints?: MediaStreamConstraints) => {
     if (dest === null) throw new Error("loopbackInjection: getUserMedia before attach()");
@@ -80,7 +90,22 @@ export function installLoopbackCapture(): LoopbackHandle {
         osc.connect(gain).connect(dest);
         osc.start(t);
         osc.stop(t + REF_CLICK_DURATION_SEC + 0.005);
+        pendingClickNodes.push({ osc, gain });
       }
+    },
+    cancelReferenceClicks() {
+      const now = context?.currentTime ?? 0;
+      for (const { osc, gain } of pendingClickNodes) {
+        try {
+          osc.stop(now);
+        } catch {
+          // Already past its natural stop time — stop() on an ended node is a no-op in
+          // most engines but guard against a stricter implementation throwing.
+        }
+        osc.disconnect();
+        gain.disconnect();
+      }
+      pendingClickNodes.length = 0;
     },
     uninstall() {
       navigator.mediaDevices.getUserMedia = original.getUserMedia;

@@ -37,7 +37,7 @@ import { createRoot } from "react-dom/client";
 import { Badge, Button, Card, Flex, Heading, Table, Text, Theme, Container } from "@radix-ui/themes";
 import "@radix-ui/themes/styles.css";
 import { CaptureAudio, type Project } from "@opendaw/studio-core";
-import { InstrumentFactories, type AudioUnitBoxAdapter } from "@opendaw/studio-adapters";
+import { InstrumentFactories, type AudioUnitBoxAdapter, type SampleLoader } from "@opendaw/studio-adapters";
 import type { AudioUnitBox } from "@opendaw/studio-boxes";
 import { WavFile } from "@opendaw/lib-dsp";
 import { Terminable } from "@opendaw/lib-std";
@@ -398,36 +398,98 @@ function waitForPositionSettled(project: Project, expectedPpqn: number, deadline
   );
 }
 
-/** Resolves once the tape's tracks hold >= targetCount audio take regions —
- *  used by loop-wrap to detect the 5th wrap (LOOP_WRAP_TAKES + 1 regions:
- *  the 5 finalized takes plus the in-progress 6th). */
+/**
+ * Resolves once the tape's tracks hold >= targetCount audio take regions —
+ * used by loop-wrap to detect the 5th wrap (LOOP_WRAP_TAKES + 1 regions:
+ * the 5 finalized takes plus the in-progress 6th).
+ *
+ * Watches `unitAdapter.tracks` itself (not just a one-time snapshot of
+ * `.values()`) — the SDK can land later takes on a newly-created TrackBox
+ * (`RecordTrack.findOrCreate` per CLAUDE.md's "Take-to-Track Matching"),
+ * which would otherwise be invisible to a fixed set of `regions`
+ * subscriptions and stall every loop-wrap cell out to the deadline.
+ *
+ * Manages its own deadline (rather than wrapping withDeadline around the
+ * promise) so every subscription — on the tracks collection AND on each
+ * track's regions — is guaranteed to terminate on every exit path (resolve,
+ * or timeout); an external withDeadline wrapper has no way to reach into
+ * this promise to clean up subs it never sees.
+ */
 function waitForTakeCount(unitAdapter: AudioUnitBoxAdapter, targetCount: number, deadlineMs: number): Promise<void> {
-  return withDeadline(
-    new Promise<void>((resolve) => {
-      const subs: Terminable[] = [];
-      const countRegions = () =>
-        unitAdapter.tracks
-          .values()
-          .flatMap((t) => [...t.regions.adapters.values()])
-          .filter((r) => r.isAudioRegion()).length;
-      const checkAndMaybeResolve = () => {
-        if (countRegions() >= targetCount) {
-          subs.forEach((s) => s.terminate());
-          resolve();
-        }
-      };
-      for (const track of unitAdapter.tracks.values()) {
-        subs.push(
-          track.regions.catchupAndSubscribe({
-            onAdded: checkAndMaybeResolve,
-            onRemoved: () => {},
-          })
-        );
+  return new Promise<void>((resolve, reject) => {
+    const subs: Terminable[] = [];
+    let settled = false;
+    const cleanup = () => subs.forEach((s) => s.terminate());
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new Error(`waitForTakeCount(${targetCount}) timed out after ${deadlineMs / 1000}s`));
+    }, deadlineMs);
+    const countRegions = () =>
+      unitAdapter.tracks
+        .values()
+        .flatMap((t) => [...t.regions.adapters.values()])
+        .filter((r) => r.isAudioRegion()).length;
+    const checkAndMaybeResolve = () => {
+      if (settled) return;
+      if (countRegions() >= targetCount) {
+        settled = true;
+        clearTimeout(timer);
+        cleanup();
+        resolve();
       }
-    }),
-    deadlineMs,
-    `waitForTakeCount(${targetCount})`
-  );
+    };
+    subs.push(
+      unitAdapter.tracks.catchupAndSubscribe({
+        onAdd: (track) => {
+          subs.push(track.regions.catchupAndSubscribe({ onAdded: checkAndMaybeResolve, onRemoved: () => {} }));
+        },
+        onRemove: () => {},
+        onReorder: () => {},
+      })
+    );
+  });
+}
+
+/**
+ * Resolves once `loader.state.type` reaches a terminal state ("loaded" or
+ * "error"); rejects with the loader's error reason if it errors, or with a
+ * timeout error after `deadlineMs`. Pre-checks the already-terminal case
+ * (avoids the `subscribe()`-fires-synchronously TDZ hazard — see CLAUDE.md's
+ * SampleLoader section) and manages its own deadline so the subscription is
+ * guaranteed to terminate on every exit path — resolve, error, or timeout.
+ * Shared by the finalization barrier and the between-cells cleanup grace
+ * wait so both close the same leak the same way.
+ */
+function waitForLoaderTerminal(loader: SampleLoader, deadlineMs: number, label: string): Promise<void> {
+  if (loader.state.type === "loaded") return Promise.resolve();
+  if (loader.state.type === "error") return Promise.reject(new Error(String(loader.state.reason)));
+  return new Promise<void>((resolve, reject) => {
+    let settled = false;
+    let subscribed = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      if (subscribed) sub.terminate();
+      reject(new Error(`${label} timed out after ${deadlineMs / 1000}s`));
+    }, deadlineMs);
+    const sub = loader.subscribe((state) => {
+      if (settled) return;
+      if (state.type === "loaded") {
+        settled = true;
+        clearTimeout(timer);
+        resolve();
+        if (subscribed) sub.terminate();
+      } else if (state.type === "error") {
+        settled = true;
+        clearTimeout(timer);
+        reject(new Error(String(state.reason)));
+        if (subscribed) sub.terminate();
+      }
+    });
+    subscribed = true;
+  });
 }
 
 /**
@@ -436,9 +498,10 @@ function waitForTakeCount(unitAdapter: AudioUnitBoxAdapter, targetCount: number,
  * scenario-specific stop condition, wait for finalization, then measure
  * every take region against the beat grid + reference schedule.
  *
- * Does NOT clean up take regions — that is the outer cell loop's job (runs
- * unconditionally, success or failure, so a mid-recording error never
- * leaves stale regions for the next repeat).
+ * Does NOT clean up take regions — that is the outer cell loop's job
+ * (`resetForNextCell`, called unconditionally after every repeat attempt,
+ * success or failure, so a mid-recording error never leaves stale regions
+ * for the next repeat).
  */
 async function runCellRepeat(
   project: Project,
@@ -540,26 +603,7 @@ async function runCellRepeat(
     .filter((r) => r.isAudioRegion())[0];
   if (!anyTake) throw new Error("no take regions created");
   const loader = anyTake.file.getOrCreateLoader();
-  if (loader.state.type !== "loaded") {
-    await withDeadline(
-      new Promise<void>((resolvePromise, reject) => {
-        let subscribed = false;
-        const sub = loader.subscribe((state) => {
-          if (state.type === "loaded") {
-            resolvePromise();
-            if (subscribed) sub.terminate();
-          }
-          if (state.type === "error") {
-            reject(new Error(String(state.reason)));
-            if (subscribed) sub.terminate();
-          }
-        });
-        subscribed = true;
-      }),
-      30_000,
-      "finalization"
-    );
-  }
+  await waitForLoaderTerminal(loader, 30_000, "finalization");
 
   onStage("measuring");
   const takeRegions = unitAdapter.tracks
@@ -615,18 +659,34 @@ async function runCellRepeat(
 }
 
 /**
- * Between-cells reset (task-4-brief.md Step 1): stop any lingering
- * recording state, delete every take region on the tape's tracks AND the
- * shared AudioFileBox they point at (`region.box.delete()` cascade-deletes
- * the region's OWN mandatory dependents, but the file is an outgoing
- * pointer the region merely refers to — the SDK's own `restartRecording()`
- * cleanup path deletes regions the same way and leaves the file box
- * orphaned, verified by reading Project.js — so it must be deleted here
- * explicitly), then reset position. Runs unconditionally (success or
- * failure) so a mid-recording error never leaves stale regions for the
- * next repeat/cell.
+ * Between-cells reset (task-4-brief.md Step 1): cancel any still-pending
+ * reference clicks from this repeat's schedule (otherwise a stray onset from
+ * an earlier repeat's ~65s schedule can leak into the NEXT repeat's captured
+ * buffer and break `identifyReferenceClicks`' gap adjacency), stop any
+ * lingering recording state, delete every take region on the tape's tracks
+ * AND the shared AudioFileBox they point at (`region.box.delete()`
+ * cascade-deletes the region's OWN mandatory dependents, but the file is an
+ * outgoing pointer the region merely refers to — the SDK's own
+ * `restartRecording()` cleanup path deletes regions the same way and leaves
+ * the file box orphaned, verified by reading Project.js — so it must be
+ * deleted here explicitly), then reset position.
+ *
+ * Runs unconditionally (success or failure) so a mid-recording error never
+ * leaves stale regions for the next repeat/cell. Per CLAUDE.md's "Never Call
+ * stop(true) During Recording Finalization" rule, an error mid-recording
+ * (most commonly a `waitForPosition`/`waitForTakeCount` timeout — EXPECTED
+ * in this campaign, see the WASM transport-start-delay note) can land here
+ * while a take is still finalizing; `stop(true)` racing that finalization is
+ * exactly what the rule warns against. So: if a take region exists whose
+ * loader hasn't reached a terminal state yet, wait up to a bounded grace
+ * period for it before deleting boxes / calling stop(true). If the grace
+ * period also expires, proceed anyway (the campaign must not hang on one
+ * bad cell) but return a warning string — the caller attaches it to the
+ * affected row's `detail` so a human (or Task 6) can spot a cell whose
+ * predecessor's cleanup may not have fully settled before it started.
  */
-function resetForNextCell(project: Project, unitAdapter: AudioUnitBoxAdapter): void {
+async function resetForNextCell(project: Project, unitAdapter: AudioUnitBoxAdapter): Promise<string | null> {
+  loopback.cancelReferenceClicks();
   if (project.engine.isRecording.getValue() || project.engine.isCountingIn.getValue()) {
     project.engine.stopRecording();
   }
@@ -634,7 +694,17 @@ function resetForNextCell(project: Project, unitAdapter: AudioUnitBoxAdapter): v
     .values()
     .flatMap((t) => [...t.regions.adapters.values()])
     .filter((r) => r.isAudioRegion());
+  let warning: string | null = null;
   if (takeRegions.length > 0) {
+    const loader = takeRegions[0].file.getOrCreateLoader();
+    if (loader.state.type !== "loaded" && loader.state.type !== "error") {
+      try {
+        await waitForLoaderTerminal(loader, 10_000, "cleanup finalization grace");
+      } catch (err) {
+        warning = `finalization grace timed out before deleting take regions: ${String(err)}`;
+        console.warn(`[recording-alignment-audit] ${warning}`);
+      }
+    }
     const fileBox = takeRegions[0].file.box;
     project.editing.modify(() => {
       takeRegions.forEach((r) => r.box.delete());
@@ -643,6 +713,7 @@ function resetForNextCell(project: Project, unitAdapter: AudioUnitBoxAdapter): v
   }
   project.engine.stop(true);
   project.engine.setPosition(0);
+  return warning;
 }
 
 /** Upload a single repeat's full capture buffer (all takes share it). Non-fatal
@@ -732,24 +803,47 @@ async function runAudit(setAuditState: (s: string) => void, onRow: (row: AuditRo
 
   for (const scenario of scenarios) {
     for (const bpm of bpms) {
-      const repeats: { repeat: number; rows: AuditRow[]; alignments: CellRepeatResult["alignments"]; buffer: CapturedBuffer }[] =
-        [];
+      const repeats: {
+        repeat: number;
+        rows: AuditRow[];
+        alignments: CellRepeatResult["alignments"];
+        buffer: CapturedBuffer;
+        cleanupWarning: string | null;
+      }[] = [];
 
       for (let repeat = 1; repeat <= REPEATS_PER_CELL; repeat++) {
         const label = cellLabel(scenario, bpm, repeat);
         setAuditState(`running:${label}`);
         let stage = "prefs";
+        let result: CellRepeatResult | null = null;
+        let errorMessage: string | null = null;
         try {
-          const result = await withDeadline(
+          result = await withDeadline(
             runCellRepeat(project, audioContext, unitAdapter, scenario, bpm, rate, repeat, (s) => {
               stage = s;
             }),
             120_000,
             label
           );
-          repeats.push({ repeat, ...result });
         } catch (err) {
-          const errorMessage = `${stage}: ${err instanceof Error ? err.message : String(err)}`;
+          errorMessage = `${stage}: ${err instanceof Error ? err.message : String(err)}`;
+          console.error(`[recording-alignment-audit] cell ${label} failed: ${errorMessage}`);
+        }
+
+        // Unconditional (success or failure) — a mid-recording error must
+        // not leave stale regions for the next repeat/cell. Guarded so a
+        // cleanup failure itself can never abort the whole campaign.
+        let cleanupWarning: string | null = null;
+        try {
+          cleanupWarning = await resetForNextCell(project, unitAdapter);
+        } catch (cleanupErr) {
+          cleanupWarning = `cleanup itself threw: ${String(cleanupErr)}`;
+          console.warn(`[recording-alignment-audit] cell ${label} cleanup failed: ${cleanupWarning}`);
+        }
+
+        if (result) {
+          repeats.push({ repeat, ...result, cleanupWarning });
+        } else {
           const errorRow: AuditRow = {
             scenario,
             bpm,
@@ -762,16 +856,11 @@ async function runAudit(setAuditState: (s: string) => void, onRow: (row: AuditRo
             headMissingMs: null,
             status: "error",
             matchedSignature: null,
-            detail: "",
-            errorMessage,
+            detail: cleanupWarning ? `cleanup warning: ${cleanupWarning}` : "",
+            errorMessage: errorMessage ?? "unknown error",
           };
           allRows.push(errorRow);
           onRow(errorRow);
-          console.error(`[recording-alignment-audit] cell ${label} failed: ${errorMessage}`);
-        } finally {
-          // Unconditional — a mid-recording error must not leave stale
-          // regions for the next repeat/cell.
-          resetForNextCell(project, unitAdapter);
         }
       }
 
@@ -792,7 +881,13 @@ async function runAudit(setAuditState: (s: string) => void, onRow: (row: AuditRo
         for (const row of r.rows) {
           row.status = classification.status;
           row.matchedSignature = classification.matchedSignature;
-          row.detail = classification.detail;
+          // A cleanup-grace warning marks a row whose PREDECESSOR's cleanup
+          // may not have fully settled before this repeat started — surfaced
+          // here (not just logged) so Task 6 can spot potentially-poisoned
+          // successor cells directly from the summary JSON/table.
+          row.detail = r.cleanupWarning
+            ? `${classification.detail} | cleanup warning: ${r.cleanupWarning}`
+            : classification.detail;
           allRows.push(row);
           onRow(row);
         }
