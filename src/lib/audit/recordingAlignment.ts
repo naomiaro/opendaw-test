@@ -360,36 +360,38 @@ export interface CellClassification {
 /**
  * Classify a cell (a group of repeated takes of the same scenario/rate/bpm
  * combination) as `aligned`, a known upstream defect signature, or
- * `investigate`. A repeat with no matched median, missing beats, or a
- * head/tail deficit beyond tolerance forces `investigate` unless a
- * `head-loss` band matches the deficit — those are structural failures, not
- * alignment error, and no signature band should paper over them. Tail
- * deficits are treated exactly like head deficits (same tolerance check,
- * same `head-loss` band exception) — the brief has no separate "tail-loss"
- * band kind.
+ * `investigate`.
+ *
+ * Deficit handling (checked before the median-based verdict, so a genuine
+ * deficit is never hidden behind otherwise-clean beat placement):
+ * - A repeat with no matched median or missing beats is always unusable —
+ *   forces `investigate`.
+ * - A **tail** deficit (`tailMissingMs > alignedToleranceMs` on any repeat)
+ *   ALWAYS forces `investigate` — no band excuses it (no configured
+ *   `SignatureBand` predicts tail loss; only head loss is predicted).
+ * - A **head** deficit (`headMissingMs > alignedToleranceMs` on any repeat):
+ *   if a `head-loss` band's range covers every repeat's `headMissingMs`,
+ *   the cell matches THAT band — this is checked even when every repeat's
+ *   beat median is already within tolerance, because the predicted head-loss
+ *   defect (the SDK advancing the region position so content stays aligned)
+ *   typically presents with aligned medians; hiding it behind an "aligned"
+ *   verdict would mask exactly the case this audit exists to catch. If no
+ *   band covers it, `investigate`.
+ * - Only once both are clear does classification fall to the median-based
+ *   verdict: `aligned` when every repeat is within tolerance, else the
+ *   `random-band`/`constant-late` bands in caller order, else `investigate`.
  */
 export function classifyCell(
   repeats: TakeAlignment[],
   bands: SignatureBand[],
   alignedToleranceMs: number
 ): CellClassification {
-  const headLossBand = bands.find((b) => b.kind === "head-loss");
-  const excusedByHeadLossBand = (deficitMs: number) =>
-    headLossBand !== undefined && deficitMs >= headLossBand.minAbsMs && deficitMs <= headLossBand.maxAbsMs;
   for (const r of repeats) {
-    const headDeficitBroken =
-      r.headMissingMs !== null &&
-      r.headMissingMs > alignedToleranceMs &&
-      !excusedByHeadLossBand(r.headMissingMs);
-    const tailDeficitBroken =
-      r.tailMissingMs !== null &&
-      r.tailMissingMs > alignedToleranceMs &&
-      !excusedByHeadLossBand(r.tailMissingMs);
-    if (r.medianBeatErrorMs === null || r.missingBeats > 0 || headDeficitBroken || tailDeficitBroken) {
+    if (r.medianBeatErrorMs === null || r.missingBeats > 0) {
       return {
         status: "investigate",
         matchedSignature: null,
-        detail: `repeat has unusable measurement: medianBeatErrorMs=${r.medianBeatErrorMs}, missingBeats=${r.missingBeats}, headMissingMs=${r.headMissingMs}, tailMissingMs=${r.tailMissingMs}`,
+        detail: `repeat has unusable measurement: medianBeatErrorMs=${r.medianBeatErrorMs}, missingBeats=${r.missingBeats}`,
       };
     }
   }
@@ -401,6 +403,44 @@ export function classifyCell(
   const spread = Math.max(...medians) - Math.min(...medians);
   const mean = medians.reduce((a, b) => a + b, 0) / medians.length;
   const detailSuffix = `medians=[${detailMedians}] spread=${spread.toFixed(2)}ms headMissingMs=[${headDeficits}] tailMissingMs=[${tailDeficits}]`;
+
+  // Tail deficit: unconditional investigate, never excusable by any band.
+  const hasTailDeficit = repeats.some(
+    (r) => r.tailMissingMs !== null && r.tailMissingMs > alignedToleranceMs
+  );
+  if (hasTailDeficit) {
+    return {
+      status: "investigate",
+      matchedSignature: null,
+      detail: `tail deficit exceeds ${alignedToleranceMs}ms tolerance (no band excuses tail loss): ${detailSuffix}`,
+    };
+  }
+
+  // Head deficit: excusable only by a head-loss band covering every repeat.
+  const hasHeadDeficit = repeats.some(
+    (r) => r.headMissingMs !== null && r.headMissingMs > alignedToleranceMs
+  );
+  if (hasHeadDeficit) {
+    const headLossBand = bands.find(
+      (b) =>
+        b.kind === "head-loss" &&
+        repeats.every(
+          (r) => r.headMissingMs !== null && r.headMissingMs >= b.minAbsMs && r.headMissingMs <= b.maxAbsMs
+        )
+    );
+    if (headLossBand !== undefined) {
+      return {
+        status: "matches-known-defect",
+        matchedSignature: headLossBand.id,
+        detail: `head-loss ${headLossBand.id}: ${detailSuffix}`,
+      };
+    }
+    return {
+      status: "investigate",
+      matchedSignature: null,
+      detail: `head deficit exceeds ${alignedToleranceMs}ms tolerance, no head-loss band covers it: ${detailSuffix}`,
+    };
+  }
 
   if (medians.every((m) => Math.abs(m) <= alignedToleranceMs)) {
     return {
@@ -435,18 +475,10 @@ export function classifyCell(
           detail: `constant-late ${band.id}: mean=${mean.toFixed(2)}ms ${detailSuffix}`,
         };
       }
-    } else if (band.kind === "head-loss") {
-      const everyHeadInBand = repeats.every(
-        (r) => r.headMissingMs !== null && r.headMissingMs >= band.minAbsMs && r.headMissingMs <= band.maxAbsMs
-      );
-      if (everyHeadInBand) {
-        return {
-          status: "matches-known-defect",
-          matchedSignature: band.id,
-          detail: `head-loss ${band.id}: ${detailSuffix}`,
-        };
-      }
     }
+    // head-loss bands are resolved above (before the median-based verdict),
+    // not here — a cell only reaches this loop once no repeat has a head or
+    // tail deficit, at which point no head-loss band could match anyway.
   }
 
   return {

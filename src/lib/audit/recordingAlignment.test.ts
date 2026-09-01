@@ -153,13 +153,44 @@ describe("classifyCell", () => {
     const c = classifyCell([broken, take(0.2), take(0.4)], bands, 2);
     expect(c.status).toBe("investigate");
   });
-  it("is not forced to investigate on tailMissingMs when a head-loss band excuses it", () => {
+  it("matches the head-loss band when headMissingMs is in-band even with aligned medians", () => {
+    const bandsWithHeadLoss: SignatureBand[] = [
+      ...bands,
+      { id: "A", kind: "head-loss", minAbsMs: 20, maxAbsMs: 300 },
+    ];
+    const withHead = (medianMs: number, headMissingMs: number) => ({
+      ...take(medianMs), headMissingMs,
+    });
+    const c = classifyCell(
+      [withHead(0.3, 50), withHead(0.2, 60), withHead(0.4, 55)],
+      bandsWithHeadLoss,
+      2
+    );
+    expect(c.status).toBe("matches-known-defect");
+    expect(c.matchedSignature).toBe("A");
+  });
+  it("investigate when headMissingMs exceeds tolerance but no head-loss band covers it, even with aligned medians", () => {
+    const bandsWithHeadLoss: SignatureBand[] = [
+      ...bands,
+      { id: "A", kind: "head-loss", minAbsMs: 20, maxAbsMs: 300 },
+    ];
+    const withHead = (medianMs: number, headMissingMs: number) => ({
+      ...take(medianMs), headMissingMs,
+    });
+    const c = classifyCell(
+      [withHead(0.3, 400), withHead(0.2, 410), withHead(0.4, 395)],
+      bandsWithHeadLoss,
+      2
+    );
+    expect(c.status).toBe("investigate");
+  });
+  it("tail deficit forces investigate even with aligned medians and a head-loss band present — tail is never excused", () => {
     const bandsWithHeadLoss: SignatureBand[] = [
       ...bands,
       { id: "A", kind: "head-loss", minAbsMs: 20, maxAbsMs: 300 },
     ];
     const broken = { ...take(0.3), tailMissingMs: 50 };
     const c = classifyCell([broken, take(0.2), take(0.4)], bandsWithHeadLoss, 2);
-    expect(c.status).not.toBe("investigate");
+    expect(c.status).toBe("investigate");
   });
 });
