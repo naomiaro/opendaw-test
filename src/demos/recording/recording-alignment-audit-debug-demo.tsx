@@ -322,6 +322,14 @@ interface AuditRow {
   missingBeats: number;
   headMissingMs: number | null; // baseline-corrected (HEAD_MISSING_BASELINE_MS already subtracted)
   headMissingRawMs: number | null; // uncorrected — see Task 6 fix-round C3/I3
+  // Task 7 fix round 1 (I1): tailMissingMs was computed by measureTakeAlignment but
+  // never persisted — classifyCell's tail-deficit gate is auditable via headMissingMs
+  // but not via this field. Persisted alongside the raw values it's derived from
+  // (stopRequestContextTime, bufferDurationSec) so a tail-deficit verdict is traceable
+  // the same way a head-deficit one already is.
+  tailMissingMs?: number | null;
+  stopRequestContextTime?: number | null;
+  bufferDurationSec?: number;
   status: CellStatus | "pending" | "error";
   matchedSignature: string | null;
   detail: string;
@@ -606,8 +614,10 @@ async function runCellRepeat(
   // Task 7 recast: audioContext.outputLatency — the register's "term 1" harness-path
   // bias (see debug/recording-start-alignment-audit.md "Bring-up calibration"),
   // passed through to measureTakeAlignment so classifyCell's verdicts run on the
-  // adjusted median rather than the raw one. Captured once per run (identical at
-  // both sample rates per the register), not per-cell.
+  // adjusted median rather than the raw one. The VALUE is read once per page load
+  // (identical at both sample rates per the register, since outputLatency doesn't
+  // change mid-session) and passed unchanged into every repeat's runCellRepeat call
+  // — this parameter itself IS supplied per repeat, not just once.
   harnessPathBiasSec: number
 ): Promise<CellRepeatResult> {
   onStage("prefs");
@@ -783,13 +793,14 @@ async function runCellRepeat(
     const regionStartSec = project.tempoMap.ppqnToSeconds(region.position);
     const waveformOffsetSec = region.box.waveformOffset.getValue();
     const regionDurationSec = project.tempoMap.intervalToSeconds(region.position, region.position + region.duration);
+    const bufferDurationSec = data.numberOfFrames / data.sampleRate;
     const alignment = measureTakeAlignment({
       lowOnsets,
       highOnsets,
       regionStartSec,
       waveformOffsetSec,
       regionDurationSec,
-      bufferDurationSec: data.numberOfFrames / data.sampleRate,
+      bufferDurationSec,
       bpm,
       countInBeats: usedCountIn ? 4 : 0,
       schedule,
@@ -834,6 +845,9 @@ async function runCellRepeat(
       missingBeats: alignment.missingBeats,
       headMissingMs: alignment.headMissingMs,
       headMissingRawMs,
+      tailMissingMs: alignment.tailMissingMs,
+      stopRequestContextTime,
+      bufferDurationSec,
       regionPositionPpqn: region.position,
       regionStartSec,
       waveformOffsetSec,
