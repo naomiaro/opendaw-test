@@ -510,15 +510,36 @@ function waitForTakeCount(unitAdapters: AudioUnitBoxAdapter[], targetCountEach: 
       }
     };
     for (const unitAdapter of unitAdapters) {
+      // Fix round 1 (I3): `catchupAndSubscribe` fires synchronously for
+      // already-existing tracks/regions. If adapter K's OWN catch-up (via
+      // its nested track.regions subscription) satisfies `every(...)` —
+      // e.g. because a LATER adapter in this list already had enough
+      // regions before this loop even reached it — `checkAndMaybeResolve`
+      // sets `settled` and calls `cleanup()` mid-loop, terminating
+      // everything pushed to `subs` SO FAR. Any subscription this same
+      // iteration pushes AFTER that point (including the outer
+      // `tracks.catchupAndSubscribe` call itself, whose nested regions-sub
+      // may have just fired synchronously inside it) is invisible to that
+      // `cleanup()` call and never terminated — a leak. `beforeLength`
+      // brackets everything THIS iteration adds so it can be swept
+      // explicitly once the iteration's own synchronous work is done, and
+      // the `if (settled) break` guard stops any FURTHER adapter from
+      // subscribing at all once a prior iteration already resolved us.
+      if (settled) break;
+      const beforeLength = subs.length;
       subs.push(
         unitAdapter.tracks.catchupAndSubscribe({
           onAdd: (track) => {
+            if (settled) return;
             subs.push(track.regions.catchupAndSubscribe({ onAdded: checkAndMaybeResolve, onRemoved: () => {} }));
           },
           onRemove: () => {},
           onReorder: () => {},
         })
       );
+      if (settled) {
+        for (let i = beforeLength; i < subs.length; i++) subs[i].terminate();
+      }
     }
   });
 }
@@ -1377,10 +1398,19 @@ interface MultitrackTapes {
   unitAdapterB: AudioUnitBoxAdapter;
 }
 
-/** Create two Tape instruments, one per loopback device — mirrors runAudit's
- *  single-tape setup, capture field writes in a SEPARATE transaction from
- *  createInstrument per CLAUDE.md's "Pointer Re-Routing" rule. */
-function createMultitrackTapes(project: Project): MultitrackTapes {
+/**
+ * Create two Tape instruments, one per loopback device — mirrors runAudit's
+ * single-tape setup, capture field writes in a SEPARATE transaction from
+ * createInstrument per CLAUDE.md's "Pointer Re-Routing" rule.
+ *
+ * Fix round 1 (C1 confirmation): `sameDeviceB`, when true, arms tape B on
+ * `loopbackDeviceId(1)` too — the SAME device as tape A, not `(2)` — so both
+ * captures are driven by literally the same `getUserMedia` deviceId. Used
+ * ONLY by the dedicated `AudioFileBox`-collision confirmation cell (see
+ * `?confirmCollision=1` in `runMultitrackAudit`); the official matrix always
+ * uses two distinct devices (default `sameDeviceB=false`).
+ */
+function createMultitrackTapes(project: Project, sameDeviceB: boolean = false): MultitrackTapes {
   let audioUnitBoxA: AudioUnitBox | null = null;
   let audioUnitBoxB: AudioUnitBox | null = null;
   project.editing.modify(() => {
@@ -1400,7 +1430,7 @@ function createMultitrackTapes(project: Project): MultitrackTapes {
   project.editing.modify(() => {
     captureA.captureBox.deviceId.setValue(loopbackDeviceId(1));
     captureA.requestChannels = 1;
-    captureB.captureBox.deviceId.setValue(loopbackDeviceId(2));
+    captureB.captureBox.deviceId.setValue(loopbackDeviceId(sameDeviceB ? 1 : 2));
     captureB.requestChannels = 1;
   });
   captureA.armed.setValue(true);
@@ -1490,6 +1520,21 @@ async function runMultitrackCellRepeat(
   harnessPathBiasSec: number
 ): Promise<MultitrackRepeatResult> {
   const { unitAdapterA, unitAdapterB } = tapes;
+
+  // Fix round 1 (I3): assert both tapes start this repeat with ZERO take
+  // regions. `firstTakeOf` (below, at measurement time) takes the FIRST
+  // audio region found on each adapter with no way to tell a fresh region
+  // from a stale one a prior repeat's cleanup failed to delete (e.g. the
+  // documented "finalization grace timed out before deleting take regions"
+  // warning path in resetForNextMultitrackCell) — a leftover region would
+  // silently be measured as THIS repeat's take instead. Fail loudly instead.
+  const countAudioRegions = (u: AudioUnitBoxAdapter) =>
+    u.tracks.values().flatMap((t) => [...t.regions.adapters.values()]).filter((r) => r.isAudioRegion()).length;
+  const staleA = countAudioRegions(unitAdapterA);
+  const staleB = countAudioRegions(unitAdapterB);
+  if (staleA > 0 || staleB > 0) {
+    throw new Error(`runMultitrackCellRepeat: expected 0 take regions at repeat start, found tapeA=${staleA} tapeB=${staleB} (prior repeat's cleanup did not fully complete)`);
+  }
 
   onStage("prefs");
   project.editing.modify(() => {
@@ -1665,13 +1710,25 @@ async function resetForNextMultitrackCell(project: Project, tapes: MultitrackTap
 
 /** Upload one tape's WAV for one repeat — non-fatal on failure, matches
  *  uploadRepeatWav's convention. */
+/**
+ * Fix round 1 (M6): the WAV filename carries a `runToken` (the run's own
+ * `Date.now()`, shared with its summary JSON's filename — see
+ * `runMultitrackAudit`) and `sdkBuildProbe`. Without either, re-running the
+ * SAME scenario/bpm/rate/repeat cell — which this task's session did
+ * repeatedly, across BOTH builds and a later restore-verification smoke —
+ * silently overwrites an earlier run's saved audio under the identical
+ * name; the disambiguated name makes every WAV on disk traceable to the
+ * summary JSON that produced it instead.
+ */
 async function uploadMultitrackRepeatWav(
   scenario: MultitrackScenario,
   bpm: number,
   rate: number,
   repeat: number,
   tape: "a" | "b",
-  buffer: CapturedBuffer
+  buffer: CapturedBuffer,
+  sdkBuildProbe: SdkBuildProbe,
+  runToken: number
 ): Promise<void> {
   const wavBuffer = WavFile.encodeInts16({
     sampleRate: buffer.sampleRate,
@@ -1679,7 +1736,7 @@ async function uploadMultitrackRepeatWav(
     numberOfChannels: buffer.channels.length,
     getChannelData: (i: number) => buffer.channels[i],
   });
-  const name = `recaudit-mt-${scenario}-${bpmToken(bpm)}-${rate}-r${repeat}-tape${tape}.wav`;
+  const name = `recaudit-mt-${scenario}-${bpmToken(bpm)}-${rate}-r${repeat}-tape${tape}-${sdkBuildProbe}-${runToken}.wav`;
   try {
     await withDeadline(
       (async () => {
@@ -1705,9 +1762,10 @@ async function uploadMultitrackSummary(
   sdkBuildProbe: SdkBuildProbe,
   outputLatency: number,
   baseLatency: number,
-  cellSkews: { scenario: MultitrackScenario; bpm: number; repeat: number; skew: CrossTrackSkew }[]
+  cellSkews: { scenario: MultitrackScenario; bpm: number; repeat: number; skew: CrossTrackSkew }[],
+  runToken: number,
+  confirmCollision: boolean
 ): Promise<void> {
-  const timestamp = Date.now();
   const summary = {
     rate, sdkBuildProbe, outputLatency, baseLatency, harnessPathBiasSec: outputLatency,
     headMissingBaselineMs: HEAD_MISSING_BASELINE_MS,
@@ -1716,13 +1774,18 @@ async function uploadMultitrackSummary(
     alignedToleranceMs: ALIGNED_TOLERANCE_MS,
     skewToleranceMs: ALIGNED_TOLERANCE_MS,
     referenceSchedule: { count: 60, baseGapSec: 0.25, gapIncrementSec: 0.005 },
+    // Fix round 1 (C1 confirmation): when true, tape B was armed on the SAME
+    // loopbackDeviceId as tape A (see createMultitrackTapes's sameDeviceB) —
+    // this run is the dedicated collision-confirmation cell, not part of the
+    // official matrix. false on every official-matrix run.
+    confirmCollision,
     rows,
     cellSkews,
   };
   const jsonBody = JSON.stringify(summary, null, 2);
   await withDeadline(
     (async () => {
-      const res = await fetch(`/__verify/recaudit-mt-summary-${timestamp}.json`, { method: "PUT", body: jsonBody });
+      const res = await fetch(`/__verify/recaudit-mt-summary-${runToken}.json`, { method: "PUT", body: jsonBody });
       if (!res.ok) throw new Error(`verify sink rejected JSON: HTTP ${res.status}`);
     })(),
     30_000,
@@ -1739,6 +1802,21 @@ async function runMultitrackAudit(
   const scenarios = resolveMultitrackScenarios(params.get("scenario"));
   const bpms = resolveMultitrackBpms(params.get("bpm"));
   const rate = resolveRate(params.get("rate"));
+  // Fix round 1 (C1 confirmation): `?confirmCollision=1` arms tape B on the
+  // SAME loopback device as tape A (see createMultitrackTapes's
+  // `sameDeviceB`) — a dedicated, deliberately-abnormal cell that tests
+  // whether two simultaneous takes of BYTE-IDENTICAL audio always collide
+  // on `AudioFileBox`'s content-derived uuid (Finding 1's corrected
+  // mechanism), as opposed to the official matrix's two distinct devices
+  // (whose captures differ slightly in length/timing and only SOMETIMES
+  // produce identical bytes). Combine with `?scenario=multitrack-start` —
+  // this flag changes tape wiring only, not the scenario/provocation logic.
+  const confirmCollision = params.get("confirmCollision") === "1";
+  // Fix round 1 (M6): shared by every WAV this run uploads AND the summary
+  // JSON's own filename, so a WAV on disk is always traceable to the exact
+  // summary that produced it, even after this cell/scenario/bpm/rate/repeat
+  // combination is re-run under a different build later in the same session.
+  const runToken = Date.now();
 
   const { project, audioContext } = await initializeOpenDAW({
     bpm: 120,
@@ -1748,9 +1826,9 @@ async function runMultitrackAudit(
   const sdkBuildProbe = detectSdkBuildProbe(project.engine);
   onBuildProbe(sdkBuildProbe);
   loopback.attach(audioContext);
-  console.log("[recording-alignment-audit] multitrack outputLatency=" + String(audioContext.outputLatency) + " baseLatency=" + String(audioContext.baseLatency));
+  console.log("[recording-alignment-audit] multitrack outputLatency=" + String(audioContext.outputLatency) + " baseLatency=" + String(audioContext.baseLatency) + " confirmCollision=" + String(confirmCollision));
 
-  const tapes = createMultitrackTapes(project);
+  const tapes = createMultitrackTapes(project, confirmCollision);
 
   const allRows: MultitrackAuditRow[] = [];
   const cellSkews: { scenario: MultitrackScenario; bpm: number; repeat: number; skew: CrossTrackSkew }[] = [];
@@ -1780,7 +1858,17 @@ async function runMultitrackAudit(
             runMultitrackCellRepeat(project, audioContext, tapes, scenario, bpm, rate, repeat, (s) => {
               stage = s;
             }, audioContext.outputLatency),
-            120_000,
+            // Fix round 1 (M5): the inner waits' own worst-case deadlines sum
+            // to ~140s (waitForPositionSettled 30s + waitForTakeCount 20s +
+            // waitForPosition 60s + the finalization Promise.all's longer
+            // side, 30s) — a 120s outer deadline could fire FIRST on an
+            // unlucky repeat where several inner stages each take close to
+            // their own max without any single one actually timing out,
+            // producing a generic "label timed out after 120s" that masks
+            // which stage was actually slow (each inner helper's own error
+            // names its stage; this one wouldn't). 180s keeps margin above
+            // the 140s worst-case sum.
+            180_000,
             label
           );
         } catch (err) {
@@ -1836,14 +1924,14 @@ async function runMultitrackAudit(
           allRows.push(row);
           onRow(row);
         }
-        await uploadMultitrackRepeatWav(scenario, bpm, rate, r.repeat, "a", r.bufferA);
-        await uploadMultitrackRepeatWav(scenario, bpm, rate, r.repeat, "b", r.bufferB);
+        await uploadMultitrackRepeatWav(scenario, bpm, rate, r.repeat, "a", r.bufferA, sdkBuildProbe, runToken);
+        await uploadMultitrackRepeatWav(scenario, bpm, rate, r.repeat, "b", r.bufferB, sdkBuildProbe, runToken);
       }
     }
   }
 
   setAuditState("uploading");
-  await uploadMultitrackSummary(allRows, rate, sdkBuildProbe, audioContext.outputLatency, audioContext.baseLatency, cellSkews);
+  await uploadMultitrackSummary(allRows, rate, sdkBuildProbe, audioContext.outputLatency, audioContext.baseLatency, cellSkews, runToken, confirmCollision);
   setAuditState("done");
 }
 

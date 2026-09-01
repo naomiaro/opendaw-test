@@ -1208,7 +1208,13 @@ scenario's `SIGNATURE_BANDS` (`multitrack-start` ~ `nominal-start`,
 when skew exceeds tolerance but both tapes are otherwise clean — no signature band
 predicts inter-track skew (no scenario in this campaign before Task 7b measured
 simultaneous capture), so any measured excess is a candidate finding, not a
-confirmation of a prediction.
+confirmation of a prediction. **(M3) "Classifies as clean" means the per-take
+status is anything other than `investigate` — this INCLUDES `matches-known-defect`,
+not only literal `aligned`.** A cell whose tapes both match a KNOWN single-tape
+signature (e.g. candidate's B band, per Task 7) but whose skew is within
+tolerance would reach the multitrack `aligned` verdict too — this campaign's
+own data never exercises that path (every tape-level classification in this
+data is `investigate`; see Finding 2's parenthetical), but the code accepts it.
 
 ### TDD evidence (lib)
 
@@ -1245,18 +1251,31 @@ unchanged, for backward compatibility with re-runs of the earlier campaign data)
 ### Per-cell results
 
 Matrix: 2 scenarios × 2 rates (44100, 48000) × bpm 120 × 3 repeats, on both
-builds (8 official cells, 24 repeat attempts per build). Run ids below are
+builds — **8 official cells total (4 per build), 12 repeat attempts per build
+(24 across both builds)**. Run ids below are
 `.verify-output/recaudit-mt-summary-<id>.json`; `medianAdj` is
 `medianBeatErrorMsAdjusted` (raw + `harnessPathBiasSec·1000`, same field the
 single-tape sections use). Every repeat's `tapeA`/`tapeB` medians below are
 identical to 2 decimal places or noted where they diverge.
 
 **Every one of the 8 official cells classified `investigate` on both builds — 0
-cells reached `aligned`.** No cell's failure is attributable to a single cause:
-some cells lost repeats entirely to a reproducible finalization hang (below);
-among the repeats that DID succeed, every measured skew exceeded the 2 ms
-tolerance except two exact-0.00 ms cases, and even those two didn't clear the
-"both tapes individually clean" half of the `aligned` test (see "Skew" below).
+cells reached `aligned`.** For 7 of the 8 cells this is directly persisted on
+every row (`classifyMultitrackCell`'s verdict, applied uniformly across that
+cell's rows in `runMultitrackAudit`). The 8th — candidate 44100 Hz
+`multitrack-janked`, table below — had ZERO successful repeats (all 3 errored
+on the `AudioFileBox` collision), so `classifyMultitrackCell` never ran its
+skew-comparison branch for that cell; its rows all carry `status: "error"`
+directly from the per-repeat error path, and the `investigate` verdict shown
+for it in this register's prose is an EXPLICIT INFERENCE (from
+`classifyMultitrackCell`'s own "no successful repeats to measure skew" branch,
+which does return `investigate` for zero repeats — verified by reading the
+function — but that return value was never attached to any row or persisted
+JSON field for this cell). No cell's failure is attributable to a single
+cause: some cells lost repeats entirely to a reproducible finalization hang
+(below); among the repeats that DID succeed, every measured skew exceeded the
+2 ms tolerance except three exact-0.00 ms cases (Finding 2 has the corrected count
+and per-repeat identification), and even those three didn't clear the "both
+tapes individually clean" half of the `aligned` test (see Finding 2 below).
 
 #### Upstream — 48000 Hz (`recaudit-mt-summary-1788302627819.json`)
 
@@ -1302,14 +1321,18 @@ tolerance except two exact-0.00 ms cases, and even those two didn't clear the
 | multitrack-janked | r2 | — | — | — | — | — | error: finalization tapeA timed out after 30s |
 | multitrack-janked | r3 | — | — | — | — | — | error: finalization tapeA timed out after 30s |
 
-### Finding 1: `AudioFileBox already staged` — a reproducible finalization hang unique to simultaneous capture
+### Finding 1: `AudioFileBox already staged` — a deterministic content-address collision when two simultaneous takes capture byte-identical audio
 
-Every repeat-failure row above (10 of 24 repeat attempts on upstream, split 2/6 at
-48000 Hz and 4/6 at 44100 Hz; 4 of 24 on candidate, split 1/6 at 48000 Hz and 3/6
-at 44100 Hz — **14 of 48 repeat attempts across both builds, 29%**) carries the
-identical `errorMessage`, `"finalizing: finalization tape<A|B> timed out after
-30s"`, and every one is preceded by an identical browser-console panic (not
-previously seen anywhere in the single-tape campaign):
+**Fix round 1 correction:** the first draft of this finding called this a
+"staging race." It is not a race — it is deterministic, and the fix round's own
+confirmation cell (below) proves it directly.
+
+Ten repeat attempts (6 of 12 on upstream — 2 at 48000 Hz, 4 at 44100 Hz; 4 of 12
+on candidate — 1 at 48000 Hz, 3 at 44100 Hz — **10 of 24 official-matrix repeat
+attempts across both builds, 42%**) carry the identical `errorMessage`,
+`"finalizing: finalization tape<A|B> timed out after 30s"`, and every one is
+preceded by an identical browser-console panic (not previously seen anywhere in
+the single-tape campaign):
 
 ```
 Error: AudioFileBox <uuid> already staged
@@ -1320,64 +1343,136 @@ Error: AudioFileBox <uuid> already staged
     at recordingWorklet.onSaved (…chunk-FW347FDO.js:3963:15)
 ```
 
-Mechanism (from the stack alone — not further root-caused this task, see "Harness
-gaps" below): each tape's `RecordingWorklet.onSaved` callback calls
-`AudioFileBox.create(...)`, which calls `BoxGraph.stageBox`. With two
-`RecordingWorklet`s finalizing around the same wall-clock moment (exactly the
-condition simultaneous multi-capture creates), one tape's `stageBox` call appears
-to collide — panicking with "already staged" — with the SAME `uuid` a different
-box graph operation already staged. The affected tape's `AudioFileBox` never
-reaches a usable state, so that tape's `SampleLoader` never emits a terminal
-state, and the harness's finalization barrier (`waitForLoaderTerminal`,
-`Promise.all` over both tapes) correctly times out at 30s rather than hanging
-forever — this is the harness behaving as designed against a genuine SDK-side
-stall, not a harness bug. The failure is **intermittent, not deterministic**: it
-hit different specific UUIDs across different repeats, hit tapeA in some runs and
-tapeB in others (see the candidate 48000 Hz `r2` row: `tapeA` timed out, the
-mirror image of every upstream failure which named `tapeB`), and multiple repeats
-of the identical cell within the same page load sometimes succeeded and sometimes
-failed. It reproduced on BOTH builds and BOTH rates — **candidate's timing-
-alignment fixes do not touch this failure mode** (expected: those fixes target
-single-tape placement math, not box-graph concurrency), though candidate's
-failure rate in this data (4/24, 17%) was numerically lower than upstream's
-(10/24, 42%) — with only 24 attempts per build this difference is not claimed as
-a confirmed rate difference, only as the raw counts measured.
+**Mechanism (read from source — `SampleService.importFile`,
+`packages/studio/core/src/samples/SampleService.ts` line 43 in the pinned
+upstream SDK source checkout, verified identical in the candidate repo):**
 
-This is a **candidate new upstream finding**: a race in `AudioFileBox` staging
-that surfaces specifically under simultaneous multi-capture finalization,
-independent of the timing-alignment issues the rest of this campaign
-investigates. Recommend a dedicated upstream issue (repro:
-`?scenario=multitrack-all&bpm=120&rate=<44100|48000>`, run several times — the
-intermittency means a single run may not reproduce it).
+```typescript
+async importFile({uuid, name, bpm, arrayBuffer, …}: AssetService.ImportArgs, …) {
+    uuid ??= await UUID.sha256(arrayBuffer)
+    …
+```
+
+`RecordingWorklet.#finalize` calls `SampleService.importRecording`, which calls
+`importFile({name, bpm, arrayBuffer, origin: "recording"})` — **no `uuid` is ever
+passed for a recording import**, so `importFile` ALWAYS derives the
+`AudioFileBox`'s uuid as `SHA-256(arrayBuffer)`, the WAV-encoded capture bytes
+themselves. This is content-addressing: two DIFFERENT recordings normally produce
+two different hashes. But this campaign's whole measurement design (see "Design
+rationale" above) deliberately feeds both tapes CLONES of the identical injected
+loopback signal — the two tapes are only prevented from capturing byte-identical
+WAVs by ordinary, small, independent timing differences between their two
+`RecordingWorklet`s' capture windows (length/start-offset jitter — the very
+inter-track skew Finding 2 measures). When those differences happen to be zero —
+both worklets capture the exact same frame count from the exact same starting
+sample — the two tapes' `arrayBuffer`s ARE byte-identical, so `UUID.sha256`
+produces the SAME uuid for both, and the second tape's `BoxGraph.stageBox` call
+panics on a uuid already staged by the first. The affected tape's `AudioFileBox`
+never reaches a usable state, its `SampleLoader` never emits a terminal state,
+and the harness's finalization barrier (`waitForLoaderTerminal`, `Promise.all`
+over both tapes) correctly times out at 30s rather than hanging forever — the
+harness is behaving as designed against a genuine SDK-side stall, not a harness
+bug.
+
+**Evidence for the content-collision mechanism, not a race:**
+1. **All 10 surviving tape-A/B WAV pairs on disk differ** (`shasum`, re-verified
+   directly for this fix round — every pair distinct). This is exactly what
+   content-addressing predicts: a pair that finalizes successfully is, by
+   construction, a pair whose captured bytes were NOT identical (if they had
+   been, the second one would have collided and never finalized at all). A
+   genuine race would predict no such correlation between "finalized
+   successfully" and "differs from its sibling."
+2. **Dedicated confirmation cell** (this fix round): arm BOTH tapes on the SAME
+   loopback deviceId (`?scenario=multitrack-start&confirmCollision=1` —
+   `createMultitrackTapes`'s new `sameDeviceB` parameter), removing the small
+   independent-worklet timing jitter that normally keeps the two captures'
+   byte lengths apart. Prediction: every repeat collides. Result: 3 of 3 did
+   (`recaudit-mt-summary-1788304987514.json`, upstream, 48000 Hz,
+   `confirmCollision: true` persisted in the JSON) — every repeat's `tapeB`
+   timed out with the identical `"finalization tapeB timed out after 30s"`
+   error. This is the sharp, deterministic repro an upstream issue needs: **two
+   simultaneous takes of identical audio always collide.**
+
+The failure's specific manifestation still varies repeat-to-repeat in the
+OFFICIAL matrix (different uuids, tapeA timed out in one candidate 48000 Hz
+repeat vs. tapeB in every other official-matrix repeat) — that variation is
+expected and fully explained by which of the two captures happens to differ in
+length by even one sample, not by any non-determinism in the collision itself
+once two captures ARE byte-identical.
+
+**On the 6/12-vs-4/12 build comparison:** the first draft framed this as
+"candidate's failure rate was numerically lower." That framing is now dropped —
+**this metric does not measure the SDK build under either scenario.** It measures
+how often two independent `RecordingWorklet`s, both fed clones of one loopback
+signal, happen to capture the exact same number of samples starting at the exact
+same offset — a property of THIS harness's timing/scheduling and each rate's
+render-quantum granularity, not of `AudioFileBox`'s collision behavior (which the
+confirmation cell shows is unconditional once bytes match) and not attributable
+to either SDK build's own code. No build-comparison claim is made from these
+counts; they are reported only as "how often the official matrix's two-distinct-
+device wiring happened to produce colliding content in this session."
+
+This is a **candidate new upstream finding**: `AudioFileBox`'s content-addressed
+uuid (`SHA-256` of the encoded WAV, with no disambiguation for "these are two
+DIFFERENT recordings that happen to contain identical audio") has no collision
+handling in `BoxGraph.stageBox` — it panics instead of, e.g., reusing the
+existing box or appending a disambiguator. Recommend a dedicated upstream issue
+(repro: `?scenario=multitrack-start&bpm=120&rate=<44100|48000>&confirmCollision=1`,
+which reproduces on every repeat, not intermittently).
 
 ### Finding 2: inter-track skew is quantized to roughly one render quantum, exceeds the 2 ms tolerance on nearly every successful repeat, and is unchanged by the candidate fix
 
-Across every successful repeat on both builds and both rates (9 measurable
-`medianSkewMs` values total — see the per-cell tables above), the skew clusters
-tightly around **exact multiples of one WASM render quantum** (128 samples):
-`128/48000 = 2.667 ms` and `128/44100 = 2.902 ms`. Of the 9 values: two are
-`0.00 ms` (both on the candidate 48000 Hz cell), six are within 0.02 ms of
-`±1×`render-quantum, and one (candidate 44100 Hz `multitrack-start`/`r2`,
-`-10.00 ms`) is a clear outlier — roughly 3.4 render-quanta, non-integer, and the
-only repeat where `pairedBeats` dropped to 16 instead of 17 (one beat's onset
-match differed between the two tapes, not just its timing). A separate
-restore-verification smoke run (upstream, 48000 Hz, `multitrack-start`,
-`recaudit-mt-summary-1788303708270.json`, not part of the official matrix —
-see "Restore verification" below) measured a `+5.33 ms` skew on its first repeat,
-almost exactly 2 render-quanta — consistent with the same quantization pattern
-extending to small integer multiples beyond ±1, not just a single fixed value.
+**Fix round 1 correction:** the first draft undercounted — it examined only the
+official-matrix cells' own per-cell tables and missed the restore-verification
+smoke run's own two successful repeats. Recomputed directly from every
+`cellSkews` entry across all 5 runs this task made (4 official-matrix runs +
+the restore-verification smoke): **14 measurable `medianSkewMs` values total**,
+not 9.
 
-This magnitude is well outside `ALIGNED_TOLERANCE_MS` (2 ms) on 7 of the 9
-measured repeats — only the two exact `0.00 ms` candidate-48000 Hz repeats clear
-the skew half of the `aligned` test, and even they don't reach `aligned` overall
-because the underlying per-take bias on that cell (medians ≈ -18.5 ms, spread
-0.00 ms across repeats) fails the *other* half of the test: `SIGNATURE_BANDS`'
-`B` (random-band) requires `spread > 2·ALIGNED_TOLERANCE_MS` to match — a
-signature calibrated to detect a NOISY defect, which a spread of exactly 0.00 ms
-structurally cannot satisfy. This is a harness/classifier observation, not a
-finding about the SDK: the candidate build's per-take placement on this cell
-became too *consistent* (near-zero repeat-to-repeat jitter) to trip a classifier
-built to recognize a scattered pattern — see "Harness gaps" below.
+The skew clusters tightly around **exact multiples of one WASM render quantum**
+(128 samples): `128/48000 = 2.667 ms` and `128/44100 = 2.902 ms`. Of the 14
+values: **3 are exact `0.00 ms`** (upstream 48000 Hz `multitrack-start`/`r2`,
+candidate 48000 Hz `multitrack-start`/`r1`, candidate 48000 Hz
+`multitrack-janked`/`r1` — NOT "both on candidate" as the first draft
+mis-stated), **10 are within 0.02 ms of `±1×` render-quantum** (including the
+restore-verification smoke's own `r1` at `+5.33 ms`, which is `≈2×`
+render-quantum and every other multiple stays at exactly `±1×` — see the
+corrected restore paragraph below for that run's own numbers), and **1 is a
+distinct outlier**: candidate 44100 Hz `multitrack-start`/`r2`, `-10.00 ms`.
+
+**The outlier is not scatter — it is a second, equally deterministic value.**
+The first draft called this repeat's mismatch "one beat's onset match differed…
+not just its timing," implying detector noise. Re-examined directly from the
+persisted `perBeatSkewMs` array: the skew is `-10.000001450244…ms` on **every
+one of its 16 paired beats**, agreeing to 6 decimal places — this is exactly as
+rock-steady as the render-quantum cases, just at a DIFFERENT constant. `10.00 ms`
+at 44100 Hz is exactly 441 samples (`44100 × 0.01`) — a clean decimal fraction of
+the sample rate, and NOT an integer multiple of the 128-sample render quantum
+(`441 / 128 ≈ 3.45`). This repeat's `pairedBeats` is 16, one fewer than the usual
+17 — but a lower `pairedBeats` count does not, on its own, mean the outlier: a
+SEPARATE repeat (upstream 48000 Hz `multitrack-janked`/`r3`) also measured
+`pairedBeats=16` while its skew was an entirely ordinary `+2.67 ms` (exactly
+`+1×` render-quantum) — the two `pairedBeats=16` repeats are unrelated instances,
+not two data points for the same phenomenon. This 441-sample value is a distinct,
+reproducible (within this one repeat, across all its beats) signature separate
+from the render-quantum clustering, worth naming as its own candidate mechanism
+rather than folded into "scatter."
+
+This magnitude is well outside `ALIGNED_TOLERANCE_MS` (2 ms) on **11 of the 14**
+measured repeats — only the 3 exact `0.00 ms` repeats clear the skew half of the
+`aligned` test, and even they don't reach `aligned` overall because the
+underlying per-take bias on their cells fails the *other* half of the test in
+one of two ways: the two candidate-48000 Hz `0.00 ms` repeats' cells have
+`spread=0.00 ms` across their own repeats, and `SIGNATURE_BANDS`' `B`
+(random-band) requires `spread > 2·ALIGNED_TOLERANCE_MS` to match — a signature
+calibrated to detect a NOISY defect, which a spread of exactly 0.00 ms
+structurally cannot satisfy (see "Harness gaps" below); the upstream-48000 Hz
+`0.00 ms` repeat's cell fails simply because its own median (≈-76.6 ms) is
+nowhere near any band. (Whether the "clean" half of the `aligned` test — "both
+tapes individually classify clean" — accepts `matches-known-defect`, not only
+literal `aligned`, is addressed under M3 in "Design rationale" above; it does,
+but no cell in this data reaches that branch regardless, since none of the 3
+zero-skew repeats' own tapes classify as anything but `investigate`.)
 
 **The candidate build does not reduce inter-track skew.** Both builds show the
 same render-quantum-granular magnitude at the same two rates
@@ -1398,7 +1493,13 @@ clocks to each other.
 | Cells reaching `aligned` | 0/4 | 0/4 |
 | Repeat attempts lost to the `AudioFileBox` panic | 6/12 (50%) | 4/12 (33%) |
 | Successful-repeat skew range | 0.00 – 2.90 ms (both rates) | 0.00 – 10.00 ms (44100 Hz outlier) |
-| Underlying per-take bias (medianAdj) | -43 to -80 ms | -9 to -25 ms |
+| Underlying per-take bias (medianAdj) | -43 to -80 ms | -5.65 to -25.12 ms |
+
+The "Repeat attempts lost to the `AudioFileBox` panic" row is included for
+completeness but is **not a build comparison** — see Finding 1's correction
+above: this count measures how often two independently-timed captures of one
+shared loopback signal happened to land on byte-identical content in THIS
+session, not a property of either SDK build.
 
 The per-take bias reduction (candidate roughly 3-5× smaller in magnitude) matches
 the single-tape Task 7 finding exactly, measured independently on a different
@@ -1412,36 +1513,69 @@ After both builds' matrices, the dev server was restarted without
 `SDK_DIST_OVERRIDE` (`rm -rf node_modules/.vite` first, and the scratch
 `vite.candidate.config.ts` wrapper — see "Harness gaps" below — deleted), and one
 upstream smoke cell run: `?scenario=multitrack-start&bpm=120&rate=48000`,
-`recaudit-mt-summary-1788303708270.json`, `sdkBuildProbe: "upstream"`. Result:
-`r1` medians -66.54/-85.21 ms adjusted (same -43 to -85 ms range as the official
-48000 Hz matrix run above), `r2` errored with the same `AudioFileBox` panic
-signature, `r1` skew +5.33 ms (≈2 render-quanta, per Finding 2). No cache bleed
-from the override swap. `git status` clean before and after — no `SDK_DIST_OVERRIDE`
-scratch files, the temporary `vite.candidate.config.ts` wrapper, or the `yjs`
-dev-dependency install (`npm install yjs --no-save`, never touched
+`recaudit-mt-summary-1788303708270.json`, `sdkBuildProbe: "upstream"`.
+
+**Fix round 1 correction:** the first draft conflated `r1`'s and `r3`'s medians
+into one figure and omitted `r3` (a genuine successful repeat) entirely. Correct
+result, all 3 repeats: `r1` medians -66.54/-61.21 ms adjusted (tapeA/tapeB),
+skew +5.33 ms (17 paired beats, ≈2× render-quanta, per Finding 2); `r2` errored
+with the same `AudioFileBox` panic signature (`finalization tapeA timed out
+after 30s`); `r3` medians -85.21/-87.87 ms adjusted, skew -2.67 ms (15 paired
+beats, ≈1× render-quantum). All three repeats' medians sit inside the -43 to -80
+ms range the official 48000 Hz matrix run above established for this exact cell
+(`recaudit-mt-summary-1788302627819.json`'s `multitrack-start` rows) — `r3`'s
+-85 to -88 ms is a few ms beyond that range's upper end, within the ordinary
+repeat-to-repeat scatter this bias has shown throughout the wider single-tape
+campaign, not a sign of cache bleed. No cache bleed from the override swap.
+`git status` clean before and after — no `SDK_DIST_OVERRIDE` scratch files, the
+temporary `vite.candidate.config.ts` wrapper, or the `yjs` dev-dependency
+install (`npm install yjs --no-save`, never touched
 `package.json`/`package-lock.json`) left any trace in the tracked tree.
+
+**Fix round 1 addition (M7):** a second, single-tape sanity cell was also run
+post-restore — `?scenario=nominal-start&bpm=120&rate=48000` on the STANDARD
+`ScenarioRunnerHarness` (not the multitrack page) —
+`recaudit-summary-1788305205480.json`, `sdkBuildProbe: "upstream"`. All 3
+repeats completed normally (medians -92.23/-104.23/-93.54 ms, matched
+16-17/17 beats, 0 errors), inside this exact cell's own previously-documented
+-64.90 to -108.20 ms range (see "Matrix results — 48000 Hz" earlier in this
+register). This confirms `installLoopbackCapture(2)` — advertising a second
+synthetic loopback device for the multitrack page, added this fix round's
+predecessor commit — does not disturb the pre-existing single-tape harness the
+rest of this campaign's register depends on.
 
 ### Harness gaps / build-environment notes (not SDK defects)
 
 - **Candidate build/layout needed two additions beyond Task 7's documented
   recipe**, both purely local dev-server plumbing, neither touching the
   candidate repo or opendaw-test's own source:
-  1. The candidate commit's `studio-core` build includes a Yjs-based
-     collaboration module (`ysync/YSync.js`/`YMapper.js`) that imports `yjs`
-     (and, transitively through other files, `y-websocket`/`zod`/`dropbox`/
-     `jszip`/`soundfont2`) — none of which resolve from files INSIDE the
-     `SDK_DIST_OVERRIDE` directory via normal Node module resolution, because
-     that directory lives outside `opendaw-test`'s own directory tree (upward
-     `node_modules` resolution from a file under
+  1. **Fix round 1 correction:** the first draft framed this as a
+     candidate-specific dependency; it is not — `yjs`/`y-websocket`/`zod`/
+     `dropbox` are declared dependencies of `@opendaw/studio-core` ITSELF
+     (verified in the package's own `package.json`, both builds), and its
+     `index.js` re-exports the Yjs collaboration module
+     (`export * from "./ysync"`) in the UPSTREAM package too — confirmed by
+     reading upstream's own installed `node_modules/@opendaw/studio-core/`.
+     A normal `npm install`/`npm ci` against the real, registry-resolved
+     `@opendaw/studio-core` pulls these in automatically as transitive
+     dependencies, which is why the single-tape harness never needed this
+     fix. The actual, build-independent cause: `SDK_DIST_OVERRIDE` aliases
+     `@opendaw/<pkg>` to a directory OUTSIDE `opendaw-test`'s own tree, so
+     whichever package is aliased there loses npm's normal transitive-install
+     mechanism, and upward Node module resolution from a file under
      `.claude/jobs/<job>/tmp/sdk-dist-override/@opendaw/studio-core/dist/…`
-     never reaches `opendaw-test/node_modules`). Fixed by installing the
-     missing packages locally (`npm install yjs --no-save` — deliberately
+     never reaches `opendaw-test/node_modules` either. Fixed by installing
+     the missing packages locally (`npm install yjs --no-save` — deliberately
      `--no-save` so `package.json`/`package-lock.json` stay untouched; the
-     other five were already present as transitive deps) and symlinking each
-     into a `node_modules/` directory created INSIDE the override root itself,
-     which IS on the upward-resolution path from every override package.
-  2. This candidate commit (`388424ef5`, pinned per Task 7) predates several
-     newer demos this repo has since grown — `modulation`, `Convolver`,
+     other five — `y-websocket`, `zod`, `dropbox`, `jszip`, `soundfont2` —
+     were already present as transitive deps of something else in this
+     project) and symlinking each into a `node_modules/` directory created
+     INSIDE the override root itself, which IS on the upward-resolution path
+     for every package the override aliases.
+  2. This pinned candidate commit (see `.claude/local.md` "Task 7
+     build/layout" for the exact SHA — not repeated here per this register's
+     convention) predates several newer demos this repo has since grown —
+     `modulation`, `Convolver`,
      `Cubed` — whose entry files import box/adapter symbols
      (`LfoModulatorBox(Adapter)`, `StepsModulatorBox(Adapter)`,
      `RandomModulatorBox(Adapter)`, `MacroModulatorBox(Adapter)`,
@@ -1467,6 +1601,22 @@ dev-dependency install (`npm install yjs --no-save`, never touched
      artifact) per this register's evidence convention, and reused directly
      from `.claude/local.md`'s existing "gitignored, local-only" convention
      for `SDK_DIST_OVERRIDE` itself.
+- **(M6) WAV filenames did not include a build/run disambiguator when this
+  fix round began**, and this session re-ran the SAME scenario/bpm/rate/repeat
+  combination four times (upstream, candidate, the restore-verification
+  smoke, and the confirmation cell) — several of those runs' successful
+  repeats share the identical cell coordinates (e.g. `multitrack-start`/120/
+  48000/`r1` succeeded on BOTH the candidate matrix run and the restore
+  smoke), so later runs silently overwrote earlier runs' saved audio under
+  the same `.wav` name. **The persisted `recaudit-mt-summary-<id>.json` files
+  (one per run, never overwritten) are authoritative for every number in this
+  register — the WAV files on disk reflect only whichever run wrote to a
+  given name LAST**, not necessarily the run a given table row's evidence
+  came from. Fixed going forward: `uploadMultitrackRepeatWav` now appends
+  `sdkBuildProbe` and a per-run `runToken` (shared with that run's own
+  summary JSON filename) to every WAV name, so future re-runs of this
+  harness won't collide and every surviving WAV is traceable to the exact
+  summary that produced it.
 - The `B` (random-band) signature's `spread > 2·ALIGNED_TOLERANCE_MS` gate,
   useful for distinguishing a genuine scattered defect from onset-detection
   noise everywhere else in this campaign, has a blind spot when a build's
@@ -1476,28 +1626,57 @@ dev-dependency install (`npm install yjs --no-save`, never touched
   a candidate follow-up if a future campaign needs to classify a
   low-jitter/high-offset cell precisely rather than folding it into
   `investigate`.
-- The `AudioFileBox already staged` panic (Finding 1) was root-caused only as
-  far as the browser console stack trace goes — the harness's `project`/
-  `audioContext` are local closures inside `runMultitrackAudit`, not React
-  `useState`, so the React-fiber live-inspection technique documented
-  elsewhere in this register doesn't apply here either (same limitation
-  already noted for the `loop-wrap` finalization hang, C2). A future
-  iteration could add harness instrumentation (e.g., logging every
-  `AudioFileBox` UUID staged, or exposing the live box graph for
-  in-flight inspection) to trace the actual collision instead of inferring
-  it from the stack trace alone.
+- **(I6, superseded by fix round 1)** The first draft of this bullet said the
+  `AudioFileBox already staged` panic was root-caused only as far as the
+  console stack trace goes. That is now superseded: Finding 1's fix-round
+  correction traces the mechanism to source (`SampleService.importFile`'s
+  `uuid ??= await UUID.sha256(arrayBuffer)`) and confirms it directly with a
+  dedicated same-device confirmation cell (3/3 collisions). What remains
+  unverified is narrower — the harness's `project`/`audioContext` are local
+  closures inside `runMultitrackAudit`, not React `useState`, so the
+  React-fiber live-inspection technique documented elsewhere in this register
+  still doesn't apply here, and no live in-flight inspection of
+  `BoxGraph.stageBox`'s internal state was performed (the mechanism is
+  established from source + the confirmation cell's black-box behavior, not
+  from single-stepping the actual collision).
+- **(I6) Does this collision explain the `loop-wrap` finalization hang (C2),
+  which shows the same "fast success or 30s-never" symptom on the SINGLE-tape
+  harness?** No — read from source
+  (`packages/studio/core/src/RecordingWorklet.ts`): `RecordingWorklet` calls
+  `SampleService.importRecording` exactly ONCE per worklet instance, when the
+  worklet itself finalizes at `stopRecording()` time. A `loop-wrap` recording
+  session has exactly ONE `RecordingWorklet` (one armed capture) producing
+  exactly ONE `importRecording` call for the ENTIRE multi-wrap sequence — all
+  of `loop-wrap`'s takes share one `AudioFileBox` precisely because there is
+  only ever one uuid derivation per session (matches this register's own
+  earlier "Loop Take Buffer Layout" description and the repo's
+  `src/demos/recording/CLAUDE.md`). There is structurally no SECOND,
+  concurrent `importFile` call within a single-tape session to collide with —
+  this mechanism requires TWO independently-finalizing `RecordingWorklet`s
+  (two ARMED captures), which only the multitrack scenarios create. `C2`'s
+  hang is a different, still-uncharacterized defect; this finding does not
+  reopen or reclassify it.
 
 ### Candidate new upstream findings, summarized (Task 7b)
 
-1. **`AudioFileBox already staged` finalization hang under simultaneous
-   multi-capture** — intermittent (14/48 repeat attempts across both builds),
-   reproduces on both builds and both rates, root cause not fully traced
-   (harness limitation, not conflicting evidence). See Finding 1.
+1. **`AudioFileBox`'s content-addressed uuid (`SHA-256` of the WAV-encoded
+   capture) collides — deterministically, not intermittently — whenever two
+   simultaneous `RecordingWorklet`s finalize byte-identical audio**, panicking
+   `BoxGraph.stageBox` and hanging the affected tape's finalization. Measured
+   10/24 (42%) official-matrix repeat attempts across both builds where the
+   official matrix's two-distinct-device wiring happened to produce colliding
+   content; a dedicated same-device confirmation cell (both tapes on the
+   IDENTICAL loopback device, removing the incidental timing jitter that
+   normally keeps captures apart) reproduced the collision on 3/3 repeats.
+   Root cause fully traced to `SampleService.importFile`'s uuid derivation;
+   `AudioFileBox`/`BoxGraph.stageBox` has no collision handling. See Finding 1.
 2. **Inter-track placement skew, render-quantum-granular, unaffected by the
-   candidate timing-alignment fix** — every successful repeat's skew clusters
-   at integer multiples of one WASM render quantum (2.667 ms @48000 Hz,
-   2.902 ms @44100 Hz), exceeding the 2 ms tolerance on 7 of 9 measured
-   repeats, present identically on both builds. See Finding 2.
+   candidate timing-alignment fix** — 11 of 14 measured repeats' skew exceeds
+   the 2 ms tolerance, clustering at integer multiples of one WASM render
+   quantum (2.667 ms @48000 Hz, 2.902 ms @44100 Hz) with one distinct,
+   equally deterministic outlier (441 samples / 10.00 ms @44100 Hz, constant
+   across all 16 of its own paired beats), present identically on both
+   builds. See Finding 2.
 
 Both are candidates for upstream issue drafts under `debug/drafts/` (Task 8),
 per the repo's issue-filing convention.
