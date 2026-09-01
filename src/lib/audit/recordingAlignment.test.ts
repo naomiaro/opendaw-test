@@ -148,4 +148,18 @@ describe("classifyCell", () => {
     const broken = { ...take(0.3), missingBeats: 2 };
     expect(classifyCell([broken, take(0.2), take(0.4)], bands, 2).status).toBe("investigate");
   });
+  it("investigate when tailMissingMs exceeds tolerance even if placement is aligned", () => {
+    const broken = { ...take(0.3), tailMissingMs: 50 };
+    const c = classifyCell([broken, take(0.2), take(0.4)], bands, 2);
+    expect(c.status).toBe("investigate");
+  });
+  it("is not forced to investigate on tailMissingMs when a head-loss band excuses it", () => {
+    const bandsWithHeadLoss: SignatureBand[] = [
+      ...bands,
+      { id: "A", kind: "head-loss", minAbsMs: 20, maxAbsMs: 300 },
+    ];
+    const broken = { ...take(0.3), tailMissingMs: 50 };
+    const c = classifyCell([broken, take(0.2), take(0.4)], bandsWithHeadLoss, 2);
+    expect(c.status).not.toBe("investigate");
+  });
 });

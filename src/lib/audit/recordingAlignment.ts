@@ -360,10 +360,13 @@ export interface CellClassification {
 /**
  * Classify a cell (a group of repeated takes of the same scenario/rate/bpm
  * combination) as `aligned`, a known upstream defect signature, or
- * `investigate`. A repeat with no matched median, missing beats, or a head
- * deficit beyond tolerance forces `investigate` unless a `head-loss` band
- * matches the head deficit — those are structural failures, not alignment
- * error, and no signature band should paper over them.
+ * `investigate`. A repeat with no matched median, missing beats, or a
+ * head/tail deficit beyond tolerance forces `investigate` unless a
+ * `head-loss` band matches the deficit — those are structural failures, not
+ * alignment error, and no signature band should paper over them. Tail
+ * deficits are treated exactly like head deficits (same tolerance check,
+ * same `head-loss` band exception) — the brief has no separate "tail-loss"
+ * band kind.
  */
 export function classifyCell(
   repeats: TakeAlignment[],
@@ -371,16 +374,22 @@ export function classifyCell(
   alignedToleranceMs: number
 ): CellClassification {
   const headLossBand = bands.find((b) => b.kind === "head-loss");
+  const excusedByHeadLossBand = (deficitMs: number) =>
+    headLossBand !== undefined && deficitMs >= headLossBand.minAbsMs && deficitMs <= headLossBand.maxAbsMs;
   for (const r of repeats) {
     const headDeficitBroken =
       r.headMissingMs !== null &&
       r.headMissingMs > alignedToleranceMs &&
-      !(headLossBand && r.headMissingMs >= headLossBand.minAbsMs && r.headMissingMs <= headLossBand.maxAbsMs);
-    if (r.medianBeatErrorMs === null || r.missingBeats > 0 || headDeficitBroken) {
+      !excusedByHeadLossBand(r.headMissingMs);
+    const tailDeficitBroken =
+      r.tailMissingMs !== null &&
+      r.tailMissingMs > alignedToleranceMs &&
+      !excusedByHeadLossBand(r.tailMissingMs);
+    if (r.medianBeatErrorMs === null || r.missingBeats > 0 || headDeficitBroken || tailDeficitBroken) {
       return {
         status: "investigate",
         matchedSignature: null,
-        detail: `repeat has unusable measurement: medianBeatErrorMs=${r.medianBeatErrorMs}, missingBeats=${r.missingBeats}, headMissingMs=${r.headMissingMs}`,
+        detail: `repeat has unusable measurement: medianBeatErrorMs=${r.medianBeatErrorMs}, missingBeats=${r.missingBeats}, headMissingMs=${r.headMissingMs}, tailMissingMs=${r.tailMissingMs}`,
       };
     }
   }
@@ -388,9 +397,10 @@ export function classifyCell(
   const medians = repeats.map((r) => r.medianBeatErrorMs!);
   const detailMedians = medians.map((m) => m.toFixed(2)).join(", ");
   const headDeficits = repeats.map((r) => r.headMissingMs).join(", ");
+  const tailDeficits = repeats.map((r) => r.tailMissingMs).join(", ");
   const spread = Math.max(...medians) - Math.min(...medians);
   const mean = medians.reduce((a, b) => a + b, 0) / medians.length;
-  const detailSuffix = `medians=[${detailMedians}] spread=${spread.toFixed(2)}ms headMissingMs=[${headDeficits}]`;
+  const detailSuffix = `medians=[${detailMedians}] spread=${spread.toFixed(2)}ms headMissingMs=[${headDeficits}] tailMissingMs=[${tailDeficits}]`;
 
   if (medians.every((m) => Math.abs(m) <= alignedToleranceMs)) {
     return {
