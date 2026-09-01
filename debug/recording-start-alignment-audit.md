@@ -175,7 +175,29 @@ no missing beats from low-band/high-band cross-talk, no metronome bleed into the
 
 ## Matrix results — 48000 Hz
 
-_(filled in Step 3)_
+Run: `recording-alignment-audit-debug-demo.html?scenario=all&bpm=all&rate=48000`, one
+fresh page load, real click, visible window. JSON summary:
+`recaudit-summary-1788287951691.json` (45 rows, `sdkBuildProbe: "upstream"`).
+`loop-wrap/120` lost repeats 2-3 and `loop-wrap/97.3` lost repeat 3 to the documented
+WASM transport-start-delay flakiness (`waitForPosition timed out`, per
+`src/demos/recording/CLAUDE.md`) — 3 error rows total, not re-run individually (loop-wrap
+still classified successfully from its surviving repeats; see below).
+
+| scenario | bpm | medianErr per repeat (ms) | headMiss (ms) | signature | status |
+|---|---|---|---|---|---|
+| nominal-start | 120 | -97.56, -94.88, -74.90 | 7.04, 0.00, 0.00 | — | investigate |
+| nominal-start | 97.3 | -108.20, -72.87, -102.87 | 4.35, 0.00, 0.00 | — | investigate |
+| janked-start | 120 | -62.90, -92.21, -94.21 | 135.04, 145.69, 147.69 | A | **matches-known-defect** |
+| janked-start | 97.3 | -97.53, -89.55, -69.55 | 145.69, 151.04, 147.04 | A | **matches-known-defect** |
+| midtimeline-start | 120 | -152.23, -154.90, -185.54 | 3.04, 0.00, 0.00 | — | investigate |
+| midtimeline-start | 97.3 | -166.36, -147.67, -151.01 | 1.04, 0.00, 1.69 | — | investigate |
+| countin-start | 120 | -101.54, -99.54, -84.21 | 0.00, 0.00, 0.00 | — | investigate |
+| countin-start | 97.3 | -77.62, -100.27, -81.62 | 0.00, 4.35, 0.00 | — | investigate |
+| loop-wrap | 120 | repeat1 takes1-4: -71.17 (flat) / take4 matched=0 / repeat2,3 error | 0.00 | — | investigate |
+| loop-wrap | 97.3 | repeat1/2 takes1-3: -68.13..-68.15 / -73.72..-73.75 (flat per repeat) / take4 matched=1 both / repeat3 error | 0.00 | — | investigate |
+
+**Tally: 10 cells — 0 aligned, 2 matches-known-defect (both janked-start), 8 investigate,
+0 outright run-failed cells (loop-wrap classified despite 3 error rows).**
 
 ## Matrix results — 44100 Hz
 
