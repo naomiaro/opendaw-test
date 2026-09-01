@@ -378,6 +378,57 @@ export function measureTakeAlignment(input: TakeMeasurementInput): TakeAlignment
   };
 }
 
+export interface CrossTrackSkew {
+  /** Per beat present in BOTH alignments' `beatErrors`, sorted by beat index. */
+  perBeatSkewMs: { beat: number; skewMs: number }[];
+  /** Median of `perBeatSkewMs[*].skewMs`; null when no beats paired. */
+  medianSkewMs: number | null;
+  /** Max absolute skew across paired beats; null when no beats paired. */
+  maxAbsSkewMs: number | null;
+  /** Count of beats matched in BOTH alignments — the sample size the two above stats are drawn from. */
+  pairedBeats: number;
+}
+
+/**
+ * Measure inter-track skew between two tapes recorded from CLONES of the same
+ * loopback signal (see `loopbackDeviceId` in `loopbackInjection.ts`): every
+ * common bias — loopback-path latency, the harness-path/`outputLatency` term,
+ * the metronome content itself, the reference-click schedule — is identical
+ * in both tapes' captured buffers, so it cancels out of the DIFFERENCE
+ * between their beat errors. What's left is genuine inter-track skew: each
+ * armed tape gets its own RecordingWorklet and places its take using that
+ * worklet's own frame counter + the position observed at ITS OWN creation,
+ * so two tracks recording the same instant can still land at different
+ * timeline positions.
+ *
+ * Pairs by beat index over beats matched in BOTH `a.beatErrors` and
+ * `b.beatErrors` (a beat missing from either side is simply excluded, not
+ * treated as an error here — `measureTakeAlignment`'s own `missingBeats`
+ * count is the place a genuine content-skip is caught).
+ *
+ * Sign convention: `skewMs = b's errorMs − a's errorMs`. A positive skew
+ * means B's content is placed LATE relative to A's (B lags A); a negative
+ * skew means B is EARLY relative to A. This is symmetric in the sense that
+ * swapping the two arguments negates every skew value — callers should keep
+ * a consistent "tape A" / "tape B" assignment across a whole cell so the
+ * sign stays comparable across repeats.
+ */
+export function measureCrossTrackSkew(a: TakeAlignment, b: TakeAlignment): CrossTrackSkew {
+  const bByBeat = new Map(b.beatErrors.map((e) => [e.beat, e.errorMs]));
+  const perBeatSkewMs = a.beatErrors
+    .filter((e) => bByBeat.has(e.beat))
+    .map((e) => ({ beat: e.beat, skewMs: bByBeat.get(e.beat)! - e.errorMs }))
+    .sort((x, y) => x.beat - y.beat);
+
+  const skews = perBeatSkewMs.map((s) => s.skewMs);
+  return {
+    perBeatSkewMs,
+    medianSkewMs: median(skews),
+    maxAbsSkewMs: skews.length === 0 ? null : Math.max(...skews.map(Math.abs)),
+    pairedBeats: perBeatSkewMs.length,
+  };
+}
+
 export type CellStatus = "aligned" | "matches-known-defect" | "investigate";
 
 export interface SignatureBand {

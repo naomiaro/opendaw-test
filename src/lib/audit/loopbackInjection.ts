@@ -16,6 +16,25 @@ export const REF_CLICK_HZ = 6000;
 export const REF_CLICK_DURATION_SEC = 0.008;
 export const REF_CLICK_GAIN = 0.5;
 
+/**
+ * Device id for the Nth (1-based) synthetic loopback input — `loopbackDeviceId(1)`
+ * is exactly `LOOPBACK_DEVICE_ID` (unchanged, so every existing single-tape call
+ * site keeps working without edits), `loopbackDeviceId(2)` is
+ * "loopback-injection-2", etc. Used by the multi-mic audit to arm N tapes on N
+ * distinct deviceIds while every one of them still resolves through the SAME
+ * `getUserMedia` override below — which already hands out a clone of the ONE
+ * `dest.stream` regardless of which deviceId was requested (constraints are
+ * unused), so every tape captures a clone of the identical signal. That's
+ * exactly what a cross-track skew measurement needs (see
+ * `measureCrossTrackSkew` in `recordingAlignment.ts`): any difference in where
+ * matched clicks land between two tapes' takes IS the skew, with every other
+ * bias (loopback path latency, metronome content, click schedule) canceling
+ * out because both tapes hear the same signal.
+ */
+export function loopbackDeviceId(index: number): string {
+  return index <= 1 ? LOOPBACK_DEVICE_ID : `${LOOPBACK_DEVICE_ID}-${index}`;
+}
+
 export interface LoopbackHandle {
   /** Call once, right after initializeOpenDAW, with the SDK's AudioContext. */
   attach(audioContext: AudioContext): void;
@@ -35,7 +54,7 @@ export interface LoopbackHandle {
   uninstall(): void;
 }
 
-export function installLoopbackCapture(): LoopbackHandle {
+export function installLoopbackCapture(deviceCount: number = 1): LoopbackHandle {
   const original = {
     getUserMedia: navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices),
     enumerateDevices: navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices),
@@ -52,12 +71,16 @@ export function installLoopbackCapture(): LoopbackHandle {
   };
   navigator.mediaDevices.enumerateDevices = async () => {
     const real = await original.enumerateDevices();
-    const synthetic = {
-      deviceId: LOOPBACK_DEVICE_ID, groupId: LOOPBACK_DEVICE_ID,
-      kind: "audioinput" as MediaDeviceKind, label: "Loopback Injection",
-      toJSON() { return this; },
-    } as MediaDeviceInfo;
-    return [synthetic, ...real];
+    const synthetic = Array.from({ length: deviceCount }, (_, i) => {
+      const id = loopbackDeviceId(i + 1);
+      return {
+        deviceId: id, groupId: id,
+        kind: "audioinput" as MediaDeviceKind,
+        label: i === 0 ? "Loopback Injection" : `Loopback Injection ${i + 1}`,
+        toJSON() { return this; },
+      } as MediaDeviceInfo;
+    });
+    return [...synthetic, ...real];
   };
 
   const connectEngine = (node: AudioNode) => {

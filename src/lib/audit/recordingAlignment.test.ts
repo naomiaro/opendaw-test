@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildReferenceSchedule, bandSplit, identifyReferenceClicks, estimateAnchorT0,
-  measureTakeAlignment, classifyCell,
+  measureTakeAlignment, classifyCell, measureCrossTrackSkew,
 } from "./recordingAlignment";
 import type { TakeAlignment, SignatureBand } from "./recordingAlignment";
 
@@ -249,5 +249,90 @@ describe("classifyCell", () => {
     const unusable: TakeAlignment = { ...take(0), medianBeatErrorMs: null, medianBeatErrorMsAdjusted: null };
     const c = classifyCell([unusable, take(0.2), take(0.4)], bands, 2);
     expect(c.status).toBe("investigate");
+  });
+});
+
+// Task 7b (multi-mic simultaneous-recording audit): two tapes fed CLONES of the
+// SAME loopback signal (see loopbackInjection.ts's loopbackDeviceId) cancel every
+// common bias (loopback-path latency, harness-path bias, metronome content itself)
+// — any difference in where matched beats land between the two takes' OWN
+// beatErrors IS the inter-track skew, no calibration term needed.
+describe("measureCrossTrackSkew", () => {
+  // Minimal TakeAlignment fixture — only `beatErrors` matters to this function;
+  // the rest is measureTakeAlignment's business and irrelevant here.
+  const alignment = (errors: { beat: number; errorMs: number }[]): TakeAlignment => ({
+    beatErrors: errors,
+    medianBeatErrorMs: null,
+    medianBeatErrorMsAdjusted: null,
+    anchorT0Sec: null,
+    firstRefIndex: null,
+    headMissingMs: null,
+    tailMissingMs: null,
+    matchedBeats: errors.length,
+    missingBeats: 0,
+    extraLowOnsets: 0,
+  });
+
+  it("reports 0 skew on every beat for identical alignments", () => {
+    const a = alignment([{ beat: 0, errorMs: -90 }, { beat: 1, errorMs: -88 }, { beat: 2, errorMs: -91 }]);
+    const b = alignment([{ beat: 0, errorMs: -90 }, { beat: 1, errorMs: -88 }, { beat: 2, errorMs: -91 }]);
+    const skew = measureCrossTrackSkew(a, b);
+    expect(skew.pairedBeats).toBe(3);
+    expect(skew.medianSkewMs).toBeCloseTo(0, 9);
+    expect(skew.maxAbsSkewMs).toBeCloseTo(0, 9);
+    expect(skew.perBeatSkewMs.every((s) => Math.abs(s.skewMs) < 1e-9)).toBe(true);
+  });
+
+  // Sign convention: skewMs = b's errorMs minus a's errorMs (b - a), so a
+  // positive skew means B's content is placed LATE relative to A's — B lags A.
+  it("reports +5ms median skew when b is shifted +5ms late on every beat", () => {
+    const a = alignment([{ beat: 0, errorMs: -90 }, { beat: 1, errorMs: -88 }, { beat: 2, errorMs: -91 }]);
+    const b = alignment([{ beat: 0, errorMs: -85 }, { beat: 1, errorMs: -83 }, { beat: 2, errorMs: -86 }]);
+    const skew = measureCrossTrackSkew(a, b);
+    expect(skew.pairedBeats).toBe(3);
+    expect(skew.medianSkewMs).toBeCloseTo(5, 9);
+    expect(skew.maxAbsSkewMs).toBeCloseTo(5, 9);
+  });
+
+  it("reports -5ms median skew when b is shifted 5ms EARLY on every beat (sign flips)", () => {
+    const a = alignment([{ beat: 0, errorMs: -90 }, { beat: 1, errorMs: -88 }]);
+    const b = alignment([{ beat: 0, errorMs: -95 }, { beat: 1, errorMs: -93 }]);
+    const skew = measureCrossTrackSkew(a, b);
+    expect(skew.medianSkewMs).toBeCloseTo(-5, 9);
+  });
+
+  it("returns nulls and 0 paired beats for disjoint matched beat sets", () => {
+    const a = alignment([{ beat: 0, errorMs: -90 }, { beat: 2, errorMs: -91 }]);
+    const b = alignment([{ beat: 1, errorMs: -85 }, { beat: 3, errorMs: -86 }]);
+    const skew = measureCrossTrackSkew(a, b);
+    expect(skew.pairedBeats).toBe(0);
+    expect(skew.medianSkewMs).toBeNull();
+    expect(skew.maxAbsSkewMs).toBeNull();
+    expect(skew.perBeatSkewMs).toEqual([]);
+  });
+
+  it("pairs only beats present in BOTH alignments, ignoring unmatched ones on either side", () => {
+    const a = alignment([{ beat: 0, errorMs: -90 }, { beat: 1, errorMs: -88 }, { beat: 5, errorMs: -80 }]);
+    const b = alignment([{ beat: 0, errorMs: -84 }, { beat: 1, errorMs: -82 }, { beat: 2, errorMs: -70 }]);
+    const skew = measureCrossTrackSkew(a, b);
+    expect(skew.pairedBeats).toBe(2);
+    expect(skew.perBeatSkewMs.map((s) => s.beat)).toEqual([0, 1]);
+    expect(skew.medianSkewMs).toBeCloseTo(6, 9); // both beats: b - a = -84-(-90)=6, -82-(-88)=6
+  });
+
+  it("median of an even number of paired beats averages the two middle values", () => {
+    const a = alignment([{ beat: 0, errorMs: 0 }, { beat: 1, errorMs: 0 }, { beat: 2, errorMs: 0 }, { beat: 3, errorMs: 0 }]);
+    const b = alignment([{ beat: 0, errorMs: 1 }, { beat: 1, errorMs: 2 }, { beat: 2, errorMs: 4 }, { beat: 3, errorMs: 8 }]);
+    const skew = measureCrossTrackSkew(a, b);
+    // skews: 1, 2, 4, 8 -> median of (2,4) = 3
+    expect(skew.medianSkewMs).toBeCloseTo(3, 9);
+    expect(skew.maxAbsSkewMs).toBeCloseTo(8, 9);
+  });
+
+  it("perBeatSkewMs is sorted by beat index regardless of input order", () => {
+    const a = alignment([{ beat: 2, errorMs: -91 }, { beat: 0, errorMs: -90 }, { beat: 1, errorMs: -88 }]);
+    const b = alignment([{ beat: 1, errorMs: -83 }, { beat: 2, errorMs: -86 }, { beat: 0, errorMs: -85 }]);
+    const skew = measureCrossTrackSkew(a, b);
+    expect(skew.perBeatSkewMs.map((s) => s.beat)).toEqual([0, 1, 2]);
   });
 });
