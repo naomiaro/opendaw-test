@@ -1423,22 +1423,34 @@ which reproduces on every repeat, not intermittently).
 ### Finding 2: inter-track skew is quantized to roughly one render quantum, exceeds the 2 ms tolerance on nearly every successful repeat, and is unchanged by the candidate fix
 
 **Fix round 1 correction:** the first draft undercounted — it examined only the
-official-matrix cells' own per-cell tables and missed the restore-verification
-smoke run's own two successful repeats. Recomputed directly from every
-`cellSkews` entry across all 5 runs this task made (4 official-matrix runs +
-the restore-verification smoke): **14 measurable `medianSkewMs` values total**,
-not 9.
+official-matrix cells' own per-cell tables and missed some of its own
+`cellSkews` entries. Recomputed directly from every `cellSkews` entry across
+the 4 OFFICIAL-MATRIX runs (matching the per-cell tables above): **14
+measurable `medianSkewMs` values total**, not 9.
+
+**Fix round 2 correction:** the fix-round-1 text above was itself
+self-contradictory — it claimed this population spanned "all 5 runs" made this
+task (the 4 official-matrix runs plus the restore-verification smoke), then
+folded the smoke's `r1` (`+5.33 ms`) into the "10 near-quantum" bucket while
+never counting the smoke's `r3` at all — despite the Restore Verification
+section (below) correctly identifying `r1` as `≈2×` the quantum, not `≈1×`.
+The population is, and always was, the **4 official-matrix runs only** — the
+14/3/10/1 figures below were computed correctly from those 4 runs even in the
+first draft; only the prose mis-described where they came from.
 
 The skew clusters tightly around **exact multiples of one WASM render quantum**
 (128 samples): `128/48000 = 2.667 ms` and `128/44100 = 2.902 ms`. Of the 14
-values: **3 are exact `0.00 ms`** (upstream 48000 Hz `multitrack-start`/`r2`,
-candidate 48000 Hz `multitrack-start`/`r1`, candidate 48000 Hz
-`multitrack-janked`/`r1` — NOT "both on candidate" as the first draft
-mis-stated), **10 are within 0.02 ms of `±1×` render-quantum** (including the
-restore-verification smoke's own `r1` at `+5.33 ms`, which is `≈2×`
-render-quantum and every other multiple stays at exactly `±1×` — see the
-corrected restore paragraph below for that run's own numbers), and **1 is a
-distinct outlier**: candidate 44100 Hz `multitrack-start`/`r2`, `-10.00 ms`.
+official-matrix values: **3 are exact `0.00 ms`** (upstream 48000 Hz
+`multitrack-start`/`r2`, candidate 48000 Hz `multitrack-start`/`r1`, candidate
+48000 Hz `multitrack-janked`/`r1`), **10 are within 0.02 ms of `±1×`
+render-quantum**, and **1 is a distinct outlier**: candidate 44100 Hz
+`multitrack-start`/`r2`, `-10.00 ms`.
+
+The restore-verification smoke's two successful repeats corroborate the
+quantization independently (`r3` at `-2.67 ms` ≈ `-1×`, `r1` at `+5.33 ms` ≈
+`+2×` the 48000 Hz quantum) and are excluded from the official tally above —
+see the corrected restore-verification paragraph below for that run's own
+numbers.
 
 **The outlier is not scatter — it is a second, equally deterministic value.**
 The first draft called this repeat's mismatch "one beat's onset match differed…
