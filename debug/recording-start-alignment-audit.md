@@ -10,7 +10,12 @@ instead of the matrix). Measurement library: `src/lib/audit/recordingAlignment.t
 calibration constants: `src/lib/audit/recordingAuditCalibration.ts`. WAV
 (`recaudit-<scenario>-<bpm>-<rate>-r<repeat>.wav`) and JSON
 (`recaudit-summary-<timestamp>.json`) uploads land in `.verify-output/` via the dev
-server's `/__verify` sink.
+server's `/__verify` sink. Every summary JSON also carries `outputLatency`,
+`baseLatency`, and `headMissingBaselineMs` (top level) plus, per row, the raw box-graph
+values behind the placement math (`regionPositionPpqn`, `regionStartSec`,
+`waveformOffsetSec`, `anchorT0Sec`, `recordRequestContextTime`, `headMissingRawMs`) and
+detector/graph-path noise (`clockNoiseIdentifiedClicks`, `clockNoiseMaxAbsResidualMs`) —
+this evidence is a committed artifact, not console-only.
 
 **Design Spec:** `docs/superpowers/specs/2026-09-01-recording-start-alignment-audit-design.md`
 (deleted in the PR that completes this work, per repo convention — recovery:
@@ -45,45 +50,104 @@ Matrix: 2 sample rates (44100, 48000) × 2 BPMs (120, 97.3) × 5 scenarios × 3 
 ## Outcome summary
 
 **Matrix: 20/20 cells classified (10 scenario×bpm combinations × 2 rates), 0
-run-failed cells.** 4/20 `matches-known-defect` (janked-start, both bpms, both rates —
-prediction A confirmed cleanly), 16/20 `investigate`. Classification is identical across
-both sample rates for every scenario — no rate-dependent effect found.
+run-failed cells.** 0/20 `matches-known-defect`, 20/20 `investigate` — the original
+draft's "4/20 matches-known-defect (janked-start)" is WITHDRAWN (see "Fix round 1":
+that data measured the harness's own provocation bug, not the SDK; the fix-round
+re-run data reclassifies every `janked-start` cell to `investigate`). Classification
+is identical across both sample rates for every scenario — no rate-dependent effect
+found. All per-cell statistics below use **matrix-run data only** (the two full
+`scenario=all` runs plus the `janked-start`/`loop-wrap` fix-round re-runs that
+replaced their invalid/incomplete rows) — the separate bring-up control-cell runs (18
+extra `nominal-start` repeats) are calibration evidence, kept out of the "official"
+per-cell population to avoid double-counting.
 
-**Bring-up hypothesis (loopback-path `outputLatency` bias) REFUTED by magnitude**
-(measured 23 ms vs. ~89 ms mean observed bias) — see "Bring-up calibration". No
-loopback-path correction was applied; the harness measures upstream SDK behavior
-directly.
+**Bring-up hypothesis (loopback-path `outputLatency` bias) REFUTED by magnitude, but
+it IS one real additive term.** `outputLatency` (23 ms, identical at both sample
+rates) is a genuine, unearned-in-a-digital-loopback contributor to every no-count-in
+take's `waveformOffset` — worth exactly 23 ms of early placement, out of scope per the
+design spec §2's "real hardware round-trip latency… not what this campaign measures" —
+but it explains only a small fraction of the measured ~91 ms mean bias. The dominant
+term is a genuinely upstream, in-scope quantity: see "Bring-up calibration" for the
+full three-term decomposition.
 
-**Two candidate new findings, both root-caused to `RecordAudio.ts` and reproduced with
-high consistency (12+ repeats each, both rates, both bpms):**
-1. **No-count-in `waveformOffset` bias** (`nominal-start`, `countin-start`): measured
-   -60 to -110 ms early content placement, traced to `RecordAudio.ts:270-274`'s
-   `headStartSeconds = wallclockSinceWorklet` being used uncompensated for the real gap
-   between the RecordingWorklet's connection and the transport's actual position-0 start
-   — 3.5-6.5x prediction B's originally-estimated ±15 ms band.
+**Two candidate new findings**, both root-caused to `RecordAudio.ts` and reproduced
+with high consistency across both rates and both bpms:
+1. **No-count-in `waveformOffset` bias** (`nominal-start`, `countin-start`): matrix-run
+   medians range -64.9 to -108.2 ms (24 repeats, mean of per-cell means ≈ -90.6 ms).
+   Traced to `RecordAudio.ts:270-274`'s `headStartSeconds = wallclockSinceWorklet`
+   used uncompensated for the real gap between the RecordingWorklet's connection and
+   the transport's actual position-0 start — see the three-term decomposition below.
 2. **`midtimeline-start` content skip**: `matched=15, missing=1` on every one of 12
-   repeats — `region.position` anchored at the first-observed transport position while
-   already playing, matching prediction A's mechanism but not currently caught by the
-   harness's `headMissingMs` metric (a harness instrumentation gap, not a refutation).
+   matrix-run repeats — `region.position` anchored at the first-observed transport
+   position while already playing, matching prediction A's mechanism but not currently
+   caught by the harness's `headMissingMs` metric (a harness instrumentation gap, not a
+   refutation).
 
-**Predictions A-D: A confirmed (janked-start, exact band match); B confirmed in
-mechanism/direction, refuted in magnitude (3.5-6.5x over); C partially confirmed
-(jank clearly shifts the signature) but not isolable from A with this campaign's
-scenarios; D confirmed flat (no per-take accumulation) but refuted in both magnitude
-(2-5x over) and sign (measured early, predicted late) — dominated by the same
-mechanism as B, not the predicted voice-crossfade lateness.**
+**A third finding surfaced during this fix round: a reproducible `loop-wrap`
+finalization hang**, unrelated to the transport-start-delay quirk this scenario's
+failures were originally (incorrectly) attributed to. See the "C2" entry in Triage —
+characterized in detail there, not resolved by widening the harness's own deadline.
 
-**One documented harness limitation reproduced, not a new finding:** the WASM
-transport-start-delay flakiness (`src/demos/recording/CLAUDE.md`) cost 5 of 12
-`loop-wrap` repeats across both rates, up to 100% of one cell's repeats — confirmed
-real and non-trivial via a targeted re-run, not a rare fluke. One harness-artifact
-candidate identified but not resolved: `loop-wrap` take4's consistently low onset-match
-count (see Triage).
+**Predictions A-D:** A confirmed as a genuine, intermittent content-skip mechanism on
+`janked-start` in the FIXED data (one of 12 re-run repeats; the original `janked-start`
+data was invalid, measuring the harness's own provocation bug, not the SDK — see "Fix
+round 1" below) and unconditionally on `midtimeline-start` (12 of 12 repeats). B
+confirmed in mechanism/direction,
+refuted in magnitude (measured range 2.6-4.3x over the calibration file's 4-25 ms
+band, 4.3-7.2x over the design spec's informal "~15 ms" wording — see Triage for both
+bases). C could not be isolated from A even after the fix (see Triage). D confirmed
+flat (no per-take accumulation) but refuted in both magnitude (2-5x over) and sign
+(measured early, predicted late) — dominated by the same mechanism as B, not the
+predicted voice-crossfade lateness.
+
+## Fix round 1 (2026-09-01) — corrections after review
+
+The team lead's review of the first draft found 3 Critical and 4 Important issues.
+This register has been rewritten to reflect the corrected data; the corrections
+themselves (what was wrong, what changed, what was re-run) are summarized here for
+traceability, with full detail folded into the relevant sections below and in
+`.superpowers/sdd/2026-09-01-recording-start-alignment-audit/task-6-fix-report-1.md`.
+
+1. **`janked-start`'s original data was invalid** — the busy-loop spin ran
+   immediately after calling `project.startRecording()`, which blocked that call's own
+   async continuation (`Recording.start` awaits `capture.prepareRecording()` — the
+   worklet-connect — before the transport actually starts), so the spin delayed
+   capture-start and transport-start together instead of jamming the main thread AFTER
+   an audio-thread anchor already existed. Fixed by keying the spin off the harness's
+   own subscription to `engine.isRecording` actually flipping true; re-ran all 4
+   `janked-start` cells (both bpms, both rates) — see the corrected A/C verdicts below.
+2. **`loop-wrap`'s failures were mis-attributed** to the `waitForPosition` transport
+   quirk; every failure row's `errorMessage` actually reads `finalizing: finalization
+   timed out after 30s`. Diagnosed with a 90s-deadline test (4 of 6 repeats STILL timed
+   out — refuting "just needs more time"), then reverted to 30s and re-run — see the C2
+   triage entry for the full characterization and evidence.
+3. **The `outputLatency` hypothesis was one real additive term, not entirely
+   refuted** — corrected to a three-term decomposition (harness-path / upstream
+   headStart / anchor-position residual) in "Bring-up calibration".
+4. Recomputed every mean/range from the raw JSON with a consistent, stated population
+   and methodology (per-cell mean, then averaged across bpm for a rate/scenario
+   summary) — the previous draft mixed populations and got several means and one
+   multiplier claim wrong.
+5. Corrected the stated reason `janked-start` never matched signature C (head-loss
+   resolves before the band loop; `constant-late` requires a positive mean, but the
+   measured means are negative) — the previous draft's stated reason (no C band
+   configured) was itself wrong; both A and C ARE configured for `janked-start`.
+6. Every scenario/cell's classifier `detail` string is now quoted directly from the
+   persisted JSON rather than paraphrased, and the false "matched=17/missing=0 on
+   every nominal repeat" claim is removed (a bring-up run — `…1788283946271.json` —
+   shows 0/42, and one matrix repeat shows 16/1).
+7. Head-missing figures are now labeled baseline-corrected vs. raw everywhere they
+   appear, with both values given.
 
 ## Bring-up calibration
 
-Control cell: `nominal-start`, 120 bpm, 48000 Hz. Three fresh-page-load runs (9 repeats
-total) plus the Task 4 smoke run (3 repeats) — 12 repeats of evidence.
+Control cell: `nominal-start`, 120 bpm, 48000 Hz. Six fresh-page-load runs (18 valid
+repeats: `recaudit-summary-1788284188534.json`, `…1788285202428.json`,
+`…1788286810273.json`, `…1788286887454.json`, `…1788287122505.json`,
+`…1788287338875.json`) plus two attempts excluded as invalid (see below), used only to
+derive the calibration constants below. **Not used as the "official"
+`nominal-start`/120/48000 matrix population** — that population is the actual matrix
+run's own 3 repeats (see "Matrix results — 48000 Hz").
 
 ### CRITICAL bring-up question: is the harness's loopback path introducing a bias?
 
@@ -92,28 +156,34 @@ total) plus the Task 4 smoke run (3 repeats) — 12 repeats of evidence.
 harness's digital loopback never incurs, so takes should land EARLY by exactly
 `outputLatency`.
 
-**Measured `audioContext.outputLatency` / `baseLatency`** (logged as strings on every
-run, identical across 4 separate page loads): `outputLatency=0.023` (23 ms),
-`baseLatency=0.0029166...` (2.92 ms).
+**Measured `audioContext.outputLatency` / `baseLatency`**, persisted in every run's
+summary JSON (not just console): `outputLatency=0.023` (23 ms) at **both** sample
+rates — confirmed identical in `recaudit-summary-1788290691302.json` (rate 48000) and
+`recaudit-summary-1788290774387.json`/`…1788291706370.json` (rate 44100).
+`baseLatency` varies slightly by rate (≈2.90-2.92 ms @48000, ≈2.90 ms @44100) but is
+too small to matter to this analysis.
 
-**Result: hypothesis REFUTED by magnitude.** Measured `medianBeatErrorMs` across all 12
-nominal-start repeats: -105.54, -91.54, -86.88 (Task 4 smoke), -92.23, -84.21, -91.54,
--73.54, -99.54, -80.21 (this task's 9). Mean ≈ -89.2 ms, range -73.5..-105.5 ms (spread
-≈ 32 ms). 23 ms of `outputLatency` cannot produce an ~89 ms bias — off by ~4x. The
-loopback-path-bias correction the brief's hypothesis proposed was **not implemented**;
-subtracting ~23 ms would have left ~66 ms of unexplained bias uncorrected while
-disguising the cell as "calibrated."
+**Result: the hypothesis, taken literally (bias = outputLatency, full stop), is
+refuted by magnitude — but `outputLatency` IS one real, correctly-signed additive
+term.** Measured `medianBeatErrorMs` across the 18 valid bring-up repeats (excluding
+one broken run and one all-failed run — see below): range -73.5 to -108.2 ms, mean ≈
+-90.5 ms. 23 ms of `outputLatency` alone cannot produce this — the dominant term is
+elsewhere, decomposed below.
 
-### Actual mechanism (found by reading `RecordAudio.ts`, confirmed against live diagnostic values)
+**Excluded bring-up runs** (not used in any statistic): `recaudit-summary-1788283946271.json`
+— first attempt, 2/3 repeats errored (`finalizing: no take regions created`, the
+documented WASM transport-start-delay flakiness) and the third repeat measured
+`matched=0, missing=42` (a degenerate capture, not representative — the one place in
+this campaign a raw `matched=0/missing=42` figure appears, cited here explicitly so it
+isn't mistaken for a "17/0 always" pattern anywhere else).
+`recaudit-summary-1788286745058.json` — a later attempt, all 3 repeats errored on the
+same transport-start-delay quirk.
 
-Added a temporary-turned-permanent diagnostic log (`[recording-alignment-audit] diag
-...`) printing the raw box-graph values behind every alignment number. Example
-(`nominal-start/120/r1`, second bring-up run): `position=5` (region PPQN),
-`regionStartSec=0.0026042`, `waveformOffsetSec=0.055000`, `anchorT0Sec=0.099688`,
-`recordRequestContextTime=0.077333`, `medianBeatErrorMs=-73.5417`.
+### Three-term decomposition (found by reading `RecordAudio.ts`, confirmed against persisted diagnostic values)
 
-`RecordAudio.ts:270-274` (installed 0.0.170, `openDAWOriginal` checkout at the pinned
-tag):
+`RecordAudio.ts:270-274` (installed 0.0.170, read in the sibling upstream SDK source
+checkout — see `.claude/local.md` for its location, not named here per repo
+convention):
 ```
 const wallclockSinceWorklet = recordingWorklet.numberOfFrames / sampleRate
 const headStartSeconds = countedIn
@@ -123,319 +193,467 @@ const waveformOffset = headStartSeconds + countInSeconds + outputLatency + input
 ```
 For the **counted-in** path, `wallclockSinceWorklet` (the RecordingWorklet's own frame
 counter — how much audio it has captured since being connected, read at the first
-`isRecording=true` position-tick) has the deterministic `countInSeconds` subtracted out,
-per the code's own comment: "L is recovered once, here, by reading `numberOfFrames` at
-the moment we first see `isRecording=true` and subtracting the BPM-derived
-`countInSeconds`." For the **no-count-in** path (this cell), there is nothing to
-subtract — `headStartSeconds` is `wallclockSinceWorklet` **in full**, on the implicit
-assumption that the RecordingWorklet started counting frames at the exact instant the
-transport began advancing from position 0.
+`isRecording=true` position-tick) has the deterministic `countInSeconds` subtracted
+out, per the code's own comment: "L is recovered once, here, by reading `numberOfFrames`
+at the moment we first see `isRecording=true` and subtracting the BPM-derived
+`countInSeconds`." For the **no-count-in** path (`nominal-start`, `countin-start`
+without its count-in offset, `loop-wrap`'s first take), there is nothing to subtract —
+`headStartSeconds` is `wallclockSinceWorklet` **in full**, on the implicit assumption
+that the RecordingWorklet started counting frames at the exact instant the transport
+began advancing from position 0.
 
-That assumption is measurably false. `region.position` (read from the SAME position-tick
-callback, via the engine's transport/PPQN clock) converts to `regionStartSec=2.6 ms` in
-the example above — i.e. the transport clock says only ~2.6 ms had elapsed at that tick.
-But `waveformOffsetSec=55.0 ms`, and with `outputLatency=23 ms` subtracted,
-`headStartSeconds≈32 ms` — the RecordingWorklet's own frame-count clock says ~32 ms had
-elapsed at the SAME tick. The two clocks, which should agree (both driven off the same
-audio-thread render loop), disagree by roughly 12x in this example. The worklet's frame
-counter is running from `prepareRecording()`'s `recordGainNode.connect(recordingWorklet)`
-call (`CaptureAudio.ts:200`) — which happens some real wall-clock time BEFORE the
-transport's position actually begins advancing from 0 — and that pre-roll gap is baked
-directly into `headStartSeconds`, uncompensated, for the no-count-in path. This is
-exactly predicted signature **B**'s mechanism ("`numberOfFrames` ring-reader delivery lag
-used as the elapsed-capture clock") — confirmed live, via source code and direct
-measurement — but the measured magnitude (mean ≈ 89 ms, up to 105.5 ms) is **3.5-6.5x**
-the predicted band's ceiling (25 ms). See "Predictions" below and the Triage section.
+That assumption is measurably false, and the total measured error decomposes into
+**three** terms, not one:
 
-**Decision: no loopback-path bias correction was applied.** This bias is upstream SDK
-behavior under audit, not a harness artifact — subtracting it would hide the exact class
-of defect this campaign exists to measure. `LOOPBACK_PATH_BIAS`/`loopbackPathBiasMs()`
-as originally proposed was **not implemented** (would have been evidence-free — the
-9-repeat control cell disproves the specific `outputLatency` mechanism it assumed).
+1. **Harness-path term ≈ `outputLatency` (23 ms), out of scope.** Real hardware would
+   incur this as speaker→ear→mic latency; this harness's digital loopback never does,
+   so it is unearned compensation baked into every no-count-in `waveformOffset`. Per
+   the design spec §2, absolute device latency is explicitly not what this campaign
+   measures — this term is acknowledged but not "fixed" or subtracted from the
+   published signature; it's simply named as the harness-attributable slice.
+2. **Upstream `headStartSeconds` term (the dominant one).** The RecordingWorklet's
+   frame counter starts running from `prepareRecording()`'s
+   `recordGainNode.connect(recordingWorklet)` call (`CaptureAudio.ts:200`) — a real
+   wall-clock instant that occurs BEFORE the transport's position actually begins
+   advancing from 0. That pre-roll gap is baked directly into `headStartSeconds`,
+   uncompensated, for the no-count-in path. Worked example (`nominal-start/120/r1`,
+   bring-up run, `regionPositionPpqn=5` → `regionStartSec=0.0026042`,
+   `waveformOffsetSec=0.055000`): `headStartSeconds = waveformOffsetSec − outputLatency
+   = 0.055 − 0.023 = 0.032s` (32 ms) vs. `regionStartSec = 0.0026s` (2.6 ms) — the
+   RecordingWorklet's frame-count clock and the transport's PPQN clock, both read at
+   the SAME position-tick callback, disagree by roughly 12x in this example.
+3. **Anchor/position residual.** Even after accounting for terms 1 and 2, a further
+   residual remains that scales with how much real time elapses between the transport
+   truly reaching position 0 and the main thread's first `isRecording=true`
+   observation actually running (the SAME "stale position read, fresh frame count"
+   race this campaign later confirmed drives `janked-start` and `midtimeline-start` —
+   see the C1 fix and prediction A below). This residual is why the total measured
+   bias (mean ≈ -90 ms) exceeds terms 1+2 (≈ 23 + 32 = 55 ms in the worked example) by
+   a further ~18-35 ms across different repeats — consistent with an A+B interaction
+   (fresh `numberOfFrames`, paired with a `currentPosition` read that's already
+   slightly stale by the time the position-tick callback runs), not a single
+   fixed pre-roll constant. This is the mechanism the data actually supports; a
+   simpler "pre-roll baked in, constant per session" story does NOT fit, because the
+   raw `headMissingMs` (worklet-connect-to-first-frame lag, see below) stays flat at
+   ~15-25 ms regardless of whether the total bias that repeat measures is -65 ms or
+   -110 ms — if it were purely a pre-roll constant, the two would track together.
+
+**Decision: no correction was applied to the published signature.** Terms 2 and 3 are
+upstream SDK behavior under audit; only term 1 (`outputLatency`) is harness-path, and
+it is small enough (23 of ~90 ms, ~25%) that subtracting it would not materially change
+the classification or the character of the finding — the register states its
+existence and magnitude here rather than silently netting it out of every number below.
+`LOOPBACK_PATH_BIAS`/`loopbackPathBiasMs()` as originally proposed (subtract
+`outputLatency` and call the cell calibrated) was **not implemented** — it would have
+left terms 2 and 3 (the majority of the bias) uncorrected while disguising the cell as
+fully explained.
 
 ### `ALIGNED_TOLERANCE_MS` (detector/graph-path noise floor)
 
-Added a `clockNoise` diagnostic: `identifyReferenceClicks` residuals (each identified
-click's `schedule.times[i] − fileTimeSec`, relative to the median anchor) — pure
+`clockNoiseMaxAbsResidualMs` (persisted per row): sub-float-precision on every bring-up
+run (e.g. `1.44e-12` in `recaudit-summary-1788290691302.json`'s first row) — pure
 onset-detection + zero-phase band-split jitter, independent of any SDK placement math
 (the reference clicks are synthetic oscillator bursts at exact scheduled `AudioContext`
-times). Measured across all 3 runs: `identifiedClicks=26`, `maxAbsResidualMs=0.0000` (sub-
-float-precision on every run — residual arrays print as `0.000`/`-0.000` throughout, e.g.
-run at 11:25:22: `[-0.000,-0.000,-0.000,-0.000,0.000,0.000,...]`). 2x that is far under
-the 2 ms floor. **`ALIGNED_TOLERANCE_MS` stays at 2 ms (unchanged)** — the provisional
-value was already correctly calibrated; no revision needed.
+times). 2x that is far under the 2 ms floor. **`ALIGNED_TOLERANCE_MS` stays at 2 ms
+(unchanged)** — the provisional value was already correctly calibrated.
 
 ### `HEAD_MISSING_BASELINE_MS` (worklet-connect-to-first-frame setup lag)
 
-Raw `headMissingMs` (buffer-start context time vs. `recordRequestContextTime`) across all
-12 nominal-start repeats: 25.02, 16.35, 17.02 (Task 4), 17.04, 17.02, 16.35, 22.35, 16.35,
-15.69 (this task's 9). Range 15.69-25.02 ms, mean ≈ 18.1 ms — this is NOT random detector
+Raw `headMissingMs` (`headMissingRawMs` in the persisted JSON — buffer-start context
+time vs. `recordRequestContextTime`, BEFORE the baseline correction) across the 15
+bring-up repeats measured before this constant existed (the JSON field for those rows
+holds the then-uncorrected value directly; the 6th run's 3 repeats already have the
+correction applied and are excluded from this specific statistic to avoid mixing
+corrected and raw values): range 14.37-25.02 ms, mean ≈ 18.58 ms — NOT random detector
 noise (the clockNoise measurement above rules that out); it is the genuine async gap
-between the JS `startRecording()` call and the RecordingWorklet's first captured frame
-reaching the ring buffer (Promise/worklet-connect message-passing setup — recording
-genuinely had not started yet at `recordRequestContextTime`, so no content was lost).
-Added `HEAD_MISSING_BASELINE_MS = 26` (just above the measured max) to
+between the
+JS `startRecording()` call and the RecordingWorklet's first captured frame reaching the
+ring buffer (Promise/worklet-connect message-passing setup — recording genuinely had
+not started yet at `recordRequestContextTime`, so no content was lost). Added
+`HEAD_MISSING_BASELINE_MS = 26` (just above the measured max) to
 `recordingAuditCalibration.ts`, subtracted from every take's raw `headMissingMs` via a
-new `headMissingBaselineMs` field on `measureTakeAlignment`'s input
-(`src/lib/audit/recordingAlignment.ts`) before `classifyCell` ever sees it. Re-verified
-live: post-calibration `headMissingMs` on a fresh control-cell run read `0.00, 0.00,
-7.02` ms (the third repeat's small residual above baseline is ordinary additional
-jitter, not a sign the correction under-fires). Scenarios that DO predict genuine
-head-loss (A: `janked-start` 20-300 ms, `midtimeline-start` 5-300 ms) remain trivially
-distinguishable from this 26 ms baseline — even A's predicted minimum is comparable to
-or above it, and this task's own measured B magnitude (mean 89 ms) shows real defects on
-this SDK run far larger than a 26 ms baseline could mask.
+`headMissingBaselineMs` field on `measureTakeAlignment`'s input
+(`src/lib/audit/recordingAlignment.ts`) before `classifyCell` ever sees it —
+**both the raw and corrected values are persisted per row** (`headMissingRawMs` /
+`headMissingMs`) so this correction is always auditable, never silently applied.
+Re-verified live post-calibration on a fresh control-cell run: corrected `headMissingMs`
+read `0.00, 0.00, 7.02` ms (the small residual on the third repeat is ordinary
+additional jitter above the fixed 26 ms baseline, not evidence the correction
+under-fires). Scenarios that DO predict genuine head-loss (A: `janked-start` 20-300 ms,
+`midtimeline-start` 5-300 ms) remain trivially distinguishable from this 26 ms
+baseline.
 
 ### Band separation
 
-`matchedBeats=17, missingBeats=0` on every one of the 12 nominal-start repeats measured
-(17 = `floor(8s / 0.5s beat) + 1`, the full expected count for a 4-bar/120bpm window) —
-no missing beats from low-band/high-band cross-talk, no metronome bleed into the high
-(reference-click) band's detection path corrupting the low-band count. No
+No missing-beat evidence of low-band/high-band cross-talk was found in any of the
+valid (non-excluded) bring-up or matrix `nominal-start` repeats. No
 `REF_CLICK_HZ`/`highCutoffHz` adjustment was needed.
 
 ### Net effect on the harness
 
 - `ALIGNED_TOLERANCE_MS = 2` — unchanged.
-- `HEAD_MISSING_BASELINE_MS = 26` — new constant, subtracted from `headMissingMs` before
-  classification (`src/lib/audit/recordingAuditCalibration.ts`,
-  `src/lib/audit/recordingAlignment.ts`).
-- Diagnostic logging added (`diag`, `clockNoise`, `outputLatency`/`baseLatency`) to
-  `recording-alignment-audit-debug-demo.tsx` — kept permanently for triage traceability
-  on future runs (cheap, string-only per CLAUDE.md's logging convention).
-- **No correction was applied to `medianBeatErrorMs`/beat placement.** The ~89 ms mean
-  bias on `nominal-start` is left as measured and carried into the matrix + triage below
-  as the primary finding.
+- `HEAD_MISSING_BASELINE_MS = 26` — new constant (`recordingAuditCalibration.ts`,
+  `recordingAlignment.ts`).
+- `janked-start`'s jank provocation rewritten to key off `engine.isRecording`
+  actually flipping true, not off calling `startRecording()` (fix round 1, C1).
+- `loop-wrap`'s finalization deadline diagnostic (90s), then reverted to 30s (fix
+  round 1, C2) — see Triage; no deadline change was retained since it didn't help.
+- `outputLatency`/`baseLatency`/`headMissingBaselineMs` (top level) and per-take
+  diagnostic fields (`regionPositionPpqn`, `regionStartSec`, `waveformOffsetSec`,
+  `anchorT0Sec`, `recordRequestContextTime`, `headMissingRawMs`,
+  `clockNoiseIdentifiedClicks`, `clockNoiseMaxAbsResidualMs`) now persisted in every
+  row of the summary JSON (fix round 1, I3) — previously console-only.
+- **No correction was applied to `medianBeatErrorMs`/beat placement.** The measured
+  bias on `nominal-start`/`countin-start` is left as measured and carried into the
+  matrix + triage below as the primary finding.
 
 ## Matrix results — 48000 Hz
 
 Run: `recording-alignment-audit-debug-demo.html?scenario=all&bpm=all&rate=48000`, one
 fresh page load, real click, visible window. JSON summary:
 `recaudit-summary-1788287951691.json` (45 rows, `sdkBuildProbe: "upstream"`).
-`loop-wrap/120` lost repeats 2-3 and `loop-wrap/97.3` lost repeat 3 to the documented
-WASM transport-start-delay flakiness (`waitForPosition timed out`, per
-`src/demos/recording/CLAUDE.md`) — 3 error rows total, not re-run individually (loop-wrap
-still classified successfully from its surviving repeats; see below).
+`janked-start` rows below are from the **fix-round re-run**
+(`recaudit-summary-1788290691302.json`, `?scenario=janked-start&bpm=all&rate=48000`) —
+the original run's `janked-start` data measured the harness's own provocation bug (see
+"Fix round 1") and is discarded, not reported.
 
-| scenario | bpm | medianErr per repeat (ms) | headMiss (ms) | signature | status |
+`loop-wrap/120` lost repeats 2-3 and `loop-wrap/97.3` lost repeat 3, every one with
+`errorMessage: "finalizing: finalization timed out after 30s"` — confirmed from the
+persisted JSON, **not** the `waitForPosition` transport-start quirk (which does not
+appear in either matrix run's loop-wrap error rows; it appears only in two of the
+bring-up control-cell attempts). See the C2 triage entry for the full characterization.
+
+| scenario | bpm | medianErr per repeat (ms) | headMiss corrected/raw (ms) | signature | status |
 |---|---|---|---|---|---|
-| nominal-start | 120 | -97.56, -94.88, -74.90 | 7.04, 0.00, 0.00 | — | investigate |
-| nominal-start | 97.3 | -108.20, -72.87, -102.87 | 4.35, 0.00, 0.00 | — | investigate |
-| janked-start | 120 | -62.90, -92.21, -94.21 | 135.04, 145.69, 147.69 | A | **matches-known-defect** |
-| janked-start | 97.3 | -97.53, -89.55, -69.55 | 145.69, 151.04, 147.04 | A | **matches-known-defect** |
-| midtimeline-start | 120 | -152.23, -154.90, -185.54 | 3.04, 0.00, 0.00 | — | investigate |
-| midtimeline-start | 97.3 | -166.36, -147.67, -151.01 | 1.04, 0.00, 1.69 | — | investigate |
-| countin-start | 120 | -101.54, -99.54, -84.21 | 0.00, 0.00, 0.00 | — | investigate |
-| countin-start | 97.3 | -77.62, -100.27, -81.62 | 0.00, 4.35, 0.00 | — | investigate |
-| loop-wrap | 120 | repeat1 takes1-4: -71.17 (flat) / take4 matched=0 / repeat2,3 error | 0.00 | — | investigate |
-| loop-wrap | 97.3 | repeat1/2 takes1-3: -68.13..-68.15 / -73.72..-73.75 (flat per repeat) / take4 matched=1 both / repeat3 error | 0.00 | — | investigate |
+| nominal-start | 120 | -97.56, -94.88, -74.90 | 7.04/33.04, 0.00/≤26, 0.00/≤26 | — | investigate |
+| nominal-start | 97.3 | -108.20, -72.87, -102.87 | 4.35/30.35, 0.00/≤26, 0.00/≤26 | — | investigate |
+| janked-start (fix-round) | 120 | -70.87, -99.56, -121.56 | 0.00/22.35, 0.00/21.71, 7.04/33.04 | — (r3 unusable: missing=1) | investigate |
+| janked-start (fix-round) | 97.3 | -73.55, -89.55, -77.53 | 0.00/17.04, 0.00/25.04, 0.00/15.69 | — (no band: mean −80.21 < 0) | investigate |
+| midtimeline-start | 120 | -152.23, -154.90, -185.54 | 3.04/29.04, 0.00/≤26, 0.00/≤26 | — | investigate |
+| midtimeline-start | 97.3 | -166.36, -147.67, -151.01 | 1.04/27.04, 0.00/≤26, 1.69/27.69 | — | investigate |
+| countin-start | 120 | -101.54, -99.54, -84.21 | 0.00/≤26, 0.00/≤26, 0.00/≤26 | — | investigate |
+| countin-start | 97.3 | -77.62, -100.27, -81.62 | 0.00/≤26, 4.35/30.35, 0.00/≤26 | — | investigate |
+| loop-wrap | 120 | repeat1 takes1-4: -71.17 (flat) / take4 matched=1 / repeats2,3 error (`finalization timed out after 30s`) | 0.00/≤26 (r1) | — | investigate |
+| loop-wrap | 97.3 | repeat1/2 takes1-3: -68.13..-68.15 / -73.72..-73.75 (flat per repeat) / take4 matched=1 both / repeat3 error (`finalization timed out after 30s`) | 0.00/≤26 | — | investigate |
 
-**Tally: 10 cells — 0 aligned, 2 matches-known-defect (both janked-start), 8 investigate,
-0 outright run-failed cells (loop-wrap classified despite 3 error rows).**
+Raw head-missing derivation: `headMissingMs (corrected) = max(0, headMissingRawMs − 26)`
+per `HEAD_MISSING_BASELINE_MS`, so a nonzero corrected value gives an exact raw value
+(`raw = corrected + 26`); a corrected value of `0.00` only bounds `raw ≤ 26` (the exact
+raw figure is unrecoverable through the clamp) — these original-matrix-run rows
+predate this fix round's per-row `headMissingRawMs` persistence (I3), so only the
+bound is available for them, not the console-logged exact figure the fix-round re-runs
+now carry in their own JSON.
+
+**Tally: 10 cells — 0 aligned, 0 matches-known-defect (corrected — see "Fix round 1":
+the original 2 `janked-start` matches-known-defect verdicts are WITHDRAWN, replaced
+with `investigate` from the fix-round re-run data), 10 investigate, 0 outright
+run-failed cells (loop-wrap classified despite 3 error rows).**
 
 ## Matrix results — 44100 Hz
 
 Run: `recording-alignment-audit-debug-demo.html?scenario=all&bpm=all&rate=44100`, fresh
 page load, real click, visible window. JSON summary:
 `recaudit-summary-1788288625777.json` (35 rows, `sdkBuildProbe: "upstream"`).
-`loop-wrap/120` lost all 3 repeats and `loop-wrap/97.3` lost repeats 1-2 to the same
-WASM transport-start-delay flakiness. Per protocol, `loop-wrap/120` was re-run alone
-(`?scenario=loop-wrap&bpm=120&rate=44100`, JSON `recaudit-summary-1788288803959.json`):
-**reproduced 2/3 failures again** (repeats 1-2 error, repeat 3 succeeds) — registered as
-a finding (the documented flakiness reproduces at a real, non-trivial rate on this SDK
-build/environment, not a one-off), not discarded as noise. Repeat 3's data is used below.
+`janked-start` rows below are from the **fix-round re-run**
+(`recaudit-summary-1788290774387.json`). `loop-wrap` rows below are from the
+**fix-round re-run at the reverted 30s deadline** (`recaudit-summary-1788291706370.json`,
+`?scenario=loop-wrap&bpm=all&rate=44100`) — chosen over the original run's data because
+the fix round's 44.1k/97.3 attempt had zero successful repeats (all 3 failed), so the
+original run's single successful repeat (r3) remains the only usable 44.1k/97.3 data
+point across every attempt made this campaign; it is retained below since `loop-wrap`
+logic besides the (now-reverted) deadline was unchanged by the fix round.
 
-| scenario | bpm | medianErr per repeat (ms) | headMiss (ms) | signature | status |
+| scenario | bpm | medianErr per repeat (ms) | headMiss corrected/raw (ms) | signature | status |
 |---|---|---|---|---|---|
-| nominal-start | 120 | -72.16, -64.90, -99.21 | 0.00, 0.00, 4.93 | — | investigate |
-| nominal-start | 97.3 | -98.39, -101.90, -77.05 | 0.00, 0.00, 0.00 | — | investigate |
-| janked-start | 120 | -71.55, -65.27, -63.50 | 142.71, 139.33, 140.46 | A | **matches-known-defect** |
-| janked-start | 97.3 | -74.30, -57.86, -65.60 | 145.49, 134.84, 139.68 | A | **matches-known-defect** |
-| midtimeline-start | 120 | -167.17, -147.65, -156.85 | 0.00, 0.00, 0.00 | — | investigate |
-| midtimeline-start | 97.3 | -208.07, -201.51, -204.98 | 2.46, 0.00, 2.28 | — | investigate |
-| countin-start | 120 | -99.52, -96.95, -89.20 | 0.00, 0.00, 0.00 | — | investigate |
-| countin-start | 97.3 | -93.15, -83.74, -101.72 | 0.00, 0.00, 0.00 | — | investigate |
-| loop-wrap | 120 | (re-run) repeat3 takes1-4: -79.16..-79.23 (flat) / take4 matched=1 / repeats1-2 error (reproduced flakiness) | 0.00 | — | investigate |
-| loop-wrap | 97.3 | repeat3 takes1-4: -67.13..-67.19 (flat) / take4 matched=1 / repeats1-2 error | 0.00 | — | investigate |
+| nominal-start | 120 | -72.16, -64.90, -99.21 | 0.00/≤26, 0.00/≤26, 4.93/30.93 | — | investigate |
+| nominal-start | 97.3 | -98.39, -101.90, -77.05 | 0.00/≤26, 0.00/≤26, 0.00/≤26 | — | investigate |
+| janked-start (fix-round) | 120 | -79.26, -89.42, -86.65 | 0.00/19.68, 0.00/21.13, 0.00/15.46 | — (no band: mean −85.11 < 0) | investigate |
+| janked-start (fix-round) | 97.3 | -69.38, -89.00, -88.64 | 0.00/12.72, 0.00/14.92, 0.00/14.56 | — (no band: mean −82.34 < 0) | investigate |
+| midtimeline-start | 120 | -167.17, -147.65, -156.85 | 0.00/≤26, 0.00/≤26, 0.00/≤26 | — | investigate |
+| midtimeline-start | 97.3 | -208.07, -201.51, -204.98 | 2.46/28.46, 0.00/≤26, 2.28/28.28 | — | investigate |
+| countin-start | 120 | -99.52, -96.95, -89.20 | 0.00/≤26, 0.00/≤26, 0.00/≤26 | — | investigate |
+| countin-start | 97.3 | -93.15, -83.74, -101.72 | 0.00/≤26, 0.00/≤26, 0.00/≤26 | — | investigate |
+| loop-wrap | 120 | repeat1/2 takes1-3: -70.99..-71.06 / -62.27..-62.34 (flat per repeat) / take4 matched=1 both / repeat3 error (`finalization timed out after 30s`) | 0.00/≤26 | — | investigate |
+| loop-wrap | 97.3 | (original run, retained) repeat3 takes1-4: -67.13..-67.19 (flat) / take4 matched=1 / repeats1-2 error (original run's error message not individually re-verified, but the fix-round's own 97.3 attempts at both 30s and 90s ALL show `finalization timed out`, making the same attribution overwhelmingly likely here too) | 0.00/≤26 | — | investigate |
 
-**Tally: 10 cells — 0 aligned, 2 matches-known-defect (both janked-start), 8
-investigate, 0 outright run-failed cells** (both loop-wrap cells classified from their
-one surviving repeat each).
+Raw head-missing derivation for this table: same rule as the 48000 Hz table above.
+
+**Tally: 10 cells — 0 aligned, 0 matches-known-defect (corrected, same as 48000 Hz),
+10 investigate, 0 outright run-failed cells.**
 
 ### Cross-rate comparison (48000 vs 44100)
 
-Every scenario's classification is **identical across both rates** — same 2
-matches-known-defect (janked-start only), same 8 investigate. Magnitudes are consistent
-within scatter, not rate-dependent:
+Every scenario's classification is **identical across both rates** — 0
+matches-known-defect, 10 investigate at both rates. Magnitudes are consistent within
+scatter, not rate-dependent:
 
-- `nominal-start` median: 48k mean ≈ -89.2 ms (6 samples: -97.56,-94.88,-74.90,-108.20,
-  -72.87,-102.87) vs 44.1k mean ≈ -85.7 ms (-72.16,-64.90,-99.21,-98.39,-101.90,-77.05).
-- `janked-start` headMissingMs: 48k range 135.04-151.04 ms vs 44.1k range 134.84-145.49
-  ms — both comfortably inside predicted A's 20-300 ms band at both rates.
-- `midtimeline-start` median: 48k mean ≈ -166.4 ms vs 44.1k mean ≈ -172.7 ms — both far
-  more negative than `nominal-start`/`countin-start`, and both show `matched=15,
-  missing=1` on every single repeat at both rates (one beat consistently unaccounted
-  for — see Triage).
-- `loop-wrap` per-repeat takes 1-4: flat (near-identical, <0.1 ms drift take-to-take)
+- `nominal-start` per-cell means: 48k/120 = -89.11 ms, 48k/97.3 = -94.64 ms, 44.1k/120
+  = -78.76 ms, 44.1k/97.3 = -92.44 ms (average of the 4 cell means ≈ -88.74 ms).
+- `countin-start` per-cell means: 48k/120 = -95.10 ms, 48k/97.3 = -86.51 ms, 44.1k/120
+  = -95.22 ms, 44.1k/97.3 = -92.87 ms (average ≈ -92.42 ms).
+- `janked-start` (fix-round) per-cell means: 48k/120 = -97.33 ms (dominated by r3's
+  severe -121.56 ms/missing=1 outlier), 48k/97.3 = -80.21 ms, 44.1k/120 = -85.11 ms,
+  44.1k/97.3 = -82.34 ms — same magnitude range as `nominal-start`/`countin-start`
+  once the harness's own provocation bug is fixed (see Triage prediction A).
+- `midtimeline-start` per-cell means: 48k/120 = -164.22 ms, 48k/97.3 = -155.01 ms,
+  44.1k/120 = -157.23 ms, 44.1k/97.3 = -204.86 ms (average of rate-level means: 48k ≈
+  -159.62 ms, 44.1k ≈ -181.04 ms) — both far more negative than
+  `nominal-start`/`countin-start`, and both show `matched=15, missing=1` on every
+  single repeat at both rates (one beat consistently unaccounted for — see Triage).
+- `loop-wrap` per-repeat takes 1-3/4: flat (near-identical, <0.1 ms drift take-to-take)
   at both rates, consistent with prediction D's "flat across consecutive takes, not
-  accumulating" — but signed magnitude (~-67 to -79 ms) is far outside D's predicted
-  15-30 ms band, and take5 (final, teardown-finalized) is consistently ~8-20 ms MORE
-  negative than takes1-4 at both rates.
+  accumulating" — but signed magnitude (~-62 to -79 ms across all successful repeats
+  measured) is far outside D's predicted 15-30 ms band, and take5 (final,
+  teardown-finalized) is consistently more negative than takes1-4 at every rate/bpm
+  measured.
 
 ## Triage
 
 ### Prediction outcomes (A-D)
 
-- **A (head-loss, `janked-start`/`midtimeline-start`) — CONFIRMED on `janked-start`,
-  measured magnitude matches the predicted band exactly.** All 12 `janked-start` repeats
-  (both bpms, both rates) classified `matches-known-defect`, `headMissingMs` in
-  134.84-151.04 ms, comfortably inside the predicted 20-300 ms band. **`midtimeline-start`
-  does NOT show the predicted head-loss signature via `headMissingMs`** (which stayed
-  near 0-3 ms at both rates, i.e. no significant gap between the record request and the
-  buffer's first captured frame) — instead it shows a consistent `matched=15,
-  missing=1/16` (one beat missing from every single repeat, both bpms, both rates) plus
-  a very large negative median (-147 to -209 ms). This is head-loss by a DIFFERENT
-  mechanism than the one `headMissingMs` measures (which is scoped to
-  `recordRequestContextTime` vs. buffer-start, not to the region's `position`/PPQN
-  anchor) — `region.position` (read once, at the first `isRecording=true` tick, per
-  `RecordAudio.ts:212` `currentPosition = owner.getValue()`) is set to wherever the
-  ALREADY-PLAYING transport happened to be at that first observation, which — because
-  the transport was mid-timeline and running continuously — genuinely skips real
-  content between the true intended start and that first-observed position. The missing
-  beat is exactly this: the beat nearest the true engage point, now excluded because
-  `region.position` already reads past it. **A is confirmed in mechanism on
-  `midtimeline-start` too (code-traced, `missing=1` on literally every repeat), but the
-  harness's `headMissingMs` metric doesn't capture this variant of A** — a gap in the
-  harness's head-loss instrumentation, not a refutation of A. See "harness gaps" below.
+- **A (head-loss, `janked-start`/`midtimeline-start`) — CONFIRMED, but only after the
+  C1 fix; the original `janked-start` "confirmation" was invalid.** The original
+  `janked-start` run's `headMissingMs` of 135-151 ms was NOT head-loss — it was the
+  harness's OWN provocation bug (the busy-loop spin, run immediately after calling
+  `project.startRecording()`, blocked that call's async continuation and delayed
+  capture-connect itself, not just the SDK's post-flip position-tick handling).
+  Evidence: the original (pre-fix) `janked-start` matrix runs' `headMissingMs`
+  (baseline-corrected) across all 12 repeats (both rates, both bpms) ranged
+  134.84-151.04 ms, mean 142.89 ms — every one of the 12 values exceeds
+  `HEAD_MISSING_BASELINE_MS` (26 ms), so `raw = corrected + 26` exactly (not an
+  approximation) for all of them: raw mean = 142.89 + 26 = **168.89 ms**. Against the
+  bring-up control cell's directly-measured raw baseline (14.37-25.02 ms, mean 18.58
+  ms — see "Bring-up calibration"), the jank run's raw head-missing exceeds nominal's
+  by 168.89 − 18.58 ≈ **150.3 ms ≈ `JANK_MS` (150 ms)** almost exactly — the busy-loop
+  duration was being measured back out of `headMissingMs` nearly 1:1, meaning the
+  ENTIRE delay was attributable to the spin blocking capture-start, not to any
+  SDK-side "accept the anchor immediately without waiting" behavior. **Fixed** (see
+  "Fix round 1") by keying the spin off the harness's own subscription to
+  `engine.isRecording` flipping true — verified live: post-fix `headMissingMs` across
+  all 12 re-run repeats (both rates, both bpms) is 0-7 ms, matching
+  `nominal-start`'s baseline exactly, confirming capture is no longer delayed. With
+  that confound removed, A's actual signature shows up differently: one repeat
+  (48k/120/r3) shows `matched=15, missing=1` — genuine content skip, the SAME
+  mechanism `midtimeline-start` shows unconditionally (see below) — while the other 11
+  repeats show full beat matches with medians in the same -57 to -101 ms range as
+  `nominal-start`'s own B-mechanism bias, meaning the 150 ms jank did NOT reliably
+  overlap the SDK's critical position-tick window; when it doesn't, the measured
+  result reduces to plain B. **A is confirmed as intermittent and severe when it does
+  occur** (one clean content-skip case, matching prediction A's mechanism precisely),
+  but does not manifest on every jank-provoked repeat with this jank duration/timing —
+  a longer or better-timed jank window is a candidate follow-up to raise the hit rate.
+  `midtimeline-start` shows the SAME content-skip mechanism **on every single
+  repeat** (12/12, both bpms, both rates): `matched=15, missing=1/16`, plus a very
+  large negative median (-147 to -209 ms). `region.position` (read once, at the first
+  `isRecording=true` tick, per `RecordAudio.ts:212` `currentPosition =
+  owner.getValue()`) is set to wherever the ALREADY-PLAYING transport happened to be
+  at that first observation — because the transport was mid-timeline and running
+  continuously, this genuinely skips real content between the true intended engage
+  point and the first-observed position. Neither `janked-start`'s occasional content
+  skip nor `midtimeline-start`'s consistent one is caught by the harness's
+  `headMissingMs` metric (which measures the gap between `recordRequestContextTime`
+  and the buffer's first captured frame, NOT the region-position anchor) — this is a
+  harness instrumentation gap, not a refutation of A. See "Harness gaps" below.
 
 - **B (random ~±15 ms band on `nominal-start`) — CONFIRMED IN MECHANISM AND DIRECTION,
-  REFUTED IN MAGNITUDE.** All 12 `nominal-start` repeats (both bpms, both rates) land
-  well outside the predicted 4-25 ms band: measured range -64.90 to -108.20 ms, mean
-  ≈ -87.4 ms across all 12 — magnitude is 3.5-6.5x the predicted ceiling (traced to
-  source in "Bring-up calibration" above: `RecordAudio.ts:270-274`'s no-count-in
-  `headStartSeconds = wallclockSinceWorklet`, uncompensated for the real gap between
-  `prepareRecording()`'s worklet-connect and the transport's actual position-0 start).
-  The scatter itself (repeat-to-repeat spread of ~10-45 ms within a cell) is consistent
-  with B's "random band" character — it's layered on top of a much larger constant-ish
-  offset the prediction didn't anticipate. **`countin-start` shows the identical
-  signature** (-77.62 to -101.72 ms, mean ≈ -92.2 ms across 12 repeats) — B's prediction
-  also names `countin-start`, and the same uncompensated-gap mechanism applies there too
-  (the counted-in branch DOES subtract `countInSeconds`, per the code, but not the
-  worklet-connect-to-count-in-start gap itself — see code excerpt above). **Recommend
-  the register (or any upstream issue) describe B's actual measured band as roughly
-  -60 to -110 ms on this SDK/environment, not ±15 ms**, and flag that the current
-  measurement conflates two effects (the worklet-connect pre-roll gap, and whatever
-  residual ~±15 ms noise the original prediction targeted) that a future harness
-  iteration should separate by instrumenting `wallclockSinceWorklet` directly.
+  REFUTED IN MAGNITUDE.** 12 `nominal-start` matrix-run repeats (both bpms, both
+  rates): range -64.90 to -108.20 ms, mean of the 4 per-cell means ≈ -88.74 ms — well
+  outside both stated forms of the predicted band. Against the calibration file's
+  formal band (`SIGNATURE_BANDS`, 4-25 ms): the measured range is **2.60x-4.33x** the
+  25 ms ceiling. Against the design spec's informal "~±15 ms" wording: **4.33x-7.21x**.
+  Root cause: see the bring-up section's three-term decomposition
+  (`RecordAudio.ts:270-274`'s no-count-in `headStartSeconds`, uncompensated for the
+  worklet-connect-to-transport-start gap, plus an anchor-position residual). The
+  scatter itself (repeat-to-repeat spread of ~10-45 ms within a cell) is consistent
+  with B's "random band" character — it's layered on top of a much larger,
+  previously-unpredicted offset. **`countin-start` shows the identical signature**
+  (12 repeats, mean of per-cell means ≈ -92.42 ms) — B's prediction also names
+  `countin-start`, and the same uncompensated-gap mechanism applies (the counted-in
+  branch DOES subtract `countInSeconds` per the code, but not the worklet-connect gap
+  itself). **Recommend any upstream issue describe B's actual measured band as
+  roughly -60 to -110 ms on this SDK/environment** (with the harness-path
+  `outputLatency` term named separately, per the bring-up decomposition), not ±15 ms.
 
-- **C (jank, 50-235 ms constant-late on `janked-start`) — NOT independently
-  distinguishable from A in this campaign's data.** `janked-start`'s measured medians
-  (-57.86 to -97.53 ms across all 12 repeats) land in a similar range to `nominal-start`'s
-  B-mechanism bias, and the cell's classification came from the `headMissingMs`/A
-  head-loss path (135-151 ms, matching A's band), not from a `constant-late` C band
-  match on the median (no C band is configured for `janked-start` in
-  `SIGNATURE_BANDS`, only A — median-based C classification was never possible with the
-  current calibration config). The 150 ms busy-loop jank clearly produced SOME effect
-  (headMissingMs jumped from nominal-start's ~0-25 ms baseline to 135-151 ms, a clean,
-  large, reproducible step at both rates and both bpms) — consistent with C's "no bounded
-  wait... accepted immediately" mechanism compounding with A's anchor-lag — but this
-  campaign cannot cleanly separate "how much of the observed lag is A vs. C" without a
-  dedicated C-only provocation (e.g. jank BETWEEN startRecording and the busy-loop, vs.
-  jank overlapping the position-tick window as currently implemented). **C: partially
-  confirmed (jank clearly moves the measured signature by ~100+ ms in the predicted
-  direction and rough magnitude band), but not cleanly isolated from A** — recommend a
-  follow-up scenario if C needs its own issue filing.
+- **C (jank, 50-235 ms constant-late on `janked-start`) — could not be isolated from A
+  even after the C1 fix; the correct reason it never matches is NOT the one stated in
+  the first draft.** `SIGNATURE_BANDS["janked-start"]` configures BOTH `A` (head-loss)
+  and `C` (constant-late, 50-235 ms) — the first draft's claim that "no C band is
+  configured" was itself wrong. The real reasons, read directly from the classifier's
+  own persisted `detail` strings: (1) `classifyCell` resolves the head-loss branch
+  BEFORE the band-matching loop that would check `C` — a repeat with `missingBeats>0`
+  (48k/120/r3, `detail: "repeat has unusable measurement:
+  medianBeatErrorMs=-121.56249793370577, missingBeats=1"`) is forced straight to
+  `investigate` and never reaches band matching at all; (2) for the other repeats, the
+  classifier's own `detail` reads `"no band matched: mean=-80.21ms …"` (48k/97.3) /
+  `"no band matched: mean=-85.11ms …"` (44.1k/120) / `"no band matched: mean=-82.34ms
+  …"` (44.1k/97.3) — `constant-late`'s match condition requires `mean > 0` (per
+  `classifyCell`'s code), and every measured mean is NEGATIVE (content early, not
+  late), so `C` structurally cannot match regardless of magnitude. The 150 ms jank did
+  measurably shift SOMETHING (see A above — one repeat showed genuine content skip),
+  but the surviving 11 repeats' medians are statistically indistinguishable from
+  `nominal-start`'s own B-mechanism bias — there is no clean, isolated C signature in
+  this data. **C: not confirmed, not cleanly refuted — the current `janked-start`
+  scenario does not isolate it from A/B.** A dedicated C-only provocation (jank that
+  reliably overlaps the SDK's anchor-read window without ever causing outright content
+  loss) is a candidate follow-up.
 
 - **D (loop-wrap, 15-30 ms constant-late, flat across takes) — CONFIRMED FLAT,
-  REFUTED IN MAGNITUDE AND SIGN AMBIGUITY.** Every `loop-wrap` cell (both bpms, both
-  rates) shows the flatness D predicts: consecutive wrap takes (1-4) agree to within
-  0.02-0.1 ms of each other within a repeat (e.g. 48k/120: -71.17, -71.17, -71.17,
-  -71.17). But the magnitude (-67 to -79 ms) is 2-5x D's predicted 15-30 ms ceiling, AND
-  the sign is EARLY (negative), not LATE (D predicts wrapped content emerges late,
-  positive). This is very likely the SAME uncompensated-worklet-connect-gap mechanism as
-  B (loop-wrap's first take also goes through the no-count-in `waveformOffset` formula,
-  and that same `currentWaveformOffset` baseline is inherited additively by every
-  subsequent wrap take per `RecordAudio.ts:238`/`279` — see repo CLAUDE.md's "Loop Take
-  Buffer Layout"), NOT the predicted 20 ms voice-crossfade lateness, which would be a
-  much smaller, positive, per-wrap-independent effect. **D as originally predicted
-  (crossfade lateness) is not confirmed by this data — the measured constant offset is
-  dominated by an inherited B-mechanism bias, not the crossfade.** The crossfade effect
-  may still be present underneath but is not separable from B's larger bias with this
-  harness's current measurement. `take5` (final, teardown-finalized) is consistently
-  8-20 ms more negative than takes 1-4 at every rate/bpm — small and separately
-  explainable by the documented "up to one render-quantum overshoot" on the
-  teardown-finalized take (CLAUDE.md), not investigated further here.
+  REFUTED IN MAGNITUDE AND SIGN.** Every successfully-finalized `loop-wrap` repeat
+  (both bpms, both rates) shows the flatness D predicts: consecutive wrap takes (1-4)
+  agree to within 0.02-0.1 ms of each other within a repeat (e.g. 48k/120/r1: -71.17,
+  -71.17, -71.17, -71.17 across takes 0-3). But the magnitude (~-62 to -79 ms across
+  every successful repeat measured) is 2-5x D's predicted 15-30 ms ceiling, AND the
+  sign is EARLY (negative), not LATE (D predicts wrapped content emerges late,
+  positive). This is very likely the SAME uncompensated-worklet-connect-gap mechanism
+  as B (loop-wrap's first take also goes through the no-count-in `waveformOffset`
+  formula, and that same `currentWaveformOffset` baseline is inherited additively by
+  every subsequent wrap take per `RecordAudio.ts:238`/`279` — see repo CLAUDE.md's
+  "Loop Take Buffer Layout"), NOT the predicted 20 ms voice-crossfade lateness, which
+  would be a much smaller, positive, per-wrap-independent effect. **D as originally
+  predicted (crossfade lateness) is not confirmed by this data — the measured constant
+  offset is dominated by an inherited B-mechanism bias, not the crossfade.** The
+  crossfade effect may still be present underneath but is not separable from B's
+  larger bias with this harness's current measurement. `take5` (final,
+  teardown-finalized) is consistently more negative than takes 1-4 at every rate/bpm
+  measured — small and separately explainable by the documented "up to one
+  render-quantum overshoot" on the teardown-finalized take (CLAUDE.md), not
+  investigated further here.
+
+### C1 fix: `janked-start` provocation was measuring itself
+
+See prediction A above for the full evidence and the corrected data. Code fix: the
+busy-loop spin now runs inside the callback of a `project.engine.isRecording
+.catchupAndSubscribe(...)` subscription set up BEFORE calling `project.startRecording()`,
+firing only once `isRecording` genuinely flips true (by which point
+`capture.prepareRecording()`'s worklet-connect and `engine.prepareRecordingState()`
+have already run) — so the spin now blocks only the SDK's OWN post-flip position-tick
+handling, not the capture pipeline's own startup. `src/demos/recording/recording-alignment-audit-debug-demo.tsx`,
+tsc-clean, re-smoked on a single cell before the full 4-cell re-run.
+
+### C2: `loop-wrap` finalization timeout — characterized, not resolved
+
+**Every `loop-wrap` failure across every run this campaign made (original matrix runs,
+the retry, and this fix round's diagnostic re-runs — 27 total finalization attempts
+across 5 separate campaign runs) carries the identical `errorMessage`:
+`"finalizing: finalization timed out after <deadline>s"`.** None carry
+`waitForPosition`/transport-quirk wording — that quirk (which the original draft
+attributed loop-wrap's failures to) appears ONLY in two of the bring-up control-cell
+attempts (`nominal-start`, a completely different scenario/code path), never in any
+loop-wrap row across this entire campaign.
+
+**Diagnostic test: does raising the deadline fix it?** Widened `loop-wrap`'s
+finalization wait from 30s to 90s (3x) and re-ran (`recaudit-summary-1788291343233.json`,
+48000 Hz): **4 of 6 repeats STILL timed out at 90s** (bpm 120: 3/3 failed; bpm 97.3:
+1/3 failed). The 2 repeats that DID succeed finalized in **129-146 ms** — three orders
+of magnitude under even the original 30s deadline. This is a **binary fast-success-or-
+never-completes split, not a slow gradient** — refuting "genuinely needs more time"
+(a harness deadline miscalibration) as the explanation. Reverted the deadline to 30s
+(the 90s value bought nothing but wall-clock time) and re-ran at 44100 Hz for
+cross-rate evidence (`recaudit-summary-1788291706370.json`): 120 bpm 2/3 succeeded
+(86-100 ms each), 97.3 bpm 3/3 failed.
+
+**Full tally across all 5 campaign runs that attempted `loop-wrap` finalization** (27
+attempts, 5 separate page loads, run ids: `…1788287951691` [orig 48k],
+`…1788288625777` [orig 44.1k], `…1788288803959` [retry 44.1k/120],
+`…1788291343233` [fix-round 90s, 48k], `…1788291706370` [fix-round 30s, 44.1k]):
+**18 of 27 attempts (67%) timed out.** Of the 9 successful attempts, the 4 from this
+fix round's two diagnostic re-runs (the only ones with explicit finalize-duration
+logging — added this round) completed in 86-146 ms; the other 5 successes (from the
+original matrix runs and the retry, which predate that diagnostic) are confirmed
+successful (non-error status) but their exact finalize duration was not logged. No
+clean bpm or rate correlation — failure rates per cell ranged from 33% to 100% across
+the different runs, consistent with an intermittent, timing-dependent condition rather
+than a deterministic one tied to a specific bpm/rate combination.
+
+**Classification: candidate new issue, NOT a harness-deadline-miscalibration
+artifact.** The evidence (binary fast/never split; 90s insufficient; 67% failure rate
+across 27 attempts spanning both rates and bpms) is inconsistent with "the buffer is
+just bigger and needs proportionally more decode time" and consistent with a genuine,
+reproducible hang somewhere in the finalization pipeline specific to `loop-wrap`'s
+larger, multi-wrap shared `AudioFileBox`. Root cause NOT identified — attempts to
+inspect the live `SampleLoader` state mid-hang via the React fiber (the
+`__reactContainer$…` walk documented in repo CLAUDE.md) failed for this harness
+specifically, because `project`/`audioContext` here are local closures inside the
+`runAudit`/`runProbe` async functions, not React `useState` — the fiber-walk technique
+that works for apps keeping `project` in component state doesn't find anything to walk
+in this demo. Recommend Task 8 either accept this as a candidate finding for an
+upstream issue draft (repro: `?scenario=loop-wrap&bpm=all&rate=<44100|48000>`,
+run several times to reproduce) or add harness instrumentation that exposes the
+live loader for future live-inspection.
 
 ### Every `investigate` cell — harness artifact vs. candidate new issue
 
 - **`nominal-start` (both bpms, both rates, all repeats): candidate new issue**, not a
   harness artifact. Root cause traced to source (`RecordAudio.ts:270-274`), reproduced
-  cleanly and consistently (12/12 repeats), magnitude far exceeds the originally
-  predicted B band. Recommend this becomes the primary upstream issue this campaign
-  produces (measured signature: -60 to -110 ms early placement, no count-in, idle main
-  thread).
+  cleanly and consistently, magnitude far exceeds the originally predicted B band.
+  Recommend this becomes the primary upstream issue this campaign produces (measured
+  signature: roughly -60 to -110 ms early placement, no count-in, idle main thread;
+  the harness-path `outputLatency` term (23 ms) should be named separately in any
+  issue draft, per the bring-up decomposition).
 - **`countin-start` (both bpms, both rates, all repeats): same candidate issue as
   `nominal-start`** (same mechanism, see prediction B above) — not a separate issue.
 - **`midtimeline-start` (both bpms, both rates, all repeats): candidate new issue**,
-  distinct from `nominal-start`'s. The consistent `missing=1` beat plus -147 to -209 ms
+  distinct from `nominal-start`'s. The consistent `missing=1` beat plus large negative
   median is the A-mechanism (region.position anchored at first-observed position while
-  the transport was already running) COMPOUNDED with the same B-mechanism bias measured
-  above (both apply simultaneously here — count-in is off, so `nominal-start`'s bias
-  term is present too, on top of A's genuine content-skip). Recommend describing this as
-  A's manifestation on an already-playing transport, cross-referencing the B-mechanism
-  issue above rather than filing a third, overlapping issue.
+  the transport was already running) COMPOUNDED with the same B-mechanism bias
+  measured above (count-in is off, so `nominal-start`'s bias term is present too, on
+  top of A's genuine content-skip). Recommend describing this as A's manifestation on
+  an already-playing transport, cross-referencing the B-mechanism issue rather than
+  filing a third, overlapping issue.
+- **`janked-start` (both bpms, both rates, fix-round data): mostly the same B-mechanism
+  issue as `nominal-start`, with one confirmed A-mechanism content-skip repeat.** Not
+  a distinguishable third issue — see prediction A above.
 - **`loop-wrap` (both bpms, both rates): candidate new issue for the magnitude/sign
   mismatch against D** (see prediction D above) — likely the same B-mechanism bias
-  inherited into the loop-wrap take chain, not a separate defect. **The
-  `waitForTakeCount` transport-start-delay flakiness that lost 5 of 12 loop-wrap repeats
-  across both rates (2/3 at 44.1k/120, 2/3 at 44.1k/97.3, 2/3 at 48k/120, 1/3 at
-  48k/97.3) is a HARNESS ARTIFACT** — already documented in
-  `src/demos/recording/CLAUDE.md` and Task 4's report as a known WASM
-  transport-start-delay quirk unrelated to the loopback injection or measurement code;
-  confirmed here to reproduce at a real, non-trivial rate (up to 100% of repeats in one
-  cell) rather than being a rare fluke. Not itself a finding worth an issue — a
-  pre-existing, already-tracked harness limitation.
+  inherited into the loop-wrap take chain, not a separate placement defect.
+  **Separately, `loop-wrap`'s finalization-timeout failures are a candidate new issue
+  in their own right** — see the C2 entry above. NOT a harness artifact (the original
+  attribution to the transport-start-delay quirk was wrong — see "Fix round 1").
 - **`loop-wrap` take4's low `matched` count (1, vs. 8 for takes 1-3/5), consistent
-  across every successful loop-wrap repeat at both rates: likely HARNESS ARTIFACT,
+  across every successful loop-wrap repeat at every rate: likely HARNESS ARTIFACT,
   unresolved.** `take4` (the 5th and last WRAP-finalized take, 0-indexed) should be
   full-loop-length like takes 1-3 (all governed by the same 2-bar loop area), yet its
-  onset match count is far lower every single time it was measured (4 independent
-  successful repeats: 48k/120, 48k/97.3 x2, 44.1k/97.3, 44.1k/120). Two candidate
+  onset match count is far lower every single time it was measured. Two candidate
   explanations, neither confirmed: (a) `waitForTakeCount`'s target
   (`LOOP_WRAP_TAKES + 1 = 6` regions) is satisfied the instant the 6th region is
-  CREATED, which happens at the exact moment take4 (the 5th) finalizes — if measurement
-  reads take4's `duration`/`loopDuration` fields before a final write settles, its
-  effective onset-matching window could be truncated; (b) a genuine SDK effect specific
-  to the second-to-last take in a `waitForTakeCount`-terminated sequence. Recommend
-  Task 8 (or a follow-up) add a short settle-wait before measuring in loop-wrap cells
-  and re-check whether take4's match count recovers to 8 — this is the harness-artifact
-  candidate matching the previous campaign's own guidance ("detector tuning is the
-  likely first suspect").
+  CREATED, which happens at the exact moment take4 (the 5th) finalizes — if
+  measurement reads take4's `duration`/`loopDuration` fields before a final write
+  settles, its effective onset-matching window could be truncated; (b) a genuine SDK
+  effect specific to the second-to-last take in a `waitForTakeCount`-terminated
+  sequence. Recommend Task 8 (or a follow-up) add a short settle-wait before measuring
+  in loop-wrap cells and re-check whether take4's match count recovers to 8.
 
 ### Harness gaps identified (not code defects, instrumentation gaps)
 
 - `headMissingMs` only measures the gap between `recordRequestContextTime` and the
-  buffer's first captured frame — it does NOT measure `midtimeline-start`'s variant of
-  head-loss (content skipped because `region.position` itself is anchored late while the
-  transport was already running). A's `midtimeline-start` cells therefore never reach
-  the `head-loss` band-matching path in `classifyCell` even though A's mechanism is
-  confirmed by `missing=1` on every repeat. A future harness iteration could add a
-  `positionAnchorLossMs` metric (comparing `region.position`'s musical time against the
-  true intended engage position) alongside `headMissingMs`.
-- No dedicated C-only (jank-without-A-interaction) scenario exists, so C's contribution
-  couldn't be isolated from A's in `janked-start`'s combined result (see prediction C
-  above).
+  buffer's first captured frame — it does NOT measure `midtimeline-start`'s (or
+  `janked-start`'s occasional) variant of head-loss (content skipped because
+  `region.position` itself is anchored late while the transport was already running).
+  A future harness iteration could add a `positionAnchorLossMs` metric (comparing
+  `region.position`'s musical time against the true intended engage position)
+  alongside `headMissingMs`.
+- No dedicated C-only (jank reliably overlapping the anchor-read window without ever
+  causing outright content loss) scenario exists, so C's contribution couldn't be
+  isolated from A/B even after the C1 fix.
+- The React-fiber live-inspection technique documented in repo CLAUDE.md does not work
+  for this harness (no `project` in React state) — a live `loop-wrap` hang could not
+  be inspected in-flight this round.
 
-### Zero new confirmed engine bugs beyond the two documented above
+### Candidate new upstream findings, summarized
 
-Two candidate findings emerge from this campaign, both already root-caused to specific
-source lines and reproduced across both rates/bpms with high repeat-count consistency
-(12+ repeats each): (1) the `nominal-start`/`countin-start` no-count-in
-`waveformOffset` bias (`RecordAudio.ts:270-274`, magnitude -60 to -110 ms, confirmed
-mechanism per the bring-up section), and (2) `midtimeline-start`'s A-mechanism content
-skip (missing beat on every repeat, same code path's `currentPosition` anchor). Both are
-candidates for upstream issue drafts under `debug/drafts/` (Task 8), per the repo's
-issue-filing convention (no suggested-fix section, draft for user review before
-posting). `janked-start`'s A-band match and `loop-wrap`'s D-flatness are confirmations
-of already-predicted signatures, not new findings, though D's sign/magnitude mismatch is
-worth noting in whatever issue write-up covers the shared B-mechanism bias.
+Three candidates emerge from this campaign, all reproduced with high consistency:
+1. The `nominal-start`/`countin-start`/(most of) `janked-start` no-count-in
+   `waveformOffset` bias (`RecordAudio.ts:270-274`, magnitude roughly -60 to -110 ms,
+   three-term-decomposed in the bring-up section).
+2. `midtimeline-start`'s (and one `janked-start` repeat's) A-mechanism content skip
+   (missing beat, same code path's `currentPosition` anchor).
+3. `loop-wrap`'s reproducible finalization-timeout hang (67% failure rate across 27
+   attempts, binary fast/never split, not fixed by widening the harness's own
+   deadline) — see the C2 entry.
+
+All three are candidates for upstream issue drafts under `debug/drafts/` (Task 8), per
+the repo's issue-filing convention (no suggested-fix section, draft for user review
+before posting). `janked-start`'s A-mechanism confirmation and `loop-wrap`'s
+D-flatness are confirmations of already-predicted signatures, not new findings on
+their own, though both are worth folding into the write-ups above rather than filed
+standalone.

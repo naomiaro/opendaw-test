@@ -316,11 +316,24 @@ interface AuditRow {
   medianBeatErrorMs: number | null;
   matchedBeats: number;
   missingBeats: number;
-  headMissingMs: number | null;
+  headMissingMs: number | null; // baseline-corrected (HEAD_MISSING_BASELINE_MS already subtracted)
+  headMissingRawMs: number | null; // uncorrected — see Task 6 fix-round C3/I3
   status: CellStatus | "pending" | "error";
   matchedSignature: string | null;
   detail: string;
   errorMessage?: string;
+  // Fix round 1 (C3/I3): raw box-graph values behind the placement math, persisted
+  // per-take (previously console-only "diag" logging) so the bring-up
+  // decomposition is backed by a committed artifact, not just console output.
+  regionPositionPpqn?: number;
+  regionStartSec?: number;
+  waveformOffsetSec?: number;
+  anchorT0Sec?: number | null;
+  recordRequestContextTime?: number | null;
+  // Detector/graph-path noise for this repeat's reference-click schedule match —
+  // previously console-only "clockNoise" logging.
+  clockNoiseIdentifiedClicks?: number;
+  clockNoiseMaxAbsResidualMs?: number;
 }
 
 interface CapturedBuffer {
@@ -591,12 +604,36 @@ async function runCellRepeat(
       project.engine.setPosition(0);
       await waitForPositionSettled(project, 0, 30_000);
       recordRequestContextTime = audioContext.currentTime;
-      project.startRecording(false);
-      // Block the main thread THROUGH the first isRecording observation window.
-      const until = performance.now() + JANK_MS;
-      while (performance.now() < until) {
-        /* spin */
-      }
+      // Fix round 1 (C1): `project.startRecording()` is fire-and-forget over an
+      // ASYNC chain (`Recording.start` AWAITS `capture.prepareRecording()` — the
+      // worklet-connect — before `engine.prepareRecordingState()` actually starts
+      // the transport). Spinning immediately after the call, as this scenario
+      // used to, blocks that continuation too: it defers capture-connect AND
+      // transport-start together, which just delays when recording genuinely
+      // begins (measured: raw headMissingMs tracked JANK_MS almost exactly,
+      // 168.89ms jank mean − 18.13ms nominal baseline ≈ 150.76ms ≈ JANK_MS) —
+      // not C's intended provocation (a main thread busy AFTER an audio-thread
+      // anchor already exists, before the SDK reads/accepts it). Fix: key the
+      // spin off our OWN subscription to `engine.isRecording` actually flipping
+      // true — by definition, everything up to and including
+      // `engine.prepareRecordingState()` has already run by then, so capture is
+      // genuinely live; only the SDK's post-flip position-tick handling (which
+      // creates the take) is still pending and gets blocked by the spin.
+      await new Promise<void>((resolve) => {
+        let jankSub: Terminable | null = null;
+        let jankApplied = false;
+        jankSub = project.engine.isRecording.catchupAndSubscribe((obs) => {
+          if (jankApplied || !obs.getValue()) return;
+          jankApplied = true;
+          const until = performance.now() + JANK_MS;
+          while (performance.now() < until) {
+            /* spin */
+          }
+          jankSub!.terminate();
+          resolve();
+        });
+        project.startRecording(false);
+      });
       break;
     }
     case "midtimeline-start": {
@@ -631,7 +668,24 @@ async function runCellRepeat(
     .filter((r) => r.isAudioRegion())[0];
   if (!anyTake) throw new Error("no take regions created");
   const loader = anyTake.file.getOrCreateLoader();
-  await waitForLoaderTerminal(loader, 30_000, "finalization");
+  // Fix round 1 (C2): loop-wrap repeats were failing with
+  // `finalizing: finalization timed out after 30s` (NOT the `waitForPosition`
+  // transport-start quirk this scenario's error rows were previously
+  // mis-attributed to). Diagnostic: widened to 90s to test "genuinely needs
+  // more time" (harness deadline miscalibration) vs a real hang. Result: 4 of
+  // 6 repeats STILL timed out at 90s (3x the original deadline) while the
+  // other 2 finalized in under 5s — a binary fast-or-never split, not a slow
+  // gradient — refuting the miscalibration hypothesis. Reverted to 30s (a
+  // longer deadline bought nothing but wall-clock time); the timing itself
+  // is kept as a diagnostic since it's cheap and helps future triage.
+  const finalizeDeadlineMs = 30_000;
+  const finalizeStart = performance.now();
+  await waitForLoaderTerminal(loader, finalizeDeadlineMs, "finalization");
+  console.log(
+    "[recording-alignment-audit] finalize " + cellLabel(scenario, bpm, repeat) +
+    " took " + (performance.now() - finalizeStart).toFixed(0) + "ms" +
+    " (deadline " + finalizeDeadlineMs + "ms)"
+  );
 
   onStage("measuring");
   const takeRegions = unitAdapter.tracks
@@ -651,13 +705,19 @@ async function runCellRepeat(
   // detector/graph-path noise, independent of any SDK placement math — each
   // identified reference click's residual against its OWN schedule entry,
   // relative to the median anchor. This isolates onset-detection + zero-phase
-  // band-split jitter from everything RecordAudio.ts computes.
+  // band-split jitter from everything RecordAudio.ts computes. Fix round 1
+  // (I3): captured into variables and persisted on every row below (was
+  // console-only), so this evidence lives in a committed artifact.
+  let clockNoiseIdentifiedClicks: number | undefined;
+  let clockNoiseMaxAbsResidualMs: number | undefined;
   {
     const identified = identifyReferenceClicks(highOnsets, schedule);
     const anchor = estimateAnchorT0(identified, schedule);
     if (anchor !== null && identified.length > 1) {
       const residualsMs = identified.map((c) => (schedule.times[c.index] - c.fileTimeSec - anchor) * 1000);
       const maxAbs = Math.max(...residualsMs.map((r) => Math.abs(r)));
+      clockNoiseIdentifiedClicks = identified.length;
+      clockNoiseMaxAbsResidualMs = maxAbs;
       console.log(
         "[recording-alignment-audit] clockNoise " + cellLabel(scenario, bpm, repeat) +
         " identifiedClicks=" + identified.length +
@@ -688,9 +748,17 @@ async function runCellRepeat(
       headMissingBaselineMs: HEAD_MISSING_BASELINE_MS,
     });
     alignments.push({ takeIndex, alignment });
+    // Fix round 1 (I3): raw (uncorrected) head-missing, so both the corrected
+    // and raw figures are available in the persisted row (was only derivable
+    // by reversing HEAD_MISSING_BASELINE_MS by hand from console output).
+    const headMissingRawMs =
+      alignment.anchorT0Sec !== null && recordRequestContextTime !== null
+        ? Math.max(0, (alignment.anchorT0Sec - recordRequestContextTime) * 1000)
+        : null;
     // Bring-up diagnostic (Task 6): raw box-graph values behind every alignment
     // number, so a calibration bias can be traced to its source term instead of
-    // inferred from the final medianBeatErrorMs alone.
+    // inferred from the final medianBeatErrorMs alone. Fix round 1 (C3/I3):
+    // also persisted on the row itself (was console-only).
     console.log(
       "[recording-alignment-audit] diag " + cellLabel(scenario, bpm, repeat) + "/take" + takeIndex +
       " position=" + String(region.position) +
@@ -699,7 +767,8 @@ async function runCellRepeat(
       " anchorT0Sec=" + String(alignment.anchorT0Sec) +
       " recordRequestContextTime=" + String(recordRequestContextTime) +
       " medianBeatErrorMs=" + String(alignment.medianBeatErrorMs) +
-      " headMissingMs=" + String(alignment.headMissingMs)
+      " headMissingMs=" + String(alignment.headMissingMs) +
+      " headMissingRawMs=" + String(headMissingRawMs)
     );
     rows.push({
       scenario,
@@ -711,6 +780,14 @@ async function runCellRepeat(
       matchedBeats: alignment.matchedBeats,
       missingBeats: alignment.missingBeats,
       headMissingMs: alignment.headMissingMs,
+      headMissingRawMs,
+      regionPositionPpqn: region.position,
+      regionStartSec,
+      waveformOffsetSec,
+      anchorT0Sec: alignment.anchorT0Sec,
+      recordRequestContextTime,
+      clockNoiseIdentifiedClicks,
+      clockNoiseMaxAbsResidualMs,
       status: "pending",
       matchedSignature: null,
       detail: "",
@@ -809,11 +886,23 @@ async function uploadRepeatWav(
 }
 
 /** Upload the JSON summary. Throws on failure (run-level, fatal -> error state). */
-async function uploadSummary(rows: AuditRow[], rate: number, sdkBuildProbe: SdkBuildProbe): Promise<void> {
+async function uploadSummary(
+  rows: AuditRow[],
+  rate: number,
+  sdkBuildProbe: SdkBuildProbe,
+  outputLatency: number,
+  baseLatency: number
+): Promise<void> {
   const timestamp = Date.now();
   const summary = {
     rate,
     sdkBuildProbe,
+    // Fix round 1 (C3/I3): persisted so the loopback-path-bias decomposition
+    // doesn't depend on console output — logged once per run, same value on
+    // every row this run produced.
+    outputLatency,
+    baseLatency,
+    headMissingBaselineMs: HEAD_MISSING_BASELINE_MS,
     repeatsPerCell: REPEATS_PER_CELL,
     jankMs: JANK_MS,
     loopWrapTakes: LOOP_WRAP_TAKES,
@@ -924,6 +1013,7 @@ async function runAudit(
             matchedBeats: 0,
             missingBeats: 0,
             headMissingMs: null,
+            headMissingRawMs: null,
             status: "error",
             matchedSignature: null,
             detail: cleanupWarning ? `cleanup warning: ${cleanupWarning}` : "",
@@ -967,7 +1057,7 @@ async function runAudit(
   }
 
   setAuditState("uploading");
-  await uploadSummary(allRows, rate, sdkBuildProbe);
+  await uploadSummary(allRows, rate, sdkBuildProbe, audioContext.outputLatency, audioContext.baseLatency);
   setAuditState("done");
 }
 
