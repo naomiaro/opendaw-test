@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   buildReferenceSchedule, bandSplit, identifyReferenceClicks, estimateAnchorT0,
+  measureTakeAlignment, classifyCell,
 } from "./recordingAlignment";
+import type { TakeAlignment, SignatureBand } from "./recordingAlignment";
 
 describe("buildReferenceSchedule", () => {
   it("uses unique growing gaps so consecutive pairs identify their index", () => {
@@ -69,5 +71,81 @@ describe("identifyReferenceClicks / estimateAnchorT0", () => {
   it("returns empty for fewer than two onsets", () => {
     expect(identifyReferenceClicks([1.23], schedule)).toEqual([]);
     expect(estimateAnchorT0([], schedule)).toBeNull();
+  });
+});
+
+describe("measureTakeAlignment", () => {
+  const bpm = 120; // beat = 0.5s
+  const schedule = buildReferenceSchedule(0, 40, 0.25, 0.005);
+  const base = {
+    regionStartSec: 0, waveformOffsetSec: 2.0, regionDurationSec: 4.0,
+    bufferDurationSec: 6.0, bpm, countInBeats: 4, schedule,
+    recordRequestContextTime: null, stopRequestContextTime: null,
+  };
+  // Perfect capture: metronome beat k lands at file time waveformOffset + k*0.5.
+  const perfectLow = [0, 1, 2, 3, 4, 5, 6, 7].map((k) => 2.0 + k * 0.5);
+  it("reports ~0 error for a perfectly placed take", () => {
+    const a = measureTakeAlignment({ ...base, lowOnsets: perfectLow, highOnsets: [] });
+    expect(a.medianBeatErrorMs).not.toBeNull();
+    expect(Math.abs(a.medianBeatErrorMs!)).toBeLessThan(0.01);
+    expect(a.matchedBeats).toBe(8);
+  });
+  it("reports a +30ms error when waveformOffset under-compensates by 30ms", () => {
+    // Content actually at +30ms relative to where the region math expects it.
+    const late = perfectLow.map((t) => t + 0.030);
+    const a = measureTakeAlignment({ ...base, lowOnsets: late, highOnsets: [] });
+    expect(a.medianBeatErrorMs!).toBeCloseTo(30, 1);
+  });
+  it("computes headMissingMs from reference clicks vs the record request time", () => {
+    // Buffer starts at context 5.0 (T0), record was requested at context 4.9 →
+    // 100ms of post-request signal never reached the buffer.
+    const T0 = 5.0;
+    const highOnsets = schedule.times.filter((t) => t >= T0).map((t) => t - T0);
+    const a = measureTakeAlignment({
+      ...base, lowOnsets: perfectLow, highOnsets, recordRequestContextTime: 4.9,
+    });
+    expect(a.anchorT0Sec).toBeCloseTo(T0, 3);
+    expect(a.headMissingMs).toBeCloseTo(100, 0);
+  });
+  it("computes tailMissingMs when the buffer ends before the stop request", () => {
+    // Buffer covers context [5.0, 11.0]; stop was requested at 11.05 → 50ms of tail lost.
+    const T0 = 5.0;
+    const highOnsets = schedule.times.filter((t) => t >= T0 && t <= T0 + 6).map((t) => t - T0);
+    const a = measureTakeAlignment({
+      ...base, lowOnsets: perfectLow, highOnsets, stopRequestContextTime: 11.05,
+    });
+    expect(a.tailMissingMs).toBeCloseTo(50, 0);
+  });
+});
+
+describe("classifyCell", () => {
+  const bands: SignatureBand[] = [
+    { id: "B", kind: "random-band", minAbsMs: 4, maxAbsMs: 25 },
+    { id: "C", kind: "constant-late", minAbsMs: 50, maxAbsMs: 235 },
+    { id: "D", kind: "constant-late", minAbsMs: 15, maxAbsMs: 30 },
+  ];
+  const take = (medianMs: number): TakeAlignment => ({
+    beatErrors: [], medianBeatErrorMs: medianMs, anchorT0Sec: null,
+    firstRefIndex: 0, headMissingMs: null, tailMissingMs: null,
+    matchedBeats: 8, missingBeats: 0, extraLowOnsets: 0,
+  });
+  it("aligned when every repeat is within tolerance", () => {
+    expect(classifyCell([take(0.5), take(-1.1), take(0.9)], bands, 2).status).toBe("aligned");
+  });
+  it("matches a random-band signature when repeats scatter inside the band", () => {
+    const c = classifyCell([take(9), take(-12), take(5)], bands, 2);
+    expect(c.status).toBe("matches-known-defect");
+    expect(c.matchedSignature).toBe("B");
+  });
+  it("matches a constant-late signature when repeats agree inside the band", () => {
+    const c = classifyCell([take(80), take(85), take(78)], bands, 2);
+    expect(c.matchedSignature).toBe("C");
+  });
+  it("investigate when magnitude fits no band", () => {
+    expect(classifyCell([take(400), take(410), take(395)], bands, 2).status).toBe("investigate");
+  });
+  it("investigate when beats are missing even if placement is aligned", () => {
+    const broken = { ...take(0.3), missingBeats: 2 };
+    expect(classifyCell([broken, take(0.2), take(0.4)], bands, 2).status).toBe("investigate");
   });
 });

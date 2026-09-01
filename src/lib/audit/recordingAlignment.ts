@@ -22,6 +22,24 @@
  * then backward over the reversed output (filtfilt) — the two passes'
  * phase delays cancel, leaving zero net phase shift at the cost of doubled
  * filter order (attenuation) and non-causality (fine for offline analysis).
+ *
+ * `measureTakeAlignment`/`classifyCell` extend this file with take-level
+ * measurement and cross-repeat cell classification — still pure, still no
+ * SDK imports; callers resolve `regionStartSec`/`waveformOffsetSec`/etc.
+ * from the box graph before calling in.
+ *
+ * Assumptions / non-goals (not exercised by the test suite):
+ * - Beat matching assumes a constant `bpm` across the measured region (no
+ *   tempo automation) — audit cells hold tempo fixed by construction.
+ * - `measureTakeAlignment` expects `lowOnsets`/`highOnsets` already
+ *   onset-detected and band-split by the caller (see `onsetDetection.ts`,
+ *   `bandSplit`) — it does no DSP of its own.
+ * - `classifyCell`'s band matching is order-sensitive (first match in the
+ *   caller's array wins) — callers with overlapping band ranges must order
+ *   them deliberately; this file does not detect or warn on overlap.
+ * - Head/tail-missing math assumes `recordRequestContextTime` /
+ *   `stopRequestContextTime`, when provided, are on the same AudioContext
+ *   clock as the schedule's click times — no cross-clock correction.
  */
 
 export interface ReferenceSchedule {
@@ -202,4 +220,228 @@ export function estimateAnchorT0(
     .sort((a, b) => a - b);
   const mid = Math.floor(diffs.length / 2);
   return diffs.length % 2 === 1 ? diffs[mid] : (diffs[mid - 1] + diffs[mid]) / 2;
+}
+
+function median(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+export interface TakeMeasurementInput {
+  lowOnsets: number[]; // file-time onsets (s), metronome band
+  highOnsets: number[]; // file-time onsets (s), reference band
+  regionStartSec: number; // tempoMap.ppqnToSeconds(region position)
+  waveformOffsetSec: number;
+  regionDurationSec: number;
+  bufferDurationSec: number; // data.numberOfFrames / data.sampleRate
+  bpm: number;
+  countInBeats: number; // 0 when recording started without count-in
+  schedule: ReferenceSchedule;
+  recordRequestContextTime: number | null; // audioContext.currentTime captured just before startRecording; null if unavailable
+  stopRequestContextTime: number | null; // audioContext.currentTime captured just before stopRecording; null if unavailable
+}
+
+export interface TakeAlignment {
+  beatErrors: { beat: number; errorMs: number }[]; // signed; beat 0 = region start
+  medianBeatErrorMs: number | null; // null when no beats matched
+  anchorT0Sec: number | null;
+  firstRefIndex: number | null;
+  headMissingMs: number | null; // signal after the record request that never entered the buffer, in ms; null when not computable
+  tailMissingMs: number | null; // signal before the stop request missing from the buffer tail: max(0, stopRequestContextTime − (anchorT0 + bufferDurationSec)) * 1000; null when not computable
+  matchedBeats: number;
+  missingBeats: number;
+  extraLowOnsets: number;
+}
+
+/**
+ * Measure a single take's alignment against the region's expected beat
+ * grid, and (when reference clicks are present) against the AudioContext
+ * clock via `identifyReferenceClicks`/`estimateAnchorT0`.
+ *
+ * Expected beats run `k = 0 … floor((regionDurationSec − ε) / beatPeriod)`
+ * — the `ε` excludes a beat landing exactly on the region-end boundary
+ * (which a boundary-stopped live capture would otherwise always report as
+ * missing) without excluding any beat that actually falls inside the
+ * presented range.
+ */
+export function measureTakeAlignment(input: TakeMeasurementInput): TakeAlignment {
+  const {
+    lowOnsets, highOnsets, regionStartSec, waveformOffsetSec, regionDurationSec,
+    bufferDurationSec, bpm, schedule, recordRequestContextTime, stopRequestContextTime,
+  } = input;
+
+  const beatPeriodSec = 60 / bpm;
+  const timelineOnsets = lowOnsets.map((t) => regionStartSec + (t - waveformOffsetSec));
+
+  const lastBeat = Math.floor((regionDurationSec - 0.001) / beatPeriodSec);
+  const expectedBeats: number[] = [];
+  for (let k = 0; k <= lastBeat; k++) expectedBeats.push(regionStartSec + k * beatPeriodSec);
+
+  // Greedy nearest-first matching within half a beat period.
+  const matchTolerance = beatPeriodSec / 2;
+  const candidates: { beatK: number; onsetIdx: number; diff: number }[] = [];
+  for (let k = 0; k < expectedBeats.length; k++) {
+    for (let o = 0; o < timelineOnsets.length; o++) {
+      const diff = Math.abs(timelineOnsets[o] - expectedBeats[k]);
+      if (diff <= matchTolerance) candidates.push({ beatK: k, onsetIdx: o, diff });
+    }
+  }
+  candidates.sort((a, b) => a.diff - b.diff);
+  const usedBeat = new Set<number>();
+  const usedOnset = new Set<number>();
+  const beatErrors: { beat: number; errorMs: number }[] = [];
+  for (const c of candidates) {
+    if (usedBeat.has(c.beatK) || usedOnset.has(c.onsetIdx)) continue;
+    usedBeat.add(c.beatK);
+    usedOnset.add(c.onsetIdx);
+    const errorMs = (timelineOnsets[c.onsetIdx] - expectedBeats[c.beatK]) * 1000;
+    beatErrors.push({ beat: c.beatK, errorMs });
+  }
+  beatErrors.sort((a, b) => a.beat - b.beat);
+
+  const matchedBeats = usedBeat.size;
+  const missingBeats = expectedBeats.length - matchedBeats;
+
+  // Extra low onsets: onsets inside the presented range with no matched beat.
+  const rangeStart = regionStartSec;
+  const rangeEnd = regionStartSec + regionDurationSec;
+  let extraLowOnsets = 0;
+  for (let o = 0; o < timelineOnsets.length; o++) {
+    if (usedOnset.has(o)) continue;
+    if (timelineOnsets[o] >= rangeStart && timelineOnsets[o] <= rangeEnd) extraLowOnsets++;
+  }
+
+  const medianBeatErrorMs = median(beatErrors.map((e) => e.errorMs));
+
+  const identified = identifyReferenceClicks(highOnsets, schedule);
+  const anchorT0Sec = estimateAnchorT0(identified, schedule);
+  const firstRefIndex = identified.length > 0 ? identified[0].index : null;
+
+  const headMissingMs =
+    anchorT0Sec !== null && recordRequestContextTime !== null
+      ? Math.max(0, anchorT0Sec - recordRequestContextTime) * 1000
+      : null;
+
+  const tailMissingMs =
+    anchorT0Sec !== null && stopRequestContextTime !== null
+      ? Math.max(0, stopRequestContextTime - (anchorT0Sec + bufferDurationSec)) * 1000
+      : null;
+
+  return {
+    beatErrors,
+    medianBeatErrorMs,
+    anchorT0Sec,
+    firstRefIndex,
+    headMissingMs,
+    tailMissingMs,
+    matchedBeats,
+    missingBeats,
+    extraLowOnsets,
+  };
+}
+
+export type CellStatus = "aligned" | "matches-known-defect" | "investigate";
+
+export interface SignatureBand {
+  id: "A" | "B" | "C" | "D";
+  kind: "random-band" | "constant-late" | "head-loss";
+  minAbsMs: number;
+  maxAbsMs: number;
+}
+
+export interface CellClassification {
+  status: CellStatus;
+  matchedSignature: SignatureBand["id"] | null;
+  detail: string;
+}
+
+/**
+ * Classify a cell (a group of repeated takes of the same scenario/rate/bpm
+ * combination) as `aligned`, a known upstream defect signature, or
+ * `investigate`. A repeat with no matched median, missing beats, or a head
+ * deficit beyond tolerance forces `investigate` unless a `head-loss` band
+ * matches the head deficit — those are structural failures, not alignment
+ * error, and no signature band should paper over them.
+ */
+export function classifyCell(
+  repeats: TakeAlignment[],
+  bands: SignatureBand[],
+  alignedToleranceMs: number
+): CellClassification {
+  const headLossBand = bands.find((b) => b.kind === "head-loss");
+  for (const r of repeats) {
+    const headDeficitBroken =
+      r.headMissingMs !== null &&
+      r.headMissingMs > alignedToleranceMs &&
+      !(headLossBand && r.headMissingMs >= headLossBand.minAbsMs && r.headMissingMs <= headLossBand.maxAbsMs);
+    if (r.medianBeatErrorMs === null || r.missingBeats > 0 || headDeficitBroken) {
+      return {
+        status: "investigate",
+        matchedSignature: null,
+        detail: `repeat has unusable measurement: medianBeatErrorMs=${r.medianBeatErrorMs}, missingBeats=${r.missingBeats}, headMissingMs=${r.headMissingMs}`,
+      };
+    }
+  }
+
+  const medians = repeats.map((r) => r.medianBeatErrorMs!);
+  const detailMedians = medians.map((m) => m.toFixed(2)).join(", ");
+  const headDeficits = repeats.map((r) => r.headMissingMs).join(", ");
+  const spread = Math.max(...medians) - Math.min(...medians);
+  const mean = medians.reduce((a, b) => a + b, 0) / medians.length;
+  const detailSuffix = `medians=[${detailMedians}] spread=${spread.toFixed(2)}ms headMissingMs=[${headDeficits}]`;
+
+  if (medians.every((m) => Math.abs(m) <= alignedToleranceMs)) {
+    return {
+      status: "aligned",
+      matchedSignature: null,
+      detail: `all repeats within ${alignedToleranceMs}ms tolerance: ${detailSuffix}`,
+    };
+  }
+
+  for (const band of bands) {
+    if (band.kind === "random-band") {
+      const withinBand = medians.every((m) => Math.abs(m) <= band.maxAbsMs);
+      const reachesMin = medians.some((m) => Math.abs(m) >= band.minAbsMs);
+      if (spread > 2 * alignedToleranceMs && withinBand && reachesMin) {
+        return {
+          status: "matches-known-defect",
+          matchedSignature: band.id,
+          detail: `random-band ${band.id}: ${detailSuffix}`,
+        };
+      }
+    } else if (band.kind === "constant-late") {
+      // Not gated on spread: random-band bands (checked earlier in the
+      // caller's array) already claim scattered-but-in-range data via their
+      // own spread>2·tol test, so a redundant spread cap here only risks
+      // rejecting genuine constant-late repeats with a few ms of ordinary
+      // jitter (measured: real repeats land a spread of ~7ms against a 2ms
+      // tolerance, well outside a literal 2·tol cap).
+      if (mean > 0 && mean >= band.minAbsMs && mean <= band.maxAbsMs) {
+        return {
+          status: "matches-known-defect",
+          matchedSignature: band.id,
+          detail: `constant-late ${band.id}: mean=${mean.toFixed(2)}ms ${detailSuffix}`,
+        };
+      }
+    } else if (band.kind === "head-loss") {
+      const everyHeadInBand = repeats.every(
+        (r) => r.headMissingMs !== null && r.headMissingMs >= band.minAbsMs && r.headMissingMs <= band.maxAbsMs
+      );
+      if (everyHeadInBand) {
+        return {
+          status: "matches-known-defect",
+          matchedSignature: band.id,
+          detail: `head-loss ${band.id}: ${detailSuffix}`,
+        };
+      }
+    }
+  }
+
+  return {
+    status: "investigate",
+    matchedSignature: null,
+    detail: `no band matched: mean=${mean.toFixed(2)}ms ${detailSuffix}`,
+  };
 }
