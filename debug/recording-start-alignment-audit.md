@@ -132,10 +132,13 @@ traceability, with full detail folded into the relevant sections below and in
    resolves before the band loop; `constant-late` requires a positive mean, but the
    measured means are negative) — the previous draft's stated reason (no C band
    configured) was itself wrong; both A and C ARE configured for `janked-start`.
-6. Every scenario/cell's classifier `detail` string is now quoted directly from the
-   persisted JSON rather than paraphrased, and the false "matched=17/missing=0 on
-   every nominal repeat" claim is removed (a bring-up run — `…1788283946271.json` —
-   shows 0/42, and one matrix repeat shows 16/1).
+6. `janked-start`'s classifier `detail` strings (the ones the C-verdict correction in
+   item 5 depends on) are now quoted directly from the persisted JSON rather than
+   paraphrased — this is NOT a claim that every cell's detail string is quoted
+   throughout the register, only that the specific reasoning this fix round depended
+   on is sourced that way. The false "matched=17/missing=0 on every nominal repeat"
+   claim is removed (a bring-up run — `…1788283946271.json` — shows 0/42, and one
+   matrix repeat shows 16/1 — see "Band separation").
 7. Head-missing figures are now labeled baseline-corrected vs. raw everywhere they
    appear, with both values given.
 
@@ -285,9 +288,17 @@ baseline.
 
 ### Band separation
 
-No missing-beat evidence of low-band/high-band cross-talk was found in any of the
-valid (non-excluded) bring-up or matrix `nominal-start` repeats. No
-`REF_CLICK_HZ`/`highCutoffHz` adjustment was needed.
+No SYSTEMATIC missing-beat evidence of low-band/high-band cross-talk was found across
+the valid (non-excluded) bring-up or matrix `nominal-start` repeats — one exception:
+the 48000 Hz matrix run's `nominal-start`/120/repeat1 measured `matched=16,
+missing=1` (see "Matrix results — 48000 Hz" above), the single missing-beat instance
+anywhere in this campaign's `nominal-start` data. This reads as isolated
+onset-detection noise (a single borderline-amplitude click near the detector
+threshold) rather than a cross-talk signature — cross-talk from the high-band
+reference clicks bleeding into the low band would be expected to produce EXTRA
+low-band onsets, not fewer, and every other `nominal-start` repeat (11 of 12 in the
+matrix population, plus all 18 valid bring-up repeats) matched every beat. No
+`REF_CLICK_HZ`/`highCutoffHz` adjustment was made.
 
 ### Net effect on the harness
 
@@ -320,8 +331,11 @@ the original run's `janked-start` data measured the harness's own provocation bu
 `loop-wrap/120` lost repeats 2-3 and `loop-wrap/97.3` lost repeat 3, every one with
 `errorMessage: "finalizing: finalization timed out after 30s"` — confirmed from the
 persisted JSON, **not** the `waitForPosition` transport-start quirk (which does not
-appear in either matrix run's loop-wrap error rows; it appears only in two of the
-bring-up control-cell attempts). See the C2 triage entry for the full characterization.
+appear in either matrix run's loop-wrap error rows; the two excluded bring-up
+control-cell attempts instead carry `recording: waitForPosition(15360) timed out
+after 60s` — `…1788286745058.json`, all 3 repeats — and `finalizing: no take regions
+created` — `…1788283946271.json`, 2 of 3 repeats — two DIFFERENT failure modes,
+neither of them loop-wrap's). See the C2 triage entry for the full characterization.
 
 | scenario | bpm | medianErr per repeat (ms) | headMiss corrected/raw (ms) | signature | status |
 |---|---|---|---|---|---|
@@ -333,7 +347,7 @@ bring-up control-cell attempts). See the C2 triage entry for the full characteri
 | midtimeline-start | 97.3 | -166.36, -147.67, -151.01 | 1.04/27.04, 0.00/≤26, 1.69/27.69 | — | investigate |
 | countin-start | 120 | -101.54, -99.54, -84.21 | 0.00/≤26, 0.00/≤26, 0.00/≤26 | — | investigate |
 | countin-start | 97.3 | -77.62, -100.27, -81.62 | 0.00/≤26, 4.35/30.35, 0.00/≤26 | — | investigate |
-| loop-wrap | 120 | repeat1 takes1-4: -71.17 (flat) / take4 matched=1 / repeats2,3 error (`finalization timed out after 30s`) | 0.00/≤26 (r1) | — | investigate |
+| loop-wrap | 120 | repeat1 takes1-4: -71.17 (flat) / take4 matched=0 (median null — no onsets matched in that take's short window) / repeats2,3 error (`finalization timed out after 30s`) | 0.00/≤26 (r1) | — | investigate |
 | loop-wrap | 97.3 | repeat1/2 takes1-3: -68.13..-68.15 / -73.72..-73.75 (flat per repeat) / take4 matched=1 both / repeat3 error (`finalization timed out after 30s`) | 0.00/≤26 | — | investigate |
 
 Raw head-missing derivation: `headMissingMs (corrected) = max(0, headMissingRawMs − 26)`
@@ -355,12 +369,17 @@ Run: `recording-alignment-audit-debug-demo.html?scenario=all&bpm=all&rate=44100`
 page load, real click, visible window. JSON summary:
 `recaudit-summary-1788288625777.json` (35 rows, `sdkBuildProbe: "upstream"`).
 `janked-start` rows below are from the **fix-round re-run**
-(`recaudit-summary-1788290774387.json`). `loop-wrap` rows below are from the
-**fix-round re-run at the reverted 30s deadline** (`recaudit-summary-1788291706370.json`,
-`?scenario=loop-wrap&bpm=all&rate=44100`) — chosen over the original run's data because
-the fix round's 44.1k/97.3 attempt had zero successful repeats (all 3 failed), so the
-original run's single successful repeat (r3) remains the only usable 44.1k/97.3 data
-point across every attempt made this campaign; it is retained below since `loop-wrap`
+(`recaudit-summary-1788290774387.json`). `loop-wrap` rows below are sourced
+PER-BPM, from whichever run actually produced a successful repeat: the **120 bpm**
+row is from the fix-round re-run at the reverted 30s deadline
+(`recaudit-summary-1788291706370.json`, `?scenario=loop-wrap&bpm=all&rate=44100`),
+which had 2 successful repeats (the fix round's own 44.1k/120 data is used here
+because it's the more recent, deadline-matched run and it succeeded). The **97.3
+bpm** row is from the ORIGINAL matrix run (`recaudit-summary-1788288625777.json`)
+instead — the fix round's own 44.1k/97.3 attempt (same JSON,
+`…1788291706370.json`) had zero successful repeats (all 3 failed), so the original
+run's single successful repeat (r3) is the only usable 44.1k/97.3 data point across
+every attempt made this campaign. This split-source is safe because `loop-wrap`
 logic besides the (now-reverted) deadline was unchanged by the fix round.
 
 | scenario | bpm | medianErr per repeat (ms) | headMiss corrected/raw (ms) | signature | status |
@@ -373,8 +392,8 @@ logic besides the (now-reverted) deadline was unchanged by the fix round.
 | midtimeline-start | 97.3 | -208.07, -201.51, -204.98 | 2.46/28.46, 0.00/≤26, 2.28/28.28 | — | investigate |
 | countin-start | 120 | -99.52, -96.95, -89.20 | 0.00/≤26, 0.00/≤26, 0.00/≤26 | — | investigate |
 | countin-start | 97.3 | -93.15, -83.74, -101.72 | 0.00/≤26, 0.00/≤26, 0.00/≤26 | — | investigate |
-| loop-wrap | 120 | repeat1/2 takes1-3: -70.99..-71.06 / -62.27..-62.34 (flat per repeat) / take4 matched=1 both / repeat3 error (`finalization timed out after 30s`) | 0.00/≤26 | — | investigate |
-| loop-wrap | 97.3 | (original run, retained) repeat3 takes1-4: -67.13..-67.19 (flat) / take4 matched=1 / repeats1-2 error (original run's error message not individually re-verified, but the fix-round's own 97.3 attempts at both 30s and 90s ALL show `finalization timed out`, making the same attribution overwhelmingly likely here too) | 0.00/≤26 | — | investigate |
+| loop-wrap | 120 | repeat1/2 takes1-3: -70.99..-71.06 / -62.27..-62.34 (flat per repeat) / take4 matched=0 (r1, median null) / matched=1 (r2) / repeat3 error (`finalization timed out after 30s`) | 0.00/≤26 | — | investigate |
+| loop-wrap | 97.3 | (original run, retained — see provenance note above) repeat3 takes1-4: -67.13..-67.19 (flat) / take4 matched=1 / repeats1-2 error (`finalization timed out after 30s`, verified directly from this run's own JSON) | 0.00/≤26 | — | investigate |
 
 Raw head-missing derivation for this table: same rule as the 48000 Hz table above.
 
@@ -435,8 +454,10 @@ scatter, not rate-dependent:
   that confound removed, A's actual signature shows up differently: one repeat
   (48k/120/r3) shows `matched=15, missing=1` — genuine content skip, the SAME
   mechanism `midtimeline-start` shows unconditionally (see below) — while the other 11
-  repeats show full beat matches with medians in the same -57 to -101 ms range as
-  `nominal-start`'s own B-mechanism bias, meaning the 150 ms jank did NOT reliably
+  repeats show full beat matches with medians in the -69.38 to -99.56 ms range (the
+  fix-round `janked-start` population's own range, excluding the one severe outlier),
+  overlapping `nominal-start`'s own B-mechanism range (-64.90 to -108.20 ms), meaning
+  the 150 ms jank did NOT reliably
   overlap the SDK's critical position-tick window; when it doesn't, the measured
   result reduces to plain B. **A is confirmed as intermittent and severe when it does
   occur** (one clean content-skip case, matching prediction A's mechanism precisely),
@@ -497,6 +518,20 @@ scatter, not rate-dependent:
   reliably overlaps the SDK's anchor-read window without ever causing outright content
   loss) is a candidate follow-up.
 
+  **Explicit spec §6 deviation:** the design spec's success criteria state "Each
+  predicted signature A–D is either confirmed with a measured magnitude or explicitly
+  refuted in the register" — a binary outcome. Prediction C does not resolve to
+  either: this campaign's `janked-start` provocation cannot isolate C's effect from A
+  and B's (both of which ARE independently confirmed/characterized), so C's outcome
+  is neither a clean confirmation nor a clean refutation. This is registered here as
+  a deliberate, explicit deviation from that binary framing — not an oversight — with
+  the reason (no C-specific provocation exists in this campaign's scenario set) and
+  the concrete follow-up needed to resolve it (a jank provocation that reliably
+  overlaps the SDK's post-flip anchor-read window without ever triggering outright
+  content loss, so its effect can be measured in isolation from A). Campaign closure
+  should treat this honestly as "open, not closed" rather than force-fitting it into
+  confirmed or refuted.
+
 - **D (loop-wrap, 15-30 ms constant-late, flat across takes) — CONFIRMED FLAT,
   REFUTED IN MAGNITUDE AND SIGN.** Every successfully-finalized `loop-wrap` repeat
   (both bpms, both rates) shows the flatness D predicts: consecutive wrap takes (1-4)
@@ -530,16 +565,50 @@ have already run) — so the spin now blocks only the SDK's OWN post-flip positi
 handling, not the capture pipeline's own startup. `src/demos/recording/recording-alignment-audit-debug-demo.tsx`,
 tsc-clean, re-smoked on a single cell before the full 4-cell re-run.
 
+**Undisclosed run, corrected (fix round 2, N2):** the single-cell C1 smoke test
+(`?scenario=janked-start&bpm=120&rate=48000`) was actually run TWICE before the full
+4-cell re-run: an initial attempt, `recaudit-summary-1788290585653.json`, and a
+second attempt whose data is what "Fix round 1" cited above
+(`recaudit-summary-1788290691302.json`'s bpm=120 rows, later superseded anyway by the
+full re-run). The first attempt's repeat 1 is a genuinely degenerate outlier, not
+previously documented: `waveformOffsetSec=118.679s`, `regionPositionPpqn=9313`
+(→ `regionStartSec≈4.85s`), `matchedBeats=1`, `medianBeatErrorMs=-190.86`,
+`clockNoiseIdentifiedClicks=117` (vs. the usual 26 — the reference-click schedule ran
+long enough to still be sounding). A `waveformOffsetSec` of 118.7 SECONDS is an
+extreme instance of term 2 in the bring-up decomposition (the RecordingWorklet's
+frame counter, uncompensated, measuring far more elapsed time than the transport
+clock's ~4.85s at the same tick) — nearly 3 orders of magnitude past the typical
+20-90 ms range measured elsewhere in this campaign. The mechanism is not confirmed
+(this campaign didn't instrument `recordingWorklet.numberOfFrames`'s own start
+instant directly), but it raises a real question: **does every FIRST repeat after a
+fresh page load carry some elevated risk of this term-2 mechanism running large**
+(worklet setup/compile/connect overhead concentrated in the first recording of a
+session), of which this 118.7s case is an extreme instance and the matrix's own
+`nominal-start`/120/repeat1 `16/1` missing-beat case (see "Band separation" above,
+also a repeat-1) might be a milder one? This campaign did not test for a
+first-repeat-vs-later-repeat effect directly (repeats within a cell reuse the same
+tape/session, so only the very first repeat of an entire page load is "first" in the
+relevant sense, and only a few page loads were run per scenario). **Open
+follow-up for Task 8 or a future campaign:** run a scenario with the SAME cell
+repeated many times across FRESH page loads and compare repeat-1-of-session medians
+against later ones, to test whether first-repeat-after-load carries a measurably
+larger term-2 bias than steady-state repeats.
+
 ### C2: `loop-wrap` finalization timeout — characterized, not resolved
 
 **Every `loop-wrap` failure across every run this campaign made (original matrix runs,
 the retry, and this fix round's diagnostic re-runs — 27 total finalization attempts
-across 5 separate campaign runs) carries the identical `errorMessage`:
-`"finalizing: finalization timed out after <deadline>s"`.** None carry
-`waitForPosition`/transport-quirk wording — that quirk (which the original draft
-attributed loop-wrap's failures to) appears ONLY in two of the bring-up control-cell
-attempts (`nominal-start`, a completely different scenario/code path), never in any
-loop-wrap row across this entire campaign.
+across 5 separate campaign runs), verified directly from each run's persisted
+`errorMessage` field, carries the identical text:
+`"finalizing: finalization timed out after <deadline>s"`.** This was checked for
+EVERY failing row individually (not spot-checked), including the original
+44.1k/97.3 run's two failures (`…1788288625777.json` repeats 1-2), which carry this
+same message. `waitForPosition`/transport-quirk wording never appears in any
+loop-wrap row across this entire campaign — that quirk (which the original draft
+attributed loop-wrap's failures to) appears only in one of the two excluded bring-up
+`nominal-start` attempts (`…1788286745058.json`; the other excluded attempt,
+`…1788283946271.json`, carries yet a third, different message,
+`"finalizing: no take regions created"` — see "Bring-up calibration" above).
 
 **Diagnostic test: does raising the deadline fix it?** Widened `loop-wrap`'s
 finalization wait from 30s to 90s (3x) and re-ran (`recaudit-summary-1788291343233.json`,
@@ -609,19 +678,25 @@ live loader for future live-inspection.
   **Separately, `loop-wrap`'s finalization-timeout failures are a candidate new issue
   in their own right** — see the C2 entry above. NOT a harness artifact (the original
   attribution to the transport-start-delay quirk was wrong — see "Fix round 1").
-- **`loop-wrap` take4's low `matched` count (1, vs. 8 for takes 1-3/5), consistent
-  across every successful loop-wrap repeat at every rate: likely HARNESS ARTIFACT,
-  unresolved.** `take4` (the 5th and last WRAP-finalized take, 0-indexed) should be
-  full-loop-length like takes 1-3 (all governed by the same 2-bar loop area), yet its
-  onset match count is far lower every single time it was measured. Two candidate
+- **`loop-wrap` take4's low `matched` count, likely HARNESS ARTIFACT, unresolved —
+  corrected (fix round 2, N1): NOT consistently 1.** Across every successful
+  loop-wrap repeat found in any run this campaign made (9 total, tallied directly
+  from the persisted JSON across all 5 loop-wrap campaign runs), take4's
+  `matchedBeats` is **0 for 2 of the 9** (48k/120/r1 `…1788287951691.json`;
+  44.1k/120/r1 `…1788291706370.json`) and **1 for the other 7**. `take4` (the 5th
+  and last WRAP-finalized take, 0-indexed) should be full-loop-length like takes 1-3
+  (all governed by the same 2-bar loop area), yet its onset match count is far lower
+  than takes 1-3/5 (which show 8) EVERY single time it was measured — the specific
+  value (0 vs. 1) varies, but the pattern (far below 8) does not. Two candidate
   explanations, neither confirmed: (a) `waitForTakeCount`'s target
   (`LOOP_WRAP_TAKES + 1 = 6` regions) is satisfied the instant the 6th region is
   CREATED, which happens at the exact moment take4 (the 5th) finalizes — if
   measurement reads take4's `duration`/`loopDuration` fields before a final write
-  settles, its effective onset-matching window could be truncated; (b) a genuine SDK
-  effect specific to the second-to-last take in a `waitForTakeCount`-terminated
-  sequence. Recommend Task 8 (or a follow-up) add a short settle-wait before measuring
-  in loop-wrap cells and re-check whether take4's match count recovers to 8.
+  settles, its effective onset-matching window could be truncated (variably, hence
+  the 0-vs-1 split); (b) a genuine SDK effect specific to the second-to-last take in
+  a `waitForTakeCount`-terminated sequence. Recommend Task 8 (or a follow-up) add a
+  short settle-wait before measuring in loop-wrap cells and re-check whether take4's
+  match count recovers to 8.
 
 ### Harness gaps identified (not code defects, instrumentation gaps)
 

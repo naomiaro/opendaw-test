@@ -334,6 +334,10 @@ interface AuditRow {
   // previously console-only "clockNoise" logging.
   clockNoiseIdentifiedClicks?: number;
   clockNoiseMaxAbsResidualMs?: number;
+  // Fix round 2 (cheap add): time from `stopRecording()` to the loader
+  // reaching a terminal state — the C2 finalization-timeout evidence
+  // (fast-success-or-never split) as a committed artifact, not console memory.
+  finalizeMs?: number;
 }
 
 interface CapturedBuffer {
@@ -534,6 +538,48 @@ function waitForLoaderTerminal(loader: SampleLoader, deadlineMs: number, label: 
 }
 
 /**
+ * Fix round 2 (N3): subscribes to `engine.isRecording` and, once it first
+ * flips true, blocks the main thread for `jankMs` (the `janked-start`
+ * provocation — see the C1 fix comment at its call site). Manages its own
+ * deadline and guaranteed subscription termination on every exit path
+ * (jank-fired, timeout) — same shape as `waitForLoaderTerminal` above and
+ * for the same reason: the original inline version had no internal
+ * deadline (a never-flipping `isRecording`, e.g. the documented WASM
+ * transport-start-delay quirk, left the subscription live past the outer
+ * 120s cell deadline, so it could fire the spin during a LATER repeat that
+ * reuses the same tape/capture — silent cross-repeat contamination) and
+ * used a bare `jankSub!.terminate()` that would null-deref if `isRecording`
+ * were already true at subscribe time (catchup fires synchronously, before
+ * the assignment to `jankSub` completes) — the same TDZ-shaped hazard
+ * CLAUDE.md's SampleLoader section warns about, fixed here with the same
+ * `subscribed` boolean guard pattern.
+ */
+function armJankOnRecordingFlip(project: Project, jankMs: number, deadlineMs: number): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    let settled = false;
+    let subscribed = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      if (subscribed) sub.terminate();
+      reject(new Error(`armJankOnRecordingFlip: isRecording never flipped true within ${deadlineMs / 1000}s`));
+    }, deadlineMs);
+    const sub = project.engine.isRecording.catchupAndSubscribe((obs) => {
+      if (settled || !obs.getValue()) return;
+      settled = true;
+      clearTimeout(timer);
+      const until = performance.now() + jankMs;
+      while (performance.now() < until) {
+        /* spin */
+      }
+      if (subscribed) sub.terminate();
+      resolve();
+    });
+    subscribed = true;
+  });
+}
+
+/**
  * Common per-repeat sequence (task-4-brief.md Steps 2-5): set bpm/prefs,
  * schedule reference clicks, run the scenario-specific start, wait for the
  * scenario-specific stop condition, wait for finalization, then measure
@@ -611,29 +657,19 @@ async function runCellRepeat(
       // used to, blocks that continuation too: it defers capture-connect AND
       // transport-start together, which just delays when recording genuinely
       // begins (measured: raw headMissingMs tracked JANK_MS almost exactly,
-      // 168.89ms jank mean − 18.13ms nominal baseline ≈ 150.76ms ≈ JANK_MS) —
+      // 168.89ms jank mean − 18.58ms nominal baseline ≈ 150.3ms ≈ JANK_MS) —
       // not C's intended provocation (a main thread busy AFTER an audio-thread
       // anchor already exists, before the SDK reads/accepts it). Fix: key the
       // spin off our OWN subscription to `engine.isRecording` actually flipping
-      // true — by definition, everything up to and including
+      // true (see `armJankOnRecordingFlip` above; fix round 2 rewrote this from
+      // an inline, undeadlined Promise to that shared, self-terminating helper)
+      // — by definition, everything up to and including
       // `engine.prepareRecordingState()` has already run by then, so capture is
       // genuinely live; only the SDK's post-flip position-tick handling (which
       // creates the take) is still pending and gets blocked by the spin.
-      await new Promise<void>((resolve) => {
-        let jankSub: Terminable | null = null;
-        let jankApplied = false;
-        jankSub = project.engine.isRecording.catchupAndSubscribe((obs) => {
-          if (jankApplied || !obs.getValue()) return;
-          jankApplied = true;
-          const until = performance.now() + JANK_MS;
-          while (performance.now() < until) {
-            /* spin */
-          }
-          jankSub!.terminate();
-          resolve();
-        });
-        project.startRecording(false);
-      });
+      const jankArmed = armJankOnRecordingFlip(project, JANK_MS, 30_000);
+      project.startRecording(false);
+      await jankArmed;
       break;
     }
     case "midtimeline-start": {
@@ -681,9 +717,13 @@ async function runCellRepeat(
   const finalizeDeadlineMs = 30_000;
   const finalizeStart = performance.now();
   await waitForLoaderTerminal(loader, finalizeDeadlineMs, "finalization");
+  // Fix round 2 (cheap add): persisted per row below (`finalizeMs`) so the C2
+  // fast-or-never finalization-timeout evidence is a committed artifact, not
+  // console-only.
+  const finalizeMs = performance.now() - finalizeStart;
   console.log(
     "[recording-alignment-audit] finalize " + cellLabel(scenario, bpm, repeat) +
-    " took " + (performance.now() - finalizeStart).toFixed(0) + "ms" +
+    " took " + finalizeMs.toFixed(0) + "ms" +
     " (deadline " + finalizeDeadlineMs + "ms)"
   );
 
@@ -786,6 +826,7 @@ async function runCellRepeat(
       waveformOffsetSec,
       anchorT0Sec: alignment.anchorT0Sec,
       recordRequestContextTime,
+      finalizeMs,
       clockNoiseIdentifiedClicks,
       clockNoiseMaxAbsResidualMs,
       status: "pending",
