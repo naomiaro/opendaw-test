@@ -344,6 +344,17 @@ directly, but no signal reaches capture), and a shared dest stream dies once any
 consumer calls `track.stop()` (tape disarm/remove). Verify capture with the real mic;
 the engine faithfully renders silence as flat peaks (that's correct, not a bug).
 
+**Verified exception (SAME-context only):** a `MediaStreamAudioDestinationNode`
+created in the SAME `AudioContext` the engine captures into works — measured
+rms=0.074515 (14.9x the 0.005 pass threshold) on a 4s take recorded through it. Hand
+out `stream.clone()` per `getUserMedia` call so a consumer's `track.stop()` (tape
+disarm/remove) can't kill the source stream — see `src/lib/audit/loopbackInjection.ts`.
+Note: the SDK's take-region creation is gated on `engine.position` actually advancing
+(`RecordAudio.js`'s `fileBox.isEmpty()` branch, driven by
+`engine.position.catchupAndSubscribe`) — the documented transport-position-start delay
+(see `src/demos/engine/CLAUDE.md`) can produce a "0 regions" result unrelated to
+capture routing; poll `engine.position`/`isRecording` if a recording produces no take.
+
 ### Monitoring Peaks Across Recording Lifecycle
 Run the peaks AnimationFrame unconditionally for the component's lifetime — do NOT
 gate it on recording/session state. A state gate can miss batched transitions (see
