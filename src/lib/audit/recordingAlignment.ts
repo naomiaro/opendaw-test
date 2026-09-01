@@ -241,6 +241,18 @@ export interface TakeMeasurementInput {
   schedule: ReferenceSchedule;
   recordRequestContextTime: number | null; // audioContext.currentTime captured just before startRecording; null if unavailable
   stopRequestContextTime: number | null; // audioContext.currentTime captured just before stopRecording; null if unavailable
+  /**
+   * Calibrated baseline (ms), subtracted from the raw head-missing figure
+   * before classification — see `HEAD_MISSING_BASELINE_MS` in
+   * `recordingAuditCalibration.ts`. Compensates for the ordinary async gap
+   * between the JS `startRecording()` call and the RecordingWorklet's first
+   * captured frame reaching the ring buffer (Promise/message-passing setup,
+   * not lost content — recording genuinely had not started yet at
+   * `recordRequestContextTime`), so this expected setup lag isn't classified
+   * as head-loss. Default 0 (no correction) when the caller has no measured
+   * baseline.
+   */
+  headMissingBaselineMs?: number;
 }
 
 export interface TakeAlignment {
@@ -270,6 +282,7 @@ export function measureTakeAlignment(input: TakeMeasurementInput): TakeAlignment
   const {
     lowOnsets, highOnsets, regionStartSec, waveformOffsetSec, regionDurationSec,
     bufferDurationSec, bpm, schedule, recordRequestContextTime, stopRequestContextTime,
+    headMissingBaselineMs = 0,
   } = input;
 
   const beatPeriodSec = 60 / bpm;
@@ -321,7 +334,7 @@ export function measureTakeAlignment(input: TakeMeasurementInput): TakeAlignment
 
   const headMissingMs =
     anchorT0Sec !== null && recordRequestContextTime !== null
-      ? Math.max(0, anchorT0Sec - recordRequestContextTime) * 1000
+      ? Math.max(0, (anchorT0Sec - recordRequestContextTime) * 1000 - headMissingBaselineMs)
       : null;
 
   const tailMissingMs =

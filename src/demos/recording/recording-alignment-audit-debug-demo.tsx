@@ -48,6 +48,8 @@ import { detectOnsets } from "@/lib/audit/onsetDetection";
 import {
   buildReferenceSchedule,
   bandSplit,
+  identifyReferenceClicks,
+  estimateAnchorT0,
   measureTakeAlignment,
   classifyCell,
   type TakeAlignment,
@@ -62,6 +64,7 @@ import {
   JANK_MS,
   LOOP_WRAP_TAKES,
   ALIGNED_TOLERANCE_MS,
+  HEAD_MISSING_BASELINE_MS,
   SIGNATURE_BANDS,
   type RecordingScenario,
 } from "@/lib/audit/recordingAuditCalibration";
@@ -109,6 +112,7 @@ async function runProbe(onRow: (row: ProbeRow) => void, onBuildProbe: (probe: Sd
   onBuildProbe(detectSdkBuildProbe(project.engine));
   loopback.attach(audioContext);
   onRow({ label: "context rate", value: String(audioContext.sampleRate) });
+  console.log("[recording-alignment-audit] outputLatency=" + String(audioContext.outputLatency) + " baseLatency=" + String(audioContext.baseLatency));
 
   const settings = project.engine.preferences.settings;
   settings.metronome.enabled = true;
@@ -643,6 +647,26 @@ async function runCellRepeat(
   const lowOnsets = detectOnsets(low, data.sampleRate, { refractorySec: 0.1 });
   const highOnsets = detectOnsets(high, data.sampleRate, { refractorySec: 0.05 });
 
+  // Bring-up diagnostic (Task 6, ALIGNED_TOLERANCE_MS calibration): pure
+  // detector/graph-path noise, independent of any SDK placement math — each
+  // identified reference click's residual against its OWN schedule entry,
+  // relative to the median anchor. This isolates onset-detection + zero-phase
+  // band-split jitter from everything RecordAudio.ts computes.
+  {
+    const identified = identifyReferenceClicks(highOnsets, schedule);
+    const anchor = estimateAnchorT0(identified, schedule);
+    if (anchor !== null && identified.length > 1) {
+      const residualsMs = identified.map((c) => (schedule.times[c.index] - c.fileTimeSec - anchor) * 1000);
+      const maxAbs = Math.max(...residualsMs.map((r) => Math.abs(r)));
+      console.log(
+        "[recording-alignment-audit] clockNoise " + cellLabel(scenario, bpm, repeat) +
+        " identifiedClicks=" + identified.length +
+        " maxAbsResidualMs=" + maxAbs.toFixed(4) +
+        " residualsMs=[" + residualsMs.map((r) => r.toFixed(3)).join(",") + "]"
+      );
+    }
+  }
+
   const rows: AuditRow[] = [];
   const alignments: { takeIndex: number; alignment: TakeAlignment }[] = [];
   for (const [takeIndex, region] of takeRegions.entries()) {
@@ -661,8 +685,22 @@ async function runCellRepeat(
       schedule,
       recordRequestContextTime,
       stopRequestContextTime,
+      headMissingBaselineMs: HEAD_MISSING_BASELINE_MS,
     });
     alignments.push({ takeIndex, alignment });
+    // Bring-up diagnostic (Task 6): raw box-graph values behind every alignment
+    // number, so a calibration bias can be traced to its source term instead of
+    // inferred from the final medianBeatErrorMs alone.
+    console.log(
+      "[recording-alignment-audit] diag " + cellLabel(scenario, bpm, repeat) + "/take" + takeIndex +
+      " position=" + String(region.position) +
+      " regionStartSec=" + String(regionStartSec) +
+      " waveformOffsetSec=" + String(waveformOffsetSec) +
+      " anchorT0Sec=" + String(alignment.anchorT0Sec) +
+      " recordRequestContextTime=" + String(recordRequestContextTime) +
+      " medianBeatErrorMs=" + String(alignment.medianBeatErrorMs) +
+      " headMissingMs=" + String(alignment.headMissingMs)
+    );
     rows.push({
       scenario,
       bpm,
@@ -812,6 +850,7 @@ async function runAudit(
   const sdkBuildProbe = detectSdkBuildProbe(project.engine);
   onBuildProbe(sdkBuildProbe);
   loopback.attach(audioContext);
+  console.log("[recording-alignment-audit] outputLatency=" + String(audioContext.outputLatency) + " baseLatency=" + String(audioContext.baseLatency));
 
   // ONE tape, created once, reused across every cell.
   let audioUnitBox: AudioUnitBox | null = null;
