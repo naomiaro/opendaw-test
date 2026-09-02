@@ -53,6 +53,7 @@ import { CaptureAudio, type Project } from "@opendaw/studio-core";
 import { InstrumentFactories, type AudioUnitBoxAdapter, type SampleLoader } from "@opendaw/studio-adapters";
 import type { AudioUnitBox } from "@opendaw/studio-boxes";
 import { WavFile } from "@opendaw/lib-dsp";
+import { detectBuildFeatures } from "@/lib/audit/buildFeatures";
 import { installLoopbackCapture, LOOPBACK_DEVICE_ID, loopbackDeviceId } from "@/lib/audit/loopbackInjection";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { withDeadline } from "@/lib/deadline";
@@ -82,6 +83,7 @@ import {
   signatureBandsFor,
   isRecordingScenario,
   isMultitrackScenario,
+  type AuditBuildFeature,
   type RecordingScenario,
   type MultitrackScenario,
 } from "@/lib/audit/recordingAuditCalibration";
@@ -495,6 +497,7 @@ async function uploadSummary(
   rows: AuditRow[],
   rate: number,
   sdkBuildProbe: SdkBuildProbe,
+  buildFeatures: AuditBuildFeature[],
   bias: HarnessPathBias,
   baseLatency: number,
   cellVerdicts: CellVerdictRecord[],
@@ -506,6 +509,7 @@ async function uploadSummary(
     beatGrid: "absolute",
     rate,
     sdkBuildProbe,
+    buildFeatures,
     // Fix round 1 (C3/I3): persisted so the loopback-path-bias decomposition
     // doesn't depend on console output. Read once per page load by
     // `resolveHarnessPathBias`, after output started — the same number every
@@ -544,6 +548,9 @@ interface MatrixContext {
   audioContext: AudioContext;
   unitAdapter: AudioUnitBoxAdapter;
   sdkBuildProbe: SdkBuildProbe;
+  /** Which SDK surfaces this build exposes — persisted so the offline classifier
+   *  can pick the band profile from what the build does, not when it ran. */
+  buildFeatures: AuditBuildFeature[];
   bias: HarnessPathBias;
 }
 
@@ -554,6 +561,8 @@ async function createMatrixContext(rate: number): Promise<MatrixContext> {
     engineTap: (node) => loopback.engineTap(node),
   });
   const sdkBuildProbe = detectSdkBuildProbe(project.engine);
+  const buildFeatures = detectBuildFeatures(project.engine);
+  console.log("[recording-alignment-audit] buildFeatures=[" + buildFeatures.join(",") + "]");
   loopback.attach(audioContext);
   const bias = await resolveHarnessPathBias(audioContext);
 
@@ -573,7 +582,7 @@ async function createMatrixContext(rate: number): Promise<MatrixContext> {
 
   const unitAdapter = project.rootBoxAdapter.audioUnits.adapters().find((u) => u.box === audioUnitBox);
   if (!unitAdapter) throw new Error("no audio unit adapter for tape");
-  return { project, audioContext, unitAdapter, sdkBuildProbe, bias };
+  return { project, audioContext, unitAdapter, sdkBuildProbe, buildFeatures, bias };
 }
 
 // Booted once per page load: `initializeOpenDAW` → `Workers.install` asserts
@@ -599,7 +608,7 @@ async function runAudit(
   // joined without guessing (Task 7c fix round 1, review M12).
   const runToken = Date.now();
 
-  const { project, audioContext, unitAdapter, sdkBuildProbe, bias } = await getMatrixContext(rate);
+  const { project, audioContext, unitAdapter, sdkBuildProbe, buildFeatures, bias } = await getMatrixContext(rate);
   onBuildProbe(sdkBuildProbe);
 
   const allRows: AuditRow[] = [];
@@ -695,7 +704,7 @@ async function runAudit(
       // explicit detail here names the reason (every repeat errored).
       const classification: CellClassification =
         alignmentsForClassification.length > 0
-          ? classifyCell(alignmentsForClassification, signatureBandsFor(scenario, sdkBuildProbe, runToken), ALIGNED_TOLERANCE_MS)
+          ? classifyCell(alignmentsForClassification, signatureBandsFor(scenario, sdkBuildProbe, runToken, buildFeatures), ALIGNED_TOLERANCE_MS)
           : { status: "investigate", matchedSignature: null, detail: "no successful repeats to classify" };
       // Persisted for EVERY cell, so an all-error cell's verdict exists on disk
       // (rows only carry the verdict of successful repeats).
@@ -732,7 +741,7 @@ async function runAudit(
   }
 
   setAuditState("uploading");
-  await uploadSummary(allRows, rate, sdkBuildProbe, bias, audioContext.baseLatency, cellVerdicts, wavUploadFailures, runToken);
+  await uploadSummary(allRows, rate, sdkBuildProbe, buildFeatures, bias, audioContext.baseLatency, cellVerdicts, wavUploadFailures, runToken);
   setAuditState("done");
 }
 
@@ -1321,6 +1330,7 @@ async function uploadMultitrackSummary(
   rows: MultitrackAuditRow[],
   rate: number,
   sdkBuildProbe: SdkBuildProbe,
+  buildFeatures: AuditBuildFeature[],
   bias: HarnessPathBias,
   baseLatency: number,
   cellSkews: { scenario: MultitrackScenario; bpm: number; repeat: number; skew: CrossTrackSkew }[],
@@ -1332,7 +1342,7 @@ async function uploadMultitrackSummary(
   const summary: MultitrackAuditSummary = {
     schemaVersion: AUDIT_SCHEMA_VERSION,
     beatGrid: "absolute",
-    rate, sdkBuildProbe,
+    rate, sdkBuildProbe, buildFeatures,
     // Read once per page load after output started (`resolveHarnessPathBias`)
     // — the value every row of this run was adjusted with.
     outputLatency: bias.valueSec, baseLatency,
@@ -1371,6 +1381,9 @@ interface MultitrackContext {
   audioContext: AudioContext;
   tapes: MultitrackTapes;
   sdkBuildProbe: SdkBuildProbe;
+  /** Which SDK surfaces this build exposes — persisted so the offline classifier
+   *  can pick the band profile from what the build does, not when it ran. */
+  buildFeatures: AuditBuildFeature[];
   bias: HarnessPathBias;
 }
 
@@ -1381,10 +1394,12 @@ async function createMultitrackContext(rate: number, confirmCollision: boolean):
     engineTap: (node) => loopback.engineTap(node),
   });
   const sdkBuildProbe = detectSdkBuildProbe(project.engine);
+  const buildFeatures = detectBuildFeatures(project.engine);
+  console.log("[recording-alignment-audit] buildFeatures=[" + buildFeatures.join(",") + "]");
   loopback.attach(audioContext);
   const bias = await resolveHarnessPathBias(audioContext);
   const tapes = createMultitrackTapes(project, confirmCollision);
-  return { project, audioContext, tapes, sdkBuildProbe, bias };
+  return { project, audioContext, tapes, sdkBuildProbe, buildFeatures, bias };
 }
 
 let multitrackContextPromise: Promise<MultitrackContext> | null = null;
@@ -1418,7 +1433,7 @@ async function runMultitrackAudit(
   // combination is re-run under a different build later in the same session.
   const runToken = Date.now();
 
-  const { project, audioContext, tapes, sdkBuildProbe, bias } = await getMultitrackContext(rate, confirmCollision);
+  const { project, audioContext, tapes, sdkBuildProbe, buildFeatures, bias } = await getMultitrackContext(rate, confirmCollision);
   onBuildProbe(sdkBuildProbe);
   console.log("[recording-alignment-audit] multitrack confirmCollision=" + String(confirmCollision));
 
@@ -1504,11 +1519,11 @@ async function runMultitrackAudit(
       const baseScenario = MULTITRACK_BASE_SCENARIO[scenario];
       const tapeAClass: CellClassification =
         repeats.length > 0
-          ? classifyCell(repeats.map((r) => r.alignmentA), signatureBandsFor(baseScenario, sdkBuildProbe, runToken), ALIGNED_TOLERANCE_MS)
+          ? classifyCell(repeats.map((r) => r.alignmentA), signatureBandsFor(baseScenario, sdkBuildProbe, runToken, buildFeatures), ALIGNED_TOLERANCE_MS)
           : { status: "investigate", matchedSignature: null, detail: "no successful repeats to classify (tape a)" };
       const tapeBClass: CellClassification =
         repeats.length > 0
-          ? classifyCell(repeats.map((r) => r.alignmentB), signatureBandsFor(baseScenario, sdkBuildProbe, runToken), ALIGNED_TOLERANCE_MS)
+          ? classifyCell(repeats.map((r) => r.alignmentB), signatureBandsFor(baseScenario, sdkBuildProbe, runToken, buildFeatures), ALIGNED_TOLERANCE_MS)
           : { status: "investigate", matchedSignature: null, detail: "no successful repeats to classify (tape b)" };
       const verdict = classifyMultitrackCell(tapeAClass, tapeBClass, repeats.map((r) => r.skew));
       // Persisted for EVERY cell, all-error cells included (no skew signature
@@ -1538,7 +1553,7 @@ async function runMultitrackAudit(
   }
 
   setAuditState("uploading");
-  await uploadMultitrackSummary(allRows, rate, sdkBuildProbe, bias, audioContext.baseLatency, cellSkews, cellVerdicts, wavUploadFailures, runToken, confirmCollision);
+  await uploadMultitrackSummary(allRows, rate, sdkBuildProbe, buildFeatures, bias, audioContext.baseLatency, cellSkews, cellVerdicts, wavUploadFailures, runToken, confirmCollision);
   setAuditState("done");
 }
 

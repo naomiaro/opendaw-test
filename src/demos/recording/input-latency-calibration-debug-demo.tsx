@@ -84,6 +84,7 @@ import "@radix-ui/themes/styles.css";
 import { CaptureAudio, type Project } from "@opendaw/studio-core";
 import { InstrumentFactories, type AudioUnitBoxAdapter } from "@opendaw/studio-adapters";
 import type { AudioUnitBox } from "@opendaw/studio-boxes";
+import { detectBuildFeatures } from "@/lib/audit/buildFeatures";
 import { installLoopbackCapture, LOOPBACK_DEVICE_ID } from "@/lib/audit/loopbackInjection";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { withDeadline } from "@/lib/deadline";
@@ -92,6 +93,7 @@ import {
   ALIGNED_TOLERANCE_MS,
   REPEATS_PER_CELL,
   signatureBandsFor,
+  type AuditBuildFeature,
 } from "@/lib/audit/recordingAuditCalibration";
 import type { AuditRow, SdkBuildProbe } from "@/lib/audit/recordingAuditArtifacts";
 import {
@@ -259,6 +261,8 @@ interface CalibrationSummary {
   rate: number;
   bpm: number;
   sdkBuildProbe: SdkBuildProbe;
+  /** Which SDK surfaces this build exposes — see src/lib/audit/buildFeatures.ts. */
+  buildFeatures: AuditBuildFeature[];
   deviceId: string;
   /** audioContext.outputLatency, read once after output started (resolveHarnessPathBias). */
   outputLatency: number;
@@ -400,6 +404,7 @@ interface CalibrationContext {
   unitAdapter: AudioUnitBoxAdapter;
   deviceId: string;
   sdkBuildProbe: SdkBuildProbe;
+  buildFeatures: AuditBuildFeature[];
   bias: HarnessPathBias;
 }
 
@@ -427,6 +432,8 @@ async function createContext(rate: number, bpm: number): Promise<CalibrationCont
     engineTap: (node) => loopback.engineTap(node),
   });
   const sdkBuildProbe = detectSdkBuildProbe(project.engine);
+  const buildFeatures = detectBuildFeatures(project.engine);
+  console.log("[input-latency-calibration] buildFeatures=[" + buildFeatures.join(",") + "]");
   loopback.attach(audioContext);
   const bias = await resolveHarnessPathBias(audioContext);
 
@@ -448,7 +455,7 @@ async function createContext(rate: number, bpm: number): Promise<CalibrationCont
 
   const unitAdapter = project.rootBoxAdapter.audioUnits.adapters().find((u) => u.box === audioUnitBox);
   if (!unitAdapter) throw new Error("no audio unit adapter for tape");
-  return { project, audioContext, capture, calibrating, unitAdapter, deviceId, sdkBuildProbe, bias };
+  return { project, audioContext, capture, calibrating, unitAdapter, deviceId, sdkBuildProbe, buildFeatures, bias };
 }
 
 // Booted once per page load (`Workers.install` asserts on a second
@@ -513,7 +520,7 @@ async function runCalibrationAudit(cb: RunCallbacks): Promise<void> {
   const armState = resolveArmState(params.get("armState"));
   const runToken = Date.now();
 
-  const { project, audioContext, capture, calibrating, unitAdapter, deviceId, sdkBuildProbe, bias } =
+  const { project, audioContext, capture, calibrating, unitAdapter, deviceId, sdkBuildProbe, buildFeatures, bias } =
     await getContext(rate, bpm);
   cb.onBuildProbe(sdkBuildProbe);
   console.log(
@@ -703,7 +710,7 @@ async function runCalibrationAudit(cb: RunCallbacks): Promise<void> {
   const alignments: TakeAlignment[] = repeats.flatMap((r) => r.alignments.map((a) => a.alignment));
   const classification: CellClassification =
     alignments.length > 0
-      ? classifyCell(alignments, signatureBandsFor(CELL_SCENARIO, sdkBuildProbe, runToken), ALIGNED_TOLERANCE_MS)
+      ? classifyCell(alignments, signatureBandsFor(CELL_SCENARIO, sdkBuildProbe, runToken, buildFeatures), ALIGNED_TOLERANCE_MS)
       : { status: "investigate", matchedSignature: null, detail: "no successful repeats to classify" };
   const cellRows = repeats.flatMap((r) => r.rows);
   for (const row of cellRows) {
@@ -764,7 +771,7 @@ async function runCalibrationAudit(cb: RunCallbacks): Promise<void> {
   await uploadSummary({
     schemaVersion: CALIBRATION_SCHEMA_VERSION,
     kind: "input-latency-calibration-ground-truth",
-    runToken, rate, bpm, sdkBuildProbe, deviceId,
+    runToken, rate, bpm, sdkBuildProbe, buildFeatures, deviceId,
     outputLatency: bias.valueSec,
     baseLatency: audioContext.baseLatency,
     harnessPathBiasSec: bias.valueSec,

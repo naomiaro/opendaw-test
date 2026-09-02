@@ -31,8 +31,9 @@ console.log("=== Final-head standing sweep, re-classified per build profile ==="
 for (const rate of [48000, 44100] as const) {
   const runId = SWEEPS[rate];
   const summary = loadSummary(runId);
-  const profile = profileKeyFor(summary.sdkBuildProbe, Number(runId));
-  console.log(`\nrun ${runId} — rate ${rate}, probe ${summary.sdkBuildProbe}, profile ${profile}, ` +
+  const profile = profileKeyFor(summary.sdkBuildProbe, Number(runId), summary.buildFeatures);
+  const features = summary.buildFeatures ? `[${summary.buildFeatures.join(",")}]` : "(none persisted — run-token fallback)";
+  console.log(`\nrun ${runId} — rate ${rate}, probe ${summary.sdkBuildProbe}, features ${features}, profile ${profile}, ` +
     `outputLatency ${summary.outputLatencySec ?? "n/a"}, rows ${summary.rows.length}`);
   for (const scenario of RECORDING_AUDIT_SCENARIOS) for (const bpm of RECORDING_AUDIT_BPMS) {
     const pop = cellPopulation(summary.rows, scenario, bpm) as AuditRow[];
@@ -48,7 +49,7 @@ for (const rate of [48000, 44100] as const) {
       continue;
     }
     const repeats: TakeAlignment[] = classified.map((r) => asClassifiable(r));
-    const cls = classifyCell(repeats, signatureBandsFor(scenario, summary.sdkBuildProbe, Number(runId)), ALIGNED_TOLERANCE_MS);
+    const cls = classifyCell(repeats, signatureBandsFor(scenario, summary.sdkBuildProbe, Number(runId), summary.buildFeatures), ALIGNED_TOLERANCE_MS);
     bump(cls.status);
     const medians = usable.map((r) => r.medianBeatErrorMsAdjusted);
     const spread = Math.max(...medians) - Math.min(...medians);
@@ -62,7 +63,7 @@ for (const rate of [48000, 44100] as const) {
 
 console.log("\n=== Multitrack cells (verdicts are the page's own; skew has no band) ===");
 const mt = loadMultitrackSummary(MULTITRACK);
-console.log(`run ${MULTITRACK} — rate ${mt.rate}, probe ${mt.sdkBuildProbe}, profile ${profileKeyFor(mt.sdkBuildProbe, Number(MULTITRACK))}`);
+console.log(`run ${MULTITRACK} — rate ${mt.rate}, probe ${mt.sdkBuildProbe}, profile ${profileKeyFor(mt.sdkBuildProbe, Number(MULTITRACK), mt.buildFeatures)}`);
 for (const verdict of mt.cellVerdicts) {
   const rows = mt.rows.filter((r) => r.scenario === verdict.scenario && r.bpm === verdict.bpm);
   const skews = rows.map((r) => r.medianSkewMs).filter((s): s is number => s !== null);

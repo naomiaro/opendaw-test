@@ -31,17 +31,22 @@ export function isMultitrackScenario(value: string): value is MultitrackScenario
  * can never classify against an empty band list and land a spurious `aligned` /
  * `investigate`.
  *
- * `build` is the value the artifact persists as `sdkBuildProbe` and `runId` its
- * run token, so a run is judged against the bands of the build it was measured
- * on (see `profileKeyFor` for why both are needed). Omitting either selects the
- * `upstream` profile: every call site that predates per-build profiles keeps
- * the behaviour it had.
+ * `features` is the artifact's persisted `buildFeatures` list and decides the
+ * profile on its own; `build`/`runId` are the fallback for artifacts written
+ * before that field existed (see `profileKeyFor`). Passing none of them selects
+ * the `upstream` profile, so every call site that predates per-build profiles
+ * keeps the behaviour it had.
  */
-export function signatureBandsFor(scenario: string, build?: string | null, runId?: number | null): SignatureBand[] {
+export function signatureBandsFor(
+  scenario: string,
+  build?: string | null,
+  runId?: number | null,
+  features?: readonly string[] | null
+): SignatureBand[] {
   if (!isRecordingScenario(scenario)) {
     throw new Error(`no signature bands for unknown scenario "${scenario}" (known: ${RECORDING_AUDIT_SCENARIOS.join(", ")})`);
   }
-  return RECORDING_AUDIT_PROFILES[profileKeyFor(build, runId)].signatureBands[scenario];
+  return RECORDING_AUDIT_PROFILES[profileKeyFor(build, runId, features)].signatureBands[scenario];
 }
 export const REPEATS_PER_CELL = 3;
 export const JANK_MS = 150;
@@ -123,20 +128,55 @@ export const SIGNATURE_BANDS: Record<RecordingScenario, SignatureBand[]> = {
 export type AuditBuildProfileKey = "upstream" | "candidate";
 
 /**
- * First run token measured on the keep-alive build. The build probe alone
- * cannot select the profile: `sdkBuildProbe` reads `candidate` for EVERY branch
- * build the campaign has measured, including Task 9's recording-start-alignment
- * branch, whose runs the register quotes and which must keep classifying against
- * bands A-D. The run token (the envelope's `Date.now()` filename id) separates
- * them — the last pre-keep-alive run in this campaign is 1788383997913 and the
- * first keep-alive run is 1788384874160 — the same device
- * `ABSOLUTE_GRID_FROM_RUN` uses in recordingAuditArtifacts.ts for the beat-grid
- * change. A caller that passes no run id gets `upstream`, so every call site
- * predating per-build profiles is unchanged and no historical output moves.
+ * SDK surfaces the harness probes at load and persists per run (`buildFeatures`
+ * on the envelope), so a profile follows what the served build actually exposes
+ * instead of when the run happened:
+ *  - `recordingStart`: the engine's one-shot audio-thread report of where and
+ *    when recording began (the recording start-alignment fix).
+ *  - `calibrateInputLatency`: the loopback calibration on `CaptureAudio`.
+ *  - `latencyProbes`: `LatencyProbes` exported from `@opendaw/lib-dsp` (the
+ *    configurable calibration probe).
+ * Detection lives in `src/lib/audit/buildFeatures.ts`; this module only reasons
+ * about the persisted names, so it stays free of SDK imports for the Node
+ * scripts.
+ */
+export type AuditBuildFeature = "recordingStart" | "calibrateInputLatency" | "latencyProbes";
+
+/**
+ * Fallback for artifacts written BEFORE `buildFeatures` existed. The build probe
+ * alone cannot select their profile: `sdkBuildProbe` reads `candidate` for every
+ * branch build the campaign has measured, Task 9's recording start-alignment
+ * branch included, whose runs the register quotes and which must keep
+ * classifying against bands A-D. The run token separates those from the
+ * keep-alive era — the last pre-keep-alive run is 1788383997913 and the first
+ * keep-alive run is 1788384874160 — the same device `ABSOLUTE_GRID_FROM_RUN`
+ * uses in recordingAuditArtifacts.ts for the beat-grid change. New runs never
+ * reach this rule; they carry the feature list.
  */
 export const KEEP_ALIVE_PROFILE_FROM_RUN = 1788384000000;
 
-export function profileKeyFor(build: string | null | undefined, runId?: number | null): AuditBuildProfileKey {
+/**
+ * Which band table an artifact is judged against.
+ *
+ * With `features` present the answer is a property of the served build:
+ * `calibrateInputLatency` means the calibration branch, whose measured
+ * behaviour bands E/F describe. Without it, the run-token fallback above
+ * applies, and a caller passing neither gets `upstream` — so every call site
+ * predating per-build profiles is unchanged and no historical output moves.
+ *
+ * Known limit: the flag cannot separate the calibration branch's own builds
+ * from one another, so a future run on a PRE-keep-alive calibration build would
+ * be judged against E/F. Every such run this campaign made predates
+ * `buildFeatures` and therefore takes the run-token path instead.
+ */
+export function profileKeyFor(
+  build: string | null | undefined,
+  runId?: number | null,
+  features?: readonly string[] | null
+): AuditBuildProfileKey {
+  if (Array.isArray(features)) {
+    return features.includes("calibrateInputLatency") ? "candidate" : "upstream";
+  }
   const isKeepAliveEra = typeof runId === "number" && Number.isFinite(runId) && runId >= KEEP_ALIVE_PROFILE_FROM_RUN;
   return build === "candidate" && isKeepAliveEra ? "candidate" : "upstream";
 }
@@ -149,13 +189,19 @@ export interface RecordingAuditProfile {
 }
 
 /**
- * DESCRIPTIVE bands for the calibration branch's keep-alive build, derived from
- * this repo's own sweep on that build — NOT predictions, unlike the `upstream`
- * table above. Stated plainly because it changes what a match means: a cell
- * matching E or F says "this build behaved the way it was measured to behave
- * here", not "this cell reproduced a defect predicted in advance". The register
- * decides what that is worth; the classifier only needs to stop reporting
- * `investigate` for behaviour that is now characterised.
+ * DESCRIPTIVE bands for the calibration branch's keep-alive build.
+ *
+ * READ THIS BEFORE QUOTING A MATCH. Bands A-D above are PREDICTIONS: the
+ * campaign spec wrote them before the data existed, so a cell matching one
+ * reproduced a defect that had been predicted in advance. Bands E and F are the
+ * opposite — they were FITTED to the very runs they now classify, by taking the
+ * measured range of those runs and rounding it outward. A cell matching E or F
+ * therefore says only "this build behaved within the range it was measured to
+ * behave in here"; it is close to tautological on the source runs themselves and
+ * carries no predictive content until a run the bands did not come from matches
+ * them. The classifier needs them so it stops reporting `investigate` for
+ * behaviour that is now characterised; the register must not present a match as
+ * a reproduced prediction.
  *
  * Source data — full standing sweep on SDK `3484e3265`, both rates, both bpms,
  * 3 repeats, run tokens `1788386290685` (48 kHz) and `1788386775464`

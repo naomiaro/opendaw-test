@@ -44,7 +44,7 @@ import type { CellStatus, CrossTrackSkew, SignatureBand } from "./recordingAlign
 // scripts' import chain (type stripping resolves nothing without it).
 import {
   isMultitrackScenario, isRecordingScenario,
-  type MultitrackScenario, type RecordingScenario,
+  type AuditBuildFeature, type MultitrackScenario, type RecordingScenario,
 } from "./recordingAuditCalibration.ts";
 
 /** Written into every new envelope. 1 = every legacy file (inferred, never persisted). */
@@ -174,6 +174,10 @@ interface SummaryBase {
   beatGrid: BeatGrid;
   rate: number;
   sdkBuildProbe: SdkBuildProbe;
+  /** Which SDK surfaces the served build exposed at load — see
+   *  `src/lib/audit/buildFeatures.ts`. Absent on every envelope written before
+   *  the field existed; `profileKeyFor` falls back to the run token there. */
+  buildFeatures?: AuditBuildFeature[];
   outputLatency: number;
   baseLatency: number;
   /** The bias every row's `medianBeatErrorMsAdjusted` was computed with (equals
@@ -224,6 +228,8 @@ export interface LoadedAuditSummary {
   beatGridSource: "persisted" | "run-id-cutoff";
   /** "unknown" for G1, where the build was not recorded. */
   sdkBuildProbe: SdkBuildProbe;
+  /** null when the envelope predates the field — see `buildFeatures` above. */
+  buildFeatures: AuditBuildFeature[] | null;
   rate: number;
   alignedToleranceMs: number;
   /** null when the run predates `outputLatency` persistence (G1, G2). */
@@ -250,6 +256,8 @@ export interface LoadedMultitrackAuditSummary {
   beatGrid: BeatGrid;
   beatGridSource: "persisted" | "run-id-cutoff";
   sdkBuildProbe: SdkBuildProbe;
+  /** null when the envelope predates the field — see `buildFeatures` above. */
+  buildFeatures: AuditBuildFeature[] | null;
   rate: number;
   alignedToleranceMs: number;
   skewToleranceMs: number;
@@ -286,6 +294,16 @@ function probeOf(top: Record<string, unknown>): SdkBuildProbe {
   if (v === "candidate" || v === "upstream" || v === "unknown") return v;
   if (v === undefined) return "unknown"; // G1: the build was not recorded
   throw new Error(`recaudit summary: unexpected sdkBuildProbe ${JSON.stringify(v)}`);
+}
+
+/** The persisted feature list, or null on an envelope written before the field. */
+function buildFeaturesOf(top: Record<string, unknown>, runId: number): AuditBuildFeature[] | null {
+  const v = top.buildFeatures;
+  if (v === undefined) return null;
+  if (!Array.isArray(v) || v.some((entry) => typeof entry !== "string")) {
+    throw new Error(`recaudit summary ${runId}: "buildFeatures" is not an array of strings`);
+  }
+  return v as AuditBuildFeature[];
 }
 
 function beatGridOf(top: Record<string, unknown>, runId: number): { beatGrid: BeatGrid; beatGridSource: LoadedAuditSummary["beatGridSource"] } {
@@ -342,6 +360,7 @@ export function parseAuditSummary(json: unknown, runId: number): LoadedAuditSumm
     schemaVersion,
     ...beatGridOf(json, runId),
     sdkBuildProbe: probeOf(json),
+    buildFeatures: buildFeaturesOf(json, runId),
     rate: requireNumber(json, "rate", runId),
     alignedToleranceMs: requireNumber(json, "alignedToleranceMs", runId),
     outputLatencySec,
@@ -373,6 +392,7 @@ export function parseMultitrackAuditSummary(json: unknown, runId: number): Loade
     schemaVersion: optionalNumber(json, "schemaVersion") ?? 1,
     ...beatGridOf(json, runId),
     sdkBuildProbe: probeOf(json),
+    buildFeatures: buildFeaturesOf(json, runId),
     rate: requireNumber(json, "rate", runId),
     alignedToleranceMs: requireNumber(json, "alignedToleranceMs", runId),
     skewToleranceMs: requireNumber(json, "skewToleranceMs", runId),
