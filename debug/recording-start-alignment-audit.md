@@ -2084,7 +2084,10 @@ here because the punch-in case is where a user would notice it first.
 ## Task 7c fix round 1: verdict re-derived on the absolute grid
 
 Live runs made in this fix round, all on the installed SDK with no build override (build
-probe reads `upstream` on every one):
+probe reads `upstream` on every one). Every one was started from a FRESH page load — a
+navigation, never a Vite HMR reload or an in-page "Re-run" — and no `src/` file was edited
+while any cell was running; the harness's own measurement code was unchanged from the
+commit that precedes the first run through the last:
 
 | run | cell(s) | purpose |
 |---|---|---|
