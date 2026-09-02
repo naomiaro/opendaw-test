@@ -51,6 +51,9 @@ export interface ProjectSetupOptions {
    * constructor, which surfaces as an initialization failure.
    */
   audioContextSampleRate?: number;
+
+  /** Called with the engine worklet node right after it connects to the destination (audit taps). */
+  engineTap?: (engineNode: AudioNode) => void;
 }
 
 /**
@@ -92,7 +95,7 @@ export interface ProjectSetupResult {
  * ```
  */
 export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Promise<ProjectSetupResult> {
-  const { localAudioBuffers, bpm = 120, onStatusUpdate, audioContextSampleRate } = options;
+  const { localAudioBuffers, bpm = 120, onStatusUpdate, audioContextSampleRate, engineTap } = options;
 
   console.log("========================================");
   console.log("openDAW -> headless -> initializing");
@@ -270,8 +273,10 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
 
   onStatusUpdate?.("Starting engine...");
 
-  // Start audio worklet and wait for engine to be ready
-  project.startAudioWorklet();
+  // Start audio worklet and wait for engine to be ready. startAudioWorklet() connects the
+  // worklet to audioContext.destination output 0 internally (Project.js) before returning it.
+  const engineWorklet = project.startAudioWorklet();
+  engineTap?.(engineWorklet);
   // engine.isReady() resolves once the worklet reports ready, or HANGS forever — it never
   // rejects. A processor that compiles cleanly but throws during worklet construction
   // (e.g. inside processorOptions handling) would otherwise stick every page at "Starting

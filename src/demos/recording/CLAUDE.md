@@ -344,6 +344,17 @@ directly, but no signal reaches capture), and a shared dest stream dies once any
 consumer calls `track.stop()` (tape disarm/remove). Verify capture with the real mic;
 the engine faithfully renders silence as flat peaks (that's correct, not a bug).
 
+**Verified exception (SAME-context only):** a `MediaStreamAudioDestinationNode`
+created in the SAME `AudioContext` the engine captures into works — measured
+rms=0.074515 (14.9x the 0.005 pass threshold) on a 4s take recorded through it. Hand
+out `stream.clone()` per `getUserMedia` call so a consumer's `track.stop()` (tape
+disarm/remove) can't kill the source stream — see `src/lib/audit/loopbackInjection.ts`.
+Note: the SDK's take-region creation is gated on `engine.position` actually advancing
+(`RecordAudio.js`'s `fileBox.isEmpty()` branch, driven by
+`engine.position.catchupAndSubscribe`) — the documented transport-position-start delay
+(see `src/demos/engine/CLAUDE.md`) can produce a "0 regions" result unrelated to
+capture routing; poll `engine.position`/`isRecording` if a recording produces no take.
+
 ### Monitoring Peaks Across Recording Lifecycle
 Run the peaks AnimationFrame unconditionally for the component's lifetime — do NOT
 gate it on recording/session state. A state gate can miss batched transitions (see
@@ -364,6 +375,71 @@ useEffect(() => {
 }, [project]);
 ```
 Reference implementation: `src/demos/recording/useTapePeaks.ts`.
+
+### Recording Start-Alignment Harness (standing regression sweep)
+
+Unlisted debug demo that measures where a recorded take actually lands on the timeline,
+against a synthetic in-context digital loopback (no real mic, no device latency):
+
+```
+recording-alignment-audit-debug-demo.html?scenario=<name|all>&bpm=<n|all>&rate=<44100|48000>
+```
+
+Scenarios: `nominal-start`, `janked-start`, `midtimeline-start`, `countin-start`,
+`loop-wrap`, plus `multitrack-start` / `multitrack-janked` for two simultaneously armed
+tapes (`?scenario=multitrack-all`). `?scenario=probe` runs the loopback feasibility
+probe instead of the matrix.
+
+**After SDK upgrades, re-run `?scenario=all&bpm=all&rate=48000` and `…&rate=44100`,
+then `?scenario=multitrack-all&bpm=120&rate=48000`** — same standing-sweep role as the
+sample-rate/quantum-alignment sweep in root CLAUDE.md's Build & Verification.
+
+- Measurement library: `src/lib/audit/recordingAlignment.ts`; calibration constants:
+  `src/lib/audit/recordingAuditCalibration.ts`; loopback injection:
+  `src/lib/audit/loopbackInjection.ts`; persisted row/envelope contract and the
+  schema-generation table (G1-G6) with the one loader the offline scripts use:
+  `src/lib/audit/recordingAuditArtifacts.ts` (+ `scripts/audit/recording-alignment/artifacts.ts`).
+  Envelopes written now carry `schemaVersion: 2`, `beatGrid: "absolute"`, `cellVerdicts`
+  (one record per attempted cell, all-error cells included), `wavUploadFailures`,
+  `harnessPathBiasSettleMs`; rows carry `harnessPathBiasSec` (the run-wide value they
+  were adjusted with, read ONCE after output started — never Chrome's initial 0) and
+  `wavName`/`wavUploadError`. Legacy files are mapped by the loader, never rewritten.
+- The engine boots once per page load (`Workers.install` asserts on a second
+  `initializeOpenDAW`): "Re-run" on the matrix/multitrack pages re-runs the matrix on the
+  cached project/tape(s) under a fresh run token; the probe page is one-shot.
+- Campaign register (baselines, prediction outcomes, every known defect and harness
+  gap): `debug/recording-start-alignment-audit.md`. Upstream outcome: PR
+  andremichelle/openDAW#376 (the reworked fix), issues #374 (residual start-placement
+  bias) and #375 (simultaneous-take `AudioFileBox` collision) — re-verify the sweep and
+  re-target the build probe when a release ships #376.
+- Runs upload `recaudit-summary-<timestamp>.json` / `recaudit-mt-summary-<timestamp>.json`
+  plus one WAV per repeat into `.verify-output/` via the dev server's `/__verify` sink.
+  Capture WAV names carry the build probe and a per-run token — do NOT join a summary
+  row to a WAV by filename alone, that collided silently before the token existed.
+- Take placement is judged on the project's **absolute** beat grid (integer multiples of
+  the beat period from timeline zero), not a region-anchored one. A region-anchored grid
+  manufactures a phantom expected beat whenever no click was captured before the region
+  start, which reads as a false content loss on every punch-in take.
+- Known reasons a run loses repeats, neither a harness bug: `loop-wrap` finalization
+  times out at a high rate on the installed SDK, and two simultaneous takes of
+  byte-identical audio collide on the content-addressed `AudioFileBox` uuid. Both are
+  characterized in the register.
+- Start the transport with a REAL click and keep the window visible — see root
+  CLAUDE.md's browser-automation notes.
+- Build probe: the page labels each run `candidate` when the live `project.engine`
+  exposes `recordingStart` (an ObservableOption — the engine's one-shot audio-thread
+  report of where and when recording began, from the reworked upstream fix) and
+  `upstream` otherwise; the label lands in the summary's `sdkBuildProbe` and in every
+  WAV name. Once the installed SDK ships `recordingStart`, the plain server will read
+  `candidate` too — re-target the marker (`detectSdkBuildProbe`) at that upgrade.
+  Rows also persist `firstQuantumTimeSec` (branch builds only); `firstQuantumTimeSec −
+  anchorT0Sec` is the loopback path's own input delay for that row.
+- Finalization probe, persisted per row on every build: `finalizeNumberOfFramesAtStop`,
+  `finalizeLimitCalls`, `finalizeNumberOfFramesAtLimit`, `finalizeOvershootFrames`,
+  `finalizeNumberOfFramesAfter`, `finalizeLoaderState`. The harness patches `limit()` on
+  the take's live `RecordingWorklet` instance before it calls `stopRecording()`; a hung
+  finalization is an empty `finalizeLimitCalls` with `finalizeLoaderState: "record"`, and
+  an error row carries the probe of the repeat that failed.
 
 ## Reference Files
 - Recording demo: `src/demos/recording/recording-api-react-demo.tsx`

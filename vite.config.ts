@@ -63,14 +63,25 @@ const verifySink = (): Plugin => ({
     },
 })
 
+// A/B mechanism for the recording-alignment-audit harness (see recording-alignment-audit-debug-demo.tsx):
+// when set to a directory laid out like node_modules (<dir>/@opendaw/<pkg>/{package.json,dist}),
+// re-points @opendaw/* module resolution AND the wasm-engine dev asset route at it, so the same
+// harness page can be run against two different SDK builds for A/B comparison.
+// Dev-server only: the alias below is gated on `command === "serve"` so a production build
+// never pairs override JS with the installed WASM assets wasmEngineEmit reads from WASM_DIST.
+const sdkDistOverride = process.env.SDK_DIST_OVERRIDE
+
 // Serves the WASM engine artifacts shipped in @opendaw/studio-core-wasm's dist/ under
-// /wasm-engine (dev: middleware straight from node_modules; build: emitFile the wasm/ tree).
-// Nothing binary is committed; loadEngineModules(base="/wasm-engine") fetches
-// /wasm-engine/wasm/engine.wasm + /wasm-engine/wasm/plugins/device_*.wasm.
+// /wasm-engine (dev: middleware straight from node_modules, or SDK_DIST_OVERRIDE when set;
+// build: emitFile the wasm/ tree). Nothing binary is committed; loadEngineModules(base="/wasm-engine")
+// fetches /wasm-engine/wasm/engine.wasm + /wasm-engine/wasm/plugins/device_*.wasm.
 const WASM_DIST = resolve(__dirname, "node_modules/@opendaw/studio-core-wasm/dist")
+// Dev-only asset root — wasmEngineEmit (build-only, below) always reads from WASM_DIST regardless
+// of the override, since SDK_DIST_OVERRIDE is a dev-server-only mechanism.
+const WASM_DEV_DIST = sdkDistOverride ? resolve(sdkDistOverride, "@opendaw/studio-core-wasm/dist") : WASM_DIST
 // Dev serves ONLY the wasm/ subtree the build emits, so dev and prod expose the same surface
 // (the processor/offline-worker URLs are handled by Vite's own ?url pipeline, not this middleware).
-const WASM_SERVE_ROOT = resolve(WASM_DIST, "wasm")
+const WASM_SERVE_ROOT = resolve(WASM_DEV_DIST, "wasm")
 const MIME: Record<string, string> = {".wasm": "application/wasm", ".js": "text/javascript", ".map": "application/json"}
 
 const wasmEngineAssets = (): Plugin => ({
@@ -81,7 +92,7 @@ const wasmEngineAssets = (): Plugin => ({
             // Runs outside connect's try/catch — a sync throw kills the dev server.
             try {
                 const rel = (req.url ?? "/").split("?")[0].replace(/^\/+/, "")
-                const file = resolve(WASM_DIST, rel)
+                const file = resolve(WASM_DEV_DIST, rel)
                 if (!(file === WASM_SERVE_ROOT || file.startsWith(WASM_SERVE_ROOT + sep)) || !existsSync(file) || !statSync(file).isFile()) {
                     return next()
                 }
@@ -123,14 +134,17 @@ const certKeyPath = "localhost-key.pem"
 const certPath = "localhost.pem"
 const hasLocalCerts = existsSync(certKeyPath) && existsSync(certPath)
 
-export default defineConfig({
+export default defineConfig(({command}) => ({
     // For GitHub Pages deployment: set base to '/repo-name/' or use env variable
     // For local dev and production on custom domain, use '/'
     base: process.env.VITE_BASE_PATH || '/',
     resolve: {
-        alias: {
-            "@": resolve(__dirname, "./src")
-        }
+        alias: [
+            {find: "@", replacement: resolve(__dirname, "./src")},
+            ...(sdkDistOverride && command === "serve"
+                ? [{find: /^@opendaw\/(.+)$/, replacement: resolve(sdkDistOverride, "@opendaw") + "/$1"}]
+                : [])
+        ]
     },
     build: {
         rollupOptions: {
@@ -175,6 +189,7 @@ export default defineConfig({
                 wasmEnsureReadySecondContextDebug: resolve(__dirname, "wasm-ensure-ready-second-context-debug-demo.html"),
                 automationSimplifierDebug: resolve(__dirname, "automation-simplifier-debug-demo.html"),
                 samplerateAudit: resolve(__dirname, "samplerate-audit-debug-demo.html"),
+                recordingAlignmentAudit: resolve(__dirname, "recording-alignment-audit-debug-demo.html"),
                 wasmEngine: resolve(__dirname, "wasm-engine-demo.html"),
                 modulation: resolve(__dirname, "modulation-demo.html"),
                 convolver: resolve(__dirname, "convolver-demo.html"),
@@ -230,4 +245,4 @@ export default defineConfig({
         wasmEngineAssets(),
         wasmEngineEmit()
     ]
-})
+}))
