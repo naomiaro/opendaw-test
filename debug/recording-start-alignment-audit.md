@@ -79,11 +79,16 @@ the Task 7 override build layout no longer exists on disk.
 
 ### Key findings
 
-1. **No-count-in start-placement bias — the campaign's primary finding.** Every
-   scenario without a count-in offset places its take EARLY on the timeline. On the
-   fresh absolute-grid upstream baseline the per-cell means run **−34.97 to −52.51 ms
-   adjusted** across all 18 measurable cells (`…1788310164556.json`,
-   `…1788310817094.json`). Root-caused to `RecordAudio.ts:270-274`'s
+1. **Start-placement bias — the campaign's primary finding.** **Every** scenario
+   measured places its take EARLY on the timeline, count-in included. On the fresh
+   absolute-grid upstream baseline the per-cell means run **−34.97 to −52.51 ms
+   adjusted** across all 18 measurable cells — 4 `nominal-start`, 4 `countin-start`,
+   4 `janked-start`, 4 `midtimeline-start` and 2 `loop-wrap`
+   (`…1788310164556.json`, `…1788310817094.json`) — and the most negative single take
+   in that baseline is a **`countin-start`** row (`…1788310817094`, 120 bpm r3,
+   −59.33 ms). The counted-in branch subtracts `countInSeconds` but not the
+   worklet-connect gap, so it carries the same signature as the rest.
+   Root-caused to `RecordAudio.ts:270-274`'s
    `headStartSeconds = wallclockSinceWorklet`, decomposed into three additive terms in
    "Bring-up calibration": a harness-path `audioContext.outputLatency` term (23 ms at
    both rates, out of scope per design spec §2), the dominant uncompensated
@@ -198,7 +203,7 @@ explainably fix:
 
 | draft | finding |
 |---|---|
-| `issue-residual-start-placement-bias.md` | the no-count-in placement bias on all five scenarios, with the three-term decomposition, the fresh-upstream signature per scenario, and the post-fix residual per scenario (Predictions B and D's measured outcomes both live here) |
+| `issue-residual-start-placement-bias.md` | the start-placement bias on all five scenarios, count-in included, with the three-term decomposition, the fresh-upstream signature per scenario, and the post-fix residual per scenario (Predictions B and D's measured outcomes both live here) |
 | `issue-loop-wrap-finalization-hang.md` | C2, filed on its own footing — resolved in the candidate data, mechanism unexplained |
 | `issue-punch-in-head-loss.md` | the request-to-first-frame capture gap, present on every scenario, unchanged by the candidate fix |
 | `issue-take-collision.md` | Task 7b Finding 1, the deterministic content-address collision |
@@ -811,8 +816,8 @@ live loader for future live-inspection.
 - **`midtimeline-start` (both bpms, both rates, all repeats): candidate new issue**,
   distinct from `nominal-start`'s. **[WITHDRAWN in Task 7c — the distinguishing
   `missing=1` is a harness grid artifact; on the absolute grid `midtimeline-start`
-  collapses into the same no-count-in placement bias as every other scenario. See
-  "Task 7c fix round 1".]** The consistent `missing=1` beat plus large negative
+  collapses into the same start-placement bias as every other scenario, count-in
+  included. See "Task 7c fix round 1".]** The consistent `missing=1` beat plus large negative
   median is the A-mechanism (region.position anchored at first-observed position while
   the transport was already running) COMPOUNDED with the same B-mechanism bias
   measured above (count-in is off, so `nominal-start`'s bias term is present too, on
@@ -2262,7 +2267,8 @@ the same runs (`nominal-start` −38.96 to −53.44, `janked-start` −50.65 to
 −58.75, `countin-start` −55.40 to −56.12, `loop-wrap` −36.23 to −77.54).
 Once the grid artifact is removed, **`midtimeline-start` stops being a
 distinct finding and collapses into the campaign's Finding 1 — the universal
-no-count-in placement bias**. It is not a separate content-skip defect.
+start-placement bias, which every scenario carries, count-in included**. It is not a
+separate content-skip defect.
 
 Two consequences for the register above. Its numbers are not rewritten — they stand as
 what was measured under the region-anchored grid — but every contaminated passage
