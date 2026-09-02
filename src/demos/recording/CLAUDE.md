@@ -376,6 +376,44 @@ useEffect(() => {
 ```
 Reference implementation: `src/demos/recording/useTapePeaks.ts`.
 
+### Recording Start-Alignment Harness (standing regression sweep)
+
+Unlisted debug demo that measures where a recorded take actually lands on the timeline,
+against a synthetic in-context digital loopback (no real mic, no device latency):
+
+```
+recording-alignment-audit-debug-demo.html?scenario=<name|all>&bpm=<n|all>&rate=<44100|48000>
+```
+
+Scenarios: `nominal-start`, `janked-start`, `midtimeline-start`, `countin-start`,
+`loop-wrap`, plus `multitrack-start` / `multitrack-janked` for two simultaneously armed
+tapes (`?scenario=multitrack-all`). `?scenario=probe` runs the loopback feasibility
+probe instead of the matrix.
+
+**After SDK upgrades, re-run `?scenario=all&bpm=all&rate=48000` and `…&rate=44100`,
+then `?scenario=multitrack-all&bpm=120&rate=48000`** — same standing-sweep role as the
+sample-rate/quantum-alignment sweep in root CLAUDE.md's Build & Verification.
+
+- Measurement library: `src/lib/audit/recordingAlignment.ts`; calibration constants:
+  `src/lib/audit/recordingAuditCalibration.ts`; loopback injection:
+  `src/lib/audit/loopbackInjection.ts`.
+- Campaign register (baselines, prediction outcomes, every known defect and harness
+  gap): `debug/recording-start-alignment-audit.md`.
+- Runs upload `recaudit-summary-<timestamp>.json` / `recaudit-mt-summary-<timestamp>.json`
+  plus one WAV per repeat into `.verify-output/` via the dev server's `/__verify` sink.
+  Capture WAV names carry the build probe and a per-run token — do NOT join a summary
+  row to a WAV by filename alone, that collided silently before the token existed.
+- Take placement is judged on the project's **absolute** beat grid (integer multiples of
+  the beat period from timeline zero), not a region-anchored one. A region-anchored grid
+  manufactures a phantom expected beat whenever no click was captured before the region
+  start, which reads as a false content loss on every punch-in take.
+- Known reasons a run loses repeats, neither a harness bug: `loop-wrap` finalization
+  times out at a high rate on the installed SDK, and two simultaneous takes of
+  byte-identical audio collide on the content-addressed `AudioFileBox` uuid. Both are
+  characterized in the register.
+- Start the transport with a REAL click and keep the window visible — see root
+  CLAUDE.md's browser-automation notes.
+
 ## Reference Files
 - Recording demo: `src/demos/recording/recording-api-react-demo.tsx`
 - Loop recording demo: `src/demos/recording/loop-recording-demo.tsx`
