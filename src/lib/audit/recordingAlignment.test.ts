@@ -147,6 +147,57 @@ describe("measureTakeAlignment", () => {
     expect(a.medianBeatErrorMs).toBeNull();
     expect(a.medianBeatErrorMsAdjusted).toBeNull();
   });
+
+  it("numbers matched beats by their absolute timeline index, not from the region start", () => {
+    // Region starts at timeline 4.0s = beat 8 at 120bpm.
+    const a = measureTakeAlignment({
+      ...base, regionStartSec: 4.0, waveformOffsetSec: 0, regionDurationSec: 2.0,
+      lowOnsets: [0, 0.5, 1.0, 1.5], highOnsets: [],
+    });
+    expect(a.beatErrors.map((e) => e.beat)).toEqual([8, 9, 10, 11]);
+    expect(a.missingBeats).toBe(0);
+  });
+
+  // Task 7c: a take punched in while the transport already runs lands at an
+  // arbitrary off-beat position, and its first captured beat is up to a full
+  // beat period after the region start. A grid anchored at the region start
+  // manufactures a beat there that no capture can reach.
+  describe("take punched in mid-timeline (region start off the beat grid)", () => {
+    // Region at 4.045s — 45ms past beat 8 — running to 6.045s, so the beats
+    // inside the presented range are 9, 10, 11 and 12 (timeline 4.5 … 6.0s).
+    // Capture begins at the region start, putting beat 9 455ms into the buffer.
+    const midtimeline = {
+      ...base, regionStartSec: 4.045, waveformOffsetSec: 0, regionDurationSec: 2.0,
+    };
+    const capturedBeats = [0.455, 0.955, 1.455, 1.955]; // beats 9-12, perfectly placed
+
+    it("reports no missing beat when every beat inside the presented range was captured", () => {
+      const a = measureTakeAlignment({ ...midtimeline, lowOnsets: capturedBeats, highOnsets: [] });
+      expect(a.missingBeats).toBe(0);
+      expect(a.beatErrors.map((e) => e.beat)).toEqual([9, 10, 11, 12]);
+    });
+
+    it("reports ~0 error, not the region start's off-grid phase, for a correctly placed take", () => {
+      const a = measureTakeAlignment({ ...midtimeline, lowOnsets: capturedBeats, highOnsets: [] });
+      expect(Math.abs(a.medianBeatErrorMs!)).toBeLessThan(0.01);
+    });
+
+    it("still reports the real placement error when the take is genuinely misplaced", () => {
+      const late = capturedBeats.map((t) => t + 0.030);
+      const a = measureTakeAlignment({ ...midtimeline, lowOnsets: late, highOnsets: [] });
+      expect(a.medianBeatErrorMs!).toBeCloseTo(30, 1);
+      expect(a.missingBeats).toBe(0);
+    });
+
+    it("still catches a beat inside the presented range whose content never reached the buffer", () => {
+      // Beat 9's click is absent; beats 10 and 11 are present and correct.
+      const a = measureTakeAlignment({
+        ...midtimeline, lowOnsets: capturedBeats.slice(1), highOnsets: [],
+      });
+      expect(a.missingBeats).toBe(1);
+      expect(a.beatErrors.map((e) => e.beat)).toEqual([10, 11, 12]);
+    });
+  });
 });
 
 describe("classifyCell", () => {

@@ -29,8 +29,11 @@
  * from the box graph before calling in.
  *
  * Assumptions / non-goals (not exercised by the test suite):
- * - Beat matching assumes a constant `bpm` across the measured region (no
- *   tempo automation) — audit cells hold tempo fixed by construction.
+ * - Beat matching assumes a constant `bpm` from timeline zero through the end
+ *   of the measured region (no tempo automation) — the expected-beat grid is
+ *   absolute (multiples of the beat period from timeline zero), so a tempo
+ *   change anywhere BEFORE the region would shift the grid under it, not just
+ *   one inside the region. Audit cells hold tempo fixed by construction.
  * - `measureTakeAlignment` expects `lowOnsets`/`highOnsets` already
  *   onset-detected and band-split by the caller (see `onsetDetection.ts`,
  *   `bandSplit`) — it does no DSP of its own.
@@ -269,7 +272,13 @@ export interface TakeMeasurementInput {
 }
 
 export interface TakeAlignment {
-  beatErrors: { beat: number; errorMs: number }[]; // signed; beat 0 = region start
+  /**
+   * Signed placement error per matched beat. `beat` is the ABSOLUTE timeline
+   * beat index (position ÷ beat period from timeline zero), not an index
+   * counted from the region start — see `measureTakeAlignment`'s expected-beat
+   * derivation for why the grid is absolute.
+   */
+  beatErrors: { beat: number; errorMs: number }[];
   medianBeatErrorMs: number | null; // null when no beats matched
   /**
    * `medianBeatErrorMs + harnessPathBiasSec * 1000` — null exactly when the
@@ -288,15 +297,32 @@ export interface TakeAlignment {
 }
 
 /**
- * Measure a single take's alignment against the region's expected beat
- * grid, and (when reference clicks are present) against the AudioContext
- * clock via `identifyReferenceClicks`/`estimateAnchorT0`.
+ * Measure a single take's alignment against the project's beat grid, and
+ * (when reference clicks are present) against the AudioContext clock via
+ * `identifyReferenceClicks`/`estimateAnchorT0`.
  *
- * Expected beats run `k = 0 … floor((regionDurationSec − ε) / beatPeriod)`
- * — the `ε` excludes a beat landing exactly on the region-end boundary
- * (which a boundary-stopped live capture would otherwise always report as
- * missing) without excluding any beat that actually falls inside the
- * presented range.
+ * Expected beats sit on the project's ABSOLUTE beat grid — integer multiples
+ * of `beatPeriodSec` from timeline zero — restricted to the take's presented
+ * range `[regionStartSec, regionStartSec + regionDurationSec]`. The trailing
+ * `ε` excludes a beat landing exactly on the region-end boundary (which a
+ * boundary-stopped live capture would otherwise always report as missing)
+ * without excluding any beat that actually falls inside the range.
+ *
+ * The grid is deliberately NOT anchored at the region start. Anchoring it
+ * there silently assumes every take begins on a beat, which holds for a take
+ * started from a stopped transport (position 0), after a count-in, or at a
+ * loop boundary — but NOT for one punched in while the transport is already
+ * running, where the region lands wherever the punch fell. On such a take an
+ * anchored grid manufactures a phantom expected beat at the region boundary
+ * that no captured beat can ever reach (the first captured beat is up to a
+ * full beat period later), reporting a permanent `missingBeats = 1` and
+ * biasing every beat's error by the region start's off-grid phase. Measuring
+ * against the absolute grid makes the reported error mean what it should:
+ * how far each captured beat lands from the timeline position it was
+ * captured at. For beat-aligned regions the two grids are identical, so this
+ * changes nothing for takes that start on a beat, and genuine head loss is
+ * still caught — a beat inside the presented range whose content never
+ * reached the buffer stays unmatched under both grids.
  */
 export function measureTakeAlignment(input: TakeMeasurementInput): TakeAlignment {
   const {
@@ -308,9 +334,17 @@ export function measureTakeAlignment(input: TakeMeasurementInput): TakeAlignment
   const beatPeriodSec = 60 / bpm;
   const timelineOnsets = lowOnsets.map((t) => regionStartSec + (t - waveformOffsetSec));
 
-  const lastBeat = Math.floor((regionDurationSec - 0.001) / beatPeriodSec);
+  // 1 microsecond of slack on the leading edge so a region whose start is a
+  // beat position that only round-trips approximately (PPQN -> seconds) still
+  // includes that beat instead of skipping to the next one.
+  const firstBeat = Math.ceil((regionStartSec - 1e-6) / beatPeriodSec);
+  const lastBeat = Math.floor((regionStartSec + regionDurationSec - 0.001) / beatPeriodSec);
   const expectedBeats: number[] = [];
-  for (let k = 0; k <= lastBeat; k++) expectedBeats.push(regionStartSec + k * beatPeriodSec);
+  const expectedBeatIndices: number[] = [];
+  for (let k = firstBeat; k <= lastBeat; k++) {
+    expectedBeats.push(k * beatPeriodSec);
+    expectedBeatIndices.push(k);
+  }
 
   // Greedy nearest-first matching within half a beat period.
   const matchTolerance = beatPeriodSec / 2;
@@ -330,7 +364,7 @@ export function measureTakeAlignment(input: TakeMeasurementInput): TakeAlignment
     usedBeat.add(c.beatK);
     usedOnset.add(c.onsetIdx);
     const errorMs = (timelineOnsets[c.onsetIdx] - expectedBeats[c.beatK]) * 1000;
-    beatErrors.push({ beat: c.beatK, errorMs });
+    beatErrors.push({ beat: expectedBeatIndices[c.beatK], errorMs });
   }
   beatErrors.sort((a, b) => a.beat - b.beat);
 
@@ -404,7 +438,11 @@ export interface CrossTrackSkew {
  * Pairs by beat index over beats matched in BOTH `a.beatErrors` and
  * `b.beatErrors` (a beat missing from either side is simply excluded, not
  * treated as an error here — `measureTakeAlignment`'s own `missingBeats`
- * count is the place a genuine content-skip is caught).
+ * count is the place a genuine content-skip is caught). Those indices are
+ * ABSOLUTE timeline beat numbers, so two tapes whose regions landed at
+ * different positions still pair beat-for-beat on the same musical instant —
+ * a region-relative index would offset one tape's whole series against the
+ * other's and read the offset as skew.
  *
  * Sign convention: `skewMs = b's errorMs − a's errorMs`. A positive skew
  * means B's content is placed LATE relative to A's (B lags A); a negative
