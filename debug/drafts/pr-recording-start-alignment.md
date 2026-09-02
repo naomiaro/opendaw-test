@@ -18,14 +18,16 @@ figures are analytically corrected from persisted per-row geometry, not re-measu
 
 ### The problem
 
-Audio takes are placed early on the timeline. On an idle main thread, with no
-count-in, the placement bias measures **−34.97 to −52.51 ms** as a per-cell mean
-across 18 of the 20 cells of a live matrix on `@opendaw/studio-sdk@0.0.170`
+Audio takes are placed early on the timeline. Measured against the project's
+absolute beat grid, the placement bias runs **−34.97 to −52.51 ms** as a per-cell
+mean across 18 of the 20 cells of a live matrix on `@opendaw/studio-sdk@0.0.170`
 (`recaudit-summary-1788310164556.json` at 48000 Hz, `…1788310817094.json` at
-44100 Hz). It appears at both sample rates tested (44100, 48000) and both tempi
-(120, 97.3 bpm), on every scenario that does not carry a count-in offset. The two
-cells without a figure are `loop-wrap` cells where every repeat failed to finalize
-(see "Measured but unexplained" below).
+44100 Hz), and no individual take exceeds **−59.33 ms**. It appears on **every**
+scenario measured — starting from bar 1 both with and without a count-in, on an
+idle and on a blocked main thread, on a mid-timeline punch-in, and on each take of
+a loop-wrap sequence — at both sample rates tested (44100, 48000) and both tempi
+(120, 97.3 bpm). The two cells without a figure are `loop-wrap` cells where every
+repeat failed to finalize (see "Measured but unexplained" below).
 
 Content lands early, so the head of a performance sits ahead of the downbeat the
 musician played to.
@@ -56,16 +58,20 @@ source and confirmed against the diagnostic fields persisted on every measured t
    `recordGainNode.connect(recordingWorklet)`, a wall-clock instant that occurs
    *before* the transport's position begins advancing from 0. For the no-count-in
    path there is nothing subtracted, so that pre-roll goes straight into
-   `headStartSeconds`. Worked example from a persisted row: with
-   `waveformOffsetSec = 0.055000` and `outputLatency = 0.023`, `headStartSeconds` is
-   32 ms while the same callback's `regionStartSec` reads 2.6 ms — the frame-count
-   clock and the PPQN clock, read at the same tick, disagree by roughly 12×.
+   `headStartSeconds`. Worked example, from `recaudit-summary-1788310164556.json`
+   (`nominal-start`/120 bpm, repeat 3): `regionPositionPpqn = 5`, so
+   `regionStartSec = 0.0026042`, while `waveformOffsetSec = 0.057667`. Netting out
+   term 1 gives `headStartSeconds = 0.057667 − 0.023 = 0.034667 s`, i.e. **34.7 ms**
+   against a transport clock reading **2.6 ms** at the same callback — the
+   frame-count clock and the PPQN clock, read at the same tick, disagree by roughly
+   13×.
 3. **An anchor-position residual.** `currentPosition` is read once, at the first
    `isRecording=true` tick, by which time the transport has already advanced. This
    residual scales with main-thread scheduling lag rather than being a fixed
    constant: the raw worklet-connect-to-first-frame lag stays flat at ~15–25 ms
-   regardless of whether a given repeat's total bias is −65 ms or −110 ms, which a
-   pure pre-roll constant would not do.
+   across repeats whose own placement error spans the full **−34.91 to −59.33 ms**
+   per-take range of the two fresh matrix runs above, which a pure pre-roll constant
+   would not do.
 
 Terms 2 and 3 are the same story from two directions: the elapsed-capture clock and
 the transport position are read on the main thread, so both carry its scheduling lag,
@@ -124,7 +130,7 @@ Per-cell mean placement bias, candidate versus unfixed, by scenario group:
 
 | scenario group | cells | bias reduction |
 |---|---|---|
-| `nominal-start` + `countin-start` | 8 | 50.5–82.1 % |
+| `nominal-start` + `countin-start` (from bar 1, without and with a count-in) | 8 | 50.5–82.1 % |
 | `janked-start` (150 ms main-thread block after the recording flip) | 4 | 71.5–81.2 % |
 | `midtimeline-start` (punch-in on a running transport) | 4 | 42.1–69.3 % |
 | `loop-wrap` (takes 1–4) | 2 comparable | 35.2–40.2 % |
@@ -160,11 +166,17 @@ On the unfixed build, `loop-wrap` recordings fail to finalize at a high rate, wi
 
 The failure is a binary fast-success-or-never split, not a slow gradient: raising the
 deadline from 30 s to 90 s left 4 of 6 repeats still failing
-(`recaudit-summary-1788291343233.json`), while successful finalizations complete in
-86–146 ms. Nothing in this commit touches the finalization pipeline, so the clean
-sweep on this branch is **a measured outcome with no traced mechanism**. It is
-reported here so it is not mistaken for an established fix — the underlying hang may
-still be present and merely not provoked.
+(`recaudit-summary-1788291343233.json`), while every finalization that does succeed
+completes in well under a tenth of a second — **72 ms and 91 ms** on the two fresh
+baseline repeats that finalized, and **64–98 ms** across the 12 repeats on this
+branch. (Those are the durations the runs persist. The five historical runs record
+no finalization duration at all, so nothing older can be quoted here.) Against a
+30 s deadline that is nearly three orders of magnitude of headroom.
+
+Nothing in this commit touches the finalization pipeline, so the clean sweep on this
+branch is **a measured outcome with no traced mechanism**. It is reported here so it
+is not mistaken for an established fix — the underlying hang may still be present and
+merely not provoked.
 
 Baseline artifacts: `recaudit-summary-1788287951691.json`, `…1788288625777.json`,
 `…1788288803959.json`, `…1788291343233.json`, `…1788291706370.json`,
@@ -229,8 +241,8 @@ https://github.com/naomiaro/opendaw-test/blob/main/debug/recording-start-alignme
 
 - `npx turbo run build --filter=@opendaw/studio-core --filter=@opendaw/studio-core-processors --filter=@opendaw/studio-core-workers` — 16 tasks successful.
 - `npm run build:bundles` in `packages/studio/core-wasm` — both bundles emitted.
-- `npm run typecheck` in `packages/studio/core-wasm` — 9 errors, all pre-existing in
-  `test/`, identical set before and after the change; zero in `src/`.
+- `npm run typecheck` in `packages/studio/core-wasm` — no new errors; zero in `src/`,
+  and the pre-existing set is identical before and after the change.
 - `npm test` in `packages/studio/core` — 43 files, 400 tests passing.
 
 A Rust rebuild is not required: the change is entirely JS/TS. The engine state

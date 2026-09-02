@@ -123,9 +123,13 @@ recording-alignment-audit-debug-demo.html?scenario=loop-wrap&bpm=all&rate=<44100
 The scenario sets a 2-bar loop area, records 5 consecutive wrap takes, then stops and
 waits for the shared file's loader to reach a terminal state. Run it several times: the
 rate is intermittent per cell, and roughly two thirds of attempts across the campaign
-never finalized. The condition also reproduces from ordinary loop recording in an
-application — the harness only adds the bounded wait that turns an indefinite hang into
-a reported timeout.
+never finalized.
+
+All the measurements above were taken through that harness, and no attempt was made to
+reproduce it anywhere else — so nothing here establishes what an application built on
+the SDK would see. What the harness adds is only the bounded wait that turns an
+indefinite wait into a reported timeout; the code path under it is the SDK's own
+`RecordingWorklet` finalization.
 
 ## Environment
 

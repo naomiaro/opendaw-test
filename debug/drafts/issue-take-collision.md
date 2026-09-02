@@ -45,8 +45,7 @@ signal, two inputs fed from one source, or a loopback split. When their encoded 
 match exactly, both derive the same uuid, and the second `BoxGraph.stageBox` call
 panics on a uuid already staged by the first.
 
-There is no collision handling on that path: `stageBox` panics rather than reusing the
-existing box or disambiguating the new one.
+There is no collision handling on that path: `stageBox` panics.
 
 Note this needs two independently-finalizing `RecordingWorklet`s. A single-capture loop
 recording is not affected, because one `RecordingWorklet` produces exactly one
@@ -62,7 +61,8 @@ captures' byte lengths apart. **Every repeat collided: 3 of 3**
 run).
 
 Corroborating: across the wider matrix, every pair of takes that *did* finalize
-successfully has distinct WAV bytes (verified by `shasum` on all 10 surviving pairs).
+successfully has distinct WAV bytes (verified by `shasum` on the 10 pairs whose WAVs
+remain on disk).
 That is exactly what content-addressing predicts — a pair that finalizes is by
 construction a pair whose bytes were not identical. A race would predict no such
 correlation.

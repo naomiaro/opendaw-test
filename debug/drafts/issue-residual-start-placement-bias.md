@@ -120,7 +120,7 @@ it**: zero of the twenty cells reach the harness's 2 ms alignment tolerance afte
 | `countin-start` | −46.04 to −52.26 ms | −9.58 to −22.77 ms | 51–82 % |
 | `janked-start` | −45.07 to −49.51 ms | −8.47 to −13.66 ms | 71–81 % |
 | `midtimeline-start` | −45.89 to −47.32 ms | −14.08 to −27.38 ms | 42–69 % |
-| `loop-wrap` (takes 1–4) | −34.97 to −49.40 ms | −22.66 to −29.52 ms | 35–40 % |
+| `loop-wrap` (takes 1–4) | −34.97 to −49.40 ms (2 cells) | −22.66 to −29.52 ms (4 cells) | 35–40 % (over the 2 with a baseline) |
 
 The "after" column comes from `recaudit-summary-1788299505584.json` (48000 Hz) and
 `…1788299943226.json` (44100 Hz) and is **analytically corrected from persisted per-row
