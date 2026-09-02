@@ -181,6 +181,12 @@ be present and merely not provoked here.
 Each of the following is reported as its own issue, so none of them depends on this
 change being taken.
 
+> **Draft-internal, strip before posting.** The five bullets below map to
+> `issue-residual-start-placement-bias.md`, `issue-loop-wrap-finalization-hang.md`,
+> `issue-punch-in-head-loss.md`, `issue-inter-track-quantum-skew.md` and
+> `issue-take-collision.md`, in that order. Replace each with the filed issue number
+> once the issues exist.
+
 - **Residual placement bias.** No cell reaches the 2 ms alignment tolerance afterwards;
   a residual of roughly 8–30 ms remains on every cell, largest on `midtimeline-start`
   and `loop-wrap`. The issue covers the signature on every scenario measured
