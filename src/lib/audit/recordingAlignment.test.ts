@@ -229,6 +229,9 @@ describe("measureTakeAlignment", () => {
       const a = measureTakeAlignment({ ...offGrid, lowOnsets: late, highOnsets: [] });
       expect(a.medianBeatErrorMs!).toBeCloseTo(30, 1);
       expect(a.missingBeats).toBe(0);
+      // Absolute numbering, not region-relative — without this the assertions
+      // above pass on the old region-anchored grid too.
+      expect(a.beatErrors.map((e) => e.beat)).toEqual([13, 14, 15, 16]);
     });
 
     it("still catches an absent in-range beat at this tempo", () => {

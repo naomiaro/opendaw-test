@@ -1783,22 +1783,23 @@ to the row before using it — see that directory's `README-task7c.md`):
 
 | # | Mechanism | Predicted signature | Measured | Verdict |
 |---|-----------|--------------------|----------|---------|
-| a | Content never captured — the punch-in beat's click is clipped or absent because the capture path connects inside `startRecording`'s async chain | a GAP in the raw buffer's click train (one interval ≈ 2× the beat period), and/or head lag well above the nominal baseline | click train uniform end-to-end on **12 midtimeline repeats** (see the population note below): consecutive gaps **499.9–500.1 ms against a 500.0 ms beat** @120, **616.6–616.8 vs 616.6** @97.3, 16 clicks in every buffer. A dropped click would read ≈1000 / 1233 ms; none does. `headMissingRawMs` on those repeats is **12.2–38.4 ms**; across all 36 persisted `midtimeline-start` rows it is **12.21–49.04 ms**, median **20.71 ms** — statistically indistinguishable from every other scenario's (`nominal-start` median 19.02, `janked-start` 19.69, `loop-wrap` 17.51, `countin-start` 22.37 ms, recounted over all 291 rows carrying the field), and two orders of magnitude short of the ~500 ms a lost beat would require | **REFUTED** |
-| b | Presented range starts after beat 0 — the content is in the buffer but region position / `waveformOffset` math skips it | a click sitting at a buffer time BEFORE `waveformOffsetSec` | clicks earlier than `waveformOffsetSec`: **0 on 12/12** midtimeline repeats. By contrast every beat-aligned scenario legitimately has ≥1 such click (`nominal-start` 12/12 takes, `countin-start` 12/12, `loop-wrap` 12/12, `janked-start` 13/15) | **REFUTED** |
-| c | Harness artifact — `measureTakeAlignment` expects a beat at exactly the region boundary | the unmatched beat is always index 0, and re-matching on the true musical grid clears it | unmatched beat index = **[0] on 12/12**; absolute-grid re-match gives **0 missing on 12/12** | **CONFIRMED** |
+| a | Content never captured — the punch-in beat's click is clipped or absent because the capture path connects inside `startRecording`'s async chain | a GAP in the raw buffer's click train (one interval ≈ 2× the beat period), and/or head lag well above the nominal baseline | click train uniform end-to-end on **24 midtimeline repeats** (population named below): 16 clicks in every buffer, consecutive gaps **499.9–510.0 ms against a 500.0 ms beat** @120 and **616.6–626.6 vs 616.65** @97.3. The two gaps above nominal are single clicks arriving ~10 ms late and staying late (`…1788307078098`/120/r3 at 510.0 ms, `…1788310817094`/97.3/r2 at 626.6 ms) — a step in the content, not an absence. A dropped click would read ≈1000 / 1233 ms; none does. `headMissingRawMs` on those 24 repeats is **12.21–38.37 ms**; across all 48 persisted `midtimeline-start` rows it is **12.21–49.04 ms**, median **20.42 ms** — statistically indistinguishable from every other scenario's (`nominal-start` median 19.02, `janked-start` 19.69, `loop-wrap` 17.37, `countin-start` 21.71 ms, recounted over all 351 rows carrying the field), and two orders of magnitude short of the ~500 ms a lost beat would require | **REFUTED** |
+| b | Presented range starts after beat 0 — the content is in the buffer but region position / `waveformOffset` math skips it | a click sitting at a buffer time BEFORE `waveformOffsetSec` | clicks earlier than `waveformOffsetSec`: **0 on 24/24** midtimeline repeats, against **87 of 92** take-0 rows in the other four scenarios (the 5 exceptions are enumerated under "The confirmed mechanism" below, and every one of them shows the same fencepost) | **REFUTED** |
+| c | Harness artifact — `measureTakeAlignment` expects a beat at exactly the region boundary | the unmatched beat is always index 0, and re-matching on the true musical grid clears it | unmatched beat index = **[0] on 24/24**; absolute-grid re-match gives **0 missing on 24/24** | **CONFIRMED** |
 
-**Population note (Task 7c fix round 1, review finding 4).** An earlier version of this
-table claimed the buffer-level results held "on 24/24 candidate + 12/12 upstream
-repeats". That population never existed on disk. Capture WAV names carried no run
-token until this fix round, so every run overwrote the previous run's capture of the
-same cell: when the offline analysis ran, the only `midtimeline-start` buffers on disk
-were the 12 belonging to the two most recent midtimeline runs
-(`recaudit-summary-1788306957902.json` @48000 and `…1788307078098.json` @44100), and
-the upstream matrix runs' buffers had been overwritten hours earlier. Every
-buffer-level figure above is recomputed over exactly those 12 rows, each joined to its
-audio by frame count, sample rate and write window rather than by filename. The
-harness now stamps the build probe and the run token into every capture name so this
-cannot recur.
+**Population note (Task 7c fix round 1, review finding 4; restated in fix round 2).** An
+earlier version of this table claimed the buffer-level results held "on 24/24 candidate
++ 12/12 upstream repeats". That population never existed on disk. Capture WAV names
+carried no run token until fix round 1, so every run overwrote the previous run's
+capture of the same cell, and the upstream matrix runs' buffers had been overwritten
+hours before the analysis. The figures above are recomputed over the **24
+`midtimeline-start` take rows whose geometry and audio provably belong together**, which
+are all four runs that still hold their own captures: `recaudit-summary-1788306957902.json`
+(48000 Hz), `…1788307078098.json` (44100 Hz), `…1788310164556.json` (48000 Hz) and
+`…1788310817094.json` (44100 Hz), 6 rows each. Each row is joined to its audio by frame
+count against its own `bufferDurationSec`, by sample rate, and by write window against
+the run's own token — never by filename. The harness now stamps the build probe and the
+run token into every capture name so this cannot recur.
 
 ### The confirmed mechanism
 
@@ -1809,70 +1810,101 @@ silently assumes every take begins on a beat.
 **It is not only `midtimeline-start` that breaks that assumption (Task 7c fix round 1,
 review finding 1).** An earlier version of this section claimed
 `regionStart mod beatPeriod` was "exactly 0.0 ms" for the four other scenarios on every
-repeat. That is false. Recomputed over every persisted row that carries per-row
-geometry:
+repeat. That is false.
+
+Population: every row carrying per-row geometry across **all 40 summary runs on disk
+through `1788310817094`**, this fix round's newest. Reproduce with
+
+```
+RECAUDIT_MAX_RUN=1788310817094 node \
+  .superpowers/sdd/2026-09-01-recording-start-alignment-audit/scripts/task7c-fix1-analysis.ts census
+```
 
 | scenario | rows with geometry | off-grid (φ > 1 µs) | max φ |
 |---|---|---|---|
-| `nominal-start` | 39 | 12 | 47.92 ms |
-| `janked-start` | 57 | 30 | 406.25 ms |
-| `countin-start` | 27 | 3 | 31.77 ms |
-| `loop-wrap` | 132 | 14 | 36.98 ms |
-| `midtimeline-start` | 36 | 36 | 137.46 ms |
-| **total** | **291** | **95** | — |
+| `nominal-start` | 51 | 24 | 47.92 ms |
+| `janked-start` | 69 | 42 | 406.25 ms |
+| `countin-start` | 39 | 15 | 34.69 ms |
+| `loop-wrap` | 144 | 16 | 37.26 ms |
+| `midtimeline-start` | 48 | 48 | 154.17 ms |
+| **total** | **351** | **145** | — |
 
-**59 of the 255 non-midtimeline rows are off-grid**, so the grid change is NOT a
+**97 of the 303 non-midtimeline rows are off-grid**, so the grid change is NOT a
 measurement no-op for them: each of those rows' median moves by exactly +φ. The claim
 that does survive, and that holds exactly in IEEE-754 rather than merely empirically,
 is the narrower one: *the two grids are point-for-point identical for a region whose
 start is exactly on a beat.*
 
 Split by build, the off-grid population is itself a finding. Non-midtimeline rows:
-**upstream 52 of 87 off-grid (max φ 406.25 ms); candidate 7 of 168 (max 35.33 ms, and
+**upstream 90 of 135 off-grid (max φ 406.25 ms); candidate 7 of 168 (max 35.33 ms, and
 all 7 are `loop-wrap`'s wrap-finalized take 5)** — i.e. the candidate build places
 non-punch-in takes ON the beat and upstream does not, a difference the region-anchored
-grid subtracted away by construction.
+grid subtracted away by construction. Take-0 `regionPositionPpqn` is 0 on all 93
+candidate rows and 5–92 PPQN on the upstream rows, with one 11340 outlier.
 
 What is special about `midtimeline-start` is not that its region is off-grid but that
 **no captured click can reach the old grid's point 0.** Clicks sound on the absolute
 beat grid, so the nearest one to a region start at `m·P + φ` is at most `min(φ, P−φ)`
-away — always within the half-beat tolerance, *if it was captured*. For every
-beat-aligned-start scenario the click at `m·P` IS in the buffer (it sits before
-`waveformOffsetSec`: measured on 12/12 `nominal-start`, `countin-start` and `loop-wrap`
-takes and 13/15 `janked-start` takes), so grid point 0 matches and only the median is
-biased. On `midtimeline-start` the punch lands mid-beat, φ = 82.2–137.5 ms on these
-runs, and the preceding beat sounded BEFORE the capture began — 0 clicks before
-`waveformOffsetSec` on 12/12. The nearest captured click is the NEXT beat, `P − φ` =
-363–418 ms @120 and 479–534 ms @97.3 after the region start, always beyond the
-half-beat tolerance (250 / 308 ms). Grid point 0 is unmatchable, and the expected-beat
-count exceeds the captured-beat count by exactly one.
+away — always within the half-beat tolerance, *if it was captured*. So the fencepost
+fires on exactly the takes where NO click was captured before the region start, and the
+question is per-take, not per-scenario.
 
-The same fencepost fires on `janked-start` whenever the record request lands just after
-a beat and the capture misses that beat's click: 3 of the 9 most recent upstream
-`janked-start`/120/48000 repeats (`…1788307183605` r1, `…1788309532177` r1,
-`…1788309644009` r3) report `missing = 1, unmatched = [0]` under the old grid and
-`missing = 0` under the absolute grid, with a uniform 499.9–500.1 ms click train in the
-buffer throughout. `midtimeline-start` was only the scenario that did it on EVERY
-repeat.
+Measured over every replayable take-0 row in the snapshot named under "What could and
+could not be replayed offline" below: **`midtimeline-start` 0 of 24 takes have a click
+before the region start; the other four scenarios have one on 87 of 92** —
+`countin-start` 24/24, `loop-wrap` 14/14, `nominal-start` 23/24, `janked-start` 26/30.
+Reproduce this paragraph and the table under it with
 
-`midtimeline-start`'s region lands wherever the punch fell, measured
-**11.5–80.7 ms** past a beat on the candidate matrix runs and **82.2–137.5 ms** on the
-two post-fix upstream runs.
+```
+RECAUDIT_MAX_RUN=1788310817094 node \
+  .superpowers/sdd/2026-09-01-recording-start-alignment-audit/scripts/task7c-fix1-analysis.ts fencepost
+```
 
-On such a take, grid point 0 sits at the region boundary while the first
-captured beat arrives **66.5–128.0 ms** after the preceding beat — i.e.
-372–550 ms into the buffer, always further than the half-beat match
-tolerance (250 ms @120, 308 ms @97.3). Grid point 0 is therefore unmatchable
-by construction on every repeat, and the count of expected beats exceeds the
-count of captured beats by exactly one. Both the permanent `missingBeats = 1`
-and a systematic bias of `−(regionStart mod beatPeriod)` on every beat's
-error follow directly.
+The five exceptions are not noise, and they are the point. **Across the whole snapshot
+the two properties coincide exactly: 29 rows show the old grid's fencepost
+(`missing = 1`, unmatched `[0]`) — the 24 `midtimeline-start` takes plus these 5 — and
+they are precisely the 29 rows with no click captured before the region start. No
+row has one property without the other, in either direction.**
 
-The spread of that punch-in phase within a cell is the harness's own doing:
-`waitForPosition` polls `engine.position` on a **50 ms** `setTimeout`, so the
-record request lands uniformly within 50 ms after the target beat. Measured
-per-cell spread of the head gap is **54.7 ms** @120 and **49.9 ms** @97.3 —
-the poll interval, not an SDK quantity.
+| run | build | cell | φ (ms) | clicks | first click | OLD grid | NEW grid |
+|---|---|---|---|---|---|---|---|
+| `…1788307183605` | upstream | `janked-start`/120/48000 r1 | 7.81 | 16 | 468.1 ms | 16 matched, **1 missing**, unmatched `[0]` | 16 matched, 0 missing |
+| `…1788309532177` | upstream | `janked-start`/120/48000 r1 | 5.21 | 16 | 470.8 ms | 16, **1**, `[0]` | 16, 0 |
+| `…1788309644009` | upstream | `janked-start`/120/48000 r3 | 26.56 | 16 | 470.8 ms | 16, **1**, `[0]` | 16, 0 |
+| `…1788310164556` | upstream | `nominal-start`/120/48000 r2 | 26.56 | 16 | 470.8 ms | 16, **1**, `[0]` | 16, 0 |
+| `…1788310817094` | upstream | `janked-start`/97.3/44100 r1 | 19.91 | 16 | 587.4 ms | 16, **1**, `[0]` | 16, 0 |
+
+So the earlier claim that "for every beat-aligned-start scenario the click at `m·P` IS
+in the buffer" is false as a universal — one `nominal-start` row inside a run this very
+section tabulates as a baseline is a counter-example. What holds is the mechanism, and
+it holds exactly: on `midtimeline-start` the punch lands mid-beat (φ = 73.2–154.2 ms
+over the 24 takes), the preceding beat sounded BEFORE the capture began, and the nearest
+captured click is the NEXT beat, `P − φ` = 345.8–420.3 ms @120 and 477.9–543.4 ms
+@97.3 after the region start — always beyond the half-beat tolerance (250.0 / 308.3 ms). Grid point 0 is
+unmatchable, so the expected-beat count exceeds the captured-beat count by exactly one,
+on 24 of 24. On the other scenarios the same thing happens only when the capture opens
+late enough to miss the beat the region is anchored just after: 5 of 92 takes. Restricted
+to the cell with the most such rows, `janked-start`/120/48000 on the upstream build, it
+is **3 of 12 replayable repeats** across four runs.
+
+`midtimeline-start`'s region lands wherever the punch fell, measured **11.46–80.73 ms**
+past a beat over the 24 candidate rows (`…1788296570300`, `…1788297229626`,
+`…1788299505584`, `…1788299943226`) and **73.23–154.17 ms** over the 24 upstream rows
+(`…1788306957902`, `…1788307078098`, `…1788310164556`, `…1788310817094`).
+
+Both the permanent `missingBeats = 1` and a systematic bias of
+`−(regionStart mod beatPeriod)` on every beat's error follow directly from that.
+Measured first-click position in the buffer, over the same 24 takes: **354.8–424.4 ms**
+@120 and **484.7–549.0 ms** @97.3.
+
+Part of the spread in that punch-in phase is the harness's own doing: `waitForPosition`
+polls `engine.position` on a **50 ms** `setTimeout`, so the record request lands within
+50 ms after the target beat. It is not the whole story, though — the measured per-cell
+spread of φ across the 8 replayable `midtimeline-start` cells is **5.73–74.48 ms**, and
+three cells exceed the poll interval, so the SDK's own placement variation contributes
+too. (An earlier version of this paragraph read the spread as "54.7 ms @120 and 49.9 ms
+@97.3 — the poll interval, not an SDK quantity", which the wider population does not
+support.)
 
 ### The fix
 
@@ -1881,21 +1913,30 @@ the poll interval, not an SDK quantity.
 zero — restricted to the take's presented range, and reports each matched
 beat by its absolute timeline index. For a beat-aligned region the two grids
 are point-for-point identical — a provable no-op **for that region**, not for
-any whole scenario (see the off-grid census above: 59 of 255 non-midtimeline
+any whole scenario (see the off-grid census above: 97 of 303 non-midtimeline
 rows are off-grid and their medians move by exactly +φ). Replaying the shipped
 function over the persisted WAVs of the runs whose geometry and audio provably
-belong together reproduces every on-grid row's median to within 0.01 ms with
-matched/missing counts exact.
+belong together reproduces the persisted median on 163 of 186 replayable rows to
+within 0.05 ms with matched/missing counts exact; the 23 that do not are `loop-wrap`
+takes 0, 4 and 5, whose presented range an offline replay has to reconstruct.
 
 The fix does not blind the metric to genuine head loss. A beat inside the
 presented range whose content never reached the buffer stays unmatched under
-both grids — confirmed on a real instance (run 1788299505584,
-`nominal-start`/120/r1: capture began 37.2 ms after beat 0, beat 0's click
-genuinely absent, reported missing under both grids). Unit tests cover all
-four cases (no missing beat when everything in range was captured; ~0 error
-rather than the off-grid phase for a correctly placed punch-in take; the real
-error still reported when the take is genuinely misplaced; a genuinely absent
-in-range beat still caught).
+both grids. **Corrected instance (Task 7c fix round 2):** an earlier version of this
+paragraph cited run `1788299505584`, `nominal-start`/120/r1 as a real case of a
+genuinely absent beat reported missing under both grids. That row's persisted values are
+`matchedBeats = 17, missingBeats = 0` — it never lost a beat, and the claim was wrong.
+The genuine instances on disk are rows that are exactly ON the grid (`regionStartSec` =
+0, so the two grids are point-for-point identical by construction) and still report a
+missing beat: `…1788297229626` `nominal-start`/97.3/44100/r1 (`matched = 16, missing =
+1`, `headMissingRawMs` 39.12 ms), `…1788296570300` `janked-start`/120/48000/r3
+(`matched = 15, missing = 1`, 35.71 ms) and `…1788287951691`
+`nominal-start`/120/48000/r1 (`matched = 16, missing = 1`, geometry not persisted). Their
+capture buffers were overwritten, so this rests on the persisted rows plus the identity
+of the two grids at φ = 0, not on a fresh decode. Unit tests cover all four cases (no
+missing beat when everything in range was captured; ~0 error rather than the off-grid
+phase for a correctly placed punch-in take; the real error still reported when the take
+is genuinely misplaced; a genuinely absent in-range beat still caught).
 
 `measureCrossTrackSkew` benefits incidentally: it pairs by beat index, and
 those indices are now absolute, so two tapes whose regions landed at
@@ -1919,13 +1960,14 @@ finalization timeout, at a rate consistent with that finding.
 
 | run | repeat | tape A pos / S | tape B pos / S | `S_B − S_A` | median skew | max abs skew | paired beats |
 |---|---|---|---|---|---|---|---|
-| `recaudit-mt-summary-1788309690683.json` | r2 | 71 PPQN / 0.036979 s | 71 PPQN / 0.036979 s | **0** | −2.6667 ms | 2.6667 ms | 16 |
-| `recaudit-mt-summary-1788309841868.json` | r1 | 15 PPQN / 0.007813 s | 15 PPQN / 0.007813 s | **0** | 0.0000 ms | 0.0000 ms | 16 |
+| `recaudit-mt-summary-1788309690683.json` | r2 | 71 PPQN / 0.036979 s | 71 PPQN / 0.036979 s | **0** | −2.666667 ms | 2.666667 ms | 16 |
+| `recaudit-mt-summary-1788309841868.json` | r1 | 15 PPQN / 0.007813 s | 15 PPQN / 0.007813 s | **0** | 4.371e-7 ms | 4.371e-7 ms | 16 |
 
 Both tapes' regions land at the SAME timeline position in both repeats, so the term the
 absolute grid adds is exactly zero and the skew is unchanged by the pairing change. The
-measured skews are 0 and −2.6667 ms — the latter is exactly one 128-frame WASM render
-quantum at 48000 Hz, and 1 of the 2 repeats exceeds the 2 ms `ALIGNED_TOLERANCE_MS`,
+measured skews are 4.371e-7 ms (zero to float precision) and −2.666667 ms — the latter
+is exactly one 128-frame WASM render quantum at 48000 Hz — and 1 of the 2 repeats
+exceeds the 2 ms `ALIGNED_TOLERANCE_MS`,
 consistent with Finding 2's "integer multiples of one render quantum, exceeding the
 tolerance on most repeats". The mechanism is therefore intra-buffer, not
 region-placement: in `…1788309841868` r1 the two tapes' `waveformOffsetSec` differ by
@@ -2018,9 +2060,10 @@ section):
 2. Prediction A is **withdrawn in full**, not merely on its `midtimeline-start` leg.
 
 Every `midtimeline-start` median quoted earlier in this register is inflated
-by that repeat's `regionStart mod beatPeriod` (11.5–80.7 ms on the candidate
-matrix runs, 82.2–137.5 ms on the two post-fix upstream runs) and should not
-be compared against the corrected figures in this section's tables.
+by that repeat's `regionStart mod beatPeriod` (11.46–80.73 ms over the 24 candidate
+rows, 73.23–154.17 ms over the 24 upstream rows — see "The confirmed mechanism" for the
+run ids) and should not be compared against the corrected figures in this section's
+tables.
 
 ### Prediction A, restated from fresh measurement (Task 7c fix round 1, review finding 3)
 
@@ -2044,13 +2087,40 @@ be re-measured; it was re-run instead.
 | …1788309644009 | 3 | 26.56 | **0** | `[0]` under the old grid | −58.65 | 33.02 |
 
 Not one repeat loses a beat under the absolute grid. Two of the six DO reproduce the
-old grid's `missing = 1, unmatched = [0]` — and in both, the buffer's click train is
-uniform end to end (499.9–500.1 ms across 16 clicks), so nothing was dropped from
-captured content. What is absent in those two is the beat-0 click that sounded before
-the capture opened; the region's own start sits after it (φ = 5.2 / 26.6 ms), so that
-beat lies outside the take's presented range and the absolute grid does not expect it.
-The head loss is real but small and is measured directly rather than as a whole beat:
-`headMissingRawMs` = 25.0 and 33.0 ms on those two repeats.
+old grid's `missing = 1, unmatched = [0]` — **`…1788309532177` r1 and `…1788309644009`
+r3** — and in both, the buffer's click train is uniform end to end (499.9–500.1 ms
+across 16 clicks), so nothing was dropped from captured content. What is absent in those
+two is the beat-0 click that sounded before the capture opened; the region's own start
+sits after it (φ = 5.21 and 26.56 ms), so that beat lies outside the take's presented
+range and the absolute grid does not expect it. The head loss is measured directly
+rather than as a whole beat, and it is **not** uniformly small: `headMissingRawMs` is
+**145.02 ms on `…1788309532177` r1 and 33.02 ms on `…1788309644009` r3** — the same two
+values the table above prints for those rows.
+
+**The 145.02 ms repeat, characterized rather than softened.** It is the largest head lag
+in the six fresh repeats and the only one over 100 ms. It does not coincide with a lost
+beat (absolute grid: `matched = 16, missing = 0`) and its adjusted median, −56.00 ms,
+sits mid-range for the cell; its off-grid phase is the smallest of the six (5.21 ms).
+Baseline-corrected it is 119.02 ms, which trips `classifyCell`'s 2 ms head-deficit gate
+and is why that cell reads `investigate`. It is *below* the 134.84–151.04 ms
+baseline-corrected band the `C1` triage entry attributes to the harness's own pre-fix
+busy-loop (raw 160.84–177.04 ms), so it is not that artifact returning at full strength —
+but it is the same order of magnitude, and whether the `C1` fix fully decoupled the jank
+from capture-start is not settled by this round's data.
+
+Against every persisted row carrying the field (351 rows, 40 runs), **exactly three
+exceed 100 ms**, and jank does not explain them:
+
+| run | build | cell | `headMissingRawMs` | `missingBeats` | adjusted median |
+|---|---|---|---|---|---|
+| `…1788295979783` | candidate | `nominal-start`/120/48000 r1 | 177.04 ms | 0 | −50.56 ms |
+| `…1788299020715` | candidate | `janked-start`/120/48000 r1 | 179.69 ms | 0 | −10.54 ms |
+| `…1788309532177` | upstream | `janked-start`/120/48000 r1 | 145.02 ms | 0 | −56.00 ms |
+
+One of the three is `nominal-start`, which does no jank at all, and two of the three are
+on the candidate build. An occasional capture-start stall of 145–180 ms therefore occurs
+on both builds and in a scenario with no provocation — it is not jank coupling. None of
+the three loses a beat.
 
 **Status: A is not observed under the corrected grid.** No repeat, on any scenario,
 shows a beat's content genuinely absent from inside a take's presented range. The two
@@ -2062,18 +2132,25 @@ should be drafted for it.
 
 **The `janked-start` positive-median outlier is also a grid artifact.**
 `recaudit-summary-1788295321703.json`, 48000 Hz / 120 bpm / r1 carries the campaign's
-only positive adjusted median, +31.12 ms, and φ = **406.25 ms** — by far the largest
-off-grid phase in the whole register. Its buffer was overwritten, so this is an
-analytic re-derivation rather than a measurement: adding φ puts the beat error at
-+414.37 ms, past the 250 ms half-beat tolerance, so each onset re-pairs one beat later
-and the raw error becomes 414.37 − 500 = −85.63 ms, i.e. an adjusted median of about
-**−62.6 ms** — an ordinary value inside the universal-bias band, not an outlier. Nothing
-in the register should treat that row as evidence of late placement.
+only positive median. Its persisted values are `medianBeatErrorMs` = **+31.12 ms** (raw)
+and `medianBeatErrorMsAdjusted` = **+54.12 ms**; its φ is **406.25 ms**, by far the
+largest off-grid phase in the register (`regionPositionPpqn` = 11340, i.e. the region
+landed 5.906 s into the timeline). Its buffer was overwritten, so this is an analytic
+re-derivation rather than a measurement, done consistently on the RAW median: 31.12 +
+406.25 = 437.37 ms, past the 250 ms half-beat tolerance, so each onset re-pairs one beat
+later and the raw error becomes 437.37 − 500 = **−62.63 ms raw**, i.e. an adjusted
+median of about **−39.6 ms** — an ordinary value inside the universal-bias band, not an
+outlier. (An earlier version of this paragraph ran the derivation from the raw median
+but labelled the result adjusted, understating it by the 23 ms harness-path term.)
+
+That row is degenerate on both grids for a second, independent reason: its persisted
+`matchedBeats` is **5**, not the 16 or 17 every other `janked-start` repeat reports.
+Nothing in the register should treat it as evidence of late placement, on either grid.
 
 ### Note: a real, small head loss on punch-in (not the missing beat)
 
 Separately from the above, `headMissingRawMs` on `midtimeline-start`
-(12.5–49.0 ms) is genuine content between the record request and the first
+(12.21–49.04 ms over all 48 persisted rows) is genuine content between the record request and the first
 captured frame — the same worklet-connect setup lag the calibration baseline
 absorbs on every scenario, not a midtimeline-specific defect. Pre-connecting
 the recording worklet at ARM time so the ring holds pre-roll before the punch
@@ -2114,16 +2191,30 @@ geometry AND its capture WAV provably belongs to it — matched by frame count a
 row's own `bufferDurationSec`, by sample rate, and by write window against the run's own
 token, never by filename alone.
 
+Snapshot: **all 40 summary runs on disk through `1788310817094`**, the newest run this
+fix round made. Reproduce with
+
+```
+RECAUDIT_MAX_RUN=1788310817094 node \
+  .superpowers/sdd/2026-09-01-recording-start-alignment-audit/scripts/task7c-fix1-analysis.ts enum
+```
+
 | population | rows | outcome |
 |---|---|---|
-| rows with no per-row geometry | 143 | not replayable — includes **both upstream matrix runs** (`recaudit-summary-1788287951691.json`, `…1788288625777.json`), which predate the geometry fields entirely |
-| rows whose capture WAV was overwritten by a later run of the same cell | 195 | not replayable |
-| rows replayed under both grids | 126 | 113 reproduce their persisted median to <0.01 ms with matched/missing counts exact |
+| rows with no per-row geometry | 148 | not replayable — includes **both upstream matrix runs** (`recaudit-summary-1788287951691.json`, `…1788288625777.json`), which predate the geometry fields entirely |
+| rows whose capture WAV was overwritten by a later run of the same cell | 165 | not replayable |
+| rows replayed under both grids | 186 | 163 reproduce their persisted median to <0.05 ms with matched/missing counts exact |
+| **total considered** | **499** | 148 + 165 + 186 |
 
-The 13 non-reproducing rows are all `loop-wrap` takes 0, 4 and 5 from runs that predate
-this fix round's per-row `regionDurationSec`: their medians reproduce, their matched
-counts do not, because an offline replay has to reconstruct the presented range of a take
-that tiles a shared buffer. That gap is now closed for future runs.
+The **23** non-reproducing rows are all `loop-wrap` takes 0, 4 and 5 from runs that
+predate this fix round's per-row `regionDurationSec`: their medians reproduce, their
+matched counts do not, because an offline replay has to reconstruct the presented range
+of a take that tiles a shared buffer. That gap is now closed for future runs.
+
+(An earlier version of this table quoted 143 / 195 / 126 / 113, a split that reproduced
+from no snapshot at all — it mixed a row count taken before the two fresh matrix runs
+landed with counts taken from a superseded ownership rule. The `RECAUDIT_MAX_RUN` bound
+above exists so this table stays reproducible after future runs land.)
 
 **The decisive gap: the upstream matrix runs carry no geometry at all, so their medians
 are uncorrectable — the entire upstream column of the verdict tables was unreplayable.**
@@ -2211,5 +2302,6 @@ the upstream build, that the missing beat was the harness's own fencepost.
   rebuilt from scratch; that is a decision for the team lead, not something this round
   did unasked.
 - **`janked-start`'s φ = 406.25 ms outlier** (`…1788295321703`, 48000 Hz/120/r1) — its
-  buffer is gone, so its re-aliased value (≈ −62.6 ms, see "Prediction A, restated from
-  fresh measurement") is derived, not measured.
+  buffer is gone, so its re-aliased value (≈ −39.6 ms adjusted / −62.63 ms raw, see
+  "Prediction A, restated from fresh measurement") is derived, not measured. That row is
+  degenerate on both grids anyway — its persisted `matchedBeats` is 5.
