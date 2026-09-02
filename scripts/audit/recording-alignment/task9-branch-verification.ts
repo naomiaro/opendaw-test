@@ -12,67 +12,42 @@
  * (matrix runs) and T9_MT (multi-mic run on the branch), T9_MT_UP (comma-separated
  * upstream multi-mic runs) if the register ever cites different ones.
  */
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { classifyCell, type TakeAlignment } from "../../../src/lib/audit/recordingAlignment.ts";
-import { SIGNATURE_BANDS } from "../../../src/lib/audit/recordingAuditCalibration.ts";
+import { classifyCell } from "../../../src/lib/audit/recordingAlignment.ts";
+import { RECORDING_AUDIT_BPMS, RECORDING_AUDIT_SCENARIOS, signatureBandsFor } from "../../../src/lib/audit/recordingAuditCalibration.ts";
+import { appliedHarnessPathBiasMs, type AuditRow, type LoadedAuditSummary } from "../../../src/lib/audit/recordingAuditArtifacts.ts";
+import { asClassifiable, cellPopulation, loadMultitrackSummary, loadSummary, mean, withMedian } from "./artifacts.ts";
 
-const VERIFY_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../../../.verify-output");
 const env = (key: string, fallback: string) => process.env[key] ?? fallback;
 const UP = { 48000: env("T9_UP48", "1788310164556"), 44100: env("T9_UP44", "1788310817094") } as const;
 const BR = { 48000: env("T9_BR48", "1788328219906"), 44100: env("T9_BR44", "1788328656062") } as const;
 const MT_BRANCH = env("T9_MT", "1788325557229");
 const MT_UPSTREAM = env("T9_MT_UP", "1788302627819").split(",");
-
-interface Row {
-  scenario: string; bpm: number; rate: number; repeat: number; takeIndex: number;
-  medianBeatErrorMs: number | null; medianBeatErrorMsAdjusted: number | null;
-  matchedBeats: number; missingBeats: number;
-  headMissingMs: number | null; headMissingRawMs?: number | null; tailMissingMs?: number | null;
-  anchorT0Sec?: number | null; firstQuantumTimeSec?: number; recordRequestContextTime?: number | null;
-  regionStartSec?: number; waveformOffsetSec?: number;
-  finalizeMs?: number; status?: string; errorMessage?: string; matchedSignature?: string | null; detail?: string;
-  bufferDurationSec?: number; stopRequestContextTime?: number | null;
-  finalizeNumberOfFramesAtStop?: number; finalizeLimitCalls?: number[]; finalizeNumberOfFramesAtLimit?: number[];
-  finalizeOvershootFrames?: number[]; finalizeNumberOfFramesAfter?: number; finalizeLoaderState?: string;
-}
 const PROBE_RUNS = env("T9_PROBE", "").split(",").filter((x) => x.length > 0);
-interface MtRow extends Row { tape: "a" | "b"; medianSkewMs: number | null; maxAbsSkewMs: number | null; pairedSkewBeats: number }
 
-const load = (id: string) => {
-  const j = JSON.parse(readFileSync(`${VERIFY_DIR}/recaudit-summary-${id}.json`, "utf8"));
-  return { rows: (j.rows ?? []) as Row[], tol: (j.alignedToleranceMs ?? 2) as number, probe: j.sdkBuildProbe as string,
-           outputLatency: j.outputLatency as number, rate: j.rate as number };
+/** Every run this script compares was made after outputLatency persistence; a
+ *  null here means a wrong run id, not a legacy generation. */
+const load = (id: string): LoadedAuditSummary & { outputLatency: number } => {
+  const s = loadSummary(id);
+  if (s.outputLatencySec === null) throw new Error(`run ${id} (${s.generation}) persists no outputLatency; this script needs a G3+ run`);
+  return { ...s, outputLatency: s.outputLatencySec };
 };
-interface CellSkew { scenario: string; bpm: number; repeat: number; skew?: { medianSkewMs: number | null; maxAbsSkewMs: number | null; pairedBeats?: number } }
-const loadMt = (id: string) => {
-  const j = JSON.parse(readFileSync(`${VERIFY_DIR}/recaudit-mt-summary-${id}.json`, "utf8"));
-  return { rows: (j.rows ?? []) as MtRow[], probe: j.sdkBuildProbe as string, rate: j.rate as number, cellSkews: (j.cellSkews ?? []) as CellSkew[] };
-};
-const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
 const fmt = (x: number | null | undefined, d = 2) => (x === null || x === undefined || Number.isNaN(x) ? "—" : x.toFixed(d));
-const SCENARIOS = ["nominal-start", "janked-start", "midtimeline-start", "countin-start", "loop-wrap"];
-const BPMS = [120, 97.3];
-/** The population classifyCell sees: loop-wrap classifies over wrap takes 1..4 (0-based). */
-const cellPop = (rows: Row[], scenario: string, bpm: number) => {
-  const list = rows.filter((r) => r.scenario === scenario && r.bpm === bpm && r.medianBeatErrorMsAdjusted !== null);
-  return scenario === "loop-wrap" ? list.filter((r) => r.takeIndex >= 1 && r.takeIndex <= 4) : list;
-};
+const SCENARIOS = RECORDING_AUDIT_SCENARIOS;
+const BPMS = RECORDING_AUDIT_BPMS;
 /**
- * The harness reads `audioContext.outputLatency` per cell as its path-bias term; Chrome reports 0
- * until output has actually started, so the first cell of a fresh session can be measured with a
- * bias of 0 instead of the run's 0.023 s. Detect it from the row itself (applied bias = adjusted −
- * raw) and report the row re-adjusted with the run's own top-level `outputLatency`.
+ * Before the harness read `audioContext.outputLatency` once after output started,
+ * Chrome's initial 0 could reach the first repeat of a fresh session as its
+ * path-bias term, so that row was adjusted with 0 instead of the run's 0.023 s.
+ * Detect it from the row itself (applied bias = adjusted − raw, see
+ * `appliedHarnessPathBiasMs`) and report the row re-adjusted with the run's own
+ * top-level `outputLatency`. The harness now persists the applied bias per row
+ * and reads it once, so this is a guard on future runs, not a workaround.
  */
-const appliedBiasMs = (r: Row) => (r.medianBeatErrorMsAdjusted ?? 0) - (r.medianBeatErrorMs ?? 0);
-const readjusted = (r: Row, outputLatency: number) => r.medianBeatErrorMs! + outputLatency * 1000;
-const biasAnomaly = (r: Row, outputLatency: number) => Math.abs(appliedBiasMs(r) - outputLatency * 1000) > 0.01;
-const asAlignment = (r: Row): TakeAlignment => ({
-  beatErrors: [], medianBeatErrorMs: r.medianBeatErrorMs, medianBeatErrorMsAdjusted: r.medianBeatErrorMsAdjusted,
-  anchorT0Sec: r.anchorT0Sec ?? null, firstRefIndex: null, headMissingMs: r.headMissingMs,
-  tailMissingMs: r.tailMissingMs ?? 0, matchedBeats: r.matchedBeats, missingBeats: r.missingBeats, extraLowOnsets: 0,
-});
+const readjusted = (r: AuditRow, outputLatency: number) => r.medianBeatErrorMs! + outputLatency * 1000;
+const biasAnomaly = (r: AuditRow, outputLatency: number) => {
+  const applied = appliedHarnessPathBiasMs(r);
+  return applied !== null && Math.abs(applied - outputLatency * 1000) > 0.01;
+};
 
 const mode = process.argv[2] ?? "all";
 
@@ -86,14 +61,18 @@ if (mode === "cells" || mode === "all") {
   const groups: Record<string, number[]> = {};
   for (const rate of [48000, 44100] as const) {
     const up = load(UP[rate]); const br = load(BR[rate]);
-    if (up.probe !== "upstream" || br.probe !== "candidate") throw new Error(`probe mismatch: ${UP[rate]}=${up.probe} ${BR[rate]}=${br.probe}`);
+    if (up.sdkBuildProbe !== "upstream" || br.sdkBuildProbe !== "candidate") throw new Error(`probe mismatch: ${UP[rate]}=${up.sdkBuildProbe} ${BR[rate]}=${br.sdkBuildProbe}`);
+    if (up.beatGrid !== "absolute" || br.beatGrid !== "absolute") throw new Error(`grid mismatch: ${UP[rate]}=${up.beatGrid} ${BR[rate]}=${br.beatGrid}; both must be absolute`);
     for (const scenario of SCENARIOS) for (const bpm of BPMS) {
-      const u = cellPop(up.rows, scenario, bpm); const b = cellPop(br.rows, scenario, bpm);
-      const bMean = b.length ? mean(b.map((r) => r.medianBeatErrorMsAdjusted!)) : NaN;
-      for (const r of b) if (biasAnomaly(r, br.outputLatency)) anomalies.push(`${rate}/${scenario}/${bpm}/r${r.repeat}/take${r.takeIndex}: applied bias ${appliedBiasMs(r).toFixed(2)} ms (run outputLatency ${br.outputLatency}); persisted adjusted ${fmt(r.medianBeatErrorMsAdjusted)}, re-adjusted ${fmt(readjusted(r, br.outputLatency))}; cell mean re-adjusted ${fmt(mean(b.map((x) => readjusted(x, br.outputLatency))))}`);
-      for (const r of u) if (biasAnomaly(r, up.outputLatency)) anomalies.push(`UPSTREAM ${rate}/${scenario}/${bpm}/r${r.repeat}/take${r.takeIndex}: applied bias ${appliedBiasMs(r).toFixed(2)} ms`);
-      const uMean = u.length ? mean(u.map((r) => r.medianBeatErrorMsAdjusted!)) : NaN;
-      const cls = b.length ? classifyCell(b.map(asAlignment), (SIGNATURE_BANDS as Record<string, any>)[scenario] ?? [], br.tol) : null;
+      // Classification sees every non-error repeat (a null-median repeat forces
+      // `investigate`, as live); means are over the repeats with a median.
+      const uPop = cellPopulation(up.rows, scenario, bpm); const bPop = cellPopulation(br.rows, scenario, bpm);
+      const u = withMedian(uPop); const b = withMedian(bPop);
+      const bMean = b.length ? mean(b.map((r) => r.medianBeatErrorMsAdjusted)) : NaN;
+      for (const r of b) if (biasAnomaly(r, br.outputLatency)) anomalies.push(`${rate}/${scenario}/${bpm}/r${r.repeat}/take${r.takeIndex}: applied bias ${fmt(appliedHarnessPathBiasMs(r))} ms (run outputLatency ${br.outputLatency}); persisted adjusted ${fmt(r.medianBeatErrorMsAdjusted)}, re-adjusted ${fmt(readjusted(r, br.outputLatency))}; cell mean re-adjusted ${fmt(mean(b.map((x) => readjusted(x, br.outputLatency))))}`);
+      for (const r of u) if (biasAnomaly(r, up.outputLatency)) anomalies.push(`UPSTREAM ${rate}/${scenario}/${bpm}/r${r.repeat}/take${r.takeIndex}: applied bias ${fmt(appliedHarnessPathBiasMs(r))} ms`);
+      const uMean = u.length ? mean(u.map((r) => r.medianBeatErrorMsAdjusted)) : NaN;
+      const cls = bPop.length ? classifyCell(bPop.map((r) => asClassifiable(r)), signatureBandsFor(scenario), br.alignedToleranceMs) : null;
       if (cls?.status === "aligned") aligned++; else if (cls?.status === "matches-known-defect") matches++; else if (cls) investigate++;
       if (b.length) { allBranch.push(bMean); (groups[scenario] ??= []).push(bMean); }
       let delta = "—";
@@ -109,9 +88,9 @@ if (mode === "cells" || mode === "all") {
   for (const rate of [48000, 44100] as const) {
     const br = load(BR[rate]);
     for (const bpm of BPMS) for (const repeat of [1, 2, 3]) {
-      const takes = br.rows.filter((r) => r.scenario === "loop-wrap" && r.bpm === bpm && r.repeat === repeat && r.takeIndex >= 1 && r.takeIndex <= 4 && r.medianBeatErrorMsAdjusted !== null);
+      const takes = withMedian(br.rows.filter((r) => r.scenario === "loop-wrap" && r.bpm === bpm && r.repeat === repeat && r.takeIndex >= 1 && r.takeIndex <= 4));
       if (takes.length < 2) continue;
-      const xs = takes.map((r) => r.medianBeatErrorMsAdjusted!);
+      const xs = takes.map((r) => r.medianBeatErrorMsAdjusted);
       const take0 = br.rows.find((r) => r.scenario === "loop-wrap" && r.bpm === bpm && r.repeat === repeat && r.takeIndex === 0);
       console.log(`  ${rate}/${bpm}/r${repeat}: takes 1–4 spread ${(Math.max(...xs) - Math.min(...xs)).toFixed(3)} ms; take 0 ${fmt(take0?.medianBeatErrorMsAdjusted)} vs takes 1–4 mean ${fmt(mean(xs))}`);
     }
@@ -152,10 +131,10 @@ if (mode === "hop" || mode === "all") {
   const residuals: number[] = []; const hops: number[] = [];
   for (const rate of [48000, 44100] as const) {
     const run = load(BR[rate]);
-    const rows = run.rows.filter((r) => r.takeIndex === 0 && r.medianBeatErrorMsAdjusted !== null && r.firstQuantumTimeSec !== undefined && r.anchorT0Sec != null);
+    const rows = withMedian(run.rows.filter((r) => r.takeIndex === 0 && r.status !== "error" && r.firstQuantumTimeSec !== undefined && r.anchorT0Sec != null));
     for (const r of rows) {
       const hop = (r.firstQuantumTimeSec! - r.anchorT0Sec!) * 1000;
-      const adjusted = biasAnomaly(r, run.outputLatency) ? readjusted(r, run.outputLatency) : r.medianBeatErrorMsAdjusted!;
+      const adjusted = biasAnomaly(r, run.outputLatency) ? readjusted(r, run.outputLatency) : r.medianBeatErrorMsAdjusted;
       const res = adjusted - hop;
       const gap = r.recordRequestContextTime != null ? (r.firstQuantumTimeSec! - r.recordRequestContextTime) * 1000 : NaN;
       hops.push(hop); if (r.scenario !== "loop-wrap") residuals.push(res);
@@ -169,8 +148,8 @@ if (mode === "hop" || mode === "all") {
 if (mode === "mt" || mode === "all") {
   console.log("\n## Multi-mic (two simultaneously armed captures), 48000 Hz / 120 bpm\n");
   for (const [label, id] of [["branch", MT_BRANCH], ...MT_UPSTREAM.map((x) => ["upstream", x] as const)] as const) {
-    const run = loadMt(id);
-    console.log(`${label} run ${id} (probe ${run.probe}, ${run.rate} Hz):`);
+    const run = loadMultitrackSummary(id);
+    console.log(`${label} run ${id} (probe ${run.sdkBuildProbe}, ${run.rate} Hz, per-tape medians on the ${run.beatGrid} grid):`);
     const errRepeats = new Set(run.rows.filter((r) => r.status === "error").map((r) => `${r.scenario}/${r.bpm}/r${r.repeat}`));
     const repeats = new Set(run.rows.map((r) => `${r.scenario}/${r.bpm}/r${r.repeat}`));
     for (const key of repeats) {
@@ -178,9 +157,9 @@ if (mode === "mt" || mode === "all") {
       const cs = run.cellSkews.find((c) => `${c.scenario}/${c.bpm}/r${c.repeat}` === key);
       const a = run.rows.find((r) => r.tape === "a" && `${r.scenario}/${r.bpm}/r${r.repeat}` === key);
       const b = run.rows.find((r) => r.tape === "b" && `${r.scenario}/${r.bpm}/r${r.repeat}` === key);
-      console.log(`  ${key}: ${err ? "ERROR — " + err.errorMessage : `skew median ${fmt(cs?.skew?.medianSkewMs, 3)} ms, max|skew| ${fmt(cs?.skew?.maxAbsSkewMs, 3)}; tape a ${fmt(a?.medianBeatErrorMsAdjusted)} / tape b ${fmt(b?.medianBeatErrorMsAdjusted)} adjusted`}`);
+      console.log(`  ${key}: ${err ? "ERROR — " + err.errorMessage : `skew median ${fmt(cs?.skew.medianSkewMs, 3)} ms, max|skew| ${fmt(cs?.skew.maxAbsSkewMs, 3)}; tape a ${fmt(a?.medianBeatErrorMsAdjusted)} / tape b ${fmt(b?.medianBeatErrorMsAdjusted)} adjusted`}`);
     }
-    const skews = run.cellSkews.map((c) => c.skew?.medianSkewMs).filter((x): x is number => typeof x === "number");
+    const skews = run.cellSkews.map((c) => c.skew.medianSkewMs).filter((x): x is number => typeof x === "number");
     console.log(`  => ${errRepeats.size} of ${repeats.size} repeats errored; ${skews.length} skew values: ${skews.map((x) => x.toFixed(3)).join(", ")}; outside 2 ms: ${skews.filter((x) => Math.abs(x) > 2).length}\n`);
   }
 }
@@ -191,8 +170,8 @@ if (mode === "probe" || mode === "all") {
   for (const id of ids) {
     const run = load(id);
     const rows = run.rows.filter((r) => r.takeIndex === 0 && r.finalizeLoaderState !== undefined);
-    if (rows.length === 0) { console.log(`run ${id} (probe ${run.probe}): no finalization probe fields persisted`); continue; }
-    console.log(`run ${id} (probe ${run.probe}, ${run.rate} Hz): ${rows.length} repeats with probe fields`);
+    if (rows.length === 0) { console.log(`run ${id} (probe ${run.sdkBuildProbe}): no finalization probe fields persisted`); continue; }
+    console.log(`run ${id} (probe ${run.sdkBuildProbe}, ${run.rate} Hz): ${rows.length} repeats with probe fields`);
     console.log("| scenario | bpm | r | frames at stop | limit() calls | frames at limit | overshoot | frames after | loader state | outcome |");
     console.log("|---|---|---|---|---|---|---|---|---|---|");
     for (const r of rows) {
@@ -211,20 +190,24 @@ if (mode === "integrity" || mode === "all") {
     for (const rate of [48000, 44100] as const) {
       const run = load(ids[rate]);
       const rows = run.rows.filter((r) => r.medianBeatErrorMs !== null);
-      const tails = rows.map((r) => r.tailMissingMs ?? 0);
-      const heads = rows.map((r) => r.headMissingMs ?? 0);
+      // Both runs persist tailMissingMs/headMissingMs per row; a null on a row
+      // means "not anchored", which the classifier now reports as unmeasured —
+      // it is counted separately here, never as a 0.
+      const tails = rows.map((r) => r.tailMissingMs).filter((t): t is number => typeof t === "number");
+      const heads = rows.map((r) => r.headMissingMs).filter((h): h is number => typeof h === "number");
+      const unanchored = rows.length - heads.length;
       const trueTail = rows.filter((r) => r.takeIndex === 0 && r.firstQuantumTimeSec !== undefined && r.bufferDurationSec !== undefined && r.stopRequestContextTime != null)
         .map((r) => (r.firstQuantumTimeSec! + r.bufferDurationSec! - r.stopRequestContextTime!) * 1000);
-      console.log(`${label} ${rate} (${ids[rate]}): rows ${rows.length}; tailMissingMs > 2: ${tails.filter((t) => t > 2).length}, max ${fmt(Math.max(...tails))}, mean ${fmt(mean(tails))}; headMissingMs > 2: ${heads.filter((h) => h > 2).length}, max ${fmt(Math.max(...heads))}${trueTail.length ? `; true-clock file end − stop request (take 0): ${fmt(Math.min(...trueTail))} … ${fmt(Math.max(...trueTail))} ms, ${trueTail.filter((t) => t < 0).length} of ${trueTail.length} end before the request` : ""}`);
+      console.log(`${label} ${rate} (${ids[rate]}): rows ${rows.length}; tailMissingMs > 2: ${tails.filter((t) => t > 2).length}, max ${fmt(Math.max(...tails))}, mean ${fmt(mean(tails))}; headMissingMs > 2: ${heads.filter((h) => h > 2).length}, max ${fmt(Math.max(...heads))}; unanchored rows (null head): ${unanchored}${trueTail.length ? `; true-clock file end − stop request (take 0): ${fmt(Math.min(...trueTail))} … ${fmt(Math.max(...trueTail))} ms, ${trueTail.filter((t) => t < 0).length} of ${trueTail.length} end before the request` : ""}`);
     }
   }
   console.log("\nBranch cell verdicts with the classifier's own detail:");
   for (const rate of [48000, 44100] as const) {
     const br = load(BR[rate]);
     for (const scenario of SCENARIOS) for (const bpm of BPMS) {
-      const b = cellPop(br.rows, scenario, bpm);
+      const b = cellPopulation(br.rows, scenario, bpm);
       if (!b.length) continue;
-      const cls = classifyCell(b.map(asAlignment), (SIGNATURE_BANDS as Record<string, any>)[scenario] ?? [], br.tol);
+      const cls = classifyCell(b.map((r) => asClassifiable(r)), signatureBandsFor(scenario), br.alignedToleranceMs);
       console.log(`  ${rate}/${scenario}/${bpm}: ${cls.status}${cls.matchedSignature ? " (" + cls.matchedSignature + ")" : ""} — ${cls.detail}`);
     }
   }

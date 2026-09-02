@@ -5,31 +5,25 @@
  * capture WAV is PROVABLY the one that row was measured from, recompute the
  * take alignment under BOTH grids:
  *   OLD: expected beats at regionStartSec + k*P, k = 0 .. floor((D-0.001)/P)
- *   NEW: expected beats at k*P,  k = ceil((S-1e-6)/P) .. floor((S+D-0.001)/P)
+ *        (re-implemented here — the shipped library no longer has this grid)
+ *   NEW: the shipped `measureTakeAlignment` itself, so this table can never
+ *        drift from the function the verdicts ran on.
  *
  * Provenance rule (never join by filename alone):
  *   - the WAV's frame count must equal round(row.bufferDurationSec * row.rate)
+ *     (rows without `bufferDurationSec` predate the field; only the rate check
+ *     applies to them)
  *   - the WAV's sample rate must equal row.rate
- *   - the WAV's mtime must fall inside [run id ms, summary file mtime ms]
+ *   - a legacy-named WAV (no run token) is accepted only when this run is the
+ *     cell's last owner AND its mtime falls in (previous owner run, summary
+ *     mtime + 2 s]; a run-unique name is its own provenance
  * Rows failing any check are reported as NOT replayable, with the reason.
  */
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { bandSplit } from "../../../src/lib/audit/recordingAlignment.ts";
+import { readFileSync, statSync } from "node:fs";
+import { bandSplit, expectedBeatRange, measureTakeAlignment } from "../../../src/lib/audit/recordingAlignment.ts";
 import { detectOnsets } from "../../../src/lib/audit/onsetDetection.ts";
-
-const VERIFY_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../../../.verify-output");
-
-export interface Row {
-  scenario: string; bpm: number; rate: number; repeat: number; takeIndex: number;
-  medianBeatErrorMs: number | null; medianBeatErrorMsAdjusted: number | null;
-  matchedBeats: number; missingBeats: number;
-  headMissingRawMs?: number | null; headMissingMs?: number | null;
-  bufferDurationSec?: number; regionPositionPpqn?: number; regionDurationSec?: number;
-  regionStartSec?: number; waveformOffsetSec?: number;
-  status?: string;
-}
+import type { AuditRow, SdkBuildProbe } from "../../../src/lib/audit/recordingAuditArtifacts.ts";
+import { VERIFY_DIR, bpmToken, loadSummaries } from "./artifacts.ts";
 
 export function decodeWav(path: string): { sampleRate: number; channel: Float32Array } {
   const buf = readFileSync(path);
@@ -50,8 +44,6 @@ export function decodeWav(path: string): { sampleRate: number; channel: Float32A
   return { sampleRate, channel: out };
 }
 
-export const bpmToken = (b: number) => String(b).replace(".", "p");
-
 function medianOf(xs: number[]): number | null {
   if (xs.length === 0) return null;
   const s = [...xs].sort((a, b) => a - b);
@@ -65,23 +57,38 @@ export interface MatchResult {
   matchedIndices: number[];
 }
 
-/** Greedy nearest-first match, identical loop to the shipped function. */
+/**
+ * Match captured metronome onsets against one of the two grids. Mode "new" is
+ * the shipped `measureTakeAlignment` (no reference clicks, so no head/tail
+ * figures); mode "old" re-implements the retired region-anchored grid with the
+ * same greedy nearest-first matcher.
+ */
 export function matchGrid(
   lowOnsets: number[], regionStartSec: number, waveformOffsetSec: number,
   regionDurationSec: number, bpm: number, mode: "old" | "new", biasSec: number,
 ): MatchResult {
+  if (mode === "new") {
+    const a = measureTakeAlignment({
+      lowOnsets, highOnsets: [], regionStartSec, waveformOffsetSec, regionDurationSec,
+      bufferDurationSec: 0, bpm, schedule: { times: [], baseGapSec: 0, gapIncrementSec: 0 },
+      recordRequestContextTime: null, stopRequestContextTime: null, harnessPathBiasSec: biasSec,
+    });
+    const { firstBeat, lastBeat } = expectedBeatRange(regionStartSec, regionDurationSec, bpm);
+    const matchedIndices = a.beatErrors.map((e) => e.beat).sort((x, y) => x - y);
+    const matchedSet = new Set(matchedIndices);
+    const unmatchedIndices: number[] = [];
+    for (let k = firstBeat; k <= lastBeat; k++) if (!matchedSet.has(k)) unmatchedIndices.push(k);
+    return {
+      expectedCount: Math.max(0, lastBeat - firstBeat + 1), matched: a.matchedBeats, missing: a.missingBeats,
+      unmatchedIndices, median: a.medianBeatErrorMs, adjusted: a.medianBeatErrorMsAdjusted, matchedIndices,
+    };
+  }
   const P = 60 / bpm;
   const timelineOnsets = lowOnsets.map((t) => regionStartSec + (t - waveformOffsetSec));
   const expected: number[] = [];
   const indices: number[] = [];
-  if (mode === "old") {
-    const last = Math.floor((regionDurationSec - 0.001) / P);
-    for (let k = 0; k <= last; k++) { expected.push(regionStartSec + k * P); indices.push(k); }
-  } else {
-    const first = Math.ceil((regionStartSec - 1e-6) / P);
-    const last = Math.floor((regionStartSec + regionDurationSec - 0.001) / P);
-    for (let k = first; k <= last; k++) { expected.push(k * P); indices.push(k); }
-  }
+  const last = Math.floor((regionDurationSec - 0.001) / P);
+  for (let k = 0; k <= last; k++) { expected.push(regionStartSec + k * P); indices.push(k); }
   const tol = P / 2;
   const cands: { b: number; o: number; d: number }[] = [];
   for (let k = 0; k < expected.length; k++) {
@@ -111,32 +118,12 @@ export function matchGrid(
 }
 
 export interface ReplayRow {
-  runId: string; summaryFile: string; probe: string;
-  row: Row; phiMs: number;
+  runId: string; summaryFile: string; probe: SdkBuildProbe;
+  row: AuditRow; phiMs: number;
   wav: string | null; notReplayable: string | null;
   old: MatchResult | null; neu: MatchResult | null;
   clickGapsMs: [number, number] | null; clickCount: number | null;
   firstClickMs: number | null; clicksBeforeOffset: number | null;
-}
-
-/**
- * Optional snapshot bound. `RECAUDIT_MAX_RUN=<runId>` restricts every population
- * to runs with an id at or below that token, so a number quoted in the register
- * stays reproducible after later runs land in `.verify-output/`.
- */
-export const MAX_RUN = process.env.RECAUDIT_MAX_RUN ? Number(process.env.RECAUDIT_MAX_RUN) : Infinity;
-
-export function loadSummaries() {
-  return readdirSync(VERIFY_DIR)
-    .filter((f) => /^recaudit-summary-\d+\.json$/.test(f))
-    .filter((f) => Number(f.replace(/^recaudit-summary-|\.json$/g, "")) <= MAX_RUN)
-    .sort()
-    .map((f) => ({
-      file: f,
-      runId: f.replace(/^recaudit-summary-|\.json$/g, ""),
-      mtimeMs: statSync(VERIFY_DIR + "/" + f).mtimeMs,
-      j: JSON.parse(readFileSync(VERIFY_DIR + "/" + f, "utf8")),
-    }));
 }
 
 export function replayAll(scenarioFilter?: string): ReplayRow[] {
@@ -146,8 +133,8 @@ export function replayAll(scenarioFilter?: string): ReplayRow[] {
   // run of a cell still has its audio on disk.
   const cellOwners = new Map<string, number[]>();
   for (const s of loadSummaries()) {
-    const probe0 = s.j.sdkBuildProbe ?? "unknown";
-    for (const r of (s.j.rows ?? []) as Row[]) {
+    const probe0 = s.summary.sdkBuildProbe;
+    for (const r of s.summary.rows) {
       const k = `${r.scenario}|${r.bpm}|${r.rate}|${r.repeat}`;
       // A run that wrote a run-unique capture name never competed for the
       // legacy name, so it is not an owner of it.
@@ -165,16 +152,18 @@ export function replayAll(scenarioFilter?: string): ReplayRow[] {
   for (const list of cellOwners.values()) list.sort((a, b) => a - b);
   const wavCache = new Map<string, { sampleRate: number; channel: Float32Array; lowOnsets: number[]; mtimeMs: number }>();
   for (const s of loadSummaries()) {
-    const rows: Row[] = s.j.rows ?? [];
+    const rows = s.summary.rows;
     if (rows.length === 0) continue;
-    const bias = s.j.harnessPathBiasSec ?? 0;
-    const probe = s.j.sdkBuildProbe ?? "unknown";
+    // The bias the run's live rows were adjusted with — 0 for generations whose
+    // rows carry no adjusted median (see recordingAuditArtifacts.ts).
+    const bias = s.summary.harnessPathBiasSec;
+    const probe = s.summary.sdkBuildProbe;
     const runStartMs = Number(s.runId);
     // Reconstruct each take's presented duration. A single-take scenario's
     // region runs to the end of the buffer; a loop-wrap repeat's takes tile the
     // same buffer, so each take runs to the NEXT take's waveform offset.
-    const nextOffset = new Map<Row, number | null>();
-    const byRepeat = new Map<string, Row[]>();
+    const nextOffset = new Map<AuditRow, number | null>();
+    const byRepeat = new Map<string, AuditRow[]>();
     for (const r of rows) {
       const k = `${r.scenario}|${r.bpm}|${r.rate}|${r.repeat}`;
       const list = byRepeat.get(k) ?? [];
@@ -210,7 +199,9 @@ export function replayAll(scenarioFilter?: string): ReplayRow[] {
       const path = VERIFY_DIR + "/" + name;
       let st;
       try { st = statSync(path); } catch {
-        out.push({ runId: s.runId, summaryFile: s.file, probe, row: r, phiMs, wav: null, notReplayable: "WAV absent", old: null, neu: null, clickGapsMs: null, clickCount: null, firstClickMs: null, clicksBeforeOffset: null });
+        // G6 rows say whether the upload ever happened.
+        const reason = r.wavUploadError ? `WAV never uploaded (${r.wavUploadError})` : "WAV absent";
+        out.push({ runId: s.runId, summaryFile: s.file, probe, row: r, phiMs, wav: null, notReplayable: reason, old: null, neu: null, clickGapsMs: null, clickCount: null, firstClickMs: null, clicksBeforeOffset: null });
         continue;
       }
       // provenance: this run must be the LAST run that recorded this cell (every
@@ -269,16 +260,17 @@ if (process.argv[1] && process.argv[1].endsWith("task7c-fix1-replay.ts")) {
   const rows = replayAll(filter);
   const rep = rows.filter((r) => r.notReplayable === null);
   console.log("total rows considered: " + rows.length + "  replayable: " + rep.length + "  not: " + (rows.length - rep.length));
-  // reproduction fidelity against the persisted numbers
+  // reproduction fidelity against the persisted numbers — only rows with a
+  // persisted median can reproduce, so they alone form the denominator
   let reproOld = 0, reproNew = 0, checked = 0;
   for (const r of rep) {
-    checked++;
     const persistedMed = r.row.medianBeatErrorMs;
     if (persistedMed === null) continue;
+    checked++;
     if (r.old!.median !== null && Math.abs(r.old!.median - persistedMed) < 0.05 && r.old!.matched === r.row.matchedBeats && r.old!.missing === r.row.missingBeats) reproOld++;
     if (r.neu!.median !== null && Math.abs(r.neu!.median - persistedMed) < 0.05 && r.neu!.matched === r.row.matchedBeats && r.neu!.missing === r.row.missingBeats) reproNew++;
   }
-  console.log("reproduces persisted row under OLD grid: " + reproOld + "/" + checked + "; under NEW grid: " + reproNew + "/" + checked);
+  console.log("reproduces persisted row under OLD grid: " + reproOld + "/" + checked + "; under NEW grid: " + reproNew + "/" + checked + " (replayable rows with a persisted median; " + (rep.length - checked) + " null-median rows excluded)");
   for (const r of rows) {
     const tag = `${r.runId} ${r.probe.padEnd(9)} ${r.row.scenario.padEnd(18)} ${String(r.row.bpm).padStart(5)} ${r.row.rate} r${r.row.repeat} t${r.row.takeIndex}`;
     if (r.notReplayable !== null) { console.log(`SKIP ${tag} phi=${isNaN(r.phiMs) ? "?" : r.phiMs.toFixed(2)} :: ${r.notReplayable}`); continue; }

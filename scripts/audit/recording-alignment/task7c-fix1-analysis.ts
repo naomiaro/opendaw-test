@@ -1,37 +1,34 @@
 /**
  * Task 7c fix round 1 — the numbers that go into the register.
  *
- *   census   off-grid census over every persisted row that carries geometry
- *   gate     replay fidelity: does my re-match reproduce the persisted row?
- *   regress  the four regression runs, BOTH grids on the SAME WAVs
- *   correct  candidate/upstream matrix cell means, old grid and absolute grid
+ *   enum        replay population census (snapshot-bounded)
+ *   census      off-grid census over every persisted row that carries geometry
+ *   gate        replay fidelity: does my re-match reproduce the persisted row?
+ *   regress     the four regression runs, BOTH grids on the SAME WAVs
+ *   correct     candidate/upstream matrix cell means, old grid and absolute grid
+ *   fencepost   the old grid's missing-beat fencepost vs "no click before the region start"
+ *   missingrows every persisted row with missingBeats > 0, with its geometry
+ *   ppqn        take-0 regionPositionPpqn distribution by build
+ *
+ * `RECAUDIT_MAX_RUN=<runToken>` bounds the snapshot (see artifacts.ts).
  */
-import { readFileSync, readdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { replayAll, loadSummaries, MAX_RUN, type Row } from "./task7c-fix1-replay.ts";
+import { replayAll } from "./task7c-fix1-replay.ts";
+import { MAX_RUN, loadSummaries, mean, phiMs } from "./artifacts.ts";
 
-const VERIFY_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../../../.verify-output");
 const mode = process.argv[2] ?? "census";
 
-function phiOf(r: Row): number {
-  const P = 60 / r.bpm;
-  const S = r.regionStartSec!;
-  return (S / P - Math.floor(S / P)) * P * 1000;
-}
 function fmt(x: number | null | undefined, d = 2): string {
   return x === null || x === undefined ? "—" : x.toFixed(d);
 }
-function mean(xs: number[]): number { return xs.reduce((a, b) => a + b, 0) / xs.length; }
 
 if (mode === "census") {
   // Every persisted row with geometry, grouped by scenario.
   const byScenario = new Map<string, { rows: number; off: number; maxPhi: number; phis: number[]; runs: Set<string> }>();
   for (const s of loadSummaries()) {
-    for (const r of (s.j.rows ?? []) as Row[]) {
+    for (const r of s.summary.rows) {
       if (r.regionStartSec === undefined) continue;
       const e = byScenario.get(r.scenario) ?? { rows: 0, off: 0, maxPhi: 0, phis: [], runs: new Set<string>() };
-      const phi = phiOf(r);
+      const phi = phiMs(r);
       e.rows++;
       e.runs.add(s.runId);
       if (phi > 1e-3) { e.off++; e.phis.push(phi); e.maxPhi = Math.max(e.maxPhi, phi); }
@@ -52,8 +49,8 @@ if (mode === "census") {
   const byProbe = new Map<string, { n: number; off: number; max: number; loopT5: number }>();
   const head = new Map<string, number[]>();
   for (const s2 of loadSummaries()) {
-    const probe = s2.j.sdkBuildProbe ?? "unknown";
-    for (const r of (s2.j.rows ?? []) as Row[]) {
+    const probe = s2.summary.sdkBuildProbe;
+    for (const r of s2.summary.rows) {
       if (typeof r.headMissingRawMs === "number") {
         const l = head.get(r.scenario) ?? []; l.push(r.headMissingRawMs); head.set(r.scenario, l);
       }
@@ -61,7 +58,7 @@ if (mode === "census") {
       const k = probe + " non-midtimeline";
       const e = byProbe.get(k) ?? { n: 0, off: 0, max: 0, loopT5: 0 };
       e.n++;
-      const phi = phiOf(r);
+      const phi = phiMs(r);
       if (phi > 1e-3) { e.off++; e.max = Math.max(e.max, phi); if (r.scenario === "loop-wrap" && r.takeIndex === 5) e.loopT5++; }
       byProbe.set(k, e);
     }
@@ -128,8 +125,8 @@ if (mode === "ppqn") {
   // scenario punches in mid-timeline. Backs the register's placement claim.
   const groups = new Map<string, number[]>();
   for (const s2 of loadSummaries()) {
-    const probe = s2.j.sdkBuildProbe ?? "unknown";
-    for (const r of (s2.j.rows ?? []) as Row[]) {
+    const probe = s2.summary.sdkBuildProbe;
+    for (const r of s2.summary.rows) {
       if (r.takeIndex !== 0 || r.regionPositionPpqn === undefined) continue;
       const k = `${probe} ${r.scenario === "midtimeline-start" ? "midtimeline" : "non-midtimeline"}`;
       const l = groups.get(k) ?? []; l.push(r.regionPositionPpqn); groups.set(k, l);
@@ -141,8 +138,8 @@ if (mode === "ppqn") {
   }
   console.log("\n-- non-midtimeline take-0 rows above 92 PPQN, and every upstream zero --");
   for (const s2 of loadSummaries()) {
-    const probe = s2.j.sdkBuildProbe ?? "unknown";
-    for (const r of (s2.j.rows ?? []) as Row[]) {
+    const probe = s2.summary.sdkBuildProbe;
+    for (const r of s2.summary.rows) {
       if (r.takeIndex !== 0 || r.regionPositionPpqn === undefined || r.scenario === "midtimeline-start") continue;
       if (r.regionPositionPpqn > 92) console.log(`  ABOVE92 ${s2.runId} ${probe} ${r.scenario}/${r.bpm}/${r.rate} r${r.repeat} ppqn=${r.regionPositionPpqn} matched=${r.matchedBeats} missing=${r.missingBeats}`);
       else if (r.regionPositionPpqn === 0 && probe === "upstream") console.log(`  UPSTREAM-ZERO ${s2.runId} ${r.scenario}/${r.bpm}/${r.rate} r${r.repeat}`);
@@ -168,15 +165,15 @@ if (mode === "missingrows") {
   console.log("");
   console.log("| run | build | cell | matched/missing | S (regionStartSec) | phi (ms) | adjusted median | headMissingRawMs | buffer |");
   for (const s2 of loadSummaries()) {
-    const probe = s2.j.sdkBuildProbe ?? "unknown";
-    for (const r of (s2.j.rows ?? []) as Row[]) {
+    const probe = s2.summary.sdkBuildProbe;
+    for (const r of s2.summary.rows) {
       if (!(r.missingBeats > 0)) continue;
       const key = `${s2.runId}|${r.scenario}|${r.bpm}|${r.rate}|${r.repeat}|${r.takeIndex}`;
       const P = 60 / r.bpm;
-      const phi = r.regionStartSec === undefined ? null : (r.regionStartSec / P - Math.floor(r.regionStartSec / P)) * P * 1000;
+      const phi = r.regionStartSec === undefined ? null : phiMs(r);
       const tol = P * 500; // half a beat, in ms
       const adj = r.medianBeatErrorMsAdjusted;
-      const raw = r.medianBeatErrorMs ?? null;
+      const raw = r.medianBeatErrorMs;
       const margin = typeof raw === "number" ? tol - Math.abs(raw) : null;
       console.log(`| ${s2.runId} | ${probe} | ${r.scenario}/${r.bpm}/${r.rate} r${r.repeat} t${r.takeIndex} | ${r.matchedBeats}/${r.missingBeats} | ${r.regionStartSec === undefined ? "not persisted" : r.regionStartSec} | ${phi === null ? "—" : phi.toFixed(2)} | ${typeof adj === "number" ? adj.toFixed(2) : "—"} | ${r.headMissingRawMs === undefined || r.headMissingRawMs === null ? "not persisted" : r.headMissingRawMs.toFixed(2)} | ${rep.get(key) === "REPLAYABLE" ? "ON DISK" : "gone"} | margin-to-half-beat=${margin === null ? "—" : margin.toFixed(2)}ms`);
     }
@@ -253,42 +250,42 @@ if (mode === "enum") {
 
 if (mode === "correct") {
   // Per-cell means on both grids. NEW = OLD + phi is applied analytically to
-  // every row that carries geometry; the identity itself is validated on the
-  // rows whose WAV survives (see `gate`).
+  // every row that carries geometry AND satisfies the identity's precondition
+  // phi < P/2 (rows past it are listed and excluded — the identity does not
+  // hold for them); the identity itself is validated on the rows whose WAV
+  // survives (see `gate`).
   const wanted = process.argv.slice(3);
-  for (const file of readdirSync(VERIFY_DIR).filter((f) => /^recaudit-summary-\d+\.json$/.test(f)).sort()) {
-    const runId = file.replace(/^recaudit-summary-|\.json$/g, "");
-    if (Number(runId) > MAX_RUN) continue;
-    if (wanted.length > 0 && !wanted.includes(runId)) continue;
-    const j = JSON.parse(readFileSync(VERIFY_DIR + "/" + file, "utf8"));
-    const rows: Row[] = j.rows ?? [];
-    // The absolute-grid change shipped mid-session: the first run measured with
-    // it is 1788306957902. Earlier runs' persisted medians are region-anchored
-    // and need +phi; later runs' already ARE absolute-grid values.
-    const ABSOLUTE_GRID_FROM = 1788306957902;
-    const alreadyAbsolute = Number(runId) >= ABSOLUTE_GRID_FROM;
-    console.log(`\n### ${file}  probe=${j.sdkBuildProbe ?? "?"} rate=${j.rate}  grid=${alreadyAbsolute ? "absolute (as measured)" : "region-anchored (needs +phi)"}`);
-    const cells = new Map<string, Row[]>();
-    for (const r of rows) {
+  for (const s of loadSummaries()) {
+    if (wanted.length > 0 && !wanted.includes(s.runId)) continue;
+    const j = s.summary;
+    // The beat grid a run's persisted medians sit on is decided by the loader
+    // (persisted from schema version 2; run-id cutoff before that).
+    const alreadyAbsolute = j.beatGrid === "absolute";
+    console.log(`\n### ${s.file}  probe=${j.sdkBuildProbe} rate=${j.rate}  grid=${alreadyAbsolute ? "absolute (as measured)" : "region-anchored (needs +phi)"} [${j.beatGridSource}]`);
+    const cells = new Map<string, typeof j.rows>();
+    for (const r of j.rows) {
       const k = `${r.scenario}|${r.bpm}`;
       const l = cells.get(k) ?? []; l.push(r); cells.set(k, l);
     }
-    console.log("| scenario | bpm | n | mean adj region-anchored | mean phi | mean adj ABSOLUTE | missing rows |");
+    console.log("| scenario | bpm | n | mean adj region-anchored | mean phi | mean adj ABSOLUTE | missing rows | phi >= P/2 (excluded) |");
     for (const [k, list] of [...cells.entries()].sort()) {
       const [scenario, bpm] = k.split("|");
       // loop-wrap cell means use takeIndex 1-4 only (register's I2 population).
       const pop = scenario === "loop-wrap" ? list.filter((r) => r.takeIndex >= 1 && r.takeIndex <= 4) : list;
-      const usable = pop.filter((r) => r.medianBeatErrorMsAdjusted !== null && r.regionStartSec !== undefined);
+      const withGeom = pop.filter((r) => typeof r.medianBeatErrorMsAdjusted === "number" && r.regionStartSec !== undefined);
+      const halfPeriodMs = (60 / Number(bpm)) * 500;
+      const invalid = withGeom.filter((r) => phiMs(r) >= halfPeriodMs);
+      const usable = withGeom.filter((r) => phiMs(r) < halfPeriodMs);
       if (usable.length === 0) {
-        const anyAdj = pop.filter((r) => r.medianBeatErrorMsAdjusted !== null);
-        console.log(`| ${scenario} | ${bpm} | ${anyAdj.length} | ${anyAdj.length ? fmt(mean(anyAdj.map((r) => r.medianBeatErrorMsAdjusted!))) : "—"} | NO GEOMETRY | NO GEOMETRY | ${pop.filter((r) => r.missingBeats > 0).length} |`);
+        const anyAdj = pop.filter((r) => typeof r.medianBeatErrorMsAdjusted === "number");
+        console.log(`| ${scenario} | ${bpm} | ${anyAdj.length} | ${anyAdj.length ? fmt(mean(anyAdj.map((r) => r.medianBeatErrorMsAdjusted!))) : "—"} | NO GEOMETRY | NO GEOMETRY | ${pop.filter((r) => r.missingBeats > 0).length} | ${invalid.length} |`);
         continue;
       }
-      const phis = usable.map(phiOf);
+      const phis = usable.map(phiMs);
       const asMeasured = mean(usable.map((r) => r.medianBeatErrorMsAdjusted!));
       const absMean = alreadyAbsolute ? asMeasured : mean(usable.map((r, i) => r.medianBeatErrorMsAdjusted! + phis[i]));
       const oldMean = alreadyAbsolute ? mean(usable.map((r, i) => r.medianBeatErrorMsAdjusted! - phis[i])) : asMeasured;
-      console.log(`| ${scenario} | ${bpm} | ${usable.length} | ${fmt(oldMean)} | ${fmt(mean(phis))} | ${fmt(absMean)} | ${pop.filter((r) => r.missingBeats > 0).length} |`);
+      console.log(`| ${scenario} | ${bpm} | ${usable.length} | ${fmt(oldMean)} | ${fmt(mean(phis))} | ${fmt(absMean)} | ${pop.filter((r) => r.missingBeats > 0).length} | ${invalid.length}${invalid.length ? " (" + invalid.map((r) => `r${r.repeat}/t${r.takeIndex} phi=${phiMs(r).toFixed(2)}`).join(", ") + ")" : ""} |`);
     }
   }
 }

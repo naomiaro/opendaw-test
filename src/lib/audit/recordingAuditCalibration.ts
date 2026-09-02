@@ -11,6 +11,20 @@ export function isRecordingScenario(value: string): value is RecordingScenario {
   return (RECORDING_AUDIT_SCENARIOS as readonly string[]).includes(value);
 }
 
+/** Multi-mic simultaneous-recording scenarios (two tapes armed on clones of the
+ *  same loopback signal). Each mirrors a single-tape scenario's provocation and
+ *  is judged, per tape, against that scenario's `SIGNATURE_BANDS`. */
+export const MULTITRACK_SCENARIOS = ["multitrack-start", "multitrack-janked"] as const;
+export type MultitrackScenario = (typeof MULTITRACK_SCENARIOS)[number];
+export const MULTITRACK_BASE_SCENARIO: Record<MultitrackScenario, RecordingScenario> = {
+  "multitrack-start": "nominal-start",
+  "multitrack-janked": "janked-start",
+};
+
+export function isMultitrackScenario(value: string): value is MultitrackScenario {
+  return (MULTITRACK_SCENARIOS as readonly string[]).includes(value);
+}
+
 /**
  * Total lookup into `SIGNATURE_BANDS`: throws on a scenario name the table
  * does not know, so an offline script fed a mistyped or foreign scenario can
