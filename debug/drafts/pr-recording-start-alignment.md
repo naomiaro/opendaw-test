@@ -171,21 +171,36 @@ Baseline artifacts: `recaudit-summary-1788287951691.json`, `…1788288625777.jso
 `…1788310164556.json`, `…1788310817094.json`. Branch artifacts:
 `recaudit-summary-1788299505584.json`, `…1788299943226.json`.
 
+**The hang is filed as its own issue and should not be closed by this PR.** Twelve
+repeats is a thin population against a condition whose per-cell failure rate ranges from
+33 % to 100 %, and with no traced mechanism the honest reading is that the hang may still
+be present and merely not provoked here.
+
 ### What this does not fix
 
-- **Residual placement bias.** No cell reaches the 2 ms alignment tolerance. The
-  remaining error is smaller but not zero.
+Each of the following is reported as its own issue, so none of them depends on this
+change being taken.
+
+- **Residual placement bias.** No cell reaches the 2 ms alignment tolerance afterwards;
+  a residual of roughly 8–30 ms remains on every cell, largest on `midtimeline-start`
+  and `loop-wrap`. The issue covers the signature on every scenario measured
+  — `nominal-start`, `countin-start`, `janked-start`, `midtimeline-start` and
+  `loop-wrap` takes 1–4 — before and after this change.
+- **Loop-wrap finalization hang.** Filed on its own footing, *not* as fixed here:
+  resolved in this PR's data (12 of 12 repeats finalized) but with **no mechanism
+  identified** linking these changes to the finalization pipeline, which they do not
+  touch. See "Measured but unexplained" above.
+- **A head loss of 12–49 ms between the record request and the first captured frame**,
+  present on every scenario and unchanged by this commit — the capture path is
+  connected inside `startRecording`'s async chain, so it is not yet live when the
+  request is issued. Invisible when recording from a stopped transport, audible on a
+  punch-in.
 - **Inter-track skew between simultaneously armed captures**, about one render
   quantum, unchanged by this commit and present identically on both builds. Each
   capture is anchored against its own worklet's callback; this commit corrects each
   one against its own clock and does not synchronize two of them to each other.
-  Filed separately.
-- **A content-address collision on simultaneous identical takes.** Filed separately.
-- **A small head loss on punch-in** (12–49 ms of content between the record request
-  and the first captured frame) that is inherent to connecting the capture path inside
-  `startRecording`'s async chain. Pre-connecting the recording worklet at arm time so
-  the ring holds pre-roll would remove it, but that is a design change to the capture
-  path rather than a bug fix and is out of scope here.
+- **A content-address collision on simultaneous identical takes**, which panics
+  `BoxGraph.stageBox` and hangs the affected capture's finalization.
 
 ### Reproducing the measurement
 

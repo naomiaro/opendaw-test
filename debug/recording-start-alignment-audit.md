@@ -192,12 +192,25 @@ multi-mic findings (collision, skew) are untouched by it and remain open on both
 
 ### Upstream contribution outcome
 
-Two issue drafts under `debug/drafts/` (`issue-take-collision.md`,
-`issue-inter-track-quantum-skew.md`) and one PR-description draft
-(`pr-recording-start-alignment.md`). The withdrawn Prediction A gets no draft, the
-residual placement bias is PR scope rather than an issue, and the `loop-wrap`
-finalization hang is covered by the PR's measured-but-unexplained improvement rather
-than filed separately.
+One PR-description draft (`pr-recording-start-alignment.md`) and **five** issue drafts,
+all under `debug/drafts/` — one per confirmed finding the PR does not fully and
+explainably fix:
+
+| draft | finding |
+|---|---|
+| `issue-residual-start-placement-bias.md` | the no-count-in placement bias on all five scenarios, with the three-term decomposition, the fresh-upstream signature per scenario, and the post-fix residual per scenario (Predictions B and D's measured outcomes both live here) |
+| `issue-loop-wrap-finalization-hang.md` | C2, filed on its own footing — resolved in the candidate data, mechanism unexplained |
+| `issue-punch-in-head-loss.md` | the request-to-first-frame capture gap, present on every scenario, unchanged by the candidate fix |
+| `issue-take-collision.md` | Task 7b Finding 1, the deterministic content-address collision |
+| `issue-inter-track-quantum-skew.md` | Task 7b Finding 2, render-quantum-granular inter-track skew |
+
+The PR draft's "what this does not fix" list points at all five, with the hang described
+as resolved in the PR's data but with no mechanism identified.
+
+**Deliberately not drafted, because neither is confirmed:** Prediction C's explicit
+spec-§6 deviation (the campaign's `janked-start` provocation cannot isolate it from A
+and B), and the six unresolved legacy rows under "Unresolved candidates" (buffers gone,
+undecidable in either direction). The withdrawn Prediction A gets no draft.
 
 ## Fix round 1 (2026-09-01) — corrections after review
 
