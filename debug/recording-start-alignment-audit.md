@@ -562,7 +562,8 @@ re-derived on the absolute grid"**):
   predicted signature A–D is either confirmed with a measured magnitude or explicitly
   refuted in the register" — a binary outcome. Prediction C does not resolve to
   either: this campaign's `janked-start` provocation cannot isolate C's effect from A
-  and B's (both of which ARE independently confirmed/characterized), so C's outcome
+  and B's (B is independently characterized; A's confirmation is withdrawn in Task 7c,
+  which leaves C's isolation problem unchanged), so C's outcome
   is neither a clean confirmation nor a clean refutation. This is registered here as
   a deliberate, explicit deviation from that binary framing — not an oversight — with
   the reason (no C-specific provocation exists in this campaign's scenario set) and
@@ -763,7 +764,8 @@ live loader for future live-inspection.
 
 ### Candidate new upstream findings, summarized
 
-Three candidates emerge from this campaign, all reproduced with high consistency:
+Three candidates emerged from this campaign, each reproduced with high consistency as
+measured at the time; item 2 has since been withdrawn (Task 7c), so two remain live:
 1. The `nominal-start`/`countin-start`/(most of) `janked-start` no-count-in
    `waveformOffset` bias (`RecordAudio.ts:270-274`, magnitude roughly -60 to -110 ms,
    three-term-decomposed in the bring-up section).
@@ -786,12 +788,15 @@ Three candidates emerge from this campaign, all reproduced with high consistency
    attempts, binary fast/never split, not fixed by widening the harness's own
    deadline) — see the C2 entry.
 
-All three are candidates for upstream issue drafts under `debug/drafts/` (Task 8), per
-the repo's issue-filing convention (no suggested-fix section, draft for user review
-before posting). `janked-start`'s A-mechanism confirmation and `loop-wrap`'s
-D-flatness are confirmations of already-predicted signatures, not new findings on
-their own, though both are worth folding into the write-ups above rather than filed
-standalone.
+Items 1 and 3 are candidates for upstream issue drafts under `debug/drafts/` (Task 8),
+per the repo's issue-filing convention (no suggested-fix section, draft for user review
+before posting); item 2 is withdrawn and gets no draft. `loop-wrap`'s D-flatness is a
+confirmation of an already-predicted signature, not a new finding on its own, and is
+worth folding into the `loop-wrap` write-up rather than filed standalone. The
+`janked-start` A-mechanism repeat is NOT a confirmation and is not to be folded into any
+write-up: it is the unresolved candidate described under item 2 (buffer gone, status
+undecidable), and Prediction A is withdrawn — see "Prediction A, restated from fresh
+measurement" in the Task 7c section.
 
 ## Task 7: harness-path bias adjustment
 
@@ -1226,7 +1231,10 @@ a second look before treating it as confirmed-and-understood rather than
 confirmed-and-unexplained; and `midtimeline-start`'s content-skip defect, while
 smaller in magnitude, was NOT eliminated by the position walk-back specifically
 built to address it, which the team lead or Task 8 may want to weigh against the
-overall positive result before deciding on the upstream-PR track.
+overall positive result before deciding on the upstream-PR track. **[Task 7c: this
+second concern is withdrawn with the missing-beat leg — there was no content-skip
+defect for the walk-back to eliminate, and nothing in it remains for Task 8 to weigh;
+see "Task 7c fix round 1: verdict re-derived on the absolute grid".]**
 
 ### Lib change accompanying this fix round (I1)
 
@@ -1802,8 +1810,9 @@ harness's own expected-beat generator, not dropped content.** Scope, stated once
 honoured throughout the section: that verdict rests on the 24 `midtimeline-start` take
 rows whose capture audio survives, which show 16 clicks in every buffer, no click before
 the region start, and `missingBeats = 0` on 24 of 24 under the absolute grid. The
-original 12 matrix repeats' buffers, on each build, were overwritten before this task
-began, so they are explained by the mechanism rather than re-measured. No SDK change is warranted or made;
+original matrix repeats — the 12 per build that reported the missing beat — had their
+buffers overwritten before this task began, so they are explained by the mechanism
+rather than re-measured. No SDK change is warranted or made;
 the fix is in `src/lib/audit/recordingAlignment.ts`.
 
 Three mechanisms were discriminated against the persisted evidence
