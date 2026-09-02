@@ -88,15 +88,20 @@ const FINALIZE_DEADLINE_MS = 30_000;
 // check (e.g. a static import of an internal class) isn't reliable here — the
 // capability under test isn't guaranteed to be a class member every build exposes
 // the same way — so this probes the LIVE `project.engine` instance returned by
-// `initializeOpenDAW()` instead: a fixed build's EngineFacade exposes a numeric
-// `syncContextTime` getter, the installed build does not. Call once init has
-// resolved; "unknown" is reserved for the case where the probe never ran at all
-// (init itself failed), never as a steady-state verdict once the engine is up.
+// `initializeOpenDAW()` instead: a fixed build's EngineFacade exposes a
+// `recordingStart` observable option (the engine's one-shot audio-thread report of
+// where and when the transport began recording); the installed build does not.
+// Earlier fix candidates exposed a numeric `syncContextTime` getter instead — that
+// marker is retired, so a build carrying only it now reads "upstream". Call once
+// init has resolved; "unknown" is reserved for the case where the probe never ran
+// at all (init itself failed), never as a steady-state verdict once the engine is
+// up. Once the installed SDK ships `recordingStart`, this reads "candidate" on the
+// plain server too — re-target the marker at that upgrade.
 type SdkBuildProbe = "candidate" | "upstream" | "unknown";
 
 function detectSdkBuildProbe(engine: unknown): SdkBuildProbe {
-  const facade = engine as { syncContextTime?: unknown };
-  return typeof facade?.syncContextTime === "number" ? "candidate" : "upstream";
+  const facade = engine as { recordingStart?: { isEmpty?: unknown } };
+  return typeof facade?.recordingStart?.isEmpty === "function" ? "candidate" : "upstream";
 }
 
 // Installed at module scope, BEFORE any SDK code can touch mediaDevices.
@@ -365,6 +370,13 @@ interface AuditRow {
   // reaching a terminal state — the C2 finalization-timeout evidence
   // (fast-success-or-never split) as a committed artifact, not console memory.
   finalizeMs?: number;
+  // Task 9: context time of the capture buffer's first frame as the SDK's own
+  // RecordingWorklet reports it (`firstQuantumTime`, present on builds carrying the
+  // audio-thread anchor fix; absent on the installed 0.0.170, so the field is
+  // undefined there). `anchorT0Sec` is the same instant as the harness sees it
+  // through the loopback's reference clicks, so their difference is the loopback
+  // path's own input delay, recoverable per row.
+  firstQuantumTimeSec?: number;
 }
 
 interface CapturedBuffer {
@@ -592,6 +604,16 @@ function waitForLoaderTerminal(loader: SampleLoader, deadlineMs: number, label: 
   });
 }
 
+/** Task 9: the SDK's RecordingWorklet (the take's SampleLoader while it records)
+ *  exposes the context time of the buffer's first frame as `firstQuantumTime`
+ *  (an Option) on builds carrying the audio-thread anchor fix; the installed
+ *  0.0.170 has no such member. Read defensively — undefined means "not exposed". */
+function readFirstQuantumTimeSec(loader: SampleLoader): number | undefined {
+  const opt = (loader as unknown as { firstQuantumTime?: { isEmpty(): boolean; unwrap(): number } }).firstQuantumTime;
+  if (opt === undefined || typeof opt.isEmpty !== "function") return undefined;
+  return opt.isEmpty() ? undefined : opt.unwrap();
+}
+
 /**
  * Fix round 2 (N3): subscribes to `engine.isRecording` and, once it first
  * flips true, blocks the main thread for `jankMs` (the `janked-start`
@@ -784,6 +806,7 @@ async function runCellRepeat(
   // fast-or-never finalization-timeout evidence is a committed artifact, not
   // console-only.
   const finalizeMs = performance.now() - finalizeStart;
+  const firstQuantumTimeSec = readFirstQuantumTimeSec(loader);
   console.log(
     "[recording-alignment-audit] finalize " + cellLabel(scenario, bpm, repeat) +
     " took " + finalizeMs.toFixed(0) + "ms" +
@@ -874,7 +897,8 @@ async function runCellRepeat(
       " medianBeatErrorMs=" + String(alignment.medianBeatErrorMs) +
       " medianBeatErrorMsAdjusted=" + String(alignment.medianBeatErrorMsAdjusted) +
       " headMissingMs=" + String(alignment.headMissingMs) +
-      " headMissingRawMs=" + String(headMissingRawMs)
+      " headMissingRawMs=" + String(headMissingRawMs) +
+      " firstQuantumTimeSec=" + String(firstQuantumTimeSec)
     );
     rows.push({
       scenario,
@@ -898,6 +922,7 @@ async function runCellRepeat(
       anchorT0Sec: alignment.anchorT0Sec,
       recordRequestContextTime,
       finalizeMs,
+      firstQuantumTimeSec,
       clockNoiseIdentifiedClicks,
       clockNoiseMaxAbsResidualMs,
       status: "pending",
@@ -1422,6 +1447,7 @@ interface MultitrackAuditRow {
   detail: string;
   errorMessage?: string;
   finalizeMs?: number;
+  firstQuantumTimeSec?: number;
 }
 
 interface MultitrackTapes {
@@ -1688,6 +1714,7 @@ async function runMultitrackCellRepeat(
       regionDurationSec,
       bufferDurationSec,
       status: "pending", detail: "", finalizeMs,
+      firstQuantumTimeSec: readFirstQuantumTimeSec(loader),
     };
     return { alignment, buffer: { channels: [mono], sampleRate: data.sampleRate }, row };
   };
