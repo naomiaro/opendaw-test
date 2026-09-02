@@ -63,26 +63,40 @@ function requestedDeviceId(constraints?: MediaStreamConstraints): string | undef
  * `CaptureAudio.streamDeviceId` (which an input-latency calibration stores its
  * entry under, and which it refuses to store at all when empty) and the
  * `getSettings().deviceId` the placement-time latency provider looks the entry
- * up by. With an empty id a calibration measured on this loopback could never
- * be stored, let alone applied. The original settings are merged, not replaced,
- * so `channelCount` (which `CaptureAudio.#rebuildAudioChain` reads) survives.
+ * up by. With an empty id a calibration measured here could never be stored,
+ * let alone applied. The original settings are merged, not replaced, so
+ * `channelCount` (which `CaptureAudio.#rebuildAudioChain` reads) survives;
+ * `groupId` is overwritten with the same id, which nothing in the SDK reads.
  *
- * OPT-IN, because it also changes how often the SDK opens a stream, and with it
- * the loopback's own delay. `CaptureAudio.prepareRecording` calls the stream
- * generator on EVERY recording start, and `#updateStream` returns early only
- * when the open stream's reported deviceId equals the requested one. Reporting
- * nothing means that check never passes, so every recording tears the stream
- * down and opens a fresh one — which is why the alignment campaign's baseline
- * loopback hop is 10-23 ms per take: each take runs on a NEW
- * MediaStreamAudioSourceNode. Reporting the id makes the SDK reuse one stream
- * (what it does with a real device), and the reused stream's hop steps to
- * ~64 ms after the first recording and stays there. Measured at 48 kHz,
+ * OPT-IN, because it selects which of TWO SDK input-chain states the capture
+ * runs in, and the two differ by ~45 ms of input delay.
+ * `CaptureAudio.prepareRecording` calls the stream generator on EVERY recording
+ * start, and `#updateStream` returns early only when the open track's reported
+ * deviceId equals the requested one. Reporting nothing means that check never
+ * passes, so every take tears the chain down and builds a fresh
+ * `MediaStreamAudioSourceNode` — which is where the alignment campaign's
+ * 10-23 ms baseline comes from. Reporting the id makes the check pass and one
+ * source node lives across takes, which is the SDK's real-device path whenever
+ * the capture box carries a device id.
+ *
+ * The delay difference is a property of that REUSED SOURCE NODE, not of this
+ * loopback: nothing here accumulates (one clone is handed out, the delay lines
+ * are fixed-length, and the producing `MediaStreamAudioDestinationNode` does not
+ * care whether a consumer pulls). Between uses the reused source node is
+ * connected only to `recordGainNode`, which with monitoring off has no path to
+ * the destination, so nobody pulls it and its browser-side buffer is not
+ * drained. The FIRST pull on a fresh chain reads 13-21 ms — whether that pull is
+ * a calibration or a take — and every later pull on the same chain reads
+ * 58-69 ms, permanently, until the chain is rebuilt. Measured at 48 kHz,
  * `firstQuantumTimeSec − anchorT0Sec` over three `nominal-start` repeats:
  * reporting off 12.3 / 9.6 / 18.3 ms, reporting on 17.0 / 64.3 / 64.3 ms.
+ * The ~41 ms (48 kHz) / ~48 ms (44.1 kHz) step is the size a ~2048-frame sink
+ * buffer would have at those rates — INFERRED from the two rates, not read from
+ * Chromium source; the state dependence itself is measured.
+ *
  * The standing sweep therefore leaves this OFF (its register baseline assumes
- * the per-take stream); the calibration page turns it ON, because a stored
- * calibration needs a device id AND is only meaningful on the very stream the
- * take will run on.
+ * the per-take chain); the calibration page turns it ON, because a stored
+ * calibration needs a device id AND only describes the chain state it ran on.
  */
 function stampDeviceId(stream: MediaStream, deviceId: string): void {
   for (const track of stream.getAudioTracks()) {
