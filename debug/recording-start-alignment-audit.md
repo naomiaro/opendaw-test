@@ -94,8 +94,10 @@ characterized in detail there, not resolved by widening the harness's own deadli
 data was invalid, measuring the harness's own provocation bug, not the SDK — see "Fix
 round 1" below) and unconditionally on `midtimeline-start` (12 of 12 repeats). **Both
 legs of A are WITHDRAWN — see "Task 7c fix round 1: verdict re-derived on the absolute
-grid"; `midtimeline-start`'s 12/12 was the harness fencepost, and the surviving
-`janked-start` repeat is not reproduced in 6 fresh repeats of its own cell.** B
+grid"; `midtimeline-start`'s 12/12 was the harness fencepost, and the remaining
+`janked-start` repeat — an unresolved candidate whose buffer is gone, see "Unresolved
+candidates" in the Task 7c section — is not reproduced in 6 fresh repeats of its own
+cell.** B
 confirmed in mechanism/direction,
 refuted in magnitude (measured range 2.6-4.3x over the calibration file's 4-25 ms
 band, 4.3-7.2x over the design spec's informal "~15 ms" wording — see Triage for both
@@ -234,7 +236,8 @@ That assumption is measurably false, and the total measured error decomposes int
    truly reaching position 0 and the main thread's first `isRecording=true`
    observation actually running (the SAME "stale position read, fresh frame count"
    race this campaign later confirmed drives `janked-start` and `midtimeline-start` —
-   see the C1 fix and prediction A below). This residual is why the total measured
+   see the C1 fix and prediction A below; **[Task 7c: the A-mechanism leg of that
+   "confirmed" is withdrawn — see "Midtimeline first-beat drop"]**). This residual is why the total measured
    bias (mean ≈ -90 ms) exceeds terms 1+2 (≈ 23 + 32 = 55 ms in the worked example) by
    a further ~18-35 ms across different repeats — consistent with an A+B interaction
    (fresh `numberOfFrames`, paired with a `currentPosition` read that's already
@@ -302,7 +305,11 @@ threshold) rather than a cross-talk signature — cross-talk from the high-band
 reference clicks bleeding into the low band would be expected to produce EXTRA
 low-band onsets, not fewer, and every other `nominal-start` repeat (11 of 12 in the
 matrix population, plus all 18 valid bring-up repeats) matched every beat. No
-`REF_CLICK_HZ`/`highCutoffHz` adjustment was made.
+`REF_CLICK_HZ`/`highCutoffHz` adjustment was made. **[Task 7c: that row
+(`…1788287951691` `nominal-start`/120/48000 r1) is now one of six unresolved candidates —
+it persists no geometry and its buffer is gone, so "detector noise" versus absent content
+cannot be decided, and three later `nominal-start` rows also reported `missing = 1`; see
+"Unresolved candidates" in the Task 7c section.]**
 
 ### Net effect on the harness
 
@@ -346,7 +353,10 @@ the region-anchored beat grid, which subtracts each take's off-grid phase
 `phi = regionStart mod beatPeriod` from its error. This run persists no per-row
 geometry, so its `phi` values are unrecoverable and these medians cannot be corrected —
 see "Task 7c fix round 1: verdict re-derived on the absolute grid" for the fresh
-absolute-grid upstream measurement that replaces them.
+absolute-grid upstream measurement that replaces them. The `missing=1` flags in this
+table are region-anchored-grid outputs too: the `janked-start` r3 row is an unresolved
+candidate (see "Unresolved candidates" in the Task 7c section) and the
+`midtimeline-start` rows carry the harness fencepost.
 
 | scenario | bpm | medianErr per repeat (ms) | headMiss corrected/raw (ms) | signature | status |
 |---|---|---|---|---|---|
@@ -452,7 +462,9 @@ re-derived on the absolute grid"**):
   `midtimeline-start` 12/12 was this harness's expected-beat fencepost, and the single
   `janked-start` repeat cited here (`…1788290691302`, 48k/120/r3) is itself off-grid at
   `phi = 29.17 ms` with the same fencepost signature and was never re-measured before its
-  buffer was overwritten; 6 fresh repeats of that exact cell show `missing = 0`. See
+  buffer was overwritten — it is recorded as an unresolved candidate, not a resolved
+  fencepost (see "Unresolved candidates" in the Task 7c section); 6 fresh repeats of
+  that exact cell show `missing = 0`. See
   "Task 7c fix round 1: verdict re-derived on the absolute grid". Original text: **A
   CONFIRMED, but only after the C1 fix; the original `janked-start` "confirmation" was
   invalid.** The original
@@ -536,7 +548,9 @@ re-derived on the absolute grid"**):
   …"` (44.1k/97.3) — `constant-late`'s match condition requires `mean > 0` (per
   `classifyCell`'s code), and every measured mean is NEGATIVE (content early, not
   late), so `C` structurally cannot match regardless of magnitude. The 150 ms jank did
-  measurably shift SOMETHING (see A above — one repeat showed genuine content skip),
+  measurably shift SOMETHING (see A above — one repeat showed genuine content skip
+  **[Task 7c: that repeat is an unresolved candidate, not a shown content skip — see A's
+  withdrawal note above]**),
   but the surviving 11 repeats' medians are statistically indistinguishable from
   `nominal-start`'s own B-mechanism bias — there is no clean, isolated C signature in
   this data. **C: not confirmed, not cleanly refuted — the current `janked-start`
@@ -700,7 +714,9 @@ live loader for future live-inspection.
   filing a third, overlapping issue.
 - **`janked-start` (both bpms, both rates, fix-round data): mostly the same B-mechanism
   issue as `nominal-start`, with one confirmed A-mechanism content-skip repeat.** Not
-  a distinguishable third issue — see prediction A above.
+  a distinguishable third issue — see prediction A above. **[Task 7c: "confirmed" is
+  withdrawn — that repeat (`…1788290691302` r3) is an unresolved candidate whose buffer
+  is gone; see "Unresolved candidates" in the Task 7c section.]**
 - **`loop-wrap` (both bpms, both rates): candidate new issue for the magnitude/sign
   mismatch against D** (see prediction D above) — likely the same B-mechanism bias
   inherited into the loop-wrap take chain, not a separate placement defect.
@@ -753,8 +769,19 @@ Three candidates emerge from this campaign, all reproduced with high consistency
    three-term-decomposed in the bring-up section).
 2. `midtimeline-start`'s (and one `janked-start` repeat's) A-mechanism content skip
    (missing beat, same code path's `currentPosition` anchor). **WITHDRAWN in Task 7c
-   fix round 1 — both legs were the harness's own expected-beat fencepost; do not file
-   this as an upstream issue. See "Task 7c fix round 1".**
+   (fix rounds 1–3); do not file this as an upstream issue.** The two legs have
+   different standings and are not both "proven fencepost": the `midtimeline-start`
+   12/12 leg is dissolved by the harness's own expected-beat fencepost — the Task 7c
+   verdict, resting on the 24 `midtimeline-start` rows whose capture audio survives
+   (`missingBeats = 0` on 24 of 24 under the absolute grid) and on 12 fresh upstream
+   repeats at 0 missing; the original 12 repeats' buffers on each build are gone and
+   are explained by the mechanism, not re-measured. The `janked-start` leg
+   (`…1788290691302`, 48k/120/r3) is an **unresolved candidate**: off-grid at
+   φ = 29.17 ms and consistent with the fencepost the absolute grid dissolves, but its
+   buffer is gone, so whether it was the fencepost cannot be decided; 6 fresh repeats
+   of its cell report `missingBeats = 0`. See "Midtimeline first-beat drop" (Task 7c),
+   its "Unresolved candidates" table, and "Prediction A, restated from fresh
+   measurement" — A's withdrawal rests only on surviving-buffer evidence.
 3. `loop-wrap`'s reproducible finalization-timeout hang (67% failure rate across 27
    attempts, binary fast/never split, not fixed by widening the harness's own
    deadline) — see the C2 entry.
@@ -887,7 +914,10 @@ offset from the raw median by exactly +23.00 ms on every one of the 3 repeats
 regardless (54.12, -65.23, -66.54 ms from raw 31.12, -88.23, -89.54 ms) — the
 adjustment arithmetic itself is unaffected by which repeat is an outlier. This
 precondition run used the UPSTREAM build (it ran before the override swap) — it is
-unrelated to the C1 fix-round finding below and not itself invalidated by it.
+unrelated to the C1 fix-round finding below and not itself invalidated by it. **[Task
+7c: repeat 1's positive median is a region-anchored-grid artifact — the row is off-grid
+at φ = 406.25 ms and degenerate (`matched = 5`); its re-aliased value is derived, not
+measured. See "Prediction A, restated from fresh measurement".]**
 
 ### C1 (team-lead review, fix round 1): the "candidate-repo bug" claim was wrong — it was our own build/layout defect
 
@@ -1108,7 +1138,7 @@ enumeration — they were never classification-relevant and shouldn't have been
 listed as exceptions. None of the 12 rows above changes any cell's classification
 (`classifyCell`'s head-deficit gate checked them and found no covering head-loss
 band). Pattern: concentrated on `midtimeline-start` (which already has its own known
-defect) and one `loop-wrap` repeat's full take family, plus one isolated
+defect **[Task 7c: withdrawn — see "Midtimeline first-beat drop"]**) and one `loop-wrap` repeat's full take family, plus one isolated
 `countin-start` residual — not spread evenly across scenarios.
 
 ### Verdict against the recast criteria (corrected)
@@ -1772,8 +1802,8 @@ harness's own expected-beat generator, not dropped content.** Scope, stated once
 honoured throughout the section: that verdict rests on the 24 `midtimeline-start` take
 rows whose capture audio survives, which show 16 clicks in every buffer, no click before
 the region start, and `missingBeats = 0` on 24 of 24 under the absolute grid. The
-original 12 matrix repeats' buffers were overwritten before this task began, so they are
-explained by the mechanism rather than re-measured. No SDK change is warranted or made;
+original 12 matrix repeats' buffers, on each build, were overwritten before this task
+began, so they are explained by the mechanism rather than re-measured. No SDK change is warranted or made;
 the fix is in `src/lib/audit/recordingAlignment.ts`.
 
 Three mechanisms were discriminated against the persisted evidence
@@ -1964,9 +1994,9 @@ capture audio provably belong together, **zero report a missing beat under the a
 grid** (29 do under the region-anchored grid, all with unmatched index `[0]` — the
 fencepost). Every row that ever reported `missingBeats > 0` — **43 of them, all 43** —
 has lost its capture buffer to the pre-fix filename collision. So there is no
-surviving-buffer instance of a genuinely absent in-range beat, in either direction: none
-that shows one, and none that could have shown one and did not. Reproduce these four
-counts with `task7c-fix1-analysis.ts missingrows`.
+surviving-buffer instance of a genuinely absent in-range beat, in either direction: no
+replayable row shows one, and no row that reported one has a buffer left to check.
+Reproduce these four counts with `task7c-fix1-analysis.ts missingrows`.
 
 **Corrected claim (Task 7c fix round 2).** An earlier version of this paragraph cited run
 `1788299505584`, `nominal-start`/120/r1 as a real case. That row's persisted values are
