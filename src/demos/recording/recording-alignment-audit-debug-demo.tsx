@@ -2,7 +2,7 @@
 // Unlisted harness for the recording start-alignment audit
 // (`.superpowers/sdd/2026-09-01-recording-start-alignment-audit/`).
 //
-// TWO modes, selected by `?scenario=`:
+// THREE roots, selected by `?scenario=`:
 //
 // `?scenario=probe` — the HARD GATE that decided whether the same-context
 // loopback injection topology (see src/lib/audit/loopbackInjection.ts)
@@ -29,10 +29,23 @@
 // (`classifyCell`), streamed into a results table, and uploaded (WAV per
 // repeat + one JSON summary) to the dev server's /__verify sink.
 //
-// DOM contract (both modes): #audit-state carries data-audit-state walking
+// `?scenario=multitrack-start|multitrack-janked|multitrack-all&bpm=<n|all>&rate=<n>`
+// — the multi-mic simultaneous-recording harness (Task 7b): two tapes armed on
+// clones of the same loopback signal, measured for inter-track skew (see the
+// section banner further down).
+//
+// Persisted contract (row/envelope types, schema generations):
+// src/lib/audit/recordingAuditArtifacts.ts.
+//
+// DOM contract (all three roots): #audit-state carries data-audit-state walking
 // setup -> running:<cell> -> [uploading ->] done (or error:<message>).
 // Probe mode additionally carries #probe-verdict with data-verdict={verdict}.
-import { useCallback, useState } from "react";
+//
+// The engine is booted ONCE per page load (`Workers.install` asserts on a
+// second call): each root caches its initialized context, so "Re-run" on the
+// matrix/multitrack pages re-runs the matrix on the same project and tape(s)
+// under a fresh run token; the probe is one-shot.
+import { useCallback, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Badge, Button, Card, Flex, Heading, Table, Text, Theme, Container } from "@radix-ui/themes";
 import "@radix-ui/themes/styles.css";
@@ -62,14 +75,29 @@ import {
 import {
   RECORDING_AUDIT_BPMS,
   RECORDING_AUDIT_SCENARIOS,
+  MULTITRACK_SCENARIOS,
+  MULTITRACK_BASE_SCENARIO,
   REPEATS_PER_CELL,
   JANK_MS,
   LOOP_WRAP_TAKES,
   ALIGNED_TOLERANCE_MS,
   HEAD_MISSING_BASELINE_MS,
   SIGNATURE_BANDS,
+  isRecordingScenario,
+  isMultitrackScenario,
   type RecordingScenario,
+  type MultitrackScenario,
 } from "@/lib/audit/recordingAuditCalibration";
+import {
+  AUDIT_SCHEMA_VERSION,
+  type AuditRow,
+  type AuditSummary,
+  type CellVerdictRecord,
+  type FinalizeProbe,
+  type MultitrackAuditRow,
+  type MultitrackAuditSummary,
+  type SdkBuildProbe,
+} from "@/lib/audit/recordingAuditArtifacts";
 import { BAR_PPQN } from "@/lib/audit/auditExpectations";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
@@ -97,8 +125,6 @@ const FINALIZE_DEADLINE_MS = 30_000;
 // at all (init itself failed), never as a steady-state verdict once the engine is
 // up. Once the installed SDK ships `recordingStart`, this reads "candidate" on the
 // plain server too — re-target the marker at that upgrade.
-type SdkBuildProbe = "candidate" | "upstream" | "unknown";
-
 function detectSdkBuildProbe(engine: unknown): SdkBuildProbe {
   const facade = engine as { recordingStart?: { isEmpty?: unknown } };
   return typeof facade?.recordingStart?.isEmpty === "function" ? "candidate" : "upstream";
@@ -180,16 +206,9 @@ async function runProbe(onRow: (row: ProbeRow) => void, onBuildProbe: (probe: Sd
   if (regions.length === 0) return "FAIL: no take region created";
 
   const loader = regions[0].file.getOrCreateLoader();
-  if (loader.state.type !== "loaded") {
-    await withDeadline(new Promise<void>((resolvePromise, reject) => {
-      let subscribed = false;
-      const sub = loader.subscribe((state) => {
-        if (state.type === "loaded") { resolvePromise(); if (subscribed) sub.terminate(); }
-        if (state.type === "error") { reject(new Error(String(state.reason))); if (subscribed) sub.terminate(); }
-      });
-      subscribed = true;
-    }), FINALIZE_DEADLINE_MS, "probe finalization");
-  }
+  // Same self-terminating wait as the matrix paths (terminal-state pre-check,
+  // subscription terminated on resolve, error AND timeout).
+  await waitForLoaderTerminal(loader, FINALIZE_DEADLINE_MS, "probe finalization");
   const dataOpt = loader.data;
   if (dataOpt.isEmpty()) return "FAIL: loader loaded but data empty";
   const data = dataOpt.unwrap();
@@ -211,9 +230,13 @@ function ProbeHarness() {
   const [verdict, setVerdict] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [buildProbe, setBuildProbe] = useState<SdkBuildProbe>("unknown");
+  // One-shot: the probe boots its own engine (`Workers.install` asserts on a
+  // second call) and arms a fresh tape each time — reload to run it again.
+  const startedRef = useRef(false);
 
   const handleRunProbe = useCallback(() => {
-    if (running) return;
+    if (running || startedRef.current) return;
+    startedRef.current = true;
     setRunning(true);
     setRows([]);
     setVerdict(null);
@@ -263,8 +286,8 @@ function ProbeHarness() {
               >
                 {auditState}
               </Badge>
-              <Button onClick={handleRunProbe} disabled={running}>
-                Run probe
+              <Button onClick={handleRunProbe} disabled={running || startedRef.current}>
+                {startedRef.current && !running ? "Probe ran — reload to run again" : "Run probe"}
               </Button>
               {verdict !== null && (
                 <Badge id="probe-verdict" data-verdict={verdict} color={verdictIsPass ? "green" : "red"}>
@@ -325,16 +348,8 @@ const ALL_SCENARIOS = [...RECORDING_AUDIT_SCENARIOS];
  *  is the take's SampleLoader while it records; its `limit(count)` method is patched
  *  on the INSTANCE (the class method is untouched) to record every call together with
  *  `numberOfFrames` at that moment. A hung finalization is one with NO `limit()` call
- *  and a loader still in the `record` state after the wait. */
-interface FinalizeProbe {
-  finalizeNumberOfFramesAtStop?: number; // numberOfFrames when stopRecording() was called
-  finalizeLimitCalls?: number[]; // every `count` passed to limit(), in order (empty = never called)
-  finalizeNumberOfFramesAtLimit?: number[]; // numberOfFrames at each limit() call
-  finalizeOvershootFrames?: number[]; // numberOfFrames − count at each call (ring frames past the limit)
-  finalizeNumberOfFramesAfter?: number; // numberOfFrames after the finalize wait resolved or timed out
-  finalizeLoaderState?: string; // loader.state.type after the wait ("loaded" = finalized, "record" = hung)
-}
-
+ *  and a loader still in the `record` state after the wait. Field contract:
+ *  `FinalizeProbe` in recordingAuditArtifacts.ts. */
 function instrumentFinalize(loader: SampleLoader): FinalizeProbe {
   const probe: FinalizeProbe = { finalizeLimitCalls: [], finalizeNumberOfFramesAtLimit: [], finalizeOvershootFrames: [] };
   const l = loader as unknown as { limit?: (count: number) => void; numberOfFrames?: number };
@@ -361,65 +376,8 @@ function settleFinalizeProbe(probe: FinalizeProbe, loader: SampleLoader): void {
 let lastFinalizeProbe: FinalizeProbe | null = null;
 let lastMultitrackFinalizeProbes: { a: FinalizeProbe; b: FinalizeProbe } | null = null;
 
-interface AuditRow extends FinalizeProbe {
-  scenario: RecordingScenario;
-  bpm: number;
-  rate: number;
-  repeat: number;
-  takeIndex: number;
-  medianBeatErrorMs: number | null;
-  // Task 7 recast: raw + harnessPathBiasSec*1000 (audioContext.outputLatency) —
-  // classifyCell's verdict runs on this field; the raw field above is unmodified
-  // and always persisted alongside it (see recordingAlignment.ts measureTakeAlignment).
-  medianBeatErrorMsAdjusted: number | null;
-  matchedBeats: number;
-  missingBeats: number;
-  headMissingMs: number | null; // baseline-corrected (HEAD_MISSING_BASELINE_MS already subtracted)
-  headMissingRawMs: number | null; // uncorrected — see Task 6 fix-round C3/I3
-  // Task 7 fix round 1 (I1): tailMissingMs was computed by measureTakeAlignment but
-  // never persisted — classifyCell's tail-deficit gate is auditable via headMissingMs
-  // but not via this field. Persisted alongside the raw values it's derived from
-  // (stopRequestContextTime, bufferDurationSec) so a tail-deficit verdict is traceable
-  // the same way a head-deficit one already is.
-  tailMissingMs?: number | null;
-  stopRequestContextTime?: number | null;
-  bufferDurationSec?: number;
-  status: CellStatus | "pending" | "error";
-  matchedSignature: string | null;
-  detail: string;
-  errorMessage?: string;
-  // Fix round 1 (C3/I3): raw box-graph values behind the placement math, persisted
-  // per-take (previously console-only "diag" logging) so the bring-up
-  // decomposition is backed by a committed artifact, not just console output.
-  regionPositionPpqn?: number;
-  regionStartSec?: number;
-  waveformOffsetSec?: number;
-  // Task 7c fix round 1 (I4): the presented duration measureTakeAlignment was
-  // actually given. Without it an offline replay has to GUESS the take's
-  // presented range (buffer duration minus waveform offset), which is right for
-  // a single-take scenario and wrong for every loop-wrap take but the last —
-  // so replayed loop-wrap numbers could not be reconciled with the persisted
-  // ones. Persisted so any future re-match runs on the same range this row was
-  // measured with.
-  regionDurationSec?: number;
-  anchorT0Sec?: number | null;
-  recordRequestContextTime?: number | null;
-  // Detector/graph-path noise for this repeat's reference-click schedule match —
-  // previously console-only "clockNoise" logging.
-  clockNoiseIdentifiedClicks?: number;
-  clockNoiseMaxAbsResidualMs?: number;
-  // Fix round 2 (cheap add): time from `stopRecording()` to the loader
-  // reaching a terminal state — the C2 finalization-timeout evidence
-  // (fast-success-or-never split) as a committed artifact, not console memory.
-  finalizeMs?: number;
-  // Task 9: context time of the capture buffer's first frame as the SDK's own
-  // RecordingWorklet reports it (`firstQuantumTime`, present on builds carrying the
-  // audio-thread anchor fix; absent on the installed 0.0.170, so the field is
-  // undefined there). `anchorT0Sec` is the same instant as the harness sees it
-  // through the loopback's reference clicks, so their difference is the loopback
-  // path's own input delay, recoverable per row.
-  firstQuantumTimeSec?: number;
-}
+// Row contract: `AuditRow` in recordingAuditArtifacts.ts (every field annotated
+// with the fix round / schema generation that introduced it).
 
 interface CapturedBuffer {
   channels: Float32Array[];
@@ -440,10 +398,6 @@ function bpmToken(bpm: number): string {
 
 function cellLabel(scenario: RecordingScenario, bpm: number, repeat: number): string {
   return `${scenario}/${bpmToken(bpm)}/r${repeat}`;
-}
-
-function isRecordingScenario(value: string): value is RecordingScenario {
-  return (ALL_SCENARIOS as string[]).includes(value);
 }
 
 function resolveScenarios(param: string | null): RecordingScenario[] {
@@ -471,24 +425,54 @@ function resolveRate(param: string | null): number {
   return n;
 }
 
-/** withDeadline-wrapped poll of engine.position, per the brief's spec — catches
- *  the documented WASM transport-start-delay flakiness (position never advances)
- *  as a timeout instead of hanging the whole campaign. */
+/**
+ * Poll `engine.position` at `intervalMs` until `predicate` holds, or reject
+ * after `deadlineMs`. Manages its own deadline (a `withDeadline` wrapper has
+ * no way to reach into the promise and stop the poll): the timer and the
+ * `settled` flag guarantee the recursive `setTimeout` chain stops on BOTH exit
+ * paths — a timed-out wait used to keep polling the box graph for the rest
+ * of the page's life, and that orphan poll was also what let a repeat
+ * abandoned by the outer cell deadline resolve during the NEXT repeat.
+ * `deferFirstCheck` delays even the first read by one interval (see
+ * `waitForPositionSettled`).
+ */
+function pollPosition(
+  project: Project,
+  predicate: (ppqn: number) => boolean,
+  intervalMs: number,
+  deadlineMs: number,
+  label: string,
+  deferFirstCheck: boolean
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    let settled = false;
+    let poll: ReturnType<typeof setTimeout> | null = null;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      if (poll !== null) clearTimeout(poll);
+      reject(new Error(`${label} timed out after ${deadlineMs / 1000}s`));
+    }, deadlineMs);
+    const check = () => {
+      if (settled) return;
+      if (predicate(project.engine.position.getValue())) {
+        settled = true;
+        clearTimeout(timer);
+        resolve();
+        return;
+      }
+      poll = setTimeout(check, intervalMs);
+    };
+    if (deferFirstCheck) poll = setTimeout(check, intervalMs);
+    else check();
+  });
+}
+
+/** Poll of engine.position, per the brief's spec — catches the documented WASM
+ *  transport-start-delay flakiness (position never advances) as a timeout
+ *  instead of hanging the whole campaign. */
 function waitForPosition(project: Project, targetPpqn: number, deadlineMs: number): Promise<void> {
-  return withDeadline(
-    new Promise<void>((resolve) => {
-      const check = () => {
-        if (project.engine.position.getValue() >= targetPpqn) {
-          resolve();
-          return;
-        }
-        setTimeout(check, 50);
-      };
-      check();
-    }),
-    deadlineMs,
-    `waitForPosition(${targetPpqn})`
-  );
+  return pollPosition(project, (ppqn) => ppqn >= targetPpqn, 50, deadlineMs, `waitForPosition(${targetPpqn})`, false);
 }
 
 /**
@@ -508,20 +492,80 @@ function waitForPosition(project: Project, targetPpqn: number, deadlineMs: numbe
  */
 function waitForPositionSettled(project: Project, expectedPpqn: number, deadlineMs: number): Promise<void> {
   const tolerancePpqn = BAR_PPQN / 4; // one beat's worth of slack
-  return withDeadline(
-    new Promise<void>((resolve) => {
-      const check = () => {
-        if (Math.abs(project.engine.position.getValue() - expectedPpqn) <= tolerancePpqn) {
-          resolve();
-          return;
-        }
-        setTimeout(check, 20);
-      };
-      setTimeout(check, 20);
-    }),
+  return pollPosition(
+    project,
+    (ppqn) => Math.abs(ppqn - expectedPpqn) <= tolerancePpqn,
+    20,
     deadlineMs,
-    `waitForPositionSettled(${expectedPpqn})`
+    `waitForPositionSettled(${expectedPpqn})`,
+    true
   );
+}
+
+/**
+ * A repeat's cancellation token. `runRepeatWithDeadline` flips `cancelled`
+ * when the outer cell deadline fires; the repeat checks it after every await
+ * (`assertCurrent`) so an abandoned repeat can never reach a side effect —
+ * `stopRecording()`, patching a loader, overwriting `lastFinalizeProbe` —
+ * while the NEXT repeat is already running. `withDeadline` alone has no
+ * cancellation: the rejected promise is dropped but the async function
+ * behind it keeps executing.
+ */
+interface RepeatToken {
+  cancelled: boolean;
+}
+
+function assertCurrent(token: RepeatToken, stage: string): void {
+  if (token.cancelled) throw new Error(`repeat abandoned by the outer cell deadline before ${stage}`);
+}
+
+function runRepeatWithDeadline<T>(run: (token: RepeatToken) => Promise<T>, ms: number, label: string): Promise<T> {
+  const token: RepeatToken = { cancelled: false };
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      token.cancelled = true;
+      reject(new Error(`${label} timed out after ${ms / 1000}s`));
+    }, ms);
+    run(token).then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      // A late rejection from an already-abandoned repeat (its assertCurrent
+      // throw) lands on a settled promise and is dropped here, by design.
+      (err) => { clearTimeout(timer); reject(err); }
+    );
+  });
+}
+
+/** The harness-path bias term and how long it took to become readable. */
+interface HarnessPathBias {
+  valueSec: number;
+  settleMs: number;
+}
+
+/**
+ * Read `audioContext.outputLatency` ONCE per page load, after output has
+ * demonstrably started. Chrome reports 0 until the output stream is running,
+ * and a run that read the property per repeat measured its first repeat with
+ * a bias of 0 while the summary recorded the later non-zero value (persisted
+ * evidence: `nominal-start/120/r1` in four runs, adjusted == raw). Resumes the
+ * context if needed, then polls at 50 ms for a non-zero read up to
+ * `deadlineMs`; on timeout the (zero) value is returned and warned about, and
+ * `settleMs` in the summary shows the wait ran out. The value is applied to
+ * EVERY row of the run and persisted both per row and in the envelope, so an
+ * offline reader never has to infer which bias a row was adjusted with.
+ */
+async function resolveHarnessPathBias(audioContext: AudioContext, deadlineMs: number = 5000): Promise<HarnessPathBias> {
+  const start = performance.now();
+  if (audioContext.state !== "running") await audioContext.resume();
+  while (!(audioContext.outputLatency > 0)) {
+    if (performance.now() - start > deadlineMs) {
+      console.warn("[recording-alignment-audit] outputLatency still " + String(audioContext.outputLatency) + " after " + deadlineMs + "ms; every row of this run will carry that bias");
+      break;
+    }
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  const bias = { valueSec: audioContext.outputLatency, settleMs: performance.now() - start };
+  console.log("[recording-alignment-audit] harnessPathBiasSec=" + String(bias.valueSec) + " settled in " + bias.settleMs.toFixed(0) + "ms; baseLatency=" + String(audioContext.baseLatency));
+  return bias;
 }
 
 /**
@@ -721,11 +765,13 @@ async function runCellRepeat(
   // Task 7 recast: audioContext.outputLatency — the register's "term 1" harness-path
   // bias (see debug/recording-start-alignment-audit.md "Bring-up calibration"),
   // passed through to measureTakeAlignment so classifyCell's verdicts run on the
-  // adjusted median rather than the raw one. The VALUE is read once per page load
-  // (identical at both sample rates per the register, since outputLatency doesn't
-  // change mid-session) and passed unchanged into every repeat's runCellRepeat call
-  // — this parameter itself IS supplied per repeat, not just once.
-  harnessPathBiasSec: number
+  // adjusted median rather than the raw one. The value is resolved ONCE per page
+  // load by `resolveHarnessPathBias` (after output has started, so it is never
+  // Chrome's initial 0) and the same value reaches every repeat of every run on
+  // this page; it is persisted on each row (`harnessPathBiasSec`) and in the
+  // summary envelope, which therefore always describe the same number.
+  harnessPathBiasSec: number,
+  token: RepeatToken
 ): Promise<CellRepeatResult> {
   onStage("prefs");
   project.editing.modify(() => {
@@ -801,9 +847,11 @@ async function runCellRepeat(
     case "midtimeline-start": {
       project.engine.setPosition(0);
       await waitForPositionSettled(project, 0, 30_000);
+      assertCurrent(token, "play");
       project.engine.play();
       startPpqn = 2 * BAR_PPQN;
       await waitForPosition(project, startPpqn, 20_000);
+      assertCurrent(token, "startRecording");
       recordRequestContextTime = audioContext.currentTime;
       project.startRecording(false);
       break;
@@ -811,6 +859,7 @@ async function runCellRepeat(
   }
 
   onStage("recording");
+  assertCurrent(token, "recording wait");
   if (scenario === "loop-wrap") {
     await waitForTakeCount([unitAdapter], LOOP_WRAP_TAKES + 1, 90_000);
   } else {
@@ -818,6 +867,9 @@ async function runCellRepeat(
   }
 
   onStage("stopping");
+  // The side effects below (loader patch, lastFinalizeProbe, stopRecording)
+  // must never run for a repeat the outer deadline already abandoned.
+  assertCurrent(token, "stopping");
   // All takes on the tape share one file (see CLAUDE.md "Loop Take Buffer
   // Layout") — wait on any one region's loader. Looked up BEFORE the stop so the
   // finalization probe is armed before the SDK's stop path can call limit().
@@ -851,6 +903,7 @@ async function runCellRepeat(
   } finally {
     settleFinalizeProbe(finalizeProbe, loader);
   }
+  assertCurrent(token, "measuring");
   // Fix round 2 (cheap add): persisted per row below (`finalizeMs`) so the C2
   // fast-or-never finalization-timeout evidence is a committed artifact, not
   // console-only.
@@ -924,6 +977,12 @@ async function runCellRepeat(
       harnessPathBiasSec,
     });
     alignments.push({ takeIndex, alignment });
+    // No reference click identified: head/tail deficits are null and the row is
+    // persisted with those nulls (classifyCell reports the cell "integrity
+    // unmeasured" for it). Warned here so a live watcher sees it too.
+    if (alignment.anchorT0Sec === null) {
+      console.warn("[recording-alignment-audit] " + cellLabel(scenario, bpm, repeat) + "/take" + takeIndex + ": no reference-click anchor — head/tail integrity unmeasured for this repeat");
+    }
     // Fix round 1 (I3): raw (uncorrected) head-missing, so both the corrected
     // and raw figures are available in the persisted row (was only derivable
     // by reversing HEAD_MISSING_BASELINE_MS by hand from console output).
@@ -971,6 +1030,7 @@ async function runCellRepeat(
       recordRequestContextTime,
       finalizeMs,
       firstQuantumTimeSec,
+      harnessPathBiasSec,
       ...finalizeProbe,
       clockNoiseIdentifiedClicks,
       clockNoiseMaxAbsResidualMs,
@@ -1041,30 +1101,23 @@ async function resetForNextCell(project: Project, unitAdapter: AudioUnitBoxAdapt
   return warning;
 }
 
-/** Upload a single repeat's full capture buffer (all takes share it). Non-fatal
- *  on failure — logs and lets the run continue (matches samplerate-audit's convention).
- *
- *  Task 7c fix round 1 (review M12/I4): the name carries the build probe and the
- *  run's own token, the convention the multi-mic path already uses. Without them
- *  every run overwrote the previous run's capture of the same cell, so an offline
- *  re-analysis silently read one run's geometry against another run's audio and
- *  no artifact on disk could contradict it. */
-async function uploadRepeatWav(
-  scenario: RecordingScenario,
-  bpm: number,
-  rate: number,
-  repeat: number,
-  buffer: CapturedBuffer,
-  sdkBuildProbe: SdkBuildProbe,
-  runToken: number
-): Promise<void> {
+/** Outcome of one capture-WAV upload: the name the rows should carry and the
+ *  failure reason, null on success. */
+interface WavUploadResult {
+  wavName: string;
+  wavUploadError: string | null;
+}
+
+/** PUT an encoded WAV to the /__verify sink. Non-fatal on failure — warns and
+ *  returns the error so the rows can persist it (a run continues; matches
+ *  samplerate-audit's convention). */
+async function putWav(name: string, buffer: CapturedBuffer): Promise<WavUploadResult> {
   const wavBuffer = WavFile.encodeInts16({
     sampleRate: buffer.sampleRate,
     length: buffer.channels[0].length,
     numberOfChannels: buffer.channels.length,
     getChannelData: (i: number) => buffer.channels[i],
   });
-  const name = `recaudit-${scenario}-${bpmToken(bpm)}-${rate}-r${repeat}-${sdkBuildProbe}-${runToken}.wav`;
   try {
     await withDeadline(
       (async () => {
@@ -1074,8 +1127,39 @@ async function uploadRepeatWav(
       30_000,
       `WAV upload ${name}`
     );
+    return { wavName: name, wavUploadError: null };
   } catch (err) {
-    console.warn(`[recording-alignment-audit] WAV upload failed for ${name}: ${String(err)}`);
+    const wavUploadError = err instanceof Error ? err.message : String(err);
+    console.warn(`[recording-alignment-audit] WAV upload failed for ${name}: ${wavUploadError}`);
+    return { wavName: name, wavUploadError };
+  }
+}
+
+/** Upload a single repeat's full capture buffer (all takes share it).
+ *
+ *  Task 7c fix round 1 (review M12/I4): the name carries the build probe and the
+ *  run's own token, the convention the multi-mic path already uses. Without them
+ *  every run overwrote the previous run's capture of the same cell, so an offline
+ *  re-analysis silently read one run's geometry against another run's audio and
+ *  no artifact on disk could contradict it. The result is stamped on every row
+ *  of the repeat (`wavName`, `wavUploadError`) so "WAV absent" offline can be
+ *  told apart from "never uploaded". */
+function uploadRepeatWav(
+  scenario: RecordingScenario,
+  bpm: number,
+  rate: number,
+  repeat: number,
+  buffer: CapturedBuffer,
+  sdkBuildProbe: SdkBuildProbe,
+  runToken: number
+): Promise<WavUploadResult> {
+  return putWav(`recaudit-${scenario}-${bpmToken(bpm)}-${rate}-r${repeat}-${sdkBuildProbe}-${runToken}.wav`, buffer);
+}
+
+function stampWavResult(rows: { wavName?: string; wavUploadError?: string | null }[], result: WavUploadResult): void {
+  for (const row of rows) {
+    row.wavName = result.wavName;
+    row.wavUploadError = result.wavUploadError;
   }
 }
 
@@ -1084,29 +1168,35 @@ async function uploadSummary(
   rows: AuditRow[],
   rate: number,
   sdkBuildProbe: SdkBuildProbe,
-  outputLatency: number,
+  bias: HarnessPathBias,
   baseLatency: number,
+  cellVerdicts: CellVerdictRecord[],
+  wavUploadFailures: number,
   runToken: number
 ): Promise<void> {
-  const summary = {
+  const summary: AuditSummary = {
+    schemaVersion: AUDIT_SCHEMA_VERSION,
+    beatGrid: "absolute",
     rate,
     sdkBuildProbe,
     // Fix round 1 (C3/I3): persisted so the loopback-path-bias decomposition
-    // doesn't depend on console output — logged once per run, same value on
-    // every row this run produced.
-    outputLatency,
+    // doesn't depend on console output. Read once per page load by
+    // `resolveHarnessPathBias`, after output started — the same number every
+    // row of this run was adjusted with.
+    outputLatency: bias.valueSec,
     baseLatency,
-    // Task 7 recast: the value actually wired into every row's harnessPathBiasSec
-    // this run (== outputLatency, captured once at run start) — recorded explicitly
-    // so a register/offline reader never has to assume outputLatency was the value
-    // live rows were adjusted by.
-    harnessPathBiasSec: outputLatency,
+    harnessPathBiasSec: bias.valueSec,
+    harnessPathBiasSettleMs: bias.settleMs,
     headMissingBaselineMs: HEAD_MISSING_BASELINE_MS,
     repeatsPerCell: REPEATS_PER_CELL,
     jankMs: JANK_MS,
     loopWrapTakes: LOOP_WRAP_TAKES,
     alignedToleranceMs: ALIGNED_TOLERANCE_MS,
     referenceSchedule: { count: 120, baseGapSec: 0.25, gapIncrementSec: 0.005 },
+    wavUploadFailures,
+    // One record per attempted cell, all-error cells included — the only place
+    // such a cell's verdict exists.
+    cellVerdicts,
     rows,
   };
   const jsonBody = JSON.stringify(summary, null, 2);
@@ -1118,6 +1208,54 @@ async function uploadSummary(
     30_000,
     "summary upload"
   );
+}
+
+/** Everything a matrix run needs that is created ONCE per page load: the booted
+ *  engine, the single armed tape, the build probe and the harness-path bias. */
+interface MatrixContext {
+  project: Project;
+  audioContext: AudioContext;
+  unitAdapter: AudioUnitBoxAdapter;
+  sdkBuildProbe: SdkBuildProbe;
+  bias: HarnessPathBias;
+}
+
+async function createMatrixContext(rate: number): Promise<MatrixContext> {
+  const { project, audioContext } = await initializeOpenDAW({
+    bpm: 120,
+    audioContextSampleRate: rate,
+    engineTap: (node) => loopback.engineTap(node),
+  });
+  const sdkBuildProbe = detectSdkBuildProbe(project.engine);
+  loopback.attach(audioContext);
+  const bias = await resolveHarnessPathBias(audioContext);
+
+  // ONE tape, created once, reused across every cell (and every re-run).
+  let audioUnitBox: AudioUnitBox | null = null;
+  project.editing.modify(() => {
+    audioUnitBox = project.api.createInstrument(InstrumentFactories.Tape).audioUnitBox;
+  });
+  if (audioUnitBox === null) throw new Error("createInstrument did not return audioUnitBox");
+  const capture = project.captureDevices.get(audioUnitBox.address.uuid).unwrap();
+  if (!(capture instanceof CaptureAudio)) throw new Error("capture is not CaptureAudio");
+  project.editing.modify(() => {
+    capture.captureBox.deviceId.setValue(LOOPBACK_DEVICE_ID);
+    capture.requestChannels = 1;
+  });
+  capture.armed.setValue(true);
+
+  const unitAdapter = project.rootBoxAdapter.audioUnits.adapters().find((u) => u.box === audioUnitBox);
+  if (!unitAdapter) throw new Error("no audio unit adapter for tape");
+  return { project, audioContext, unitAdapter, sdkBuildProbe, bias };
+}
+
+// Booted once per page load: `initializeOpenDAW` → `Workers.install` asserts
+// "Workers are already installed" on a second call, so "Re-run" reuses this
+// context (a failed boot stays failed — reload the page).
+let matrixContextPromise: Promise<MatrixContext> | null = null;
+function getMatrixContext(rate: number): Promise<MatrixContext> {
+  if (matrixContextPromise === null) matrixContextPromise = createMatrixContext(rate);
+  return matrixContextPromise;
 }
 
 async function runAudit(
@@ -1134,34 +1272,12 @@ async function runAudit(
   // joined without guessing (Task 7c fix round 1, review M12).
   const runToken = Date.now();
 
-  const { project, audioContext } = await initializeOpenDAW({
-    bpm: 120,
-    audioContextSampleRate: rate,
-    engineTap: (node) => loopback.engineTap(node),
-  });
-  const sdkBuildProbe = detectSdkBuildProbe(project.engine);
+  const { project, audioContext, unitAdapter, sdkBuildProbe, bias } = await getMatrixContext(rate);
   onBuildProbe(sdkBuildProbe);
-  loopback.attach(audioContext);
-  console.log("[recording-alignment-audit] outputLatency=" + String(audioContext.outputLatency) + " baseLatency=" + String(audioContext.baseLatency));
-
-  // ONE tape, created once, reused across every cell.
-  let audioUnitBox: AudioUnitBox | null = null;
-  project.editing.modify(() => {
-    audioUnitBox = project.api.createInstrument(InstrumentFactories.Tape).audioUnitBox;
-  });
-  if (audioUnitBox === null) throw new Error("createInstrument did not return audioUnitBox");
-  const capture = project.captureDevices.get(audioUnitBox.address.uuid).unwrap();
-  if (!(capture instanceof CaptureAudio)) throw new Error("capture is not CaptureAudio");
-  project.editing.modify(() => {
-    capture.captureBox.deviceId.setValue(LOOPBACK_DEVICE_ID);
-    capture.requestChannels = 1;
-  });
-  capture.armed.setValue(true);
-
-  const unitAdapter = project.rootBoxAdapter.audioUnits.adapters().find((u) => u.box === audioUnitBox);
-  if (!unitAdapter) throw new Error("no audio unit adapter for tape");
 
   const allRows: AuditRow[] = [];
+  const cellVerdicts: CellVerdictRecord[] = [];
+  let wavUploadFailures = 0;
 
   for (const scenario of scenarios) {
     for (const bpm of bpms) {
@@ -1181,11 +1297,18 @@ async function runAudit(
         let errorMessage: string | null = null;
         lastFinalizeProbe = null;
         try {
-          result = await withDeadline(
-            runCellRepeat(project, audioContext, unitAdapter, scenario, bpm, rate, repeat, (s) => {
+          result = await runRepeatWithDeadline(
+            (token) => runCellRepeat(project, audioContext, unitAdapter, scenario, bpm, rate, repeat, (s) => {
               stage = s;
-            }, audioContext.outputLatency),
-            120_000,
+            }, bias.valueSec, token),
+            // Outer deadline ABOVE the inner stages' worst-case sum, so the
+            // stage that is actually slow is the one that names itself:
+            // loop-wrap 30 (settle) + 90 (take count) + 30 (finalize) = 150 s;
+            // janked-start 30 + 30 (jank arm) + 60 (position) + 30 = 150 s;
+            // midtimeline 30 + 20 + 60 + 30 = 140 s. 180 s keeps 30 s of margin.
+            // Should it still fire first, the token makes the abandoned repeat
+            // inert (see `runRepeatWithDeadline`).
+            180_000,
             label
           );
         } catch (err) {
@@ -1238,10 +1361,22 @@ async function runAudit(
           ? repeats.flatMap((r) => r.alignments.filter((a) => a.takeIndex >= 1 && a.takeIndex <= LOOP_WRAP_TAKES - 1).map((a) => a.alignment))
           : repeats.flatMap((r) => r.alignments.map((a) => a.alignment));
 
+      // classifyCell itself returns "investigate" for an empty repeat list; the
+      // explicit detail here names the reason (every repeat errored).
       const classification: CellClassification =
         alignmentsForClassification.length > 0
           ? classifyCell(alignmentsForClassification, SIGNATURE_BANDS[scenario], ALIGNED_TOLERANCE_MS)
           : { status: "investigate", matchedSignature: null, detail: "no successful repeats to classify" };
+      // Persisted for EVERY cell, so an all-error cell's verdict exists on disk
+      // (rows only carry the verdict of successful repeats).
+      cellVerdicts.push({
+        scenario, bpm, rate,
+        status: classification.status,
+        matchedSignature: classification.matchedSignature,
+        detail: classification.detail,
+        successfulRepeats: repeats.length,
+        errorRepeats: REPEATS_PER_CELL - repeats.length,
+      });
 
       for (const r of repeats) {
         for (const row of r.rows) {
@@ -1254,16 +1389,20 @@ async function runAudit(
           row.detail = r.cleanupWarning
             ? `${classification.detail} | cleanup warning: ${r.cleanupWarning}`
             : classification.detail;
+        }
+        const wav = await uploadRepeatWav(scenario, bpm, rate, r.repeat, r.buffer, sdkBuildProbe, runToken);
+        if (wav.wavUploadError !== null) wavUploadFailures++;
+        stampWavResult(r.rows, wav);
+        for (const row of r.rows) {
           allRows.push(row);
           onRow(row);
         }
-        await uploadRepeatWav(scenario, bpm, rate, r.repeat, r.buffer, sdkBuildProbe, runToken);
       }
     }
   }
 
   setAuditState("uploading");
-  await uploadSummary(allRows, rate, sdkBuildProbe, audioContext.outputLatency, audioContext.baseLatency, runToken);
+  await uploadSummary(allRows, rate, sdkBuildProbe, bias, audioContext.baseLatency, cellVerdicts, wavUploadFailures, runToken);
   setAuditState("done");
 }
 
@@ -1422,25 +1561,17 @@ Click "Run audit" with a real click — resumes the AudioContext.`}
 // (measureCrossTrackSkew) — no calibration term needed here, unlike the
 // single-tape sections above.
 
-type MultitrackScenario = "multitrack-start" | "multitrack-janked";
-const ALL_MULTITRACK_SCENARIOS: MultitrackScenario[] = ["multitrack-start", "multitrack-janked"];
+const ALL_MULTITRACK_SCENARIOS = [...MULTITRACK_SCENARIOS];
 const MULTITRACK_RECORD_BARS = 4; // matches nominal-start/janked-start's own 4-bar window
 
-/** Reuse the equivalent single-tape scenario's SIGNATURE_BANDS to judge "did
- *  each tape individually place its take the way a single-tape recording of
- *  the same provocation would?" — multitrack-start mirrors nominal-start's
- *  no-jank/no-count-in provocation, multitrack-janked mirrors janked-start's
- *  busy-loop-on-flip provocation (armJankOnRecordingFlip, reused unchanged —
- *  isRecording is engine-wide, so one jank jams BOTH captures' post-flip
- *  handling at once). */
-const MULTITRACK_BASE_SCENARIO: Record<MultitrackScenario, RecordingScenario> = {
-  "multitrack-start": "nominal-start",
-  "multitrack-janked": "janked-start",
-};
-
-function isMultitrackScenario(value: string): value is MultitrackScenario {
-  return (ALL_MULTITRACK_SCENARIOS as string[]).includes(value);
-}
+// `MULTITRACK_BASE_SCENARIO` (recordingAuditCalibration.ts) reuses the
+// equivalent single-tape scenario's SIGNATURE_BANDS to judge "did each tape
+// individually place its take the way a single-tape recording of the same
+// provocation would?" — multitrack-start mirrors nominal-start's no-jank/
+// no-count-in provocation, multitrack-janked mirrors janked-start's
+// busy-loop-on-flip provocation (armJankOnRecordingFlip, reused unchanged —
+// isRecording is engine-wide, so one jank jams BOTH captures' post-flip
+// handling at once).
 
 function resolveMultitrackScenarios(param: string | null): MultitrackScenario[] {
   if (param === "multitrack-all") return ALL_MULTITRACK_SCENARIOS;
@@ -1463,48 +1594,16 @@ function multitrackCellLabel(scenario: MultitrackScenario, bpm: number, repeat: 
   return `${scenario}/${bpmToken(bpm)}/r${repeat}`;
 }
 
-interface MultitrackAuditRow extends FinalizeProbe {
-  scenario: MultitrackScenario;
-  bpm: number;
-  rate: number;
-  repeat: number;
-  tape: "a" | "b";
-  medianBeatErrorMs: number | null;
-  medianBeatErrorMsAdjusted: number | null;
-  matchedBeats: number;
-  missingBeats: number;
-  headMissingMs: number | null;
-  headMissingRawMs: number | null;
-  tailMissingMs: number | null;
-  // Cross-track measurement, not per-tape — repeated on BOTH tapes' rows for
-  // the same repeat so every existing single-tape column stays meaningful
-  // side by side with these in one table/JSON.
-  medianSkewMs: number | null;
-  maxAbsSkewMs: number | null;
-  pairedSkewBeats: number;
-  // Task 7c fix round 1 (Ruling B / review finding 6): the per-tape box-graph
-  // geometry `measureTakeAlignment` was given. `measureCrossTrackSkew` pairs by
-  // ABSOLUTE beat index, so a skew now carries the two tapes' region-position
-  // difference instead of cancelling it — and whether it does is only checkable
-  // from disk if the geometry is persisted alongside the skew it explains. The
-  // single-tape rows have carried these fields since Task 6; the multi-mic rows
-  // computed them at the call site and threw them away.
-  regionPositionPpqn?: number;
-  regionStartSec?: number;
-  waveformOffsetSec?: number;
-  regionDurationSec?: number;
-  bufferDurationSec?: number;
-  status: CellStatus | "pending" | "error";
-  detail: string;
-  errorMessage?: string;
-  finalizeMs?: number;
-  firstQuantumTimeSec?: number;
-  // Task 9: persisted per tape so the loopback path's own delay (firstQuantumTimeSec −
-  // anchorT0Sec) is recoverable for EACH capture, which is what separates an SDK-side
-  // inter-track skew from a difference between the two loopback streams' delays.
-  anchorT0Sec?: number | null;
-  recordRequestContextTime?: number | null;
-}
+// Row contract: `MultitrackAuditRow` in recordingAuditArtifacts.ts. The
+// cross-track skew fields are repeated on BOTH tapes' rows for the same repeat
+// so every single-tape column stays meaningful side by side with them; the
+// per-tape geometry is persisted (Task 7c fix round 1, Ruling B) because
+// `measureCrossTrackSkew` pairs by ABSOLUTE beat index, so a skew carries the
+// two tapes' region-position difference and that is only checkable from disk
+// with the geometry beside it; `anchorT0Sec`/`recordRequestContextTime` per
+// tape (Task 9) make each capture's loopback delay recoverable, which is what
+// separates an SDK-side inter-track skew from a difference between the two
+// loopback streams' delays.
 
 interface MultitrackTapes {
   audioUnitBoxA: AudioUnitBox;
@@ -1632,7 +1731,8 @@ async function runMultitrackCellRepeat(
   rate: number,
   repeat: number,
   onStage: (stage: string) => void,
-  harnessPathBiasSec: number
+  harnessPathBiasSec: number,
+  token: RepeatToken
 ): Promise<MultitrackRepeatResult> {
   const { unitAdapterA, unitAdapterB } = tapes;
 
@@ -1680,6 +1780,7 @@ async function runMultitrackCellRepeat(
   onStage("start");
   project.engine.setPosition(0);
   await waitForPositionSettled(project, 0, 30_000);
+  assertCurrent(token, "startRecording");
   recordRequestContextTime = audioContext.currentTime;
   if (scenario === "multitrack-janked") {
     const jankArmed = armJankOnRecordingFlip(project, JANK_MS, 30_000);
@@ -1690,15 +1791,20 @@ async function runMultitrackCellRepeat(
   }
 
   onStage("recording");
+  assertCurrent(token, "recording wait");
   // Confirm BOTH tapes' independent RecordingWorklets have actually created
   // their take region before trusting the duration wait — see
   // waitForTakeCount's doc comment for why this must not be skipped here
   // (skipping it would race exactly the inter-track skew this scenario
   // measures).
   await waitForTakeCount([unitAdapterA, unitAdapterB], 1, 20_000);
+  assertCurrent(token, "position wait");
   await waitForPosition(project, MULTITRACK_RECORD_BARS * BAR_PPQN, 60_000);
 
   onStage("stopping");
+  // Side effects below (loader patches, lastMultitrackFinalizeProbes,
+  // stopRecording) must never run for an abandoned repeat.
+  assertCurrent(token, "stopping");
   const firstTakeOf = (u: AudioUnitBoxAdapter) =>
     u.tracks.values().flatMap((t) => [...t.regions.adapters.values()]).filter((r) => r.isAudioRegion())[0];
   const takeA = firstTakeOf(unitAdapterA);
@@ -1732,6 +1838,7 @@ async function runMultitrackCellRepeat(
     settleFinalizeProbe(probeA, loaderA);
     settleFinalizeProbe(probeB, loaderB);
   }
+  assertCurrent(token, "measuring");
   const finalizeMs = performance.now() - finalizeStart;
   console.log(
     "[recording-alignment-audit] multitrack finalize " + multitrackCellLabel(scenario, bpm, repeat) +
@@ -1762,12 +1869,16 @@ async function runMultitrackCellRepeat(
       recordRequestContextTime, stopRequestContextTime,
       headMissingBaselineMs: HEAD_MISSING_BASELINE_MS, harnessPathBiasSec,
     });
+    if (alignment.anchorT0Sec === null) {
+      console.warn("[recording-alignment-audit] " + multitrackCellLabel(scenario, bpm, repeat) + "/tape" + tapeLabel + ": no reference-click anchor — head/tail integrity unmeasured for this tape");
+    }
     const headMissingRawMs =
       alignment.anchorT0Sec !== null && recordRequestContextTime !== null
         ? Math.max(0, (alignment.anchorT0Sec - recordRequestContextTime) * 1000)
         : null;
     const row: MultitrackAuditRow = {
       scenario, bpm, rate, repeat, tape: tapeLabel,
+      harnessPathBiasSec,
       medianBeatErrorMs: alignment.medianBeatErrorMs,
       medianBeatErrorMsAdjusted: alignment.medianBeatErrorMsAdjusted,
       matchedBeats: alignment.matchedBeats,
@@ -1844,9 +1955,10 @@ async function resetForNextMultitrackCell(project: Project, tapes: MultitrackTap
   return warnings.length > 0 ? warnings.join(" | ") : null;
 }
 
-/** Upload one tape's WAV for one repeat — non-fatal on failure, matches
- *  uploadRepeatWav's convention. */
 /**
+ * Upload one tape's WAV for one repeat — non-fatal on failure, matches
+ * uploadRepeatWav's convention; the result is stamped on that tape's row.
+ *
  * Fix round 1 (M6): the WAV filename carries a `runToken` (the run's own
  * `Date.now()`, shared with its summary JSON's filename — see
  * `runMultitrackAudit`) and `sdkBuildProbe`. Without either, re-running the
@@ -1856,7 +1968,7 @@ async function resetForNextMultitrackCell(project: Project, tapes: MultitrackTap
  * name; the disambiguated name makes every WAV on disk traceable to the
  * summary JSON that produced it instead.
  */
-async function uploadMultitrackRepeatWav(
+function uploadMultitrackRepeatWav(
   scenario: MultitrackScenario,
   bpm: number,
   rate: number,
@@ -1865,26 +1977,8 @@ async function uploadMultitrackRepeatWav(
   buffer: CapturedBuffer,
   sdkBuildProbe: SdkBuildProbe,
   runToken: number
-): Promise<void> {
-  const wavBuffer = WavFile.encodeInts16({
-    sampleRate: buffer.sampleRate,
-    length: buffer.channels[0].length,
-    numberOfChannels: buffer.channels.length,
-    getChannelData: (i: number) => buffer.channels[i],
-  });
-  const name = `recaudit-mt-${scenario}-${bpmToken(bpm)}-${rate}-r${repeat}-tape${tape}-${sdkBuildProbe}-${runToken}.wav`;
-  try {
-    await withDeadline(
-      (async () => {
-        const res = await fetch(`/__verify/${name}`, { method: "PUT", body: wavBuffer });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      })(),
-      30_000,
-      `WAV upload ${name}`
-    );
-  } catch (err) {
-    console.warn(`[recording-alignment-audit] WAV upload failed for ${name}: ${String(err)}`);
-  }
+): Promise<WavUploadResult> {
+  return putWav(`recaudit-mt-${scenario}-${bpmToken(bpm)}-${rate}-r${repeat}-tape${tape}-${sdkBuildProbe}-${runToken}.wav`, buffer);
 }
 
 /** Upload the multitrack JSON summary — rows (both tapes) plus one
@@ -1896,14 +1990,22 @@ async function uploadMultitrackSummary(
   rows: MultitrackAuditRow[],
   rate: number,
   sdkBuildProbe: SdkBuildProbe,
-  outputLatency: number,
+  bias: HarnessPathBias,
   baseLatency: number,
   cellSkews: { scenario: MultitrackScenario; bpm: number; repeat: number; skew: CrossTrackSkew }[],
+  cellVerdicts: CellVerdictRecord[],
+  wavUploadFailures: number,
   runToken: number,
   confirmCollision: boolean
 ): Promise<void> {
-  const summary = {
-    rate, sdkBuildProbe, outputLatency, baseLatency, harnessPathBiasSec: outputLatency,
+  const summary: MultitrackAuditSummary = {
+    schemaVersion: AUDIT_SCHEMA_VERSION,
+    beatGrid: "absolute",
+    rate, sdkBuildProbe,
+    // Read once per page load after output started (`resolveHarnessPathBias`)
+    // — the value every row of this run was adjusted with.
+    outputLatency: bias.valueSec, baseLatency,
+    harnessPathBiasSec: bias.valueSec, harnessPathBiasSettleMs: bias.settleMs,
     headMissingBaselineMs: HEAD_MISSING_BASELINE_MS,
     repeatsPerCell: REPEATS_PER_CELL,
     jankMs: JANK_MS,
@@ -1915,6 +2017,8 @@ async function uploadMultitrackSummary(
     // this run is the dedicated collision-confirmation cell, not part of the
     // official matrix. false on every official-matrix run.
     confirmCollision,
+    wavUploadFailures,
+    cellVerdicts,
     rows,
     cellSkews,
   };
@@ -1927,6 +2031,35 @@ async function uploadMultitrackSummary(
     30_000,
     "multitrack summary upload"
   );
+}
+
+/** The multi-mic page's once-per-page-load context — same contract as
+ *  `MatrixContext`, with two tapes. */
+interface MultitrackContext {
+  project: Project;
+  audioContext: AudioContext;
+  tapes: MultitrackTapes;
+  sdkBuildProbe: SdkBuildProbe;
+  bias: HarnessPathBias;
+}
+
+async function createMultitrackContext(rate: number, confirmCollision: boolean): Promise<MultitrackContext> {
+  const { project, audioContext } = await initializeOpenDAW({
+    bpm: 120,
+    audioContextSampleRate: rate,
+    engineTap: (node) => loopback.engineTap(node),
+  });
+  const sdkBuildProbe = detectSdkBuildProbe(project.engine);
+  loopback.attach(audioContext);
+  const bias = await resolveHarnessPathBias(audioContext);
+  const tapes = createMultitrackTapes(project, confirmCollision);
+  return { project, audioContext, tapes, sdkBuildProbe, bias };
+}
+
+let multitrackContextPromise: Promise<MultitrackContext> | null = null;
+function getMultitrackContext(rate: number, confirmCollision: boolean): Promise<MultitrackContext> {
+  if (multitrackContextPromise === null) multitrackContextPromise = createMultitrackContext(rate, confirmCollision);
+  return multitrackContextPromise;
 }
 
 async function runMultitrackAudit(
@@ -1954,20 +2087,14 @@ async function runMultitrackAudit(
   // combination is re-run under a different build later in the same session.
   const runToken = Date.now();
 
-  const { project, audioContext } = await initializeOpenDAW({
-    bpm: 120,
-    audioContextSampleRate: rate,
-    engineTap: (node) => loopback.engineTap(node),
-  });
-  const sdkBuildProbe = detectSdkBuildProbe(project.engine);
+  const { project, audioContext, tapes, sdkBuildProbe, bias } = await getMultitrackContext(rate, confirmCollision);
   onBuildProbe(sdkBuildProbe);
-  loopback.attach(audioContext);
-  console.log("[recording-alignment-audit] multitrack outputLatency=" + String(audioContext.outputLatency) + " baseLatency=" + String(audioContext.baseLatency) + " confirmCollision=" + String(confirmCollision));
-
-  const tapes = createMultitrackTapes(project, confirmCollision);
+  console.log("[recording-alignment-audit] multitrack confirmCollision=" + String(confirmCollision));
 
   const allRows: MultitrackAuditRow[] = [];
   const cellSkews: { scenario: MultitrackScenario; bpm: number; repeat: number; skew: CrossTrackSkew }[] = [];
+  const cellVerdicts: CellVerdictRecord[] = [];
+  let wavUploadFailures = 0;
 
   for (const scenario of scenarios) {
     for (const bpm of bpms) {
@@ -1991,21 +2118,20 @@ async function runMultitrackAudit(
         let errorMessage: string | null = null;
         lastMultitrackFinalizeProbes = null;
         try {
-          result = await withDeadline(
-            runMultitrackCellRepeat(project, audioContext, tapes, scenario, bpm, rate, repeat, (s) => {
+          result = await runRepeatWithDeadline(
+            (token) => runMultitrackCellRepeat(project, audioContext, tapes, scenario, bpm, rate, repeat, (s) => {
               stage = s;
-            }, audioContext.outputLatency),
-            // Fix round 1 (M5): the inner waits' own worst-case deadlines sum
-            // to ~140s (waitForPositionSettled 30s + waitForTakeCount 20s +
-            // waitForPosition 60s + the finalization Promise.all's longer
-            // side, 30s) — a 120s outer deadline could fire FIRST on an
-            // unlucky repeat where several inner stages each take close to
-            // their own max without any single one actually timing out,
-            // producing a generic "label timed out after 120s" that masks
-            // which stage was actually slow (each inner helper's own error
-            // names its stage; this one wouldn't). 180s keeps margin above
-            // the 140s worst-case sum.
-            180_000,
+            }, bias.valueSec, token),
+            // Fix round 1 (M5): the outer deadline must sit ABOVE the inner
+            // waits' worst-case sum, or an unlucky repeat where several stages
+            // each run close to their own max produces a generic "label timed
+            // out" that masks which stage was slow (each inner helper names
+            // its own). Worst case: waitForPositionSettled 30 s +
+            // armJankOnRecordingFlip 30 s (janked only) + waitForTakeCount
+            // 20 s + waitForPosition 60 s + the finalization Promise.all's
+            // longer side 30 s = 170 s. 200 s keeps 30 s of margin; the token
+            // makes an abandoned repeat inert should it still fire first.
+            200_000,
             label
           );
         } catch (err) {
@@ -2054,22 +2180,34 @@ async function runMultitrackAudit(
           ? classifyCell(repeats.map((r) => r.alignmentB), SIGNATURE_BANDS[baseScenario], ALIGNED_TOLERANCE_MS)
           : { status: "investigate", matchedSignature: null, detail: "no successful repeats to classify (tape b)" };
       const verdict = classifyMultitrackCell(tapeAClass, tapeBClass, repeats.map((r) => r.skew));
+      // Persisted for EVERY cell, all-error cells included (no skew signature
+      // band exists, so matchedSignature is always null here).
+      cellVerdicts.push({
+        scenario, bpm, rate, status: verdict.status, matchedSignature: null, detail: verdict.detail,
+        successfulRepeats: repeats.length, errorRepeats: REPEATS_PER_CELL - repeats.length,
+      });
 
       for (const r of repeats) {
         for (const row of [r.rowA, r.rowB]) {
           row.status = verdict.status;
           row.detail = r.cleanupWarning ? `${verdict.detail} | cleanup warning: ${r.cleanupWarning}` : verdict.detail;
+        }
+        const wavA = await uploadMultitrackRepeatWav(scenario, bpm, rate, r.repeat, "a", r.bufferA, sdkBuildProbe, runToken);
+        const wavB = await uploadMultitrackRepeatWav(scenario, bpm, rate, r.repeat, "b", r.bufferB, sdkBuildProbe, runToken);
+        if (wavA.wavUploadError !== null) wavUploadFailures++;
+        if (wavB.wavUploadError !== null) wavUploadFailures++;
+        stampWavResult([r.rowA], wavA);
+        stampWavResult([r.rowB], wavB);
+        for (const row of [r.rowA, r.rowB]) {
           allRows.push(row);
           onRow(row);
         }
-        await uploadMultitrackRepeatWav(scenario, bpm, rate, r.repeat, "a", r.bufferA, sdkBuildProbe, runToken);
-        await uploadMultitrackRepeatWav(scenario, bpm, rate, r.repeat, "b", r.bufferB, sdkBuildProbe, runToken);
       }
     }
   }
 
   setAuditState("uploading");
-  await uploadMultitrackSummary(allRows, rate, sdkBuildProbe, audioContext.outputLatency, audioContext.baseLatency, cellSkews, runToken, confirmCollision);
+  await uploadMultitrackSummary(allRows, rate, sdkBuildProbe, bias, audioContext.baseLatency, cellSkews, cellVerdicts, wavUploadFailures, runToken, confirmCollision);
   setAuditState("done");
 }
 
