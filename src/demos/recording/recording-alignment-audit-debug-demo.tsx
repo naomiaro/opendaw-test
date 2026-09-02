@@ -347,6 +347,14 @@ interface AuditRow {
   regionPositionPpqn?: number;
   regionStartSec?: number;
   waveformOffsetSec?: number;
+  // Task 7c fix round 1 (I4): the presented duration measureTakeAlignment was
+  // actually given. Without it an offline replay has to GUESS the take's
+  // presented range (buffer duration minus waveform offset), which is right for
+  // a single-take scenario and wrong for every loop-wrap take but the last —
+  // so replayed loop-wrap numbers could not be reconciled with the persisted
+  // ones. Persisted so any future re-match runs on the same range this row was
+  // measured with.
+  regionDurationSec?: number;
   anchorT0Sec?: number | null;
   recordRequestContextTime?: number | null;
   // Detector/graph-path noise for this repeat's reference-click schedule match —
@@ -886,6 +894,7 @@ async function runCellRepeat(
       regionPositionPpqn: region.position,
       regionStartSec,
       waveformOffsetSec,
+      regionDurationSec,
       anchorT0Sec: alignment.anchorT0Sec,
       recordRequestContextTime,
       finalizeMs,
@@ -959,13 +968,21 @@ async function resetForNextCell(project: Project, unitAdapter: AudioUnitBoxAdapt
 }
 
 /** Upload a single repeat's full capture buffer (all takes share it). Non-fatal
- *  on failure — logs and lets the run continue (matches samplerate-audit's convention). */
+ *  on failure — logs and lets the run continue (matches samplerate-audit's convention).
+ *
+ *  Task 7c fix round 1 (review M12/I4): the name carries the build probe and the
+ *  run's own token, the convention the multi-mic path already uses. Without them
+ *  every run overwrote the previous run's capture of the same cell, so an offline
+ *  re-analysis silently read one run's geometry against another run's audio and
+ *  no artifact on disk could contradict it. */
 async function uploadRepeatWav(
   scenario: RecordingScenario,
   bpm: number,
   rate: number,
   repeat: number,
-  buffer: CapturedBuffer
+  buffer: CapturedBuffer,
+  sdkBuildProbe: SdkBuildProbe,
+  runToken: number
 ): Promise<void> {
   const wavBuffer = WavFile.encodeInts16({
     sampleRate: buffer.sampleRate,
@@ -973,7 +990,7 @@ async function uploadRepeatWav(
     numberOfChannels: buffer.channels.length,
     getChannelData: (i: number) => buffer.channels[i],
   });
-  const name = `recaudit-${scenario}-${bpmToken(bpm)}-${rate}-r${repeat}.wav`;
+  const name = `recaudit-${scenario}-${bpmToken(bpm)}-${rate}-r${repeat}-${sdkBuildProbe}-${runToken}.wav`;
   try {
     await withDeadline(
       (async () => {
@@ -994,9 +1011,9 @@ async function uploadSummary(
   rate: number,
   sdkBuildProbe: SdkBuildProbe,
   outputLatency: number,
-  baseLatency: number
+  baseLatency: number,
+  runToken: number
 ): Promise<void> {
-  const timestamp = Date.now();
   const summary = {
     rate,
     sdkBuildProbe,
@@ -1021,7 +1038,7 @@ async function uploadSummary(
   const jsonBody = JSON.stringify(summary, null, 2);
   await withDeadline(
     (async () => {
-      const res = await fetch(`/__verify/recaudit-summary-${timestamp}.json`, { method: "PUT", body: jsonBody });
+      const res = await fetch(`/__verify/recaudit-summary-${runToken}.json`, { method: "PUT", body: jsonBody });
       if (!res.ok) throw new Error(`verify sink rejected JSON: HTTP ${res.status}`);
     })(),
     30_000,
@@ -1038,6 +1055,10 @@ async function runAudit(
   const scenarios = resolveScenarios(params.get("scenario"));
   const bpms = resolveBpms(params.get("bpm"));
   const rate = resolveRate(params.get("rate"));
+  // One token per run, stamped into BOTH the summary name and every capture
+  // WAV name, so a summary row and the audio it was measured from can always be
+  // joined without guessing (Task 7c fix round 1, review M12).
+  const runToken = Date.now();
 
   const { project, audioContext } = await initializeOpenDAW({
     bpm: 120,
@@ -1160,13 +1181,13 @@ async function runAudit(
           allRows.push(row);
           onRow(row);
         }
-        await uploadRepeatWav(scenario, bpm, rate, r.repeat, r.buffer);
+        await uploadRepeatWav(scenario, bpm, rate, r.repeat, r.buffer, sdkBuildProbe, runToken);
       }
     }
   }
 
   setAuditState("uploading");
-  await uploadSummary(allRows, rate, sdkBuildProbe, audioContext.outputLatency, audioContext.baseLatency);
+  await uploadSummary(allRows, rate, sdkBuildProbe, audioContext.outputLatency, audioContext.baseLatency, runToken);
   setAuditState("done");
 }
 
@@ -1295,8 +1316,8 @@ function ScenarioRunnerHarness() {
 ?bpm=<number|all>     default "all" (${RECORDING_AUDIT_BPMS.join(", ")})
 ?rate=<number>        default 48000 — sets the AudioContext at init, never "all"
 Repeats per cell:       ${REPEATS_PER_CELL}
-Uploads:                recaudit-summary-<timestamp>.json (all rows) via PUT /__verify
-                        recaudit-<scenario>-<bpm>-<rate>-r<repeat>.wav per repeat
+Uploads:                recaudit-summary-<runToken>.json (all rows) via PUT /__verify
+                        recaudit-<scenario>-<bpm>-<rate>-r<repeat>-<build>-<runToken>.wav per repeat
 Click "Run audit" with a real click — resumes the AudioContext.`}
             </pre>
           </Card>
@@ -1385,6 +1406,18 @@ interface MultitrackAuditRow {
   medianSkewMs: number | null;
   maxAbsSkewMs: number | null;
   pairedSkewBeats: number;
+  // Task 7c fix round 1 (Ruling B / review finding 6): the per-tape box-graph
+  // geometry `measureTakeAlignment` was given. `measureCrossTrackSkew` pairs by
+  // ABSOLUTE beat index, so a skew now carries the two tapes' region-position
+  // difference instead of cancelling it — and whether it does is only checkable
+  // from disk if the geometry is persisted alongside the skew it explains. The
+  // single-tape rows have carried these fields since Task 6; the multi-mic rows
+  // computed them at the call site and threw them away.
+  regionPositionPpqn?: number;
+  regionStartSec?: number;
+  waveformOffsetSec?: number;
+  regionDurationSec?: number;
+  bufferDurationSec?: number;
   status: CellStatus | "pending" | "error";
   detail: string;
   errorMessage?: string;
@@ -1649,6 +1682,11 @@ async function runMultitrackCellRepeat(
       headMissingRawMs,
       tailMissingMs: alignment.tailMissingMs,
       medianSkewMs: null, maxAbsSkewMs: null, pairedSkewBeats: 0, // filled in once both tapes are measured
+      regionPositionPpqn: take.position,
+      regionStartSec,
+      waveformOffsetSec,
+      regionDurationSec,
+      bufferDurationSec,
       status: "pending", detail: "", finalizeMs,
     };
     return { alignment, buffer: { channels: [mono], sampleRate: data.sampleRate }, row };
