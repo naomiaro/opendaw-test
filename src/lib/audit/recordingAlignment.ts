@@ -497,7 +497,11 @@ export function measureCrossTrackSkew(a: TakeAlignment, b: TakeAlignment): Cross
 export type CellStatus = "aligned" | "matches-known-defect" | "investigate";
 
 export interface SignatureBand {
-  id: "A" | "B" | "C" | "D";
+  // A-D: the campaign's predicted upstream signatures. E-F: the measured
+  // signatures of the calibration branch's keep-alive build. Which set applies
+  // is chosen per artifact by its persisted build probe — see
+  // `RECORDING_AUDIT_PROFILES` in recordingAuditCalibration.ts.
+  id: "A" | "B" | "C" | "D" | "E" | "F";
   kind: "random-band" | "constant-late" | "head-loss";
   minAbsMs: number;
   maxAbsMs: number;

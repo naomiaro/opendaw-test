@@ -26,16 +26,22 @@ export function isMultitrackScenario(value: string): value is MultitrackScenario
 }
 
 /**
- * Total lookup into `SIGNATURE_BANDS`: throws on a scenario name the table
- * does not know, so an offline script fed a mistyped or foreign scenario can
- * never classify against an empty band list and land a spurious `aligned` /
+ * Total lookup into a build profile's band table: throws on a scenario name the
+ * table does not know, so an offline script fed a mistyped or foreign scenario
+ * can never classify against an empty band list and land a spurious `aligned` /
  * `investigate`.
+ *
+ * `build` is the value the artifact persists as `sdkBuildProbe` and `runId` its
+ * run token, so a run is judged against the bands of the build it was measured
+ * on (see `profileKeyFor` for why both are needed). Omitting either selects the
+ * `upstream` profile: every call site that predates per-build profiles keeps
+ * the behaviour it had.
  */
-export function signatureBandsFor(scenario: string): SignatureBand[] {
+export function signatureBandsFor(scenario: string, build?: string | null, runId?: number | null): SignatureBand[] {
   if (!isRecordingScenario(scenario)) {
     throw new Error(`no signature bands for unknown scenario "${scenario}" (known: ${RECORDING_AUDIT_SCENARIOS.join(", ")})`);
   }
-  return SIGNATURE_BANDS[scenario];
+  return RECORDING_AUDIT_PROFILES[profileKeyFor(build, runId)].signatureBands[scenario];
 }
 export const REPEATS_PER_CELL = 3;
 export const JANK_MS = 150;
@@ -91,7 +97,9 @@ export const ALIGNED_TOLERANCE_MS = 2;
  * Both are persisted — the correction is never silently applied.
  */
 export const HEAD_MISSING_BASELINE_MS = 26;
-/** Predicted upstream signatures (spec §1) — predictions to test, not truths. */
+/** Predicted upstream signatures (spec §1) — predictions to test, not truths.
+ *  This is the `upstream` profile's table (see `RECORDING_AUDIT_PROFILES`); it is
+ *  frozen, so every historical artifact keeps classifying exactly as it did. */
 export const SIGNATURE_BANDS: Record<RecordingScenario, SignatureBand[]> = {
   "nominal-start": [{ id: "B", kind: "random-band", minAbsMs: 4, maxAbsMs: 25 }],
   "janked-start": [
@@ -101,4 +109,106 @@ export const SIGNATURE_BANDS: Record<RecordingScenario, SignatureBand[]> = {
   "midtimeline-start": [{ id: "A", kind: "head-loss", minAbsMs: 5, maxAbsMs: 300 }],
   "countin-start": [{ id: "B", kind: "random-band", minAbsMs: 4, maxAbsMs: 25 }],
   "loop-wrap": [{ id: "D", kind: "constant-late", minAbsMs: 15, maxAbsMs: 30 }],
+};
+
+/**
+ * Which band table a run is judged against. The harness already persists the
+ * build it measured (`sdkBuildProbe`), so the profile follows the artifact
+ * rather than the checkout: a historical JSON classifies against the bands it
+ * was designed for however the working tree has moved on.
+ *
+ * `unknown` (bring-up runs that predate the probe) resolves to `upstream`,
+ * which is what those runs measured.
+ */
+export type AuditBuildProfileKey = "upstream" | "candidate";
+
+/**
+ * First run token measured on the keep-alive build. The build probe alone
+ * cannot select the profile: `sdkBuildProbe` reads `candidate` for EVERY branch
+ * build the campaign has measured, including Task 9's recording-start-alignment
+ * branch, whose runs the register quotes and which must keep classifying against
+ * bands A-D. The run token (the envelope's `Date.now()` filename id) separates
+ * them — the last pre-keep-alive run in this campaign is 1788383997913 and the
+ * first keep-alive run is 1788384874160 — the same device
+ * `ABSOLUTE_GRID_FROM_RUN` uses in recordingAuditArtifacts.ts for the beat-grid
+ * change. A caller that passes no run id gets `upstream`, so every call site
+ * predating per-build profiles is unchanged and no historical output moves.
+ */
+export const KEEP_ALIVE_PROFILE_FROM_RUN = 1788384000000;
+
+export function profileKeyFor(build: string | null | undefined, runId?: number | null): AuditBuildProfileKey {
+  const isKeepAliveEra = typeof runId === "number" && Number.isFinite(runId) && runId >= KEEP_ALIVE_PROFILE_FROM_RUN;
+  return build === "candidate" && isKeepAliveEra ? "candidate" : "upstream";
+}
+
+export interface RecordingAuditProfile {
+  key: AuditBuildProfileKey;
+  /** What the profile describes, and whether its bands are predictions or measurements. */
+  description: string;
+  signatureBands: Record<RecordingScenario, SignatureBand[]>;
+}
+
+/**
+ * DESCRIPTIVE bands for the calibration branch's keep-alive build, derived from
+ * this repo's own sweep on that build — NOT predictions, unlike the `upstream`
+ * table above. Stated plainly because it changes what a match means: a cell
+ * matching E or F says "this build behaved the way it was measured to behave
+ * here", not "this cell reproduced a defect predicted in advance". The register
+ * decides what that is worth; the classifier only needs to stop reporting
+ * `investigate` for behaviour that is now characterised.
+ *
+ * Source data — full standing sweep on SDK `3484e3265`, both rates, both bpms,
+ * 3 repeats, run tokens `1788386290685` (48 kHz) and `1788386775464`
+ * (44.1 kHz), persisted in `.verify-output/`:
+ *  - 96 repeat medians (`medianBeatErrorMsAdjusted`, loop-wrap counted over its
+ *    classified takes 1-4): min 13.36 ms, max 24.22 ms, every one LATE.
+ *  - 20 cell means: min 16.33 ms, max 23.67 ms.
+ *  - head and tail deficits 0 on every row of both runs; no error repeats.
+ *  - Every cell's repeats land in ONE of two shapes: a single chain state
+ *    (spread 0.06-2.13 ms) or two states about 8.0-9.6 ms apart (spread
+ *    8.00-9.64 ms). No cell is scattered across more than two values.
+ *
+ * Hence two bands, in the order `classifyCell` reads them:
+ *  - `E` random-band 4-30 ms catches the two-state cells (its spread > 2·tol
+ *    precondition is exactly what a two-state cell satisfies and a one-state
+ *    cell does not); the 4 ms floor is band B's, kept so `reachesMin` stays
+ *    trivially satisfied at these magnitudes.
+ *  - `F` constant-late 10-30 ms catches the one-state cells by their mean; it
+ *    is not spread-gated (see `classifyCell`). The 10 ms floor sits below the
+ *    smallest measured cell mean (16.33 ms) so the band cannot claim a cell
+ *    that has drifted towards aligned, and 30 ms sits above the largest
+ *    measured median (24.22 ms), both rounded outward to 5 ms.
+ *
+ * The same pair applies to every single-tape scenario because the measured data
+ * no longer distinguishes them: on this build `janked-start` and
+ * `midtimeline-start` produce the same magnitudes as `nominal-start` (their
+ * upstream bands C and A described a late/lossy signature this build does not
+ * show), and head-loss bands are unreachable with head deficits at 0.
+ */
+const KEEP_ALIVE_BANDS: SignatureBand[] = [
+  { id: "E", kind: "random-band", minAbsMs: 4, maxAbsMs: 30 },
+  { id: "F", kind: "constant-late", minAbsMs: 10, maxAbsMs: 30 },
+];
+
+export const RECORDING_AUDIT_PROFILES: Record<AuditBuildProfileKey, RecordingAuditProfile> = {
+  upstream: {
+    key: "upstream",
+    description:
+      "Predicted signatures from the campaign spec (bands A-D), tested against the installed " +
+      "0.0.170 and the pre-keep-alive branch builds. Frozen so historical artifacts keep their verdicts.",
+    signatureBands: SIGNATURE_BANDS,
+  },
+  candidate: {
+    key: "candidate",
+    description:
+      "Measured signatures of the calibration branch's keep-alive build (bands E/F), derived from " +
+      "runs 1788386290685 (48 kHz) and 1788386775464 (44.1 kHz). Descriptive, not predictive.",
+    signatureBands: {
+      "nominal-start": KEEP_ALIVE_BANDS,
+      "janked-start": KEEP_ALIVE_BANDS,
+      "midtimeline-start": KEEP_ALIVE_BANDS,
+      "countin-start": KEEP_ALIVE_BANDS,
+      "loop-wrap": KEEP_ALIVE_BANDS,
+    },
+  },
 };

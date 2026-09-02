@@ -91,7 +91,7 @@ import { classifyCell, type CellClassification, type TakeAlignment } from "@/lib
 import {
   ALIGNED_TOLERANCE_MS,
   REPEATS_PER_CELL,
-  SIGNATURE_BANDS,
+  signatureBandsFor,
 } from "@/lib/audit/recordingAuditCalibration";
 import type { AuditRow, SdkBuildProbe } from "@/lib/audit/recordingAuditArtifacts";
 import {
@@ -703,7 +703,7 @@ async function runCalibrationAudit(cb: RunCallbacks): Promise<void> {
   const alignments: TakeAlignment[] = repeats.flatMap((r) => r.alignments.map((a) => a.alignment));
   const classification: CellClassification =
     alignments.length > 0
-      ? classifyCell(alignments, SIGNATURE_BANDS[CELL_SCENARIO], ALIGNED_TOLERANCE_MS)
+      ? classifyCell(alignments, signatureBandsFor(CELL_SCENARIO, sdkBuildProbe, runToken), ALIGNED_TOLERANCE_MS)
       : { status: "investigate", matchedSignature: null, detail: "no successful repeats to classify" };
   const cellRows = repeats.flatMap((r) => r.rows);
   for (const row of cellRows) {

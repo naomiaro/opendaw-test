@@ -79,7 +79,7 @@ import {
   LOOP_WRAP_TAKES,
   ALIGNED_TOLERANCE_MS,
   HEAD_MISSING_BASELINE_MS,
-  SIGNATURE_BANDS,
+  signatureBandsFor,
   isRecordingScenario,
   isMultitrackScenario,
   type RecordingScenario,
@@ -695,7 +695,7 @@ async function runAudit(
       // explicit detail here names the reason (every repeat errored).
       const classification: CellClassification =
         alignmentsForClassification.length > 0
-          ? classifyCell(alignmentsForClassification, SIGNATURE_BANDS[scenario], ALIGNED_TOLERANCE_MS)
+          ? classifyCell(alignmentsForClassification, signatureBandsFor(scenario, sdkBuildProbe, runToken), ALIGNED_TOLERANCE_MS)
           : { status: "investigate", matchedSignature: null, detail: "no successful repeats to classify" };
       // Persisted for EVERY cell, so an all-error cell's verdict exists on disk
       // (rows only carry the verdict of successful repeats).
@@ -1504,11 +1504,11 @@ async function runMultitrackAudit(
       const baseScenario = MULTITRACK_BASE_SCENARIO[scenario];
       const tapeAClass: CellClassification =
         repeats.length > 0
-          ? classifyCell(repeats.map((r) => r.alignmentA), SIGNATURE_BANDS[baseScenario], ALIGNED_TOLERANCE_MS)
+          ? classifyCell(repeats.map((r) => r.alignmentA), signatureBandsFor(baseScenario, sdkBuildProbe, runToken), ALIGNED_TOLERANCE_MS)
           : { status: "investigate", matchedSignature: null, detail: "no successful repeats to classify (tape a)" };
       const tapeBClass: CellClassification =
         repeats.length > 0
-          ? classifyCell(repeats.map((r) => r.alignmentB), SIGNATURE_BANDS[baseScenario], ALIGNED_TOLERANCE_MS)
+          ? classifyCell(repeats.map((r) => r.alignmentB), signatureBandsFor(baseScenario, sdkBuildProbe, runToken), ALIGNED_TOLERANCE_MS)
           : { status: "investigate", matchedSignature: null, detail: "no successful repeats to classify (tape b)" };
       const verdict = classifyMultitrackCell(tapeAClass, tapeBClass, repeats.map((r) => r.skew));
       // Persisted for EVERY cell, all-error cells included (no skew signature

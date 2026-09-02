@@ -52,7 +52,7 @@ for (const rate of [48000, 44100] as const) {
         // the new one (verified live on 12 upstream repeats).
         missingBeats: scenario === "midtimeline-start" ? 0 : r.missingBeats,
       }));
-      const cls = classifyCell(repeats, signatureBandsFor(scenario), cand.alignedToleranceMs);
+      const cls = classifyCell(repeats, signatureBandsFor(scenario, cand.sdkBuildProbe, Number(CAND[rate])), cand.alignedToleranceMs);
       if (cls.status === "matches-known-defect") matches++;
       if (withMedian(uRows).length === 0) {
         missingUpstream.push(`${rate}/${scenario}/${bpm}`);
