@@ -67,6 +67,8 @@ const verifySink = (): Plugin => ({
 // when set to a directory laid out like node_modules (<dir>/@opendaw/<pkg>/{package.json,dist}),
 // re-points @opendaw/* module resolution AND the wasm-engine dev asset route at it, so the same
 // harness page can be run against two different SDK builds for A/B comparison.
+// Dev-server only: the alias below is gated on `command === "serve"` so a production build
+// never pairs override JS with the installed WASM assets wasmEngineEmit reads from WASM_DIST.
 const sdkDistOverride = process.env.SDK_DIST_OVERRIDE
 
 // Serves the WASM engine artifacts shipped in @opendaw/studio-core-wasm's dist/ under
@@ -132,14 +134,14 @@ const certKeyPath = "localhost-key.pem"
 const certPath = "localhost.pem"
 const hasLocalCerts = existsSync(certKeyPath) && existsSync(certPath)
 
-export default defineConfig({
+export default defineConfig(({command}) => ({
     // For GitHub Pages deployment: set base to '/repo-name/' or use env variable
     // For local dev and production on custom domain, use '/'
     base: process.env.VITE_BASE_PATH || '/',
     resolve: {
         alias: [
             {find: "@", replacement: resolve(__dirname, "./src")},
-            ...(sdkDistOverride
+            ...(sdkDistOverride && command === "serve"
                 ? [{find: /^@opendaw\/(.+)$/, replacement: resolve(sdkDistOverride, "@opendaw") + "/$1"}]
                 : [])
         ]
@@ -243,4 +245,4 @@ export default defineConfig({
         wasmEngineAssets(),
         wasmEngineEmit()
     ]
-})
+}))

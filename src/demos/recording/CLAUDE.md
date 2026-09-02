@@ -413,6 +413,14 @@ sample-rate/quantum-alignment sweep in root CLAUDE.md's Build & Verification.
   characterized in the register.
 - Start the transport with a REAL click and keep the window visible — see root
   CLAUDE.md's browser-automation notes.
+- Build probe: the page labels each run `candidate` when the live `project.engine`
+  exposes `recordingStart` (an ObservableOption — the engine's one-shot audio-thread
+  report of where and when recording began, from the reworked upstream fix) and
+  `upstream` otherwise; the label lands in the summary's `sdkBuildProbe` and in every
+  WAV name. Once the installed SDK ships `recordingStart`, the plain server will read
+  `candidate` too — re-target the marker (`detectSdkBuildProbe`) at that upgrade.
+  Rows also persist `firstQuantumTimeSec` (branch builds only); `firstQuantumTimeSec −
+  anchorT0Sec` is the loopback path's own input delay for that row.
 
 ## Reference Files
 - Recording demo: `src/demos/recording/recording-api-react-demo.tsx`
