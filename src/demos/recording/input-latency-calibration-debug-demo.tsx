@@ -204,6 +204,8 @@ interface CalibrationSummary {
   harnessPathBiasSettleMs: number;
   /** The virtual output-device leg the destination tee carried (= harnessPathBiasSec). */
   virtualOutputLegSec: number;
+  /** The discarded first calibration — see the warm-up comment in `runCalibrationAudit`. */
+  warmup: CalibrationResult | null;
   sweep: SweepRow[];
   fit: LeastSquaresFit | null;
   applied: CalibrationResult | null;
@@ -370,6 +372,7 @@ interface RunCallbacks {
   setState: (state: string) => void;
   onSweepRow: (row: SweepRow) => void;
   onFit: (fit: LeastSquaresFit | null) => void;
+  onWarmup: (result: CalibrationResult) => void;
   onApplied: (result: CalibrationResult, entry: CalibrationEntry | null) => void;
   onCell: (cell: CellOutcome, hopSec: number | null) => void;
   onBuildProbe: (probe: SdkBuildProbe) => void;
@@ -395,6 +398,29 @@ async function runCalibrationAudit(cb: RunCallbacks): Promise<void> {
   // A stale entry from an earlier run on this page would be applied to the
   // sweep cells too — the sweep must measure the raw path.
   calibrating.clearInputLatencyCalibration();
+
+  // WARM-UP, discarded from the fit. Measured on this loopback (run
+  // 1788380827527 and the constant-delay diagnostic 1788381020…, both at
+  // 48 kHz): the FIRST calibration after the stream opens reads a round trip
+  // ~41 ms shorter than every later one, and the step is permanent — six
+  // consecutive calibrations at D=0 read 21.3, 62.7, 63.3, 64.0, 65.3,
+  // 61.3 ms of input part. The loopback's MediaStream hop grows once, and the
+  // recorded cell afterwards runs at the LARGER hop (measured 61.0 ms against
+  // a 62.7 ms calibration in that same run). Sweeping without this warm-up
+  // therefore fits one out-of-steady-state point against four steady ones and
+  // reports a slope that is an artifact of the step, and an applied value that
+  // does not describe the path the take will travel. The result is persisted
+  // so the transient itself stays visible in the artifact.
+  cb.setState("warmup");
+  loopback.setReturnDelay(0);
+  await sleep(DELAY_SETTLE_MS);
+  const warmup = await calibrateThroughLoopback(calibrating, bias.valueSec, false);
+  console.log(
+    "[input-latency-calibration] warmup verdict=" + warmup.verdict +
+    " inputLatencySec=" + String(warmup.inputLatencySeconds) +
+    " (discarded from the fit — see the warm-up comment)"
+  );
+  cb.onWarmup(warmup);
 
   const sweep: SweepRow[] = [];
   for (const delayMs of delaysMs) {
@@ -537,7 +563,7 @@ async function runCalibrationAudit(cb: RunCallbacks): Promise<void> {
     harnessPathBiasSec: bias.valueSec,
     harnessPathBiasSettleMs: bias.settleMs,
     virtualOutputLegSec: bias.valueSec,
-    sweep, fit, applied, storedEntry, cell,
+    warmup, sweep, fit, applied, storedEntry, cell,
     harnessLoopbackHopSec: hopSec,
     harnessLoopbackHopPerRowSec: hopPerRow,
     harnessLoopbackHopSource:
@@ -570,6 +596,7 @@ function CalibrationHarness() {
   const [buildProbe, setBuildProbe] = useState<SdkBuildProbe>("unknown");
   const [sweep, setSweep] = useState<SweepRow[]>([]);
   const [fit, setFit] = useState<LeastSquaresFit | null>(null);
+  const [warmup, setWarmup] = useState<CalibrationResult | null>(null);
   const [applied, setApplied] = useState<CalibrationResult | null>(null);
   const [storedEntry, setStoredEntry] = useState<CalibrationEntry | null>(null);
   const [cell, setCell] = useState<CellOutcome | null>(null);
@@ -581,6 +608,7 @@ function CalibrationHarness() {
     setStarted(true);
     setSweep([]);
     setFit(null);
+    setWarmup(null);
     setApplied(null);
     setStoredEntry(null);
     setCell(null);
@@ -589,6 +617,7 @@ function CalibrationHarness() {
       setState: setAuditState,
       onSweepRow: (row) => setSweep((prev) => [...prev, row]),
       onFit: setFit,
+      onWarmup: setWarmup,
       onApplied: (result, entry) => { setApplied(result); setStoredEntry(entry); },
       onCell: (outcome, hop) => { setCell(outcome); setHopSec(hop); },
       onBuildProbe: setBuildProbe,
@@ -654,8 +683,8 @@ function CalibrationHarness() {
                   </Table.Row>
                 </Table.Header>
                 <Table.Body>
-                  {sweep.map((row) => (
-                    <Table.Row key={row.requestedDelayMs}>
+                  {sweep.map((row, index) => (
+                    <Table.Row key={`${row.requestedDelayMs}-${index}`}>
                       <Table.Cell>{row.requestedDelayMs}</Table.Cell>
                       <Table.Cell>{ms(row.roundTripSeconds)}</Table.Cell>
                       <Table.Cell>{ms(row.inputLatencySeconds)}</Table.Cell>
@@ -690,7 +719,8 @@ function CalibrationHarness() {
             <pre style={{ margin: 0, fontSize: "0.85rem", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
               {applied === null
                 ? "applied: pending"
-                : `applied verdict:   ${applied.verdict}
+                : `warm-up input:     ${warmup === null ? "—" : ms(warmup.inputLatencySeconds)} ms (discarded)
+applied verdict:   ${applied.verdict}
 input part:        ${ms(applied.inputLatencySeconds)} ms
 round trip:        ${ms(applied.roundTripSeconds)} ms
 output latency:    ${ms(applied.outputLatencySeconds)} ms (reported: ${String(applied.outputLatencyReported)})
