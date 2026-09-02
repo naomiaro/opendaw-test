@@ -6,7 +6,7 @@
  * SDK_DIST_OVERRIDE. Every figure the register's "Task 9" section quotes comes
  * from here; nothing is carried over from earlier prose.
  *
- *   node scripts/audit/recording-alignment/task9-branch-verification.ts [cells|hang|hop|mt|all]
+ *   node scripts/audit/recording-alignment/task9-branch-verification.ts [cells|hang|hop|mt|probe|integrity|all]
  *
  * Run ids are the defaults below; override with T9_UP48/T9_UP44/T9_BR48/T9_BR44
  * (matrix runs) and T9_MT (multi-mic run on the branch), T9_MT_UP (comma-separated
@@ -21,8 +21,8 @@ import { SIGNATURE_BANDS } from "../../../src/lib/audit/recordingAuditCalibratio
 const VERIFY_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../../../.verify-output");
 const env = (key: string, fallback: string) => process.env[key] ?? fallback;
 const UP = { 48000: env("T9_UP48", "1788310164556"), 44100: env("T9_UP44", "1788310817094") } as const;
-const BR = { 48000: env("T9_BR48", "1788324358634"), 44100: env("T9_BR44", "1788324856598") } as const;
-const MT_BRANCH = env("T9_MT", "1788325292003");
+const BR = { 48000: env("T9_BR48", "1788328219906"), 44100: env("T9_BR44", "1788328656062") } as const;
+const MT_BRANCH = env("T9_MT", "1788325557229");
 const MT_UPSTREAM = env("T9_MT_UP", "1788302627819").split(",");
 
 interface Row {
@@ -32,8 +32,12 @@ interface Row {
   headMissingMs: number | null; headMissingRawMs?: number | null; tailMissingMs?: number | null;
   anchorT0Sec?: number | null; firstQuantumTimeSec?: number; recordRequestContextTime?: number | null;
   regionStartSec?: number; waveformOffsetSec?: number;
-  finalizeMs?: number; status?: string; errorMessage?: string; matchedSignature?: string | null;
+  finalizeMs?: number; status?: string; errorMessage?: string; matchedSignature?: string | null; detail?: string;
+  bufferDurationSec?: number; stopRequestContextTime?: number | null;
+  finalizeNumberOfFramesAtStop?: number; finalizeLimitCalls?: number[]; finalizeNumberOfFramesAtLimit?: number[];
+  finalizeOvershootFrames?: number[]; finalizeNumberOfFramesAfter?: number; finalizeLoaderState?: string;
 }
+const PROBE_RUNS = env("T9_PROBE", "").split(",").filter((x) => x.length > 0);
 interface MtRow extends Row { tape: "a" | "b"; medianSkewMs: number | null; maxAbsSkewMs: number | null; pairedSkewBeats: number }
 
 const load = (id: string) => {
@@ -178,5 +182,50 @@ if (mode === "mt" || mode === "all") {
     }
     const skews = run.cellSkews.map((c) => c.skew?.medianSkewMs).filter((x): x is number => typeof x === "number");
     console.log(`  => ${errRepeats.size} of ${repeats.size} repeats errored; ${skews.length} skew values: ${skews.map((x) => x.toFixed(3)).join(", ")}; outside 2 ms: ${skews.filter((x) => Math.abs(x) > 2).length}\n`);
+  }
+}
+
+if (mode === "probe" || mode === "all") {
+  console.log("\n## Finalization probe (per repeat, take 0 row): limit() calls, numberOfFrames, overshoot, loader state\n");
+  const ids = PROBE_RUNS.length ? PROBE_RUNS : [UP[48000], UP[44100], BR[48000], BR[44100]];
+  for (const id of ids) {
+    const run = load(id);
+    const rows = run.rows.filter((r) => r.takeIndex === 0 && r.finalizeLoaderState !== undefined);
+    if (rows.length === 0) { console.log(`run ${id} (probe ${run.probe}): no finalization probe fields persisted`); continue; }
+    console.log(`run ${id} (probe ${run.probe}, ${run.rate} Hz): ${rows.length} repeats with probe fields`);
+    console.log("| scenario | bpm | r | frames at stop | limit() calls | frames at limit | overshoot | frames after | loader state | outcome |");
+    console.log("|---|---|---|---|---|---|---|---|---|---|");
+    for (const r of rows) {
+      console.log(`| ${r.scenario} | ${r.bpm} | ${r.repeat} | ${r.finalizeNumberOfFramesAtStop} | ${r.finalizeLimitCalls?.join(", ") || "none"} | ${r.finalizeNumberOfFramesAtLimit?.join(", ") || "—"} | ${r.finalizeOvershootFrames?.join(", ") || "—"} | ${r.finalizeNumberOfFramesAfter} | ${r.finalizeLoaderState} | ${r.status === "error" ? "ERROR: " + r.errorMessage : "finalized " + fmt(r.finalizeMs, 0) + " ms"} |`);
+    }
+    const hung = rows.filter((r) => r.finalizeLoaderState !== "loaded");
+    const noCall = hung.filter((r) => (r.finalizeLimitCalls?.length ?? 0) === 0);
+    const ov = rows.flatMap((r) => r.finalizeOvershootFrames ?? []);
+    console.log(`  => not finalized: ${hung.length} of ${rows.length}; of those with NO limit() call: ${noCall.length}; overshoot frames over ${ov.length} calls: ${ov.length ? Math.min(...ov) + " … " + Math.max(...ov) : "—"}\n`);
+  }
+}
+
+if (mode === "integrity" || mode === "all") {
+  console.log("\n## Head/tail integrity (spec §3.7 (d)) and classifier detail reasons\n");
+  for (const [label, ids] of [["upstream", UP], ["branch", BR]] as const) {
+    for (const rate of [48000, 44100] as const) {
+      const run = load(ids[rate]);
+      const rows = run.rows.filter((r) => r.medianBeatErrorMs !== null);
+      const tails = rows.map((r) => r.tailMissingMs ?? 0);
+      const heads = rows.map((r) => r.headMissingMs ?? 0);
+      const trueTail = rows.filter((r) => r.takeIndex === 0 && r.firstQuantumTimeSec !== undefined && r.bufferDurationSec !== undefined && r.stopRequestContextTime != null)
+        .map((r) => (r.firstQuantumTimeSec! + r.bufferDurationSec! - r.stopRequestContextTime!) * 1000);
+      console.log(`${label} ${rate} (${ids[rate]}): rows ${rows.length}; tailMissingMs > 2: ${tails.filter((t) => t > 2).length}, max ${fmt(Math.max(...tails))}, mean ${fmt(mean(tails))}; headMissingMs > 2: ${heads.filter((h) => h > 2).length}, max ${fmt(Math.max(...heads))}${trueTail.length ? `; true-clock file end − stop request (take 0): ${fmt(Math.min(...trueTail))} … ${fmt(Math.max(...trueTail))} ms, ${trueTail.filter((t) => t < 0).length} of ${trueTail.length} end before the request` : ""}`);
+    }
+  }
+  console.log("\nBranch cell verdicts with the classifier's own detail:");
+  for (const rate of [48000, 44100] as const) {
+    const br = load(BR[rate]);
+    for (const scenario of SCENARIOS) for (const bpm of BPMS) {
+      const b = cellPop(br.rows, scenario, bpm);
+      if (!b.length) continue;
+      const cls = classifyCell(b.map(asAlignment), (SIGNATURE_BANDS as Record<string, any>)[scenario] ?? [], br.tol);
+      console.log(`  ${rate}/${scenario}/${bpm}: ${cls.status}${cls.matchedSignature ? " (" + cls.matchedSignature + ")" : ""} — ${cls.detail}`);
+    }
   }
 }

@@ -421,6 +421,12 @@ sample-rate/quantum-alignment sweep in root CLAUDE.md's Build & Verification.
   `candidate` too — re-target the marker (`detectSdkBuildProbe`) at that upgrade.
   Rows also persist `firstQuantumTimeSec` (branch builds only); `firstQuantumTimeSec −
   anchorT0Sec` is the loopback path's own input delay for that row.
+- Finalization probe, persisted per row on every build: `finalizeNumberOfFramesAtStop`,
+  `finalizeLimitCalls`, `finalizeNumberOfFramesAtLimit`, `finalizeOvershootFrames`,
+  `finalizeNumberOfFramesAfter`, `finalizeLoaderState`. The harness patches `limit()` on
+  the take's live `RecordingWorklet` instance before it calls `stopRecording()`; a hung
+  finalization is an empty `finalizeLimitCalls` with `finalizeLoaderState: "record"`, and
+  an error row carries the probe of the repeat that failed.
 
 ## Reference Files
 - Recording demo: `src/demos/recording/recording-api-react-demo.tsx`
