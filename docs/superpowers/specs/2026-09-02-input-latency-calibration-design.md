@@ -1,7 +1,7 @@
 # Input-latency calibration — design spec
 
 **Date:** 2026-09-02
-**Status:** approved in conversation, awaiting written review
+**Status:** approved in conversation (§3 revised to the MLS probe on 2026-09-02), awaiting written review
 **Upstream target:** `andremichelle/openDAW`, one SDK-only PR stacked on #378 (reported input
 latency as default) and #376 (engine-clock take anchoring). Refs #374.
 **This repo:** verification page, register section, standing-sweep variant.
@@ -32,47 +32,63 @@ routine to the SDK. It deliberately adds NO studio UI; the maintainer builds tha
   the stream it runs on; a later stream on the same device may differ by up to a render quantum.
 - Continuous or automatic re-calibration.
 
-## 3. Measurement method (approach chosen: scheduled click train, main-thread analysis)
+## 3. Measurement method (approach chosen: scheduled MLS bursts, main-thread correlation)
 
-Ported from this repo's `src/lib/audit/recordingAlignment.ts` / `loopbackInjection.ts`, which
-the audit campaign validated to sub-millisecond agreement against an independent anchor:
+Two ingredients, taken from two sources that each validated one of them:
 
-1. **Reference train.** N short clicks (default 12; 8 ms, band-limited around 6 kHz so they sit
-   above the metronome/music band) with unique, growing gaps: gap(i) = base + i·increment
-   (defaults 0.25 s and 5 ms). Any two consecutive recovered clicks identify their schedule
-   indices, so a missed or spurious click cannot shift the fit.
-2. **Scheduling.** Each click is an `AudioBufferSourceNode` started at an explicit context time
-   `t_sched(i)` on the capture's output route (§4.2). The train starts ≥ 100 ms after the routine
-   begins so the first click is never scheduled in the past.
-3. **Capture.** The capture's stream source is connected to a dedicated `AudioWorkletNode`
-   (a minimal recorder: appends every input quantum to a Float32 buffer and reports the context
-   time of its first frame, the same contract `RecordingProcessor` gained in #376). Capture runs
-   for the train's length plus 0.5 s tail.
-4. **Analysis (pure functions, unit-tested).** Band-split the buffer above 1.5 kHz; detect onsets;
-   identify clicks by gap pattern; least-squares fit `t_arrival(i) = t_sched(i) + RTT` over the
-   identified clicks. `RTT` is the round trip; the residuals' spread (max |residual|) is the
-   quality figure; the count of identified clicks is reported.
-5. **Decomposition.** `outputLatency` is read AFTER the train has played (§4.3);
+- **Anchoring** from this repo's audit harness (`src/lib/audit/recordingAlignment.ts`): the probe
+  is scheduled at an explicit context time and its arrival is read from a worklet in context
+  time, the clock #376 now anchors takes on. The audit's fit against that anchor agreed with an
+  independent measurement within about a millisecond.
+- **Probe signal** from Gil Panal, Richard & David, *A Maximum Length Sequence–Based Method for
+  Robust Round-Trip Latency Estimation in online Digital Audio Workstations* (WAC 2025;
+  reference implementation `weblatencytest`): an MLS noise burst located by cross-correlation,
+  with the correlation peak-to-mean ratio as the trust figure (they use +18 dB). Correlation over
+  the whole sequence has a large processing gain, so it survives reflections and room noise
+  where onset detection of single clicks does not. Their implementation anchors on
+  `MediaRecorder.start()` on the main thread, which is where its reported 1–8 ms standard
+  deviation comes from; this design keeps their probe and replaces that anchor.
+
+Procedure:
+
+1. **Probe.** An MLS of order 15 (32 767 samples, ≈ 0.68 s at 48 kHz) rendered once at the
+   context's sample rate at a default level of −12 dBFS (`gainDb` option). Default burst count
+   3, spaced by the MLS length plus 0.5 s so echoes decay between bursts.
+2. **Scheduling.** Each burst is an `AudioBufferSourceNode` started at an explicit context time
+   `t_sched(i)` on the capture's output route (§4.2), the first ≥ 100 ms after the routine
+   begins so nothing is scheduled in the past.
+3. **Capture.** The capture's stream source feeds a dedicated `AudioWorkletNode` (minimal
+   recorder: appends every input quantum to a Float32 buffer and reports the context time of its
+   first frame, the contract `RecordingProcessor` gained in #376). Capture runs from before the
+   first burst to 0.6 s after the last burst's scheduled end (maximum round trip searched).
+4. **Analysis (pure functions, unit-tested).** For each burst, cross-correlate the captured
+   segment `[t_sched(i), t_sched(i) + mlsLength + 0.6 s]` with the MLS via FFT
+   (`@opendaw/lib-dsp` `FFT`; no worker needed at this size); the peak lag gives
+   `t_arrival(i) − t_sched(i)`; refine the peak to sub-sample by parabolic interpolation; the
+   peak-to-mean power ratio in dB is the burst's trust figure. `RTT` = median of the per-burst
+   delays; `spread` = max |delay(i) − RTT|.
+5. **Decomposition.** `outputLatency` is read AFTER the last burst has played (§4.3);
    `inputLatency = RTT − outputLatency`. If `outputLatency` is unreported (undefined, 0 or not
    finite after output ran), `inputLatency = RTT` and the result is flagged
    `outputLatencyReported: false`.
-6. **Verdict.** `no-signal` when fewer than 3 clicks are identified (no fit is attempted);
-   otherwise a fit is made and the verdict is `ok` when ≥ 6 clicks are identified AND the spread
-   is ≤ 1.0 ms, else `noisy` (the result is still returned with its figures; the caller decides).
+6. **Verdict.** A burst counts as identified when its correlation ratio ≥ 18 dB. `no-signal`
+   when no burst is identified; otherwise `ok` when every burst is identified AND `spread` ≤
+   1.0 ms, else `noisy` (result still returned with its figures; the caller decides).
    `context-not-running` / `no-stream` / `transport-running` are precondition verdicts with no
-   measurement. Bounds are named constants in `InputLatencyCalibration` and stated in the PR.
+   measurement. The bounds (18 dB, 1.0 ms) are named constants in `InputLatencyCalibration`
+   and stated in the PR.
 
-Alternatives considered and rejected: single click with peak detection (one reflection moves
-the peak; no spread); engine-side cross-correlation in Rust (touches the engine crate and the
-WASM build for no accuracy gain over the click-train fit).
-
+Alternatives considered and rejected: a click train with onset detection (the audit's method;
+precise anchor but fragile in a noisy acoustic setup — superseded by the MLS probe under the
+same anchor); single click with peak detection (one reflection moves the peak, no spread);
+engine-side correlation in Rust (touches the engine crate and the WASM build for no gain).
 ## 4. Architecture
 
 ### 4.1 `packages/studio/core/src/capture/InputLatencyCalibration.ts` (studio-core)
 
 ```ts
 export namespace InputLatencyCalibration {
-    export interface Options { clickCount?: int; baseGapSeconds?: number; gapIncrementSeconds?: number; gainDb?: number }
+    export interface Options { burstCount?: int; mlsOrder?: int; burstSpacingSeconds?: number; gainDb?: number }
     export type Verdict = "ok" | "noisy" | "no-signal" | "context-not-running" | "no-stream" | "transport-running"
     export interface Result {
         verdict: Verdict
@@ -80,9 +96,10 @@ export namespace InputLatencyCalibration {
         outputLatencySeconds: number        // as read after output ran; 0 if unreported
         outputLatencyReported: boolean
         inputLatencySeconds: number         // roundTrip − outputLatency, or roundTrip if unreported
-        spreadSeconds: number               // max |residual| of the fit
-        identifiedClicks: int
-        scheduledClicks: int
+        spreadSeconds: number               // max |delay(i) − RTT| over identified bursts
+        correlationRatioDb: number          // minimum over identified bursts (trust figure)
+        identifiedBursts: int
+        scheduledBursts: int
         sampleRate: number
         measuredAt: number                  // Date.now()
     }
@@ -90,9 +107,9 @@ export namespace InputLatencyCalibration {
 }
 ```
 
-`measure` owns the preconditions (§4.3), schedules the train, records, analyses, and resolves.
-It never writes preferences. Pure helpers live beside it (`calibrationAnalysis.ts`: schedule,
-band split, onset detection, identification, fit) with their own tests.
+`measure` owns the preconditions (§4.3), schedules the bursts, records, analyses, and resolves.
+It never writes preferences. Pure helpers live beside it (`calibrationAnalysis.ts`: MLS
+generation, FFT cross-correlation, peak refinement, ratio, median/spread) with their own tests.
 
 ### 4.2 `CaptureAudio.calibrateInputLatency(options?: Options & {apply?: boolean}): Promise<Result>`
 
@@ -106,10 +123,10 @@ stores the result (§4.4). Also `clearInputLatencyCalibration(): void`.
 - Context running: `await context.resume()`; if `state !== "running"` afterwards → verdict
   `context-not-running`. (Same rule #376's `prepareRecording` now applies.)
 - A live stream source (`no-stream` otherwise).
-- Transport stopped and no recording in progress (`transport-running` otherwise) — the click
-  train must not land in a take, and the engine must not be producing output that would confuse
-  onset detection.
-- `outputLatency` is read only after the last click's scheduled time has passed on the context
+- Transport stopped and no recording in progress (`transport-running` otherwise) — the bursts
+  must not land in a take, and the engine must not be producing output that would correlate
+  with nothing useful and raise the noise floor.
+- `outputLatency` is read only after the last burst's scheduled end has passed on the context
   clock, because Chrome reports 0 until audio has been rendered to the device.
 
 ### 4.4 Storage and resolution
@@ -135,7 +152,7 @@ stores the result (§4.4). Also `clearInputLatencyCalibration(): void`.
 
 Upstream PR (branch `feat/input-latency-calibration`, based on `feat/reported-input-latency`
 with `fix/recording-start-alignment` merged in; PR text states it stacks on #378 and #376):
-1. `calibrationAnalysis.ts` + tests (ported functions, cases in §6).
+1. `calibrationAnalysis.ts` + tests (MLS, correlation, peak, ratio; cases in §6).
 2. `InputLatencyCalibration.ts` + tests for verdicts/preconditions through fakes.
 3. `CaptureAudio.calibrateInputLatency` / `clearInputLatencyCalibration`; resolver rung; schema
    entry; `InputLatency.test.ts` cases for the rung.
@@ -153,10 +170,13 @@ This repo (branch `input-latency-calibration`):
 
 ## 6. Verification and tests
 
-Unit (upstream, TDD): synthetic capture with known delay recovers it within one sample; missed
-click and spurious click still identify; reflections (delayed attenuated copies) do not move
-the fit; silence → `no-signal`; spread above bound → `noisy`; preconditions via fakes;
-resolver rung and schema default; `apply` writes and `clear` removes the entry.
+Unit (upstream, TDD): the MLS has the expected autocorrelation (a single peak, flat elsewhere);
+a synthetic capture = MLS delayed by D samples (integer and fractional) recovers D within 0.1
+sample; added white noise at 0 dB SNR still recovers D with ratio ≥ 18 dB; a delayed attenuated
+copy (reflection) does not move the peak; a burst window containing silence → ratio below
+threshold, not identified; all bursts silent → `no-signal`; one burst off by 3 ms → `noisy`
+with the right spread; preconditions via fakes; resolver rung and schema default; `apply`
+writes and `clear` removes the entry.
 
 Ground truth (this repo): result tracks D with slope 1.00 ± 0.01; the constant offset equals the
 stream's own hop as measured independently by the harness's first-frame time within 2 ms.
@@ -169,10 +189,13 @@ Real device: one acoustic run on the user's laptop; value and spread reported fo
 
 ## 7. Risks
 
-- **Acoustic runs.** Speaker-to-mic paths add reflections and noise; identification by gap
-  pattern is the mitigation, and `noisy` is a first-class verdict rather than a failure.
-- **Clicks audible.** Calibration plays 12 clicks at −6 dB by default; the caller can lower gain.
-  Documented; no attempt to hide it.
+- **Acoustic runs.** Speaker-to-mic paths add reflections and noise; MLS correlation gain plus
+  the 18 dB ratio gate are the mitigation, and `noisy` is a first-class verdict, not a failure.
+- **Audible probe.** Calibration plays three ≈0.7 s bursts of noise at −12 dBFS by default; the
+  caller can lower the gain. Documented; no attempt to hide it.
+- **Correlation cost.** FFT correlation of a 32 767-sample MLS against a ≈1.3 s window is a few
+  ms per burst on the main thread at 48 kHz; measured in the verification page, and moved to a
+  worker only if it ever blocks a frame.
 - **Stacked PRs.** If the maintainer reworks #376 or #378, this branch rebases; the spec ties to
   their APIs (`Reported`, the placement-time provider) by name so drift is visible.
 - **Browser reports.** The cancellation argument (§4.4) covers wrong reports within one output
