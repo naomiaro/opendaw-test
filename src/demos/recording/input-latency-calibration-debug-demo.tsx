@@ -70,6 +70,14 @@
 // device the synthetic stream does not report back forces a rebuild before every
 // recording. Use it to measure the chain-reuse path rather than the rebuild one.
 //
+// `?repeat=N` runs N further calibrations back to back on the same armed chain
+// after the sweep, and reports how many came back exactly one render quantum off
+// the run's modal round trip — the miss the campaign saw once at 44.1 kHz, with
+// all three bursts agreeing and a verdict of `ok`. On a build that reports a
+// second capture anchor it also says, per miss, which anchor still agreed with
+// the mode, which is what would identify the offending one. Pair it with
+// `delays=0`; the phase is about repetition, not about the delay.
+//
 // `?armState=steady|fresh` (default steady) selects which SDK input-chain state
 // the applied cell records in: `steady` records on the chain the sweep and the
 // applied calibration ran on; `fresh` disarms and re-arms first, so take 1 is
@@ -179,6 +187,25 @@ interface CalibrationResult {
   scheduledBursts: number;
   sampleRate: number;
   measuredAt: number;
+  // --- second capture anchor (upstream 45c551d7 and later) -------------------
+  // `measure` opens a SECOND capture node mid-run, after the first burst's
+  // scheduled start has passed, and analyses both buffers: the reported round
+  // trip is node A's, `roundTripSecondsSecondary` is node B's, and the verdict
+  // becomes `noisy` with `reason` "capture anchors disagree" when the two differ
+  // by more than half a render quantum. It exists because a capture node's
+  // first-frame time can be one quantum off on some chains (observed once at
+  // 44.1 kHz; cause not identified) — the case `?repeat=` below measures.
+  //
+  // OPTIONAL on purpose: a build before that commit returns none of them, and
+  // the page must still run there. Read every one defensively.
+  /** Node B's round trip. Absent on builds with a single capture anchor. */
+  roundTripSecondsSecondary?: number;
+  /** Context time of each capture node's first frame, `[A, B]`. */
+  captureStartTimes?: number[];
+  /** Per node, per burst, the located delay: `[[A…], [B…]]`. */
+  burstDelays?: number[][];
+  /** Why a verdict is what it is, when the verdict alone does not say. */
+  reason?: string;
 }
 
 interface CalibratingCapture {
@@ -232,6 +259,46 @@ export const CALIBRATION_SCHEMA_VERSION = 1;
 interface SweepRow extends CalibrationResult {
   requestedDelayMs: number;
   requestedDelaySec: number;
+}
+
+/** One call of the `?repeat=` phase, with every field the build returned plus this
+ *  call's relation to the run's modal round trip. */
+interface RepeatCall extends CalibrationResult {
+  index: number;
+  /** Primary round trip minus the run's mode, in seconds. */
+  deltaFromModeSec: number;
+  /** That delta in render quanta (128 frames at the run's rate) — 1.00 is the miss. */
+  deltaQuanta: number;
+  /** |delta| within 25 % of exactly one quantum: the signature being counted. */
+  isOneQuantumMiss: boolean;
+  /** Whether the build's own second-anchor check flagged this call. */
+  flaggedByAnchorCheck: boolean;
+  /**
+   * Which capture anchor agrees with the run's mode, on a miss: `"A"` (the
+   * reported one is right and B drifted), `"B"` (the reported one is the one
+   * that is off — the case that would identify the culprit), `"both"`, `"neither"`,
+   * or `null` when the build reports no second anchor.
+   */
+  anchorMatchingMode: "A" | "B" | "both" | "neither" | null;
+}
+
+interface RepeatSummary {
+  calls: number;
+  /** Modal primary round trip across the phase, the value a call is judged against. */
+  modeRoundTripSec: number;
+  /** How many calls share the mode. */
+  modeCount: number;
+  renderQuantumSec: number;
+  /** Calls one quantum off the mode (±25 %). */
+  oneQuantumMisses: number;
+  /** Of those, how many the build's second-anchor check flagged. */
+  missesFlaggedByAnchorCheck: number;
+  /** Calls the anchor check flagged that were NOT one quantum off the mode. */
+  flaggedWithoutMiss: number;
+  /** Per miss, which anchor matched the mode — the observation Part 3 needs. */
+  missAnchorVerdicts: { index: number; deltaQuanta: number; anchorMatchingMode: RepeatCall["anchorMatchingMode"]; reason: string | null }[];
+  /** False when the served build returns no `roundTripSecondsSecondary` at all. */
+  secondAnchorAvailable: boolean;
 }
 
 /** A sweep point that was never run because its predicted round trip exceeded the SDK's search window. */
@@ -289,6 +356,10 @@ interface CalibrationSummary {
   /** The discarded first calibration — see the warm-up comment in `runCalibrationAudit`. */
   warmup: CalibrationResult | null;
   sweep: SweepRow[];
+  /** `?repeat=` phase: every call verbatim, empty when the phase was skipped. */
+  repeats: RepeatCall[];
+  /** null when the phase was skipped. */
+  repeatSummary: RepeatSummary | null;
   /** Points refused before running — see `SkippedDelay` and the ceiling constants. */
   skipped: SkippedDelay[];
   /**
@@ -382,6 +453,25 @@ function resolveDelaysMs(param: string | null): number[] {
   return values;
 }
 
+/**
+ * `?repeat=N` — after the sweep, run N further calibrations back to back on the
+ * SAME armed chain (no re-arm, the return delay left where the sweep put it).
+ * The point is the miss the campaign saw once: a call whose round trip came back
+ * exactly one render quantum short with all three bursts agreeing and a verdict
+ * of `ok`. One call cannot show that; N in a row measure how often it happens
+ * and whether the second capture anchor catches it. 0 (the default) skips the
+ * phase entirely, so every other run is unaffected. Pair it with `delays=0`:
+ * the phase is about repetition at one delay, not about the delay.
+ */
+function resolveRepeatCount(param: string | null): number {
+  if (param === null) return 0;
+  const n = Number(param);
+  if (!Number.isInteger(n) || n < 0 || n > 200) {
+    throw new Error(`invalid ?repeat= "${param}" — a whole number of calibrations in [0, 200]`);
+  }
+  return n;
+}
+
 function resolveArmState(param: string | null): ArmState {
   const raw = param ?? "steady";
   if (raw !== "steady" && raw !== "fresh") {
@@ -420,6 +510,80 @@ function median(values: number[]): number | null {
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** The most common value in `values`, compared at frame resolution so floats that
+ *  differ only in the last bits count as the same measurement. Ties go to the
+ *  first value seen, which is the earliest call. */
+function modeAtFrameResolution(values: number[], sampleRate: number): { value: number; count: number } {
+  const counts = new Map<number, { value: number; count: number }>();
+  for (const value of values) {
+    const key = Math.round(value * sampleRate);
+    const entry = counts.get(key);
+    if (entry === undefined) counts.set(key, { value, count: 1 });
+    else entry.count++;
+  }
+  let best = { value: values[0], count: 0 };
+  for (const entry of counts.values()) if (entry.count > best.count) best = entry;
+  return best;
+}
+
+/**
+ * Judge each repeat call against the run's modal round trip.
+ *
+ * "One quantum off" is |delta| within 25 % of exactly one 128-frame quantum, as
+ * the brief defines it — wide enough to catch a miss that also carries the
+ * ordinary sub-millisecond wobble, narrow enough not to swallow a half- or
+ * double-quantum excursion, which would be a different finding.
+ *
+ * `anchorMatchingMode` is the observation that decides whether the offending
+ * anchor is identifiable: on a miss, the anchor within half a quantum of the
+ * mode is the one that stayed right. "B" would mean the REPORTED round trip is
+ * the one that drifted.
+ */
+function summarizeRepeats(calls: CalibrationResult[], sampleRate: number): { rows: RepeatCall[]; summary: RepeatSummary } {
+  const renderQuantumSec = 128 / sampleRate;
+  const usable = calls.filter((call) => Number.isFinite(call.roundTripSeconds));
+  const mode = usable.length > 0
+    ? modeAtFrameResolution(usable.map((call) => call.roundTripSeconds), sampleRate)
+    : { value: Number.NaN, count: 0 };
+  const matchesMode = (value: number | undefined) =>
+    value !== undefined && Number.isFinite(value) && Math.abs(value - mode.value) <= 0.5 * renderQuantumSec;
+
+  const rows: RepeatCall[] = calls.map((call, index) => {
+    const deltaFromModeSec = call.roundTripSeconds - mode.value;
+    const deltaQuanta = deltaFromModeSec / renderQuantumSec;
+    const isOneQuantumMiss = Math.abs(Math.abs(deltaQuanta) - 1) <= 0.25;
+    const flaggedByAnchorCheck = (call.reason ?? "").includes("capture anchors disagree");
+    const hasSecondary = call.roundTripSecondsSecondary !== undefined;
+    const anchorMatchingMode: RepeatCall["anchorMatchingMode"] = !hasSecondary
+      ? null
+      : matchesMode(call.roundTripSeconds)
+        ? (matchesMode(call.roundTripSecondsSecondary) ? "both" : "A")
+        : (matchesMode(call.roundTripSecondsSecondary) ? "B" : "neither");
+    return { ...call, index, deltaFromModeSec, deltaQuanta, isOneQuantumMiss, flaggedByAnchorCheck, anchorMatchingMode };
+  });
+
+  const misses = rows.filter((row) => row.isOneQuantumMiss);
+  return {
+    rows,
+    summary: {
+      calls: rows.length,
+      modeRoundTripSec: mode.value,
+      modeCount: mode.count,
+      renderQuantumSec,
+      oneQuantumMisses: misses.length,
+      missesFlaggedByAnchorCheck: misses.filter((row) => row.flaggedByAnchorCheck).length,
+      flaggedWithoutMiss: rows.filter((row) => row.flaggedByAnchorCheck && !row.isOneQuantumMiss).length,
+      missAnchorVerdicts: misses.map((row) => ({
+        index: row.index,
+        deltaQuanta: row.deltaQuanta,
+        anchorMatchingMode: row.anchorMatchingMode,
+        reason: row.reason ?? null,
+      })),
+      secondAnchorAvailable: rows.some((row) => row.roundTripSecondsSecondary !== undefined),
+    },
+  };
+}
 
 interface CalibrationContext {
   project: Project;
@@ -528,6 +692,8 @@ interface RunCallbacks {
     excluded: { count: number; delaysMs: number[]; verdicts: string[] }
   ) => void;
   onSkipped: (skipped: SkippedDelay) => void;
+  onRepeatCall: (result: CalibrationResult, index: number) => void;
+  onRepeatSummary: (summary: RepeatSummary) => void;
   onWarmup: (result: CalibrationResult) => void;
   onApplied: (result: CalibrationResult, entry: CalibrationEntry | null) => void;
   onCell: (
@@ -544,6 +710,7 @@ async function runCalibrationAudit(cb: RunCallbacks): Promise<void> {
   const bpm = resolveNumber(params.get("bpm"), 120, "bpm");
   const rate = resolveNumber(params.get("rate"), 48000, "rate");
   const armState = resolveArmState(params.get("armState"));
+  const repeatCount = resolveRepeatCount(params.get("repeat"));
   const runToken = Date.now();
 
   const { project, audioContext, capture, calibrating, unitAdapter, deviceId, sdkBuildProbe, buildFeatures, bias } =
@@ -554,6 +721,7 @@ async function runCalibrationAudit(cb: RunCallbacks): Promise<void> {
     " rate=" + String(rate) + " bpm=" + String(bpm) +
     " delaysMs=[" + delaysMs.join(",") + "]" +
     " armState=" + armState +
+    " repeat=" + String(repeatCount) +
     " harnessPathBiasSec=" + bias.valueSec.toFixed(6)
   );
 
@@ -666,6 +834,42 @@ async function runCalibrationAudit(cb: RunCallbacks): Promise<void> {
         : " fit(all rows) slope=" + fitIncludingNoisy.slope.toFixed(4) +
           " interceptMs=" + (fitIncludingNoisy.interceptSec * 1000).toFixed(3))
     );
+  }
+
+  // `?repeat=N`: N more calibrations back to back on the same chain, before the
+  // apply so the stored value is still measured the way every other run measures
+  // it. Nothing is re-armed and the return delay is left where the sweep put it.
+  const repeatCalls: CalibrationResult[] = [];
+  for (let index = 0; index < repeatCount; index++) {
+    cb.setState(`repeat:${index + 1}/${repeatCount}`);
+    const result = await calibrateThroughLoopback(calibrating, bias.valueSec, false);
+    repeatCalls.push(result);
+    cb.onRepeatCall(result, index);
+    console.log(
+      "[input-latency-calibration] repeat " + String(index + 1) + "/" + String(repeatCount) +
+      " verdict=" + result.verdict +
+      " roundTripSec=" + String(result.roundTripSeconds) +
+      " secondarySec=" + String(result.roundTripSecondsSecondary) +
+      " captureStartTimes=[" + (result.captureStartTimes ?? []).join(",") + "]" +
+      " spreadSec=" + String(result.spreadSeconds) +
+      " reason=" + String(result.reason ?? "(none)")
+    );
+  }
+  const repeatAnalysis = repeatCount > 0 ? summarizeRepeats(repeatCalls, rate) : null;
+  if (repeatAnalysis !== null) {
+    const { summary } = repeatAnalysis;
+    console.log(
+      "[input-latency-calibration] repeat summary calls=" + String(summary.calls) +
+      " modeRoundTripMs=" + (summary.modeRoundTripSec * 1000).toFixed(4) +
+      " modeCount=" + String(summary.modeCount) +
+      " quantumMs=" + (summary.renderQuantumSec * 1000).toFixed(4) +
+      " oneQuantumMisses=" + String(summary.oneQuantumMisses) +
+      " flaggedMisses=" + String(summary.missesFlaggedByAnchorCheck) +
+      " flaggedWithoutMiss=" + String(summary.flaggedWithoutMiss) +
+      " secondAnchorAvailable=" + String(summary.secondAnchorAvailable) +
+      " missAnchors=[" + summary.missAnchorVerdicts.map((m) => "#" + String(m.index) + ":" + String(m.anchorMatchingMode)).join(",") + "]"
+    );
+    cb.onRepeatSummary(summary);
   }
 
   cb.setState("applying");
@@ -811,6 +1015,8 @@ async function runCalibrationAudit(cb: RunCallbacks): Promise<void> {
     virtualOutputLegSec: bias.valueSec,
     armState,
     warmup, sweep, skipped, fit, fitIncludingNoisy, fitExcludedNoisy, applied, storedEntry, cell,
+    repeats: repeatAnalysis?.rows ?? [],
+    repeatSummary: repeatAnalysis?.summary ?? null,
     harnessLoopbackHopSec: hopSec,
     harnessLoopbackHopPerRowSec: hopPerRow,
     cellRowStates,
@@ -849,6 +1055,8 @@ function CalibrationHarness() {
     count: 0, delaysMs: [], verdicts: [],
   });
   const [skipped, setSkipped] = useState<SkippedDelay[]>([]);
+  const [repeatCalls, setRepeatCalls] = useState<{ result: CalibrationResult; index: number }[]>([]);
+  const [repeatSummary, setRepeatSummary] = useState<RepeatSummary | null>(null);
   const [warmup, setWarmup] = useState<CalibrationResult | null>(null);
   const [applied, setApplied] = useState<CalibrationResult | null>(null);
   const [storedEntry, setStoredEntry] = useState<CalibrationEntry | null>(null);
@@ -868,6 +1076,8 @@ function CalibrationHarness() {
     setFitAll(null);
     setExcluded({ count: 0, delaysMs: [], verdicts: [] });
     setSkipped([]);
+    setRepeatCalls([]);
+    setRepeatSummary(null);
     setWarmup(null);
     setApplied(null);
     setStoredEntry(null);
@@ -879,6 +1089,8 @@ function CalibrationHarness() {
       onSweepRow: (row) => setSweep((prev) => [...prev, row]),
       onFit: (primary, all, drops) => { setFit(primary); setFitAll(all); setExcluded(drops); },
       onSkipped: (entry) => setSkipped((prev) => [...prev, entry]),
+      onRepeatCall: (result, index) => setRepeatCalls((prev) => [...prev, { result, index }]),
+      onRepeatSummary: setRepeatSummary,
       onWarmup: setWarmup,
       onApplied: (result, entry) => { setApplied(result); setStoredEntry(entry); },
       onCell: (outcome, hop, states) => { setCell(outcome); setHopSec(hop); setRowStates(states); },
@@ -1015,6 +1227,39 @@ chain state:       ${rowStates.map((r) => `r${r.repeat} ${r.chainPull} ${r.hopSe
             )}
           </Card>
 
+          {repeatSummary === null && repeatCalls.length > 0 && (
+            <Card>
+              <Text size="2" color="gray">
+                {`repeat phase running — ${repeatCalls.length} call(s) done, last round trip ` +
+                  `${ms(repeatCalls[repeatCalls.length - 1].result.roundTripSeconds)} ms ` +
+                  `(${repeatCalls[repeatCalls.length - 1].result.verdict})`}
+              </Text>
+            </Card>
+          )}
+
+          {repeatSummary !== null && (
+            <Card>
+              <Heading size="4" style={{ marginBottom: "0.5rem" }}>
+                Repeat phase — one-quantum miss rate
+              </Heading>
+              <pre style={{ margin: 0, fontSize: "0.85rem", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+                {`calls:              ${repeatSummary.calls}
+modal round trip:   ${ms(repeatSummary.modeRoundTripSec)} ms on ${repeatSummary.modeCount}/${repeatSummary.calls} calls
+render quantum:     ${ms(repeatSummary.renderQuantumSec)} ms
+one-quantum misses: ${repeatSummary.oneQuantumMisses}
+  flagged by the second anchor: ${repeatSummary.missesFlaggedByAnchorCheck}/${repeatSummary.oneQuantumMisses}
+flagged, not a miss: ${repeatSummary.flaggedWithoutMiss}
+second anchor:      ${repeatSummary.secondAnchorAvailable ? "reported by this build" : "NOT reported — build predates it"}
+anchor matching the mode, per miss:
+${repeatSummary.missAnchorVerdicts.length === 0
+  ? "  (no misses)"
+  : repeatSummary.missAnchorVerdicts
+      .map((m) => `  #${m.index} delta ${m.deltaQuanta.toFixed(3)} quanta -> ${m.anchorMatchingMode ?? "n/a"}${m.reason ? ` (${m.reason})` : ""}`)
+      .join("\n")}`}
+              </pre>
+            </Card>
+          )}
+
           <Card>
             <Heading size="4" style={{ marginBottom: "0.5rem" }}>Configuration</Heading>
             <pre style={{ margin: 0, fontSize: "0.85rem", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
@@ -1025,6 +1270,9 @@ chain state:       ${rowStates.map((r) => `r${r.repeat} ${r.chainPull} ${r.hopSe
                       is the first pull on a rebuilt SDK input chain
 ?defaultInput=1       arm on the SDK's default input (box names no device), the
                       only configuration where the audio chain is reused
+?repeat=<n>           default 0 — after the sweep, run n more calibrations back to
+                      back on the same chain and report the one-quantum miss rate
+                      (pair with delays=0)
 Cell:                 ${CELL_SCENARIO}, ${REPEATS_PER_CELL} repeats, calibration applied
 Delay ceiling:        ${MAX_REQUESTED_DELAY_MS.toFixed(0)} ms at parse time; per point the run
                       refuses any D whose predicted round trip passes
