@@ -11,9 +11,10 @@ node scripts/audit/recording-alignment/<script>.ts [mode]
 
 | script | what it recomputes |
 |---|---|
+| `artifacts.ts` | Not a script — the ONE loader every script reads `.verify-output/` through (`loadSummary`, `loadSummaries`, `loadMultitrackSummary`, the `RECAUDIT_MAX_RUN` snapshot bound), plus the shared row → `TakeAlignment` reconstruction (`asClassifiable`), the classifier population (`cellPopulation`: every non-error repeat, loop-wrap takes 1..4, null-median repeats included as live) and the φ helpers (`phiCorrectionMs` asserts φ < P/2 wherever the absolute = region-anchored + φ identity is applied). Row/envelope types and the schema-generation table live in `src/lib/audit/recordingAuditArtifacts.ts` |
 | `task7-adjusted-classification.ts` | Task 7: the upstream matrix cells re-classified with the harness-path `outputLatency` term netted out |
-| `task7c-fix1-replay.ts [scenario]` | Task 7c fix round 1: replays both beat grids (region-anchored and absolute) over every replayable row; provenance-checked (a row is joined to a WAV only when frame count, sample rate and write window match) |
-| `task7c-fix1-analysis.ts <enum\|census\|gate\|regress\|correct\|fencepost\|missingrows>` | Task 7c fix round 1: the register's replay, census, gate, regression, correction and fencepost tables (`RECAUDIT_MAX_RUN=<runToken>` bounds the snapshot) |
+| `task7c-fix1-replay.ts [scenario]` | Task 7c fix round 1: replays both beat grids (region-anchored re-implemented; absolute = the shipped `measureTakeAlignment`) over every replayable row; provenance-checked (a row is joined to a WAV only when frame count, sample rate and write window match) |
+| `task7c-fix1-analysis.ts <enum\|census\|gate\|regress\|correct\|fencepost\|missingrows\|ppqn>` | Task 7c fix round 1: the register's replay, census, gate, regression, correction, fencepost, missing-row and PPQN-placement tables (`RECAUDIT_MAX_RUN=<runToken>` bounds the snapshot) |
 | `task7c-fix1-verdict.ts` | Task 7c fix round 1: the 20-cell candidate-vs-upstream verdict re-derived on the absolute grid |
 | `task8-amendment-recompute.ts` | Task 8: figures for the punch-in head-loss, skew and collision issue drafts |
 | `task8-summary-recompute.ts` | Task 8: independent recomputation of every number in the register's outcome summary |

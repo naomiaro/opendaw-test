@@ -4,6 +4,12 @@
 
 **SDK Pin:** `@opendaw/studio-sdk@0.0.170` (installed npm package; WASM engine only)
 
+**Filed:** upstream PR [andremichelle/openDAW#376](https://github.com/andremichelle/openDAW/pull/376)
+(the reworked fix, fork branch `naomiaro:fix/recording-start-alignment`); issues
+[andremichelle/openDAW#374](https://github.com/andremichelle/openDAW/issues/374) (residual
+start-placement bias) and [andremichelle/openDAW#375](https://github.com/andremichelle/openDAW/issues/375)
+(simultaneous-take `AudioFileBox` collision).
+
 **Harness:** unlisted debug demo `recording-alignment-audit-debug-demo.html?scenario=<name|all>&bpm=<n|all>&rate=<44100|48000>`
 on the dev server (`?scenario=probe` runs the same-context loopback feasibility probe
 instead of the matrix). Measurement library: `src/lib/audit/recordingAlignment.ts`;
@@ -76,7 +82,8 @@ build; no rate-dependent effect was found. The candidate build's 5
 matching signature B.
 
 **Candidate-build figures in this summary are analytically corrected from persisted
-per-row geometry (absolute median = region-anchored median + `phi`), not re-measured** —
+per-row geometry (absolute median = region-anchored median + `phi`, valid for `phi < P/2`,
+which every corrected row satisfies — see "Task 7c fix round 1"), not re-measured** —
 the Task 7 override build layout no longer exists on disk. **They are history: the
 reworked fix was re-measured live on its own branch in Task 9** (section "Task 9:
 best-fix rework — branch-measured verification"), which supersedes the candidate column
@@ -2571,6 +2578,13 @@ note), so its rows are corrected analytically by adding each row's own `phi`. Th
 identity that licenses that — absolute median = region-anchored median + `phi` — was
 verified directly on every row of this round where both grids were computed on the same
 audio (27 regression rows and 6 janked repeats, delta = `phi` exactly on all of them).
+**It holds only for `phi < P/2`**: past the half period the region-anchored grid's nearest
+expected beat to the first captured onset is the region start itself, at distance `P − phi`,
+so the anchored error is `e + (P − phi)` and the correct correction is `phi − P`, a full
+beat period away from `+phi`. Every corrected row in the tables below satisfies the
+condition (midtimeline `phi` ≤ 154 ms against a 250/308 ms half period; the loop-wrap take-5
+rows ≤ 45 ms), and since the PR-review fix wave (2026-09-02) the scripts assert it per row
+(`phiCorrectionMs` in `scripts/audit/recording-alignment/artifacts.ts`) rather than assume it.
 
 ### The corrected 20-cell comparison
 
@@ -2953,3 +2967,52 @@ server restarted, and the build probe read `upstream` on a fresh load
 (`recaudit-summary-1788329377765.json`: `nominal-start`/120/48000, adjusted medians −53.33,
 −36.38, −40.06 ms, no `firstQuantumTimeSec`, ring overshoot at `limit()` back to 2047 / 1535 /
 1536 frames; the first-build round's restore run was `…1788325938960.json`).
+
+## PR review fixes (2026-09-02)
+
+The five-agent review of PR #123 (0 Critical, 25 Important) was fixed in one wave. Nothing
+in this section re-measures anything; it records what the fixes changed in the
+recomputation scripts and the harness, and that the figures above stand.
+
+**Scripts re-run, every figure unchanged.** All seven committed scripts were run before and
+after the fixes, unbounded and under the documented `RECAUDIT_MAX_RUN=1788310817094`
+bound, and their outputs diffed. Every numeric and status figure this register quotes is
+byte-identical. The differences are: relabelled provenance notes (the two G2 upstream
+runs now say "outputLatency not persisted, bring-up constant 0.023" instead of
+"fallback"); added counts (verdict and task8 footers now print skipped/no-row cells so
+the tallies sum to 20); the task9 multi-mic header now names the beat grid each run's
+per-tape medians sit on; and two corrections in `task7c-fix1-analysis.ts correct`, a
+mode this register never quotes: cells whose rows predate `medianBeatErrorMsAdjusted`
+printed `NaN` means and now print no data, and one row past the φ-identity's
+precondition (`…1788295321703`, `janked-start`/120/48000 r1, φ = 406.25 ms against a
+250 ms half period) is now listed and excluded — its old "+φ" figure was wrong by a full
+beat period. The null-median repeat the review flagged (`…1788296570300`, `loop-wrap`/120
+r1) is take 5, outside the take-1..4 population every classifier evaluates, so passing
+null-median repeats through to `classifyCell` (as the harness does live) moved no verdict.
+
+**Classifier rules added** (`classifyCell`): an empty repeat list is `investigate` (it read
+`aligned` before, vacuously); a repeat whose `headMissingMs` is null — no reference-click
+anchor — is `investigate` with detail "integrity unmeasured" instead of silently skipping
+both integrity gates. No persisted non-error row in any run has a null head figure, so no
+recorded verdict changes; the rule protects future sweeps.
+
+**Persisted contract.** Row and envelope types now live in
+`src/lib/audit/recordingAuditArtifacts.ts` with an explicit schema-generation table
+(G1–G6) that replaces every run-id and `??` inference the scripts used to make; the
+harness writes `schemaVersion: 2`, `beatGrid: "absolute"`, `cellVerdicts` (one record per
+attempted cell, all-error cells included), `wavUploadFailures`, and per row the applied
+`harnessPathBiasSec` plus `wavName`/`wavUploadError`. Legacy files are untouched.
+
+**Harness.** `audioContext.outputLatency` is read once per page load after output has
+started (the per-repeat read behind the first-cell "bias 0" rows in Task 9 is gone);
+the engine boots once per page so "Re-run" works; position polls stop on timeout; a
+repeat abandoned by the outer cell deadline (now 180 s single-tape / 200 s multi-mic,
+above the inner stages' worst-case sums) can no longer call `stopRecording()` or patch a
+loader during the next repeat. Smoke run on the installed build, plain server:
+`recaudit-summary-1788333632997.json` (`nominal-start`/120/48000, 3 repeats,
+`harnessPathBiasSec` 0.024 on every row and in the envelope, settled in 0 ms, adjusted
+medians −48.02 / −56.25 / −61.58 ms, verdict `investigate` as expected for the installed
+build); a Re-run on the same page produced `…1788333706282.json` under a fresh token
+with the same per-row bias (−48.06 / −42.77 / −42.37 ms). This session's
+`outputLatency` read 0.024 s, not the campaign's 0.023 s — a device-state difference the
+per-row persistence now makes visible rather than assumed.

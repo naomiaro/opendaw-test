@@ -102,8 +102,33 @@ import { BAR_PPQN } from "@/lib/audit/auditExpectations";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
+import { DebugLinkBar, type DebugLink } from "@/components/DebugLinkBar";
 
 const params = new URLSearchParams(window.location.search);
+
+/** Campaign register and the upstream outcome, shown on all three roots. */
+const AUDIT_LINKS: DebugLink[] = [
+  {
+    label: "debug/recording-start-alignment-audit.md",
+    href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/recording-start-alignment-audit.md",
+    kind: "note",
+  },
+  {
+    label: "Upstream PR: openDAW#376 (recording start-alignment fix)",
+    href: "https://github.com/andremichelle/openDAW/pull/376",
+    kind: "note",
+  },
+  {
+    label: "Upstream issue: openDAW#374 (residual start-placement bias)",
+    href: "https://github.com/andremichelle/openDAW/issues/374",
+    kind: "note",
+  },
+  {
+    label: "Upstream issue: openDAW#375 (simultaneous-take collision)",
+    href: "https://github.com/andremichelle/openDAW/issues/375",
+    kind: "note",
+  },
+];
 const rate = Number(params.get("rate") ?? "48000");
 /** RMS floor above which capture is judged non-silent — see module header. */
 const RMS_PASS_THRESHOLD = 0.005;
@@ -266,6 +291,7 @@ function ProbeHarness() {
       <Container size="4" style={{ padding: "2rem", minHeight: "100vh" }}>
         <GitHubCorner />
         <BackLink />
+        <DebugLinkBar links={AUDIT_LINKS} />
         <Flex direction="column" gap="4">
           <Heading size="7" align="center">
             Recording Start-Alignment Audit — Feasibility Probe
@@ -1448,6 +1474,7 @@ function ScenarioRunnerHarness() {
       <Container size="4" style={{ padding: "2rem", minHeight: "100vh" }}>
         <GitHubCorner />
         <BackLink />
+        <DebugLinkBar links={AUDIT_LINKS} />
         <Flex direction="column" gap="4">
           <Heading size="7" align="center">
             Recording Start-Alignment Audit — Scenario Matrix
@@ -2252,6 +2279,7 @@ function MultitrackRunnerHarness() {
       <Container size="4" style={{ padding: "2rem", minHeight: "100vh" }}>
         <GitHubCorner />
         <BackLink />
+        <DebugLinkBar links={AUDIT_LINKS} />
         <Flex direction="column" gap="4">
           <Heading size="7" align="center">
             Recording Start-Alignment Audit — Multi-Mic Simultaneous Recording

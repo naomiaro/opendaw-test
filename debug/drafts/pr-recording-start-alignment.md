@@ -1,6 +1,6 @@
 # PR description draft — recording start-alignment
 
-**Status: DRAFT for user review. Nothing pushed, no PR opened.**
+**Status: OPENED as [andremichelle/openDAW#376](https://github.com/andremichelle/openDAW/pull/376)** (fork branch `naomiaro:fix/recording-start-alignment`, e1c533f69; body below as posted).
 Target: `andremichelle/openDAW`, branch `fix/recording-start-alignment` in the local
 upstream checkout, one commit on top of `origin/main` (`4a9f183f6`).
 
@@ -172,7 +172,8 @@ Artifacts: 0.0.170 baseline `recaudit-summary-1788310164556.json` (48000 Hz) and
 `…1788328656062.json` (44100 Hz), 60 rows each, no error rows. One row per branch
 run (`nominal-start`/120/repeat 1, the first cell of each session) was measured with
 the harness's `outputLatency` term read as 0 — a harness artifact (Chrome reports 0
-until output has started), re-adjusted in the register; the ranges above use the
+until output has started; the harness now reads the term once after output starts and
+persists it per row), re-adjusted in the register; the ranges above use the
 persisted values. An earlier build of this branch, whose stop path limited the file
 to the last position tick's duration, truncated up to 5.8 ms of audio before the
 stop request and failed the harness's tail-integrity gate on 94 of 120 rows; that is

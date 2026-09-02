@@ -1,6 +1,6 @@
 # Issue draft — recorded takes are placed early on the timeline, on every recording scenario
 
-**Status: DRAFT for user review. Not filed.** Target: `andremichelle/openDAW`.
+**Status: FILED as [andremichelle/openDAW#374](https://github.com/andremichelle/openDAW/issues/374)** (body below as posted).
 
 ## Title
 

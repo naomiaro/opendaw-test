@@ -396,9 +396,22 @@ sample-rate/quantum-alignment sweep in root CLAUDE.md's Build & Verification.
 
 - Measurement library: `src/lib/audit/recordingAlignment.ts`; calibration constants:
   `src/lib/audit/recordingAuditCalibration.ts`; loopback injection:
-  `src/lib/audit/loopbackInjection.ts`.
+  `src/lib/audit/loopbackInjection.ts`; persisted row/envelope contract and the
+  schema-generation table (G1-G6) with the one loader the offline scripts use:
+  `src/lib/audit/recordingAuditArtifacts.ts` (+ `scripts/audit/recording-alignment/artifacts.ts`).
+  Envelopes written now carry `schemaVersion: 2`, `beatGrid: "absolute"`, `cellVerdicts`
+  (one record per attempted cell, all-error cells included), `wavUploadFailures`,
+  `harnessPathBiasSettleMs`; rows carry `harnessPathBiasSec` (the run-wide value they
+  were adjusted with, read ONCE after output started — never Chrome's initial 0) and
+  `wavName`/`wavUploadError`. Legacy files are mapped by the loader, never rewritten.
+- The engine boots once per page load (`Workers.install` asserts on a second
+  `initializeOpenDAW`): "Re-run" on the matrix/multitrack pages re-runs the matrix on the
+  cached project/tape(s) under a fresh run token; the probe page is one-shot.
 - Campaign register (baselines, prediction outcomes, every known defect and harness
-  gap): `debug/recording-start-alignment-audit.md`.
+  gap): `debug/recording-start-alignment-audit.md`. Upstream outcome: PR
+  andremichelle/openDAW#376 (the reworked fix), issues #374 (residual start-placement
+  bias) and #375 (simultaneous-take `AudioFileBox` collision) — re-verify the sweep and
+  re-target the build probe when a release ships #376.
 - Runs upload `recaudit-summary-<timestamp>.json` / `recaudit-mt-summary-<timestamp>.json`
   plus one WAV per repeat into `.verify-output/` via the dev server's `/__verify` sink.
   Capture WAV names carry the build probe and a per-run token — do NOT join a summary
