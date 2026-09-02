@@ -319,7 +319,49 @@ Click "Run probe" with a real click — resumes the AudioContext.`}
 
 const ALL_SCENARIOS = [...RECORDING_AUDIT_SCENARIOS];
 
-interface AuditRow {
+/** Task 9 fix round 1 (I3): finalization instrumentation, persisted per row so the
+ *  loop-wrap hang mechanism (and the ring overshoot behind the `#finalize` head drop)
+ *  rests on committed artifacts rather than console logs. The SDK's `RecordingWorklet`
+ *  is the take's SampleLoader while it records; its `limit(count)` method is patched
+ *  on the INSTANCE (the class method is untouched) to record every call together with
+ *  `numberOfFrames` at that moment. A hung finalization is one with NO `limit()` call
+ *  and a loader still in the `record` state after the wait. */
+interface FinalizeProbe {
+  finalizeNumberOfFramesAtStop?: number; // numberOfFrames when stopRecording() was called
+  finalizeLimitCalls?: number[]; // every `count` passed to limit(), in order (empty = never called)
+  finalizeNumberOfFramesAtLimit?: number[]; // numberOfFrames at each limit() call
+  finalizeOvershootFrames?: number[]; // numberOfFrames − count at each call (ring frames past the limit)
+  finalizeNumberOfFramesAfter?: number; // numberOfFrames after the finalize wait resolved or timed out
+  finalizeLoaderState?: string; // loader.state.type after the wait ("loaded" = finalized, "record" = hung)
+}
+
+function instrumentFinalize(loader: SampleLoader): FinalizeProbe {
+  const probe: FinalizeProbe = { finalizeLimitCalls: [], finalizeNumberOfFramesAtLimit: [], finalizeOvershootFrames: [] };
+  const l = loader as unknown as { limit?: (count: number) => void; numberOfFrames?: number };
+  if (typeof l.limit !== "function" || typeof l.numberOfFrames !== "number") return probe;
+  const original = l.limit;
+  l.limit = (count: number) => {
+    const frames = l.numberOfFrames as number;
+    probe.finalizeLimitCalls!.push(count);
+    probe.finalizeNumberOfFramesAtLimit!.push(frames);
+    probe.finalizeOvershootFrames!.push(frames - count);
+    original.call(loader, count);
+  };
+  return probe;
+}
+
+function settleFinalizeProbe(probe: FinalizeProbe, loader: SampleLoader): void {
+  const l = loader as unknown as { numberOfFrames?: number };
+  probe.finalizeNumberOfFramesAfter = typeof l.numberOfFrames === "number" ? l.numberOfFrames : undefined;
+  probe.finalizeLoaderState = loader.state.type;
+}
+
+// The probe of the repeat currently running, so a repeat that fails (a hung
+// finalization is exactly the case of interest) still persists it on its error row.
+let lastFinalizeProbe: FinalizeProbe | null = null;
+let lastMultitrackFinalizeProbes: { a: FinalizeProbe; b: FinalizeProbe } | null = null;
+
+interface AuditRow extends FinalizeProbe {
   scenario: RecordingScenario;
   bpm: number;
   rate: number;
@@ -777,18 +819,22 @@ async function runCellRepeat(
   }
 
   onStage("stopping");
-  stopRequestContextTime = audioContext.currentTime;
-  project.engine.stopRecording();
-
-  onStage("finalizing");
   // All takes on the tape share one file (see CLAUDE.md "Loop Take Buffer
-  // Layout") — wait on any one region's loader.
+  // Layout") — wait on any one region's loader. Looked up BEFORE the stop so the
+  // finalization probe is armed before the SDK's stop path can call limit().
   const anyTake = unitAdapter.tracks
     .values()
     .flatMap((t) => [...t.regions.adapters.values()])
     .filter((r) => r.isAudioRegion())[0];
   if (!anyTake) throw new Error("no take regions created");
   const loader = anyTake.file.getOrCreateLoader();
+  const finalizeProbe = instrumentFinalize(loader);
+  lastFinalizeProbe = finalizeProbe;
+  finalizeProbe.finalizeNumberOfFramesAtStop = (loader as unknown as { numberOfFrames?: number }).numberOfFrames;
+  stopRequestContextTime = audioContext.currentTime;
+  project.engine.stopRecording();
+
+  onStage("finalizing");
   // Fix round 1 (C2): loop-wrap repeats were failing with
   // `finalizing: finalization timed out after 30s` (NOT the `waitForPosition`
   // transport-start quirk this scenario's error rows were previously
@@ -801,7 +847,11 @@ async function runCellRepeat(
   // is kept as a diagnostic since it's cheap and helps future triage.
   const finalizeDeadlineMs = 30_000;
   const finalizeStart = performance.now();
-  await waitForLoaderTerminal(loader, finalizeDeadlineMs, "finalization");
+  try {
+    await waitForLoaderTerminal(loader, finalizeDeadlineMs, "finalization");
+  } finally {
+    settleFinalizeProbe(finalizeProbe, loader);
+  }
   // Fix round 2 (cheap add): persisted per row below (`finalizeMs`) so the C2
   // fast-or-never finalization-timeout evidence is a committed artifact, not
   // console-only.
@@ -923,6 +973,7 @@ async function runCellRepeat(
       recordRequestContextTime,
       finalizeMs,
       firstQuantumTimeSec,
+      ...finalizeProbe,
       clockNoiseIdentifiedClicks,
       clockNoiseMaxAbsResidualMs,
       status: "pending",
@@ -1130,6 +1181,7 @@ async function runAudit(
         let stage = "prefs";
         let result: CellRepeatResult | null = null;
         let errorMessage: string | null = null;
+        lastFinalizeProbe = null;
         try {
           result = await withDeadline(
             runCellRepeat(project, audioContext, unitAdapter, scenario, bpm, rate, repeat, (s) => {
@@ -1173,6 +1225,7 @@ async function runAudit(
             matchedSignature: null,
             detail: cleanupWarning ? `cleanup warning: ${cleanupWarning}` : "",
             errorMessage: errorMessage ?? "unknown error",
+            ...(lastFinalizeProbe ?? {}),
           };
           allRows.push(errorRow);
           onRow(errorRow);
@@ -1412,7 +1465,7 @@ function multitrackCellLabel(scenario: MultitrackScenario, bpm: number, repeat: 
   return `${scenario}/${bpmToken(bpm)}/r${repeat}`;
 }
 
-interface MultitrackAuditRow {
+interface MultitrackAuditRow extends FinalizeProbe {
   scenario: MultitrackScenario;
   bpm: number;
   rate: number;
@@ -1648,10 +1701,6 @@ async function runMultitrackCellRepeat(
   await waitForPosition(project, MULTITRACK_RECORD_BARS * BAR_PPQN, 60_000);
 
   onStage("stopping");
-  stopRequestContextTime = audioContext.currentTime;
-  project.engine.stopRecording();
-
-  onStage("finalizing");
   const firstTakeOf = (u: AudioUnitBoxAdapter) =>
     u.tracks.values().flatMap((t) => [...t.regions.adapters.values()]).filter((r) => r.isAudioRegion())[0];
   const takeA = firstTakeOf(unitAdapterA);
@@ -1659,16 +1708,32 @@ async function runMultitrackCellRepeat(
   if (!takeA || !takeB) {
     throw new Error(`no take regions created (tapeA=${takeA ? "ok" : "missing"}, tapeB=${takeB ? "ok" : "missing"})`);
   }
+  // Loaders looked up BEFORE the stop so both finalization probes are armed
+  // before the SDK's stop path can call limit() (see instrumentFinalize).
   const loaderA = takeA.file.getOrCreateLoader();
   const loaderB = takeB.file.getOrCreateLoader();
+  const probeA = instrumentFinalize(loaderA);
+  const probeB = instrumentFinalize(loaderB);
+  lastMultitrackFinalizeProbes = { a: probeA, b: probeB };
+  probeA.finalizeNumberOfFramesAtStop = (loaderA as unknown as { numberOfFrames?: number }).numberOfFrames;
+  probeB.finalizeNumberOfFramesAtStop = (loaderB as unknown as { numberOfFrames?: number }).numberOfFrames;
+  stopRequestContextTime = audioContext.currentTime;
+  project.engine.stopRecording();
+
+  onStage("finalizing");
   const finalizeStart = performance.now();
   // Two independent RecordingWorklets -> two independent loaders — the
   // barrier must wait for BOTH, same terminal-state contract per loader as
   // the single-tape finalization above (waitForLoaderTerminal).
-  await Promise.all([
-    waitForLoaderTerminal(loaderA, FINALIZE_DEADLINE_MS, "finalization tapeA"),
-    waitForLoaderTerminal(loaderB, FINALIZE_DEADLINE_MS, "finalization tapeB"),
-  ]);
+  try {
+    await Promise.all([
+      waitForLoaderTerminal(loaderA, FINALIZE_DEADLINE_MS, "finalization tapeA"),
+      waitForLoaderTerminal(loaderB, FINALIZE_DEADLINE_MS, "finalization tapeB"),
+    ]);
+  } finally {
+    settleFinalizeProbe(probeA, loaderA);
+    settleFinalizeProbe(probeB, loaderB);
+  }
   const finalizeMs = performance.now() - finalizeStart;
   console.log(
     "[recording-alignment-audit] multitrack finalize " + multitrackCellLabel(scenario, bpm, repeat) +
@@ -1722,6 +1787,7 @@ async function runMultitrackCellRepeat(
       firstQuantumTimeSec: readFirstQuantumTimeSec(loader),
       anchorT0Sec: alignment.anchorT0Sec,
       recordRequestContextTime,
+      ...(tapeLabel === "a" ? probeA : probeB),
     };
     return { alignment, buffer: { channels: [mono], sampleRate: data.sampleRate }, row };
   };
@@ -1925,6 +1991,7 @@ async function runMultitrackAudit(
         let stage = "prefs";
         let result: MultitrackRepeatResult | null = null;
         let errorMessage: string | null = null;
+        lastMultitrackFinalizeProbes = null;
         try {
           result = await withDeadline(
             runMultitrackCellRepeat(project, audioContext, tapes, scenario, bpm, rate, repeat, (s) => {
@@ -1969,6 +2036,7 @@ async function runMultitrackAudit(
             status: "error",
             detail: cleanupWarning ? `cleanup warning: ${cleanupWarning}` : "",
             errorMessage: errorMessage ?? "unknown error",
+            ...(lastMultitrackFinalizeProbes ? lastMultitrackFinalizeProbes[tape] : {}),
           });
           const rowA = errRow("a");
           const rowB = errRow("b");
