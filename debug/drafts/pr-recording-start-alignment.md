@@ -153,6 +153,15 @@ re-measured** — the build layout those runs used no longer exists on disk. The
 correction adds each row's own off-grid phase, an identity verified directly on every
 row of the campaign where both grids were computed on the same audio.
 
+**Provenance of these figures, stated plainly.** This branch is compile- and
+unit-test-verified against upstream `main` (the scoped turbo build and `studio-core`'s
+vitest, both listed under Verification below) but it has **not been run in a browser
+there**. Every measurement above was taken on a build of these same source changes
+applied over the `0.0.170` release base, through an out-of-tree recording
+start-alignment audit harness (`recording-alignment-audit-debug-demo.html`) driving a
+synthetic in-context digital loopback. Re-running the matrix against this branch as
+built from upstream `main` would be worth doing before merge.
+
 ### Measured but unexplained
 
 On the unfixed build, `loop-wrap` recordings fail to finalize at a high rate, with
