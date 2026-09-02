@@ -198,6 +198,45 @@ describe("measureTakeAlignment", () => {
       expect(a.beatErrors.map((e) => e.beat)).toEqual([10, 11, 12]);
     });
   });
+
+  // Task 7c fix round 1 (review M9): the two properties of the absolute grid most
+  // likely to regress silently were covered only by live runs — a beat period that
+  // does not terminate in binary (97.3 bpm), and a take read from part-way into a
+  // shared capture buffer (waveformOffsetSec != 0, as every loop-wrap take is).
+  describe("absolute grid at a non-integer tempo with a non-zero waveform offset", () => {
+    const bpm973 = 97.3;
+    const P = 60 / bpm973; // 0.61664954779…s, non-terminating
+    // Region at beat 13 exactly, running for 4 beats, read from 3.2s into a buffer
+    // whose first 3.2s belong to earlier takes.
+    const regionStartSec = 13 * P;
+    const waveformOffsetSec = 3.2;
+    const offGrid = {
+      ...base, bpm: bpm973, regionStartSec, waveformOffsetSec,
+      regionDurationSec: 4 * P, bufferDurationSec: 3.2 + 4 * P,
+    };
+    // Beats 13-16 land at file time waveformOffset + k*P.
+    const captured = [0, 1, 2, 3].map((k) => waveformOffsetSec + k * P);
+
+    it("numbers a beat-aligned region's beats absolutely and loses none", () => {
+      const a = measureTakeAlignment({ ...offGrid, lowOnsets: captured, highOnsets: [] });
+      expect(a.missingBeats).toBe(0);
+      expect(a.beatErrors.map((e) => e.beat)).toEqual([13, 14, 15, 16]);
+      expect(Math.abs(a.medianBeatErrorMs!)).toBeLessThan(0.01);
+    });
+
+    it("reports the real error through the non-zero waveform offset", () => {
+      const late = captured.map((t) => t + 0.030);
+      const a = measureTakeAlignment({ ...offGrid, lowOnsets: late, highOnsets: [] });
+      expect(a.medianBeatErrorMs!).toBeCloseTo(30, 1);
+      expect(a.missingBeats).toBe(0);
+    });
+
+    it("still catches an absent in-range beat at this tempo", () => {
+      const a = measureTakeAlignment({ ...offGrid, lowOnsets: captured.slice(1), highOnsets: [] });
+      expect(a.missingBeats).toBe(1);
+      expect(a.beatErrors.map((e) => e.beat)).toEqual([14, 15, 16]);
+    });
+  });
 });
 
 describe("classifyCell", () => {

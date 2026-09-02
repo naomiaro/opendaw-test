@@ -2101,8 +2101,8 @@ function MultitrackRunnerHarness() {
 ?rate=<number>        default 48000 — sets the AudioContext at init, never "all"
 Repeats per cell:       ${REPEATS_PER_CELL}
 Two tapes armed on loopbackDeviceId(1)/(2) — clones of the SAME loopback signal.
-Uploads:                recaudit-mt-summary-<timestamp>.json (all rows + per-repeat skew) via PUT /__verify
-                        recaudit-mt-<scenario>-<bpm>-<rate>-r<repeat>-tape<a|b>.wav per repeat
+Uploads:                recaudit-mt-summary-<runToken>.json (all rows + per-repeat skew) via PUT /__verify
+                        recaudit-mt-<scenario>-<bpm>-<rate>-r<repeat>-tape<a|b>-<build>-<runToken>.wav per repeat
 Click "Run audit" with a real click — resumes the AudioContext.`}
             </pre>
           </Card>
