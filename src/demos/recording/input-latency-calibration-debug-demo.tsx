@@ -226,7 +226,14 @@ interface CalibrationSummary {
 
 // --- run -------------------------------------------------------------------
 
-const loopback = installLoopbackCapture(1);
+// `reportDeviceId: true` — the SDK stores a calibration under the stream's own
+// device id and refuses to store one under the empty id a
+// MediaStreamAudioDestinationNode track reports. It also makes the SDK reuse
+// one stream across recordings instead of opening a fresh one per take (see
+// `stampDeviceId`), which is the configuration this measurement needs: a
+// calibration only describes the stream it ran on, and the applied cell has to
+// record on that same stream. The alignment harness deliberately leaves it off.
+const loopback = installLoopbackCapture(1, { reportDeviceId: true });
 
 /** Same marker the alignment harness probes — see its `detectSdkBuildProbe`. */
 function detectSdkBuildProbe(engine: unknown): SdkBuildProbe {

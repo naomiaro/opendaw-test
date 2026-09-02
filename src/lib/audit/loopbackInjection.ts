@@ -64,9 +64,25 @@ function requestedDeviceId(constraints?: MediaStreamConstraints): string | undef
  * entry under, and which it refuses to store at all when empty) and the
  * `getSettings().deviceId` the placement-time latency provider looks the entry
  * up by. With an empty id a calibration measured on this loopback could never
- * be stored, let alone applied — the ground-truth page's whole point.
- * The original settings are merged, not replaced, so `channelCount` (which
- * `CaptureAudio.#rebuildAudioChain` reads) survives.
+ * be stored, let alone applied. The original settings are merged, not replaced,
+ * so `channelCount` (which `CaptureAudio.#rebuildAudioChain` reads) survives.
+ *
+ * OPT-IN, because it also changes how often the SDK opens a stream, and with it
+ * the loopback's own delay. `CaptureAudio.prepareRecording` calls the stream
+ * generator on EVERY recording start, and `#updateStream` returns early only
+ * when the open stream's reported deviceId equals the requested one. Reporting
+ * nothing means that check never passes, so every recording tears the stream
+ * down and opens a fresh one — which is why the alignment campaign's baseline
+ * loopback hop is 10-23 ms per take: each take runs on a NEW
+ * MediaStreamAudioSourceNode. Reporting the id makes the SDK reuse one stream
+ * (what it does with a real device), and the reused stream's hop steps to
+ * ~64 ms after the first recording and stays there. Measured at 48 kHz,
+ * `firstQuantumTimeSec − anchorT0Sec` over three `nominal-start` repeats:
+ * reporting off 12.3 / 9.6 / 18.3 ms, reporting on 17.0 / 64.3 / 64.3 ms.
+ * The standing sweep therefore leaves this OFF (its register baseline assumes
+ * the per-take stream); the calibration page turns it ON, because a stored
+ * calibration needs a device id AND is only meaningful on the very stream the
+ * take will run on.
  */
 function stampDeviceId(stream: MediaStream, deviceId: string): void {
   for (const track of stream.getAudioTracks()) {
@@ -134,7 +150,13 @@ export interface LoopbackHandle {
   uninstall(): void;
 }
 
-export function installLoopbackCapture(deviceCount: number = 1): LoopbackHandle {
+export interface LoopbackOptions {
+  /** Report the requested deviceId on the handed-out stream — see `stampDeviceId`. Default false. */
+  reportDeviceId?: boolean;
+}
+
+export function installLoopbackCapture(deviceCount: number = 1, options: LoopbackOptions = {}): LoopbackHandle {
+  const reportDeviceId = options.reportDeviceId === true;
   const original = {
     getUserMedia: navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices),
     enumerateDevices: navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices),
@@ -155,8 +177,12 @@ export function installLoopbackCapture(deviceCount: number = 1): LoopbackHandle 
     if (dest === null) throw new Error("loopbackInjection: getUserMedia before attach()");
     const clone = dest.stream.clone();
     const deviceId = requestedDeviceId(constraints);
-    if (deviceId !== undefined && deviceId !== "") stampDeviceId(clone, deviceId);
-    console.log("[loopbackInjection] getUserMedia -> clone stamped deviceId=" + String(deviceId ?? "(none)"));
+    const stamped = reportDeviceId && deviceId !== undefined && deviceId !== "";
+    if (stamped) stampDeviceId(clone, deviceId as string);
+    console.log(
+      "[loopbackInjection] getUserMedia requested deviceId=" + String(deviceId ?? "(none)") +
+      " reportedOnStream=" + String(stamped)
+    );
     return clone;
   };
   navigator.mediaDevices.enumerateDevices = async () => {
