@@ -830,7 +830,7 @@ function CalibrationHarness() {
             <pre style={{ margin: 0, fontSize: "0.85rem", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
               {applied === null
                 ? "applied: pending"
-                : `warm-up input:     ${warmup === null ? "—" : ms(warmup.inputLatencySeconds)} ms (discarded)
+                : `priming (fresh):   ${warmup === null ? "—" : ms(warmup.inputLatencySeconds)} ms (discarded from the fit)
 applied verdict:   ${applied.verdict}
 input part:        ${ms(applied.inputLatencySeconds)} ms
 round trip:        ${ms(applied.roundTripSeconds)} ms
