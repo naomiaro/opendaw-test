@@ -158,16 +158,28 @@ export const KEEP_ALIVE_PROFILE_FROM_RUN = 1788384000000;
 /**
  * Which band table an artifact is judged against.
  *
- * With `features` present the answer is a property of the served build:
- * `calibrateInputLatency` means the calibration branch, whose measured
- * behaviour bands E/F describe. Without it, the run-token fallback above
- * applies, and a caller passing neither gets `upstream` — so every call site
- * predating per-build profiles is unchanged and no historical output moves.
+ * With `features` present the answer is a property of the served build, and the
+ * key is `latencyProbes`, NOT `calibrateInputLatency`. Both are calibration-branch
+ * surfaces, but they arrived at different points and only one of them is late
+ * enough: `calibrateInputLatency` exists from the commit that added the routine,
+ * which is BEFORE the keep-alive sink, so keying on it would judge a run served
+ * from a pre-keep-alive calibration build — an override this campaign keeps for
+ * A/B — against bands fitted to a build whose input chain behaves differently.
+ * `LatencyProbes` arrived with the configurable probe, a descendant of the sink
+ * commit, so on this branch's history it is present exactly for the builds bands
+ * E/F were measured on.
  *
- * Known limit: the flag cannot separate the calibration branch's own builds
- * from one another, so a future run on a PRE-keep-alive calibration build would
- * be judged against E/F. Every such run this campaign made predates
- * `buildFeatures` and therefore takes the run-token path instead.
+ * It is a PROXY, not the thing itself: the keep-alive sink is a graph edge with
+ * no detectable surface (see buildFeatures.ts), so the profile keys on a
+ * neighbouring commit's export instead. The limit that leaves is narrow — a
+ * build that cherry-picks `LatencyProbes` without the sink, which no build in
+ * this branch's history does — and it is one-directional: a pre-keep-alive
+ * calibration build now resolves to `upstream`, which is the conservative
+ * answer, since bands A-D were what the campaign measured it against.
+ *
+ * Without `features`, the run-token fallback above applies, and a caller passing
+ * neither gets `upstream` — so every call site predating per-build profiles is
+ * unchanged and no historical output moves.
  */
 export function profileKeyFor(
   build: string | null | undefined,
@@ -175,7 +187,7 @@ export function profileKeyFor(
   features?: readonly string[] | null
 ): AuditBuildProfileKey {
   if (Array.isArray(features)) {
-    return features.includes("calibrateInputLatency") ? "candidate" : "upstream";
+    return features.includes("latencyProbes") ? "candidate" : "upstream";
   }
   const isKeepAliveEra = typeof runId === "number" && Number.isFinite(runId) && runId >= KEEP_ALIVE_PROFILE_FROM_RUN;
   return build === "candidate" && isKeepAliveEra ? "candidate" : "upstream";
@@ -211,8 +223,16 @@ export interface RecordingAuditProfile {
  *  - 20 cell means: min 16.33 ms, max 23.67 ms.
  *  - head and tail deficits 0 on every row of both runs; no error repeats.
  *  - Every cell's repeats land in ONE of two shapes: a single chain state
- *    (spread 0.06-2.13 ms) or two states about 8.0-9.6 ms apart (spread
- *    8.00-9.64 ms). No cell is scattered across more than two values.
+ *    (spread 0.06-2.13 ms) or two states apart by one of a small set of steps
+ *    (spread 8.00-9.64 ms). No cell is scattered across more than two values.
+ *  - At 48 kHz every hop observed on this build sits on a 32-frame lattice:
+ *    590 / 974 / 1006 / 1038 frames (12.292 / 20.292 / 20.958 / 21.625 ms), all
+ *    congruent mod 32. So "the step" is not one number — low-to-high is 384,
+ *    416 or 448 frames (8.000 / 8.667 / 9.333 ms, i.e. 3, 3.25 or 3.5 render
+ *    quanta) depending on which high-cluster member the chain took. A future run
+ *    landing one 32-frame unit off is the same behaviour, not a new state.
+ *    44.1 kHz shows no clean lattice (441-frame chunks against 128-frame
+ *    quanta): a 13.175 ms low against a 20.6-23.1 ms cluster.
  *
  * Hence two bands, in the order `classifyCell` reads them:
  *  - `E` random-band 4-30 ms catches the two-state cells (its spread > 2·tol

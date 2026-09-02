@@ -64,9 +64,9 @@ import {
   measureTakeAlignment,
   classifyCell,
   measureCrossTrackSkew,
+  classifyMultitrackCell,
   type TakeAlignment,
   type CellClassification,
-  type CellStatus,
   type ReferenceSchedule,
   type CrossTrackSkew,
 } from "@/lib/audit/recordingAlignment";
@@ -996,62 +996,6 @@ function createMultitrackTapes(project: Project, sameDeviceB: boolean = false): 
   return { audioUnitBoxA, audioUnitBoxB, unitAdapterA, unitAdapterB };
 }
 
-interface MultitrackCellVerdict {
-  status: CellStatus;
-  detail: string;
-}
-
-/**
- * Cell verdict for a multitrack scenario: `aligned` when every repeat's
- * skew magnitude is within `ALIGNED_TOLERANCE_MS` AND both tapes' own
- * per-take alignment independently classifies as clean (not `investigate`)
- * against the equivalent single-tape scenario's SIGNATURE_BANDS —
- * otherwise `investigate`. There is no `matches-known-defect` outcome for
- * skew itself: no signature band predicts it (the single-tape sections
- * never provoked or measured simultaneous capture), so any measured skew
- * beyond tolerance is a candidate finding, named directly in the detail
- * string rather than mapped onto a band.
- */
-function classifyMultitrackCell(
-  tapeAClass: CellClassification,
-  tapeBClass: CellClassification,
-  repeatSkews: CrossTrackSkew[]
-): MultitrackCellVerdict {
-  if (repeatSkews.length === 0) {
-    return {
-      status: "investigate",
-      detail: `no successful repeats to measure skew (tapeA=${tapeAClass.status}, tapeB=${tapeBClass.status})`,
-    };
-  }
-  const usable = repeatSkews.filter((s) => s.medianSkewMs !== null);
-  if (usable.length !== repeatSkews.length) {
-    return {
-      status: "investigate",
-      detail: `skew unusable (0 paired beats) on ${repeatSkews.length - usable.length}/${repeatSkews.length} successful repeat(s) — tapeA=${tapeAClass.status}, tapeB=${tapeBClass.status}`,
-    };
-  }
-  const medians = usable.map((s) => s.medianSkewMs!);
-  const skewDetail = `medianSkewMs per repeat=[${medians.map((m) => m.toFixed(2)).join(", ")}] maxAbsMedianSkewMs=${Math.max(...medians.map(Math.abs)).toFixed(2)}`;
-  const tapesClean = tapeAClass.status !== "investigate" && tapeBClass.status !== "investigate";
-  const skewClean = medians.every((m) => Math.abs(m) <= ALIGNED_TOLERANCE_MS);
-  if (skewClean && tapesClean) {
-    return {
-      status: "aligned",
-      detail: `skew within ${ALIGNED_TOLERANCE_MS}ms tolerance on every repeat and both tapes individually clean (tapeA=${tapeAClass.status}, tapeB=${tapeBClass.status}) — ${skewDetail}`,
-    };
-  }
-  if (!tapesClean) {
-    return {
-      status: "investigate",
-      detail: `at least one tape's own per-take alignment did not classify clean (tapeA=${tapeAClass.status}: ${tapeAClass.detail}; tapeB=${tapeBClass.status}: ${tapeBClass.detail}) — ${skewDetail}`,
-    };
-  }
-  return {
-    status: "investigate",
-    detail: `skew exceeds ${ALIGNED_TOLERANCE_MS}ms tolerance with both tapes otherwise clean (candidate finding — no predicted band for inter-track skew) — ${skewDetail}`,
-  };
-}
-
 interface MultitrackRepeatResult {
   rowA: MultitrackAuditRow;
   rowB: MultitrackAuditRow;
@@ -1525,7 +1469,7 @@ async function runMultitrackAudit(
         repeats.length > 0
           ? classifyCell(repeats.map((r) => r.alignmentB), signatureBandsFor(baseScenario, sdkBuildProbe, runToken, buildFeatures), ALIGNED_TOLERANCE_MS)
           : { status: "investigate", matchedSignature: null, detail: "no successful repeats to classify (tape b)" };
-      const verdict = classifyMultitrackCell(tapeAClass, tapeBClass, repeats.map((r) => r.skew));
+      const verdict = classifyMultitrackCell(tapeAClass, tapeBClass, repeats.map((r) => r.skew), ALIGNED_TOLERANCE_MS);
       // Persisted for EVERY cell, all-error cells included (no skew signature
       // band exists, so matchedSignature is always null here).
       cellVerdicts.push({

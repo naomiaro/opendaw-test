@@ -85,9 +85,15 @@ function requestedDeviceId(constraints?: MediaStreamConstraints): string | undef
  * care whether a consumer pulls). Between uses the reused source node is
  * connected only to `recordGainNode`, which with monitoring off has no path to
  * the destination, so nobody pulls it and its browser-side buffer is not
- * drained. The FIRST pull on a fresh chain reads 13-21 ms — whether that pull is
- * a calibration or a take — and every later pull on the same chain reads
- * 58-69 ms, permanently, until the chain is rebuilt. Measured at 48 kHz,
+ * drained. ON SDK `f0c44b06c` (the calibration routine WITHOUT the keep-alive
+ * sink) the FIRST pull on a fresh chain reads 13-21 ms — whether that pull is a
+ * calibration or a take — and every later pull on the same chain reads
+ * 58-69 ms, permanently, until the chain is rebuilt. The sink commit
+ * (`ac1c15ea8`) keeps the source pulled for the chain's life and removes that
+ * ratchet: on `ac1c15ea8` and later every pull reads ~21 ms, and what remains is
+ * a per-chain-instance state set when the chain is built (see the E-band
+ * derivation in recordingAuditCalibration.ts). Measured at 48 kHz on
+ * `f0c44b06c`,
  * `firstQuantumTimeSec − anchorT0Sec` over three `nominal-start` repeats:
  * reporting off 12.3 / 9.6 / 18.3 ms, reporting on 17.0 / 64.3 / 64.3 ms.
  * The ~41 ms (48 kHz) / ~48 ms (44.1 kHz) step is the size a ~2048-frame sink

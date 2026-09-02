@@ -9,9 +9,11 @@
 // `?delays=`, calibrates at each value, and fits `inputLatencySeconds` against
 // it by least squares. A calibration that measures what it claims to measure
 // has slope 1.00 and an intercept equal to the input chain's own delay at
-// zero injected delay. The chain's delay moves between calls (sd 3.17 ms over
-// 26 steady-state points), so the slope is only resolvable over a long span:
-// 1σ on the slope is ±0.084 over a 0-50 ms span and ±0.0095 over 0-400 ms.
+// zero injected delay. On SDK `f0c44b06c` the chain's delay moved between calls
+// (sd 3.17 ms over 26 steady-state points), so the slope was only resolvable
+// over a long span: 1σ was ±0.084 over 0-50 ms and ±0.0095 over 0-400 ms. From
+// `ac1c15ea8` a chain's delay is constant for its life and the short span
+// resolves the slope on its own (within-run residuals ≤ 0.003 ms).
 // Then it applies the calibration (`apply: true`, delay back to 0) and runs ONE
 // `nominal-start` cell through the recording start-alignment harness's own
 // runner (`src/lib/audit/recordingCellRunner.ts`) so the verdict is the same
@@ -539,12 +541,16 @@ async function runCalibrationAudit(cb: RunCallbacks): Promise<void> {
   // "warming up the loopback": it moves the SDK's input chain out of its
   // fresh-chain state and into the state every later use of that chain runs in.
   //
-  // With the stream reused (`reportDeviceId`), the first pull on a chain reads
-  // 13-21 ms of input delay and every later pull on the same chain reads
-  // 58-69 ms — permanently, until `#updateStream` rebuilds it. That holds for
-  // takes as well as calibrations: uncalibrated `nominal-start` runs on the
-  // reused stream measured take 1 at 17.0 / 13.0 ms and takes 2-3 at
-  // 63.6-67.6 ms. Between uses the reused `MediaStreamAudioSourceNode` is
+  // ON SDK `f0c44b06c` (calibration routine, no keep-alive sink) and with the
+  // stream reused (`reportDeviceId`), the first pull on a chain reads 13-21 ms of
+  // input delay and every later pull on the same chain reads 58-69 ms —
+  // permanently, until `#updateStream` rebuilds it. That held for takes as well
+  // as calibrations: uncalibrated `nominal-start` runs on the reused stream
+  // measured take 1 at 17.0 / 13.0 ms and takes 2-3 at 63.6-67.6 ms. From
+  // `ac1c15ea8` the sink keeps the source pulled and that ratchet is gone (every
+  // pull ~21 ms); priming stays useful because a chain's delay is still fixed
+  // when the chain is built, so the calibration must run on the chain the take
+  // will use. Between uses the reused `MediaStreamAudioSourceNode` is
   // connected only to `recordGainNode`, which with monitoring off reaches no
   // destination, so nobody drains its browser-side buffer (see `stampDeviceId`
   // in loopbackInjection.ts — the buffer SIZE is inferred, the state dependence
