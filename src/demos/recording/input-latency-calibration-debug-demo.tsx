@@ -52,6 +52,15 @@
 //    `outputLatency` late. Both the raw round trip and the leg are persisted,
 //    so either space can be recomputed offline.
 //
+// Two rules on what enters the answer. A requested delay whose round trip would
+// pass the SDK's searchable lag window is REFUSED with a stated reason, at parse
+// time against the static ceiling and again per point against the round trip this
+// run actually measures — the alternative is a `no-signal` row that looks like a
+// failed measurement. And the headline fit uses `ok` rows only: a `noisy` verdict
+// is the SDK reporting that its own spread bound was exceeded on that call, so
+// those rows are excluded and counted, with the all-rows fit persisted beside it
+// so the exclusion's effect is visible rather than assumed.
+//
 // `?armState=steady|fresh` (default steady) selects which SDK input-chain state
 // the applied cell records in: `steady` records on the chain the sweep and the
 // applied calibration ran on; `fresh` disarms and re-arms first, so take 1 is
@@ -125,6 +134,18 @@ const CELL_SCENARIO = "nominal-start" as const;
 /** Settle time after moving the return delay before a calibration is started. */
 const DELAY_SETTLE_MS = 200;
 const CALIBRATION_DEADLINE_MS = 60_000;
+/**
+ * Mirrors `InputLatencyCalibration.MaxRoundTripSeconds` — part of the branch API
+ * shim above, since the installed types do not declare the namespace. The
+ * analysis correlates lags 1…`ceil(MaxRoundTripSeconds × sampleRate)` only
+ * (`analyzeBursts` in lib-dsp), so a round trip past it is simply not searched
+ * and the call returns `no-signal` with nothing to say why. The MLS length does
+ * NOT come off this budget: the per-burst window is `mlsLength + maxLag` and only
+ * the probe itself must fit inside the capture.
+ */
+const SDK_MAX_ROUND_TRIP_SEC = 0.6;
+/** Margin kept below the ceiling so a point near it cannot fail on run-to-run chain-delay drift. */
+const ROUND_TRIP_HEADROOM_SEC = 0.05;
 /** Same outer per-repeat deadline the alignment harness uses for a single-tape cell. */
 const REPEAT_DEADLINE_MS = 180_000;
 const STREAM_DEADLINE_MS = 15_000;
@@ -202,6 +223,14 @@ interface SweepRow extends CalibrationResult {
   requestedDelaySec: number;
 }
 
+/** A sweep point that was never run because its predicted round trip exceeded the SDK's search window. */
+interface SkippedDelay {
+  requestedDelayMs: number;
+  predictedRoundTripSec: number;
+  ceilingSec: number;
+  reason: string;
+}
+
 interface LeastSquaresFit {
   /** d(inputLatencySeconds)/d(requestedDelaySec) — 1.00 when the calibration tracks the injected delay. */
   slope: number;
@@ -243,7 +272,18 @@ interface CalibrationSummary {
   /** The discarded first calibration — see the warm-up comment in `runCalibrationAudit`. */
   warmup: CalibrationResult | null;
   sweep: SweepRow[];
+  /** Points refused before running — see `SkippedDelay` and the ceiling constants. */
+  skipped: SkippedDelay[];
+  /**
+   * Least squares over the `ok` rows ONLY. A `noisy` verdict means the SDK's own
+   * spread bound was exceeded, so those rows are excluded from the headline fit
+   * rather than entering it silently; `fitIncludingNoisy` keeps the all-rows
+   * answer so the exclusion's effect is visible instead of assumed.
+   */
   fit: LeastSquaresFit | null;
+  fitIncludingNoisy: LeastSquaresFit | null;
+  /** How many sweep rows the headline fit dropped, and at which delays. */
+  fitExcludedNoisy: { count: number; delaysMs: number[]; verdicts: string[] };
   applied: CalibrationResult | null;
   storedEntry: CalibrationEntry | null;
   cell: CellOutcome;
@@ -284,11 +324,31 @@ function detectSdkBuildProbe(engine: unknown): SdkBuildProbe {
   return typeof facade?.recordingStart?.isEmpty === "function" ? "candidate" : "upstream";
 }
 
+/**
+ * Hard ceiling on a requested delay: even with a zero-latency chain, a round trip
+ * at or above `SDK_MAX_ROUND_TRIP_SEC` is outside the correlation's search window.
+ * The real ceiling is lower by the chain's own delay and the virtual output leg,
+ * and that part is enforced at run time once those are measured (see
+ * `predictedRoundTripSec` in `runCalibrationAudit`) — a static bound cannot know
+ * them. Refusing here turns "the page silently reported no-signal" into a stated
+ * reason on the state badge.
+ */
+const MAX_REQUESTED_DELAY_MS = (SDK_MAX_ROUND_TRIP_SEC - ROUND_TRIP_HEADROOM_SEC) * 1000;
+
 function resolveDelaysMs(param: string | null): number[] {
   const raw = param ?? "0,10,25,50";
   const values = raw.split(",").map((part) => Number(part.trim()));
-  if (values.length === 0 || values.some((v) => !Number.isFinite(v) || v < 0 || v > 1000)) {
-    throw new Error(`invalid ?delays= "${raw}" — comma-separated milliseconds in [0, 1000]`);
+  if (values.length === 0 || values.some((v) => !Number.isFinite(v) || v < 0)) {
+    throw new Error(`invalid ?delays= "${raw}" — comma-separated milliseconds, each ≥ 0`);
+  }
+  const overCeiling = values.filter((v) => v > MAX_REQUESTED_DELAY_MS);
+  if (overCeiling.length > 0) {
+    throw new Error(
+      `?delays= refused: ${overCeiling.join(", ")} ms exceed the ${MAX_REQUESTED_DELAY_MS.toFixed(0)} ms ceiling ` +
+      `(the SDK correlates round trips up to ${(SDK_MAX_ROUND_TRIP_SEC * 1000).toFixed(0)} ms only, less ` +
+      `${(ROUND_TRIP_HEADROOM_SEC * 1000).toFixed(0)} ms headroom; the output leg and the chain's own delay ` +
+      `come off it too, so the effective ceiling is lower still and is enforced per point at run time)`
+    );
   }
   return values;
 }
@@ -429,7 +489,12 @@ async function uploadSummary(summary: CalibrationSummary): Promise<void> {
 interface RunCallbacks {
   setState: (state: string) => void;
   onSweepRow: (row: SweepRow) => void;
-  onFit: (fit: LeastSquaresFit | null) => void;
+  onFit: (
+    fit: LeastSquaresFit | null,
+    fitIncludingNoisy: LeastSquaresFit | null,
+    excluded: { count: number; delaysMs: number[]; verdicts: string[] }
+  ) => void;
+  onSkipped: (skipped: SkippedDelay) => void;
   onWarmup: (result: CalibrationResult) => void;
   onApplied: (result: CalibrationResult, entry: CalibrationEntry | null) => void;
   onCell: (
@@ -497,13 +562,34 @@ async function runCalibrationAudit(cb: RunCallbacks): Promise<void> {
   cb.onWarmup(warmup);
 
   const sweep: SweepRow[] = [];
+  const skipped: SkippedDelay[] = [];
+  // Round trip this chain would show at D = 0, i.e. output leg + chain delay.
+  // Seeded from the priming call and re-anchored after every measured row, so the
+  // per-point ceiling below is checked against what this run actually measures
+  // rather than a guess. The priming value is the fresh-chain one and understates
+  // the steady state by the ~45 ms step, which is what the headroom absorbs until
+  // the first row re-anchors it.
+  let roundTripAtZeroSec = Number.isFinite(warmup.roundTripSeconds) ? warmup.roundTripSeconds : 0;
   for (const delayMs of delaysMs) {
+    const predictedRoundTripSec = roundTripAtZeroSec + delayMs / 1000;
+    const ceilingSec = SDK_MAX_ROUND_TRIP_SEC - ROUND_TRIP_HEADROOM_SEC;
+    if (predictedRoundTripSec > ceilingSec) {
+      const reason =
+        `predicted round trip ${(predictedRoundTripSec * 1000).toFixed(1)} ms exceeds the ` +
+        `${(ceilingSec * 1000).toFixed(0)} ms searchable ceiling ` +
+        `(chain + output leg measures ${(roundTripAtZeroSec * 1000).toFixed(1)} ms at D = 0)`;
+      skipped.push({ requestedDelayMs: delayMs, predictedRoundTripSec, ceilingSec, reason });
+      cb.onSkipped({ requestedDelayMs: delayMs, predictedRoundTripSec, ceilingSec, reason });
+      console.warn("[input-latency-calibration] D=" + String(delayMs) + "ms SKIPPED: " + reason);
+      continue;
+    }
     cb.setState(`sweep:${delayMs}ms`);
     loopback.setReturnDelay(delayMs / 1000);
     await sleep(DELAY_SETTLE_MS);
     const result = await calibrateThroughLoopback(calibrating, bias.valueSec, false);
     const row: SweepRow = { requestedDelayMs: delayMs, requestedDelaySec: delayMs / 1000, ...result };
     sweep.push(row);
+    if (Number.isFinite(result.roundTripSeconds)) roundTripAtZeroSec = result.roundTripSeconds - delayMs / 1000;
     cb.onSweepRow(row);
     console.log(
       "[input-latency-calibration] D=" + String(delayMs) + "ms verdict=" + result.verdict +
@@ -517,14 +603,31 @@ async function runCalibrationAudit(cb: RunCallbacks): Promise<void> {
     );
   }
 
-  const fit = leastSquares(sweep.map((row) => ({ x: row.requestedDelaySec, y: row.inputLatencySeconds })));
-  cb.onFit(fit);
+  // M2: a `noisy` verdict is the SDK saying its own spread bound was exceeded on
+  // that call. Those rows are EXCLUDED from the headline fit; the all-rows fit is
+  // computed too, so the exclusion's effect is visible rather than assumed.
+  const okRows = sweep.filter((row) => row.verdict === "ok");
+  const excludedRows = sweep.filter((row) => row.verdict !== "ok");
+  const asPoint = (row: SweepRow) => ({ x: row.requestedDelaySec, y: row.inputLatencySeconds });
+  const fit = leastSquares(okRows.map(asPoint));
+  const fitIncludingNoisy = leastSquares(sweep.map(asPoint));
+  const fitExcludedNoisy = {
+    count: excludedRows.length,
+    delaysMs: excludedRows.map((row) => row.requestedDelayMs),
+    verdicts: excludedRows.map((row) => row.verdict),
+  };
+  cb.onFit(fit, fitIncludingNoisy, fitExcludedNoisy);
   if (fit !== null) {
     console.log(
-      "[input-latency-calibration] fit slope=" + fit.slope.toFixed(4) +
+      "[input-latency-calibration] fit(ok-only) slope=" + fit.slope.toFixed(4) +
       " interceptMs=" + (fit.interceptSec * 1000).toFixed(3) +
       " points=" + String(fit.points) +
-      " maxAbsResidualMs=" + fit.maxAbsResidualMs.toFixed(3)
+      " maxAbsResidualMs=" + fit.maxAbsResidualMs.toFixed(3) +
+      " excludedNonOkRows=" + String(fitExcludedNoisy.count) +
+      (fitIncludingNoisy === null
+        ? ""
+        : " fit(all rows) slope=" + fitIncludingNoisy.slope.toFixed(4) +
+          " interceptMs=" + (fitIncludingNoisy.interceptSec * 1000).toFixed(3))
     );
   }
 
@@ -668,7 +771,7 @@ async function runCalibrationAudit(cb: RunCallbacks): Promise<void> {
     harnessPathBiasSettleMs: bias.settleMs,
     virtualOutputLegSec: bias.valueSec,
     armState,
-    warmup, sweep, fit, applied, storedEntry, cell,
+    warmup, sweep, skipped, fit, fitIncludingNoisy, fitExcludedNoisy, applied, storedEntry, cell,
     harnessLoopbackHopSec: hopSec,
     harnessLoopbackHopPerRowSec: hopPerRow,
     cellRowStates,
@@ -702,6 +805,11 @@ function CalibrationHarness() {
   const [buildProbe, setBuildProbe] = useState<SdkBuildProbe>("unknown");
   const [sweep, setSweep] = useState<SweepRow[]>([]);
   const [fit, setFit] = useState<LeastSquaresFit | null>(null);
+  const [fitAll, setFitAll] = useState<LeastSquaresFit | null>(null);
+  const [excluded, setExcluded] = useState<{ count: number; delaysMs: number[]; verdicts: string[] }>({
+    count: 0, delaysMs: [], verdicts: [],
+  });
+  const [skipped, setSkipped] = useState<SkippedDelay[]>([]);
   const [warmup, setWarmup] = useState<CalibrationResult | null>(null);
   const [applied, setApplied] = useState<CalibrationResult | null>(null);
   const [storedEntry, setStoredEntry] = useState<CalibrationEntry | null>(null);
@@ -718,6 +826,9 @@ function CalibrationHarness() {
     setStarted(true);
     setSweep([]);
     setFit(null);
+    setFitAll(null);
+    setExcluded({ count: 0, delaysMs: [], verdicts: [] });
+    setSkipped([]);
     setWarmup(null);
     setApplied(null);
     setStoredEntry(null);
@@ -727,7 +838,8 @@ function CalibrationHarness() {
     runCalibrationAudit({
       setState: setAuditState,
       onSweepRow: (row) => setSweep((prev) => [...prev, row]),
-      onFit: setFit,
+      onFit: (primary, all, drops) => { setFit(primary); setFitAll(all); setExcluded(drops); },
+      onSkipped: (entry) => setSkipped((prev) => [...prev, entry]),
       onWarmup: setWarmup,
       onApplied: (result, entry) => { setApplied(result); setStoredEntry(entry); },
       onCell: (outcome, hop, states) => { setCell(outcome); setHopSec(hop); setRowStates(states); },
@@ -815,9 +927,24 @@ function CalibrationHarness() {
             <Text size="2" color="gray" as="p" style={{ marginTop: "0.75rem" }}>
               {fit === null
                 ? "fit: pending"
-                : `fit: slope ${fit.slope.toFixed(4)} · intercept ${(fit.interceptSec * 1000).toFixed(3)} ms · ` +
+                : `fit (ok rows only): slope ${fit.slope.toFixed(4)} · intercept ${(fit.interceptSec * 1000).toFixed(3)} ms · ` +
                   `max residual ${fit.maxAbsResidualMs.toFixed(3)} ms · ${fit.points} points`}
             </Text>
+            {excluded.count > 0 && (
+              <Text size="2" color="amber" as="p">
+                {`excluded ${excluded.count} non-ok row(s) from the fit at D = ${excluded.delaysMs.join(", ")} ms ` +
+                  `(${excluded.verdicts.join(", ")})` +
+                  (fitAll === null
+                    ? ""
+                    : ` · including them: slope ${fitAll.slope.toFixed(4)}, intercept ${(fitAll.interceptSec * 1000).toFixed(3)} ms`)}
+              </Text>
+            )}
+            {skipped.length > 0 && (
+              <Text size="2" color="red" as="p">
+                {`refused ${skipped.length} point(s) above the searchable round-trip ceiling: ` +
+                  skipped.map((entry) => `${entry.requestedDelayMs} ms (${entry.reason})`).join(" · ")}
+              </Text>
+            )}
             <Text size="2" color="gray" as="p">
               {hopSec === null
                 ? "input chain delay: pending (measured from the applied cell's rows)"
@@ -858,6 +985,10 @@ chain state:       ${rowStates.map((r) => `r${r.repeat} ${r.chainPull} ${r.hopSe
 ?armState=steady|fresh default steady — "fresh" re-arms before the cell, so take 1
                       is the first pull on a rebuilt SDK input chain
 Cell:                 ${CELL_SCENARIO}, ${REPEATS_PER_CELL} repeats, calibration applied
+Delay ceiling:        ${MAX_REQUESTED_DELAY_MS.toFixed(0)} ms at parse time; per point the run
+                      refuses any D whose predicted round trip passes
+                      ${((SDK_MAX_ROUND_TRIP_SEC - ROUND_TRIP_HEADROOM_SEC) * 1000).toFixed(0)} ms (the SDK searches ${(SDK_MAX_ROUND_TRIP_SEC * 1000).toFixed(0)} ms of lag)
+Fit:                  ok rows only; non-ok rows are excluded and counted
 Uploads:              calib-summary-<runToken>.json via PUT /__verify
 Needs the calibration-branch SDK (SDK_DIST_OVERRIDE); the page says so if it is missing.
 Click "Run calibration" with a real click — resumes the AudioContext.`}
