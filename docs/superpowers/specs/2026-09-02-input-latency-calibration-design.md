@@ -107,6 +107,19 @@ export namespace InputLatencyCalibration {
 }
 ```
 
+**Attribution in source.** The module doc comment of `calibrationAnalysis.ts` (and a one-line
+pointer from `InputLatencyCalibration.ts`) cites the probe's origin verbatim:
+
+> Gil Panal, J. M., Richard, G., & David, A. (2025). A Maximum Length Sequence–Based Method for
+> Robust Round-Trip Latency Estimation in online Digital Audio Workstations. In *Proceedings of
+> the Web Audio Conference (WAC 2025)*. https://doi.org/10.5281/zenodo.17642262
+> Reference implementation: https://github.com/gilpanal/weblatencytest (MIT).
+
+and states in one sentence what is taken (the MLS probe, correlation-peak location, the
+peak-to-mean ratio gate) and what differs (emission and arrival anchored on the AudioContext
+clock instead of `MediaRecorder.start()`). No code is copied from that repository; if any ever
+is, its MIT notice travels with it. The PR description repeats the citation.
+
 `measure` owns the preconditions (§4.3), schedules the bursts, records, analyses, and resolves.
 It never writes preferences. Pure helpers live beside it (`calibrationAnalysis.ts`: MLS
 generation, FFT cross-correlation, peak refinement, ratio, median/spread) with their own tests.
@@ -156,7 +169,8 @@ with `fix/recording-start-alignment` merged in; PR text states it stacks on #378
 2. `InputLatencyCalibration.ts` + tests for verdicts/preconditions through fakes.
 3. `CaptureAudio.calibrateInputLatency` / `clearInputLatencyCalibration`; resolver rung; schema
    entry; `InputLatency.test.ts` cases for the rung.
-4. PR description drafted for user review before posting; no session links; no origin naming.
+4. PR description drafted for user review before posting, citing the WAC 2025 paper; no session
+   links; no downstream-fork naming.
 
 This repo (branch `input-latency-calibration`):
 5. Unlisted debug page `input-latency-calibration-debug-demo.html` (+ tsx under
