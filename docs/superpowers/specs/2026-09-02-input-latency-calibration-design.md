@@ -161,9 +161,6 @@ clock instead of `MediaRecorder.start()`). No code is copied from that repositor
 is, its MIT notice travels with it. The PR description repeats the citation.
 
 `measure` owns the preconditions (§4.3), schedules the bursts, records, analyses, and resolves.
-It never writes preferences. Pure helpers live beside it (`calibrationAnalysis.ts`: MLS
-generation, FFT cross-correlation, peak refinement, ratio, median/spread) with their own tests.
-
 ### 4.2 `CaptureAudio.calibrateInputLatency(options?: Options & {apply?: boolean}): Promise<Result>`
 
 Feeds `measure` the capture's own stream source node (the same node `prepareRecording` connects
