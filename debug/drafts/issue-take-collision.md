@@ -2,6 +2,8 @@
 
 **Status: DRAFT for user review. Not filed.** Target: `andremichelle/openDAW`.
 
+> Task 9 addendum: unchanged by the accompanying take-placement fix — on that branch 6 of 12 simultaneous-capture repeats collided (`recaudit-mt-summary-1788325292003.json` 3/6, `…1788325557229.json` 3/6, both `finalization tape<A|B> timed out after 30s`). Keeping the buffer head in `#finalize` makes two captures of one signal byte-identical more often, so a harness that feeds both tapes the same signal hits it more, not less.
+
 ## Title
 
 Recording two armed captures at once panics `BoxGraph.stageBox` when both takes encode

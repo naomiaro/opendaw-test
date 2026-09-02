@@ -5,14 +5,17 @@ Target: `andremichelle/openDAW`, branch `fix/recording-start-alignment` in the l
 upstream checkout, one commit on top of `origin/main` (`4a9f183f6`).
 
 Every number below was recomputed from the persisted measurement artifacts in
-`.verify-output/` and each is followed by the file it came from. Candidate-build
-figures are analytically corrected from persisted per-row geometry, not re-measured.
+`.verify-output/` by `scripts/audit/recording-alignment/task9-branch-verification.ts`
+and each is followed by the file it came from. Both sides of every comparison were
+measured live: the "before" side on the installed `@opendaw/studio-sdk@0.0.170`, the
+"after" side on this branch built from `main` and served in place of the installed
+package through the same harness.
 
 ---
 
 ## Title
 
-`fix(recording): anchor take placement on the audio-thread clock`
+`fix(recording): anchor takes on the engine's own recording start and keep the buffer head`
 
 ## Body
 
@@ -27,15 +30,18 @@ scenario measured — starting from bar 1 both with and without a count-in, on a
 idle and on a blocked main thread, on a mid-timeline punch-in, and on each take of
 a loop-wrap sequence — at both sample rates tested (44100, 48000) and both tempi
 (120, 97.3 bpm). The two cells without a figure are `loop-wrap` cells where every
-repeat failed to finalize (see "Measured but unexplained" below).
+repeat failed to finalize (the third defect below).
 
 Content lands early, so the head of a performance sits ahead of the downbeat the
 musician played to.
 
 ### Where the error comes from
 
-`RecordAudio.ts` derives the take's `waveformOffset` from two quantities, both read
-on the main thread:
+Three things in the recording path produce it, two of them found only by
+instrumenting the installed build.
+
+**1. Main-thread anchors.** `RecordAudio.ts` derives the take's `waveformOffset`
+from two quantities read on the main thread:
 
 ```ts
 const wallclockSinceWorklet = recordingWorklet.numberOfFrames / sampleRate
@@ -45,189 +51,143 @@ const headStartSeconds = countedIn
 const waveformOffset = headStartSeconds + countInSeconds + outputLatency + inputLatency
 ```
 
-The total error decomposes into three additive terms, established by reading the
-source and confirmed against the diagnostic fields persisted on every measured take:
+`numberOfFrames` counts chunks as the ring reader delivers them and starts at
+`prepareRecording()`'s `recordGainNode.connect(recordingWorklet)`, before the
+transport leaves its start position; `currentPosition` is the position observed on
+the first `isRecording=true` callback, by which time the transport has already
+advanced. Both trail the audio thread by the main thread's scheduling lag, and
+nothing pairs them to one instant. Worked example, from
+`recaudit-summary-1788310164556.json` (`nominal-start`/120 bpm, repeat 3):
+`regionPositionPpqn = 5`, so `regionStartSec = 0.0026042`, while
+`waveformOffsetSec = 0.057667` — the frame-count clock and the PPQN clock, read at
+the same tick, disagree by roughly 13× once the 23 ms `outputLatency` term is netted
+out.
 
-1. **`outputLatency` (23 ms at both rates).** Real compensation for a
-   speaker → ear → mic path. A digital loopback never incurs it, so in the
-   measurement harness this term is unearned. It is named here for completeness and
-   is *not* what this PR changes — absolute device latency was explicitly out of the
-   audit's scope.
-2. **The uncompensated worklet-connect gap — the dominant term.** The
-   `RecordingWorklet`'s frame counter starts at `prepareRecording()`'s
-   `recordGainNode.connect(recordingWorklet)`, a wall-clock instant that occurs
-   *before* the transport's position begins advancing from 0. For the no-count-in
-   path there is nothing subtracted, so that pre-roll goes straight into
-   `headStartSeconds`. Worked example, from `recaudit-summary-1788310164556.json`
-   (`nominal-start`/120 bpm, repeat 3): `regionPositionPpqn = 5`, so
-   `regionStartSec = 0.0026042`, while `waveformOffsetSec = 0.057667`. Netting out
-   term 1 gives `headStartSeconds = 0.057667 − 0.023 = 0.034667 s`, i.e. **34.7 ms**
-   against a transport clock reading **2.6 ms** at the same callback — the
-   frame-count clock and the PPQN clock, read at the same tick, disagree by roughly
-   13×.
-3. **An anchor-position residual.** `currentPosition` is read once, at the first
-   `isRecording=true` tick, by which time the transport has already advanced. This
-   residual scales with main-thread scheduling lag rather than being a fixed
-   constant: the raw worklet-connect-to-first-frame lag stays flat at ~15–25 ms
-   across repeats whose own placement error spans the full **−34.91 to −59.33 ms**
-   per-take range of the two fresh matrix runs above, which a pure pre-roll constant
-   would not do.
+**2. `RecordingWorklet.#finalize` kept the wrong end of the buffer.** The ring
+delivers whole chunks and runs past the `limit` at stop — on six of six single-take
+repeats instrumented on 0.0.170 (`recaudit-summary-1788323424682.json`) the ring
+held 1407–2048 frames (29–43 ms) more than the limit when `limit()` was called — and
+`#finalize` did `frame.slice(-totalSamples)`, the LAST `limit` frames. The imported
+file therefore began that many frames into the capture, while the regions still
+addressed it from frame 0 through `waveformOffset`: every take shifted early by the
+overshoot, a per-recording random amount that no anchor arithmetic can see. (The
+`onSaved` comment in `RecordAudio.ts` already assumed the truncation happens at the
+tail.)
 
-Terms 2 and 3 are the same story from two directions: the elapsed-capture clock and
-the transport position are read on the main thread, so both carry its scheduling lag,
-and nothing pairs them to a common instant.
+**3. A stop right behind a loop wrap never finalized.** When the current take's
+live duration is still `<= 0` at stop — the case immediately after a wrap, while the
+ring has not yet delivered past the chained offset — the stop path deleted the
+region under the #840 zero-duration rule and never called `limit()`, so `#finalize`
+never ran and the loader stayed in `{type: "record"}` indefinitely. Instrumented on
+0.0.170 (`recaudit-summary-1788323077339.json`, 6 loop-wrap repeats): every one of
+the 4 hangs coincides with `stop: deleting zero-duration region` and no `limit()`
+call; both finalized repeats had one. The placement bias widens that window, since
+it inflates every chained waveform offset.
 
 ### What the commit changes
 
-It replaces both main-thread reads with anchors taken on the audio thread.
-
-- `RecordingProcessor` posts the context time of the buffer's first captured frame
-  (`{type: "first-quantum", contextTime}`), gated on the same channel-count check the
-  ring writer uses so setup-phase quanta are skipped. `RecordingWorklet` exposes it as
-  `firstQuantumTime`.
-- The engine state packet gains `contextTime`, the audio-thread `currentTime` at which
-  its `position` was sampled. `EngineWorklet` and `EngineFacade` expose it as
-  `syncContextTime`.
-- `RecordAudio` computes elapsed capture time as the difference between those two,
-  which puts both halves of the pair on one clock, and keeps the previous observation
-  pair as a fallback when either anchor is unavailable. It waits a bounded three
-  callbacks for the first-quantum announcement before accepting that fallback, since
-  the announcement rides a MessagePort and can trail the first `isRecording`
-  observation on a busy main thread.
-- The take is anchored at the position recording *started*
-  (`Recording.wasStartingAt()`, already present upstream) rather than the first
-  observed position, walking the waveform offset back by the musical time between the
-  two. A one-second sanity window keeps the observed anchor when the start position is
-  stale, which can happen after a seek dispatched just before the request.
-  `waveformOffset` is clamped at 0.
-- Wrapped loop takes start their window one voice-crossfade plus one render quantum
-  deeper into the buffer. The transport clock wraps seamlessly, but the rendered audio
-  of each wrapped cycle emerges that much late behind `BlockFlag.discontinuous`, so a
-  player following what they hear is late within each cycle's window. The compensation
-  is applied per take rather than added to the chained base, which would accumulate.
-
-Two small independent fixes ride along, both touching the same recording path:
-
-- `CaptureAudio` opts out of OS-level ML voice filtering (macOS Voice Isolation via
-  Chrome 120+), which adds latency and mangles instrument input, and asks for minimal
-  capture buffering. Both are `ideal`/ignorable constraints, so browsers without
-  support are unaffected. `env.d.ts` declares the two constraint properties lib.dom
-  omits.
-- `RecordMidi`'s `outputLatency` fallback read `?? 10.0` — ten *seconds*, not ten
-  milliseconds. On a browser that does not report `outputLatency` this shifted MIDI
-  takes ten seconds early. It is now `0.010`.
+- **`EngineToClient.recordingStarted(contextTime, position)`.** The wasm processor
+  reports, once per recording and straight from the engine state after `render()`,
+  the context time at the END of the quantum in which the transport began recording,
+  paired with the playhead position after that quantum — one instant, one message,
+  on the channel `switchMarkerState` already uses. `EngineWorklet` keeps it as
+  `recordingStart` (an `ObservableOption`, cleared when a recording is prepared),
+  `EngineFacade` mirrors it, the `Engine` interface declares it. The sync packet is
+  untouched.
+- **`RecordingProcessor`** posts the context time of the buffer's first captured
+  frame, gated like the ring writer so setup-phase quanta are skipped;
+  `RecordingWorklet` exposes it as `firstQuantumTime`.
+- **`RecordAudio`** places the first take on the first `isRecording` tick with both
+  reports present: `waveformOffset = (start.contextTime − firstQuantumTime) +
+  outputLatency + inputLatency`, positioned at `start.position` (floored to the
+  integer field with the fraction moved into the offset; a first frame that
+  postdates the start moves the take to the first position the audio covers). Only
+  after a 0.25 s wait on the context clock does it fall back to the previous
+  main-thread arithmetic, with a debug line naming the missing report. Loop-wrap
+  takes keep the existing chained offset.
+- **`#finalize`** keeps the first `limit` frames and drops the overshoot.
+- **The stop path** drops a zero-duration take first, then always finalizes the
+  file for the takes that remain, with the limit clamped to the frames the ring
+  delivered (the source is already disconnected, so a higher limit would never be
+  reached). A recording that leaves no take at all is aborted and its file box
+  deleted instead of leaking a loader in the recording state.
+- **Tests:** `packages/studio/core/src/capture/RecordAudio.test.ts` (7) — anchored
+  placement, fractional position, a first frame after the start, waiting for both
+  reports, the fallback after the wait, and both stop paths.
 
 ### Measured effect
 
-Live matrix: 5 scenarios × 2 bpms (120, 97.3) × 2 rates (44100, 48000) × 3 repeats,
-recorded through a synthetic in-context digital loopback so that the measurement
-carries no real device latency. Take placement is judged against the project's
-**absolute** beat grid (integer multiples of the beat period from timeline zero), and
-a harness-path `outputLatency` term of 23 ms is netted out of the classification math
-on both sides equally.
+Live matrix: 5 scenarios × 2 bpms (120, 97.3) × 2 rates (44100, 48000) × 3 repeats
+(12 wrap takes per loop-wrap cell), recorded through a synthetic in-context digital
+loopback so that the measurement carries no real device latency. Take placement is
+judged against the project's **absolute** beat grid, and a harness-path
+`outputLatency` term of 23 ms is netted out of the classification math on both sides
+equally.
 
-Per-cell mean placement bias, candidate versus unfixed, by scenario group:
-
-| scenario group | cells | bias reduction |
+| | per-cell mean placement error | cells |
 |---|---|---|
-| `nominal-start` + `countin-start` (from bar 1, without and with a count-in) | 8 | 50.5–82.1 % |
-| `janked-start` (150 ms main-thread block after the recording flip) | 4 | 71.5–81.2 % |
-| `midtimeline-start` (punch-in on a running transport) | 4 | 42.1–69.3 % |
-| `loop-wrap` (takes 1–4) | 2 comparable | 35.2–40.2 % |
+| `@opendaw/studio-sdk@0.0.170` | **−34.97 … −52.51 ms** | 18 (2 lost to the finalization hang) |
+| this branch | **+6.44 … +21.95 ms** | 20 |
 
-**The bias is smaller on all 18 comparable cells; none regresses.** Five cells move
-from unclassified into the predicted random-band signature (`nominal-start`/120/48000,
-`countin-start`/120/48000, `nominal-start`/120/44100, `nominal-start`/97.3/44100,
-`countin-start`/120/44100). No cell reaches the harness's 2 ms `aligned` tolerance —
-a residual bias remains.
+The magnitude falls on **all 18 comparable cells**, to 12–51 % of the 0.0.170 value,
+and the sign flips to late; the per-scenario ranges overlap completely (nominal
+6.44–19.46, blocked main thread 13.67–21.95, punch-in 17.66–21.34, count-in
+17.44–20.25, loop-wrap 17.66–21.61 ms). Loop-wrap takes 0–4 agree to ≤ 0.14 ms
+within every repeat.
 
-The remaining two of the twenty cells (`loop-wrap`/120/48000 and
-`loop-wrap`/97.3/44100) have no comparison at all: every unfixed repeat of them hit
-the finalization failure described below.
+**What the remainder is.** The branch's `RecordingWorklet.firstQuantumTime` gives
+the SDK's own context time of the buffer's first frame; the harness independently
+estimates the same instant from reference clicks it schedules on the context and
+recovers from the capture. Their difference is the loopback path's own input delay
+(`MediaStreamAudioDestinationNode → getUserMedia → MediaStreamAudioSourceNode`):
+**9.62–22.90 ms, different per stream instance**, over all 60 take-0 rows. Netting
+it out of the adjusted median leaves **+1.13 … +1.19 ms on 59 of 60 rows** (one row
++4.07 ms), a rate-independent constant inside the harness's 2 ms tolerance and
+consistent with onset-detector latency. The SDK's first captured frame follows the
+record request by 0–2 render quanta on every row. On a real input that delay is
+what the `inputLatency` preference exists for; this change does not set it.
 
-Artifacts: unfixed baseline `recaudit-summary-1788310164556.json` (48000 Hz) and
-`…1788310817094.json` (44100 Hz), both measured directly on the absolute grid.
-Candidate `recaudit-summary-1788299505584.json` (48000 Hz) and `…1788299943226.json`
-(44100 Hz), **analytically corrected from persisted per-row geometry rather than
-re-measured** — the build layout those runs used no longer exists on disk. The
-correction adds each row's own off-grid phase, an identity verified directly on every
-row of the campaign where both grids were computed on the same audio.
+Loop-wrap finalization: **0 of 12** repeats on this branch fail against **10 of 12**
+on 0.0.170 (both finalize in 72–96 ms when they do).
 
-**Provenance of these figures, stated plainly.** This branch is compile- and
-unit-test-verified against upstream `main` (the scoped turbo build and `studio-core`'s
-vitest, both listed under Verification below) but it has **not been run in a browser
-there**. Every measurement above was taken on a build of these same source changes
-applied over the `0.0.170` release base, through an out-of-tree recording
-start-alignment audit harness (`recording-alignment-audit-debug-demo.html`) driving a
-synthetic in-context digital loopback. Re-running the matrix against this branch as
-built from upstream `main` would be worth doing before merge.
-
-### Measured but unexplained
-
-On the unfixed build, `loop-wrap` recordings fail to finalize at a high rate, with
-`finalization timed out after 30s`:
-
-| population | failures |
-|---|---|
-| five campaign runs that attempted `loop-wrap` | 18 of 27 |
-| fresh baseline matrix, both rates | 10 of 12 |
-| this branch, both rates | **0 of 12** |
-
-The failure is a binary fast-success-or-never split, not a slow gradient: raising the
-deadline from 30 s to 90 s left 4 of 6 repeats still failing
-(`recaudit-summary-1788291343233.json`), while every finalization that does succeed
-completes in well under a tenth of a second — **72 ms and 91 ms** on the two fresh
-baseline repeats that finalized, and **64–98 ms** across the 12 repeats on this
-branch. (Those are the durations the runs persist. The five historical runs record
-no finalization duration at all, so nothing older can be quoted here.) Against a
-30 s deadline that is nearly three orders of magnitude of headroom.
-
-Nothing in this commit touches the finalization pipeline, so the clean sweep on this
-branch is **a measured outcome with no traced mechanism**. It is reported here so it
-is not mistaken for an established fix — the underlying hang may still be present and
-merely not provoked.
-
-Baseline artifacts: `recaudit-summary-1788287951691.json`, `…1788288625777.json`,
-`…1788288803959.json`, `…1788291343233.json`, `…1788291706370.json`,
-`…1788310164556.json`, `…1788310817094.json`. Branch artifacts:
-`recaudit-summary-1788299505584.json`, `…1788299943226.json`.
-
-**The hang is filed as its own issue and should not be closed by this PR.** Twelve
-repeats is a thin population against a condition whose per-cell failure rate ranges from
-33 % to 100 %, and with no traced mechanism the honest reading is that the hang may still
-be present and merely not provoked here.
+Artifacts: 0.0.170 baseline `recaudit-summary-1788310164556.json` (48000 Hz) and
+`…1788310817094.json` (44100 Hz); this branch `…1788324358634.json` (48000 Hz) and
+`…1788324856598.json` (44100 Hz), 60 rows each, no error rows. One row per branch
+run (`nominal-start`/120/repeat 1, the first cell of each session) was measured with
+the harness's `outputLatency` term read as 0 — a harness artifact (Chrome reports 0
+until output has started), re-adjusted in the register; the ranges above use the
+persisted values.
 
 ### What this does not fix
 
 Each of the following is reported as its own issue, so none of them depends on this
 change being taken.
 
-> **Draft-internal, strip before posting.** The five bullets below map to
-> `issue-residual-start-placement-bias.md`, `issue-loop-wrap-finalization-hang.md`,
-> `issue-punch-in-head-loss.md`, `issue-inter-track-quantum-skew.md` and
-> `issue-take-collision.md`, in that order. Replace each with the filed issue number
-> once the issues exist.
+> **Draft-internal, strip before posting.** The bullets below map to
+> `issue-residual-start-placement-bias.md` and `issue-take-collision.md`, in that
+> order. Replace each with the filed issue number once the issues exist.
+> (`issue-loop-wrap-finalization-hang.md`, `issue-punch-in-head-loss.md` and
+> `issue-inter-track-quantum-skew.md` were withdrawn in Task 9 — the hang is fixed
+> here, the "head loss" was the `#finalize` head drop, and the skew is the two
+> loopback streams' delay difference — and sit under `debug/drafts/withdrawn/`.)
 
-- **Residual placement bias.** No cell reaches the 2 ms alignment tolerance afterwards;
-  a residual of roughly 8–30 ms remains on every cell, largest on `midtimeline-start`
-  and `loop-wrap`. The issue covers the signature on every scenario measured
-  — `nominal-start`, `countin-start`, `janked-start`, `midtimeline-start` and
-  `loop-wrap` takes 1–4 — before and after this change.
-- **Loop-wrap finalization hang.** Filed on its own footing, *not* as fixed here:
-  resolved in this PR's data (12 of 12 repeats finalized) but with **no mechanism
-  identified** linking these changes to the finalization pipeline, which they do not
-  touch. See "Measured but unexplained" above.
-- **A head loss of 12–49 ms between the record request and the first captured frame**,
-  present on every scenario and unchanged by this commit — the capture path is
-  connected inside `startRecording`'s async chain, so it is not yet live when the
-  request is issued. Invisible when recording from a stopped transport, audible on a
-  punch-in.
-- **Inter-track skew between simultaneously armed captures**, about one render
-  quantum, unchanged by this commit and present identically on both builds. Each
-  capture is anchored against its own worklet's callback; this commit corrects each
-  one against its own clock and does not synchronize two of them to each other.
+- **The input path's own delay is not compensated automatically.** After this
+  change the takes on the harness sit late by exactly the loopback's input delay
+  (10–23 ms here). On a real device that is the `inputLatency` preference's job; the
+  issue records the 0.0.170 signature and what remains afterwards.
 - **A content-address collision on simultaneous identical takes**, which panics
-  `BoxGraph.stageBox` and hangs the affected capture's finalization.
+  `BoxGraph.stageBox` and hangs the affected capture's finalization — unchanged
+  (6 of 12 simultaneous-capture repeats on this branch, `recaudit-mt-summary-1788325292003.json`
+  and `…1788325557229.json`). Keeping the buffer head makes two captures of the same
+  signal byte-identical more often, so the harness — which feeds both tapes one
+  signal — hits it more, not less.
+
+Inter-track skew between simultaneously armed captures, measured at ±1 render quantum
+on 0.0.170, is not listed: on this branch each tape's residual after netting its own
+input delay is identical (+1.15 ms on both tapes of every successful repeat) and the
+measured skew equals the difference of the two loopback streams' delays exactly, so
+with both captures anchored on the same `recordingStarted` instant there is no SDK-side
+skew left to report.
 
 ### Reproducing the measurement
 
@@ -240,24 +200,27 @@ recording-alignment-audit-debug-demo.html?scenario=<name|all>&bpm=<n|all>&rate=<
 
 Scenarios: `nominal-start`, `janked-start`, `midtimeline-start`, `countin-start`,
 `loop-wrap`, plus `multitrack-start` / `multitrack-janked` for the simultaneous-capture
-cells. Each run writes a summary JSON and one WAV per repeat.
+cells. Each run writes a summary JSON and one WAV per repeat; the offline
+recomputation of every figure above is
+`scripts/audit/recording-alignment/task9-branch-verification.ts`.
 
 Full campaign register, including every prediction that was refuted or withdrawn and
-the harness measurement defect that was found and fixed mid-campaign:
+the harness measurement defects that were found and fixed mid-campaign:
 https://github.com/naomiaro/opendaw-test/blob/main/debug/recording-start-alignment-audit.md
 
 ### Verification
 
-- `npx turbo run build --filter=@opendaw/studio-core --filter=@opendaw/studio-core-processors --filter=@opendaw/studio-core-workers` — 16 tasks successful.
+- `npx turbo run build --filter=@opendaw/studio-core --filter=@opendaw/studio-core-processors --filter=@opendaw/studio-core-workers` — 16 tasks successful, no TypeScript errors.
 - `npm run build:bundles` in `packages/studio/core-wasm` — both bundles emitted.
-- `npm run typecheck` in `packages/studio/core-wasm` — no new errors; zero in `src/`,
-  and the pre-existing set is identical before and after the change.
-- `npm test` in `packages/studio/core` — 43 files, 400 tests passing.
+- `npm run typecheck` in `packages/studio/core-wasm` — zero errors in `src/`; the
+  pre-existing set under `test/` is identical before and after the change.
+- `npm test` in `packages/studio/core` — 44 files, 407 tests passing (400 before this
+  change plus the 7 new ones).
+- The live matrix above, on this branch built from `main`.
 
-A Rust rebuild is not required: the change is entirely JS/TS. The engine state
-schema's byte layout is an output-side concern of the JS SyncStream writer, which
-assigns fields by name; the Rust-side `write_engine_state` and its byte-offset
-constants are untouched.
+A Rust rebuild is not required: the change is entirely JS/TS. `write_engine_state` and
+its byte-offset constants are untouched; the processor reads the recording flag and
+position from the same state buffer it already decodes for the sync packet.
 
 ---
 

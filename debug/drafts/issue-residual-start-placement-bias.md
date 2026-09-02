@@ -63,7 +63,8 @@ const headStartSeconds = countedIn
 const waveformOffset = headStartSeconds + countInSeconds + outputLatency + inputLatency
 ```
 
-The measured error decomposes into three additive terms.
+The measured error decomposes into four additive terms — three from the source, one
+found only by instrumenting the installed build.
 
 **1. `audioContext.outputLatency`, 23 ms — this one belongs to the measurement path,
 not to the SDK.** It reads `0.023` identically in every run that persists it and at both
@@ -91,50 +92,59 @@ The counted-in branch does subtract `countInSeconds`, per the code's own reasoni
 it does not subtract this gap — which is why `countin-start` shows the same signature as
 `nominal-start` rather than a smaller one.
 
-**3. An anchor-position residual, roughly 18–35 ms.** `currentPosition` is read once, at
-the first `isRecording=true` tick (`RecordAudio.ts`, `currentPosition = owner.getValue()`),
-by which time the transport has already advanced. Terms 1 and 2 together account for
-about 55 ms in the worked example, and the total measured bias exceeds that by this much
-again, varying repeat to repeat.
+**3. The observed anchor position.** `currentPosition` is read once, at the first
+`isRecording=true` tick (`RecordAudio.ts`, `currentPosition = owner.getValue()`), by which
+time the transport has already advanced. Terms 2 and 3 are the same problem from two
+directions: the elapsed-capture measure and the transport position are both read on the
+main thread, so both carry its scheduling lag, and nothing pairs them to a common instant
+on a single clock.
 
-This residual is **not** a fixed per-session pre-roll constant, and the persisted data
-rules that reading out: the raw worklet-connect-to-first-frame lag stays flat at roughly
-15–25 ms regardless of whether a given repeat's total bias is at the low or high end of
-its cell's range. If the whole error were one pre-roll constant, the two would track
-together. What the data supports instead is a fresh frame count paired with a
-`currentPosition` read that is already stale by the time the position-tick callback runs.
+**4. `RecordingWorklet.#finalize` keeps the wrong end of the buffer — 29–43 ms per
+recording, random.** The ring delivers whole chunks and runs past the `limit` at stop:
+instrumented on 0.0.170 (`recaudit-summary-1788323424682.json`, six `nominal-start`
+repeats), the ring held 1407–2048 frames (29.31–42.67 ms) more than the limit at every
+`limit()` call, and `#finalize` does `frame.slice(-totalSamples)` — the LAST `limit`
+frames. The imported file therefore begins that many frames into the capture, while the
+regions address it from frame 0 through `waveformOffset`: every take's content shifts
+early by the overshoot. This is the term that varies repeat to repeat (the six raw
+medians regress on the six logged drops with a slope of −1.32), and it is invisible to
+any anchor arithmetic.
 
-Terms 2 and 3 are the same problem from two directions: the elapsed-capture measure and
-the transport position are both read on the main thread, so both carry its scheduling
-lag, and nothing pairs them to a common instant on a single clock.
+A fifth quantity works against the others: the input path's own delay — on this
+harness the loopback hop through `MediaStreamAudioDestinationNode → getUserMedia →
+MediaStreamAudioSourceNode`, 10–23 ms and different per stream instance — makes content
+LATE, so the early terms above are partially masked on 0.0.170. It is recoverable per
+row only on a build that reports the buffer's first-frame time (below).
 
 ## Effect of the accompanying fix, and what is left
 
-A change submitted alongside this issue replaces both main-thread reads with anchors
-taken on the audio thread. It reduces the bias substantially but **does not eliminate
-it**: zero of the twenty cells reach the harness's 2 ms alignment tolerance afterwards.
+A change submitted alongside this issue anchors the take on the engine's own report of
+where and when recording began (paired with the buffer's first-frame time from the
+recording processor), keeps the buffer head in `#finalize`, and always finalizes at
+stop. Measured live on that branch through the same harness:
 
-| scenario | before (fresh upstream) | after | reduction |
-|---|---|---|---|
-| `nominal-start` | −41.57 to −52.51 ms | −7.67 to −14.55 ms | 71–82 % |
-| `countin-start` | −46.04 to −52.26 ms | −9.58 to −22.77 ms | 51–82 % |
-| `janked-start` | −45.07 to −49.51 ms | −8.47 to −13.66 ms | 71–81 % |
-| `midtimeline-start` | −45.89 to −47.32 ms | −14.08 to −27.38 ms | 42–69 % |
-| `loop-wrap` (takes 1–4) | −34.97 to −49.40 ms (2 cells) | −22.66 to −29.52 ms (4 cells) | 35–40 % (over the 2 with a baseline) |
+| scenario | before (0.0.170) | after (branch) |
+|---|---|---|
+| `nominal-start` | −41.57 to −52.51 ms | +6.44 to +19.46 ms |
+| `countin-start` | −46.04 to −52.26 ms | +17.44 to +20.25 ms |
+| `janked-start` | −45.07 to −49.51 ms | +13.67 to +21.95 ms |
+| `midtimeline-start` | −45.89 to −47.32 ms | +17.66 to +21.34 ms |
+| `loop-wrap` (takes 1–4) | −34.97 to −49.40 ms (2 cells) | +17.66 to +21.61 ms (4 cells) |
 
-The "after" column comes from `recaudit-summary-1788299505584.json` (48000 Hz) and
-`…1788299943226.json` (44100 Hz) and is **analytically corrected from persisted per-row
-geometry, not re-measured** — the build layout those runs used no longer exists on disk.
-The correction adds each row's own off-grid phase, an identity verified directly on every
-row of the campaign where both grids were computed on the same audio. The reduction
-percentages are computed against the fresh upstream means in the first column, so the
-two columns are on the same grid. Loop-wrap flatness is unchanged by the fix: the largest
-within-repeat spread across takes 1–4 over its 12 repeats is 0.142 ms.
+The "after" column comes from `recaudit-summary-1788324358634.json` (48000 Hz) and
+`…1788324856598.json` (44100 Hz), 3 repeats per cell, no lost repeats. The magnitude
+falls on all 18 comparable cells (to 12–51 % of the 0.0.170 value) and the sign flips to
+LATE. What is left is the input path's own delay, quantified per row: the branch reports
+the buffer's first-frame time, the harness independently recovers the same instant from
+its scheduled reference clicks, and the difference — the loopback hop — is 9.62–22.90 ms,
+varying per stream instance. Netting it out leaves +1.13 to +1.19 ms on 59 of 60 rows (one
+at +4.07 ms), a rate-independent constant inside the 2 ms tolerance. Loop-wrap flatness is
+unchanged: the largest within-repeat spread across takes 1–4 on the branch is 0.141 ms.
 
 **This issue stands on its own.** It reports the 0.0.170 behaviour, which is what the
 first table measures. If that change is not taken, the signature above is what remains.
-If it is taken, a residual of roughly 8–30 ms remains on every cell and this issue
-describes what still needs closing.
+If it is taken, what remains is the input path's delay — on a real device the
+`inputLatency` preference's job, which that change does not automate.
 
 ## Repro
 

@@ -1,6 +1,8 @@
 # Issue draft — loop-recording sessions frequently never finalize
 
-**Status: DRAFT for user review. Not filed.** Target: `andremichelle/openDAW`.
+**WITHDRAWN (Task 9, 2026-09-02) — do not file; the accompanying PR fixes it.** Root cause found on the installed build with instrumentation (register, Task 9 section): when a take's live duration is still ≤ 0 at stop — the case right behind a loop wrap — `RecordAudio`'s stop path deletes the region and never calls `RecordingWorklet.limit()`, so `#finalize` never runs (4 of 4 hangs in `recaudit-summary-1788323077339.json` coincide with `stop: deleting zero-duration region` and no `limit()` call; both finalized repeats had one). The reworked branch always finalizes the file for the takes that remain: 0 of 12 branch repeats hung against 10 of 12 upstream (`…1788324358634`, `…1788324856598` vs `…1788310164556`, `…1788310817094`). Kept for history; the text below is as it stood before withdrawal.
+
+**Status (superseded): DRAFT for user review. Not filed.** Target: `andremichelle/openDAW`.
 
 ## Title
 

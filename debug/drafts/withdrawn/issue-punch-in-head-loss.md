@@ -1,6 +1,8 @@
 # Issue draft — the first 12–49 ms after a record request is never captured
 
-**Status: DRAFT for user review. Not filed.** Target: `andremichelle/openDAW`.
+**WITHDRAWN (Task 9, 2026-09-02) — do not file.** The quantity this draft measured (`headMissingRawMs`, the loopback-derived buffer start minus the record request) was not a capture-start gap: it was the `RecordingWorklet.#finalize` head drop (the file kept the LAST `limit` frames, discarding 29–43 ms from the buffer head) minus the loopback path's own delay. On the reworked branch, which keeps the head, `headMissingRawMs` is 0 on all 120 matrix rows and the SDK-reported first captured frame follows the record request by 0–5.8 ms (0–2 render quanta) on every row (`recaudit-summary-1788324358634.json`, `…1788324856598.json`). The head drop is fixed by the accompanying PR; see the register's Task 9 section. Kept for history; the text below is as it stood before withdrawal.
+
+**Status (superseded): DRAFT for user review. Not filed.** Target: `andremichelle/openDAW`.
 
 ## Title
 

@@ -1,6 +1,8 @@
 # Issue draft — simultaneously armed captures land one render quantum apart
 
-**Status: DRAFT for user review. Not filed.** Target: `andremichelle/openDAW`.
+**WITHDRAWN (Task 9, 2026-09-02) — do not file as an SDK defect.** On the reworked branch, each tape persists the SDK's own first-frame time next to the harness's loopback-derived buffer start, so each capture's loopback delay is known per row. In every successful multi-mic repeat (`recaudit-mt-summary-1788325557229.json`) the two tapes' residuals after netting their OWN loopback delay are identical (+1.15 ms both, to 0.01 ms) and the measured skew equals the difference of the two delays exactly (18.96 vs 21.63 ms → 2.667; 18.96 vs 20.96 → 2.000; 12.29 vs 9.62 → −2.667). The skew is the two loopback streams' delay difference, not the SDK's arithmetic; with both captures anchored on the same `recordingStarted` instant the SDK-side skew is zero. The same magnitudes on 0.0.170 are consistent with the same cause but cannot be decomposed there (no first-frame time). Kept for history; the text below is as it stood before withdrawal.
+
+**Status (superseded): DRAFT for user review. Not filed.** Target: `andremichelle/openDAW`.
 
 ## Title
 
