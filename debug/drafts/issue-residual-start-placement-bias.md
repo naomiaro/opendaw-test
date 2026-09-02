@@ -37,7 +37,7 @@ Per-cell mean placement error, from the two fresh upstream matrix runs
 | `loop-wrap` — takes 1–4 of a 5-take loop sequence | 2 | −34.97 to −49.40 ms |
 
 Negative is early. Two of the 20 cells are absent from the `loop-wrap` row because every
-repeat of them failed to finalize — a separate defect, filed on its own.
+repeat of them failed to finalize — a separate defect, fixed by the accompanying change.
 
 The magnitudes do not separate by scenario: a count-in, a busy main thread and a
 mid-timeline punch-in all land in the same band as the plainest case. Nothing here is
@@ -99,16 +99,18 @@ directions: the elapsed-capture measure and the transport position are both read
 main thread, so both carry its scheduling lag, and nothing pairs them to a common instant
 on a single clock.
 
-**4. `RecordingWorklet.#finalize` keeps the wrong end of the buffer — 29–43 ms per
+**4. `RecordingWorklet.#finalize` keeps the wrong end of the buffer — 32–51 ms per
 recording, random.** The ring delivers whole chunks and runs past the `limit` at stop:
-instrumented on 0.0.170 (`recaudit-summary-1788323424682.json`, six `nominal-start`
-repeats), the ring held 1407–2048 frames (29.31–42.67 ms) more than the limit at every
-`limit()` call, and `#finalize` does `frame.slice(-totalSamples)` — the LAST `limit`
-frames. The imported file therefore begins that many frames into the capture, while the
-regions address it from frame 0 through `waveformOffset`: every take's content shifts
-early by the overshoot. This is the term that varies repeat to repeat (the six raw
-medians regress on the six logged drops with a slope of −1.32), and it is invisible to
-any anchor arithmetic.
+instrumented on 0.0.170 (`recaudit-summary-1788328085978.json`, six `nominal-start`
+repeats, per-row `finalizeOvershootFrames`), the ring held 1535–2431 frames
+(32.0–50.6 ms) more than the limit at every `limit()` call, and `#finalize` does
+`frame.slice(-totalSamples)` — the LAST `limit` frames. The imported file therefore
+begins that many frames into the capture, while the regions address it from frame 0
+through `waveformOffset`: every take's content shifts early by the overshoot. This is the
+term that varies repeat to repeat — on the two 0.0.170 matrix runs the raw median
+regresses on the loopback-derived head lag (`headMissingRawMs`, which the drop inflates)
+with slope −0.93 and −0.92 over 25 take-0 rows each — and it is invisible to any anchor
+arithmetic.
 
 A fifth quantity works against the others: the input path's own delay — on this
 harness the loopback hop through `MediaStreamAudioDestinationNode → getUserMedia →
@@ -172,5 +174,6 @@ click or existing material.
 Full campaign register, including the predictions this measurement refuted and the
 harness measurement defect found and fixed mid-campaign:
 https://github.com/naomiaro/opendaw-test/blob/main/debug/recording-start-alignment-audit.md
-(sections "Bring-up calibration" for the decomposition, "Task 7c fix round 1: verdict
-re-derived on the absolute grid" for the corrected comparison)
+(sections "Bring-up calibration" for the original three-term decomposition and "Task 9:
+best-fix rework — branch-measured verification" for the fourth term, the per-row loopback
+delay and the before/after comparison the table above is taken from)

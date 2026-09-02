@@ -65,8 +65,9 @@ out.
 
 **2. `RecordingWorklet.#finalize` kept the wrong end of the buffer.** The ring
 delivers whole chunks and runs past the `limit` at stop — on six of six single-take
-repeats instrumented on 0.0.170 (`recaudit-summary-1788323424682.json`) the ring
-held 1407–2048 frames (29–43 ms) more than the limit when `limit()` was called — and
+repeats instrumented on 0.0.170 (`recaudit-summary-1788328085978.json`, per-row
+`finalizeOvershootFrames`) the ring held 1535–2431 frames (32.0–50.6 ms) more than
+the limit when `limit()` was called — and
 `#finalize` did `frame.slice(-totalSamples)`, the LAST `limit` frames. The imported
 file therefore began that many frames into the capture, while the regions still
 addressed it from frame 0 through `waveformOffset`: every take shifted early by the
@@ -79,10 +80,11 @@ live duration is still `<= 0` at stop — the case immediately after a wrap, whi
 ring has not yet delivered past the chained offset — the stop path deleted the
 region under the #840 zero-duration rule and never called `limit()`, so `#finalize`
 never ran and the loader stayed in `{type: "record"}` indefinitely. Instrumented on
-0.0.170 (`recaudit-summary-1788323077339.json`, 6 loop-wrap repeats): every one of
-the 4 hangs coincides with `stop: deleting zero-duration region` and no `limit()`
-call; both finalized repeats had one. The placement bias widens that window, since
-it inflates every chained waveform offset.
+0.0.170 (`recaudit-summary-1788327757434.json`, 6 loop-wrap repeats, per-row
+`finalizeLimitCalls` / `finalizeLoaderState`): 4 of 6 never finalized, all four with
+no `limit()` call and the loader still in `record` after the wait, while the ring had
+kept delivering; both finalized repeats had exactly one call. The placement bias
+widens that window, since it inflates every chained waveform offset.
 
 ### What the commit changes
 
@@ -233,8 +235,8 @@ https://github.com/naomiaro/opendaw-test/blob/main/debug/recording-start-alignme
 - `npm run build:bundles` in `packages/studio/core-wasm` — both bundles emitted.
 - `npm run typecheck` in `packages/studio/core-wasm` — zero errors in `src/`; the
   pre-existing set under `test/` is identical before and after the change.
-- `npm test` in `packages/studio/core` — 44 files, 407 tests passing (400 before this
-  change plus the 7 new ones).
+- `npm test` in `packages/studio/core` — 45 files, 411 tests passing (400 before this
+  change plus the 11 new ones).
 - The live matrix above, on this branch built from `main`.
 
 A Rust rebuild is not required: the change is entirely JS/TS. `write_engine_state` and

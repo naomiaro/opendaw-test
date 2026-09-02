@@ -74,7 +74,7 @@ correlation.
 | population | repeats lost to the panic |
 |---|---|
 | same-device confirmation cell, `recaudit-mt-summary-1788304987514.json` | **3 of 3** |
-| two-distinct-device matrix, four runs, both builds | 10 of 24 |
+| two-distinct-device matrix, four runs, upstream and the superseded candidate build | 10 of 24 |
 
 The 10-of-24 figure is *not* a property of the SDK. It measures how often two
 independently-scheduled capture windows happened to land on byte-identical content in
