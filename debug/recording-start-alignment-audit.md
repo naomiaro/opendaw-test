@@ -1767,10 +1767,14 @@ per the repo's issue-filing convention.
 `midtimeline-start` reported `missingBeats = 1` on 12/12 matrix repeats on
 BOTH builds — the only scenario to do so unconditionally, and the campaign's
 last unexplained head-loss signature. This section establishes what produced
-it. **The verdict is that no beat was ever dropped: the missing beat was a
-phantom grid point manufactured by this harness's own expected-beat
-generator.** No SDK change is warranted or made; the fix is in
-`src/lib/audit/recordingAlignment.ts`.
+it. **The verdict is that the missing beat was a phantom grid point manufactured by this
+harness's own expected-beat generator, not dropped content.** Scope, stated once here and
+honoured throughout the section: that verdict rests on the 24 `midtimeline-start` take
+rows whose capture audio survives, which show 16 clicks in every buffer, no click before
+the region start, and `missingBeats = 0` on 24 of 24 under the absolute grid. The
+original 12 matrix repeats' buffers were overwritten before this task began, so they are
+explained by the mechanism rather than re-measured. No SDK change is warranted or made;
+the fix is in `src/lib/audit/recordingAlignment.ts`.
 
 Three mechanisms were discriminated against the persisted evidence
 (`.verify-output/recaudit-*.wav` decoded offline, band-split and
@@ -1839,8 +1843,28 @@ Split by build, the off-grid population is itself a finding. Non-midtimeline row
 **upstream 90 of 135 off-grid (max φ 406.25 ms); candidate 7 of 168 (max 35.33 ms, and
 all 7 are `loop-wrap`'s wrap-finalized take 5)** — i.e. the candidate build places
 non-punch-in takes ON the beat and upstream does not, a difference the region-anchored
-grid subtracted away by construction. Take-0 `regionPositionPpqn` is 0 on all 93
-candidate rows and 5–92 PPQN on the upstream rows, with one 11340 outlier.
+grid subtracted away by construction.
+
+The take-0 `regionPositionPpqn` distribution over the same bounded snapshot, populations
+named (reproduce with `task7c-fix1-analysis.ts ppqn`):
+
+| population | rows | range | zeros | above 92 PPQN |
+|---|---|---|---|---|
+| candidate, non-midtimeline | 93 | 0 only | **93** | 0 |
+| upstream, non-midtimeline | 90 | 0–11340 | **9** | 2 |
+| candidate, midtimeline | 24 | 7702–7835 | 0 | 24 |
+| upstream, midtimeline | 24 | 7794–7976 | 0 | 24 |
+
+Every candidate non-midtimeline take-0 region lands exactly on PPQN 0; on upstream only
+9 of 90 do, and all 9 are `loop-wrap` take 0, whose position is the loop start rather
+than a placement decision. The other 81 upstream rows run **4–92 PPQN** (the low end is
+`…1788310817094` `nominal-start`/97.3/44100 r3 at 4) plus **two** outliers far above
+that: 9313 (`…1788290585653` `janked-start`/120/48000 r1, `matched = 1`) and 11340
+(`…1788295321703` `janked-start`/120/48000 r1, `matched = 5`), both degenerate rows. The
+midtimeline rows are off-grid by design on both builds and are excluded from the
+comparison. (An earlier version of this sentence gave "0 on all 93 candidate rows and
+5–92 PPQN on the upstream rows, with one 11340 outlier" — the population was unnamed, the
+low end was 4 not 5, it implied no upstream zeros, and it missed the 9313 outlier.)
 
 What is special about `midtimeline-start` is not that its region is off-grid but that
 **no captured click can reach the old grid's point 0.** Clicks sound on the absolute
@@ -1877,8 +1901,9 @@ row has one property without the other, in either direction.**
 So the earlier claim that "for every beat-aligned-start scenario the click at `m·P` IS
 in the buffer" is false as a universal — one `nominal-start` row inside a run this very
 section tabulates as a baseline is a counter-example. What holds is the mechanism, and
-it holds exactly: on `midtimeline-start` the punch lands mid-beat (φ = 73.2–154.2 ms
-over the 24 takes), the preceding beat sounded BEFORE the capture began, and the nearest
+it holds exactly: on `midtimeline-start` the punch lands mid-beat (φ = 73.23–154.17 ms
+over the 24 replayable takes, all of them upstream), the preceding beat sounded BEFORE
+the capture began, and the nearest
 captured click is the NEXT beat, `P − φ` = 345.8–420.3 ms @120 and 477.9–543.4 ms
 @97.3 after the region start — always beyond the half-beat tolerance (250.0 / 308.3 ms). Grid point 0 is
 unmatchable, so the expected-beat count exceeds the captured-beat count by exactly one,
@@ -1900,9 +1925,10 @@ Measured first-click position in the buffer, over the same 24 takes: **354.8–4
 Part of the spread in that punch-in phase is the harness's own doing: `waitForPosition`
 polls `engine.position` on a **50 ms** `setTimeout`, so the record request lands within
 50 ms after the target beat. It is not the whole story, though — the measured per-cell
-spread of φ across the 8 replayable `midtimeline-start` cells is **5.73–74.48 ms**, and
-three cells exceed the poll interval, so the SDK's own placement variation contributes
-too. (An earlier version of this paragraph read the spread as "54.7 ms @120 and 49.9 ms
+spread of φ across the 8 replayable `midtimeline-start` cells is **5.73–74.48 ms** —
+per cell: 29.69, 24.41, 5.73, 55.24, 74.48, 59.10, 11.46, 55.24 ms — so **four** of the
+eight exceed the poll interval and the SDK's own placement variation contributes too.
+(`task7c-fix1-analysis.ts fencepost` prints the per-cell list and that count.) (An earlier version of this paragraph read the spread as "54.7 ms @120 and 49.9 ms
 @97.3 — the poll interval, not an SDK quantity", which the wider population does not
 support.)
 
@@ -1920,23 +1946,67 @@ belong together reproduces the persisted median on 163 of 186 replayable rows to
 within 0.05 ms with matched/missing counts exact; the 23 that do not are `loop-wrap`
 takes 0, 4 and 5, whose presented range an offline replay has to reconstruct.
 
-The fix does not blind the metric to genuine head loss. A beat inside the
-presented range whose content never reached the buffer stays unmatched under
-both grids. **Corrected instance (Task 7c fix round 2):** an earlier version of this
-paragraph cited run `1788299505584`, `nominal-start`/120/r1 as a real case of a
-genuinely absent beat reported missing under both grids. That row's persisted values are
-`matchedBeats = 17, missingBeats = 0` — it never lost a beat, and the claim was wrong.
-The genuine instances on disk are rows that are exactly ON the grid (`regionStartSec` =
-0, so the two grids are point-for-point identical by construction) and still report a
-missing beat: `…1788297229626` `nominal-start`/97.3/44100/r1 (`matched = 16, missing =
-1`, `headMissingRawMs` 39.12 ms), `…1788296570300` `janked-start`/120/48000/r3
-(`matched = 15, missing = 1`, 35.71 ms) and `…1788287951691`
-`nominal-start`/120/48000/r1 (`matched = 16, missing = 1`, geometry not persisted). Their
-capture buffers were overwritten, so this rests on the persisted rows plus the identity
-of the two grids at φ = 0, not on a fresh decode. Unit tests cover all four cases (no
-missing beat when everything in range was captured; ~0 error rather than the off-grid
-phase for a correctly placed punch-in take; the real error still reported when the take
-is genuinely misplaced; a genuinely absent in-range beat still caught).
+### Does the fix blind the metric to genuine head loss?
+
+**The guarantee this register can make is a unit-test guarantee, not a measurement one.**
+A beat inside the presented range whose content never reached the buffer stays unmatched
+under both grids — that is pinned by
+`src/lib/audit/recordingAlignment.test.ts:192` ("still catches a beat inside the
+presented range whose content never reached the buffer") and, at a non-integer tempo
+with a non-zero waveform offset, by `:237` ("still catches an absent in-range beat at
+this tempo"). Both fixtures remove a click that belongs to an in-range beat and assert
+the beat is still reported missing. The other two cases are pinned alongside them: no
+missing beat when everything in range was captured, and ~0 error rather than the
+off-grid phase for a correctly placed punch-in take.
+
+**No live repeat demonstrates it, and none can.** Of the 186 rows whose geometry and
+capture audio provably belong together, **zero report a missing beat under the absolute
+grid** (29 do under the region-anchored grid, all with unmatched index `[0]` — the
+fencepost). Every row that ever reported `missingBeats > 0` — **43 of them, all 43** —
+has lost its capture buffer to the pre-fix filename collision. So there is no
+surviving-buffer instance of a genuinely absent in-range beat, in either direction: none
+that shows one, and none that could have shown one and did not. Reproduce these four
+counts with `task7c-fix1-analysis.ts missingrows`.
+
+**Corrected claim (Task 7c fix round 2).** An earlier version of this paragraph cited run
+`1788299505584`, `nominal-start`/120/r1 as a real case. That row's persisted values are
+`matchedBeats = 17, missingBeats = 0` — it never lost a beat. Fix round 2 replaced it
+with three legacy rows and called them "the genuine instances". **That label is
+withdrawn in fix round 3**: nothing in the persisted fields distinguishes absent content
+from a captured onset that drifted past the half-beat tolerance, or from a detector
+miss, and one of the three persists no geometry at all.
+
+### Unresolved candidates: the non-midtimeline rows that reported a missing beat
+
+Six rows outside `midtimeline-start` reported `missingBeats > 0` across the campaign
+(a seventh, `…1788283946271` `nominal-start`/120/48000 r1, is the `0/42` bring-up
+failure this register already excludes). **All six have lost their capture buffers, so
+none can be resolved.** Reproduce with `task7c-fix1-analysis.ts missingrows`.
+
+These six are disjoint from the five fencepost exceptions tabled under "The confirmed
+mechanism": those five have surviving buffers and their persisted `missingBeats` is 0,
+because they were measured after the fix. The six below were measured under the
+region-anchored grid and their audio is gone.
+
+| run | build | cell | matched/missing | φ | adjusted median | `headMissingRawMs` | why it cannot be decided |
+|---|---|---|---|---|---|---|---|
+| `…1788287951691` | upstream | `nominal-start`/120/48000 r1 | 16 / 1 | **no geometry persisted** | not persisted | not persisted | the grid-identity argument is unavailable — this row predates the geometry fields entirely, so not even φ is known |
+| `…1788290691302` | upstream | `janked-start`/120/48000 r3 | 15 / 1 | 29.17 ms | not persisted | 33.04 ms | off-grid, and consistent with the fencepost the absolute grid dissolves |
+| `…1788300424628` | upstream | `nominal-start`/120/48000 r1 | 16 / 1 | 15.63 ms | −63.88 ms | 30.35 ms | off-grid, same |
+| `…1788305205480` | upstream | `nominal-start`/120/48000 r1 | 16 / 1 | 5.21 ms | −69.23 ms | 38.38 ms | off-grid, same |
+| `…1788296570300` | candidate | `janked-start`/120/48000 r3 | 15 / 1 | **0.00 ms** | −213.23 ms | 35.71 ms | on-grid, so not a fencepost — but its raw median sits only **13.77 ms** inside the 250 ms half-beat tolerance, so ordinary drift explains the unmatched beat without any content being absent |
+| `…1788297229626` | candidate | `nominal-start`/97.3/44100 r1 | 16 / 1 | **0.00 ms** | −61.17 ms | 39.12 ms | on-grid, and its median sits 224.16 ms inside tolerance, so systematic drift does NOT explain it — but a single onset drifting or a detector miss still would, and no persisted field separates those from absent content |
+
+What the φ = 0 rows do establish is narrow and worth stating exactly: at φ = 0 the two
+grids are point-for-point identical, grid point 0 sits on the region start where a click
+sounds, and no phantom expected beat can exist — so those two unmatched beats are **not**
+the fencepost this task removed, on either grid. What they are instead is undetermined.
+They are recorded here as open candidates for a future round that re-runs those cells
+with the run-unique capture names this fix round introduced; they are **not** evidence
+for or against Prediction A, and neither the Prediction A withdrawal below nor the
+"no upstream issue" conclusion rests on them.
+
+### Cross-track skew
 
 `measureCrossTrackSkew` benefits incidentally: it pairs by beat index, and
 those indices are now absolute, so two tapes whose regions landed at
@@ -2049,10 +2119,9 @@ Once the grid artifact is removed, **`midtimeline-start` stops being a
 distinct finding and collapses into the campaign's Finding 1 — the universal
 no-count-in placement bias**. It is not a separate content-skip defect.
 
-Two consequences for the register above, which is NOT rewritten here (its
-numbers stand as what was measured under the old grid, and the outcome
-summary's `midtimeline-start` content-skip claim should be read against this
-section):
+Two consequences for the register above. Its numbers are not rewritten — they stand as
+what was measured under the region-anchored grid — but every contaminated passage
+carries a forward pointer to this section, added in fix round 1:
 
 1. The outcome summary's finding 2 (`midtimeline-start` content skip,
    `matched=15, missing=1` on 12/12) is **withdrawn** — it measured this
@@ -2100,13 +2169,18 @@ values the table above prints for those rows.
 **The 145.02 ms repeat, characterized rather than softened.** It is the largest head lag
 in the six fresh repeats and the only one over 100 ms. It does not coincide with a lost
 beat (absolute grid: `matched = 16, missing = 0`) and its adjusted median, −56.00 ms,
-sits mid-range for the cell; its off-grid phase is the smallest of the six (5.21 ms).
+sits mid-range for the cell; its off-grid phase, 5.21 ms, is tied for second-smallest of
+the six (the smallest is 2.60 ms on `…1788309644009` r2), so nothing about its geometry
+is exceptional.
 Baseline-corrected it is 119.02 ms, which trips `classifyCell`'s 2 ms head-deficit gate
 and is why that cell reads `investigate`. It is *below* the 134.84–151.04 ms
 baseline-corrected band the `C1` triage entry attributes to the harness's own pre-fix
 busy-loop (raw 160.84–177.04 ms), so it is not that artifact returning at full strength —
 but it is the same order of magnitude, and whether the `C1` fix fully decoupled the jank
-from capture-start is not settled by this round's data.
+from capture-start is not settled by this round's data. One row does point the other way:
+`…1788295979783` `nominal-start`/120/48000 r1 carries `headMissingMs` = **151.04 ms**
+baseline-corrected, the exact top of the `C1` band, on a scenario that runs no busy-loop
+at all.
 
 Against every persisted row carrying the field (351 rows, 40 runs), **exactly three
 exceed 100 ms**, and jank does not explain them:
@@ -2122,13 +2196,36 @@ on the candidate build. An occasional capture-start stall of 145–180 ms theref
 on both builds and in a scenario with no provocation — it is not jank coupling. None of
 the three loses a beat.
 
-**Status: A is not observed under the corrected grid.** No repeat, on any scenario,
-shows a beat's content genuinely absent from inside a take's presented range. The two
-repeats that once supported A are contaminated by the same fencepost — the
-`midtimeline-start` 12/12 outright, and the `janked-start` row at φ = 29.17 ms — and
-neither buffer survives for re-measurement. A should be recorded as **withdrawn, not
-reproduced in 6 fresh repeats of the cell it last rested on**, and no upstream issue
-should be drafted for it.
+**Status: A is not observed on any repeat whose capture buffer survives.** That is the
+strongest universal the artifacts support, and it is deliberately narrower than the one
+an earlier version of this paragraph asserted ("no repeat, on any scenario"). Scoped to
+surviving-buffer evidence, with the populations named:
+
+- **186 rows** across the campaign have both their geometry and their capture audio on
+  disk. **Zero** of them report a missing beat under the absolute grid. The 29 that do
+  under the region-anchored grid all carry unmatched index `[0]` and are the fencepost
+  this task removed.
+- **The 6 fresh `janked-start`/120/48000 repeats** (`…1788309532177`,
+  `…1788309644009`) — the cell A last rested on — report `missingBeats = 0` on 6 of 6,
+  with a uniform 16-click train in every buffer.
+- **The 12 fresh upstream `midtimeline-start` repeats** in the two fresh matrix runs
+  (`…1788310164556`, `…1788310817094`) report `missingBeats = 0` on 12 of 12, on the
+  build where A was originally called "confirmed unconditionally".
+
+A's two original supports cannot be re-measured: the `midtimeline-start` 12/12 is
+dissolved by the fencepost outright, and the `janked-start` row at φ = 29.17 ms
+(`…1788290691302` r3) is off-grid with the fencepost signature and its buffer is gone.
+**A is recorded as withdrawn — not reproduced on any repeat with a surviving buffer,
+including 6 fresh repeats of the cell it last rested on — and no upstream issue should
+be drafted for it.**
+
+This withdrawal rests only on the surviving-buffer evidence above. It does **not** rest
+on the six unresolved legacy rows tabled under "Unresolved candidates" earlier in this
+section, in either direction: two of those are on-grid and therefore not fencepost
+artifacts, but no persisted field can tell whether their unmatched beat was absent
+content or a drifted onset, and their buffers are gone. If a future round re-runs those
+cells with run-unique capture names and finds genuinely absent in-range content, A comes
+back onto the table and this withdrawal must be revisited.
 
 **The `janked-start` positive-median outlier is also a grid artifact.**
 `recaudit-summary-1788295321703.json`, 48000 Hz / 120 bpm / r1 carries the campaign's
