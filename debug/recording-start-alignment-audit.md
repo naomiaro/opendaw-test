@@ -65,7 +65,7 @@ each build.
 | upstream 0.0.170 (campaign population) | 0/20 | 0/20 | **20/20** | `recaudit-summary-1788287951691.json` + `…1788288625777.json` (15 cells), `…1788290691302.json` + `…1788290774387.json` (4 `janked-start` cells), `…1788291706370.json` (`loop-wrap`/120/44100) |
 | upstream 0.0.170 (fresh absolute-grid baseline) | 0/20 | 0/20 | **18/20 measured, 2 with no usable repeat** | `recaudit-summary-1788310164556.json` (48000 Hz), `…1788310817094.json` (44100 Hz) |
 | candidate fix build (superseded, history) | 0/20 | **5/20** | 15/20 | `recaudit-summary-1788299505584.json` (48000 Hz), `…1788299943226.json` (44100 Hz), corrected to the absolute grid and re-classified |
-| **reworked fix, this branch (Task 9)** | 0/20 | 1/20 | **19/20** | `recaudit-summary-1788324358634.json` (48000 Hz), `…1788324856598.json` (44100 Hz) — measured live on the branch; `investigate` here is the loopback's own input delay, quantified per row (see Task 9) |
+| **reworked fix, this branch (Task 9, amended)** | 0/20 | 8/20 | **12/20** | `recaudit-summary-1788328219906.json` (48000 Hz), `…1788328656062.json` (44100 Hz) — measured live on the branch; every `investigate` is the classifier's "no band matched" (a late mean of 15–24 ms) and the 8 band matches are magnitude coincidences — both are the loopback's own input delay, quantified per row; head and tail deficits 0 on all 120 rows (see Task 9) |
 
 The two fresh-baseline cells with no usable repeat are `loop-wrap`/120/48000 and
 `loop-wrap`/97.3/44100 — all three repeats of each hit the C2 finalization timeout.
@@ -102,9 +102,9 @@ wherever the two disagree.
    `RecordingWorklet.#finalize` kept the LAST `limit` frames of the ring, dropping the
    29–43 ms overshoot from the buffer HEAD on every recording (`…1788323424682`), and
    that the loopback path's own delay (10–23 ms, late) partially masks the early terms.
-   On the reworked branch the per-cell means are +6.44 … +21.95 ms, and netting out the
+   On the reworked branch the per-cell means are +9.33 … +23.77 ms, and netting out the
    per-row loopback delay leaves +1.13 … +1.19 ms on 59 of 60 rows
-   (`…1788324358634`, `…1788324856598`).
+   (`…1788328219906`, `…1788328656062`).
 2. **`loop-wrap` finalization hang.** On upstream, **18 of 27** finalization attempts
    across the five campaign runs that attempted `loop-wrap` timed out
    (`…1788287951691`, `…1788288625777`, `…1788288803959`, `…1788291343233`,
@@ -113,8 +113,9 @@ wherever the two disagree.
    deadline from 30 s to 90 s left 4 of 6 still failing (`…1788291343233`). **Root-caused
    in Task 9** (`…1788323077339`: every hang is a take whose live duration is still ≤ 0
    at stop, deleted without the worklet ever being asked to finalize) and fixed on the
-   branch: 0 of 12 branch repeats fail (`…1788324358634`, `…1788324856598`). See C2 and
-   Task 9.
+   branch: 0 of 12 branch repeats fail (`…1788328219906`, `…1788328656062`); the hang
+   evidence is persisted per repeat (`…1788327757434`: 4 of 6 hung, all four without any
+   `limit()` call). See C2 and Task 9.
 3. **Multi-mic take collision (Task 7b Finding 1).** `SampleService.importFile` derives
    an `AudioFileBox` uuid as `SHA-256(arrayBuffer)` when none is passed, and
    `importRecording` never passes one. Two simultaneous takes whose encoded bytes are
@@ -198,12 +199,16 @@ verdict re-derived on the absolute grid"):
 consistent, non-regressing progress on (a) without clearing it.** The two orthogonal
 multi-mic findings (collision, skew) are untouched by it and remain open on both builds.
 
-**Superseded by Task 9 (reworked fix, measured live on its branch):** (a) still not
-literally `aligned` — per-cell means +6.44 … +21.95 ms — but the whole remainder is the
+**Superseded by Task 9 (reworked fix, measured live on its branch, amended stop path):**
+(a) not `aligned` on any cell — 8 `matches-known-defect` (magnitude coincidences), 12
+`investigate` ("no band matched", late means of 15–24 ms); the whole remainder is the
 loopback's own input delay, quantified per row (residual +1.13 … +1.19 ms on 59 of 60
 rows); (b) 18 of 18 comparable cells smaller in magnitude, 2 more cells measurable;
-(c) 0 of 12 with the mechanism traced and fixed; (d) `headMissingRawMs` 0 on all 120
-rows; collision unchanged; skew attributed to the harness's two streams.
+(c) 0 of 12 with the mechanism traced, fixed and its evidence persisted; (d) **passed on
+the amended branch** — `headMissingMs` and `tailMissingMs` are 0 on all 120 rows — after
+the first branch build had FAILED it on the tail (94 of 120 rows, its stop path truncated
+the file at the last position tick; kept as history in Task 9); collision unchanged; skew
+attributed to the harness's two streams.
 
 ### Evidence index
 
@@ -247,8 +252,8 @@ undecidable in either direction). The withdrawn Prediction A gets no draft.
 The team lead's review of the first draft found 3 Critical and 4 Important issues.
 This register has been rewritten to reflect the corrected data; the corrections
 themselves (what was wrong, what changed, what was re-run) are summarized here for
-traceability, with full detail folded into the relevant sections below and in
-`.superpowers/sdd/2026-09-01-recording-start-alignment-audit/task-6-fix-report-1.md`.
+traceability, with full detail folded into the relevant sections below and in the
+Task 6 fix-round session report (not committed).
 
 1. **`janked-start`'s original data was invalid** — the busy-loop spin ran
    immediately after calling `project.startRecording()`, which blocked that call's own
@@ -2609,12 +2614,21 @@ upstream `main` (`4a9f183f6`, package versions identical to the installed 0.0.17
 through `SDK_DIST_OVERRIDE`. Every figure in this section is recomputed from the named
 `.verify-output/*.json` artifacts by
 `node scripts/audit/recording-alignment/task9-branch-verification.ts` (modes `cells`,
-`hang`, `hop`, `mt`); nothing is carried over from earlier prose. The "before" side is the
-fresh absolute-grid upstream baseline (`recaudit-summary-1788310164556.json` 48000 Hz,
-`…1788310817094.json` 44100 Hz), never the two original upstream runs. The earlier
+`hang`, `hop`, `mt`, `probe`, `integrity`); nothing is carried over from earlier prose. The
+"before" side is the fresh absolute-grid upstream baseline (`recaudit-summary-1788310164556.json`
+48000 Hz, `…1788310817094.json` 44100 Hz), never the two original upstream runs. The earlier
 "analytically corrected" candidate figures ("Task 7c fix round 1", "Task 7: candidate-build
 verification") stay above as history of a build that no longer exists; this section
 supersedes them as the campaign's after-side evidence.
+
+**Fix round 1 (review of this section, C1/I1):** the first branch build measured here
+truncated the file at the last position tick, which failed the spec's tail-integrity
+criterion on 94 of 120 rows while the first version of this section reported only head
+integrity and attributed every `investigate` verdict to the loopback delay. That build's
+runs (`…1788324358634`, `…1788324856598`) are kept below as history under "First branch
+build"; the stop path was changed to keep every delivered frame and the matrix was re-run
+(`…1788328219906`, `…1788328656062`). Every verdict below now carries the classifier's own
+`detail`, and criterion (d) is stated per build.
 
 ### The reworked fix, in upstream terms
 
@@ -2637,178 +2651,263 @@ supersedes them as the campaign's after-side evidence.
   which anchor is missing. Gone: the three-tick cap, the `wasStartingAt` walk-back, the 1 s
   window, and the loop-wrap "restart-fade" compensation (the fresh upstream data showed no
   wrap lateness to compensate — takes 0 and 1–4 agree to 0.07 ms).
-- **Finalization hang, root-caused and fixed** (mechanism below): the stop path always
-  finalizes the file for the takes that remain, with the frame limit clamped to what the
-  ring delivered.
+- **Stop path** (mechanisms below): after the source is disconnected, the current take's
+  duration is set to the delivered length (`numberOfFrames / sampleRate − currentWaveformOffset`;
+  the live update only ran on position ticks and chunks keep arriving between the last tick
+  and the stop), a take whose delivered length is ≤ 0 is dropped, the file always finalizes
+  for the takes that remain with `limit(numberOfFrames)` — every delivered frame kept, both
+  ends — and a recording that leaves no take is aborted with its file box deleted.
 - **`RecordingWorklet.#finalize` head-keep** (new finding, below): the imported sample keeps
-  the FIRST `limit` frames instead of the last.
+  the FIRST `limit` frames instead of the last (`recordedFrames`, a pure exported helper).
 - Dropped from the PR: the `RecordMidi` `?? 10.0` one-liner and the `getUserMedia`
   constraint change (recorded in the task report, not branched).
-- Tests: `packages/studio/core/src/capture/RecordAudio.test.ts` (7 tests) upstream; the
-  scoped turbo build, `core-wasm` bundles and the `studio-core` vitest (44 files, 407 tests)
-  all green before the commit.
+- Tests: `packages/studio/core/src/capture/RecordAudio.test.ts` (8 tests: anchored placement,
+  fractional position, a first frame after the start, waiting for both anchors, the fallback,
+  stop extends the take to the delivered frames, stop with a zero-duration take finalizes the
+  earlier takes, abort deletes the file box) and `RecordingWorklet.test.ts` (3 tests on
+  `recordedFrames` with ramp chunks, asserting frame values); the scoped turbo build,
+  `core-wasm` bundles and the `studio-core` vitest (45 files, 411 tests) all green before
+  the commit.
 
 ### Two mechanisms found on the installed build before anything was claimed
 
-**C2, the loop-wrap finalization hang — confirmed and root-caused.** Instrumented on the
-installed 0.0.170 (plain server, page-level patch of `RecordingWorklet.prototype.limit`
-plus the SDK's own `[RecordAudio] stop` debug lines; `?scenario=loop-wrap&bpm=all&rate=48000`,
-`recaudit-summary-1788323077339.json`, 6 repeats): every one of the 4 hangs coincides with
-`stop: deleting zero-duration region {takeNumber: 6}` and **no `limit()` call at all**; the
-loader stayed `{type: "record"}` 2 s later. Both finalized repeats had a `limit()` call, with
-the limit 1535 and 2047 frames BELOW `numberOfFrames`. Mechanism: the harness stops as soon
-as the 6th take exists (right after the 5th wrap); that take's live duration
+**C2, the loop-wrap finalization hang — confirmed and root-caused, evidence persisted.**
+The harness's finalization probe (`finalizeLimitCalls`, `finalizeNumberOfFramesAtStop`,
+`finalizeNumberOfFramesAtLimit`, `finalizeOvershootFrames`, `finalizeNumberOfFramesAfter`,
+`finalizeLoaderState`; `limit()` patched on the take's live `RecordingWorklet` instance
+before `stopRecording()`) on the installed 0.0.170, plain server,
+`?scenario=loop-wrap&bpm=all&rate=48000`, `recaudit-summary-1788327757434.json`:
+
+| repeat | frames at stop | `limit()` calls | frames after the wait | loader state | outcome |
+|---|---|---|---|---|---|
+| 120/r1 | 1057664 | **none** | 1059456 | `record` | timed out 30 s |
+| 120/r2 | 1057536 | **none** | 1059584 | `record` | timed out 30 s |
+| 120/r3 | 1058176 | **none** | 1060096 | `record` | timed out 30 s |
+| 97.3/r1 | 1304192 | **none** | 1306240 | `record` | timed out 30 s |
+| 97.3/r2 | 1305728 | 1305728 (frames at the call 1307648, overshoot 1920) | 1307648 | `loaded` | finalized 101 ms |
+| 97.3/r3 | 1305088 | 1305089 (frames 1306752, overshoot 1663) | 1306752 | `loaded` | finalized 118 ms |
+
+Every hang is a repeat in which **nobody ever called `limit()`**; the ring kept delivering
+(frames after > frames at stop) and the loader stayed in `record`. Mechanism: the harness
+stops as soon as the 6th take exists (right after the 5th wrap); that take's live duration
 (`numberOfFrames / sampleRate − currentWaveformOffset`) is still ≤ 0 while the ring has not
 delivered past the chained offset — a window widened by the placement bias itself, since
 the bias inflates every chained offset — so the stop path takes the #840 zero-duration
 branch, deletes the region and never asks the worklet to finalize. The review's competing
-hypothesis (a float-rounding `limit === numberOfFrames + 1`) is refuted by the logged values.
-Why the candidate build "fixed" it without touching finalization: its smaller bias narrows
-the window; a lower hit rate, not a fix.
+hypothesis (a float-rounding `limit === numberOfFrames + 1`) has no instance: both
+finalized repeats' limits sat 1663 and 1920 frames BELOW `numberOfFrames`. An earlier
+console-only run of the same test (`…1788323077339`, 2 of 6 finalized, same pattern) is
+superseded by this persisted one. Why the candidate build "fixed" it without touching
+finalization: its smaller bias narrows the window; a lower hit rate, not a fix.
 
 **A head drop in `RecordingWorklet.#finalize` — the random term of the placement bias.**
-The same instrumentation on `nominal-start` (`recaudit-summary-1788323424682.json`, 6
-repeats) showed the ring 1407–2048 frames (29.31–42.67 ms) past the `limit` at every stop,
-and `#finalize` kept the LAST `limit` frames (`frame.slice(-totalSamples)`), so the file's
-frame 0 was the buffer's frame `numberOfFrames − limit`. Regions address the buffer from
-frame 0 through `waveformOffset`, so every take's content shifted early by that overshoot
-— random per recording, invisible to any anchor arithmetic. Regressing the six raw medians
-on the six logged drops gives a slope of −1.32; the two loop-wrap successes carried the same
-32.0 and 42.6 ms drops. The `onSaved` comment in `RecordAudio.ts` already assumed the
-truncation happens at the tail.
+The same probe on `nominal-start` (`recaudit-summary-1788328085978.json`, 6 repeats,
+installed build): every repeat finalized with one `limit()` call, and at that call the ring
+had delivered **1535–2431 frames (32.0–50.6 ms) more than the limit** (per repeat: 1535,
+1919, 1663, 2431, 1536, 1535). `#finalize` kept the LAST `limit` frames
+(`frame.slice(-totalSamples)`), so the file's frame 0 was the buffer's frame
+`numberOfFrames − limit`. Regions address the buffer from frame 0 through `waveformOffset`,
+so every take's content shifted early by that overshoot — random per recording, invisible
+to any anchor arithmetic. Persisted corroboration on the fresh upstream matrix rows: the
+raw median regresses on `headMissingRawMs` (the loopback-derived buffer start minus the
+request, which the head drop inflates) with slope −0.93 (n = 25, `…1788310164556`) and
+−0.92 (n = 25, `…1788310817094`). The `onSaved` comment in `RecordAudio.ts` already
+assumed the truncation happens at the tail.
 
 ### Before (fresh upstream) vs after (this branch), per cell, absolute grid
 
 Population as `classifyCell` sees it (loop-wrap over wrap takes 1–4, 12 rows per cell; the
-other scenarios 3 repeats per cell). Branch runs: `recaudit-summary-1788324358634.json`
-(48000 Hz) and `…1788324856598.json` (44100 Hz), 60 rows each, **0 error rows**, build probe
-`candidate` on both.
+other scenarios 3 repeats per cell). Branch runs: `recaudit-summary-1788328219906.json`
+(48000 Hz) and `…1788328656062.json` (44100 Hz), 60 rows each, **0 error rows**, build probe
+`candidate` on both. The status column is the classifier's verdict WITH its own `detail`
+reason.
 
-| rate | scenario | bpm | upstream mean (ms) | branch mean (ms) | branch cell status | \|branch\| / \|upstream\| |
+| rate | scenario | bpm | upstream mean (ms) | branch mean (ms) | branch status — classifier detail | \|branch\| / \|upstream\| |
 |---|---|---|---|---|---|---|
-| 48000 | nominal-start | 120 | −52.51 | 6.44 (see anomaly note: 14.10 re-adjusted) | investigate | 12 % |
-| 48000 | nominal-start | 97.3 | −41.81 | 17.89 | investigate | 43 % |
-| 48000 | janked-start | 120 | −47.85 | 19.66 | investigate | 41 % |
-| 48000 | janked-start | 97.3 | −49.51 | 13.67 | investigate | 28 % |
-| 48000 | midtimeline-start | 120 | −46.83 | 17.66 | investigate | 38 % |
-| 48000 | midtimeline-start | 97.3 | −47.32 | 20.78 | investigate | 44 % |
-| 48000 | countin-start | 120 | −52.26 | 17.44 | matches-known-defect (B) | 33 % |
-| 48000 | countin-start | 97.3 | −46.04 | 19.45 | investigate | 42 % |
-| 48000 | loop-wrap | 120 | no data (3/3 hit C2) | 17.66 | investigate | — |
-| 48000 | loop-wrap | 97.3 | −49.40 | 19.41 | investigate | 39 % |
-| 44100 | nominal-start | 120 | −44.73 | 13.00 (anomaly note: 20.67 re-adjusted) | investigate | 29 % |
-| 44100 | nominal-start | 97.3 | −41.57 | 19.46 | investigate | 47 % |
-| 44100 | janked-start | 120 | −45.07 | 21.95 | investigate | 49 % |
-| 44100 | janked-start | 97.3 | −46.32 | 20.75 | investigate | 45 % |
-| 44100 | midtimeline-start | 120 | −47.16 | 21.34 | investigate | 45 % |
-| 44100 | midtimeline-start | 97.3 | −45.89 | 20.28 | investigate | 44 % |
-| 44100 | countin-start | 120 | −47.07 | 19.35 | investigate | 41 % |
-| 44100 | countin-start | 97.3 | −47.33 | 20.25 | investigate | 43 % |
-| 44100 | loop-wrap | 120 | −34.97 | 17.99 | investigate | 51 % |
-| 44100 | loop-wrap | 97.3 | no data (3/3 hit C2) | 21.61 | investigate | — |
+| 48000 | nominal-start | 120 | −52.51 | 9.33 (anomaly note: 16.99 re-adjusted) | matches-known-defect (B) — random-band B, spread 23.00 ms | 18 % |
+| 48000 | nominal-start | 97.3 | −41.81 | 19.67 | investigate — no band matched (mean 19.67, spread 1.33) | 47 % |
+| 48000 | janked-start | 120 | −47.85 | 19.44 | investigate — no band matched (spread 9.33) | 41 % |
+| 48000 | janked-start | 97.3 | −49.51 | 15.00 | investigate — no band matched (spread 7.33) | 30 % |
+| 48000 | midtimeline-start | 120 | −46.83 | 20.33 | investigate — no band matched (spread 2.67) | 43 % |
+| 48000 | midtimeline-start | 97.3 | −47.32 | 17.00 | investigate — no band matched (spread 9.33) | 36 % |
+| 48000 | countin-start | 120 | −52.26 | 15.44 | matches-known-defect (B) — random-band B, spread 11.33 | 30 % |
+| 48000 | countin-start | 97.3 | −46.04 | 18.33 | matches-known-defect (B) — random-band B, spread 9.33 | 40 % |
+| 48000 | loop-wrap | 120 | no data (3/3 hit C2) | 10.78 | investigate — no band matched (mean 10.78) | — |
+| 48000 | loop-wrap | 97.3 | −49.40 | 18.30 | matches-known-defect (D) — constant-late D, mean 18.30 | 37 % |
+| 44100 | nominal-start | 120 | −44.73 | 14.50 (anomaly note: 22.17 re-adjusted) | matches-known-defect (B) — random-band B, spread 23.18 | 32 % |
+| 44100 | nominal-start | 97.3 | −41.57 | 22.36 | investigate — no band matched (spread 2.54) | 54 % |
+| 44100 | janked-start | 120 | −45.07 | 22.28 | investigate — no band matched (spread 1.34) | 49 % |
+| 44100 | janked-start | 97.3 | −46.32 | 23.77 | investigate — no band matched (spread 0.73) | 51 % |
+| 44100 | midtimeline-start | 120 | −47.16 | 18.97 | investigate — no band matched (spread 8.21) | 40 % |
+| 44100 | midtimeline-start | 97.3 | −45.89 | 21.56 | investigate — no band matched (spread 1.45) | 47 % |
+| 44100 | countin-start | 120 | −47.07 | 21.14 | investigate — no band matched (spread 1.93) | 45 % |
+| 44100 | countin-start | 97.3 | −47.33 | 21.40 | matches-known-defect (B) — random-band B, spread 4.58 | 45 % |
+| 44100 | loop-wrap | 120 | −34.97 | 21.28 | matches-known-defect (D) — constant-late D, mean 21.28 | 61 % |
+| 44100 | loop-wrap | 97.3 | no data (3/3 hit C2) | 21.13 | matches-known-defect (D) — constant-late D, mean 21.13 | — |
 
-- **Sign flips, magnitude falls on 18 of 18 comparable cells** (12–51 % of the upstream
+- **Sign flips, magnitude falls on 18 of 18 comparable cells** (18–61 % of the upstream
   magnitude); the two cells with no upstream baseline now measure like every other. Branch
-  per-cell means run **+6.44 … +21.95 ms** — late, not early — and the per-scenario ranges
-  overlap completely (nominal 6.44–19.46, janked 13.67–21.95, midtimeline 17.66–21.34,
-  count-in 17.44–20.25, loop-wrap 17.66–21.61). Under the campaign's classification 19 cells
-  read `investigate` and one `matches-known-defect (B)`; **none reads `aligned`**, because the
-  residual is the harness path's own delay, quantified next.
+  per-cell means run **+9.33 … +23.77 ms** — late, not early — and the per-scenario ranges
+  overlap completely (nominal 9.33–22.36, janked 15.00–23.77, midtimeline 17.00–21.56,
+  count-in 15.44–21.40, loop-wrap 10.78–21.28).
+- **Verdicts, honestly:** 0 `aligned`, 8 `matches-known-defect`, 12 `investigate`. Every
+  `investigate` is the classifier's "no band matched": a late mean of 15–24 ms with a
+  within-cell spread of 0.7–9.3 ms that no predicted signature band covers. The 8 band
+  matches are coincidences of magnitude, not mechanism: the five "B" cells match the
+  random-band signature only because the loopback delay (below) varies 10–23 ms per stream
+  instance and so scatters the three repeats; the three loop-wrap "D" cells land inside D's
+  15–30 ms constant-late band because the loopback delay is that size — Prediction D's
+  mechanism (voice-crossfade lateness, accumulating or not) was refuted earlier in this
+  register, and takes 0 and 1–4 agree to 0.08 ms here. None of the 20 verdicts is produced
+  by a head or tail deficit (next).
+- **Criterion (d), head/tail integrity, per build:**
+
+  | build | rows | `tailMissingMs` > 2 ms | tail max / mean | `headMissingMs` > 2 ms | true-clock file end − stop request (take 0) |
+  |---|---|---|---|---|---|
+  | upstream 48000 (`…1788310164556`) | 30 | 0 | 0.00 / 0.00 | 3 (max 5.69) | n/a (no `firstQuantumTimeSec`) |
+  | upstream 44100 (`…1788310817094`) | 30 | 0 | 0.00 / 0.00 | 2 (max 7.61) | n/a |
+  | first branch build 48000 (`…1788324358634`, history) | 60 | **48** | 24.29 / 14.90 | 0 | −5.33 … +32.02 ms, 8 of 30 end before the request |
+  | first branch build 44100 (`…1788324856598`, history) | 60 | **46** | 25.80 / 15.09 | 0 | −5.78 … +31.95 ms, 6 of 30 end before |
+  | **branch 48000 (`…1788328219906`)** | 60 | **0** | 0.00 / 0.00 | 0 | +24.00 … +72.00 ms, 0 of 30 end before |
+  | **branch 44100 (`…1788328656062`)** | 60 | **0** | 0.00 / 0.00 | 0 | +29.02 … +78.37 ms, 0 of 30 end before |
+
+  The first branch build failed (d): its stop path limited the file to the last position
+  tick's duration, discarding chunks delivered after that tick (the file ended up to 5.8 ms
+  before the stop request on the true clock; the harness's `tailMissingMs`, which also
+  carries the loopback delay, flagged 94 of 120 rows and produced 17 of its 19
+  `investigate` verdicts as "tail deficit exceeds 2ms tolerance"). Upstream and the
+  superseded candidate build passed (d) with tail 0 of 120 because upstream's `#finalize`
+  kept the LAST frames — complete tail, dropped head. The amended branch keeps both ends:
+  tail and head deficits are 0 on all 120 rows, and the file now ends 24–78 ms AFTER the
+  stop request (the stop command's round trip plus the packet observation and the chunks
+  still delivered before the disconnect); the current take is extended to that point.
 - **Loop-wrap stays flat**: within-repeat spread across takes 1–4 is 0.063–0.079 ms at
-  48000 Hz and 0.137–0.141 ms at 44100 Hz on all 12 branch repeats, and take 0 agrees with
-  takes 1–4 to ≤ 0.08 ms — the earlier port's 12.7 ms wrap-take offset is gone.
+  48000 Hz and 0.137–0.142 ms at 44100 Hz on all 12 branch repeats, and take 0 sits within
+  0.08 ms of the takes 1–4 mean — the earlier port's 12.7 ms wrap-take offset is gone.
 - **Harness-bias anomaly, two rows.** The harness reads `audioContext.outputLatency` per
   cell as its path-bias term; Chrome reports 0 until output has started, so the first cell of
   each fresh session (`nominal-start`/120/r1 at both rates) was measured with a bias of 0
   instead of 0.023 s (`medianBeatErrorMsAdjusted − medianBeatErrorMs` = 0.00 on those two
   rows, 23.00 on the other 118). Re-adjusted with the run's own `outputLatency` they read
-  +12.10 and +20.16 ms and the cell means +14.10 / +20.67 ms; the table keeps the persisted
+  +20.10 and +23.06 ms and the cell means +16.99 / +22.17 ms; the table keeps the persisted
   values. Not an SDK effect (the SDK read 0.023 on those repeats — `waveformOffsetSec` is
   identical to the neighbouring repeats). Fix pending in the harness: read the term after
   the first output, or per repeat.
+- **Region start granularity (not head loss):** the take's region starts at
+  `floor(position after the quantum in which the transport flipped to recording)`, i.e.
+  1–3 render quanta after the musical start (`regionPositionPpqn` 4, 5 or 10 on the branch
+  rows). The content is not shifted — the fraction is moved into `waveformOffset` — only the
+  region's left edge is that late. Sub-quantum exactness would need the transport to expose
+  the block offset of the flip; optional follow-up.
 
 ### The residual is the loopback path, quantified per row
 
-`firstQuantumTimeSec` (new per-row field: the SDK's own context time of the buffer's first
+`firstQuantumTimeSec` (per-row field: the SDK's own context time of the buffer's first
 frame) and `anchorT0Sec` (the harness's estimate of the same instant from the loopback's
-reference clicks) differ by the loopback path's own delay —
+reference clicks, which uses no region field) differ by the loopback path's own delay —
 `MediaStreamAudioDestinationNode → getUserMedia → MediaStreamAudioSourceNode` — which the
-review flagged as the one harness-path unknown. On the branch it is **9.62–22.90 ms,
+review flagged as the one harness-path unknown. On the branch it is **9.62–22.92 ms,
 varying per stream instance** (60 take-0 rows over both rates). Netting it out of the
-adjusted median leaves **+1.13 … +1.19 ms on 59 of 60 rows** (one row +4.07 ms,
-44100/`midtimeline-start`/97.3/r1), a rate-independent constant inside the 2 ms tolerance,
-consistent with detector onset latency and not investigated further. The SDK-reported first
-captured frame follows the record request by **0–5.8 ms (0–2 render quanta)** on every row,
-and `headMissingRawMs` is 0 on all 120 rows. So: on this harness the reworked SDK places
-takes exactly to within the detector's own constant; what the classification still calls
-`investigate` is the loopback's input delay, which a real device would report as its
-`inputLatency`. Upstream rows carry no `firstQuantumTimeSec`, so the same decomposition
-cannot be run on the before side.
+adjusted median leaves **+1.13 … +1.19 ms on 59 of 60 rows** (the 60th is the 48000
+first-cell anomaly row, −0.85 ms after re-adjustment), a rate-independent constant inside
+the 2 ms tolerance, consistent with detector onset latency and not investigated further.
+The SDK-reported first captured frame follows the record request by **0–8.7 ms (0–3
+render quanta, exactly)** on every row, and `headMissingRawMs` is 0 on all 120 rows. So:
+on this harness the reworked SDK places takes exactly to within the detector's own
+constant; what the classification calls `investigate` or a band match is the loopback's
+input delay, which a real device would report as its `inputLatency`. Upstream rows carry
+no `firstQuantumTimeSec`, so the same decomposition cannot be run on the before side.
 
 ### Loop-wrap finalization
 
-| build | repeats | failed | successes |
-|---|---|---|---|
-| upstream (`…1788310164556`, `…1788310817094`) | 12 | **10** (`finalization timed out after 30s`) | 72–91 ms |
-| branch (`…1788324358634`, `…1788324856598`) | 12 | **0** | 73–96 ms |
+| build | repeats | failed | successes | probe |
+|---|---|---|---|---|
+| upstream (`…1788310164556`, `…1788310817094`) | 12 | **10** (`finalization timed out after 30s`) | 72–91 ms | (no probe fields; the persisted probe run above shows the no-`limit()` pattern on 4 of 6) |
+| branch (`…1788328219906`, `…1788328656062`) | 12 | **0** | 72–100 ms | one `limit()` call per repeat, overshoot 0 on all 60 rows, loader `loaded` on all |
 
 With the mechanism traced and fixed, `issue-loop-wrap-finalization-hang.md` is withdrawn
 from the to-file set (moved to `debug/drafts/withdrawn/`, reason at its head).
 
+### First branch build (history)
+
+`recaudit-summary-1788324358634.json` (48000) and `…1788324856598.json` (44100), 60 rows
+each, 0 error rows: per-cell means +6.44 … +21.95 ms, 18 of 18 comparable smaller, 0 of 12
+loop-wrap hangs, hop 9.62–22.90 ms, residual +1.13 … +1.19 on 59 of 60 rows — and tail
+deficits on 94 of 120 rows (table above). Superseded by the amended branch; kept because
+the review's finding is part of the record.
+
 ### Multi-mic on the branch
 
-Branch runs `recaudit-mt-summary-1788325292003.json` and `…1788325557229.json`
-(`multitrack-start` + `multitrack-janked`, 48000 Hz / 120 bpm, 3 repeats each; the second
-run after the harness gained per-tape `anchorT0Sec` so each tape's loopback delay is
-recoverable), against the upstream `…1788302627819.json`:
+Branch runs `recaudit-mt-summary-1788325292003.json` and `…1788325557229.json` (first
+branch build; the second after the harness gained per-tape `anchorT0Sec`) and
+`…1788329084394.json` (amended branch, with the finalization probe), all
+`multitrack-start` + `multitrack-janked`, 48000 Hz / 120 bpm, 3 repeats each, against the
+two upstream official runs:
 
-| run | build | repeats lost to the collision | skew medians (ms) |
-|---|---|---|---|
-| `…1788302627819` | upstream | 2 of 6 | −0.000, −2.667, 2.667, 2.667 |
-| `…1788325292003` | branch | 3 of 6 | 2.667, 0.000, −2.667 |
-| `…1788325557229` | branch | 3 of 6 | 2.000, 2.667, −2.667 |
+| run | build | rate | repeats lost to the collision | skew medians (ms) |
+|---|---|---|---|---|
+| `…1788302627819` | upstream (official) | 48000 | 2 of 6 | −0.000, −2.667, 2.667, 2.667 |
+| `…1788302870379` | upstream (official) | 44100 | 4 of 6 | −2.902, 2.902 |
+| `…1788325292003` | first branch build | 48000 | 3 of 6 | 2.667, 0.000, −2.667 |
+| `…1788325557229` | first branch build | 48000 | 3 of 6 | 2.000, 2.667, −2.667 |
+| `…1788329084394` | amended branch | 48000 | 3 of 6 | −2.667, 2.667, 2.667 |
 
-- **Collision (Finding 1): unchanged**, 6 of 12 branch repeats (`finalization tape<A|B>
-  timed out after 30s`); keeping the buffer head makes the two byte streams identical
-  more often, so the harness's identical-signal design hits it more.
-- **Skew (Finding 2): same magnitude, but now attributable.** In `…1788325557229` every
-  successful repeat's two tapes have identical residuals after netting their OWN loopback
-  delay (+1.15 / +1.15 ms; the first-cell row pair −21.85 / −21.85 under the bias anomaly),
-  and the measured skew equals the difference of the two delays exactly: 18.96 vs 21.63 ms
-  → 2.667; 18.96 vs 20.96 → 2.000; 12.29 vs 9.62 → −2.667. In `…1788325292003` r2 the two
-  first frames sat one quantum apart (8.2667 vs 8.2693 s) and the skew was 0.000 — the
-  shared `recordingStarted` anchor compensates a first-frame difference exactly. The
-  skew is the two loopback streams' delay difference, not the SDK's arithmetic;
-  `issue-inter-track-quantum-skew.md` is withdrawn (`debug/drafts/withdrawn/`).
+- **Collision (Finding 1): unchanged** — 6 of 12 repeats on the two upstream official runs
+  and 9 of 18 on the three branch runs (`finalization tape<A|B> timed out after 30s` on
+  every lost repeat). The populations differ in rate (upstream 48000 + 44100, branch
+  48000 × 3), so this is "same rate", not a matched comparison; nothing in the data says
+  the branch collides more or less often. The probe now separates the collision from the
+  loop-wrap hang: on every collided repeat of `…1788329084394` BOTH tapes' `limit()` was
+  called (`finalizeLimitCalls` one entry each, overshoot 0) and only the colliding tape's
+  loader stayed in `record` — the import panicked after `limit()`, whereas a hung
+  loop-wrap never reached `limit()` at all.
+- **Skew (Finding 2): same magnitude, attributable.** In `…1788325557229` and
+  `…1788329084394` every successful repeat's two tapes have identical residuals after
+  netting their OWN loopback delay (+1.15 / +1.15 ms; the first-cell row pairs −21.85 /
+  −21.85 under the bias anomaly), and the measured skew equals the difference of the two
+  delays exactly: 18.96 vs 21.63 ms → 2.667; 18.96 vs 20.96 → 2.000; 12.29 vs 9.62 →
+  −2.667; 20.96 vs 18.29 → −2.667; 18.29 vs 20.96 → 2.667; 9.62 vs 12.29 → 2.667. In
+  `…1788325292003` r2 the two first frames sat one quantum apart (8.2667 vs 8.2693 s) and
+  the skew was 0.000 — the shared `recordingStarted` anchor compensates a first-frame
+  difference exactly. The skew is the two loopback streams' delay difference, not the SDK's
+  arithmetic; `issue-inter-track-quantum-skew.md` is withdrawn (`debug/drafts/withdrawn/`).
+  Tail and head deficits are 0 on all 6 successful tape rows of the amended run.
 
 ### What this changes about the campaign's conclusions
 
 - **Key finding 1 (placement bias)** now decomposes into: (1) the harness `outputLatency`
   term (23 ms, unchanged); (2) the main-thread anchors (worklet-connect gap + observed
   position) — fixed by the `recordingStarted` design; (3) the `#finalize` head drop of
-  29–43 ms per recording — fixed; and (4) the loopback hop of 10–23 ms in the LATE
+  32–51 ms per recording — fixed; and (4) the loopback hop of 10–23 ms in the LATE
   direction, which partially masked the others and is the whole of what remains. The
   "anchor-position residual" term of the residual-bias draft was (3).
 - **Prediction B** (random band from ring delivery lag): the randomness was the head drop
-  (the ring overshoot at stop), not delivery lag in the anchor read.
-- **Key finding 2 (C2)**: root-caused and fixed; not "unexplained".
+  (the ring overshoot at stop), not delivery lag in the anchor read. The branch's five "B"
+  matches are the loopback delay's per-stream variation, not B's mechanism.
+- **Prediction D**: the three loop-wrap "D" matches on the branch are the loopback delay's
+  magnitude landing in D's band; D's mechanism stays refuted (flat takes, take 0 = takes 1–4).
+- **Key finding 2 (C2)**: root-caused and fixed, evidence persisted; not "unexplained".
+- **Criterion (d)**: passed on upstream (tail complete, head dropped), failed on the first
+  branch build (tail truncated at the last tick), passed on the amended branch (both ends).
 - **The punch-in head-loss draft is withdrawn** (`debug/drafts/withdrawn/`): its measured
   quantity was the head drop minus the hop, not a capture-start gap; the true
-  request-to-first-frame interval is 0–2 quanta.
-- **Multi-mic**: the collision stands (Finding 1); the skew draft is withdrawn (Finding 2 is the harness's two stream delays).
+  request-to-first-frame interval is 0–3 quanta.
+- **Multi-mic**: the collision stands unchanged (Finding 1, 6 of 12 upstream, 9 of 18 branch); the skew draft is withdrawn (Finding 2 is the harness's two stream delays).
 
 ### Evidence index (Task 9)
 
 | quantity | artifact |
 |---|---|
-| hang mechanism, installed build | `recaudit-summary-1788323077339.json` + Playwright console log of that run (probe lines quoted in the task report) |
-| head drop, installed build | `recaudit-summary-1788323424682.json` + console log |
-| override engagement smoke | `recaudit-summary-1788324070880.json` (probe `candidate`) |
-| branch matrix | `recaudit-summary-1788324358634.json` (48000), `…1788324856598.json` (44100) |
-| branch multi-mic | `recaudit-mt-summary-1788325292003.json`, `…1788325557229.json` |
-| before side | `recaudit-summary-1788310164556.json`, `…1788310817094.json` |
+| hang mechanism, installed build, persisted probe | `recaudit-summary-1788327757434.json` (fields `finalizeLimitCalls`, `finalizeLoaderState`, …); earlier console-only run `…1788323077339.json` |
+| head drop / ring overshoot, installed build, persisted probe | `recaudit-summary-1788328085978.json`; earlier console-only run `…1788323424682.json`; slope −0.93/−0.92 on `…1788310164556`/`…1788310817094` |
+| override engagement smoke (amended branch) | `recaudit-summary-1788328182481.json` (probe `candidate`, overshoot 0, tail 0) — first build's smoke `…1788324070880.json` |
+| branch matrix (amended) | `recaudit-summary-1788328219906.json` (48000), `…1788328656062.json` (44100) |
+| first branch build matrix (history) | `recaudit-summary-1788324358634.json`, `…1788324856598.json` |
+| branch multi-mic | `recaudit-mt-summary-1788329084394.json` (amended); first build `…1788325292003.json`, `…1788325557229.json` |
+| before side | `recaudit-summary-1788310164556.json`, `…1788310817094.json`; multi-mic `recaudit-mt-summary-1788302627819.json`, `…1788302870379.json` |
 
 Restore: the override server was killed by PID, `node_modules/.vite` cleared, the plain
 server restarted, and the build probe read `upstream` on a fresh load
-(`recaudit-summary-1788325938960.json`: `nominal-start`/120/48000, adjusted medians −50.65,
-−47.96, −50.92 ms — the 0.0.170 signature back, and no `firstQuantumTimeSec` on any row).
+(`recaudit-summary-1788329377765.json`: `nominal-start`/120/48000, adjusted medians −53.33,
+−36.38, −40.06 ms, no `firstQuantumTimeSec`, ring overshoot at `limit()` back to 2047 / 1535 /
+1536 frames; the first-build round's restore run was `…1788325938960.json`).
