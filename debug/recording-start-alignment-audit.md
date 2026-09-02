@@ -2249,7 +2249,9 @@ Nothing in the register should treat it as evidence of late placement, on either
 Separately from the above, `headMissingRawMs` on `midtimeline-start`
 (12.21–49.04 ms over all 48 persisted rows) is genuine content between the record request and the first
 captured frame — the same worklet-connect setup lag the calibration baseline
-absorbs on every scenario, not a midtimeline-specific defect. Pre-connecting
+absorbs on every scenario, not a midtimeline-specific defect. "Small" is scoped to
+`midtimeline-start`: across all 351 rows the same quantity reaches 145–180 ms on three
+occasions, tabled under "Prediction A, restated from fresh measurement" above. Pre-connecting
 the recording worklet at ARM time so the ring holds pre-roll before the punch
 would remove it for all scenarios. That is a design change to the SDK's
 capture path, not a bug fix, and is out of this task's scope; it is recorded
