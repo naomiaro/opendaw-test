@@ -49,62 +49,155 @@ Matrix: 2 sample rates (44100, 48000) × 2 BPMs (120, 97.3) × 5 scenarios × 3 
 
 ## Outcome summary
 
-**Matrix: 20/20 cells classified (10 scenario×bpm combinations × 2 rates), 0
-run-failed cells.** 0/20 `matches-known-defect`, 20/20 `investigate` — the original
-draft's "4/20 matches-known-defect (janked-start)" is WITHDRAWN (see "Fix round 1":
-that data measured the harness's own provocation bug, not the SDK; the fix-round
-re-run data reclassifies every `janked-start` cell to `investigate`). Classification
-is identical across both sample rates for every scenario — no rate-dependent effect
-found. All per-cell statistics below use **matrix-run data only** (the two full
-`scenario=all` runs plus the `janked-start`/`loop-wrap` fix-round re-runs that
-replaced their invalid/incomplete rows) — the separate bring-up control-cell runs (18
-extra `nominal-start` repeats) are calibration evidence, kept out of the "official"
-per-cell population to avoid double-counting.
+Every figure below was recomputed for this summary directly from the persisted
+`.verify-output/*.json` artifacts it names; none is carried over from the prose of the
+sections that follow. Where a figure was measured on the region-anchored beat grid that
+Task 7c replaced, it is not quoted here at all — see "What still cannot be corrected".
 
-**Bring-up hypothesis (loopback-path `outputLatency` bias) REFUTED by magnitude, but
-it IS one real additive term.** `outputLatency` (23 ms, identical at both sample
-rates) is a genuine, unearned-in-a-digital-loopback contributor to every no-count-in
-take's `waveformOffset` — worth exactly 23 ms of early placement, out of scope per the
-design spec §2's "real hardware round-trip latency… not what this campaign measures" —
-but it explains only a small fraction of the measured ~91 ms mean bias. The dominant
-term is a genuinely upstream, in-scope quantity: see "Bring-up calibration" for the
-full three-term decomposition.
+### Matrix tally
 
-**Two candidate new findings**, both root-caused to `RecordAudio.ts` and reproduced
-with high consistency across both rates and both bpms:
-1. **No-count-in `waveformOffset` bias** (`nominal-start`, `countin-start`): matrix-run
-   medians range -64.9 to -108.2 ms (24 repeats, mean of per-cell means ≈ -90.6 ms).
-   Traced to `RecordAudio.ts:270-274`'s `headStartSeconds = wallclockSinceWorklet`
-   used uncompensated for the real gap between the RecordingWorklet's connection and
-   the transport's actual position-0 start — see the three-term decomposition below.
-2. **`midtimeline-start` content skip**: `matched=15, missing=1` on every one of 12
-   matrix-run repeats — **WITHDRAWN, see "Midtimeline first-beat drop" (Task 7c): the
-   missing beat was this harness's own expected-beat fencepost, not a content skip** — `region.position` anchored at the first-observed transport
-   position while already playing, matching prediction A's mechanism but not currently
-   caught by the harness's `headMissingMs` metric (a harness instrumentation gap, not a
-   refutation).
+**20/20 cells classified** (5 scenarios × 2 bpms × 2 rates), **0 run-failed cells**, on
+each build.
 
-**A third finding surfaced during this fix round: a reproducible `loop-wrap`
-finalization hang**, unrelated to the transport-start-delay quirk this scenario's
-failures were originally (incorrectly) attributed to. See the "C2" entry in Triage —
-characterized in detail there, not resolved by widening the harness's own deadline.
+| build | `aligned` | `matches-known-defect` | `investigate` | source |
+|---|---|---|---|---|
+| upstream 0.0.170 (campaign population) | 0/20 | 0/20 | **20/20** | `recaudit-summary-1788287951691.json` + `…1788288625777.json` (15 cells), `…1788290691302.json` + `…1788290774387.json` (4 `janked-start` cells), `…1788291706370.json` (`loop-wrap`/120/44100) |
+| upstream 0.0.170 (fresh absolute-grid baseline) | 0/20 | 0/20 | **18/20 measured, 2 with no usable repeat** | `recaudit-summary-1788310164556.json` (48000 Hz), `…1788310817094.json` (44100 Hz) |
+| candidate fix build | 0/20 | **5/20** | 15/20 | `recaudit-summary-1788299505584.json` (48000 Hz), `…1788299943226.json` (44100 Hz), corrected to the absolute grid and re-classified |
 
-**Predictions A-D:** A confirmed as a genuine, intermittent content-skip mechanism on
-`janked-start` in the FIXED data (one of 12 re-run repeats; the original `janked-start`
-data was invalid, measuring the harness's own provocation bug, not the SDK — see "Fix
-round 1" below) and unconditionally on `midtimeline-start` (12 of 12 repeats). **Both
-legs of A are WITHDRAWN — see "Task 7c fix round 1: verdict re-derived on the absolute
-grid"; `midtimeline-start`'s 12/12 was the harness fencepost, and the remaining
-`janked-start` repeat — an unresolved candidate whose buffer is gone, see "Unresolved
-candidates" in the Task 7c section — is not reproduced in 6 fresh repeats of its own
-cell.** B
-confirmed in mechanism/direction,
-refuted in magnitude (measured range 2.6-4.3x over the calibration file's 4-25 ms
-band, 4.3-7.2x over the design spec's informal "~15 ms" wording — see Triage for both
-bases). C could not be isolated from A even after the fix (see Triage). D confirmed
-flat (no per-take accumulation) but refuted in both magnitude (2-5x over) and sign
-(measured early, predicted late) — dominated by the same mechanism as B, not the
-predicted voice-crossfade lateness.
+The two fresh-baseline cells with no usable repeat are `loop-wrap`/120/48000 and
+`loop-wrap`/97.3/44100 — all three repeats of each hit the C2 finalization timeout.
+Classification is identical across both sample rates for every scenario on the upstream
+build; no rate-dependent effect was found. The candidate build's 5
+`matches-known-defect` cells are `nominal-start`/120/48000, `countin-start`/120/48000,
+`nominal-start`/120/44100, `nominal-start`/97.3/44100 and `countin-start`/120/44100, all
+matching signature B.
+
+**Candidate figures throughout this summary are analytically corrected from persisted
+per-row geometry (absolute median = region-anchored median + `phi`), not re-measured** —
+the Task 7 override build layout no longer exists on disk.
+
+### Key findings
+
+1. **No-count-in start-placement bias — the campaign's primary finding.** Every
+   scenario without a count-in offset places its take EARLY on the timeline. On the
+   fresh absolute-grid upstream baseline the per-cell means run **−34.97 to −52.51 ms
+   adjusted** across all 18 measurable cells (`…1788310164556.json`,
+   `…1788310817094.json`). Root-caused to `RecordAudio.ts:270-274`'s
+   `headStartSeconds = wallclockSinceWorklet`, decomposed into three additive terms in
+   "Bring-up calibration": a harness-path `audioContext.outputLatency` term (23 ms at
+   both rates, out of scope per design spec §2), the dominant uncompensated
+   worklet-connect-to-transport-start gap, and an anchor-position residual.
+2. **`loop-wrap` finalization hang.** On upstream, **18 of 27** finalization attempts
+   across the five campaign runs that attempted `loop-wrap` timed out
+   (`…1788287951691`, `…1788288625777`, `…1788288803959`, `…1788291343233`,
+   `…1788291706370`), and **10 of 12** on the fresh baseline (5/6 at each rate,
+   `…1788310164556`, `…1788310817094`). Binary fast-success-or-never: raising the
+   deadline from 30 s to 90 s left 4 of 6 still failing (`…1788291343233`). Root cause
+   not identified. See C2.
+3. **Multi-mic take collision (Task 7b Finding 1).** `SampleService.importFile` derives
+   an `AudioFileBox` uuid as `SHA-256(arrayBuffer)` when none is passed, and
+   `importRecording` never passes one. Two simultaneous takes whose encoded bytes are
+   identical therefore derive the SAME uuid, and the second `BoxGraph.stageBox` panics
+   with `AudioFileBox <uuid> already staged`. **Deterministic, not a race:** a dedicated
+   same-device confirmation cell collided on **3 of 3** repeats
+   (`recaudit-mt-summary-1788304987514.json`). In the official matrix the incidental
+   timing jitter between two independently-scheduled worklets produced colliding content
+   on **10 of 24** repeat attempts across both builds (`…1788302627819` 2/6,
+   `…1788302870379` 4/6, `…1788303391228` 1/6, `…1788303605274` 3/6) — that count
+   measures this harness's own capture-window jitter, not either SDK build.
+4. **Inter-track skew (Task 7b Finding 2).** Of the **14** measurable `medianSkewMs`
+   values across the four official multi-mic runs, **3** are zero to float precision,
+   **10** are within 0.02 ms of ±1 WASM render quantum (2.667 ms @48000 Hz, 2.902 ms
+   @44100 Hz), and **1** is a distinct constant outlier (−10.000001 ms = 441 samples at
+   44100 Hz, holding to 6 decimal places across all 16 of its paired beats,
+   `…1788303605274` `multitrack-start`/r2). **11 of 14 exceed the 2 ms tolerance, and
+   the magnitude is identical on both builds** — the candidate fix corrects each tape
+   against its own clock and does not synchronize two tapes to each other.
+5. **A harness measurement defect, found and fixed in Task 7c.**
+   `measureTakeAlignment` anchored its expected-beat grid at the region start, which
+   manufactures a phantom grid point whenever no click was captured before the region
+   start. That fencepost produced `midtimeline-start`'s permanent `missingBeats = 1` and
+   biased every off-grid take's median by exactly `−phi`. The grid is now absolute
+   (integer multiples of the beat period from timeline zero). 145 of 351 rows carrying
+   geometry are off-grid, so this was not a measurement no-op.
+
+### Content loss
+
+**No genuine in-range content loss was observed on any surviving-buffer repeat; six
+legacy rows are unresolved.** Of the **186 rows** whose geometry and capture audio
+provably belong together, **zero** report a missing beat under the absolute grid; **29**
+do under the region-anchored grid and every one carries unmatched index `[0]` — the
+fencepost. **43 rows** across the campaign ever persisted `missingBeats > 0`, and **all
+43 have lost their capture buffer** to the pre-fix filename collision, so none can be
+re-measured. Six of those, outside `midtimeline-start`, are recorded as **unresolved
+candidates** — never as instances — in "Unresolved candidates": `…1788287951691`
+(`nominal-start`/120/48000 r1), `…1788290691302` (`janked-start`/120/48000 r3),
+`…1788300424628` and `…1788305205480` (both `nominal-start`/120/48000 r1), plus
+candidate-build `…1788296570300` (`janked-start`/120/48000 r3) and `…1788297229626`
+(`nominal-start`/97.3/44100 r1). The guarantee that the fixed metric still catches a
+genuinely absent in-range beat is a **unit-test guarantee**
+(`src/lib/audit/recordingAlignment.test.ts:192` and `:237`), not a measurement one.
+
+### Prediction outcomes (A–D)
+
+| ID | Outcome | Evidence |
+|----|---------|----------|
+| A — take anchored at first-*observed* position, head content skipped | **WITHDRAWN** | Both supporting legs fell in Task 7c. `midtimeline-start`'s 12/12 was the harness fencepost — 0 of 12 fresh upstream midtimeline repeats report a missing beat (`…1788310164556`, `…1788310817094`), and 0 of 24 replayable midtimeline takes do under the absolute grid. The single remaining `janked-start` repeat is an unresolved candidate with no buffer left; 6 fresh repeats of its exact cell report `missingBeats = 0` (`…1788309532177`, `…1788309644009`). No upstream issue is drafted for A. |
+| B — random ±15 ms band from ring-reader delivery lag | **CONFIRMED in mechanism and direction, REFUTED in magnitude** | The measured bias is roughly an order larger than predicted and systematically negative. Fresh absolute-grid per-cell means −34.97 to −52.51 ms (`…1788310164556`, `…1788310817094`). Any upstream report should describe B's measured band as this range on this SDK/environment, with the 23 ms harness-path `outputLatency` term named separately. |
+| C — 50–235 ms constant-late under main-thread jank | **NOT CONFIRMED, NOT CLEANLY REFUTED — explicit design-spec §6 deviation** | `janked-start` cannot isolate C from A and B: `classifyCell` resolves the head-loss branch before band matching, and `constant-late` structurally requires a positive mean while every measured mean is negative. Registered as a deliberate deviation from the spec's binary framing, with the follow-up needed to resolve it (a jank provocation that overlaps the anchor-read window without causing content loss). |
+| D — loop-wrap content ~20–24 ms LATE, flat across takes | **CONFIRMED FLAT, REFUTED in magnitude and sign** | Consecutive wrap takes agree to within 0.02–0.1 ms within a repeat, as predicted. But the offset is EARLY, not late, and 2–5× the predicted 15–30 ms band — the same inherited no-count-in bias as B, not the predicted voice-crossfade lateness. |
+
+### Candidate-build verdict — partial pass
+
+Measured against the recast criteria, on the absolute grid ("Task 7c fix round 1:
+verdict re-derived on the absolute grid"):
+
+- **(a) targeted cells read `aligned` — PARTIAL.** Zero of the 20 cells reach literal
+  `aligned`. But 5 of 20 reach `matches-known-defect` (signature B), and the bias
+  magnitude falls on **18 of 18 comparable cells** — none regresses. Recomputed
+  reductions: `nominal-start`/`countin-start` **50.5–82.1 %** (8 cells),
+  `janked-start` **71.5–81.2 %** (4 cells), `midtimeline-start` **42.1–69.3 %**
+  (4 cells), `loop-wrap` **35.2–40.2 %** (2 comparable cells). The remaining 2 cells
+  have no upstream comparison at all: all three fresh upstream repeats of
+  `loop-wrap`/120/48000 and `loop-wrap`/97.3/44100 hit the C2 timeout.
+- **(b) no cell regresses — MET.** 18 of 18 comparable cells smaller in magnitude.
+- **(c) `loop-wrap` finalization-hang failure rate — MET, mechanism unexplained.**
+  0 of 12 candidate repeats failed (`…1788299505584`, `…1788299943226`) against 10 of
+  12 fresh upstream (`…1788310164556`, `…1788310817094`) and 18 of 27 historically. The
+  candidate fixes do not touch the finalization pipeline, so this is reported as a
+  **measured outcome without a confirmed causal mechanism**.
+- **(d) head/tail integrity — MET.** `tailMissingMs` is 0 on all 120 candidate rows;
+  `headMissingMs` exceeds the 2 ms gate on 12 of 120, none of which changes a
+  classification.
+
+**Overall: the candidate build passes (b), (c) and (d), and makes substantial,
+consistent, non-regressing progress on (a) without clearing it.** The two orthogonal
+multi-mic findings (collision, skew) are untouched by it and remain open on both builds.
+
+### Evidence index
+
+| quantity | artifact(s) |
+|---|---|
+| upstream 20-cell tally | `recaudit-summary-1788287951691.json`, `…1788288625777.json`, `…1788290691302.json`, `…1788290774387.json`, `…1788291706370.json` |
+| fresh absolute-grid upstream baseline | `recaudit-summary-1788310164556.json`, `…1788310817094.json` |
+| candidate matrix (corrected, not re-measured) | `recaudit-summary-1788299505584.json`, `…1788299943226.json` |
+| `loop-wrap` C2 historical tally | the five runs named under key finding 2 |
+| 90 s deadline diagnostic | `recaudit-summary-1788291343233.json` |
+| Prediction A re-measurement | `recaudit-summary-1788309532177.json`, `…1788309644009.json` |
+| multi-mic official matrix | `recaudit-mt-summary-1788302627819.json`, `…1788302870379.json`, `…1788303391228.json`, `…1788303605274.json` |
+| multi-mic collision confirmation | `recaudit-mt-summary-1788304987514.json` |
+| multi-mic geometry re-check | `recaudit-mt-summary-1788309690683.json`, `…1788309841868.json`, `…1788309988877.json` |
+| replayable-row census, missing-beat census | all 40 `recaudit-summary-*.json` runs through `1788310817094` |
+
+### Upstream contribution outcome
+
+Two issue drafts under `debug/drafts/` (`issue-take-collision.md`,
+`issue-inter-track-quantum-skew.md`) and one PR-description draft
+(`pr-recording-start-alignment.md`). The withdrawn Prediction A gets no draft, the
+residual placement bias is PR scope rather than an issue, and the `loop-wrap`
+finalization hang is covered by the PR's measured-but-unexplained improvement rather
+than filed separately.
 
 ## Fix round 1 (2026-09-01) — corrections after review
 
@@ -2162,9 +2255,10 @@ Two consequences for the register above. Its numbers are not rewritten — they 
 what was measured under the region-anchored grid — but every contaminated passage
 carries a forward pointer to this section, added in fix round 1:
 
-1. The outcome summary's finding 2 (`midtimeline-start` content skip,
+1. The pre-Task-8 outcome summary's finding 2 (`midtimeline-start` content skip,
    `matched=15, missing=1` on 12/12) is **withdrawn** — it measured this
-   harness artifact.
+   harness artifact. (The summary was rewritten in Task 8 and no longer carries that
+   finding; this entry records the withdrawal for traceability.)
 2. Prediction A is **withdrawn in full**, not merely on its `midtimeline-start` leg.
 
 Every `midtimeline-start` median quoted earlier in this register is inflated
