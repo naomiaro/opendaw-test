@@ -1448,6 +1448,11 @@ interface MultitrackAuditRow {
   errorMessage?: string;
   finalizeMs?: number;
   firstQuantumTimeSec?: number;
+  // Task 9: persisted per tape so the loopback path's own delay (firstQuantumTimeSec −
+  // anchorT0Sec) is recoverable for EACH capture, which is what separates an SDK-side
+  // inter-track skew from a difference between the two loopback streams' delays.
+  anchorT0Sec?: number | null;
+  recordRequestContextTime?: number | null;
 }
 
 interface MultitrackTapes {
@@ -1715,6 +1720,8 @@ async function runMultitrackCellRepeat(
       bufferDurationSec,
       status: "pending", detail: "", finalizeMs,
       firstQuantumTimeSec: readFirstQuantumTimeSec(loader),
+      anchorT0Sec: alignment.anchorT0Sec,
+      recordRequestContextTime,
     };
     return { alignment, buffer: { channels: [mono], sampleRate: data.sampleRate }, row };
   };
