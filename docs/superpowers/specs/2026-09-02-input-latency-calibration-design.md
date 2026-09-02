@@ -61,12 +61,15 @@ Procedure:
    recorder: appends every input quantum to a Float32 buffer and reports the context time of its
    first frame, the contract `RecordingProcessor` gained in #376). Capture runs from before the
    first burst to 0.6 s after the last burst's scheduled end (maximum round trip searched).
-4. **Analysis (pure functions, unit-tested).** For each burst, cross-correlate the captured
-   segment `[t_sched(i), t_sched(i) + mlsLength + 0.6 s]` with the MLS via FFT
-   (`@opendaw/lib-dsp` `FFT`; no worker needed at this size); the peak lag gives
-   `t_arrival(i) − t_sched(i)`; refine the peak to sub-sample by parabolic interpolation; the
-   peak-to-mean power ratio in dB is the burst's trust figure. `RTT` = median of the per-burst
-   delays; `spread` = max |delay(i) − RTT|.
+4. **Analysis (pure functions, unit-tested, executed in the SDK's worker).** The captured
+   buffer is transferred (not copied) to the existing `studio-core-workers` worker, where for
+   each burst the segment `[t_sched(i), t_sched(i) + mlsLength + 0.6 s]` is cross-correlated with
+   the MLS via FFT (`@opendaw/lib-dsp` `FFT`); the peak lag gives `t_arrival(i) − t_sched(i)`;
+   the peak is refined to sub-sample by parabolic interpolation; the peak-to-mean power ratio in
+   dB is the burst's trust figure. `RTT` = median of the per-burst delays; `spread` =
+   max |delay(i) − RTT|. Running this off the main thread keeps a busy host application (e.g.
+   one with collaboration traffic) from delaying the result or dropping frames; the main thread
+   only schedules, captures, and reads `outputLatency`, none of which is compute-bound.
 5. **Decomposition.** `outputLatency` is read AFTER the last burst has played (§4.3);
    `inputLatency = RTT − outputLatency`. If `outputLatency` is unreported (undefined, 0 or not
    finite after output ran), `inputLatency = RTT` and the result is flagged
@@ -84,7 +87,39 @@ same anchor); single click with peak detection (one reflection moves the peak, n
 engine-side correlation in Rust (touches the engine crate and the WASM build for no gain).
 ## 4. Architecture
 
-### 4.1 `packages/studio/core/src/capture/InputLatencyCalibration.ts` (studio-core)
+### 4.1 Where the pieces live (following the existing worker pattern)
+
+The SDK already runs DSP off the main thread this way: a protocol interface in `lib-dsp`, an
+executor registered in `studio-core-workers/src/workers-main.ts` on a named messenger channel,
+and a typed sender on studio-core's `Workers` class. Calibration follows it exactly:
+
+- `packages/lib/dsp/src/latency-calibration.ts` (+ `.test.ts`): pure functions —
+  `generateMls(order)`, `crossCorrelateFft(segment, mls)`, `refinePeak(correlation, index)`,
+  `peakToMeanRatioDb(correlation, index)`, `analyzeBursts(input): AnalysisResult` — and the
+  protocol:
+  ```ts
+  export interface LatencyCalibrationProtocol {
+      analyze(input: LatencyCalibrationInput): Promise<LatencyCalibrationAnalysis>
+  }
+  export interface LatencyCalibrationInput {
+      sampleRate: number
+      capture: Float32Array            // transferred
+      captureStartTime: number         // context time of capture[0]
+      mlsOrder: int
+      burstStartTimes: ReadonlyArray<number>   // context times of the scheduled bursts
+      maxRoundTripSeconds: number      // search window, default 0.6
+  }
+  export interface LatencyCalibrationAnalysis {
+      delays: ReadonlyArray<number>            // per burst, seconds (NaN when not identified)
+      ratiosDb: ReadonlyArray<number>          // per burst
+      roundTripSeconds: number                 // median of identified delays, NaN if none
+      spreadSeconds: number
+      identifiedBursts: int
+  }
+  ```
+- `packages/studio/core-workers/src/workers-main.ts`: `Communicator.executor(messenger.channel("latency-calibration"), …)` calling `analyzeBursts`.
+- `packages/studio/core/src/Workers.ts`: `static get LatencyCalibration(): LatencyCalibrationProtocol` sender on the same channel.
+- `packages/studio/core/src/capture/InputLatencyCalibration.ts` (studio-core): the routine.
 
 ```ts
 export namespace InputLatencyCalibration {
@@ -107,8 +142,13 @@ export namespace InputLatencyCalibration {
 }
 ```
 
-**Attribution in source.** The module doc comment of `calibrationAnalysis.ts` (and a one-line
-pointer from `InputLatencyCalibration.ts`) cites the probe's origin verbatim:
+`measure` owns the preconditions (§4.3), renders the MLS once, schedules the bursts, records
+through a minimal capture worklet (§3.3), transfers the buffer to `Workers.LatencyCalibration`,
+reads `outputLatency`, and turns the analysis into a `Result`. It never writes preferences. It
+requires `Workers.install` to have run (the SDK's normal boot), and reports a clear error if not.
+
+**Attribution in source.** The module doc comment of `lib-dsp`'s `latency-calibration.ts` (and a
+one-line pointer from `InputLatencyCalibration.ts`) cites the probe's origin verbatim:
 
 > Gil Panal, J. M., Richard, G., & David, A. (2025). A Maximum Length Sequence–Based Method for
 > Robust Round-Trip Latency Estimation in online Digital Audio Workstations. In *Proceedings of
@@ -165,8 +205,10 @@ stores the result (§4.4). Also `clearInputLatencyCalibration(): void`.
 
 Upstream PR (branch `feat/input-latency-calibration`, based on `feat/reported-input-latency`
 with `fix/recording-start-alignment` merged in; PR text states it stacks on #378 and #376):
-1. `calibrationAnalysis.ts` + tests (MLS, correlation, peak, ratio; cases in §6).
-2. `InputLatencyCalibration.ts` + tests for verdicts/preconditions through fakes.
+1. `lib-dsp` `latency-calibration.ts` + tests (MLS, correlation, peak, ratio, `analyzeBursts`;
+   cases in §6) and the protocol; worker executor in `workers-main.ts`; `Workers.LatencyCalibration`.
+2. `InputLatencyCalibration.ts` + tests for verdicts/preconditions through fakes (the worker
+   sender is injected so tests call `analyzeBursts` directly).
 3. `CaptureAudio.calibrateInputLatency` / `clearInputLatencyCalibration`; resolver rung; schema
    entry; `InputLatency.test.ts` cases for the rung.
 4. PR description drafted for user review before posting, citing the WAC 2025 paper; no session
@@ -207,9 +249,11 @@ Real device: one acoustic run on the user's laptop; value and spread reported fo
   the 18 dB ratio gate are the mitigation, and `noisy` is a first-class verdict, not a failure.
 - **Audible probe.** Calibration plays three ≈0.7 s bursts of noise at −12 dBFS by default; the
   caller can lower the gain. Documented; no attempt to hide it.
-- **Correlation cost.** FFT correlation of a 32 767-sample MLS against a ≈1.3 s window is a few
-  ms per burst on the main thread at 48 kHz; measured in the verification page, and moved to a
-  worker only if it ever blocks a frame.
+- **Worker availability.** The analysis runs in the SDK's worker, so a host whose main thread
+  is busy (collaboration traffic, UI) neither delays the result nor drops frames; the cost is
+  one transfer of the captured buffer (≈ 5 s of mono float at 48 kHz, ≈ 1 MB). If `Workers` is
+  not installed the routine fails fast with a clear error rather than falling back to the main
+  thread.
 - **Stacked PRs.** If the maintainer reworks #376 or #378, this branch rebases; the spec ties to
   their APIs (`Reported`, the placement-time provider) by name so drift is visible.
 - **Browser reports.** The cancellation argument (§4.4) covers wrong reports within one output
