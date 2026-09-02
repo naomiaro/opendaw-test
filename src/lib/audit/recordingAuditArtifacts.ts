@@ -56,6 +56,8 @@ export const AUDIT_SCHEMA_VERSION = 2;
 export const ABSOLUTE_GRID_FROM_RUN = 1788306957902;
 
 export type SdkBuildProbe = "candidate" | "upstream" | "unknown";
+/** Whether the capture box named a device (`named`) or left it unset (`default`). */
+export type CaptureMode = "named" | "default";
 export type BeatGrid = "region-anchored" | "absolute";
 
 /**
@@ -178,6 +180,15 @@ interface SummaryBase {
    *  `src/lib/audit/buildFeatures.ts`. Absent on every envelope written before
    *  the field existed; `profileKeyFor` falls back to the run token there. */
   buildFeatures?: AuditBuildFeature[];
+  /** How the tape was armed: `named` sets the capture box's `deviceId` to the
+   *  synthetic loopback device, `default` leaves it unset so the SDK opens its
+   *  default input (`?defaultInput=1`). The two take different paths through
+   *  `CaptureAudio.#updateStream`, so a row means nothing without it. */
+  captureMode?: CaptureMode;
+  /** Streams the SDK opened during the run, counted by the loopback's
+   *  `getUserMedia` override. One open for a whole cell means every take ran on
+   *  the same audio chain; one per take means the chain was rebuilt each time. */
+  getUserMediaOpens?: number;
   outputLatency: number;
   baseLatency: number;
   /** The bias every row's `medianBeatErrorMsAdjusted` was computed with (equals
@@ -230,6 +241,10 @@ export interface LoadedAuditSummary {
   sdkBuildProbe: SdkBuildProbe;
   /** null when the envelope predates the field — see `buildFeatures` above. */
   buildFeatures: AuditBuildFeature[] | null;
+  /** null when the envelope predates the field; every run before it was `named`. */
+  captureMode: CaptureMode | null;
+  /** null when the envelope predates the field. */
+  getUserMediaOpens: number | null;
   rate: number;
   alignedToleranceMs: number;
   /** null when the run predates `outputLatency` persistence (G1, G2). */
@@ -258,6 +273,10 @@ export interface LoadedMultitrackAuditSummary {
   sdkBuildProbe: SdkBuildProbe;
   /** null when the envelope predates the field — see `buildFeatures` above. */
   buildFeatures: AuditBuildFeature[] | null;
+  /** null when the envelope predates the field; every run before it was `named`. */
+  captureMode: CaptureMode | null;
+  /** null when the envelope predates the field. */
+  getUserMediaOpens: number | null;
   rate: number;
   alignedToleranceMs: number;
   skewToleranceMs: number;
@@ -304,6 +323,26 @@ function buildFeaturesOf(top: Record<string, unknown>, runId: number): AuditBuil
     throw new Error(`recaudit summary ${runId}: "buildFeatures" is not an array of strings`);
   }
   return v as AuditBuildFeature[];
+}
+
+/** The persisted capture mode, or null on an envelope written before the field. */
+function captureModeOf(top: Record<string, unknown>, runId: number): CaptureMode | null {
+  const v = top.captureMode;
+  if (v === undefined) return null;
+  if (v !== "named" && v !== "default") {
+    throw new Error(`recaudit summary ${runId}: unexpected captureMode ${JSON.stringify(v)}`);
+  }
+  return v;
+}
+
+/** The persisted stream-open count, or null on an envelope written before the field. */
+function getUserMediaOpensOf(top: Record<string, unknown>, runId: number): number | null {
+  const v = top.getUserMediaOpens;
+  if (v === undefined) return null;
+  if (typeof v !== "number" || !Number.isFinite(v)) {
+    throw new Error(`recaudit summary ${runId}: unexpected getUserMediaOpens ${JSON.stringify(v)}`);
+  }
+  return v;
 }
 
 function beatGridOf(top: Record<string, unknown>, runId: number): { beatGrid: BeatGrid; beatGridSource: LoadedAuditSummary["beatGridSource"] } {
@@ -361,6 +400,8 @@ export function parseAuditSummary(json: unknown, runId: number): LoadedAuditSumm
     ...beatGridOf(json, runId),
     sdkBuildProbe: probeOf(json),
     buildFeatures: buildFeaturesOf(json, runId),
+    captureMode: captureModeOf(json, runId),
+    getUserMediaOpens: getUserMediaOpensOf(json, runId),
     rate: requireNumber(json, "rate", runId),
     alignedToleranceMs: requireNumber(json, "alignedToleranceMs", runId),
     outputLatencySec,
@@ -393,6 +434,8 @@ export function parseMultitrackAuditSummary(json: unknown, runId: number): Loade
     ...beatGridOf(json, runId),
     sdkBuildProbe: probeOf(json),
     buildFeatures: buildFeaturesOf(json, runId),
+    captureMode: captureModeOf(json, runId),
+    getUserMediaOpens: getUserMediaOpensOf(json, runId),
     rate: requireNumber(json, "rate", runId),
     alignedToleranceMs: requireNumber(json, "alignedToleranceMs", runId),
     skewToleranceMs: requireNumber(json, "skewToleranceMs", runId),

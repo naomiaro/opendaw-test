@@ -101,6 +101,7 @@ import {
   type FinalizeProbe,
   type MultitrackAuditRow,
   type MultitrackAuditSummary,
+  type CaptureMode,
   type SdkBuildProbe,
 } from "@/lib/audit/recordingAuditArtifacts";
 import { BAR_PPQN } from "@/lib/audit/auditExpectations";
@@ -204,6 +205,8 @@ function detectSdkBuildProbe(engine: unknown): SdkBuildProbe {
  * named devices by construction.
  */
 const DEFAULT_INPUT = params.get("defaultInput") === "1";
+/** Persisted per run so an envelope says which `#updateStream` path it took. */
+const CAPTURE_MODE: CaptureMode = DEFAULT_INPUT ? "default" : "named";
 
 const loopback = installLoopbackCapture(2, { serveDefault: DEFAULT_INPUT });
 
@@ -529,6 +532,8 @@ async function uploadSummary(
     rate,
     sdkBuildProbe,
     buildFeatures,
+    captureMode: CAPTURE_MODE,
+    getUserMediaOpens: loopback.getUserMediaOpens(),
     // Fix round 1 (C3/I3): persisted so the loopback-path-bias decomposition
     // doesn't depend on console output. Read once per page load by
     // `resolveHarnessPathBias`, after output started — the same number every
@@ -1308,6 +1313,8 @@ async function uploadMultitrackSummary(
     schemaVersion: AUDIT_SCHEMA_VERSION,
     beatGrid: "absolute",
     rate, sdkBuildProbe, buildFeatures,
+    captureMode: CAPTURE_MODE,
+    getUserMediaOpens: loopback.getUserMediaOpens(),
     // Read once per page load after output started (`resolveHarnessPathBias`)
     // — the value every row of this run was adjusted with.
     outputLatency: bias.valueSec, baseLatency,

@@ -132,6 +132,14 @@ export interface LoopbackHandle {
    */
   cancelReferenceClicks(): void;
   /**
+   * How many times the `getUserMedia` override has handed out a stream — one per
+   * stream the SDK opened. It is the direct evidence for whether an audio chain
+   * was reused or rebuilt (one open for a whole cell means every take ran on the
+   * same chain), so the harnesses persist it per run instead of leaving it in the
+   * console.
+   */
+  getUserMediaOpens(): number;
+  /**
    * Extra delay, in seconds (0 … MAX_LOOPBACK_DELAY_SEC), inserted into the
    * loopback's whole return path — engine tap, reference clicks and the
    * destination tee alike — before it reaches the capture stream. 0 by
@@ -195,6 +203,12 @@ export interface LoopbackOptions {
    * exactly that value.
    *
    * Non-audio devices are still passed through, and video inputs are untouched.
+   * Two consequences worth knowing: no real input can be opened while this is on,
+   * so the mode cannot coexist with a real-device run in the same page load; and
+   * with `reportDeviceId` OFF the served clone reports an EMPTY id, so a
+   * calibration could not be stored on that stream — chain reuse still holds,
+   * because the SDK's unnamed-box rule keys on what the box named when the stream
+   * was opened, not on what the track reports.
    */
   serveDefault?: boolean;
 }
@@ -217,10 +231,12 @@ export function installLoopbackCapture(deviceCount: number = 1, options: Loopbac
   let pendingEngineNode: AudioNode | null = null;
   let engineNode: AudioNode | null = null;
   const pendingClickNodes: { osc: OscillatorNode; gain: GainNode }[] = [];
+  let getUserMediaOpens = 0;
 
   navigator.mediaDevices.getUserMedia = async (constraints?: MediaStreamConstraints) => {
     if (dest === null) throw new Error("loopbackInjection: getUserMedia before attach()");
     const clone = dest.stream.clone();
+    getUserMediaOpens++;
     const requested = requestedDeviceId(constraints);
     // An unconstrained request under `serveDefault` is the default-device path:
     // the browser picks a device and the track reports ITS id, so the clone
@@ -301,6 +317,7 @@ export function installLoopbackCapture(deviceCount: number = 1, options: Loopbac
         pendingClickNodes.push({ osc, gain });
       }
     },
+    getUserMediaOpens() { return getUserMediaOpens; },
     cancelReferenceClicks() {
       const now = context?.currentTime ?? 0;
       for (const { osc, gain } of pendingClickNodes) {

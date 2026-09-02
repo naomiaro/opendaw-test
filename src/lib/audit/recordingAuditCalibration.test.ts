@@ -40,6 +40,15 @@ describe("profileKeyFor", () => {
     expect(profileKeyFor("candidate", 1788386290685, FEATURES.preKeepAliveCalibration)).toBe("upstream");
   });
 
+  it("keeps the keep-alive build on the upstream bands, which is the fail-loud side", () => {
+    // ac1c15ea8 has the sink but not the configurable probe, and its override is
+    // also kept for A/B. Resolving it to `upstream` means a new sweep on it would
+    // read `investigate` for nominal-start (its spread is ≤ 0.7 ms, below band B's
+    // precondition) rather than quietly matching bands fitted to a later build —
+    // the safe direction for a key that cannot see the sink itself.
+    expect(profileKeyFor("candidate", 1788386290685, FEATURES.keepAlive)).toBe("upstream");
+  });
+
   it("keeps builds with no calibration surfaces on the upstream bands", () => {
     expect(profileKeyFor("upstream", 1788386290685, FEATURES.installed)).toBe("upstream");
     expect(profileKeyFor("candidate", 1788386290685, FEATURES.startAlignment)).toBe("upstream");

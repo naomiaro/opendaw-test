@@ -104,7 +104,7 @@ import {
   signatureBandsFor,
   type AuditBuildFeature,
 } from "@/lib/audit/recordingAuditCalibration";
-import type { AuditRow, SdkBuildProbe } from "@/lib/audit/recordingAuditArtifacts";
+import type { AuditRow, CaptureMode, SdkBuildProbe } from "@/lib/audit/recordingAuditArtifacts";
 import {
   clearLastFinalizeProbe,
   resetForNextCell,
@@ -272,6 +272,10 @@ interface CalibrationSummary {
   sdkBuildProbe: SdkBuildProbe;
   /** Which SDK surfaces this build exposes — see src/lib/audit/buildFeatures.ts. */
   buildFeatures: AuditBuildFeature[];
+  /** `named` (the box names the loopback device) or `default` (`?defaultInput=1`). */
+  captureMode: CaptureMode;
+  /** Streams the SDK opened during the run — one means every take reused one chain. */
+  getUserMediaOpens: number;
   deviceId: string;
   /** audioContext.outputLatency, read once after output started (resolveHarnessPathBias). */
   outputLatency: number;
@@ -338,6 +342,8 @@ interface CalibrationSummary {
  * calibration is stored and resolved exactly as it is when a device is named.
  */
 const DEFAULT_INPUT = params.get("defaultInput") === "1";
+/** Persisted per run so an envelope says which `#updateStream` path it took. */
+const CAPTURE_MODE: CaptureMode = DEFAULT_INPUT ? "default" : "named";
 
 const loopback = installLoopbackCapture(1, { reportDeviceId: true, serveDefault: DEFAULT_INPUT });
 
@@ -796,6 +802,8 @@ async function runCalibrationAudit(cb: RunCallbacks): Promise<void> {
     schemaVersion: CALIBRATION_SCHEMA_VERSION,
     kind: "input-latency-calibration-ground-truth",
     runToken, rate, bpm, sdkBuildProbe, buildFeatures, deviceId,
+    captureMode: CAPTURE_MODE,
+    getUserMediaOpens: loopback.getUserMediaOpens(),
     outputLatency: bias.valueSec,
     baseLatency: audioContext.baseLatency,
     harnessPathBiasSec: bias.valueSec,
