@@ -2164,7 +2164,20 @@ Live runs made in this fix round, all on the installed SDK with no build overrid
 probe reads `upstream` on every one). Every one was started from a FRESH page load — a
 navigation, never a Vite HMR reload or an in-page "Re-run" — and no `src/` file was edited
 while any cell was running; the harness's own measurement code was unchanged from the
-commit that precedes the first run through the last:
+commit that precedes the first run through the last.
+
+Two qualifications, so the note is not read as stronger than it is. One in-page "Re-run"
+WAS attempted, after the first `janked-start` run: it tripped the SDK's one-shot
+`Workers.install` assert (the page read `error: Workers are already installed`, the
+known Vite HMR remount artifact), produced no summary and no rows, and was discarded —
+every run in the table below came from a fresh navigation instead. And two lines of the
+multi-mic harness's on-page Configuration panel — display text describing the upload
+filenames, no measurement logic — were corrected after the pre-run commit and sat
+uncommitted across all seven runs; they were written before the first run started and
+untouched until after the last, so no run overlapped an edit, but the runs were not made
+from a fully committed tree.
+
+The runs:
 
 | run | cell(s) | purpose |
 |---|---|---|
