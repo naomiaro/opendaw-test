@@ -240,33 +240,39 @@ export interface TakeMeasurementInput {
   regionDurationSec: number;
   bufferDurationSec: number; // data.numberOfFrames / data.sampleRate
   bpm: number;
-  countInBeats: number; // 0 when recording started without count-in
   schedule: ReferenceSchedule;
   recordRequestContextTime: number | null; // audioContext.currentTime captured just before startRecording; null if unavailable
   stopRequestContextTime: number | null; // audioContext.currentTime captured just before stopRecording; null if unavailable
   /**
    * Calibrated baseline (ms), subtracted from the raw head-missing figure
-   * before classification — see `HEAD_MISSING_BASELINE_MS` in
-   * `recordingAuditCalibration.ts`. Compensates for the ordinary async gap
-   * between the JS `startRecording()` call and the RecordingWorklet's first
-   * captured frame reaching the ring buffer (Promise/message-passing setup,
-   * not lost content — recording genuinely had not started yet at
-   * `recordRequestContextTime`), so this expected setup lag isn't classified
-   * as head-loss. Default 0 (no correction) when the caller has no measured
-   * baseline.
+   * (clamped at 0) before classification — see `HEAD_MISSING_BASELINE_MS` in
+   * `recordingAuditCalibration.ts` for the measurement and the caveat on
+   * what the clamp hides. What the raw figure IS on the installed SDK: the
+   * `RecordingWorklet.#finalize` head drop — finalization keeps the LAST
+   * `limit` frames of the ring (`frame.slice(-limit)`), so the buffer's first
+   * frame, as the loopback's reference clicks locate it, sits the ring's
+   * overshoot past the true first captured frame, minus the loopback path's
+   * own delay. It is a real, discarded head, not a setup gap: the SDK's first
+   * captured frame follows the request by 0-3 render quanta, and a build that
+   * keeps the buffer head measures a raw value of 0 on every row. The
+   * baseline is an empirical constant for the installed build's rows; a
+   * scenario's predicted head loss must exceed it to be visible after the
+   * clamp. Default 0 (no correction) when the caller has no measured baseline.
    */
   headMissingBaselineMs?: number;
   /**
    * Task 7 recast: harness-path bias (seconds), added onto every beat's raw
    * signed error before computing `medianBeatErrorMsAdjusted` — the runtime
-   * value is `audioContext.outputLatency`, the register's "term 1" (a real
-   * hardware round-trip cost this harness's digital loopback never incurs, but
-   * which the SDK's waveformOffset math bakes in uncompensated for every
-   * no-count-in take — see debug/recording-start-alignment-audit.md "Bring-up
-   * calibration"). Content that lands exactly `harnessPathBiasSec` early nets
-   * to ~0 adjusted error. Default 0 (adjusted equals raw) when the caller has
-   * no measured bias. The raw median is NEVER modified — both are always
-   * available on the result.
+   * value is `audioContext.outputLatency`, the register's "term 1". The SDK
+   * adds `outputLatency` to take 1's `waveformOffset` on every recording,
+   * count-in or not (`RecordAudio`: `headStart + countIn + outputLatency +
+   * inputLatency`) — a real hardware round-trip cost this harness's digital
+   * loopback never incurs, so the compensation is unearned here and the
+   * harness nets it back out on every scenario (see
+   * debug/recording-start-alignment-audit.md "Bring-up calibration"). Content
+   * that lands exactly `harnessPathBiasSec` early nets to ~0 adjusted error.
+   * Default 0 (adjusted equals raw) when the caller has no measured bias. The
+   * raw median is NEVER modified — both are always available on the result.
    */
   harnessPathBiasSec?: number;
 }
@@ -303,10 +309,9 @@ export interface TakeAlignment {
  *
  * Expected beats sit on the project's ABSOLUTE beat grid — integer multiples
  * of `beatPeriodSec` from timeline zero — restricted to the take's presented
- * range `[regionStartSec, regionStartSec + regionDurationSec]`. The trailing
- * `ε` excludes a beat landing exactly on the region-end boundary (which a
- * boundary-stopped live capture would otherwise always report as missing)
- * without excluding any beat that actually falls inside the range.
+ * range `[regionStartSec, regionStartSec + regionDurationSec]` (see
+ * `expectedBeatRange` for the 1 µs / 1 ms edge slack and why a beat within
+ * 1 ms of the region end is deliberately excluded).
  *
  * The grid is deliberately NOT anchored at the region start. Anchoring it
  * there silently assumes every take begins on a beat, which holds for a take
@@ -324,6 +329,32 @@ export interface TakeAlignment {
  * still caught — a beat inside the presented range whose content never
  * reached the buffer stays unmatched under both grids.
  */
+/**
+ * The absolute beat indices `measureTakeAlignment` expects inside a take's
+ * presented range `[regionStartSec, regionStartSec + regionDurationSec]`:
+ * `firstBeat .. lastBeat` inclusive (empty when `lastBeat < firstBeat`).
+ * Exported so an offline replay can enumerate the same grid the verdicts used
+ * instead of re-implementing the fence.
+ *
+ * 1 microsecond of slack on the leading edge so a region whose start is a
+ * beat position that only round-trips approximately (PPQN -> seconds) still
+ * includes that beat instead of skipping to the next one; 1 ms of slack on the
+ * trailing edge excludes a beat landing on (or within 1 ms before) the
+ * region-end boundary, which a boundary-stopped live capture would otherwise
+ * always report as missing.
+ */
+export function expectedBeatRange(
+  regionStartSec: number,
+  regionDurationSec: number,
+  bpm: number
+): { firstBeat: number; lastBeat: number } {
+  const beatPeriodSec = 60 / bpm;
+  return {
+    firstBeat: Math.ceil((regionStartSec - 1e-6) / beatPeriodSec),
+    lastBeat: Math.floor((regionStartSec + regionDurationSec - 0.001) / beatPeriodSec),
+  };
+}
+
 export function measureTakeAlignment(input: TakeMeasurementInput): TakeAlignment {
   const {
     lowOnsets, highOnsets, regionStartSec, waveformOffsetSec, regionDurationSec,
@@ -334,11 +365,7 @@ export function measureTakeAlignment(input: TakeMeasurementInput): TakeAlignment
   const beatPeriodSec = 60 / bpm;
   const timelineOnsets = lowOnsets.map((t) => regionStartSec + (t - waveformOffsetSec));
 
-  // 1 microsecond of slack on the leading edge so a region whose start is a
-  // beat position that only round-trips approximately (PPQN -> seconds) still
-  // includes that beat instead of skipping to the next one.
-  const firstBeat = Math.ceil((regionStartSec - 1e-6) / beatPeriodSec);
-  const lastBeat = Math.floor((regionStartSec + regionDurationSec - 0.001) / beatPeriodSec);
+  const { firstBeat, lastBeat } = expectedBeatRange(regionStartSec, regionDurationSec, bpm);
   const expectedBeats: number[] = [];
   const expectedBeatIndices: number[] = [];
   for (let k = firstBeat; k <= lastBeat; k++) {
@@ -489,8 +516,20 @@ export interface CellClassification {
  *
  * Deficit handling (checked before the median-based verdict, so a genuine
  * deficit is never hidden behind otherwise-clean beat placement):
+ * - An empty repeat list is `investigate` — a cell with no evidence must never
+ *   read as the best verdict (the `every()` below is vacuously true on `[]`).
  * - A repeat with no matched median or missing beats is always unusable —
  *   forces `investigate`.
+ * - A repeat whose `headMissingMs` is null is "integrity unmeasured" — forces
+ *   `investigate`. `measureTakeAlignment` yields a null head deficit exactly
+ *   when no reference click was identified (`anchorT0Sec` null) or no record
+ *   request time was captured, and then the head AND tail gates below would
+ *   both be skipped silently, letting a repeat whose reference schedule never
+ *   reached the buffer classify `aligned` with no integrity check at all. A
+ *   null `tailMissingMs` alongside a MEASURED head is not flagged: it only
+ *   arises for offline reconstructions from rows persisted before the tail
+ *   figure was (the row was anchored live; only the tail gate is unavailable,
+ *   and the detail string shows the null).
  * - A **tail** deficit (`tailMissingMs > alignedToleranceMs` on any repeat)
  *   ALWAYS forces `investigate` — no band excuses it (no configured
  *   `SignatureBand` predicts tail loss; only head loss is predicted).
@@ -519,12 +558,22 @@ export function classifyCell(
   bands: SignatureBand[],
   alignedToleranceMs: number
 ): CellClassification {
+  if (repeats.length === 0) {
+    return { status: "investigate", matchedSignature: null, detail: "no repeats to classify" };
+  }
   for (const r of repeats) {
     if (r.medianBeatErrorMs === null || r.missingBeats > 0) {
       return {
         status: "investigate",
         matchedSignature: null,
         detail: `repeat has unusable measurement: medianBeatErrorMs=${r.medianBeatErrorMs}, missingBeats=${r.missingBeats}`,
+      };
+    }
+    if (r.headMissingMs === null) {
+      return {
+        status: "investigate",
+        matchedSignature: null,
+        detail: `integrity unmeasured: headMissingMs is null (no reference-click anchor for this repeat, so neither the head nor the tail gate could run); medianBeatErrorMsAdjusted=${r.medianBeatErrorMsAdjusted}`,
       };
     }
   }

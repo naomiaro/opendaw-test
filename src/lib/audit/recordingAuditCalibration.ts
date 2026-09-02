@@ -6,6 +6,23 @@ export const RECORDING_AUDIT_SCENARIOS = [
   "nominal-start", "janked-start", "midtimeline-start", "countin-start", "loop-wrap",
 ] as const;
 export type RecordingScenario = (typeof RECORDING_AUDIT_SCENARIOS)[number];
+
+export function isRecordingScenario(value: string): value is RecordingScenario {
+  return (RECORDING_AUDIT_SCENARIOS as readonly string[]).includes(value);
+}
+
+/**
+ * Total lookup into `SIGNATURE_BANDS`: throws on a scenario name the table
+ * does not know, so an offline script fed a mistyped or foreign scenario can
+ * never classify against an empty band list and land a spurious `aligned` /
+ * `investigate`.
+ */
+export function signatureBandsFor(scenario: string): SignatureBand[] {
+  if (!isRecordingScenario(scenario)) {
+    throw new Error(`no signature bands for unknown scenario "${scenario}" (known: ${RECORDING_AUDIT_SCENARIOS.join(", ")})`);
+  }
+  return SIGNATURE_BANDS[scenario];
+}
 export const REPEATS_PER_CELL = 3;
 export const JANK_MS = 150;
 export const LOOP_WRAP_TAKES = 5;
@@ -42,16 +59,22 @@ export const ALIGNED_TOLERANCE_MS = 2;
  * captured frame follows the request by 0-3 render quanta, and on a build
  * that keeps the buffer head the raw value is 0 on every row. The constant
  * remains a purely empirical baseline for the installed build's rows. Set to
- * 26ms (just above the measured max,
- * zeroing every control-cell repeat's corrected headMissingMs) so this
- * universal setup lag doesn't force `investigate` via the head-deficit path
- * on scenarios that predict no head-loss (nominal-start, countin-start).
- * Scenarios that DO predict head-loss (A: janked-start 20-300ms,
- * midtimeline-start 5-300ms) remain trivially distinguishable — their
- * predicted magnitudes are 1-12x this baseline even at the predicted
- * minimum. Both the raw (`headMissingRawMs`) and corrected (`headMissingMs`)
- * values are persisted per row since fix round 1 (I3) — never silently
- * applied.
+ * 26ms (just above the measured max, zeroing every control-cell repeat's
+ * corrected headMissingMs) so this universal finalize head drop doesn't force
+ * `investigate` via the head-deficit path on scenarios that predict no
+ * head-loss (nominal-start, countin-start).
+ *
+ * Caveat — what the clamp hides: `measureTakeAlignment` computes
+ * `max(0, raw − 26)` and `classifyCell` gates on `headMissingMs > 2`, so on
+ * the installed build a head loss under ~28 ms raw is INVISIBLE to the
+ * head-deficit gate. Band A predicts head loss of 20-300 ms (janked-start) and
+ * 5-300 ms (midtimeline-start): the upper parts of both ranges are 1-12x this
+ * baseline and remain distinguishable, but each band's lower edge (20 ms,
+ * 5 ms — 0.77x and 0.19x the baseline) is unreachable in corrected space. A
+ * genuine head loss inside those lower bands classifies as if there were
+ * none; the raw figure (`headMissingRawMs`, persisted per row since fix round
+ * 1 (I3) alongside the corrected `headMissingMs`) is the only place it shows.
+ * Both are persisted — the correction is never silently applied.
  */
 export const HEAD_MISSING_BASELINE_MS = 26;
 /** Predicted upstream signatures (spec §1) — predictions to test, not truths. */

@@ -79,7 +79,7 @@ describe("measureTakeAlignment", () => {
   const schedule = buildReferenceSchedule(0, 40, 0.25, 0.005);
   const base = {
     regionStartSec: 0, waveformOffsetSec: 2.0, regionDurationSec: 4.0,
-    bufferDurationSec: 6.0, bpm, countInBeats: 4, schedule,
+    bufferDurationSec: 6.0, bpm, schedule,
     recordRequestContextTime: null, stopRequestContextTime: null,
   };
   // Perfect capture: metronome beat k lands at file time waveformOffset + k*0.5.
@@ -115,6 +115,53 @@ describe("measureTakeAlignment", () => {
       ...base, lowOnsets: perfectLow, highOnsets, stopRequestContextTime: 11.05,
     });
     expect(a.tailMissingMs).toBeCloseTo(50, 0);
+  });
+
+  // PR review (tests I2): the other branch of the clamp — the file runs PAST the
+  // stop request (the ring's overshoot, or a build that keeps the buffer tail), so
+  // the deficit must read 0, never negative.
+  it("clamps tailMissingMs to 0 when the buffer ends after the stop request", () => {
+    // Buffer covers context [5.0, 11.0]; stop was requested at 10.95, inside the buffer.
+    const T0 = 5.0;
+    const highOnsets = schedule.times.filter((t) => t >= T0 && t <= T0 + 6).map((t) => t - T0);
+    const a = measureTakeAlignment({
+      ...base, lowOnsets: perfectLow, highOnsets, stopRequestContextTime: 10.95,
+    });
+    expect(a.tailMissingMs).toBe(0);
+  });
+
+  // PR review (tests I1): every live row passes through the baseline subtraction
+  // with HEAD_MISSING_BASELINE_MS = 26; the register's "raw = corrected + 26" and
+  // "headMissingMs is 0 on all rows" claims rest on these two lines.
+  describe("headMissingBaselineMs", () => {
+    const T0 = 5.0;
+    const highOnsets = schedule.times.filter((t) => t >= T0).map((t) => t - T0);
+    it("subtracts the baseline from the raw head deficit", () => {
+      // raw = (5.0 − 4.96) s = 40 ms; baseline 26 → corrected 14.
+      const a = measureTakeAlignment({
+        ...base, lowOnsets: perfectLow, highOnsets,
+        recordRequestContextTime: 4.96, headMissingBaselineMs: 26,
+      });
+      expect(a.headMissingMs).toBeCloseTo(14, 1);
+    });
+    it("clamps at 0 when the baseline exceeds the raw deficit", () => {
+      // raw = 20 ms; baseline 26 → 0, not −6.
+      const a = measureTakeAlignment({
+        ...base, lowOnsets: perfectLow, highOnsets,
+        recordRequestContextTime: 4.98, headMissingBaselineMs: 26,
+      });
+      expect(a.headMissingMs).toBe(0);
+    });
+  });
+
+  it("reports head/tail deficits as null when no reference clicks were identified", () => {
+    const a = measureTakeAlignment({
+      ...base, lowOnsets: perfectLow, highOnsets: [],
+      recordRequestContextTime: 4.9, stopRequestContextTime: 11.05,
+    });
+    expect(a.anchorT0Sec).toBeNull();
+    expect(a.headMissingMs).toBeNull();
+    expect(a.tailMissingMs).toBeNull();
   });
 
   // Task 7 recast: audioContext.outputLatency is a harness-path term (see
@@ -251,9 +298,12 @@ describe("classifyCell", () => {
   // medianBeatErrorMsAdjusted defaults to the raw median (harnessPathBiasSec=0 is
   // the implicit default) so every pre-existing test below is unaffected by the
   // Task 7 adjustment — classifyCell reads the adjusted field for its verdict math.
+  // A clean, fully measured repeat: reference clicks anchored, no head or tail
+  // deficit. (A null headMissingMs means the anchor was never found and is
+  // classified "integrity unmeasured" — see the dedicated test below.)
   const take = (medianMs: number): TakeAlignment => ({
     beatErrors: [], medianBeatErrorMs: medianMs, medianBeatErrorMsAdjusted: medianMs,
-    anchorT0Sec: null, firstRefIndex: 0, headMissingMs: null, tailMissingMs: null,
+    anchorT0Sec: 5.0, firstRefIndex: 0, headMissingMs: 0, tailMissingMs: 0,
     matchedBeats: 8, missingBeats: 0, extraLowOnsets: 0,
   });
   it("aligned when every repeat is within tolerance", () => {
@@ -342,6 +392,34 @@ describe("classifyCell", () => {
     const unusable: TakeAlignment = { ...take(0), medianBeatErrorMs: null, medianBeatErrorMsAdjusted: null };
     const c = classifyCell([unusable, take(0.2), take(0.4)], bands, 2);
     expect(c.status).toBe("investigate");
+  });
+
+  // PR review (tests I5): a cell with no evidence must not read as the best verdict.
+  it("investigate, never aligned, for an empty repeat list", () => {
+    const c = classifyCell([], bands, 2);
+    expect(c.status).toBe("investigate");
+    expect(c.matchedSignature).toBeNull();
+    expect(c.detail).toMatch(/no repeats/);
+  });
+
+  // PR review (errors I7): when no reference click was identified, headMissingMs is
+  // null and the integrity gates would be skipped silently — a repeat whose reference
+  // schedule never reached the buffer could classify aligned with no head/tail check.
+  it("investigate with 'integrity unmeasured' when a repeat's headMissingMs is null, even with aligned medians", () => {
+    const unmeasured = { ...take(0.3), headMissingMs: null, tailMissingMs: null };
+    const c = classifyCell([unmeasured, take(0.2), take(0.4)], bands, 2);
+    expect(c.status).toBe("investigate");
+    expect(c.matchedSignature).toBeNull();
+    expect(c.detail).toMatch(/integrity unmeasured/);
+  });
+
+  // The offline scripts reconstruct repeats from rows that predate tail persistence
+  // (headMissingMs measured, tailMissingMs not persisted → null). Those rows were
+  // anchored live, so only the tail gate is skipped — the verdict must be the live one.
+  it("does not flag a measured head with an unpersisted (null) tail as unmeasured", () => {
+    const legacy = { ...take(0.3), headMissingMs: 0, tailMissingMs: null };
+    const c = classifyCell([legacy, legacy, legacy], bands, 2);
+    expect(c.status).toBe("aligned");
   });
 });
 

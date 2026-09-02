@@ -751,7 +751,6 @@ async function runCellRepeat(
   const schedule: ReferenceSchedule = buildReferenceSchedule(audioContext.currentTime + 0.2, 120, 0.25, 0.005);
   loopback.scheduleReferenceClicks(schedule.times);
 
-  const usedCountIn = scenario === "countin-start" || scenario === "loop-wrap";
   let recordRequestContextTime: number | null = null;
   let stopRequestContextTime: number | null = null;
   let startPpqn = 0;
@@ -918,7 +917,6 @@ async function runCellRepeat(
       regionDurationSec,
       bufferDurationSec,
       bpm,
-      countInBeats: usedCountIn ? 4 : 0,
       schedule,
       recordRequestContextTime,
       stopRequestContextTime,
@@ -1760,7 +1758,7 @@ async function runMultitrackCellRepeat(
     const bufferDurationSec = data.numberOfFrames / data.sampleRate;
     const alignment = measureTakeAlignment({
       lowOnsets, highOnsets, regionStartSec, waveformOffsetSec, regionDurationSec,
-      bufferDurationSec, bpm, countInBeats: 0, schedule,
+      bufferDurationSec, bpm, schedule,
       recordRequestContextTime, stopRequestContextTime,
       headMissingBaselineMs: HEAD_MISSING_BASELINE_MS, harnessPathBiasSec,
     });
