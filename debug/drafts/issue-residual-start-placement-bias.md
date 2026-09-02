@@ -125,21 +125,22 @@ stop. Measured live on that branch through the same harness:
 
 | scenario | before (0.0.170) | after (branch) |
 |---|---|---|
-| `nominal-start` | −41.57 to −52.51 ms | +6.44 to +19.46 ms |
-| `countin-start` | −46.04 to −52.26 ms | +17.44 to +20.25 ms |
-| `janked-start` | −45.07 to −49.51 ms | +13.67 to +21.95 ms |
-| `midtimeline-start` | −45.89 to −47.32 ms | +17.66 to +21.34 ms |
-| `loop-wrap` (takes 1–4) | −34.97 to −49.40 ms (2 cells) | +17.66 to +21.61 ms (4 cells) |
+| `nominal-start` | −41.57 to −52.51 ms | +9.33 to +22.36 ms |
+| `countin-start` | −46.04 to −52.26 ms | +15.44 to +21.40 ms |
+| `janked-start` | −45.07 to −49.51 ms | +15.00 to +23.77 ms |
+| `midtimeline-start` | −45.89 to −47.32 ms | +17.00 to +21.56 ms |
+| `loop-wrap` (takes 1–4) | −34.97 to −49.40 ms (2 cells) | +10.78 to +21.28 ms (4 cells) |
 
-The "after" column comes from `recaudit-summary-1788324358634.json` (48000 Hz) and
-`…1788324856598.json` (44100 Hz), 3 repeats per cell, no lost repeats. The magnitude
-falls on all 18 comparable cells (to 12–51 % of the 0.0.170 value) and the sign flips to
-LATE. What is left is the input path's own delay, quantified per row: the branch reports
-the buffer's first-frame time, the harness independently recovers the same instant from
-its scheduled reference clicks, and the difference — the loopback hop — is 9.62–22.90 ms,
-varying per stream instance. Netting it out leaves +1.13 to +1.19 ms on 59 of 60 rows (one
-at +4.07 ms), a rate-independent constant inside the 2 ms tolerance. Loop-wrap flatness is
-unchanged: the largest within-repeat spread across takes 1–4 on the branch is 0.141 ms.
+The "after" column comes from `recaudit-summary-1788328219906.json` (48000 Hz) and
+`…1788328656062.json` (44100 Hz), 3 repeats per cell, no lost repeats, head and tail
+deficits 0 on all 120 rows. The magnitude falls on all 18 comparable cells (to 18–61 %
+of the 0.0.170 value) and the sign flips to LATE. What is left is the input path's own
+delay, quantified per row: the branch reports the buffer's first-frame time, the harness
+independently recovers the same instant from its scheduled reference clicks, and the
+difference — the loopback hop — is 9.62–22.92 ms, varying per stream instance. Netting it
+out leaves +1.13 to +1.19 ms on 59 of 60 rows (the 60th is a harness-artifact row), a
+rate-independent constant inside the 2 ms tolerance. Loop-wrap flatness is unchanged: the
+largest within-repeat spread across takes 1–4 on the branch is 0.142 ms.
 
 **This issue stands on its own.** It reports the 0.0.170 behaviour, which is what the
 first table measures. If that change is not taken, the signature above is what remains.

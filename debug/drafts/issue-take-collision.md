@@ -2,7 +2,7 @@
 
 **Status: DRAFT for user review. Not filed.** Target: `andremichelle/openDAW`.
 
-> Task 9 addendum: unchanged by the accompanying take-placement fix — on that branch 6 of 12 simultaneous-capture repeats collided (`recaudit-mt-summary-1788325292003.json` 3/6, `…1788325557229.json` 3/6, both `finalization tape<A|B> timed out after 30s`). Keeping the buffer head in `#finalize` makes two captures of one signal byte-identical more often, so a harness that feeds both tapes the same signal hits it more, not less.
+> Task 9 addendum: unchanged by the accompanying take-placement fix — 6 of 12 simultaneous-capture repeats collided on the two upstream official runs (`recaudit-mt-summary-1788302627819.json` 2/6 at 48000 Hz, `…1788302870379.json` 4/6 at 44100 Hz) and 9 of 18 on the three branch runs (`…1788325292003.json` 3/6, `…1788325557229.json` 3/6, `…1788329084394.json` 3/6, all at 48000 Hz), every lost repeat `finalization tape<A|B> timed out after 30s`. On the last of those the harness's finalization probe shows the colliding tape's `limit()` WAS called (one call, zero overshoot) and its loader then stayed in `record` — the import fails after the worklet hands the frames over, consistent with the `stageBox` panic below.
 
 ## Title
 

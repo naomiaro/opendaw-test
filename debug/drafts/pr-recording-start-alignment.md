@@ -105,15 +105,21 @@ it inflates every chained waveform offset.
   after a 0.25 s wait on the context clock does it fall back to the previous
   main-thread arithmetic, with a debug line naming the missing report. Loop-wrap
   takes keep the existing chained offset.
-- **`#finalize`** keeps the first `limit` frames and drops the overshoot.
-- **The stop path** drops a zero-duration take first, then always finalizes the
-  file for the takes that remain, with the limit clamped to the frames the ring
-  delivered (the source is already disconnected, so a higher limit would never be
-  reached). A recording that leaves no take at all is aborted and its file box
+- **The stop path keeps every frame the ring delivered before the source was
+  disconnected.** The current take's duration is set to the delivered length (the
+  live update only ran on position ticks, and chunks keep arriving between the last
+  tick and the stop), `#finalize` keeps the FIRST `limit` frames (`recordedFrames`)
+  and the file is limited to exactly the delivered frame count, so the worklet
+  finalizes immediately and nothing is dropped at either end — on the branch the
+  file ends 24–78 ms after the stop request and the take extends to it. A take whose
+  delivered length is still ≤ 0 is dropped and the file still finalizes for the takes
+  before it; a recording that leaves no take at all is aborted and its file box
   deleted instead of leaking a loader in the recording state.
-- **Tests:** `packages/studio/core/src/capture/RecordAudio.test.ts` (7) — anchored
+- **Tests:** `packages/studio/core/src/capture/RecordAudio.test.ts` (8) — anchored
   placement, fractional position, a first frame after the start, waiting for both
-  reports, the fallback after the wait, and both stop paths.
+  reports, the fallback after the wait, the stop extending the take to the delivered
+  frames, the stop behind a wrap, and the abort; `RecordingWorklet.test.ts` (3) —
+  `recordedFrames` on ramp chunks, asserting frame values.
 
 ### Measured effect
 
@@ -127,36 +133,49 @@ equally.
 | | per-cell mean placement error | cells |
 |---|---|---|
 | `@opendaw/studio-sdk@0.0.170` | **−34.97 … −52.51 ms** | 18 (2 lost to the finalization hang) |
-| this branch | **+6.44 … +21.95 ms** | 20 |
+| this branch | **+9.33 … +23.77 ms** | 20 |
 
-The magnitude falls on **all 18 comparable cells**, to 12–51 % of the 0.0.170 value,
+The magnitude falls on **all 18 comparable cells**, to 18–61 % of the 0.0.170 value,
 and the sign flips to late; the per-scenario ranges overlap completely (nominal
-6.44–19.46, blocked main thread 13.67–21.95, punch-in 17.66–21.34, count-in
-17.44–20.25, loop-wrap 17.66–21.61 ms). Loop-wrap takes 0–4 agree to ≤ 0.14 ms
-within every repeat.
+9.33–22.36, blocked main thread 15.00–23.77, punch-in 17.00–21.56, count-in
+15.44–21.40, loop-wrap 10.78–21.28 ms). Within every loop-wrap repeat, takes 1–4 agree
+to ≤ 0.14 ms and take 0 sits within 0.08 ms of their mean. Head and tail integrity:
+the harness's head and tail deficits are 0 on all 120 branch rows (0.0.170: head
+deficit > 2 ms on 5 of 60 rows, tail 0). The harness's own classifier reads
+`investigate` on 12 of the 20 branch cells — its "no band matched" verdict for a late
+mean of 15–24 ms — and a known-signature band on the other 8 by coincidence of
+magnitude; none of the 20 verdicts is produced by a head or tail deficit.
 
 **What the remainder is.** The branch's `RecordingWorklet.firstQuantumTime` gives
 the SDK's own context time of the buffer's first frame; the harness independently
 estimates the same instant from reference clicks it schedules on the context and
 recovers from the capture. Their difference is the loopback path's own input delay
 (`MediaStreamAudioDestinationNode → getUserMedia → MediaStreamAudioSourceNode`):
-**9.62–22.90 ms, different per stream instance**, over all 60 take-0 rows. Netting
-it out of the adjusted median leaves **+1.13 … +1.19 ms on 59 of 60 rows** (one row
-+4.07 ms), a rate-independent constant inside the harness's 2 ms tolerance and
-consistent with onset-detector latency. The SDK's first captured frame follows the
-record request by 0–2 render quanta on every row. On a real input that delay is
-what the `inputLatency` preference exists for; this change does not set it.
+**9.62–22.92 ms, different per stream instance**, over all 60 take-0 rows. Netting
+it out of the adjusted median leaves **+1.13 … +1.19 ms on 59 of 60 rows** (the 60th
+is a harness-artifact row, below), a rate-independent constant inside the harness's
+2 ms tolerance and consistent with onset-detector latency. The SDK's first captured
+frame follows the record request by 0–3 render quanta on every row. On a real input
+that delay is what the `inputLatency` preference exists for; this change does not
+set it.
 
 Loop-wrap finalization: **0 of 12** repeats on this branch fail against **10 of 12**
-on 0.0.170 (both finalize in 72–96 ms when they do).
+on 0.0.170 (both finalize in 72–100 ms when they do). The per-repeat probe on 0.0.170
+(`recaudit-summary-1788327757434.json`) shows every hung repeat with no `limit()`
+call and the loader still recording; on the branch every repeat has exactly one call
+with zero overshoot.
 
 Artifacts: 0.0.170 baseline `recaudit-summary-1788310164556.json` (48000 Hz) and
-`…1788310817094.json` (44100 Hz); this branch `…1788324358634.json` (48000 Hz) and
-`…1788324856598.json` (44100 Hz), 60 rows each, no error rows. One row per branch
+`…1788310817094.json` (44100 Hz); this branch `…1788328219906.json` (48000 Hz) and
+`…1788328656062.json` (44100 Hz), 60 rows each, no error rows. One row per branch
 run (`nominal-start`/120/repeat 1, the first cell of each session) was measured with
 the harness's `outputLatency` term read as 0 — a harness artifact (Chrome reports 0
 until output has started), re-adjusted in the register; the ranges above use the
-persisted values.
+persisted values. An earlier build of this branch, whose stop path limited the file
+to the last position tick's duration, truncated up to 5.8 ms of audio before the
+stop request and failed the harness's tail-integrity gate on 94 of 120 rows; that is
+the reason the stop path now keeps every delivered frame, and those runs are kept in
+the register as history.
 
 ### What this does not fix
 
@@ -176,11 +195,11 @@ change being taken.
   (10–23 ms here). On a real device that is the `inputLatency` preference's job; the
   issue records the 0.0.170 signature and what remains afterwards.
 - **A content-address collision on simultaneous identical takes**, which panics
-  `BoxGraph.stageBox` and hangs the affected capture's finalization — unchanged
-  (6 of 12 simultaneous-capture repeats on this branch, `recaudit-mt-summary-1788325292003.json`
-  and `…1788325557229.json`). Keeping the buffer head makes two captures of the same
-  signal byte-identical more often, so the harness — which feeds both tapes one
-  signal — hits it more, not less.
+  `BoxGraph.stageBox` and hangs the affected capture's finalization — unchanged: 6 of
+  12 simultaneous-capture repeats on the two 0.0.170 runs
+  (`recaudit-mt-summary-1788302627819.json`, `…1788302870379.json`) and 9 of 18 on the
+  three runs on this branch (`…1788325292003.json`, `…1788325557229.json`,
+  `…1788329084394.json`).
 
 Inter-track skew between simultaneously armed captures, measured at ±1 render quantum
 on 0.0.170, is not listed: on this branch each tape's residual after netting its own
