@@ -34,11 +34,15 @@ export const ALIGNED_TOLERANCE_MS = 2;
  * 1788285202428, 1788286810273, 1788286887454, 1788287122505 — those rows'
  * `headMissingMs` field holds the then-uncorrected raw value directly): raw
  * headMissingMs ranged 14.37-25.02ms (mean ~18.58ms), NOT random detector
- * noise — it is the genuine async gap between the JS `startRecording()` call
- * and the RecordingWorklet's first captured frame reaching the ring buffer
- * (Promise/worklet-connect message-passing setup; recording genuinely had
- * not started yet at `recordRequestContextTime`, so this is expected
- * latency, not lost content). Set to 26ms (just above the measured max,
+ * noise. What the quantity IS was established later (Task 9 of the register):
+ * on the installed 0.0.170 it is the `RecordingWorklet.#finalize` head drop —
+ * the file kept the LAST `limit` frames, so the loopback-derived buffer start
+ * sits the ring's overshoot (32-51ms measured) later than the true first
+ * frame — minus the loopback path's own delay (10-23ms); the SDK's first
+ * captured frame follows the request by 0-3 render quanta, and on a build
+ * that keeps the buffer head the raw value is 0 on every row. The constant
+ * remains a purely empirical baseline for the installed build's rows. Set to
+ * 26ms (just above the measured max,
  * zeroing every control-cell repeat's corrected headMissingMs) so this
  * universal setup lag doesn't force `investigate` via the head-deficit path
  * on scenarios that predict no head-loss (nominal-start, countin-start).

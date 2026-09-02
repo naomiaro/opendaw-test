@@ -100,7 +100,8 @@ wherever the two disagree.
    worklet-connect-to-transport-start gap, and an anchor-position residual. **Task 9
    found that the "anchor-position residual" is a fourth mechanism**:
    `RecordingWorklet.#finalize` kept the LAST `limit` frames of the ring, dropping the
-   29–43 ms overshoot from the buffer HEAD on every recording (`…1788323424682`), and
+   32–51 ms overshoot from the buffer HEAD on every recording (`…1788328085978`, persisted
+   `finalizeOvershootFrames` 1535–2431 on 6 of 6), and
    that the loopback path's own delay (10–23 ms, late) partially masks the early terms.
    On the reworked branch the per-cell means are +9.33 … +23.77 ms, and netting out the
    per-row loopback delay leaves +1.13 … +1.19 ms on 59 of 60 rows
@@ -111,8 +112,9 @@ wherever the two disagree.
    `…1788291706370`), and **10 of 12** on the fresh baseline (5/6 at each rate,
    `…1788310164556`, `…1788310817094`). Binary fast-success-or-never: raising the
    deadline from 30 s to 90 s left 4 of 6 still failing (`…1788291343233`). **Root-caused
-   in Task 9** (`…1788323077339`: every hang is a take whose live duration is still ≤ 0
-   at stop, deleted without the worklet ever being asked to finalize) and fixed on the
+   in Task 9** (`…1788327757434`, persisted per-repeat probe: 4 of 6 hung, every one a
+   take whose live duration is still ≤ 0 at stop, deleted without the worklet ever being
+   asked to finalize — no `limit()` call, loader left in `record`) and fixed on the
    branch: 0 of 12 branch repeats fail (`…1788328219906`, `…1788328656062`); the hang
    evidence is persisted per repeat (`…1788327757434`: 4 of 6 hung, all four without any
    `limit()` call). See C2 and Task 9.
@@ -124,7 +126,7 @@ wherever the two disagree.
    same-device confirmation cell collided on **3 of 3** repeats
    (`recaudit-mt-summary-1788304987514.json`). In the official matrix the incidental
    timing jitter between two independently-scheduled worklets produced colliding content
-   on **10 of 24** repeat attempts across both builds (`…1788302627819` 2/6,
+   on **10 of 24** repeat attempts across upstream and the superseded candidate build (`…1788302627819` 2/6,
    `…1788302870379` 4/6, `…1788303391228` 1/6, `…1788303605274` 3/6) — that count
    measures this harness's own capture-window jitter, not either SDK build.
 4. **Inter-track skew (Task 7b Finding 2).** Of the **14** measurable `medianSkewMs`
@@ -168,7 +170,7 @@ genuinely absent in-range beat is a **unit-test guarantee**
 | ID | Outcome | Evidence |
 |----|---------|----------|
 | A — take anchored at first-*observed* position, head content skipped | **WITHDRAWN** | Both supporting legs fell in Task 7c. `midtimeline-start`'s 12/12 was the harness fencepost — 0 of 12 fresh upstream midtimeline repeats report a missing beat (`…1788310164556`, `…1788310817094`), and 0 of 24 replayable midtimeline takes do under the absolute grid. The single remaining `janked-start` repeat is an unresolved candidate with no buffer left; 6 fresh repeats of its exact cell report `missingBeats = 0` (`…1788309532177`, `…1788309644009`). No upstream issue is drafted for A. |
-| B — random ±15 ms band from ring-reader delivery lag | **CONFIRMED in direction, REFUTED in magnitude and mechanism** | The measured bias is 2.3–3.5× the predicted ±15 ms and systematically negative. Fresh absolute-grid per-cell means −34.97 to −52.51 ms (`…1788310164556`, `…1788310817094`). Task 9: the random component is the ring's overshoot at stop being dropped from the buffer HEAD by `#finalize` (29–43 ms, `…1788323424682`), not delivery lag in the anchor read. |
+| B — random ±15 ms band from ring-reader delivery lag | **CONFIRMED in direction, REFUTED in magnitude and mechanism** | The measured bias is 2.3–3.5× the predicted ±15 ms and systematically negative. Fresh absolute-grid per-cell means −34.97 to −52.51 ms (`…1788310164556`, `…1788310817094`). Task 9: the random component is the ring's overshoot at stop being dropped from the buffer HEAD by `#finalize` (32–51 ms, `…1788328085978`), not delivery lag in the anchor read. |
 | C — 50–235 ms constant-late under main-thread jank | **NOT CONFIRMED, NOT CLEANLY REFUTED — explicit design-spec §6 deviation** | `janked-start` cannot isolate C from A and B: `classifyCell` resolves the head-loss branch before band matching, and `constant-late` structurally requires a positive mean while every measured mean is negative. Registered as a deliberate deviation from the spec's binary framing, with the follow-up needed to resolve it (a jank provocation that overlaps the anchor-read window without causing content loss). |
 | D — loop-wrap content ~20–24 ms LATE, flat across takes | **CONFIRMED FLAT, REFUTED in magnitude and sign** | Flatness holds on the absolute grid: the within-repeat spread across takes 1–4 is **0.079 ms** (`…1788310164556`, 97.3 bpm r1) and **0.136 ms** (`…1788310817094`, 120 bpm r2) on the two fresh upstream repeats that finalized, and at most **0.142 ms** over the 12 candidate repeats — no accumulation take to take. But the offset is EARLY, not late, and the two fresh cell means (−34.97, −49.40 ms) are **1.2–3.3×** the predicted 15–30 ms band — the same inherited placement bias as B, not the predicted voice-crossfade lateness. |
 
@@ -235,9 +237,9 @@ with the reason at their head:
 | draft | finding | status |
 |---|---|---|
 | `issue-residual-start-placement-bias.md` | the start-placement bias on all five scenarios, count-in included, with the four-term decomposition, the fresh-upstream signature per scenario, and what remains after the fix (the input path's own delay) | to file |
-| `issue-take-collision.md` | Task 7b Finding 1, the deterministic content-address collision (unchanged on the branch: 6 of 12 repeats) | to file |
+| `issue-take-collision.md` | Task 7b Finding 1, the deterministic content-address collision (unchanged: 6 of 12 repeats on the two upstream official runs, 9 of 18 on the three branch runs) | to file |
 | `withdrawn/issue-loop-wrap-finalization-hang.md` | C2 — root-caused and fixed by the PR | withdrawn |
-| `withdrawn/issue-punch-in-head-loss.md` | its measured quantity was the `#finalize` head drop minus the loopback delay; the true request-to-first-frame gap is 0–2 quanta | withdrawn |
+| `withdrawn/issue-punch-in-head-loss.md` | its measured quantity was the `#finalize` head drop minus the loopback delay; the true request-to-first-frame gap is 0–3 render quanta (0–8.7 ms) | withdrawn |
 | `withdrawn/issue-inter-track-quantum-skew.md` | the skew equals the two loopback streams' delay difference; SDK-side skew is zero on the branch | withdrawn |
 
 The PR draft's "what this does not fix" list points at the two remaining drafts.
@@ -409,6 +411,15 @@ times). 2x that is far under the 2 ms floor. **`ALIGNED_TOLERANCE_MS` stays at 2
 (unchanged)** — the provisional value was already correctly calibrated.
 
 ### `HEAD_MISSING_BASELINE_MS` (worklet-connect-to-first-frame setup lag)
+
+> **Superseded in Task 9** ("Task 9: best-fix rework — branch-measured verification"):
+> the quantity this baseline absorbs is not a request-to-first-frame gap. On the
+> installed 0.0.170 it is the `RecordingWorklet.#finalize` head drop (the file kept the
+> LAST `limit` frames; ring overshoot 1535–2431 frames, `…1788328085978`) minus the
+> loopback path's own delay (10–23 ms); the SDK-reported first captured frame follows
+> the request by 0–3 render quanta, and on the reworked branch `headMissingRawMs` is 0
+> on all 120 rows. The constant still works as the empirical baseline it was measured
+> as; the interpretation below is history.
 
 Raw `headMissingMs` (`headMissingRawMs` in the persisted JSON — buffer-start context
 time vs. `recordRequestContextTime`, BEFORE the baseline correction) across the 15
@@ -780,10 +791,10 @@ larger term-2 bias than steady-state repeats.
 
 > **Resolved in Task 9** ("Task 9: best-fix rework — branch-measured verification"): the
 > hang is the stop path deleting a take whose live duration is still ≤ 0 (a stop right
-> behind a wrap) without ever asking the worklet to finalize — 4 of 4 hangs in
-> `recaudit-summary-1788323077339.json` coincide with `stop: deleting zero-duration
-> region` and no `limit()` call. Fixed on the reworked branch (0 of 12 repeats). The
-> characterization below stands as written.
+> behind a wrap) without ever asking the worklet to finalize — 4 of 6 repeats in
+> `recaudit-summary-1788327757434.json` hung, all four with an empty `finalizeLimitCalls`
+> and `finalizeLoaderState: "record"` (persisted per row). Fixed on the reworked branch
+> (0 of 12 repeats). The characterization below stands as written.
 
 **Every `loop-wrap` failure across every run this campaign made (original matrix runs,
 the retry, and this fix round's diagnostic re-runs — 27 total finalization attempts
@@ -938,7 +949,9 @@ measured at the time; item 2 has since been withdrawn (Task 7c), so two remain l
 
 Items 1 and 3 are candidates for upstream issue drafts under `debug/drafts/` (Task 8),
 per the repo's issue-filing convention (no suggested-fix section, draft for user review
-before posting); item 2 is withdrawn and gets no draft. `loop-wrap`'s D-flatness is a
+before posting); item 2 is withdrawn and gets no draft. (Task 9 outcome: item 3, the
+hang, was root-caused and fixed by the PR and its draft withdrawn — see "Task 9:
+best-fix rework — branch-measured verification".) `loop-wrap`'s D-flatness is a
 confirmation of an already-predicted signature, not a new finding on its own, and is
 worth folding into the `loop-wrap` write-up rather than filed standalone. The
 `janked-start` A-mechanism repeat is NOT a confirmation and is not to be folded into any
@@ -1676,6 +1689,13 @@ which reproduces on every repeat, not intermittently).
 
 ### Finding 2: inter-track skew is quantized to roughly one render quantum, exceeds the 2 ms tolerance on nearly every successful repeat, and is unchanged by the candidate fix
 
+> **Attributed in Task 9** ("Multi-mic on the branch"): with per-tape first-frame times
+> persisted, the skew equals the difference of the two loopback streams' own delays
+> exactly on every successful pair and each tape's residual after netting its own delay
+> is identical (+1.15 / +1.15 ms) — the harness's two streams, not the SDK. The issue
+> draft is withdrawn (`debug/drafts/withdrawn/issue-inter-track-quantum-skew.md`). The
+> characterization below stands as measured.
+
 **Fix round 1 correction:** the first draft undercounted — it examined only the
 official-matrix cells' own per-cell tables and missed some of its own
 `cellSkews` entries. Recomputed directly from every `cellSkews` entry across
@@ -1946,6 +1966,10 @@ rest of this campaign's register depends on.
 
 Both are candidates for upstream issue drafts under `debug/drafts/` (Task 8),
 per the repo's issue-filing convention.
+
+> **Task 9 outcome:** Finding 1 is drafted (`issue-take-collision.md`, unchanged on the
+> reworked branch: 9 of 18 repeats); Finding 2 is withdrawn — the skew is the two
+> loopback streams' delay difference, not the SDK's (see "Multi-mic on the branch").
 
 ## Midtimeline first-beat drop — root cause and candidate fix (Task 7c)
 
@@ -2384,6 +2408,12 @@ on the candidate build. An occasional capture-start stall of 145–180 ms theref
 on both builds and in a scenario with no provocation — it is not jank coupling. None of
 the three loses a beat.
 
+> **Reinterpreted in Task 9:** `headMissingRawMs` is the `#finalize` head drop (ring
+> overshoot, 32–51 ms measured) minus the loopback delay, not a capture-start gap, so a
+> 145–180 ms value would need a ~170 ms overshoot or a real stall — neither is measured,
+> and all three rows have lost their capture buffers. They are unexplained, not evidence
+> of a stall.
+
 **Status: A is not observed on any repeat whose capture buffer survives.** That is the
 strongest universal the artifacts support, and it is deliberately narrower than the one
 an earlier version of this paragraph asserted ("no repeat, on any scenario"). Scoped to
@@ -2433,6 +2463,14 @@ That row is degenerate on both grids for a second, independent reason: its persi
 Nothing in the register should treat it as evidence of late placement, on either grid.
 
 ### Note: a real, small head loss on punch-in (not the missing beat)
+
+> **Superseded in Task 9** ("Task 9: best-fix rework — branch-measured verification"):
+> `headMissingRawMs` is the `#finalize` head drop minus the loopback delay, not content
+> lost between the request and the first captured frame; the SDK's first captured frame
+> follows the request by 0–3 render quanta, and the quantity is 0 on all 120 rows of
+> the reworked branch. The punch-in draft was withdrawn for this reason
+> (`debug/drafts/withdrawn/issue-punch-in-head-loss.md`); the pre-connect-at-arm
+> suggestion below is moot. The note stands as history.
 
 Separately from the above, `headMissingRawMs` on `midtimeline-start`
 (12.21–49.04 ms over all 48 persisted rows) is genuine content between the record request and the first
@@ -2809,7 +2847,11 @@ reference clicks, which uses no region field) differ by the loopback path's own 
 review flagged as the one harness-path unknown. On the branch it is **9.62–22.92 ms,
 varying per stream instance** (60 take-0 rows over both rates). Netting it out of the
 adjusted median leaves **+1.13 … +1.19 ms on 59 of 60 rows** (the 60th is the 48000
-first-cell anomaly row, −0.85 ms after re-adjustment), a rate-independent constant inside
+first-cell anomaly row, −0.85 ms after re-adjustment: its `waveformOffsetSec` is
+0.027604 against 0.025604 on its neighbours, i.e. the SDK read `outputLatency` as 0.025
+instead of 0.023 on the session's first recording and placed that take 2 ms earlier —
+the same first-recording latency-report wobble that feeds the harness-side anomaly), a
+rate-independent constant inside
 the 2 ms tolerance, consistent with detector onset latency and not investigated further.
 The SDK-reported first captured frame follows the record request by **0–8.7 ms (0–3
 render quanta, exactly)** on every row, and `headMissingRawMs` is 0 on all 120 rows. So:
