@@ -29,6 +29,12 @@
 // (`classifyCell`), streamed into a results table, and uploaded (WAV per
 // repeat + one JSON summary) to the dev server's /__verify sink.
 //
+// `&defaultInput=1` (single-tape scenarios) arms the tape on the SDK's DEFAULT
+// input — the capture box names no device — instead of naming the synthetic
+// loopback device. It is the only configuration in which `CaptureAudio` reuses
+// its audio chain across takes rather than rebuilding it before each one, so it
+// is how the sweep measures the reuse path. See `DEFAULT_INPUT` below.
+//
 // `?scenario=multitrack-start|multitrack-janked|multitrack-all&bpm=<n|all>&rate=<n>`
 // — the multi-mic simultaneous-recording harness (Task 7b): two tapes armed on
 // clones of the same loopback signal, measured for inter-track skew (see the
@@ -186,7 +192,20 @@ function detectSdkBuildProbe(engine: unknown): SdkBuildProbe {
 // multi-mic scenarios' second tape (see "Multi-mic simultaneous recording"
 // section below) — advertising it unconditionally costs nothing for the
 // single-tape modes.
-const loopback = installLoopbackCapture(2);
+/**
+ * `?defaultInput=1` — arm the tape on the SDK's DEFAULT input instead of naming
+ * the synthetic device: the capture box's `deviceId` is left unset and the
+ * loopback serves the resulting unconstrained request (see `serveDefault` in
+ * loopbackInjection.ts). That is the only configuration in which
+ * `CaptureAudio.#updateStream` can reuse its audio chain across takes, because
+ * its reuse test asks whether the BOX names a device; naming one that the
+ * synthetic stream does not report back forces a rebuild before every
+ * recording. Single-tape scenarios only — the multi-mic ones need two distinct
+ * named devices by construction.
+ */
+const DEFAULT_INPUT = params.get("defaultInput") === "1";
+
+const loopback = installLoopbackCapture(2, { serveDefault: DEFAULT_INPUT });
 
 type ProbeRow = { label: string; value: string };
 
@@ -575,10 +594,12 @@ async function createMatrixContext(rate: number): Promise<MatrixContext> {
   const capture = project.captureDevices.get(audioUnitBox.address.uuid).unwrap();
   if (!(capture instanceof CaptureAudio)) throw new Error("capture is not CaptureAudio");
   project.editing.modify(() => {
-    capture.captureBox.deviceId.setValue(LOOPBACK_DEVICE_ID);
+    // `defaultInput` leaves the box's deviceId unset — see DEFAULT_INPUT.
+    if (!DEFAULT_INPUT) capture.captureBox.deviceId.setValue(LOOPBACK_DEVICE_ID);
     capture.requestChannels = 1;
   });
   capture.armed.setValue(true);
+  console.log("[recording-alignment-audit] tape armed, defaultInput=" + String(DEFAULT_INPUT));
 
   const unitAdapter = project.rootBoxAdapter.audioUnits.adapters().find((u) => u.box === audioUnitBox);
   if (!unitAdapter) throw new Error("no audio unit adapter for tape");

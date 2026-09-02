@@ -173,10 +173,35 @@ export interface LoopbackHandle {
 export interface LoopbackOptions {
   /** Report the requested deviceId on the handed-out stream — see `stampDeviceId`. Default false. */
   reportDeviceId?: boolean;
+  /**
+   * Serve the loopback as the DEFAULT input, for exercising the SDK path where
+   * no device is named anywhere. Default false.
+   *
+   * Leaving the capture box's `deviceId` unset is not enough on its own:
+   * `CaptureAudio.#updateStream` falls back to `AudioDevices.defaultInput`, which
+   * is the first entry of the enumerated input list, and this module normally
+   * puts its synthetic devices at the head of that list — so the SDK would name
+   * the loopback by id anyway and the request would carry an exact-device
+   * constraint. With this option `enumerateDevices` reports NO audio inputs at
+   * all (the synthetic ones are withheld and real ones filtered, so the SDK
+   * cannot name a device this harness would not serve), `defaultInput` resolves
+   * to nothing, and the stream request goes out with no `deviceId` constraint —
+   * which is the path `CaptureAudio` takes for a box that names no device.
+   *
+   * `getUserMedia` serves the loopback for that unconstrained request, and with
+   * `reportDeviceId` on, the handed-out clone reports `LOOPBACK_DEVICE_ID`: a
+   * real default-device stream reports the concrete device the browser chose,
+   * not an empty id, and the SDK keys a stored input-latency calibration on
+   * exactly that value.
+   *
+   * Non-audio devices are still passed through, and video inputs are untouched.
+   */
+  serveDefault?: boolean;
 }
 
 export function installLoopbackCapture(deviceCount: number = 1, options: LoopbackOptions = {}): LoopbackHandle {
   const reportDeviceId = options.reportDeviceId === true;
+  const serveDefault = options.serveDefault === true;
   const original = {
     getUserMedia: navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices),
     enumerateDevices: navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices),
@@ -196,17 +221,27 @@ export function installLoopbackCapture(deviceCount: number = 1, options: Loopbac
   navigator.mediaDevices.getUserMedia = async (constraints?: MediaStreamConstraints) => {
     if (dest === null) throw new Error("loopbackInjection: getUserMedia before attach()");
     const clone = dest.stream.clone();
-    const deviceId = requestedDeviceId(constraints);
+    const requested = requestedDeviceId(constraints);
+    // An unconstrained request under `serveDefault` is the default-device path:
+    // the browser picks a device and the track reports ITS id, so the clone
+    // reports the device this harness actually served.
+    const deviceId = requested ?? (serveDefault ? LOOPBACK_DEVICE_ID : undefined);
     const stamped = reportDeviceId && deviceId !== undefined && deviceId !== "";
     if (stamped) stampDeviceId(clone, deviceId as string);
     console.log(
-      "[loopbackInjection] getUserMedia requested deviceId=" + String(deviceId ?? "(none)") +
+      "[loopbackInjection] getUserMedia requested deviceId=" + String(requested ?? "(none — default device)") +
+      " served=" + String(deviceId ?? "(none)") +
       " reportedOnStream=" + String(stamped)
     );
     return clone;
   };
   navigator.mediaDevices.enumerateDevices = async () => {
     const real = await original.enumerateDevices();
+    if (serveDefault) {
+      // Withhold every audio input so `AudioDevices.defaultInput` is undefined and
+      // the SDK asks for the default device without naming one — see `serveDefault`.
+      return real.filter((device) => device.kind !== "audioinput");
+    }
     const synthetic = Array.from({ length: deviceCount }, (_, i) => {
       const id = loopbackDeviceId(i + 1);
       return {

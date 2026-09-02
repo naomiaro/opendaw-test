@@ -63,6 +63,13 @@
 // those rows are excluded and counted, with the all-rows fit persisted beside it
 // so the exclusion's effect is visible rather than assumed.
 //
+// `?defaultInput=1` arms the tape on the SDK's default input (the capture box
+// names no device) instead of naming the synthetic loopback. That is the only
+// configuration in which `CaptureAudio` reuses its audio chain across
+// recordings: its reuse test asks whether the BOX names a device, and a named
+// device the synthetic stream does not report back forces a rebuild before every
+// recording. Use it to measure the chain-reuse path rather than the rebuild one.
+//
 // `?armState=steady|fresh` (default steady) selects which SDK input-chain state
 // the applied cell records in: `steady` records on the chain the sweep and the
 // applied calibration ran on; `fresh` disarms and re-arms first, so take 1 is
@@ -322,7 +329,17 @@ interface CalibrationSummary {
 // `stampDeviceId`), which is the configuration this measurement needs: a
 // calibration only describes the stream it ran on, and the applied cell has to
 // record on that same stream. The alignment harness deliberately leaves it off.
-const loopback = installLoopbackCapture(1, { reportDeviceId: true });
+/**
+ * `?defaultInput=1` — leave the capture box's `deviceId` unset so the SDK opens
+ * its DEFAULT input, and have the loopback serve that unconstrained request
+ * (`serveDefault` in loopbackInjection.ts). This is the configuration in which
+ * `CaptureAudio` reuses its audio chain across recordings instead of rebuilding
+ * it before each one; the served clone still reports a concrete device id, so a
+ * calibration is stored and resolved exactly as it is when a device is named.
+ */
+const DEFAULT_INPUT = params.get("defaultInput") === "1";
+
+const loopback = installLoopbackCapture(1, { reportDeviceId: true, serveDefault: DEFAULT_INPUT });
 
 /** Same marker the alignment harness probes — see its `detectSdkBuildProbe`. */
 function detectSdkBuildProbe(engine: unknown): SdkBuildProbe {
@@ -447,13 +464,14 @@ async function createContext(rate: number, bpm: number): Promise<CalibrationCont
   const capture = project.captureDevices.get(audioUnitBox.address.uuid).unwrap();
   if (!(capture instanceof CaptureAudio)) throw new Error("capture is not CaptureAudio");
   project.editing.modify(() => {
-    capture.captureBox.deviceId.setValue(LOOPBACK_DEVICE_ID);
+    // `defaultInput` leaves the box's deviceId unset — see DEFAULT_INPUT.
+    if (!DEFAULT_INPUT) capture.captureBox.deviceId.setValue(LOOPBACK_DEVICE_ID);
     capture.requestChannels = 1;
   });
   capture.armed.setValue(true);
   const calibrating = calibratingCaptureOf(capture);
   const deviceId = await waitForStream(capture, STREAM_DEADLINE_MS);
-  console.log("[input-latency-calibration] stream open on deviceId=" + deviceId);
+  console.log("[input-latency-calibration] stream open on deviceId=" + deviceId + " defaultInput=" + String(DEFAULT_INPUT));
 
   const unitAdapter = project.rootBoxAdapter.audioUnits.adapters().find((u) => u.box === audioUnitBox);
   if (!unitAdapter) throw new Error("no audio unit adapter for tape");
@@ -997,6 +1015,8 @@ chain state:       ${rowStates.map((r) => `r${r.repeat} ${r.chainPull} ${r.hopSe
 ?rate=<number>        default 48000 — sets the AudioContext at init, never "all"
 ?armState=steady|fresh default steady — "fresh" re-arms before the cell, so take 1
                       is the first pull on a rebuilt SDK input chain
+?defaultInput=1       arm on the SDK's default input (box names no device), the
+                      only configuration where the audio chain is reused
 Cell:                 ${CELL_SCENARIO}, ${REPEATS_PER_CELL} repeats, calibration applied
 Delay ceiling:        ${MAX_REQUESTED_DELAY_MS.toFixed(0)} ms at parse time; per point the run
                       refuses any D whose predicted round trip passes
