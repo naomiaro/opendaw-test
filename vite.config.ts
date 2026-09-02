@@ -190,6 +190,7 @@ export default defineConfig(({command}) => ({
                 automationSimplifierDebug: resolve(__dirname, "automation-simplifier-debug-demo.html"),
                 samplerateAudit: resolve(__dirname, "samplerate-audit-debug-demo.html"),
                 recordingAlignmentAudit: resolve(__dirname, "recording-alignment-audit-debug-demo.html"),
+                inputLatencyCalibrationDebugDemo: resolve(__dirname, "input-latency-calibration-debug-demo.html"),
                 wasmEngine: resolve(__dirname, "wasm-engine-demo.html"),
                 modulation: resolve(__dirname, "modulation-demo.html"),
                 convolver: resolve(__dirname, "convolver-demo.html"),
