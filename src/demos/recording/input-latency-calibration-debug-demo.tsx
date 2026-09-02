@@ -71,7 +71,7 @@
 // recording. Use it to measure the chain-reuse path rather than the rebuild one.
 //
 // `?repeat=N` runs N further calibrations back to back on the same armed chain
-// after the sweep, and reports how many came back exactly one render quantum off
+// after the sweep, at the last delay `?delays=` names, and reports how many came back exactly one render quantum off
 // the run's modal round trip — the miss the campaign saw once at 44.1 kHz, with
 // all three bursts agreeing and a verdict of `ok`. On a build that reports a
 // second capture anchor it also says, per miss, which anchor still agreed with
@@ -284,6 +284,8 @@ interface RepeatCall extends CalibrationResult {
 
 interface RepeatSummary {
   calls: number;
+  /** The injected return delay every call in the phase ran at, in ms. */
+  delayMs: number;
   /** Modal primary round trip across the phase, the value a call is judged against. */
   modeRoundTripSec: number;
   /** How many calls share the mode. */
@@ -540,7 +542,11 @@ function modeAtFrameResolution(values: number[], sampleRate: number): { value: n
  * mode is the one that stayed right. "B" would mean the REPORTED round trip is
  * the one that drifted.
  */
-function summarizeRepeats(calls: CalibrationResult[], sampleRate: number): { rows: RepeatCall[]; summary: RepeatSummary } {
+function summarizeRepeats(
+  calls: CalibrationResult[],
+  sampleRate: number,
+  delayMs: number
+): { rows: RepeatCall[]; summary: RepeatSummary } {
   const renderQuantumSec = 128 / sampleRate;
   const usable = calls.filter((call) => Number.isFinite(call.roundTripSeconds));
   const mode = usable.length > 0
@@ -568,6 +574,7 @@ function summarizeRepeats(calls: CalibrationResult[], sampleRate: number): { row
     rows,
     summary: {
       calls: rows.length,
+      delayMs,
       modeRoundTripSec: mode.value,
       modeCount: mode.count,
       renderQuantumSec,
@@ -838,8 +845,20 @@ async function runCalibrationAudit(cb: RunCallbacks): Promise<void> {
 
   // `?repeat=N`: N more calibrations back to back on the same chain, before the
   // apply so the stored value is still measured the way every other run measures
-  // it. Nothing is re-armed and the return delay is left where the sweep put it.
+  // it. Nothing is re-armed.
+  //
+  // The phase runs at the LAST delay `?delays=` named, set explicitly here rather
+  // than inherited from wherever the sweep left the node: the delay is a
+  // condition of the measurement — the one miss the campaign saw was at D = 50 ms
+  // — so it is set on purpose and persisted with the summary, instead of being a
+  // fact about loop order that the artifact does not record.
+  const repeatDelayMs = delaysMs.length > 0 ? delaysMs[delaysMs.length - 1] : 0;
   const repeatCalls: CalibrationResult[] = [];
+  if (repeatCount > 0) {
+    loopback.setReturnDelay(repeatDelayMs / 1000);
+    await sleep(DELAY_SETTLE_MS);
+    console.log("[input-latency-calibration] repeat phase at D=" + String(repeatDelayMs) + "ms, " + String(repeatCount) + " calls");
+  }
   for (let index = 0; index < repeatCount; index++) {
     cb.setState(`repeat:${index + 1}/${repeatCount}`);
     const result = await calibrateThroughLoopback(calibrating, bias.valueSec, false);
@@ -855,11 +874,12 @@ async function runCalibrationAudit(cb: RunCallbacks): Promise<void> {
       " reason=" + String(result.reason ?? "(none)")
     );
   }
-  const repeatAnalysis = repeatCount > 0 ? summarizeRepeats(repeatCalls, rate) : null;
+  const repeatAnalysis = repeatCount > 0 ? summarizeRepeats(repeatCalls, rate, repeatDelayMs) : null;
   if (repeatAnalysis !== null) {
     const { summary } = repeatAnalysis;
     console.log(
       "[input-latency-calibration] repeat summary calls=" + String(summary.calls) +
+      " delayMs=" + String(summary.delayMs) +
       " modeRoundTripMs=" + (summary.modeRoundTripSec * 1000).toFixed(4) +
       " modeCount=" + String(summary.modeCount) +
       " quantumMs=" + (summary.renderQuantumSec * 1000).toFixed(4) +
@@ -1243,7 +1263,7 @@ chain state:       ${rowStates.map((r) => `r${r.repeat} ${r.chainPull} ${r.hopSe
                 Repeat phase — one-quantum miss rate
               </Heading>
               <pre style={{ margin: 0, fontSize: "0.85rem", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
-                {`calls:              ${repeatSummary.calls}
+                {`calls:              ${repeatSummary.calls} at D = ${repeatSummary.delayMs} ms
 modal round trip:   ${ms(repeatSummary.modeRoundTripSec)} ms on ${repeatSummary.modeCount}/${repeatSummary.calls} calls
 render quantum:     ${ms(repeatSummary.renderQuantumSec)} ms
 one-quantum misses: ${repeatSummary.oneQuantumMisses}
@@ -1271,8 +1291,8 @@ ${repeatSummary.missAnchorVerdicts.length === 0
 ?defaultInput=1       arm on the SDK's default input (box names no device), the
                       only configuration where the audio chain is reused
 ?repeat=<n>           default 0 — after the sweep, run n more calibrations back to
-                      back on the same chain and report the one-quantum miss rate
-                      (pair with delays=0)
+                      back on the same chain, at the LAST delay ?delays= names,
+                      and report the one-quantum miss rate
 Cell:                 ${CELL_SCENARIO}, ${REPEATS_PER_CELL} repeats, calibration applied
 Delay ceiling:        ${MAX_REQUESTED_DELAY_MS.toFixed(0)} ms at parse time; per point the run
                       refuses any D whose predicted round trip passes
