@@ -160,7 +160,6 @@ peak-to-mean ratio gate) and what differs (emission and arrival anchored on the 
 clock instead of `MediaRecorder.start()`). No code is copied from that repository; if any ever
 is, its MIT notice travels with it. The PR description repeats the citation.
 
-`measure` owns the preconditions (§4.3), schedules the bursts, records, analyses, and resolves.
 ### 4.2 `CaptureAudio.calibrateInputLatency(options?: Options & {apply?: boolean}): Promise<Result>`
 
 Feeds `measure` the capture's own stream source node (the same node `prepareRecording` connects
@@ -181,9 +180,10 @@ stores the result (§4.4). Also `clearInputLatencyCalibration(): void`.
 
 ### 4.4 Storage and resolution
 
-- New engine preference `recording.inputLatencyCalibrations`:
-  `Record<deviceId, {inputLatency: number, outputLatencyAtCalibration: number, spread: number, measuredAt: number}>`,
-  schema default `{}`. Persisted with the other preferences (local storage: per browser, per
+- New engine preference `recording.inputLatencyCalibrations`: an array of
+  `{deviceId: string, inputLatency: number, outputLatencyAtCalibration: number, spread: number, measuredAt: number}`,
+  schema default `[]`, replaced wholesale on write and on clear (the preferences proxy does not
+  deep-proxy arrays and has no delete trap, so an array replaced as a unit is the reliable shape). Persisted with the other preferences (local storage: per browser, per
   origin — the same scope as `getUserMedia` device ids, so a calibration can never be applied by
   a different browser).
 - Resolution order (extends #378 by one rung):
