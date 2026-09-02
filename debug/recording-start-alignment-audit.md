@@ -1692,3 +1692,146 @@ rest of this campaign's register depends on.
 
 Both are candidates for upstream issue drafts under `debug/drafts/` (Task 8),
 per the repo's issue-filing convention.
+
+## Midtimeline first-beat drop — root cause and candidate fix (Task 7c)
+
+`midtimeline-start` reported `missingBeats = 1` on 12/12 matrix repeats on
+BOTH builds — the only scenario to do so unconditionally, and the campaign's
+last unexplained head-loss signature. This section establishes what produced
+it. **The verdict is that no beat was ever dropped: the missing beat was a
+phantom grid point manufactured by this harness's own expected-beat
+generator.** No SDK change is warranted or made; the fix is in
+`src/lib/audit/recordingAlignment.ts`.
+
+Three mechanisms were discriminated against the persisted evidence
+(`.verify-output/recaudit-*.wav` decoded offline, band-split and
+onset-detected with this repo's own `bandSplit`/`detectOnsets`, then
+re-matched — scripts under
+`.superpowers/sdd/2026-09-01-recording-start-alignment-audit/scripts/`):
+
+| # | Mechanism | Predicted signature | Measured | Verdict |
+|---|-----------|--------------------|----------|---------|
+| a | Content never captured — the punch-in beat's click is clipped or absent because the capture path connects inside `startRecording`'s async chain | a GAP in the raw buffer's click train (one interval ≈ 2× the beat period), and/or head lag well above the nominal baseline | click train uniform end-to-end on 24/24 candidate + 12/12 upstream repeats: consecutive gaps **499.9–500.1 ms against a 500.0 ms beat** @120, **616.6–616.8 vs 616.6** @97.3. `headMissingRawMs` **12.5–49.0 ms**, inside the nominal-start control-cell band (14.4–25.0 ms, baseline 26 ms) | **REFUTED** |
+| b | Presented range starts after beat 0 — the content is in the buffer but region position / `waveformOffset` math skips it | a click sitting at a buffer time BEFORE `waveformOffsetSec` | clicks earlier than `waveformOffsetSec`: **0 on 24/24** candidate repeats (`waveformOffsetSec` itself is 0 on the definitive runs). By contrast every beat-aligned scenario legitimately has 1 such click (count-in has 4–5) | **REFUTED** |
+| c | Harness artifact — `measureTakeAlignment` expects a beat at exactly the region boundary | the unmatched beat is always index 0, and re-matching on the true musical grid clears it | unmatched beat index = **[0] on 24/24**; musical-grid re-match gives **0 missing on 24/24** | **CONFIRMED** |
+
+### The confirmed mechanism
+
+`measureTakeAlignment` built its expected-beat grid as
+`regionStartSec + k·beatPeriod`, i.e. anchored at the region start. That
+silently assumes every take begins on a beat. It holds for a take started
+from a stopped transport (position 0), after a count-in, or at a loop
+boundary — measured `regionStart mod beatPeriod` is **exactly 0.0 ms** for
+`nominal-start`, `janked-start`, `countin-start` and `loop-wrap` on every
+repeat. It does not hold for a take punched in while the transport already
+runs: `midtimeline-start`'s region lands wherever the punch fell, measured
+**11.5–80.7 ms** past a beat.
+
+On such a take, grid point 0 sits at the region boundary while the first
+captured beat arrives **66.5–128.0 ms** after the preceding beat — i.e.
+372–550 ms into the buffer, always further than the half-beat match
+tolerance (250 ms @120, 308 ms @97.3). Grid point 0 is therefore unmatchable
+by construction on every repeat, and the count of expected beats exceeds the
+count of captured beats by exactly one. Both the permanent `missingBeats = 1`
+and a systematic bias of `−(regionStart mod beatPeriod)` on every beat's
+error follow directly.
+
+The spread of that punch-in phase within a cell is the harness's own doing:
+`waitForPosition` polls `engine.position` on a **50 ms** `setTimeout`, so the
+record request lands uniformly within 50 ms after the target beat. Measured
+per-cell spread of the head gap is **54.7 ms** @120 and **49.9 ms** @97.3 —
+the poll interval, not an SDK quantity.
+
+### The fix
+
+`measureTakeAlignment` now builds the expected-beat grid on the project's
+**absolute** beat grid — integer multiples of the beat period from timeline
+zero — restricted to the take's presented range, and reports each matched
+beat by its absolute timeline index. For a beat-aligned region the two grids
+are point-for-point identical, so the change is a provable no-op for every
+scenario except `midtimeline-start`: replaying the shipped function over the
+definitive matrix runs' persisted WAVs reproduces `nominal-start`,
+`janked-start` and `countin-start` medians to within 0.1 ms and their
+matched/missing counts exactly.
+
+The fix does not blind the metric to genuine head loss. A beat inside the
+presented range whose content never reached the buffer stays unmatched under
+both grids — confirmed on a real instance (run 1788299505584,
+`nominal-start`/120/r1: capture began 37.2 ms after beat 0, beat 0's click
+genuinely absent, reported missing under both grids). Unit tests cover all
+four cases (no missing beat when everything in range was captured; ~0 error
+rather than the off-grid phase for a correctly placed punch-in take; the real
+error still reported when the take is genuinely misplaced; a genuinely absent
+in-range beat still caught).
+
+`measureCrossTrackSkew` benefits incidentally: it pairs by beat index, and
+those indices are now absolute, so two tapes whose regions landed at
+different positions pair on the same musical instant instead of offsetting
+one series against the other. Task 7b's multi-mic regions are all
+beat-aligned, so no Task 7b number changes.
+
+### Verification (all runs on the installed SDK, build probe `upstream`)
+
+`missingBeats` is 0 on every row of every run below — previously 12/12
+`midtimeline-start` repeats reported 1.
+
+| Run id | Rate | Scenario | Cell | `missingBeats` | Adjusted medians (ms) |
+|--------|------|----------|------|----------------|------------------------|
+| 1788306957902 | 48000 | midtimeline-start | 120 | **0/3** | −61.71, −69.37, −48.38 |
+| 1788306957902 | 48000 | midtimeline-start | 97.3 | **0/3** | −57.24, −41.40, −51.14 |
+| 1788307078098 | 44100 | midtimeline-start | 120 | **0/3** | −35.51, −34.35, −48.46 |
+| 1788307078098 | 44100 | midtimeline-start | 97.3 | **0/3** | −45.79, −34.92, −35.05 |
+
+Regression cells (48000 Hz, 120 bpm — one cell each, as specified):
+
+| Run id | Scenario | `missingBeats` | Adjusted medians (ms) | Verdict |
+|--------|----------|----------------|------------------------|---------|
+| 1788307141361 | nominal-start | 0/3 | −53.44, −47.62, −38.96 | no regression |
+| 1788307183605 | janked-start | 0/3 | −58.75, −50.65, −53.37 | no regression |
+| 1788307228648 | countin-start | 0/3 | −56.12, −55.40, −56.02 | no regression |
+| 1788307304777 | loop-wrap | 0/18 rows | −77.54, −36.23, −41.25 | no regression |
+
+`loop-wrap`'s per-take matched-beat split for repeat 1 reads 8,8,8,8,1,7
+against 8,8,8,8,0,8 (run 1788287951691) and 8,8,8,8,8,1 (run 1788299505584)
+before the fix — the last two takes' split varies run to run in the pre-fix
+data too (the teardown-finalized take's duration is render-quantum granular),
+and every take reports `missingBeats = 0` in all three. All three `loop-wrap`
+repeats finalized without hitting `C2`'s timeout on this run.
+
+### What this changes about the campaign's conclusions
+
+`midtimeline-start`'s corrected adjusted medians (−34.35 to −69.37 ms across
+12 repeats, both rates) sit inside the same band as every other scenario in
+the same runs (`nominal-start` −38.96 to −53.44, `janked-start` −50.65 to
+−58.75, `countin-start` −55.40 to −56.12, `loop-wrap` −36.23 to −77.54).
+Once the grid artifact is removed, **`midtimeline-start` stops being a
+distinct finding and collapses into the campaign's Finding 1 — the universal
+no-count-in placement bias**. It is not a separate content-skip defect.
+
+Two consequences for the register above, which is NOT rewritten here (its
+numbers stand as what was measured under the old grid, and the outcome
+summary's `midtimeline-start` content-skip claim should be read against this
+section):
+
+1. The outcome summary's finding 2 (`midtimeline-start` content skip,
+   `matched=15, missing=1` on 12/12) is **withdrawn** — it measured this
+   harness artifact.
+2. Prediction A's "confirmed unconditionally on `midtimeline-start` (12 of
+   12)" is **withdrawn** on the same evidence. A's status now rests solely on
+   the one intermittent `janked-start` repeat.
+
+Every `midtimeline-start` median quoted earlier in this register is inflated
+by that repeat's `regionStart mod beatPeriod` (11.5–80.7 ms measured) and
+should not be compared against the corrected figures in this section's
+tables.
+
+### Note: a real, small head loss on punch-in (not the missing beat)
+
+Separately from the above, `headMissingRawMs` on `midtimeline-start`
+(12.5–49.0 ms) is genuine content between the record request and the first
+captured frame — the same worklet-connect setup lag the calibration baseline
+absorbs on every scenario, not a midtimeline-specific defect. Pre-connecting
+the recording worklet at ARM time so the ring holds pre-roll before the punch
+would remove it for all scenarios. That is a design change to the SDK's
+capture path, not a bug fix, and is out of this task's scope; it is recorded
+here because the punch-in case is where a user would notice it first.
