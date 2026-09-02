@@ -1952,7 +1952,7 @@ presentation (Task 7c fix round 1, review finding 2):** an earlier version of th
 gave only the post-fix (absolute-grid) medians and called them "no regression" against
 pre-fix numbers that had been measured on the region-anchored grid. Three of these four
 runs are off-grid on all three repeats, so that was not a like-for-like comparison —
-the inter-grid difference on those rows is 2.6–39.6 ms, the same order as the medians
+the inter-grid difference on those rows is 5.2–39.6 ms, the same order as the medians
 themselves. Both grids are therefore recomputed here on the SAME capture WAVs, by
 re-matching each run's own persisted onsets and geometry:
 
