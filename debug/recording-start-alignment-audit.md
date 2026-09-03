@@ -244,7 +244,7 @@ What this campaign has put upstream, or has ready to:
 |---|---|---|
 | PR [#376](https://github.com/andremichelle/openDAW/pull/376) — anchor takes on the engine's own recording start | the one-shot `recordingStart` engine report, the processor's first-frame time, the finalization hang and the `#finalize` head drop | **posted** (fork branch `naomiaro:fix/recording-start-alignment`); measured before/after under "Task 9: best-fix rework" |
 | PR [#378](https://github.com/andremichelle/openDAW/pull/378) — apply the input latency the browser reports | `InputLatency.resolve` and the `Reported` default, bounded and read after output has started | **posted**; the branch below stacks on it |
-| Input-latency calibration PR | the loopback calibration routine (`InputLatencyCalibration.measure`, `CaptureAudio.calibrateInputLatency`, the per-device store, the `calibrated` resolver rung, the keep-alive sink, the chain-reuse fix, the second capture anchor), upstream final head `b51951082` (figures measured at `66021385`) | **prepared, not posted** — description drafted, awaiting review; measurements and open findings under "Input-latency calibration (2026-09-02)" |
+| PR [#380](https://github.com/andremichelle/openDAW/pull/380) — loopback input-latency calibration | the loopback calibration routine (`InputLatencyCalibration.measure`, `CaptureAudio.calibrateInputLatency`, the per-device store, the `calibrated` resolver rung, the keep-alive sink, the chain-reuse fix, the second capture anchor), upstream final head `b51951082` (figures measured at `66021385`) | **posted** 2026-09-03 (fork branch `naomiaro:feat/input-latency-calibration`, stacks on #378 and #376); measurements and open findings under "Input-latency calibration (2026-09-02)" |
 
 One PR-description draft (`pr-recording-start-alignment.md`, rewritten in Task 9 around
 the reworked fix with branch-measured before/after) and **two** issue drafts under
@@ -3049,8 +3049,7 @@ capture worklet, `InputLatencyCalibration.measure`, the per-device store and the
 resolver rung, `CaptureAudio.calibrateInputLatency` / `clearInputLatencyCalibration`, the
 polarity-tolerant peak search, the stored-spread clamp, the keep-alive sink (`ac1c15ea8`), the
 configurable probe (`3484e3265`), the unstamped-capture chain reuse (`546b5bfaa`) and the
-second capture anchor (`66021385`). **Not filed** — the PR description is drafted and awaits
-review.
+second capture anchor (`66021385`). **Filed** as PR [#380](https://github.com/andremichelle/openDAW/pull/380) on 2026-09-03.
 
 Every measurement in this section was taken at or below `66021385`; the branch's **final head is
 `b51951082`**, five commits above it, none of which touches the measurement, the protocol or the

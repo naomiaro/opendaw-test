@@ -151,6 +151,11 @@ const CALIBRATION_LINKS: DebugLink[] = [
     href: "https://github.com/andremichelle/openDAW/issues/374",
     kind: "note",
   },
+  {
+    label: "Upstream PR: openDAW#380 (the calibration routine this page measures)",
+    href: "https://github.com/andremichelle/openDAW/pull/380",
+    kind: "note",
+  },
 ];
 
 /** The scenario the applied cell runs — the campaign's cleanest single-tape provocation. */
