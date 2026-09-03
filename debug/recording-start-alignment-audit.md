@@ -263,8 +263,8 @@ The PR draft's "what this does not fix" list points at the two remaining drafts.
 
 The calibration section adds one more issue candidate, not drafted yet: the stop path
 truncating input in flight beyond its incidental post-stop margin. A second candidate — a
-terminated capture never tearing its audio chain down — was fixed on the calibration branch
-instead, leaving only its microphone-release half open.
+terminated capture never tearing its audio chain down, nor releasing its microphone — was fixed
+on the calibration branch instead.
 
 **Deliberately not drafted, because neither is confirmed:** Prediction C's explicit
 spec-§6 deviation (the campaign's `janked-start` provocation cannot isolate it from A
@@ -3051,12 +3051,15 @@ configurable probe (`3484e3265`), the unstamped-capture chain reuse (`546b5bfaa`
 second capture anchor (`66021385`). **Not filed** — the PR description is drafted and awaits
 review.
 
-Every measurement in this section was taken at or below `66021385`. The whole-branch review
-before the push called for three contained changes on top of it, none touching the measurement,
-the protocol or the analysis: the probe plays through the context destination unconditionally
-(see Method), the terminator tears the audio chain down (finding 3), and invalid `Options` are
-rejected instead of hanging the wait. The branch head therefore moves above `66021385`; the
-figures below do not.
+Every measurement in this section was taken at or below `66021385`; the branch's **final head is
+`bca9dcb5e`**, four commits above it, none of which touches the measurement, the protocol or the
+analysis. `e539e543f` plays the probe through the context destination unconditionally (see
+Method), `b8e08b97e` makes the terminator tear the audio chain down (finding 3), `a9df2da18`
+refuses `Options` that would hang the wait (`burstCount` not a positive integer, a
+non-positive or non-finite `burstSpacingSeconds`, a non-finite `gainDb` — each of which left the
+last burst's scheduled end NaN, which the default clock wait can neither reach nor time out on),
+and `bca9dcb5e` is review polish. Test counts at the final head: lib-dsp 14 files / 137,
+studio-core 48 files / 511.
 
 **Design spec:** `docs/superpowers/specs/2026-09-02-input-latency-calibration-design.md` and its
 plan, both deleted in the PR that completes this work per repo convention — recovery:
@@ -3470,20 +3473,27 @@ it rests on a single surviving repeat. It must never be quoted as takes landing 
    over the calibration rows), so the harness can no longer provoke it; any device whose true
    input latency exceeds the margin still would. **Issue candidate**, not yet drafted.
 3. **`CaptureAudio.terminate()` never tore the audio chain down — FIXED on the branch
-   (commit sha pending confirmation).** The terminator disconnected monitoring and detached the
-   monitor element but never called `#stopStream()` or `#destroyAudioChain()`, so a terminated
-   capture left the mic stream live and the source wired. Pre-existing on `origin/main` in its
-   open-mic form; the keep-alive sink converted it from a dormant leak into an active one,
-   because the sink→destination edge survived termination and the dead capture's source and
-   gain were rendered every quantum for the life of the page. `CaptureDevices` terminates a
-   capture on capture-pointer change, unit removal and project close/switch, so a page that
-   switched projects stranded one pulled dead chain per armed capture. The whole-branch review
-   ruled this the branch's to fix rather than a follow-up, since the branch is what made it
-   render: the terminator now destroys the chain, restoring the pre-branch idle state. The
-   separate pre-existing question — whether termination should also release the microphone, and
-   what a mid-recording terminate should do — is untouched and stays open upstream. **Not
-   measured here:** no run in this campaign exercises the terminator, so the fix is confirmed by
-   its upstream test, not by anything in `.verify-output/`.
+   (`b8e08b97e`).** The terminator disconnected monitoring and detached the monitor element but
+   never called `#stopStream()` or `#destroyAudioChain()`, so a terminated capture left the mic
+   stream live and the source wired. Pre-existing on `origin/main` in its open-mic form; the
+   keep-alive sink converted it from a dormant leak into an active one, because the
+   sink→destination edge survived termination and the dead capture's source and gain were
+   rendered every quantum for the life of the page. `CaptureDevices` terminates a capture on
+   capture-pointer change, unit removal and project close/switch, so a page that switched
+   projects stranded one pulled dead chain per armed capture. The whole-branch review ruled this
+   the branch's to fix rather than a follow-up, since the branch is what made it render.
+   **What the fix does:** the terminator's teardown now calls `#stopStream()` in place of the
+   bare `#disconnectMonitoring()`, which is the same teardown a disarm runs — disconnect
+   monitoring, destroy the audio chain, and stop every track of the open stream. So the chain
+   stops rendering **and the microphone is released**; the pre-existing open-mic half of this
+   finding is closed with it, not left over. A capture terminated mid-recording loses its input,
+   which the commit states as the intent — the recording it fed cannot outlive its capture — and
+   that is what the commit's test pins, alongside the chain teardown: after `terminate()` the
+   output node is `Option.None`, the keep-alive sink took a bare disconnect, and the opened
+   track reads `stopped`. One residual is untouched: the terminator still does not discard a
+   prepared-but-unused `RecordingWorklet`. **Not measured here:** no run in this campaign
+   exercises the terminator, so the fix rests on that upstream test, not on anything in
+   `.verify-output/`.
 4. **`prepareRecording` rebuilt the chain for a capture box carrying no device id — note,
    fixed on the branch.** The reuse test compared `undefined` against the reported id, so it
    never matched and the default-input path rebuilt per recording. `546b5bfaa` compares what
@@ -3509,8 +3519,8 @@ it rests on a single surviving repeat. It must never be quoted as takes landing 
   miss or the +1.15 ms residual. Not run: it needs a person present to allow the microphone
   prompt, and the campaign ran unattended.
 - **Finding 2 (stop-path truncation)** as an upstream issue; it is drafted nowhere yet. Finding
-  3 is fixed on the branch, but the microphone-release half of it is not, and that half is still
-  worth an issue.
+  3 is fixed on the branch, microphone release included; the only residual is the prepared
+  worklet the terminator still does not discard.
 - **`armState=fresh` batches** for the one-quantum miss — the one condition of the original
   observation that 122 calls did not vary.
 - **The +1.15 ms residual's attribution.**
