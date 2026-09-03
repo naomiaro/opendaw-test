@@ -31,9 +31,12 @@
 //
 // `&defaultInput=1` (single-tape scenarios) arms the tape on the SDK's DEFAULT
 // input — the capture box names no device — instead of naming the synthetic
-// loopback device. It is the only configuration in which `CaptureAudio` reuses
-// its audio chain across takes rather than rebuilding it before each one, so it
-// is how the sweep measures the reuse path. See `DEFAULT_INPUT` below.
+// loopback device. On THIS harness — whose loopback leaves `reportDeviceId`
+// off, so a named synthetic device never matches the empty id its stream
+// reports — it is the only configuration in which `CaptureAudio` reuses its
+// audio chain across takes rather than rebuilding it before each one, so it is
+// how the sweep measures the reuse path. (The calibration page reports the id
+// back and reuses in both modes.) See `DEFAULT_INPUT` below.
 //
 // `?scenario=multitrack-start|multitrack-janked|multitrack-all&bpm=<n|all>&rate=<n>`
 // — the multi-mic simultaneous-recording harness (Task 7b): two tapes armed on

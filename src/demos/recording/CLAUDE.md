@@ -390,8 +390,11 @@ Scenarios: `nominal-start`, `janked-start`, `midtimeline-start`, `countin-start`
 tapes (`?scenario=multitrack-all`). `?scenario=probe` runs the loopback feasibility
 probe instead of the matrix. `&defaultInput=1` arms on the SDK's default input (the capture
 box names no device and the injection withholds every audio input from `enumerateDevices`) —
-the only configuration in which the SDK reuses one audio chain across a cell's takes;
-single-tape scenarios only, since the multi-mic ones need two distinct named devices.
+on THIS harness the only configuration in which the SDK reuses one audio chain across a
+cell's takes, because its loopback leaves `reportDeviceId` off, so a named synthetic device
+never matches the empty id the stream reports and the chain is rebuilt per take (a real
+named device, which reports its id, reuses on every build); single-tape scenarios only,
+since the multi-mic ones name two distinct devices — the page refuses the combination.
 
 **After SDK upgrades, re-run `?scenario=all&bpm=all&rate=48000` and `…&rate=44100`,
 then `?scenario=multitrack-all&bpm=120&rate=48000`** — same standing-sweep role as the
@@ -420,7 +423,11 @@ sample-rate/quantum-alignment sweep in root CLAUDE.md's Build & Verification.
   bands A–D (predicted, written before their data existed) for the installed release, and
   the descriptive bands E/F for the calibration branch — selected by the presence of
   `LatencyProbes`, a proxy that exists only from the build after the keep-alive sink.
-  Envelopes written before the field fall back to a documented run-token threshold. E/F
+  The served build decides, not the `sdkBuildProbe` label: a future release that ships
+  `LatencyProbes` resolves to E/F even though the marker stamps it `upstream` (INTENDED —
+  A–D were fitted to the pre-#376 release and stop describing such a build; pinned in
+  `recordingAuditCalibration.test.ts`). Envelopes written before the field fall back to a
+  documented run-token threshold. E/F
   were FITTED to the two sweeps they classify, so a match on those runs is the envelope's
   construction, not a reproduced prediction — quote the 8-of-20 figure under A–D beside
   any 20-of-20 under E/F.
@@ -475,9 +482,13 @@ input-latency-calibration-debug-demo.html?delays=0,10,25,50&bpm=120&rate=48000
   chain the SDK rebuilt. That is the configuration that exposes the two-state chain lottery:
   the calibration is right only for the state it measured.
 - `?defaultInput=1` — leave the capture box's `deviceId` unset and withhold every audio input
-  from `enumerateDevices`, so the SDK asks for the default device without naming one. This is
-  the ONLY configuration that reaches the chain-reuse path; it cannot coexist with a real
-  device in the same page load.
+  from `enumerateDevices`, so the SDK asks for the default device without naming one. NOT a
+  reuse-versus-rebuild switch on this page: its loopback reports the device id back
+  (`reportDeviceId: true`), so the named mode reuses its chain too and both modes persist
+  `getUserMediaOpens: 1`. It selects WHICH reuse rule runs — the unnamed-box rule from
+  `546b5bfaa` instead of the named-device one. It cannot coexist with a real device in the
+  same page load. (The alignment harness, whose loopback leaves `reportDeviceId` off, is
+  where default input is the only reusing configuration.)
 - `?repeat=<n>` — after the sweep, run n more calibrations back to back on the same chain,
   CYCLING the delays `?delays=` names (call k at `delays[k mod len]`, with the same settle
   before each call as the sweep), and report the one-quantum miss rate. Each call persists the
