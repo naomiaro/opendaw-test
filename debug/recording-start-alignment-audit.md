@@ -244,7 +244,7 @@ What this campaign has put upstream, or has ready to:
 |---|---|---|
 | PR [#376](https://github.com/andremichelle/openDAW/pull/376) — anchor takes on the engine's own recording start | the one-shot `recordingStart` engine report, the processor's first-frame time, the finalization hang and the `#finalize` head drop | **posted** (fork branch `naomiaro:fix/recording-start-alignment`); measured before/after under "Task 9: best-fix rework" |
 | PR [#378](https://github.com/andremichelle/openDAW/pull/378) — apply the input latency the browser reports | `InputLatency.resolve` and the `Reported` default, bounded and read after output has started | **posted**; the branch below stacks on it |
-| Input-latency calibration PR | the loopback calibration routine (`InputLatencyCalibration.measure`, `CaptureAudio.calibrateInputLatency`, the per-device store, the `calibrated` resolver rung, the keep-alive sink, the chain-reuse fix, the second capture anchor), upstream head `66021385` | **prepared, not posted** — description drafted, awaiting review; measurements and open findings under "Input-latency calibration (2026-09-02)" |
+| Input-latency calibration PR | the loopback calibration routine (`InputLatencyCalibration.measure`, `CaptureAudio.calibrateInputLatency`, the per-device store, the `calibrated` resolver rung, the keep-alive sink, the chain-reuse fix, the second capture anchor), upstream final head `bca9dcb5e` (measured at `66021385`) | **prepared, not posted** — description drafted, awaiting review; measurements and open findings under "Input-latency calibration (2026-09-02)" |
 
 One PR-description draft (`pr-recording-start-alignment.md`, rewritten in Task 9 around
 the reworked fix with branch-measured before/after) and **two** issue drafts under
@@ -264,7 +264,7 @@ The PR draft's "what this does not fix" list points at the two remaining drafts.
 The calibration section adds one more issue candidate, not drafted yet: the stop path
 truncating input in flight beyond its incidental post-stop margin. A second candidate — a
 terminated capture never tearing its audio chain down, nor releasing its microphone — was fixed
-on the calibration branch instead.
+on the calibration branch instead (`b8e08b97e`).
 
 **Deliberately not drafted, because neither is confirmed:** Prediction C's explicit
 spec-§6 deviation (the campaign's `janked-start` provocation cannot isolate it from A
@@ -3041,9 +3041,10 @@ reports a figure that does not describe the device in use — the residual #374 
 branch adds a loopback calibration routine to the SDK that measures that delay, and this repo
 adds a ground-truth page that measures the routine against a delay it injects itself.
 
-**Upstream branch:** `feat/input-latency-calibration`, final head **`66021385`**, on top of the
-merge of PR #376 and PR #378. Fourteen commits: the MLS generator, the FFT correlation and
-peak refinement, `analyzeBursts` and the worker protocol, the worker executor and sender, the
+**Upstream branch:** `feat/input-latency-calibration`, final head **`bca9dcb5e`**, on top of the
+merge of PR #376 and PR #378. Fourteen commits up to `66021385` — the head every measurement
+below was taken at — then four more, covered in the note after this list. The fourteen: the MLS
+generator, the FFT correlation and peak refinement, `analyzeBursts` and the worker protocol, the worker executor and sender, the
 capture worklet, `InputLatencyCalibration.measure`, the per-device store and the `calibrated`
 resolver rung, `CaptureAudio.calibrateInputLatency` / `clearInputLatencyCalibration`, the
 polarity-tolerant peak search, the stored-spread clamp, the keep-alive sink (`ac1c15ea8`), the
@@ -3067,7 +3068,7 @@ plan, both deleted in the PR that completes this work per repo convention — re
 section supersedes the spec on three points: the sub-sample refinement bound is 0.25 sample,
 not §6's 0.1; the probe plays through the context destination unconditionally, not §4.2's
 monitor output when one is set; and the capture buffer reaches the worker structured-cloned,
-not "transferred" as §7 has it.
+not "transferred", which is what the spec's analysis step and its protocol block both claim.
 
 **Harness:** unlisted debug demo
 `input-latency-calibration-debug-demo.html?delays=<ms,…>&bpm=<n>&rate=<44100|48000>&armState=<steady|fresh>&defaultInput=1&repeat=<n>`.
@@ -3108,7 +3109,7 @@ F) with a single `getUserMedia` open persisted on the envelope.
 
 **(ii) Calibration ground truth.** On `3484e3265` the routine recovered the injected return
 delay with slope 1.0000 on all ten runs (spans 0–50 ms, four points each, max residual
-≤ 0.0027 ms, every burst identified at 45–53 dB, nothing skipped or excluded); in the two
+≤ 0.003 ms, every burst identified at 45–53 dB, nothing skipped or excluded); in the two
 steady runs the intercept matched the harness's independent hop of the same chain to within
 0.30 ms and the applied cell classified `aligned` at +1.44 / +1.45 ms, identical across
 repeats; in 7 of 8 fresh runs the rebuilt chain landed within 1.04 ms of the calibrated chain
@@ -3140,12 +3141,23 @@ on `546b5bfaa` is supported by two consistent runs plus a `getUserMediaOpens: 1`
 envelope, not by an SDK-side observation; the multitrack `AudioFileBox` collision (#375) still
 loses 3 of 6 multitrack repeats.
 
-Two denominators in (ii) and (iii) differ from the review text that framed them, because the
-recomputation in `task12b-calibration-tables.ts` counts one chain fewer per rate than the
-review's tally (49 and 35 chain instances, not 50 and 36 — the low counts, 11 and 2, are
-unchanged) and counts 29 keep-alive-era 44.1 kHz sweep calls rather than 24. The rates
-(22 % and 6 %) and every conclusion are unaffected. The review's "within 0.66 ms" for the
-seven fresh chains is likewise 1.04 ms on recount, from its own per-run table.
+These four sentences are the referee's, with **seven departures** — four figures the
+recomputation in `task12b-calibration-tables.ts` disagreed with, and three places where a
+better artifact existed. None changes a conclusion.
+
+| # | referee's text | as written here | why |
+|---|---|---|---|
+| 1 | 11 of 50 chains low at 48 kHz | 11 of **49** | the referee's per-source tally counts eight arm-built calibration chains where the build has seven 48 kHz runs; one high chain was double-counted |
+| 2 | 2 of 36 at 44.1 kHz | 2 of **35** | same: three arm chains, counted as four |
+| 3 | 1 of 24 keep-alive-era 44.1 kHz calls | 1 of **29** sweep calls | the seven runs' sweeps are 4+4+5+4+4+4+4, including the wide-span run's fifth point and the miss run's own four |
+| 4 | fresh chains "within 0.66 ms" of the calibrated one | within **1.04 ms** | 0.66 is the largest 44.1 kHz value; `1788388011786` is 1.041 ms, listed in the referee's own table |
+| 5 | 39 of 39 within-chain repeats identical | **72 of 72** rows across 24 runs | the full population from `ac1c15ea8` on, not the thirteen runs the referee counted |
+| 6 | the `defaultInput=1` cell `1788390729375`, open count console-observed | the fix-round-3 re-run **`1788391499692`** (hop 20.96 ×3), open count persisted | same verdict and spread; the evidence is on the envelope instead of in a console log |
+| 7 | "three further runs" on `546b5bfaa`, slope 1.0000 on two | **four** further runs, slope 1.0000 on three | the fourth is `1788391548108`, the re-run above's calibration counterpart |
+
+The rates (22 % and 6 %) and every verdict are unaffected. One nuance (ii) compresses: "one
+stream for the whole run" is persisted as `getUserMediaOpens: 1` for `1788391548108`; for the
+earlier `1788390783792` it is console-observed, as the ground-truth table below says.
 
 ### Method
 
@@ -3163,8 +3175,8 @@ seven fresh chains is likewise 1.04 ms on recount, from its own per-run table.
 3. **Analysis in the worker.** The captured buffer goes to the SDK's existing worker —
    structured-cloned, not transferred: `Communicator` transfers only top-level
    `Transfer`-wrapped arguments and the buffer sits inside the protocol's input object, so each
-   anchor costs about a megabyte of copy per call at 48 kHz (spec §7 said "transferred"; it is
-   wrong). There each burst's window is cross-correlated with the reference through
+   anchor costs about a megabyte of copy per call at 48 kHz (the design spec said
+   "transferred (not copied)"; it is wrong). There each burst's window is cross-correlated with the reference through
    `@opendaw/lib-dsp`'s `FFT`. The peak lag is the delay, refined by three-point parabolic interpolation; the
    peak-to-mean power ratio in dB is the burst's trust figure. The peak is located on the
    correlation's **magnitude**, so a polarity-inverting loopback does not read as no signal.
@@ -3249,7 +3261,7 @@ take 1 landed **55.23 ms early** while takes 2 and 3, on the ratcheted-up chain,
 34.29 ms on the standing harness (`recaudit-summary-1788381289172`); see finding 2.
 
 **SDK `ac1c15ea8` — the keep-alive sink.** Six runs, both rates, both spans, both arm states:
-slope **1.0000** on every one (max residual ≤ 0.0027 ms), intercept within **0.30 ms** of the
+slope **1.0000** on every one (max residual ≤ 0.003 ms), intercept within **0.30 ms** of the
 same chain's harness hop, every applied cell **`aligned`** with head and tail deficits of 0 and
 medians identical across the three repeats: +1.44 ms at 48 kHz (`1788384874160`,
 `1788385066131`, `1788385236496`), +1.45 ms at 44.1 kHz (`1788385001347`, `1788385315180`) and
@@ -3258,7 +3270,7 @@ sweep rows: mean 21.140 ms, **sd 0.312 ms** — and all of that sd is between ch
 own points agree to ≤ 0.003 ms.
 
 **SDK `3484e3265` — the final code head for the measurement set.** Ten runs, slope 1.0000 on
-all ten, max residual 0.0000 ms at 48 kHz and 0.0027 ms at 44.1 kHz, every sweep row `ok`,
+all ten, max residual 0.0000 ms at 48 kHz and 0.0028 ms at 44.1 kHz, every sweep row `ok`,
 3/3 bursts, ratios 45.2–52.9 dB, nothing skipped or excluded.
 
 | run | rate | armState | L | rebuilt-chain hop | L − hop | medians | cell |
@@ -3292,12 +3304,19 @@ regression (`1788393692168`'s own four-point sweep fits slope 1.000009, intercep
 ### The applied cells, and the residual
 
 After `apply`, the `nominal-start` cell's adjusted medians are identical across the three
-repeats of every run from `ac1c15ea8` on, and equal `hop − L + 1.146 ms` at 48 kHz and
-`hop − L + 1.156 ms` at 44.1 kHz on every row of every run — including the first build's. That
-**+1.15 ms is a constant of the harness/SDK pair, not noise**: it is the same on every repeat
-and every run, it sits inside the 2 ms `ALIGNED_TOLERANCE_MS` with 0.85 ms of margin, and it is
-**unattributed**. Candidates, neither tested: the harness's click-onset detection latency, or a
-one-quantum term in the SDK's `firstQuantumTime` anchoring.
+repeats of every run from `ac1c15ea8` on, and equal `hop − L + 1.1458 ms` at 48 kHz and
+`hop − L + 1.1565 ms` at 44.1 kHz — **exactly, to four decimals, on all 72 rows of the 24
+calibration runs from `ac1c15ea8` on**. On the first build the same identity holds on 23 of its
+30 rows and fails on seven: `1788381518785` r1 sits 2.667 ms above it, and all three rows of
+`1788381715449` and all three of `1788383812745` sit 2.000 ms above it. Those seven are not
+explained here; they are first-build rows, taken while the un-pulled-node ratchet was still in
+play, and nothing in this campaign re-measures them.
+
+Where the identity holds, that **+1.15 ms is a constant of the harness/SDK pair, not noise**:
+it is the same on every repeat and every run, it sits inside the 2 ms `ALIGNED_TOLERANCE_MS`
+with 0.85 ms of margin, and it is **unattributed**. Candidates, neither tested: the harness's
+click-onset detection latency, or a one-quantum term in the SDK's `firstQuantumTime`
+anchoring.
 
 ### The chain state: a ratchet, a sink, and a residual two-state lottery
 
@@ -3393,8 +3412,8 @@ were all varied without reproducing it; what remains untried is `armState=fresh`
 call would run on a chain the disarm/re-arm had just rebuilt. Two consequences to state
 plainly: the miss's per-call rate on this configuration is under ~2.5 % at 95 % confidence, and
 **the detector's hit rate on a real miss is untested, because no miss occurred**. Two mechanical
-observations from the persisted `burstDelays`: node B opens 291–302 render quanta after node A,
-in burst 1's tail as designed, and its **first burst delay is null in all 60 calls** — so the
+observations from the persisted `burstDelays`: node B opens 290–302 render quanta after node A,
+in burst 1's tail as designed, and its **first burst delay is null in all 122 calls** — so the
 cross-check rests on bursts 2 and 3, and a fault confined to burst 1 would be invisible to it.
 
 ### The standing sweep on this build, and the descriptive bands E/F
@@ -3482,15 +3501,17 @@ it rests on a single surviving repeat. It must never be quoted as takes landing 
    capture-pointer change, unit removal and project close/switch, so a page that switched
    projects stranded one pulled dead chain per armed capture. The whole-branch review ruled this
    the branch's to fix rather than a follow-up, since the branch is what made it render.
-   **What the fix does:** the terminator's teardown now calls `#stopStream()` in place of the
-   bare `#disconnectMonitoring()`, which is the same teardown a disarm runs — disconnect
-   monitoring, destroy the audio chain, and stop every track of the open stream. So the chain
-   stops rendering **and the microphone is released**; the pre-existing open-mic half of this
-   finding is closed with it, not left over. A capture terminated mid-recording loses its input,
-   which the commit states as the intent — the recording it fed cannot outlive its capture — and
-   that is what the commit's test pins, alongside the chain teardown: after `terminate()` the
-   output node is `Option.None`, the keep-alive sink took a bare disconnect, and the opened
-   track reads `stopped`. One residual is untouched: the terminator still does not discard a
+   **What the fix does:** the terminator's teardown calls `#stopStream()` in place of the bare
+   `#disconnectMonitoring()`, which is the same teardown a disarm runs — disconnect monitoring,
+   destroy the audio chain, and stop every track of the open stream. So the chain stops
+   rendering **and the microphone is released**: the pre-existing open-mic half of this finding
+   is closed by the same line, not left over. A capture terminated mid-recording loses its
+   input, which the commit states as the intent — the recording it fed cannot outlive its
+   capture — and it is safe: `RecordAudio`'s own terminator wraps its
+   `sourceNode.disconnect(recordingWorklet)` in `tryCatch`, so a chain already destroyed does
+   not throw on the way out. The commit's test pins both halves: after `terminate()` the output
+   node is `Option.None`, the keep-alive sink took a bare disconnect, and the opened track reads
+   `stopped`. One residual is untouched — the terminator still does not discard a
    prepared-but-unused `RecordingWorklet`. **Not measured here:** no run in this campaign
    exercises the terminator, so the fix rests on that upstream test, not on anything in
    `.verify-output/`.
@@ -3518,9 +3539,10 @@ it rests on a single surviving repeat. It must never be quoted as takes landing 
   whether a real device track shows the two chain states, the 32-frame lattice, the one-quantum
   miss or the +1.15 ms residual. Not run: it needs a person present to allow the microphone
   prompt, and the campaign ran unattended.
-- **Finding 2 (stop-path truncation)** as an upstream issue; it is drafted nowhere yet. Finding
-  3 is fixed on the branch, microphone release included; the only residual is the prepared
-  worklet the terminator still does not discard.
+- **Finding 2 (stop-path truncation)** as an upstream issue; it is drafted nowhere yet. It is
+  the only finding here still open — finding 3 is fixed on the branch, microphone release
+  included, leaving one residual too small to file on its own: the terminator does not discard
+  a prepared-but-unused `RecordingWorklet`.
 - **`armState=fresh` batches** for the one-quantum miss — the one condition of the original
   observation that 122 calls did not vary.
 - **The +1.15 ms residual's attribution.**
