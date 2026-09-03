@@ -557,7 +557,7 @@ export function summarizeRealInput(
     if (chain.withinHalfQuantum) {
       verdict = "repeatable";
       shape = `chain ${chain.chainIndex}: ${chain.usableCalls} usable calls all within half a quantum of the modal ${seriesName} ` +
-        `${msText(modeSec as number)} (${chain.modeCount} at the mode)`;
+        `${msText(modeSec as number)}${verdictSeries === "inputLatency" ? ` (${chain.modeCount} at the mode)` : ""}`;
     } else if (clusters.length === 2 && !sameState(clusters[1].centerSec, clusters[0].centerSec, renderQuantumSec)) {
       verdict = "two-state";
       stateSeparationQuanta = (clusters[1].centerSec - clusters[0].centerSec) / renderQuantumSec;

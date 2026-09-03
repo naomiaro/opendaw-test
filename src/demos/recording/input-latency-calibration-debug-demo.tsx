@@ -2002,8 +2002,9 @@ function CalibrationHarness() {
   const [realCalls, setRealCalls] = useState<{ result: CalibrationResult; index: number; chainIndex: number }[]>([]);
   const [realSummary, setRealSummary] = useState<RealInputSummary | null>(null);
   const [arms, setArms] = useState<RealArmInfo[]>([]);
-  // Display only — the run validates `?rate=` itself; the table's frame column needs the number.
-  const realSampleRate = Number(params.get("rate") ?? "48000");
+  // Display only — the run validates `?rate=` itself; the table's frame column needs the number,
+  // and takes the summary's validated rate as soon as one exists.
+  const realSampleRate = realSummary !== null ? 128 / realSummary.renderQuantumSec : Number(params.get("rate") ?? "48000");
 
   const walk = useCallback((state: string) => {
     setAuditState(state);

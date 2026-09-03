@@ -107,7 +107,8 @@ function printRuns(): void {
     const trackRate = typeof track?.sampleRate === "number" ? track.sampleRate : null;
     console.log(
       `\n-- ${runId} ${rate} Hz armState=${summary.armState} repeats=${repeats.length} label="${summary.runLabel}"` +
-      ` device="${summary.device?.label}" opens (arm count on builds before the counter)=${summary.getUserMediaOpens}`
+      ` device="${summary.device?.label}" deviceFallback=${String((summary as unknown as Record<string, unknown>).deviceFallback ?? "n/a (field predates the check)")}` +
+      ` opens (arm count on builds before the counter)=${summary.getUserMediaOpens}`
     );
     console.log(
       `   verdicts ${[...verdicts.entries()].map(([k, v]) => `${k}×${v}`).join(", ")};` +
@@ -175,7 +176,7 @@ function printRuns(): void {
     inputMaxMs = Math.max(inputMaxMs, applied.call.inputLatencySeconds * 1000);
     // This run's own input-part range (repeats and applied), for the per-run
     // "minus reported" line below — each run is compared with ITS track's figure.
-    const runInputs = [...repeats.filter((c) => usable(c.call)), applied].map((c) => c.call.inputLatencySeconds * 1000);
+    const runInputs = [...repeats, applied].filter((c) => usable(c.call)).map((c) => c.call.inputLatencySeconds * 1000);
     perRunInput.set(runId, { minMs: Math.min(...runInputs), maxMs: Math.max(...runInputs), trackLatency });
   }
   console.log(
