@@ -244,7 +244,7 @@ What this campaign has put upstream, or has ready to:
 |---|---|---|
 | PR [#376](https://github.com/andremichelle/openDAW/pull/376) — anchor takes on the engine's own recording start | the one-shot `recordingStart` engine report, the processor's first-frame time, the finalization hang and the `#finalize` head drop | **posted** (fork branch `naomiaro:fix/recording-start-alignment`); measured before/after under "Task 9: best-fix rework" |
 | PR [#378](https://github.com/andremichelle/openDAW/pull/378) — apply the input latency the browser reports | `InputLatency.resolve` and the `Reported` default, bounded and read after output has started | **posted**; the branch below stacks on it |
-| Input-latency calibration PR | the loopback calibration routine (`InputLatencyCalibration.measure`, `CaptureAudio.calibrateInputLatency`, the per-device store, the `calibrated` resolver rung, the keep-alive sink, the chain-reuse fix, the second capture anchor), upstream final head `bca9dcb5e` (measured at `66021385`) | **prepared, not posted** — description drafted, awaiting review; measurements and open findings under "Input-latency calibration (2026-09-02)" |
+| Input-latency calibration PR | the loopback calibration routine (`InputLatencyCalibration.measure`, `CaptureAudio.calibrateInputLatency`, the per-device store, the `calibrated` resolver rung, the keep-alive sink, the chain-reuse fix, the second capture anchor), upstream final head `b51951082` (figures measured at `66021385`) | **prepared, not posted** — description drafted, awaiting review; measurements and open findings under "Input-latency calibration (2026-09-02)" |
 
 One PR-description draft (`pr-recording-start-alignment.md`, rewritten in Task 9 around
 the reworked fix with branch-measured before/after) and **two** issue drafts under
@@ -3041,7 +3041,7 @@ reports a figure that does not describe the device in use — the residual #374 
 branch adds a loopback calibration routine to the SDK that measures that delay, and this repo
 adds a ground-truth page that measures the routine against a delay it injects itself.
 
-**Upstream branch:** `feat/input-latency-calibration`, final head **`bca9dcb5e`**, on top of the
+**Upstream branch:** `feat/input-latency-calibration`, final head **`b51951082`**, on top of the
 merge of PR #376 and PR #378. Fourteen commits up to `66021385` — the head every measurement
 below was taken at — then four more, covered in the note after this list. The fourteen: the MLS
 generator, the FFT correlation and peak refinement, `analyzeBursts` and the worker protocol, the worker executor and sender, the
@@ -3053,14 +3053,15 @@ second capture anchor (`66021385`). **Not filed** — the PR description is draf
 review.
 
 Every measurement in this section was taken at or below `66021385`; the branch's **final head is
-`bca9dcb5e`**, four commits above it, none of which touches the measurement, the protocol or the
+`b51951082`**, five commits above it, none of which touches the measurement, the protocol or the
 analysis. `e539e543f` plays the probe through the context destination unconditionally (see
 Method), `b8e08b97e` makes the terminator tear the audio chain down (finding 3), `a9df2da18`
 refuses `Options` that would hang the wait (`burstCount` not a positive integer, a
 non-positive or non-finite `burstSpacingSeconds`, a non-finite `gainDb` — each of which left the
 last burst's scheduled end NaN, which the default clock wait can neither reach nor time out on),
-and `bca9dcb5e` is review polish. Test counts at the final head: lib-dsp 14 files / 137,
-studio-core 48 files / 511.
+`bca9dcb5e` is review polish, and `b51951082` corrects the second-anchor comment's own count of
+the one-quantum observation to the 1-in-29 this section derives. Test counts at `bca9dcb5e`,
+which `b51951082` does not change: lib-dsp 14 files / 137, studio-core 48 files / 511.
 
 **Design spec:** `docs/superpowers/specs/2026-09-02-input-latency-calibration-design.md` and its
 plan, both deleted in the PR that completes this work per repo convention — recovery:
@@ -3548,6 +3549,13 @@ it rests on a single surviving repeat. It must never be quoted as takes landing 
 - **The +1.15 ms residual's attribution.**
 - **The multitrack collision (#375)**, which still costs 3 of 6 repeats and leaves cross-track
   skew measured on three sessions only.
+- **A `?scenario=calibrated` variant of the standing sweep**, which the design spec listed and
+  which was not built. It cannot be: the standing sweep runs against the installed release, and
+  no release exposes `calibrateInputLatency`, so there is nothing for such a scenario to call.
+  What stands in for it is the calibration page's own modes — `?armState`, `?defaultInput=1`
+  and `?repeat=` — together with the per-build signature profiles, run against an override
+  build after each SDK upgrade. The variant becomes worth building on the release that ships
+  the API, at which point the sweep can carry a calibrated arm on the plain server.
 
 ### Evidence index (input-latency calibration)
 

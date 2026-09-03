@@ -388,7 +388,10 @@ recording-alignment-audit-debug-demo.html?scenario=<name|all>&bpm=<n|all>&rate=<
 Scenarios: `nominal-start`, `janked-start`, `midtimeline-start`, `countin-start`,
 `loop-wrap`, plus `multitrack-start` / `multitrack-janked` for two simultaneously armed
 tapes (`?scenario=multitrack-all`). `?scenario=probe` runs the loopback feasibility
-probe instead of the matrix.
+probe instead of the matrix. `&defaultInput=1` arms on the SDK's default input (the capture
+box names no device and the injection withholds every audio input from `enumerateDevices`) —
+the only configuration in which the SDK reuses one audio chain across a cell's takes;
+single-tape scenarios only, since the multi-mic ones need two distinct named devices.
 
 **After SDK upgrades, re-run `?scenario=all&bpm=all&rate=48000` and `…&rate=44100`,
 then `?scenario=multitrack-all&bpm=120&rate=48000`** — same standing-sweep role as the

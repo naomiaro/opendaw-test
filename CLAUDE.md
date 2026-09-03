@@ -634,8 +634,12 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   fitted to the runs they classify and carry no predictive content on them.
 - The SDK's loopback input-latency calibration has its own unlisted ground-truth page,
   `input-latency-calibration-debug-demo.html` — it needs the calibration-branch SDK served
-  through `SDK_DIST_OVERRIDE` and is not part of the standing sweep. Params, envelope fields
-  and the branch-API shim: `src/demos/recording/CLAUDE.md`; measurements and open findings:
+  through `SDK_DIST_OVERRIDE`, so it is NOT part of the standing sweep, which runs against the
+  installed release. Its `?armState` / `?defaultInput=1` / `?repeat=` modes plus the per-build
+  signature profiles ARE the sweep's calibration arm for now, re-run against an override build
+  after an SDK upgrade; a `?scenario=calibrated` sweep variant becomes possible only on a
+  release that ships `calibrateInputLatency`. Params, envelope fields and the branch-API shim:
+  `src/demos/recording/CLAUDE.md`; measurements and open findings:
   `debug/recording-start-alignment-audit.md`.
 - `npm run build` runs Vite then VitePress — demos go to `dist/`, docs go to `dist/docs/` for `/docs/` on Cloudflare Pages
 - `npm run docs:dev` — local VitePress dev server for documentation

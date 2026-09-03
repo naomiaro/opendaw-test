@@ -896,6 +896,8 @@ function ScenarioRunnerHarness() {
               {`?scenario=<name|all>   default "all" (${ALL_SCENARIOS.join(", ")})
 ?bpm=<number|all>     default "all" (${RECORDING_AUDIT_BPMS.join(", ")})
 ?rate=<number>        default 48000 — sets the AudioContext at init, never "all"
+?defaultInput=1       arm on the SDK's default input (the box names no device), the
+                      only configuration in which one audio chain serves every take
 Repeats per cell:       ${REPEATS_PER_CELL}
 Uploads:                recaudit-summary-<runToken>.json (all rows) via PUT /__verify
                         recaudit-<scenario>-<bpm>-<rate>-r<repeat>-<build>-<runToken>.wav per repeat
