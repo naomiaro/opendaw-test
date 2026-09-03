@@ -136,10 +136,17 @@
 // render, Start stays disabled until a device is chosen) -> `arming` (set the
 // capture box's deviceId, arm, wait for the stream, persist the track's
 // settings) -> `repeat:<i>/<n>` (N direct `calibrateInputLatency({})` calls;
-// `?armState=fresh` disarms/re-arms after call ⌈N/2⌉ so two chains are
+// `?armState=fresh` walks `rearming` after call ⌈N/2⌉ — disarm, re-arm, wait
+// for the new stream, re-read its track settings — so two chains are
 // measured, `chainIndex` 0/1 per call) -> `applying` (one `{apply: true}` call,
 // stored entry read back) -> `uploading` -> `done`. `#real-verdict` carries
 // data-verdict = the `realSummary.verdict` (`src/lib/audit/realInputSummary.ts`).
+// Every arm compares the stream's reported device id with the REQUESTED one:
+// the SDK falls back to the default input when `{exact: deviceId}` fails
+// (console.warn only), so a mismatch is persisted as `deviceFallback` and
+// shown, never thrown on — the run stays evidence, labelled. A re-arm that
+// fails is persisted as an `error` row, the envelope is still uploaded, and
+// the run ends `error:<message>`.
 // ---------------------------------------------------------------------------
 //
 // Run it with a REAL click (the AudioContext resumes on the gesture) on a
@@ -470,9 +477,28 @@ interface TrackSettingsRecord {
 }
 
 /** A real-mode repeat call: the loopback rows' analysis fields plus which chain it ran on. */
-interface RealRepeatCall extends RepeatCall {
+/**
+ * A real-mode repeat call: the SDK `Result` verbatim plus its position and
+ * chain. NOTHING loopback-derived is on it — the pooled-mode `deltaQuanta` /
+ * `isOneQuantumMiss` fields of `RepeatCall` read a fresh run's second chain as
+ * fifteen misses of the first chain's value; `realSummary` (per chain) is the
+ * authority on what a call was.
+ */
+interface RealRepeatCall extends CalibrationResult {
+  index: number;
   /** 0 for the chain armed at the start; 1 for the chain `?armState=fresh` rebuilt mid-run. */
   chainIndex: number;
+}
+
+/** One arm of the real-mode run: what was asked for, what the stream reported, and its track. */
+interface RealArmInfo {
+  chainIndex: number;
+  requestedDeviceId: string;
+  /** The device id the armed stream reported (`capture.streamDeviceId`). */
+  streamDeviceId: string;
+  /** True when the stream's id is not the requested one — the SDK fell back to another input. */
+  fallback: boolean;
+  settings: TrackSettingsRecord | null;
 }
 
 interface CellOutcome {
@@ -520,7 +546,7 @@ interface CalibrationSummary {
   warmup: CalibrationResult | null;
   sweep: SweepRow[];
   /** `?repeat=` phase: every call verbatim, empty when the phase was skipped. */
-  repeats: RepeatCall[];
+  repeats: RepeatCall[] | RealRepeatCall[];
   /** null when the phase was skipped. */
   repeatSummary: RepeatSummary | null;
   /** Points refused before running — see `SkippedDelay` and the ceiling constants. */
@@ -566,7 +592,15 @@ interface CalibrationSummary {
   armedStreamDeviceIds?: string[];
   /** True when a re-armed stream reported an id different from the first arm's; `deviceId` is then the last one. */
   streamDeviceIdChanged?: boolean;
+  /** The device the user chose — what every arm asked the SDK for. */
+  requestedDeviceId?: string;
+  /** True when ANY armed stream reported an id other than `requestedDeviceId`: the SDK fell back to another input. */
+  deviceFallback?: boolean;
+  /** Every arm in order (index = chainIndex): requested vs reported id, fallback flag, the track's settings. */
+  arms?: RealArmInfo[];
+  /** The first chain's track settings (kept for readers of the earlier envelopes); all chains are in `trackSettingsPerChain`. */
   trackSettings?: TrackSettingsRecord | null;
+  trackSettingsPerChain?: (TrackSettingsRecord | null)[];
   /** `audioContext.outputLatency` at run start, before any probe played — may be 0 (recorded, not refused). */
   outputLatencyAtStartSec?: number;
   /** The same property re-read after the first calibration call returned. */
@@ -1399,11 +1433,24 @@ async function runCalibrationAudit(cb: RunCallbacks): Promise<void> {
  * every `audioinput` with a non-empty id, in enumeration order.
  */
 async function enumerateRealInputs(): Promise<RealDevice[]> {
-  const unlock = await withDeadline(
-    navigator.mediaDevices.getUserMedia({ audio: true }),
-    STREAM_DEADLINE_MS,
-    "getUserMedia({audio: true}) to unlock device labels"
-  );
+  // If the deadline fires first (a permission prompt left open), the browser
+  // may still hand the stream out later — stop its tracks then, so no capture
+  // is left running behind the page.
+  let timedOut = false;
+  const pending = navigator.mediaDevices.getUserMedia({ audio: true });
+  pending.then((late) => {
+    if (timedOut) {
+      for (const track of late.getTracks()) track.stop();
+      console.warn("[input-latency-calibration] label-unlock getUserMedia resolved after its deadline; tracks stopped");
+    }
+  }).catch(() => { /* the awaited branch below reports it */ });
+  let unlock: MediaStream;
+  try {
+    unlock = await withDeadline(pending, STREAM_DEADLINE_MS, "getUserMedia({audio: true}) to unlock device labels");
+  } catch (err) {
+    timedOut = true;
+    throw err;
+  }
   for (const track of unlock.getTracks()) track.stop();
   const all = await navigator.mediaDevices.enumerateDevices();
   const inputs = all
@@ -1517,11 +1564,39 @@ interface RealRunInput {
 interface RealRunCallbacks {
   setState: (state: string) => void;
   onBuildProbe: (probe: SdkBuildProbe) => void;
-  onTrackSettings: (settings: TrackSettingsRecord | null, streamDeviceId: string) => void;
+  /** Once per arm (chain 0 at `arming`, chain 1 at `rearming`). */
+  onArm: (arm: RealArmInfo) => void;
   onRepeatCall: (result: CalibrationResult, index: number, chainIndex: number) => void;
-  onRepeatRows: (rows: RealRepeatCall[], summary: RepeatSummary) => void;
   onRealSummary: (summary: RealInputSummary) => void;
-  onApplied: (result: CalibrationResult, entry: CalibrationEntry | null) => void;
+  onApplied: (result: CalibrationResult | null, entry: CalibrationEntry | null) => void;
+}
+
+/** Arm the capture on `requestedDeviceId` (or re-arm it) and describe what the SDK actually opened. */
+async function armAndDescribe(
+  project: Project, capture: CaptureAudio, requestedDeviceId: string, chainIndex: number, rearm: boolean
+): Promise<RealArmInfo> {
+  let streamDeviceId: string;
+  if (rearm) {
+    capture.armed.setValue(false);
+    await sleep(DELAY_SETTLE_MS);
+    capture.armed.setValue(true);
+    streamDeviceId = await waitForStream(capture, STREAM_DEADLINE_MS);
+  } else {
+    streamDeviceId = await armRealDevice(project, capture, requestedDeviceId);
+  }
+  const arm: RealArmInfo = {
+    chainIndex, requestedDeviceId, streamDeviceId,
+    fallback: streamDeviceId !== requestedDeviceId,
+    settings: readTrackSettings(capture),
+  };
+  console.log("[input-latency-calibration] " + (rearm ? "re-armed" : "armed") + " chain " + String(chainIndex) +
+    " on stream deviceId=" + streamDeviceId + " trackSettings=" + JSON.stringify(arm.settings));
+  if (arm.fallback) {
+    console.warn("[input-latency-calibration] DEVICE FALLBACK on chain " + String(chainIndex) + ": requested " +
+      requestedDeviceId + " but the stream reports " + streamDeviceId +
+      " — the SDK opened another input (its #updateStream falls back to the default when {exact} fails); persisted, not thrown");
+  }
+  return arm;
 }
 
 async function runRealInputAudit(input: RealRunInput, cb: RealRunCallbacks): Promise<void> {
@@ -1555,11 +1630,10 @@ async function runRealInputAudit(input: RealRunInput, cb: RealRunCallbacks): Pro
 
   cb.setState("arming");
   calibrating.clearInputLatencyCalibration();
-  const deviceId = await armRealDevice(project, capture, input.device.deviceId);
-  const trackSettings = readTrackSettings(capture);
-  cb.onTrackSettings(trackSettings, deviceId);
-  console.log("[input-latency-calibration] armed on stream deviceId=" + deviceId +
-    " trackSettings=" + JSON.stringify(trackSettings));
+  const requestedDeviceId = input.device.deviceId;
+  const arms: RealArmInfo[] = [await armAndDescribe(project, capture, requestedDeviceId, 0, false)];
+  cb.onArm(arms[0]);
+  const deviceId = arms[0].streamDeviceId;
 
   // N direct calls — no tee, no delay, nothing between the SDK and the device.
   // `fresh`: after call ⌈N/2⌉ the chain is rebuilt, so the second half measures
@@ -1568,23 +1642,30 @@ async function runRealInputAudit(input: RealRunInput, cb: RealRunCallbacks): Pro
   const calls: { result: CalibrationResult; chainIndex: number }[] = [];
   let outputLatencyAfterFirstCallSec: number | null = null;
   let chainIndex = 0;
-  // The id each armed stream reported, in arm order. The SDK keys the stored
-  // entry on the stream the apply ran on, so the lookup below uses the LAST
-  // one; a re-arm that reports a different id is recorded, not assumed away.
-  const armedStreamDeviceIds = [deviceId];
+  // A re-arm that fails (the new stream never reports an id) ends the run —
+  // but AFTER the envelope is uploaded with every call measured so far and an
+  // `error` row standing in for the re-arm; see the end of this function.
+  let rearmFailure: string | null = null;
   for (let index = 0; index < repeatCount; index++) {
     if (index === rearmAfter) {
       cb.setState("rearming");
-      capture.armed.setValue(false);
-      await sleep(DELAY_SETTLE_MS);
-      capture.armed.setValue(true);
-      const rearmedDeviceId = await waitForStream(capture, STREAM_DEADLINE_MS);
-      armedStreamDeviceIds.push(rearmedDeviceId);
-      chainIndex = 1;
-      console.log("[input-latency-calibration] re-armed after call " + String(index) + ", chain rebuilt, deviceId=" + rearmedDeviceId);
-      if (rearmedDeviceId !== deviceId) {
-        console.warn("[input-latency-calibration] re-armed stream reports a DIFFERENT device id than the first arm (" +
-          deviceId + " → " + rearmedDeviceId + "); the stored entry is looked up under the new one");
+      try {
+        const arm = await armAndDescribe(project, capture, requestedDeviceId, 1, true);
+        arms.push(arm);
+        cb.onArm(arm);
+        chainIndex = 1;
+        if (arm.streamDeviceId !== deviceId) {
+          console.warn("[input-latency-calibration] re-armed stream reports a DIFFERENT device id than the first arm (" +
+            deviceId + " → " + arm.streamDeviceId + "); the stored entry is looked up under the new one");
+        }
+      } catch (err) {
+        rearmFailure = err instanceof Error ? err.message : String(err);
+        console.error("[input-latency-calibration] re-arm FAILED after call " + String(index) + ": " + rearmFailure +
+          " — persisting an error row for it and uploading what was measured");
+        const row = errorResult(`re-arm: ${rearmFailure}`, rate);
+        calls.push({ result: row, chainIndex: 1 });
+        cb.onRepeatCall(row, index, 1);
+        break;
       }
     }
     cb.setState(`repeat:${index + 1}/${repeatCount}`);
@@ -1594,14 +1675,20 @@ async function runRealInputAudit(input: RealRunInput, cb: RealRunCallbacks): Pro
     cb.onRepeatCall(result, index, chainIndex);
     logCalibrationCall(`repeat ${index + 1}/${repeatCount} chain=${chainIndex}`, result);
   }
+  // The id each armed stream reported, in arm order. The SDK keys the stored
+  // entry on the stream the apply ran on, so the lookup below uses the LAST
+  // one; a re-arm that reports a different id is recorded, not assumed away.
+  const armedStreamDeviceIds = arms.map((arm) => arm.streamDeviceId);
+  const deviceFallback = arms.some((arm) => arm.fallback);
 
-  const repeatAnalysis = summarizeRepeats(calls.map((c) => ({ result: c.result, delayMs: 0 })), rate, [0]);
-  const repeatRows: RealRepeatCall[] = repeatAnalysis.rows.map((row, index) => ({ ...row, chainIndex: calls[index].chainIndex }));
-  cb.onRepeatRows(repeatRows, repeatAnalysis.summary);
+  // Persisted verbatim: the SDK Result plus index and chain, nothing derived
+  // from the loopback page's pooled-mode rules (see `RealRepeatCall`).
+  const repeatRows: RealRepeatCall[] = calls.map((c, index) => ({ ...c.result, index, chainIndex: c.chainIndex }));
   const realSummary = summarizeRealInput(
     calls.map((c) => ({ ...c.result, chainIndex: c.chainIndex })),
     rate,
-    trackSettings?.latency ?? null
+    // Each chain's own track reported its own latency.
+    arms.map((arm) => arm.settings?.latency ?? null)
   );
   cb.onRealSummary(realSummary);
   console.log(
@@ -1615,19 +1702,26 @@ async function runRealInputAudit(input: RealRunInput, cb: RealRunCallbacks): Pro
     " anchorDisagreements=" + String(realSummary.anchorDisagreements.flaggedBySdk) + "/" + String(realSummary.anchorDisagreements.rederived) +
     " perChainModesMs=[" + realSummary.perChain.map((c) => String(c.chainIndex) + ":" + (c.modeInputLatencySec === null ? "n/a" : (c.modeInputLatencySec * 1000).toFixed(3))).join(",") + "]" +
     " reportedLatencySec=" + String(realSummary.reportedLatencySec) +
+    " deviceFallback=" + String(deviceFallback) +
     " detail=" + realSummary.detail
   );
 
-  cb.setState("applying");
-  const applied = await calibrateReal(calibrating, true, rate, "applied");
+  // The apply is skipped when the re-arm failed: there is no chain to apply on.
   const appliedStreamDeviceId = armedStreamDeviceIds[armedStreamDeviceIds.length - 1];
-  const storedEntry = storedCalibrations(project).find((entry) => entry.deviceId === appliedStreamDeviceId) ?? null;
+  let applied: CalibrationResult | null = null;
+  let storedEntry: CalibrationEntry | null = null;
+  if (rearmFailure === null) {
+    cb.setState("applying");
+    applied = await calibrateReal(calibrating, true, rate, "applied");
+    storedEntry = storedCalibrations(project).find((entry) => entry.deviceId === appliedStreamDeviceId) ?? null;
+    logCalibrationCall("applied", applied);
+  }
   const streamDeviceIdChanged = armedStreamDeviceIds.some((id) => id !== deviceId);
   cb.onApplied(applied, storedEntry);
-  logCalibrationCall("applied", applied);
   console.log("[input-latency-calibration] storedEntry(" + appliedStreamDeviceId + ")=" +
     (storedEntry === null ? "none" : JSON.stringify(storedEntry)) +
-    " armedStreamDeviceIds=[" + armedStreamDeviceIds.join(",") + "] changed=" + String(streamDeviceIdChanged));
+    " armedStreamDeviceIds=[" + armedStreamDeviceIds.join(",") + "] changed=" + String(streamDeviceIdChanged) +
+    (rearmFailure === null ? "" : " (apply skipped: re-arm failed)"));
 
   const cell: CellOutcome = {
     scenario: CELL_SCENARIO,
@@ -1664,7 +1758,8 @@ async function runRealInputAudit(input: RealRunInput, cb: RealRunCallbacks): Pro
     fitExcludedNoisy: { count: 0, delaysMs: [], verdicts: [] },
     applied, storedEntry, cell,
     repeats: repeatRows,
-    repeatSummary: repeatAnalysis.summary,
+    // Never the loopback page's pooled-mode summary: judged per chain in `realSummary`.
+    repeatSummary: null,
     harnessLoopbackHopSec: null,
     harnessLoopbackHopPerRowSec: [],
     harnessLoopbackHopSource: "not measured: real input, no applied cell",
@@ -1674,13 +1769,44 @@ async function runRealInputAudit(input: RealRunInput, cb: RealRunCallbacks): Pro
     device: input.device,
     armedStreamDeviceIds,
     streamDeviceIdChanged,
-    trackSettings,
+    requestedDeviceId,
+    deviceFallback,
+    arms,
+    trackSettings: arms[0].settings,
+    trackSettingsPerChain: arms.map((arm) => arm.settings),
     outputLatencyAtStartSec,
     outputLatencyAfterFirstCallSec,
     baseLatencySec,
     realSummary,
   });
+  if (rearmFailure !== null) {
+    throw new Error(`re-arm failed after ${String(rearmAfter)} call(s): ${rearmFailure} — envelope uploaded with the calls measured before it`);
+  }
   cb.setState("done");
+}
+
+/** What `realSummary` says about one call: its offset from ITS chain's modal round trip, and the event kind if any. */
+function annotateRealCall(
+  summary: RealInputSummary | null, index: number, chainIndex: number, roundTripSeconds: number, sampleRate: number
+): { text: string; kind: string } {
+  const chain = summary?.perChain.find((c) => c.chainIndex === chainIndex);
+  if (summary === null || chain === undefined || chain.modeRoundTripSec === null || !Number.isFinite(roundTripSeconds)) {
+    return { text: "—", kind: "" };
+  }
+  const deltaSec = roundTripSeconds - chain.modeRoundTripSec;
+  const frames = deltaSec * sampleRate;
+  const quanta = deltaSec / summary.renderQuantumSec;
+  const transition = chain.transitions.find((t) => t.index === index);
+  const kind = summary.anchorDisagreements.indices.includes(index)
+    ? "disagreement"
+    : transition !== undefined
+      ? (transition.confirmedByFollowingCall ? "transition" : "transition (unconfirmed)")
+      : chain.isolatedDeviations.some((d) => d.index === index)
+        ? "isolated"
+        : chain.firstCallOff?.index === index
+          ? "first call off"
+          : "";
+  return { text: `${frames >= 0 ? "+" : ""}${frames.toFixed(1)} fr / ${quanta >= 0 ? "+" : ""}${quanta.toFixed(3)} q`, kind };
 }
 
 // --- UI --------------------------------------------------------------------
@@ -1715,17 +1841,16 @@ const statsLine = (label: string, s: { median: number; min: number; max: number;
 
 function RealInputResults(props: {
   calls: { result: CalibrationResult; index: number; chainIndex: number }[];
-  rows: RealRepeatCall[];
   summary: RealInputSummary | null;
   applied: CalibrationResult | null;
   storedEntry: CalibrationEntry | null;
-  trackSettings: { settings: TrackSettingsRecord | null; streamDeviceId: string } | null;
+  arms: RealArmInfo[];
   runLabel: string;
   device: RealDevice | null;
+  sampleRate: number;
 }) {
-  const { calls, rows, summary, applied, storedEntry, trackSettings, runLabel, device } = props;
-  // Rows carry the analysis once the phase completes; until then the raw calls are shown.
-  const rowFor = (index: number): RealRepeatCall | null => rows[index] ?? null;
+  const { calls, summary, applied, storedEntry, arms, runLabel, device, sampleRate } = props;
+  const deviceFallback = arms.some((arm) => arm.fallback);
   return (
     <>
       <Card>
@@ -1744,15 +1869,16 @@ function RealInputResults(props: {
                 <Table.ColumnHeaderCell>spread (ms)</Table.ColumnHeaderCell>
                 <Table.ColumnHeaderCell>ratio (dB)</Table.ColumnHeaderCell>
                 <Table.ColumnHeaderCell>identified/scheduled</Table.ColumnHeaderCell>
-                <Table.ColumnHeaderCell>Δ mode (quanta)</Table.ColumnHeaderCell>
+                <Table.ColumnHeaderCell>Δ chain mode</Table.ColumnHeaderCell>
+                <Table.ColumnHeaderCell>event</Table.ColumnHeaderCell>
                 <Table.ColumnHeaderCell>verdict</Table.ColumnHeaderCell>
                 <Table.ColumnHeaderCell>reason</Table.ColumnHeaderCell>
               </Table.Row>
             </Table.Header>
             <Table.Body>
               {calls.map((call) => {
-                const row = rowFor(call.index);
                 const r = call.result;
+                const note = annotateRealCall(summary, call.index, call.chainIndex, r.roundTripSeconds, sampleRate);
                 return (
                   <Table.Row key={call.index}>
                     <Table.Cell>{call.index + 1}</Table.Cell>
@@ -1765,7 +1891,8 @@ function RealInputResults(props: {
                     <Table.Cell>{ms(r.spreadSeconds)}</Table.Cell>
                     <Table.Cell>{Number.isFinite(r.correlationRatioDb) ? r.correlationRatioDb.toFixed(2) : "—"}</Table.Cell>
                     <Table.Cell>{r.identifiedBursts}/{r.scheduledBursts}</Table.Cell>
-                    <Table.Cell>{row === null || !Number.isFinite(row.deltaQuanta) ? "—" : row.deltaQuanta.toFixed(3) + (row.isOneQuantumMiss ? " MISS" : "")}</Table.Cell>
+                    <Table.Cell>{note.text}</Table.Cell>
+                    <Table.Cell>{note.kind === "" ? "" : <Badge color={note.kind === "disagreement" ? "red" : "amber"}>{note.kind}</Badge>}</Table.Cell>
                     <Table.Cell><Badge color={verdictColor(r.verdict)}>{r.verdict}</Badge></Table.Cell>
                     <Table.Cell>{r.reason ?? "—"}</Table.Cell>
                   </Table.Row>
@@ -1782,10 +1909,11 @@ function RealInputResults(props: {
         <pre style={{ margin: 0, fontSize: "0.85rem", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
           {summary === null
             ? "summary: pending (written after the last call)"
-            : `verdict:           ${summary.verdict} (on ${summary.verdictBasis})
-detail:            ${summary.detail}
+            : `verdict:           ${summary.verdict} (on ${summary.verdictBasis}, ${summary.verdictSeries === "inputLatency" ? "input part" : "round trip"})
+detail:            ${summary.detail}${deviceFallback ? `; DEVICE FALLBACK on chain(s) ${arms.filter((a) => a.fallback).map((a) => `${a.chainIndex} (requested ${a.requestedDeviceId}, stream reports ${a.streamDeviceId})`).join(", ")} — the SDK opened another input` : ""}
 run label:         ${runLabel || "(none)"}
 device:            ${device === null ? "—" : `"${device.label}" [${device.deviceId}]`}
+device fallback:   ${arms.length === 0 ? "—" : deviceFallback ? "YES — see detail; the run is evidence about whichever input the stream reports" : "none (every armed stream reports the requested id)"}
 calls:             ${summary.calls} (${summary.usableCalls} usable) · verdicts ${Object.entries(summary.verdictCounts).map(([k, v]) => `${k}×${v}`).join(", ")}
 ${statsLine("input part:", summary.inputLatencySec, "ms")}
 ${statsLine("round trip:", summary.roundTripSec, "ms")}
@@ -1793,10 +1921,11 @@ ${statsLine("spread:", summary.spreadSec, "ms")}
 ${statsLine("ratio:", summary.correlationRatioDb, "dB")}
 render quantum:    ${ms(summary.renderQuantumSec)} ms
 per chain:
-${summary.perChain.map((c) => `  chain ${c.chainIndex}: ${c.usableCalls}/${c.calls} usable · mode (input part) ${c.modeInputLatencySec === null ? "—" : `${ms(c.modeInputLatencySec)} ms on ${c.modeCount}`} · mode (round trip) ${c.modeRoundTripSec === null ? "—" : ms(c.modeRoundTripSec) + " ms"} · median ${c.medianInputLatencySec === null ? "—" : ms(c.medianInputLatencySec) + " ms"} · ${c.withinHalfQuantum ? "within ½ quantum" : "NOT within ½ quantum"}
-    clusters: ${c.clusters.length === 0 ? "—" : c.clusters.map((k) => `${ms(k.centerSec)} ms ×${k.calls} [${ms(k.minSec)}–${ms(k.maxSec)}]`).join(" · ")}
-    states:   ${c.states.length === 0 ? "—" : c.states.map((s) => `calls ${s.firstIndex + 1}–${s.lastIndex + 1} (${s.calls}) at ${ms(s.roundTripSec)} ms`).join(" → ")}`).join("\n")}${summary.chainMedianDifferenceQuanta === null ? "" : `\n  chain 1 − chain 0 = ${summary.chainMedianDifferenceQuanta.toFixed(3)} quanta`}${summary.stateSeparationQuanta === null ? "" : `\n  state separation: ${summary.stateSeparationQuanta.toFixed(3)} quanta (${summary.verdictBasis})`}
-state transitions: ${summary.stateTransitions.count} (${summary.stateTransitions.oneQuantumSteps} one-quantum step(s), ${summary.stateTransitions.unconfirmedSteps} on a last call, unconfirmed)${summary.stateTransitions.count === 0 ? "" : " — " + summary.stateTransitions.transitions.map((t) => `call ${t.index + 1} chain ${t.chainIndex} ${t.stepQuanta >= 0 ? "+" : ""}${t.stepQuanta.toFixed(3)} quanta${t.confirmedByFollowingCall ? "" : " (last call, unconfirmed)"}`).join(" · ")}
+${summary.perChain.map((c) => `  chain ${c.chainIndex}: ${c.usableCalls}/${c.calls} usable · mode (input part) ${c.modeInputLatencySec === null ? "—" : `${ms(c.modeInputLatencySec)} ms on ${c.modeCount}`} · mode (round trip) ${c.modeRoundTripSec === null ? "—" : ms(c.modeRoundTripSec) + " ms"} · median ${c.medianInputLatencySec === null ? "—" : ms(c.medianInputLatencySec) + " ms"} · ${c.withinHalfQuantum ? "within ½ quantum" : "NOT within ½ quantum"}${c.firstCallOff === null ? "" : ` · first call off (${c.firstCallOff.deltaQuanta.toFixed(3)} quanta)`}
+    clusters (${c.clusterSeries === "inputLatency" ? "input part" : "round trip"}): ${c.clusters.length === 0 ? "—" : c.clusters.map((k) => `${ms(k.centerSec)} ms ×${k.calls} [${ms(k.minSec)}–${ms(k.maxSec)}]`).join(" · ")}
+    states:   ${c.states.length === 0 ? "—" : c.states.map((s) => `calls ${s.firstIndex + 1}–${s.lastIndex + 1} (${s.calls}) at ${ms(s.roundTripSec)} ms`).join(" → ")}
+    track latency: ${c.reportedLatencySec === null ? "not reported" : `${ms(c.reportedLatencySec)} ms reported · median input part − reported = ${c.medianInputMinusReportedSec === null ? "—" : ms(c.medianInputMinusReportedSec) + " ms"}`}`).join("\n")}${summary.chainMedianDifferenceQuanta === null ? "" : `\n  chain 1 − chain 0 = ${summary.chainMedianDifferenceQuanta.toFixed(3)} quanta`}${summary.stateSeparationQuanta === null ? "" : `\n  state separation: ${summary.stateSeparationQuanta.toFixed(3)} quanta (${summary.verdictBasis})`}
+state transitions: ${summary.stateTransitions.count} (${summary.stateTransitions.oneQuantumSteps} one-quantum step(s), ${summary.stateTransitions.unconfirmedSteps} unconfirmed — no further agreeing call in the state opened)${summary.stateTransitions.count === 0 ? "" : " — " + summary.stateTransitions.transitions.map((t) => `call ${t.index + 1} chain ${t.chainIndex} ${t.stepQuanta >= 0 ? "+" : ""}${t.stepQuanta.toFixed(3)} quanta${t.confirmedByFollowingCall ? "" : " (unconfirmed)"}`).join(" · ")}
 isolated deviations: ${summary.isolatedDeviations.count}${summary.isolatedDeviations.count === 0 ? " (expected 0 — the single-call case no anchor check can catch)" : " — " + summary.isolatedDeviations.deviations.map((d) => `call ${d.index + 1} chain ${d.chainIndex} ${d.deltaQuanta >= 0 ? "+" : ""}${d.deltaQuanta.toFixed(3)} quanta`).join(" · ")}
 anchor disagreements: ${summary.anchorDisagreements.secondAnchorAvailable ? `flagged by the SDK ${summary.anchorDisagreements.flaggedBySdk} · re-derived > ½ quantum ${summary.anchorDisagreements.rederived}${summary.anchorDisagreements.rederived === 0 ? "" : ` (calls ${summary.anchorDisagreements.indices.map((i) => i + 1).join(", ")})`}` : "second anchor NOT reported by this build"}
 output latency:    reported on ${summary.outputLatencyReportedCount}/${summary.calls} calls
@@ -1821,14 +1950,16 @@ cell:              skipped (real input — no applied take cell in this mode)`}
       </Card>
 
       <Card>
-        <Heading size="4" style={{ marginBottom: "0.5rem" }}>Track settings (the armed stream)</Heading>
+        <Heading size="4" style={{ marginBottom: "0.5rem" }}>Track settings (one block per armed chain)</Heading>
         <pre style={{ margin: 0, fontSize: "0.85rem", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
-          {trackSettings === null
+          {arms.length === 0
             ? "track settings: pending (read after arming)"
-            : `stream deviceId:   ${trackSettings.streamDeviceId}
-${trackSettings.settings === null
-  ? "settings:          (no media track on the capture)"
-  : Object.entries(trackSettings.settings).map(([k, v]) => `${(k + ":").padEnd(19)}${v === null ? "(not reported)" : String(v)}`).join("\n")}`}
+            : arms.map((arm) => `chain ${arm.chainIndex}:
+  requested deviceId: ${arm.requestedDeviceId}
+  stream deviceId:    ${arm.streamDeviceId}${arm.fallback ? "   ← DEVICE FALLBACK (not the requested input)" : ""}
+${arm.settings === null
+  ? "  settings:           (no media track on the capture)"
+  : Object.entries(arm.settings).map(([k, v]) => `  ${(k + ":").padEnd(19)}${v === null ? "(not reported)" : String(v)}`).join("\n")}`).join("\n")}
         </pre>
       </Card>
     </>
@@ -1869,9 +2000,10 @@ function CalibrationHarness() {
   /** Every state the badge walked, in order — the trail the brief asks for. */
   const [trail, setTrail] = useState<string[]>([]);
   const [realCalls, setRealCalls] = useState<{ result: CalibrationResult; index: number; chainIndex: number }[]>([]);
-  const [realRows, setRealRows] = useState<RealRepeatCall[]>([]);
   const [realSummary, setRealSummary] = useState<RealInputSummary | null>(null);
-  const [trackSettings, setTrackSettings] = useState<{ settings: TrackSettingsRecord | null; streamDeviceId: string } | null>(null);
+  const [arms, setArms] = useState<RealArmInfo[]>([]);
+  // Display only — the run validates `?rate=` itself; the table's frame column needs the number.
+  const realSampleRate = Number(params.get("rate") ?? "48000");
 
   const walk = useCallback((state: string) => {
     setAuditState(state);
@@ -1917,18 +2049,15 @@ function CalibrationHarness() {
     // so it reads as the header's documented walk (and, on a Re-run, as the
     // page's whole history since load).
     setRealCalls([]);
-    setRealRows([]);
     setRealSummary(null);
-    setRepeatSummary(null);
-    setTrackSettings(null);
+    setArms([]);
     setApplied(null);
     setStoredEntry(null);
     runRealInputAudit({ device: selectedDevice, runLabel }, {
       setState: walk,
       onBuildProbe: setBuildProbe,
-      onTrackSettings: (settings, streamDeviceId) => setTrackSettings({ settings, streamDeviceId }),
+      onArm: (arm) => setArms((prev) => [...prev, arm]),
       onRepeatCall: (result, index, chainIndex) => setRealCalls((prev) => [...prev, { result, index, chainIndex }]),
-      onRepeatRows: (rows, summary) => { setRealRows(rows); setRepeatSummary(summary); },
       onRealSummary: setRealSummary,
       onApplied: (result, entry) => { setApplied(result); setStoredEntry(entry); },
     })
@@ -2068,13 +2197,13 @@ function CalibrationHarness() {
           {REAL_INPUT && (
             <RealInputResults
               calls={realCalls}
-              rows={realRows}
               summary={realSummary}
               applied={applied}
               storedEntry={storedEntry}
-              trackSettings={trackSettings}
+              arms={arms}
               runLabel={runLabel}
               device={selectedDevice}
+              sampleRate={realSampleRate}
             />
           )}
 
