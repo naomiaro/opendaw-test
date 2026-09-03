@@ -532,10 +532,17 @@ input-latency-calibration-debug-demo.html?input=real&rate=48000&bpm=120
   `groupId`), `trackSettings` (the armed track's `getSettings()`: deviceId, latency,
   sampleRate, channelCount, echo/noise/AGC flags — proof of the processing state and the
   browser's own latency figure), `realSummary` (`src/lib/audit/realInputSummary.ts`,
-  pure + tested: counts per verdict, usable-call stats, one-quantum misses, anchor
-  disagreements, per-chain medians, a descriptive `repeatable` / `two-state` /
-  `scattered` / `unusable` verdict — no band, no pass/fail). Loopback envelopes gain only
-  `inputMode: "loopback"`. `#real-verdict` carries `data-verdict`.
+  pure + tested: counts per verdict, usable-call stats, and PER CHAIN the modes, clusters
+  and round-trip states; a descriptive `repeatable` / `two-state` / `scattered` /
+  `unusable` verdict decided on the chain's clusters (steady) or on the two chain medians
+  (fresh), `verdictBasis` says which — no band, no pass/fail). Three things a call off
+  its chain's mode can be are kept apart: `anchorDisagreements` (A vs B > ½ quantum, the
+  SDK's detector), `stateTransitions` (a ≥ ½-quantum step from the previous call, anchors
+  agreeing, that persists — `isOneQuantumStep` within 25 % of a quantum) and
+  `isolatedDeviations` (one call off, anchors agreeing, next call back — expected 0).
+  Never judge a fresh run's second chain against the pooled mode: the rebuilt chain lands
+  where it lands, and that difference is `chainMedianDifferenceQuanta` only. Loopback
+  envelopes gain only `inputMode: "loopback"`. `#real-verdict` carries `data-verdict`.
 - Run recipe: serve the calibration-branch build through `SDK_DIST_OVERRIDE`; open the URL
   on a visible window; grant the mic permission (the page asks once to unlock device
   labels); pick the device in the select and type a label; click Start with a REAL click.

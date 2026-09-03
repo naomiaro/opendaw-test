@@ -1545,8 +1545,11 @@ async function runRealInputAudit(input: RealRunInput, cb: RealRunCallbacks): Pro
     " usable=" + String(realSummary.usableCalls) + "/" + String(realSummary.calls) +
     " verdicts=" + JSON.stringify(realSummary.verdictCounts) +
     " medianInputMs=" + (realSummary.inputLatencySec === null ? "n/a" : (realSummary.inputLatencySec.median * 1000).toFixed(3)) +
-    " oneQuantumMisses=" + String(realSummary.oneQuantumMisses) +
+    " basis=" + realSummary.verdictBasis +
+    " stateTransitions=" + String(realSummary.stateTransitions.count) + " (oneQuantumSteps " + String(realSummary.stateTransitions.oneQuantumSteps) + ")" +
+    " isolatedDeviations=" + String(realSummary.isolatedDeviations.count) +
     " anchorDisagreements=" + String(realSummary.anchorDisagreements.flaggedBySdk) + "/" + String(realSummary.anchorDisagreements.rederived) +
+    " perChainModesMs=[" + realSummary.perChain.map((c) => String(c.chainIndex) + ":" + (c.modeInputLatencySec === null ? "n/a" : (c.modeInputLatencySec * 1000).toFixed(3))).join(",") + "]" +
     " reportedLatencySec=" + String(realSummary.reportedLatencySec) +
     " detail=" + realSummary.detail
   );
@@ -1708,7 +1711,7 @@ function RealInputResults(props: {
         <pre style={{ margin: 0, fontSize: "0.85rem", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
           {summary === null
             ? "summary: pending (written after the last call)"
-            : `verdict:           ${summary.verdict}
+            : `verdict:           ${summary.verdict} (on ${summary.verdictBasis})
 detail:            ${summary.detail}
 run label:         ${runLabel || "(none)"}
 device:            ${device === null ? "—" : `"${device.label}" [${device.deviceId}]`}
@@ -1717,14 +1720,16 @@ ${statsLine("input part:", summary.inputLatencySec, "ms")}
 ${statsLine("round trip:", summary.roundTripSec, "ms")}
 ${statsLine("spread:", summary.spreadSec, "ms")}
 ${statsLine("ratio:", summary.correlationRatioDb, "dB")}
-mode (input part): ${summary.modeInputLatencySec === null ? "—" : `${ms(summary.modeInputLatencySec)} ms on ${summary.modeCount}/${summary.usableCalls} usable calls`}
 render quantum:    ${ms(summary.renderQuantumSec)} ms
-one-quantum misses: ${summary.oneQuantumMisses} (on the round trip, ±25 % of a quantum off its mode)${repeatSummary === null ? "" : ` · summarizeRepeats agrees: ${repeatSummary.oneQuantumMisses}`}
-clusters:          ${summary.clusters.length === 0 ? "—" : summary.clusters.map((c) => `${ms(c.centerSec)} ms ×${c.calls} [${ms(c.minSec)}–${ms(c.maxSec)}]`).join(" · ")}${summary.stateSeparationQuanta === null ? "" : ` → ${summary.stateSeparationQuanta.toFixed(3)} quanta apart`}
-output latency:    reported on ${summary.outputLatencyReportedCount}/${summary.calls} calls
-second anchor:     ${summary.anchorDisagreements.secondAnchorAvailable ? `reported · flagged by the SDK ${summary.anchorDisagreements.flaggedBySdk} · re-derived > ½ quantum ${summary.anchorDisagreements.rederived}` : "NOT reported by this build"}
-per chain:         ${summary.perChain === null ? "one chain (steady)" : summary.perChain.map((c) => `chain ${c.chainIndex}: ${c.usableCalls}/${c.calls} usable, median ${c.medianInputLatencySec === null ? "—" : ms(c.medianInputLatencySec) + " ms"}`).join(" · ")}${summary.chainMedianDifferenceQuanta === null ? "" : ` → chain 1 − chain 0 = ${summary.chainMedianDifferenceQuanta.toFixed(3)} quanta`}
-track latency:     ${summary.reportedLatencySec === null ? "not reported by the browser" : `${ms(summary.reportedLatencySec)} ms reported · median input part − reported = ${summary.medianInputMinusReportedSec === null ? "—" : ms(summary.medianInputMinusReportedSec) + " ms"}`}`}
+per chain:
+${summary.perChain.map((c) => `  chain ${c.chainIndex}: ${c.usableCalls}/${c.calls} usable · mode (input part) ${c.modeInputLatencySec === null ? "—" : `${ms(c.modeInputLatencySec)} ms on ${c.modeCount}`} · mode (round trip) ${c.modeRoundTripSec === null ? "—" : ms(c.modeRoundTripSec) + " ms"} · median ${c.medianInputLatencySec === null ? "—" : ms(c.medianInputLatencySec) + " ms"} · ${c.withinHalfQuantum ? "within ½ quantum" : "NOT within ½ quantum"}
+    clusters: ${c.clusters.length === 0 ? "—" : c.clusters.map((k) => `${ms(k.centerSec)} ms ×${k.calls} [${ms(k.minSec)}–${ms(k.maxSec)}]`).join(" · ")}
+    states:   ${c.states.length === 0 ? "—" : c.states.map((s) => `calls ${s.firstIndex + 1}–${s.lastIndex + 1} (${s.calls}) at ${ms(s.roundTripSec)} ms`).join(" → ")}`).join("\n")}${summary.chainMedianDifferenceQuanta === null ? "" : `\n  chain 1 − chain 0 = ${summary.chainMedianDifferenceQuanta.toFixed(3)} quanta`}${summary.stateSeparationQuanta === null ? "" : `\n  state separation: ${summary.stateSeparationQuanta.toFixed(3)} quanta (${summary.verdictBasis})`}
+state transitions: ${summary.stateTransitions.count} (${summary.stateTransitions.oneQuantumSteps} one-quantum step(s))${summary.stateTransitions.count === 0 ? "" : " — " + summary.stateTransitions.transitions.map((t) => `call ${t.index + 1} chain ${t.chainIndex} ${t.stepQuanta >= 0 ? "+" : ""}${t.stepQuanta.toFixed(3)} quanta`).join(" · ")}
+isolated deviations: ${summary.isolatedDeviations.count}${summary.isolatedDeviations.count === 0 ? " (expected 0 — the single-call case no anchor check can catch)" : " — " + summary.isolatedDeviations.deviations.map((d) => `call ${d.index + 1} chain ${d.chainIndex} ${d.deltaQuanta >= 0 ? "+" : ""}${d.deltaQuanta.toFixed(3)} quanta`).join(" · ")}
+anchor disagreements: ${summary.anchorDisagreements.secondAnchorAvailable ? `flagged by the SDK ${summary.anchorDisagreements.flaggedBySdk} · re-derived > ½ quantum ${summary.anchorDisagreements.rederived}${summary.anchorDisagreements.rederived === 0 ? "" : ` (calls ${summary.anchorDisagreements.indices.map((i) => i + 1).join(", ")})`}` : "second anchor NOT reported by this build"}
+output latency:    reported on ${summary.outputLatencyReportedCount}/${summary.calls} calls${repeatSummary === null ? "" : `\nloopback rule:     summarizeRepeats (pooled mode, ±25 % of a quantum) would count ${repeatSummary.oneQuantumMisses} "miss(es)" — kept in the envelope for comparison, not the reading`}
+track latency:     ${summary.reportedLatencySec === null ? "not reported by the browser" : `${ms(summary.reportedLatencySec)} ms reported · pooled median input part − reported = ${summary.medianInputMinusReportedSec === null ? "—" : ms(summary.medianInputMinusReportedSec) + " ms"}`}`}
         </pre>
       </Card>
 

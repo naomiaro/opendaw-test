@@ -1,9 +1,14 @@
 /**
  * The shape verdicts of a real-input calibration run are pinned here so the
  * page's summary card cannot drift from the rule the register quotes:
- * repeatable = every usable call within half a quantum of the mode; two-state =
- * exactly two clusters at least half a quantum apart; scattered otherwise;
- * unusable = no usable call at all.
+ * repeatable = every usable call within half a quantum of its chain's mode;
+ * two-state = exactly two clusters (steady) or two chain medians (fresh) at
+ * least half a quantum apart; scattered otherwise; unusable = no usable call.
+ *
+ * The batch cases carry the frame counts of the first real-mic batches in
+ * `.verify-output/` (calib-summary-<runToken>.json), so the labelling defects
+ * they exposed — pooled-mode "misses" on a fresh run, a persisting one-quantum
+ * step read as misses — cannot come back.
  */
 import { describe, expect, it } from "vitest";
 import { isUsableCall, modeAtFrameResolution, summarizeRealInput, type RealInputCall } from "./realInputSummary";
@@ -27,46 +32,191 @@ function call(inputLatencySeconds: number, overrides: Partial<RealInputCall> = {
   };
 }
 
-describe("summarizeRealInput", () => {
+/** A call as the envelopes persist it: round trip and output latency in frames at `rate`, both anchors agreeing unless `bFrames` says otherwise. */
+function frames(rate: number, rtFrames: number, outFrames: number, chainIndex: number, overrides: Partial<RealInputCall> = {}, bFrames = rtFrames): RealInputCall {
+  return {
+    verdict: "ok",
+    roundTripSeconds: rtFrames / rate,
+    roundTripSecondsSecondary: bFrames / rate,
+    inputLatencySeconds: (rtFrames - outFrames) / rate,
+    outputLatencySeconds: outFrames / rate,
+    outputLatencyReported: true,
+    spreadSeconds: 0,
+    correlationRatioDb: 37,
+    identifiedBursts: 3,
+    chainIndex,
+    ...overrides,
+  };
+}
+
+const repeat = <T,>(n: number, make: (k: number) => T): T[] => Array.from({ length: n }, (_, k) => make(k));
+
+describe("summarizeRealInput — the real-mic batches", () => {
+  it("batch 1788464591756 (48 kHz steady): a persisting −128-frame step is one transition, not three misses", () => {
+    // Calls 1-27 at 4264 frames; call 28 (noisy) and 29-30 at 4136, both anchors agreeing throughout.
+    const calls = [
+      ...repeat(27, () => frames(48000, 4264, 1104, 0)),
+      frames(48000, 4136, 1104, 0, { verdict: "noisy" }),
+      frames(48000, 4136, 1104, 0),
+      frames(48000, 4136, 1104, 0),
+    ];
+    const summary = summarizeRealInput(calls, 48000, 0.002666);
+    expect(summary.verdict).toBe("two-state");
+    expect(summary.verdictBasis).toBe("per-chain clusters");
+    // Cluster separation is upper minus lower; the signed step lives on the transition.
+    expect(summary.stateSeparationQuanta).toBeCloseTo(1, 6);
+    expect(summary.stateTransitions.count).toBe(1);
+    expect(summary.stateTransitions.oneQuantumSteps).toBe(1);
+    expect(summary.stateTransitions.transitions[0]).toMatchObject({ chainIndex: 0, index: 27, isOneQuantumStep: true });
+    expect(summary.stateTransitions.transitions[0].stepQuanta).toBeCloseTo(-1, 6);
+    expect(summary.perChain).toHaveLength(1);
+    expect(summary.perChain[0].states.map((s) => s.calls)).toEqual([27, 3]);
+    expect(summary.perChain[0].states[1].roundTripSec).toBeCloseTo(4136 / 48000, 12);
+    expect(summary.perChain[0].modeRoundTripSec).toBeCloseTo(4264 / 48000, 12);
+    expect(summary.isolatedDeviations.count).toBe(0);
+    expect(summary.anchorDisagreements).toMatchObject({ flaggedBySdk: 0, rederived: 0, secondAnchorAvailable: true });
+    expect(summary.verdictCounts).toEqual({ ok: 29, noisy: 1 });
+    expect(summary.detail).toContain("1 state transition(s): call 28 chain 0 -1.00 quanta (one-quantum step)");
+    expect(summary.detail).not.toContain("miss");
+  });
+
+  it("batch 1788464404625 (44.1 kHz fresh): the re-armed chain's 107 frames are a chain difference, not 15 misses", () => {
+    // Chain 0: 15 calls at 2656 frames, call 11 noisy with anchor B at 2528 (A stays at the mode).
+    // Chain 1 (re-armed): 15 calls at 2764 frames.
+    const calls = [
+      ...repeat(15, (k) => k === 10
+        ? frames(44100, 2656, 1014, 0, { verdict: "noisy", reason: "capture anchors disagree" }, 2528)
+        : frames(44100, 2656, 1014, 0)),
+      ...repeat(15, () => frames(44100, 2764, 1014, 1)),
+    ];
+    const summary = summarizeRealInput(calls, 44100, 0.002666);
+    expect(summary.verdict).toBe("two-state");
+    expect(summary.verdictBasis).toBe("chain medians");
+    expect(summary.chainMedianDifferenceQuanta).toBeCloseTo(108 / 128, 6);
+    expect(summary.stateSeparationQuanta).toBeCloseTo(108 / 128, 6);
+    expect(summary.stateTransitions.count).toBe(0);
+    expect(summary.isolatedDeviations.count).toBe(0);
+    expect(summary.anchorDisagreements).toEqual({ flaggedBySdk: 1, rederived: 1, indices: [10], secondAnchorAvailable: true });
+    expect(summary.perChain.map((c) => c.modeRoundTripSec)).toEqual([2656 / 44100, 2764 / 44100]);
+    expect(summary.perChain.map((c) => c.withinHalfQuantum)).toEqual([true, true]);
+    expect(summary.perChain.map((c) => c.states.length)).toEqual([1, 1]);
+    expect(summary.detail).toContain("1 anchor disagreement(s) (calls 11)");
+    expect(summary.detail).not.toContain("miss");
+  });
+
+  it("batch 1788464100870 (48 kHz fresh): chains 10 frames apart are repeatable on chain medians", () => {
+    const calls = [
+      ...repeat(15, () => frames(48000, 3104, 1104, 0)),
+      ...repeat(15, () => frames(48000, 3094, 1104, 1)),
+    ];
+    const summary = summarizeRealInput(calls, 48000, 0.002666);
+    expect(summary.verdict).toBe("repeatable");
+    expect(summary.verdictBasis).toBe("chain medians");
+    expect(summary.chainMedianDifferenceQuanta).toBeCloseTo(-10 / 128, 6);
+    expect(summary.stateSeparationQuanta).toBeNull();
+    expect(summary.stateTransitions.count).toBe(0);
+    expect(summary.perChain.map((c) => c.medianInputLatencySec)).toEqual([2000 / 48000, 1990 / 48000]);
+  });
+
+  it("batch 1788463933323 (48 kHz steady): thirty identical calls are repeatable with one state", () => {
+    const summary = summarizeRealInput(repeat(30, () => frames(48000, 3067, 1104, 0)), 48000, 0.002666);
+    expect(summary.verdict).toBe("repeatable");
+    expect(summary.verdictBasis).toBe("per-chain clusters");
+    expect(summary.perChain[0]).toMatchObject({ usableCalls: 30, modeCount: 30, withinHalfQuantum: true });
+    expect(summary.perChain[0].states).toEqual([{ firstIndex: 0, lastIndex: 29, calls: 30, roundTripSec: 3067 / 48000 }]);
+    expect(summary.medianInputMinusReportedSec).toBeCloseTo(1963 / 48000 - 0.002666, 9);
+  });
+});
+
+describe("summarizeRealInput — the three mechanisms kept apart", () => {
+  it("an isolated deviation (off, anchors agreeing, next call back) is neither a transition nor a disagreement", () => {
+    const calls = repeat(10, (k) => (k === 4 ? frames(48000, 4264 - 128, 1104, 0) : frames(48000, 4264, 1104, 0)));
+    const summary = summarizeRealInput(calls, 48000, null);
+    expect(summary.isolatedDeviations.count).toBe(1);
+    expect(summary.isolatedDeviations.deviations[0]).toMatchObject({ chainIndex: 0, index: 4 });
+    expect(summary.isolatedDeviations.deviations[0].deltaQuanta).toBeCloseTo(-1, 6);
+    expect(summary.stateTransitions.count).toBe(0);
+    expect(summary.anchorDisagreements.rederived).toBe(0);
+    // The deviating call still forms a second input-part cluster, so the shape rule still reads two-state.
+    expect(summary.verdict).toBe("two-state");
+    expect(summary.perChain[0].states).toHaveLength(1);
+    expect(summary.detail).toContain("1 isolated deviation(s) (calls 5)");
+  });
+
+  it("a call whose anchors disagree never opens a state, even when its reported round trip is off", () => {
+    const calls = repeat(8, (k) => (k === 3
+      ? frames(48000, 4264 - 128, 1104, 0, { verdict: "noisy", reason: "capture anchors disagree" }, 4264)
+      : frames(48000, 4264, 1104, 0)));
+    const summary = summarizeRealInput(calls, 48000, null);
+    expect(summary.anchorDisagreements).toMatchObject({ flaggedBySdk: 1, rederived: 1, indices: [3] });
+    expect(summary.stateTransitions.count).toBe(0);
+    expect(summary.isolatedDeviations.count).toBe(0);
+    expect(summary.perChain[0].states).toHaveLength(1);
+  });
+
+  it("a step on the last call is a transition (there is no next call to make it isolated)", () => {
+    const calls = [...repeat(9, () => frames(48000, 4264, 1104, 0)), frames(48000, 4264 + 128, 1104, 0)];
+    const summary = summarizeRealInput(calls, 48000, null);
+    expect(summary.stateTransitions.count).toBe(1);
+    expect(summary.stateTransitions.transitions[0]).toMatchObject({ index: 9, isOneQuantumStep: true });
+    expect(summary.isolatedDeviations.count).toBe(0);
+    expect(summary.perChain[0].states.map((s) => s.calls)).toEqual([9, 1]);
+  });
+
+  it("transitions are judged within a chain: the first call of a re-armed chain is not a step from the old chain", () => {
+    const calls = [...repeat(5, () => frames(48000, 4264, 1104, 0)), ...repeat(5, () => frames(48000, 4264 + 128, 1104, 1))];
+    const summary = summarizeRealInput(calls, 48000, null);
+    expect(summary.stateTransitions.count).toBe(0);
+    expect(summary.isolatedDeviations.count).toBe(0);
+    expect(summary.verdict).toBe("two-state");
+    expect(summary.verdictBasis).toBe("chain medians");
+    expect(summary.chainMedianDifferenceQuanta).toBeCloseTo(1, 6);
+  });
+
+  it("a fresh run whose chain is not internally stable is scattered, whatever the chain medians say", () => {
+    const calls = [
+      ...repeat(3, (k) => frames(48000, 4264 + k * 100, 1104, 0)),
+      ...repeat(3, () => frames(48000, 4264, 1104, 1)),
+    ];
+    const summary = summarizeRealInput(calls, 48000, null);
+    expect(summary.verdict).toBe("scattered");
+    expect(summary.verdictBasis).toBe("chain medians");
+    expect(summary.perChain[0].withinHalfQuantum).toBe(false);
+    expect(summary.detail).toContain("chain(s) 0 not within half a quantum");
+  });
+});
+
+describe("summarizeRealInput — shape rules", () => {
   it("reads a run whose calls all sit within half a quantum of the mode as repeatable", () => {
     const calls = [0.0216, 0.0216, 0.02165, 0.0216, 0.02155].map((v) => call(v));
     const summary = summarizeRealInput(calls, RATE, null);
     expect(summary.verdict).toBe("repeatable");
-    expect(summary.calls).toBe(5);
     expect(summary.usableCalls).toBe(5);
     expect(summary.verdictCounts).toEqual({ ok: 5 });
-    expect(summary.modeInputLatencySec).toBeCloseTo(0.0216, 9);
-    expect(summary.modeCount).toBe(3);
-    expect(summary.oneQuantumMisses).toBe(0);
-    expect(summary.clusters).toHaveLength(1);
+    expect(summary.perChain[0].modeInputLatencySec).toBeCloseTo(0.0216, 9);
+    expect(summary.perChain[0].modeCount).toBe(3);
+    expect(summary.perChain[0].clusters).toHaveLength(1);
     expect(summary.stateSeparationQuanta).toBeNull();
-    expect(summary.perChain).toBeNull();
-    expect(summary.inputLatencySec).not.toBeNull();
     expect(summary.inputLatencySec!.median).toBeCloseTo(0.0216, 9);
     expect(summary.inputLatencySec!.min).toBeCloseTo(0.02155, 9);
     expect(summary.inputLatencySec!.max).toBeCloseTo(0.02165, 9);
     expect(summary.inputLatencySec!.stdev).toBeGreaterThan(0);
     expect(summary.outputLatencyReportedCount).toBe(5);
-    expect(summary.detail).toContain("within half a quantum");
   });
 
-  it("reads two clusters exactly one quantum apart as two-state and counts the misses", () => {
+  it("reads two clusters exactly one quantum apart as two-state; alternating single calls are isolated deviations", () => {
     const low = 0.0216;
     const high = low + QUANTUM;
     const calls = [low, high, low, low, high, low].map((v) => call(v));
     const summary = summarizeRealInput(calls, RATE, null);
     expect(summary.verdict).toBe("two-state");
-    expect(summary.clusters).toHaveLength(2);
-    expect(summary.clusters[0].calls).toBe(4);
-    expect(summary.clusters[1].calls).toBe(2);
+    expect(summary.perChain[0].clusters.map((c) => c.calls)).toEqual([4, 2]);
     expect(summary.stateSeparationQuanta).toBeCloseTo(1, 6);
-    // The round trip carries the same lattice, so the two high calls are one-quantum misses off the mode.
-    expect(summary.modeRoundTripSec).toBeCloseTo(low + OUTPUT, 9);
-    expect(summary.oneQuantumMisses).toBe(2);
-    expect(summary.detail).toContain("two states");
+    expect(summary.isolatedDeviations.deviations.map((d) => d.index)).toEqual([1, 4]);
+    expect(summary.stateTransitions.count).toBe(0);
   });
 
-  it("reads values spread over more than two groups, or two groups too close, as scattered", () => {
+  it("reads values spread over more than two groups, or a staircase, as scattered", () => {
     const spread = [0, 0.4, 0.8, 1.2, 1.6].map((q) => call(0.02 + q * QUANTUM));
     expect(summarizeRealInput(spread, RATE, null).verdict).toBe("scattered");
     // A staircase: not within half a quantum of the mode (the earliest tied value, 0),
@@ -75,7 +225,6 @@ describe("summarizeRealInput", () => {
     const summary = summarizeRealInput(close, RATE, null);
     expect(summary.verdict).toBe("scattered");
     expect(summary.stateSeparationQuanta).toBeNull();
-    expect(summary.detail).toContain("scattered");
   });
 
   it("is unusable when no call returned a stored verdict with finite figures, and nulls every statistic", () => {
@@ -87,12 +236,12 @@ describe("summarizeRealInput", () => {
     ];
     const summary = summarizeRealInput(calls, RATE, 0.01);
     expect(summary.verdict).toBe("unusable");
+    expect(summary.verdictBasis).toBe("none");
     expect(summary.usableCalls).toBe(0);
     expect(summary.verdictCounts).toEqual({ "no-signal": 1, "no-stream": 1, "context-not-running": 1 });
     expect(summary.inputLatencySec).toBeNull();
-    expect(summary.roundTripSec).toBeNull();
-    expect(summary.modeInputLatencySec).toBeNull();
-    expect(summary.clusters).toEqual([]);
+    expect(summary.perChain[0].usableCalls).toBe(0);
+    expect(summary.perChain[0].clusters).toEqual([]);
     expect(summary.reportedLatencySec).toBe(0.01);
     expect(summary.medianInputMinusReportedSec).toBeNull();
     expect(summary.detail).toContain("no usable call");
@@ -110,13 +259,13 @@ describe("summarizeRealInput", () => {
     const summary = summarizeRealInput(calls, RATE, null);
     expect(summary.usableCalls).toBe(4);
     expect(summary.verdictCounts).toEqual({ ok: 2, noisy: 2 });
-    expect(summary.anchorDisagreements).toEqual({ flaggedBySdk: 1, rederived: 2, secondAnchorAvailable: true });
+    expect(summary.anchorDisagreements).toEqual({ flaggedBySdk: 1, rederived: 2, indices: [1, 2], secondAnchorAvailable: true });
     expect(summary.verdict).toBe("repeatable");
   });
 
   it("reports no second anchor when no call carried one", () => {
     const summary = summarizeRealInput([call(0.02), call(0.02)], RATE, null);
-    expect(summary.anchorDisagreements).toEqual({ flaggedBySdk: 0, rederived: 0, secondAnchorAvailable: false });
+    expect(summary.anchorDisagreements).toEqual({ flaggedBySdk: 0, rederived: 0, indices: [], secondAnchorAvailable: false });
   });
 
   it("gives per-chain medians and their difference in quanta when a fresh re-arm split the run", () => {
@@ -124,15 +273,15 @@ describe("summarizeRealInput", () => {
     const chain1 = [0.0216 + QUANTUM, 0.0216 + QUANTUM, 0.0215 + QUANTUM].map((v) => call(v, { chainIndex: 1 }));
     const summary = summarizeRealInput([...chain0, ...chain1], RATE, null);
     expect(summary.perChain).toHaveLength(2);
-    expect(summary.perChain![0]).toEqual({ chainIndex: 0, calls: 3, usableCalls: 3, medianInputLatencySec: 0.0216 });
-    expect(summary.perChain![1].calls).toBe(3);
-    expect(summary.perChain![1].medianInputLatencySec).toBeCloseTo(0.0216 + QUANTUM, 9);
+    expect(summary.perChain[0]).toMatchObject({ chainIndex: 0, calls: 3, usableCalls: 3, medianInputLatencySec: 0.0216 });
+    expect(summary.perChain[1].medianInputLatencySec).toBeCloseTo(0.0216 + QUANTUM, 9);
     expect(summary.chainMedianDifferenceQuanta).toBeCloseTo(1, 6);
     expect(summary.verdict).toBe("two-state");
-    expect(summary.detail).toContain("chain 1 − chain 0");
+    expect(summary.verdictBasis).toBe("chain medians");
+    expect(summary.detail).toContain("chain medians");
   });
 
-  it("subtracts the browser's reported track latency from the median input part", () => {
+  it("subtracts the browser's reported track latency from the pooled median input part", () => {
     const summary = summarizeRealInput([call(0.030), call(0.032), call(0.031)], RATE, 0.01);
     expect(summary.reportedLatencySec).toBe(0.01);
     expect(summary.medianInputMinusReportedSec).toBeCloseTo(0.021, 9);
@@ -144,8 +293,11 @@ describe("summarizeRealInput", () => {
   it("chain difference is null when one chain has no usable call", () => {
     const calls = [call(0.02, { chainIndex: 0 }), call(Number.NaN, { chainIndex: 1, verdict: "no-signal", roundTripSeconds: Number.NaN })];
     const summary = summarizeRealInput(calls, RATE, null);
-    expect(summary.perChain![1]).toEqual({ chainIndex: 1, calls: 1, usableCalls: 0, medianInputLatencySec: null });
+    expect(summary.perChain[1]).toMatchObject({ chainIndex: 1, calls: 1, usableCalls: 0, medianInputLatencySec: null });
     expect(summary.chainMedianDifferenceQuanta).toBeNull();
+    // Only one chain has data, so the verdict falls back to that chain's clusters.
+    expect(summary.verdictBasis).toBe("per-chain clusters");
+    expect(summary.verdict).toBe("repeatable");
   });
 });
 
