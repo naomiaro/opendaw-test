@@ -800,7 +800,8 @@ function summarizeRepeats(
       usableCalls: usable.length,
       delayCycleMs,
       modeRoundTripSec: mode.value,
-      modeNormalizedInputMs: mode.value * 1000 - (rows[0]?.outputLatencySeconds ?? 0) * 1000,
+      // The output leg of the first USABLE call: call 1 can be an error row in real mode.
+      modeNormalizedInputMs: mode.value * 1000 - (usable[0]?.result.outputLatencySeconds ?? 0) * 1000,
       modeCount: mode.count,
       renderQuantumSec,
       oneQuantumMisses: misses.length,
@@ -1795,7 +1796,7 @@ per chain:
 ${summary.perChain.map((c) => `  chain ${c.chainIndex}: ${c.usableCalls}/${c.calls} usable · mode (input part) ${c.modeInputLatencySec === null ? "—" : `${ms(c.modeInputLatencySec)} ms on ${c.modeCount}`} · mode (round trip) ${c.modeRoundTripSec === null ? "—" : ms(c.modeRoundTripSec) + " ms"} · median ${c.medianInputLatencySec === null ? "—" : ms(c.medianInputLatencySec) + " ms"} · ${c.withinHalfQuantum ? "within ½ quantum" : "NOT within ½ quantum"}
     clusters: ${c.clusters.length === 0 ? "—" : c.clusters.map((k) => `${ms(k.centerSec)} ms ×${k.calls} [${ms(k.minSec)}–${ms(k.maxSec)}]`).join(" · ")}
     states:   ${c.states.length === 0 ? "—" : c.states.map((s) => `calls ${s.firstIndex + 1}–${s.lastIndex + 1} (${s.calls}) at ${ms(s.roundTripSec)} ms`).join(" → ")}`).join("\n")}${summary.chainMedianDifferenceQuanta === null ? "" : `\n  chain 1 − chain 0 = ${summary.chainMedianDifferenceQuanta.toFixed(3)} quanta`}${summary.stateSeparationQuanta === null ? "" : `\n  state separation: ${summary.stateSeparationQuanta.toFixed(3)} quanta (${summary.verdictBasis})`}
-state transitions: ${summary.stateTransitions.count} (${summary.stateTransitions.oneQuantumSteps} one-quantum step(s))${summary.stateTransitions.count === 0 ? "" : " — " + summary.stateTransitions.transitions.map((t) => `call ${t.index + 1} chain ${t.chainIndex} ${t.stepQuanta >= 0 ? "+" : ""}${t.stepQuanta.toFixed(3)} quanta`).join(" · ")}
+state transitions: ${summary.stateTransitions.count} (${summary.stateTransitions.oneQuantumSteps} one-quantum step(s), ${summary.stateTransitions.unconfirmedSteps} on a last call, unconfirmed)${summary.stateTransitions.count === 0 ? "" : " — " + summary.stateTransitions.transitions.map((t) => `call ${t.index + 1} chain ${t.chainIndex} ${t.stepQuanta >= 0 ? "+" : ""}${t.stepQuanta.toFixed(3)} quanta${t.confirmedByFollowingCall ? "" : " (last call, unconfirmed)"}`).join(" · ")}
 isolated deviations: ${summary.isolatedDeviations.count}${summary.isolatedDeviations.count === 0 ? " (expected 0 — the single-call case no anchor check can catch)" : " — " + summary.isolatedDeviations.deviations.map((d) => `call ${d.index + 1} chain ${d.chainIndex} ${d.deltaQuanta >= 0 ? "+" : ""}${d.deltaQuanta.toFixed(3)} quanta`).join(" · ")}
 anchor disagreements: ${summary.anchorDisagreements.secondAnchorAvailable ? `flagged by the SDK ${summary.anchorDisagreements.flaggedBySdk} · re-derived > ½ quantum ${summary.anchorDisagreements.rederived}${summary.anchorDisagreements.rederived === 0 ? "" : ` (calls ${summary.anchorDisagreements.indices.map((i) => i + 1).join(", ")})`}` : "second anchor NOT reported by this build"}
 output latency:    reported on ${summary.outputLatencyReportedCount}/${summary.calls} calls

@@ -67,7 +67,8 @@ describe("summarizeRealInput — the real-mic batches", () => {
     expect(summary.stateSeparationQuanta).toBeCloseTo(1, 6);
     expect(summary.stateTransitions.count).toBe(1);
     expect(summary.stateTransitions.oneQuantumSteps).toBe(1);
-    expect(summary.stateTransitions.transitions[0]).toMatchObject({ chainIndex: 0, index: 27, isOneQuantumStep: true });
+    expect(summary.stateTransitions.transitions[0]).toMatchObject({ chainIndex: 0, index: 27, isOneQuantumStep: true, confirmedByFollowingCall: true });
+    expect(summary.stateTransitions.unconfirmedSteps).toBe(0);
     expect(summary.stateTransitions.transitions[0].stepQuanta).toBeCloseTo(-1, 6);
     expect(summary.perChain).toHaveLength(1);
     expect(summary.perChain[0].states.map((s) => s.calls)).toEqual([27, 3]);
@@ -154,13 +155,27 @@ describe("summarizeRealInput — the three mechanisms kept apart", () => {
     expect(summary.perChain[0].states).toHaveLength(1);
   });
 
-  it("a step on the last call is a transition (there is no next call to make it isolated)", () => {
+  it("a step on the last call is a transition, marked unconfirmed (nothing follows it)", () => {
     const calls = [...repeat(9, () => frames(48000, 4264, 1104, 0)), frames(48000, 4264 + 128, 1104, 0)];
     const summary = summarizeRealInput(calls, 48000, null);
     expect(summary.stateTransitions.count).toBe(1);
-    expect(summary.stateTransitions.transitions[0]).toMatchObject({ index: 9, isOneQuantumStep: true });
+    expect(summary.stateTransitions.unconfirmedSteps).toBe(1);
+    expect(summary.stateTransitions.transitions[0]).toMatchObject({ index: 9, isOneQuantumStep: true, confirmedByFollowingCall: false });
     expect(summary.isolatedDeviations.count).toBe(0);
     expect(summary.perChain[0].states.map((s) => s.calls)).toEqual([9, 1]);
+    expect(summary.detail).toContain("nothing after it to confirm the hold");
+  });
+
+  it("a first call whose anchors disagree does not seed the chain's state (no spurious transition on call 2)", () => {
+    // A = mode − 1 q with B at the mode on call 1, then nine calls at the mode.
+    const calls = [frames(48000, 4264 - 128, 1104, 0, {}, 4264), ...repeat(9, () => frames(48000, 4264, 1104, 0))];
+    const summary = summarizeRealInput(calls, 48000, null);
+    expect(summary.anchorDisagreements.rederived).toBe(1);
+    expect(summary.stateTransitions.count).toBe(0);
+    expect(summary.isolatedDeviations.count).toBe(0);
+    expect(summary.perChain[0].states).toHaveLength(1);
+    expect(summary.perChain[0].states[0].calls).toBe(10);
+    expect(summary.perChain[0].states[0].roundTripSec).toBeCloseTo(4264 / 48000, 12);
   });
 
   it("transitions are judged within a chain: the first call of a re-armed chain is not a step from the old chain", () => {

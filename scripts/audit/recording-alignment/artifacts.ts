@@ -77,7 +77,8 @@ export interface CalibrationCall {
   inputLatencySeconds: number;
   /** null on an `error` row (NaN persisted), a number otherwise. */
   spreadSeconds: number | null;
-  correlationRatioDb: number;
+  /** null on an `error` row, like `spreadSeconds`. */
+  correlationRatioDb: number | null;
   identifiedBursts: number;
   sampleRate: number;
   reason?: string;

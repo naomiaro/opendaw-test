@@ -34,10 +34,17 @@
  *    first-frame time is a quantum off; the reported round trip may still sit
  *    at the mode (batch 1788464404625 call 11: A = mode, B = mode − 128 frames).
  *  - a STATE TRANSITION: the round trip steps by at least half a quantum from
- *    the PREVIOUS call, both anchors agreeing, and STAYS there — the input path
- *    itself moved (batch 1788464591756 calls 28-30 and the applied call all
- *    read exactly −128 frames). Counted as transitions, with the calls in each
- *    state; a step within 25 % of one quantum is flagged `isOneQuantumStep`.
+ *    the PREVIOUS agreeing call, both anchors agreeing on the stepping call —
+ *    the input path itself moved (batch 1788464591756 calls 28-30 and the
+ *    applied call all read exactly −128 frames). Counted as transitions, with
+ *    the calls in each state; a step within 25 % of one quantum is flagged
+ *    `isOneQuantumStep`. A step on the LAST call of a chain is counted too,
+ *    opening a one-call state: nothing follows it to show whether it held,
+ *    so `confirmedByFollowingCall` is false on it (true when at least one
+ *    later agreeing call sat in the new state) — a persisted step and a
+ *    terminal one stay distinguishable. A chain's FIRST state is seeded by
+ *    its first anchors-agreeing call; disagreeing calls before it are folded
+ *    into that state, never used as the reference a step is measured from.
  *  - an ISOLATED DEVIATION: one call off its chain's mode with both anchors
  *    agreeing and the NEXT call back at the mode — the single-call case no
  *    anchor check can catch. Expected 0; if it is ever non-zero that is the
@@ -98,6 +105,9 @@ export interface RealInputTransition {
   stepQuanta: number;
   /** |step| within 25 % of exactly one quantum. */
   isOneQuantumStep: boolean;
+  /** True when at least one later anchors-agreeing call of the chain sat in the state this step
+   *  opened; false on a step at the chain's last call, which nothing follows to confirm the hold. */
+  confirmedByFollowingCall: boolean;
 }
 
 export interface RealInputIsolatedDeviation {
@@ -161,6 +171,8 @@ export interface RealInputSummary {
   stateTransitions: {
     count: number;
     oneQuantumSteps: number;
+    /** Of `count`, the steps on a chain's last call — opened a state no later call confirmed. */
+    unconfirmedSteps: number;
     transitions: RealInputTransition[];
   };
   /** Single calls off their chain's mode, anchors agreeing, next call back — see the header. */
@@ -275,7 +287,12 @@ function clusterInputParts(values: number[], renderQuantumSec: number): RealInpu
   }));
 }
 
-interface IndexedCall { call: RealInputCall; index: number }
+interface IndexedCall {
+  call: RealInputCall;
+  index: number;
+  /** Set on a call that opened a state: the reference round trip its step was measured from. */
+  stepFromSec?: number;
+}
 
 /**
  * One chain's summary. Transitions and isolated deviations are found on the
@@ -317,28 +334,47 @@ function summarizeChain(chainIndex: number, all: IndexedCall[], sampleRate: numb
     }
   });
 
-  const transitions: RealInputTransition[] = [];
+  const agrees = (k: IndexedCall) => anchorsAgree(k.call, renderQuantumSec);
   const stateRuns: IndexedCall[][] = [];
-  for (const c of kept) {
+  const openers: (IndexedCall | null)[] = [];
+  // The first state is seeded by the chain's first anchors-agreeing call;
+  // disagreeing calls before it are folded into that state rather than
+  // opening one of their own (a first call with A a quantum off and B at the
+  // mode would otherwise manufacture a transition on call 2).
+  const firstAgreeing = kept.findIndex(agrees);
+  const seedCount = firstAgreeing === -1 ? kept.length : firstAgreeing + 1;
+  if (kept.length > 0) {
+    stateRuns.push(kept.slice(0, seedCount));
+    openers.push(null);
+  }
+  for (const c of kept.slice(seedCount)) {
     const open = stateRuns[stateRuns.length - 1];
-    if (open === undefined) { stateRuns.push([c]); continue; }
     // The step is measured from the last call of the open state whose anchors
     // agree: a folded-in disagreeing call has a suspect round trip, and the
     // call after it must not read as a step back from that figure.
-    const previous = [...open].reverse().find((k) => anchorsAgree(k.call, renderQuantumSec)) ?? open[open.length - 1];
-    const step = c.call.roundTripSeconds - previous.call.roundTripSeconds;
-    if (!sameState(c.call.roundTripSeconds, previous.call.roundTripSeconds, renderQuantumSec) && anchorsAgree(c.call, renderQuantumSec)) {
-      const stepQuanta = step / renderQuantumSec;
-      transitions.push({
-        chainIndex, index: c.index,
-        fromRoundTripSec: previous.call.roundTripSeconds, toRoundTripSec: c.call.roundTripSeconds,
-        stepQuanta, isOneQuantumStep: Math.abs(Math.abs(stepQuanta) - 1) <= ONE_QUANTUM_TOLERANCE,
-      });
+    const previous = [...open].reverse().find(agrees) ?? open[open.length - 1];
+    if (!sameState(c.call.roundTripSeconds, previous.call.roundTripSeconds, renderQuantumSec) && agrees(c)) {
       stateRuns.push([c]);
+      openers.push(c);
+      // `fromRoundTripSec` is the reference the step was measured from.
+      c.stepFromSec = previous.call.roundTripSeconds;
     } else {
       open.push(c);
     }
   }
+  const transitions: RealInputTransition[] = [];
+  stateRuns.forEach((run, k) => {
+    const opener = openers[k];
+    if (opener === null || opener === undefined) return;
+    const stepQuanta = (opener.call.roundTripSeconds - (opener.stepFromSec as number)) / renderQuantumSec;
+    transitions.push({
+      chainIndex, index: opener.index,
+      fromRoundTripSec: opener.stepFromSec as number, toRoundTripSec: opener.call.roundTripSeconds,
+      stepQuanta, isOneQuantumStep: Math.abs(Math.abs(stepQuanta) - 1) <= ONE_QUANTUM_TOLERANCE,
+      // The opener agrees by construction; a second agreeing call in the run confirms the hold.
+      confirmedByFollowingCall: run.filter(agrees).length >= 2,
+    });
+  });
   const states: RealInputState[] = stateRuns.map((run) => ({
     firstIndex: run[0].index,
     lastIndex: run[run.length - 1].index,
@@ -418,6 +454,7 @@ export function summarizeRealInput(
     stateTransitions: {
       count: transitions.length,
       oneQuantumSteps: transitions.filter((t) => t.isOneQuantumStep).length,
+      unconfirmedSteps: transitions.filter((t) => !t.confirmedByFollowingCall).length,
       transitions,
     },
     isolatedDeviations: { count: deviations.length, deviations },
@@ -490,7 +527,8 @@ export function summarizeRealInput(
     ? "no state transition"
     : `${transitions.length} state transition(s): ` + transitions
       .map((t) => `call ${t.index + 1} chain ${t.chainIndex} ${t.stepQuanta >= 0 ? "+" : ""}${t.stepQuanta.toFixed(2)} quanta` +
-        (t.isOneQuantumStep ? " (one-quantum step)" : ""))
+        (t.isOneQuantumStep ? " (one-quantum step)" : "") +
+        (t.confirmedByFollowingCall ? "" : " (last call — nothing after it to confirm the hold)"))
       .join(", ") +
       `; states ${perChain.flatMap((c) => c.states).map((s) => `${s.calls}×${msText(s.roundTripSec)}`).join(" / ")}`;
   const anchorText = `${anchorDisagreements.rederived} anchor disagreement(s)` +
