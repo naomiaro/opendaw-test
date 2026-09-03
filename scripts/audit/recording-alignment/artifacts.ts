@@ -153,8 +153,8 @@ export interface LoadedCalibrationSummary {
  * its own, so a malformed envelope throws instead of feeding a table
  * `undefined`. `cell.status` is any string, so `skipped` passes as `error` does.
  */
-export function loadCalibrationSummary(runId: string): LoadedCalibrationSummary {
-  const json = JSON.parse(readFileSync(`${VERIFY_DIR}/calib-summary-${runId}.json`, "utf8")) as Record<string, unknown>;
+export function loadCalibrationSummary(runId: string, dir: string = VERIFY_DIR): LoadedCalibrationSummary {
+  const json = JSON.parse(readFileSync(`${dir}/calib-summary-${runId}.json`, "utf8")) as Record<string, unknown>;
   const summary = json as unknown as LoadedCalibrationSummary;
   const fail = (what: string): never => { throw new Error(`calib-summary-${runId}.json: ${what}`); };
   if (summary.runToken !== Number(runId)) fail(`carries runToken ${summary.runToken}`);
@@ -171,7 +171,8 @@ export function loadCalibrationSummary(runId: string): LoadedCalibrationSummary 
     typeof (v as CalibrationCall).verdict === "string" &&
     numberOrNull((v as CalibrationCall).roundTripSeconds) &&
     numberOrNull((v as CalibrationCall).inputLatencySeconds) &&
-    numberOrNull((v as CalibrationCall).spreadSeconds);
+    numberOrNull((v as CalibrationCall).spreadSeconds) &&
+    numberOrNull((v as CalibrationCall).correlationRatioDb);
   if (!Array.isArray(json.sweep) || !json.sweep.every(isCall)) fail(`"sweep" is not a list of calibration calls`);
   if (json.applied !== null && !isCall(json.applied)) fail(`"applied" is neither null nor a calibration call`);
   if (json.warmup !== undefined && json.warmup !== null && !isCall(json.warmup)) fail(`"warmup" is neither null nor a calibration call`);

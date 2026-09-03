@@ -91,6 +91,7 @@ function printRuns(): void {
   let allThreeBursts = 0;
   let inputMinMs = Infinity;
   let inputMaxMs = -Infinity;
+  const perRunInput = new Map<string, { minMs: number; maxMs: number; trackLatency: number | null }>();
   for (const runId of RUNS) {
     const summary = load(runId);
     const rate = summary.rate;
@@ -106,7 +107,7 @@ function printRuns(): void {
     const trackRate = typeof track?.sampleRate === "number" ? track.sampleRate : null;
     console.log(
       `\n-- ${runId} ${rate} Hz armState=${summary.armState} repeats=${repeats.length} label="${summary.runLabel}"` +
-      ` device="${summary.device?.label}" opens=${summary.getUserMediaOpens}`
+      ` device="${summary.device?.label}" opens (arm count on builds before the counter)=${summary.getUserMediaOpens}`
     );
     console.log(
       `   verdicts ${[...verdicts.entries()].map(([k, v]) => `${k}×${v}`).join(", ")};` +
@@ -125,7 +126,8 @@ function printRuns(): void {
       const atMode = usableOwn.filter((c) => sameState(c.call.roundTripSeconds, mode.value, q)).map((c) => framesOf(c.call.roundTripSeconds, rate));
       const inputs = usableOwn.map((c) => c.call.inputLatencySeconds * 1000);
       const inputMode = modeAtFrameResolution(usableOwn.map((c) => c.call.inputLatencySeconds), rate);
-      const ratios = usableOwn.map((c) => c.call.correlationRatioDb);
+      // null on an `error` row (never usable, but the type says so): narrowed, not assumed.
+      const ratios = usableOwn.map((c) => c.call.correlationRatioDb).filter((r): r is number => typeof r === "number");
       const threeOfThree = usableOwn.filter((c) => c.call.identifiedBursts === 3).length;
       const anchorDeltas = usableOwn
         .filter((c) => typeof c.call.roundTripSecondsSecondary === "number" && Number.isFinite(c.call.roundTripSecondsSecondary))
@@ -156,25 +158,39 @@ function printRuns(): void {
     const b = applied.call.roundTripSecondsSecondary;
     const dB = typeof b === "number" ? framesOf(b - appliedMode.value, rate) : NaN;
     const stored = (summary as unknown as { storedEntry: { inputLatency?: number } | null }).storedEntry;
+    const appliedRatio = applied.call.correlationRatioDb;
     console.log(
       `   applied (chain ${applied.chainIndex}): verdict=${applied.call.verdict} round trip ${f3(framesOf(applied.call.roundTripSeconds, rate))} fr,` +
       ` A−mode=${f3(dA)} fr B−mode=${Number.isFinite(dB) ? f3(dB) : "—"} fr (${f3(dA / 128)} q), input part ${f3(applied.call.inputLatencySeconds * 1000)} ms,` +
-      ` ratio ${applied.call.correlationRatioDb.toFixed(1)} dB; stored entry inputLatency ${stored?.inputLatency === undefined ? "—" : `${f3(stored.inputLatency * 1000)} ms`}` +
+      ` ratio ${appliedRatio === null ? "—" : appliedRatio.toFixed(1)} dB; stored entry inputLatency ${stored?.inputLatency === undefined ? "—" : `${f3(stored.inputLatency * 1000)} ms`}` +
       ` (${stored?.inputLatency === applied.call.inputLatencySeconds ? "equals the applied call" : "DIFFERS from the applied call"})`
     );
     totalApplied += 1;
-    ratioMin = Math.min(ratioMin, applied.call.correlationRatioDb);
-    ratioMax = Math.max(ratioMax, applied.call.correlationRatioDb);
+    if (appliedRatio !== null) {
+      ratioMin = Math.min(ratioMin, appliedRatio);
+      ratioMax = Math.max(ratioMax, appliedRatio);
+    }
     if (applied.call.identifiedBursts === 3) allThreeBursts += 1;
     inputMinMs = Math.min(inputMinMs, applied.call.inputLatencySeconds * 1000);
     inputMaxMs = Math.max(inputMaxMs, applied.call.inputLatencySeconds * 1000);
+    // This run's own input-part range (repeats and applied), for the per-run
+    // "minus reported" line below — each run is compared with ITS track's figure.
+    const runInputs = [...repeats.filter((c) => usable(c.call)), applied].map((c) => c.call.inputLatencySeconds * 1000);
+    perRunInput.set(runId, { minMs: Math.min(...runInputs), maxMs: Math.max(...runInputs), trackLatency });
   }
   console.log(
     `\n   totals: ${totalRepeats} repeat calls + ${totalApplied} applied calls; 3/3 bursts on ${allThreeBursts}/${totalRepeats + totalApplied};` +
     ` ratio ${ratioMin.toFixed(2)}…${ratioMax.toFixed(2)} dB; input part ${f3(inputMinMs)}…${f3(inputMaxMs)} ms`
   );
-  const reportedSettings = [...new Set(RUNS.map((runId) => (load(runId).trackSettings as Record<string, unknown> | null)?.latency))];
-  console.log(`   browser-reported track latency on every run: ${reportedSettings.join(", ")} s → measured input part minus it: ${f3(inputMinMs - 1000 * Number(reportedSettings[0]))}…${f3(inputMaxMs - 1000 * Number(reportedSettings[0]))} ms`);
+  console.log("   browser-reported track latency, per run, and this run's measured input part minus it:");
+  for (const runId of RUNS) {
+    const run = perRunInput.get(runId);
+    if (run === undefined) continue;
+    const minus = run.trackLatency === null
+      ? "— (no track latency reported)"
+      : `${f3(run.minMs - 1000 * run.trackLatency)}…${f3(run.maxMs - 1000 * run.trackLatency)} ms`;
+    console.log(`     ${runId}: reported ${run.trackLatency === null ? "—" : `${run.trackLatency} s`} → ${minus}`);
+  }
 }
 
 /** Every chain instance the runs contain: how it was built, and its mode. */
@@ -306,7 +322,7 @@ function printEvents(): void {
         ` verdict=${c.call.verdict} reason=${c.call.reason ?? "—"}` +
         ` A−mode=${f3(framesOf(a - mode, rate))} fr B−mode=${bFinite ? f3(framesOf((b as number) - mode, rate)) : "—"} fr` +
         ` |A−B|=${bFinite ? f3(Math.abs(framesOf((b as number) - a, rate))) : "—"} fr` +
-        ` spread=${Number.isFinite(spreadFrames) ? f3(spreadFrames) : "—"} fr ratio=${c.call.correlationRatioDb.toFixed(1)} dB bursts=${c.call.identifiedBursts}` +
+        ` spread=${Number.isFinite(spreadFrames) ? f3(spreadFrames) : "—"} fr ratio=${c.call.correlationRatioDb === null ? "—" : c.call.correlationRatioDb.toFixed(1)} dB bursts=${c.call.identifiedBursts}` +
         ` → ${klass}; ${note}; burst delays off mode: A [${bursts[0] ?? "—"}] B [${bursts[1] ?? "—"}]`
       );
     });
