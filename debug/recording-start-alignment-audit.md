@@ -8,7 +8,9 @@
 (the reworked fix, fork branch `naomiaro:fix/recording-start-alignment`); issues
 [andremichelle/openDAW#374](https://github.com/andremichelle/openDAW/issues/374) (residual
 start-placement bias) and [andremichelle/openDAW#375](https://github.com/andremichelle/openDAW/issues/375)
-(simultaneous-take `AudioFileBox` collision).
+(simultaneous-take `AudioFileBox` collision). A third contribution — the loopback
+input-latency calibration that closes #374's remaining term — is prepared but not posted; see
+"Input-latency calibration (2026-09-02)" at the end of this register.
 
 **Harness:** unlisted debug demo `recording-alignment-audit-debug-demo.html?scenario=<name|all>&bpm=<n|all>&rate=<44100|48000>`
 on the dev server (`?scenario=probe` runs the same-context loopback feasibility probe
@@ -236,6 +238,14 @@ attributed to the harness's two streams.
 
 ### Upstream contribution outcome
 
+What this campaign has put upstream, or has ready to:
+
+| contribution | what it carries | status |
+|---|---|---|
+| PR [#376](https://github.com/andremichelle/openDAW/pull/376) — anchor takes on the engine's own recording start | the one-shot `recordingStart` engine report, the processor's first-frame time, the finalization hang and the `#finalize` head drop | **posted** (fork branch `naomiaro:fix/recording-start-alignment`); measured before/after under "Task 9: best-fix rework" |
+| PR [#378](https://github.com/andremichelle/openDAW/pull/378) — apply the input latency the browser reports | `InputLatency.resolve` and the `Reported` default, bounded and read after output has started | **posted**; the branch below stacks on it |
+| Input-latency calibration PR | the loopback calibration routine (`InputLatencyCalibration.measure`, `CaptureAudio.calibrateInputLatency`, the per-device store, the `calibrated` resolver rung, the keep-alive sink, the chain-reuse fix, the second capture anchor), upstream head `66021385` | **prepared, not posted** — description drafted, awaiting review; measurements and open findings under "Input-latency calibration (2026-09-02)" |
+
 One PR-description draft (`pr-recording-start-alignment.md`, rewritten in Task 9 around
 the reworked fix with branch-measured before/after) and **two** issue drafts under
 `debug/drafts/`; three earlier drafts are withdrawn under `debug/drafts/withdrawn/`
@@ -250,6 +260,10 @@ with the reason at their head:
 | `withdrawn/issue-inter-track-quantum-skew.md` | the skew equals the two loopback streams' delay difference; SDK-side skew is zero on the branch | withdrawn |
 
 The PR draft's "what this does not fix" list points at the two remaining drafts.
+
+The calibration section adds two more issue candidates, neither drafted yet: the stop path
+truncating input in flight beyond its incidental post-stop margin, and `CaptureAudio.terminate()`
+never tearing the audio chain down.
 
 **Deliberately not drafted, because neither is confirmed:** Prediction C's explicit
 spec-§6 deviation (the campaign's `janked-start` provocation cannot isolate it from A
@@ -3016,3 +3030,480 @@ build); a Re-run on the same page produced `…1788333706282.json` under a fresh
 with the same per-row bias (−48.06 / −42.77 / −42.37 ms). This session's
 `outputLatency` read 0.024 s, not the campaign's 0.023 s — a device-state difference the
 per-row persistence now makes visible rather than assumed.
+
+## Input-latency calibration (2026-09-02)
+
+An extension of this campaign, stacked on the same upstream branch. #376 anchors a take on
+the engine's own recording start and #378 applies the input latency the browser reports; what
+remains is the input path's own delay whenever the browser reports nothing, reports zero, or
+reports a figure that does not describe the device in use — the residual #374 names. The
+branch adds a loopback calibration routine to the SDK that measures that delay, and this repo
+adds a ground-truth page that measures the routine against a delay it injects itself.
+
+**Upstream branch:** `feat/input-latency-calibration`, final head **`66021385`**, on top of the
+merge of PR #376 and PR #378. Fourteen commits: the MLS generator, the FFT correlation and
+peak refinement, `analyzeBursts` and the worker protocol, the worker executor and sender, the
+capture worklet, `InputLatencyCalibration.measure`, the per-device store and the `calibrated`
+resolver rung, `CaptureAudio.calibrateInputLatency` / `clearInputLatencyCalibration`, the
+polarity-tolerant peak search, the stored-spread clamp, the keep-alive sink (`ac1c15ea8`), the
+configurable probe (`3484e3265`), the unstamped-capture chain reuse (`546b5bfaa`) and the
+second capture anchor (`66021385`). **Not filed** — the PR description is drafted and awaits
+review.
+
+**Design spec:** `docs/superpowers/specs/2026-09-02-input-latency-calibration-design.md` and its
+plan, both deleted in the PR that completes this work per repo convention — recovery:
+`git log --all --oneline -- 'docs/superpowers/*/2026-09-02-input-latency-calibration*'`. This
+section supersedes the spec's §6 acceptance figures: the sub-sample refinement bound is 0.25
+sample, not the spec's 0.1.
+
+**Harness:** unlisted debug demo
+`input-latency-calibration-debug-demo.html?delays=<ms,…>&bpm=<n>&rate=<44100|48000>&armState=<steady|fresh>&defaultInput=1&repeat=<n>`.
+It sweeps a `DelayNode` in the synthetic loopback's return path, calibrates at each value,
+fits the measured input part against the injected delay, applies the calibration and then runs
+one `nominal-start` cell through the standing sweep's own runner
+(`src/lib/audit/recordingCellRunner.ts`), so the verdict is this register's metric and not a
+look-alike. Runs upload `calib-summary-<runToken>.json` into `.verify-output/`. The page reaches
+the branch API through local structural interfaces plus a runtime feature check, documented at
+its head as a shim to delete when a release ships the API.
+
+**Every figure below was recomputed from the named artifacts** by
+`node scripts/audit/recording-alignment/task12b-calibration-tables.ts [runs|noise|chains|miss|batches]`
+(calibration tables) and
+`node scripts/audit/recording-alignment/task12a-keepalive-classification.ts` (the standing
+sweep's cells). Neither script trusts the page's arithmetic: the least-squares fits are
+recomputed and any disagreement with the persisted `fit` is printed, and the sweep cells are
+re-classified through `classifyCell`.
+
+### What the measurements support
+
+**(i) The standing sweep on this build.** On SDK `3484e3265` (calibration routine, keep-alive
+sink, MLS probe), uncalibrated, same-context loopback, the full standing sweep at 48 and
+44.1 kHz (60 rows each) recorded every row with head and tail deficits of 0 and lost no
+repeat, as every branch build since run 1788299505584 has (installed 0.0.170 lost 3–5
+loop-wrap repeats per sweep); every repeat median was late by 13.36–24.22 ms (cell means
+16.33–23.67 ms). The harness names the loopback device on a stream that reports no id, so the
+SDK rebuilt the input chain before every take, and each take's chain landed in one of two
+delay states (48 kHz: hop 12.29 ms on 9 of 30 chains, 20.29–21.63 ms on the rest; 44.1 kHz:
+13.18 ms on 2 of 30). Under the campaign's predicted bands A–D the 20 single-tape cells read 8
+`matches-known-defect` (B ×4, D ×4) and 12 `investigate`; under bands E/F, fitted to these two
+runs, all 20 fall inside the envelope by construction. `janked-start` and `midtimeline-start`
+no longer differ from `nominal-start`, so the sweep is a regression guard on a constant. On
+`546b5bfaa` the same configuration still rebuilt per take (`nominal-start` 48 kHz: 12.29 /
+12.29 / 20.96 ms, E; 44.1 kHz: spread 1.75 ms, F); with the box naming no device
+(`defaultInput=1`) one cell recorded three takes on one chain (hop 20.96 ×3, spread 0.00 ms,
+F) with a single `getUserMedia` open persisted on the envelope.
+
+**(ii) Calibration ground truth.** On `3484e3265` the routine recovered the injected return
+delay with slope 1.0000 on all ten runs (spans 0–50 ms, four points each, max residual
+≤ 0.0027 ms, every burst identified at 45–53 dB, nothing skipped or excluded); in the two
+steady runs the intercept matched the harness's independent hop of the same chain to within
+0.30 ms and the applied cell classified `aligned` at +1.44 / +1.45 ms, identical across
+repeats; in 7 of 8 fresh runs the rebuilt chain landed within 1.04 ms of the calibrated chain
+and the cell classified `aligned` at +0.10…+1.82 ms, and in 1 of 8 it landed in the low state,
+8.38 ms below the stored value, placing all three takes 7.23 ms early (`investigate`). On
+`546b5bfaa` four further runs classified `aligned` at +0.10 (48 kHz fresh), +0.21 (44.1 kHz
+fresh) and +1.44 ms twice (48 kHz steady, default input, one stream for the whole run), with
+slope 1.0000 on three of them; on the 44.1 kHz run one of the four sweep calls returned a
+value 128.00 frames (one render quantum, 2.90 ms) short with verdict `ok` and burst spread
+9e-9 s, giving a fitted slope of 0.941 — the routine's self-check does not catch a one-quantum
+error on which all three bursts agree.
+
+**(iii) Rebuilt-chain residual.** A chain's input delay is constant for the chain's life (all 72 rows
+of the 24 calibration runs from `ac1c15ea8` on read one hop within their own run) but is set when the chain is built, in one of two states
+8.0–9.3 ms apart at 48 kHz (hops on a 32-frame lattice: 590 against 974 / 1006 / 1038 frames);
+across every fresh chain in this build's artifacts the low state took 11 of 49 chains at
+48 kHz and 2 of 35 at 44.1 kHz. A chain is built at arm, at every explicit disarm/re-arm, and
+— before `546b5bfaa` — before every recording on a capture box naming no device; a box naming
+a device that the stream reports (every real device) reused its chain on every build. A stored
+calibration is therefore wrong by the step whenever a take's chain lands in the other state
+from the calibrated one, and nothing the harness records predicts which; the mechanism is
+measured, not identified.
+
+**(iv) What is unmeasured.** Every figure is a same-context digital loopback result; no
+microphone track has been measured, so whether a real device track shows the two chain states,
+the 32-frame lattice, the one-quantum calibration miss, or the +1.2 ms constant residual is
+unknown, and the real-device run is the only evidence that could say so. The chain-reuse path
+on `546b5bfaa` is supported by two consistent runs plus a `getUserMediaOpens: 1` on each
+envelope, not by an SDK-side observation; the multitrack `AudioFileBox` collision (#375) still
+loses 3 of 6 multitrack repeats.
+
+Two denominators in (ii) and (iii) differ from the review text that framed them, because the
+recomputation in `task12b-calibration-tables.ts` counts one chain fewer per rate than the
+review's tally (49 and 35 chain instances, not 50 and 36 — the low counts, 11 and 2, are
+unchanged) and counts 29 keep-alive-era 44.1 kHz sweep calls rather than 24. The rates
+(22 % and 6 %) and every conclusion are unaffected. The review's "within 0.66 ms" for the
+seven fresh chains is likewise 1.04 ms on recount, from its own per-run table.
+
+### Method
+
+1. **Probe.** A maximum-length sequence of order 15 (32 767 samples, ≈ 0.68 s at 48 kHz)
+   rendered once at the context's rate and played at −12 dBFS; three bursts by default, spaced
+   by the sequence length plus a 0.5 s tail. Since `3484e3265` the probe is an injectable
+   `LatencyProbe { name, render(sampleRate) }`, with `LatencyProbes.mls(order)` the default —
+   the analysis is unchanged by a probe swap, because every probe is located by the same
+   correlation-peak search and the same peak-to-mean gate.
+2. **Both ends on the context clock.** Each burst is an `AudioBufferSourceNode` started at an
+   explicit `AudioContext` time (the first 100 ms after the routine begins); arrival is
+   captured by a minimal worklet that reports the context time of its first frame — the same
+   contract `RecordingProcessor` gained in #376. Both readings are of the clock takes are
+   anchored on.
+3. **Analysis in the worker.** The captured buffer goes to the SDK's existing worker, where
+   each burst's window is cross-correlated with the reference through `@opendaw/lib-dsp`'s
+   `FFT`. The peak lag is the delay, refined by three-point parabolic interpolation; the
+   peak-to-mean power ratio in dB is the burst's trust figure. The peak is located on the
+   correlation's **magnitude**, so a polarity-inverting loopback does not read as no signal.
+   The refinement's tested bound is **within 0.25 sample** on a triangular peak — the design
+   spec's "within 0.1 sample" was arithmetic that the interpolation does not deliver against a
+   linearly interpolated synthetic delay, and it is superseded by 0.25.
+4. **Decomposition and verdict.** `outputLatency` is read only after the last burst has played
+   (Chrome reports 0 until audio has actually reached the device); `inputLatency = roundTrip −
+   outputLatency`, with the whole round trip taken as the input part and
+   `outputLatencyReported: false` when the report is missing, zero or non-finite. A burst
+   counts as identified at `RatioThresholdDb` = 18 dB. No burst identified is `no-signal`;
+   every burst identified with `spreadSeconds` within `SpreadBoundSeconds` = 1.0 ms is `ok`;
+   anything between is `noisy`, returned with all its figures. `context-not-running`,
+   `no-stream` and `transport-running` are precondition verdicts that never touch audio.
+5. **Second capture anchor** (`66021385`). The same emission is captured through two worklets,
+   the second opened in the first burst's tail; the result carries
+   `roundTripSecondsSecondary`, `captureStartTimes`, `burstDelays` and a `reason`, and the
+   verdict becomes `noisy` with reason "capture anchors disagree" when the two round trips
+   differ by more than half a render quantum. It exists because of the one-quantum miss below.
+
+The probe and its trust figure follow, cited verbatim in the module doc of
+`packages/lib/dsp/src/latency-calibration.ts`:
+
+> Gil Panal, J. M., Richard, G., & David, A. (2025). A Maximum Length Sequence–Based Method for
+> Robust Round-Trip Latency Estimation in online Digital Audio Workstations. In Proceedings of
+> the Web Audio Conference (WAC 2025). https://doi.org/10.5281/zenodo.17642262
+> Reference implementation: https://github.com/gilpanal/weblatencytest (MIT)
+
+Taken from that work: the MLS probe, locating it by the cross-correlation peak, and the
+peak-to-mean ratio as the gate. Different here: emission and arrival are both `AudioContext`
+clock readings rather than being anchored on `MediaRecorder.start()`. No code is copied.
+
+The harness's own two path notes, both persisted per run: the probe plays out through
+`audioContext.destination`, which has no outputs to tap, so the loopback tees destination
+connections into its return path for the duration of each call; that tee carries a virtual
+output-device leg of `audioContext.outputLatency` seconds, the same term the sweep already adds
+back as `harnessPathBiasSec` before judging a take, so the raw round trip and the leg are both
+in the artifact and either space can be recomputed offline.
+
+### Ground truth, build by build
+
+`node scripts/audit/recording-alignment/task12b-calibration-tables.ts runs`. Slope and
+intercept are recomputed over the `ok` sweep rows; `L` is the applied calibration's input part;
+`hop` is the harness's independent `firstQuantumTimeSec − anchorT0Sec` per recorded take.
+
+**SDK `f0c44b06c` — the first build, noise-limited.** No keep-alive sink: a source node left
+un-pulled after its first use ratcheted its input delay up by ~45 ms and never recovered, so
+the per-call figure moved between calls and the slope could not be resolved on the required
+span.
+
+| run | rate | span | slope | intercept | max resid | L | L − median hop | applied-cell medians |
+|---|---|---|---|---|---|---|---|---|
+| `1788381518785` | 48 k | 0–50 | 0.8831 | 66.317 ms | 5.94 ms | 60.667 | −0.958 | +1.44 / +9.44 / +2.10 |
+| `1788381617706` | 44.1 k | 0–50 | 0.9000 (0.8400 as persisted, fitted over all four rows including one `noisy`) | 67.959 ms | 2.20 ms | 62.513 | +0.745 | −0.18 / +5.92 / +0.41 |
+| `1788381715449` | 48 k | 0–400 | 0.9905 | 66.127 ms | 3.75 ms | 64.000 | +4.375 | +5.44 / −1.23 / −1.23 |
+| `1788381865054` | 48 k | 0–50 | 0.9900 | 63.046 ms | 3.61 ms | 69.333 | +4.375 | −3.90 / −3.23 / −1.90 |
+| `1788383812745` | 48 k | 0–400 | 0.9947 | 63.733 ms | 3.20 ms | 70.667 | +7.042 | −3.90 / −0.56 / −5.23 |
+| `1788383904062` | 44.1 k | 0–400 | 0.9968 | 63.144 ms | 5.68 ms | 57.275 | −5.446 | +6.60 / +9.48 / +2.36 |
+| `1788383382606` | 48 k | 0–50, `armState=fresh` | 0.9289 | 64.344 ms | 2.99 ms | 68.000 | +3.708 | **−55.23** / −2.56 / +1.44 |
+
+Pooled per-call noise over the six runs of the original session (`…827527`, `…023857`,
+`…518785`, `…617706`, `…715449`, `…865054`), excluding the two fresh-chain first pulls:
+**n = 26, mean 64.014 ms, sd 3.167 ms, range 57.33…69.33 ms**. That noise gives a 1σ slope
+uncertainty of **±0.0841** on the required 0–50 ms span and **±0.0095** on 0–400 ms, and a 1σ
+intercept uncertainty of **±2.388 ms**. So the design spec's 1.00 ± 0.01 bar is unresolvable on
+the required span with this build's path — 0.883, 0.900 and 0.990 are all inside 2σ of 1.00 —
+and the three concordant wide-span slopes (0.9905, 0.9947, 0.9968, each ±0.010) are the
+defensible figure for it. The intercept bar of 2 ms sits at its own 1σ. **These are disclosed as
+first-build data, not as evidence about the routine**: the noise was the un-pulled node's
+ratchet sampled at different phases, and the keep-alive sink removed it.
+
+The `armState=fresh` run is the ratchet measured in both directions: the calibration stored
+68.000 ms on a chain in the high state, the disarm/re-arm built a chain reading 11.625 ms, and
+take 1 landed **55.23 ms early** while takes 2 and 3, on the ratcheted-up chain, landed −2.56 /
++1.44 ms. Applied-cell tail deficits on this build reached 31.62 ms on the calibration page and
+34.29 ms on the standing harness (`recaudit-summary-1788381289172`); see finding 2.
+
+**SDK `ac1c15ea8` — the keep-alive sink.** Six runs, both rates, both spans, both arm states:
+slope **1.0000** on every one (max residual ≤ 0.0027 ms), intercept within **0.30 ms** of the
+same chain's harness hop, every applied cell **`aligned`** with head and tail deficits of 0 and
+medians identical across the three repeats: +1.44 ms at 48 kHz (`1788384874160`,
+`1788385066131`, `1788385236496`), +1.45 ms at 44.1 kHz (`1788385001347`, `1788385315180`) and
++0.87 ms on the one 44.1 kHz fresh run (`1788385161872`). Pooled `input − D` across the 26
+sweep rows: mean 21.140 ms, **sd 0.312 ms** — and all of that sd is between chains; each run's
+own points agree to ≤ 0.003 ms.
+
+**SDK `3484e3265` — the final code head for the measurement set.** Ten runs, slope 1.0000 on
+all ten, max residual 0.0000 ms at 48 kHz and 0.0027 ms at 44.1 kHz, every sweep row `ok`,
+3/3 bursts, ratios 45.2–52.9 dB, nothing skipped or excluded.
+
+| run | rate | armState | L | rebuilt-chain hop | L − hop | medians | cell |
+|---|---|---|---|---|---|---|---|
+| `1788387758809` | 48 k | steady | 20.667 | 20.958 ×3 | −0.291 | +1.44 ×3 | `aligned` |
+| `1788387844291` | 44.1 k | steady | 20.949 | 21.247 ×3 | −0.298 | +1.45 ×3 | `aligned` |
+| `1788387924745` | 48 k | fresh | 20.667 | **12.292 ×3** | +8.375 | **−7.23 ×3** | `investigate` |
+| `1788388011786` | 48 k | fresh | 21.333 | 20.292 ×3 | +1.041 | +0.10 ×3 | `aligned` |
+| `1788388441928` | 48 k | fresh | 20.667 | 20.292 ×3 | +0.375 | +0.77 ×3 | `aligned` |
+| `1788388530136` | 48 k | fresh | 20.667 | 20.958 ×3 | −0.291 | +1.44 ×3 | `aligned` |
+| `1788388610945` | 48 k | fresh | 20.667 | 20.958 ×3 | −0.291 | +1.44 ×3 | `aligned` |
+| `1788388693481` | 48 k | fresh | 20.667 | 20.958 ×3 | −0.291 | +1.44 ×3 | `aligned` |
+| `1788388770256` | 44.1 k | fresh | 21.606 | 22.268 ×3 | −0.662 | +1.82 ×3 | `aligned` |
+| `1788388847147` | 44.1 k | fresh | 21.606 | 21.315 ×3 | +0.291 | +0.87 ×3 | `aligned` |
+
+Head and tail deficits are 0 on all 30 rows. The one `investigate` is the chain-state lottery
+of finding 1, not a calibration error: the routine measured the chain it ran on exactly, and
+the disarm/re-arm built a different one.
+
+**SDK `546b5bfaa` — chain reuse for an unstamped capture.** Four calibration runs, every cell
+`aligned`: `1788389912522` (48 k fresh, slope 1.000000, L 21.333, hop 20.292 ×3, +0.10 ×3),
+`1788389998986` (44.1 k fresh, **slope 0.9412** — see the miss below — L 21.606, hop 20.658 ×3,
++0.21 ×3), `1788390783792` and `1788391548108` (48 k steady, `defaultInput=1`, slope 1.000000,
+L 20.667, hop 20.958 ×3, +1.44 ×3). The later of the two persists `captureMode: "default"` and
+`getUserMediaOpens: 1` — one stream for priming, four sweep points, the applied calibration and
+all three takes.
+
+**SDK `66021385` — the second capture anchor.** Four `?repeat=` batches, 122 calls, no sweep
+regression (`1788393692168`'s own four-point sweep fits slope 1.000009, intercept 20.949 ms).
+
+### The applied cells, and the residual
+
+After `apply`, the `nominal-start` cell's adjusted medians are identical across the three
+repeats of every run from `ac1c15ea8` on, and equal `hop − L + 1.146 ms` at 48 kHz and
+`hop − L + 1.156 ms` at 44.1 kHz on every row of every run — including the first build's. That
+**+1.15 ms is a constant of the harness/SDK pair, not noise**: it is the same on every repeat
+and every run, it sits inside the 2 ms `ALIGNED_TOLERANCE_MS` with 0.85 ms of margin, and it is
+**unattributed**. Candidates, neither tested: the harness's click-onset detection latency, or a
+one-quantum term in the SDK's `firstQuantumTime` anchoring.
+
+### The chain state: a ratchet, a sink, and a residual two-state lottery
+
+`node scripts/audit/recording-alignment/task12b-calibration-tables.ts chains` pools every
+fresh chain instance the `3484e3265` artifacts contain. A recorded take reports the harness's
+hop and a calibrated chain reports the routine's own input latency; the two differ by the
+harness's constant (+0.29 ms at 48 kHz), far below the ~8 ms step being counted.
+
+| source | 48 kHz chains | low | 44.1 kHz chains | low |
+|---|---|---|---|---|
+| standing sweep (one chain per recording) | 30 | 9 | 30 | 2 |
+| multitrack (one per tape per repeat) | 6 | 1 | — | — |
+| calibration, chain built at arm | 7 | 0 | 3 | 0 |
+| calibration, chain rebuilt by `armState=fresh` | 6 | 1 | 2 | 0 |
+| **pooled** | **49** | **11 (22 %)** | **35** | **2 (6 %)** |
+
+At 48 kHz the low group is 12.292 ms on every instance and the high group spans
+20.292–21.625 ms. Every 48 kHz hop sits on a **32-frame lattice** — 590, 974, 1006, 1038
+frames, all ≡ 14 mod 32, the 14 being the harness's own constant — so in input-latency terms
+the states are 576 / 960 / 992 / 1024 frames = 12.000 / 20.000 / 20.667 / 21.333 ms = 4.5 /
+7.5 / 7.75 / 8 render quanta. **Low-to-high is therefore not one number**: 384, 416 or 448
+frames (8.000, 8.667 or 9.333 ms = 3, 3.25 or 3.5 quanta) depending on which high member the
+chain took; 8.667 ms is only the gap between the two commonest. It is *not* a 480-frame 10 ms
+media chunk and not a fixed quantum multiple, and the 32-frame lattice unit is unexplained. At
+44.1 kHz there is no lattice (24 distinct hop values over 581–1017 frames, 18 distinct residues
+mod 32): a 13.175 ms low against a 20.635–23.061 ms cluster, a 7.5–9.9 ms step.
+
+**When a chain is drawn.** A state is drawn whenever `#rebuildAudioChain` creates a
+`MediaStreamAudioSourceNode`, which happens on four triggers:
+
+1. **At arm** — no stream yet, so open and build. One draw per armed capture.
+2. **At every explicit disarm/re-arm** — `armed.setValue(false)` runs `#stopStream()`
+   unconditionally, whatever the box names, so the re-arm opens and builds. This is
+   `?armState=fresh`, on every build.
+3. **Before a recording**, only when the open stream is judged changed: a box that names a
+   device re-opens iff the named id differs from the id the open track **reports**; a box that
+   names none re-opens iff the open stream was itself requested with a named device. Before
+   `546b5bfaa` a box naming none always re-opened, since `undefined` never equalled the
+   reported id.
+4. On a `deviceId` change while armed, on the exact-device fallback retry, and on a
+   `requestChannels` change (which rebuilds the chain on the same stream — whether that redraws
+   the state is unmeasured).
+
+Per configuration, which is the distinction the campaign's own phrasing kept losing:
+
+| configuration | when the state is drawn |
+|---|---|
+| standing sweep (box names `loopback-injection`, stream reports an empty id) | **per take**, on every build including `66021385` |
+| calibration page (named **and** reported) | **per arm**, on every build since `3484e3265` |
+| `defaultInput=1` (box unnamed, request unconstrained) | **per arm on `546b5bfaa`**; per take before it, by the code, not measured |
+| **a real device** (names an id the track reports) | **per arm on every build** |
+
+So the per-take rebuild the standing sweep shows is a property of *this harness's* synthetic
+device — named but not reported — and never described a real named device. `546b5bfaa` changes
+the default-input case only.
+
+### The one-quantum calibration miss, and what the batches say
+
+`node scripts/audit/recording-alignment/task12b-calibration-tables.ts miss`. On run
+`1788389998986` (44.1 kHz, `armState=fresh`, SDK `546b5bfaa`) the four sweep points read
+`input − D` of 21.6063, 21.6063, 21.6099 and **18.7037 ms**. The short one is
+**2.9025 ms = 128.001 frames = exactly one render quantum** below the median of the other
+three, and the run's fitted slope is 0.9412 (intercept 22.131 ms, max residual 0.949 ms)
+because of it alone.
+
+What makes it a finding rather than noise: **that call's verdict was `ok`.** Its three bursts
+agreed to 9e-9 s, its correlation ratio was 48.90 dB, and 3 of 3 bursts were identified, so
+neither the SDK's own spread gate nor the harness's `noisy` exclusion could see it. The priming
+call before it and the applied call after it both read 21.6062 ms, so the chain did not stay
+stepped: either the chain moved one quantum for that one call, or the peak locator landed one
+quantum early with all three bursts agreeing. Across the keep-alive era at 44.1 kHz this is
+**1 of 29 sweep calls**; the six other runs' 25 calls vary by ≤ 0.0037 ms within their own run
+(and that 0.0037 ms is the correlator resolving the half-frame of a 25 ms delay at 44.1 kHz,
+1102.5 frames — the refinement working, not an error).
+
+The upstream response was the second capture anchor (`66021385`), which cross-checks the
+reported first-frame time against a second worklet opened in burst 1's tail and returns `noisy`
+with reason "capture anchors disagree" when the two round trips differ by more than half a
+quantum. It is a **guard, not a fix**: no direct fix landed, because no mechanism was found.
+
+`… batches` recomputes the four `?repeat=` batches run to look for the miss on `66021385`:
+
+| run | rate | capture | D (ms) | calls | modal round trip, own delay removed | one-quantum misses | anchors disagreeing | secondary − primary |
+|---|---|---|---|---|---|---|---|---|
+| `1788392793660` | 44.1 k | default | 0 | 30 | 43.9487 ms (1938 frames) on 30/30 | 0 | 0 | ≤ 0.00025 frames |
+| `1788392963167` | 48 k | default | 0 | 30 | 44.3333 ms (2128 frames) on 30/30 | 0 | 0 | ≤ 0.00000 frames |
+| `1788393319769` | 44.1 k | named | 50 | 30 | 44.6063 ms (1967 frames) on 30/30 | 0 | 0 | ≤ 0.00051 frames |
+| `1788393692168` | 44.1 k | named | 0/10/25/50 cycling | 32 | 43.95 ms (1938 frames) on 32/32 | 0 | 0 | ≤ 0.00063 frames |
+
+**122 calls, 0 one-quantum misses, 0 anchor disagreements**, against 1 in 4 on the run that
+showed it. The delay value, the delay changing per call, the sample rate and the capture mode
+were all varied without reproducing it; what remains untried is `armState=fresh`, where each
+call would run on a chain the disarm/re-arm had just rebuilt. Two consequences to state
+plainly: the miss's per-call rate on this configuration is under ~2.5 % at 95 % confidence, and
+**the detector's hit rate on a real miss is untested, because no miss occurred**. Two mechanical
+observations from the persisted `burstDelays`: node B opens 291–302 render quanta after node A,
+in burst 1's tail as designed, and its **first burst delay is null in all 60 calls** — so the
+cross-check rests on bursts 2 and 3, and a fault confined to burst 1 would be invisible to it.
+
+### The standing sweep on this build, and the descriptive bands E/F
+
+`node scripts/audit/recording-alignment/task12a-keepalive-classification.ts` re-classifies the
+two final-head sweeps through `classifyCell` with the band table its own build selects.
+
+Bands **E** (`random-band` 4–30 ms) and **F** (`constant-late` 10–30 ms) were **fitted to runs
+`1788386290685` and `1788386775464`** by rounding those runs' measured range outward to 5 ms.
+A cell of those two runs "matching" them therefore states only that the envelope contains its
+own source data; it cannot fail unless the rounding was done wrong. Both tallies belong
+together and quoting only the second is an overclaim:
+
+- Under the campaign's **predicted** bands A–D — written before their data existed — the 20
+  single-tape cells read **8 `matches-known-defect` (B ×4, D ×4) and 12 `investigate`**, the 12
+  because this build's `nominal-start`-like signature falls outside the `janked-start` and
+  `midtimeline-start` predictions and below band B's spread precondition at 44.1 kHz.
+- Under **E/F**, all **20 of 20** fall inside the envelope (E ×10, F ×10 across the rates).
+  That is the envelope's construction. Predictive content begins with the first run the bands
+  did not come from.
+
+E vs F is not two defects: F means all three chains of a cell landed in the high cluster, E
+means at least one landed low, so the split per rate is the per-cell luck of the chain lottery.
+The profile is selected by the `buildFeatures` list the harness persists (keyed on
+`latencyProbes`, which exists only from `3484e3265`, a descendant of the sink commit), with the
+run-token threshold retained only as the documented fallback for envelopes written before the
+field. One artifact outside these sweeps moves under the profile and is printed by the script
+so the change is visible: **`1788385420462`** (Task 11's single keep-alive `nominal-start`
+cell) reads `matches-known-defect/F` (mean 22.33 ms, spread 0.67 ms) where the page persisted
+`investigate`.
+
+The provocations no longer differentiate: `janked-start` and `midtimeline-start` produce
+`nominal-start`'s hop set and magnitudes, head deficits are 0 everywhere so bands A and C are
+unreachable, and the matrix measures one thing five ways. Whether the provocations lost their
+grip or the fix removed what they provoked is not decidable from this data. The sweep's value
+going forward is as a regression guard on a constant and on head/tail integrity — a tail
+deficit, a head deficit, a drift out of 10–30 ms, a third chain state or a lost repeat would
+all surface.
+
+### Multitrack on this build
+
+`recaudit-mt-summary-1788387238856`: 12 rows, **3 of 6 repeats lost**, every error
+`finalizing: finalization tapeB timed out after 30s` — openDAW#375 unchanged. Of the three
+survivors, two show a cross-track skew of −0.00 ms and one shows **−8.000 ms** = 384 frames =
+exactly 3 render quanta = the 974-frame high state minus the 590-frame low state, i.e. the two
+tapes' chains landing one in each state. With one chain per tape, a cross-track skew of
+8.0–9.3 ms at 48 kHz appears whenever exactly one tape's chain lands low, and a per-device
+calibration entry cannot remove it, since both tapes read the same loopback device.
+
+**Verdict caveat.** Under the build's profile `multitrack-janked/120` classifies **`aligned`**.
+That label is **skew-only**: it means the two tapes agree with each other within tolerance and
+neither tape's own cell read `investigate`. Both tapes in that cell were **22.10 ms late**, and
+it rests on a single surviving repeat. It must never be quoted as takes landing on the beat.
+
+### Findings, with status
+
+1. **Two-state input delay on a chain left un-pulled — FIXED on the branch.** On `f0c44b06c` a
+   `MediaStreamAudioSourceNode` that had been rendered once and was then left un-pulled
+   buffered what arrived meanwhile and never drained it: the first pull on a fresh chain read
+   13–21 ms and every later pull on that chain read 58–69 ms, permanently. It is a **ratchet,
+   not a fill to steady state** — the low first pull after seconds of idle shows the browser
+   does not buffer before the first render. The branch's keep-alive sink (`ac1c15ea8`) connects
+   the source to a zero-gain node on the destination for the chain's life, so the node is
+   rendered from creation and the ratchet never engages; both arm states then measure ~21 ms.
+   The mechanism is **inferred from timing, not read from browser source**, and no real
+   microphone has been measured.
+2. **The stop path truncates input in flight beyond its incidental post-stop margin — OPEN,
+   no longer exercised.** `tailMissingMs ≡ hop − postStopCapture` in every row, independent of
+   the applied calibration, and it appeared uncalibrated on the same stream (5.6–34.3 ms). The
+   SDK's stop path keeps whatever frames were delivered when the stop landed (32–77 ms over
+   this build's 30 calibration rows, an artifact of message and quantum latency, not a margin
+   sized against input latency); audio still in flight beyond that is lost. Calibration **exposes** this rather than causing it —
+   uncalibrated, the missing tail hid under a placement that was ~64 ms late anyway. On the
+   keep-alive builds every tail deficit is 0 — on all 120 standing-sweep rows and all 72
+   calibration rows — because every hop (12.3–22.3 ms) sits under every margin (24.0–72.6 ms
+   over the calibration rows), so the harness can no longer provoke it; any device whose true
+   input latency exceeds the margin still would. **Issue candidate**, not yet drafted.
+3. **`CaptureAudio.terminate()` never tears the audio chain down — OPEN, issue candidate.**
+   The terminator disconnects monitoring and detaches the monitor element but never calls
+   `#stopStream()` or `#destroyAudioChain()`, so a terminated capture leaves the mic stream
+   live and the source wired. Pre-existing on `origin/main` in its open-mic form; the
+   keep-alive sink converts it from a dormant leak into an active one, because the
+   sink→destination edge survives termination and the dead capture's source and gain are
+   rendered every quantum for the life of the page. `CaptureDevices` terminates a capture on
+   capture-pointer change, unit removal and project close/switch, so a page that switches
+   projects strands one pulled dead chain per armed capture. A correct fix must settle three
+   behaviours (mic release, mid-recording teardown, the undiscarded prepared worklet) and was
+   deliberately deferred out of the sink commit.
+4. **`prepareRecording` rebuilt the chain for a capture box carrying no device id — note,
+   fixed on the branch.** The reuse test compared `undefined` against the reported id, so it
+   never matched and the default-input path rebuilt per recording. `546b5bfaa` compares what
+   the box names against what the open stream was *requested* with, remembering the named id in
+   memory so clearing a named device back to the default still re-opens; the box is never
+   written. One named consequence: an unstamped capture no longer follows a change of OS
+   default input mid-arm. On Chrome the requested id is the virtual `"default"` entry, which
+   follows the OS itself, so the stream tracks the change anyway; the exposure is browsers whose
+   enumeration carries no `"default"` device, and a disarm/re-arm recovers.
+5. **The exact 10.000 ms `noisy` spread was one MediaStream chunk.** The single `noisy` row of
+   the whole campaign (`1788381617706`, 44.1 kHz, D = 50 ms) had `spreadSeconds` = 0.0099999967 s
+   = **440.9999 frames = one 10 ms MediaStream chunk at 44.1 kHz** — not a render quantum
+   (128 frames = 2.9 ms), not the fixed `DelayNode`, not the analyzer. One burst of three landed
+   exactly one media chunk from the other two. Consistent with the reuse-state buffer sitting at
+   capacity, where a 441-frame push against a 128-frame pull periodically cannot fit; named as
+   consistent, not proven, since the `Result` did not expose per-burst delays at that build. The
+   routine handled it correctly: verdict `noisy`, median unaffected, round trip on the fit line.
+
+### What remains
+
+- **The real-device run.** A microphone and speakers instead of the digital loopback, to check
+  whether a real device track shows the two chain states, the 32-frame lattice, the one-quantum
+  miss or the +1.15 ms residual. Not run: it needs a person present to allow the microphone
+  prompt, and the campaign ran unattended.
+- **Finding 2 (stop-path truncation) and finding 3 (`terminate()`)** as upstream issues; both
+  are drafted nowhere yet.
+- **`armState=fresh` batches** for the one-quantum miss — the one condition of the original
+  observation that 122 calls did not vary.
+- **The +1.15 ms residual's attribution.**
+- **The multitrack collision (#375)**, which still costs 3 of 6 repeats and leaves cross-track
+  skew measured on three sessions only.
+
+### Evidence index (input-latency calibration)
+
+| quantity | artifact(s) |
+|---|---|
+| first-build ground truth, noise-limited slopes | `calib-summary-1788380827527/…1788381023857/…1788381518785/…1788381617706/…1788381715449/…1788381865054.json` |
+| first-build wide spans, fresh-chain −55 ms take | `calib-summary-1788383382606/…1788383812745/…1788383904062/…1788383997913.json` |
+| first-build uncalibrated two states, tail deficits | `recaudit-summary-1788381192364.json`, `…1788381289172.json` (reporting on); `…1788381341876/…1788381404900/…1788381808038.json` (off) |
+| keep-alive build, six runs | `calib-summary-1788384874160/…1788385001347/…1788385066131/…1788385161872/…1788385236496/…1788385315180.json`; single sweep cell `recaudit-summary-1788385420462.json` |
+| final-head standing sweep + multitrack | `recaudit-summary-1788386290685.json` (48 k), `…1788386775464.json` (44.1 k), `recaudit-mt-summary-1788387238856.json` |
+| final-head calibration, ten runs | `calib-summary-1788387758809/…1788387844291/…1788387924745/…1788388011786/…1788388441928/…1788388530136/…1788388610945/…1788388693481/…1788388770256/…1788388847147.json` |
+| chain-reuse build, four runs + the one-quantum miss | `calib-summary-1788389912522/…1788389998986/…1788390783792/…1788391548108.json` |
+| chain-reuse build, alignment cells | `recaudit-summary-1788390078851.json`, `…1788390134814.json`, `…1788390729375.json`, `…1788391499692.json` (the last two `defaultInput=1`) |
+| second-anchor batches, 122 calls | `calib-summary-1788392793660/…1788392963167/…1788393319769/…1788393692168.json` |
+| offline recomputation | `.verify-output/task12b-calibration-tables.txt`, `.verify-output/task12a-keepalive-classification.txt` |
