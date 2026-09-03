@@ -239,6 +239,9 @@ function printChains(): void {
     for (const runId of BUILDS[2].runs) {
       const summary = loadCalibrationSummary(runId);
       if (summary.rate !== rate) continue;
+      // A run whose apply stored nothing persists an `error` cell with no rows
+      // and an empty applied result: neither figure describes a chain.
+      if (summary.cell.status === "error") continue;
       // The chain built at arm is the one the calibration itself measured, so
       // its delay is the routine's own figure rather than a take's hop.
       if (summary.applied !== null) {

@@ -200,12 +200,13 @@ function detectSdkBuildProbe(engine: unknown): SdkBuildProbe {
  * `?defaultInput=1` — arm the tape on the SDK's DEFAULT input instead of naming
  * the synthetic device: the capture box's `deviceId` is left unset and the
  * loopback serves the resulting unconstrained request (see `serveDefault` in
- * loopbackInjection.ts). That is the only configuration in which
- * `CaptureAudio.#updateStream` can reuse its audio chain across takes, because
- * its reuse test asks whether the BOX names a device; naming one that the
- * synthetic stream does not report back forces a rebuild before every
- * recording. Single-tape scenarios only — the multi-mic ones need two distinct
- * named devices by construction.
+ * loopbackInjection.ts). On THIS harness that is the only configuration in
+ * which `CaptureAudio.#updateStream` reuses its audio chain across takes: the
+ * synthetic stream reports an empty device id here (`reportDeviceId` is off),
+ * so a box that names a device never matches what the open stream reports and
+ * the chain is rebuilt before every recording. A real named device reports its
+ * id back and reuses on every build. Single-tape scenarios only — the
+ * multi-mic ones need two distinct named devices by construction.
  */
 const DEFAULT_INPUT = params.get("defaultInput") === "1";
 /** Persisted per run so an envelope says which `#updateStream` path it took. */
@@ -899,8 +900,9 @@ function ScenarioRunnerHarness() {
               {`?scenario=<name|all>   default "all" (${ALL_SCENARIOS.join(", ")})
 ?bpm=<number|all>     default "all" (${RECORDING_AUDIT_BPMS.join(", ")})
 ?rate=<number>        default 48000 — sets the AudioContext at init, never "all"
-?defaultInput=1       arm on the SDK's default input (the box names no device), the
-                      only configuration in which one audio chain serves every take
+?defaultInput=1       arm on the SDK's default input (the box names no device) — on this
+                      harness the only configuration in which one audio chain serves every
+                      take, since the synthetic stream reports no device id back
 Repeats per cell:       ${REPEATS_PER_CELL}
 Uploads:                recaudit-summary-<runToken>.json (all rows) via PUT /__verify
                         recaudit-<scenario>-<bpm>-<rate>-r<repeat>-<build>-<runToken>.wav per repeat

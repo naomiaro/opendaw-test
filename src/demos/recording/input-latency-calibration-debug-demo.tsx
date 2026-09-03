@@ -1068,8 +1068,8 @@ async function runCalibrationAudit(cb: RunCallbacks): Promise<void> {
   );
 
   // GATE ON THE APPLIED OUTCOME. The SDK stores an entry only for an `ok` or
-  // `noisy` result with finite numbers; on `no-signal`, `transport-running` or
-  // `no-stream` it stores nothing, and a cell run now would record UNCALIBRATED
+  // `noisy` result with finite numbers; on `no-signal`, `transport-running`,
+  // `no-stream` or `context-not-running` it stores nothing, and a cell run now would record UNCALIBRATED
   // and still reach `done` with an ordinary verdict — on the candidate profile a
   // keep-alive chain lands in band F, so the page would report
   // `matches-known-defect` for a calibration it never tested. So the cell is
