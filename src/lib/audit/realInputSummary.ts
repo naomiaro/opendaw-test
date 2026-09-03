@@ -105,8 +105,9 @@ export interface RealInputTransition {
   stepQuanta: number;
   /** |step| within 25 % of exactly one quantum. */
   isOneQuantumStep: boolean;
-  /** True when at least one later anchors-agreeing call of the chain sat in the state this step
-   *  opened; false on a step at the chain's last call, which nothing follows to confirm the hold. */
+  /** True when the state this step opened is confirmed by at least one further anchors-agreeing
+   *  call in it; false when nothing agreeing follows — a step on the chain's last call, or one
+   *  followed only by calls whose anchors disagree. */
   confirmedByFollowingCall: boolean;
 }
 
