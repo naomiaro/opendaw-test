@@ -71,7 +71,8 @@
 // recording. Use it to measure the chain-reuse path rather than the rebuild one.
 //
 // `?repeat=N` runs N further calibrations back to back on the same armed chain
-// after the sweep, at the last delay `?delays=` names, and reports how many came back exactly one render quantum off
+// after the sweep, cycling the delays `?delays=` names (call k at
+// `delays[k mod delays.length]`), and reports how many came back exactly one render quantum off
 // the run's modal round trip — the miss the campaign saw once at 44.1 kHz, with
 // all three bursts agreeing and a verdict of `ok`. On a build that reports a
 // second capture anchor it also says, per miss, which anchor still agreed with
@@ -265,7 +266,18 @@ interface SweepRow extends CalibrationResult {
  *  call's relation to the run's modal round trip. */
 interface RepeatCall extends CalibrationResult {
   index: number;
-  /** Primary round trip minus the run's mode, in seconds. */
+  /** The injected return delay THIS call ran at — the cycle repeats over `?delays=`. */
+  delayMs: number;
+  /** The delay of the call before it, null for the first: the correlation this phase tests. */
+  previousDelayMs: number | null;
+  /** True when this call is the first at a delay different from the one before it. */
+  isFirstAfterDelayChange: boolean;
+  /** Primary round trip with this call's own delay removed — the chain's own round
+   *  trip, and the quantity every call is compared on once the delay varies. */
+  normalizedRoundTripSec: number;
+  /** Input part with the delay removed, in ms: the ~21.6 ms constant. */
+  normalizedInputMs: number;
+  /** Normalized primary round trip minus the run's mode, in seconds. */
   deltaFromModeSec: number;
   /** That delta in render quanta (128 frames at the run's rate) — 1.00 is the miss. */
   deltaQuanta: number;
@@ -284,10 +296,15 @@ interface RepeatCall extends CalibrationResult {
 
 interface RepeatSummary {
   calls: number;
-  /** The injected return delay every call in the phase ran at, in ms. */
-  delayMs: number;
-  /** Modal primary round trip across the phase, the value a call is judged against. */
+  /** The delays the phase cycled through, in call order; one entry means a fixed
+   *  delay. (Artifacts from before the cycle carry a scalar `delayMs` instead.) */
+  delayCycleMs: number[];
+  /** Modal round trip with each call's own delay removed, the value a call is
+   *  judged against — normalized, because with a cycling delay the raw round
+   *  trips differ by design. */
   modeRoundTripSec: number;
+  /** The same mode as an input part in ms: the constant the phase is testing. */
+  modeNormalizedInputMs: number;
   /** How many calls share the mode. */
   modeCount: number;
   renderQuantumSec: number;
@@ -298,7 +315,20 @@ interface RepeatSummary {
   /** Calls the anchor check flagged that were NOT one quantum off the mode. */
   flaggedWithoutMiss: number;
   /** Per miss, which anchor matched the mode — the observation Part 3 needs. */
-  missAnchorVerdicts: { index: number; deltaQuanta: number; anchorMatchingMode: RepeatCall["anchorMatchingMode"]; reason: string | null }[];
+  missAnchorVerdicts: {
+    index: number; delayMs: number; previousDelayMs: number | null; isFirstAfterDelayChange: boolean;
+    deltaQuanta: number; anchorMatchingMode: RepeatCall["anchorMatchingMode"]; reason: string | null;
+  }[];
+  /**
+   * Does a miss follow a CHANGE of injected delay? A miss confined to the first
+   * call after a change would point at the loopback's own `DelayNode` settling,
+   * i.e. the harness, rather than at anything in the SDK. Both base rates are
+   * given so the comparison is possible rather than implied.
+   */
+  callsAfterDelayChange: number;
+  callsAfterSameDelay: number;
+  missesAfterDelayChange: number;
+  missesAfterSameDelay: number;
   /** False when the served build returns no `roundTripSecondsSecondary` at all. */
   secondAnchorAvailable: boolean;
 }
@@ -543,39 +573,57 @@ function modeAtFrameResolution(values: number[], sampleRate: number): { value: n
  * the one that drifted.
  */
 function summarizeRepeats(
-  calls: CalibrationResult[],
+  calls: { result: CalibrationResult; delayMs: number }[],
   sampleRate: number,
-  delayMs: number
+  delayCycleMs: number[]
 ): { rows: RepeatCall[]; summary: RepeatSummary } {
   const renderQuantumSec = 128 / sampleRate;
-  const usable = calls.filter((call) => Number.isFinite(call.roundTripSeconds));
+  // With a cycling delay the raw round trips differ by design, so every call is
+  // compared on its round trip with its OWN delay removed — the chain's own
+  // round trip, which is what should be constant.
+  const normalized = (call: { result: CalibrationResult; delayMs: number }) =>
+    call.result.roundTripSeconds - call.delayMs / 1000;
+  const usable = calls.filter((call) => Number.isFinite(call.result.roundTripSeconds));
   const mode = usable.length > 0
-    ? modeAtFrameResolution(usable.map((call) => call.roundTripSeconds), sampleRate)
+    ? modeAtFrameResolution(usable.map(normalized), sampleRate)
     : { value: Number.NaN, count: 0 };
-  const matchesMode = (value: number | undefined) =>
-    value !== undefined && Number.isFinite(value) && Math.abs(value - mode.value) <= 0.5 * renderQuantumSec;
+  const matchesMode = (value: number | undefined, delaySec: number) =>
+    value !== undefined && Number.isFinite(value) && Math.abs(value - delaySec - mode.value) <= 0.5 * renderQuantumSec;
 
   const rows: RepeatCall[] = calls.map((call, index) => {
-    const deltaFromModeSec = call.roundTripSeconds - mode.value;
+    const { result, delayMs } = call;
+    const delaySec = delayMs / 1000;
+    const previousDelayMs = index === 0 ? null : calls[index - 1].delayMs;
+    const normalizedRoundTripSec = normalized(call);
+    const deltaFromModeSec = normalizedRoundTripSec - mode.value;
     const deltaQuanta = deltaFromModeSec / renderQuantumSec;
     const isOneQuantumMiss = Math.abs(Math.abs(deltaQuanta) - 1) <= 0.25;
-    const flaggedByAnchorCheck = (call.reason ?? "").includes("capture anchors disagree");
-    const hasSecondary = call.roundTripSecondsSecondary !== undefined;
+    const flaggedByAnchorCheck = (result.reason ?? "").includes("capture anchors disagree");
+    const hasSecondary = result.roundTripSecondsSecondary !== undefined;
     const anchorMatchingMode: RepeatCall["anchorMatchingMode"] = !hasSecondary
       ? null
-      : matchesMode(call.roundTripSeconds)
-        ? (matchesMode(call.roundTripSecondsSecondary) ? "both" : "A")
-        : (matchesMode(call.roundTripSecondsSecondary) ? "B" : "neither");
-    return { ...call, index, deltaFromModeSec, deltaQuanta, isOneQuantumMiss, flaggedByAnchorCheck, anchorMatchingMode };
+      : matchesMode(result.roundTripSeconds, delaySec)
+        ? (matchesMode(result.roundTripSecondsSecondary, delaySec) ? "both" : "A")
+        : (matchesMode(result.roundTripSecondsSecondary, delaySec) ? "B" : "neither");
+    return {
+      ...result, index, delayMs, previousDelayMs,
+      isFirstAfterDelayChange: previousDelayMs !== null && previousDelayMs !== delayMs,
+      normalizedRoundTripSec,
+      normalizedInputMs: result.inputLatencySeconds * 1000 - delayMs,
+      deltaFromModeSec, deltaQuanta, isOneQuantumMiss, flaggedByAnchorCheck, anchorMatchingMode,
+    };
   });
 
   const misses = rows.filter((row) => row.isOneQuantumMiss);
+  const afterChange = rows.filter((row) => row.isFirstAfterDelayChange);
+  const afterSame = rows.filter((row) => row.previousDelayMs !== null && !row.isFirstAfterDelayChange);
   return {
     rows,
     summary: {
       calls: rows.length,
-      delayMs,
+      delayCycleMs,
       modeRoundTripSec: mode.value,
+      modeNormalizedInputMs: mode.value * 1000 - (rows[0]?.outputLatencySeconds ?? 0) * 1000,
       modeCount: mode.count,
       renderQuantumSec,
       oneQuantumMisses: misses.length,
@@ -583,10 +631,17 @@ function summarizeRepeats(
       flaggedWithoutMiss: rows.filter((row) => row.flaggedByAnchorCheck && !row.isOneQuantumMiss).length,
       missAnchorVerdicts: misses.map((row) => ({
         index: row.index,
+        delayMs: row.delayMs,
+        previousDelayMs: row.previousDelayMs,
+        isFirstAfterDelayChange: row.isFirstAfterDelayChange,
         deltaQuanta: row.deltaQuanta,
         anchorMatchingMode: row.anchorMatchingMode,
         reason: row.reason ?? null,
       })),
+      callsAfterDelayChange: afterChange.length,
+      callsAfterSameDelay: afterSame.length,
+      missesAfterDelayChange: afterChange.filter((row) => row.isOneQuantumMiss).length,
+      missesAfterSameDelay: afterSame.filter((row) => row.isOneQuantumMiss).length,
       secondAnchorAvailable: rows.some((row) => row.roundTripSecondsSecondary !== undefined),
     },
   };
@@ -847,25 +902,36 @@ async function runCalibrationAudit(cb: RunCallbacks): Promise<void> {
   // apply so the stored value is still measured the way every other run measures
   // it. Nothing is re-armed.
   //
-  // The phase runs at the LAST delay `?delays=` named, set explicitly here rather
-  // than inherited from wherever the sweep left the node: the delay is a
-  // condition of the measurement — the one miss the campaign saw was at D = 50 ms
-  // — so it is set on purpose and persisted with the summary, instead of being a
-  // fact about loop order that the artifact does not record.
-  const repeatDelayMs = delaysMs.length > 0 ? delaysMs[delaysMs.length - 1] : 0;
-  const repeatCalls: CalibrationResult[] = [];
+  // The phase CYCLES the delays `?delays=` names: call k runs at
+  // `delays[k % delays.length]`, with `setReturnDelay` and the same 200 ms settle
+  // before each call, exactly as the sweep does. One delay in the list means a
+  // fixed delay, which is what the earlier batches ran.
+  //
+  // Cycling is the point of this variant: the run that showed the one-quantum
+  // miss had a delay that CHANGED between calls, and a miss confined to the first
+  // call after a change would be the loopback's own `DelayNode` settling — the
+  // harness — rather than anything in the SDK. `isFirstAfterDelayChange` on each
+  // call is what makes that separable.
+  const delayCycleMs = delaysMs.length > 0 ? delaysMs : [0];
+  const repeatCalls: { result: CalibrationResult; delayMs: number }[] = [];
   if (repeatCount > 0) {
-    loopback.setReturnDelay(repeatDelayMs / 1000);
-    await sleep(DELAY_SETTLE_MS);
-    console.log("[input-latency-calibration] repeat phase at D=" + String(repeatDelayMs) + "ms, " + String(repeatCount) + " calls");
+    console.log(
+      "[input-latency-calibration] repeat phase cycling D=[" + delayCycleMs.join(",") + "]ms, " +
+      String(repeatCount) + " calls"
+    );
   }
   for (let index = 0; index < repeatCount; index++) {
+    const delayMs = delayCycleMs[index % delayCycleMs.length];
     cb.setState(`repeat:${index + 1}/${repeatCount}`);
+    loopback.setReturnDelay(delayMs / 1000);
+    await sleep(DELAY_SETTLE_MS);
     const result = await calibrateThroughLoopback(calibrating, bias.valueSec, false);
-    repeatCalls.push(result);
+    repeatCalls.push({ result, delayMs });
     cb.onRepeatCall(result, index);
     console.log(
       "[input-latency-calibration] repeat " + String(index + 1) + "/" + String(repeatCount) +
+      " D=" + String(delayMs) + "ms" +
+      " inputMinusDelayMs=" + (result.inputLatencySeconds * 1000 - delayMs).toFixed(4) +
       " verdict=" + result.verdict +
       " roundTripSec=" + String(result.roundTripSeconds) +
       " secondarySec=" + String(result.roundTripSecondsSecondary) +
@@ -874,13 +940,16 @@ async function runCalibrationAudit(cb: RunCallbacks): Promise<void> {
       " reason=" + String(result.reason ?? "(none)")
     );
   }
-  const repeatAnalysis = repeatCount > 0 ? summarizeRepeats(repeatCalls, rate, repeatDelayMs) : null;
+  const repeatAnalysis = repeatCount > 0 ? summarizeRepeats(repeatCalls, rate, delayCycleMs) : null;
   if (repeatAnalysis !== null) {
     const { summary } = repeatAnalysis;
     console.log(
       "[input-latency-calibration] repeat summary calls=" + String(summary.calls) +
-      " delayMs=" + String(summary.delayMs) +
-      " modeRoundTripMs=" + (summary.modeRoundTripSec * 1000).toFixed(4) +
+      " delayCycleMs=[" + summary.delayCycleMs.join(",") + "]" +
+      " modeNormalizedRoundTripMs=" + (summary.modeRoundTripSec * 1000).toFixed(4) +
+      " modeNormalizedInputMs=" + summary.modeNormalizedInputMs.toFixed(4) +
+      " missesAfterDelayChange=" + String(summary.missesAfterDelayChange) + "/" + String(summary.callsAfterDelayChange) +
+      " missesAfterSameDelay=" + String(summary.missesAfterSameDelay) + "/" + String(summary.callsAfterSameDelay) +
       " modeCount=" + String(summary.modeCount) +
       " quantumMs=" + (summary.renderQuantumSec * 1000).toFixed(4) +
       " oneQuantumMisses=" + String(summary.oneQuantumMisses) +
@@ -1263,8 +1332,10 @@ chain state:       ${rowStates.map((r) => `r${r.repeat} ${r.chainPull} ${r.hopSe
                 Repeat phase — one-quantum miss rate
               </Heading>
               <pre style={{ margin: 0, fontSize: "0.85rem", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
-                {`calls:              ${repeatSummary.calls} at D = ${repeatSummary.delayMs} ms
-modal round trip:   ${ms(repeatSummary.modeRoundTripSec)} ms on ${repeatSummary.modeCount}/${repeatSummary.calls} calls
+                {`calls:              ${repeatSummary.calls}, delay cycle [${repeatSummary.delayCycleMs.join(", ")}] ms
+modal round trip:   ${ms(repeatSummary.modeRoundTripSec)} ms (delay removed) on ${repeatSummary.modeCount}/${repeatSummary.calls} calls
+input minus delay:  ${repeatSummary.modeNormalizedInputMs.toFixed(4)} ms
+after a delay change: ${repeatSummary.missesAfterDelayChange}/${repeatSummary.callsAfterDelayChange} missed · same delay: ${repeatSummary.missesAfterSameDelay}/${repeatSummary.callsAfterSameDelay}
 render quantum:     ${ms(repeatSummary.renderQuantumSec)} ms
 one-quantum misses: ${repeatSummary.oneQuantumMisses}
   flagged by the second anchor: ${repeatSummary.missesFlaggedByAnchorCheck}/${repeatSummary.oneQuantumMisses}
@@ -1274,7 +1345,7 @@ anchor matching the mode, per miss:
 ${repeatSummary.missAnchorVerdicts.length === 0
   ? "  (no misses)"
   : repeatSummary.missAnchorVerdicts
-      .map((m) => `  #${m.index} delta ${m.deltaQuanta.toFixed(3)} quanta -> ${m.anchorMatchingMode ?? "n/a"}${m.reason ? ` (${m.reason})` : ""}`)
+      .map((m) => `  #${m.index} D=${m.delayMs} (prev ${m.previousDelayMs ?? "—"}${m.isFirstAfterDelayChange ? ", CHANGED" : ""}) delta ${m.deltaQuanta.toFixed(3)} quanta -> ${m.anchorMatchingMode ?? "n/a"}${m.reason ? ` (${m.reason})` : ""}`)
       .join("\n")}`}
               </pre>
             </Card>
@@ -1291,7 +1362,7 @@ ${repeatSummary.missAnchorVerdicts.length === 0
 ?defaultInput=1       arm on the SDK's default input (box names no device), the
                       only configuration where the audio chain is reused
 ?repeat=<n>           default 0 — after the sweep, run n more calibrations back to
-                      back on the same chain, at the LAST delay ?delays= names,
+                      back on the same chain, CYCLING the delays ?delays= names,
                       and report the one-quantum miss rate
 Cell:                 ${CELL_SCENARIO}, ${REPEATS_PER_CELL} repeats, calibration applied
 Delay ceiling:        ${MAX_REQUESTED_DELAY_MS.toFixed(0)} ms at parse time; per point the run
