@@ -1388,6 +1388,16 @@ async function runMultitrackAudit(
   onBuildProbe: (probe: SdkBuildProbe) => void
 ): Promise<void> {
   setAuditState("setup");
+  // `createMultitrackTapes` names a loopback device on BOTH tapes, so this
+  // combination would persist `captureMode: "default"` on an envelope whose
+  // captures were named — and the injection's `serveDefault` would withhold
+  // the very devices those tapes ask for. Refuse it rather than mislabel it.
+  if (DEFAULT_INPUT) {
+    throw new Error(
+      "?defaultInput=1 cannot be combined with a multitrack scenario: both tapes name a loopback device, " +
+      "so the envelope would stamp captureMode \"default\" on named captures — drop one of the two parameters"
+    );
+  }
   const scenarios = resolveMultitrackScenarios(params.get("scenario"));
   const bpms = resolveMultitrackBpms(params.get("bpm"));
   const rate = resolveRate(params.get("rate"));

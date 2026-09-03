@@ -597,10 +597,9 @@ export async function runCellRepeat(options: CellRepeatOptions): Promise<CellRep
   // gradient — refuting the miscalibration hypothesis. Reverted to 30s (a
   // longer deadline bought nothing but wall-clock time); the timing itself
   // is kept as a diagnostic since it's cheap and helps future triage.
-  const finalizeDeadlineMs = 30_000;
   const finalizeStart = performance.now();
   try {
-    await waitForLoaderTerminal(loader, finalizeDeadlineMs, "finalization");
+    await waitForLoaderTerminal(loader, FINALIZE_DEADLINE_MS, "finalization");
   } finally {
     settleFinalizeProbe(finalizeProbe, loader);
   }
@@ -613,7 +612,7 @@ export async function runCellRepeat(options: CellRepeatOptions): Promise<CellRep
   console.log(
     "[recording-alignment-audit] finalize " + cellLabel(scenario, bpm, repeat) +
     " took " + finalizeMs.toFixed(0) + "ms" +
-    " (deadline " + finalizeDeadlineMs + "ms)"
+    " (deadline " + String(FINALIZE_DEADLINE_MS) + "ms)"
   );
 
   onStage("measuring");

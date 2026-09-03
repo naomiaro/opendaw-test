@@ -29,20 +29,25 @@
 // branch. This repo's tsc resolves @opendaw/* types from node_modules (the
 // installed release), which does not declare them, so they are reached here
 // through the local structural interfaces below plus a runtime feature check.
-// The field names mirror `InputLatencyCalibration.Result` exactly. When the
-// installed SDK ships the API, delete the interfaces and the check and import
-// the real types.
+// The field names mirror `InputLatencyCalibration.Result` at the branch head;
+// members that later branch commits added (`probe`, the second-anchor fields,
+// `reason`) are optional here so the earlier override builds still run. When
+// the installed SDK ships the API, delete the interfaces and the check and
+// import the real types.
 // ---------------------------------------------------------------------------
 //
 // What the cell verdict can and cannot show. `classifyCell` fails a repeat whose
-// `tailMissingMs` exceeds 2 ms, and that quantity is `hop − postStopCapture`:
+// `tailMissingMs` exceeds 2 ms, and that quantity is `hop − postStopCapture`.
+// On SDK `f0c44b06c` (before the keep-alive sink) that gate fired on this page:
 // the SDK's stop path keeps whatever frames happen to have been delivered when
-// the stop lands (29-67 ms here, an artifact of message and quantum latency, not
-// a margin sized against input latency), and input still in flight beyond that
-// is truncated. It does not depend on the applied calibration — the same
-// deficits appear uncalibrated on the same stream — so it is an SDK stop-path
-// effect that calibration EXPOSES rather than causes: uncalibrated, the missing
-// tail was hidden under a placement that was ~64 ms late anyway.
+// the stop lands (29-67 ms on that build, an artifact of message and quantum
+// latency, not a margin sized against input latency), and input still in
+// flight beyond that is truncated. It does not depend on the applied
+// calibration — the same deficits appeared uncalibrated on the same stream — so
+// it is an SDK stop-path effect that calibration EXPOSES rather than causes:
+// uncalibrated, the missing tail was hidden under a placement that was ~64 ms
+// late on that build anyway. From `ac1c15ea8` every applied cell has read head
+// and tail deficits of 0; the gate is unchanged and still stands in the path.
 //
 // Two probe-path notes, both deliberate and both persisted in the JSON:
 //  - The probe is played out through `audioContext.destination`, which has no
@@ -67,11 +72,17 @@
 // so the exclusion's effect is visible rather than assumed.
 //
 // `?defaultInput=1` arms the tape on the SDK's default input (the capture box
-// names no device) instead of naming the synthetic loopback. That is the only
-// configuration in which `CaptureAudio` reuses its audio chain across
-// recordings: its reuse test asks whether the BOX names a device, and a named
-// device the synthetic stream does not report back forces a rebuild before every
-// recording. Use it to measure the chain-reuse path rather than the rebuild one.
+// names no device) instead of naming the synthetic loopback. On THIS page both
+// modes reuse one chain across the sweep, the applied calibration and the cell:
+// the loopback reports the device id back (`reportDeviceId`, below), so the
+// named box's reuse test passes and `#updateStream` returns early before every
+// recording — persisted as `getUserMediaOpens: 1` in either mode. What
+// `?defaultInput=1` changes is WHICH reuse rule is exercised: the unnamed-box
+// rule `546b5bfaa` added (the box names nothing and the stream was requested
+// unconstrained) instead of the named-device rule (the box names the id the
+// open track reports). "Default input is the only configuration that reuses
+// the chain" holds for the alignment harness only, whose loopback leaves
+// `reportDeviceId` off so its named synthetic device never matches.
 //
 // `?repeat=N` runs N further calibrations back to back on the same armed chain
 // after the sweep, cycling the delays `?delays=` names (call k at
@@ -92,9 +103,12 @@
 // predicted.
 //
 // DOM contract: #audit-state carries data-audit-state walking setup ->
-// priming -> sweep:<delay> -> applying -> [rearm ->] cell:<repeat> ->
-// uploading -> done (or error:<message>); #cell-verdict carries
-// data-verdict={cell status}.
+// priming -> sweep:<delay> -> [repeat:<k>/<n> ->] applying -> [rearm ->]
+// cell:<repeat> -> uploading -> done (or error:<message>); #cell-verdict
+// carries data-verdict={cell status}, which is `error` when the applied
+// calibration stored no entry — the rearm/cell stages are then skipped and the
+// run still reaches `done` with the sweep persisted (see the gate after
+// `apply` in `runCalibrationAudit`).
 //
 // Run it with a REAL click (the AudioContext resumes on the gesture) on a
 // visible window, one fresh navigation per run — same discipline as the
@@ -184,7 +198,7 @@ const STREAM_DEADLINE_MS = 15_000;
 type CalibrationVerdict =
   | "ok" | "noisy" | "no-signal" | "context-not-running" | "no-stream" | "transport-running";
 
-/** Mirrors `InputLatencyCalibration.Result` field for field. */
+/** Mirrors `InputLatencyCalibration.Result` at the branch head; see the shim note in the header for which members are optional and why. */
 interface CalibrationResult {
   verdict: CalibrationVerdict;
   roundTripSeconds: number;
@@ -197,9 +211,17 @@ interface CalibrationResult {
   scheduledBursts: number;
   sampleRate: number;
   measuredAt: number;
-  // --- second capture anchor (upstream 45c551d7 and later) -------------------
-  // `measure` opens a SECOND capture node mid-run, after the first burst's
-  // scheduled start has passed, and analyses both buffers: the reported round
+  /**
+   * Name of the probe the bursts carried (`"mls"` on the configurable-probe
+   * builds). Since branch commit `3484e3265`; absent on the two builds before
+   * it, so it is optional for the same reason the second-anchor fields are.
+   */
+  probe?: string;
+  // --- second capture anchor (branch commit 660213857 and later) -------------
+  // `measure` opens a SECOND capture node mid-run, at the end of the first
+  // burst's emission (`firstBurst + min(referenceSeconds, spacing)`, so the
+  // node's construction cannot fall inside the burst while it is still
+  // playing), and analyses both buffers: the reported round
   // trip is node A's, `roundTripSecondsSecondary` is node B's, and the verdict
   // becomes `noisy` with `reason` "capture anchors disagree" when the two differ
   // by more than half a render quantum. It exists because a capture node's
@@ -227,13 +249,31 @@ interface CalibratingCapture {
  * Which SDK input-chain state the applied cell records in.
  *  - `steady`: record on the chain the sweep and the applied calibration ran on.
  *  - `fresh`: disarm and re-arm first, so `#updateStream` rebuilds the chain and
- *    take 1 is its FIRST pull (13-21 ms) while the stored calibration describes
- *    the reused state (58-69 ms). Takes 2-3 are back on the reused state.
+ *    take 1 records on a chain the stored calibration never measured. On SDK
+ *    `f0c44b06c` (before the keep-alive sink) that meant take 1 was the chain's
+ *    FIRST pull (13-21 ms) while the stored value described the reused state
+ *    (58-69 ms), with takes 2-3 back on the reused state; from `ac1c15ea8`
+ *    every pull reads ~21 ms, and what `fresh` exposes is the rebuilt chain
+ *    landing in the other of two states ~8 ms apart — in either direction — or
+ *    in the same one.
  */
 type ArmState = "steady" | "fresh";
 
-/** Which pull of its chain a take was: only the first one after a rebuild is fast. */
+/**
+ * Which pull of its chain a take was. On SDK `f0c44b06c` (before the keep-alive
+ * sink) only the first pull after a rebuild was fast; from `ac1c15ea8` the pull
+ * index no longer moves the delay, and the label only says whether the take ran
+ * on the chain the re-arm rebuilt.
+ */
 type ChainPull = "first-after-arm" | "reused";
+
+/** Per applied-cell row: the chain delay it measured and which pull of its chain it was. */
+interface CellRowState {
+  repeat: number;
+  takeIndex: number;
+  hopSec: number | null;
+  chainPull: ChainPull;
+}
 
 /** Mirrors the `recording.inputLatencyCalibrations` preference entry. */
 interface CalibrationEntry {
@@ -305,6 +345,13 @@ interface RepeatCall extends CalibrationResult {
 
 interface RepeatSummary {
   calls: number;
+  /**
+   * Calls that returned a finite round trip — the population the mode is taken
+   * over. 0 means every call was non-ok and NOTHING below is meaningful: the
+   * mode is NaN, no call can be a miss, and the phase must be read as unusable
+   * rather than as "0 misses".
+   */
+  usableCalls: number;
   /** The delays the phase cycled through, in call order; one entry means a fixed
    *  delay. (Artifacts from before the cycle carry a scalar `delayMs` instead.) */
   delayCycleMs: number[];
@@ -362,7 +409,13 @@ interface LeastSquaresFit {
 
 interface CellOutcome {
   scenario: string;
-  status: CellClassification["status"];
+  /**
+   * The runner's verdict, or `error` when the cell was NOT run because the
+   * applied calibration stored nothing (see the gate after `apply` in
+   * `runCalibrationAudit`) — a cell that recorded uncalibrated would otherwise
+   * carry an ordinary verdict for a calibration it never tested.
+   */
+  status: CellClassification["status"] | "error";
   matchedSignature: string | null;
   detail: string;
   successfulRepeats: number;
@@ -433,7 +486,7 @@ interface CalibrationSummary {
    * everything else is a reused pull. Persisted so the two states are legible
    * from the artifact without re-deriving them from the run's structure.
    */
-  cellRowStates: { repeat: number; takeIndex: number; hopSec: number | null; chainPull: ChainPull }[];
+  cellRowStates: CellRowState[];
 }
 
 // --- run -------------------------------------------------------------------
@@ -448,10 +501,12 @@ interface CalibrationSummary {
 /**
  * `?defaultInput=1` — leave the capture box's `deviceId` unset so the SDK opens
  * its DEFAULT input, and have the loopback serve that unconstrained request
- * (`serveDefault` in loopbackInjection.ts). This is the configuration in which
- * `CaptureAudio` reuses its audio chain across recordings instead of rebuilding
- * it before each one; the served clone still reports a concrete device id, so a
- * calibration is stored and resolved exactly as it is when a device is named.
+ * (`serveDefault` in loopbackInjection.ts). Not a reuse-versus-rebuild switch
+ * on this page — with `reportDeviceId` on, the named mode reuses its chain too
+ * (see the header) — but a choice of WHICH reuse rule runs: the unnamed-box
+ * rule from `546b5bfaa` instead of the named-device one. The served clone still
+ * reports a concrete device id, so a calibration is stored and resolved exactly
+ * as it is when a device is named.
  */
 const DEFAULT_INPUT = params.get("defaultInput") === "1";
 /** Persisted per run so an envelope says which `#updateStream` path it took. */
@@ -630,6 +685,7 @@ function summarizeRepeats(
     rows,
     summary: {
       calls: rows.length,
+      usableCalls: usable.length,
       delayCycleMs,
       modeRoundTripSec: mode.value,
       modeNormalizedInputMs: mode.value * 1000 - (rows[0]?.outputLatencySeconds ?? 0) * 1000,
@@ -727,16 +783,20 @@ function getContext(rate: number, bpm: number): Promise<CalibrationContext> {
   return contextPromise;
 }
 
-/** One calibration call, with the destination teed into the loopback for its duration. */
+/**
+ * One calibration call, with the destination teed into the loopback for its
+ * duration. The deadline is handed to the tee rather than wrapped around it, so
+ * a timeout restores `AudioNode.prototype.connect` instead of leaving the tee
+ * armed for the next call (see `captureDestinationDuring`).
+ */
 function calibrateThroughLoopback(
   calibrating: CalibratingCapture,
   virtualOutputLegSec: number,
   apply: boolean
 ): Promise<CalibrationResult> {
-  return withDeadline(
-    loopback.captureDestinationDuring(virtualOutputLegSec, () =>
-      calibrating.calibrateInputLatency(apply ? { apply: true } : {})
-    ),
+  return loopback.captureDestinationDuring(
+    virtualOutputLegSec,
+    () => calibrating.calibrateInputLatency(apply ? { apply: true } : {}),
     CALIBRATION_DEADLINE_MS,
     `calibrateInputLatency(apply=${String(apply)})`
   );
@@ -770,7 +830,7 @@ interface RunCallbacks {
   onCell: (
     cell: CellOutcome,
     hopSec: number | null,
-    rowStates: { repeat: number; takeIndex: number; hopSec: number | null; chainPull: ChainPull }[]
+    rowStates: CellRowState[]
   ) => void;
   onBuildProbe: (probe: SdkBuildProbe) => void;
 }
@@ -787,6 +847,19 @@ async function runCalibrationAudit(cb: RunCallbacks): Promise<void> {
   const { project, audioContext, capture, calibrating, unitAdapter, deviceId, sdkBuildProbe, buildFeatures, bias } =
     await getContext(rate, bpm);
   cb.onBuildProbe(sdkBuildProbe);
+  // `resolveHarnessPathBias` returns 0 with only a console warning when
+  // `outputLatency` never became readable. On the alignment harness that only
+  // mis-adjusts rows; here the same number is ALSO the virtual output leg the
+  // probe traverses, so a 0 would make every calibration measure a round trip
+  // short by the real output leg and the applied cell land that much late —
+  // a wrong answer that would look like a finding. Refuse instead.
+  if (!(bias.valueSec > 0)) {
+    throw new Error(
+      `audioContext.outputLatency read ${String(bias.valueSec)} after ${bias.settleMs.toFixed(0)} ms — the virtual ` +
+      "output leg would be 0 and every calibration would measure short; the value is read once per page load, " +
+      "so navigate fresh and re-run"
+    );
+  }
   console.log(
     "[input-latency-calibration] run " + String(runToken) +
     " rate=" + String(rate) + " bpm=" + String(bpm) +
@@ -842,9 +915,12 @@ async function runCalibrationAudit(cb: RunCallbacks): Promise<void> {
   // Round trip this chain would show at D = 0, i.e. output leg + chain delay.
   // Seeded from the priming call and re-anchored after every measured row, so the
   // per-point ceiling below is checked against what this run actually measures
-  // rather than a guess. The priming value is the fresh-chain one and understates
-  // the steady state by the ~45 ms step, which is what the headroom absorbs until
-  // the first row re-anchors it.
+  // rather than a guess. On SDK `f0c44b06c` (before the keep-alive sink) the
+  // priming value was the fresh-chain one and understated the steady state by
+  // the ~45 ms step, which the headroom absorbs until the first row re-anchors
+  // it; from `ac1c15ea8` the two agree to within the ~8 ms two-state step.
+  // Only an `ok` row re-anchors: a `noisy` or `no-signal` round trip is the
+  // SDK saying it could not trust that number, so it must not set the ceiling.
   let roundTripAtZeroSec = Number.isFinite(warmup.roundTripSeconds) ? warmup.roundTripSeconds : 0;
   for (const delayMs of delaysMs) {
     const predictedRoundTripSec = roundTripAtZeroSec + delayMs / 1000;
@@ -865,7 +941,9 @@ async function runCalibrationAudit(cb: RunCallbacks): Promise<void> {
     const result = await calibrateThroughLoopback(calibrating, bias.valueSec, false);
     const row: SweepRow = { requestedDelayMs: delayMs, requestedDelaySec: delayMs / 1000, ...result };
     sweep.push(row);
-    if (Number.isFinite(result.roundTripSeconds)) roundTripAtZeroSec = result.roundTripSeconds - delayMs / 1000;
+    if (result.verdict === "ok" && Number.isFinite(result.roundTripSeconds)) {
+      roundTripAtZeroSec = result.roundTripSeconds - delayMs / 1000;
+    }
     cb.onSweepRow(row);
     console.log(
       "[input-latency-calibration] D=" + String(delayMs) + "ms verdict=" + result.verdict +
@@ -952,8 +1030,15 @@ async function runCalibrationAudit(cb: RunCallbacks): Promise<void> {
   const repeatAnalysis = repeatCount > 0 ? summarizeRepeats(repeatCalls, rate, delayCycleMs) : null;
   if (repeatAnalysis !== null) {
     const { summary } = repeatAnalysis;
+    if (summary.usableCalls === 0) {
+      console.warn(
+        "[input-latency-calibration] repeat phase UNUSABLE: none of " + String(summary.calls) +
+        " calls returned a finite round trip (verdicts: " + repeatCalls.map((c) => c.result.verdict).join(",") + ")"
+      );
+    }
     console.log(
       "[input-latency-calibration] repeat summary calls=" + String(summary.calls) +
+      " usableCalls=" + String(summary.usableCalls) +
       " delayCycleMs=[" + summary.delayCycleMs.join(",") + "]" +
       " modeNormalizedRoundTripMs=" + (summary.modeRoundTripSec * 1000).toFixed(4) +
       " modeNormalizedInputMs=" + summary.modeNormalizedInputMs.toFixed(4) +
@@ -982,121 +1067,163 @@ async function runCalibrationAudit(cb: RunCallbacks): Promise<void> {
     " storedEntry=" + (storedEntry === null ? "none" : JSON.stringify(storedEntry))
   );
 
-  // `?armState=fresh`: rebuild the SDK's input chain AFTER storing the
-  // calibration, so take 1 records on a chain whose delay is ~45 ms below the
-  // value just stored. Disarming runs `#stopStream` synchronously; re-arming
-  // runs the stream generator, and `waitForStream` blocks until the new track
-  // reports its id. The stored entry is keyed by device id, which does not
-  // change, so it still resolves — that is exactly the hazard being measured.
-  if (armState === "fresh") {
-    cb.setState("rearm");
-    capture.armed.setValue(false);
-    await sleep(DELAY_SETTLE_MS);
-    capture.armed.setValue(true);
-    const rearmedDeviceId = await waitForStream(capture, STREAM_DEADLINE_MS);
-    console.log("[input-latency-calibration] re-armed before the cell, chain rebuilt, deviceId=" + rearmedDeviceId);
-  }
+  // GATE ON THE APPLIED OUTCOME. The SDK stores an entry only for an `ok` or
+  // `noisy` result with finite numbers; on `no-signal`, `transport-running` or
+  // `no-stream` it stores nothing, and a cell run now would record UNCALIBRATED
+  // and still reach `done` with an ordinary verdict — on the candidate profile a
+  // keep-alive chain lands in band F, so the page would report
+  // `matches-known-defect` for a calibration it never tested. So the cell is
+  // NOT run: the envelope is still persisted (the sweep is evidence on its
+  // own), with `cell.status = "error"`, no rows and the apply verdict in the
+  // detail. An empty row list is what the offline scripts already handle for
+  // an all-failed cell, so the envelope stays parseable.
+  //
+  // A `noisy` applied verdict IS stored and used by the SDK, although the
+  // sweep fit excludes noisy rows; the cell runs, and its detail says so.
+  const appliedNote = applied.verdict === "noisy"
+    ? "applied verdict noisy (the SDK stored and uses it, though the sweep fit excludes noisy rows) — "
+    : "";
+  let cell: CellOutcome;
+  let hopSec: number | null = null;
+  let hopPerRow: number[] = [];
+  let cellRowStates: CellRowState[] = [];
+  if (storedEntry === null) {
+    const detail =
+      `calibration not stored for "${deviceId}": apply verdict ${applied.verdict}` +
+      (applied.reason !== undefined ? ` (${applied.reason})` : "") +
+      " — the cell was NOT run, it would have recorded uncalibrated";
+    console.error("[input-latency-calibration] " + detail);
+    cell = {
+      scenario: CELL_SCENARIO,
+      status: "error",
+      matchedSignature: null,
+      detail,
+      successfulRepeats: 0,
+      errorRepeats: REPEATS_PER_CELL,
+      errors: [detail],
+      rows: [],
+    };
+  } else {
+    // `?armState=fresh`: rebuild the SDK's input chain AFTER storing the
+    // calibration, so take 1 records on a chain the stored value never measured
+    // (on SDK `f0c44b06c`, before the keep-alive sink, ~45 ms below it; from
+    // `ac1c15ea8` the same delay, or ~8 ms above or below it, depending on
+    // which of the two states the rebuild draws). Disarming runs `#stopStream`
+    // synchronously; re-arming runs the stream generator, and `waitForStream`
+    // blocks until the new track reports its id. The stored entry is keyed by
+    // device id, which does not change, so it still resolves — that is exactly
+    // the hazard being measured.
+    if (armState === "fresh") {
+      cb.setState("rearm");
+      capture.armed.setValue(false);
+      await sleep(DELAY_SETTLE_MS);
+      capture.armed.setValue(true);
+      const rearmedDeviceId = await waitForStream(capture, STREAM_DEADLINE_MS);
+      console.log("[input-latency-calibration] re-armed before the cell, chain rebuilt, deviceId=" + rearmedDeviceId);
+    }
 
-  // One nominal-start cell through the alignment harness's own runner, so the
-  // verdict is the campaign metric (classifyCell on the adjusted median plus
-  // the head/tail integrity gates), not a look-alike.
-  const repeats: { rows: AuditRow[]; alignments: CellRepeatResult["alignments"] }[] = [];
-  const cellErrors: string[] = [];
-  for (let repeat = 1; repeat <= REPEATS_PER_CELL; repeat++) {
-    cb.setState(`cell:${CELL_SCENARIO}/r${repeat}`);
-    let stage = "prefs";
-    let result: CellRepeatResult | null = null;
-    clearLastFinalizeProbe();
-    try {
-      result = await runRepeatWithDeadline(
-        (token) => runCellRepeat({
-          project, audioContext, loopback, unitAdapter,
-          scenario: CELL_SCENARIO, bpm, rate, repeat,
-          onStage: (s) => { stage = s; },
-          harnessPathBiasSec: bias.valueSec,
-          token,
-        }),
-        REPEAT_DEADLINE_MS,
-        `${CELL_SCENARIO}/r${repeat}`
-      );
-    } catch (err) {
-      const message = `${stage}: ${err instanceof Error ? err.message : String(err)}`;
-      cellErrors.push(`r${repeat} ${message}`);
-      console.error("[input-latency-calibration] cell repeat " + String(repeat) + " failed: " + message);
+    // One nominal-start cell through the alignment harness's own runner, so the
+    // verdict is the campaign metric (classifyCell on the adjusted median plus
+    // the head/tail integrity gates), not a look-alike.
+    const repeats: { rows: AuditRow[]; alignments: CellRepeatResult["alignments"] }[] = [];
+    const cellErrors: string[] = [];
+    for (let repeat = 1; repeat <= REPEATS_PER_CELL; repeat++) {
+      cb.setState(`cell:${CELL_SCENARIO}/r${repeat}`);
+      let stage = "prefs";
+      let result: CellRepeatResult | null = null;
+      clearLastFinalizeProbe();
+      try {
+        result = await runRepeatWithDeadline(
+          (token) => runCellRepeat({
+            project, audioContext, loopback, unitAdapter,
+            scenario: CELL_SCENARIO, bpm, rate, repeat,
+            onStage: (s) => { stage = s; },
+            harnessPathBiasSec: bias.valueSec,
+            token,
+          }),
+          REPEAT_DEADLINE_MS,
+          `${CELL_SCENARIO}/r${repeat}`
+        );
+      } catch (err) {
+        const message = `${stage}: ${err instanceof Error ? err.message : String(err)}`;
+        cellErrors.push(`r${repeat} ${message}`);
+        console.error("[input-latency-calibration] cell repeat " + String(repeat) + " failed: " + message);
+      }
+      let cleanupWarning: string | null = null;
+      try {
+        cleanupWarning = await resetForNextCell(project, loopback, unitAdapter);
+      } catch (cleanupErr) {
+        cleanupWarning = `cleanup itself threw: ${String(cleanupErr)}`;
+      }
+      if (cleanupWarning !== null) {
+        cellErrors.push(`r${repeat} cleanup warning: ${cleanupWarning}`);
+        console.warn("[input-latency-calibration] cleanup warning: " + cleanupWarning);
+      }
+      if (result !== null) {
+        repeats.push({ rows: result.rows, alignments: result.alignments });
+      }
     }
-    let cleanupWarning: string | null = null;
-    try {
-      cleanupWarning = await resetForNextCell(project, loopback, unitAdapter);
-    } catch (cleanupErr) {
-      cleanupWarning = `cleanup itself threw: ${String(cleanupErr)}`;
-    }
-    if (cleanupWarning !== null) {
-      cellErrors.push(`r${repeat} cleanup warning: ${cleanupWarning}`);
-      console.warn("[input-latency-calibration] cleanup warning: " + cleanupWarning);
-    }
-    if (result !== null) {
-      repeats.push({ rows: result.rows, alignments: result.alignments });
-    }
-  }
 
-  const alignments: TakeAlignment[] = repeats.flatMap((r) => r.alignments.map((a) => a.alignment));
-  const classification: CellClassification =
-    alignments.length > 0
-      ? classifyCell(alignments, signatureBandsFor(CELL_SCENARIO, sdkBuildProbe, runToken, buildFeatures), ALIGNED_TOLERANCE_MS)
-      : { status: "investigate", matchedSignature: null, detail: "no successful repeats to classify" };
-  const cellRows = repeats.flatMap((r) => r.rows);
-  for (const row of cellRows) {
-    row.status = classification.status;
-    row.matchedSignature = classification.matchedSignature;
-    row.detail = classification.detail;
-  }
-  if (repeats.length === 0) {
-    // No rows exist to carry it, so the finalize probe of the last failed
-    // attempt is reported here — a hung finalization is exactly the case a
-    // fully-failed cell needs explained.
-    console.warn("[input-latency-calibration] cell produced no rows; last finalize probe: " +
-      JSON.stringify(takeLastFinalizeProbe()));
-  }
+    const alignments: TakeAlignment[] = repeats.flatMap((r) => r.alignments.map((a) => a.alignment));
+    const classification: CellClassification =
+      alignments.length > 0
+        ? classifyCell(alignments, signatureBandsFor(CELL_SCENARIO, sdkBuildProbe, runToken, buildFeatures), ALIGNED_TOLERANCE_MS)
+        : { status: "investigate", matchedSignature: null, detail: "no successful repeats to classify" };
+    const detail = appliedNote + classification.detail;
+    const cellRows = repeats.flatMap((r) => r.rows);
+    for (const row of cellRows) {
+      row.status = classification.status;
+      row.matchedSignature = classification.matchedSignature;
+      row.detail = detail;
+    }
+    if (repeats.length === 0) {
+      // No rows exist to carry it, so the finalize probe of the last failed
+      // attempt is reported here — a hung finalization is exactly the case a
+      // fully-failed cell needs explained.
+      console.warn("[input-latency-calibration] cell produced no rows; last finalize probe: " +
+        JSON.stringify(takeLastFinalizeProbe()));
+    }
 
-  const rowHopSec = (row: AuditRow): number | null => {
-    if (row.firstQuantumTimeSec === undefined || row.anchorT0Sec === null || row.anchorT0Sec === undefined) return null;
-    const hop = row.firstQuantumTimeSec - row.anchorT0Sec;
-    return Number.isFinite(hop) ? hop : null;
-  };
-  const hopPerRow = cellRows.map(rowHopSec).filter((value): value is number => value !== null);
-  const hopSec = median(hopPerRow);
-  // In `fresh` mode repeat 1 is the first pull on the rebuilt chain; in `steady`
-  // mode the priming/sweep/applied calls already pulled it, so every repeat is a
-  // reused pull.
-  const cellRowStates = cellRows.map((row) => ({
-    repeat: row.repeat,
-    takeIndex: row.takeIndex,
-    hopSec: rowHopSec(row),
-    chainPull: (armState === "fresh" && row.repeat === 1 ? "first-after-arm" : "reused") as ChainPull,
-  }));
-  console.log(
-    "[input-latency-calibration] cellRowStates armState=" + armState + " " +
-    cellRowStates
-      .map((r) => "r" + String(r.repeat) + ":" + r.chainPull + ":" +
-        (r.hopSec === null ? "n/a" : (r.hopSec * 1000).toFixed(3) + "ms"))
-      .join(" ")
-  );
-  const cell: CellOutcome = {
-    scenario: CELL_SCENARIO,
-    status: classification.status,
-    matchedSignature: classification.matchedSignature,
-    detail: classification.detail,
-    successfulRepeats: repeats.length,
-    errorRepeats: REPEATS_PER_CELL - repeats.length,
-    errors: cellErrors,
-    rows: cellRows,
-  };
+    const rowHopSec = (row: AuditRow): number | null => {
+      if (row.firstQuantumTimeSec === undefined || row.anchorT0Sec === null || row.anchorT0Sec === undefined) return null;
+      const hop = row.firstQuantumTimeSec - row.anchorT0Sec;
+      return Number.isFinite(hop) ? hop : null;
+    };
+    hopPerRow = cellRows.map(rowHopSec).filter((value): value is number => value !== null);
+    hopSec = median(hopPerRow);
+    // In `fresh` mode repeat 1 is the first pull on the rebuilt chain; in `steady`
+    // mode the priming/sweep/applied calls already pulled it, so every repeat is a
+    // reused pull.
+    cellRowStates = cellRows.map((row) => ({
+      repeat: row.repeat,
+      takeIndex: row.takeIndex,
+      hopSec: rowHopSec(row),
+      chainPull: (armState === "fresh" && row.repeat === 1 ? "first-after-arm" : "reused") as ChainPull,
+    }));
+    console.log(
+      "[input-latency-calibration] cellRowStates armState=" + armState + " " +
+      cellRowStates
+        .map((r) => "r" + String(r.repeat) + ":" + r.chainPull + ":" +
+          (r.hopSec === null ? "n/a" : (r.hopSec * 1000).toFixed(3) + "ms"))
+        .join(" ")
+    );
+    cell = {
+      scenario: CELL_SCENARIO,
+      status: classification.status,
+      matchedSignature: classification.matchedSignature,
+      detail,
+      successfulRepeats: repeats.length,
+      errorRepeats: REPEATS_PER_CELL - repeats.length,
+      errors: cellErrors,
+      rows: cellRows,
+    };
+  }
   cb.onCell(cell, hopSec, cellRowStates);
   console.log(
-    "[input-latency-calibration] cell status=" + classification.status +
-    " repeats=" + String(repeats.length) + "/" + String(REPEATS_PER_CELL) +
+    "[input-latency-calibration] cell status=" + cell.status +
+    " repeats=" + String(cell.successfulRepeats) + "/" + String(REPEATS_PER_CELL) +
     " harnessLoopbackHopMs=" + (hopSec === null ? "n/a" : (hopSec * 1000).toFixed(3)) +
-    " detail=" + classification.detail
+    " detail=" + cell.detail
   );
 
   cb.setState("uploading");
@@ -1132,7 +1259,7 @@ function verdictColor(verdict: CalibrationVerdict): "green" | "amber" | "red" {
   return "red";
 }
 
-function statusColor(status: CellClassification["status"]): "green" | "amber" | "red" | "gray" {
+function statusColor(status: CellOutcome["status"]): "green" | "amber" | "red" | "gray" {
   if (status === "aligned") return "green";
   if (status === "matches-known-defect") return "amber";
   if (status === "investigate" || status === "error") return "red";
@@ -1160,10 +1287,12 @@ function CalibrationHarness() {
   const [storedEntry, setStoredEntry] = useState<CalibrationEntry | null>(null);
   const [cell, setCell] = useState<CellOutcome | null>(null);
   const [hopSec, setHopSec] = useState<number | null>(null);
-  const [rowStates, setRowStates] = useState<
-    { repeat: number; takeIndex: number; hopSec: number | null; chainPull: ChainPull }[]
-  >([]);
-  const armState = resolveArmState(params.get("armState"));
+  const [rowStates, setRowStates] = useState<CellRowState[]>([]);
+  // Display only — NOT validated here. `resolveArmState` throws on a bad value,
+  // and a throw during render would unmount the root before `#audit-state`
+  // exists; the run validates it (with every other param) inside
+  // `runCalibrationAudit`, where a rejection lands on the state badge.
+  const armStateLabel = params.get("armState") ?? "steady";
 
   const handleRun = useCallback(() => {
     if (running) return;
@@ -1213,7 +1342,7 @@ function CalibrationHarness() {
             Input-Latency Calibration — Ground Truth
           </Heading>
           <Text size="1" color="gray" align="center">
-            build: {buildProbe} · armState: {armState}
+            build: {buildProbe} · armState: {armStateLabel}
           </Text>
 
           <Card>
@@ -1307,7 +1436,8 @@ function CalibrationHarness() {
               {applied === null
                 ? "applied: pending"
                 : `priming (fresh):   ${warmup === null ? "—" : ms(warmup.inputLatencySeconds)} ms (discarded from the fit)
-applied verdict:   ${applied.verdict}
+applied verdict:   ${applied.verdict}${applied.reason !== undefined ? ` (${applied.reason})` : ""}
+probe:             ${applied.probe ?? "(not reported — build predates the configurable probe)"}
 input part:        ${ms(applied.inputLatencySeconds)} ms
 round trip:        ${ms(applied.roundTripSeconds)} ms
 output latency:    ${ms(applied.outputLatencySeconds)} ms (reported: ${String(applied.outputLatencyReported)})
@@ -1341,8 +1471,11 @@ chain state:       ${rowStates.map((r) => `r${r.repeat} ${r.chainPull} ${r.hopSe
                 Repeat phase — one-quantum miss rate
               </Heading>
               <pre style={{ margin: 0, fontSize: "0.85rem", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
-                {`calls:              ${repeatSummary.calls}, delay cycle [${repeatSummary.delayCycleMs.join(", ")}] ms
-modal round trip:   ${ms(repeatSummary.modeRoundTripSec)} ms (delay removed) on ${repeatSummary.modeCount}/${repeatSummary.calls} calls
+                {repeatSummary.usableCalls === 0
+                  ? `calls:              ${repeatSummary.calls}, delay cycle [${repeatSummary.delayCycleMs.join(", ")}] ms
+PHASE UNUSABLE:     no call returned a finite round trip (every verdict non-ok) — no mode, no miss count`
+                  : `calls:              ${repeatSummary.calls} (${repeatSummary.usableCalls} usable), delay cycle [${repeatSummary.delayCycleMs.join(", ")}] ms
+modal round trip:   ${ms(repeatSummary.modeRoundTripSec)} ms (delay removed) on ${repeatSummary.modeCount}/${repeatSummary.usableCalls} usable calls
 input minus delay:  ${repeatSummary.modeNormalizedInputMs.toFixed(4)} ms
 after a delay change: ${repeatSummary.missesAfterDelayChange}/${repeatSummary.callsAfterDelayChange} missed · same delay: ${repeatSummary.missesAfterSameDelay}/${repeatSummary.callsAfterSameDelay}
 render quantum:     ${ms(repeatSummary.renderQuantumSec)} ms
@@ -1368,8 +1501,9 @@ ${repeatSummary.missAnchorVerdicts.length === 0
 ?rate=<number>        default 48000 — sets the AudioContext at init, never "all"
 ?armState=steady|fresh default steady — "fresh" re-arms before the cell, so take 1
                       is the first pull on a rebuilt SDK input chain
-?defaultInput=1       arm on the SDK's default input (box names no device), the
-                      only configuration where the audio chain is reused
+?defaultInput=1       arm on the SDK's default input (box names no device): exercises
+                      the SDK's unnamed-box chain-reuse rule; the named mode reuses its
+                      chain on this page too, since the loopback reports the id back
 ?repeat=<n>           default 0 — after the sweep, run n more calibrations back to
                       back on the same chain, CYCLING the delays ?delays= names,
                       and report the one-quantum miss rate

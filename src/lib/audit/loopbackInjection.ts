@@ -14,6 +14,8 @@
  * getUserMedia hands out stream CLONES so a consumer's track.stop() (tape
  * disarm/remove) cannot kill the source stream.
  */
+import { withDeadline } from "@/lib/deadline";
+
 export const LOOPBACK_DEVICE_ID = "loopback-injection";
 export const LOW_BAND_CUTOFF_HZ = 1500;
 export const REF_CLICK_HZ = 6000;
@@ -185,8 +187,20 @@ export interface LoopbackHandle {
    * destination, which has no outputs of its own to tap. The wrapper is armed
    * for as short a window as possible and skips the engine node (already in
    * the low band), so a stray connection from elsewhere cannot be teed in.
+   *
+   * The deadline is owned HERE, not by a `withDeadline` wrapped around the
+   * call: an outer race cannot reach this function's `finally`, so on a timeout
+   * the prototype patch would stay armed and every later calibration on the
+   * page would tee its probe twice. With `deadlineMs` given, a timeout rejects
+   * with `label` AND restores the prototype and disconnects every teed node;
+   * without it `fn` is waited on unbounded (the caller owns the wait).
    */
-  captureDestinationDuring<T>(virtualOutputDelaySec: number, fn: () => Promise<T>): Promise<T>;
+  captureDestinationDuring<T>(
+    virtualOutputDelaySec: number,
+    fn: () => Promise<T>,
+    deadlineMs?: number,
+    label?: string
+  ): Promise<T>;
   uninstall(): void;
 }
 
@@ -199,8 +213,9 @@ export interface LoopbackOptions {
    *
    * Leaving the capture box's `deviceId` unset is not enough on its own:
    * `CaptureAudio.#updateStream` falls back to `AudioDevices.defaultInput`, which
-   * is the first entry of the enumerated input list, and this module normally
-   * puts its synthetic devices at the head of that list — so the SDK would name
+   * prefers the enumerated input whose id is `"default"` and otherwise takes the
+   * first entry of the list, and this module normally puts its synthetic devices
+   * at the head of that list — so the SDK would name
    * the loopback by id anyway and the request would carry an exact-device
    * constraint. With this option `enumerateDevices` reports NO audio inputs at
    * all (the synthetic ones are withheld and real ones filtered, so the SDK
@@ -350,7 +365,12 @@ export function installLoopbackCapture(deviceCount: number = 1, options: Loopbac
       returnDelay.delayTime.value = value;
       console.log("[loopbackInjection] returnDelaySec=" + value.toFixed(6));
     },
-    async captureDestinationDuring<T>(virtualOutputDelaySec: number, fn: () => Promise<T>): Promise<T> {
+    async captureDestinationDuring<T>(
+      virtualOutputDelaySec: number,
+      fn: () => Promise<T>,
+      deadlineMs?: number,
+      label: string = "captureDestinationDuring"
+    ): Promise<T> {
       if (context === null || outputLegDelay === null || teeInput === null) {
         throw new Error("loopbackInjection: captureDestinationDuring before attach()");
       }
@@ -359,22 +379,39 @@ export function installLoopbackCapture(deviceCount: number = 1, options: Loopbac
       const leg = clampDelay(virtualOutputDelaySec);
       outputLegDelay.delayTime.value = leg;
       const nativeConnect = AudioNode.prototype.connect;
-      let teed = 0;
+      // Every connection this window teed, so the restore can undo it: a probe
+      // source the SDK leaves connected to the destination would otherwise stay
+      // teed into the return path after the window closed.
+      const teed: { node: AudioNode; output: number | undefined }[] = [];
       const patched = function (this: AudioNode, target: AudioNode | AudioParam, output?: number, input?: number) {
         const result = nativeConnect.call(this, target as AudioNode, output as number, input as number);
         if (target === destination && this !== engineNode) {
           nativeConnect.call(this, tee, output as number);
-          teed++;
+          teed.push({ node: this, output });
         }
         return result;
       };
       AudioNode.prototype.connect = patched as typeof AudioNode.prototype.connect;
       console.log("[loopbackInjection] destination tee armed, virtualOutputDelaySec=" + leg.toFixed(6));
       try {
-        return await fn();
+        return deadlineMs === undefined ? await fn() : await withDeadline(fn(), deadlineMs, label);
       } finally {
         AudioNode.prototype.connect = nativeConnect;
-        console.log("[loopbackInjection] destination tee disarmed, teedConnections=" + String(teed));
+        let disconnected = 0;
+        for (const { node, output } of teed) {
+          try {
+            if (output === undefined) node.disconnect(tee); else node.disconnect(tee, output);
+            disconnected++;
+          } catch {
+            // Already disconnected (the SDK tears its probe source down after the
+            // measurement) — `disconnect` throws InvalidAccessError on a
+            // connection that no longer exists, which is the state we want.
+          }
+        }
+        console.log(
+          "[loopbackInjection] destination tee disarmed, teedConnections=" + String(teed.length) +
+          " disconnectedOnRestore=" + String(disconnected)
+        );
       }
     },
     uninstall() {

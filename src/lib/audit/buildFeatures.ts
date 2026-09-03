@@ -21,7 +21,8 @@
  * The keep-alive sink has NO detectable surface — it is a graph edge inside
  * `#rebuildAudioChain`, not a member — so it is deliberately absent here rather
  * than guessed at from a source fetch or inferred from a measurement. What the
- * profile keys on is `calibrateInputLatency`; see `profileKeyFor` in
+ * profile keys on is `latencyProbes` (NOT `calibrateInputLatency`, which the
+ * pre-sink calibration build exposes too); see `profileKeyFor` in
  * recordingAuditCalibration.ts for that rule and its known limit.
  *
  * This module imports the SDK, so it is used by the browser harnesses only; the
