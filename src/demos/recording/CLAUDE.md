@@ -504,6 +504,88 @@ rows), `harnessLoopbackHopPerRowSec` and `cellRowStates` (the harness's own
 **`getUserMediaOpens` is cumulative per page load**, not per run — a "Re-run" persists the
 total since load, so navigate fresh per run if the count is the evidence.
 
+**Real-input mode (`?input=real`).** Same page, same SDK routine, against a PHYSICAL
+input instead of the synthetic loopback — the evidence the loopback cannot give: the
+detector's hit rate on a real device and the answer's repeatability there.
+
+```
+input-latency-calibration-debug-demo.html?input=real&rate=48000&bpm=120
+    &repeat=<n>&armState=steady|fresh&deviceId=<id>&label=<text>
+```
+
+- Nothing of the loopback is installed in this mode (no `getUserMedia` override, no
+  DelayNode, no destination tee; `loopback` is `null` and every loopback-only path throws
+  through `requireLoopback()`). `?delays=` and `?defaultInput=` are rejected.
+- `?repeat=` defaults to 10 (1–200): the run IS the repeat phase — N direct
+  `calibrateInputLatency({})` calls on the chosen device, then one `{apply: true}`.
+  `?armState=fresh` disarms and re-arms HALFWAY through (after call ⌈N/2⌉), so the second
+  half measures a chain the SDK rebuilt; each persisted call carries `chainIndex` 0/1.
+- `?deviceId=` preselects an enumerated input; `?label=` prefills the free-text run label
+  (persisted as `runLabel` — say what was plugged in: "cable loopback", "laptop mic +
+  speakers").
+- No applied take cell: `cell.status` is `"skipped"` (its reference clicks and band split
+  assume the loopback tap). No injected delay: `sweep: []`, `fit: null`. The probe
+  traverses the real output device, so `harnessPathBiasSec` is 0 and a 0
+  `audioContext.outputLatency` read is recorded (`outputLatencyAtStartSec`,
+  `outputLatencyAfterFirstCallSec`, `baseLatencySec`), not refused.
+- A call that throws or times out is persisted as an `error` row (verdict `"error"`, the
+  message in `reason`, NaN figures) and the run continues — one deadline must not lose the
+  calls before it. `getUserMediaOpens` counts the page's ACTUAL opens since load, the label
+  unlock included (expected 2 on a steady run and 3 on a fresh one — not yet measured: the
+  six 2026-09-03 envelopes predate the counter and persist the arm count, 1 or 2, and no
+  `armedStreamDeviceIds`). The stored entry is looked up under the stream the apply ran on
+  (`deviceId`); every armed stream's id is in `armedStreamDeviceIds`, and
+  `streamDeviceIdChanged` says whether a re-arm reported a different one. Every arm also
+  compares the reported id with the REQUESTED one: the SDK's `#updateStream` falls back to
+  the default input when `{exact: deviceId}` fails (a console.warn only), so
+  `deviceFallback` / `requestedDeviceId` / `arms` (per chain: ids, fallback flag, the
+  track's `getSettings()` re-read after each re-arm, also `trackSettingsPerChain`) label
+  the run instead of throwing. A re-arm that fails is an `error` row, the envelope is still
+  uploaded, and the run ends `error:<message>`. Real mode persists `repeatSummary: null`
+  and `repeats` as the SDK `Result` plus `index`/`chainIndex` only — never the loopback
+  page's pooled-mode per-row fields — `realSummary` is the authority (the six 2026-09-03
+  envelopes predate this and carry a pooled `repeatSummary` and per-row miss flags to be
+  ignored). The status trail is cumulative per page load (setup → device at load, then the
+  run's stages, `rearming` on a fresh run).
+- Envelope additions: `inputMode: "real"`, `runLabel`, `device` (`deviceId`/`label`/
+  `groupId`), `trackSettings` (the armed track's `getSettings()`: deviceId, latency,
+  sampleRate, channelCount, echo/noise/AGC flags — proof of the processing state and the
+  browser's own latency figure), `realSummary` (`src/lib/audit/realInputSummary.ts`,
+  pure + tested: counts per verdict, usable-call stats, and PER CHAIN the modes, clusters
+  and round-trip states; a descriptive `repeatable` / `two-state` / `scattered` /
+  `unusable` verdict decided on the chain's clusters (steady) or on the two chain medians
+  (fresh), `verdictBasis` says which — no band, no pass/fail). Three things a call off
+  its chain's mode can be are kept apart: `anchorDisagreements` (A vs B > ½ quantum, the
+  SDK's detector), `stateTransitions` (a ≥ ½-quantum step from the previous agreeing call,
+  anchors agreeing — counted on a last call too; `confirmedByFollowingCall` says whether a
+  later agreeing call held the new state; `isOneQuantumStep` within 25 % of a quantum) and
+  `isolatedDeviations` (one call off, anchors agreeing, previous and next at the mode —
+  expected 0; a chain's off FIRST call is `firstCallOff` instead). Clusters are read on
+  the input part unless `outputLatencyReported` flips within the run, then on the round
+  trip (`verdictSeries`).
+  Never judge a fresh run's second chain against the pooled mode: the rebuilt chain lands
+  where it lands, and that difference is `chainMedianDifferenceQuanta` only. Loopback
+  envelopes gain only `inputMode: "loopback"`. `#real-verdict` carries `data-verdict`.
+- Run recipe: serve the calibration-branch build through `SDK_DIST_OVERRIDE`; open the URL
+  on a visible window; grant the mic permission (the page asks once to unlock device
+  labels); pick the device in the select and type a label; click Start with a REAL click.
+  Acoustic case: keep the room quiet — every call plays three audible bursts out of the
+  speakers, and the mic must hear them. Cable case: route the interface's output into the
+  chosen input physically. One fresh navigation per run.
+- **Measured so far** (2026-09-03, branch `9d0cccb88`, Chrome/macOS): ONE device — a MacBook
+  Pro built-in microphone, acoustically — six runs (2 + 5 × 30 calls; 48 and 44.1 kHz; steady
+  and fresh). Every call 3/3 bursts at 30.55–38.16 dB; round trip constant to ≤ 0.024 frame
+  within a chain state; the browser's track `latency` (0.002666 s) sits 35–63 ms under the
+  measured input part; the second-anchor detector's first real hit (1 in 152, anchor B one
+  quantum off, A at the mode); the input path stepping DOWN one render quantum mid-chain and
+  holding (2 of 5 chains at 48 kHz, 0 of 3 at 44.1) — a stored calibration 2.67 ms off until
+  recalibrated, and invisible to the anchor check by construction; page loads ~24 ms apart at
+  48 kHz, re-arms under one quantum, neither on a 32- or 128-frame lattice. NOT measured: a
+  cable loopback, other browsers/devices, a take cell on a real path. Tables, findings with
+  status, what remains: `debug/recording-start-alignment-audit.md`, section "Real-device
+  calibration (2026-09-03)"; recompute with
+  `node scripts/audit/recording-alignment/task12c-real-input-tables.ts [runs|chains|events|all]`.
+
 **Branch API shim.** `calibrateInputLatency`, `clearInputLatencyCalibration` and
 `recording.inputLatencyCalibrations` exist only on the upstream calibration branch, and this
 repo's tsc resolves `@opendaw/*` types from the installed release, so the page reaches them
@@ -512,8 +594,10 @@ the check when a release ships the API. The page needs the branch build served t
 `SDK_DIST_OVERRIDE` and says so when it is missing.
 
 Measurements, findings and what remains: `debug/recording-start-alignment-audit.md`,
-section "Input-latency calibration (2026-09-02)". Offline recomputation:
-`node scripts/audit/recording-alignment/task12b-calibration-tables.ts`.
+section "Input-latency calibration (2026-09-02)" (loopback) and "Real-device calibration
+(2026-09-03)". Offline recomputation:
+`node scripts/audit/recording-alignment/task12b-calibration-tables.ts` (loopback) and
+`node scripts/audit/recording-alignment/task12c-real-input-tables.ts` (real device).
 
 ## Reference Files
 - Recording demo: `src/demos/recording/recording-api-react-demo.tsx`

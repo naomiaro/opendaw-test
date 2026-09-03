@@ -244,7 +244,7 @@ What this campaign has put upstream, or has ready to:
 |---|---|---|
 | PR [#376](https://github.com/andremichelle/openDAW/pull/376) — anchor takes on the engine's own recording start | the one-shot `recordingStart` engine report, the processor's first-frame time, the finalization hang and the `#finalize` head drop | **posted** (fork branch `naomiaro:fix/recording-start-alignment`); measured before/after under "Task 9: best-fix rework" |
 | PR [#378](https://github.com/andremichelle/openDAW/pull/378) — apply the input latency the browser reports | `InputLatency.resolve` and the `Reported` default, bounded and read after output has started | **posted**; the branch below stacks on it |
-| PR [#380](https://github.com/andremichelle/openDAW/pull/380) — loopback input-latency calibration | the loopback calibration routine (`InputLatencyCalibration.measure`, `CaptureAudio.calibrateInputLatency`, the per-device store, the `calibrated` resolver rung, the keep-alive sink, the chain-reuse fix, the second capture anchor), upstream final head `b51951082` (figures measured at `66021385`) | **posted** 2026-09-03 (fork branch `naomiaro:feat/input-latency-calibration`, stacks on #378 and #376); measurements and open findings under "Input-latency calibration (2026-09-02)" |
+| PR [#380](https://github.com/andremichelle/openDAW/pull/380) — loopback input-latency calibration | the loopback calibration routine (`InputLatencyCalibration.measure`, `CaptureAudio.calibrateInputLatency`, the per-device store, the `calibrated` resolver rung, the keep-alive sink, the chain-reuse fix, the second capture anchor), upstream PR head `9d0cccb88` (figures measured at `66021385`; the real-device runs at `9d0cccb88` — the measurement code is the same, see the head reconciliation in the calibration section) | **posted** 2026-09-03 (fork branch `naomiaro:feat/input-latency-calibration`, stacks on #378 and #376); measurements and open findings under "Input-latency calibration (2026-09-02)"; **real device measured** 2026-09-03 — six acoustic runs on a built-in microphone, section "Real-device calibration (2026-09-03)" |
 
 One PR-description draft (`pr-recording-start-alignment.md`, rewritten in Task 9 around
 the reworked fix with branch-measured before/after) and **two** issue drafts under
@@ -3041,8 +3041,10 @@ reports a figure that does not describe the device in use — the residual #374 
 branch adds a loopback calibration routine to the SDK that measures that delay, and this repo
 adds a ground-truth page that measures the routine against a delay it injects itself.
 
-**Upstream branch:** `feat/input-latency-calibration`, final head **`b51951082`**, on top of the
-merge of PR #376 and PR #378. Fourteen commits up to `66021385` — the head every measurement
+**Upstream branch:** `feat/input-latency-calibration`, PR head **`9d0cccb88`** (34 commits by
+GitHub's count from base `4a9f183f6`, which includes the merged #376/#378 commits; 27 by
+`rev-list` from the fourteen onward), on
+top of the merge of PR #376 and PR #378. Fourteen commits up to `66021385` — the head every measurement
 below was taken at — then four more, covered in the note after this list. The fourteen: the MLS
 generator, the FFT correlation and peak refinement, `analyzeBursts` and the worker protocol, the worker executor and sender, the
 capture worklet, `InputLatencyCalibration.measure`, the per-device store and the `calibrated`
@@ -3051,9 +3053,9 @@ polarity-tolerant peak search, the stored-spread clamp, the keep-alive sink (`ac
 configurable probe (`3484e3265`), the unstamped-capture chain reuse (`546b5bfaa`) and the
 second capture anchor (`66021385`). **Filed** as PR [#380](https://github.com/andremichelle/openDAW/pull/380) on 2026-09-03.
 
-Every measurement in this section was taken at or below `66021385`; the branch's **final head is
-`b51951082`**, five commits above it, none of which touches the measurement, the protocol or the
-analysis. `e539e543f` plays the probe through the context destination unconditionally (see
+Every measurement in this section was taken at or below `66021385`; `b51951082`, five commits
+above it, is the head the PR was filed at, and none of the five touches the measurement, the
+protocol or the analysis. `e539e543f` plays the probe through the context destination unconditionally (see
 Method), `b8e08b97e` makes the terminator tear the audio chain down (finding 3), `a9df2da18`
 refuses `Options` that would hang the wait (`burstCount` not a positive integer, a
 non-positive or non-finite `burstSpacingSeconds`, a non-finite `gainDb` — each of which left the
@@ -3061,6 +3063,32 @@ last burst's scheduled end NaN, which the default clock wait can neither reach n
 `bca9dcb5e` is review polish, and `b51951082` corrects the second-anchor comment's own count of
 the one-quantum observation to the 1-in-29 this section derives. Test counts at `bca9dcb5e`,
 which `b51951082` does not change: lib-dsp 14 files / 137, studio-core 48 files / 511.
+
+**Head reconciliation.** The PR's head is now **`9d0cccb88`**, 8 commits above `b51951082` by
+`git rev-list` — 6 on the branch's first parent, two of them merges of
+`fix/recording-start-alignment` that bring in `38d453c6c` (drop a recording-start report
+belonging to an earlier recording) and `2bbc9ee39` (start the processor's recording generation
+below the client's); the other four are `4ae040cc8` (a type guard on nested preference labels
+in the studio app) and three on `InputLatencyCalibration.ts`: `d2780316d` (the scheduling
+runs inside a `Promises.tryCatch` closure, so a capture node that throws on construction
+takes the gain node off the output), `1d0a864e2` (the capture's stop is bounded, and a
+rejected stop returns `context-not-running` instead of hanging) and `9d0cccb88` (that return
+carries reason "capture delivered no frames"). Read-only `git diff 66021385..9d0cccb88` over
+`packages/lib/dsp/src/latency-calibration.ts` and
+`packages/studio/core/src/capture/InputLatencyCalibration.ts` (70 insertions, 36 deletions):
+the dsp file changes by **one guard in `analyzeBursts`** (`bca9dcb5e`) that skips a burst whose
+capture start time is NaN — a capture that never saw input — instead of letting it fall through
+into an empty subarray; for a finite start time the window, the correlation and the peak
+refinement are byte-for-byte the same. The core file changes by the option refusal
+(`a9df2da18`), the doc comment's count (`b51951082`), the `NoFramesReason` constant, the two
+`tryCatch` wrappers around the capture stop and its disconnect, and the closure above; the
+lead-in, the burst start times, the second anchor's opening instant
+(`firstBurst + min(referenceSeconds, burstSpacingSeconds)`) and the final wait are the same
+expressions. **So a call that completes runs the same measurement code at `9d0cccb88` as at
+`66021385`**, and the real-device runs (section "Real-device calibration (2026-09-03)", served
+from `9d0cccb88`) are comparable with the loopback runs above. Test counts at `9d0cccb88`:
+lib-dsp 14 files / 137, studio-core 48 files / **512** (the bounded stop adds one test, per the
+PR's Verification section).
 
 **Design spec:** `docs/superpowers/specs/2026-09-02-input-latency-calibration-design.md` and its
 plan, both deleted in the PR that completes this work per repo convention — recovery:
@@ -3139,7 +3167,10 @@ the 32-frame lattice, the one-quantum calibration miss, or the +1.2 ms constant 
 unknown, and the real-device run is the only evidence that could say so. The chain-reuse path
 on `546b5bfaa` is supported by two consistent runs plus a `getUserMediaOpens: 1` on each
 envelope, not by an SDK-side observation; the multitrack `AudioFileBox` collision (#375) still
-loses 3 of 6 multitrack repeats.
+loses 3 of 6 multitrack repeats. *Since measured, on one device — section "Real-device
+calibration (2026-09-03)": the two chain states and the 32-frame lattice do not appear on it,
+the one-quantum step does and holds, and the residual is still unmeasured because no take was
+recorded on the real path.*
 
 These four sentences are the referee's, with **seven departures** — four figures the
 recomputation in `task12b-calibration-tables.ts` disagreed with, and three places where a
@@ -3478,8 +3509,9 @@ it rests on a single surviving repeat. It must never be quoted as takes landing 
    does not buffer before the first render. The branch's keep-alive sink (`ac1c15ea8`) connects
    the source to a zero-gain node on the destination for the chain's life, so the node is
    rendered from creation and the ratchet never engages; both arm states then measure ~21 ms.
-   The mechanism is **inferred from timing, not read from browser source**, and no real
-   microphone has been measured.
+   The mechanism is **inferred from timing, not read from browser source**. A real microphone
+   has since been measured (section "Real-device calibration (2026-09-03)"): its chains show
+   neither the ~45 ms ratchet nor the loopback's two-state 8–9 ms step.
 2. **The stop path truncates input in flight beyond its incidental post-stop margin — OPEN,
    no longer exercised.** `tailMissingMs ≡ hop − postStopCapture` in every row, independent of
    the applied calibration, and it appeared uncalibrated on the same stream (5.6–34.3 ms). The
@@ -3535,10 +3567,11 @@ it rests on a single surviving repeat. It must never be quoted as takes landing 
 
 ### What remains
 
-- **The real-device run.** A microphone and speakers instead of the digital loopback, to check
-  whether a real device track shows the two chain states, the 32-frame lattice, the one-quantum
-  miss or the +1.15 ms residual. Not run: it needs a person present to allow the microphone
-  prompt, and the campaign ran unattended.
+- **The real-device run — RUN on 2026-09-03**, a laptop microphone and speakers, six runs:
+  section "Real-device calibration (2026-09-03)" below. Neither the two chain states nor the
+  32-frame lattice appear on it; the one-quantum step does, and holds; the +1.15 ms residual is
+  still unmeasured there, since no take is recorded on a real path. Still open from that
+  section: a cable loopback, other browsers and devices, and the applied cell on a real path.
 - **Finding 2 (stop-path truncation)** as an upstream issue; it is drafted nowhere yet. It is
   the only finding here still open — finding 3 is fixed on the branch, microphone release
   included, leaving one residual too small to file on its own: the terminator does not discard
@@ -3569,4 +3602,212 @@ it rests on a single surviving repeat. It must never be quoted as takes landing 
 | chain-reuse build, four runs + the one-quantum miss | `calib-summary-1788389912522/…1788389998986/…1788390783792/…1788391548108.json` |
 | chain-reuse build, alignment cells | `recaudit-summary-1788390078851.json`, `…1788390134814.json`, `…1788390729375.json`, `…1788391499692.json` (the last two `defaultInput=1`) |
 | second-anchor batches, 122 calls | `calib-summary-1788392793660/…1788392963167/…1788393319769/…1788393692168.json` |
-| offline recomputation | `.verify-output/task12b-calibration-tables.txt`, `.verify-output/task12a-keepalive-classification.txt` |
+| real device, six runs (section "Real-device calibration (2026-09-03)") | `calib-summary-1788463872683/…1788463933323/…1788464100870/…1788464254347/…1788464404625/…1788464591756.json` |
+| offline recomputation | `.verify-output/task12b-calibration-tables.txt`, `.verify-output/task12a-keepalive-classification.txt`, `.verify-output/task12c-real-input-tables.txt` |
+
+## Real-device calibration (2026-09-03)
+
+The run the section above closes on as unmeasured. The same routine, the same page in its
+`?input=real` mode, against a **physical microphone**: the MacBook Pro's built-in microphone
+("MacBook Pro Microphone (Built-in)"), fed **acoustically** — the probe plays out of the laptop's
+speakers and comes back through the room — in Chrome on macOS, with the calibration branch
+served through `SDK_DIST_OVERRIDE` at **`9d0cccb88`**. Six runs: one two-call Playwright smoke
+run, then five thirty-call acoustic runs, at 48 and 44.1 kHz, `armState=steady` and `fresh`.
+Every call is a direct `calibrateInputLatency({})` on the armed capture and the run ends with
+one `{apply: true}`; a `fresh` run disarms and re-arms after call 15, so its second fifteen
+calls measure a chain the SDK rebuilt (`chainIndex` 1). No delay is injected and no take is
+recorded, so there is no slope and no applied cell here — what a real device can show is
+whether the detector hits, how repeatable the answer is, what the browser's own latency figure
+is worth, and whether the chain states, the lattice and the one-quantum step of the loopback
+appear on a real path.
+
+**The acoustic caveat.** The air path from the speakers to the microphone is inside every
+"input part" below — of the order of 1 ms at a laptop's speaker-to-microphone distance — and
+so is whatever the room adds; nothing here can separate it from the device's own delay. That
+takes a cable loopback through an interface, which was not measured. The figures are therefore
+about the routine and about this path, not a datasheet value for the microphone.
+
+**Every figure below was recomputed from the six envelopes** by
+`node scripts/audit/recording-alignment/task12c-real-input-tables.ts [runs|chains|events|all]`,
+from the per-call fields only — never from the page's persisted `realSummary` or
+`repeatSummary`. The one half-quantum state rule and the frame-resolution mode are imported from
+`src/lib/audit/realInputSummary.ts`, so the classifications agree with the page's by
+construction; the tables are the script's own. Its `all` output is persisted as
+`.verify-output/task12c-real-input-tables.txt` (the byte-identity oracle in the scripts README).
+Indices below are stated both ways where it matters: "index 10" is 0-based among a run's
+repeat calls, "call 11 (1-based)" is the same call.
+
+### The runs
+
+Frames are at the run's context rate; q = one 128-frame render quantum (2.667 ms at 48 kHz,
+2.902 ms at 44.1 kHz). The **mode** is the modal round trip at frame resolution over a chain's
+usable repeat calls; **spread at mode** is max − min over the calls within half a quantum of
+it; **|A−B|** is the two capture anchors' round-trip difference. The applied call is not in the
+mode population and is judged against it.
+
+| run | rate | arm | label | calls | verdicts | chain | mode round trip | input part | spread at mode | ratio | \|A−B\| max | applied − mode |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `1788463872683` | 48 k | steady | playwright smoke | 2 | ok ×2 | 0 | 4211.860 fr = 87.747 ms on 2/2 | 64.747 ms | 0.002 fr | 37.6…37.7 dB | 0.002 fr | **−127.998 fr** (−1.000 q), both anchors |
+| `1788463933323` | 48 k | steady | acoustic | 30 | ok ×30 | 0 | 3067.259 fr = 63.901 ms on 30/30 | 40.901 ms | 0.019 fr | 34.7…37.3 dB | 0.004 fr | −0.002 fr |
+| `1788464100870` | 48 k | fresh | acoustic | 30 | ok ×30 | 0 | 3103.563 fr = 64.658 ms on 15/15 | 41.658 ms | 0.024 fr | 30.5…35.8 dB | 0.005 fr | — |
+| | | | | | | 1 | 3093.566 fr = 64.449 ms on 15/15 | 41.449 ms | 0.021 fr | 31.8…36.3 dB | 0.006 fr | −0.004 fr |
+| `1788464254347` | 44.1 k | steady | acoustic | 30 | ok ×30 | 0 | 2742.153 fr = 62.180 ms on 30/30 | 39.180 ms | 0.011 fr | 37.1…37.9 dB | 0.002 fr | +0.006 fr |
+| `1788464404625` | 44.1 k | fresh | acoustic | 30 | ok ×29, noisy ×1 | 0 | 2656.102 fr = 60.229 ms on 15/15 | 37.229 ms | 0.011 fr | 37.8…38.1 dB | 0.005 fr over 14 agreeing; **127.999 fr on index 10** | — |
+| | | | | | | 1 | 2763.587 fr = 62.666 ms on 15/15 | 39.666 ms | 0.017 fr | 35.9…36.2 dB | 0.003 fr | +0.002 fr |
+| `1788464591756` | 48 k | steady | acoustic run 2 | 30 | ok ×29, noisy ×1 | 0 | 4264.011 fr = 88.834 ms on **27/30** | 65.834 ms | 0.015 fr (27 calls) | 35.5…38.2 dB | 0.003 fr | **−127.997 fr** (−1.000 q), both anchors |
+
+Over all **152 repeat calls + 6 applied calls: 3 of 3 bursts identified on 158 of 158, ratio
+30.55…38.16 dB, input part 37.229…65.834 ms**. `audioContext.outputLatency` read **0.023 s on
+every call at both rates** (and 0.023 s at page start, before any audio had played — the
+harness's 0-read guard is loopback-only and was not needed). The browser's own
+`MediaTrackSettings.latency` for the armed track read **0.002666 s on every run** = 127.968
+frames at 48 kHz — the track's own `sampleRate` is 48 000 on the 44.1 kHz runs too, where the
+same figure is 117.571 frames at the context rate. Every stored entry equals its run's
+applied call.
+
+### Every call off its chain's mode
+
+`… events`. A call is listed when its anchor A or B round trip is at least half a quantum off
+its chain's mode. **anchor-disagreement** = |A−B| ≥ ½ q, the SDK's own detector;
+**state-transition** = A ≈ B and the next call stays at the new value (or the previous call was
+already there — the call holds a state a transition opened); **isolated** = A ≈ B and the next
+call is back at the mode. Burst delays are anchor A's three bursts as frames off the mode, then
+anchor B's (its first burst is always null: it opens in burst 1's tail).
+
+| run | chain | call | verdict / reason | A − mode | B − mode | \|A−B\| | burst spread | ratio | class | bursts A / B (fr off mode) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `1788463872683` 48 k | 0 | applied (after 2 repeats) | ok | −127.998 fr | −127.998 fr | 0.001 fr | 0.003 fr | 36.5 dB | **state-transition** — last call, nothing after it to confirm the hold | −127.994 / −127.998 / −127.999 · null / −127.998 / −127.999 |
+| `1788464404625` 44.1 k | 0 | index 10 (call 11, 1-based) | **noisy, "capture anchors disagree"** | −0.008 fr | **−128.008 fr** | **127.999 fr** | 0.001 fr | 37.9 dB | **anchor-disagreement** — A at the mode, B one quantum off | −0.009 / −0.008 / −0.007 · null / −128.008 / −128.007 |
+| `1788464591756` 48 k | 0 | index 27 (call 28, 1-based) | **noisy**, no reason | −127.998 fr | −128.001 fr | 0.003 fr | **128.000 fr** | 35.5 dB | **state-transition** — opens the new state; index 28 stays there | **+0.002** / −128.004 / −127.998 · null / −128.004 / −127.998 |
+| | 0 | index 28 (call 29) | ok | −128.004 fr | −128.002 fr | 0.002 fr | 0.004 fr | 37.9 dB | holds the state index 27 opened | −128.005 / −128.004 / −128.000 · null / −128.004 / −128.000 |
+| | 0 | index 29 (call 30) | ok | −128.002 fr | −128.002 fr | 0.000 fr | 0.003 fr | 38.0 dB | holds | −128.002 / −128.004 / −127.999 · null / −128.004 / −127.999 |
+| | 0 | applied | ok | −127.997 fr | −127.997 fr | 0.000 fr | 0.004 fr | 37.8 dB | holds | −128.001 / −127.997 / −127.996 · null / −127.997 / −127.996 |
+
+**6 event calls over 152 repeat + 6 applied calls: 1 anchor disagreement, 2 state
+transitions, 0 isolated deviations.** The two `noisy` verdicts are the two mechanisms: the
+44.1 kHz one is the second-anchor detector firing (spread 0.001 fr, ratio 37.9 dB — nothing
+else about the call is off); the 48 kHz one is the spread gate firing because the chain's step
+landed **between burst 1 and burst 2 of that call** — its first burst reads the old state to
++0.002 fr and its last two the new state, so the median moved to the new state and the spread
+is exactly one quantum, 128.000 fr = 2.667 ms, over the 1.0 ms `SpreadBoundSeconds`.
+
+### Page loads and re-arms
+
+`… chains`. One page load is one arm and one chain 0; a fresh run's chain 1 is the re-arm
+inside the same page. Differences are later minus earlier in run order; "mod 128" is the
+residue of the frame difference, so a difference on the quantum lattice reads 0.
+
+| rate | chain instance | how built | mode | input part |
+|---|---|---|---|---|
+| 48 k | `1788463872683` / 0 | arm at page load | 4211.860 fr = 87.747 ms | 64.747 ms |
+| 48 k | `1788463933323` / 0 | arm at page load | 3067.259 fr = 63.901 ms | 40.901 ms |
+| 48 k | `1788464100870` / 0 | arm at page load | 3103.563 fr = 64.658 ms | 41.658 ms |
+| 48 k | `1788464100870` / 1 | **re-arm, same page** | 3093.566 fr = 64.449 ms | 41.449 ms |
+| 48 k | `1788464591756` / 0 | arm at page load | 4264.011 fr = 88.834 ms | 65.834 ms |
+| 44.1 k | `1788464254347` / 0 | arm at page load | 2742.153 fr = 62.180 ms | 39.180 ms |
+| 44.1 k | `1788464404625` / 0 | arm at page load | 2656.102 fr = 60.229 ms | 37.229 ms |
+| 44.1 k | `1788464404625` / 1 | **re-arm, same page** | 2763.587 fr = 62.666 ms | 39.666 ms |
+
+| difference (later − earlier) | frames | ms | quanta | mod 128 | mod 32 |
+|---|---|---|---|---|---|
+| 48 k re-arm: `…100870`/1 − `…100870`/0 | **−9.996 fr** | −0.208 ms | −0.08 q | 118 | 22.00 |
+| 44.1 k re-arm: `…404625`/1 − `…404625`/0 | **+107.485 fr** | +2.437 ms | **+0.84 q** | 107 | 11.48 |
+| 48 k page loads: `…591756`/0 − `…933323`/0 | +1196.752 fr | **+24.932 ms** | +9.35 q | 45 | 12.75 |
+| 48 k page loads: `…591756`/0 − `…100870`/0 | +1160.448 fr | +24.176 ms | +9.07 q | 8 | 8.45 |
+| 48 k page loads: `…933323`/0 − `…872683`/0 | −1144.601 fr | −23.846 ms | −8.94 q | 7 | 7.40 |
+| 48 k page loads: `…100870`/0 − `…933323`/0 | +36.303 fr | +0.756 ms | +0.28 q | 36 | 4.30 |
+| 48 k page loads: `…591756`/0 − `…872683`/0 | +52.151 fr | +1.086 ms | +0.41 q | 52 | 20.15 |
+| 44.1 k page loads: `…404625`/0 − `…254347`/0 | −86.050 fr | −1.951 ms | −0.67 q | 42 | 9.95 |
+
+### Findings, with status
+
+1. **The routine works on a real microphone, acoustically — MEASURED.** Over 152 repeat calls
+   and 6 applied calls on the built-in microphone through the room, **every call identified 3 of
+   3 bursts at 30.55…38.16 dB** (the loopback's 45–53 dB, less the air path and the room, still
+   12 dB and more above the 18 dB gate); 156 verdicts `ok` and **2 `noisy`**, each for a reason
+   the tables above state. Within a chain, and within a state, the round trip is **constant to
+   ≤ 0.024 frame** (0.5 µs at 48 kHz — the 8 chain instances read spreads at mode of 0.002,
+   0.019, 0.024, 0.021, 0.011, 0.011, 0.017 and 0.015 fr), and the two anchors agree to
+   ≤ 0.006 fr on every call but the one the detector flagged. Repeatability is therefore not a
+   property of the synthetic loopback; it is the routine's.
+2. **The browser-reported track latency is nominal, and the `Reported` default underestimates
+   this device by 35–63 ms — MEASURED.** `MediaTrackSettings.latency` read **0.002666 s on all
+   six runs** — 127.968 frames at 48 kHz, i.e. 128/48000 truncated to six decimals, and the same
+   figure at 44.1 kHz where it is 117.571 frames at the context rate — while the measured input
+   part on the same track was
+   **37.229…65.834 ms**. The difference, **34.563…63.168 ms**, is what #378's `Reported` default
+   would place a take late by on this device, and what a calibration entry removes. One device,
+   one browser: the size of the gap is this device's, but that the report is a constant of the
+   track's own rate and not a measurement is the structural point.
+3. **The second-anchor detector's first real hit — MEASURED, 1 in 152 repeat calls.** Run
+   `1788464404625` (44.1 kHz, fresh), **index 10 (call 11, 1-based)**, chain 0: anchor A's round
+   trip at the chain's mode (−0.008 fr), anchor B's **one quantum below it (−128.008 fr,
+   |A−B| = 127.999 fr)**, verdict `noisy` with reason "capture anchors disagree", ratio 37.9 dB,
+   burst spread 0.001 fr, 3 of 3 bursts on both anchors. The call before and the call after both
+   read the mode with both anchors agreeing, so B's own capture start was the figure a quantum
+   off, on that call alone — the fault the detector was built for, on the anchor whose figure is
+   not the one reported. The reported round trip was right; the verdict withheld a correct value.
+   That is the guard's design: it cannot tell which anchor is off, so it distrusts both. The
+   loopback's 122 calls on `66021385` never produced a hit; this run says the detector fires and
+   says what it fires on.
+4. **The input path itself steps by one render quantum — MEASURED: stepped on 2 of 5 48 kHz
+   chains, held through the following calls on one of them (the other stepped on its last
+   call); 0 of 3 chains at 44.1 kHz.** Run `1788464591756`: 27 calls at 4264.01 fr, then
+   **index 27 (call 28, 1-based)** at **−127.998 fr, both anchors agreeing** (|A−B| 0.003 fr),
+   and indices 28, 29 and the applied call all at −128.00 fr with |A−B| ≤ 0.002 fr. The step
+   landed inside call 28, between its first and second burst (burst delays +0.002 / −128.004 /
+   −127.998 fr off the old mode), which is why that one call is `noisy` on spread and the next
+   are `ok`. The smoke run `1788463872683` is the same event with less context: two repeat calls
+   at 4211.86 fr, then the applied call at **−127.998 fr, both anchors** — nothing after it to
+   confirm the hold. Both steps are **downward** (the path got one quantum shorter), both are on
+   chains in the ~64–66 ms state, and the stored entry is in each case the post-step value
+   (63.167 ms and 62.080 ms). **Consequence:** a stored calibration is off by one quantum
+   (2.667 ms at 48 kHz) from the state the chain held before the step, and stays off until
+   recalibrated; and **the anchor check cannot see it by construction** — both anchors capture
+   the same chain, and after the step both read the new state. The loopback's one-quantum miss
+   (1 of 29 sweep calls on `546b5bfaa`, verdict `ok`) was a chain that did *not* stay stepped;
+   this is a chain that did. Mechanism not identified; the count is 2 steps in 5 chains at
+   48 kHz (chains of 2, 30, 15, 15 and 30 repeat calls plus one applied call each; the steps on
+   the 2-call chain's applied call and the last 30-call chain's call 28) and 0 in 3 at 44.1 kHz
+   (30, 15 and 15 calls).
+5. **Chain states on a real path: sub-quantum on re-arm, ~24 ms between page loads, not on the
+   loopback's lattice — MEASURED.** A disarm/re-arm within one page moved the chain by
+   **−9.996 fr = −0.208 ms (48 kHz)** and by **+107.485 fr = +2.437 ms = +0.84 q (44.1 kHz)**.
+   Across page loads at 48 kHz the input part landed at **40.901, 41.658 and 65.834 ms** (and
+   64.747 ms on the smoke run): two clusters **≈ 24 ms apart** — +1196.752 fr = 24.932 ms =
+   9.35 q, and −1144.601 fr = 23.846 ms = 8.94 q — with residues 45 and 7 mod 128 and 12.75 and
+   7.40 mod 32, so neither the loopback's 32-frame lattice nor the quantum lattice describes them.
+   At 44.1 kHz the two page loads sat 1.951 ms = 0.67 q apart. The loopback's two-state
+   8.0–9.3 ms step does not appear on this device; what appears instead is a ~24 ms page-load
+   difference of unknown origin (a device buffer configuration drawn per stream open is the
+   obvious candidate, untested) and re-arm differences under one quantum. **Consequence for a
+   stored calibration:** a value measured on one page load can be ~24 ms wrong on the next, on
+   this device, and nothing in the envelope predicts which state a load draws — of the four
+   48 kHz loads, two read ~41 ms and two ~65 ms; the two 44.1 kHz loads read 37 and 39 ms.
+   Mechanism measured, not identified.
+6. **Not measured — OPEN.** A **cable loopback** through an interface, which would take the
+   air path and the room out of the input part and put a second device under the same tables.
+   **Other browsers** (Safari, Firefox), whose `outputLatency` and track-latency reports differ
+   from Chrome's. **Other devices** (a USB interface at another buffer size). **The applied
+   take cell on a real path** — take placement was not measured here, because the cell's
+   reference clicks and band split assume the loopback tap; whether the +1.15 ms residual holds
+   on a real path, and whether a take on this device lands where its calibration says, is
+   still unknown. And the mechanisms of findings 4 and 5.
+
+### Evidence index (real device)
+
+| quantity | artifact(s) |
+|---|---|
+| smoke run, 48 kHz steady, 2 calls, applied call one quantum down | `calib-summary-1788463872683.json` |
+| acoustic runs, 48 kHz: steady 30, fresh 30, steady 30 (the one-quantum step at index 27) | `calib-summary-1788463933323/…1788464100870/…1788464591756.json` |
+| acoustic runs, 44.1 kHz: steady 30, fresh 30 (the anchor disagreement at index 10) | `calib-summary-1788464254347/…1788464404625.json` |
+| offline recomputation | `.verify-output/task12c-real-input-tables.txt` |
+
+All six envelopes predate the PR #125 review fix that stopped real mode from running its
+calls through the loopback page's pooled-mode `summarizeRepeats`: they carry a
+`repeatSummary` (1788464404625's says `oneQuantumMisses: 15` — the fifteen calls of the
+re-armed chain judged against the first chain's mode) and per-row `deltaQuanta` /
+`isOneQuantumMiss` flags, all of which must be ignored; `realSummary` and the tables
+above are the reading, and task12c never reads those fields (it recomputes every figure
+from the per-call `roundTripSeconds` / `roundTripSecondsSecondary` / `inputLatencySeconds`
+and `chainIndex`).

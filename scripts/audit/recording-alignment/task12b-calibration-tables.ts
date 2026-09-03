@@ -287,7 +287,8 @@ function printMiss(): void {
     console.log(
       `    D=${row.requestedDelayMs} ms: input=${ms(row.inputLatencySeconds).toFixed(4)} ms` +
       ` input−D=${inputMinusD.toFixed(4)} ms verdict=${row.verdict}` +
-      ` spread=${row.spreadSeconds.toExponential(2)} s ratio=${row.correlationRatioDb.toFixed(2)} dB bursts=${row.identifiedBursts}`
+      ` spread=${row.spreadSeconds === null ? "—" : row.spreadSeconds.toExponential(2)} s` +
+      ` ratio=${row.correlationRatioDb === null ? "—" : row.correlationRatioDb.toFixed(2)} dB bursts=${row.identifiedBursts}`
     );
   }
   // The short call is measured against the median of the other three, not

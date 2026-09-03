@@ -75,8 +75,10 @@ export interface CalibrationCall {
   /** Present only on builds carrying the second capture anchor (660213857 on). */
   roundTripSecondsSecondary?: number;
   inputLatencySeconds: number;
-  spreadSeconds: number;
-  correlationRatioDb: number;
+  /** null on an `error` row (NaN persisted), a number otherwise. */
+  spreadSeconds: number | null;
+  /** null on an `error` row, like `spreadSeconds`. */
+  correlationRatioDb: number | null;
   identifiedBursts: number;
   sampleRate: number;
   reason?: string;
@@ -115,11 +117,28 @@ export interface LoadedCalibrationSummary {
   /** null on the runs written before `404a70b`, the commit that added the exclusion. */
   fitExcludedNoisy: { count: number; delaysMs: number[] } | null;
   applied: CalibrationCall | null;
+  /**
+   * `status` is the runner's verdict, `error` (apply stored nothing, cell not
+   * run) or `skipped` (`?input=real`: the cell cannot run against a real
+   * device — no loopback tap for its reference clicks). A `skipped` cell has
+   * no rows, like an `error` one.
+   */
   cell: {
     status: string;
     rows: { medianBeatErrorMsAdjusted: number | null; headMissingMs: number | null; tailMissingMs: number | null }[];
   };
   harnessLoopbackHopPerRowSec: number[];
+  /**
+   * `loopback` or `real`; envelopes written before the field are loopback
+   * runs and read null here. A `real` envelope carries an empty `sweep`, a
+   * null `fit`, `harnessPathBiasSec` 0 and the fields below — the scripts
+   * that fit a slope or read the applied cell have nothing to read on it.
+   */
+  inputMode: string | null;
+  runLabel: string | null;
+  device: { deviceId: string; label: string; groupId: string } | null;
+  trackSettings: Record<string, unknown> | null;
+  realSummary: Record<string, unknown> | null;
 }
 
 /**
@@ -127,13 +146,15 @@ export interface LoadedCalibrationSummary {
  * generation to reason about: the page has kept one shape since the first run,
  * and every field added after it (`buildFeatures`, `captureMode`,
  * `getUserMediaOpens`, `armState`, `warmup`, `fitExcludedNoisy`, `repeats`,
- * `repeatSummary`) reads `null` (or an empty list) on the artifacts that
- * predate it rather than being inferred. The fields the scripts read are
- * checked for shape here, the way `parseAuditSummary` checks its own, so a
- * malformed envelope throws instead of feeding a table `undefined`.
+ * `repeatSummary`, and the `?input=real` set `inputMode` / `runLabel` /
+ * `device` / `trackSettings` / `realSummary`) reads `null` (or an empty list)
+ * on the artifacts that predate it rather than being inferred. The fields the
+ * scripts read are checked for shape here, the way `parseAuditSummary` checks
+ * its own, so a malformed envelope throws instead of feeding a table
+ * `undefined`. `cell.status` is any string, so `skipped` passes as `error` does.
  */
-export function loadCalibrationSummary(runId: string): LoadedCalibrationSummary {
-  const json = JSON.parse(readFileSync(`${VERIFY_DIR}/calib-summary-${runId}.json`, "utf8")) as Record<string, unknown>;
+export function loadCalibrationSummary(runId: string, dir: string = VERIFY_DIR): LoadedCalibrationSummary {
+  const json = JSON.parse(readFileSync(`${dir}/calib-summary-${runId}.json`, "utf8")) as Record<string, unknown>;
   const summary = json as unknown as LoadedCalibrationSummary;
   const fail = (what: string): never => { throw new Error(`calib-summary-${runId}.json: ${what}`); };
   if (summary.runToken !== Number(runId)) fail(`carries runToken ${summary.runToken}`);
@@ -141,14 +162,17 @@ export function loadCalibrationSummary(runId: string): LoadedCalibrationSummary 
   if (typeof json.sdkBuildProbe !== "string") fail(`"sdkBuildProbe" is ${JSON.stringify(json.sdkBuildProbe)}`);
   if (typeof json.deviceId !== "string") fail(`"deviceId" is ${JSON.stringify(json.deviceId)}`);
   // A call that never reached the analysis carries NaN round trip and input
-  // figures, which JSON persists as null — so those two are number-or-null.
+  // figures, which JSON persists as null — so those are number-or-null. The
+  // real-input page's `error` rows (a call that threw or timed out) carry NaN
+  // spread as well.
   const numberOrNull = (v: unknown) => v === null || (typeof v === "number");
   const isCall = (v: unknown): v is CalibrationCall =>
     typeof v === "object" && v !== null &&
     typeof (v as CalibrationCall).verdict === "string" &&
     numberOrNull((v as CalibrationCall).roundTripSeconds) &&
     numberOrNull((v as CalibrationCall).inputLatencySeconds) &&
-    typeof (v as CalibrationCall).spreadSeconds === "number";
+    numberOrNull((v as CalibrationCall).spreadSeconds) &&
+    numberOrNull((v as CalibrationCall).correlationRatioDb);
   if (!Array.isArray(json.sweep) || !json.sweep.every(isCall)) fail(`"sweep" is not a list of calibration calls`);
   if (json.applied !== null && !isCall(json.applied)) fail(`"applied" is neither null nor a calibration call`);
   if (json.warmup !== undefined && json.warmup !== null && !isCall(json.warmup)) fail(`"warmup" is neither null nor a calibration call`);
@@ -167,6 +191,18 @@ export function loadCalibrationSummary(runId: string): LoadedCalibrationSummary 
   if (!Array.isArray(hops) || !hops.every((h) => typeof h === "number" && Number.isFinite(h))) {
     fail(`"harnessLoopbackHopPerRowSec" is not a list of finite numbers`);
   }
+  if (json.inputMode !== undefined && json.inputMode !== "loopback" && json.inputMode !== "real") {
+    fail(`"inputMode" is ${JSON.stringify(json.inputMode)}, not loopback|real`);
+  }
+  const device = json.device;
+  if (device !== undefined && device !== null && (typeof device !== "object" ||
+    typeof (device as { deviceId?: unknown }).deviceId !== "string" || typeof (device as { label?: unknown }).label !== "string" ||
+    typeof (device as { groupId?: unknown }).groupId !== "string")) {
+    fail(`"device" is neither absent nor {deviceId, label, groupId} (all strings)`);
+  }
+  const objectOrNull = (v: unknown) => v === null || (typeof v === "object" && !Array.isArray(v));
+  if (json.trackSettings !== undefined && !objectOrNull(json.trackSettings)) fail(`"trackSettings" is neither null nor an object`);
+  if (json.realSummary !== undefined && !objectOrNull(json.realSummary)) fail(`"realSummary" is neither null nor an object`);
   return {
     ...summary,
     buildFeatures: Array.isArray(json.buildFeatures) ? (json.buildFeatures as string[]) : null,
@@ -177,6 +213,11 @@ export function loadCalibrationSummary(runId: string): LoadedCalibrationSummary 
     fitExcludedNoisy: (json.fitExcludedNoisy ?? null) as { count: number; delaysMs: number[] } | null,
     repeats: Array.isArray(json.repeats) ? (json.repeats as CalibrationCall[]) : [],
     repeatSummary: (json.repeatSummary ?? null) as LoadedCalibrationSummary["repeatSummary"],
+    inputMode: typeof json.inputMode === "string" ? json.inputMode : null,
+    runLabel: typeof json.runLabel === "string" ? json.runLabel : null,
+    device: (json.device ?? null) as LoadedCalibrationSummary["device"],
+    trackSettings: (json.trackSettings ?? null) as Record<string, unknown> | null,
+    realSummary: (json.realSummary ?? null) as Record<string, unknown> | null,
   };
 }
 
