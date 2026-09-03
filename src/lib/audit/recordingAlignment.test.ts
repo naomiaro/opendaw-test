@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   buildReferenceSchedule, bandSplit, identifyReferenceClicks, estimateAnchorT0,
-  measureTakeAlignment, classifyCell, measureCrossTrackSkew,
+  measureTakeAlignment, classifyCell, classifyMultitrackCell, measureCrossTrackSkew,
 } from "./recordingAlignment";
-import type { TakeAlignment, SignatureBand } from "./recordingAlignment";
+import type { CellClassification, CrossTrackSkew, TakeAlignment, SignatureBand } from "./recordingAlignment";
 
 describe("buildReferenceSchedule", () => {
   it("uses unique growing gaps so consecutive pairs identify their index", () => {
@@ -505,5 +505,46 @@ describe("measureCrossTrackSkew", () => {
     const b = alignment([{ beat: 1, errorMs: -83 }, { beat: 2, errorMs: -86 }, { beat: 0, errorMs: -85 }]);
     const skew = measureCrossTrackSkew(a, b);
     expect(skew.perBeatSkewMs.map((s) => s.beat)).toEqual([0, 1, 2]);
+  });
+});
+
+describe("classifyMultitrackCell", () => {
+  // The offline re-classification (task12a) runs this exact function over the
+  // persisted multitrack run, so each return branch is pinned here.
+  const cls = (status: CellClassification["status"], matchedSignature: string | null = null): CellClassification =>
+    ({ status, matchedSignature: matchedSignature as CellClassification["matchedSignature"], detail: `${status} detail` });
+  const skew = (medianSkewMs: number | null, maxAbsSkewMs: number = medianSkewMs === null ? 0 : Math.abs(medianSkewMs)): CrossTrackSkew =>
+    ({ medianSkewMs, maxAbsSkewMs, pairedBeats: medianSkewMs === null ? 0 : 16, perBeatSkewMs: [] });
+
+  it("no successful repeats → investigate", () => {
+    const v = classifyMultitrackCell(cls("aligned"), cls("aligned"), [], 2);
+    expect(v.status).toBe("investigate");
+    expect(v.detail).toMatch(/no successful repeats/);
+  });
+
+  it("a repeat with no paired beats (null skew) → investigate, counted in the detail", () => {
+    const v = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(0.5), skew(null), skew(0.2)], 2);
+    expect(v.status).toBe("investigate");
+    expect(v.detail).toMatch(/skew unusable \(0 paired beats\) on 1\/3/);
+  });
+
+  it("skew within tolerance and both tapes clean → aligned, even when the tapes match a defect band", () => {
+    // Both tapes 22 ms late in the same direction (matches-known-defect/F on
+    // each) still reads `aligned` here: the quantity is the skew between them.
+    const v = classifyMultitrackCell(cls("matches-known-defect", "F"), cls("matches-known-defect", "F"), [skew(0.1), skew(-1.9), skew(1.2)], 2);
+    expect(v.status).toBe("aligned");
+    expect(v.detail).toMatch(/both tapes individually clean/);
+  });
+
+  it("a tape that classified investigate → investigate, whatever the skew", () => {
+    const v = classifyMultitrackCell(cls("aligned"), cls("investigate"), [skew(0.1), skew(0.2)], 2);
+    expect(v.status).toBe("investigate");
+    expect(v.detail).toMatch(/at least one tape's own per-take alignment did not classify clean/);
+  });
+
+  it("skew past the tolerance with both tapes clean → investigate as a candidate finding", () => {
+    const v = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(0.5), skew(2.7), skew(0.3)], 2);
+    expect(v.status).toBe("investigate");
+    expect(v.detail).toMatch(/candidate finding/);
   });
 });

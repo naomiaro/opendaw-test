@@ -63,6 +63,124 @@ export function loadMultitrackSummary(runId: string): LoadedMultitrackAuditSumma
 }
 
 /**
+ * One calibration call as `input-latency-calibration-debug-demo` persists it —
+ * the SDK `Result` plus, on a sweep row, the delay the loopback was injecting.
+ * The page owns the full type; this is the subset the offline scripts read.
+ */
+export interface CalibrationCall {
+  verdict: string;
+  requestedDelayMs?: number;
+  requestedDelaySec?: number;
+  roundTripSeconds: number;
+  /** Present only on builds carrying the second capture anchor (660213857 on). */
+  roundTripSecondsSecondary?: number;
+  inputLatencySeconds: number;
+  spreadSeconds: number;
+  correlationRatioDb: number;
+  identifiedBursts: number;
+  sampleRate: number;
+  reason?: string;
+  /** `?repeat=` rows only: the delay THIS call ran at, and the previous call's. */
+  delayMs?: number;
+  previousDelayMs?: number | null;
+  flaggedByAnchorCheck?: boolean;
+}
+
+/**
+ * The `calib-summary-<runToken>.json` envelope, restricted to the fields the
+ * offline calibration tables read. `harnessLoopbackHopPerRowSec` is the
+ * harness's own independent measure of the chain's delay for the applied cell's
+ * takes (`firstQuantumTimeSec − anchorT0Sec`), so a run carries one hop per
+ * recorded repeat and none for its swept delays.
+ */
+export interface LoadedCalibrationSummary {
+  runToken: number;
+  rate: number;
+  sdkBuildProbe: string;
+  buildFeatures: string[] | null;
+  captureMode: string | null;
+  getUserMediaOpens: number | null;
+  armState: string | null;
+  warmup: CalibrationCall | null;
+  sweep: CalibrationCall[];
+  repeats: CalibrationCall[];
+  /**
+   * `?repeat=` phase envelope, null when the phase was skipped. The page now
+   * always writes `delayCycleMs` (one entry for a fixed delay) and each call's
+   * own delay on the call; only the pre-cycle artifacts, written before
+   * `8df9a17`, carry a scalar `delayMs` instead.
+   */
+  repeatSummary: { calls: number; delayMs?: number; delayCycleMs?: number[] } | null;
+  fit: { slope: number; interceptSec: number; points: number; maxAbsResidualMs: number } | null;
+  /** null on the runs written before `404a70b`, the commit that added the exclusion. */
+  fitExcludedNoisy: { count: number; delaysMs: number[] } | null;
+  applied: CalibrationCall | null;
+  cell: {
+    status: string;
+    rows: { medianBeatErrorMsAdjusted: number | null; headMissingMs: number | null; tailMissingMs: number | null }[];
+  };
+  harnessLoopbackHopPerRowSec: number[];
+}
+
+/**
+ * Read a calibration envelope. Unlike the audit summaries there is no schema
+ * generation to reason about: the page has kept one shape since the first run,
+ * and every field added after it (`buildFeatures`, `captureMode`,
+ * `getUserMediaOpens`, `armState`, `warmup`, `fitExcludedNoisy`, `repeats`,
+ * `repeatSummary`) reads `null` (or an empty list) on the artifacts that
+ * predate it rather than being inferred. The fields the scripts read are
+ * checked for shape here, the way `parseAuditSummary` checks its own, so a
+ * malformed envelope throws instead of feeding a table `undefined`.
+ */
+export function loadCalibrationSummary(runId: string): LoadedCalibrationSummary {
+  const json = JSON.parse(readFileSync(`${VERIFY_DIR}/calib-summary-${runId}.json`, "utf8")) as Record<string, unknown>;
+  const summary = json as unknown as LoadedCalibrationSummary;
+  const fail = (what: string): never => { throw new Error(`calib-summary-${runId}.json: ${what}`); };
+  if (summary.runToken !== Number(runId)) fail(`carries runToken ${summary.runToken}`);
+  if (typeof json.rate !== "number" || !Number.isFinite(json.rate)) fail(`"rate" is ${JSON.stringify(json.rate)}`);
+  if (typeof json.sdkBuildProbe !== "string") fail(`"sdkBuildProbe" is ${JSON.stringify(json.sdkBuildProbe)}`);
+  if (typeof json.deviceId !== "string") fail(`"deviceId" is ${JSON.stringify(json.deviceId)}`);
+  // A call that never reached the analysis carries NaN round trip and input
+  // figures, which JSON persists as null — so those two are number-or-null.
+  const numberOrNull = (v: unknown) => v === null || (typeof v === "number");
+  const isCall = (v: unknown): v is CalibrationCall =>
+    typeof v === "object" && v !== null &&
+    typeof (v as CalibrationCall).verdict === "string" &&
+    numberOrNull((v as CalibrationCall).roundTripSeconds) &&
+    numberOrNull((v as CalibrationCall).inputLatencySeconds) &&
+    typeof (v as CalibrationCall).spreadSeconds === "number";
+  if (!Array.isArray(json.sweep) || !json.sweep.every(isCall)) fail(`"sweep" is not a list of calibration calls`);
+  if (json.applied !== null && !isCall(json.applied)) fail(`"applied" is neither null nor a calibration call`);
+  if (json.warmup !== undefined && json.warmup !== null && !isCall(json.warmup)) fail(`"warmup" is neither null nor a calibration call`);
+  if (Array.isArray(json.repeats) && !json.repeats.every(isCall)) fail(`"repeats" is not a list of calibration calls`);
+  const fit = json.fit;
+  if (fit !== null && (typeof fit !== "object" || typeof (fit as { slope?: unknown }).slope !== "number" ||
+    typeof (fit as { interceptSec?: unknown }).interceptSec !== "number")) {
+    fail(`"fit" is neither null nor a least-squares fit`);
+  }
+  const cell = json.cell;
+  if (typeof cell !== "object" || cell === null || typeof (cell as { status?: unknown }).status !== "string" ||
+    !Array.isArray((cell as { rows?: unknown }).rows)) {
+    fail(`"cell" lacks a status string or a rows list`);
+  }
+  const hops = json.harnessLoopbackHopPerRowSec;
+  if (!Array.isArray(hops) || !hops.every((h) => typeof h === "number" && Number.isFinite(h))) {
+    fail(`"harnessLoopbackHopPerRowSec" is not a list of finite numbers`);
+  }
+  return {
+    ...summary,
+    buildFeatures: Array.isArray(json.buildFeatures) ? (json.buildFeatures as string[]) : null,
+    captureMode: typeof json.captureMode === "string" ? json.captureMode : null,
+    getUserMediaOpens: typeof json.getUserMediaOpens === "number" ? json.getUserMediaOpens : null,
+    armState: typeof json.armState === "string" ? json.armState : null,
+    warmup: (json.warmup ?? null) as CalibrationCall | null,
+    fitExcludedNoisy: (json.fitExcludedNoisy ?? null) as { count: number; delaysMs: number[] } | null,
+    repeats: Array.isArray(json.repeats) ? (json.repeats as CalibrationCall[]) : [],
+    repeatSummary: (json.repeatSummary ?? null) as LoadedCalibrationSummary["repeatSummary"],
+  };
+}
+
+/**
  * The population `classifyCell` sees for a cell: every non-error row of the
  * scenario/bpm, loop-wrap restricted to wrap takes 1..4 (0-based). A successful
  * repeat with NO matched beats (null median) stays in — the live harness passes

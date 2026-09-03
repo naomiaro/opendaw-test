@@ -101,8 +101,8 @@ for (const cell of CELLS) {
     });
     continue;
   }
-  const before = classifyCell(buildAlignmentsRawOnly(alignments), signatureBandsFor(cell.scenario), ALIGNED_TOLERANCE_MS);
-  const after = classifyCell(alignments, signatureBandsFor(cell.scenario), ALIGNED_TOLERANCE_MS);
+  const before = classifyCell(buildAlignmentsRawOnly(alignments), signatureBandsFor(cell.scenario, summary.sdkBuildProbe, Number(cell.runId)), ALIGNED_TOLERANCE_MS);
+  const after = classifyCell(alignments, signatureBandsFor(cell.scenario, summary.sdkBuildProbe, Number(cell.runId)), ALIGNED_TOLERANCE_MS);
   results.push({
     scenario: cell.scenario, bpm: cell.bpm, rate: cell.rate,
     note: fallbackUsed ? `${cell.note} [${summary.generation}: outputLatency not persisted, bring-up constant ${OUTPUT_LATENCY_BRING_UP_SEC}]` : cell.note,

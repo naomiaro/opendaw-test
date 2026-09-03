@@ -29,6 +29,15 @@
 // (`classifyCell`), streamed into a results table, and uploaded (WAV per
 // repeat + one JSON summary) to the dev server's /__verify sink.
 //
+// `&defaultInput=1` (single-tape scenarios) arms the tape on the SDK's DEFAULT
+// input — the capture box names no device — instead of naming the synthetic
+// loopback device. On THIS harness — whose loopback leaves `reportDeviceId`
+// off, so a named synthetic device never matches the empty id its stream
+// reports — it is the only configuration in which `CaptureAudio` reuses its
+// audio chain across takes rather than rebuilding it before each one, so it is
+// how the sweep measures the reuse path. (The calibration page reports the id
+// back and reuses in both modes.) See `DEFAULT_INPUT` below.
+//
 // `?scenario=multitrack-start|multitrack-janked|multitrack-all&bpm=<n|all>&rate=<n>`
 // — the multi-mic simultaneous-recording harness (Task 7b): two tapes armed on
 // clones of the same loopback signal, measured for inter-track skew (see the
@@ -53,7 +62,7 @@ import { CaptureAudio, type Project } from "@opendaw/studio-core";
 import { InstrumentFactories, type AudioUnitBoxAdapter, type SampleLoader } from "@opendaw/studio-adapters";
 import type { AudioUnitBox } from "@opendaw/studio-boxes";
 import { WavFile } from "@opendaw/lib-dsp";
-import { Terminable } from "@opendaw/lib-std";
+import { detectBuildFeatures } from "@/lib/audit/buildFeatures";
 import { installLoopbackCapture, LOOPBACK_DEVICE_ID, loopbackDeviceId } from "@/lib/audit/loopbackInjection";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { withDeadline } from "@/lib/deadline";
@@ -61,14 +70,12 @@ import { detectOnsets } from "@/lib/audit/onsetDetection";
 import {
   buildReferenceSchedule,
   bandSplit,
-  identifyReferenceClicks,
-  estimateAnchorT0,
   measureTakeAlignment,
   classifyCell,
   measureCrossTrackSkew,
+  classifyMultitrackCell,
   type TakeAlignment,
   type CellClassification,
-  type CellStatus,
   type ReferenceSchedule,
   type CrossTrackSkew,
 } from "@/lib/audit/recordingAlignment";
@@ -82,9 +89,10 @@ import {
   LOOP_WRAP_TAKES,
   ALIGNED_TOLERANCE_MS,
   HEAD_MISSING_BASELINE_MS,
-  SIGNATURE_BANDS,
+  signatureBandsFor,
   isRecordingScenario,
   isMultitrackScenario,
+  type AuditBuildFeature,
   type RecordingScenario,
   type MultitrackScenario,
 } from "@/lib/audit/recordingAuditCalibration";
@@ -96,9 +104,37 @@ import {
   type FinalizeProbe,
   type MultitrackAuditRow,
   type MultitrackAuditSummary,
+  type CaptureMode,
   type SdkBuildProbe,
 } from "@/lib/audit/recordingAuditArtifacts";
 import { BAR_PPQN } from "@/lib/audit/auditExpectations";
+// Single-tape per-repeat runner and its waits, shared with the input-latency
+// calibration page (src/demos/recording/input-latency-calibration-debug-demo.tsx)
+// so both measure and classify a cell exactly the same way.
+import {
+  FINALIZE_DEADLINE_MS,
+  armJankOnRecordingFlip,
+  bpmToken,
+  cellLabel,
+  clearLastFinalizeProbe,
+  instrumentFinalize,
+  resetForNextCell,
+  readFirstQuantumTimeSec,
+  resolveHarnessPathBias,
+  runCellRepeat,
+  runRepeatWithDeadline,
+  settleFinalizeProbe,
+  takeLastFinalizeProbe,
+  assertCurrent,
+  waitForLoaderTerminal,
+  waitForPosition,
+  waitForPositionSettled,
+  waitForTakeCount,
+  type CapturedBuffer,
+  type CellRepeatResult,
+  type HarnessPathBias,
+  type RepeatToken,
+} from "@/lib/audit/recordingCellRunner";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
@@ -134,7 +170,6 @@ const rate = Number(params.get("rate") ?? "48000");
 const RMS_PASS_THRESHOLD = 0.005;
 /** How long to record before stopping (no count-in — startRecording(false)). */
 const RECORD_WINDOW_MS = 4000;
-const FINALIZE_DEADLINE_MS = 30_000;
 
 // Build probe: identifies which SDK build is live, for A/B runs against an
 // alternate dist tree (see SDK_DIST_OVERRIDE in vite.config.ts). A module-surface
@@ -161,7 +196,23 @@ function detectSdkBuildProbe(engine: unknown): SdkBuildProbe {
 // multi-mic scenarios' second tape (see "Multi-mic simultaneous recording"
 // section below) — advertising it unconditionally costs nothing for the
 // single-tape modes.
-const loopback = installLoopbackCapture(2);
+/**
+ * `?defaultInput=1` — arm the tape on the SDK's DEFAULT input instead of naming
+ * the synthetic device: the capture box's `deviceId` is left unset and the
+ * loopback serves the resulting unconstrained request (see `serveDefault` in
+ * loopbackInjection.ts). On THIS harness that is the only configuration in
+ * which `CaptureAudio.#updateStream` reuses its audio chain across takes: the
+ * synthetic stream reports an empty device id here (`reportDeviceId` is off),
+ * so a box that names a device never matches what the open stream reports and
+ * the chain is rebuilt before every recording. A real named device reports its
+ * id back and reuses on every build. Single-tape scenarios only — the
+ * multi-mic ones need two distinct named devices by construction.
+ */
+const DEFAULT_INPUT = params.get("defaultInput") === "1";
+/** Persisted per run so an envelope says which `#updateStream` path it took. */
+const CAPTURE_MODE: CaptureMode = DEFAULT_INPUT ? "default" : "named";
+
+const loopback = installLoopbackCapture(2, { serveDefault: DEFAULT_INPUT });
 
 type ProbeRow = { label: string; value: string };
 
@@ -368,63 +419,15 @@ Click "Run probe" with a real click — resumes the AudioContext.`}
 
 const ALL_SCENARIOS = [...RECORDING_AUDIT_SCENARIOS];
 
-/** Task 9 fix round 1 (I3): finalization instrumentation, persisted per row so the
- *  loop-wrap hang mechanism (and the ring overshoot behind the `#finalize` head drop)
- *  rests on committed artifacts rather than console logs. The SDK's `RecordingWorklet`
- *  is the take's SampleLoader while it records; its `limit(count)` method is patched
- *  on the INSTANCE (the class method is untouched) to record every call together with
- *  `numberOfFrames` at that moment. A hung finalization is one with NO `limit()` call
- *  and a loader still in the `record` state after the wait. Field contract:
- *  `FinalizeProbe` in recordingAuditArtifacts.ts. */
-function instrumentFinalize(loader: SampleLoader): FinalizeProbe {
-  const probe: FinalizeProbe = { finalizeLimitCalls: [], finalizeNumberOfFramesAtLimit: [], finalizeOvershootFrames: [] };
-  const l = loader as unknown as { limit?: (count: number) => void; numberOfFrames?: number };
-  if (typeof l.limit !== "function" || typeof l.numberOfFrames !== "number") return probe;
-  const original = l.limit;
-  l.limit = (count: number) => {
-    const frames = l.numberOfFrames as number;
-    probe.finalizeLimitCalls!.push(count);
-    probe.finalizeNumberOfFramesAtLimit!.push(frames);
-    probe.finalizeOvershootFrames!.push(frames - count);
-    original.call(loader, count);
-  };
-  return probe;
-}
-
-function settleFinalizeProbe(probe: FinalizeProbe, loader: SampleLoader): void {
-  const l = loader as unknown as { numberOfFrames?: number };
-  probe.finalizeNumberOfFramesAfter = typeof l.numberOfFrames === "number" ? l.numberOfFrames : undefined;
-  probe.finalizeLoaderState = loader.state.type;
-}
-
-// The probe of the repeat currently running, so a repeat that fails (a hung
-// finalization is exactly the case of interest) still persists it on its error row.
-let lastFinalizeProbe: FinalizeProbe | null = null;
+// The multi-mic finalize probes of the repeat currently running, so a repeat
+// that fails (a hung finalization is exactly the case of interest) still
+// persists them on its error rows. The single-tape equivalent lives with the
+// shared runner (`takeLastFinalizeProbe` in recordingCellRunner.ts).
 let lastMultitrackFinalizeProbes: { a: FinalizeProbe; b: FinalizeProbe } | null = null;
 
 // Row contract: `AuditRow` in recordingAuditArtifacts.ts (every field annotated
 // with the fix round / schema generation that introduced it).
 
-interface CapturedBuffer {
-  channels: Float32Array[];
-  sampleRate: number;
-}
-
-interface CellRepeatResult {
-  rows: AuditRow[];
-  alignments: { takeIndex: number; alignment: TakeAlignment }[];
-  buffer: CapturedBuffer;
-}
-
-/** Filename-safe token for a bpm that may carry a decimal (97.3 -> "97p3") —
- *  the /__verify sink's name regex only accepts [a-z0-9-]+ before the extension. */
-function bpmToken(bpm: number): string {
-  return String(bpm).replace(".", "p");
-}
-
-function cellLabel(scenario: RecordingScenario, bpm: number, repeat: number): string {
-  return `${scenario}/${bpmToken(bpm)}/r${repeat}`;
-}
 
 function resolveScenarios(param: string | null): RecordingScenario[] {
   if (!param || param === "all") return ALL_SCENARIOS;
@@ -451,681 +454,7 @@ function resolveRate(param: string | null): number {
   return n;
 }
 
-/**
- * Poll `engine.position` at `intervalMs` until `predicate` holds, or reject
- * after `deadlineMs`. Manages its own deadline (a `withDeadline` wrapper has
- * no way to reach into the promise and stop the poll): the timer and the
- * `settled` flag guarantee the recursive `setTimeout` chain stops on BOTH exit
- * paths — a timed-out wait used to keep polling the box graph for the rest
- * of the page's life, and that orphan poll was also what let a repeat
- * abandoned by the outer cell deadline resolve during the NEXT repeat.
- * `deferFirstCheck` delays even the first read by one interval (see
- * `waitForPositionSettled`).
- */
-function pollPosition(
-  project: Project,
-  predicate: (ppqn: number) => boolean,
-  intervalMs: number,
-  deadlineMs: number,
-  label: string,
-  deferFirstCheck: boolean
-): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
-    let settled = false;
-    let poll: ReturnType<typeof setTimeout> | null = null;
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      if (poll !== null) clearTimeout(poll);
-      reject(new Error(`${label} timed out after ${deadlineMs / 1000}s`));
-    }, deadlineMs);
-    const check = () => {
-      if (settled) return;
-      if (predicate(project.engine.position.getValue())) {
-        settled = true;
-        clearTimeout(timer);
-        resolve();
-        return;
-      }
-      poll = setTimeout(check, intervalMs);
-    };
-    if (deferFirstCheck) poll = setTimeout(check, intervalMs);
-    else check();
-  });
-}
 
-/** Poll of engine.position, per the brief's spec — catches the documented WASM
- *  transport-start-delay flakiness (position never advances) as a timeout
- *  instead of hanging the whole campaign. */
-function waitForPosition(project: Project, targetPpqn: number, deadlineMs: number): Promise<void> {
-  return pollPosition(project, (ppqn) => ppqn >= targetPpqn, 50, deadlineMs, `waitForPosition(${targetPpqn})`, false);
-}
-
-/**
- * Poll until engine.position reads back within one beat of `expectedPpqn`.
- * Required after every `setPosition()` call, before trusting any later
- * `waitForPosition(..., target)` check: `position.getValue()` can still
- * return the PREVIOUS repeat's stale value for one or more polls
- * immediately after `setPosition()` (the reset is applied on the audio
- * thread and only reflected back asynchronously). Without this settle,
- * a repeat targeting the same musical span as the one before it can read
- * that stale (already-past-target) value on `waitForPosition`'s very
- * first, synchronous check and resolve instantly — stopping the recording
- * before any audio was captured (observed: two consecutive repeats both
- * finalizing with zero take regions, no timeout, right after a prior
- * repeat had ended near the same position). The first check is deferred
- * via setTimeout so it can never resolve on a synchronous stale read.
- */
-function waitForPositionSettled(project: Project, expectedPpqn: number, deadlineMs: number): Promise<void> {
-  const tolerancePpqn = BAR_PPQN / 4; // one beat's worth of slack
-  return pollPosition(
-    project,
-    (ppqn) => Math.abs(ppqn - expectedPpqn) <= tolerancePpqn,
-    20,
-    deadlineMs,
-    `waitForPositionSettled(${expectedPpqn})`,
-    true
-  );
-}
-
-/**
- * A repeat's cancellation token. `runRepeatWithDeadline` flips `cancelled`
- * when the outer cell deadline fires; the repeat checks it after every await
- * (`assertCurrent`) so an abandoned repeat can never reach a side effect —
- * `stopRecording()`, patching a loader, overwriting `lastFinalizeProbe` —
- * while the NEXT repeat is already running. `withDeadline` alone has no
- * cancellation: the rejected promise is dropped but the async function
- * behind it keeps executing.
- */
-interface RepeatToken {
-  cancelled: boolean;
-}
-
-function assertCurrent(token: RepeatToken, stage: string): void {
-  if (token.cancelled) throw new Error(`repeat abandoned by the outer cell deadline before ${stage}`);
-}
-
-function runRepeatWithDeadline<T>(run: (token: RepeatToken) => Promise<T>, ms: number, label: string): Promise<T> {
-  const token: RepeatToken = { cancelled: false };
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      token.cancelled = true;
-      reject(new Error(`${label} timed out after ${ms / 1000}s`));
-    }, ms);
-    run(token).then(
-      (value) => { clearTimeout(timer); resolve(value); },
-      // A late rejection from an already-abandoned repeat (its assertCurrent
-      // throw) lands on a settled promise and is dropped here, by design.
-      (err) => { clearTimeout(timer); reject(err); }
-    );
-  });
-}
-
-/** The harness-path bias term and how long it took to become readable. */
-interface HarnessPathBias {
-  valueSec: number;
-  settleMs: number;
-}
-
-/**
- * Read `audioContext.outputLatency` ONCE per page load, after output has
- * demonstrably started. Chrome reports 0 until the output stream is running,
- * and a run that read the property per repeat measured its first repeat with
- * a bias of 0 while the summary recorded the later non-zero value (persisted
- * evidence: `nominal-start/120/r1` in four runs, adjusted == raw). Resumes the
- * context if needed, then polls at 50 ms for a non-zero read up to
- * `deadlineMs`; on timeout the (zero) value is returned and warned about, and
- * `settleMs` in the summary shows the wait ran out. The value is applied to
- * EVERY row of the run and persisted both per row and in the envelope, so an
- * offline reader never has to infer which bias a row was adjusted with.
- */
-async function resolveHarnessPathBias(audioContext: AudioContext, deadlineMs: number = 5000): Promise<HarnessPathBias> {
-  const start = performance.now();
-  if (audioContext.state !== "running") await audioContext.resume();
-  while (!(audioContext.outputLatency > 0)) {
-    if (performance.now() - start > deadlineMs) {
-      console.warn("[recording-alignment-audit] outputLatency still " + String(audioContext.outputLatency) + " after " + deadlineMs + "ms; every row of this run will carry that bias");
-      break;
-    }
-    await new Promise((r) => setTimeout(r, 50));
-  }
-  const bias = { valueSec: audioContext.outputLatency, settleMs: performance.now() - start };
-  console.log("[recording-alignment-audit] harnessPathBiasSec=" + String(bias.valueSec) + " settled in " + bias.settleMs.toFixed(0) + "ms; baseLatency=" + String(audioContext.baseLatency));
-  return bias;
-}
-
-/**
- * Resolves once EVERY one of `unitAdapters` holds >= targetCountEach audio
- * take regions — used by loop-wrap (a single adapter, LOOP_WRAP_TAKES + 1 —
- * the 5 finalized takes plus the in-progress 6th) and by the multi-mic
- * scenarios (two adapters, target 1 each: confirms BOTH tapes' independent
- * RecordingWorklets have actually created their take region before the
- * caller trusts the recording is genuinely underway on both — skipping this
- * check would race exactly the inter-track skew this scenario measures,
- * since each tape's region-creation timing is independent).
- *
- * Watches each adapter's `.tracks` itself (not just a one-time snapshot of
- * `.values()`) — the SDK can land later takes on a newly-created TrackBox
- * (`RecordTrack.findOrCreate` per CLAUDE.md's "Take-to-Track Matching"),
- * which would otherwise be invisible to a fixed set of `regions`
- * subscriptions and stall the cell out to the deadline.
- *
- * Manages its own deadline (rather than wrapping withDeadline around the
- * promise) so every subscription — on every adapter's tracks collection AND
- * on each track's regions — is guaranteed to terminate on every exit path
- * (resolve, or timeout); an external withDeadline wrapper has no way to
- * reach into this promise to clean up subs it never sees.
- */
-function waitForTakeCount(unitAdapters: AudioUnitBoxAdapter[], targetCountEach: number, deadlineMs: number): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
-    const subs: Terminable[] = [];
-    let settled = false;
-    const cleanup = () => subs.forEach((s) => s.terminate());
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      reject(new Error(`waitForTakeCount(${targetCountEach}x${unitAdapters.length}) timed out after ${deadlineMs / 1000}s`));
-    }, deadlineMs);
-    const countRegions = (unitAdapter: AudioUnitBoxAdapter) =>
-      unitAdapter.tracks
-        .values()
-        .flatMap((t) => [...t.regions.adapters.values()])
-        .filter((r) => r.isAudioRegion()).length;
-    const checkAndMaybeResolve = () => {
-      if (settled) return;
-      if (unitAdapters.every((u) => countRegions(u) >= targetCountEach)) {
-        settled = true;
-        clearTimeout(timer);
-        cleanup();
-        resolve();
-      }
-    };
-    for (const unitAdapter of unitAdapters) {
-      // Fix round 1 (I3): `catchupAndSubscribe` fires synchronously for
-      // already-existing tracks/regions. If adapter K's OWN catch-up (via
-      // its nested track.regions subscription) satisfies `every(...)` —
-      // e.g. because a LATER adapter in this list already had enough
-      // regions before this loop even reached it — `checkAndMaybeResolve`
-      // sets `settled` and calls `cleanup()` mid-loop, terminating
-      // everything pushed to `subs` SO FAR. Any subscription this same
-      // iteration pushes AFTER that point (including the outer
-      // `tracks.catchupAndSubscribe` call itself, whose nested regions-sub
-      // may have just fired synchronously inside it) is invisible to that
-      // `cleanup()` call and never terminated — a leak. `beforeLength`
-      // brackets everything THIS iteration adds so it can be swept
-      // explicitly once the iteration's own synchronous work is done, and
-      // the `if (settled) break` guard stops any FURTHER adapter from
-      // subscribing at all once a prior iteration already resolved us.
-      if (settled) break;
-      const beforeLength = subs.length;
-      subs.push(
-        unitAdapter.tracks.catchupAndSubscribe({
-          onAdd: (track) => {
-            if (settled) return;
-            subs.push(track.regions.catchupAndSubscribe({ onAdded: checkAndMaybeResolve, onRemoved: () => {} }));
-          },
-          onRemove: () => {},
-          onReorder: () => {},
-        })
-      );
-      if (settled) {
-        for (let i = beforeLength; i < subs.length; i++) subs[i].terminate();
-      }
-    }
-  });
-}
-
-/**
- * Resolves once `loader.state.type` reaches a terminal state ("loaded" or
- * "error"); rejects with the loader's error reason if it errors, or with a
- * timeout error after `deadlineMs`. Pre-checks the already-terminal case
- * (avoids the `subscribe()`-fires-synchronously TDZ hazard — see CLAUDE.md's
- * SampleLoader section) and manages its own deadline so the subscription is
- * guaranteed to terminate on every exit path — resolve, error, or timeout.
- * Shared by the finalization barrier and the between-cells cleanup grace
- * wait so both close the same leak the same way.
- */
-function waitForLoaderTerminal(loader: SampleLoader, deadlineMs: number, label: string): Promise<void> {
-  if (loader.state.type === "loaded") return Promise.resolve();
-  if (loader.state.type === "error") return Promise.reject(new Error(String(loader.state.reason)));
-  return new Promise<void>((resolve, reject) => {
-    let settled = false;
-    let subscribed = false;
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      if (subscribed) sub.terminate();
-      reject(new Error(`${label} timed out after ${deadlineMs / 1000}s`));
-    }, deadlineMs);
-    const sub = loader.subscribe((state) => {
-      if (settled) return;
-      if (state.type === "loaded") {
-        settled = true;
-        clearTimeout(timer);
-        resolve();
-        if (subscribed) sub.terminate();
-      } else if (state.type === "error") {
-        settled = true;
-        clearTimeout(timer);
-        reject(new Error(String(state.reason)));
-        if (subscribed) sub.terminate();
-      }
-    });
-    subscribed = true;
-  });
-}
-
-/** Task 9: the SDK's RecordingWorklet (the take's SampleLoader while it records)
- *  exposes the context time of the buffer's first frame as `firstQuantumTime`
- *  (an Option) on builds carrying the audio-thread anchor fix; the installed
- *  0.0.170 has no such member. Read defensively — undefined means "not exposed". */
-function readFirstQuantumTimeSec(loader: SampleLoader): number | undefined {
-  const opt = (loader as unknown as { firstQuantumTime?: { isEmpty(): boolean; unwrap(): number } }).firstQuantumTime;
-  if (opt === undefined || typeof opt.isEmpty !== "function") return undefined;
-  return opt.isEmpty() ? undefined : opt.unwrap();
-}
-
-/**
- * Fix round 2 (N3): subscribes to `engine.isRecording` and, once it first
- * flips true, blocks the main thread for `jankMs` (the `janked-start`
- * provocation — see the C1 fix comment at its call site). Manages its own
- * deadline and guaranteed subscription termination on every exit path
- * (jank-fired, timeout) — same shape as `waitForLoaderTerminal` above and
- * for the same reason: the original inline version had no internal
- * deadline (a never-flipping `isRecording`, e.g. the documented WASM
- * transport-start-delay quirk, left the subscription live past the outer
- * 120s cell deadline, so it could fire the spin during a LATER repeat that
- * reuses the same tape/capture — silent cross-repeat contamination) and
- * used a bare `jankSub!.terminate()` that would null-deref if `isRecording`
- * were already true at subscribe time (catchup fires synchronously, before
- * the assignment to `jankSub` completes) — the same TDZ-shaped hazard
- * CLAUDE.md's SampleLoader section warns about, fixed here with the same
- * `subscribed` boolean guard pattern.
- */
-function armJankOnRecordingFlip(project: Project, jankMs: number, deadlineMs: number): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
-    let settled = false;
-    let subscribed = false;
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      if (subscribed) sub.terminate();
-      reject(new Error(`armJankOnRecordingFlip: isRecording never flipped true within ${deadlineMs / 1000}s`));
-    }, deadlineMs);
-    const sub = project.engine.isRecording.catchupAndSubscribe((obs) => {
-      if (settled || !obs.getValue()) return;
-      settled = true;
-      clearTimeout(timer);
-      const until = performance.now() + jankMs;
-      while (performance.now() < until) {
-        /* spin */
-      }
-      if (subscribed) sub.terminate();
-      resolve();
-    });
-    subscribed = true;
-  });
-}
-
-/**
- * Common per-repeat sequence (task-4-brief.md Steps 2-5): set bpm/prefs,
- * schedule reference clicks, run the scenario-specific start, wait for the
- * scenario-specific stop condition, wait for finalization, then measure
- * every take region against the beat grid + reference schedule.
- *
- * Does NOT clean up take regions — that is the outer cell loop's job
- * (`resetForNextCell`, called unconditionally after every repeat attempt,
- * success or failure, so a mid-recording error never leaves stale regions
- * for the next repeat).
- */
-async function runCellRepeat(
-  project: Project,
-  audioContext: AudioContext,
-  unitAdapter: AudioUnitBoxAdapter,
-  scenario: RecordingScenario,
-  bpm: number,
-  rate: number,
-  repeat: number,
-  onStage: (stage: string) => void,
-  // Task 7 recast: audioContext.outputLatency — the register's "term 1" harness-path
-  // bias (see debug/recording-start-alignment-audit.md "Bring-up calibration"),
-  // passed through to measureTakeAlignment so classifyCell's verdicts run on the
-  // adjusted median rather than the raw one. The value is resolved ONCE per page
-  // load by `resolveHarnessPathBias` (after output has started, so it is never
-  // Chrome's initial 0) and the same value reaches every repeat of every run on
-  // this page; it is persisted on each row (`harnessPathBiasSec`) and in the
-  // summary envelope, which therefore always describe the same number.
-  harnessPathBiasSec: number,
-  token: RepeatToken
-): Promise<CellRepeatResult> {
-  onStage("prefs");
-  project.editing.modify(() => {
-    project.timelineBox.bpm.setValue(bpm);
-  });
-  const settings = project.engine.preferences.settings;
-  settings.metronome.enabled = true;
-  settings.recording.countInBars = 1;
-  settings.recording.allowTakes = true;
-  settings.recording.olderTakeAction = "mute-region";
-  settings.recording.inputLatency = 0;
-
-  // Loop area only for loop-wrap; disabled otherwise (same editing.modify).
-  const { loopArea } = project.timelineBox;
-  project.editing.modify(() => {
-    loopArea.from.setValue(0);
-    loopArea.to.setValue(2 * BAR_PPQN);
-    loopArea.enabled.setValue(scenario === "loop-wrap");
-  });
-
-  // Reference clicks: start before recording, cover the longest cell
-  // (loop-wrap 5 takes @97.3bpm ~= 25s) + margin.
-  const schedule: ReferenceSchedule = buildReferenceSchedule(audioContext.currentTime + 0.2, 120, 0.25, 0.005);
-  loopback.scheduleReferenceClicks(schedule.times);
-
-  let recordRequestContextTime: number | null = null;
-  let stopRequestContextTime: number | null = null;
-  let startPpqn = 0;
-
-  onStage("start");
-  switch (scenario) {
-    case "nominal-start": {
-      project.engine.setPosition(0);
-      await waitForPositionSettled(project, 0, 30_000);
-      recordRequestContextTime = audioContext.currentTime;
-      project.startRecording(false);
-      break;
-    }
-    case "countin-start":
-    case "loop-wrap": {
-      project.engine.setPosition(0);
-      await waitForPositionSettled(project, 0, 30_000);
-      recordRequestContextTime = audioContext.currentTime;
-      project.startRecording(true); // 1-bar count-in
-      break;
-    }
-    case "janked-start": {
-      project.engine.setPosition(0);
-      await waitForPositionSettled(project, 0, 30_000);
-      recordRequestContextTime = audioContext.currentTime;
-      // Fix round 1 (C1): `project.startRecording()` is fire-and-forget over an
-      // ASYNC chain (`Recording.start` AWAITS `capture.prepareRecording()` — the
-      // worklet-connect — before `engine.prepareRecordingState()` actually starts
-      // the transport). Spinning immediately after the call, as this scenario
-      // used to, blocks that continuation too: it defers capture-connect AND
-      // transport-start together, which just delays when recording genuinely
-      // begins (measured: raw headMissingMs tracked JANK_MS almost exactly,
-      // 168.89ms jank mean − 18.58ms nominal baseline ≈ 150.3ms ≈ JANK_MS) —
-      // not C's intended provocation (a main thread busy AFTER an audio-thread
-      // anchor already exists, before the SDK reads/accepts it). Fix: key the
-      // spin off our OWN subscription to `engine.isRecording` actually flipping
-      // true (see `armJankOnRecordingFlip` above; fix round 2 rewrote this from
-      // an inline, undeadlined Promise to that shared, self-terminating helper)
-      // — by definition, everything up to and including
-      // `engine.prepareRecordingState()` has already run by then, so capture is
-      // genuinely live; only the SDK's post-flip position-tick handling (which
-      // creates the take) is still pending and gets blocked by the spin.
-      const jankArmed = armJankOnRecordingFlip(project, JANK_MS, 30_000);
-      project.startRecording(false);
-      await jankArmed;
-      break;
-    }
-    case "midtimeline-start": {
-      project.engine.setPosition(0);
-      await waitForPositionSettled(project, 0, 30_000);
-      assertCurrent(token, "play");
-      project.engine.play();
-      startPpqn = 2 * BAR_PPQN;
-      await waitForPosition(project, startPpqn, 20_000);
-      assertCurrent(token, "startRecording");
-      recordRequestContextTime = audioContext.currentTime;
-      project.startRecording(false);
-      break;
-    }
-  }
-
-  onStage("recording");
-  assertCurrent(token, "recording wait");
-  if (scenario === "loop-wrap") {
-    await waitForTakeCount([unitAdapter], LOOP_WRAP_TAKES + 1, 90_000);
-  } else {
-    await waitForPosition(project, startPpqn + 4 * BAR_PPQN, 60_000);
-  }
-
-  onStage("stopping");
-  // The side effects below (loader patch, lastFinalizeProbe, stopRecording)
-  // must never run for a repeat the outer deadline already abandoned.
-  assertCurrent(token, "stopping");
-  // All takes on the tape share one file (see CLAUDE.md "Loop Take Buffer
-  // Layout") — wait on any one region's loader. Looked up BEFORE the stop so the
-  // finalization probe is armed before the SDK's stop path can call limit().
-  const anyTake = unitAdapter.tracks
-    .values()
-    .flatMap((t) => [...t.regions.adapters.values()])
-    .filter((r) => r.isAudioRegion())[0];
-  if (!anyTake) throw new Error("no take regions created");
-  const loader = anyTake.file.getOrCreateLoader();
-  const finalizeProbe = instrumentFinalize(loader);
-  lastFinalizeProbe = finalizeProbe;
-  finalizeProbe.finalizeNumberOfFramesAtStop = (loader as unknown as { numberOfFrames?: number }).numberOfFrames;
-  stopRequestContextTime = audioContext.currentTime;
-  project.engine.stopRecording();
-
-  onStage("finalizing");
-  // Fix round 1 (C2): loop-wrap repeats were failing with
-  // `finalizing: finalization timed out after 30s` (NOT the `waitForPosition`
-  // transport-start quirk this scenario's error rows were previously
-  // mis-attributed to). Diagnostic: widened to 90s to test "genuinely needs
-  // more time" (harness deadline miscalibration) vs a real hang. Result: 4 of
-  // 6 repeats STILL timed out at 90s (3x the original deadline) while the
-  // other 2 finalized in under 5s — a binary fast-or-never split, not a slow
-  // gradient — refuting the miscalibration hypothesis. Reverted to 30s (a
-  // longer deadline bought nothing but wall-clock time); the timing itself
-  // is kept as a diagnostic since it's cheap and helps future triage.
-  const finalizeDeadlineMs = 30_000;
-  const finalizeStart = performance.now();
-  try {
-    await waitForLoaderTerminal(loader, finalizeDeadlineMs, "finalization");
-  } finally {
-    settleFinalizeProbe(finalizeProbe, loader);
-  }
-  assertCurrent(token, "measuring");
-  // Fix round 2 (cheap add): persisted per row below (`finalizeMs`) so the C2
-  // fast-or-never finalization-timeout evidence is a committed artifact, not
-  // console-only.
-  const finalizeMs = performance.now() - finalizeStart;
-  const firstQuantumTimeSec = readFirstQuantumTimeSec(loader);
-  console.log(
-    "[recording-alignment-audit] finalize " + cellLabel(scenario, bpm, repeat) +
-    " took " + finalizeMs.toFixed(0) + "ms" +
-    " (deadline " + finalizeDeadlineMs + "ms)"
-  );
-
-  onStage("measuring");
-  const takeRegions = unitAdapter.tracks
-    .values()
-    .flatMap((t) => [...t.regions.adapters.values()])
-    .filter((r) => r.isAudioRegion())
-    .sort((a, b) => a.position - b.position);
-  const dataOpt = loader.data;
-  if (dataOpt.isEmpty()) throw new Error("loader loaded but data empty");
-  const data = dataOpt.unwrap();
-  const mono = data.frames[0]; // requestChannels = 1
-  const { low, high } = bandSplit(mono, data.sampleRate);
-  const lowOnsets = detectOnsets(low, data.sampleRate, { refractorySec: 0.1 });
-  const highOnsets = detectOnsets(high, data.sampleRate, { refractorySec: 0.05 });
-
-  // Bring-up diagnostic (Task 6, ALIGNED_TOLERANCE_MS calibration): pure
-  // detector/graph-path noise, independent of any SDK placement math — each
-  // identified reference click's residual against its OWN schedule entry,
-  // relative to the median anchor. This isolates onset-detection + zero-phase
-  // band-split jitter from everything RecordAudio.ts computes. Fix round 1
-  // (I3): captured into variables and persisted on every row below (was
-  // console-only), so this evidence lives in a committed artifact.
-  let clockNoiseIdentifiedClicks: number | undefined;
-  let clockNoiseMaxAbsResidualMs: number | undefined;
-  {
-    const identified = identifyReferenceClicks(highOnsets, schedule);
-    const anchor = estimateAnchorT0(identified, schedule);
-    if (anchor !== null && identified.length > 1) {
-      const residualsMs = identified.map((c) => (schedule.times[c.index] - c.fileTimeSec - anchor) * 1000);
-      const maxAbs = Math.max(...residualsMs.map((r) => Math.abs(r)));
-      clockNoiseIdentifiedClicks = identified.length;
-      clockNoiseMaxAbsResidualMs = maxAbs;
-      console.log(
-        "[recording-alignment-audit] clockNoise " + cellLabel(scenario, bpm, repeat) +
-        " identifiedClicks=" + identified.length +
-        " maxAbsResidualMs=" + maxAbs.toFixed(4) +
-        " residualsMs=[" + residualsMs.map((r) => r.toFixed(3)).join(",") + "]"
-      );
-    }
-  }
-
-  const rows: AuditRow[] = [];
-  const alignments: { takeIndex: number; alignment: TakeAlignment }[] = [];
-  for (const [takeIndex, region] of takeRegions.entries()) {
-    const regionStartSec = project.tempoMap.ppqnToSeconds(region.position);
-    const waveformOffsetSec = region.box.waveformOffset.getValue();
-    const regionDurationSec = project.tempoMap.intervalToSeconds(region.position, region.position + region.duration);
-    const bufferDurationSec = data.numberOfFrames / data.sampleRate;
-    const alignment = measureTakeAlignment({
-      lowOnsets,
-      highOnsets,
-      regionStartSec,
-      waveformOffsetSec,
-      regionDurationSec,
-      bufferDurationSec,
-      bpm,
-      schedule,
-      recordRequestContextTime,
-      stopRequestContextTime,
-      headMissingBaselineMs: HEAD_MISSING_BASELINE_MS,
-      harnessPathBiasSec,
-    });
-    alignments.push({ takeIndex, alignment });
-    // No reference click identified: head/tail deficits are null and the row is
-    // persisted with those nulls (classifyCell reports the cell "integrity
-    // unmeasured" for it). Warned here so a live watcher sees it too.
-    if (alignment.anchorT0Sec === null) {
-      console.warn("[recording-alignment-audit] " + cellLabel(scenario, bpm, repeat) + "/take" + takeIndex + ": no reference-click anchor — head/tail integrity unmeasured for this repeat");
-    }
-    // Fix round 1 (I3): raw (uncorrected) head-missing, so both the corrected
-    // and raw figures are available in the persisted row (was only derivable
-    // by reversing HEAD_MISSING_BASELINE_MS by hand from console output).
-    const headMissingRawMs =
-      alignment.anchorT0Sec !== null && recordRequestContextTime !== null
-        ? Math.max(0, (alignment.anchorT0Sec - recordRequestContextTime) * 1000)
-        : null;
-    // Bring-up diagnostic (Task 6): raw box-graph values behind every alignment
-    // number, so a calibration bias can be traced to its source term instead of
-    // inferred from the final medianBeatErrorMs alone. Fix round 1 (C3/I3):
-    // also persisted on the row itself (was console-only).
-    console.log(
-      "[recording-alignment-audit] diag " + cellLabel(scenario, bpm, repeat) + "/take" + takeIndex +
-      " position=" + String(region.position) +
-      " regionStartSec=" + String(regionStartSec) +
-      " waveformOffsetSec=" + String(waveformOffsetSec) +
-      " anchorT0Sec=" + String(alignment.anchorT0Sec) +
-      " recordRequestContextTime=" + String(recordRequestContextTime) +
-      " medianBeatErrorMs=" + String(alignment.medianBeatErrorMs) +
-      " medianBeatErrorMsAdjusted=" + String(alignment.medianBeatErrorMsAdjusted) +
-      " headMissingMs=" + String(alignment.headMissingMs) +
-      " headMissingRawMs=" + String(headMissingRawMs) +
-      " firstQuantumTimeSec=" + String(firstQuantumTimeSec)
-    );
-    rows.push({
-      scenario,
-      bpm,
-      rate,
-      repeat,
-      takeIndex,
-      medianBeatErrorMs: alignment.medianBeatErrorMs,
-      medianBeatErrorMsAdjusted: alignment.medianBeatErrorMsAdjusted,
-      matchedBeats: alignment.matchedBeats,
-      missingBeats: alignment.missingBeats,
-      headMissingMs: alignment.headMissingMs,
-      headMissingRawMs,
-      tailMissingMs: alignment.tailMissingMs,
-      stopRequestContextTime,
-      bufferDurationSec,
-      regionPositionPpqn: region.position,
-      regionStartSec,
-      waveformOffsetSec,
-      regionDurationSec,
-      anchorT0Sec: alignment.anchorT0Sec,
-      recordRequestContextTime,
-      finalizeMs,
-      firstQuantumTimeSec,
-      harnessPathBiasSec,
-      ...finalizeProbe,
-      clockNoiseIdentifiedClicks,
-      clockNoiseMaxAbsResidualMs,
-      status: "pending",
-      matchedSignature: null,
-      detail: "",
-    });
-  }
-
-  return { rows, alignments, buffer: { channels: [mono], sampleRate: data.sampleRate } };
-}
-
-/**
- * Between-cells reset (task-4-brief.md Step 1): cancel any still-pending
- * reference clicks from this repeat's schedule (otherwise a stray onset from
- * an earlier repeat's ~65s schedule can leak into the NEXT repeat's captured
- * buffer and break `identifyReferenceClicks`' gap adjacency), stop any
- * lingering recording state, delete every take region on the tape's tracks
- * AND the shared AudioFileBox they point at (`region.box.delete()`
- * cascade-deletes the region's OWN mandatory dependents, but the file is an
- * outgoing pointer the region merely refers to — the SDK's own
- * `restartRecording()` cleanup path deletes regions the same way and leaves
- * the file box orphaned, verified by reading Project.js — so it must be
- * deleted here explicitly), then reset position.
- *
- * Runs unconditionally (success or failure) so a mid-recording error never
- * leaves stale regions for the next repeat/cell. Per CLAUDE.md's "Never Call
- * stop(true) During Recording Finalization" rule, an error mid-recording
- * (most commonly a `waitForPosition`/`waitForTakeCount` timeout — EXPECTED
- * in this campaign, see the WASM transport-start-delay note) can land here
- * while a take is still finalizing; `stop(true)` racing that finalization is
- * exactly what the rule warns against. So: if a take region exists whose
- * loader hasn't reached a terminal state yet, wait up to a bounded grace
- * period for it before deleting boxes / calling stop(true). If the grace
- * period also expires, proceed anyway (the campaign must not hang on one
- * bad cell) but return a warning string — the caller attaches it to the
- * affected row's `detail` so a human (or Task 6) can spot a cell whose
- * predecessor's cleanup may not have fully settled before it started.
- */
-async function resetForNextCell(project: Project, unitAdapter: AudioUnitBoxAdapter): Promise<string | null> {
-  loopback.cancelReferenceClicks();
-  if (project.engine.isRecording.getValue() || project.engine.isCountingIn.getValue()) {
-    project.engine.stopRecording();
-  }
-  const takeRegions = unitAdapter.tracks
-    .values()
-    .flatMap((t) => [...t.regions.adapters.values()])
-    .filter((r) => r.isAudioRegion());
-  let warning: string | null = null;
-  if (takeRegions.length > 0) {
-    const loader = takeRegions[0].file.getOrCreateLoader();
-    if (loader.state.type !== "loaded" && loader.state.type !== "error") {
-      try {
-        await waitForLoaderTerminal(loader, 10_000, "cleanup finalization grace");
-      } catch (err) {
-        warning = `finalization grace timed out before deleting take regions: ${String(err)}`;
-        console.warn(`[recording-alignment-audit] ${warning}`);
-      }
-    }
-    const fileBox = takeRegions[0].file.box;
-    project.editing.modify(() => {
-      takeRegions.forEach((r) => r.box.delete());
-      fileBox.delete();
-    });
-  }
-  project.engine.stop(true);
-  project.engine.setPosition(0);
-  return warning;
-}
 
 /** Outcome of one capture-WAV upload: the name the rows should carry and the
  *  failure reason, null on success. */
@@ -1194,6 +523,7 @@ async function uploadSummary(
   rows: AuditRow[],
   rate: number,
   sdkBuildProbe: SdkBuildProbe,
+  buildFeatures: AuditBuildFeature[],
   bias: HarnessPathBias,
   baseLatency: number,
   cellVerdicts: CellVerdictRecord[],
@@ -1205,6 +535,9 @@ async function uploadSummary(
     beatGrid: "absolute",
     rate,
     sdkBuildProbe,
+    buildFeatures,
+    captureMode: CAPTURE_MODE,
+    getUserMediaOpens: loopback.getUserMediaOpens(),
     // Fix round 1 (C3/I3): persisted so the loopback-path-bias decomposition
     // doesn't depend on console output. Read once per page load by
     // `resolveHarnessPathBias`, after output started — the same number every
@@ -1243,6 +576,9 @@ interface MatrixContext {
   audioContext: AudioContext;
   unitAdapter: AudioUnitBoxAdapter;
   sdkBuildProbe: SdkBuildProbe;
+  /** Which SDK surfaces this build exposes — persisted so the offline classifier
+   *  can pick the band profile from what the build does, not when it ran. */
+  buildFeatures: AuditBuildFeature[];
   bias: HarnessPathBias;
 }
 
@@ -1253,6 +589,8 @@ async function createMatrixContext(rate: number): Promise<MatrixContext> {
     engineTap: (node) => loopback.engineTap(node),
   });
   const sdkBuildProbe = detectSdkBuildProbe(project.engine);
+  const buildFeatures = detectBuildFeatures(project.engine);
+  console.log("[recording-alignment-audit] buildFeatures=[" + buildFeatures.join(",") + "]");
   loopback.attach(audioContext);
   const bias = await resolveHarnessPathBias(audioContext);
 
@@ -1265,14 +603,16 @@ async function createMatrixContext(rate: number): Promise<MatrixContext> {
   const capture = project.captureDevices.get(audioUnitBox.address.uuid).unwrap();
   if (!(capture instanceof CaptureAudio)) throw new Error("capture is not CaptureAudio");
   project.editing.modify(() => {
-    capture.captureBox.deviceId.setValue(LOOPBACK_DEVICE_ID);
+    // `defaultInput` leaves the box's deviceId unset — see DEFAULT_INPUT.
+    if (!DEFAULT_INPUT) capture.captureBox.deviceId.setValue(LOOPBACK_DEVICE_ID);
     capture.requestChannels = 1;
   });
   capture.armed.setValue(true);
+  console.log("[recording-alignment-audit] tape armed, defaultInput=" + String(DEFAULT_INPUT));
 
   const unitAdapter = project.rootBoxAdapter.audioUnits.adapters().find((u) => u.box === audioUnitBox);
   if (!unitAdapter) throw new Error("no audio unit adapter for tape");
-  return { project, audioContext, unitAdapter, sdkBuildProbe, bias };
+  return { project, audioContext, unitAdapter, sdkBuildProbe, buildFeatures, bias };
 }
 
 // Booted once per page load: `initializeOpenDAW` → `Workers.install` asserts
@@ -1298,7 +638,7 @@ async function runAudit(
   // joined without guessing (Task 7c fix round 1, review M12).
   const runToken = Date.now();
 
-  const { project, audioContext, unitAdapter, sdkBuildProbe, bias } = await getMatrixContext(rate);
+  const { project, audioContext, unitAdapter, sdkBuildProbe, buildFeatures, bias } = await getMatrixContext(rate);
   onBuildProbe(sdkBuildProbe);
 
   const allRows: AuditRow[] = [];
@@ -1321,12 +661,15 @@ async function runAudit(
         let stage = "prefs";
         let result: CellRepeatResult | null = null;
         let errorMessage: string | null = null;
-        lastFinalizeProbe = null;
+        clearLastFinalizeProbe();
         try {
           result = await runRepeatWithDeadline(
-            (token) => runCellRepeat(project, audioContext, unitAdapter, scenario, bpm, rate, repeat, (s) => {
-              stage = s;
-            }, bias.valueSec, token),
+            (token) => runCellRepeat({
+              project, audioContext, loopback, unitAdapter, scenario, bpm, rate, repeat,
+              onStage: (s) => { stage = s; },
+              harnessPathBiasSec: bias.valueSec,
+              token,
+            }),
             // Outer deadline ABOVE the inner stages' worst-case sum, so the
             // stage that is actually slow is the one that names itself:
             // loop-wrap 30 (settle) + 90 (take count) + 30 (finalize) = 150 s;
@@ -1347,7 +690,7 @@ async function runAudit(
         // cleanup failure itself can never abort the whole campaign.
         let cleanupWarning: string | null = null;
         try {
-          cleanupWarning = await resetForNextCell(project, unitAdapter);
+          cleanupWarning = await resetForNextCell(project, loopback, unitAdapter);
         } catch (cleanupErr) {
           cleanupWarning = `cleanup itself threw: ${String(cleanupErr)}`;
           console.warn(`[recording-alignment-audit] cell ${label} cleanup failed: ${cleanupWarning}`);
@@ -1372,7 +715,7 @@ async function runAudit(
             matchedSignature: null,
             detail: cleanupWarning ? `cleanup warning: ${cleanupWarning}` : "",
             errorMessage: errorMessage ?? "unknown error",
-            ...(lastFinalizeProbe ?? {}),
+            ...(takeLastFinalizeProbe() ?? {}),
           };
           allRows.push(errorRow);
           onRow(errorRow);
@@ -1391,7 +734,7 @@ async function runAudit(
       // explicit detail here names the reason (every repeat errored).
       const classification: CellClassification =
         alignmentsForClassification.length > 0
-          ? classifyCell(alignmentsForClassification, SIGNATURE_BANDS[scenario], ALIGNED_TOLERANCE_MS)
+          ? classifyCell(alignmentsForClassification, signatureBandsFor(scenario, sdkBuildProbe, runToken, buildFeatures), ALIGNED_TOLERANCE_MS)
           : { status: "investigate", matchedSignature: null, detail: "no successful repeats to classify" };
       // Persisted for EVERY cell, so an all-error cell's verdict exists on disk
       // (rows only carry the verdict of successful repeats).
@@ -1428,7 +771,7 @@ async function runAudit(
   }
 
   setAuditState("uploading");
-  await uploadSummary(allRows, rate, sdkBuildProbe, bias, audioContext.baseLatency, cellVerdicts, wavUploadFailures, runToken);
+  await uploadSummary(allRows, rate, sdkBuildProbe, buildFeatures, bias, audioContext.baseLatency, cellVerdicts, wavUploadFailures, runToken);
   setAuditState("done");
 }
 
@@ -1557,6 +900,9 @@ function ScenarioRunnerHarness() {
               {`?scenario=<name|all>   default "all" (${ALL_SCENARIOS.join(", ")})
 ?bpm=<number|all>     default "all" (${RECORDING_AUDIT_BPMS.join(", ")})
 ?rate=<number>        default 48000 — sets the AudioContext at init, never "all"
+?defaultInput=1       arm on the SDK's default input (the box names no device) — on this
+                      harness the only configuration in which one audio chain serves every
+                      take, since the synthetic stream reports no device id back
 Repeats per cell:       ${REPEATS_PER_CELL}
 Uploads:                recaudit-summary-<runToken>.json (all rows) via PUT /__verify
                         recaudit-<scenario>-<bpm>-<rate>-r<repeat>-<build>-<runToken>.wav per repeat
@@ -1681,62 +1027,6 @@ function createMultitrackTapes(project: Project, sameDeviceB: boolean = false): 
   const unitAdapterB = project.rootBoxAdapter.audioUnits.adapters().find((u) => u.box === audioUnitBoxB);
   if (!unitAdapterA || !unitAdapterB) throw new Error("createMultitrackTapes: missing audio unit adapter");
   return { audioUnitBoxA, audioUnitBoxB, unitAdapterA, unitAdapterB };
-}
-
-interface MultitrackCellVerdict {
-  status: CellStatus;
-  detail: string;
-}
-
-/**
- * Cell verdict for a multitrack scenario: `aligned` when every repeat's
- * skew magnitude is within `ALIGNED_TOLERANCE_MS` AND both tapes' own
- * per-take alignment independently classifies as clean (not `investigate`)
- * against the equivalent single-tape scenario's SIGNATURE_BANDS —
- * otherwise `investigate`. There is no `matches-known-defect` outcome for
- * skew itself: no signature band predicts it (the single-tape sections
- * never provoked or measured simultaneous capture), so any measured skew
- * beyond tolerance is a candidate finding, named directly in the detail
- * string rather than mapped onto a band.
- */
-function classifyMultitrackCell(
-  tapeAClass: CellClassification,
-  tapeBClass: CellClassification,
-  repeatSkews: CrossTrackSkew[]
-): MultitrackCellVerdict {
-  if (repeatSkews.length === 0) {
-    return {
-      status: "investigate",
-      detail: `no successful repeats to measure skew (tapeA=${tapeAClass.status}, tapeB=${tapeBClass.status})`,
-    };
-  }
-  const usable = repeatSkews.filter((s) => s.medianSkewMs !== null);
-  if (usable.length !== repeatSkews.length) {
-    return {
-      status: "investigate",
-      detail: `skew unusable (0 paired beats) on ${repeatSkews.length - usable.length}/${repeatSkews.length} successful repeat(s) — tapeA=${tapeAClass.status}, tapeB=${tapeBClass.status}`,
-    };
-  }
-  const medians = usable.map((s) => s.medianSkewMs!);
-  const skewDetail = `medianSkewMs per repeat=[${medians.map((m) => m.toFixed(2)).join(", ")}] maxAbsMedianSkewMs=${Math.max(...medians.map(Math.abs)).toFixed(2)}`;
-  const tapesClean = tapeAClass.status !== "investigate" && tapeBClass.status !== "investigate";
-  const skewClean = medians.every((m) => Math.abs(m) <= ALIGNED_TOLERANCE_MS);
-  if (skewClean && tapesClean) {
-    return {
-      status: "aligned",
-      detail: `skew within ${ALIGNED_TOLERANCE_MS}ms tolerance on every repeat and both tapes individually clean (tapeA=${tapeAClass.status}, tapeB=${tapeBClass.status}) — ${skewDetail}`,
-    };
-  }
-  if (!tapesClean) {
-    return {
-      status: "investigate",
-      detail: `at least one tape's own per-take alignment did not classify clean (tapeA=${tapeAClass.status}: ${tapeAClass.detail}; tapeB=${tapeBClass.status}: ${tapeBClass.detail}) — ${skewDetail}`,
-    };
-  }
-  return {
-    status: "investigate",
-    detail: `skew exceeds ${ALIGNED_TOLERANCE_MS}ms tolerance with both tapes otherwise clean (candidate finding — no predicted band for inter-track skew) — ${skewDetail}`,
-  };
 }
 
 interface MultitrackRepeatResult {
@@ -2017,6 +1307,7 @@ async function uploadMultitrackSummary(
   rows: MultitrackAuditRow[],
   rate: number,
   sdkBuildProbe: SdkBuildProbe,
+  buildFeatures: AuditBuildFeature[],
   bias: HarnessPathBias,
   baseLatency: number,
   cellSkews: { scenario: MultitrackScenario; bpm: number; repeat: number; skew: CrossTrackSkew }[],
@@ -2028,7 +1319,9 @@ async function uploadMultitrackSummary(
   const summary: MultitrackAuditSummary = {
     schemaVersion: AUDIT_SCHEMA_VERSION,
     beatGrid: "absolute",
-    rate, sdkBuildProbe,
+    rate, sdkBuildProbe, buildFeatures,
+    captureMode: CAPTURE_MODE,
+    getUserMediaOpens: loopback.getUserMediaOpens(),
     // Read once per page load after output started (`resolveHarnessPathBias`)
     // — the value every row of this run was adjusted with.
     outputLatency: bias.valueSec, baseLatency,
@@ -2067,6 +1360,9 @@ interface MultitrackContext {
   audioContext: AudioContext;
   tapes: MultitrackTapes;
   sdkBuildProbe: SdkBuildProbe;
+  /** Which SDK surfaces this build exposes — persisted so the offline classifier
+   *  can pick the band profile from what the build does, not when it ran. */
+  buildFeatures: AuditBuildFeature[];
   bias: HarnessPathBias;
 }
 
@@ -2077,10 +1373,12 @@ async function createMultitrackContext(rate: number, confirmCollision: boolean):
     engineTap: (node) => loopback.engineTap(node),
   });
   const sdkBuildProbe = detectSdkBuildProbe(project.engine);
+  const buildFeatures = detectBuildFeatures(project.engine);
+  console.log("[recording-alignment-audit] buildFeatures=[" + buildFeatures.join(",") + "]");
   loopback.attach(audioContext);
   const bias = await resolveHarnessPathBias(audioContext);
   const tapes = createMultitrackTapes(project, confirmCollision);
-  return { project, audioContext, tapes, sdkBuildProbe, bias };
+  return { project, audioContext, tapes, sdkBuildProbe, buildFeatures, bias };
 }
 
 let multitrackContextPromise: Promise<MultitrackContext> | null = null;
@@ -2095,6 +1393,16 @@ async function runMultitrackAudit(
   onBuildProbe: (probe: SdkBuildProbe) => void
 ): Promise<void> {
   setAuditState("setup");
+  // `createMultitrackTapes` names a loopback device on BOTH tapes, so this
+  // combination would persist `captureMode: "default"` on an envelope whose
+  // captures were named — and the injection's `serveDefault` would withhold
+  // the very devices those tapes ask for. Refuse it rather than mislabel it.
+  if (DEFAULT_INPUT) {
+    throw new Error(
+      "?defaultInput=1 cannot be combined with a multitrack scenario: both tapes name a loopback device, " +
+      "so the envelope would stamp captureMode \"default\" on named captures — drop one of the two parameters"
+    );
+  }
   const scenarios = resolveMultitrackScenarios(params.get("scenario"));
   const bpms = resolveMultitrackBpms(params.get("bpm"));
   const rate = resolveRate(params.get("rate"));
@@ -2114,7 +1422,7 @@ async function runMultitrackAudit(
   // combination is re-run under a different build later in the same session.
   const runToken = Date.now();
 
-  const { project, audioContext, tapes, sdkBuildProbe, bias } = await getMultitrackContext(rate, confirmCollision);
+  const { project, audioContext, tapes, sdkBuildProbe, buildFeatures, bias } = await getMultitrackContext(rate, confirmCollision);
   onBuildProbe(sdkBuildProbe);
   console.log("[recording-alignment-audit] multitrack confirmCollision=" + String(confirmCollision));
 
@@ -2200,13 +1508,13 @@ async function runMultitrackAudit(
       const baseScenario = MULTITRACK_BASE_SCENARIO[scenario];
       const tapeAClass: CellClassification =
         repeats.length > 0
-          ? classifyCell(repeats.map((r) => r.alignmentA), SIGNATURE_BANDS[baseScenario], ALIGNED_TOLERANCE_MS)
+          ? classifyCell(repeats.map((r) => r.alignmentA), signatureBandsFor(baseScenario, sdkBuildProbe, runToken, buildFeatures), ALIGNED_TOLERANCE_MS)
           : { status: "investigate", matchedSignature: null, detail: "no successful repeats to classify (tape a)" };
       const tapeBClass: CellClassification =
         repeats.length > 0
-          ? classifyCell(repeats.map((r) => r.alignmentB), SIGNATURE_BANDS[baseScenario], ALIGNED_TOLERANCE_MS)
+          ? classifyCell(repeats.map((r) => r.alignmentB), signatureBandsFor(baseScenario, sdkBuildProbe, runToken, buildFeatures), ALIGNED_TOLERANCE_MS)
           : { status: "investigate", matchedSignature: null, detail: "no successful repeats to classify (tape b)" };
-      const verdict = classifyMultitrackCell(tapeAClass, tapeBClass, repeats.map((r) => r.skew));
+      const verdict = classifyMultitrackCell(tapeAClass, tapeBClass, repeats.map((r) => r.skew), ALIGNED_TOLERANCE_MS);
       // Persisted for EVERY cell, all-error cells included (no skew signature
       // band exists, so matchedSignature is always null here).
       cellVerdicts.push({
@@ -2234,7 +1542,7 @@ async function runMultitrackAudit(
   }
 
   setAuditState("uploading");
-  await uploadMultitrackSummary(allRows, rate, sdkBuildProbe, bias, audioContext.baseLatency, cellSkews, cellVerdicts, wavUploadFailures, runToken, confirmCollision);
+  await uploadMultitrackSummary(allRows, rate, sdkBuildProbe, buildFeatures, bias, audioContext.baseLatency, cellSkews, cellVerdicts, wavUploadFailures, runToken, confirmCollision);
   setAuditState("done");
 }
 

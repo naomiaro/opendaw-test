@@ -628,7 +628,19 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   `src/lib/audit/recordingAlignment.ts`, calibration
   `src/lib/audit/recordingAuditCalibration.ts`, campaign register
   `debug/recording-start-alignment-audit.md`. Full scenario list and the known
-  repeat-losing defects: `src/demos/recording/CLAUDE.md`.
+  repeat-losing defects: `src/demos/recording/CLAUDE.md`. Signature bands are chosen PER
+  BUILD from the `buildFeatures` list the page probes off the live SDK, so read a verdict
+  against the profile the run's own envelope names; the calibration branch's bands E/F were
+  fitted to the runs they classify and carry no predictive content on them.
+- The SDK's loopback input-latency calibration has its own unlisted ground-truth page,
+  `input-latency-calibration-debug-demo.html` — it needs the calibration-branch SDK served
+  through `SDK_DIST_OVERRIDE`, so it is NOT part of the standing sweep, which runs against the
+  installed release. Its `?armState` / `?defaultInput=1` / `?repeat=` modes plus the per-build
+  signature profiles ARE the sweep's calibration arm for now, re-run against an override build
+  after an SDK upgrade; a `?scenario=calibrated` sweep variant becomes possible only on a
+  release that ships `calibrateInputLatency`. Params, envelope fields and the branch-API shim:
+  `src/demos/recording/CLAUDE.md`; measurements and open findings:
+  `debug/recording-start-alignment-audit.md`.
 - `npm run build` runs Vite then VitePress — demos go to `dist/`, docs go to `dist/docs/` for `/docs/` on Cloudflare Pages
 - `npm run docs:dev` — local VitePress dev server for documentation
 - typescript-lsp plugin: install `typescript-language-server` and `typescript` **globally** (`npm i -g typescript-language-server typescript`) — the plugin spawns by PATH, NOT from `node_modules/.bin`, so a devDep doesn't satisfy it. LSP `hover` / `goToDefinition` / `documentSymbol` also resolve types in the upstream openDAW checkout (`tsserver` walks up to the nearest tsconfig — handy for SDK drift audits). Prefer file-scoped ops over `workspaceSymbol` (~3.9k symbols / ~135 KB persisted in this repo).
@@ -793,6 +805,12 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   internal debug note, not the issue). Draft the issue body as an md file for user
   review BEFORE posting. Cross-link the issue
   number back into the repro page's DebugLinkBar and the debug note's header.
+- Upstream PRs describe their CURRENT state in the PR body: after every push to a PR
+  branch (review responses, extra fixes, scope additions), edit the body with
+  `gh pr edit --body-file` so it reads as one coherent description — never post
+  "pushed a follow-up commit that …" narrative comments. Replies inside a reviewer's
+  inline thread are fine. Never put a Claude session URL in any public text; commit
+  messages carry only the Co-Authored-By trailer.
 - After an SDK upgrade, audit `documentation/*.md` chapter docs for stale API signatures: grep
   each renamed/changed identifier from the changelog and update method signatures, return
   types, and code examples. Chapter docs describe current contracts — leaving stale

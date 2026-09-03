@@ -497,7 +497,13 @@ export function measureCrossTrackSkew(a: TakeAlignment, b: TakeAlignment): Cross
 export type CellStatus = "aligned" | "matches-known-defect" | "investigate";
 
 export interface SignatureBand {
-  id: "A" | "B" | "C" | "D";
+  // A-D: the campaign's predicted upstream signatures. E-F: the measured
+  // signatures of the calibration branch's keep-alive build. Which set applies
+  // is chosen per artifact by its persisted `buildFeatures` list, with the build
+  // probe and run token as the fallback for artifacts written before that field
+  // — see `profileKeyFor` / `RECORDING_AUDIT_PROFILES` in
+  // recordingAuditCalibration.ts.
+  id: "A" | "B" | "C" | "D" | "E" | "F";
   kind: "random-band" | "constant-late" | "head-loss";
   minAbsMs: number;
   maxAbsMs: number;
@@ -667,5 +673,73 @@ export function classifyCell(
     status: "investigate",
     matchedSignature: null,
     detail: `no band matched: mean=${mean.toFixed(2)}ms ${detailSuffix}`,
+  };
+}
+
+export interface MultitrackCellVerdict {
+  status: CellStatus;
+  detail: string;
+}
+
+/**
+ * Cell verdict for a multitrack scenario: `aligned` when every repeat's
+ * skew magnitude is within `alignedToleranceMs` AND both tapes' own
+ * per-take alignment independently classifies as clean (not `investigate`)
+ * against the equivalent single-tape scenario's bands —
+ * otherwise `investigate`. There is no `matches-known-defect` outcome for
+ * skew itself: no signature band predicts it (the single-tape sections
+ * never provoked or measured simultaneous capture), so any measured skew
+ * beyond tolerance is a candidate finding, named directly in the detail
+ * string rather than mapped onto a band.
+ *
+ * NOTE for anyone quoting an `aligned` multitrack cell: it means the two tapes
+ * agree with EACH OTHER to within the tolerance and neither tape's own cell
+ * classified `investigate`. It does NOT mean the takes landed on the beat — a
+ * cell whose two tapes are both 22 ms late in the same direction is `aligned`
+ * here, because the skew that this scenario exists to measure is zero. Read the
+ * per-tape verdicts beside it.
+ *
+ * Lives here rather than on the harness page so the offline scripts classify a
+ * persisted multitrack run exactly as the page did; `alignedToleranceMs` is a
+ * parameter for the same reason `classifyCell` takes one.
+ */
+export function classifyMultitrackCell(
+  tapeAClass: CellClassification,
+  tapeBClass: CellClassification,
+  repeatSkews: CrossTrackSkew[],
+  alignedToleranceMs: number
+): MultitrackCellVerdict {
+  if (repeatSkews.length === 0) {
+    return {
+      status: "investigate",
+      detail: `no successful repeats to measure skew (tapeA=${tapeAClass.status}, tapeB=${tapeBClass.status})`,
+    };
+  }
+  const usable = repeatSkews.filter((s) => s.medianSkewMs !== null);
+  if (usable.length !== repeatSkews.length) {
+    return {
+      status: "investigate",
+      detail: `skew unusable (0 paired beats) on ${repeatSkews.length - usable.length}/${repeatSkews.length} successful repeat(s) — tapeA=${tapeAClass.status}, tapeB=${tapeBClass.status}`,
+    };
+  }
+  const medians = usable.map((s) => s.medianSkewMs!);
+  const skewDetail = `medianSkewMs per repeat=[${medians.map((m) => m.toFixed(2)).join(", ")}] maxAbsMedianSkewMs=${Math.max(...medians.map(Math.abs)).toFixed(2)}`;
+  const tapesClean = tapeAClass.status !== "investigate" && tapeBClass.status !== "investigate";
+  const skewClean = medians.every((m) => Math.abs(m) <= alignedToleranceMs);
+  if (skewClean && tapesClean) {
+    return {
+      status: "aligned",
+      detail: `skew within ${alignedToleranceMs}ms tolerance on every repeat and both tapes individually clean (tapeA=${tapeAClass.status}, tapeB=${tapeBClass.status}) — ${skewDetail}`,
+    };
+  }
+  if (!tapesClean) {
+    return {
+      status: "investigate",
+      detail: `at least one tape's own per-take alignment did not classify clean (tapeA=${tapeAClass.status}: ${tapeAClass.detail}; tapeB=${tapeBClass.status}: ${tapeBClass.detail}) — ${skewDetail}`,
+    };
+  }
+  return {
+    status: "investigate",
+    detail: `skew exceeds ${alignedToleranceMs}ms tolerance with both tapes otherwise clean (candidate finding — no predicted band for inter-track skew) — ${skewDetail}`,
   };
 }

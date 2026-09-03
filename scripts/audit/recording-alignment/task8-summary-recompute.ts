@@ -81,7 +81,7 @@ for (const rate of [48000, 44100]) {
       ...asClassifiable(r, corrected(r)),
       missingBeats: s === "midtimeline-start" ? 0 : r.missingBeats,
     }));
-    const cls = classifyCell(repeats, signatureBandsFor(s), c.alignedToleranceMs);
+    const cls = classifyCell(repeats, signatureBandsFor(s, c.sdkBuildProbe, Number(CAND[rate])), c.alignedToleranceMs);
     if (cls.status === "matches-known-defect") mkd++; else if (cls.status === "aligned") aligned++; else inv++;
     const u = upsMean[`${rate}|${s}|${bpm}`];
     let d = "no upstream data";

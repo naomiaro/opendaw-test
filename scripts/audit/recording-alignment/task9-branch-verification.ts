@@ -72,7 +72,7 @@ if (mode === "cells" || mode === "all") {
       for (const r of b) if (biasAnomaly(r, br.outputLatency)) anomalies.push(`${rate}/${scenario}/${bpm}/r${r.repeat}/take${r.takeIndex}: applied bias ${fmt(appliedHarnessPathBiasMs(r))} ms (run outputLatency ${br.outputLatency}); persisted adjusted ${fmt(r.medianBeatErrorMsAdjusted)}, re-adjusted ${fmt(readjusted(r, br.outputLatency))}; cell mean re-adjusted ${fmt(mean(b.map((x) => readjusted(x, br.outputLatency))))}`);
       for (const r of u) if (biasAnomaly(r, up.outputLatency)) anomalies.push(`UPSTREAM ${rate}/${scenario}/${bpm}/r${r.repeat}/take${r.takeIndex}: applied bias ${fmt(appliedHarnessPathBiasMs(r))} ms`);
       const uMean = u.length ? mean(u.map((r) => r.medianBeatErrorMsAdjusted)) : NaN;
-      const cls = bPop.length ? classifyCell(bPop.map((r) => asClassifiable(r)), signatureBandsFor(scenario), br.alignedToleranceMs) : null;
+      const cls = bPop.length ? classifyCell(bPop.map((r) => asClassifiable(r)), signatureBandsFor(scenario, br.sdkBuildProbe, Number(BR[rate])), br.alignedToleranceMs) : null;
       if (cls?.status === "aligned") aligned++; else if (cls?.status === "matches-known-defect") matches++; else if (cls) investigate++;
       if (b.length) { allBranch.push(bMean); (groups[scenario] ??= []).push(bMean); }
       let delta = "—";
@@ -207,7 +207,7 @@ if (mode === "integrity" || mode === "all") {
     for (const scenario of SCENARIOS) for (const bpm of BPMS) {
       const b = cellPopulation(br.rows, scenario, bpm);
       if (!b.length) continue;
-      const cls = classifyCell(b.map((r) => asClassifiable(r)), signatureBandsFor(scenario), br.alignedToleranceMs);
+      const cls = classifyCell(b.map((r) => asClassifiable(r)), signatureBandsFor(scenario, br.sdkBuildProbe, Number(BR[rate])), br.alignedToleranceMs);
       console.log(`  ${rate}/${scenario}/${bpm}: ${cls.status}${cls.matchedSignature ? " (" + cls.matchedSignature + ")" : ""} — ${cls.detail}`);
     }
   }
