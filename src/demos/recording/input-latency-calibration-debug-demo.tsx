@@ -1,7 +1,10 @@
 // src/demos/recording/input-latency-calibration-debug-demo.tsx
-// Unlisted ground-truth page for the SDK's input-latency calibration
-// (`.superpowers/sdd/2026-09-02-input-latency-calibration/`, design spec
-// `docs/superpowers/specs/2026-09-02-input-latency-calibration-design.md` §5).
+// Unlisted ground-truth page for the SDK's input-latency calibration. What was
+// measured, on which SDK head, and what it does not settle:
+// `debug/recording-start-alignment-audit.md`, section "Input-latency calibration
+// (2026-09-02)". The design spec and plan this page was built from are deleted
+// with the work — recover them with
+// `git log --all --oneline -- 'docs/superpowers/*/2026-09-02-input-latency-calibration*'`.
 //
 // What it proves: the SDK's `CaptureAudio.calibrateInputLatency` measures a
 // KNOWN delay. The synthetic loopback (src/lib/audit/loopbackInjection.ts)
