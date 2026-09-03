@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ABSOLUTE_GRID_FROM_RUN, appliedHarnessPathBiasMs, parseAuditSummary, parseMultitrackAuditSummary,
 } from "./recordingAuditArtifacts";
+import { profileKeyFor } from "./recordingAuditCalibration";
 
 // Minimal envelopes shaped like the generations actually on disk (see the
 // module's generation table). Only the fields the loader decides on are set.
@@ -72,6 +73,51 @@ describe("parseAuditSummary — generation table", () => {
     expect(s.beatGrid).toBe("absolute");
     expect(s.beatGridSource).toBe("persisted");
     expect(s.cellVerdicts).toHaveLength(1);
+  });
+});
+
+describe("parseAuditSummary — G7 build-feature fields", () => {
+  // G7: envelopes that persist `buildFeatures`, `captureMode` and
+  // `getUserMediaOpens` (the per-build profile era). All three are optional on
+  // older artifacts, must pass through verbatim when present, and must throw
+  // rather than be coerced when malformed.
+  const g6 = { ...base, schemaVersion: 2, beatGrid: "absolute", sdkBuildProbe: "candidate", outputLatency: 0.023, harnessPathBiasSec: 0.023, rows: [row({ medianBeatErrorMsAdjusted: -62, tailMissingMs: 0 })] };
+
+  it("absent → null on every one of the three, for both envelope kinds", () => {
+    const s = parseAuditSummary(g6, 1788386290685);
+    expect(s.buildFeatures).toBeNull();
+    expect(s.captureMode).toBeNull();
+    expect(s.getUserMediaOpens).toBeNull();
+    const mt = parseMultitrackAuditSummary(
+      { ...g6, skewToleranceMs: 2, rows: [{ scenario: "multitrack-start", bpm: 120, rate: 48000, repeat: 1, tape: "a", medianBeatErrorMs: -80, matchedBeats: 16, missingBeats: 0, headMissingMs: 0, status: "aligned", detail: "" }], cellSkews: [] },
+      1788387238856
+    );
+    expect(mt.buildFeatures).toBeNull();
+    expect(mt.captureMode).toBeNull();
+    expect(mt.getUserMediaOpens).toBeNull();
+  });
+
+  it("present → passed through verbatim, and the feature list selects the profile", () => {
+    const features = ["recordingStart", "calibrateInputLatency", "latencyProbes"];
+    const s = parseAuditSummary({ ...g6, buildFeatures: features, captureMode: "default", getUserMediaOpens: 1 }, 1788386290685);
+    expect(s.buildFeatures).toEqual(features);
+    expect(s.captureMode).toBe("default");
+    expect(s.getUserMediaOpens).toBe(1);
+    expect(profileKeyFor(s.sdkBuildProbe, s.runId, s.buildFeatures)).toBe("candidate");
+    // An empty list is still a positive statement about the served build.
+    const none = parseAuditSummary({ ...g6, buildFeatures: [], captureMode: "named", getUserMediaOpens: 30 }, 1788386290685);
+    expect(none.buildFeatures).toEqual([]);
+    expect(profileKeyFor(none.sdkBuildProbe, none.runId, none.buildFeatures)).toBe("upstream");
+  });
+
+  it("malformed → throws, never coerces", () => {
+    expect(() => parseAuditSummary({ ...g6, buildFeatures: "latencyProbes" }, 1)).toThrow(/buildFeatures/);
+    expect(() => parseAuditSummary({ ...g6, buildFeatures: [1, 2] }, 1)).toThrow(/buildFeatures/);
+    expect(() => parseAuditSummary({ ...g6, buildFeatures: null }, 1)).toThrow(/buildFeatures/);
+    expect(() => parseAuditSummary({ ...g6, captureMode: "loopback" }, 1)).toThrow(/captureMode/);
+    expect(() => parseAuditSummary({ ...g6, captureMode: null }, 1)).toThrow(/captureMode/);
+    expect(() => parseAuditSummary({ ...g6, getUserMediaOpens: "1" }, 1)).toThrow(/getUserMediaOpens/);
+    expect(() => parseAuditSummary({ ...g6, getUserMediaOpens: Number.NaN }, 1)).toThrow(/getUserMediaOpens/);
   });
 });
 

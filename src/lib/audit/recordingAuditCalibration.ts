@@ -195,6 +195,15 @@ export const KEEP_ALIVE_PROFILE_FROM_RUN = 1788384000000;
  * Without `features`, the run-token fallback above applies, and a caller passing
  * neither gets `upstream` — so every call site predating per-build profiles is
  * unchanged and no historical output moves.
+ *
+ * INTENDED: once a feature list exists, `build` is ignored. The profile
+ * describes the SERVED SDK's behaviour, not the probe label — so a future
+ * release that ships `LatencyProbes` resolves to E/F even though the page
+ * stamps it `sdkBuildProbe: "upstream"` (the marker only detects
+ * `recordingStart`). Bands A-D were fitted to the pre-#376 release and stop
+ * describing such a build; judging it against them would manufacture
+ * `investigate` verdicts for behaviour the E/F bands already characterise. The
+ * tests pin this for `"upstream"` and `"unknown"`.
  */
 export function profileKeyFor(
   build: string | null | undefined,
