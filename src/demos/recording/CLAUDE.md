@@ -557,6 +557,19 @@ input-latency-calibration-debug-demo.html?input=real&rate=48000&bpm=120
   Acoustic case: keep the room quiet — every call plays three audible bursts out of the
   speakers, and the mic must hear them. Cable case: route the interface's output into the
   chosen input physically. One fresh navigation per run.
+- **Measured so far** (2026-09-03, branch `9d0cccb88`, Chrome/macOS): ONE device — a MacBook
+  Pro built-in microphone, acoustically — six runs (2 + 5 × 30 calls; 48 and 44.1 kHz; steady
+  and fresh). Every call 3/3 bursts at 30.55–38.16 dB; round trip constant to ≤ 0.024 frame
+  within a chain state; the browser's track `latency` (0.002666 s) sits 35–63 ms under the
+  measured input part; the second-anchor detector's first real hit (1 in 152, anchor B one
+  quantum off, A at the mode); the input path stepping DOWN one render quantum mid-chain and
+  holding (2 of 5 chains at 48 kHz, 0 of 3 at 44.1) — a stored calibration 2.67 ms off until
+  recalibrated, and invisible to the anchor check by construction; page loads ~24 ms apart at
+  48 kHz, re-arms under one quantum, neither on a 32- or 128-frame lattice. NOT measured: a
+  cable loopback, other browsers/devices, a take cell on a real path. Tables, findings with
+  status, what remains: `debug/recording-start-alignment-audit.md`, section "Real-device
+  calibration (2026-09-03)"; recompute with
+  `node scripts/audit/recording-alignment/task12c-real-input-tables.ts [runs|chains|events|all]`.
 
 **Branch API shim.** `calibrateInputLatency`, `clearInputLatencyCalibration` and
 `recording.inputLatencyCalibrations` exist only on the upstream calibration branch, and this
@@ -566,8 +579,10 @@ the check when a release ships the API. The page needs the branch build served t
 `SDK_DIST_OVERRIDE` and says so when it is missing.
 
 Measurements, findings and what remains: `debug/recording-start-alignment-audit.md`,
-section "Input-latency calibration (2026-09-02)". Offline recomputation:
-`node scripts/audit/recording-alignment/task12b-calibration-tables.ts`.
+section "Input-latency calibration (2026-09-02)" (loopback) and "Real-device calibration
+(2026-09-03)". Offline recomputation:
+`node scripts/audit/recording-alignment/task12b-calibration-tables.ts` (loopback) and
+`node scripts/audit/recording-alignment/task12c-real-input-tables.ts` (real device).
 
 ## Reference Files
 - Recording demo: `src/demos/recording/recording-api-react-demo.tsx`
