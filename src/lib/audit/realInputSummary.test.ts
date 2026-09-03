@@ -163,7 +163,98 @@ describe("summarizeRealInput — the three mechanisms kept apart", () => {
     expect(summary.stateTransitions.transitions[0]).toMatchObject({ index: 9, isOneQuantumStep: true, confirmedByFollowingCall: false });
     expect(summary.isolatedDeviations.count).toBe(0);
     expect(summary.perChain[0].states.map((s) => s.calls)).toEqual([9, 1]);
-    expect(summary.detail).toContain("nothing after it to confirm the hold");
+    expect(summary.detail).toContain("unconfirmed — no further agreeing call in the state it opened");
+  });
+
+  it("an unconfirmed step is one no later agreeing call sat in: a mid-run one-call state counts too", () => {
+    // [10×4264, 4136, 5×4200]: call 11 opens a state the next call leaves (unconfirmed, −1 q);
+    // call 12 opens the 4200 state that four more calls confirm (+0.5 q).
+    const calls = [...repeat(10, () => frames(48000, 4264, 1104, 0)), frames(48000, 4136, 1104, 0), ...repeat(5, () => frames(48000, 4200, 1104, 0))];
+    const summary = summarizeRealInput(calls, 48000, null);
+    expect(summary.stateTransitions.transitions.map((t) => [t.index, t.confirmedByFollowingCall])).toEqual([[10, false], [11, true]]);
+    expect(summary.stateTransitions.transitions[0].stepQuanta).toBeCloseTo(-1, 6);
+    expect(summary.stateTransitions.transitions[1].stepQuanta).toBeCloseTo(0.5, 6);
+    expect(summary.stateTransitions.unconfirmedSteps).toBe(1);
+    expect(summary.isolatedDeviations.count).toBe(0);
+    expect(summary.perChain[0].states.map((s) => s.calls)).toEqual([10, 1, 5]);
+  });
+
+  it("[27×4264, 4136, 4136, 4200]: a confirmed one-quantum step, then a half-quantum step on the last call, unconfirmed", () => {
+    const calls = [...repeat(27, () => frames(48000, 4264, 1104, 0)), frames(48000, 4136, 1104, 0), frames(48000, 4136, 1104, 0), frames(48000, 4200, 1104, 0)];
+    const summary = summarizeRealInput(calls, 48000, null);
+    expect(summary.stateTransitions.count).toBe(2);
+    expect(summary.stateTransitions.transitions.map((t) => [t.index, t.isOneQuantumStep, t.confirmedByFollowingCall])).toEqual([[27, true, true], [29, false, false]]);
+    expect(summary.stateTransitions.unconfirmedSteps).toBe(1);
+    expect(summary.perChain[0].states.map((s) => s.calls)).toEqual([27, 2, 1]);
+    expect(summary.isolatedDeviations.count).toBe(0);
+  });
+
+  it("[27×4264, 4136, 4264, 4136, 4136]: call 28 is isolated, the transition opens at call 30 and is confirmed", () => {
+    const calls = [
+      ...repeat(27, () => frames(48000, 4264, 1104, 0)),
+      frames(48000, 4136, 1104, 0), frames(48000, 4264, 1104, 0), frames(48000, 4136, 1104, 0), frames(48000, 4136, 1104, 0),
+    ];
+    const summary = summarizeRealInput(calls, 48000, null);
+    expect(summary.isolatedDeviations.deviations.map((d) => d.index)).toEqual([27]);
+    expect(summary.stateTransitions.transitions.map((t) => [t.index, t.confirmedByFollowingCall])).toEqual([[29, true]]);
+    // The isolated call is left out of the states: 27 + call 29 at the mode, then the two at 4136.
+    expect(summary.perChain[0].states.map((s) => s.calls)).toEqual([28, 2]);
+    expect(summary.perChain[0].states[0].lastIndex).toBe(28);
+  });
+
+  it("two consecutive off calls are a state the run stepped into and back out of, not deviations", () => {
+    const calls = [...repeat(10, () => frames(48000, 4264, 1104, 0)), ...repeat(2, () => frames(48000, 4136, 1104, 0)), ...repeat(10, () => frames(48000, 4264, 1104, 0))];
+    const summary = summarizeRealInput(calls, 48000, null);
+    expect(summary.isolatedDeviations.count).toBe(0);
+    expect(summary.stateTransitions.transitions.map((t) => [t.index, t.confirmedByFollowingCall])).toEqual([[10, true], [12, true]]);
+    expect(summary.perChain[0].states.map((s) => s.calls)).toEqual([10, 2, 10]);
+  });
+
+  it("an off FIRST call with the second at the mode is firstCallOff, not an isolated deviation, and opens no state", () => {
+    const calls = [frames(48000, 4136, 1104, 0), ...repeat(9, () => frames(48000, 4264, 1104, 0))];
+    const summary = summarizeRealInput(calls, 48000, null);
+    expect(summary.perChain[0].firstCallOff).not.toBeNull();
+    expect(summary.perChain[0].firstCallOff!.index).toBe(0);
+    expect(summary.perChain[0].firstCallOff!.deltaQuanta).toBeCloseTo(-1, 6);
+    expect(summary.isolatedDeviations.count).toBe(0);
+    expect(summary.stateTransitions.count).toBe(0);
+    expect(summary.perChain[0].states).toEqual([{ firstIndex: 1, lastIndex: 9, calls: 9, roundTripSec: 4264 / 48000 }]);
+    expect(summary.detail).toContain("first call off on chain(s) 0 (call 1, -1.00 quanta)");
+    // Two off calls at the start are a state the chain started in, so the step out of it is a transition.
+    const started = summarizeRealInput([frames(48000, 4136, 1104, 0), frames(48000, 4136, 1104, 0), ...repeat(8, () => frames(48000, 4264, 1104, 0))], 48000, null);
+    expect(started.perChain[0].firstCallOff).toBeNull();
+    expect(started.stateTransitions.transitions.map((t) => [t.index, t.confirmedByFollowingCall])).toEqual([[2, true]]);
+  });
+
+  it("reads the clusters on the round trip when outputLatencyReported flips within the run, and says so", () => {
+    // Same round trip throughout; the SDK reported the output leg on half the calls only, so the
+    // input part carries a 1104-frame step the input path never made.
+    const calls = repeat(10, (k) => (k < 5
+      ? frames(48000, 4264, 1104, 0)
+      : frames(48000, 4264, 0, 0, { outputLatencyReported: false })));
+    const summary = summarizeRealInput(calls, 48000, null);
+    expect(summary.verdictSeries).toBe("roundTrip");
+    expect(summary.verdict).toBe("repeatable");
+    expect(summary.perChain[0].clusterSeries).toBe("roundTrip");
+    expect(summary.perChain[0].clusters).toHaveLength(1);
+    expect(summary.detail).toContain("clusters read on the round trip");
+    // On the input part the same calls would have read as two clusters 8.6 quanta apart.
+    const consistent = summarizeRealInput(calls.map((c) => ({ ...c, outputLatencyReported: true })), 48000, null);
+    expect(consistent.verdictSeries).toBe("inputLatency");
+    expect(consistent.verdict).toBe("two-state");
+  });
+
+  it("uses a per-chain reported track latency when given a list, and the spread when chains are not 0/1", () => {
+    const calls = [...repeat(3, () => call(0.030, { chainIndex: 1 })), ...repeat(3, () => call(0.030 + QUANTUM, { chainIndex: 2 }))];
+    const summary = summarizeRealInput(calls, RATE, [null, 0.010, 0.020]);
+    expect(summary.perChain.map((c) => c.reportedLatencySec)).toEqual([0.010, 0.020]);
+    expect(summary.perChain[0].medianInputMinusReportedSec).toBeCloseTo(0.020, 9);
+    expect(summary.perChain[1].medianInputMinusReportedSec).toBeCloseTo(0.010 + QUANTUM, 9);
+    expect(summary.reportedLatencySec).toBe(0.010);
+    // No chain 0/1 pair: the signed difference is null and the two-state separation falls back to the spread.
+    expect(summary.chainMedianDifferenceQuanta).toBeNull();
+    expect(summary.verdict).toBe("two-state");
+    expect(summary.stateSeparationQuanta).toBeCloseTo(1, 6);
   });
 
   it("a first call whose anchors disagree does not seed the chain's state (no spurious transition on call 2)", () => {

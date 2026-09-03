@@ -13,9 +13,10 @@
  * Every figure is over the USABLE calls only: a call whose verdict is `ok` or
  * `noisy` (the two the SDK stores) AND whose round trip and input part are
  * finite. The other verdicts (`no-signal`, `no-stream`, `context-not-running`,
- * `transport-running`) report NaN figures, so they are counted by verdict and
- * otherwise left out; `usableCalls === 0` makes the whole summary `unusable`
- * and every statistic below it null.
+ * `transport-running`) report a NaN round trip and input part (spread 0,
+ * ratio −∞), and the page's own `error` rows are NaN throughout; they are
+ * counted by verdict and otherwise left out. `usableCalls === 0` makes the
+ * whole summary `unusable` and every statistic below it null.
  *
  * EVERYTHING IS JUDGED PER CHAIN. `?armState=fresh` rebuilds the SDK's input
  * chain halfway through the run, and a rebuilt chain legitimately lands at a
@@ -26,6 +27,14 @@
  * `chainIndex`, and the cross-chain difference lives ONLY in
  * `chainMedianDifferenceQuanta` (and `stateSeparationQuanta` when it decides
  * the verdict).
+ *
+ * WHICH SERIES THE SHAPE IS READ ON. Transitions and deviations are always
+ * judged on the ROUND TRIP (the anchors measure it). Clusters — and so the
+ * verdict — are read on the INPUT PART, the figure the SDK stores, as long as
+ * `outputLatencyReported` is identical across the usable calls: the input part
+ * is then the round trip minus one constant. When it flips within a run the
+ * input part carries a step the input path never made, so the clusters are
+ * read on the round trip instead and `verdictSeries` / `detail` say so.
  *
  * Three different things a call off its chain's mode can be, kept apart in the
  * output because they point at different mechanisms:
@@ -38,17 +47,22 @@
  *    the input path itself moved (batch 1788464591756 calls 28-30 and the
  *    applied call all read exactly −128 frames). Counted as transitions, with
  *    the calls in each state; a step within 25 % of one quantum is flagged
- *    `isOneQuantumStep`. A step on the LAST call of a chain is counted too,
- *    opening a one-call state: nothing follows it to show whether it held,
- *    so `confirmedByFollowingCall` is false on it (true when at least one
- *    later agreeing call sat in the new state) — a persisted step and a
- *    terminal one stay distinguishable. A chain's FIRST state is seeded by
- *    its first anchors-agreeing call; disagreeing calls before it are folded
- *    into that state, never used as the reference a step is measured from.
+ *    `isOneQuantumStep`. `confirmedByFollowingCall` is true when at least one
+ *    LATER agreeing call sat in the state the step opened, false when none
+ *    did — a step on the chain's last call (nothing follows it) or a one-call
+ *    state in mid-run that the next call stepped out of again. A persisted
+ *    step and an unconfirmed one stay distinguishable. A chain's FIRST state
+ *    is seeded by its first anchors-agreeing call; disagreeing calls before
+ *    it are folded into that state, never used as the reference a step is
+ *    measured from.
  *  - an ISOLATED DEVIATION: one call off its chain's mode with both anchors
- *    agreeing and the NEXT call back at the mode — the single-call case no
- *    anchor check can catch. Expected 0; if it is ever non-zero that is the
- *    finding.
+ *    agreeing, the previous call at the mode and the NEXT call back at the
+ *    mode — the single-call case no anchor check can catch. Expected 0; if it
+ *    is ever non-zero that is the finding. The chain's FIRST usable call is
+ *    never counted here (it has no previous call to return from): when it is
+ *    off the mode, anchors agreeing, and the second call sits at the mode, it
+ *    is reported as `firstCallOff` on the chain and left out of the state
+ *    walk, which then starts at the second call.
  */
 
 export interface RealInputCall {
@@ -76,10 +90,10 @@ export interface RealInputStats {
   stdev: number | null;
 }
 
-/** One group of a chain's usable input parts whose range is within half a render quantum. */
+/** One group of a chain's usable values (of `clusterSeries`) whose span is under half a render quantum. */
 export interface RealInputCluster {
   calls: number;
-  /** Median of the cluster's input parts, seconds. */
+  /** Median of the cluster's values, seconds. */
   centerSec: number;
   minSec: number;
   maxSec: number;
@@ -105,9 +119,8 @@ export interface RealInputTransition {
   stepQuanta: number;
   /** |step| within 25 % of exactly one quantum. */
   isOneQuantumStep: boolean;
-  /** True when the state this step opened is confirmed by at least one further anchors-agreeing
-   *  call in it; false when nothing agreeing follows — a step on the chain's last call, or one
-   *  followed only by calls whose anchors disagree. */
+  /** True when at least one later anchors-agreeing call of the chain sat in the state this step
+   *  opened; false when none did — the chain's last call, or a one-call state the next call left. */
   confirmedByFollowingCall: boolean;
 }
 
@@ -119,30 +132,42 @@ export interface RealInputIsolatedDeviation {
   deltaQuanta: number;
 }
 
+/** Which series a chain's clusters (and so the verdict) were read on — see the header. */
+export type RealInputSeries = "inputLatency" | "roundTrip";
+
 export interface RealInputChainSummary {
   chainIndex: number;
   calls: number;
   usableCalls: number;
   medianInputLatencySec: number | null;
+  medianRoundTripSec: number | null;
   /** Modal input part at frame resolution over the chain's usable calls, and how many share it. */
   modeInputLatencySec: number | null;
   modeCount: number;
   /** Modal round trip at frame resolution — the quantity transitions and deviations are judged on. */
   modeRoundTripSec: number | null;
-  /** True when every usable call of the chain is within half a quantum of the chain's modal input part. */
+  /** The series `clusters` and `withinHalfQuantum` were read on. */
+  clusterSeries: RealInputSeries;
+  /** True when every usable call of the chain is the same state as the chain's mode on `clusterSeries`. */
   withinHalfQuantum: boolean;
-  /** The chain's usable input parts grouped greedily: a call joins the open cluster while it stays
-   *  within half a quantum of that cluster's lowest value. Sorted ascending. */
+  /** The chain's usable values of `clusterSeries` grouped greedily: a call joins the open cluster
+   *  while it is the same state as that cluster's lowest value. Sorted ascending. */
   clusters: RealInputCluster[];
-  /** The chain's consecutive round-trip states, in call order (isolated deviations excluded). */
+  /** The chain's consecutive round-trip states, in call order (isolated deviations and an off first call excluded). */
   states: RealInputState[];
   transitions: RealInputTransition[];
   isolatedDeviations: RealInputIsolatedDeviation[];
+  /** The chain's first usable call off the mode with the second at it — see the header; null otherwise. */
+  firstCallOff: { index: number; deltaQuanta: number } | null;
+  /** `MediaTrackSettings.latency` the browser reported for THIS chain's track, when it did. */
+  reportedLatencySec: number | null;
+  /** The chain's median input part minus its reported track latency. */
+  medianInputMinusReportedSec: number | null;
 }
 
 export type RealInputVerdict = "repeatable" | "two-state" | "scattered" | "unusable";
 
-/** What the verdict was decided on: one chain's input-part clusters, or the medians of two chains. */
+/** What the verdict was decided on: one chain's clusters, or the medians of two chains. */
 export type RealInputVerdictBasis = "per-chain clusters" | "chain medians" | "none";
 
 export interface RealInputSummary {
@@ -168,30 +193,32 @@ export interface RealInputSummary {
     /** False when no call reported a second anchor at all. */
     secondAnchorAvailable: boolean;
   };
-  /** Round-trip steps that persisted, across all chains — see the header. */
+  /** Round-trip steps, across all chains — see the header. */
   stateTransitions: {
     count: number;
     oneQuantumSteps: number;
-    /** Of `count`, the steps on a chain's last call — opened a state no later call confirmed. */
+    /** Of `count`, the steps whose new state no later agreeing call sat in. */
     unconfirmedSteps: number;
     transitions: RealInputTransition[];
   };
-  /** Single calls off their chain's mode, anchors agreeing, next call back — see the header. */
+  /** Single calls off their chain's mode, anchors agreeing, neighbours at the mode — see the header. */
   isolatedDeviations: {
     count: number;
     deviations: RealInputIsolatedDeviation[];
   };
   /** One entry per chain seen, ascending `chainIndex`; a steady run has exactly one. */
   perChain: RealInputChainSummary[];
-  /** Chain 1's median input part minus chain 0's, in quanta, when both have a usable call. */
+  /** Chain 1's median (of `verdictSeries`) minus chain 0's, in quanta, when both have a usable call. */
   chainMedianDifferenceQuanta: number | null;
   /** For a `two-state` verdict, the separation of the two states in quanta: upper cluster minus
    *  lower (always positive) on per-chain clusters, chain 1 minus chain 0 (signed) on chain medians; else null. */
   stateSeparationQuanta: number | null;
   verdictBasis: RealInputVerdictBasis;
-  /** `MediaTrackSettings.latency` as the browser reported it for the armed track, when it did. */
+  /** The series the clusters and chain medians behind the verdict were read on — see the header. */
+  verdictSeries: RealInputSeries;
+  /** The first usable chain's reported track latency (a scalar argument applies to every chain). */
   reportedLatencySec: number | null;
-  /** Pooled median measured input part minus the browser's reported figure. */
+  /** Pooled median measured input part minus `reportedLatencySec`. */
   medianInputMinusReportedSec: number | null;
   verdict: RealInputVerdict;
   detail: string;
@@ -272,7 +299,7 @@ function anchorsAgree(call: RealInputCall, renderQuantumSec: number): boolean {
 
 /** Greedy over the sorted values: a value joins the open cluster while it is the same
  *  state as that cluster's lowest value, so every cluster's span is under half a quantum. */
-function clusterInputParts(values: number[], renderQuantumSec: number): RealInputCluster[] {
+function clusterValues(values: number[], renderQuantumSec: number): RealInputCluster[] {
   const sorted = [...values].sort((a, b) => a - b);
   const groups: number[][] = [];
   for (const value of sorted) {
@@ -295,47 +322,65 @@ interface IndexedCall {
   stepFromSec?: number;
 }
 
+const seriesValue = (call: RealInputCall, series: RealInputSeries): number =>
+  series === "inputLatency" ? call.inputLatencySeconds : call.roundTripSeconds;
+
 /**
  * One chain's summary. Transitions and isolated deviations are found on the
  * chain's usable calls in call order:
- *  1. an isolated deviation is a call off the chain's modal round trip by at
- *     least half a quantum, anchors agreeing, whose neighbours on BOTH sides
- *     (where they exist; the call must have a next one) sit at the mode;
- *  2. with those removed, a transition is a call whose round trip is at least
- *     half a quantum from the previous kept call's, anchors agreeing on it;
- *     a call whose anchors disagree never opens a state (its reported round
- *     trip is the suspect figure) and is folded into the state it follows.
+ *  1. an isolated deviation is a call off the chain's modal round trip,
+ *     anchors agreeing, whose previous AND next usable calls sit at the mode;
+ *     the chain's first usable call cannot be one (no previous call) — if it
+ *     is off with the second call at the mode it is `firstCallOff` instead,
+ *     and likewise left out of the state walk;
+ *  2. with those removed, a transition is a call whose round trip is a
+ *     distinct state from the previous agreeing call's, anchors agreeing on
+ *     it; a call whose anchors disagree never opens a state (its reported
+ *     round trip is the suspect figure) and is folded into the state it
+ *     follows; the first state is seeded by the first agreeing call.
  */
-function summarizeChain(chainIndex: number, all: IndexedCall[], sampleRate: number): RealInputChainSummary {
+function summarizeChain(
+  chainIndex: number,
+  all: IndexedCall[],
+  sampleRate: number,
+  clusterSeries: RealInputSeries,
+  reportedLatencySec: number | null
+): RealInputChainSummary {
   const renderQuantumSec = 128 / sampleRate;
   const usable = all.filter(({ call }) => isUsableCall(call));
   const empty: RealInputChainSummary = {
     chainIndex, calls: all.length, usableCalls: usable.length,
-    medianInputLatencySec: null, modeInputLatencySec: null, modeCount: 0, modeRoundTripSec: null,
-    withinHalfQuantum: false, clusters: [], states: [], transitions: [], isolatedDeviations: [],
+    medianInputLatencySec: null, medianRoundTripSec: null, modeInputLatencySec: null, modeCount: 0, modeRoundTripSec: null,
+    clusterSeries, withinHalfQuantum: false, clusters: [], states: [], transitions: [], isolatedDeviations: [],
+    firstCallOff: null, reportedLatencySec, medianInputMinusReportedSec: null,
   };
   if (usable.length === 0) return empty;
 
   const inputParts = usable.map(({ call }) => call.inputLatencySeconds);
   const inputMode = modeAtFrameResolution(inputParts, sampleRate);
   const roundTripMode = modeAtFrameResolution(usable.map(({ call }) => call.roundTripSeconds), sampleRate);
+  const seriesValues = usable.map(({ call }) => seriesValue(call, clusterSeries));
+  const seriesMode = clusterSeries === "inputLatency" ? inputMode : roundTripMode;
   const atMode = (c: IndexedCall) => sameState(c.call.roundTripSeconds, roundTripMode.value, renderQuantumSec);
+  const agrees = (k: IndexedCall) => anchorsAgree(k.call, renderQuantumSec);
+  const deltaQuanta = (c: IndexedCall) => (c.call.roundTripSeconds - roundTripMode.value) / renderQuantumSec;
 
   const isolated: RealInputIsolatedDeviation[] = [];
+  let firstCallOff: RealInputChainSummary["firstCallOff"] = null;
   const kept: IndexedCall[] = [];
   usable.forEach((c, k) => {
     const next = usable[k + 1];
     const prev = usable[k - 1];
-    const isIsolated = !atMode(c) && anchorsAgree(c.call, renderQuantumSec) &&
-      next !== undefined && atMode(next) && (prev === undefined || atMode(prev));
-    if (isIsolated) {
-      isolated.push({ chainIndex, index: c.index, deltaQuanta: (c.call.roundTripSeconds - roundTripMode.value) / renderQuantumSec });
+    const singleExcursion = !atMode(c) && agrees(c) && next !== undefined && atMode(next);
+    if (singleExcursion && k === 0) {
+      firstCallOff = { index: c.index, deltaQuanta: deltaQuanta(c) };
+    } else if (singleExcursion && atMode(prev)) {
+      isolated.push({ chainIndex, index: c.index, deltaQuanta: deltaQuanta(c) });
     } else {
       kept.push(c);
     }
   });
 
-  const agrees = (k: IndexedCall) => anchorsAgree(k.call, renderQuantumSec);
   const stateRuns: IndexedCall[][] = [];
   const openers: (IndexedCall | null)[] = [];
   // The first state is seeded by the chain's first anchors-agreeing call;
@@ -357,7 +402,6 @@ function summarizeChain(chainIndex: number, all: IndexedCall[], sampleRate: numb
     if (!sameState(c.call.roundTripSeconds, previous.call.roundTripSeconds, renderQuantumSec) && agrees(c)) {
       stateRuns.push([c]);
       openers.push(c);
-      // `fromRoundTripSec` is the reference the step was measured from.
       c.stepFromSec = previous.call.roundTripSeconds;
     } else {
       open.push(c);
@@ -383,15 +427,19 @@ function summarizeChain(chainIndex: number, all: IndexedCall[], sampleRate: numb
     roundTripSec: modeAtFrameResolution(run.map(({ call }) => call.roundTripSeconds), sampleRate).value,
   }));
 
+  const medianInputLatencySec = median(inputParts);
   return {
     ...empty,
-    medianInputLatencySec: median(inputParts),
+    medianInputLatencySec,
+    medianRoundTripSec: median(usable.map(({ call }) => call.roundTripSeconds)),
     modeInputLatencySec: inputMode.value,
     modeCount: inputMode.count,
     modeRoundTripSec: roundTripMode.value,
-    withinHalfQuantum: inputParts.every((v) => sameState(v, inputMode.value, renderQuantumSec)),
-    clusters: clusterInputParts(inputParts, renderQuantumSec),
-    states, transitions, isolatedDeviations: isolated,
+    withinHalfQuantum: seriesValues.every((v) => sameState(v, seriesMode.value, renderQuantumSec)),
+    clusters: clusterValues(seriesValues, renderQuantumSec),
+    states, transitions, isolatedDeviations: isolated, firstCallOff,
+    medianInputMinusReportedSec:
+      reportedLatencySec === null || medianInputLatencySec === null ? null : medianInputLatencySec - reportedLatencySec,
   };
 }
 
@@ -399,23 +447,23 @@ const msText = (seconds: number) => (seconds * 1000).toFixed(3) + " ms";
 
 /**
  * Summarize `calls` (in call order) at `sampleRate`. `reportedTrackLatencySec`
- * is the browser's `MediaTrackSettings.latency` for the armed track, or null
- * when it reported none.
+ * is the browser's `MediaTrackSettings.latency` for the armed track: a scalar
+ * applies to every chain, a list gives one figure per `chainIndex` (a re-armed
+ * chain has its own track), null where the browser reported none.
  *
- * Verdict, kept as the brief defined it but decided per chain:
- *  - one chain (steady): `repeatable` when every usable call is within half a
- *    quantum of the chain's modal input part; `two-state` when the chain's
- *    input-part clusters are exactly two and at least half a quantum apart;
- *    `scattered` otherwise. Basis "per-chain clusters".
- *  - two chains (fresh): each chain must be internally within half a quantum
- *    of its own mode, else `scattered`; then `repeatable` when the chain
- *    medians are within half a quantum of each other and `two-state` when
- *    they are at least half a quantum apart. Basis "chain medians".
+ * Verdict, kept as the brief defined it but decided per chain on
+ * `verdictSeries` (see the header):
+ *  - one chain (steady): `repeatable` when every usable call is the same state
+ *    as the chain's mode; `two-state` when the chain's clusters are exactly
+ *    two with distinct centres; `scattered` otherwise. Basis "per-chain clusters".
+ *  - two chains (fresh): each chain must be internally the same state as its
+ *    own mode, else `scattered`; then `repeatable` when the chain medians are
+ *    the same state and `two-state` when they are distinct. Basis "chain medians".
  */
 export function summarizeRealInput(
   calls: RealInputCall[],
   sampleRate: number,
-  reportedTrackLatencySec: number | null
+  reportedTrackLatencySec: number | null | ReadonlyArray<number | null>
 ): RealInputSummary {
   const renderQuantumSec = 128 / sampleRate;
   const verdictCounts: Record<string, number> = {};
@@ -433,17 +481,33 @@ export function summarizeRealInput(
     indices: rederivedIndices,
     secondAnchorAvailable,
   };
+  // The input part is the round trip minus the SDK's output-latency figure; if
+  // that figure was reported on some calls and not others, the input part
+  // carries a step the input path never made — read the clusters on the round
+  // trip then.
+  const reportedFlags = new Set(usable.map(({ call }) => call.outputLatencyReported));
+  const verdictSeries: RealInputSeries = reportedFlags.size > 1 ? "roundTrip" : "inputLatency";
+  const reportedFor = (chainIndex: number): number | null =>
+    Array.isArray(reportedTrackLatencySec)
+      ? (reportedTrackLatencySec[chainIndex] ?? null)
+      : (reportedTrackLatencySec as number | null);
   const chainIndices = [...new Set(calls.map((call) => call.chainIndex))].sort((a, b) => a - b);
   const perChain = chainIndices.map((chainIndex) =>
-    summarizeChain(chainIndex, indexed.filter(({ call }) => call.chainIndex === chainIndex), sampleRate));
+    summarizeChain(chainIndex, indexed.filter(({ call }) => call.chainIndex === chainIndex), sampleRate, verdictSeries, reportedFor(chainIndex)));
+  const chainMedian = (c: RealInputChainSummary): number | null =>
+    verdictSeries === "inputLatency" ? c.medianInputLatencySec : c.medianRoundTripSec;
   const chainMedianDifferenceQuanta = (() => {
     if (perChain.length < 2) return null;
-    const first = perChain.find((c) => c.chainIndex === 0)?.medianInputLatencySec ?? null;
-    const second = perChain.find((c) => c.chainIndex === 1)?.medianInputLatencySec ?? null;
-    return first === null || second === null ? null : (second - first) / renderQuantumSec;
+    const first = perChain.find((c) => c.chainIndex === 0);
+    const second = perChain.find((c) => c.chainIndex === 1);
+    const a = first === undefined ? null : chainMedian(first);
+    const b = second === undefined ? null : chainMedian(second);
+    return a === null || b === null ? null : (b - a) / renderQuantumSec;
   })();
   const transitions = perChain.flatMap((c) => c.transitions);
   const deviations = perChain.flatMap((c) => c.isolatedDeviations);
+  const usableChains = perChain.filter((c) => c.usableCalls > 0);
+  const reportedLatencySec = usableChains[0]?.reportedLatencySec ?? perChain[0]?.reportedLatencySec ?? null;
 
   const base = {
     calls: calls.length,
@@ -461,7 +525,8 @@ export function summarizeRealInput(
     isolatedDeviations: { count: deviations.length, deviations },
     perChain,
     chainMedianDifferenceQuanta,
-    reportedLatencySec: reportedTrackLatencySec,
+    verdictSeries,
+    reportedLatencySec,
   };
 
   if (usable.length === 0) {
@@ -477,8 +542,8 @@ export function summarizeRealInput(
   }
 
   const inputStats = stats(usable.map(({ call }) => call.inputLatencySeconds)) as RealInputStats;
-  const medianInputMinusReportedSec = reportedTrackLatencySec === null ? null : inputStats.median - reportedTrackLatencySec;
-  const usableChains = perChain.filter((c) => c.usableCalls > 0);
+  const medianInputMinusReportedSec = reportedLatencySec === null ? null : inputStats.median - reportedLatencySec;
+  const seriesName = verdictSeries === "inputLatency" ? "input part" : "round trip";
 
   let verdict: RealInputVerdict;
   let verdictBasis: RealInputVerdictBasis;
@@ -488,27 +553,28 @@ export function summarizeRealInput(
     const chain = usableChains[0];
     verdictBasis = "per-chain clusters";
     const { clusters } = chain;
+    const modeSec = verdictSeries === "inputLatency" ? chain.modeInputLatencySec : chain.modeRoundTripSec;
     if (chain.withinHalfQuantum) {
       verdict = "repeatable";
-      shape = `chain ${chain.chainIndex}: ${chain.usableCalls} usable calls all within half a quantum of the modal input part ` +
-        `${msText(chain.modeInputLatencySec as number)} (${chain.modeCount} at the mode)`;
+      shape = `chain ${chain.chainIndex}: ${chain.usableCalls} usable calls all within half a quantum of the modal ${seriesName} ` +
+        `${msText(modeSec as number)} (${chain.modeCount} at the mode)`;
     } else if (clusters.length === 2 && !sameState(clusters[1].centerSec, clusters[0].centerSec, renderQuantumSec)) {
       verdict = "two-state";
       stateSeparationQuanta = (clusters[1].centerSec - clusters[0].centerSec) / renderQuantumSec;
-      shape = `chain ${chain.chainIndex}: two input-part clusters ${msText(clusters[0].centerSec)} ×${clusters[0].calls} and ` +
+      shape = `chain ${chain.chainIndex}: two ${seriesName} clusters ${msText(clusters[0].centerSec)} ×${clusters[0].calls} and ` +
         `${msText(clusters[1].centerSec)} ×${clusters[1].calls}, ${stateSeparationQuanta.toFixed(2)} quanta apart`;
     } else {
       verdict = "scattered";
       const span = Math.max(...clusters.map((c) => c.maxSec)) - Math.min(...clusters.map((c) => c.minSec));
-      shape = `chain ${chain.chainIndex}: ${clusters.length} input-part clusters spanning ${msText(span)} ` +
+      shape = `chain ${chain.chainIndex}: ${clusters.length} ${seriesName} clusters spanning ${msText(span)} ` +
         `(${(span / renderQuantumSec).toFixed(2)} quanta)`;
     }
   } else {
     verdictBasis = "chain medians";
-    const medians = usableChains.map((c) => c.medianInputLatencySec as number);
+    const medians = usableChains.map((c) => chainMedian(c) as number);
     const spreadQuanta = (Math.max(...medians) - Math.min(...medians)) / renderQuantumSec;
     const chainsText = usableChains
-      .map((c) => `chain ${c.chainIndex} median ${msText(c.medianInputLatencySec as number)} ×${c.usableCalls}`)
+      .map((c) => `chain ${c.chainIndex} median ${seriesName} ${msText(chainMedian(c) as number)} ×${c.usableCalls}`)
       .join(", ");
     const unstable = usableChains.filter((c) => !c.withinHalfQuantum);
     if (unstable.length > 0) {
@@ -519,24 +585,32 @@ export function summarizeRealInput(
       shape = `${chainsText} — within half a quantum of each other (${spreadQuanta.toFixed(2)} quanta)`;
     } else {
       verdict = "two-state";
+      // Chains not indexed 0/1 have no signed difference; the spread stands in.
       stateSeparationQuanta = chainMedianDifferenceQuanta ?? spreadQuanta;
       shape = `${chainsText} — ${spreadQuanta.toFixed(2)} quanta apart (the re-armed chain landed elsewhere)`;
     }
   }
+  const seriesNote = verdictSeries === "roundTrip"
+    ? " [clusters read on the round trip: outputLatencyReported flipped within the run]"
+    : "";
 
   const transitionText = transitions.length === 0
     ? "no state transition"
     : `${transitions.length} state transition(s): ` + transitions
       .map((t) => `call ${t.index + 1} chain ${t.chainIndex} ${t.stepQuanta >= 0 ? "+" : ""}${t.stepQuanta.toFixed(2)} quanta` +
         (t.isOneQuantumStep ? " (one-quantum step)" : "") +
-        (t.confirmedByFollowingCall ? "" : " (last call — nothing after it to confirm the hold)"))
+        (t.confirmedByFollowingCall ? "" : " (unconfirmed — no further agreeing call in the state it opened)"))
       .join(", ") +
       `; states ${perChain.flatMap((c) => c.states).map((s) => `${s.calls}×${msText(s.roundTripSec)}`).join(" / ")}`;
   const anchorText = `${anchorDisagreements.rederived} anchor disagreement(s)` +
     (anchorDisagreements.rederived > 0 ? ` (calls ${anchorDisagreements.indices.map((i) => i + 1).join(", ")})` : "");
   const deviationText = `${deviations.length} isolated deviation(s)` +
     (deviations.length > 0 ? ` (calls ${deviations.map((d) => d.index + 1).join(", ")})` : "");
-  const detail = `${verdict} on ${verdictBasis}: ${shape}; ${transitionText}; ${anchorText}; ${deviationText}`;
+  const firstOff = perChain.filter((c) => c.firstCallOff !== null);
+  const firstOffText = firstOff.length === 0
+    ? ""
+    : `; first call off on chain(s) ${firstOff.map((c) => `${c.chainIndex} (call ${(c.firstCallOff as { index: number }).index + 1}, ${(c.firstCallOff as { deltaQuanta: number }).deltaQuanta.toFixed(2)} quanta)`).join(", ")}`;
+  const detail = `${verdict} on ${verdictBasis}${seriesNote}: ${shape}; ${transitionText}; ${anchorText}; ${deviationText}${firstOffText}`;
 
   return {
     ...base,
