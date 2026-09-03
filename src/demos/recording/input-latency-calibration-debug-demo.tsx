@@ -86,9 +86,10 @@
 // the applied cell records in: `steady` records on the chain the sweep and the
 // applied calibration ran on; `fresh` disarms and re-arms first, so take 1 is
 // the first pull on a rebuilt chain while the stored calibration still describes
-// the old one. That is the state pair the ~45 ms step lives in (see the priming
-// comment in `runCalibrationAudit`), and `fresh` is how the second half of it
-// gets measured instead of predicted.
+// the old one. That is the state pair the ~45 ms step of SDK `f0c44b06c` lived
+// in (see the priming comment in `runCalibrationAudit` for what `ac1c15ea8`
+// changed), and `fresh` is how the second state gets measured instead of
+// predicted.
 //
 // DOM contract: #audit-state carries data-audit-state walking setup ->
 // priming -> sweep:<delay> -> applying -> [rearm ->] cell:<repeat> ->

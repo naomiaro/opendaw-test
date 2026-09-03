@@ -69,7 +69,9 @@ function requestedDeviceId(constraints?: MediaStreamConstraints): string | undef
  * `groupId` is overwritten with the same id, which nothing in the SDK reads.
  *
  * OPT-IN, because it selects which of TWO SDK input-chain states the capture
- * runs in, and the two differ by ~45 ms of input delay.
+ * runs in, and on SDK `f0c44b06c` the two differed by ~45 ms of input delay
+ * (the ratchet the sink commit removed — the full history is two paragraphs
+ * down; on `ac1c15ea8` and later the states are ~8 ms apart).
  * `CaptureAudio.prepareRecording` calls the stream generator on EVERY recording
  * start, and `#updateStream` returns early only when the open track's reported
  * deviceId equals the one the capture box names. Reporting nothing means that
