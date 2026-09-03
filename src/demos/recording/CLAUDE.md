@@ -504,6 +504,45 @@ rows), `harnessLoopbackHopPerRowSec` and `cellRowStates` (the harness's own
 **`getUserMediaOpens` is cumulative per page load**, not per run — a "Re-run" persists the
 total since load, so navigate fresh per run if the count is the evidence.
 
+**Real-input mode (`?input=real`).** Same page, same SDK routine, against a PHYSICAL
+input instead of the synthetic loopback — the evidence the loopback cannot give: the
+detector's hit rate on a real device and the answer's repeatability there.
+
+```
+input-latency-calibration-debug-demo.html?input=real&rate=48000&bpm=120
+    &repeat=<n>&armState=steady|fresh&deviceId=<id>&label=<text>
+```
+
+- Nothing of the loopback is installed in this mode (no `getUserMedia` override, no
+  DelayNode, no destination tee; `loopback` is `null` and every loopback-only path throws
+  through `requireLoopback()`). `?delays=` and `?defaultInput=` are rejected.
+- `?repeat=` defaults to 10 (1–200): the run IS the repeat phase — N direct
+  `calibrateInputLatency({})` calls on the chosen device, then one `{apply: true}`.
+  `?armState=fresh` disarms and re-arms HALFWAY through (after call ⌈N/2⌉), so the second
+  half measures a chain the SDK rebuilt; each persisted call carries `chainIndex` 0/1.
+- `?deviceId=` preselects an enumerated input; `?label=` prefills the free-text run label
+  (persisted as `runLabel` — say what was plugged in: "cable loopback", "laptop mic +
+  speakers").
+- No applied take cell: `cell.status` is `"skipped"` (its reference clicks and band split
+  assume the loopback tap). No injected delay: `sweep: []`, `fit: null`. The probe
+  traverses the real output device, so `harnessPathBiasSec` is 0 and a 0
+  `audioContext.outputLatency` read is recorded (`outputLatencyAtStartSec`,
+  `outputLatencyAfterFirstCallSec`, `baseLatencySec`), not refused.
+- Envelope additions: `inputMode: "real"`, `runLabel`, `device` (`deviceId`/`label`/
+  `groupId`), `trackSettings` (the armed track's `getSettings()`: deviceId, latency,
+  sampleRate, channelCount, echo/noise/AGC flags — proof of the processing state and the
+  browser's own latency figure), `realSummary` (`src/lib/audit/realInputSummary.ts`,
+  pure + tested: counts per verdict, usable-call stats, one-quantum misses, anchor
+  disagreements, per-chain medians, a descriptive `repeatable` / `two-state` /
+  `scattered` / `unusable` verdict — no band, no pass/fail). Loopback envelopes gain only
+  `inputMode: "loopback"`. `#real-verdict` carries `data-verdict`.
+- Run recipe: serve the calibration-branch build through `SDK_DIST_OVERRIDE`; open the URL
+  on a visible window; grant the mic permission (the page asks once to unlock device
+  labels); pick the device in the select and type a label; click Start with a REAL click.
+  Acoustic case: keep the room quiet — every call plays three audible bursts out of the
+  speakers, and the mic must hear them. Cable case: route the interface's output into the
+  chosen input physically. One fresh navigation per run.
+
 **Branch API shim.** `calibrateInputLatency`, `clearInputLatencyCalibration` and
 `recording.inputLatencyCalibrations` exist only on the upstream calibration branch, and this
 repo's tsc resolves `@opendaw/*` types from the installed release, so the page reaches them
