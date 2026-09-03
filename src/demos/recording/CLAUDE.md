@@ -530,12 +530,23 @@ input-latency-calibration-debug-demo.html?input=real&rate=48000&bpm=120
   `outputLatencyAfterFirstCallSec`, `baseLatencySec`), not refused.
 - A call that throws or times out is persisted as an `error` row (verdict `"error"`, the
   message in `reason`, NaN figures) and the run continues — one deadline must not lose the
-  calls before it. `getUserMediaOpens` counts the page's ACTUAL opens since load (the label
-  unlock included, so a steady run reads 2 and a fresh run 3). The stored entry is looked up
-  under the stream the apply ran on (`deviceId`); every armed stream's id is in
-  `armedStreamDeviceIds`, and `streamDeviceIdChanged` says whether a re-arm reported a
-  different one. The status trail is cumulative per page load (setup → device at load,
-  then the run's stages).
+  calls before it. `getUserMediaOpens` counts the page's ACTUAL opens since load, the label
+  unlock included (expected 2 on a steady run and 3 on a fresh one — not yet measured: the
+  six 2026-09-03 envelopes predate the counter and persist the arm count, 1 or 2, and no
+  `armedStreamDeviceIds`). The stored entry is looked up under the stream the apply ran on
+  (`deviceId`); every armed stream's id is in `armedStreamDeviceIds`, and
+  `streamDeviceIdChanged` says whether a re-arm reported a different one. Every arm also
+  compares the reported id with the REQUESTED one: the SDK's `#updateStream` falls back to
+  the default input when `{exact: deviceId}` fails (a console.warn only), so
+  `deviceFallback` / `requestedDeviceId` / `arms` (per chain: ids, fallback flag, the
+  track's `getSettings()` re-read after each re-arm, also `trackSettingsPerChain`) label
+  the run instead of throwing. A re-arm that fails is an `error` row, the envelope is still
+  uploaded, and the run ends `error:<message>`. Real mode persists `repeatSummary: null`
+  and `repeats` as the SDK `Result` plus `index`/`chainIndex` only — never the loopback
+  page's pooled-mode per-row fields — `realSummary` is the authority (the six 2026-09-03
+  envelopes predate this and carry a pooled `repeatSummary` and per-row miss flags to be
+  ignored). The status trail is cumulative per page load (setup → device at load, then the
+  run's stages, `rearming` on a fresh run).
 - Envelope additions: `inputMode: "real"`, `runLabel`, `device` (`deviceId`/`label`/
   `groupId`), `trackSettings` (the armed track's `getSettings()`: deviceId, latency,
   sampleRate, channelCount, echo/noise/AGC flags — proof of the processing state and the
@@ -545,9 +556,13 @@ input-latency-calibration-debug-demo.html?input=real&rate=48000&bpm=120
   `unusable` verdict decided on the chain's clusters (steady) or on the two chain medians
   (fresh), `verdictBasis` says which — no band, no pass/fail). Three things a call off
   its chain's mode can be are kept apart: `anchorDisagreements` (A vs B > ½ quantum, the
-  SDK's detector), `stateTransitions` (a ≥ ½-quantum step from the previous call, anchors
-  agreeing, that persists — `isOneQuantumStep` within 25 % of a quantum) and
-  `isolatedDeviations` (one call off, anchors agreeing, next call back — expected 0).
+  SDK's detector), `stateTransitions` (a ≥ ½-quantum step from the previous agreeing call,
+  anchors agreeing — counted on a last call too; `confirmedByFollowingCall` says whether a
+  later agreeing call held the new state; `isOneQuantumStep` within 25 % of a quantum) and
+  `isolatedDeviations` (one call off, anchors agreeing, previous and next at the mode —
+  expected 0; a chain's off FIRST call is `firstCallOff` instead). Clusters are read on
+  the input part unless `outputLatencyReported` flips within the run, then on the round
+  trip (`verdictSeries`).
   Never judge a fresh run's second chain against the pooled mode: the rebuilt chain lands
   where it lands, and that difference is `chainMedianDifferenceQuanta` only. Loopback
   envelopes gain only `inputMode: "loopback"`. `#real-verdict` carries `data-verdict`.

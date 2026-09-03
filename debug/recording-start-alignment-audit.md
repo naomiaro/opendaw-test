@@ -3041,7 +3041,9 @@ reports a figure that does not describe the device in use — the residual #374 
 branch adds a loopback calibration routine to the SDK that measures that delay, and this repo
 adds a ground-truth page that measures the routine against a delay it injects itself.
 
-**Upstream branch:** `feat/input-latency-calibration`, PR head **`9d0cccb88`** (34 commits), on
+**Upstream branch:** `feat/input-latency-calibration`, PR head **`9d0cccb88`** (34 commits by
+GitHub's count from base `4a9f183f6`, which includes the merged #376/#378 commits; 27 by
+`rev-list` from the fourteen onward), on
 top of the merge of PR #376 and PR #378. Fourteen commits up to `66021385` — the head every measurement
 below was taken at — then four more, covered in the note after this list. The fourteen: the MLS
 generator, the FFT correlation and peak refinement, `analyzeBursts` and the worker protocol, the worker executor and sender, the
@@ -3800,3 +3802,12 @@ residue of the frame difference, so a difference on the quantum lattice reads 0.
 | acoustic runs, 48 kHz: steady 30, fresh 30, steady 30 (the one-quantum step at index 27) | `calib-summary-1788463933323/…1788464100870/…1788464591756.json` |
 | acoustic runs, 44.1 kHz: steady 30, fresh 30 (the anchor disagreement at index 10) | `calib-summary-1788464254347/…1788464404625.json` |
 | offline recomputation | `.verify-output/task12c-real-input-tables.txt` |
+
+All six envelopes predate the PR #125 review fix that stopped real mode from running its
+calls through the loopback page's pooled-mode `summarizeRepeats`: they carry a
+`repeatSummary` (1788464404625's says `oneQuantumMisses: 15` — the fifteen calls of the
+re-armed chain judged against the first chain's mode) and per-row `deltaQuanta` /
+`isOneQuantumMiss` flags, all of which must be ignored; `realSummary` and the tables
+above are the reading, and task12c never reads those fields (it recomputes every figure
+from the per-call `roundTripSeconds` / `roundTripSecondsSecondary` / `inputLatencySeconds`
+and `chainIndex`).
