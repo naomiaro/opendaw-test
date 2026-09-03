@@ -166,10 +166,11 @@ export interface LoopbackHandle {
   /**
    * Run `fn` with everything connected to `audioContext.destination` teed into
    * the loopback return path, so a probe the SDK plays out through the context
-   * destination (`CaptureAudio.calibrateInputLatency`, whose output route is
-   * the monitor destination or, with no monitor device set, the context
-   * destination) comes back through this capture stream instead of only
-   * through the room.
+   * destination comes back through this capture stream instead of only through
+   * the room. `CaptureAudio.calibrateInputLatency` plays there unconditionally,
+   * never through a per-capture monitor output: the route has to be the one
+   * whose `outputLatency` the measurement subtracts and `RecordAudio` adds back
+   * at placement.
    *
    * `virtualOutputDelaySec` is a stand-in for the output device leg the
    * synthetic path never traverses: the harness already models that leg,

@@ -307,12 +307,15 @@ function printMiss(): void {
       const vals = run.sweep.map((row) => ms(row.inputLatencySeconds - (row.requestedDelaySec ?? 0)));
       const range = Math.max(...vals) - Math.min(...vals);
       total += vals.length;
-      const runMisses = vals.filter((v) => Math.abs(v - vals[0]) > 0.5 * quantumMs).length;
-      misses += runMisses;
-      console.log(`    ${runId} (${build.head}): ${vals.length} calls, within-run range ${range.toFixed(4)} ms, misses ${runMisses}`);
+      // "Off its run's first call by more than half a quantum" — a coarser net than
+      // the page's +-25 %-of-one-quantum window, so it cannot miss the event and
+      // would also catch a half-quantum drift the page's window would ignore.
+      const runOff = vals.filter((v) => Math.abs(v - vals[0]) > 0.5 * quantumMs).length;
+      misses += runOff;
+      console.log(`    ${runId} (${build.head}): ${vals.length} calls, within-run range ${range.toFixed(4)} ms, off-by->half-a-quantum ${runOff}`);
     }
   }
-  console.log(`  total ${total} calls, ${misses} one-quantum miss`);
+  console.log(`  total ${total} calls, ${misses} off its run's first call by more than half a quantum`);
 }
 
 function printBatches(): void {

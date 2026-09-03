@@ -111,7 +111,7 @@ export interface LoadedCalibrationSummary {
    */
   repeatSummary: { calls: number; delayMs?: number; delayCycleMs?: number[] } | null;
   fit: { slope: number; interceptSec: number; points: number; maxAbsResidualMs: number } | null;
-  /** null on the runs that predate the noisy-row exclusion (`404a70b` and earlier). */
+  /** null on the runs written before `404a70b`, the commit that added the exclusion. */
   fitExcludedNoisy: { count: number; delaysMs: number[] } | null;
   applied: CalibrationCall | null;
   cell: {

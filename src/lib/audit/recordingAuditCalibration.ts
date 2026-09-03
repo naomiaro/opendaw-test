@@ -117,10 +117,12 @@ export const SIGNATURE_BANDS: Record<RecordingScenario, SignatureBand[]> = {
 };
 
 /**
- * Which band table a run is judged against. The harness already persists the
- * build it measured (`sdkBuildProbe`), so the profile follows the artifact
- * rather than the checkout: a historical JSON classifies against the bands it
- * was designed for however the working tree has moved on.
+ * Which band table a run is judged against. The profile follows the artifact
+ * rather than the checkout — a historical JSON classifies against the bands it
+ * was designed for however the working tree has moved on — and `profileKeyFor`
+ * below decides which, from the persisted feature list when the envelope has
+ * one and from the run token otherwise. (`sdkBuildProbe` alone cannot decide
+ * it: it reads `candidate` for every branch build this campaign measured.)
  *
  * `unknown` (bring-up runs that predate the probe) resolves to `upstream`,
  * which is what those runs measured.
@@ -152,6 +154,19 @@ export type AuditBuildFeature = "recordingStart" | "calibrateInputLatency" | "la
  * keep-alive run is 1788384874160 — the same device `ABSOLUTE_GRID_FROM_RUN`
  * uses in recordingAuditArtifacts.ts for the beat-grid change. New runs never
  * reach this rule; they carry the feature list.
+ *
+ * This DELIBERATELY routes the sink build's own historical artifacts to
+ * `candidate` — every ac1c15ea8-era run, `1788385420462` included, which the
+ * register quotes as `matches-known-defect/F`. Bands E/F describe a chain the
+ * keep-alive sink holds pulled, and that build has the sink, so the fallback
+ * gives those artifacts the table that describes them. The feature rule below
+ * cannot: it keys on `latencyProbes`, which ac1c15ea8 does not export, so a
+ * FRESH run of that same build resolves to `upstream` and reads `investigate`
+ * for nominal-start. The two rules therefore disagree about ac1c15ea8, on
+ * purpose: the fallback is retrospective and knows which build wrote the file,
+ * the feature rule is prospective and only knows what the served build exposes,
+ * and it fails toward the table the campaign measured rather than toward a
+ * quiet match.
  */
 export const KEEP_ALIVE_PROFILE_FROM_RUN = 1788384000000;
 
