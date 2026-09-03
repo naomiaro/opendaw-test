@@ -412,6 +412,15 @@ sample-rate/quantum-alignment sweep in root CLAUDE.md's Build & Verification.
   andremichelle/openDAW#376 (the reworked fix), issues #374 (residual start-placement
   bias) and #375 (simultaneous-take `AudioFileBox` collision) — re-verify the sweep and
   re-target the build probe when a release ships #376.
+- **Signature bands are per SDK build.** `signatureBandsFor()` picks the band table from
+  the `buildFeatures` list the page probes off the live SDK and persists on the envelope:
+  bands A–D (predicted, written before their data existed) for the installed release, and
+  the descriptive bands E/F for the calibration branch — selected by the presence of
+  `LatencyProbes`, a proxy that exists only from the build after the keep-alive sink.
+  Envelopes written before the field fall back to a documented run-token threshold. E/F
+  were FITTED to the two sweeps they classify, so a match on those runs is the envelope's
+  construction, not a reproduced prediction — quote the 8-of-20 figure under A–D beside
+  any 20-of-20 under E/F.
 - Runs upload `recaudit-summary-<timestamp>.json` / `recaudit-mt-summary-<timestamp>.json`
   plus one WAV per repeat into `.verify-output/` via the dev server's `/__verify` sink.
   Capture WAV names carry the build probe and a per-run token — do NOT join a summary
@@ -440,6 +449,57 @@ sample-rate/quantum-alignment sweep in root CLAUDE.md's Build & Verification.
   the take's live `RecordingWorklet` instance before it calls `stopRecording()`; a hung
   finalization is an empty `finalizeLimitCalls` with `finalizeLoaderState: "record"`, and
   an error row carries the probe of the repeat that failed.
+
+### Input-Latency Calibration Ground-Truth Page (unlisted)
+
+Measures the SDK's loopback input-latency calibration against a delay the harness injects
+itself. It sweeps a `DelayNode` in the synthetic loopback's return path, calibrates at each
+value, fits the measured input part against the injected delay, applies the calibration, and
+runs ONE `nominal-start` cell through the standing sweep's own runner
+(`src/lib/audit/recordingCellRunner.ts`) so the verdict is the campaign's metric:
+
+```
+input-latency-calibration-debug-demo.html?delays=0,10,25,50&bpm=120&rate=48000
+    &armState=steady|fresh&defaultInput=1&repeat=<n>
+```
+
+- `?delays=` — injected return delays in ms (default `0,10,25,50`). Refused twice: at parse
+  time against a 550 ms static ceiling, and per point against the round trip the run is
+  actually measuring, because the SDK searches only 600 ms of lag and an over-long delay
+  comes back as a `no-signal` row that looks like a failure. Refused points land in
+  `skipped` with the reason.
+- `?armState=steady|fresh` — `fresh` disarms and re-arms after `apply`, so take 1 runs on a
+  chain the SDK rebuilt. That is the configuration that exposes the two-state chain lottery:
+  the calibration is right only for the state it measured.
+- `?defaultInput=1` — leave the capture box's `deviceId` unset and withhold every audio input
+  from `enumerateDevices`, so the SDK asks for the default device without naming one. This is
+  the ONLY configuration that reaches the chain-reuse path; it cannot coexist with a real
+  device in the same page load.
+- `?repeat=<n>` — after the sweep, run n more calibrations back to back on the same chain,
+  CYCLING the delays `?delays=` names (call k at `delays[k mod len]`, with the same settle
+  before each call as the sweep), and report the one-quantum miss rate. Each call persists the
+  delay it ran at and the previous call's.
+
+Envelope `calib-summary-<runToken>.json`: `sweep` (one row per delay, the full SDK `Result`
+plus the requested delay), `warmup` (the discarded priming call), `fit` / `fitIncludingNoisy` /
+`fitExcludedNoisy` (the headline fit is `ok` rows only; the all-rows answer is kept so the
+exclusion's effect is visible), `applied`, `storedEntry`, `cell` (the runner's verdict and
+rows), `harnessLoopbackHopPerRowSec` and `cellRowStates` (the harness's own
+`firstQuantumTimeSec − anchorT0Sec` per take, plus `first-after-arm` vs `reused`), `repeats` /
+`repeatSummary`, and the shared `buildFeatures` / `captureMode` / `getUserMediaOpens`.
+**`getUserMediaOpens` is cumulative per page load**, not per run — a "Re-run" persists the
+total since load, so navigate fresh per run if the count is the evidence.
+
+**Branch API shim.** `calibrateInputLatency`, `clearInputLatencyCalibration` and
+`recording.inputLatencyCalibrations` exist only on the upstream calibration branch, and this
+repo's tsc resolves `@opendaw/*` types from the installed release, so the page reaches them
+through local structural interfaces plus a runtime feature check. Delete the interfaces and
+the check when a release ships the API. The page needs the branch build served through
+`SDK_DIST_OVERRIDE` and says so when it is missing.
+
+Measurements, findings and what remains: `debug/recording-start-alignment-audit.md`,
+section "Input-latency calibration (2026-09-02)". Offline recomputation:
+`node scripts/audit/recording-alignment/task12b-calibration-tables.ts`.
 
 ## Reference Files
 - Recording demo: `src/demos/recording/recording-api-react-demo.tsx`

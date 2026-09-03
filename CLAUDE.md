@@ -628,7 +628,15 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   `src/lib/audit/recordingAlignment.ts`, calibration
   `src/lib/audit/recordingAuditCalibration.ts`, campaign register
   `debug/recording-start-alignment-audit.md`. Full scenario list and the known
-  repeat-losing defects: `src/demos/recording/CLAUDE.md`.
+  repeat-losing defects: `src/demos/recording/CLAUDE.md`. Signature bands are chosen PER
+  BUILD from the `buildFeatures` list the page probes off the live SDK, so read a verdict
+  against the profile the run's own envelope names; the calibration branch's bands E/F were
+  fitted to the runs they classify and carry no predictive content on them.
+- The SDK's loopback input-latency calibration has its own unlisted ground-truth page,
+  `input-latency-calibration-debug-demo.html` — it needs the calibration-branch SDK served
+  through `SDK_DIST_OVERRIDE` and is not part of the standing sweep. Params, envelope fields
+  and the branch-API shim: `src/demos/recording/CLAUDE.md`; measurements and open findings:
+  `debug/recording-start-alignment-audit.md`.
 - `npm run build` runs Vite then VitePress — demos go to `dist/`, docs go to `dist/docs/` for `/docs/` on Cloudflare Pages
 - `npm run docs:dev` — local VitePress dev server for documentation
 - typescript-lsp plugin: install `typescript-language-server` and `typescript` **globally** (`npm i -g typescript-language-server typescript`) — the plugin spawns by PATH, NOT from `node_modules/.bin`, so a devDep doesn't satisfy it. LSP `hover` / `goToDefinition` / `documentSymbol` also resolve types in the upstream openDAW checkout (`tsserver` walks up to the nearest tsconfig — handy for SDK drift audits). Prefer file-scoped ops over `workspaceSymbol` (~3.9k symbols / ~135 KB persisted in this repo).
