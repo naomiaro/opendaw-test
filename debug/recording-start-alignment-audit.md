@@ -261,9 +261,10 @@ with the reason at their head:
 
 The PR draft's "what this does not fix" list points at the two remaining drafts.
 
-The calibration section adds two more issue candidates, neither drafted yet: the stop path
-truncating input in flight beyond its incidental post-stop margin, and `CaptureAudio.terminate()`
-never tearing the audio chain down.
+The calibration section adds one more issue candidate, not drafted yet: the stop path
+truncating input in flight beyond its incidental post-stop margin. A second candidate — a
+terminated capture never tearing its audio chain down — was fixed on the calibration branch
+instead, leaving only its microphone-release half open.
 
 **Deliberately not drafted, because neither is confirmed:** Prediction C's explicit
 spec-§6 deviation (the campaign's `janked-start` provocation cannot isolate it from A
@@ -3050,11 +3051,20 @@ configurable probe (`3484e3265`), the unstamped-capture chain reuse (`546b5bfaa`
 second capture anchor (`66021385`). **Not filed** — the PR description is drafted and awaits
 review.
 
+Every measurement in this section was taken at or below `66021385`. The whole-branch review
+before the push called for three contained changes on top of it, none touching the measurement,
+the protocol or the analysis: the probe plays through the context destination unconditionally
+(see Method), the terminator tears the audio chain down (finding 3), and invalid `Options` are
+rejected instead of hanging the wait. The branch head therefore moves above `66021385`; the
+figures below do not.
+
 **Design spec:** `docs/superpowers/specs/2026-09-02-input-latency-calibration-design.md` and its
 plan, both deleted in the PR that completes this work per repo convention — recovery:
 `git log --all --oneline -- 'docs/superpowers/*/2026-09-02-input-latency-calibration*'`. This
-section supersedes the spec's §6 acceptance figures: the sub-sample refinement bound is 0.25
-sample, not the spec's 0.1.
+section supersedes the spec on three points: the sub-sample refinement bound is 0.25 sample,
+not §6's 0.1; the probe plays through the context destination unconditionally, not §4.2's
+monitor output when one is set; and the capture buffer reaches the worker structured-cloned,
+not "transferred" as §7 has it.
 
 **Harness:** unlisted debug demo
 `input-latency-calibration-debug-demo.html?delays=<ms,…>&bpm=<n>&rate=<44100|48000>&armState=<steady|fresh>&defaultInput=1&repeat=<n>`.
@@ -3147,17 +3157,26 @@ seven fresh chains is likewise 1.04 ms on recount, from its own per-run table.
    captured by a minimal worklet that reports the context time of its first frame — the same
    contract `RecordingProcessor` gained in #376. Both readings are of the clock takes are
    anchored on.
-3. **Analysis in the worker.** The captured buffer goes to the SDK's existing worker, where
-   each burst's window is cross-correlated with the reference through `@opendaw/lib-dsp`'s
-   `FFT`. The peak lag is the delay, refined by three-point parabolic interpolation; the
+3. **Analysis in the worker.** The captured buffer goes to the SDK's existing worker —
+   structured-cloned, not transferred: `Communicator` transfers only top-level
+   `Transfer`-wrapped arguments and the buffer sits inside the protocol's input object, so each
+   anchor costs about a megabyte of copy per call at 48 kHz (spec §7 said "transferred"; it is
+   wrong). There each burst's window is cross-correlated with the reference through
+   `@opendaw/lib-dsp`'s `FFT`. The peak lag is the delay, refined by three-point parabolic interpolation; the
    peak-to-mean power ratio in dB is the burst's trust figure. The peak is located on the
    correlation's **magnitude**, so a polarity-inverting loopback does not read as no signal.
    The refinement's tested bound is **within 0.25 sample** on a triangular peak — the design
    spec's "within 0.1 sample" was arithmetic that the interpolation does not deliver against a
    linearly interpolated synthetic delay, and it is superseded by 0.25.
-4. **Decomposition and verdict.** `outputLatency` is read only after the last burst has played
-   (Chrome reports 0 until audio has actually reached the device); `inputLatency = roundTrip −
-   outputLatency`, with the whole round trip taken as the input part and
+4. **Decomposition and verdict.** The probe plays through **`audioContext.destination`
+   unconditionally**, never the per-capture monitor output — the route has to be the one whose
+   `outputLatency` is subtracted here and added back at placement, or the stored input part
+   silently absorbs the difference between the monitor's `<audio>`-element path and the context
+   sink and the call still reports `ok`. (Spec §4.2 chose the monitor output when one was set;
+   the spec is wrong on this point and the branch fixes it.) `outputLatency` is read only after
+   the last burst has played (Chrome reports 0 until audio has actually reached the device);
+   `inputLatency = roundTrip − outputLatency`, with the whole round trip taken as the input part
+   and
    `outputLatencyReported: false` when the report is missing, zero or non-finite. A burst
    counts as identified at `RatioThresholdDb` = 18 dB. No burst identified is `no-signal`;
    every burst identified with `spreadSeconds` within `SpreadBoundSeconds` = 1.0 ms is `ok`;
@@ -3450,17 +3469,21 @@ it rests on a single surviving repeat. It must never be quoted as takes landing 
    calibration rows — because every hop (12.3–22.3 ms) sits under every margin (24.0–72.6 ms
    over the calibration rows), so the harness can no longer provoke it; any device whose true
    input latency exceeds the margin still would. **Issue candidate**, not yet drafted.
-3. **`CaptureAudio.terminate()` never tears the audio chain down — OPEN, issue candidate.**
-   The terminator disconnects monitoring and detaches the monitor element but never calls
-   `#stopStream()` or `#destroyAudioChain()`, so a terminated capture leaves the mic stream
-   live and the source wired. Pre-existing on `origin/main` in its open-mic form; the
-   keep-alive sink converts it from a dormant leak into an active one, because the
-   sink→destination edge survives termination and the dead capture's source and gain are
-   rendered every quantum for the life of the page. `CaptureDevices` terminates a capture on
-   capture-pointer change, unit removal and project close/switch, so a page that switches
-   projects strands one pulled dead chain per armed capture. A correct fix must settle three
-   behaviours (mic release, mid-recording teardown, the undiscarded prepared worklet) and was
-   deliberately deferred out of the sink commit.
+3. **`CaptureAudio.terminate()` never tore the audio chain down — FIXED on the branch
+   (commit sha pending confirmation).** The terminator disconnected monitoring and detached the
+   monitor element but never called `#stopStream()` or `#destroyAudioChain()`, so a terminated
+   capture left the mic stream live and the source wired. Pre-existing on `origin/main` in its
+   open-mic form; the keep-alive sink converted it from a dormant leak into an active one,
+   because the sink→destination edge survived termination and the dead capture's source and
+   gain were rendered every quantum for the life of the page. `CaptureDevices` terminates a
+   capture on capture-pointer change, unit removal and project close/switch, so a page that
+   switched projects stranded one pulled dead chain per armed capture. The whole-branch review
+   ruled this the branch's to fix rather than a follow-up, since the branch is what made it
+   render: the terminator now destroys the chain, restoring the pre-branch idle state. The
+   separate pre-existing question — whether termination should also release the microphone, and
+   what a mid-recording terminate should do — is untouched and stays open upstream. **Not
+   measured here:** no run in this campaign exercises the terminator, so the fix is confirmed by
+   its upstream test, not by anything in `.verify-output/`.
 4. **`prepareRecording` rebuilt the chain for a capture box carrying no device id — note,
    fixed on the branch.** The reuse test compared `undefined` against the reported id, so it
    never matched and the default-input path rebuilt per recording. `546b5bfaa` compares what
@@ -3485,8 +3508,9 @@ it rests on a single surviving repeat. It must never be quoted as takes landing 
   whether a real device track shows the two chain states, the 32-frame lattice, the one-quantum
   miss or the +1.15 ms residual. Not run: it needs a person present to allow the microphone
   prompt, and the campaign ran unattended.
-- **Finding 2 (stop-path truncation) and finding 3 (`terminate()`)** as upstream issues; both
-  are drafted nowhere yet.
+- **Finding 2 (stop-path truncation)** as an upstream issue; it is drafted nowhere yet. Finding
+  3 is fixed on the branch, but the microphone-release half of it is not, and that half is still
+  worth an issue.
 - **`armState=fresh` batches** for the one-quantum miss — the one condition of the original
   observation that 122 calls did not vary.
 - **The +1.15 ms residual's attribution.**
