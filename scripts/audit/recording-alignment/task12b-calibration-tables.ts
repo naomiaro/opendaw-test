@@ -117,8 +117,13 @@ function printRuns(): void {
       const applied = summary.applied === null ? null : ms(summary.applied.inputLatencySeconds);
       const hops = hopsMs(summary);
       const medians = summary.cell.rows.map((row) => row.medianBeatErrorMsAdjusted).filter((m): m is number => m !== null);
-      const heads = summary.cell.rows.map((row) => row.headMissingMs ?? 0);
-      const tails = summary.cell.rows.map((row) => row.tailMissingMs ?? 0);
+      // A null head or tail figure is "integrity unmeasured" (no reference click
+      // anchored the take — see `asClassifiable` in artifacts.ts), never 0: it is
+      // left out of the max and counted, so an unanchored row cannot print as a
+      // clean 0.00.
+      const heads = summary.cell.rows.map((row) => row.headMissingMs).filter((h): h is number => typeof h === "number");
+      const tails = summary.cell.rows.map((row) => row.tailMissingMs).filter((t): t is number => typeof t === "number");
+      const unmeasured = (summary.cell.rows.length - heads.length) + (summary.cell.rows.length - tails.length);
       let persisted = "";
       if (fit !== null && summary.fit !== null && Math.abs(fit.slope - summary.fit.slope) > 1e-9) {
         const all = fitRows(summary.sweep, false);
@@ -139,6 +144,7 @@ function printRuns(): void {
         ` L−medianHop=${applied === null || hops.length === 0 ? "—" : (applied - median(hops)).toFixed(3)}` +
         ` medians=[${medians.map((m) => m.toFixed(2)).join(", ")}]` +
         ` head/tail max=${Math.max(...heads, 0).toFixed(2)}/${Math.max(...tails, 0).toFixed(2)}` +
+        (unmeasured > 0 ? ` (${unmeasured} head/tail figure(s) unmeasured — null, excluded from the max)` : "") +
         ` cell=${summary.cell.status}${persisted}`
       );
     }
@@ -209,7 +215,9 @@ function printChains(): void {
     const sweep = loadSummary(SWEEPS[rate]);
     const perRecording = new Map<string, number[]>();
     for (const row of sweep.rows) {
-      if (row.status === "error" || row.firstQuantumTimeSec === undefined || row.anchorT0Sec === undefined) continue;
+      // `anchorT0Sec` is null (not undefined) on a persisted row that found no
+      // reference click, and such a row has no hop to contribute.
+      if (row.status === "error" || row.firstQuantumTimeSec === undefined || typeof row.anchorT0Sec !== "number") continue;
       const key = `${row.scenario}/${row.bpm}/${row.repeat}`;
       const hop = ms(row.firstQuantumTimeSec - row.anchorT0Sec);
       const list = perRecording.get(key);
@@ -224,7 +232,7 @@ function printChains(): void {
     if (rate === 48000) {
       const mt = loadMultitrackSummary(MULTITRACK);
       for (const row of mt.rows) {
-        if (row.status === "error" || row.firstQuantumTimeSec === undefined || row.anchorT0Sec === undefined) continue;
+        if (row.status === "error" || row.firstQuantumTimeSec === undefined || typeof row.anchorT0Sec !== "number") continue;
         rows.push({ source: "multitrack (one chain per tape per repeat)", hopMs: ms(row.firstQuantumTimeSec - row.anchorT0Sec), isHop: true });
       }
     }

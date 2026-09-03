@@ -22,6 +22,23 @@ node scripts/audit/recording-alignment/<script>.ts [mode]
 | `task12b-calibration-tables.ts [runs\|noise\|chains\|miss\|batches\|all]` | Task 12b: the register's input-latency-calibration tables — the per-build ground truth (least-squares fits recomputed and checked against the page's), the first build's pooled per-call noise and the 1σ slope/intercept it implies, the chain-state census with its frame lattice, the one-quantum calibration miss, and the `?repeat=` batches |
 | `task9-branch-verification.ts [cells\|hang\|hop\|mt\|probe\|integrity\|all]` | Task 9: before (fresh upstream runs) vs after (reworked branch) per cell, finalization rate, loopback-hop decomposition, multi-mic skew, per-repeat finalization probe, head/tail integrity. Run ids default to the register's; override with `T9_UP48`/`T9_UP44`/`T9_BR48`/`T9_BR44` (matrix), `T9_MT` (one multi-mic run — the register quotes `…1788325557229` (default) and `…1788329084394`), `T9_MT_UP`, and `T9_PROBE` (comma-separated runs for `probe`) |
 
+## Regression oracle for the scripts themselves
+
+Two scripts have their full output persisted beside the artifacts, in
+`.verify-output/task12a-keepalive-classification.txt` and
+`.verify-output/task12b-calibration-tables.txt`. `.verify-output/` is gitignored, so
+nothing in CI runs this; it is the local byte-for-byte check that a change to a script,
+to `artifacts.ts`, or to the shared classifier did not move a figure the register quotes:
+
+```
+node scripts/audit/recording-alignment/task12a-keepalive-classification.ts | diff - .verify-output/task12a-keepalive-classification.txt
+node scripts/audit/recording-alignment/task12b-calibration-tables.ts all    | diff - .verify-output/task12b-calibration-tables.txt
+```
+
+An empty diff is the pass. A change that legitimately moves a line (a new artifact, a
+corrected label) re-persists the file with the same command minus the `diff`, and the
+commit says which line moved and why.
+
 History: three earlier Task 7c scripts joined a summary row to a capture WAV by filename
 alone, before the harness stamped a run token into WAV names; every run overwrote the
 previous run's capture of the same cell, so they silently read one run's geometry against
