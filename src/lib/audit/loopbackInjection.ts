@@ -72,12 +72,16 @@ function requestedDeviceId(constraints?: MediaStreamConstraints): string | undef
  * runs in, and the two differ by ~45 ms of input delay.
  * `CaptureAudio.prepareRecording` calls the stream generator on EVERY recording
  * start, and `#updateStream` returns early only when the open track's reported
- * deviceId equals the requested one. Reporting nothing means that check never
- * passes, so every take tears the chain down and builds a fresh
+ * deviceId equals the one the capture box names. Reporting nothing means that
+ * check never passes, so every take tears the chain down and builds a fresh
  * `MediaStreamAudioSourceNode` — which is where the alignment campaign's
  * 10-23 ms baseline comes from. Reporting the id makes the check pass and one
  * source node lives across takes, which is the SDK's real-device path whenever
- * the capture box carries a device id.
+ * the capture box carries a device id — on every build, since a real device
+ * always reports the id it was opened with. A box naming NO device rebuilt on
+ * every recording too until SDK `546b5bfaa`, which compares what the box names
+ * against what the open stream was REQUESTED with; from there an unnamed box
+ * reuses its chain (see `serveDefault`, the mode that exercises it).
  *
  * The delay difference is a property of that REUSED SOURCE NODE, not of this
  * loopback: nothing here accumulates (one clone is handed out, the delay lines
@@ -137,6 +141,11 @@ export interface LoopbackHandle {
    * was reused or rebuilt (one open for a whole cell means every take ran on the
    * same chain), so the harnesses persist it per run instead of leaving it in the
    * console.
+   *
+   * The counter is CUMULATIVE PER PAGE LOAD, not per run: it is never reset, so
+   * a second run started with the page's "Re-run" button persists the total
+   * since load rather than that run's own opens. A fresh navigation per run —
+   * the campaign's practice — makes the two equal.
    */
   getUserMediaOpens(): number;
   /**
