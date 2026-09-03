@@ -528,6 +528,14 @@ input-latency-calibration-debug-demo.html?input=real&rate=48000&bpm=120
   traverses the real output device, so `harnessPathBiasSec` is 0 and a 0
   `audioContext.outputLatency` read is recorded (`outputLatencyAtStartSec`,
   `outputLatencyAfterFirstCallSec`, `baseLatencySec`), not refused.
+- A call that throws or times out is persisted as an `error` row (verdict `"error"`, the
+  message in `reason`, NaN figures) and the run continues — one deadline must not lose the
+  calls before it. `getUserMediaOpens` counts the page's ACTUAL opens since load (the label
+  unlock included, so a steady run reads 2 and a fresh run 3). The stored entry is looked up
+  under the stream the apply ran on (`deviceId`); every armed stream's id is in
+  `armedStreamDeviceIds`, and `streamDeviceIdChanged` says whether a re-arm reported a
+  different one. The status trail is cumulative per page load (setup → device at load,
+  then the run's stages).
 - Envelope additions: `inputMode: "real"`, `runLabel`, `device` (`deviceId`/`label`/
   `groupId`), `trackSettings` (the armed track's `getSettings()`: deviceId, latency,
   sampleRate, channelCount, echo/noise/AGC flags — proof of the processing state and the

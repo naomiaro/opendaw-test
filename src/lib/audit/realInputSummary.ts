@@ -29,8 +29,8 @@
  *
  * Three different things a call off its chain's mode can be, kept apart in the
  * output because they point at different mechanisms:
- *  - an ANCHOR DISAGREEMENT: the two capture anchors of one call differ by more
- *    than half a quantum. The SDK's own detector for a capture node whose
+ *  - an ANCHOR DISAGREEMENT: the two capture anchors of one call are distinct
+ *    states (see `sameState`). The SDK's own detector for a capture node whose
  *    first-frame time is a quantum off; the reported round trip may still sit
  *    at the mode (batch 1788464404625 call 11: A = mode, B = mode − 128 frames).
  *  - a STATE TRANSITION: the round trip steps by at least half a quantum from
@@ -150,7 +150,7 @@ export interface RealInputSummary {
   anchorDisagreements: {
     /** Calls whose `reason` carries the SDK's own "capture anchors disagree" flag. */
     flaggedBySdk: number;
-    /** Usable calls whose two anchors differ by more than half a quantum, re-derived here. */
+    /** Usable calls whose two anchors are distinct states (at least half a quantum apart), re-derived here. */
     rederived: number;
     /** 0-based indices of the re-derived disagreements. */
     indices: number[];
@@ -235,18 +235,36 @@ export function isUsableCall(call: RealInputCall): boolean {
     Number.isFinite(call.roundTripSeconds) && Number.isFinite(call.inputLatencySeconds);
 }
 
-/** Both anchors agree: the second is absent (nothing to disagree), or within half a quantum of the first. */
-function anchorsAgree(call: RealInputCall, halfQuantumSec: number): boolean {
-  const b = call.roundTripSecondsSecondary;
-  return b === undefined || !Number.isFinite(b) || Math.abs(b - call.roundTripSeconds) <= halfQuantumSec;
+/** Tolerance on the half-quantum boundary, as a fraction of a quantum, so a float that lands a
+ *  hair under exactly 0.5 q still reads as the boundary case it is. */
+const STATE_BOUNDARY_TOLERANCE = 1e-3;
+
+/**
+ * THE ONE STATE RULE, used by every comparison in this module: two figures are the
+ * same state when they differ by LESS than half a render quantum (minus the
+ * tolerance), and distinct states at exactly half a quantum and beyond. So a
+ * cluster is a maximal set whose span is under half a quantum, two anchors agree
+ * when they are the same state, a transition is a step to a distinct state, and
+ * two clusters or chain medians are two states when their centres are distinct.
+ */
+export function sameState(a: number, b: number, renderQuantumSec: number): boolean {
+  return Math.abs(a - b) < (0.5 - STATE_BOUNDARY_TOLERANCE) * renderQuantumSec;
 }
 
-function clusterInputParts(values: number[], halfQuantumSec: number): RealInputCluster[] {
+/** Both anchors agree: the second is absent (nothing to disagree), or the same state as the first. */
+function anchorsAgree(call: RealInputCall, renderQuantumSec: number): boolean {
+  const b = call.roundTripSecondsSecondary;
+  return b === undefined || !Number.isFinite(b) || sameState(b, call.roundTripSeconds, renderQuantumSec);
+}
+
+/** Greedy over the sorted values: a value joins the open cluster while it is the same
+ *  state as that cluster's lowest value, so every cluster's span is under half a quantum. */
+function clusterInputParts(values: number[], renderQuantumSec: number): RealInputCluster[] {
   const sorted = [...values].sort((a, b) => a - b);
   const groups: number[][] = [];
   for (const value of sorted) {
     const open = groups[groups.length - 1];
-    if (open !== undefined && value - open[0] <= halfQuantumSec) open.push(value);
+    if (open !== undefined && sameState(value, open[0], renderQuantumSec)) open.push(value);
     else groups.push([value]);
   }
   return groups.map((group) => ({
@@ -272,7 +290,6 @@ interface IndexedCall { call: RealInputCall; index: number }
  */
 function summarizeChain(chainIndex: number, all: IndexedCall[], sampleRate: number): RealInputChainSummary {
   const renderQuantumSec = 128 / sampleRate;
-  const halfQuantumSec = 0.5 * renderQuantumSec;
   const usable = all.filter(({ call }) => isUsableCall(call));
   const empty: RealInputChainSummary = {
     chainIndex, calls: all.length, usableCalls: usable.length,
@@ -284,14 +301,14 @@ function summarizeChain(chainIndex: number, all: IndexedCall[], sampleRate: numb
   const inputParts = usable.map(({ call }) => call.inputLatencySeconds);
   const inputMode = modeAtFrameResolution(inputParts, sampleRate);
   const roundTripMode = modeAtFrameResolution(usable.map(({ call }) => call.roundTripSeconds), sampleRate);
-  const atMode = (c: IndexedCall) => Math.abs(c.call.roundTripSeconds - roundTripMode.value) <= halfQuantumSec;
+  const atMode = (c: IndexedCall) => sameState(c.call.roundTripSeconds, roundTripMode.value, renderQuantumSec);
 
   const isolated: RealInputIsolatedDeviation[] = [];
   const kept: IndexedCall[] = [];
   usable.forEach((c, k) => {
     const next = usable[k + 1];
     const prev = usable[k - 1];
-    const isIsolated = !atMode(c) && anchorsAgree(c.call, halfQuantumSec) &&
+    const isIsolated = !atMode(c) && anchorsAgree(c.call, renderQuantumSec) &&
       next !== undefined && atMode(next) && (prev === undefined || atMode(prev));
     if (isIsolated) {
       isolated.push({ chainIndex, index: c.index, deltaQuanta: (c.call.roundTripSeconds - roundTripMode.value) / renderQuantumSec });
@@ -308,9 +325,9 @@ function summarizeChain(chainIndex: number, all: IndexedCall[], sampleRate: numb
     // The step is measured from the last call of the open state whose anchors
     // agree: a folded-in disagreeing call has a suspect round trip, and the
     // call after it must not read as a step back from that figure.
-    const previous = [...open].reverse().find((k) => anchorsAgree(k.call, halfQuantumSec)) ?? open[open.length - 1];
+    const previous = [...open].reverse().find((k) => anchorsAgree(k.call, renderQuantumSec)) ?? open[open.length - 1];
     const step = c.call.roundTripSeconds - previous.call.roundTripSeconds;
-    if (Math.abs(step) >= halfQuantumSec && anchorsAgree(c.call, halfQuantumSec)) {
+    if (!sameState(c.call.roundTripSeconds, previous.call.roundTripSeconds, renderQuantumSec) && anchorsAgree(c.call, renderQuantumSec)) {
       const stepQuanta = step / renderQuantumSec;
       transitions.push({
         chainIndex, index: c.index,
@@ -335,8 +352,8 @@ function summarizeChain(chainIndex: number, all: IndexedCall[], sampleRate: numb
     modeInputLatencySec: inputMode.value,
     modeCount: inputMode.count,
     modeRoundTripSec: roundTripMode.value,
-    withinHalfQuantum: inputParts.every((v) => Math.abs(v - inputMode.value) <= halfQuantumSec),
-    clusters: clusterInputParts(inputParts, halfQuantumSec),
+    withinHalfQuantum: inputParts.every((v) => sameState(v, inputMode.value, renderQuantumSec)),
+    clusters: clusterInputParts(inputParts, renderQuantumSec),
     states, transitions, isolatedDeviations: isolated,
   };
 }
@@ -364,7 +381,6 @@ export function summarizeRealInput(
   reportedTrackLatencySec: number | null
 ): RealInputSummary {
   const renderQuantumSec = 128 / sampleRate;
-  const halfQuantumSec = 0.5 * renderQuantumSec;
   const verdictCounts: Record<string, number> = {};
   for (const call of calls) verdictCounts[call.verdict] = (verdictCounts[call.verdict] ?? 0) + 1;
   const indexed: IndexedCall[] = calls.map((call, index) => ({ call, index }));
@@ -372,7 +388,7 @@ export function summarizeRealInput(
   const outputLatencyReportedCount = calls.filter((call) => call.outputLatencyReported).length;
   const secondAnchorAvailable = calls.some((call) => call.roundTripSecondsSecondary !== undefined);
   const rederivedIndices = usable
-    .filter(({ call }) => call.roundTripSecondsSecondary !== undefined && !anchorsAgree(call, halfQuantumSec))
+    .filter(({ call }) => call.roundTripSecondsSecondary !== undefined && !anchorsAgree(call, renderQuantumSec))
     .map(({ index }) => index);
   const anchorDisagreements = {
     flaggedBySdk: calls.filter((call) => (call.reason ?? "").includes(ANCHOR_DISAGREE_REASON)).length,
@@ -438,7 +454,7 @@ export function summarizeRealInput(
       verdict = "repeatable";
       shape = `chain ${chain.chainIndex}: ${chain.usableCalls} usable calls all within half a quantum of the modal input part ` +
         `${msText(chain.modeInputLatencySec as number)} (${chain.modeCount} at the mode)`;
-    } else if (clusters.length === 2 && clusters[1].minSec - clusters[0].maxSec >= halfQuantumSec) {
+    } else if (clusters.length === 2 && !sameState(clusters[1].centerSec, clusters[0].centerSec, renderQuantumSec)) {
       verdict = "two-state";
       stateSeparationQuanta = (clusters[1].centerSec - clusters[0].centerSec) / renderQuantumSec;
       shape = `chain ${chain.chainIndex}: two input-part clusters ${msText(clusters[0].centerSec)} ×${clusters[0].calls} and ` +
@@ -460,7 +476,7 @@ export function summarizeRealInput(
     if (unstable.length > 0) {
       verdict = "scattered";
       shape = `chain(s) ${unstable.map((c) => c.chainIndex).join(", ")} not within half a quantum of their own mode; ${chainsText}`;
-    } else if (spreadQuanta < 0.5) {
+    } else if (sameState(Math.max(...medians), Math.min(...medians), renderQuantumSec)) {
       verdict = "repeatable";
       shape = `${chainsText} — within half a quantum of each other (${spreadQuanta.toFixed(2)} quanta)`;
     } else {

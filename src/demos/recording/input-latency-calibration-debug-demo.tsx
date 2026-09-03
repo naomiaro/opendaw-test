@@ -229,7 +229,9 @@ const STREAM_DEADLINE_MS = 15_000;
 // --- branch API shim (see the header) --------------------------------------
 
 type CalibrationVerdict =
-  | "ok" | "noisy" | "no-signal" | "context-not-running" | "no-stream" | "transport-running";
+  | "ok" | "noisy" | "no-signal" | "context-not-running" | "no-stream" | "transport-running"
+  /** Page-local, real mode only: the call threw or timed out — see `errorResult`. */
+  | "error";
 
 /** Mirrors `InputLatencyCalibration.Result` at the branch head; see the shim note in the header for which members are optional and why. */
 interface CalibrationResult {
@@ -560,6 +562,10 @@ interface CalibrationSummary {
   /** Free text the user typed to say what was plugged in ("cable loopback", "laptop mic + speakers"). */
   runLabel?: string;
   device?: RealDevice;
+  /** The id each armed stream reported, in arm order (two entries on `?armState=fresh`). */
+  armedStreamDeviceIds?: string[];
+  /** True when a re-armed stream reported an id different from the first arm's; `deviceId` is then the last one. */
+  streamDeviceIdChanged?: boolean;
   trackSettings?: TrackSettingsRecord | null;
   /** `audioContext.outputLatency` at run start, before any probe played — may be 0 (recorded, not refused). */
   outputLatencyAtStartSec?: number;
@@ -602,6 +608,22 @@ const CAPTURE_MODE: CaptureMode = DEFAULT_INPUT ? "default" : "named";
  * (a throw during module evaluation would never reach the state badge).
  */
 const REAL_INPUT = params.get("input") === "real";
+
+/**
+ * Real mode counts the page's ACTUAL `getUserMedia` opens — the label unlock in
+ * the `device` stage plus every stream the SDK opens at arm — by wrapping the
+ * method with a pass-through counter (no behaviour is changed; the loopback's
+ * override is what real mode must not install). Cumulative per page load, like
+ * the loopback handle's counter: a Re-run persists the total since load.
+ */
+let realGetUserMediaOpens = 0;
+if (REAL_INPUT) {
+  const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+  navigator.mediaDevices.getUserMedia = (constraints?: MediaStreamConstraints) => {
+    realGetUserMediaOpens++;
+    return original(constraints);
+  };
+}
 
 function resolveInputMode(param: string | null): InputMode {
   const raw = param ?? "loopback";
@@ -1429,12 +1451,44 @@ async function armRealDevice(project: Project, capture: CaptureAudio, deviceId: 
   return waitForStream(capture, STREAM_DEADLINE_MS);
 }
 
-function calibrateReal(calibrating: CalibratingCapture, apply: boolean): Promise<CalibrationResult> {
-  return withDeadline(
-    calibrating.calibrateInputLatency(apply ? { apply: true } : {}),
-    CALIBRATION_DEADLINE_MS,
-    `calibrateInputLatency(apply=${String(apply)})`
-  );
+/** The row persisted for a call that threw or timed out, so the run keeps going and
+ *  the envelope keeps every earlier call. NaN figures (null in JSON) and a verdict
+ *  outside the SDK's set make it unusable to `summarizeRealInput`. */
+function errorResult(message: string, sampleRate: number): CalibrationResult {
+  return {
+    verdict: "error",
+    roundTripSeconds: Number.NaN,
+    outputLatencySeconds: Number.NaN,
+    outputLatencyReported: false,
+    inputLatencySeconds: Number.NaN,
+    spreadSeconds: Number.NaN,
+    correlationRatioDb: Number.NaN,
+    identifiedBursts: 0,
+    scheduledBursts: 0,
+    sampleRate,
+    measuredAt: Date.now(),
+    reason: message,
+  };
+}
+
+/**
+ * One direct call, raced against the deadline. A throw or timeout is returned
+ * as an `error` row rather than propagated: a deadline on call 17 of 30 must
+ * not lose the sixteen calls before it, which is what an exception out of
+ * `runRealInputAudit` before `uploadSummary` did.
+ */
+async function calibrateReal(calibrating: CalibratingCapture, apply: boolean, sampleRate: number, label: string): Promise<CalibrationResult> {
+  try {
+    return await withDeadline(
+      calibrating.calibrateInputLatency(apply ? { apply: true } : {}),
+      CALIBRATION_DEADLINE_MS,
+      `calibrateInputLatency(apply=${String(apply)})`
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[input-latency-calibration] " + label + " FAILED: " + message + " — persisted as an error row, continuing");
+    return errorResult(message, sampleRate);
+  }
 }
 
 function logCalibrationCall(prefix: string, result: CalibrationResult): void {
@@ -1513,6 +1567,10 @@ async function runRealInputAudit(input: RealRunInput, cb: RealRunCallbacks): Pro
   const calls: { result: CalibrationResult; chainIndex: number }[] = [];
   let outputLatencyAfterFirstCallSec: number | null = null;
   let chainIndex = 0;
+  // The id each armed stream reported, in arm order. The SDK keys the stored
+  // entry on the stream the apply ran on, so the lookup below uses the LAST
+  // one; a re-arm that reports a different id is recorded, not assumed away.
+  const armedStreamDeviceIds = [deviceId];
   for (let index = 0; index < repeatCount; index++) {
     if (index === rearmAfter) {
       cb.setState("rearming");
@@ -1520,11 +1578,16 @@ async function runRealInputAudit(input: RealRunInput, cb: RealRunCallbacks): Pro
       await sleep(DELAY_SETTLE_MS);
       capture.armed.setValue(true);
       const rearmedDeviceId = await waitForStream(capture, STREAM_DEADLINE_MS);
+      armedStreamDeviceIds.push(rearmedDeviceId);
       chainIndex = 1;
       console.log("[input-latency-calibration] re-armed after call " + String(index) + ", chain rebuilt, deviceId=" + rearmedDeviceId);
+      if (rearmedDeviceId !== deviceId) {
+        console.warn("[input-latency-calibration] re-armed stream reports a DIFFERENT device id than the first arm (" +
+          deviceId + " → " + rearmedDeviceId + "); the stored entry is looked up under the new one");
+      }
     }
     cb.setState(`repeat:${index + 1}/${repeatCount}`);
-    const result = await calibrateReal(calibrating, false);
+    const result = await calibrateReal(calibrating, false, rate, `repeat ${index + 1}/${repeatCount}`);
     if (outputLatencyAfterFirstCallSec === null) outputLatencyAfterFirstCallSec = audioContext.outputLatency;
     calls.push({ result, chainIndex });
     cb.onRepeatCall(result, index, chainIndex);
@@ -1555,11 +1618,15 @@ async function runRealInputAudit(input: RealRunInput, cb: RealRunCallbacks): Pro
   );
 
   cb.setState("applying");
-  const applied = await calibrateReal(calibrating, true);
-  const storedEntry = storedCalibrations(project).find((entry) => entry.deviceId === deviceId) ?? null;
+  const applied = await calibrateReal(calibrating, true, rate, "applied");
+  const appliedStreamDeviceId = armedStreamDeviceIds[armedStreamDeviceIds.length - 1];
+  const storedEntry = storedCalibrations(project).find((entry) => entry.deviceId === appliedStreamDeviceId) ?? null;
+  const streamDeviceIdChanged = armedStreamDeviceIds.some((id) => id !== deviceId);
   cb.onApplied(applied, storedEntry);
   logCalibrationCall("applied", applied);
-  console.log("[input-latency-calibration] storedEntry=" + (storedEntry === null ? "none" : JSON.stringify(storedEntry)));
+  console.log("[input-latency-calibration] storedEntry(" + appliedStreamDeviceId + ")=" +
+    (storedEntry === null ? "none" : JSON.stringify(storedEntry)) +
+    " armedStreamDeviceIds=[" + armedStreamDeviceIds.join(",") + "] changed=" + String(streamDeviceIdChanged));
 
   const cell: CellOutcome = {
     scenario: CELL_SCENARIO,
@@ -1576,10 +1643,12 @@ async function runRealInputAudit(input: RealRunInput, cb: RealRunCallbacks): Pro
   await uploadSummary({
     schemaVersion: CALIBRATION_SCHEMA_VERSION,
     kind: "input-latency-calibration-ground-truth",
-    runToken, rate, bpm, sdkBuildProbe, buildFeatures, deviceId,
+    runToken, rate, bpm, sdkBuildProbe, buildFeatures,
+    // The id the stored entry is keyed on: the stream the apply ran on.
+    deviceId: appliedStreamDeviceId,
     captureMode: "named",
-    // No override is installed in real mode, so the SDK's own opens are not counted — one arm, one stream, per chain.
-    getUserMediaOpens: chainIndex + 1,
+    // Actual opens since page load, the label unlock included — see `realGetUserMediaOpens`.
+    getUserMediaOpens: realGetUserMediaOpens,
     outputLatency: outputLatencyAtStartSec,
     baseLatency: baseLatencySec,
     harnessPathBiasSec: 0,
@@ -1602,6 +1671,8 @@ async function runRealInputAudit(input: RealRunInput, cb: RealRunCallbacks): Pro
     inputMode: "real",
     runLabel: input.runLabel,
     device: input.device,
+    armedStreamDeviceIds,
+    streamDeviceIdChanged,
     trackSettings,
     outputLatencyAtStartSec,
     outputLatencyAfterFirstCallSec,
@@ -1645,14 +1716,13 @@ function RealInputResults(props: {
   calls: { result: CalibrationResult; index: number; chainIndex: number }[];
   rows: RealRepeatCall[];
   summary: RealInputSummary | null;
-  repeatSummary: RepeatSummary | null;
   applied: CalibrationResult | null;
   storedEntry: CalibrationEntry | null;
   trackSettings: { settings: TrackSettingsRecord | null; streamDeviceId: string } | null;
   runLabel: string;
   device: RealDevice | null;
 }) {
-  const { calls, rows, summary, repeatSummary, applied, storedEntry, trackSettings, runLabel, device } = props;
+  const { calls, rows, summary, applied, storedEntry, trackSettings, runLabel, device } = props;
   // Rows carry the analysis once the phase completes; until then the raw calls are shown.
   const rowFor = (index: number): RealRepeatCall | null => rows[index] ?? null;
   return (
@@ -1728,7 +1798,7 @@ ${summary.perChain.map((c) => `  chain ${c.chainIndex}: ${c.usableCalls}/${c.cal
 state transitions: ${summary.stateTransitions.count} (${summary.stateTransitions.oneQuantumSteps} one-quantum step(s))${summary.stateTransitions.count === 0 ? "" : " — " + summary.stateTransitions.transitions.map((t) => `call ${t.index + 1} chain ${t.chainIndex} ${t.stepQuanta >= 0 ? "+" : ""}${t.stepQuanta.toFixed(3)} quanta`).join(" · ")}
 isolated deviations: ${summary.isolatedDeviations.count}${summary.isolatedDeviations.count === 0 ? " (expected 0 — the single-call case no anchor check can catch)" : " — " + summary.isolatedDeviations.deviations.map((d) => `call ${d.index + 1} chain ${d.chainIndex} ${d.deltaQuanta >= 0 ? "+" : ""}${d.deltaQuanta.toFixed(3)} quanta`).join(" · ")}
 anchor disagreements: ${summary.anchorDisagreements.secondAnchorAvailable ? `flagged by the SDK ${summary.anchorDisagreements.flaggedBySdk} · re-derived > ½ quantum ${summary.anchorDisagreements.rederived}${summary.anchorDisagreements.rederived === 0 ? "" : ` (calls ${summary.anchorDisagreements.indices.map((i) => i + 1).join(", ")})`}` : "second anchor NOT reported by this build"}
-output latency:    reported on ${summary.outputLatencyReportedCount}/${summary.calls} calls${repeatSummary === null ? "" : `\nloopback rule:     summarizeRepeats (pooled mode, ±25 % of a quantum) would count ${repeatSummary.oneQuantumMisses} "miss(es)" — kept in the envelope for comparison, not the reading`}
+output latency:    reported on ${summary.outputLatencyReportedCount}/${summary.calls} calls
 track latency:     ${summary.reportedLatencySec === null ? "not reported by the browser" : `${ms(summary.reportedLatencySec)} ms reported · pooled median input part − reported = ${summary.medianInputMinusReportedSec === null ? "—" : ms(summary.medianInputMinusReportedSec) + " ms"}`}`}
         </pre>
       </Card>
@@ -1842,7 +1912,9 @@ function CalibrationHarness() {
     if (running || selectedDevice === null) return;
     setRunning(true);
     setStarted(true);
-    setTrail([]);
+    // The trail is NOT reset: it keeps the setup/device stages walked at load,
+    // so it reads as the header's documented walk (and, on a Re-run, as the
+    // page's whole history since load).
     setRealCalls([]);
     setRealRows([]);
     setRealSummary(null);
@@ -1997,7 +2069,6 @@ function CalibrationHarness() {
               calls={realCalls}
               rows={realRows}
               summary={realSummary}
-              repeatSummary={repeatSummary}
               applied={applied}
               storedEntry={storedEntry}
               trackSettings={trackSettings}

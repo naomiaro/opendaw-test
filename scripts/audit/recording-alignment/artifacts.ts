@@ -75,7 +75,8 @@ export interface CalibrationCall {
   /** Present only on builds carrying the second capture anchor (660213857 on). */
   roundTripSecondsSecondary?: number;
   inputLatencySeconds: number;
-  spreadSeconds: number;
+  /** null on an `error` row (NaN persisted), a number otherwise. */
+  spreadSeconds: number | null;
   correlationRatioDb: number;
   identifiedBursts: number;
   sampleRate: number;
@@ -160,14 +161,16 @@ export function loadCalibrationSummary(runId: string): LoadedCalibrationSummary 
   if (typeof json.sdkBuildProbe !== "string") fail(`"sdkBuildProbe" is ${JSON.stringify(json.sdkBuildProbe)}`);
   if (typeof json.deviceId !== "string") fail(`"deviceId" is ${JSON.stringify(json.deviceId)}`);
   // A call that never reached the analysis carries NaN round trip and input
-  // figures, which JSON persists as null — so those two are number-or-null.
+  // figures, which JSON persists as null — so those are number-or-null. The
+  // real-input page's `error` rows (a call that threw or timed out) carry NaN
+  // spread as well.
   const numberOrNull = (v: unknown) => v === null || (typeof v === "number");
   const isCall = (v: unknown): v is CalibrationCall =>
     typeof v === "object" && v !== null &&
     typeof (v as CalibrationCall).verdict === "string" &&
     numberOrNull((v as CalibrationCall).roundTripSeconds) &&
     numberOrNull((v as CalibrationCall).inputLatencySeconds) &&
-    typeof (v as CalibrationCall).spreadSeconds === "number";
+    numberOrNull((v as CalibrationCall).spreadSeconds);
   if (!Array.isArray(json.sweep) || !json.sweep.every(isCall)) fail(`"sweep" is not a list of calibration calls`);
   if (json.applied !== null && !isCall(json.applied)) fail(`"applied" is neither null nor a calibration call`);
   if (json.warmup !== undefined && json.warmup !== null && !isCall(json.warmup)) fail(`"warmup" is neither null nor a calibration call`);
@@ -191,8 +194,9 @@ export function loadCalibrationSummary(runId: string): LoadedCalibrationSummary 
   }
   const device = json.device;
   if (device !== undefined && device !== null && (typeof device !== "object" ||
-    typeof (device as { deviceId?: unknown }).deviceId !== "string" || typeof (device as { label?: unknown }).label !== "string")) {
-    fail(`"device" is neither absent nor {deviceId, label, groupId}`);
+    typeof (device as { deviceId?: unknown }).deviceId !== "string" || typeof (device as { label?: unknown }).label !== "string" ||
+    typeof (device as { groupId?: unknown }).groupId !== "string")) {
+    fail(`"device" is neither absent nor {deviceId, label, groupId} (all strings)`);
   }
   const objectOrNull = (v: unknown) => v === null || (typeof v === "object" && !Array.isArray(v));
   if (json.trackSettings !== undefined && !objectOrNull(json.trackSettings)) fail(`"trackSettings" is neither null nor an object`);

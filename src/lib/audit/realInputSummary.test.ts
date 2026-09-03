@@ -11,7 +11,7 @@
  * step read as misses — cannot come back.
  */
 import { describe, expect, it } from "vitest";
-import { isUsableCall, modeAtFrameResolution, summarizeRealInput, type RealInputCall } from "./realInputSummary";
+import { isUsableCall, modeAtFrameResolution, sameState, summarizeRealInput, type RealInputCall } from "./realInputSummary";
 
 const RATE = 48000;
 const QUANTUM = 128 / RATE;
@@ -186,6 +186,67 @@ describe("summarizeRealInput — the three mechanisms kept apart", () => {
   });
 });
 
+describe("summarizeRealInput — the state boundary (one rule, float-robust)", () => {
+  it("two values exactly half a quantum apart are two states, at the boundary and a hair under it", () => {
+    for (const fraction of [0.5, 0.5 - 1e-4]) {
+      const calls = [call(0.02), call(0.02 + fraction * QUANTUM)];
+      const summary = summarizeRealInput(calls, RATE, null);
+      expect(summary.verdict, `fraction ${fraction}`).toBe("two-state");
+      expect(summary.perChain[0].clusters).toHaveLength(2);
+      expect(summary.perChain[0].withinHalfQuantum).toBe(false);
+      expect(summary.stateSeparationQuanta).toBeCloseTo(fraction, 3);
+    }
+    // Comfortably under half a quantum: one state.
+    expect(summarizeRealInput([call(0.02), call(0.02 + 0.45 * QUANTUM)], RATE, null).verdict).toBe("repeatable");
+  });
+
+  it("[0, 0.5, 0.5, 1.0] quanta is three states, so scattered — not two", () => {
+    const calls = [0, 0.5, 0.5, 1.0].map((q) => call(0.02 + q * QUANTUM));
+    const summary = summarizeRealInput(calls, RATE, null);
+    expect(summary.perChain[0].clusters.map((c) => c.calls)).toEqual([1, 2, 1]);
+    expect(summary.verdict).toBe("scattered");
+  });
+
+  it("anchors exactly half a quantum apart disagree; chain medians exactly half a quantum apart are two states", () => {
+    const disagree = summarizeRealInput([call(0.02, { roundTripSecondsSecondary: 0.02 + OUTPUT + 0.5 * QUANTUM })], RATE, null);
+    expect(disagree.anchorDisagreements.rederived).toBe(1);
+    const agree = summarizeRealInput([call(0.02, { roundTripSecondsSecondary: 0.02 + OUTPUT + 0.45 * QUANTUM })], RATE, null);
+    expect(agree.anchorDisagreements.rederived).toBe(0);
+    const fresh = summarizeRealInput([
+      ...repeat(3, () => call(0.02, { chainIndex: 0 })),
+      ...repeat(3, () => call(0.02 + 0.5 * QUANTUM, { chainIndex: 1 })),
+    ], RATE, null);
+    expect(fresh.verdict).toBe("two-state");
+    expect(fresh.verdictBasis).toBe("chain medians");
+  });
+
+  it("a 64-frame alternation at 48 kHz: two states half a quantum apart, every excursion an isolated deviation", () => {
+    // 4264 / 4328 frames alternating, nine calls so the run ends at the mode.
+    const calls = repeat(9, (k) => frames(48000, k % 2 === 0 ? 4264 : 4328, 1104, 0));
+    const summary = summarizeRealInput(calls, 48000, null);
+    expect(summary.verdict).toBe("two-state");
+    expect(summary.perChain[0].clusters.map((c) => c.calls)).toEqual([5, 4]);
+    expect(summary.stateSeparationQuanta).toBeCloseTo(0.5, 6);
+    expect(summary.isolatedDeviations.deviations.map((d) => d.index)).toEqual([1, 3, 5, 7]);
+    expect(summary.isolatedDeviations.deviations[0].deltaQuanta).toBeCloseTo(0.5, 6);
+    expect(summary.stateTransitions.count).toBe(0);
+    expect(summary.perChain[0].states).toHaveLength(1);
+  });
+
+  it("error rows (a call that threw or timed out) are counted by verdict and otherwise unusable", () => {
+    const error: RealInputCall = {
+      verdict: "error", roundTripSeconds: Number.NaN, inputLatencySeconds: Number.NaN, outputLatencySeconds: Number.NaN,
+      outputLatencyReported: false, spreadSeconds: Number.NaN, correlationRatioDb: Number.NaN, identifiedBursts: 0,
+      reason: "calibrateInputLatency(apply=false) timed out after 60000ms", chainIndex: 0,
+    };
+    const mixed = summarizeRealInput([call(0.02), error, call(0.02)], RATE, null);
+    expect(mixed.verdictCounts).toEqual({ ok: 2, error: 1 });
+    expect(mixed.usableCalls).toBe(2);
+    expect(mixed.verdict).toBe("repeatable");
+    expect(summarizeRealInput([error, error], RATE, null).verdict).toBe("unusable");
+  });
+});
+
 describe("summarizeRealInput — shape rules", () => {
   it("reads a run whose calls all sit within half a quantum of the mode as repeatable", () => {
     const calls = [0.0216, 0.0216, 0.02165, 0.0216, 0.02155].map((v) => call(v));
@@ -219,9 +280,10 @@ describe("summarizeRealInput — shape rules", () => {
   it("reads values spread over more than two groups, or a staircase, as scattered", () => {
     const spread = [0, 0.4, 0.8, 1.2, 1.6].map((q) => call(0.02 + q * QUANTUM));
     expect(summarizeRealInput(spread, RATE, null).verdict).toBe("scattered");
-    // A staircase: not within half a quantum of the mode (the earliest tied value, 0),
-    // and the two greedy groups it forms are only 0.45 quanta apart — neither one state nor two.
-    const close = [0, 0, 0.45, 0.9, 0.9].map((q) => call(0.02 + q * QUANTUM));
+    // A staircase: the value at 0 is a distinct state from the mode (0.5, ×3), yet the
+    // two greedy groups it forms have centres 0.49 and 0.5 — the same state. Neither
+    // one state nor two.
+    const close = [0, 0.49, 0.49, 0.5, 0.5, 0.5].map((q) => call(0.02 + q * QUANTUM));
     const summary = summarizeRealInput(close, RATE, null);
     expect(summary.verdict).toBe("scattered");
     expect(summary.stateSeparationQuanta).toBeNull();
@@ -298,6 +360,15 @@ describe("summarizeRealInput — shape rules", () => {
     // Only one chain has data, so the verdict falls back to that chain's clusters.
     expect(summary.verdictBasis).toBe("per-chain clusters");
     expect(summary.verdict).toBe("repeatable");
+  });
+});
+
+describe("sameState", () => {
+  it("is the one boundary rule: same under half a quantum, distinct at half a quantum and a hair under it", () => {
+    expect(sameState(0.02, 0.02 + 0.49 * QUANTUM, QUANTUM)).toBe(true);
+    expect(sameState(0.02, 0.02 + 0.5 * QUANTUM, QUANTUM)).toBe(false);
+    expect(sameState(0.02, 0.02 + (0.5 - 5e-4) * QUANTUM, QUANTUM)).toBe(false);
+    expect(sameState(0.02 + 0.5 * QUANTUM, 0.02, QUANTUM)).toBe(false);
   });
 });
 
