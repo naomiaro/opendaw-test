@@ -50,7 +50,7 @@ describe("profileKeyFor", () => {
   });
 
   it("selects the release profile for a build that ships recordingStart without LatencyProbes", () => {
-    // SDK 0.0.172+ (PR #376 merged) and Task 9's branch: the take is anchored on
+    // Releases that ship PR #376 and Task 9's branch: the take is anchored on
     // the engine's own start and the row carries `firstQuantumTimeSec`, so the
     // loopback's own delay can be netted per row — bands A-D describe the
     // pre-#376 placement and would only match such a build by range coincidence.
@@ -208,7 +208,7 @@ describe("classifyCell under the candidate (E/F) profile", () => {
 });
 
 describe("release profile", () => {
-  it("is reachable only through the feature list — a 0.0.172-era run id without features stays upstream", () => {
+  it("is reachable only through the feature list — a post-#376 run id without features stays upstream", () => {
     expect(profileKeyFor("upstream", 1790622731936)).toBe("upstream");
     expect(profileKeyFor("upstream", 1790622731936, null)).toBe("upstream");
   });

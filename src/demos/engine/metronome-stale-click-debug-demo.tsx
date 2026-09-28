@@ -486,7 +486,7 @@ const App: React.FC = () => {
             expected={[
               { label: "outcome", value: "OK" },
               { label: "cut click body before the stop", value: `${CUT_BODY_MIN_MS}–${CUT_BODY_MAX_MS} ms (attack complete, stopped early in the body; the lead adapts otherwise)` },
-              { label: `restart head ratio (first ${HEAD_WINDOW_MS} ms / interrupted click's level)`, value: `≥ ${STALE_HEAD_RATIO_MIN} on SDK 0.0.172 (BUG PRESENT); ≤ ${CLEAN_HEAD_RATIO_MAX} once fixed` },
+              { label: `restart head ratio (first ${HEAD_WINDOW_MS} ms / interrupted click's level)`, value: `≥ ${STALE_HEAD_RATIO_MIN} while the defect is present (BUG PRESENT); ≤ ${CLEAN_HEAD_RATIO_MAX} once fixed` },
             ]}
             got={gotByStep[2] ?? null}
           />

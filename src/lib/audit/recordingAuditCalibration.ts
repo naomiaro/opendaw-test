@@ -193,18 +193,18 @@ export const KEEP_ALIVE_PROFILE_FROM_RUN = 1788384000000;
  * calibration build never resolves to `candidate`; it resolves to `release`
  * (below; it resolved to `upstream` before that profile existed).
  *
- * `recordingStart` without `LatencyProbes` — every release from SDK 0.0.172 on
- * (PR #376 merged), Task 9's branch, and the two calibration builds that
- * predate the configurable probe — resolves to `release`: the take is anchored
+ * `recordingStart` without `LatencyProbes` — every release that ships PR #376,
+ * Task 9's branch, and the two calibration builds that predate the configurable
+ * probe — resolves to `release`: the take is anchored
  * on the engine's own start and the row carries `firstQuantumTimeSec`, so the
  * loopback path's own delay (`firstQuantumTimeSec − anchorT0Sec`) is netted out
  * per row before the tolerance test (`RecordingAuditProfile.netLoopbackDelay`,
  * consumed by `classifyCell`'s `netLoopbackDelay` option). Bands A–D stay as
  * that profile's fallback table for rows without a delay. Before this profile
  * existed those builds resolved to `upstream`, where B/D matched the +17…+23 ms
- * residual by range coincidence; the register's 0.0.172 section records both
- * readings. Measured on the 0.0.172 sweeps (`1790622731936`, `1790623224013`):
- * netted medians +0.97…+1.19 ms on 120 of 120 rows.
+ * residual by range coincidence; the register's "Standing sweep" section for the
+ * first such release records both readings. Measured on its sweeps
+ * (`1790622731936`, `1790623224013`): netted medians +0.97…+1.19 ms on 120 of 120 rows.
  *
  * Without `features`, the run-token fallback above applies, and a caller passing
  * neither gets `upstream` — so every call site predating per-build profiles is
@@ -320,7 +320,7 @@ export const RECORDING_AUDIT_PROFILES: Record<AuditBuildProfileKey, RecordingAud
   release: {
     key: "release",
     description:
-      "A build that anchors takes on the engine's own recording start (SDK 0.0.172+, PR #376): the " +
+      "A build that anchors takes on the engine's own recording start (PR #376): the " +
       "loopback path's own delay is netted out per row before the tolerance test, so a correctly " +
       "placed take reads aligned; bands A-D remain the fallback for rows without a delay.",
     signatureBands: SIGNATURE_BANDS,

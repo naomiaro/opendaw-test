@@ -31,7 +31,7 @@
  * | G6-versioned | `schemaVersion >= 2`                                | `beatGrid` persisted; `harnessPathBiasSec` on every row; `cellVerdicts` and `wavName`/`wavUploadError` present |
  *
  * G6 sub-case (not a generation of its own — `AuditArtifactGeneration` stays at G6): rows
- * written by a build that reports `firstQuantumTime` (SDK 0.0.172+, or the branch builds)
+ * written by a build that reports `firstQuantumTime` (a release that ships PR #376, or the branch builds)
  * additionally carry `loopbackDelayMs` / `medianBeatErrorMsNetted`. Whether the persisted
  * verdict ran on the netted median is a property of the ENVELOPE's `buildFeatures`
  * (`profileKeyFor(...) === "release"`) and of the page: the matrix and multitrack pages net
@@ -137,7 +137,7 @@ interface TakeRowBase extends FinalizeProbe {
   /** G6+: the bias this row's `medianBeatErrorMsAdjusted` was computed with —
    *  the run-wide value read once after output started. */
   harnessPathBiasSec?: number;
-  /** G6 sub-case (SDK 0.0.172+ builds): `(firstQuantumTimeSec − anchorT0Sec) · 1000`,
+  /** G6 sub-case (builds that report `firstQuantumTime`): `(firstQuantumTimeSec − anchorT0Sec) · 1000`,
    *  the loopback path's own input delay for this row; null when either side is
    *  unknown. Present only on builds that report `firstQuantumTime`. */
   loopbackDelayMs?: number | null;

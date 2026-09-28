@@ -174,14 +174,14 @@ const RECORD_WINDOW_MS = 4000;
 
 // Build probe: identifies which SDK build is live, for A/B runs against an
 // alternate dist tree (see SDK_DIST_OVERRIDE in vite.config.ts). The marker is the
-// newest campaign surface the installed release does NOT ship yet: `recordingStart`
+// newest campaign surface the installed release does NOT ship yet. `recordingStart`
 // (the engine's one-shot audio-thread report, upstream PR #376, a live-instance
-// check on `project.engine`) shipped in 0.0.172 and stopped distinguishing
-// anything, so the marker moved to `calibrateInputLatency` on `CaptureAudio`'s
-// prototype (the loopback calibration, upstream PR #380) — a plain class-member
-// check on the imported module, which the same-named probe in buildFeatures.ts
-// also makes. A build carrying only `recordingStart` — every release from 0.0.172
-// on — reads "upstream". "unknown" is reserved for the case where the probe never
+// check on `project.engine`) is in the installed release and no longer
+// distinguishes anything, so the marker is `calibrateInputLatency` on
+// `CaptureAudio`'s prototype (the loopback calibration, upstream PR #380) — a
+// plain class-member check on the imported module, which the same-named probe in
+// buildFeatures.ts also makes. A build carrying only `recordingStart` — any
+// installed release — reads "upstream". "unknown" is reserved for the case where the probe never
 // ran at all (init itself failed), never as a steady-state verdict once the engine
 // is up. Once the installed SDK ships #380, this reads "candidate" on the plain
 // server too — re-target the marker at that upgrade. The `engine` argument is

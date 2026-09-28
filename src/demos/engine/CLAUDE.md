@@ -101,7 +101,7 @@ and keeps its active clicks in a list that `Engine::pause` / `stop` / `stop_reco
 never clear (they re-apply the enabled state via `apply_metronome()` only). Stop inside a
 click's 52 ms body (2 ms attack + 50 ms release) and play again: the rest of that click
 renders on top of the new position's first quantum (monophonic default: faded over 5 ms,
-still full level at the restart). Same code on 0.0.170 and 0.0.172. Repro (self-classifying,
+still full level at the restart). Present in the installed SDK. Repro (self-classifying,
 control vs. stale step, restart head ratio): `metronome-stale-click-debug-demo.html`;
 write-up `debug/metronome-click-survives-pause.md`. Measurement recipe reusable for any
 "what does the engine output around a transport edge" question: `initializeOpenDAW`'s

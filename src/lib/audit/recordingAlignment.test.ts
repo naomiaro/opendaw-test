@@ -309,10 +309,10 @@ describe("classifyCell", () => {
   it("aligned when every repeat is within tolerance", () => {
     expect(classifyCell([take(0.5), take(-1.1), take(0.9)], bands, 2).status).toBe("aligned");
   });
-  // Release profile (SDK 0.0.172+): the row's `loopbackDelayMs` — the loopback
-  // path's own input delay, `firstQuantumTimeSec − anchorT0Sec` — is netted out
-  // of the adjusted median before the tolerance test. Measured on the 0.0.172
-  // sweeps: adjusted +10.8…+24.3 ms, delay 9.6…23.2 ms, netted +0.97…+1.19 ms.
+  // Release profile: the row's `loopbackDelayMs` — the loopback path's own input
+  // delay, `firstQuantumTimeSec − anchorT0Sec` — is netted out of the adjusted
+  // median before the tolerance test. Measured on the first release sweeps:
+  // adjusted +10.8…+24.3 ms, delay 9.6…23.2 ms, netted +0.97…+1.19 ms.
   const netted = (adjustedMs: number, loopbackDelayMs: number | null): TakeAlignment =>
     ({ ...take(adjustedMs), loopbackDelayMs });
   it("nets the per-row loopback delay when asked, so a fixed build reads aligned", () => {

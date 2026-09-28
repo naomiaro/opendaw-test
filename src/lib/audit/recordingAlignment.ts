@@ -298,7 +298,7 @@ export interface TakeAlignment {
    * `firstQuantumTimeSec − anchorT0Sec` (the SDK's context time of the buffer's
    * first frame minus the harness's estimate of the same instant from the
    * reference clicks). Set by the cell runner on builds that report
-   * `firstQuantumTime` (SDK 0.0.172+); null/absent otherwise. `classifyCell`
+   * `firstQuantumTime` (a release that ships PR #376); null/absent otherwise. `classifyCell`
    * nets it out of the adjusted median only when asked (`netLoopbackDelay`).
    */
   loopbackDelayMs?: number | null;

@@ -24,13 +24,13 @@ import { InfoCircledIcon, PlayIcon } from "@radix-ui/react-icons";
 // mechanisms can produce that, and this page measures both in one run:
 //
 //   (A) `RecordAutomation.simplifyRecordedEvents` — the finalize-time thinning
-//       pass. Since SDK 0.0.172 it is recursive Ramer–Douglas–Peucker with
-//       ε = 0.01, so ε bounds the kept polyline's error (measured: 116 → 11
-//       events, 0.0037 = 0.4× ε). On 0.0.170 it was a single-pass greedy chord
-//       filter that only ever tested the point ADJACENT to the chord's far end,
-//       where an arc's error is smallest by construction — the same arc
-//       collapsed 116 → 4 at 19.8× ε (openDAW#363). A verdict of A or BOTH
-//       here means the defect is back.
+//       pass: recursive Ramer–Douglas–Peucker with ε = 0.01, so ε bounds the
+//       kept polyline's error (measured: 116 → 11 events, 0.0037 = 0.4× ε). The
+//       defect this page was written for (openDAW#363, fixed) was a single-pass
+//       greedy chord filter that only ever tested the point ADJACENT to the
+//       chord's far end, where an arc's error is smallest by construction — the
+//       same arc collapsed 116 → 4 at 19.8× ε. A verdict of A or BOTH here
+//       means that defect is back.
 //   (B) Latch overdub front-trim — after the wrap `RecordAutomation` opens a
 //       NEW take for the same parameter holding the last value (latch: the
 //       producer never lifts off), and `updateRegionDurations` grows that
@@ -411,10 +411,10 @@ const App: React.FC = () => {
         (arcRegion.last.position > arcRegion.first.position ||
           !finalRegions.some(r => r.key === arcRegion.last.key));
 
-      // Regression gate for (A): the fixed pass (SDK 0.0.172+) measures ≤ 0.4× ε on
-      // both shapes; the 0.0.170 greedy filter measured 19.8× ε on the arc (3 % of
-      // points kept, a straight line) and 15× on the zig-zag. 1.5× ε leaves the pass
-      // its own rounding and still catches a partial regression well below 5×.
+      // Regression gate for (A): the current pass measures ≤ 0.4× ε on both shapes;
+      // the defective greedy filter measured 19.8× ε on the arc (3 % of points kept,
+      // a straight line) and 15× on the zig-zag. 1.5× ε leaves the pass its own
+      // rounding and still catches a partial regression well below 5×.
       const collapsed = Number.isFinite(simplifierDeviation) && simplifierDeviation > EPSILON * 1.5;
       const verdict: Verdict = collapsed && trimmed ? "BOTH" : collapsed ? "A" : trimmed ? "B" : "NEITHER";
       const ratio = Number.isFinite(simplifierDeviation) ? (simplifierDeviation / EPSILON).toFixed(1) : "?";
@@ -540,11 +540,10 @@ const App: React.FC = () => {
               Two mechanisms can turn a recorded curve into a straight line, and this page
               measures both in one run. <strong>(A)</strong>{" "}
               <Code>RecordAutomation.simplifyRecordedEvents</Code>, the finalize-time thinning
-              pass — recursive Ramer–Douglas–Peucker with <Code>ε = 0.01</Code> since SDK
-              0.0.172, so ε bounds the error. On 0.0.170 it was a greedy chord filter that only
-              tested the point ADJACENT to the chord's far end, where an arc's error is smallest
-              by construction, and a two-bar arc collapsed to 4 events at 19.8× ε (openDAW#363,
-              fixed).{" "}
+              pass — recursive Ramer–Douglas–Peucker with <Code>ε = 0.01</Code>, so ε bounds the
+              error. The defect this page was written for (openDAW#363, fixed) was a greedy chord
+              filter that only tested the point ADJACENT to the chord's far end, where an arc's
+              error is smallest by construction; a two-bar arc collapsed to 4 events at 19.8× ε.{" "}
               <strong>(B)</strong> With the loop on, latch keeps the take open: the next pass
               opens a region holding the last value, and{" "}
               <Code>updateRegionDurations</Code> grows it with the playhead even with nobody

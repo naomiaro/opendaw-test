@@ -676,7 +676,7 @@ export async function runCellRepeat(options: CellRepeatOptions): Promise<CellRep
       headMissingBaselineMs: HEAD_MISSING_BASELINE_MS,
       harnessPathBiasSec,
     });
-    // Release profile (SDK 0.0.172+): the loopback path's own delay for this
+    // Release profile: the loopback path's own delay for this
     // take, netted out of the adjusted median by `classifyCell` when the served
     // build's profile asks for it (`auditProfileFor(...).netLoopbackDelay`).
     const loopbackDelayMs =

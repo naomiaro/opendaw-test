@@ -415,18 +415,19 @@ sample-rate/quantum-alignment sweep in root CLAUDE.md's Build & Verification.
   cached project/tape(s) under a fresh run token; the probe page is one-shot.
 - Campaign register (baselines, prediction outcomes, every known defect and harness
   gap): `debug/recording-start-alignment-audit.md`. Upstream outcome: PR
-  andremichelle/openDAW#376 (the reworked fix) MERGED and shipped in SDK 0.0.172, which
-  also closed #375 (simultaneous-take `AudioFileBox` collision — the capture now owns the
-  recording uuid, no box swap after save); #374 (residual start-placement bias) stays open
-  with PRs #378 / #380. The post-upgrade sweep on 0.0.172 is in the register.
-- **Release profile (SDK 0.0.172+).** `auditProfileFor()` resolves a build whose
-  `buildFeatures` carry `recordingStart` but not `latencyProbes` to the `release` profile:
-  `classifyCell(..., { netLoopbackDelay: true })` judges each repeat on
+  andremichelle/openDAW#376 (the reworked fix) is merged and in the installed SDK, and #375
+  (simultaneous-take `AudioFileBox` collision) is closed with it — the capture owns the
+  recording uuid, there is no box swap after save; #374 (residual start-placement bias)
+  stays open with PRs #378 / #380. The sweep results per SDK release are in the register.
+- **Release profile.** `auditProfileFor()` resolves a build whose `buildFeatures` carry
+  `recordingStart` but not `latencyProbes` (any installed release that ships PR #376) to the
+  `release` profile: `classifyCell(..., { netLoopbackDelay: true })` judges each repeat on
   `medianBeatErrorMsAdjusted − loopbackDelayMs`, where `loopbackDelayMs =
   (firstQuantumTimeSec − anchorT0Sec) · 1000` is the loopback path's own input delay for
-  that row (persisted per row with `medianBeatErrorMsNetted`, schema generation G7).
-  Measured on the 0.0.172 sweeps: netted +0.97…+1.19 ms on 120/120 rows, so a correctly
-  placed take reads `aligned` and a misplacement fails it. Bands A–D stay as the profile's
+  that row (persisted per row with `medianBeatErrorMsNetted`, a G6 sub-case in the artifacts
+  generation table). Measured on the first release sweeps: netted +0.97…+1.19 ms on 120/120
+  rows, so a correctly placed take reads `aligned` and a misplacement fails it — a netted
+  cell is `aligned` or `investigate`, never a band match. Bands A–D stay as the profile's
   fallback for rows without a delay. The offline scripts do NOT net (they replay the
   persisted A–D verdicts; their oracle files are unchanged) — a script wanting the netted
   verdict passes the option explicitly.
@@ -451,24 +452,24 @@ sample-rate/quantum-alignment sweep in root CLAUDE.md's Build & Verification.
   the beat period from timeline zero), not a region-anchored one. A region-anchored grid
   manufactures a phantom expected beat whenever no click was captured before the region
   start, which reads as a false content loss on every punch-in take.
-- Known reasons a run lost repeats on 0.0.170, neither a harness bug: `loop-wrap`
-  finalization timed out at a high rate (the stop path set a `limit` above the delivered
-  frames), and two simultaneous takes of byte-identical audio collided on the
-  content-addressed `AudioFileBox` uuid. Both fixed in 0.0.172 (`limit(numberOfFrames)`;
-  capture-owned uuid) and characterized in the register.
+- Two reasons a run used to lose repeats, neither a harness bug, both fixed in the installed
+  SDK and characterized in the register: `loop-wrap` finalization timed out at a high rate
+  (the stop path set a `limit` above the delivered frames; it now limits to
+  `numberOfFrames`), and two simultaneous takes of byte-identical audio collided on a
+  content-addressed `AudioFileBox` uuid (the capture now owns the uuid).
 - Start the transport with a REAL click and keep the window visible — see root
   CLAUDE.md's browser-automation notes.
 - Build probe: the page labels each run `candidate` when `CaptureAudio.prototype`
   exposes `calibrateInputLatency` (the loopback calibration, upstream PR #380 — still
   unreleased) and `upstream` otherwise; the label lands in the summary's `sdkBuildProbe`
-  and in every WAV name. The marker was `engine.recordingStart` until SDK 0.0.172 shipped
-  it (PR #376); it moves to the newest campaign surface the installed release lacks, so
-  re-target `detectSdkBuildProbe` (both audit demos) when a release ships #380. Band
-  selection does NOT read the label — `profileKeyFor` keys on the persisted
-  `buildFeatures` list; the 0.0.172 release's `[recordingStart]` resolves to bands A–D,
-  the table the Task 9 (#376-branch) runs were judged against. Rows also persist
-  `firstQuantumTimeSec` (every build from 0.0.172 on); `firstQuantumTimeSec −
-  anchorT0Sec` is the loopback path's own input delay for that row.
+  and in every WAV name. The marker is always the newest campaign surface the installed
+  release lacks (it was `engine.recordingStart` until PR #376 shipped), so re-target
+  `detectSdkBuildProbe` (both audit demos) when a release ships #380. Band selection does
+  NOT read the label — `profileKeyFor` keys on the persisted `buildFeatures` list; an
+  installed release's `[recordingStart]` resolves to bands A–D, the table the Task 9
+  (#376-branch) runs were judged against. Rows also persist `firstQuantumTimeSec` (every
+  build that ships #376); `firstQuantumTimeSec − anchorT0Sec` is the loopback path's own
+  input delay for that row.
 - Finalization probe, persisted per row on every build: `finalizeNumberOfFramesAtStop`,
   `finalizeLimitCalls`, `finalizeNumberOfFramesAtLimit`, `finalizeOvershootFrames`,
   `finalizeNumberOfFramesAfter`, `finalizeLoaderState`. The harness patches `limit()` on
