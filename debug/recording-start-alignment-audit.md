@@ -3888,6 +3888,28 @@ release build's `buildFeatures` (`["recordingStart"]`) deliberately resolves to 
 (`recordingStart` without calibration) so the standing sweep can report `aligned` on a
 fixed build.
 
+### Release profile: the sweep reads `aligned` on a fixed build (2026-09-28)
+
+The A–D "no band / range coincidence" reading above was the harness's, not the SDK's:
+bands A–D were fitted to the 0.0.170 placement and the E/F pair to the calibration
+branch, and neither describes a build that anchors takes on its own recording start.
+`recordingAuditCalibration.ts` now resolves such a build — `buildFeatures` carrying
+`recordingStart` but not `latencyProbes`, i.e. every release from 0.0.172 on and the Task 9
+branch — to a **`release` profile** whose verdict nets the loopback path's own delay out of
+each row before the 2 ms tolerance test: `loopbackDelayMs = (firstQuantumTimeSec −
+anchorT0Sec) · 1000` (the decomposition "The residual is the loopback path, quantified per
+row" established in Task 9), `medianBeatErrorMsNetted = medianBeatErrorMsAdjusted −
+loopbackDelayMs`, both persisted per row (schema generation G7). Bands A–D remain the
+profile's fallback for rows without a delay; the A–D and E/F tables and every archived
+verdict are unchanged (the offline scripts do not net — the task12a oracle is byte-identical).
+
+Re-run on 0.0.172 with the profile, 48 kHz, `recaudit-summary-1790626695294.json`: 60 rows,
+0 error rows, **10 of 10 cells `aligned`**, netted medians **+1.07…+1.17 ms** (loopback delay
+9.62…21.63 ms), head and tail deficits 0. The 44.1 kHz and multi-mic runs above net to
++0.97…+1.19 ms on every row by the same arithmetic (checked offline on their persisted
+rows) and would read the same. A misplacement of more than ~1 ms beyond the detector's
+constant now fails the sweep instead of matching a band by coincidence.
+
 ### Sample-rate/quantum-alignment sweep
 
 `samplerate-audit-debug-demo.html?family=all&bpm=all&rate=all` on 0.0.172: **180 of 180

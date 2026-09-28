@@ -251,6 +251,7 @@ export function asClassifiable(row: AuditRow | MultitrackAuditRow, adjustedMedia
     beatErrors: [],
     medianBeatErrorMs: row.medianBeatErrorMs,
     medianBeatErrorMsAdjusted: adjustedMedianMs !== undefined ? adjustedMedianMs : (row.medianBeatErrorMsAdjusted ?? null),
+    loopbackDelayMs: row.loopbackDelayMs === undefined ? null : row.loopbackDelayMs,
     anchorT0Sec: row.anchorT0Sec === undefined ? null : row.anchorT0Sec,
     firstRefIndex: null,
     headMissingMs: row.headMissingMs,

@@ -88,6 +88,7 @@ import {
   JANK_MS,
   LOOP_WRAP_TAKES,
   ALIGNED_TOLERANCE_MS,
+  auditProfileFor,
   HEAD_MISSING_BASELINE_MS,
   signatureBandsFor,
   isRecordingScenario,
@@ -735,7 +736,12 @@ async function runAudit(
       // explicit detail here names the reason (every repeat errored).
       const classification: CellClassification =
         alignmentsForClassification.length > 0
-          ? classifyCell(alignmentsForClassification, signatureBandsFor(scenario, sdkBuildProbe, runToken, buildFeatures), ALIGNED_TOLERANCE_MS)
+          ? classifyCell(
+              alignmentsForClassification,
+              signatureBandsFor(scenario, sdkBuildProbe, runToken, buildFeatures),
+              ALIGNED_TOLERANCE_MS,
+              { netLoopbackDelay: auditProfileFor(sdkBuildProbe, runToken, buildFeatures).netLoopbackDelay }
+            )
           : { status: "investigate", matchedSignature: null, detail: "no successful repeats to classify" };
       // Persisted for EVERY cell, so an all-error cell's verdict exists on disk
       // (rows only carry the verdict of successful repeats).
@@ -1190,6 +1196,17 @@ async function runMultitrackCellRepeat(
     if (alignment.anchorT0Sec === null) {
       console.warn("[recording-alignment-audit] " + multitrackCellLabel(scenario, bpm, repeat) + "/tape" + tapeLabel + ": no reference-click anchor — head/tail integrity unmeasured for this tape");
     }
+    // Release profile: per-tape loopback delay, same derivation as the matrix runner.
+    const firstQuantumTimeSec = readFirstQuantumTimeSec(loader);
+    const loopbackDelayMs =
+      typeof firstQuantumTimeSec === "number" && alignment.anchorT0Sec !== null
+        ? (firstQuantumTimeSec - alignment.anchorT0Sec) * 1000
+        : null;
+    alignment.loopbackDelayMs = loopbackDelayMs;
+    const medianBeatErrorMsNetted =
+      loopbackDelayMs !== null && alignment.medianBeatErrorMsAdjusted !== null
+        ? alignment.medianBeatErrorMsAdjusted - loopbackDelayMs
+        : null;
     const headMissingRawMs =
       alignment.anchorT0Sec !== null && recordRequestContextTime !== null
         ? Math.max(0, (alignment.anchorT0Sec - recordRequestContextTime) * 1000)
@@ -1211,7 +1228,9 @@ async function runMultitrackCellRepeat(
       regionDurationSec,
       bufferDurationSec,
       status: "pending", detail: "", finalizeMs,
-      firstQuantumTimeSec: readFirstQuantumTimeSec(loader),
+      firstQuantumTimeSec,
+      loopbackDelayMs,
+      medianBeatErrorMsNetted,
       anchorT0Sec: alignment.anchorT0Sec,
       recordRequestContextTime,
       ...(tapeLabel === "a" ? probeA : probeB),
@@ -1509,11 +1528,11 @@ async function runMultitrackAudit(
       const baseScenario = MULTITRACK_BASE_SCENARIO[scenario];
       const tapeAClass: CellClassification =
         repeats.length > 0
-          ? classifyCell(repeats.map((r) => r.alignmentA), signatureBandsFor(baseScenario, sdkBuildProbe, runToken, buildFeatures), ALIGNED_TOLERANCE_MS)
+          ? classifyCell(repeats.map((r) => r.alignmentA), signatureBandsFor(baseScenario, sdkBuildProbe, runToken, buildFeatures), ALIGNED_TOLERANCE_MS, { netLoopbackDelay: auditProfileFor(sdkBuildProbe, runToken, buildFeatures).netLoopbackDelay })
           : { status: "investigate", matchedSignature: null, detail: "no successful repeats to classify (tape a)" };
       const tapeBClass: CellClassification =
         repeats.length > 0
-          ? classifyCell(repeats.map((r) => r.alignmentB), signatureBandsFor(baseScenario, sdkBuildProbe, runToken, buildFeatures), ALIGNED_TOLERANCE_MS)
+          ? classifyCell(repeats.map((r) => r.alignmentB), signatureBandsFor(baseScenario, sdkBuildProbe, runToken, buildFeatures), ALIGNED_TOLERANCE_MS, { netLoopbackDelay: auditProfileFor(sdkBuildProbe, runToken, buildFeatures).netLoopbackDelay })
           : { status: "investigate", matchedSignature: null, detail: "no successful repeats to classify (tape b)" };
       const verdict = classifyMultitrackCell(tapeAClass, tapeBClass, repeats.map((r) => r.skew), ALIGNED_TOLERANCE_MS);
       // Persisted for EVERY cell, all-error cells included (no skew signature
