@@ -1,5 +1,7 @@
 # Count-in leaks the punch-in downbeat click when the metronome is off
 
+**Status:** **FIXED in SDK 0.0.172** — `Metronome::set_click_ceiling(recording_start)` during a metronome-off count-in (upstream `774c8ea9a`, closes #367). Re-measured 2026-09-28 on `swipe-comping-demo.html?sampleRate=44100` (120 BPM, "Count-in only", output tapped through an `AnalyserNode` installed before page load): four clicks per recording on the 500 ms grid, none at the punch-in. The demo stays as the regression check; the write-up below describes 0.0.170.
+
 **Verified against:** OpenDAW SDK 0.0.170 (`crates/engine/src/lib.rs` — same code on upstream `main` as of 2026-08-27) and reproduced live on https://opendaw.studio/.
 **Upstream issue:** [openDAW#367](https://github.com/andremichelle/openDAW/issues/367)
 **Repro pages:** https://opendaw.studio/ (metronome disabled, count-in enabled, record) and this repo's `swipe-comping-demo.html` (Click mode "Count-in only").

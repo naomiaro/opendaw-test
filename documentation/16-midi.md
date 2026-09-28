@@ -23,7 +23,7 @@ A region on a track that contains MIDI notes. Symmetric to `AudioRegionBox` but 
 | `position` | `Int32Field` | Timeline position in PPQN |
 | `duration` | `Int32Field` | Length in PPQN |
 | `loopOffset` / `loopDuration` | `Int32Field` | Looping bounds (PPQN) |
-| `eventOffset` | `Int32Field` | Where in the collection playback starts |
+| `eventOffset` | `Int32Field` | **Deprecated.** Still on the box so stored documents read, but `createNoteRegion` no longer writes it and the engine ignores it — playback always starts at the collection's origin |
 | `mute` | `BooleanField` | |
 | `label`, `hue` | `StringField`, `Int32Field` | UI labelling |
 

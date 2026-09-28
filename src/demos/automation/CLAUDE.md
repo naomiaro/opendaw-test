@@ -265,18 +265,16 @@ the region that opens after the wrap just keeps growing until the take closes, s
 wherever **Stop** happened — not necessarily the boundary again. The newer pass's region clips
 the older pass where they overlap (trimmed, not duplicated).
 
-**The finalize-time simplifier is a greedy collinearity filter, not Ramer–Douglas–Peucker —
-and ε does not bound the error.** `RecordAutomation.simplifyRecordedEvents` walks the events
-once, keeping a stack: it drops the middle point `b` of the last kept pair whenever `b.value`
-is within ε = 0.01 of the linear interpolation between `a` and the incoming event. No recursive
-worst-point split, no global error bound. `b` is always the point *adjacent to the incoming
-event* — the far end of the chord — where a smooth arc's error against its chord vanishes by
-construction, so the chord keeps growing and the admissible sagitta grows with it
-(≈ `ε · span / (4 · sample spacing)`). Measured: a two-bar parabolic pan arc thinned 116 events
-→ 4, max deviation **0.198 unitValue = 19.8× ε**; a fast zig-zag control retained 81 % of its
-points but still measured 15× ε. It only runs on **floating** parameters
-(`adapter.valueMapping.floating()`), and it runs at every finalize — a loop wrap as well as
-Stop, so a looping take visibly re-thins its curve each pass. Repro + numbers:
+**The finalize-time simplifier is Ramer–Douglas–Peucker with ε = 0.01, and ε bounds the
+error.** `RecordAutomation.simplifyRecordedEvents` recurses on the interior point
+that deviates most from the chord `[first, last]`; a range whose worst point is within ε loses
+every interior point. Non-linear events and events sharing a position with a neighbour are
+anchored (never dropped). Measured on the repro page: the two-bar parabolic pan arc thins
+116 events → 11, max deviation **0.0037 unitValue = 0.4× ε**. The earlier single-pass greedy
+chord filter, which only tested the point adjacent to the chord's far end, collapsed the same
+arc 116 → 4 at 19.8× ε (openDAW#363, fixed; history in `debug/automation-simplifier-flattening.md`). It only runs on **floating**
+parameters (`adapter.valueMapping.floating()`), and it runs at every finalize — a loop wrap as
+well as Stop, so a looping take re-thins its curve each pass. Regression test + numbers:
 `automation-simplifier-debug-demo.html` / `debug/automation-simplifier-flattening.md`.
 
 **Latch + loop = a hands-off pass overwrites the previous one.** Latch never lifts off, so

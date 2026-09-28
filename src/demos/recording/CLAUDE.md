@@ -415,9 +415,10 @@ sample-rate/quantum-alignment sweep in root CLAUDE.md's Build & Verification.
   cached project/tape(s) under a fresh run token; the probe page is one-shot.
 - Campaign register (baselines, prediction outcomes, every known defect and harness
   gap): `debug/recording-start-alignment-audit.md`. Upstream outcome: PR
-  andremichelle/openDAW#376 (the reworked fix), issues #374 (residual start-placement
-  bias) and #375 (simultaneous-take `AudioFileBox` collision) — re-verify the sweep and
-  re-target the build probe when a release ships #376.
+  andremichelle/openDAW#376 (the reworked fix) is merged and in the installed SDK, and #375
+  (simultaneous-take `AudioFileBox` collision) is closed with it — the capture owns the
+  recording uuid, there is no box swap after save; #374 (residual start-placement bias)
+  stays open with PRs #378 / #380. The sweep results per SDK release are in the register.
 - **Signature bands are per SDK build.** `signatureBandsFor()` picks the band table from
   the `buildFeatures` list the page probes off the live SDK and persists on the envelope:
   bands A–D (predicted, written before their data existed) for the installed release, and
@@ -439,20 +440,24 @@ sample-rate/quantum-alignment sweep in root CLAUDE.md's Build & Verification.
   the beat period from timeline zero), not a region-anchored one. A region-anchored grid
   manufactures a phantom expected beat whenever no click was captured before the region
   start, which reads as a false content loss on every punch-in take.
-- Known reasons a run loses repeats, neither a harness bug: `loop-wrap` finalization
-  times out at a high rate on the installed SDK, and two simultaneous takes of
-  byte-identical audio collide on the content-addressed `AudioFileBox` uuid. Both are
-  characterized in the register.
+- Two reasons a run used to lose repeats, neither a harness bug, both fixed in the installed
+  SDK and characterized in the register: `loop-wrap` finalization timed out at a high rate
+  (the stop path set a `limit` above the delivered frames; it now limits to
+  `numberOfFrames`), and two simultaneous takes of byte-identical audio collided on a
+  content-addressed `AudioFileBox` uuid (the capture now owns the uuid).
 - Start the transport with a REAL click and keep the window visible — see root
   CLAUDE.md's browser-automation notes.
-- Build probe: the page labels each run `candidate` when the live `project.engine`
-  exposes `recordingStart` (an ObservableOption — the engine's one-shot audio-thread
-  report of where and when recording began, from the reworked upstream fix) and
-  `upstream` otherwise; the label lands in the summary's `sdkBuildProbe` and in every
-  WAV name. Once the installed SDK ships `recordingStart`, the plain server will read
-  `candidate` too — re-target the marker (`detectSdkBuildProbe`) at that upgrade.
-  Rows also persist `firstQuantumTimeSec` (branch builds only); `firstQuantumTimeSec −
-  anchorT0Sec` is the loopback path's own input delay for that row.
+- Build probe: the page labels each run `candidate` when `CaptureAudio.prototype`
+  exposes `calibrateInputLatency` (the loopback calibration, upstream PR #380 — still
+  unreleased) and `upstream` otherwise; the label lands in the summary's `sdkBuildProbe`
+  and in every WAV name. The marker is always the newest campaign surface the installed
+  release lacks (it was `engine.recordingStart` until PR #376 shipped), so re-target
+  `detectSdkBuildProbe` (both audit demos) when a release ships #380. Band selection does
+  NOT read the label — `profileKeyFor` keys on the persisted `buildFeatures` list; an
+  installed release's `[recordingStart]` resolves to bands A–D, the table the Task 9
+  (#376-branch) runs were judged against. Rows also persist `firstQuantumTimeSec` (every
+  build that ships #376); `firstQuantumTimeSec − anchorT0Sec` is the loopback path's own
+  input delay for that row.
 - Finalization probe, persisted per row on every build: `finalizeNumberOfFramesAtStop`,
   `finalizeLimitCalls`, `finalizeNumberOfFramesAtLimit`, `finalizeOvershootFrames`,
   `finalizeNumberOfFramesAfter`, `finalizeLoaderState`. The harness patches `limit()` on

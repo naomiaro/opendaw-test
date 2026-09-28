@@ -794,11 +794,15 @@ for (const loader of loaders) {
 ### SampleLoader / RecordingWorklet
 
 During recording, `project.sampleManager.getOrCreate(uuid)` returns the `RecordingWorklet` itself — it IS the SampleLoader. Key properties:
-- `peaks` → `Option<Peaks>` — PeaksWriter during recording, SamplePeaks after finalization
-- `data` → `Option<AudioData>` — set by `#finalize()` before SamplePeaks are generated
-- `meta` → `Option<SampleMetaData>` — always `Option.None` while recording (a take in
-  progress is not a stored sample yet; metadata exists once `importRecording` finalizes
-  it and a `DefaultSampleLoader` serves it)
+- `peaks` → `Option<Peaks>` — PeaksWriter during recording; after finalization the worklet
+  adopts the stored sample's peaks (`SampleStorage.loadPeaks`)
+- `data` → `Option<AudioData>` — set by `#finalize()` before the take is imported
+- `meta` → `Option<SampleMetaData>` — `Option.None` while recording (a take in progress is
+  not a stored sample yet); once `#finalize()` has imported the take through
+  `importRecording` the worklet adopts the stored sample's metadata, so `meta` and `peaks`
+  read what a `DefaultSampleLoader` for the same uuid would serve. The uuid is the one the
+  capture generated up front — the worklet, the `AudioFileBox` and the stored sample all
+  share it, nothing is re-pointed after save
 - `state` → `{ type: "record" | "loaded" | ... }` — tracks lifecycle
 - `subscribe(observer)` — observe state changes (fires with `{type: "loaded"}` when finalization completes)
 

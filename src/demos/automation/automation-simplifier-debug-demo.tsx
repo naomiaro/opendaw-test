@@ -17,20 +17,20 @@ import {
 } from "@radix-ui/themes";
 import { InfoCircledIcon, PlayIcon } from "@radix-ui/react-icons";
 
-// Repro for `debug/automation-simplifier-flattening.md`.
+// Repro (now regression test) for `debug/automation-simplifier-flattening.md`.
 //
-// A slow, smooth automation gesture recorded with the transport loop on comes
-// back after the wrap as (very nearly) a straight line. Two independent
+// A slow, smooth automation gesture recorded with the transport loop on can
+// come back after the wrap as (very nearly) a straight line. Two independent
 // mechanisms can produce that, and this page measures both in one run:
 //
 //   (A) `RecordAutomation.simplifyRecordedEvents` — the finalize-time thinning
-//       pass. It is NOT Ramer–Douglas–Peucker: it walks the take once and drops
-//       the middle point `b` of the last kept pair whenever `b` sits within
-//       ε = 0.01 of the chord `a → incoming event`. Because `b` is always the
-//       point ADJACENT to the chord's far end, the arc-to-chord error is
-//       evaluated where it is smallest by construction (t → 1), so the chord
-//       keeps growing and a smooth arc can collapse entirely — with a real
-//       deviation many times ε.
+//       pass: recursive Ramer–Douglas–Peucker with ε = 0.01, so ε bounds the
+//       kept polyline's error (measured: 116 → 11 events, 0.0037 = 0.4× ε). The
+//       defect this page was written for (openDAW#363, fixed) was a single-pass
+//       greedy chord filter that only ever tested the point ADJACENT to the
+//       chord's far end, where an arc's error is smallest by construction — the
+//       same arc collapsed 116 → 4 at 19.8× ε. A verdict of A or BOTH here
+//       means that defect is back.
 //   (B) Latch overdub front-trim — after the wrap `RecordAutomation` opens a
 //       NEW take for the same parameter holding the last value (latch: the
 //       producer never lifts off), and `updateRegionDurations` grows that
@@ -411,10 +411,11 @@ const App: React.FC = () => {
         (arcRegion.last.position > arcRegion.first.position ||
           !finalRegions.some(r => r.key === arcRegion.last.key));
 
-      // Any deviation several times ε is an ε violation — measured on BOTH
-      // shapes here. What separates them is retention: the smooth arc keeps ~3 %
-      // of its points (a straight line), the zig-zag ~85 % (a clipped curve).
-      const collapsed = Number.isFinite(simplifierDeviation) && simplifierDeviation > EPSILON * 5;
+      // Regression gate for (A): the current pass measures ≤ 0.4× ε on both shapes;
+      // the defective greedy filter measured 19.8× ε on the arc (3 % of points kept,
+      // a straight line) and 15× on the zig-zag. 1.5× ε leaves the pass its own
+      // rounding and still catches a partial regression well below 5×.
+      const collapsed = Number.isFinite(simplifierDeviation) && simplifierDeviation > EPSILON * 1.5;
       const verdict: Verdict = collapsed && trimmed ? "BOTH" : collapsed ? "A" : trimmed ? "B" : "NEITHER";
       const ratio = Number.isFinite(simplifierDeviation) ? (simplifierDeviation / EPSILON).toFixed(1) : "?";
       const retained = rawN > 0 ? `${((keptN / rawN) * 100).toFixed(0)} %` : "n/a";
@@ -531,24 +532,24 @@ const App: React.FC = () => {
         />
 
         <Flex direction="column" gap="4">
-          <Heading size="7" align="center">Automation simplifier: smooth gestures flatten on finalize</Heading>
+          <Heading size="7" align="center">Automation simplifier: finalize-time thinning stays within ε</Heading>
 
           <Callout.Root color="blue">
             <Callout.Icon><InfoCircledIcon /></Callout.Icon>
             <Callout.Text>
-              Two mechanisms turn a recorded curve into a straight line, and this page
+              Two mechanisms can turn a recorded curve into a straight line, and this page
               measures both in one run. <strong>(A)</strong>{" "}
-              <Code>RecordAutomation.simplifyRecordedEvents</Code> drops the middle point of the
-              last kept pair whenever it lies within <Code>ε = 0.01</Code> of the chord through
-              its neighbours. The tested point is always the one ADJACENT to the chord's far
-              end, where an arc's error against its chord is smallest by construction — so the
-              chord keeps growing and the true deviation is unbounded by ε.{" "}
+              <Code>RecordAutomation.simplifyRecordedEvents</Code>, the finalize-time thinning
+              pass — recursive Ramer–Douglas–Peucker with <Code>ε = 0.01</Code>, so ε bounds the
+              error. The defect this page was written for (openDAW#363, fixed) was a greedy chord
+              filter that only tested the point ADJACENT to the chord's far end, where an arc's
+              error is smallest by construction; a two-bar arc collapsed to 4 events at 19.8× ε.{" "}
               <strong>(B)</strong> With the loop on, latch keeps the take open: the next pass
               opens a region holding the last value, and{" "}
               <Code>updateRegionDurations</Code> grows it with the playhead even with nobody
               touching anything, front-trimming the previous pass's region out of the way
-              (<Code>RegionClipResolver.#trimStart</Code>). (B) is by-design latch semantics;
-              (A) is the candidate defect.
+              (<Code>RegionClipResolver.#trimStart</Code>). (B) is by-design latch semantics
+              and still happens; a verdict of A or BOTH means the simplifier defect is back.
             </Callout.Text>
           </Callout.Root>
 
@@ -585,13 +586,13 @@ const App: React.FC = () => {
                 }
                 expected={[
                   { label: "outcome", value: "OK" },
-                  { label: "verdict", value: "NEITHER (a faithful ε = 0.01 pass, curve intact)" },
+                  { label: "verdict", value: "B (thinning within ε; the by-design latch front-trim remains)" },
                   { label: "writes injected", value: "~200 (one per frame across two bars)" },
-                  { label: "events raw → kept", value: "many → enough to hold the shape" },
+                  { label: "events raw → kept", value: "many → a dozen or so that hold the shape" },
                   { label: "max deviation (simplifier)", value: "≤ 0.0100 unitValue (1.0× ε)" },
-                  { label: "max deviation (end to end)", value: "≤ 0.0100 unitValue" },
+                  { label: "max deviation (end to end)", value: "large — the next pass's flat hold (B), not the simplifier" },
                   { label: "gesture region at finalize", value: "covers bars 2–4" },
-                  { label: "gesture region at stop", value: "unchanged position" },
+                  { label: "gesture region at stop", value: "front-trimmed by the next pass (position moved, by design)" },
                   { label: "writes no longer covered", value: "0 / N" },
                   { label: "stages", value: "reset lane → resume context → startRecording → injecting → stop → measure" },
                   { label: "elapsed", value: "~26 s" },

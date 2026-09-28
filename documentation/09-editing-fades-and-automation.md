@@ -1313,7 +1313,7 @@ project.engine.stopRecording();
 
 #### Post-Recording Simplification
 
-When a take is finalized (transport stop or loop wrap), the engine thins the recorded events with a single-pass greedy collinearity filter (epsilon = 0.01). It walks the take once, dropping the middle point of the last kept pair whenever that point sits within epsilon of the linear interpolation between its neighbours. This reduces event count sharply. It is not a Ramer-Douglas-Peucker pass: there is no recursive worst-point split and no global error bound, and epsilon is not a bound on the resulting error. The point being tested is always the one adjacent to the far end of the chord, where a smooth arc sits closest to that chord anyway, so the chord keeps growing and the admissible deviation grows with it. A slow, gradual gesture can therefore flatten almost to a straight line, while a fast, jagged one — whose direction changes break the chord — survives largely intact. Only parameters with a floating value mapping are simplified.
+When a take is finalized (transport stop or loop wrap), the engine thins the recorded events with a Ramer-Douglas-Peucker pass (epsilon = 0.01). For the chord between the first and last event it finds the interior point that deviates most from the chord; if that deviation is within epsilon every interior point is dropped, otherwise the range splits at that point and both halves are simplified in turn. Epsilon is therefore a bound on how far the kept polyline sits from the recorded stream. Events whose interpolation is not linear, and events that share a position with a neighbour, are anchored and never dropped. A slow two-bar arc typically survives as a dozen events within a fraction of epsilon of its performed shape. Only parameters with a floating value mapping are simplified.
 
 #### Manual Override During Playback (AutomationSuspension)
 
@@ -1346,10 +1346,9 @@ fader gestures instead of scripted events. Three lanes — an audio unit's `volu
 plus a Delay effect's `wet` — start with no automation track at all; the first gesture after
 Record creates the value track and region on demand. Hitting Record and dragging a Radix Slider
 latches a take exactly as described above (no touch gate, transport stop or loop wrap closes it);
-each lane's header shows a live `kept / captured` readout from the finalize-time simplifier — a
-single-pass greedy collinearity filter that drops a point when it sits within ε = 0.01 of the
-line through its neighbours — so the effect of that pass is visible on real input rather than
-asserted in prose. It runs at every finalize, a loop wrap included, so a looping take visibly
+each lane's header shows a live `kept / captured` readout from the finalize-time simplifier — the
+Ramer-Douglas-Peucker pass with ε = 0.01 described above — so the effect of that pass is visible
+on real input rather than asserted in prose. It runs at every finalize, a loop wrap included, so a looping take visibly
 re-thins its curve each pass. With loop recording on, each pass overdubs its own region and the
 canvas renders every pass's outline stacked across the window. Recording itself always leaves
 `loopOffset` at 0 (`loopDuration` is set to the region's own duration); the non-zero `loopOffset`

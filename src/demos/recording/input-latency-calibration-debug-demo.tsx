@@ -681,10 +681,12 @@ function requireLoopback(where: string): LoopbackHandle {
   return loopback;
 }
 
-/** Same marker the alignment harness probes — see its `detectSdkBuildProbe`. */
+/** Same marker the alignment harness probes — see its `detectSdkBuildProbe`:
+ *  `calibrateInputLatency` (PR #380), the newest surface the installed release lacks. */
 function detectSdkBuildProbe(engine: unknown): SdkBuildProbe {
-  const facade = engine as { recordingStart?: { isEmpty?: unknown } };
-  return typeof facade?.recordingStart?.isEmpty === "function" ? "candidate" : "upstream";
+  void engine;
+  const capturePrototype = CaptureAudio.prototype as unknown as { calibrateInputLatency?: unknown };
+  return typeof capturePrototype.calibrateInputLatency === "function" ? "candidate" : "upstream";
 }
 
 /**
