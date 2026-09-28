@@ -326,6 +326,21 @@ describe("classifyCell", () => {
     const c = classifyCell([netted(30, 17.6), netted(34, 21.6), netted(22, 9.6)], bands, 2, { netLoopbackDelay: true });
     expect(c.status).not.toBe("aligned");
   });
+  it("a netted cell never matches a band — a 15-30 ms late misplacement on a fixed build is investigate, not D", () => {
+    // netted medians 18.4 / 20.4 / 16.4 sit squarely inside band D (constant-late 15-30 ms)
+    const c = classifyCell([netted(36, 17.6), netted(42, 21.6), netted(26, 9.6)], bands, 2, { netLoopbackDelay: true });
+    expect(c.status).toBe("investigate");
+    expect(c.matchedSignature).toBeNull();
+    // and a scattered 4-25 ms netted cell is not band B either
+    const b = classifyCell([netted(22, 17.6), netted(26, 21.6), netted(31, 9.6)], bands, 2, { netLoopbackDelay: true });
+    expect(b.status).toBe("investigate");
+  });
+  it("a netted cell with a head deficit is investigate even where a head-loss band would cover it", () => {
+    const headLoss = [{ id: "A" as const, kind: "head-loss" as const, minAbsMs: 5, maxAbsMs: 300 }];
+    const repeats = [{ ...netted(18.77, 17.6), headMissingMs: 30 }, { ...netted(22.77, 21.6), headMissingMs: 30 }];
+    expect(classifyCell(repeats, headLoss, 2).status).toBe("matches-known-defect");
+    expect(classifyCell(repeats, headLoss, 2, { netLoopbackDelay: true }).status).toBe("investigate");
+  });
   it("nets only the repeats that carry a delay; the rest keep their adjusted median", () => {
     const c = classifyCell([netted(18.77, 17.6), netted(22.77, null), netted(10.77, 9.6)], bands, 2, { netLoopbackDelay: true });
     expect(c.status).not.toBe("aligned");

@@ -18,9 +18,9 @@ is a stray click tail.
 - Live page: https://opendaw-test.pages.dev/metronome-stale-click-debug-demo.html — the
   "stale" step stops the transport early inside the beat-2 click, restarts from 0 and reports
   the restart's first-0.5 ms peak over the interrupted click's own level. Measured on
-  `@opendaw/studio-sdk@0.0.172`, three fresh loads: control (stop between clicks) 0.14 each
-  time; stale (stop 1.0 / 3.9 / 6.8 ms into the beat-2 click) 0.57 / 0.66 / 0.80 — the click's
-  body resumes at its release level under the new downbeat.
+  `@opendaw/studio-sdk@0.0.172` (Chrome, 48 kHz, fresh loads): control (stop between clicks)
+  0.14 each time; stale (stop 3.9–9.7 ms into the beat-2 click) 0.47–0.80 — the click's body
+  resumes at its release level under the new downbeat.
 - Studio: metronome on, play, stop right on a beat, play again.
 - Unit level, at the `@opendaw/studio-sdk@0.0.172` tag (`crates/engine/src/metronome.rs`,
   1 s DC click sounds, gain 0 dB, 48 kHz / 120 BPM): process one block at pulse 0 (one click

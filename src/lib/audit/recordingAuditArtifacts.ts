@@ -29,7 +29,7 @@
  * | G4-adjusted  | `harnessPathBiasSec`, rows without `tailMissingMs`  | rows adjusted by the persisted bias; tail deficit measured live but not persisted → `tailPersisted: false` (a script reconstructing a repeat must pass `tailMissingMs: null`, never 0) |
  * | G5-tail      | rows carry `tailMissingMs` (with `bufferDurationSec`, `stopRequestContextTime`), no `schemaVersion` | everything above persisted; `regionDurationSec`, `firstQuantumTimeSec` and the `finalize*` probe fields arrive within this generation and are simply present or absent per row |
  * | G6-versioned | `schemaVersion >= 2`                                | `beatGrid` persisted; `harnessPathBiasSec` on every row; `cellVerdicts` and `wavName`/`wavUploadError` present |
- * | G7-netted    | rows carry `loopbackDelayMs` / `medianBeatErrorMsNetted` (release profile, SDK 0.0.172+) | the verdict ran on the netted median where the row has a delay (`classifyCell` `netLoopbackDelay`); both fields present or absent per row — the loader adds nothing, `asClassifiable` passes `loopbackDelayMs` through |
+ * | G7-netted    | rows carry `loopbackDelayMs` / `medianBeatErrorMsNetted` (SDK 0.0.172+ builds) | on the matrix and multitrack pages the verdict ran on the netted median where the row has a delay (`classifyCell` `netLoopbackDelay`, release profile); the input-latency calibration page persists the same two fields (shared cell runner) but classifies UN-netted — its cells measure an applied calibration, and netting the loopback delay it just compensated would count it twice. Both fields present or absent per row — the loader adds nothing, `asClassifiable` passes `loopbackDelayMs` through |
  *
  * Beat grid: G6 persists `beatGrid`. For every earlier generation the grid is
  * decided by the run id — the absolute grid shipped mid-session, and the first
@@ -131,9 +131,11 @@ interface TakeRowBase extends FinalizeProbe {
    *  loopback path's own input delay for this row; null when either side is
    *  unknown. Present only on builds that report `firstQuantumTime`. */
   loopbackDelayMs?: number | null;
-  /** G7+: `medianBeatErrorMsAdjusted − loopbackDelayMs`, the median the release
-   *  profile's verdict ran on; null when either term is null. Persisted so the
-   *  offline scripts can replay the verdict without re-deriving it. */
+  /** G7+: `medianBeatErrorMsAdjusted − loopbackDelayMs`; null when either term is
+   *  null. The median the release profile's verdict ran on (matrix/multitrack
+   *  pages) — the input-latency calibration page persists it but does not judge
+   *  on it (see the G7 row above). Persisted so the offline scripts can replay
+   *  the verdict without re-deriving it. */
   medianBeatErrorMsNetted?: number | null;
   /** G6+: the capture WAV this row was measured from, and why its upload failed
    *  (null on success). Lets "WAV absent" be told apart from "never uploaded". */

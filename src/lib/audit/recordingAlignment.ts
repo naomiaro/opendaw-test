@@ -615,9 +615,17 @@ export function classifyCell(
   const nettedCount = netLoopbackDelay
     ? repeats.filter((r) => typeof r.loopbackDelayMs === "number" && Number.isFinite(r.loopbackDelayMs)).length
     : 0;
+  // Bands A-F describe UN-netted residuals (a pre-fix placement, or the loopback
+  // delay itself). Once any repeat is judged on a netted median the bands say
+  // nothing about it: a netted cell is `aligned` or `investigate`, never a band
+  // match — otherwise a real 15-30 ms misplacement on a fixed build would read
+  // `matches-known-defect (D)`. Head-loss bands are withheld for the same reason.
+  const bandsApply = nettedCount === 0;
   const detailMedians =
     medians.map((m) => m.toFixed(2)).join(", ") +
-    (netLoopbackDelay ? ` (netted on ${nettedCount}/${repeats.length}; adjusted=[${repeats.map((r) => r.medianBeatErrorMsAdjusted!.toFixed(2)).join(", ")}])` : "");
+    (netLoopbackDelay
+      ? ` (netted on ${nettedCount}/${repeats.length}; adjusted=[${repeats.map((r) => r.medianBeatErrorMsAdjusted?.toFixed(2) ?? "null").join(", ")}])`
+      : "");
   const headDeficits = repeats.map((r) => r.headMissingMs).join(", ");
   const tailDeficits = repeats.map((r) => r.tailMissingMs).join(", ");
   const spread = Math.max(...medians) - Math.min(...medians);
@@ -641,13 +649,13 @@ export function classifyCell(
     (r) => r.headMissingMs !== null && r.headMissingMs > alignedToleranceMs
   );
   if (hasHeadDeficit) {
-    const headLossBand = bands.find(
+    const headLossBand = bandsApply ? bands.find(
       (b) =>
         b.kind === "head-loss" &&
         repeats.every(
           (r) => r.headMissingMs !== null && r.headMissingMs >= b.minAbsMs && r.headMissingMs <= b.maxAbsMs
         )
-    );
+    ) : undefined;
     if (headLossBand !== undefined) {
       return {
         status: "matches-known-defect",
@@ -667,6 +675,14 @@ export function classifyCell(
       status: "aligned",
       matchedSignature: null,
       detail: `all repeats within ${alignedToleranceMs}ms tolerance: ${detailSuffix}`,
+    };
+  }
+
+  if (!bandsApply) {
+    return {
+      status: "investigate",
+      matchedSignature: null,
+      detail: `netted median outside ${alignedToleranceMs}ms tolerance (no band applies to a netted cell): ${detailSuffix}`,
     };
   }
 

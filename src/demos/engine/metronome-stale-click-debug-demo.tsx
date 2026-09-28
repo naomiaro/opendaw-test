@@ -8,7 +8,7 @@ import { BackLink } from "@/components/BackLink";
 import { DebugLinkBar } from "@/components/DebugLinkBar";
 import { TestStep, TestStepRow } from "@/components/TestStep";
 import { initializeOpenDAW } from "@/lib/projectSetup";
-import { analyzeRestart, type RestartAnalysis } from "@/lib/audit/clickHead";
+import { ATTACK_COMPLETE_MS, analyzeRestart, type RestartAnalysis } from "@/lib/audit/clickHead";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
@@ -64,12 +64,18 @@ const STALE_LEAD_START_MS = 40;
 const STALE_LEAD_STEP_MS = 8;
 const STALE_ATTEMPTS = 7;
 const stalePpqnForLead = (leadMs: number) => 2 * BEAT - (leadMs / 1000) * ((BPM / 60) * BEAT);
-/** Next lead from the last attempt's rendered cut: missed → shorter, too deep → longer. */
+/** Next lead from the last attempt's rendered cut: landed before the click (the previous
+ *  click's whole body rendered) → shorter; landed inside but off target (too deep, or in
+ *  the attack) → shift by the distance to the middle of the accepted window. */
 const nextLeadMs = (leadMs: number, cutBodyMs: number): number =>
-  cutBodyMs >= 40 ? Math.max(0, leadMs - STALE_LEAD_STEP_MS) : leadMs + (cutBodyMs - CUT_BODY_MAX_MS / 2);
+  cutBodyMs >= 40 ? Math.max(0, leadMs - STALE_LEAD_STEP_MS) : leadMs + (cutBodyMs - (CUT_BODY_MIN_MS + CUT_BODY_MAX_MS) / 2);
 /** A click cut within this many ms was stopped early in its body (2 ms attack + 50 ms
- *  release), leaving a remainder at ≥ 80 % of its level to resume. */
+ *  release), leaving a remainder at ≥ 80 % of its level to resume. The lower bound is
+ *  the completed attack (`ATTACK_COMPLETE_MS`): the head is normalised by the interrupted
+ *  click's own peak, which only exists once its attack has rendered. */
 const CUT_BODY_MAX_MS = 12;
+const CUT_BODY_MIN_MS = ATTACK_COMPLETE_MS;
+const cutInsideBody = (cutBodyMs: number) => cutBodyMs >= CUT_BODY_MIN_MS && cutBodyMs <= CUT_BODY_MAX_MS;
 /** Peak of the first 0.5 ms over the interrupted click's level: a 2 ms attack ramp
  *  reaches ≤ 25 % there (≤ 29 % for a downbeat measured against the quieter beat
  *  click), so a click starting from silence stays under this. */
@@ -77,7 +83,8 @@ const CLEAN_HEAD_RATIO_MAX = 0.35;
 /** A click body resuming at ≥ 80 % of its level exceeds this inside any 0.5 ms window
  *  (≥ 64 % of the 440 Hz sine's peak whatever its phase). */
 const STALE_HEAD_RATIO_MIN = 0.45;
-const HANG_TIMEOUT_MS = 20_000;
+/** 7 attempts × ~2.5 s plus the control; a hang is a stage that never settles. */
+const HANG_TIMEOUT_MS = 40_000;
 const SILENCE_THRESHOLD = 0.01;
 
 type Outcome = "OK" | "HUNG" | "THREW";
@@ -97,9 +104,24 @@ class HangError extends Error {
   }
 }
 
-function raceHang<T>(promise: Promise<T>, stages: () => string): Promise<T> {
+class CancelledError extends Error {
+  constructor() { super("cancelled: the hang ceiling fired while a stage was pending"); }
+}
+
+/** A run's cancellation token: the hang ceiling flips it, and every stage checks
+ *  it so a timed-out run stops driving the engine instead of interleaving with
+ *  the next click's run. */
+class RunToken {
+  cancelled = false;
+  private readonly listeners: (() => void)[] = [];
+  cancel(): void { this.cancelled = true; this.listeners.splice(0).forEach((l) => l()); }
+  onCancel(listener: () => void): void { if (this.cancelled) listener(); else this.listeners.push(listener); }
+  check(): void { if (this.cancelled) throw new CancelledError(); }
+}
+
+function raceHang<T>(promise: Promise<T>, stages: () => string, token: RunToken): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new HangError(stages(), HANG_TIMEOUT_MS)), HANG_TIMEOUT_MS);
+    const timer = setTimeout(() => { token.cancel(); reject(new HangError(stages(), HANG_TIMEOUT_MS)); }, HANG_TIMEOUT_MS);
     promise.then(
       (v) => { clearTimeout(timer); resolve(v); },
       (e) => { clearTimeout(timer); reject(e); }
@@ -107,17 +129,23 @@ function raceHang<T>(promise: Promise<T>, stages: () => string): Promise<T> {
   });
 }
 
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+const sleep = (ms: number, token: RunToken) => new Promise<void>((resolve, reject) => {
+  const timer = setTimeout(resolve, ms);
+  token.onCancel(() => { clearTimeout(timer); reject(new CancelledError()); });
+});
 
 /** Resolve once `test()` holds: checked now, then on every notification from
  *  `subscribe` (a plain `subscribe`, so the callback never fires synchronously
- *  inside the `const` binding — the TDZ hazard root CLAUDE.md warns about). */
-function waitUntil(test: () => boolean, subscribe: (cb: () => void) => { terminate(): void }): Promise<void> {
+ *  inside the `const` binding — the TDZ hazard root CLAUDE.md warns about).
+ *  Rejects and terminates the subscription when the run is cancelled. */
+function waitUntil(test: () => boolean, subscribe: (cb: () => void) => { terminate(): void }, token: RunToken): Promise<void> {
+  token.check();
   if (test()) return Promise.resolve();
-  return new Promise<void>((resolve) => {
+  return new Promise<void>((resolve, reject) => {
     const sub = subscribe(() => {
       if (test()) { sub.terminate(); resolve(); }
     });
+    token.onCancel(() => { sub.terminate(); reject(new CancelledError()); });
   });
 }
 
@@ -238,33 +266,34 @@ const App: React.FC = () => {
 
   /** Play from 0, stop once the position passes `stopPpqn`, restart from 0, record both edges. */
   const stopAndRestart = useCallback(
-    async (stopPpqn: number, stage: (s: string) => void): Promise<RestartAnalysis> => {
+    async (stopPpqn: number, stage: (s: string) => void, token: RunToken): Promise<RestartAnalysis> => {
       if (!project || !audioContext || !recorderRef.current) throw new Error("not initialized");
       const recorder = recorderRef.current;
       const { engine } = project;
       stage("arm");
+      token.check();
       if (audioContext.state !== "running") await audioContext.resume();
       engine.stop();
-      await sleep(150);
+      await sleep(150, token);
       engine.setPosition(0);
-      await sleep(100);
+      await sleep(100, token);
       stage("play");
       engine.play();
-      await waitUntil(() => engine.position.getValue() >= stopPpqn, (cb) => engine.position.subscribe(cb));
+      await waitUntil(() => engine.position.getValue() >= stopPpqn, (cb) => engine.position.subscribe(cb), token);
       const stopAt = audioContext.currentTime;
       stage(`stop@${stopAt.toFixed(3)}`);
       engine.stop();
-      await waitUntil(() => !engine.isPlaying.getValue(), (cb) => engine.isPlaying.subscribe(cb));
-      await sleep(350);
+      await waitUntil(() => !engine.isPlaying.getValue(), (cb) => engine.isPlaying.subscribe(cb), token);
+      await sleep(350, token);
       stage("rewind");
       engine.setPosition(0);
-      await sleep(150);
+      await sleep(150, token);
       const playAt = audioContext.currentTime;
       stage(`restart@${playAt.toFixed(3)}`);
       engine.play();
-      await sleep(450);
+      await sleep(450, token);
       engine.stop();
-      await sleep(200);
+      await sleep(200, token);
       stage("analyze");
       const pre = recorder.slice(stopAt - 0.7, stopAt + 0.3);
       const post = recorder.slice(playAt - 0.02, playAt + 0.45);
@@ -274,16 +303,17 @@ const App: React.FC = () => {
   );
 
   const runStep = useCallback(
-    async (stepIndex: number, body: (stage: (s: string) => void) => Promise<{ analysis: RestartAnalysis; attempts: number; detail: string }>) => {
+    async (stepIndex: number, body: (stage: (s: string) => void, token: RunToken) => Promise<{ analysis: RestartAnalysis; attempts: number; detail: string }>) => {
       if (!project || running !== null) return;
       setRunning(stepIndex);
       setGotByStep((prev) => { const next = { ...prev }; delete next[stepIndex]; return next; });
       const stages: string[] = [];
       const stage = (s: string) => { stages.push(s); };
       const startedAt = performance.now();
+      const token = new RunToken();
       let report: RunReport;
       try {
-        const { analysis, attempts, detail } = await raceHang(body(stage), () => stages[stages.length - 1] ?? "(none)");
+        const { analysis, attempts, detail } = await raceHang(body(stage, token), () => stages[stages.length - 1] ?? "(none)", token);
         report = { outcome: "OK", stages: stages.join(" → "), elapsedMs: performance.now() - startedAt, detail, analysis, attempts };
       } catch (error) {
         console.error(`step ${stepIndex} failed: ${String(error)}`);
@@ -300,8 +330,8 @@ const App: React.FC = () => {
     [project, running]
   );
 
-  const runControl = useCallback(() => runStep(1, async (stage) => {
-    const analysis = await stopAndRestart(CONTROL_STOP_PPQN, stage);
+  const runControl = useCallback(() => runStep(1, async (stage, token) => {
+    const analysis = await stopAndRestart(CONTROL_STOP_PPQN, stage, token);
     const clean = analysis.headRatio <= CLEAN_HEAD_RATIO_MAX;
     return {
       analysis, attempts: 1,
@@ -311,16 +341,16 @@ const App: React.FC = () => {
     };
   }), [runStep, stopAndRestart]);
 
-  const runStale = useCallback(() => runStep(2, async (stage) => {
+  const runStale = useCallback(() => runStep(2, async (stage, token) => {
     let last: RestartAnalysis | null = null;
     let leadMs = STALE_LEAD_START_MS;
     for (let attempt = 1; attempt <= STALE_ATTEMPTS; attempt++) {
       stage(`attempt ${attempt} (lead ${leadMs.toFixed(0)} ms)`);
-      const analysis = await stopAndRestart(stalePpqnForLead(leadMs), stage);
+      const analysis = await stopAndRestart(stalePpqnForLead(leadMs), stage, token);
       last = analysis;
-      const cutInside = analysis.cutBodyMs > 0.5 && analysis.cutBodyMs <= CUT_BODY_MAX_MS;
+      const cutInside = cutInsideBody(analysis.cutBodyMs);
       if (!cutInside) {
-        stage(`${analysis.cutBodyMs >= 40 ? "stop landed before the click" : "stop landed too deep"} (${analysis.cutBodyMs.toFixed(1)} ms rendered)`);
+        stage(`${analysis.cutBodyMs >= 40 ? "stop landed before the click" : analysis.cutBodyMs < CUT_BODY_MIN_MS ? "stop landed in the attack" : "stop landed too deep"} (${analysis.cutBodyMs.toFixed(1)} ms rendered)`);
         leadMs = nextLeadMs(leadMs, analysis.cutBodyMs);
         continue;
       }
@@ -345,8 +375,7 @@ const App: React.FC = () => {
     const stale = reports[2];
     if (!stale || stale.outcome !== "OK" || !stale.analysis) return stale ? "INCONCLUSIVE" : null;
     const a = stale.analysis;
-    const cutInside = a.cutBodyMs > 0.5 && a.cutBodyMs < CUT_BODY_MAX_MS;
-    if (!cutInside) return "INCONCLUSIVE";
+    if (!cutInsideBody(a.cutBodyMs)) return "INCONCLUSIVE";
     if (a.headRatio >= STALE_HEAD_RATIO_MIN) return "BUG PRESENT";
     if (a.headRatio <= CLEAN_HEAD_RATIO_MAX) return "FIXED";
     return "INCONCLUSIVE";
@@ -445,7 +474,7 @@ const App: React.FC = () => {
               <>
                 Play from 0, send the stop a little before beat 2 so the transport halts inside
                 that click (the lead starts at {STALE_LEAD_START_MS} ms and adapts from each
-                attempt's recording until the click is cut within its first {CUT_BODY_MAX_MS} ms),
+                attempt's recording until the click is cut {CUT_BODY_MIN_MS}–{CUT_BODY_MAX_MS} ms in),
                 restart from 0. With
                 the defect the stale click's body resumes at its release level under the new
                 downbeat; on a fixed engine the restart reads like the control.
@@ -454,7 +483,7 @@ const App: React.FC = () => {
             actions={runButton("Run stale-click step", runStale)}
             expected={[
               { label: "outcome", value: "OK" },
-              { label: "cut click body before the stop", value: `0.5–${CUT_BODY_MAX_MS} ms (stopped early in the body; the lead walks down otherwise)` },
+              { label: "cut click body before the stop", value: `${CUT_BODY_MIN_MS}–${CUT_BODY_MAX_MS} ms (attack complete, stopped early in the body; the lead adapts otherwise)` },
               { label: "restart head ratio (first 0.5 ms / interrupted click's level)", value: `≥ ${STALE_HEAD_RATIO_MIN} on SDK 0.0.172 (BUG PRESENT); ≤ ${CLEAN_HEAD_RATIO_MAX} once fixed` },
             ]}
             got={gotByStep[2] ?? null}

@@ -55,15 +55,15 @@ two steps at 120 BPM with the metronome on: **control** stops a quarter beat aft
 click and restarts from 0; **stale** sends the stop with a lead before beat 2 (40 ms to start, adapted from each
 attempt's recording — a stop that landed before the click shortens it, one that landed too deep
 lengthens it; the position observable ticks per animation frame and the stop command
-round-trips through the worklet) so the transport halts early inside that click, then restarts. Per run it reports the cut click's rendered body before the stop (0.5–12 ms accepted
-for the stale step), the interrupted click's own peak (its attack completes 2 ms in), and the
+round-trips through the worklet) so the transport halts early inside that click, then restarts. Per run it reports the cut click's rendered body before the stop (2.5–12 ms accepted
+for the stale step — the attack must have completed so the click's own peak is known), the interrupted click's own peak (its attack completes 2 ms in), and the
 **restart head ratio** (peak of the first 0.5 ms after the restart's first non-silent sample over
 that level). A click starting from silence ramps linearly for 2 ms, so 0.5 ms in reads ≤ 0.35; a
 stale body resuming at its release level (≥ 80 % when cut within 12 ms) reads ≥ 0.45 — any
 0.5 ms window of the 440 Hz beat click sees ≥ 64 % of the sine's peak whatever its phase. Page verdict: BUG PRESENT /
-FIXED / INCONCLUSIVE. Measured 2026-09-28 on 0.0.172 (Chrome, 48 kHz, three fresh loads):
-control 0.14 / 0.14 / 0.14; stale 0.57 / 0.66 / 0.80 with the stop 1.0 / 3.9 / 6.8 ms into the
-click — **BUG PRESENT** each time.
+FIXED / INCONCLUSIVE. Measured 2026-09-28 on 0.0.172 (Chrome, 48 kHz, fresh loads): control
+0.14 every time; stale 0.47–0.80 with the stop 3.9–9.7 ms into the click (3.9 → 0.66, 6.8 → 0.80,
+9.7 → 0.47 twice) — **BUG PRESENT** on every load whose stop landed in the accepted window.
 
 ## Fix idea (internal — does not go in the issue)
 

@@ -24,7 +24,7 @@
  */
 export const HEAD_WINDOW_MS = 0.5;
 /** A cut this long has completed the click's 2 ms attack, so its peak is the full level. */
-const ATTACK_COMPLETE_MS = 2.5;
+export const ATTACK_COMPLETE_MS = 2.5;
 
 export function firstOnsetIndex(samples: Float32Array, threshold: number, from = 0): number {
   for (let i = from; i < samples.length; i++) if (Math.abs(samples[i]) > threshold) return i;
