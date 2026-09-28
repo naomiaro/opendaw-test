@@ -239,6 +239,13 @@ and envelope").
   `ProjectApi.createNoteRegion` dropped its `eventOffset` param and no longer writes the
   field, and the Rust box registry dropped field 14 — the engine ignores it.
 - `ValueUndoZombie.test.ts`, `CreateTrackRegionResolvesOverlap.test.ts` updates upstream.
+- **Found during this upgrade's review (pre-existing, unchanged by the release):**
+  `ProjectApi.createNoteRegion` writes `box.loopDuration.setValue(loopOffset ?? 0)` and
+  then `box.loopDuration.setValue(loopDuration ?? duration)` — the `loopOffset` parameter is
+  never written to `box.loopOffset` (verified in `studio-core/dist/project/ProjectApi.js`
+  and the pinned source). Every caller in this repo passes `loopOffset: 0`, the box default,
+  so no demo is affected. Issue draft: `debug/drafts/issue-create-note-region-loop-offset.md`
+  (not posted).
 
 ## Transfer, presets, clipboard: modulators keep their identity (#385)
 
