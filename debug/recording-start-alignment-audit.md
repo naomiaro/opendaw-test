@@ -3961,8 +3961,8 @@ against `crates/engine/src/metronome.rs` at the 0.0.172 tag confirmed it (a bloc
 click, no calls, then a block from pulse 0: two clicks in the list, sample 0 at 2.0). The
 harness's stops land 64–125 ms after a beat once the stop round trip is added, past the click's
 body, so it did not fire in these runs; it would in the studio on a stop pressed during a
-click. Same code on 0.0.170. Write-up: `debug/metronome-click-survives-pause.md`; issue draft:
-`debug/drafts/issue-metronome-click-survives-pause.md` (not posted — needs a repro page first).
+click. Same code on 0.0.170. Write-up: `debug/metronome-click-survives-pause.md`; repro page
+`metronome-stale-click-debug-demo.html`; filed as openDAW#419 (2026-09-28).
 
 One capture-side signature also turned up, already present in the Task 9 branch-era captures,
 so not new in 0.0.172, and it never reaches the speakers:

@@ -1,4 +1,4 @@
-# DRAFT — not posted. For review before filing on andremichelle/openDAW.
+# POSTED 2026-09-28 as https://github.com/andremichelle/openDAW/issues/420 (body below as filed).
 
 **Title:** `ProjectApi.createNoteRegion` never writes its `loopOffset` parameter
 

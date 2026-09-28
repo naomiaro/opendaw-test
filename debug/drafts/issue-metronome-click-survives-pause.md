@@ -1,7 +1,4 @@
-# DRAFT — not posted. For review before filing on andremichelle/openDAW.
-
-Before posting: the repro page below must be deployed (merged to main); the signature was
-measured on the dev server (three fresh page loads, Chrome, 48 kHz).
+# POSTED 2026-09-28 as https://github.com/andremichelle/openDAW/issues/419 (body below as filed).
 
 **Title:** A metronome click in flight when the transport stops resumes at the next play
 

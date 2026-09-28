@@ -90,8 +90,7 @@ completely silent, and `region.iterateActiveNotesAt(pos)` yields nothing at ever
 scheduling. Always set `box.loopOffset.setValue(0)` and `box.loopDuration.setValue(contentLenPPQN)`
 when building a note region by hand. `project.api.createNoteRegion({ ..., loopDuration })` sets
 `loopDuration` for you — but NOT `loopOffset`: the installed SDK assigns the `loopOffset` param
-to `loopDuration` and then overwrites it (pre-existing bug, issue draft
-`debug/drafts/issue-create-note-region-loop-offset.md`); pass 0 or set the field yourself
+to `loopDuration` and then overwrites it (openDAW#420); pass 0 or set the field yourself
 afterwards. See `patternContent.ts` step 3. NB: verify audio demos by measuring actual
 output signal — an `isPlaying === true` transport and a disabled Play button do NOT prove sound.
 
@@ -103,7 +102,7 @@ click's 52 ms body (2 ms attack + 50 ms release) and play again: the rest of tha
 renders on top of the new position's first quantum (monophonic default: faded over 5 ms,
 still full level at the restart). Present in the installed SDK. Repro (self-classifying,
 control vs. stale step, restart head ratio): `metronome-stale-click-debug-demo.html`;
-write-up `debug/metronome-click-survives-pause.md`. Measurement recipe reusable for any
+write-up `debug/metronome-click-survives-pause.md`; upstream openDAW#419. Measurement recipe reusable for any
 "what does the engine output around a transport edge" question: `initializeOpenDAW`'s
 `engineTap` + an AudioWorklet recorder posting quanta stamped with `currentTime`, sliced by
 context time (`src/demos/engine/metronome-stale-click-debug-demo.tsx` `OutputRecorder`);
