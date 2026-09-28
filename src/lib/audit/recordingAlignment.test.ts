@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildReferenceSchedule, bandSplit, identifyReferenceClicks, estimateAnchorT0,
-  measureTakeAlignment, classifyCell, classifyMultitrackCell, measureCrossTrackSkew,
+  measureTakeAlignment, classifyCell, classifyMultitrackCell, judgedMedianMs, measureCrossTrackSkew,
 } from "./recordingAlignment";
 import type { CellClassification, CrossTrackSkew, TakeAlignment, SignatureBand } from "./recordingAlignment";
 
@@ -317,14 +317,22 @@ describe("classifyCell", () => {
     ({ ...take(adjustedMs), loopbackDelayMs });
   it("nets the per-row loopback delay when asked, so a fixed build reads aligned", () => {
     const repeats = [netted(18.77, 17.6), netted(22.77, 21.6), netted(10.77, 9.6)];
-    expect(classifyCell(repeats, bands, 2).status).toBe("matches-known-defect"); // A-D by range coincidence
+    const unnetted = classifyCell(repeats, bands, 2);
+    expect(unnetted.status).toBe("matches-known-defect"); // A-D by range coincidence
+    expect(unnetted.matchedSignature).toBe("B");
     const c = classifyCell(repeats, bands, 2, { netLoopbackDelay: true });
     expect(c.status).toBe("aligned");
-    expect(c.detail).toContain("netted");
+    expect(c.detail).toContain("medians=[1.17, 1.17, 1.17] netted on 3/3, adjusted=[18.77, 22.77, 10.77]");
   });
-  it("a misplacement still fails the netted verdict", () => {
-    const c = classifyCell([netted(30, 17.6), netted(34, 21.6), netted(22, 9.6)], bands, 2, { netLoopbackDelay: true });
-    expect(c.status).not.toBe("aligned");
+  it("a misplacement fails the netted verdict as investigate, whatever band the ADJUSTED values would match", () => {
+    // adjusted [30, 34, 22] has mean 28.67 → band D on the un-netted path; netted [12.4, 12.4, 12.4] is
+    // outside tolerance and no band applies to a netted cell
+    const repeats = [netted(30, 17.6), netted(34, 21.6), netted(22, 9.6)];
+    expect(classifyCell(repeats, bands, 2).matchedSignature).toBe("D");
+    const c = classifyCell(repeats, bands, 2, { netLoopbackDelay: true });
+    expect(c.status).toBe("investigate");
+    expect(c.matchedSignature).toBeNull();
+    expect(c.detail).toContain("medians=[12.40, 12.40, 12.40] netted on 3/3");
   });
   it("a netted cell never matches a band — a 15-30 ms late misplacement on a fixed build is investigate, not D", () => {
     // netted medians 18.4 / 20.4 / 16.4 sit squarely inside band D (constant-late 15-30 ms)
@@ -343,8 +351,25 @@ describe("classifyCell", () => {
   });
   it("nets only the repeats that carry a delay; the rest keep their adjusted median", () => {
     const c = classifyCell([netted(18.77, 17.6), netted(22.77, null), netted(10.77, 9.6)], bands, 2, { netLoopbackDelay: true });
-    expect(c.status).not.toBe("aligned");
-    expect(c.detail).toContain("22.77");
+    // judged list: two netted (1.17), one adjusted (22.77) — a mixed cell is outside tolerance and,
+    // since a repeat WAS netted, no band applies
+    expect(c.detail).toContain("medians=[1.17, 22.77, 1.17] netted on 2/3");
+    expect(c.status).toBe("investigate");
+    expect(c.matchedSignature).toBeNull();
+  });
+  describe("judgedMedianMs", () => {
+    it("returns the adjusted median unless netting is on AND the delay is a finite number", () => {
+      const r = netted(20, 17.6);
+      expect(judgedMedianMs(r, false)).toBe(20);
+      expect(judgedMedianMs(r, true)).toBeCloseTo(2.4, 6);
+      expect(judgedMedianMs(netted(20, null), true)).toBe(20);
+      expect(judgedMedianMs({ ...take(20) }, true)).toBe(20); // legacy object: field absent
+      expect(judgedMedianMs(netted(20, Number.NaN), true)).toBe(20);
+      expect(judgedMedianMs(netted(20, Number.POSITIVE_INFINITY), true)).toBe(20);
+    });
+    it("is null when the adjusted median is null", () => {
+      expect(judgedMedianMs({ ...netted(20, 17.6), medianBeatErrorMsAdjusted: null }, true)).toBeNull();
+    });
   });
   it("ignores loopbackDelayMs unless netting is requested", () => {
     expect(classifyCell([netted(1.1, 17.6), netted(0.5, 21.6)], bands, 2).status).toBe("aligned");

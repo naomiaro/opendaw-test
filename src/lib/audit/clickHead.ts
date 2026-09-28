@@ -25,6 +25,17 @@
 export const HEAD_WINDOW_MS = 0.5;
 /** A cut this long has completed the click's 2 ms attack, so its peak is the full level. */
 export const ATTACK_COMPLETE_MS = 2.5;
+/** The stale step accepts a stop that cut the click this far into its body: attack complete
+ *  (`ATTACK_COMPLETE_MS`) and the remaining release still at ≥ 80 % of the click's level. */
+export const CUT_BODY_MIN_MS = ATTACK_COMPLETE_MS;
+export const CUT_BODY_MAX_MS = 12;
+/** A click starting from silence: ≤ 25 % of its own level `HEAD_WINDOW_MS` into a 2 ms
+ *  ramp, ≤ ~29 % when the restart is the louder downbeat measured against the beat click. */
+export const CLEAN_HEAD_RATIO_MAX = 0.35;
+/** A click body resuming at ≥ 80 % of its level: any 0.5 ms window of the 440 Hz beat click
+ *  sees ≥ 64 % of the sine's peak whatever its phase, so ≥ 0.5 — 0.45 leaves a margin. */
+export const STALE_HEAD_RATIO_MIN = 0.45;
+export const cutInsideBody = (cutBodyMs: number): boolean => cutBodyMs >= CUT_BODY_MIN_MS && cutBodyMs <= CUT_BODY_MAX_MS;
 
 export function firstOnsetIndex(samples: Float32Array, threshold: number, from = 0): number {
   for (let i = from; i < samples.length; i++) if (Math.abs(samples[i]) > threshold) return i;

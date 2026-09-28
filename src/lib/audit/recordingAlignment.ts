@@ -621,16 +621,15 @@ export function classifyCell(
   // match — otherwise a real 15-30 ms misplacement on a fixed build would read
   // `matches-known-defect (D)`. Head-loss bands are withheld for the same reason.
   const bandsApply = nettedCount === 0;
-  const detailMedians =
-    medians.map((m) => m.toFixed(2)).join(", ") +
-    (netLoopbackDelay
-      ? ` (netted on ${nettedCount}/${repeats.length}; adjusted=[${repeats.map((r) => r.medianBeatErrorMsAdjusted?.toFixed(2) ?? "null").join(", ")}])`
-      : "");
+  const detailMedians = medians.map((m) => m.toFixed(2)).join(", ");
+  const nettedNote = netLoopbackDelay
+    ? ` netted on ${nettedCount}/${repeats.length}, adjusted=[${repeats.map((r) => r.medianBeatErrorMsAdjusted?.toFixed(2) ?? "null").join(", ")}]`
+    : "";
   const headDeficits = repeats.map((r) => r.headMissingMs).join(", ");
   const tailDeficits = repeats.map((r) => r.tailMissingMs).join(", ");
   const spread = Math.max(...medians) - Math.min(...medians);
   const mean = medians.reduce((a, b) => a + b, 0) / medians.length;
-  const detailSuffix = `medians=[${detailMedians}] spread=${spread.toFixed(2)}ms headMissingMs=[${headDeficits}] tailMissingMs=[${tailDeficits}]`;
+  const detailSuffix = `medians=[${detailMedians}]${nettedNote} spread=${spread.toFixed(2)}ms headMissingMs=[${headDeficits}] tailMissingMs=[${tailDeficits}]`;
 
   // Tail deficit: unconditional investigate, never excusable by any band.
   const hasTailDeficit = repeats.some(

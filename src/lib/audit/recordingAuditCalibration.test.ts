@@ -208,6 +208,17 @@ describe("classifyCell under the candidate (E/F) profile", () => {
 });
 
 describe("release profile", () => {
+  it("is reachable only through the feature list — a 0.0.172-era run id without features stays upstream", () => {
+    expect(profileKeyFor("upstream", 1790622731936)).toBe("upstream");
+    expect(profileKeyFor("upstream", 1790622731936, null)).toBe("upstream");
+  });
+
+  it("auditProfileFor returns the profile profileKeyFor names, for every key", () => {
+    for (const features of [FEATURES.installed, FEATURES.startAlignment, FEATURES.configurableProbe]) {
+      expect(auditProfileFor("upstream", 1790622731936, features).key).toBe(profileKeyFor("upstream", 1790622731936, features));
+    }
+  });
+
   it("nets the loopback delay and falls back to bands A-D", () => {
     const profile = auditProfileFor("upstream", 1790622731936, FEATURES.startAlignment);
     expect(profile.key).toBe("release");

@@ -8,7 +8,10 @@ import { BackLink } from "@/components/BackLink";
 import { DebugLinkBar } from "@/components/DebugLinkBar";
 import { TestStep, TestStepRow } from "@/components/TestStep";
 import { initializeOpenDAW } from "@/lib/projectSetup";
-import { ATTACK_COMPLETE_MS, analyzeRestart, type RestartAnalysis } from "@/lib/audit/clickHead";
+import {
+  CLEAN_HEAD_RATIO_MAX, CUT_BODY_MAX_MS, CUT_BODY_MIN_MS, HEAD_WINDOW_MS, STALE_HEAD_RATIO_MIN,
+  analyzeRestart, cutInsideBody, type RestartAnalysis,
+} from "@/lib/audit/clickHead";
 import "@radix-ui/themes/styles.css";
 import {
   Theme,
@@ -37,15 +40,19 @@ import { InfoCircledIcon, PlayIcon } from "@radix-ui/react-icons";
 // fades the stale one over 5 ms; it still hits full level at the restart.
 //
 // Both steps below stop the transport and restart it from 0 with the metronome
-// on, recording the engine's output through a tap on its destination connect:
-//  - CONTROL stops a quarter beat AFTER a click, between clicks. The restart's
-//    first millisecond is the new downbeat's own 2 ms attack ramp, so its peak
-//    sits at roughly half the click's full level.
-//  - STALE stops as the position crosses beat 2, i.e. a few milliseconds INTO
-//    that click (the page checks the cut click's rendered body was under 45 ms
-//    and retries when the stop missed the body). With the defect, the restart's
-//    first millisecond is the stale click's body at full level: head ratio ≈ 1.
-//    On a fixed engine it reads like the control.
+// on, recording the engine's output through `initializeOpenDAW`'s `engineTap`
+// (an AudioWorklet recorder on output 0). The metric is the restart's HEAD RATIO:
+// the peak of the first `HEAD_WINDOW_MS` (0.5 ms) after the restart's first
+// non-silent sample over the interrupted click's own peak (see clickHead.ts).
+//  - CONTROL stops a quarter beat AFTER the beat-2 click, between clicks. The
+//    restart's head is the new downbeat's own 2 ms attack ramp, ≤ ~29 % of the
+//    beat click's level (measured 0.14) — under `CLEAN_HEAD_RATIO_MAX`.
+//  - STALE sends the stop with a lead BEFORE beat 2 (adapted per attempt from
+//    the recording) so the transport halts `CUT_BODY_MIN_MS`–`CUT_BODY_MAX_MS`
+//    into that click: attack complete, release still ≥ 80 %. With the defect
+//    the stale body resumes at that level under the new downbeat, ≥
+//    `STALE_HEAD_RATIO_MIN` whatever the 440 Hz sine's phase (measured
+//    0.47–0.80). On a fixed engine it reads like the control.
 //
 // Every stage is raced against a hang ceiling and the verdict names the last
 // stage reached, so the page self-classifies as BUG PRESENT / FIXED /
@@ -69,20 +76,8 @@ const stalePpqnForLead = (leadMs: number) => 2 * BEAT - (leadMs / 1000) * ((BPM 
  *  the attack) → shift by the distance to the middle of the accepted window. */
 const nextLeadMs = (leadMs: number, cutBodyMs: number): number =>
   cutBodyMs >= 40 ? Math.max(0, leadMs - STALE_LEAD_STEP_MS) : leadMs + (cutBodyMs - (CUT_BODY_MIN_MS + CUT_BODY_MAX_MS) / 2);
-/** A click cut within this many ms was stopped early in its body (2 ms attack + 50 ms
- *  release), leaving a remainder at ≥ 80 % of its level to resume. The lower bound is
- *  the completed attack (`ATTACK_COMPLETE_MS`): the head is normalised by the interrupted
- *  click's own peak, which only exists once its attack has rendered. */
-const CUT_BODY_MAX_MS = 12;
-const CUT_BODY_MIN_MS = ATTACK_COMPLETE_MS;
-const cutInsideBody = (cutBodyMs: number) => cutBodyMs >= CUT_BODY_MIN_MS && cutBodyMs <= CUT_BODY_MAX_MS;
-/** Peak of the first 0.5 ms over the interrupted click's level: a 2 ms attack ramp
- *  reaches ≤ 25 % there (≤ 29 % for a downbeat measured against the quieter beat
- *  click), so a click starting from silence stays under this. */
-const CLEAN_HEAD_RATIO_MAX = 0.35;
-/** A click body resuming at ≥ 80 % of its level exceeds this inside any 0.5 ms window
- *  (≥ 64 % of the 440 Hz sine's peak whatever its phase). */
-const STALE_HEAD_RATIO_MIN = 0.45;
+// The accepted cut window and the two head-ratio bounds live in clickHead.ts next
+// to the measurement, so the unit tests and this page cannot drift apart.
 /** 7 attempts × ~2.5 s plus the control; a hang is a stage that never settles. */
 const HANG_TIMEOUT_MS = 40_000;
 const SILENCE_THRESHOLD = 0.01;
@@ -214,7 +209,7 @@ function reportRows(report: RunReport): TestStepRow[] {
     { label: "attempts", value: String(report.attempts) },
     { label: "cut click body before the stop", value: a ? `${a.cutBodyMs.toFixed(1)} ms` : "—" },
     { label: "interrupted click's level", value: a ? a.fullLevel.toFixed(3) : "—" },
-    { label: "restart head ratio (first 0.5 ms / interrupted click's level)", value: a ? a.headRatio.toFixed(2) : "—" },
+    { label: "restart head ratio (first {HEAD_WINDOW_MS} ms / interrupted click's level)", value: a ? a.headRatio.toFixed(2) : "—" },
     { label: "elapsed", value: `${(report.elapsedMs / 1000).toFixed(2)} s` },
     { label: "detail", value: report.detail },
   ];
@@ -332,6 +327,9 @@ const App: React.FC = () => {
 
   const runControl = useCallback(() => runStep(1, async (stage, token) => {
     const analysis = await stopAndRestart(CONTROL_STOP_PPQN, stage, token);
+    if (analysis.restartOnset < 0) {
+      return { analysis, attempts: 1, detail: "the recorder saw no signal after the restart — tap or transport failed, control INCONCLUSIVE" };
+    }
     const clean = analysis.headRatio <= CLEAN_HEAD_RATIO_MAX;
     return {
       analysis, attempts: 1,
@@ -348,6 +346,10 @@ const App: React.FC = () => {
       stage(`attempt ${attempt} (lead ${leadMs.toFixed(0)} ms)`);
       const analysis = await stopAndRestart(stalePpqnForLead(leadMs), stage, token);
       last = analysis;
+      if (analysis.restartOnset < 0) {
+        stage("restart not captured");
+        return { analysis, attempts: attempt, detail: "the recorder saw no signal after the restart — tap or transport failed, INCONCLUSIVE" };
+      }
       const cutInside = cutInsideBody(analysis.cutBodyMs);
       if (!cutInside) {
         stage(`${analysis.cutBodyMs >= 40 ? "stop landed before the click" : analysis.cutBodyMs < CUT_BODY_MIN_MS ? "stop landed in the attack" : "stop landed too deep"} (${analysis.cutBodyMs.toFixed(1)} ms rendered)`);
@@ -375,7 +377,7 @@ const App: React.FC = () => {
     const stale = reports[2];
     if (!stale || stale.outcome !== "OK" || !stale.analysis) return stale ? "INCONCLUSIVE" : null;
     const a = stale.analysis;
-    if (!cutInsideBody(a.cutBodyMs)) return "INCONCLUSIVE";
+    if (a.restartOnset < 0 || !cutInsideBody(a.cutBodyMs)) return "INCONCLUSIVE";
     if (a.headRatio >= STALE_HEAD_RATIO_MIN) return "BUG PRESENT";
     if (a.headRatio <= CLEAN_HEAD_RATIO_MAX) return "FIXED";
     return "INCONCLUSIVE";
@@ -455,14 +457,14 @@ const App: React.FC = () => {
             description={
               <>
                 Play from 0, stop a quarter beat after the beat-2 click (its body is over), restart
-                from 0. The restart's first millisecond is the new downbeat's own attack ramp.
+                from 0. The restart's first half millisecond is the new downbeat's own attack ramp.
               </>
             }
             actions={runButton("Run control", runControl)}
             expected={[
               { label: "outcome", value: "OK" },
               { label: "cut click body before the stop", value: "≥ 40 ms (the last click ran its full body)" },
-              { label: "restart head ratio (first 0.5 ms / interrupted click's level)", value: `≤ ${CLEAN_HEAD_RATIO_MAX}` },
+              { label: "restart head ratio (first {HEAD_WINDOW_MS} ms / interrupted click's level)", value: `≤ ${CLEAN_HEAD_RATIO_MAX}` },
             ]}
             got={gotByStep[1] ?? null}
           />
@@ -484,7 +486,7 @@ const App: React.FC = () => {
             expected={[
               { label: "outcome", value: "OK" },
               { label: "cut click body before the stop", value: `${CUT_BODY_MIN_MS}–${CUT_BODY_MAX_MS} ms (attack complete, stopped early in the body; the lead adapts otherwise)` },
-              { label: "restart head ratio (first 0.5 ms / interrupted click's level)", value: `≥ ${STALE_HEAD_RATIO_MIN} on SDK 0.0.172 (BUG PRESENT); ≤ ${CLEAN_HEAD_RATIO_MAX} once fixed` },
+              { label: "restart head ratio (first {HEAD_WINDOW_MS} ms / interrupted click's level)", value: `≥ ${STALE_HEAD_RATIO_MIN} on SDK 0.0.172 (BUG PRESENT); ≤ ${CLEAN_HEAD_RATIO_MAX} once fixed` },
             ]}
             got={gotByStep[2] ?? null}
           />

@@ -161,12 +161,13 @@ export type AuditBuildFeature = "recordingStart" | "calibrateInputLatency" | "la
  * keep-alive sink holds pulled, and that build has the sink, so the fallback
  * gives those artifacts the table that describes them. The feature rule below
  * cannot: it keys on `latencyProbes`, which ac1c15ea8 does not export, so a
- * FRESH run of that same build resolves to `upstream` and reads `investigate`
- * for nominal-start. The two rules therefore disagree about ac1c15ea8, on
- * purpose: the fallback is retrospective and knows which build wrote the file,
- * the feature rule is prospective and only knows what the served build exposes,
- * and it fails toward the table the campaign measured rather than toward a
- * quiet match.
+ * FRESH run of that same build resolves to `release` (it ships `recordingStart`;
+ * before the release profile existed it resolved to `upstream` and read
+ * `investigate` for nominal-start). The two rules therefore disagree about
+ * ac1c15ea8, on purpose: the fallback is retrospective and knows which build
+ * wrote the file, the feature rule is prospective and only knows what the served
+ * build exposes, and it never assumes the E/F chain behaviour from a build it
+ * cannot see the sink on.
  */
 export const KEEP_ALIVE_PROFILE_FROM_RUN = 1788384000000;
 
@@ -189,8 +190,8 @@ export const KEEP_ALIVE_PROFILE_FROM_RUN = 1788384000000;
  * neighbouring commit's export instead. The limit that leaves is narrow — a
  * build that cherry-picks `LatencyProbes` without the sink, which no build in
  * this branch's history does — and it is one-directional: a pre-keep-alive
- * calibration build now resolves to `upstream`, which is the conservative
- * answer, since bands A-D were what the campaign measured it against.
+ * calibration build never resolves to `candidate`; it resolves to `release`
+ * (below; it resolved to `upstream` before that profile existed).
  *
  * `recordingStart` without `LatencyProbes` — every release from SDK 0.0.172 on
  * (PR #376 merged), Task 9's branch, and the two calibration builds that
