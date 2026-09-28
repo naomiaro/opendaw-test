@@ -365,10 +365,12 @@ const App: React.FC = () => {
   // The engine FORCES the metronome on while counting in (metronome_pref ||
   // is_counting_in), so count-in clicks always sound; this effect governs
   // what happens outside the count-in. Since SDK 0.0.172 the engine caps the
-  // forced count-in clicks at the punch-in pulse (openDAW#367), so the
-  // quantum-granular count-in → recording flip no longer leaks the boundary
-  // downbeat (see debug/countin-metronome-boundary-click.md for the 0.0.170
-  // measurement and the 0.0.172 re-check).
+  // forced count-in clicks at the punch-in pulse (openDAW#367) — but ONLY while
+  // the preference is off (`is_counting_in && !metronome_pref`). In "count-in"
+  // mode this effect keeps the preference TRUE through the count-in, so the
+  // ceiling engages only because the pre-disarm in the countInBeatsRemaining
+  // subscription flips it off ~0.2 beats before the boundary — keep that
+  // pre-disarm (see debug/countin-metronome-boundary-click.md).
   useEffect(() => {
     if (!project) return;
     const settings = project.engine.preferences.settings;

@@ -411,10 +411,11 @@ const App: React.FC = () => {
         (arcRegion.last.position > arcRegion.first.position ||
           !finalRegions.some(r => r.key === arcRegion.last.key));
 
-      // Any deviation several times ε is an ε violation — measured on BOTH
-      // shapes here. What separates them is retention: the smooth arc keeps ~3 %
-      // of its points (a straight line), the zig-zag ~85 % (a clipped curve).
-      const collapsed = Number.isFinite(simplifierDeviation) && simplifierDeviation > EPSILON * 5;
+      // Regression gate for (A): the fixed pass (SDK 0.0.172+) measures ≤ 0.4× ε on
+      // both shapes; the 0.0.170 greedy filter measured 19.8× ε on the arc (3 % of
+      // points kept, a straight line) and 15× on the zig-zag. 1.5× ε leaves the pass
+      // its own rounding and still catches a partial regression well below 5×.
+      const collapsed = Number.isFinite(simplifierDeviation) && simplifierDeviation > EPSILON * 1.5;
       const verdict: Verdict = collapsed && trimmed ? "BOTH" : collapsed ? "A" : trimmed ? "B" : "NEITHER";
       const ratio = Number.isFinite(simplifierDeviation) ? (simplifierDeviation / EPSILON).toFixed(1) : "?";
       const retained = rawN > 0 ? `${((keptN / rawN) * 100).toFixed(0)} %` : "n/a";

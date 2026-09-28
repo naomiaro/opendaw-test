@@ -158,9 +158,10 @@ latch-overdub front-trim the page measures alongside it is by-design and unchang
 ## Engine (WASM): count-in click ceiling, non-finite report, device naming
 
 - **#367** — `Metronome::set_click_ceiling(pulse)` (exclusive; `INFINITY` = unbounded).
-  `prepare_recording_state`'s count-in flip sets it to `recording_start` while counting in
-  with the preference off, else `INFINITY`; `Metronome::process` clamps each region's end to
-  the ceiling. Upstream regression tests: a block straddling pulse 0 no longer schedules the
+  `Engine::render` sets it every quantum, right after the count-in→recording flip check:
+  `recording_start` while counting in with the preference OFF, else `INFINITY`
+  (`prepare_recording_state` itself only calls `apply_metronome()`); `Metronome::process`
+  clamps each region's end to the ceiling. Upstream regression tests: a block straddling pulse 0 no longer schedules the
   boundary downbeat, a count-in beat strictly before it still sounds. Measured here on
   `swipe-comping-demo.html?sampleRate=44100` (120 BPM, Click "Count-in only", output tapped
   through an `AnalyserNode` installed before page load, three recordings): **four clicks
@@ -332,10 +333,11 @@ creating an audio track, loopmasters samples, error-triage flips (1097…1129).
   (2026-09-28)" in `debug/recording-start-alignment-audit.md`): sample-rate/quantum-alignment
   180 of 180 cells pass; recording start-alignment 48 kHz and 44.1 kHz 60 rows each, 0 error
   rows, 30 of 30 repeats finalized (no loop-wrap hang), head/tail deficits 0, per-cell means
-  −4…+0.3 ms raw (+17…+23 ms after the harness-path term) versus −35…−53 ms on 0.0.170;
+  −6.2…+0.3 ms raw (+17…+23 ms after the harness-path term) versus −35…−53 ms on 0.0.170;
   multi-mic 6 of 6 repeats on both tapes (no #375 collision), skew ≤ one quantum. Verdicts
-  are `matches-known-defect`/`investigate` against bands A–D, which were fitted to the
-  0.0.170 bug — a release band table is a harness follow-up, not an SDK finding.
+  are `matches-known-defect` (bands B/D contain the +17…+23 ms residual by range coincidence)
+  or `investigate` (no band) against bands A–D, which were fitted to the 0.0.170 bug — a
+  release band table is a harness follow-up, not an SDK finding.
 - **Stale docs updated in this PR**: root `CLAUDE.md` (`RegionClipResolver.fatal` no longer
   exists; `importRecording` takes the uuid first), `documentation/08-recording.md`
   (`RecordingWorklet.meta` / peaks after finalize), `documentation/09-editing-fades-and-

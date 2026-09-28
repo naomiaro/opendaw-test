@@ -1346,10 +1346,9 @@ fader gestures instead of scripted events. Three lanes — an audio unit's `volu
 plus a Delay effect's `wet` — start with no automation track at all; the first gesture after
 Record creates the value track and region on demand. Hitting Record and dragging a Radix Slider
 latches a take exactly as described above (no touch gate, transport stop or loop wrap closes it);
-each lane's header shows a live `kept / captured` readout from the finalize-time simplifier — a
-single-pass greedy collinearity filter that drops a point when it sits within ε = 0.01 of the
-line through its neighbours — so the effect of that pass is visible on real input rather than
-asserted in prose. It runs at every finalize, a loop wrap included, so a looping take visibly
+each lane's header shows a live `kept / captured` readout from the finalize-time simplifier — the
+Ramer-Douglas-Peucker pass with ε = 0.01 described above — so the effect of that pass is visible
+on real input rather than asserted in prose. It runs at every finalize, a loop wrap included, so a looping take visibly
 re-thins its curve each pass. With loop recording on, each pass overdubs its own region and the
 canvas renders every pass's outline stacked across the window. Recording itself always leaves
 `loopOffset` at 0 (`loopDuration` is set to the region's own duration); the non-zero `loopOffset`

@@ -172,20 +172,19 @@ const RMS_PASS_THRESHOLD = 0.005;
 const RECORD_WINDOW_MS = 4000;
 
 // Build probe: identifies which SDK build is live, for A/B runs against an
-// alternate dist tree (see SDK_DIST_OVERRIDE in vite.config.ts). A module-surface
-// check (e.g. a static import of an internal class) isn't reliable here — the
-// capability under test isn't guaranteed to be a class member every build exposes
-// the same way — so this probes a LIVE surface instead. The marker is the newest
-// campaign surface the installed release does NOT ship yet: `recordingStart` (the
-// engine's one-shot audio-thread report, upstream PR #376) shipped in 0.0.172 and
-// stopped distinguishing anything, so the marker moved to `calibrateInputLatency`
-// on `CaptureAudio`'s prototype (the loopback calibration, upstream PR #380). A
-// build carrying only `recordingStart` — every release from 0.0.172 on — reads
-// "upstream". Call once init has resolved; "unknown" is reserved for the case
-// where the probe never ran at all (init itself failed), never as a steady-state
-// verdict once the engine is up. Once the installed SDK ships #380, this reads
-// "candidate" on the plain server too — re-target the marker at that upgrade.
-// The `engine` argument is kept so the call sites stay one probe call per run.
+// alternate dist tree (see SDK_DIST_OVERRIDE in vite.config.ts). The marker is the
+// newest campaign surface the installed release does NOT ship yet: `recordingStart`
+// (the engine's one-shot audio-thread report, upstream PR #376, a live-instance
+// check on `project.engine`) shipped in 0.0.172 and stopped distinguishing
+// anything, so the marker moved to `calibrateInputLatency` on `CaptureAudio`'s
+// prototype (the loopback calibration, upstream PR #380) — a plain class-member
+// check on the imported module, which the same-named probe in buildFeatures.ts
+// also makes. A build carrying only `recordingStart` — every release from 0.0.172
+// on — reads "upstream". "unknown" is reserved for the case where the probe never
+// ran at all (init itself failed), never as a steady-state verdict once the engine
+// is up. Once the installed SDK ships #380, this reads "candidate" on the plain
+// server too — re-target the marker at that upgrade. The `engine` argument is
+// kept so the call sites stay one probe call per run after init.
 function detectSdkBuildProbe(engine: unknown): SdkBuildProbe {
   void engine;
   const capturePrototype = CaptureAudio.prototype as unknown as { calibrateInputLatency?: unknown };

@@ -3875,9 +3875,13 @@ repeat, all 12 verdicts `investigate` (no A–D band).
 0 `aligned` / 87 `matches-known-defect` / 45 `investigate` over the 132 matrix + multitrack
 rows — the same shape Task 9 reported for the branch (0 / 8 / 12 per 20 cells). The bands
 A–D were written for the 0.0.170 placement (−35…−53 ms early); a build that places within
-about −4…+0.3 ms on the raw grid, +17…+23 ms after the harness-path term (the loopback
-path's own delay, "The residual is the loopback path" above), has no band in that table.
-`investigate` here is the classifier saying "no predicted band", not a regression, and the
+about −6.2…+0.3 ms on the raw grid, +17…+23 ms after the harness-path term (the loopback
+path's own delay, "The residual is the loopback path" above), is not what that table
+describes: the 87 `matches-known-defect` rows are range coincidences — band B
+(`random-band`, |4–25| ms, nominal/count-in) and band D (`constant-late`, 15–30 ms,
+loop-wrap) happen to contain +17…+23 ms, exactly as Task 9 noted for the branch ("the 8
+band matches are coincidences of magnitude, not mechanism") — and the 45 `investigate`
+rows are the classifier saying "no predicted band". Neither is a regression, and the
 release build's `buildFeatures` (`["recordingStart"]`) deliberately resolves to A–D (see
 `profileKeyFor`). The descriptive E/F bands engage only on a build that exports
 `LatencyProbes` (PR #380). **Harness follow-up:** a band table fitted to the release
@@ -3935,8 +3939,8 @@ against `crates/engine/src/metronome.rs` at the 0.0.172 tag confirmed it (a bloc
 click, no calls, then a block from pulse 0: two clicks in the list, sample 0 at 2.0). The
 harness's stops land 64–125 ms after a beat once the stop round trip is added, past the click's
 body, so it did not fire in these runs; it would in the studio on a stop pressed during a
-click. Same code on 0.0.170. Issue draft: `debug/drafts/issue-metronome-click-survives-pause.md`
-(not posted).
+click. Same code on 0.0.170. Write-up: `debug/metronome-click-survives-pause.md`; issue draft:
+`debug/drafts/issue-metronome-click-survives-pause.md` (not posted — needs a repro page first).
 
 One capture-side signature also turned up, already present in the Task 9 branch-era captures,
 so not new in 0.0.172, and it never reaches the speakers:
