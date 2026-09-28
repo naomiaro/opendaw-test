@@ -175,19 +175,21 @@ const RECORD_WINDOW_MS = 4000;
 // alternate dist tree (see SDK_DIST_OVERRIDE in vite.config.ts). A module-surface
 // check (e.g. a static import of an internal class) isn't reliable here — the
 // capability under test isn't guaranteed to be a class member every build exposes
-// the same way — so this probes the LIVE `project.engine` instance returned by
-// `initializeOpenDAW()` instead: a fixed build's EngineFacade exposes a
-// `recordingStart` observable option (the engine's one-shot audio-thread report of
-// where and when the transport began recording); the installed build does not.
-// Earlier fix candidates exposed a numeric `syncContextTime` getter instead — that
-// marker is retired, so a build carrying only it now reads "upstream". Call once
-// init has resolved; "unknown" is reserved for the case where the probe never ran
-// at all (init itself failed), never as a steady-state verdict once the engine is
-// up. Once the installed SDK ships `recordingStart`, this reads "candidate" on the
-// plain server too — re-target the marker at that upgrade.
+// the same way — so this probes a LIVE surface instead. The marker is the newest
+// campaign surface the installed release does NOT ship yet: `recordingStart` (the
+// engine's one-shot audio-thread report, upstream PR #376) shipped in 0.0.172 and
+// stopped distinguishing anything, so the marker moved to `calibrateInputLatency`
+// on `CaptureAudio`'s prototype (the loopback calibration, upstream PR #380). A
+// build carrying only `recordingStart` — every release from 0.0.172 on — reads
+// "upstream". Call once init has resolved; "unknown" is reserved for the case
+// where the probe never ran at all (init itself failed), never as a steady-state
+// verdict once the engine is up. Once the installed SDK ships #380, this reads
+// "candidate" on the plain server too — re-target the marker at that upgrade.
+// The `engine` argument is kept so the call sites stay one probe call per run.
 function detectSdkBuildProbe(engine: unknown): SdkBuildProbe {
-  const facade = engine as { recordingStart?: { isEmpty?: unknown } };
-  return typeof facade?.recordingStart?.isEmpty === "function" ? "candidate" : "upstream";
+  void engine;
+  const capturePrototype = CaptureAudio.prototype as unknown as { calibrateInputLatency?: unknown };
+  return typeof capturePrototype.calibrateInputLatency === "function" ? "candidate" : "upstream";
 }
 
 // Installed at module scope, BEFORE any SDK code can touch mediaDevices.

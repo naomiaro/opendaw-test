@@ -553,20 +553,17 @@ const App: React.FC = () => {
                     <Flex direction="column" gap="1">
                       <div className="mc-lattice-label" style={{ color: "var(--mc-amber)" }}>4 · Simplify</div>
                       <Text size="2" color="gray">
-                        On finalize the raw stream is thinned by a single-pass greedy
-                        collinearity pass with ε = 0.01: points that lie within that
-                        tolerance of the line through their neighbours are dropped. Each
-                        lane header shows <em>kept / captured</em> — hundreds of writes
-                        typically survive as a handful of events. With Loop on you can
-                        watch it happen: the curve visibly snaps to its thinned form at{" "}
-                        <em>every</em> loop wrap as well as at Stop. That is the take
-                        being finalized, not a glitch. Worth knowing before you judge a
-                        take: ε does not bound what you see. The pass only ever tests the
-                        point next to the far end of its growing chord, where a smooth
-                        arc is closest to that chord anyway — so a slow, gradual move can
-                        flatten almost to a straight line (measured here: a two-bar arc
-                        thinned from 116 events to 4, twenty times ε off its performed
-                        shape) while a fast, jagged one survives nearly intact.
+                        On finalize the raw stream is thinned by a Ramer–Douglas–Peucker
+                        pass with ε = 0.01: the point that deviates most from the chord
+                        between a range's ends splits it, and a range whose worst point
+                        lies within ε loses its interior points — so ε bounds how far the
+                        kept polyline sits from what you played. Each lane header shows{" "}
+                        <em>kept / captured</em> — hundreds of writes typically survive as
+                        a dozen events. With Loop on you can watch it happen: the curve
+                        visibly snaps to its thinned form at <em>every</em> loop wrap as
+                        well as at Stop. That is the take being finalized, not a glitch.
+                        (Measured here: a two-bar arc thinned from 116 events to 11 and
+                        stayed within 0.4 ε of its performed shape.)
                       </Text>
                     </Flex>
                   </Grid>

@@ -51,8 +51,9 @@ subs.push(trackSub);
 ### SampleService (SDK 0.0.124+; BpmDetector arg since 0.0.167)
 - `new SampleService(audioContext, BpmDetector.Unknown)` required in `ProjectEnv` for
   recording finalization. The detector only runs in `importFile` when no bpm is given —
-  every path that reaches `importFile` here supplies one (`importRecording` delegates to
-  it with the capture bpm), so the no-op detector never runs. Real detection:
+  every path that reaches `importFile` here supplies one (`importRecording(uuid, audioData,
+  bpm)` delegates to it with the capture bpm — the uuid is the capture-owned recording uuid
+  since 0.0.172, no `AudioFileBox` swap after save), so the no-op detector never runs. Real detection:
   `new WasmBpmDetector(<stretch_wasm.wasm url>)` (needs `Workers.install` first).
 - `CaptureAudio.prepareRecording()` injects it into `RecordingWorklet` automatically
 
@@ -506,8 +507,8 @@ project.editing.modify(() => {
 ### createTrackRegion Resolves Overlaps and Seeds Value Regions (SDK 0.0.167+)
 `project.api.createTrackRegion` (Notes/Value tracks) clips or pushes existing regions in
 the target range per the studio `overlapping-regions-behaviour` setting (default
-`"clip"`: covered regions are DELETED, then `validateTrack` hard-asserts — outside the
-studio app `RegionClipResolver.fatal` defaults to true). Don't delete "replaced" regions
+`"clip"`: covered regions are DELETED, then `validateTrack` hard-asserts — it always
+panics; the `RegionClipResolver.fatal` opt-out was removed in 0.0.172). Don't delete "replaced" regions
 yourself afterwards without a `boxGraph.findBox(uuid).nonEmpty()` guard. Value regions
 are additionally seeded with one inherited node at region-local position 0; clear it in
 a FOLLOW-UP `editing.append()` before writing your own position-0 event — two events at

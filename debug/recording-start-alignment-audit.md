@@ -242,9 +242,10 @@ What this campaign has put upstream, or has ready to:
 
 | contribution | what it carries | status |
 |---|---|---|
-| PR [#376](https://github.com/andremichelle/openDAW/pull/376) — anchor takes on the engine's own recording start | the one-shot `recordingStart` engine report, the processor's first-frame time, the finalization hang and the `#finalize` head drop | **posted** (fork branch `naomiaro:fix/recording-start-alignment`); measured before/after under "Task 9: best-fix rework" |
+| PR [#376](https://github.com/andremichelle/openDAW/pull/376) — anchor takes on the engine's own recording start | the one-shot `recordingStart` engine report, the processor's first-frame time, the finalization hang and the `#finalize` head drop | **merged** 2026-09-11, **shipped in SDK 0.0.172** (with the maintainer's follow-ups: recording generation, latency read at placement, prepared-worklet disposal, resume-or-reject; #375 closed by the capture-owned uuid); measured before/after under "Task 9: best-fix rework"; post-upgrade standing sweep under "Standing sweep on 0.0.172 (2026-09-28)" |
 | PR [#378](https://github.com/andremichelle/openDAW/pull/378) — apply the input latency the browser reports | `InputLatency.resolve` and the `Reported` default, bounded and read after output has started | **posted**; the branch below stacks on it |
 | PR [#380](https://github.com/andremichelle/openDAW/pull/380) — loopback input-latency calibration | the loopback calibration routine (`InputLatencyCalibration.measure`, `CaptureAudio.calibrateInputLatency`, the per-device store, the `calibrated` resolver rung, the keep-alive sink, the chain-reuse fix, the second capture anchor), upstream PR head `9d0cccb88` (figures measured at `66021385`; the real-device runs at `9d0cccb88` — the measurement code is the same, see the head reconciliation in the calibration section) | **posted** 2026-09-03 (fork branch `naomiaro:feat/input-latency-calibration`, stacks on #378 and #376); measurements and open findings under "Input-latency calibration (2026-09-02)"; **real device measured** 2026-09-03 — six acoustic runs on a built-in microphone, section "Real-device calibration (2026-09-03)" |
+| PR [#418](https://github.com/andremichelle/openDAW/pull/418) — audio chain lifecycle fixes extracted from #380 | `terminate()` tears the chain down and releases the microphone, an unstamped capture reuses its stream across recordings, the keep-alive sink, plus the review round's stream-lifetime rule (a stream exists only while armed and alive), ended-track re-open, prepared-worklet discard on `terminate()` — no calibration API | **posted** 2026-09-28 (rebased onto current main at the maintainer's request) |
 
 One PR-description draft (`pr-recording-start-alignment.md`, rewritten in Task 9 around
 the reworked fix with branch-measured before/after) and **two** issue drafts under
@@ -3811,3 +3812,119 @@ re-armed chain judged against the first chain's mode) and per-row `deltaQuanta` 
 above are the reading, and task12c never reads those fields (it recomputes every figure
 from the per-call `roundTripSeconds` / `roundTripSecondsSecondary` / `inputLatencySeconds`
 and `chainIndex`).
+
+## Standing sweep on 0.0.172 (2026-09-28)
+
+First re-run of the standing sweep on a RELEASE that ships PR #376 (merged upstream
+2026-09-11, published in `@opendaw/studio-sdk@0.0.172` — `studio-core` 0.2.6 with the
+maintainer's follow-ups: recording generation on `prepareRecordingState`/`recordingStarted`,
+the latency read at placement, prepared-worklet disposal, resume-or-reject in
+`prepareRecording`; #375 closed by the capture-owned recording uuid). Build probe
+`upstream` (re-targeted this upgrade to `calibrateInputLatency`, since `recordingStart`
+now ships), `buildFeatures: ["recordingStart"]` → bands A–D, the same table the Task 9
+branch runs were judged against. Harness unchanged since PR #125.
+
+### 48000 Hz — `recaudit-summary-1790622731936.json`
+
+60 rows, 0 error rows, 30 of 30 repeats finalized (the 0.0.170 loop-wrap hang — 10 of 12
+fresh repeats — did not occur once), head and tail deficits 0 on all 60 rows, take-0 file end
++29.33…+72.00 ms after the stop request (0 of 30 before it). Per-cell means on the absolute
+grid (`medianBeatErrorMsAdjusted`; the raw column is before the 0.023 s harness-path term):
+
+| scenario | bpm | n | mean adj (ms) | mean raw (ms) | min…max adj | verdict (A–D) | Task 9 branch mean | 0.0.170 mean |
+|---|---|---|---|---|---|---|---|---|
+| nominal-start | 120 | 3 | +18.77 | −4.23 | 10.77…22.77 | matches-known-defect (B) | +9.33 (16.99 re-adjusted) | −52.51 |
+| nominal-start | 97.3 | 3 | +19.45 | −3.55 | 13.45…22.78 | matches-known-defect (B) | +19.67 | −41.81 |
+| janked-start | 120 | 3 | +19.22 | −3.78 | 13.44…22.77 | investigate | +19.44 | −47.85 |
+| janked-start | 97.3 | 3 | +19.00 | −4.00 | 13.45…22.11 | investigate | +15.00 | −49.51 |
+| midtimeline-start | 120 | 3 | +18.77 | −4.23 | 13.44…22.77 | investigate | +20.33 | −46.83 |
+| midtimeline-start | 97.3 | 3 | +19.67 | −3.33 | 13.44…22.78 | investigate | +17.00 | −47.32 |
+| countin-start | 120 | 3 | +16.77 | −6.23 | 10.77…20.10 | matches-known-defect (B) | +15.44 | −52.26 |
+| countin-start | 97.3 | 3 | +17.45 | −5.55 | 10.78…22.11 | matches-known-defect (B) | +18.33 | −46.04 |
+| loop-wrap | 120 | 18 | +17.23 | −5.77 | 10.73…22.13 | matches-known-defect (D) | +10.78 | no data (3/3 hung) |
+| loop-wrap | 97.3 | 18 | +18.53 | −4.47 | 13.36…22.11 | matches-known-defect (D) | +18.30 | −49.40 |
+
+### 44100 Hz — `recaudit-summary-1790623224013.json`
+
+60 rows, 0 error rows, 30 of 30 finalized, head and tail deficits 0 on all 60 rows, take-0
+file end +29.02…+69.66 ms after the stop request (0 of 30 before it).
+
+| scenario | bpm | n | mean adj (ms) | mean raw (ms) | min…max adj | verdict (A–D) | Task 9 branch mean | 0.0.170 mean |
+|---|---|---|---|---|---|---|---|---|
+| nominal-start | 120 | 3 | +23.24 | +0.24 | 23.11…23.38 | investigate | +14.50 (22.17 re-adjusted) | −44.73 |
+| nominal-start | 97.3 | 3 | +19.89 | −3.11 | 14.34…23.93 | matches-known-defect (B) | +22.36 | −41.57 |
+| janked-start | 120 | 3 | +22.83 | −0.17 | 22.15…23.58 | investigate | +22.28 | −45.07 |
+| janked-start | 97.3 | 3 | +22.71 | −0.29 | 21.37…24.32 | investigate | +23.77 | −46.32 |
+| midtimeline-start | 120 | 3 | +19.97 | −3.03 | 11.90…24.33 | investigate | +18.97 | −47.16 |
+| midtimeline-start | 97.3 | 3 | +23.34 | +0.34 | 22.14…23.98 | investigate | +21.56 | −45.89 |
+| countin-start | 120 | 3 | +22.40 | −0.60 | 20.90…23.16 | investigate | +21.14 | −47.07 |
+| countin-start | 97.3 | 3 | +22.99 | −0.01 | 22.62…23.52 | investigate | +21.40 | −47.33 |
+| loop-wrap | 120 | 18 | +22.57 | −0.43 | 22.13…23.20 | matches-known-defect (D) | +21.28 | −34.97 |
+| loop-wrap | 97.3 | 18 | +22.10 | −0.90 | 18.96…23.89 | matches-known-defect (D) | +21.13 | no data (3/3 hung) |
+
+### Multi-mic — `recaudit-mt-summary` (multitrack-all, 120 BPM, 48000 Hz)
+
+12 rows (2 scenarios × 3 repeats × 2 tapes), 0 error rows, **6 of 6 repeats finalized on
+both tapes** — the byte-identical-take collision (#375) that cost 3 of 6 repeats on 0.0.170
+did not occur (the capture now owns the recording uuid). Adjusted medians +10.77…+22.77 ms,
+head deficits 0, inter-tape skew 0.00 or ±2.67 ms (one render quantum at 48 kHz) on every
+repeat, all 12 verdicts `investigate` (no A–D band).
+
+### Reading the verdicts
+
+0 `aligned` / 87 `matches-known-defect` / 45 `investigate` over the 132 matrix + multitrack
+rows — the same shape Task 9 reported for the branch (0 / 8 / 12 per 20 cells). The bands
+A–D were written for the 0.0.170 placement (−35…−53 ms early); a build that places within
+about −4…+0.3 ms on the raw grid, +17…+23 ms after the harness-path term (the loopback
+path's own delay, "The residual is the loopback path" above), has no band in that table.
+`investigate` here is the classifier saying "no predicted band", not a regression, and the
+release build's `buildFeatures` (`["recordingStart"]`) deliberately resolves to A–D (see
+`profileKeyFor`). The descriptive E/F bands engage only on a build that exports
+`LatencyProbes` (PR #380). **Harness follow-up:** a band table fitted to the release
+(`recordingStart` without calibration) so the standing sweep can report `aligned` on a
+fixed build.
+
+### Sample-rate/quantum-alignment sweep
+
+`samplerate-audit-debug-demo.html?family=all&bpm=all&rate=all` on 0.0.172: **180 of 180
+cells pass, 0 investigate** (9 families × 5 bpms × 4 rates, max deviation 0.07–0.08 ms on
+the metronome family), 0.5 min. Same result as the 0.0.170 campaign.
+
+### A "double click on a downbeat" heard during the 48 kHz sweep (2026-09-28)
+
+Reported by ear while the 48 kHz matrix ran. Checked three ways, none reproduced it in the
+engine's rendered output:
+
+- **Every matrix capture** (the loopback = engine output 0 through the 1.5 kHz low band):
+  no two metronome-band onsets within 60 ms in any of the 30 cells at 48 kHz; every click
+  peaks at its nominal level (downbeat 0.581, beat 0.508 — an aligned duplicate would sum).
+- **The speaker feed itself**: a `ScriptProcessorNode` tee on the destination connect
+  (installed before page load) recorded the whole `loop-wrap/120/48000` cell
+  (`speaker-loopwrap-120-48000.wav`, 67.9 s): 135 clicks, no onset pair within 60 ms, all
+  peaks 0.479–0.484.
+- **The engine path**: with the metronome preference ON (the harness's setting) the
+  count-in→recording flip and `Metronome::process` are byte-identical to 0.0.170 — the
+  click ceiling that shipped for #367 is set only while the preference is OFF — and the
+  metronome schedules in `[p0, p1)`, so neither the punch-in nor a loop wrap produces two
+  clicks from one pulse.
+
+One capture-side signature did turn up, already present in the Task 9 branch-era captures,
+so it is not new in 0.0.172, and it never reaches the speakers:
+
+- **44.1 kHz head duplicate**: in 14 of 30 cells (12 of 30 on branch run `1788386775464`)
+  the first click of the take is followed 19.9–20.9 ms later by a second copy at ~65 %
+  amplitude and the same frequency (875 Hz downbeat; the click's own release tail measures
+  ~22 % there) — only the first click, never at 48 kHz. Consistent with a stream-start
+  FIFO/resampler artifact on the `MediaStreamAudioSourceNode` when the context rate (44100)
+  differs from the device rate; it sits inside the recorded take's first ~35 ms. Not
+  investigated further this campaign.
+
+A second candidate was a false alarm worth recording so it is not re-found: an onset
+detector with a short refractory re-arms on the synthesized click's 50 ms release tail
+(~0.1 at +30 ms, −13 dB, same frequency as the click) and reports a "follower" after every
+beat click. The tail is identical in the speaker feed, the release captures, the branch-era
+captures and every scenario — it is the click sound, not a second click.
+
+Nothing measured explains a click heard on the speakers at 48 kHz. The next step if it recurs is a
+listening session with the destination tee armed for the whole sweep (the tee recipe above
+captures exactly what the speakers get) and a note of the cell in progress.

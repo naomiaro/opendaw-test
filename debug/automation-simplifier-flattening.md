@@ -1,5 +1,7 @@
 # Automation simplifier flattens smooth gestures far beyond its ε
 
+**Status:** **FIXED in SDK 0.0.172** (`studio-core` 0.2.6) — `simplifyRecordedEvents` is recursive Ramer–Douglas–Peucker (upstream `c5d01af92`, closes #363). Re-measured 2026-09-28 on the repro page, same protocol: 116 → 11 events (9 % retained), max simplifier deviation **0.0037 unitValue = 0.4× ε**, verdict B (only the by-design latch front-trim remains; end-to-end 0.796). The repro page is now the regression test; the write-up below describes 0.0.170.
+
 **Verified against:** `@opendaw/studio-sdk` 0.0.170 (`studio-core` 0.2.4, `studio-adapters` 0.3.2), WASM engine, Chrome.
 **Repro page:** [`automation-simplifier-debug-demo.html`](../automation-simplifier-debug-demo.html) (unlisted).
 **Upstream issue:** [openDAW#363](https://github.com/andremichelle/openDAW/issues/363).
