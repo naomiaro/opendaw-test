@@ -7,7 +7,8 @@ report during the 0.0.172 standing sweep (`debug/recording-start-alignment-audit
 "Standing sweep on 0.0.172"); NOT what that listener heard (that was the harness's cell
 cadence). **Repro page:** [`metronome-stale-click-debug-demo.html`](../metronome-stale-click-debug-demo.html)
 (unlisted, self-classifying: control stop between clicks vs. stop inside a click, restart
-head ratio). Issue draft `drafts/issue-metronome-click-survives-pause.md` (not posted).
+head ratio). **Upstream issue:** [openDAW#419](https://github.com/andremichelle/openDAW/issues/419)
+(filed 2026-09-28 from `drafts/issue-metronome-click-survives-pause.md`).
 
 ## Symptom
 

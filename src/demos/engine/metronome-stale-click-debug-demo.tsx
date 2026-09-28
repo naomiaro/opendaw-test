@@ -403,6 +403,11 @@ const App: React.FC = () => {
               href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/metronome-click-survives-pause.md",
               kind: "note",
             },
+            {
+              label: "Upstream issue: openDAW#419",
+              href: "https://github.com/andremichelle/openDAW/issues/419",
+              kind: "note",
+            },
           ]}
         />
 

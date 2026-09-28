@@ -244,8 +244,7 @@ and envelope").
   then `box.loopDuration.setValue(loopDuration ?? duration)` — the `loopOffset` parameter is
   never written to `box.loopOffset` (verified in `studio-core/dist/project/ProjectApi.js`
   and the pinned source). Every caller in this repo passes `loopOffset: 0`, the box default,
-  so no demo is affected. Issue draft: `debug/drafts/issue-create-note-region-loop-offset.md`
-  (not posted).
+  so no demo is affected. Filed as openDAW#420.
 
 ## Transfer, presets, clipboard: modulators keep their identity (#385)
 
@@ -329,9 +328,10 @@ creating an audio track, loopmasters samples, error-triage flips (1097…1129).
   cell cadence (the next cell's first downbeat lands 190–270 ms after the previous cell's
   last beat click) — six independent measurements in the register section, including an
   acoustic recording of the speakers; not an engine defect. A latent engine behaviour was
-  found on the way and drafted for upstream review (`debug/drafts/issue-metronome-click-
-  survives-pause.md`): metronome clicks in flight at a stop are never cleared and resume at
-  the next play — same code on 0.0.170, not exercised by the sweep.
+  found on the way and filed as openDAW#419 (repro page
+  `metronome-stale-click-debug-demo.html`, note `debug/metronome-click-survives-pause.md`):
+  metronome clicks in flight at a stop are never cleared and resume at the next play — same
+  code on 0.0.170, not exercised by the sweep.
 - **Regression checks on the installed build** (both pages are the standing regression tests):
   `automation-simplifier-debug-demo.html` → 116 → 11 events, 0.0037 (0.4× ε), verdict B
   (front-trim only); `swipe-comping-demo.html?sampleRate=44100` Count-in only → four clicks in
