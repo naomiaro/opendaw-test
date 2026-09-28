@@ -265,14 +265,14 @@ the region that opens after the wrap just keeps growing until the take closes, s
 wherever **Stop** happened — not necessarily the boundary again. The newer pass's region clips
 the older pass where they overlap (trimmed, not duplicated).
 
-**The finalize-time simplifier is Ramer–Douglas–Peucker with ε = 0.01 (SDK 0.0.172+), and ε
-bounds the error.** `RecordAutomation.simplifyRecordedEvents` recurses on the interior point
+**The finalize-time simplifier is Ramer–Douglas–Peucker with ε = 0.01, and ε bounds the
+error.** `RecordAutomation.simplifyRecordedEvents` recurses on the interior point
 that deviates most from the chord `[first, last]`; a range whose worst point is within ε loses
 every interior point. Non-linear events and events sharing a position with a neighbour are
 anchored (never dropped). Measured on the repro page: the two-bar parabolic pan arc thins
-116 events → 11, max deviation **0.0037 unitValue = 0.4× ε**. On 0.0.170 the pass was a
-single-pass greedy chord filter that only tested the point adjacent to the chord's far end —
-the same arc collapsed 116 → 4 at 19.8× ε (openDAW#363, fixed). It only runs on **floating**
+116 events → 11, max deviation **0.0037 unitValue = 0.4× ε**. The earlier single-pass greedy
+chord filter, which only tested the point adjacent to the chord's far end, collapsed the same
+arc 116 → 4 at 19.8× ε (openDAW#363, fixed; history in `debug/automation-simplifier-flattening.md`). It only runs on **floating**
 parameters (`adapter.valueMapping.floating()`), and it runs at every finalize — a loop wrap as
 well as Stop, so a looping take re-thins its curve each pass. Regression test + numbers:
 `automation-simplifier-debug-demo.html` / `debug/automation-simplifier-flattening.md`.

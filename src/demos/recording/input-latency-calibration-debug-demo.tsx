@@ -682,7 +682,7 @@ function requireLoopback(where: string): LoopbackHandle {
 }
 
 /** Same marker the alignment harness probes — see its `detectSdkBuildProbe`:
- *  `calibrateInputLatency` (PR #380), since `recordingStart` shipped in 0.0.172. */
+ *  `calibrateInputLatency` (PR #380), the newest surface the installed release lacks. */
 function detectSdkBuildProbe(engine: unknown): SdkBuildProbe {
   void engine;
   const capturePrototype = CaptureAudio.prototype as unknown as { calibrateInputLatency?: unknown };

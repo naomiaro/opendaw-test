@@ -261,10 +261,10 @@ const App: React.FC = () => {
             // "Count-in only" mode: pre-disarm the preference just before the
             // bar boundary so the engine's count-in→recording flip restores a
             // FALSE preference (waiting for isCountingIn arrives a frame late).
-            // This keeps the recording itself click-free. The punch-in downbeat
-            // click that leaked through the boundary block on SDK ≤ 0.0.170
-            // (openDAW#367) is fixed in 0.0.172 by the engine's count-in click
-            // ceiling — see debug/countin-metronome-boundary-click.md.
+            // This keeps the recording itself click-free. The engine's count-in
+            // click ceiling keeps the punch-in downbeat from leaking through the
+            // boundary block (openDAW#367, fixed) — see
+            // debug/countin-metronome-boundary-click.md.
             if (clickModeRef.current === "count-in" && beats > 0 && beats < 0.2) {
               newProject.engine.preferences.settings.metronome.enabled = false;
             }
@@ -364,8 +364,8 @@ const App: React.FC = () => {
   // ── Click (metronome) mode — app-side gating of the engine metronome.
   // The engine FORCES the metronome on while counting in (metronome_pref ||
   // is_counting_in), so count-in clicks always sound; this effect governs
-  // what happens outside the count-in. Since SDK 0.0.172 the engine caps the
-  // forced count-in clicks at the punch-in pulse (openDAW#367) — but ONLY while
+  // what happens outside the count-in. The engine caps the forced count-in clicks
+  // at the punch-in pulse (openDAW#367, fixed) — but ONLY while
   // the preference is off (`is_counting_in && !metronome_pref`). In "count-in"
   // mode this effect keeps the preference TRUE through the count-in, so the
   // ceiling engages only because the pre-disarm in the countInBeatsRemaining
