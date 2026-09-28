@@ -317,6 +317,13 @@ creating an audio track, loopmasters samples, error-triage flips (1097…1129).
   already keyed on the persisted `buildFeatures` list, not the label, and is unchanged: the
   release's features are `[recordingStart]`, which resolves to bands A–D — the same table the
   register's Task 9 branch runs (the #376 build) were judged against.
+- **A "double click on a downbeat" heard during the 48 kHz sweep** was traced to the harness's
+  cell cadence (the next cell's first downbeat lands 190–270 ms after the previous cell's
+  last beat click) — six independent measurements in the register section, including an
+  acoustic recording of the speakers; not an engine defect. A latent engine behaviour was
+  found on the way and drafted for upstream review (`debug/drafts/issue-metronome-click-
+  survives-pause.md`): metronome clicks in flight at a stop are never cleared and resume at
+  the next play — same code on 0.0.170, not exercised by the sweep.
 - **Regression checks on the installed build** (both pages are the standing regression tests):
   `automation-simplifier-debug-demo.html` → 116 → 11 events, 0.0037 (0.4× ε), verdict B
   (front-trim only); `swipe-comping-demo.html?sampleRate=44100` Count-in only → four clicks in

@@ -3890,26 +3890,56 @@ fixed build.
 cells pass, 0 investigate** (9 families × 5 bpms × 4 rates, max deviation 0.07–0.08 ms on
 the metronome family), 0.5 min. Same result as the 0.0.170 campaign.
 
-### A "double click on a downbeat" heard during the 48 kHz sweep (2026-09-28)
+### A "double click on a downbeat" heard during the 48 kHz sweep (2026-09-28) — resolved: harness cell cadence
 
-Reported by ear while the 48 kHz matrix ran. Checked three ways, none reproduced it in the
-engine's rendered output:
+Reported by ear while the 48 kHz matrix ran, refined by the listener to "the first downbeat
+of every cell except the first". Resolved as the harness's cell cadence, not an engine
+defect: a cell stops ~4.05 s after its start (8 beats at 120 BPM plus the stop round trip),
+finalizes in 60–100 ms, and the next cell's transport starts at once — so the next cell's
+first downbeat click lands **190–270 ms after the previous cell's last beat click**, an
+eighth-note pair straddling the boundary, heard as a double click on a downbeat. The first
+cell has nothing before it and sounds clean, which is what the listener reported. Evidence,
+in the order it was gathered:
 
-- **Every matrix capture** (the loopback = engine output 0 through the 1.5 kHz low band):
-  no two metronome-band onsets within 60 ms in any of the 30 cells at 48 kHz; every click
-  peaks at its nominal level (downbeat 0.581, beat 0.508 — an aligned duplicate would sum).
-- **The speaker feed itself**: a `ScriptProcessorNode` tee on the destination connect
-  (installed before page load) recorded the whole `loop-wrap/120/48000` cell
-  (`speaker-loopwrap-120-48000.wav`, 67.9 s): 135 clicks, no onset pair within 60 ms, all
-  peaks 0.479–0.484.
-- **The engine path**: with the metronome preference ON (the harness's setting) the
-  count-in→recording flip and `Metronome::process` are byte-identical to 0.0.170 — the
-  click ceiling that shipped for #367 is set only while the preference is OFF — and the
-  metronome schedules in `[p0, p1)`, so neither the punch-in nor a loop wrap produces two
-  clicks from one pulse.
+- **Matrix captures** (the loopback = engine output 0): no two metronome-band onsets within
+  60 ms in any 48 kHz cell; every click at its nominal level.
+- **In-graph tee of the speaker feed, whole 48 kHz sweep** (`AudioWorkletNode` recorder on
+  the engine's destination connection, immune to the harness's main-thread jank;
+  `speaker-sweep-48000.wav`, 410 s, 750 clicks): every cell's first click has the same
+  envelope as a mid-cell click (peak 0.45, smooth 50 ms decay, no re-rise); the boundary gap
+  from the previous cell's last click is ~190 ms.
+- **Every destination connection on every context** (a second run logging `AudioContext`
+  constructions and destination connects): one context, one connection — the engine's
+  output 0 — so nothing reaches the speakers that the tee did not record.
+- **Device layer**: `getOutputTimestamp()` sampled at 4 ms across three cells shows only the
+  steady 2.89 ms resync sawtooth of a 44.1 kHz output device fed by a 48 kHz context; no
+  jump at any cell start, i.e. no underrun/dropout inserted after the graph.
+- **Playback chain A/B**: a plain WebAudio click train with 0.7 s silent gaps between 4 s
+  bursts, then the same with a −70 dBFS noise floor in the gaps — the listener heard no
+  double in either, ruling out amplifier wake-up / OS effects on the first sound after silence.
+- **Acoustic recording** of the built-in microphone from the audit page (real
+  `getUserMedia` grabbed before the harness's loopback replaces it, AEC/NS/AGC off,
+  `mic-nominal120-48000.wav`, 3 cells): 51 onsets, every one a single attack (re-rise ≤ 1.11
+  on all, heads 1.03 and 1.01), beat gaps 499–503 ms and the two inter-cell gaps **273 ms
+  and 227 ms**.
 
-One capture-side signature did turn up, already present in the Task 9 branch-era captures,
-so it is not new in 0.0.172, and it never reaches the speakers:
+Harness follow-up (cosmetic): hold the next cell's start until a full beat (or bar) after the
+previous cell's last click so listening along stays interpretable.
+
+**Latent engine behaviour found on the way, not exercised here:** `Metronome::process` runs
+only while the transport plays and `pause()` / `stop()` / `stop_recording()` never clear
+`self.clicks`, so a click that has started within its 50 ms body when the transport stops is
+frozen and resumes at the next play, on top of whatever plays then (in the default monophonic
+mode the new click fades it over 5 ms; in polyphonic mode both sum). A scratch unit test
+against `crates/engine/src/metronome.rs` at the 0.0.172 tag confirmed it (a block starting a
+click, no calls, then a block from pulse 0: two clicks in the list, sample 0 at 2.0). The
+harness's stops land 64–125 ms after a beat once the stop round trip is added, past the click's
+body, so it did not fire in these runs; it would in the studio on a stop pressed during a
+click. Same code on 0.0.170. Issue draft: `debug/drafts/issue-metronome-click-survives-pause.md`
+(not posted).
+
+One capture-side signature also turned up, already present in the Task 9 branch-era captures,
+so not new in 0.0.172, and it never reaches the speakers:
 
 - **44.1 kHz head duplicate**: in 14 of 30 cells (12 of 30 on branch run `1788386775464`)
   the first click of the take is followed 19.9–20.9 ms later by a second copy at ~65 %
@@ -3919,12 +3949,8 @@ so it is not new in 0.0.172, and it never reaches the speakers:
   differs from the device rate; it sits inside the recorded take's first ~35 ms. Not
   investigated further this campaign.
 
-A second candidate was a false alarm worth recording so it is not re-found: an onset
-detector with a short refractory re-arms on the synthesized click's 50 ms release tail
-(~0.1 at +30 ms, −13 dB, same frequency as the click) and reports a "follower" after every
-beat click. The tail is identical in the speaker feed, the release captures, the branch-era
-captures and every scenario — it is the click sound, not a second click.
-
-Nothing measured explains a click heard on the speakers at 48 kHz. The next step if it recurs is a
-listening session with the destination tee armed for the whole sweep (the tee recipe above
-captures exactly what the speakers get) and a note of the cell in progress.
+A false alarm worth recording so it is not re-found: an onset detector with a short
+refractory re-arms on the synthesized click's 50 ms release tail (~0.1 at +30 ms, −13 dB,
+same frequency as the click) and reports a "follower" after every beat click. The tail is
+identical in the speaker feed, the release captures, the branch-era captures and every
+scenario — it is the click sound, not a second click.
