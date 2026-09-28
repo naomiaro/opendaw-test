@@ -293,6 +293,15 @@ export interface TakeAlignment {
    * stays independently auditable. See `TakeMeasurementInput.harnessPathBiasSec`.
    */
   medianBeatErrorMsAdjusted: number | null;
+  /**
+   * The loopback path's own input delay for this take, in ms:
+   * `firstQuantumTimeSec − anchorT0Sec` (the SDK's context time of the buffer's
+   * first frame minus the harness's estimate of the same instant from the
+   * reference clicks). Set by the cell runner on builds that report
+   * `firstQuantumTime` (a release that ships PR #376); null/absent otherwise. `classifyCell`
+   * nets it out of the adjusted median only when asked (`netLoopbackDelay`).
+   */
+  loopbackDelayMs?: number | null;
   anchorT0Sec: number | null;
   firstRefIndex: number | null;
   headMissingMs: number | null; // signal after the record request that never entered the buffer, in ms; null when not computable
@@ -559,11 +568,29 @@ export interface CellClassification {
  * Head/tail deficit gating is unaffected — those run on headMissingMs/tailMissingMs,
  * which the harness-path adjustment does not touch.
  */
+export interface ClassifyCellOptions {
+  /** Release profile: judge each repeat on `medianBeatErrorMsAdjusted − loopbackDelayMs`
+   *  where the delay is known; repeats without one keep their adjusted median. */
+  netLoopbackDelay?: boolean;
+}
+
+/** The median a repeat is judged on: netted when asked and the delay is known. */
+export function judgedMedianMs(r: TakeAlignment, netLoopbackDelay: boolean): number | null {
+  if (r.medianBeatErrorMsAdjusted === null) return null;
+  const delay = r.loopbackDelayMs;
+  if (netLoopbackDelay && typeof delay === "number" && Number.isFinite(delay)) {
+    return r.medianBeatErrorMsAdjusted - delay;
+  }
+  return r.medianBeatErrorMsAdjusted;
+}
+
 export function classifyCell(
   repeats: TakeAlignment[],
   bands: SignatureBand[],
-  alignedToleranceMs: number
+  alignedToleranceMs: number,
+  options: ClassifyCellOptions = {}
 ): CellClassification {
+  const netLoopbackDelay = options.netLoopbackDelay === true;
   if (repeats.length === 0) {
     return { status: "investigate", matchedSignature: null, detail: "no repeats to classify" };
   }
@@ -584,13 +611,25 @@ export function classifyCell(
     }
   }
 
-  const medians = repeats.map((r) => r.medianBeatErrorMsAdjusted!);
+  const medians = repeats.map((r) => judgedMedianMs(r, netLoopbackDelay)!);
+  const nettedCount = netLoopbackDelay
+    ? repeats.filter((r) => typeof r.loopbackDelayMs === "number" && Number.isFinite(r.loopbackDelayMs)).length
+    : 0;
+  // Bands A-F describe UN-netted residuals (a pre-fix placement, or the loopback
+  // delay itself). Once any repeat is judged on a netted median the bands say
+  // nothing about it: a netted cell is `aligned` or `investigate`, never a band
+  // match — otherwise a real 15-30 ms misplacement on a fixed build would read
+  // `matches-known-defect (D)`. Head-loss bands are withheld for the same reason.
+  const bandsApply = nettedCount === 0;
   const detailMedians = medians.map((m) => m.toFixed(2)).join(", ");
+  const nettedNote = netLoopbackDelay
+    ? ` netted on ${nettedCount}/${repeats.length}, adjusted=[${repeats.map((r) => r.medianBeatErrorMsAdjusted?.toFixed(2) ?? "null").join(", ")}]`
+    : "";
   const headDeficits = repeats.map((r) => r.headMissingMs).join(", ");
   const tailDeficits = repeats.map((r) => r.tailMissingMs).join(", ");
   const spread = Math.max(...medians) - Math.min(...medians);
   const mean = medians.reduce((a, b) => a + b, 0) / medians.length;
-  const detailSuffix = `medians=[${detailMedians}] spread=${spread.toFixed(2)}ms headMissingMs=[${headDeficits}] tailMissingMs=[${tailDeficits}]`;
+  const detailSuffix = `medians=[${detailMedians}]${nettedNote} spread=${spread.toFixed(2)}ms headMissingMs=[${headDeficits}] tailMissingMs=[${tailDeficits}]`;
 
   // Tail deficit: unconditional investigate, never excusable by any band.
   const hasTailDeficit = repeats.some(
@@ -609,13 +648,13 @@ export function classifyCell(
     (r) => r.headMissingMs !== null && r.headMissingMs > alignedToleranceMs
   );
   if (hasHeadDeficit) {
-    const headLossBand = bands.find(
+    const headLossBand = bandsApply ? bands.find(
       (b) =>
         b.kind === "head-loss" &&
         repeats.every(
           (r) => r.headMissingMs !== null && r.headMissingMs >= b.minAbsMs && r.headMissingMs <= b.maxAbsMs
         )
-    );
+    ) : undefined;
     if (headLossBand !== undefined) {
       return {
         status: "matches-known-defect",
@@ -635,6 +674,14 @@ export function classifyCell(
       status: "aligned",
       matchedSignature: null,
       detail: `all repeats within ${alignedToleranceMs}ms tolerance: ${detailSuffix}`,
+    };
+  }
+
+  if (!bandsApply) {
+    return {
+      status: "investigate",
+      matchedSignature: null,
+      detail: `netted median outside ${alignedToleranceMs}ms tolerance (no band applies to a netted cell): ${detailSuffix}`,
     };
   }
 

@@ -9,7 +9,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { loadCalibrationSummary } from "./artifacts.ts";
+import { asClassifiable, loadCalibrationSummary } from "./artifacts.ts";
 
 let dir = "";
 beforeAll(() => { dir = mkdtempSync(join(tmpdir(), "recaudit-loader-")); });
@@ -121,5 +121,19 @@ describe("loadCalibrationSummary", () => {
   it("refuses a cell without a status string or a rows list, and a hop list with a non-finite entry", () => {
     expect(envelope({ ...oldEnvelope, cell: { status: "aligned" } })).toThrow(/"cell" lacks a status string or a rows list/);
     expect(envelope({ ...oldEnvelope, harnessLoopbackHopPerRowSec: [null] })).toThrow(/"harnessLoopbackHopPerRowSec" is not a list of finite numbers/);
+  });
+});
+
+describe("asClassifiable", () => {
+  const row = (extra: Record<string, unknown>) => ({
+    scenario: "nominal-start", bpm: 120, rate: 48000, repeat: 1, takeIndex: 0,
+    medianBeatErrorMs: -4.2, medianBeatErrorMsAdjusted: 18.8, matchedBeats: 16, missingBeats: 0,
+    headMissingMs: 0, tailMissingMs: 0, status: "matches-known-defect", matchedSignature: "B", detail: "",
+    ...extra,
+  }) as never;
+  it("passes loopbackDelayMs through (absent → null) so a script can opt into netting", () => {
+    expect(asClassifiable(row({})).loopbackDelayMs).toBeNull();
+    expect(asClassifiable(row({ loopbackDelayMs: 17.6 })).loopbackDelayMs).toBe(17.6);
+    expect(asClassifiable(row({ loopbackDelayMs: null })).loopbackDelayMs).toBeNull();
   });
 });

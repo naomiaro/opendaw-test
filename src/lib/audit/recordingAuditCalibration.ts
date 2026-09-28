@@ -127,7 +127,7 @@ export const SIGNATURE_BANDS: Record<RecordingScenario, SignatureBand[]> = {
  * `unknown` (bring-up runs that predate the probe) resolves to `upstream`,
  * which is what those runs measured.
  */
-export type AuditBuildProfileKey = "upstream" | "candidate";
+export type AuditBuildProfileKey = "upstream" | "candidate" | "release";
 
 /**
  * SDK surfaces the harness probes at load and persists per run (`buildFeatures`
@@ -161,12 +161,13 @@ export type AuditBuildFeature = "recordingStart" | "calibrateInputLatency" | "la
  * keep-alive sink holds pulled, and that build has the sink, so the fallback
  * gives those artifacts the table that describes them. The feature rule below
  * cannot: it keys on `latencyProbes`, which ac1c15ea8 does not export, so a
- * FRESH run of that same build resolves to `upstream` and reads `investigate`
- * for nominal-start. The two rules therefore disagree about ac1c15ea8, on
- * purpose: the fallback is retrospective and knows which build wrote the file,
- * the feature rule is prospective and only knows what the served build exposes,
- * and it fails toward the table the campaign measured rather than toward a
- * quiet match.
+ * FRESH run of that same build resolves to `release` (it ships `recordingStart`;
+ * before the release profile existed it resolved to `upstream` and read
+ * `investigate` for nominal-start). The two rules therefore disagree about
+ * ac1c15ea8, on purpose: the fallback is retrospective and knows which build
+ * wrote the file, the feature rule is prospective and only knows what the served
+ * build exposes, and it never assumes the E/F chain behaviour from a build it
+ * cannot see the sink on.
  */
 export const KEEP_ALIVE_PROFILE_FROM_RUN = 1788384000000;
 
@@ -189,8 +190,21 @@ export const KEEP_ALIVE_PROFILE_FROM_RUN = 1788384000000;
  * neighbouring commit's export instead. The limit that leaves is narrow — a
  * build that cherry-picks `LatencyProbes` without the sink, which no build in
  * this branch's history does — and it is one-directional: a pre-keep-alive
- * calibration build now resolves to `upstream`, which is the conservative
- * answer, since bands A-D were what the campaign measured it against.
+ * calibration build never resolves to `candidate`; it resolves to `release`
+ * (below; it resolved to `upstream` before that profile existed).
+ *
+ * `recordingStart` without `LatencyProbes` — every release that ships PR #376,
+ * Task 9's branch, and the two calibration builds that predate the configurable
+ * probe — resolves to `release`: the take is anchored
+ * on the engine's own start and the row carries `firstQuantumTimeSec`, so the
+ * loopback path's own delay (`firstQuantumTimeSec − anchorT0Sec`) is netted out
+ * per row before the tolerance test (`RecordingAuditProfile.netLoopbackDelay`,
+ * consumed by `classifyCell`'s `netLoopbackDelay` option). Bands A–D stay as
+ * that profile's fallback table for rows without a delay. Before this profile
+ * existed those builds resolved to `upstream`, where B/D matched the +17…+23 ms
+ * residual by range coincidence; the register's "Standing sweep" section for the
+ * first such release records both readings. Measured on its sweeps
+ * (`1790622731936`, `1790623224013`): netted medians +0.97…+1.19 ms on 120 of 120 rows.
  *
  * Without `features`, the run-token fallback above applies, and a caller passing
  * neither gets `upstream` — so every call site predating per-build profiles is
@@ -211,7 +225,9 @@ export function profileKeyFor(
   features?: readonly string[] | null
 ): AuditBuildProfileKey {
   if (Array.isArray(features)) {
-    return features.includes("latencyProbes") ? "candidate" : "upstream";
+    if (features.includes("latencyProbes")) return "candidate";
+    if (features.includes("recordingStart")) return "release";
+    return "upstream";
   }
   const isKeepAliveEra = typeof runId === "number" && Number.isFinite(runId) && runId >= KEEP_ALIVE_PROFILE_FROM_RUN;
   return build === "candidate" && isKeepAliveEra ? "candidate" : "upstream";
@@ -222,6 +238,18 @@ export interface RecordingAuditProfile {
   /** What the profile describes, and whether its bands are predictions or measurements. */
   description: string;
   signatureBands: Record<RecordingScenario, SignatureBand[]>;
+  /** Net each repeat's persisted loopback delay (`loopbackDelayMs`) out of its
+   *  adjusted median before `classifyCell`'s tolerance test — see `profileKeyFor`. */
+  netLoopbackDelay: boolean;
+}
+
+/** The whole profile an artifact resolves to (`signatureBandsFor` is its bands only). */
+export function auditProfileFor(
+  build: string | null | undefined,
+  runId?: number | null,
+  features?: readonly string[] | null
+): RecordingAuditProfile {
+  return RECORDING_AUDIT_PROFILES[profileKeyFor(build, runId, features)];
 }
 
 /**
@@ -287,6 +315,16 @@ export const RECORDING_AUDIT_PROFILES: Record<AuditBuildProfileKey, RecordingAud
       "Predicted signatures from the campaign spec (bands A-D), tested against the installed " +
       "0.0.170 and the pre-keep-alive branch builds. Frozen so historical artifacts keep their verdicts.",
     signatureBands: SIGNATURE_BANDS,
+    netLoopbackDelay: false,
+  },
+  release: {
+    key: "release",
+    description:
+      "A build that anchors takes on the engine's own recording start (PR #376): the " +
+      "loopback path's own delay is netted out per row before the tolerance test, so a correctly " +
+      "placed take reads aligned; bands A-D remain the fallback for rows without a delay.",
+    signatureBands: SIGNATURE_BANDS,
+    netLoopbackDelay: true,
   },
   candidate: {
     key: "candidate",
@@ -300,5 +338,6 @@ export const RECORDING_AUDIT_PROFILES: Record<AuditBuildProfileKey, RecordingAud
       "countin-start": KEEP_ALIVE_BANDS,
       "loop-wrap": KEEP_ALIVE_BANDS,
     },
+    netLoopbackDelay: false,
   },
 };
