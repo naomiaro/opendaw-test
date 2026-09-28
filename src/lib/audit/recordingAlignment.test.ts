@@ -309,6 +309,32 @@ describe("classifyCell", () => {
   it("aligned when every repeat is within tolerance", () => {
     expect(classifyCell([take(0.5), take(-1.1), take(0.9)], bands, 2).status).toBe("aligned");
   });
+  // Release profile (SDK 0.0.172+): the row's `loopbackDelayMs` — the loopback
+  // path's own input delay, `firstQuantumTimeSec − anchorT0Sec` — is netted out
+  // of the adjusted median before the tolerance test. Measured on the 0.0.172
+  // sweeps: adjusted +10.8…+24.3 ms, delay 9.6…23.2 ms, netted +0.97…+1.19 ms.
+  const netted = (adjustedMs: number, loopbackDelayMs: number | null): TakeAlignment =>
+    ({ ...take(adjustedMs), loopbackDelayMs });
+  it("nets the per-row loopback delay when asked, so a fixed build reads aligned", () => {
+    const repeats = [netted(18.77, 17.6), netted(22.77, 21.6), netted(10.77, 9.6)];
+    expect(classifyCell(repeats, bands, 2).status).toBe("matches-known-defect"); // A-D by range coincidence
+    const c = classifyCell(repeats, bands, 2, { netLoopbackDelay: true });
+    expect(c.status).toBe("aligned");
+    expect(c.detail).toContain("netted");
+  });
+  it("a misplacement still fails the netted verdict", () => {
+    const c = classifyCell([netted(30, 17.6), netted(34, 21.6), netted(22, 9.6)], bands, 2, { netLoopbackDelay: true });
+    expect(c.status).not.toBe("aligned");
+  });
+  it("nets only the repeats that carry a delay; the rest keep their adjusted median", () => {
+    const c = classifyCell([netted(18.77, 17.6), netted(22.77, null), netted(10.77, 9.6)], bands, 2, { netLoopbackDelay: true });
+    expect(c.status).not.toBe("aligned");
+    expect(c.detail).toContain("22.77");
+  });
+  it("ignores loopbackDelayMs unless netting is requested", () => {
+    expect(classifyCell([netted(1.1, 17.6), netted(0.5, 21.6)], bands, 2).status).toBe("aligned");
+    expect(classifyCell([netted(1.1, 17.6), netted(0.5, 21.6)], bands, 2, { netLoopbackDelay: true }).status).not.toBe("aligned");
+  });
   it("matches a random-band signature when repeats scatter inside the band", () => {
     const c = classifyCell([take(9), take(-12), take(5)], bands, 2);
     expect(c.status).toBe("matches-known-defect");

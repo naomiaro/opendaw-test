@@ -676,6 +676,18 @@ export async function runCellRepeat(options: CellRepeatOptions): Promise<CellRep
       headMissingBaselineMs: HEAD_MISSING_BASELINE_MS,
       harnessPathBiasSec,
     });
+    // Release profile (SDK 0.0.172+): the loopback path's own delay for this
+    // take, netted out of the adjusted median by `classifyCell` when the served
+    // build's profile asks for it (`auditProfileFor(...).netLoopbackDelay`).
+    const loopbackDelayMs =
+      typeof firstQuantumTimeSec === "number" && alignment.anchorT0Sec !== null
+        ? (firstQuantumTimeSec - alignment.anchorT0Sec) * 1000
+        : null;
+    alignment.loopbackDelayMs = loopbackDelayMs;
+    const medianBeatErrorMsNetted =
+      loopbackDelayMs !== null && alignment.medianBeatErrorMsAdjusted !== null
+        ? alignment.medianBeatErrorMsAdjusted - loopbackDelayMs
+        : null;
     alignments.push({ takeIndex, alignment });
     // No reference click identified: head/tail deficits are null and the row is
     // persisted with those nulls (classifyCell reports the cell "integrity
@@ -705,7 +717,9 @@ export async function runCellRepeat(options: CellRepeatOptions): Promise<CellRep
       " medianBeatErrorMsAdjusted=" + String(alignment.medianBeatErrorMsAdjusted) +
       " headMissingMs=" + String(alignment.headMissingMs) +
       " headMissingRawMs=" + String(headMissingRawMs) +
-      " firstQuantumTimeSec=" + String(firstQuantumTimeSec)
+      " firstQuantumTimeSec=" + String(firstQuantumTimeSec) +
+      " loopbackDelayMs=" + String(loopbackDelayMs) +
+      " medianBeatErrorMsNetted=" + String(medianBeatErrorMsNetted)
     );
     rows.push({
       scenario,
@@ -730,6 +744,8 @@ export async function runCellRepeat(options: CellRepeatOptions): Promise<CellRep
       recordRequestContextTime,
       finalizeMs,
       firstQuantumTimeSec,
+      loopbackDelayMs,
+      medianBeatErrorMsNetted,
       harnessPathBiasSec,
       ...finalizeProbe,
       clockNoiseIdentifiedClicks,

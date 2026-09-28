@@ -419,6 +419,17 @@ sample-rate/quantum-alignment sweep in root CLAUDE.md's Build & Verification.
   also closed #375 (simultaneous-take `AudioFileBox` collision — the capture now owns the
   recording uuid, no box swap after save); #374 (residual start-placement bias) stays open
   with PRs #378 / #380. The post-upgrade sweep on 0.0.172 is in the register.
+- **Release profile (SDK 0.0.172+).** `auditProfileFor()` resolves a build whose
+  `buildFeatures` carry `recordingStart` but not `latencyProbes` to the `release` profile:
+  `classifyCell(..., { netLoopbackDelay: true })` judges each repeat on
+  `medianBeatErrorMsAdjusted − loopbackDelayMs`, where `loopbackDelayMs =
+  (firstQuantumTimeSec − anchorT0Sec) · 1000` is the loopback path's own input delay for
+  that row (persisted per row with `medianBeatErrorMsNetted`, schema generation G7).
+  Measured on the 0.0.172 sweeps: netted +0.97…+1.19 ms on 120/120 rows, so a correctly
+  placed take reads `aligned` and a misplacement fails it. Bands A–D stay as the profile's
+  fallback for rows without a delay. The offline scripts do NOT net (they replay the
+  persisted A–D verdicts; their oracle files are unchanged) — a script wanting the netted
+  verdict passes the option explicitly.
 - **Signature bands are per SDK build.** `signatureBandsFor()` picks the band table from
   the `buildFeatures` list the page probes off the live SDK and persists on the envelope:
   bands A–D (predicted, written before their data existed) for the installed release, and

@@ -127,7 +127,7 @@ export const SIGNATURE_BANDS: Record<RecordingScenario, SignatureBand[]> = {
  * `unknown` (bring-up runs that predate the probe) resolves to `upstream`,
  * which is what those runs measured.
  */
-export type AuditBuildProfileKey = "upstream" | "candidate";
+export type AuditBuildProfileKey = "upstream" | "candidate" | "release";
 
 /**
  * SDK surfaces the harness probes at load and persists per run (`buildFeatures`
@@ -192,6 +192,19 @@ export const KEEP_ALIVE_PROFILE_FROM_RUN = 1788384000000;
  * calibration build now resolves to `upstream`, which is the conservative
  * answer, since bands A-D were what the campaign measured it against.
  *
+ * `recordingStart` without `LatencyProbes` — every release from SDK 0.0.172 on
+ * (PR #376 merged), Task 9's branch, and the two calibration builds that
+ * predate the configurable probe — resolves to `release`: the take is anchored
+ * on the engine's own start and the row carries `firstQuantumTimeSec`, so the
+ * loopback path's own delay (`firstQuantumTimeSec − anchorT0Sec`) is netted out
+ * per row before the tolerance test (`RecordingAuditProfile.netLoopbackDelay`,
+ * consumed by `classifyCell`'s `netLoopbackDelay` option). Bands A–D stay as
+ * that profile's fallback table for rows without a delay. Before this profile
+ * existed those builds resolved to `upstream`, where B/D matched the +17…+23 ms
+ * residual by range coincidence; the register's 0.0.172 section records both
+ * readings. Measured on the 0.0.172 sweeps (`1790622731936`, `1790623224013`):
+ * netted medians +0.97…+1.19 ms on 120 of 120 rows.
+ *
  * Without `features`, the run-token fallback above applies, and a caller passing
  * neither gets `upstream` — so every call site predating per-build profiles is
  * unchanged and no historical output moves.
@@ -211,7 +224,9 @@ export function profileKeyFor(
   features?: readonly string[] | null
 ): AuditBuildProfileKey {
   if (Array.isArray(features)) {
-    return features.includes("latencyProbes") ? "candidate" : "upstream";
+    if (features.includes("latencyProbes")) return "candidate";
+    if (features.includes("recordingStart")) return "release";
+    return "upstream";
   }
   const isKeepAliveEra = typeof runId === "number" && Number.isFinite(runId) && runId >= KEEP_ALIVE_PROFILE_FROM_RUN;
   return build === "candidate" && isKeepAliveEra ? "candidate" : "upstream";
@@ -222,6 +237,18 @@ export interface RecordingAuditProfile {
   /** What the profile describes, and whether its bands are predictions or measurements. */
   description: string;
   signatureBands: Record<RecordingScenario, SignatureBand[]>;
+  /** Net each repeat's persisted loopback delay (`loopbackDelayMs`) out of its
+   *  adjusted median before `classifyCell`'s tolerance test — see `profileKeyFor`. */
+  netLoopbackDelay: boolean;
+}
+
+/** The whole profile an artifact resolves to (`signatureBandsFor` is its bands only). */
+export function auditProfileFor(
+  build: string | null | undefined,
+  runId?: number | null,
+  features?: readonly string[] | null
+): RecordingAuditProfile {
+  return RECORDING_AUDIT_PROFILES[profileKeyFor(build, runId, features)];
 }
 
 /**
@@ -287,6 +314,16 @@ export const RECORDING_AUDIT_PROFILES: Record<AuditBuildProfileKey, RecordingAud
       "Predicted signatures from the campaign spec (bands A-D), tested against the installed " +
       "0.0.170 and the pre-keep-alive branch builds. Frozen so historical artifacts keep their verdicts.",
     signatureBands: SIGNATURE_BANDS,
+    netLoopbackDelay: false,
+  },
+  release: {
+    key: "release",
+    description:
+      "A build that anchors takes on the engine's own recording start (SDK 0.0.172+, PR #376): the " +
+      "loopback path's own delay is netted out per row before the tolerance test, so a correctly " +
+      "placed take reads aligned; bands A-D remain the fallback for rows without a delay.",
+    signatureBands: SIGNATURE_BANDS,
+    netLoopbackDelay: true,
   },
   candidate: {
     key: "candidate",
@@ -300,5 +337,6 @@ export const RECORDING_AUDIT_PROFILES: Record<AuditBuildProfileKey, RecordingAud
       "countin-start": KEEP_ALIVE_BANDS,
       "loop-wrap": KEEP_ALIVE_BANDS,
     },
+    netLoopbackDelay: false,
   },
 };

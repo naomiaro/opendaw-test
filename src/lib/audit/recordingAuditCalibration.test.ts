@@ -10,6 +10,7 @@ import {
   RECORDING_AUDIT_PROFILES,
   RECORDING_AUDIT_SCENARIOS,
   SIGNATURE_BANDS,
+  auditProfileFor,
   profileKeyFor,
   signatureBandsFor,
 } from "./recordingAuditCalibration";
@@ -34,26 +35,32 @@ describe("profileKeyFor", () => {
     expect(profileKeyFor("candidate", 1788386290685, FEATURES.configurableProbe)).toBe("candidate");
   });
 
-  it("keeps a pre-keep-alive calibration build on the upstream bands", () => {
+  it("never resolves a calibration build without LatencyProbes to the candidate bands", () => {
     // The regression this rule exists for: `calibrateInputLatency` alone is NOT
     // enough, because f0c44b06c exposes it and its input chain behaves
     // differently from the build bands E/F were fitted to. A run served from
-    // that override would otherwise be judged against the wrong table.
-    expect(profileKeyFor("candidate", 1788386290685, FEATURES.preKeepAliveCalibration)).toBe("upstream");
+    // that override would otherwise be judged against the wrong table. (Such a
+    // build now resolves to `release` — see the test below — never `candidate`.)
+    expect(profileKeyFor("candidate", 1788386290685, FEATURES.preKeepAliveCalibration)).not.toBe("candidate");
+    expect(profileKeyFor("candidate", 1788386290685, FEATURES.keepAlive)).not.toBe("candidate");
   });
 
-  it("keeps the keep-alive build on the upstream bands, which is the fail-loud side", () => {
-    // ac1c15ea8 has the sink but not the configurable probe, and its override is
-    // also kept for A/B. Resolving it to `upstream` means a new sweep on it would
-    // read `investigate` for nominal-start (its spread is ≤ 0.7 ms, below band B's
-    // precondition) rather than quietly matching bands fitted to a later build —
-    // the safe direction for a key that cannot see the sink itself.
-    expect(profileKeyFor("candidate", 1788386290685, FEATURES.keepAlive)).toBe("upstream");
-  });
-
-  it("keeps builds with no calibration surfaces on the upstream bands", () => {
+  it("keeps builds with no recording-start surface on the upstream bands", () => {
     expect(profileKeyFor("upstream", 1788386290685, FEATURES.installed)).toBe("upstream");
-    expect(profileKeyFor("candidate", 1788386290685, FEATURES.startAlignment)).toBe("upstream");
+  });
+
+  it("selects the release profile for a build that ships recordingStart without LatencyProbes", () => {
+    // SDK 0.0.172+ (PR #376 merged) and Task 9's branch: the take is anchored on
+    // the engine's own start and the row carries `firstQuantumTimeSec`, so the
+    // loopback's own delay can be netted per row — bands A-D describe the
+    // pre-#376 placement and would only match such a build by range coincidence.
+    expect(profileKeyFor("upstream", 1790622731936, FEATURES.startAlignment)).toBe("release");
+    expect(profileKeyFor("candidate", 1788328219906, FEATURES.startAlignment)).toBe("release");
+    // The pre-keep-alive calibration build also ships recordingStart: it moves
+    // from `upstream` to `release` too — its rows carry firstQuantumTimeSec, so
+    // the netted verdict describes its placement better than bands A-D did.
+    expect(profileKeyFor("candidate", 1788386290685, FEATURES.preKeepAliveCalibration)).toBe("release");
+    expect(profileKeyFor("candidate", 1788386290685, FEATURES.keepAlive)).toBe("release");
   });
 
   it("ignores the build probe once a feature list is present — the served SDK decides, not the label", () => {
@@ -197,5 +204,24 @@ describe("classifyCell under the candidate (E/F) profile", () => {
     const c = classifyCell([take(16.3, 5), take(16.5), take(16.4)], bands, ALIGNED_TOLERANCE_MS);
     expect(c.status).toBe("investigate");
     expect(c.detail).toMatch(/head deficit exceeds/);
+  });
+});
+
+describe("release profile", () => {
+  it("nets the loopback delay and falls back to bands A-D", () => {
+    const profile = auditProfileFor("upstream", 1790622731936, FEATURES.startAlignment);
+    expect(profile.key).toBe("release");
+    expect(profile.netLoopbackDelay).toBe(true);
+    for (const scenario of RECORDING_AUDIT_SCENARIOS) {
+      expect(profile.signatureBands[scenario]).toBe(SIGNATURE_BANDS[scenario]);
+    }
+    expect(RECORDING_AUDIT_PROFILES.upstream.netLoopbackDelay).toBe(false);
+    expect(RECORDING_AUDIT_PROFILES.candidate.netLoopbackDelay).toBe(false);
+  });
+
+  it("signatureBandsFor keeps returning A-D for the release profile", () => {
+    for (const scenario of RECORDING_AUDIT_SCENARIOS) {
+      expect(signatureBandsFor(scenario, "upstream", 1790622731936, FEATURES.startAlignment)).toBe(SIGNATURE_BANDS[scenario]);
+    }
   });
 });
