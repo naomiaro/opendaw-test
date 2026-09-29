@@ -33,7 +33,7 @@ const REGISTER_RUNS = [
   // Three repeats per cell; the page judged them on the raw skew.
   "1790707818551", "1790710650174", "1790710747979", "1790710801157",
   // Eight repeats per cell; the page judged them on the netted skew.
-  "1790711541897", "1790711774452", "1790711921325", "1790712215292", "1790712952262",
+  "1790711541897", "1790711774452", "1790711921325", "1790712215292", "1790712952262", "1790714222787",
 ];
 
 const runs = process.argv.length > 2 ? process.argv.slice(2) : REGISTER_RUNS;

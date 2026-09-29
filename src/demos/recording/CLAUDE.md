@@ -403,15 +403,26 @@ sample-rate/quantum-alignment sweep in root CLAUDE.md's Build & Verification.
 **Reading a multi-mic verdict.** On a build whose profile nets the loopback delay, a
 multi-mic cell is `aligned` when (1) each tape classifies clean on its own, (2) the
 NETTED skew — raw skew minus the difference between the two tapes' `loopbackDelayMs` —
-is within 2 ms on every repeat, and (3) the raw skew is within
-`MULTITRACK_RAW_SKEW_LIMIT_MS` on every repeat. The raw skew itself is NOT a verdict: the
-two loopback streams each have their own delay, on a lattice of a quarter render quantum,
-and differ by 0 to 4 quanta from one repeat to the next (measured up to 10.67 ms), so
-the raw skew is reported as a spread over render quanta in the cell's detail, over
-`MULTITRACK_REPEATS_PER_CELL` repeats. What the netted skew says is narrow: the SDK
-placed both takes the same way against its own first-frame times. Where the sound sits
-in each buffer cancels out of it, which is why rule 3 exists — and a skew inside that
-limit is not told apart from the two streams' delays. Replay saved runs with
+is within `ALIGNED_TOLERANCE_MS` on every repeat, and (3) the raw skew of every netted
+repeat is within `MULTITRACK_RAW_SKEW_LIMIT_MS`. A repeat that lacks a delay is judged
+on its raw skew against the tolerance and marked `raw` in the detail. On a build whose
+profile does not net, the rule is (1) and the raw skew within the tolerance.
+
+The raw skew itself is NOT a verdict: it moves by 0 to 4 render quanta from one repeat
+to the next (measured up to 10.67 ms; at 48 kHz the streams' delays sit on a lattice of
+a quarter quantum), so it is reported as a spread over render quanta in the cell's
+detail, over `MULTITRACK_REPEATS_PER_CELL` repeats.
+
+What a netted `aligned` says is narrow: the SDK placed both takes the same way against
+its own first-frame times. Where the sound sits in each buffer cancels out of the netted
+skew, and so does any error in a first-frame time, which is why rule 3 exists — and a
+raw skew inside that limit is NOT attributed. It is taken to be the two loopback
+streams' own delays; the harness has no measurement of a stream's delay that does not go
+through the SDK's first-frame time. Never quote a raw multi-mic skew as an SDK finding,
+and never quote a netted `aligned` as "the two recordings line up".
+
+`classifyMultitrackCell` throws when asked to net without one delay record per repeat or
+without a limit above zero. Replay saved runs (one sample rate at a time) with
 `node scripts/audit/recording-alignment/task13-multitrack-netted-verdict.ts [runId …]`.
 
 - Measurement library: `src/lib/audit/recordingAlignment.ts`; calibration constants:
