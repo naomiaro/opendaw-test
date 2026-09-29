@@ -1,7 +1,7 @@
 # Nano Sampler Demo — Design
 
 Date: 2026-09-29
-Branch: `feat/nano-demo` (stacked on `chore/instruments-subfolders`, PR #130)
+Branch: `feat/nano-demo` (on `main`; the instrument folder move landed in PR #130)
 
 ## Purpose
 
