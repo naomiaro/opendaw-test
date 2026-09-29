@@ -18,7 +18,7 @@ export interface ImpulseResponseSpec {
 }
 
 /** Deterministic PRNG (mulberry32) — the gallery must render identically every load */
-function mulberry32(seed: number): () => number {
+export function mulberry32(seed: number): () => number {
   let state = seed >>> 0;
   return () => {
     state = (state + 0x6d2b79f5) | 0;
