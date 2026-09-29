@@ -10,6 +10,7 @@ import { DropZone } from "@/components/DropZone";
 import { ParamSlider } from "@/components/ParamSlider";
 import { PianoKeyboard, PIANO_STYLES } from "@/demos/midi/PianoKeyboard";
 import { CONSOLE_STYLES } from "@/lib/design/consoleTheme";
+import { NanoWaveform, WAVEFORM_STYLES } from "./NanoWaveform";
 import { buildNanoDemoContent, NANO_DEMO_BPM, type CurrentSample, type NanoDemoSetup } from "./nanoContent";
 import "@radix-ui/themes/styles.css";
 import { Theme, Container, Text, Flex, Card, Callout, Badge, Button, Switch, Grid } from "@radix-ui/themes";
@@ -74,8 +75,7 @@ const App: React.FC = () => {
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
   const [setup, setSetup] = useState<NanoDemoSetup | null>(null);
   const [current, setCurrent] = useState<CurrentSample | null>(null);
-  // Task 7 reads this value; until then only the setter is named (an unread state value fails the type check).
-  const [, setPeaksVersion] = useState(0);
+  const [peaksVersion, setPeaksVersion] = useState(0);
   const [sampleError, setSampleError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -217,6 +217,7 @@ const App: React.FC = () => {
       <style>{CONSOLE_STYLES}</style>
       <style>{PAGE_STYLES}</style>
       <style>{PIANO_STYLES}</style>
+      <style>{WAVEFORM_STYLES}</style>
       <Container size="4" px="4" py="8">
         <GitHubCorner />
         <BackLink />
@@ -280,7 +281,22 @@ const App: React.FC = () => {
                 </Flex>
               </Card>
 
-              {/* WAVEFORM — Task 7 inserts <NanoWaveform …/> in a Card here */}
+              <Card>
+                <Flex direction="column" gap="3">
+                  <Flex align="center" justify="between" wrap="wrap" gap="2">
+                    <Text size="2" weight="bold" color="gray">Waveform</Text>
+                    <Text size="1" color="gray">
+                      Drag S and E to set the region, L to set the loop. Arrow keys move a focused marker.
+                    </Text>
+                  </Flex>
+                  <NanoWaveform
+                    project={project}
+                    adapter={setup.adapter}
+                    sampleSeconds={current.seconds}
+                    peaksVersion={peaksVersion}
+                  />
+                </Flex>
+              </Card>
 
               <Card>
                 <Flex align="center" gap="3" wrap="wrap">
