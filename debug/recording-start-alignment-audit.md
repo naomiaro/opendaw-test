@@ -4102,9 +4102,9 @@ the section above.
 
 ### Reading
 
-- **The stored-sample sweep does not disturb recording.** 132 single-tape and multi-mic
-  repeats were saved into `samples/v2` and read back after the folder had been cleared at
-  page load; none failed to finalize.
+- **The stored-sample sweep does not disturb recording.** 108 recordings (60 single-tape
+  repeats, and 24 multi-mic repeats on two tapes each) were saved into `samples/v2` and
+  read back after the folder had been cleared at page load; none failed to finalize.
 - **The strict fixes did not change the harness.** Single-tape placement is the same to
   the hundredth of a millisecond as before them (netted +1.07…+1.17 at 48 kHz,
   +0.97…+1.19 at 44.1 kHz).
