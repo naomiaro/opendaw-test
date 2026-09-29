@@ -13,12 +13,14 @@ import {
   SampleProvider,
   SoundfontProvider,
   SampleService,
+  SampleStorage,
 } from "@opendaw/studio-core";
 import type { SoundfontService } from "@opendaw/studio-core";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { testFeatures } from "../features";
 import { installWasmEngine, ensureWasmReady } from "./wasmEngine";
 import { withDeadline } from "./deadline";
+import { clearStoredSamples } from "./storedSamples";
 
 import WorkersUrl from "@opendaw/studio-core/workers-main.js?worker&url";
 import WorkletsUrl from "@opendaw/studio-core/processors.js?url";
@@ -120,6 +122,19 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
   // OfflineEngineRenderer (the TS offline worker was removed with the TS engine).
   await Workers.install(WorkersUrl);
   AudioWorklets.install(WorkletsUrl);
+
+  // The SDK stores every sample it loads and removes none. The demos never read
+  // one back, so sweep them here, before this page stores any of its own.
+  const storedSamples = await clearStoredSamples({
+    locks: "locks" in navigator ? navigator.locks : undefined,
+    deleteFolder: path => Workers.Opfs.delete(path),
+    folder: SampleStorage.Folder,
+  });
+  if (storedSamples.startsWith("failed")) {
+    console.warn("Stored samples were not cleared (" + storedSamples + "). The page loads as usual.");
+  } else {
+    console.debug("Stored samples: " + storedSamples);
+  }
 
   // Test browser features
   const { status: testStatus, error: testError } = await Promises.tryCatch(testFeatures());

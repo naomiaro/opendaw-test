@@ -250,6 +250,41 @@ samples/v2/{uuid}/
   meta.json      ← bpm, duration, sample rate, origin
 ```
 
+### Stored samples pile up
+
+The SDK writes every sample its loader fetches to `samples/v2/`, and every finished
+recording too. It removes a stored sample only when the project was told the sample is
+user-created (`project.trackUserCreatedSample(uuid)`) and the last box pointing at it is
+deleted. A sample you hand the loader from memory under a fresh uuid is stored and never
+removed, so an app that makes new uuids on every page load grows its storage on every
+page load.
+
+If your app never reads a stored sample back, clear the folder when the page loads,
+before the project exists:
+
+```typescript
+import { SampleStorage, Workers } from "@opendaw/studio-core";
+
+await Workers.install(workersUrl);
+await Workers.Opfs.delete(SampleStorage.Folder); // "samples/v2", recursive
+```
+
+The folder belongs to the whole origin, not to one tab. A tab that is already open may
+be saving a recording into it, so skip the sweep while another tab is open. The demos
+do this with a Web Lock each page holds while it lives
+(`src/lib/storedSamples.ts`):
+
+```typescript
+await navigator.locks.request("my-app:page-open", { mode: "exclusive", ifAvailable: true }, async lock => {
+  if (lock !== null) await Workers.Opfs.delete(SampleStorage.Folder); // nobody else is open
+  // Ask for the shared lock while the exclusive one is still held, so it is next in line.
+  void navigator.locks.request("my-app:page-open", { mode: "shared" }, () => new Promise(() => {}));
+});
+```
+
+If your app does keep samples between visits, keep the uuids stable instead, so a
+sample is stored once and found again.
+
 ### Clearing everything
 
 If you need a clean slate:
