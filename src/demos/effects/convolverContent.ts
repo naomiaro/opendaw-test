@@ -1,4 +1,4 @@
-import { UUID } from "@opendaw/lib-std";
+import { Terminable, UUID } from "@opendaw/lib-std";
 import { PPQN } from "@opendaw/lib-dsp";
 import { Project, EffectFactories } from "@opendaw/studio-core";
 import {
@@ -52,8 +52,10 @@ export interface ConvolverDemoSetup {
   readonly removeIR: () => null;
 }
 
-// Stable per-page-load UUIDs so re-selecting a gallery IR reuses its cached
-// sample loader instead of re-fetching under a fresh identity.
+// Stable per-page-load UUIDs, so re-selecting a gallery IR resolves to the same
+// stored sample instead of storing another copy under a fresh identity. (Its
+// loader does not survive: deleting a file box ends the loader, and selecting
+// the IR again builds a new one.)
 const galleryUUIDs = new Map<string, UUID.Bytes>();
 const galleryUUID = (specId: string): UUID.Bytes => {
   let uuid = galleryUUIDs.get(specId);
@@ -192,9 +194,13 @@ export async function buildConvolverDemoContent(
     releaseDeleted(deletedUUID);
   };
 
+  // One watch at a time: an error for an impulse that is no longer selected must not be shown.
+  let loadWatch: Terminable = Terminable.Empty;
   const reportLoadError = (uuid: UUID.Bytes, name: string, onLoadError?: IRLoadErrorHandler): void => {
+    loadWatch.terminate();
+    loadWatch = Terminable.Empty;
     if (!onLoadError) return;
-    watchSampleLoad(project, uuid, {
+    loadWatch = watchSampleLoad(project, uuid, {
       onError: reason => onLoadError(`Impulse "${name}" failed to load: ${reason}`),
     });
   };
@@ -227,6 +233,8 @@ export async function buildConvolverDemoContent(
   };
 
   const removeIR = (): null => {
+    loadWatch.terminate();
+    loadWatch = Terminable.Empty;
     let deletedUUID: string | null = null;
     project.editing.modify(() => {
       const filePointer = convolver.file;

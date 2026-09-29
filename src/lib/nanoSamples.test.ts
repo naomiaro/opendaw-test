@@ -97,10 +97,28 @@ describe("NANO_SAMPLES", () => {
     expect(first[1]).toEqual(second[1]);
   });
 
-  it.each(cases)("%s starts and ends near silence at %d Hz", (_id, rate, spec) => {
-    const [left] = spec.render(rate);
-    expect(Math.abs(left[0])).toBeLessThan(0.05);
-    expect(Math.abs(left[left.length - 1])).toBeLessThan(0.05);
+  it.each(cases)("%s starts and ends near silence on both channels at %d Hz", (_id, rate, spec) => {
+    for (const channel of spec.render(rate)) {
+      expect(Math.abs(channel[0])).toBeLessThan(0.05);
+      expect(Math.abs(channel[channel.length - 1])).toBeLessThan(0.05);
+      // Not one quiet sample after a loud one: the last millisecond as a whole.
+      // The shortest fade in the gallery is 5 ms, which is down to a tenth by then.
+      const tail = Math.round(0.001 * rate);
+      let sum = 0;
+      for (let i = channel.length - tail; i < channel.length; i++) sum += channel[i] * channel[i];
+      expect(Math.sqrt(sum / tail)).toBeLessThan(0.05);
+    }
+  });
+
+  // Normalizing each channel on its own would bring both to 0.9 and change the
+  // balance between them. The pluck's channels differ, so one of them stays below.
+  it("normalizes the two channels together, keeping the balance between them", () => {
+    const pluck = NANO_SAMPLES.find(spec => spec.id === "pluck")!;
+    const [left, right] = pluck.render(48000);
+    const peaks = [peak(left), peak(right)].sort((a, b) => a - b);
+    expect(peaks[1]).toBeCloseTo(0.9, 3);
+    expect(peaks[0]).toBeLessThan(0.895);
+    expect(peaks[0]).toBeGreaterThan(0.8);
   });
 
   it.each(

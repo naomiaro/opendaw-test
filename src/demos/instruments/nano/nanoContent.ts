@@ -29,8 +29,6 @@ export interface SampleLoadCallbacks {
 }
 
 export interface NanoDemoSetup {
-  readonly audioUnitBox: AudioUnitBox;
-  readonly nanoBox: NanoDeviceBox;
   readonly adapter: NanoDeviceBoxAdapter;
   readonly initialSample: CurrentSample;
   readonly selectSample: (id: NanoSampleId, callbacks?: SampleLoadCallbacks) => CurrentSample;
@@ -256,8 +254,6 @@ export async function buildNanoDemoContent(
   project.engine.setPosition(0);
 
   return {
-    audioUnitBox,
-    nanoBox,
     adapter,
     initialSample: { id: first.spec.id, name: first.spec.name, seconds: first.buffer.duration },
     selectSample,

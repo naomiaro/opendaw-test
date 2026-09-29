@@ -48,7 +48,7 @@ interface Mounted extends SamplerFixture {
   readonly unmount: () => void;
 }
 
-function mount(params: Partial<NanoParams> = {}, options: { sample?: boolean } = {}): Mounted {
+function mount(params: Partial<NanoParams> = {}, options: { sample?: boolean; lfo?: boolean } = {}): Mounted {
   const fixture = samplerFixture();
   if (options.sample !== false) withSample(fixture.adapter, FRAMES);
   fixture.project.editing.modify(() =>
@@ -58,7 +58,10 @@ function mount(params: Partial<NanoParams> = {}, options: { sample?: boolean } =
   const project = { editing: fixture.project.editing, liveStreamReceiver: stream } as unknown as NanoWaveformProps["project"];
   const { container, unmount } = render(
     <Theme>
-      <NanoWaveform project={project} adapter={fixture.adapter} sampleSeconds={2} peaksVersion={0} />
+      <NanoWaveform
+        project={project} adapter={fixture.adapter} sampleSeconds={2} peaksVersion={0}
+        ghostParameter={options.lfo === true ? fixture.adapter.namedParameter.sampleStart : null}
+      />
     </Theme>
   );
   const wave = container.querySelector(".nn-wave") as HTMLElement;
@@ -267,6 +270,14 @@ describe("NanoWaveform messages", () => {
     mount({ sampleStart: 0.5, sampleEnd: 0.5 });
 
     expect(screen.getByRole("status").textContent).toContain("The region is empty");
+  });
+
+  it("does not claim silence for an empty region while the LFO moves the start", () => {
+    mount({ sampleStart: 0.5, sampleEnd: 0.5 }, { lfo: true });
+
+    const text = screen.getByRole("status").textContent ?? "";
+    expect(text).toContain("only if the LFO has moved its start away");
+    expect(text).not.toContain("play nothing");
   });
 
   it("says nothing about a region of one slider step, which the engine plays", () => {

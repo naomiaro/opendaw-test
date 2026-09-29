@@ -4,6 +4,7 @@ import { PeaksPainter } from "@opendaw/lib-fusion";
 import type { Project } from "@opendaw/studio-core";
 import type { NanoDeviceBoxAdapter } from "@opendaw/studio-adapters";
 import { Callout, Text } from "@radix-ui/themes";
+import { regionMessage } from "./nanoMessages";
 import { CanvasPainter } from "@/lib/CanvasPainter";
 import { CANVAS_COLORS } from "@/lib/design/consoleTheme";
 import { useParameterUnit, type UnitParameter } from "@/hooks/useParameterUnit";
@@ -20,6 +21,8 @@ const HEIGHT = 180;
 const STALE_PLAYHEAD_MS = 150;
 
 export const WAVEFORM_STYLES = `
+/* Half a marker's width on each side, so a marker at either end stays inside the frame. */
+.nn-wave-frame { padding: 0 12px; }
 .nn-wave { position: relative; width: 100%; height: ${HEIGHT}px; }
 .nn-wave canvas {
   position: absolute; inset: 0; width: 100%; height: 100%; display: block;
@@ -320,6 +323,7 @@ export const NanoWaveform: React.FC<NanoWaveformProps> = ({
   // Drawing only: a loop marker stored outside the region is drawn at the
   // region's edge, where the engine puts the loop. The stored value is left
   // alone, so the Loop sliders can read differently from the markers.
+  const message = regionMessage({ empty: region.empty, startIsModulated: ghostParameter !== null });
   const displayed: MarkerValues = {
     sampleStart,
     sampleEnd,
@@ -329,6 +333,7 @@ export const NanoWaveform: React.FC<NanoWaveformProps> = ({
 
   return (
     <>
+      <div className="nn-wave-frame">
       <div ref={containerRef} className="nn-wave">
         <canvas
           ref={staticRef}
@@ -366,9 +371,10 @@ export const NanoWaveform: React.FC<NanoWaveformProps> = ({
           />
         ))}
       </div>
-      {loaded && region.empty && (
+      </div>
+      {loaded && message !== null && (
         <Callout.Root color="amber" size="1" role="status">
-          <Callout.Text>The region is empty, so notes play nothing. Move Start or End.</Callout.Text>
+          <Callout.Text>{message}</Callout.Text>
         </Callout.Root>
       )}
       {loaded && loopOn && loop.degenerate && !region.empty && (

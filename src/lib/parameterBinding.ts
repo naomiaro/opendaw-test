@@ -5,15 +5,21 @@
  */
 import type { Terminable } from "@opendaw/lib-std";
 import type { Project } from "@opendaw/studio-core";
-import type { AutomatableParameterFieldAdapter } from "@opendaw/studio-adapters";
 
 /**
- * The unit-value API (getUnitValue / setUnitValue / getPrintValue) does not
- * depend on the field's primitive type, so one binding serves number, integer
- * and boolean parameters.
+ * The part of an SDK parameter adapter a control needs: its value in unit
+ * space (0..1) and as printed text. It does not depend on the field's type, so
+ * number, integer and boolean parameters all fit, and nothing here can write a
+ * raw value past the parameter's mapping.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type UnitParameter = AutomatableParameterFieldAdapter<any>;
+export interface UnitParameter {
+  getUnitValue(): number;
+  setUnitValue(value: number): void;
+  /** The unit value with automation and modulation added, as the engine applies it */
+  getControlledUnitValue(): number;
+  getPrintValue(): Readonly<{ value: string; unit: string }>;
+  catchupAndSubscribe(observer: (parameter: UnitParameter) => void): Terminable;
+}
 
 export interface ParameterSnapshot {
   /** 0..1 */
