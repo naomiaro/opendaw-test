@@ -13,12 +13,14 @@ import {
   SampleProvider,
   SoundfontProvider,
   SampleService,
+  SampleStorage,
 } from "@opendaw/studio-core";
 import type { SoundfontService } from "@opendaw/studio-core";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { testFeatures } from "../features";
 import { installWasmEngine, ensureWasmReady } from "./wasmEngine";
 import { withDeadline } from "./deadline";
+import { clearStoredSamples } from "./storedSamples";
 
 import WorkersUrl from "@opendaw/studio-core/workers-main.js?worker&url";
 import WorkletsUrl from "@opendaw/studio-core/processors.js?url";
@@ -125,6 +127,21 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
   const { status: testStatus, error: testError } = await Promises.tryCatch(testFeatures());
   if (testStatus === "rejected") {
     throw new Error(`Could not test features: ${testError}`);
+  }
+
+  // The SDK stores every sample it loads and removes none. The demos never read
+  // one back, so sweep them here: after the check that the browser has the file
+  // system at all, and before this page stores any sample of its own.
+  const storedSamples = await clearStoredSamples({
+    locks: "locks" in navigator ? navigator.locks : undefined,
+    deleteFolder: path => Workers.Opfs.delete(path),
+    folderExists: path => Workers.Opfs.exists(path),
+    folder: SampleStorage.Folder,
+  });
+  if (storedSamples.startsWith("failed")) {
+    console.warn("Stored samples were not cleared (" + storedSamples + "). The page loads as usual.");
+  } else {
+    console.debug("Stored samples: " + storedSamples);
   }
 
   // Create AudioContext

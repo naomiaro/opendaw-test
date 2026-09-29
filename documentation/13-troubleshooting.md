@@ -250,6 +250,51 @@ samples/v2/{uuid}/
   meta.json      ← bpm, duration, sample rate, origin
 ```
 
+### Stored samples pile up
+
+The SDK writes every sample its loader fetches to `samples/v2/`, and every finished
+recording too. It may remove a stored sample when the project was told the sample is
+user-created (`project.trackUserCreatedSample(uuid)`) and the last box pointing at it is
+deleted; whether it does depends on the `auto-delete-orphaned-samples` preference or the
+user's answer to a prompt. A sample you hand the loader from memory under a fresh uuid is stored and never
+removed, so an app that makes new uuids on every page load grows its storage on every
+page load.
+
+If your app never reads a stored sample back, clear the folder when the page loads,
+before the project exists:
+
+```typescript
+import { SampleStorage, Workers } from "@opendaw/studio-core";
+
+await Workers.install(workersUrl);
+await Workers.Opfs.delete(SampleStorage.Folder); // "samples/v2", recursive
+```
+
+The folder belongs to the whole origin, not to one tab. A tab that is already open may
+be saving a recording into it, so skip the sweep while another tab is open. The demos
+do this with a Web Lock each page holds while it lives
+(`src/lib/storedSamples.ts`):
+
+```typescript
+await navigator.locks.request("my-app:page-open", { mode: "exclusive", ifAvailable: true }, async lock => {
+  if (lock !== null) await Workers.Opfs.delete(SampleStorage.Folder); // nobody else is open
+  // Ask for the shared lock while the exclusive one is still held, so it is next in line.
+  void navigator.locks.request("my-app:page-open", { mode: "shared" }, () => new Promise(() => {}));
+});
+```
+
+This is the idea, not the whole of it. `src/lib/storedSamples.ts` also waits until
+the shared lock is granted before the page goes on, checks that the folder is gone
+(`Workers.Opfs.delete` reports nothing when it fails), and gives up on a lock manager
+that does not answer.
+
+A page's own samples must stay for as long as it lives: a recording is read back from
+storage after it is saved, and storage is its only source. So never clear while your
+own page is running.
+
+If your app does keep samples between visits, keep the uuids stable instead, so a
+sample is stored once and found again.
+
 ### Clearing everything
 
 If you need a clean slate:

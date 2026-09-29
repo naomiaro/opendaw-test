@@ -48,6 +48,31 @@ subs.push(trackSub);
 - We pass a Proxy that throws a clear error if a future SDK version accesses it
 - None of the demos use soundfont instruments (MIDI demo uses Vaporisateur built-in synth)
 
+### Stored Samples Are Swept at Page Load
+- The SDK's loader writes every sample it fetches to OPFS (`samples/v2/<uuid>/`), and
+  `SampleService` writes every finished recording there. Nothing removes them unless the
+  project was told the sample is user-created (`project.trackUserCreatedSample`). The
+  demos make fresh uuids on every load, so without a sweep the folder only grows
+  (measured: 1,138 samples, 8.7 GB in one browser profile).
+- `initializeOpenDAW` calls `clearStoredSamples()` (`src/lib/storedSamples.ts`) right
+  after `Workers.install`: it deletes `SampleStorage.Folder` unless another page of the
+  site is open. Pages announce themselves with a shared Web Lock
+  (`opendaw-demos:page-open`) held for their lifetime.
+- Consequence: NO demo may rely on a sample stored by an earlier page load. A demo that
+  needs samples to persist needs an opt-out added to `ProjectSetupOptions` first.
+- A page's OWN samples must stay for as long as the page lives: a recording is read
+  back from storage right after it is saved (its peaks), and again when its loader was
+  dropped and is wanted back (the last box pointing at it deleted, then undo). Storage
+  is the only source for a recording — the sample provider cannot supply it. That is
+  why the sweep is skipped while another page is open, and why it waits for a clear to
+  finish instead of loading beside it.
+- `Workers.Opfs.delete` reports nothing when it fails, so the sweep checks with
+  `Workers.Opfs.exists` afterwards.
+- OPFS is per ORIGIN, and the port is part of the origin: `localhost:5173` and
+  `localhost:5180` have separate storage.
+- `navigator.storage.estimate()` under-reports badly here (40 MB reported against
+  8.7 GB of files). Sum the file sizes under `samples/v2` instead.
+
 ### SampleService (SDK 0.0.124+; BpmDetector arg since 0.0.167)
 - `new SampleService(audioContext, BpmDetector.Unknown)` required in `ProjectEnv` for
   recording finalization. The detector only runs in `importFile` when no bpm is given —
