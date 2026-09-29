@@ -74,6 +74,7 @@ import {
   classifyCell,
   measureCrossTrackSkew,
   classifyMultitrackCell,
+  nettedSkewMs,
   type TakeAlignment,
   type CellClassification,
   type ReferenceSchedule,
@@ -85,6 +86,9 @@ import {
   MULTITRACK_SCENARIOS,
   MULTITRACK_BASE_SCENARIO,
   REPEATS_PER_CELL,
+  MULTITRACK_REPEATS_PER_CELL,
+  RENDER_QUANTUM_FRAMES,
+  MULTITRACK_RAW_SKEW_LIMIT_MS,
   JANK_MS,
   LOOP_WRAP_TAKES,
   ALIGNED_TOLERANCE_MS,
@@ -932,11 +936,11 @@ Click "Run audit" with a real click — resumes the AudioContext.`}
 // recording the SAME instant can still land at different timeline
 // positions ("inter-track skew"). Measurement design: feed every tape a
 // CLONE of the SAME loopback signal (loopbackDeviceId(1)/(2) — see
-// loopbackInjection.ts) so every common bias (loopback-path latency, the
-// harness-path/outputLatency term, the metronome content itself) cancels
-// out of the DIFFERENCE between the two tapes' beat errors
-// (measureCrossTrackSkew) — no calibration term needed here, unlike the
-// single-tape sections above.
+// loopbackInjection.ts) so what the tapes share (the harness-path/
+// outputLatency term, the metronome content itself) cancels out of the
+// DIFFERENCE between the two tapes' beat errors (measureCrossTrackSkew).
+// Each stream's own delay on the way to its tape does not cancel: the verdict
+// takes the two delays out on a profile that nets (classifyMultitrackCell).
 
 const ALL_MULTITRACK_SCENARIOS = [...MULTITRACK_SCENARIOS];
 const MULTITRACK_RECORD_BARS = 4; // matches nominal-start/janked-start's own 4-bar window
@@ -956,9 +960,9 @@ function resolveMultitrackScenarios(param: string | null): MultitrackScenario[] 
   throw new Error(`unknown multitrack scenario "${param}" — use ?scenario=multitrack-all|${ALL_MULTITRACK_SCENARIOS.join("|")}`);
 }
 
-/** Multitrack matrix runs bpm 120 only (spec: "2 scenarios × 2 rates × bpm
- *  120 × 3 repeats") — defaults to [120] rather than the single-tape "all"
- *  default of every RECORDING_AUDIT_BPMS entry; ?bpm=<n|all> still overrides. */
+/** Multitrack matrix runs bpm 120 only — defaults to [120] rather than the
+ *  single-tape "all" default of every RECORDING_AUDIT_BPMS entry;
+ *  ?bpm=<n|all> still overrides. */
 function resolveMultitrackBpms(param: string | null): number[] {
   if (!param) return [120];
   if (param === "all") return [...RECORDING_AUDIT_BPMS];
@@ -1239,6 +1243,12 @@ async function runMultitrackCellRepeat(
   b.row.medianSkewMs = skew.medianSkewMs;
   b.row.maxAbsSkewMs = skew.maxAbsSkewMs;
   b.row.pairedSkewBeats = skew.pairedBeats;
+  const netted = nettedSkewMs(skew.medianSkewMs, {
+    aMs: a.row.loopbackDelayMs ?? null,
+    bMs: b.row.loopbackDelayMs ?? null,
+  });
+  a.row.medianSkewMsNetted = netted;
+  b.row.medianSkewMsNetted = netted;
 
   return { rowA: a.row, rowB: b.row, alignmentA: a.alignment, alignmentB: b.alignment, skew, bufferA: a.buffer, bufferB: b.buffer };
 }
@@ -1339,10 +1349,13 @@ async function uploadMultitrackSummary(
     outputLatency: bias.valueSec, baseLatency,
     harnessPathBiasSec: bias.valueSec, harnessPathBiasSettleMs: bias.settleMs,
     headMissingBaselineMs: HEAD_MISSING_BASELINE_MS,
-    repeatsPerCell: REPEATS_PER_CELL,
+    repeatsPerCell: MULTITRACK_REPEATS_PER_CELL,
     jankMs: JANK_MS,
     alignedToleranceMs: ALIGNED_TOLERANCE_MS,
     skewToleranceMs: ALIGNED_TOLERANCE_MS,
+    rawSkewLimitMs: auditProfileFor(sdkBuildProbe, runToken, buildFeatures).netLoopbackDelay
+      ? MULTITRACK_RAW_SKEW_LIMIT_MS
+      : null,
     referenceSchedule: { count: 60, baseGapSec: 0.25, gapIncrementSec: 0.005 },
     // Fix round 1 (C1 confirmation): when true, tape B was armed on the SAME
     // loopbackDeviceId as tape A (see createMultitrackTapes's sameDeviceB) —
@@ -1457,7 +1470,7 @@ async function runMultitrackAudit(
         cleanupWarning: string | null;
       }[] = [];
 
-      for (let repeat = 1; repeat <= REPEATS_PER_CELL; repeat++) {
+      for (let repeat = 1; repeat <= MULTITRACK_REPEATS_PER_CELL; repeat++) {
         const label = multitrackCellLabel(scenario, bpm, repeat);
         setAuditState(`running:${label}`);
         let stage = "prefs";
@@ -1526,12 +1539,17 @@ async function runMultitrackAudit(
         repeats.length > 0
           ? classifyCell(repeats.map((r) => r.alignmentB), signatureBandsFor(baseScenario, sdkBuildProbe, runToken, buildFeatures), ALIGNED_TOLERANCE_MS, { netLoopbackDelay: auditProfileFor(sdkBuildProbe, runToken, buildFeatures).netLoopbackDelay })
           : { status: "investigate", matchedSignature: null, detail: "no successful repeats to classify (tape b)" };
-      const verdict = classifyMultitrackCell(tapeAClass, tapeBClass, repeats.map((r) => r.skew), ALIGNED_TOLERANCE_MS);
+      const verdict = classifyMultitrackCell(tapeAClass, tapeBClass, repeats.map((r) => r.skew), ALIGNED_TOLERANCE_MS, {
+        netLoopbackDelay: auditProfileFor(sdkBuildProbe, runToken, buildFeatures).netLoopbackDelay,
+        loopbackDelays: repeats.map((r) => ({ aMs: r.rowA.loopbackDelayMs ?? null, bMs: r.rowB.loopbackDelayMs ?? null })),
+        renderQuantumMs: (RENDER_QUANTUM_FRAMES / rate) * 1000,
+        rawSkewLimitMs: MULTITRACK_RAW_SKEW_LIMIT_MS,
+      });
       // Persisted for EVERY cell, all-error cells included (no skew signature
       // band exists, so matchedSignature is always null here).
       cellVerdicts.push({
         scenario, bpm, rate, status: verdict.status, matchedSignature: null, detail: verdict.detail,
-        successfulRepeats: repeats.length, errorRepeats: REPEATS_PER_CELL - repeats.length,
+        successfulRepeats: repeats.length, errorRepeats: MULTITRACK_REPEATS_PER_CELL - repeats.length,
       });
 
       for (const r of repeats) {
@@ -1645,6 +1663,7 @@ function MultitrackRunnerHarness() {
                     <Table.ColumnHeaderCell>missing</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>headMiss (ms)</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>medianSkew (ms)</Table.ColumnHeaderCell>
+                    <Table.ColumnHeaderCell>nettedSkew (ms)</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>maxAbsSkew (ms)</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>pairedBeats</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>status</Table.ColumnHeaderCell>
@@ -1662,8 +1681,9 @@ function MultitrackRunnerHarness() {
                       <Table.Cell>{row.matchedBeats}</Table.Cell>
                       <Table.Cell>{row.missingBeats}</Table.Cell>
                       <Table.Cell>{row.headMissingMs === null ? "—" : row.headMissingMs.toFixed(2)}</Table.Cell>
-                      <Table.Cell>{row.medianSkewMs === null ? "—" : row.medianSkewMs.toFixed(2)}</Table.Cell>
-                      <Table.Cell>{row.maxAbsSkewMs === null ? "—" : row.maxAbsSkewMs.toFixed(2)}</Table.Cell>
+                      <Table.Cell>{formatMilliseconds(row.medianSkewMs)}</Table.Cell>
+                      <Table.Cell>{formatMilliseconds(row.medianSkewMsNetted)}</Table.Cell>
+                      <Table.Cell>{formatMilliseconds(row.maxAbsSkewMs)}</Table.Cell>
                       <Table.Cell>{row.pairedSkewBeats}</Table.Cell>
                       <Table.Cell>
                         <Badge color={multitrackStatusColor(row.status)} title={row.errorMessage ?? row.detail}>
@@ -1685,7 +1705,14 @@ function MultitrackRunnerHarness() {
               {`?scenario=<multitrack-start|multitrack-janked|multitrack-all>
 ?bpm=<number|all>     default 120 (matrix spec: bpm 120 only)
 ?rate=<number>        default 48000 — sets the AudioContext at init, never "all"
-Repeats per cell:       ${REPEATS_PER_CELL}
+Repeats per cell:       ${MULTITRACK_REPEATS_PER_CELL}
+Verdict:                on a build whose profile nets the loopback delay: each tape clean AND the
+                        skew between them within ${ALIGNED_TOLERANCE_MS} ms once both tapes' own loopback delays are
+                        taken out AND the raw skew within ${MULTITRACK_RAW_SKEW_LIMIT_MS} ms. Inside that limit the raw skew
+                        is not told apart from the two streams' own delays.
+                        On any other build: each tape clean AND the raw skew within ${ALIGNED_TOLERANCE_MS} ms.
+                        The raw skew is reported as a spread over render quanta in the cell's detail.
+                        The verdict covers the repeats that finished; error repeats are counted beside it.
 Two tapes armed on loopbackDeviceId(1)/(2) — clones of the SAME loopback signal.
 Uploads:                recaudit-mt-summary-<runToken>.json (all rows + per-repeat skew) via PUT /__verify
                         recaudit-mt-<scenario>-<bpm>-<rate>-r<repeat>-tape<a|b>-<build>-<runToken>.wav per repeat

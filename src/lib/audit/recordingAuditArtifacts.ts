@@ -32,7 +32,9 @@
  *
  * G6 sub-case (not a generation of its own — `AuditArtifactGeneration` stays at G6): rows
  * written by a build that reports `firstQuantumTime` (a release that ships PR #376, or the branch builds)
- * additionally carry `loopbackDelayMs` / `medianBeatErrorMsNetted`. Whether the persisted
+ * additionally carry `loopbackDelayMs` / `medianBeatErrorMsNetted`, and multitrack rows
+ * `medianSkewMsNetted` (absent on multitrack rows written before that field existed: their
+ * verdict ran on the raw `medianSkewMs`, whatever the profile). Whether the persisted
  * verdict ran on the netted median is a property of the ENVELOPE's `buildFeatures`
  * (`profileKeyFor(...) === "release"`) and of the page: the matrix and multitrack pages net
  * under the release profile; the input-latency calibration page writes the same two fields
@@ -51,8 +53,9 @@
  * defaulting.
  */
 import type { CellStatus, CrossTrackSkew, SignatureBand } from "./recordingAlignment";
-// Value import with an explicit `.ts` extension: this module sits in the Node
+// Value imports with an explicit `.ts` extension: this module sits in the Node
 // scripts' import chain (type stripping resolves nothing without it).
+import { formatTwoDecimals } from "./recordingAlignment.ts";
 import {
   isMultitrackScenario, isRecordingScenario,
   type AuditBuildFeature, type MultitrackScenario, type RecordingScenario,
@@ -170,6 +173,13 @@ export interface MultitrackAuditRow extends TakeRowBase {
   medianSkewMs: number | null;
   maxAbsSkewMs: number | null;
   pairedSkewBeats: number;
+  /** G6 sub-case (rows that carry `loopbackDelayMs`): `medianSkewMs` with the two
+   *  tapes' own loopback delays taken out, `medianSkewMs − (delay b − delay a)`;
+   *  null when the skew or either delay is unknown. Written whenever both delays
+   *  are known, whatever the profile: the verdict ran on it only where the
+   *  envelope's profile nets, and on the raw `medianSkewMs` otherwise — as it
+   *  did for every row that lacks the field. */
+  medianSkewMsNetted?: number | null;
 }
 
 export interface ReferenceScheduleDescriptor {
@@ -241,6 +251,9 @@ export interface MultitrackCellSkew {
 
 export interface MultitrackAuditSummary extends SummaryBase {
   skewToleranceMs: number;
+  /** The most the raw skew of a netted repeat was allowed to be; null when the run's
+   *  profile does not net the loopback delay, so no limit applied. */
+  rawSkewLimitMs: number | null;
   confirmCollision: boolean;
   rows: MultitrackAuditRow[];
   cellSkews: MultitrackCellSkew[];
@@ -301,6 +314,8 @@ export interface LoadedMultitrackAuditSummary {
   rate: number;
   alignedToleranceMs: number;
   skewToleranceMs: number;
+  /** null when no limit applied — the profile does not net, or the envelope predates the field. */
+  rawSkewLimitMs: number | null;
   outputLatencySec: number | null;
   harnessPathBiasSec: number;
   /** false when the flag is absent: it was introduced with the dedicated
@@ -362,6 +377,16 @@ function getUserMediaOpensOf(top: Record<string, unknown>, runId: number): numbe
   if (v === undefined) return null;
   if (typeof v !== "number" || !Number.isFinite(v)) {
     throw new Error(`recaudit summary ${runId}: unexpected getUserMediaOpens ${JSON.stringify(v)}`);
+  }
+  return v;
+}
+
+/** Absent or null: no limit applied. Anything else has to be a limit that could have been. */
+function rawSkewLimitOf(top: Record<string, unknown>, runId: number): number | null {
+  const v = top.rawSkewLimitMs;
+  if (v === undefined || v === null) return null;
+  if (typeof v !== "number" || !Number.isFinite(v) || v <= 0) {
+    throw new Error(`recaudit mt summary ${runId}: unexpected rawSkewLimitMs ${JSON.stringify(v)}`);
   }
   return v;
 }
@@ -460,6 +485,7 @@ export function parseMultitrackAuditSummary(json: unknown, runId: number): Loade
     rate: requireNumber(json, "rate", runId),
     alignedToleranceMs: requireNumber(json, "alignedToleranceMs", runId),
     skewToleranceMs: requireNumber(json, "skewToleranceMs", runId),
+    rawSkewLimitMs: rawSkewLimitOf(json, runId),
     outputLatencySec: optionalNumber(json, "outputLatency"),
     harnessPathBiasSec: persistedBias ?? 0,
     confirmCollision: json.confirmCollision === true,
@@ -492,5 +518,5 @@ export function appliedHarnessPathBiasMs(row: TakeRowBase): number | null {
  */
 export function formatMilliseconds(value: number | null | undefined): string {
   if (value === null || value === undefined) return "—";
-  return Number.isFinite(value) ? value.toFixed(2) : String(value);
+  return Number.isFinite(value) ? formatTwoDecimals(value) : String(value);
 }

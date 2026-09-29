@@ -49,6 +49,31 @@ export function signatureBandsFor(
   return RECORDING_AUDIT_PROFILES[profileKeyFor(build, runId, features)].signatureBands[scenario];
 }
 export const REPEATS_PER_CELL = 3;
+/**
+ * Repeats per multi-mic cell. More than the single-tape cells get, because the
+ * multi-mic scenarios also report how the raw skew between the two tapes is
+ * spread over render quanta, and three repeats do not show a spread: the same
+ * build gave 0, 0, 0 on one run and 1, 4, 1 quanta on the next.
+ */
+export const MULTITRACK_REPEATS_PER_CELL = 8;
+
+/**
+ * Frames in one Web Audio render quantum: the unit the raw skew between two tapes is
+ * reported in. Most measured skews are whole multiples of it; the rest fall on quarter
+ * quanta.
+ */
+export const RENDER_QUANTUM_FRAMES = 128;
+
+/**
+ * The most the raw skew between two tapes may be on a profile that nets the loopback
+ * delay (`classifyMultitrackCell`'s `rawSkewLimitMs`). One loopback stream's delay was
+ * measured between 9.625 and 23.15 ms (12.0 ms from lowest to highest at 48 kHz), so
+ * two streams differ by up to 12 ms. The limit is that 12 ms plus one render quantum at
+ * 44.1 kHz, rounded up. It is fitted, not derived: a skew inside it is not told apart
+ * from the two streams' delays. The runs behind it are in the campaign register
+ * (`debug/recording-start-alignment-audit.md`).
+ */
+export const MULTITRACK_RAW_SKEW_LIMIT_MS = 15;
 export const JANK_MS = 150;
 export const LOOP_WRAP_TAKES = 5;
 /**

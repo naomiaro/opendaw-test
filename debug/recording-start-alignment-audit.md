@@ -4108,5 +4108,206 @@ the section above.
 - **The strict fixes did not change the harness.** Single-tape placement is the same to
   the hundredth of a millisecond as before them (netted +1.07…+1.17 at 48 kHz,
   +0.97…+1.19 at 44.1 kHz).
-- **Open:** the multi-mic verdict reads the skew of one run. See above.
+- **Open:** the multi-mic verdict reads the skew of one run. See above. — Closed in the
+  next section.
 
+## Multi-mic verdict on the netted skew, raw skew as a distribution (2026-09-29)
+
+Same SDK (`@opendaw/studio-sdk@0.0.172`, `release` profile). The change is in the harness.
+
+### What the verdict was, and what it is
+
+Until now a multi-mic cell was `aligned` when both tapes classified clean and the raw
+skew between them — tape b's beat error minus tape a's — stayed within 2 ms on every
+repeat. The section above shows why that could not hold still: the raw skew moves by 0
+to 4 render quanta from one repeat to the next.
+
+Now, on a profile that nets the loopback delay (`release`):
+
+1. Both tapes classify clean, as before (each on its own netted median).
+2. **The netted skew is within 2 ms on every repeat**: raw skew − (tape b's
+   `loopbackDelayMs` − tape a's). A repeat where either delay is missing is judged on
+   its raw skew; the detail marks its value `raw` and counts how many were netted.
+3. **The raw skew is within 15 ms on every netted repeat**
+   (`MULTITRACK_RAW_SKEW_LIMIT_MS`, persisted as `rawSkewLimitMs`).
+4. The cell's detail reports the raw skew as a spread over render quanta, whatever the
+   verdict, and an `aligned` detail names the largest raw skew and says it is not
+   attributed. Rows carry `medianSkewMsNetted`.
+
+Eight repeats per cell instead of three (`MULTITRACK_REPEATS_PER_CELL`), so one run shows
+a spread: three repeats gave 0, 0, 0 on one run and 1, 4, 1 quanta on the next.
+
+Netting without one delay record per repeat, or without a limit above zero, is refused
+(it throws): either would switch a rule off with nothing to show for it.
+
+On the `upstream` and `candidate` profiles the rule is the old one: no netting, no
+limit, the raw skew against 2 ms. `task12a`'s oracle is byte-identical. One thing moved
+on every profile: a skew that rounds to zero prints `0.00`, not `-0.00`.
+
+### What the netted skew measures, and what it cannot
+
+A tape's beat error is (region start − waveform offset) + (where the sound sits in the
+buffer) − (where the beat is). `loopbackDelayMs` is the SDK's time for the buffer's first
+frame (`firstQuantumTimeSec`) minus the harness's estimate of that instant from the
+reference clicks (`anchorT0Sec`) — and that estimate moves one for one with where the
+sound sits in the buffer. So netting takes the sound's offset in the buffer out of the
+figure altogether:
+
+> netted skew = (region start − waveform offset − first-frame time) of tape b, minus
+> the same of tape a
+
+Recomputed from those three SDK-side fields alone it matches the persisted
+`medianSkewMsNetted` to 4.4e-7 ms on every repeat. It answers one question: did the SDK
+place the two takes the same way against its own first-frame times. It is 0.00 ms on
+all 120 repeats below.
+
+**It cannot see how far apart the two buffers hold the same sound, and it cannot see
+whether a first-frame time is true.** A capture that lost 30 ms from the head of one
+tape while reporting the same first-frame time would net to zero, and at 30 ms the head
+gate of rule 1 would not fire either: it needs the anchor more than 28 ms after the
+record request, and in these runs the anchor sits 9.6 to 21 ms BEFORE it, so a head loss
+shows from about 38 ms up. Rule 3 is the only bound below that,
+and its limit is fitted, not derived: one stream's delay was measured between 9.625 and
+23.15 ms (426 rows of `release`-profile runs, single-tape and multi-mic; 366 at 48 kHz,
+9.625…21.625, and 60 at 44.1 kHz), so two streams differ by up to 12 ms; the largest
+raw skew measured is 10.67 ms. **A skew inside 15 ms is not told apart from the two
+streams' delays.**
+
+The single-tape `release` verdict nets the same way, so its netted median is equally
+blind to where the sound sits in the buffer; only its head and tail gates see that.
+
+### The four runs of the section above, replayed
+
+`node scripts/audit/recording-alignment/task13-multitrack-netted-verdict.ts` — each cell
+re-run from the saved rows under this section's rule:
+
+| run | cell | page persisted | replayed | raw skew per repeat (ms) | netted |
+|---|---|---|---|---|---|
+| `…1790707818551` | start | `aligned` | `aligned` | 0.00, 2.00, 0.00 | 0.00 ×3 |
+| | janked | `aligned` | `aligned` | 0.00, 0.00, 0.00 | 0.00 ×3 |
+| `…1790710650174` | start | `investigate` | `aligned` | 2.67, 0.00, 2.67 | 0.00 ×3 |
+| | janked | `investigate` | `aligned` | −2.67, −10.67, −2.67 | 0.00 ×3 |
+| `…1790710747979` | start | `investigate` | `aligned` | 0.00, 2.67, 0.00 | 0.00 ×3 |
+| | janked | `aligned` | `aligned` | 0.00, 0.00, 0.00 | 0.00 ×3 |
+| `…1790710801157` | start | `investigate` | `aligned` | 0.00, 5.33, −7.33 | 0.00 ×3 |
+| | janked | `investigate` | `aligned` | 8.00, 0.00, 2.67 | 0.00 ×3 |
+
+(Skew here is b − a, the sign the rows carry; the table in the section above printed
+a − b.)
+
+### Six new runs, eight repeats per cell
+
+`?scenario=multitrack-all&bpm=120&rate=48000`, each on a fresh page load.
+
+| file | rows | error rows | finalized | netted, every row | raw skew in quanta: start | janked | verdicts |
+|---|---|---|---|---|---|---|---|
+| `recaudit-mt-summary-1790711541897.json` | 32 | 0 | 32 of 32 | +1.146 | 0 ×5, 1 ×3 | 0 ×4, 1 ×4 | 2 of 2 `aligned` |
+| `recaudit-mt-summary-1790711774452.json` | 32 | 0 | 32 of 32 | +1.146 | 0 ×6, 1 ×2 | 0 ×3, 1 ×4, 3 ×1 | 2 of 2 `aligned` |
+| `recaudit-mt-summary-1790711921325.json` | 32 | 0 | 32 of 32 | +1.146 | 0 ×4, 1 ×4 | 0 ×5, 1 ×3 | 2 of 2 `aligned` |
+| `recaudit-mt-summary-1790712215292.json` | 32 | 0 | 32 of 32 | +1.146 | 0 ×4, 1 ×4 | 0 ×5, 1 ×3 | 2 of 2 `aligned` |
+| `recaudit-mt-summary-1790712952262.json` | 32 | 0 | 32 of 32 | +1.146 | 0 ×6, 1 ×2 | 0 ×6, 1 ×2 | 2 of 2 `aligned` |
+| `recaudit-mt-summary-1790714222787.json` | 32 | 0 | 32 of 32 | +1.146 | 0 ×3, 1 ×4, 3 ×1 | 0 ×6, 1 ×2 | 2 of 2 `aligned` |
+
+Head and tail deficits 0 on all 192 rows, 0 WAV upload failures. The first four ran
+before rule 3 existed (their envelopes have no `rawSkewLimitMs`); the last two ran with
+it, the last one on the code as merged. Replayed, all six read the same.
+
+A single-tape cell run alongside (`nominal-start`, 120 BPM, 48 kHz,
+`recaudit-summary-1790712379366.json`) is unchanged: 3 of 3 `aligned`, netted +1.15 ms.
+
+### The raw skew over all ten runs
+
+120 repeats, 20 cells, all `aligned`; largest netted skew 0.00 ms, largest raw skew
+10.67 ms.
+
+| raw skew, in render quanta of 2.667 ms | repeats, of 120 |
+|---|---|
+| 0 | 70 |
+| 0.75 (2.00 ms) | 1 |
+| 1 | 43 |
+| 2 | 1 |
+| 2.75 (7.33 ms) | 1 |
+| 3 | 3 |
+| 4 (10.67 ms) | 1 |
+
+**The two skews that are not whole quanta fall on a lattice.** All 240 delays of these
+runs sit on one lattice of 32 frames (0.667 ms, a quarter of a quantum): every
+`loopbackDelayMs × 48` is 14 modulo 32. The values seen are 9.625, 10.292, 10.958,
+12.292, 12.958, 14.958, 17.625, 18.292, 18.958, 20.292, 20.958 and 21.625 ms. Two streams
+therefore differ by a multiple of a quarter quantum, and 2.00 and 7.33 ms are 3 and 11 of
+them. This is at 48 kHz only: the 60 single-tape delays at 44.1 kHz take 28 distinct
+values and show no lattice. Why 32 frames is not established.
+
+### Where the raw skew comes from: not settled
+
+Region start is the same on both tapes in all 120 repeats. What differs is the
+first-frame time, the waveform offset, and the anchor:
+
+| the two tapes' first-frame times | raw skew | repeats, of 120 |
+|---|---|---|
+| equal | 0.00 | 59 |
+| equal | not zero, up to 10.67 ms | 42 |
+| one render quantum apart | 0.00 | 11 |
+| one render quantum apart | one quantum or more | 8 |
+
+- **The 11** are the SDK's placement at work: one capture started a quantum after the
+  other, the waveform offset differs by the same quantum the other way, and the sound
+  lands together on the timeline.
+- **The 42** are the two buffers holding the same sound up to four quanta apart while
+  the SDK reports one first-frame time for both. Read as the two loopback streams
+  delivering late by different amounts, that is the harness. Read as one capture
+  starting later than its first-frame time says, it is the SDK. These runs do not tell
+  the two apart.
+- **In 6 of the 8** the anchors are EQUAL — both buffers hold the sound at the same
+  offset — and the first-frame times and waveform offsets are a quantum apart, so the
+  sound lands one quantum apart on the timeline. Either the streams' delays differed by
+  exactly the quantum the captures' starts differed by, or one first-frame time is a
+  quantum off.
+
+What speaks for the streams: the calibration sections of this register measured one
+capture chain in states several quanta apart ("The chain state: a ratchet, a sink, and
+a residual two-state lottery"), and single-tape delays spread over the same 12 ms from
+repeat to repeat. What that does not do is attribute any one of these 50 repeats.
+Task 9's "the skew is the two loopback streams' delay difference, not the SDK's
+arithmetic" holds for the arithmetic — the netted skew is zero — and rests on the same
+algebra for the rest; it is not independent evidence.
+
+**What would settle it:** a delay for each stream measured without the SDK's first-frame
+time — the harness tapping each loopback stream itself and timing a reference click's
+arrival on the context clock. With that, raw skew minus the measured stream difference
+is what the SDK contributes, and rule 3 stops being a fitted limit.
+
+### The verdict can fail
+
+With the two tapes' delays swapped in the page's call (so the delay difference is added
+instead of taken out), a run read 32 of 32 rows `investigate`, netted skews 5.33 ms where
+the raw skew was 2.67 and 21.33 where it was 10.67. That shows the page's verdict runs
+through the classifier with the delays in the right order; it says nothing about how the
+verdict responds to a change in the SDK. Reverted; that run's files were deleted, and so
+were those of one run before it that started within 26 ms of the dev server picking up
+the edit and ran the unchanged code.
+
+Fourteen deliberate breaks of `classifyMultitrackCell` and `nettedSkewMs` (a dropped
+absolute value, an exclusive tolerance, the limit three times too loose, the delay sign
+reversed, the tape verdict ignored, …) each fail at least one unit test.
+
+### Reading
+
+- **Closed:** the multi-mic verdict no longer depends on which run is read. Ten runs,
+  20 of 20 cells `aligned`, where the raw skew gave 3 of 8 on the first four.
+- **What `aligned` means here:** the SDK placed both takes the same way against its own
+  first-frame times, each tape is clean on its own, and the two buffers hold the sound
+  no further apart than 15 ms. It does not mean the two recordings line up: the sound is
+  up to 10.67 ms apart on the timeline in these runs, in 50 of 120 repeats, and whether
+  that is the harness or the SDK is open (above).
+- **Not established:** whether two REAL inputs show a skew of this kind, and how large.
+  Each real device has its own input latency; removing it is what the input-latency
+  calibration (upstream PR #380, open) is for. Once a release ships it, the multi-mic
+  scenarios can calibrate each tape and check that the raw skew goes to zero — see the
+  `?scenario=calibrated` note in the root CLAUDE.md.
+- **Older than this change, unchanged by it:** a verdict covers the repeats that
+  finished. A cell with one finished repeat and two errors can read `aligned` "on every
+  repeat" (`…1788387238856` `multitrack-janked`: ok 1, err 2). The error count is in the
+  cell's record beside the verdict. The single-tape page follows the same convention.
+- **Standing sweep:** unchanged URL. One multi-mic run is 16 recordings and takes about
+  2.5 minutes.

@@ -145,6 +145,16 @@ describe("parseMultitrackAuditSummary", () => {
     expect(s.beatGrid).toBe("region-anchored");
     expect(s.rows[0].tape).toBe("a");
   });
+  it("reads the raw skew limit the run applied, null when the envelope has none", () => {
+    expect(parseMultitrackAuditSummary({ ...mtBase, rows: [mtRow], cellSkews: [] }, 1788302627819).rawSkewLimitMs).toBeNull();
+    expect(parseMultitrackAuditSummary({ ...mtBase, rawSkewLimitMs: null, rows: [mtRow], cellSkews: [] }, 1790712215292).rawSkewLimitMs).toBeNull();
+    expect(parseMultitrackAuditSummary({ ...mtBase, rawSkewLimitMs: 15, rows: [mtRow], cellSkews: [] }, 1790712215292).rawSkewLimitMs).toBe(15);
+  });
+  // null means "no limit applied"; a limit that cannot be read must not pass for that.
+  it.each(["15", true, -1, 0])("rejects a raw skew limit of %j", limit => {
+    expect(() => parseMultitrackAuditSummary({ ...mtBase, rawSkewLimitMs: limit, rows: [mtRow], cellSkews: [] }, 1790712215292))
+      .toThrow(/unexpected rawSkewLimitMs/);
+  });
   it("rejects a single-tape scenario in a multitrack envelope", () => {
     expect(() => parseMultitrackAuditSummary({ ...mtBase, rows: [{ ...mtRow, scenario: "nominal-start" }] }, 1)).toThrow(/not a multitrack scenario/);
   });
@@ -165,6 +175,13 @@ describe("formatMilliseconds", () => {
     expect(formatMilliseconds(12.3456)).toBe("12.35");
     expect(formatMilliseconds(-6.2)).toBe("-6.20");
     expect(formatMilliseconds(0)).toBe("0.00");
+  });
+
+  // Subtracting two equal delays leaves float dust on either side of zero.
+  it("prints a value that rounds to zero without a minus sign", () => {
+    expect(formatMilliseconds(-1e-12)).toBe("0.00");
+    expect(formatMilliseconds(-0.004)).toBe("0.00");
+    expect(formatMilliseconds(-0.006)).toBe("-0.01");
   });
 
   it("prints a dash for a row that has no value", () => {

@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   buildReferenceSchedule, bandSplit, identifyReferenceClicks, estimateAnchorT0,
   measureTakeAlignment, classifyCell, classifyMultitrackCell, judgedMedianMs, measureCrossTrackSkew,
+  nettedSkewMs, skewDistribution, formatSkewDistribution, formatTwoDecimals,
 } from "./recordingAlignment";
-import type { CellClassification, CrossTrackSkew, TakeAlignment, SignatureBand } from "./recordingAlignment";
+import type { CellClassification, CrossTrackSkew, TakeAlignment, SignatureBand, ClassifyMultitrackOptions } from "./recordingAlignment";
 
 describe("buildReferenceSchedule", () => {
   it("uses unique growing gaps so consecutive pairs identify their index", () => {
@@ -612,5 +613,307 @@ describe("classifyMultitrackCell", () => {
     const v = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(0.5), skew(2.7), skew(0.3)], 2);
     expect(v.status).toBe("investigate");
     expect(v.detail).toMatch(/candidate finding/);
+  });
+
+  // The saved output of the offline replay (task12a) holds these strings whole.
+  it("without options: the whole detail, skew within the tolerance", () => {
+    const v = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(0.1), skew(-1.9), skew(1.2)], 2);
+    expect(v.status).toBe("aligned");
+    expect(v.detail).toBe(
+      "skew within 2ms tolerance on every repeat and both tapes individually clean (tapeA=aligned, tapeB=aligned) — " +
+      "medianSkewMs per repeat=[0.10, -1.90, 1.20] maxAbsMedianSkewMs=1.90"
+    );
+  });
+
+  it("without options: the whole detail, skew past the tolerance", () => {
+    const v = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(0.5), skew(2.7), skew(0.3)], 2);
+    expect(v.detail).toBe(
+      "skew exceeds 2ms tolerance with both tapes otherwise clean (candidate finding — no predicted band for inter-track skew) — " +
+      "medianSkewMs per repeat=[0.50, 2.70, 0.30] maxAbsMedianSkewMs=2.70"
+    );
+  });
+
+  it("a skew past the tolerance in the other direction (tape b early) → investigate", () => {
+    const v = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(-2.7)], 2);
+    expect(v.status).toBe("investigate");
+    expect(v.detail).toMatch(/^skew exceeds 2ms tolerance/);
+    expect(v.detail).toMatch(/medianSkewMs per repeat=\[-2\.70\]/);
+  });
+
+  it("a skew at the tolerance passes, in either direction", () => {
+    expect(classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(2), skew(-2)], 2).status).toBe("aligned");
+    expect(classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(2.01)], 2).status).toBe("investigate");
+  });
+
+  it("prints a raw skew that rounds to zero without a minus sign", () => {
+    const v = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(-1e-12), skew(0.5)], 2);
+    expect(v.detail).toMatch(/medianSkewMs per repeat=\[0\.00, 0\.50\]/);
+  });
+
+  it("says nothing about quanta when it was not told the quantum", () => {
+    const v = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(0.5)], 2);
+    expect(v.detail).not.toMatch(/render quanta/);
+  });
+
+  // --- Netting the two loopback streams' own delays out of the skew ---
+  // Measured on a build that nets: the raw skew between the tapes equals the
+  // difference of the two streams' delays, and each tape nets to the same value.
+  const Q = (128 / 48000) * 1000;
+  const delays = (aMs: number | null, bMs: number | null) => ({ aMs, bMs });
+  const net = (loopbackDelays: ReturnType<typeof delays>[], extra: Partial<ClassifyMultitrackOptions> = {}): ClassifyMultitrackOptions =>
+    ({ netLoopbackDelay: true, loopbackDelays, renderQuantumMs: Q, rawSkewLimitMs: 15, ...extra });
+  const measured = {
+    skews: [skew(-10.6667), skew(2.6667), skew(0), skew(-2.6667)],
+    delays: [delays(20.9583, 10.2917), delays(17.625, 20.2917), delays(20.9583, 20.9583), delays(12.2917, 9.625)],
+  };
+
+  it("netted: skew that is the two streams' delay difference → aligned, and the detail says what was not shown", () => {
+    const v = classifyMultitrackCell(cls("aligned"), cls("aligned"), measured.skews, 2, net(measured.delays));
+    expect(v.status).toBe("aligned");
+    expect(v.detail).toMatch(/^netted skew within 2ms tolerance on every repeat, /);
+    expect(v.detail).toMatch(/raw skew within 15ms \(largest 10\.67ms; not attributed — taken to be the two loopback streams' own delays\)/);
+    expect(v.detail).toMatch(/netted on 4\/4/);
+  });
+
+  it("not netting: delays and a limit that are passed all the same change nothing", () => {
+    const off = { netLoopbackDelay: false, loopbackDelays: [delays(10, 20)], rawSkewLimitMs: 15, renderQuantumMs: Q };
+    // Netted, this would be −9.
+    const within = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(1)], 2, off);
+    expect(within.status).toBe("aligned");
+    expect(within.detail).toMatch(/^skew within 2ms/);
+    expect(within.detail).not.toMatch(/netted/);
+    // Netted, this would be 0.
+    const past = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(10)], 2, off);
+    expect(past.status).toBe("investigate");
+    expect(past.detail).toMatch(/^skew exceeds 2ms tolerance/);
+    expect(past.detail).not.toMatch(/netted|raw skew exceeds/);
+  });
+
+  it("netted: a skew the delays do not account for → investigate, and the detail gives the netted value", () => {
+    // Tape b placed 6 ms late on top of a one-quantum delay difference.
+    const v = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(0), skew(2.6667 + 6)], 2,
+      net([delays(20, 20), delays(17.625, 20.2917)]));
+    expect(v.status).toBe("investigate");
+    expect(v.detail).toMatch(/^netted skew exceeds 2ms tolerance/);
+    expect(v.detail).toMatch(/nettedSkewMs per repeat=\[0\.00, 6\.00\]/);
+  });
+
+  // What netting is for: the two buffers agree, and the takes were placed 6.5 ms
+  // apart against their own first-frame times.
+  it("netted: a small raw skew with a large netted skew → investigate", () => {
+    const v = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(0.5)], 2, net([delays(16, 10)]));
+    expect(v.status).toBe("investigate");
+    expect(v.detail).toMatch(/^netted skew exceeds 2ms tolerance/);
+    expect(v.detail).toMatch(/nettedSkewMs per repeat=\[6\.50\]/);
+  });
+
+  it("netted: a netted skew past the tolerance in the other direction → investigate", () => {
+    const v = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(-8)], 2, net([delays(12, 10)]));
+    expect(v.status).toBe("investigate");
+    expect(v.detail).toMatch(/nettedSkewMs per repeat=\[-6\.00\]/);
+  });
+
+  it("netted: a netted skew at the tolerance passes, in either direction", () => {
+    const at = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(8), skew(-8)], 2, net([delays(10, 16), delays(16, 10)]));
+    expect(at.status).toBe("aligned");
+    expect(at.detail).toMatch(/nettedSkewMs per repeat=\[2\.00, -2\.00\]/);
+    const past = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(8.01)], 2, net([delays(10, 16)]));
+    expect(past.status).toBe("investigate");
+  });
+
+  it("netted: a repeat without both delays is judged on its raw skew, and marked as raw", () => {
+    const passing = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(2.6667), skew(0.4)], 2,
+      net([delays(17.625, 20.2917), delays(null, 20)]));
+    expect(passing.status).toBe("aligned");
+    expect(passing.detail).toMatch(/^netted skew \(1\/2 repeats, the rest raw\) within 2ms tolerance/);
+    expect(passing.detail).toMatch(/nettedSkewMs per repeat=\[0\.00, raw 0\.40\] netted on 1\/2/);
+
+    const failing = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(2.6667), skew(2.6667)], 2,
+      net([delays(17.625, 20.2917), delays(null, 20)]));
+    expect(failing.status).toBe("investigate");
+    expect(failing.detail).toMatch(/^netted skew \(1\/2 repeats, the rest raw\) exceeds 2ms tolerance/);
+    expect(failing.detail).toMatch(/nettedSkewMs per repeat=\[0\.00, raw 2\.67\]/);
+  });
+
+  it("netted: no repeat has both delays → every repeat judged raw, and the detail says none was netted", () => {
+    const within = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(0.5)], 2, net([delays(null, null)]));
+    expect(within.status).toBe("aligned");
+    expect(within.detail).toMatch(/^skew within 2ms/);
+    expect(within.detail).toMatch(/netted on 0\/1/);
+    const past = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(2.6667)], 2, net([delays(null, 20)]));
+    expect(past.status).toBe("investigate");
+    expect(past.detail).toMatch(/^skew exceeds 2ms tolerance/);
+    expect(past.detail).toMatch(/no predicted band/);
+    expect(past.detail).toMatch(/netted on 0\/1/);
+  });
+
+  // A list of another length would pair a repeat with some other repeat's delays.
+  it.each([
+    ["none", undefined],
+    ["fewer than the repeats", [delays(17.625, 20.2917)]],
+    ["more than the repeats", [delays(20, 20), delays(20, 20), delays(20, 20)]],
+  ])("netted: refuses a list of delays that is not one per repeat (%s)", (_label, list) => {
+    expect(() => classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(0), skew(0)], 2, net([], { loopbackDelays: list })))
+      .toThrow(/one delay record per repeat/);
+  });
+
+  it("netted: a repeat with no skew → investigate as unusable, before any netting", () => {
+    const v = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(null), skew(2.6667)], 2,
+      net([delays(20, 20), delays(17.625, 20.2917)]));
+    expect(v.status).toBe("investigate");
+    expect(v.detail).toMatch(/skew unusable \(0 paired beats\) on 1\/2/);
+  });
+
+  it("netted: a skew the delays account for prints as zero, without a minus sign", () => {
+    // −2.6667 − (17.625 − 20.2917) leaves a hair below zero.
+    const v = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(2.6667), skew(-2.6667)], 2,
+      net([delays(17.625, 20.2917), delays(20.2917, 17.625)]));
+    expect(v.detail).toMatch(/nettedSkewMs per repeat=\[0\.00, 0\.00\]/);
+  });
+
+  // Netting takes the sound's offset in the buffer out of the figure altogether, so
+  // on its own it would pass a skew of any size that the two delays "account for".
+  it("netted: a raw skew beyond the limit → investigate, though the delays account for it", () => {
+    for (const raw of [50, -50]) {
+      const v = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(0), skew(raw)], 2,
+        net([delays(20, 20), delays(20, 20 + raw)]));
+      expect(v.status).toBe("investigate");
+      expect(v.detail).toMatch(/^raw skew exceeds 15ms on 1\/2 repeat\(s\)/);
+      expect(v.detail).not.toMatch(/netted skew exceeds/);
+      expect(v.detail).toMatch(/nettedSkewMs per repeat=\[0\.00, 0\.00\]/);
+    }
+  });
+
+  it("netted: a raw skew at the limit passes in either direction, one just past it does not", () => {
+    expect(classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(15)], 2, net([delays(5, 20)])).status).toBe("aligned");
+    expect(classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(-15)], 2, net([delays(20, 5)])).status).toBe("aligned");
+    const past = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(15.01)], 2, net([delays(5, 20.01)]));
+    expect(past.status).toBe("investigate");
+    expect(past.detail).toMatch(/^raw skew exceeds 15ms on 1\/1 repeat\(s\)/);
+  });
+
+  // Without a limit nothing bounds how far apart the two buffers hold the sound.
+  it.each([undefined, Number.NaN, Number.POSITIVE_INFINITY, 0, -1])("netted: refuses a raw skew limit of %s", limit => {
+    expect(() => classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(0)], 2, net([delays(20, 20)], { rawSkewLimitMs: limit })))
+      .toThrow(/rawSkewLimitMs/);
+  });
+
+  it("the raw skew limit says nothing new about a repeat judged on its raw skew", () => {
+    const v = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(50)], 2, { rawSkewLimitMs: 15 });
+    expect(v.status).toBe("investigate");
+    expect(v.detail).toMatch(/^skew exceeds 2ms tolerance/);
+  });
+
+  it("netted: a tape that classified investigate is what the detail names, whatever the skew", () => {
+    const within = classifyMultitrackCell(cls("aligned"), cls("investigate"), measured.skews, 2, net(measured.delays));
+    expect(within.status).toBe("investigate");
+    expect(within.detail).toMatch(/did not classify clean/);
+    const beyond = classifyMultitrackCell(cls("investigate"), cls("aligned"), [skew(50)], 2, net([delays(20, 70)]));
+    expect(beyond.status).toBe("investigate");
+    expect(beyond.detail).toMatch(/did not classify clean/);
+  });
+
+  it("reports how the raw skew is spread over render quanta on either verdict", () => {
+    const aligned = classifyMultitrackCell(cls("aligned"), cls("aligned"), measured.skews, 2, net(measured.delays));
+    expect(aligned.status).toBe("aligned");
+    expect(aligned.detail).toMatch(/raw skew in render quanta: 0 ×1, 1 ×2, 4 ×1$/);
+    const investigate = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(0), skew(8.6667)], 2,
+      net([delays(20, 20), delays(17.625, 20.2917)]));
+    expect(investigate.status).toBe("investigate");
+    expect(investigate.detail).toMatch(/raw skew in render quanta: 0 ×1, 3\.25 ×1$/);
+  });
+
+  it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])("refuses a render quantum of %s", quantum => {
+    expect(() => classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(0)], 2, { renderQuantumMs: quantum }))
+      .toThrow(/render quantum/);
+  });
+});
+
+describe("formatTwoDecimals", () => {
+  it("prints two decimals, and a value that rounds to zero without a minus sign", () => {
+    expect(formatTwoDecimals(12.3456)).toBe("12.35");
+    expect(formatTwoDecimals(-6.2)).toBe("-6.20");
+    expect(formatTwoDecimals(-0)).toBe("0.00");
+    expect(formatTwoDecimals(-0.004)).toBe("0.00");
+    expect(formatTwoDecimals(-0.006)).toBe("-0.01");
+  });
+});
+
+describe("nettedSkewMs", () => {
+  it("takes the difference of the two delays out of the skew (skew is b − a)", () => {
+    expect(nettedSkewMs(-10.5, { aMs: 20.75, bMs: 10.25 })).toBe(0);
+    expect(nettedSkewMs(2.5, { aMs: 17.5, bMs: 20 })).toBe(0);
+    expect(nettedSkewMs(8, { aMs: 10, bMs: 12 })).toBe(6);
+    expect(nettedSkewMs(8, { aMs: 12, bMs: 10 })).toBe(10);
+  });
+
+  it.each([
+    ["no record", undefined],
+    ["tape a's delay unknown", { aMs: null, bMs: 12 }],
+    ["tape b's delay unknown", { aMs: 10, bMs: null }],
+    ["tape a's delay not a number", { aMs: Number.NaN, bMs: 12 }],
+    ["tape b's delay not a number", { aMs: 10, bMs: Number.NaN }],
+    ["tape a's delay infinite", { aMs: Number.NEGATIVE_INFINITY, bMs: 10 }],
+    ["tape b's delay infinite", { aMs: 10, bMs: Number.POSITIVE_INFINITY }],
+  ])("is null with %s", (_label, record) => {
+    expect(nettedSkewMs(8, record)).toBeNull();
+  });
+
+  it("is null for a repeat that has no skew", () => {
+    expect(nettedSkewMs(null, { aMs: 10, bMs: 12 })).toBeNull();
+  });
+});
+
+describe("skewDistribution", () => {
+  const Q = (128 / 48000) * 1000;
+
+  it("counts repeats by the size of their skew in render quanta, ignoring its direction", () => {
+    expect(skewDistribution([0, 2.6667, -2.6667, 10.6667, -0.0000004], Q)).toEqual([
+      { quanta: 0, count: 2 }, { quanta: 1, count: 2 }, { quanta: 4, count: 1 },
+    ]);
+  });
+
+  it("keeps a skew that is not a whole number of quanta as it is, to two decimals", () => {
+    expect(skewDistribution([2.0, 7.3333], Q)).toEqual([
+      { quanta: 0.75, count: 1 }, { quanta: 2.75, count: 1 },
+    ]);
+  });
+
+  it("uses the quantum of the rate it is given", () => {
+    const at441 = (128 / 44100) * 1000;
+    expect(skewDistribution([2.9025, -2.9025], at441)).toEqual([{ quanta: 1, count: 2 }]);
+  });
+
+  it("leaves out repeats without a skew", () => {
+    expect(skewDistribution([null, 0, null], Q)).toEqual([{ quanta: 0, count: 1 }]);
+  });
+
+  it("is empty when no repeat has a skew", () => {
+    expect(skewDistribution([], Q)).toEqual([]);
+    expect(skewDistribution([null, null], Q)).toEqual([]);
+  });
+
+  it("leaves out a skew that is not a number", () => {
+    expect(skewDistribution([Number.NaN, Number.POSITIVE_INFINITY, 2.6667], Q)).toEqual([{ quanta: 1, count: 1 }]);
+  });
+
+  it("orders by size, whatever the direction", () => {
+    expect(skewDistribution([-10.6667, -2.6667, -0.1], Q).map((bucket) => bucket.quanta)).toEqual([0.04, 1, 4]);
+  });
+
+  it("rounds to two decimals of a quantum", () => {
+    expect(skewDistribution([Q * 0.125, Q * 1.004, Q * 0.996], Q)).toEqual([
+      { quanta: 0.13, count: 1 }, { quanta: 1, count: 2 },
+    ]);
+  });
+
+  // An empty spread would read as "no repeats", and an infinite quantum as "no skew".
+  it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])("refuses a quantum of %s", quantum => {
+    expect(() => skewDistribution([0, 2.6667], quantum)).toThrow(/render quantum/);
+  });
+
+  it("prints as a list of sizes and counts", () => {
+    expect(formatSkewDistribution(skewDistribution([0, 0, 2.6667, 2.0, 10.6667], Q))).toBe("0 ×2, 0.75 ×1, 1 ×1, 4 ×1");
+    expect(formatSkewDistribution([])).toBe("none");
   });
 });
