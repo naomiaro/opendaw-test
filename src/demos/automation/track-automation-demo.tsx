@@ -351,20 +351,18 @@ const App: React.FC = () => {
         // (chain field via the adapter layer, resolved outside the transaction)
         setStatus("Setting up automation tracks...");
         const reverbField = audioEffectsFieldOf(newProject, audioUnitBox);
-        let reverbBox: ReverbDeviceBox | null = null;
-        newProject.editing.modify(() => {
-          const effectBox = newProject.api.insertEffect(reverbField, EffectFactories.Reverb);
-          reverbBox = effectBox as ReverbDeviceBox;
-          // Large hall: long decay, low damping, noticeable wet level
-          reverbBox.decay.setValue(0.85);     // long tail (0-1)
-          reverbBox.preDelay.setValue(0.03);  // 30ms pre-delay
-          reverbBox.damp.setValue(0.3);       // low damping = brighter
-          reverbBox.wet.setValue(-6);         // -6 dB wet (loud enough to hear)
-          reverbBox.dry.setValue(0);          // 0 dB dry
-        });
-        if (!reverbBox) {
-          throw new Error("Failed to create Reverb effect");
-        }
+        const reverbBox: ReverbDeviceBox = newProject.editing
+          .modify(() => {
+            const box = newProject.api.insertEffect(reverbField, EffectFactories.Reverb) as ReverbDeviceBox;
+            // Large hall: long decay, low damping, noticeable wet level
+            box.decay.setValue(0.85);     // long tail (0-1)
+            box.preDelay.setValue(0.03);  // 30ms pre-delay
+            box.damp.setValue(0.3);       // low damping = brighter
+            box.wet.setValue(-6);         // -6 dB wet (loud enough to hear)
+            box.dry.setValue(0);          // 0 dB dry
+            return box;
+          })
+          .unwrap("Failed to create Reverb effect");
         reverbDeviceBoxRef.current = reverbBox;
 
         // Create 3 automation tracks: volume, pan, reverb wet. The fields' pointer unions

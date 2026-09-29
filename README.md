@@ -129,7 +129,7 @@ src/
 │   ├── parameterBinding.ts            # Read, write and observe one parameter
 │   ├── parameterSteps.ts              # Whole-number slider positions for integer parameters
 │   ├── nanoSamples.ts                 # Synthesized samples for the Nano demo
-│   └── testing/                       # Fixtures for unit tests (a real box graph in Node)
+│   └── testing/                       # Test fixtures: a real box graph in Node, DOM setup
 └── demos/
     ├── playback/                      # Playback, editing, and mixing demos
     │   ├── clip-fades-demo.tsx        # Fade curve types
@@ -159,6 +159,7 @@ src/
     │       ├── nanoContent.ts         # Instrument, sample swap and pattern builder
     │       ├── NanoWaveform.tsx       # Waveform, markers and live playheads
     │       ├── nanoMarkers.ts         # Region, loop and playhead math
+    │       ├── nanoMessages.ts        # What the page says, and reading a dropped file
     │       └── nanoPresets.ts         # Per-sample parameters and patterns
     ├── clips/                         # Clip launcher demos
     │   └── jam-arrangement-demo.tsx   # Clip jamming → committed region arrangement

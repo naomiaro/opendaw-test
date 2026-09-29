@@ -461,13 +461,16 @@ export function rebuildSpliceRegions(
       const zoneStart = zoneBounds[z];
       const zoneEnd = zoneBounds[z + 1];
       const take = takes[assignments[z]];
-      if (!take || !take.audioFileBox) continue;
+      if (!take) continue;
+      // A local, so the check still holds inside the callback below.
+      const audioFileBox = take.audioFileBox;
+      if (!audioFileBox) continue;
 
       const eventsCollectionBox = ValueEventCollectionBox.create(project.boxGraph, UUID.generate());
 
       AudioRegionBox.create(project.boxGraph, UUID.generate(), box => {
         box.regions.refer(spliceTrackBox.regions);
-        box.file.refer(take.audioFileBox);
+        box.file.refer(audioFileBox);
         box.events.refer(eventsCollectionBox.owners);
         box.position.setValue(zoneStart);
         box.duration.setValue(zoneEnd - zoneStart);

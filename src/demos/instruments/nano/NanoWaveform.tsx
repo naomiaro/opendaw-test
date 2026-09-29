@@ -4,6 +4,7 @@ import { PeaksPainter } from "@opendaw/lib-fusion";
 import type { Project } from "@opendaw/studio-core";
 import type { NanoDeviceBoxAdapter } from "@opendaw/studio-adapters";
 import { Callout, Text } from "@radix-ui/themes";
+import { regionMessage } from "./nanoMessages";
 import { CanvasPainter } from "@/lib/CanvasPainter";
 import { CANVAS_COLORS } from "@/lib/design/consoleTheme";
 import { useParameterUnit, type UnitParameter } from "@/hooks/useParameterUnit";
@@ -20,6 +21,8 @@ const HEIGHT = 180;
 const STALE_PLAYHEAD_MS = 150;
 
 export const WAVEFORM_STYLES = `
+/* Half a marker's width on each side, so a marker at either end stays inside the frame. */
+.nn-wave-frame { padding: 0 12px; }
 .nn-wave { position: relative; width: 100%; height: ${HEIGHT}px; }
 .nn-wave canvas {
   position: absolute; inset: 0; width: 100%; height: 100%; display: block;
@@ -59,7 +62,7 @@ const MARKERS: ReadonlyArray<{
 ];
 
 export interface NanoWaveformProps {
-  project: Project;
+  project: Pick<Project, "editing" | "liveStreamReceiver">;
   adapter: NanoDeviceBoxAdapter;
   sampleSeconds: number;
   peaksVersion: number;
@@ -292,7 +295,12 @@ export const NanoWaveform: React.FC<NanoWaveformProps> = ({
     return true;
   }, [project, adapter]);
 
+  // A drag belongs to the pointer that started it, and moves the marker it
+  // started on, until that pointer lets go. Other pointers are ignored.
   const onPointerDown = useCallback((id: MarkerId, event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    const drag = dragRef.current;
+    if (drag !== null && drag.pointerId !== event.pointerId) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     dragRef.current = { id, pointerId: event.pointerId, committed: false };
   }, []);
@@ -306,9 +314,15 @@ export const NanoWaveform: React.FC<NanoWaveformProps> = ({
     if (changed) drag.committed = true;
   }, [writeMarker]);
 
-  const endDrag = useCallback(() => {
-    dragRef.current = null;
+  const endDrag = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (dragRef.current !== null && dragRef.current.pointerId === event.pointerId) dragRef.current = null;
   }, []);
+
+  // The loop markers go away with the loop, and with them any event that would end their drag.
+  useEffect(() => {
+    const drag = dragRef.current;
+    if (!loopOn && drag !== null && (drag.id === "loopStart" || drag.id === "loopEnd")) dragRef.current = null;
+  }, [loopOn]);
 
   const onKeyDown = useCallback((id: MarkerId, event: React.KeyboardEvent<HTMLDivElement>) => {
     const target = markerKeyTarget(id, event.key, event.shiftKey, readValues(adapter));
@@ -320,6 +334,7 @@ export const NanoWaveform: React.FC<NanoWaveformProps> = ({
   // Drawing only: a loop marker stored outside the region is drawn at the
   // region's edge, where the engine puts the loop. The stored value is left
   // alone, so the Loop sliders can read differently from the markers.
+  const message = regionMessage({ empty: region.empty, startIsModulated: ghostParameter !== null });
   const displayed: MarkerValues = {
     sampleStart,
     sampleEnd,
@@ -329,6 +344,7 @@ export const NanoWaveform: React.FC<NanoWaveformProps> = ({
 
   return (
     <>
+      <div className="nn-wave-frame">
       <div ref={containerRef} className="nn-wave">
         <canvas
           ref={staticRef}
@@ -366,9 +382,10 @@ export const NanoWaveform: React.FC<NanoWaveformProps> = ({
           />
         ))}
       </div>
-      {loaded && region.empty && (
+      </div>
+      {loaded && message !== null && (
         <Callout.Root color="amber" size="1" role="status">
-          <Callout.Text>The region is empty, so notes play nothing. Move Start or End.</Callout.Text>
+          <Callout.Text>{message}</Callout.Text>
         </Callout.Root>
       )}
       {loaded && loopOn && loop.degenerate && !region.empty && (

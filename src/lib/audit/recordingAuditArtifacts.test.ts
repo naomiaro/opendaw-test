@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ABSOLUTE_GRID_FROM_RUN, appliedHarnessPathBiasMs, parseAuditSummary, parseMultitrackAuditSummary,
+  formatMilliseconds,
 } from "./recordingAuditArtifacts";
 import { profileKeyFor } from "./recordingAuditCalibration";
 
@@ -156,5 +157,31 @@ describe("appliedHarnessPathBiasMs", () => {
   it("is null for an unadjusted or unmeasured row", () => {
     expect(appliedHarnessPathBiasMs(row() as never)).toBeNull();
     expect(appliedHarnessPathBiasMs(row({ medianBeatErrorMs: null, medianBeatErrorMsAdjusted: null }) as never)).toBeNull();
+  });
+});
+
+describe("formatMilliseconds", () => {
+  it("prints a value with two decimals", () => {
+    expect(formatMilliseconds(12.3456)).toBe("12.35");
+    expect(formatMilliseconds(-6.2)).toBe("-6.20");
+    expect(formatMilliseconds(0)).toBe("0.00");
+  });
+
+  it("prints a dash for a row that has no value", () => {
+    expect(formatMilliseconds(null)).toBe("—");
+  });
+
+  // A row saved before the field existed has no such key at all.
+  it("prints a dash for a row saved without the field", () => {
+    expect(formatMilliseconds(undefined)).toBe("—");
+    const saved: { medianBeatErrorMsAdjusted?: number | null } = JSON.parse("{}");
+    expect(formatMilliseconds(saved.medianBeatErrorMsAdjusted)).toBe("—");
+  });
+
+  // A dash means "no value". A value that was computed and came out wrong is a
+  // different finding (a latency the browser did not report, say) and must show.
+  it("prints a value that is not a number as it is, not as a dash", () => {
+    expect(formatMilliseconds(Number.NaN)).toBe("NaN");
+    expect(formatMilliseconds(Number.POSITIVE_INFINITY)).toBe("Infinity");
   });
 });

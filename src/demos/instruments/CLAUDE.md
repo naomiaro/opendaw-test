@@ -92,6 +92,13 @@
   because "one frame" depends on it (0.1 % of a 60 s sample is 60 ms of sound).
 - Measured with a decaying 1.5 s pluck held past its end: loop on, output RMS 0.008 at
   2.5 s; loop off, RMS 0.
+- **The empty-region message depends on modulation.** The markers show the STORED
+  start; the engine reads the start with modulation added. With Start equal to End
+  and the LFO on, held notes sounded on 5 of 6 tries (RMS 0.08–0.10), so the page only
+  claims silence while nothing modulates the start (`regionMessage` in
+  `nanoMessages.ts`).
+- Pitch, octave and reverse were measured at both 44.1 kHz and 48 kHz contexts
+  (48 kHz: 220.2 Hz, 440.4 Hz an octave up, pad 130.8 Hz, reversed sweep 960 → 676 Hz).
 - **Read heads:** `project.liveStreamReceiver.subscribeFloats(adapter.positionsAddress, …)`
   delivers the positions of the first 16 sounding voices in SOURCE FRAMES. A −1 ends the
   list when fewer than 16 are sounding; entries after it are stale, and with 16 or more
@@ -147,6 +154,12 @@
   moving pitch at two points at least 0.4 s into the note.
 - Autocorrelation pitch reads need the FIRST strong peak, not the best one: two periods
   score as high as one, and a 220 Hz note reads as 110 Hz.
+- To measure at another sample rate, force it before the page loads: replace
+  `window.AudioContext` in an init script with a subclass whose constructor passes
+  `sampleRate`.
+- A multi-file drop can be made in the page: fill a `DataTransfer` with `File`s and
+  dispatch a `DragEvent("drop", { dataTransfer })` on `.mc-dropzone`. `setInputFiles`
+  with several files fails on the single-file input.
 - Two sliders share a parameter on this page (a waveform marker and a parameter slider).
   The markers are named "… marker"; match parameter sliders with `exact: true`.
 

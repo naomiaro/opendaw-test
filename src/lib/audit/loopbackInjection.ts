@@ -378,15 +378,20 @@ export function installLoopbackCapture(deviceCount: number = 1, options: Loopbac
       const tee = teeInput;
       const leg = clampDelay(virtualOutputDelaySec);
       outputLegDelay.delayTime.value = leg;
-      const nativeConnect = AudioNode.prototype.connect;
+      const originalConnect = AudioNode.prototype.connect;
+      // `connect` is overloaded, and `.call` on an overloaded method is typed by
+      // its last overload alone. One signature that covers all of them:
+      const nativeConnect = originalConnect as (
+        this: AudioNode, target: AudioNode | AudioParam, output?: number, input?: number
+      ) => AudioNode | void;
       // Every connection this window teed, so the restore can undo it: a probe
       // source the SDK leaves connected to the destination would otherwise stay
       // teed into the return path after the window closed.
       const teed: { node: AudioNode; output: number | undefined }[] = [];
       const patched = function (this: AudioNode, target: AudioNode | AudioParam, output?: number, input?: number) {
-        const result = nativeConnect.call(this, target as AudioNode, output as number, input as number);
+        const result = nativeConnect.call(this, target, output, input);
         if (target === destination && this !== engineNode) {
-          nativeConnect.call(this, tee, output as number);
+          nativeConnect.call(this, tee, output);
           teed.push({ node: this, output });
         }
         return result;
@@ -396,7 +401,7 @@ export function installLoopbackCapture(deviceCount: number = 1, options: Loopbac
       try {
         return deadlineMs === undefined ? await fn() : await withDeadline(fn(), deadlineMs, label);
       } finally {
-        AudioNode.prototype.connect = nativeConnect;
+        AudioNode.prototype.connect = originalConnect;
         let disconnected = 0;
         for (const { node, output } of teed) {
           try {
