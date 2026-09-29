@@ -171,6 +171,7 @@ import {
   signatureBandsFor,
   type AuditBuildFeature,
 } from "@/lib/audit/recordingAuditCalibration";
+import { formatMilliseconds } from "@/lib/audit/recordingAuditArtifacts";
 import type { AuditRow, CaptureMode, SdkBuildProbe } from "@/lib/audit/recordingAuditArtifacts";
 import {
   clearLastFinalizeProbe,
@@ -902,11 +903,9 @@ async function bootProject(rate: number, bpm: number): Promise<Omit<CalibrationC
   const buildFeatures = detectBuildFeatures(project.engine);
   console.log("[input-latency-calibration] buildFeatures=[" + buildFeatures.join(",") + "]");
 
-  let audioUnitBox: AudioUnitBox | null = null;
-  project.editing.modify(() => {
-    audioUnitBox = project.api.createInstrument(InstrumentFactories.Tape).audioUnitBox;
-  });
-  if (audioUnitBox === null) throw new Error("createInstrument did not return audioUnitBox");
+  const audioUnitBox: AudioUnitBox = project.editing
+    .modify(() => project.api.createInstrument(InstrumentFactories.Tape).audioUnitBox)
+    .unwrap("createInstrument did not return audioUnitBox");
   const capture = project.captureDevices.get(audioUnitBox.address.uuid).unwrap();
   if (!(capture instanceof CaptureAudio)) throw new Error("capture is not CaptureAudio");
   const calibrating = calibratingCaptureOf(capture);
@@ -2294,7 +2293,7 @@ stored entry:      ${storedEntry === null ? "NONE (not stored)" : `inputLatency 
                 {`cell:              ${cell.scenario} — ${cell.status}
 repeats:           ${cell.successfulRepeats} ok, ${cell.errorRepeats} error
 detail:            ${cell.detail}
-adjusted medians:  ${cell.rows.map((r) => (r.medianBeatErrorMsAdjusted === null ? "—" : r.medianBeatErrorMsAdjusted.toFixed(2))).join(", ")} ms
+adjusted medians:  ${cell.rows.map((r) => (formatMilliseconds(r.medianBeatErrorMsAdjusted))).join(", ")} ms
 chain state:       ${rowStates.map((r) => `r${r.repeat} ${r.chainPull} ${r.hopSec === null ? "—" : `${(r.hopSec * 1000).toFixed(2)} ms`}`).join(" · ")}${cell.errors.length > 0 ? `\nerrors:            ${cell.errors.join(" | ")}` : ""}`}
               </pre>
             )}

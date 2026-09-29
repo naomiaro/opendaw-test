@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build --mode production && vitepress build documentation",
+    "build": "tsc --noEmit && vite build --mode production && vitepress build documentation",
     "preview": "vite preview",
     "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx}\"",
     "test": "vitest run",

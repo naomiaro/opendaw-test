@@ -673,12 +673,28 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
 - Dev server is HTTPS (COOP/COEP) — Playwright/curl must use `https://`, not `http://`. Custom port:
   `npm run dev -- --port 5180 --host 127.0.0.1`, then browse `https://localhost:5180/<demo>.html`.
 - COOP/COEP headers in `public/_headers` exclude `/docs/*` — VitePress assets break under `require-corp`
-- Vite handles TypeScript transpilation (no standalone `tsc` available)
-- `noUnusedLocals` is strict, but `npm run build` doesn't surface TS6133 — Vite skips
-  `tsc`. Use the LSP to verify after adding `useState` declarations. `setFoo(...)` does
-  NOT count as a read of `foo` from `const [foo, setFoo] = useState(...)` — TS6133 still
-  fires. When splitting work across commits, introduce state in the commit that first
-  **reads** it.
+- The repo compiles with `strict` (plus `noFallthroughCasesInSwitch`, `noImplicitOverride`,
+  `noUnusedLocals`, `noUnusedParameters`, `noImplicitReturns`). `npm run typecheck`
+  (`tsc --noEmit`) exits 0 on a clean tree, and `npm run build` runs it first, so a type
+  error fails the build and the deploy. Vite itself only transpiles.
+- `skipLibCheck` is on: two SDK declaration files name DOM types the TypeScript lib does
+  not have (`FileSystemSyncAccessHandle`, `AudioPlaybackStats`). Declarations for
+  untyped packages go in `types/`.
+- **A variable assigned inside a callback reads as `never` afterwards.** `let box: T |
+  null = null; editing.modify(() => { box = … }); if (box === null) throw …; box.address`
+  fails under `strict`: the compiler does not follow the assignment into the callback,
+  so after the null check nothing is left. Return the value instead —
+  `const box = editing.modify(() => …).unwrap("message")` — or, when several values
+  come out of one transaction, cast after the callback with a comment.
+- **A check on a property does not hold inside a callback.** `if (!take.audioFileBox)
+  continue;` followed by `create(box => box.file.refer(take.audioFileBox))` fails: copy
+  the property to a `const` first.
+- **`.call` on an overloaded method is typed by its LAST overload alone**
+  (`AudioNode.prototype.connect.call(node, gainNode, 0, 0)` is rejected). Cast the
+  method to one signature that covers the overloads.
+- `setFoo(...)` does NOT count as a read of `foo` from `const [foo, setFoo] =
+  useState(...)` — TS6133 fires. When splitting work across commits, introduce state in
+  the commit that first **reads** it.
 - Node CLI scripts: `node scripts/<name>.ts` runs directly (Node ≥23 type stripping).
   VALUE imports in the script's import chain need explicit `.ts` extensions
   (`allowImportingTsExtensions` is enabled); type-only imports may stay extension-less.
@@ -692,13 +708,13 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
 - `typescript` is a devDependency (`^5.9.2`, matching the upstream openDAW monorepo pin),
   so `npx tsc --noEmit` runs the project-local TS — no `--ignoreDeprecations` flag needed.
   Don't jump to TS 7.x: it removes `baseUrl` outright (hard error TS5102).
-- `src/` is tsc-clean: `npx tsc --noEmit` must report zero `^src/` lines before a
-  commit. If unsure whether an error pre-dates a branch, diff against the parent
-  commit's error set (`git show` + the worktree recipe below).
-- Concrete "zero new errors" recipe: `git worktree add <tmp> <parent> && cd <tmp> &&
-  npm ci && npx tsc --noEmit 2>&1 | grep '^src/' | sort`,
-  then `comm -13 baseline.txt branch.txt`. Filter to `^src/` — the node_modules
-  TS2304s (`FilePickerOptions`/`AudioPlaybackStats` DOM-lib cascade) are environmental.
+- `npm run typecheck` must exit 0 before a commit.
+- Component and hook tests run in jsdom: start the test file with
+  `// @vitest-environment jsdom` and import `@/lib/testing/domSetup` first. Every other
+  test stays in Node. jsdom lays nothing out (give an element a size with `layOut()`),
+  has no canvas (`installFakeContext2d()` before rendering), and parameters hold
+  32-bit floats, so compare a marker's percent with a tolerance. A themed Radix Slider
+  works under `userEvent.keyboard`.
 - If `npm run build` fails with a missing SDK export on a clean tree (e.g. "InputLatency
   is not exported"), suspect node_modules drift behind package-lock.json (installed SDK
   version < locked version) — fix with `npm ci`, not code changes.
@@ -716,12 +732,11 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   ParameterFieldAdapters(), isMainThread: false }`, as long as no pointer of theirs has a
   target yet — that gives tests the SDK's real value and string mappings. `new
   BoxEditing(boxGraph)` is a real `editing` (modify, append, undo).
-- React components are tested by rendering to markup (`renderToStaticMarkup` from
-  `react-dom/server`) — the repo has no DOM test environment, so effects do not run and
-  nothing can be clicked. Keep logic out of components (see `src/lib/parameterBinding.ts`
-  under `useParameterUnit`) so it is testable without one. A themed Radix `Slider`
-  rendered this way carries its value in the filled range's `right:` style, not in the
-  thumb's `aria-valuenow`.
+- Keep logic out of components (see `src/lib/parameterBinding.ts` under
+  `useParameterUnit`), so most of it is testable in Node. What a component shows for a
+  value can also be tested without a DOM, by rendering to markup
+  (`renderToStaticMarkup`); a themed Radix `Slider` rendered that way carries its value
+  in the filled range's `right:` style, not in the thumb's `aria-valuenow`.
 - The SDK's value mappings clamp a UNIT value outside 0..1 in `y(x)` (so `setUnitValue(1.5)`
   lands on the maximum), but pass NaN through. `setValue` does not clamp. Guard non-finite
   unit values before writing.

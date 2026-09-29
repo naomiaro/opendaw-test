@@ -107,6 +107,7 @@ import {
   type MultitrackAuditSummary,
   type CaptureMode,
   type SdkBuildProbe,
+  formatMilliseconds,
 } from "@/lib/audit/recordingAuditArtifacts";
 import { BAR_PPQN } from "@/lib/audit/auditExpectations";
 // Single-tape per-repeat runner and its waits, shared with the input-latency
@@ -235,11 +236,9 @@ async function runProbe(onRow: (row: ProbeRow) => void, onBuildProbe: (probe: Sd
   settings.recording.countInBars = 1;
 
   // Tape + capture (three transactions — createInstrument, then capture fields; armed is not a box field)
-  let audioUnitBox: AudioUnitBox | null = null;
-  project.editing.modify(() => {
-    audioUnitBox = project.api.createInstrument(InstrumentFactories.Tape).audioUnitBox;
-  });
-  if (audioUnitBox === null) throw new Error("probe: createInstrument did not return audioUnitBox");
+  const audioUnitBox: AudioUnitBox = project.editing
+    .modify(() => project.api.createInstrument(InstrumentFactories.Tape).audioUnitBox)
+    .unwrap("probe: createInstrument did not return audioUnitBox");
   const capture = project.captureDevices.get(audioUnitBox.address.uuid).unwrap();
   if (!(capture instanceof CaptureAudio)) throw new Error("probe: capture is not CaptureAudio");
   project.editing.modify(() => {
@@ -597,11 +596,9 @@ async function createMatrixContext(rate: number): Promise<MatrixContext> {
   const bias = await resolveHarnessPathBias(audioContext);
 
   // ONE tape, created once, reused across every cell (and every re-run).
-  let audioUnitBox: AudioUnitBox | null = null;
-  project.editing.modify(() => {
-    audioUnitBox = project.api.createInstrument(InstrumentFactories.Tape).audioUnitBox;
-  });
-  if (audioUnitBox === null) throw new Error("createInstrument did not return audioUnitBox");
+  const audioUnitBox: AudioUnitBox = project.editing
+    .modify(() => project.api.createInstrument(InstrumentFactories.Tape).audioUnitBox)
+    .unwrap("createInstrument did not return audioUnitBox");
   const capture = project.captureDevices.get(audioUnitBox.address.uuid).unwrap();
   if (!(capture instanceof CaptureAudio)) throw new Error("capture is not CaptureAudio");
   project.editing.modify(() => {
@@ -882,7 +879,7 @@ function ScenarioRunnerHarness() {
                       <Table.Cell>{row.repeat}</Table.Cell>
                       <Table.Cell>{row.takeIndex}</Table.Cell>
                       <Table.Cell>{row.medianBeatErrorMs === null ? "—" : row.medianBeatErrorMs.toFixed(2)}</Table.Cell>
-                      <Table.Cell>{row.medianBeatErrorMsAdjusted === null ? "—" : row.medianBeatErrorMsAdjusted.toFixed(2)}</Table.Cell>
+                      <Table.Cell>{formatMilliseconds(row.medianBeatErrorMsAdjusted)}</Table.Cell>
                       <Table.Cell>{row.matchedBeats}</Table.Cell>
                       <Table.Cell>{row.missingBeats}</Table.Cell>
                       <Table.Cell>{row.headMissingMs === null ? "—" : row.headMissingMs.toFixed(2)}</Table.Cell>
@@ -1005,17 +1002,12 @@ interface MultitrackTapes {
  * uses two distinct devices (default `sameDeviceB=false`).
  */
 function createMultitrackTapes(project: Project, sameDeviceB: boolean = false): MultitrackTapes {
-  let audioUnitBoxA: AudioUnitBox | null = null;
-  let audioUnitBoxB: AudioUnitBox | null = null;
-  project.editing.modify(() => {
-    audioUnitBoxA = project.api.createInstrument(InstrumentFactories.Tape).audioUnitBox;
-  });
-  project.editing.modify(() => {
-    audioUnitBoxB = project.api.createInstrument(InstrumentFactories.Tape).audioUnitBox;
-  });
-  if (audioUnitBoxA === null || audioUnitBoxB === null) {
-    throw new Error("createMultitrackTapes: createInstrument did not return both audioUnitBoxes");
-  }
+  const createTape = (): AudioUnitBox =>
+    project.editing
+      .modify(() => project.api.createInstrument(InstrumentFactories.Tape).audioUnitBox)
+      .unwrap("createMultitrackTapes: createInstrument did not return an audioUnitBox");
+  const audioUnitBoxA = createTape();
+  const audioUnitBoxB = createTape();
   const captureA = project.captureDevices.get(audioUnitBoxA.address.uuid).unwrap();
   const captureB = project.captureDevices.get(audioUnitBoxB.address.uuid).unwrap();
   if (!(captureA instanceof CaptureAudio) || !(captureB instanceof CaptureAudio)) {
@@ -1666,7 +1658,7 @@ function MultitrackRunnerHarness() {
                       <Table.Cell>{row.repeat}</Table.Cell>
                       <Table.Cell>{row.tape}</Table.Cell>
                       <Table.Cell>{row.medianBeatErrorMs === null ? "—" : row.medianBeatErrorMs.toFixed(2)}</Table.Cell>
-                      <Table.Cell>{row.medianBeatErrorMsAdjusted === null ? "—" : row.medianBeatErrorMsAdjusted.toFixed(2)}</Table.Cell>
+                      <Table.Cell>{formatMilliseconds(row.medianBeatErrorMsAdjusted)}</Table.Cell>
                       <Table.Cell>{row.matchedBeats}</Table.Cell>
                       <Table.Cell>{row.missingBeats}</Table.Cell>
                       <Table.Cell>{row.headMissingMs === null ? "—" : row.headMissingMs.toFixed(2)}</Table.Cell>

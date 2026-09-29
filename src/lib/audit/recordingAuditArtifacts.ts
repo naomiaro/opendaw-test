@@ -483,3 +483,11 @@ export function appliedHarnessPathBiasMs(row: TakeRowBase): number | null {
   }
   return row.medianBeatErrorMsAdjusted - row.medianBeatErrorMs;
 }
+
+/**
+ * A millisecond value for a table cell or a text report. A dash stands for "no
+ * value": null, a row saved without the field, or something that is not a number.
+ */
+export function formatMilliseconds(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value) ? value.toFixed(2) : "—";
+}
