@@ -11,7 +11,7 @@ import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
 import { DropZone } from "@/components/DropZone";
-import { ParamSlider } from "@/components/ParamSlider";
+import { ParamSlider, useSliderThumbLabel } from "@/components/ParamSlider";
 import { PianoKeyboard, PIANO_STYLES } from "@/demos/midi/PianoKeyboard";
 import { CANVAS_COLORS, CONSOLE_STYLES } from "@/lib/design/consoleTheme";
 import { CanvasPainter } from "@/lib/CanvasPainter";
@@ -158,6 +158,7 @@ const LfoCard: React.FC<{
   const [depth, setDepth] = useState(LFO_DEFAULT_DEPTH);
   const [lfoError, setLfoError] = useState<string | null>(null);
   const sampleStart = setup.adapter.namedParameter.sampleStart;
+  const depthRef = useSliderThumbLabel("LFO depth");
   const onEnabledChangeRef = useRef(onEnabledChange);
   onEnabledChangeRef.current = onEnabledChange;
 
@@ -247,9 +248,9 @@ const LfoCard: React.FC<{
                 <Text size="1" color="gray" style={{ fontFamily: "var(--mc-mono)" }}>{depth.toFixed(2)}</Text>
               </Flex>
               <Slider
+                ref={depthRef}
                 min={-1} max={1} step={0.01}
                 value={[depth]}
-                aria-label="LFO depth"
                 onValueChange={([value]) =>
                   project.editing.modify(() => lfo.assignment.depth.setValue(Math.min(1, Math.max(-1, value))))}
               />
