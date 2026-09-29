@@ -749,12 +749,86 @@ export interface MultitrackCellVerdict {
  * Lives here rather than on the harness page so the offline scripts classify a
  * persisted multitrack run exactly as the page did; `alignedToleranceMs` is a
  * parameter for the same reason `classifyCell` takes one.
+ *
+ * NETTING (`options.netLoopbackDelay`, the release profile). Each tape records
+ * from its own loopback stream, and each stream reaches its tape with its own
+ * delay, a different number of render quanta from one repeat to the next. The
+ * raw skew between the tapes is the difference of those two delays (measured:
+ * equal to it on every pair), so a verdict on the raw skew is a verdict on the
+ * harness's streams and changes from run to run. With netting the repeat is
+ * judged on what is left once both delays are taken out, which is what the
+ * SDK's placement contributes. Called without options the function is what it
+ * always was, detail strings included: the offline oracle depends on that.
  */
+/** The delay of each tape's own loopback stream on one repeat (`loopbackDelayMs` of its row). */
+export interface LoopbackDelayPair {
+  aMs: number | null;
+  bMs: number | null;
+}
+
+/**
+ * The skew between the tapes with the two streams' own delays taken out.
+ * `skew = b's error − a's error`, and each tape's error carries its own
+ * stream's delay, so what the delays account for is `bMs − aMs`. Null when
+ * the repeat has no skew or either delay is unknown.
+ */
+export function nettedSkewMs(medianSkewMs: number | null, delays: LoopbackDelayPair | undefined): number | null {
+  if (medianSkewMs === null || delays === undefined) return null;
+  const { aMs, bMs } = delays;
+  if (typeof aMs !== "number" || !Number.isFinite(aMs) || typeof bMs !== "number" || !Number.isFinite(bMs)) return null;
+  return medianSkewMs - (bMs - aMs);
+}
+
+/** Two decimals, with a value that rounds to zero printed as "0.00" rather than "-0.00". */
+export function formatTwoDecimals(value: number): string {
+  const text = value.toFixed(2);
+  return text === "-0.00" ? "0.00" : text;
+}
+
+export interface SkewBucket {
+  /** Size of the skew in render quanta, to two decimals; its direction is ignored */
+  quanta: number;
+  count: number;
+}
+
+/**
+ * How a set of repeats' skews is spread over render quanta. A description of
+ * what was measured, never a verdict: on this harness the raw skew is the
+ * difference of the two loopback streams' delays, which falls on a different
+ * number of quanta from one repeat to the next.
+ */
+export function skewDistribution(skewsMs: ReadonlyArray<number | null>, renderQuantumMs: number): SkewBucket[] {
+  if (!(renderQuantumMs > 0)) return [];
+  const counts = new Map<number, number>();
+  for (const skew of skewsMs) {
+    if (skew === null || !Number.isFinite(skew)) continue;
+    const quanta = Math.round((Math.abs(skew) / renderQuantumMs) * 100) / 100;
+    counts.set(quanta, (counts.get(quanta) ?? 0) + 1);
+  }
+  return [...counts.entries()].sort((x, y) => x[0] - y[0]).map(([quanta, count]) => ({ quanta, count }));
+}
+
+export function formatSkewDistribution(buckets: ReadonlyArray<SkewBucket>): string {
+  if (buckets.length === 0) return "none";
+  return buckets.map((bucket) => `${bucket.quanta} ×${bucket.count}`).join(", ");
+}
+
+export interface ClassifyMultitrackOptions {
+  /** Release profile: judge each repeat's skew with the two streams' own delays
+   *  taken out, where both are known; a repeat without them keeps its raw skew. */
+  netLoopbackDelay?: boolean;
+  /** One record per entry of `repeatSkews`, in the same order. */
+  loopbackDelays?: ReadonlyArray<LoopbackDelayPair>;
+  /** When given, the detail reports the raw skew's spread over render quanta. */
+  renderQuantumMs?: number;
+}
+
 export function classifyMultitrackCell(
   tapeAClass: CellClassification,
   tapeBClass: CellClassification,
   repeatSkews: CrossTrackSkew[],
-  alignedToleranceMs: number
+  alignedToleranceMs: number,
+  options: ClassifyMultitrackOptions = {}
 ): MultitrackCellVerdict {
   if (repeatSkews.length === 0) {
     return {
@@ -770,13 +844,26 @@ export function classifyMultitrackCell(
     };
   }
   const medians = usable.map((s) => s.medianSkewMs!);
-  const skewDetail = `medianSkewMs per repeat=[${medians.map((m) => m.toFixed(2)).join(", ")}] maxAbsMedianSkewMs=${Math.max(...medians.map(Math.abs)).toFixed(2)}`;
+  const netted = options.netLoopbackDelay === true
+    ? medians.map((m, index) => nettedSkewMs(m, options.loopbackDelays?.[index]))
+    : medians.map(() => null);
+  const nettedCount = netted.filter((n) => n !== null).length;
+  // Each repeat is judged on its netted skew where that is known, else on its raw skew.
+  const judged = medians.map((m, index) => netted[index] ?? m);
+  const distribution = options.renderQuantumMs !== undefined
+    ? ` raw skew in render quanta: ${formatSkewDistribution(skewDistribution(medians, options.renderQuantumMs))}`
+    : "";
+  const nettedDetail = nettedCount > 0
+    ? ` nettedSkewMs per repeat=[${judged.map(formatTwoDecimals).join(", ")}] netted on ${nettedCount}/${medians.length}`
+    : options.netLoopbackDelay === true ? ` netted on 0/${medians.length}` : "";
+  const skewDetail = `medianSkewMs per repeat=[${medians.map(formatTwoDecimals).join(", ")}] maxAbsMedianSkewMs=${Math.max(...medians.map(Math.abs)).toFixed(2)}${nettedDetail}${distribution}`;
+  const what = nettedCount > 0 ? "netted skew" : "skew";
   const tapesClean = tapeAClass.status !== "investigate" && tapeBClass.status !== "investigate";
-  const skewClean = medians.every((m) => Math.abs(m) <= alignedToleranceMs);
+  const skewClean = judged.every((m) => Math.abs(m) <= alignedToleranceMs);
   if (skewClean && tapesClean) {
     return {
       status: "aligned",
-      detail: `skew within ${alignedToleranceMs}ms tolerance on every repeat and both tapes individually clean (tapeA=${tapeAClass.status}, tapeB=${tapeBClass.status}) — ${skewDetail}`,
+      detail: `${what} within ${alignedToleranceMs}ms tolerance on every repeat and both tapes individually clean (tapeA=${tapeAClass.status}, tapeB=${tapeBClass.status}) — ${skewDetail}`,
     };
   }
   if (!tapesClean) {
@@ -785,8 +872,11 @@ export function classifyMultitrackCell(
       detail: `at least one tape's own per-take alignment did not classify clean (tapeA=${tapeAClass.status}: ${tapeAClass.detail}; tapeB=${tapeBClass.status}: ${tapeBClass.detail}) — ${skewDetail}`,
     };
   }
+  const finding = nettedCount > 0
+    ? "candidate finding — the two loopback streams' own delays do not account for it"
+    : "candidate finding — no predicted band for inter-track skew";
   return {
     status: "investigate",
-    detail: `skew exceeds ${alignedToleranceMs}ms tolerance with both tapes otherwise clean (candidate finding — no predicted band for inter-track skew) — ${skewDetail}`,
+    detail: `${what} exceeds ${alignedToleranceMs}ms tolerance with both tapes otherwise clean (${finding}) — ${skewDetail}`,
   };
 }

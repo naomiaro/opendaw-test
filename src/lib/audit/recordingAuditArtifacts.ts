@@ -32,7 +32,9 @@
  *
  * G6 sub-case (not a generation of its own — `AuditArtifactGeneration` stays at G6): rows
  * written by a build that reports `firstQuantumTime` (a release that ships PR #376, or the branch builds)
- * additionally carry `loopbackDelayMs` / `medianBeatErrorMsNetted`. Whether the persisted
+ * additionally carry `loopbackDelayMs` / `medianBeatErrorMsNetted`, and multitrack rows
+ * `medianSkewMsNetted` (absent on multitrack rows written before that field existed: their
+ * verdict ran on the raw `medianSkewMs`, whatever the profile). Whether the persisted
  * verdict ran on the netted median is a property of the ENVELOPE's `buildFeatures`
  * (`profileKeyFor(...) === "release"`) and of the page: the matrix and multitrack pages net
  * under the release profile; the input-latency calibration page writes the same two fields
@@ -51,8 +53,9 @@
  * defaulting.
  */
 import type { CellStatus, CrossTrackSkew, SignatureBand } from "./recordingAlignment";
-// Value import with an explicit `.ts` extension: this module sits in the Node
+// Value imports with an explicit `.ts` extension: this module sits in the Node
 // scripts' import chain (type stripping resolves nothing without it).
+import { formatTwoDecimals } from "./recordingAlignment.ts";
 import {
   isMultitrackScenario, isRecordingScenario,
   type AuditBuildFeature, type MultitrackScenario, type RecordingScenario,
@@ -170,6 +173,12 @@ export interface MultitrackAuditRow extends TakeRowBase {
   medianSkewMs: number | null;
   maxAbsSkewMs: number | null;
   pairedSkewBeats: number;
+  /** G6 sub-case (rows that carry `loopbackDelayMs`): `medianSkewMs` with the two
+   *  tapes' own loopback delays taken out, `medianSkewMs − (delay b − delay a)`;
+   *  null when the skew or either delay is unknown. The skew the release
+   *  profile's multi-mic verdict ran on. Absent on rows written before it existed,
+   *  whose verdict ran on the raw `medianSkewMs`. */
+  medianSkewMsNetted?: number | null;
 }
 
 export interface ReferenceScheduleDescriptor {
@@ -492,5 +501,5 @@ export function appliedHarnessPathBiasMs(row: TakeRowBase): number | null {
  */
 export function formatMilliseconds(value: number | null | undefined): string {
   if (value === null || value === undefined) return "—";
-  return Number.isFinite(value) ? value.toFixed(2) : String(value);
+  return Number.isFinite(value) ? formatTwoDecimals(value) : String(value);
 }

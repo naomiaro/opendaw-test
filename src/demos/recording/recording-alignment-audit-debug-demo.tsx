@@ -74,6 +74,7 @@ import {
   classifyCell,
   measureCrossTrackSkew,
   classifyMultitrackCell,
+  nettedSkewMs,
   type TakeAlignment,
   type CellClassification,
   type ReferenceSchedule,
@@ -85,6 +86,8 @@ import {
   MULTITRACK_SCENARIOS,
   MULTITRACK_BASE_SCENARIO,
   REPEATS_PER_CELL,
+  MULTITRACK_REPEATS_PER_CELL,
+  RENDER_QUANTUM_FRAMES,
   JANK_MS,
   LOOP_WRAP_TAKES,
   ALIGNED_TOLERANCE_MS,
@@ -1239,6 +1242,12 @@ async function runMultitrackCellRepeat(
   b.row.medianSkewMs = skew.medianSkewMs;
   b.row.maxAbsSkewMs = skew.maxAbsSkewMs;
   b.row.pairedSkewBeats = skew.pairedBeats;
+  const netted = nettedSkewMs(skew.medianSkewMs, {
+    aMs: a.row.loopbackDelayMs ?? null,
+    bMs: b.row.loopbackDelayMs ?? null,
+  });
+  a.row.medianSkewMsNetted = netted;
+  b.row.medianSkewMsNetted = netted;
 
   return { rowA: a.row, rowB: b.row, alignmentA: a.alignment, alignmentB: b.alignment, skew, bufferA: a.buffer, bufferB: b.buffer };
 }
@@ -1339,7 +1348,7 @@ async function uploadMultitrackSummary(
     outputLatency: bias.valueSec, baseLatency,
     harnessPathBiasSec: bias.valueSec, harnessPathBiasSettleMs: bias.settleMs,
     headMissingBaselineMs: HEAD_MISSING_BASELINE_MS,
-    repeatsPerCell: REPEATS_PER_CELL,
+    repeatsPerCell: MULTITRACK_REPEATS_PER_CELL,
     jankMs: JANK_MS,
     alignedToleranceMs: ALIGNED_TOLERANCE_MS,
     skewToleranceMs: ALIGNED_TOLERANCE_MS,
@@ -1457,7 +1466,7 @@ async function runMultitrackAudit(
         cleanupWarning: string | null;
       }[] = [];
 
-      for (let repeat = 1; repeat <= REPEATS_PER_CELL; repeat++) {
+      for (let repeat = 1; repeat <= MULTITRACK_REPEATS_PER_CELL; repeat++) {
         const label = multitrackCellLabel(scenario, bpm, repeat);
         setAuditState(`running:${label}`);
         let stage = "prefs";
@@ -1526,12 +1535,16 @@ async function runMultitrackAudit(
         repeats.length > 0
           ? classifyCell(repeats.map((r) => r.alignmentB), signatureBandsFor(baseScenario, sdkBuildProbe, runToken, buildFeatures), ALIGNED_TOLERANCE_MS, { netLoopbackDelay: auditProfileFor(sdkBuildProbe, runToken, buildFeatures).netLoopbackDelay })
           : { status: "investigate", matchedSignature: null, detail: "no successful repeats to classify (tape b)" };
-      const verdict = classifyMultitrackCell(tapeAClass, tapeBClass, repeats.map((r) => r.skew), ALIGNED_TOLERANCE_MS);
+      const verdict = classifyMultitrackCell(tapeAClass, tapeBClass, repeats.map((r) => r.skew), ALIGNED_TOLERANCE_MS, {
+        netLoopbackDelay: auditProfileFor(sdkBuildProbe, runToken, buildFeatures).netLoopbackDelay,
+        loopbackDelays: repeats.map((r) => ({ aMs: r.rowA.loopbackDelayMs ?? null, bMs: r.rowB.loopbackDelayMs ?? null })),
+        renderQuantumMs: (RENDER_QUANTUM_FRAMES / rate) * 1000,
+      });
       // Persisted for EVERY cell, all-error cells included (no skew signature
       // band exists, so matchedSignature is always null here).
       cellVerdicts.push({
         scenario, bpm, rate, status: verdict.status, matchedSignature: null, detail: verdict.detail,
-        successfulRepeats: repeats.length, errorRepeats: REPEATS_PER_CELL - repeats.length,
+        successfulRepeats: repeats.length, errorRepeats: MULTITRACK_REPEATS_PER_CELL - repeats.length,
       });
 
       for (const r of repeats) {
@@ -1645,6 +1658,7 @@ function MultitrackRunnerHarness() {
                     <Table.ColumnHeaderCell>missing</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>headMiss (ms)</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>medianSkew (ms)</Table.ColumnHeaderCell>
+                    <Table.ColumnHeaderCell>nettedSkew (ms)</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>maxAbsSkew (ms)</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>pairedBeats</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>status</Table.ColumnHeaderCell>
@@ -1662,8 +1676,9 @@ function MultitrackRunnerHarness() {
                       <Table.Cell>{row.matchedBeats}</Table.Cell>
                       <Table.Cell>{row.missingBeats}</Table.Cell>
                       <Table.Cell>{row.headMissingMs === null ? "—" : row.headMissingMs.toFixed(2)}</Table.Cell>
-                      <Table.Cell>{row.medianSkewMs === null ? "—" : row.medianSkewMs.toFixed(2)}</Table.Cell>
-                      <Table.Cell>{row.maxAbsSkewMs === null ? "—" : row.maxAbsSkewMs.toFixed(2)}</Table.Cell>
+                      <Table.Cell>{formatMilliseconds(row.medianSkewMs)}</Table.Cell>
+                      <Table.Cell>{formatMilliseconds(row.medianSkewMsNetted)}</Table.Cell>
+                      <Table.Cell>{formatMilliseconds(row.maxAbsSkewMs)}</Table.Cell>
                       <Table.Cell>{row.pairedSkewBeats}</Table.Cell>
                       <Table.Cell>
                         <Badge color={multitrackStatusColor(row.status)} title={row.errorMessage ?? row.detail}>
@@ -1685,7 +1700,10 @@ function MultitrackRunnerHarness() {
               {`?scenario=<multitrack-start|multitrack-janked|multitrack-all>
 ?bpm=<number|all>     default 120 (matrix spec: bpm 120 only)
 ?rate=<number>        default 48000 — sets the AudioContext at init, never "all"
-Repeats per cell:       ${REPEATS_PER_CELL}
+Repeats per cell:       ${MULTITRACK_REPEATS_PER_CELL}
+Verdict:                each tape clean AND the skew between them within ${ALIGNED_TOLERANCE_MS} ms once both
+                        tapes' own loopback delays are taken out. The raw skew is reported as a spread
+                        over render quanta in the cell's detail; it is the two streams, not the SDK.
 Two tapes armed on loopbackDeviceId(1)/(2) — clones of the SAME loopback signal.
 Uploads:                recaudit-mt-summary-<runToken>.json (all rows + per-repeat skew) via PUT /__verify
                         recaudit-mt-<scenario>-<bpm>-<rate>-r<repeat>-tape<a|b>-<build>-<runToken>.wav per repeat

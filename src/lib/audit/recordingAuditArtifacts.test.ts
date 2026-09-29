@@ -167,6 +167,13 @@ describe("formatMilliseconds", () => {
     expect(formatMilliseconds(0)).toBe("0.00");
   });
 
+  // Subtracting two equal delays leaves float dust on either side of zero.
+  it("prints a value that rounds to zero without a minus sign", () => {
+    expect(formatMilliseconds(-1e-12)).toBe("0.00");
+    expect(formatMilliseconds(-0.004)).toBe("0.00");
+    expect(formatMilliseconds(-0.006)).toBe("-0.01");
+  });
+
   it("prints a dash for a row that has no value", () => {
     expect(formatMilliseconds(null)).toBe("—");
   });

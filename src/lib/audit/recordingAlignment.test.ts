@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildReferenceSchedule, bandSplit, identifyReferenceClicks, estimateAnchorT0,
   measureTakeAlignment, classifyCell, classifyMultitrackCell, judgedMedianMs, measureCrossTrackSkew,
+  nettedSkewMs, skewDistribution, formatSkewDistribution,
 } from "./recordingAlignment";
 import type { CellClassification, CrossTrackSkew, TakeAlignment, SignatureBand } from "./recordingAlignment";
 
@@ -612,5 +613,148 @@ describe("classifyMultitrackCell", () => {
     const v = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(0.5), skew(2.7), skew(0.3)], 2);
     expect(v.status).toBe("investigate");
     expect(v.detail).toMatch(/candidate finding/);
+  });
+
+  // --- Netting the two loopback streams' own delays out of the skew ---
+  // Measured on the release build: the raw skew between the tapes equals the
+  // difference of the two streams' delays, and each tape nets to the same value.
+  const Q = (128 / 48000) * 1000;
+  const delays = (aMs: number | null, bMs: number | null) => ({ aMs, bMs });
+  const measured = {
+    skews: [skew(-10.6667), skew(2.6667), skew(0), skew(-2.6667)],
+    delays: [delays(20.9583, 10.2917), delays(17.625, 20.2917), delays(20.9583, 20.9583), delays(12.2917, 9.625)],
+  };
+
+  it("netted: skew that is the two streams' delay difference → aligned", () => {
+    const v = classifyMultitrackCell(cls("aligned"), cls("aligned"), measured.skews, 2, {
+      netLoopbackDelay: true, loopbackDelays: measured.delays, renderQuantumMs: Q,
+    });
+    expect(v.status).toBe("aligned");
+    expect(v.detail).toMatch(/netted skew within 2ms tolerance on every repeat/);
+    expect(v.detail).toMatch(/netted on 4\/4/);
+  });
+
+  it("netted: the same run without netting still reads investigate", () => {
+    const v = classifyMultitrackCell(cls("aligned"), cls("aligned"), measured.skews, 2);
+    expect(v.status).toBe("investigate");
+  });
+
+  it("netted: a skew the delays do not account for → investigate, and the detail gives the netted value", () => {
+    // Tape b placed 6 ms late on top of a one-quantum delay difference.
+    const v = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(0), skew(2.6667 + 6)], 2, {
+      netLoopbackDelay: true, loopbackDelays: [delays(20, 20), delays(17.625, 20.2917)], renderQuantumMs: Q,
+    });
+    expect(v.status).toBe("investigate");
+    expect(v.detail).toMatch(/netted skew exceeds 2ms tolerance/);
+    expect(v.detail).toMatch(/nettedSkewMs per repeat=\[0\.00, 6\.00\]/);
+  });
+
+  it("netted: a repeat without both delays is judged on its raw skew, and counted", () => {
+    const passing = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(2.6667), skew(0.4)], 2, {
+      netLoopbackDelay: true, loopbackDelays: [delays(17.625, 20.2917), delays(null, 20)], renderQuantumMs: Q,
+    });
+    expect(passing.status).toBe("aligned");
+    expect(passing.detail).toMatch(/netted on 1\/2/);
+
+    const failing = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(2.6667), skew(2.6667)], 2, {
+      netLoopbackDelay: true, loopbackDelays: [delays(17.625, 20.2917), delays(null, 20)], renderQuantumMs: Q,
+    });
+    expect(failing.status).toBe("investigate");
+  });
+
+  it("netted: fewer delay records than repeats → the missing ones are judged raw", () => {
+    const v = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(2.6667), skew(2.6667)], 2, {
+      netLoopbackDelay: true, loopbackDelays: [delays(17.625, 20.2917)], renderQuantumMs: Q,
+    });
+    expect(v.status).toBe("investigate");
+    expect(v.detail).toMatch(/netted on 1\/2/);
+  });
+
+  it("netted: a skew the delays account for prints as zero, without a minus sign", () => {
+    // 2.6667 − (20.2917 − 17.625) leaves a hair below zero.
+    const v = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(2.6667), skew(-2.6667)], 2, {
+      netLoopbackDelay: true, loopbackDelays: [delays(17.625, 20.2917), delays(20.2917, 17.625)], renderQuantumMs: Q,
+    });
+    expect(v.detail).toMatch(/nettedSkewMs per repeat=\[0\.00, 0\.00\]/);
+  });
+
+  it("prints a raw skew that rounds to zero without a minus sign", () => {
+    const v = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(-1e-12), skew(0.5)], 2);
+    expect(v.detail).toMatch(/medianSkewMs per repeat=\[0\.00, 0\.50\]/);
+  });
+
+  it("netted: a tape that classified investigate still decides the verdict", () => {
+    const v = classifyMultitrackCell(cls("aligned"), cls("investigate"), measured.skews, 2, {
+      netLoopbackDelay: true, loopbackDelays: measured.delays, renderQuantumMs: Q,
+    });
+    expect(v.status).toBe("investigate");
+    expect(v.detail).toMatch(/did not classify clean/);
+  });
+
+  it("reports how the raw skew is spread over render quanta, whatever the verdict", () => {
+    const v = classifyMultitrackCell(cls("aligned"), cls("aligned"), measured.skews, 2, {
+      netLoopbackDelay: true, loopbackDelays: measured.delays, renderQuantumMs: Q,
+    });
+    expect(v.detail).toMatch(/raw skew in render quanta: 0 ×1, 1 ×2, 4 ×1/);
+  });
+
+  it("says nothing about quanta when it was not told the quantum", () => {
+    const v = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(0.5)], 2);
+    expect(v.detail).not.toMatch(/render quanta/);
+  });
+});
+
+describe("nettedSkewMs", () => {
+  it("takes the difference of the two delays out of the skew (skew is b − a)", () => {
+    expect(nettedSkewMs(-10.6667, { aMs: 20.9583, bMs: 10.2917 })).toBeCloseTo(-0.0001, 3);
+    expect(nettedSkewMs(2.6667, { aMs: 17.625, bMs: 20.2917 })).toBeCloseTo(0, 3);
+    expect(nettedSkewMs(8, { aMs: 10, bMs: 12 })).toBeCloseTo(6, 9);
+  });
+
+  it.each([
+    ["no record", undefined],
+    ["tape a's delay unknown", { aMs: null, bMs: 12 }],
+    ["tape b's delay unknown", { aMs: 10, bMs: null }],
+    ["a delay that is not a number", { aMs: Number.NaN, bMs: 12 }],
+  ])("is null with %s", (_label, record) => {
+    expect(nettedSkewMs(8, record)).toBeNull();
+  });
+
+  it("is null for a repeat that has no skew", () => {
+    expect(nettedSkewMs(null, { aMs: 10, bMs: 12 })).toBeNull();
+  });
+});
+
+describe("skewDistribution", () => {
+  const Q = (128 / 48000) * 1000;
+
+  it("counts repeats by the size of their skew in render quanta, ignoring its direction", () => {
+    expect(skewDistribution([0, 2.6667, -2.6667, 10.6667, -0.0000004], Q)).toEqual([
+      { quanta: 0, count: 2 }, { quanta: 1, count: 2 }, { quanta: 4, count: 1 },
+    ]);
+  });
+
+  it("keeps a skew that is not a whole number of quanta as it is, to two decimals", () => {
+    expect(skewDistribution([2.0, 7.3333], Q)).toEqual([
+      { quanta: 0.75, count: 1 }, { quanta: 2.75, count: 1 },
+    ]);
+  });
+
+  it("uses the quantum of the rate it is given", () => {
+    const at441 = (128 / 44100) * 1000;
+    expect(skewDistribution([2.9025, -2.9025], at441)).toEqual([{ quanta: 1, count: 2 }]);
+  });
+
+  it("leaves out repeats without a skew", () => {
+    expect(skewDistribution([null, 0, null], Q)).toEqual([{ quanta: 0, count: 1 }]);
+  });
+
+  it.each([0, -1, Number.NaN])("is empty for a quantum of %d", quantum => {
+    expect(skewDistribution([0, 2.6667], quantum)).toEqual([]);
+  });
+
+  it("prints as a list of sizes and counts", () => {
+    expect(formatSkewDistribution(skewDistribution([0, 0, 2.6667, 2.0, 10.6667], Q))).toBe("0 ×2, 0.75 ×1, 1 ×1, 4 ×1");
+    expect(formatSkewDistribution([])).toBe("none");
   });
 });

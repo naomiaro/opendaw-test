@@ -49,6 +49,19 @@ export function signatureBandsFor(
   return RECORDING_AUDIT_PROFILES[profileKeyFor(build, runId, features)].signatureBands[scenario];
 }
 export const REPEATS_PER_CELL = 3;
+/**
+ * Repeats per multi-mic cell. More than the single-tape cells get, because the
+ * multi-mic scenarios also report how the raw skew between the two tapes is
+ * spread over render quanta, and three repeats do not show a spread: the same
+ * build gave 0, 0, 0 on one run and 1, 4, 1 quanta on the next.
+ */
+export const MULTITRACK_REPEATS_PER_CELL = 8;
+
+/**
+ * Frames in one Web Audio render quantum. The skew between two tapes comes in steps of
+ * this size, so the raw skew is reported as a count of them.
+ */
+export const RENDER_QUANTUM_FRAMES = 128;
 export const JANK_MS = 150;
 export const LOOP_WRAP_TAKES = 5;
 /**
