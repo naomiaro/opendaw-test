@@ -14,3 +14,5 @@ export { useAudioDevicePermission } from "./useAudioDevicePermission";
 export type { AudioDevicePermissionResult } from "./useAudioDevicePermission";
 export { useRecordingTapes } from "./useRecordingTapes";
 export type { RecordingTapesResult } from "./useRecordingTapes";
+export { useParameterUnit, formatParameterPrint } from "./useParameterUnit";
+export type { UnitParameter } from "./useParameterUnit";

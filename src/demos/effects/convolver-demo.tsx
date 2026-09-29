@@ -1,15 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Project } from "@opendaw/studio-core";
-import {
-  ConvolverDeviceBoxAdapter,
-  type AutomatableParameterFieldAdapter,
-} from "@opendaw/studio-adapters";
+import { ConvolverDeviceBoxAdapter } from "@opendaw/studio-adapters";
 import type { BooleanField } from "@opendaw/lib-box";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
 import { DropZone } from "@/components/DropZone";
+import { ParamSlider } from "@/components/ParamSlider";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { CanvasPainter } from "@/lib/CanvasPainter";
 import { IMPULSE_RESPONSES } from "@/lib/impulseResponses";
@@ -21,7 +19,7 @@ import {
 } from "./convolverContent";
 import "@radix-ui/themes/styles.css";
 import {
-  Theme, Container, Flex, Grid, Text, Card, Button, Badge, Switch, Slider, Separator, Callout,
+  Theme, Container, Flex, Grid, Text, Card, Button, Badge, Switch, Separator, Callout,
 } from "@radix-ui/themes";
 import { CONSOLE_STYLES, CANVAS_COLORS } from "@/lib/design/consoleTheme";
 
@@ -81,43 +79,6 @@ const EnvelopeCanvas: React.FC<{ channel: Float32Array; color: string; height: n
         background: CANVAS_COLORS.bg,
       }}
     />
-  );
-};
-
-// ---------------------------------------------------------------------------
-// Parameter slider bound to an AutomatableParameterFieldAdapter (unit space,
-// printed through the adapter's StringMapping — dB for wet/dry, ms for pre-delay).
-// ---------------------------------------------------------------------------
-
-const ParamSlider: React.FC<{
-  project: Project;
-  param: AutomatableParameterFieldAdapter<number>;
-  label: string;
-}> = ({ project, param, label }) => {
-  const [unit, setUnit] = useState(() => param.getUnitValue());
-  const [print, setPrint] = useState("");
-
-  useEffect(() => {
-    const sub = param.catchupAndSubscribe(p => {
-      setUnit(p.getUnitValue());
-      const { value, unit: suffix } = p.getPrintValue();
-      setPrint(`${value} ${suffix}`.trim());
-    });
-    return () => sub.terminate();
-  }, [param]);
-
-  return (
-    <Flex direction="column" gap="1" flexGrow="1">
-      <Flex justify="between">
-        <Text size="1" color="gray">{label}</Text>
-        <Text size="1" color="gray">{print}</Text>
-      </Flex>
-      <Slider
-        min={0} max={1} step={0.005}
-        value={[unit]}
-        onValueChange={([value]) => project.editing.modify(() => param.setUnitValue(value))}
-      />
-    </Flex>
   );
 };
 
@@ -395,9 +356,9 @@ const App: React.FC = () => {
                       <Text size="2" weight="bold">Device</Text>
                       <FieldSwitch project={project} field={setup.convolverBox.enabled} label="Enabled" />
                     </Flex>
-                    <ParamSlider project={project} param={setup.adapter.namedParameter.preDelay} label="PRE-DELAY" />
-                    <ParamSlider project={project} param={setup.adapter.namedParameter.wet} label="WET" />
-                    <ParamSlider project={project} param={setup.adapter.namedParameter.dry} label="DRY" />
+                    <ParamSlider project={project} parameter={setup.adapter.namedParameter.preDelay} label="PRE-DELAY" />
+                    <ParamSlider project={project} parameter={setup.adapter.namedParameter.wet} label="WET" />
+                    <ParamSlider project={project} parameter={setup.adapter.namedParameter.dry} label="DRY" />
                     <Separator size="4" />
                     <Flex gap="4">
                       <FieldSwitch project={project} field={setup.convolverBox.normalize} label="Normalize" />

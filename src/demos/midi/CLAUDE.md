@@ -152,7 +152,7 @@ Available instrument adapters (each implements `InstrumentDeviceBoxAdapter`):
 - `VaporisateurDeviceBoxAdapter` — built-in synth (no external files)
 - `SoundfontDeviceBoxAdapter` — SF2 soundfont player
 - `TapeDeviceBoxAdapter` — audio sample playback (default for audio recording)
-- `NanoDeviceBoxAdapter` — lightweight sampler
+- `NanoDeviceBoxAdapter` — polyphonic sampler (region, crossfade loop, root key); see `src/demos/instruments/CLAUDE.md`
 - `PlayfieldDeviceBoxAdapter` — drum pad sampler with `Gate` triggers
 - `ApparatDeviceBoxAdapter` — scriptable instrument (JavaScript DSP)
 - `MIDIOutputDeviceBoxAdapter` — routes to external MIDI hardware

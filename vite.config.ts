@@ -177,6 +177,7 @@ export default defineConfig(({command}) => ({
                 apparat: resolve(__dirname, "apparat-demo.html"),
                 neon: resolve(__dirname, "neon-demo.html"),
                 cubed: resolve(__dirname, "cubed-demo.html"),
+                nano: resolve(__dirname, "nano-demo.html"),
                 export: resolve(__dirname, "export-demo.html"),
                 compLanesDebug: resolve(__dirname, "comp-lanes-debug-demo.html"),
                 fadeOutEndOfFileDebug: resolve(__dirname, "fade-out-end-of-file-debug-demo.html"),

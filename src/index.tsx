@@ -180,6 +180,12 @@ const GROUPS: Group[] = [
         blurb:
           "Program Cubed's built-in step sequencer live — notes, gates, slides and accents on a 64-step grid, a random pattern generator, JSON and ABL .pat pattern exchange, and a synced LFO sweeping the filter.",
       },
+      {
+        href: "/nano-demo.html",
+        title: "Nano: Polyphonic Sampler",
+        blurb:
+          "Play one sample across the keyboard. Drag the region and loop markers on the waveform, run it backwards, crossfade the loop, scan the start with an LFO, and watch the read heads of the sounding voices move.",
+      },
     ],
   },
   {

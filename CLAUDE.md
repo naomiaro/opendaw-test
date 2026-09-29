@@ -706,6 +706,25 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   connect's try/catch — wrap sync fs calls in try/catch or a throw kills the dev server.
 - git worktrees: copy `localhost*.pem` in and run `npm ci` there before the dev
   server — certs and node_modules don't follow the checkout.
+- Unit tests can run against a REAL box graph in Node, no AudioContext: fixtures in
+  `src/lib/testing/boxGraphFixtures.ts`. `graph.endTransaction()` validates mandatory
+  pointers and rolls back on a violation (a bare `NanoDeviceBox.create` fails with
+  "Pointer … (host) requires an edge"), so build instruments the way the SDK does:
+  `ProjectSkeleton.empty(…)` → `AudioUnitFactory.create(skeleton, AudioUnitType.Instrument,
+  Option.None)` → `InstrumentFactories.X.create(boxGraph, unit.input, name, icon)`. Device
+  adapters construct with a minimal context, `{ parameterFieldAdapters: new
+  ParameterFieldAdapters(), isMainThread: false }`, as long as no pointer of theirs has a
+  target yet — that gives tests the SDK's real value and string mappings. `new
+  BoxEditing(boxGraph)` is a real `editing` (modify, append, undo).
+- React components are tested by rendering to markup (`renderToStaticMarkup` from
+  `react-dom/server`) — the repo has no DOM test environment, so effects do not run and
+  nothing can be clicked. Keep logic out of components (see `src/lib/parameterBinding.ts`
+  under `useParameterUnit`) so it is testable without one. A themed Radix `Slider`
+  rendered this way carries its value in the filled range's `right:` style, not in the
+  thumb's `aria-valuenow`.
+- The SDK's value mappings clamp a UNIT value outside 0..1 in `y(x)` (so `setUnitValue(1.5)`
+  lands on the maximum), but pass NaN through. `setValue` does not clamp. Guard non-finite
+  unit values before writing.
 - vitest scans `.claude/worktrees/**` — test counts double while a worktree exists;
   remove worktrees (or add a vitest exclude) before trusting `npm test` totals.
 - Web fonts under the COOP/COEP dev server need `crossorigin` on BOTH the preconnect
@@ -883,8 +902,8 @@ Each demo category folder has its own CLAUDE.md with SDK knowledge scoped to tho
 - `src/demos/export/CLAUDE.md` — offline rendering, mutate-copy-restore pattern
 - `src/demos/warp/CLAUDE.md` — beat maps, warp markers, tempo-map conform, time-stretch
 - `src/demos/engine/CLAUDE.md` — WASM (Rust) engine: EngineVariant/WasmEngine wiring and boot, offline rendering notes, DSP-load reporting
-- `src/demos/instruments/CLAUDE.md` — stock instruments (Neon, Cubed): box fields, presets,
-  pattern data, parameter-panel binding. Each instrument's files live in their own
+- `src/demos/instruments/CLAUDE.md` — stock instruments (Neon, Cubed, Nano): box fields, presets,
+  pattern data, parameter-panel binding, sampler region and loop rules, read-head broadcast. Each instrument's files live in their own
   subfolder (`src/demos/instruments/<instrument>/`); the CLAUDE.md stays at the category level
 - `src/demos/modulation/CLAUDE.md` — modulation system: ProjectModulation transaction rules, engine depth/amount/bipolar math, free-running behavior, modulator adapter constants
 - `src/demos/clips/CLAUDE.md` — clip launcher boxes, quantization, clip notifications, convert-to-region
