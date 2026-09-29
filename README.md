@@ -140,9 +140,12 @@ src/
     ├── midi/                          # MIDI demos
     │   └── midi-recording-demo.tsx    # MIDI recording + step recording
     ├── instruments/                   # Stock instrument demos
-    │   ├── neon-demo.tsx              # Neon (CZ-101 phase distortion) + .syx presets
-    │   ├── cubed-demo.tsx             # Cubed (303-style acid bassline) step sequencer
-    │   └── cubedPatterns.ts           # Hand-authored acid pattern + sound presets
+    │   ├── neon/                      # One folder per instrument
+    │   │   ├── neon-demo.tsx          # Neon (CZ-101 phase distortion) + .syx presets
+    │   │   └── neonPresets.ts         # Original patches round-tripped through sysex
+    │   └── cubed/
+    │       ├── cubed-demo.tsx         # Cubed (303-style acid bassline) step sequencer
+    │       └── cubedPatterns.ts       # Hand-authored acid pattern + sound presets
     ├── clips/                         # Clip launcher demos
     │   └── jam-arrangement-demo.tsx   # Clip jamming → committed region arrangement
     ├── automation/                    # Automation demos
