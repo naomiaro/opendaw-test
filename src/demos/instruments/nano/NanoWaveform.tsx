@@ -49,10 +49,10 @@ export const WAVEFORM_STYLES = `
 const MARKERS: ReadonlyArray<{
   id: MarkerId; label: string; tag: string; edge: "top" | "bottom"; color: string;
 }> = [
-  { id: "sampleStart", label: "Region start", tag: "S", edge: "top", color: "var(--mc-amber)" },
-  { id: "sampleEnd", label: "Region end", tag: "E", edge: "top", color: "var(--mc-amber)" },
-  { id: "loopStart", label: "Loop start", tag: "L▸", edge: "bottom", color: "var(--mc-cyan)" },
-  { id: "loopEnd", label: "Loop end", tag: "◂L", edge: "bottom", color: "var(--mc-cyan)" },
+  { id: "sampleStart", label: "Region start marker", tag: "S", edge: "top", color: "var(--mc-amber)" },
+  { id: "sampleEnd", label: "Region end marker", tag: "E", edge: "top", color: "var(--mc-amber)" },
+  { id: "loopStart", label: "Loop start marker", tag: "L▸", edge: "bottom", color: "var(--mc-cyan)" },
+  { id: "loopEnd", label: "Loop end marker", tag: "◂L", edge: "bottom", color: "var(--mc-cyan)" },
 ];
 
 export interface NanoWaveformProps {

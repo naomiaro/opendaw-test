@@ -514,8 +514,8 @@ const App: React.FC = () => {
                 <Card>
                   <Flex direction="column" gap="3">
                     <Text size="2" weight="bold" color="gray">Pitch</Text>
-                    <ParamSlider project={project} parameter={setup.adapter.namedParameter.rootKey} label="Root key" step={1 / 127} />
-                    <ParamSlider project={project} parameter={setup.adapter.namedParameter.octave} label="Octave" step={1 / 6} />
+                    <ParamSlider project={project} parameter={setup.adapter.namedParameter.rootKey} label="Root key" positions={128} />
+                    <ParamSlider project={project} parameter={setup.adapter.namedParameter.octave} label="Octave" positions={7} />
                     <ParamSlider project={project} parameter={setup.adapter.namedParameter.tune} label="Tune" />
                     <Text size="1" color="gray">These three are read live: they retune notes that are already sounding.</Text>
                   </Flex>
