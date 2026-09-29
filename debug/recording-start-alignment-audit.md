@@ -4842,8 +4842,10 @@ by each capture's recording worklet; both read `currentTime` in the worklet scop
   opened on the onset of a click, in the anomalous repeat as in all others: 62 windows
   of 96 in `…1790721436525`, 57 of 96 in `…1790721143967`, 32 of 48 in
   `…1790721702824`. The other windows opened on the metronome or part-way into a click
-  and say nothing either way. During the take the worklet clock and the clock the
-  clicks are scheduled on agree.
+  and say nothing either way. No window reads a whole number of quanta off an onset, or
+  a sample before its click was scheduled; with a quantum put into the anchors of a copy
+  of the run, the script flags every window it touches and exits with 1. During the take
+  the worklet clock and the clock the clicks are scheduled on agree.
 - **The capture chain**, as far as the recording-start time goes: the engine's stamp has
   nothing to do with a capture's stream, source node or chain.
 

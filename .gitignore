@@ -10,3 +10,5 @@ documentation/.vitepress/cache
 .claude/local.md
 .superpowers/
 .verify-output/
+# the unbroken copy of a source file while scripts/audit/recording-alignment/stream-tap/node-delay-breaks.ts has a break in it
+*.unbroken

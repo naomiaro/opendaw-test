@@ -10,7 +10,13 @@
 window.runWorkletClock = async (cfg) => {
   const QUANTUM = 128;
   const ctx = new AudioContext({ latencyHint: 0, sampleRate: cfg.sampleRate });
+  try {
   await ctx.resume();
+  if (ctx.state !== "running") throw new Error("the context is " + ctx.state + ": the page needs a real click first");
+  const within = (promise, ms, what) => Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(what + " did not come within " + String(ms) + " ms")), ms)),
+  ]);
   const source = `
     class FirstQuanta extends AudioWorkletProcessor {
       constructor(o) { super(); this.n = o.processorOptions.quanta; this.buf = new Float32Array(this.n * 128); this.frames = new Float64Array(this.n); this.times = new Float64Array(this.n); this.i = 0; }
@@ -26,7 +32,12 @@ window.runWorkletClock = async (cfg) => {
       }
     }
     registerProcessor("first-quanta", FirstQuanta);`;
-  await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([source], { type: "application/javascript" })));
+  const moduleUrl = URL.createObjectURL(new Blob([source], { type: "application/javascript" }));
+  try {
+    await within(ctx.audioWorklet.addModule(moduleUrl), 10000, "the recorder module");
+  } finally {
+    URL.revokeObjectURL(moduleUrl);
+  }
   const length = ctx.sampleRate * 30;
   const noiseBuffer = ctx.createBuffer(1, length, ctx.sampleRate);
   const noise = noiseBuffer.getChannelData(0);
@@ -84,7 +95,7 @@ window.runWorkletClock = async (cfg) => {
     }
     if (cfg.jankMs > 0) { const until = performance.now() + cfg.jankMs; while (performance.now() < until) { /* hold the main thread */ } }
     for (let b = 0; b < batch; b++) {
-      const data = await recorders[b].done;
+      const data = await within(recorders[b].done, 10000, "recorder " + String(b) + " of open " + String(open));
       bus.disconnect(recorders[b].rec);
       const offs = []; const stampSteps = []; const timeVsFrame = [];
       for (let q = 0; q < cfg.quanta; q++) {
@@ -102,7 +113,8 @@ window.runWorkletClock = async (cfg) => {
     for (const c of churn) { c.node.disconnect(); c.clone.getTracks().forEach((t) => t.stop()); }
     await sleep(cfg.gapMs);
   }
-  await ctx.close();
+  if (dest !== null) bus.disconnect(dest);
+  node.stop();
   const tally = (a) => { const c = {}; for (const v of a) c[v] = (c[v] ?? 0) + 1; return c; };
   const summary = {
     recordings: rows.length,
@@ -115,5 +127,8 @@ window.runWorkletClock = async (cfg) => {
   };
   const name = "worklet-clock-" + String(cfg.sampleRate) + "-jank" + String(cfg.jankMs) + "-batch" + String(batch) + (cfg.streams ? "-streams" : "") + "-" + String(Date.now()) + ".json";
   const put = await fetch("/__verify/" + name, { method: "PUT", body: JSON.stringify({ cfg, userAgent: navigator.userAgent, startFrame, rows, summary }, null, 1) });
-  return { saved: put.ok ? name : "UPLOAD FAILED", summary };
+  return { saved: put.ok ? name : "UPLOAD FAILED " + String(put.status), summary };
+  } finally {
+    await ctx.close();
+  }
 };
