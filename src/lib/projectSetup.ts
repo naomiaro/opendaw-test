@@ -123,23 +123,25 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
   await Workers.install(WorkersUrl);
   AudioWorklets.install(WorkletsUrl);
 
+  // Test browser features
+  const { status: testStatus, error: testError } = await Promises.tryCatch(testFeatures());
+  if (testStatus === "rejected") {
+    throw new Error(`Could not test features: ${testError}`);
+  }
+
   // The SDK stores every sample it loads and removes none. The demos never read
-  // one back, so sweep them here, before this page stores any of its own.
+  // one back, so sweep them here: after the check that the browser has the file
+  // system at all, and before this page stores any sample of its own.
   const storedSamples = await clearStoredSamples({
     locks: "locks" in navigator ? navigator.locks : undefined,
     deleteFolder: path => Workers.Opfs.delete(path),
+    folderExists: path => Workers.Opfs.exists(path),
     folder: SampleStorage.Folder,
   });
   if (storedSamples.startsWith("failed")) {
     console.warn("Stored samples were not cleared (" + storedSamples + "). The page loads as usual.");
   } else {
     console.debug("Stored samples: " + storedSamples);
-  }
-
-  // Test browser features
-  const { status: testStatus, error: testError } = await Promises.tryCatch(testFeatures());
-  if (testStatus === "rejected") {
-    throw new Error(`Could not test features: ${testError}`);
   }
 
   // Create AudioContext

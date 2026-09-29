@@ -60,6 +60,14 @@ subs.push(trackSub);
   (`opendaw-demos:page-open`) held for their lifetime.
 - Consequence: NO demo may rely on a sample stored by an earlier page load. A demo that
   needs samples to persist needs an opt-out added to `ProjectSetupOptions` first.
+- A page's OWN samples must stay for as long as the page lives: a recording is read
+  back from storage right after it is saved (its peaks), and again when its loader was
+  dropped and is wanted back (the last box pointing at it deleted, then undo). Storage
+  is the only source for a recording — the sample provider cannot supply it. That is
+  why the sweep is skipped while another page is open, and why it waits for a clear to
+  finish instead of loading beside it.
+- `Workers.Opfs.delete` reports nothing when it fails, so the sweep checks with
+  `Workers.Opfs.exists` afterwards.
 - OPFS is per ORIGIN, and the port is part of the origin: `localhost:5173` and
   `localhost:5180` have separate storage.
 - `navigator.storage.estimate()` under-reports badly here (40 MB reported against

@@ -30,8 +30,14 @@ export interface ClearStoredSamplesOptions {
   readonly locks: PageLocks | undefined;
   /** Removes a folder and everything in it */
   readonly deleteFolder: (path: string) => Promise<void>;
+  /** The SDK's delete reports nothing when it fails, so the result is checked with this */
+  readonly folderExists: (path: string) => Promise<boolean>;
   readonly folder: string;
-  /** How long to wait for the locks before letting the page load without a sweep */
+  /**
+   * How long the lock manager may take to ANSWER before the page loads without
+   * a sweep. It does not limit the clear itself: carrying on beside a delete
+   * that is still running would let it remove the samples the page stores next.
+   */
   readonly deadlineMs?: number;
 }
 
@@ -42,12 +48,12 @@ const messageOf = (error: unknown): string => (error instanceof Error ? error.me
  * this page as open. Never throws: a page must load whether or not the sweep worked.
  */
 export async function clearStoredSamples({
-  locks, deleteFolder, folder, deadlineMs = 5000,
+  locks, deleteFolder, folderExists, folder, deadlineMs = 5000,
 }: ClearStoredSamplesOptions): Promise<ClearOutcome> {
   const clear = async (): Promise<ClearOutcome> => {
     try {
       await deleteFolder(folder);
-      return "cleared";
+      return (await folderExists(folder)) ? "failed: the folder is still there" : "cleared";
     } catch (error) {
       return `failed: ${messageOf(error)}`;
     }
@@ -69,25 +75,41 @@ export async function clearStoredSamples({
     });
   };
 
-  const sweep = async (): Promise<ClearOutcome> => {
+  // Set when the page stopped waiting for the lock manager. An answer that
+  // comes after that must not clear: the page is running by then.
+  let givenUp = false;
+  let answered: () => void = () => {};
+  const hasAnswered = new Promise<void>(resolve => {
+    answered = resolve;
+  });
+
+  const sweep = (async (): Promise<ClearOutcome> => {
     const outcome = await locks.request(
       PAGE_OPEN_LOCK,
+      // Only if it is free right now. A plain request would wait until every
+      // other page had closed and then clear under whichever page is running.
       { mode: "exclusive", ifAvailable: true },
       async lock => {
-        const result: ClearOutcome = lock === null ? "kept: another page is open" : await clear();
+        answered();
+        const result: ClearOutcome =
+          lock === null || givenUp ? "kept: another page is open" : await clear();
         // Asked for while the exclusive lock is still held, so it is next in
-        // line: no other page can slip in and clear between the two.
+        // line: no other page can take the exclusive lock between the two.
         markOpen();
         return result;
       }
     );
     await markedOpen;
     return outcome as ClearOutcome;
-  };
+  })();
+  // Observed below, or abandoned after the deadline; either way never unhandled.
+  sweep.catch(() => {});
 
   try {
-    return await withDeadline(sweep(), deadlineMs, "Waiting for the page locks");
+    await withDeadline(Promise.race([hasAnswered, sweep]), deadlineMs, "Waiting for the page locks");
+    return await sweep;
   } catch (error) {
+    givenUp = true;
     return `failed: ${messageOf(error)}`;
   }
 }

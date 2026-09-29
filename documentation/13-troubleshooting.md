@@ -253,9 +253,10 @@ samples/v2/{uuid}/
 ### Stored samples pile up
 
 The SDK writes every sample its loader fetches to `samples/v2/`, and every finished
-recording too. It removes a stored sample only when the project was told the sample is
+recording too. It may remove a stored sample when the project was told the sample is
 user-created (`project.trackUserCreatedSample(uuid)`) and the last box pointing at it is
-deleted. A sample you hand the loader from memory under a fresh uuid is stored and never
+deleted; whether it does depends on the `auto-delete-orphaned-samples` preference or the
+user's answer to a prompt. A sample you hand the loader from memory under a fresh uuid is stored and never
 removed, so an app that makes new uuids on every page load grows its storage on every
 page load.
 
@@ -281,6 +282,15 @@ await navigator.locks.request("my-app:page-open", { mode: "exclusive", ifAvailab
   void navigator.locks.request("my-app:page-open", { mode: "shared" }, () => new Promise(() => {}));
 });
 ```
+
+This is the idea, not the whole of it. `src/lib/storedSamples.ts` also waits until
+the shared lock is granted before the page goes on, checks that the folder is gone
+(`Workers.Opfs.delete` reports nothing when it fails), and gives up on a lock manager
+that does not answer.
+
+A page's own samples must stay for as long as it lives: a recording is read back from
+storage after it is saved, and storage is its only source. So never clear while your
+own page is running.
 
 If your app does keep samples between visits, keep the uuids stable instead, so a
 sample is stored once and found again.
