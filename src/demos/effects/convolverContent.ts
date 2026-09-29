@@ -17,6 +17,7 @@ import type { AudioBusBox, AudioUnitBox } from "@opendaw/studio-boxes";
 import { loadAudioFile } from "@/lib/audioUtils";
 import { audioEffectsFieldOf } from "@/lib/adapterUtils";
 import { IMPULSE_RESPONSES, channelsToAudioBuffer, renderOneShot } from "@/lib/impulseResponses";
+import { referSampleFile, watchSampleLoad } from "@/lib/sampleFiles";
 
 // BassDrums30.mp3 measured at ~122 BPM (audio-analyzer rhythm_analysis, two
 // windows: median 122.3, mean 121.5–122.0, stability 0.97+) — keeps the clave
@@ -62,72 +63,6 @@ const galleryUUID = (specId: string): UUID.Bytes => {
   }
   return uuid;
 };
-
-/**
- * Swap the convolver's IR pointer with the studio's SampleSelectStrategy
- * semantics: refer the new AudioFileBox, and delete the old one when the
- * convolver was its only pointer. Runs inside its own transaction.
- * Returns the UUID string of a deleted AudioFileBox (so its decoded buffer
- * can be dropped from the shared sample map) or null.
- */
-function referImpulseFile(
-  project: Project,
-  convolverBox: ConvolverDeviceBox,
-  uuid: UUID.Bytes,
-  name: string,
-  durationSeconds: number
-): string | null {
-  const { boxGraph } = project;
-  let deletedUUID: string | null = null;
-  project.editing.modify(() => {
-    const newFile = boxGraph
-      .findBox<AudioFileBox>(uuid)
-      .unwrapOrElse(() =>
-        AudioFileBox.create(boxGraph, uuid, box => {
-          box.fileName.setValue(name);
-          box.endInSeconds.setValue(durationSeconds);
-        })
-      );
-    const filePointer = convolverBox.file;
-    filePointer.targetVertex.match({
-      none: () => filePointer.refer(newFile),
-      some: ({ box: existingFile }) => {
-        if (UUID.equals(newFile.address.uuid, existingFile.address.uuid)) return;
-        const mustDelete = existingFile.pointerHub.size() === 1;
-        filePointer.refer(newFile);
-        if (mustDelete) {
-          deletedUUID = UUID.toString(existingFile.address.uuid);
-          existingFile.delete();
-        }
-      },
-    });
-  });
-  return deletedUUID;
-}
-
-/**
- * Observe the sample loader for a just-referred IR and report a load failure.
- * Without this a failed fetch shows "Loaded" in the UI while the device plays
- * dry. Pre-check pattern per repo convention: `subscribe()` fires synchronously
- * for terminal states, so read `state` first and never terminate inside the
- * callback before the subscription binding exists.
- */
-function watchIRLoad(project: Project, uuid: UUID.Bytes, name: string, onLoadError?: IRLoadErrorHandler): void {
-  if (!onLoadError) return;
-  const loader = project.sampleManager.getOrCreate(uuid);
-  const state = loader.state;
-  if (state.type === "error") {
-    onLoadError(`Impulse "${name}" failed to load: ${state.reason}`);
-    return;
-  }
-  if (state.type === "loaded") return;
-  let subscribed = false;
-  const sub = loader.subscribe(next => {
-    if (next.type === "error") onLoadError(`Impulse "${name}" failed to load: ${next.reason}`);
-    if ((next.type === "error" || next.type === "loaded") && subscribed) sub.terminate();
-  });
-  subscribed = true;
-}
 
 /**
  * Build the Convolver demo project content.
@@ -249,6 +184,21 @@ export async function buildConvolverDemoContent(
     if (deletedUUID !== null) audioBuffers.delete(deletedUUID);
   };
 
+  const swapImpulse = (uuid: UUID.Bytes, name: string, seconds: number): void => {
+    let deletedUUID: string | null = null;
+    project.editing.modify(() => {
+      deletedUUID = referSampleFile(project, convolver.file, uuid, name, seconds);
+    });
+    releaseDeleted(deletedUUID);
+  };
+
+  const reportLoadError = (uuid: UUID.Bytes, name: string, onLoadError?: IRLoadErrorHandler): void => {
+    if (!onLoadError) return;
+    watchSampleLoad(project, uuid, {
+      onError: reason => onLoadError(`Impulse "${name}" failed to load: ${reason}`),
+    });
+  };
+
   const selectGalleryIR = (specId: string, onLoadError?: IRLoadErrorHandler): CurrentIR => {
     const spec = IMPULSE_RESPONSES.find(candidate => candidate.id === specId);
     const buffer = galleryBuffers.get(specId);
@@ -258,16 +208,16 @@ export async function buildConvolverDemoContent(
     }
     const uuid = galleryUUID(specId);
     audioBuffers.set(UUID.toString(uuid), buffer);
-    releaseDeleted(referImpulseFile(project, convolver, uuid, spec.name, buffer.duration));
-    watchIRLoad(project, uuid, spec.name, onLoadError);
+    swapImpulse(uuid, spec.name, buffer.duration);
+    reportLoadError(uuid, spec.name, onLoadError);
     return { specId, name: spec.name, seconds: buffer.duration, channel };
   };
 
   const setCustomIR = (name: string, buffer: AudioBuffer, onLoadError?: IRLoadErrorHandler): CurrentIR => {
     const uuid = UUID.generate();
     audioBuffers.set(UUID.toString(uuid), buffer);
-    releaseDeleted(referImpulseFile(project, convolver, uuid, name, buffer.duration));
-    watchIRLoad(project, uuid, name, onLoadError);
+    swapImpulse(uuid, name, buffer.duration);
+    reportLoadError(uuid, name, onLoadError);
     return {
       specId: null,
       name,

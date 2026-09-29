@@ -258,4 +258,5 @@ passes, and a mobile-width scan finds no clipped elements.
 - An LFO target picker or more than one modulator.
 - Saving or reloading a dropped sample between visits.
 - Multi-sample key zones or velocity layers, which Nano does not have.
-- Any change to the Neon or Cubed demos beyond the folder move in PR #130.
+- Any change to the Neon or Cubed demos beyond the folder move in PR #130 and replacing
+  Cubed's private parameter hook and slider with the shared ones.

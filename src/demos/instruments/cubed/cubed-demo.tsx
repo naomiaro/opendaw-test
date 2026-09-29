@@ -14,7 +14,6 @@ import {
   LfoModulatorBoxAdapter,
   type CubedContour,
   type CubedRandomizeOptions,
-  type AutomatableParameterFieldAdapter,
 } from "@opendaw/studio-adapters";
 import { CubedDeviceBox, LfoModulatorBox, type ModulationBox } from "@opendaw/studio-boxes";
 import { initializeOpenDAW } from "@/lib/projectSetup";
@@ -23,6 +22,8 @@ import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
 import { DropZone } from "@/components/DropZone";
+import { ParamSlider } from "@/components/ParamSlider";
+import type { UnitParameter } from "@/hooks/useParameterUnit";
 import { CANVAS_COLORS, CONSOLE_STYLES } from "@/lib/design/consoleTheme";
 import { CUBED_PRESETS, type CubedPreset } from "./cubedPatterns";
 import "@radix-ui/themes/styles.css";
@@ -136,58 +137,6 @@ const PAGE_STYLES = `
 `;
 
 // ---------------------------------------------------------------------------
-// Parameter binding: one hook per bound control (repo convention). Reads catch
-// up immediately; writes commit a transaction; preset applies flow back through
-// the same subscription and snap the slider.
-// ---------------------------------------------------------------------------
-
-// The demo binds through the unit-value API only (getUnitValue/setUnitValue/
-// getPrintValue), which is independent of the field's primitive type — Cubed's
-// unipolar params are declared AutomatableParameterFieldAdapter<PrimitiveValues>.
-type UnitParam = AutomatableParameterFieldAdapter;
-
-function formatPrint(param: UnitParam): string {
-  const { value, unit } = param.getPrintValue();
-  return unit ? `${value} ${unit}` : value;
-}
-
-function useParamUnit(
-  project: Project,
-  param: UnitParam,
-): [number, string, (v: number) => void] {
-  const [unit, setUnit] = useState(() => param.getUnitValue());
-  const [print, setPrint] = useState(() => formatPrint(param));
-  useEffect(() => {
-    const sub = param.catchupAndSubscribe((p) => {
-      setUnit(p.getUnitValue());
-      setPrint(formatPrint(p));
-    });
-    return () => sub.terminate();
-  }, [param]);
-  const write = useCallback((v: number) => {
-    project.editing.modify(() => param.setUnitValue(v));
-  }, [project, param]);
-  return [unit, print, write];
-}
-
-const ParamSlider: React.FC<{
-  project: Project;
-  param: UnitParam;
-  label: string;
-}> = ({ project, param, label }) => {
-  const [unit, print, write] = useParamUnit(project, param);
-  return (
-    <Flex direction="column" gap="1">
-      <Flex justify="between">
-        <Text size="1" color="gray">{label}</Text>
-        <Text size="1" color="gray" style={{ fontFamily: "var(--mc-mono)" }}>{print}</Text>
-      </Flex>
-      <Slider min={0} max={1} step={0.005} value={[unit]} onValueChange={([v]) => write(v)} />
-    </Flex>
-  );
-};
-
-// ---------------------------------------------------------------------------
 // Live cutoff scope: plots the controlled unit value (stored value + streamed
 // modulation sum) so the LFO sweep is visible against the knob's base value.
 // Same pattern as the modulation demo's ModScope.
@@ -196,7 +145,7 @@ const ParamSlider: React.FC<{
 const SCOPE_SECONDS = 4;
 const SCOPE_LEN = SCOPE_SECONDS * 60;
 
-const CutoffScope: React.FC<{ param: UnitParam }> = ({ param }) => {
+const CutoffScope: React.FC<{ param: UnitParameter }> = ({ param }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -1046,13 +995,13 @@ const App: React.FC = () => {
                         <SegmentedControl.Item value="1">Square</SegmentedControl.Item>
                       </SegmentedControl.Root>
                     </Flex>
-                    <ParamSlider project={project} param={adapter.namedParameter.cutoff} label="Cutoff" />
-                    <ParamSlider project={project} param={adapter.namedParameter.resonance} label="Resonance" />
-                    <ParamSlider project={project} param={adapter.namedParameter.envMod} label="Env Mod" />
-                    <ParamSlider project={project} param={adapter.namedParameter.decay} label="Decay" />
-                    <ParamSlider project={project} param={adapter.namedParameter.accent} label="Accent" />
-                    <ParamSlider project={project} param={adapter.namedParameter.tuning} label="Tuning" />
-                    <ParamSlider project={project} param={adapter.namedParameter.volume} label="Volume" />
+                    <ParamSlider project={project} parameter={adapter.namedParameter.cutoff} label="Cutoff" />
+                    <ParamSlider project={project} parameter={adapter.namedParameter.resonance} label="Resonance" />
+                    <ParamSlider project={project} parameter={adapter.namedParameter.envMod} label="Env Mod" />
+                    <ParamSlider project={project} parameter={adapter.namedParameter.decay} label="Decay" />
+                    <ParamSlider project={project} parameter={adapter.namedParameter.accent} label="Accent" />
+                    <ParamSlider project={project} parameter={adapter.namedParameter.tuning} label="Tuning" />
+                    <ParamSlider project={project} parameter={adapter.namedParameter.volume} label="Volume" />
                   </Flex>
                 </Card>
 
