@@ -1,4 +1,13 @@
 import { PPQN } from "@opendaw/lib-dsp";
+import type { NanoSampleId } from "@/lib/nanoSamples";
+
+/**
+ * The LFO's synced rate when it is first switched on. Longer than the two-bar
+ * pattern's bar, so the notes that fall on bar lines land on different points
+ * of the cycle. Every synced rate of one bar or less repeats on each bar line
+ * and would give those notes the same start every time.
+ */
+export const LFO_DEFAULT_RATE_LABEL = "4 bars";
 
 /** Every pattern is two bars, so the note region and the timeline loop never change size */
 export const PATTERN_LENGTH = 2 * PPQN.Bar;
@@ -23,7 +32,12 @@ export interface NanoParams {
   readonly loopEnd: number;
 }
 
-/** The ranges the sampler's parameters map over. Box fields do not clamp, so presets are tested against these. */
+/**
+ * The ranges the sampler's parameters map over, for reading. The authority is
+ * each parameter's own mapping, which `applyParams` checks every value against.
+ * Gain is the exception to "min..max": its curve reaches -72 dB and then
+ * falls to silence at the very bottom.
+ */
 export const PARAM_RANGES: Readonly<Record<keyof Omit<NanoParams, "loop">, readonly [number, number]>> = {
   rootKey: [0, 127],
   octave: [-3, 3],
@@ -82,7 +96,7 @@ const held = (position: number, pitch: number, velocity = 0.8): NanoPatternNote 
 
 const KICK_FIGURE = [60, 60, 72, 60, 48, 60, 67, 60];
 
-export const NANO_PRESETS: Readonly<Record<string, NanoPreset>> = {
+export const NANO_PRESETS: Readonly<Record<NanoSampleId, NanoPreset>> = {
   pluck: {
     params: { ...DEFAULTS, rootKey: 57, release: 0.6, loop: true, loopStart: 0.25, loopEnd: 0.6, loopFade: 0.05 },
     pattern: [held(0, 57), held(BAR, 60)],

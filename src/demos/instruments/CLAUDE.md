@@ -63,7 +63,8 @@
   transaction; it deletes the old file box when the sampler was its only pointer) and
   watch the load with `watchSampleLoad()`.
 - `NanoDeviceBoxAdapter.namedParameter`, all automatable and modulatable:
-  `volume` (label "Gain", dB, −72..0), `octave` (int −3..3), `tune` (±1200 ct),
+  `volume` (label "Gain", dB: 0 at the top, −72 along the curve, −∞ at unit 0),
+  `octave` (int −3..3), `tune` (±1200 ct),
   `rootKey` (int 0..127, default 60), `attack` (0.001–5 s, exponential),
   `release` (0.001–8 s, exponential), `sampleStart` / `sampleEnd` (0..1),
   `loop` (boolean), `loopFade` (0.001–1 s, exponential), `loopStart` / `loopEnd` (0..1).
@@ -72,23 +73,29 @@
   `watchSampleLoad`'s `onLoaded`.
 - **All four markers are shares of the WHOLE sample**, not of the region. Start past end
   plays backwards.
-- **Captured at note start vs read live.** A voice captures its region when it starts:
-  moving Start/End, or modulating Sample Start, is heard on the NEXT note. Root key,
-  octave and tune are read live and retune sounding notes. Measured: a held 220.5 Hz note
+- **Captured at note start vs read live.** A voice captures its REGION when it starts:
+  moving Start/End, or modulating Sample Start, is heard on the NEXT note. Everything
+  else is read every block and changes sounding notes: root key, octave, tune, loop
+  on/off, loop points, fade, attack, release, gain. Measured: a held 220.5 Hz note
   moved to 441 Hz when Tune went to +1200 ct, with one read head throughout and no gap.
   Reverse measured on a 200→2000 Hz sweep: start 1 / end 0 reads 1026 Hz then 723 Hz
   (falling); start 0 / end 1 reads 405 Hz then 573 Hz (rising).
 - **Loop rules** (from the voice): the two loop points are ordered, clamped inside the
-  region, and fall back to the whole region when nothing is left between them. The fade
-  is capped at half the loop span. There are TWO fade zones, one at each end of the loop
-  (`[lo, lo+fade]` and `[hi−fade, hi]`); the voice crossfades between them at the wrap.
+  region, and fall back to the whole region when less than ONE SOURCE FRAME is left
+  between them. A region holding less than one frame plays nothing. The fade is capped
+  at half the loop span and is in seconds of SOURCE material, so a note an octave up
+  crosses it in half the time. There are TWO fade zones, one at each end of the loop
+  (`[lo, lo+fade]` and `[hi−fade, hi]`): the fade runs while the head crosses the end
+  zone, and the wrap lands at `lo+fade`, so the loop repeats every span minus fade.
   Switching the loop off mid-note lets the voice run out. `nanoMarkers.ts` mirrors these
-  rules (`effectiveLoop`, `fadeUnits`) for drawing.
-- Measured with a decaying 1.5 s pluck held for 3 s: loop on, output RMS 0.008 at 2.5 s;
-  loop off, RMS 0.
+  rules for drawing; `regionBounds` and `effectiveLoop` take the sample's frame count
+  because "one frame" depends on it (0.1 % of a 60 s sample is 60 ms of sound).
+- Measured with a decaying 1.5 s pluck held past its end: loop on, output RMS 0.008 at
+  2.5 s; loop off, RMS 0.
 - **Read heads:** `project.liveStreamReceiver.subscribeFloats(adapter.positionsAddress, …)`
-  delivers up to 16 positions in SOURCE FRAMES, one per voice, ended by −1. Divide by
-  `numberOfFrames − 1` for a share of the sample. The device keeps broadcasting while
+  delivers the positions of the first 16 sounding voices in SOURCE FRAMES. A −1 ends the
+  list when fewer than 16 are sounding; entries after it are stale, and with 16 or more
+  there is no −1. Divide by `numberOfFrames − 1` for a share of the sample. The device keeps broadcasting while
   idle (about 50 packets a second, first entry −1), so an overlay is cleared by the next
   packet; the demo also clears on a 150 ms stale timer. Draw straight to a canvas in the
   callback — no React state per packet. A releasing voice still has a head: a three-note
@@ -99,11 +106,28 @@
   Root key stuck after one step). `ParamSlider` takes `positions` (7 for octave, 128 for
   root key) and runs over whole-number positions; math in `src/lib/parameterSteps.ts`.
 - **LFO on Sample Start:** create it unipolar (`box.bipolar.setValue(false)`). A bipolar
-  LFO on a start of 0 spends half of every cycle clamped at 0. While the transport
-  plays, a synced LFO's phase follows the position (measured: a "4 bars" LFO over the
-  two-bar loop gave two alternating starts, 0.16 and 0.32); stopped, it free-runs. So
-  every synced rate of one bar or less gives notes on bar lines the same start each
-  time — the demo defaults to "4 bars".
+  LFO on a start of 0 spends half of every cycle clamped at 0. Base plus modulation
+  is clamped to the sample, so on a start of 1 (the Riser as loaded) only a NEGATIVE
+  depth does anything. While the transport plays, a synced LFO's phase is tied to the
+  position: it re-anchors on start, locate and every loop jump (measured: a "4 bars"
+  LFO over the two-bar loop gave two alternating first read-head positions, 0.16 and
+  0.32 — the start plus a few tens of ms of travel). Stopped, it keeps advancing on the
+  engine's free-running clock (from the engine source; `src/demos/modulation/CLAUDE.md`
+  has the flat-until-first-Play caveat). So every synced rate of one bar or less gives
+  notes on bar lines the same start each time — the demo defaults to "4 bars".
+- **Presets are checked against the parameter's own mapping.** `setValue` does not
+  clamp, so `applyParams` refuses a value that `parameter.valueMapping.clamp(value)`
+  would change (out of range, NaN, a fraction for an integer) and throws, which aborts
+  the transaction.
+- **Deleting a file box ends its loader.** When `referSampleFile` deletes the old
+  `AudioFileBox`, the project unregisters the sample and its loader goes with it;
+  selecting that sample again builds a new loader, which asks the provider for the
+  buffer again. So gallery buffers STAY in `localAudioBuffers` for the page's lifetime —
+  only a dropped file's buffer is removed when its file box goes. Taking a buffer away
+  while a load for it is still running fails that load.
+- **`queryLoadingComplete()` resolves for a FAILED sample too** (it plays as silence).
+  Read the loader's state afterwards — `project.sampleManager.getOrCreate(uuid).state` —
+  or a failed first sample gives a page that looks ready and makes no sound.
 - **Replacing a note pattern** takes two commits: `editing.modify()` deleting the
   existing events, then `editing.append()` creating the new ones (one undo step). A
   collection does not see its own in-flight changes.
@@ -119,7 +143,7 @@
 - The playhead overlay (`.nn-wave-overlay`) exposes `data-playheads` (count) and
   `data-positions` (shares of the sample, comma-separated).
 - An `AnalyserNode` read reflects the PAST: with `fftSize` 16384 the buffer is 0.37 s
-  long, so a pitch read from its start describes audio from about 0.3 s earlier. Read a
+  long at 44.1 kHz, so a pitch read from its start describes audio from about 0.3 s earlier. Read a
   moving pitch at two points at least 0.4 s into the note.
 - Autocorrelation pitch reads need the FIRST strong peak, not the best one: two periods
   score as high as one, and a 220 Hz note reads as 110 Hz.

@@ -1,10 +1,12 @@
 import { Terminable, UUID } from "@opendaw/lib-std";
 import type { Project } from "@opendaw/studio-core";
 import { InstrumentFactories, NanoDeviceBoxAdapter, NoteRegionBoxAdapter } from "@opendaw/studio-adapters";
+import type { AutomatableParameterFieldAdapter } from "@opendaw/studio-adapters";
 import { AudioFileBox } from "@opendaw/studio-boxes";
 import type { AudioUnitBox, NanoDeviceBox, NoteRegionBox, TrackBox } from "@opendaw/studio-boxes";
 import { channelsToAudioBuffer } from "@/lib/impulseResponses";
-import { NANO_SAMPLES, type NanoSampleSpec } from "@/lib/nanoSamples";
+import { NANO_SAMPLES, type NanoSampleId, type NanoSampleSpec } from "@/lib/nanoSamples";
+import { withDeadline } from "@/lib/deadline";
 import { referSampleFile, watchSampleLoad } from "@/lib/sampleFiles";
 import {
   CUSTOM_PRESET, NANO_PRESETS, PATTERN_LENGTH,
@@ -15,13 +17,14 @@ export const NANO_DEMO_BPM = 120;
 
 export interface CurrentSample {
   /** Gallery sample id, or null for a dropped file */
-  readonly id: string | null;
+  readonly id: NanoSampleId | null;
   readonly name: string;
   readonly seconds: number;
 }
 
 export interface SampleLoadCallbacks {
   readonly onLoaded?: () => void;
+  /** The message is ready to show and already names the sample */
   readonly onError?: (message: string) => void;
 }
 
@@ -30,32 +33,47 @@ export interface NanoDemoSetup {
   readonly nanoBox: NanoDeviceBox;
   readonly adapter: NanoDeviceBoxAdapter;
   readonly initialSample: CurrentSample;
-  readonly selectSample: (id: string, callbacks?: SampleLoadCallbacks) => CurrentSample;
+  readonly selectSample: (id: NanoSampleId, callbacks?: SampleLoadCallbacks) => CurrentSample;
   readonly setCustomSample: (name: string, buffer: AudioBuffer, callbacks?: SampleLoadCallbacks) => CurrentSample;
 }
 
 interface GalleryEntry {
   readonly spec: NanoSampleSpec;
   readonly buffer: AudioBuffer;
-  /** Stable for the page's lifetime, so re-selecting a sample reuses its cached loader */
+  /** Stable for the page's lifetime, so re-selecting a sample resolves to the same stored sample */
   readonly uuid: UUID.Bytes;
 }
 
-/** Write a full parameter set. Call inside a transaction. */
-function applyParams(adapter: NanoDeviceBoxAdapter, params: NanoParams): void {
+/** How long the first sample may take to load before the page reports it */
+const LOADING_DEADLINE_MS = 30_000;
+
+/**
+ * Write one preset value. Box fields do not clamp, so a value the parameter's
+ * own mapping would change (out of range, not a number, a fraction for an
+ * integer) is refused. The throw aborts the surrounding transaction.
+ */
+function writeChecked<T extends number | boolean>(parameter: AutomatableParameterFieldAdapter<T>, value: T): void {
+  if (parameter.valueMapping.clamp(value) !== value) {
+    throw new Error(`Preset value ${String(value)} is outside the range of "${parameter.name}".`);
+  }
+  parameter.setValue(value);
+}
+
+/** Write a full parameter set. Call inside a transaction; a refused value aborts it. */
+export function applyParams(adapter: NanoDeviceBoxAdapter, params: NanoParams): void {
   const named = adapter.namedParameter;
-  named.rootKey.setValue(params.rootKey);
-  named.octave.setValue(params.octave);
-  named.tune.setValue(params.tune);
-  named.volume.setValue(params.volume);
-  named.attack.setValue(params.attack);
-  named.release.setValue(params.release);
-  named.sampleStart.setValue(params.sampleStart);
-  named.sampleEnd.setValue(params.sampleEnd);
-  named.loop.setValue(params.loop);
-  named.loopFade.setValue(params.loopFade);
-  named.loopStart.setValue(params.loopStart);
-  named.loopEnd.setValue(params.loopEnd);
+  writeChecked(named.rootKey, params.rootKey);
+  writeChecked(named.octave, params.octave);
+  writeChecked(named.tune, params.tune);
+  writeChecked(named.volume, params.volume);
+  writeChecked(named.attack, params.attack);
+  writeChecked(named.release, params.release);
+  writeChecked(named.sampleStart, params.sampleStart);
+  writeChecked(named.sampleEnd, params.sampleEnd);
+  writeChecked(named.loop, params.loop);
+  writeChecked(named.loopFade, params.loopFade);
+  writeChecked(named.loopStart, params.loopStart);
+  writeChecked(named.loopEnd, params.loopEnd);
 }
 
 /**
@@ -72,11 +90,12 @@ export async function buildNanoDemoContent(
   const sampleRate = audioContext.sampleRate;
 
   onStatus?.("Rendering samples...");
-  const gallery = new Map<string, GalleryEntry>();
+  const gallery = new Map<NanoSampleId, GalleryEntry>();
   for (const spec of NANO_SAMPLES) {
     const buffer = channelsToAudioBuffer(spec.render(sampleRate), sampleRate);
     gallery.set(spec.id, { spec, buffer, uuid: UUID.generate() });
   }
+  const galleryKeys = new Set<string>([...gallery.values()].map(entry => UUID.toString(entry.uuid)));
   const first = gallery.get(NANO_SAMPLES[0].id);
   if (first === undefined) throw new Error("The sample gallery is empty.");
   audioBuffers.set(UUID.toString(first.uuid), first.buffer);
@@ -171,39 +190,69 @@ export async function buildNanoDemoContent(
     name: string,
     buffer: AudioBuffer,
     preset: NanoPreset,
+    isGallerySample: boolean,
     callbacks?: SampleLoadCallbacks
   ): void => {
-    // A watch for a sample that is no longer selected must not report.
-    loadWatch.terminate();
-    audioBuffers.set(UUID.toString(uuid), buffer);
+    const key = UUID.toString(uuid);
+    // The buffer must be in the map before the transaction that refers to it:
+    // the loader asks for it as soon as the file box exists.
+    audioBuffers.set(key, buffer);
     let deletedUUID: string | null = null;
-    project.editing.modify(() => {
-      deletedUUID = referSampleFile(project, nanoBox.file, uuid, name, buffer.duration);
-      applyParams(adapter, preset.params);
-    });
-    if (deletedUUID !== null) audioBuffers.delete(deletedUUID);
-    writePattern(preset.pattern);
+    try {
+      project.editing.modify(() => {
+        deletedUUID = referSampleFile(project, nanoBox.file, uuid, name, buffer.duration);
+        applyParams(adapter, preset.params);
+      });
+    } catch (error) {
+      // Nothing was committed: the previous sample is still current and keeps
+      // its watch. A dropped file's buffer would otherwise stay in the map for good.
+      if (!isGallerySample) audioBuffers.delete(key);
+      throw error;
+    }
+    // From here on the new sample IS the sampler's sample, whatever happens next.
+    loadWatch.terminate();
     loadWatch = watchSampleLoad(project, uuid, {
       onLoaded: callbacks?.onLoaded,
       onError: reason => callbacks?.onError?.(`"${name}" failed to load: ${reason}`),
     });
+    // Gallery buffers stay: the gallery holds them anyway, and a load that is
+    // still running for one of them would fail if its buffer were taken away.
+    if (deletedUUID !== null && !galleryKeys.has(deletedUUID)) audioBuffers.delete(deletedUUID);
+    try {
+      writePattern(preset.pattern);
+    } catch (error) {
+      console.error("Nano demo: pattern write failed: " + String(error));
+      callbacks?.onError?.(
+        `"${name}" is loaded, but its pattern could not be written: ` +
+        (error instanceof Error ? error.message : String(error))
+      );
+    }
   };
 
-  const selectSample = (id: string, callbacks?: SampleLoadCallbacks): CurrentSample => {
+  const selectSample = (id: NanoSampleId, callbacks?: SampleLoadCallbacks): CurrentSample => {
     const entry = gallery.get(id);
     if (entry === undefined) throw new Error(`Unknown sample: ${id}`);
-    swap(entry.uuid, entry.spec.name, entry.buffer, NANO_PRESETS[id], callbacks);
+    swap(entry.uuid, entry.spec.name, entry.buffer, NANO_PRESETS[id], true, callbacks);
     return { id, name: entry.spec.name, seconds: entry.buffer.duration };
   };
 
   const setCustomSample = (name: string, buffer: AudioBuffer, callbacks?: SampleLoadCallbacks): CurrentSample => {
-    swap(UUID.generate(), name, buffer, CUSTOM_PRESET, callbacks);
+    swap(UUID.generate(), name, buffer, CUSTOM_PRESET, false, callbacks);
     return { id: null, name, seconds: buffer.duration };
   };
 
   onStatus?.("Waiting for samples...");
-  const loadingComplete = await project.engine.queryLoadingComplete();
+  // The engine's answer does not tell a loaded sample from a failed one (a
+  // failed sample resolves too, as silence), and a loader that never settles
+  // would leave the page waiting for good. So: a deadline, then the loader's own state.
+  const loadingComplete = await withDeadline(
+    project.engine.queryLoadingComplete(), LOADING_DEADLINE_MS, `Loading "${first.spec.name}"`
+  );
   if (!loadingComplete) throw new Error("Sample loading did not complete cleanly.");
+  const firstState = project.sampleManager.getOrCreate(first.uuid).state;
+  if (firstState.type === "error") {
+    throw new Error(`"${first.spec.name}" failed to load: ${firstState.reason}`);
+  }
   project.engine.setPosition(0);
 
   return {

@@ -8,9 +8,12 @@
  */
 import { mulberry32 } from "./impulseResponses";
 
+/** The gallery's samples. Presets are keyed by this, so a sample without a preset does not compile. */
+export type NanoSampleId = "pluck" | "riser" | "pad" | "kick";
+
 export interface NanoSampleSpec {
-  /** Stable slug: keys presets, the per-page-load uuid cache and React keys */
-  readonly id: string;
+  /** Stable slug: keys presets, the per-page-load uuid table and React keys */
+  readonly id: NanoSampleId;
   readonly name: string;
   readonly description: string;
   /** Rendered duration in seconds */
@@ -165,7 +168,7 @@ export const NANO_SAMPLES: ReadonlyArray<NanoSampleSpec> = [
   {
     id: "riser",
     name: "Riser",
-    description: "An upward sweep. Put the start marker past the end marker to play it backwards.",
+    description: "An upward sweep, loaded with its start past its end so it plays backwards. Swap them to hear it rise.",
     seconds: RISER_SECONDS,
     rootKey: 60,
     fundamentalHz: null,
@@ -203,7 +206,8 @@ export function checkCustomSample(seconds: number, frames: number): string | nul
     return "the file holds no audio";
   }
   if (seconds > MAX_CUSTOM_SAMPLE_SECONDS) {
-    return `it is ${seconds.toFixed(1)} s long and the sampler page takes samples up to ${MAX_CUSTOM_SAMPLE_SECONDS} s`;
+    // Two decimals: a file a few hundredths over the limit must not print as the limit itself.
+    return `it is ${seconds.toFixed(2)} s long and the sampler page takes samples up to ${MAX_CUSTOM_SAMPLE_SECONDS} s`;
   }
   return null;
 }

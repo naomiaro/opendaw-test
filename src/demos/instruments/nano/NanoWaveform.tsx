@@ -8,12 +8,15 @@ import { CanvasPainter } from "@/lib/CanvasPainter";
 import { CANVAS_COLORS } from "@/lib/design/consoleTheme";
 import { useParameterUnit, type UnitParameter } from "@/hooks/useParameterUnit";
 import {
-  constrainMarker, effectiveLoop, fadeUnits, nudgeMarker, positionsToUnits,
+  constrainMarker, effectiveLoop, fadeUnits, markerKeyTarget, positionsToUnits,
   regionBounds, unitToX, xToUnit, type MarkerId, type MarkerValues,
 } from "./nanoMarkers";
 
 const HEIGHT = 180;
-/** Packets stop when nothing plays; after this long without one the overlay clears itself */
+/**
+ * The device broadcasts while idle too, so the next packet normally clears the overlay.
+ * This covers the cases where packets stop: the engine halted, or the tab in the background.
+ */
 const STALE_PLAYHEAD_MS = 150;
 
 export const WAVEFORM_STYLES = `
@@ -73,6 +76,14 @@ function readValues(adapter: NanoDeviceBoxAdapter): MarkerValues {
   };
 }
 
+/** Frames in the sampler's current sample, or 0 while it has none loaded */
+function framesOf(adapter: NanoDeviceBoxAdapter): number {
+  const fileOption = adapter.file();
+  if (fileOption.isEmpty()) return 0;
+  const dataOption = fileOption.unwrap().data;
+  return dataOption.isEmpty() ? 0 : dataOption.unwrap().numberOfFrames;
+}
+
 function drawPeaks(
   context: CanvasRenderingContext2D, adapter: NanoDeviceBoxAdapter,
   x0: number, x1: number, width: number, height: number
@@ -117,8 +128,11 @@ export const NanoWaveform: React.FC<NanoWaveformProps> = ({
   const [loopUnit] = useParameterUnit(project, named.loop);
   const loopOn = loopUnit >= 0.5;
   const values: MarkerValues = { sampleStart, sampleEnd, loopStart, loopEnd };
-  const region = regionBounds(values);
-  const loop = effectiveLoop(values);
+  // Re-read on every render; the page re-renders this component when the sample has loaded.
+  const frames = framesOf(adapter);
+  const loaded = frames >= 2;
+  const region = regionBounds(values, frames);
+  const loop = effectiveLoop(values, frames);
 
   // Static layer: repaints only when something it draws has changed.
   useEffect(() => {
@@ -128,7 +142,8 @@ export const NanoWaveform: React.FC<NanoWaveformProps> = ({
       const width = canvas.clientWidth;
       const height = canvas.clientHeight;
       const current = readValues(adapter);
-      const currentRegion = regionBounds(current);
+      const currentFrames = framesOf(adapter);
+      const currentRegion = regionBounds(current, currentFrames);
       const regionX0 = unitToX(currentRegion.lo, width);
       const regionX1 = unitToX(currentRegion.hi, width);
       context.fillStyle = CANVAS_COLORS.bg;
@@ -144,7 +159,7 @@ export const NanoWaveform: React.FC<NanoWaveformProps> = ({
       drawPeaks(context, adapter, regionX0, regionX1, width, height);
 
       if (adapter.namedParameter.loop.getValue() && !currentRegion.empty) {
-        const currentLoop = effectiveLoop(current);
+        const currentLoop = effectiveLoop(current, currentFrames);
         const loopX0 = unitToX(currentLoop.lo, width);
         const loopX1 = unitToX(currentLoop.hi, width);
         context.globalAlpha = 0.14;
@@ -204,31 +219,40 @@ export const NanoWaveform: React.FC<NanoWaveformProps> = ({
       canvas.dataset.playheads = "0";
       canvas.dataset.positions = "";
     };
+    // Nothing catches a throw from a live-stream callback: it would surface about
+    // fifty times a second and hold up other frame work. Contain it, log it once.
+    let hasLoggedError = false;
     const sub = project.liveStreamReceiver.subscribeFloats(adapter.positionsAddress, positions => {
-      lastPacket = performance.now();
-      const width = canvas.clientWidth;
-      const height = canvas.clientHeight;
-      if (width === 0 || height === 0) return;
-      const ratio = window.devicePixelRatio || 1;
-      const pixelWidth = Math.floor(width * ratio);
-      const pixelHeight = Math.floor(height * ratio);
-      if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
-        canvas.width = pixelWidth;
-        canvas.height = pixelHeight;
+      try {
+        lastPacket = performance.now();
+        const width = canvas.clientWidth;
+        const height = canvas.clientHeight;
+        if (width === 0 || height === 0) return;
+        const ratio = window.devicePixelRatio || 1;
+        const pixelWidth = Math.floor(width * ratio);
+        const pixelHeight = Math.floor(height * ratio);
+        if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+          canvas.width = pixelWidth;
+          canvas.height = pixelHeight;
+        }
+        clear();
+        const fileOption = adapter.file();
+        if (fileOption.isEmpty()) return;
+        const dataOption = fileOption.unwrap().data;
+        if (dataOption.isEmpty()) return;
+        const units = positionsToUnits(positions, dataOption.unwrap().numberOfFrames);
+        context.setTransform(ratio, 0, 0, ratio, 0, 0);
+        context.fillStyle = CANVAS_COLORS.playhead;
+        for (const unit of units) context.fillRect(Math.round(unitToX(unit, width)), 0, 1, height);
+        drawn = units.length;
+        // Read by browser checks: how many heads, and where (shares of the sample).
+        canvas.dataset.playheads = String(drawn);
+        canvas.dataset.positions = units.map(unit => unit.toFixed(3)).join(",");
+      } catch (error) {
+        if (hasLoggedError) return;
+        hasLoggedError = true;
+        console.error("Nano demo: playhead drawing failed (logged once): " + String(error));
       }
-      clear();
-      const fileOption = adapter.file();
-      if (fileOption.isEmpty()) return;
-      const dataOption = fileOption.unwrap().data;
-      if (dataOption.isEmpty()) return;
-      const units = positionsToUnits(positions, dataOption.unwrap().numberOfFrames);
-      context.setTransform(ratio, 0, 0, ratio, 0, 0);
-      context.fillStyle = CANVAS_COLORS.playhead;
-      for (const unit of units) context.fillRect(Math.round(unitToX(unit, width)), 0, 1, height);
-      drawn = units.length;
-      // Read by browser checks: how many heads, and where (shares of the sample).
-      canvas.dataset.playheads = String(drawn);
-      canvas.dataset.positions = units.map(unit => unit.toFixed(3)).join(",");
     });
     const frame = AnimationFrame.add(() => {
       if (drawn > 0 && performance.now() - lastPacket > STALE_PLAYHEAD_MS) clear();
@@ -287,17 +311,15 @@ export const NanoWaveform: React.FC<NanoWaveformProps> = ({
   }, []);
 
   const onKeyDown = useCallback((id: MarkerId, event: React.KeyboardEvent<HTMLDivElement>) => {
-    const current = adapter.namedParameter[id].getUnitValue();
-    let target: number | null = null;
-    if (event.key === "ArrowLeft") target = nudgeMarker(current, -1, event.shiftKey);
-    else if (event.key === "ArrowRight") target = nudgeMarker(current, 1, event.shiftKey);
-    else if (event.key === "Home") target = 0;
-    else if (event.key === "End") target = 1;
+    const target = markerKeyTarget(id, event.key, event.shiftKey, readValues(adapter));
     if (target === null) return;
     event.preventDefault();
     writeMarker(id, target, false);
   }, [adapter, writeMarker]);
 
+  // Drawing only: a loop marker stored outside the region is drawn at the
+  // region's edge, where the engine puts the loop. The stored value is left
+  // alone, so the Loop sliders can read differently from the markers.
   const displayed: MarkerValues = {
     sampleStart,
     sampleEnd,
@@ -344,12 +366,12 @@ export const NanoWaveform: React.FC<NanoWaveformProps> = ({
           />
         ))}
       </div>
-      {region.empty && (
+      {loaded && region.empty && (
         <Callout.Root color="amber" size="1" role="status">
           <Callout.Text>The region is empty, so notes play nothing. Move Start or End.</Callout.Text>
         </Callout.Root>
       )}
-      {loopOn && loop.degenerate && !region.empty && (
+      {loaded && loopOn && loop.degenerate && !region.empty && (
         <Text size="1" color="gray">
           The loop points leave nothing to loop inside the region, so the whole region loops.
         </Text>

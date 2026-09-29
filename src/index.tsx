@@ -184,7 +184,7 @@ const GROUPS: Group[] = [
         href: "/nano-demo.html",
         title: "Nano: Polyphonic Sampler",
         blurb:
-          "Play one sample across the keyboard. Drag the region and loop markers on the waveform, run it backwards, crossfade the loop, scan the start with an LFO, and watch every voice's read head move.",
+          "Play one sample across the keyboard. Drag the region and loop markers on the waveform, run it backwards, crossfade the loop, scan the start with an LFO, and watch the read heads of the sounding voices move.",
       },
     ],
   },

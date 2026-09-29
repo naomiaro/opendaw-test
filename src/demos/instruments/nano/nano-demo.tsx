@@ -6,7 +6,7 @@ import { Project, MidiDevices } from "@opendaw/studio-core";
 import { LfoModulatorBoxAdapter } from "@opendaw/studio-adapters";
 import { LfoModulatorBox, type ModulationBox } from "@opendaw/studio-boxes";
 import { initializeOpenDAW } from "@/lib/projectSetup";
-import { NANO_SAMPLES, checkCustomSample } from "@/lib/nanoSamples";
+import { NANO_SAMPLES, checkCustomSample, type NanoSampleId } from "@/lib/nanoSamples";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
@@ -17,6 +17,7 @@ import { CANVAS_COLORS, CODE_BLOCK_STYLE, CONSOLE_STYLES } from "@/lib/design/co
 import { CanvasPainter } from "@/lib/CanvasPainter";
 import type { UnitParameter } from "@/hooks/useParameterUnit";
 import { NanoWaveform, WAVEFORM_STYLES } from "./NanoWaveform";
+import { LFO_DEFAULT_RATE_LABEL } from "./nanoPresets";
 import { buildNanoDemoContent, NANO_DEMO_BPM, type CurrentSample, type NanoDemoSetup } from "./nanoContent";
 import "@radix-ui/themes/styles.css";
 import {
@@ -82,19 +83,18 @@ import { InstrumentFactories, NanoDeviceBoxAdapter } from "@opendaw/studio-adapt
 
 // 1. Register the decoded audio under a uuid, then create the file box and
 //    the sampler in one transaction. The file box is the factory's attachment.
+//    localAudioBuffers is the Map your sample provider's fetch(uuid) reads
+//    from; on this site it is the one passed to initializeOpenDAW().
 const uuid = UUID.generate();
 localAudioBuffers.set(UUID.toString(uuid), audioBuffer);
 
-let nanoBox, audioUnitBox;
-project.editing.modify(() => {
+const { instrumentBox: nanoBox, audioUnitBox } = project.editing.modify(() => {
   const fileBox = AudioFileBox.create(project.boxGraph, uuid, box => {
     box.fileName.setValue("My sample");
     box.endInSeconds.setValue(audioBuffer.duration);
   });
-  const product = project.api.createInstrument(InstrumentFactories.Nano, { attachment: fileBox });
-  nanoBox = product.instrumentBox;
-  audioUnitBox = product.audioUnitBox;
-});
+  return project.api.createInstrument(InstrumentFactories.Nano, { attachment: fileBox });
+}).unwrap();
 
 // 2. After that transaction: arm the MIDI capture and take the adapter.
 project.captureDevices.get(audioUnitBox.address.uuid).unwrap().armed.setValue(true);
@@ -112,8 +112,10 @@ project.editing.modify(() => {
   p.loopFade.setValue(0.05);   // seconds, capped at half the loop
 });
 
-// 4. Follow the read heads: source frames, one per voice, ended by -1.
+// 4. Follow the read heads: the first 16 sounding voices, in source frames.
+//    A -1 ends the list when fewer than 16 are sounding.
 const sub = project.liveStreamReceiver.subscribeFloats(nano.positionsAddress, positions => {
+  const numberOfFrames = nano.file().unwrap().data.unwrap().numberOfFrames; // once loaded
   for (const frame of positions) {
     if (frame === -1) break;
     drawPlayheadAt(frame / (numberOfFrames - 1));
@@ -121,12 +123,11 @@ const sub = project.liveStreamReceiver.subscribeFloats(nano.positionsAddress, po
 });`;
 
 const LFO_DEFAULT_DEPTH = 0.3;
-// Longer than the two-bar pattern, so the notes that fall on bar lines land on
-// different points of the cycle. Every synced rate of one bar or less repeats
-// on each bar line and would give those notes the same start every time.
 const LFO_DEFAULT_RATE = (() => {
-  const index = LfoModulatorBoxAdapter.RateStrings.indexOf("4 bars");
-  return index >= 0 ? index : 0;
+  const index = LfoModulatorBoxAdapter.RateStrings.indexOf(LFO_DEFAULT_RATE_LABEL);
+  // Index 0 is "Off". A unit test holds the label to the LFO's list, so this is for a reader, not a fallback.
+  if (index < 0) console.error(`Nano demo: the LFO offers no "${LFO_DEFAULT_RATE_LABEL}" rate`);
+  return Math.max(0, index);
 })();
 const SCOPE_LENGTH = 4 * 60;
 
@@ -176,7 +177,7 @@ const StartScope: React.FC<{ parameter: UnitParameter }> = ({ parameter }) => {
     <canvas
       ref={canvasRef}
       role="img"
-      aria-label="Sample start over the last four seconds, with the LFO added"
+      aria-label="Recent sample start values, with the LFO added"
       style={{
         width: "100%", height: 64, display: "block", boxSizing: "border-box",
         border: "1px solid var(--mc-line)", borderRadius: 4, background: CANVAS_COLORS.bg,
@@ -265,10 +266,12 @@ const LfoCard: React.FC<{
           </Flex>
         </Flex>
         <Text size="1" color="gray">
-          The LFO pushes the start of each new note forward from the S marker, by up to
-          the depth. A note keeps the region it started with, so a note that is already
-          sounding does not follow the LFO. The dashed line on the waveform is the start
-          a note would get right now.
+          The LFO moves the start of each new note away from the S marker by up to the
+          depth: forward for a positive depth, backward for a negative one. The result
+          stays inside the sample, so with S at 100 % (the Riser as loaded) only a
+          negative depth has an effect. A note keeps the region it started with, so a
+          note that is already sounding does not follow the LFO. The dashed line on the
+          waveform is the start a note would get right now.
         </Text>
         {lfo && (
           <Grid columns={{ initial: "1", sm: "2" }} gap="3">
@@ -333,6 +336,7 @@ const App: React.FC = () => {
   useEffect(() => {
     let mounted = true;
     let createdContext: AudioContext | null = null;
+    let createdProject: Project | null = null;
     (async () => {
       try {
         const localAudioBuffers = new Map<string, AudioBuffer>();
@@ -342,10 +346,19 @@ const App: React.FC = () => {
           onStatusUpdate: setStatus,
         });
         createdContext = context;
-        if (!mounted) return;
+        createdProject = newProject;
+        if (!mounted) {
+          newProject.terminate();
+          void context.close();
+          return;
+        }
         newProject.engine.preferences.settings.metronome.enabled = false;
         const built = await buildNanoDemoContent(newProject, context, localAudioBuffers, setStatus);
-        if (!mounted) return;
+        if (!mounted) {
+          newProject.terminate();
+          void context.close();
+          return;
+        }
         setAudioContext(context);
         setProject(newProject);
         setSetup(built);
@@ -357,6 +370,8 @@ const App: React.FC = () => {
           "Nano demo: init failed: " + String(error) +
           (error instanceof Error && error.stack ? "\n" + error.stack : "")
         );
+        // Without the terminate, a failed content build leaves the engine running behind the error card.
+        createdProject?.terminate();
         void createdContext?.close();
         if (mounted) setInitError(error instanceof Error ? error.message : String(error));
       }
@@ -382,7 +397,7 @@ const App: React.FC = () => {
     },
   }), []);
 
-  const chooseSample = useCallback((id: string) => {
+  const chooseSample = useCallback((id: NanoSampleId) => {
     if (!setup) return;
     const token = ++selectionRef.current;
     setSampleError(null);
@@ -473,7 +488,7 @@ const App: React.FC = () => {
             <p className="mc-intro">
               A polyphonic sampler: one sample, played across the keyboard. Choose the part
               of the sample to play, run it backwards, loop it with a crossfade, and retune
-              it. Everything on this page goes through{" "}
+              it. Every sampler control on this page writes to{" "}
               <code>NanoDeviceBoxAdapter.namedParameter</code>; the moving lines on the
               waveform are the engine's own read heads.
             </p>
@@ -595,6 +610,7 @@ const App: React.FC = () => {
                     <ParamSlider project={project} parameter={setup.adapter.namedParameter.loopFade} label="Fade" />
                     <Text size="1" color="gray">
                       The loop is kept inside the region, and the fade is capped at half the loop.
+                      Loop changes are heard at once, on notes that are already sounding.
                     </Text>
                   </Flex>
                 </Card>

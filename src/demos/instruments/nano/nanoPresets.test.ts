@@ -30,11 +30,22 @@ describe("NANO_PRESETS", () => {
     expect(Number.isInteger(preset.params.octave)).toBe(true);
   });
 
+  // The shortest sample a preset is applied to: the kick, at the lowest common rate.
+  const SHORTEST_FRAMES = Math.round(0.4 * 44100);
+
   it.each(all)("%s has a region that plays and a loop that is not degenerate", (_id, preset) => {
     const { sampleStart, sampleEnd, loopStart, loopEnd } = preset.params;
     const values = { sampleStart, sampleEnd, loopStart, loopEnd };
-    expect(regionBounds(values).empty).toBe(false);
-    if (preset.params.loop) expect(effectiveLoop(values).degenerate).toBe(false);
+    expect(regionBounds(values, SHORTEST_FRAMES).empty).toBe(false);
+    if (preset.params.loop) expect(effectiveLoop(values, SHORTEST_FRAMES).degenerate).toBe(false);
+  });
+
+  it.each(all)("%s keeps its loop fade inside half the loop, so the fade heard is the fade set", (id, preset) => {
+    if (!preset.params.loop) return;
+    const spec = NANO_SAMPLES.find(candidate => candidate.id === id);
+    const seconds = spec === undefined ? 1 : spec.seconds;
+    const span = Math.abs(preset.params.loopEnd - preset.params.loopStart) * seconds;
+    expect(preset.params.loopFade).toBeLessThanOrEqual(span / 2);
   });
 
   it.each(all)("%s has a pattern of whole-number notes inside the loop", (_id, preset) => {
@@ -66,7 +77,9 @@ describe("NANO_PRESETS", () => {
   });
 
   it("reverses the riser and leaves the others forward", () => {
-    expect(regionBounds(NANO_PRESETS.riser.params).reversed).toBe(true);
-    for (const id of ["pluck", "pad", "kick"]) expect(regionBounds(NANO_PRESETS[id].params).reversed).toBe(false);
+    expect(regionBounds(NANO_PRESETS.riser.params, SHORTEST_FRAMES).reversed).toBe(true);
+    for (const id of ["pluck", "pad", "kick"] as const) {
+      expect(regionBounds(NANO_PRESETS[id].params, SHORTEST_FRAMES).reversed).toBe(false);
+    }
   });
 });
