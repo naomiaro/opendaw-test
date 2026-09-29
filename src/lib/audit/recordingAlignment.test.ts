@@ -683,6 +683,40 @@ describe("classifyMultitrackCell", () => {
     expect(v.detail).toMatch(/medianSkewMs per repeat=\[0\.00, 0\.50\]/);
   });
 
+  // Netting takes the content's offset in the buffer out of the figure altogether, so
+  // on its own it would pass a skew of any size that the two delays "account for".
+  it("netted: a raw skew beyond the limit → investigate, though the delays account for it", () => {
+    for (const raw of [50, -50]) {
+      const v = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(0), skew(raw)], 2, {
+        netLoopbackDelay: true, loopbackDelays: [delays(20, 20), delays(20, 20 + raw)], renderQuantumMs: Q,
+        rawSkewLimitMs: 15,
+      });
+      expect(v.status).toBe("investigate");
+      expect(v.detail).toMatch(/raw skew exceeds 15ms on 1\/2 repeat\(s\)/);
+      expect(v.detail).toMatch(/nettedSkewMs per repeat=\[0\.00, 0\.00\]/);
+    }
+  });
+
+  it("netted: a raw skew at the limit passes", () => {
+    const v = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(15)], 2, {
+      netLoopbackDelay: true, loopbackDelays: [delays(5, 20)], renderQuantumMs: Q, rawSkewLimitMs: 15,
+    });
+    expect(v.status).toBe("aligned");
+  });
+
+  it("netted: without a limit the raw skew is not judged", () => {
+    const v = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(50)], 2, {
+      netLoopbackDelay: true, loopbackDelays: [delays(20, 70)], renderQuantumMs: Q,
+    });
+    expect(v.status).toBe("aligned");
+  });
+
+  it("the raw skew limit says nothing new about a repeat judged on its raw skew", () => {
+    const v = classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(50)], 2, { rawSkewLimitMs: 15 });
+    expect(v.status).toBe("investigate");
+    expect(v.detail).toMatch(/^skew exceeds 2ms tolerance/);
+  });
+
   it("netted: a tape that classified investigate still decides the verdict", () => {
     const v = classifyMultitrackCell(cls("aligned"), cls("investigate"), measured.skews, 2, {
       netLoopbackDelay: true, loopbackDelays: measured.delays, renderQuantumMs: Q,

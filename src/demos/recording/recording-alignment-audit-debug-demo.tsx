@@ -88,6 +88,7 @@ import {
   REPEATS_PER_CELL,
   MULTITRACK_REPEATS_PER_CELL,
   RENDER_QUANTUM_FRAMES,
+  MULTITRACK_RAW_SKEW_LIMIT_MS,
   JANK_MS,
   LOOP_WRAP_TAKES,
   ALIGNED_TOLERANCE_MS,
@@ -1352,6 +1353,9 @@ async function uploadMultitrackSummary(
     jankMs: JANK_MS,
     alignedToleranceMs: ALIGNED_TOLERANCE_MS,
     skewToleranceMs: ALIGNED_TOLERANCE_MS,
+    rawSkewLimitMs: auditProfileFor(sdkBuildProbe, runToken, buildFeatures).netLoopbackDelay
+      ? MULTITRACK_RAW_SKEW_LIMIT_MS
+      : null,
     referenceSchedule: { count: 60, baseGapSec: 0.25, gapIncrementSec: 0.005 },
     // Fix round 1 (C1 confirmation): when true, tape B was armed on the SAME
     // loopbackDeviceId as tape A (see createMultitrackTapes's sameDeviceB) —
@@ -1539,6 +1543,7 @@ async function runMultitrackAudit(
         netLoopbackDelay: auditProfileFor(sdkBuildProbe, runToken, buildFeatures).netLoopbackDelay,
         loopbackDelays: repeats.map((r) => ({ aMs: r.rowA.loopbackDelayMs ?? null, bMs: r.rowB.loopbackDelayMs ?? null })),
         renderQuantumMs: (RENDER_QUANTUM_FRAMES / rate) * 1000,
+        rawSkewLimitMs: MULTITRACK_RAW_SKEW_LIMIT_MS,
       });
       // Persisted for EVERY cell, all-error cells included (no skew signature
       // band exists, so matchedSignature is always null here).
@@ -1702,8 +1707,9 @@ function MultitrackRunnerHarness() {
 ?rate=<number>        default 48000 — sets the AudioContext at init, never "all"
 Repeats per cell:       ${MULTITRACK_REPEATS_PER_CELL}
 Verdict:                each tape clean AND the skew between them within ${ALIGNED_TOLERANCE_MS} ms once both
-                        tapes' own loopback delays are taken out. The raw skew is reported as a spread
-                        over render quanta in the cell's detail; it is the two streams, not the SDK.
+                        tapes' own loopback delays are taken out AND the raw skew within
+                        ${MULTITRACK_RAW_SKEW_LIMIT_MS} ms. The raw skew is reported as a spread over render quanta in
+                        the cell's detail; inside that limit it is the two streams' own delays.
 Two tapes armed on loopbackDeviceId(1)/(2) — clones of the SAME loopback signal.
 Uploads:                recaudit-mt-summary-<runToken>.json (all rows + per-repeat skew) via PUT /__verify
                         recaudit-mt-<scenario>-<bpm>-<rate>-r<repeat>-tape<a|b>-<build>-<runToken>.wav per repeat

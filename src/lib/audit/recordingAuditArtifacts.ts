@@ -250,6 +250,9 @@ export interface MultitrackCellSkew {
 
 export interface MultitrackAuditSummary extends SummaryBase {
   skewToleranceMs: number;
+  /** The most the raw skew of a netted repeat was allowed to be; null when the run's
+   *  profile does not net the loopback delay, so no limit applied. */
+  rawSkewLimitMs: number | null;
   confirmCollision: boolean;
   rows: MultitrackAuditRow[];
   cellSkews: MultitrackCellSkew[];
@@ -310,6 +313,8 @@ export interface LoadedMultitrackAuditSummary {
   rate: number;
   alignedToleranceMs: number;
   skewToleranceMs: number;
+  /** null when no limit applied — the profile does not net, or the envelope predates the field. */
+  rawSkewLimitMs: number | null;
   outputLatencySec: number | null;
   harnessPathBiasSec: number;
   /** false when the flag is absent: it was introduced with the dedicated
@@ -469,6 +474,7 @@ export function parseMultitrackAuditSummary(json: unknown, runId: number): Loade
     rate: requireNumber(json, "rate", runId),
     alignedToleranceMs: requireNumber(json, "alignedToleranceMs", runId),
     skewToleranceMs: requireNumber(json, "skewToleranceMs", runId),
+    rawSkewLimitMs: optionalNumber(json, "rawSkewLimitMs"),
     outputLatencySec: optionalNumber(json, "outputLatency"),
     harnessPathBiasSec: persistedBias ?? 0,
     confirmCollision: json.confirmCollision === true,

@@ -17,7 +17,7 @@ import {
   type CellClassification, type CrossTrackSkew, type LoopbackDelayPair,
 } from "../../../src/lib/audit/recordingAlignment.ts";
 import {
-  ALIGNED_TOLERANCE_MS, MULTITRACK_BASE_SCENARIO, RENDER_QUANTUM_FRAMES, auditProfileFor, profileKeyFor, signatureBandsFor,
+  ALIGNED_TOLERANCE_MS, MULTITRACK_BASE_SCENARIO, MULTITRACK_RAW_SKEW_LIMIT_MS, RENDER_QUANTUM_FRAMES, auditProfileFor, profileKeyFor, signatureBandsFor,
 } from "../../../src/lib/audit/recordingAuditCalibration.ts";
 import { asClassifiable, cellPopulation, loadMultitrackSummary } from "./artifacts.ts";
 
@@ -26,7 +26,7 @@ const REGISTER_RUNS = [
   // Three repeats per cell, judged on the raw skew when they ran.
   "1790707818551", "1790710650174", "1790710747979", "1790710801157",
   // Eight repeats per cell, judged on the netted skew.
-  "1790711541897", "1790711774452", "1790711921325", "1790712215292",
+  "1790711541897", "1790711774452", "1790711921325", "1790712215292", "1790712952262",
 ];
 
 const runs = process.argv.length > 2 ? process.argv.slice(2) : REGISTER_RUNS;
@@ -64,6 +64,7 @@ for (const runId of runs) {
     }
     const verdict = classifyMultitrackCell(classifyTape("a"), classifyTape("b"), skews, ALIGNED_TOLERANCE_MS, {
       netLoopbackDelay: profile.netLoopbackDelay, loopbackDelays: delays, renderQuantumMs: quantumMs,
+      rawSkewLimitMs: MULTITRACK_RAW_SKEW_LIMIT_MS,
     });
     const netted = skews.map((s, index) => (profile.netLoopbackDelay ? nettedSkewMs(s.medianSkewMs, delays[index]) : null));
     pooledRaw.push(...skews.map((s) => s.medianSkewMs));
@@ -83,4 +84,6 @@ console.log(`  repeats: ${pooledRaw.length}, netted on ${pooledNetted.length}`);
 console.log(`  raw skew in render quanta: ${formatSkewDistribution(skewDistribution(pooledRaw, quantumMs))}`);
 if (pooledNetted.length > 0) {
   console.log(`  largest netted skew: ${formatTwoDecimals(Math.max(...pooledNetted.map(Math.abs)))} ms (tolerance ${ALIGNED_TOLERANCE_MS} ms)`);
+  const raws = pooledRaw.filter((m): m is number => m !== null).map(Math.abs);
+  console.log(`  largest raw skew: ${formatTwoDecimals(Math.max(...raws))} ms (limit ${MULTITRACK_RAW_SKEW_LIMIT_MS} ms)`);
 }

@@ -821,6 +821,15 @@ export interface ClassifyMultitrackOptions {
   loopbackDelays?: ReadonlyArray<LoopbackDelayPair>;
   /** When given, the detail reports the raw skew's spread over render quanta. */
   renderQuantumMs?: number;
+  /**
+   * The most the raw skew of a NETTED repeat may be. Netting takes the content's
+   * offset in the buffer out of the figure altogether (it is in the skew and in
+   * the delay difference alike), so a netted skew says where the two takes were
+   * placed against the SDK's own first-frame times and nothing about how far apart
+   * the two buffers hold the same sound. This bounds that: the raw skew has to stay
+   * within what two loopback streams' delays have been measured to differ by.
+   */
+  rawSkewLimitMs?: number;
 }
 
 export function classifyMultitrackCell(
@@ -858,8 +867,12 @@ export function classifyMultitrackCell(
     : options.netLoopbackDelay === true ? ` netted on 0/${medians.length}` : "";
   const skewDetail = `medianSkewMs per repeat=[${medians.map(formatTwoDecimals).join(", ")}] maxAbsMedianSkewMs=${Math.max(...medians.map(Math.abs)).toFixed(2)}${nettedDetail}${distribution}`;
   const what = nettedCount > 0 ? "netted skew" : "skew";
+  const rawSkewLimitMs = options.rawSkewLimitMs;
+  const beyondLimit = rawSkewLimitMs === undefined
+    ? 0
+    : medians.filter((m, index) => netted[index] !== null && Math.abs(m) > rawSkewLimitMs).length;
   const tapesClean = tapeAClass.status !== "investigate" && tapeBClass.status !== "investigate";
-  const skewClean = judged.every((m) => Math.abs(m) <= alignedToleranceMs);
+  const skewClean = beyondLimit === 0 && judged.every((m) => Math.abs(m) <= alignedToleranceMs);
   if (skewClean && tapesClean) {
     return {
       status: "aligned",
@@ -870,6 +883,12 @@ export function classifyMultitrackCell(
     return {
       status: "investigate",
       detail: `at least one tape's own per-take alignment did not classify clean (tapeA=${tapeAClass.status}: ${tapeAClass.detail}; tapeB=${tapeBClass.status}: ${tapeBClass.detail}) — ${skewDetail}`,
+    };
+  }
+  if (beyondLimit > 0) {
+    return {
+      status: "investigate",
+      detail: `raw skew exceeds ${rawSkewLimitMs}ms on ${beyondLimit}/${medians.length} repeat(s) with both tapes otherwise clean (candidate finding — more than two loopback streams' delays have been measured to differ by, whatever the netted skew) — ${skewDetail}`,
     };
   }
   const finding = nettedCount > 0

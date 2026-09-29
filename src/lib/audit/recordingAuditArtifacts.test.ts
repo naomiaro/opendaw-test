@@ -145,6 +145,11 @@ describe("parseMultitrackAuditSummary", () => {
     expect(s.beatGrid).toBe("region-anchored");
     expect(s.rows[0].tape).toBe("a");
   });
+  it("reads the raw skew limit the run applied, null when the envelope has none", () => {
+    expect(parseMultitrackAuditSummary({ ...mtBase, rows: [mtRow], cellSkews: [] }, 1788302627819).rawSkewLimitMs).toBeNull();
+    expect(parseMultitrackAuditSummary({ ...mtBase, rawSkewLimitMs: null, rows: [mtRow], cellSkews: [] }, 1790712215292).rawSkewLimitMs).toBeNull();
+    expect(parseMultitrackAuditSummary({ ...mtBase, rawSkewLimitMs: 15, rows: [mtRow], cellSkews: [] }, 1790712215292).rawSkewLimitMs).toBe(15);
+  });
   it("rejects a single-tape scenario in a multitrack envelope", () => {
     expect(() => parseMultitrackAuditSummary({ ...mtBase, rows: [{ ...mtRow, scenario: "nominal-start" }] }, 1)).toThrow(/not a multitrack scenario/);
   });
