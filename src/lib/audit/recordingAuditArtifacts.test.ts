@@ -155,6 +155,18 @@ describe("parseMultitrackAuditSummary", () => {
     expect(() => parseMultitrackAuditSummary({ ...mtBase, rawSkewLimitMs: limit, rows: [mtRow], cellSkews: [] }, 1790712215292))
       .toThrow(/unexpected rawSkewLimitMs/);
   });
+
+  it("reads the anchor offset a run with node taps applied, null where there is none", () => {
+    expect(parseMultitrackAuditSummary({ ...mtBase, rows: [mtRow], cellSkews: [] }, 1790714222787).anchorOffsetMs).toBeNull();
+    expect(parseMultitrackAuditSummary({ ...mtBase, anchorOffsetMs: null, rows: [mtRow], cellSkews: [] }, 1790717815603).anchorOffsetMs).toBeNull();
+    expect(parseMultitrackAuditSummary({ ...mtBase, anchorOffsetMs: 0.29, rows: [mtRow], cellSkews: [] }, 1790717815603).anchorOffsetMs).toBe(0.29);
+    expect(parseMultitrackAuditSummary({ ...mtBase, anchorOffsetMs: 0, rows: [mtRow], cellSkews: [] }, 1790717815603).anchorOffsetMs).toBe(0);
+  });
+
+  it.each(["0.29", Number.NaN, Number.POSITIVE_INFINITY])("refuses an anchor offset that is not a time: %s", (offset) => {
+    expect(() => parseMultitrackAuditSummary({ ...mtBase, anchorOffsetMs: offset, rows: [mtRow], cellSkews: [] }, 1790717815603))
+      .toThrow(/unexpected anchorOffsetMs/);
+  });
   it("rejects a single-tape scenario in a multitrack envelope", () => {
     expect(() => parseMultitrackAuditSummary({ ...mtBase, rows: [{ ...mtRow, scenario: "nominal-start" }] }, 1)).toThrow(/not a multitrack scenario/);
   });

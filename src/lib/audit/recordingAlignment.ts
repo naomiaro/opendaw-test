@@ -747,6 +747,27 @@ export function nettedSkewMs(medianSkewMs: number | null, delays: LoopbackDelayP
   return medianSkewMs - (bMs - aMs);
 }
 
+/**
+ * How far a tape's `loopbackDelayMs` is from where it has to be if the SDK's
+ * first-frame time is true. `loopbackDelayMs` is that first-frame time minus the
+ * harness's anchor, and the anchor is the context time of the buffer's first
+ * frame as the reference clicks locate it, late by `anchorOffsetMs` (the onset
+ * detector marks a click some way up its attack). The node's delay is measured
+ * by the harness's own tap and uses neither. So with a true first-frame time
+ * `loopbackDelayMs − nodeDelayMs` is the anchor's offset, and this is zero. A
+ * capture that starts a render quantum later than it says, or that lost the
+ * head of its buffer, shows here by that much. Null when either delay is unknown.
+ */
+export function firstFrameCheckMs(
+  loopbackDelayMs: number | null | undefined,
+  nodeDelayMs: number | null | undefined,
+  anchorOffsetMs: number
+): number | null {
+  if (typeof loopbackDelayMs !== "number" || !Number.isFinite(loopbackDelayMs)) return null;
+  if (typeof nodeDelayMs !== "number" || !Number.isFinite(nodeDelayMs)) return null;
+  return loopbackDelayMs - nodeDelayMs - anchorOffsetMs;
+}
+
 /** Two decimals, with a value that rounds to zero printed as "0.00" rather than "-0.00". */
 export function formatTwoDecimals(value: number): string {
   const text = value.toFixed(2);
@@ -809,18 +830,36 @@ export interface ClassifyMultitrackOptions {
    * the two buffers hold the same sound. This bounds that: the raw skew has to stay
    * within what two loopback streams' delays have been measured to differ by.
    * A repeat judged on its raw skew is held to the tolerance, which is tighter.
+   * A repeat whose two node delays are known is not held to this limit but to
+   * the two tests `nodeDelays` describes.
    */
   rawSkewLimitMs?: number;
+  /**
+   * The delay of the source node each tape recorded through, as the harness's
+   * own taps measured it (`nodeTap.ts`): one record per entry of `repeatSkews`,
+   * nulls where a tap read nothing. Read only when netting, and needs
+   * `anchorOffsetMs`. A netted repeat with both delays known is held to two
+   * tests in place of the raw limit, each against `alignedToleranceMs`:
+   *  - each tape's first-frame time is true (`firstFrameCheckMs`);
+   *  - the raw skew is what the two nodes' delays differ by
+   *    (`nettedSkewMs` with the node delays in place of the loopback delays).
+   * Unlike the raw limit, both have a reason and neither is fitted: the node's
+   * delay does not go through the SDK's first-frame time.
+   */
+  nodeDelays?: ReadonlyArray<LoopbackDelayPair>;
+  /** What `loopbackDelayMs` exceeds a node's delay by when the first-frame time is true. */
+  anchorOffsetMs?: number;
 }
 
 /**
  * Cell verdict for a multitrack scenario: `aligned` when both tapes' own
  * per-take alignment classifies clean (not `investigate`) against the
  * equivalent single-tape scenario's bands, every repeat's judged skew is
- * within `alignedToleranceMs`, and no netted repeat's raw skew is beyond
- * `options.rawSkewLimitMs` — otherwise `investigate`. The judged skew is the
- * netted one where netting is asked for and both delays are known, the raw one
- * otherwise. There is no `matches-known-defect` outcome for skew itself: no
+ * within `alignedToleranceMs`, and every netted repeat passes what it is held
+ * to — otherwise `investigate`. The judged skew is the netted one where
+ * netting is asked for and both delays are known, the raw one otherwise. A
+ * netted repeat is held to the two node-delay tests where both node delays are
+ * known (`options.nodeDelays`), and to `options.rawSkewLimitMs` where not. There is no `matches-known-defect` outcome for skew itself: no
  * signature band predicts it, so a skew beyond tolerance is a candidate
  * finding, named directly in the detail string rather than mapped onto a band.
  *
@@ -829,28 +868,34 @@ export interface ClassifyMultitrackOptions {
  * neither tape's own cell classified `investigate`. It does NOT mean the takes
  * landed on the beat — a cell whose two tapes are both 22 ms late in the same
  * direction is `aligned` here. With netting it means less about the sound: the
- * two takes were placed the same way against the SDK's own first-frame times,
- * and the two buffers hold the sound no further apart than the raw limit. How
- * far apart they do hold it is in the detail, and is NOT attributed: it is
- * taken to be the two streams' own delays. Read the per-tape verdicts beside it.
+ * two takes were placed the same way against the SDK's own first-frame times.
+ * On a repeat with node delays it also means that those first-frame times are
+ * true and that the two buffers hold the sound as far apart as the two source
+ * nodes delivered it — which can be several render quanta, and is in the
+ * detail. On a repeat without them it means only that the buffers hold the
+ * sound no further apart than the raw limit, and that distance is NOT
+ * attributed. Either way it does not say the two recordings line up. Read the
+ * per-tape verdicts beside it.
  *
  * Lives here rather than on the harness page so the offline scripts classify a
  * persisted multitrack run exactly as the page did; `alignedToleranceMs` is a
  * parameter for the same reason `classifyCell` takes one.
  *
  * NETTING (`options.netLoopbackDelay`). Each tape records from its own
- * loopback stream, and each stream reaches its tape with its own delay, which
- * varies from one repeat to the next. The raw skew between the tapes equals
- * the difference of those two delays (measured on every pair), so a verdict on
- * the raw skew changes from run to run. With netting the repeat is judged on
- * what is left once both delays are taken out.
+ * loopback stream through a source node of its own, and each node hands the
+ * stream on with its own delay, which varies from one repeat to the next. The
+ * raw skew between the tapes equals the difference of those two delays
+ * (measured on every pair), so a verdict on the raw skew changes from run to
+ * run. With netting the repeat is judged on what is left once both delays are
+ * taken out.
  *
  * Called without options it judges the raw skew against the tolerance, and its
  * detail strings are the ones `task12a`'s saved output holds.
  *
  * Throws for options that cannot be meant: netting without one delay record
- * per repeat or without a raw limit above zero, and a render quantum that is
- * not a time above zero.
+ * per repeat or without a raw limit above zero, node delays without one record
+ * per repeat or without an anchor offset, and a render quantum that is not a
+ * time above zero.
  */
 export function classifyMultitrackCell(
   tapeAClass: CellClassification,
@@ -860,7 +905,7 @@ export function classifyMultitrackCell(
   options: ClassifyMultitrackOptions = {}
 ): MultitrackCellVerdict {
   const netting = options.netLoopbackDelay === true;
-  const { loopbackDelays, rawSkewLimitMs, renderQuantumMs } = options;
+  const { loopbackDelays, rawSkewLimitMs, renderQuantumMs, nodeDelays, anchorOffsetMs } = options;
   if (renderQuantumMs !== undefined) requireRenderQuantum(renderQuantumMs);
   if (netting) {
     if (loopbackDelays === undefined || loopbackDelays.length !== repeatSkews.length) {
@@ -870,6 +915,16 @@ export function classifyMultitrackCell(
     }
     if (rawSkewLimitMs === undefined || !Number.isFinite(rawSkewLimitMs) || rawSkewLimitMs <= 0) {
       throw new RangeError(`netting needs a rawSkewLimitMs above zero; got ${rawSkewLimitMs}`);
+    }
+    if (nodeDelays !== undefined) {
+      if (nodeDelays.length !== repeatSkews.length) {
+        throw new RangeError(
+          `node delays need one record per repeat: ${nodeDelays.length} record(s) for ${repeatSkews.length} repeat(s)`
+        );
+      }
+      if (anchorOffsetMs === undefined || !Number.isFinite(anchorOffsetMs)) {
+        throw new RangeError(`node delays need an anchorOffsetMs; got ${anchorOffsetMs}`);
+      }
     }
   }
   if (repeatSkews.length === 0) {
@@ -886,11 +941,20 @@ export function classifyMultitrackCell(
     };
   }
   // Every repeat has a skew from here on, so index i is the same repeat in
-  // `repeatSkews`, `medians`, `netted` and `loopbackDelays`.
+  // `repeatSkews`, `medians`, `netted`, `loopbackDelays` and `nodeDelays`.
   const medians = repeatSkews.map((s) => s.medianSkewMs!);
   const netted = medians.map((m, index) => (netting ? nettedSkewMs(m, loopbackDelays![index]) : null));
   const nettedCount = netted.filter((n) => n !== null).length;
   const judged = medians.map((m, index) => netted[index] ?? m);
+  // What the two nodes' delays leave of the raw skew. Only a netted repeat is
+  // read this way: without the loopback delays there is no first-frame check.
+  const tapped = netting && nodeDelays !== undefined;
+  const unaccounted = medians.map((m, index) => (tapped && netted[index] !== null ? nettedSkewMs(m, nodeDelays![index]) : null));
+  const attributedCount = unaccounted.filter((u) => u !== null).length;
+  const firstFrame = medians.map((_, index) => (unaccounted[index] === null ? null : {
+    a: firstFrameCheckMs(loopbackDelays![index].aMs, nodeDelays![index].aMs, anchorOffsetMs!)!,
+    b: firstFrameCheckMs(loopbackDelays![index].bMs, nodeDelays![index].bMs, anchorOffsetMs!)!,
+  }));
   const largestRaw = Math.max(...medians.map(Math.abs));
   const distribution = renderQuantumMs !== undefined
     ? ` raw skew in render quanta: ${formatSkewDistribution(skewDistribution(medians, renderQuantumMs))}`
@@ -901,17 +965,45 @@ export function classifyMultitrackCell(
   const nettedDetail = nettedCount > 0
     ? ` nettedSkewMs per repeat=[${judgedList}] netted on ${nettedCount}/${medians.length}`
     : netting ? ` netted on 0/${medians.length}` : "";
-  const skewDetail = `medianSkewMs per repeat=[${medians.map(formatTwoDecimals).join(", ")}] maxAbsMedianSkewMs=${largestRaw.toFixed(2)}${nettedDetail}${distribution}`;
+  const orDash = (value: number | null | undefined) => (value === null || value === undefined ? "—" : formatTwoDecimals(value));
+  const nodeDetail = !tapped
+    ? ""
+    : attributedCount === 0
+      ? ` node delays on 0/${medians.length}`
+      : ` node delays on ${attributedCount}/${medians.length} unaccountedSkewMs per repeat=[${unaccounted.map(orDash).join(", ")}]`
+        + ` firstFrameCheckMs per repeat a=[${firstFrame.map((f) => orDash(f?.a)).join(", ")}] b=[${firstFrame.map((f) => orDash(f?.b)).join(", ")}]`;
+  const skewDetail = `medianSkewMs per repeat=[${medians.map(formatTwoDecimals).join(", ")}] maxAbsMedianSkewMs=${largestRaw.toFixed(2)}${nettedDetail}${nodeDetail}${distribution}`;
   const what = nettedCount === 0
     ? "skew"
     : nettedCount === medians.length ? "netted skew" : `netted skew (${nettedCount}/${medians.length} repeats, the rest raw)`;
-  const beyondLimit = medians.filter((m, index) => netted[index] !== null && Math.abs(m) > rawSkewLimitMs!).length;
+  // The raw limit holds the netted repeats that have no node delays to be read by.
+  const limited = medians.filter((_, index) => netted[index] !== null && unaccounted[index] === null);
+  const beyondLimit = limited.filter((m) => Math.abs(m) > rawSkewLimitMs!).length;
+  const firstFrameOff = firstFrame.filter(
+    (f) => f !== null && (Math.abs(f.a) > alignedToleranceMs || Math.abs(f.b) > alignedToleranceMs)
+  ).length;
+  const leftOver = unaccounted.filter((u) => u !== null && Math.abs(u) > alignedToleranceMs).length;
   const tapesClean = tapeAClass.status !== "investigate" && tapeBClass.status !== "investigate";
-  const skewClean = beyondLimit === 0 && judged.every((m) => Math.abs(m) <= alignedToleranceMs);
+  const skewClean = beyondLimit === 0 && firstFrameOff === 0 && leftOver === 0
+    && judged.every((m) => Math.abs(m) <= alignedToleranceMs);
   if (skewClean && tapesClean) {
-    const rawNote = nettedCount > 0
-      ? `, raw skew within ${rawSkewLimitMs}ms (largest ${largestRaw.toFixed(2)}ms; not attributed — taken to be the two loopback streams' own delays)`
-      : "";
+    const notes: string[] = [];
+    if (attributedCount > 0) {
+      const largestLeft = Math.max(...unaccounted.map((u) => (u === null ? 0 : Math.abs(u))));
+      const largestCheck = Math.max(...firstFrame.map((f) => (f === null ? 0 : Math.max(Math.abs(f.a), Math.abs(f.b)))));
+      const on = attributedCount === medians.length ? "every repeat" : `${attributedCount}/${medians.length} repeats`;
+      notes.push(
+        `raw skew accounted for by the two source nodes' own delays on ${on} (largest raw ${largestRaw.toFixed(2)}ms, largest left over ${largestLeft.toFixed(2)}ms)`,
+        `first-frame times true on ${on} (largest deviation ${largestCheck.toFixed(2)}ms)`
+      );
+    }
+    if (limited.length > 0) {
+      const largestLimited = Math.max(...limited.map(Math.abs));
+      notes.push(attributedCount === 0
+        ? `raw skew within ${rawSkewLimitMs}ms (largest ${largestRaw.toFixed(2)}ms; not attributed — taken to be the two loopback streams' own delays)`
+        : `raw skew within ${rawSkewLimitMs}ms on the ${limited.length} repeat(s) without node delays (largest ${largestLimited.toFixed(2)}ms; not attributed)`);
+    }
+    const rawNote = notes.map((note) => `, ${note}`).join("");
     return {
       status: "aligned",
       detail: `${what} within ${alignedToleranceMs}ms tolerance on every repeat${rawNote} and both tapes individually clean (tapeA=${tapeAClass.status}, tapeB=${tapeBClass.status}) — ${skewDetail}`,
@@ -927,6 +1019,18 @@ export function classifyMultitrackCell(
     return {
       status: "investigate",
       detail: `raw skew exceeds ${rawSkewLimitMs}ms on ${beyondLimit}/${medians.length} repeat(s) with both tapes otherwise clean (candidate finding — more than two loopback streams' delays have been measured to differ by, whatever the netted skew) — ${skewDetail}`,
+    };
+  }
+  if (firstFrameOff > 0) {
+    return {
+      status: "investigate",
+      detail: `first-frame time off by more than ${alignedToleranceMs}ms on ${firstFrameOff}/${medians.length} repeat(s) with both tapes otherwise clean (candidate finding — measured against the source node's own delay, the buffer's first frame is not at the time the SDK gives for it) — ${skewDetail}`,
+    };
+  }
+  if (leftOver > 0) {
+    return {
+      status: "investigate",
+      detail: `raw skew differs from what the two source nodes' delays account for by more than ${alignedToleranceMs}ms on ${leftOver}/${medians.length} repeat(s) with both tapes otherwise clean (candidate finding — the two buffers hold the sound further apart than the nodes delivered it) — ${skewDetail}`,
     };
   }
   const finding = nettedCount > 0

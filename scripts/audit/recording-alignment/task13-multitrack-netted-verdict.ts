@@ -19,11 +19,11 @@
  * Without run ids it replays the register's runs (`REGISTER_RUNS`).
  */
 import {
-  classifyCell, classifyMultitrackCell, formatSkewDistribution, formatTwoDecimals, nettedSkewMs, skewDistribution,
+  classifyCell, classifyMultitrackCell, formatSkewDistribution, formatTwoDecimals, nettedSkewMs, firstFrameCheckMs, skewDistribution,
   type CellClassification, type CrossTrackSkew, type LoopbackDelayPair,
 } from "../../../src/lib/audit/recordingAlignment.ts";
 import {
-  ALIGNED_TOLERANCE_MS, MULTITRACK_BASE_SCENARIO, MULTITRACK_RAW_SKEW_LIMIT_MS, RENDER_QUANTUM_FRAMES,
+  ALIGNED_TOLERANCE_MS, MULTITRACK_BASE_SCENARIO, MULTITRACK_RAW_SKEW_LIMIT_MS, ANCHOR_OFFSET_MS, RENDER_QUANTUM_FRAMES,
   auditProfileFor, isMultitrackScenario, profileKeyFor, signatureBandsFor,
 } from "../../../src/lib/audit/recordingAuditCalibration.ts";
 import { cellPopulation, asClassifiable, loadMultitrackSummary } from "./artifacts.ts";
@@ -78,6 +78,7 @@ for (const { runId, summary } of summaries) {
     const repeats = [...new Set(rows.map((r) => r.repeat))].sort((x, y) => x - y);
     const skews: CrossTrackSkew[] = [];
     const delays: LoopbackDelayPair[] = [];
+    const nodeDelays: LoopbackDelayPair[] = [];
     for (const repeat of repeats) {
       const a = tapeRows("a").find((r) => r.repeat === repeat);
       const b = tapeRows("b").find((r) => r.repeat === repeat);
@@ -86,10 +87,15 @@ for (const { runId, summary } of summaries) {
       }
       skews.push({ medianSkewMs: a.medianSkewMs, maxAbsSkewMs: a.maxAbsSkewMs, pairedBeats: a.pairedSkewBeats, perBeatSkewMs: [] });
       delays.push({ aMs: a.loopbackDelayMs ?? null, bMs: b.loopbackDelayMs ?? null });
+      nodeDelays.push({ aMs: a.nodeDelayMs ?? null, bMs: b.nodeDelayMs ?? null });
     }
+    // A run that listened to the source nodes says so by the offset it applied;
+    // one that did not is replayed as it ran, every netted repeat on the raw limit.
+    const tapped = summary.anchorOffsetMs !== null;
     const verdict = classifyMultitrackCell(classifyTape("a"), classifyTape("b"), skews, ALIGNED_TOLERANCE_MS, {
       netLoopbackDelay: profile.netLoopbackDelay, loopbackDelays: delays, renderQuantumMs: quantumMs,
       rawSkewLimitMs: MULTITRACK_RAW_SKEW_LIMIT_MS,
+      ...(tapped ? { nodeDelays, anchorOffsetMs: ANCHOR_OFFSET_MS } : {}),
     });
     const netted = skews.map((s, index) => (profile.netLoopbackDelay ? nettedSkewMs(s.medianSkewMs, delays[index]) : null));
     skews.forEach((s, index) => {
@@ -106,6 +112,17 @@ for (const { runId, summary } of summaries) {
     console.log(`  ${scenario}/${bpm}: ${verdict.status} ok=${repeats.length} err=${errorRows / 2}  [${was}]`);
     console.log(`    raw    [${skews.map((s) => (s.medianSkewMs === null ? "null" : formatTwoDecimals(s.medianSkewMs))).join(", ")}] ms`);
     console.log(`    netted [${netted.map((n) => (n === null ? "—" : formatTwoDecimals(n))).join(", ")}] ms`);
+    if (tapped) {
+      const dash = (value: number | null) => (value === null ? "—" : formatTwoDecimals(value));
+      const left = skews.map((s, index) => nettedSkewMs(s.medianSkewMs, nodeDelays[index]));
+      const check = (tape: "aMs" | "bMs") =>
+        delays.map((d, index) => dash(firstFrameCheckMs(d[tape], nodeDelays[index][tape], ANCHOR_OFFSET_MS))).join(", ");
+      console.log(`    node delays a [${nodeDelays.map((d) => dash(d.aMs)).join(", ")}] ms`);
+      console.log(`    node delays b [${nodeDelays.map((d) => dash(d.bMs)).join(", ")}] ms`);
+      console.log(`    left over     [${left.map(dash).join(", ")}] ms`);
+      console.log(`    first frame a [${check("aMs")}] ms`);
+      console.log(`    first frame b [${check("bMs")}] ms`);
+    }
     console.log(`    quanta ${formatSkewDistribution(skewDistribution(skews.map((s) => s.medianSkewMs), quantumMs))}`);
   }
 }

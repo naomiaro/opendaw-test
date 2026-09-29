@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildReferenceSchedule, bandSplit, identifyReferenceClicks, estimateAnchorT0,
-  measureTakeAlignment, classifyCell, classifyMultitrackCell, judgedMedianMs, measureCrossTrackSkew,
+  measureTakeAlignment, classifyCell, classifyMultitrackCell, firstFrameCheckMs, judgedMedianMs, measureCrossTrackSkew,
   nettedSkewMs, skewDistribution, formatSkewDistribution, formatTwoDecimals,
 } from "./recordingAlignment";
 import type { CellClassification, CrossTrackSkew, TakeAlignment, SignatureBand, ClassifyMultitrackOptions } from "./recordingAlignment";
@@ -826,6 +826,194 @@ describe("classifyMultitrackCell", () => {
   it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])("refuses a render quantum of %s", quantum => {
     expect(() => classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(0)], 2, { renderQuantumMs: quantum }))
       .toThrow(/render quantum/);
+  });
+});
+
+describe("classifyMultitrackCell with node delays", () => {
+  const cls = (status: CellClassification["status"]): CellClassification =>
+    ({ status, matchedSignature: null, detail: `${status} detail` });
+  const skew = (medianSkewMs: number): CrossTrackSkew =>
+    ({ medianSkewMs, maxAbsSkewMs: Math.abs(medianSkewMs), pairedBeats: 16, perBeatSkewMs: [] });
+  // Whole numbers and an offset of 1, so every figure below is exact.
+  const OFFSET = 1;
+  const pair = (aMs: number | null, bMs: number | null) => ({ aMs, bMs });
+  /** A repeat whose tapes recorded through nodes of these delays, with true first-frame times. */
+  const honest = (nodeA: number, nodeB: number) => ({
+    skew: skew(nodeB - nodeA), loopback: pair(nodeA + OFFSET, nodeB + OFFSET), node: pair(nodeA, nodeB),
+  });
+  type Repeat = { skew: CrossTrackSkew; loopback: { aMs: number | null; bMs: number | null }; node: { aMs: number | null; bMs: number | null } };
+  const classify = (repeats: Repeat[], a = cls("aligned"), b = cls("aligned")) =>
+    classifyMultitrackCell(a, b, repeats.map((r) => r.skew), 2, {
+      netLoopbackDelay: true, rawSkewLimitMs: 15,
+      loopbackDelays: repeats.map((r) => r.loopback),
+      nodeDelays: repeats.map((r) => r.node),
+      anchorOffsetMs: OFFSET,
+    });
+
+  it("a raw skew the two nodes' delays account for → aligned, the whole detail", () => {
+    const v = classify([honest(10, 20), honest(18, 18), honest(21, 12)]);
+    expect(v.status).toBe("aligned");
+    expect(v.detail).toBe(
+      "netted skew within 2ms tolerance on every repeat, " +
+      "raw skew accounted for by the two source nodes' own delays on every repeat (largest raw 10.00ms, largest left over 0.00ms), " +
+      "first-frame times true on every repeat (largest deviation 0.00ms) " +
+      "and both tapes individually clean (tapeA=aligned, tapeB=aligned) — " +
+      "medianSkewMs per repeat=[10.00, 0.00, -9.00] maxAbsMedianSkewMs=10.00 " +
+      "nettedSkewMs per repeat=[0.00, 0.00, 0.00] netted on 3/3 " +
+      "node delays on 3/3 unaccountedSkewMs per repeat=[0.00, 0.00, 0.00] " +
+      "firstFrameCheckMs per repeat a=[0.00, 0.00, 0.00] b=[0.00, 0.00, 0.00]"
+    );
+  });
+
+  it("does not hold a repeat with node delays to the raw limit", () => {
+    const v = classify([honest(10, 30)]);
+    expect(v.status).toBe("aligned");
+    expect(v.detail).not.toMatch(/raw skew within 15ms/);
+    expect(v.detail).toMatch(/largest raw 20\.00ms/);
+  });
+
+  it("a first-frame time one quantum late on one tape → investigate, though the netted skew is zero", () => {
+    // Tape b's buffer starts 3 ms after the time the SDK gives for it: its anchor moves
+    // with it, so the loopback delay reads 3 ms long and the netting cancels the lot.
+    const late: Repeat = { skew: skew(13), loopback: pair(11, 24), node: pair(10, 20) };
+    const v = classify([honest(10, 20), late]);
+    expect(v.status).toBe("investigate");
+    expect(v.detail).toMatch(/^first-frame time off by more than 2ms on 1\/2 repeat\(s\)/);
+    expect(v.detail).toMatch(/nettedSkewMs per repeat=\[0\.00, 0\.00\]/);
+    expect(v.detail).toMatch(/firstFrameCheckMs per repeat a=\[0\.00, 0\.00\] b=\[0\.00, 3\.00\]/);
+    expect(v.detail).toMatch(/unaccountedSkewMs per repeat=\[0\.00, 3\.00\]/);
+  });
+
+  it("a first-frame time that is early fails like one that is late", () => {
+    const early: Repeat = { skew: skew(7), loopback: pair(11, 18), node: pair(10, 20) };
+    expect(classify([early]).status).toBe("investigate");
+    expect(classify([early]).detail).toMatch(/b=\[-3\.00\]/);
+  });
+
+  it("both first-frame times off by the same amount → investigate, and nothing else sees it", () => {
+    // Both buffers start 3 ms after the times given for them. The skew is what the
+    // nodes' delays differ by, netted or not; only the first-frame check moves.
+    const late: Repeat = { skew: skew(10), loopback: pair(14, 24), node: pair(10, 20) };
+    const v = classify([late]);
+    expect(v.status).toBe("investigate");
+    expect(v.detail).toMatch(/^first-frame time off by more than 2ms on 1\/1/);
+    expect(v.detail).toMatch(/nettedSkewMs per repeat=\[0\.00\]/);
+    expect(v.detail).toMatch(/unaccountedSkewMs per repeat=\[0\.00\]/);
+    expect(v.detail).toMatch(/a=\[3\.00\] b=\[3\.00\]/);
+    const early: Repeat = { skew: skew(10), loopback: pair(8, 18), node: pair(10, 20) };
+    expect(classify([early]).status).toBe("investigate");
+    expect(classify([early]).detail).toMatch(/a=\[-3\.00\] b=\[-3\.00\]/);
+  });
+
+  it("checks tape a's first-frame time as it checks tape b's", () => {
+    const lateA: Repeat = { skew: skew(7), loopback: pair(14, 21), node: pair(10, 20) };
+    const v = classify([lateA]);
+    expect(v.status).toBe("investigate");
+    expect(v.detail).toMatch(/^first-frame time off/);
+    expect(v.detail).toMatch(/a=\[3\.00\] b=\[0\.00\]/);
+  });
+
+  it("a first-frame deviation at the tolerance passes, past it fails", () => {
+    const at: Repeat = { skew: skew(12), loopback: pair(11, 23), node: pair(10, 20) };
+    const past: Repeat = { skew: skew(12.5), loopback: pair(11, 23.5), node: pair(10, 20) };
+    expect(classify([at]).status).toBe("aligned");
+    expect(classify([past]).status).toBe("investigate");
+  });
+
+  it("takes the anchor's offset out before it judges", () => {
+    // With the offset ignored both tapes would read 1 ms off, inside the tolerance,
+    // and 3.5 ms would read 3.5: the verdicts are the same. At 1.5 past the offset
+    // the two readings part: 1.5 passes, 2.5 would not.
+    const repeat: Repeat = { skew: skew(10), loopback: pair(12.5, 22.5), node: pair(10, 20) };
+    const v = classify([repeat]);
+    expect(v.status).toBe("aligned");
+    expect(v.detail).toMatch(/a=\[1\.50\] b=\[1\.50\]/);
+  });
+
+  it("what the nodes leave over is judged on its own: both checks inside the tolerance, the remainder not", () => {
+    // a reads 1.5 early, b 1.5 late, the netted skew is 1.5: each within 2 ms, and
+    // the raw skew is 4.5 ms more than the nodes' delays differ by.
+    const repeat: Repeat = { skew: skew(14.5), loopback: pair(9.5, 22.5), node: pair(10, 20) };
+    const v = classify([repeat]);
+    expect(v.status).toBe("investigate");
+    expect(v.detail).toMatch(/^raw skew differs from what the two source nodes' delays account for by more than 2ms on 1\/1/);
+    expect(v.detail).toMatch(/unaccountedSkewMs per repeat=\[4\.50\]/);
+  });
+
+  it("judges a remainder the other way round the same", () => {
+    const repeat: Repeat = { skew: skew(5.5), loopback: pair(12.5, 19.5), node: pair(10, 20) };
+    const v = classify([repeat]);
+    expect(v.status).toBe("investigate");
+    expect(v.detail).toMatch(/^raw skew differs from what the two source nodes' delays account for/);
+    expect(v.detail).toMatch(/unaccountedSkewMs per repeat=\[-4\.50\]/);
+  });
+
+  it("the two tapes' node delays the wrong way round → investigate", () => {
+    const swapped: Repeat = { skew: skew(10), loopback: pair(11, 21), node: pair(20, 10) };
+    expect(classify([swapped]).status).toBe("investigate");
+  });
+
+  it("a repeat whose tap read nothing is held to the raw limit, the others are not", () => {
+    const untapped = (raw: number): Repeat => ({ skew: skew(raw), loopback: pair(11, 11 + raw), node: pair(null, 20) });
+    const within = classify([honest(10, 30), untapped(10), honest(18, 18)]);
+    expect(within.status).toBe("aligned");
+    expect(within.detail).toMatch(/accounted for by the two source nodes' own delays on 2\/3 repeats \(largest raw 20\.00ms/);
+    expect(within.detail).toMatch(/raw skew within 15ms on the 1 repeat\(s\) without node delays \(largest 10\.00ms; not attributed\)/);
+    expect(within.detail).toMatch(/unaccountedSkewMs per repeat=\[0\.00, —, 0\.00\]/);
+    const beyond = classify([honest(10, 30), untapped(16)]);
+    expect(beyond.status).toBe("investigate");
+    expect(beyond.detail).toMatch(/^raw skew exceeds 15ms on 1\/2 repeat\(s\)/);
+  });
+
+  it("with no node delay read at all it judges as without taps, and says there were none", () => {
+    const repeats: Repeat[] = [
+      { skew: skew(10), loopback: pair(11, 21), node: pair(null, null) },
+      { skew: skew(0), loopback: pair(11, 11), node: pair(null, null) },
+    ];
+    const without = classifyMultitrackCell(cls("aligned"), cls("aligned"), repeats.map((r) => r.skew), 2, {
+      netLoopbackDelay: true, rawSkewLimitMs: 15, loopbackDelays: repeats.map((r) => r.loopback),
+    });
+    const v = classify(repeats);
+    expect(v.status).toBe("aligned");
+    expect(v.detail).toBe(without.detail + " node delays on 0/2");
+  });
+
+  it("a tape that classified investigate comes first", () => {
+    const late: Repeat = { skew: skew(13), loopback: pair(11, 24), node: pair(10, 20) };
+    const v = classify([late], cls("aligned"), cls("investigate"));
+    expect(v.detail).toMatch(/^at least one tape's own per-take alignment did not classify clean/);
+  });
+
+  it("does not read node delays when it does not net", () => {
+    const skews = [skew(0.5), skew(-1)];
+    const plain = classifyMultitrackCell(cls("aligned"), cls("aligned"), skews, 2);
+    const given = classifyMultitrackCell(cls("aligned"), cls("aligned"), skews, 2, {
+      nodeDelays: [pair(10, 20), pair(10, 20)], anchorOffsetMs: OFFSET,
+    });
+    expect(given).toEqual(plain);
+  });
+
+  it("refuses node delays it cannot pair with the repeats, or without an offset", () => {
+    const base = { netLoopbackDelay: true, rawSkewLimitMs: 15, loopbackDelays: [pair(11, 21)] };
+    const call = (extra: object) => () => classifyMultitrackCell(cls("aligned"), cls("aligned"), [skew(10)], 2, { ...base, ...extra });
+    expect(call({ nodeDelays: [], anchorOffsetMs: OFFSET })).toThrow(/one record per repeat: 0 record\(s\) for 1 repeat/);
+    expect(call({ nodeDelays: [pair(10, 20)] })).toThrow(/need an anchorOffsetMs/);
+    expect(call({ nodeDelays: [pair(10, 20)], anchorOffsetMs: Number.NaN })).toThrow(/need an anchorOffsetMs/);
+  });
+});
+
+describe("firstFrameCheckMs", () => {
+  it("is what the loopback delay exceeds the node's delay by, less the anchor's offset", () => {
+    expect(firstFrameCheckMs(21, 20, 1)).toBe(0);
+    expect(firstFrameCheckMs(24, 20, 1)).toBe(3);
+    expect(firstFrameCheckMs(18, 20, 1)).toBe(-3);
+  });
+
+  it("is null when either delay is unknown", () => {
+    expect(firstFrameCheckMs(null, 20, 1)).toBeNull();
+    expect(firstFrameCheckMs(21, null, 1)).toBeNull();
+    expect(firstFrameCheckMs(undefined, 20, 1)).toBeNull();
+    expect(firstFrameCheckMs(21, Number.NaN, 1)).toBeNull();
   });
 });
 

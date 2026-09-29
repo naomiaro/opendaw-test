@@ -63,7 +63,10 @@ import { InstrumentFactories, type AudioUnitBoxAdapter, type SampleLoader } from
 import type { AudioUnitBox } from "@opendaw/studio-boxes";
 import { WavFile } from "@opendaw/lib-dsp";
 import { detectBuildFeatures } from "@/lib/audit/buildFeatures";
-import { installLoopbackCapture, LOOPBACK_DEVICE_ID, loopbackDeviceId } from "@/lib/audit/loopbackInjection";
+import {
+  installLoopbackCapture, LOOPBACK_DEVICE_ID, loopbackDeviceId, type SourceNodeRecording,
+} from "@/lib/audit/loopbackInjection";
+import { measureNodeDelay, type NodeDelayMeasurement } from "@/lib/audit/nodeTap";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { withDeadline } from "@/lib/deadline";
 import { detectOnsets } from "@/lib/audit/onsetDetection";
@@ -75,6 +78,7 @@ import {
   measureCrossTrackSkew,
   classifyMultitrackCell,
   nettedSkewMs,
+  firstFrameCheckMs,
   type TakeAlignment,
   type CellClassification,
   type ReferenceSchedule,
@@ -89,6 +93,7 @@ import {
   MULTITRACK_REPEATS_PER_CELL,
   RENDER_QUANTUM_FRAMES,
   MULTITRACK_RAW_SKEW_LIMIT_MS,
+  ANCHOR_OFFSET_MS,
   JANK_MS,
   LOOP_WRAP_TAKES,
   ALIGNED_TOLERANCE_MS,
@@ -219,7 +224,10 @@ const DEFAULT_INPUT = params.get("defaultInput") === "1";
 /** Persisted per run so an envelope says which `#updateStream` path it took. */
 const CAPTURE_MODE: CaptureMode = DEFAULT_INPUT ? "default" : "named";
 
-const loopback = installLoopbackCapture(2, { serveDefault: DEFAULT_INPUT });
+/** The multi-mic scenarios listen to the source node each tape records through. */
+const NODE_TAPS = params.get("scenario")?.startsWith("multitrack") === true;
+
+const loopback = installLoopbackCapture(2, { serveDefault: DEFAULT_INPUT, nodeTaps: NODE_TAPS });
 
 type ProbeRow = { label: string; value: string };
 
@@ -991,6 +999,30 @@ interface MultitrackTapes {
   audioUnitBoxB: AudioUnitBox;
   unitAdapterA: AudioUnitBoxAdapter;
   unitAdapterB: AudioUnitBoxAdapter;
+  /** The loopback device each tape names. The same on both in the collision cell. */
+  deviceIdA: string;
+  deviceIdB: string;
+}
+
+/**
+ * The delay of the source node a tape recorded through, from the taps of its
+ * repeat. Measured here, after the take: the comparison holds the main thread.
+ * Two tapes on one device id share the newest node of that device, and which
+ * tape it belongs to is not known, so neither gets a delay.
+ */
+function nodeDelayOf(
+  taps: ReadonlyArray<SourceNodeRecording>,
+  deviceId: string,
+  otherDeviceId: string,
+  rate: number
+): { tap: SourceNodeRecording | null; measurement: NodeDelayMeasurement } {
+  const none = (unmeasured: string): NodeDelayMeasurement =>
+    ({ delayFrames: null, delayMs: null, unmeasured, windows: [], tapFirstFrame: null, tapMissingQuanta: 0 });
+  if (deviceId === otherDeviceId) return { tap: null, measurement: none("both tapes record from one device id") };
+  const tap = taps.find((t) => t.deviceId === deviceId) ?? null;
+  if (tap === null) return { tap, measurement: none(`no source node was built on ${deviceId}`) };
+  if (tap.failed !== null) return { tap, measurement: none(tap.failed) };
+  return { tap, measurement: measureNodeDelay(tap.tapChunks, tap.referenceChunks, rate) };
 }
 
 /**
@@ -1012,15 +1044,17 @@ function createMultitrackTapes(project: Project, sameDeviceB: boolean = false): 
       .unwrap("createMultitrackTapes: createInstrument did not return an audioUnitBox");
   const audioUnitBoxA = createTape();
   const audioUnitBoxB = createTape();
+  const deviceIdA = loopbackDeviceId(1);
+  const deviceIdB = loopbackDeviceId(sameDeviceB ? 1 : 2);
   const captureA = project.captureDevices.get(audioUnitBoxA.address.uuid).unwrap();
   const captureB = project.captureDevices.get(audioUnitBoxB.address.uuid).unwrap();
   if (!(captureA instanceof CaptureAudio) || !(captureB instanceof CaptureAudio)) {
     throw new Error("createMultitrackTapes: capture is not CaptureAudio");
   }
   project.editing.modify(() => {
-    captureA.captureBox.deviceId.setValue(loopbackDeviceId(1));
+    captureA.captureBox.deviceId.setValue(deviceIdA);
     captureA.requestChannels = 1;
-    captureB.captureBox.deviceId.setValue(loopbackDeviceId(sameDeviceB ? 1 : 2));
+    captureB.captureBox.deviceId.setValue(deviceIdB);
     captureB.requestChannels = 1;
   });
   captureA.armed.setValue(true);
@@ -1029,7 +1063,7 @@ function createMultitrackTapes(project: Project, sameDeviceB: boolean = false): 
   const unitAdapterA = project.rootBoxAdapter.audioUnits.adapters().find((u) => u.box === audioUnitBoxA);
   const unitAdapterB = project.rootBoxAdapter.audioUnits.adapters().find((u) => u.box === audioUnitBoxB);
   if (!unitAdapterA || !unitAdapterB) throw new Error("createMultitrackTapes: missing audio unit adapter");
-  return { audioUnitBoxA, audioUnitBoxB, unitAdapterA, unitAdapterB };
+  return { audioUnitBoxA, audioUnitBoxB, unitAdapterA, unitAdapterB, deviceIdA, deviceIdB };
 }
 
 interface MultitrackRepeatResult {
@@ -1118,6 +1152,12 @@ async function runMultitrackCellRepeat(
   // (skipping it would race exactly the inter-track skew this scenario
   // measures).
   await waitForTakeCount([unitAdapterA, unitAdapterB], 1, 20_000);
+  // Both captures are recording: their source nodes are being pulled, and a tap
+  // attached now does not decide when. The taps run for 2 s of the take's 8.
+  const tapsPending: Promise<SourceNodeRecording[]> = loopback.tapSourceNodes().catch((error: unknown) => {
+    console.warn("[recording-alignment-audit] " + multitrackCellLabel(scenario, bpm, repeat) + ": node taps failed: " + String(error));
+    return [];
+  });
   assertCurrent(token, "position wait");
   await waitForPosition(project, MULTITRACK_RECORD_BARS * BAR_PPQN, 60_000);
 
@@ -1166,6 +1206,21 @@ async function runMultitrackCellRepeat(
   );
 
   onStage("measuring");
+  const taps = await tapsPending;
+  assertCurrent(token, "node delays");
+  const nodeDelays = {
+    a: nodeDelayOf(taps, tapes.deviceIdA, tapes.deviceIdB, rate),
+    b: nodeDelayOf(taps, tapes.deviceIdB, tapes.deviceIdA, rate),
+  };
+  for (const tape of ["a", "b"] as const) {
+    const { measurement } = nodeDelays[tape];
+    console.log(
+      "[recording-alignment-audit] " + multitrackCellLabel(scenario, bpm, repeat) + "/tape" + tape + " node delay: " +
+      (measurement.delayFrames === null
+        ? "not measured — " + String(measurement.unmeasured)
+        : String(measurement.delayFrames) + " frames")
+    );
+  }
   type TakeRegionAdapter = NonNullable<ReturnType<typeof firstTakeOf>>;
   const measureTape = (
     take: TakeRegionAdapter,
@@ -1207,8 +1262,17 @@ async function runMultitrackCellRepeat(
       alignment.anchorT0Sec !== null && recordRequestContextTime !== null
         ? Math.max(0, (alignment.anchorT0Sec - recordRequestContextTime) * 1000)
         : null;
+    const { tap, measurement } = nodeDelays[tapeLabel];
     const row: MultitrackAuditRow = {
       scenario, bpm, rate, repeat, tape: tapeLabel,
+      nodeDelayMs: measurement.delayMs,
+      nodeDelayFrames: measurement.delayFrames,
+      nodeDelayUnmeasured: measurement.unmeasured,
+      nodeTapWindows: measurement.windows,
+      nodeSourceCreatedAtSec: tap?.sourceCreatedAtSec ?? null,
+      nodeTapAttachedAtSec: tap?.tapAttachedAtSec ?? null,
+      nodeTapNodesBuilt: tap?.nodesBuilt ?? null,
+      firstFrameCheckMs: firstFrameCheckMs(loopbackDelayMs, measurement.delayMs, ANCHOR_OFFSET_MS),
       harnessPathBiasSec,
       medianBeatErrorMs: alignment.medianBeatErrorMs,
       medianBeatErrorMsAdjusted: alignment.medianBeatErrorMsAdjusted,
@@ -1249,6 +1313,12 @@ async function runMultitrackCellRepeat(
   });
   a.row.medianSkewMsNetted = netted;
   b.row.medianSkewMsNetted = netted;
+  const unaccounted = nettedSkewMs(skew.medianSkewMs, {
+    aMs: a.row.nodeDelayMs ?? null,
+    bMs: b.row.nodeDelayMs ?? null,
+  });
+  a.row.medianSkewMsUnaccounted = unaccounted;
+  b.row.medianSkewMsUnaccounted = unaccounted;
 
   return { rowA: a.row, rowB: b.row, alignmentA: a.alignment, alignmentB: b.alignment, skew, bufferA: a.buffer, bufferB: b.buffer };
 }
@@ -1356,6 +1426,9 @@ async function uploadMultitrackSummary(
     rawSkewLimitMs: auditProfileFor(sdkBuildProbe, runToken, buildFeatures).netLoopbackDelay
       ? MULTITRACK_RAW_SKEW_LIMIT_MS
       : null,
+    anchorOffsetMs: auditProfileFor(sdkBuildProbe, runToken, buildFeatures).netLoopbackDelay
+      ? ANCHOR_OFFSET_MS
+      : null,
     referenceSchedule: { count: 60, baseGapSec: 0.25, gapIncrementSec: 0.005 },
     // Fix round 1 (C1 confirmation): when true, tape B was armed on the SAME
     // loopbackDeviceId as tape A (see createMultitrackTapes's sameDeviceB) —
@@ -1401,6 +1474,8 @@ async function createMultitrackContext(rate: number, confirmCollision: boolean):
   const buildFeatures = detectBuildFeatures(project.engine);
   console.log("[recording-alignment-audit] buildFeatures=[" + buildFeatures.join(",") + "]");
   loopback.attach(audioContext);
+  // Waited for here, before anything records: see `prepareNodeTaps`.
+  await withDeadline(loopback.prepareNodeTaps(), 15_000, "node tap setup");
   const bias = await resolveHarnessPathBias(audioContext);
   const tapes = createMultitrackTapes(project, confirmCollision);
   return { project, audioContext, tapes, sdkBuildProbe, buildFeatures, bias };
@@ -1544,6 +1619,8 @@ async function runMultitrackAudit(
         loopbackDelays: repeats.map((r) => ({ aMs: r.rowA.loopbackDelayMs ?? null, bMs: r.rowB.loopbackDelayMs ?? null })),
         renderQuantumMs: (RENDER_QUANTUM_FRAMES / rate) * 1000,
         rawSkewLimitMs: MULTITRACK_RAW_SKEW_LIMIT_MS,
+        nodeDelays: repeats.map((r) => ({ aMs: r.rowA.nodeDelayMs ?? null, bMs: r.rowB.nodeDelayMs ?? null })),
+        anchorOffsetMs: ANCHOR_OFFSET_MS,
       });
       // Persisted for EVERY cell, all-error cells included (no skew signature
       // band exists, so matchedSignature is always null here).
@@ -1664,6 +1741,9 @@ function MultitrackRunnerHarness() {
                     <Table.ColumnHeaderCell>headMiss (ms)</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>medianSkew (ms)</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>nettedSkew (ms)</Table.ColumnHeaderCell>
+                    <Table.ColumnHeaderCell>nodeDelay (ms)</Table.ColumnHeaderCell>
+                    <Table.ColumnHeaderCell>firstFrame (ms)</Table.ColumnHeaderCell>
+                    <Table.ColumnHeaderCell>unaccounted (ms)</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>maxAbsSkew (ms)</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>pairedBeats</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>status</Table.ColumnHeaderCell>
@@ -1683,6 +1763,9 @@ function MultitrackRunnerHarness() {
                       <Table.Cell>{row.headMissingMs === null ? "—" : row.headMissingMs.toFixed(2)}</Table.Cell>
                       <Table.Cell>{formatMilliseconds(row.medianSkewMs)}</Table.Cell>
                       <Table.Cell>{formatMilliseconds(row.medianSkewMsNetted)}</Table.Cell>
+                      <Table.Cell title={row.nodeDelayUnmeasured ?? undefined}>{formatMilliseconds(row.nodeDelayMs)}</Table.Cell>
+                      <Table.Cell>{formatMilliseconds(row.firstFrameCheckMs)}</Table.Cell>
+                      <Table.Cell>{formatMilliseconds(row.medianSkewMsUnaccounted)}</Table.Cell>
                       <Table.Cell>{formatMilliseconds(row.maxAbsSkewMs)}</Table.Cell>
                       <Table.Cell>{row.pairedSkewBeats}</Table.Cell>
                       <Table.Cell>
