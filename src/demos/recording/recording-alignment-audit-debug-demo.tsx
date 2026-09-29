@@ -66,7 +66,7 @@ import { detectBuildFeatures } from "@/lib/audit/buildFeatures";
 import {
   installLoopbackCapture, LOOPBACK_DEVICE_ID, loopbackDeviceId, type SourceNodeRecording,
 } from "@/lib/audit/loopbackInjection";
-import { measureNodeDelay, type NodeDelayMeasurement } from "@/lib/audit/nodeTap";
+import { nodeDelayFor } from "@/lib/audit/nodeTap";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { withDeadline } from "@/lib/deadline";
 import { detectOnsets } from "@/lib/audit/onsetDetection";
@@ -1005,27 +1005,6 @@ interface MultitrackTapes {
 }
 
 /**
- * The delay of the source node a tape recorded through, from the taps of its
- * repeat. Measured here, after the take: the comparison holds the main thread.
- * Two tapes on one device id share the newest node of that device, and which
- * tape it belongs to is not known, so neither gets a delay.
- */
-function nodeDelayOf(
-  taps: ReadonlyArray<SourceNodeRecording>,
-  deviceId: string,
-  otherDeviceId: string,
-  rate: number
-): { tap: SourceNodeRecording | null; measurement: NodeDelayMeasurement } {
-  const none = (unmeasured: string): NodeDelayMeasurement =>
-    ({ delayFrames: null, delayMs: null, unmeasured, windows: [], tapFirstFrame: null, tapMissingQuanta: 0 });
-  if (deviceId === otherDeviceId) return { tap: null, measurement: none("both tapes record from one device id") };
-  const tap = taps.find((t) => t.deviceId === deviceId) ?? null;
-  if (tap === null) return { tap, measurement: none(`no source node was built on ${deviceId}`) };
-  if (tap.failed !== null) return { tap, measurement: none(tap.failed) };
-  return { tap, measurement: measureNodeDelay(tap.tapChunks, tap.referenceChunks, rate) };
-}
-
-/**
  * Create two Tape instruments, one per loopback device — mirrors runAudit's
  * single-tape setup, capture field writes in a SEPARATE transaction from
  * createInstrument per CLAUDE.md's "Pointer Re-Routing" rule.
@@ -1153,11 +1132,15 @@ async function runMultitrackCellRepeat(
   // measures).
   await waitForTakeCount([unitAdapterA, unitAdapterB], 1, 20_000);
   // Both captures are recording: their source nodes are being pulled, and a tap
-  // attached now does not decide when. The taps run for 2 s of the take's 8.
-  const tapsPending: Promise<SourceNodeRecording[]> = loopback.tapSourceNodes().catch((error: unknown) => {
-    console.warn("[recording-alignment-audit] " + multitrackCellLabel(scenario, bpm, repeat) + ": node taps failed: " + String(error));
-    return [];
-  });
+  // attached now does not decide when. The taps run for 2 s of the take's 4 bars
+  // (8 s at 120 bpm).
+  const tapsPending: Promise<{ taps: SourceNodeRecording[]; failure: string | null }> = loopback.tapSourceNodes().then(
+    (taps) => ({ taps, failure: null }),
+    (error: unknown) => {
+      console.warn("[recording-alignment-audit] " + multitrackCellLabel(scenario, bpm, repeat) + ": node taps failed: " + String(error));
+      return { taps: [], failure: String(error) };
+    }
+  );
   assertCurrent(token, "position wait");
   await waitForPosition(project, MULTITRACK_RECORD_BARS * BAR_PPQN, 60_000);
 
@@ -1206,20 +1189,18 @@ async function runMultitrackCellRepeat(
   );
 
   onStage("measuring");
-  const taps = await tapsPending;
+  // Measured here, after the take: the comparison holds the main thread.
+  const { taps, failure: tapsFailure } = await tapsPending;
   assertCurrent(token, "node delays");
   const nodeDelays = {
-    a: nodeDelayOf(taps, tapes.deviceIdA, tapes.deviceIdB, rate),
-    b: nodeDelayOf(taps, tapes.deviceIdB, tapes.deviceIdA, rate),
+    a: nodeDelayFor(taps, tapes.deviceIdA, tapes.deviceIdB, rate, tapsFailure),
+    b: nodeDelayFor(taps, tapes.deviceIdB, tapes.deviceIdA, rate, tapsFailure),
   };
   for (const tape of ["a", "b"] as const) {
     const { measurement } = nodeDelays[tape];
-    console.log(
-      "[recording-alignment-audit] " + multitrackCellLabel(scenario, bpm, repeat) + "/tape" + tape + " node delay: " +
-      (measurement.delayFrames === null
-        ? "not measured — " + String(measurement.unmeasured)
-        : String(measurement.delayFrames) + " frames")
-    );
+    const label = "[recording-alignment-audit] " + multitrackCellLabel(scenario, bpm, repeat) + "/tape" + tape + " node delay: ";
+    if (measurement.unmeasured === null) console.log(label + String(measurement.delayFrames) + " frames");
+    else console.warn(label + "not read — " + measurement.unmeasured);
   }
   type TakeRegionAdapter = NonNullable<ReturnType<typeof firstTakeOf>>;
   const measureTape = (
@@ -1262,7 +1243,7 @@ async function runMultitrackCellRepeat(
       alignment.anchorT0Sec !== null && recordRequestContextTime !== null
         ? Math.max(0, (alignment.anchorT0Sec - recordRequestContextTime) * 1000)
         : null;
-    const { tap, measurement } = nodeDelays[tapeLabel];
+    const { tap, measurement, candidates } = nodeDelays[tapeLabel];
     const row: MultitrackAuditRow = {
       scenario, bpm, rate, repeat, tape: tapeLabel,
       nodeDelayMs: measurement.delayMs,
@@ -1272,6 +1253,9 @@ async function runMultitrackCellRepeat(
       nodeSourceCreatedAtSec: tap?.sourceCreatedAtSec ?? null,
       nodeTapAttachedAtSec: tap?.tapAttachedAtSec ?? null,
       nodeTapNodesBuilt: tap?.nodesBuilt ?? null,
+      nodeTapCandidates: candidates,
+      nodeTapMissingQuanta: tap === null ? null : measurement.tapMissingQuanta,
+      nodeTapReferenceMissingQuanta: tap === null ? null : measurement.referenceMissingQuanta,
       firstFrameCheckMs: firstFrameCheckMs(loopbackDelayMs, measurement.delayMs, ANCHOR_OFFSET_MS),
       harnessPathBiasSec,
       medianBeatErrorMs: alignment.medianBeatErrorMs,
@@ -1313,7 +1297,8 @@ async function runMultitrackCellRepeat(
   });
   a.row.medianSkewMsNetted = netted;
   b.row.medianSkewMsNetted = netted;
-  const unaccounted = nettedSkewMs(skew.medianSkewMs, {
+  // As the verdict reads it: only where the loopback delays are known too.
+  const unaccounted = netted === null ? null : nettedSkewMs(skew.medianSkewMs, {
     aMs: a.row.nodeDelayMs ?? null,
     bMs: b.row.nodeDelayMs ?? null,
   });
@@ -1619,14 +1604,17 @@ async function runMultitrackAudit(
         loopbackDelays: repeats.map((r) => ({ aMs: r.rowA.loopbackDelayMs ?? null, bMs: r.rowB.loopbackDelayMs ?? null })),
         renderQuantumMs: (RENDER_QUANTUM_FRAMES / rate) * 1000,
         rawSkewLimitMs: MULTITRACK_RAW_SKEW_LIMIT_MS,
-        nodeDelays: repeats.map((r) => ({ aMs: r.rowA.nodeDelayMs ?? null, bMs: r.rowB.nodeDelayMs ?? null })),
-        anchorOffsetMs: ANCHOR_OFFSET_MS,
+        nodeDelays: {
+          pairs: repeats.map((r) => ({ aMs: r.rowA.nodeDelayMs ?? null, bMs: r.rowB.nodeDelayMs ?? null })),
+          anchorOffsetMs: ANCHOR_OFFSET_MS,
+        },
       });
       // Persisted for EVERY cell, all-error cells included (no skew signature
       // band exists, so matchedSignature is always null here).
       cellVerdicts.push({
         scenario, bpm, rate, status: verdict.status, matchedSignature: null, detail: verdict.detail,
         successfulRepeats: repeats.length, errorRepeats: MULTITRACK_REPEATS_PER_CELL - repeats.length,
+        nodeDelayUse: verdict.nodeDelayUse,
       });
 
       for (const r of repeats) {
@@ -1688,6 +1676,8 @@ function MultitrackRunnerHarness() {
   const alignedCount = rows.filter((r) => r.status === "aligned").length;
   const investigateCount = rows.filter((r) => r.status === "investigate").length;
   const errorCount = rows.filter((r) => r.status === "error").length;
+  const tappedRows = rows.filter((r) => r.status !== "error");
+  const nodeDelayCount = tappedRows.filter((r) => typeof r.nodeDelayMs === "number").length;
 
   return (
     <Theme appearance="dark" accentColor="amber">
@@ -1721,6 +1711,15 @@ function MultitrackRunnerHarness() {
               <Text size="2" color="gray">
                 {rows.length} row{rows.length === 1 ? "" : "s"} — {alignedCount} aligned, {investigateCount} investigate
                 {errorCount > 0 && `, ${errorCount} error`}
+              </Text>
+              <Text
+                id="node-delay-count"
+                data-read={nodeDelayCount}
+                data-of={tappedRows.length}
+                size="2"
+                color={nodeDelayCount === tappedRows.length ? "gray" : "amber"}
+              >
+                node delay read on {nodeDelayCount} of {tappedRows.length} rows
               </Text>
             </Flex>
           </Card>
@@ -1763,7 +1762,11 @@ function MultitrackRunnerHarness() {
                       <Table.Cell>{row.headMissingMs === null ? "—" : row.headMissingMs.toFixed(2)}</Table.Cell>
                       <Table.Cell>{formatMilliseconds(row.medianSkewMs)}</Table.Cell>
                       <Table.Cell>{formatMilliseconds(row.medianSkewMsNetted)}</Table.Cell>
-                      <Table.Cell title={row.nodeDelayUnmeasured ?? undefined}>{formatMilliseconds(row.nodeDelayMs)}</Table.Cell>
+                      <Table.Cell>
+                        {typeof row.nodeDelayMs === "number"
+                          ? formatMilliseconds(row.nodeDelayMs)
+                          : `not read: ${row.nodeDelayUnmeasured ?? "no tap"}`}
+                      </Table.Cell>
                       <Table.Cell>{formatMilliseconds(row.firstFrameCheckMs)}</Table.Cell>
                       <Table.Cell>{formatMilliseconds(row.medianSkewMsUnaccounted)}</Table.Cell>
                       <Table.Cell>{formatMilliseconds(row.maxAbsSkewMs)}</Table.Cell>
@@ -1791,8 +1794,11 @@ function MultitrackRunnerHarness() {
 Repeats per cell:       ${MULTITRACK_REPEATS_PER_CELL}
 Verdict:                on a build whose profile nets the loopback delay: each tape clean AND the
                         skew between them within ${ALIGNED_TOLERANCE_MS} ms once both tapes' own loopback delays are
-                        taken out AND the raw skew within ${MULTITRACK_RAW_SKEW_LIMIT_MS} ms. Inside that limit the raw skew
-                        is not told apart from the two streams' own delays.
+                        taken out AND, for every tape whose source node's delay was read, a first-frame
+                        time that is true to ${ALIGNED_TOLERANCE_MS} ms AND, for every repeat with both node delays, a raw
+                        skew that is what the two delays differ by, to ${ALIGNED_TOLERANCE_MS} ms. A repeat without both is
+                        held to a raw skew within ${MULTITRACK_RAW_SKEW_LIMIT_MS} ms and is not attributed. A cell in which no
+                        repeat has both reads investigate.
                         On any other build: each tape clean AND the raw skew within ${ALIGNED_TOLERANCE_MS} ms.
                         The raw skew is reported as a spread over render quanta in the cell's detail.
                         The verdict covers the repeats that finished; error repeats are counted beside it.

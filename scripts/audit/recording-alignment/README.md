@@ -21,17 +21,17 @@ node scripts/audit/recording-alignment/<script>.ts [mode]
 | `task12a-keepalive-classification.ts` | The final-head standing sweep and multitrack run re-classified through `classifyCell` / `classifyMultitrackCell` with the band table each artifact's own build selects, printing the page-persisted verdict beside it so a change of table is visible; plus the head/tail integrity tally and the one older artifact whose verdict the per-build profile moves |
 | `task12b-calibration-tables.ts [runs\|noise\|chains\|miss\|batches\|all]` | Task 12b: the register's input-latency-calibration tables — the per-build ground truth (least-squares fits recomputed and checked against the page's), the first build's pooled per-call noise and the 1σ slope/intercept it implies, the chain-state census with its frame lattice, the one-quantum calibration miss, and the `?repeat=` batches |
 | `task12c-real-input-tables.ts [runs\|chains\|events\|all]` | Task 12c: the register's real-device calibration tables — the six `?input=real` envelopes (a MacBook Pro built-in microphone, acoustic path) per run and per chain (modal round trip and input part at frame resolution, within-chain spread, ratio range, bursts, largest anchor disagreement, where the applied call sat), the page-load table of every chain instance's mode with pairwise differences in frames / ms / quanta, and the event table classifying every call ≥ ½ quantum off its chain's mode as `anchor-disagreement`, `state-transition` or `isolated`. The state rule and the frame-resolution mode are imported from `src/lib/audit/realInputSummary.ts`; nothing is read from the persisted `realSummary`, and the script deliberately RE-DERIVES the event classification rather than calling `summarizeRealInput`, so a divergence between what the page persists and what the register says is caught by the local byte-identity diff below, and only there |
-| `task13-multitrack-netted-verdict.ts [runId …]` | The multi-mic verdict replayed over saved `recaudit-mt-summary` envelopes the way the page computes it: each tape through `classifyCell`, the pair through `classifyMultitrackCell` with the two loopback streams' delays, under the tolerance and raw skew limit of `recordingAuditCalibration.ts`. Per run it prints the limit the run itself applied; per cell the replayed verdict, the verdict the page persisted (marked when the two differ), the raw and netted skew per repeat and the raw skew's spread over render quanta; then the same pooled over all the runs named. The runs named must share one sample rate. Without run ids it replays the runs the register quotes. A run whose envelope carries `anchorOffsetMs` had node taps: its repeats are replayed with the node delays of its rows, and the node delays, what they leave of the raw skew and the first-frame check are printed per repeat. A run without is replayed as it ran |
+| `task13-multitrack-netted-verdict.ts [runId …]` | The multi-mic verdict replayed over saved `recaudit-mt-summary` envelopes the way the page computes it: each tape through `classifyCell`, the pair through `classifyMultitrackCell` with the two loopback streams' delays, under the tolerance and raw skew limit of `recordingAuditCalibration.ts`. Per run it prints the limit the run itself applied; per cell the replayed verdict, the verdict the page persisted (marked when the two differ), the raw and netted skew per repeat and the raw skew's spread over render quanta; then the same pooled over all the runs named. The runs named must share one sample rate. Without run ids it replays the runs the register quotes. A run whose envelope carries an `anchorOffsetMs` had node taps and a verdict that read them: its repeats are replayed with the node delays of its rows and the offset the run applied, and the node delays, what they leave of the raw skew and the first-frame check are printed per repeat. A run without is replayed as it ran |
 | `task9-branch-verification.ts [cells\|hang\|hop\|mt\|probe\|integrity\|all]` | Task 9: before (fresh upstream runs) vs after (reworked branch) per cell, finalization rate, loopback-hop decomposition, multi-mic skew, per-repeat finalization probe, head/tail integrity. Run ids default to the register's; override with `T9_UP48`/`T9_UP44`/`T9_BR48`/`T9_BR44` (matrix), `T9_MT` (one multi-mic run — the register quotes `…1788325557229` (default) and `…1788329084394`), `T9_MT_UP`, and `T9_PROBE` (comma-separated runs for `probe`) |
 
 ## Browser-side probes (`stream-tap/`)
 
 These run in the browser, not under Node. They measure the delay of a
 `MediaStreamAudioSourceNode` on the context clock, with nothing of the SDK's in the
-figure. The `*.playwright.js` files are passed to the Playwright MCP's `browser_run_code`
-(dev server on `https://localhost:5173`); they fetch the page-side script through the dev
-server's `?raw`, so the text that runs is the text in the repo. Artifacts land in
-`.verify-output/`.
+figure. The `*.playwright.js` files are passed to the Playwright MCP's tool that runs a
+code snippet against the page (dev server on `https://localhost:5173`); the two `run-*`
+files fetch the page-side script through the dev server's `?raw`, so the text that runs
+is the text in the repo. Artifacts land in `.verify-output/`.
 
 | file | what it does |
 |---|---|
@@ -42,9 +42,9 @@ server's `?raw`, so the text that runs is the text in the repo. Artifacts land i
 | `node-tap.read.cjs <node-tap json> <recaudit-mt-summary json>` | Joins the probe's taps to the run's rows (by tape, and by the SDK connection that precedes the row's first-frame time) and prints, per row, `loopbackDelayMs` against the node's delay, and per repeat, the raw skew against the difference of the two nodes' delays |
 
 The register's figures are persisted in `.verify-output/two-tap-spike-tables.txt`,
-`.verify-output/node-tap-tables.txt` and `.verify-output/harness-node-delays.txt`; the
-replay of the runs that carry node delays in
-`.verify-output/task13-node-delay-runs-48000.txt` and `…-44100.txt`.
+`.verify-output/node-tap-tables.txt`, `.verify-output/harness-node-delays.txt` and
+`.verify-output/harness-node-delays-after-review.txt`; the replay of the runs that carry
+node delays in `.verify-output/task13-node-delay-runs-48000.txt` and `…-44100.txt`.
 
 ## Regression oracle for the scripts themselves
 

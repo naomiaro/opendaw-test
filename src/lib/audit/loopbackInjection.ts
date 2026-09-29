@@ -21,7 +21,11 @@
  * capture recorded with can only be read from the node it recorded through.
  */
 import { withDeadline } from "@/lib/deadline";
-import { NODE_TAP_MAX_LAG_SEC, NODE_TAP_QUANTUM_FRAMES, NODE_TAP_SECONDS, spanOf, type TapChunk } from "./nodeTap";
+import {
+  NODE_TAP_PROCESSOR, NODE_TAP_PROCESSOR_SOURCE, NODE_TAP_QUANTUM_FRAMES, NODE_TAP_SECONDS,
+  referenceCovers, referenceFor, spanOf, trimReference,
+  type TapChunk, type TappedNode,
+} from "./nodeTap";
 
 export const LOOPBACK_DEVICE_ID = "loopback-injection";
 export const LOW_BAND_CUTOFF_HZ = 1500;
@@ -39,60 +43,20 @@ const REFERENCE_KEEP_SEC = 30;
 const REFERENCE_CHUNK_QUANTA = 64;
 /** How long a tap may take beyond its own length before it is given up. */
 const NODE_TAP_GRACE_MS = 3000;
-const NODE_TAP_PROCESSOR = "loopback-node-tap";
-
-/**
- * The recorder behind the node taps: copies its input, one render quantum per
- * `process` call, and stamps each with `currentFrame`. With `quanta` above zero
- * it stops after that many; with zero it runs for as long as the node lives.
- * It posts every `chunkQuanta` quanta, and what is left when it stops.
- */
-const NODE_TAP_PROCESSOR_SOURCE = `
-class LoopbackNodeTap extends AudioWorkletProcessor {
-  constructor(options) {
-    super();
-    this.quanta = options.processorOptions.quanta;
-    this.chunkQuanta = options.processorOptions.chunkQuanta;
-    this.done = 0;
-    this.begin();
-  }
-  begin() {
-    this.samples = new Float32Array(this.chunkQuanta * 128);
-    this.frames = new Float64Array(this.chunkQuanta);
-    this.count = 0;
-  }
-  process(inputs) {
-    if (this.quanta > 0 && this.done >= this.quanta) return false;
-    const input = inputs[0];
-    this.frames[this.count] = currentFrame;
-    if (input.length > 0) this.samples.set(input[0], this.count * 128);
-    this.count++;
-    this.done++;
-    if (this.count === this.chunkQuanta || (this.quanta > 0 && this.done === this.quanta)) {
-      this.port.postMessage(
-        { frames: this.frames, samples: this.samples, count: this.count },
-        [this.frames.buffer, this.samples.buffer]
-      );
-      this.begin();
-    }
-    return true;
-  }
-}
-registerProcessor("${NODE_TAP_PROCESSOR}", LoopbackNodeTap);
-`;
-
 /** What one tap heard, and what went into the stream over the same stretch. */
-export interface SourceNodeRecording {
+export interface SourceNodeRecording extends TappedNode {
   /** The device the stream the node consumes was opened for; `LOOPBACK_UNNAMED_DEVICE` when the request named none. */
   deviceId: string;
   /** Context time the node was created at. */
   sourceCreatedAtSec: number;
   /** Context time the tap was attached at. */
   tapAttachedAtSec: number;
-  /** Source nodes built on this device's streams since the tap before this one, the tapped one included. */
+  /** Source nodes built on this device's streams since the call before this one, all of
+   *  them tapped by this one. 0 when none was built: the node is one tapped before. */
   nodesBuilt: number;
-  tapChunks: TapChunk[];
-  referenceChunks: TapChunk[];
+  /** When `failed` is a reason, what the tap had delivered by then; nothing to measure. */
+  tapChunks: ReadonlyArray<TapChunk>;
+  referenceChunks: ReadonlyArray<TapChunk>;
   /** Why there is nothing to measure, or null. */
   failed: string | null;
 }
@@ -277,24 +241,28 @@ export interface LoopbackHandle {
   /**
    * Load the tap recorder and start recording what goes into the stream. Needs the
    * `nodeTaps` option and `attach()`. WAIT FOR IT before the first take: a worklet
-   * module still loading when a recording starts held that take's first frame back
-   * by 117 ms.
+   * module still loading when a recording starts delays that take's first frame
+   * (117 ms measured). After a failure it can be called again.
    */
   prepareNodeTaps(): Promise<void>;
   /**
-   * Listen for `NODE_TAP_SECONDS` to the newest source node built on each device's
-   * stream, and hand back what each tap heard with what went into the stream over
-   * the same stretch (`measureNodeDelay` in `nodeTap.ts` reads the node's delay
-   * from the two). Call it once the recording is running, so that the SDK and
-   * nothing else decides when the node starts being pulled; a second listener on
-   * a node reads the same delay as the first, whenever it is attached.
+   * Listen for `NODE_TAP_SECONDS` to every source node built on the handed-out
+   * streams since the call before, or, on a device where none was, to the newest
+   * one tapped then. It hands back what each tap heard with what went into the
+   * stream over the same stretch (`nodeDelayFor` in `nodeTap.ts` reads a tape's
+   * delay from them). Call it once the recording is running, so that the SDK and
+   * nothing else decides when a node starts being pulled; a second listener on a
+   * node reads the same delay as the first, whenever it is attached.
    *
-   * It never rejects: a tap that fails says so in `failed`. Measure after the
-   * take, not during it — the comparison holds the main thread for some tens of
-   * milliseconds.
+   * A tap that fails does not reject: it says so in `failed`. The call rejects
+   * when it is made before `prepareNodeTaps()` or when the recorder did not load.
+   * Measure after the take, not during it — the comparison holds the main thread
+   * for some tens of milliseconds. One call at a time: a second call made while
+   * the first is running taps the same nodes and reports them as built before.
    *
    * A node the SDK has dropped is silent (its stream's tracks are stopped), so a
-   * tap on the wrong node reads nothing; it cannot read a wrong delay.
+   * tap on it reads nothing. Two nodes that both carry signal on one device
+   * cannot be told apart here; `nodeDelayFor` refuses that case.
    */
   tapSourceNodes(): Promise<SourceNodeRecording[]>;
   uninstall(): void;
@@ -364,31 +332,60 @@ export function installLoopbackCapture(deviceCount: number = 1, options: Loopbac
   const pendingClickNodes: { osc: OscillatorNode; gain: GainNode }[] = [];
   let getUserMediaOpens = 0;
   const streamDevices = new WeakMap<MediaStream, string>();
-  /** The newest source node on each device, and how many were built since the last tap. */
-  const sourceNodes = new Map<string, { node: MediaStreamAudioSourceNode; createdAtSec: number; nodesBuilt: number }>();
+  interface SourceNodeEntry { node: MediaStreamAudioSourceNode; createdAtSec: number }
+  /** Per device: the nodes built since the last tap, and the newest one tapped then. */
+  const sourceNodes = new Map<string, { untapped: SourceNodeEntry[]; newest: SourceNodeEntry | null }>();
   let nodeTapsReady: Promise<void> | null = null;
   let referenceRecorder: AudioWorkletNode | null = null;
+  /** Why the reference recorder stopped, once it has; every tap after that fails with it. */
+  let referenceFailure: string | null = null;
   let referenceChunks: TapChunk[] = [];
+  let uninstalled = false;
 
-  const tapRecorder = (audioContext: AudioContext, quanta: number, chunkQuanta: number, onChunk: (chunk: TapChunk) => void): AudioWorkletNode => {
+  const tapRecorder = (
+    audioContext: AudioContext,
+    quanta: number,
+    chunkQuanta: number,
+    onChunk: (chunk: TapChunk) => void,
+    onFailure: (reason: string) => void
+  ): AudioWorkletNode => {
     const node = new AudioWorkletNode(audioContext, NODE_TAP_PROCESSOR, {
       numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1, channelCountMode: "explicit",
       processorOptions: { quanta, chunkQuanta },
     });
-    node.port.onmessage = (event: MessageEvent<TapChunk>) => onChunk(event.data);
+    node.port.onmessage = (event: MessageEvent<TapChunk>) => {
+      try {
+        onChunk(event.data);
+      } catch (error) {
+        onFailure(`the recorder's chunk could not be taken: ${String(error)}`);
+      }
+    };
+    node.port.onmessageerror = () => onFailure("the recorder's chunk could not be read");
+    node.onprocessorerror = () => onFailure("the recorder's processor threw");
     return node;
+  };
+
+  /** Drop a connection that may be gone already: the SDK takes a chain down with its source node. */
+  const disconnectQuietly = (from: AudioNode, to: AudioNode): void => {
+    try {
+      from.disconnect(to);
+    } catch (error) {
+      if (!(error instanceof DOMException) || error.name !== "InvalidAccessError") {
+        console.warn("[loopbackInjection] disconnect failed: " + String(error));
+      }
+    }
   };
 
   /** One node's tap. Resolves when the tap has its quanta and the reference has caught up, or with `failed`. */
   const tapOne = (
     audioContext: AudioContext,
     deviceId: string,
-    entry: { node: MediaStreamAudioSourceNode; createdAtSec: number; nodesBuilt: number }
+    entry: SourceNodeEntry,
+    nodesBuilt: number
   ): Promise<SourceNodeRecording> => new Promise((resolve) => {
-    const nodesBuilt = entry.nodesBuilt;
-    entry.nodesBuilt = 0;
     const tapChunks: TapChunk[] = [];
-    const base = { deviceId, sourceCreatedAtSec: entry.createdAtSec, nodesBuilt };
+    const quanta = Math.ceil((audioContext.sampleRate * NODE_TAP_SECONDS) / NODE_TAP_QUANTUM_FRAMES);
+    let received = 0;
     let tapAttachedAtSec = audioContext.currentTime;
     let settled = false;
     let recorder: AudioWorkletNode | null = null;
@@ -397,41 +394,41 @@ export function installLoopbackCapture(deviceCount: number = 1, options: Loopbac
       settled = true;
       clearTimeout(giveUp);
       if (recorder !== null) {
-        try {
-          entry.node.disconnect(recorder);
-        } catch {
-          // The SDK has taken the chain down already, and the tap's connection with it.
-        }
+        recorder.port.onmessage = null;
+        disconnectQuietly(entry.node, recorder);
       }
-      resolve({ ...base, tapAttachedAtSec, tapChunks, referenceChunks: reference, failed });
+      resolve({
+        deviceId, sourceCreatedAtSec: entry.createdAtSec, nodesBuilt,
+        tapAttachedAtSec, tapChunks: [...tapChunks], referenceChunks: reference, failed,
+      });
     };
-    const giveUp = setTimeout(
-      () => settle(`the tap did not finish within ${NODE_TAP_SECONDS * 1000 + NODE_TAP_GRACE_MS} ms`, []),
-      NODE_TAP_SECONDS * 1000 + NODE_TAP_GRACE_MS
-    );
+    const budgetMs = NODE_TAP_SECONDS * 1000 + NODE_TAP_GRACE_MS;
+    const giveUp = setTimeout(() => {
+      const span = spanOf(tapChunks);
+      const covered = spanOf(referenceChunks);
+      settle(
+        received < quanta || span === null
+          ? `the tap delivered ${received} of ${quanta} quanta within ${budgetMs} ms`
+          : `the tap is complete to frame ${span.endFrame}, the reference reached ${covered === null ? "nothing" : `frame ${covered.endFrame}`} within ${budgetMs} ms`,
+        []
+      );
+    }, budgetMs);
     try {
-      const quanta = Math.ceil((audioContext.sampleRate * NODE_TAP_SECONDS) / NODE_TAP_QUANTUM_FRAMES);
-      let received = 0;
       recorder = tapRecorder(audioContext, quanta, quanta, (chunk) => {
         tapChunks.push(chunk);
         received += chunk.count;
         if (received < quanta) return;
         const span = spanOf(tapChunks);
         if (span === null) { settle("the tap recorded nothing", []); return; }
-        const from = span.firstFrame - Math.round(audioContext.sampleRate * NODE_TAP_MAX_LAG_SEC) - NODE_TAP_QUANTUM_FRAMES;
         // The reference posts every REFERENCE_CHUNK_QUANTA quanta, so it trails the tap's end.
         const waitForReference = () => {
           if (settled) return;
-          const covered = spanOf(referenceChunks);
-          if (covered === null || covered.endFrame < span.endFrame) { setTimeout(waitForReference, 25); return; }
-          const needed = referenceChunks.filter((c) => {
-            const own = spanOf([c]);
-            return own !== null && own.endFrame > from && own.firstFrame < span.endFrame;
-          });
-          settle(null, needed);
+          if (referenceFailure !== null) { settle(`the reference stopped: ${referenceFailure}`, []); return; }
+          if (!referenceCovers(referenceChunks, span)) { setTimeout(waitForReference, 25); return; }
+          settle(null, referenceFor(referenceChunks, span, audioContext.sampleRate));
         };
         waitForReference();
-      });
+      }, (reason) => settle(reason, []));
       tapAttachedAtSec = audioContext.currentTime;
       entry.node.connect(recorder);
     } catch (error) {
@@ -491,6 +488,10 @@ export function installLoopbackCapture(deviceCount: number = 1, options: Loopbac
 
   return {
     attach(audioContext: AudioContext) {
+      if (nodeTaps && context !== null) {
+        // The taps' recorder, reference and nodes belong to one context.
+        throw new Error("loopbackInjection: attach() a second time with nodeTaps on");
+      }
       context = audioContext;
       dest = audioContext.createMediaStreamDestination();
       returnDelay = audioContext.createDelay(MAX_LOOPBACK_DELAY_SEC);
@@ -513,8 +514,9 @@ export function installLoopbackCapture(deviceCount: number = 1, options: Loopbac
           const deviceId = streamDevices.get(stream);
           // A stream this module did not hand out is not the loopback's: leave it alone.
           if (deviceId !== undefined) {
-            const nodesBuilt = (sourceNodes.get(deviceId)?.nodesBuilt ?? 0) + 1;
-            sourceNodes.set(deviceId, { node, createdAtSec: audioContext.currentTime, nodesBuilt });
+            const known = sourceNodes.get(deviceId) ?? { untapped: [], newest: null };
+            known.untapped.push({ node, createdAtSec: audioContext.currentTime });
+            sourceNodes.set(deviceId, known);
           }
           return node;
         };
@@ -621,18 +623,26 @@ export function installLoopbackCapture(deviceCount: number = 1, options: Loopbac
       const audioContext = context;
       const intoStream = returnDelay;
       const moduleUrl = URL.createObjectURL(new Blob([NODE_TAP_PROCESSOR_SOURCE], { type: "application/javascript" }));
-      nodeTapsReady = audioContext.audioWorklet.addModule(moduleUrl).then(() => {
+      const ready = audioContext.audioWorklet.addModule(moduleUrl).then(() => {
+        if (uninstalled) throw new Error("uninstalled while the recorder was loading");
         const keepFrames = REFERENCE_KEEP_SEC * audioContext.sampleRate;
+        referenceFailure = null;
         referenceRecorder = tapRecorder(audioContext, 0, REFERENCE_CHUNK_QUANTA, (chunk) => {
           referenceChunks.push(chunk);
-          const newest = chunk.frames[chunk.count - 1];
-          while (referenceChunks.length > 0 && referenceChunks[0].frames[0] < newest - keepFrames) referenceChunks.shift();
+          trimReference(referenceChunks, keepFrames);
+        }, (reason) => {
+          referenceFailure = reason;
+          console.warn("[loopbackInjection] the reference recorder stopped: " + reason);
         });
         // Everything that reaches the stream reaches it through the return delay.
         intoStream.connect(referenceRecorder);
         console.log("[loopbackInjection] node taps ready");
+      }).catch((error: unknown) => {
+        if (nodeTapsReady === ready) nodeTapsReady = null;
+        throw new Error("loopbackInjection: the node tap recorder did not load: " + String(error));
       }).finally(() => URL.revokeObjectURL(moduleUrl));
-      return nodeTapsReady;
+      nodeTapsReady = ready;
+      return ready;
     },
     async tapSourceNodes(): Promise<SourceNodeRecording[]> {
       if (context === null || nodeTapsReady === null) {
@@ -640,9 +650,20 @@ export function installLoopbackCapture(deviceCount: number = 1, options: Loopbac
       }
       await nodeTapsReady;
       const audioContext = context;
-      return Promise.all([...sourceNodes.entries()].map(([deviceId, entry]) => tapOne(audioContext, deviceId, entry)));
+      const taps: Promise<SourceNodeRecording>[] = [];
+      for (const [deviceId, known] of sourceNodes) {
+        const built = known.untapped;
+        known.untapped = [];
+        if (built.length > 0) known.newest = built[built.length - 1];
+        const targets = built.length > 0 ? built : known.newest === null ? [] : [known.newest];
+        for (const entry of targets) taps.push(tapOne(audioContext, deviceId, entry, built.length));
+      }
+      return Promise.all(taps);
     },
     uninstall() {
+      uninstalled = true;
+      nodeTapsReady = null;
+      sourceNodes.clear();
       navigator.mediaDevices.getUserMedia = original.getUserMedia;
       navigator.mediaDevices.enumerateDevices = original.enumerateDevices;
       if (context !== null && nodeTaps) {
@@ -650,13 +671,8 @@ export function installLoopbackCapture(deviceCount: number = 1, options: Loopbac
         delete (context as { createMediaStreamSource?: unknown }).createMediaStreamSource;
       }
       if (referenceRecorder !== null) {
-        referenceRecorder.disconnect();
         referenceRecorder.port.onmessage = null;
-        try {
-          returnDelay?.disconnect(referenceRecorder);
-        } catch {
-          // Never connected, or disconnected already.
-        }
+        if (returnDelay !== null) disconnectQuietly(returnDelay, referenceRecorder);
         referenceRecorder = null;
         referenceChunks = [];
       }

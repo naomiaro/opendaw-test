@@ -3,8 +3,8 @@
 //
 // One MediaStreamAudioDestinationNode fed with white noise, in the context the harness
 // uses ({ latencyHint: 0, sampleRate }). Per open: two clones of its stream, two
-// MediaStreamAudioSourceNodes on EACH clone, every source into its own recorder worklet
-// that stamps each render quantum with `currentFrame`. A fifth recorder takes the noise
+// MediaStreamAudioSourceNodes on EACH clone, every source, through a gain of its own,
+// into its own recorder worklet that stamps each render quantum with `currentFrame`. A fifth recorder takes the noise
 // directly. A tap's delay is the lag, in whole frames, at which its recording equals the
 // direct one — read on the context clock, no SDK involved.
 //

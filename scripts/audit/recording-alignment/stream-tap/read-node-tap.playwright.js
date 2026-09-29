@@ -24,7 +24,8 @@ async (page) => {
     }
     return {
       saved: put.ok ? name : "UPLOAD FAILED " + String(put.status), auditState, statuses,
-      taps: probe.taps.length, measured: probe.taps.filter((t) => t.lags !== null).length, errors: probe.errors,
+      taps: probe.taps.length, read: probe.taps.filter((t) => t.unread === null).length,
+      unread: [...new Set(probe.taps.filter((t) => t.unread !== null).map((t) => t.unread))], errors: probe.errors,
     };
   }, state);
 }

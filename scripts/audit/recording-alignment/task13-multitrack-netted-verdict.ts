@@ -12,6 +12,12 @@
  * persisted, the raw and netted skew per repeat and the raw skew's spread over
  * render quanta; then the same pooled over all the runs named.
  *
+ * A run whose envelope carries an `anchorOffsetMs` had node taps and a verdict
+ * that read them. Its repeats are replayed with the node delays of its rows and
+ * with the offset the run applied, and per repeat the node delays, what they
+ * leave of the raw skew and the first-frame check are printed. A run without is
+ * replayed as it ran.
+ *
  * All the runs named must share one sample rate: the spread is counted in
  * render quanta, and a quantum is a different time at each rate.
  *
@@ -89,13 +95,15 @@ for (const { runId, summary } of summaries) {
       delays.push({ aMs: a.loopbackDelayMs ?? null, bMs: b.loopbackDelayMs ?? null });
       nodeDelays.push({ aMs: a.nodeDelayMs ?? null, bMs: b.nodeDelayMs ?? null });
     }
-    // A run that listened to the source nodes says so by the offset it applied;
-    // one that did not is replayed as it ran, every netted repeat on the raw limit.
-    const tapped = summary.anchorOffsetMs !== null;
+    // A run whose verdict read node delays says so by the offset it applied, and is
+    // replayed with that offset; one that did not is replayed as it ran, every
+    // netted repeat on the raw limit.
+    const anchorOffsetMs = summary.anchorOffsetMs;
+    const tapped = anchorOffsetMs !== null;
     const verdict = classifyMultitrackCell(classifyTape("a"), classifyTape("b"), skews, ALIGNED_TOLERANCE_MS, {
       netLoopbackDelay: profile.netLoopbackDelay, loopbackDelays: delays, renderQuantumMs: quantumMs,
       rawSkewLimitMs: MULTITRACK_RAW_SKEW_LIMIT_MS,
-      ...(tapped ? { nodeDelays, anchorOffsetMs: ANCHOR_OFFSET_MS } : {}),
+      ...(tapped ? { nodeDelays: { pairs: nodeDelays, anchorOffsetMs } } : {}),
     });
     const netted = skews.map((s, index) => (profile.netLoopbackDelay ? nettedSkewMs(s.medianSkewMs, delays[index]) : null));
     skews.forEach((s, index) => {
@@ -114,9 +122,16 @@ for (const { runId, summary } of summaries) {
     console.log(`    netted [${netted.map((n) => (n === null ? "—" : formatTwoDecimals(n))).join(", ")}] ms`);
     if (tapped) {
       const dash = (value: number | null) => (value === null ? "—" : formatTwoDecimals(value));
-      const left = skews.map((s, index) => nettedSkewMs(s.medianSkewMs, nodeDelays[index]));
+      const left = skews.map((s, index) => (netted[index] === null ? null : nettedSkewMs(s.medianSkewMs, nodeDelays[index])));
       const check = (tape: "aMs" | "bMs") =>
-        delays.map((d, index) => dash(firstFrameCheckMs(d[tape], nodeDelays[index][tape], ANCHOR_OFFSET_MS))).join(", ");
+        delays.map((d, index) => dash(firstFrameCheckMs(d[tape], nodeDelays[index][tape], anchorOffsetMs))).join(", ");
+      if (anchorOffsetMs !== ANCHOR_OFFSET_MS) {
+        console.log(`    anchor offset of the run ${anchorOffsetMs} ms, of this build ${ANCHOR_OFFSET_MS} ms: replayed with the run's`);
+      }
+      const use = verdict.nodeDelayUse;
+      if (use !== null) {
+        console.log(`    node delays: ${use.tapesRead} of ${2 * repeats.length} tapes, ${use.repeatsRead} of ${repeats.length} repeats; on the raw limit ${use.repeatsOnRawLimit}`);
+      }
       console.log(`    node delays a [${nodeDelays.map((d) => dash(d.aMs)).join(", ")}] ms`);
       console.log(`    node delays b [${nodeDelays.map((d) => dash(d.bMs)).join(", ")}] ms`);
       console.log(`    left over     [${left.map(dash).join(", ")}] ms`);

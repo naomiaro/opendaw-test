@@ -24,7 +24,11 @@ for (const arg of process.argv.slice(2)) {
   console.log(`  firstFrameCheckMs: ${range(measured.map((r) => r.firstFrameCheckMs), 4)} ms`);
   console.log(`  repeats with both node delays: ${both.length} of ${pairs.length}; raw skew not zero on ${both.filter((p) => Math.abs(p.a.medianSkewMs) > 0.005).length}, up to ${Math.max(0, ...both.map((p) => Math.abs(p.a.medianSkewMs))).toFixed(2)} ms; left over ${range(both.map((p) => p.a.medianSkewMsUnaccounted), 6)} ms`);
   console.log(`  raw skew in render quanta: ${tally(pairs.map((p) => (Math.abs(p.a.medianSkewMs) / (128000 / rate)).toFixed(2)))}`);
-  console.log(`  tap attached after the first frame by ${range(measured.map((r) => (r.nodeTapAttachedAtSec - r.firstQuantumTimeSec) * 1000), 0)} ms; nodes built since the tap before: ${tally(rows.map((r) => r.nodeTapNodesBuilt))}`);
+  console.log(`  tap attached after the first frame by ${range(measured.map((r) => (r.nodeTapAttachedAtSec - r.firstQuantumTimeSec) * 1000), 0)} ms; nodes built since the tap before: ${tally(rows.map((r) => r.nodeTapNodesBuilt))}; nodes with signal: ${tally(rows.map((r) => r.nodeTapCandidates ?? "—"))}`);
+  console.log(`  quanta missing from a tap: ${tally(rows.map((r) => r.nodeTapMissingQuanta ?? "—"))}; from the reference: ${tally(rows.map((r) => r.nodeTapReferenceMissingQuanta ?? "—"))}`);
+  for (const v of run.cellVerdicts) {
+    if (v.nodeDelayUse) console.log(`  ${v.scenario}: judged by node delays on ${v.nodeDelayUse.tapesRead} tapes and ${v.nodeDelayUse.repeatsRead} repeats, by the raw limit on ${v.nodeDelayUse.repeatsOnRawLimit}`);
+  }
   const pool = (pooled[rate] ??= { rows: 0, measured: 0, offsets: [], repeats: 0, both: 0, nonZero: 0, left: [], raw: [], check: [], moved: 0 });
   pool.rows += rows.length; pool.measured += measured.length; pool.repeats += pairs.length; pool.both += both.length;
   pool.nonZero += both.filter((p) => Math.abs(p.a.medianSkewMs) > 0.005).length;
@@ -47,13 +51,14 @@ for (const arg of process.argv.slice(2)) {
     }
     if (best === null) { notes.push(`${row.scenario} r${row.repeat}${row.tape}: no probe tap`); continue; }
     used.add(best);
-    const stable = new Set(best.lags).size === 1;
+    const stable = Array.isArray(best.lags) && best.lags.length === 3 && best.lags.every((lag) => typeof lag === "number" && lag >= 0)
+      && new Set(best.lags).size === 1 && best.mad.every((mad) => mad === 0) && (best.unread === undefined || best.unread === null);
     if (typeof row.nodeDelayFrames === "number" && stable) {
       bothRead++;
       if (best.lags[0] === row.nodeDelayFrames) equal++;
       else notes.push(`${row.scenario} r${row.repeat}${row.tape}: harness ${row.nodeDelayFrames}, probe ${best.lags[0]}`);
     } else {
-      notes.push(`${row.scenario} r${row.repeat}${row.tape}: harness ${row.nodeDelayFrames === null ? `not read (${row.nodeDelayUnmeasured})` : row.nodeDelayFrames}, probe ${best.lags.join(" / ")}`);
+      notes.push(`${row.scenario} r${row.repeat}${row.tape}: harness ${row.nodeDelayFrames === null ? `not read (${row.nodeDelayUnmeasured})` : row.nodeDelayFrames}, probe ${stable ? best.lags[0] : `not read (${best.unread ?? (Array.isArray(best.lags) ? best.lags.join(" / ") : "unfinished")})`}`);
     }
   }
   console.log(`  external probe node-tap-${probeId} (errors ${probe.errors.length}): both read ${bothRead} rows, equal on ${equal}`);

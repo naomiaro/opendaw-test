@@ -404,12 +404,15 @@ sample-rate/quantum-alignment sweep in root CLAUDE.md's Build & Verification.
 multi-mic cell is `aligned` when (1) each tape classifies clean on its own, (2) the
 NETTED skew — raw skew minus the difference between the two tapes' `loopbackDelayMs` —
 is within `ALIGNED_TOLERANCE_MS` on every repeat, and (3) every netted repeat passes
-what it is held to. A repeat whose two NODE delays were read (`nodeDelayMs`, below) is
-held to two tests, each against the tolerance: `firstFrameCheckMs` (`loopbackDelayMs` −
-node delay − `ANCHOR_OFFSET_MS`) on both tapes, and `medianSkewMsUnaccounted` (raw skew
-− the difference of the two node delays). A repeat where a tap read nothing is held to
+what it is held to, each test against the tolerance. A TAPE whose node delay was read
+(`nodeDelayMs`, below) has its first-frame time checked: `firstFrameCheckMs` is
+`loopbackDelayMs` − node delay − `ANCHOR_OFFSET_MS`, whatever became of the other
+tape's tap. A REPEAT with both node delays is held to `medianSkewMsUnaccounted` (raw
+skew − the difference of the two node delays). A repeat without both is held to
 `MULTITRACK_RAW_SKEW_LIMIT_MS`, which is fitted, and the detail counts those repeats as
-not attributed. A repeat that lacks a loopback delay is judged on its raw skew against
+not attributed. A cell in which no repeat has both is `investigate`, and its detail
+says that this is not a finding about the SDK. How much the node delays judged is in the
+cell's `nodeDelayUse`. A repeat that lacks a loopback delay is judged on its raw skew against
 the tolerance and marked `raw` in the detail. On a build whose profile does not net, the
 rule is (1) and the raw skew within the tolerance.
 
@@ -419,10 +422,13 @@ through (`nodeTaps` in `loopbackInjection.ts`, `measureNodeDelay` in
 clock with nothing of the SDK's in it. It is null, with the reason in
 `nodeDelayUnmeasured`, unless three windows of the tap match what went into the stream
 exactly and at one lag. The taps attach once both takes have a region, so the SDK alone
-decides when a node starts being pulled. `firstFrameCheckMs` is the only figure in the
-harness that moves when a capture's buffer does not start at the time the SDK gives for
-it; the netted skew and the netted median cancel that out. Single-tape rows carry no
-node delay.
+decides when a node starts being pulled. Every node built on a tape's device since the
+repeat before is tapped: the one the SDK dropped is silent, the one that carries signal
+is the one recording, and with two that carry signal no delay is given.
+`firstFrameCheckMs` is the only figure that tells a buffer not starting at the time the
+SDK gives for it apart from the node's own delay: `loopbackDelayMs` carries both, and
+the netted skew and the netted median cancel it out. Single-tape rows carry no node
+delay.
 
 The raw skew itself is NOT a verdict: it moves by 0 to 4 render quanta from one repeat
 to the next (measured up to 10.67 ms; at 48 kHz the streams' delays sit on a lattice of
@@ -439,18 +445,19 @@ as "the two recordings line up".
 
 **Where the raw skew comes from.** Each `MediaStreamAudioSourceNode` delivers its stream
 with a delay of its own, set when the node starts: two nodes on the SAME stream clone,
-created in one task, are a render quantum apart in about half the pairs, and nodes
+created in one task, are a render quantum apart in a third to a half of the pairs, and nodes
 started at different moments differ by up to 12 ms. So a second node opened on a stream
 measures itself, not the stream and not the SDK's node. A second LISTENER on the same
 node reads that node's delay exactly. The injected probe in
 `scripts/audit/recording-alignment/stream-tap/` listens to the SDK's own source nodes
 that way, from outside the page; the multi-mic page does the same from inside, and the
-two agree on every row. Measured, the raw skew equals the difference of the two nodes'
-delays and `loopbackDelayMs` equals the node's delay plus the harness's anchor offset
-(14 frames at 48 kHz, 13 at 44.1 kHz), on every row. At 44.1 kHz a node's delay can
-step by 441 frames (10 ms) in its first second, and a tap that sees it reports the delay
-as not read. Anything that loads an AudioWorklet module must have it loaded before the
-first take: a load still running made that take start 117 ms late.
+two agree on every row both read. Measured, the raw skew equals the difference of the
+two nodes' delays and `loopbackDelayMs` equals the node's delay plus the harness's
+anchor offset (14 frames at 48 kHz, 13 at 44.1 kHz), on every row read. At 44.1 kHz a
+node's delay can step by 441 frames (10 ms) in its first second, and a tap that sees it
+reports the delay as not read. Anything that loads an AudioWorklet module must have it
+loaded before the first take: a load still running when a take starts delays that
+take's first frame (117 ms measured).
 
 `classifyMultitrackCell` throws when asked to net without one delay record per repeat or
 without a limit above zero. Replay saved runs (one sample rate at a time) with

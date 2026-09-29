@@ -1,24 +1,30 @@
 // Node-tap probe, injected with page.addInitScript BEFORE the audit page's own scripts.
 //
-// The two-tap spike showed that a loopback stream's delay belongs to the consuming
-// MediaStreamAudioSourceNode, and that a second listener on the SAME node reads the
-// node's delay exactly. So this probe listens to the SDK's own source nodes:
+// A loopback stream's delay belongs to the consuming MediaStreamAudioSourceNode, and a
+// second listener on the SAME node reads that node's delay exactly
+// (two-tap-spike.page.js). So this probe listens to the SDK's own source nodes:
 //
-//   reference  whatever is connected to the loopback's MediaStreamAudioDestinationNode is
-//              also recorded, continuously, with every quantum stamped with currentFrame
+//   reference  the first node connected to a MediaStreamAudioDestinationNode of a
+//              context is also recorded, continuously, with every quantum stamped
+//              with currentFrame
 //   tap        150 ms after the SDK connects a capture chain's gain to its recording
 //              worklet, a recorder is attached to that chain's SOURCE NODE for 2 s
 //
-// A tap's delay is the lag, in whole frames, at which it equals the reference — read on
-// the context clock; nothing of the SDK's is used. Attaching after the SDK's own
-// connection leaves the moment the node starts being pulled as it was.
+// A tap's delay is the lag, in whole frames, at which it comes closest to the
+// reference — read on the context clock; nothing of the SDK's is used. Attaching after
+// the SDK's own connection leaves the moment the node starts being pulled as it was.
+// A tap that was not read has `unread` set to the reason and a null in `lags` for every
+// window that gave none; it is read when `unread` is null.
 (() => {
   const QUANTUM = 128;
   const TAP_SECONDS = 2;
   const TAP_ATTACH_DELAY_MS = 150;
   const WINDOW = 512;
   const probe = (window.__nodeTap = { taps: [], errors: [], refChunks: 0, contexts: 0 });
-  const fail = (where, error) => probe.errors.push(where + ": " + String(error));
+  const fail = (where, error) => {
+    probe.errors.push(where + ": " + String(error));
+    console.warn("[node-tap probe] " + where + ": " + String(error));
+  };
 
   const workletSource = `
     class NodeTapRecorder extends AudioWorkletProcessor {
@@ -107,9 +113,8 @@
   });
 
   // The recorder module is loaded when a context is CONSTRUCTED, so the load is over long
-  // before the first take. Loaded at the loopback's attach() instead, it made the first
-  // take of a run start 117 ms after its record request (run 1790716387848, head deficit
-  // 81.7 ms on both tapes of repeat 1).
+  // before the first take: a module still loading when a take starts delays that take's
+  // first frame.
   const NativeAudioContext = window.AudioContext;
   window.AudioContext = new Proxy(NativeAudioContext, {
     construct(target, args, newTarget) {
@@ -123,16 +128,18 @@
   const destinations = new WeakSet();
   AudioContext.prototype.createMediaStreamDestination = function (...args) {
     const node = nativeCreateDestination.apply(this, args);
-    destinations.add(node);
-    stateOf(this);
+    // The probe's own failure must not become the page's.
+    try { destinations.add(node); stateOf(this); } catch (error) { fail("createMediaStreamDestination", error); }
     return node;
   };
 
   const nativeCreateSource = AudioContext.prototype.createMediaStreamSource;
   AudioContext.prototype.createMediaStreamSource = function (stream) {
     const node = nativeCreateSource.call(this, stream);
-    sources.set(node, { node, deviceId: streams.get(stream) ?? "(unknown stream)", createdAtSec: this.currentTime, context: this });
-    stateOf(this);
+    try {
+      sources.set(node, { node, deviceId: streams.get(stream) ?? "(unknown stream)", createdAtSec: this.currentTime, context: this });
+      stateOf(this);
+    } catch (error) { fail("createMediaStreamSource", error); }
     return node;
   };
 
@@ -145,8 +152,10 @@
       context: state.index, sampleRate: context.sampleRate, deviceId: info.deviceId,
       sourceCreatedAtSec: info.createdAtSec, sdkConnectSec, tapAttachSec: null,
       firstFrame: null, skippedQuanta: null, lags: null, mad: null, secondMad: null, windowFrames: null,
+      unread: "the tap has not finished",
     };
     probe.taps.push(record);
+    state.module.catch(() => { record.unread = "the recorder module did not load"; });
     state.module.then(() => setTimeout(() => {
       try {
         let received = 0;
@@ -154,15 +163,23 @@
           chunks.push(chunk);
           received += chunk.count;
           if (received >= quanta) {
-            try { info.node.disconnect(node); } catch (error) { /* chain already destroyed */ }
+            try {
+              info.node.disconnect(node);
+            } catch (error) {
+              // The SDK has taken the chain down already, and the tap's connection with it.
+              if (!(error instanceof DOMException) || error.name !== "InvalidAccessError") fail("disconnect", error);
+            }
             // The reference trails by up to one chunk of its own: wait for it to cover the tap.
             setTimeout(() => measure(state, chunks, record), 600);
           }
         });
         record.tapAttachSec = context.currentTime;
         nativeConnect.call(info.node, node);
-      } catch (error) { fail("attachTap", error); }
-    }, TAP_ATTACH_DELAY_MS));
+      } catch (error) {
+        record.unread = "the tap could not be attached: " + String(error);
+        fail("attachTap", error);
+      }
+    }, TAP_ATTACH_DELAY_MS)).catch(() => { /* recorded above: the module did not load */ });
   };
 
   // Quanta laid out on the frame axis from `first`; a quantum never delivered stays NaN.
@@ -190,6 +207,7 @@
       const refFirst = first - maxLag;
       const ref = layOut(state.ref, refFirst, tap.length + maxLag);
       record.lags = []; record.mad = []; record.secondMad = []; record.windowFrames = [];
+      const reasons = [];
       // Three windows, each opened 64 frames before the first loud sample found from
       // 0.3 s, 0.9 s and 1.5 s into the tap.
       for (const fromSec of [0.3, 0.9, 1.5]) {
@@ -197,7 +215,11 @@
         for (let i = Math.round(fromSec * record.sampleRate); i + WINDOW < tap.length; i++) {
           if (Math.abs(tap[i]) > 0.05) { onset = i; break; }
         }
-        if (onset < 0) { record.lags.push(-2); record.mad.push(-1); record.secondMad.push(-1); record.windowFrames.push(-1); continue; }
+        if (onset < 0) {
+          record.lags.push(null); record.mad.push(null); record.secondMad.push(null); record.windowFrames.push(null);
+          reasons.push("no signal from " + String(fromSec) + " s on");
+          continue;
+        }
         const t0 = onset - 64;
         let best = -1, bestSad = Infinity, second = Infinity, refused = false;
         for (let lag = 0; lag <= maxLag; lag++) {
@@ -208,12 +230,19 @@
           if (sad < bestSad) { second = bestSad; bestSad = sad; best = lag; }
           else if (sad < second) second = sad;
         }
-        record.lags.push(refused ? -3 : best);
-        record.mad.push(refused ? -1 : bestSad / WINDOW);
-        record.secondMad.push(refused ? -1 : second / WINDOW);
+        record.lags.push(refused || best < 0 ? null : best);
+        record.mad.push(refused || best < 0 ? null : bestSad / WINDOW);
+        record.secondMad.push(refused || best < 0 || second === Infinity ? null : second / WINDOW);
         record.windowFrames.push(first + t0);
+        if (refused || best < 0) reasons.push("a quantum is missing at frame " + String(first + t0));
+        else if (bestSad > 0) reasons.push("no exact match at frame " + String(first + t0));
       }
-    } catch (error) { fail("measure", error); }
+      if (reasons.length === 0 && new Set(record.lags).size > 1) reasons.push("the delay moved inside the tap: " + record.lags.join(" / "));
+      record.unread = reasons.length === 0 ? null : reasons.join("; ");
+    } catch (error) {
+      record.unread = "the measurement threw: " + String(error);
+      fail("measure", error);
+    }
   };
 
   AudioNode.prototype.connect = function (target, output, input) {

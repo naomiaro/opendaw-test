@@ -1,5 +1,5 @@
-// Playwright side of the two-tap spike (pass the file to the Playwright MCP's
-// browser_run_code, dev server on https://localhost:5173). One variant per call keeps a
+// Playwright side of the two-tap spike (pass the file to the Playwright MCP's tool that
+// runs a code snippet against the page; dev server on https://localhost:5173). One variant per call keeps a
 // call under two minutes: edit `cfg`. The artifact lands in .verify-output/.
 async (page) => {
   const cfg = { sampleRate: 48000, opens: 40, variants: ["together"] };

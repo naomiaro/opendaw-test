@@ -1,4 +1,5 @@
-// Playwright side of the node-tap probe: the standing multi-mic run with the probe
+// Playwright side of the node-tap probe (pass the file to the Playwright MCP's tool that
+// runs a code snippet against the page): the standing multi-mic run with the probe
 // injected before the page's own scripts. Returns once the run is under way;
 // read-node-tap.playwright.js waits for the end and saves the probe.
 async (page) => {

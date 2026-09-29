@@ -7,9 +7,16 @@ const summary = JSON.parse(fs.readFileSync(summaryFile));
 const rate = summary.rate;
 console.log("probe errors:", probe.errors.length, "| taps:", probe.taps.length, "| rows:", summary.rows.length);
 console.log("cell verdicts:", JSON.stringify(summary.cellVerdicts));
-const taps = probe.taps.map((t) => ({ ...t, tape: t.deviceId === "loopback-injection" ? "a" : t.deviceId === "loopback-injection-2" ? "b" : "?" }));
-console.log("tap windows unstable:", taps.filter((t) => new Set(t.lags).size > 1).map((t) => t.lags.join("/")).join(" ") || "none",
-  "| worst mad", Math.max(...taps.flatMap((t) => t.mad)), "| skipped quanta", taps.reduce((s, t) => s + t.skippedQuanta, 0));
+// A tap is read when every window gave a lag, the same lag, with nothing between the
+// tap and the reference at it. An artifact written before the probe said so itself has
+// no `unread`; it is judged here by the same rule.
+const isRead = (t) => Array.isArray(t.lags) && t.lags.length === 3 && t.lags.every((lag) => typeof lag === "number" && lag >= 0)
+  && new Set(t.lags).size === 1 && t.mad.every((mad) => mad === 0) && (t.unread === undefined || t.unread === null);
+const taps = probe.taps.map((t) => ({ ...t, read: isRead(t), tape: t.deviceId === "loopback-injection" ? "a" : t.deviceId === "loopback-injection-2" ? "b" : "?" }));
+const unread = taps.filter((t) => !t.read);
+console.log("taps read:", taps.length - unread.length, "of", taps.length,
+  "| skipped quanta", taps.reduce((s, t) => s + (t.skippedQuanta ?? 0), 0));
+for (const t of unread) console.log("  not read, tape", t.tape, "connected at", t.sdkConnectSec, ":", t.unread ?? (Array.isArray(t.lags) ? "lags " + t.lags.join(" / ") : "the tap did not finish"));
 // Rows in run order; each row takes the unused tap of its tape whose SDK connection is the
 // latest one at or before the row's first-frame time.
 const used = new Set();
@@ -28,7 +35,7 @@ const f = (sec) => Math.round(sec * rate);
 console.log("\nscenario          r tape  nodeDelay  loopbackDelay  diff   firstQuantum-sdkConnect  anchorT0(fr) firstQ(fr) waveOff(fr)");
 const diffs = [];
 for (const { row, tap } of joined) {
-  if (tap === null) continue;
+  if (tap === null || !tap.read) continue;
   const node = tap.lags[0];
   const loop = row.loopbackDelayMs * rate / 1000;
   diffs.push(loop - node);
@@ -42,6 +49,7 @@ for (const j of joined) { const k = j.row.scenario + " r" + j.row.repeat; byRepe
 const left = [];
 for (const [k, pair] of byRepeat) {
   if (!pair.a || !pair.b || !pair.a.tap || !pair.b.tap) { console.log(k, "incomplete"); continue; }
+  if (!pair.a.tap.read || !pair.b.tap.read) { console.log(k.padEnd(24), "a tap was not read"); continue; }
   const raw = pair.b.row.medianSkewMs;            // b − a, the sign the rows carry
   const rawBeat = pair.b.row.medianBeatErrorMs - pair.a.row.medianBeatErrorMs;
   const node = (pair.b.tap.lags[0] - pair.a.tap.lags[0]) / rate * 1000;
