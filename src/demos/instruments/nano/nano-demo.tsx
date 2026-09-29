@@ -1,6 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { asInstanceOf } from "@opendaw/lib-std";
+import { AnimationFrame } from "@opendaw/lib-dom";
 import { Project, MidiDevices } from "@opendaw/studio-core";
+import { LfoModulatorBoxAdapter } from "@opendaw/studio-adapters";
+import { LfoModulatorBox, type ModulationBox } from "@opendaw/studio-boxes";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { NANO_SAMPLES, checkCustomSample } from "@/lib/nanoSamples";
 import { GitHubCorner } from "@/components/GitHubCorner";
@@ -9,11 +13,15 @@ import { BackLink } from "@/components/BackLink";
 import { DropZone } from "@/components/DropZone";
 import { ParamSlider } from "@/components/ParamSlider";
 import { PianoKeyboard, PIANO_STYLES } from "@/demos/midi/PianoKeyboard";
-import { CONSOLE_STYLES } from "@/lib/design/consoleTheme";
+import { CANVAS_COLORS, CONSOLE_STYLES } from "@/lib/design/consoleTheme";
+import { CanvasPainter } from "@/lib/CanvasPainter";
+import type { UnitParameter } from "@/hooks/useParameterUnit";
 import { NanoWaveform, WAVEFORM_STYLES } from "./NanoWaveform";
 import { buildNanoDemoContent, NANO_DEMO_BPM, type CurrentSample, type NanoDemoSetup } from "./nanoContent";
 import "@radix-ui/themes/styles.css";
-import { Theme, Container, Text, Flex, Card, Callout, Badge, Button, Switch, Grid } from "@radix-ui/themes";
+import {
+  Theme, Container, Text, Flex, Card, Callout, Badge, Button, Switch, Grid, Select, Slider,
+} from "@radix-ui/themes";
 
 const PAGE_STYLES = `
 .nn-grid {
@@ -68,6 +76,197 @@ const LoopSwitch: React.FC<{ project: Project; setup: NanoDemoSetup }> = ({ proj
   );
 };
 
+const LFO_DEFAULT_DEPTH = 0.3;
+// Longer than the two-bar pattern, so the notes that fall on bar lines land on
+// different points of the cycle. Every synced rate of one bar or less repeats
+// on each bar line and would give those notes the same start every time.
+const LFO_DEFAULT_RATE = (() => {
+  const index = LfoModulatorBoxAdapter.RateStrings.indexOf("4 bars");
+  return index >= 0 ? index : 0;
+})();
+const SCOPE_LENGTH = 4 * 60;
+
+/** Plots the controlled unit value: the stored value plus the modulation the engine streams back */
+const StartScope: React.FC<{ parameter: UnitParameter }> = ({ parameter }) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return undefined;
+    const samples = new Float32Array(SCOPE_LENGTH).fill(parameter.getUnitValue());
+    let head = 0;
+    const painter = new CanvasPainter(canvas, (_painter, context) => {
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      context.fillStyle = CANVAS_COLORS.bg;
+      context.fillRect(0, 0, width, height);
+      const baseY = (1 - parameter.getUnitValue()) * (height - 8) + 4;
+      context.strokeStyle = CANVAS_COLORS.gridSupporting;
+      context.setLineDash([3, 4]);
+      context.beginPath();
+      context.moveTo(0, baseY);
+      context.lineTo(width, baseY);
+      context.stroke();
+      context.setLineDash([]);
+      context.strokeStyle = CANVAS_COLORS.amber;
+      context.lineWidth = 1.5;
+      context.beginPath();
+      for (let i = 0; i < SCOPE_LENGTH; i++) {
+        const x = (i / (SCOPE_LENGTH - 1)) * width;
+        const y = (1 - samples[(head + i) % SCOPE_LENGTH]) * (height - 8) + 4;
+        if (i === 0) context.moveTo(x, y);
+        else context.lineTo(x, y);
+      }
+      context.stroke();
+    });
+    const frame = AnimationFrame.add(() => {
+      samples[head] = parameter.getControlledUnitValue();
+      head = (head + 1) % SCOPE_LENGTH;
+      painter.requestUpdate();
+    });
+    return () => {
+      frame.terminate();
+      painter.terminate();
+    };
+  }, [parameter]);
+  return (
+    <canvas
+      ref={canvasRef}
+      role="img"
+      aria-label="Sample start over the last four seconds, with the LFO added"
+      style={{
+        width: "100%", height: 64, display: "block", boxSizing: "border-box",
+        border: "1px solid var(--mc-line)", borderRadius: 4, background: CANVAS_COLORS.bg,
+      }}
+    />
+  );
+};
+
+type LfoSetup = { readonly box: LfoModulatorBox; readonly assignment: ModulationBox };
+
+/**
+ * One LFO on Sample Start. Created the first time the switch goes on, in its
+ * own transaction; after that the modulator's enabled flag toggles it.
+ */
+const LfoCard: React.FC<{
+  project: Project;
+  setup: NanoDemoSetup;
+  onEnabledChange: (enabled: boolean) => void;
+}> = ({ project, setup, onEnabledChange }) => {
+  const [lfo, setLfo] = useState<LfoSetup | null>(null);
+  const [enabled, setEnabled] = useState(false);
+  const [rate, setRate] = useState(LFO_DEFAULT_RATE);
+  const [depth, setDepth] = useState(LFO_DEFAULT_DEPTH);
+  const [lfoError, setLfoError] = useState<string | null>(null);
+  const sampleStart = setup.adapter.namedParameter.sampleStart;
+  const onEnabledChangeRef = useRef(onEnabledChange);
+  onEnabledChangeRef.current = onEnabledChange;
+
+  useEffect(() => {
+    if (!lfo) return undefined;
+    const enabledSub = lfo.box.enabled.catchupAndSubscribe(obs => {
+      setEnabled(obs.getValue());
+      onEnabledChangeRef.current(obs.getValue());
+    });
+    const rateSub = lfo.box.rateSync.catchupAndSubscribe(obs => setRate(obs.getValue()));
+    const depthSub = lfo.assignment.depth.catchupAndSubscribe(obs => setDepth(obs.getValue()));
+    return () => {
+      enabledSub.terminate();
+      rateSub.terminate();
+      depthSub.terminate();
+    };
+  }, [lfo]);
+
+  const onToggle = useCallback((on: boolean) => {
+    if (lfo) {
+      project.editing.modify(() => lfo.box.enabled.setValue(on));
+      return;
+    }
+    if (!on) return;
+    let box: LfoModulatorBox | null = null;
+    let assignment: ModulationBox | null = null;
+    try {
+      // modify() rethrows after aborting, so a failure commits nothing. It is
+      // caught here so the switch does not just stay off without a reason.
+      project.editing.modify(() => {
+        box = asInstanceOf(project.api.modulation.createLfo("Start Scan"), LfoModulatorBox);
+        box.rateSync.setValue(LFO_DEFAULT_RATE);
+        // Unipolar: the LFO only ever moves the start forward from its marker. A
+        // bipolar LFO on a start of 0 would spend half of every cycle clamped at 0.
+        box.bipolar.setValue(false);
+        assignment = project.api.modulation.assign(box, sampleStart.modulationTarget, LFO_DEFAULT_DEPTH);
+      });
+    } catch (error) {
+      console.error("Nano demo: LFO creation failed: " + String(error));
+      setLfoError(error instanceof Error ? error.message : String(error));
+      return;
+    }
+    if (!box || !assignment) {
+      console.error("Nano demo: LFO creation produced no box or no assignment");
+      setLfoError("The LFO was not created.");
+      return;
+    }
+    setLfoError(null);
+    setLfo({ box: box as LfoModulatorBox, assignment: assignment as ModulationBox });
+  }, [project, lfo, sampleStart]);
+
+  return (
+    <Card>
+      <Flex direction="column" gap="3">
+        <Flex align="center" justify="between" wrap="wrap" gap="2">
+          <Text size="2" weight="bold" color="gray">LFO on Sample Start</Text>
+          <Flex align="center" gap="2">
+            <Switch checked={enabled} aria-label="LFO on Sample Start" onCheckedChange={onToggle} />
+            <Text size="2" color="gray">{enabled ? "On" : "Off"}</Text>
+          </Flex>
+        </Flex>
+        <Text size="1" color="gray">
+          The LFO pushes the start of each new note forward from the S marker, by up to
+          the depth. A note keeps the region it started with, so a note that is already
+          sounding does not follow the LFO. The dashed line on the waveform is the start
+          a note would get right now.
+        </Text>
+        {lfo && (
+          <Grid columns={{ initial: "1", sm: "2" }} gap="3">
+            <Flex direction="column" gap="1">
+              <Text size="1" color="gray">Rate</Text>
+              <Select.Root
+                value={String(rate)}
+                onValueChange={value => project.editing.modify(() => lfo.box.rateSync.setValue(Number(value)))}
+              >
+                <Select.Trigger aria-label="LFO rate" />
+                <Select.Content>
+                  {LfoModulatorBoxAdapter.RateStrings.map((label, index) => (
+                    <Select.Item key={label} value={String(index)}>{label}</Select.Item>
+                  ))}
+                </Select.Content>
+              </Select.Root>
+            </Flex>
+            <Flex direction="column" gap="1">
+              <Flex justify="between">
+                <Text size="1" color="gray">Depth</Text>
+                <Text size="1" color="gray" style={{ fontFamily: "var(--mc-mono)" }}>{depth.toFixed(2)}</Text>
+              </Flex>
+              <Slider
+                min={-1} max={1} step={0.01}
+                value={[depth]}
+                aria-label="LFO depth"
+                onValueChange={([value]) =>
+                  project.editing.modify(() => lfo.assignment.depth.setValue(Math.min(1, Math.max(-1, value))))}
+              />
+            </Flex>
+          </Grid>
+        )}
+        {lfo && <StartScope parameter={sampleStart} />}
+        {lfoError && (
+          <Callout.Root color="red" size="1" role="alert">
+            <Callout.Text>Could not create the LFO: {lfoError}</Callout.Text>
+          </Callout.Root>
+        )}
+      </Flex>
+    </Card>
+  );
+};
+
 const App: React.FC = () => {
   const [status, setStatus] = useState("Booting…");
   const [initError, setInitError] = useState<string | null>(null);
@@ -76,6 +275,7 @@ const App: React.FC = () => {
   const [setup, setSetup] = useState<NanoDemoSetup | null>(null);
   const [current, setCurrent] = useState<CurrentSample | null>(null);
   const [peaksVersion, setPeaksVersion] = useState(0);
+  const [lfoOn, setLfoOn] = useState(false);
   const [sampleError, setSampleError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -294,6 +494,7 @@ const App: React.FC = () => {
                     adapter={setup.adapter}
                     sampleSeconds={current.seconds}
                     peaksVersion={peaksVersion}
+                    ghostParameter={lfoOn ? setup.adapter.namedParameter.sampleStart : null}
                   />
                 </Flex>
               </Card>
@@ -354,7 +555,7 @@ const App: React.FC = () => {
                 </Card>
               </Grid>
 
-              {/* LFO — Task 8 inserts <LfoCard …/> here */}
+              <LfoCard project={project} setup={setup} onEnabledChange={setLfoOn} />
 
               <Card>
                 <Flex direction="column" gap="3">

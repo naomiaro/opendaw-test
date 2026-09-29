@@ -202,6 +202,7 @@ export const NanoWaveform: React.FC<NanoWaveformProps> = ({
       context.clearRect(0, 0, canvas.width, canvas.height);
       drawn = 0;
       canvas.dataset.playheads = "0";
+      canvas.dataset.positions = "";
     };
     const sub = project.liveStreamReceiver.subscribeFloats(adapter.positionsAddress, positions => {
       lastPacket = performance.now();
@@ -225,7 +226,9 @@ export const NanoWaveform: React.FC<NanoWaveformProps> = ({
       context.fillStyle = CANVAS_COLORS.playhead;
       for (const unit of units) context.fillRect(Math.round(unitToX(unit, width)), 0, 1, height);
       drawn = units.length;
+      // Read by browser checks: how many heads, and where (shares of the sample).
       canvas.dataset.playheads = String(drawn);
+      canvas.dataset.positions = units.map(unit => unit.toFixed(3)).join(",");
     });
     const frame = AnimationFrame.add(() => {
       if (drawn > 0 && performance.now() - lastPacket > STALE_PLAYHEAD_MS) clear();
