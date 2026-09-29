@@ -4837,9 +4837,11 @@ by each capture's recording worklet; both read `currentTime` in the worklet scop
   clicks out of each saved WAV, puts them on the context's clock by the row's anchor, and
   compares that with the frame at which the harness's tap, stamped by a worklet's
   `currentFrame`, saw the same click go into the stream. 6 frames on every window that
-  opened on a click, in the anomalous repeat as in all others: 62 of 62 windows in
-  `…1790721436525`, 57 of 57 in `…1790721143967`, 32 of 32 in `…1790721702824`. During
-  the take the worklet clock and the clock the clicks are scheduled on agree.
+  opened on the onset of a click, in the anomalous repeat as in all others: 62 windows
+  of 96 in `…1790721436525`, 57 of 96 in `…1790721143967`, 32 of 48 in
+  `…1790721702824`. The other windows opened on the metronome or part-way into a click
+  and say nothing either way. During the take the worklet clock and the clock the
+  clicks are scheduled on agree.
 - **The capture chain**, as far as the recording-start time goes: the engine's stamp has
   nothing to do with a capture's stream, source node or chain.
 
@@ -4876,10 +4878,10 @@ the engine's stamp being off as well says the capture chain is not where it come
 It cannot be excluded either, because what makes the stamps early is not known: the
 sink changes what the graph pulls at the start of a take.
 
-Only a measurement would say, and the rate is against it: one repeat in 88 means some
-260 repeats (about 40 minutes of `multitrack-janked` runs) to expect to see it once on
-the release, and as many without it on a build with #418 before that would mean
-anything.
+Only a measurement would say, and the rate is against it: at one repeat in 88 it takes
+some 260 repeats (about 40 minutes of `multitrack-janked` runs) for a 95 % chance of
+seeing it once on the release, and as many without it on a build with #418 before its
+absence would mean anything. The rate itself rests on one occurrence.
 
 ### Reading
 
