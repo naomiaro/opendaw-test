@@ -150,6 +150,11 @@ describe("parseMultitrackAuditSummary", () => {
     expect(parseMultitrackAuditSummary({ ...mtBase, rawSkewLimitMs: null, rows: [mtRow], cellSkews: [] }, 1790712215292).rawSkewLimitMs).toBeNull();
     expect(parseMultitrackAuditSummary({ ...mtBase, rawSkewLimitMs: 15, rows: [mtRow], cellSkews: [] }, 1790712215292).rawSkewLimitMs).toBe(15);
   });
+  // null means "no limit applied"; a limit that cannot be read must not pass for that.
+  it.each(["15", true, -1, 0])("rejects a raw skew limit of %j", limit => {
+    expect(() => parseMultitrackAuditSummary({ ...mtBase, rawSkewLimitMs: limit, rows: [mtRow], cellSkews: [] }, 1790712215292))
+      .toThrow(/unexpected rawSkewLimitMs/);
+  });
   it("rejects a single-tape scenario in a multitrack envelope", () => {
     expect(() => parseMultitrackAuditSummary({ ...mtBase, rows: [{ ...mtRow, scenario: "nominal-start" }] }, 1)).toThrow(/not a multitrack scenario/);
   });

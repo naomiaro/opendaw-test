@@ -175,9 +175,10 @@ export interface MultitrackAuditRow extends TakeRowBase {
   pairedSkewBeats: number;
   /** G6 sub-case (rows that carry `loopbackDelayMs`): `medianSkewMs` with the two
    *  tapes' own loopback delays taken out, `medianSkewMs − (delay b − delay a)`;
-   *  null when the skew or either delay is unknown. The skew the release
-   *  profile's multi-mic verdict ran on. Absent on rows written before it existed,
-   *  whose verdict ran on the raw `medianSkewMs`. */
+   *  null when the skew or either delay is unknown. Written whenever both delays
+   *  are known, whatever the profile: the verdict ran on it only where the
+   *  envelope's profile nets, and on the raw `medianSkewMs` otherwise — as it
+   *  did for every row that lacks the field. */
   medianSkewMsNetted?: number | null;
 }
 
@@ -380,6 +381,16 @@ function getUserMediaOpensOf(top: Record<string, unknown>, runId: number): numbe
   return v;
 }
 
+/** Absent or null: no limit applied. Anything else has to be a limit that could have been. */
+function rawSkewLimitOf(top: Record<string, unknown>, runId: number): number | null {
+  const v = top.rawSkewLimitMs;
+  if (v === undefined || v === null) return null;
+  if (typeof v !== "number" || !Number.isFinite(v) || v <= 0) {
+    throw new Error(`recaudit mt summary ${runId}: unexpected rawSkewLimitMs ${JSON.stringify(v)}`);
+  }
+  return v;
+}
+
 function beatGridOf(top: Record<string, unknown>, runId: number): { beatGrid: BeatGrid; beatGridSource: LoadedAuditSummary["beatGridSource"] } {
   const v = top.beatGrid;
   if (v === "absolute" || v === "region-anchored") return { beatGrid: v, beatGridSource: "persisted" };
@@ -474,7 +485,7 @@ export function parseMultitrackAuditSummary(json: unknown, runId: number): Loade
     rate: requireNumber(json, "rate", runId),
     alignedToleranceMs: requireNumber(json, "alignedToleranceMs", runId),
     skewToleranceMs: requireNumber(json, "skewToleranceMs", runId),
-    rawSkewLimitMs: optionalNumber(json, "rawSkewLimitMs"),
+    rawSkewLimitMs: rawSkewLimitOf(json, runId),
     outputLatencySec: optionalNumber(json, "outputLatency"),
     harnessPathBiasSec: persistedBias ?? 0,
     confirmCollision: json.confirmCollision === true,

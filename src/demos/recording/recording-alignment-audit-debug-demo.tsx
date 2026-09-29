@@ -936,11 +936,11 @@ Click "Run audit" with a real click — resumes the AudioContext.`}
 // recording the SAME instant can still land at different timeline
 // positions ("inter-track skew"). Measurement design: feed every tape a
 // CLONE of the SAME loopback signal (loopbackDeviceId(1)/(2) — see
-// loopbackInjection.ts) so every common bias (loopback-path latency, the
-// harness-path/outputLatency term, the metronome content itself) cancels
-// out of the DIFFERENCE between the two tapes' beat errors
-// (measureCrossTrackSkew) — no calibration term needed here, unlike the
-// single-tape sections above.
+// loopbackInjection.ts) so what the tapes share (the harness-path/
+// outputLatency term, the metronome content itself) cancels out of the
+// DIFFERENCE between the two tapes' beat errors (measureCrossTrackSkew).
+// Each stream's own delay on the way to its tape does not cancel: the verdict
+// takes the two delays out on a profile that nets (classifyMultitrackCell).
 
 const ALL_MULTITRACK_SCENARIOS = [...MULTITRACK_SCENARIOS];
 const MULTITRACK_RECORD_BARS = 4; // matches nominal-start/janked-start's own 4-bar window
@@ -960,9 +960,9 @@ function resolveMultitrackScenarios(param: string | null): MultitrackScenario[] 
   throw new Error(`unknown multitrack scenario "${param}" — use ?scenario=multitrack-all|${ALL_MULTITRACK_SCENARIOS.join("|")}`);
 }
 
-/** Multitrack matrix runs bpm 120 only (spec: "2 scenarios × 2 rates × bpm
- *  120 × 3 repeats") — defaults to [120] rather than the single-tape "all"
- *  default of every RECORDING_AUDIT_BPMS entry; ?bpm=<n|all> still overrides. */
+/** Multitrack matrix runs bpm 120 only — defaults to [120] rather than the
+ *  single-tape "all" default of every RECORDING_AUDIT_BPMS entry;
+ *  ?bpm=<n|all> still overrides. */
 function resolveMultitrackBpms(param: string | null): number[] {
   if (!param) return [120];
   if (param === "all") return [...RECORDING_AUDIT_BPMS];
@@ -1706,10 +1706,13 @@ function MultitrackRunnerHarness() {
 ?bpm=<number|all>     default 120 (matrix spec: bpm 120 only)
 ?rate=<number>        default 48000 — sets the AudioContext at init, never "all"
 Repeats per cell:       ${MULTITRACK_REPEATS_PER_CELL}
-Verdict:                each tape clean AND the skew between them within ${ALIGNED_TOLERANCE_MS} ms once both
-                        tapes' own loopback delays are taken out AND the raw skew within
-                        ${MULTITRACK_RAW_SKEW_LIMIT_MS} ms. The raw skew is reported as a spread over render quanta in
-                        the cell's detail; inside that limit it is the two streams' own delays.
+Verdict:                on a build whose profile nets the loopback delay: each tape clean AND the
+                        skew between them within ${ALIGNED_TOLERANCE_MS} ms once both tapes' own loopback delays are
+                        taken out AND the raw skew within ${MULTITRACK_RAW_SKEW_LIMIT_MS} ms. Inside that limit the raw skew
+                        is not told apart from the two streams' own delays.
+                        On any other build: each tape clean AND the raw skew within ${ALIGNED_TOLERANCE_MS} ms.
+                        The raw skew is reported as a spread over render quanta in the cell's detail.
+                        The verdict covers the repeats that finished; error repeats are counted beside it.
 Two tapes armed on loopbackDeviceId(1)/(2) — clones of the SAME loopback signal.
 Uploads:                recaudit-mt-summary-<runToken>.json (all rows + per-repeat skew) via PUT /__verify
                         recaudit-mt-<scenario>-<bpm>-<rate>-r<repeat>-tape<a|b>-<build>-<runToken>.wav per repeat
