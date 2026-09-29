@@ -4756,25 +4756,25 @@ Each on a fresh page load. Output of `harness-node-delays.read.cjs` in
 | first-frame time − context time the source node was created at | **−128 frames** | 0, +128 or +256 frames |
 | head and tail deficit | 0 | 0 |
 
-- **Two figures that share nothing but the anchor agree to the frame.** The tape's own
-  verdict failed on the netted median (one quantum over) before the node delays were
-  looked at; the first-frame check is one quantum under. Both say that the buffer's
-  first frame is 128 frames later than the first-frame time the SDK gives.
-- **A third does not use the anchor at all.** These are the only two rows of 174 in
-  which the first-frame time is EARLIER than the context time at which the source node
-  was created, read on the main thread, whose clock never runs ahead of the audio
-  thread's. A buffer fed by that node cannot have a first frame from before the node
-  existed.
+- The tape's own verdict failed on the netted median (one quantum over) before the node
+  delays were looked at; the first-frame check is one quantum under.
+- These are the only two rows of 174 in which the first-frame time is EARLIER than the
+  context time at which the source node was created, as the main thread read it.
 - **The sound is where the node's delay puts it.** The adjusted median exceeds the node
-  delay by what it exceeds it by on every other row. So the take was placed against the
-  buffer as it is; what is a quantum off is the first-frame time the loader reports.
+  delay by what it exceeds it by on every other row: the take is placed like every
+  other take.
 - Both tapes show it, by the same amount, in the same repeat. The two captures have
   separate worklets and separate source nodes.
 
+What these figures say together is in "The one-quantum repeat, looked at again" below.
+As first written this list read the netted median and the first-frame check as two
+witnesses of one thing, a first-frame time that is off. They are not: the netted median
+cannot see a first-frame time at all.
+
 **What this is not established to be.** It happened once in 88 repeats on this code (56
 of them `multitrack-janked`), did not recur in 24 further `multitrack-janked` repeats
-made straight after, and is the first netted median off +1.15 ms in the 746 rows this
-build has in `.verify-output/`. One repeat does not say which of the SDK's figures is
+made straight after, and is the first netted median off its run's mode in the 826 rows
+this build has in `.verify-output/` with a loopback delay. One repeat does not say which of the SDK's figures is
 off, or whether the main thread being held for 150 ms at the flip is needed for it. The
 taps attached 221 ms after the first frame on this repeat, as on the others. The two
 WAVs are saved under the run's token.
@@ -4795,3 +4795,98 @@ upstream issue: there is no page that reproduces it.
   the same with `multitrack-start` to see whether the held main thread matters.
 - **Not established,** as before: real input devices; any browser but Chromium; the
   single-tape scenarios; what the 441-frame step does to a take at 44.1 kHz.
+
+## The one-quantum repeat, looked at again (2026-09-29)
+
+No new recordings of the SDK. The figures of run `…1790721436525`, its WAVs, the SDK's
+source at the installed release, and one experiment with no SDK on the page.
+
+### What each figure can see
+
+With `D` the node's delay, `F` the first-frame time the SDK reports and `T0` the context
+time the buffer's first frame really has, `C` the context time the engine reports for
+the recording start and `Ct` the context time at which the engine rendered that
+position:
+
+| figure | is |
+|---|---|
+| `firstFrameCheckMs` | `F − T0` |
+| netted median | `(Ct − C)` + constants |
+| adjusted median − node delay | `(F − T0) + (Ct − C)` + constants |
+
+The first-frame time drops out of the netted median (`RecordAudio` places the take by
+`C − F`, and `loopbackDelayMs` is `F` minus the anchor). So the three figures of the
+repeat say two things, not one:
+
+- `F` is one render quantum EARLIER than the buffer's first frame (−2.67 ms);
+- `C` is one render quantum EARLIER than the engine's audio for that position
+  (+2.67 ms on the netted median);
+- the two cancel where the take is placed, which is why the sound is where the node's
+  delay puts it.
+
+**Both of the SDK's audio-thread time stamps taken at the start of that take are a
+quantum early, against the audio they describe.** One is taken by the engine, the other
+by each capture's recording worklet; both read `currentTime` in the worklet scope.
+
+### What is ruled out
+
+- **A lost first chunk.** With the head of the ring lost after the stamp, the sound
+  would land a quantum early (adjusted median − node delay one quantum under) and the
+  netted median would not move. Both are the other way round.
+- **The harness's reference.** `node .verify-output/clock-check.ts <run>` reads the
+  clicks out of each saved WAV, puts them on the context's clock by the row's anchor, and
+  compares that with the frame at which the harness's tap, stamped by a worklet's
+  `currentFrame`, saw the same click go into the stream. 6 frames on every window that
+  opened on a click, in the anomalous repeat as in all others: 62 of 62 windows in
+  `…1790721436525`, 57 of 57 in `…1790721143967`, 32 of 32 in `…1790721702824`. During
+  the take the worklet clock and the clock the clicks are scheduled on agree.
+- **The capture chain**, as far as the recording-start time goes: the engine's stamp has
+  nothing to do with a capture's stream, source node or chain.
+
+### A worklet's stamp against its block, no SDK
+
+`.playwright-mcp/worklet-clock.page.js` (local). A noise source started at a known frame
+feeds recorder worklets made fresh, as a take's are; the frame a quantum really is
+comes from its content. 48 kHz.
+
+| what was going on when the recorders were made | recordings | quanta | stamp equal to the block's frame | a stamp repeated or skipped |
+|---|---|---|---|---|
+| nothing else | 800 | 19200 | all | none |
+| three recorders at once, two streams opened and two source nodes built in the same task, main thread held for 150 ms straight after | 900 | 36000 | all (2 recorders had no input in their first call) | none |
+
+A worklet handed a stale `currentFrame` would explain two stamps a quantum early. It did
+not happen once in 55200 quanta here. The two-tap spike did record stamps that repeat
+or skip (24 recorders of 750), under conditions this experiment does not copy:
+recordings of 1.3 s and longer, with the main thread busy comparing them.
+
+### Would upstream PR #418 change it
+
+openDAW PR #418 (open) carries three fixes to `CaptureAudio` and the guards around them.
+Read against this repeat:
+
+| in #418 | what it does to a take of the multi-mic page |
+|---|---|
+| A box naming no device reuses its stream | Nothing. The tapes name a device; the synthetic stream does not report it; a named box is still compared with what the track reports, so the chain is rebuilt on every take as it is now |
+| Keep-alive sink | The source node is pulled from the moment the chain is built, not from the moment the recording worklet is connected. The one change that touches the start of a take |
+| A stream only while armed and alive; an ended track re-opens; teardown on `terminate()` | Nothing on a take that runs normally |
+
+Neither time stamp is taken in code #418 touches: one is in `RecordingProcessor`, the
+other in the engine. There is no reason in the diff to expect the repeat to go away, and
+the engine's stamp being off as well says the capture chain is not where it comes from.
+It cannot be excluded either, because what makes the stamps early is not known: the
+sink changes what the graph pulls at the start of a take.
+
+Only a measurement would say, and the rate is against it: one repeat in 88 means some
+260 repeats (about 40 minutes of `multitrack-janked` runs) to expect to see it once on
+the release, and as many without it on a build with #418 before that would mean
+anything.
+
+### Reading
+
+- **Corrected:** what is off is two time stamps, not one, and the take is placed right.
+  For a user of the SDK this repeat is a recording that landed where every other one
+  does. What it breaks is a reading of `firstQuantumTime`, or of the recording start,
+  as the time of the audio.
+- **Open:** why both stamps are early. Not reproduced, by a further 24 repeats on the
+  page or by 1700 fresh recorders without the SDK.
+- **Not a reason to wait for #418**, and not evidence against it.
