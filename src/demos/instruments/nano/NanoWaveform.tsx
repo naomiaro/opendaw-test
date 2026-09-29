@@ -59,7 +59,7 @@ const MARKERS: ReadonlyArray<{
 ];
 
 export interface NanoWaveformProps {
-  project: Project;
+  project: Pick<Project, "editing" | "liveStreamReceiver">;
   adapter: NanoDeviceBoxAdapter;
   sampleSeconds: number;
   peaksVersion: number;
