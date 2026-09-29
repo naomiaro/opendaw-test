@@ -677,9 +677,11 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   `noUnusedLocals`, `noUnusedParameters`, `noImplicitReturns`). `npm run typecheck`
   (`tsc --noEmit`) exits 0 on a clean tree, and `npm run build` runs it first, so a type
   error fails the build and the deploy. Vite itself only transpiles.
-- `skipLibCheck` is on: two SDK declaration files name DOM types the TypeScript lib does
-  not have (`FileSystemSyncAccessHandle`, `AudioPlaybackStats`). Declarations for
-  untyped packages go in `types/`.
+- Declaration files ARE checked (`skipLibCheck` is off), the SDK's included. Two of
+  them name DOM types the TypeScript lib does not have (`FileSystemSyncAccessHandle`,
+  `AudioPlaybackStats`); `types/sdk-dom-gaps.d.ts` declares those two, empty. If an SDK
+  upgrade brings a new error of that kind, add the missing name there. Declarations for
+  untyped packages go in `types/` too.
 - **A variable assigned inside a callback reads as `never` afterwards.** `let box: T |
   null = null; editing.modify(() => { box = … }); if (box === null) throw …; box.address`
   fails under `strict`: the compiler does not follow the assignment into the callback,
@@ -711,10 +713,29 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
 - `npm run typecheck` must exit 0 before a commit.
 - Component and hook tests run in jsdom: start the test file with
   `// @vitest-environment jsdom` and import `@/lib/testing/domSetup` first. Every other
-  test stays in Node. jsdom lays nothing out (give an element a size with `layOut()`),
-  has no canvas (`installFakeContext2d()` before rendering), and parameters hold
-  32-bit floats, so compare a marker's percent with a tolerance. A themed Radix Slider
-  works under `userEvent.keyboard`.
+  test stays in Node. What jsdom lacks, and what `domSetup` gives in its place:
+  - no layout: every element measures 0 × 0 until a test calls `layOut(element, box)`,
+    and nothing resizes by itself — `resize(element)` tells its observers it did
+  - no canvas: `installFakeContext2d()` BEFORE rendering gives every canvas a context
+    that records its calls and throws for a name a real 2D context does not have
+  - no frames: nothing that waits for an animation frame happens (a canvas repaint, a
+    marker written to the DOM per frame) until `driveFrames().tick()`. A test that never
+    ticks tests none of that. lib-dom keeps the last frame's time for the life of the
+    module and skips a frame whose time has not moved on, so the driver's clock only
+    ever rises
+  - no pointer capture: stubbed, and it never throws. Fire pointer events on the
+    handle itself
+  Parameters hold 32-bit floats, so compare a marker's percent with a tolerance. A
+  themed Radix Slider works under `userEvent.keyboard`. `fireEvent.keyDown` returns
+  false when the handler called `preventDefault`.
+- **A test that asserts a value which is already true before the action proves
+  nothing.** Start from a state the action must change (drag a marker that sits in the
+  middle to the end, not one that is already there), and after writing a DOM test,
+  break the component on purpose and watch the test fail.
+- `vitest.config.ts` adds to the app's Vite config for tests only: it leaves out
+  `.claude/**` (a worktree holds a second copy of every test) and drops what the SDK
+  prints as a matter of course. A test that expects a warning spies on `console.warn`
+  and asserts it, so a run's output is empty unless something is wrong.
 - If `npm run build` fails with a missing SDK export on a clean tree (e.g. "InputLatency
   is not exported"), suspect node_modules drift behind package-lock.json (installed SDK
   version < locked version) — fix with `npm ci`, not code changes.
@@ -740,8 +761,6 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
 - The SDK's value mappings clamp a UNIT value outside 0..1 in `y(x)` (so `setUnitValue(1.5)`
   lands on the maximum), but pass NaN through. `setValue` does not clamp. Guard non-finite
   unit values before writing.
-- vitest scans `.claude/worktrees/**` — test counts double while a worktree exists;
-  remove worktrees (or add a vitest exclude) before trusting `npm test` totals.
 - Web fonts under the COOP/COEP dev server need `crossorigin` on BOTH the preconnect
   and stylesheet `<link>`s (verified with Google Fonts on warp-demos.html).
 - In-browser audio demos: start the transport (Record/Play) with a REAL click

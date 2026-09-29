@@ -76,6 +76,20 @@ describe("useParameterUnit", () => {
     expect(result.current[1]).toBe("700 ct");
   });
 
+  it("writes to the new parameter after the parameter changes", () => {
+    const { adapter, box, project } = samplerFixture();
+    const { result, rerender } = renderHook(
+      ({ name }: { name: "octave" | "tune" }) => useParameterUnit(project, adapter.namedParameter[name]),
+      { initialProps: { name: "octave" } }
+    );
+
+    rerender({ name: "tune" });
+    act(() => result.current[2](1));
+
+    expect(box.tune.getValue()).toBeCloseTo(1200, 3);
+    expect(box.octave.getValue()).toBe(0);
+  });
+
   it("keeps the same write function between renders, so a control is not rebuilt each time", () => {
     const { adapter, project } = samplerFixture();
     const { result, rerender } = renderHook(() => useParameterUnit(project, adapter.namedParameter.tune));

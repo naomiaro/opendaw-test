@@ -18,17 +18,23 @@ export interface ParamSliderProps {
 }
 
 /**
- * Give a themed Slider's thumb its accessible name. The name belongs on the
- * thumb (the element with role="slider"); the themed Slider renders its thumb
- * internally and forwards no label to it. Pass the returned ref to the Slider.
+ * Give a themed Slider's thumb its accessible name and, when given, the text
+ * of its value. Both belong on the thumb (the element with role="slider"); the
+ * themed Slider renders its thumb internally and forwards neither to it. Pass
+ * the returned ref to the Slider.
  */
-export function useSliderThumbLabel(label: string): React.RefObject<HTMLSpanElement | null> {
+export function useSliderThumbLabel(label: string, valueText?: string): React.RefObject<HTMLSpanElement | null> {
   const rootRef = useRef<HTMLSpanElement>(null);
   // No dependency list: the Slider may mount later than the component that
   // calls this hook (a conditionally rendered control), and one attribute
   // write per render costs nothing.
   useEffect(() => {
-    rootRef.current?.querySelector('[role="slider"]')?.setAttribute("aria-label", label);
+    const thumb = rootRef.current?.querySelector('[role="slider"]');
+    if (!thumb) return;
+    thumb.setAttribute("aria-label", label);
+    // The slider's own number is a position or a share of the range. This is
+    // the value as a person reads it ("-2 oct"), which is what gets announced.
+    if (valueText !== undefined) thumb.setAttribute("aria-valuetext", valueText);
   });
   return rootRef;
 }
@@ -38,7 +44,7 @@ export const ParamSlider: React.FC<ParamSliderProps> = ({
   project, parameter, label, step = 0.005, positions,
 }) => {
   const [unit, print, write] = useParameterUnit(project, parameter);
-  const rootRef = useSliderThumbLabel(label);
+  const rootRef = useSliderThumbLabel(label, print);
   return (
     <Flex direction="column" gap="1" flexGrow="1" style={{ minWidth: 0 }}>
       <Flex justify="between" gap="2">

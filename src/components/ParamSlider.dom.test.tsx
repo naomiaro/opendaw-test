@@ -2,7 +2,7 @@
 import "@/lib/testing/domSetup";
 import React from "react";
 import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Slider, Theme } from "@radix-ui/themes";
 import { ParamSlider, useSliderThumbLabel } from "./ParamSlider";
@@ -97,12 +97,60 @@ describe("ParamSlider in the DOM", () => {
     const { adapter, box, project } = samplerFixture();
     show(<ParamSlider project={project} parameter={adapter.namedParameter.octave} label="Octave" positions={7} />);
 
-    await React.act(async () => {
-      project.editing.modify(() => box.octave.setValue(-2));
-    });
+    act(() => project.editing.modify(() => box.octave.setValue(-2)));
 
     expect(screen.getByText("-2 oct")).toBeDefined();
     expect(screen.getByRole("slider", { name: "Octave" }).getAttribute("aria-valuenow")).toBe("1");
+  });
+
+  it("shows a change made elsewhere on a continuous parameter", () => {
+    const { adapter, box, project } = samplerFixture();
+    show(<ParamSlider project={project} parameter={adapter.namedParameter.tune} label="Tune" />);
+
+    act(() => project.editing.modify(() => box.tune.setValue(600)));
+
+    expect(screen.getByText("600 ct")).toBeDefined();
+    expect(Number(screen.getByRole("slider", { name: "Tune" }).getAttribute("aria-valuenow"))).toBeCloseTo(0.75, 6);
+  });
+
+  it("moves a continuous parameter by its step with an arrow key", async () => {
+    const user = userEvent.setup();
+    const { adapter, box, project } = samplerFixture();
+    show(
+      <>
+        <ParamSlider project={project} parameter={adapter.namedParameter.tune} label="Tune" />
+        <ParamSlider project={project} parameter={adapter.namedParameter.sampleStart} label="Start" step={0.001} />
+      </>
+    );
+
+    screen.getByRole("slider", { name: "Tune" }).focus();
+    await user.keyboard("{ArrowRight}{ArrowRight}");
+    expect(box.tune.getValue()).toBeCloseTo(24, 3);
+
+    screen.getByRole("slider", { name: "Start" }).focus();
+    await user.keyboard("{ArrowRight}{ArrowRight}{ArrowRight}");
+    expect(box.sampleStart.getValue()).toBeCloseTo(0.003, 6);
+  });
+
+  // The slider's own number is a position or a share of the range. What a
+  // person needs to hear is the value, as it is printed beside the slider.
+  it("tells a screen reader the value as it is printed, not the slider's position", () => {
+    const { adapter, box, project } = samplerFixture();
+    show(
+      <>
+        <ParamSlider project={project} parameter={adapter.namedParameter.octave} label="Octave" positions={7} />
+        <ParamSlider project={project} parameter={adapter.namedParameter.tune} label="Tune" />
+      </>
+    );
+    expect(screen.getByRole("slider", { name: "Octave" }).getAttribute("aria-valuetext")).toBe("0 oct");
+
+    act(() => project.editing.modify(() => {
+      box.octave.setValue(-2);
+      box.tune.setValue(600);
+    }));
+
+    expect(screen.getByRole("slider", { name: "Octave" }).getAttribute("aria-valuetext")).toBe("-2 oct");
+    expect(screen.getByRole("slider", { name: "Tune" }).getAttribute("aria-valuetext")).toBe("600 ct");
   });
 });
 

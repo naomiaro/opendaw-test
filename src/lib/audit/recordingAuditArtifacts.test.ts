@@ -178,7 +178,10 @@ describe("formatMilliseconds", () => {
     expect(formatMilliseconds(saved.medianBeatErrorMsAdjusted)).toBe("—");
   });
 
-  it("prints a dash for a value that is not a number", () => {
-    expect(formatMilliseconds(Number.NaN)).toBe("—");
+  // A dash means "no value". A value that was computed and came out wrong is a
+  // different finding (a latency the browser did not report, say) and must show.
+  it("prints a value that is not a number as it is, not as a dash", () => {
+    expect(formatMilliseconds(Number.NaN)).toBe("NaN");
+    expect(formatMilliseconds(Number.POSITIVE_INFINITY)).toBe("Infinity");
   });
 });

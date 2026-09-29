@@ -16,7 +16,6 @@
     "noEmit": true,
     "allowImportingTsExtensions": true,
     "strict": true,
-    "skipLibCheck": true,
     "noFallthroughCasesInSwitch": true,
     "noImplicitOverride": true,
     "noUnusedLocals": true,

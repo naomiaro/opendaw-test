@@ -79,3 +79,48 @@ export function regionMessage(region: { readonly empty: boolean; readonly startI
     ? "Start and End are at the same place. A note sounds only if the LFO has moved its start away."
     : "The region is empty, so notes play nothing. Move Start or End.";
 }
+
+/** What the sample card is showing besides the sample itself */
+export interface SampleMessages {
+  /** Shown in red */
+  readonly error: string | null;
+  /** Shown in amber: something the person may want to know, not a failure */
+  readonly note: string | null;
+  /** True when the current sample's load failed, so the page must not call it loaded */
+  readonly loadFailed: boolean;
+}
+
+export const NO_MESSAGES: SampleMessages = { error: null, note: null, loadFailed: false };
+
+export type SampleEvent =
+  | { readonly type: "sample chosen" }
+  | { readonly type: "files dropped"; readonly skippedCount: number }
+  | { readonly type: "file refused"; readonly message: string }
+  | { readonly type: "file accepted" }
+  | { readonly type: "load failed"; readonly message: string }
+  | { readonly type: "failed"; readonly message: string }
+  | { readonly type: "nothing dropped" };
+
+/**
+ * The messages after something happened. `loadFailed` belongs to the sample
+ * that is current, so only an event that changes the sample, or reports its
+ * load, touches it: a refused file leaves the sample that was there in place.
+ */
+export function messagesAfter(state: SampleMessages, event: SampleEvent): SampleMessages {
+  switch (event.type) {
+    case "sample chosen":
+      return NO_MESSAGES;
+    case "files dropped":
+      return { ...state, error: null, note: skippedFilesNote(event.skippedCount) };
+    case "file refused":
+      return { ...state, error: event.message };
+    case "file accepted":
+      return { ...state, loadFailed: false };
+    case "load failed":
+      return { ...state, error: event.message, loadFailed: true };
+    case "failed":
+      return { ...state, error: event.message };
+    case "nothing dropped":
+      return { ...state, error: "That drop held no file. Drop an audio file.", note: null };
+  }
+}

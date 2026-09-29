@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { asInstanceOf } from "@opendaw/lib-std";
 import { AnimationFrame } from "@opendaw/lib-dom";
@@ -18,7 +18,7 @@ import { CanvasPainter } from "@/lib/CanvasPainter";
 import type { UnitParameter } from "@/hooks/useParameterUnit";
 import { NanoWaveform, WAVEFORM_STYLES } from "./NanoWaveform";
 import { LFO_DEFAULT_RATE_LABEL } from "./nanoPresets";
-import { dropZoneText, readDroppedSample, skippedFilesNote } from "./nanoMessages";
+import { NO_MESSAGES, dropZoneText, messagesAfter, readDroppedSample } from "./nanoMessages";
 import { buildNanoDemoContent, NANO_DEMO_BPM, type CurrentSample, type NanoDemoSetup } from "./nanoContent";
 import "@radix-ui/themes/styles.css";
 import {
@@ -325,9 +325,7 @@ const App: React.FC = () => {
   const [current, setCurrent] = useState<CurrentSample | null>(null);
   const [peaksVersion, setPeaksVersion] = useState(0);
   const [lfoOn, setLfoOn] = useState(false);
-  const [sampleError, setSampleError] = useState<string | null>(null);
-  const [sampleNote, setSampleNote] = useState<string | null>(null);
-  const [loadFailed, setLoadFailed] = useState(false);
+  const [messages, tell] = useReducer(messagesAfter, NO_MESSAGES);
   const [busy, setBusy] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [activeNotes, setActiveNotes] = useState<Set<number>>(new Set());
@@ -396,45 +394,40 @@ const App: React.FC = () => {
       if (selectionRef.current === token) setPeaksVersion(version => version + 1);
     },
     onError: (message: string) => {
-      if (selectionRef.current !== token) return;
-      setSampleError(message);
-      setLoadFailed(true);
+      if (selectionRef.current === token) tell({ type: "load failed", message });
     },
   }), []);
 
   const chooseSample = useCallback((id: NanoSampleId) => {
     if (!setup) return;
     const token = ++selectionRef.current;
-    setSampleError(null);
-    setSampleNote(null);
-    setLoadFailed(false);
+    tell({ type: "sample chosen" });
     try {
       setCurrent(setup.selectSample(id, callbacksFor(token)));
     } catch (error) {
       console.error("Nano demo: could not select sample: " + String(error));
-      setSampleError(`Could not load that sample: ${String(error)}`);
+      tell({ type: "failed", message: `Could not load that sample: ${String(error)}` });
     }
   }, [setup, callbacksFor]);
 
   const loadDroppedFile = useCallback(async (file: File, skippedCount: number) => {
     if (!setup || !audioContext) return;
     setBusy(true);
-    setSampleError(null);
-    setSampleNote(skippedFilesNote(skippedCount));
+    tell({ type: "files dropped", skippedCount });
     try {
       const dropped = await readDroppedSample(file, bytes => audioContext.decodeAudioData(bytes));
       if (!dropped.ok) {
-        setSampleError(dropped.message);
+        tell({ type: "file refused", message: dropped.message });
         return;
       }
       // A box-graph failure here is not the fault of the user's file.
       try {
         const token = ++selectionRef.current;
-        setLoadFailed(false);
+        tell({ type: "file accepted" });
         setCurrent(setup.setCustomSample(file.name, dropped.buffer, callbacksFor(token)));
       } catch (error) {
         console.error("Nano demo: could not load sample into the engine: " + String(error));
-        setSampleError(`Failed to load "${file.name}" into the engine: ${String(error)}`);
+        tell({ type: "failed", message: `Failed to load "${file.name}" into the engine: ${String(error)}` });
       }
     } finally {
       setBusy(false);
@@ -526,20 +519,20 @@ const App: React.FC = () => {
                     ariaLabel="Drop an audio file to use as the sample, or press Enter to browse"
                     disabled={busy}
                     onFile={(file, skippedCount) => void loadDroppedFile(file, skippedCount)}
-                    onInvalidDrop={() => setSampleError("That drop held no file. Drop an audio file.")}
+                    onInvalidDrop={() => tell({ type: "nothing dropped" })}
                   >
                     <Text size="2" color="gray">
-                      {dropZoneText(current, loadFailed)}
+                      {dropZoneText(current, messages.loadFailed)}
                     </Text>
                   </DropZone>
-                  {sampleNote && (
+                  {messages.note && (
                     <Callout.Root color="amber" size="1" role="status">
-                      <Callout.Text>{sampleNote}</Callout.Text>
+                      <Callout.Text>{messages.note}</Callout.Text>
                     </Callout.Root>
                   )}
-                  {sampleError && (
+                  {messages.error && (
                     <Callout.Root color="red" size="1" role="alert">
-                      <Callout.Text>{sampleError}</Callout.Text>
+                      <Callout.Text>{messages.error}</Callout.Text>
                     </Callout.Root>
                   )}
                 </Flex>

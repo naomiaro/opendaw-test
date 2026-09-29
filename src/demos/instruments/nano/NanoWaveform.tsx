@@ -295,7 +295,12 @@ export const NanoWaveform: React.FC<NanoWaveformProps> = ({
     return true;
   }, [project, adapter]);
 
+  // A drag belongs to the pointer that started it, and moves the marker it
+  // started on, until that pointer lets go. Other pointers are ignored.
   const onPointerDown = useCallback((id: MarkerId, event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    const drag = dragRef.current;
+    if (drag !== null && drag.pointerId !== event.pointerId) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     dragRef.current = { id, pointerId: event.pointerId, committed: false };
   }, []);
@@ -309,9 +314,15 @@ export const NanoWaveform: React.FC<NanoWaveformProps> = ({
     if (changed) drag.committed = true;
   }, [writeMarker]);
 
-  const endDrag = useCallback(() => {
-    dragRef.current = null;
+  const endDrag = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (dragRef.current !== null && dragRef.current.pointerId === event.pointerId) dragRef.current = null;
   }, []);
+
+  // The loop markers go away with the loop, and with them any event that would end their drag.
+  useEffect(() => {
+    const drag = dragRef.current;
+    if (!loopOn && drag !== null && (drag.id === "loopStart" || drag.id === "loopEnd")) dragRef.current = null;
+  }, [loopOn]);
 
   const onKeyDown = useCallback((id: MarkerId, event: React.KeyboardEvent<HTMLDivElement>) => {
     const target = markerKeyTarget(id, event.key, event.shiftKey, readValues(adapter));
