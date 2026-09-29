@@ -3980,3 +3980,133 @@ refractory re-arms on the synthesized click's 50 ms release tail (~0.1 at +30 ms
 same frequency as the click) and reports a "follower" after every beat click. The tail is
 identical in the speaker feed, the release captures, the branch-era captures and every
 scenario — it is the click sound, not a second click.
+
+## Standing sweep after the strict-compile and stored-sample changes (2026-09-29)
+
+Same SDK as the section above (`@opendaw/studio-sdk@0.0.172`, build probe `upstream`,
+`buildFeatures: ["recordingStart"]` → `release` profile). What changed is this repo, at
+`main` = `2ad5ff1`:
+
+- PR #132 — `initializeOpenDAW` clears the SDK's stored samples (OPFS `samples/v2`) at
+  page load unless another page of the site is open. Recording saves into that folder
+  during the session, and reads the take's peaks back from it right after.
+- PR #133 — the repo compiles with `strict`. In the harness that touched: tape creation
+  on both audit pages (the box now comes back as the transaction's return value), the
+  `AudioNode.prototype.connect` patch in `loopbackInjection.ts` (typing only), and the
+  adjusted-median table cells (`formatMilliseconds`).
+
+So this run answers two questions: does a take still record, finalize and land where it
+did, with the stored-sample sweep in place; and did the strict fixes change the harness.
+
+### 48000 Hz — `recaudit-summary-1790709786130.json`
+
+60 rows, 0 error rows, **10 of 10 cells `aligned`**, 30 of 30 repeats finalized (loader
+state `loaded` on all 60 rows), head and tail deficits 0 on all 60 rows, 0 WAV upload
+failures. Netted medians **+1.07…+1.17 ms** — the same range as the release-profile run
+above (`…1790626695294`). 6.4 min.
+
+| scenario | bpm | n | mean raw (ms) | mean adj (ms) | mean netted (ms) | netted min…max | loopback delay (ms) |
+|---|---|---|---|---|---|---|---|
+| nominal-start | 120 | 3 | −4.23 | +18.77 | +1.15 | 1.15…1.15 | 12.29…21.63 |
+| nominal-start | 97.3 | 3 | −3.55 | +19.45 | +1.15 | 1.15…1.15 | 12.29…21.62 |
+| janked-start | 120 | 3 | −1.56 | +21.44 | +1.15 | 1.15…1.15 | 17.62…21.63 |
+| janked-start | 97.3 | 3 | −0.44 | +22.56 | +1.15 | 1.15…1.15 | 20.96…21.63 |
+| midtimeline-start | 120 | 3 | −3.34 | +19.66 | +1.15 | 1.15…1.15 | 14.29…20.96 |
+| midtimeline-start | 97.3 | 3 | −0.45 | +22.55 | +1.15 | 1.15…1.15 | 20.96…21.63 |
+| countin-start | 120 | 3 | −4.90 | +18.10 | +1.15 | 1.15…1.15 | 9.63…20.96 |
+| countin-start | 97.3 | 3 | −6.67 | +16.33 | +1.15 | 1.15…1.15 | 12.29…20.96 |
+| loop-wrap | 120 | 18 | −1.11 | +21.89 | +1.16 | 1.10…1.17 | 20.29…21.63 |
+| loop-wrap | 97.3 | 18 | −3.58 | +19.42 | +1.13 | 1.07…1.15 | 12.29…21.62 |
+
+Raw medians −12.23…−0.21 ms over the 60 rows.
+
+### 44100 Hz — `recaudit-summary-1790710228547.json`
+
+60 rows, 0 error rows, **10 of 10 cells `aligned`**, 30 of 30 repeats finalized, head and
+tail deficits 0 on all 60 rows, 0 WAV upload failures. Netted medians **+0.97…+1.19 ms** —
+exactly the range the section above computed offline for the 44.1 kHz rows.
+
+| scenario | bpm | n | mean raw (ms) | mean adj (ms) | mean netted (ms) | netted min…max | loopback delay (ms) |
+|---|---|---|---|---|---|---|---|
+| nominal-start | 120 | 3 | −1.26 | +21.74 | +1.16 | 1.16…1.16 | 19.32…21.95 |
+| nominal-start | 97.3 | 3 | −2.79 | +20.21 | +1.17 | 1.17…1.17 | 18.62…19.55 |
+| janked-start | 120 | 3 | +1.01 | +24.01 | +1.16 | 1.16…1.16 | 22.61…23.06 |
+| janked-start | 97.3 | 3 | +0.46 | +23.46 | +1.17 | 1.16…1.17 | 21.50…23.15 |
+| midtimeline-start | 120 | 3 | −4.01 | +18.99 | +1.19 | 1.19…1.19 | 13.12…20.56 |
+| midtimeline-start | 97.3 | 3 | −2.70 | +20.30 | +1.17 | 1.17…1.17 | 18.50…20.29 |
+| countin-start | 120 | 3 | −2.14 | +20.86 | +1.17 | 1.17…1.17 | 18.07…21.95 |
+| countin-start | 97.3 | 3 | −1.99 | +21.01 | +1.17 | 1.17…1.17 | 19.41…20.63 |
+| loop-wrap | 120 | 18 | −2.07 | +20.93 | +1.09 | 0.97…1.18 | 19.41…20.15 |
+| loop-wrap | 97.3 | 18 | −1.25 | +21.75 | +1.10 | 0.98…1.17 | 19.25…22.59 |
+
+Raw medians −8.69…+1.32 ms over the 60 rows.
+
+### Multi-mic — four runs (multitrack-all, 120 BPM, 48000 Hz)
+
+Run four times, because the first run of the sweep read 12 `investigate` where a run
+earlier the same day had read 12 `aligned`.
+
+| file | rows | error rows | finalized | netted, every row | inter-tape skew per repeat, a − b (ms) | row verdicts |
+|---|---|---|---|---|---|---|
+| `recaudit-mt-summary-1790707818551.json` (before the sweep, on the PR #133 branch) | 12 | 0 | 12 of 12 | +1.146 | janked 0.00, 0.00, 0.00 · start 0.00, −2.00, 0.00 | 12 `aligned` |
+| `recaudit-mt-summary-1790710650174.json` | 12 | 0 | 12 of 12 | +1.146 | janked 2.67, 10.67, 2.67 · start −2.67, 0.00, −2.67 | 12 `investigate` |
+| `recaudit-mt-summary-1790710747979.json` | 12 | 0 | 12 of 12 | +1.146 | janked 0.00, 0.00, 0.00 · start 0.00, −2.67, 0.00 | 6 `aligned`, 6 `investigate` |
+| `recaudit-mt-summary-1790710801157.json` | 12 | 0 | 12 of 12 | +1.146 | janked −8.00, 0.00, −2.67 · start 0.00, −5.33, 7.33 | 12 `investigate` |
+
+What holds on all 48 rows: no error row, every repeat finalized on both tapes (no #375
+collision), head and tail deficits 0, and **each tape on its own lands at +1.146 ms
+netted** — the release profile's `aligned`, on every row.
+
+What differs from run to run is the skew BETWEEN the two tapes, and only that decides
+the multi-mic verdict (`skewToleranceMs` 2). It is Finding 2 of this register ("inter-track
+skew is quantized to roughly one render quantum, exceeds the 2 ms tolerance on nearly
+every successful repeat"), unchanged:
+
+| skew, in render quanta of 2.667 ms | repeats, of 24 |
+|---|---|
+| 0 | 13 |
+| 0.75 (2.00 ms) | 1 |
+| 1 | 6 |
+| 2 | 1 |
+| 2.75 (7.33 ms) | 1 |
+| 3 | 1 |
+| 4 (10.67 ms) | 1 |
+
+The row-level arithmetic says where the skew lives. On `multitrack-janked` r2 of
+`…1790710650174`, tape a has raw −0.90 ms with a loopback delay of 20.96 ms, and tape b
+raw −11.56 ms with a loopback delay of 10.29 ms: the 10.67 ms between the raw medians is
+the 10.67 ms between the two loopback delays, and both net to +1.146. The two takes are
+each placed on their own first captured quantum; what is four quanta apart is when the
+two capture chains delivered that first quantum.
+
+Two things this run adds to Finding 2:
+
+- **The release build is not limited to one quantum.** The single multi-mic run in the
+  section above saw 0.00 or ±2.67 ms and could be read that way. Four runs show up to four
+  quanta, the same spread the 0.0.170 runs had (`…1788303605274` 10.0 ms, `…1788387238856`
+  8.0 ms, `…1788303708270` 5.33 ms).
+- **One run is not a verdict for this scenario.** The same build read 12 `aligned`, then
+  12 `investigate`, then 6 and 6, within an hour. A multi-mic result needs the skew
+  distribution over several runs, not one run's row verdicts.
+
+Not established here: whether the multi-quantum skews come from the harness (two
+synthetic loopback devices, each opened by its own `getUserMedia`) or would also appear
+between two real inputs. The two 0.75-multiples (2.00 and 7.33 ms) are not whole quanta
+and are unexplained.
+
+### Sample-rate/quantum-alignment sweep
+
+`samplerate-audit-debug-demo.html?family=all&bpm=all&rate=all`: **180 of 180 cells pass,
+0 investigate**, max deviation 0.07–0.08 ms on the metronome family, 0.5 min. Same as
+the section above.
+
+### Reading
+
+- **The stored-sample sweep does not disturb recording.** 108 recordings (60 single-tape
+  repeats, and 24 multi-mic repeats on two tapes each) were saved into `samples/v2` and
+  read back after the folder had been cleared at page load; none failed to finalize.
+- **The strict fixes did not change the harness.** Single-tape placement is the same to
+  the hundredth of a millisecond as before them (netted +1.07…+1.17 at 48 kHz,
+  +0.97…+1.19 at 44.1 kHz).
+- **Open:** the multi-mic verdict reads the skew of one run. See above.
+
