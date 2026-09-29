@@ -13,14 +13,14 @@ import { BackLink } from "@/components/BackLink";
 import { DropZone } from "@/components/DropZone";
 import { ParamSlider, useSliderThumbLabel } from "@/components/ParamSlider";
 import { PianoKeyboard, PIANO_STYLES } from "@/demos/midi/PianoKeyboard";
-import { CANVAS_COLORS, CONSOLE_STYLES } from "@/lib/design/consoleTheme";
+import { CANVAS_COLORS, CODE_BLOCK_STYLE, CONSOLE_STYLES } from "@/lib/design/consoleTheme";
 import { CanvasPainter } from "@/lib/CanvasPainter";
 import type { UnitParameter } from "@/hooks/useParameterUnit";
 import { NanoWaveform, WAVEFORM_STYLES } from "./NanoWaveform";
 import { buildNanoDemoContent, NANO_DEMO_BPM, type CurrentSample, type NanoDemoSetup } from "./nanoContent";
 import "@radix-ui/themes/styles.css";
 import {
-  Theme, Container, Text, Flex, Card, Callout, Badge, Button, Switch, Grid, Select, Slider,
+  Theme, Container, Text, Flex, Card, Callout, Badge, Button, Switch, Grid, Select, Slider, Code,
 } from "@radix-ui/themes";
 
 const PAGE_STYLES = `
@@ -75,6 +75,50 @@ const LoopSwitch: React.FC<{ project: Project; setup: NanoDemoSetup }> = ({ proj
     </Flex>
   );
 };
+
+const CODE_REFERENCE = `import { UUID } from "@opendaw/lib-std";
+import { AudioFileBox } from "@opendaw/studio-boxes";
+import { InstrumentFactories, NanoDeviceBoxAdapter } from "@opendaw/studio-adapters";
+
+// 1. Register the decoded audio under a uuid, then create the file box and
+//    the sampler in one transaction. The file box is the factory's attachment.
+const uuid = UUID.generate();
+localAudioBuffers.set(UUID.toString(uuid), audioBuffer);
+
+let nanoBox, audioUnitBox;
+project.editing.modify(() => {
+  const fileBox = AudioFileBox.create(project.boxGraph, uuid, box => {
+    box.fileName.setValue("My sample");
+    box.endInSeconds.setValue(audioBuffer.duration);
+  });
+  const product = project.api.createInstrument(InstrumentFactories.Nano, { attachment: fileBox });
+  nanoBox = product.instrumentBox;
+  audioUnitBox = product.audioUnitBox;
+});
+
+// 2. After that transaction: arm the MIDI capture and take the adapter.
+project.captureDevices.get(audioUnitBox.address.uuid).unwrap().armed.setValue(true);
+const nano = project.boxAdapters.adapterFor(nanoBox, NanoDeviceBoxAdapter);
+
+// 3. Shape the playback. All four markers are shares of the whole sample.
+project.editing.modify(() => {
+  const p = nano.namedParameter;
+  p.rootKey.setValue(57);      // the note that plays the sample at its own pitch
+  p.sampleStart.setValue(1);   // start past end: play backwards
+  p.sampleEnd.setValue(0);
+  p.loop.setValue(true);
+  p.loopStart.setValue(0.25);  // kept inside the region by the engine
+  p.loopEnd.setValue(0.6);
+  p.loopFade.setValue(0.05);   // seconds, capped at half the loop
+});
+
+// 4. Follow the read heads: source frames, one per voice, ended by -1.
+const sub = project.liveStreamReceiver.subscribeFloats(nano.positionsAddress, positions => {
+  for (const frame of positions) {
+    if (frame === -1) break;
+    drawPlayheadAt(frame / (numberOfFrames - 1));
+  }
+});`;
 
 const LFO_DEFAULT_DEPTH = 0.3;
 // Longer than the two-bar pattern, so the notes that fall on bar lines land on
@@ -579,7 +623,12 @@ const App: React.FC = () => {
                 </Flex>
               </Card>
 
-              {/* CODE REFERENCE — Task 10 inserts the reference card here */}
+              <Card>
+                <Flex direction="column" gap="2">
+                  <Text size="2" weight="bold" color="gray">Code reference</Text>
+                  <Code style={CODE_BLOCK_STYLE}>{CODE_REFERENCE}</Code>
+                </Flex>
+              </Card>
             </>
           )}
         </Flex>

@@ -858,8 +858,8 @@ Each demo category folder has its own CLAUDE.md with SDK knowledge scoped to tho
 - `src/demos/export/CLAUDE.md` — offline rendering, mutate-copy-restore pattern
 - `src/demos/warp/CLAUDE.md` — beat maps, warp markers, tempo-map conform, time-stretch
 - `src/demos/engine/CLAUDE.md` — WASM (Rust) engine: EngineVariant/WasmEngine wiring and boot, offline rendering notes, DSP-load reporting
-- `src/demos/instruments/CLAUDE.md` — stock instruments (Neon, Cubed): box fields, presets,
-  pattern data, parameter-panel binding. Each instrument's files live in their own
+- `src/demos/instruments/CLAUDE.md` — stock instruments (Neon, Cubed, Nano): box fields, presets,
+  pattern data, parameter-panel binding, sampler region and loop rules, read-head broadcast. Each instrument's files live in their own
   subfolder (`src/demos/instruments/<instrument>/`); the CLAUDE.md stays at the category level
 - `src/demos/modulation/CLAUDE.md` — modulation system: ProjectModulation transaction rules, engine depth/amount/bipolar math, free-running behavior, modulator adapter constants
 - `src/demos/clips/CLAUDE.md` — clip launcher boxes, quantization, clip notifications, convert-to-region

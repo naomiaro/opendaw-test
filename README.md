@@ -21,6 +21,7 @@ Visit http://localhost:5173 to explore the demos.
 | **[MIDI Recording](https://opendaw-test.pages.dev/midi-recording-demo.html)** | Record MIDI notes with device/channel selection, on-screen piano keyboard, and step recording |
 | **[Neon: CZ-101 Phase Distortion](https://opendaw-test.pages.dev/neon-demo.html)** | Play OpenDAW's Casio CZ-101 phase-distortion synth — five original patches round-tripped through real `.syx` bytes, a sysex drop zone, live wave/modulation controls, and an 8-stage envelope visualizer |
 | **[Cubed: 303-Style Acid Bassline](https://opendaw-test.pages.dev/cubed-demo.html)** | Program Cubed's built-in step sequencer live — notes, gates, slides and accents on a 64-step grid, a random pattern generator, JSON and ABL `.pat` pattern exchange, and a synced LFO sweeping the filter |
+| **[Nano: Polyphonic Sampler](https://opendaw-test.pages.dev/nano-demo.html)** | Play one sample across the keyboard — four synthesized samples or your own file, draggable region and loop markers on the waveform, reverse playback, a crossfaded loop, an LFO scanning the sample start, and live read heads for every voice |
 | **[Loop Recording & Takes](https://opendaw-test.pages.dev/loop-recording-demo.html)** | Record multiple takes over a loop region with per-take waveforms and mute controls |
 | **[Quick Swipe Comping](https://opendaw-test.pages.dev/swipe-comping-demo.html)** | Loop-record takes on a single tape, then swipe across take lanes to splice a comp — Logic-style comping with transparent engine crossfades at every seam, undo per swipe |
 | **[Drum Pattern Scheduling](https://opendaw-test.pages.dev/drum-scheduling-demo.html)** | Schedule drum samples across a timeline with visual playback |
@@ -143,9 +144,15 @@ src/
     │   ├── neon/                      # One folder per instrument
     │   │   ├── neon-demo.tsx          # Neon (CZ-101 phase distortion) + .syx presets
     │   │   └── neonPresets.ts         # Original patches round-tripped through sysex
-    │   └── cubed/
-    │       ├── cubed-demo.tsx         # Cubed (303-style acid bassline) step sequencer
-    │       └── cubedPatterns.ts       # Hand-authored acid pattern + sound presets
+    │   ├── cubed/
+    │   │   ├── cubed-demo.tsx         # Cubed (303-style acid bassline) step sequencer
+    │   │   └── cubedPatterns.ts       # Hand-authored acid pattern + sound presets
+    │   └── nano/
+    │       ├── nano-demo.tsx          # Nano (polyphonic sampler) page
+    │       ├── nanoContent.ts         # Instrument, sample swap and pattern builder
+    │       ├── NanoWaveform.tsx       # Waveform, markers and live playheads
+    │       ├── nanoMarkers.ts         # Region, loop and playhead math
+    │       └── nanoPresets.ts         # Per-sample parameters and patterns
     ├── clips/                         # Clip launcher demos
     │   └── jam-arrangement-demo.tsx   # Clip jamming → committed region arrangement
     ├── automation/                    # Automation demos
