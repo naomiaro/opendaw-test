@@ -681,6 +681,25 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   connect's try/catch — wrap sync fs calls in try/catch or a throw kills the dev server.
 - git worktrees: copy `localhost*.pem` in and run `npm ci` there before the dev
   server — certs and node_modules don't follow the checkout.
+- Unit tests can run against a REAL box graph in Node, no AudioContext: fixtures in
+  `src/lib/testing/boxGraphFixtures.ts`. `graph.endTransaction()` validates mandatory
+  pointers and rolls back on a violation (a bare `NanoDeviceBox.create` fails with
+  "Pointer … (host) requires an edge"), so build instruments the way the SDK does:
+  `ProjectSkeleton.empty(…)` → `AudioUnitFactory.create(skeleton, AudioUnitType.Instrument,
+  Option.None)` → `InstrumentFactories.X.create(boxGraph, unit.input, name, icon)`. Device
+  adapters construct with a minimal context, `{ parameterFieldAdapters: new
+  ParameterFieldAdapters(), isMainThread: false }`, as long as no pointer of theirs has a
+  target yet — that gives tests the SDK's real value and string mappings. `new
+  BoxEditing(boxGraph)` is a real `editing` (modify, append, undo).
+- React components are tested by rendering to markup (`renderToStaticMarkup` from
+  `react-dom/server`) — the repo has no DOM test environment, so effects do not run and
+  nothing can be clicked. Keep logic out of components (see `src/lib/parameterBinding.ts`
+  under `useParameterUnit`) so it is testable without one. A themed Radix `Slider`
+  rendered this way carries its value in the filled range's `right:` style, not in the
+  thumb's `aria-valuenow`.
+- The SDK's value mappings clamp a UNIT value outside 0..1 in `y(x)` (so `setUnitValue(1.5)`
+  lands on the maximum), but pass NaN through. `setValue` does not clamp. Guard non-finite
+  unit values before writing.
 - vitest scans `.claude/worktrees/**` — test counts double while a worktree exists;
   remove worktrees (or add a vitest exclude) before trusting `npm test` totals.
 - Web fonts under the COOP/COEP dev server need `crossorigin` on BOTH the preconnect

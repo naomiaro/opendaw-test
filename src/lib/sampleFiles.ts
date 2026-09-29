@@ -16,7 +16,7 @@ import type { Pointers } from "@opendaw/studio-enums";
  * decoded buffer from the local sample map, or null.
  */
 export function referSampleFile(
-  project: Project,
+  project: Pick<Project, "boxGraph">,
   filePointer: PointerField<Pointers.AudioFile>,
   uuid: UUID.Bytes,
   name: string,
@@ -61,7 +61,11 @@ export interface SampleLoadHandlers {
  * Terminate the returned handle to cancel a watch that is no longer wanted
  * (for example when another sample has been selected in the meantime).
  */
-export function watchSampleLoad(project: Project, uuid: UUID.Bytes, handlers: SampleLoadHandlers): Terminable {
+export function watchSampleLoad(
+  project: Pick<Project, "sampleManager">,
+  uuid: UUID.Bytes,
+  handlers: SampleLoadHandlers
+): Terminable {
   const loader = project.sampleManager.getOrCreate(uuid);
   const state = loader.state;
   if (state.type === "error") {

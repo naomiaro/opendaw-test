@@ -116,13 +116,20 @@ npm run preview   # Preview build locally
 ```
 src/
 ├── components/                        # Reusable UI components
+│   └── ParamSlider.tsx                # Labelled slider bound to an SDK parameter
 ├── hooks/                             # Custom React hooks
+│   └── useParameterUnit.ts            # React wrapper around the parameter binding
 ├── lib/
 │   ├── projectSetup.ts                # OpenDAW initialization
 │   ├── trackLoading.ts                # Track loading with queryLoadingComplete
 │   ├── groupTrackLoading.ts           # Group bus creation + track routing
 │   ├── audioUtils.ts                  # Format detection, file loading
-│   └── CanvasPainter.ts              # Canvas rendering helper
+│   ├── CanvasPainter.ts              # Canvas rendering helper
+│   ├── sampleFiles.ts                 # Refer and watch in-memory sample files
+│   ├── parameterBinding.ts            # Read, write and observe one parameter
+│   ├── parameterSteps.ts              # Whole-number slider positions for integer parameters
+│   ├── nanoSamples.ts                 # Synthesized samples for the Nano demo
+│   └── testing/                       # Fixtures for unit tests (a real box graph in Node)
 └── demos/
     ├── playback/                      # Playback, editing, and mixing demos
     │   ├── clip-fades-demo.tsx        # Fade curve types

@@ -5,7 +5,7 @@ import { useParameterUnit, type UnitParameter } from "@/hooks/useParameterUnit";
 import { stepIndexToUnit, unitToStepIndex } from "@/lib/parameterSteps";
 
 export interface ParamSliderProps {
-  project: Project;
+  project: Pick<Project, "editing">;
   parameter: UnitParameter;
   label: string;
   /** Unit-space step for a continuous parameter. Ignored when `positions` is set. */
