@@ -4698,7 +4698,8 @@ detail strings are the ones the saved replays hold.
 ### Deliberate breaks
 
 63 breaks of `classifyMultitrackCell`, `firstFrameCheckMs`, `nodeTap.ts` and the
-recorder's processor each fail at least one unit test. The test reviewer ran 32 against
+recorder's processor each fail at least one unit test
+(`node scripts/audit/recording-alignment/stream-tap/node-delay-breaks.ts`). The test reviewer ran 32 against
 the first version of `nodeTap.ts` and 16 survived (5 of them equivalent); the 9 this
 register reported above were too few. Two of the 63 survived the first pass here as
 well (a lone lag accepted, a tap never counted as silent) and have a test each now. One
@@ -4833,23 +4834,27 @@ by each capture's recording worklet; both read `currentTime` in the worklet scop
 - **A lost first chunk.** With the head of the ring lost after the stamp, the sound
   would land a quantum early (adjusted median − node delay one quantum under) and the
   netted median would not move. Both are the other way round.
-- **The harness's reference.** `node .verify-output/clock-check.ts <run>` reads the
+- **The harness's reference.**
+  `node scripts/audit/recording-alignment/stream-tap/clock-check.ts <run>` reads the
   clicks out of each saved WAV, puts them on the context's clock by the row's anchor, and
   compares that with the frame at which the harness's tap, stamped by a worklet's
   `currentFrame`, saw the same click go into the stream. 6 frames on every window that
   opened on the onset of a click, in the anomalous repeat as in all others: 62 windows
   of 96 in `…1790721436525`, 57 of 96 in `…1790721143967`, 32 of 48 in
   `…1790721702824`. The other windows opened on the metronome or part-way into a click
-  and say nothing either way. During the take the worklet clock and the clock the
-  clicks are scheduled on agree.
+  and say nothing either way. No window reads a whole number of quanta off an onset, or
+  a sample before its click was scheduled; with a quantum put into the anchors of a copy
+  of the run, the script flags every window it touches and exits with 1. During the take
+  the worklet clock and the clock the clicks are scheduled on agree.
 - **The capture chain**, as far as the recording-start time goes: the engine's stamp has
   nothing to do with a capture's stream, source node or chain.
 
 ### A worklet's stamp against its block, no SDK
 
-`.playwright-mcp/worklet-clock.page.js` (local). A noise source started at a known frame
-feeds recorder worklets made fresh, as a take's are; the frame a quantum really is
-comes from its content. 48 kHz.
+`worklet-clock.page.js` in `scripts/audit/recording-alignment/stream-tap/`, run with
+`run-worklet-clock.playwright.js`; artifacts `worklet-clock-48000-*.json`. A noise source
+started at a known frame feeds recorder worklets made fresh, as a take's are; the frame
+a quantum really is comes from its content. 48 kHz.
 
 | what was going on when the recorders were made | recordings | quanta | stamp equal to the block's frame | a stamp repeated or skipped |
 |---|---|---|---|---|

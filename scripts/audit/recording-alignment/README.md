@@ -26,12 +26,14 @@ node scripts/audit/recording-alignment/<script>.ts [mode]
 
 ## Browser-side probes (`stream-tap/`)
 
-These run in the browser, not under Node. They measure the delay of a
-`MediaStreamAudioSourceNode` on the context clock, with nothing of the SDK's in the
-figure. The `*.playwright.js` files are passed to the Playwright MCP's tool that runs a
-code snippet against the page (dev server on `https://localhost:5173`); the two `run-*`
-files fetch the page-side script through the dev server's `?raw`, so the text that runs
-is the text in the repo. Artifacts land in `.verify-output/`.
+Probes that run in the browser, the readers of what they save, and two scripts that
+run under Node (`clock-check.ts`, `node-delay-breaks.ts`; both from the repo root, as
+`node scripts/audit/recording-alignment/stream-tap/<script>.ts`). The probes measure on
+the context clock, with nothing of the SDK's in the figure. The `*.playwright.js` files
+are passed to the Playwright MCP's tool that runs a code snippet against the page (dev
+server on `https://localhost:5173`); the `run-*` files fetch the page-side script
+through the dev server's `?raw`, so the text that runs is the text in the repo.
+Artifacts land in `.verify-output/`.
 
 | file | what it does |
 |---|---|
@@ -39,6 +41,9 @@ is the text in the repo. Artifacts land in `.verify-output/`.
 | `two-tap-spike.read.cjs` | Tabulates every `spike-two-tap-*.json`: exactness of the match, skipped quanta, delays and their lattice, how often two nodes on one clone, two nodes on two clones and two recorders on one node agree |
 | `node-tap.init.js` + `run-multitrack-node-tap.playwright.js` + `read-node-tap.playwright.js` | The standing multi-mic run with a probe injected before the page's scripts: it records what goes into the loopback's destination node, and attaches a recorder to each source node the SDK builds, 150 ms after the SDK connects that chain to its recording worklet. Writes `node-tap-<time>.json` beside the run's own `recaudit-mt-summary` |
 | `harness-node-delays.read.cjs <run id>[:<node-tap time>] …` | What the multi-mic page's OWN node taps read, run by run and pooled per sample rate: how many rows have a node delay and why the others do not, `loopbackDelayMs` against the node's delay in frames, `firstFrameCheckMs`, what the two nodes' delays leave of the raw skew. With a node-tap time after the colon it also compares the page's figure with the external probe's, row by row |
+| `clock-check.ts <run id> [scenario]` | Runs under Node. For a run whose rows carry node delays and whose WAVs are saved: puts the reference clicks of each take on the context's clock by the row's anchor, and holds that against the frame at which the page's tap, stamped by a worklet, saw the same click go into the stream. The same few frames on every row means the worklet clock and the clock the clicks are scheduled on agree. A reading whole render quanta off that, or before its click was scheduled, has its own line in the summary and makes the script exit with 1 |
+| `worklet-clock.page.js` + `run-worklet-clock.playwright.js` | No SDK. Recorder worklets made fresh and fed by a noise source started at a known frame; whether the `currentFrame` a worklet is handed is the frame of the block it is handed, read from the block's content. Options hold the main thread, make several recorders at once, and open streams in the same task. Writes `worklet-clock-<rate>-…-<time>.json` |
+| `node-delay-breaks.ts` + `node-delay-breaks.json` | Runs under Node. Deliberate breaks of `classifyMultitrackCell`, `firstFrameCheckMs`, `nodeTap.ts` and the recorder's processor: each entry replaces one piece of source by a wrong one, runs the test file that should notice, and puts the source back. It runs the tests unbroken first and refuses to go on when they fail. An entry whose piece of source is no longer there stops the run: when that code changes, the entry changes with it. While a break is in, the unbroken source is beside the file as `<file>.unbroken`; an interrupt puts it back, and so does the next run |
 | `node-tap.read.cjs <node-tap json> <recaudit-mt-summary json>` | Joins the probe's taps to the run's rows (by tape, and by the SDK connection that precedes the row's first-frame time) and prints, per row, `loopbackDelayMs` against the node's delay, and per repeat, the raw skew against the difference of the two nodes' delays |
 
 The register's figures are persisted in `.verify-output/two-tap-spike-tables.txt`,

@@ -1,0 +1,443 @@
+[
+  {
+    "file": "src/lib/audit/recordingAlignment.ts",
+    "test": "src/lib/audit/recordingAlignment.test.ts",
+    "name": "tolerance: absolute value dropped",
+    "find": "const off = (value: number | null) => value !== null && Math.abs(value) > alignedToleranceMs;",
+    "replace": "const off = (value: number | null) => value !== null && value > alignedToleranceMs;"
+  },
+  {
+    "file": "src/lib/audit/recordingAlignment.ts",
+    "test": "src/lib/audit/recordingAlignment.test.ts",
+    "name": "tolerance exclusive",
+    "find": "const off = (value: number | null) => value !== null && Math.abs(value) > alignedToleranceMs;",
+    "replace": "const off = (value: number | null) => value !== null && Math.abs(value) >= alignedToleranceMs;"
+  },
+  {
+    "file": "src/lib/audit/recordingAlignment.ts",
+    "test": "src/lib/audit/recordingAlignment.test.ts",
+    "name": "tolerance three times too loose",
+    "find": "const off = (value: number | null) => value !== null && Math.abs(value) > alignedToleranceMs;",
+    "replace": "const off = (value: number | null) => value !== null && Math.abs(value) > 3 * alignedToleranceMs;"
+  },
+  {
+    "file": "src/lib/audit/recordingAlignment.ts",
+    "test": "src/lib/audit/recordingAlignment.test.ts",
+    "name": "first-frame: tape a not checked",
+    "find": "const firstFrameOff = firstFrame.filter((f) => off(f.a) || off(f.b)).length;",
+    "replace": "const firstFrameOff = firstFrame.filter((f) => off(f.b)).length;"
+  },
+  {
+    "file": "src/lib/audit/recordingAlignment.ts",
+    "test": "src/lib/audit/recordingAlignment.test.ts",
+    "name": "first-frame: tape b not checked",
+    "find": "const firstFrameOff = firstFrame.filter((f) => off(f.a) || off(f.b)).length;",
+    "replace": "const firstFrameOff = firstFrame.filter((f) => off(f.a)).length;"
+  },
+  {
+    "file": "src/lib/audit/recordingAlignment.ts",
+    "test": "src/lib/audit/recordingAlignment.test.ts",
+    "name": "first-frame: test switched off",
+    "find": "const skewClean = beyondLimit === 0 && firstFrameOff === 0 && leftOver === 0 && !nothingRead",
+    "replace": "const skewClean = beyondLimit === 0 && leftOver === 0 && !nothingRead"
+  },
+  {
+    "file": "src/lib/audit/recordingAlignment.ts",
+    "test": "src/lib/audit/recordingAlignment.test.ts",
+    "name": "left over: test switched off",
+    "find": "const skewClean = beyondLimit === 0 && firstFrameOff === 0 && leftOver === 0 && !nothingRead",
+    "replace": "const skewClean = beyondLimit === 0 && firstFrameOff === 0 && !nothingRead"
+  },
+  {
+    "file": "src/lib/audit/recordingAlignment.ts",
+    "test": "src/lib/audit/recordingAlignment.test.ts",
+    "name": "nothing read: floor switched off",
+    "find": "const skewClean = beyondLimit === 0 && firstFrameOff === 0 && leftOver === 0 && !nothingRead",
+    "replace": "const skewClean = beyondLimit === 0 && firstFrameOff === 0 && leftOver === 0"
+  },
+  {
+    "file": "src/lib/audit/recordingAlignment.ts",
+    "test": "src/lib/audit/recordingAlignment.test.ts",
+    "name": "nothing read: counted on tapes, not on repeats",
+    "find": "const nothingRead = taps !== null && nettedCount > 0 && attributedCount === 0;",
+    "replace": "const nothingRead = taps !== null && nettedCount > 0 && tapesRead === 0;"
+  },
+  {
+    "file": "src/lib/audit/recordingAlignment.ts",
+    "test": "src/lib/audit/recordingAlignment.test.ts",
+    "name": "first-frame check gated on the pair",
+    "find": "const firstFrame = medians.map((_, index) => (taps === null ? { a: null, b: null } : {",
+    "replace": "const firstFrame = medians.map((_, index) => (taps === null || unaccounted[index] === null ? { a: null, b: null } : {"
+  },
+  {
+    "file": "src/lib/audit/recordingAlignment.ts",
+    "test": "src/lib/audit/recordingAlignment.test.ts",
+    "name": "anchor offset ignored",
+    "find": "return loopbackDelayMs - nodeDelayMs - anchorOffsetMs;",
+    "replace": "return loopbackDelayMs - nodeDelayMs;"
+  },
+  {
+    "file": "src/lib/audit/recordingAlignment.ts",
+    "test": "src/lib/audit/recordingAlignment.test.ts",
+    "name": "anchor offset added",
+    "find": "return loopbackDelayMs - nodeDelayMs - anchorOffsetMs;",
+    "replace": "return loopbackDelayMs - nodeDelayMs + anchorOffsetMs;"
+  },
+  {
+    "file": "src/lib/audit/recordingAlignment.ts",
+    "test": "src/lib/audit/recordingAlignment.test.ts",
+    "name": "first-frame check reversed",
+    "find": "return loopbackDelayMs - nodeDelayMs - anchorOffsetMs;",
+    "replace": "return nodeDelayMs - loopbackDelayMs - anchorOffsetMs;"
+  },
+  {
+    "file": "src/lib/audit/recordingAlignment.ts",
+    "test": "src/lib/audit/recordingAlignment.test.ts",
+    "name": "tapped repeats still held to the raw limit",
+    "find": "const limited = medians.filter((_, index) => netted[index] !== null && unaccounted[index] === null);",
+    "replace": "const limited = medians.filter((_, index) => netted[index] !== null);"
+  },
+  {
+    "file": "src/lib/audit/recordingAlignment.ts",
+    "test": "src/lib/audit/recordingAlignment.test.ts",
+    "name": "untapped repeats not held to the raw limit",
+    "find": "const limited = medians.filter((_, index) => netted[index] !== null && unaccounted[index] === null);",
+    "replace": "const limited = medians.filter((_, index) => false);"
+  },
+  {
+    "file": "src/lib/audit/recordingAlignment.ts",
+    "test": "src/lib/audit/recordingAlignment.test.ts",
+    "name": "node delays read without netting",
+    "find": "const taps = netting && options.nodeDelays !== undefined ? options.nodeDelays : null;",
+    "replace": "const taps = options.nodeDelays !== undefined ? options.nodeDelays : null;"
+  },
+  {
+    "file": "src/lib/audit/recordingAlignment.ts",
+    "test": "src/lib/audit/recordingAlignment.test.ts",
+    "name": "node delay record count not checked",
+    "find": "if (taps.pairs.length !== repeatSkews.length) {",
+    "replace": "if (false) {"
+  },
+  {
+    "file": "src/lib/audit/recordingAlignment.ts",
+    "test": "src/lib/audit/recordingAlignment.test.ts",
+    "name": "anchor offset not checked",
+    "find": "if (typeof taps.anchorOffsetMs !== \"number\" || !Number.isFinite(taps.anchorOffsetMs)) {",
+    "replace": "if (false) {"
+  },
+  {
+    "file": "src/lib/audit/recordingAlignment.ts",
+    "test": "src/lib/audit/recordingAlignment.test.ts",
+    "name": "left over read without the loopback delays",
+    "find": "taps !== null && netted[index] !== null ? nettedSkewMs(m, taps.pairs[index]) : null",
+    "replace": "taps !== null ? nettedSkewMs(m, taps.pairs[index]) : null"
+  },
+  {
+    "file": "src/lib/audit/recordingAlignment.ts",
+    "test": "src/lib/audit/recordingAlignment.test.ts",
+    "name": "raw-limit repeats not counted",
+    "find": "repeatsOnRawLimit: limited.length };",
+    "replace": "repeatsOnRawLimit: 0 };"
+  },
+  {
+    "file": "src/lib/audit/recordingAlignment.ts",
+    "test": "src/lib/audit/recordingAlignment.test.ts",
+    "name": "tapes read not counted",
+    "find": "{ tapesRead, repeatsRead: attributedCount,",
+    "replace": "{ tapesRead: 2 * attributedCount, repeatsRead: attributedCount,"
+  },
+  {
+    "file": "src/lib/audit/recordingAlignment.ts",
+    "test": "src/lib/audit/recordingAlignment.test.ts",
+    "name": "tape verdict ignored",
+    "find": "const tapesClean = tapeAClass.status !== \"investigate\" && tapeBClass.status !== \"investigate\";",
+    "replace": "const tapesClean = true;"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "quanta laid out by position, not by stamp",
+    "find": "      const at = chunk.frames[i] - firstFrame;",
+    "replace": "      const at = (chunk.frames[0] - firstFrame) + i * quantumFrames;"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "a chunk read to the end of its arrays",
+    "find": "    for (let i = 0; i < chunk.count; i++) {\n      const at = chunk.frames[i] - firstFrame;",
+    "replace": "    for (let i = 0; i < chunk.frames.length; i++) {\n      const at = chunk.frames[i] - firstFrame;"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "a moved delay reported as the first window's",
+    "find": "if (lags.some((lag) => lag !== lags[0])) {",
+    "replace": "if (false) {"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "only the first two windows compared",
+    "find": "if (lags.some((lag) => lag !== lags[0])) {",
+    "replace": "if (lags[1] !== lags[0]) {"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "inexact match accepted",
+    "find": "const inexact = windows.find((w) => w.meanAbsDifference > NODE_TAP_EXACT_MAX);",
+    "replace": "const inexact = undefined as NodeTapWindow | undefined;"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "exactness loosened to 1e-3",
+    "find": "export const NODE_TAP_EXACT_MAX = 1e-9;",
+    "replace": "export const NODE_TAP_EXACT_MAX = 1e-3;"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "exactness loosened to 1e-6",
+    "find": "export const NODE_TAP_EXACT_MAX = 1e-9;",
+    "replace": "export const NODE_TAP_EXACT_MAX = 1e-6;"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "difference a sum, not a mean",
+    "find": "    meanAbsDifference: bestSum / windowFrames,",
+    "replace": "    meanAbsDifference: bestSum,"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "ambiguous match accepted",
+    "find": "const ambiguous = windows.find((w) => w.runnerUpMeanAbsDifference !== null && w.runnerUpMeanAbsDifference < NODE_TAP_RUNNER_UP_MIN);",
+    "replace": "const ambiguous = undefined as NodeTapWindow | undefined;"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "a lone lag accepted",
+    "find": "const alone = windows.find((w) => w.runnerUpMeanAbsDifference === null);",
+    "replace": "const alone = undefined as NodeTapWindow | undefined;"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "runner-up: the best so far not kept",
+    "find": "      runnerUp = bestSum;\n",
+    "replace": ""
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "runner-up: a later lag not kept",
+    "find": "    } else if (sum < runnerUp) {\n      runnerUp = sum;\n    }",
+    "replace": "    }"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "lags left out not counted",
+    "find": "if (Number.isNaN(sum)) { lagsNotCompared++; continue; }",
+    "replace": "if (Number.isNaN(sum)) { continue; }"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "a missing quantum in the tap's window read as zeros",
+    "find": "if (Number.isNaN(tap.samples[tapAt + k])) return null;",
+    "replace": "if (Number.isNaN(tap.samples[tapAt + k])) tap.samples[tapAt + k] = 0;"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "lag sign reversed",
+    "find": "const refAt = windowStartFrame - lag - reference.firstFrame;",
+    "replace": "const refAt = windowStartFrame + lag - reference.firstFrame;"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "lag search starts at one",
+    "find": "for (let lag = 0; lag <= maxLagFrames; lag++) {",
+    "replace": "for (let lag = 1; lag <= maxLagFrames; lag++) {"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "lag search stops one short",
+    "find": "for (let lag = 0; lag <= maxLagFrames; lag++) {",
+    "replace": "for (let lag = 0; lag < maxLagFrames; lag++) {"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "longest lag halved",
+    "find": "export const NODE_TAP_MAX_LAG_SEC = 0.12;",
+    "replace": "export const NODE_TAP_MAX_LAG_SEC = 0.06;"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "delay in ms computed at 48 kHz whatever the rate",
+    "find": "delayMs: (lags[0] / sampleRate) * 1000,",
+    "replace": "delayMs: (lags[0] / 48000) * 1000,"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "windows all searched from the same place",
+    "find": "const from = Math.max(Math.round(startSec * sampleRate), free);",
+    "replace": "const from = Math.max(Math.round(0.3 * sampleRate), free);"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "windows may be the same window",
+    "find": "    free = opensAt + NODE_TAP_WINDOW_FRAMES;\n",
+    "replace": ""
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "window lead dropped",
+    "find": "const opensAt = Math.max(free, loud - NODE_TAP_WINDOW_LEAD_FRAMES);",
+    "replace": "const opensAt = Math.max(free, loud);"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "tap never silent",
+    "find": "if (Math.abs(tap.samples[i]) > NODE_TAP_LOUD) { tapSilent = false; break; }\n  }\n  const windows",
+    "replace": "if (Math.abs(tap.samples[i]) > 0) { tapSilent = false; break; }\n  }\n  const windows"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "reference missing quanta not reported",
+    "find": "    referenceMissingQuanta: reference.missingQuanta, tapSilent,\n  });",
+    "replace": "    referenceMissingQuanta: 0, tapSilent,\n  });"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "reference lead not on the quantum grid",
+    "find": "return Math.ceil(Math.round(sampleRate * NODE_TAP_MAX_LAG_SEC) / quantumFrames) * quantumFrames;",
+    "replace": "return Math.round(sampleRate * NODE_TAP_MAX_LAG_SEC);"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "reference covers: one quantum early",
+    "find": "return covered !== null && covered.endFrame >= tapSpan.endFrame;",
+    "replace": "return covered !== null && covered.endFrame >= tapSpan.endFrame - 128;"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "reference for: head comparison flipped",
+    "find": "return own !== null && own.endFrame > from && own.firstFrame < tapSpan.endFrame;",
+    "replace": "return own !== null && own.endFrame < from && own.firstFrame < tapSpan.endFrame;"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "reference for: tail not bounded",
+    "find": "return own !== null && own.endFrame > from && own.firstFrame < tapSpan.endFrame;",
+    "replace": "return own !== null && own.endFrame > from;"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "reference for: lead dropped",
+    "find": "const from = tapSpan.firstFrame - referenceLeadFrames(sampleRate);",
+    "replace": "const from = tapSpan.firstFrame;"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "reference never trimmed",
+    "find": "    referenceChunks.shift();",
+    "replace": "    return;"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "reference trimmed to nothing but the last chunk",
+    "find": "if (own !== null && own.endFrame >= covered.endFrame - keepFrames) return;",
+    "replace": "if (false) return;"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "two tapes on one device given the node's delay",
+    "find": "if (deviceId === otherDeviceId) return none(\"both tapes record from one device id\");",
+    "replace": ""
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "a failed tap measured",
+    "find": "if (tap.failed !== null) return { tap, measurement: notMeasured(tap.failed) as NodeDelayMeasurement };",
+    "replace": ""
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "the taps' failure dropped",
+    "find": "if (tapsFailure !== null) return none(`the taps could not be taken: ${tapsFailure}`);",
+    "replace": ""
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "two live nodes: the newest taken",
+    "find": "if (candidates.length > 1) {",
+    "replace": "if (false) {"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "a dropped node taken for the recording one",
+    "find": "const chosen = candidates.length === 1 ? candidates[0] : measured[measured.length - 1];",
+    "replace": "const chosen = measured[0];"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "a throwing measurement not caught",
+    "find": "      return { tap, measurement: notMeasured(`the tap could not be measured: ${String(error)}`) as NodeDelayMeasurement };",
+    "replace": "      throw error;"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "processor: stamp one quantum late",
+    "find": "    this.frames[this.count] = currentFrame;",
+    "replace": "    this.frames[this.count] = currentFrame + 128;"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "processor: runs one quantum over",
+    "find": "if (this.quanta > 0 && this.done >= this.quanta) return false;",
+    "replace": "if (this.quanta > 0 && this.done > this.quanta) return false;"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "processor: the last partial chunk lost",
+    "find": "if (this.count === this.chunkQuanta || (this.quanta > 0 && this.done === this.quanta)) {",
+    "replace": "if (this.count === this.chunkQuanta) {"
+  },
+  {
+    "file": "src/lib/audit/nodeTap.ts",
+    "test": "src/lib/audit/nodeTap.test.ts",
+    "name": "processor: input copied to the wrong quantum",
+    "find": "if (input.length > 0) this.samples.set(input[0], this.count * ${NODE_TAP_QUANTUM_FRAMES});",
+    "replace": "if (input.length > 0) this.samples.set(input[0], 0);"
+  }
+]
