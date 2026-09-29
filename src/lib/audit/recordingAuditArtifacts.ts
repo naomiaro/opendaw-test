@@ -43,6 +43,17 @@
  * adds nothing; `asClassifiable` passes `loopbackDelayMs` through and the offline scripts
  * only net when they pass `netLoopbackDelay` themselves.
  *
+ * G6 sub-case, node taps: a multitrack envelope that has the key `anchorOffsetMs` was
+ * written by a page that listened to the source node each tape recorded through. Its rows
+ * carry `nodeDelayMs` (null with a reason in `nodeDelayUnmeasured` where a tap read
+ * nothing), `firstFrameCheckMs` and `medianSkewMsUnaccounted`. `anchorOffsetMs` has three
+ * states:
+ *  - a number: the verdict read the node delays, with this offset. How much it had to
+ *    judge by is in each cell's `nodeDelayUse`;
+ *  - null: the taps ran and the rows carry their figures, but the profile does not net,
+ *    so the verdict did not read them;
+ *  - absent: no taps, and every netted repeat was held to the raw limit.
+ *
  * Beat grid: G6 persists `beatGrid`. For every earlier generation the grid is
  * decided by the run id — the absolute grid shipped mid-session, and the first
  * run measured on it is `ABSOLUTE_GRID_FROM_RUN`; nothing in those envelopes
@@ -52,7 +63,8 @@
  * generation; the loader throws when they are absent or unknown rather than
  * defaulting.
  */
-import type { CellStatus, CrossTrackSkew, SignatureBand } from "./recordingAlignment";
+import type { CellStatus, CrossTrackSkew, NodeDelayUse, SignatureBand } from "./recordingAlignment";
+import type { NodeTapWindow } from "./nodeTap";
 // Value imports with an explicit `.ts` extension: this module sits in the Node
 // scripts' import chain (type stripping resolves nothing without it).
 import { formatTwoDecimals } from "./recordingAlignment.ts";
@@ -180,6 +192,36 @@ export interface MultitrackAuditRow extends TakeRowBase {
    *  envelope's profile nets, and on the raw `medianSkewMs` otherwise — as it
    *  did for every row that lacks the field. */
   medianSkewMsNetted?: number | null;
+  /** Node taps: the delay of the source node this tape recorded through, as the
+   *  harness's own tap read it on the context clock — nothing of the SDK's is in
+   *  it. Null when the tap read nothing; `nodeDelayUnmeasured` says why. */
+  nodeDelayMs?: number | null;
+  nodeDelayFrames?: number | null;
+  nodeDelayUnmeasured?: string | null;
+  /** Every window the tap was compared at, whatever came of it. */
+  nodeTapWindows?: NodeTapWindow[];
+  /** Context times: when the tapped node was created and when the tap was attached. */
+  nodeSourceCreatedAtSec?: number | null;
+  nodeTapAttachedAtSec?: number | null;
+  /** Source nodes built on this tape's device since the repeat before, all of them
+   *  tapped. 0 when none was built: the node is one tapped before. */
+  nodeTapNodesBuilt?: number | null;
+  /** Of the nodes tapped on this tape's device, those that were not silent. One is
+   *  the node that recorded; with more, no delay is given. */
+  nodeTapCandidates?: number | null;
+  /** Render quanta the tap's recorder did not deliver, and quanta the reference
+   *  lacks over the stretch the tap was compared with. A delay can be read all the same. */
+  nodeTapMissingQuanta?: number | null;
+  nodeTapReferenceMissingQuanta?: number | null;
+  /** Node taps: `loopbackDelayMs − nodeDelayMs − ANCHOR_OFFSET_MS` of the build that
+   *  wrote the row; zero when the SDK's first-frame time is true. Null when either
+   *  delay is unknown. */
+  firstFrameCheckMs?: number | null;
+  /** Node taps: `medianSkewMs` with the two tapes' NODE delays taken out,
+   *  `medianSkewMs − (node delay b − node delay a)`, on both tapes' rows; what of
+   *  the raw skew the nodes do not account for. Null when the skew, a node delay or
+   *  a loopback delay is unknown, as in the verdict. */
+  medianSkewMsUnaccounted?: number | null;
 }
 
 export interface ReferenceScheduleDescriptor {
@@ -200,6 +242,9 @@ export interface CellVerdictRecord {
   detail: string;
   successfulRepeats: number;
   errorRepeats: number;
+  /** Multitrack cells of a run with node taps: how much the node delays gave the
+   *  verdict to judge by. Null when the verdict did not read them. */
+  nodeDelayUse?: NodeDelayUse | null;
 }
 
 interface SummaryBase {
@@ -254,6 +299,10 @@ export interface MultitrackAuditSummary extends SummaryBase {
   /** The most the raw skew of a netted repeat was allowed to be; null when the run's
    *  profile does not net the loopback delay, so no limit applied. */
   rawSkewLimitMs: number | null;
+  /** What `loopbackDelayMs` exceeds a node's delay by when the first-frame time is
+   *  true, as the verdict applied it; null when the taps ran and the verdict did not
+   *  read them (the profile does not net). Absent when there were no taps. */
+  anchorOffsetMs?: number | null;
   confirmCollision: boolean;
   rows: MultitrackAuditRow[];
   cellSkews: MultitrackCellSkew[];
@@ -316,6 +365,8 @@ export interface LoadedMultitrackAuditSummary {
   skewToleranceMs: number;
   /** null when no limit applied — the profile does not net, or the envelope predates the field. */
   rawSkewLimitMs: number | null;
+  /** null when the verdict read no node delays: no taps, or a profile that does not net. */
+  anchorOffsetMs: number | null;
   outputLatencySec: number | null;
   harnessPathBiasSec: number;
   /** false when the flag is absent: it was introduced with the dedicated
@@ -387,6 +438,16 @@ function rawSkewLimitOf(top: Record<string, unknown>, runId: number): number | n
   if (v === undefined || v === null) return null;
   if (typeof v !== "number" || !Number.isFinite(v) || v <= 0) {
     throw new Error(`recaudit mt summary ${runId}: unexpected rawSkewLimitMs ${JSON.stringify(v)}`);
+  }
+  return v;
+}
+
+/** Absent or null: the verdict read no node delays. Anything else has to be a time. */
+function anchorOffsetOf(top: Record<string, unknown>, runId: number): number | null {
+  const v = top.anchorOffsetMs;
+  if (v === undefined || v === null) return null;
+  if (typeof v !== "number" || !Number.isFinite(v)) {
+    throw new Error(`recaudit mt summary ${runId}: unexpected anchorOffsetMs ${JSON.stringify(v)}`);
   }
   return v;
 }
@@ -486,6 +547,7 @@ export function parseMultitrackAuditSummary(json: unknown, runId: number): Loade
     alignedToleranceMs: requireNumber(json, "alignedToleranceMs", runId),
     skewToleranceMs: requireNumber(json, "skewToleranceMs", runId),
     rawSkewLimitMs: rawSkewLimitOf(json, runId),
+    anchorOffsetMs: anchorOffsetOf(json, runId),
     outputLatencySec: optionalNumber(json, "outputLatency"),
     harnessPathBiasSec: persistedBias ?? 0,
     confirmCollision: json.confirmCollision === true,

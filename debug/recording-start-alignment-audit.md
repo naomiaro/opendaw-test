@@ -4311,3 +4311,487 @@ reversed, the tape verdict ignored, …) each fail at least one unit test.
   cell's record beside the verdict. The single-tape page follows the same convention.
 - **Standing sweep:** unchanged URL. One multi-mic run is 16 recordings and takes about
   2.5 minutes.
+
+## Whose skew it is: the source nodes', measured (2026-09-29)
+
+Same SDK (`@opendaw/studio-sdk@0.0.172`, `release` profile), harness code as merged. The
+measurements here are injected into the page from outside; nothing in `src/` changed.
+Chromium 154 (the Playwright browser every run of this register's last three sections
+used). Scripts: `scripts/audit/recording-alignment/stream-tap/`.
+
+The section above left one question: in 50 of 120 multi-mic repeats the two buffers hold
+the same sound up to 10.67 ms apart, and the runs could not say whether that is the two
+loopback streams or an SDK first-frame time that is off. It proposed tapping each
+loopback stream. **A tap on the stream cannot answer it; a tap on the SDK's own source
+node can, and does: the skew is the two source nodes' own delays, to the frame, on every
+repeat measured.**
+
+### The two-tap spike: a second consumer has its own delay
+
+`two-tap-spike.page.js`. No SDK, no harness: one `MediaStreamAudioDestinationNode` fed
+with white noise in a context built the way the demos build theirs
+(`{ latencyHint: 0, sampleRate }`). Per open, two clones of its stream and two
+`MediaStreamAudioSourceNode`s on each clone (A, B on one clone; C, D on the other), every
+node into its own recorder worklet that stamps each render quantum with `currentFrame`.
+One more recorder takes the noise directly. A tap's delay is the lag, in whole frames, at
+which its recording equals the direct one.
+
+The match is exact: mean absolute difference 0 at the matched lag on all 2640 windows,
+0.13 at the runner-up. The loopback path is a pure delay of whole frames.
+
+| variant | rate | opens | same clone, two nodes: delays equal | largest difference | two clones, two nodes started in one task: equal | largest difference |
+|---|---|---|---|---|---|---|
+| `together` — all four created and connected in one task | 48 kHz | 40 | 39 of 80 | 128 frames, 2.67 ms | 54 of 80 | 480 frames, 10.00 ms |
+| `together` | 44.1 kHz | 40 | 51 of 80 | 128 frames, 2.90 ms | 51 of 80 | 128 frames, 2.90 ms |
+| `staggered` — created together, B and D connected 5–100 ms after A and C | 48 kHz | 40 | 4 of 80 | 576 frames, 12.00 ms | 64 of 80 | 480 frames, 10.00 ms |
+| `lateCreate` — B and D created and connected 5–100 ms after A and C | 48 kHz | 40 | 20 of 80 | 576 frames, 12.00 ms | 59 of 80 | 384 frames, 8.00 ms |
+
+- **Two nodes on the SAME clone disagree.** Created and connected in one task they are one
+  render quantum apart in 41 of 80 pairs at 48 kHz and 29 of 80 at 44.1 kHz. Started
+  5–100 ms apart they agree in 24 of 160 pairs and differ by up to 12.00 ms.
+- **Sharing a clone does not make two nodes agree.** Started in one task, two nodes
+  differ in 41 of 80 pairs on one clone and in 26 of 80 on two (48 kHz), in 29 of 80 and
+  29 of 80 (44.1 kHz).
+- So the delay is set per consuming node, when the node starts. A tap that opens its own
+  node measures its own node.
+
+**The spike reproduces the register's raw skew without any SDK code.** Two nodes on two
+clones, started in one task, 48 kHz, 240 pairs pooled: 0 quanta ×177, 1 ×55, 0.25 ×2,
+0.75 ×1, 2.75 ×1, 3 ×1, 3.75 ×3. The 120 multi-mic repeats of the section above: 0 ×70,
+1 ×43, 0.75 ×1, 2 ×1, 2.75 ×1, 3 ×3, 4 ×1. The delays themselves take the same values:
+448 to 1024 frames here, every one a multiple of 32; the 12 `loopbackDelayMs` values
+listed above are 448, 480, 512, 576, 608, 704, 832, 864, 896, 960, 992 and 1024 frames
+plus the harness's 14.
+
+A first pass of the spike indexed each recording from its first quantum and assumed the
+rest followed without a gap. At 48 kHz some recorders do not: 18 of 600 tap recordings
+and 6 of 150 direct ones either miss the quantum after their first, or have a quantum
+whose `currentFrame` repeats the one before, followed by a jump of two. Those four
+artifacts were deleted. The figures here are from the second pass, which lays every
+quantum out at the frame it was stamped with and refuses a window that touches a missing
+one (0 of 2640 refused).
+
+### A second listener on the same node reads the same delay
+
+Variant `sameNode`: one source node per clone, and a second recorder attached to that
+same node 5–100 ms after the first (to the node's gain on one clone, to the node itself
+on the other).
+
+| rate | opens | same node, two recorders: delays equal |
+|---|---|---|
+| 48 kHz | 30 | 60 of 60 |
+| 44.1 kHz | 30 | 60 of 60 |
+
+That is what makes a measurement possible: a recorder attached to the node the SDK
+created reads that node's delay, and attaching it late does not change when the node
+starts being pulled.
+
+### The 32-frame lattice, and a delay that moves at 44.1 kHz
+
+At 44.1 kHz the delays show no lattice (62 distinct values in 160), and in 6 of 70 opens
+a tap's delay changed inside the recording — every time by exactly 441 frames, every
+time upward, between 0.4 s and 1.0 s after the node started, which is as far as a
+recording looks (for example 560 → 1001 frames). In five of the six every node of the
+open moved, at the same moment; in one, one node moved and the other did not. At 48 kHz
+no delay moved in 150 opens.
+
+441 frames is 10 ms at 44.1 kHz. A path that carries audio in 10 ms chunks between
+128-frame quanta puts every delay on a lattice of gcd(chunk, 128) frames: gcd(480, 128)
+= 32 at 48 kHz, gcd(441, 128) = 1 at 44.1 kHz. That accounts for the lattice this
+register could not explain, and for its absence at 44.1 kHz. The 10 ms chunk is inferred
+from the 441-frame steps, not read from Chromium's source.
+
+### The node tap: the SDK's own chains, two multi-mic runs
+
+`node-tap.init.js`, injected before the page's scripts. It records whatever is connected
+to the loopback's `MediaStreamAudioDestinationNode`, continuously, as the reference. When
+the SDK connects a capture chain's gain to its recording worklet, the probe waits 150 ms
+and attaches a recorder to that chain's SOURCE node for 2 s. The delay is read as in the
+spike, at three windows. Nothing of the SDK's enters it: no first-frame time, no buffer,
+no region.
+
+`?scenario=multitrack-all&bpm=120&rate=48000`, fresh page load each:
+
+| summary | probe | rows | taps measured | verdicts | head/tail deficits | `loopbackDelayMs` − node delay | raw skew − (node delay b − a), per repeat |
+|---|---|---|---|---|---|---|---|
+| `recaudit-mt-summary-1790716387848.json` | `node-tap-1790716524453.json` | 32 | 32 | `start` `investigate`, `janked` `aligned` — see "The probe's own effect" | repeat 1 of `start`: 81.7 ms head, both tapes | 14 frames on 32 of 32 | 0.00 ms on 16 of 16 |
+| `recaudit-mt-summary-1790716602960.json` | `node-tap-1790716739522.json` | 32 | 32 | 2 of 2 `aligned` | 0 on 32 rows | 14 frames on 32 of 32 | 0.00 ms on 16 of 16 |
+
+Every tap matched exactly (mean absolute difference 0), at the same lag in all three
+windows, with no quantum skipped.
+
+- **`loopbackDelayMs` is the node's delay plus 14 frames on all 64 rows**, to within
+  1e-6 frame. `loopbackDelayMs` is the SDK's first-frame time minus the harness's anchor;
+  the node delay uses neither. They can only agree on every row if the buffer's first
+  frame is at the context time the SDK says it is. The 14 frames are the harness's own
+  constant (the "14" of "The chain state" above), now measured against an independent
+  figure.
+- **The raw skew is the difference between the two nodes' delays on all 32 repeats**,
+  the largest remainder 8.7e-7 ms. 12 of the 32 had a raw skew that is not zero:
+
+| run | cell, repeat | raw skew b − a (ms) | node delays a, b (frames) | node delay b − a (ms) | first-frame times b − a |
+|---|---|---|---|---|---|
+| `…1790716387848` | start r2 | 2.67 | 448, 576 | 2.67 | 0 |
+| | start r6 | −7.33 | 1024, 672 | −7.33 | 2 quanta |
+| | start r8 | −2.67 | 992, 864 | −2.67 | 0 |
+| | janked r2 | −2.67 | 576, 448 | −2.67 | 0 |
+| | janked r3 | 10.00 | 448, 928 | 10.00 | 0 |
+| `…1790716602960` | start r1 | −7.33 | 928, 576 | −7.33 | 0 |
+| | start r2 | −2.67 | 576, 448 | −2.67 | 0 |
+| | start r3 | 10.00 | 448, 928 | 10.00 | 0 |
+| | start r5 | 2.67 | 896, 1024 | 2.67 | 0 |
+| | start r6 | 10.00 | 448, 928 | 10.00 | 0 |
+| | start r8 | −2.67 | 576, 448 | −2.67 | 1 quantum |
+| | janked r3 | −2.67 | 992, 864 | −2.67 | 1 quantum |
+
+  Of the four cases in the table of "Where the raw skew comes from", three occur here.
+  First-frame times apart with no skew (the 11 of 120) does not: the 20 repeats with no
+  skew all have equal first-frame times.
+
+### How the SDK stamps the first frame
+
+`RecordingProcessor.process` (`packages/studio/core-processors/src/RecordingProcessor.ts`)
+posts the worklet's `currentTime` on the first call whose input carries the configured
+number of channels, and writes the input to the ring in the same call.
+`RingBuffer.writer.write` drops a call whose input has any other number of channels. The
+two tests are the same test, so ring frame 0 and the stamp belong to one quantum.
+`RecordingWorklet` keeps the head of the ring when it finalizes. By the code the
+first-frame time is exact; the 64 rows above are the measurement that agrees with it.
+
+### The probe's own effect
+
+In the first run the probe loaded its recorder module when the loopback attached. That
+run's first take started 117.3 ms after its record request (0 to 5.3 ms on the first
+take of 22 other runs of this harness, 10.7 ms at most on any of their rows), lost its
+head, and the head gate fired:
+raw head deficit 107.7 ms, 81.7 ms after the baseline, both tapes, cell `investigate`.
+The take was still placed right: netted median +1.15 ms, like every other row. The
+probe now loads the module when the context is constructed; the second run's first take
+started 2.7 ms after its request and the run read 32 of 32 `aligned`.
+
+That is the first time this register shows the head gate firing on a late start that
+really happened. It was caused by the probe, not by the SDK.
+
+The taps themselves attach after the SDK's own connection and the second run's rows are
+unremarkable (netted +1.146 on every row, raw skew 0 ×9, 1 quantum ×4, 2.75 ×1, 3.75 ×2),
+but two runs cannot show that a tap changes nothing.
+
+### Reading
+
+- **Settled, for the repeats measured:** the raw multi-mic skew is the difference between
+  the delays of the two `MediaStreamAudioSourceNode`s the SDK's two captures consume
+  their streams through. The SDK contributes 0.00 ms on 32 of 32 repeats, and its
+  first-frame time is true on 64 of 64 rows. The skew is the browser's, reached through
+  this harness's synthetic streams.
+- **The 50 repeats of the section above are not re-measured** and cannot be: they carry
+  no node delay. What carries over is the mechanism — the same build, the same browser,
+  the same delay values, the same distribution of differences — not a measurement of
+  those repeats.
+- **Rule 3 can become a test.** With a node delay on every row, "raw skew within 15 ms"
+  can be replaced by two checks that have a reason: `loopbackDelayMs` − node delay equals
+  the harness constant, and raw skew − node-delay difference is within the skew
+  tolerance. A capture that lost 30 ms from its head while reporting the same first-frame
+  time would fail the first. That change is the next section.
+- **Not established:** any of this on real input devices, where the node's delay sits on
+  top of the device's own; any browser but Chromium. Multi-mic at 44.1 kHz, where a
+  node's delay can move by 10 ms in the first second, is in the next section.
+- **For an application:** two inputs recorded together in Chromium can land up to four
+  render quanta apart for reasons that are not in the SDK and not in the devices. An
+  input-latency calibration that measures each capture's chain would take it out, as long
+  as the chain it measured is the chain that records.
+
+## Node delays in the harness: rule 3 becomes two tests (2026-09-29)
+
+Same SDK (`@opendaw/studio-sdk@0.0.172`, `release` profile), same browser. The change is
+in the harness: the multi-mic page now listens to the source node each tape records
+through, every row carries that node's delay, and the verdict uses it.
+
+### What the page does
+
+- `installLoopbackCapture(..., { nodeTaps: true })` keeps track of the source nodes the
+  SDK builds on the streams it handed out (it wraps `createMediaStreamSource` on the one
+  context, not on the prototype). `prepareNodeTaps()` loads the recorder and starts
+  recording what goes into the stream; the page waits for it before anything records.
+- Once both takes have a region, `tapSourceNodes()` attaches a recorder to the newest
+  source node of each device for 2 s. The taps were attached 32 to 232 ms after the
+  take's first frame.
+- After the take, `measureNodeDelay` (`src/lib/audit/nodeTap.ts`) reads each node's delay
+  at three windows. It counts as read only when all three were found, every match is
+  exact (mean absolute difference 0 measured; 1e-9 allowed) and clearly better than the
+  next best lag, and all three give the same lag. Otherwise the row carries
+  `nodeDelayMs: null` and the reason in `nodeDelayUnmeasured`.
+- Rows carry `nodeDelayMs`, `nodeDelayFrames`, `nodeTapWindows`, `firstFrameCheckMs` and
+  `medianSkewMsUnaccounted`; the envelope carries `anchorOffsetMs`.
+
+### What the verdict is
+
+This is the rule the five runs of this section ran under. The PR review changed it in
+three places before it was merged; the rule as merged is in "After the review" below.
+
+On a profile that nets, a multi-mic cell is `aligned` when:
+
+1. Both tapes classify clean, as before.
+2. The netted skew is within 2 ms on every repeat, as before.
+3. On a repeat where both node delays were read:
+   - **each tape's first-frame time is true**: `loopbackDelayMs` − node delay −
+     `ANCHOR_OFFSET_MS` is within 2 ms;
+   - **the raw skew is what the nodes' delays differ by**: raw skew − (node delay b −
+     node delay a) is within 2 ms.
+4. On a repeat where a tap read nothing, the raw skew is within 15 ms — the rule of the
+   section before last, kept as the fallback, and still fitted. The detail says how many
+   repeats it judged and that those are not attributed.
+
+The first test of rule 3 is the one nothing else in the harness can make. When both
+captures start later than the times given for them, by the same amount, the raw skew,
+the netted skew and what the nodes leave over are all unchanged; only
+`firstFrameCheckMs` moves. A capture that lost 30 ms from the head of its buffer while
+reporting the same first-frame time now fails, where the section before last showed it
+passing everything below 38 ms.
+
+`ANCHOR_OFFSET_MS` is 14 frames at 48 kHz, 0.2917 ms. It is how late the harness's
+anchor is: the onset detector marks a reference click at the first sample above a
+quarter of its peak, and a click rises over 1 ms at 6 kHz, which is 14 frames in at
+48 kHz. Measured, `loopbackDelayMs` − node delay is 14.000 frames on 96 of 96 rows at
+48 kHz and 13.000 frames (0.2948 ms) on 60 of 60 at 44.1 kHz. One value serves both
+rates; the difference is 0.003 ms.
+
+A run without taps replays as it ran: `task13` passes node delays only for an envelope
+that carries `anchorOffsetMs`. The four offline oracles diff empty.
+
+### Five runs
+
+`?scenario=multitrack-all&bpm=120`, each on a fresh page load.
+`node scripts/audit/recording-alignment/stream-tap/harness-node-delays.read.cjs`, output
+in `.verify-output/harness-node-delays.txt`.
+
+| summary | rate | rows | node delay read | `loopbackDelayMs` − node delay | repeats with both delays | raw skew not zero | largest raw skew | largest left over | verdicts |
+|---|---|---|---|---|---|---|---|---|---|
+| `recaudit-mt-summary-1790717815603.json` | 48 kHz | 32 | 32 | 14.000 frames ×32 | 16 of 16 | 8 | 2.67 ms | under 1e-6 ms | 2 of 2 `aligned` |
+| `recaudit-mt-summary-1790718468583.json` | 48 kHz | 32 | 32 | 14.000 frames ×32 | 16 of 16 | 6 | 10.00 ms | under 1e-6 ms | 2 of 2 `aligned` |
+| `recaudit-mt-summary-1790718756124.json` | 48 kHz | 32 | 32 | 14.000 frames ×32 | 16 of 16 | 9 | 10.00 ms | under 1e-6 ms | 2 of 2 `aligned` |
+| `recaudit-mt-summary-1790717974643.json` | 44.1 kHz | 32 | 30 | 13.000 frames ×30 | 15 of 16 | 5 | 2.90 ms | under 1e-6 ms | 2 of 2 `aligned` |
+| `recaudit-mt-summary-1790718614685.json` | 44.1 kHz | 32 | 30 | 13.000 frames ×30 | 15 of 16 | 9 | 8.71 ms | under 1e-6 ms | 2 of 2 `aligned` |
+
+No error rows, head and tail deficits 0 on all 160 rows, 34 streams opened per run, first
+take 0 to 5.3 ms after its request, netted median +1.146 ms on every 48 kHz row and
++1.156 ms on every 44.1 kHz row. The first and the fourth run were made before the
+comments in `src/` reached their final wording; nothing but comments changed after them.
+
+**Pooled: 78 repeats with both node delays, 37 of them with a raw skew that is not zero
+(up to 10.00 ms), and on all 78 the raw skew is the difference of the two nodes' delays
+to within 1e-6 ms. First-frame times true on 156 of 156 rows read.**
+
+These are the first multi-mic runs at 44.1 kHz. The raw skew there is 0 or whole render
+quanta of 2.90 ms (0 ×18, 1 ×13, 3 ×1); the node delays take 35 distinct values between
+514 and 994 frames.
+
+### The harness's taps against the external probe
+
+Two of the runs had the injected probe of the section above running beside the
+harness's own taps: two recorders on each source node, attached at different moments by
+different code.
+
+| summary | probe | rows both read | equal |
+|---|---|---|---|
+| `…1790718468583` (48 kHz) | `node-tap-1790718605417.json` | 32 | 32 |
+| `…1790717974643` (44.1 kHz) | `node-tap-1790718111355.json` | 30 | 30 |
+
+On the two rows of the 44.1 kHz run that the harness did not read, the probe saw the
+same three lags the harness gave as its reason.
+
+### A delay that moved inside the take, 44.1 kHz
+
+In each 44.1 kHz run one repeat has no node delay, on both tapes, for the same reason:
+the delay moved inside the tap by 441 frames, 562 → 1003 in one run and 434 → 875 in the
+other, between 0.4 s and 1.0 s after the take's first frame. Both nodes moved together
+and by the same amount, so the raw skew of those repeats is 0.00. Both times it was
+repeat 2 of `multitrack-start`, the second take after the page load. On those four rows
+`loopbackDelayMs` is the delay AFTER the move plus 13 frames (1016 and 888 frames): the
+anchor is a median over the take's clicks, and most of them come after the move.
+
+Those two repeats were held to rule 4. What a 10 ms step in the first second does to the
+audio of the take was not looked at. It is the stream's, not the SDK's: the spike shows
+the same step with no SDK on the page.
+
+### The verdict can fail
+
+- With the two tapes' taps swapped in the page's call, a run of `multitrack-start` read
+  16 of 16 rows `investigate`: "first-frame time off by more than 2ms on 3/8 repeat(s)",
+  the three repeats whose raw skew was one quantum, with `firstFrameCheckMs` ∓2.67 ms and
+  5.33 ms left over. The five repeats whose nodes had equal delays passed, as they must.
+  Reverted; that run's files were deleted.
+- 25 deliberate breaks of `classifyMultitrackCell`, `firstFrameCheckMs` and `nodeTap.ts`
+  (63 after the review, below) each fail at least one unit test: an absolute value dropped, a tape not checked, the
+  tolerance exclusive or three times too loose, a test switched off, the anchor offset
+  ignored, added or the check reversed, tapped repeats still held to the raw limit and
+  untapped ones not, node delays read without netting, quanta laid out by position, a
+  moved delay reported as the first window's, an inexact or an ambiguous match accepted,
+  a missing quantum read as zeros, the lag's sign reversed, and others. Three of the
+  first sixteen survived until two tests were added: both first-frame times off by the
+  same amount, and a remainder that is negative.
+
+### Reading
+
+- **Closed:** each multi-mic row carries a delay measured without the SDK, and rule 3 is
+  a test with a reason wherever a tap read a delay: 156 of 160 rows in these runs.
+- **Kept, with its reason:** the 15 ms limit, for a repeat where a tap read nothing. It
+  is still fitted. In these runs it judged 2 of 80 repeats, both with a raw skew of 0.00.
+- **What `aligned` means now**, on a repeat with node delays: the SDK placed both takes
+  the same way against its own first-frame times, those times are true, each tape is
+  clean on its own, and the two buffers hold the sound exactly as far apart as the two
+  source nodes delivered it. It still does not mean the two recordings line up: they are
+  up to 10.00 ms apart in these runs, in 37 of 78 repeats. That distance is the
+  browser's.
+- **Not established:** real input devices; any browser but Chromium; the single-tape
+  scenarios, whose rows carry no node delay and whose netted verdict is as blind to the
+  buffer as it was (their head and tail gates aside); what the 441-frame step does to a
+  take at 44.1 kHz.
+- **Standing sweep:** the multi-mic URL is unchanged and costs the same 2.5 minutes. A
+  run at `rate=44100` is now known to work and takes as long.
+
+## After the review: the rule as merged, and one repeat that fails it (2026-09-29)
+
+The PR review (five reviewers: code, tests, silent failures, comments, types) found one
+defect in the verdict and a number of places where a failed measurement could pass for
+something else. This section is what changed, the runs on the code as merged, and a
+repeat in those runs that reads `investigate` and should.
+
+### What the review found, and what was done
+
+| finding | what was wrong | now |
+|---|---|---|
+| A failing first-frame check was dropped when the other tape's tap read nothing | The check is per tape and was gated on both node delays. With tape a 30 ms off and tape b unread the cell read `aligned`, "node delays on 0/1", while the row carried `firstFrameCheckMs: 30` | Each tape with a node delay and a loopback delay is checked, whatever became of the other |
+| A cell in which every tap failed read `aligned` | The only trace was "node delays on 0/2" inside the detail | A cell where taps were given and no netted repeat has both node delays is `investigate`, and says it is not a finding about the SDK. `nodeDelayUse` on the verdict and in `cellVerdicts` counts tapes read, repeats read and repeats on the raw limit; the page's header counts rows read |
+| Three windows could be one window | With signal only late in the tap all three opened at the same frame, and "the delay did not move" was not tested | Windows do not overlap; a tap with signal for fewer than three reads "no signal from … on" |
+| A rejected `tapSourceNodes()` was persisted as "no source node was built on …" | A statement about the SDK for a failure of the harness | The reason is "the taps could not be taken: …"; a device that was not tapped lists the devices that were |
+| One timeout message for three failures | Tap never delivered, reference never caught up, or a processor threw | The message says what was received; both recorders report a processor error; a reference that stopped fails every later tap with its reason |
+| Two live nodes on one device | The newest node was tapped whether or not it was the one recording | Every node built since the repeat before is tapped. One that the SDK dropped is silent; with two that carry signal no delay is given |
+| `Infinity` as runner-up became `null` in JSON against a `number` | | `number \| null`; a window where one lag alone could be compared is not read |
+| A gap in the reference read "no exact match … best lag 0" | It pointed at the signal path | "no match … among the lags that could be compared; N could not be, the reference has a gap there". Quanta missing from the tap and from the reference are on the row |
+| Replay used the constant, not the run's offset | A later change of `ANCHOR_OFFSET_MS` would have moved old verdicts | `task13` replays with the envelope's `anchorOffsetMs` and says so when the two differ |
+| The external probe wrote −2 and −3 for windows it did not read, and its reader took them for delays | | The probe writes null and a reason; both readers count a tap as read only when every window gave the same lag exactly |
+| `nodeDelayOf` was in the page, untested | | `nodeDelayFor` in `nodeTap.ts`, with the reference selection, the wait predicate, the trim and the recorder's processor, all tested in Node |
+
+The comments carried five errors of fact, corrected: the runner-up margin (the smallest
+next best difference in the saved runs is 0.0012, against a threshold of 0.0001, not
+"0.009 or more"); the longest delay measured (22.8 ms); "it never rejects"; the anchor
+being early, not late; and `firstFrameCheckMs` being "the only figure that moves" — it
+is the only one that tells a buffer that does not start where the SDK says apart from
+the node's own delay.
+
+### The rule as merged
+
+On a profile that nets, with node delays given, a multi-mic cell is `aligned` when:
+
+1. Both tapes classify clean.
+2. The netted skew is within 2 ms on every repeat.
+3. Every tape whose node delay was read has a first-frame time that is true to 2 ms.
+4. Every repeat with both node delays has a raw skew that is what the two delays differ
+   by, to 2 ms.
+5. Every netted repeat without both node delays has a raw skew within 15 ms (fitted; not
+   attributed).
+6. At least one netted repeat has both node delays.
+
+Without node delays given (a run that had no taps) it is rules 1, 2 and 5, and the
+detail strings are the ones the saved replays hold.
+
+### Deliberate breaks
+
+63 breaks of `classifyMultitrackCell`, `firstFrameCheckMs`, `nodeTap.ts` and the
+recorder's processor each fail at least one unit test. The test reviewer ran 32 against
+the first version of `nodeTap.ts` and 16 survived (5 of them equivalent); the 9 this
+register reported above were too few. Two of the 63 survived the first pass here as
+well (a lone lag accepted, a tap never counted as silent) and have a test each now. One
+pass reported 63 of 63 caught while a test of the baseline was failing, which catches
+everything; it was discarded and run again on a passing baseline.
+
+`ANCHOR_OFFSET_MS` has a test of its own (`anchorOffset.test.ts`): clicks made the way
+the loopback makes them, through `bandSplit`, `detectOnsets`, `identifyReferenceClicks`
+and `estimateAnchorT0`, put the anchor 14 frames early at 48 kHz and 13 at 44.1 kHz.
+
+### Seven runs on the code as merged
+
+Each on a fresh page load. Output of `harness-node-delays.read.cjs` in
+`.verify-output/harness-node-delays-after-review.txt`; replays in
+`.verify-output/task13-node-delay-runs-48000.txt` and `…-44100.txt`.
+
+| summary | rate | scenarios | rows | node delay read | `loopbackDelayMs` − node delay | raw skew not zero | largest | verdicts |
+|---|---|---|---|---|---|---|---|---|
+| `recaudit-mt-summary-1790721143967.json` | 48 kHz | both | 32 | 32 | 14 frames ×32 | 4 of 16 | 2.67 ms | 2 of 2 `aligned` |
+| `recaudit-mt-summary-1790721436525.json` | 48 kHz | both | 32 | 32 | 14 frames ×30, **−114 ×2** | 7 of 16 | 10.00 ms | `start` `aligned`, **`janked` `investigate`** |
+| `recaudit-mt-summary-1790721702824.json` | 48 kHz | janked | 16 | 16 | 14 frames ×16 | 3 of 8 | 7.33 ms | 1 of 1 `aligned` |
+| `recaudit-mt-summary-1790721770406.json` | 48 kHz | janked | 16 | 16 | 14 frames ×16 | 5 of 8 | 8.00 ms | 1 of 1 `aligned` |
+| `recaudit-mt-summary-1790721838086.json` | 48 kHz | janked | 16 | 16 | 14 frames ×16 | 2 of 8 | 7.33 ms | 1 of 1 `aligned` |
+| `recaudit-mt-summary-1790721290225.json` | 44.1 kHz | both | 32 | 30 | 13 frames ×30 | 8 of 15 | 8.71 ms | 2 of 2 `aligned` |
+| `recaudit-mt-summary-1790721905754.json` | 44.1 kHz | both | 32 | 32 | 13 frames ×32 | 6 of 16 | 8.71 ms | 2 of 2 `aligned` |
+
+- No error rows; head and tail deficits 0 on all 176 rows; first take 0 to 2.9 ms after
+  its request.
+- What the nodes leave of the raw skew is under 1e-6 ms on all 87 repeats with both node
+  delays, 35 of them with a raw skew that is not zero.
+- One node carried signal on every one of the 176 rows' devices; on the first repeat of
+  a run two nodes had been built (one at arm, dropped at the first take).
+- The first and the sixth run had the external probe beside the harness's taps: equal
+  on 32 of 32 and 30 of 30 rows both read, and on the two rows the harness did not read
+  the probe did not either, for the same three lags.
+- In the 44.1 kHz run `…1790721290225` the delay moved inside the take on one repeat
+  (437 → 878 and 565 → 1006 frames, the two nodes a quantum apart and both by 441). This
+  time it was repeat 4 of `multitrack-janked`, not the second take after the page load.
+  The other 44.1 kHz run had none.
+- The five runs of the section above, replayed under the rule as merged, read the same:
+  10 of 10 cells `aligned`.
+
+### One repeat, both tapes: the buffer starts a quantum after the time given for it
+
+`…1790721436525`, `multitrack-janked`, repeat 3. Both tapes:
+
+| figure | this repeat | every other row at 48 kHz (110 rows) |
+|---|---|---|
+| node delay, three windows | 832 / 832 / 832 frames | — |
+| `loopbackDelayMs` | 14.958 ms = 718 frames | node delay + 14 frames |
+| `loopbackDelayMs` − node delay | **−114 frames** | 14 frames |
+| `firstFrameCheckMs` | **−2.67 ms** | 0.00 |
+| netted median | **+3.81 ms** | +1.146 |
+| adjusted median − node delay | 1.4375 ms | 1.4375 ms |
+| first-frame time − context time the source node was created at | **−128 frames** | 0, +128 or +256 frames |
+| head and tail deficit | 0 | 0 |
+
+- **Two figures that share nothing but the anchor agree to the frame.** The tape's own
+  verdict failed on the netted median (one quantum over) before the node delays were
+  looked at; the first-frame check is one quantum under. Both say that the buffer's
+  first frame is 128 frames later than the first-frame time the SDK gives.
+- **A third does not use the anchor at all.** These are the only two rows of 174 in
+  which the first-frame time is EARLIER than the context time at which the source node
+  was created, read on the main thread, whose clock never runs ahead of the audio
+  thread's. A buffer fed by that node cannot have a first frame from before the node
+  existed.
+- **The sound is where the node's delay puts it.** The adjusted median exceeds the node
+  delay by what it exceeds it by on every other row. So the take was placed against the
+  buffer as it is; what is a quantum off is the first-frame time the loader reports.
+- Both tapes show it, by the same amount, in the same repeat. The two captures have
+  separate worklets and separate source nodes.
+
+**What this is not established to be.** It happened once in 88 repeats on this code (56
+of them `multitrack-janked`), did not recur in 24 further `multitrack-janked` repeats
+made straight after, and is the first netted median off +1.15 ms in the 746 rows this
+build has in `.verify-output/`. One repeat does not say which of the SDK's figures is
+off, or whether the main thread being held for 150 ms at the flip is needed for it. The
+taps attached 221 ms after the first frame on this repeat, as on the others. The two
+WAVs are saved under the run's token.
+
+It is a candidate finding about the SDK and not more. It is not written up as an
+upstream issue: there is no page that reproduces it.
+
+### Reading
+
+- **The verdict does what it was built to do.** The one repeat in these runs where a
+  buffer does not start where the SDK says was caught by the first-frame check, and the
+  existing netted median caught it too.
+- **Closed:** the review's Critical and Important findings. What is left of its
+  suggestions: node delays on single-tape rows, and a parity test that replays a saved
+  envelope against its persisted verdict.
+- **Open:** the one-quantum repeat above. The next step is a run that repeats
+  `multitrack-janked` until it shows again, with the external probe beside it, and then
+  the same with `multitrack-start` to see whether the held main thread matters.
+- **Not established,** as before: real input devices; any browser but Chromium; the
+  single-tape scenarios; what the 441-frame step does to a take at 44.1 kHz.

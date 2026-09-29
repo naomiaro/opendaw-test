@@ -72,8 +72,25 @@ export const RENDER_QUANTUM_FRAMES = 128;
  * 44.1 kHz, rounded up. It is fitted, not derived: a skew inside it is not told apart
  * from the two streams' delays. The runs behind it are in the campaign register
  * (`debug/recording-start-alignment-audit.md`).
+ *
+ * It is the fallback. A repeat whose two source nodes' delays were read by the
+ * harness's taps is held to what they leave of the raw skew in its place
+ * (`ClassifyMultitrackOptions.nodeDelays`), against the tolerance; the limit applies
+ * to a repeat where a tap read nothing.
  */
 export const MULTITRACK_RAW_SKEW_LIMIT_MS = 15;
+/**
+ * How far the harness's anchor is off: what `loopbackDelayMs` exceeds the delay of the
+ * source node by when the SDK's first-frame time is true (`firstFrameCheckMs`). The
+ * onset detector marks a reference click at the first sample at or above a quarter of
+ * its peak, and a click rises over 1 ms at 6 kHz, which puts that sample 14 frames into
+ * a click that starts on a frame at 48 kHz. Every click is found that much late in the
+ * buffer, so the buffer's start is placed that much early. Measured: `loopbackDelayMs`
+ * − node delay is 14 frames at 48 kHz and 13 frames (0.295 ms) at 44.1 kHz, on every
+ * row read. One value serves both rates: the 0.003 ms between them is a seventh of a
+ * frame, against a tolerance of 2 ms.
+ */
+export const ANCHOR_OFFSET_MS = (14 / 48000) * 1000;
 export const JANK_MS = 150;
 export const LOOP_WRAP_TAKES = 5;
 /**
