@@ -346,7 +346,7 @@ Position and duration are both stored in PPQN ticks. The clip occupies a fixed n
 
 **Behavior when BPM changes:** A 4-beat clip always occupies 4 beats. At 120 BPM that's 2 seconds; at 60 BPM it's 4 seconds. Without a play-mode attached, the audio still plays back at its source speed — it just finishes sooner or later relative to the grid. To make the audio actually follow the tempo (so a 4-beat loop fills 4 beats at any BPM), attach an `AudioPitchStretchBox` or `AudioTimeStretchBox` to the region's `playMode` pointer. See [Ch. 18 — Time & Pitch](./18-time-and-pitch.md).
 
-**Overlap rule:** Regions on one track must not overlap — in **either** timebase. The live engine tolerates overlaps at runtime, but `project.copy()` (export, offline render) deletes the overlapping pair with only a console warning. Put intentionally overlapping audio on separate tracks.
+**Overlap rule:** A Musical region must end before the next region on its track starts. The live engine tolerates an overlap at runtime, but `project.copy()` (export, offline render) repairs it with only a console warning: the earlier region is trimmed to end where the later one starts, and two regions at the same position are both deleted. Put intentionally overlapping audio on separate tracks.
 
 ### Seconds Timebase
 
@@ -360,7 +360,7 @@ Position is in PPQN (for grid alignment), but duration is in real-time seconds. 
 
 **Behavior when BPM changes:** A 4-second clip always plays for 4 seconds. At 120 BPM it spans 8 beats; at 60 BPM it spans 4 beats. The clip's tick-duration is recalculated.
 
-**Overlap rule:** Overlapping regions on one track are invalid by design in both timeBases. The live probe (`Project.invalid()`) skips Seconds tracks — so no warning surfaces during editing. `ProjectValidation.validate()` (runs on load and inside `project.copy()`) compares raw box values; because Seconds regions store `duration` in seconds while `position` is in PPQN, its overlap arithmetic uses mixed units — musically-offset overlaps may survive `copy()` undetected while near-identical-position duplicates are deleted. Do not rely on validation in either direction for Seconds regions; prevent overlaps at write time and use separate tracks for decays that must overlap (e.g. drum-hit tails).
+**Overlap rule:** A Seconds region's end moves with the tempo, so it is allowed to reach over the next region on its track: it ends where that region starts. Neither the live probe (`Project.invalid()`) nor `ProjectValidation.validate()` (runs on load and inside `project.copy()`) treats it as an overlap, and the engine plays it only until the successor starts — the rest of the tail is cut. A Musical region, by contrast, must end before the next region starts: `Project.invalid()` reports the overlap and `ProjectValidation` trims the earlier region to end where the later one starts (two regions at the same position are both deleted). Every check goes through `RegionOverlap` in `@opendaw/studio-adapters`. Prevent overlaps at write time and use separate tracks for decays that must overlap (e.g. drum-hit tails).
 
 ### Choosing Between Them
 

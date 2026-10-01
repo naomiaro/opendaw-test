@@ -251,7 +251,7 @@ Five MIDI effects ship with the SDK, inserted into a track's MIDI device chain (
 
 ### Arpeggio
 
-Plays notes in patterns over a configurable rate and number of octaves.
+Plays notes in patterns over a configurable rate and number of octaves. It also runs while the transport is stopped: keys held live are arpeggiated on the free-running clock, and the steps end when the keys go up.
 
 | Field | Type | Range | Meaning |
 |---|---|---|---|

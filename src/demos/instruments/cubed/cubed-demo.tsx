@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { asInstanceOf } from "@opendaw/lib-std";
-import { MidiKeys } from "@opendaw/lib-dsp";
+import { MidiKeys, PPQN } from "@opendaw/lib-dsp";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { Project } from "@opendaw/studio-core";
 import {
@@ -24,6 +24,7 @@ import { BackLink } from "@/components/BackLink";
 import { DropZone } from "@/components/DropZone";
 import { ParamSlider } from "@/components/ParamSlider";
 import type { UnitParameter } from "@/hooks/useParameterUnit";
+import { useTimelineLoop } from "@/hooks/useTimelineLoop";
 import { CANVAS_COLORS, CONSOLE_STYLES } from "@/lib/design/consoleTheme";
 import { CUBED_PRESETS, type CubedPreset } from "./cubedPatterns";
 import "@radix-ui/themes/styles.css";
@@ -33,6 +34,9 @@ import {
 } from "@radix-ui/themes";
 
 const STEPS_PER_PAGE = 16;
+const LOOP_BARS = 4;
+/** On at load: the transport cycles over four bars, 64 sixteenth steps. */
+const LOOP = { from: 0, to: LOOP_BARS * PPQN.fromSignature(4, 4), enabled: true };
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 // indexOf guards against a future label rename; fields don't clamp, so a raw -1
 // would be stored silently (repo rule: box numeric constraints do not clamp).
@@ -778,6 +782,7 @@ const App: React.FC = () => {
   const [adapter, setAdapter] = useState<CubedDeviceBoxAdapter | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [bpm, setBpm] = useState(120);
+  const [loopEnabled, setLoopEnabled] = useTimelineLoop(project, LOOP);
   const [page, setPage] = useState(0);
   const [activePreset, setActivePreset] = useState<string | null>(null);
   // Re-render the pattern card after every committed transaction — the grid and
@@ -879,6 +884,7 @@ const App: React.FC = () => {
           ) : (
             <>
               <Card>
+                <Flex direction="column" gap="3">
                 <Flex align="center" gap="3" wrap="wrap">
                   <Button onClick={() => project.engine.play()} disabled={isPlaying}>▶ Play</Button>
                   <Button variant="soft" onClick={() => project.engine.stop(false)} disabled={!isPlaying}>⏸ Pause</Button>
@@ -894,7 +900,23 @@ const App: React.FC = () => {
                     />
                     <Text size="1" style={{ fontFamily: "var(--mc-mono)", minWidth: 32 }}>{Math.round(bpm)}</Text>
                   </Flex>
+                  <Flex asChild align="center" gap="2">
+                    {/* The switch sits outside the gray Text, which would tint its checked track */}
+                    <label style={{ whiteSpace: "nowrap" }}>
+                      <Switch size="1" checked={loopEnabled} onCheckedChange={setLoopEnabled} />
+                      <Text size="1" color="gray">Loop {LOOP_BARS} bars</Text>
+                    </label>
+                  </Flex>
                   <Badge color={isPlaying ? "green" : "amber"}>{isPlaying ? "Playing" : status}</Badge>
+                </Flex>
+                <Text size="1" color="gray">
+                  The sequencer's step is the transport position counted in sixteenths, modulo
+                  the pattern length. <strong>Loop on:</strong> the transport wraps to bar 1
+                  every {LOOP_BARS} bars and the pattern restarts at step 1 with it — a length
+                  that does not divide {LOOP_BARS * 16} steps is cut short at the wrap.{" "}
+                  <strong>Loop off:</strong> the transport runs on and the pattern cycles on its
+                  own length, drifting against the bar line when that length is not a whole bar.
+                </Text>
                 </Flex>
               </Card>
 

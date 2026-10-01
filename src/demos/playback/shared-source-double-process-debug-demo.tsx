@@ -63,7 +63,7 @@ const TOTAL_DURATION_SECONDS = 60;
 // Int32Field that silently truncates non-integer PPQN values (while
 // `duration` is a Float32Field that preserves them), so assigning a
 // fractional PPQN to both fields creates a sub-PPQN overlap that
-// `project.copy()` deletes. See `debug/project-copy-deletes-overlapping-
+// `project.copy()` trims off the earlier region. See `debug/project-copy-deletes-overlapping-
 // regions.md` for the schema-mismatch mechanism.
 //
 // At 48 kHz the in-block sample offsets work out to 0 (block-aligned)
@@ -541,7 +541,7 @@ const App: React.FC = () => {
                 check whether the touching-seam discontinuity depends on where the seam lands
                 inside a quantum. Both positions are exact integer PPQN at BPM 120 (required —
                 <Code>position</Code> is <Code>Int32</Code> and would truncate a fractional
-                PPQN, creating a sub-PPQN overlap that <Code>project.copy()</Code> deletes).
+                PPQN, creating a sub-PPQN overlap that <Code>project.copy()</Code> trims off).
               </Text>
               <Text size="2">
                 <strong>30.000 s</strong> = PPQN 57600 = sample 1,440,000 at 48 kHz =

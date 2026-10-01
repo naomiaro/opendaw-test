@@ -153,7 +153,7 @@ let loop_gate = (self.controls.loop_enabled.get() && !self.is_counting_in
     && (!self.is_recording || self.allow_takes)) || self.pause_on_loop_disabled;
 self.transport.set_loop_enabled(loop_gate);
 ...
-self.tempo_map.borrow_mut().update(self.controls.bpm.get(), tempo_curve);
+self.refresh_tempo_map(); // the live tempo curve when automation is on and non-empty, else the bpm
 
 // count-in flip: reaching the recording start turns counting-in into recording
 if self.is_counting_in && self.transport.position() >= self.recording_start { ... }
@@ -373,7 +373,7 @@ The unit's signal path is therefore `instrument → fx0 → fx1 → … → chan
 
 A **disabled** effect is not built and not wired: it is skipped entirely, rather than processed and bypassed.
 
-Solo is a mixer-wide concern and cannot ride a single strip's per-block automation, because it silences *other* strips. It resolves once per quantum, at the quantum's start position and only while transporting, into per-strip forced-silent flags (`resolve_automated_solo`, called from `render`). A paused quantum therefore holds the last resolved solo state.
+Solo is a mixer-wide concern and cannot ride a single strip's per-block automation, because it silences *other* strips. It resolves once per quantum, at the quantum's start position, while transporting and on the one quantum that follows a locate on a stopped transport, into per-strip forced-silent flags (`resolve_automated_solo`, called from `render`). Any other paused quantum holds the last resolved solo state.
 
 Every effect's output is also published into an `AudioOutputBufferRegistry` keyed by its box address, which is how a sidechain pointer resolves to both the buffer to read and the node to depend on.
 

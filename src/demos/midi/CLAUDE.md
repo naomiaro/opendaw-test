@@ -76,11 +76,9 @@ with the default `loopDuration:0` the engine plays ZERO notes (silent) even thou
 collection, note track and output routing all look correct and `iterateActiveNotesAt` yields
 nothing. Setting `box.duration` + the timeline `loopArea` is NOT enough. Set
 `box.loopOffset.setValue(0)` + `box.loopDuration.setValue(contentLenPPQN)`, or use
-`project.api.createNoteRegion(...)`, which defaults `loopDuration` to `duration` when omitted
-(only raw `NoteRegionBox.create` leaves it at 0). Caveat (verified in studio-core
-`ProjectApi.js`): `createNoteRegion` never writes `loopOffset` — the implementation writes
-`loopDuration` twice — so a non-zero `loopOffset` param is silently ignored; set it on the box
-afterwards if needed. `StepRecordingSection` omits loopDuration (its regions are
+`project.api.createNoteRegion(...)`, which defaults `loopDuration` to `duration` and
+`loopOffset` to 0 when omitted and writes both (only raw `NoteRegionBox.create` leaves
+`loopDuration` at 0). `StepRecordingSection` omits loopDuration (its regions are
 recording-driven), so don't copy it as a playing-region template.
 
 ### NoteEventCollectionBoxAdapter (Event Container)
@@ -153,12 +151,27 @@ Available instrument adapters (each implements `InstrumentDeviceBoxAdapter`):
 - `SoundfontDeviceBoxAdapter` — SF2 soundfont player
 - `TapeDeviceBoxAdapter` — audio sample playback (default for audio recording)
 - `NanoDeviceBoxAdapter` — polyphonic sampler (region, crossfade loop, root key); see `src/demos/instruments/CLAUDE.md`
+- `TubularDeviceBoxAdapter` — six-operator FM synth, DX7 compatible (`InstrumentFactories.Tubular`;
+  a voice is a 155-byte `Uint8Array` loaded with `TubularPreset.apply(box, voice)`;
+  `Dx7Sysex.decode(bytes)` parses a cartridge into `{name, data}` voices — pass `data`)
+- `InstrumentCompositeBoxAdapter` — layered instruments (`InstrumentFactories.InstrumentComposite`);
+  each layer is an `InstrumentCompositeCellBoxAdapter` with its own instrument, MIDI and audio
+  chains and a gain / pan / mute / solo strip. Layers are managed through `project.api`
+  (`createCompositeLayer`, `setLayerInstrument`, `moveCompositeLayer`, `duplicateCompositeLayer`,
+  `deleteCompositeLayer`, `wrapInstrumentIntoComposite`)
 - `PlayfieldDeviceBoxAdapter` — drum pad sampler with `Gate` triggers
 - `ApparatDeviceBoxAdapter` — scriptable instrument (JavaScript DSP)
 - `MIDIOutputDeviceBoxAdapter` — routes to external MIDI hardware
 
 ### Diagnosing "keyboard plays but no sound"
 `capture.captureNoteOnCount` (observable) increments when an armed capture receives a note-on outside recording — read it before/after a key press to prove MIDI reached the capture without any audio tap. If it increments but output RMS is 0, the fault is engine-side rendering, not MIDI routing.
+
+### Loop Switch on the MIDI Recording Demo
+`useTimelineLoop(project, { from: 0, to: 4 bars, enabled: false })`. Off: a recording is one
+take however long it runs. On: `RecordMidi` finalizes the take at every wrap, starts a new
+one at the loop start and applies the older-take preference to the pass before it (defaults
+`olderTakeAction: "mute-region"`, `olderTakeScope: "previous-only"`), so after Stop only the
+last pass is unmuted. A recording made earlier stays in the project and plays along.
 
 ## Cross-References
 - For recording preferences (takes, count-in), see `src/demos/recording/CLAUDE.md`

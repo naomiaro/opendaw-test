@@ -36,10 +36,11 @@ const { Quarter } = PPQN;
  * Demonstrates the difference between Musical TimeBase and Seconds TimeBase:
  * - Musical: duration stored in PPQN — changes with BPM
  * - Seconds: duration stored in seconds — constant regardless of BPM
- * Overlap rules are identical in both: overlapping regions on one track are
- * invalid by design. Musical overlaps are detected and deleted by ProjectValidation
- * inside project.copy(). Seconds overlap detection is unreliable (mixed-unit
- * arithmetic) — overlaps may survive export; prevent them at write time.
+ * Overlap rules differ: a Musical region must end before the next region on its
+ * track starts (ProjectValidation, inside project.copy(), trims the earlier region
+ * to end where the later one starts, and deletes both when they share a position). A Seconds region's end
+ * moves with the tempo, so it may reach over its successor: the engine plays it
+ * only until the next region starts. The demo keeps both tracks free of overlaps.
  */
 function TimeBaseDemo() {
   const [project, setProject] = useState<Project | null>(null);
@@ -197,9 +198,10 @@ function TimeBaseDemo() {
     (beatPosition: number) => {
       if (!project || !musicalTrackInfo || !audioFileUUID) return;
 
-      // Overlapping regions on one track are invalid by design (all timeBases);
-      // project.copy() (export, offline render) runs ProjectValidation which deletes
-      // Musical overlapping pairs. Read existing regions from the box graph
+      // Overlapping Musical regions on one track are invalid by design;
+      // project.copy() (export, offline render) runs ProjectValidation, which trims
+      // the earlier region to end where the later one starts (and deletes both when
+      // they share a position). Read existing regions from the box graph
       // (synchronous snapshot), not React state — batched rapid clicks would
       // otherwise see stale region lists.
       const newStart = beatPosition * Quarter;
@@ -280,11 +282,10 @@ function TimeBaseDemo() {
     (beatPosition: number) => {
       if (!project || !secondsTrackInfo || !audioFileUUID) return;
 
-      // Overlapping regions on one track are invalid by design (all timeBases).
-      // The live Project.invalid() probe skips Seconds tracks — no warning during editing.
-      // ProjectValidation (inside copy()) uses mixed-unit arithmetic for Seconds regions
-      // (duration in seconds, position in PPQN), so Seconds overlaps may silently survive
-      // export. Prevent them here. Read from the box graph (synchronous snapshot), not
+      // A Seconds region that reaches over the next region on its track is not an
+      // error to the SDK (neither Project.invalid() nor ProjectValidation flags it):
+      // the engine plays it only until the next region starts, so the tail is cut.
+      // Prevent that here. Read from the box graph (synchronous snapshot), not
       // React state — batched rapid clicks would otherwise see stale region lists.
       const newStart = beatPosition * Quarter;
       const newEnd = newStart + PPQN.secondsToPulses(sampleDurationInSeconds, bpm);
@@ -301,7 +302,7 @@ function TimeBaseDemo() {
         const overlapBeat = overlap.position.getValue() / Quarter + 1;
         setAddNotice(
           `Skipped: would overlap the region at beat ${overlapBeat.toFixed(2)} — ` +
-          `overlapping regions on one track are invalid by design.`
+          `the earlier region's tail would be cut where the next one starts.`
         );
         return;
       }
@@ -475,14 +476,14 @@ function TimeBaseDemo() {
               <code>PPQN.secondsToPulses(seconds, bpm)</code>. For Seconds timeBase pass{" "}
               <code>duration</code> directly in seconds. Both modes use{" "}
               <code>box.position.setValue(beatPosition * Quarter)</code> — position is always
-              PPQN. Overlapping regions on one track are invalid by design in both timeBases.
-              The live <code>Project.invalid()</code> probe skips Seconds tracks — no warning
-              during editing. <code>ProjectValidation</code> (inside{" "}
-              <code>project.copy()</code>, so: export and offline render) detects and deletes
-              Musical overlapping pairs. For Seconds regions it uses mixed-unit arithmetic
-              (duration in seconds, position in PPQN) — overlaps may survive undetected.
-              Prevent overlaps at write time. For overlapping one-shots, put each region on
-              its own Tape track.
+              PPQN. Overlapping Musical regions on one track are invalid by design:{" "}
+              <code>Project.invalid()</code> reports them, and <code>ProjectValidation</code>{" "}
+              (inside <code>project.copy()</code>, so: export and offline render) trims the
+              earlier region to end where the later one starts, or deletes both when they
+              share a position. A Seconds region's end moves with the tempo, so it may reach
+              over its successor without being an error — the engine plays it only until the
+              next region starts. Prevent overlaps at write time. For overlapping one-shots,
+              put each region on its own Tape track.
             </p>
             <p>
               With no <code>playMode</code> box attached (NoStretch — the default), both
@@ -701,12 +702,11 @@ function TimeBaseDemo() {
               effects, and one-shots whose length must not change with BPM.
             </p>
             <p>
-              Overlapping regions on one track are invalid by design in both timeBases.
-              Musical overlaps are detected and deleted by <code>ProjectValidation</code>{" "}
-              inside <code>project.copy()</code> (export, offline render). Seconds overlap
-              detection is unreliable (mixed-unit arithmetic) — overlaps may silently survive
-              export. Prevent overlaps at write time and put overlapping one-shots on separate
-              Tape tracks.
+              A Musical region must end before the next region on its track starts:{" "}
+              <code>ProjectValidation</code> inside <code>project.copy()</code> (export, offline
+              render) trims an overlapping region to end where the next one starts. A Seconds region may reach over
+              its successor, and is then heard only until that successor starts. Prevent
+              overlaps at write time and put overlapping one-shots on separate Tape tracks.
             </p>
           </section>
         </Flex>

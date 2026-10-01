@@ -717,9 +717,12 @@ makes the export bit-exact with realtime.
 
 ### "Overlapping regions" warning and incomplete export
 
-Overlapping regions on a single track are invalid by design in both timeBases. The
-Seconds-timeBase path surfaces no warning for overlaps during editing — this is **not a bug**,
-but it can truncate an export. Keep one region per position per track.
+Overlapping Musical regions on a single track are invalid by design: the copy an export
+renders from has the earlier region trimmed to end where the later one starts (two regions at
+one position are both deleted), with an "Overlapping regions" warning in the console. A
+Seconds-timeBase region may reach over the next region without a warning — this is **not a
+bug**: it is heard only until that region starts, live and in the export. Keep one region per
+position per track.
 
 ---
 

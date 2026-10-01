@@ -2,7 +2,15 @@
 
 **Verified against:** studio-core 0.0.152 (`ProjectValidation.ts`, `Project.ts:487-489`, `RegionClipResolver.ts:36,82`), studio-adapters 0.0.116.
 
-**Status:** Open. Not a new regression — the mismatch is structural and present since Seconds timeBase was introduced. No repro page (the symptom is silent: overlaps survive `project.copy()` and offline render undetected).
+**CLOSED by SDK 0.0.173** (upstream `2c2506987`, "one overlap rule for every site: a seconds
+region ends where the next region starts"): every overlap check now goes through
+`RegionOverlap` in studio-adapters, which skips a Seconds region as a predecessor instead of
+reading its seconds duration as PPQN. A Seconds region reaching over its successor is not an
+overlap by definition (the engine plays it until the successor starts); a Seconds region no
+longer switches `Project.invalid()` off for the rest of its track. Verified 2026-10-01 with real
+boxes on the installed SDK. Everything below describes studio-core 0.0.152.
+
+**Status (as written):** Open. Not a new regression — the mismatch is structural and present since Seconds timeBase was introduced. No repro page (the symptom is silent: overlaps survive `project.copy()` and offline render undetected).
 
 ## Symptom
 

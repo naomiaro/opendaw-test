@@ -3950,7 +3950,9 @@ in the order it was gathered:
   and 227 ms**.
 
 Harness follow-up (cosmetic): hold the next cell's start until a full beat (or bar) after the
-previous cell's last click so listening along stays interpretable.
+previous cell's last click so listening along stays interpretable. — Done 2026-10-01 the other way round: the
+previous repeat stops an eighth note before its next click (section "Standing sweep on 0.0.173,
+and the stop moved ahead of the next click").
 
 **Latent engine behaviour found on the way, not exercised here:** `Metronome::process` runs
 only while the transport plays and `pause()` / `stop()` / `stop_recording()` never clear
@@ -4897,3 +4899,173 @@ absence would mean anything. The rate itself rests on one occurrence.
 - **Open:** why both stamps are early. Not reproduced, by a further 24 repeats on the
   page or by 1700 fresh recorders without the SDK.
 - **Not a reason to wait for #418**, and not evidence against it.
+
+## Standing sweep on 0.0.173, and the stop moved ahead of the next click (2026-10-01)
+
+`@opendaw/studio-sdk@0.0.173` (build probe `upstream`, `buildFeatures: ["recordingStart"]` →
+`release` profile; PRs #378 / #380 / #418 still open, so the probe marker stays
+`calibrateInputLatency`). The release changes nothing under `packages/studio/core/src/capture`
+and nothing in the recording worklet; what it changes in the engine is in
+`changelogs/sdk-0.0.172-to-0.0.173-changes.md`. Two things were run: the standing sweep on the
+harness as it was, and the same sweep after a change to the harness itself.
+
+### The harness as it was — 48000 Hz, two runs
+
+| file | rows | error rows | cells `aligned` | finalized | netted medians | raw medians |
+|---|---|---|---|---|---|---|
+| `recaudit-summary-1790871141815.json` | 60 | 0 | 9 of 10 | 30 of 30 | +1.07…+1.17 ms | −12.27…−0.21 ms |
+| `recaudit-summary-1790871617650.json` | 60 | 0 | 10 of 10 | 30 of 30 | +1.07…+1.17 ms | −12.22…−0.21 ms |
+
+Loader state `loaded` on all 120 rows, tail deficit 0 on all, 0 WAV upload failures. The netted
+range is the one the 0.0.172 runs gave (`…1790709786130`: +1.07…+1.17).
+
+The one cell not `aligned` is `nominal-start/120` of the first run, on a head deficit of its
+first repeat only: **84.4 ms** (raw 110.4), netted median +1.15 like every other row. That
+repeat was the first recording of the first page load after `node_modules/.vite` had been
+deleted for the upgrade: the first captured quantum came 130.7 ms after the record request
+(2.7 ms on the next repeat). It did not recur on the four first repeats of the later page loads.
+Read as a cold start of the page, the same family as the worklet-module load noted in the
+node-delay section, and not as the SDK.
+
+### The stop moved ahead of the next click
+
+A listener following the sweep heard a double click at the start of each repeat. It is the
+cadence this register traced on 0.0.172 ("A double click on a downbeat"): a repeat stopped just
+after a click, and the next repeat's first click followed it closely. From run
+`…1790871141815`, on the 11 boundaries between back-to-back repeats of `nominal-start` and
+`janked-start`: the stop request went out 35–104 ms after the last beat, the next record request
+115–235 ms after the stop, and the previous repeat's last click and the next repeat's start
+were **187–280 ms** apart.
+
+The harness follow-up noted there is now done (`STOP_LEAD_PPQN` in
+`src/lib/audit/recordingCellRunner.ts`): every repeat's stop goes out an eighth note before the
+next metronome click.
+
+- Linear scenarios (and the multi-mic page) wait for `start + 4 bars − lead` instead of
+  `start + 4 bars`. The downbeat that followed the four bars is no longer played.
+- `loop-wrap` still waits for the take the last wrap opens, then for the position to pass a
+  lead before beat 2 of that pass (`waitForPositionWithin`, bounded above by the loop's last
+  beat so a read from before the wrap is not taken for arrival).
+
+Measured on the changed harness (`…1790872110234`, `…1790872569363`): the stop request goes out
+136–256 ms ahead of the click it avoids, and the last click of a repeat and the next record
+request are **432 ms or more** apart on all 48 boundaries of the linear scenarios.
+
+What it changes in the rows:
+
+- A linear take matches **15 beats, was 16**. The beat that left the expected range is the
+  downbeat the repeat no longer plays; `missingBeats` stays 0.
+- The last take of a `loop-wrap` repeat is about 0.39 s long (was 0.06 s) and still holds one
+  beat.
+- Nothing else. Row counts per cell, head and tail deficits and the netted medians are below.
+
+A missed lead would show in no verdict (the expected beats come from the take's own length),
+so each row persists `stopLeadMs`, the stop request's distance from the click it is meant to
+end before, read off `engine.position`, and the page warns under 30 ms. Added after the review
+of the change and checked on three short runs (`…1790874956367` `nominal-start`,
+`…1790874984657` `loop-wrap`, `recaudit-mt-summary-1790875060142.json` `multitrack-start`, all
+120 BPM, 48 kHz): **205–248 ms on 14 repeats**, no warning, 37 of 37 rows `aligned` on the same
+netted medians. The sweeps below were recorded before the field existed and do not carry it.
+
+### The changed harness
+
+| file | rate | rows | error rows | cells `aligned` | finalized | netted medians | raw medians |
+|---|---|---|---|---|---|---|---|
+| `recaudit-summary-1790872110234.json` | 48000 | 60 | 0 | 9 of 10 | 30 of 30 | +1.07…+1.17 ms on 59 rows, **+3.82** on one | −12.31…−0.22 ms |
+| `recaudit-summary-1790872569363.json` | 44100 | 60 | 0 | 10 of 10 | 30 of 30 | +0.97…+1.19 ms | −14.28…+0.91 ms |
+
+Head and tail deficits 0 on all 120 rows, loader state `loaded` on all, 0 WAV upload failures.
+Per cell at 48 kHz the netted mean is +1.15 (linear scenarios, except the one cell with the
+row off, 2.04), +1.16 and +1.13 (`loop-wrap` 120 and 97.3), as on the unchanged harness; at 44.1 kHz +1.16…+1.19 and +1.09 / +1.10, the
+figures of the 2026-09-29 sweep. The one row off is the subject of the next section.
+
+Multi-mic (`multitrack-all`, 120 BPM, 48000 Hz), three runs, 8 repeats per cell:
+
+| file | rows | error rows | finalized | node delays read | netted, every row | cells | inter-tape skew in render quanta, start · janked |
+|---|---|---|---|---|---|---|---|
+| `recaudit-mt-summary-1790872984620.json` | 32 | 0 | 32 of 32 | 32 of 32 | +1.146 on 30, **+3.813** on 2 | start `aligned`, janked `investigate` | 0 ×4, 1 ×3, 2.75 ×1 · 0 ×3, 1 ×4, 2 ×1 |
+| `recaudit-mt-summary-1790873210628.json` | 32 | 0 | 32 of 32 | 32 of 32 | +1.146 | both `aligned` | 0 ×8 · 0 ×6, 2.75 ×1, 3 ×1 |
+| `recaudit-mt-summary-1790873377511.json` | 32 | 0 | 32 of 32 | 32 of 32 | +1.146 | both `aligned` | 0 ×6, 1 ×2 · 0 ×6, 1 ×2 |
+
+No collision, no hang, head and tail deficits 0 on all 96 rows. On 47 of 48 repeats the raw
+skew is the difference of the two source nodes' delays to the hundredth of a millisecond and
+every first-frame check is 0.00.
+
+### The one-quantum event, twice more
+
+Two repeats of the 168 recorded on this release read one render quantum off. Both are on the
+changed harness; neither is on a figure the change touches (it moves where the previous repeat
+stopped, and both figures are stamped at the start of a take, after `setPosition(0)` and a
+settle wait).
+
+**`midtimeline-start/97.3/r1`, 48 kHz, single tape** (`…1790872110234`): netted median
+**+3.819 ms** (mode +1.153), raw −0.889, adjusted +22.111, `loopbackDelayMs` 18.292, head and
+tail 0, 15 of 15 beats. By the algebra of "The one-quantum repeat, looked at again", a netted
+median one quantum high is the engine's recording-start time one quantum EARLIER than the audio
+it describes. A single-tape row carries no node delay, so the row cannot say whether the
+first-frame time is early as well (the take then sits where every other take sits) or true (the
+take is then a quantum late). The first-frame stamp equals the record request's context time on
+this row; that alone is not a sign, it is so on 144 of the 318 first-take single-tape rows that
+carry both stamps, 5 of 42 of them `midtimeline-start` at 48 kHz.
+
+**`multitrack-janked/120/r7`, both tapes** (`…1790872984620`):
+
+| figure | tape a | tape b | every other row of the run |
+|---|---|---|---|
+| netted median | **+3.813 ms** | **+3.813 ms** | +1.146 |
+| node delay | 20.000 ms | 17.333 ms | — |
+| `loopbackDelayMs` | 20.292 | 14.958 | node delay + 0.292 |
+| `firstFrameCheckMs` | 0.00 | **−2.667** | 0.00 |
+| adjusted median − node delay | **4.104 ms** | 1.4375 ms | 1.4375 ms |
+| raw skew a − b | −5.33 ms | | |
+| skew left over after the node delays | **−2.67 ms** | | 0.00 |
+
+The engine's recording-start time is a quantum early for both tapes, as it must be: there is
+one engine. Tape b's first-frame time is a quantum early too, so on tape b the two cancel and
+the take is placed like every other take. Tape a's first-frame time is true, so **tape a's
+take is one render quantum off**, and the two takes of the repeat are 2.67 ms further apart
+than their source nodes delivered them. That is new. In the 0.0.172 sighting
+(`…1790721436525`) both tapes' first-frame times were early and both takes were placed right.
+
+Counts, over every release-build envelope in `.verify-output/`:
+
+| build | repeats | repeats with a netted median off its mode |
+|---|---|---|
+| 0.0.172 | 416 (96 single-tape, 320 multi-mic) | 1 |
+| 0.0.173 | 168 (120 single-tape, 48 multi-mic) | 2 |
+
+Of the 168, 60 are on the unchanged harness (0 events) and 108 on the changed one (2).
+
+**What this is not established to be.** Three events in 584 repeats do not make a rate, and
+1 in 416 against 2 in 168 does not separate the two releases (Fisher's exact test, one-sided,
+p = 0.20). Nor do 0 in 60 against 2 in 108 separate the two harnesses (two events falling both
+among the 108 has a chance of 0.41 if the harness makes no difference). Nothing in the release
+touches the capture path; what it changes in `Engine::render` is the quantum after a locate on a
+stopped transport, the tempo re-read after a transaction, and the reconcile of composites and
+modulators. Whether any of those bears on a recording-start stamp is not known, and neither is
+what makes the stamp early in the first place.
+
+### Sample-rate/quantum-alignment sweep
+
+`samplerate-audit-debug-demo.html?family=all&bpm=all&rate=all`: **180 of 180 cells pass,
+0 investigate**, max deviation 0.06–0.08 ms on the metronome family, 0.5 min. No family but
+`loop-wrap` sets the loop area, and the schema default of `loopArea.enabled` went from `true` to
+`false` in this release: the sweep passing unchanged says no other family's expected onsets
+depended on the wrap at bar 4.
+
+### Reading
+
+- **0.0.173 records, finalizes and places a take as 0.0.172 did.** 336 single-tape and
+  multi-mic rows on the release, no error row, every repeat finalized, head and tail deficits 0
+  except the cold first repeat, netted medians on the 0.0.172 figures on 333 rows.
+- **The harness change is audible and not measurable.** The double click at repeat boundaries
+  is gone (432 ms or more where it was 187–280 ms); the rows differ by the one expected beat a
+  linear take no longer holds and by the length of `loop-wrap`'s last take.
+- **Open, and now seen on a single tape and as a real misplacement:** the one-quantum event.
+  One tape of one repeat landed a render quantum (2.67 ms) off, which the verdict caught
+  (`investigate`). The next step is the one the earlier section named,
+  a run that repeats `multitrack-janked` until it shows, now on both releases side by side
+  (`SDK_DIST_OVERRIDE` serves a saved 0.0.172 build) and on both harness versions, some 400
+  repeats per arm before a difference in rate could be read.
+- **Not established,** as before: real input devices; any browser but Chromium; what the
+  441-frame step does to a take at 44.1 kHz.

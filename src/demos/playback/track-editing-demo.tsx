@@ -385,7 +385,7 @@ const App: React.FC = () => {
               <strong>Split</strong> regions at the playhead via{" "}
               <code>RegionEditing.cut()</code>, <strong>move</strong> them forward or backward
               in 1-second steps. Each track holds one region per lane — overlapping regions on
-              a single track are invalid by design and removed by{" "}
+              a single track are invalid by design and trimmed apart by{" "}
               <code>project.copy()</code> (export / offline render).
             </p>
           </div>
@@ -549,8 +549,8 @@ const App: React.FC = () => {
               call site; the underlying <code>position</code> field is{" "}
               <code>Int32</code>. Overlapping regions on one track are invalid by design:{" "}
               the live engine tolerates them, but <code>project.copy()</code> (export,
-              offline render) deletes both regions with &ldquo;Overlapping regions&rdquo; in
-              the console and no error thrown. Move operations guard against this by reading
+              offline render) trims the earlier region to end where the later one starts,
+              with &ldquo;Overlapping regions&rdquo; in the console and no error thrown. Move operations guard against this by reading
               sibling positions from the box graph directly before committing.
             </p>
             <p>

@@ -47,6 +47,49 @@ import { BAR_PPQN } from "@/lib/audit/auditExpectations";
 /** Finalization barrier deadline, shared by every take-finalizing wait on both pages. */
 export const FINALIZE_DEADLINE_MS = 30_000;
 
+/**
+ * How far before a metronome click a repeat's stop goes out: an eighth note.
+ *
+ * A repeat that stops just AFTER a click (the downbeat that follows its four
+ * bars, or the downbeat of the pass a loop wrap opens) leaves that click
+ * 190–280 ms ahead of the next repeat's start, and the pair is heard as a
+ * double click on every repeat boundary. Stopping a lead before the click keeps
+ * the last click that sounds most of a beat away from the next repeat's first.
+ *
+ * The stop request trails the position it waits for by 35–105 ms (the 50 ms
+ * poll, an animation frame, the engine's position sync) and the stop itself
+ * round-trips through the worklet, so the lead has to clear about 135 ms at
+ * every tempo the matrix runs. An eighth note is 250 ms at 120 BPM; it falls
+ * under 135 ms above about 220 BPM, so a faster `?bpm=` would bring the click
+ * back (`recordingCellRunner.test.ts` pins the matrix tempos).
+ */
+export const STOP_LEAD_PPQN = BAR_PPQN / 8;
+/** What the stop request can trail the awaited position by, plus the stop's round trip. */
+export const STOP_TRAIL_MS = 135;
+/** The stop's round trip through the worklet: a request closer to the click than this may not beat it. */
+export const STOP_ROUND_TRIP_MS = 30;
+const BEAT_PPQN = BAR_PPQN / 4;
+/** The loop `loop-wrap` records over. */
+const LOOP_WRAP_PPQN = 2 * BAR_PPQN;
+
+/**
+ * Milliseconds from a stop request sent at `stopRequestPpqn` to the click at
+ * `clickPpqn`. Under `STOP_ROUND_TRIP_MS`, or negative, the repeat may not have
+ * ended before the click. Persisted per row as `stopLeadMs`, since nothing else
+ * in a row shows a missed lead.
+ */
+export function stopLeadMs(stopRequestPpqn: number, clickPpqn: number, bpm: number): number {
+  return ((clickPpqn - stopRequestPpqn) / BEAT_PPQN) * (60_000 / bpm);
+}
+
+/** `stopLeadMs` at the moment of the stop request, with a warning when the lead was missed. */
+export function readStopLead(project: Project, clickPpqn: number, bpm: number, label: string): number {
+  const leadMs = stopLeadMs(project.engine.position.getValue(), clickPpqn, bpm);
+  if (leadMs < STOP_ROUND_TRIP_MS) {
+    console.warn("[recording-alignment-audit] " + label + ": stop request " + leadMs.toFixed(0) + " ms ahead of the click it should end before (under " + String(STOP_ROUND_TRIP_MS) + " ms: the click may have sounded)");
+  }
+  return leadMs;
+}
 
 export interface CapturedBuffer {
   channels: Float32Array[];
@@ -153,6 +196,22 @@ export function waitForPosition(project: Project, targetPpqn: number, deadlineMs
 }
 
 /**
+ * Poll until engine.position sits in `[fromPpqn, belowPpqn)`. For a wait inside a
+ * loop pass: a position read just after a wrap can still be the one from before
+ * it, near the loop end, and a bare `>= fromPpqn` would take that for arrival.
+ */
+export function waitForPositionWithin(project: Project, fromPpqn: number, belowPpqn: number, deadlineMs: number): Promise<void> {
+  return pollPosition(
+    project,
+    (ppqn) => ppqn >= fromPpqn && ppqn < belowPpqn,
+    50,
+    deadlineMs,
+    `waitForPositionWithin(${fromPpqn}, ${belowPpqn})`,
+    false
+  );
+}
+
+/**
  * Poll until engine.position reads back within one beat of `expectedPpqn`.
  * Required after every `setPosition()` call, before trusting any later
  * `waitForPosition(..., target)` check: `position.getValue()` can still
@@ -168,7 +227,7 @@ export function waitForPosition(project: Project, targetPpqn: number, deadlineMs
  * via setTimeout so it can never resolve on a synchronous stale read.
  */
 export function waitForPositionSettled(project: Project, expectedPpqn: number, deadlineMs: number): Promise<void> {
-  const tolerancePpqn = BAR_PPQN / 4; // one beat's worth of slack
+  const tolerancePpqn = BEAT_PPQN; // one beat's worth of slack
   return pollPosition(
     project,
     (ppqn) => Math.abs(ppqn - expectedPpqn) <= tolerancePpqn,
@@ -489,7 +548,7 @@ export async function runCellRepeat(options: CellRepeatOptions): Promise<CellRep
   const { loopArea } = project.timelineBox;
   project.editing.modify(() => {
     loopArea.from.setValue(0);
-    loopArea.to.setValue(2 * BAR_PPQN);
+    loopArea.to.setValue(LOOP_WRAP_PPQN);
     loopArea.enabled.setValue(scenario === "loop-wrap");
   });
 
@@ -561,10 +620,16 @@ export async function runCellRepeat(options: CellRepeatOptions): Promise<CellRep
 
   onStage("recording");
   assertCurrent(token, "recording wait");
+  // Every scenario stops a lead before the next metronome click (see STOP_LEAD_PPQN).
   if (scenario === "loop-wrap") {
     await waitForTakeCount([unitAdapter], LOOP_WRAP_TAKES + 1, 90_000);
+    // The take the last wrap opened starts on the loop's downbeat click: record on
+    // to a lead before beat 2 of that pass. The upper bound is the loop's last
+    // beat, where a read from before the wrap would still sit.
+    assertCurrent(token, "final pass wait");
+    await waitForPositionWithin(project, BEAT_PPQN - STOP_LEAD_PPQN, LOOP_WRAP_PPQN - BEAT_PPQN, 20_000);
   } else {
-    await waitForPosition(project, startPpqn + 4 * BAR_PPQN, 60_000);
+    await waitForPosition(project, startPpqn + 4 * BAR_PPQN - STOP_LEAD_PPQN, 60_000);
   }
 
   onStage("stopping");
@@ -584,6 +649,11 @@ export async function runCellRepeat(options: CellRepeatOptions): Promise<CellRep
   lastFinalizeProbe = finalizeProbe;
   finalizeProbe.finalizeNumberOfFramesAtStop = (loader as unknown as { numberOfFrames?: number }).numberOfFrames;
   stopRequestContextTime = audioContext.currentTime;
+  // The click this repeat ends before: beat 2 of the pass the last wrap opened, or
+  // the downbeat that follows the four bars.
+  const stopLead = readStopLead(
+    project, scenario === "loop-wrap" ? BEAT_PPQN : startPpqn + 4 * BAR_PPQN, bpm, cellLabel(scenario, bpm, repeat)
+  );
   project.engine.stopRecording();
 
   onStage("finalizing");
@@ -735,6 +805,7 @@ export async function runCellRepeat(options: CellRepeatOptions): Promise<CellRep
       headMissingRawMs,
       tailMissingMs: alignment.tailMissingMs,
       stopRequestContextTime,
+      stopLeadMs: stopLead,
       bufferDurationSec,
       regionPositionPpqn: region.position,
       regionStartSec,

@@ -52,10 +52,10 @@ import { DebugLinkBar } from "@/components/DebugLinkBar";
 //               loopOffset on region B. Two tracks rather than one
 //               sidesteps the per-track no-overlap invariant — see
 //               `debug/project-copy-deletes-overlapping-regions.md`
-//               (placing both overlapping regions on a single track
-//               caused `project.copy()` to silently delete them
-//               during validation, making offline rendering
-//               impossible). The track outputs sum at the master,
+//               (on a single track `project.copy()` validation trims
+//               the earlier region to end where the later one starts,
+//               so the offline render would hold no crossfade).
+//               The track outputs sum at the master,
 //               so the crossfade emerges from mixing two separate
 //               voice paths. Should match ALIGNED once the engine
 //               artifacts documented in the sibling debug notes
@@ -295,8 +295,8 @@ const App: React.FC = () => {
         // Use SEPARATE tracks for the two regions so they can overlap in
         // timeline (crossfade) without violating the per-track no-overlap
         // invariant that `project.copy()` enforces. See
-        // `debug/project-copy-deletes-overlapping-regions.md` — overlapping
-        // regions on the same track are deleted during copy, which makes
+        // `debug/project-copy-deletes-overlapping-regions.md` — on one track
+        // the earlier region is trimmed to end at the later one during copy, which makes
         // offline rendering of any crossfade impossible. Separate tracks
         // each have their own `regions` collection, so each track has only
         // one region; the overlap is between tracks and the mix happens

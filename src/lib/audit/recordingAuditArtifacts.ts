@@ -127,6 +127,12 @@ interface TakeRowBase extends FinalizeProbe {
   tailMissingMs?: number | null;
   /** G5+ */
   stopRequestContextTime?: number | null;
+  /** G6, rows written by a harness that stops ahead of a click: milliseconds from the
+   *  stop request to the metronome click the repeat is meant to end before, read off
+   *  `engine.position` at the request. The stop round-trips through the worklet after
+   *  it, so a value under about 30 ms (or a negative one) means the click may have
+   *  sounded: the repeat boundary can carry a double click. It does not enter a verdict. */
+  stopLeadMs?: number | null;
   /** G5+ */
   bufferDurationSec?: number;
   status: AuditRowStatus;

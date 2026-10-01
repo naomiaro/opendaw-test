@@ -88,21 +88,19 @@ looks correct (events present, `hasCollection` true, on the right note track, ou
 completely silent, and `region.iterateActiveNotesAt(pos)` yields nothing at every position. Setting
 `box.duration` and the timeline `loopArea` is **not** enough; the timeline loop does not drive note
 scheduling. Always set `box.loopOffset.setValue(0)` and `box.loopDuration.setValue(contentLenPPQN)`
-when building a note region by hand. `project.api.createNoteRegion({ ..., loopDuration })` sets
-`loopDuration` for you — but NOT `loopOffset`: the installed SDK assigns the `loopOffset` param
-to `loopDuration` and then overwrites it (openDAW#420); pass 0 or set the field yourself
-afterwards. See `patternContent.ts` step 3. NB: verify audio demos by measuring actual
+when building a note region by hand. `project.api.createNoteRegion({ ..., loopOffset, loopDuration })`
+writes both for you (`loopOffset` defaults to 0, `loopDuration` to `duration`). See
+`patternContent.ts` step 3. NB: verify audio demos by measuring actual
 output signal — an `isPlaying === true` transport and a disabled Play button do NOT prove sound.
 
-## Metronome Clicks Survive pause / stop (latent engine defect)
+## Metronome Clicks Are Cleared at pause / stop
 `Metronome::process` (crates/engine/src/metronome.rs) runs only while the transport plays
-and keeps its active clicks in a list that `Engine::pause` / `stop` / `stop_recording`
-never clear (they re-apply the enabled state via `apply_metronome()` only). Stop inside a
-click's 52 ms body (2 ms attack + 50 ms release) and play again: the rest of that click
-renders on top of the new position's first quantum (monophonic default: faded over 5 ms,
-still full level at the restart). Present in the installed SDK. Repro (self-classifying,
-control vs. stale step, restart head ratio): `metronome-stale-click-debug-demo.html`;
-write-up `debug/metronome-click-survives-pause.md`; upstream openDAW#419. Measurement recipe reusable for any
+and keeps its active clicks in a list; `Engine::pause` / `stop` / `stop_recording` clear
+that list (`Metronome::clear`), so a click cut inside its 52 ms body (2 ms attack + 50 ms
+release) does not resume at the next play. Regression test (self-classifying, control vs.
+stale step, restart head ratio — both read 0.14, verdict FIXED):
+`metronome-stale-click-debug-demo.html`; history of the defect in
+`debug/metronome-click-survives-pause.md` (openDAW#419, fixed). Measurement recipe reusable for any
 "what does the engine output around a transport edge" question: `initializeOpenDAW`'s
 `engineTap` + an AudioWorklet recorder posting quanta stamped with `currentTime`, sliced by
 context time (`src/demos/engine/metronome-stale-click-debug-demo.tsx` `OutputRecorder`);

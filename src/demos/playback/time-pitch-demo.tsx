@@ -51,6 +51,7 @@ type PlayMode = "none" | "pitch" | "time" | "smith";
 const SAMPLE_PATH = "/audio/BassDrums30.mp3";
 const SAMPLE_NAME = "BassDrums30";
 const PROJECT_BPM = 120;
+const LOOP_PPQN = 4 * PPQN.fromSignature(4, 4); // four bars
 
 // Cents offset from the project's starting concert pitch. The baseline is
 // whatever the project loaded with (typically 440, but a project saved at
@@ -188,6 +189,13 @@ function TimePitchDemo() {
             }
           );
           regionRef.current = region;
+
+          // Keep the transport cycling over the first four bars, so a mode or
+          // tempo change is heard against the same material on every pass.
+          const { loopArea } = newProject.timelineBox;
+          loopArea.from.setValue(0);
+          loopArea.to.setValue(LOOP_PPQN);
+          loopArea.enabled.setValue(true);
         });
 
         await newProject.engine.queryLoadingComplete();

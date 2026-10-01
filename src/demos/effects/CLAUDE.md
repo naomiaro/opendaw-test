@@ -66,6 +66,14 @@ Parameters are created by `ScriptCompiler.compile()`. Access via:
 `werkstattBox.parameters.pointerHub.incoming()` → `pointer.box` as `WerkstattParameterBox`
 Fields: `.label` (StringField), `.value` (Float32Field, automatable), `.defaultValue` (Float32Field).
 
+### Werkstatt Scripts and Transport Reset
+A transport reset (`engine.stop(true)`; a pause, `stop(false)`, keeps all device state)
+reaches a Werkstatt script: an optional `reset()` method on the
+`Processor` is called; a script WITHOUT one has its `Processor` rebuilt on the next block
+(cached params and samples replayed), so class-field state — delay lines, feedback tails —
+starts fresh instead of sounding on after Stop. A Spielwerk script's `reset()` runs on a
+discontinuous block.
+
 ### Werkstatt Generator Scripts Must Check Transport
 Scripts that generate audio (ignoring `src`) must check `block.flags & 4` (playing flag)
 and return early when stopped, otherwise they produce continuous output after Stop is pressed:
@@ -130,13 +138,18 @@ All adapters implement `DeviceBoxAdapter` with `.type`, `.labelField`, `.enabled
 - `DattorroReverbDeviceBoxAdapter` — preDelay (ms, 0-1000), wet/dry use DefaultDecibel
 - `GateDeviceBoxAdapter` — inverse, threshold (−80..0), return (0..24), attack (0..1000 ms), hold (0..500 ms), release (1..2000 ms), floor (decibel −72,−12,0)
 - `MaximizerDeviceBoxAdapter` — threshold (adapter UI −24..0; box schema −30..0), lookahead (bool)
-- `CrusherDeviceBoxAdapter` — crush (inverted: higher value = MORE crushing; sample-rate reduction IS this param), bits, boost, mix
+- `CrusherDeviceBoxAdapter` — crush (inverted: higher value = MORE crushing; sample-rate reduction IS this param), bits, boost, mix (unipolar, linear — 0 is fully dry)
 - `FoldDeviceBoxAdapter` — waveshaper fold amount
 - `WaveshaperDeviceBoxAdapter` — custom waveshaper curve
 - `StereoToolDeviceBoxAdapter` — stereo width is bipolar (-1..1), NOT 0-2
 - `VocoderDeviceBoxAdapter` — carrier/modulator routing
 - `TidalDeviceBoxAdapter` — 17-entry RateFractions (1/1→1/128), different from Delay
 - `NeuralAmpDeviceBoxAdapter` ("Tone3000") — neural amp modeling with NAM files
+- `AudioSinkDeviceBoxAdapter` ("Sink", `EffectFactories.Sink`) — routes the signal at its
+  chain position into a bus: `box.targetBus` (optional `Pointers.AudioOutput` pointer) gets
+  the full signal, `namedParameter.pass` (DefaultDecibel, default −∞) is the level the chain
+  continues at (0 dB = a full copy carries on). A unit holding a Sink cannot be frozen
+  (`AudioUnitFreeze.hasSink`)
 
 ### Convolver (SDK 0.0.170+)
 `EffectFactories.Convolver` → `ConvolverDeviceBox`. Parameters: `wet` (DefaultDecibel,

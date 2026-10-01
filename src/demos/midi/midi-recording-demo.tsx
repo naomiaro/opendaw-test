@@ -1,11 +1,13 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { createRoot } from "react-dom/client";
 import type { Terminable } from "@opendaw/lib-std";
+import { PPQN } from "@opendaw/lib-dsp";
 import { Project, MidiDevices } from "@opendaw/studio-core";
 import { InstrumentFactories } from "@opendaw/studio-adapters";
 import type { AudioUnitBox } from "@opendaw/studio-boxes";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { useEnginePreference } from "@/hooks/useEnginePreference";
+import { useTimelineLoop } from "@/hooks/useTimelineLoop";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
@@ -27,7 +29,12 @@ import {
   Callout,
   Badge,
   Code,
+  Switch,
 } from "@radix-ui/themes";
+
+const LOOP_BARS = 4;
+/** Off at load: a recording is one continuous take unless the Loop switch says otherwise. */
+const LOOP = { from: 0, to: LOOP_BARS * PPQN.fromSignature(4, 4), enabled: false };
 
 type ActiveNote = {
   pitch: number;
@@ -97,6 +104,7 @@ const App: React.FC = () => {
 
   // Engine preferences
   const [metronomeEnabled, setMetronomeEnabled] = useEnginePreference(project, ["metronome", "enabled"]);
+  const [loopEnabled, setLoopEnabled] = useTimelineLoop(project, LOOP);
 
   // Initialize OpenDAW
   useEffect(() => {
@@ -420,7 +428,25 @@ const App: React.FC = () => {
                       metronomeEnabled={metronomeEnabled}
                       onMetronomeEnabledChange={setMetronomeEnabled}
                     />
+                    <Flex asChild align="center" gap="2">
+                      <Text as="label" size="2">
+                        <Switch
+                          checked={loopEnabled}
+                          onCheckedChange={setLoopEnabled}
+                          disabled={isRecording || isCountingIn}
+                        />
+                        Loop {LOOP_BARS} bars
+                      </Text>
+                    </Flex>
                   </Flex>
+                  <Text size="2" color="gray">
+                    <strong>Loop off:</strong> a recording is one take, as long as you play, and
+                    Play runs straight through it. <strong>Loop on:</strong> the transport wraps
+                    at the end of bar {LOOP_BARS}. While recording, every pass becomes its own
+                    take and the pass before it is muted, so Play repeats the last pass
+                    (<Code size="1">timelineBox.loopArea</Code> with the{" "}
+                    <Code size="1">recording.allowTakes</Code> preference).
+                  </Text>
                 </Flex>
               </Card>
 
