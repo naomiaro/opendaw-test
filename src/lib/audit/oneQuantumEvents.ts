@@ -106,6 +106,8 @@ export interface RunEvents {
   events: RepeatReading[];
   /** Those that are off by something other than one quantum. */
   others: RepeatReading[];
+  /** Those that show nothing: the control an event is read against. */
+  ordinary: RepeatReading[];
   /** The run's usual netted median; null when the run has too few repeats to tell. */
   usualMs: number | null;
 }
@@ -114,11 +116,12 @@ export interface RunEvents {
 export function eventsOfRun(rows: readonly EventRow[], rate: number): RunEvents {
   const repeats = repeatsOf(rows);
   const usualMs = usualNettedMs(repeats);
-  if (usualMs === null) return { repeats: repeats.length, events: [], others: [], usualMs: null };
+  if (usualMs === null) return { repeats: repeats.length, events: [], others: [], ordinary: [], usualMs: null };
   return {
     repeats: repeats.length,
     events: repeats.filter((reading) => deviationOf(reading, usualMs, rate) === "one-quantum"),
     others: repeats.filter((reading) => deviationOf(reading, usualMs, rate) === "other"),
+    ordinary: repeats.filter((reading) => deviationOf(reading, usualMs, rate) === "none"),
     usualMs,
   };
 }

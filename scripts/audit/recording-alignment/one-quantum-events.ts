@@ -142,7 +142,7 @@ for (const run of runs) {
   if (run.graphChurn) { forced++; continue; }
   const sdk = sdkOf(run.identity);
   if (sdk === null) { skipped++; continue; }
-  const { repeats, events, others, usualMs } = eventsOfRun(run.rows, run.rate);
+  const { repeats, events, others, ordinary, usualMs } = eventsOfRun(run.rows, run.rate);
   if (repeats === 0) continue;
   if (usualMs === null) { tooShort++; continue; }
   counted++;
@@ -169,9 +169,7 @@ for (const run of runs) {
         clockSteps.map((step) => `${step.previousFrame}→${step.frame} (${step.betweenChunks ? "between chunks" : "inside a chunk"})`).join(", ")
       );
     }
-    const unusual = new Set([...events, ...others]);
-    for (const reading of repeatsOf(run.rows)) {
-      if (unusual.has(reading)) continue;
+    for (const reading of ordinary) {
       for (const row of reading.rows) {
         ordinaryRows++;
         const line = staleLine(row, clockSteps, run.rate);

@@ -50,7 +50,7 @@ describe("usualNettedMs", () => {
   it("is null for two repeats: nothing says which of two different values is the usual one", () => {
     const rows = [mt(1, "a", 3.819), mt(2, "a", 1.146)];
     expect(usualNettedMs(repeatsOf(rows))).toBeNull();
-    expect(eventsOfRun(rows, 48000)).toEqual({ repeats: 2, events: [], others: [], usualMs: null });
+    expect(eventsOfRun(rows, 48000)).toEqual({ repeats: 2, events: [], others: [], ordinary: [], usualMs: null });
   });
 });
 
@@ -99,6 +99,13 @@ describe("eventsOfRun", () => {
     expect(others.map((other) => other.repeat)).toEqual([2]);
   });
 
+  it("hands back the ordinary repeats too: every counted repeat is an event, another kind, or ordinary", () => {
+    const rows = [mt(1, "a", 1.146), mt(2, "a", 11.146), mt(3, "a", 1.146), mt(4, "a", 3.813), mt(5, "a", 1.146)];
+    const { repeats, events, others, ordinary } = eventsOfRun(rows, 48000);
+    expect(ordinary.map((reading) => reading.repeat)).toEqual([1, 3, 5]);
+    expect(events.length + others.length + ordinary.length).toBe(repeats);
+  });
+
   it("does not count the spread of loop-wrap takes at 44.1 kHz", () => {
     const rows = [1, 2, 3].flatMap((repeat) => loopWrap(repeat, [0.97, 1.05, 1.12, 1.18, 1.19, 1.17]));
     const { repeats, events, others } = eventsOfRun(rows, 44100);
@@ -114,7 +121,7 @@ describe("eventsOfRun", () => {
   });
 
   it("returns nothing for a run without netted medians", () => {
-    expect(eventsOfRun([mt(1, "a", null)], 48000)).toEqual({ repeats: 0, events: [], others: [], usualMs: null });
+    expect(eventsOfRun([mt(1, "a", null)], 48000)).toEqual({ repeats: 0, events: [], others: [], ordinary: [], usualMs: null });
   });
 });
 
