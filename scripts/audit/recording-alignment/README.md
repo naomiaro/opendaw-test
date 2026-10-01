@@ -56,8 +56,8 @@ node delays in `.verify-output/task13-node-delay-runs-48000.txt` and `…-44100.
 
 `one-quantum/run-graph-lock-clock.playwright.js` runs the probe in
 `src/lib/audit/workletClockProbe.ts` with no SDK on the page; `worklet-clock-debug-demo.html`
-runs the same code on a button press and says `STALE CLOCK`, `CLOCK TRUE`, `NOT CHECKED`
-(too little was watched or worked, as in a background tab) or `THREW <stage>`.
+runs the same code on a button press and says `STALE CLOCK`, `CLOCK TRUE`, `CLOCK AHEAD`,
+`NOT CHECKED` (too little was watched or worked, as on a hidden page) or `THREW <stage>`.
 A buffer source plays a ramp in which every sample names its own frame; a
 worklet records, for each `process` call, the `currentFrame` it read and the first sample it
 was handed, while the main thread does one kind of work in stretches: nothing, a loop that
@@ -72,7 +72,8 @@ On the audit page the same thing is watched and forced: a multi-mic envelope lis
 reference recorder's calls whose stamp did not advance by one quantum
 (`clockDiscontinuities`), `one-quantum-events.ts` says for each event tape whether such a
 call sits on one of its start-of-take stamps, and `&graphChurn=on` does graph work at each
-record request (an envelope with `graphChurn: true` is left out of every count).
+record request (`one-quantum-events.ts` leaves an envelope with `graphChurn: true` out; no
+other script reads the flag).
 
 ## Running one page many times (`one-quantum/`)
 

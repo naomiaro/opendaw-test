@@ -235,13 +235,16 @@ const STOP_LEAD_PARAM = params.get("stopLead");
 const STOP_LEAD = STOP_LEAD_PARAM !== "off";
 /** `&graphChurn=on` does graph work on the main thread from each record request on, to
  *  force the worklet clock to stand still while the SDK takes its start-of-take stamps.
- *  Multi-mic scenarios only. Such a run is not part of any count. */
+ *  Multi-mic scenarios only. The envelope says so (`graphChurn`), and the event tally
+ *  (`one-quantum-events.ts`) leaves such a run out; no other script reads the flag. */
 const GRAPH_CHURN_PARAM = params.get("graphChurn");
 /** Any other value is refused when a run starts (`graphChurnFrom`). */
 const GRAPH_CHURN = GRAPH_CHURN_PARAM === "on";
-/** It has to be over before the windows a node delay is read from open, 0.3 s into a tap
- *  (`NODE_TAP_WINDOW_STARTS_SEC`). The taps themselves attach while it still runs in
- *  `multitrack-start` (some 30 to 80 ms after the request); their stamps are repaired. */
+/** It has to be over before the windows a node delay is read from open
+ *  (`NODE_TAP_WINDOW_STARTS_SEC`, counted from a tap's start). The taps themselves attach
+ *  while it still runs in `multitrack-start`; their stamps are repaired. In
+ *  `multitrack-janked` the jank holds the main thread for about as long as the churn lasts,
+ *  so little of it is done there: a row's `graphChurnPairs` says how much. */
 const GRAPH_CHURN_MS = 150;
 /** Persisted per run so an envelope says which `#updateStream` path it took. */
 const CAPTURE_MODE: CaptureMode = DEFAULT_INPUT ? "default" : "named";
@@ -1150,11 +1153,15 @@ async function runMultitrackCellRepeat(
   assertCurrent(token, "startRecording");
   recordRequestContextTime = audioContext.currentTime;
   // The churn's first stretch runs inside the call: it starts once the recording is asked for.
+  // What came of it is read before the rows are built: a forced repeat whose churn threw or
+  // did nothing is an error row, not a row that says forcing changed nothing.
+  let churned: Promise<{ pairs: number } | { failed: string }> = Promise.resolve({ pairs: 0 });
   const churn = (): void => {
     if (!GRAPH_CHURN) return;
-    churnGraph(audioContext, GRAPH_CHURN_MS).catch((error: unknown) => {
-      console.error("[recording-alignment-audit] graph churn failed: " + String(error));
-    });
+    churned = churnGraph(audioContext, GRAPH_CHURN_MS).then(
+      (pairs) => ({ pairs }),
+      (error: unknown) => ({ failed: String(error) })
+    );
   };
   if (scenario === "multitrack-janked") {
     const jankArmed = armJankOnRecordingFlip(project, JANK_MS, 30_000);
@@ -1304,6 +1311,7 @@ async function runMultitrackCellRepeat(
       nodeTapNodesBuilt: tap?.nodesBuilt ?? null,
       nodeTapCandidates: candidates,
       nodeTapMissingQuanta: tap === null ? null : measurement.tapMissingQuanta,
+      nodeTapRepairedStamps: tap === null ? null : tap.repairedStamps,
       nodeTapReferenceMissingQuanta: tap === null ? null : measurement.referenceMissingQuanta,
       firstFrameCheckMs: firstFrameCheckMs(loopbackDelayMs, measurement.delayMs, ANCHOR_OFFSET_MS),
       harnessPathBiasSec,
@@ -1334,8 +1342,19 @@ async function runMultitrackCellRepeat(
     return { alignment, buffer: { channels: [mono], sampleRate: data.sampleRate }, row };
   };
 
+  const churnOutcome = await churned;
+  if (GRAPH_CHURN && ("failed" in churnOutcome || churnOutcome.pairs === 0)) {
+    throw new Error(
+      "graph churn " + ("failed" in churnOutcome ? "failed: " + churnOutcome.failed : "did no connect / disconnect pair") +
+      ": the repeat was not forced"
+    );
+  }
   const a = measureTape(takeA, loaderA, "a");
   const b = measureTape(takeB, loaderB, "b");
+  if (GRAPH_CHURN && "pairs" in churnOutcome) {
+    a.row.graphChurnPairs = churnOutcome.pairs;
+    b.row.graphChurnPairs = churnOutcome.pairs;
+  }
   const skew = measureCrossTrackSkew(a.alignment, b.alignment);
   a.row.medianSkewMs = skew.medianSkewMs;
   a.row.maxAbsSkewMs = skew.maxAbsSkewMs;
@@ -1454,6 +1473,7 @@ async function uploadMultitrackSummary(
     stopLead: STOP_LEAD,
     graphChurn: GRAPH_CHURN,
     clockDiscontinuities,
+    clockWitnessFailure: loopback.referenceFailure(),
     captureMode: CAPTURE_MODE,
     getUserMediaOpens: loopback.getUserMediaOpens(),
     // Read once per page load after output started (`resolveHarnessPathBias`)

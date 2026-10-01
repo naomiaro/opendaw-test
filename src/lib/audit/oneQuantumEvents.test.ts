@@ -10,6 +10,7 @@ import {
   quantumMs,
   repeatsOf,
   sdkOf,
+  controlTally,
   staleQuantaAtStamps,
   usualNettedMs,
   type EventRow,
@@ -208,34 +209,60 @@ describe("staleQuantaAtStamps", () => {
   const Q = 128;
   /** The clock read `frame` on two calls running: the second call's quantum, whose true frame is `frame + Q`, is the stale one. */
   const stale = (frame: number, betweenChunks = false) => ({ previousFrame: frame, frame, betweenChunks });
-  const sec = (frame: number) => frame / RATE;
+  const sec = (frame: number, rate = RATE) => frame / rate;
 
-  it("finds the stale read a recorder's first-quantum stamp equals", () => {
+  it("finds the stall a recorder's first-quantum stamp reads the frame of", () => {
     expect(staleQuantaAtStamps([stale(96000)], { firstQuantumTimeSec: sec(96000) }, RATE))
-      .toEqual([{ stamp: "first quantum", staleFrame: 96000, readsStaleFrame: true, quantaFromStale: 0 }]);
+      .toEqual([{ stamp: "first quantum", staleFrame: 96000, stallQuanta: 1, readsStaleFrame: true, quantaFromStall: 0 }]);
   });
 
   it("reads the engine's recording start one quantum back: it reports the END of the quantum it stamped in", () => {
     expect(staleQuantaAtStamps([stale(96000)], { recordingStartContextTimeSec: sec(96000 + Q) }, RATE))
-      .toEqual([{ stamp: "recording start", staleFrame: 96000, readsStaleFrame: true, quantaFromStale: 0 }]);
+      .toEqual([{ stamp: "recording start", staleFrame: 96000, stallQuanta: 1, readsStaleFrame: true, quantaFromStall: 0 }]);
   });
 
-  it("finds a stamp taken in the quantum right AFTER the stale one: it reads two quanta more than the clock stood on", () => {
+  it("reports each stamp of a row that carries both", () => {
+    const found = staleQuantaAtStamps(
+      [stale(96000)], { firstQuantumTimeSec: sec(96000), recordingStartContextTimeSec: sec(96000 + 3 * Q) }, RATE
+    );
+    expect(found.map((entry) => [entry.stamp, entry.quantaFromStall])).toEqual([["first quantum", 0], ["recording start", 1]]);
+  });
+
+  it("finds the stall at 44.1 kHz, where seconds × rate is not a whole number", () => {
+    expect((90368 / 44100) * 44100).not.toBe(90368);
+    expect(staleQuantaAtStamps([stale(90368)], { firstQuantumTimeSec: sec(90368, 44100) }, 44100))
+      .toEqual([{ stamp: "first quantum", staleFrame: 90368, stallQuanta: 1, readsStaleFrame: true, quantaFromStall: 0 }]);
+  });
+
+  it("finds a stamp taken in the quantum right AFTER the stall: it reads two quanta more than the clock stood on", () => {
     // clock: 96000 (true), 96000 (stale, really 96128), 96256 (true): a first call there stamps 96256
     expect(staleQuantaAtStamps([stale(96000)], { firstQuantumTimeSec: sec(96000 + 2 * Q) }, RATE))
-      .toEqual([{ stamp: "first quantum", staleFrame: 96000, readsStaleFrame: false, quantaFromStale: 1 }]);
+      .toEqual([{ stamp: "first quantum", staleFrame: 96000, stallQuanta: 1, readsStaleFrame: false, quantaFromStall: 1 }]);
   });
 
-  it("measures from the stale quantum, two quanta either side, and no further", () => {
+  it("measures from the stall, two quanta either side, and no further", () => {
     const at = (stampFrame: number) =>
-      staleQuantaAtStamps([stale(96000)], { firstQuantumTimeSec: sec(stampFrame) }, RATE).map((found) => found.quantaFromStale);
+      staleQuantaAtStamps([stale(96000)], { firstQuantumTimeSec: sec(stampFrame) }, RATE).map((found) => found.quantaFromStall);
     expect(at(96000 - Q)).toEqual([-2]); // a true read two calls before the stale one
     expect(at(96000 + 3 * Q)).toEqual([2]);
     expect(at(96000 - 2 * Q)).toEqual([]);
     expect(at(96000 + 4 * Q)).toEqual([]);
+    // no call can read the stale quantum's own true frame: nothing is said of such a stamp
+    expect(at(96000 + Q)).toEqual([]);
   });
 
-  it("does not take a step forward for a stale read: a lost chunk and the catch-up after a stale quantum look like that", () => {
+  it("takes a stall of several quanta as one, and measures after it from its LAST stale quantum", () => {
+    // the clock read 96000 on three calls: true 96000, then stale at 96128 and 96256; 96384 is the first true read after
+    const stall = [stale(96000), stale(96000), { previousFrame: 96000, frame: 96384, betweenChunks: false }];
+    const at = (stampFrame: number) => staleQuantaAtStamps(stall, { firstQuantumTimeSec: sec(stampFrame) }, RATE);
+    expect(at(96000)).toEqual([{ stamp: "first quantum", staleFrame: 96000, stallQuanta: 2, readsStaleFrame: true, quantaFromStall: 0 }]);
+    expect(at(96384).map((found) => found.quantaFromStall)).toEqual([1]);
+    expect(at(96512).map((found) => found.quantaFromStall)).toEqual([2]);
+    expect(at(96640)).toEqual([]);
+    expect(at(96000 - Q).map((found) => found.quantaFromStall)).toEqual([-2]);
+  });
+
+  it("does not take a step forward for a stall: a lost chunk and the catch-up after a stall look like that", () => {
     const forward = { previousFrame: 96000 - Q, frame: 96000 + Q, betweenChunks: false };
     expect(staleQuantaAtStamps([forward], { firstQuantumTimeSec: sec(96000) }, RATE)).toEqual([]);
   });
@@ -247,5 +274,30 @@ describe("staleQuantaAtStamps", () => {
   it("has nothing to say about a row without stamps", () => {
     expect(staleQuantaAtStamps([stale(96000)], {}, RATE)).toEqual([]);
     expect(staleQuantaAtStamps([stale(96000)], { firstQuantumTimeSec: null, recordingStartContextTimeSec: null }, RATE)).toEqual([]);
+  });
+});
+
+describe("controlTally", () => {
+  const RATE = 48000;
+  const stale = (frame: number) => ({ previousFrame: frame, frame, betweenChunks: false });
+  const row = (tape: string, firstQuantumFrame: number | null) => ({
+    scenario: "multitrack-janked", bpm: 120, repeat: 1, tape,
+    ...(firstQuantumFrame === null ? {} : { firstQuantumTimeSec: firstQuantumFrame / RATE }),
+  });
+
+  it("counts a row on a stall, a row near one, a row clear of any, and leaves out a row without stamps", () => {
+    const tally = controlTally(
+      [row("on", 96000), row("near", 96000 + 256), row("clear", 200000), row("none", null)],
+      [stale(96000)], RATE
+    );
+    expect(tally.rows).toBe(3);
+    expect(tally.onAStall.map((entry) => entry.row.tape)).toEqual(["on"]);
+    expect(tally.near.map((entry) => entry.row.tape)).toEqual(["near"]);
+    expect(tally.withoutStamps).toBe(1);
+  });
+
+  it("counts nothing near when the clock never stood still", () => {
+    const tally = controlTally([row("a", 96000), row("b", 96000)], [], RATE);
+    expect(tally).toEqual({ rows: 2, onAStall: [], near: [], withoutStamps: 0 });
   });
 });

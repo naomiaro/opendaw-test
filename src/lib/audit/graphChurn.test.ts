@@ -29,6 +29,18 @@ describe("churnGraph", () => {
     expect(calls.length).toBe(settled);
   });
 
+  it("rejects when a graph call throws in a later stretch, instead of going quiet", async () => {
+    let calls = 0;
+    const node = () => ({
+      connect: () => { if (++calls > 20_000) throw new Error("the node is gone"); },
+      disconnect: () => {},
+    });
+    const done = churnGraph({ createGain: node } as unknown as BaseAudioContext, 20, { stretchMs: 2, gapMs: 1 });
+    const outcome = done.then(() => "resolved", (error: unknown) => String(error));
+    await vi.advanceTimersByTimeAsync(60);
+    expect(await outcome).toBe("Error: the node is gone");
+  });
+
   it("does nothing for a duration of zero", async () => {
     const { calls, context } = fakeContext();
     const done = churnGraph(context, 0);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  behindRangeQuanta, classifyClockProbe, clockProbeConfigFrom, summarizeClockWatch, summarizeFreshRecorders,
+  behindRangeQuanta, classifyClockProbe, clockProbeConfigFrom, countOffs, summarizeClockWatch, summarizeFreshRecorders,
   type ClockConditionResult,
 } from "./workletClockProbe";
 
@@ -135,14 +135,14 @@ describe("classifyClockProbe", () => {
       const verdict = classifyClockProbe([healthy("idle"), throttled], cfg);
       expect(verdict.verdict).toBe("NOT CHECKED");
       expect(verdict.headline).toBe(
-        "NOT CHECKED: connect did 12 stretches of work where about 1000 were due: keep the page in a visible, focused window"
+        "NOT CHECKED: connect did 12 stretches of work where about 1000 were due: keep the page visible (a hidden or covered page is throttled)"
       );
     });
 
     it("names the throttled conditions in one clause", () => {
       const verdict = classifyClockProbe([{ ...healthy("idle"), bursts: 14 }, { ...healthy("connect"), bursts: 11 }], cfg);
       expect(verdict.headline).toBe(
-        "NOT CHECKED: idle, connect did 11 to 14 stretches of work where about 1000 were due: keep the page in a visible, focused window"
+        "NOT CHECKED: idle, connect did 11 to 14 stretches of work where about 1000 were due: keep the page visible (a hidden or covered page is throttled)"
       );
     });
 
@@ -157,6 +157,31 @@ describe("classifyClockProbe", () => {
       const verdict = classifyClockProbe([healthy("idle"), throttled], cfg);
       expect(verdict.verdict).toBe("STALE CLOCK");
       expect(verdict.headline).toContain("connect did 12 stretches of work where about 1000 were due");
+    });
+
+    it("carries the reasons as a list, for a saved result to be sorted by", () => {
+      expect(classifyClockProbe([healthy("idle"), { ...healthy("connect"), bursts: 12 }], cfg).shortfalls)
+        .toEqual(["connect did 12 stretches of work where about 1000 were due: keep the page visible (a hidden or covered page is throttled)"]);
+      expect(classifyClockProbe([healthy("idle"), healthy("connect")], cfg).shortfalls).toEqual([]);
+    });
+
+    it("is NOT CHECKED for a stream condition that reports no fresh worklets at all", () => {
+      const verdict = classifyClockProbe([healthy("stream")], cfg);
+      expect(verdict.verdict).toBe("NOT CHECKED");
+      expect(verdict.headline).toBe("NOT CHECKED: stream built 0 fresh worklets that answered");
+    });
+
+    it("says CLOCK AHEAD with the same caveat when a starved run found a stamp ahead", () => {
+      const verdict = classifyClockProbe([{ ...healthy("connect"), bursts: 12, offs: { "0": 3692, "128": 1 } }], cfg);
+      expect(verdict.verdict).toBe("CLOCK AHEAD");
+      expect(verdict.headline).toContain("connect did 12 stretches of work where about 1000 were due");
+    });
+
+    it("does not expect more stretches than a browser's timers give: nested timeouts come at 4 ms at the soonest", () => {
+      // 1 ms of work and no pause would be 1000 stretches a second; a focused page does about 250
+      const quick = { ...cfg, burstMs: 1, gapMs: 0 };
+      expect(classifyClockProbe([{ ...healthy("idle"), bursts: 2400 }], quick).verdict).toBe("CLOCK TRUE");
+      expect(classifyClockProbe([{ ...healthy("idle"), bursts: 12 }], quick).verdict).toBe("NOT CHECKED");
     });
 
     it("judges nothing about throttling without a configuration", () => {
@@ -201,6 +226,12 @@ describe("clockProbeConfigFrom", () => {
     expect(() => from("conditions=stream,stream")).toThrow(/conditions/);
     expect(() => from("seconds=0")).toThrow(/seconds/);
     expect(() => from("seconds=abc")).toThrow(/seconds/);
+    // digits only: no other way of writing a number
+    expect(() => from("seconds=1.5")).toThrow(/seconds/);
+    expect(() => from("seconds=0x10")).toThrow(/seconds/);
+    expect(() => from("seconds=1e1")).toThrow(/seconds/);
+    expect(() => from("gapMs=")).toThrow(/gapMs/);
+    expect(() => from("seconds=%2010")).toThrow(/seconds/);
     // the ramp names each frame by a float32, which holds to about 340 s at 48 kHz: the page stops well short
     expect(() => from("seconds=121")).toThrow(/seconds/);
     expect(() => from("rate=1000")).toThrow(/rate/);
@@ -218,5 +249,15 @@ describe("behindRangeQuanta", () => {
   it("gives the least and the most a stamp was behind, in quanta", () => {
     expect(behindRangeQuanta({ "0": 10, "-128": 3 })).toEqual([1, 1]);
     expect(behindRangeQuanta({ "0": 10, "-128": 3, "-1792": 1, "-384": 2 })).toEqual([1, 14]);
+  });
+});
+
+describe("countOffs", () => {
+  it("adds up the calls whose distance from their own frame is picked", () => {
+    const offs = { "0": 10, "-128": 3, "-384": 2, "128": 1 };
+    expect(countOffs(offs, (off) => off < 0)).toBe(5);
+    expect(countOffs(offs, (off) => off === 0)).toBe(10);
+    expect(countOffs(offs, (off) => off > 0)).toBe(1);
+    expect(countOffs({}, () => true)).toBe(0);
   });
 });

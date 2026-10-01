@@ -170,6 +170,15 @@ describe("parseAuditSummary — SDK version and stop lead", () => {
     expect(parseMultitrackAuditSummary({ ...mt, clockDiscontinuities: steps }, 1790880000001).clockDiscontinuities).toEqual(steps);
   });
 
+  it("clockWitnessFailure: null when the witness ran to the end or the envelope has no witness, the reason when it stopped", () => {
+    const mt = { ...g6, skewToleranceMs: 2, rows: mtRows, cellSkews: [] };
+    expect(parseMultitrackAuditSummary(mt, 1790880000001).clockWitnessFailure).toBeNull();
+    expect(parseMultitrackAuditSummary({ ...mt, clockWitnessFailure: null }, 1790880000001).clockWitnessFailure).toBeNull();
+    expect(parseMultitrackAuditSummary({ ...mt, clockWitnessFailure: "the recorder's processor threw" }, 1790880000001).clockWitnessFailure)
+      .toBe("the recorder's processor threw");
+    expect(() => parseMultitrackAuditSummary({ ...mt, clockWitnessFailure: true }, 1)).toThrow(/clockWitnessFailure/);
+  });
+
   it("clockDiscontinuities: malformed → throws, entry by entry", () => {
     const mt = { ...g6, skewToleranceMs: 2, rows: mtRows, cellSkews: [] };
     expect(() => parseMultitrackAuditSummary({ ...mt, clockDiscontinuities: "none" }, 1)).toThrow(/clockDiscontinuities/);

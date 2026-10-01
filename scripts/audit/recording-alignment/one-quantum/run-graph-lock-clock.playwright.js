@@ -15,7 +15,14 @@ async (page) => {
     const report = await probe.runWorkletClockProbe(c);
     const verdict = probe.classifyClockProbe(report.results, c);
     const name = "graph-lock-clock-" + String(Date.now()) + ".json";
-    const put = await fetch("/__verify/" + name, { method: "PUT", body: JSON.stringify({ ...report, verdict }, null, 1) });
-    return { saved: put.ok ? name : "NOT SAVED (" + String(put.status) + ")", verdict, ...report };
+    // A save that fails must not cost the report of a minute's run: it is returned either way.
+    let saved;
+    try {
+      const put = await fetch("/__verify/" + name, { method: "PUT", body: JSON.stringify({ ...report, verdict }, null, 1) });
+      saved = put.ok ? name : "NOT SAVED (" + String(put.status) + ")";
+    } catch (error) {
+      saved = "NOT SAVED (" + String(error) + ")";
+    }
+    return { saved, verdict, ...report };
   }, cfg);
 }

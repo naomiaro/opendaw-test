@@ -16,8 +16,8 @@
  */
 import { MAX_RUN, listMultitrackSummaryRunIds, loadMultitrackSummary, loadSummaries } from "./artifacts.ts";
 import {
-  eventsOfRun, exactRateInterval, fisherOneSided, harnessOf, quantumMs, repeatsOf, sdkOf, staleQuantaAtStamps,
-  type EventRow, type HarnessStop, type RepeatReading, type RunIdentity,
+  controlTally, eventsOfRun, exactRateInterval, fisherOneSided, harnessOf, quantumMs, repeatsOf, sdkOf, staleQuantaAtStamps,
+  type EventRow, type HarnessStop, type RepeatReading, type RunIdentity, type StaleAtStamp,
 } from "../../../src/lib/audit/oneQuantumEvents.ts";
 import type { ClockDiscontinuity } from "../../../src/lib/audit/nodeTap";
 
@@ -47,9 +47,12 @@ interface Run {
   rows: EventRow[];
   /** A run made with `?graphChurn=on`: the event was forced, so it is not counted. */
   graphChurn: boolean;
-  /** The reference recorder's clock witness; null on a single-tape run and on a multi-mic
-   *  envelope written before the field existed. */
+  /** The reference recorder's clock witness; null on a single-tape run, on a multi-mic
+   *  envelope written before the field existed, and on a run whose witness stopped early
+   *  (`witnessStopped`): a list that ends before the run does says nothing of the rest. */
   clockSteps: ClockDiscontinuity[] | null;
+  /** Why the witness stopped before the run ended, or null. */
+  witnessStopped: string | null;
 }
 
 const runs: Run[] = [];
@@ -61,6 +64,7 @@ for (const { summary } of loadSummaries()) {
     rows: summary.rows,
     graphChurn: summary.graphChurn,
     clockSteps: null,
+    witnessStopped: null,
   });
 }
 for (const runId of listMultitrackSummaryRunIds()) {
@@ -71,7 +75,8 @@ for (const runId of listMultitrackSummaryRunIds()) {
     rate: summary.rate,
     rows: summary.rows,
     graphChurn: summary.graphChurn,
-    clockSteps: summary.clockDiscontinuities,
+    clockSteps: summary.clockWitnessFailure === null ? summary.clockDiscontinuities : null,
+    witnessStopped: summary.clockWitnessFailure,
   });
 }
 
@@ -88,24 +93,24 @@ const bump = (map: Map<string, Tally>, key: string, repeats: number, events: num
 };
 const eventLines: string[] = [];
 const otherLines: string[] = [];
-/** What the witness has within two quanta of a row's stamps; null when nothing. */
-const staleNear = (row: EventRow, clockSteps: ClockDiscontinuity[], rate: number): { line: string; onAStamp: boolean } | null => {
-  const near = staleQuantaAtStamps(clockSteps, row as EventRow & StartFigures, rate);
-  if (near.length === 0) return null;
-  const where = (quanta: number): string =>
-    `taken ${Math.abs(quanta)} ${Math.abs(quanta) === 1 ? "quantum" : "quanta"} ${quanta > 0 ? "after" : "before"} the stale quantum`;
-  return {
-    onAStamp: near.some((found) => found.readsStaleFrame),
-    line: near.map((found) =>
-      `${found.stamp}: the clock stood on ${found.staleFrame}, ` +
-      (found.readsStaleFrame ? "the frame this stamp reads" : where(found.quantaFromStale))
-    ).join("; "),
-  };
-};
+/** What the clock did within two quanta of a row's stamps, in words. */
+const describeFound = (found: readonly StaleAtStamp[]): string =>
+  found.map((entry) => {
+    const stall = `the clock stood on ${entry.staleFrame}` + (entry.stallQuanta > 1 ? ` for ${entry.stallQuanta} quanta` : "");
+    const quanta = Math.abs(entry.quantaFromStall);
+    const where = entry.readsStaleFrame
+      ? "the frame this stamp reads"
+      : `taken ${quanta} ${quanta === 1 ? "quantum" : "quanta"} ${entry.quantaFromStall > 0 ? "after" : "before"} the stall`;
+    return `${entry.stamp}: ${stall}, ${where}`;
+  }).join("; ");
 const staleLine = (row: EventRow, clockSteps: ClockDiscontinuity[], rate: number): string => {
-  const near = staleNear(row, clockSteps, rate);
-  if (near === null) return "no";
-  return (near.onAStamp ? "yes" : "no, but near") + " (" + near.line + ")";
+  const stamps = row as EventRow & StartFigures;
+  if (typeof stamps.firstQuantumTimeSec !== "number" && typeof stamps.recordingStartContextTimeSec !== "number") {
+    return "no stamp on this row";
+  }
+  const found = staleQuantaAtStamps(clockSteps, stamps, rate);
+  if (found.length === 0) return "no";
+  return (found.some((entry) => entry.readsStaleFrame) ? "yes" : "no, but near") + " (" + describeFound(found) + ")";
 };
 const describe = (reading: RepeatReading, usualMs: number, rate: number, clockSteps: ClockDiscontinuity[] | null): string =>
   reading.rows.map((row) => {
@@ -130,6 +135,8 @@ const describe = (reading: RepeatReading, usualMs: number, rate: number, clockSt
   }).join("\n      ");
 
 const clockLines: string[] = [];
+/** Runs whose witness stopped early: named, and left out of everything the witness is asked. */
+const stoppedLines: string[] = [];
 let runsWithClock = 0;
 let runsWithSteps = 0;
 /** Rows of repeats that are NOT events, in runs that carry the witness: the control. */
@@ -177,20 +184,16 @@ for (const run of runs) {
         clockSteps.map((step) => `${step.previousFrame}→${step.frame} (${step.betweenChunks ? "between chunks" : "inside a chunk"})`).join(", ")
       );
     }
-    for (const reading of ordinary) {
-      for (const row of reading.rows) {
-        const stamps = row as EventRow & StartFigures;
-        if (typeof stamps.firstQuantumTimeSec !== "number" && typeof stamps.recordingStartContextTimeSec !== "number") {
-          ordinaryRowsWithoutStamps++;
-          continue;
-        }
-        ordinaryRows++;
-        const near = staleNear(row, clockSteps, run.rate);
-        if (near === null) continue;
-        if (near.onAStamp) ordinaryRowsOnAStamp++; else ordinaryRowsNear++;
-        ordinaryStaleLines.push(`run ${run.identity.runId} ${reading.scenario}/${reading.bpm}/r${reading.repeat} ${row.tape ?? ""}: ${near.line}`);
-      }
+    const control = controlTally(ordinary.flatMap((reading) => reading.rows as (EventRow & StartFigures)[]), clockSteps, run.rate);
+    ordinaryRows += control.rows;
+    ordinaryRowsWithoutStamps += control.withoutStamps;
+    ordinaryRowsOnAStamp += control.onAStall.length;
+    ordinaryRowsNear += control.near.length;
+    for (const { row, found } of [...control.onAStall, ...control.near]) {
+      ordinaryStaleLines.push(`run ${run.identity.runId} ${row.scenario}/${row.bpm}/r${row.repeat} ${row.tape ?? ""}: ${describeFound(found)}`);
     }
+  } else if (run.witnessStopped !== null) {
+    stoppedLines.push(`run ${run.identity.runId}: the witness stopped before the run ended (${run.witnessStopped}); not read`);
   }
 }
 
@@ -256,10 +259,11 @@ if (otherLines.length > 0) {
 
 console.log(`\nClock discontinuities (multi-mic runs that carry the field): ${runsWithSteps} of ${runsWithClock}`);
 for (const line of clockLines) console.log("  " + line);
+for (const line of stoppedLines) console.log("  " + line);
 if (runsWithClock > 0) {
   console.log(
     `Rows of ordinary repeats in those runs (${ordinaryRows}): ${ordinaryRowsOnAStamp} with a stamp that reads the frame the clock stood on, ` +
-    `${ordinaryRowsNear} with a stale quantum within two quanta of a stamp that does not` +
+    `${ordinaryRowsNear} with a stall within two quanta of a stamp that does not` +
     (ordinaryRowsWithoutStamps > 0 ? `; ${ordinaryRowsWithoutStamps} more rows carry no stamp and are left out` : "")
   );
   for (const line of ordinaryStaleLines) console.log("  " + line);

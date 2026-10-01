@@ -230,6 +230,12 @@ export interface MultitrackAuditRow extends TakeRowBase {
   /** Render quanta the tap's recorder did not deliver, and quanta the reference
    *  lacks over the stretch the tap was compared with. A delay can be read all the same. */
   nodeTapMissingQuanta?: number | null;
+  /** Stamps of the tap that read a clock that stood still and were moved to their call's
+   *  own frame before the tap was laid out. Null without a tap. */
+  nodeTapRepairedStamps?: number | null;
+  /** On a `?graphChurn=on` run: the connect / disconnect pairs the main thread did at this
+   *  repeat's start. Absent on any other run. */
+  graphChurnPairs?: number;
   nodeTapReferenceMissingQuanta?: number | null;
   /** Node taps: `loopbackDelayMs − nodeDelayMs − ANCHOR_OFFSET_MS` of the build that
    *  wrote the row; zero when the SDK's first-frame time is true. Null when either
@@ -339,6 +345,9 @@ export interface MultitrackAuditSummary extends SummaryBase {
    *  page load) whose `currentFrame` did not advance by one quantum (see
    *  `frameDiscontinuities`). No verdict reads it. */
   clockDiscontinuities?: ClockDiscontinuity[];
+  /** Why the reference recorder stopped before the run ended, or null. When it is a reason,
+   *  `clockDiscontinuities` covers only the part of the run before it. */
+  clockWitnessFailure?: string | null;
   rows: MultitrackAuditRow[];
   cellSkews: MultitrackCellSkew[];
 }
@@ -419,6 +428,8 @@ export interface LoadedMultitrackAuditSummary {
   /** The reference recorder's calls whose `currentFrame` did not advance by one quantum,
    *  during the run; null when the envelope predates the witness. */
   clockDiscontinuities: ClockDiscontinuity[] | null;
+  /** Why the witness stopped before the run ended; null when it ran to the end, or there is none. */
+  clockWitnessFailure: string | null;
   /** false when the flag is absent: it was introduced with the dedicated
    *  collision-confirmation cell, and every run before it was an official-
    *  matrix run on two distinct devices. */
@@ -516,6 +527,15 @@ function clockDiscontinuitiesOf(top: Record<string, unknown>, runId: number): Cl
     }
     return { previousFrame: step.previousFrame, frame: step.frame, betweenChunks: step.betweenChunks };
   });
+}
+
+function clockWitnessFailureOf(top: Record<string, unknown>, runId: number): string | null {
+  const v = top.clockWitnessFailure;
+  if (v === undefined || v === null) return null;
+  if (typeof v !== "string") {
+    throw new Error(`recaudit summary ${runId}: unexpected clockWitnessFailure ${JSON.stringify(v)}`);
+  }
+  return v;
 }
 
 function stopLeadOf(top: Record<string, unknown>, runId: number): boolean | null {
@@ -653,6 +673,7 @@ export function parseMultitrackAuditSummary(json: unknown, runId: number): Loade
     harnessPathBiasSec: persistedBias ?? 0,
     confirmCollision: json.confirmCollision === true,
     clockDiscontinuities: clockDiscontinuitiesOf(json, runId),
+    clockWitnessFailure: clockWitnessFailureOf(json, runId),
     cellVerdicts: cellVerdictsOf(json),
     rows: rawRows as unknown as MultitrackAuditRow[],
     cellSkews,

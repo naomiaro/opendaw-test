@@ -233,7 +233,8 @@ quantum: the stall is the take's own chain being built.
 - **The SDK under forced graph work:** dev server, then
   `recording-alignment-audit-debug-demo.html?scenario=multitrack-start&bpm=120&rate=48000&graphChurn=on`.
   Rows off by whole quanta in the netted median or the first-frame check. Such a run carries
-  `graphChurn: true` and no count includes it.
+  `graphChurn: true`, each row the pairs of graph calls done (`graphChurnPairs`), and the
+  event tally leaves it out (no other script reads the flag).
 - **Natural events:** loop `?scenario=multitrack-janked&bpm=120&rate=48000`
   (`one-quantum/run-loop.playwright.js`), then
   `node scripts/audit/recording-alignment/one-quantum-events.ts`: each event tape's line says

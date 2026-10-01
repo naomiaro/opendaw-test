@@ -5,7 +5,7 @@ import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
 import { DebugLinkBar } from "@/components/DebugLinkBar";
 import {
-  CLOCK_CONDITION_LABELS, behindRangeQuanta, classifyClockProbe, clockProbeConfigFrom, runWorkletClockProbe,
+  CLOCK_CONDITION_LABELS, behindRangeQuanta, classifyClockProbe, clockProbeConfigFrom, countOffs, runWorkletClockProbe,
   type ClockConditionResult, type ClockProbeConfig, type ClockProbeReport, type ClockProbeVerdict,
 } from "@/lib/audit/workletClockProbe";
 import "@radix-ui/themes/styles.css";
@@ -36,25 +36,29 @@ const CONFIG = readConfig();
 type RunState =
   | { kind: "idle" }
   | { kind: "running"; stage: string }
-  | { kind: "done"; report: ClockProbeReport; verdict: ClockProbeVerdict; saved: string | null }
+  | { kind: "done"; report: ClockProbeReport; verdict: ClockProbeVerdict; saved: Saved | null }
   | { kind: "threw"; stage: string; message: string };
 
+/** What became of writing the result to disk: the file's name, or why there is none. */
+type Saved = { name: string; failed: null } | { name: null; failed: string };
+
 /** On the dev server the result is also written to `.verify-output/`; anywhere else it stays on the page. */
-async function saveOnDevServer(report: ClockProbeReport, verdict: ClockProbeVerdict): Promise<string | null> {
+async function saveOnDevServer(report: ClockProbeReport, verdict: ClockProbeVerdict): Promise<Saved | null> {
   if (window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") return null;
   const name = "graph-lock-clock-" + String(Date.now()) + ".json";
+  const notSaved = (why: string): Saved => {
+    console.error("[worklet-clock] the result was not saved: " + why);
+    return { name: null, failed: why };
+  };
   try {
     const put = await fetch("/__verify/" + name, { method: "PUT", body: JSON.stringify({ ...report, verdict }, null, 1) });
     // A local preview of the built site has no sink: nothing to report.
     if (put.status === 404 || put.status === 405) return null;
-    return put.ok ? name : `NOT SAVED (${put.status})`;
+    return put.ok ? { name, failed: null } : notSaved(`the dev server answered ${put.status}`);
   } catch (error) {
-    return `NOT SAVED (${String(error)})`;
+    return notSaved(String(error));
   }
 }
-
-const countOf = (offs: Record<string, number>, pick: (off: number) => boolean): number =>
-  Object.entries(offs).reduce((sum, [off, calls]) => (pick(Number(off)) ? sum + calls : sum), 0);
 
 function behindBy(offs: Record<string, number>): string {
   const range = behindRangeQuanta(offs);
@@ -64,15 +68,15 @@ function behindBy(offs: Record<string, number>): string {
 }
 
 const ResultRow: React.FC<{ result: ClockConditionResult }> = ({ result }) => {
-  const behind = countOf(result.offs, (off) => off < 0);
-  const ahead = countOf(result.offs, (off) => off > 0);
+  const behind = countOffs(result.offs, (off) => off < 0);
+  const ahead = countOffs(result.offs, (off) => off > 0);
   const fresh = result.freshRecorders;
   return (
     <Table.Row>
       <Table.RowHeaderCell>{CLOCK_CONDITION_LABELS[result.condition]}</Table.RowHeaderCell>
       <Table.Cell>{result.bursts}</Table.Cell>
       <Table.Cell>{result.checked}</Table.Cell>
-      <Table.Cell>{countOf(result.offs, (off) => off === 0)}</Table.Cell>
+      <Table.Cell>{countOffs(result.offs, (off) => off === 0)}</Table.Cell>
       <Table.Cell>
         {behind > 0 ? <Badge color="red">{behind}</Badge> : "0"}
         {ahead > 0 && <Badge color="purple" ml="2">{ahead} ahead</Badge>}
@@ -81,8 +85,8 @@ const ResultRow: React.FC<{ result: ClockConditionResult }> = ({ result }) => {
       <Table.Cell>
         {fresh === undefined
           ? ""
-          : `${countOf(fresh.offs, (off) => off < 0)} of ${fresh.answered} read their first currentFrame early` +
-            (countOf(fresh.offs, (off) => off > 0) > 0 ? `, ${countOf(fresh.offs, (off) => off > 0)} ahead` : "")}
+          : `${countOffs(fresh.offs, (off) => off < 0)} of ${fresh.answered} read their first currentFrame early` +
+            (countOffs(fresh.offs, (off) => off > 0) > 0 ? `, ${countOffs(fresh.offs, (off) => off > 0)} ahead` : "")}
       </Table.Cell>
     </Table.Row>
   );
@@ -160,8 +164,8 @@ const App: React.FC = () => {
               <Code>currentFrame</Code> it read and the first sample it was handed. The stamp less the frame the
               sample names is 0 when the clock is true. Meanwhile the main thread does one kind of work at a
               time, in stretches. In the last condition every freshly built worklet also reports the{" "}
-              <Code>currentFrame</Code> of its first call: the read a recorder makes once, when a recording
-              starts. Nothing is played through the speakers and no microphone is opened.
+              <Code>currentFrame</Code> of its first call that carries the ramp: the read a recorder makes
+              once, when a recording starts. Nothing is played through the speakers and no microphone is opened.
             </Callout.Text>
           </Callout.Root>
 
@@ -178,7 +182,9 @@ const App: React.FC = () => {
                 {verdictLine}
               </Text>
               {state.kind === "done" && state.saved !== null && (
-                <Text size="1" color="gray">saved: {state.saved}</Text>
+                state.saved.failed === null
+                  ? <Text size="1" color="gray">saved: {state.saved.name}</Text>
+                  : <Text size="1" color="red">not saved: {state.saved.failed}</Text>
               )}
             </Flex>
           </Card>

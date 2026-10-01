@@ -8,7 +8,7 @@
  * path: nothing audible changes.
  */
 
-/** The most pairs one stretch does, so a stretch ends even where the clock does not move. */
+/** The most pairs one stretch does, so a stretch ends even where `performance.now()` does not advance (fake timers). */
 const MAX_PAIRS_PER_STRETCH = 20_000;
 
 /** Whether a page's `?graphChurn=` asks for the churn. Any value but `on` is refused: a
@@ -19,6 +19,12 @@ export function graphChurnFrom(param: string | null): boolean {
   return true;
 }
 
+/**
+ * Connect and disconnect two loose gain nodes for `durationMs`, in stretches of
+ * `timing.stretchMs` with `timing.gapMs` between. The first stretch runs inside the call.
+ * Resolves with the number of connect / disconnect pairs done; rejects when a graph call
+ * throws, in whichever stretch.
+ */
 export function churnGraph(
   audioContext: BaseAudioContext,
   durationMs: number,
@@ -29,17 +35,23 @@ export function churnGraph(
   const to = audioContext.createGain();
   const end = performance.now() + durationMs;
   let pairs = 0;
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const stretch = () => {
       if (performance.now() >= end) { resolve(pairs); return; }
       const until = Math.min(end, performance.now() + timing.stretchMs);
       let inStretch = 0;
-      do {
-        from.connect(to);
-        from.disconnect(to);
-        pairs++;
-        inStretch++;
-      } while (performance.now() < until && inStretch < MAX_PAIRS_PER_STRETCH);
+      try {
+        do {
+          from.connect(to);
+          from.disconnect(to);
+          pairs++;
+          inStretch++;
+        } while (performance.now() < until && inStretch < MAX_PAIRS_PER_STRETCH);
+      } catch (error) {
+        // A later stretch runs from a timer: without this the promise would never settle.
+        reject(error);
+        return;
+      }
       setTimeout(stretch, timing.gapMs);
     };
     stretch();

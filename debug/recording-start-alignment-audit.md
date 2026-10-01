@@ -5440,3 +5440,35 @@ one in the code, all folded in above:
 - The openDAW draft states what its 1020 repeats are made of and that the rate is the
   harness's.
 - The probe page no longer says `CLOCK TRUE` for a run that checked nothing: `NOT CHECKED`.
+
+### After the PR review
+
+Five more reads of the final code (PR #141) found no critical defect and these, all fixed
+before merge:
+
+- A stall of several quanta is persisted as the same `f→f` entry several times, and the
+  tally took each for a stale quantum at `f` + one quantum. `clockStalls` now groups them
+  into one stall with its length, and a stamp after it is measured from its last stale
+  quantum. The natural runs have one stall of two quanta, at no stamp; the control reads the
+  same as before (0 of 804 on a stall, the one near miss).
+- A forced run said `graphChurn: true` whatever the churn did. A row now carries
+  `graphChurnPairs`, a repeat whose churn threw or did nothing is an error row, and in
+  `multitrack-janked` the jank is known to hold the main thread for about as long as the
+  churn lasts (use `multitrack-start`).
+- A reference recorder that stopped early left a witness that read as "the clock never
+  stood still" for the rest of the run. The envelope now carries `clockWitnessFailure` and
+  the tally reads nothing from such a run. None of the saved runs has one.
+- A row now carries how many of its tap's stamps were repaired (`nodeTapRepairedStamps`).
+- The probe ends in `THREW` when the main thread's work or a watching processor throws,
+  instead of reporting a quiet clock or blaming a hidden page.
+- The witness-then-repair order in the loopback, on which the witness depends, is one
+  tested function (`witnessAndRepair`).
+
+Checked after the fixes, one run each: `multitrack-all`
+(`recaudit-mt-summary-1790888801293.json`) reads as before, netted 1.146 on 32 of 32 rows,
+first-frame check 0, a node delay on every row, no repaired stamp, no witness failure.
+`multitrack-start` with `&graphChurn=on` (`recaudit-mt-summary-1790888964095.json`): every
+row carries `graphChurnPairs` (56143 to 73308), 8 of 16 rows have a stamp off by whole
+quanta, 5 to 10 stamps of each tap were repaired, and a node delay is read on 16 of 16.
+The probe page ends in `STALE CLOCK` with idle and busy at 0
+(`graph-lock-clock-1790889074592.json`, 6 s a condition).

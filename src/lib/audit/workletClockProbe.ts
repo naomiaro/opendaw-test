@@ -24,8 +24,8 @@ const EXAMPLES = 12;
  * - `create`: create gain nodes
  * - `stream`: build a MediaStreamAudioSourceNode on a stream and connect it to a fresh
  *   worklet node, once per burst, as the start of a recording does. The fresh worklet also
- *   gets the ramp, and reports the `currentFrame` of its FIRST call with the sample it was
- *   handed: the read a recorder makes once, at the start of a take.
+ *   gets the ramp, and reports the `currentFrame` of its first call that carries it, with
+ *   the sample it was handed: the read a recorder makes once, at the start of a take.
  */
 export type ClockCondition = "idle" | "busy" | "connect" | "create" | "stream";
 
@@ -55,7 +55,8 @@ function wholeParam(params: URLSearchParams, name: string, fallback: number, min
   const raw = params.get(name);
   if (raw === null) return fallback;
   const value = Number(raw);
-  if (raw.trim() === "" || !Number.isInteger(value) || value < min || value > max) {
+  // digits only: `1e1`, `0x10`, `1.0` and a padded value are other ways of writing a number
+  if (!/^\d+$/.test(raw) || value < min || value > max) {
     throw new Error(`invalid ?${name}= "${raw}" — a whole number from ${min} to ${max}`);
   }
   return value;
@@ -65,7 +66,8 @@ function wholeParam(params: URLSearchParams, name: string, fallback: number, min
  * The probe's configuration from a page's query: `?seconds=` per condition (10),
  * `?rate=` (48000), `?burstMs=` (8), `?gapMs=` (2), `?conditions=` as a comma list (all
  * five). A value it does not know is refused. The ramp names each frame by a float32,
- * which holds to about 340 s at 48 kHz; `seconds` stops at 120.
+ * which is exact up to 2^24 frames (349 s at 48 kHz, 174 s at 96 kHz); `seconds` stops at
+ * 120.
  */
 export function clockProbeConfigFrom(params: URLSearchParams): ClockProbeConfig {
   const rawConditions = params.get("conditions");
@@ -81,6 +83,15 @@ export function clockProbeConfigFrom(params: URLSearchParams): ClockProbeConfig 
     gapMs: wholeParam(params, "gapMs", 2, 0, 100),
     conditions,
   };
+}
+
+/** How many calls of an `offs` count have a `stamp − trueFrame` that `pick` takes. */
+export function countOffs(offs: Record<string, number>, pick: (off: number) => boolean): number {
+  let calls = 0;
+  for (const [off, count] of Object.entries(offs)) {
+    if (pick(Number(off))) calls += count;
+  }
+  return calls;
 }
 
 /** The least and the most a stamp was behind its quantum, in quanta; null when none was. */
@@ -188,12 +199,17 @@ export interface ClockProbeVerdict {
   freshAnswered: number;
   /** Stamps ahead of their own quantum, watched and fresh together. A stale clock cannot make one. */
   late: number;
+  /** Why the run cannot vouch for its rates, or for a true clock: conditions that watched or
+   *  worked too little. Empty for a run that did its work. */
+  shortfalls: string[];
 }
 
 /** A condition counts as watched when at least this share of its quanta carried the ramp. */
 const MIN_CHECKED_SHARE = 0.5;
 /** …and as worked when the main thread did at least this share of the stretches that were due. */
 const MIN_BURST_SHARE = 0.25;
+/** A timer that re-arms itself comes round every 4 ms at the soonest, whatever it asks for. */
+const MIN_TIMER_CYCLE_MS = 4;
 
 /** Why a run cannot vouch for a true clock: conditions that checked or worked too little. */
 function shortfallsOf(
@@ -206,20 +222,20 @@ function shortfallsOf(
     if (result.checked < result.quanta * MIN_CHECKED_SHARE) {
       shortfalls.push(`${result.condition} checked ${result.checked} of ${result.quanta} quanta`);
     }
-    if (result.freshRecorders !== undefined && result.freshRecorders.answered === 0) {
+    if (result.condition === "stream" && (result.freshRecorders === undefined || result.freshRecorders.answered === 0)) {
       shortfalls.push(`${result.condition} built 0 fresh worklets that answered`);
     }
   }
   if (cfg !== undefined) {
-    // A page that is not in a visible, focused window has its timers throttled to about one a second.
-    const due = Math.round((cfg.seconds * 1000) / (cfg.burstMs + cfg.gapMs));
+    // A hidden or covered page has its timers throttled to about one a second.
+    const due = Math.round((cfg.seconds * 1000) / Math.max(cfg.burstMs + cfg.gapMs, MIN_TIMER_CYCLE_MS));
     const throttled = results.filter((result) => result.bursts < due * MIN_BURST_SHARE);
     if (throttled.length > 0) {
       const least = Math.min(...throttled.map((result) => result.bursts));
       const most = Math.max(...throttled.map((result) => result.bursts));
       shortfalls.push(
         `${throttled.map((result) => result.condition).join(", ")} did ${least === most ? least : `${least} to ${most}`} ` +
-        `stretches of work where about ${due} were due: keep the page in a visible, focused window`
+        `stretches of work where about ${due} were due: keep the page visible (a hidden or covered page is throttled)`
       );
     }
   }
@@ -228,9 +244,10 @@ function shortfallsOf(
 
 /**
  * What a run of the probe shows, in one line. A stamp found behind is STALE CLOCK however
- * little else was checked; a run that found none says CLOCK TRUE only when every condition
- * was watched and worked (`cfg` given: the stretches of work that were due are checked too),
- * and NOT CHECKED otherwise.
+ * little else was checked. With none behind, a stamp ahead is CLOCK AHEAD. Either carries
+ * the run's shortfalls as a caveat. With no stamp off, the run says CLOCK TRUE only when
+ * every condition was watched and worked (`cfg` given: the stretches of work that were due
+ * are checked too), and NOT CHECKED otherwise.
  */
 export function classifyClockProbe(
   results: readonly ClockConditionResult[],
@@ -241,15 +258,8 @@ export function classifyClockProbe(
   let freshEarly = 0;
   let freshAnswered = 0;
   let late = 0;
-  const count = (offs: Record<string, number>): { behind: number; ahead: number } => {
-    let behind = 0;
-    let ahead = 0;
-    for (const [off, calls] of Object.entries(offs)) {
-      if (Number(off) < 0) behind += calls;
-      if (Number(off) > 0) ahead += calls;
-    }
-    return { behind, ahead };
-  };
+  const count = (offs: Record<string, number>): { behind: number; ahead: number } =>
+    ({ behind: countOffs(offs, (off) => off < 0), ahead: countOffs(offs, (off) => off > 0) });
   for (const result of results) {
     const watched = count(result.offs);
     staleQuanta += watched.behind;
@@ -262,25 +272,25 @@ export function classifyClockProbe(
       freshAnswered += result.freshRecorders.answered;
     }
   }
-  const figures = { staleQuanta, checkedQuanta, freshEarly, freshAnswered, late };
   const shortfalls = shortfallsOf(results, cfg);
+  const figures = { staleQuanta, checkedQuanta, freshEarly, freshAnswered, late, shortfalls };
+  const caveat = shortfalls.length > 0 ? ` (the rates are not this browser's: ${shortfalls.join("; ")})` : "";
   if (staleQuanta > 0 || freshEarly > 0) {
     const parts: string[] = [];
     if (freshAnswered > 0) parts.push(`${freshEarly} of ${freshAnswered} fresh worklets read their first currentFrame early`);
     parts.push(`${staleQuanta} of ${checkedQuanta} quanta read a currentFrame behind their own`);
     if (late > 0) parts.push(`${late} stamp(s) AHEAD of their own quantum`);
-    const caveat = shortfalls.length > 0 ? ` (the rates are not this browser's: ${shortfalls.join("; ")})` : "";
     return { verdict: "STALE CLOCK", headline: "STALE CLOCK: " + parts.join("; ") + caveat, ...figures };
-  }
-  if (shortfalls.length > 0 && late === 0) {
-    return { verdict: "NOT CHECKED", headline: "NOT CHECKED: " + shortfalls.join("; "), ...figures };
   }
   if (late > 0) {
     return {
       verdict: "CLOCK AHEAD",
-      headline: `CLOCK AHEAD: ${late} stamp(s) read a currentFrame AHEAD of their own quantum, of ${checkedQuanta} quanta`,
+      headline: `CLOCK AHEAD: ${late} stamp(s) read a currentFrame AHEAD of their own quantum, of ${checkedQuanta} quanta` + caveat,
       ...figures,
     };
+  }
+  if (shortfalls.length > 0) {
+    return { verdict: "NOT CHECKED", headline: "NOT CHECKED: " + shortfalls.join("; "), ...figures };
   }
   return {
     verdict: "CLOCK TRUE",
@@ -332,7 +342,8 @@ function within<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
  * Run the conditions one after another on a context of its own and report each one's
  * stamps. The page needs a user gesture first: the context has to be allowed to run.
  * `onStage` is told what the probe is about to do, so a caller can name the stage a
- * failure happened in. Every wait has a deadline.
+ * failure happened in. Every wait has a deadline, and a throw in the main thread's work or
+ * in a watching processor ends the run with that error instead of a quieter result.
  */
 export async function runWorkletClockProbe(
   cfg: ClockProbeConfig,
@@ -400,8 +411,12 @@ export async function runWorkletClockProbe(
         processorOptions: { quanta },
       });
       player.connect(watch);
-      const done = new Promise<{ frames: Float64Array; first: Float32Array }>((resolve) => {
+      let fail: (error: Error) => void = () => {};
+      const done = new Promise<{ frames: Float64Array; first: Float32Array }>((resolve, reject) => {
+        fail = reject;
         watch.port.onmessage = (event: MessageEvent<{ frames: Float64Array; first: Float32Array }>) => resolve(event.data);
+        watch.port.onmessageerror = () => reject(new Error(`the watch of ${condition} posted something that could not be read`));
+        watch.onprocessorerror = () => reject(new Error(`the watching processor of ${condition} threw`));
       });
       const startFrame = Math.ceil(((ctx.currentTime + 0.15) * rate) / QUANTUM) * QUANTUM;
       player.start(startFrame / rate);
@@ -411,7 +426,14 @@ export async function runWorkletClockProbe(
       const take: Take = { player, firstCalls: [] };
       const burst = (): void => {
         if (!running) return;
-        operations += work[condition](performance.now() + cfg.burstMs, take);
+        try {
+          operations += work[condition](performance.now() + cfg.burstMs, take);
+        } catch (error) {
+          // The work is what the condition is: without it the watch would report a quiet clock.
+          running = false;
+          fail(new Error(`the main thread's work for ${condition} threw after ${bursts} stretches: ${String(error)}`));
+          return;
+        }
         bursts++;
         setTimeout(burst, cfg.gapMs);
       };
@@ -435,8 +457,8 @@ export async function runWorkletClockProbe(
     }
     return { userAgent: navigator.userAgent, sampleRate: rate, cfg, results };
   } finally {
-    // A close that fails must not take the place of what the probe threw or found.
-    await ctx.close().catch((error: unknown) => {
+    // A close that fails or hangs must not take the place of what the probe threw or found.
+    await within(ctx.close(), 5000, "the context's close").catch((error: unknown) => {
       console.warn("[workletClockProbe] the context did not close: " + String(error));
     });
   }

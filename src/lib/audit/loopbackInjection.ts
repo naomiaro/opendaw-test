@@ -23,8 +23,8 @@
 import { withDeadline } from "@/lib/deadline";
 import {
   NODE_TAP_PROCESSOR, NODE_TAP_PROCESSOR_SOURCE, NODE_TAP_QUANTUM_FRAMES, NODE_TAP_SECONDS,
-  frameDiscontinuities, referenceCovers, referenceFor, repairFrames, spanOf, trimReference,
-  type ClockDiscontinuity, type TapChunk, type TappedNode,
+  referenceCovers, referenceFor, repairFrames, spanOf, trimReference, witnessAndRepair,
+  type ClockDiscontinuity, type ClockWitnessState, type TapChunk, type TappedNode,
 } from "./nodeTap";
 
 export const LOOPBACK_DEVICE_ID = "loopback-injection";
@@ -59,6 +59,8 @@ export interface SourceNodeRecording extends TappedNode {
   referenceChunks: ReadonlyArray<TapChunk>;
   /** Why there is nothing to measure, or null. */
   failed: string | null;
+  /** Stamps of the tap that read a clock that stood still and were moved to their call's own frame. */
+  repairedStamps: number;
 }
 
 /**
@@ -271,6 +273,9 @@ export interface LoopbackHandle {
    * A copy: the caller may keep it.
    */
   clockDiscontinuities(): ClockDiscontinuity[];
+  /** Why the reference recorder stopped, once it has: from then on the list above grows no
+   *  further and says nothing of the clock. Null while it runs. */
+  referenceFailure(): string | null;
   uninstall(): void;
 }
 
@@ -346,12 +351,10 @@ export function installLoopbackCapture(deviceCount: number = 1, options: Loopbac
   /** Why the reference recorder stopped, once it has; every tap after that fails with it. */
   let referenceFailure: string | null = null;
   let referenceChunks: TapChunk[] = [];
-  // Every reference call whose currentFrame did not advance by one quantum, for the whole
-  // run: the reference itself is trimmed, this list is not.
+  // Every reference call whose currentFrame did not advance by one quantum, for as long as
+  // the loopback is installed: the reference itself is trimmed, this list is not.
   let clockDiscontinuities: ClockDiscontinuity[] = [];
-  let lastReferenceFrame: number | null = null;
-  /** The last frame of the reference AFTER repair: what the next chunk's stamps are repaired from. */
-  let lastRepairedReferenceFrame: number | null = null;
+  let witness: ClockWitnessState = { lastRawFrame: null, lastRepairedFrame: null };
   let uninstalled = false;
 
   const tapRecorder = (
@@ -400,6 +403,7 @@ export function installLoopbackCapture(deviceCount: number = 1, options: Loopbac
     let received = 0;
     let tapAttachedAtSec = audioContext.currentTime;
     let settled = false;
+    let repairedStamps = 0;
     let recorder: AudioWorkletNode | null = null;
     const settle = (failed: string | null, reference: TapChunk[]) => {
       if (settled) return;
@@ -411,7 +415,7 @@ export function installLoopbackCapture(deviceCount: number = 1, options: Loopbac
       }
       resolve({
         deviceId, sourceCreatedAtSec: entry.createdAtSec, nodesBuilt,
-        tapAttachedAtSec, tapChunks: [...tapChunks], referenceChunks: reference, failed,
+        tapAttachedAtSec, tapChunks: [...tapChunks], referenceChunks: reference, failed, repairedStamps,
       });
     };
     const budgetMs = NODE_TAP_SECONDS * 1000 + NODE_TAP_GRACE_MS;
@@ -432,10 +436,10 @@ export function installLoopbackCapture(deviceCount: number = 1, options: Loopbac
         if (received < quanta) return;
         // A tap's stamps are open to the stale worklet clock like anyone's: put each
         // call where it was before the tap is laid out against the reference.
-        const { repaired } = repairFrames(tapChunks, null);
-        if (repaired > 0) {
+        repairedStamps = repairFrames(tapChunks, null).repaired;
+        if (repairedStamps > 0) {
           console.warn(
-            "[loopbackInjection] tap on " + deviceId + ": " + String(repaired) +
+            "[loopbackInjection] tap on " + deviceId + ": " + String(repairedStamps) +
             " stamp(s) read a clock that stood still and were moved to their call's own frame"
           );
         }
@@ -649,18 +653,17 @@ export function installLoopbackCapture(deviceCount: number = 1, options: Loopbac
         const keepFrames = REFERENCE_KEEP_SEC * audioContext.sampleRate;
         referenceFailure = null;
         referenceRecorder = tapRecorder(audioContext, 0, REFERENCE_CHUNK_QUANTA, (chunk) => {
-          const { found, lastFrame } = frameDiscontinuities([chunk], lastReferenceFrame);
-          lastReferenceFrame = lastFrame;
-          for (const discontinuity of found) {
+          // Witnessed as the worklet stamped it, then repaired: the reference is laid out by
+          // where each call really was (`witnessAndRepair` keeps the two apart).
+          const taken = witnessAndRepair(chunk, witness);
+          witness = taken.state;
+          for (const discontinuity of taken.found) {
             clockDiscontinuities.push(discontinuity);
             console.warn(
               "[loopbackInjection] reference clock: frame " + String(discontinuity.frame) + " after " +
               String(discontinuity.previousFrame) + (discontinuity.betweenChunks ? " (between chunks)" : " (inside a chunk)")
             );
           }
-          // The witness above read the stamps as the worklet gave them; the reference is
-          // laid out by where each call really was.
-          lastRepairedReferenceFrame = repairFrames([chunk], lastRepairedReferenceFrame).lastFrame;
           referenceChunks.push(chunk);
           trimReference(referenceChunks, keepFrames);
         }, (reason) => {
@@ -696,6 +699,7 @@ export function installLoopbackCapture(deviceCount: number = 1, options: Loopbac
     clockDiscontinuities() {
       return clockDiscontinuities.map((discontinuity) => ({ ...discontinuity }));
     },
+    referenceFailure() { return referenceFailure; },
     uninstall() {
       uninstalled = true;
       nodeTapsReady = null;
@@ -712,8 +716,7 @@ export function installLoopbackCapture(deviceCount: number = 1, options: Loopbac
         referenceRecorder = null;
         referenceChunks = [];
         clockDiscontinuities = [];
-        lastReferenceFrame = null;
-        lastRepairedReferenceFrame = null;
+        witness = { lastRawFrame: null, lastRepairedFrame: null };
       }
     },
   };

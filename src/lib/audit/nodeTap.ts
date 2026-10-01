@@ -107,10 +107,11 @@ export interface ClockDiscontinuity {
 /**
  * The calls among `chunks` whose `currentFrame` is not exactly one quantum after the
  * previous call's. `previousFrame` is the last frame of an earlier batch, null for the
- * first. A worklet's clock can stand still for a call while the main thread changes the
- * audio graph: that shows INSIDE a chunk, as a frame equal to the one before it and then
- * a step of two quanta. A step BETWEEN two chunks is either the clock or a posted chunk
- * that was lost.
+ * first. A worklet's clock can stand still while the main thread changes the audio graph:
+ * that shows as a frame equal to the one before it, once for every quantum the stall
+ * lasts, and then a step forward that makes up for them (two quanta after a stall of
+ * one). A step forward BETWEEN two chunks without a repeated frame before it is a posted
+ * chunk that was lost.
  */
 export function frameDiscontinuities(
   chunks: readonly TapChunk[],
@@ -128,6 +129,60 @@ export function frameDiscontinuities(
     }
   }
   return { found, lastFrame: last };
+}
+
+/** A stretch in which the clock stood still: it read `frame` truly, then again in each of the next `quanta` calls. */
+export interface ClockStall {
+  /** The frame the clock stood on. The stale quanta are really at `frame + 1 … quanta` quanta. */
+  frame: number;
+  /** How many calls read it again: the length of the stall in quanta. */
+  quanta: number;
+}
+
+/**
+ * The stalls among a run's discontinuities, in order. A discontinuity whose frame equals
+ * the one before it is one stale quantum; several in a row on the same frame are one stall
+ * that lasted that many quanta. A step forward is not a stall.
+ */
+export function clockStalls(steps: readonly ClockDiscontinuity[]): ClockStall[] {
+  const stalls: ClockStall[] = [];
+  let open: ClockStall | null = null;
+  for (const step of steps) {
+    if (step.frame !== step.previousFrame) { open = null; continue; }
+    if (open !== null && open.frame === step.frame) {
+      open.quanta++;
+    } else {
+      open = { frame: step.frame, quanta: 1 };
+      stalls.push(open);
+    }
+  }
+  return stalls;
+}
+
+/** What a recorder's chunks were last seen at: as the worklet stamped them, and after repair. */
+export interface ClockWitnessState {
+  lastRawFrame: number | null;
+  lastRepairedFrame: number | null;
+}
+
+/**
+ * Take one chunk of a recorder that runs for a long time: note the calls whose stamp did
+ * not advance by one quantum, reading the stamps AS GIVEN and against the last raw frame,
+ * then repair the stamps in place from the last REPAIRED frame. In that order, and with
+ * the two frames kept apart: a repair done first would hide every stall from the witness,
+ * and a repair continued from a raw frame would undo itself at a chunk border.
+ */
+export function witnessAndRepair(
+  chunk: TapChunk,
+  state: ClockWitnessState
+): { found: ClockDiscontinuity[]; repaired: number; state: ClockWitnessState } {
+  const witnessed = frameDiscontinuities([chunk], state.lastRawFrame);
+  const repair = repairFrames([chunk], state.lastRepairedFrame);
+  return {
+    found: witnessed.found,
+    repaired: repair.repaired,
+    state: { lastRawFrame: witnessed.lastFrame, lastRepairedFrame: repair.lastFrame },
+  };
 }
 
 /**

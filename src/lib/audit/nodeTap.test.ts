@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  findLag, frameDiscontinuities, layOutRange, measureNodeDelay, repairFrames, nodeDelayFor, notMeasured,
+  clockStalls, findLag, frameDiscontinuities, layOutRange, measureNodeDelay, repairFrames, witnessAndRepair, nodeDelayFor, notMeasured,
   referenceCovers, referenceFor, referenceLeadFrames, spanOf, trimReference,
   NODE_TAP_LOUD, NODE_TAP_MAX_LAG_SEC, NODE_TAP_PROCESSOR, NODE_TAP_PROCESSOR_SOURCE,
   NODE_TAP_QUANTUM_FRAMES, NODE_TAP_SECONDS, NODE_TAP_WINDOW_FRAMES, NODE_TAP_WINDOW_LEAD_FRAMES,
@@ -739,5 +739,46 @@ describe("repairFrames", () => {
     const chunk = stamped([256, 512]);
     expect(repairFrames([chunk], 256)).toEqual({ repaired: 1, lastFrame: 512 });
     expect([...chunk.frames]).toEqual([384, 512]);
+  });
+});
+
+describe("clockStalls", () => {
+  const step = (previousFrame: number, frame: number, betweenChunks = false) => ({ previousFrame, frame, betweenChunks });
+
+  it("is one stall of one quantum for a clock that read a frame twice", () => {
+    expect(clockStalls([step(128, 128), step(128, 384)])).toEqual([{ frame: 128, quanta: 1 }]);
+  });
+
+  it("counts every further read of the same frame into the same stall", () => {
+    // the clock read 128 on three calls running: two stale quanta, then it caught up
+    expect(clockStalls([step(128, 128), step(128, 128, true), step(128, 512)])).toEqual([{ frame: 128, quanta: 2 }]);
+  });
+
+  it("keeps two stalls apart, and takes no forward step for one", () => {
+    expect(clockStalls([step(128, 128), step(128, 384), step(640, 1024, true), step(2048, 2048), step(2048, 2304)]))
+      .toEqual([{ frame: 128, quanta: 1 }, { frame: 2048, quanta: 1 }]);
+    expect(clockStalls([])).toEqual([]);
+  });
+});
+
+describe("witnessAndRepair", () => {
+  it("witnesses the stamps as given and repairs them afterwards, each from its own last frame", () => {
+    // a stall of two quanta that straddles a chunk border: true frames 0,128,256 | 384,512
+    const first = stamped([0, 128, 128]);
+    const second = stamped([128, 512]);
+    const one = witnessAndRepair(first, { lastRawFrame: null, lastRepairedFrame: null });
+    expect(one.found).toEqual([{ previousFrame: 128, frame: 128, betweenChunks: false }]);
+    expect([...first.frames]).toEqual([0, 128, 256]);
+    expect(one.state).toEqual({ lastRawFrame: 128, lastRepairedFrame: 256 });
+    const two = witnessAndRepair(second, one.state);
+    // the witness compares with the RAW last frame: the border call read 128 again
+    expect(two.found).toEqual([
+      { previousFrame: 128, frame: 128, betweenChunks: true },
+      { previousFrame: 128, frame: 512, betweenChunks: false },
+    ]);
+    // the repair continues from the REPAIRED last frame
+    expect([...second.frames]).toEqual([384, 512]);
+    expect(two.state).toEqual({ lastRawFrame: 512, lastRepairedFrame: 512 });
+    expect(two.repaired).toBe(1);
   });
 });
