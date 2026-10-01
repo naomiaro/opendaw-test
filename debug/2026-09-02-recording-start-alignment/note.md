@@ -5505,3 +5505,7 @@ After the restart, by hand: `CLOCK TRUE`, 14774 quanta and 1920 fresh worklets
 Safari 18.6, by hand: `CLOCK TRUE`, 14772 quanta and 1351 fresh worklets
 (`graph-lock-clock-1790891225129.json`); 1026 of its 2377 fresh worklets did not report
 before the condition ended. So the stale clock is Chrome's alone among the three.
+
+Filed 2026-10-01 as [openDAW#424](https://github.com/andremichelle/openDAW/issues/424). The
+cause and the quicker trigger are on Chromium issue 442866743 as
+[comment 5](https://issues.chromium.org/issues/442866743#comment5), posted the same day.
