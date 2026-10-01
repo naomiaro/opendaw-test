@@ -5500,3 +5500,7 @@ that the browser has to be restarted.
 
 After the restart, by hand: `CLOCK TRUE`, 14774 quanta and 1920 fresh worklets
 (`graph-lock-clock-1790891148652.json`).
+
+Safari 18.6, by hand: `CLOCK TRUE`, 14772 quanta and 1351 fresh worklets
+(`graph-lock-clock-1790891225129.json`); 1026 of its 2377 fresh worklets did not report
+before the condition ended. So the stale clock is Chrome's alone among the three.

@@ -3,8 +3,8 @@
 Notes for the read, not part of the body:
 - The repro page URL works once this repo's PR is merged and deployed.
 - The browser defect is already on the Chromium tracker (issue 442866743, open); the body
-  links it. Its reporter says other browsers do not do it; Firefox 157 was measured here with
-  the repro page and reads a true clock, Safari is not measured.
+  links it. Its reporter says other browsers do not do it; Firefox 157 and Safari 18.6 were measured
+  here with the repro page and read a true clock.
 - No fix is suggested, by the repo's rule. The fix idea is in
   `debug/worklet-clock-stale-under-graph-work.md`, last section.
 - The rate is the measurement harness's, and the body says so: the harness rebuilds the audio
@@ -55,7 +55,7 @@ A stamp is only ever early, never late.
   of 3693 quanta read a `currentFrame` one or two quanta old. Building a
   `MediaStreamAudioSourceNode` and connecting it to a fresh worklet node, as the start of a
   take does: 15 of 1825 fresh worklets read their FIRST `currentFrame` early (14 by one
-  quantum, 1 by two). Firefox 157 on the same page: every stamp true.
+  quantum, 1 by two). Firefox 157 and Safari 18.6 on the same page: every stamp true.
 - With the SDK: record with two tapes armed while the page does graph work at the record
   request (connect / disconnect of any nodes), and compare the takes against a known signal.
 

@@ -70,7 +70,7 @@ under that many nodes. The result
 true and how many were behind, and for the last condition how many fresh worklets read a
 first `currentFrame` that was behind. In Chrome the clock stands still for a quantum when
 the main thread is inside a graph call at the moment the quantum before it ends. In Firefox
-every stamp is true.
+and Safari every stamp is true.
 
 On the audit page the same thing is watched and forced: a multi-mic envelope lists the
 reference recorder's calls whose stamp did not advance by one quantum

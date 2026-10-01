@@ -3,7 +3,7 @@
 **Verified against:** `@opendaw/studio-sdk@0.0.173` (the same stamping code on 0.0.172);
 Chrome 154 on macOS 15.6.1 (Apple M4 Pro), 48 kHz; Chromium `main` at commit
 `4b38af96d95350e04e831d18f6ba91a2a0cca5d2` (2026-10-01) for the source lines. Firefox 157
-on the same machine: the clock is true (below). Safari: not measured.
+and Safari 18.6 on the same machine: the clock is true (below).
 
 **Status (2026-10-01):** the stale clock is measured, and watched through three natural events
 on the recording harness; why it stands still is read from Chromium's source. The browser
@@ -149,6 +149,15 @@ remote control in a fresh profile, the page visible. The same by hand in the use
 profile (`graph-lock-clock-1790891148652.json`): `CLOCK TRUE`, 14774 quanta and 1920 fresh
 worklets, each condition's 10 s of quanta rendered in 10.000 to 10.006 s.
 
+**Safari 18.6, same machine, same page, by hand** (`graph-lock-clock-1790891225129.json`):
+`CLOCK TRUE`. 14772 quanta, every stamp the frame of its own quantum, under 1 660 000
+connect / disconnect pairs and 2377 stream-source builds, each condition's quanta rendered in
+real time (9.997 to 10.087 s). Of the 2377 fresh worklets 1351 reported a first call that
+carried the ramp, all of them true; the other 1026 did not report before the condition ended
+(in Chrome 21 of 1846 did not, in Firefox 24 of 1944). The probe lets a fresh worklet go
+after eight more are built, some 34 ms at Safari's pace, so one that Safari had not run by
+then never answers: not followed up.
+
 What Firefox does instead under graph work is render late. It queues each graph call for its
 render thread, and the thread has to run them:
 - A stretch that connected and disconnected for its whole 8 ms (about 21 000 pairs) left the
@@ -238,9 +247,10 @@ quantum: the stall is the take's own chain being built.
   given stall. The source says so and every measurement fits; no run logged the lock. That
   the SDK's two stamps are single reads of the worklet clock is read from the SDK's source and
   shows in every row's arithmetic.
-- **Measured in Firefox 157:** the clock is true under the same probe (the Chromium issue's
-  reporter says the freeze is Chrome only). The SDK's recording harness was not run there.
-- **Not measured:** Safari; other machines; the rate in a real session. The harness
+- **Measured in Firefox 157 and Safari 18.6:** the clock is true under the same probe (the
+  Chromium issue's reporter says the freeze is Chrome only). The SDK's recording harness was
+  not run there.
+- **Not measured:** other machines; the rate in a real session. The harness
   rebuilds the audio chain on every take (its synthetic device reports no id) and schedules
   its clicks just before each take, so it does more graph work around a take's start than an
   application recording from one named device, which reuses its chain. Any application UI that

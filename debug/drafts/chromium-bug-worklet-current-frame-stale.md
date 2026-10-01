@@ -62,8 +62,8 @@ with the sample it was handed: 15 of 1825 read it one or two quanta early. With
 `?conditions=create` the main thread creates gain nodes for the whole stretch: 610 of 3693
 quanta behind, by 1 to 26 quanta. No stamp was ahead of its block in any run.
 
-Firefox 157 on the same machine, same page: every stamp true (14774 quanta, 1739 fresh
-worklets). In a stale quantum the processor
+Firefox 157 and Safari 18.6 on the same machine, same page: every stamp true (Firefox 14774
+quanta and 1920 fresh worklets, Safari 14772 and 1351). In a stale quantum the processor
 reads the same `currentFrame` as in its previous call, and two quanta more in the call after,
 as described above in this issue. A busy main thread alone does not do it; graph work does,
 and it can last several quanta.

@@ -518,8 +518,8 @@ without a limit above zero. Replay saved runs (one sample rate at a time) with
   more. `create` runs only when `?conditions=` names it: Chrome shows it only when nodes
   are made in bulk, and Firefox stops rendering under that and starts no context
   afterwards until it is restarted (the page then ends in `THREW context`). A watch that misses its
-  deadline says how much audio the context rendered in that time. Firefox reads
-  `CLOCK TRUE`. Write-up:
+  deadline says how much audio the context rendered in that time. Firefox and Safari
+  read `CLOCK TRUE`. Write-up:
   `debug/worklet-clock-stale-under-graph-work.md`.
 - **Reading a multi-mic run's clock witness.** The envelope's `clockDiscontinuities` lists
   every call of the reference recorder whose `currentFrame` was not one quantum after the
