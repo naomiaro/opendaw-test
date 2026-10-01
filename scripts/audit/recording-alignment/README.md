@@ -54,16 +54,24 @@ node delays in `.verify-output/task13-node-delay-runs-48000.txt` and `…-44100.
 
 ## The worklet clock under graph work (`one-quantum/`)
 
-`one-quantum/graph-lock-clock.page.js` (runner `run-graph-lock-clock.playwright.js`) has no
-SDK on the page. A buffer source plays a ramp in which every sample names its own frame; a
+`one-quantum/run-graph-lock-clock.playwright.js` runs the probe in
+`src/lib/audit/workletClockProbe.ts` with no SDK on the page; `worklet-clock-debug-demo.html`
+runs the same code on a button press and says `STALE CLOCK`, `CLOCK TRUE` or `THREW <stage>`.
+A buffer source plays a ramp in which every sample names its own frame; a
 worklet records, for each `process` call, the `currentFrame` it read and the first sample it
 was handed, while the main thread does one kind of work in stretches: nothing, a loop that
 touches no audio object, connecting and disconnecting two loose gain nodes, creating gain
 nodes, or building a stream source and a fresh worklet as a take's start does. The result
-(`.verify-output/graph-lock-clock-<time>.json`) gives per condition how many stamps were
+(`.verify-output/graph-lock-clock-<time>.json`, with the verdict) gives per condition how many stamps were
 true and how many were behind, and for the last condition how many fresh worklets read a
 first `currentFrame` that was behind. In Chrome the clock stands still for a quantum when
 the main thread is inside a graph call at the moment the quantum before it ends.
+
+On the audit page the same thing is watched and forced: a multi-mic envelope lists the
+reference recorder's calls whose stamp did not advance by one quantum
+(`clockDiscontinuities`), `one-quantum-events.ts` says for each event tape whether such a
+call sits on one of its start-of-take stamps, and `&graphChurn=on` does graph work at each
+record request (an envelope with `graphChurn: true` is left out of every count).
 
 ## Running one page many times (`one-quantum/`)
 
