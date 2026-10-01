@@ -134,6 +134,7 @@ import {
   resolveHarnessPathBias,
   runCellRepeat,
   runRepeatWithDeadline,
+  STOP_LEAD_PPQN,
   settleFinalizeProbe,
   takeLastFinalizeProbe,
   assertCurrent,
@@ -1142,7 +1143,8 @@ async function runMultitrackCellRepeat(
     }
   );
   assertCurrent(token, "position wait");
-  await waitForPosition(project, MULTITRACK_RECORD_BARS * BAR_PPQN, 60_000);
+  // Stop a lead before the downbeat that follows the window (see STOP_LEAD_PPQN).
+  await waitForPosition(project, MULTITRACK_RECORD_BARS * BAR_PPQN - STOP_LEAD_PPQN, 60_000);
 
   onStage("stopping");
   // Side effects below (loader patches, lastMultitrackFinalizeProbes,

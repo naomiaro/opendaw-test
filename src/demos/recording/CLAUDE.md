@@ -473,6 +473,11 @@ without a limit above zero. Replay saved runs (one sample rate at a time) with
   `harnessPathBiasSettleMs`; rows carry `harnessPathBiasSec` (the run-wide value they
   were adjusted with, read ONCE after output started — never Chrome's initial 0) and
   `wavName`/`wavUploadError`. Legacy files are mapped by the loader, never rewritten.
+- Every repeat stops an eighth note BEFORE the next metronome click (`STOP_LEAD_PPQN` in
+  `src/lib/audit/recordingCellRunner.ts`): a linear take runs four bars less the lead and
+  matches 15 beats; `loop-wrap` stops a lead before beat 2 of the pass its last wrap opened.
+  A stop just after a click put that click 190–280 ms ahead of the next repeat's first one,
+  heard as a double click on every repeat boundary.
 - The engine boots once per page load (`Workers.install` asserts on a second
   `initializeOpenDAW`): "Re-run" on the matrix/multitrack pages re-runs the matrix on the
   cached project/tape(s) under a fresh run token; the probe page is one-shot.

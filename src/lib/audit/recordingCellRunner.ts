@@ -47,6 +47,23 @@ import { BAR_PPQN } from "@/lib/audit/auditExpectations";
 /** Finalization barrier deadline, shared by every take-finalizing wait on both pages. */
 export const FINALIZE_DEADLINE_MS = 30_000;
 
+/**
+ * How far before a metronome click a repeat's stop goes out: an eighth note.
+ *
+ * A repeat that stops just AFTER a click (the downbeat that follows its four
+ * bars, or the downbeat of the pass a loop wrap opens) leaves that click
+ * 190–280 ms ahead of the next repeat's first one, and the pair is heard as a
+ * double click on every repeat boundary. Stopping a lead before the click keeps
+ * the last click that sounds most of a beat away from the next repeat's first.
+ *
+ * The stop request trails the position it waits for by 35–105 ms (the 50 ms
+ * poll, an animation frame, the engine's position sync) and the stop itself
+ * round-trips through the worklet, so the lead has to clear about 135 ms at
+ * every tempo the matrix runs. An eighth note is 250 ms at 120 BPM.
+ */
+export const STOP_LEAD_PPQN = BAR_PPQN / 8;
+const BEAT_PPQN = BAR_PPQN / 4;
+
 
 export interface CapturedBuffer {
   channels: Float32Array[];
@@ -150,6 +167,22 @@ function pollPosition(
  *  instead of hanging the whole campaign. */
 export function waitForPosition(project: Project, targetPpqn: number, deadlineMs: number): Promise<void> {
   return pollPosition(project, (ppqn) => ppqn >= targetPpqn, 50, deadlineMs, `waitForPosition(${targetPpqn})`, false);
+}
+
+/**
+ * Poll until engine.position sits in `[fromPpqn, belowPpqn)`. For a wait inside a
+ * loop pass: a position read just after a wrap can still be the one from before
+ * it, near the loop end, and a bare `>= fromPpqn` would take that for arrival.
+ */
+export function waitForPositionWithin(project: Project, fromPpqn: number, belowPpqn: number, deadlineMs: number): Promise<void> {
+  return pollPosition(
+    project,
+    (ppqn) => ppqn >= fromPpqn && ppqn < belowPpqn,
+    50,
+    deadlineMs,
+    `waitForPositionWithin(${fromPpqn}, ${belowPpqn})`,
+    false
+  );
 }
 
 /**
@@ -561,10 +594,16 @@ export async function runCellRepeat(options: CellRepeatOptions): Promise<CellRep
 
   onStage("recording");
   assertCurrent(token, "recording wait");
+  // Every scenario stops a lead before the next metronome click (see STOP_LEAD_PPQN).
   if (scenario === "loop-wrap") {
     await waitForTakeCount([unitAdapter], LOOP_WRAP_TAKES + 1, 90_000);
+    // The take the last wrap opened starts on the loop's downbeat click: record on
+    // to a lead before beat 2 of that pass. The upper bound is the loop's last
+    // beat, where a read from before the wrap would still sit.
+    assertCurrent(token, "final pass wait");
+    await waitForPositionWithin(project, BEAT_PPQN - STOP_LEAD_PPQN, 2 * BAR_PPQN - BEAT_PPQN, 20_000);
   } else {
-    await waitForPosition(project, startPpqn + 4 * BAR_PPQN, 60_000);
+    await waitForPosition(project, startPpqn + 4 * BAR_PPQN - STOP_LEAD_PPQN, 60_000);
   }
 
   onStage("stopping");
