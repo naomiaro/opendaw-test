@@ -240,7 +240,7 @@ start time.
 
 **`LoopArea.enabled` schema-defaults to `false`.** `LoopArea.initializeFields()`
 (`node_modules/@opendaw/studio-boxes/dist/LoopArea.js`) sets `enabled: false`, `from: 0`,
-`to: 15360` (4 bars) on a fresh box. A demo with a Loop control still writes its starting
+`to: 15360` (4 bars) on a fresh box. A demo with a Loop control writes its starting
 state at boot (range AND `enabled`), so the UI and the engine agree from the first frame
 whatever the default is; a demo that wants the transport to cycle must switch the loop on
 itself — a fresh project plays linearly past bar 4.

@@ -155,8 +155,9 @@ DX7 voices.
   (`TubularPitchEnvelope`: four rates, four levels), `40 operators` (array of six
   `TubularOperator`, panel order OP1..OP6, 22 fields each: four rates, four levels,
   break-point, left/right depth and curve, rate-scaling, amp-mod-sens, velocity-sens,
-  output-level, mode, coarse, fine, detune, enabled). Values are the DX7 panel bytes
-  (Int32, `ParameterPointerRules` — automatable, MIDI-controllable, modulatable). Plain
+  output-level, mode, coarse, fine, detune, enabled). Apart from the Float32 `cutoff`,
+  `resonance`, `volume` and `tune`, values are the DX7 panel bytes (Int32); all carry
+  `ParameterPointerRules` (automatable, MIDI-controllable, modulatable). Plain
   fields: `50 voice-load` (bumped by every voice load — the device cuts all notes and
   restarts the LFO) and `51 engine` (0 = Mark I hardware-like tables, 1 = Modern msfa,
   default 1).
@@ -183,8 +184,8 @@ DX7 voices.
 `Pointers.InstrumentCompositeCell`; no studio code created the old boxes, so no stored
 project holds the old class names) and the device is now complete end to end.
 
-- **`InstrumentCompositeCellBox`** gained a strip: `7 minimized`, `40 gain` (dB), `41 mute`,
-  `42 solo`, `43 pan` (bipolar) — all automatable; the `instrument` field is no longer
+- **`InstrumentCompositeCellBox`** gained `7 minimized` and a strip: `40 gain` (dB), `41 mute`,
+  `42 solo`, `43 pan` (bipolar) — the four strip fields automatable; the `instrument` field is no longer
   mandatory; the box accepts the `Editing` pointer (a layer can be entered in the device
   panel). Engine: mute / solo silence at the strip, the layer keeps running.
 - **Adapters**: `InstrumentCompositeBoxAdapter` (`cells` collection),
@@ -201,8 +202,11 @@ project holds the old class names) and the device is now complete end to end.
   `setLayerInstrument(cellBox, factory)`, `moveCompositeLayer`, `duplicateCompositeLayer`,
   `deleteCompositeLayer`, `wrapInstrumentIntoComposite(instrumentBox)` (re-hosts by pointer,
   automation lanes keep their targets), `pasteAudioUnitAsLayer(composite, data, notes?)`
-  (namespace `AudioUnitAsLayer`, `Notes = "keep" | "replace" | "append"`); return type
-  `CompositeLayerProduct<INST> = {cellBox, instrumentBox}`.
+  (namespace `AudioUnitAsLayer`, `Notes = "keep" | "replace" | "append"`). The create / wrap /
+  paste methods return `Attempt<CompositeLayerProduct<INST>, string>` with
+  `CompositeLayerProduct<INST> = {cellBox, instrumentBox}`; `setLayerInstrument` returns
+  `Attempt<InstrumentBox, string>`, `duplicateCompositeLayer` the new cell box, the other two
+  `void`.
 - `NestedHostExit` (owned by every `Project`): when the entered layer / entry / Playfield
   slot is deleted, the device panel exits to the nearest surviving parent instead of
   crashing.
@@ -341,8 +345,11 @@ pages (Sink, Composite, Tubular), `StudioService.restartEngine` removed, error-t
   regions, or that Seconds overlaps slip through a mixed-unit check, now describe the trim
   and the Seconds rule (`timebase-demo.tsx`, `track-editing-demo.tsx`,
   `pure-webaudio-target-debug-demo.tsx`, `voice-fadein-clip-fadein-product-debug-demo.tsx`,
-  `compLaneUtils.ts`, `src/demos/playback/CLAUDE.md`, `documentation/02-timing-and-tempo.md`,
-  and a dated update on `debug/project-copy-deletes-overlapping-regions.md`). Measured with
+  `shared-source-double-process-debug-demo.tsx`, `compLaneUtils.ts`,
+  `src/demos/playback/CLAUDE.md`, `documentation/02-timing-and-tempo.md`,
+  `documentation/10-export.md`, and dated updates on
+  `debug/project-copy-deletes-overlapping-regions.md` and
+  `debug/seconds-overlap-validation-unit-mismatch.md`, which this release closes). Measured with
   real boxes on the installed SDK: musical `0+3840` / `1920+3840` → `0+1920` / `1920+3840`;
   two musical regions at one position → both deleted; Seconds regions reaching over their
   successor → untouched and not `invalid`. No demo behaviour changes: the demos prevent
@@ -351,23 +358,31 @@ pages (Sink, Composite, Tubular), `StudioService.restartEngine` removed, error-t
   Werkstatt `reset()`), `documentation/16-midi.md` (arpeggio on a stopped transport),
   `documentation/internals/05-devices-and-effects.md` (paused locate, `InstrumentCompositeBox`),
   `src/demos/effects/CLAUDE.md` (Crusher mix, Sink, script reset), `src/demos/midi/CLAUDE.md`
-  (Tubular and Composite adapters), root `CLAUDE.md` (`asCompositeCell`, aux-send routing).
+  (Tubular and Composite adapters), root `CLAUDE.md` (`asCompositeCell`, aux-send routing),
+  the aux-send tap point in `documentation/internals/05-devices-and-effects.md` and
+  `documentation/14-glossary.md`, and `documentation/internals/01-engine-processor.md` /
+  `08-time-and-pitch.md` (solo on a located quantum, `refresh_tempo_map`, the clamp on a
+  timeBase switch).
 - **Crusher in the effects demo**: the demo writes the raw `mix` field (0..1), which the
   engine reads as the wet amount before and after the change; no audible difference.
 - **Recording audit harness, not part of the SDK change**: every repeat now stops an eighth
   note before the next metronome click (`STOP_LEAD_PPQN`), which removes the double click a
   listener heard at each repeat boundary (last click to next start 432 ms or more, was
-  187–280 ms). A linear take matches 15 beats instead of 16; nothing else in the rows moves.
+  187–280 ms). A linear take matches 15 beats instead of 16 and loop-wrap's last take is about
+  0.39 s long instead of 0.06 s; verdicts and medians do not move. Each row persists
+  `stopLeadMs` (how far ahead of the click the stop request went out; the page warns under
+  30 ms), since no verdict would show a missed lead.
 - **Standing sweeps on the release** (register section "Standing sweep on 0.0.173, and the
   stop moved ahead of the next click" in `debug/recording-start-alignment-audit.md`):
   sample-rate/quantum-alignment 180 of 180 cells pass; recording start-alignment 48 kHz (three
   runs) and 44.1 kHz (one), 60 rows each, 0 error rows, every repeat finalized, netted medians
-  +1.07…+1.17 ms and +0.97…+1.19 ms as on 0.0.172; multi-mic three runs, 96 rows, no collision,
+  +1.07…+1.17 ms and +0.97…+1.19 ms as on 0.0.172 on all but one row; multi-mic three runs, 96 rows, no collision,
   no hang. Three things to read there: the first recording after a cold start had an 84 ms
   head deficit once and not again; and the open one-quantum event showed twice in 168 repeats
   (once in 416 on 0.0.172), one of them a real 2.67 ms misplacement of one tape — not enough
   repeats to say the rate moved.
-- **Verification**: `npm run typecheck` 0 errors, 851 of 851 vitest tests, `npm run build`,
+- **Verification**: `npm run typecheck` 0 errors, 864 of 864 vitest tests (13 of them new, on
+  the harness's stop lead), `npm run build`,
   `npm ci` on the regenerated lockfile.
 - API claims verified against the installed tarballs (`node_modules/@opendaw/*/dist`):
   `LoopArea` `enabled` default `false`; `box.loopOffset.setValue(loopOffset ?? 0)` in
@@ -376,7 +391,7 @@ pages (Sink, Composite, Tubular), `StudioService.restartEngine` removed, error-t
   `InstrumentCompositeCellBox`, `AudioSinkDeviceBox` present and `CompositeDeviceBox` /
   `CompositeCellBox` absent; `TubularDeviceBox.engine` default 1; `RegionOverlap` exported
   and used by `Validator.js`; `trims` in `ProjectValidation.js`; `#mergeEnv` in `Project.js`;
-  the nine new `ProjectApi` methods; `EffectFactories.Sink`, `EffectFactory.boxName`, no
+  the eleven new `ProjectApi` methods; `EffectFactories.Sink`, `EffectFactory.boxName`, no
   `*_ENTRY_LABELS`; `InstrumentFactories.Tubular` / `InstrumentComposite` / `keyOfBox` /
   `isLayerInstrument`; `DeviceHost.asCompositeCell`; `Mixer` constructor with `boxAdapters`;
   `AssetService.importFiles` / `acceptsFile` / `extensionOf`, `SampleService.AudioExtensions`;

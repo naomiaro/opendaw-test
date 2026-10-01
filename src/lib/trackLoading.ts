@@ -36,7 +36,8 @@ export async function loadTracksFromFiles(
      */
     defaultVolume?: number;
     /**
-     * Whether to automatically set loop end to match longest track (default: true)
+     * Whether to loop the timeline over the longest track — loop end set AND loop
+     * switched on (default: true). With false the loop area is left untouched.
      */
     autoSetLoopEnd?: boolean;
     /**

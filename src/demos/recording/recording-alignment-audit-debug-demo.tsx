@@ -134,6 +134,7 @@ import {
   resolveHarnessPathBias,
   runCellRepeat,
   runRepeatWithDeadline,
+  readStopLead,
   STOP_LEAD_PPQN,
   settleFinalizeProbe,
   takeLastFinalizeProbe,
@@ -684,12 +685,12 @@ async function runAudit(
             }),
             // Outer deadline ABOVE the inner stages' worst-case sum, so the
             // stage that is actually slow is the one that names itself:
-            // loop-wrap 30 (settle) + 90 (take count) + 30 (finalize) = 150 s;
-            // janked-start 30 + 30 (jank arm) + 60 (position) + 30 = 150 s;
-            // midtimeline 30 + 20 + 60 + 30 = 140 s. 180 s keeps 30 s of margin.
-            // Should it still fire first, the token makes the abandoned repeat
-            // inert (see `runRepeatWithDeadline`).
-            180_000,
+            // loop-wrap 30 (settle) + 90 (take count) + 20 (final pass) + 30
+            // (finalize) = 170 s; janked-start 30 + 30 (jank arm) + 60
+            // (position) + 30 = 150 s; midtimeline 30 + 20 + 60 + 30 = 140 s.
+            // 200 s keeps 30 s of margin. Should it still fire first, the token
+            // makes the abandoned repeat inert (see `runRepeatWithDeadline`).
+            200_000,
             label
           );
         } catch (err) {
@@ -1167,6 +1168,9 @@ async function runMultitrackCellRepeat(
   probeA.finalizeNumberOfFramesAtStop = (loaderA as unknown as { numberOfFrames?: number }).numberOfFrames;
   probeB.finalizeNumberOfFramesAtStop = (loaderB as unknown as { numberOfFrames?: number }).numberOfFrames;
   stopRequestContextTime = audioContext.currentTime;
+  const stopLead = readStopLead(
+    project, MULTITRACK_RECORD_BARS * BAR_PPQN, bpm, multitrackCellLabel(scenario, bpm, repeat)
+  );
   project.engine.stopRecording();
 
   onStage("finalizing");
@@ -1267,6 +1271,7 @@ async function runMultitrackCellRepeat(
       headMissingMs: alignment.headMissingMs,
       headMissingRawMs,
       tailMissingMs: alignment.tailMissingMs,
+      stopLeadMs: stopLead,
       medianSkewMs: null, maxAbsSkewMs: null, pairedSkewBeats: 0, // filled in once both tapes are measured
       regionPositionPpqn: take.position,
       regionStartSec,

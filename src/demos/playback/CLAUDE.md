@@ -335,8 +335,8 @@ regions to overlap on one lane is the bug, not the repair.
 
 A **Seconds**-timeBase region is the exception: its end moves with the tempo, so it may
 reach over the next region on its track without being an overlap (`RegionOverlap.
-endsAtSuccessor`; neither `Project.invalid()` nor `ProjectValidation` flags it, and it is
-never trimmed or deleted). The engine plays it only until the next region starts — the
+endsAtSuccessor`; neither `Project.invalid()` nor `ProjectValidation` flags it, and load
+and `copy()` neither trim nor delete it — two Seconds regions at one position included). The engine plays it only until the next region starts — the
 tail is cut there and does not come back in a later gap. Every overlap check in the SDK
 (`RegionClipResolver.validateTrack`, `ProjectValidation`, `Project.invalid()`,
 `Validator.hasOverlappingRegions`, `compactTracks`, the push / keep-existing resolvers)
@@ -350,7 +350,8 @@ mixing the track outputs at the master. See `pure-webaudio-target-debug-demo.tsx
 `debug/project-copy-deletes-overlapping-regions.md` for full context including the
 sub-PPQN overlap footgun (an `Int32` `position` + `Float32` `duration` at non-integer
 PPQN can produce a 0.5-PPQN overlap that triggers the same repair without the
-consumer intending any; the tolerance is about a thousandth of a pulse).
+consumer intending any; the tolerance is `|position| · 2⁻²³ + 0.001` pulses, about 0.06 at
+the end of a four-minute song).
 
 ### Phase-Correlate Shifts: Don't Double-Compensate Source Delay
 When applying a phase-correlation result via `loopOffset` to align two regions reading

@@ -47,7 +47,7 @@ flowchart LR
     class Out,Bus io
 ```
 
-The instrument is the source. Effects run in their declared order. Aux sends tap the signal *after* the effects and *before* the fader, route copies to one or more aux buses, and pass the original through to the channel strip — which applies volume, pan and mute, and produces the unit's output. The MIDI device chain is symmetric but simpler: notes flow through MIDI effects directly into the instrument, with no sends and no channel strip.
+The instrument is the source. Effects run in their declared order. Aux sends tap the signal after the effects — *before* the channel strip for a Pre send, *after* it for a Post send (`AuxSendBox.routing`, Post by default) — route copies to one or more aux buses, and pass the original through to the channel strip — which applies volume, pan and mute, and produces the unit's output. The MIDI device chain is symmetric but simpler: notes flow through MIDI effects directly into the instrument, with no sends and no channel strip.
 
 The builder for all of this is `crates/engine/src/audio_unit/wiring.rs`, driven by the per-unit `AudioUnitBinding` in `crates/engine/src/audio_unit/mod.rs`. A unit's binding holds three ordered `IndexedCollection`s taken straight from the box graph — the `input` instrument, the `midi-effects` chain, and the `audio-effects` chain, each sorted by the device's `index` field — and rebuilds its processor cluster only when a chain reports dirty. Because the ordering comes from the boxes, "reorder an effect" is a box edit that arrives over the sync stream like any other; nothing in the engine tracks chain order separately.
 
@@ -344,7 +344,7 @@ Four things to notice:
 
 The strip does **not** decide solo. Solo is a cross-unit fact — it silences *other* strips — so the strip only reads a `forced_silent` flag that the engine resolves for it.
 
-`AuxSendProcessor` (`crates/engine-env/src/aux_send.rs`) is structurally the same node with a smaller surface: send gain (dB) plus send pan, no mute or solo, the same linear balance law and the same `LinearRamp` de-clicking. It taps the unit's post-effects, pre-fader buffer, and its output is summed into the target bus.
+`AuxSendProcessor` (`crates/engine-env/src/aux_send.rs`) is structurally the same node with a smaller surface: send gain (dB) plus send pan, no mute or solo, the same linear balance law and the same `LinearRamp` de-clicking. It taps the unit's post-effects buffer before the strip (`routing` Pre) or the strip's output (`routing` Post, the box default), and its output is summed into the target bus.
 
 ### Solo resolution
 

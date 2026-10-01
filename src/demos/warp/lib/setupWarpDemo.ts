@@ -83,8 +83,8 @@ export async function setupWarpDemo(opts: {
       box.timeBase.setValue(TimeBase.Seconds);
       box.label.setValue(SAMPLE_NAME);
     });
-    // Default loopArea.to is 15360 PPQN (~16 beats) — playback would wrap after
-    // ~8 s. Loop the full file instead; demos update `to` when their end tick
+    // A fresh project's loop area is disabled and ends at 15360 PPQN (~16
+    // beats). Loop the full file; demos update `to` when their end tick
     // changes (warp mode switches, conform repositioning).
     const endPpqn = Math.round(PPQN.secondsToPulses(audioBuffer.duration, projectBpm));
     project.timelineBox.loopArea.from.setValue(0);

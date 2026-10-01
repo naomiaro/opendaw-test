@@ -109,7 +109,8 @@ export async function createJamSession(
       });
     }
 
-    // Arrangement playback must run linearly — kill the default timeline loop.
+    // Arrangement playback must run linearly — state the loop as off rather
+    // than rely on the schema default.
     // Inside the try: a failure here still needs the rollback below, same as
     // a per-stem load/modify failure above.
     project.editing.modify(() => {

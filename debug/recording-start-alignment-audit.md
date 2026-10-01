@@ -4959,6 +4959,14 @@ What it changes in the rows:
   beat.
 - Nothing else. Row counts per cell, head and tail deficits and the netted medians are below.
 
+A missed lead would show in no verdict (the expected beats come from the take's own length),
+so each row persists `stopLeadMs`, the stop request's distance from the click it is meant to
+end before, read off `engine.position`, and the page warns under 30 ms. Added after the review
+of the change and checked on three short runs (`…1790874956367` `nominal-start`,
+`…1790874984657` `loop-wrap`, `recaudit-mt-summary-1790875060142.json` `multitrack-start`, all
+120 BPM, 48 kHz): **205–248 ms on 14 repeats**, no warning, 37 of 37 rows `aligned` on the same
+netted medians. The sweeps below were recorded before the field existed and do not carry it.
+
 ### The changed harness
 
 | file | rate | rows | error rows | cells `aligned` | finalized | netted medians | raw medians |
@@ -4967,8 +4975,8 @@ What it changes in the rows:
 | `recaudit-summary-1790872569363.json` | 44100 | 60 | 0 | 10 of 10 | 30 of 30 | +0.97…+1.19 ms | −14.28…+0.91 ms |
 
 Head and tail deficits 0 on all 120 rows, loader state `loaded` on all, 0 WAV upload failures.
-Per cell at 48 kHz the netted mean is +1.15 (linear scenarios), +1.16 and +1.13 (`loop-wrap`
-120 and 97.3), as on the unchanged harness; at 44.1 kHz +1.16…+1.19 and +1.09 / +1.10, the
+Per cell at 48 kHz the netted mean is +1.15 (linear scenarios, except the one cell with the
+row off, 2.04), +1.16 and +1.13 (`loop-wrap` 120 and 97.3), as on the unchanged harness; at 44.1 kHz +1.16…+1.19 and +1.09 / +1.10, the
 figures of the 2026-09-29 sweep. The one row off is the subject of the next section.
 
 Multi-mic (`multitrack-all`, 120 BPM, 48000 Hz), three runs, 8 repeats per cell:
@@ -5040,7 +5048,7 @@ what makes the stamp early in the first place.
 ### Sample-rate/quantum-alignment sweep
 
 `samplerate-audit-debug-demo.html?family=all&bpm=all&rate=all`: **180 of 180 cells pass,
-0 investigate**, max deviation 0.07–0.08 ms on the metronome family, 0.5 min. No family but
+0 investigate**, max deviation 0.06–0.08 ms on the metronome family, 0.5 min. No family but
 `loop-wrap` sets the loop area, and the schema default of `loopArea.enabled` went from `true` to
 `false` in this release: the sweep passing unchanged says no other family's expected onsets
 depended on the wrap at bar 4.

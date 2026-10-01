@@ -38,7 +38,7 @@ const { Quarter } = PPQN;
  * - Seconds: duration stored in seconds — constant regardless of BPM
  * Overlap rules differ: a Musical region must end before the next region on its
  * track starts (ProjectValidation, inside project.copy(), trims the earlier region
- * to the gap, and deletes both when they share a position). A Seconds region's end
+ * to end where the later one starts, and deletes both when they share a position). A Seconds region's end
  * moves with the tempo, so it may reach over its successor: the engine plays it
  * only until the next region starts. The demo keeps both tracks free of overlaps.
  */
@@ -302,7 +302,7 @@ function TimeBaseDemo() {
         const overlapBeat = overlap.position.getValue() / Quarter + 1;
         setAddNotice(
           `Skipped: would overlap the region at beat ${overlapBeat.toFixed(2)} — ` +
-          `overlapping regions on one track are invalid by design.`
+          `the earlier region's tail would be cut where the next one starts.`
         );
         return;
       }
@@ -704,7 +704,7 @@ function TimeBaseDemo() {
             <p>
               A Musical region must end before the next region on its track starts:{" "}
               <code>ProjectValidation</code> inside <code>project.copy()</code> (export, offline
-              render) trims an overlapping region to the gap. A Seconds region may reach over
+              render) trims an overlapping region to end where the next one starts. A Seconds region may reach over
               its successor, and is then heard only until that successor starts. Prevent
               overlaps at write time and put overlapping one-shots on separate Tape tracks.
             </p>

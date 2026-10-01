@@ -366,6 +366,8 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
  * A fresh project's loop area is disabled and ends at 15360 PPQN (four 4/4 bars), so both
  * are written here: playback of a loaded song wraps to the start when the longest track ends.
  * A demo that wants no loop sets `loopArea.enabled` to false after loading.
+ * With no buffers (every track failed to load) nothing is written and the loop
+ * stays as it was.
  *
  * @param project - The OpenDAW project instance
  * @param audioBuffers - Map of audio buffers (UUID string -> AudioBuffer)
@@ -394,8 +396,8 @@ export function setLoopEndFromTracks(project: Project, audioBuffers: Map<string,
   // Calculate the max duration from the audio buffers
   const maxDurationSeconds = Math.max(...Array.from(audioBuffers.values()).map(buf => buf.duration));
 
-  // Convert to PPQN
-  const loopEndInPPQN = PPQN.secondsToPulses(maxDurationSeconds, effectiveBpm);
+  // Convert to PPQN (loopArea.to is an Int32 field)
+  const loopEndInPPQN = Math.round(PPQN.secondsToPulses(maxDurationSeconds, effectiveBpm));
 
   // Set the loop end and enable the loop in a transaction
   project.editing.modify(() => {

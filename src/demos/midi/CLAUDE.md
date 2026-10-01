@@ -152,7 +152,8 @@ Available instrument adapters (each implements `InstrumentDeviceBoxAdapter`):
 - `TapeDeviceBoxAdapter` — audio sample playback (default for audio recording)
 - `NanoDeviceBoxAdapter` — polyphonic sampler (region, crossfade loop, root key); see `src/demos/instruments/CLAUDE.md`
 - `TubularDeviceBoxAdapter` — six-operator FM synth, DX7 compatible (`InstrumentFactories.Tubular`;
-  voices load through `TubularPreset.apply(box, voice)`, cartridges parse with `Dx7Sysex`)
+  a voice is a 155-byte `Uint8Array` loaded with `TubularPreset.apply(box, voice)`;
+  `Dx7Sysex.decode(bytes)` parses a cartridge into `{name, data}` voices — pass `data`)
 - `InstrumentCompositeBoxAdapter` — layered instruments (`InstrumentFactories.InstrumentComposite`);
   each layer is an `InstrumentCompositeCellBoxAdapter` with its own instrument, MIDI and audio
   chains and a gain / pan / mute / solo strip. Layers are managed through `project.api`

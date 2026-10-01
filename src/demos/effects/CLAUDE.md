@@ -67,7 +67,8 @@ Parameters are created by `ScriptCompiler.compile()`. Access via:
 Fields: `.label` (StringField), `.value` (Float32Field, automatable), `.defaultValue` (Float32Field).
 
 ### Werkstatt Scripts and Transport Reset
-A transport reset reaches a Werkstatt script: an optional `reset()` method on the
+A transport reset (`engine.stop(true)`; a pause, `stop(false)`, keeps all device state)
+reaches a Werkstatt script: an optional `reset()` method on the
 `Processor` is called; a script WITHOUT one has its `Processor` rebuilt on the next block
 (cached params and samples replayed), so class-field state — delay lines, feedback tails —
 starts fresh instead of sounding on after Stop. A Spielwerk script's `reset()` runs on a

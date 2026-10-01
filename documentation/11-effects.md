@@ -2000,7 +2000,7 @@ class Processor {
 }
 ```
 
-A transport reset reaches the script: with a `reset()` method the engine calls it; without one the `Processor` is rebuilt on the next block (parameters and samples are replayed), so state held in class fields starts fresh and a feedback delay does not keep sounding after Stop.
+A transport reset — a stop that rewinds, `engine.stop(true)`; a pause keeps all device state — reaches the script: with a `reset()` method the engine calls it; without one the `Processor` is rebuilt on the next block (parameters and samples are replayed), so state held in class fields starts fresh and a feedback delay does not keep sounding after Stop.
 
 **`io` Object:**
 

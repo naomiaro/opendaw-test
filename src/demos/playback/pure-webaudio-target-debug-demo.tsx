@@ -296,7 +296,7 @@ const App: React.FC = () => {
         // timeline (crossfade) without violating the per-track no-overlap
         // invariant that `project.copy()` enforces. See
         // `debug/project-copy-deletes-overlapping-regions.md` — on one track
-        // the earlier region is trimmed to the gap during copy, which makes
+        // the earlier region is trimmed to end at the later one during copy, which makes
         // offline rendering of any crossfade impossible. Separate tracks
         // each have their own `regions` collection, so each track has only
         // one region; the overlap is between tracks and the mix happens

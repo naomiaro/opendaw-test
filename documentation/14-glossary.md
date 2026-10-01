@@ -31,7 +31,7 @@ A typed wrapper around a box that exposes its fields with `ValueMapping` / `Stri
 A bus (`AudioBusBox`, summed by the engine's `AudioBusProcessor`) that receives audio from one or more aux sends and mixes it. Typically used for reverb/delay returns. See [Ch. 11](./11-effects.md), [internals/05](./internals/05-devices-and-effects.md).
 
 ### Aux send
-A processor that taps a copy of an `AudioUnit`'s signal (post-effects, pre-channel-strip) and routes it to an aux bus. See [internals/05](./internals/05-devices-and-effects.md).
+A processor that taps a copy of an `AudioUnit`'s signal after its effects — before the channel strip (Pre) or after it (Post, the default; `AuxSendBox.routing`) — and routes it to an aux bus. See [internals/05](./internals/05-devices-and-effects.md).
 
 ### Automation
 Time-varying parameter values stored in `ValueEvent`s on a `ValueEventCollectionBox`. The audio worklet evaluates the curve once per render quantum (and at event boundaries for sample-accurate changes). See [Ch. 09](./09-editing-fades-and-automation.md), [internals/01](./internals/01-engine-processor.md).
