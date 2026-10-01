@@ -280,6 +280,9 @@ interface SummaryBase {
    *  `stopLeadMs` then tells, and `harnessOf` in `oneQuantumEvents.ts` lists the runs
    *  that had the lead and no such figure. */
   stopLead?: boolean;
+  /** True when the run was made with `?graphChurn=on`: the main thread did graph work at
+   *  each take's start. Not a measurement of the SDK as it runs. */
+  graphChurn?: boolean;
   /** Which SDK surfaces the served build exposed at load — see
    *  `src/lib/audit/buildFeatures.ts`. Absent on every envelope written before
    *  the field existed; `profileKeyFor` falls back to the run token there. */
@@ -363,6 +366,8 @@ export interface LoadedAuditSummary {
   sdkVersion: string | null;
   /** Whether repeats stopped a lead before the click; null when the envelope predates the field. */
   stopLead: boolean | null;
+  /** Whether the run forced graph work at each take's start (`?graphChurn=on`); false when the field is absent. */
+  graphChurn: boolean;
   rate: number;
   alignedToleranceMs: number;
   /** null when the run predates `outputLatency` persistence (G1, G2). */
@@ -399,6 +404,8 @@ export interface LoadedMultitrackAuditSummary {
   sdkVersion: string | null;
   /** Whether repeats stopped a lead before the click; null when the envelope predates the field. */
   stopLead: boolean | null;
+  /** Whether the run forced graph work at each take's start (`?graphChurn=on`); false when the field is absent. */
+  graphChurn: boolean;
   rate: number;
   alignedToleranceMs: number;
   skewToleranceMs: number;
@@ -476,6 +483,15 @@ function sdkVersionOf(top: Record<string, unknown>, runId: number): string | nul
   if (v === undefined) return null;
   if (typeof v !== "string" || v.length === 0) {
     throw new Error(`recaudit summary ${runId}: unexpected sdkVersion ${JSON.stringify(v)}`);
+  }
+  return v;
+}
+
+function graphChurnOf(top: Record<string, unknown>, runId: number): boolean {
+  const v = top.graphChurn;
+  if (v === undefined) return false;
+  if (typeof v !== "boolean") {
+    throw new Error(`recaudit summary ${runId}: unexpected graphChurn ${JSON.stringify(v)}`);
   }
   return v;
 }
@@ -568,6 +584,7 @@ export function parseAuditSummary(json: unknown, runId: number): LoadedAuditSumm
     getUserMediaOpens: getUserMediaOpensOf(json, runId),
     sdkVersion: sdkVersionOf(json, runId),
     stopLead: stopLeadOf(json, runId),
+    graphChurn: graphChurnOf(json, runId),
     rate: requireNumber(json, "rate", runId),
     alignedToleranceMs: requireNumber(json, "alignedToleranceMs", runId),
     outputLatencySec,
@@ -604,6 +621,7 @@ export function parseMultitrackAuditSummary(json: unknown, runId: number): Loade
     getUserMediaOpens: getUserMediaOpensOf(json, runId),
     sdkVersion: sdkVersionOf(json, runId),
     stopLead: stopLeadOf(json, runId),
+    graphChurn: graphChurnOf(json, runId),
     rate: requireNumber(json, "rate", runId),
     alignedToleranceMs: requireNumber(json, "alignedToleranceMs", runId),
     skewToleranceMs: requireNumber(json, "skewToleranceMs", runId),

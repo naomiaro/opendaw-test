@@ -45,6 +45,8 @@ interface Run {
   identity: RunIdentity;
   rate: number;
   rows: EventRow[];
+  /** A run made with `?graphChurn=on`: the event was forced, so it is not counted. */
+  graphChurn: boolean;
   /** The reference recorder's clock witness; null on a single-tape run and on a multi-mic
    *  envelope written before the field existed. */
   clockSteps: ClockStep[] | null;
@@ -67,6 +69,7 @@ for (const { summary } of loadSummaries()) {
     identity: { runId: summary.runId, sdkVersion: summary.sdkVersion, stopLead: summary.stopLead, sdkBuildProbe: summary.sdkBuildProbe, buildFeatures: summary.buildFeatures },
     rate: summary.rate,
     rows: summary.rows,
+    graphChurn: summary.graphChurn,
     clockSteps: null,
   });
 }
@@ -77,6 +80,7 @@ for (const runId of listMultitrackSummaryRunIds()) {
     identity: { runId: summary.runId, sdkVersion: summary.sdkVersion, stopLead: summary.stopLead, sdkBuildProbe: summary.sdkBuildProbe, buildFeatures: summary.buildFeatures },
     rate: summary.rate,
     rows: summary.rows,
+    graphChurn: summary.graphChurn,
     clockSteps: clockStepsOf(runId),
   });
 }
@@ -129,11 +133,13 @@ let runsWithSteps = 0;
 let ordinaryRows = 0;
 let ordinaryRowsWithStale = 0;
 const ordinaryStaleLines: string[] = [];
+let forced = 0;
 let skipped = 0;
 let tooShort = 0;
 let counted = 0;
 for (const run of runs) {
   if (run.identity.runId < fromRun) continue;
+  if (run.graphChurn) { forced++; continue; }
   const sdk = sdkOf(run.identity);
   if (sdk === null) { skipped++; continue; }
   const { repeats, events, others, usualMs } = eventsOfRun(run.rows, run.rate);
@@ -185,7 +191,7 @@ const rateLine = ({ repeats, events }: Tally): string => {
 console.log(
   `runs read: ${runs.length}` + (MAX_RUN === Infinity ? "" : ` (RECAUDIT_MAX_RUN=${MAX_RUN})`) +
   `, counted: ${counted}` + (fromRun > 0 ? ` (from run ${fromRun})` : "") +
-  `, not release builds: ${skipped}, fewer than 3 repeats: ${tooShort}\n`
+  `, forced runs left out: ${forced}, not release builds: ${skipped}, fewer than 3 repeats: ${tooShort}\n`
 );
 console.log("| SDK | harness stop | kind | rate | repeats | events |\n|---|---|---|---|---|---|");
 for (const key of [...tallies.keys()].sort()) {

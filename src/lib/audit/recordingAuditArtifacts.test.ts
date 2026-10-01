@@ -149,6 +149,19 @@ describe("parseAuditSummary — SDK version and stop lead", () => {
     expect(() => parseAuditSummary({ ...g6, sdkVersion: "" }, 1)).toThrow(/sdkVersion/);
     expect(() => parseAuditSummary({ ...g6, stopLead: "off" }, 1)).toThrow(/stopLead/);
   });
+
+  it("graphChurn: an envelope without the field was not a forced run; true is passed through", () => {
+    expect(parseAuditSummary(g6, 1790880000000).graphChurn).toBe(false);
+    expect(parseAuditSummary({ ...g6, graphChurn: true }, 1790880000000).graphChurn).toBe(true);
+    const mt = { ...g6, skewToleranceMs: 2, rows: mtRows, cellSkews: [] };
+    expect(parseMultitrackAuditSummary(mt, 1790880000001).graphChurn).toBe(false);
+    expect(parseMultitrackAuditSummary({ ...mt, graphChurn: false }, 1790880000001).graphChurn).toBe(false);
+    expect(parseMultitrackAuditSummary({ ...mt, graphChurn: true }, 1790880000001).graphChurn).toBe(true);
+  });
+
+  it("graphChurn: malformed → throws, so a forced run cannot be counted by a typo", () => {
+    expect(() => parseMultitrackAuditSummary({ ...g6, skewToleranceMs: 2, rows: mtRows, cellSkews: [], graphChurn: "on" }, 1)).toThrow(/graphChurn/);
+  });
 });
 
 describe("parseAuditSummary — validation", () => {

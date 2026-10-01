@@ -68,6 +68,7 @@ import {
   installLoopbackCapture, LOOPBACK_DEVICE_ID, loopbackDeviceId, type SourceNodeRecording,
 } from "@/lib/audit/loopbackInjection";
 import { nodeDelayFor } from "@/lib/audit/nodeTap";
+import { churnGraph } from "@/lib/audit/graphChurn";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { withDeadline } from "@/lib/deadline";
 import { detectOnsets } from "@/lib/audit/onsetDetection";
@@ -231,6 +232,12 @@ const DEFAULT_INPUT = params.get("defaultInput") === "1";
  *  is refused: a run has to say which stop it used. */
 const STOP_LEAD_PARAM = params.get("stopLead");
 const STOP_LEAD = STOP_LEAD_PARAM !== "off";
+/** `&graphChurn=on` does graph work on the main thread from each record request on, to
+ *  force the worklet clock to stand still while the SDK takes its start-of-take stamps.
+ *  Multi-mic scenarios only. Such a run is not part of any count. */
+const GRAPH_CHURN = params.get("graphChurn") === "on";
+/** It has to be over before the node taps attach, about 220 ms after a take's first quantum. */
+const GRAPH_CHURN_MS = 150;
 /** Persisted per run so an envelope says which `#updateStream` path it took. */
 const CAPTURE_MODE: CaptureMode = DEFAULT_INPUT ? "default" : "named";
 
@@ -664,6 +671,7 @@ async function runAudit(
   const bpms = resolveBpms(params.get("bpm"));
   const rate = resolveRate(params.get("rate"));
   assertStopLeadParam();
+  if (GRAPH_CHURN) throw new Error("?graphChurn=on is for the multitrack scenarios");
   // One token per run, stamped into BOTH the summary name and every capture
   // WAV name, so a summary row and the audio it was measured from can always be
   // joined without guessing (Task 7c fix round 1, review M12).
@@ -1136,6 +1144,7 @@ async function runMultitrackCellRepeat(
   await waitForPositionSettled(project, 0, 30_000);
   assertCurrent(token, "startRecording");
   recordRequestContextTime = audioContext.currentTime;
+  if (GRAPH_CHURN) void churnGraph(audioContext, GRAPH_CHURN_MS);
   if (scenario === "multitrack-janked") {
     const jankArmed = armJankOnRecordingFlip(project, JANK_MS, 30_000);
     project.startRecording(false);
@@ -1429,6 +1438,7 @@ async function uploadMultitrackSummary(
     rate, sdkBuildProbe, buildFeatures,
     sdkVersion: OPENDAW_SDK_VERSION,
     stopLead: STOP_LEAD,
+    graphChurn: GRAPH_CHURN,
     clockDiscontinuities: loopback.clockDiscontinuities(),
     captureMode: CAPTURE_MODE,
     getUserMediaOpens: loopback.getUserMediaOpens(),
