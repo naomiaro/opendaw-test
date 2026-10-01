@@ -512,7 +512,13 @@ without a limit above zero. Replay saved runs (one sample rate at a time) with
   `worklet-clock-debug-demo.html` (`src/lib/audit/workletClockProbe.ts`; it says
   `STALE CLOCK`, `CLOCK TRUE`, `CLOCK AHEAD` (a stamp ahead of its quantum, which a stale
   clock cannot make), `NOT CHECKED` when the run watched or worked too little, as on a
-  hidden or covered page, or `THREW <stage>`). Write-up:
+  hidden or covered page, or `THREW <stage>`). A bare page runs `idle`, `busy`, `connect`
+  and `stream`. `connect` makes at most `MAX_CONNECTS_PER_STRETCH` pairs a stretch: Firefox
+  runs each graph call as a message on its render thread and falls behind real time under
+  more. `create` runs only when `?conditions=` names it: Chrome shows it only when nodes
+  are made in bulk, and Firefox stops rendering under that. A watch that misses its
+  deadline says how much audio the context rendered in that time. Firefox reads
+  `CLOCK TRUE`. Write-up:
   `debug/worklet-clock-stale-under-graph-work.md`.
 - **Reading a multi-mic run's clock witness.** The envelope's `clockDiscontinuities` lists
   every call of the reference recorder whose `currentFrame` was not one quantum after the

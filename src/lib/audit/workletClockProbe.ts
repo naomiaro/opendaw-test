@@ -6,7 +6,7 @@
  * started at a known context frame. A worklet records, for each `process` call, the
  * `currentFrame` it read and the first sample of its input: the frame the quantum really
  * is comes from the sample, and the stamp less that frame is 0 when the stamp is true.
- * Meanwhile the main thread does one kind of work in bursts (`ClockCondition`).
+ * Meanwhile the main thread does one kind of work in stretches (`ClockCondition`).
  *
  * The summaries and the verdict are plain functions and run in Node; `runWorkletClockProbe`
  * needs a browser.
@@ -20,8 +20,10 @@ const EXAMPLES = 12;
  * What the main thread does while the clock is watched:
  * - `idle`: nothing
  * - `busy`: a loop that touches no audio object
- * - `connect`: connect and disconnect two gain nodes that are in nobody's path
- * - `create`: create gain nodes
+ * - `connect`: connect and disconnect two gain nodes that are in nobody's path, up to
+ *   `MAX_CONNECTS_PER_STRETCH` times a stretch
+ * - `create`: create gain nodes for the whole stretch. Not among the conditions a bare page
+ *   runs (`DEFAULT_CLOCK_CONDITIONS`): see there
  * - `stream`: build a MediaStreamAudioSourceNode on a stream and connect it to a fresh
  *   worklet node, once per burst, as the start of a recording does. The fresh worklet also
  *   gets the ramp, and reports the `currentFrame` of its first call that carries it, with
@@ -30,6 +32,15 @@ const EXAMPLES = 12;
 export type ClockCondition = "idle" | "busy" | "connect" | "create" | "stream";
 
 export const CLOCK_CONDITIONS: readonly ClockCondition[] = ["idle", "busy", "connect", "create", "stream"];
+
+/**
+ * What a run does when it is not told: every condition but `create`. Chrome's clock stands
+ * still under `create` only when nodes are made by the hundred thousand, and Firefox stops
+ * rendering under that many; a context made afterwards in the same Firefox does not start
+ * either (measured: see the debug note). A run that asks for it in such a browser ends in
+ * a deadline that says how little the context rendered.
+ */
+export const DEFAULT_CLOCK_CONDITIONS: readonly ClockCondition[] = ["idle", "busy", "connect", "stream"];
 
 export const CLOCK_CONDITION_LABELS: Record<ClockCondition, string> = {
   idle: "does nothing",
@@ -43,7 +54,8 @@ export interface ClockProbeConfig {
   sampleRate: number;
   /** How long each condition is watched. */
   seconds: number;
-  /** How long the main thread works at a stretch. `stream` does one build per stretch whatever this is. */
+  /** How long the main thread works at a stretch, at the most: `connect` stops at
+   *  `MAX_CONNECTS_PER_STRETCH`, and `stream` does one build per stretch whatever this is. */
   burstMs: number;
   /** The pause between stretches. */
   gapMs: number;
@@ -64,14 +76,14 @@ function wholeParam(params: URLSearchParams, name: string, fallback: number, min
 
 /**
  * The probe's configuration from a page's query: `?seconds=` per condition (10),
- * `?rate=` (48000), `?burstMs=` (8), `?gapMs=` (2), `?conditions=` as a comma list (all
- * five). A value it does not know is refused. The ramp names each frame by a float32,
+ * `?rate=` (48000), `?burstMs=` (8), `?gapMs=` (2), `?conditions=` as a comma list
+ * (`DEFAULT_CLOCK_CONDITIONS`). A value it does not know is refused. The ramp names each frame by a float32,
  * which is exact up to 2^24 frames (349 s at 48 kHz, 174 s at 96 kHz); `seconds` stops at
  * 120.
  */
 export function clockProbeConfigFrom(params: URLSearchParams): ClockProbeConfig {
   const rawConditions = params.get("conditions");
-  const conditions = rawConditions === null ? [...CLOCK_CONDITIONS] : rawConditions.split(",");
+  const conditions = rawConditions === null ? [...DEFAULT_CLOCK_CONDITIONS] : rawConditions.split(",");
   const known = (name: string): name is ClockCondition => (CLOCK_CONDITIONS as readonly string[]).includes(name);
   if (conditions.length === 0 || !conditions.every(known) || new Set(conditions).size !== conditions.length) {
     throw new Error(`invalid ?conditions= "${rawConditions ?? ""}" — a comma list of ${CLOCK_CONDITIONS.join(", ")}, each once`);
@@ -83,6 +95,41 @@ export function clockProbeConfigFrom(params: URLSearchParams): ClockProbeConfig 
     gapMs: wholeParam(params, "gapMs", 2, 0, 100),
     conditions,
   };
+}
+
+/**
+ * The most connect / disconnect pairs one stretch makes: the same dose in every browser. A
+ * stretch that made as many as fit in `burstMs` asked for more than every browser can
+ * render beside: Firefox runs each call as a message on its render thread, and its context
+ * fell behind real time. Chrome's clock stands still at this dose all the same (measured:
+ * see the debug note).
+ */
+export const MAX_CONNECTS_PER_STRETCH = 1000;
+
+/** A context that renders less than this share of real time has fallen behind. */
+const MIN_RENDER_PACE = 0.9;
+
+/** Call `op` until the time is `until` or `maxCalls` calls are made, whichever comes first. How many it made. */
+export function workStretch(
+  op: () => void,
+  until: number,
+  maxCalls: number,
+  now: () => number = () => performance.now()
+): number {
+  let calls = 0;
+  while (calls < maxCalls && now() < until) {
+    op();
+    calls++;
+  }
+  return calls;
+}
+
+/** What a context did while a watch was waited for in vain: how much audio in how long. */
+export function renderPaceNote(renderedSec: number, wallSec: number): string {
+  const pace = `the context rendered ${renderedSec.toFixed(1)} s of audio in ${wallSec.toFixed(1)} s`;
+  return renderedSec < wallSec * MIN_RENDER_PACE
+    ? pace + ": its render thread did not keep up with the main thread's work"
+    : pace;
 }
 
 /** How many calls of an `offs` count have a `stamp − trueFrame` that `pick` takes. */
@@ -132,6 +179,9 @@ export interface ClockConditionResult extends ClockWatchSummary {
   quanta: number;
   bursts: number;
   operations: number;
+  /** How long the watch took from its start to its report. Its quanta are `seconds` of
+   *  audio: a watch that took much longer was rendered slower than real time. */
+  wallMs: number;
   /** `stream` only. */
   freshRecorders?: FreshRecorderSummary;
 }
@@ -328,9 +378,12 @@ class FreshRecorder extends AudioWorkletProcessor {
 }
 registerProcessor("fresh-recorder", FreshRecorder);`;
 
+/** A wait that ran out, as opposed to a wait that was answered with an error. */
+class DeadlineError extends Error {}
+
 function within<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`${what} did not come within ${ms} ms`)), ms);
+    const timer = setTimeout(() => reject(new DeadlineError(`${what} did not come within ${ms} ms`)), ms);
     promise.then(
       (value) => { clearTimeout(timer); resolve(value); },
       (error) => { clearTimeout(timer); reject(error); }
@@ -376,12 +429,10 @@ export async function runWorkletClockProbe(
     const work: Record<ClockCondition, (until: number, take: Take) => number> = {
       idle: () => 0,
       busy: (until) => { let n = 0; while (performance.now() < until) n++; return n; },
-      connect: (until) => {
-        let n = 0;
-        while (performance.now() < until) { loose[0].connect(loose[1]); loose[0].disconnect(loose[1]); n++; }
-        return n;
-      },
-      create: (until) => { let n = 0; while (performance.now() < until) { ctx.createGain(); n++; } return n; },
+      connect: (until) => workStretch(
+        () => { loose[0].connect(loose[1]); loose[0].disconnect(loose[1]); }, until, MAX_CONNECTS_PER_STRETCH
+      ),
+      create: (until) => workStretch(() => { ctx.createGain(); }, until, Infinity),
       stream: (_until, take) => {
         const node = ctx.createMediaStreamSource(streamOut.stream);
         const recorder = new AudioWorkletNode(ctx, "fresh-recorder", {
@@ -438,16 +489,24 @@ export async function runWorkletClockProbe(
         setTimeout(burst, cfg.gapMs);
       };
       setTimeout(burst, 0);
+      const watchedFromMs = performance.now();
+      const watchedFromSec = ctx.currentTime;
       let data: { frames: Float64Array; first: Float32Array };
       try {
         data = await within(done, (cfg.seconds + 10) * 1000, `the watch of ${condition}`);
+      } catch (error) {
+        if (!(error instanceof DeadlineError)) throw error;
+        // The watch reports after `seconds` of audio: say how far the context got instead.
+        throw new Error(
+          error.message + ": " + renderPaceNote(ctx.currentTime - watchedFromSec, (performance.now() - watchedFromMs) / 1000)
+        );
       } finally {
         running = false;
         player.stop();
         player.disconnect();
       }
       const result: ClockConditionResult = {
-        condition, quanta, bursts, operations,
+        condition, quanta, bursts, operations, wallMs: Math.round(performance.now() - watchedFromMs),
         ...summarizeClockWatch(data.frames, data.first, startFrame, length),
       };
       if (condition === "stream") {

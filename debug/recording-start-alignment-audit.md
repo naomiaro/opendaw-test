@@ -5472,3 +5472,22 @@ row carries `graphChurnPairs` (56143 to 73308), 8 of 16 rows have a stamp off by
 quanta, 5 to 10 stamps of each tap were repaired, and a node delay is read on 16 of 16.
 The probe page ends in `STALE CLOCK` with idle and busy at 0
 (`graph-lock-clock-1790889074592.json`, 6 s a condition).
+
+### Firefox, and the probe's dose (2026-10-01)
+
+The probe page run by hand in Firefox 157 ended in `THREW connect: the watch of connect did
+not come within 20000 ms`. Cause: the probe worked for as long as a stretch lasted, however
+many graph calls that was, and Firefox runs each call as a message on its render thread. Under
+about 21 000 connect / disconnect pairs a stretch its context rendered 2.98 s of audio in
+5.01 s; under gain nodes created for a whole stretch it stopped rendering, and contexts made
+afterwards did not resume. No `currentFrame` repeated or skipped.
+
+Changed: a stretch of `connect` stops at 1000 pairs (`MAX_CONNECTS_PER_STRETCH`), which
+Firefox renders in real time and under which Chrome's clock still stands still (627 of 3693
+quanta); `create` runs only when `?conditions=` names it; a watch that misses its deadline
+says how much audio the context rendered meanwhile.
+
+On the page as it now opens: Firefox 157 `CLOCK TRUE`, 14774 quanta and 1739 fresh worklets
+(`graph-lock-clock-1790890307105.json`); Chrome 154 `STALE CLOCK`, 643 of 14772 quanta and 15
+of 1825 fresh worklets (`graph-lock-clock-1790890357688.json`). Figures and doses:
+`debug/worklet-clock-stale-under-graph-work.md`, evidence 1. Safari: not measured.

@@ -61,12 +61,16 @@ runs the same code on a button press and says `STALE CLOCK`, `CLOCK TRUE`, `CLOC
 A buffer source plays a ramp in which every sample names its own frame; a
 worklet records, for each `process` call, the `currentFrame` it read and the first sample it
 was handed, while the main thread does one kind of work in stretches: nothing, a loop that
-touches no audio object, connecting and disconnecting two loose gain nodes, creating gain
-nodes, or building a stream source and a fresh worklet as a take's start does. The result
+touches no audio object, connecting and disconnecting two loose gain nodes (at most
+`MAX_CONNECTS_PER_STRETCH` pairs a stretch), or building a stream source and a fresh worklet
+as a take's start does. Creating gain nodes for the whole stretch (`create`) runs only when
+it is named (`?conditions=` on the page, the `cfg` in the runner): Firefox stops rendering
+under that many nodes. The result
 (`.verify-output/graph-lock-clock-<time>.json`, with the verdict) gives per condition how many stamps were
 true and how many were behind, and for the last condition how many fresh worklets read a
 first `currentFrame` that was behind. In Chrome the clock stands still for a quantum when
-the main thread is inside a graph call at the moment the quantum before it ends.
+the main thread is inside a graph call at the moment the quantum before it ends. In Firefox
+every stamp is true.
 
 On the audit page the same thing is watched and forced: a multi-mic envelope lists the
 reference recorder's calls whose stamp did not advance by one quantum

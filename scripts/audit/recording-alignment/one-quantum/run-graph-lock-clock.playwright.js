@@ -4,8 +4,10 @@
 // The measuring code is src/lib/audit/workletClockProbe.ts, the same the page
 // worklet-clock-debug-demo.html runs on a button press.
 // `seconds` is how long each condition is watched, `burstMs` how long the main thread
-// works at a stretch, `gapMs` the pause between stretches. The `stream` condition does
-// one build per stretch whatever `burstMs` is. The artifact lands in .verify-output/.
+// works at a stretch at the most, `gapMs` the pause between stretches. `connect` stops at
+// MAX_CONNECTS_PER_STRETCH pairs, and `stream` does one build per stretch whatever
+// `burstMs` is. `create` is named here because this runs in Chrome: the page leaves it
+// out unless asked (Firefox stops rendering under it). The artifact lands in .verify-output/.
 async (page) => {
   const cfg = { sampleRate: 48000, seconds: 12, burstMs: 8, gapMs: 2, conditions: ["idle", "busy", "connect", "create", "stream"] };
   await page.goto("https://localhost:5173/");

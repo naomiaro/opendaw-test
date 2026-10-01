@@ -20,7 +20,10 @@ import { InfoCircledIcon, PlayIcon } from "@radix-ui/react-icons";
 // run that watched or worked too little to vouch for anything, as in a background tab), or
 // THREW with the stage it was in. The measuring code is `src/lib/audit/workletClockProbe.ts`.
 //
-//   worklet-clock-debug-demo.html?seconds=10&rate=48000&burstMs=8&gapMs=2&conditions=idle,busy,connect,create,stream
+//   worklet-clock-debug-demo.html?seconds=10&rate=48000&burstMs=8&gapMs=2&conditions=idle,busy,connect,stream
+//
+// `create` (gain nodes made for the whole stretch) runs only when `?conditions=` names it:
+// Firefox stops rendering under that many nodes (`DEFAULT_CLOCK_CONDITIONS`).
 
 type Config = { cfg: ClockProbeConfig; error: null } | { cfg: null; error: string };
 
@@ -223,7 +226,7 @@ const App: React.FC = () => {
                 : `Sample rate:   ${CONFIG.cfg.sampleRate} Hz        (?rate=)
 Per condition: ${CONFIG.cfg.seconds} s               (?seconds=, 1 to 120; the last condition finds more with more time)
 Stretches:     ${CONFIG.cfg.burstMs} ms of work, ${CONFIG.cfg.gapMs} ms pause   (?burstMs=, ?gapMs=)
-Conditions:    ${CONFIG.cfg.conditions.join(", ")}   (?conditions=)`}
+Conditions:    ${CONFIG.cfg.conditions.join(", ")}   (?conditions=; create only when named: Firefox stops rendering under it)`}
             </pre>
           </Card>
         </Flex>

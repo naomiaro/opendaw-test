@@ -3,8 +3,8 @@
 Notes for the read, not part of the body:
 - The repro page URL works once this repo's PR is merged and deployed.
 - The browser defect is already on the Chromium tracker (issue 442866743, open); the body
-  links it. Its reporter says other browsers do not do it; Firefox and Safari are not
-  measured here.
+  links it. Its reporter says other browsers do not do it; Firefox 157 was measured here with
+  the repro page and reads a true clock, Safari is not measured.
 - No fix is suggested, by the repo's rule. The fix idea is in
   `debug/worklet-clock-stale-under-graph-work.md`, last section.
 - The rate is the measurement harness's, and the body says so: the harness rebuilds the audio
@@ -51,11 +51,11 @@ A stamp is only ever early, never late.
   https://opendaw-test.pages.dev/worklet-clock-debug-demo.html — press "Run the probe" with
   the page in a visible window. A worklet's `currentFrame` is checked, call by call, against
   audio in which every sample names its own frame, while the main thread does one kind of work
-  at a time. Idle or merely busy: every stamp true. Connecting and disconnecting nodes: 1813
-  of 4444 quanta read a `currentFrame` one to four quanta old. Building a
+  at a time. Idle or merely busy: every stamp true. Connecting and disconnecting nodes: 627
+  of 3693 quanta read a `currentFrame` one or two quanta old. Building a
   `MediaStreamAudioSourceNode` and connecting it to a fresh worklet node, as the start of a
-  take does: 15 of 2210 fresh worklets read their FIRST `currentFrame` early (14 by one
-  quantum, 1 by two).
+  take does: 15 of 1825 fresh worklets read their FIRST `currentFrame` early (14 by one
+  quantum, 1 by two). Firefox 157 on the same page: every stamp true.
 - With the SDK: record with two tapes armed while the page does graph work at the record
   request (connect / disconnect of any nodes), and compare the takes against a known signal.
 

@@ -2,8 +2,8 @@
 
 **Verified against:** `@opendaw/studio-sdk@0.0.173` (the same stamping code on 0.0.172);
 Chrome 154 on macOS 15.6.1 (Apple M4 Pro), 48 kHz; Chromium `main` at commit
-`4b38af96d95350e04e831d18f6ba91a2a0cca5d2` (2026-10-01) for the source lines. Firefox and
-Safari: not measured.
+`4b38af96d95350e04e831d18f6ba91a2a0cca5d2` (2026-10-01) for the source lines. Firefox 157
+on the same machine: the clock is true (below). Safari: not measured.
 
 **Status (2026-10-01):** the stale clock is measured, and watched through three natural events
 on the recording harness; why it stands still is read from Chromium's source. The browser
@@ -114,23 +114,54 @@ quanta before and while the stamps are read.
 source plays a ramp in which every sample names its own frame, started at a known context
 frame. A worklet notes for each call the `currentFrame` it read and the first sample of its
 input; the stamp less the frame the sample names is 0 when the stamp is true. The main thread
-meanwhile does one kind of work, 8 ms at a stretch with 2 ms between.
+meanwhile does one kind of work, in stretches of up to 8 ms with 2 ms between; a stretch of
+connecting and disconnecting stops at 1000 pairs.
 
-Run `graph-lock-clock-1790885449275.json`, 12 s per condition:
+Chrome 154, the page as it opens, 10 s per condition (`graph-lock-clock-1790890357688.json`):
 
 | the main thread | quanta checked | stamp true | stamp behind | by |
 |---|---|---|---|---|
-| does nothing | 4443 | 4443 | 0 | |
-| runs a loop that touches no audio object | 4443 | 4443 | 0 | |
-| connects and disconnects two gain nodes that are in nobody's path | 4444 | 2631 | 1813 | 1 to 4 quanta |
-| creates gain nodes | 4443 | 3641 | 802 | 1 to 10 quanta |
-| builds a `MediaStreamAudioSourceNode` and connects it to a fresh worklet node, once per stretch | 4443 | 4422 | 21 | 1 to 4 quanta |
+| does nothing | 3693 | 3693 | 0 | |
+| runs a loop that touches no audio object | 3693 | 3693 | 0 | |
+| connects and disconnects two gain nodes that are in nobody's path | 3693 | 3066 | 627 | 1 to 2 quanta |
+| builds a `MediaStreamAudioSourceNode` and connects it to a fresh worklet node, once per stretch | 3693 | 3677 | 16 | 1 to 2 quanta |
 
 In the last condition each fresh worklet reports the `currentFrame` of its first call with the
-sample it was handed, which is the read a recorder makes once: **15 of 2210 read it early**
-(14 by one quantum, 1 by two). Earlier runs: 44 of 12003 (`…1790878967602`, 60 s), 17 of 1900
-(`…1790885347933`, 10 s). No stamp was ever ahead, in any run. A busy main thread alone does
-nothing to the clock.
+sample it was handed, which is the read a recorder makes once: **15 of 1825 read it early**
+(14 by one quantum, 1 by two). No stamp was ever ahead, in any run. A busy main thread alone
+does nothing to the clock.
+
+Creating gain nodes for the whole stretch (`?conditions=create`,
+`graph-lock-clock-1790890367926.json`): 610 of 3693 quanta behind, by 1 to 26 quanta. At 50
+nodes a stretch Chrome showed 1 stale quantum in 6 s, at 200 it showed 68: it takes nodes
+made in bulk.
+
+Earlier runs, in which a stretch connected and disconnected for its whole 8 ms (about 12 500
+pairs): 1813 of 4444 quanta behind under connect / disconnect, 802 of 4443 under node
+creation, 15 of 2210 fresh worklets early (`graph-lock-clock-1790885449275.json`, 12 s per
+condition); 44 of 12003 fresh worklets (`…1790878967602`, 60 s); 17 of 1900
+(`…1790885347933`, 10 s).
+
+**Firefox 157, same machine, same page** (`graph-lock-clock-1790890307105.json`): `CLOCK
+TRUE`. 14774 quanta and 1739 fresh worklets, every stamp the frame of its own quantum, under
+1 606 000 connect / disconnect pairs and 1760 stream-source builds. The run was driven by
+remote control in a fresh profile, the page visible.
+
+What Firefox does instead under graph work is render late. It queues each graph call for its
+render thread, and the thread has to run them:
+- A stretch that connected and disconnected for its whole 8 ms (about 21 000 pairs) left the
+  context rendering 2.98 s of audio in 5.01 s. The probe's watch of 10 s of quanta then
+  missed its 20 s deadline, which is how this was found. At 1000 pairs a stretch the context
+  keeps real time (10 s of quanta in 10.016 s); at 3000 it rendered 3.44 s in 4.
+- Gain nodes created for the whole stretch (about 12 000 a stretch): 0.48 s of audio in 5 s,
+  then none at all, and contexts made afterwards in the same Firefox did not resume within
+  5 s (ten tries in two runs, until the browser was restarted). At 50 nodes a stretch it
+  keeps real time; at 200 it fell behind after about 170 000 nodes.
+
+No `currentFrame` repeated or skipped in any of it. So the probe's dose is the same in every
+browser and one both can render beside: at most 1000 connect / disconnect pairs a stretch,
+and `create` only when it is asked for. A watch that misses its deadline now says how much
+audio the context rendered in that time.
 
 ### 2. Forced, with the SDK in the loop
 
@@ -205,8 +236,9 @@ quantum: the stall is the take's own chain being built.
   given stall. The source says so and every measurement fits; no run logged the lock. That
   the SDK's two stamps are single reads of the worklet clock is read from the SDK's source and
   shows in every row's arithmetic.
-- **Not measured:** Firefox, Safari (the Chromium issue's reporter says the freeze is Chrome
-  only); other machines; the rate in a real session. The harness
+- **Measured in Firefox 157:** the clock is true under the same probe (the Chromium issue's
+  reporter says the freeze is Chrome only). The SDK's recording harness was not run there.
+- **Not measured:** Safari; other machines; the rate in a real session. The harness
   rebuilds the audio chain on every take (its synthetic device reports no id) and schedules
   its clicks just before each take, so it does more graph work around a take's start than an
   application recording from one named device, which reuses its chain. Any application UI that
@@ -222,7 +254,7 @@ quantum: the stall is the take's own chain being built.
 
 ## Repro
 
-- **The clock:** `worklet-clock-debug-demo.html`, press "Run the probe" (about 50 s) with the
+- **The clock:** `worklet-clock-debug-demo.html`, press "Run the probe" (about 40 s) with the
   page in a visible window. The page reads
   `STALE CLOCK: <n> of <N> fresh worklets read their first currentFrame early; …`,
   `CLOCK TRUE`, `NOT CHECKED` (a run that watched or worked too little to vouch for a true

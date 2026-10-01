@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  behindRangeQuanta, classifyClockProbe, clockProbeConfigFrom, countOffs, summarizeClockWatch, summarizeFreshRecorders,
+  behindRangeQuanta, classifyClockProbe, clockProbeConfigFrom, countOffs, renderPaceNote,
+  summarizeClockWatch, summarizeFreshRecorders, workStretch,
   type ClockConditionResult,
 } from "./workletClockProbe";
 
@@ -72,7 +73,7 @@ describe("classifyClockProbe", () => {
     const checked = Object.values(offs).reduce((sum, n) => sum + n, 0);
     const answered = fresh === undefined ? 0 : Object.values(fresh).reduce((sum, n) => sum + n, 0);
     return {
-      condition: name, quanta: checked, checked, bursts: 1, operations: 1, offs, steps: {}, firstOffs: [],
+      condition: name, quanta: checked, checked, bursts: 1, operations: 1, wallMs: 10_000, offs, steps: {}, firstOffs: [],
       ...(fresh === undefined ? {} : { freshRecorders: { built: answered, answered, offs: fresh } }),
     };
   };
@@ -207,11 +208,15 @@ describe("classifyClockProbe", () => {
 describe("clockProbeConfigFrom", () => {
   const from = (query: string) => clockProbeConfigFrom(new URLSearchParams(query));
 
-  it("watches all five conditions for ten seconds each at 48 kHz when the page is opened bare", () => {
+  it("watches four conditions for ten seconds each at 48 kHz when the page is opened bare: not `create`, which not every browser renders beside", () => {
     expect(from("")).toEqual({
       sampleRate: 48000, seconds: 10, burstMs: 8, gapMs: 2,
-      conditions: ["idle", "busy", "connect", "create", "stream"],
+      conditions: ["idle", "busy", "connect", "stream"],
     });
+  });
+
+  it("runs `create` when it is asked for", () => {
+    expect(from("conditions=create,stream").conditions).toEqual(["create", "stream"]);
   });
 
   it("takes the length, the rate, the stretches and a choice of conditions from the query", () => {
@@ -259,5 +264,47 @@ describe("countOffs", () => {
     expect(countOffs(offs, (off) => off === 0)).toBe(10);
     expect(countOffs(offs, (off) => off > 0)).toBe(1);
     expect(countOffs({}, () => true)).toBe(0);
+  });
+});
+
+describe("workStretch", () => {
+  /** A clock that moves on by `stepMs` every time it is read. */
+  const clock = (stepMs: number) => { let now = 0; return () => { const read = now; now += stepMs; return read; }; };
+
+  it("stops at the most calls a stretch may make, however much time is left", () => {
+    let calls = 0;
+    expect(workStretch(() => { calls++; }, 8, 1000, clock(0))).toBe(1000);
+    expect(calls).toBe(1000);
+  });
+
+  it("works for the whole stretch when no limit is set", () => {
+    // the clock is read before each call: 0, 0.5, … 7.5 are before 8
+    expect(workStretch(() => {}, 8, Infinity, clock(0.5))).toBe(16);
+  });
+
+  it("stops when the stretch's time is up, however few calls that was", () => {
+    let calls = 0;
+    // the clock is read once before each call: 0, 2, 4, 6 are before 8
+    expect(workStretch(() => { calls++; }, 8, 1000, clock(2))).toBe(4);
+    expect(calls).toBe(4);
+  });
+
+  it("makes no call in a stretch whose time is already up", () => {
+    let calls = 0;
+    expect(workStretch(() => { calls++; }, 0, 1000, clock(1))).toBe(0);
+    expect(calls).toBe(0);
+  });
+});
+
+describe("renderPaceNote", () => {
+  it("says how much audio the context rendered in how long", () => {
+    expect(renderPaceNote(19.96, 20)).toBe("the context rendered 20.0 s of audio in 20.0 s");
+  });
+
+  it("names the render thread when it fell behind the main thread's work", () => {
+    expect(renderPaceNote(11.9, 20)).toBe(
+      "the context rendered 11.9 s of audio in 20.0 s: its render thread did not keep up with the main thread's work"
+    );
+    expect(renderPaceNote(0, 20)).toContain("0.0 s of audio in 20.0 s: its render thread did not keep up");
   });
 });
