@@ -12,6 +12,9 @@
  * SDK-free and DOM-free: the offline script and the tests share it.
  */
 
+// A value import with an explicit `.ts` extension: this module is in the Node scripts' import chain.
+import { clockStalls, type ClockDiscontinuity } from "./nodeTap.ts";
+
 /** Render quantum, in milliseconds, at a sample rate. */
 export function quantumMs(rate: number): number {
   return (128 / rate) * 1000;
@@ -106,6 +109,8 @@ export interface RunEvents {
   events: RepeatReading[];
   /** Those that are off by something other than one quantum. */
   others: RepeatReading[];
+  /** Those that show nothing: the control an event is read against. */
+  ordinary: RepeatReading[];
   /** The run's usual netted median; null when the run has too few repeats to tell. */
   usualMs: number | null;
 }
@@ -114,13 +119,123 @@ export interface RunEvents {
 export function eventsOfRun(rows: readonly EventRow[], rate: number): RunEvents {
   const repeats = repeatsOf(rows);
   const usualMs = usualNettedMs(repeats);
-  if (usualMs === null) return { repeats: repeats.length, events: [], others: [], usualMs: null };
+  if (usualMs === null) return { repeats: repeats.length, events: [], others: [], ordinary: [], usualMs: null };
   return {
     repeats: repeats.length,
     events: repeats.filter((reading) => deviationOf(reading, usualMs, rate) === "one-quantum"),
     others: repeats.filter((reading) => deviationOf(reading, usualMs, rate) === "other"),
+    ordinary: repeats.filter((reading) => deviationOf(reading, usualMs, rate) === "none"),
     usualMs,
   };
+}
+
+/** The start-of-take stamps a row carries. */
+export interface StampedStart {
+  firstQuantumTimeSec?: number | null;
+  recordingStartContextTimeSec?: number | null;
+}
+
+export interface StaleAtStamp {
+  stamp: "first quantum" | "recording start";
+  /** The frame the clock stood on during the stall. */
+  staleFrame: number;
+  /** How many quanta the stall lasted. */
+  stallQuanta: number;
+  /** The stamp reads the very frame the clock stood on: it was taken in a stale quantum
+   *  (early by as many quanta as the stall had run), or truly in the quantum before the
+   *  stall. The two read the same number. */
+  readsStaleFrame: boolean;
+  /** Where the call that took the stamp was, in quanta from the stall: 0 when
+   *  `readsStaleFrame`; 1 for the quantum right after the stall's last stale quantum; −2
+   *  for two quanta before its first. −1 is never reported: a stamp from the quantum
+   *  before the stall reads the stale frame and is given as 0. */
+  quantaFromStall: number;
+}
+
+/** How far from a stall a stamping call is still listed. */
+const STALL_WINDOW_QUANTA = 2;
+
+/**
+ * The stalls of a run's clock that fall within two quanta of a row's start-of-take stamps
+ * (`clockStalls` over the envelope's `clockDiscontinuities`). The recording worklet's stamp
+ * is the frame its first call read; the engine reports the END of the quantum it stamped in,
+ * so the frame it read is one quantum before its report.
+ *
+ * Distances are measured from the stall itself, so that a stamp taken right after it (a
+ * near miss: the stamp is true) is seen as well as one taken in it. `readsStaleFrame` does
+ * not say which call took the stamp: a processor that stamped in the quantum BEFORE the
+ * stall read the same number truly. Whether a stamp is early is the row's own figures' to
+ * say (netted median, first-frame check); this says whether the clock stood still there.
+ * A stamp that names a stale quantum's own true frame is not listed: no call can read it.
+ */
+export function staleQuantaAtStamps(
+  steps: readonly ClockDiscontinuity[],
+  row: StampedStart,
+  rate: number,
+  quantumFrames = 128
+): StaleAtStamp[] {
+  const stamps: { stamp: StaleAtStamp["stamp"]; frame: number }[] = [];
+  if (typeof row.firstQuantumTimeSec === "number") {
+    stamps.push({ stamp: "first quantum", frame: Math.round(row.firstQuantumTimeSec * rate) });
+  }
+  if (typeof row.recordingStartContextTimeSec === "number") {
+    stamps.push({ stamp: "recording start", frame: Math.round(row.recordingStartContextTimeSec * rate) - quantumFrames });
+  }
+  const stalls = clockStalls(steps);
+  const found: StaleAtStamp[] = [];
+  for (const { stamp, frame } of stamps) {
+    for (const stall of stalls) {
+      const lastStaleFrame = stall.frame + stall.quanta * quantumFrames;
+      let quantaFromStall: number;
+      if (frame === stall.frame) {
+        quantaFromStall = 0;
+      } else if (frame > lastStaleFrame) {
+        quantaFromStall = (frame - lastStaleFrame) / quantumFrames;
+      } else if (frame < stall.frame) {
+        quantaFromStall = (frame - stall.frame - quantumFrames) / quantumFrames;
+      } else {
+        continue; // the true frame of a stale quantum: a value no call read
+      }
+      if (Math.abs(quantaFromStall) <= STALL_WINDOW_QUANTA) {
+        found.push({
+          stamp, staleFrame: stall.frame, stallQuanta: stall.quanta,
+          readsStaleFrame: frame === stall.frame, quantaFromStall,
+        });
+      }
+    }
+  }
+  return found;
+}
+
+export interface ControlTally<Row> {
+  /** Rows that carry at least one stamp: the ones the control can speak of. */
+  rows: number;
+  /** Rows with a stamp that reads a frame the clock stood on. */
+  onAStall: { row: Row; found: StaleAtStamp[] }[];
+  /** Rows with a stall within two quanta of a stamp that does not read its frame: near misses. */
+  near: { row: Row; found: StaleAtStamp[] }[];
+  /** Rows that carry neither stamp, of which nothing can be said. Not among `rows`. */
+  withoutStamps: number;
+}
+
+/** The control an event is read against: what the clock did near the stamps of ordinary rows. */
+export function controlTally<Row extends StampedStart>(
+  rows: readonly Row[],
+  steps: readonly ClockDiscontinuity[],
+  rate: number
+): ControlTally<Row> {
+  const tally: ControlTally<Row> = { rows: 0, onAStall: [], near: [], withoutStamps: 0 };
+  for (const row of rows) {
+    if (typeof row.firstQuantumTimeSec !== "number" && typeof row.recordingStartContextTimeSec !== "number") {
+      tally.withoutStamps++;
+      continue;
+    }
+    tally.rows++;
+    const found = staleQuantaAtStamps(steps, row, rate);
+    if (found.length === 0) continue;
+    (found.some((entry) => entry.readsStaleFrame) ? tally.onAStall : tally.near).push({ row, found });
+  }
+  return tally;
 }
 
 /**

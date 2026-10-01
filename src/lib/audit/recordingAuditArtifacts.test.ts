@@ -149,6 +149,47 @@ describe("parseAuditSummary — SDK version and stop lead", () => {
     expect(() => parseAuditSummary({ ...g6, sdkVersion: "" }, 1)).toThrow(/sdkVersion/);
     expect(() => parseAuditSummary({ ...g6, stopLead: "off" }, 1)).toThrow(/stopLead/);
   });
+
+  it("graphChurn: an envelope without the field was not a forced run; true is passed through", () => {
+    expect(parseAuditSummary(g6, 1790880000000).graphChurn).toBe(false);
+    expect(parseAuditSummary({ ...g6, graphChurn: true }, 1790880000000).graphChurn).toBe(true);
+    const mt = { ...g6, skewToleranceMs: 2, rows: mtRows, cellSkews: [] };
+    expect(parseMultitrackAuditSummary(mt, 1790880000001).graphChurn).toBe(false);
+    expect(parseMultitrackAuditSummary({ ...mt, graphChurn: false }, 1790880000001).graphChurn).toBe(false);
+    expect(parseMultitrackAuditSummary({ ...mt, graphChurn: true }, 1790880000001).graphChurn).toBe(true);
+  });
+
+  it("clockDiscontinuities: null when the envelope has none to say, the list when it does", () => {
+    const mt = { ...g6, skewToleranceMs: 2, rows: mtRows, cellSkews: [] };
+    expect(parseMultitrackAuditSummary(mt, 1790880000001).clockDiscontinuities).toBeNull();
+    expect(parseMultitrackAuditSummary({ ...mt, clockDiscontinuities: [] }, 1790880000001).clockDiscontinuities).toEqual([]);
+    const steps = [
+      { previousFrame: 388608, frame: 388608, betweenChunks: false },
+      { previousFrame: 388608, frame: 388864, betweenChunks: false },
+    ];
+    expect(parseMultitrackAuditSummary({ ...mt, clockDiscontinuities: steps }, 1790880000001).clockDiscontinuities).toEqual(steps);
+  });
+
+  it("clockWitnessFailure: null when the witness ran to the end or the envelope has no witness, the reason when it stopped", () => {
+    const mt = { ...g6, skewToleranceMs: 2, rows: mtRows, cellSkews: [] };
+    expect(parseMultitrackAuditSummary(mt, 1790880000001).clockWitnessFailure).toBeNull();
+    expect(parseMultitrackAuditSummary({ ...mt, clockWitnessFailure: null }, 1790880000001).clockWitnessFailure).toBeNull();
+    expect(parseMultitrackAuditSummary({ ...mt, clockWitnessFailure: "the recorder's processor threw" }, 1790880000001).clockWitnessFailure)
+      .toBe("the recorder's processor threw");
+    expect(() => parseMultitrackAuditSummary({ ...mt, clockWitnessFailure: true }, 1)).toThrow(/clockWitnessFailure/);
+  });
+
+  it("clockDiscontinuities: malformed → throws, entry by entry", () => {
+    const mt = { ...g6, skewToleranceMs: 2, rows: mtRows, cellSkews: [] };
+    expect(() => parseMultitrackAuditSummary({ ...mt, clockDiscontinuities: "none" }, 1)).toThrow(/clockDiscontinuities/);
+    expect(() => parseMultitrackAuditSummary({ ...mt, clockDiscontinuities: [{ previousFrame: 1, frame: "2", betweenChunks: false }] }, 1)).toThrow(/clockDiscontinuities\[0\]/);
+    expect(() => parseMultitrackAuditSummary({ ...mt, clockDiscontinuities: [{ previousFrame: 1, frame: 129 }] }, 1)).toThrow(/clockDiscontinuities\[0\]/);
+    expect(() => parseMultitrackAuditSummary({ ...mt, clockDiscontinuities: [null] }, 1)).toThrow(/clockDiscontinuities\[0\]/);
+  });
+
+  it("graphChurn: malformed → throws, so a forced run cannot be counted by a typo", () => {
+    expect(() => parseMultitrackAuditSummary({ ...g6, skewToleranceMs: 2, rows: mtRows, cellSkews: [], graphChurn: "on" }, 1)).toThrow(/graphChurn/);
+  });
 });
 
 describe("parseAuditSummary — validation", () => {

@@ -193,6 +193,7 @@ export default defineConfig(({command}) => ({
                 samplerateAudit: resolve(__dirname, "samplerate-audit-debug-demo.html"),
                 recordingAlignmentAudit: resolve(__dirname, "recording-alignment-audit-debug-demo.html"),
                 inputLatencyCalibrationDebugDemo: resolve(__dirname, "input-latency-calibration-debug-demo.html"),
+                workletClockDebug: resolve(__dirname, "worklet-clock-debug-demo.html"),
                 wasmEngine: resolve(__dirname, "wasm-engine-demo.html"),
                 modulation: resolve(__dirname, "modulation-demo.html"),
                 convolver: resolve(__dirname, "convolver-demo.html"),

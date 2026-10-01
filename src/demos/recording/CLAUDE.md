@@ -496,15 +496,57 @@ without a limit above zero. Replay saved runs (one sample rate at a time) with
   `node scripts/audit/recording-alignment/one-quantum-events.ts`.
 - **A worklet's `currentTime` / `currentFrame` can be behind in Chrome.** The worklet scope's
   clock is moved on at the end of a render quantum only if the audio graph lock is free; the
-  main thread holds it while it constructs, connects or disconnects a node. When the two
-  coincide, every `process()` call of the next quantum reads the previous quantum's time
-  (never a later one). A busy main thread alone does not do it. The SDK takes both
+  main thread holds it while it connects or disconnects a node or makes a worklet node (read
+  from Chromium's source; Chromium issue 442866743). Measured: while the main thread does such
+  work, every `process()` call of some quanta reads the previous quantum's time, or an older
+  one, never a later one. A busy main thread alone does not do it. The SDK takes both
   start-of-take stamps (`engine.recordingStart`, the recording worklet's first-quantum time)
   from one read of that clock while a take's nodes are being built, so on a rare repeat a
   stamp is one quantum early: a netted median one quantum above the run's usual value, a
-  first-frame check of minus one quantum, or both. Any worklet that stamps its quanta with
-  `currentFrame` (the node taps, the reference recorder) is open to the same thing. Probe
-  without the SDK: `scripts/audit/recording-alignment/one-quantum/graph-lock-clock.page.js`.
+  first-frame check of minus one quantum, or both. An engine stamp that is early alone puts
+  the take one quantum late, a recorder stamp alone one quantum early; both cancel. Any
+  worklet that stamps its quanta with `currentFrame` is open to the same thing; the node taps
+  and the reference recorder repair their stamps (`repairFrames` in `nodeTap.ts`: the clock
+  is only ever behind, so a stamp less than one quantum after the call before it is moved to
+  exactly that; a recorder's first stamp cannot be repaired). Probe without the SDK:
+  `worklet-clock-debug-demo.html` (`src/lib/audit/workletClockProbe.ts`; it says
+  `STALE CLOCK`, `CLOCK TRUE`, `CLOCK AHEAD` (a stamp ahead of its quantum, which a stale
+  clock cannot make), `NOT CHECKED` when the run watched or worked too little, as on a
+  hidden or covered page, or `THREW <stage>`). A bare page runs `idle`, `busy`, `connect`
+  and `stream`. `connect` makes at most `MAX_CONNECTS_PER_STRETCH` pairs a stretch: Firefox
+  runs each graph call as a message on its render thread and falls behind real time under
+  more. `create` runs only when `?conditions=` names it: Chrome shows it only when nodes
+  are made in bulk, and Firefox stops rendering under that and starts no context
+  afterwards until it is restarted (the page then ends in `THREW context`). A watch that misses its
+  deadline says how much audio the context rendered in that time. Firefox and Safari
+  read `CLOCK TRUE`. Write-up:
+  `debug/worklet-clock-stale-under-graph-work.md`.
+- **Reading a multi-mic run's clock witness.** The envelope's `clockDiscontinuities` lists
+  every call of the reference recorder whose `currentFrame` was not one quantum after the
+  call before it. `frame === previousFrame` is the clock standing still (the quantum of that
+  call is a stale one; the same frame several times running is one stall of that many
+  quanta: `clockStalls`); a step forward marked `betweenChunks` with no repeated frame before
+  it could be a lost chunk. Most runs have a few stalls shortly before a record request,
+  where the harness schedules its reference clicks (measured: see the debug note); those
+  touch no stamp. `one-quantum-events.ts` says for each event tape whether one of its stamps
+  reads the frame the clock stood on (the stamp was taken in a stale quantum, early, or
+  truly in the quantum before the stall: the two read the same number, and the row's netted
+  median and first-frame check say which) and counts the same over ordinary repeats, which
+  is the control. It also lists a stamp taken within two quanta of a stall without reading
+  its frame: a near miss, and a true stamp. An envelope whose `clockWitnessFailure` is a
+  reason has a witness that stopped early; the tally names the run and reads nothing from
+  it. A row's `nodeTapRepairedStamps` says how many of its tap's stamps were repaired.
+- `&graphChurn=on` (multi-mic scenarios only; any other value is refused) connects and
+  disconnects two unrelated gain nodes for `GRAPH_CHURN_MS` from each record request on,
+  which forces the stale clock onto
+  the SDK's stamps: rows off by whole quanta in the netted median (never negative) and the
+  first-frame check (never positive). It runs over the start of the node taps in
+  `multitrack-start` and ends before the windows a node delay is read from open
+  (`NODE_TAP_WINDOW_STARTS_SEC`). Use it with `multitrack-start`: in `multitrack-janked` the
+  jank holds the main thread for about as long as the churn lasts. Every row carries
+  `graphChurnPairs`, the connect / disconnect pairs done at its repeat's start, and a repeat
+  whose churn threw or did none is an error row. The envelope carries `graphChurn: true`;
+  `one-quantum-events.ts` leaves such a run out, and no other script reads the flag.
 - The engine boots once per page load (`Workers.install` asserts on a second
   `initializeOpenDAW`): "Re-run" on the matrix/multitrack pages re-runs the matrix on the
   cached project/tape(s) under a fresh run token; the probe page is one-shot.
