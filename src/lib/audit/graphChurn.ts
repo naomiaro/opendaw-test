@@ -11,6 +11,14 @@
 /** The most pairs one stretch does, so a stretch ends even where the clock does not move. */
 const MAX_PAIRS_PER_STRETCH = 20_000;
 
+/** Whether a page's `?graphChurn=` asks for the churn. Any value but `on` is refused: a
+ *  run has to say whether it was forced. */
+export function graphChurnFrom(param: string | null): boolean {
+  if (param === null) return false;
+  if (param !== "on") throw new Error(`invalid ?graphChurn= "${param}" — leave it out, or use graphChurn=on`);
+  return true;
+}
+
 export function churnGraph(
   audioContext: BaseAudioContext,
   durationMs: number,

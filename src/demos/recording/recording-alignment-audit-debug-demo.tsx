@@ -68,7 +68,8 @@ import {
   installLoopbackCapture, LOOPBACK_DEVICE_ID, loopbackDeviceId, type SourceNodeRecording,
 } from "@/lib/audit/loopbackInjection";
 import { nodeDelayFor } from "@/lib/audit/nodeTap";
-import { churnGraph } from "@/lib/audit/graphChurn";
+import { churnGraph, graphChurnFrom } from "@/lib/audit/graphChurn";
+import type { ClockDiscontinuity } from "@/lib/audit/nodeTap";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { withDeadline } from "@/lib/deadline";
 import { detectOnsets } from "@/lib/audit/onsetDetection";
@@ -235,7 +236,9 @@ const STOP_LEAD = STOP_LEAD_PARAM !== "off";
 /** `&graphChurn=on` does graph work on the main thread from each record request on, to
  *  force the worklet clock to stand still while the SDK takes its start-of-take stamps.
  *  Multi-mic scenarios only. Such a run is not part of any count. */
-const GRAPH_CHURN = params.get("graphChurn") === "on";
+const GRAPH_CHURN_PARAM = params.get("graphChurn");
+/** Any other value is refused when a run starts (`graphChurnFrom`). */
+const GRAPH_CHURN = GRAPH_CHURN_PARAM === "on";
 /** It has to be over before the windows a node delay is read from open, 0.3 s into a tap
  *  (`NODE_TAP_WINDOW_STARTS_SEC`). The taps themselves attach while it still runs in
  *  `multitrack-start` (some 30 to 80 ms after the request); their stamps are repaired. */
@@ -673,7 +676,7 @@ async function runAudit(
   const bpms = resolveBpms(params.get("bpm"));
   const rate = resolveRate(params.get("rate"));
   assertStopLeadParam();
-  if (GRAPH_CHURN) throw new Error("?graphChurn=on is for the multitrack scenarios");
+  if (graphChurnFrom(GRAPH_CHURN_PARAM)) throw new Error("?graphChurn=on is for the multitrack scenarios");
   // One token per run, stamped into BOTH the summary name and every capture
   // WAV name, so a summary row and the audio it was measured from can always be
   // joined without guessing (Task 7c fix round 1, review M12).
@@ -1146,13 +1149,21 @@ async function runMultitrackCellRepeat(
   await waitForPositionSettled(project, 0, 30_000);
   assertCurrent(token, "startRecording");
   recordRequestContextTime = audioContext.currentTime;
-  if (GRAPH_CHURN) void churnGraph(audioContext, GRAPH_CHURN_MS);
+  // The churn's first stretch runs inside the call: it starts once the recording is asked for.
+  const churn = (): void => {
+    if (!GRAPH_CHURN) return;
+    churnGraph(audioContext, GRAPH_CHURN_MS).catch((error: unknown) => {
+      console.error("[recording-alignment-audit] graph churn failed: " + String(error));
+    });
+  };
   if (scenario === "multitrack-janked") {
     const jankArmed = armJankOnRecordingFlip(project, JANK_MS, 30_000);
     project.startRecording(false);
+    churn();
     await jankArmed;
   } else {
     project.startRecording(false);
+    churn();
   }
 
   onStage("recording");
@@ -1432,7 +1443,8 @@ async function uploadMultitrackSummary(
   cellVerdicts: CellVerdictRecord[],
   wavUploadFailures: number,
   runToken: number,
-  confirmCollision: boolean
+  confirmCollision: boolean,
+  clockDiscontinuities: ClockDiscontinuity[]
 ): Promise<void> {
   const summary: MultitrackAuditSummary = {
     schemaVersion: AUDIT_SCHEMA_VERSION,
@@ -1441,7 +1453,7 @@ async function uploadMultitrackSummary(
     sdkVersion: OPENDAW_SDK_VERSION,
     stopLead: STOP_LEAD,
     graphChurn: GRAPH_CHURN,
-    clockDiscontinuities: loopback.clockDiscontinuities(),
+    clockDiscontinuities,
     captureMode: CAPTURE_MODE,
     getUserMediaOpens: loopback.getUserMediaOpens(),
     // Read once per page load after output started (`resolveHarnessPathBias`)
@@ -1537,6 +1549,10 @@ async function runMultitrackAudit(
   const bpms = resolveMultitrackBpms(params.get("bpm"));
   const rate = resolveRate(params.get("rate"));
   assertStopLeadParam();
+  graphChurnFrom(GRAPH_CHURN_PARAM);
+  // The loopback lives for the page load and its witness with it: a second run on the same
+  // page reports only what the clock did from here on.
+  const clockStepsBefore = loopback.clockDiscontinuities().length;
   // Fix round 1 (C1 confirmation): `?confirmCollision=1` arms tape B on the
   // SAME loopback device as tape A (see createMultitrackTapes's
   // `sameDeviceB`) — a dedicated, deliberately-abnormal cell that tests
@@ -1683,7 +1699,7 @@ async function runMultitrackAudit(
   }
 
   setAuditState("uploading");
-  await uploadMultitrackSummary(allRows, rate, sdkBuildProbe, buildFeatures, bias, audioContext.baseLatency, cellSkews, cellVerdicts, wavUploadFailures, runToken, confirmCollision);
+  await uploadMultitrackSummary(allRows, rate, sdkBuildProbe, buildFeatures, bias, audioContext.baseLatency, cellSkews, cellVerdicts, wavUploadFailures, runToken, confirmCollision, loopback.clockDiscontinuities().slice(clockStepsBefore));
   setAuditState("done");
 }
 

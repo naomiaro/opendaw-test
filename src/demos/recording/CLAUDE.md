@@ -524,8 +524,9 @@ without a limit above zero. Replay saved runs (one sample rate at a time) with
   number, and the row's netted median and first-frame check say which) and counts the same
   over ordinary repeats, which is the control. It also lists a stamp taken within two quanta
   of a stale quantum without reading its frame: a near miss, and a true stamp.
-- `&graphChurn=on` (multi-mic scenarios only) connects and disconnects two unrelated gain
-  nodes for `GRAPH_CHURN_MS` from each record request on, which forces the stale clock onto
+- `&graphChurn=on` (multi-mic scenarios only; any other value is refused) connects and
+  disconnects two unrelated gain nodes for `GRAPH_CHURN_MS` from each record request on,
+  which forces the stale clock onto
   the SDK's stamps: rows off by whole quanta in the netted median (never negative) and the
   first-frame check (never positive). It runs over the start of the node taps in
   `multitrack-start` (they attach 30 to 80 ms after the request) and ends before the windows a

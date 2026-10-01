@@ -5073,8 +5073,9 @@ depended on the wrap at bar 4.
 ## Tooling for counting the one-quantum event on two releases (2026-10-01)
 
 No finding here: what was added so that the count the section above asks for can be made,
-and the runs that checked it. The plan the count follows is
-`docs/superpowers/plans/2026-10-01-one-quantum-event.md`.
+and the runs that checked it. The plan the count follows was
+`docs/superpowers/plans/2026-10-01-one-quantum-event.md` (carried out and removed since; in
+git history).
 
 - **Another release, served.** `node scripts/audit/sdk-override.ts <git-rev> <dir>` builds a
   directory for `SDK_DIST_OVERRIDE` from the lockfile of a revision of this repo. For 0.0.172
@@ -5251,8 +5252,9 @@ that coincides with the end of a quantum that counts.
   0.0.172 and 0.0.173 (nothing in the 0.0.173 diff touches the capture path or either
   stamping site, so a difference would have to come from how much graph work the page does
   around a take's start).
-- **Not a fix:** nothing here changes the SDK or the harness. What follows is in
-  `docs/superpowers/plans/2026-10-01-one-quantum-event.md`.
+- **Not a fix:** nothing here changes the SDK or the harness. What followed is the next
+  section; its plan, `docs/superpowers/plans/2026-10-01-one-quantum-event.md`, is in git
+  history.
 
 ## The one-quantum event, resolved to the worklet clock (2026-10-01)
 

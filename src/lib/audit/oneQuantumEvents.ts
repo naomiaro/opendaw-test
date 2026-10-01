@@ -12,6 +12,8 @@
  * SDK-free and DOM-free: the offline script and the tests share it.
  */
 
+import type { ClockDiscontinuity } from "./nodeTap";
+
 /** Render quantum, in milliseconds, at a sample rate. */
 export function quantumMs(rate: number): number {
   return (128 / rate) * 1000;
@@ -126,14 +128,6 @@ export function eventsOfRun(rows: readonly EventRow[], rate: number): RunEvents 
   };
 }
 
-/** A call of the harness's reference recorder whose `currentFrame` was not one quantum
- *  after the call before it, as a multi-mic envelope carries it (`clockDiscontinuities`). */
-export interface ClockStep {
-  previousFrame: number;
-  frame: number;
-  betweenChunks: boolean;
-}
-
 /** The start-of-take stamps a row carries. */
 export interface StampedStart {
   firstQuantumTimeSec?: number | null;
@@ -170,7 +164,7 @@ const STALE_WINDOW_QUANTA = 2;
  * to say (netted median, first-frame check); this says whether the clock stood still there.
  */
 export function staleQuantaAtStamps(
-  steps: readonly ClockStep[],
+  steps: readonly ClockDiscontinuity[],
   row: StampedStart,
   rate: number,
   quantumFrames = 128

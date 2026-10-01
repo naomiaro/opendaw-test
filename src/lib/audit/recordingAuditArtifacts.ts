@@ -335,8 +335,9 @@ export interface MultitrackAuditSummary extends SummaryBase {
    *  read them (the profile does not net). Absent when there were no taps. */
   anchorOffsetMs?: number | null;
   confirmCollision: boolean;
-  /** Every call of the reference recorder during the run whose `currentFrame` did not
-   *  advance by one quantum (see `frameDiscontinuities`). No verdict reads it. */
+  /** Every call of the reference recorder during THIS run (not an earlier run of the same
+   *  page load) whose `currentFrame` did not advance by one quantum (see
+   *  `frameDiscontinuities`). No verdict reads it. */
   clockDiscontinuities?: ClockDiscontinuity[];
   rows: MultitrackAuditRow[];
   cellSkews: MultitrackCellSkew[];
@@ -415,6 +416,9 @@ export interface LoadedMultitrackAuditSummary {
   anchorOffsetMs: number | null;
   outputLatencySec: number | null;
   harnessPathBiasSec: number;
+  /** The reference recorder's calls whose `currentFrame` did not advance by one quantum,
+   *  during the run; null when the envelope predates the witness. */
+  clockDiscontinuities: ClockDiscontinuity[] | null;
   /** false when the flag is absent: it was introduced with the dedicated
    *  collision-confirmation cell, and every run before it was an official-
    *  matrix run on two distinct devices. */
@@ -494,6 +498,24 @@ function graphChurnOf(top: Record<string, unknown>, runId: number): boolean {
     throw new Error(`recaudit summary ${runId}: unexpected graphChurn ${JSON.stringify(v)}`);
   }
   return v;
+}
+
+function clockDiscontinuitiesOf(top: Record<string, unknown>, runId: number): ClockDiscontinuity[] | null {
+  const v = top.clockDiscontinuities;
+  if (v === undefined) return null;
+  if (!Array.isArray(v)) {
+    throw new Error(`recaudit summary ${runId}: clockDiscontinuities is not a list`);
+  }
+  return v.map((entry: unknown, index) => {
+    const step = entry as Partial<ClockDiscontinuity> | null;
+    if (
+      step === null || typeof step !== "object" ||
+      typeof step.previousFrame !== "number" || typeof step.frame !== "number" || typeof step.betweenChunks !== "boolean"
+    ) {
+      throw new Error(`recaudit summary ${runId}: unexpected clockDiscontinuities[${index}] ${JSON.stringify(entry)}`);
+    }
+    return { previousFrame: step.previousFrame, frame: step.frame, betweenChunks: step.betweenChunks };
+  });
 }
 
 function stopLeadOf(top: Record<string, unknown>, runId: number): boolean | null {
@@ -630,6 +652,7 @@ export function parseMultitrackAuditSummary(json: unknown, runId: number): Loade
     outputLatencySec: optionalNumber(json, "outputLatency"),
     harnessPathBiasSec: persistedBias ?? 0,
     confirmCollision: json.confirmCollision === true,
+    clockDiscontinuities: clockDiscontinuitiesOf(json, runId),
     cellVerdicts: cellVerdictsOf(json),
     rows: rawRows as unknown as MultitrackAuditRow[],
     cellSkews,

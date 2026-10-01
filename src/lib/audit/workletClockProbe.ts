@@ -71,8 +71,8 @@ export function clockProbeConfigFrom(params: URLSearchParams): ClockProbeConfig 
   const rawConditions = params.get("conditions");
   const conditions = rawConditions === null ? [...CLOCK_CONDITIONS] : rawConditions.split(",");
   const known = (name: string): name is ClockCondition => (CLOCK_CONDITIONS as readonly string[]).includes(name);
-  if (conditions.length === 0 || !conditions.every(known)) {
-    throw new Error(`invalid ?conditions= "${rawConditions ?? ""}" — a comma list of ${CLOCK_CONDITIONS.join(", ")}`);
+  if (conditions.length === 0 || !conditions.every(known) || new Set(conditions).size !== conditions.length) {
+    throw new Error(`invalid ?conditions= "${rawConditions ?? ""}" — a comma list of ${CLOCK_CONDITIONS.join(", ")}, each once`);
   }
   return {
     sampleRate: wholeParam(params, "rate", 48000, 8000, 96000),
@@ -435,6 +435,9 @@ export async function runWorkletClockProbe(
     }
     return { userAgent: navigator.userAgent, sampleRate: rate, cfg, results };
   } finally {
-    await ctx.close();
+    // A close that fails must not take the place of what the probe threw or found.
+    await ctx.close().catch((error: unknown) => {
+      console.warn("[workletClockProbe] the context did not close: " + String(error));
+    });
   }
 }

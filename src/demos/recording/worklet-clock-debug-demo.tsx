@@ -45,6 +45,8 @@ async function saveOnDevServer(report: ClockProbeReport, verdict: ClockProbeVerd
   const name = "graph-lock-clock-" + String(Date.now()) + ".json";
   try {
     const put = await fetch("/__verify/" + name, { method: "PUT", body: JSON.stringify({ ...report, verdict }, null, 1) });
+    // A local preview of the built site has no sink: nothing to report.
+    if (put.status === 404 || put.status === 405) return null;
     return put.ok ? name : `NOT SAVED (${put.status})`;
   } catch (error) {
     return `NOT SAVED (${String(error)})`;

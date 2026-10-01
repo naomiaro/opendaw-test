@@ -198,6 +198,7 @@ describe("clockProbeConfigFrom", () => {
   it("refuses what it does not know instead of running something else", () => {
     expect(() => from("conditions=stream,jank")).toThrow(/conditions/);
     expect(() => from("conditions=")).toThrow(/conditions/);
+    expect(() => from("conditions=stream,stream")).toThrow(/conditions/);
     expect(() => from("seconds=0")).toThrow(/seconds/);
     expect(() => from("seconds=abc")).toThrow(/seconds/);
     // the ramp names each frame by a float32, which holds to about 340 s at 48 kHz: the page stops well short
