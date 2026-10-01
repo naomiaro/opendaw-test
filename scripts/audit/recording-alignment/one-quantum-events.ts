@@ -14,10 +14,11 @@
  * the `sdkVersion` / `stopLead` envelope fields is assigned to a release and a harness,
  * is in `src/lib/audit/oneQuantumEvents.ts`.
  */
-import { MAX_RUN, listMultitrackSummaryRunIds, loadMultitrackSummary, loadSummaries } from "./artifacts.ts";
+import { readFileSync } from "node:fs";
+import { MAX_RUN, VERIFY_DIR, listMultitrackSummaryRunIds, loadMultitrackSummary, loadSummaries } from "./artifacts.ts";
 import {
-  eventsOfRun, exactRateInterval, fisherOneSided, harnessOf, quantumMs, repeatsOf, sdkOf,
-  type EventRow, type HarnessStop, type RepeatReading, type RunIdentity,
+  eventsOfRun, exactRateInterval, fisherOneSided, harnessOf, quantumMs, repeatsOf, sdkOf, staleQuantaAtStamps,
+  type ClockStep, type EventRow, type HarnessStop, type RepeatReading, type RunIdentity,
 } from "../../../src/lib/audit/oneQuantumEvents.ts";
 
 const fromArgument = process.argv.indexOf("--from");
@@ -44,6 +45,19 @@ interface Run {
   identity: RunIdentity;
   rate: number;
   rows: EventRow[];
+  /** The reference recorder's clock witness; null on a single-tape run and on a multi-mic
+   *  envelope written before the field existed. */
+  clockSteps: ClockStep[] | null;
+}
+
+/** The loaded type does not carry the witness: it is read off the raw envelope. */
+function clockStepsOf(runId: string): ClockStep[] | null {
+  const raw = JSON.parse(readFileSync(`${VERIFY_DIR}/recaudit-mt-summary-${runId}.json`, "utf8")) as { clockDiscontinuities?: unknown };
+  if (raw.clockDiscontinuities === undefined) return null;
+  if (!Array.isArray(raw.clockDiscontinuities)) {
+    throw new Error(`recaudit-mt-summary-${runId}: clockDiscontinuities is not a list`);
+  }
+  return raw.clockDiscontinuities as ClockStep[];
 }
 
 const runs: Run[] = [];
@@ -53,6 +67,7 @@ for (const { summary } of loadSummaries()) {
     identity: { runId: summary.runId, sdkVersion: summary.sdkVersion, stopLead: summary.stopLead, sdkBuildProbe: summary.sdkBuildProbe, buildFeatures: summary.buildFeatures },
     rate: summary.rate,
     rows: summary.rows,
+    clockSteps: null,
   });
 }
 for (const runId of listMultitrackSummaryRunIds()) {
@@ -62,6 +77,7 @@ for (const runId of listMultitrackSummaryRunIds()) {
     identity: { runId: summary.runId, sdkVersion: summary.sdkVersion, stopLead: summary.stopLead, sdkBuildProbe: summary.sdkBuildProbe, buildFeatures: summary.buildFeatures },
     rate: summary.rate,
     rows: summary.rows,
+    clockSteps: clockStepsOf(runId),
   });
 }
 
@@ -78,7 +94,13 @@ const bump = (map: Map<string, Tally>, key: string, repeats: number, events: num
 };
 const eventLines: string[] = [];
 const otherLines: string[] = [];
-const describe = (reading: RepeatReading, usualMs: number, rate: number): string =>
+const staleLine = (row: EventRow, clockSteps: ClockStep[], rate: number): string => {
+  const at = staleQuantaAtStamps(clockSteps, row as EventRow & StartFigures, rate);
+  return at.length === 0
+    ? "no"
+    : "yes (" + at.map((found) => `${found.stamp}: the clock read ${found.staleFrame} twice, ${found.distanceFrames} frames from the stamp`).join("; ") + ")";
+};
+const describe = (reading: RepeatReading, usualMs: number, rate: number, clockSteps: ClockStep[] | null): string =>
   reading.rows.map((row) => {
     const figures = row as EventRow & StartFigures;
     const name = row.tape ?? `take ${String(row.takeIndex ?? 0)}`;
@@ -96,9 +118,17 @@ const describe = (reading: RepeatReading, usualMs: number, rate: number): string
       parts.push(`recording start − first quantum ${quanta.toFixed(3)} quanta`);
     }
     if (typeof figures.recordingStartPositionPpqn === "number") parts.push(`recording-start position ${figures.recordingStartPositionPpqn.toFixed(3)}`);
+    if (clockSteps !== null) parts.push(`stale quantum at a stamp: ${staleLine(row, clockSteps, rate)}`);
     return `${name}: ${parts.join(", ")}`;
   }).join("\n      ");
 
+const clockLines: string[] = [];
+let runsWithClock = 0;
+let runsWithSteps = 0;
+/** Rows of repeats that are NOT events, in runs that carry the witness: the control. */
+let ordinaryRows = 0;
+let ordinaryRowsWithStale = 0;
+const ordinaryStaleLines: string[] = [];
 let skipped = 0;
 let tooShort = 0;
 let counted = 0;
@@ -117,12 +147,34 @@ for (const run of runs) {
   for (const reading of repeatsOf(run.rows)) bump(byScenario, `${sdk} | ${harness} | ${reading.scenario}`, 1, 0);
   const title = (reading: RepeatReading): string =>
     `${sdk} ${harness} ${run.kind} run ${run.identity.runId} ${reading.scenario}/${reading.bpm}/r${reading.repeat} ` +
-    `(quantum ${quantumMs(run.rate).toFixed(3)} ms)\n      ${describe(reading, usualMs, run.rate)}`;
+    `(quantum ${quantumMs(run.rate).toFixed(3)} ms)\n      ${describe(reading, usualMs, run.rate, run.clockSteps)}`;
   for (const event of events) {
     bump(byScenario, `${sdk} | ${harness} | ${event.scenario}`, 0, 1);
     eventLines.push(title(event));
   }
   for (const other of others) otherLines.push(title(other));
+  if (run.clockSteps !== null) {
+    const clockSteps = run.clockSteps;
+    runsWithClock++;
+    if (clockSteps.length > 0) {
+      runsWithSteps++;
+      clockLines.push(
+        `run ${run.identity.runId}: ${clockSteps.length} — frames ` +
+        clockSteps.map((step) => `${step.previousFrame}→${step.frame} (${step.betweenChunks ? "between chunks" : "inside a chunk"})`).join(", ")
+      );
+    }
+    const unusual = new Set([...events, ...others]);
+    for (const reading of repeatsOf(run.rows)) {
+      if (unusual.has(reading)) continue;
+      for (const row of reading.rows) {
+        ordinaryRows++;
+        const line = staleLine(row, clockSteps, run.rate);
+        if (line === "no") continue;
+        ordinaryRowsWithStale++;
+        ordinaryStaleLines.push(`run ${run.identity.runId} ${reading.scenario}/${reading.bpm}/r${reading.repeat} ${row.tape ?? ""}: ${line}`);
+      }
+    }
+  }
 }
 
 const rateLine = ({ repeats, events }: Tally): string => {
@@ -183,4 +235,11 @@ for (const line of eventLines) console.log("  " + line);
 if (otherLines.length > 0) {
   console.log(`\nRepeats off by something other than one quantum, not counted as events (${otherLines.length}):`);
   for (const line of otherLines) console.log("  " + line);
+}
+
+console.log(`\nClock discontinuities (multi-mic runs that carry the field): ${runsWithSteps} of ${runsWithClock}`);
+for (const line of clockLines) console.log("  " + line);
+if (runsWithClock > 0) {
+  console.log(`Rows of ordinary repeats in those runs with a stale quantum at a stamp: ${ordinaryRowsWithStale} of ${ordinaryRows}`);
+  for (const line of ordinaryStaleLines) console.log("  " + line);
 }

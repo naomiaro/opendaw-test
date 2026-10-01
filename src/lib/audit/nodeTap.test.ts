@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  findLag, layOutRange, measureNodeDelay, nodeDelayFor, notMeasured,
+  findLag, frameDiscontinuities, layOutRange, measureNodeDelay, nodeDelayFor, notMeasured,
   referenceCovers, referenceFor, referenceLeadFrames, spanOf, trimReference,
   NODE_TAP_LOUD, NODE_TAP_MAX_LAG_SEC, NODE_TAP_PROCESSOR, NODE_TAP_PROCESSOR_SOURCE,
   NODE_TAP_QUANTUM_FRAMES, NODE_TAP_SECONDS, NODE_TAP_WINDOW_FRAMES, NODE_TAP_WINDOW_LEAD_FRAMES,
@@ -641,5 +641,47 @@ describe("the recorder's processor", () => {
       }
     }
     expect(measureNodeDelay(tap.posted, reference.posted, 48000).delayFrames).toBe(640);
+  });
+});
+
+describe("frameDiscontinuities", () => {
+  /** A chunk of `frames.length` quanta stamped with the given frames; the samples do not matter here. */
+  const stamped = (frames: number[]): TapChunk => ({
+    frames: Float64Array.from(frames),
+    samples: new Float32Array(frames.length * NODE_TAP_QUANTUM_FRAMES),
+    count: frames.length,
+  });
+
+  it("finds nothing in a clock that advances one quantum per call, across chunks too", () => {
+    const { found, lastFrame } = frameDiscontinuities([stamped([0, 128, 256]), stamped([384, 512])], null);
+    expect(found).toEqual([]);
+    expect(lastFrame).toBe(512);
+  });
+
+  it("reports a clock that stood still for one call: the same frame, then two quanta on", () => {
+    const { found } = frameDiscontinuities([stamped([0, 128, 128, 384])], null);
+    expect(found).toEqual([
+      { previousFrame: 128, frame: 128, betweenChunks: false },
+      { previousFrame: 128, frame: 384, betweenChunks: false },
+    ]);
+  });
+
+  it("marks a gap between two chunks as such: a chunk that never arrived looks the same", () => {
+    const { found } = frameDiscontinuities([stamped([0, 128]), stamped([512, 640])], null);
+    expect(found).toEqual([{ previousFrame: 128, frame: 512, betweenChunks: true }]);
+  });
+
+  it("carries the last frame over from an earlier call", () => {
+    expect(frameDiscontinuities([stamped([256, 384])], 128).found).toEqual([]);
+    expect(frameDiscontinuities([stamped([384, 512])], 128).found)
+      .toEqual([{ previousFrame: 128, frame: 384, betweenChunks: true }]);
+  });
+
+  it("reads only the quanta a chunk says it holds", () => {
+    const partial = stamped([0, 128, 999]);
+    partial.count = 2;
+    const { found, lastFrame } = frameDiscontinuities([partial], null);
+    expect(found).toEqual([]);
+    expect(lastFrame).toBe(128);
   });
 });

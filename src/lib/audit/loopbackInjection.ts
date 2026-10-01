@@ -23,8 +23,8 @@
 import { withDeadline } from "@/lib/deadline";
 import {
   NODE_TAP_PROCESSOR, NODE_TAP_PROCESSOR_SOURCE, NODE_TAP_QUANTUM_FRAMES, NODE_TAP_SECONDS,
-  referenceCovers, referenceFor, spanOf, trimReference,
-  type TapChunk, type TappedNode,
+  frameDiscontinuities, referenceCovers, referenceFor, spanOf, trimReference,
+  type ClockDiscontinuity, type TapChunk, type TappedNode,
 } from "./nodeTap";
 
 export const LOOPBACK_DEVICE_ID = "loopback-injection";
@@ -265,6 +265,12 @@ export interface LoopbackHandle {
    * cannot be told apart here; `nodeDelayFor` refuses that case.
    */
   tapSourceNodes(): Promise<SourceNodeRecording[]>;
+  /**
+   * Every call of the reference recorder, since `prepareNodeTaps()`, whose `currentFrame`
+   * was not one quantum after the call before it. Empty without the `nodeTaps` option.
+   * A copy: the caller may keep it.
+   */
+  clockDiscontinuities(): ClockDiscontinuity[];
   uninstall(): void;
 }
 
@@ -340,6 +346,10 @@ export function installLoopbackCapture(deviceCount: number = 1, options: Loopbac
   /** Why the reference recorder stopped, once it has; every tap after that fails with it. */
   let referenceFailure: string | null = null;
   let referenceChunks: TapChunk[] = [];
+  // Every reference call whose currentFrame did not advance by one quantum, for the whole
+  // run: the reference itself is trimmed, this list is not.
+  let clockDiscontinuities: ClockDiscontinuity[] = [];
+  let lastReferenceFrame: number | null = null;
   let uninstalled = false;
 
   const tapRecorder = (
@@ -628,6 +638,15 @@ export function installLoopbackCapture(deviceCount: number = 1, options: Loopbac
         const keepFrames = REFERENCE_KEEP_SEC * audioContext.sampleRate;
         referenceFailure = null;
         referenceRecorder = tapRecorder(audioContext, 0, REFERENCE_CHUNK_QUANTA, (chunk) => {
+          const { found, lastFrame } = frameDiscontinuities([chunk], lastReferenceFrame);
+          lastReferenceFrame = lastFrame;
+          for (const discontinuity of found) {
+            clockDiscontinuities.push(discontinuity);
+            console.warn(
+              "[loopbackInjection] reference clock: frame " + String(discontinuity.frame) + " after " +
+              String(discontinuity.previousFrame) + (discontinuity.betweenChunks ? " (between chunks)" : " (inside a chunk)")
+            );
+          }
           referenceChunks.push(chunk);
           trimReference(referenceChunks, keepFrames);
         }, (reason) => {
@@ -660,6 +679,9 @@ export function installLoopbackCapture(deviceCount: number = 1, options: Loopbac
       }
       return Promise.all(taps);
     },
+    clockDiscontinuities() {
+      return clockDiscontinuities.map((discontinuity) => ({ ...discontinuity }));
+    },
     uninstall() {
       uninstalled = true;
       nodeTapsReady = null;
@@ -675,6 +697,8 @@ export function installLoopbackCapture(deviceCount: number = 1, options: Loopbac
         if (returnDelay !== null) disconnectQuietly(returnDelay, referenceRecorder);
         referenceRecorder = null;
         referenceChunks = [];
+        clockDiscontinuities = [];
+        lastReferenceFrame = null;
       }
     },
   };

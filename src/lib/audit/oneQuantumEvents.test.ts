@@ -10,6 +10,7 @@ import {
   quantumMs,
   repeatsOf,
   sdkOf,
+  staleQuantaAtStamps,
   usualNettedMs,
   type EventRow,
   type RunIdentity,
@@ -192,5 +193,43 @@ describe("exactRateInterval", () => {
 
   it("covers everything for no repeats", () => {
     expect(exactRateInterval(0, 0)).toEqual([0, 1]);
+  });
+});
+
+describe("staleQuantaAtStamps", () => {
+  const RATE = 48000;
+  /** The clock read `frame` on two calls running: the second call's quantum is the stale one. */
+  const stale = (frame: number, betweenChunks = false) => ({ previousFrame: frame, frame, betweenChunks });
+  const sec = (frame: number) => frame / RATE;
+
+  it("finds the stale read a recorder's first-quantum stamp equals", () => {
+    expect(staleQuantaAtStamps([stale(96000)], { firstQuantumTimeSec: sec(96000) }, RATE))
+      .toEqual([{ stamp: "first quantum", staleFrame: 96000, distanceFrames: 0 }]);
+  });
+
+  it("reads the engine's recording start one quantum back: it reports the END of the quantum it stamped in", () => {
+    expect(staleQuantaAtStamps([stale(96000)], { recordingStartContextTimeSec: sec(96000 + 128) }, RATE))
+      .toEqual([{ stamp: "recording start", staleFrame: 96000, distanceFrames: 0 }]);
+  });
+
+  it("counts a stale read one quantum either side of a stamp, with its distance, and none further off", () => {
+    const row = { firstQuantumTimeSec: sec(96000) };
+    expect(staleQuantaAtStamps([stale(96000 - 128)], row, RATE)).toEqual([{ stamp: "first quantum", staleFrame: 95872, distanceFrames: -128 }]);
+    expect(staleQuantaAtStamps([stale(96000 + 128)], row, RATE)).toEqual([{ stamp: "first quantum", staleFrame: 96128, distanceFrames: 128 }]);
+    expect(staleQuantaAtStamps([stale(96000 + 256), stale(96000 - 256)], row, RATE)).toEqual([]);
+  });
+
+  it("does not take a step forward for a stale read: a lost chunk and the catch-up after a stale quantum look like that", () => {
+    const forward = { previousFrame: 96000 - 128, frame: 96000 + 128, betweenChunks: false };
+    expect(staleQuantaAtStamps([forward], { firstQuantumTimeSec: sec(96000) }, RATE)).toEqual([]);
+  });
+
+  it("takes a stale read at a chunk border too: a lost chunk cannot make the clock repeat itself", () => {
+    expect(staleQuantaAtStamps([stale(96000, true)], { firstQuantumTimeSec: sec(96000) }, RATE)).toHaveLength(1);
+  });
+
+  it("has nothing to say about a row without stamps", () => {
+    expect(staleQuantaAtStamps([stale(96000)], {}, RATE)).toEqual([]);
+    expect(staleQuantaAtStamps([stale(96000)], { firstQuantumTimeSec: null, recordingStartContextTimeSec: null }, RATE)).toEqual([]);
   });
 });

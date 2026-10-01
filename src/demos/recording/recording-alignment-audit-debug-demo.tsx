@@ -1429,6 +1429,7 @@ async function uploadMultitrackSummary(
     rate, sdkBuildProbe, buildFeatures,
     sdkVersion: OPENDAW_SDK_VERSION,
     stopLead: STOP_LEAD,
+    clockDiscontinuities: loopback.clockDiscontinuities(),
     captureMode: CAPTURE_MODE,
     getUserMediaOpens: loopback.getUserMediaOpens(),
     // Read once per page load after output started (`resolveHarnessPathBias`)

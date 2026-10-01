@@ -123,6 +123,64 @@ export function eventsOfRun(rows: readonly EventRow[], rate: number): RunEvents 
   };
 }
 
+/** A call of the harness's reference recorder whose `currentFrame` was not one quantum
+ *  after the call before it, as a multi-mic envelope carries it (`clockDiscontinuities`). */
+export interface ClockStep {
+  previousFrame: number;
+  frame: number;
+  betweenChunks: boolean;
+}
+
+/** The start-of-take stamps a row carries. */
+export interface StampedStart {
+  firstQuantumTimeSec?: number | null;
+  recordingStartContextTimeSec?: number | null;
+}
+
+export interface StaleAtStamp {
+  stamp: "first quantum" | "recording start";
+  /** What the clock read in the stale quantum: one quantum less than that quantum's true frame. */
+  staleFrame: number;
+  /** `staleFrame` less the frame the stamp read. 0: the clock read the stamp's own value in a stale quantum. */
+  distanceFrames: number;
+}
+
+/**
+ * The stale clock reads of a run that fall within one quantum of a row's start-of-take
+ * stamps. A stale read is a call that read the same frame as the call before it, inside
+ * a chunk or at a chunk border (a lost chunk makes the frame jump forward, never repeat).
+ * The recording worklet's stamp is the frame its first call read; the engine reports the
+ * END of the quantum it stamped in, so the frame it read is one quantum before its report.
+ *
+ * A distance of 0 does not say which call took the stamp: a processor that stamped in the
+ * quantum BEFORE the stale one read the same number truly. Whether a stamp is early is the
+ * row's own figures' to say (netted median, first-frame check); this says whether the clock
+ * stood still there.
+ */
+export function staleQuantaAtStamps(
+  steps: readonly ClockStep[],
+  row: StampedStart,
+  rate: number,
+  quantumFrames = 128
+): StaleAtStamp[] {
+  const stamps: { stamp: StaleAtStamp["stamp"]; frame: number }[] = [];
+  if (typeof row.firstQuantumTimeSec === "number") {
+    stamps.push({ stamp: "first quantum", frame: Math.round(row.firstQuantumTimeSec * rate) });
+  }
+  if (typeof row.recordingStartContextTimeSec === "number") {
+    stamps.push({ stamp: "recording start", frame: Math.round(row.recordingStartContextTimeSec * rate) - quantumFrames });
+  }
+  const found: StaleAtStamp[] = [];
+  for (const { stamp, frame } of stamps) {
+    for (const step of steps) {
+      if (step.frame !== step.previousFrame) continue;
+      const distanceFrames = step.frame - frame;
+      if (Math.abs(distanceFrames) <= quantumFrames) found.push({ stamp, staleFrame: step.frame, distanceFrames });
+    }
+  }
+  return found;
+}
+
 /**
  * How a saved envelope without an `sdkVersion` is dated: a release-build run with this
  * id or a later one was recorded on 0.0.173, an earlier one on 0.0.172. The constant

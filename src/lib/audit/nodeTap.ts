@@ -96,6 +96,40 @@ class LoopbackNodeTap extends AudioWorkletProcessor {
 registerProcessor("${NODE_TAP_PROCESSOR}", LoopbackNodeTap);
 `;
 
+/** A `process` call whose `currentFrame` was not one quantum after the call before it. */
+export interface ClockDiscontinuity {
+  previousFrame: number;
+  frame: number;
+  /** True when the two calls are in different posted chunks: a chunk that never arrived looks the same. */
+  betweenChunks: boolean;
+}
+
+/**
+ * The calls among `chunks` whose `currentFrame` is not exactly one quantum after the
+ * previous call's. `previousFrame` is the last frame of an earlier batch, null for the
+ * first. A worklet's clock can stand still for a call while the main thread changes the
+ * audio graph: that shows INSIDE a chunk, as a frame equal to the one before it and then
+ * a step of two quanta. A step BETWEEN two chunks is either the clock or a posted chunk
+ * that was lost.
+ */
+export function frameDiscontinuities(
+  chunks: readonly TapChunk[],
+  previousFrame: number | null
+): { found: ClockDiscontinuity[]; lastFrame: number | null } {
+  const found: ClockDiscontinuity[] = [];
+  let last = previousFrame;
+  for (const chunk of chunks) {
+    for (let index = 0; index < chunk.count; index++) {
+      const frame = chunk.frames[index];
+      if (last !== null && frame !== last + NODE_TAP_QUANTUM_FRAMES) {
+        found.push({ previousFrame: last, frame, betweenChunks: index === 0 });
+      }
+      last = frame;
+    }
+  }
+  return { found, lastFrame: last };
+}
+
 /**
  * Lay chunks out from `firstFrame` over `lengthFrames`, each quantum at the
  * frame it was stamped with. Never by position in the chunk: a recorder can

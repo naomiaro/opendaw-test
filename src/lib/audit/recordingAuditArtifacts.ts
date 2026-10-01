@@ -64,7 +64,7 @@
  * defaulting.
  */
 import type { CellStatus, CrossTrackSkew, NodeDelayUse, SignatureBand } from "./recordingAlignment";
-import type { NodeTapWindow } from "./nodeTap";
+import type { ClockDiscontinuity, NodeTapWindow } from "./nodeTap";
 // Value imports with an explicit `.ts` extension: this module sits in the Node
 // scripts' import chain (type stripping resolves nothing without it).
 import { formatTwoDecimals } from "./recordingAlignment.ts";
@@ -332,6 +332,9 @@ export interface MultitrackAuditSummary extends SummaryBase {
    *  read them (the profile does not net). Absent when there were no taps. */
   anchorOffsetMs?: number | null;
   confirmCollision: boolean;
+  /** Every call of the reference recorder during the run whose `currentFrame` did not
+   *  advance by one quantum (see `frameDiscontinuities`). No verdict reads it. */
+  clockDiscontinuities?: ClockDiscontinuity[];
   rows: MultitrackAuditRow[];
   cellSkews: MultitrackCellSkew[];
 }
