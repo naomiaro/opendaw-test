@@ -82,6 +82,42 @@ export function stopLeadMs(stopRequestPpqn: number, clickPpqn: number, bpm: numb
   return ((clickPpqn - stopRequestPpqn) / BEAT_PPQN) * (60_000 / bpm);
 }
 
+/**
+ * The position of the click a repeat's stop is measured against.
+ *
+ * With the lead it is the click the stop comes before: beat 2 of the pass the last
+ * wrap opened (`loop-wrap`), or the downbeat after the four bars. Without the lead it
+ * is the click the stop follows: the same downbeat, or for `loop-wrap` the loop's own
+ * downbeat. That one is at 0 once the position has wrapped and at the loop's end
+ * while the position read is still from before the wrap, so the figure comes out a
+ * few milliseconds either side of zero and never a whole pass off.
+ */
+export function stopClickPpqn(
+  loopWrap: boolean,
+  startPpqn: number,
+  aheadOfClick: boolean,
+  stopRequestPpqn: number
+): number {
+  if (!loopWrap) return startPpqn + 4 * BAR_PPQN;
+  if (aheadOfClick) return BEAT_PPQN;
+  return stopRequestPpqn < LOOP_WRAP_PPQN / 2 ? 0 : LOOP_WRAP_PPQN;
+}
+
+/**
+ * The engine's one-shot report of where and when the recording began, for a row.
+ * Nulls before the report arrives and on a build whose engine has none.
+ */
+export function readRecordingStart(engine: unknown): { contextTimeSec: number | null; positionPpqn: number | null } {
+  const report = (engine as {
+    recordingStart?: { isEmpty?: () => boolean; unwrap?: () => { contextTime: number; position: number } };
+  }).recordingStart;
+  if (report === undefined || typeof report.isEmpty !== "function" || typeof report.unwrap !== "function" || report.isEmpty()) {
+    return { contextTimeSec: null, positionPpqn: null };
+  }
+  const { contextTime, position } = report.unwrap();
+  return { contextTimeSec: contextTime, positionPpqn: position };
+}
+
 /** `stopLeadMs` at the moment of the stop request, with a warning when the lead was missed. */
 export function readStopLead(project: Project, clickPpqn: number, bpm: number, label: string): number {
   const leadMs = stopLeadMs(project.engine.position.getValue(), clickPpqn, bpm);
@@ -526,12 +562,15 @@ export interface CellRepeatOptions {
   // summary envelope, which therefore always describe the same number.
   harnessPathBiasSec: number;
   token: RepeatToken;
+  /** False stops the repeat just AFTER the click instead of a lead before it
+   *  (`?stopLead=off`). Default true. */
+  stopLead?: boolean;
 }
 
 export async function runCellRepeat(options: CellRepeatOptions): Promise<CellRepeatResult> {
   const {
     project, audioContext, loopback, unitAdapter, scenario, bpm, rate, repeat, onStage,
-    harnessPathBiasSec, token,
+    harnessPathBiasSec, token, stopLead: stopsAheadOfClick = true,
   } = options;
   onStage("prefs");
   project.editing.modify(() => {
@@ -620,16 +659,19 @@ export async function runCellRepeat(options: CellRepeatOptions): Promise<CellRep
 
   onStage("recording");
   assertCurrent(token, "recording wait");
-  // Every scenario stops a lead before the next metronome click (see STOP_LEAD_PPQN).
+  // Every scenario stops a lead before the next metronome click (see STOP_LEAD_PPQN),
+  // unless the run asked for the stop just after it.
   if (scenario === "loop-wrap") {
     await waitForTakeCount([unitAdapter], LOOP_WRAP_TAKES + 1, 90_000);
-    // The take the last wrap opened starts on the loop's downbeat click: record on
-    // to a lead before beat 2 of that pass. The upper bound is the loop's last
-    // beat, where a read from before the wrap would still sit.
-    assertCurrent(token, "final pass wait");
-    await waitForPositionWithin(project, BEAT_PPQN - STOP_LEAD_PPQN, LOOP_WRAP_PPQN - BEAT_PPQN, 20_000);
+    if (stopsAheadOfClick) {
+      // The take the last wrap opened starts on the loop's downbeat click: record on
+      // to a lead before beat 2 of that pass. The upper bound is the loop's last
+      // beat, where a read from before the wrap would still sit.
+      assertCurrent(token, "final pass wait");
+      await waitForPositionWithin(project, BEAT_PPQN - STOP_LEAD_PPQN, LOOP_WRAP_PPQN - BEAT_PPQN, 20_000);
+    }
   } else {
-    await waitForPosition(project, startPpqn + 4 * BAR_PPQN - STOP_LEAD_PPQN, 60_000);
+    await waitForPosition(project, startPpqn + 4 * BAR_PPQN - (stopsAheadOfClick ? STOP_LEAD_PPQN : 0), 60_000);
   }
 
   onStage("stopping");
@@ -649,11 +691,13 @@ export async function runCellRepeat(options: CellRepeatOptions): Promise<CellRep
   lastFinalizeProbe = finalizeProbe;
   finalizeProbe.finalizeNumberOfFramesAtStop = (loader as unknown as { numberOfFrames?: number }).numberOfFrames;
   stopRequestContextTime = audioContext.currentTime;
-  // The click this repeat ends before: beat 2 of the pass the last wrap opened, or
-  // the downbeat that follows the four bars.
-  const stopLead = readStopLead(
-    project, scenario === "loop-wrap" ? BEAT_PPQN : startPpqn + 4 * BAR_PPQN, bpm, cellLabel(scenario, bpm, repeat)
-  );
+  const stopRequestPpqn = project.engine.position.getValue();
+  const clickPpqn = stopClickPpqn(scenario === "loop-wrap", startPpqn, stopsAheadOfClick, stopRequestPpqn);
+  // Without a lead the stop is meant to follow the click: the figure is kept, the warning is not
+  const stopLead = stopsAheadOfClick
+    ? readStopLead(project, clickPpqn, bpm, cellLabel(scenario, bpm, repeat))
+    : stopLeadMs(stopRequestPpqn, clickPpqn, bpm);
+  const recordingStart = readRecordingStart(project.engine);
   project.engine.stopRecording();
 
   onStage("finalizing");
@@ -806,6 +850,8 @@ export async function runCellRepeat(options: CellRepeatOptions): Promise<CellRep
       tailMissingMs: alignment.tailMissingMs,
       stopRequestContextTime,
       stopLeadMs: stopLead,
+      recordingStartContextTimeSec: recordingStart.contextTimeSec,
+      recordingStartPositionPpqn: recordingStart.positionPpqn,
       bufferDurationSec,
       regionPositionPpqn: region.position,
       regionStartSec,

@@ -62,6 +62,7 @@ import { CaptureAudio, type Project } from "@opendaw/studio-core";
 import { InstrumentFactories, type AudioUnitBoxAdapter, type SampleLoader } from "@opendaw/studio-adapters";
 import type { AudioUnitBox } from "@opendaw/studio-boxes";
 import { WavFile } from "@opendaw/lib-dsp";
+import { OPENDAW_SDK_VERSION } from "@opendaw/studio-sdk";
 import { detectBuildFeatures } from "@/lib/audit/buildFeatures";
 import {
   installLoopbackCapture, LOOPBACK_DEVICE_ID, loopbackDeviceId, type SourceNodeRecording,
@@ -134,8 +135,10 @@ import {
   resolveHarnessPathBias,
   runCellRepeat,
   runRepeatWithDeadline,
+  readRecordingStart,
   readStopLead,
   STOP_LEAD_PPQN,
+  stopLeadMs,
   settleFinalizeProbe,
   takeLastFinalizeProbe,
   assertCurrent,
@@ -223,6 +226,11 @@ function detectSdkBuildProbe(engine: unknown): SdkBuildProbe {
  * multi-mic ones need two distinct named devices by construction.
  */
 const DEFAULT_INPUT = params.get("defaultInput") === "1";
+/** `&stopLead=off` stops every repeat just AFTER the metronome click instead of a lead
+ *  before it. For telling the harness's effect apart from the SDK's. Any other value
+ *  is refused: a run has to say which stop it used. */
+const STOP_LEAD_PARAM = params.get("stopLead");
+const STOP_LEAD = STOP_LEAD_PARAM !== "off";
 /** Persisted per run so an envelope says which `#updateStream` path it took. */
 const CAPTURE_MODE: CaptureMode = DEFAULT_INPUT ? "default" : "named";
 
@@ -459,6 +467,13 @@ function resolveBpms(param: string | null): number[] {
   return [n];
 }
 
+/** Refuse a `?stopLead=` the page does not know, before a run records anything. */
+function assertStopLeadParam(): void {
+  if (STOP_LEAD_PARAM !== null && STOP_LEAD_PARAM !== "off") {
+    throw new Error(`invalid ?stopLead= "${STOP_LEAD_PARAM}" — leave it out, or use stopLead=off`);
+  }
+}
+
 /** rate is per-page-load (sets the AudioContext at init) — NEVER "all". */
 function resolveRate(param: string | null): number {
   const raw = param ?? "48000";
@@ -550,6 +565,8 @@ async function uploadSummary(
     beatGrid: "absolute",
     rate,
     sdkBuildProbe,
+    sdkVersion: OPENDAW_SDK_VERSION,
+    stopLead: STOP_LEAD,
     buildFeatures,
     captureMode: CAPTURE_MODE,
     getUserMediaOpens: loopback.getUserMediaOpens(),
@@ -646,6 +663,7 @@ async function runAudit(
   const scenarios = resolveScenarios(params.get("scenario"));
   const bpms = resolveBpms(params.get("bpm"));
   const rate = resolveRate(params.get("rate"));
+  assertStopLeadParam();
   // One token per run, stamped into BOTH the summary name and every capture
   // WAV name, so a summary row and the audio it was measured from can always be
   // joined without guessing (Task 7c fix round 1, review M12).
@@ -682,6 +700,7 @@ async function runAudit(
               onStage: (s) => { stage = s; },
               harnessPathBiasSec: bias.valueSec,
               token,
+              stopLead: STOP_LEAD,
             }),
             // Outer deadline ABOVE the inner stages' worst-case sum, so the
             // stage that is actually slow is the one that names itself:
@@ -1144,8 +1163,9 @@ async function runMultitrackCellRepeat(
     }
   );
   assertCurrent(token, "position wait");
-  // Stop a lead before the downbeat that follows the window (see STOP_LEAD_PPQN).
-  await waitForPosition(project, MULTITRACK_RECORD_BARS * BAR_PPQN - STOP_LEAD_PPQN, 60_000);
+  // Stop a lead before the downbeat that follows the window (see STOP_LEAD_PPQN),
+  // unless the run asked for the stop just after it.
+  await waitForPosition(project, MULTITRACK_RECORD_BARS * BAR_PPQN - (STOP_LEAD ? STOP_LEAD_PPQN : 0), 60_000);
 
   onStage("stopping");
   // Side effects below (loader patches, lastMultitrackFinalizeProbes,
@@ -1168,9 +1188,10 @@ async function runMultitrackCellRepeat(
   probeA.finalizeNumberOfFramesAtStop = (loaderA as unknown as { numberOfFrames?: number }).numberOfFrames;
   probeB.finalizeNumberOfFramesAtStop = (loaderB as unknown as { numberOfFrames?: number }).numberOfFrames;
   stopRequestContextTime = audioContext.currentTime;
-  const stopLead = readStopLead(
-    project, MULTITRACK_RECORD_BARS * BAR_PPQN, bpm, multitrackCellLabel(scenario, bpm, repeat)
-  );
+  const stopLead = STOP_LEAD
+    ? readStopLead(project, MULTITRACK_RECORD_BARS * BAR_PPQN, bpm, multitrackCellLabel(scenario, bpm, repeat))
+    : stopLeadMs(project.engine.position.getValue(), MULTITRACK_RECORD_BARS * BAR_PPQN, bpm);
+  const recordingStart = readRecordingStart(project.engine);
   project.engine.stopRecording();
 
   onStage("finalizing");
@@ -1272,6 +1293,8 @@ async function runMultitrackCellRepeat(
       headMissingRawMs,
       tailMissingMs: alignment.tailMissingMs,
       stopLeadMs: stopLead,
+      recordingStartContextTimeSec: recordingStart.contextTimeSec,
+      recordingStartPositionPpqn: recordingStart.positionPpqn,
       medianSkewMs: null, maxAbsSkewMs: null, pairedSkewBeats: 0, // filled in once both tapes are measured
       regionPositionPpqn: take.position,
       regionStartSec,
@@ -1404,6 +1427,8 @@ async function uploadMultitrackSummary(
     schemaVersion: AUDIT_SCHEMA_VERSION,
     beatGrid: "absolute",
     rate, sdkBuildProbe, buildFeatures,
+    sdkVersion: OPENDAW_SDK_VERSION,
+    stopLead: STOP_LEAD,
     captureMode: CAPTURE_MODE,
     getUserMediaOpens: loopback.getUserMediaOpens(),
     // Read once per page load after output started (`resolveHarnessPathBias`)
@@ -1498,6 +1523,7 @@ async function runMultitrackAudit(
   const scenarios = resolveMultitrackScenarios(params.get("scenario"));
   const bpms = resolveMultitrackBpms(params.get("bpm"));
   const rate = resolveRate(params.get("rate"));
+  assertStopLeadParam();
   // Fix round 1 (C1 confirmation): `?confirmCollision=1` arms tape B on the
   // SAME loopback device as tape A (see createMultitrackTapes's
   // `sameDeviceB`) — a dedicated, deliberately-abnormal cell that tests

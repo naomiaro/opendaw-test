@@ -9,7 +9,8 @@ import type { Project } from "@opendaw/studio-core";
 import { BAR_PPQN } from "./auditExpectations";
 import { RECORDING_AUDIT_BPMS } from "./recordingAuditCalibration";
 import {
-  STOP_LEAD_PPQN, STOP_ROUND_TRIP_MS, STOP_TRAIL_MS, readStopLead, stopLeadMs, waitForPositionWithin,
+  STOP_LEAD_PPQN, STOP_ROUND_TRIP_MS, STOP_TRAIL_MS, readRecordingStart, readStopLead, stopClickPpqn,
+  stopLeadMs, waitForPositionWithin,
 } from "./recordingCellRunner";
 
 const BEAT_PPQN = BAR_PPQN / 4;
@@ -23,6 +24,28 @@ describe("STOP_LEAD_PPQN", () => {
   it.each(RECORDING_AUDIT_BPMS)("leaves loop-wrap's stop short of beat 2 at %s BPM", (bpm) => {
     // loop-wrap waits for one beat less the lead into the pass, then stops
     expect(msOf(BEAT_PPQN - STOP_LEAD_PPQN, bpm) + STOP_TRAIL_MS).toBeLessThan(msOf(BEAT_PPQN, bpm));
+  });
+});
+
+describe("stopClickPpqn", () => {
+  const LOOP_PPQN = 2 * BAR_PPQN;
+
+  it("is the downbeat after the four bars for a linear repeat, with the lead or without", () => {
+    expect(stopClickPpqn(false, 0, true, 4 * BAR_PPQN - STOP_LEAD_PPQN)).toBe(4 * BAR_PPQN);
+    expect(stopClickPpqn(false, 2 * BAR_PPQN, false, 6 * BAR_PPQN + 20)).toBe(6 * BAR_PPQN);
+  });
+
+  it("is beat 2 of the last pass for loop-wrap with the lead", () => {
+    expect(stopClickPpqn(true, 0, true, BEAT_PPQN - STOP_LEAD_PPQN)).toBe(BEAT_PPQN);
+  });
+
+  it("is the loop's downbeat for loop-wrap without the lead, on either side of the wrap", () => {
+    // read after the wrap: the stop follows the click at 0 by a few milliseconds
+    expect(stopClickPpqn(true, 0, false, 40)).toBe(0);
+    expect(stopLeadMs(40, stopClickPpqn(true, 0, false, 40), 120)).toBeCloseTo(-20.83, 2);
+    // read still from before the wrap: the same click, at the loop's end
+    expect(stopClickPpqn(true, 0, false, LOOP_PPQN - 10)).toBe(LOOP_PPQN);
+    expect(stopLeadMs(LOOP_PPQN - 10, stopClickPpqn(true, 0, false, LOOP_PPQN - 10), 120)).toBeCloseTo(5.21, 2);
   });
 });
 
@@ -57,6 +80,29 @@ describe("readStopLead", () => {
     expect(readStopLead(at(CLICK + 100), CLICK, 120, "nominal-start/120/r2")).toBeLessThan(0);
     expect(warn).toHaveBeenCalledTimes(2);
     expect(String(warn.mock.calls[0][0])).toContain("nominal-start/120/r1");
+  });
+});
+
+describe("readRecordingStart", () => {
+  const option = (value: { contextTime: number; position: number } | null) => ({
+    isEmpty: () => value === null,
+    unwrap: () => {
+      if (value === null) throw new Error("empty");
+      return value;
+    },
+  });
+
+  it("returns the engine's report", () => {
+    expect(readRecordingStart({ recordingStart: option({ contextTime: 12.345, position: 5.12 }) }))
+      .toEqual({ contextTimeSec: 12.345, positionPpqn: 5.12 });
+  });
+
+  it("returns nulls while the engine has not reported", () => {
+    expect(readRecordingStart({ recordingStart: option(null) })).toEqual({ contextTimeSec: null, positionPpqn: null });
+  });
+
+  it("returns nulls on a build whose engine has no such report", () => {
+    expect(readRecordingStart({})).toEqual({ contextTimeSec: null, positionPpqn: null });
   });
 });
 
