@@ -20,7 +20,7 @@ The event: on a rare repeat, a time stamp the SDK takes at the start of a take i
 | `firstFrameCheckMs` (multi-mic rows only) | recording worklet's first-quantum time against the buffer's real first frame | −2.667 instead of 0.00 |
 | adjusted median − `nodeDelayMs` | the sum of the two: where the sound really sits | 1.4375 ms when the two cancel, 4.104 ms when only the engine's stamp is off |
 
-Three sightings in 609 repeats (1 in 416 on 0.0.172, 2 in 193 on 0.0.173; Fisher one-sided p = 0.24):
+Three sightings in 615 repeats (1 in 416 on 0.0.172, 2 in 199 on 0.0.173; Fisher one-sided p = 0.25):
 
 | run | SDK | row | netted | first-frame check | take really misplaced? |
 |---|---|---|---|---|---|

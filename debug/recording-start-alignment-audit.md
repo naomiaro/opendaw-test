@@ -5113,7 +5113,11 @@ and the runs that checked it. The plan the count follows is
   single-tape ones. On a `stopLead=off` `loop-wrap` row, `stopLeadMs` is measured against
   the loop's downbeat, the click that stop follows. `sdk-override.ts` refuses a directory it
   did not build. The count is unchanged by any of it: 1 in 416, 2 in 193, the same three
-  events.
+  events. Two runs then checked the page: `…1790879414150` (`loop-wrap/120`,
+  `stopLead=off`: 18 rows `aligned`, `stopLeadMs` −13, −11, −11) and `…1790879484557`
+  (`nominal-start/120`: 3 `aligned`, lead 211 to 227 ms), and `stopLead=0` was refused
+  before anything recorded. With their six repeats 0.0.173 stands at **2 in 199** (0 in 66
+  with the stop after the click, 2 in 133 with the lead), 615 repeats in all.
 
 Two things the event rows show that the section above did not say:
 
@@ -5206,7 +5210,7 @@ that coincides with the end of a quantum that counts.
   `recordGainNode.connect(recordingWorklet)`), and in the harness the tape's stream opens at
   that moment too, so its source node is made and connected then (`#updateStream`). The two
   stamps are read in the quanta right after. One build in
-  the probe gives 1 early first read in 273; the harness has seen 3 events in 609 repeats.
+  the probe gives 1 early first read in 273; the harness has seen 3 events in 615 repeats.
 - `multitrack-janked/r7` on 0.0.173: tape a's recorder stamps its first quantum in quantum
   *n*, true. In quantum *n*+1 the clock still reads *n*: tape b's recorder stamps there (one
   quantum early, first-frame check −2.667) and the engine reports its recording start there
