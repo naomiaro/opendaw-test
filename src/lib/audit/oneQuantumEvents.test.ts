@@ -205,29 +205,38 @@ describe("exactRateInterval", () => {
 
 describe("staleQuantaAtStamps", () => {
   const RATE = 48000;
-  /** The clock read `frame` on two calls running: the second call's quantum is the stale one. */
+  const Q = 128;
+  /** The clock read `frame` on two calls running: the second call's quantum, whose true frame is `frame + Q`, is the stale one. */
   const stale = (frame: number, betweenChunks = false) => ({ previousFrame: frame, frame, betweenChunks });
   const sec = (frame: number) => frame / RATE;
 
   it("finds the stale read a recorder's first-quantum stamp equals", () => {
     expect(staleQuantaAtStamps([stale(96000)], { firstQuantumTimeSec: sec(96000) }, RATE))
-      .toEqual([{ stamp: "first quantum", staleFrame: 96000, distanceFrames: 0 }]);
+      .toEqual([{ stamp: "first quantum", staleFrame: 96000, readsStaleFrame: true, quantaFromStale: 0 }]);
   });
 
   it("reads the engine's recording start one quantum back: it reports the END of the quantum it stamped in", () => {
-    expect(staleQuantaAtStamps([stale(96000)], { recordingStartContextTimeSec: sec(96000 + 128) }, RATE))
-      .toEqual([{ stamp: "recording start", staleFrame: 96000, distanceFrames: 0 }]);
+    expect(staleQuantaAtStamps([stale(96000)], { recordingStartContextTimeSec: sec(96000 + Q) }, RATE))
+      .toEqual([{ stamp: "recording start", staleFrame: 96000, readsStaleFrame: true, quantaFromStale: 0 }]);
   });
 
-  it("counts a stale read one quantum either side of a stamp, with its distance, and none further off", () => {
-    const row = { firstQuantumTimeSec: sec(96000) };
-    expect(staleQuantaAtStamps([stale(96000 - 128)], row, RATE)).toEqual([{ stamp: "first quantum", staleFrame: 95872, distanceFrames: -128 }]);
-    expect(staleQuantaAtStamps([stale(96000 + 128)], row, RATE)).toEqual([{ stamp: "first quantum", staleFrame: 96128, distanceFrames: 128 }]);
-    expect(staleQuantaAtStamps([stale(96000 + 256), stale(96000 - 256)], row, RATE)).toEqual([]);
+  it("finds a stamp taken in the quantum right AFTER the stale one: it reads two quanta more than the clock stood on", () => {
+    // clock: 96000 (true), 96000 (stale, really 96128), 96256 (true): a first call there stamps 96256
+    expect(staleQuantaAtStamps([stale(96000)], { firstQuantumTimeSec: sec(96000 + 2 * Q) }, RATE))
+      .toEqual([{ stamp: "first quantum", staleFrame: 96000, readsStaleFrame: false, quantaFromStale: 1 }]);
+  });
+
+  it("measures from the stale quantum, two quanta either side, and no further", () => {
+    const at = (stampFrame: number) =>
+      staleQuantaAtStamps([stale(96000)], { firstQuantumTimeSec: sec(stampFrame) }, RATE).map((found) => found.quantaFromStale);
+    expect(at(96000 - Q)).toEqual([-2]); // a true read two calls before the stale one
+    expect(at(96000 + 3 * Q)).toEqual([2]);
+    expect(at(96000 - 2 * Q)).toEqual([]);
+    expect(at(96000 + 4 * Q)).toEqual([]);
   });
 
   it("does not take a step forward for a stale read: a lost chunk and the catch-up after a stale quantum look like that", () => {
-    const forward = { previousFrame: 96000 - 128, frame: 96000 + 128, betweenChunks: false };
+    const forward = { previousFrame: 96000 - Q, frame: 96000 + Q, betweenChunks: false };
     expect(staleQuantaAtStamps([forward], { firstQuantumTimeSec: sec(96000) }, RATE)).toEqual([]);
   });
 

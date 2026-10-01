@@ -106,6 +106,64 @@ describe("classifyClockProbe", () => {
     expect(verdict.headline).toBe("STALE CLOCK: 40 of 100 quanta read a currentFrame behind their own");
   });
 
+  describe("a run that checked too little says so instead of CLOCK TRUE", () => {
+    const cfg = { sampleRate: 48000, seconds: 10, burstMs: 8, gapMs: 2, conditions: ["idle", "connect", "stream"] as const };
+    /** A condition as a healthy foreground run gives it: every quantum checked, about a thousand stretches of work. */
+    const healthy = (name: ClockConditionResult["condition"], fresh?: Record<string, number>): ClockConditionResult =>
+      ({ ...condition(name, { "0": 3693 }, fresh), quanta: 3750, bursts: 900 });
+
+    it("is CLOCK TRUE for a healthy run", () => {
+      const verdict = classifyClockProbe([healthy("idle"), healthy("connect"), healthy("stream", { "0": 1900 })], cfg);
+      expect(verdict.verdict).toBe("CLOCK TRUE");
+    });
+
+    it("is NOT CHECKED when no condition ran", () => {
+      const verdict = classifyClockProbe([], cfg);
+      expect(verdict.verdict).toBe("NOT CHECKED");
+      expect(verdict.headline).toBe("NOT CHECKED: no condition was watched");
+    });
+
+    it("is NOT CHECKED when a condition's quanta mostly carried no ramp", () => {
+      const starved = { ...healthy("connect"), checked: 100, offs: { "0": 100 } };
+      const verdict = classifyClockProbe([healthy("idle"), starved], cfg);
+      expect(verdict.verdict).toBe("NOT CHECKED");
+      expect(verdict.headline).toBe("NOT CHECKED: connect checked 100 of 3750 quanta");
+    });
+
+    it("is NOT CHECKED when the main thread's work was throttled: a tab in the background does a stretch a second", () => {
+      const throttled = { ...healthy("connect"), bursts: 12 };
+      const verdict = classifyClockProbe([healthy("idle"), throttled], cfg);
+      expect(verdict.verdict).toBe("NOT CHECKED");
+      expect(verdict.headline).toBe(
+        "NOT CHECKED: connect did 12 stretches of work where about 1000 were due: keep the page in a visible, focused window"
+      );
+    });
+
+    it("names the throttled conditions in one clause", () => {
+      const verdict = classifyClockProbe([{ ...healthy("idle"), bursts: 14 }, { ...healthy("connect"), bursts: 11 }], cfg);
+      expect(verdict.headline).toBe(
+        "NOT CHECKED: idle, connect did 11 to 14 stretches of work where about 1000 were due: keep the page in a visible, focused window"
+      );
+    });
+
+    it("is NOT CHECKED when no fresh worklet answered", () => {
+      const verdict = classifyClockProbe([healthy("stream", {})], cfg);
+      expect(verdict.verdict).toBe("NOT CHECKED");
+      expect(verdict.headline).toBe("NOT CHECKED: stream built 0 fresh worklets that answered");
+    });
+
+    it("still says STALE CLOCK when a starved run found a stale stamp: found is found", () => {
+      const throttled = { ...healthy("connect"), bursts: 12, offs: { "0": 3672, "-128": 21 } };
+      const verdict = classifyClockProbe([healthy("idle"), throttled], cfg);
+      expect(verdict.verdict).toBe("STALE CLOCK");
+      expect(verdict.headline).toContain("connect did 12 stretches of work where about 1000 were due");
+    });
+
+    it("judges nothing about throttling without a configuration", () => {
+      expect(classifyClockProbe([{ ...healthy("connect"), bursts: 12 }]).verdict).toBe("CLOCK TRUE");
+    });
+  });
+
   it("counts a stamp AHEAD of its quantum apart: a stale clock cannot make one", () => {
     const ahead = classifyClockProbe([condition("connect", { "0": 99, "128": 1 })]);
     expect(ahead.verdict).toBe("CLOCK AHEAD");

@@ -236,7 +236,9 @@ const STOP_LEAD = STOP_LEAD_PARAM !== "off";
  *  force the worklet clock to stand still while the SDK takes its start-of-take stamps.
  *  Multi-mic scenarios only. Such a run is not part of any count. */
 const GRAPH_CHURN = params.get("graphChurn") === "on";
-/** It has to be over before the node taps attach, about 220 ms after a take's first quantum. */
+/** It has to be over before the windows a node delay is read from open, 0.3 s into a tap
+ *  (`NODE_TAP_WINDOW_STARTS_SEC`). The taps themselves attach while it still runs in
+ *  `multitrack-start` (some 30 to 80 ms after the request); their stamps are repaired. */
 const GRAPH_CHURN_MS = 150;
 /** Persisted per run so an envelope says which `#updateStream` path it took. */
 const CAPTURE_MODE: CaptureMode = DEFAULT_INPUT ? "default" : "named";

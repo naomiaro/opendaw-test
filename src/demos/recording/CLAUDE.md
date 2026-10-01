@@ -496,9 +496,10 @@ without a limit above zero. Replay saved runs (one sample rate at a time) with
   `node scripts/audit/recording-alignment/one-quantum-events.ts`.
 - **A worklet's `currentTime` / `currentFrame` can be behind in Chrome.** The worklet scope's
   clock is moved on at the end of a render quantum only if the audio graph lock is free; the
-  main thread holds it while it connects or disconnects a node or makes a worklet node. When the two
-  coincide, every `process()` call of the next quantum reads the previous quantum's time
-  (never a later one). A busy main thread alone does not do it. The SDK takes both
+  main thread holds it while it connects or disconnects a node or makes a worklet node (read
+  from Chromium's source; Chromium issue 442866743). Measured: while the main thread does such
+  work, every `process()` call of some quanta reads the previous quantum's time, or an older
+  one, never a later one. A busy main thread alone does not do it. The SDK takes both
   start-of-take stamps (`engine.recordingStart`, the recording worklet's first-quantum time)
   from one read of that clock while a take's nodes are being built, so on a rare repeat a
   stamp is one quantum early: a netted median one quantum above the run's usual value, a
@@ -509,7 +510,8 @@ without a limit above zero. Replay saved runs (one sample rate at a time) with
   is only ever behind, so a stamp less than one quantum after the call before it is moved to
   exactly that; a recorder's first stamp cannot be repaired). Probe without the SDK:
   `worklet-clock-debug-demo.html` (`src/lib/audit/workletClockProbe.ts`; it says
-  `STALE CLOCK`, `CLOCK TRUE` or `THREW <stage>`). Write-up:
+  `STALE CLOCK`, `CLOCK TRUE`, `NOT CHECKED` when the run watched or worked too little, as
+  in a background tab, or `THREW <stage>`). Write-up:
   `debug/worklet-clock-stale-under-graph-work.md`.
 - **Reading a multi-mic run's clock witness.** The envelope's `clockDiscontinuities` lists
   every call of the reference recorder whose `currentFrame` was not one quantum after the
@@ -517,13 +519,18 @@ without a limit above zero. Replay saved runs (one sample rate at a time) with
   call is the stale one); a step forward marked `betweenChunks` could be a lost chunk. Most
   runs have a few, in the 150 ms before a record request, where the harness schedules its
   reference clicks: those touch no stamp. `one-quantum-events.ts` says for each event tape
-  whether a stale read sits on one of its stamps (0 frames away when that stamp was taken in
-  the stale quantum) and counts the same over ordinary repeats, which is the control.
+  whether one of its stamps reads the frame the clock stood on (the stamp was taken in the
+  stale quantum, one quantum early, or truly in the quantum before it: the two read the same
+  number, and the row's netted median and first-frame check say which) and counts the same
+  over ordinary repeats, which is the control. It also lists a stamp taken within two quanta
+  of a stale quantum without reading its frame: a near miss, and a true stamp.
 - `&graphChurn=on` (multi-mic scenarios only) connects and disconnects two unrelated gain
   nodes for `GRAPH_CHURN_MS` from each record request on, which forces the stale clock onto
   the SDK's stamps: rows off by whole quanta in the netted median (never negative) and the
-  first-frame check (never positive). It ends before the node taps attach. The envelope
-  carries `graphChurn: true`, and no count includes such a run.
+  first-frame check (never positive). It runs over the start of the node taps in
+  `multitrack-start` (they attach 30 to 80 ms after the request) and ends before the windows a
+  node delay is read from open, 0.3 s into a tap. The envelope carries `graphChurn: true`,
+  and no count includes such a run.
 - The engine boots once per page load (`Workers.install` asserts on a second
   `initializeOpenDAW`): "Re-run" on the matrix/multitrack pages re-runs the matrix on the
   cached project/tape(s) under a fresh run token; the probe page is one-shot.

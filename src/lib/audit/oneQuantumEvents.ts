@@ -144,21 +144,30 @@ export interface StaleAtStamp {
   stamp: "first quantum" | "recording start";
   /** What the clock read in the stale quantum: one quantum less than that quantum's true frame. */
   staleFrame: number;
-  /** `staleFrame` less the frame the stamp read. 0: the clock read the stamp's own value in a stale quantum. */
-  distanceFrames: number;
+  /** The stamp reads the very frame the clock stood on: it was taken in the stale quantum
+   *  (one quantum early), or truly in the quantum before it. The two read the same number. */
+  readsStaleFrame: boolean;
+  /** Where the call that took the stamp was, in quanta from the stale quantum: 0 when
+   *  `readsStaleFrame`, 1 for the quantum right after it, −2 for two before. */
+  quantaFromStale: number;
 }
 
+/** How far from a stale quantum a stamping call is still listed. */
+const STALE_WINDOW_QUANTA = 2;
+
 /**
- * The stale clock reads of a run that fall within one quantum of a row's start-of-take
- * stamps. A stale read is a call that read the same frame as the call before it, inside
- * a chunk or at a chunk border (a lost chunk makes the frame jump forward, never repeat).
- * The recording worklet's stamp is the frame its first call read; the engine reports the
- * END of the quantum it stamped in, so the frame it read is one quantum before its report.
+ * The stale quanta of a run that fall within two quanta of a row's start-of-take stamps.
+ * A stale read is a call that read the same frame as the call before it, inside a chunk or
+ * at a chunk border (a lost chunk makes the frame jump forward, never repeat); the stale
+ * quantum's true frame is one quantum more than what it read. The recording worklet's stamp
+ * is the frame its first call read; the engine reports the END of the quantum it stamped in,
+ * so the frame it read is one quantum before its report.
  *
- * A distance of 0 does not say which call took the stamp: a processor that stamped in the
- * quantum BEFORE the stale one read the same number truly. Whether a stamp is early is the
- * row's own figures' to say (netted median, first-frame check); this says whether the clock
- * stood still there.
+ * Distances are measured from the stale quantum itself, so that a stamp taken right after
+ * it (a near miss: the stamp is true) is seen as well as one taken in it. `readsStaleFrame`
+ * does not say which call took the stamp: a processor that stamped in the quantum BEFORE the
+ * stale one read the same number truly. Whether a stamp is early is the row's own figures'
+ * to say (netted median, first-frame check); this says whether the clock stood still there.
  */
 export function staleQuantaAtStamps(
   steps: readonly ClockStep[],
@@ -177,8 +186,12 @@ export function staleQuantaAtStamps(
   for (const { stamp, frame } of stamps) {
     for (const step of steps) {
       if (step.frame !== step.previousFrame) continue;
-      const distanceFrames = step.frame - frame;
-      if (Math.abs(distanceFrames) <= quantumFrames) found.push({ stamp, staleFrame: step.frame, distanceFrames });
+      const readsStaleFrame = frame === step.frame;
+      // a stamp that was read truly names its own quantum; the stale quantum is at step.frame + one quantum
+      const quantaFromStale = readsStaleFrame ? 0 : (frame - step.frame - quantumFrames) / quantumFrames;
+      if (Math.abs(quantaFromStale) <= STALE_WINDOW_QUANTA) {
+        found.push({ stamp, staleFrame: step.frame, readsStaleFrame, quantaFromStale });
+      }
     }
   }
   return found;

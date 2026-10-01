@@ -5274,15 +5274,17 @@ for an openDAW issue and a Chromium bug are under `drafts/`; nothing is posted.
   (`src/lib/audit/graphChurn.ts`). The envelope carries `graphChurn: true` and the tally
   leaves such a run out.
 - **The tally reads the witness.** `one-quantum-events.ts` prints, for each event tape,
-  whether the clock stood still within a quantum of one of its start-of-take stamps and how
-  many frames from it, and counts the same over the rows of ordinary repeats
-  (`staleQuantaAtStamps` in `src/lib/audit/oneQuantumEvents.ts`).
+  whether one of its start-of-take stamps reads a frame the clock stood on, and lists any
+  stamp taken within two quanta of a stale quantum; it counts both over the rows of ordinary
+  repeats (`staleQuantaAtStamps` in `src/lib/audit/oneQuantumEvents.ts`, which measures from
+  the stale quantum's true frame).
 - **Repaired stamps.** The reference and the taps are laid out by their stamps. A stamp less
   than one quantum after the call before it is now moved to exactly that (`repairFrames`); the
   witness still reads the stamps as the worklet gave them. A tap's first stamp cannot be
   repaired and stays as read.
 - **The probe is a page.** `worklet-clock-debug-demo.html` runs the five conditions of the
-  section above on a button press and says `STALE CLOCK`, `CLOCK TRUE` or `THREW <stage>`. The
+  section above on a button press and says `STALE CLOCK`, `CLOCK TRUE`, `NOT CHECKED` (a run
+  that watched or worked too little, as in a background tab) or `THREW <stage>`. The
   measuring code moved from `one-quantum/graph-lock-clock.page.js` to
   `src/lib/audit/workletClockProbe.ts`, which the Playwright runner imports too.
 
@@ -5299,7 +5301,12 @@ first-take delay this register has seen before with the same 117.3 ms (`…17907
 
 Three runs of `scenario=multitrack-start&graphChurn=on` (`…1790880251689`, `…0319988`,
 `…0388326`), 46 rows measured (one repeat lost, see "A second finding"), a node delay on every
-one, 190 to 233 clock discontinuities per run:
+one, 190 to 233 clock discontinuities per run. The plan took the taps to attach about 220 ms
+after a take's first quantum; that holds for `multitrack-janked` (176 to 240 ms after the
+request). In `multitrack-start` they attach 32 to 83 ms after the request, so the 150 ms of
+churn ran over the start of every tap: each forced row carries `nodeTapMissingQuanta` of 2 to
+11 (these runs predate the repair). The node delays stand all the same: the windows open
+0.3 s into a tap, and no stale read lies in a stretch any of them was matched against.
 
 | netted / first-frame check, in quanta off the usual | rows | adjusted − node delay, quanta off the usual 1.4375 ms |
 |---|---|---|
@@ -5336,18 +5343,27 @@ it again).
 
 - Every stamp that is off equals a frame the reference recorder read on two calls running.
   The second of those calls is the stale quantum; the stamp was taken in it.
-- The control: 804 rows of ordinary repeats in the same 50 runs, none with a stale read
-  within a quantum of either stamp.
+- The control: 804 rows of ordinary repeats in the same 50 runs, none with a stamp that
+  reads a frame the clock stood on.
+- One near miss among them: `…1857425` `multitrack-janked` r3. The record request was read at
+  frame 771968; the clock read 771968 twice (the quantum at 772096 was stale); both recorders
+  and the engine stamped 772224, the quantum right after it, truly (netted 1.146, check
+  0.000). The tally measures from the stale quantum itself and lists the row as "1 quantum
+  after the stale quantum".
 - The third event is the 0.0.173 `r7` sighting again: tape a's recorder stamps truly, the
   clock stands still in the next quantum, the engine and tape b's recorder stamp there. Tape a
   is one quantum late, tape b in place.
-- On the first event both recorders' stamps are 128 frames before `nodeSourceCreatedAtSec`
-  (0 on the run's other 14 rows), as on the 0.0.172 event.
+- `firstQuantumTimeSec − nodeSourceCreatedAtSec` over the 810 rows: 0 on 677, +128 on 122,
+  +256 on 8, −128 on 3. The three are both tapes of the first event and tape b of the second
+  (both tapes of the 0.0.172 event read −128 too): the main thread was making that take's
+  source node during the stale quantum.
 
-Where the clock stood still, over the 50 runs: 67 stale reads in 37 runs. 41 are in the
-150 ms before a record request, 3 are the events, 23 elsewhere, none in the 150 ms after a
-request other than the events. The 41 are the harness: `scheduleReferenceClicks` makes and
-connects 120 nodes shortly before it asks for the recording. One stall lasted two quanta
+Where the clock stood still, over the 50 runs, by the stale quantum's true frame: 67 stale
+reads in 37 runs. 40 are in the 150 ms before a record request, 3 are the events, 1 the near
+miss in the quantum after a request, 23 elsewhere (one of those at the time the request of
+an errored r8 would be: an error row carries no request time). The 40 are the harness:
+`scheduleReferenceClicks` makes and connects 120 nodes shortly before it asks for the
+recording. So 4 stalls fell among the stamping quanta in 405 repeats; 3 became events. One stall lasted two quanta
 (`…0765125`); one stale read fell on the first call of a posted chunk (`…0833410`), a repeat of
 the frame, so the clock and not a lost chunk.
 
@@ -5359,7 +5375,8 @@ All release-build runs on disk, to run `1790884463919`: 0.0.172 1 in 416, 0.0.17
 `…1790884969330`: `graphChurn=on` with the churn lengthened to 600 ms for this run only, so
 that it overlaps the taps. 768 discontinuities; a node delay read on 16 of 16 rows; 18 taps
 warned that 36 to 61 of their stamps were moved. On the last repeat both taps keep one missing
-quantum: their first call read a stale clock, which the repair cannot see.
+quantum: their first call read a stale clock, which the repair cannot see. Longest stall in
+this run: 5 quanta (772864 read six times); in the three 150 ms runs: 3, 4 and 3.
 
 ### A second finding, not the event
 
@@ -5378,8 +5395,10 @@ a part is not excluded, and nothing here says why the last repeat.
 ### Reading
 
 - **Established:** the harness's one-quantum events are the stale worklet clock: three of
-  three natural events have the stale read on the stamp that is off, and no ordinary repeat
-  has one near a stamp. Forced graph work at a take's start moves the SDK's stamps by one to
+  three natural events have the stale read on the stamp that is off, and no ordinary row has
+  a stamp that reads a frame the clock stood on (one ordinary repeat has a stall one quantum
+  before its stamps). That the clock stands still because of the graph try-lock is read from
+  Chromium's source, not logged by any run. Forced graph work at a take's start moves the SDK's stamps by one to
   three quanta and misplaces 20 of 46 takes by −3 to +1 quanta.
 - **Corrected:** the section above named the `AudioNode` constructor among the main-thread
   lock holders. At Chromium `4b38af96d953` it does not take the lock; `connect`, every
@@ -5388,6 +5407,12 @@ a part is not excluded, and nothing here says why the last repeat.
   `Dispose` under garbage collection (inferred).
 - **The harness's own share.** The harness rebuilds the audio chain on every take and
   schedules its clicks just before each, so its rate (6 in 1020) is not an application's.
+- **Already reported to Chromium, found after this section was first written:**
+  [issue 442866743](https://issues.chromium.org/issues/442866743), "currentTime and
+  currentFrame sometimes freeze for a render quantum" (2025-09-03, open, P2; reproduced by
+  triage on 142 to 144 and back to M-132; the reporter's repro suspends and resumes the
+  context on repeat; no cause given; "just a Chrome problem" by the reporter). The Chromium
+  draft is a comment for that issue.
 - **Open:** Firefox and Safari; the rate with a reused chain (a named real device); the
   earlier one-quantum findings named in the section above, not re-read; the finalization
   error; and whether to move the harness's click scheduling away from the record request,
@@ -5395,3 +5420,21 @@ a part is not excluded, and nothing here says why the last repeat.
   with.
 - **Not done on purpose:** the comparison between 0.0.172 and 0.0.173 (Task 6 of the plan).
   The cause is in the browser and neither stamping site changed between the releases.
+
+### After the review
+
+A fresh read of the branch against the saved runs changed four things in this section and
+one in the code, all folded in above:
+
+- The control first measured from the frame a stale quantum READ, which hid a stamp taken in
+  the quantum right after a stall. Measured from the stale quantum itself, one ordinary
+  repeat is such a near miss; the sentences "no ordinary repeat has a stale read near a
+  stamp" and "none in the 150 ms after a request" were wrong and are gone.
+- "The churn ends before the taps attach" was the plan's assumption and false for
+  `multitrack-start`. The node delays of the forced runs stand for another reason (the
+  windows open 0.3 s into a tap).
+- That the graph try-lock is the reason the clock stands still is now labelled as read from
+  source.
+- The openDAW draft states what its 1020 repeats are made of and that the rate is the
+  harness's.
+- The probe page no longer says `CLOCK TRUE` for a run that checked nothing: `NOT CHECKED`.

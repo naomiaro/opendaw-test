@@ -178,7 +178,7 @@ export function summarizeFreshRecorders(
 }
 
 export interface ClockProbeVerdict {
-  verdict: "CLOCK TRUE" | "STALE CLOCK" | "CLOCK AHEAD";
+  verdict: "CLOCK TRUE" | "STALE CLOCK" | "CLOCK AHEAD" | "NOT CHECKED";
   headline: string;
   /** Quanta, over every condition, whose stamp was behind their own frame. */
   staleQuanta: number;
@@ -190,8 +190,52 @@ export interface ClockProbeVerdict {
   late: number;
 }
 
-/** What a run of the probe shows, in one line. */
-export function classifyClockProbe(results: readonly ClockConditionResult[]): ClockProbeVerdict {
+/** A condition counts as watched when at least this share of its quanta carried the ramp. */
+const MIN_CHECKED_SHARE = 0.5;
+/** …and as worked when the main thread did at least this share of the stretches that were due. */
+const MIN_BURST_SHARE = 0.25;
+
+/** Why a run cannot vouch for a true clock: conditions that checked or worked too little. */
+function shortfallsOf(
+  results: readonly ClockConditionResult[],
+  cfg?: Pick<ClockProbeConfig, "seconds" | "burstMs" | "gapMs">
+): string[] {
+  if (results.length === 0) return ["no condition was watched"];
+  const shortfalls: string[] = [];
+  for (const result of results) {
+    if (result.checked < result.quanta * MIN_CHECKED_SHARE) {
+      shortfalls.push(`${result.condition} checked ${result.checked} of ${result.quanta} quanta`);
+    }
+    if (result.freshRecorders !== undefined && result.freshRecorders.answered === 0) {
+      shortfalls.push(`${result.condition} built 0 fresh worklets that answered`);
+    }
+  }
+  if (cfg !== undefined) {
+    // A page that is not in a visible, focused window has its timers throttled to about one a second.
+    const due = Math.round((cfg.seconds * 1000) / (cfg.burstMs + cfg.gapMs));
+    const throttled = results.filter((result) => result.bursts < due * MIN_BURST_SHARE);
+    if (throttled.length > 0) {
+      const least = Math.min(...throttled.map((result) => result.bursts));
+      const most = Math.max(...throttled.map((result) => result.bursts));
+      shortfalls.push(
+        `${throttled.map((result) => result.condition).join(", ")} did ${least === most ? least : `${least} to ${most}`} ` +
+        `stretches of work where about ${due} were due: keep the page in a visible, focused window`
+      );
+    }
+  }
+  return shortfalls;
+}
+
+/**
+ * What a run of the probe shows, in one line. A stamp found behind is STALE CLOCK however
+ * little else was checked; a run that found none says CLOCK TRUE only when every condition
+ * was watched and worked (`cfg` given: the stretches of work that were due are checked too),
+ * and NOT CHECKED otherwise.
+ */
+export function classifyClockProbe(
+  results: readonly ClockConditionResult[],
+  cfg?: Pick<ClockProbeConfig, "seconds" | "burstMs" | "gapMs">
+): ClockProbeVerdict {
   let staleQuanta = 0;
   let checkedQuanta = 0;
   let freshEarly = 0;
@@ -219,12 +263,17 @@ export function classifyClockProbe(results: readonly ClockConditionResult[]): Cl
     }
   }
   const figures = { staleQuanta, checkedQuanta, freshEarly, freshAnswered, late };
+  const shortfalls = shortfallsOf(results, cfg);
   if (staleQuanta > 0 || freshEarly > 0) {
     const parts: string[] = [];
     if (freshAnswered > 0) parts.push(`${freshEarly} of ${freshAnswered} fresh worklets read their first currentFrame early`);
     parts.push(`${staleQuanta} of ${checkedQuanta} quanta read a currentFrame behind their own`);
     if (late > 0) parts.push(`${late} stamp(s) AHEAD of their own quantum`);
-    return { verdict: "STALE CLOCK", headline: "STALE CLOCK: " + parts.join("; "), ...figures };
+    const caveat = shortfalls.length > 0 ? ` (the rates are not this browser's: ${shortfalls.join("; ")})` : "";
+    return { verdict: "STALE CLOCK", headline: "STALE CLOCK: " + parts.join("; ") + caveat, ...figures };
+  }
+  if (shortfalls.length > 0 && late === 0) {
+    return { verdict: "NOT CHECKED", headline: "NOT CHECKED: " + shortfalls.join("; "), ...figures };
   }
   if (late > 0) {
     return {

@@ -98,11 +98,24 @@ const bump = (map: Map<string, Tally>, key: string, repeats: number, events: num
 };
 const eventLines: string[] = [];
 const otherLines: string[] = [];
+/** What the witness has within two quanta of a row's stamps; null when nothing. */
+const staleNear = (row: EventRow, clockSteps: ClockStep[], rate: number): { line: string; onAStamp: boolean } | null => {
+  const near = staleQuantaAtStamps(clockSteps, row as EventRow & StartFigures, rate);
+  if (near.length === 0) return null;
+  const where = (quanta: number): string =>
+    `taken ${Math.abs(quanta)} ${Math.abs(quanta) === 1 ? "quantum" : "quanta"} ${quanta > 0 ? "after" : "before"} the stale quantum`;
+  return {
+    onAStamp: near.some((found) => found.readsStaleFrame),
+    line: near.map((found) =>
+      `${found.stamp}: the clock stood on ${found.staleFrame}, ` +
+      (found.readsStaleFrame ? "the frame this stamp reads" : where(found.quantaFromStale))
+    ).join("; "),
+  };
+};
 const staleLine = (row: EventRow, clockSteps: ClockStep[], rate: number): string => {
-  const at = staleQuantaAtStamps(clockSteps, row as EventRow & StartFigures, rate);
-  return at.length === 0
-    ? "no"
-    : "yes (" + at.map((found) => `${found.stamp}: the clock read ${found.staleFrame} twice, ${found.distanceFrames} frames from the stamp`).join("; ") + ")";
+  const near = staleNear(row, clockSteps, rate);
+  if (near === null) return "no";
+  return (near.onAStamp ? "yes" : "no, but near") + " (" + near.line + ")";
 };
 const describe = (reading: RepeatReading, usualMs: number, rate: number, clockSteps: ClockStep[] | null): string =>
   reading.rows.map((row) => {
@@ -131,7 +144,10 @@ let runsWithClock = 0;
 let runsWithSteps = 0;
 /** Rows of repeats that are NOT events, in runs that carry the witness: the control. */
 let ordinaryRows = 0;
-let ordinaryRowsWithStale = 0;
+/** Those whose stamp reads the frame the clock stood on. */
+let ordinaryRowsOnAStamp = 0;
+/** Those with a stale quantum within two quanta of a stamp that does not read it: near misses. */
+let ordinaryRowsNear = 0;
 const ordinaryStaleLines: string[] = [];
 let forced = 0;
 let skipped = 0;
@@ -172,10 +188,10 @@ for (const run of runs) {
     for (const reading of ordinary) {
       for (const row of reading.rows) {
         ordinaryRows++;
-        const line = staleLine(row, clockSteps, run.rate);
-        if (line === "no") continue;
-        ordinaryRowsWithStale++;
-        ordinaryStaleLines.push(`run ${run.identity.runId} ${reading.scenario}/${reading.bpm}/r${reading.repeat} ${row.tape ?? ""}: ${line}`);
+        const near = staleNear(row, clockSteps, run.rate);
+        if (near === null) continue;
+        if (near.onAStamp) ordinaryRowsOnAStamp++; else ordinaryRowsNear++;
+        ordinaryStaleLines.push(`run ${run.identity.runId} ${reading.scenario}/${reading.bpm}/r${reading.repeat} ${row.tape ?? ""}: ${near.line}`);
       }
     }
   }
@@ -244,6 +260,9 @@ if (otherLines.length > 0) {
 console.log(`\nClock discontinuities (multi-mic runs that carry the field): ${runsWithSteps} of ${runsWithClock}`);
 for (const line of clockLines) console.log("  " + line);
 if (runsWithClock > 0) {
-  console.log(`Rows of ordinary repeats in those runs with a stale quantum at a stamp: ${ordinaryRowsWithStale} of ${ordinaryRows}`);
+  console.log(
+    `Rows of ordinary repeats in those runs (${ordinaryRows}): ${ordinaryRowsOnAStamp} with a stamp that reads the frame the clock stood on, ` +
+    `${ordinaryRowsNear} with a stale quantum within two quanta of a stamp that does not`
+  );
   for (const line of ordinaryStaleLines) console.log("  " + line);
 }

@@ -5,12 +5,17 @@ Chrome 154 on macOS 15.6.1 (Apple M4 Pro), 48 kHz; Chromium `main` at commit
 `4b38af96d95350e04e831d18f6ba91a2a0cca5d2` (2026-10-01) for the source lines. Firefox and
 Safari: not measured.
 
-**Status (2026-10-01):** cause established and watched through three natural events on the
-recording harness. Nothing is posted upstream. Two drafts wait for a read:
+**Status (2026-10-01):** the stale clock is measured, and watched through three natural events
+on the recording harness; why it stands still is read from Chromium's source. The browser
+defect is already reported: [Chromium issue 442866743](https://issues.chromium.org/issues/442866743),
+"currentTime and currentFrame sometimes freeze for a render quantum" (filed 2025-09-03, open,
+reproduced by Chromium triage on 142 to 144 and back to M-132; reproduced there by suspending
+and resuming the context on repeat; no cause given). Nothing is posted upstream from here. Two
+drafts wait for a read:
 [`drafts/issue-recording-start-stale-worklet-clock.md`](./drafts/issue-recording-start-stale-worklet-clock.md)
-(openDAW) and
+(an openDAW issue) and
 [`drafts/chromium-bug-worklet-current-frame-stale.md`](./drafts/chromium-bug-worklet-current-frame-stale.md)
-(Chromium).
+(a comment for the Chromium issue: the cause and a quicker trigger).
 
 Campaign history, run by run:
 [`recording-start-alignment-audit.md`](./recording-start-alignment-audit.md), sections "The
@@ -31,11 +36,13 @@ The SDK takes two such stamps and places the take by their difference:
 With two tapes armed, each tape has its own recording worklet and all share the engine's
 stamp, so one take can be off while the other is in place.
 
-On the recording harness (two tapes on a synthetic loopback, a fresh audio chain per take):
-6 events in 1020 repeats over both releases (1 in 416 on 0.0.172, 5 in 604 on 0.0.173; Fisher
-one-sided p = 0.22, so not shown to differ). Of the five multi-mic events, two left one tape
-really one quantum late; in three the stamps cancelled on both tapes. The sixth is a
-single-tape row, which cannot tell.
+On the recording harness (a synthetic loopback, a fresh audio chain per take): 6 events in 1020
+repeats over both releases (1 in 416 on 0.0.172, 5 in 604 on 0.0.173; Fisher one-sided
+p = 0.22, so not shown to differ). 789 of the repeats have two tapes (5 events), 231 one tape
+(1 event; a single-tape row has no first-frame check, so it sees only the engine's stamp); 124
+are at 44.1 kHz. Of the five two-tape events, two left one tape really one quantum late; in
+three the stamps cancelled on both tapes. The single-tape event cannot tell. This is the
+harness's rate, not an application's: see "What is established, and what is not".
 
 A user hears nothing of one quantum on a single take. It matters where takes are compared
 with each other or with a reference at sample accuracy: two microphones on one source (a
@@ -129,9 +136,12 @@ nothing to the clock.
 
 `recording-alignment-audit-debug-demo.html?scenario=multitrack-start&bpm=120&rate=48000&graphChurn=on`
 (dev server): from each record request on, the main thread connects and disconnects two gain
-nodes that are in nobody's path for 150 ms, then stops before the harness's taps attach. Three
-runs (`recaudit-mt-summary-1790880251689`, `…0319988`, `…0388326`), 46 rows measured, a node
-delay read on every one:
+nodes that are in nobody's path for 150 ms. The harness's taps attach 32 to 83 ms after the
+request in this scenario, so the churn runs over their first 70 to 120 ms; the windows a node
+delay is read from open 0.3 s into a tap, clear of it. Three runs
+(`recaudit-mt-summary-1790880251689`, `…0319988`, `…0388326`), 46 rows measured, a node delay
+read on every one (each tap has 2 to 11 quanta misplaced by stale stamps at its start: these
+runs predate the repair of the harness's stamps):
 
 | netted median / first-frame check, in quanta off the usual | rows | where the take sits |
 |---|---|---|
@@ -160,29 +170,43 @@ repeats, 3 events:
 | `…4327239` | r5, tape a | +1 / 0 | **one quantum late** | read 1541248 twice: the frame the engine stamped; tape a stamped 1541120, one call earlier, truly |
 | | r5, tape b | +1 / −1 | in place | the same read: the frame tape b's recorder stamped |
 
-In every event a stale read sits exactly on each stamp that is off (0 frames away). The
-control: of the 804 rows of ordinary repeats in those runs, none has a stale read within a
-quantum of either of its stamps.
+In every event each stamp that is off reads exactly the frame the clock stood on. The control:
+of the 804 rows of ordinary repeats in those runs, none has a stamp that reads a frame the
+clock stood on. One ordinary repeat is a near miss (`…1857425`, r3, both tapes): the clock
+stood on 771968, the frame of its record request, and both recorders and the engine stamped
+in the very next quantum, truly (netted 1.146, check 0.000). So 4 stalls fell among the
+stamping quanta in 405 repeats; 3 hit the quantum a stamp was taken in and are the events,
+1 missed it by one quantum and left an ordinary take.
 
-The clock stood still 67 times in 37 of the 50 runs. 41 of those are in the 150 ms before a
+The clock stood still 67 times in 37 of the 50 runs. 40 of those are in the 150 ms before a
 record request, where the harness schedules its 60 reference clicks (120 nodes made and
-connected); 3 are the events; 23 are elsewhere. So the harness's own graph work stalls the
-clock about once per ten takes, a few quanta before the stamps are read, and the event is
-the rarer case of a stall while they are read.
+connected); 3 are the events and 1 the near miss; 23 are elsewhere (one of them at the time
+the request of a repeat that ended as an error row would be; such a row carries no request
+time). So the harness's own graph work stalls the clock about once per ten takes, a few
+quanta before the stamps are read, and the event is the rarer case of a stall while they are
+read.
 
-On the first of the three (and on the 0.0.172 event) the recorder's stamp is 128 frames
-before the context time the main thread read when the tape's source node was made
-(`firstQuantumTimeSec − nodeSourceCreatedAtSec` = −128; 0 or +128 on every other row): a
-recorder cannot have run on a node before the node existed.
+A recorder cannot have run on a node before the node existed, and yet over the 810 rows of
+these runs `firstQuantumTimeSec − nodeSourceCreatedAtSec` is 0 on 677, +128 on 122, +256 on 8
+and −128 on 3: both tapes of the first event and tape b of the second (and both tapes of the
+0.0.172 event). On those the main thread was making that take's source node during the stale
+quantum: the stall is the take's own chain being built.
 
 ### What is established, and what is not
 
-- **Established:** in Chrome a worklet's `currentTime` / `currentFrame` are one or more quanta
-  behind in a quantum that follows one at whose end the main thread held the graph lock; the
-  SDK's two start-of-take stamps are single reads of that clock; the harness's one-quantum
-  events are that (three of three watched; the control is clean); under forced graph work the
-  SDK misplaces takes by whole quanta.
-- **Not measured:** Firefox, Safari; other machines; the rate in a real session. The harness
+- **Measured:** in Chrome a worklet's `currentTime` / `currentFrame` are one or more whole
+  quanta behind, never ahead, in some quanta while the main thread connects, disconnects or
+  creates nodes or builds a stream source with a worklet; never while it is idle or merely
+  busy. The harness's one-quantum events are that clock (three of three watched: each stamp
+  that is off reads the frame the clock stood on; no ordinary row's does). Under forced graph
+  work the SDK misplaces takes by whole quanta.
+- **Read from source, not observed:** that the reason is the try-lock in
+  `UpdateWorkletGlobalScopeOnRenderingThread`, and which main-thread call held the lock at a
+  given stall. The source says so and every measurement fits; no run logged the lock. That
+  the SDK's two stamps are single reads of the worklet clock is read from the SDK's source and
+  shows in every row's arithmetic.
+- **Not measured:** Firefox, Safari (the Chromium issue's reporter says the freeze is Chrome
+  only); other machines; the rate in a real session. The harness
   rebuilds the audio chain on every take (its synthetic device reports no id) and schedules
   its clicks just before each take, so it does more graph work around a take's start than an
   application recording from one named device, which reuses its chain. Any application UI that
@@ -198,9 +222,12 @@ recorder cannot have run on a node before the node existed.
 
 ## Repro
 
-- **The clock:** `worklet-clock-debug-demo.html`, press "Run the probe" (about 50 s). The page
-  reads `STALE CLOCK: <n> of <N> fresh worklets read their first currentFrame early; …`,
-  `CLOCK TRUE`, or `THREW <stage>`, with the table of conditions under it. `?seconds=60&conditions=stream`
+- **The clock:** `worklet-clock-debug-demo.html`, press "Run the probe" (about 50 s) with the
+  page in a visible window. The page reads
+  `STALE CLOCK: <n> of <N> fresh worklets read their first currentFrame early; …`,
+  `CLOCK TRUE`, `NOT CHECKED` (a run that watched or worked too little to vouch for a true
+  clock: a background tab does one stretch of work a second), or `THREW <stage>`, with the
+  table of conditions under it. `?seconds=60&conditions=stream`
   watches the take-start condition alone for longer. Through Playwright:
   `scripts/audit/recording-alignment/one-quantum/run-graph-lock-clock.playwright.js`.
 - **The SDK under forced graph work:** dev server, then
@@ -234,10 +261,13 @@ which is the one it stamps. Three ways, weighed:
    them.* A stale stamp is too small, a true one gives exactly the first call's frame, so the
    largest is right as soon as one of the N calls read a true clock. It rests on the calls
    being consecutive quanta, which the ring buffer already assumes (frame 0 of the ring is
-   call 0). With N = 8 it fails only on a stall of 8 quanta at the very start of a take
-   (longest natural stall seen: 2 quanta; under continuous forced graph work: 4, and 41 while
-   nodes were being created in a loop). Cost: the first-quantum time arrives 21 ms later on
-   the main thread, which reads it when it places the take; a placement that comes sooner
+   call 0). It is never worse than the single read, and it is right when N is longer than
+   what is left of the stall the first call fell into. Stalls measured: 2 quanta at most on
+   natural harness runs; 5 under forced connect / disconnect on the harness; one fresh
+   worklet's first read 7 quanta early in the probe's take-start condition; 41 while nodes
+   were being created in a loop. So N = 8 has no margin; N = 32 (85 ms at 48 kHz) covers
+   everything seen at a take's start. Cost: the first-quantum time arrives that much later
+   on the main thread, which reads it when it places the take; a placement that comes sooner
    takes the fallback path it already has.
 2. *Report at once, and send a correction if a later call within N shows the first stamp was
    early.* No delay in the common case; the main thread must take the latest value at
@@ -248,15 +278,16 @@ which is the one it stamps. Three ways, weighed:
    quantum (the raw `currentFrame` is the same before and after). Only with a guaranteed
    order.
 
-Way 1 is the smallest change that is right by construction. Both repairs are local to the two
-processors and change nothing for a browser whose clock is true.
+Way 1 is the smallest change, and way 2 the one without a delay; either needs N chosen
+against the stall lengths above. Both repairs are local to the two processors and change
+nothing for a browser whose clock is true.
 
 **Upstream context.** The user's open PRs on this code are openDAW #378, #380 and #418; none
 touches either stamping site. Whether this becomes another PR, and on top of which, is the
 user's decision.
 
-**The browser.** The Chromium draft describes the try-lock and leaves the remedy to the
-maintainers. Until it changes, any worklet code that reads `currentTime` once and treats it as
+**The browser.** The Chromium draft adds the try-lock and the trigger to the existing issue
+and leaves the remedy to the maintainers. Until it changes, any worklet code that reads `currentTime` once and treats it as
 the time of its block is exposed whenever the page builds or connects nodes; the same holds
 for this repo's worklet recorders that stamp quanta with `currentFrame` / `currentTime`
 (repaired in the recording harness; the metronome regression page's `OutputRecorder` slices by

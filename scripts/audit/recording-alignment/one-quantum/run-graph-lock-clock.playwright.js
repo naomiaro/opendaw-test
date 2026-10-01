@@ -13,7 +13,7 @@ async (page) => {
   return await page.evaluate(async (c) => {
     const probe = await import("/src/lib/audit/workletClockProbe.ts");
     const report = await probe.runWorkletClockProbe(c);
-    const verdict = probe.classifyClockProbe(report.results);
+    const verdict = probe.classifyClockProbe(report.results, c);
     const name = "graph-lock-clock-" + String(Date.now()) + ".json";
     const put = await fetch("/__verify/" + name, { method: "PUT", body: JSON.stringify({ ...report, verdict }, null, 1) });
     return { saved: put.ok ? name : "NOT SAVED (" + String(put.status) + ")", verdict, ...report };

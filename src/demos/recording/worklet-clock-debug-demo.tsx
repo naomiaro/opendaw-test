@@ -16,8 +16,9 @@ import { InfoCircledIcon, PlayIcon } from "@radix-ui/react-icons";
 //
 // A worklet's `currentFrame` is watched against the audio it is handed while the main
 // thread does one kind of work at a time. The page says what it found in one line
-// (`#clock-verdict`, `data-verdict`): STALE CLOCK, CLOCK TRUE, CLOCK AHEAD, or THREW with
-// the stage it was in. The measuring code is `src/lib/audit/workletClockProbe.ts`.
+// (`#clock-verdict`, `data-verdict`): STALE CLOCK, CLOCK TRUE, CLOCK AHEAD, NOT CHECKED (a
+// run that watched or worked too little to vouch for anything, as in a background tab), or
+// THREW with the stage it was in. The measuring code is `src/lib/audit/workletClockProbe.ts`.
 //
 //   worklet-clock-debug-demo.html?seconds=10&rate=48000&burstMs=8&gapMs=2&conditions=idle,busy,connect,create,stream
 
@@ -67,6 +68,7 @@ const ResultRow: React.FC<{ result: ClockConditionResult }> = ({ result }) => {
   return (
     <Table.Row>
       <Table.RowHeaderCell>{CLOCK_CONDITION_LABELS[result.condition]}</Table.RowHeaderCell>
+      <Table.Cell>{result.bursts}</Table.Cell>
       <Table.Cell>{result.checked}</Table.Cell>
       <Table.Cell>{countOf(result.offs, (off) => off === 0)}</Table.Cell>
       <Table.Cell>
@@ -96,7 +98,7 @@ const App: React.FC = () => {
         stage = next;
         setState({ kind: "running", stage: next });
       });
-      const verdict = classifyClockProbe(report.results);
+      const verdict = classifyClockProbe(report.results, CONFIG.cfg);
       console.log("[worklet-clock] " + verdict.headline);
       stage = "save";
       const saved = await saveOnDevServer(report, verdict);
@@ -118,7 +120,8 @@ const App: React.FC = () => {
     : state.kind === "running" ? `Running: ${state.stage}…`
     : "Not run yet.";
   const verdictColor =
-    state.kind === "done" ? (state.verdict.verdict === "CLOCK TRUE" ? "green" : "red")
+    state.kind === "done"
+      ? (state.verdict.verdict === "CLOCK TRUE" ? "green" : state.verdict.verdict === "NOT CHECKED" ? "amber" : "red")
     : state.kind === "threw" ? "red"
     : "gray";
   const totalSeconds = CONFIG.cfg === null ? 0 : CONFIG.cfg.seconds * CONFIG.cfg.conditions.length;
@@ -185,6 +188,7 @@ const App: React.FC = () => {
                   <Table.Header>
                     <Table.Row>
                       <Table.ColumnHeaderCell>the main thread</Table.ColumnHeaderCell>
+                      <Table.ColumnHeaderCell>stretches of work</Table.ColumnHeaderCell>
                       <Table.ColumnHeaderCell>quanta checked</Table.ColumnHeaderCell>
                       <Table.ColumnHeaderCell>stamp true</Table.ColumnHeaderCell>
                       <Table.ColumnHeaderCell>stamp behind</Table.ColumnHeaderCell>
