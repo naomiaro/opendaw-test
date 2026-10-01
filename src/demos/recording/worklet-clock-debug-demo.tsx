@@ -147,6 +147,16 @@ const App: React.FC = () => {
               href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-10-01-worklet-clock-stale/note.md",
               kind: "note",
             },
+            {
+              label: "Upstream issue: openDAW#424",
+              href: "https://github.com/andremichelle/openDAW/issues/424",
+              kind: "note",
+            },
+            {
+              label: "Chromium issue 442866743",
+              href: "https://issues.chromium.org/issues/442866743",
+              kind: "note",
+            },
           ]}
         />
 
