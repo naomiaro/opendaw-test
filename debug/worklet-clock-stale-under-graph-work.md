@@ -145,7 +145,9 @@ condition); 44 of 12003 fresh worklets (`…1790878967602`, 60 s); 17 of 1900
 **Firefox 157, same machine, same page** (`graph-lock-clock-1790890307105.json`): `CLOCK
 TRUE`. 14774 quanta and 1739 fresh worklets, every stamp the frame of its own quantum, under
 1 606 000 connect / disconnect pairs and 1760 stream-source builds. The run was driven by
-remote control in a fresh profile, the page visible.
+remote control in a fresh profile, the page visible. The same by hand in the user's own
+profile (`graph-lock-clock-1790891148652.json`): `CLOCK TRUE`, 14774 quanta and 1920 fresh
+worklets, each condition's 10 s of quanta rendered in 10.000 to 10.006 s.
 
 What Firefox does instead under graph work is render late. It queues each graph call for its
 render thread, and the thread has to run them:

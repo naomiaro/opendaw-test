@@ -5497,3 +5497,6 @@ page pressed afterwards ends in `THREW context: the context's resume did not com
 5000 ms` (by hand in the user's Firefox, and again by remote control). The content process's
 graph thread was at full load three minutes later, its main thread idle. That error now says
 that the browser has to be restarted.
+
+After the restart, by hand: `CLOCK TRUE`, 14774 quanta and 1920 fresh worklets
+(`graph-lock-clock-1790891148652.json`).
