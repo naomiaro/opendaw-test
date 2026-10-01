@@ -92,7 +92,7 @@ below.
 
 ## Known exemplar (filed, not re-reported)
 
-**openDAW#367** — count-in→recording boundary click at `crates/engine/src/lib.rs:1468-1471` (if-guard on quantum-start position) + forced metronome restoration at `lib.rs:1799`. Static audit confirms present and unchanged at 0.0.170. See also: [countin-metronome-boundary-click.md](countin-metronome-boundary-click.md).
+**openDAW#367** — count-in→recording boundary click at `crates/engine/src/lib.rs:1468-1471` (if-guard on quantum-start position) + forced metronome restoration at `lib.rs:1799`. Static audit confirms present and unchanged at 0.0.170. See also: [debug/2026-08-27-countin-metronome-boundary-click/note.md](../2026-08-27-countin-metronome-boundary-click/note.md).
 
 ## Suspect register
 
@@ -488,7 +488,7 @@ connect fired), and the worklet-swap recovery — which works for the tap but br
 **Result: inconclusive at 48000 Hz, not a negative finding** — this is a tooling
 limitation of the two browser-automation paths available in this session, not a
 measurement that failed to find the leak. No claim is made about `#367`'s presence or
-absence at 48000 Hz; the campaign register's static read (`countin-metronome-boundary-click.md`)
+absence at 48000 Hz; the campaign register's static read (`debug/2026-08-27-countin-metronome-boundary-click/note.md`)
 already establishes the code path is sample-rate-independent (a `position`/quantum
 comparison, not a literal 44.1k-only constant), so the leak is expected to reproduce
 there too, but this session did not measure it.

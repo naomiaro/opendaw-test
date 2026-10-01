@@ -136,7 +136,7 @@ function WarpVarispeedDemo() {
         // cause an audible jump — gate on stopped state only.
         // Read live engine state (not the React var, which may be stale in the
         // closure) for consistency with warp-timestretch-demo.tsx.
-        // See debug/time-pitch-start-position-pop.md for resolution.
+        // See debug/2026-06-09-time-pitch-start-position-pop/note.md for resolution.
         if (!project.engine.isPlaying.getValue()) {
           project.engine.setPosition(0);
           pausedPositionRef.current = 0;

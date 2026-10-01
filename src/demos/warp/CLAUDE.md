@@ -58,7 +58,7 @@
 - Post-swap `setPosition` (after a full mode-swap transaction) is a convenience
   reposition for the stopped state only — gate it on `!isPlaying`. Mode swaps do not
   reset engine.position; calling setPosition mid-playback causes the jump, not the swap.
-  See `debug/time-pitch-start-position-pop.md` and playback CLAUDE.md.
+  See `debug/2026-06-09-time-pitch-start-position-pop/note.md` and playback CLAUDE.md.
 - TimeStretch renders silence with FEWER THAN 2 transient markers
   (`transients.length() < 2`), not just zero.
 - Outside the warp-marker range `[first.position, last.position)` the engine plays

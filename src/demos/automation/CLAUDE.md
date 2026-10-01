@@ -275,10 +275,10 @@ every interior point. Non-linear events and events sharing a position with a nei
 anchored (never dropped). Measured on the repro page: the two-bar parabolic pan arc thins
 116 events → 11, max deviation **0.0037 unitValue = 0.4× ε**. The earlier single-pass greedy
 chord filter, which only tested the point adjacent to the chord's far end, collapsed the same
-arc 116 → 4 at 19.8× ε (openDAW#363, fixed; history in `debug/automation-simplifier-flattening.md`). It only runs on **floating**
+arc 116 → 4 at 19.8× ε (openDAW#363, fixed; history in `debug/2026-08-26-automation-simplifier-flattening/note.md`). It only runs on **floating**
 parameters (`adapter.valueMapping.floating()`), and it runs at every finalize — a loop wrap as
 well as Stop, so a looping take re-thins its curve each pass. Regression test + numbers:
-`automation-simplifier-debug-demo.html` / `debug/automation-simplifier-flattening.md`.
+`automation-simplifier-debug-demo.html` / `debug/2026-08-26-automation-simplifier-flattening/note.md`.
 
 **Latch + loop = a hands-off pass overwrites the previous one.** Latch never lifts off, so
 `handleLoopWrap` finalizes the take and immediately opens a new region holding `lastValue` —

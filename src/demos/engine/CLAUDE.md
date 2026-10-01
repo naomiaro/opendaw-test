@@ -40,7 +40,7 @@ contexts), so `createEngine` on a second context throws
 right after `ensureReady` returned `true`. A single first-boot wasm render on an
 OfflineAudioContext DOES work (unreachable here — `initializeOpenDAW`'s live boot always
 consumes the first-context registration). Repro: `wasm-ensure-ready-second-context-debug-demo.html`;
-write-up: `debug/wasm-ensure-ready-second-context.md`. The immune offline path is
+write-up: `debug/2026-07-15-wasm-ensure-ready-second-context/note.md`. The immune offline path is
 `OfflineEngineRenderer` from `@opendaw/studio-core`, which runs the WASM offline
 **worker** (self-loads the wasm artifacts) registered by `WasmEngine.install`'s
 `offlineWorkerUrl`:
@@ -100,7 +100,7 @@ that list (`Metronome::clear`), so a click cut inside its 52 ms body (2 ms attac
 release) does not resume at the next play. Regression test (self-classifying, control vs.
 stale step, restart head ratio — both read 0.14, verdict FIXED):
 `metronome-stale-click-debug-demo.html`; history of the defect in
-`debug/metronome-click-survives-pause.md` (openDAW#419, fixed). Measurement recipe reusable for any
+`debug/2026-09-28-metronome-click-survives-pause/note.md` (openDAW#419, fixed). Measurement recipe reusable for any
 "what does the engine output around a transport edge" question: `initializeOpenDAW`'s
 `engineTap` + an AudioWorklet recorder posting quanta stamped with `currentTime`, sliced by
 context time (`src/demos/engine/metronome-stale-click-debug-demo.tsx` `OutputRecorder`);

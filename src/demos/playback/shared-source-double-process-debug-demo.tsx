@@ -30,7 +30,7 @@ import {
 } from "@radix-ui/themes";
 import { InfoCircledIcon, PlayIcon, StopIcon } from "@radix-ui/react-icons";
 
-// Repro for `debug/shared-source-double-process.md`.
+// Repro for `debug/2026-05-19-shared-source-double-process/note.md`.
 //
 // One Tape track. Two AudioRegionBoxes, each covering ~30 s of the same
 // 60 s 440 Hz sine. Two toggleable configurations:
@@ -463,8 +463,8 @@ const App: React.FC = () => {
               kind: "demo",
             },
             {
-              label: "debug/shared-source-double-process.md",
-              href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/shared-source-double-process.md",
+              label: "debug/2026-05-19-shared-source-double-process/note.md",
+              href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-05-19-shared-source-double-process/note.md",
               kind: "note",
             },
             {
@@ -494,8 +494,8 @@ const App: React.FC = () => {
               off-boundary audibility gap is real: off-boundary produces a 20 ms destructive
               crossfade (−9.7 dB at seam+11.25 ms); block-aligned reduces to a single dropped
               sample (−0.004 dB). Mechanism closed — see{" "}
-              <a href="https://github.com/naomiaro/opendaw-test/blob/main/debug/shared-source-double-process.md">
-                debug/shared-source-double-process.md addendum
+              <a href="https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-05-19-shared-source-double-process/note.md">
+                debug/2026-05-19-shared-source-double-process/note.md addendum
               </a>.
             </Callout.Text>
           </Callout.Root>

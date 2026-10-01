@@ -32,7 +32,7 @@ import {
 } from "@radix-ui/themes";
 import { InfoCircledIcon, PlayIcon } from "@radix-ui/react-icons";
 
-// Repro for `debug/wasm-ensure-ready-second-context.md`.
+// Repro for `debug/2026-07-15-wasm-ensure-ready-second-context/note.md`.
 //
 // `WasmEngine.ensureReady(context)` registers the wasm processor module only
 // on the FIRST BaseAudioContext it is ever called with — once the modules are
@@ -309,8 +309,8 @@ const App: React.FC = () => {
               kind: "demo",
             },
             {
-              label: "debug/wasm-ensure-ready-second-context.md",
-              href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/wasm-ensure-ready-second-context.md",
+              label: "debug/2026-07-15-wasm-ensure-ready-second-context/note.md",
+              href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-07-15-wasm-ensure-ready-second-context/note.md",
               kind: "note",
             },
             {

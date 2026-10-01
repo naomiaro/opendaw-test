@@ -162,7 +162,7 @@ rate) when `drift ≤ fadeLengthSamples`, falling back to the evict-and-replace
 behaviour only when drift is too large to interpolate over.
 
 **This project's impact:** Directly resolves the issue investigated in
-`debug/fade-out-end-of-file-pop/` (PR #29). The debug demo previously
+`debug/2026-05-12-fade-out-end-of-file-pop/note.md` (PR #29). The debug demo previously
 demonstrated an audible pop on region-end with non-zero fade-out — that should
 no longer reproduce. Worth re-running `fade-out-eof-debug-demo.html` to
 confirm.

@@ -71,7 +71,7 @@ export const RENDER_QUANTUM_FRAMES = 128;
  * two streams differ by up to 12 ms. The limit is that 12 ms plus one render quantum at
  * 44.1 kHz, rounded up. It is fitted, not derived: a skew inside it is not told apart
  * from the two streams' delays. The runs behind it are in the campaign register
- * (`debug/recording-start-alignment-audit.md`).
+ * (`debug/2026-09-02-recording-start-alignment/note.md`).
  *
  * It is the fallback. A repeat whose two source nodes' delays were read by the
  * harness's taps is held to what they leave of the raw skew in its place
@@ -106,7 +106,7 @@ export const LOOP_WRAP_TAKES = 5;
  * synthetic oscillator-scheduled click in a purely digital signal chain has
  * no acoustic/detector jitter to speak of). 2x that is far under the 2ms
  * floor, so the floor applies unchanged from the provisional value — no
- * revision needed. See debug/recording-start-alignment-audit.md "Bring-up
+ * revision needed. See debug/2026-09-02-recording-start-alignment/note.md "Bring-up
  * calibration" for the full residual arrays and run detail.
  */
 export const ALIGNED_TOLERANCE_MS = 2;

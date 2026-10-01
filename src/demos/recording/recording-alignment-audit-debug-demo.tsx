@@ -163,8 +163,8 @@ const params = new URLSearchParams(window.location.search);
 /** Campaign register and the upstream outcome, shown on all three roots. */
 const AUDIT_LINKS: DebugLink[] = [
   {
-    label: "debug/recording-start-alignment-audit.md",
-    href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/recording-start-alignment-audit.md",
+    label: "debug/2026-09-02-recording-start-alignment/note.md",
+    href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-09-02-recording-start-alignment/note.md",
     kind: "note",
   },
   {

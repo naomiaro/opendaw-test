@@ -2,7 +2,7 @@
 
 **Verified against:** OpenDAW SDK 0.0.140 (`@opendaw/studio-sdk@0.0.140`, `@opendaw/studio-core@0.0.136`).
 
-**Repro page:** [`fade-out-end-of-file-debug-demo.html`](../fade-out-end-of-file-debug-demo.html) (unlisted).
+**Repro page:** [`fade-out-end-of-file-debug-demo.html`](../../fade-out-end-of-file-debug-demo.html) (unlisted).
 
 ## Symptom
 

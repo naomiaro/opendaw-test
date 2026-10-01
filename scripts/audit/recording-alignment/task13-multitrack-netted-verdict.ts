@@ -34,7 +34,7 @@ import {
 } from "../../../src/lib/audit/recordingAuditCalibration.ts";
 import { cellPopulation, asClassifiable, loadMultitrackSummary } from "./artifacts.ts";
 
-/** The runs `debug/recording-start-alignment-audit.md` quotes for this verdict, oldest first. */
+/** The runs `debug/2026-09-02-recording-start-alignment/note.md` quotes for this verdict, oldest first. */
 const REGISTER_RUNS = [
   // Three repeats per cell; the page judged them on the raw skew.
   "1790707818551", "1790710650174", "1790710747979", "1790710801157",

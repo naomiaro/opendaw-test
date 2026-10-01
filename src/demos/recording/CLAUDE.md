@@ -520,7 +520,7 @@ without a limit above zero. Replay saved runs (one sample rate at a time) with
   afterwards until it is restarted (the page then ends in `THREW context`). A watch that misses its
   deadline says how much audio the context rendered in that time. Firefox and Safari
   read `CLOCK TRUE`. Write-up:
-  `debug/worklet-clock-stale-under-graph-work.md`.
+  `debug/2026-10-01-worklet-clock-stale/note.md`.
 - **Reading a multi-mic run's clock witness.** The envelope's `clockDiscontinuities` lists
   every call of the reference recorder whose `currentFrame` was not one quantum after the
   call before it. `frame === previousFrame` is the clock standing still (the quantum of that
@@ -551,11 +551,11 @@ without a limit above zero. Replay saved runs (one sample rate at a time) with
   `initializeOpenDAW`): "Re-run" on the matrix/multitrack pages re-runs the matrix on the
   cached project/tape(s) under a fresh run token; the probe page is one-shot.
 - Campaign register (baselines, prediction outcomes, every known defect and harness
-  gap): `debug/recording-start-alignment-audit.md`. Upstream outcome: PR
+  gap): `debug/2026-09-02-recording-start-alignment/note.md`. Upstream outcome: PR
   andremichelle/openDAW#376 (the reworked fix) is merged and in the installed SDK, and #375
   (simultaneous-take `AudioFileBox` collision) is closed with it — the capture owns the
   recording uuid, there is no box swap after save; #374 (residual start-placement bias)
-  stays open with PRs #378 / #380. The sweep results per SDK release are in the register.
+  is closed as well, and PRs #378 / #380 / #418 are open. The sweep results per SDK release are in the register.
 - **Release profile.** `auditProfileFor()` resolves a build whose `buildFeatures` carry
   `recordingStart` but not `latencyProbes` (any installed release that ships PR #376) to the
   `release` profile: `classifyCell(..., { netLoopbackDelay: true })` judges each repeat on
@@ -736,7 +736,7 @@ input-latency-calibration-debug-demo.html?input=real&rate=48000&bpm=120
   recalibrated, and invisible to the anchor check by construction; page loads ~24 ms apart at
   48 kHz, re-arms under one quantum, neither on a 32- or 128-frame lattice. NOT measured: a
   cable loopback, other browsers/devices, a take cell on a real path. Tables, findings with
-  status, what remains: `debug/recording-start-alignment-audit.md`, section "Real-device
+  status, what remains: `debug/2026-09-02-recording-start-alignment/note.md`, section "Real-device
   calibration (2026-09-03)"; recompute with
   `node scripts/audit/recording-alignment/task12c-real-input-tables.ts [runs|chains|events|all]`.
 
@@ -747,7 +747,7 @@ through local structural interfaces plus a runtime feature check. Delete the int
 the check when a release ships the API. The page needs the branch build served through
 `SDK_DIST_OVERRIDE` and says so when it is missing.
 
-Measurements, findings and what remains: `debug/recording-start-alignment-audit.md`,
+Measurements, findings and what remains: `debug/2026-09-02-recording-start-alignment/note.md`,
 section "Input-latency calibration (2026-09-02)" (loopback) and "Real-device calibration
 (2026-09-03)". Offline recomputation:
 `node scripts/audit/recording-alignment/task12b-calibration-tables.ts` (loopback) and

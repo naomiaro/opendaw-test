@@ -652,13 +652,13 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
 - After SDK upgrades, re-run the standing sample-rate/quantum-alignment regression sweep:
   `samplerate-audit-debug-demo.html?family=all&bpm=all&rate=all` (calibration in
   `src/lib/audit/auditCalibration.ts`, campaign register in
-  `debug/sample-rate-alignment-audit.md`).
+  `debug/2026-08-27-sample-rate-alignment-audit/note.md`).
 - After SDK upgrades, also re-run the standing recording start-alignment sweep:
   `recording-alignment-audit-debug-demo.html?scenario=all&bpm=all&rate=48000` (then
   `&rate=44100`, then `?scenario=multitrack-all&bpm=120&rate=48000`) — measurement lib
   `src/lib/audit/recordingAlignment.ts`, calibration
   `src/lib/audit/recordingAuditCalibration.ts`, campaign register
-  `debug/recording-start-alignment-audit.md`. Full scenario list and the known
+  `debug/2026-09-02-recording-start-alignment/note.md`. Full scenario list and the known
   repeat-losing defects: `src/demos/recording/CLAUDE.md`. Signature bands are chosen PER
   BUILD from the `buildFeatures` list the page probes off the live SDK, so read a verdict
   against the profile the run's own envelope names; the calibration branch's bands E/F were
@@ -671,7 +671,7 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   after an SDK upgrade; a `?scenario=calibrated` sweep variant becomes possible only on a
   release that ships `calibrateInputLatency`. Params, envelope fields and the branch-API shim:
   `src/demos/recording/CLAUDE.md`; measurements and open findings:
-  `debug/recording-start-alignment-audit.md`.
+  `debug/2026-09-02-recording-start-alignment/note.md`.
 - `npm run build` runs Vite then VitePress — demos go to `dist/`, docs go to `dist/docs/` for `/docs/` on Cloudflare Pages
 - `npm run docs:dev` — local VitePress dev server for documentation
 - typescript-lsp plugin: install `typescript-language-server` and `typescript` **globally** (`npm i -g typescript-language-server typescript`) — the plugin spawns by PATH, NOT from `node_modules/.bin`, so a devDep doesn't satisfy it. LSP `hover` / `goToDefinition` / `documentSymbol` also resolve types in the upstream openDAW checkout (`tsserver` walks up to the nearest tsconfig — handy for SDK drift audits). Prefer file-scoped ops over `workspaceSymbol` (~3.9k symbols / ~135 KB persisted in this repo).
@@ -884,10 +884,12 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   checkout silently clobbers uncommitted edits to that file.
 - Report SDK bugs as GitHub issues on `andremichelle/openDAW` (tracker is actively worked —
   filed bugs have been fixed within one release cycle). Body: live repro page URL +
-  `debug/*.md` write-up link + measured signature. NO suggested-fix section — describe
-  the cause precisely and let the maintainer choose the remedy (fix ideas belong in the
-  internal debug note, not the issue). Draft the issue body as an md file for user
-  review BEFORE posting. Cross-link the issue
+  the investigation's `debug/<date>-<topic>/note.md` link + measured signature. NO
+  suggested-fix section — describe the cause precisely and let the maintainer choose the
+  remedy (fix ideas belong in the internal debug note, not the issue). Draft the issue body
+  for user review BEFORE posting, as `debug/<date>-<topic>/drafts/TO-REVIEW-<target>.md`,
+  and list it under "Waiting for a read" in `debug/README.md`; once posted, rename it
+  `posted-<tracker>-<number>[-topic].md`. Cross-link the issue
   number back into the repro page's DebugLinkBar and the debug note's header.
 - Upstream PRs describe their CURRENT state in the PR body: after every push to a PR
   branch (review responses, extra fixes, scope additions), edit the body with
@@ -966,7 +968,10 @@ Each demo category folder has its own CLAUDE.md with SDK knowledge scoped to tho
 - Editing, fades & automation: `documentation/09-editing-fades-and-automation.md`
 - Export & offline rendering: `documentation/10-export.md`
 - SDK changelogs: `changelogs/`
-- SDK investigations & open questions: `debug/` (see `debug/README.md` for convention)
+- SDK investigations & open questions: `debug/`, one folder per investigation named
+  `YYYY-MM-DD-topic/` with its `note.md` and its `drafts/` (`debug/README.md` has the
+  layout and a newest-first index). The loose `.md` files at `debug/`'s top level are
+  stubs for links in filed issues: leave them, and add no notes there.
 - `docs/superpowers/{specs,plans}` hold in-flight work only — delete a spec/plan in the
   PR that completes its work (git history preserves them). Durable decisions graduate to
   `docs/design/`, CLAUDE.md, or `documentation/` before deletion.

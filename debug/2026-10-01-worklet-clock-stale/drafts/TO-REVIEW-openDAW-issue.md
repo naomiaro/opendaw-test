@@ -6,9 +6,15 @@ Notes for the read, not part of the body:
   links it. Its reporter says other browsers do not do it; Firefox 157 and Safari 18.6 were measured
   here with the repro page and read a true clock.
 - No fix is suggested, by the repo's rule. The fix idea is in
-  `debug/worklet-clock-stale-under-graph-work.md`, last section.
+  `debug/2026-10-01-worklet-clock-stale/note.md`, last section.
 - The rate is the measurement harness's, and the body says so: the harness rebuilds the audio
   chain on every take and builds 120 nodes of its own just before each.
+- The "Related" section at the end links the maintainer's comment on PR #380 (added
+  2026-10-01 at the user's request). It claims two things only: #418 removes one piece of
+  graph work at a take's start without touching either stamp, and two one-quantum readings
+  in #380's calibration measurements MAY be this clock. Neither effect is measured, and the
+  section says so. The ~24 ms page-load variation that comment speaks of is not this: a
+  quantum is 2.67 ms.
 
 ---
 
@@ -60,7 +66,7 @@ A stamp is only ever early, never late.
   request (connect / disconnect of any nodes), and compare the takes against a known signal.
 
 Write-up, with the runs and the per-row figures:
-https://github.com/naomiaro/opendaw-test/blob/main/debug/worklet-clock-stale-under-graph-work.md
+https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-10-01-worklet-clock-stale/note.md
 
 ## Cause
 
@@ -93,3 +99,22 @@ then, makes and connects its source node), which is exactly such work. Watched o
 that stamps every quantum: in each of three natural events the clock read the same frame on
 two calls running, and that frame is the one the stamp that is off carries; none of 804
 ordinary takes has a stamp that reads a frame the clock stood on.
+
+## Related
+
+https://github.com/andremichelle/openDAW/pull/380#issuecomment-5700363981, the comment on
+#380 that asked for the capture-chain fixes as their own PR (now #418) and questioned how far
+a stored calibration can be trusted in Chrome. It touches this in two places:
+
+- **#418's stream reuse.** With it, a capture that names no device keeps its stream, so
+  `prepareRecording` no longer builds a `MediaStreamAudioSourceNode` before every take. That
+  is one piece of the graph work described above gone from a take's start. The take's
+  recording worklet is still made and connected on every take, and neither stamp is in code
+  #418 changes, so the stamps stay open to the stale clock. Whether #418 makes the event
+  rarer is not measured: the harness's tapes name a device, and their chain is rebuilt either
+  way.
+- **The calibration in #380.** This is a second way timing on the capture path moves in
+  Chrome, apart from the variation between page loads that comment refers to (which is far
+  larger than a quantum and is not this). The calibration measurements include two readings
+  one quantum off (one call a quantum short, a second anchor a quantum off in 1 of 152
+  calls). They may be the same clock; that has not been checked.

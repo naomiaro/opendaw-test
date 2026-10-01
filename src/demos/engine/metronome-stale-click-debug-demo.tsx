@@ -27,7 +27,7 @@ import {
 } from "@radix-ui/themes";
 import { InfoCircledIcon, PlayIcon } from "@radix-ui/react-icons";
 
-// Regression test for `debug/metronome-click-survives-pause.md` (openDAW#419, fixed).
+// Regression test for `debug/2026-09-28-metronome-click-survives-pause/note.md` (openDAW#419, fixed).
 //
 // `Metronome::process` (crates/engine/src/metronome.rs) is called from `render`
 // only while the transport plays; it keeps its active clicks in `self.clicks`
@@ -400,8 +400,8 @@ const App: React.FC = () => {
           links={[
             { label: "Swipe comping demo (count-in metronome)", href: "/swipe-comping-demo.html", kind: "demo" },
             {
-              label: "debug/metronome-click-survives-pause.md",
-              href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/metronome-click-survives-pause.md",
+              label: "debug/2026-09-28-metronome-click-survives-pause/note.md",
+              href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-09-28-metronome-click-survives-pause/note.md",
               kind: "note",
             },
             {

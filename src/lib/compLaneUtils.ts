@@ -456,7 +456,7 @@ export function rebuildSpliceRegions(
     // design: project.copy() validation trims the earlier region to end where the later
     // one starts (and deletes both when they share a position), so export and offline
     // render would lose the overlap. Exact boundaries can click at cross-file seams — see
-    // debug/splice-click-cross-file.md for the open question with the openDAW maintainer.
+    // debug/2026-05-01-splice-click-cross-file/note.md for the open question with the openDAW maintainer.
     const zoneBounds = [playbackStart, ...boundaries, playbackStart + TOTAL_PPQN];
     for (let z = 0; z < assignments.length; z++) {
       const zoneStart = zoneBounds[z];

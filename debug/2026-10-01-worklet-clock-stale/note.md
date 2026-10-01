@@ -12,13 +12,13 @@ defect is already reported: [Chromium issue 442866743](https://issues.chromium.o
 reproduced by Chromium triage on 142 to 144 and back to M-132; reproduced there by suspending
 and resuming the context on repeat; no cause given). Nothing is posted upstream from here. Two
 drafts wait for a read:
-[`drafts/issue-recording-start-stale-worklet-clock.md`](./drafts/issue-recording-start-stale-worklet-clock.md)
+[`drafts/TO-REVIEW-openDAW-issue.md`](./drafts/TO-REVIEW-openDAW-issue.md)
 (an openDAW issue) and
-[`drafts/chromium-bug-worklet-current-frame-stale.md`](./drafts/chromium-bug-worklet-current-frame-stale.md)
+[`drafts/TO-REVIEW-chromium-442866743-comment.md`](./drafts/TO-REVIEW-chromium-442866743-comment.md)
 (a comment for the Chromium issue: the cause and a quicker trigger).
 
 Campaign history, run by run:
-[`recording-start-alignment-audit.md`](./recording-start-alignment-audit.md), sections "The
+[`debug/2026-09-02-recording-start-alignment/note.md`](../2026-09-02-recording-start-alignment/note.md), sections "The
 cause of the one-quantum event" and "The one-quantum event, resolved to the worklet clock".
 
 ## Symptom
@@ -328,8 +328,12 @@ against the stall lengths above. Both repairs are local to the two processors an
 nothing for a browser whose clock is true.
 
 **Upstream context.** The user's open PRs on this code are openDAW #378, #380 and #418; none
-touches either stamping site. Whether this becomes another PR, and on top of which, is the
-user's decision.
+touches either stamping site. The issue draft links the maintainer's [comment on
+#380](https://github.com/andremichelle/openDAW/pull/380#issuecomment-5700363981) (the request
+that became #418, and his doubt about a stored calibration in Chrome): #418's stream reuse
+takes the per-take source node out of a take's start for a capture that names no device, and
+the calibration's two one-quantum readings may be this clock (not checked). Whether this
+becomes another PR, and on top of which, is the user's decision.
 
 **The browser.** The Chromium draft adds the try-lock and the trigger to the existing issue
 and leaves the remedy to the maintainers. Until it changes, any worklet code that reads `currentTime` once and treats it as

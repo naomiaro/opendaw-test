@@ -343,7 +343,7 @@ pages (Sink, Composite, Tubular), `StudioService.restartEngine` removed, error-t
   - The audit harnesses set the loop area per scenario and are unaffected (sample-rate sweep
     180 of 180).
 - **#419 and #420 closed out**: `metronome-stale-click-debug-demo` is a regression test now
-  (copy, heading and title reworded; FIXED 3 of 3); `debug/metronome-click-survives-pause.md`
+  (copy, heading and title reworded; FIXED 3 of 3); `debug/2026-09-28-metronome-click-survives-pause/note.md`
   and `debug/README.md` marked fixed; the "set `loopOffset` yourself" caveats removed from
   `src/demos/engine/CLAUDE.md` and `src/demos/midi/CLAUDE.md`.
 - **Overlap rule**: demo copy and comments that said `project.copy()` DELETES overlapping
@@ -353,8 +353,8 @@ pages (Sink, Composite, Tubular), `StudioService.restartEngine` removed, error-t
   `shared-source-double-process-debug-demo.tsx`, `compLaneUtils.ts`,
   `src/demos/playback/CLAUDE.md`, `documentation/02-timing-and-tempo.md`,
   `documentation/10-export.md`, and dated updates on
-  `debug/project-copy-deletes-overlapping-regions.md` and
-  `debug/seconds-overlap-validation-unit-mismatch.md`, which this release closes). Measured with
+  `debug/2026-05-19-project-copy-deletes-overlapping-regions/note.md` and
+  `debug/2026-06-11-seconds-overlap-validation-unit-mismatch/note.md`, which this release closes). Measured with
   real boxes on the installed SDK: musical `0+3840` / `1920+3840` → `0+1920` / `1920+3840`;
   two musical regions at one position → both deleted; Seconds regions reaching over their
   successor → untouched and not `invalid`. No demo behaviour changes: the demos prevent
@@ -378,7 +378,7 @@ pages (Sink, Composite, Tubular), `StudioService.restartEngine` removed, error-t
   `stopLeadMs` (how far ahead of the click the stop request went out; the page warns under
   30 ms), since no verdict would show a missed lead.
 - **Standing sweeps on the release** (register section "Standing sweep on 0.0.173, and the
-  stop moved ahead of the next click" in `debug/recording-start-alignment-audit.md`):
+  stop moved ahead of the next click" in `debug/2026-09-02-recording-start-alignment/note.md`):
   sample-rate/quantum-alignment 180 of 180 cells pass; recording start-alignment 48 kHz (three
   runs) and 44.1 kHz (one), 60 rows each, 0 error rows, every repeat finalized, netted medians
   +1.07…+1.17 ms and +0.97…+1.19 ms as on 0.0.172 on all but one row; multi-mic three runs, 96 rows, no collision,

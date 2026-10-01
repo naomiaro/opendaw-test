@@ -29,7 +29,7 @@ interface CellSource {
   note: string;
 }
 
-// Provenance mirrors debug/recording-start-alignment-audit.md's "Matrix results —
+// Provenance mirrors debug/2026-09-02-recording-start-alignment/note.md's "Matrix results —
 // 48000 Hz" / "Matrix results — 44100 Hz" tables exactly (including their stated
 // per-cell source-file exceptions for janked-start's fix-round data and loop-wrap's
 // split 44.1k/97.3 provenance).

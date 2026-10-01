@@ -269,7 +269,7 @@ export interface TakeMeasurementInput {
    * inputLatency`) — a real hardware round-trip cost this harness's digital
    * loopback never incurs, so the compensation is unearned here and the
    * harness nets it back out on every scenario (see
-   * debug/recording-start-alignment-audit.md "Bring-up calibration"). Content
+   * debug/2026-09-02-recording-start-alignment/note.md "Bring-up calibration"). Content
    * that lands exactly `harnessPathBiasSec` early nets to ~0 adjusted error.
    * Default 0 (adjusted equals raw) when the caller has no measured bias. The
    * raw median is NEVER modified — both are always available on the result.

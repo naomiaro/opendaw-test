@@ -51,7 +51,7 @@ const BAR_PPQN = PPQN.Quarter * 4; // one bar in 4/4
 
 // Dev-only sample-rate audit knob: ?sampleRate=44100 forces the AudioContext's
 // sample rate for forced-rate audit sessions (see
-// debug/sample-rate-alignment-audit.md). Parsed once at module load — no UI,
+// debug/2026-08-27-sample-rate-alignment-audit/note.md). Parsed once at module load — no UI,
 // audit tooling only. Invalid/missing values fall back to the device-native rate.
 const AUDIT_SAMPLE_RATE: number | undefined = (() => {
   // Browser-only module; do not import outside a page context.
@@ -264,7 +264,7 @@ const App: React.FC = () => {
             // This keeps the recording itself click-free. The engine's count-in
             // click ceiling keeps the punch-in downbeat from leaking through the
             // boundary block (openDAW#367, fixed) — see
-            // debug/countin-metronome-boundary-click.md.
+            // debug/2026-08-27-countin-metronome-boundary-click/note.md.
             if (clickModeRef.current === "count-in" && beats > 0 && beats < 0.2) {
               newProject.engine.preferences.settings.metronome.enabled = false;
             }
@@ -370,7 +370,7 @@ const App: React.FC = () => {
   // mode this effect keeps the preference TRUE through the count-in, so the
   // ceiling engages only because the pre-disarm in the countInBeatsRemaining
   // subscription flips it off ~0.2 beats before the boundary — keep that
-  // pre-disarm (see debug/countin-metronome-boundary-click.md).
+  // pre-disarm (see debug/2026-08-27-countin-metronome-boundary-click/note.md).
   useEffect(() => {
     if (!project) return;
     const settings = project.engine.preferences.settings;

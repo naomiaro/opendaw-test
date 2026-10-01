@@ -170,7 +170,7 @@ function WarpTimestretchDemo() {
         // cause an audible jump — gate on stopped state only.
         // Read live engine state (not the React var, which may be stale in the
         // closure) to avoid a position jump when Play is active during switching.
-        // See debug/time-pitch-start-position-pop.md for resolution.
+        // See debug/2026-06-09-time-pitch-start-position-pop/note.md for resolution.
         if (!setup.project.engine.isPlaying.getValue()) {
           project.engine.setPosition(0);
           pausedPositionRef.current = 0;

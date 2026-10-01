@@ -17,7 +17,7 @@ import {
 } from "@radix-ui/themes";
 import { InfoCircledIcon, PlayIcon } from "@radix-ui/react-icons";
 
-// Repro (now regression test) for `debug/automation-simplifier-flattening.md`.
+// Repro (now regression test) for `debug/2026-08-26-automation-simplifier-flattening/note.md`.
 //
 // A slow, smooth automation gesture recorded with the transport loop on can
 // come back after the wrap as (very nearly) a straight line. Two independent
@@ -519,8 +519,8 @@ const App: React.FC = () => {
           links={[
             { label: "Live automation recording demo", href: "/live-automation-recording-demo.html", kind: "demo" },
             {
-              label: "debug/automation-simplifier-flattening.md",
-              href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/automation-simplifier-flattening.md",
+              label: "debug/2026-08-26-automation-simplifier-flattening/note.md",
+              href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-08-26-automation-simplifier-flattening/note.md",
               kind: "note",
             },
             {
