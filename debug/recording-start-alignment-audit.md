@@ -5069,3 +5069,42 @@ depended on the wrap at bar 4.
   repeats per arm before a difference in rate could be read.
 - **Not established,** as before: real input devices; any browser but Chromium; what the
   441-frame step does to a take at 44.1 kHz.
+
+## Tooling for counting the one-quantum event on two releases (2026-10-01)
+
+No finding here: what was added so that the count the section above asks for can be made,
+and the runs that checked it. The plan the count follows is
+`docs/superpowers/plans/2026-10-01-one-quantum-event.md`.
+
+- **Another release, served.** `node scripts/audit/sdk-override.ts <git-rev> <dir>` builds a
+  directory for `SDK_DIST_OVERRIDE` from the lockfile of a revision of this repo. For 0.0.172
+  (`a5bf064`, main before the upgrade) it is at `/Users/naomiaro/Code/opendaw-sdk-override-0.0.172`:
+  its 32 wasm files and the `studio-core` and `studio-adapters` dists are byte-identical to the
+  0.0.172 install kept from before the upgrade, the dev server serves its `engine.wasm`
+  (sha-256 `a6b14cd4d4d819fc…`), and a `midtimeline-start/120` cell on it read 3 of 3
+  `aligned` with no page error. That run's files were deleted: its envelope carried no SDK
+  version and would have been counted as 0.0.173. A first layout under `<dir>/node_modules`
+  failed in Vite's dependency optimizer; the packages have to sit outside any `node_modules`.
+- **A run says what it is.** The envelope carries `sdkVersion` and `stopLead`; `&stopLead=off`
+  stops a repeat just after the click as the harness did before the stop lead. Run
+  `…1790877269188` (`nominal-start/120`, `stopLead=off`): `sdkVersion` 0.0.173, `stopLead`
+  false, 16 matched beats, `stopLeadMs` −3, −27, −21, netted +1.15 on all three.
+- **The engine's report on the row.** `recordingStartContextTimeSec` and
+  `recordingStartPositionPpqn`. Run `recaudit-mt-summary-1790877184674.json`
+  (`multitrack-janked`, 16 rows, all `aligned`): position 5.120 on every row, recording start
+  one or two quanta after the first-quantum time, and `waveformOffsetSec` equal to recording
+  start − first quantum + output latency − 0.0625 ms (the 0.12 pulse the Int32 region
+  position drops): 25.667 − 0.0625 = 25.604 ms, and 28.333 − 0.0625 = 28.271 ms.
+- **The count.** `node scripts/audit/recording-alignment/one-quantum-events.ts`. With the
+  checks above and the three short runs of the review, the saved release-build runs stand at
+  **0.0.172: 1 in 416 repeats; 0.0.173: 2 in 193** (0 in 63 with the stop after the click, 2 in
+  130 with the stop lead). Every 0.0.172 repeat was recorded with the stop after the click, so
+  the saved runs cannot separate the release from the stop.
+
+Two things the event rows show that the section above did not say:
+
+- On all three events `regionPositionPpqn` (5) and `waveformOffsetSec` (25.604 ms) are the
+  values of the rows around them. What the SDK placed the take from looks as it always does.
+- The three tapes whose first-frame check is −2.667 ms all read node delay 17.333 ms and
+  loopback delay 14.958 ms, in the 0.0.172 run and in the 0.0.173 one. A node delay of 17.333
+  ms is also read on rows without the event.

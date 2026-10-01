@@ -482,6 +482,18 @@ without a limit above zero. Replay saved runs (one sample rate at a time) with
   `STOP_ROUND_TRIP_MS` the page warns, since no verdict would show a missed lead. An eighth
   note clears the stop's trail up to about 220 BPM (`recordingCellRunner.test.ts` pins the
   matrix tempos).
+- `&stopLead=off` stops every repeat just AFTER the click instead (the envelope's `stopLead`
+  says which a run did), for telling the harness's own effect apart from the SDK's.
+- An envelope names the SDK release that served the run (`sdkVersion`, the
+  `OPENDAW_SDK_VERSION` of the served `@opendaw/studio-sdk`), and every row carries the
+  engine's own recording-start report (`recordingStartContextTimeSec`,
+  `recordingStartPositionPpqn`, read at the stop request). With `firstQuantumTimeSec` they
+  reproduce the SDK's placement: `waveformOffsetSec` = recording start − first quantum +
+  output latency − the fraction of a pulse the Int32 region position drops. No verdict
+  reads either. To run the page against another release, build an override with
+  `node scripts/audit/sdk-override.ts <git-rev> <dir>` and serve it through
+  `SDK_DIST_OVERRIDE`; count rare events over saved runs with
+  `node scripts/audit/recording-alignment/one-quantum-events.ts`.
 - The engine boots once per page load (`Workers.install` asserts on a second
   `initializeOpenDAW`): "Re-run" on the matrix/multitrack pages re-runs the matrix on the
   cached project/tape(s) under a fresh run token; the probe page is one-shot.

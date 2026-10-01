@@ -9,7 +9,8 @@ import type { Project } from "@opendaw/studio-core";
 import { BAR_PPQN } from "./auditExpectations";
 import { RECORDING_AUDIT_BPMS } from "./recordingAuditCalibration";
 import {
-  STOP_LEAD_PPQN, STOP_ROUND_TRIP_MS, STOP_TRAIL_MS, readStopLead, stopLeadMs, waitForPositionWithin,
+  STOP_LEAD_PPQN, STOP_ROUND_TRIP_MS, STOP_TRAIL_MS, readRecordingStart, readStopLead, stopLeadMs,
+  waitForPositionWithin,
 } from "./recordingCellRunner";
 
 const BEAT_PPQN = BAR_PPQN / 4;
@@ -57,6 +58,29 @@ describe("readStopLead", () => {
     expect(readStopLead(at(CLICK + 100), CLICK, 120, "nominal-start/120/r2")).toBeLessThan(0);
     expect(warn).toHaveBeenCalledTimes(2);
     expect(String(warn.mock.calls[0][0])).toContain("nominal-start/120/r1");
+  });
+});
+
+describe("readRecordingStart", () => {
+  const option = (value: { contextTime: number; position: number } | null) => ({
+    isEmpty: () => value === null,
+    unwrap: () => {
+      if (value === null) throw new Error("empty");
+      return value;
+    },
+  });
+
+  it("returns the engine's report", () => {
+    expect(readRecordingStart({ recordingStart: option({ contextTime: 12.345, position: 5.12 }) }))
+      .toEqual({ contextTimeSec: 12.345, positionPpqn: 5.12 });
+  });
+
+  it("returns nulls while the engine has not reported", () => {
+    expect(readRecordingStart({ recordingStart: option(null) })).toEqual({ contextTimeSec: null, positionPpqn: null });
+  });
+
+  it("returns nulls on a build whose engine has no such report", () => {
+    expect(readRecordingStart({})).toEqual({ contextTimeSec: null, positionPpqn: null });
   });
 });
 

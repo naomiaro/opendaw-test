@@ -133,6 +133,16 @@ interface TakeRowBase extends FinalizeProbe {
    *  it, so a value under about 30 ms (or a negative one) means the click may have
    *  sounded: the repeat boundary can carry a double click. It does not enter a verdict. */
   stopLeadMs?: number | null;
+  /** G6, later rows: the engine's own report of where and when the repeat's recording began
+   *  (`engine.recordingStart`), read at the stop request. `contextTime` is the END of the
+   *  render quantum in which the engine first saw its recording flag, `position` the engine
+   *  position after that quantum. `RecordAudio` places the take from these two and the
+   *  recording worklet's first-quantum time, so with `firstQuantumTimeSec`,
+   *  `regionPositionPpqn` and `waveformOffsetSec` a row can be checked against the SDK's own
+   *  arithmetic. Null before a report, and on a build without one. Every take of a
+   *  loop-wrap repeat carries the same values: there is one recording start per repeat. */
+  recordingStartContextTimeSec?: number | null;
+  recordingStartPositionPpqn?: number | null;
   /** G5+ */
   bufferDurationSec?: number;
   status: AuditRowStatus;
@@ -258,6 +268,16 @@ interface SummaryBase {
   beatGrid: BeatGrid;
   rate: number;
   sdkBuildProbe: SdkBuildProbe;
+  /** `OPENDAW_SDK_VERSION` as the served `@opendaw/studio-sdk` exports it. A label for
+   *  telling apart two releases that expose the same surfaces (an `SDK_DIST_OVERRIDE`
+   *  run against an installed one); no verdict or band table reads it. Absent on every
+   *  envelope written before the field existed. */
+  sdkVersion?: string;
+  /** False when the run was made with `?stopLead=off`: repeats stopped just AFTER the
+   *  metronome click, as the harness did before it had a stop lead. Absent on envelopes
+   *  written before the field existed (a row's `stopLeadMs` then tells: rows without it
+   *  are either older than the lead or from the sweeps recorded just after it arrived). */
+  stopLead?: boolean;
   /** Which SDK surfaces the served build exposed at load — see
    *  `src/lib/audit/buildFeatures.ts`. Absent on every envelope written before
    *  the field existed; `profileKeyFor` falls back to the run token there. */
@@ -334,6 +354,10 @@ export interface LoadedAuditSummary {
   captureMode: CaptureMode | null;
   /** null when the envelope predates the field. */
   getUserMediaOpens: number | null;
+  /** The served SDK's version; null when the envelope predates the field. */
+  sdkVersion: string | null;
+  /** Whether repeats stopped a lead before the click; null when the envelope predates the field. */
+  stopLead: boolean | null;
   rate: number;
   alignedToleranceMs: number;
   /** null when the run predates `outputLatency` persistence (G1, G2). */
@@ -366,6 +390,10 @@ export interface LoadedMultitrackAuditSummary {
   captureMode: CaptureMode | null;
   /** null when the envelope predates the field. */
   getUserMediaOpens: number | null;
+  /** The served SDK's version; null when the envelope predates the field. */
+  sdkVersion: string | null;
+  /** Whether repeats stopped a lead before the click; null when the envelope predates the field. */
+  stopLead: boolean | null;
   rate: number;
   alignedToleranceMs: number;
   skewToleranceMs: number;
@@ -434,6 +462,24 @@ function getUserMediaOpensOf(top: Record<string, unknown>, runId: number): numbe
   if (v === undefined) return null;
   if (typeof v !== "number" || !Number.isFinite(v)) {
     throw new Error(`recaudit summary ${runId}: unexpected getUserMediaOpens ${JSON.stringify(v)}`);
+  }
+  return v;
+}
+
+function sdkVersionOf(top: Record<string, unknown>, runId: number): string | null {
+  const v = top.sdkVersion;
+  if (v === undefined) return null;
+  if (typeof v !== "string" || v.length === 0) {
+    throw new Error(`recaudit summary ${runId}: unexpected sdkVersion ${JSON.stringify(v)}`);
+  }
+  return v;
+}
+
+function stopLeadOf(top: Record<string, unknown>, runId: number): boolean | null {
+  const v = top.stopLead;
+  if (v === undefined) return null;
+  if (typeof v !== "boolean") {
+    throw new Error(`recaudit summary ${runId}: unexpected stopLead ${JSON.stringify(v)}`);
   }
   return v;
 }
@@ -515,6 +561,8 @@ export function parseAuditSummary(json: unknown, runId: number): LoadedAuditSumm
     buildFeatures: buildFeaturesOf(json, runId),
     captureMode: captureModeOf(json, runId),
     getUserMediaOpens: getUserMediaOpensOf(json, runId),
+    sdkVersion: sdkVersionOf(json, runId),
+    stopLead: stopLeadOf(json, runId),
     rate: requireNumber(json, "rate", runId),
     alignedToleranceMs: requireNumber(json, "alignedToleranceMs", runId),
     outputLatencySec,
@@ -549,6 +597,8 @@ export function parseMultitrackAuditSummary(json: unknown, runId: number): Loade
     buildFeatures: buildFeaturesOf(json, runId),
     captureMode: captureModeOf(json, runId),
     getUserMediaOpens: getUserMediaOpensOf(json, runId),
+    sdkVersion: sdkVersionOf(json, runId),
+    stopLead: stopLeadOf(json, runId),
     rate: requireNumber(json, "rate", runId),
     alignedToleranceMs: requireNumber(json, "alignedToleranceMs", runId),
     skewToleranceMs: requireNumber(json, "skewToleranceMs", runId),

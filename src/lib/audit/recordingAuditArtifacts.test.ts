@@ -122,6 +122,34 @@ describe("parseAuditSummary — G7 build-feature fields", () => {
   });
 });
 
+describe("parseAuditSummary — SDK version and stop lead", () => {
+  const g6 = { ...base, schemaVersion: 2, beatGrid: "absolute", sdkBuildProbe: "upstream", outputLatency: 0.023, harnessPathBiasSec: 0.023, rows: [row({ medianBeatErrorMsAdjusted: -62, tailMissingMs: 0 })] };
+  const mtRows = [{ scenario: "multitrack-start", bpm: 120, rate: 48000, repeat: 1, tape: "a", medianBeatErrorMs: -80, matchedBeats: 16, missingBeats: 0, headMissingMs: 0, status: "aligned", detail: "" }];
+
+  it("absent → null on both, for both envelope kinds", () => {
+    const s = parseAuditSummary(g6, 1790871141815);
+    expect(s.sdkVersion).toBeNull();
+    expect(s.stopLead).toBeNull();
+    const mt = parseMultitrackAuditSummary({ ...g6, skewToleranceMs: 2, rows: mtRows, cellSkews: [] }, 1790872984620);
+    expect(mt.sdkVersion).toBeNull();
+    expect(mt.stopLead).toBeNull();
+  });
+
+  it("present → passed through verbatim", () => {
+    const s = parseAuditSummary({ ...g6, sdkVersion: "0.0.172", stopLead: false }, 1790880000000);
+    expect(s.sdkVersion).toBe("0.0.172");
+    expect(s.stopLead).toBe(false);
+    const mt = parseMultitrackAuditSummary({ ...g6, skewToleranceMs: 2, rows: mtRows, cellSkews: [], sdkVersion: "0.0.173", stopLead: true }, 1790880000001);
+    expect(mt.sdkVersion).toBe("0.0.173");
+    expect(mt.stopLead).toBe(true);
+  });
+
+  it("malformed → throws, never coerces", () => {
+    expect(() => parseAuditSummary({ ...g6, sdkVersion: 173 }, 1)).toThrow(/sdkVersion/);
+    expect(() => parseAuditSummary({ ...g6, stopLead: "off" }, 1)).toThrow(/stopLead/);
+  });
+});
+
 describe("parseAuditSummary — validation", () => {
   it("throws on an unknown scenario instead of admitting the row", () => {
     expect(() => parseAuditSummary({ ...base, rows: [row({ scenario: "multitrack-start" })] }, 1)).toThrow(/not a recording scenario/);
