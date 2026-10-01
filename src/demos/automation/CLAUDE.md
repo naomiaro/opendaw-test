@@ -243,7 +243,9 @@ start time.
 `to: 15360` (4 bars) on a fresh box. A demo with a Loop control writes its starting
 state at boot (range AND `enabled`), so the UI and the engine agree from the first frame
 whatever the default is; a demo that wants the transport to cycle must switch the loop on
-itself — a fresh project plays linearly past bar 4.
+itself — a fresh project plays linearly past bar 4. `useTimelineLoop(project, { from, to,
+enabled })` (`src/hooks/useTimelineLoop.ts`) does both and follows the field afterwards;
+the live-automation, MIDI recording and Cubed demos use it.
 
 **Non-zero `loopOffset` comes from the overdub trim, not from wrap finalization; event positions
 are loop-cycle-relative.** `RecordAutomation` never writes `loopOffset` — every path it takes

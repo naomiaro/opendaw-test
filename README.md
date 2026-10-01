@@ -118,7 +118,8 @@ src/
 ├── components/                        # Reusable UI components
 │   └── ParamSlider.tsx                # Labelled slider bound to an SDK parameter
 ├── hooks/                             # Custom React hooks
-│   └── useParameterUnit.ts            # React wrapper around the parameter binding
+│   ├── useParameterUnit.ts            # React wrapper around the parameter binding
+│   └── useTimelineLoop.ts             # Timeline loop range and on/off as state, for a Loop switch
 ├── lib/
 │   ├── projectSetup.ts                # OpenDAW initialization
 │   ├── trackLoading.ts                # Track loading with queryLoadingComplete

@@ -5,6 +5,7 @@ import { UUID } from "@opendaw/lib-std";
 import type { Project } from "@opendaw/studio-core";
 import type { AutomationMode } from "@opendaw/studio-adapters";
 import { initializeOpenDAW } from "@/lib/projectSetup";
+import { useTimelineLoop } from "@/hooks/useTimelineLoop";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
@@ -26,6 +27,7 @@ import {
 // header (the shared HEADER_WIDTH) plus the Radix gap="3" between the header and
 // the canvas.
 const LANE_HEADER_OFFSET = HEADER_WIDTH + 12; // 12 = Radix gap="3"
+const LOOP = { from: 0, to: WINDOW_PPQN, enabled: false };
 
 const LANE_IDS: ReadonlyArray<LaneId> = ["volume", "pan", "wet"];
 
@@ -86,7 +88,9 @@ const App: React.FC = () => {
   const [setup, setSetup] = useState<LiveAutomationSetup | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-  const [loopEnabled, setLoopEnabled] = useState(false);
+  // The transport loops the WHOLE window: one pass is one screenful of lane, so
+  // the wrap lands on the right-hand edge instead of mid-canvas. Off at load.
+  const [loopEnabled, setLoopEnabled] = useTimelineLoop(project, LOOP);
   const [mode, setMode] = useState<AutomationMode>(INITIAL_MODE);
   const [sliderValues, setSliderValues] = useState<Record<LaneId, number>>(INITIAL_SLIDER_VALUES);
   const [overridden, setOverridden] = useState<Record<LaneId, boolean>>(NO_OVERRIDES);
@@ -352,19 +356,6 @@ const App: React.FC = () => {
     gestureRef.current[lane.id] = false;
   }, []);
 
-  const onLoopToggle = useCallback((next: boolean) => {
-    if (!project) return;
-    project.editing.modify(() => {
-      const loopArea = project.timelineBox.loopArea;
-      loopArea.from.setValue(0);
-      // The transport loops the WHOLE window: one pass is one screenful of lane,
-      // so the wrap lands on the right-hand edge instead of mid-canvas.
-      loopArea.to.setValue(WINDOW_PPQN);
-      loopArea.enabled.setValue(next);
-    });
-    setLoopEnabled(next);
-  }, [project]);
-
   const onModeChange = useCallback((next: AutomationMode) => {
     if (!project || !setup) return;
     // Registry state, not box graph — never inside editing.modify().
@@ -425,7 +416,7 @@ const App: React.FC = () => {
                     <Button variant="soft" onClick={onStop}>■ Stop</Button>
                     <Separator orientation="vertical" />
                     <Flex align="center" gap="2">
-                      <Switch checked={loopEnabled} onCheckedChange={onLoopToggle} />
+                      <Switch checked={loopEnabled} onCheckedChange={setLoopEnabled} />
                       <Text size="2" color="gray">Loop {NUM_BARS} bars</Text>
                     </Flex>
                     <Separator orientation="vertical" />

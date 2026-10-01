@@ -71,18 +71,6 @@ export async function buildLiveAutomationContent(
     delayBox = project.api.insertEffect(effectsField, EffectFactories.Delay);
   });
 
-  // The LoopArea schema defaults to enabled=false, from=0, to=15360 (four bars).
-  // The page's Loop switch starts OFF and the engine must agree with it from the
-  // first frame, so the state is written rather than left to the default. Pin the
-  // range to the whole window — one transport pass is exactly one screenful of
-  // lane, so the wrap lands on the right-hand edge — and start it disabled.
-  project.editing.modify(() => {
-    const { loopArea } = project.timelineBox;
-    loopArea.from.setValue(0);
-    loopArea.to.setValue(WINDOW_PPQN);
-    loopArea.enabled.setValue(false);
-  });
-
   // Subject of the demo — explicit even though it defaults to true.
   project.engine.preferences.settings.recording.automationEnabled = true;
 

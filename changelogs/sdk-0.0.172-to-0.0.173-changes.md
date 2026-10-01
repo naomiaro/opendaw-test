@@ -10,7 +10,7 @@ One publish (0.0.173 on 2026-09-30; 112 commits tag-to-tag). What matters for th
 3. **The timeline loop is OFF by default** — `TimelineBox.loopArea.enabled` schema default
    flipped `true → false` (upstream `af938c9c0` "default loop disabled"). A fresh project no
    longer wraps at bar 4. Three sites in this repo relied on the old default and two demos
-   are left on the new one; see the follow-ups at the end.
+   gained a Loop switch; see the follow-ups at the end.
 4. **One overlap rule** — a new `RegionOverlap` namespace in `studio-adapters` backs every
    overlap check. A Seconds-timeBase region never overlaps its successor (it ends where the
    next region starts), and load-time validation TRIMS a musical overlap to the gap instead
@@ -331,10 +331,15 @@ pages (Sink, Composite, Tubular), `StudioService.restartEngine` removed, error-t
     sets that loop explicitly (position measured wrapping at 15360 PPQN, as before).
   - `liveAutomationContent.ts` and `src/demos/automation/CLAUDE.md`: the comment and the note
     said the default is `true`; rewritten.
-  - **Left on the new default (behaviour change):** the MIDI recording demo and the Cubed demo
-    set no loop. They used to wrap at bar 4 without saying so — the MIDI demo split a longer
-    recording into takes at an invisible wrap — and now run linearly. Cubed's internal
-    sequencer cycles on its own pattern length either way.
+  - **A Loop switch on the two demos that set no loop** (they used to wrap at bar 4 without
+    saying so), each with a line stating what it changes. MIDI recording: off at load — a
+    recording is one take and Play runs through it; on, every pass over the four bars becomes
+    its own take with the pass before it muted (measured: 18 s at 120 BPM → takes of 15360,
+    15360 and 4800 PPQN, the first two muted). Cubed: on at load — the sequencer's step is the
+    position in sixteenths modulo the pattern length, so a wrap restarts the pattern and cuts a
+    length that does not divide 64 steps; off, the transport runs on (measured past 29000 PPQN)
+    and the pattern cycles on its own length. Both, and the live-automation demo's existing
+    switch, go through the new `useTimelineLoop` hook (`src/hooks/`, 6 tests).
   - The audit harnesses set the loop area per scenario and are unaffected (sample-rate sweep
     180 of 180).
 - **#419 and #420 closed out**: `metronome-stale-click-debug-demo` is a regression test now
@@ -381,8 +386,8 @@ pages (Sink, Composite, Tubular), `StudioService.restartEngine` removed, error-t
   head deficit once and not again; and the open one-quantum event showed twice in 168 repeats
   (once in 416 on 0.0.172), one of them a real 2.67 ms misplacement of one tape — not enough
   repeats to say the rate moved.
-- **Verification**: `npm run typecheck` 0 errors, 864 of 864 vitest tests (13 of them new, on
-  the harness's stop lead), `npm run build`,
+- **Verification**: `npm run typecheck` 0 errors, 870 of 870 vitest tests (19 of them new: 13
+  on the harness's stop lead, 6 on the loop hook), `npm run build`,
   `npm ci` on the regenerated lockfile.
 - API claims verified against the installed tarballs (`node_modules/@opendaw/*/dist`):
   `LoopArea` `enabled` default `false`; `box.loopOffset.setValue(loopOffset ?? 0)` in

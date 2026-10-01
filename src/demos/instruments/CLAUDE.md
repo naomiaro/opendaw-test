@@ -22,6 +22,11 @@
   (presets, JSON/ABL apply) and `randomizeCurrentPattern` reset them to the default
   step, and `clearCurrentPattern` clears all 64. `writeCurrentPattern` also clamps
   `length` to 1–64 and truncates >64-step input silently — report the applied count.
+- The step is the transport position counted in sixteenths, modulo the pattern length
+  (`floor(position / SemiQuaver) mod length`), so a timeline loop wrap restarts the pattern
+  at step 1 and releases the held note: with a four-bar loop a length that does not divide
+  64 steps is cut short at the wrap; with the loop off the pattern cycles on its own length.
+  The demo's Loop switch (`useTimelineLoop`, on at load) shows both.
 - Playhead: the device streams its current step as
   `liveStreamReceiver.subscribeIntegers(adapter.address.append(0), array => array[0])`.
   Toggle DOM classes directly in the callback (no setState per packet).
