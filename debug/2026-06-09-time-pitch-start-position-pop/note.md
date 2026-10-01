@@ -2,7 +2,7 @@
 
 **Verified against:** OpenDAW SDK 0.0.154 (`@opendaw/studio-sdk@0.0.154`, `@opendaw/studio-core@0.0.152`, `@opendaw/studio-adapters@0.0.116`).
 
-**Repro page:** [`time-pitch-start-position-debug-demo.html`](../time-pitch-start-position-debug-demo.html) (unlisted).
+**Repro page:** [`time-pitch-start-position-debug-demo.html`](../../time-pitch-start-position-debug-demo.html) (unlisted).
 
 **Status:** Empirically confirmed by ear on 2026-06-09 against the repro page above. The artifact reproduces on **mid-file silent gaps bracketed by audio**, not on the file's head silence — see the contrast pair below. Mechanism is not yet identified.
 
@@ -54,7 +54,7 @@ Source-tracing should focus on:
 
 **Ruled out:** Pingpong-mode replay at segment start — verified by ear that the pop reproduces identically at `Once`, `Repeat`, and `Pingpong`. Segment-replay choice is not the mechanism.
 
-Previously listed candidate-related notes (`fade-out-end-of-file-pop.md`, `voice-fadein-clip-fadein-product.md`, `splice-click-cross-file.md`) all describe artifacts in the engine's voice path, which is shared by NoStretch and TimeStretch. The NoStretch-clean observation rules them out as direct causes for this artifact.
+Previously listed candidate-related notes (`debug/2026-05-12-fade-out-end-of-file-pop/note.md`, `debug/2026-05-19-voice-fadein-clip-fadein-product/note.md`, `debug/2026-05-01-splice-click-cross-file/note.md`) all describe artifacts in the engine's voice path, which is shared by NoStretch and TimeStretch. The NoStretch-clean observation rules them out as direct causes for this artifact.
 
 ## Open questions
 

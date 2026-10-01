@@ -91,5 +91,5 @@ non-finite range. Relevant to anyone driving SDK `Range` objects from UI code.
 - `renderOfflineSlice` routes through `OfflineEngineRenderer` (`variant: true`) when the
   WASM engine is active — `OfflineAudioContext` + `createEngine` hangs with the WASM
   `EngineVariant` (see `src/demos/engine/CLAUDE.md`).
-- `debug/shared-source-double-process.md`, `debug/voice-fadein-clip-fadein-product.md`,
+- `debug/2026-05-19-shared-source-double-process/note.md`, `debug/2026-05-19-voice-fadein-clip-fadein-product/note.md`,
   and `debug/README.md` updated with fixed-status sections and 0.0.159 measurements.

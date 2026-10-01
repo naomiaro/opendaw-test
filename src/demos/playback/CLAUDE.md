@@ -164,7 +164,7 @@ swap.
   (rewinding content behind the playhead; SDK-side, not fixable from app code). A post-swap `setPosition` call is appropriate
   when stopped (convenience reposition for the next Play), but calling it mid-playback
   is itself the source of an audible jump. Gate post-swap `setPosition` on `!isPlaying`.
-  See `debug/time-pitch-start-position-pop.md` for the full resolution.
+  See `debug/2026-06-09-time-pitch-start-position-pop/note.md` for the full resolution.
 
 ### AudioFileBoxAdapter Audio Data Access
 `.audioData: Promise<AudioData>` (awaits sample loader), `.data: Option<AudioData>`
@@ -347,7 +347,7 @@ the fade duration), put each region on its **own** Tape track. Each track has it
 `regions` collection; the overlap is between tracks and the crossfade emerges from
 mixing the track outputs at the master. See `pure-webaudio-target-debug-demo.tsx` and
 `voice-fadein-clip-fadein-product-debug-demo.tsx` for the working pattern, and
-`debug/project-copy-deletes-overlapping-regions.md` for full context including the
+`debug/2026-05-19-project-copy-deletes-overlapping-regions/note.md` for full context including the
 sub-PPQN overlap footgun (an `Int32` `position` + `Float32` `duration` at non-integer
 PPQN can produce a 0.5-PPQN overlap that triggers the same repair without the
 consumer intending any; the tolerance is `|position| · 2⁻²³ + 0.001` pulses, about 0.06 at

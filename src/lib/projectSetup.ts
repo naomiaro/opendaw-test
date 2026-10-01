@@ -47,7 +47,7 @@ export interface ProjectSetupOptions {
 
   /**
    * Optional forced AudioContext sample rate, e.g. for sample-rate-alignment
-   * audit sessions (see debug/sample-rate-alignment-audit.md). Threaded into
+   * audit sessions (see debug/2026-08-27-sample-rate-alignment-audit/note.md). Threaded into
    * `new AudioContext({ sampleRate })`. Omit for default (device-native) rate —
    * browsers reject unsupported rates by throwing from the AudioContext
    * constructor, which surfaces as an initialization failure.

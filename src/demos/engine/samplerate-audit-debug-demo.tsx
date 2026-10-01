@@ -115,7 +115,7 @@ const TAIL_GUARD_SEC = 0.15;
  *   working range) since it's still correct and gives extra margin now that
  *   the real gap is wider.
  *
- * Task 8 follow-up (register S27/S28, `debug/sample-rate-alignment-audit.md`
+ * Task 8 follow-up (register S27/S28, `debug/2026-08-27-sample-rate-alignment-audit/note.md`
  * Triage section) — two harness detector artifacts found by the matrix run,
  * fixed here:
  * - `loop-wrap`: `refractorySec: 0.2` was tuned against a bpm where

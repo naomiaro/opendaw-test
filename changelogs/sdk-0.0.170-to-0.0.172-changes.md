@@ -43,7 +43,7 @@ are byte-identical.
 ## Recording: start alignment, finalize head, uuid ownership (studio-core 0.2.5/0.2.6, core-wasm 0.0.16, adapters 0.3.3)
 
 Upstream PR #376 (this repo's recording start-alignment campaign, register
-`debug/recording-start-alignment-audit.md`) plus two follow-ups by the maintainer.
+`debug/2026-09-02-recording-start-alignment/note.md`) plus two follow-ups by the maintainer.
 
 ### Protocol and engine surface
 
@@ -329,7 +329,7 @@ creating an audio track, loopmasters samples, error-triage flips (1097…1129).
   last beat click) — six independent measurements in the register section, including an
   acoustic recording of the speakers; not an engine defect. A latent engine behaviour was
   found on the way and filed as openDAW#419 (repro page
-  `metronome-stale-click-debug-demo.html`, note `debug/metronome-click-survives-pause.md`):
+  `metronome-stale-click-debug-demo.html`, note `debug/2026-09-28-metronome-click-survives-pause/note.md`):
   metronome clicks in flight at a stop are never cleared and resume at the next play — same
   code on 0.0.170, not exercised by the sweep.
 - **Regression checks on the installed build** (both pages are the standing regression tests):
@@ -337,7 +337,7 @@ creating an audio track, loopmasters samples, error-triage flips (1097…1129).
   (front-trim only); `swipe-comping-demo.html?sampleRate=44100` Count-in only → four clicks in
   each of three recordings, none at the punch-in.
 - **Standing sweeps re-run against the release** (register section "Standing sweep on 0.0.172
-  (2026-09-28)" in `debug/recording-start-alignment-audit.md`): sample-rate/quantum-alignment
+  (2026-09-28)" in `debug/2026-09-02-recording-start-alignment/note.md`): sample-rate/quantum-alignment
   180 of 180 cells pass; recording start-alignment 48 kHz and 44.1 kHz 60 rows each, 0 error
   rows, 30 of 30 repeats finalized (no loop-wrap hang), head/tail deficits 0, per-cell means
   −6.2…+0.3 ms raw (+17…+23 ms after the harness-path term) versus −35…−53 ms on 0.0.170;

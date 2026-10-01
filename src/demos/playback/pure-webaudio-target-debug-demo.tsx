@@ -51,7 +51,7 @@ import { DebugLinkBar } from "@/components/DebugLinkBar";
 //               extensions, the phase-correlate shift applied via
 //               loopOffset on region B. Two tracks rather than one
 //               sidesteps the per-track no-overlap invariant — see
-//               `debug/project-copy-deletes-overlapping-regions.md`
+//               `debug/2026-05-19-project-copy-deletes-overlapping-regions/note.md`
 //               (on a single track `project.copy()` validation trims
 //               the earlier region to end where the later one starts,
 //               so the offline render would hold no crossfade).
@@ -295,7 +295,7 @@ const App: React.FC = () => {
         // Use SEPARATE tracks for the two regions so they can overlap in
         // timeline (crossfade) without violating the per-track no-overlap
         // invariant that `project.copy()` enforces. See
-        // `debug/project-copy-deletes-overlapping-regions.md` — on one track
+        // `debug/2026-05-19-project-copy-deletes-overlapping-regions/note.md` — on one track
         // the earlier region is trimmed to end at the later one during copy, which makes
         // offline rendering of any crossfade impossible. Separate tracks
         // each have their own `regions` collection, so each track has only
@@ -671,8 +671,8 @@ const App: React.FC = () => {
               kind: "demo",
             },
             {
-              label: "debug/voice-fadein-clip-fadein-product.md",
-              href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/voice-fadein-clip-fadein-product.md",
+              label: "debug/2026-05-19-voice-fadein-clip-fadein-product/note.md",
+              href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-05-19-voice-fadein-clip-fadein-product/note.md",
               kind: "note",
             },
             {

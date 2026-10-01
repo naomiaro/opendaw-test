@@ -1,7 +1,7 @@
 /**
  * Measurement helpers for the stale-metronome-click repro page
  * (`metronome-stale-click-debug-demo.html`, note
- * `debug/metronome-click-survives-pause.md`).
+ * `debug/2026-09-28-metronome-click-survives-pause/note.md`).
  *
  * The page records the engine's output around a transport stop and the restart
  * that follows. Three numbers decide the verdict:

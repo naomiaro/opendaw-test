@@ -553,7 +553,7 @@ export interface CellRepeatOptions {
   repeat: number;
   onStage: (stage: string) => void;
   // Task 7 recast: audioContext.outputLatency — the register's "term 1" harness-path
-  // bias (see debug/recording-start-alignment-audit.md "Bring-up calibration"),
+  // bias (see debug/2026-09-02-recording-start-alignment/note.md "Bring-up calibration"),
   // passed through to measureTakeAlignment so classifyCell's verdicts run on the
   // adjusted median rather than the raw one. The value is resolved ONCE per page
   // load by `resolveHarnessPathBias` (after output has started, so it is never

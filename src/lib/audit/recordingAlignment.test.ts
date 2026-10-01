@@ -166,7 +166,7 @@ describe("measureTakeAlignment", () => {
   });
 
   // Task 7 recast: audioContext.outputLatency is a harness-path term (see
-  // debug/recording-start-alignment-audit.md "Bring-up calibration" decomposition
+  // debug/2026-09-02-recording-start-alignment/note.md "Bring-up calibration" decomposition
   // term 1) — a real hardware round-trip cost this harness's digital loopback never
   // incurs, baked uncompensated into every no-count-in waveformOffset. Content that
   // lands exactly harnessPathBiasSec early is content the SDK actually placed

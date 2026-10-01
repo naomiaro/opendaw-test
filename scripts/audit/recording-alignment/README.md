@@ -1,6 +1,6 @@
 # Recording start-alignment audit — offline analysis scripts
 
-Offline recomputation of the figures in `debug/recording-start-alignment-audit.md` from
+Offline recomputation of the figures in `debug/2026-09-02-recording-start-alignment/note.md` from
 the persisted run artifacts in `.verify-output/` (gitignored; produced by
 `recording-alignment-audit-debug-demo.html`). Every script runs directly under Node ≥ 23
 type stripping, from the repo root:

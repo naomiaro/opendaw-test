@@ -30,10 +30,10 @@ import {
 } from "@radix-ui/themes";
 import { InfoCircledIcon, PlayIcon, StopIcon } from "@radix-ui/react-icons";
 
-// Repro for `debug/voice-fadein-clip-fadein-product.md`.
+// Repro for `debug/2026-05-19-voice-fadein-clip-fadein-product/note.md`.
 //
 // Two distinct AudioFileBoxes (different UUIDs) on the same Tape track so
-// the shared-source path in `shared-source-double-process.md` does NOT
+// the shared-source path in `debug/2026-05-19-shared-source-double-process/note.md` does NOT
 // apply. They reference two on-disk WAVs that are the same 440 Hz sine
 // shifted in time by 30 samples (~0.680 ms ~108° at 440 Hz); we
 // compensate via loopOffset on Region B so both regions play
@@ -433,8 +433,8 @@ const App: React.FC = () => {
               kind: "demo",
             },
             {
-              label: "debug/voice-fadein-clip-fadein-product.md",
-              href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/voice-fadein-clip-fadein-product.md",
+              label: "debug/2026-05-19-voice-fadein-clip-fadein-product/note.md",
+              href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-05-19-voice-fadein-clip-fadein-product/note.md",
               kind: "note",
             },
             {

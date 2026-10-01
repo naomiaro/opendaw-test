@@ -1,6 +1,6 @@
 # Recording start-alignment audit — same-context loopback feasibility probe
 
-**What this is:** the bring-up feasibility note for the audit harness's loopback path (Task 1 of the campaign) — a record of the probe run, not an issue or PR draft and not filed anywhere. The campaign register is `recording-start-alignment-audit.md`.
+**What this is:** the bring-up feasibility note for the audit harness's loopback path (Task 1 of the campaign) — a record of the probe run, not an issue or PR draft and not filed anywhere. The campaign register is `note.md`.
 
 Scratch note for Task 1 of the campaign (its HARD GATE), committed here for the record and
 reachable from the register's `debug/README.md` entry — a record of the probe run, not a

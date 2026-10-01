@@ -48,7 +48,7 @@ Idle players (not visited, not ringing a release) now get their `cycle_id` clear
 prune block, so the next play re-primes from the region start. Upstream regression tests
 cover native seam transparency, the region-end tail, the stop release, and the replay.
 
-Repo impact: the voice-pop memory note, `debug/splice-click-cross-file.md`, and
+Repo impact: the voice-pop memory note, `debug/2026-05-01-splice-click-cross-file/note.md`, and
 `documentation/09-editing-fades-and-automation.md` described the cut/splice pop as a
 known limitation with volume-automation crossfades as the workaround — the workaround
 is no longer required for click-free edits (still the right tool for musical-length
@@ -146,6 +146,6 @@ engine (it rejects the transaction).
   skill passes.
 - Docs updated: `documentation/09-editing-fades-and-automation.md` clean-edits section
   now describes the automatic edit-point crossfade; playback `CLAUDE.md` voice-crossfade
-  section rewritten; resolution addendum added to `debug/splice-click-cross-file.md`
+  section rewritten; resolution addendum added to `debug/2026-05-01-splice-click-cross-file/note.md`
   (open question answered: automatic SDK handling); re-verify note added to
-  `debug/time-pitch-start-position-pop.md`.
+  `debug/2026-06-09-time-pitch-start-position-pop/note.md`.

@@ -18,9 +18,9 @@ Everything below describes 0.0.147.
 
 **Status (2026-05-21):** Resolved by SDK author. Andre confirmed: "Regarding overlapping regions: They are not allowed in openDAW. That is why they get deleted in case the UI allowed such positioning at some point (which is considered a bug)." The deletion is intentional. Consumers authoring a crossfade between two regions of the same lane must use **separate tracks** for the overlapping regions and let the crossfade emerge from mixing the track outputs — see `pure-webaudio-target-debug-demo.tsx` for the working pattern. The sub-PPQN overlap from `Int32` `position` vs `Float32` `duration` (below) is still worth being aware of as a consumer footgun: it produces the same deletion without the consumer intending any overlap.
 
-**Repro page:** [`voice-fadein-clip-fadein-product-debug-demo.html`](../voice-fadein-clip-fadein-product-debug-demo.html) (unlisted). The CROSSFADE configuration places two `AudioRegionBox`es on the same Tape track with a 40 ms timeline overlap (region A's `fading.out` extends past the seam; region B's position is shifted back by half the fade) — live playback through the engine plays both regions audibly, but the offline-scan path (which uses `project.copy()`) returns silence.
+**Repro page:** [`voice-fadein-clip-fadein-product-debug-demo.html`](../../voice-fadein-clip-fadein-product-debug-demo.html) (unlisted). The CROSSFADE configuration places two `AudioRegionBox`es on the same Tape track with a 40 ms timeline overlap (region A's `fading.out` extends past the seam; region B's position is shifted back by half the fade) — live playback through the engine plays both regions audibly, but the offline-scan path (which uses `project.copy()`) returns silence.
 
-Note: the sibling target demo [`pure-webaudio-target-debug-demo.html`](../pure-webaudio-target-debug-demo.html) deliberately uses **two separate Tape tracks** for the same crossfade configuration as a workaround. Each track has its own `regions` collection, so the per-track overlap check doesn't fire.
+Note: the sibling target demo [`pure-webaudio-target-debug-demo.html`](../../pure-webaudio-target-debug-demo.html) deliberately uses **two separate Tape tracks** for the same crossfade configuration as a workaround. Each track has its own `regions` collection, so the per-track overlap check doesn't fire.
 
 ## Symptom
 

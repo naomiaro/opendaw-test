@@ -44,7 +44,7 @@ export const AUDIT_CALIBRATION: Partial<Record<AuditFamily, number>> = {
   // loop-wrap: RECALIBRATED (Task 8 follow-up, register S28) after widening
   // ONSET_OPTIONS_BY_FAMILY's refractorySec to 0.6s (fixes the harness's
   // spurious release-ring re-trigger at bpm 90/97.3 — see debug/
-  // sample-rate-alignment-audit.md Triage). Re-measured on the control row
+  // debug/2026-08-27-sample-rate-alignment-audit/note.md Triage). Re-measured on the control row
   // (bpm=120/rate=48000, run id 1787881393241): value is unchanged to float
   // noise (the refractory widening only suppresses the spurious extra
   // trigger, it doesn't move the real onsets' detected time).
@@ -65,7 +65,7 @@ export const AUDIT_CALIBRATION: Partial<Record<AuditFamily, number>> = {
   // switching ONSET_OPTIONS_BY_FAMILY's automation entry from the default
   // fixed-64-sample hop to `hopSeconds: 64/44100` (rate-independent hop
   // duration — fixes the harness's sustained-tone false onsets at
-  // 88.2k/96k, see debug/sample-rate-alignment-audit.md Triage). Re-measured
+  // 88.2k/96k, see debug/2026-08-27-sample-rate-alignment-audit/note.md Triage). Re-measured
   // on the control row (bpm=120/rate=48000, run id 1787881384541): value is
   // unchanged to float noise (the hop-duration change only affects
   // sustained-tone ripple sensitivity, not the real onsets' detected time).

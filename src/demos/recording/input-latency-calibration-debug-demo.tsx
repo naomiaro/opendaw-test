@@ -1,7 +1,7 @@
 // src/demos/recording/input-latency-calibration-debug-demo.tsx
 // Unlisted ground-truth page for the SDK's input-latency calibration. What was
 // measured, on which SDK head, and what it does not settle:
-// `debug/recording-start-alignment-audit.md`, section "Input-latency calibration
+// `debug/2026-09-02-recording-start-alignment/note.md`, section "Input-latency calibration
 // (2026-09-02)". The design spec and plan this page was built from are deleted
 // with the work — recover them with
 // `git log --all --oneline -- 'docs/superpowers/*/2026-09-02-input-latency-calibration*'`.
@@ -192,8 +192,8 @@ const params = new URLSearchParams(window.location.search);
 
 const CALIBRATION_LINKS: DebugLink[] = [
   {
-    label: "debug/recording-start-alignment-audit.md",
-    href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/recording-start-alignment-audit.md",
+    label: "debug/2026-09-02-recording-start-alignment/note.md",
+    href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-09-02-recording-start-alignment/note.md",
     kind: "note",
   },
   {

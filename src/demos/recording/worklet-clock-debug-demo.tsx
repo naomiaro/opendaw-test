@@ -12,7 +12,7 @@ import "@radix-ui/themes/styles.css";
 import { Theme, Container, Heading, Text, Flex, Card, Callout, Badge, Button, Code, Table } from "@radix-ui/themes";
 import { InfoCircledIcon, PlayIcon } from "@radix-ui/react-icons";
 
-// Repro for `debug/worklet-clock-stale-under-graph-work.md`. No SDK is loaded.
+// Repro for `debug/2026-10-01-worklet-clock-stale/note.md`. No SDK is loaded.
 //
 // A worklet's `currentFrame` is watched against the audio it is handed while the main
 // thread does one kind of work at a time. The page says what it found in one line
@@ -143,8 +143,8 @@ const App: React.FC = () => {
         <DebugLinkBar
           links={[
             {
-              label: "debug/worklet-clock-stale-under-graph-work.md",
-              href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/worklet-clock-stale-under-graph-work.md",
+              label: "debug/2026-10-01-worklet-clock-stale/note.md",
+              href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-10-01-worklet-clock-stale/note.md",
               kind: "note",
             },
           ]}

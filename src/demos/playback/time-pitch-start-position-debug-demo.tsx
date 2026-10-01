@@ -461,7 +461,7 @@ const App: React.FC = () => {
         // cause an audible jump — gate on stopped state only.
         // Read live engine state (not the React var, which may be stale in the
         // closure) — same pattern as the AnimationFrame at ~line 302.
-        // See debug/time-pitch-start-position-pop.md for resolution.
+        // See debug/2026-06-09-time-pitch-start-position-pop/note.md for resolution.
         if (!project.engine.isPlaying.getValue()) {
           const bpm = project.timelineBox.bpm.getValue();
           const ppqn = Math.round(PPQN.secondsToPulses(startSeconds, bpm));

@@ -2,7 +2,7 @@
  * Counting the one-quantum event over saved recording-audit runs.
  *
  * The event (register: "The one-quantum repeat, looked at again" and "The one-quantum
- * event, twice more" in `debug/recording-start-alignment-audit.md`): on a rare repeat a
+ * event, twice more" in `debug/2026-09-02-recording-start-alignment/note.md`): on a rare repeat a
  * time stamp the SDK takes at the start of a take is one render quantum early. It shows
  * in a row as a netted median one quantum off the run's usual value (the engine's
  * recording-start time), or as a first-frame check one quantum off zero (the recording

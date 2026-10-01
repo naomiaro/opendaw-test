@@ -50,7 +50,7 @@ export async function renderOfflineSlice(
   // WASM offline worker is the only render path (the TS engine is removed from this
   // repo). OfflineAudioContext + createEngine is NOT usable here: ensureReady
   // registers the processor module only on the FIRST context it ever sees
-  // (see debug/wasm-ensure-ready-second-context.md), and the live engine already
+  // (see debug/2026-07-15-wasm-ensure-ready-second-context/note.md), and the live engine already
   // consumed that registration at initializeOpenDAW time.
   // Checked BEFORE project.copy() so the error path doesn't pay for an unnecessary clone.
   if (!isWasmReady()) {
