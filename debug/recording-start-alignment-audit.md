@@ -5491,3 +5491,9 @@ On the page as it now opens: Firefox 157 `CLOCK TRUE`, 14774 quanta and 1739 fre
 (`graph-lock-clock-1790890307105.json`); Chrome 154 `STALE CLOCK`, 643 of 14772 quanta and 15
 of 1825 fresh worklets (`graph-lock-clock-1790890357688.json`). Figures and doses:
 `debug/worklet-clock-stale-under-graph-work.md`, evidence 1. Safari: not measured.
+
+A `?conditions=create` run in Firefox leaves the browser unable to start a context: the bare
+page pressed afterwards ends in `THREW context: the context's resume did not come within
+5000 ms` (by hand in the user's Firefox, and again by remote control). The content process's
+graph thread was at full load three minutes later, its main thread idle. That error now says
+that the browser has to be restarted.

@@ -378,6 +378,11 @@ class FreshRecorder extends AudioWorkletProcessor {
 }
 registerProcessor("fresh-recorder", FreshRecorder);`;
 
+/** What a context that does not start most likely means on this page. */
+export const RESUME_HINT =
+  "the browser's audio did not start. After a run of `create`, Firefox's audio thread stays busy " +
+  "and no context starts until the browser is restarted";
+
 /** A wait that ran out, as opposed to a wait that was answered with an error. */
 class DeadlineError extends Error {}
 
@@ -405,7 +410,12 @@ export async function runWorkletClockProbe(
   onStage("context");
   const ctx = new AudioContext({ latencyHint: 0, sampleRate: cfg.sampleRate });
   try {
-    await within(ctx.resume(), 5000, "the context's resume");
+    try {
+      await within(ctx.resume(), 5000, "the context's resume");
+    } catch (error) {
+      if (!(error instanceof DeadlineError)) throw error;
+      throw new Error(error.message + ": " + RESUME_HINT);
+    }
     if (ctx.state !== "running") throw new Error(`the context is ${ctx.state}: the page needs a real click first`);
     onStage("worklet module");
     const moduleUrl = URL.createObjectURL(new Blob([CLOCK_WATCH_SOURCE], { type: "application/javascript" }));
