@@ -385,7 +385,7 @@ const App: React.FC = () => {
               <strong>Split</strong> regions at the playhead via{" "}
               <code>RegionEditing.cut()</code>, <strong>move</strong> them forward or backward
               in 1-second steps. Each track holds one region per lane — overlapping regions on
-              a single track are invalid by design and removed by{" "}
+              a single track are invalid by design and trimmed apart by{" "}
               <code>project.copy()</code> (export / offline render).
             </p>
           </div>

@@ -340,7 +340,7 @@ Four things to notice:
 - **Pan is a linear balance law, not constant power.** `gain_left = (1 - max(0, pan)) * volume` reduces one side as the pan moves toward the other; centre is unity on both channels. Mean energy isn't preserved across the field, but it's cheap and predictable.
 - **Mute, solo and automation collapse to one ramp.** Rather than branch per sample, the strip precomputes a single `silent` boolean into `mute_gain`. All three gains are `LinearRamp`s so parameter moves de-click, and `set` no-ops on an unchanged target.
 - **Automation is a closure, not a poll.** `StripAutomation` holds an optional `Rc<dyn Fn(f64) -> f32>` per parameter, swapped in by the engine binding when a Value track attaches. `None` means "not automated, use the static field."
-- **A paused transport holds, it doesn't re-read.** The update clock is gated on the transporting flag, so an automated parameter keeps its last resolved value rather than sampling the free-running paused position. Static edits (a mute click) still apply. `retarget_held` is that path.
+- **A paused transport holds, it doesn't re-read — except right after a locate.** The update clock is gated on the transporting flag, so an automated parameter keeps its last resolved value rather than sampling the free-running paused position. Static edits (a mute click) still apply. `retarget_held` is that path. A `set_position` on a stopped transport opens the clock for exactly one quantum (`paused_locate`, fired at the block start), so automated parameters take their value at the new position without playing.
 
 The strip does **not** decide solo. Solo is a cross-unit fact — it silences *other* strips — so the strip only reads a `forced_silent` flag that the engine resolves for it.
 
@@ -411,7 +411,7 @@ A composite is a device box that hosts a *collection* of child devices rather th
 `CompositeSpec` (`packages/studio/core-wasm/src/engine-modules.ts`) describes an instrument composite: the child collection's host field, the child field its order and routing read, and optional per-child `enabled` / `mute` / `solo` keys. Two are registered:
 
 - **`PlayfieldDeviceBox`** — direct children (self-hosting slots), routed by note index with choke groups. The slot's DSP *is* a normal plugin: `PlayfieldSampleBox` → `device_playfield_sample.wasm`.
-- **`CompositeDeviceBox`** — a generic instrument bundle whose children are cells, each wrapping one instrument plus its own MIDI and audio effect chains.
+- **`InstrumentCompositeBox`** — a generic instrument bundle whose children are cells (`InstrumentCompositeCellBox`), each wrapping one instrument plus its own MIDI and audio effect chains and a strip (gain, pan, mute, solo — mute and solo silence at the strip, the layer keeps running). Layers read launched clips through a shared, non-advancing read; the engine advances the clip machine once per block.
 
 `EffectCompositeSpec` describes an effect composite: an audio or MIDI effect hosting entries that each run their own chain **in parallel**, mixed back against the dry signal. The `distributor` field selects how the input reaches the entries, and three are registered:
 

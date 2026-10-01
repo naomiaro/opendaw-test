@@ -224,7 +224,12 @@ Beyond `.volume`, `.panning`, `.mute`, `.solo`, `.tracks`:
   chain kind", e.g. an effect-composite branch has no midi chain; unwrap before use.
   Also `.audioEffectsField`/`.midiEffectsField` return `Option<Field<…>>` — unwrap to
   get the field `project.api.insertEffect()` takes)
-- `.auxSends` — `BoxAdapterCollection<AuxSendBoxAdapter>` (sends to buses)
+- `.auxSends` — `BoxAdapterCollection<AuxSendBoxAdapter>` (sends to buses; each send's
+  `routingField` is pre / post — the engine taps the unit before or after its strip)
+- `.asCompositeCell()` — `Option<CompositeCell>`, `None` for an audio unit. Every
+  `DeviceHost` has it: an effect-composite entry or an instrument-composite layer returns
+  itself (`cellKind`, `namedParameter` gain / pan / mute / solo, `siblings()`,
+  `compositeDevice()`)
 - `.isBus`, `.isInstrument`, `.isOutput` — type checks
 - `.label` — display name
 - `.move(delta)` — reorder in mixer

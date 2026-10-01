@@ -251,9 +251,12 @@ export async function buildConvolverDemoContent(
     return null;
   };
 
-  // Loop the timeline over the drum loop
+  // Loop the timeline over the drum loop (a fresh project's loop area is disabled)
   project.editing.modify(() => {
-    project.timelineBox.loopArea.to.setValue(loopDurationPPQN);
+    const { loopArea } = project.timelineBox;
+    loopArea.from.setValue(0);
+    loopArea.to.setValue(loopDurationPPQN);
+    loopArea.enabled.setValue(true);
   });
 
   onStatus?.("Waiting for samples...");

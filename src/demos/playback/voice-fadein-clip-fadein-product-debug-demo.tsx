@@ -458,7 +458,7 @@ const App: React.FC = () => {
               A 40 ms linear clip crossfade between two regions with different{" "}
               <Code>sourceUuid</Code>s — placed on <strong>separate</strong> Tape tracks so the
               mix happens at the master (overlapping regions on a single track are disallowed by
-              design and get deleted by <Code>project.copy()</Code>) — produces a measurable dip
+              design and get trimmed apart by <Code>project.copy()</Code>) — produces a measurable dip
               on the incoming voice's fade-in side. Cause (confirmed): the Tape playback
               starts new voices in a fade-in state for{" "}
               <Code>VOICE_FADE_DURATION</Code> (20 ms) when read offset ≠ 0, and the render

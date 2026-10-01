@@ -27,17 +27,17 @@ import {
 } from "@radix-ui/themes";
 import { InfoCircledIcon, PlayIcon } from "@radix-ui/react-icons";
 
-// Repro for `debug/metronome-click-survives-pause.md`.
+// Regression test for `debug/metronome-click-survives-pause.md` (openDAW#419, fixed).
 //
 // `Metronome::process` (crates/engine/src/metronome.rs) is called from `render`
 // only while the transport plays; it keeps its active clicks in `self.clicks`
 // and advances them at the end of every call. `Engine::pause` / `stop` /
-// `stop_recording` reset the transport and re-apply the metronome's enabled
-// state but never clear that list. A click that has started within its body
-// (the default click: 2 ms attack + 50 ms release) when the transport stops is
-// therefore frozen and resumes at the first render after play — on top of
-// whatever the new position plays. In the default monophonic mode the new click
-// fades the stale one over 5 ms; it still hits full level at the restart.
+// `stop_recording` clear that list. The defect this page guards against is an
+// engine that does not: a click that has started within its body (the default
+// click: 2 ms attack + 50 ms release) when the transport stops is then frozen
+// and resumes at the first render after play — on top of whatever the new
+// position plays. In the default monophonic mode the new click fades the stale
+// one over 5 ms; it still hits full level at the restart.
 //
 // Both steps below stop the transport and restart it from 0 with the metronome
 // on, recording the engine's output through `initializeOpenDAW`'s `engineTap`
@@ -52,7 +52,8 @@ import { InfoCircledIcon, PlayIcon } from "@radix-ui/react-icons";
 //    into that click: attack complete, release still ≥ 80 %. With the defect
 //    the stale body resumes at that level under the new downbeat, ≥
 //    `STALE_HEAD_RATIO_MIN` whatever the 440 Hz sine's phase (measured
-//    0.47–0.80). On a fixed engine it reads like the control.
+//    0.47–0.80 on an engine with the defect). The installed engine reads like
+//    the control (0.14).
 //
 // Every stage is raced against a hang ceiling and the verdict names the last
 // stage reached, so the page self-classifies as BUG PRESENT / FIXED /
@@ -404,7 +405,7 @@ const App: React.FC = () => {
               kind: "note",
             },
             {
-              label: "Upstream issue: openDAW#419",
+              label: "Upstream issue: openDAW#419 (fixed)",
               href: "https://github.com/andremichelle/openDAW/issues/419",
               kind: "note",
             },
@@ -412,16 +413,17 @@ const App: React.FC = () => {
         />
 
         <Flex direction="column" gap="4">
-          <Heading size="7" align="center">Metronome: a click in flight at a stop resumes at the next play</Heading>
+          <Heading size="7" align="center">Metronome: a click in flight at a stop must not resume at the next play</Heading>
 
           <Callout.Root color="blue">
             <Callout.Icon><InfoCircledIcon /></Callout.Icon>
             <Callout.Text>
+              Regression test (the defect is fixed upstream, openDAW#419).{" "}
               <Code>Metronome::process</Code> runs only while the transport plays and keeps its
-              active clicks in a list that <Code>pause</Code>, <Code>stop</Code> and{" "}
-              <Code>stop_recording</Code> never clear. Stop the transport inside a click's 52 ms
-              body and press play: the rest of that click renders on top of the new position's
-              first quantum. Both steps stop and restart from 0 with the metronome on and record
+              active clicks in a list, which <Code>pause</Code>, <Code>stop</Code> and{" "}
+              <Code>stop_recording</Code> clear. An engine that does not clear it lets a click
+              cut inside its 52 ms body render its remainder on top of the new position's first
+              quantum at the next play. Both steps stop and restart from 0 with the metronome on and record
               the engine's output (a tap on its destination connect). The <strong>control</strong>{" "}
               stops between clicks; the <strong>stale</strong> step stops as the position crosses
               beat 2 so the transport halts inside that click, and compares the restart's first

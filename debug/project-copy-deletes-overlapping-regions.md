@@ -1,5 +1,19 @@
 # `project.copy()` silently deletes overlapping regions
 
+**Update for SDK 0.0.173 (2026-10-01):** the repair changed, the rule did not. `ProjectValidation`
+(run on load and inside `project.copy()`) now goes through the shared `RegionOverlap` check: a
+MUSICAL overlap with a gap between the two positions is TRIMMED — the earlier region's `duration`
+becomes `right.position − left.position` — and only two regions at the same position are still
+deleted; a SECONDS-timeBase region is never an overlap (it ends where the next region starts, and
+the engine plays it only until then). Measured on the installed SDK with real boxes: `0+3840` and
+`1920+3840` (musical) → `0+1920` and `1920+3840`, log `Deleting 0 invalid boxes, trimming 1
+overlapping regions`; two musical regions at 960 → both deleted; Seconds regions at 0 and 1920
+(8 s each), and at 0 and 5 → untouched, `Validator.hasOverlappingRegions` false. So the offline
+render of a same-track overlap is no longer silent — it renders the trimmed regions, without the
+overlap or any crossfade in it — and the sub-PPQN footgun below now costs half a pulse of the
+earlier region instead of both regions. Separate tracks remain the way to author a crossfade.
+Everything below describes 0.0.147.
+
 **Verified against:** OpenDAW SDK 0.0.147 (`@opendaw/studio-sdk@0.0.147`, `@opendaw/studio-core@0.0.145`).
 
 **Status (2026-05-21):** Resolved by SDK author. Andre confirmed: "Regarding overlapping regions: They are not allowed in openDAW. That is why they get deleted in case the UI allowed such positioning at some point (which is considered a bug)." The deletion is intentional. Consumers authoring a crossfade between two regions of the same lane must use **separate tracks** for the overlapping regions and let the crossfade emerge from mixing the track outputs — see `pure-webaudio-target-debug-demo.tsx` for the working pattern. The sub-PPQN overlap from `Int32` `position` vs `Float32` `duration` (below) is still worth being aware of as a consumer footgun: it produces the same deletion without the consumer intending any overlap.

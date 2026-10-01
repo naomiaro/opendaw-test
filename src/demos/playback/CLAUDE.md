@@ -323,17 +323,24 @@ For same-file consecutive regions, no fade is needed — the audio is already co
 Adding fades makes it worse. See `documentation/09-editing-fades-and-automation.md#advanced-region-splicing--comp-lanes`.
 
 ### Overlapping Regions Need Separate Tracks
-Overlapping regions on a single track are **disallowed by design** in OpenDAW (Andre
-confirmed 2026-05-21). The live engine tolerates them at runtime but `project.copy()`'s
-validator deletes both regions, with console output `_AudioRegionBox _AudioRegionBox
-Overlapping regions` → `Deleting 2 invalid boxes`. Anything that depends on `copy()`
-(export, offline render via the standard `project.copy() → OfflineAudioContext →
-AudioWorklets.createFor(...) → createEngine(...)` pattern) will produce silence with
-no error. Any UI path that lets a user position two regions to overlap on one lane is
-the bug, not the deletion. Note: for Seconds-timeBase regions, `ProjectValidation`
-compares mixed units (duration in seconds, position in PPQN) — Seconds overlaps
-may survive `copy()` undetected; prevent them at write time rather than relying on
-validation to catch them.
+Overlapping Musical regions on a single track are **disallowed by design** in OpenDAW
+(Andre confirmed 2026-05-21). The live engine tolerates them at runtime but
+`project.copy()`'s validator (`ProjectValidation`, also run on load) repairs them: the
+earlier region's `duration` is TRIMMED to end where the later one starts (console:
+`Overlapping regions` → `Deleting 0 invalid boxes, trimming 1 overlapping regions`), and
+two regions at the SAME position are both deleted. Anything that depends on `copy()`
+(export, offline render) therefore renders the trimmed regions — an authored overlap, and
+any crossfade inside it, is gone with no error. Any UI path that lets a user position two
+regions to overlap on one lane is the bug, not the repair.
+
+A **Seconds**-timeBase region is the exception: its end moves with the tempo, so it may
+reach over the next region on its track without being an overlap (`RegionOverlap.
+endsAtSuccessor`; neither `Project.invalid()` nor `ProjectValidation` flags it, and it is
+never trimmed or deleted). The engine plays it only until the next region starts — the
+tail is cut there and does not come back in a later gap. Every overlap check in the SDK
+(`RegionClipResolver.validateTrack`, `ProjectValidation`, `Project.invalid()`,
+`Validator.hasOverlappingRegions`, `compactTracks`, the push / keep-existing resolvers)
+goes through the `RegionOverlap` namespace in `@opendaw/studio-adapters`.
 
 For crossfade-via-overlap (e.g. linear crossfade between two regions that overlap by
 the fade duration), put each region on its **own** Tape track. Each track has its own
@@ -342,8 +349,8 @@ mixing the track outputs at the master. See `pure-webaudio-target-debug-demo.tsx
 `voice-fadein-clip-fadein-product-debug-demo.tsx` for the working pattern, and
 `debug/project-copy-deletes-overlapping-regions.md` for full context including the
 sub-PPQN overlap footgun (an `Int32` `position` + `Float32` `duration` at non-integer
-PPQN can produce a 0.5-PPQN overlap that triggers the same deletion without the
-consumer intending any).
+PPQN can produce a 0.5-PPQN overlap that triggers the same repair without the
+consumer intending any; the tolerance is about a thousandth of a pulse).
 
 ### Phase-Correlate Shifts: Don't Double-Compensate Source Delay
 When applying a phase-correlation result via `loopOffset` to align two regions reading

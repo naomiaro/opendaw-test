@@ -1,5 +1,13 @@
 # A metronome click in flight when the transport stops resumes at the next play
 
+**FIXED in SDK 0.0.173** (upstream `91237921c` "fixes #419": `Metronome::clear()` empties the
+click list, called from `Engine::pause`, `stop` and `stop_recording`; upstream regression tests
+`a_click_cut_by_a_pause_does_not_survive_without_clear` / `clear_drops_the_click_cut_by_a_pause`).
+Re-measured 2026-10-01 on the repro page, 44.1 kHz: control head ratio 0.14; stale step with the
+stop landing 3.9 / 9.7 / 3.9 ms into the beat-2 click: head ratio **0.14, verdict FIXED 3 of 3**
+(0.0.172: 0.47–0.80, BUG PRESENT 3 of 3). The page stays as the regression test. Everything below
+describes the defect as it was on 0.0.172.
+
 **Verified against:** `@opendaw/studio-sdk` 0.0.172 (`crates/engine/src/metronome.rs`,
 `crates/engine/src/lib.rs` at the `@opendaw/studio-sdk@0.0.172` tag; same code on 0.0.170).
 **Status:** latent — found by code reading and a scratch unit test while chasing a listener

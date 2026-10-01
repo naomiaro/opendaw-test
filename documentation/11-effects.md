@@ -480,7 +480,7 @@ The LFO is a triangle wave that modulates the delay line read position, creating
 | crush | float32 | 0.0 to 1.0 | 0.0 | unipolar | yes | Sample rate reduction (0=clean, 1=max crush) |
 | bits | int32 | 1 to 16 | 16 | bits | yes | Target bit depth for reduction |
 | boost | float32 | 0.0 to 24.0 | 0.0 | dB | yes | Pre-emphasis gain before quantization |
-| mix | float32 | 0.001 to 1.0 | 1.0 | % | yes | Dry/Wet mix (adapter uses exponential mapping) |
+| mix | float32 | 0.0 to 1.0 | 1.0 | % | yes | Dry/Wet mix, linear (0 = fully dry) |
 
 **Important — Crush inversion:** The processor inverts the crush value internally (`setCrush(1.0 - value)`) before applying exponential mapping to compute the crushed sample rate: `exponential(20, 20000, invertedValue)`. This means small box values produce subtle effects and large values produce extreme crushing:
 
@@ -1994,8 +1994,13 @@ class Processor {
 
     // OPTIONAL: Called when a @param knob changes
     paramChanged(label, value) { }
+
+    // OPTIONAL: Called on a transport reset — clear delay lines and tails here
+    reset() { }
 }
 ```
+
+A transport reset reaches the script: with a `reset()` method the engine calls it; without one the `Processor` is rebuilt on the next block (parameters and samples are replayed), so state held in class fields starts fresh and a feedback delay does not keep sounding after Stop.
 
 **`io` Object:**
 
