@@ -6,7 +6,8 @@
  * time stamp the SDK takes at the start of a take is one render quantum early. It shows
  * in a row as a netted median one quantum off the run's usual value (the engine's
  * recording-start time), or as a first-frame check one quantum off zero (the recording
- * worklet's first-quantum time), or both.
+ * worklet's first-quantum time), or both. A single-tape row has no first-frame check:
+ * an event in which only the recording worklet's stamp is early cannot be seen on it.
  *
  * SDK-free and DOM-free: the offline script and the tests share it.
  */
@@ -16,23 +17,16 @@ export function quantumMs(rate: number): number {
   return (128 / rate) * 1000;
 }
 
-/** The most frequent value after rounding to `resolution`; null for no values. */
-export function modalValue(values: readonly number[], resolution = 0.01): number | null {
-  const counts = new Map<number, number>();
-  for (const value of values) {
-    const key = Math.round(value / resolution);
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
-  let best: number | null = null;
-  let bestCount = 0;
-  for (const [key, count] of counts) {
-    if (count > bestCount) {
-      best = key;
-      bestCount = count;
-    }
-  }
-  return best === null ? null : best * resolution;
+/** The median (the mean of the two middle values for an even count); null for no values. */
+export function medianOf(values: readonly number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((x, y) => x - y);
+  const middle = sorted.length >> 1;
+  return sorted.length % 2 === 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 }
+
+/** The fewest repeats a run needs before one of them can be called unusual. */
+export const MIN_REPEATS_FOR_USUAL = 3;
 
 /** What the counting reads off a persisted row, single-tape or multi-mic. */
 export interface EventRow {
@@ -68,34 +62,72 @@ export function repeatsOf(rows: readonly EventRow[]): RepeatReading[] {
 }
 
 /**
- * Whether a repeat shows the event: a netted median more than half a quantum off the
- * run's mode, or a first-frame check more than half a quantum off zero, on any row.
+ * The run's usual netted median: the median over its repeats of each repeat's own
+ * median. It stays on the usual value while fewer than half the repeats are off it.
+ * Null for a run of fewer than `MIN_REPEATS_FOR_USUAL` repeats: with two repeats that
+ * differ, nothing says which one is the usual one.
  */
-export function isOneQuantumEvent(reading: RepeatReading, modeMs: number, rate: number): boolean {
-  const half = quantumMs(rate) / 2;
-  return reading.rows.some((row) =>
-    (typeof row.medianBeatErrorMsNetted === "number" && Math.abs(row.medianBeatErrorMsNetted - modeMs) > half) ||
-    (typeof row.firstFrameCheckMs === "number" && Math.abs(row.firstFrameCheckMs) > half)
-  );
+export function usualNettedMs(repeats: readonly RepeatReading[]): number | null {
+  if (repeats.length < MIN_REPEATS_FOR_USUAL) return null;
+  return medianOf(repeats.map((reading) =>
+    medianOf(reading.rows.map((row) => row.medianBeatErrorMsNetted as number)) as number
+  ));
+}
+
+/**
+ * What a repeat's start-of-take figures say:
+ * - `none`: every netted median within half a quantum of the run's usual value and
+ *   every first-frame check within half a quantum of zero;
+ * - `one-quantum`: at least one of them is off, and every one that is off is off by one
+ *   quantum (to within a quarter of a quantum) — the event;
+ * - `other`: something is off by another amount. Not the event, and not counted as one.
+ */
+export type RepeatDeviation = "none" | "one-quantum" | "other";
+
+export function deviationOf(reading: RepeatReading, usualMs: number, rate: number): RepeatDeviation {
+  const quantum = quantumMs(rate);
+  const off: number[] = [];
+  for (const row of reading.rows) {
+    if (typeof row.medianBeatErrorMsNetted === "number" && Math.abs(row.medianBeatErrorMsNetted - usualMs) > quantum / 2) {
+      off.push(row.medianBeatErrorMsNetted - usualMs);
+    }
+    if (typeof row.firstFrameCheckMs === "number" && Math.abs(row.firstFrameCheckMs) > quantum / 2) {
+      off.push(row.firstFrameCheckMs);
+    }
+  }
+  if (off.length === 0) return "none";
+  return off.every((value) => Math.abs(Math.abs(value) - quantum) < quantum / 4) ? "one-quantum" : "other";
 }
 
 export interface RunEvents {
+  /** Repeats in which every row has a netted median. */
   repeats: number;
+  /** Those among them that show the one-quantum event. Empty when `usualMs` is null. */
   events: RepeatReading[];
-  /** The run's usual netted median, null when no repeat has one. */
-  modeMs: number | null;
+  /** Those that are off by something other than one quantum. */
+  others: RepeatReading[];
+  /** The run's usual netted median; null when the run has too few repeats to tell. */
+  usualMs: number | null;
 }
 
-/** The repeats of one run that carry netted medians, and those among them that show the event. */
+/** The repeats of one run that carry netted medians, and what each of them shows. */
 export function eventsOfRun(rows: readonly EventRow[], rate: number): RunEvents {
   const repeats = repeatsOf(rows);
-  const modeMs = modalValue(repeats.flatMap((reading) => reading.rows.map((row) => row.medianBeatErrorMsNetted as number)));
-  if (modeMs === null) return { repeats: 0, events: [], modeMs: null };
-  return { repeats: repeats.length, events: repeats.filter((reading) => isOneQuantumEvent(reading, modeMs, rate)), modeMs };
+  const usualMs = usualNettedMs(repeats);
+  if (usualMs === null) return { repeats: repeats.length, events: [], others: [], usualMs: null };
+  return {
+    repeats: repeats.length,
+    events: repeats.filter((reading) => deviationOf(reading, usualMs, rate) === "one-quantum"),
+    others: repeats.filter((reading) => deviationOf(reading, usualMs, rate) === "other"),
+    usualMs,
+  };
 }
 
-/** The first run recorded on SDK 0.0.173. Release-build envelopes before it, without an
- *  `sdkVersion`, were recorded on 0.0.172. */
+/**
+ * How a saved envelope without an `sdkVersion` is dated: a release-build run with this
+ * id or a later one was recorded on 0.0.173, an earlier one on 0.0.172. The constant
+ * describes runs already on disk; every new envelope carries its version.
+ */
 export const FIRST_RUN_ON_0_0_173 = 1790871141815;
 /** Runs recorded with the stop lead before rows carried `stopLeadMs`. */
 export const STOP_LEAD_RUNS_WITHOUT_FIELD: readonly number[] = [
@@ -111,16 +143,21 @@ export interface RunIdentity {
 }
 
 /**
- * Which SDK release a run was recorded on: the envelope's own `sdkVersion`, or for an
- * envelope older than the field the release its run id falls in. Null for a run that is
- * not a release build (a branch build, or one that predates the build probe's re-targeting):
- * those are not part of the comparison.
+ * Which SDK release a run was recorded on, or null for a run that is not a release
+ * build: those are not part of a comparison between releases.
+ *
+ * A release build is one the build probe calls `upstream` and whose feature list is
+ * exactly `recordingStart`. A branch build served through `SDK_DIST_OVERRIDE` carries
+ * its base release's version string, so the version alone cannot tell; a release that
+ * exposes further surfaces needs this check widened before its runs are counted.
+ * The release is the envelope's own `sdkVersion`, or for an envelope without the field
+ * the one its run id falls in.
  */
 export function sdkOf(run: RunIdentity): string | null {
-  if (run.sdkVersion !== null) return run.sdkVersion;
   const release = run.sdkBuildProbe === "upstream" && run.buildFeatures !== null &&
     run.buildFeatures.length === 1 && run.buildFeatures[0] === "recordingStart";
   if (!release) return null;
+  if (run.sdkVersion !== null) return run.sdkVersion;
   return run.runId >= FIRST_RUN_ON_0_0_173 ? "0.0.173" : "0.0.172";
 }
 

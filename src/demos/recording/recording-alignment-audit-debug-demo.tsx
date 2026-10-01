@@ -226,9 +226,11 @@ function detectSdkBuildProbe(engine: unknown): SdkBuildProbe {
  * multi-mic ones need two distinct named devices by construction.
  */
 const DEFAULT_INPUT = params.get("defaultInput") === "1";
-/** `&stopLead=off` stops every repeat just AFTER the metronome click, as the harness did
- *  before it had a stop lead. For telling the harness's effect apart from the SDK's. */
-const STOP_LEAD = params.get("stopLead") !== "off";
+/** `&stopLead=off` stops every repeat just AFTER the metronome click instead of a lead
+ *  before it. For telling the harness's effect apart from the SDK's. Any other value
+ *  is refused: a run has to say which stop it used. */
+const STOP_LEAD_PARAM = params.get("stopLead");
+const STOP_LEAD = STOP_LEAD_PARAM !== "off";
 /** Persisted per run so an envelope says which `#updateStream` path it took. */
 const CAPTURE_MODE: CaptureMode = DEFAULT_INPUT ? "default" : "named";
 
@@ -465,6 +467,13 @@ function resolveBpms(param: string | null): number[] {
   return [n];
 }
 
+/** Refuse a `?stopLead=` the page does not know, before a run records anything. */
+function assertStopLeadParam(): void {
+  if (STOP_LEAD_PARAM !== null && STOP_LEAD_PARAM !== "off") {
+    throw new Error(`invalid ?stopLead= "${STOP_LEAD_PARAM}" — leave it out, or use stopLead=off`);
+  }
+}
+
 /** rate is per-page-load (sets the AudioContext at init) — NEVER "all". */
 function resolveRate(param: string | null): number {
   const raw = param ?? "48000";
@@ -654,6 +663,7 @@ async function runAudit(
   const scenarios = resolveScenarios(params.get("scenario"));
   const bpms = resolveBpms(params.get("bpm"));
   const rate = resolveRate(params.get("rate"));
+  assertStopLeadParam();
   // One token per run, stamped into BOTH the summary name and every capture
   // WAV name, so a summary row and the audio it was measured from can always be
   // joined without guessing (Task 7c fix round 1, review M12).
@@ -1513,6 +1523,7 @@ async function runMultitrackAudit(
   const scenarios = resolveMultitrackScenarios(params.get("scenario"));
   const bpms = resolveMultitrackBpms(params.get("bpm"));
   const rate = resolveRate(params.get("rate"));
+  assertStopLeadParam();
   // Fix round 1 (C1 confirmation): `?confirmCollision=1` arms tape B on the
   // SAME loopback device as tape A (see createMultitrackTapes's
   // `sameDeviceB`) — a dedicated, deliberately-abnormal cell that tests

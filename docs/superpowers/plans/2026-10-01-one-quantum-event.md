@@ -1,14 +1,14 @@
-# One-Quantum Recording-Start Event — Investigation Plan
+# One-Quantum Recording-Start Event — Resolution Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to work this plan task-by-task (it is a measurement campaign: the tasks are sequential and share one dev server, so do not fan them out to subagents). Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Find out whether the one-quantum recording-start event is more frequent on SDK 0.0.173 than on 0.0.172, whether the audit harness's stop lead has anything to do with it, and which of the SDK's start-of-take time stamps is off on each new event.
+**Goal:** Get the one-quantum recording-start event resolved. Its cause is found: Chrome's worklet clock stands still for a quantum when the main thread is changing the audio graph, and the SDK reads that clock once at the start of a take. What is left: watch the clock through an event on the harness, measure what it does to a take when it is forced, make the harness itself safe from it, and bring the user an openDAW issue draft, a Chromium bug draft and a fix proposal to decide on.
 
-**Architecture:** The same harness page (`recording-alignment-audit-debug-demo.html?scenario=multitrack-all`) is run in three arms that differ in ONE thing each: the SDK release served (`SDK_DIST_OVERRIDE`) or the harness's stop (`&stopLead=off`). Every run's envelope names its SDK version and its stop, every row carries the engine's own recording-start report beside the recording worklet's first-quantum time and the source node's measured delay, and one script tallies repeats and events per arm from `.verify-output/`.
+**Architecture:** The multi-mic harness already records every render quantum that goes into the loopback stream, each stamped with the `currentFrame` its `process` call read. That recording becomes a clock witness: the list of calls where the stamp did not advance by exactly one quantum. With it, natural events are collected and read; a switch on the audit page then does graph work on the main thread at the start of each take, which turns the rare event into a frequent one with the SDK in the loop.
 
 **Tech Stack:** Vite dev server (HTTPS, port 5173), Playwright MCP (`browser_run_code_unsafe` with a `filename`), Node ≥ 23 running `.ts` scripts directly, vitest.
 
-**Spec:** `debug/recording-start-alignment-audit.md`, sections "One repeat, both tapes: the buffer starts a quantum after the time given for it", "The one-quantum repeat, looked at again (2026-09-29)" and "The one-quantum event, twice more" (inside "Standing sweep on 0.0.173, and the stop moved ahead of the next click (2026-10-01)"). Read all three before Task 1: the second one has the algebra that says what each figure can and cannot see.
+**Spec:** `debug/recording-start-alignment-audit.md`, section "The cause of the one-quantum event: Chrome's worklet clock stands still while the main thread changes the graph (2026-10-01)". Read it before Task 1; it has the browser source, the measurement and what is and is not established. Background: "The one-quantum repeat, looked at again (2026-09-29)" (the algebra of what each figure on a row can see) and "The one-quantum event, twice more" (inside "Standing sweep on 0.0.173, and the stop moved ahead of the next click (2026-10-01)").
 
 ## What is known (2026-10-01)
 
@@ -16,11 +16,11 @@ The event: on a rare repeat, a time stamp the SDK takes at the start of a take i
 
 | figure on a row | what it is | what an event looks like |
 |---|---|---|
-| `medianBeatErrorMsNetted` | engine's recording-start time against the engine's audio, plus constants | one quantum above the run's mode (+3.81 where the mode is +1.146) |
+| `medianBeatErrorMsNetted` | engine's recording-start time against the engine's audio, plus constants | one quantum above the run's usual value (+3.81 where the usual is +1.146) |
 | `firstFrameCheckMs` (multi-mic rows only) | recording worklet's first-quantum time against the buffer's real first frame | −2.667 instead of 0.00 |
 | adjusted median − `nodeDelayMs` | the sum of the two: where the sound really sits | 1.4375 ms when the two cancel, 4.104 ms when only the engine's stamp is off |
 
-Three sightings in 609 repeats:
+Three sightings in 609 repeats (1 in 416 on 0.0.172, 2 in 193 on 0.0.173; Fisher one-sided p = 0.24):
 
 | run | SDK | row | netted | first-frame check | take really misplaced? |
 |---|---|---|---|---|---|
@@ -28,261 +28,566 @@ Three sightings in 609 repeats:
 | `recaudit-summary-1790872110234` | 0.0.173 | `midtimeline-start/97.3/r1` | +3.819 | not measured (single tape) | unknown |
 | `recaudit-mt-summary-1790872984620` | 0.0.173 | `multitrack-janked/120/r7` | +3.813 on both | 0.00 on tape a, −2.667 on tape b | **tape a: yes, one quantum** |
 
-Tally by `node scripts/audit/recording-alignment/one-quantum-events.ts` on 2026-10-01: 0.0.172 1 in 416 repeats, 0.0.173 2 in 193; Fisher one-sided p = 0.24. On 0.0.173, 0 in 63 with the stop after the click and 2 in 130 with the stop lead; p = 0.45. Nothing is established. (Every 0.0.172 repeat so far was recorded with the stop after the click, so the two questions are not yet separated in the saved runs: that is what arm B is for.)
+**The cause.** Chromium updates the worklet scope's `currentFrame` at the end of each quantum only if it can take the audio graph lock without waiting (`BaseAudioContext::UpdateWorkletGlobalScopeOnRenderingThread`, a try-lock). The main thread holds that lock while it constructs, connects or disconnects a node. When the two coincide, every `process()` call of the next quantum reads a `currentFrame` and `currentTime` one quantum old. Measured without the SDK (`scripts/audit/recording-alignment/one-quantum/graph-lock-clock.page.js`, Chrome 154): no stale stamp with an idle or merely busy main thread; 1831 of 4446 quanta stale under connect/disconnect; and 44 of 12003 fresh worklets connected to a fresh stream source read a first `currentFrame` one quantum early (1 in 273). Never late.
 
-Observations that cost nothing to keep in mind:
+**Where the SDK reads it** (checkout `/Users/naomiaro/Code/openDAWOriginal`, pinned at `@opendaw/studio-sdk@0.0.173`; the same code on 0.0.172):
 
-- On all three events `regionPositionPpqn` and `waveformOffsetSec` are the values every other row of the run has (5 and 25.604 ms from a stopped start at 120 BPM). The SDK's placement inputs look normal; it is the audio that sits a quantum away from them.
-- Both tapes whose first-frame check is −2.667 read node delay 17.333 ms (832 frames) and loopback delay 14.958 ms, in the 0.0.172 event and in the 0.0.173 one. A node delay of 17.333 also occurs on ordinary rows.
-- The single-tape event was the first repeat after the tempo changed (120 → 97.3). On 0.0.173 a tempo change makes the engine refresh its tempo map and re-read Seconds-based spans after the transaction (`Engine::transact`, `TempoStamp`); on 0.0.172 it did not. One event is not a pattern.
-- What 0.0.173 changed in `Engine::render` and around it: the quantum after a `set_position` on a stopped transport now runs the update clock once (`paused_locate`, `begin_quantum_position`), the tempo re-read above, and the composite / modulator reconcile. Nothing under `packages/studio/core/src/capture`, nothing in the recording worklet, nothing in `packages/studio/core-wasm/src` except `engine-modules.ts`, `script-bridge.ts` and `script-spielwerk.ts`. Source checkout: `/Users/naomiaro/Code/openDAWOriginal`, pinned at `@opendaw/studio-sdk@0.0.173`; diff a path with `git diff "@opendaw/studio-sdk@0.0.172..@opendaw/studio-sdk@0.0.173" -- <path>`.
+- engine's recording start — `packages/studio/core-wasm/src/processor.ts`, `#announceRecordingStart`: `currentTime + RenderQuantum / sampleRate` on the first render that leaves the recording flag set;
+- recording worklet's first quantum — `packages/studio/core-processors/src/RecordingProcessor.ts`, `process`: `currentTime` on the first call whose input has the expected channel count;
+- placement — `packages/studio/core/src/capture/RecordAudio.ts`: `startOffset = contextTime − firstQuantumTime + outputLatency + inputLatency`, region position `floor(position)`.
 
-## What this branch already provides
+Both stamps are taken in the quanta right after the SDK makes the take's recording worklet and connects it (`CaptureAudio.prepareRecording`; in the harness the tape's source node is made at that moment too), which is graph work.
 
-Built and checked on 2026-10-01 (branch `debug/one-quantum-event-prep`); nothing here needs redoing.
+**Not yet shown:** that the three harness events were this, by watching the clock through one. Everything about them fits (the register section goes through each), and on the 0.0.172 event the recorder's stamp is 128 frames before the context time at which its own source node was made, which no reading of the loopback can explain away.
+
+## What the prep already provides
 
 | piece | where | what it does |
 |---|---|---|
-| A servable 0.0.172 build | `/Users/naomiaro/Code/opendaw-sdk-override-0.0.172` (outside the repo), built by `node scripts/audit/sdk-override.ts a5bf064 <dir>` | Exact versions from the lockfile at `a5bf064` (main before the upgrade). Its 32 wasm files and the `studio-core` / `studio-adapters` dists are byte-identical to the 0.0.172 install. A `midtimeline-start` cell ran on it: 3 of 3 `aligned`, no page errors |
-| SDK version on every envelope | `sdkVersion` (`OPENDAW_SDK_VERSION` of the served build) | Tells two releases with the same surfaces apart. No verdict reads it |
-| Stop switch | `&stopLead=off` on the audit page; envelope `stopLead` | Stops every repeat just after the click, as the harness did before the stop lead. Checked: matched beats 16, `stopLeadMs` −3…−27 |
-| Engine's recording-start report on every row | `recordingStartContextTimeSec`, `recordingStartPositionPpqn` | Checked against the SDK's arithmetic: `waveformOffsetSec` = recording start − first quantum + output latency − the fraction of a pulse the Int32 region position drops (25.667 − 0.0625 = 25.604 ms) |
-| Event tally | `node scripts/audit/recording-alignment/one-quantum-events.ts [--from <run id>]`; logic and tests in `src/lib/audit/oneQuantumEvents.ts` | Repeats and events per SDK and per stop, exact intervals, Fisher's test, each event with its start-of-take figures |
+| The clock probe | `scripts/audit/recording-alignment/one-quantum/graph-lock-clock.page.js`, runner `run-graph-lock-clock.playwright.js` | No SDK. Stamp against true frame for every quantum under five kinds of main-thread work; result in `.verify-output/graph-lock-clock-<time>.json` |
+| Engine's recording-start report on every row | `recordingStartContextTimeSec`, `recordingStartPositionPpqn` | Checked against the SDK's arithmetic: `waveformOffsetSec` = recording start − first quantum + output latency − the fraction of a pulse the Int32 region position drops |
+| Event tally | `node scripts/audit/recording-alignment/one-quantum-events.ts [--from <run id>]`, `RECAUDIT_MAX_RUN=<run id>` for an upper bound; logic and tests in `src/lib/audit/oneQuantumEvents.ts` | Repeats and events per SDK, per stop and per scenario, exact intervals, Fisher's test, each event with its start-of-take figures. Counts release builds only; a repeat off by something other than one quantum is listed apart |
 | Loop driver | `scripts/audit/recording-alignment/one-quantum/run-loop.playwright.js` | One URL, `RUNS` times, a fresh page per run |
+| SDK version and stop on every envelope | `sdkVersion`, `stopLead`; `&stopLead=off` on the audit page | For Task 6 only |
+| A servable 0.0.172 build | `/Users/naomiaro/Code/opendaw-sdk-override-0.0.172` (outside the repo), built by `node scripts/audit/sdk-override.ts a5bf064 <dir>` | For Task 6 only. Served engine binary sha-256 `a6b14cd4d4d819fc…`; the audit page's version import resolves into it (0.0.172). The installed build's is `edf2c4a1e5f11b1d…` |
 
 ## Global Constraints
 
-- No file under the repo is edited while a run is going: Vite may reload the page. A run that overlaps an edit is deleted (`rm .verify-output/*<runToken>*`), not quoted.
-- One arm per dev-server process. Before starting a server on another build: kill the old one by port (`lsof -ti :5173 | xargs kill`), then `rm -rf node_modules/.vite`. After the last override run, do both again so the next plain `npm run dev` serves the installed SDK.
-- A run belongs to the arm its ENVELOPE says: `sdkVersion` and `stopLead`. Never assign a run to an arm from memory of what was served.
-- The browser window stays visible and the run is started with a real click (the driver does both; a hidden page freezes the transport and the driver skips the run).
-- The test of a difference between arms uses only runs recorded under this plan: `--from <first run id of Task 2>`. The 609 earlier repeats suggested the question and cannot also answer it.
-- The comparison scenario is `multitrack-all` at 120 BPM, 48000 Hz: 16 repeats per run (8 `multitrack-start`, 8 `multitrack-janked`), about 130 s, node delays on every row.
-- Nothing in the measurement goes through the speakers (the loopback is inside the AudioContext). The system output can be muted for the whole campaign.
-- Version numbers go in `debug/` and `changelogs/` only. Chapter docs, demo copy, code comments and CLAUDE.md additions state current behaviour.
-- Nothing is posted upstream without the user reading the text first: an issue goes to `debug/drafts/<name>.md` and waits.
-- `npm run typecheck` exits 0 before a commit. PRs are squash-merged; this plan file is deleted in the PR that completes the work.
+- No file under the repo is edited while a run is going: Vite reloads the page. A run that overlaps an edit is deleted (`rm .verify-output/*<runToken>*`), not quoted.
+- Starting a dev server always goes: `lsof -ti :5173 | xargs kill; rm -rf node_modules/.vite`, then the start in the background, then wait until `curl -sk -o /dev/null https://localhost:5173/` succeeds, then `curl -sk https://localhost:5173/wasm-engine/wasm/engine.wasm | shasum -a 256 | cut -c1-16` and compare with the build wanted (`edf2c4a1e5f11b1d` installed, `a6b14cd4d4d819fc` override). After the last run of a session: kill and clear the cache again.
+- The browser window stays visible and a run is started with a real click (the drivers do both; a hidden page freezes the transport and the loop driver skips the run).
+- The tally counts natural events only. A forced run (Task 2) carries `graphChurn: true` on its envelope and the tally leaves it out.
+- Nothing in the measurement goes through the speakers (the loopback is inside the AudioContext). The system output can be muted; tell the user so before the first long block.
+- A change to the harness must not move what it measures: after it, a `multitrack-all` run has 32 rows, netted 1.146 on every ordinary row and a node delay on every row.
+- Version numbers go in `debug/`, `changelogs/` and this plan only. Chapter docs, demo copy, code comments and CLAUDE.md additions state current behaviour.
+- Nothing is posted anywhere without the user reading the text first: an issue or a browser bug goes to `debug/drafts/<name>.md` and waits. A fix is proposed to the user in the debug note, never put into an issue.
+- `npm run typecheck` exits 0 before a commit; commit named paths, not `git add -A` (the loop driver's `RUNS` and `QUERY` are edited during the campaign: restore them with `git checkout -- scripts/audit/recording-alignment/one-quantum/run-loop.playwright.js` before committing). PRs are squash-merged; this plan file is deleted in the PR that completes the work.
 
 ## Review Focus
 
-- **A run recorded on the wrong build.** The override not picked up (stale `node_modules/.vite`, the variable not exported to the server process) gives an arm B that is really arm A. Task 1 checks the served engine binary and the envelope's `sdkVersion`; Task 2 re-reads `sdkVersion` after every block.
-- **Reading a difference into too few events.** At the rates seen so far a 400-repeat arm holds between 1 and 6 events. The stopping rule in Task 2 is fixed before the first run; a p-value looked at after every block and acted on at 0.05 is not a test.
-- **The first repeat after a cold start.** After `rm -rf node_modules/.vite` the first recording of the first page load can start late (an 84 ms head deficit was measured once). It does not move the netted median and so does not make an event, but it makes the cell `investigate`. Do not count verdicts; count events.
-- **An event that is not this event.** The tally flags any repeat whose netted median is more than half a quantum off the run's mode or whose first-frame check is more than half a quantum off zero. Read each flagged repeat's figures before counting it: a row that is off by something other than one quantum is a different finding and gets its own line in the write-up.
-- **Editing while measuring.** The write-up is written between blocks only when no run is going; the safest order is all of Task 2, then Task 3.
+- **A coincidence taken for a confirmation.** A stale quantum somewhere in a run and an event somewhere in the same run prove nothing. The stale quantum has to be the one a stamp of that event was taken in, and repeats without an event must have none there. Task 3 compares both.
+- **A lost message read as a stale clock.** The reference recorder posts chunks of 64 quanta. A chunk that never arrives leaves a gap BETWEEN chunks; a clock that stood still shows INSIDE a chunk, as a stamp equal to the one before it. Task 1 keeps the two apart.
+- **The harness measuring its own exposure.** Taps and the reference are laid out by their stamps. Under forced graph work a stale stamp inside a tap would move the harness's reference, not the SDK's take. Task 2 ends the graph work before the taps attach and checks that node delays are still read on every row.
+- **Forced runs in the count.** They would swamp the natural rate. The envelope flag and the tally's skip are tested in Task 2.
+- **An event that is not this event.** The tally lists a repeat that is off by something other than one quantum apart from the events. Read those too: a second kind of finding gets its own line in the write-up.
 
 ---
 
-### Task 1: Check the three arms run and say what they are
+### Task 1: A clock witness in the harness
+
+The reference recorder in `src/lib/audit/loopbackInjection.ts` (started by `prepareNodeTaps`, multi-mic runs only) stamps every quantum with `currentFrame`. Its chunks are trimmed to 30 seconds; the list of stamps that did not advance by one quantum is kept for the whole run and goes on the envelope.
+
+**Files:**
+- Modify: `src/lib/audit/nodeTap.ts`, `src/lib/audit/nodeTap.test.ts`
+- Modify: `src/lib/audit/loopbackInjection.ts`
+- Modify: `src/lib/audit/recordingAuditArtifacts.ts`
+- Modify: `src/demos/recording/recording-alignment-audit-debug-demo.tsx` (multi-mic summary)
+- Modify: `scripts/audit/recording-alignment/one-quantum-events.ts`
+
+**Interfaces:**
+- Produces: `frameDiscontinuities(chunks: readonly TapChunk[], previousFrame: number | null): { found: ClockDiscontinuity[]; lastFrame: number | null }` with `ClockDiscontinuity = { previousFrame: number; frame: number; betweenChunks: boolean }`; `LoopbackHandle.clockDiscontinuities(): ClockDiscontinuity[]`; envelope field `clockDiscontinuities?: ClockDiscontinuity[]`.
+
+- [ ] **Step 1: Write the failing tests**
+
+Add to `src/lib/audit/nodeTap.test.ts` (add `frameDiscontinuities` to its import from `./nodeTap`; `TapChunk` and `NODE_TAP_QUANTUM_FRAMES` are already imported):
+
+```ts
+describe("frameDiscontinuities", () => {
+  /** A chunk of `frames.length` quanta stamped with the given frames; the samples do not matter here. */
+  const stamped = (frames: number[]): TapChunk => ({
+    frames: Float64Array.from(frames),
+    samples: new Float32Array(frames.length * NODE_TAP_QUANTUM_FRAMES),
+    count: frames.length,
+  });
+
+  it("finds nothing in a clock that advances one quantum per call, across chunks too", () => {
+    const { found, lastFrame } = frameDiscontinuities([stamped([0, 128, 256]), stamped([384, 512])], null);
+    expect(found).toEqual([]);
+    expect(lastFrame).toBe(512);
+  });
+
+  it("reports a clock that stood still for one call: the same frame, then two quanta on", () => {
+    const { found } = frameDiscontinuities([stamped([0, 128, 128, 384])], null);
+    expect(found).toEqual([
+      { previousFrame: 128, frame: 128, betweenChunks: false },
+      { previousFrame: 128, frame: 384, betweenChunks: false },
+    ]);
+  });
+
+  it("marks a gap between two chunks as such: a chunk that never arrived looks the same", () => {
+    const { found } = frameDiscontinuities([stamped([0, 128]), stamped([512, 640])], null);
+    expect(found).toEqual([{ previousFrame: 128, frame: 512, betweenChunks: true }]);
+  });
+
+  it("carries the last frame over from an earlier call", () => {
+    expect(frameDiscontinuities([stamped([256, 384])], 128).found).toEqual([]);
+    expect(frameDiscontinuities([stamped([384, 512])], 128).found)
+      .toEqual([{ previousFrame: 128, frame: 384, betweenChunks: true }]);
+  });
+
+  it("reads only the quanta a chunk says it holds", () => {
+    const partial = stamped([0, 128, 999]);
+    partial.count = 2;
+    const { found, lastFrame } = frameDiscontinuities([partial], null);
+    expect(found).toEqual([]);
+    expect(lastFrame).toBe(128);
+  });
+});
+```
+
+- [ ] **Step 2: Run them and see them fail**
+
+Run: `npx vitest run src/lib/audit/nodeTap.test.ts`
+Expected: FAIL, `frameDiscontinuities is not a function`.
+
+- [ ] **Step 3: Implement**
+
+Add to `src/lib/audit/nodeTap.ts`, after `NODE_TAP_PROCESSOR_SOURCE`:
+
+```ts
+/** A `process` call whose `currentFrame` was not one quantum after the call before it. */
+export interface ClockDiscontinuity {
+  previousFrame: number;
+  frame: number;
+  /** True when the two calls are in different posted chunks: a chunk that never arrived looks the same. */
+  betweenChunks: boolean;
+}
+
+/**
+ * The calls among `chunks` whose `currentFrame` is not exactly one quantum after the
+ * previous call's. `previousFrame` is the last frame of an earlier batch, null for the
+ * first. A worklet's clock can stand still for a call while the main thread changes the
+ * audio graph: that shows INSIDE a chunk, as a frame equal to the one before it and then
+ * a step of two quanta. A step BETWEEN two chunks is either the clock or a posted chunk
+ * that was lost.
+ */
+export function frameDiscontinuities(
+  chunks: readonly TapChunk[],
+  previousFrame: number | null
+): { found: ClockDiscontinuity[]; lastFrame: number | null } {
+  const found: ClockDiscontinuity[] = [];
+  let last = previousFrame;
+  for (const chunk of chunks) {
+    for (let index = 0; index < chunk.count; index++) {
+      const frame = chunk.frames[index];
+      if (last !== null && frame !== last + NODE_TAP_QUANTUM_FRAMES) {
+        found.push({ previousFrame: last, frame, betweenChunks: index === 0 });
+      }
+      last = frame;
+    }
+  }
+  return { found, lastFrame: last };
+}
+```
+
+- [ ] **Step 4: Run them and see them pass, then break it on purpose**
+
+Run: `npx vitest run src/lib/audit/nodeTap.test.ts` — expected PASS.
+Change `frame !== last + NODE_TAP_QUANTUM_FRAMES` to `frame > last + NODE_TAP_QUANTUM_FRAMES`: the "stood still" test must fail. Put it back.
+
+- [ ] **Step 5: Collect in the loopback and expose**
+
+In `src/lib/audit/loopbackInjection.ts`:
+
+1. Import `frameDiscontinuities` and `type ClockDiscontinuity` from `./nodeTap`.
+2. Beside `let referenceChunks: TapChunk[] = [];` add:
+```ts
+  // Every reference call whose currentFrame did not advance by one quantum, for the whole
+  // run: the reference itself is trimmed, this list is not.
+  let clockDiscontinuities: ClockDiscontinuity[] = [];
+  let lastReferenceFrame: number | null = null;
+```
+3. In the reference recorder's chunk callback inside `prepareNodeTaps`, before `referenceChunks.push(chunk);`:
+```ts
+          const { found, lastFrame } = frameDiscontinuities([chunk], lastReferenceFrame);
+          lastReferenceFrame = lastFrame;
+          for (const discontinuity of found) {
+            clockDiscontinuities.push(discontinuity);
+            console.warn(
+              "[loopbackInjection] reference clock: frame " + String(discontinuity.frame) + " after " +
+              String(discontinuity.previousFrame) + (discontinuity.betweenChunks ? " (between chunks)" : " (inside a chunk)")
+            );
+          }
+```
+4. Where `referenceChunks = [];` is reset on uninstall, also `clockDiscontinuities = [];` and `lastReferenceFrame = null;`.
+5. Add to the `LoopbackHandle` interface and to the returned object:
+```ts
+  /**
+   * Every call of the reference recorder, since `prepareNodeTaps()`, whose `currentFrame`
+   * was not one quantum after the call before it. Empty without the `nodeTaps` option.
+   * A copy: the caller may keep it.
+   */
+  clockDiscontinuities(): ClockDiscontinuity[];
+```
+```ts
+    clockDiscontinuities() {
+      return clockDiscontinuities.map((discontinuity) => ({ ...discontinuity }));
+    },
+```
+
+- [ ] **Step 6: Persist and print**
+
+`src/lib/audit/recordingAuditArtifacts.ts`, on `MultitrackAuditSummary` (import `type ClockDiscontinuity` from `./nodeTap`):
+```ts
+  /** Every call of the reference recorder during the run whose `currentFrame` did not
+   *  advance by one quantum (see `frameDiscontinuities`). No verdict reads it. */
+  clockDiscontinuities?: ClockDiscontinuity[];
+```
+In the multi-mic summary builder of `recording-alignment-audit-debug-demo.tsx` (beside `stopLead: STOP_LEAD,`): `clockDiscontinuities: loopback.clockDiscontinuities(),`.
+
+`scripts/audit/recording-alignment/one-quantum-events.ts`: read the field off the raw envelope for each counted multi-mic run (the loaded type does not carry it: `JSON.parse(readFileSync(`${VERIFY_DIR}/recaudit-mt-summary-${runId}.json`, "utf8")).clockDiscontinuities`), and print after the event list:
+
+```
+Clock discontinuities (multi-mic runs that carry the field): <runs with any> of <runs with the field>
+  run <id>: <n> — frames <previousFrame>→<frame> (inside a chunk | between chunks), …
+```
+and add to each multi-mic event tape's line, when the run carries the field, `stale quantum at a stamp: yes | no`, where "yes" means the run has an in-chunk discontinuity with `frame === previousFrame` whose frame is within one quantum of the tape's `firstQuantumTimeSec × rate` or of `recordingStartContextTimeSec × rate − 128`.
+
+Run: `npm run typecheck && npx vitest run src/lib/audit` — expected: exit 0, all pass.
+
+- [ ] **Step 7: One run; the witness must not move the measurement**
+
+Start the installed-SDK server (Global Constraints). In the loop driver set `RUNS = 1`, `QUERY = "scenario=multitrack-all&bpm=120&rate=48000"` and call it through the Playwright MCP with `filename: "scripts/audit/recording-alignment/one-quantum/run-loop.playwright.js"`.
+Expected: one entry with `state: "done"` and `line` starting `32 rows`.
+
+```bash
+node -e 'const fs=require("fs");const f=fs.readdirSync(".verify-output").filter(n=>/^recaudit-mt-summary-/.test(n)).sort().pop();const j=JSON.parse(fs.readFileSync(".verify-output/"+f,"utf8"));console.log(f,j.sdkVersion,j.rows.length,"netted",[...new Set(j.rows.map(r=>r.medianBeatErrorMsNetted.toFixed(3)))].join(","),"node delays",j.rows.filter(r=>typeof r.nodeDelayMs==="number").length,"discontinuities",JSON.stringify(j.clockDiscontinuities))'
+```
+Expected: `0.0.173 32 netted 1.146 node delays 32 discontinuities []` (or a list: then read it before going on; a `betweenChunks: true` entry on an idle run means posted chunks are being lost and the witness needs a look first). Write the run id down as `FIRST_PLAN_RUN`.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git checkout -- scripts/audit/recording-alignment/one-quantum/run-loop.playwright.js
+npm run typecheck && npx vitest run
+git add src/lib/audit/nodeTap.ts src/lib/audit/nodeTap.test.ts src/lib/audit/loopbackInjection.ts src/lib/audit/recordingAuditArtifacts.ts src/demos/recording/recording-alignment-audit-debug-demo.tsx scripts/audit/recording-alignment/one-quantum-events.ts
+git commit -m "feat(audit): a clock witness on the multi-mic harness"
+```
+
+### Task 2: Force the event, with the SDK in the loop
+
+`&graphChurn=on` makes the main thread connect and disconnect two gain nodes that are in nobody's path, in short stretches, from the record request on. If the cause is right, the SDK's stamps go stale on a large share of repeats and the harness's own figures show it: first-frame checks and netted medians off by whole quanta. This is the measured signature for the upstream report.
+
+**Files:**
+- Create: `src/lib/audit/graphChurn.ts`, `src/lib/audit/graphChurn.test.ts`
+- Modify: `src/demos/recording/recording-alignment-audit-debug-demo.tsx`
+- Modify: `src/lib/audit/recordingAuditArtifacts.ts` (+ its test)
+- Modify: `scripts/audit/recording-alignment/one-quantum-events.ts`
+
+**Interfaces:**
+- Produces: `churnGraph(audioContext: BaseAudioContext, durationMs: number, timing?: { stretchMs: number; gapMs: number }): Promise<number>` (resolves with the number of connect/disconnect pairs done); envelope field `graphChurn?: boolean`; loaded summaries gain `graphChurn: boolean`.
+
+- [ ] **Step 1: The failing test**
+
+`src/lib/audit/graphChurn.test.ts`:
+
+```ts
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { churnGraph } from "./graphChurn";
+
+/** A stand-in for the two things the churn touches: `createGain`, and a node's connect/disconnect. */
+function fakeContext() {
+  const calls: string[] = [];
+  const node = () => ({
+    connect: () => { calls.push("connect"); },
+    disconnect: () => { calls.push("disconnect"); },
+  });
+  return { calls, context: { createGain: node } as unknown as BaseAudioContext };
+}
+
+describe("churnGraph", () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("connects and disconnects in pairs until the duration is over, then resolves with the count", async () => {
+    const { calls, context } = fakeContext();
+    const done = churnGraph(context, 20, { stretchMs: 2, gapMs: 1 });
+    await vi.advanceTimersByTimeAsync(60);
+    const pairs = await done;
+    expect(pairs).toBeGreaterThan(0);
+    expect(calls.length).toBe(pairs * 2);
+    expect(calls[0]).toBe("connect");
+    expect(calls[calls.length - 1]).toBe("disconnect");
+    const settled = calls.length;
+    await vi.advanceTimersByTimeAsync(60);
+    expect(calls.length).toBe(settled);
+  });
+
+  it("does nothing for a duration of zero", async () => {
+    const { calls, context } = fakeContext();
+    const done = churnGraph(context, 0);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(await done).toBe(0);
+    expect(calls).toEqual([]);
+  });
+});
+```
+
+`vi.useFakeTimers()` also fakes `performance.now()`, which the stretches read; inside a stretch the clock does not move, so the implementation bounds a stretch by a pair count as well as by time (below). Run: `npx vitest run src/lib/audit/graphChurn.test.ts` — expected FAIL (no module).
+
+- [ ] **Step 2: Implement**
+
+`src/lib/audit/graphChurn.ts`:
+
+```ts
+/**
+ * Graph work on the main thread, for forcing the worklet clock to stand still.
+ *
+ * Every `connect` and `disconnect` takes the audio graph lock. Chrome moves the worklet
+ * scope's `currentFrame` on at the end of a render quantum only if that lock is free, so
+ * a main thread that is inside one of these calls at that instant leaves every worklet
+ * reading the previous quantum's time for one quantum. The two nodes here are in nobody's
+ * path: nothing audible changes.
+ */
+
+/** The most pairs one stretch does, so a stretch ends even where the clock does not move. */
+const MAX_PAIRS_PER_STRETCH = 20_000;
+
+export function churnGraph(
+  audioContext: BaseAudioContext,
+  durationMs: number,
+  timing: { stretchMs: number; gapMs: number } = { stretchMs: 2, gapMs: 1 }
+): Promise<number> {
+  if (durationMs <= 0) return Promise.resolve(0);
+  const from = audioContext.createGain();
+  const to = audioContext.createGain();
+  const end = performance.now() + durationMs;
+  let pairs = 0;
+  return new Promise((resolve) => {
+    const stretch = () => {
+      if (performance.now() >= end) { resolve(pairs); return; }
+      const until = Math.min(end, performance.now() + timing.stretchMs);
+      let inStretch = 0;
+      do {
+        from.connect(to);
+        from.disconnect(to);
+        pairs++;
+        inStretch++;
+      } while (performance.now() < until && inStretch < MAX_PAIRS_PER_STRETCH);
+      setTimeout(stretch, timing.gapMs);
+    };
+    stretch();
+  });
+}
+```
+
+Run the test: PASS. Break it (drop the `disconnect`): the pair-count assertion must fail. Put it back.
+
+- [ ] **Step 3: The switch on the page, the flag on the envelope, the skip in the tally**
+
+`recording-alignment-audit-debug-demo.tsx`:
+- beside `STOP_LEAD`: 
+```ts
+/** `&graphChurn=on` does graph work on the main thread from each record request on, to
+ *  force the worklet clock to stand still while the SDK takes its start-of-take stamps.
+ *  Multi-mic scenarios only. Such a run is not part of any count. */
+const GRAPH_CHURN = params.get("graphChurn") === "on";
+/** It has to be over before the node taps attach, about 220 ms after a take's first quantum. */
+const GRAPH_CHURN_MS = 150;
+```
+- in the multi-mic runner, right before the `if (scenario === "multitrack-janked")` that calls `project.startRecording(false)`: `if (GRAPH_CHURN) void churnGraph(audioContext, GRAPH_CHURN_MS);`
+- in the multi-mic summary: `graphChurn: GRAPH_CHURN,`
+- in the single-tape `runAudit`, beside `assertStopLeadParam();`: `if (GRAPH_CHURN) throw new Error("?graphChurn=on is for the multitrack scenarios");`
+
+`recordingAuditArtifacts.ts`: `graphChurn?: boolean` on `SummaryBase` ("True when the run was made with `?graphChurn=on`: the main thread did graph work at each take's start. Not a measurement of the SDK as it runs."), `graphChurn: boolean` on both loaded types via `json.graphChurn === true`; a test in `recordingAuditArtifacts.test.ts` that an envelope without the field loads as `false` and one with `true` as `true`.
+
+`one-quantum-events.ts`: add `graphChurn: boolean` to its `Run`, skip `run.graphChurn` runs before `sdkOf`, count them, and print `forced runs left out: <n>` in the header line.
+
+Run: `npm run typecheck && npx vitest run src/lib/audit` — exit 0, all pass.
+
+- [ ] **Step 4: Measure**
+
+Installed-SDK server. Driver: `RUNS = 3`, `QUERY = "scenario=multitrack-start&bpm=120&rate=48000&graphChurn=on"`. Then:
+
+```bash
+node -e 'const fs=require("fs");for(const f of fs.readdirSync(".verify-output").filter(n=>/^recaudit-mt-summary-/.test(n)).sort().slice(-3)){const j=JSON.parse(fs.readFileSync(".verify-output/"+f,"utf8"));const q=128/j.rate*1000;const h={};for(const r of j.rows){const k="netted "+(typeof r.medianBeatErrorMsNetted==="number"?Math.round((r.medianBeatErrorMsNetted-1.146)/q):"null")+"q, check "+(typeof r.firstFrameCheckMs==="number"?Math.round(r.firstFrameCheckMs/q):"null")+"q";h[k]=(h[k]||0)+1}console.log(f,"churn",j.graphChurn,"rows",j.rows.length,"node delays",j.rows.filter(r=>typeof r.nodeDelayMs==="number").length,"discontinuities",(j.clockDiscontinuities||[]).length,JSON.stringify(h))}'
+```
+
+Expected if the cause is right: `churn true`, 16 rows per run, a node delay on every row (the churn ended before the taps), many clock discontinuities, and a good share of rows away from `netted 0q, check 0q`, by whole quanta, with the check never positive and the netted never negative (a stale stamp is only ever early). Then `node scripts/audit/recording-alignment/one-quantum-events.ts --from <FIRST_PLAN_RUN>` must print `forced runs left out: 3` and count none of their repeats.
+
+If every row reads `netted 0q, check 0q`: the churn missed the stamps. Read `recordRequestContextTime` against `firstQuantumTimeSec` on the rows to see how long after the request the first quantum comes, and move the churn's start or length (it must still end before the taps attach). If node delays go missing: the churn ran into the taps; shorten it.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git checkout -- scripts/audit/recording-alignment/one-quantum/run-loop.playwright.js
+npm run typecheck && npx vitest run
+git add src/lib/audit/graphChurn.ts src/lib/audit/graphChurn.test.ts src/lib/audit/recordingAuditArtifacts.ts src/lib/audit/recordingAuditArtifacts.test.ts src/demos/recording/recording-alignment-audit-debug-demo.tsx scripts/audit/recording-alignment/one-quantum-events.ts
+git commit -m "feat(audit): force the stale worklet clock at a take's start"
+```
+
+### Task 3: Watch the clock through natural events
 
 **Files:** none modified.
 
-**Interfaces:**
-- Consumes: the override directory, the driver, the tally script (table above).
-- Produces: `FIRST_PLAN_RUN`, the id of the first run recorded under this plan, used by `--from` in Tasks 2 and 3.
+- [ ] **Step 1: Loop `multitrack-janked` on the installed SDK**
 
-- [ ] **Step 1: The branch builds and its tests pass**
-
-Run: `npm run typecheck && npx vitest run src/lib/audit src/hooks`
-Expected: typecheck exits 0; every test file passes.
-
-- [ ] **Step 2: The 0.0.172 override is still there and still exact**
-
-Run:
+Driver: `RUNS = 10`, `QUERY = "scenario=multitrack-janked&bpm=120&rate=48000"` (8 repeats and about 70 s per run; two of the three sightings were in this scenario). About 12 minutes per call; the Playwright MCP moves a call past two minutes to the background and reports when it is done. After each call:
 ```bash
-ls /Users/naomiaro/Code/opendaw-sdk-override-0.0.172/@opendaw | wc -l
-grep OPENDAW_SDK_VERSION /Users/naomiaro/Code/opendaw-sdk-override-0.0.172/@opendaw/studio-sdk/dist/version.js
-shasum -a 256 /Users/naomiaro/Code/opendaw-sdk-override-0.0.172/@opendaw/studio-core-wasm/dist/wasm/engine.wasm | cut -c1-16
+node scripts/audit/recording-alignment/one-quantum-events.ts --from <FIRST_PLAN_RUN>
 ```
-Expected: `17`, `"0.0.172"`, `a6b14cd4d4d819fc`. If the directory is gone: `node scripts/audit/sdk-override.ts a5bf064 /Users/naomiaro/Code/opendaw-sdk-override-0.0.172` and check again.
+**Stop at 3 events, or after 8 calls (640 repeats, about 1.6 hours), whichever comes first.** A run the driver reports as anything but `done` is noted and not topped up. With fewer than 3 events after 8 calls, go on with what there is and say so in the write-up.
 
-- [ ] **Step 3: Note the baseline tally**
+- [ ] **Step 2: Read them**
 
-Run: `node scripts/audit/recording-alignment/one-quantum-events.ts`
-Expected: `0.0.172: 1 in 416`, `0.0.173: 2 in 193`, three events listed. A different count means `.verify-output/` changed since 2026-10-01; say so in the write-up.
+For each event tape the tally prints `stale quantum at a stamp: yes | no`. And the control: among the runs without an event, how many have any discontinuity, and is any of them within a quantum of a stamp of an ordinary repeat?
 
-- [ ] **Step 4: One run on the installed SDK (arm A)**
+| what the events show | conclusion |
+|---|---|
+| every event has a stale quantum at a stamp; ordinary repeats have none there | the harness events are the stale clock. Go to Task 4 |
+| some events have none | a second cause exists beside the stale clock. Write down each kind with its count and its figures; Task 5's reports cover the stale clock only, and the register names the rest as open |
+| ordinary repeats have stale quanta at their stamps without being events | the reading of "at a stamp" is too loose (which quantum the engine or recorder actually stamped in). Tighten it from the row's own times before concluding anything |
 
-Set `const RUNS = 1;` in `scripts/audit/recording-alignment/one-quantum/run-loop.playwright.js` and leave `QUERY` as `scenario=multitrack-janked&bpm=120&rate=48000`. Then:
-```bash
-rm -rf node_modules/.vite
-npm run dev -- --port 5173 --host 127.0.0.1 --strictPort   # in the background
-```
-Call the Playwright MCP's `browser_run_code_unsafe` with `filename: "scripts/audit/recording-alignment/one-quantum/run-loop.playwright.js"`.
-Expected: `[{ run: 1, state: "done", line: "16 rows — …", stopLeadWarnings: 0 }]`.
-
-Then:
-```bash
-node -e 'const fs=require("fs");const f=fs.readdirSync(".verify-output").filter(n=>/^recaudit-mt-summary-/.test(n)).sort().pop();const j=JSON.parse(fs.readFileSync(".verify-output/"+f,"utf8"));console.log(f,j.sdkVersion,j.stopLead,j.rows.length,j.rows.filter(r=>typeof r.recordingStartContextTimeSec==="number").length)'
-```
-Expected: the newest file, `0.0.173 true 16 16`. Write its run id down as `FIRST_PLAN_RUN`.
-
-- [ ] **Step 5: One run on 0.0.172 (arm B)**
+- [ ] **Step 3: Save the tally**
 
 ```bash
-lsof -ti :5173 | xargs kill
-rm -rf node_modules/.vite
-SDK_DIST_OVERRIDE=/Users/naomiaro/Code/opendaw-sdk-override-0.0.172 npm run dev -- --port 5173 --host 127.0.0.1 --strictPort   # in the background
-curl -sk https://localhost:5173/wasm-engine/wasm/engine.wasm | shasum -a 256 | cut -c1-16
+node scripts/audit/recording-alignment/one-quantum-events.ts --from <FIRST_PLAN_RUN> > .verify-output/one-quantum-events-$(date +%F).txt
 ```
-Expected: `a6b14cd4d4d819fc`. Call the driver again, then the `node -e` line of Step 4.
-Expected: `0.0.172 true 16 16`.
+The write-up quotes this file; a later tally uses `RECAUDIT_MAX_RUN=<last run id of this task>`.
 
-- [ ] **Step 6: One run with the stop after the click (arm C), back on the installed SDK**
+### Task 4: Make the harness's own stamps safe
 
-```bash
-lsof -ti :5173 | xargs kill
-rm -rf node_modules/.vite
-npm run dev -- --port 5173 --host 127.0.0.1 --strictPort   # in the background
-```
-Set `QUERY` in the driver to `scenario=multitrack-janked&bpm=120&rate=48000&stopLead=off`, call it, run the `node -e` line.
-Expected: `0.0.173 false 16 16`. Stop the server (`lsof -ti :5173 | xargs kill`).
+Taps and the reference are laid out by their stamps (`layOutRange`). A stale stamp puts a quantum on top of the one before it and leaves its own place empty. Since a stale stamp is only ever behind, a sequence of calls can be repaired: a stamp less than one quantum after the previous call's frame is replaced by that frame plus a quantum; a stamp at or beyond it is taken as read (a recorder that was not called for a while jumps forward).
 
-- [ ] **Step 7: The tally sees three arms**
-
-Run: `node scripts/audit/recording-alignment/one-quantum-events.ts --from <FIRST_PLAN_RUN>`
-Expected: three lines under "Per SDK release and harness stop" — `0.0.172 | stop-lead`, `0.0.173 | stop-after-click`, `0.0.173 | stop-lead` — each with 8 repeats.
-
-### Task 2: Record the arms
-
-**Files:** none modified. Keep a block log in the session (run ids per block and arm); it goes into the register in Task 4.
+**Files:**
+- Modify: `src/lib/audit/nodeTap.ts`, `src/lib/audit/nodeTap.test.ts`
+- Modify: `src/lib/audit/loopbackInjection.ts`
 
 **Interfaces:**
-- Consumes: `FIRST_PLAN_RUN`.
-- Produces: per arm, the repeats and the events recorded under this plan.
+- Produces: `repairFrames(chunks: readonly TapChunk[], previousFrame: number | null): { repaired: number; lastFrame: number | null }` — rewrites `chunk.frames` in place.
 
-The three arms, all `scenario=multitrack-all&bpm=120&rate=48000`:
+- [ ] **Step 1: Failing tests** (in `nodeTap.test.ts`, with the `stamped` helper of Task 1 moved to the top of the file):
+
+```ts
+describe("repairFrames", () => {
+  it("leaves a true clock alone", () => {
+    const chunk = stamped([0, 128, 256]);
+    expect(repairFrames([chunk], null)).toEqual({ repaired: 0, lastFrame: 256 });
+    expect([...chunk.frames]).toEqual([0, 128, 256]);
+  });
+
+  it("moves a stamp that stood still to one quantum after the call before it", () => {
+    const chunk = stamped([0, 128, 128, 384]);
+    expect(repairFrames([chunk], null).repaired).toBe(1);
+    expect([...chunk.frames]).toEqual([0, 128, 256, 384]);
+  });
+
+  it("repairs a clock that stood still for several calls", () => {
+    const chunk = stamped([0, 128, 128, 128, 512]);
+    expect(repairFrames([chunk], null).repaired).toBe(2);
+    expect([...chunk.frames]).toEqual([0, 128, 256, 384, 512]);
+  });
+
+  it("takes a jump forward as read: the recorder was not called in between", () => {
+    const chunk = stamped([0, 128, 512, 640]);
+    expect(repairFrames([chunk], null).repaired).toBe(0);
+    expect([...chunk.frames]).toEqual([0, 128, 512, 640]);
+  });
+
+  it("repairs across a chunk border from the frame carried over", () => {
+    const chunk = stamped([256, 384]);
+    expect(repairFrames([chunk], 256)).toEqual({ repaired: 1, lastFrame: 512 });
+    expect([...chunk.frames]).toEqual([384, 512]);
+  });
+});
+```
+Run: FAIL (`repairFrames is not a function`).
+
+- [ ] **Step 2: Implement** in `nodeTap.ts`:
+
+```ts
+/**
+ * Put each call's stamp where the call really was. A worklet's `currentFrame` can be
+ * behind for a call, never ahead: a stamp less than one quantum after the call before it
+ * is moved to exactly that; a stamp at or beyond it stays (a recorder that was not called
+ * for a while jumps forward). The first stamp of a recorder stays as read, so a recorder
+ * whose very first call read a stale clock keeps that call one quantum early.
+ * Rewrites `frames` in place; returns how many stamps it moved.
+ */
+export function repairFrames(
+  chunks: readonly TapChunk[],
+  previousFrame: number | null
+): { repaired: number; lastFrame: number | null } {
+  let repaired = 0;
+  let last = previousFrame;
+  for (const chunk of chunks) {
+    for (let index = 0; index < chunk.count; index++) {
+      if (last !== null && chunk.frames[index] < last + NODE_TAP_QUANTUM_FRAMES) {
+        chunk.frames[index] = last + NODE_TAP_QUANTUM_FRAMES;
+        repaired++;
+      }
+      last = chunk.frames[index];
+    }
+  }
+  return { repaired, lastFrame: last };
+}
+```
+Run: PASS. Break it (`<` to `<=`): the true-clock test must fail. Put it back.
+
+- [ ] **Step 3: Use it**
+
+In `loopbackInjection.ts`: in the reference's chunk callback, AFTER the `frameDiscontinuities` call of Task 1 (the witness reads the stamps as the worklet gave them) and before `referenceChunks.push(chunk)`, call `repairFrames([chunk], lastRepairedReferenceFrame)` and keep its `lastFrame` (a new `let lastRepairedReferenceFrame: number | null = null`, reset where the others are). In `tapSourceNodes`, where a tap settles, call `repairFrames(tapChunks, null)` before the chunks are handed on, and warn with the tape's device id when it moved any. Update the comment on `layOutRange` ("each quantum at the frame it was stamped with…") to say the stamps it gets are repaired ones and why.
+
+- [ ] **Step 4: Check and commit**
+
+Run one `multitrack-all` run as in Task 1 Step 7: same expected line. Then one `&graphChurn=on` run with `GRAPH_CHURN_MS` raised to 600 for this check only (so the churn overlaps the taps): node delays must still be read on every row, and the console must show the repair warnings. Put `GRAPH_CHURN_MS` back to its Task 2 value.
+
+```bash
+git checkout -- scripts/audit/recording-alignment/one-quantum/run-loop.playwright.js
+npm run typecheck && npx vitest run
+git add src/lib/audit/nodeTap.ts src/lib/audit/nodeTap.test.ts src/lib/audit/loopbackInjection.ts
+git commit -m "fix(audit): lay taps out by repaired stamps"
+```
+
+### Task 5: Write it up and bring it to the user
+
+**Files:**
+- Create: `debug/worklet-clock-stale-under-graph-work.md` (by the convention in `debug/README.md`: verified-against line, symptom, mechanism, evidence, repro, and a last section "Fix idea (internal — does not go in an issue)")
+- Create: `debug/drafts/issue-recording-start-stale-worklet-clock.md` (openDAW)
+- Create: `debug/drafts/chromium-bug-worklet-current-frame-stale.md` (Chromium)
+- Modify: `debug/recording-start-alignment-audit.md` (append a section), `debug/README.md`
+- Modify: `src/demos/recording/CLAUDE.md` (the rule for reading a row; current behaviour only)
+- Delete: `docs/superpowers/plans/2026-10-01-one-quantum-event.md` (this file, in the PR that completes the work)
+
+- [ ] **Step 1: A repro anyone can open.** The probe needs the dev server and Playwright. Make it a page: an unlisted debug demo (`comp-lanes-debug-demo.tsx` as the reference for layout, `<meta name="robots" content="noindex">`, not on the index or the sitemap) `worklet-clock-debug-demo.html` → `src/demos/recording/worklet-clock-debug-demo.tsx`, which runs the five conditions of `graph-lock-clock.page.js` on a button press and classifies itself: `STALE CLOCK: <n> of <N> fresh worklets read their first currentFrame early` or `CLOCK TRUE` or `THREW <stage>`, with the table of conditions under it. Move the probe's measuring code into `src/lib/audit/workletClockProbe.ts` so the page and the Playwright runner share it; keep the logic out of the component. Run it in Chrome; if Firefox or Safari are at hand, run it there too and write down what they read (it decides whether the SDK report says "Chrome" or "browsers").
+
+- [ ] **Step 2: The note.** Symptom (a take one quantum off, about 1 in 200 take starts on this machine); mechanism (the try-lock, the two stamping sites); evidence (the probe's table, the forced runs of Task 2, the natural events of Task 3 with the witness); repro (the page of Step 1; `&graphChurn=on`). Last section, internal: what would make each stamp robust. Two starting points to weigh there, not to post:
+  - the engine processor is called every quantum, so it can keep its own frame count and take the larger of `currentFrame` and its own count plus one quantum (the repair of Task 4), and report from that;
+  - the recorder is new at each take and has no history at its first call. It can hold its report back for a few calls and take the largest `stamp − 128 × call index` among them, or read a clock the engine processor keeps for the scope.
+  The user has open PRs on this code (openDAW #378, #380, #418); whether this becomes another PR, and on top of which, is theirs to decide.
+
+- [ ] **Step 3: The two drafts.** openDAW: what a user sees, the measured signature, the repro page URL, the link to the note, the cause stated precisely (both stamps are one read of the worklet clock, taken while the graph is being built; in Chrome that clock can be a quantum behind then). No suggested fix. Chromium: `currentFrame` / `currentTime` in `AudioWorkletGlobalScope` are stale for a quantum when the graph lock is held at the end of the previous one; what the spec says they are; the repro page; the source lines. Before drafting, search the Chromium tracker for an existing report of the same thing and cite it if there is one.
+
+- [ ] **Step 4: Register and index.** Register section `## The one-quantum event, resolved to the worklet clock (<date>)`: runs and counts, the per-event table with the witness, the forced runs, the harness repair, what is established, what is open. `debug/README.md`: prepend the result to the register's entry, add the note's entry. `src/demos/recording/CLAUDE.md`: how to read a row with a clock discontinuity and what `&graphChurn=on` is. Memory: `project_first_frame_quantum_anomaly.md` and its line in `MEMORY.md`.
+
+- [ ] **Step 5: Verify, commit, stop.**
+```bash
+npm run typecheck && npx vitest run && npm run build
+git add debug src docs scripts worklet-clock-debug-demo.html vite.config.ts
+git commit -m "docs(debug): the one-quantum recording-start event is Chrome's worklet clock standing still"
+```
+Then STOP and ask the user to read the two drafts and the fix idea. Nothing is posted, and no upstream branch is pushed, before they answer. Push and open the PR when they ask.
+
+### Task 6 (only if the user still wants it): Is it more frequent on 0.0.173?
+
+With the cause in the browser, the rate depends on how much graph work the page does around the stamps and on timing, not on the release as such; nothing in the 0.0.173 diff touches the capture path or either stamping site. Ask the user before spending three hours on it. If it is wanted:
+
+Arms, on `scenario=multitrack-all&bpm=120&rate=48000` (16 repeats per run, about 130 s; a block is `RUNS = 5`, 80 repeats, about 11 minutes):
 
 | arm | server | driver `QUERY` |
 |---|---|---|
 | A | installed (0.0.173) | `scenario=multitrack-all&bpm=120&rate=48000` |
-| B | `SDK_DIST_OVERRIDE=/Users/naomiaro/Code/opendaw-sdk-override-0.0.172` | `scenario=multitrack-all&bpm=120&rate=48000` |
+| B | `SDK_DIST_OVERRIDE=/Users/naomiaro/Code/opendaw-sdk-override-0.0.172` | the same |
 | C | installed (0.0.173) | `scenario=multitrack-all&bpm=120&rate=48000&stopLead=off` |
 
-A block is `RUNS = 5`: 80 repeats, about 11 minutes. A round is one block of each arm in the order A, C, B (A and C share a server).
+- [ ] **Step 1: Check the override.** `ls /Users/naomiaro/Code/opendaw-sdk-override-0.0.172/@opendaw | wc -l` → `17`; `grep OPENDAW_SDK_VERSION /Users/naomiaro/Code/opendaw-sdk-override-0.0.172/@opendaw/studio-sdk/dist/version.js` → `"0.0.172"`. If the directory is gone: `node scripts/audit/sdk-override.ts a5bf064 /Users/naomiaro/Code/opendaw-sdk-override-0.0.172`.
 
-**Stopping rule, fixed now:** record 5 rounds (400 repeats per arm, about 3 hours of recording) unless one of these happens first:
-
-1. After a completed round, one of the tally's Fisher lines is below 0.01 on the plan's own runs: `stop-lead only` (arms A and B, the SDK question) or `on 0.0.173` (arms A and C, the harness question), in either of the two directions each line prints. Then record one more round and stop.
-2. A block ends with error rows, or a run is skipped as not visible, twice in a row. Then stop and find out why before recording more.
-
-No other look at the numbers changes how much is recorded.
-
-- [ ] **Step 1: Round 1, arm A**
-
-Set `RUNS = 5` and the arm's `QUERY` in the driver. Start the installed-SDK server as in Task 1 Step 4. Call the driver. It returns after about 11 minutes (the tool reports it as a background task).
-Expected: five entries, each `state: "done"`, `line` starting `32 rows`.
-
-- [ ] **Step 2: Round 1, arm C**
-
-Same server. Change `QUERY` to arm C's — this edit is made while no run is going. Call the driver.
-Expected: five entries `done`.
-
-- [ ] **Step 3: Round 1, arm B**
-
-Restart the server on the override as in Task 1 Step 5, including the `curl … | shasum` check. Set `QUERY` back to arm B's (the same as arm A's). Call the driver.
-Expected: five entries `done`.
-
-- [ ] **Step 4: Check the round**
-
+- [ ] **Step 2: Record rounds.** A round is one block of each arm in the order A, C, B. Every block starts with the server start of the Global Constraints (kill first, then the hash of the build that arm wants) and ends with:
 ```bash
-node scripts/audit/recording-alignment/one-quantum-events.ts --from <FIRST_PLAN_RUN>
+node -e 'const fs=require("fs");for(const f of fs.readdirSync(".verify-output").filter(n=>/^recaudit-mt-summary-/.test(n)).sort().slice(-5)){const j=JSON.parse(fs.readFileSync(".verify-output/"+f,"utf8"));console.log(f,j.sdkVersion,"stopLead",j.stopLead,j.rows.length,"rows")}'
 ```
-Expected: each arm's repeat count grew by 80 (plus Task 1's 8). Confirm no block landed in the wrong arm. Read each event's lines. Apply the stopping rule.
+Expected: five files, each with the arm's `sdkVersion` and `stopLead` and 32 rows. A block that reads otherwise was recorded on the wrong build: delete its five runs and record it again. Write down the first run id of the first block as `FIRST_AB_RUN`; every tally of this task is `--from <FIRST_AB_RUN>`.
 
-- [ ] **Step 5: Rounds 2 to 5**
+**Stopping rule, fixed now.** Record 5 rounds. After each completed round read the two tally lines `stop-lead only` (arms A and B) and `on 0.0.173` (arms A and C), each in both directions, as the tally prints them (three decimals). If any of the four figures prints below `0.010` after rounds 1 to 4, record exactly one more round and stop there. The result is read off the tally after the LAST round recorded, whatever an earlier look showed. A run that ends in anything but `done` (an error row, a skip for a hidden window, the driver's deadline) is not topped up; two such runs in one block: stop and find out why before recording more.
 
-Repeat Steps 1 to 4. After the last arm-B block: `lsof -ti :5173 | xargs kill && rm -rf node_modules/.vite`.
-
-### Task 3: Read the events
-
-**Files:**
-- Create: `.verify-output/one-quantum-events-<date>.txt` (the tally's full output, kept beside the artifacts like the other scripts' oracles)
-
-**Interfaces:**
-- Consumes: the runs of Task 2.
-- Produces: per event, which stamp is off and whether the take is misplaced; per arm, a rate with its interval.
-
-- [ ] **Step 1: Save the tally**
-
-```bash
-node scripts/audit/recording-alignment/one-quantum-events.ts --from <FIRST_PLAN_RUN> > .verify-output/one-quantum-events-$(date +%F).txt
-node scripts/audit/recording-alignment/one-quantum-events.ts > .verify-output/one-quantum-events-all-$(date +%F).txt
-```
-
-- [ ] **Step 2: Classify every event of the plan's runs**
-
-For each event the tally prints, per tape: netted median, first-frame check, node delay, "adjusted − node delay", loopback delay, region position, waveform offset, "recording start − first quantum" in quanta, recording-start position. Fill one row per event:
-
-| question | read it from | answer means |
-|---|---|---|
-| Is the engine's stamp early? | netted median one quantum above the mode | yes: the recording-start `contextTime` is a quantum before the engine's audio |
-| Is the worklet's stamp early? | first-frame check −2.667 | yes: `firstQuantumTime` is a quantum before the buffer's first frame |
-| Is the take misplaced? | "adjusted − node delay" against the run's usual 1.4375 ms | one quantum off (4.1042): yes |
-| Is the recording-start position the usual one? | "recording-start position" against the other rows of the run (5.120 at 120 BPM from a stopped start) | a different value says the report came from a different quantum than usual, not only with a different time |
-| Is recording start − first quantum a whole number of quanta, and which? | that figure, against the run's other rows (1.000 and 2.000 are usual) | a value the run's other rows never show points at the order in which the two processors first ran |
-
-- [ ] **Step 3: Compare the arms**
-
-From the saved tally: repeats, events, rate and interval per arm; the Fisher line `stop-lead only` (arms A and B, the SDK question) and the line `on 0.0.173` (arms A and C, the harness question), each in the direction the counts point. State the result as one of:
-
-- "a difference": p < 0.01 under the stopping rule;
-- "no difference seen at this size": otherwise, with the two intervals and the largest ratio of rates they still allow.
-
-Split the events by scenario (`multitrack-start` against `multitrack-janked`) in the same way: it says whether holding the main thread for 150 ms at the recording flip matters.
-
-### Task 4: Follow the mechanism, as far as the events allow
-
-Only if Task 3 has at least three events that carry `recordingStartContextTimeSec`. Otherwise skip to Task 5 and say the mechanism is still open.
-
-**Files:** read-only in `/Users/naomiaro/Code/openDAWOriginal`:
-- `packages/studio/core-wasm/src/processor.ts` and `packages/studio/core-wasm/src/recording-start-edge.ts` — where the engine's report is stamped (`currentTime + 128 / sampleRate` on the first render that sees the recording flag).
-- `packages/studio/core-processors/src/RecordingProcessor.ts` — where the recording worklet stamps its first quantum.
-- `packages/studio/core/src/capture/RecordAudio.ts` — the placement (`startOffset = contextTime − firstQuantumTime + outputLatency + inputLatency`, position floored).
-- `packages/studio/core/src/EngineWorklet.ts` — the generation counter that drops a stale report.
-- `crates/engine/src/lib.rs` (`render`, `prepare_recording_state`, `set_position`, `begin_quantum_position`, `transact`) — what the engine does in the quanta around a recording start.
-
-- [ ] **Step 1: Say what the events have in common**
-
-From Task 3's table: same stamp off every time or not; same "recording start − first quantum"; same node delay; first repeat after a tempo change or after a server start; which scenario. Write the common part down in one paragraph before reading any source.
-
-- [ ] **Step 2: Read the two stamping sites against that paragraph**
-
-For each site, answer in writing: which clock value is read, in which callback, and what would have to happen for that value to be one quantum behind the audio of the same callback. Check each candidate against the events: a candidate that predicts a different "recording-start position" or a different "recording start − first quantum" than the events show is out.
-
-- [ ] **Step 3: If the SDK arms differ, bisect the engine changes by reading**
-
-`git diff "@opendaw/studio-sdk@0.0.172..@opendaw/studio-sdk@0.0.173" -- crates/engine/src/lib.rs` and judge the three candidates named under "What is known" against Step 2. A change that cannot run between `set_position(0)` settling and the first recorded quantum is out.
-
-- [ ] **Step 4: Decide whether a repro page is possible**
-
-A repro page needs the event on demand, or at least at a rate a page can show in a minute. If Step 2 names a condition that can be forced (a tempo write just before the start, a start within a given number of quanta of a locate), try it on a scratch copy of the audit page with `?scenario=multitrack-janked` and count. Twenty forced repeats with at least five events is a repro; anything less is not.
-
-### Task 5: Write it up
-
-**Files:**
-- Modify: `debug/recording-start-alignment-audit.md` (append a section)
-- Modify: `debug/README.md` (the register's index line)
-- Modify: `src/demos/recording/CLAUDE.md` (only if a rule for reading runs changed)
-- Create, only with a repro: `debug/drafts/issue-recording-start-one-quantum.md`
-- Delete: `docs/superpowers/plans/2026-10-01-one-quantum-event.md` (this file, in the PR that completes the work)
-
-- [ ] **Step 1: Append the register section**
-
-Title: `## The one-quantum event, counted on two releases (<date>)`. Contents, in this order: what was run (arms, block log with run ids, total repeats per arm); the tally table as the script printed it; the per-event table of Task 3 Step 2; the comparison of Task 3 Step 3 in the words fixed there; what Task 4 found, with what is ruled out and what is not; a "Reading" list in the register's style — what is established, what is open, what is not established.
-
-- [ ] **Step 2: Update the index and the memory**
-
-`debug/README.md`: prepend the new section's one-line result to the register's entry. Memory: update `project_first_frame_quantum_anomaly.md` and its line in `MEMORY.md` with the counts, the result and what is left.
-
-- [ ] **Step 3: Only with a repro — draft the issue**
-
-`debug/drafts/issue-recording-start-one-quantum.md`: the symptom, the measured signature, the repro page's URL, the link to the register section. Describe the cause precisely where it is known; no suggested fix. Stop and ask the user to read it. Do not post.
-
-- [ ] **Step 4: Verify and commit**
-
-```bash
-npm run typecheck && npx vitest run
-git add -A && git commit -m "docs(debug): the one-quantum event counted on 0.0.172 and 0.0.173"
-```
-Expected: typecheck 0, all tests pass. Push and open the PR only when the user asks.
+- [ ] **Step 3: State it** as "a difference" (a figure below 0.010 after the last round) or "no difference seen at this size", with each arm's rate and exact interval, and the by-scenario lines the tally prints (`multitrack-start` against `multitrack-janked`). At the rates seen so far the second is the likely outcome even if they are real: say what size of difference this many repeats could have shown. Kill the server and clear the cache after the last arm-B block.

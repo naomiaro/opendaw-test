@@ -40,6 +40,16 @@ export function listSummaryRunIds(): string[] {
     .sort();
 }
 
+const MULTITRACK_SUMMARY_NAME = /^recaudit-mt-summary-(\d+)\.json$/;
+
+/** Multi-mic run ids on disk, under the same snapshot bound as the single-tape ones. */
+export function listMultitrackSummaryRunIds(): string[] {
+  return readdirSync(VERIFY_DIR)
+    .map((f) => f.match(MULTITRACK_SUMMARY_NAME)?.[1])
+    .filter((id): id is string => id !== undefined && Number(id) <= MAX_RUN)
+    .sort();
+}
+
 const cache = new Map<string, LoadedAuditSummary>();
 export function loadSummary(runId: string): LoadedAuditSummary {
   const cached = cache.get(runId);

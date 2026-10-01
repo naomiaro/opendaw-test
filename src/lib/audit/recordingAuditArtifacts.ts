@@ -131,7 +131,9 @@ interface TakeRowBase extends FinalizeProbe {
    *  stop request to the metronome click the repeat is meant to end before, read off
    *  `engine.position` at the request. The stop round-trips through the worklet after
    *  it, so a value under about 30 ms (or a negative one) means the click may have
-   *  sounded: the repeat boundary can carry a double click. It does not enter a verdict. */
+   *  sounded: the repeat boundary can carry a double click. It does not enter a verdict.
+   *  On a `?stopLead=off` run it is measured against the click the stop follows and is
+   *  expected near zero or below it. */
   stopLeadMs?: number | null;
   /** G6, later rows: the engine's own report of where and when the repeat's recording began
    *  (`engine.recordingStart`), read at the stop request. `contextTime` is the END of the
@@ -274,9 +276,9 @@ interface SummaryBase {
    *  envelope written before the field existed. */
   sdkVersion?: string;
   /** False when the run was made with `?stopLead=off`: repeats stopped just AFTER the
-   *  metronome click, as the harness did before it had a stop lead. Absent on envelopes
-   *  written before the field existed (a row's `stopLeadMs` then tells: rows without it
-   *  are either older than the lead or from the sweeps recorded just after it arrived). */
+   *  metronome click instead of a lead before it. Absent on older envelopes; a row's
+   *  `stopLeadMs` then tells, and `harnessOf` in `oneQuantumEvents.ts` lists the runs
+   *  that had the lead and no such figure. */
   stopLead?: boolean;
   /** Which SDK surfaces the served build exposed at load — see
    *  `src/lib/audit/buildFeatures.ts`. Absent on every envelope written before

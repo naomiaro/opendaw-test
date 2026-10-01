@@ -1,14 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   FIRST_RUN_ON_0_0_173,
+  deviationOf,
   eventsOfRun,
   exactRateInterval,
   fisherOneSided,
   harnessOf,
-  modalValue,
+  medianOf,
   quantumMs,
   repeatsOf,
   sdkOf,
+  usualNettedMs,
   type EventRow,
   type RunIdentity,
 } from "./oneQuantumEvents";
@@ -16,37 +18,92 @@ import {
 const mt = (repeat: number, tape: string, netted: number | null, ffc: number | null = 0): EventRow =>
   ({ scenario: "multitrack-janked", bpm: 120, repeat, tape, medianBeatErrorMsNetted: netted, firstFrameCheckMs: ffc });
 
-describe("quantumMs and modalValue", () => {
+const loopWrap = (repeat: number, netted: number[]): EventRow[] =>
+  netted.map((value, takeIndex) => ({ scenario: "loop-wrap", bpm: 120, repeat, takeIndex, medianBeatErrorMsNetted: value }));
+
+describe("quantumMs and medianOf", () => {
   it("is 128 frames at the rate", () => {
     expect(quantumMs(48000)).toBeCloseTo(2.6667, 4);
     expect(quantumMs(44100)).toBeCloseTo(2.9025, 4);
   });
 
-  it("returns the most frequent value and null for none", () => {
-    expect(modalValue([1.146, 1.146, 3.813, 1.146])).toBeCloseTo(1.15, 6);
-    expect(modalValue([])).toBeNull();
+  it("returns the middle value, the mean of the two middle ones, and null for none", () => {
+    expect(medianOf([3.813, 1.146, 1.146])).toBe(1.146);
+    expect(medianOf([1, 4, 2, 3])).toBe(2.5);
+    expect(medianOf([])).toBeNull();
+  });
+});
+
+describe("usualNettedMs", () => {
+  it("stays on the usual value when the repeat that is off has the most rows alike", () => {
+    // one event repeat of three takes, two ordinary repeats whose takes spread
+    const rows = [
+      ...loopWrap(1, [1.07 + 2.667, 1.12 + 2.667, 1.17 + 2.667]),
+      ...loopWrap(2, [1.08, 1.13, 1.16]),
+      ...loopWrap(3, [1.09, 1.14, 1.15]),
+    ];
+    expect(usualNettedMs(repeatsOf(rows))).toBeCloseTo(1.14, 6);
+    expect(eventsOfRun(rows, 48000).events.map((event) => event.repeat)).toEqual([1]);
+  });
+
+  it("is null for two repeats: nothing says which of two different values is the usual one", () => {
+    const rows = [mt(1, "a", 3.819), mt(2, "a", 1.146)];
+    expect(usualNettedMs(repeatsOf(rows))).toBeNull();
+    expect(eventsOfRun(rows, 48000)).toEqual({ repeats: 2, events: [], others: [], usualMs: null });
+  });
+});
+
+describe("deviationOf", () => {
+  const reading = (rows: EventRow[]) => repeatsOf(rows)[0];
+
+  it("is none within half a quantum, one-quantum at a quantum, other beyond", () => {
+    expect(deviationOf(reading([mt(1, "a", 1.146)]), 1.146, 48000)).toBe("none");
+    expect(deviationOf(reading([mt(1, "a", 2.4)]), 1.146, 48000)).toBe("none");
+    expect(deviationOf(reading([mt(1, "a", 3.813)]), 1.146, 48000)).toBe("one-quantum");
+    expect(deviationOf(reading([mt(1, "a", 1.146 - 2.667)]), 1.146, 48000)).toBe("one-quantum");
+    expect(deviationOf(reading([mt(1, "a", 1.146 + 5.333)]), 1.146, 48000)).toBe("other");
+    expect(deviationOf(reading([mt(1, "a", 11.146)]), 1.146, 48000)).toBe("other");
+  });
+
+  it("reads the quantum at the run's own rate", () => {
+    // 1.40 ms is under half a quantum at 44.1 kHz (1.451) and over half at 48 kHz (1.333)
+    expect(deviationOf(reading([mt(1, "a", 1.156 + 2.9025)]), 1.156, 44100)).toBe("one-quantum");
+    expect(deviationOf(reading([mt(1, "a", 1.156 + 1.40)]), 1.156, 44100)).toBe("none");
+    expect(deviationOf(reading([mt(1, "a", 1.156 + 1.40)]), 1.156, 48000)).toBe("other");
+  });
+
+  it("is other when one figure is a quantum off and another is off by something else", () => {
+    expect(deviationOf(reading([mt(1, "a", 3.813, -2.667), mt(1, "b", 3.813, -8)]), 1.146, 48000)).toBe("other");
   });
 });
 
 describe("eventsOfRun", () => {
-  it("counts a repeat whose netted median is a quantum off the run's mode", () => {
+  it("counts a repeat whose netted median is a quantum off the run's usual value", () => {
     const rows = [mt(1, "a", 1.146), mt(1, "b", 1.146), mt(2, "a", 3.813), mt(2, "b", 3.813), mt(3, "a", 1.146), mt(3, "b", 1.146)];
-    const { repeats, events } = eventsOfRun(rows, 48000);
+    const { repeats, events, others } = eventsOfRun(rows, 48000);
     expect(repeats).toBe(3);
     expect(events.map((event) => event.repeat)).toEqual([2]);
+    expect(others).toEqual([]);
   });
 
   it("counts a repeat whose first-frame check is a quantum off zero even with the usual netted median", () => {
-    const rows = [mt(1, "a", 1.146), mt(1, "b", 1.146, -2.667), mt(2, "a", 1.146), mt(2, "b", 1.146)];
+    const rows = [mt(1, "a", 1.146), mt(1, "b", 1.146, -2.667), mt(2, "a", 1.146), mt(2, "b", 1.146), mt(3, "a", 1.146), mt(3, "b", 1.146)];
     expect(eventsOfRun(rows, 48000).events.map((event) => event.repeat)).toEqual([1]);
   });
 
+  it("keeps a repeat that is off by something else out of the events", () => {
+    const rows = [mt(1, "a", 1.146), mt(2, "a", 11.146), mt(3, "a", 1.146), mt(4, "a", 3.813), mt(5, "a", 1.146)];
+    const { events, others } = eventsOfRun(rows, 48000);
+    expect(events.map((event) => event.repeat)).toEqual([4]);
+    expect(others.map((other) => other.repeat)).toEqual([2]);
+  });
+
   it("does not count the spread of loop-wrap takes at 44.1 kHz", () => {
-    const rows: EventRow[] = [0.97, 1.05, 1.12, 1.18, 1.19, 1.17].map((netted, takeIndex) =>
-      ({ scenario: "loop-wrap", bpm: 120, repeat: 1, takeIndex, medianBeatErrorMsNetted: netted }));
-    const { repeats, events } = eventsOfRun(rows, 44100);
-    expect(repeats).toBe(1);
+    const rows = [1, 2, 3].flatMap((repeat) => loopWrap(repeat, [0.97, 1.05, 1.12, 1.18, 1.19, 1.17]));
+    const { repeats, events, others } = eventsOfRun(rows, 44100);
+    expect(repeats).toBe(3);
     expect(events).toEqual([]);
+    expect(others).toEqual([]);
   });
 
   it("leaves out a repeat with a row that has no netted median", () => {
@@ -56,7 +113,7 @@ describe("eventsOfRun", () => {
   });
 
   it("returns nothing for a run without netted medians", () => {
-    expect(eventsOfRun([mt(1, "a", null)], 48000)).toEqual({ repeats: 0, events: [], modeMs: null });
+    expect(eventsOfRun([mt(1, "a", null)], 48000)).toEqual({ repeats: 0, events: [], others: [], usualMs: null });
   });
 });
 
@@ -65,6 +122,12 @@ describe("sdkOf and harnessOf", () => {
 
   it("reads the version off the envelope when it is there", () => {
     expect(sdkOf({ ...release, sdkVersion: "0.0.172", runId: FIRST_RUN_ON_0_0_173 + 10 })).toBe("0.0.172");
+  });
+
+  it("leaves a branch build out even when its envelope carries a version", () => {
+    const branch = { ...release, sdkVersion: "0.0.173", runId: FIRST_RUN_ON_0_0_173 + 10 };
+    expect(sdkOf({ ...branch, sdkBuildProbe: "candidate" })).toBeNull();
+    expect(sdkOf({ ...branch, buildFeatures: ["recordingStart", "calibrateInputLatency", "latencyProbes"] })).toBeNull();
   });
 
   it("dates an older release envelope by its run id", () => {
@@ -114,6 +177,17 @@ describe("exactRateInterval", () => {
     expect(low).toBeLessThan(2 / 168);
     expect(high).toBeGreaterThan(2 / 168);
     expect(high).toBeLessThan(0.05);
+  });
+
+  it("matches the exact bounds for 2 in 168 and for every repeat an event", () => {
+    const [low, high] = exactRateInterval(2, 168);
+    expect(low).toBeCloseTo(0.001445, 6);
+    expect(high).toBeCloseTo(0.0423406, 6);
+    // all 5 of 5: the lower bound is 0.025^(1/5), the upper is 1
+    expect(exactRateInterval(5, 5)[0]).toBeCloseTo(Math.pow(0.025, 1 / 5), 6);
+    expect(exactRateInterval(5, 5)[1]).toBe(1);
+    // 1 of 5: the lower bound is 1 − 0.975^(1/5)
+    expect(exactRateInterval(1, 5)[0]).toBeCloseTo(1 - Math.pow(0.975, 1 / 5), 6);
   });
 
   it("covers everything for no repeats", () => {

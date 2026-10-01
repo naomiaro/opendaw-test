@@ -1,21 +1,22 @@
 /**
- * The one-quantum event over every release-build run in `.verify-output/`: repeats and
- * events per SDK release and per harness stop, each event with the figures that show it,
- * exact intervals for the rates, and Fisher's exact test between the groups.
+ * The one-quantum event over the release-build runs in `.verify-output/`: repeats and
+ * events per SDK release, per harness stop and per scenario, each event with the figures
+ * that show it, exact intervals for the rates, and Fisher's exact test between the groups.
  *
  *   node scripts/audit/recording-alignment/one-quantum-events.ts [--from <run id>]
  *
  * `--from` counts only runs with that id or a later one. A comparison that is to TEST
  * whether two groups differ has to leave out the runs that suggested the question.
+ * `RECAUDIT_MAX_RUN=<run id>` leaves out every later run (see `artifacts.ts`), so a
+ * tally quoted in the register can be printed again after more runs have landed.
  *
- * What counts as an event, and how a run older than the `sdkVersion` / `stopLead`
- * envelope fields is assigned to a release and a harness, is in
- * `src/lib/audit/oneQuantumEvents.ts`.
+ * What counts as an event, which runs count as a release build, and how a run older than
+ * the `sdkVersion` / `stopLead` envelope fields is assigned to a release and a harness,
+ * is in `src/lib/audit/oneQuantumEvents.ts`.
  */
-import { readdirSync } from "node:fs";
-import { VERIFY_DIR, loadMultitrackSummary, loadSummaries } from "./artifacts.ts";
+import { MAX_RUN, listMultitrackSummaryRunIds, loadMultitrackSummary, loadSummaries } from "./artifacts.ts";
 import {
-  eventsOfRun, exactRateInterval, fisherOneSided, harnessOf, quantumMs, sdkOf,
+  eventsOfRun, exactRateInterval, fisherOneSided, harnessOf, quantumMs, repeatsOf, sdkOf,
   type EventRow, type HarnessStop, type RepeatReading, type RunIdentity,
 } from "../../../src/lib/audit/oneQuantumEvents.ts";
 
@@ -54,9 +55,7 @@ for (const { summary } of loadSummaries()) {
     rows: summary.rows,
   });
 }
-for (const file of readdirSync(VERIFY_DIR).sort()) {
-  const runId = /^recaudit-mt-summary-(\d+)\.json$/.exec(file)?.[1];
-  if (runId === undefined) continue;
+for (const runId of listMultitrackSummaryRunIds()) {
   const summary = loadMultitrackSummary(runId);
   runs.push({
     kind: "multi",
@@ -70,6 +69,7 @@ interface Tally { repeats: number; events: number }
 const tallies = new Map<string, Tally>();
 const bySdk = new Map<string, Tally>();
 const byHarness = new Map<string, Tally>();
+const byScenario = new Map<string, Tally>();
 const bump = (map: Map<string, Tally>, key: string, repeats: number, events: number) => {
   const tally = map.get(key) ?? { repeats: 0, events: 0 };
   tally.repeats += repeats;
@@ -77,11 +77,12 @@ const bump = (map: Map<string, Tally>, key: string, repeats: number, events: num
   map.set(key, tally);
 };
 const eventLines: string[] = [];
-const describe = (reading: RepeatReading, modeMs: number, rate: number): string =>
+const otherLines: string[] = [];
+const describe = (reading: RepeatReading, usualMs: number, rate: number): string =>
   reading.rows.map((row) => {
     const figures = row as EventRow & StartFigures;
     const name = row.tape ?? `take ${String(row.takeIndex ?? 0)}`;
-    const parts = [`netted ${(row.medianBeatErrorMsNetted as number).toFixed(3)} (mode ${modeMs.toFixed(2)})`];
+    const parts = [`netted ${(row.medianBeatErrorMsNetted as number).toFixed(3)} (usual ${usualMs.toFixed(3)})`];
     if (typeof row.firstFrameCheckMs === "number") parts.push(`first-frame check ${row.firstFrameCheckMs.toFixed(3)}`);
     if (typeof figures.nodeDelayMs === "number") parts.push(`node delay ${figures.nodeDelayMs.toFixed(3)}`);
     if (typeof figures.nodeDelayMs === "number" && typeof figures.medianBeatErrorMsAdjusted === "number") {
@@ -99,22 +100,29 @@ const describe = (reading: RepeatReading, modeMs: number, rate: number): string 
   }).join("\n      ");
 
 let skipped = 0;
+let tooShort = 0;
+let counted = 0;
 for (const run of runs) {
   if (run.identity.runId < fromRun) continue;
   const sdk = sdkOf(run.identity);
   if (sdk === null) { skipped++; continue; }
-  const { repeats, events, modeMs } = eventsOfRun(run.rows, run.rate);
-  if (repeats === 0 || modeMs === null) continue;
+  const { repeats, events, others, usualMs } = eventsOfRun(run.rows, run.rate);
+  if (repeats === 0) continue;
+  if (usualMs === null) { tooShort++; continue; }
+  counted++;
   const harness: HarnessStop = harnessOf(run.identity, run.rows);
   bump(tallies, `${sdk} | ${harness} | ${run.kind} | ${run.rate}`, repeats, events.length);
   bump(bySdk, sdk, repeats, events.length);
   bump(byHarness, `${sdk} | ${harness}`, repeats, events.length);
+  for (const reading of repeatsOf(run.rows)) bump(byScenario, `${sdk} | ${harness} | ${reading.scenario}`, 1, 0);
+  const title = (reading: RepeatReading): string =>
+    `${sdk} ${harness} ${run.kind} run ${run.identity.runId} ${reading.scenario}/${reading.bpm}/r${reading.repeat} ` +
+    `(quantum ${quantumMs(run.rate).toFixed(3)} ms)\n      ${describe(reading, usualMs, run.rate)}`;
   for (const event of events) {
-    eventLines.push(
-      `${sdk} ${harness} ${run.kind} run ${run.identity.runId} ${event.scenario}/${event.bpm}/r${event.repeat} ` +
-      `(quantum ${quantumMs(run.rate).toFixed(3)} ms)\n      ${describe(event, modeMs, run.rate)}`
-    );
+    bump(byScenario, `${sdk} | ${harness} | ${event.scenario}`, 0, 1);
+    eventLines.push(title(event));
   }
+  for (const other of others) otherLines.push(title(other));
 }
 
 const rateLine = ({ repeats, events }: Tally): string => {
@@ -122,7 +130,11 @@ const rateLine = ({ repeats, events }: Tally): string => {
   return `${events} in ${repeats} (${((events / repeats) * 100).toFixed(2)} %, 95 % interval ${(low * 100).toFixed(2)}–${(high * 100).toFixed(2)} %)`;
 };
 
-console.log(`runs read: ${runs.length}${fromRun > 0 ? ` (counting from run ${fromRun})` : ""}, not release builds: ${skipped}\n`);
+console.log(
+  `runs read: ${runs.length}` + (MAX_RUN === Infinity ? "" : ` (RECAUDIT_MAX_RUN=${MAX_RUN})`) +
+  `, counted: ${counted}` + (fromRun > 0 ? ` (from run ${fromRun})` : "") +
+  `, not release builds: ${skipped}, fewer than 3 repeats: ${tooShort}\n`
+);
 console.log("| SDK | harness stop | kind | rate | repeats | events |\n|---|---|---|---|---|---|");
 for (const key of [...tallies.keys()].sort()) {
   const tally = tallies.get(key) as Tally;
@@ -132,6 +144,9 @@ console.log("\nPer SDK release:");
 for (const key of [...bySdk.keys()].sort()) console.log(`  ${key}: ${rateLine(bySdk.get(key) as Tally)}`);
 console.log("\nPer SDK release and harness stop:");
 for (const key of [...byHarness.keys()].sort()) console.log(`  ${key}: ${rateLine(byHarness.get(key) as Tally)}`);
+
+console.log("\nPer SDK release, harness stop and scenario:");
+for (const key of [...byScenario.keys()].sort()) console.log(`  ${key}: ${rateLine(byScenario.get(key) as Tally)}`);
 
 const releases = [...bySdk.keys()].sort();
 const stops: HarnessStop[] = ["stop-lead", "stop-after-click"];
@@ -158,5 +173,14 @@ for (const sdk of releases) {
   compare(`on ${sdk}`, "stop-after-click", byHarness.get(`${sdk} | stop-after-click`), "stop-lead", byHarness.get(`${sdk} | stop-lead`));
 }
 
+// Whether holding the main thread at the recording flip matters: the two multi-mic scenarios in one group
+for (const key of [...byHarness.keys()].sort()) {
+  compare(`${key}, by scenario`, "multitrack-start", byScenario.get(`${key} | multitrack-start`), "multitrack-janked", byScenario.get(`${key} | multitrack-janked`));
+}
+
 console.log(`\nEvents (${eventLines.length}):`);
 for (const line of eventLines) console.log("  " + line);
+if (otherLines.length > 0) {
+  console.log(`\nRepeats off by something other than one quantum, not counted as events (${otherLines.length}):`);
+  for (const line of otherLines) console.log("  " + line);
+}

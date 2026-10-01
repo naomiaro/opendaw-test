@@ -5079,14 +5079,18 @@ and the runs that checked it. The plan the count follows is
 - **Another release, served.** `node scripts/audit/sdk-override.ts <git-rev> <dir>` builds a
   directory for `SDK_DIST_OVERRIDE` from the lockfile of a revision of this repo. For 0.0.172
   (`a5bf064`, main before the upgrade) it is at `/Users/naomiaro/Code/opendaw-sdk-override-0.0.172`:
-  its 32 wasm files and the `studio-core` and `studio-adapters` dists are byte-identical to the
-  0.0.172 install kept from before the upgrade, the dev server serves its `engine.wasm`
+  its 32 wasm files and the `studio-core` and `studio-adapters` dists were byte-identical to a
+  copy of the 0.0.172 `node_modules/@opendaw` taken before the upgrade (a scratch copy, not
+  kept with the repo), the dev server serves its `engine.wasm`
   (sha-256 `a6b14cd4d4d819fc…`), and a `midtimeline-start/120` cell on it read 3 of 3
   `aligned` with no page error. That run's files were deleted: its envelope carried no SDK
   version and would have been counted as 0.0.173. A first layout under `<dir>/node_modules`
   failed in Vite's dependency optimizer; the packages have to sit outside any `node_modules`.
 - **A run says what it is.** The envelope carries `sdkVersion` and `stopLead`; `&stopLead=off`
-  stops a repeat just after the click as the harness did before the stop lead. Run
+  stops a repeat just after the click as the harness did before the stop lead. The page's
+  own import of the SDK version resolves into the override too (checked on the override
+  server: the audit page imports `…/opendaw-sdk-override-0.0.172/@opendaw/studio-sdk/dist/index.js`,
+  whose version is 0.0.172). Run
   `…1790877269188` (`nominal-start/120`, `stopLead=off`): `sdkVersion` 0.0.173, `stopLead`
   false, 16 matched beats, `stopLeadMs` −3, −27, −21, netted +1.15 on all three.
 - **The engine's report on the row.** `recordingStartContextTimeSec` and
@@ -5101,10 +5105,147 @@ and the runs that checked it. The plan the count follows is
   130 with the stop lead). Every 0.0.172 repeat was recorded with the stop after the click, so
   the saved runs cannot separate the release from the stop.
 
+- **After the review of the tooling (same day).** A repeat is held against the run's median
+  netted value, not its most frequent one (in a short run the event's own rows could be the
+  most frequent), and a run of fewer than three repeats is not read. A repeat off by
+  something other than one quantum is listed apart. A branch build is left out whatever
+  version its envelope names. The multi-mic runs obey `RECAUDIT_MAX_RUN` like the
+  single-tape ones. On a `stopLead=off` `loop-wrap` row, `stopLeadMs` is measured against
+  the loop's downbeat, the click that stop follows. `sdk-override.ts` refuses a directory it
+  did not build. The count is unchanged by any of it: 1 in 416, 2 in 193, the same three
+  events.
+
 Two things the event rows show that the section above did not say:
 
-- On all three events `regionPositionPpqn` (5) and `waveformOffsetSec` (25.604 ms) are the
-  values of the rows around them. What the SDK placed the take from looks as it always does.
+- Both multi-mic events carry the commonest placement values of their run:
+  `regionPositionPpqn` 5 and `waveformOffsetSec` 25.604 ms (22 of the other 30 rows in
+  `…1790872984620` and 24 of 30 in `…1790721436525`; the rest read 28.271 or 30.938 ms, a
+  recording start two or three quanta after the first quantum). What the SDK placed those
+  takes from looks as it usually does. The single-tape event (`midtimeline-start/97.3/r1`,
+  position 7821, offset 25.433 ms) has no common value to be held against: its cell's other
+  two repeats read 7738 / 25.452 ms and 7829 / 27.905 ms.
 - The three tapes whose first-frame check is −2.667 ms all read node delay 17.333 ms and
   loopback delay 14.958 ms, in the 0.0.172 run and in the 0.0.173 one. A node delay of 17.333
   ms is also read on rows without the event.
+
+## The cause of the one-quantum event: Chrome's worklet clock stands still while the main thread changes the graph (2026-10-01)
+
+Found while the plan for the count was being reworked, by reading the two stamping sites and
+then the browser. It makes the count between releases a side question: the event does not
+need the SDK at all.
+
+### What the SDK reads
+
+Both start-of-take stamps are one read of the worklet-scope clock inside one `process()` call
+(checkout at `@opendaw/studio-sdk@0.0.173`; 0.0.172 has the same code):
+
+- the engine's recording start, `packages/studio/core-wasm/src/processor.ts`
+  `#announceRecordingStart`: `currentTime + RenderQuantum / sampleRate` on the first render
+  that leaves the recording flag set;
+- the recording worklet's first quantum, `packages/studio/core-processors/src/RecordingProcessor.ts`
+  `process`: `currentTime` on the first call whose input has the expected channel count.
+
+### What Chrome does with that clock
+
+Chromium `main`, read 2026-10-01 (`base_audio_context.cc` last changed 2026-09-25, commit
+`89e8f692751c`), under `third_party/blink/renderer/modules/webaudio/`:
+
+- `realtime_audio_destination_handler.cc`, `RealtimeAudioDestinationHandler::Render`: after a
+  quantum is rendered it calls `AdvanceCurrentSampleFrame(number_of_frames)` and then
+  `context->UpdateWorkletGlobalScopeOnRenderingThread()`.
+- `base_audio_context.cc`, `UpdateWorkletGlobalScopeOnRenderingThread`: it takes a
+  `DeferredTaskHandler::GraphAutoTryLocker` and calls
+  `global_scope->SetCurrentFrame(CurrentSampleFrame())` only `if (try_locker.IsAcquired())`.
+- `audio_worklet_global_scope.cc`: `currentTime()` is `current_frame_ / sample_rate_`.
+- The main thread holds that lock (`DeferredTaskHandler::GraphAutoLocker`) in the `AudioNode`
+  constructor, in `AudioNode::connect`, in every `AudioNode::disconnect`, and when an
+  `AudioWorkletNode` is made (`audio_node.cc`, `audio_worklet_node.cc`).
+
+So when the main thread is inside one of those at the instant a quantum ends, the worklet
+scope keeps the previous quantum's frame. Every `process()` call of the next quantum, in
+every processor of the context, reads a `currentFrame` and `currentTime` one quantum old. The
+quantum after that reads true again (a step of two quanta), unless the lock is held again.
+
+### Measured, without the SDK
+
+`scripts/audit/recording-alignment/one-quantum/graph-lock-clock.page.js` (runner
+`run-graph-lock-clock.playwright.js`; Chrome 154, macOS, 48 kHz, `latencyHint: 0`). A buffer
+source plays a ramp in which every sample names its own frame, started at a known context
+frame. A worklet records for each call the `currentFrame` it read and the first sample of its
+input; the stamp less the frame the sample names is 0 when the stamp is true. The main thread
+meanwhile does one kind of work, in stretches of 8 ms with 2 ms between.
+
+Run `graph-lock-clock-1790878810989.json`, 12 s per condition:
+
+| the main thread | quanta checked | stamp true | stamp early | by |
+|---|---|---|---|---|
+| does nothing | 4443 | 4443 | 0 | |
+| runs a loop that touches no audio object | 4443 | 4443 | 0 | |
+| connects and disconnects two gain nodes that are in nobody's path | 4446 | 2615 | 1831 | 1 to 4 quanta |
+| creates gain nodes | 4443 | 3617 | 826 | 1 to 14 quanta |
+| builds a `MediaStreamAudioSourceNode` and connects it to a fresh worklet node, once per stretch | 4445 | 4443 | 2 | 1 quantum |
+
+No stamp was ever late. In the last condition each fresh worklet also reported the
+`currentFrame` of its first call with the sample it was handed, which is the read a recorder
+makes once at the start of a take: 2 of 2270 were one quantum early. Run
+`graph-lock-clock-1790878967602.json`, that condition alone for 60 s: 50 of 22443 quanta
+early (49 by one quantum, 1 by two), and **44 of 12003 fresh worklets read a first
+`currentFrame` one quantum early** (0.37 %, 1 in 273), none late. A first run of the five
+conditions, before the probe saved its result, read the same pattern (idle 0, busy 0, connect
+1900 of 4445, create 796 of 4443, stream 3 of 4443).
+
+A busy main thread alone does nothing to the clock, which is why the earlier experiment
+without the SDK (`stream-tap/worklet-clock.page.js`: 1700 fresh recorders, a held main thread)
+found every stamp true: its graph work was over before its recorders ran. It is graph work
+that coincides with the end of a quantum that counts.
+
+### How it fits the three events
+
+- The start of a take is graph work: per tape the SDK makes a fresh recording worklet and
+  connects the tape's record gain to it (`CaptureAudio.prepareRecording`,
+  `recordGainNode.connect(recordingWorklet)`), and in the harness the tape's stream opens at
+  that moment too, so its source node is made and connected then (`#updateStream`). The two
+  stamps are read in the quanta right after. One build in
+  the probe gives 1 early first read in 273; the harness has seen 3 events in 609 repeats.
+- `multitrack-janked/r7` on 0.0.173: tape a's recorder stamps its first quantum in quantum
+  *n*, true. In quantum *n*+1 the clock still reads *n*: tape b's recorder stamps there (one
+  quantum early, first-frame check −2.667) and the engine reports its recording start there
+  (one quantum early, netted +2.667 on both tapes). The three stamps stand in their usual
+  relation, which is what the row shows (the usual `waveformOffsetSec`, equal first-quantum
+  times). Tape a ends a quantum off, tape b in place.
+- `multitrack-janked/r3` on 0.0.172: both recorders and the engine stamp in the stale
+  quantum, all three early, both takes in place. And on both tapes the first-quantum time is
+  128 frames BEFORE the context time the main thread read when the tape's source node was
+  made (`firstQuantumTimeSec − nodeSourceCreatedAtSec`; on the other 30 rows of that run it
+  is 0, +128 or +256, and on all 32 rows of `…1790872984620` it is 0 or +128). A recorder
+  cannot have run on a node before the node existed: that stamp is too early whatever the
+  loopback says.
+- The single-tape event: the engine's stamp one quantum early; nothing on that row reads the
+  recorder's.
+
+### Reading
+
+- **Established:** in Chrome, a worklet's `currentTime` and `currentFrame` are one or more
+  quanta behind in any quantum that follows a quantum end at which the main thread held the
+  audio graph lock; a fresh worklet connected to a fresh stream source reads its first
+  `currentFrame` one quantum early about once in 273 builds on this machine; both of the
+  SDK's start-of-take stamps are single reads of that clock, taken while the graph is being
+  built.
+- **Not yet shown directly:** that the three harness events were this. Signature, rarity
+  and the stamp that predates its own node all fit, and nothing else does; no run has yet
+  watched the clock through an event. The harness's reference recorder stamps every quantum
+  and can be made to report it.
+- **The harness is exposed too.** `layOutRange` places a tap's quanta by their stamps. A
+  stale stamp puts a quantum on top of the one before it and leaves its own place empty.
+  A tap or a reference laid out over a stale quantum reads one missing quantum; no saved
+  verdict is known to rest on one, and none has been looked for.
+- **Earlier one-quantum findings in this register may be the same thing** and have not been
+  re-read against it: the calibration call that read one quantum short with verdict `ok`,
+  the second anchor one quantum off (1 in 152 calls), the stamps that repeated or skipped in
+  the two-tap spike (24 recorders of 750).
+- **Not measured:** Firefox and Safari; other machines; whether the rate differs between
+  0.0.172 and 0.0.173 (nothing in the 0.0.173 diff touches the capture path or either
+  stamping site, so a difference would have to come from how much graph work the page does
+  around a take's start).
+- **Not a fix:** nothing here changes the SDK or the harness. What follows is in
+  `docs/superpowers/plans/2026-10-01-one-quantum-event.md`.

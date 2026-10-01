@@ -146,6 +146,7 @@ describe("parseAuditSummary — SDK version and stop lead", () => {
 
   it("malformed → throws, never coerces", () => {
     expect(() => parseAuditSummary({ ...g6, sdkVersion: 173 }, 1)).toThrow(/sdkVersion/);
+    expect(() => parseAuditSummary({ ...g6, sdkVersion: "" }, 1)).toThrow(/sdkVersion/);
     expect(() => parseAuditSummary({ ...g6, stopLead: "off" }, 1)).toThrow(/stopLead/);
   });
 });
