@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  findLag, frameDiscontinuities, layOutRange, measureNodeDelay, nodeDelayFor, notMeasured,
+  findLag, frameDiscontinuities, layOutRange, measureNodeDelay, repairFrames, nodeDelayFor, notMeasured,
   referenceCovers, referenceFor, referenceLeadFrames, spanOf, trimReference,
   NODE_TAP_LOUD, NODE_TAP_MAX_LAG_SEC, NODE_TAP_PROCESSOR, NODE_TAP_PROCESSOR_SOURCE,
   NODE_TAP_QUANTUM_FRAMES, NODE_TAP_SECONDS, NODE_TAP_WINDOW_FRAMES, NODE_TAP_WINDOW_LEAD_FRAMES,
@@ -8,6 +8,13 @@ import {
 } from "./nodeTap";
 
 const QUANTUM = NODE_TAP_QUANTUM_FRAMES;
+
+/** A chunk of `frames.length` quanta stamped with the given frames; the samples do not matter. */
+const stamped = (frames: number[]): TapChunk => ({
+  frames: Float64Array.from(frames),
+  samples: new Float32Array(frames.length * NODE_TAP_QUANTUM_FRAMES),
+  count: frames.length,
+});
 
 /** What goes into the stream, as a function of the context frame: reference
  *  clicks (6 kHz, 8 ms, every 0.25 s, peak 0.5) over a quiet bed that never repeats. */
@@ -142,6 +149,30 @@ describe("measureNodeDelay", () => {
     expect(result.delayFrames).toBeNull();
     expect(result.unmeasured).toContain("could not be compared");
     expect(result.tapMissingQuanta).toBe(1);
+  });
+
+  it("reads the delay through such a quantum once the stamps are repaired, in the tap or in the reference", () => {
+    const input = streamInput(48000);
+    const first = 40 * QUANTUM;
+    const clean = measureNodeDelay(record(delayed(input, 896), first, tapQuanta(48000)), record(input, 0, 1000), 48000);
+    const inWindow = Math.floor((clean.windows[0].startFrame - first) / QUANTUM) + 1;
+    const tap = record(delayed(input, 896), first, tapQuanta(48000), { repeatStamp: [inWindow] });
+    expect(repairFrames(tap, null).repaired).toBe(1);
+    const repairedTap = measureNodeDelay(tap, record(input, 0, 1000), 48000);
+    expect(repairedTap.delayFrames).toBe(896);
+    expect(repairedTap.tapMissingQuanta).toBe(0);
+    // The same stale stamp in the reference, in the stretch the first window is matched against.
+    const inReference = Math.floor((clean.windows[0].startFrame - 896) / QUANTUM) + 1;
+    const stale = record(input, 0, 1000, { repeatStamp: [inReference] });
+    const cleanTap = record(delayed(input, 896), first, tapQuanta(48000));
+    const unrepaired = measureNodeDelay(cleanTap, stale, 48000);
+    expect(unrepaired.delayFrames).toBeNull();
+    expect(unrepaired.referenceMissingQuanta).toBe(clean.referenceMissingQuanta + 1);
+    expect(repairFrames(stale, null).repaired).toBe(1);
+    const repairedReference = measureNodeDelay(cleanTap, stale, 48000);
+    expect(repairedReference.delayFrames).toBe(896);
+    // The lead reaches back before the reference's first frame: the clean scene lacks those quanta too.
+    expect(repairedReference.referenceMissingQuanta).toBe(clean.referenceMissingQuanta);
   });
 
   it("reads the delay when the repeated stamp is outside every window", () => {
@@ -645,13 +676,6 @@ describe("the recorder's processor", () => {
 });
 
 describe("frameDiscontinuities", () => {
-  /** A chunk of `frames.length` quanta stamped with the given frames; the samples do not matter here. */
-  const stamped = (frames: number[]): TapChunk => ({
-    frames: Float64Array.from(frames),
-    samples: new Float32Array(frames.length * NODE_TAP_QUANTUM_FRAMES),
-    count: frames.length,
-  });
-
   it("finds nothing in a clock that advances one quantum per call, across chunks too", () => {
     const { found, lastFrame } = frameDiscontinuities([stamped([0, 128, 256]), stamped([384, 512])], null);
     expect(found).toEqual([]);
@@ -683,5 +707,37 @@ describe("frameDiscontinuities", () => {
     const { found, lastFrame } = frameDiscontinuities([partial], null);
     expect(found).toEqual([]);
     expect(lastFrame).toBe(128);
+  });
+});
+
+describe("repairFrames", () => {
+  it("leaves a true clock alone", () => {
+    const chunk = stamped([0, 128, 256]);
+    expect(repairFrames([chunk], null)).toEqual({ repaired: 0, lastFrame: 256 });
+    expect([...chunk.frames]).toEqual([0, 128, 256]);
+  });
+
+  it("moves a stamp that stood still to one quantum after the call before it", () => {
+    const chunk = stamped([0, 128, 128, 384]);
+    expect(repairFrames([chunk], null).repaired).toBe(1);
+    expect([...chunk.frames]).toEqual([0, 128, 256, 384]);
+  });
+
+  it("repairs a clock that stood still for several calls", () => {
+    const chunk = stamped([0, 128, 128, 128, 512]);
+    expect(repairFrames([chunk], null).repaired).toBe(2);
+    expect([...chunk.frames]).toEqual([0, 128, 256, 384, 512]);
+  });
+
+  it("takes a jump forward as read: the recorder was not called in between", () => {
+    const chunk = stamped([0, 128, 512, 640]);
+    expect(repairFrames([chunk], null).repaired).toBe(0);
+    expect([...chunk.frames]).toEqual([0, 128, 512, 640]);
+  });
+
+  it("repairs across a chunk border from the frame carried over", () => {
+    const chunk = stamped([256, 512]);
+    expect(repairFrames([chunk], 256)).toEqual({ repaired: 1, lastFrame: 512 });
+    expect([...chunk.frames]).toEqual([384, 512]);
   });
 });

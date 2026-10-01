@@ -131,10 +131,38 @@ export function frameDiscontinuities(
 }
 
 /**
+ * Put each call's stamp where the call really was. A worklet's `currentFrame` can be
+ * behind for a call, never ahead: a stamp less than one quantum after the call before it
+ * is moved to exactly that; a stamp at or beyond it stays (a recorder that was not called
+ * for a while jumps forward). The first stamp of a recorder stays as read, so a recorder
+ * whose very first call read a stale clock keeps that call one quantum early.
+ * Rewrites `frames` in place; returns how many stamps it moved.
+ */
+export function repairFrames(
+  chunks: readonly TapChunk[],
+  previousFrame: number | null
+): { repaired: number; lastFrame: number | null } {
+  let repaired = 0;
+  let last = previousFrame;
+  for (const chunk of chunks) {
+    for (let index = 0; index < chunk.count; index++) {
+      if (last !== null && chunk.frames[index] < last + NODE_TAP_QUANTUM_FRAMES) {
+        chunk.frames[index] = last + NODE_TAP_QUANTUM_FRAMES;
+        repaired++;
+      }
+      last = chunk.frames[index];
+    }
+  }
+  return { repaired, lastFrame: last };
+}
+
+/**
  * Lay chunks out from `firstFrame` over `lengthFrames`, each quantum at the
- * frame it was stamped with. Never by position in the chunk: a recorder can
- * miss a quantum, or deliver two with the same stamp, and everything after it
- * would sit a quantum off.
+ * frame it is stamped with. Never by position in the chunk: a recorder can
+ * miss a quantum, and everything after it would sit a quantum off. The stamps
+ * are expected REPAIRED (`repairFrames`): a worklet's clock can stand still for
+ * a call, and a quantum laid out by such a stamp lands on top of the one before
+ * it and leaves its own place empty.
  */
 export function layOutRange(
   chunks: ReadonlyArray<TapChunk>,

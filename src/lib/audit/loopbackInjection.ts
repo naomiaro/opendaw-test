@@ -23,7 +23,7 @@
 import { withDeadline } from "@/lib/deadline";
 import {
   NODE_TAP_PROCESSOR, NODE_TAP_PROCESSOR_SOURCE, NODE_TAP_QUANTUM_FRAMES, NODE_TAP_SECONDS,
-  frameDiscontinuities, referenceCovers, referenceFor, spanOf, trimReference,
+  frameDiscontinuities, referenceCovers, referenceFor, repairFrames, spanOf, trimReference,
   type ClockDiscontinuity, type TapChunk, type TappedNode,
 } from "./nodeTap";
 
@@ -350,6 +350,8 @@ export function installLoopbackCapture(deviceCount: number = 1, options: Loopbac
   // run: the reference itself is trimmed, this list is not.
   let clockDiscontinuities: ClockDiscontinuity[] = [];
   let lastReferenceFrame: number | null = null;
+  /** The last frame of the reference AFTER repair: what the next chunk's stamps are repaired from. */
+  let lastRepairedReferenceFrame: number | null = null;
   let uninstalled = false;
 
   const tapRecorder = (
@@ -428,6 +430,15 @@ export function installLoopbackCapture(deviceCount: number = 1, options: Loopbac
         tapChunks.push(chunk);
         received += chunk.count;
         if (received < quanta) return;
+        // A tap's stamps are open to the stale worklet clock like anyone's: put each
+        // call where it was before the tap is laid out against the reference.
+        const { repaired } = repairFrames(tapChunks, null);
+        if (repaired > 0) {
+          console.warn(
+            "[loopbackInjection] tap on " + deviceId + ": " + String(repaired) +
+            " stamp(s) read a clock that stood still and were moved to their call's own frame"
+          );
+        }
         const span = spanOf(tapChunks);
         if (span === null) { settle("the tap recorded nothing", []); return; }
         // The reference posts every REFERENCE_CHUNK_QUANTA quanta, so it trails the tap's end.
@@ -647,6 +658,9 @@ export function installLoopbackCapture(deviceCount: number = 1, options: Loopbac
               String(discontinuity.previousFrame) + (discontinuity.betweenChunks ? " (between chunks)" : " (inside a chunk)")
             );
           }
+          // The witness above read the stamps as the worklet gave them; the reference is
+          // laid out by where each call really was.
+          lastRepairedReferenceFrame = repairFrames([chunk], lastRepairedReferenceFrame).lastFrame;
           referenceChunks.push(chunk);
           trimReference(referenceChunks, keepFrames);
         }, (reason) => {
@@ -699,6 +713,7 @@ export function installLoopbackCapture(deviceCount: number = 1, options: Loopbac
         referenceChunks = [];
         clockDiscontinuities = [];
         lastReferenceFrame = null;
+        lastRepairedReferenceFrame = null;
       }
     },
   };
