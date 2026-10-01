@@ -555,7 +555,7 @@ without a limit above zero. Replay saved runs (one sample rate at a time) with
   andremichelle/openDAW#376 (the reworked fix) is merged and in the installed SDK, and #375
   (simultaneous-take `AudioFileBox` collision) is closed with it — the capture owns the
   recording uuid, there is no box swap after save; #374 (residual start-placement bias)
-  stays open with PRs #378 / #380. The sweep results per SDK release are in the register.
+  is closed as well, and PRs #378 / #380 / #418 are open. The sweep results per SDK release are in the register.
 - **Release profile.** `auditProfileFor()` resolves a build whose `buildFeatures` carry
   `recordingStart` but not `latencyProbes` (any installed release that ships PR #376) to the
   `release` profile: `classifyCell(..., { netLoopbackDelay: true })` judges each repeat on

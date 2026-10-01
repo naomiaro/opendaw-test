@@ -889,7 +889,7 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   remedy (fix ideas belong in the internal debug note, not the issue). Draft the issue body
   for user review BEFORE posting, as `debug/<date>-<topic>/drafts/TO-REVIEW-<target>.md`,
   and list it under "Waiting for a read" in `debug/README.md`; once posted, rename it
-  `posted-<tracker>-<number>.md`. Cross-link the issue
+  `posted-<tracker>-<number>[-topic].md`. Cross-link the issue
   number back into the repro page's DebugLinkBar and the debug note's header.
 - Upstream PRs describe their CURRENT state in the PR body: after every push to a PR
   branch (review responses, extra fixes, scope additions), edit the body with

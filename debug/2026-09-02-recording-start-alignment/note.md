@@ -254,8 +254,8 @@ with the reason at their head:
 
 | draft | finding | status |
 |---|---|---|
-| `drafts/posted-openDAW-374-placement-bias.md` | the start-placement bias on all five scenarios, count-in included, with the four-term decomposition, the fresh-upstream signature per scenario, and what remains after the fix (the input path's own delay) | to file |
-| `drafts/posted-openDAW-375-take-collision.md` | Task 7b Finding 1, the deterministic content-address collision (unchanged: 6 of 12 repeats on the two upstream official runs, 9 of 18 on the three branch runs) | to file |
+| `drafts/posted-openDAW-374-placement-bias.md` | the start-placement bias on all five scenarios, count-in included, with the four-term decomposition, the fresh-upstream signature per scenario, and what remains after the fix (the input path's own delay) | posted as #374 (was: to file) |
+| `drafts/posted-openDAW-375-take-collision.md` | Task 7b Finding 1, the deterministic content-address collision (unchanged: 6 of 12 repeats on the two upstream official runs, 9 of 18 on the three branch runs) | posted as #375 (was: to file) |
 | `drafts/withdrawn-loop-wrap-finalization-hang.md` | C2 — root-caused and fixed by the PR | withdrawn |
 | `drafts/withdrawn-punch-in-head-loss.md` | its measured quantity was the `#finalize` head drop minus the loopback delay; the true request-to-first-frame gap is 0–3 render quanta (0–8.7 ms) | withdrawn |
 | `drafts/withdrawn-inter-track-quantum-skew.md` | the skew equals the two loopback streams' delay difference; SDK-side skew is zero on the branch | withdrawn |

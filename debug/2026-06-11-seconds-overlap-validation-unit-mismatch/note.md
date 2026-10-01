@@ -33,7 +33,7 @@ Net: Musical overlaps are detected and deleted (by-design enforcement); Seconds 
 
 ## Impact
 
-Overlapping regions are invalid by design in both timeBase modes (maintainer ruling, confirmed in [`debug/2026-05-19-project-copy-deletes-overlapping-regions/note.md`](../2026-05-19-project-copy-deletes-overlapping-regions/note.md#status)). In Musical timeBase the engine enforces this at `project.copy()` time. In Seconds timeBase the enforcement is unit-broken, so:
+Overlapping regions are invalid by design in both timeBase modes (maintainer ruling, confirmed in [`debug/2026-05-19-project-copy-deletes-overlapping-regions/note.md`](../2026-05-19-project-copy-deletes-overlapping-regions/note.md)). In Musical timeBase the engine enforces this at `project.copy()` time. In Seconds timeBase the enforcement is unit-broken, so:
 
 1. A Seconds-timeBase project with a genuine overlap will render the overlap live (the live engine tolerates it) and also render it offline through `project.copy()` (the validator misses it) — producing output that differs from a well-formed project in a hard-to-predict way.
 2. A consumer who authored the overlap accidentally (e.g. via the sub-PPQN truncation footgun described in the sibling note) receives no console warning and no deletion — the silent-failure mode is worse than the Musical case, where at least the console warns.
