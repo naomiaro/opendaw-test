@@ -6,6 +6,7 @@ import {
   chunksFromSignal,
   deliveredLevelDb,
   deliveredPeakDb,
+  isUnfilledReading,
   signalSpan,
   type TapStats,
 } from "./loudnessTap";
@@ -123,5 +124,28 @@ describe("the worklet processor", () => {
   it("counts frames when nothing is connected", () => {
     const posted = runProcessor([]);
     expect(posted).toEqual([{ frame: 0, frames: 1024, sumSquares: [0, 0], peak: [0, 0] }]);
+  });
+});
+
+describe("isUnfilledReading", () => {
+  const reading = (momentary: number, shortTerm: number, integrated: number, range: number, peak: number) => ({
+    atMs: 0,
+    momentary,
+    shortTerm,
+    integrated,
+    range,
+    peak,
+  });
+  it("is true for the stream's array before the meter has filled it", () => {
+    expect(isUnfilledReading(reading(0, 0, 0, 0, 0))).toBe(true);
+  });
+  it("is false for an empty meter, which reads -120 with a range of 0", () => {
+    expect(isUnfilledReading(reading(-120, -120, -120, 0, -120))).toBe(false);
+  });
+  it("is false for a meter that kept an earlier measurement", () => {
+    expect(isUnfilledReading(reading(-120, -120, -23.27, 4.2, -23))).toBe(false);
+  });
+  it("is false when only some values are zero", () => {
+    expect(isUnfilledReading(reading(0, 0, 0, 0, -6))).toBe(false);
   });
 });

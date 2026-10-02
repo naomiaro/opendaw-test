@@ -15,6 +15,7 @@ import {
   LOUDNESS_TAP_PROCESSOR,
   LOUDNESS_TAP_PROCESSOR_SOURCE,
   LOUDNESS_TAP_QUIET,
+  isUnfilledReading,
   signalSpan,
   type CaseCapture,
   type LoudnessReading,
@@ -189,15 +190,19 @@ export async function playAndCapture(
   tap.port.onmessage = (event: MessageEvent<TapStats>) => {
     chunks.push({ ...event.data, atMs: performance.now() });
   };
+  let unfilled = 0;
   const subscription = project.liveStreamReceiver.subscribeFloats(EngineAddresses.LOUDNESS, (values) => {
-    readings.push({
+    const reading: LoudnessReading = {
       atMs: performance.now(),
       momentary: values[0],
       shortTerm: values[1],
       integrated: values[2],
       range: values[3],
       peak: values[4],
-    });
+    };
+    // A packet sent before the meter filled the array is not a reading.
+    if (isUnfilledReading(reading)) unfilled++;
+    else readings.push(reading);
   });
   const loud = (chunk: TapChunk) => Math.max(chunk.peak[0], chunk.peak[1]) > LOUDNESS_TAP_QUIET;
   try {
@@ -220,5 +225,6 @@ export async function playAndCapture(
     tap.port.onmessage = null;
     document.removeEventListener("visibilitychange", onVisibility);
   }
+  if (unfilled > 0) console.info(`[loudness-session] skipped ${unfilled} unfilled loudness packet(s)`);
   return { readings, chunks, hidden };
 }

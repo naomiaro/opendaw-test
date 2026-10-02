@@ -35,6 +35,22 @@ export interface LoudnessReading {
   peak: number;
 }
 
+/**
+ * The stream's array as it stands before the meter has written to it. The engine sends the
+ * array on every flush and fills it only once the subscription has registered, so the first
+ * packet after subscribing to a new worklet can be all zeros. No measurement reads that: an
+ * empty meter reads -120.
+ */
+export function isUnfilledReading(reading: LoudnessReading): boolean {
+  return (
+    reading.momentary === 0 &&
+    reading.shortTerm === 0 &&
+    reading.integrated === 0 &&
+    reading.range === 0 &&
+    reading.peak === 0
+  );
+}
+
 export interface CaseCapture {
   readings: LoudnessReading[];
   chunks: TapChunk[];
