@@ -905,6 +905,11 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   "pushed a follow-up commit that …" narrative comments. Replies inside a reviewer's
   inline thread are fine. Never put a Claude session URL in any public text; commit
   messages carry only the Co-Authored-By trailer.
+- Upstream code keeps comments to a minimum (the maintainer's request: "drop the multi-line
+  comment blocks, we keep comments to a minimum in this repo"). Before the first push of an
+  upstream branch, grep its diff for `//` and `/*`: at most a short single line that names a
+  source or a constant, no paragraph above a class or method, test files included. This repo's
+  own style, where a comment saying why is welcome, does not travel upstream.
 - After an SDK upgrade, audit `documentation/*.md` chapter docs for stale API signatures: grep
   each renamed/changed identifier from the changelog and update method signatures, return
   types, and code examples. Chapter docs describe current contracts — leaving stale
