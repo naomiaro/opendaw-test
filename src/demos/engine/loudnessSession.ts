@@ -3,7 +3,6 @@
 // captured as tap chunks and meter readings.
 import { UUID } from "@opendaw/lib-std";
 import { PPQN } from "@opendaw/lib-dsp";
-import { LiveStreamReceiver } from "@opendaw/lib-fusion";
 import { EngineAddresses, InstrumentFactories } from "@opendaw/studio-adapters";
 import { AudioFileBox, AudioRegionBox, ValueEventCollectionBox, type TrackBox } from "@opendaw/studio-boxes";
 import type { Project } from "@opendaw/studio-core";
@@ -130,10 +129,12 @@ export function loadSignal(session: LoudnessSession, signal: Float32Array, label
  */
 export async function freshMeter(session: LoudnessSession): Promise<void> {
   const { project, audioContext } = session;
+  session.tap?.port.postMessage("stop");
   session.tap?.disconnect();
   session.engineNode?.disconnect();
-  // The receiver is a plain field; a worklet cannot connect to one that is already connected.
-  (project as { liveStreamReceiver: LiveStreamReceiver }).liveStreamReceiver = new LiveStreamReceiver();
+  // Terminates the worklet now in use, which also frees the project's live stream receiver
+  // for the next one. Without this every earlier engine would stay alive beside the new one.
+  project.engine.releaseWorklet();
   const worklet = project.startAudioWorklet();
   await withDeadline(worklet.isReady(), 30_000, "the worklet restart");
   worklet.disconnect(); // startAudioWorklet connected it to the speakers

@@ -61,13 +61,18 @@ export interface CaseCapture {
 /**
  * The tap, as the text of an AudioWorklet module. It writes nothing to its output, so
  * connecting it to the destination keeps it running and plays silence. A mono input is
- * counted on both channels; no input at all is counted as silence.
+ * counted on both channels; no input at all is counted as silence. Any message on its port
+ * stops it, so a tap that is no longer wanted does not run for the life of the context.
  */
 export const LOUDNESS_TAP_PROCESSOR_SOURCE = `
 class LoudnessOutputTap extends AudioWorkletProcessor {
   constructor(options) {
     super();
     this.chunkQuanta = options.processorOptions.chunkQuanta;
+    this.stopped = false;
+    this.port.onmessage = () => {
+      this.stopped = true;
+    };
     this.begin();
   }
   begin() {
@@ -78,6 +83,7 @@ class LoudnessOutputTap extends AudioWorkletProcessor {
     this.peak = [0, 0];
   }
   process(inputs) {
+    if (this.stopped) return false;
     if (this.frame < 0) this.frame = currentFrame;
     const input = inputs[0];
     const channels = input.length === 0 ? [] : [input[0], input.length > 1 ? input[1] : input[0]];

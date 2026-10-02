@@ -26,11 +26,17 @@ const steady =
       : { momentary: level, shortTerm: level, integrated: level, range: 0, peak: level, ...overrides };
 
 /** A capture of `testCase` as the page would make it: a second of silence, the signal, silence. */
-function captureOf(testCase: LoudnessCase, meter: Meter, gain: number = 1): CaseCapture {
+function captureOf(
+  testCase: LoudnessCase,
+  meter: Meter,
+  gain: number = 1,
+  disturb: (output: Float32Array, signalStart: number) => void = () => {}
+): CaseCapture {
   const signal = synthesize(testCase.segments, RATE, testCase.taperMs);
   const lead = LEAD_SECONDS * RATE;
   const output = new Float32Array(lead + signal.length + TAIL_SECONDS * RATE);
   for (let i = 0; i < signal.length; i++) output[lead + i] = signal[i] * gain;
+  disturb(output, lead);
   const readings: LoudnessReading[] = [];
   for (let atMs = 0; atMs <= (output.length / RATE) * 1000; atMs += 100) {
     readings.push({ atMs, ...meter(atMs / 1000 - LEAD_SECONDS) });
@@ -159,6 +165,27 @@ describe("judgeCapture", () => {
     expect(check?.intendedDb).toBeCloseTo(-9.031, 2);
     expect(check?.deliveredDb).toBeCloseTo(-9.031, 2);
     expect(row.status).toBe("pass");
+  });
+  it("is invalid when a sample outside the measured interior is above the tone's highest", () => {
+    // The meter holds its peak from the moment it is switched on, so a click at the region's
+    // edge moves the reading. Here the reading would pass.
+    const click = (output: Float32Array, signalStart: number) => {
+      output[signalStart + 10] = 0.9;
+    };
+    const [row] = judgeCapture(case16, RATE, captureOf(case16, steady(-9, { peak: -6 }), 1, click));
+    expect(row.status).toBe("invalid");
+    expect(row.reasons).toEqual(["whole capture sample peak: delivered -0.92 dB, intended -9.03 dB"]);
+    expect(row.metrics[0].within).toBe(true);
+  });
+  it("is invalid when the tap's timing of the signal does not match its length", () => {
+    // The first loud chunk reaches the main thread 300 ms late: every reading time that is
+    // counted from it would be 300 ms late too.
+    const capture = captureOf(case1, steady(-23));
+    const first = capture.chunks.findIndex((chunk) => chunk.peak[0] > 0);
+    capture.chunks[first] = { ...capture.chunks[first], atMs: capture.chunks[first].atMs + 300 };
+    const [row] = judgeCapture(case1, RATE, capture);
+    expect(row.status).toBe("invalid");
+    expect(row.reasons).toEqual(["the tap timed the signal at 19.732 s, it is 20.000 s long"]);
   });
   it("judges each sweep tone by the short-term reading at that tone's end", () => {
     // Every tone reads its expected loudness, except 1500 Hz, which reads 0.49 low.

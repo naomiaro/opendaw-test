@@ -116,8 +116,10 @@ helpers in `src/lib/audit/clickHead.ts`.
   all zero (`isUnfilledReading` in `src/lib/audit/loudnessTap.ts`).
 - The meter runs only while the address has a subscriber, and it has no reset: integrated and
   range accumulate for the life of the worklet processor, across play and stop. An empty meter
-  needs a restarted worklet — `freshMeter` in `loudnessSession.ts` (a new `LiveStreamReceiver`
-  on the project, then `project.startAudioWorklet()`).
+  needs a restarted worklet — `freshMeter` in `loudnessSession.ts`:
+  `project.engine.releaseWorklet()`, then `project.startAudioWorklet()`. The release terminates
+  the worklet in use and frees the project's live stream receiver for the next one; without it
+  every earlier engine stays alive beside the new one.
 - The fifth value is the highest sample, not an oversampled true peak.
 - The offline renderer does not run the meter and the class is not importable, so a rendered
   file cannot be measured with SDK code.

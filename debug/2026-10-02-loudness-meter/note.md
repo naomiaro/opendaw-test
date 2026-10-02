@@ -55,6 +55,14 @@ loudness is known through a Tape track at unity gain and judges what the meter r
 - A sweep of fifteen tones against the ITU-R BS.1770 K-weighting response. This group and its
   ±0.1 LU tolerance are the harness's own, not an EBU case.
 
+Not measured, and why:
+
+- Tech 3341 case 6 is 5.0 surround; the meter takes a stereo signal.
+- Tech 3341 cases 7–8 and Tech 3342 cases 5–6 need the EBU's authentic programme files.
+- Tech 3341 cases 9–14 (momentary and short-term dynamics), 19 (a tone above full scale) and
+  20–23 (signals synthesized at four times the rate and downsampled) can be synthesized and
+  are left for a later version. Adding one is a new row in `src/lib/audit/loudnessCases.ts`.
+
 A tap on the engine's output confirms each tone arrived at its synthesized level before the
 meter is judged. The meter has no reset, and both EBU documents require one before each
 measurement, so each case runs on a restarted worklet.

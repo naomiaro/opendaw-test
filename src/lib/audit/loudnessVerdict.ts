@@ -33,6 +33,12 @@ export const PEAK_TOLERANCE_DB = 0.05;
 export const INTERIOR_MARGIN_SEC = 0.1;
 /** The tap places the signal's start and end to a chunk each. */
 export const LENGTH_SLACK_FRAMES = 2 * LOUDNESS_TAP_CHUNK_FRAMES;
+/**
+ * Reading times are counted from the arrival of the tap's first loud chunk. If the time
+ * between that and the arrival of its first quiet chunk is not the signal's length to within
+ * this, one of the two arrived late and the readings cannot be placed.
+ */
+export const TIMING_SLACK_MS = 150;
 /** The stream carries 32-bit floats: a reading on the limit must not fail for its last bit. */
 const TOLERANCE_SLACK = 1e-5;
 
@@ -161,11 +167,15 @@ export function judgeCapture(testCase: LoudnessCase, sampleRate: number, capture
   } else if (capture.readings[0].integrated > EMPTY_METER_MAX) {
     problems.push(`the meter was not empty at the start (integrated ${capture.readings[0].integrated.toFixed(2)})`);
   }
+  const totalSeconds = (totalFrames / sampleRate).toFixed(3);
   if (span === null) {
     problems.push("the tap never saw the signal start and end");
   } else if (Math.abs(span.endFrame - span.startFrame - totalFrames) > LENGTH_SLACK_FRAMES) {
     const delivered = ((span.endFrame - span.startFrame) / sampleRate).toFixed(3);
-    problems.push(`signal length delivered ${delivered} s, synthesized ${(totalFrames / sampleRate).toFixed(3)} s`);
+    problems.push(`signal length delivered ${delivered} s, synthesized ${totalSeconds} s`);
+  } else if (Math.abs(span.endMs - span.startMs - (totalFrames / sampleRate) * 1000) > TIMING_SLACK_MS) {
+    const timed = ((span.endMs - span.startMs) / 1000).toFixed(3);
+    problems.push(`the tap timed the signal at ${timed} s, it is ${totalSeconds} s long`);
   }
 
   const checksFor = (index: number): DeliveredCheck[] => {
@@ -203,6 +213,16 @@ export function judgeCapture(testCase: LoudnessCase, sampleRate: number, capture
     const { readAt } = spec;
     const segmentIndexes = readAt.kind === "segmentEnd" ? [readAt.segment] : testCase.segments.map((_, index) => index);
     const delivered = segmentIndexes.flatMap(checksFor);
+    if (testCase.group === "peak") {
+      // The meter holds its peak from the moment it is switched on, so the whole capture must
+      // stay at or below the tone's highest sample, not only the interior measured above.
+      delivered.push({
+        label: "whole capture sample peak",
+        intendedDb: Math.max(...testCase.segments.map((segment) => samplePeakDb(segment, sampleRate))),
+        deliveredDb: deliveredPeakDb(capture.chunks, -Infinity, Infinity),
+        toleranceDb: PEAK_TOLERANCE_DB,
+      });
+    }
     let values: MetricValues = {};
     if (span !== null) {
       values =

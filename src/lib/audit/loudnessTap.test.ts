@@ -121,6 +121,27 @@ describe("the worklet processor", () => {
     expect(posted[3].sumSquares[1]).toBe(posted[3].sumSquares[0]);
     expect(posted[3].peak[1]).toBeGreaterThan(0);
   });
+  it("stops when it is told to over its port", () => {
+    const posted: TapStats[] = [];
+    class FakeProcessor {
+      port: { postMessage: (message: TapStats) => void; onmessage: (() => void) | null } = {
+        postMessage: (message) => posted.push(message),
+        onmessage: null,
+      };
+    }
+    type Processor = FakeProcessor & { process(inputs: Float32Array[][]): boolean };
+    const holder: { create: (new (options: unknown) => Processor) | null } = { create: null };
+    new Function("AudioWorkletProcessor", "registerProcessor", "currentFrame", LOUDNESS_TAP_PROCESSOR_SOURCE)(
+      FakeProcessor,
+      (_name: string, create: new (options: unknown) => Processor) => (holder.create = create),
+      0
+    );
+    if (holder.create === null) throw new Error("the source registered no processor");
+    const processor = new holder.create({ processorOptions: { chunkQuanta: LOUDNESS_TAP_CHUNK_QUANTA } });
+    expect(processor.process([[]])).toBe(true);
+    processor.port.onmessage?.();
+    expect(processor.process([[]])).toBe(false);
+  });
   it("counts frames when nothing is connected", () => {
     const posted = runProcessor([]);
     expect(posted).toEqual([{ frame: 0, frames: 1024, sumSquares: [0, 0], peak: [0, 0] }]);
