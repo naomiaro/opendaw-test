@@ -6,7 +6,10 @@ Documented bugs and open questions from working with the OpenDAW SDK. Each inves
 
 Drafts that are written and not posted. Find them at any time with `ls debug/*/drafts/TO-REVIEW-*`.
 
-Nothing is waiting.
+- `debug/2026-10-02-loudness-meter/drafts/TO-REVIEW-openDAW-k-weighting.md` — the meter's K-weighting reads 0.25 LU low at 1 kHz (EBU Tech 3341 cases 1–5 fail)
+- `debug/2026-10-02-loudness-meter/drafts/TO-REVIEW-openDAW-true-peak.md` — the stream's "true peak" is the highest sample
+- `debug/2026-10-02-loudness-meter/drafts/TO-REVIEW-openDAW-no-reset.md` — the meter has no reset
+- `debug/2026-10-02-loudness-meter/drafts/TO-REVIEW-openDAW-first-packet.md` — a float broadcast's first packet can be the unfilled array
 
 ## Layout
 
@@ -44,7 +47,7 @@ Nothing is waiting.
 
 | Started | Investigation | What | Status | Repro page | Drafts |
 |---|---|---|---|---|---|
-| 2026-10-02 | [loudness-meter](./2026-10-02-loudness-meter/note.md) | What the engine's loudness meter reads for the EBU Tech 3341 / 3342 test signals and a K-weighting sweep, played through the live engine. | **Standing sweep** after SDK upgrades | [`loudness-meter-audit-debug-demo.html`](../loudness-meter-audit-debug-demo.html) |  |
+| 2026-10-02 | [loudness-meter](./2026-10-02-loudness-meter/note.md) | What the engine's loudness meter reads for the EBU Tech 3341 / 3342 test signals and a K-weighting sweep, played through the live engine: 12 of 28 rows fail in Chrome, Firefox and Safari; a local build with the standard's filters passes all 28. | **Standing sweep** after SDK upgrades. Four issue drafts waiting for a read | [`loudness-meter-audit-debug-demo.html`](../loudness-meter-audit-debug-demo.html) | 4 × `TO-REVIEW-openDAW-…` |
 | 2026-10-01 | [worklet-clock-stale](./2026-10-01-worklet-clock-stale/note.md) | Chrome's worklet clock stands still for a quantum while the main thread changes the audio graph; the SDK's start-of-take stamps read it, so a rare take is a quantum off. Firefox and Safari read true. | **Open.** Filed as [openDAW#424](https://github.com/andremichelle/openDAW/issues/424); Chrome defect ([Chromium 442866743](https://issues.chromium.org/issues/442866743), cause added in [comment 5](https://issues.chromium.org/issues/442866743#comment5)) | [`worklet-clock-debug-demo.html`](../worklet-clock-debug-demo.html) | [posted #424](./2026-10-01-worklet-clock-stale/drafts/posted-openDAW-424.md); [posted Chromium comment](./2026-10-01-worklet-clock-stale/drafts/posted-chromium-442866743-comment.md) |
 | 2026-09-28 | create-note-region-loop-offset (`2026-09-28-create-note-region-loop-offset/`) | `ProjectApi.createNoteRegion` never wrote its `loopOffset` parameter. No note: the filed issue is the write-up. | Fixed in SDK 0.0.173 ([openDAW#420](https://github.com/andremichelle/openDAW/issues/420)) |  | [posted #420](./2026-09-28-create-note-region-loop-offset/drafts/posted-openDAW-420.md) |
 | 2026-09-28 | [metronome-click-survives-pause](./2026-09-28-metronome-click-survives-pause/note.md) | A metronome click in flight when the transport stops resumed at the next play. | Fixed in SDK 0.0.173 ([openDAW#419](https://github.com/andremichelle/openDAW/issues/419)); page is the regression test | [`metronome-stale-click-debug-demo.html`](../metronome-stale-click-debug-demo.html) | [posted #419](./2026-09-28-metronome-click-survives-pause/drafts/posted-openDAW-419.md) |

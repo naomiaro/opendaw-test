@@ -1,7 +1,9 @@
 # The SDK's loudness meter against the EBU test signals
 
-Verified against: `@opendaw/studio-sdk` 0.0.173.
-Harness: [`loudness-meter-audit-debug-demo.html`](../../loudness-meter-audit-debug-demo.html).
+Verified against: `@opendaw/studio-sdk` 0.0.173, in Chrome 154, Firefox 157 and Safari 18.6 on macOS.
+Harness: [`loudness-meter-audit-debug-demo.html`](../../loudness-meter-audit-debug-demo.html);
+Firefox and Safari are driven by `scripts/audit/loudness/`.
+Issue drafts waiting for a read: [`drafts/`](./drafts/).
 
 ## Bring-up probe (2026-10-02)
 
@@ -77,7 +79,9 @@ length, or when the tab was hidden.
 
 `loudness-meter-audit-debug-demo.html?case=all` (add `&rate=44100` for the second rate). Click
 Run, keep the tab visible. About twelve minutes, silent unless `&audible=1`. The summary lands
-in `.verify-output/loudness-audit-<timestamp>.json`.
+in `.verify-output/loudness-audit-<timestamp>.json`. In Firefox and Safari:
+`node scripts/audit/loudness/drive-firefox.ts <url> 1100` and `drive-safari.ts` (see the README
+there); the page is the same, only the click is delivered differently.
 
 ## Register
 
@@ -151,6 +155,11 @@ in the peak cases within 0.001 dB of its synthesized sample peak. Both runs: 28 
 | `kweight-16000` | pass | shortTerm −16.69 (−0.05) | I −18.58, LRA 9.70, peak −20.00 |
 | `kweight-20000` | pass | shortTerm −16.69 (−0.05) | I −18.58, LRA 9.70, peak −20.00 |
 
+### Firefox 157 and Safari 18.6, 48 kHz, 2026-10-02
+
+The same 28 rows as Chrome at 48 kHz, every verdict and every reading to the two decimals
+shown (`loudness-audit-1790979375072.json`, `loudness-audit-1790980068328.json`).
+
 ## Observed
 
 - Tones at 1 kHz read 0.25 to 0.27 LU below their level in every loudness case, at both rates:
@@ -185,16 +194,96 @@ processor's callback with whether the address has subscribers, and the processor
 array from the meter only when it has. A flush that still sees no subscriber sends the array
 as it stands, which on a new worklet is zeros.
 
+## A build with the standard's filters
+
+To tell the meter's error from the harness's, and to turn two source readings into verified
+causes, a local build of the release was made with two changes to
+`packages/studio/core-wasm/src/analysis-dsp.ts` and nothing else:
+
+- the pre-filter's two stages are ITU-R BS.1770's own (its analog prototypes transformed at the
+  running rate, which gives the standard's printed coefficients at 48 kHz) in place of lib-dsp's
+  general high-shelf and high-pass;
+- the fifth value is the maximum of the 4× interpolated signal (the 48-tap, 4-phase filter of
+  BS.1770 Annex 2, coefficients copied from the document) and the samples, in place of the
+  highest sample.
+
+The build is commit `ca95e0e` on branch `fix/loudness-meter-bs1770` of the local openDAW
+checkout, on top of the `@opendaw/studio-sdk@0.0.173` tag, with a vitest file that feeds the
+EBU signals to `LoudnessMeter` directly (57 checks at 48 kHz and 44.1 kHz: 29 fail before the
+change, 0 after). Only the worklet bundle was rebuilt; it was served through
+`SDK_DIST_OVERRIDE` in a copy of the 0.0.173 release.
+
+Results, same page, same procedure, 2026-10-02:
+
+| Browser | Rate | Rows |
+|---|---|---|
+| Chrome 154 | 48 kHz | 28 pass (`loudness-audit-1790976413371.json`) |
+| Firefox 157 | 48 kHz | 28 pass, identical rows (`…1790977142399.json`) |
+| Safari 18.6 | 48 kHz | 28 pass, identical rows (`…1790977921579.json`) |
+| Firefox 157 | 44.1 kHz | 28 pass; three sweep rows 0.01 apart from 48 kHz (`…1790978642630.json`) |
+
+### Local build `ca95e0e` (the 0.0.173 release with the two changes), 48 kHz, 2026-10-02, Chrome 154 — identical rows in Firefox 157 and Safari 18.6
+
+| Row | Verdict | Meter (error) | 5 s after the end |
+|---|---|---|---|
+| `3341-1` | pass | integrated −22.97 (+0.03), maxMomentary −22.99 (+0.01), maxShortTerm −22.99 (+0.01) | I −22.97, LRA 4.30, peak −22.99 |
+| `3341-2` | pass | integrated −32.97 (+0.03), maxMomentary −32.99 (+0.01), maxShortTerm −32.99 (+0.01) | I −32.97, LRA 4.10, peak −32.99 |
+| `3341-3` | pass | integrated −22.96 (+0.04) | I −22.96, LRA 13.00, peak −22.99 |
+| `3341-4` | pass | integrated −22.96 (+0.04) | I −22.96, LRA 13.00, peak −22.99 |
+| `3341-5` | pass | integrated −22.95 (+0.05) | I −22.95, LRA 6.00, peak −19.99 |
+| `3342-1` | pass | range 10.00 (+0.00) | I −22.55, LRA 10.00, peak −19.99 |
+| `3342-2` | pass | range 5.00 (+0.00) | I −16.78, LRA 5.00, peak −14.99 |
+| `3342-3` | pass | range 20.00 (+0.00) | I −19.97, LRA 20.00, peak −19.99 |
+| `3342-4` | pass | range 15.00 (+0.00) | I −24.45, LRA 15.00, peak −19.99 |
+| `3341-15` | pass | peak −6.02 (−0.02) | I −2.75, LRA 9.30, peak −6.02 |
+| `3341-16` | pass | peak −5.98 (+0.02) | I −2.75, LRA 9.20, peak −5.98 |
+| `3341-17` | pass | peak −6.31 (−0.31) | I −2.75, LRA 9.20, peak −6.31 |
+| `3341-18` | pass | peak −6.03 (−0.03) | I −2.75, LRA 9.40, peak −6.03 |
+| `kweight-25` | pass | shortTerm −31.08 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-40` | pass | shortTerm −26.26 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-60` | pass | shortTerm −23.59 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-100` | pass | shortTerm −21.83 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-250` | pass | shortTerm −20.84 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-500` | pass | shortTerm −20.65 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-1000` | pass | shortTerm −19.99 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-1500` | pass | shortTerm −18.66 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-2000` | pass | shortTerm −17.62 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-3000` | pass | shortTerm −16.88 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-5000` | pass | shortTerm −16.68 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-8000` | pass | shortTerm −16.65 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-12000` | pass | shortTerm −16.65 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-16000` | pass | shortTerm −16.65 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-20000` | pass | shortTerm −16.65 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+
+Observed on this build:
+
+- The loudness cases read +0.03 to +0.05 LU: −22.97 for case 1, −22.95 for case 5. The sweep
+  reads its expected value to the second decimal at every frequency.
+- The true-peak cases read −6.02, −5.98, −6.31 and −6.03 dBTP. Case 17 (fs/6 at 60°) is the
+  closest to the −0.4 limit: that is the standard's own filter's under-read at fs/6.
+- Range, and the delivered-signal checks (worst 0.004 dB), are as before.
+
+## Cause of the weighting error, verified by the build above
+
+`LoudnessMeter`'s constructor builds the pre-filter from lib-dsp's `setHighShelfParams` (an RBJ
+high shelf with slope 1) and `setHighpassParams` (an RBJ high-pass, unity passband), passing them
+BS.1770's prototype parameters. Those parameters describe the standard's stages in another
+formulation (the shelf's lower gain is `Vh^0.4997`), so the RBJ shelf with the same centre and
+gain has a different transition: 0.26 dB under the standard at 1 kHz, 0.49 dB at 1.5 kHz; and
+the normalized high-pass leaves out the +0.04 dB the standard's numerator (1, −2, 1) carries.
+That is the sweep's error profile above, and replacing the two stages removes it.
+
+## Cause of the peak reading, observed
+
+The fifth value equals the highest sample in every peak row (register above) and `process`
+keeps `max(|l|, |r|)` per sample (`analysis-dsp.ts:108`); the comment above the class says
+"4x oversampled" and the Level card labels the value dBTP. With the Annex 2 interpolator the same
+rows read the true peak.
+
 ## Inferred from the source, not observed
 
-Read in `studio-core-wasm/src/analysis-dsp.ts` at the version above. These are readings of the
-code. The peak rows above agree with the second; no row shows the first or the third:
-
-- The K-weighting shelf is built with lib-dsp's general high-shelf, and the high-pass is
-  normalized to unity; BS.1770's two stages differ from both.
-- The fifth value is `max(|l|, |r|)` per sample; the comment above the class says 4x
-  oversampled.
-- Blocks are 100 ms without overlap; BS.1770 gates 400 ms blocks at 75 % overlap.
+- Blocks are 100 ms without overlap; BS.1770 gates 400 ms blocks at 75 % overlap. No row shows
+  this: the loudness cases pass on the build above with the blocks unchanged.
 
 ## What differs from the Node measurements
 
