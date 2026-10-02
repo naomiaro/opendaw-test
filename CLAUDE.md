@@ -663,6 +663,12 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   BUILD from the `buildFeatures` list the page probes off the live SDK, so read a verdict
   against the profile the run's own envelope names; the calibration branch's bands E/F were
   fitted to the runs they classify and carry no predictive content on them.
+- After SDK upgrades, also re-run the standing loudness meter sweep:
+  `loudness-meter-audit-debug-demo.html?case=all` (then `&rate=44100`) — a real click on Run,
+  the tab visible throughout, about twelve minutes, silent unless `&audible=1`. Compare the
+  rows with the register in `debug/2026-10-02-loudness-meter/note.md`: a row that changed is
+  the finding, a `fail` the register already lists is not. Cases and tolerances:
+  `src/lib/audit/loudnessCases.ts`; verdicts: `src/lib/audit/loudnessVerdict.ts`.
 - The SDK's loopback input-latency calibration has its own unlisted ground-truth page,
   `input-latency-calibration-debug-demo.html` — it needs the calibration-branch SDK served
   through `SDK_DIST_OVERRIDE`, so it is NOT part of the standing sweep, which runs against the
