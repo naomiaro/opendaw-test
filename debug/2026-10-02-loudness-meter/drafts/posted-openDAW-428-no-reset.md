@@ -1,4 +1,4 @@
-# TO REVIEW — for https://github.com/andremichelle/openDAW/issues (new)
+# POSTED 2026-10-02 as https://github.com/andremichelle/openDAW/issues/428 (body below as filed).
 
 **Title:** The loudness meter has no reset: integrated loudness and loudness range accumulate for the life of the engine worklet
 

@@ -1,4 +1,4 @@
-# TO REVIEW — for https://github.com/andremichelle/openDAW/issues (new)
+# POSTED 2026-10-02 as https://github.com/andremichelle/openDAW/issues/427 (body below as filed).
 
 **Title:** The loudness stream's "true peak" is the highest sample: EBU Tech 3341 cases 16–18 read −9.03, −7.27 and −6.71 dBTP for a −6.0 dBTP tone
 

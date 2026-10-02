@@ -1,4 +1,4 @@
-# TO REVIEW — for https://github.com/andremichelle/openDAW/issues (new)
+# POSTED 2026-10-02 as https://github.com/andremichelle/openDAW/issues/429 (body below as filed).
 
 **Title:** The first packet a new subscriber gets from a float broadcast can be the array as it stood before anyone subscribed: all zeros from the loudness meter on a new worklet
 
@@ -27,4 +27,4 @@ A receiver that subscribes between the broadcaster reading the flags and the rec
 
 ## Related
 
-Same stream, same release: the loudness meter's weighting and true peak (separate issues).
+Same stream, same release: #426 (weighting) and #427 (true peak).

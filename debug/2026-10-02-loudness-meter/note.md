@@ -3,7 +3,12 @@
 Verified against: `@opendaw/studio-sdk` 0.0.173, in Chrome 154, Firefox 157 and Safari 18.6 on macOS.
 Harness: [`loudness-meter-audit-debug-demo.html`](../../loudness-meter-audit-debug-demo.html);
 Firefox and Safari are driven by `scripts/audit/loudness/`.
-Issue drafts waiting for a read: [`drafts/`](./drafts/).
+Filed upstream (2026-10-02): [openDAW#426](https://github.com/andremichelle/openDAW/issues/426)
+(weighting), [#427](https://github.com/andremichelle/openDAW/issues/427) (true peak),
+[#428](https://github.com/andremichelle/openDAW/issues/428) (no reset),
+[#429](https://github.com/andremichelle/openDAW/issues/429) (first packet after subscribing);
+the build below is [PR #430](https://github.com/andremichelle/openDAW/pull/430). Bodies as filed:
+[`drafts/`](./drafts/).
 
 ## Bring-up probe (2026-10-02)
 
@@ -208,7 +213,8 @@ causes, a local build of the release was made with two changes to
   highest sample.
 
 The build is commit `ca95e0e` on branch `fix/loudness-meter-bs1770` of the local openDAW
-checkout, on top of the `@opendaw/studio-sdk@0.0.173` tag, with a vitest file that feeds the
+checkout, on top of the `@opendaw/studio-sdk@0.0.173` tag (rebased onto `main` as
+[PR #430](https://github.com/andremichelle/openDAW/pull/430)), with a vitest file that feeds the
 EBU signals to `LoudnessMeter` directly (57 checks at 48 kHz and 44.1 kHz: 29 fail before the
 change, 0 after). Only the worklet bundle was rebuilt; it was served through
 `SDK_DIST_OVERRIDE` in a copy of the 0.0.173 release.

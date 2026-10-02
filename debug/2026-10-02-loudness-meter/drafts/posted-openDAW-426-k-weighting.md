@@ -1,4 +1,4 @@
-# TO REVIEW — for https://github.com/andremichelle/openDAW/issues (new)
+# POSTED 2026-10-02 as https://github.com/andremichelle/openDAW/issues/426 (body below as filed).
 
 **Title:** The loudness meter's K-weighting reads 0.25 LU low at 1 kHz and up to 0.5 LU low between 1 and 3 kHz: EBU Tech 3341 loudness cases 1–5 fail
 

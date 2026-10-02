@@ -37,6 +37,7 @@ import { freshMeter, loadSignal, openSession, playAndCapture } from "./loudnessS
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
+import { DebugLinkBar } from "@/components/DebugLinkBar";
 import "@radix-ui/themes/styles.css";
 import { Theme, Container, Heading, Text, Flex, Card, Badge, Button, Table } from "@radix-ui/themes";
 
@@ -205,6 +206,40 @@ function LoudnessAudit() {
       <Container size="4" style={{ padding: "2rem", minHeight: "100vh" }}>
         <GitHubCorner />
         <BackLink />
+        <DebugLinkBar
+          links={[
+            {
+              label: "debug/2026-10-02-loudness-meter/note.md",
+              href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-10-02-loudness-meter/note.md",
+              kind: "note",
+            },
+            {
+              label: "Upstream: openDAW#426 (weighting)",
+              href: "https://github.com/andremichelle/openDAW/issues/426",
+              kind: "note",
+            },
+            {
+              label: "openDAW#427 (true peak)",
+              href: "https://github.com/andremichelle/openDAW/issues/427",
+              kind: "note",
+            },
+            {
+              label: "openDAW#428 (no reset)",
+              href: "https://github.com/andremichelle/openDAW/issues/428",
+              kind: "note",
+            },
+            {
+              label: "openDAW#429 (first packet)",
+              href: "https://github.com/andremichelle/openDAW/issues/429",
+              kind: "note",
+            },
+            {
+              label: "Fix for #426 / #427: PR #430",
+              href: "https://github.com/andremichelle/openDAW/pull/430",
+              kind: "note",
+            },
+          ]}
+        />
         <Flex direction="column" gap="4">
           <Heading size="7" align="center">
             Loudness Meter Audit Harness

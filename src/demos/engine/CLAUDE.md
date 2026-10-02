@@ -121,7 +121,9 @@ helpers in `src/lib/audit/clickHead.ts`.
   `project.engine.releaseWorklet()`, then `project.startAudioWorklet()`. The release terminates
   the worklet in use and frees the project's live stream receiver for the next one; without it
   `startAudioWorklet()` throws "Already connected".
-- The fifth value is the highest sample, not an oversampled true peak.
+- The fifth value is the highest sample, not an oversampled true peak (openDAW#427), and the
+  K-weighting reads 0.25 LU low at 1 kHz (openDAW#426); PR #430 upstream changes both. The
+  missing reset is openDAW#428, the unfilled first packet openDAW#429.
 - The offline renderer does not run the meter and the package does not export the class, so a
   rendered file cannot be measured through the SDK's public surface.
 - `startAudioWorklet()` connects the engine to the speakers. To measure in silence, disconnect
