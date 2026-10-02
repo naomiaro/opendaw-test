@@ -51,6 +51,15 @@ export function isUnfilledReading(reading: LoudnessReading): boolean {
   );
 }
 
+/**
+ * Whether a packet is left out of a capture: only an unfilled one that comes before the
+ * first reading. An all-zero packet after that is not the unfilled array (once filled, the
+ * array keeps its last values), so it is kept and judged like any other reading.
+ */
+export function isLeadingUnfilled(readings: readonly LoudnessReading[], reading: LoudnessReading): boolean {
+  return readings.length === 0 && isUnfilledReading(reading);
+}
+
 export interface CaseCapture {
   readings: LoudnessReading[];
   chunks: TapChunk[];

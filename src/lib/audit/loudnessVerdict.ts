@@ -39,6 +39,12 @@ export const LENGTH_SLACK_FRAMES = 2 * LOUDNESS_TAP_CHUNK_FRAMES;
  * this, one of the two arrived late and the readings cannot be placed.
  */
 export const TIMING_SLACK_MS = 150;
+/**
+ * Readings arrive every animation frame. A longer silence than this between two of them
+ * during the signal means the main thread stalled, and a row could be judged from a reading
+ * taken well before its moment.
+ */
+export const READING_GAP_LIMIT_MS = 500;
 /** The stream carries 32-bit floats: a reading on the limit must not fail for its last bit. */
 const TOLERANCE_SLACK = 1e-5;
 
@@ -118,6 +124,19 @@ export function lateValues(readings: readonly LoudnessReading[], endMs: number):
   return late === null ? {} : { integrated: late.integrated, range: late.range, peak: late.peak };
 }
 
+/** The longest time without a reading between `fromMs` and `toMs`, in ms. */
+export function longestReadingGapMs(readings: readonly LoudnessReading[], fromMs: number, toMs: number): number {
+  let previous = fromMs;
+  let longest = 0;
+  for (const reading of readings) {
+    if (reading.atMs <= fromMs) continue;
+    if (reading.atMs >= toMs) break;
+    longest = Math.max(longest, reading.atMs - previous);
+    previous = reading.atMs;
+  }
+  return Math.max(longest, toMs - previous);
+}
+
 export interface RowInput {
   judged: readonly MetricExpectation[];
   values: MetricValues;
@@ -126,7 +145,8 @@ export interface RowInput {
   problems: readonly string[];
 }
 
-/** Invalid when anything says the meter was not fed the intended signal; otherwise pass or fail. */
+/** Invalid when anything says the measurement cannot be trusted (the signal, the readings or
+ *  the meter's starting state); otherwise pass or fail. */
 export function judgeRow({ judged, values, delivered, problems }: RowInput): RowVerdict {
   const reasons = [...problems];
   for (const check of delivered) {
@@ -177,6 +197,14 @@ export function judgeCapture(testCase: LoudnessCase, sampleRate: number, capture
     const timed = ((span.endMs - span.startMs) / 1000).toFixed(3);
     problems.push(`the tap timed the signal at ${timed} s, it is ${totalSeconds} s long`);
   }
+  if (span !== null && capture.readings.length > 0) {
+    // Up to the end-of-signal reading itself, so a reading that came late is caught too.
+    const end = firstReadingAtOrAfter(capture.readings, span.endMs + END_READING_DELAY_MS);
+    const gap = longestReadingGapMs(capture.readings, span.startMs, end === null ? span.endMs : end.atMs);
+    if (gap > READING_GAP_LIMIT_MS) {
+      problems.push(`no loudness reading for ${(gap / 1000).toFixed(3)} s during the signal`);
+    }
+  }
 
   const checksFor = (index: number): DeliveredCheck[] => {
     const segment = testCase.segments[index];
@@ -214,8 +242,8 @@ export function judgeCapture(testCase: LoudnessCase, sampleRate: number, capture
     const segmentIndexes = readAt.kind === "segmentEnd" ? [readAt.segment] : testCase.segments.map((_, index) => index);
     const delivered = segmentIndexes.flatMap(checksFor);
     if (testCase.group === "peak") {
-      // The meter holds its peak from the moment it is switched on, so the whole capture must
-      // stay at or below the tone's highest sample, not only the interior measured above.
+      // The meter holds its peak from the moment it is switched on, so the highest sample of
+      // the whole capture must be the tone's own, not only that of the interior measured above.
       delivered.push({
         label: "whole capture sample peak",
         intendedDb: Math.max(...testCase.segments.map((segment) => samplePeakDb(segment, sampleRate))),

@@ -112,17 +112,18 @@ helpers in `src/lib/audit/clickHead.ts`.
   on the engine's main stereo output. `EngineAddresses` comes from `@opendaw/studio-adapters`.
   The array is reused: copy the numbers out inside the callback.
 - The first packet after subscribing can be the array before the meter has filled it — all
-  zeros on a new worklet. An empty meter reads −120, so skip a packet whose five values are
-  all zero (`isUnfilledReading` in `src/lib/audit/loudnessTap.ts`).
+  zeros on a new worklet. An empty meter reads −120, so skip an all-zero packet that comes
+  before the first reading (`isLeadingUnfilled` in `src/lib/audit/loudnessTap.ts`). On a
+  worklet that has measured before, that first packet holds the array's last values instead.
 - The meter runs only while the address has a subscriber, and it has no reset: integrated and
   range accumulate for the life of the worklet processor, across play and stop. An empty meter
   needs a restarted worklet — `freshMeter` in `loudnessSession.ts`:
   `project.engine.releaseWorklet()`, then `project.startAudioWorklet()`. The release terminates
   the worklet in use and frees the project's live stream receiver for the next one; without it
-  every earlier engine stays alive beside the new one.
+  `startAudioWorklet()` throws "Already connected".
 - The fifth value is the highest sample, not an oversampled true peak.
-- The offline renderer does not run the meter and the class is not importable, so a rendered
-  file cannot be measured with SDK code.
+- The offline renderer does not run the meter and the package does not export the class, so a
+  rendered file cannot be measured through the SDK's public surface.
 - `startAudioWorklet()` connects the engine to the speakers. To measure in silence, disconnect
   it and route it through a node that outputs nothing (the harness's tap worklet).
 - What the readings are for signals of known loudness, per SDK version:

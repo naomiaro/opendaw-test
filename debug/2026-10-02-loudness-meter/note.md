@@ -7,7 +7,7 @@ Harness: [`loudness-meter-audit-debug-demo.html`](../../loudness-meter-audit-deb
 
 Before the harness was built, a throwaway page checked the two things it rests on: that
 restarting the engine worklet empties the meter, and that a tone on a Tape track reaches the
-engine's output at its synthesized level, sample for sample. It played a 1 kHz tone at
+engine's output at its synthesized level with its highest sample unchanged. It played a 1 kHz tone at
 −23 dBFS twice and an fs/4 tone at half scale and 45° once, each for five seconds on a
 restarted worklet, at 48 kHz.
 
@@ -45,9 +45,10 @@ the end to one 1024-frame chunk each.
 
 ## What is measured
 
-The engine worklet runs a loudness meter on its main stereo output while something is
-subscribed to `EngineAddresses.LOUDNESS`, and publishes
-`[momentary, shortTerm, integrated, loudnessRange, peak]`. The harness plays tones whose
+The engine worklet publishes `[momentary, shortTerm, integrated, loudnessRange, peak]` on
+`EngineAddresses.LOUDNESS`, from a loudness meter on its main stereo output. Read in the
+source, not measured here: the meter runs only while that address has a subscriber, and it
+has no reset. The harness plays tones whose
 loudness is known through a Tape track at unity gain and judges what the meter reads:
 
 - EBU Tech 3341 (2023), Table 1, cases 1–5 (loudness) and 15–18 (true peak).
@@ -64,8 +65,13 @@ Not measured, and why:
   are left for a later version. Adding one is a new row in `src/lib/audit/loudnessCases.ts`.
 
 A tap on the engine's output confirms each tone arrived at its synthesized level before the
-meter is judged. The meter has no reset, and both EBU documents require one before each
-measurement, so each case runs on a restarted worklet.
+meter is judged. Both EBU documents require the meter to be reset before each measurement,
+so each case runs on a restarted worklet, which the probe above showed starts empty.
+
+A row is `invalid`, and the meter is not judged, when the tone was not delivered as
+synthesized, when the meter was not empty at the start, when readings were missing for more
+than half a second during the signal, when the tap's timing of the signal does not match its
+length, or when the tab was hidden.
 
 ## How to run
 
@@ -153,14 +159,14 @@ in the peak cases within 0.001 dB of its synthesized sample peak. Both runs: 28 
 - The range cases read 10.00, 5.00, 20.00 and 15.00 LU, the expected values exactly.
 - The fifth value equals the delivered sample peak in cases 15–18: it reads −6.02, −9.03,
   −7.27 and −6.71 dB, and the tap measured the tones' highest samples at those values. Each
-  tone's true peak is −6.02 dBTP.
+  tone is synthesized at half scale, so its true peak is −6.02 dBTP by construction.
 - The sweep is within tolerance at and below 500 Hz and at and above 5 kHz (0.04 to 0.07 LU
   low), and low by 0.17 to 0.49 LU from 1 kHz to 3 kHz, most at 1.5 kHz.
 - Five seconds after the signal ends, integrated reads the same as at the end in all five
   loudness cases, and range reads the same as at the end in all four range cases.
-- Range reads 4.20 LU five seconds after a steady 20 s tone (cases 1 and 2). The harness
-  takes range at the end of the signal only in the range cases, so these rows do not show
-  whether the 4.20 arose during the tone or after it.
+- Range reads 4.20 LU five seconds after a steady 20 s tone (cases 1 and 2). The register
+  shows range at the end of the signal only where it is judged, in the range cases, so these
+  rows do not show whether the 4.20 arose during the tone or after it.
 - In each full run, 7 of the 14 cases began with one loudness packet whose five values were
   all zero, before the first packet from the meter (which reads −120 when empty).
 
@@ -169,8 +175,9 @@ in the peak cases within 0.001 dB of its synthesized sample peak. Both runs: 28 
 The first full run marked 20 of 28 rows invalid with "the meter was not empty at the start
 (integrated 0.00)", while every judged reading in those rows was the same as in the runs
 registered above. The harness was reading an all-zero packet as the meter's first reading. It
-now skips a packet whose five values are all zero and logs how many it skipped; with that, no
-row is invalid.
+now skips an all-zero packet that arrives before the first reading and logs how many it
+skipped; with that, no row is invalid. An all-zero packet later in a capture is kept and
+judged.
 
 Inferred from `lib-fusion` `LiveStreamBroadcaster.broadcastFloats` and the engine processor,
 not observed directly: the broadcaster writes the array on every flush after calling the
@@ -181,7 +188,7 @@ as it stands, which on a new worklet is zeros.
 ## Inferred from the source, not observed
 
 Read in `studio-core-wasm/src/analysis-dsp.ts` at the version above. These are readings of the
-code, and the rows above do not prove them:
+code. The peak rows above agree with the second; no row shows the first or the third:
 
 - The K-weighting shelf is built with lib-dsp's general high-shelf, and the high-pass is
   normalized to unity; BS.1770's two stages differ from both.
@@ -191,8 +198,9 @@ code, and the rows above do not prove them:
 
 ## What differs from the Node measurements
 
-Before the harness existed, the meter class was run in Node on the same signals, imported
-from the installed dist file. The live rows agree with those numbers to two decimals, with one
+Before the harness existed, the meter class was run in Node on the same signals. The package
+does not export it, so it was imported from the installed dist file by path and bundled with
+esbuild. The live rows agree with those numbers to two decimals, with one
 difference: integrated reads −23.26 or −23.27 in cases 1 to 4 where Node read −23.25. In Node
 the signal was fed with nothing before or after it; in the engine it sits between silences.
 Whether that is the cause was not tested.

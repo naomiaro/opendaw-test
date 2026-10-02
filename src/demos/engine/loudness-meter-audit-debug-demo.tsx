@@ -234,8 +234,8 @@ function LoudnessAudit() {
               </Text>
             </Flex>
             <Text as="p" size="2" color="gray" style={{ marginTop: "0.5rem" }}>
-              The run is silent and takes about twelve minutes for every case. Keep this tab visible: a hidden tab
-              stops receiving the meter's readings and its cases are marked invalid.
+              A run of every case takes about twelve minutes and is silent unless ?audible=1. Keep this tab
+              visible: a hidden tab stops receiving the meter's readings and its cases are marked invalid.
             </Text>
           </Card>
 
@@ -274,7 +274,8 @@ function LoudnessAudit() {
 ?audible=1             also play the run through the speakers
 pass     every judged reading within its tolerance
 fail     a judged reading outside its tolerance
-invalid  the signal did not reach the meter as synthesized, or the tab was hidden
+invalid  the measurement cannot be trusted: the signal did not reach the meter as synthesized,
+         readings were missing, the meter was not empty at the start, or the tab was hidden
 error    the case threw or timed out
 Uploads: loudness-audit-<timestamp>.json (all rows) via PUT /__verify`}
             </pre>

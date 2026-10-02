@@ -72,7 +72,7 @@ describe("synthesize", () => {
     expect(signal[240]).toBeCloseTo(0.5, 6);
     expect(signal[480]).toBeCloseTo(1, 6);
     expect(signal[47760]).toBeCloseTo(239 / 480, 6);
-    expect(signal[47999]).toBeCloseTo(0, 6);
+    expect(signal[47996]).toBeCloseTo(3 / 480, 6);
   });
 });
 

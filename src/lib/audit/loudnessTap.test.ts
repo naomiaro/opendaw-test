@@ -6,6 +6,7 @@ import {
   chunksFromSignal,
   deliveredLevelDb,
   deliveredPeakDb,
+  isLeadingUnfilled,
   isUnfilledReading,
   signalSpan,
   type TapStats,
@@ -66,6 +67,11 @@ describe("signalSpan", () => {
     const signal = padded(synthesize(tone(-72), RATE));
     expect(signalSpan(chunksFromSignal(signal, signal, RATE))?.startFrame).toBe(4096);
   });
+  it("sees a signal that is on the right channel only", () => {
+    const signal = padded(synthesize(tone(-23), RATE));
+    const silence = new Float32Array(signal.length);
+    expect(signalSpan(chunksFromSignal(silence, signal, RATE))?.startFrame).toBe(4096);
+  });
   it("is null while the output is silent", () => {
     const silence = new Float32Array(RATE);
     expect(signalSpan(chunksFromSignal(silence, silence, RATE))).toBeNull();
@@ -102,8 +108,9 @@ describe("deliveredPeakDb", () => {
 
 describe("the worklet processor", () => {
   it("posts what chunksFromSignal computes", () => {
-    const left = synthesize(tone(-23), RATE);
-    const right = synthesize(tone(-26), RATE);
+    // Silence after the tone: a processor that kept its peak from chunk to chunk would show it.
+    const left = padded(synthesize(tone(-23), RATE));
+    const right = padded(synthesize(tone(-26), RATE));
     const posted = runProcessor([left, right]);
     const expected = chunksFromSignal(left, right, RATE);
     expect(posted.length).toBe(expected.length);
@@ -166,7 +173,25 @@ describe("isUnfilledReading", () => {
   it("is false for a meter that kept an earlier measurement", () => {
     expect(isUnfilledReading(reading(-120, -120, -23.27, 4.2, -23))).toBe(false);
   });
-  it("is false when only some values are zero", () => {
+  it("is false when any one value is not zero", () => {
+    expect(isUnfilledReading(reading(-1, 0, 0, 0, 0))).toBe(false);
+    expect(isUnfilledReading(reading(0, -1, 0, 0, 0))).toBe(false);
+    expect(isUnfilledReading(reading(0, 0, -1, 0, 0))).toBe(false);
+    expect(isUnfilledReading(reading(0, 0, 0, 1, 0))).toBe(false);
     expect(isUnfilledReading(reading(0, 0, 0, 0, -6))).toBe(false);
+  });
+});
+
+describe("isLeadingUnfilled", () => {
+  const zeros = { atMs: 0, momentary: 0, shortTerm: 0, integrated: 0, range: 0, peak: 0 };
+  const empty = { atMs: 0, momentary: -120, shortTerm: -120, integrated: -120, range: 0, peak: -120 };
+  it("leaves out an unfilled packet that comes before the first reading", () => {
+    expect(isLeadingUnfilled([], zeros)).toBe(true);
+  });
+  it("keeps an all-zero packet once a reading has arrived, so it is judged like any other", () => {
+    expect(isLeadingUnfilled([empty], zeros)).toBe(false);
+  });
+  it("keeps the first reading", () => {
+    expect(isLeadingUnfilled([], empty)).toBe(false);
   });
 });

@@ -14,7 +14,7 @@ import {
   LOUDNESS_TAP_PROCESSOR,
   LOUDNESS_TAP_PROCESSOR_SOURCE,
   LOUDNESS_TAP_QUIET,
-  isUnfilledReading,
+  isLeadingUnfilled,
   signalSpan,
   type CaseCapture,
   type LoudnessReading,
@@ -23,7 +23,8 @@ import {
 } from "@/lib/audit/loudnessTap";
 
 const BPM = 120;
-/** How long after the signal ends the capture keeps reading (the late reading). */
+/** How long after the signal ends the capture keeps reading, for the late reading. Not less
+ *  than `LATE_READING_DELAY_MS` in loudnessVerdict.ts, or no late reading is captured. */
 const LATE_SECONDS = 5;
 
 export interface LoudnessSession {
@@ -132,8 +133,8 @@ export async function freshMeter(session: LoudnessSession): Promise<void> {
   session.tap?.port.postMessage("stop");
   session.tap?.disconnect();
   session.engineNode?.disconnect();
-  // Terminates the worklet now in use, which also frees the project's live stream receiver
-  // for the next one. Without this every earlier engine would stay alive beside the new one.
+  // Terminates the worklet now in use, which also frees the project's live stream receiver.
+  // Without this the next startAudioWorklet() throws "Already connected".
   project.engine.releaseWorklet();
   const worklet = project.startAudioWorklet();
   await withDeadline(worklet.isReady(), 30_000, "the worklet restart");
@@ -202,7 +203,7 @@ export async function playAndCapture(
       peak: values[4],
     };
     // A packet sent before the meter filled the array is not a reading.
-    if (isUnfilledReading(reading)) unfilled++;
+    if (isLeadingUnfilled(readings, reading)) unfilled++;
     else readings.push(reading);
   });
   const loud = (chunk: TapChunk) => Math.max(chunk.peak[0], chunk.peak[1]) > LOUDNESS_TAP_QUIET;

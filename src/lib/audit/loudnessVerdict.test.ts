@@ -30,7 +30,8 @@ function captureOf(
   testCase: LoudnessCase,
   meter: Meter,
   gain: number = 1,
-  disturb: (output: Float32Array, signalStart: number) => void = () => {}
+  disturb: (output: Float32Array, signalStart: number) => void = () => {},
+  disturbRight: (right: Float32Array, signalStart: number) => void = () => {}
 ): CaseCapture {
   const signal = synthesize(testCase.segments, RATE, testCase.taperMs);
   const lead = LEAD_SECONDS * RATE;
@@ -41,7 +42,9 @@ function captureOf(
   for (let atMs = 0; atMs <= (output.length / RATE) * 1000; atMs += 100) {
     readings.push({ atMs, ...meter(atMs / 1000 - LEAD_SECONDS) });
   }
-  return { readings, chunks: chunksFromSignal(output, output, RATE), hidden: false };
+  const right = output.slice();
+  disturbRight(right, lead);
+  return { readings, chunks: chunksFromSignal(output, right, RATE), hidden: false };
 }
 
 const case1 = selectCases("3341-1")[0];
@@ -186,6 +189,83 @@ describe("judgeCapture", () => {
     const [row] = judgeCapture(case1, RATE, capture);
     expect(row.status).toBe("invalid");
     expect(row.reasons).toEqual(["the tap timed the signal at 19.732 s, it is 20.000 s long"]);
+  });
+  it("takes each metric from its own field of the stream", () => {
+    const distinct: Meter = (seconds) =>
+      seconds < 0 ? EMPTY : { momentary: -21, shortTerm: -22, integrated: -23, range: 7, peak: -9 };
+    const got = (testCase: LoudnessCase) =>
+      judgeCapture(testCase, RATE, captureOf(testCase, distinct))[0].metrics.map((metric) => [
+        metric.metric,
+        metric.got,
+      ]);
+    expect(got(case1)).toEqual([
+      ["integrated", -23],
+      ["maxMomentary", -21],
+      ["maxShortTerm", -22],
+    ]);
+    expect(got(selectCases("3342-1")[0])).toEqual([["range", 7]]);
+    expect(got(case16)).toEqual([["peak", -9]]);
+    expect(judgeCapture(case1, RATE, captureOf(case1, distinct))[0].late).toEqual({
+      integrated: -23,
+      range: 7,
+      peak: -9,
+    });
+  });
+  it("checks the right channel's level on its own", () => {
+    const quieter = (right: Float32Array) => {
+      for (let i = 0; i < right.length; i++) right[i] *= 0.99;
+    };
+    const [row] = judgeCapture(case1, RATE, captureOf(case1, steady(-23), 1, undefined, quieter));
+    expect(row.status).toBe("invalid");
+    expect(row.reasons).toEqual(["segment 1 level R: delivered -23.09 dB, intended -23.00 dB"]);
+  });
+  it("sees a click that is on the right channel only", () => {
+    const click = (right: Float32Array, signalStart: number) => {
+      right[signalStart + 10] = 0.9;
+    };
+    const capture = captureOf(case16, steady(-9, { peak: -6 }), 1, undefined, click);
+    expect(judgeCapture(case16, RATE, capture)[0].reasons).toEqual([
+      "whole capture sample peak: delivered -0.92 dB, intended -9.03 dB",
+    ]);
+  });
+  it("checks every segment of a case against that segment's own level", () => {
+    // Tech 3341 case 3 is 10 s, 60 s, 10 s. Only the middle segment is delivered low.
+    const case3 = selectCases("3341-3")[0];
+    const lowMiddle = (output: Float32Array, signalStart: number) => {
+      for (let i = signalStart + 10 * RATE; i < signalStart + 70 * RATE; i++) output[i] *= 0.99;
+    };
+    const [row] = judgeCapture(case3, RATE, captureOf(case3, steady(-23), 1, lowMiddle));
+    expect(row.status).toBe("invalid");
+    expect(row.reasons).toEqual([
+      "segment 2 level L: delivered -23.09 dB, intended -23.00 dB",
+      "segment 2 level R: delivered -23.09 dB, intended -23.00 dB",
+    ]);
+  });
+  it("reads a sweep tone 300 ms before its end, once the 3 s window holds only that tone", () => {
+    // The meter is right only from 3 s into each tone until 300 ms before the tone ends.
+    const meter: Meter = (seconds) => {
+      if (seconds < 0) return EMPTY;
+      const ms = Math.round(seconds * 1000);
+      const hz = WEIGHTING_HZ[Math.min(Math.floor(ms / 6000), WEIGHTING_HZ.length - 1)];
+      const settled = ms % 6000 >= 3000 && ms % 6000 <= 5700;
+      return { ...steady(-20)(seconds), shortTerm: settled ? expectedToneLoudness(RATE, hz, -20) : -99 };
+    };
+    const rows = judgeCapture(sweep, RATE, captureOf(sweep, meter));
+    expect(rows.map((row) => row.status)).toEqual(Array(15).fill("pass"));
+  });
+  it("is invalid when the readings stopped during the signal", () => {
+    // No reading for the whole of the second tone: its row would otherwise be judged from
+    // the last reading of the first tone.
+    const meter: Meter = (seconds) => {
+      if (seconds < 0) return EMPTY;
+      const hz = WEIGHTING_HZ[Math.min(Math.floor(seconds / 6), WEIGHTING_HZ.length - 1)];
+      return { ...steady(-20)(seconds), shortTerm: expectedToneLoudness(RATE, hz, -20) };
+    };
+    const capture = captureOf(sweep, meter);
+    capture.readings = capture.readings.filter((reading) => reading.atMs < 7000 || reading.atMs >= 13000);
+    const rows = judgeCapture(sweep, RATE, capture);
+    expect(rows.map((row) => row.status)).toEqual(Array(15).fill("invalid"));
+    expect(rows[1].reasons).toEqual(["no loudness reading for 6.100 s during the signal"]);
   });
   it("judges each sweep tone by the short-term reading at that tone's end", () => {
     // Every tone reads its expected loudness, except 1500 Hz, which reads 0.49 low.

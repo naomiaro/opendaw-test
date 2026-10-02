@@ -9,6 +9,49 @@ describe("LOUDNESS_CASES", () => {
   it("runs for 610.1 seconds in all", () => {
     expect(LOUDNESS_CASES.reduce((sum, testCase) => sum + caseSeconds(testCase), 0)).toBeCloseTo(610.1, 6);
   });
+  it("states every loudness and range case as published", () => {
+    const stated = LOUDNESS_CASES.filter((testCase) => testCase.group === "loudness" || testCase.group === "range").map(
+      (testCase) => [
+        testCase.id,
+        testCase.segments.map((segment) => [segment.levelDb, segment.seconds]),
+        testCase.judged.map((expectation) => [expectation.metric, expectation.expected]),
+      ]
+    );
+    const all = (level: number) => [
+      ["integrated", level],
+      ["maxMomentary", level],
+      ["maxShortTerm", level],
+    ];
+    expect(stated).toEqual([
+      ["3341-1", [[-23, 20]], all(-23)],
+      ["3341-2", [[-33, 20]], all(-33)],
+      ["3341-3", [[-36, 10], [-23, 60], [-36, 10]], [["integrated", -23]]],
+      ["3341-4", [[-72, 10], [-36, 10], [-23, 60], [-36, 10], [-72, 10]], [["integrated", -23]]],
+      ["3341-5", [[-26, 20], [-20, 20.1], [-26, 20]], [["integrated", -23]]],
+      ["3342-1", [[-20, 20], [-30, 20]], [["range", 10]]],
+      ["3342-2", [[-20, 20], [-15, 20]], [["range", 5]]],
+      ["3342-3", [[-40, 20], [-20, 20]], [["range", 20]]],
+      ["3342-4", [[-50, 20], [-35, 20], [-20, 20], [-35, 20], [-50, 20]], [["range", 15]]],
+    ]);
+    for (const testCase of LOUDNESS_CASES.filter((entry) => entry.group !== "peak")) {
+      for (const segment of testCase.segments) expect(segment.phaseDeg).toBe(0);
+    }
+  });
+  it("states every true-peak tone as published: half scale, at a fraction of the rate and a phase", () => {
+    const stated = selectCases("peak").map((testCase) => [
+      testCase.id,
+      testCase.segments.map((segment) => [segment.frequency, segment.phaseDeg]),
+    ]);
+    expect(stated).toEqual([
+      ["3341-15", [[{ rateDivisor: 4 }, 0]]],
+      ["3341-16", [[{ rateDivisor: 4 }, 45]]],
+      ["3341-17", [[{ rateDivisor: 6 }, 60]]],
+      ["3341-18", [[{ rateDivisor: 8 }, 67.5]]],
+    ]);
+    for (const testCase of selectCases("peak")) {
+      expect(Math.pow(10, testCase.segments[0].levelDb / 20)).toBeCloseTo(0.5, 12);
+    }
+  });
   it("states Tech 3341 case 5 as published", () => {
     const [case5] = selectCases("3341-5");
     expect(case5.segments.map((segment) => [segment.levelDb, segment.seconds])).toEqual([
