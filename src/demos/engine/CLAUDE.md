@@ -106,6 +106,29 @@ stale step, restart head ratio — both read 0.14, verdict FIXED):
 context time (`src/demos/engine/metronome-stale-click-debug-demo.tsx` `OutputRecorder`);
 helpers in `src/lib/audit/clickHead.ts`.
 
+## Loudness Stream (Live Only)
+- `project.liveStreamReceiver.subscribeFloats(EngineAddresses.LOUDNESS, values => …)` delivers
+  `[momentary, shortTerm, integrated]` in LUFS, `loudnessRange` in LU and `peak` in dB, measured
+  on the engine's main stereo output. `EngineAddresses` comes from `@opendaw/studio-adapters`.
+  The array is reused: copy the numbers out inside the callback.
+- The first packet after subscribing can be the array before the meter has filled it — all
+  zeros on a new worklet. An empty meter reads −120, so skip an all-zero packet that comes
+  before the first reading (`isLeadingUnfilled` in `src/lib/audit/loudnessTap.ts`). On a
+  worklet that has measured before, that first packet holds the array's last values instead.
+- The meter runs only while the address has a subscriber, and it has no reset: integrated and
+  range accumulate for the life of the worklet processor, across play and stop. An empty meter
+  needs a restarted worklet — `freshMeter` in `loudnessSession.ts`:
+  `project.engine.releaseWorklet()`, then `project.startAudioWorklet()`. The release terminates
+  the worklet in use and frees the project's live stream receiver for the next one; without it
+  `startAudioWorklet()` throws "Already connected".
+- The fifth value is the highest sample, not an oversampled true peak.
+- The offline renderer does not run the meter and the package does not export the class, so a
+  rendered file cannot be measured through the SDK's public surface.
+- `startAudioWorklet()` connects the engine to the speakers. To measure in silence, disconnect
+  it and route it through a node that outputs nothing (the harness's tap worklet).
+- What the readings are for signals of known loudness, per SDK version:
+  `debug/2026-10-02-loudness-meter/note.md`. Harness: `loudness-meter-audit-debug-demo.html`.
+
 ## Reference Files
 - WASM wiring: `src/lib/wasmEngine.ts`
 - Content builder: `src/demos/engine/patternContent.ts`
