@@ -446,6 +446,8 @@ This is the one place the engine's zero-JS-in-render rule is relaxed, and it is 
 
 `crates/stock-devices/device-neural-amp/src/lib.rs` does the wrapper DSP — input/output gains, mono downmix, dry/wet mix — and calls `host_nam_*` imports implemented by `packages/studio/core-wasm/src/nam-bridge.ts`. The bridge runs `@opendaw/nam-wasm` (NeuralAmpModelerCore) as its **own** WebAssembly instance beside the engine, because an Emscripten build cannot link against the engine's own linear memory. Per chunk it copies at most 128 samples per channel between the two memories — negligible against the inference cost.
 
+WebCLAP is the second device built this way: `crates/stock-devices/device-wclap` and `device-wclap-instrument` (shared `crates/wclap-common`) do no DSP and call `host_wclap_*` imports implemented by `packages/studio/core-wasm/src/wclap/wclap-bridge.ts`, which instantiates a CLAP plugin compiled to wasm32 as its own instance per device box (a WASI preview1 shim in `wasi-shim.ts`, the CLAP struct layout for ILP32 in `clap-abi.ts`, host callbacks entered through the funcref trampoline in `trampoline.ts`). The same four patterns apply; the plugin passes audio through until it is loaded, and parameter values arrive already resolved by the engine (unit values mapped to the plugin's own range, modulation as a separate `param_mod` event).
+
 Four patterns worth copying if you integrate other heavy WASM:
 
 1. **Identity is the device box UUID.** `host_nam_create(uuidPtr)` returns a handle keyed by UUID, so a rebind reuses the existing instance and its already-prewarmed model rather than reloading.

@@ -160,6 +160,10 @@ Available instrument adapters (each implements `InstrumentDeviceBoxAdapter`):
   (`createCompositeLayer`, `setLayerInstrument`, `moveCompositeLayer`, `duplicateCompositeLayer`,
   `deleteCompositeLayer`, `wrapInstrumentIntoComposite`)
 - `PlayfieldDeviceBoxAdapter` — drum pad sampler with `Gate` triggers
+- `WclapInstrumentBoxAdapter` — a CLAP plugin compiled to WebAssembly (`InstrumentFactories.Wclap`;
+  the factory writes label, icon and host only — a headless consumer sets `box.url` (the
+  `.wclap.tar.gz` bundle) and `box.clapId` itself; the engine fills `box.state` and creates one
+  `WclapParameterBox` per automatable parameter, exposed through `adapter.parameters`)
 - `ApparatDeviceBoxAdapter` — scriptable instrument (JavaScript DSP)
 - `MIDIOutputDeviceBoxAdapter` — routes to external MIDI hardware
 

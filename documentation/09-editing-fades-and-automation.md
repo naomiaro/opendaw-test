@@ -1275,6 +1275,7 @@ Recording is **latch-based** — there is no touch gate:
 1. **Any write opens the take** — while `engine.isRecording` is true, each `setValue()`/`setUnitValue()` call triggers `notifyWrite()`, which `RecordAutomation` captures as events at the current timeline position. A knob drag, a MIDI controller and a checkbox all record alike.
 2. **Subsequent writes extend it** — events accumulate on the same automation region.
 3. **Only the transport closes it** — stopping the transport (or a loop wrap) finalizes the region (sets duration, adds hold event, runs simplification). The producer of the writes never closes the take itself.
+4. **A pause records a hold, then a step** — on a floating parameter, a write that lands more than 100 ms after the previous one with a different value is recorded as two events at the new position: the old value (index 0) and the new value (index 1), so the lane holds the old value up to that point and steps instead of ramping from the last event. Writes within 100 ms of each other, a repeated value and stepped parameters (`Interpolation.None`) record one event per write.
 
 #### Enabling Automation Recording
 

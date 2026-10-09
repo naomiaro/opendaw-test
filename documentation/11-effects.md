@@ -102,6 +102,14 @@ OpenDAW provides a comprehensive audio effects system with both **MIDI Effects**
    - Connect modules together
    - Create custom signal processors
 
+16. **WebCLAP** - Hosts a CLAP plugin compiled to WebAssembly
+   - `WclapDeviceBox` holds the bundle url (`.wclap.tar.gz`), the plugin id and the
+     plugin's own state blob; every automatable parameter is a `WclapParameterBox` child
+     the engine creates once the plugin loads (`EffectFactories.Wclap`; the same plugin
+     format hosts instruments through `InstrumentFactories.Wclap`)
+   - Runs as its own WebAssembly instance beside the engine; passes audio through until
+     the plugin is up, and on a failed load
+
 16. **Werkstatt** - Scriptable audio effect
     - User-written JavaScript DSP code
     - Uses `// @param` and `// @sample` comment declarations for parameters

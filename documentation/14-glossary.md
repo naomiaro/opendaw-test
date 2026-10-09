@@ -90,7 +90,7 @@ The audio brain: the WASM (Rust) engine processor running in the `AudioWorklet` 
 The main-thread observable wrapper around the engine — `isPlaying`, `position`, `bpm`, `play()`, `stop()`, `setPosition()`. What your UI subscribes to. See [Quick Start](./quick-start.md), [internals/03](./internals/03-cross-thread-protocols.md).
 
 ### `engineToClient`
-The typed RPC channel from the audio worklet back to the main thread — `log`, `error`, `fetchAudio`, `fetchSoundfont`, `notifyClipSequenceChanges`. See [internals/03](./internals/03-cross-thread-protocols.md).
+The typed RPC channel from the audio worklet back to the main thread — `log`, `error`, `fetchAudio`, `fetchSoundfont`, `fetchNamWasm`, `fetchWclapBundle`, `notifyClipSequenceChanges` and the WebCLAP relay (`wclap*`). See [internals/03](./internals/03-cross-thread-protocols.md).
 
 ## F
 

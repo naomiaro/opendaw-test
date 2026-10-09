@@ -245,7 +245,7 @@ What this campaign has put upstream, or has ready to:
 | PR [#376](https://github.com/andremichelle/openDAW/pull/376) — anchor takes on the engine's own recording start | the one-shot `recordingStart` engine report, the processor's first-frame time, the finalization hang and the `#finalize` head drop | **merged** 2026-09-11, **shipped in SDK 0.0.172** (with the maintainer's follow-ups: recording generation, latency read at placement, prepared-worklet disposal, resume-or-reject; #375 closed by the capture-owned uuid); measured before/after under "Task 9: best-fix rework"; post-upgrade standing sweep under "Standing sweep on 0.0.172 (2026-09-28)" |
 | PR [#378](https://github.com/andremichelle/openDAW/pull/378) — apply the input latency the browser reports | `InputLatency.resolve` and the `Reported` default, bounded and read after output has started | **posted**; the branch below stacks on it |
 | PR [#380](https://github.com/andremichelle/openDAW/pull/380) — loopback input-latency calibration | the loopback calibration routine (`InputLatencyCalibration.measure`, `CaptureAudio.calibrateInputLatency`, the per-device store, the `calibrated` resolver rung, the keep-alive sink, the chain-reuse fix, the second capture anchor), upstream PR head `9d0cccb88` (figures measured at `66021385`; the real-device runs at `9d0cccb88` — the measurement code is the same, see the head reconciliation in the calibration section) | **posted** 2026-09-03 (fork branch `naomiaro:feat/input-latency-calibration`, stacks on #378 and #376); measurements and open findings under "Input-latency calibration (2026-09-02)"; **real device measured** 2026-09-03 — six acoustic runs on a built-in microphone, section "Real-device calibration (2026-09-03)" |
-| PR [#418](https://github.com/andremichelle/openDAW/pull/418) — audio chain lifecycle fixes extracted from #380 | `terminate()` tears the chain down and releases the microphone, an unstamped capture reuses its stream across recordings, the keep-alive sink, plus the review round's stream-lifetime rule (a stream exists only while armed and alive), ended-track re-open, prepared-worklet discard on `terminate()` — no calibration API | **posted** 2026-09-28 (rebased onto current main at the maintainer's request) |
+| PR [#418](https://github.com/andremichelle/openDAW/pull/418) — audio chain lifecycle fixes extracted from #380 | `terminate()` tears the chain down and releases the microphone, an unstamped capture reuses its stream across recordings, the keep-alive sink, plus the review round's stream-lifetime rule (a stream exists only while armed and alive), ended-track re-open, prepared-worklet discard on `terminate()` — no calibration API | **merged** 2026-10-09, **shipped in SDK 0.0.174** (four `fix(capture)` commits, `packages/studio/core/CHANGELOG.md` 0.2.8); post-upgrade standing sweep under "Standing sweep on 0.0.174" |
 
 One PR-description draft (`drafts/posted-openDAW-376-pr.md`, rewritten in Task 9 around
 the reworked fix with branch-measured before/after) and **two** issue drafts under
@@ -4870,8 +4870,10 @@ recordings of 1.3 s and longer, with the main thread busy comparing them.
 
 ### Would upstream PR #418 change it
 
-openDAW PR #418 (open) carries three fixes to `CaptureAudio` and the guards around them.
-Read against this repeat:
+openDAW PR #418 (open when this was written; merged 2026-10-09 and shipped in SDK 0.0.174,
+together with the stamp repair of openDAW#424 — the measurement this section asks for is the
+"Standing sweep on 0.0.174" section) carries three fixes to `CaptureAudio` and the guards
+around them. Read against this repeat:
 
 | in #418 | what it does to a take of the multi-mic page |
 |---|---|
@@ -5509,3 +5511,80 @@ before the condition ended. So the stale clock is Chrome's alone among the three
 Filed 2026-10-01 as [openDAW#424](https://github.com/andremichelle/openDAW/issues/424). The
 cause and the quicker trigger are on Chromium issue 442866743 as
 [comment 5](https://issues.chromium.org/issues/442866743#comment5), posted the same day.
+
+## Standing sweep on 0.0.174 (2026-10-09)
+
+`@opendaw/studio-sdk@0.0.174` (build probe `upstream`, `buildFeatures: ["recordingStart"]` →
+`release` profile; PRs #378 / #380 still open, so the probe marker stays
+`calibrateInputLatency`). What the release changes on this harness's path: PR #418's four
+capture commits (the keep-alive sink, chain reuse for a capture naming no device, teardown on
+`terminate()`, the stream-lifetime rule) and the stamp repair for openDAW#424 (a `QuantumClock`
+behind the engine's recording start and the recorder's first-quantum time, the latter sent 16
+calls late so a true read repairs a stale first stamp); details in
+`changelogs/sdk-0.0.173-to-0.0.174-changes.md`. The harness is the one the 0.0.173 sweep ran
+(stop lead on). Chrome 154, the Playwright browser, the tab visible throughout.
+
+### Single tape
+
+| file | rate | rows | error rows | cells `aligned` | finalized | netted medians | raw medians |
+|---|---|---|---|---|---|---|---|
+| `recaudit-summary-1791567758148.json` | 48000 | 60 | 0 | 9 of 10 | 60 of 60 | +1.07…+1.17 ms | −9.64…−0.22 ms |
+| `recaudit-summary-1791568173651.json` | 44100 | 60 | 0 | 10 of 10 | 60 of 60 | +0.97…+1.19 ms | −8.65…+1.26 ms |
+
+Tail deficit 0 on all 120 rows, loader state `loaded` on all, 0 WAV upload failures, stop lead
+157–308 ms. The netted ranges are the 0.0.173 ranges to the hundredth (48 kHz tally: 1.15 ×33,
+1.17 ×15, 1.07 / 1.10 / 1.13 / 1.14 ×3 each — run `…1790872110234` read the same with its one
+row at +3.82; 44.1 kHz per cell +1.16…+1.19 and +1.10 / +1.10 for `loop-wrap`). Nothing #418
+changed shows in a single-tape row, as expected: the harness's named synthetic device never
+matches the empty id the stream reports, so the chain is still rebuilt per take here
+(`&defaultInput=1` is the configuration that reuses).
+
+The one cell not `aligned`: `nominal-start/120` at 48 kHz, on its first repeat's head deficit of
+**79.0 ms** (raw 105.0; the first captured quantum 125.3 ms after the record request; netted
+median +1.15 like every other row; repeats 2 and 3 at 0). It is the first recording of the
+first page load after `node_modules/.vite` was deleted for the upgrade — the same event, at the
+same place in the session, as the 0.0.173 sweep's 84.4 ms / 130.7 ms, read there as a cold
+start of the page and not as the SDK. The 44.1 kHz run, a later page load, has every first
+repeat at 0.
+
+### Multi-mic (`multitrack-all`, 120 BPM, 48000 Hz), two runs, 8 repeats per cell
+
+| file | rows | error rows | finalized | node delays read | netted, every row | cells | raw inter-tape skew in render quanta, start · janked |
+|---|---|---|---|---|---|---|---|
+| `recaudit-mt-summary-1791568582254.json` | 32 | 0 | 32 of 32 | 32 of 32 | +1.146 | both `aligned` | 0 ×8 · 0 ×7, 3.5 ×1 |
+| `recaudit-mt-summary-1791568716778.json` | 32 | 0 | 32 of 32 | 32 of 32 | +1.146 | both `aligned` | 0 ×8 · 0 ×8 |
+
+Netted skew 0.00 and first-frame check 0.00 on every row, every raw skew accounted for by the
+two source nodes' own delays, 4 and 6 clock discontinuities per run (the reference clicks'
+scheduling, as before), no event. Every repeat finalized both tapes: the open finding of a
+last repeat that never finalized one tape (3 of 51 cells on 0.0.172 / 0.0.173) did not show
+in 7 multi-mic cells here. One reading at this count, not a claim: `multitrack-start` raw
+skew is 0 on 16 of 16 repeats (the 0.0.173 runs: 18 of 24) — #418's sink pulls the source node
+from the moment the chain is built, which the register's prediction table named as the one
+change that touches the start of a take.
+
+### Forced: the SDK's stamps under graph work, on the repaired stamps
+
+Three runs of `scenario=multitrack-start&graphChurn=on` (`…1791568848334`, `…1791568938582`,
+`…1791569009195`), 48 rows, 0 error rows, a node delay on every one, 190 to 220 clock
+discontinuities per run, 54 553 to 75 242 connect / disconnect pairs per repeat,
+`nodeTapMissingQuanta` 0 to 2.
+
+| netted / first-frame check, in quanta off the usual | rows |
+|---|---|
+| 0 / 0 | 48 |
+
+On 0.0.173 the same experiment put 24 of 46 rows one to three quanta off (table under
+"Forced: the SDK's stamps under graph work"). With the clock standing still 190 to 220 times
+per run, neither stamp reads early once: the repair holds under a churn well above the natural
+rate, and N = 16 on the recorder's side was enough for it. What this does not cover: the
+stalls the fix-idea section weighed N against went to 41 quanta under a node-CREATION loop,
+which connect / disconnect churn does not reproduce; that loop was not run here.
+
+### The one-quantum event, counted
+
+`one-quantum-events.ts` after these runs: 0.0.174 **0 in 92** repeats (95 % interval
+0–3.9 %; 30 single-tape at 48 kHz, 30 at 44.1 kHz, 32 multi-mic), against 6 in 712 on 0.0.173
+(0.84 %) and 1 in 416 on 0.0.172. Ninety-two repeats cannot show a rate under one per cent
+moving; the forced runs are the measurement that can, and they do. Forced runs stay out of the
+tally (`forced runs left out: 9`).

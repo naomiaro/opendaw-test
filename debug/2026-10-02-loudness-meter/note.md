@@ -10,6 +10,16 @@ Filed upstream (2026-10-02): [openDAW#426](https://github.com/andremichelle/open
 the build below is [PR #430](https://github.com/andremichelle/openDAW/pull/430). Bodies as filed:
 [`drafts/`](./drafts/).
 
+**Update (2026-10-09): all four fixed in SDK 0.0.174.** Upstream `4406971f8` replaces the RBJ
+stages with BS.1770's prototypes bilinear-transformed at the running rate (the high-pass
+numerator kept un-normalised), adds the Annex 2 4× true-peak interpolator per channel, adds
+`LoudnessMeter.reset()` and calls it when the loudness address gains its first subscriber, and
+makes `LiveStreamReceiver` skip a packet written while nobody subscribed; `6779433de` imports
+PR #430's EBU 3341 / 3342 suite as `core-wasm/test/loudness-meter-ebu.test.ts`. Re-measured
+on the release under "SDK 0.0.174" in the register: 28 of 28 rows pass at both rates. The
+harness is the regression test from here on. Changelog:
+`changelogs/sdk-0.0.173-to-0.0.174-changes.md`.
+
 ## Bring-up probe (2026-10-02)
 
 Before the harness was built, a throwaway page checked the two things it rests on: that
@@ -90,9 +100,10 @@ there); the page is the same, only the click is delivered differently.
 
 ## Register
 
-In every row of both runs the tap found the tone within 0.003 dB of its synthesized level, and
-in the peak cases within 0.001 dB of its synthesized sample peak. Both runs: 28 rows, 16 pass,
-12 fail, none invalid, none in error.
+On 0.0.173 (the two runs that follow), in every row of both runs the tap found the tone
+within 0.003 dB of its synthesized level, and in the peak cases within 0.001 dB of its
+synthesized sample peak. Both runs: 28 rows, 16 pass, 12 fail, none invalid, none in error.
+On 0.0.174 (the two runs after them) every row passes.
 
 ### SDK 0.0.173, 48 kHz, 2026-10-02, Chrome 154 on macOS
 
@@ -164,6 +175,86 @@ in the peak cases within 0.001 dB of its synthesized sample peak. Both runs: 28 
 
 The same 28 rows as Chrome at 48 kHz, every verdict and every reading to the two decimals
 shown (`loudness-audit-1790979375072.json`, `loudness-audit-1790980068328.json`).
+
+### SDK 0.0.174, 48 kHz, 2026-10-09, Chrome 154 on macOS
+
+The release with the fixes (`loudness-audit-1791567000907.json`, run from the Playwright
+browser with a real click, the tab visible throughout). 28 rows, **28 pass**, none invalid,
+none in error. Every row that failed on 0.0.173 reads within 0.05 LU of its level now, and
+the K-weighting rows read their weighted level to the hundredth (the meter's filter is the
+one the expected value is computed from). The sweep case's running true peak reads −19.81 for
+its −20 dBFS tones (was −20.00 as a sample peak): the interpolated peak of a tone high in the
+band, within the +0.2 dB the peak cases allow, and not a judged reading.
+
+| Row | Verdict | Meter (error) | 5 s after the end |
+|---|---|---|---|
+| `3341-1` | pass | integrated −22.97 (+0.03), maxMomentary −22.99 (+0.01), maxShortTerm −22.99 (+0.01) | I −22.97, LRA 4.30, peak −22.99 |
+| `3341-2` | pass | integrated −32.97 (+0.03), maxMomentary −32.99 (+0.01), maxShortTerm −32.99 (+0.01) | I −32.97, LRA 4.20, peak −32.99 |
+| `3341-3` | pass | integrated −22.96 (+0.04) | I −22.96, LRA 13.00, peak −22.99 |
+| `3341-4` | pass | integrated −22.96 (+0.04) | I −22.96, LRA 13.00, peak −22.99 |
+| `3341-5` | pass | integrated −22.95 (+0.05) | I −22.95, LRA 6.00, peak −19.99 |
+| `3342-1` | pass | range 10.00 (+0.00) | I −22.55, LRA 10.00, peak −19.99 |
+| `3342-2` | pass | range 5.00 (+0.00) | I −16.78, LRA 5.00, peak −14.99 |
+| `3342-3` | pass | range 20.00 (+0.00) | I −19.97, LRA 20.00, peak −19.99 |
+| `3342-4` | pass | range 15.00 (+0.00) | I −24.46, LRA 15.00, peak −19.99 |
+| `3341-15` | pass | peak −6.02 (−0.02) | I −2.75, LRA 9.30, peak −6.02 |
+| `3341-16` | pass | peak −5.98 (+0.02) | I −2.75, LRA 9.30, peak −5.98 |
+| `3341-17` | pass | peak −6.31 (−0.31) | I −2.75, LRA 9.40, peak −6.31 |
+| `3341-18` | pass | peak −6.03 (−0.03) | I −2.75, LRA 9.30, peak −6.03 |
+| `kweight-25` | pass | shortTerm −31.08 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-40` | pass | shortTerm −26.26 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-60` | pass | shortTerm −23.59 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-100` | pass | shortTerm −21.83 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-250` | pass | shortTerm −20.84 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-500` | pass | shortTerm −20.65 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-1000` | pass | shortTerm −19.99 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-1500` | pass | shortTerm −18.66 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-2000` | pass | shortTerm −17.62 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-3000` | pass | shortTerm −16.88 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-5000` | pass | shortTerm −16.68 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-8000` | pass | shortTerm −16.65 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-12000` | pass | shortTerm −16.65 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-16000` | pass | shortTerm −16.65 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-20000` | pass | shortTerm −16.65 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+
+### SDK 0.0.174, 44.1 kHz, 2026-10-09, Chrome 154 on macOS
+
+`loudness-audit-1791567720437.json`, same browser and click. 28 rows, **28 pass**, none invalid,
+none in error. The same rows as 48 kHz to the hundredth but for: `3341-2` LRA 4.30, `3342-4`
+I −24.45, `3341-15` / `-16` / `-17` LRA 9.20, `kweight-100` −21.82, `kweight-1500` −18.65,
+`kweight-5000` −16.67, and the sweep case's running true peak −19.68 (48 kHz: −19.81); every
+error column reads as at 48 kHz.
+
+| Row | Verdict | Meter (error) | 5 s after the end |
+|---|---|---|---|
+| `3341-1` | pass | integrated −22.97 (+0.03), maxMomentary −22.99 (+0.01), maxShortTerm −22.99 (+0.01) | I −22.97, LRA 4.30, peak −22.99 |
+| `3341-2` | pass | integrated −32.97 (+0.03), maxMomentary −32.99 (+0.01), maxShortTerm −32.99 (+0.01) | I −32.97, LRA 4.30, peak −32.99 |
+| `3341-3` | pass | integrated −22.96 (+0.04) | I −22.96, LRA 13.00, peak −22.99 |
+| `3341-4` | pass | integrated −22.96 (+0.04) | I −22.96, LRA 13.00, peak −22.99 |
+| `3341-5` | pass | integrated −22.95 (+0.05) | I −22.95, LRA 6.00, peak −19.99 |
+| `3342-1` | pass | range 10.00 (+0.00) | I −22.55, LRA 10.00, peak −19.99 |
+| `3342-2` | pass | range 5.00 (+0.00) | I −16.78, LRA 5.00, peak −14.99 |
+| `3342-3` | pass | range 20.00 (+0.00) | I −19.97, LRA 20.00, peak −19.99 |
+| `3342-4` | pass | range 15.00 (+0.00) | I −24.45, LRA 15.00, peak −19.99 |
+| `3341-15` | pass | peak −6.02 (−0.02) | I −2.75, LRA 9.20, peak −6.02 |
+| `3341-16` | pass | peak −5.98 (+0.02) | I −2.75, LRA 9.20, peak −5.98 |
+| `3341-17` | pass | peak −6.31 (−0.31) | I −2.75, LRA 9.20, peak −6.31 |
+| `3341-18` | pass | peak −6.03 (−0.03) | I −2.75, LRA 9.30, peak −6.03 |
+| `kweight-25` | pass | shortTerm −31.08 (−0.00) | I −18.46, LRA 9.60, peak −19.68 |
+| `kweight-40` | pass | shortTerm −26.26 (−0.00) | I −18.46, LRA 9.60, peak −19.68 |
+| `kweight-60` | pass | shortTerm −23.59 (−0.00) | I −18.46, LRA 9.60, peak −19.68 |
+| `kweight-100` | pass | shortTerm −21.82 (−0.00) | I −18.46, LRA 9.60, peak −19.68 |
+| `kweight-250` | pass | shortTerm −20.84 (−0.00) | I −18.46, LRA 9.60, peak −19.68 |
+| `kweight-500` | pass | shortTerm −20.65 (−0.00) | I −18.46, LRA 9.60, peak −19.68 |
+| `kweight-1000` | pass | shortTerm −19.99 (−0.00) | I −18.46, LRA 9.60, peak −19.68 |
+| `kweight-1500` | pass | shortTerm −18.65 (−0.00) | I −18.46, LRA 9.60, peak −19.68 |
+| `kweight-2000` | pass | shortTerm −17.62 (−0.00) | I −18.46, LRA 9.60, peak −19.68 |
+| `kweight-3000` | pass | shortTerm −16.88 (−0.00) | I −18.46, LRA 9.60, peak −19.68 |
+| `kweight-5000` | pass | shortTerm −16.67 (−0.00) | I −18.46, LRA 9.60, peak −19.68 |
+| `kweight-8000` | pass | shortTerm −16.65 (−0.00) | I −18.46, LRA 9.60, peak −19.68 |
+| `kweight-12000` | pass | shortTerm −16.65 (−0.00) | I −18.46, LRA 9.60, peak −19.68 |
+| `kweight-16000` | pass | shortTerm −16.65 (−0.00) | I −18.46, LRA 9.60, peak −19.68 |
+| `kweight-20000` | pass | shortTerm −16.65 (−0.00) | I −18.46, LRA 9.60, peak −19.68 |
 
 ## Observed
 

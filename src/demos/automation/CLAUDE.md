@@ -280,6 +280,16 @@ parameters (`adapter.valueMapping.floating()`), and it runs at every finalize â€
 well as Stop, so a looping take re-thins its curve each pass. Regression test + numbers:
 `automation-simplifier-debug-demo.html` / `debug/2026-08-26-automation-simplifier-flattening/note.md`.
 
+**A write after a pause records a hold, then a step.** On a floating parameter, a write that
+lands more than 100 ms after the previous one with a different value makes `RecordAutomation`
+write TWO events at the new position: the old value at index 0 and the new value at index 1
+(the lane holds the old value up to the position, then steps). Writes within 100 ms of each
+other, a write of the same value, and stepped parameters (`Interpolation.None`, e.g. mute)
+record as before, one event per write. A preset change after a pause therefore recorded as a
+ramp into the jump before and as a step now; a lane renderer that sorts events by position
+alone must keep collection order (index) for the two events at one position to draw the
+vertical step.
+
 **Latch + loop = a hands-off pass overwrites the previous one.** Latch never lifts off, so
 `handleLoopWrap` finalizes the take and immediately opens a new region holding `lastValue` â€”
 and `updateRegionDurations` grows that region with the playhead *with no further writes at
