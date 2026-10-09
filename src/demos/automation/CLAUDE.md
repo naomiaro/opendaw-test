@@ -285,10 +285,10 @@ lands more than 100 ms after the previous one with a different value makes `Reco
 write TWO events at the new position: the old value at index 0 and the new value at index 1
 (the lane holds the old value up to the position, then steps). Writes within 100 ms of each
 other, a write of the same value, and stepped parameters (`Interpolation.None`, e.g. mute)
-record as before, one event per write. A preset change after a pause therefore recorded as a
-ramp into the jump before and as a step now; a lane renderer that sorts events by position
-alone must keep collection order (index) for the two events at one position to draw the
-vertical step.
+record one event per write (a write on the same PPQN tick as the last event updates that
+event instead); the 100 ms is wall-clock time between writes. A preset change after a pause therefore records as a step, not a
+ramp into the jump; a lane renderer that sorts events by position alone must keep collection
+order (index) for the two events at one position to draw the vertical step.
 
 **Latch + loop = a hands-off pass overwrites the previous one.** Latch never lifts off, so
 `handleLoopWrap` finalizes the take and immediately opens a new region holding `lastValue` —

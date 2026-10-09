@@ -500,22 +500,22 @@ without a limit above zero. Replay saved runs (one sample rate at a time) with
   main thread holds it while it connects or disconnects a node or makes a worklet node (read
   from Chromium's source; Chromium issue 442866743). Measured: while the main thread does such
   work, every `process()` call of some quanta reads the previous quantum's time, or an older
-  one, never a later one. A busy main thread alone does not do it. The SDK used to take both
-  start-of-take stamps (`engine.recordingStart`, the recording worklet's first-quantum time)
-  from one read of that clock while a take's nodes are being built, so on a rare repeat a
-  stamp was one quantum early: a netted median one quantum above the run's usual value, a
-  first-frame check of minus one quantum, or both. An engine stamp that is early alone puts
-  the take one quantum late, a recorder stamp alone one quantum early; both cancel. The
-  installed SDK keeps each processor's frame on a `QuantumClock` (lib-dsp: a 128-frame
+  one, never a later one. A busy main thread alone does not do it. Both start-of-take stamps
+  (`engine.recordingStart`, the recording worklet's first-quantum time) are taken while a
+  take's nodes are being built, so a raw read there is a quantum early on a rare repeat: a
+  netted median one quantum above the run's usual value, a first-frame check of minus one
+  quantum, or both (an engine stamp that is early alone puts the take one quantum late, a
+  recorder stamp alone one quantum early; both cancel). The SDK does not read the clock raw
+  for either: each processor keeps its frame on a `QuantumClock` (lib-dsp: a 128-frame
   lattice anchored at the largest `currentFrame − calls·128` read so far, so a stale read is
   corrected and a stale first read is corrected once a true one arrives); the engine stamps
   the recording start from it, and the recording worklet sends its first-quantum time 16
-  calls late so a true read among them repairs it (the browser defect is unchanged;
-  measurements per release in the register). Any worklet that stamps its quanta with
-  `currentFrame` itself is open to the same thing; the node taps and the reference recorder
-  repair their stamps (`repairFrames` in `nodeTap.ts`: the clock is only ever behind, so a
-  stamp less than one quantum after the call before it is moved to exactly that; a
-  recorder's first stamp cannot be repaired). Probe without the SDK:
+  calls late so a true read among them repairs it. The browser defect itself stands;
+  measurements per release, with and without the repair, are in the register. Any worklet
+  that stamps its quanta with `currentFrame` itself is open to the same thing; the node taps
+  and the reference recorder repair their stamps (`repairFrames` in `nodeTap.ts`: the clock
+  is only ever behind, so a stamp less than one quantum after the call before it is moved to
+  exactly that; a recorder's first stamp cannot be repaired). Probe without the SDK:
   `worklet-clock-debug-demo.html` (`src/lib/audit/workletClockProbe.ts`; it says
   `STALE CLOCK`, `CLOCK TRUE`, `CLOCK AHEAD` (a stamp ahead of its quantum, which a stale
   clock cannot make), `NOT CHECKED` when the run watched or worked too little, as on a

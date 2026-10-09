@@ -25,7 +25,7 @@ One publish (0.0.174 on 2026-10-09; 73 commits tag-to-tag). What matters for thi
    nothing from #378 is in this release.
 5. **WebCLAP** — CLAP plugins compiled to WebAssembly (`.wclap.tar.gz` bundles) hosted as an
    instrument or an audio effect: three new boxes, two adapters, `InstrumentFactories.Wclap`
-   / `EffectFactories.Wclap`, sixteen new engine-protocol members, a `wclap/` namespace in
+   / `EffectFactories.Wclap`, fifteen new engine-protocol members, a `wclap/` namespace in
    `studio-core` (bundle fetch, OPFS storage, parameter reconcile, state, GUI relay), and a
    ~1000-line JS bridge in `core-wasm` that runs each plugin as its own wasm32 instance beside
    the engine. No demo here uses it yet.
@@ -328,7 +328,7 @@ the plugin's state blob, and every parameter is a child box the engine binds by 
     plugin relay), `wclapSaveState(uuid)` (answered through `wclapState` when it changed),
     `wclapDescribe(url): Promise<ReadonlyArray<WclapPluginInfo>>` (fetches and instantiates the
     module once, cached per url).
-  - `EngineToClient` +10: `fetchWclapBundle(url): Promise<WclapBundle>` (beside `fetchAudio` /
+  - `EngineToClient` +9: `fetchWclapBundle(url): Promise<WclapBundle>` (beside `fetchAudio` /
     `fetchSoundfont` / `fetchNamWasm`), `wclapSend`, `wclapState`, `wclapParams` (the parameter
     list, once per load), `wclapParam(uuid, paramId, value, gesture)` (the plugin's own
     changes), `wclapHovered` (`clap.param-hovered`, −1 = none), `wclapResizeGui` (the plugin's
@@ -404,8 +404,10 @@ through `trampoline.ts` (a one-function wasm module that imports and re-exports 
 can sit in a funcref table). `process` writes up to 128 param events, 128 note events and the
 transport (`bpm`, pulse position at PPQN 960, playing flag) into a CLAP event list and runs
 the plugin on a sub-quantum chunk; a plugin that is not up yet returns "not ready" and the
-Rust device passes through. Parameter values arrive resolved from the engine (`Unit` → the
-plugin's own `min..max`, real values as is, a modulation sum → `clap_event_param_mod`); host
+Rust device passes through. The engine hands the bridge each parameter's raw kind, value and
+modulation sum and the bridge resolves them (`Unit` → the plugin's own `min..max`, real values
+as is; the modulation sum → `clap_event_param_mod` for a parameter flagged modulatable, folded
+into the clamped value for the rest); host
 values that arrive before the plugin is up are queued per clap id and applied with the first
 process call; plugin-side changes are polled (`POLL_PER_CHUNK` 16 get_value calls per quantum,
 stopping once the plugin emits `PARAM_VALUE` itself — #446) and reported once; a host value is
@@ -516,8 +518,10 @@ foreign `TypeError`, `ErrorInfo` now recognises it), 1159 watched.
   `src/lib/projectSetup.ts` constructs the same `ProjectEnv` (unchanged `.d.ts`); no new
   member for WebCLAP — the worklet fetches bundles itself.
 - **Loudness meter closed out** — `loudness-meter-audit-debug-demo.html` is the regression
-  test: **28 of 28 rows pass at 48 kHz and at 44.1 kHz** (`loudness-audit-1791567000907.json`,
-  `…1791567720437.json`; the 0.0.173 runs read 16 of 28). Every row that failed reads within
+  test: **28 of 28 rows pass at 48 kHz and at 44.1 kHz** (envelopes `loudness-audit-1791567000907.json` /
+  `…1791567720437.json` in the local, untracked `.verify-output/`; the rows are in the register
+  section "SDK 0.0.174" of `debug/2026-10-02-loudness-meter/note.md`; the 0.0.173 runs read
+  16 of 28). Every row that failed reads within
   0.05 LU of its level; the K-weighting rows read their weighted level to the hundredth. The
   harness keeps its worklet restart between cases (it also empties the meter) and its
   leading-zero skip (the release never sends that packet; the comment says so). The link bar

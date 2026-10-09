@@ -173,7 +173,7 @@ export interface EngineCommands extends Terminable {
     play(): void
     stop(reset: boolean): void
     setPosition(position: ppqn): void
-    prepareRecordingState(countIn: boolean): void
+    prepareRecordingState(countIn: boolean, generation: int): void
     stopRecording(): void
     queryLoadingComplete(): Promise<boolean>
     panic(): void
@@ -185,16 +185,17 @@ export interface EngineCommands extends Terminable {
     loadClickSound(index: 0 | 1, data: AudioData): void
     setFrozenAudio(uuid: UUID.Bytes, audioData: Nullable<AudioData>): void
     updateMonitoringMap(map: ReadonlyArray<MonitoringMapEntry>): void
+    suspendAutomation(uuid: UUID.Bytes): void
     wclapOpenGui(uuid: UUID.Bytes): Promise<WclapGuiInfo>
     wclapCloseGui(uuid: UUID.Bytes): void
     wclapResizeGui(uuid: UUID.Bytes, width: number, height: number): Promise<WclapGuiSize>
-    wclapReceive(uuid: UUID.Bytes, bytes: Uint8Array): void
+    wclapReceive(uuid: UUID.Bytes, bytes: ArrayBuffer): void
     wclapSaveState(uuid: UUID.Bytes): void
     wclapDescribe(url: string): Promise<ReadonlyArray<WclapPluginInfo>>
 }
 ```
 
-Most methods are `void` — fire-and-forget commands. `queryLoadingComplete()` returns a `Promise`, used to await sample (and WebCLAP plugin) loading before play begins; the `wclap*` members are the main thread's side of hosting a WebCLAP plugin (open, close and resize its GUI, relay a byte message from the plugin's page, ask for its state, list a bundle's plugins), and the three that answer return a `Promise` too.
+Most methods are `void` — fire-and-forget commands. `queryLoadingComplete()` returns a `Promise`, used to await sample (and WebCLAP plugin) loading before play begins; the `wclap*` members are the main thread's side of hosting a WebCLAP plugin (open, close and resize its GUI, relay a byte message from the plugin's page, ask for its state, list a bundle's plugins), and the three that answer return a `Promise` too. `prepareRecordingState` carries the recording generation the engine echoes back in `recordingStarted`, and `suspendAutomation` names a track whose automation the engine stops reading until the transport stops (a parameter written by hand or by MIDI takes over from its lane, `AutomationSuspension` in `packages/studio/core/src/project/AutomationSuspension.ts`).
 
 `setupMIDI(port, buffer)` is interesting: it transfers a `MessagePort` *and* a `SharedArrayBuffer` to the worklet so MIDI input events from a separate worker can land directly in the audio thread without going through the main thread.
 
@@ -212,23 +213,24 @@ export interface EngineToClient {
     fetchSoundfont(uuid: UUID.Bytes): Promise<SoundFont2>
     fetchNamWasm(): Promise<ArrayBuffer>
     fetchWclapBundle(url: string): Promise<WclapBundle>
-    wclapSend(uuid: UUID.Bytes, bytes: Uint8Array): void
-    wclapState(uuid: UUID.Bytes, bytes: Uint8Array): void
-    wclapParams(uuid: UUID.Bytes, params: ReadonlyArray<WclapParamInfo>): void
-    wclapParam(uuid: UUID.Bytes, paramId: int, value: number, gesture: WclapParamGesture): void
-    wclapHovered(uuid: UUID.Bytes, paramId: int): void
-    wclapResizeGui(uuid: UUID.Bytes, width: number, height: number): void
-    wclapStatus(uuid: UUID.Bytes, status: WclapStatus): void
-    wclapRequestSave(uuid: UUID.Bytes): void
+    wclapSend(uuid: string, bytes: ArrayBuffer): void
+    wclapState(uuid: string, bytes: ArrayBuffer): void
+    wclapParams(uuid: string, params: ReadonlyArray<WclapParamInfo>): void
+    wclapParam(uuid: string, paramId: number, value: number, gesture: WclapParamGesture): void
+    wclapHovered(uuid: string, paramId: number): void
+    wclapResizeGui(uuid: string, width: number, height: number): void
+    wclapStatus(uuid: string, status: WclapStatus): void
+    wclapRequestSave(uuid: string): void
     notifyClipSequenceChanges(changes: ClipSequencingUpdates): void
     switchMarkerState(state: Nullable<[UUID.Bytes, int]>): void
+    recordingStarted(contextTime: number, position: ppqn, generation: int): void
     ready(): void
 }
 ```
 
-The `fetchWclapBundle` / `wclap*` members are the worklet's side of a WebCLAP plugin: the bridge in `packages/studio/core-wasm/src/wclap/wclap-bridge.ts` asks the main thread for the bundle (a `.tar.gz` holding `module.wasm` and the GUI files) and reports the plugin's parameter list once per load, its own parameter changes and state blobs, the hovered control, a GUI resize request and its load status.
+The `fetchWclapBundle` / `wclap*` members (the `wclap*` ones take the device uuid as a string, the form the bridge keys its slots by) are the worklet's side of a WebCLAP plugin: the bridge in `packages/studio/core-wasm/src/wclap/wclap-bridge.ts` asks the main thread for the bundle (a `.tar.gz` holding `module.wasm` and the GUI files) and reports the plugin's parameter list once per load, its own parameter changes and state blobs, the hovered control, a GUI resize request and its load status.
 
-Worklet-originated. The three `fetch*` methods are RPC calls — the worklet *awaits* the result before continuing. The rest are notifications.
+Worklet-originated. The four `fetch*` methods are RPC calls — the worklet *awaits* the result before continuing. The rest are notifications.
 
 The worklet calling `fetchAudio(uuid).then(...)` is how it gets decoded sample data — see [the fetchAudio flow](#fetchaudio-the-async-resource-pattern) below.
 

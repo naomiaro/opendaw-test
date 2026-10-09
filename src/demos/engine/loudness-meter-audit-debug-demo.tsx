@@ -234,7 +234,7 @@ function LoudnessAudit() {
               kind: "note",
             },
             {
-              label: "PR #430 (its EBU test suite is upstream's now)",
+              label: "PR #430 (EBU test suite, imported upstream)",
               href: "https://github.com/andremichelle/openDAW/pull/430",
               kind: "note",
             },

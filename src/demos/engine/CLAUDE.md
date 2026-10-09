@@ -108,13 +108,13 @@ helpers in `src/lib/audit/clickHead.ts`.
 
 ## Loudness Stream (Live Only)
 - `project.liveStreamReceiver.subscribeFloats(EngineAddresses.LOUDNESS, values => …)` delivers
-  `[momentary, shortTerm, integrated]` in LUFS, `loudnessRange` in LU and `peak` in dB, measured
+  `[momentary, shortTerm, integrated]` in LUFS, `loudnessRange` in LU and the true peak in dBTP, measured
   on the engine's main stereo output. `EngineAddresses` comes from `@opendaw/studio-adapters`.
   The array is reused: copy the numbers out inside the callback.
 - The receiver delivers no packet the processor wrote while nobody subscribed, so the first
   packet after subscribing is a reading. The harness still skips an all-zero packet that
   arrives before the first reading (`isLeadingUnfilled` in `src/lib/audit/loudnessTap.ts`);
-  on the installed SDK that packet never comes, and the skip is harmless.
+  the SDK's receiver never sends that packet, and the skip is harmless.
 - The meter runs only while the address has a subscriber, and it resets when the address
   gains its first subscriber: integrated and range start over per subscription, not per
   worklet. Across play and stop within one subscription they accumulate. The harness still
@@ -123,10 +123,10 @@ helpers in `src/lib/audit/clickHead.ts`.
   it; the release frees the project's live stream receiver for the next worklet, and without
   it `startAudioWorklet()` throws "Already connected".
 - The pre-filter is BS.1770's (the prototypes bilinear-transformed at the running rate), and
-  the fifth value is a true peak in dBTP (the Annex 2 4× interpolator). The RBJ stages that
-  read 0.25 LU low at 1 kHz, the sample peak and the missing reset were openDAW#426, #427 and
-  #428; the unfilled first packet #429. All four are fixed; the harness is their regression
-  test (28 of 28 rows pass at both rates).
+  the fifth value is a true peak in dBTP (the Annex 2 4× interpolator). The harness is the
+  regression test for the weighting, the peak, the reset and the first packet
+  (openDAW#426–#429): 28 of 28 rows pass at both rates, and a row that changes on a later
+  release is the finding.
 - The offline renderer does not run the meter and the package does not export the class, so a
   rendered file cannot be measured through the SDK's public surface.
 - `startAudioWorklet()` connects the engine to the speakers. To measure in silence, disconnect
