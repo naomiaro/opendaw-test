@@ -108,22 +108,25 @@ helpers in `src/lib/audit/clickHead.ts`.
 
 ## Loudness Stream (Live Only)
 - `project.liveStreamReceiver.subscribeFloats(EngineAddresses.LOUDNESS, values => …)` delivers
-  `[momentary, shortTerm, integrated]` in LUFS, `loudnessRange` in LU and `peak` in dB, measured
+  `[momentary, shortTerm, integrated]` in LUFS, `loudnessRange` in LU and the true peak in dBTP, measured
   on the engine's main stereo output. `EngineAddresses` comes from `@opendaw/studio-adapters`.
   The array is reused: copy the numbers out inside the callback.
-- The first packet after subscribing can be the array before the meter has filled it — all
-  zeros on a new worklet. An empty meter reads −120, so skip an all-zero packet that comes
-  before the first reading (`isLeadingUnfilled` in `src/lib/audit/loudnessTap.ts`). On a
-  worklet that has measured before, that first packet holds the array's last values instead.
-- The meter runs only while the address has a subscriber, and it has no reset: integrated and
-  range accumulate for the life of the worklet processor, across play and stop. An empty meter
-  needs a restarted worklet — `freshMeter` in `loudnessSession.ts`:
-  `project.engine.releaseWorklet()`, then `project.startAudioWorklet()`. The release terminates
-  the worklet in use and frees the project's live stream receiver for the next one; without it
-  `startAudioWorklet()` throws "Already connected".
-- The fifth value is the highest sample, not an oversampled true peak (openDAW#427), and the
-  K-weighting reads 0.25 LU low at 1 kHz (openDAW#426); PR #430 upstream changes both. The
-  missing reset is openDAW#428, the unfilled first packet openDAW#429.
+- The receiver delivers no packet the processor wrote while nobody subscribed, so the first
+  packet after subscribing is a reading. The harness still skips an all-zero packet that
+  arrives before the first reading (`isLeadingUnfilled` in `src/lib/audit/loudnessTap.ts`);
+  the SDK's receiver never sends that packet, and the skip is harmless.
+- The meter runs only while the address has a subscriber, and it resets when the address
+  gains its first subscriber: integrated and range start over per subscription, not per
+  worklet. Across play and stop within one subscription they accumulate. The harness still
+  restarts the worklet between cases (`freshMeter` in `loudnessSession.ts`:
+  `project.engine.releaseWorklet()`, then `project.startAudioWorklet()`), which also empties
+  it; the release frees the project's live stream receiver for the next worklet, and without
+  it `startAudioWorklet()` throws "Already connected".
+- The pre-filter is BS.1770's (the prototypes bilinear-transformed at the running rate), and
+  the fifth value is a true peak in dBTP (the Annex 2 4× interpolator). The harness is the
+  regression test for the weighting, the peak, the reset and the first packet
+  (openDAW#426–#429): 28 of 28 rows pass at both rates, and a row that changes on a later
+  release is the finding.
 - The offline renderer does not run the meter and the package does not export the class, so a
   rendered file cannot be measured through the SDK's public surface.
 - `startAudioWorklet()` connects the engine to the speakers. To measure in silence, disconnect

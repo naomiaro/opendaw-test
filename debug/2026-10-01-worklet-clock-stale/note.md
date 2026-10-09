@@ -5,6 +5,18 @@ Chrome 154 on macOS 15.6.1 (Apple M4 Pro), 48 kHz; Chromium `main` at commit
 `4b38af96d95350e04e831d18f6ba91a2a0cca5d2` (2026-10-01) for the source lines. Firefox 157
 and Safari 18.6 on the same machine: the clock is true (below).
 
+**Update (2026-10-09): worked around in SDK 0.0.174.** The browser is unchanged (Chromium
+442866743 open). `lib-dsp` gained `QuantumClock`: a processor's frame is its call count on a
+128-frame lattice anchored at the largest `currentFrame − calls·128` read so far, so a stale
+read is corrected at once and a stale FIRST read is corrected once a true read arrives. The
+engine stamps the recording start from it (the "engine's stamp" repair under "Fix idea"), and
+the recording worklet keeps the call index of its first quantum and sends `firstQuantum` 16
+calls later from `clock.frameOf(firstQuantumCall)` (way 1 below, with N = 16 where the
+numbers below put N = 32 as the value with margin under forced churn; the natural stalls seen
+at a first read were up to 7 quanta). The first-quantum time reaches the main thread about
+43 ms later than before. Changelog: `changelogs/sdk-0.0.173-to-0.0.174-changes.md`;
+measurements on the release in the campaign register's "Standing sweep on 0.0.174" section.
+
 **Status (2026-10-01):** the stale clock is measured, and watched through three natural events
 on the recording harness; why it stands still is read from Chromium's source. The browser
 defect is already reported: [Chromium issue 442866743](https://issues.chromium.org/issues/442866743),

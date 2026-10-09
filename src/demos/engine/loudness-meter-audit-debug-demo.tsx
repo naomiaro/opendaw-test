@@ -214,7 +214,7 @@ function LoudnessAudit() {
               kind: "note",
             },
             {
-              label: "Upstream: openDAW#426 (weighting)",
+              label: "Upstream, all four fixed: openDAW#426 (weighting)",
               href: "https://github.com/andremichelle/openDAW/issues/426",
               kind: "note",
             },
@@ -234,7 +234,7 @@ function LoudnessAudit() {
               kind: "note",
             },
             {
-              label: "Fix for #426 / #427: PR #430",
+              label: "PR #430 (EBU test suite, imported upstream)",
               href: "https://github.com/andremichelle/openDAW/pull/430",
               kind: "note",
             },

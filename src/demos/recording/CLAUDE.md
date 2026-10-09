@@ -391,7 +391,8 @@ tapes (`?scenario=multitrack-all`). `?scenario=probe` runs the loopback feasibil
 probe instead of the matrix. `&defaultInput=1` arms on the SDK's default input (the capture
 box names no device and the injection withholds every audio input from `enumerateDevices`) —
 on THIS harness the only configuration in which the SDK reuses one audio chain across a
-cell's takes, because its loopback leaves `reportDeviceId` off, so a named synthetic device
+cell's takes: a capture naming no device keeps a stream that was itself opened unnamed,
+while the harness's loopback leaves `reportDeviceId` off, so a named synthetic device
 never matches the empty id the stream reports and the chain is rebuilt per take (a real
 named device, which reports its id, reuses on every build); single-tape scenarios only,
 since the multi-mic ones name two distinct devices — the page refuses the combination.
@@ -499,13 +500,19 @@ without a limit above zero. Replay saved runs (one sample rate at a time) with
   main thread holds it while it connects or disconnects a node or makes a worklet node (read
   from Chromium's source; Chromium issue 442866743). Measured: while the main thread does such
   work, every `process()` call of some quanta reads the previous quantum's time, or an older
-  one, never a later one. A busy main thread alone does not do it. The SDK takes both
-  start-of-take stamps (`engine.recordingStart`, the recording worklet's first-quantum time)
-  from one read of that clock while a take's nodes are being built, so on a rare repeat a
-  stamp is one quantum early: a netted median one quantum above the run's usual value, a
-  first-frame check of minus one quantum, or both. An engine stamp that is early alone puts
-  the take one quantum late, a recorder stamp alone one quantum early; both cancel. Any
-  worklet that stamps its quanta with `currentFrame` is open to the same thing; the node taps
+  one, never a later one. A busy main thread alone does not do it. Both start-of-take stamps
+  (`engine.recordingStart`, the recording worklet's first-quantum time) are taken while a
+  take's nodes are being built, so a raw read there is a quantum early on a rare repeat: a
+  netted median one quantum above the run's usual value, a first-frame check of minus one
+  quantum, or both (an engine stamp that is early alone puts the take one quantum late, a
+  recorder stamp alone one quantum early; both cancel). The SDK does not read the clock raw
+  for either: each processor keeps its frame on a `QuantumClock` (lib-dsp: a 128-frame
+  lattice anchored at the largest `currentFrame − calls·128` read so far, so a stale read is
+  corrected and a stale first read is corrected once a true one arrives); the engine stamps
+  the recording start from it, and the recording worklet sends its first-quantum time 16
+  calls late so a true read among them repairs it. The browser defect itself stands;
+  measurements per release, with and without the repair, are in the register. Any worklet
+  that stamps its quanta with `currentFrame` itself is open to the same thing; the node taps
   and the reference recorder repair their stamps (`repairFrames` in `nodeTap.ts`: the clock
   is only ever behind, so a stamp less than one quantum after the call before it is moved to
   exactly that; a recorder's first stamp cannot be repaired). Probe without the SDK:
@@ -555,7 +562,10 @@ without a limit above zero. Replay saved runs (one sample rate at a time) with
   andremichelle/openDAW#376 (the reworked fix) is merged and in the installed SDK, and #375
   (simultaneous-take `AudioFileBox` collision) is closed with it — the capture owns the
   recording uuid, there is no box swap after save; #374 (residual start-placement bias)
-  is closed as well, and PRs #378 / #380 / #418 are open. The sweep results per SDK release are in the register.
+  is closed as well; PR #418 (the capture's audio chain lifecycle: keep-alive sink, chain
+  reuse for a capture naming no device, teardown on `terminate()`, a stream only while armed
+  and alive) is merged and in the installed SDK; PRs #378 / #380 are open. The sweep results
+  per SDK release are in the register.
 - **Release profile.** `auditProfileFor()` resolves a build whose `buildFeatures` carry
   `recordingStart` but not `latencyProbes` (any installed release that ships PR #376) to the
   `release` profile: `classifyCell(..., { netLoopbackDelay: true })` judges each repeat on
@@ -572,7 +582,8 @@ without a limit above zero. Replay saved runs (one sample rate at a time) with
   the `buildFeatures` list the page probes off the live SDK and persists on the envelope:
   bands A–D (predicted, written before their data existed) for the installed release, and
   the descriptive bands E/F for the calibration branch — selected by the presence of
-  `LatencyProbes`, a proxy that exists only from the build after the keep-alive sink.
+  `LatencyProbes`, a proxy that exists only on the calibration branch (PR #380; the
+  keep-alive sink alone, which the installed SDK has, does not select it).
   The served build decides, not the `sdkBuildProbe` label: a future release that ships
   `LatencyProbes` resolves to E/F even though the marker stamps it `upstream` (INTENDED —
   A–D were fitted to the pre-#376 release and stop describing such a build; pinned in

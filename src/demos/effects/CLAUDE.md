@@ -145,6 +145,18 @@ All adapters implement `DeviceBoxAdapter` with `.type`, `.labelField`, `.enabled
 - `VocoderDeviceBoxAdapter` — carrier/modulator routing
 - `TidalDeviceBoxAdapter` — 17-entry RateFractions (1/1→1/128), different from Delay
 - `NeuralAmpDeviceBoxAdapter` ("Tone3000") — neural amp modeling with NAM files
+- `WclapDeviceBoxAdapter` ("WebCLAP", `EffectFactories.Wclap`) — a CLAP plugin compiled to
+  WebAssembly, run as its own instance beside the engine: `box.url` (the `.wclap.tar.gz`
+  bundle) and `box.clapId` select the plugin (typed path: `adapter.urlField` /
+  `adapter.clapIdField`), `box.state` is its base64 state blob. The worklet reports the
+  plugin's parameter list once per load and `EngineWorklet` reconciles it on the main thread
+  (`WclapParameters.reconcile`, studio-core): one `WclapParameterBox` per automatable (not
+  hidden, not read-only) parameter, created, refreshed or deleted in a non-undoable
+  transaction; `box.state` is written the same way (`WclapStates.store`). Exposed through
+  `adapter.parameters`; values in the plugin's own units, linear or stepped mapping from the
+  CLAP flags. Audio passes through until the plugin is up and when its load failed. An
+  offline render stubs the parameter report, so the boxes appear only while an
+  `EngineWorklet` runs
 - `AudioSinkDeviceBoxAdapter` ("Sink", `EffectFactories.Sink`) — routes the signal at its
   chain position into a bus: `box.targetBus` (optional `Pointers.AudioOutput` pointer) gets
   the full signal, `namedParameter.pass` (DefaultDecibel, default −∞) is the level the chain
