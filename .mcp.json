@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "xerj": {
+      "command": "/Users/naomiaro/.local/bin/xerj",
+      "args": [
+        "mcp"
+      ],
+      "env": {
+        "XERJ_URL": "http://localhost:9200",
+        "XERJ_AUTH": "ApiKey ${XERJ_API_KEY}"
+      }
+    }
+  }
+}
