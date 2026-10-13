@@ -37,8 +37,10 @@ fix. The deployed build carries it.
 
 ## What was tried
 
-Everything below ran clean: no throw, no hang, no console error, the engine checksum in
-step with the source graph, the transport advancing, the output sounding.
+Everything below ran clean: no throw, no hang, no console error. Where an engine was
+involved (the second and third runs, and the page) the engine checksum stayed in step
+with the source graph, the transport kept advancing and the output kept sounding; the
+first run is the box graph alone.
 
 **Box graph alone, Node, openDAW checkout at the 2026-10-09 publish** (temporary vitest files
 in `packages/studio/core`, deleted afterwards): `deleteCompositeLayer` on a layer with a Delay
@@ -89,10 +91,22 @@ effect) and a nested Composite as a third layer with its own Vaporisateur; a not
 looping four quarter notes; a value lane with a region automating the first layer's gain;
 a modulator on the first layer's synth volume; a second Vaporisateur unit whose Compressor
 side-chains from the Composite unit. The transport plays throughout. Each step is raced
-against a hang ceiling (30 s for the build, 10 s for the rest) and the verdict names the
-last stage reached; after every deletion the page runs `verifyPointers`, confirms the
-engine position still advances, and reads the output level through an `AnalyserNode` on
-the engine worklet's output 0.
+against a hang ceiling (30 s for the build, 20 s for the soak, 10 s otherwise) and the
+verdict names the last stage reached: OK; FAILED when one of the page's own checks
+fails; THREW when the SDK threw; HUNG when the ceiling was overrun or the engine position
+stopped advancing. A synchronous main-thread loop would freeze the tab instead, so every
+stage is also logged to the console on entry.
+
+What is checked where: after each layer delete, that the deleted box is gone from the
+graph and the layer count dropped, `verifyPointers`, that the engine position still
+advances, and that the output still sounds (peak RMS over 0.8 s through an
+`AnalyserNode` on the engine worklet's output 0); after each undo, that the box is back,
+`verifyPointers` and the position check, and every `undo()` / `redo()` return value
+(`false` means the SDK rolled the step back). After the unit delete the output is
+expected to go silent (the second unit has no notes), so there the checks are the unit
+gone, the side-chain pointer cleared, pointers and position, with the sound check after
+the undo. The soak asserts the delete and the restore by uuid every cycle and runs the
+pointer, position and sound checks every sixth cycle. One run per page load.
 
 Run of 2026-10-13 (fresh load, a real click on Run):
 
@@ -105,15 +119,35 @@ Run of 2026-10-13 (fresh load, a real click on Run):
 | Delete the side-chain source unit while playing, undo | OK | deleted in 4.5 ms, side-chain pointer cleared; unit back, rms 0.46 after undo |
 | Soak, 24 random delete/undo cycles | OK | max `modify` 1.8 ms, max undos 2, engine advancing, pointers fine |
 
-A first run on this page hung at "wait for position" for 10 s after the build (the
-transport was started with `engine.play()` but `position` stayed at 0); a second fresh load
-advanced within a second. Not reproduced since; the build step's ceiling is 30 s now. The
-`debug/README.md` conventions record the same symptom at SDK 0.0.159.
+The pointer count is taken where the check runs: with the layer deleted in step 2 (37),
+with it restored in steps 3 and 4 (48). That run predates the review fixes (the per-step
+sound and uuid assertions, FAILED/HUNG classes); the re-run after them is below.
+
+Re-run of 2026-10-13 after the review fixes (fresh load, window visible, a real click):
+
+| Step | Outcome | Detail |
+|---|---|---|
+| Build and play | OK | 3 layers, output peak rms 0.481 |
+| Row-icon delete of the edited layer, undo | OK | box gone; 37 pointers fine, engine advancing; rms 0.408 after delete; **undos to restore: 2** |
+| Menu delete, undo, redo, undo | OK | box gone; 37 pointers fine; rms 0.396 after delete; box back, 48 pointers fine; undos after redo: 1 |
+| Delete the nested layer from inside it, undo | OK | outer and inner gone; 44 pointers fine; rms 0.362 after delete; both back, 48 pointers fine; undos to restore: 2 |
+| Delete the side-chain source unit while playing, undo | OK | unit gone, side-chain cleared; 48 pointers fine; unit back, side-chain restored; rms 0.444 after undo |
+| Soak, 24 random delete/undo cycles | OK | every delete and restore confirmed by uuid; max `modify` 1.8 ms; max undos 2; last rms 0.486 |
+
+Two runs on this page stalled at "wait for position" after the build: `engine.play()`
+was issued but the main thread saw `position` stay at 0 and `isPlaying` false. The page
+now logs the context state and `document.visibilityState` while it waits, and both
+stalls read `visibility hidden`: the Chrome window holding the tab was occluded, which
+suspends `requestAnimationFrame` and with it the main thread's view of the engine (the
+engine itself keeps running; see the browser-verification notes in CLAUDE.md). The page
+names that case in its HUNG message. With the window visible the transport advanced
+within a second every time.
 
 ## One finding: the row path needs two undos when the deleted layer was being edited
 
 Not a hang and not a loss of work, but reproducible through the SDK and visible on the
-page (steps 2 and 4).
+page (steps 2 and 4). The states below are measured; the mechanism is inferred from the
+cited source and is consistent with them, it was not observed step by step at runtime.
 
 - `UserEditing.edit()` writes the editing pointer through `editing.modify(…, false)`
   (`packages/studio/adapters/src/editing/UserEditing.ts`): the move stays in
@@ -133,12 +167,15 @@ undo `layers=1 pointer=none resolved=false verify=ok`; after a second `layers=2
 pointer=<layer>`. Nothing dangles: the pointer is empty, not broken, and saving or editing
 from that state works.
 
-In the studio the row icon is only shown in the Composite's own editor, where the edited
-host is the unit, so the icon cannot delete the layer being edited; the menu path moves
-the pointer inside the transaction and undoes in one step (studio run and page step 3).
-The two-undo state is reached when the edited layer is deleted by something other than
-the user's own click: a redo of a row-path delete, a live-room participant, a script.
-Low priority; not filed.
+In the studio the row icon is shown in the editor of a Composite in the edited host's
+chain (the unit's chain, or the outer layer's for a nested Composite), so it deletes a
+child of the edited host, never the host being edited; the menu path moves the pointer
+inside the transaction and undoes in one step (studio run and page step 3). The two-undo
+state is reached when the edited layer is deleted by something other than the user's own
+click: a redo of a row-path delete (measured in the Node probe: delete, undo, undo, redo,
+redo, then one undo left the layer deleted with the pointer empty), or a script. A
+live-room participant's delete would be another candidate and is untested. Low priority;
+not filed.
 
 ## Questions for the reporter
 

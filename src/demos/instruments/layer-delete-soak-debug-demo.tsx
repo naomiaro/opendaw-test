@@ -26,6 +26,7 @@ import {
   PitchDeviceBox,
   TrackBox,
 } from "@opendaw/studio-boxes";
+import type { Box } from "@opendaw/lib-box";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
@@ -50,10 +51,17 @@ import { InfoCircledIcon, PlayIcon } from "@radix-ui/react-icons";
 
 // Repro surface for `debug/2026-10-13-layer-delete-hang-report/note.md`: a Discord user
 // reports that "deleting a layer" makes openDAW hang or crash and loses their work. The
-// report names no steps. This page drives every deletion the SDK offers for a Composite
-// layer and for the audio unit around it, through the real WASM engine while it plays,
-// and races each step against a hang ceiling so the page says OK / HUNG / THREW on its
-// own, with the last stage reached. The default engine sound is heard; keep the volume low.
+// report names no steps. This page drives both studio gestures that delete a Composite
+// layer (`deleteCompositeLayer`, with and without the editing-pointer move the context
+// menu makes) and the unit delete (`deleteAudioUnit`), through the real WASM engine while
+// it plays, and races each step against a hang ceiling (30 s for the build, 20 s for the
+// soak, 10 s otherwise). The default engine sound is heard; keep the volume low.
+//
+// Verdicts: OK; FAILED when one of the page's own checks fails (a `CheckFailed`); THREW
+// when the SDK threw; HUNG when a step overran its ceiling, or when the engine position
+// stopped advancing. The ceiling only catches a step that is waiting: a synchronous
+// main-thread loop freezes the tab itself, which is why every stage is also logged to the
+// console on entry, so a frozen tab still names the last stage reached.
 //
 // The scenario is what a user who "layers" sounds would have: a Composite with two synth
 // layers (one carrying a midi and an audio effect) and a nested Composite as a third
@@ -64,13 +72,21 @@ import { InfoCircledIcon, PlayIcon } from "@radix-ui/react-icons";
 // Steps: delete the edited layer the way the layer row's icon does (no pointer move, the
 // SDK's NestedHostExit moves the editing pointer after the transaction) and undo; delete
 // it the way the layer's context menu does (pointer moved inside the transaction) with
-// undo, redo, undo; delete the nested layer from inside it; delete the side-chain source
-// unit while playing; then a soak of random deletes and undos. After every deletion the
-// page checks the layer count, `verifyPointers`, that the engine position still
-// advances, and that the output is not silent.
+// undo, redo, undo; delete the nested layer from inside it and undo; delete the
+// side-chain source unit while playing and undo; then a soak of random deletes and
+// undos. After each layer delete the page asserts the box is gone and the count dropped,
+// runs `verifyPointers`, confirms the engine position still advances, and that the
+// output still sounds; after each undo it asserts the box is back, runs `verifyPointers`
+// and the position check. Every `undo()` / `redo()` return value is checked: `false`
+// means the SDK rolled the step back. After the unit delete the output is expected to be
+// silent (the second unit has no notes), so there the checks are the pointer, the
+// cleared side-chain and the engine position, and the sound check comes after the undo.
+// The soak asserts the delete and the restore every cycle and runs the pointer, position
+// and sound checks every sixth cycle.
 
 const HANG_TIMEOUT_MS = 10_000;
 const BUILD_TIMEOUT_MS = 30_000; // the first play after a cold engine boot has taken longer than 10 s once
+const SOAK_TIMEOUT_MS = 20_000;
 const SOAK_CYCLES = 24;
 const RMS_SOUNDING = 0.002;
 const BPM = 120;
@@ -81,7 +97,13 @@ class HangError extends Error {
   }
 }
 
-function raceHang<T>(promise: Promise<T>, stages: () => string, timeoutMs = HANG_TIMEOUT_MS): Promise<T> {
+// one of the page's own assertions failed (reported as FAILED, distinct from an SDK throw)
+class CheckFailed extends Error {}
+
+// the engine position stopped advancing (reported as HUNG)
+class EngineStall extends Error {}
+
+function raceHang<T>(promise: Promise<T>, stages: () => string, timeoutMs: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(
       () => reject(new HangError(stages(), timeoutMs)),
@@ -109,15 +131,16 @@ interface StepDef {
   key: string;
   title: string;
   description: string;
+  timeoutMs: number;
 }
 
 const STEPS: StepDef[] = [
-  { key: "build", title: "Build and play", description: "Composite (2 synth layers + nested layer), notes, value lane, modulator, side-chained second unit. Transport runs; output must sound." },
-  { key: "row", title: "Row-icon delete of the edited layer, then undo", description: "deleteCompositeLayer alone; NestedHostExit moves the editing pointer afterwards. Counts how many undos restore the layer." },
-  { key: "menu", title: "Menu delete, undo, redo, undo", description: "Editing pointer moved to the parent inside the same transaction, as the layer's context menu does." },
-  { key: "nested", title: "Delete the nested layer from inside it, undo", description: "Editing pointer on the inner layer; the outer layer (a Composite itself) is deleted." },
-  { key: "unit", title: "Delete the side-chain source unit while playing, undo", description: "deleteAudioUnit on the Composite's unit while the second unit's Compressor side-chains from it." },
-  { key: "soak", title: `Soak: ${SOAK_CYCLES} random delete/undo cycles`, description: "Random layer, random path, engine liveness and pointer integrity checked each cycle." },
+  { key: "build", title: "Build and play", description: "Composite (2 synth layers + nested layer), notes, value lane, modulator, side-chained second unit. Transport runs; output must sound.", timeoutMs: BUILD_TIMEOUT_MS },
+  { key: "row", title: "Row-icon delete of the edited layer, then undo", description: "deleteCompositeLayer alone; NestedHostExit moves the editing pointer afterwards. Box gone, pointers, position and sound checked after the delete; counts how many undos restore the layer.", timeoutMs: HANG_TIMEOUT_MS },
+  { key: "menu", title: "Menu delete, undo, redo, undo", description: "Editing pointer moved to the parent inside the same transaction, as the layer's context menu does. Same checks after the delete and after the last undo.", timeoutMs: HANG_TIMEOUT_MS },
+  { key: "nested", title: "Delete the nested layer from inside it, undo", description: "Editing pointer on the inner layer; the outer layer (a Composite itself) is deleted. Same checks.", timeoutMs: HANG_TIMEOUT_MS },
+  { key: "unit", title: "Delete the side-chain source unit while playing, undo", description: "deleteAudioUnit on the Composite's unit while the second unit's Compressor side-chains from it. Unit gone, side-chain cleared, pointers and position checked; sound checked after the undo.", timeoutMs: HANG_TIMEOUT_MS },
+  { key: "soak", title: `Soak: ${SOAK_CYCLES} random delete/undo cycles`, description: "Random layer, random path. Delete and restore asserted by uuid every cycle; pointers, position and sound every sixth cycle.", timeoutMs: SOAK_TIMEOUT_MS },
 ];
 
 interface Scenario {
@@ -134,6 +157,7 @@ interface Scenario {
 class OutputTap {
   readonly analyser: AnalyserNode;
   readonly #buffer: Float32Array<ArrayBuffer>;
+  attached = false;
 
   constructor(context: AudioContext) {
     this.analyser = context.createAnalyser();
@@ -143,6 +167,7 @@ class OutputTap {
 
   attach(engineNode: AudioNode): void {
     engineNode.connect(this.analyser, 0);
+    this.attached = true;
   }
 
   rms(): number {
@@ -171,18 +196,37 @@ const cellAdapter = (project: Project, cell: InstrumentCompositeCellBox) =>
   project.boxAdapters.adapterFor(cell, InstrumentCompositeCellBoxAdapter);
 
 const editingTarget = (project: Project): string =>
-  project.userEditingManager.audioUnit.get().mapOr((vertex) => vertex.box.constructor.name, "none");
+  project.userEditingManager.audioUnit.get().mapOr((vertex) => vertex.box.name, "none");
 
-async function engineAdvances(project: Project): Promise<boolean> {
-  const before = project.engine.position.getValue();
-  await sleep(400);
-  return project.engine.position.getValue() !== before;
+const isAttached = (project: Project, box: Box): boolean => project.boxGraph.findBox(box.address.uuid).nonEmpty();
+
+// an occluded Chrome window suspends requestAnimationFrame, which is what feeds the main thread's view of the
+// engine (position, isPlaying): the engine keeps running, the page just cannot see it (CLAUDE.md, browser
+// verification notes). Named in the stall message so that case is not read as an SDK hang.
+const visibilityHint = (): string =>
+  document.visibilityState === "hidden" ? "; the window is hidden or occluded, so the main thread does not observe the engine: bring it to the front and reload" : "";
+
+function assertGone(project: Project, box: Box, label: string): void {
+  if (isAttached(project, box)) throw new CheckFailed(`${label}: ${box.name} is still in the graph`);
 }
 
-function undoUntil(project: Project, satisfied: () => boolean, max = 3): number {
+function assertBack(project: Project, box: Box, label: string): void {
+  if (!isAttached(project, box)) throw new CheckFailed(`${label}: ${box.name} is not back in the graph`);
+}
+
+function undoOrFail(project: Project, label: string): void {
+  if (!project.editing.undo()) throw new CheckFailed(`${label}: undo() returned false (the SDK rolled the step back, see the console)`);
+}
+
+function redoOrFail(project: Project, label: string): void {
+  if (!project.editing.redo()) throw new CheckFailed(`${label}: redo() returned false (the SDK rolled the step back, see the console)`);
+}
+
+// undo until `satisfied`, at most `max` times; the count is the finding, a false return a failure
+function undoUntil(project: Project, satisfied: () => boolean, label: string, max = 3): number {
   let count = 0;
   while (!satisfied() && count < max) {
-    project.editing.undo();
+    undoOrFail(project, `${label} (undo ${count + 1})`);
     count++;
   }
   return count;
@@ -259,38 +303,51 @@ function buildScenario(project: Project): Scenario {
   return { compositeUnit, composite, layerA: layerA.cellBox, layerB: layerB.cellBox, outer: outer.cellBox, inner: inner.cellBox, secondUnit, compressor };
 }
 
-type StepBody = (stage: (name: string) => void, log: (line: string) => void) => Promise<string>;
+type Stage = (name: string) => void;
+type StepBody = (stage: Stage, log: (line: string) => void) => Promise<string>;
 
 function makeSteps(project: Project, tap: OutputTap, scenarioRef: { current: Scenario | null }): Record<string, StepBody> {
   const scenario = () => {
     if (scenarioRef.current === null) throw new Error("scenario not built");
     return scenarioRef.current;
   };
-  const check = async (stage: (name: string) => void, label: string): Promise<string> => {
+  const check = async (stage: Stage, label: string): Promise<string> => {
     stage(`${label}: verifyPointers`);
     const { count } = project.boxGraph.verifyPointers();
     stage(`${label}: engine position`);
-    const alive = await engineAdvances(project);
-    if (!alive) throw new Error(`${label}: engine position stopped advancing`);
+    const before = project.engine.position.getValue();
+    await sleep(400);
+    if (project.engine.position.getValue() === before) {
+      throw new EngineStall(`${label}: engine position stopped advancing at ${before.toFixed(0)} (context ${tap.analyser.context.state}, visibility ${document.visibilityState}, isPlaying ${project.engine.isPlaying.getValue()})${visibilityHint()}`);
+    }
     return `${count} pointers fine, engine advancing`;
   };
+  const sounding = async (stage: Stage, label: string, ms = 800): Promise<number> => {
+    stage(`${label}: measure output`);
+    if (!tap.attached) throw new CheckFailed(`${label}: the output tap never attached to the engine node`);
+    const rms = await tap.peakRms(ms);
+    if (rms < RMS_SOUNDING) throw new CheckFailed(`${label}: output silent (peak rms ${rms.toFixed(5)})`);
+    return rms;
+  };
   const layers = () => layersOf(project, scenario().composite);
+  const expectLayers = (n: number, label: string) => {
+    if (layers().length !== n) throw new CheckFailed(`${label}: expected ${n} layers, got ${layers().length}`);
+  };
   return {
     build: async (stage, log) => {
       stage("build boxes");
       scenarioRef.current = buildScenario(project);
       stage("play");
+      const positionBefore = project.engine.position.getValue();
       project.engine.play();
       stage("wait for position");
-      for (let i = 0; i < 80 && project.engine.position.getValue() === 0; i++) {
+      for (let i = 0; i < 250 && project.engine.position.getValue() === positionBefore; i++) {
         if (i % 10 === 9) log(`waiting: context ${tap.analyser.context.state}, visibility ${document.visibilityState}, isPlaying ${project.engine.isPlaying.getValue()}, position ${project.engine.position.getValue()}`);
         await sleep(100);
       }
-      if (project.engine.position.getValue() === 0) throw new Error(`transport never advanced (context ${tap.analyser.context.state}, visibility ${document.visibilityState})`);
-      stage("measure output");
-      const rms = await tap.peakRms(1500);
+      if (project.engine.position.getValue() === positionBefore) throw new EngineStall(`transport never advanced (context ${tap.analyser.context.state}, visibility ${document.visibilityState})${visibilityHint()}`);
+      const rms = await sounding(stage, "build", 1500);
       log(`output peak rms ${rms.toFixed(4)}, ${layers().length} layers, editing ${editingTarget(project)}`);
-      if (rms < RMS_SOUNDING) throw new Error(`output silent (rms ${rms.toFixed(5)})`);
       return `${layers().length} layers, rms ${rms.toFixed(3)}`;
     },
     row: async (stage, log) => {
@@ -304,17 +361,18 @@ function makeSteps(project: Project, tap: OutputTap, scenarioRef: { current: Sce
       const ms = performance.now() - t0;
       await Promise.resolve();
       log(`deleted in ${ms.toFixed(1)} ms, ${layers().length} layers, editing ${editingTarget(project)}`);
-      if (layers().length !== 2) throw new Error(`expected 2 layers, got ${layers().length}`);
+      assertGone(project, layerA, "after delete");
+      expectLayers(2, "after delete");
       const after = await check(stage, "after delete");
-      stage("measure output");
-      const rms = await tap.peakRms(800);
+      const rms = await sounding(stage, "after delete");
       stage("undo until restored");
-      const undos = undoUntil(project, () => layers().length === 3);
+      const undos = undoUntil(project, () => layers().length === 3, "row undo");
       log(`undos needed to restore the layer: ${undos}, editing ${editingTarget(project)}`);
-      if (layers().length !== 3) throw new Error(`layer not restored after ${undos} undos`);
+      assertBack(project, layerA, `after ${undos} undo(s)`);
+      expectLayers(3, `after ${undos} undo(s)`);
       await check(stage, "after undo");
       scenarioRef.current = { ...scenario(), layerA: layers()[0].box };
-      return `${after}; rms ${rms.toFixed(3)}; undos to restore: ${undos}`;
+      return `${after}; rms ${rms.toFixed(3)} after delete; undos to restore: ${undos}`;
     },
     menu: async (stage, log) => {
       const { layerA } = scenario();
@@ -327,22 +385,28 @@ function makeSteps(project: Project, tap: OutputTap, scenarioRef: { current: Sce
         project.api.deleteCompositeLayer(layerA);
       });
       await Promise.resolve();
-      if (layers().length !== 2) throw new Error(`expected 2 layers, got ${layers().length}`);
+      assertGone(project, layerA, "after delete");
+      expectLayers(2, "after delete");
+      const after = await check(stage, "after delete");
+      const rms = await sounding(stage, "after delete");
       stage("undo");
-      project.editing.undo();
+      undoOrFail(project, "menu undo");
       await Promise.resolve();
-      if (layers().length !== 3) throw new Error(`undo did not restore, ${layers().length} layers`);
+      assertBack(project, layerA, "after undo");
+      expectLayers(3, "after undo");
       stage("redo");
-      project.editing.redo();
+      redoOrFail(project, "menu redo");
       await Promise.resolve();
-      if (layers().length !== 2) throw new Error(`redo did not delete, ${layers().length} layers`);
+      assertGone(project, layerA, "after redo");
+      expectLayers(2, "after redo");
       stage("undo again");
-      const undos = undoUntil(project, () => layers().length === 3);
+      const undos = undoUntil(project, () => layers().length === 3, "menu undo after redo");
       log(`undo, redo, then ${undos} undo(s) to restore; editing ${editingTarget(project)}`);
-      if (layers().length !== 3) throw new Error(`layer not restored after redo + ${undos} undos`);
+      assertBack(project, layerA, `after redo + ${undos} undo(s)`);
+      expectLayers(3, `after redo + ${undos} undo(s)`);
       const result = await check(stage, "after undo/redo/undo");
       scenarioRef.current = { ...scenario(), layerA: layers()[0].box };
-      return `${result}; undos after redo: ${undos}`;
+      return `${after}; rms ${rms.toFixed(3)} after delete; ${result}; undos after redo: ${undos}`;
     },
     nested: async (stage, log) => {
       const { outer, inner } = scenario();
@@ -353,16 +417,21 @@ function makeSteps(project: Project, tap: OutputTap, scenarioRef: { current: Sce
       project.editing.modify(() => project.api.deleteCompositeLayer(outer));
       await Promise.resolve();
       log(`${layers().length} layers, editing ${editingTarget(project)}`);
-      if (layers().length !== 2) throw new Error(`expected 2 layers, got ${layers().length}`);
-      await check(stage, "after delete");
+      assertGone(project, outer, "after delete");
+      assertGone(project, inner, "after delete");
+      expectLayers(2, "after delete");
+      const after = await check(stage, "after delete");
+      const rms = await sounding(stage, "after delete");
       stage("undo until restored");
-      const undos = undoUntil(project, () => layers().length === 3);
-      if (layers().length !== 3) throw new Error(`outer layer not restored after ${undos} undos`);
+      const undos = undoUntil(project, () => layers().length === 3, "nested undo");
+      assertBack(project, outer, `after ${undos} undo(s)`);
+      assertBack(project, inner, `after ${undos} undo(s)`);
+      expectLayers(3, `after ${undos} undo(s)`);
       const result = await check(stage, "after undo");
-      const restoredOuter = layers()[2].box;
-      const innerLayers = layersOf(project, project.boxGraph.findBox(outer.address.uuid).isEmpty() ? scenario().composite : (cellAdapter(project, restoredOuter).input.adapter().unwrap().box as InstrumentCompositeBox));
-      scenarioRef.current = { ...scenario(), outer: restoredOuter, inner: innerLayers[0]?.box ?? inner };
-      return `${result}; undos to restore: ${undos}`;
+      const restoredOuter = project.boxGraph.findBox(outer.address.uuid).unwrap("outer") as InstrumentCompositeCellBox;
+      const restoredInner = project.boxGraph.findBox(inner.address.uuid).unwrap("inner") as InstrumentCompositeCellBox;
+      scenarioRef.current = { ...scenario(), outer: restoredOuter, inner: restoredInner };
+      return `${after}; rms ${rms.toFixed(3)} after delete; ${result}; undos to restore: ${undos}`;
     },
     unit: async (stage, log) => {
       const { compositeUnit, compressor } = scenario();
@@ -371,33 +440,35 @@ function makeSteps(project: Project, tap: OutputTap, scenarioRef: { current: Sce
       project.editing.modify(() => project.api.deleteAudioUnit(compositeUnit));
       const ms = performance.now() - t0;
       await Promise.resolve();
-      const sideChain = compressor.sideChain.targetAddress.isEmpty() ? "cleared" : "still set";
-      log(`deleted in ${ms.toFixed(1)} ms, side-chain pointer ${sideChain}`);
+      assertGone(project, compositeUnit, "after delete");
+      if (compressor.sideChain.targetAddress.nonEmpty()) throw new CheckFailed("after delete: the compressor's side-chain pointer still has a target");
+      log(`deleted in ${ms.toFixed(1)} ms, side-chain pointer cleared`);
       await check(stage, "after delete");
       stage("undo");
-      project.editing.undo();
+      undoOrFail(project, "unit undo");
       await Promise.resolve();
-      const restored = project.boxGraph.findBox(compositeUnit.address.uuid);
-      if (restored.isEmpty()) throw new Error("unit not restored by undo");
+      assertBack(project, compositeUnit, "after undo");
+      if (compressor.sideChain.targetAddress.isEmpty()) throw new CheckFailed("after undo: the compressor's side-chain pointer was not restored");
       const result = await check(stage, "after undo");
-      stage("measure output");
-      const rms = await tap.peakRms(1500);
-      if (rms < RMS_SOUNDING) throw new Error(`output silent after undo (rms ${rms.toFixed(5)})`);
-      const unit = restored.unwrap() as AudioUnitBox;
+      const rms = await sounding(stage, "after undo", 1500);
+      const unit = project.boxGraph.findBox(compositeUnit.address.uuid).unwrap("unit") as AudioUnitBox;
       const composite = project.boxGraph.findBox(scenario().composite.address.uuid).unwrap("composite") as InstrumentCompositeBox;
       const cells = layersOf(project, composite);
+      if (cells.length !== 3) throw new CheckFailed(`after undo: expected 3 layers, got ${cells.length}`);
       scenarioRef.current = { ...scenario(), compositeUnit: unit, composite, layerA: cells[0].box, layerB: cells[1].box, outer: cells[2].box };
-      return `${result}; side-chain ${sideChain} on delete; rms ${rms.toFixed(3)} after undo`;
+      return `${result}; side-chain cleared on delete and restored by undo; rms ${rms.toFixed(3)} after undo`;
     },
     soak: async (stage, log) => {
       const ui = project.userEditingManager.audioUnit;
       let maxMs = 0;
       let maxUndos = 0;
+      let rms = 0;
       for (let cycle = 0; cycle < SOAK_CYCLES; cycle++) {
         const current = layers();
         const pick = current[Math.floor(Math.random() * current.length)];
         const menuPath = Math.random() < 0.5;
-        stage(`cycle ${cycle + 1}: delete layer ${pick.indexField.getValue() + 1} (${menuPath ? "menu" : "row"})`);
+        const label = `cycle ${cycle + 1}`;
+        stage(`${label}: delete layer ${pick.indexField.getValue() + 1} (${menuPath ? "menu" : "row"})`);
         ui.edit(pick.box);
         const t0 = performance.now();
         project.editing.modify(() => {
@@ -406,20 +477,21 @@ function makeSteps(project: Project, tap: OutputTap, scenarioRef: { current: Sce
         });
         maxMs = Math.max(maxMs, performance.now() - t0);
         await Promise.resolve();
-        if (layers().length !== current.length - 1) throw new Error(`cycle ${cycle + 1}: delete left ${layers().length} layers`);
-        stage(`cycle ${cycle + 1}: undo`);
-        const undos = undoUntil(project, () => layers().length === current.length);
+        assertGone(project, pick.box, label);
+        expectLayers(current.length - 1, `${label} after delete`);
+        stage(`${label}: undo`);
+        const undos = undoUntil(project, () => layers().length === current.length, label);
         maxUndos = Math.max(maxUndos, undos);
-        if (layers().length !== current.length) throw new Error(`cycle ${cycle + 1}: not restored after ${undos} undos`);
+        assertBack(project, pick.box, `${label} after ${undos} undo(s)`);
+        expectLayers(current.length, `${label} after ${undos} undo(s)`);
         if (cycle % 6 === 5) {
-          await check(stage, `cycle ${cycle + 1}`);
-          log(`cycle ${cycle + 1}: max modify ${maxMs.toFixed(1)} ms, max undos ${maxUndos}`);
+          await check(stage, label);
+          rms = await sounding(stage, label);
+          log(`${label}: max modify ${maxMs.toFixed(1)} ms, max undos ${maxUndos}, rms ${rms.toFixed(3)}`);
         }
       }
       const result = await check(stage, "end");
-      stage("measure output");
-      const rms = await tap.peakRms(1000);
-      return `${result}; max modify ${maxMs.toFixed(1)} ms; max undos ${maxUndos}; rms ${rms.toFixed(3)}`;
+      return `${result}; max modify ${maxMs.toFixed(1)} ms; max undos ${maxUndos}; last rms ${rms.toFixed(3)}`;
     },
   };
 }
@@ -432,6 +504,7 @@ function App() {
   const [reports, setReports] = useState<Record<string, StepReport | "running">>({});
   const [log, setLog] = useState<string[]>([]);
   const [running, setRunning] = useState(false);
+  const [ran, setRan] = useState(false);
   const tapRef = useRef<OutputTap | null>(null);
   const scenarioRef = useRef<Scenario | null>(null);
 
@@ -469,29 +542,41 @@ function App() {
     setLog((prev) => [...prev, line]);
   };
 
+  // one run per page load: a second run would build beside the first scenario and on top of its history
   const run = async () => {
-    if (project === null || tapRef.current === null || running) return;
+    if (project === null || tapRef.current === null || running || ran) return;
     setRunning(true);
+    setRan(true);
     setReports({});
     setLog([]);
     const bodies = makeSteps(project, tapRef.current, scenarioRef);
     for (const step of STEPS) {
       setReports((prev) => ({ ...prev, [step.key]: "running" }));
       const stages: string[] = [];
+      let settled = false;
+      // logged on entry so a frozen tab still names the last stage; throws once the verdict is in, so a
+      // body that overran its ceiling stops at its next stage instead of editing under the next step
+      const stage: Stage = (name) => {
+        if (settled) throw new Error(`step ${step.key} already settled, stage "${name}" abandoned`);
+        stages.push(name);
+        console.log(`[layer-delete-soak] ${step.key}: stage ${name}`);
+      };
       const startedAt = performance.now();
       let report: StepReport;
       try {
         const detail = await raceHang(
-          bodies[step.key]((name) => stages.push(name), (line) => appendLog(`${step.key}: ${line}`)),
+          bodies[step.key](stage, (line) => appendLog(`${step.key}: ${line}`)),
           () => stages[stages.length - 1] ?? "(none)",
-          step.key === "build" ? BUILD_TIMEOUT_MS : HANG_TIMEOUT_MS
+          step.timeoutMs
         );
         report = { outcome: "OK", stages: stages.join(" → "), elapsedMs: performance.now() - startedAt, detail };
       } catch (error) {
         console.error(`step ${step.key} failed: ` + String(error));
-        const outcome: Outcome = error instanceof HangError ? "HUNG" : error instanceof Error && error.message.startsWith("expected") ? "FAILED" : "THREW";
+        const outcome: Outcome = error instanceof HangError || error instanceof EngineStall ? "HUNG"
+          : error instanceof CheckFailed ? "FAILED" : "THREW";
         report = { outcome, stages: stages.join(" → "), elapsedMs: performance.now() - startedAt, detail: String(error instanceof Error ? error.message : error) };
       }
+      settled = true;
       setReports((prev) => ({ ...prev, [step.key]: report }));
       if (report.outcome !== "OK") break;
     }
@@ -509,21 +594,23 @@ function App() {
         ]} />
         <Heading size="7" style={{ marginTop: "1rem" }}>Layer Delete Soak</Heading>
         <Text as="p" size="3" color="gray" style={{ marginBottom: "1rem" }}>
-          Deleting Composite layers and the unit around them while the WASM engine plays, every step raced
-          against a {HANG_TIMEOUT_MS / 1000} s hang ceiling. The page reports OK, HUNG, THREW or FAILED per step
-          with the last stage reached.
+          Deleting Composite layers and the unit around them while the WASM engine plays. Each step is raced
+          against a hang ceiling ({BUILD_TIMEOUT_MS / 1000} s for the build, {SOAK_TIMEOUT_MS / 1000} s for the soak,
+          {HANG_TIMEOUT_MS / 1000} s otherwise) and reports OK, FAILED (a check of this page), THREW (the SDK threw)
+          or HUNG (ceiling overrun or engine position stalled) with the last stage reached. A tab that freezes
+          is a synchronous hang: the console names the last stage.
         </Text>
         <Callout.Root color="blue" style={{ marginBottom: "1rem" }}>
           <Callout.Icon><InfoCircledIcon /></Callout.Icon>
           <Callout.Text>
             A Discord report says "deleting a layer" hangs or crashes openDAW and loses work, without steps.
-            This page exercises every deletion the SDK offers on that path. Audio is audible: keep the volume low.
-            Status: <Code>{status}</Code>
+            This page exercises both studio gestures that delete a layer and the unit delete. Audio is audible:
+            keep the volume low. One run per page load. Status: <Code>{status}</Code>
           </Callout.Text>
         </Callout.Root>
         <Flex gap="3" style={{ marginBottom: "1rem" }}>
-          <Button size="3" disabled={project === null || running} onClick={run}>
-            <PlayIcon /> {running ? "Running..." : "Run all steps"}
+          <Button size="3" disabled={project === null || running || ran} onClick={run}>
+            <PlayIcon /> {running ? "Running..." : ran ? "Reload the page to run again" : "Run all steps"}
           </Button>
         </Flex>
         <Card>

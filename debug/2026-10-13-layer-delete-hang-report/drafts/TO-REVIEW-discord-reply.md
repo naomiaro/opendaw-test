@@ -5,18 +5,18 @@ deleting a layer hangs or crashes openDAW and loses their work.
 
 ---
 
-I tried to reproduce this today against the current deployment (build of 2026-10-12, 18:47
-UTC) and could not make it hang. What I covered, with the transport playing where it
-mattered:
+I tried to reproduce this today and could not make it hang. What I covered:
 
-- Composite layers: "Delete layer" from the layer's menu, the ⊗ on the layer row, deleting
-  from inside the layer, deleting a nested Composite layer, undo and redo after each, with
-  effects, automation lanes and a modulator on the layer.
-- The whole audio unit: "Delete 'Composite'" from the track header while another unit's
-  Compressor side-chains from it, then undo while playing.
-- A scripted soak of 24 random delete/undo cycles through the SDK with the WASM engine
-  running (page: `layer-delete-soak-debug-demo.html` in the opendaw-test repo), checking
-  pointer integrity, the engine position and the output level after every step.
+- In the current deployment (build of 2026-10-12, 18:47 UTC), by hand: a Composite with
+  two layers, "Delete layer" from the layer's menu and the ⊗ on the layer row, from inside
+  the layer, stopped and while playing, undo and redo after each; "Delete 'Composite'"
+  from the track header while another unit's Compressor side-chains from it, then undo
+  while playing.
+- Through the SDK with the WASM engine running (page `layer-delete-soak-debug-demo.html`
+  in the opendaw-test repo): the same two layer gestures on a Composite with effects, a
+  value lane and a modulator on the layer and a nested Composite layer deleted from inside
+  it, the unit delete, and a soak of 24 random delete/undo cycles, with the deleted box,
+  pointer integrity, engine position and output level checked after each delete.
 
 Everything stayed clean, so the hang needs more detail to be found. Could you share:
 
@@ -30,6 +30,6 @@ Everything stayed clean, so the hang needs more detail to be found. Could you sh
 5. If the project still opens: does the hang come back with the same steps on it?
 
 One small thing I did find, not a hang: if the layer you are editing is deleted by a redo
-or by another participant, it takes two ⌘Z to bring it back (the first only empties the
-device panel). That is in the SDK's editing-pointer handling and I have the mechanism
-written up if it is of interest.
+(or by a script), it takes two ⌘Z to bring it back; the first only empties the device
+panel. That is in the SDK's editing-pointer handling and I have it written up if it is of
+interest.
