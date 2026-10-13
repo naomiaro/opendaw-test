@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "xerj": {
+      "command": "${HOME}/.local/bin/xerj",
+      "args": [
+        "mcp"
+      ],
+      "env": {
+        "XERJ_URL": "http://localhost:9200",
+        "XERJ_AUTH": "ApiKey ${XERJ_API_KEY:-}",
+        "XERJ_DISABLE_FEEDBACK": "true"
+      }
+    }
+  }
+}
