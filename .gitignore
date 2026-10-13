@@ -10,5 +10,7 @@ documentation/.vitepress/cache
 .claude/local.md
 .superpowers/
 .verify-output/
+# SDK override dirs built for an A/B of a page against another SDK build (SDK_DIST_OVERRIDE)
+.sdk-override-*/
 # the unbroken copy of a source file while scripts/audit/recording-alignment/stream-tap/node-delay-breaks.ts has a break in it
 *.unbroken
