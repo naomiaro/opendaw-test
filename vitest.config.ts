@@ -13,8 +13,9 @@ const SDK_ROUTINE = [
 export default defineConfig(env =>
     mergeConfig(viteConfig(env), defineConfig({
         test: {
-            // A worktree under .claude/ holds a second copy of every test.
-            exclude: [...configDefaults.exclude, ".claude/**"],
+            // A worktree under .claude/ holds a second copy of every test. private/ is a
+            // local-only folder (see .git/info/exclude) with its own config.
+            exclude: [...configDefaults.exclude, ".claude/**", "private/**"],
             // What the SDK prints as a matter of course: each library announcing
             // itself, every project and audio unit created, every undo. Hundreds of
             // lines a run, which would bury a warning that matters.
