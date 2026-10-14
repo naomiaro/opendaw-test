@@ -13,7 +13,7 @@ import { audioEffectsFieldOf } from "@/lib/adapterUtils";
 import "@radix-ui/themes/styles.css";
 import { Theme, Container, Heading, Text, Flex, Card, Badge, Button, Code, Table } from "@radix-ui/themes";
 
-// Repro for `debug/2026-10-14-param-write-lost-on-enabled-flip/note.md`.
+// Repro for `debug/2026-10-14-param-write-lost-on-enabled-flip/note.md` (openDAW#459).
 //
 // A Vaporisateur plays one quarter note (0.25–0.75 s) in a 4 s loop; a StereoTool sits in its effect
 // chain, bypassed to begin with (`enabled` false). The synth's `release` sets how long the note rings
@@ -260,6 +260,7 @@ function App() {
           <DebugLinkBar
             links={[
               { label: "debug/2026-10-14-param-write-lost-on-enabled-flip/note.md", href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-10-14-param-write-lost-on-enabled-flip/note.md", kind: "note" },
+              { label: "openDAW#459", href: "https://github.com/andremichelle/openDAW/issues/459", kind: "note" },
             ]}
           />
           <MoisesLogo />
