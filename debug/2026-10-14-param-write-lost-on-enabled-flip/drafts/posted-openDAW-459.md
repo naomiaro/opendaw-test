@@ -1,4 +1,4 @@
-<!-- Target: new issue on andremichelle/openDAW. Not posted. Post AFTER repo PR #152 is merged and deployed (the page URL exists only then). -->
+<!-- Posted as https://github.com/andremichelle/openDAW/issues/459 on 2026-10-14. Body as filed. -->
 
 # Parameter write in the same transaction as an effect's `enabled` toggle never reaches the engine
 

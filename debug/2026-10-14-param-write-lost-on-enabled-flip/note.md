@@ -1,5 +1,6 @@
 # A parameter write in the same transaction as an effect's `enabled` flip never reaches the engine
 
+Filed as [openDAW#459](https://github.com/andremichelle/openDAW/issues/459) on 2026-10-14.
 Verified against `@opendaw/studio-sdk` 0.0.174 (WASM engine), Chrome 155 (`navigator.userAgent`), macOS, 2026-10-14.
 Repro page: `param-write-enabled-flip-debug-demo.html` (unlisted; `src/demos/engine/param-write-enabled-flip-debug-demo.tsx`).
 
