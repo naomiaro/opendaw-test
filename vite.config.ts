@@ -196,6 +196,7 @@ export default defineConfig(({command}) => ({
                 inputLatencyCalibrationDebugDemo: resolve(__dirname, "input-latency-calibration-debug-demo.html"),
                 workletClockDebug: resolve(__dirname, "worklet-clock-debug-demo.html"),
                 layerDeleteSoakDebug: resolve(__dirname, "layer-delete-soak-debug-demo.html"),
+                paramWriteEnabledFlipDebug: resolve(__dirname, "param-write-enabled-flip-debug-demo.html"),
                 wasmEngine: resolve(__dirname, "wasm-engine-demo.html"),
                 modulation: resolve(__dirname, "modulation-demo.html"),
                 convolver: resolve(__dirname, "convolver-demo.html"),
