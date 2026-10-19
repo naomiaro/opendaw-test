@@ -41,6 +41,8 @@ const SOURCE_SECONDS = 1.0;
 const RENDER_SECONDS = 0.5;
 const MAX_LAG_FRAMES = 2400; // 50 ms
 const ONSET_THRESHOLD = 0.05;
+// A correlation below this is not a lag reading: the shift lies outside the window or the render differs.
+const SCORE_FLOOR = 0.9;
 
 type ScenarioId = "dry" | "compressor-off" | "compressor-on" | "maximizer-off" | "maximizer-on";
 
@@ -172,6 +174,10 @@ const App: React.FC = () => {
       const left = channels[0];
       const peak = peakOf(left);
       const onset = firstOnsetIndex(left, ONSET_THRESHOLD);
+      // The offline worker swallows a failed sample fetch and renders zeros; a silent render must not print numbers.
+      if (onset < 0 || peak === 0) {
+        throw new Error(`render of "${scenario.label}" is silent (peak ${peak}): the sample did not load or the device muted it`);
+      }
       const { lag, score } = bestLag(reference ?? left, left, MAX_LAG_FRAMES);
       return { onset, peak, lag, score, left };
     } finally {
@@ -185,24 +191,29 @@ const App: React.FC = () => {
     setRunning(true);
     setGot(null);
     const rows: TestStepRow[] = [];
+    let current: Scenario = SCENARIOS[0];
     try {
       let reference: Float32Array | null = null;
       for (const scenario of SCENARIOS) {
+        current = scenario;
         setStatus(`Rendering: ${scenario.label}`);
         const result = await measure(scenario, reference);
         if (scenario.id === "dry") reference = result.left;
         const ms = (result.lag / SAMPLE_RATE) * 1000;
+        const lagText = result.score >= SCORE_FLOOR
+          ? `lag ${result.lag} frames (${ms.toFixed(2)} ms), score ${result.score.toFixed(3)}`
+          : `lag — (score ${result.score.toFixed(3)} below ${SCORE_FLOOR}: shift outside ±${MAX_LAG_FRAMES} frames or a different render)`;
         rows.push({
           label: scenario.label,
-          value: `onset ${result.onset} (${((result.onset / SAMPLE_RATE) * 1000).toFixed(2)} ms), peak ${result.peak.toFixed(3)}, ` +
-            `lag ${result.lag} frames (${ms.toFixed(2)} ms), score ${result.score.toFixed(3)}`,
+          value: `onset ${result.onset} (${((result.onset / SAMPLE_RATE) * 1000).toFixed(2)} ms), peak ${result.peak.toFixed(3)}, ${lagText}`,
         });
         setGot([...rows]);
       }
       setStatus("Done");
     } catch (error) {
       console.error("Run failed: " + String(error));
-      rows.push({ label: "error", value: String(error) });
+      // TestStep shows a row only under an expected label, so the failure lands on the scenario that threw
+      rows.push({ label: current.label, value: `error: ${String(error)}` });
       setGot([...rows]);
       setStatus(`Error: ${String(error)}`);
     } finally {
