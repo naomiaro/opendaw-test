@@ -182,6 +182,11 @@ const AUDIT_LINKS: DebugLink[] = [
     href: "https://github.com/andremichelle/openDAW/issues/375",
     kind: "note",
   },
+  {
+    label: "Upstream issue: openDAW#479 (stop drops input in flight)",
+    href: "https://github.com/andremichelle/openDAW/issues/479",
+    kind: "note",
+  },
 ];
 const rate = Number(params.get("rate") ?? "48000");
 /** RMS floor above which capture is judged non-silent — see module header. */

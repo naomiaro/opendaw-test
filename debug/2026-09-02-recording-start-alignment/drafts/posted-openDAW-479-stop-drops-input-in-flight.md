@@ -1,7 +1,6 @@
-# TO-REVIEW — openDAW issue draft (not posted)
+# Posted: https://github.com/andremichelle/openDAW/issues/479
 
-Target: https://github.com/andremichelle/openDAW/issues (new issue)
-Status: drafted 2026-10-19 from the 0.0.175 standing sweep; nothing posted. Register section
+Filed 2026-10-19 from the 0.0.175 standing sweep, the body as below. Register section
 "Standing sweep on 0.0.175" in `../note.md` has the rows; issue candidate 2 under "Fix round 2"
 has the earlier analysis.
 

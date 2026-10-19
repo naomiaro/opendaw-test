@@ -3515,8 +3515,9 @@ it rests on a single surviving repeat. It must never be quoted as takes landing 
    neither the ~45 ms ratchet nor the loopback's two-state 8–9 ms step.
 2. **The stop path truncates input in flight beyond its incidental post-stop margin — OPEN;
    exercised again on 0.0.175 (section "Standing sweep on 0.0.175": the margin halved, 31 of
-   120 single-tape takes lose 0.3–6.6 ms) and drafted as
-   `drafts/TO-REVIEW-openDAW-stop-drops-input-in-flight.md`. The paragraph below is the
+   120 single-tape takes lose 0.3–6.6 ms) and filed as
+   [openDAW#479](https://github.com/andremichelle/openDAW/issues/479)
+   (`drafts/posted-openDAW-479-stop-drops-input-in-flight.md`). The paragraph below is the
    calibration-era reading.** `tailMissingMs ≡ hop − postStopCapture` in every row, independent of
    the applied calibration, and it appeared uncalibrated on the same stream (5.6–34.3 ms). The
    SDK's stop path keeps whatever frames were delivered when the stop landed (32–77 ms over
@@ -3526,7 +3527,7 @@ it rests on a single surviving repeat. It must never be quoted as takes landing 
    keep-alive builds every tail deficit is 0 — on all 120 standing-sweep rows and all 72
    calibration rows — because every hop (12.3–22.3 ms) sits under every margin (24.0–72.6 ms
    over the calibration rows), so the harness can no longer provoke it; any device whose true
-   input latency exceeds the margin still would. **Issue candidate**, drafted on 2026-10-19
+   input latency exceeds the margin still would. **Filed** as openDAW#479 on 2026-10-19
    (see the head of this entry).
 3. **`CaptureAudio.terminate()` never tore the audio chain down — FIXED on the branch
    (`b8e08b97e`).** The terminator disconnected monitoring and detached the monitor element but
@@ -5649,8 +5650,9 @@ stop (upstream's comment: a limit above them would never be reached and the reco
 finalize), so the input between the last delivered chunk and the stop request is dropped; the
 observation now comes a frame sooner (the `SyncStream` fix), one chunk less has crossed, and
 a hop of ~21 ms no longer fits under a margin that used to be 29 ms and more. The take's placement is untouched; what goes missing is the last 0.3–6.6 ms
-of input before the stop request. Draft:
-`drafts/TO-REVIEW-openDAW-stop-drops-input-in-flight.md`.
+of input before the stop request. Filed as
+[openDAW#479](https://github.com/andremichelle/openDAW/issues/479)
+(`drafts/posted-openDAW-479-stop-drops-input-in-flight.md`).
 
 ### Multi-mic (`multitrack-all`, 120 BPM, 48000 Hz), 8 repeats per cell
 
@@ -5694,4 +5696,4 @@ an event.
 Placement, inter-tape skew, finalization and the stamp repair are the 0.0.174 readings to the
 row. What moved is the end of a take: the stop keeps a frame less than before, and the input
 path's own delay no longer fits under it on about one repeat in four. The register's candidate
-2 is exercised again, by a release and not by a calibration, and is drafted as an issue.
+2 is exercised again, by a release and not by a calibration, and is filed as openDAW#479.

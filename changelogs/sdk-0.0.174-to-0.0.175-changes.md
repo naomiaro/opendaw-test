@@ -401,8 +401,9 @@ waiting for a sample).
   incidental post-stop margin"), un-exercised since the keep-alive builds and exercised again
   now: `RecordAudio` limits the take to the chunks the main thread has RECEIVED when it
   observes the stop, and with `SyncStream` delivering every state the observation comes a frame
-  sooner (inferred from the code; the margin shift is what is measured). Issue drafted for
-  review (`debug/2026-09-02-recording-start-alignment/drafts/TO-REVIEW-openDAW-stop-drops-input-in-flight.md`);
+  sooner (inferred from the code; the margin shift is what is measured). Filed as
+  [openDAW#479](https://github.com/andremichelle/openDAW/issues/479)
+  (`debug/2026-09-02-recording-start-alignment/drafts/posted-openDAW-479-stop-drops-input-in-flight.md`);
   rows in the register's "Standing sweep on 0.0.175". The one head deficit (104 ms on the
   first recording after the `node_modules/.vite` wipe) is the known cold-start event.
 - **Docs for what changed**: `documentation/10-export.md` and `src/demos/export/CLAUDE.md`

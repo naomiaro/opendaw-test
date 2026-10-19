@@ -409,7 +409,7 @@ the post-stop margin (`finalizeNumberOfFramesAtLimit − finalizeNumberOfFramesA
 harness's loopback hop and the margin are of the same order, so a repeat whose hop exceeds
 its margin reads a deficit, and on every such row `tailMissingMs = hop − margin`. That is the
 register's stop-path finding (`debug/2026-09-02-recording-start-alignment/note.md`, issue
-candidate 2, with a per-release table of margin ranges), NOT a placement regression — judge
+candidate 2, filed as openDAW#479, with a per-release table of margin ranges), NOT a placement regression — judge
 placement on the netted medians and the head deficit, and compare the margin range with the
 register's table before calling a change in the SDK.
 
