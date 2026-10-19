@@ -16,9 +16,9 @@ no stage that reads a device's latency.
 
 One Tape track plays a single-sample impulse (0.5) at 0.25 s. The same half second is rendered
 offline at 48 kHz five times through `OfflineEngineRenderer`; each render is compared with the dry
-one by normalized cross-correlation (`bestLag`, ±2400 frames). Device settings change no gain
+one by normalized cross-correlation (`bestLag`, ±2400 frames; the dry render with itself). Device settings apply no gain reduction
 (Compressor: threshold 0 dB, ratio 1, knee 0, input gain 0, makeup 0, auto-makeup off, mix 1;
-Maximizer: threshold 0 dB); the look-ahead toggle is set before the renderer starts, so its 15 ms
+Maximizer: threshold 0 dB, its fixed −0.001 dB headroom stays); the look-ahead toggle is set before the renderer starts, so its 15 ms
 crossfade does not run inside the render.
 
 | render | onset (frame) | peak | lag vs dry | score |
@@ -29,8 +29,8 @@ crossfade does not run inside the render.
 | Maximizer, look-ahead off | 12000 | 0.500 | 0 | 1.000 |
 | Maximizer, look-ahead on | 12240 (255.00 ms) | 0.500 | **+240 frames (5.00 ms)** | 1.000 |
 
-The shift is the device's whole look-ahead (`LOOKAHEAD_SECONDS = 0.005` in both devices), the sample
-is otherwise untouched (peak and correlation unchanged), and the look-ahead-off rows are the control.
+The shift is the device's whole look-ahead (0.005 s in both devices: `LOOKAHEAD_SECONDS` in the Compressor, `LOOK_AHEAD_SECONDS` in the Maximizer), the sample is
+otherwise untouched (peak within the Maximizer's headroom and correlation unchanged), and the look-ahead-off rows are the control.
 A delay-compensating engine would read 0 in every row.
 
 ## Where the engine stands (read, not measured)

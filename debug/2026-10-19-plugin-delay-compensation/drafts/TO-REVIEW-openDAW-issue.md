@@ -14,8 +14,8 @@ extension, so a hosted plug-in with look-ahead of its own is shifted as well.
 **Repro page (headless offline render, reads the shift by cross-correlation):**
 https://opendaw-test.pages.dev/plugin-delay-compensation-debug-demo.html — click Run. One Tape track plays
 a single-sample impulse at 0.25 s; the same half second is rendered at 48 kHz dry and through each device
-with look-ahead off and on, at settings that change no gain (Compressor: threshold 0 dB, ratio 1, knee 0,
-input gain 0, makeup 0, auto-makeup off, mix 1; Maximizer: threshold 0 dB). The look-ahead toggle is set
+with look-ahead off and on, at settings that apply no gain reduction (Compressor: threshold 0 dB, ratio 1, knee 0,
+input gain 0, makeup 0, auto-makeup off, mix 1; Maximizer: threshold 0 dB, its fixed −0.001 dB headroom stays). The look-ahead toggle is set
 before the offline renderer starts.
 
 | render | onset (frame) | peak | lag vs dry | correlation |
@@ -26,8 +26,8 @@ before the offline renderer starts.
 | Maximizer, look-ahead off | 12000 | 0.500 | 0 | 1.000 |
 | Maximizer, look-ahead on | 12240 (255.00 ms) | 0.500 | **+240 frames (5.00 ms)** | 1.000 |
 
-The shift is the device's whole look-ahead (`LOOKAHEAD_SECONDS = 0.005` in both devices); peak and
-correlation are unchanged, so the sample is otherwise untouched; the look-ahead-off rows are the control.
+The shift is the device's whole look-ahead (0.005 s in both devices: `LOOKAHEAD_SECONDS` in the Compressor, `LOOK_AHEAD_SECONDS` in the Maximizer); peak (within the
+Maximizer's fixed headroom) and correlation are unchanged, so the sample is otherwise untouched; the look-ahead-off rows are the control.
 
 **Read in the source (0.0.175):** the device ABI registers `process`, `init`, `parameter_changed`,
 `field_changed`, `sample_changed`, `soundfont_changed`, `reset` and `terminate` (`device_register`,

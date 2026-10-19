@@ -30,8 +30,9 @@ import { InfoCircledIcon, PlayIcon } from "@radix-ui/react-icons";
 //
 // One Tape track plays a single-sample impulse at IMPULSE_SECONDS. The same slice is rendered
 // offline five times: dry, then with a Compressor and a Maximizer inserted on the track, each with
-// its look-ahead off and on, at settings that change no gain (ratio 1, threshold 0 dB). Each render
-// is compared with the dry one by normalized cross-correlation; the lag is the frames by which the
+// its look-ahead off and on, at settings that apply no gain reduction (ratio 1, threshold 0 dB; the
+// Maximizer keeps its fixed -0.001 dB headroom). Each render is compared with the dry one by
+// normalized cross-correlation (the dry render with itself); the lag is the frames by which the
 // device shifted the track. A delay-compensating engine would read 0 in every row.
 const SAMPLE_RATE = 48000;
 const BPM = 120;
@@ -63,6 +64,7 @@ interface Measurement {
   peak: number;
   lag: number;
   score: number;
+  left: Float32Array;
 }
 
 const impulseBuffer = (context: BaseAudioContext): AudioBuffer => {
@@ -170,8 +172,8 @@ const App: React.FC = () => {
       const left = channels[0];
       const peak = peakOf(left);
       const onset = firstOnsetIndex(left, ONSET_THRESHOLD);
-      const { lag, score } = reference === null ? { lag: 0, score: 1 } : bestLag(reference, left, MAX_LAG_FRAMES);
-      return { onset, peak, lag, score };
+      const { lag, score } = bestLag(reference ?? left, left, MAX_LAG_FRAMES);
+      return { onset, peak, lag, score, left };
     } finally {
       const box = effectBox;
       if (box !== null) project.editing.modify(() => box.delete());
@@ -188,10 +190,7 @@ const App: React.FC = () => {
       for (const scenario of SCENARIOS) {
         setStatus(`Rendering: ${scenario.label}`);
         const result = await measure(scenario, reference);
-        if (scenario.id === "dry") {
-          const { channels } = await renderOfflineSlice(project, 0, RENDER_SECONDS, SAMPLE_RATE);
-          reference = channels[0];
-        }
+        if (scenario.id === "dry") reference = result.left;
         const ms = (result.lag / SAMPLE_RATE) * 1000;
         rows.push({
           label: scenario.label,
@@ -239,8 +238,8 @@ const App: React.FC = () => {
           <Text size="2" color="gray">
             A device with look-ahead (the Compressor and the Maximizer buffer 5 ms) delays its track by that
             amount; nothing in the engine delays the other tracks to match. This page renders one impulse
-            dry and through each device, look-ahead off and on, at settings that change no gain, and reads
-            the shift by cross-correlation against the dry render. Offline render at 48 kHz.
+            dry and through each device, look-ahead off and on, at settings that apply no gain reduction,
+            and reads the shift by cross-correlation against the dry render. Offline render at 48 kHz.
           </Text>
           <Callout.Root color="gray">
             <Callout.Icon><InfoCircledIcon /></Callout.Icon>
@@ -252,8 +251,8 @@ const App: React.FC = () => {
             description={
               <>
                 Five offline renders of the same half second. <Code>lag</Code> is the cross-correlation
-                maximum against the dry render (positive = later); <Code>onset</Code> is the first frame
-                above {ONSET_THRESHOLD} absolute.
+                maximum against the dry render (positive = later; the dry row against itself);
+                <Code>onset</Code> is the first frame above {ONSET_THRESHOLD} absolute.
               </>
             }
             actions={
@@ -267,8 +266,8 @@ const App: React.FC = () => {
           <Card>
             <Text size="1" color="gray">
               Device settings: Compressor threshold 0 dB, ratio 1, knee 0, input gain 0, makeup 0, auto-makeup off,
-              mix 1; Maximizer threshold 0 dB. The look-ahead toggle is set before the offline renderer starts,
-              so its 15 ms crossfade does not run inside the render.
+              mix 1; Maximizer threshold 0 dB (its fixed -0.001 dB headroom stays). The look-ahead toggle is set
+              before the offline renderer starts, so its 15 ms crossfade does not run inside the render.
             </Text>
           </Card>
         </Flex>

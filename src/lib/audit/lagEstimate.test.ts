@@ -59,6 +59,31 @@ describe("bestLag", () => {
     expect(bestLag(a, new Float32Array(1024), 100)).toEqual({ lag: 0, score: 0 });
   });
 
+  it("reaches both ends of the search window", () => {
+    const a = noise(4096, 29);
+    expect(bestLag(a, delayed(a, 500), 500).lag).toBe(500);
+    expect(bestLag(a, delayed(a, -500), 500).lag).toBe(-500);
+  });
+
+  it("does not prefer a boundary lag whose overlap is a few samples", () => {
+    const a = noise(100, 23);
+    expect(bestLag(a, a, 99)).toMatchObject({ lag: 0 });
+    expect(bestLag(a, delayed(a, 5), 200).lag).toBe(5);
+  });
+
+  it("reads a low score when the true lag lies outside the window", () => {
+    const a = noise(4096, 37);
+    expect(bestLag(a, delayed(a, 501), 500).score).toBeLessThan(0.2);
+  });
+
+  it("rejects non-finite input instead of reading it as silence", () => {
+    const a = noise(2000, 31);
+    const broken = a.slice();
+    broken[1000] = NaN;
+    expect(() => bestLag(a, broken, 100)).toThrow(/non-finite sample at 1000/);
+    expect(() => bestLag(a, a, NaN)).toThrow(/maxLag/);
+  });
+
   it("rejects mismatched lengths", () => {
     expect(() => bestLag(new Float32Array(10), new Float32Array(11), 2)).toThrow(/lengths differ/);
   });
