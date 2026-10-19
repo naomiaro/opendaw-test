@@ -45,7 +45,7 @@ Delete + create of tempo/value events in a single `editing.modify()` is safe:
 `existing.box.isAttached()`. The one-modify-per-event rule applies to the
 signature track only. `isAttached()` is instance identity, not a uuid lookup: a box
 deleted and brought back by undo is a NEW instance, and a reference kept across the
-undo reports detached (its `delete()` is a no-op, its writes emit nothing) — re-resolve
+undo reports detached (its `delete()` is a no-op, its scalar writes emit nothing) — re-resolve
 through `boxGraph.findBox(uuid)` instead of holding the old box.
 
 ### Track Automation (Volume, Pan, Effects)

@@ -68,9 +68,12 @@ region.resolveLoopDuration(ppqn)         // compute duration at position
 region.copyTo({ target, position?, duration?, loopOffset?, loopDuration?, consolidate? })
 region.consolidate()                     // bake loop into single region
 region.resetLoopOffset(truncateNotesAtRegionEnd) // loop starts at the region start, same playback;
-                                         // pass engine.preferences.settings.truncateNotesAtRegionEnd
-region.flatten(regions, truncateNotesAtRegionEnd?) // Option<NoteRegionBox>: KEEPS the region it is
-                                         // called on (uuid, selection), deletes the others
+                                         // pass engine.preferences.settings.playback.truncateNotesAtRegionEnd
+region.flatten(regions, truncateNotesAtRegionEnd?) // Option<NoteRegionBox>; None unless EVERY region
+                                         // is a selected note region on one track (headless code must
+                                         // project.selection.select() them first). KEEPS the region it
+                                         // is called on when it is among `regions` (else the first of
+                                         // them), deletes every other region of the track in the range
 region.iterateActiveNotesAt(position)    // IterableIterator<NoteEvent> at a PPQN
 ```
 Read events via `region.optCollection.unwrap().events` (or guard with `hasCollection`).
@@ -184,11 +187,13 @@ Available instrument adapters (each implements `InstrumentDeviceBoxAdapter`):
 
 ### Where a Recorded Note Lands
 `RecordMidi` places a key at its MIDI event's `timeStamp` (carried on `NoteSignalOn` /
-`NoteSignalOff`), extrapolating the engine position between two playhead updates at the
-current BPM (never across a loop end the engine wraps at) plus the output-latency term, and
-writes the note's duration at key-up — so a late handler (GC, main-thread jank) does not delay
-a note and a tap shorter than one playhead update keeps its real length. A signal without a
-stamp (an audition, a hand-built `noteSignal`) is placed at `performance.now()`.
+`NoteSignalOff`; a stamp in the future counts as now), extrapolating the engine position
+between two playhead updates at the engine's live BPM — never across an enabled loop end
+while takes are allowed, where the engine wraps — plus the output-latency term (converted to
+pulses once at arm time, at that moment's BPM), and writes the note's duration at key-up — so
+a late handler (GC, main-thread jank) does not delay a note and a tap shorter than one
+playhead update keeps its real length. An audition signal, or a hand-built `noteSignal`
+without a stamp, is placed at `performance.now()`.
 
 ### Loop Switch on the MIDI Recording Demo
 `useTimelineLoop(project, { from: 0, to: 4 bars, enabled: false })`. Off: a recording is one

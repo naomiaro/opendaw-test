@@ -15,8 +15,8 @@ this repo:
    here; anything that reads the transport observables sees them move twice as often.
 3. **The master analysis excludes the metronome (#463)** — the engine renders a second
    stereo buffer (`analysis_ptr`) holding the mix without the click; the peak meter, spectrum,
-   waveform, stereo, gonio and **loudness** taps read it, live and offline. `output_ptr` still
-   carries the click. The loudness harness never plays the click, so its rows are unchanged
+   waveform, stereo, gonio and **loudness** taps read it live, and the offline worker's
+   analyser and peaks read it too. `output_ptr` still carries the click. The loudness harness never plays the click, so its rows are unchanged
    by this (verified below).
 4. **MIDI recording places a note where its MIDI event was stamped** — `NoteSignal` carries
    the event's `timeStamp`, `RecordMidi` extrapolates the write position from it between
@@ -40,8 +40,8 @@ this repo:
    `Box.isAttached()` is true only when the graph's box at that uuid IS this instance,
    `Field.isAttached()` asks its box, and `ParameterAdapterSet.removeParameter` terminates
    the adapter it removes (a box recreated at the same address found the old adapter and
-   wrote to the deleted field). Code that keeps box instances across an undo (recorders,
-   this repo's comp-lane rebuild) now sees the stale instance report detached.
+   wrote to the deleted field). Code that keeps box instances across an undo (the studio's
+   recorders did) now sees the stale instance report detached.
 
 Plus: `WavFile.encodeInts24` (and an odd-sized data chunk padded to an even byte count);
 lib-dom `Fullscreen` (`isAvailable` / `request` / `toggle`, a wrapper that throws
@@ -196,10 +196,12 @@ own answer to the frame-rate position.
   it stayed registered in the project's `ParameterFieldAdapters`, where a box created again
   at the same address (undo, redo) found it and wrote to the deleted field.
   `wclap-parameter-recreated-mirror.test.ts` keeps the engine mirror in sync through it.
-- For this repo: `src/lib/compLaneUtils.ts` and the automation demos guard with
-  `box.isAttached()` inside transactions (uncommitted boxes are still invisible to it, as
-  before); `layer-delete-soak-debug-demo.tsx` defines its own uuid-only check on purpose and
-  is unaffected.
+- For this repo: nothing in `src/` calls `isAttached()`; the guard the automation demos rely
+  on is the SDK's own (`ValueEventCollectionBoxAdapter.createEvent` checks
+  `existing.box.isAttached()` before reusing a cached adapter, as `src/lib/compLaneUtils.ts`
+  and `src/demos/automation/CLAUDE.md` describe), and it now rejects a stale instance too;
+  uncommitted boxes are still invisible to it, as before. `layer-delete-soak-debug-demo.tsx`
+  defines its own uuid-only check on purpose and is unaffected.
 
 ## Box graph mirror: strings byte-exact, checksum cached (`6e7117768`, `c6c03d64a`)
 

@@ -177,7 +177,7 @@ write_engine_state(transport, state, is_recording, is_counting_in, recording_sta
 
 Note what the box graph is *not* doing here: nothing reads boxes during render. Box-graph subscriptions record scalar edits into a shared `Controls` struct of `Cell`s (bpm, signature, loop area, tempo-automation enable), and `render` applies them at the top of the quantum. That is a hard constraint of the design — a subscription running during render would alias the `&mut self` the render already holds.
 
-The metronome renders into its own staging buffer rather than straight into `output`, so the same signal can be mixed into the mixdown *and* copied out as its own stem. It is added last: the engine first copies the summed bus into a second buffer, `analysis_ptr()` (same planar L|R layout as `output_ptr()`), and the host's master analysis — peak meter, spectrum and waveform, stereo and gonio, the loudness meter, live and in the offline worker — reads that copy, so a running click never shows in a meter while `output_ptr()` still carries it to the speakers.
+The metronome renders into its own staging buffer rather than straight into `output`, so the same signal can be mixed into the mixdown *and* copied out as its own stem. It is added last: the engine first copies the summed bus into a second buffer, `analysis_ptr()` (same planar L|R layout as `output_ptr()`), and the host's master analysis reads that copy — live for all five taps (peak meter, spectrum and waveform, stereo, gonio, the loudness meter), in the offline worker for the peak meter, spectrum and waveform — so a running click never shows in a meter while `output_ptr()` still carries it to the speakers.
 
 ## Blocks
 

@@ -406,9 +406,10 @@ the end of the saved buffer. The SDK's stop keeps only the chunks the main threa
 when it observed the stop (`RecordAudio` sets `recordingWorklet.limit(numberOfFrames)` in its
 terminator), so a take loses whatever the ring still held — the input path's own delay minus
 the post-stop margin (`finalizeNumberOfFramesAtLimit − finalizeNumberOfFramesAtStop`). The
-harness's loopback hop is 20–23 ms and the margin runs 14–44 ms, so about one repeat in four
-reads a deficit of up to ~7 ms; on every such row `tailMissingMs = hop − margin`. That is the
-register's stop-path finding (issue candidate 2, drafted), NOT a placement regression — judge
+harness's loopback hop and the margin are of the same order, so a repeat whose hop exceeds
+its margin reads a deficit, and on every such row `tailMissingMs = hop − margin`. That is the
+register's stop-path finding (`debug/2026-09-02-recording-start-alignment/note.md`, issue
+candidate 2, with a per-release table of margin ranges), NOT a placement regression — judge
 placement on the netted medians and the head deficit, and compare the margin range with the
 register's table before calling a change in the SDK.
 

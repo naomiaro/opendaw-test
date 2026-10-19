@@ -3513,8 +3513,11 @@ it rests on a single surviving repeat. It must never be quoted as takes landing 
    The mechanism is **inferred from timing, not read from browser source**. A real microphone
    has since been measured (section "Real-device calibration (2026-09-03)"): its chains show
    neither the ~45 ms ratchet nor the loopback's two-state 8–9 ms step.
-2. **The stop path truncates input in flight beyond its incidental post-stop margin — OPEN,
-   no longer exercised.** `tailMissingMs ≡ hop − postStopCapture` in every row, independent of
+2. **The stop path truncates input in flight beyond its incidental post-stop margin — OPEN;
+   exercised again on 0.0.175 (section "Standing sweep on 0.0.175": the margin halved, 31 of
+   120 single-tape takes lose 0.3–6.6 ms) and drafted as
+   `drafts/TO-REVIEW-openDAW-stop-drops-input-in-flight.md`. The paragraph below is the
+   calibration-era reading.** `tailMissingMs ≡ hop − postStopCapture` in every row, independent of
    the applied calibration, and it appeared uncalibrated on the same stream (5.6–34.3 ms). The
    SDK's stop path keeps whatever frames were delivered when the stop landed (32–77 ms over
    this build's 30 calibration rows, an artifact of message and quantum latency, not a margin
@@ -3523,7 +3526,8 @@ it rests on a single surviving repeat. It must never be quoted as takes landing 
    keep-alive builds every tail deficit is 0 — on all 120 standing-sweep rows and all 72
    calibration rows — because every hop (12.3–22.3 ms) sits under every margin (24.0–72.6 ms
    over the calibration rows), so the harness can no longer provoke it; any device whose true
-   input latency exceeds the margin still would. **Issue candidate**, not yet drafted.
+   input latency exceeds the margin still would. **Issue candidate**, drafted on 2026-10-19
+   (see the head of this entry).
 3. **`CaptureAudio.terminate()` never tore the audio chain down — FIXED on the branch
    (`b8e08b97e`).** The terminator disconnected monitoring and detached the monitor element but
    never called `#stopStream()` or `#destroyAudioChain()`, so a terminated capture left the mic
@@ -5599,7 +5603,7 @@ lib-std's `SyncStream` now delivers the engine state on every frame (every secon
 and `tryRead` was a no-op before, so the main thread saw the transport at half the frame
 rate), which moves the moment the main thread observes a stop up to one animation frame
 earlier; details in `changelogs/sdk-0.0.174-to-0.0.175-changes.md`. The harness is the one
-the 0.0.174 sweep ran. Chrome 154, the Playwright browser, the tab visible throughout.
+the 0.0.174 sweep ran. Chrome 155, the Playwright browser, the tab visible throughout.
 
 ### Single tape
 
@@ -5638,12 +5642,13 @@ The identity `tailMissingMs = hop − postStopCapture` holds on every deficit ro
 4.2; `midtimeline-start/120` r2: 22.82 − 20.3 = 2.5), as the candidate's analysis said it
 would once a hop exceeds the margin. What is measured: the margin halved between the two
 releases and the hop did not move. What is inferred, not observed: `RecordAudio`'s stop
-(`packages/studio/core/src/capture/RecordAudio.ts`, the terminator) sets the worklet's limit to
+(`packages/studio/core/src/capture/RecordAudio.ts`, the terminator) disconnects the source
+node from the recording worklet and sets the worklet's limit to
 `recordingWorklet.numberOfFrames`, the chunks the main thread has RECEIVED when it observes the
-stop, so the input the ring still holds between that count and the engine's actual stop is
-dropped; the observation now comes a frame sooner (the `SyncStream` fix), the ring has
-delivered a frame less, and a hop of ~21 ms no longer fits under a margin that used to be
-29 ms and more. The take's placement is untouched; what goes missing is the last 0.3–6.6 ms
+stop (upstream's comment: a limit above them would never be reached and the recording never
+finalize), so the input between the last delivered chunk and the stop request is dropped; the
+observation now comes a frame sooner (the `SyncStream` fix), one chunk less has crossed, and
+a hop of ~21 ms no longer fits under a margin that used to be 29 ms and more. The take's placement is untouched; what goes missing is the last 0.3–6.6 ms
 of input before the stop request. Draft:
 `drafts/TO-REVIEW-openDAW-stop-drops-input-in-flight.md`.
 
