@@ -182,6 +182,11 @@ API: `.isEmpty()`, `.nonEmpty()`, `.unwrap()`, `.unwrapOrNull()`, `.unwrapOrUnde
   `unstageBox` does NOT cascade; `box.delete()` cascade-deletes mandatory dependents
   (e.g. a stretch box's warp markers) — use `.delete()` when dependents must go too
 - Find box: `project.boxGraph.findBox(uuid)` — returns `Option<Box>`, NOT raw box
+- Never write through a box held across an undo: the restored box is a NEW instance under the
+  same uuid and the held one reads `isAttached() === false`. Its scalar writes go nowhere, but
+  a POINTER write (`stale.file.refer(…)`) has no attachment guard: it leaves a ghost edge on the
+  target, emits an update for the LIVE address, and the engine mirror applies it (openDAW#480;
+  repro `src/lib/staleBoxPointerWrite.test.ts`). Re-resolve with `boxGraph.findBox(uuid)`.
 - AudioRegionBox gain: field is `gain` (dB, decibel constraint), NOT `volume`, NOT a 0-1 range
 - Option API: `isEmpty()` / `nonEmpty()` — NOT `isSome()` / `isNone()`
 - Disconnect pointer: `pointerField.defer()` — NOT `unrefer()` (doesn't exist)
@@ -687,6 +692,9 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   stop keeps only the chunks the main thread had received), not placement: judge placement on
   the netted medians in the envelope's `cellVerdicts`; the on-page status column marks every
   row of such a cell. Reading recipe: `src/demos/recording/CLAUDE.md`.
+- Tests marked "flips when fixed" assert a filed defect AS MEASURED (`staleBoxPointerWrite.test.ts`
+  for openDAW#480). After an SDK upgrade, one of them failing is the fix landing: invert the
+  assertion, note the release in the issue's debug note, and close the loop upstream.
 - SDK-upgrade dist audit: `npm pack @opendaw/<pkg>@<old> --pack-destination <scratch>` for each
   sub-package, untar, then `diff -rq <old>/dist node_modules/@opendaw/<pkg>/dist` (filter `.d.ts`
   for the surface, `shasum -a 256` the `dist/wasm/**/*.wasm` for binaries). The git tag can
@@ -774,6 +782,9 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   nothing.** Start from a state the action must change (drag a marker that sits in the
   middle to the end, not one that is already there), and after writing a DOM test,
   break the component on purpose and watch the test fail.
+- `toEqual` on two SDK fields or boxes compares their structure, so a stale and a live field
+  with the same address read equal; assert identity with `toBe`, and settle an async
+  mirror on a round trip it must answer (a checksum request), not on a timer.
 - `vitest.config.ts` adds to the app's Vite config for tests only: it leaves out
   `.claude/**` (a worktree holds a second copy of every test) and drops what the SDK
   prints as a matter of course. A test that expects a warning spies on `console.warn`
@@ -795,6 +806,18 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   ParameterFieldAdapters(), isMainThread: false }`, as long as no pointer of theirs has a
   target yet — that gives tests the SDK's real value and string mappings. `new
   BoxEditing(boxGraph)` is a real `editing` (modify, append, undo).
+- Some boxes are mandatory-edge TARGETS (`AudioFileBox`): the transaction that creates one must
+  also point something at it, and `defer()` of its last pointer throws "requires an edge".
+- The SDK's sync and the installed engine run in Node too. `SyncSource(boxGraph,
+  Messenger.for(port1 as never), true)` + `createSyncTarget(mirror, Messenger.for(port2 as
+  never))` over a `MessageChannel` is a live mirror; settle it by awaiting
+  `source.checksum(boxGraph.checksum())`, which rejects "Checksum mismatch" when the mirror
+  diverged. For `engine.wasm`: `WebAssembly.compile` the dist file with imports `{ env: { memory,
+  __indirect_function_table, host_perf_now } }`, call `init(sampleRate)`, feed the SyncSource's
+  tasks through `serializeUpdateTasks` → `input_reserve(len)` / `apply_updates(len)` (0 =
+  accepted) and read 32 bytes at `checksum_ptr()`. Import `serializeUpdateTasks` and
+  `createSyncLoopback` by RELATIVE path from `node_modules/@opendaw/studio-core-wasm/dist/sync/`
+  — the package's exports map does not expose them.
 - Keep logic out of components (see `src/lib/parameterBinding.ts` under
   `useParameterUnit`), so most of it is testable in Node. What a component shows for a
   value can also be tested without a DOM, by rendering to markup
