@@ -182,6 +182,7 @@ export default defineConfig(({command}) => ({
                 compLanesDebug: resolve(__dirname, "comp-lanes-debug-demo.html"),
                 fadeOutEndOfFileDebug: resolve(__dirname, "fade-out-end-of-file-debug-demo.html"),
                 pureWebaudioTargetDebug: resolve(__dirname, "pure-webaudio-target-debug-demo.html"),
+                pluginDelayCompensationDebug: resolve(__dirname, "plugin-delay-compensation-debug-demo.html"),
                 sharedSourceDoubleProcessDebug: resolve(__dirname, "shared-source-double-process-debug-demo.html"),
                 voiceFadeinClipFadeinProductDebug: resolve(__dirname, "voice-fadein-clip-fadein-product-debug-demo.html"),
                 timePitchStartPositionDebug: resolve(__dirname, "time-pitch-start-position-debug-demo.html"),
