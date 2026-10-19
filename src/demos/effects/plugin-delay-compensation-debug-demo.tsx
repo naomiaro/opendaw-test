@@ -244,6 +244,7 @@ const App: React.FC = () => {
           <DebugLinkBar
             links={[
               { label: "Investigation note", href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-10-19-plugin-delay-compensation/note.md", kind: "note" },
+              { label: "openDAW#482", href: "https://github.com/andremichelle/openDAW/issues/482", kind: "note" },
             ]}
           />
           <Text size="2" color="gray">

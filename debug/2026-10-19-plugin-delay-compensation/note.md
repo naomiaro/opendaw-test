@@ -1,6 +1,7 @@
 # No plug-in delay compensation: a look-ahead device shifts its track by its latency
 
 Verified against `@opendaw/studio-sdk` 0.0.175 (WASM engine), Chrome, macOS, 2026-10-19.
+Filed as [openDAW#482](https://github.com/andremichelle/openDAW/issues/482).
 Repro page: [`plugin-delay-compensation-debug-demo.html`](../../plugin-delay-compensation-debug-demo.html)
 (unlisted; `src/demos/effects/plugin-delay-compensation-debug-demo.tsx`). Lag helper and its tests:
 `src/lib/audit/lagEstimate.ts`.
@@ -49,5 +50,6 @@ A delay-compensating engine would read 0 in every row.
 
 ## Status
 
-Open. Issue draft for upstream in `drafts/` (TO-REVIEW). The page is the regression check: the two
+Open upstream as [openDAW#482](https://github.com/andremichelle/openDAW/issues/482) (body as filed:
+`drafts/posted-openDAW-482-plugin-delay-compensation.md`). The page is the regression check: the two
 look-ahead-on rows read 0 once the engine compensates.

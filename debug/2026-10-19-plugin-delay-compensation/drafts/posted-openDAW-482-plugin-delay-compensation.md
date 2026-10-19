@@ -1,4 +1,4 @@
-<!-- Draft for a new issue on andremichelle/openDAW. Not posted. Target: a bug report that carries the measurement the open feature requests #355 and #357 lack; label suggestion: bug or feature request, the maintainer's call. -->
+<!-- Posted as https://github.com/andremichelle/openDAW/issues/482 on 2026-10-19. Body as filed. -->
 
 # No plug-in delay compensation: a look-ahead device shifts its track 5 ms against the rest
 
