@@ -100,6 +100,10 @@ project.engine.isCountingIn.catchupAndSubscribe(obs => {
 project.engine.countInBeatsRemaining.catchupAndSubscribe(obs => {
   const beats = Math.ceil(obs.getValue());
 });
+// Every observable above refreshes once per animation frame with the first quantum the engine
+// wrote after the previous read — never older than a frame. RecordMidi extrapolates between
+// frames from the MIDI event's timeStamp; RecordAudio ends a take at the chunks received when
+// it observes the stop (openDAW#479).
 ```
 
 ### Engine Preferences (SDK 0.0.87+)
@@ -114,6 +118,9 @@ settings.metronome.beatSubDivision = 1; // 1=quarter, 2=eighth, 4=16th, 8=32nd
 
 // Recording
 settings.recording.countInBars = 1; // 1-8 bars
+
+// Playback (also pauseOnLoopDisabled, timestampEnabled)
+settings.playback.truncateNotesAtRegionEnd = true; // what resetLoopOffset / flatten take
 ```
 
 ### AudioContext Suspension
@@ -671,6 +678,28 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   `src/lib/audit/loudnessCases.ts`; verdicts: `src/lib/audit/loudnessVerdict.ts`. Firefox and
   Safari run the same page through `scripts/audit/loudness/drive-firefox.ts` / `drive-safari.ts`
   (one browser at a time; Safari needs Develop > Allow Remote Automation).
+- After SDK upgrades, also run `param-write-enabled-flip-debug-demo.html` once (real click,
+  one run per load; expect FIXED) and three
+  `recording-alignment-audit-debug-demo.html?scenario=multitrack-start&bpm=120&rate=48000&graphChurn=on`
+  runs (expect every row at 0 / 0 quanta), then
+  `node scripts/audit/recording-alignment/one-quantum-events.ts` for the per-release tally.
+- A recording-alignment cell that reads `investigate` on a TAIL deficit is openDAW#479 (the
+  stop keeps only the chunks the main thread had received), not placement: judge placement on
+  the netted medians in the envelope's `cellVerdicts`; the on-page status column marks every
+  row of such a cell. Reading recipe: `src/demos/recording/CLAUDE.md`.
+- SDK-upgrade dist audit: `npm pack @opendaw/<pkg>@<old> --pack-destination <scratch>` for each
+  sub-package, untar, then `diff -rq <old>/dist node_modules/@opendaw/<pkg>/dist` (filter `.d.ts`
+  for the surface, `shasum -a 256` the `dist/wasm/**/*.wasm` for binaries). The git tag can
+  differ from the publish; the tarball is the authority.
+- Audit pages differ in how they start: the sample-rate page auto-runs on load (no button),
+  the recording-alignment page's button reads "Run audit", the loudness page's is `#run`; all
+  expose `#audit-state[data-audit-state]` ending in `done`. Poll in calls under ~100 s — a
+  Playwright MCP call past 120 s is moved to the background.
+- Editing `.md` files (changelogs/, debug/, documentation/, CLAUDE.md) during a browser run is
+  safe — they are outside Vite's module graph; editing anything under `src/` or `public/`
+  reloads the page and loses the run.
+- zsh: `echo ====` fails with "=== not found" (`=word` expansion) — use `printf '%s\n' '===='`
+  for separators in Bash commands.
 - The SDK's loopback input-latency calibration has its own unlisted ground-truth page,
   `input-latency-calibration-debug-demo.html` — it needs the calibration-branch SDK served
   through `SDK_DIST_OVERRIDE`, so it is NOT part of the standing sweep, which runs against the
@@ -815,6 +844,8 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   re-points the engine facade via `setWorklet`; the old worklet idles stopped. The receiver
   swap is required: `LiveStreamReceiver.connect` asserts "Already connected" and aborts the
   EngineWorklet constructor mid-build without it. (Verified on warp/time-pitch demos.)
+  The SDK's own taps (peaks, spectrum, waveform, stereo, gonio, loudness) read the engine's
+  analysis mix WITHOUT the metronome; to measure a click, tap the destination yourself.
 - Playwright MCP screenshots: omit the `filename` param — custom-named files land
   loose in the MCP server's CWD (which may be a DIFFERENT repo than the one you're
   working in); default-named files land in `.playwright-mcp/`.
