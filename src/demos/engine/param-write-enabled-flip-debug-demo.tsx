@@ -260,7 +260,7 @@ function App() {
           <DebugLinkBar
             links={[
               { label: "debug/2026-10-14-param-write-lost-on-enabled-flip/note.md", href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-10-14-param-write-lost-on-enabled-flip/note.md", kind: "note" },
-              { label: "openDAW#459", href: "https://github.com/andremichelle/openDAW/issues/459", kind: "note" },
+              { label: "Upstream, fixed: openDAW#459", href: "https://github.com/andremichelle/openDAW/issues/459", kind: "note" },
             ]}
           />
           <MoisesLogo />

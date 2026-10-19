@@ -5588,3 +5588,105 @@ which connect / disconnect churn does not reproduce; that loop was not run here.
 (0.84 %) and 1 in 416 on 0.0.172. Ninety-two repeats cannot show a rate under one per cent
 moving; the forced runs are the measurement that can, and they do. Forced runs stay out of the
 tally (`forced runs left out: 9`).
+
+## Standing sweep on 0.0.175 (2026-10-19)
+
+`@opendaw/studio-sdk@0.0.175` (build probe `upstream`, `buildFeatures: ["recordingStart"]` →
+`release` profile; PRs #378 / #380 still open, so the probe marker stays
+`calibrateInputLatency`). What the release changes on this harness's path: nothing in the
+capture, the recorder, the recording processor or the engine's transport and stamps — but
+lib-std's `SyncStream` now delivers the engine state on every frame (every second `tryWrite`
+and `tryRead` was a no-op before, so the main thread saw the transport at half the frame
+rate), which moves the moment the main thread observes a stop up to one animation frame
+earlier; details in `changelogs/sdk-0.0.174-to-0.0.175-changes.md`. The harness is the one
+the 0.0.174 sweep ran. Chrome 154, the Playwright browser, the tab visible throughout.
+
+### Single tape
+
+| file | rate | rows | error rows | cells `aligned` | finalized | netted medians | raw medians |
+|---|---|---|---|---|---|---|---|
+| `recaudit-summary-1792426213324.json` | 48000 | 60 | 0 | 6 of 10 | 60 of 60 | +1.07…+1.17 ms | −9.60…−0.21 ms |
+| `recaudit-summary-1792426721162.json` | 44100 | 60 | 0 | 6 of 10 | 60 of 60 | +0.97…+1.19 ms | −0.82…+1.15 ms |
+
+**Placement is the 0.0.174 placement to the row.** The 48 kHz netted tally reads 1.15 ×33,
+1.17 ×15, 1.07 / 1.10 / 1.13 / 1.14 ×3 each — the 0.0.174 tally exactly; at 44.1 kHz every
+cell reads +1.16…+1.19 and `loop-wrap` +0.97…+1.18, as on 0.0.174. Loader state `loaded` on
+all 120 rows, 0 WAV upload failures, stop lead 179–307 ms, every repeat finalized. Head deficit:
+one row, `nominal-start/120` repeat 1 at 48 kHz, 104.4 ms (raw 130.4) — the first recording of
+the first page load after `node_modules/.vite` was deleted for the upgrade, the cold-start
+event the 0.0.173 (84.4 ms) and 0.0.174 (79.0 ms) sweeps recorded at the same place; the
+44.1 kHz run has no head deficit on any row.
+
+**The eight cells not `aligned` are all on a TAIL deficit, which no row of the 0.0.174 sweeps
+had.** 15 rows at 48 kHz (0.29–5.63 ms: `nominal-start/97.3` r1, `midtimeline-start/97.3` r3,
+`countin-start/97.3` r3, `loop-wrap/120` r2 and r3) and 16 at 44.1 kHz (0.80–6.64 ms:
+`midtimeline-start/120` r2 / r3, `countin-start/120` r1, `countin-start/97.3` r3,
+`loop-wrap/120` r1, `loop-wrap/97.3` r3); the `loop-wrap` rows carry one value per repeat
+across all six takes (one stop per repeat). This is issue candidate 2 of "Fix round 2"
+("the stop path truncates input in flight beyond its incidental post-stop margin — OPEN, no
+longer exercised"), exercised again:
+
+| release | post-stop capture (`finalizeNumberOfFramesAtLimit − finalizeNumberOfFramesAtStop`) | loopback hop | rows with a tail deficit |
+|---|---|---|---|
+| 0.0.174, 48 kHz | 1408–3712 frames, 29.3–77.3 ms | 20.3–21.6 ms | 0 of 60 |
+| 0.0.174, 44.1 kHz | 1408–3456 frames, 31.9–78.4 ms | 20.3–22.9 ms | 0 of 60 |
+| 0.0.175, 48 kHz | 768–1536 frames, 16.0–32.0 ms | 20.3–21.6 ms | 15 of 60 |
+| 0.0.175, 44.1 kHz | 640–1920 frames, 14.5–43.5 ms | 21.1–22.9 ms | 16 of 60 |
+
+The identity `tailMissingMs = hop − postStopCapture` holds on every deficit row
+(`countin-start/97.3` r3 at 44.1 kHz: 21.15 − 14.5 = 6.6; `loop-wrap/97.3` r3: 21.66 − 17.4 =
+4.2; `midtimeline-start/120` r2: 22.82 − 20.3 = 2.5), as the candidate's analysis said it
+would once a hop exceeds the margin. What is measured: the margin halved between the two
+releases and the hop did not move. What is inferred, not observed: `RecordAudio`'s stop
+(`packages/studio/core/src/capture/RecordAudio.ts`, the terminator) sets the worklet's limit to
+`recordingWorklet.numberOfFrames`, the chunks the main thread has RECEIVED when it observes the
+stop, so the input the ring still holds between that count and the engine's actual stop is
+dropped; the observation now comes a frame sooner (the `SyncStream` fix), the ring has
+delivered a frame less, and a hop of ~21 ms no longer fits under a margin that used to be
+29 ms and more. The take's placement is untouched; what goes missing is the last 0.3–6.6 ms
+of input before the stop request. Draft:
+`drafts/TO-REVIEW-openDAW-stop-drops-input-in-flight.md`.
+
+### Multi-mic (`multitrack-all`, 120 BPM, 48000 Hz), 8 repeats per cell
+
+| file | rows | error rows | finalized | node delays read | netted, every row | cells | raw inter-tape skew in render quanta, start · janked |
+|---|---|---|---|---|---|---|---|
+| `recaudit-mt-summary-1792427144636.json` | 32 | 0 | 32 of 32 | 32 of 32 | +1.146 | start `investigate` (tail), janked `aligned` | 0 ×8 · 0 ×8 |
+
+Netted skew 0.00 and first-frame check 0.00 (1.6e-11 at most) on every row, every raw skew
+accounted for by the two source nodes' own delays, 4 clock discontinuities (the reference
+clicks' scheduling, as before), no event, every repeat finalized both tapes, raw skew 0 on
+16 of 16 repeats (0.0.174: 16 of 16). The one cell not `aligned` is the tail term above:
+repeats 1 and 3 of `multitrack-start` end 4.29 and 1.62 ms before the stop request, on BOTH
+tapes to the hundredth (one stop, one count, two takes).
+
+### Forced: the SDK's stamps under graph work (three runs)
+
+`scenario=multitrack-start&graphChurn=on` (`…1792427285385`, `…1792427381671`,
+`…1792427459937`), 48 rows, 0 error rows, a node delay on every one, 194 / 219 / 217 clock
+discontinuities per run, 61 949 to 75 767 connect / disconnect pairs per repeat,
+`nodeTapMissingQuanta` 0 to 1.
+
+| netted / first-frame check, in quanta off the usual | rows |
+|---|---|
+| 0 / 0 | 48 |
+
+As on 0.0.174 (48 of 48; on 0.0.173, 24 of 46 rows one to three quanta off): the repair holds
+under a churn well above the natural rate. Netted +1.146 on every row. The tail term shows
+here too (2 / 4 / 2 rows per run), the same stop-path loss as in the single-tape runs.
+
+### The one-quantum event, counted
+
+`one-quantum-events.ts` after these runs: 0.0.175 **0 in 76** repeats (95 % interval
+0–4.7 %; 30 single-tape at 48 kHz, 30 at 44.1 kHz, 16 multi-mic), against 0 in 92 on 0.0.174,
+6 in 788 on 0.0.173 and 1 in 416 on 0.0.172. The forced runs stay out of the tally (`forced
+runs left out: 12`). One ordinary multi-mic repeat (`multitrack-janked` r6) had a stall within
+two quanta of its stamps, both stamps taken after the stall: a near miss, counted as such, not
+an event.
+
+### Reading
+
+Placement, inter-tape skew, finalization and the stamp repair are the 0.0.174 readings to the
+row. What moved is the end of a take: the stop keeps a frame less than before, and the input
+path's own delay no longer fits under it on about one repeat in four. The register's candidate
+2 is exercised again, by a release and not by a calibration, and is drafted as an issue.

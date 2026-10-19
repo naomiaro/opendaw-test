@@ -90,7 +90,8 @@ Beyond `.box`, `.fading`, `.file`:
 - `.optCollection` — `Option<ValueEventCollectionBoxAdapter>` for region automation
 - `.asPlayModePitchStretch` / `.asPlayModeTimeStretch` / `.isPlayModeNoStretch` — play-mode checks
 - `.optWarpMarkers` — `Option<EventCollection<WarpMarkerBoxAdapter>>`
-- `.moveContentStart(delta)` — shift content start position
+- `.moveContentStart(delta)` — shift content start position (note and value regions
+  consolidate a mirrored region first and move each event exactly once; delta 0 is a no-op)
 - `.resolveLoopDuration(ppqn)` / `.resolveDuration(ppqn)` / `.resolveComplete(ppqn)` —
   compute boundaries at a timeline position (looped regions)
 - `.copyTo({ target, position?, duration?, loopOffset?, loopDuration?, consolidate? })` —

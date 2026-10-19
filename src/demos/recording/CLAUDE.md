@@ -401,6 +401,17 @@ since the multi-mic ones name two distinct devices — the page refuses the comb
 then `?scenario=multitrack-all&bpm=120&rate=48000`** — same standing-sweep role as the
 sample-rate/quantum-alignment sweep in root CLAUDE.md's Build & Verification.
 
+**Reading a `tail deficit` cell.** `tailMissingMs` is the stop request's context time minus
+the end of the saved buffer. The SDK's stop keeps only the chunks the main thread had RECEIVED
+when it observed the stop (`RecordAudio` sets `recordingWorklet.limit(numberOfFrames)` in its
+terminator), so a take loses whatever the ring still held — the input path's own delay minus
+the post-stop margin (`finalizeNumberOfFramesAtLimit − finalizeNumberOfFramesAtStop`). The
+harness's loopback hop is 20–23 ms and the margin runs 14–44 ms, so about one repeat in four
+reads a deficit of up to ~7 ms; on every such row `tailMissingMs = hop − margin`. That is the
+register's stop-path finding (issue candidate 2, drafted), NOT a placement regression — judge
+placement on the netted medians and the head deficit, and compare the margin range with the
+register's table before calling a change in the SDK.
+
 **Reading a multi-mic verdict.** On a build whose profile nets the loopback delay, a
 multi-mic cell is `aligned` when (1) each tape classifies clean on its own, (2) the
 NETTED skew — raw skew minus the difference between the two tapes' `loopbackDelayMs` —

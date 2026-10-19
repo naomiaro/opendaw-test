@@ -192,10 +192,11 @@ export interface EngineCommands extends Terminable {
     wclapReceive(uuid: UUID.Bytes, bytes: ArrayBuffer): void
     wclapSaveState(uuid: UUID.Bytes): void
     wclapDescribe(url: string): Promise<ReadonlyArray<WclapPluginInfo>>
+    wclapRetry(url: string): void
 }
 ```
 
-Most methods are `void` — fire-and-forget commands. `queryLoadingComplete()` returns a `Promise`, used to await sample (and WebCLAP plugin) loading before play begins; the `wclap*` members are the main thread's side of hosting a WebCLAP plugin (open, close and resize its GUI, relay a byte message from the plugin's page, ask for its state, list a bundle's plugins), and the three that answer return a `Promise` too. `prepareRecordingState` carries the recording generation the engine echoes back in `recordingStarted`, and `suspendAutomation` names a track whose automation the engine stops reading until the transport stops (a parameter written by hand or by MIDI takes over from its lane, `AutomationSuspension` in `packages/studio/core/src/project/AutomationSuspension.ts`).
+Most methods are `void` — fire-and-forget commands. `queryLoadingComplete()` returns a `Promise`, used to await sample (and WebCLAP plugin) loading before play begins; the `wclap*` members are the main thread's side of hosting a WebCLAP plugin (open, close and resize its GUI, relay a byte message from the plugin's page, ask for its state, list a bundle's plugins, load every failed plugin of a url again once its bundle is back), and the three that answer return a `Promise` too. `prepareRecordingState` carries the recording generation the engine echoes back in `recordingStarted`, and `suspendAutomation` names a track whose automation the engine stops reading until the transport stops (a parameter written by hand or by MIDI takes over from its lane, `AutomationSuspension` in `packages/studio/core/src/project/AutomationSuspension.ts`).
 
 `setupMIDI(port, buffer)` is interesting: it transfers a `MessagePort` *and* a `SharedArrayBuffer` to the worklet so MIDI input events from a separate worker can land directly in the audio thread without going through the main thread.
 
@@ -228,7 +229,7 @@ export interface EngineToClient {
 }
 ```
 
-The `fetchWclapBundle` / `wclap*` members (the `wclap*` ones take the device uuid as a string, the form the bridge keys its slots by) are the worklet's side of a WebCLAP plugin: the bridge in `packages/studio/core-wasm/src/wclap/wclap-bridge.ts` asks the main thread for the bundle (a `.tar.gz` holding `module.wasm` and the GUI files) and reports the plugin's parameter list once per load, its own parameter changes and state blobs, the hovered control, a GUI resize request and its load status.
+The `fetchWclapBundle` / `wclap*` members (the `wclap*` ones take the device uuid as a string, the form the bridge keys its slots by) are the worklet's side of a WebCLAP plugin: the bridge in `packages/studio/core-wasm/src/wclap/wclap-bridge.ts` asks the main thread for the bundle (a `.tar.gz` holding `module.wasm` and the GUI files, or a bare `.wasm` module) and reports the plugin's parameter list once per load, its own parameter changes and state blobs, the hovered control, a GUI resize request and its load status (`WclapStatus`: the state and message, the plugin's audio input ports once ready, and whether it offers a window of its own).
 
 Worklet-originated. The four `fetch*` methods are RPC calls — the worklet *awaits* the result before continuing. The rest are notifications.
 
@@ -290,7 +291,7 @@ this.#stateSender = SyncStream.writer(EngineStateSchema(), syncStreamBuffer, sta
 
 `engine_state_ptr()` / `engine_state_len()` are exports of `crates/engine/src/lib.rs` — the byte offsets above are that record's layout, so the two sides must be changed together. `playbackTimestamp` is the exception: it's a host-side value the processor tracks across `setPosition` / `stop`, not something the engine owns.
 
-`tryWrite()` is the publish step. The exact ordering (whether each field uses `Atomics.store` or a relaxed write, and whether there's a generation counter for torn-read detection) lives in `@opendaw/lib-std`'s `SyncStream` — read that if you need bit-level certainty.
+`tryWrite()` is the publish step: one `Atomics.compareExchange` on the header byte moves the slot from READ to WRITING, the fields are written, and the slot is marked WRITTEN; the reader's `tryRead()` moves WRITTEN to READING the same way and hands the slot back as READ. `compareExchange` returns the state the slot was in, so each side tests for the state it expected to find (READ for the writer, WRITTEN for the reader) — a write lands only when the reader has taken the previous one, a read never sees the same state twice, and with both sides keeping up every call on both sides delivers. The field layout lives in `@opendaw/lib-std`'s `SyncStream` — read that if you need bit-level certainty.
 
 ### Reader (main thread)
 

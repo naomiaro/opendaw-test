@@ -29,7 +29,7 @@ sequenceDiagram
     E->>E: transport.render_quantum() → blocks
     E->>G: context.process(ProcessInfo{blocks})
     G-->>E: output bus filled
-    E-->>H: output_ptr() / engine_state_ptr()
+    E-->>H: output_ptr() / analysis_ptr() / engine_state_ptr()
     H->>SAB: stateSender.tryWrite()
     H-->>AW: true
 ```
@@ -170,12 +170,14 @@ if transport.is_playing() {
 
 context.process(&ProcessInfo {blocks: blocks.as_slice()});
 // mix the output bus into `output`
+analysis.copy_from_slice(output);   // the mix without the click, for the analysis taps
+// add the metronome staging into `output`
 write_engine_state(transport, state, is_recording, is_counting_in, recording_start, denominator);
 ```
 
 Note what the box graph is *not* doing here: nothing reads boxes during render. Box-graph subscriptions record scalar edits into a shared `Controls` struct of `Cell`s (bpm, signature, loop area, tempo-automation enable), and `render` applies them at the top of the quantum. That is a hard constraint of the design — a subscription running during render would alias the `&mut self` the render already holds.
 
-The metronome renders into its own staging buffer rather than straight into `output`, so the same signal can be mixed into the mixdown *and* copied out as its own stem.
+The metronome renders into its own staging buffer rather than straight into `output`, so the same signal can be mixed into the mixdown *and* copied out as its own stem. It is added last: the engine first copies the summed bus into a second buffer, `analysis_ptr()` (same planar L|R layout as `output_ptr()`), and the host's master analysis — peak meter, spectrum and waveform, stereo and gonio, the loudness meter, live and in the offline worker — reads that copy, so a running click never shows in a meter while `output_ptr()` still carries it to the speakers.
 
 ## Blocks
 
