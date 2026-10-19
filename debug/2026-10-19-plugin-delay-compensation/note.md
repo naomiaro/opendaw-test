@@ -47,14 +47,6 @@ A delay-compensating engine would read 0 in every row.
   [#357](https://github.com/andremichelle/openDAW/issues/357) (latency compensation for Werkstatt
   effects, "also a thing that is required for some VST effects"). Neither carries a measurement.
 
-## Why it matters here
-
-The moisesDAW fork hosts native VST plug-ins through a ring that is 4–6 quanta deep (512–768
-frames, 11.6–17.4 ms at 44.1 kHz), and its devices already export the figure
-(`latency_samples`); nothing upstream or in the fork consumes it
-([moisesDAW#28](https://github.com/moises-ai/moisesDAW/issues/28)). A compensation stage upstream
-would be the place to feed it.
-
 ## Status
 
 Open. Issue draft for upstream in `drafts/` (TO-REVIEW). The page is the regression check: the two
