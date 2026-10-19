@@ -109,7 +109,11 @@ helpers in `src/lib/audit/clickHead.ts`.
 ## Loudness Stream (Live Only)
 - `project.liveStreamReceiver.subscribeFloats(EngineAddresses.LOUDNESS, values => …)` delivers
   `[momentary, shortTerm, integrated]` in LUFS, `loudnessRange` in LU and the true peak in dBTP, measured
-  on the engine's main stereo output. `EngineAddresses` comes from `@opendaw/studio-adapters`.
+  on the engine's master analysis mix — the main stereo output WITHOUT the metronome (the engine
+  copies the summed bus to `analysis_ptr` before it adds the click; the peak meter, spectrum,
+  waveform, stereo and gonio taps read the same copy). A click never shows in a meter; a page
+  that wants to meter its own click has to tap the output node itself. `EngineAddresses` comes
+  from `@opendaw/studio-adapters`.
   The array is reused: copy the numbers out inside the callback.
 - The receiver delivers no packet the processor wrote while nobody subscribed, so the first
   packet after subscribing is a reading. The harness still skips an all-zero packet that

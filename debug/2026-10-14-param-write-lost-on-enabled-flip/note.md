@@ -2,6 +2,15 @@
 
 Filed as [openDAW#459](https://github.com/andremichelle/openDAW/issues/459) on 2026-10-14.
 Verified against `@opendaw/studio-sdk` 0.0.174 (WASM engine), Chrome 155 (`navigator.userAgent`), macOS, 2026-10-14.
+
+**Update (2026-10-19): fixed in SDK 0.0.175.** Upstream `0d0b318b9` (closed the issue on
+2026-10-15): `crates/engine/src/audio_unit/mod.rs` refreshes a unit's parameters after a chain
+reconcile too, not only after a plain field edit, so a write that shares a transaction with an
+`enabled` flip (or an effect added, removed or reordered) reaches the surviving device; the
+engine test `a_parameter_write_in_the_same_transaction_as_an_enabled_toggle_reaches_the_device`
+pins both directions. Re-run on the release, one real click: **FIXED** — step 2 tail 2100 ms,
+step 3 tail 400 ms, the controls 400 / 2050 / 2500 / 500 / 1700 ms, every step ok. The page is
+the regression test from here on. Changelog: `changelogs/sdk-0.0.174-to-0.0.175-changes.md`.
 Repro page: `param-write-enabled-flip-debug-demo.html` (unlisted; `src/demos/engine/param-write-enabled-flip-debug-demo.tsx`).
 
 ## Symptom

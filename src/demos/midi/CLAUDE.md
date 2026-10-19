@@ -62,13 +62,23 @@ region.hasCollection  // boolean — true if an event collection is attached
 region.optCollection  // Option<NoteEventCollectionBoxAdapter> — guarded access
 
 // Methods
-region.moveContentStart(delta)           // shift content start position
+region.moveContentStart(delta)           // shift content start position (consolidates a mirrored
+                                         // region first; each event moves once; delta 0 is a no-op)
 region.resolveLoopDuration(ppqn)         // compute duration at position
 region.copyTo({ target, position?, duration?, loopOffset?, loopDuration?, consolidate? })
 region.consolidate()                     // bake loop into single region
+region.resetLoopOffset(truncateNotesAtRegionEnd) // loop starts at the region start, same playback;
+                                         // pass engine.preferences.settings.playback.truncateNotesAtRegionEnd
+region.flatten(regions, truncateNotesAtRegionEnd?) // Option<NoteRegionBox>; None unless EVERY region
+                                         // is a selected note region on one track (headless code must
+                                         // project.selection.select() them first). KEEPS the region it
+                                         // is called on when it is among `regions` (else the first of
+                                         // them), deletes every other region of the track in the range
 region.iterateActiveNotesAt(position)    // IterableIterator<NoteEvent> at a PPQN
 ```
 Read events via `region.optCollection.unwrap().events` (or guard with `hasCollection`).
+`NoteEventBoxAdapter.copyTo` copies every field (`playCurve` is typed `bipolar`, −1…+1), so a
+copied or duplicated note keeps fine tune, chance, play count and curve.
 
 ### Programmatic Note Regions Need loopDuration (or they play silently)
 A hand-built `NoteRegionBox` schedules events within `[loopOffset, loopOffset+loopDuration]`;
@@ -153,7 +163,9 @@ Available instrument adapters (each implements `InstrumentDeviceBoxAdapter`):
 - `NanoDeviceBoxAdapter` — polyphonic sampler (region, crossfade loop, root key); see `src/demos/instruments/CLAUDE.md`
 - `TubularDeviceBoxAdapter` — six-operator FM synth, DX7 compatible (`InstrumentFactories.Tubular`;
   a voice is a 155-byte `Uint8Array` loaded with `TubularPreset.apply(box, voice)`;
-  `Dx7Sysex.decode(bytes)` parses a cartridge into `{name, data}` voices — pass `data`)
+  `Dx7Sysex.decode(bytes)` parses a cartridge into `{name, data}` voices — pass `data`; the
+  device always runs the msfa "Modern" operator kernel — the box's `engine` field is deprecated
+  and ignored)
 - `InstrumentCompositeBoxAdapter` — layered instruments (`InstrumentFactories.InstrumentComposite`);
   each layer is an `InstrumentCompositeCellBoxAdapter` with its own instrument, MIDI and audio
   chains and a gain / pan / mute / solo strip. Layers are managed through `project.api`
@@ -172,6 +184,16 @@ Available instrument adapters (each implements `InstrumentDeviceBoxAdapter`):
 
 ### Diagnosing "keyboard plays but no sound"
 `capture.captureNoteOnCount` (observable) increments when an armed capture receives a note-on outside recording — read it before/after a key press to prove MIDI reached the capture without any audio tap. If it increments but output RMS is 0, the fault is engine-side rendering, not MIDI routing.
+
+### Where a Recorded Note Lands
+`RecordMidi` places a key at its MIDI event's `timeStamp` (carried on `NoteSignalOn` /
+`NoteSignalOff`; a stamp in the future counts as now), extrapolating the engine position
+between two playhead updates at the engine's live BPM — never across an enabled loop end
+while takes are allowed, where the engine wraps — plus the output-latency term (converted to
+pulses once at arm time, at that moment's BPM), and writes the note's duration at key-up — so
+a late handler (GC, main-thread jank) does not delay a note and a tap shorter than one
+playhead update keeps its real length. An audition signal, or a hand-built `noteSignal`
+without a stamp, is placed at `performance.now()`.
 
 ### Loop Switch on the MIDI Recording Demo
 `useTimelineLoop(project, { from: 0, to: 4 bars, enabled: false })`. Off: a recording is one

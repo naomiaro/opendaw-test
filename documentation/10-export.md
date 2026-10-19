@@ -225,8 +225,9 @@ const audio = WavFile.decodeFloats(arrayBuffer);
 **Encoders:**
 - `encodeFloats` — 32-bit IEEE float (lossless, the default used throughout this chapter)
 - `encodeInts16` — 16-bit PCM (same input shape; float samples clamped to [-1, 1])
+- `encodeInts24` — 24-bit PCM (same input shape and clamping; an odd-sized data chunk is padded to an even byte count)
 
-Both accept `AudioData | AudioBufferLike`, mono or stereo. There is no 24-bit encoder.
+All three accept `AudioData | AudioBufferLike`, mono or stereo, and `decodeFloats` reads every one of them back.
 
 ### Saving and slicing the result
 

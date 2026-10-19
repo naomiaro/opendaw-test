@@ -90,7 +90,10 @@ Beyond `.box`, `.fading`, `.file`:
 - `.optCollection` — `Option<ValueEventCollectionBoxAdapter>` for region automation
 - `.asPlayModePitchStretch` / `.asPlayModeTimeStretch` / `.isPlayModeNoStretch` — play-mode checks
 - `.optWarpMarkers` — `Option<EventCollection<WarpMarkerBoxAdapter>>`
-- `.moveContentStart(delta)` — shift content start position
+- `.moveContentStart(delta)` — shift content start position: moves `position` by `delta`,
+  shortens `duration` / `loopDuration` by it and, in the Seconds time base, moves
+  `waveformOffset` by the tempo-mapped seconds (the note / value variants are in
+  `src/demos/midi/CLAUDE.md`)
 - `.resolveLoopDuration(ppqn)` / `.resolveDuration(ppqn)` / `.resolveComplete(ppqn)` —
   compute boundaries at a timeline position (looped regions)
 - `.copyTo({ target, position?, duration?, loopOffset?, loopDuration?, consolidate? })` —

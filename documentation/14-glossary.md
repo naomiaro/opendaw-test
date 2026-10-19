@@ -238,7 +238,7 @@ A single track or sub-mix rendered to its own output file during export, instead
 The hash-chained transaction history kept alongside a project. Used for crash recovery. Not the primary save format — that's the `.od` snapshot. See [internals/06](./internals/06-project-and-persistence.md).
 
 ### `SyncStream`
-The lock-free `SharedArrayBuffer`-backed state ring the worklet writes once per render quantum (position, BPM, meters, DSP load) for the main thread to poll. See [internals/03](./internals/03-cross-thread-protocols.md).
+The lock-free `SharedArrayBuffer`-backed state ring the worklet writes once per render quantum (position, BPM, meters, DSP load) for the main thread to poll once per animation frame; every write and read call delivers when the other side keeps up. See [internals/03](./internals/03-cross-thread-protocols.md).
 
 ## T
 

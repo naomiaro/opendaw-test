@@ -16,6 +16,8 @@ numbers below put N = 32 as the value with margin under forced churn; the natura
 at a first read were up to 7 quanta). The first-quantum time reaches the main thread about
 43 ms later than before. Changelog: `changelogs/sdk-0.0.173-to-0.0.174-changes.md`;
 measurements on the release in the campaign register's "Standing sweep on 0.0.174" section.
+Re-measured on 0.0.175 (2026-10-19, register section "Standing sweep on 0.0.175"): three forced
+runs, 48 of 48 rows at 0 / 0 quanta off under 194–219 stalls per run; natural tally 0 in 76.
 
 **Status (2026-10-01):** the stale clock is measured, and watched through three natural events
 on the recording harness; why it stands still is read from Chromium's source. The browser
