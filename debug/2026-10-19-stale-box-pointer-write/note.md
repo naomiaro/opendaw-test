@@ -82,4 +82,6 @@ boxes; whether any of them writes a POINTER on a held instance was not traced.
 
 ## Status
 
-Issue draft: `drafts/TO-REVIEW-openDAW-stale-pointer-write.md`.
+Filed as [openDAW#480](https://github.com/andremichelle/openDAW/issues/480) on 2026-10-19
+(`drafts/posted-openDAW-480-stale-pointer-write.md`). The test is the regression check: a
+"flips when fixed" test failing after an SDK upgrade is the fix landing.

@@ -1,4 +1,4 @@
-// SDK probe and regression test for debug/2026-10-19-stale-box-pointer-write/note.md.
+// SDK probe and regression test for debug/2026-10-19-stale-box-pointer-write/note.md (openDAW#480).
 //
 // A box instance that undo replaced (same uuid, new instance) reports detached, and a SCALAR
 // write through it reaches neither the live box nor the update stream. A POINTER write through it

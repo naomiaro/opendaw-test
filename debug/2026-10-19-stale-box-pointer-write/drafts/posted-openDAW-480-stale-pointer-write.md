@@ -1,7 +1,6 @@
-# TO-REVIEW — openDAW issue draft (not posted)
+# Posted: https://github.com/andremichelle/openDAW/issues/480
 
-Target: https://github.com/andremichelle/openDAW/issues (new issue)
-Status: drafted 2026-10-19 from the Node repro in `src/lib/staleBoxPointerWrite.test.ts`; nothing posted.
+Filed 2026-10-19 from the Node repro in `src/lib/staleBoxPointerWrite.test.ts`, the body as below.
 
 ---
 
