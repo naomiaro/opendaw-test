@@ -304,6 +304,28 @@ combined cell is its measurement.
 4. **Early-clamp jitter** (up to a frame, 1 … 17 of 48 notes per row): part of band 1's
    shape; whether it gets its own issue depends on how upstream wants the stamp handled.
 
+### Observation: the playhead is drawn in the render domain (2026-10-20)
+
+Raised while reading the +32 ms result: the position a player sees should ideally be the
+one they are hearing. In openDAW's studio the timeline cursor is drawn straight from
+`engine.position` (`packages/app/studio/src/ui/timeline/TimeAxis.tsx`, `position.subscribe(updateCursor)`,
+optionally through an editor mapper), which is the RENDERED position; what leaves the
+speakers is `outputLatency` behind it, 23 ms here, and the only place the studio shows that
+number is the footer's latency readout. For comparison, waveform-playlist draws its playhead
+at `engine.getAudibleTime()`, the engine time minus the output latency and the scheduler
+look-ahead ("without the subtraction the playhead leads audio by ~100 ms with the Tone
+adapter", `packages/dawcore/src/elements/daw-editor.ts`, MIT), and compensates a recording
+by the same audible-latency window. SoundCraft (Rust, pre-alpha, indexed on the XERJ node as
+`soundcraft` on 2026-10-20) has plug-in delay compensation but no I/O latency compensation
+or MIDI recording yet, so it offers no precedent either way.
+
+What this is and is not: a visual lead of one output latency between the cursor and the
+sound, a UX observation rather than a measured defect (nothing in this register judges the
+cursor). It is tied to the recorder finding through the domain question: the MIDI recorder
+adds the output latency to the rendered position; a playhead in the heard domain would be
+the position a key should land on with nothing added. Not filed; noted for the discussion
+once the combined harness has run.
+
 ### Follow-ups (not in this harness)
 
 - Manual keyboard page: enumeration, hot-plug while armed, a played take against the
