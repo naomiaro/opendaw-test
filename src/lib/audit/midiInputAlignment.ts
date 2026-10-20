@@ -166,11 +166,33 @@ export interface KnownDefectBand {
   scenario: MidiScenario | "any";
   medianMsMin: number;
   medianMsMax: number;
+  /** The jitter the defect carries; the spread tolerance when absent. */
+  maxDevMsMax?: number;
+  /** The release jitter the defect carries, as the largest absolute duration error; the duration tolerance when absent. */
+  durationErrorMsMax?: number;
+  /** The display frame interval the band was measured at; a row outside it, or without one, misses the band. */
+  frameIntervalMsRange?: [number, number];
   detail: string;
 }
 
-/** Empty until the register pins a measured band. */
-export const MIDI_KNOWN_DEFECTS: readonly KnownDefectBand[] = [];
+/**
+ * Bands the register pinned (`debug/2026-10-20-midi-input-alignment/note.md`, "Bring-up").
+ * A band is the measured shape of a characterized defect: a release that changes it reads
+ * `aligned` or `investigate`, never silently the same.
+ */
+export const MIDI_KNOWN_DEFECTS: readonly KnownDefectBand[] = [
+  {
+    id: "midi-late-60hz",
+    scenario: "any",
+    medianMsMin: 28,
+    medianMsMax: 38,
+    maxDevMsMax: 12,
+    durationErrorMsMax: 15,
+    frameIntervalMsRange: [15, 18],
+    detail: "notes written at the rendered position plus the output latency, extrapolated from a frame-stale base "
+      + "(about +32 ms at 60 Hz with 23 ms output latency); the clamp of a stamp before the last frame read spreads them up to a frame early",
+  },
+];
 
 const fmt = (value: number): string => String(Number(value.toFixed(2)));
 
@@ -179,6 +201,7 @@ export function classifyMidiCell(
   repeats: readonly RepeatFigures[],
   tolerances: MidiTolerances,
   bands: readonly KnownDefectBand[] = MIDI_KNOWN_DEFECTS,
+  frameIntervalsMs: ReadonlyArray<number | null> = [],
 ): { status: MidiCellStatus; detail: string } {
   if (repeats.length === 0) return { status: "investigate", detail: "no repeats" };
   const integrity: Array<keyof RepeatFigures> = ["missing", "receiptsMissing", "extra", "stuck", "velocityMismatches"];
@@ -191,26 +214,36 @@ export function classifyMidiCell(
     if (r.placementMedianMs === null || r.placementMaxAbsDevMs === null) {
       return { status: "investigate", detail: `no judged notes${on}` };
     }
-    if (r.placementMaxAbsDevMs > tolerances.spreadMs) {
-      return { status: "investigate", detail: `placementMaxAbsDevMs ${fmt(r.placementMaxAbsDevMs)} > ${tolerances.spreadMs}${on}` };
-    }
-    if (r.durationErrorMaxMs !== null && Math.abs(r.durationErrorMaxMs) > tolerances.durationMs) {
-      return { status: "investigate", detail: `durationErrorMaxMs ${fmt(r.durationErrorMaxMs)} > ${tolerances.durationMs}${on}` };
-    }
   }
   const medians = repeats.map((r) => r.placementMedianMs as number);
-  if (medians.every((m) => Math.abs(m) <= tolerances.placementMs)) {
+  const spreads = repeats.map((r) => r.placementMaxAbsDevMs as number);
+  const durations = repeats.map((r) => Math.abs(r.durationErrorMaxMs ?? 0));
+  const spreadOffender = spreads.findIndex((v) => v > tolerances.spreadMs);
+  const medianOffender = medians.findIndex((m) => Math.abs(m) > tolerances.placementMs);
+  const durationOffender = durations.findIndex((v) => v > tolerances.durationMs);
+  if (spreadOffender < 0 && medianOffender < 0 && durationOffender < 0) {
     return { status: "aligned", detail: `medians ${medians.map(fmt).join(", ")} ms within ±${tolerances.placementMs}` };
   }
   const band = bands.find((b) =>
     (b.scenario === "any" || b.scenario === scenario)
-    && medians.every((m) => m >= b.medianMsMin && m <= b.medianMsMax));
+    && medians.every((m) => m >= b.medianMsMin && m <= b.medianMsMax)
+    && spreads.every((v) => v <= (b.maxDevMsMax ?? tolerances.spreadMs))
+    && durations.every((v) => v <= (b.durationErrorMsMax ?? tolerances.durationMs))
+    && (b.frameIntervalMsRange === undefined || repeats.every((_, i) => {
+      const f = frameIntervalsMs[i];
+      return f !== null && f !== undefined && f >= b.frameIntervalMsRange![0] && f <= b.frameIntervalMsRange![1];
+    })));
   if (band !== undefined) {
     return { status: "matches-known-defect", detail: `${band.id}: ${band.detail} (medians ${medians.map(fmt).join(", ")} ms)` };
   }
-  const offender = medians.findIndex((m) => Math.abs(m) > tolerances.placementMs);
+  if (durationOffender >= 0) {
+    return { status: "investigate", detail: `durationErrorMaxMs ${fmt(durations[durationOffender])} > ${tolerances.durationMs} on repeat ${durationOffender + 1}` };
+  }
+  if (spreadOffender >= 0) {
+    return { status: "investigate", detail: `placementMaxAbsDevMs ${fmt(spreads[spreadOffender])} > ${tolerances.spreadMs} on repeat ${spreadOffender + 1}` };
+  }
   return {
     status: "investigate",
-    detail: `placementMedianMs ${fmt(medians[offender])} > ${tolerances.placementMs} on repeat ${offender + 1}`,
+    detail: `placementMedianMs ${fmt(medians[medianOffender])} > ${tolerances.placementMs} on repeat ${medianOffender + 1}`,
   };
 }

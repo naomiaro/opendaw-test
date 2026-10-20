@@ -89,6 +89,26 @@ describe("classifyMidiCell", () => {
     expect(classifyMidiCell("nominal-start", [clean(1, 12)], MIDI_TOLERANCES).detail).toContain("placementMaxAbsDevMs");
     expect(classifyMidiCell("nominal-start", [{ ...clean(0), missing: 1 }], MIDI_TOLERANCES).detail).toContain("missing 1");
   });
+  it("lets a band carry the clamp jitter and a frame-interval range, and misses it outside either", () => {
+    const band = [{
+      id: "midi-late-60hz", scenario: "any" as const, medianMsMin: 28, medianMsMax: 38, maxDevMsMax: 12,
+      frameIntervalMsRange: [15, 18] as [number, number], detail: "latency sign + frame-stale base at 60 Hz, clamp jitter",
+    }];
+    expect(classifyMidiCell("loop-wrap", [clean(32.8, 10.4), clean(33.3, 9.9)], MIDI_TOLERANCES, band, [16.7, 17.0]).status).toBe("matches-known-defect");
+    expect(classifyMidiCell("loop-wrap", [clean(32.8, 13), clean(33.3, 9.9)], MIDI_TOLERANCES, band, [16.7, 17.0]).status).toBe("investigate");
+    expect(classifyMidiCell("loop-wrap", [clean(32.8, 10.4)], MIDI_TOLERANCES, band, [8.3]).status).toBe("investigate");
+    expect(classifyMidiCell("loop-wrap", [clean(32.8, 10.4)], MIDI_TOLERANCES, band, [null]).status).toBe("investigate");
+  });
+  it("lets a band carry the release jitter as a duration bound and misses a collapsed release", () => {
+    const band = [{
+      id: "midi-late-60hz", scenario: "any" as const, medianMsMin: 28, medianMsMax: 38, maxDevMsMax: 12, durationErrorMsMax: 15,
+      detail: "clamp jitter on releases too",
+    }];
+    expect(classifyMidiCell("nominal-start", [{ ...clean(33, 9.6), durationErrorMaxMs: 10.94 }], MIDI_TOLERANCES, band).status).toBe("matches-known-defect");
+    expect(classifyMidiCell("janked-mid", [{ ...clean(33, 9.6), durationErrorMaxMs: 93.75 }], MIDI_TOLERANCES, band))
+      .toMatchObject({ status: "investigate", detail: expect.stringContaining("durationErrorMaxMs 93.75") });
+    expect(classifyMidiCell("nominal-start", [{ ...clean(1, 1), durationErrorMaxMs: 10 }], MIDI_TOLERANCES, band).status).toBe("investigate");
+  });
   it("matches a known-defect band on the median when counts and spread are clean", () => {
     const band = [{ id: "midi-late-2x", scenario: "any" as const, medianMsMin: 25, medianMsMax: 45, detail: "twice the output latency" }];
     expect(classifyMidiCell("nominal-start", [clean(31), clean(33)], MIDI_TOLERANCES, band).status).toBe("matches-known-defect");

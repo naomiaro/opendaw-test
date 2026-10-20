@@ -25,7 +25,7 @@ import {
   isMidiScenario, MIDI_AUDIT_BPMS, MIDI_AUDIT_SCENARIOS, MIDI_BUS_DEFAULT, MIDI_REPEATS_PER_CELL, MIDI_TOLERANCES,
   type MidiScenario,
 } from "@/lib/audit/midiInputCalibration";
-import { classifyMidiCell, median, type RepeatFigures } from "@/lib/audit/midiInputAlignment";
+import { classifyMidiCell, median, MIDI_KNOWN_DEFECTS, type RepeatFigures } from "@/lib/audit/midiInputAlignment";
 import {
   MIDI_AUDIT_SCHEMA_VERSION, summaryFileName, type MidiAuditRow, type MidiAuditSummary, type MidiCellVerdictRecord,
 } from "@/lib/audit/midiInputArtifacts";
@@ -163,6 +163,7 @@ async function runAudit(setAuditState: (s: string) => void, onRows: (rows: MidiA
     for (const bpm of bpms) {
       const cellRows: MidiAuditRow[] = [];
       const figures: RepeatFigures[] = [];
+      const frameIntervals: Array<number | null> = [];
       for (let repeat = 1; repeat <= repeatsPerCell; repeat++) {
         const label = cellLabel(scenario, bpm, repeat);
         setAuditState(`running:${label}`);
@@ -179,6 +180,7 @@ async function runAudit(setAuditState: (s: string) => void, onRows: (rows: MidiA
           );
           row = resultRow(scenario, bpm, repeat, result, scenario === "janked-start");
           figures.push(result.figures);
+          frameIntervals.push(result.frameIntervalMs);
         } catch (err) {
           const message = `${stage}: ${err instanceof Error ? err.message : String(err)}`;
           console.error(`[midi-input-audit] cell ${label} failed: ${message}`);
@@ -195,7 +197,7 @@ async function runAudit(setAuditState: (s: string) => void, onRows: (rows: MidiA
         onRows([...allRows]);
       }
       const verdict = figures.length === repeatsPerCell
-        ? classifyMidiCell(scenario, figures, MIDI_TOLERANCES)
+        ? classifyMidiCell(scenario, figures, MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, frameIntervals)
         : { status: "investigate" as const, detail: `${repeatsPerCell - figures.length} of ${repeatsPerCell} repeats failed` };
       for (const row of cellRows) {
         if (row.status === "error") continue;
