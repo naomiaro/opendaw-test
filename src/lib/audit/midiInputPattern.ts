@@ -7,7 +7,7 @@
 import { PPQN } from "@opendaw/lib-dsp";
 import { BAR_PPQN } from "./auditExpectations";
 import {
-  BEAT_PPQN, EIGHTH_BARS, PATTERN_BARS, PATTERN_LEAD_MS, PITCH_BASE, PITCH_RANGE, THIRTYSECOND_BARS, VELOCITIES,
+  BEAT_PPQN, COUNT_IN_NOTES, EIGHTH_BARS, PATTERN_BARS, PATTERN_LEAD_MS, PITCH_BASE, PITCH_RANGE, THIRTYSECOND_BARS, VELOCITIES,
 } from "./midiInputCalibration";
 
 export type NoteTag = "eighth" | "thirtysecond" | "countin";
@@ -63,4 +63,23 @@ export function buildPattern({ originPpqn, loopEndPpqn }: { originPpqn: number; 
   const thirtysecondStart = originPpqn + EIGHTH_BARS * BAR_PPQN;
   for (let i = 0; i < THIRTYSECOND_BARS * 32; i++) push("thirtysecond", thirtysecondStart + i * thirtysecond, thirtysecond);
   return notes;
+}
+
+export interface CountInNote {
+  pitch: number;
+  velocity: number;
+  /** After the record request, on the performance clock. */
+  offsetMs: number;
+  holdMs: number;
+}
+
+/** The count-in notes for a one-bar count-in at `bpm`; pitches above the pattern's range. */
+export function countInSchedule(bpm: number): CountInNote[] {
+  const barMs = (4 * 60_000) / bpm;
+  return COUNT_IN_NOTES.map((note, i) => ({
+    pitch: PITCH_BASE + PITCH_RANGE + 1 + i,
+    velocity: 100,
+    offsetMs: note.atBar * barMs,
+    holdMs: "holdMs" in note ? note.holdMs : note.holdBars * barMs,
+  }));
 }

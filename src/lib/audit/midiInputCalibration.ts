@@ -42,8 +42,16 @@ export const PITCH_BASE = 36;
 /** Longer than any held step, so a pitch is never re-triggered while it is held. */
 export const PITCH_RANGE = 48;
 export const VELOCITIES = [100, 64, 127, 32] as const;
-/** `countin-start` sends two unanchored notes this long after the record request. */
-export const COUNT_IN_NOTE_OFFSETS_MS = [400, 800] as const;
+/**
+ * `countin-start` sends three unanchored notes during the one-bar count-in, as fractions of
+ * the bar after the record request: two short ones released inside the bar, and one pressed
+ * at three quarters and held half a bar, so it is still down at the downbeat.
+ */
+export const COUNT_IN_NOTES = [
+  { atBar: 0.15, holdMs: 100 },
+  { atBar: 0.35, holdMs: 100 },
+  { atBar: 0.75, holdBars: 0.5 },
+] as const;
 
 export interface MidiTolerances {
   placementMs: number;

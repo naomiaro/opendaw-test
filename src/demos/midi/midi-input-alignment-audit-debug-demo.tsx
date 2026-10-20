@@ -129,10 +129,10 @@ function errorRow(scenario: MidiScenario, bpm: number, repeat: number, detail: s
     scenario, bpm, repeat, status: "error", detail,
     notesSent: 0, notesRecorded: 0, judgedNotes: 0, missing: 0, receiptsMissing: 0, extra: 0, stuck: 0, velocityMismatches: 0,
     placementMedianMs: null, placementMaxAbsDevMs: null, placementP5P95Ms: null, durationErrorMedianMs: null, durationErrorMaxMs: null,
-    loopbackDelayMedianMs: null, loopbackDelayMaxMs: null, wrapAdjacent: 0, countInNotes: 0,
+    loopbackDelayMedianMs: null, loopbackDelayMaxMs: null, wrapAdjacent: 0, countInNotes: 0, countInRecorded: 0,
     jankMs: null, takeCount: 0, takeIndexSource: null, anchorContextTime: null, anchorPosition: null, originPpqn: null,
     frameIntervalMs: null, outputLatencyMs: null, baseLatencyMs: null, compensationLatencyMs: null, sdkLatencyTermMs: null,
-    cleanupWarning: null, notes: [],
+    heardLagMs: null, cleanupWarning: null, notes: [],
   };
 }
 
@@ -144,7 +144,7 @@ function resultRow(scenario: MidiScenario, bpm: number, repeat: number, r: MidiC
     takeCount: r.takeCount, takeIndexSource: r.takeIndexSource,
     anchorContextTime: r.anchor.contextTime, anchorPosition: r.anchor.position, originPpqn: r.originPpqn,
     frameIntervalMs: r.frameIntervalMs, outputLatencyMs: r.outputLatencyMs, baseLatencyMs: r.baseLatencyMs,
-    compensationLatencyMs: r.compensationLatencyMs, sdkLatencyTermMs: r.sdkLatencyTermMs,
+    compensationLatencyMs: r.compensationLatencyMs, sdkLatencyTermMs: r.sdkLatencyTermMs, heardLagMs: r.heardLagMs,
     cleanupWarning: null, notes: r.notes,
   };
 }
@@ -299,7 +299,7 @@ function Harness() {
                 <Table.Header>
                   <Table.Row>
                     {["scenario", "bpm", "rep", "status", "rec/sent", "miss", "no rcpt", "extra", "stuck", "vel", "median ms", "max dev ms",
-                      "p5–p95 ms", "dur max ms", "loopback ms", "frame ms", "sdk term ms", "takes", "detail"]
+                      "p5–p95 ms", "dur max ms", "loopback ms", "frame ms", "sdk term ms", "heard lag ms", "takes", "cin rec/sent", "detail"]
                       .map((h) => <Table.ColumnHeaderCell key={h}>{h}</Table.ColumnHeaderCell>)}
                   </Table.Row>
                 </Table.Header>
@@ -327,7 +327,9 @@ function Harness() {
                       <Table.Cell>{ms(r.loopbackDelayMedianMs)}</Table.Cell>
                       <Table.Cell>{ms(r.frameIntervalMs)}</Table.Cell>
                       <Table.Cell>{ms(r.sdkLatencyTermMs)}</Table.Cell>
+                      <Table.Cell>{ms(r.heardLagMs)}</Table.Cell>
                       <Table.Cell>{r.takeCount}</Table.Cell>
+                      <Table.Cell>{r.countInNotes > 0 ? `${r.countInRecorded}/${r.countInNotes}` : "—"}</Table.Cell>
                       <Table.Cell style={{ maxWidth: 360, whiteSpace: "pre-wrap" }}>
                         {r.detail ?? ""}{r.cleanupWarning ? ` [cleanup: ${r.cleanupWarning}]` : ""}
                       </Table.Cell>

@@ -5,7 +5,7 @@
  * (`SentNote.expectedPpqn`); nothing is netted out. See the register,
  * `debug/2026-10-20-midi-input-alignment/note.md`.
  */
-import type { MidiScenario, MidiTolerances } from "./midiInputCalibration";
+import { BEAT_PPQN, type MidiScenario, type MidiTolerances } from "./midiInputCalibration";
 import type { PatternNote } from "./midiInputPattern";
 import { pulsesToMs } from "./midiClockMap";
 
@@ -36,8 +36,9 @@ export interface MatchedNote {
   placementErrorMs: number;
   durationErrorMs: number;
   velocityMismatch: boolean;
-  /** Its release was never written: the note reaches the end of its region AND runs past twice its sent length
-   *  (a late take lets a note of its sent length overhang the region end; that is placement, not a stuck key). */
+  /** Its release was never written: the note runs past twice its sent length AND reaches the take's last write
+   *  (the recorder rounds the region end up to the next beat past it). A note of its sent length that a late
+   *  take lets overhang the region end is placement, not a stuck key. */
   stuck: boolean;
   loopbackDelayMs: number;
 }
@@ -83,7 +84,7 @@ export function matchNotes(
       placementErrorMs: pulsesToMs(best.absolutePpqn - expected, bpm),
       durationErrorMs: pulsesToMs(best.durationPpqn - note.durationPpqn, bpm),
       velocityMismatch: Math.abs(best.velocity - note.velocity) > 1,
-      stuck: best.absolutePpqn + best.durationPpqn >= best.regionEndPpqn - 1 && best.durationPpqn > 2 * note.durationPpqn,
+      stuck: best.durationPpqn > 2 * note.durationPpqn && best.absolutePpqn + best.durationPpqn >= best.regionEndPpqn - BEAT_PPQN,
       loopbackDelayMs: note.receiptPerfMs - note.scheduledPerfMs,
     });
   }
@@ -108,12 +109,23 @@ export interface RepeatFigures {
   loopbackDelayMedianMs: number | null;
   loopbackDelayMaxMs: number | null;
   wrapAdjacent: number;
+  /** Count-in notes sent (unanchored, never matched) and how many of them the SDK recorded. */
   countInNotes: number;
+  countInRecorded: number;
+}
+
+/** Recorded notes at the count-in pitches, taken out of `extra` and counted on their own: reported, not judged. */
+export function splitCountIn(match: MatchResult, countInPitches: readonly number[]): { match: MatchResult; countInRecorded: RecordedNote[] } {
+  const countInRecorded = match.extra.filter((n) => countInPitches.includes(n.pitch));
+  return { match: { ...match, extra: match.extra.filter((n) => !countInRecorded.includes(n)) }, countInRecorded };
 }
 
 const isJudged = (note: MatchedNote): boolean => note.sent.tag !== "countin" && !note.sent.wrapAdjacent;
 
-export function measureRepeat({ matched, missing, receiptsMissing, extra }: MatchResult): RepeatFigures {
+export function measureRepeat(
+  { matched, missing, receiptsMissing, extra }: MatchResult,
+  countIn: { sent: number; recorded: number } = { sent: 0, recorded: 0 },
+): RepeatFigures {
   const judged = matched.filter(isJudged);
   const placement = judged.map((m) => m.placementErrorMs);
   const placementMedian = median(placement);
@@ -141,7 +153,8 @@ export function measureRepeat({ matched, missing, receiptsMissing, extra }: Matc
     loopbackDelayMedianMs: median(delays),
     loopbackDelayMaxMs: delays.length === 0 ? null : Math.max(...delays),
     wrapAdjacent: sentAll.filter((n) => n.wrapAdjacent).length,
-    countInNotes: sentAll.filter((n) => n.tag === "countin").length,
+    countInNotes: sentAll.filter((n) => n.tag === "countin").length + countIn.sent,
+    countInRecorded: countIn.recorded,
   };
 }
 
@@ -184,11 +197,15 @@ export const MIDI_KNOWN_DEFECTS: readonly KnownDefectBand[] = [
   {
     id: "midi-late-60hz",
     scenario: "any",
+    // The 41 bring-up medians (+32.2 … +33.3 ms) with 5 ms to either side.
     medianMsMin: 28,
     medianMsMax: 38,
-    maxDevMsMax: 12,
-    durationErrorMsMax: 15,
-    frameIntervalMsRange: [15, 18],
+    // The clamp moves a note at most one frame early plus a quantum of slot staleness: 20 + 2.9 ms.
+    maxDevMsMax: 23,
+    // The same clamp on a release.
+    durationErrorMsMax: 23,
+    // What a 60 Hz display gives Chrome's animation frames, under load included (18.6 ms measured).
+    frameIntervalMsRange: [14, 20],
     detail: "notes written at the rendered position plus the output latency, extrapolated from a frame-stale base "
       + "(about +32 ms at 60 Hz with 23 ms output latency); the clamp of a stamp before the last frame read spreads them up to a frame early",
   },

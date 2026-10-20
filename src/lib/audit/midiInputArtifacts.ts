@@ -30,7 +30,7 @@ export interface MidiAuditNoteRow {
   takeIndex: number | null;
   placementErrorMs: number | null;
   durationErrorMs: number | null;
-  outcome: "matched" | "missing" | "receipt-missing";
+  outcome: "matched" | "missing" | "receipt-missing" | "countin-dropped" | "countin-recorded";
 }
 
 export interface MidiAuditRow extends RepeatFigures {
@@ -51,6 +51,9 @@ export interface MidiAuditRow extends RepeatFigures {
   compensationLatencyMs: number | null;
   /** What the SDK adds to a note's write position: output plus compensation latency. */
   sdkLatencyTermMs: number | null;
+  /** How far the heard clock lagged the render clock at the output timestamp pair: `(currentTime − pair.contextTime)
+   *  − (now − pair.performanceTime)`, in ms. The browser's own figure for the output latency the mapping assumes. */
+  heardLagMs: number | null;
   cleanupWarning: string | null;
   notes: MidiAuditNoteRow[];
 }

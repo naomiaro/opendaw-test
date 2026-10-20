@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MIDI_TOLERANCES } from "./midiInputCalibration";
 import {
-  classifyMidiCell, matchNotes, measureRepeat, median, percentile, type RecordedNote, type SentNote,
+  classifyMidiCell, matchNotes, measureRepeat, median, MIDI_KNOWN_DEFECTS, percentile, splitCountIn, type RecordedNote, type SentNote,
 } from "./midiInputAlignment";
 
 const sent = (index: number, over: Partial<SentNote> = {}): SentNote => ({
@@ -32,11 +32,17 @@ describe("matchNotes", () => {
     expect(r.matched).toEqual([]);
     expect(r.extra.length).toBe(1);
   });
-  it("flags a velocity off by more than one and a note that reaches the region end as stuck", () => {
-    const r = matchNotes([sent(0), sent(1)], [rec(0, { velocity: 97 }), rec(1, { durationPpqn: 3840 * 4 - 960 })], 120, 480);
+  it("flags a velocity off by more than one, and a never-released key whose region ends at the next beat past its last write as stuck", () => {
+    // RecordMidi keeps a held key's duration at the last per-frame write and rounds the region end up to the beat
+    const lastWrite = 960 + 2900;
+    const r = matchNotes([sent(0), sent(1)], [rec(0, { velocity: 97 }), rec(1, { durationPpqn: 2900, regionEndPpqn: Math.ceil(lastWrite / 960) * 960 })], 120, 480);
     expect(r.matched[0].velocityMismatch).toBe(true);
     expect(r.matched[0].stuck).toBe(false);
     expect(r.matched[1].stuck).toBe(true);
+  });
+  it("does not call a key stuck that was released long before the take ended", () => {
+    const r = matchNotes([sent(0)], [rec(0, { durationPpqn: 900, regionEndPpqn: 3840 * 4 })], 120, 480);
+    expect(r.matched[0].stuck).toBe(false);
   });
   it("does not call a note of its sent length stuck because a late take lets it overhang the region end", () => {
     const end = 3840 * 4;
@@ -50,7 +56,7 @@ describe("measureRepeat", () => {
   it("judges matched notes minus count-in and wrap-adjacent ones", () => {
     const s = [sent(0), sent(1, { wrapAdjacent: true }), sent(2, { tag: "countin" })];
     const f = measureRepeat(matchNotes(s, [rec(0), rec(1, { absolutePpqn: 960 - 100 }), rec(2)], 120, 480));
-    expect(f).toMatchObject({ notesSent: 3, notesRecorded: 3, judgedNotes: 1, wrapAdjacent: 1, countInNotes: 1, missing: 0, extra: 0 });
+    expect(f).toMatchObject({ notesSent: 3, notesRecorded: 3, judgedNotes: 1, wrapAdjacent: 1, countInNotes: 1, countInRecorded: 0, missing: 0, extra: 0 });
     expect(f.placementMedianMs).toBeCloseTo(0, 6);
   });
   it("reports the spread as the largest deviation from the median and the p5–p95 width", () => {
@@ -76,11 +82,41 @@ describe("median / percentile", () => {
   });
 });
 
+describe("MIDI_KNOWN_DEFECTS", () => {
+  const row = (medianMs: number, spread: number, durationMax: number): ReturnType<typeof measureRepeat> => ({
+    notesSent: 48, notesRecorded: 48, judgedNotes: 48, missing: 0, receiptsMissing: 0, extra: 0, stuck: 0, velocityMismatches: 0,
+    placementMedianMs: medianMs, placementMaxAbsDevMs: spread, placementP5P95Ms: spread, durationErrorMedianMs: 0, durationErrorMaxMs: durationMax,
+    loopbackDelayMedianMs: 0, loopbackDelayMaxMs: 0, wrapAdjacent: 0, countInNotes: 0, countInRecorded: 0,
+  });
+  it("classifies every bring-up row of the register, including the one at an 18.6 ms frame", () => {
+    expect(classifyMidiCell("midtimeline-start", [row(32.64, 9.72, 12.5), row(33.33, 9.72, 9.72)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [18.57, 17.33]).status)
+      .toBe("matches-known-defect");
+    expect(classifyMidiCell("loop-wrap", [row(32.82, 10.42, 10.94), row(32.82, 9.38, 13.54)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [17.02, 16.8]).status)
+      .toBe("matches-known-defect");
+  });
+  it("misses a 120 Hz row and a collapsed release", () => {
+    expect(classifyMidiCell("nominal-start", [row(40, 5, 8)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [8.33]).status).toBe("investigate");
+    expect(classifyMidiCell("janked-mid", [row(33, 9.4, 93.75)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [16.7]).status).toBe("investigate");
+  });
+});
+
+describe("splitCountIn", () => {
+  it("moves recorded notes at count-in pitches out of extra and counts them", () => {
+    const r = matchNotes([sent(0)], [rec(0), rec(5, { pitch: 85 }), rec(6, { pitch: 90 })], 120, 480);
+    const { match, countInRecorded } = splitCountIn(r, [85, 86]);
+    expect(countInRecorded.map((n) => n.pitch)).toEqual([85]);
+    expect(match.extra.map((n) => n.pitch)).toEqual([90]);
+    const f = measureRepeat(match, { sent: 2, recorded: countInRecorded.length });
+    expect(f.countInNotes).toBe(2);
+    expect(f.countInRecorded).toBe(1);
+  });
+});
+
 describe("classifyMidiCell", () => {
   const clean = (medianMs: number, spread = 1): ReturnType<typeof measureRepeat> => ({
     notesSent: 48, notesRecorded: 48, judgedNotes: 48, missing: 0, receiptsMissing: 0, extra: 0, stuck: 0, velocityMismatches: 0,
     placementMedianMs: medianMs, placementMaxAbsDevMs: spread, placementP5P95Ms: spread, durationErrorMedianMs: 0, durationErrorMaxMs: 1,
-    loopbackDelayMedianMs: 0.4, loopbackDelayMaxMs: 0.9, wrapAdjacent: 0, countInNotes: 0,
+    loopbackDelayMedianMs: 0.4, loopbackDelayMaxMs: 0.9, wrapAdjacent: 0, countInNotes: 0, countInRecorded: 0,
   });
   it("is aligned only when every repeat is clean and inside every tolerance", () => {
     expect(classifyMidiCell("nominal-start", [clean(1), clean(-2)], MIDI_TOLERANCES).status).toBe("aligned");

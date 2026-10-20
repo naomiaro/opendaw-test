@@ -7,6 +7,7 @@
  * token, so an abandoned repeat can never touch the next one.
  */
 import { AnimationFrame } from "@opendaw/lib-dom";
+import { PPQN } from "@opendaw/lib-dsp";
 import type { AudioUnitBox } from "@opendaw/studio-boxes";
 import type { Project } from "@opendaw/studio-core";
 import { withDeadline } from "@/lib/deadline";
@@ -15,15 +16,16 @@ import {
   armJankOnRecordingFlip, assertCurrent, readRecordingStart, waitForPosition, waitForPositionSettled, type RepeatToken,
 } from "./recordingCellRunner";
 import {
-  COUNT_IN_NOTE_OFFSETS_MS, JANK_MID_OFFSET_PPQN, LOOP_WRAP_PPQN, MIDI_TOLERANCES, MIDTIMELINE_START_PPQN, PITCH_BASE,
-  PITCH_RANGE, STOP_AFTER_PATTERN_PPQN, type MidiScenario,
+  JANK_MID_OFFSET_PPQN, LOOP_WRAP_PPQN, MIDI_TOLERANCES, MIDTIMELINE_START_PPQN, STOP_AFTER_PATTERN_PPQN, type MidiScenario,
 } from "./midiInputCalibration";
-import { buildPattern, patternEndPpqn, patternOriginPpqn, type PatternNote } from "./midiInputPattern";
+import { buildPattern, countInSchedule, patternEndPpqn, patternOriginPpqn, type PatternNote } from "./midiInputPattern";
 import {
   contextSecAtPosition, heardContextSecAt, isFreshAnchor, perfMsAtHeardContextSec, positionAtContextSec, renderPpqnFromHeard,
   type OutputStampPair, type RecordingAnchor,
 } from "./midiClockMap";
-import { matchNotes, measureRepeat, median, type MatchResult, type RepeatFigures, type SentNote } from "./midiInputAlignment";
+import {
+  matchNotes, measureRepeat, median, splitCountIn, type MatchResult, type RecordedNote, type RepeatFigures, type SentNote,
+} from "./midiInputAlignment";
 import type { MidiAuditNoteRow } from "./midiInputArtifacts";
 import { clearRecordedNotes, collectRecordedNotes } from "./midiInputRecorded";
 import { pairReceipts, type MidiLoopbackSender, type ScheduledNote } from "./midiLoopback";
@@ -53,6 +55,7 @@ export interface MidiCellRepeatResult {
   baseLatencyMs: number;
   compensationLatencyMs: number;
   sdkLatencyTermMs: number;
+  heardLagMs: number;
 }
 
 export function cellLabel(scenario: MidiScenario, bpm: number, repeat: number): string {
@@ -180,12 +183,27 @@ function waitForNotRecording(project: Project, deadlineMs: number): Promise<void
 
 const nextFrame = (): Promise<void> => new Promise((resolve) => AnimationFrame.once(resolve));
 
-function noteRowsFrom(match: MatchResult, sent: readonly SentNote[]): MidiAuditNoteRow[] {
+function noteRowsFrom(
+  match: MatchResult,
+  sent: readonly SentNote[],
+  countInSent: readonly SentNote[] = [],
+  countInRecorded: readonly RecordedNote[] = [],
+): MidiAuditNoteRow[] {
   const outcome = new Map<SentNote, MidiAuditNoteRow["outcome"]>();
   const matched = new Map(match.matched.map((m) => [m.sent, m]));
   for (const n of match.missing) outcome.set(n, "missing");
   for (const n of match.receiptsMissing) outcome.set(n, "receipt-missing");
-  return sent.map((note) => {
+  const countInRows: MidiAuditNoteRow[] = countInSent.map((note) => {
+    const r = countInRecorded.find((n) => n.pitch === note.pitch);
+    return {
+      index: note.index, tag: note.tag, pitch: note.pitch, velocity: note.velocity, wrapAdjacent: false,
+      scheduledPerfMs: note.scheduledPerfMs, receiptPerfMs: null, loopbackDelayMs: null, expectedPpqn: null, expectedRenderPpqn: null,
+      recordedPpqn: r?.absolutePpqn ?? null, recordedDurationPpqn: r?.durationPpqn ?? null, recordedVelocity: r?.velocity ?? null,
+      takeIndex: r?.takeIndex ?? null, placementErrorMs: null, durationErrorMs: null,
+      outcome: r === undefined ? "countin-dropped" : "countin-recorded",
+    };
+  });
+  return [...countInRows, ...sent.map((note): MidiAuditNoteRow => {
     const m = matched.get(note);
     return {
       index: note.index,
@@ -206,7 +224,7 @@ function noteRowsFrom(match: MatchResult, sent: readonly SentNote[]): MidiAuditN
       durationErrorMs: m?.durationErrorMs ?? null,
       outcome: m !== undefined ? "matched" : outcome.get(note) ?? "missing",
     };
-  });
+  })];
 }
 
 export async function runMidiCellRepeat(options: MidiCellRepeatOptions): Promise<MidiCellRepeatResult> {
@@ -251,10 +269,13 @@ export async function runMidiCellRepeat(options: MidiCellRepeatOptions): Promise
       project.startRecording(true);
       if (scenario === "countin-start") {
         const requested = performance.now();
-        COUNT_IN_NOTE_OFFSETS_MS.forEach((offset, i) => {
-          const pitch = PITCH_BASE + PITCH_RANGE + 1 + i;
-          countInNotes.push({ index: -1 - i, tag: "countin", pitch, velocity: 100, onPpqn: 0, durationPpqn: 0, wrapAdjacent: false });
-          void waitUntilPerf(requested + offset, token, "count-in note").then(() => loopback.sendNow({ pitch, velocity: 100 }, 100), () => undefined);
+        countInSchedule(bpm).forEach((note, i) => {
+          countInNotes.push({
+            index: -1 - i, tag: "countin", pitch: note.pitch, velocity: note.velocity, onPpqn: 0,
+            durationPpqn: PPQN.secondsToPulses(note.holdMs / 1000, bpm), wrapAdjacent: false,
+          });
+          void waitUntilPerf(requested + note.offsetMs, token, "count-in note")
+            .then(() => loopback.sendNow({ pitch: note.pitch, velocity: note.velocity }, note.holdMs), () => undefined);
         });
       }
       break;
@@ -272,6 +293,7 @@ export async function runMidiCellRepeat(options: MidiCellRepeatOptions): Promise
   const anchor = await waitForRecordingStart(project, recordRequestContextTime, 30_000);
   assertCurrent(token, "anchor");
   const pair: OutputStampPair = audioContext.getOutputTimestamp() as OutputStampPair;
+  const heardLagMs = (audioContext.currentTime - pair.contextTime) * 1000 - (performance.now() - pair.performanceTime);
   const outputLatencyMs = audioContext.outputLatency * 1000;
   const baseLatencyMs = audioContext.baseLatency * 1000;
   const compensationLatencyMs = project.engine.compensationLatency.getValue() * 1000;
@@ -307,16 +329,16 @@ export async function runMidiCellRepeat(options: MidiCellRepeatOptions): Promise
   const countInSent: SentNote[] = countInNotes.map((note) => ({
     ...note, scheduledPerfMs: 0, receiptPerfMs: null, offReceiptPerfMs: null, expectedPpqn: null, expectedRenderPpqn: null,
   }));
-  const match = matchNotes(sent, recorded.notes, bpm, MIDI_TOLERANCES.matchWindowPpqn);
-  // Count-in notes are reported, not judged: they are sent unanchored and drop out of the
-  // matching, so what they count is the recorded notes left over at their pitches.
-  const countInRecorded = match.extra.filter((n) => countInSent.some((c) => c.pitch === n.pitch));
-  match.extra = match.extra.filter((n) => !countInRecorded.includes(n));
-  const figures = measureRepeat(match);
-  figures.countInNotes = countInSent.length;
+  // Count-in notes are reported, not judged: sent unanchored, they never enter the matching;
+  // what the SDK recorded at their pitches is counted on its own.
+  const { match, countInRecorded } = splitCountIn(
+    matchNotes(sent, recorded.notes, bpm, MIDI_TOLERANCES.matchWindowPpqn),
+    countInSent.map((n) => n.pitch),
+  );
+  const figures = measureRepeat(match, { sent: countInSent.length, recorded: countInRecorded.length });
   return {
     figures,
-    notes: noteRowsFrom(match, sent),
+    notes: noteRowsFrom(match, sent, countInSent, countInRecorded),
     takeCount: recorded.takes.length,
     takeIndexSource: recorded.takeIndexSource,
     anchor,
@@ -327,6 +349,7 @@ export async function runMidiCellRepeat(options: MidiCellRepeatOptions): Promise
     baseLatencyMs,
     compensationLatencyMs,
     sdkLatencyTermMs: outputLatencyMs + compensationLatencyMs,
+    heardLagMs,
   };
 }
 

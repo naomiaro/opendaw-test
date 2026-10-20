@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { PPQN } from "@opendaw/lib-dsp";
 import { BAR_PPQN } from "./auditExpectations";
 import { BEAT_PPQN, EIGHTH_BARS, PITCH_RANGE, THIRTYSECOND_BARS } from "./midiInputCalibration";
-import { buildPattern, patternEndPpqn, patternOriginPpqn, pitchForIndex } from "./midiInputPattern";
+import { buildPattern, countInSchedule, patternEndPpqn, patternOriginPpqn, pitchForIndex } from "./midiInputPattern";
 
 describe("buildPattern", () => {
   it("lays two bars of eighths then one bar of thirty-seconds from the origin", () => {
@@ -38,5 +38,19 @@ describe("patternOriginPpqn", () => {
     expect(patternOriginPpqn(BAR_PPQN, 120, 0)).toBe(BAR_PPQN);
     expect(patternOriginPpqn(0, 90)).toBe(BAR_PPQN); // 300 ms = 432 pulses
     expect(PPQN.secondsToPulses(0.3, 120)).toBeCloseTo(576, 6);
+  });
+});
+
+describe("countInSchedule", () => {
+  it("places two short notes inside the count-in bar and one that is still held at the downbeat", () => {
+    const bar = (4 * 60_000) / 120;
+    const notes = countInSchedule(120);
+    expect(notes.map((n) => n.pitch)).toEqual([85, 86, 87]);
+    expect(notes[0]).toMatchObject({ offsetMs: 0.15 * bar, holdMs: 100 });
+    expect(notes[1]).toMatchObject({ offsetMs: 0.35 * bar, holdMs: 100 });
+    expect(notes[2].offsetMs).toBeCloseTo(0.75 * bar, 6);
+    expect(notes[2].offsetMs + notes[2].holdMs).toBeCloseTo(1.25 * bar, 6);
+    const slow = countInSchedule(90);
+    expect(slow[2].offsetMs + slow[2].holdMs).toBeGreaterThan((4 * 60_000) / 90);
   });
 });
