@@ -48,3 +48,26 @@ describe("classifyCombinedCell", () => {
     expect(classifyCombinedCell("nominal-start", [{ midi: midi(), combined: combined(-8.6, 40.9), context: null }]).detail).toContain("no band context");
   });
 });
+
+describe("classifyCombinedCell at its edges", () => {
+  it("holds together to one quantum, not to the band's margin", () => {
+    expect(classifyCombinedCell("nominal-start", [{ midi: midi(), combined: combined(4, 40.9, { partsApartMaxAbsDevMs: 5 }), context: ctx("default") }]).status).not.toBe("together");
+    expect(classifyCombinedCell("nominal-start", [{ midi: midi(), combined: combined(2.5, 40.9, { partsApartMaxAbsDevMs: 5 }), context: ctx("default") }]).status).toBe("together");
+  });
+  it("tolerates an audio side up to the band's margin off the calibration", () => {
+    expect(classifyCombinedCell("nominal-start", [{ midi: midi(), combined: combined(-8.6 - 4.9, 40.9 + 4.9), context: ctx("default") }]).status).toBe("matches-known-defect");
+  });
+  it("names the calibration before calling a coincidental pair together", () => {
+    const v = classifyCombinedCell("nominal-start", [{ midi: midi(), combined: combined(1.0, 8, { partsApartMaxAbsDevMs: 5 }), context: ctx("calibrated") }]);
+    expect(v.status).toBe("investigate");
+    expect(v.detail).toMatch(/disagrees with the calibration/);
+  });
+  it("judges every repeat and names the offending one", () => {
+    const v = classifyCombinedCell("nominal-start", [
+      { midi: midi(), combined: combined(-8.6, 40.9), context: ctx("default") },
+      { midi: midi(), combined: combined(-20, 40.9), context: ctx("default") },
+    ]);
+    expect(v.status).toBe("investigate");
+    expect(v.detail).toContain("on repeat 2");
+  });
+});

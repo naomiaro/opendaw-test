@@ -10,6 +10,7 @@ import { withDeadline } from "@/lib/deadline";
 import { bandSplit } from "./recordingAlignment";
 import { detectOnsets } from "./onsetDetection";
 import { median } from "./midiInputAlignment";
+import { CLICK_DURATION_SEC, CLICK_GAIN, CLICK_HZ } from "./combinedClicks";
 
 export const CALIBRATION_CLICKS = 3;
 export const CALIBRATION_GAP_SEC = 1.0;
@@ -151,10 +152,10 @@ export function summarizeRoundTrips(
   };
 }
 
-/** Builds the worklet on `source`, measures, disconnects. The output latency is read once the capture is over,
- *  with the output running. Throws the refusal text when a click is not found. */
 const modulesLoaded = new WeakSet<AudioContext>();
 
+/** Builds the worklet on `source`, measures, disconnects. The output latency is read once the capture is over,
+ *  with the output running. Throws the refusal text when a click is not found. */
 export async function measureMicRoundTrip(audioContext: AudioContext, source: AudioNode): Promise<MicRoundTrip> {
   // Once per context: a second addModule would re-run registerProcessor, which throws in the worklet scope.
   if (!modulesLoaded.has(audioContext)) {
@@ -176,9 +177,10 @@ export async function measureMicRoundTrip(audioContext: AudioContext, source: Au
       gap: Math.round(CALIBRATION_GAP_SEC * rate),
       tail: Math.round(CALIBRATION_TAIL_SEC * rate),
       clicks: CALIBRATION_CLICKS,
-      clickFrames: Math.round(0.008 * rate),
-      clickHz: 6000,
-      gain: 0.5,
+      // The same click as the pattern's, so the round trip transfers through the same onset detector.
+      clickFrames: Math.round(CLICK_DURATION_SEC * rate),
+      clickHz: CLICK_HZ,
+      gain: CLICK_GAIN,
     },
   });
   const captured = new Promise<CalibrationCapture>((resolve) => {

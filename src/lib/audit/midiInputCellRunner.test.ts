@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { BAR_PPQN } from "./auditExpectations";
 import { buildPattern } from "./midiInputPattern";
-import { cellLabel, frameGapSummary, scheduleContext, scheduleFor, sentNotesFrom, waitForRecordingStart } from "./midiInputCellRunner";
+import { cellLabel, frameGapSummary, runMidiCellRepeat, scheduleContext, scheduleFor, sentNotesFrom, waitForRecordingStart } from "./midiInputCellRunner";
 
 const anchor = { contextTime: 12.0, position: 0 };
 const pair = { contextTime: 10.0, performanceTime: 5000 };
@@ -88,5 +88,32 @@ describe("scheduleContext", () => {
     expect(c.contextSecAt(BAR_PPQN)).toBeCloseTo(14, 9);
     expect(c.perfAt(BAR_PPQN)).toBeCloseTo(9000, 6);
     expect(c.originPpqn).toBe(BAR_PPQN);
+  });
+});
+
+describe("runMidiCellRepeat and the metronome preference", () => {
+  it("applies the option before the body and restores the flag and the gain it found, on a throw too", async () => {
+    const metronome = { enabled: true, gain: -6 };
+    let seenDuringBody: { enabled: boolean; gain: number } | null = null;
+    const audioContext = { get state() { seenDuringBody = { ...metronome }; return "suspended"; } } as unknown as AudioContext;
+    const project = { engine: { preferences: { settings: { metronome, recording: {} } } } } as never;
+    await expect(runMidiCellRepeat({
+      project, audioContext, loopback: {} as never, audioUnitBox: {} as never, scenario: "nominal-start", bpm: 120, repeat: 1,
+      onStage: () => undefined, token: { cancelled: false }, metronome: { enabled: false, gainDb: -120 },
+    })).rejects.toThrow(/AudioContext is suspended/);
+    expect(seenDuringBody).toEqual({ enabled: false, gain: -120 });
+    expect(metronome).toEqual({ enabled: true, gain: -6 });
+  });
+});
+
+describe("the metronome gain option", () => {
+  it("refuses a non-finite gain, which would serialise as null in the persisted preferences", async () => {
+    const metronome = { enabled: true, gain: -6 };
+    const project = { engine: { preferences: { settings: { metronome, recording: {} } } } } as never;
+    await expect(runMidiCellRepeat({
+      project, audioContext: {} as never, loopback: {} as never, audioUnitBox: {} as never, scenario: "nominal-start", bpm: 120, repeat: 1,
+      onStage: () => undefined, token: { cancelled: false }, metronome: { enabled: false, gainDb: Number.NEGATIVE_INFINITY },
+    })).rejects.toThrow(/finite/);
+    expect(metronome).toEqual({ enabled: true, gain: -6 });
   });
 });

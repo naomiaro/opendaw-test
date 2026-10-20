@@ -2,7 +2,7 @@
  * The verdict of a combined MIDI + audio cell. `together` is the player's wish: key and
  * sound within a quantum. The band is the two recorders' known shapes computed from the
  * row's own figures: the MIDI recorder's late term minus whatever microphone latency the
- * SDK was not told about. Before any band, a default-state row whose audio median disagrees
+ * SDK was not told about. Before any band, in either state, a row whose audio median disagrees
  * with the run's own calibration names the microphone path, not the SDK.
  */
 import {

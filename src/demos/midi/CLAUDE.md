@@ -265,8 +265,9 @@ picks another). Register: `debug/2026-10-20-midi-input-alignment/note.md`.
 ### Combined MIDI + Audio Audit (unlisted)
 `midi-audio-combined-audit-debug-demo.html?scenario=<nominal-start|countin-start|janked-mid|all>&bpm=<n>[&repeats=<n>][&state=<default|calibrated|both>][&bus=][&input=][&output=][&audible=1]`
 sends each note of the MIDI sweep's pattern on the IAC bus AND plays a 6 kHz click out of the
-speakers at the same heard instant (an `OscillatorNode` at the render context time of the
-note's position, straight to the destination), records the keys through the Vaporisateur's
+speakers at the same heard instant (one `AudioBufferSourceNode` carrying the whole click
+train, started at the render context time of the first note's position, straight to the
+destination, so the harness makes no graph change during the measured span), records the keys through the Vaporisateur's
 MIDI capture and the clicks through a Tape pinned to the microphone, and reports
 `partsApartMs` = where the key landed − where the sound landed. Register:
 `debug/2026-10-20-midi-audio-combined/note.md`.
@@ -276,8 +277,8 @@ MIDI capture and the clicks through a Tape pinned to the microphone, and reports
   emits three clicks and records its input; the round trip is a difference of its own
   process-call frame counter, never a `currentTime` / `currentFrame` read (Chromium
   442866743). The output latency is read AFTER the clicks have played (Chrome's figure before
-  output starts is not the running one). The built-in path reads 87–89 ms round trip here
-  (62–65 on other days); every row carries the run's value.
+  output starts is not the running one). Every row carries the run's value; the register
+  holds the history.
 - **Two states** on `CaptureAudioBox.inputLatency` (a `Float32Field` in seconds; `-2` inherits
   the preference, `-1` means equal to the output latency): `0`, or the run's input part.
   The engine preference `recording.inputLatency` is NEVER written (localStorage, shared by
@@ -294,7 +295,7 @@ MIDI capture and the clicks through a Tape pinned to the microphone, and reports
 - **What it measured:** uncalibrated, the key lands 31 ms BEFORE the sound (the audio late by
   exactly the input part); calibrated, the sound is on the heard beat to 0.00 ms and the key
   33 ms late. The audio recorder is right; the jitter (7–10 ms) is all the MIDI recorder's.
-- `together` is the player's wish (within a quantum); on this release every cell reads the
+- `together` is the player's wish (within a quantum); every cell measured so far reads the
   band computed from the row's own figures.
 
 ## Cross-References

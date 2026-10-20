@@ -31,7 +31,8 @@ const max = (values: Array<number | null | undefined>): number | null => {
   const present = values.filter((v): v is number => v !== null && v !== undefined);
   return present.length === 0 ? null : Math.max(...present);
 };
-const sum = (rows: CombinedRow[], key: "clicksFound" | "clicksMissing" | "clicksExtra"): number => rows.reduce((a, r) => a + r[key], 0);
+const sum = (rows: CombinedRow[], key: "clicksFound" | "clicksMissing" | "clicksExtra"): number =>
+  rows.filter((r) => r.status !== "error").reduce((a, r) => a + r[key], 0);
 
 console.log("scenario | state | status | parts apart median ms (per repeat) | max dev ms | clicks found/missing/extra | midi median ms | audio median ms | mic round trip / input part / applied ms | detail");
 for (const v of summary.cellVerdicts) {

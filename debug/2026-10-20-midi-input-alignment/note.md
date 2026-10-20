@@ -241,9 +241,9 @@ real sound at the heard position. This sweep places MIDI at the heard position +
 the same machine. If both hold, a key and a sound produced together land about 32 ms apart
 in the project at 60 Hz. The combined MIDI + audio harness
 ([`../2026-10-20-midi-audio-combined/note.md`](../2026-10-20-midi-audio-combined/note.md))
-records the two together through the laptop's speakers and microphone; its first cells read
-the key 31 ms BEFORE the sound with the microphone uncalibrated and 36 ms AFTER it calibrated
-(the audio then within 3 ms of the heard beat). The user's decision (2026-10-20) is that no
+records the two together through the laptop's speakers and microphone; its first full run
+(6 of 6 cells) read the key 31 ms BEFORE the sound with the microphone uncalibrated and
+33 ms AFTER it calibrated, the audio then on the heard beat to 0.00 ms. The user's decision (2026-10-20) is that no
 issue goes upstream before that harness and the MIDI-effects harness have run.
 
 ### Loop-wrap, five repeats
@@ -313,8 +313,8 @@ Raised while reading the +32 ms result: the position a player sees should ideall
 one they are hearing. In openDAW's studio the timeline cursor is drawn straight from
 `engine.position` (`packages/app/studio/src/ui/timeline/TimeAxis.tsx`, `position.subscribe(updateCursor)`,
 optionally through an editor mapper), which is the RENDERED position; what leaves the
-speakers is `outputLatency` behind it, 23 ms here, and the only place the studio shows that
-number is the footer's latency readout. For comparison, waveform-playlist draws its playhead
+speakers is `outputLatency` behind it, 23 ms here, and the only user-facing place the studio
+shows that number is the footer's latency readout. For comparison, waveform-playlist draws its playhead
 at `engine.getAudibleTime()`, the engine time minus the output latency and the scheduler
 look-ahead ("without the subtraction the playhead leads audio by ~100 ms with the Tone
 adapter", `packages/dawcore/src/elements/daw-editor.ts`, MIT), and compensates a recording

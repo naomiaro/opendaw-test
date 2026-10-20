@@ -71,8 +71,10 @@ where the sound landed.
 **Verdict per cell:** `together` when every repeat has no lost or extra click, no MIDI
 integrity failure, `|partsApartMedianMs|` within a render quantum and its largest deviation
 within a frame plus a quantum. `matches-known-defect` when every repeat sits within ±5 ms of
-`expectedPartsApartMs = 2 × (outputLatency + compensation) − (frame − quantum) − (micInputPart −
-applied)`, the two recorders' known shapes computed from the row's own figures. Before the
+`expectedPartsApartMs = 2 × (outputLatency + compensation) − (frame − quantum) − (micRoundTrip −
+this repeat's outputLatency − applied)`, the two recorders' known shapes computed from the
+row's own figures (the audio term equals `micInputPart − applied` only while the output
+latency has not moved since the calibration). Before the
 band, in either state, a row whose audio median is more than 5 ms (the band's own margin)
 off `micRoundTrip − the repeat's own outputLatency − applied` names the microphone path
 (the built-in path has sat at 64 ms on some runs and 88 ms on others; an output-latency
@@ -102,7 +104,8 @@ Run `1792535824348`: `?scenario=all&bpm=120` (three scenarios, both states, thre
 18 rows), Chrome, 44.1 kHz context, display 60 Hz (frame 16.7 ms), `outputLatency` 23.0 ms,
 input "MacBook Pro Microphone (Built-in)", output "MacBook Pro Speakers (Built-in)", bus
 "IAC Driver Bus 1". Calibration: round trip **87.35 ms**, spread 0.00 over the three clicks,
-input part **64.35 ms**, floor −85 dBFS, peak −9 dBFS. Six minutes.
+input part **64.35 ms**, floor −87 dBFS, peak −8 dBFS. About three minutes from the run token
+to the summary.
 
 | scenario | state | status | parts apart median ms (r1 / r2 / r3) | max dev ms | clicks found / missing / extra | MIDI median ms | audio median ms | mic round trip / input part / applied ms |
 |---|---|---|---|---|---|---|---|---|
@@ -120,9 +123,10 @@ input part **64.35 ms**, floor −85 dBFS, peak −9 dBFS. Six minutes.
   repeat on 5 of 6, its own band).
 - **Uncalibrated (the player who never set an input latency):** the key lands **31 ms before
   the sound** (parts apart −31.0 … −31.5 ms on nominal and count-in; −28.4 … −31.0 on
-  janked-mid). The audio median is +64.35 ms on 13 of 18 rows: exactly the input part the
-  calibration measured, to the hundredth, so the audio recorder lands a sound late by
-  precisely the microphone latency it was not told, and nothing else.
+  janked-mid). The audio median is +64.35 ms on 7 of the 9 uncalibrated rows (61.69 on the
+  other two, janked-mid, a quantum early as below): exactly the input part the calibration
+  measured, to the hundredth, so the audio recorder lands a sound late by precisely the
+  microphone latency it was not told, and nothing else.
 - **Calibrated (the input part on the capture box's field):** the audio median is **0.00 ms**
   on nominal and count-in (0.06 on one row): the sound lands on the heard beat. The key
   stays +32.8 ms late, so the parts sit **+32.8 ms apart**; janked-mid +35.7 ms with its
@@ -135,7 +139,7 @@ input part **64.35 ms**, floor −85 dBFS, peak −9 dBFS. Six minutes.
 - **The prediction held** on every cell: the run's own expected values (from its input part of
   64.35 ms) are −32.1 uncalibrated and +32.2 calibrated, against measured −31.0 … −31.5 and
   +32.8 (janked-mid +35.7 with its audio a quantum early, below): residuals of about 1 ms,
-  the MIDI sweep's known 0 … +2.3 ms above its formula. 18 of 18 cells
+  the MIDI sweep's known 0 … +2.3 ms above its formula. 6 of 6 cells (18 rows)
   `matches-known-defect`; `together` is unreachable on this release.
 - **Jitter is all on the MIDI side.** The audio side's largest deviation from its median is
   0.05 … 0.06 ms on 17 rows (2.65 on one): the clicks land within a sample or two of each
@@ -148,8 +152,8 @@ input part **64.35 ms**, floor −85 dBFS, peak −9 dBFS. Six minutes.
   the input chain's state; the jank sits where the chain is built. Inside the band; listed
   for the audio campaign, where the one-quantum lattice lives.
 - **The round trip is stable within a run** (spread 0.00 over three clicks) and differs
-  between runs: 87.2, 89.1 and 87.4 ms on the three runs today, against 62–65 ms on five of
-  the audio campaign's six runs. The calibration is therefore per run, as designed, and
+  between runs: 87.2, 89.1, 87.4, 87.6 and 87.1 ms on today's runs, against 62–65 ms on five
+  of the audio campaign's six runs. The calibration is therefore per run, as designed, and
   every row says which value it ran under.
 - **One 4.8 s frame gap** on nominal-start / calibrated / r1 (`frameGapMaxMs` 4761) with the
   window uncovered and the figures unaffected; every other row 26 … 166 ms (the 150 ms jank

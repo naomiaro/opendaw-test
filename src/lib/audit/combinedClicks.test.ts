@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { BAR_PPQN } from "./auditExpectations";
 import { buildPattern } from "./midiInputPattern";
-import { CLICK_DURATION_SEC, clickContextTimes, inputLatencySecondsFor, renderClickTrain } from "./combinedClicks";
+import { CLICK_DURATION_SEC, clickContextTimes, inputLatencySecondsFor, playClicks, renderClickTrain } from "./combinedClicks";
 
 describe("clickContextTimes", () => {
   it("puts each click at the render time of its note's heard instant", () => {
@@ -11,6 +11,13 @@ describe("clickContextTimes", () => {
     expect(s[0].contextSec).toBeCloseTo(14, 9); // one bar at 120 = 2 s after the anchor
     expect(s[1].contextSec - s[0].contextSec).toBeCloseTo(0.25, 9); // an eighth
     expect(s.length).toBe(48);
+  });
+  it("subtracts the anchor's own position, which is the first recording quantum's end, not zero", () => {
+    const pattern = buildPattern({ originPpqn: BAR_PPQN, loopEndPpqn: null });
+    const s = clickContextTimes(pattern, { contextTime: 12, position: 5.57 }, 120);
+    expect(s[0].contextSec).toBeCloseTo(14 - 5.57 / 1920, 9);
+    const s2 = clickContextTimes(pattern, { contextTime: 12, position: 2 * BAR_PPQN }, 120);
+    expect(s2[0].contextSec).toBeCloseTo(10, 9);
   });
 });
 
@@ -40,5 +47,17 @@ describe("renderClickTrain", () => {
   });
   it("is empty for an empty schedule", () => {
     expect(renderClickTrain([], 44100).samples.length).toBe(0);
+  });
+});
+
+describe("playClicks", () => {
+  it("refuses a train whose first click is already in the past, instead of playing it late and blaming the microphone", () => {
+    const audioContext = {
+      sampleRate: 44100, currentTime: 20,
+      createBuffer: () => ({ copyToChannel: () => undefined }),
+      createBufferSource: () => ({ connect: () => undefined, start: () => undefined, stop: () => undefined, onended: null, buffer: null }),
+    } as unknown as BaseAudioContext;
+    expect(() => playClicks(audioContext, {} as AudioNode, [{ index: 0, contextSec: 19.9 }])).toThrow(/in the past/);
+    expect(() => playClicks(audioContext, {} as AudioNode, [{ index: 0, contextSec: 20.5 }])).not.toThrow();
   });
 });

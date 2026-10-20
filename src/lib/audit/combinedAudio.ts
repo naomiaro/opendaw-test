@@ -60,7 +60,11 @@ export function matchClicks(pattern: readonly PatternNote[], clickPpqn: readonly
   };
   for (const note of pattern) if (note.tag === "eighth") take(note, note.onPpqn, BEAT_PPQN / 4);
   const anchorOffsetMs = median(pairs.map((p) => p.audioErrorMs));
-  const anchorPpqn = anchorOffsetMs === null ? 0 : PPQN.secondsToPulses(anchorOffsetMs / 1000, bpm);
+  if (anchorOffsetMs === null) {
+    // No eighth click: nothing anchors the 1/32 bar, and an unanchored match would pair its clicks with the wrong notes.
+    return { pairs: [], clicksMissing: pattern.map((n) => n.index), clicksExtraPpqn: [...clickPpqn], anchorOffsetMs: null };
+  }
+  const anchorPpqn = PPQN.secondsToPulses(anchorOffsetMs / 1000, bpm);
   // Second pass: with the anchor known, the eighths are matched around it, so a stray onset nearer the raw grid loses.
   unused = new Set<number>(clickPpqn.map((_, i) => i));
   pairs = [];
@@ -95,7 +99,7 @@ export interface CombinedFigures {
 }
 
 const maxAbsDev = (values: readonly number[], centre: number | null): number | null =>
-  centre === null ? null : Math.max(...values.map((v) => Math.abs(v - centre)));
+  centre === null || values.length === 0 ? null : Math.max(...values.map((v) => Math.abs(v - centre)));
 
 export function measureCombined(
   match: ClickMatch,

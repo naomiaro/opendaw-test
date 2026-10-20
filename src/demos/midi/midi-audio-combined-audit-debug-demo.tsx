@@ -28,7 +28,7 @@ import { isMidiScenario, MIDI_BUS_DEFAULT, type MidiScenario } from "@/lib/audit
 import { FrameWatch } from "@/lib/audit/midiInputCellRunner";
 import { MidiLoopbackSender, pickIacPorts } from "@/lib/audit/midiLoopback";
 import { pickAudioDevice } from "@/lib/audit/combinedDevices";
-import type { InputLatencyState } from "@/lib/audit/combinedClicks";
+import { inputLatencySecondsFor, type InputLatencyState } from "@/lib/audit/combinedClicks";
 import { measureMicRoundTrip, type MicRoundTrip } from "@/lib/audit/combinedCalibration";
 import { classifyCombinedCell, expectedPartsApartMs, type CombinedContext, type CombinedRepeatInput } from "@/lib/audit/combinedVerdict";
 import {
@@ -211,7 +211,7 @@ const emptyFigures = {
 function errorRow(scenario: MidiScenario, state: InputLatencyState, bpm: number, repeat: number, detail: string, mic: MicRoundTrip): CombinedRow {
   return {
     ...emptyFigures, scenario, state, bpm, repeat, status: "error", detail, midi: null, midiNotes: [], pairsDetail: [],
-    micRoundTripMs: mic.roundTripMs, micRoundTripSpreadMs: mic.roundTripSpreadMs, micInputPartMs: mic.inputPartMs, inputLatencyAppliedMs: null,
+    micRoundTripMs: mic.roundTripMs, micRoundTripSpreadMs: mic.roundTripSpreadMs, micOutputLatencyMs: mic.outputLatencyMs, micInputPartMs: mic.inputPartMs, inputLatencyAppliedMs: null,
     outputLatencyMs: null, compensationLatencyMs: null, heardLagMs: null, frameIntervalMs: null, frameGapMaxMs: null, sampleRate: null,
     anchorContextTime: null, originPpqn: null, takeRegionStartSec: null, waveformOffsetSec: null, cleanupWarning: null,
   };
@@ -220,7 +220,7 @@ function errorRow(scenario: MidiScenario, state: InputLatencyState, bpm: number,
 function resultRow(scenario: MidiScenario, state: InputLatencyState, bpm: number, repeat: number, r: CombinedRepeatResult, mic: MicRoundTrip, sampleRate: number): CombinedRow {
   return {
     ...r.figures, scenario, state, bpm, repeat, status: "pending", detail: null, midi: r.midi.figures, midiNotes: r.midi.notes, pairsDetail: r.pairs,
-    micRoundTripMs: mic.roundTripMs, micRoundTripSpreadMs: mic.roundTripSpreadMs, micInputPartMs: mic.inputPartMs, inputLatencyAppliedMs: r.inputLatencyAppliedMs,
+    micRoundTripMs: mic.roundTripMs, micRoundTripSpreadMs: mic.roundTripSpreadMs, micOutputLatencyMs: mic.outputLatencyMs, micInputPartMs: mic.inputPartMs, inputLatencyAppliedMs: r.inputLatencyAppliedMs,
     outputLatencyMs: r.midi.outputLatencyMs, compensationLatencyMs: r.midi.compensationLatencyMs, heardLagMs: r.midi.heardLagMs,
     frameIntervalMs: r.midi.frameIntervalMs, frameGapMaxMs: r.midi.frameGapMaxMs, sampleRate,
     anchorContextTime: r.midi.anchor.contextTime, originPpqn: r.midi.originPpqn, takeRegionStartSec: r.takeRegionStartSec, waveformOffsetSec: r.waveformOffsetSec,
@@ -357,7 +357,7 @@ function Harness() {
     const ctx: CombinedContext = {
       outputLatencyMs: last.outputLatencyMs as number, compensationLatencyMs: last.compensationLatencyMs ?? 0, frameIntervalMs: last.frameIntervalMs as number,
       sampleRate: last.sampleRate as number, state, micRoundTripMs: last.micRoundTripMs as number, micInputPartMs: last.micInputPartMs as number,
-      inputLatencyAppliedMs: state === "calibrated" ? (last.micInputPartMs as number) : 0,
+      inputLatencyAppliedMs: inputLatencySecondsFor(state, last.micInputPartMs as number) * 1000,
     };
     return expectedPartsApartMs(ctx).toFixed(1);
   };
@@ -449,11 +449,11 @@ function Harness() {
 ?audible=1            hear the synth (the metronome is off in every scenario; the count-in forces it on, so that run sets its gain to a finite −120 dB floor and restores it)
 Calibration           three 6 kHz clicks out of the speakers before the first repeat, measured through the Tape capture's own node in the worklet's
                       own frame count (no worklet clock read); written on every row. Keep the room quiet and the window uncovered.
-Prediction            partsApartMs ≈ 2 × (output + compensation latency) − (frame − quantum) − (input part − applied):
-                      about −8 ms uncalibrated (the audio lands later than the key), about +32 ms calibrated, at 60 Hz with 23 ms output latency and a 41 ms input part.
+Prediction            partsApartMs ≈ 2 × (output + compensation latency) − (frame − quantum) − (round trip − this repeat's output latency − applied):
+                      about −9 ms uncalibrated (the audio lands later than the key), about +32 ms calibrated, at 60 Hz with 23 ms output latency and a 41 ms input part.
 This machine          default ${predict("default")} ms, calibrated ${predict("calibrated")} ms (from the latest row's figures)
 Verdict               together = |median| ≤ a quantum and max dev ≤ a frame + a quantum; matches-known-defect = the two recorders' known shapes from the row's own figures;
-                      a default-state audio median that disagrees with the calibration names the microphone path, not the SDK.
+                      an audio median that disagrees with the calibration, in either state, names the microphone path, not the SDK.
 Click "Run audit" with a real click — it asks for the microphone, MIDI access and resumes the AudioContext.`}
             </pre>
           </Card>

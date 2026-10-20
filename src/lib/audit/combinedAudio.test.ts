@@ -42,7 +42,35 @@ describe("matchClicks", () => {
   });
 });
 
+describe("matchClicks at other tempi and without an anchor", () => {
+  it.each([90, 140])("matches a 64 ms late pattern at %i bpm", (bpm) => {
+    const clicks = pattern.map((n) => n.onPpqn + late(64, bpm));
+    const m = matchClicks(pattern, clicks, bpm);
+    expect(m.pairs.length).toBe(48);
+    expect(m.pairs.every((p) => Math.abs(p.audioErrorMs - 64) < 1e-6)).toBe(true);
+  });
+  it("does not match the 1/32 bar at all when no eighth click gave an anchor", () => {
+    const clicks = pattern.filter((n) => n.tag === "thirtysecond").map((n) => n.onPpqn + late(64));
+    const m = matchClicks(pattern, clicks, 120);
+    expect(m.anchorOffsetMs).toBeNull();
+    expect(m.pairs).toEqual([]);
+    expect(m.clicksMissing.length).toBe(48);
+    expect(m.clicksExtraPpqn.length).toBe(32);
+  });
+});
+
 describe("measureCombined", () => {
+  it("measures the spreads around the medians, not around zero", () => {
+    const clicks = pattern.map((n) => n.onPpqn + late(40 + (n.index % 5) - 2));
+    const m = matchClicks(pattern, clicks, 120);
+    const rows = pattern.map((n) => ({ index: n.index, outcome: "matched", recordedPpqn: n.onPpqn + late(32 + (n.index % 3)) } as never));
+    const { figures } = measureCombined(m, rows, 120, 0);
+    expect(figures.audioMaxAbsDevMs).toBeCloseTo(2, 6);
+    expect(figures.partsApartMaxAbsDevMs).toBeGreaterThan(2.5);
+    expect(figures.partsApartMaxAbsDevMs).toBeLessThan(4.5);
+    expect(figures.partsApartP5P95Ms).toBeGreaterThan(4);
+    expect(figures.partsApartP5P95Ms).toBeLessThan(7);
+  });
   it("pairs a matched click with a matched MIDI row and reports midi minus audio", () => {
     const clicks = pattern.map((n) => n.onPpqn + late(40));
     const m = matchClicks(pattern, clicks, 120);

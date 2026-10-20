@@ -115,7 +115,7 @@ export async function runCombinedRepeat(options: CombinedRepeatOptions): Promise
       metronome: { enabled: false, gainDb: scenario === "countin-start" ? METRONOME_SILENT_DB : undefined },
       onScheduled: (context) => {
         scheduleCtx = context;
-        player = playClicks(audioContext, audioContext.destination, clickContextTimes(context.pattern, context.anchor, bpm));
+        player = playClicks(audioContext, audioContext.destination, clickContextTimes(context.pattern, context.anchor, context.bpm));
       },
       beforeStop: () => {
         const region = audioRegionsOf(tapeAdapter)[0];

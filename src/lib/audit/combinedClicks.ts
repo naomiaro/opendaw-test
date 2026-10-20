@@ -57,6 +57,9 @@ export function renderClickTrain(schedule: readonly ClickSchedule[], sampleRate:
 export function playClicks(audioContext: BaseAudioContext, destination: AudioNode, schedule: readonly ClickSchedule[]): ClickPlayer {
   const { startSec, samples } = renderClickTrain(schedule, audioContext.sampleRate);
   if (samples.length === 0) return { cancel: () => undefined };
+  if (startSec <= audioContext.currentTime) {
+    throw new Error(`click train starts ${(audioContext.currentTime - startSec).toFixed(3)} s in the past (context ${audioContext.currentTime.toFixed(3)})`);
+  }
   const buffer = audioContext.createBuffer(1, samples.length, audioContext.sampleRate);
   buffer.copyToChannel(samples, 0);
   const source = audioContext.createBufferSource();

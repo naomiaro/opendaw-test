@@ -23,6 +23,8 @@ export interface CombinedRow extends CombinedFigures {
   pairsDetail: CombinedPair[];
   micRoundTripMs: number | null;
   micRoundTripSpreadMs: number | null;
+  /** The output latency the calibration subtracted; the repeat's own is `outputLatencyMs` (the two can differ). */
+  micOutputLatencyMs: number | null;
   micInputPartMs: number | null;
   inputLatencyAppliedMs: number | null;
   outputLatencyMs: number | null;
