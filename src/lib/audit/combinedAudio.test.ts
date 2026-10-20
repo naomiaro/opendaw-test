@@ -28,6 +28,12 @@ describe("matchClicks", () => {
     expect(m.clicksMissing).toEqual([20]);
     expect(m.pairs.find((p) => p.index === 21)!.audioErrorMs).toBeCloseTo(40, 6);
   });
+  it("does not let a burst between the grid and a late click steal an eighth's pair", () => {
+    const clicks = [...pattern.map((n) => n.onPpqn + late(64)), pattern[5].onPpqn + 30]; // the burst 16 ms after the grid, the click 64 ms
+    const m = matchClicks(pattern, clicks, 120);
+    expect(m.pairs.find((p) => p.index === 5)!.audioErrorMs).toBeCloseTo(64, 6);
+    expect(m.clicksExtraPpqn).toEqual([pattern[5].onPpqn + 30]);
+  });
   it("counts a noise burst as extra and never pairs it", () => {
     const clicks = [...pattern.map((n) => n.onPpqn + late(40)), pattern[5].onPpqn + late(40) + 200];
     const m = matchClicks(pattern, clicks, 120);

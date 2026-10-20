@@ -16,13 +16,21 @@ export type CombinedStatus = "together" | "matches-known-defect" | "investigate"
 
 export interface CombinedContext extends BandContext {
   state: InputLatencyState;
+  /** The run's calibration. */
+  micRoundTripMs: number;
   micInputPartMs: number;
   inputLatencyAppliedMs: number;
 }
 
+/** Where the SDK should land the sound: the round trip less the output latency of THIS repeat (what the audio
+ *  recorder subtracts) less the field; an output-latency drift since the calibration therefore cancels. */
+export function expectedAudioMs(ctx: CombinedContext): number {
+  return ctx.micRoundTripMs - ctx.outputLatencyMs - ctx.inputLatencyAppliedMs;
+}
+
 /** Where the key lands relative to the sound on this machine, by the two recorders' rules. */
 export function expectedPartsApartMs(ctx: CombinedContext): number {
-  return expectedLateMedianMs(ctx) - (ctx.micInputPartMs - ctx.inputLatencyAppliedMs);
+  return expectedLateMedianMs(ctx) - expectedAudioMs(ctx);
 }
 
 export interface CombinedRepeatInput {
@@ -53,28 +61,31 @@ export function classifyCombinedCell(
   const medians = repeats.map((r) => r.combined.partsApartMedianMs as number);
   const devs = repeats.map((r) => r.combined.partsApartMaxAbsDevMs as number);
   const contextless = repeats.findIndex((r) => r.context === null);
-  const jitterBound = (r: CombinedRepeatInput): number | null => (r.context === null ? null : clampJitterBoundMs(r.context));
-  const quantum = (r: CombinedRepeatInput): number | null => (r.context === null ? null : quantumMs(r.context.sampleRate));
-  if (contextless < 0 && repeats.every((r, i) => Math.abs(medians[i]) <= (quantum(r) as number) && devs[i] <= (jitterBound(r) as number))) {
-    return { status: "together", detail: `parts within a quantum: medians ${medians.map(fmt).join(", ")} ms` };
-  }
   if (contextless >= 0) {
     return { status: "investigate", detail: `no band context on repeat ${contextless + 1} (no frame interval or latency figure)` };
   }
+  // Attribution first, in both states: an audio side off the run's own calibration by more than the band's
+  // margin would break the band on its own, and that is the microphone path (or a drifted calibration), not the SDK.
   for (const [i, r] of repeats.entries()) {
     const ctx = r.context as CombinedContext;
-    if (ctx.state === "default" && r.combined.audioMedianMs !== null
-      && Math.abs(r.combined.audioMedianMs - ctx.micInputPartMs) > clampJitterBoundMs(ctx)) {
+    const expectedAudio = expectedAudioMs(ctx);
+    if (r.combined.audioMedianMs !== null && Math.abs(r.combined.audioMedianMs - expectedAudio) > LATE_MEDIAN_MARGIN_MS) {
       return {
         status: "investigate",
-        detail: `audio median ${fmt(r.combined.audioMedianMs)} ms disagrees with the calibration's input part ${fmt(ctx.micInputPartMs)} ms`
+        detail: `audio median ${fmt(r.combined.audioMedianMs)} ms disagrees with the calibration (expected ${fmt(expectedAudio)} ms from `
+          + `round trip ${fmt(ctx.micRoundTripMs)} − output latency ${fmt(ctx.outputLatencyMs)} − applied ${fmt(ctx.inputLatencyAppliedMs)})`
           + ` on repeat ${i + 1} (the microphone path moved, not the SDK)`,
       };
     }
   }
+  const jitterBound = (r: CombinedRepeatInput): number => clampJitterBoundMs(r.context as CombinedContext);
+  const quantum = (r: CombinedRepeatInput): number => quantumMs((r.context as CombinedContext).sampleRate);
+  if (repeats.every((r, i) => Math.abs(medians[i]) <= quantum(r) && devs[i] <= jitterBound(r))) {
+    return { status: "together", detail: `parts within a quantum: medians ${medians.map(fmt).join(", ")} ms` };
+  }
   const expected = repeats.map((r) => expectedPartsApartMs(r.context as CombinedContext));
   const inBand = repeats.every((r, i) =>
-    Math.abs(medians[i] - expected[i]) <= LATE_MEDIAN_MARGIN_MS && devs[i] <= (jitterBound(r) as number));
+    Math.abs(medians[i] - expected[i]) <= LATE_MEDIAN_MARGIN_MS && devs[i] <= jitterBound(r));
   if (inBand) {
     return {
       status: "matches-known-defect",
@@ -82,7 +93,7 @@ export function classifyCombinedCell(
         + "(MIDI late by 2 × latency − a stale frame, audio late by the microphone latency the SDK was not told)",
     };
   }
-  const offender = repeats.findIndex((r, i) => Math.abs(medians[i] - expected[i]) > LATE_MEDIAN_MARGIN_MS || devs[i] > (jitterBound(r) as number));
+  const offender = repeats.findIndex((r, i) => Math.abs(medians[i] - expected[i]) > LATE_MEDIAN_MARGIN_MS || devs[i] > jitterBound(r));
   return {
     status: "investigate",
     detail: `partsApartMedianMs ${fmt(medians[offender])} (expected ${fmt(expected[offender])} ± ${LATE_MEDIAN_MARGIN_MS}), max dev ${fmt(devs[offender])} on repeat ${offender + 1}`,

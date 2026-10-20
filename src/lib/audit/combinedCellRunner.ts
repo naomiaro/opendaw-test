@@ -21,6 +21,9 @@ import { clickContextTimes, inputLatencySecondsFor, playClicks, type ClickPlayer
 import type { MicRoundTrip } from "./combinedCalibration";
 import { matchClicks, measureCombined, onsetsToTimelineSec, withinSpan, type CombinedFigures, type CombinedPair } from "./combinedAudio";
 
+/** Silent at any level, and valid JSON in the persisted preferences (−Infinity is not). */
+export const METRONOME_SILENT_DB = -120;
+
 export interface CombinedRepeatOptions {
   project: Project;
   audioContext: AudioContext;
@@ -108,7 +111,8 @@ export async function runCombinedRepeat(options: CombinedRepeatOptions): Promise
     midi = await runMidiCellRepeat({
       project, audioContext, loopback: options.loopback, audioUnitBox: options.midiUnitBox, scenario, bpm,
       repeat: options.repeat, onStage, token: options.token, frameWatch: options.frameWatch,
-      metronome: { enabled: false, gainDb: scenario === "countin-start" ? Number.NEGATIVE_INFINITY : undefined },
+      // A finite floor: −Infinity would serialise as null in the persisted preferences and void the metronome section on a crash.
+      metronome: { enabled: false, gainDb: scenario === "countin-start" ? METRONOME_SILENT_DB : undefined },
       onScheduled: (context) => {
         scheduleCtx = context;
         player = playClicks(audioContext, audioContext.destination, clickContextTimes(context.pattern, context.anchor, bpm));

@@ -57,12 +57,14 @@ another page left it non-zero.
 
 **Per repeat:** the MIDI sweep's figures for the keys; for the clicks, the Tape's take read
 through its loader, band-split, onsets placed on the timeline through the region position and
-waveform offset, matched to the pattern with the eighth bars as the anchor (half a 1/32 step
-is 62 ms at 120 bpm and an uncalibrated audio side can be 65 ms late, which would pair every
-1/32 click with the next note; the eighth clicks are matched first, their median offset is
-subtracted to match the 1/32 bar, every error is reported raw; a lost click stays lost, nothing
-is matched by order; onsets outside the pattern's span, with slack of 0.1 s before and 0.25 s
-after, are reported as `onsetsOutsideSpan`). Per pair, `partsApartMs` = where the key landed −
+waveform offset, matched to the pattern with the eighth bars as the anchor (a 1/32 step is
+62 ms at 120 bpm and an uncalibrated audio side reads 64 ms late, a whole step, which would
+pair every 1/32 click with the next note; the eighth clicks are matched first, their median
+offset becomes the anchor, the eighths are matched again around it so a stray onset nearer
+the raw grid cannot take a pair, and the 1/32 bar is matched around it; every error is
+reported raw; a lost click stays lost, nothing is matched by order; onsets outside the
+pattern's span, with slack of 0.1 s before and 0.25 s after, are reported as
+`onsetsOutsideSpan`). Per pair, `partsApartMs` = where the key landed −
 where the sound landed.
 
 **Verdict per cell:** `together` when every repeat has no lost or extra click, no MIDI
@@ -70,9 +72,11 @@ integrity failure, `|partsApartMedianMs|` within a render quantum and its larges
 within a frame plus a quantum. `matches-known-defect` when every repeat sits within ±5 ms of
 `expectedPartsApartMs = 2 × (outputLatency + compensation) − (frame − quantum) − (micInputPart −
 applied)`, the two recorders' known shapes computed from the row's own figures. Before the
-band, a `default`-state row whose audio median disagrees with the run's input part by more
-than a frame plus a quantum names the microphone path (the built-in path has sat at 64 ms on
-some runs and 88 ms on others), not the SDK. Else `investigate` naming the figure.
+band, in either state, a row whose audio median is more than 5 ms (the band's own margin)
+off `micRoundTrip − the repeat's own outputLatency − applied` names the microphone path
+(the built-in path has sat at 64 ms on some runs and 88 ms on others; an output-latency
+drift since the calibration cancels in that term), not the SDK. Else `investigate` naming
+the figure. The calibration is measured on EVERY run, a re-run included.
 
 ## Prediction (written before the first full run, 2026-10-20)
 
@@ -122,11 +126,16 @@ input part **64.35 ms**, floor −85 dBFS, peak −9 dBFS. Six minutes.
   on nominal and count-in (0.06 on one row): the sound lands on the heard beat. The key
   stays +32.8 ms late, so the parts sit **+32.8 ms apart**; janked-mid +35.7 ms with its
   audio at −2.65. Calibrating the microphone makes the two parts further apart, as the
-  model said: the audio recorder is right and the MIDI recorder is not.
-- **The prediction held** on every cell: expected −33.9 / +32.2 against measured −31.0 /
-  +32.8 (the 2–3 ms residual is the MIDI sweep's known +0…+2.3 ms above its formula plus the
-  audio side's quantum, below). 18 of 18 cells `matches-known-defect`; `together` is
-  unreachable on this release.
+  model said: the audio recorder is right and the MIDI recorder is not. (The 0.00 is a
+  consistency check as much as a measurement: the same detector, band split and
+  output-latency reading set the field and measure the take, so it shows the SDK applies
+  the field exactly; whether the speakers' own DSP adds a delay the clock pair does not
+  report is the cable-loopback follow-up's question.)
+- **The prediction held** on every cell: the run's own expected values (from its input part of
+  64.35 ms) are −32.1 uncalibrated and +32.2 calibrated, against measured −31.0 … −31.5 and
+  +32.8 (janked-mid +35.7 with its audio a quantum early, below): residuals of about 1 ms,
+  the MIDI sweep's known 0 … +2.3 ms above its formula. 18 of 18 cells
+  `matches-known-defect`; `together` is unreachable on this release.
 - **Jitter is all on the MIDI side.** The audio side's largest deviation from its median is
   0.05 … 0.06 ms on 17 rows (2.65 on one): the clicks land within a sample or two of each
   other. The parts-apart deviation, 6.8 … 9.9 ms, is the MIDI recorder's clamp jitter

@@ -1,11 +1,12 @@
 /**
  * The audio side of the combined MIDI + audio audit: clicks found in the Tape's take are
  * placed on the timeline, matched to the pattern's notes, and paired with the MIDI rows of
- * the same notes. Matching anchors on the eighth bars: in the 1/32 bar half a step is
- * 62 ms at 120 bpm and an uncalibrated audio side can be 65 ms late, which would pair every
- * click with the next note; so the eighth clicks are matched first, their median offset is
- * subtracted to match the 1/32 bar, and every error is reported raw. A lost click stays
- * lost: nothing is matched by order.
+ * the same notes. Matching anchors on the eighth bars: a 1/32 step is 62 ms at 120 bpm and
+ * an uncalibrated audio side reads about 64 ms late, a whole step, which would pair every
+ * 1/32 click with the next note; so the eighth clicks (a 250 ms step) are matched first,
+ * their median offset becomes the anchor, the eighths are matched again centred on it (so a
+ * noise burst nearer the raw grid cannot take a pair) and the 1/32 bar is matched around
+ * it; every error is reported raw. A lost click stays lost: nothing is matched by order.
  */
 import { PPQN } from "@opendaw/lib-dsp";
 import { BEAT_PPQN } from "./midiInputCalibration";
@@ -39,9 +40,9 @@ export interface ClickMatch {
 }
 
 export function matchClicks(pattern: readonly PatternNote[], clickPpqn: readonly number[], bpm: number): ClickMatch {
-  const unused = new Set<number>(clickPpqn.map((_, i) => i));
-  const pairs: ClickPair[] = [];
-  const clicksMissing: number[] = [];
+  let unused = new Set<number>(clickPpqn.map((_, i) => i));
+  let pairs: ClickPair[] = [];
+  let clicksMissing: number[] = [];
   const take = (note: PatternNote, centrePpqn: number, windowPpqn: number): boolean => {
     let best: number | null = null;
     for (const i of unused) {
@@ -60,6 +61,11 @@ export function matchClicks(pattern: readonly PatternNote[], clickPpqn: readonly
   for (const note of pattern) if (note.tag === "eighth") take(note, note.onPpqn, BEAT_PPQN / 4);
   const anchorOffsetMs = median(pairs.map((p) => p.audioErrorMs));
   const anchorPpqn = anchorOffsetMs === null ? 0 : PPQN.secondsToPulses(anchorOffsetMs / 1000, bpm);
+  // Second pass: with the anchor known, the eighths are matched around it, so a stray onset nearer the raw grid loses.
+  unused = new Set<number>(clickPpqn.map((_, i) => i));
+  pairs = [];
+  clicksMissing = [];
+  for (const note of pattern) if (note.tag === "eighth") take(note, note.onPpqn + anchorPpqn, BEAT_PPQN / 4);
   for (const note of pattern) if (note.tag === "thirtysecond") take(note, note.onPpqn + anchorPpqn, BEAT_PPQN / 16);
   pairs.sort((a, b) => a.index - b.index);
   clicksMissing.sort((a, b) => a - b);

@@ -286,9 +286,10 @@ MIDI capture and the clicks through a Tape pinned to the microphone, and reports
   master leaves it in the microphone's take. The count-in forces it on, so `countin-start`
   sets `settings.metronome.gain = -Infinity` and the MIDI runner restores both the flag and
   the gain it found (preferences persist).
-- **Matching** anchors on the eighth bars (half a 1/32 step is 62 ms; an uncalibrated audio
-  side reads 64 ms late), then matches the 1/32 bar with that offset subtracted and reports
-  every error raw; a lost click stays lost.
+- **Matching** anchors on the eighth bars (a 1/32 step is 62 ms at 120 bpm; an uncalibrated
+  audio side reads 64 ms late, a whole step), re-matches the eighths around the anchor so a
+  stray onset cannot take a pair, then matches the 1/32 bar around it and reports every error
+  raw; a lost click stays lost.
 - **What it measured:** uncalibrated, the key lands 31 ms BEFORE the sound (the audio late by
   exactly the input part); calibrated, the sound is on the heard beat to 0.00 ms and the key
   33 ms late. The audio recorder is right; the jitter (7–10 ms) is all the MIDI recorder's.
