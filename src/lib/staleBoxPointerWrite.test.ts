@@ -111,6 +111,28 @@ describe("a box instance replaced by undo", () => {
     expect(targetOf(live)).toBe("none");
   });
 
+  it("a stale write leaves the undo history alone", () => {
+    const { editing, stale, audioFile } = staleAndLive();
+    // after the fixture the delete sits on the redo stack and nothing on the undo stack
+    expect(editing.canUndo()).toBe(false);
+    expect(editing.canRedo()).toBe(true);
+    editing.modify(() => stale.file.refer(audioFile));
+    // an unguarded write would record a step for the live address and splice the redo away
+    expect(editing.canUndo()).toBe(false);
+    expect(editing.canRedo()).toBe(true);
+  });
+
+  it("stale refer then stale defer: the disconnect path emits nothing either", () => {
+    const { boxGraph, editing, stale, live, other, audioFile, updates } = staleAndLive();
+    editing.modify(() => stale.file.refer(audioFile));
+    editing.modify(() => stale.file.defer());
+    expect(targetOf(stale)).toBe("none");
+    expect(targetOf(live)).toBe("none");
+    expect(updates).toEqual([]);
+    expect(boxGraph.edges().incomingEdgesOf(audioFile)).toEqual([other.file]);
+    expect(audioFile.pointerHub.size()).toBe(1);
+  });
+
   it("the SDK's sync mirror sees nothing of the stale write, so the graphs stay in checksum", async () => {
     const { editing, stale, live, boxGraph, audioFile } = staleAndLive();
     const mirror = new BoxGraph<BoxIO.TypeMap>(Option.wrap(BoxIO.create));
@@ -174,7 +196,8 @@ describe("the WASM engine's mirror (apply_updates on the installed engine.wasm)"
       expect(applied).toEqual([0]);
       expect(engineChecksum()).toEqual(boxGraph.checksum());
       editing.modify(() => stale.file.refer(audioFile));
-      expect(applied.every((code) => code === 0)).toBe(true); // whatever crossed, the engine accepted
+      // the sync source sends a batch per transaction, empty here; the checksum below is the proof
+      expect(applied.every((code) => code === 0)).toBe(true);
       expect(targetOf(live)).toBe("none");
       expect(engineChecksum()).toEqual(boxGraph.checksum());
     } finally {

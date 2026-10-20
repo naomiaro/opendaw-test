@@ -125,8 +125,8 @@ Covered in detail at [Ch. 11 — Werkstatt](./11-effects.md#werkstatt). Summary 
 - **No `noteOn`/`noteOff`.** Audio in, audio out.
 - **Sample data:** `@sample` is wired — `this.samples.<name>` returns the loaded audio data, as in Apparat.
 - **Sidechains:** `// @sidechain <name>` declares a named sidechain input; the script reads `this.sidechains.<name>` as `[left, right]` buffers (silence while nothing is connected). Reading a name no line declares stops the device with a named error. Apparat accepts the same declaration.
-- **Latency:** a script that delays its output declares it with `// @latency <ms>` (or sets `this.latency = frames` at runtime); the engine's delay compensation aligns the rest of the mix to it (see [Ch. 11 — Werkstatt](./11-effects.md#werkstatt)).
-- **A failing script renders silence:** a thrown `process()` (or a missing processor) mutes the device's output for that block instead of leaving the previous block in the buffer.
+- **Latency:** a script that delays its output declares it with `// @latency <ms>` (a positive `this.latency = frames` at runtime overrides it); the engine's delay compensation aligns the rest of the mix to it (see [Ch. 11 — Werkstatt](./11-effects.md#werkstatt)).
+- **A failing script renders silence:** a thrown `process()` mutes the device until the script is compiled again, and a script that has not loaded yet mutes each block until it does, instead of leaving the previous block in the buffer.
 
 Practical Werkstatt use cases: custom filters, wave-shapers, distortion, granular processors, anything where you can express the per-sample (or per-block) transformation in code.
 

@@ -7,7 +7,7 @@ matters for this repo:
 1. **Plug-in delay compensation (#482, filed from this repo)** — devices report their latency
    (Compressor and Maximizer look-ahead, Fold oversampling, Autotune's PSOLA buffer, a WebCLAP
    plug-in through `clap.latency`, a Werkstatt script through `// @latency <ms>` or
-   `this.latency`), and every point where signals meet delays its earlier inputs to the latest
+   `this.latency` when positive), and every point where signals meet delays its earlier inputs to the latest
    one: a bus or the master, an aux send into a return, a composite sum, an effects stack's dry
    path, a device's sidechain inputs. The metronome, take placement (`RecordAudio`,
    `RecordMidi`), MIDI out, mixdowns and stems follow the total latency; automation and
@@ -23,8 +23,8 @@ matters for this repo:
    the engine state carries `recordingStopTime` (the context time of the first frame the
    stop excludes, set with `isRecording` falling), `RecordAudio` limits the take to that time
    netted like the start (`+ outputLatency + inputLatency`, plus the compensation latency),
-   keeps the source connected until the tail has arrived, and falls back to the delivered
-   frames if it has not after the tail plus one second. New surface: `engine.recordingStop:
+   keeps the source connected until the tail has arrived, and trims the take to what did
+   arrive if the tail is still incomplete after the shortfall plus one second. New surface: `engine.recordingStop:
    Option<{contextTime}>`, `EngineState.recordingStopTime` (double, NaN while recording or
    never stopped). Sweep readings on the release are below.
 3. **A pointer write through a box instance that undo replaced no longer reaches the live
@@ -42,7 +42,9 @@ matters for this repo:
    (silence while unconnected). `ScriptDeclaration.parseSidechains`,
    `ScriptCompiler.reconcileSidechainBoxes`, `AudioUnitFreeze.hasSidechainDependents` sees
    them (freezing a tapped unit is refused). **A failing script now renders silence** — the
-   bridge used to leave the output untouched on an error, so the last quantum looped.
+   bridge used to leave the output untouched on an error, so the last quantum looped; a thrown
+   `process()` keeps the device muted until the next compile, a script not yet loaded mutes
+   each block until it is.
 5. **A Werkstatt script receives its `@sample` files as `this.samples`** (#353), like Apparat
    — the device's `observe_sample_collection_field` (12) and `sample_changed` are wired, the
    bridge re-resolves the slots every block for both kinds. The repo's docs said the data was
@@ -139,8 +141,8 @@ bit-identical").
   `id`, `label`, `owner` uuid, `latency`, `arrival`; `edges` with `data` false for an
   ordering-only sidechain edge and `delay`; `sampleRate`, `maxCompensation`), on
   `EngineFacade` and `EngineWorklet` (the offline worker answers an empty graph).
-  `EngineState.compensationLatency: Schema.float`. `EngineWorklet`'s output-latency hint to
-  `MonitoringRouter` adds it. The studio shows the total as "PDC" in its footer and draws the
+  `EngineState.compensationLatency: Schema.float`. `EngineWorklet` adds it to the output
+  latency its `MIDIReceiver` times engine MIDI out by. The studio shows the total as "PDC" in its footer and draws the
   graph on a debug Signal Graph page (app code).
 - **For this repo.** The effects demos that enable look-ahead (`useDynamicEffect` sets
   `lookahead` on the Compressor and Maximizer) now play aligned with the other tracks; the
@@ -305,8 +307,11 @@ hook).
   the file said they would (no ghost edge: `incomingEdgesOf` 1, `pointerHub.size()` 1,
   `updates` empty; the mandatory-edge control throws again after the stale write; the sync
   mirror's checksum request resolves; the engine's checksum equals the source's). Inverted
-  into regression tests asserting the fixed behaviour; the note, `debug/README.md` and the
-  memory say fixed.
+  into regression tests asserting the fixed behaviour, plus two that pin the editing side (a
+  stale write leaves the undo and redo stacks alone; a stale refer-then-defer emits nothing on
+  the disconnect path either). Proven against the installed `lib-box` with the guard line
+  disabled: 7 of the 8 tests fail, only the scalar control passes. The note, `debug/README.md`
+  and the memory say fixed.
 - **#482 closed out** — `plugin-delay-compensation-debug-demo.html` on the release, one
   click: every row `onset 12000 (250.00 ms), peak 0.500, lag 0 frames (0.00 ms), score
   1.000` (the two look-ahead-on rows read `lag 240 frames (5.00 ms)` on 0.0.175). The
@@ -351,8 +356,8 @@ hook).
   `debug/2026-10-02-loudness-meter/note.md` under "SDK 0.0.176"). The #459 page
   (`param-write-enabled-flip-debug-demo.html`) still reads **FIXED** (step 2 tail 2100 ms,
   step 3 400 ms, every step ok).
-- **Verification**: `npm run typecheck` 0 errors, 1071 of 1071 vitest tests (the five inverted
-  #480 tests included), `npm run build`, `npm ci` on the regenerated lockfile.
+- **Verification**: `npm run typecheck` 0 errors, 1073 of 1073 vitest tests (the five inverted
+  #480 tests and two added ones included), `npm run build`, `npm ci` on the regenerated lockfile.
 - API claims verified against the installed tarballs (`node_modules/@opendaw/*/dist`, diffed
   against the installed 0.0.175 sub-packages): `OPENDAW_SDK_VERSION = "0.0.176"`; the
   `isAttached` guard line in `lib-box/dist/graph.js`; `recordingStopTime` and

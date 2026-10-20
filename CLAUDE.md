@@ -690,11 +690,10 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   runs (expect every row at 0 / 0 quanta), then
   `node scripts/audit/recording-alignment/one-quantum-events.ts` for the per-release tally.
 - A recording-alignment cell that reads `investigate` on a TAIL deficit is a stop-path
-  finding, not placement (the register's closed candidate 2, openDAW#479, was one: the take
-  ended at the chunks received when the stop was observed; the stop is now stamped by the
-  engine and netted, so `tailMissingMs` reads 0 on every row and a deficit is NEW): judge
-  placement on the netted medians in the envelope's `cellVerdicts`; the on-page status column
-  marks every row of such a cell. Reading recipe: `src/demos/recording/CLAUDE.md`.
+  finding, not placement: the stop is stamped by the engine and netted, so `tailMissingMs`
+  reads 0 on every row and a deficit is NEW (the closed one is openDAW#479). Judge placement
+  on the netted medians in the envelope's `cellVerdicts`; the on-page status column marks
+  every row of such a cell. Reading recipe: `src/demos/recording/CLAUDE.md`.
 - Tests marked "flips when fixed" assert a filed defect AS MEASURED. After an SDK upgrade, one of
   them failing is the fix landing: invert the assertion so the file pins the fixed behaviour, note
   the release in the issue's debug note, and close the loop upstream (done once for

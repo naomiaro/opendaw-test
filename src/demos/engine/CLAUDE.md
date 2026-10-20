@@ -79,9 +79,11 @@ return, composite sum, effects-stack dry path, sidechain) to the latest one — 
 longer shifts its track against the mix. `engine.compensationLatency` (seconds) is the total
 the heard output lags the timeline; the metronome, take placement and MIDI out follow it,
 automation behind a latent device reads where its audio was rendered. Offline renders settle
-and trim it, so an export starts aligned. `engine.querySignalGraph()` returns the processor
-graph with every latency and compensation delay (nodes: `id`, `label`, `owner`, `latency`,
-`arrival`; edges: `data`, `delay`). Caps: 0.1 s per stage, a change crossfades over 10 ms.
+and trim it, so an export starts aligned. `engine.querySignalGraph()` (live engine only; the
+offline worker answers an empty graph) returns the processor graph with every latency and
+compensation delay (`sampleRate`, `maxCompensation`; nodes: `id`, `label`, `owner`, `latency`,
+`arrival`; edges: `source`, `target`, `data`, `delay`). Caps: 0.1 s per stage (a path that
+needs more stays unaligned and is reported), a change crossfades over 10 ms.
 Regression page: `plugin-delay-compensation-debug-demo.html` (every row lag 0).
 
 ## Performance reporting is itself a cost

@@ -27,9 +27,10 @@ Three new scriptable device types powered by `ScriptCompiler`:
 All use `// @param` and `// @sample` comment declarations in code for parameters/samples (Werkstatt
 reads `this.samples.<name>` like Apparat). Werkstatt and Apparat also take `// @sidechain <name>`
 (a `WerkstattSidechainBox` per name under the device's `side-chains` field; the script reads
-`this.sidechains.<name>` as `[L, R]`) and `// @latency <ms>` (the engine's delay compensation
-aligns the mix to it; `this.latency = frames` overrides at runtime). A script that throws in
-`process()` renders silence for that block, not the previous block again.
+`this.sidechains.<name>` as `[L, R]`; box accessor `sideChains`) and `// @latency <ms>` (the
+engine's delay compensation aligns the mix to it; a positive `this.latency = frames` overrides
+it at runtime). A script that throws in `process()` is muted until it is compiled again, not
+left looping its previous block.
 Box types: `ApparatDeviceBox`, `WerkstattDeviceBox`, `SpielwerkDeviceBox`.
 SDK 0.0.132 adds `// @label <name>` (auto-sets device label) and `// @group <name> [color]` (groups params visually).
 `ScriptParamDeclaration` was renamed to `ScriptDeclaration` in 0.0.132.

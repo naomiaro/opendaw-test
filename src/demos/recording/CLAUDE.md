@@ -405,16 +405,15 @@ sample-rate/quantum-alignment sweep in root CLAUDE.md's Build & Verification.
 the end of the saved buffer. The SDK's stop ends the take at the engine's stop stamp
 (`engine.recordingStop.contextTime`, the end of the last quantum rendered while recording)
 netted by the same output and input latencies as the start, and `RecordAudio` keeps the source
-connected until that many frames have arrived (falling back to the delivered frames after the
-shortfall plus one second), so input captured before the stop request is in the take and
+connected until that many frames have arrived (a tail still incomplete after the shortfall plus
+one second trims the take to what arrived), so input captured before the stop request is in the take and
 `tailMissingMs` reads 0 on every row; the post-stop margin
 (`finalizeNumberOfFramesAtLimit − finalizeNumberOfFramesAtStop`) is the netted input delay
 plus the stop's own lead, not "whatever had crossed". A tail deficit on a release is therefore a
-NEW finding to characterize, not the register's closed stop-path finding (issue candidate 2,
-filed as openDAW#479 when a release that observed the stop a frame sooner exercised it — on
-that build `tailMissingMs = loopback hop − margin` on every deficit row, and the per-release
-margin table in `debug/2026-09-02-recording-start-alignment/note.md` reads it). Judge
-placement on the netted medians and the head deficit, as before.
+NEW finding to characterize, not the register's closed stop-path finding (issue candidate 2 /
+openDAW#479; its per-release margin table is in
+`debug/2026-09-02-recording-start-alignment/note.md`). Judge placement on the netted medians
+and the head deficit, as before.
 
 **Reading a multi-mic verdict.** On a build whose profile nets the loopback delay, a
 multi-mic cell is `aligned` when (1) each tape classifies clean on its own, (2) the
