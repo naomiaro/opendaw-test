@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { BAR_PPQN } from "./auditExpectations";
 import { buildPattern } from "./midiInputPattern";
-import { cellLabel, frameGapSummary, scheduleFor, sentNotesFrom, waitForRecordingStart } from "./midiInputCellRunner";
+import { cellLabel, frameGapSummary, scheduleContext, scheduleFor, sentNotesFrom, waitForRecordingStart } from "./midiInputCellRunner";
 
 const anchor = { contextTime: 12.0, position: 0 };
 const pair = { contextTime: 10.0, performanceTime: 5000 };
@@ -78,5 +78,15 @@ describe("waitForRecordingStart", () => {
     const engine = fakeEngine(null);
     await expect(waitForRecordingStart(engine.project, 12, 20)).rejects.toThrow(/no fresh recordingStart/);
     expect(engine.listeners()).toBe(0);
+  });
+});
+
+describe("scheduleContext", () => {
+  it("gives the render context time and the performance time of a position from one anchor and pair", () => {
+    const pattern = buildPattern({ originPpqn: BAR_PPQN, loopEndPpqn: null });
+    const c = scheduleContext(pattern, scheduleFor(pattern, anchor, pair, 120), anchor, pair, 120, BAR_PPQN);
+    expect(c.contextSecAt(BAR_PPQN)).toBeCloseTo(14, 9);
+    expect(c.perfAt(BAR_PPQN)).toBeCloseTo(9000, 6);
+    expect(c.originPpqn).toBe(BAR_PPQN);
   });
 });
