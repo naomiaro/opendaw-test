@@ -243,7 +243,9 @@ in the project at 60 Hz. The combined MIDI + audio harness
 ([`../2026-10-20-midi-audio-combined/note.md`](../2026-10-20-midi-audio-combined/note.md))
 records the two together through the laptop's speakers and microphone; its first full run
 (6 of 6 cells) read the key 31 ms BEFORE the sound with the microphone uncalibrated and
-33 ms AFTER it calibrated, the audio then on the heard beat to 0.00 ms. The user's decision (2026-10-20) is that no
+33 ms AFTER it calibrated, the audio then on its calibrated position to 0.00 ms (a
+consistency check through one chain; the absolute placement needs the cable-loopback
+reference that register lists). The user's decision (2026-10-20) is that no
 issue goes upstream before that harness and the MIDI-effects harness have run.
 
 ### Loop-wrap, five repeats

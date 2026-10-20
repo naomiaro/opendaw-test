@@ -159,13 +159,24 @@ to the summary.
   window uncovered and the figures unaffected; every other row 26 … 166 ms (the 150 ms jank
   rows read 152 … 166). Not attributed; the row is clean and the next one normal.
 
-### The headline, measured
+### The headline, measured — and what it does not say
 
 On this machine, a player who records a keyboard part and a microphone part together on
 this SDK gets them about 31 ms apart with the microphone uncalibrated and about 33 ms apart
-calibrated, in opposite directions; the audio part is placed right, the MIDI part is placed
-`2 × outputLatency − (frame − quantum)` late. This is the measurement the MIDI register's
-"Against the audio recorder" section called inferred; it is inferred no longer.
+calibrated, in opposite directions. That figure is the harness's own: key and click are
+scheduled from the same clock pair, so a constant the chain hides shifts both equally and
+cancels in `partsApartMs`. The MIDI part is placed `2 × outputLatency − (frame − quantum)`
+late relative to the audio part. What the run shows about the audio recorder on its own is
+narrower: it lands a sound late by exactly the microphone latency it was not told (64.35 ms
+to the hundredth) and on the calibrated value when it was (0.00 ms) — it applies the
+calibration exactly. Whether that calibrated position is acoustically the heard beat, rather
+than the heard beat plus a constant the speakers' own processing hides from the clock pair,
+is not something this chain can tell: the calibration and the measurement share the speaker,
+the microphone, the click and the clock, so such a constant reads as 0.00 as well. A
+host-side calibration routine built through the same chain inherits the same blind spot. The
+cable loopback through an interface (follow-ups) is the independent reference that would
+confirm the absolute figure; until then the audio recorder's absolute placement stays the
+audio campaign's inferred claim, now consistent with a measured relative one.
 
 ### A consequence for the order of fixes
 

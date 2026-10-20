@@ -293,8 +293,11 @@ MIDI capture and the clicks through a Tape pinned to the microphone, and reports
   stray onset cannot take a pair, then matches the 1/32 bar around it and reports every error
   raw; a lost click stays lost.
 - **What it measured:** uncalibrated, the key lands 31 ms BEFORE the sound (the audio late by
-  exactly the input part); calibrated, the sound is on the heard beat to 0.00 ms and the key
-  33 ms late. The audio recorder is right; the jitter (7–10 ms) is all the MIDI recorder's.
+  exactly the input part); calibrated, the sound is on its calibrated position to 0.00 ms and
+  the key 33 ms late. The parts-apart figure is safe against a constant the chain hides (key
+  and click share one clock pair); the audio side's 0.00 is a consistency check through one
+  chain, not an absolute truth (a cable loopback is that). The jitter (7–10 ms) is all the
+  MIDI recorder's.
 - `together` is the player's wish (within a quantum); every cell measured so far reads the
   band computed from the row's own figures.
 
