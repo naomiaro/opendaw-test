@@ -1,7 +1,9 @@
 # No plug-in delay compensation: a look-ahead device shifts its track by its latency
 
 Verified against `@opendaw/studio-sdk` 0.0.175 (WASM engine), Chrome, macOS, 2026-10-19.
-Filed as [openDAW#482](https://github.com/andremichelle/openDAW/issues/482).
+Filed as [openDAW#482](https://github.com/andremichelle/openDAW/issues/482). **Fixed in 0.0.176**
+(plug-in delay compensation, upstream `df8c72f90` + `1bfbdcb50` + `54ac2db89`), verified on the
+release 2026-10-20 — see Status.
 Repro page: [`plugin-delay-compensation-debug-demo.html`](../../plugin-delay-compensation-debug-demo.html)
 (unlisted; `src/demos/effects/plugin-delay-compensation-debug-demo.tsx`). Lag helper and its tests:
 `src/lib/audit/lagEstimate.ts`.
@@ -50,6 +52,14 @@ A delay-compensating engine would read 0 in every row.
 
 ## Status
 
-Open upstream as [openDAW#482](https://github.com/andremichelle/openDAW/issues/482) (body as filed:
-`drafts/posted-openDAW-482-plugin-delay-compensation.md`). The page is the regression check: the two
-look-ahead-on rows read 0 once the engine compensates.
+Filed as [openDAW#482](https://github.com/andremichelle/openDAW/issues/482) (body as filed:
+`drafts/posted-openDAW-482-plugin-delay-compensation.md`). **Fixed upstream in 0.0.176**, published
+2026-10-20: devices report their latency (`host_set_latency`; Compressor and Maximizer look-ahead,
+Fold oversampling, Autotune, WebCLAP `clap.latency`, Werkstatt `// @latency` / `this.latency`) and
+every junction delays its earlier inputs to the latest one (buses, aux returns, composite sums, an
+effects stack's dry path, sidechains), capped at 0.1 s per stage; the metronome, take placement,
+MIDI out, mixdowns and stems follow the total, automation behind a latent device reads where its
+audio was rendered. Measured on the release with this page, one click: every row `onset 12000
+(250.00 ms), peak 0.500, lag 0 frames (0.00 ms), score 1.000` — the two look-ahead-on rows read
++240 frames on 0.0.175. The page stays the regression check (expect lag 0 on every row).
+Details: `changelogs/sdk-0.0.175-to-0.0.176-changes.md`.

@@ -339,6 +339,84 @@ none in error. Every judged metric reads the 0.0.174 value to the hundredth; the
 | `kweight-16000` | pass | shortTerm −16.65 (−0.00) | I −18.46, LRA 9.60, peak −19.68 |
 | `kweight-20000` | pass | shortTerm −16.65 (−0.00) | I −18.46, LRA 9.60, peak −19.68 |
 
+### SDK 0.0.176, 48 kHz, 2026-10-20, Chrome 155 on macOS
+
+`loudness-audit-1792515622408.json`, run from the Playwright browser with a real click, the tab
+visible throughout. 28 rows, **28 pass**, none invalid, none in error. Every judged metric reads
+the 0.0.175 value to the hundredth (the release touches no analysis path: the engine's
+`analysis_ptr` mix and the meter are as on 0.0.175; the new compensation stage holds no delay
+line on a project without a latent device). The unjudged "5 s after the end" range moves on
+three peak rows by one or two 0.1 LU steps (`3341-15` LRA 9.40, was 9.20; `3341-17` 9.20, was
+9.30; `3341-18` 9.40, was 8.60) — the range of a short peak burst read five seconds after it
+ended, not a judged reading.
+
+| Row | Verdict | Meter (error) | 5 s after the end |
+|---|---|---|---|
+| `3341-1` | pass | integrated −22.97 (+0.03), maxMomentary −22.99 (+0.01), maxShortTerm −22.99 (+0.01) | I −22.97, LRA 4.20, peak −22.99 |
+| `3341-2` | pass | integrated −32.97 (+0.03), maxMomentary −32.99 (+0.01), maxShortTerm −32.99 (+0.01) | I −32.97, LRA 4.20, peak −32.99 |
+| `3341-3` | pass | integrated −22.96 (+0.04) | I −22.96, LRA 13.00, peak −22.99 |
+| `3341-4` | pass | integrated −22.96 (+0.04) | I −22.96, LRA 13.00, peak −22.99 |
+| `3341-5` | pass | integrated −22.95 (+0.05) | I −22.95, LRA 6.00, peak −19.99 |
+| `3342-1` | pass | range 10.00 (+0.00) | I −22.55, LRA 10.00, peak −19.99 |
+| `3342-2` | pass | range 5.00 (+0.00) | I −16.78, LRA 5.00, peak −14.99 |
+| `3342-3` | pass | range 20.00 (+0.00) | I −19.97, LRA 20.00, peak −19.99 |
+| `3342-4` | pass | range 15.00 (+0.00) | I −24.45, LRA 15.00, peak −19.99 |
+| `3341-15` | pass | peak −6.02 (−0.02) | I −2.75, LRA 9.40, peak −6.02 |
+| `3341-16` | pass | peak −5.98 (+0.02) | I −2.75, LRA 9.30, peak −5.98 |
+| `3341-17` | pass | peak −6.31 (−0.31) | I −2.75, LRA 9.20, peak −6.31 |
+| `3341-18` | pass | peak −6.03 (−0.03) | I −2.75, LRA 9.40, peak −6.03 |
+| `kweight-25` | pass | shortTerm −31.08 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-40` | pass | shortTerm −26.26 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-60` | pass | shortTerm −23.59 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-100` | pass | shortTerm −21.83 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-250` | pass | shortTerm −20.84 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-500` | pass | shortTerm −20.65 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-1000` | pass | shortTerm −19.99 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-1500` | pass | shortTerm −18.66 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-2000` | pass | shortTerm −17.62 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-3000` | pass | shortTerm −16.88 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-5000` | pass | shortTerm −16.68 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-8000` | pass | shortTerm −16.65 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-12000` | pass | shortTerm −16.65 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-16000` | pass | shortTerm −16.65 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+| `kweight-20000` | pass | shortTerm −16.65 (−0.00) | I −18.46, LRA 9.60, peak −19.81 |
+
+### SDK 0.0.176, 44.1 kHz, 2026-10-20, Chrome 155 on macOS
+
+`loudness-audit-1792516320522.json`, same browser and click. 28 rows, **28 pass**, none invalid,
+none in error. Every judged metric reads the 0.0.175 value to the hundredth. The unjudged "5 s after the end" column moves on 5 rows (3341-2 range 4.20 (was 4.30); 3341-15 range 9.40 (was 9.30); 3341-16 range 8.60 (was 9.40); 3341-17 range 9.40 (was 9.20); 3341-18 range 9.30 (was 9.20)), a short peak burst's range read five seconds after it ended (one 0.1 LU step, `3341-16` eight), not a judged reading.
+
+| Row | Verdict | Meter (error) | 5 s after the end |
+|---|---|---|---|
+| `3341-1` | pass | integrated −22.97 (+0.03), maxMomentary −22.99 (+0.01), maxShortTerm −22.99 (+0.01) | I −22.97, LRA 4.30, peak −22.99 |
+| `3341-2` | pass | integrated −32.97 (+0.03), maxMomentary −32.99 (+0.01), maxShortTerm −32.99 (+0.01) | I −32.97, LRA 4.20, peak −32.99 |
+| `3341-3` | pass | integrated −22.96 (+0.04) | I −22.96, LRA 13.00, peak −22.99 |
+| `3341-4` | pass | integrated −22.96 (+0.04) | I −22.96, LRA 13.00, peak −22.99 |
+| `3341-5` | pass | integrated −22.95 (+0.05) | I −22.95, LRA 6.00, peak −19.99 |
+| `3342-1` | pass | range 10.00 (+0.00) | I −22.55, LRA 10.00, peak −19.99 |
+| `3342-2` | pass | range 5.00 (+0.00) | I −16.78, LRA 5.00, peak −14.99 |
+| `3342-3` | pass | range 20.00 (+0.00) | I −19.97, LRA 20.00, peak −19.99 |
+| `3342-4` | pass | range 15.00 (+0.00) | I −24.45, LRA 15.00, peak −19.99 |
+| `3341-15` | pass | peak −6.02 (−0.02) | I −2.75, LRA 9.40, peak −6.02 |
+| `3341-16` | pass | peak −5.98 (+0.02) | I −2.75, LRA 8.60, peak −5.98 |
+| `3341-17` | pass | peak −6.31 (−0.31) | I −2.75, LRA 9.40, peak −6.31 |
+| `3341-18` | pass | peak −6.03 (−0.03) | I −2.75, LRA 9.30, peak −6.03 |
+| `kweight-25` | pass | shortTerm −31.08 (−0.00) | I −18.46, LRA 9.60, peak −19.68 |
+| `kweight-40` | pass | shortTerm −26.26 (−0.00) | I −18.46, LRA 9.60, peak −19.68 |
+| `kweight-60` | pass | shortTerm −23.59 (−0.00) | I −18.46, LRA 9.60, peak −19.68 |
+| `kweight-100` | pass | shortTerm −21.82 (−0.00) | I −18.46, LRA 9.60, peak −19.68 |
+| `kweight-250` | pass | shortTerm −20.84 (−0.00) | I −18.46, LRA 9.60, peak −19.68 |
+| `kweight-500` | pass | shortTerm −20.65 (−0.00) | I −18.46, LRA 9.60, peak −19.68 |
+| `kweight-1000` | pass | shortTerm −19.99 (−0.00) | I −18.46, LRA 9.60, peak −19.68 |
+| `kweight-1500` | pass | shortTerm −18.65 (−0.00) | I −18.46, LRA 9.60, peak −19.68 |
+| `kweight-2000` | pass | shortTerm −17.62 (−0.00) | I −18.46, LRA 9.60, peak −19.68 |
+| `kweight-3000` | pass | shortTerm −16.88 (−0.00) | I −18.46, LRA 9.60, peak −19.68 |
+| `kweight-5000` | pass | shortTerm −16.67 (−0.00) | I −18.46, LRA 9.60, peak −19.68 |
+| `kweight-8000` | pass | shortTerm −16.65 (−0.00) | I −18.46, LRA 9.60, peak −19.68 |
+| `kweight-12000` | pass | shortTerm −16.65 (−0.00) | I −18.46, LRA 9.60, peak −19.68 |
+| `kweight-16000` | pass | shortTerm −16.65 (−0.00) | I −18.46, LRA 9.60, peak −19.68 |
+| `kweight-20000` | pass | shortTerm −16.65 (−0.00) | I −18.46, LRA 9.60, peak −19.68 |
+
 ## Observed
 
 - Tones at 1 kHz read 0.25 to 0.27 LU below their level in every loudness case, at both rates:

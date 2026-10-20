@@ -70,6 +70,20 @@ until a re-play) while `isPlaying` flips true immediately. Offline renders don't
 the live transport — prefer them for measurements. Re-tested at 0.0.160 (2026-07-16): did
 not reproduce — position advanced in ~3.3 s.
 
+## Plug-in delay compensation
+
+A device that buffers (Compressor / Maximizer look-ahead 240 frames at 48 kHz, Fold
+oversampling, Autotune, a WebCLAP plug-in with `clap.latency`, a Werkstatt `// @latency`)
+reports its latency and the engine delays every other input at each junction (bus, aux
+return, composite sum, effects-stack dry path, sidechain) to the latest one — a device no
+longer shifts its track against the mix. `engine.compensationLatency` (seconds) is the total
+the heard output lags the timeline; the metronome, take placement and MIDI out follow it,
+automation behind a latent device reads where its audio was rendered. Offline renders settle
+and trim it, so an export starts aligned. `engine.querySignalGraph()` returns the processor
+graph with every latency and compensation delay (nodes: `id`, `label`, `owner`, `latency`,
+`arrival`; edges: `data`, `delay`). Caps: 0.1 s per stage, a change crossfades over 10 ms.
+Regression page: `plugin-delay-compensation-debug-demo.html` (every row lag 0).
+
 ## Performance reporting is itself a cost
 
 DSP-load measurement runs in the audio thread and perturbs the load it measures, so it is

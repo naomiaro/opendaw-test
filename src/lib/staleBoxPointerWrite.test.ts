@@ -1,13 +1,12 @@
-// SDK probe and regression test for debug/2026-10-19-stale-box-pointer-write/note.md (openDAW#480).
+// Regression test for debug/2026-10-19-stale-box-pointer-write/note.md (openDAW#480, fixed upstream).
 //
-// A box instance that undo replaced (same uuid, new instance) reports detached, and a SCALAR
-// write through it reaches neither the live box nor the update stream. A POINTER write through it
-// takes the graph path that has no attachment guard: the target's incoming list gains the stale
-// field (the outgoing table, keyed by source address, which the stale and the live field share,
-// keeps whichever entry came first), a pointer update for the LIVE address is emitted, and the
-// SDK's own sync mirror and the engine binary apply it to the live box. These tests assert the behaviour AS MEASURED
-// on the installed SDK; the ones marked "flips when fixed" fail on a release that guards the
-// pointer path, which is the signal to invert them.
+// A box instance that undo replaced (same uuid, new instance) reports detached. A write through
+// it — scalar or pointer — stays on the detached instance: the live box, the update stream, the
+// SDK's own sync mirror and the engine binary never see it. The pointer path once lacked the
+// attachment guard the scalar path has (a ghost edge on the target, a pointer update for the
+// LIVE address that the mirror and the engine applied, a target that could no longer be
+// released); these tests pin the guarded behaviour against the installed lib-box, the sync
+// mirror and the installed engine.wasm, and fail if the guard is lost.
 import { describe, expect, it } from "vitest";
 import { Arrays, Option, UUID } from "@opendaw/lib-std";
 import { BoxEditing, BoxGraph, SyncSource, createSyncTarget, type Update } from "@opendaw/lib-box";
@@ -50,46 +49,40 @@ describe("a box instance replaced by undo", () => {
     expect(updates).toEqual([]);
   });
 
-  it("pointer write: a ghost edge from the stale field, an update for the live address (flips when fixed)", () => {
+  it("pointer write: no edge on the target, no update; the stale field keeps its own value", () => {
     const { boxGraph, editing, stale, live, other, audioFile, updates } = staleAndLive();
     expect(live.file.isEmpty()).toBe(true);
     expect(audioFile.pointerHub.size()).toBe(1);
     editing.modify(() => stale.file.refer(audioFile));
     expect(targetOf(live)).toBe("none");
-    expect(targetOf(stale)).toBe(short(audioFile.address));
+    expect(targetOf(stale)).toBe(short(audioFile.address)); // stored on the detached instance, like a scalar write
     const incoming = boxGraph.edges().incomingEdgesOf(audioFile);
-    expect(incoming).toHaveLength(2);
+    expect(incoming).toHaveLength(1);
     expect(incoming[0]).toBe(other.file);
-    expect(incoming[1]).toBe(stale.file);
-    expect(incoming).not.toContain(live.file);
-    expect(audioFile.pointerHub.size()).toBe(2);
-    expect(updates.map((update) => update.type === "pointer" ? `pointer ${update.address.toString()}` : update.type))
-      .toEqual([`pointer ${live.file.address.toString()}`]);
+    expect(incoming).not.toContain(stale.file);
+    expect(audioFile.pointerHub.size()).toBe(1);
+    expect(updates).toEqual([]);
   });
 
-  it("the ghost edge keeps the target valid past its last real user, and undo cannot remove it (flips when fixed)", () => {
+  it("a mandatory-edge target is still held by its real user alone after a stale write", () => {
     const { editing, stale, live, other, audioFile } = staleAndLive();
-    // control: without the ghost, letting go of the last pointer is refused (the box needs an edge)
+    // control: letting go of the last pointer is refused (the box needs an edge)
     expect(() => editing.modify(() => other.file.defer())).toThrow(/requires an edge/);
     expect(audioFile.pointerHub.size()).toBe(1);
     editing.modify(() => stale.file.refer(audioFile));
-    // AudioFileBox is a mandatory-edge target: that this modify is accepted is the defect
-    editing.modify(() => other.file.defer());
+    // the stale write added no edge, so the same release is refused the same way
+    expect(() => editing.modify(() => other.file.defer())).toThrow(/requires an edge/);
     expect(audioFile.isAttached()).toBe(true);
     expect(audioFile.pointerHub.size()).toBe(1);
-    expect(editing.undo()).toBe(true);
-    expect(editing.undo()).toBe(true);
-    // the inverse of the recorded update goes to the live field (already empty); the stale edge stays
-    expect(audioFile.pointerHub.size()).toBe(2);
     expect(targetOf(stale)).toBe(short(audioFile.address));
     expect(targetOf(live)).toBe("none");
-    // only deleting the target clears it: delete() defers every pointer at it, the stale one included
-    // (it is a non-mandatory pointer; a mandatory stale pointer would drag the stale box into the deletion)
+    // deleting the target defers its one real pointer; nothing dangles
     editing.modify(() => audioFile.delete());
     expect(audioFile.isAttached()).toBe(false);
+    expect(other.file.isEmpty()).toBe(true);
   });
 
-  it("with a target on the live field, the edge tables corrupt and the target can no longer be released (flips when fixed)", () => {
+  it("with a target on the live field, a stale write elsewhere leaves both targets deletable", () => {
     const { boxGraph, editing, stale, live, other, audioFile } = staleAndLive();
     editing.modify(() => live.file.refer(audioFile));
     const second = transact(boxGraph, () => {
@@ -99,26 +92,26 @@ describe("a box instance replaced by undo", () => {
     });
     editing.modify(() => stale.file.refer(second));
     expect(targetOf(live)).toBe(short(audioFile.address));
-    expect(second.pointerHub.size()).toBe(2);
+    expect(second.pointerHub.size()).toBe(1);
+    expect(second.pointerHub.incoming()).not.toContain(stale.file);
     expect(boxGraph.edges().isConnected(live.file, audioFile.address)).toBe(true);
-    // deleting the ghost's target defers the stale pointer: disconnect removes the LIVE field's
-    // outgoing entry (same address key) and then fails to find the stale source in the list that
-    // entry points at — the live field's target, audioFile
-    expect(() => editing.modify(() => second.delete())).toThrow(/PointerField.*not found/);
-    expect(targetOf(stale)).toBe("none"); // the stale field's own value was stored before the throw
+    // deleting the stale write's target defers its one real pointer and leaves the live edge alone
+    editing.modify(() => second.delete());
+    expect(second.isAttached()).toBe(false);
+    expect(other.file.isEmpty()).toBe(true);
+    expect(targetOf(stale)).toBe(short(second.address)); // the detached instance keeps its dangling value
     expect(targetOf(live)).toBe(short(audioFile.address));
-    expect(boxGraph.edges().isConnected(live.file, audioFile.address)).toBe(false);
-    expect(() => editing.modify(() => live.file.defer())).toThrow(/Could not remove/);
-    // the release half-succeeds: the field reads empty, the target's incoming list still holds it
+    expect(boxGraph.edges().isConnected(live.file, audioFile.address)).toBe(true);
+    // the live field is audioFile's last pointer: releasing it is refused by the mandatory-edge
+    // rule, deleting the target is not
+    expect(() => editing.modify(() => live.file.defer())).toThrow(/requires an edge/);
+    expect(targetOf(live)).toBe(short(audioFile.address));
+    editing.modify(() => audioFile.delete());
+    expect(audioFile.isAttached()).toBe(false);
     expect(targetOf(live)).toBe("none");
-    expect(audioFile.pointerHub.incoming()).toContain(live.file);
-    expect(() => editing.modify(() => audioFile.delete())).toThrow(/has incoming edges/);
-    // `second` is wedged the same way: the stale defer is a no-op now, its ghost stays
-    expect(second.pointerHub.incoming()).toContain(stale.file);
-    expect(() => editing.modify(() => second.delete())).toThrow(/has incoming edges/);
   });
 
-  it("the SDK's sync mirror applies the stale write to the live box, so the graphs diverge (flips when fixed)", async () => {
+  it("the SDK's sync mirror sees nothing of the stale write, so the graphs stay in checksum", async () => {
     const { editing, stale, live, boxGraph, audioFile } = staleAndLive();
     const mirror = new BoxGraph<BoxIO.TypeMap>(Option.wrap(BoxIO.create));
     const { port1, port2 } = new MessageChannel();
@@ -134,10 +127,10 @@ describe("a box instance replaced by undo", () => {
       expect(same()).toBe(true);
       expect(mirrorFile()).toBe("none");
       editing.modify(() => stale.file.refer(audioFile));
-      await expect(compare()).rejects.toBe("Checksum mismatch");
+      await expect(compare()).resolves.toBeUndefined();
       expect(targetOf(live)).toBe("none");
-      expect(mirrorFile()).toBe(short(audioFile.address));
-      expect(same()).toBe(false);
+      expect(mirrorFile()).toBe("none");
+      expect(same()).toBe(true);
     } finally {
       source.terminate();
       target.terminate();
@@ -148,7 +141,7 @@ describe("a box instance replaced by undo", () => {
 });
 
 describe("the WASM engine's mirror (apply_updates on the installed engine.wasm)", () => {
-  it("applies the stale pointer write to the live box: the engine's checksum leaves the source's (flips when fixed)", async () => {
+  it("receives no update for the stale pointer write: the engine's checksum stays the source's", async () => {
     const { readFileSync } = await import("node:fs");
     const { Communicator } = await import("@opendaw/lib-runtime");
     const { serializeUpdateTasks } = await import("../../node_modules/@opendaw/studio-core-wasm/dist/sync/serialize-update-tasks.js");
@@ -181,9 +174,9 @@ describe("the WASM engine's mirror (apply_updates on the installed engine.wasm)"
       expect(applied).toEqual([0]);
       expect(engineChecksum()).toEqual(boxGraph.checksum());
       editing.modify(() => stale.file.refer(audioFile));
-      expect(applied).toEqual([0, 0]); // the engine accepted the update for the live address
+      expect(applied.every((code) => code === 0)).toBe(true); // whatever crossed, the engine accepted
       expect(targetOf(live)).toBe("none");
-      expect(engineChecksum()).not.toEqual(boxGraph.checksum());
+      expect(engineChecksum()).toEqual(boxGraph.checksum());
     } finally {
       source.terminate();
       executor.terminate();

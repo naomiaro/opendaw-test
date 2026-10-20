@@ -102,8 +102,8 @@ project.engine.countInBeatsRemaining.catchupAndSubscribe(obs => {
 });
 // Every observable above refreshes once per animation frame with the first quantum the engine
 // wrote after the previous read — never older than a frame. RecordMidi extrapolates between
-// frames from the MIDI event's timeStamp; RecordAudio ends a take at the chunks received when
-// it observes the stop (openDAW#479).
+// frames from the MIDI event's timeStamp; RecordAudio ends a take at the engine's stop stamp
+// (`engine.recordingStop`, netted by the start's latencies) and waits for the input in flight.
 ```
 
 ### Engine Preferences (SDK 0.0.87+)
@@ -183,11 +183,11 @@ API: `.isEmpty()`, `.nonEmpty()`, `.unwrap()`, `.unwrapOrNull()`, `.unwrapOrUnde
   (e.g. a stretch box's warp markers) — use `.delete()` when dependents must go too
 - Find box: `project.boxGraph.findBox(uuid)` — returns `Option<Box>`, NOT raw box
 - Never write through a box held across an undo: the restored box is a NEW instance under the
-  same uuid and the held one reads `isAttached() === false`. Its scalar writes stay on the held
-  instance (it reads them back; the live box and the update stream never see them), but a
-  POINTER write (`stale.file.refer(…)`) has no attachment guard: it leaves a ghost edge on the
-  target, emits an update for the LIVE address, and the engine mirror applies it (openDAW#480;
-  repro `src/lib/staleBoxPointerWrite.test.ts`). Re-resolve with `boxGraph.findBox(uuid)`.
+  same uuid and the held one reads `isAttached() === false`. Scalar AND pointer writes stay on
+  the held instance (it reads them back; the live box, the update stream, the sync mirror and
+  the engine never see them — the pointer path was unguarded once, openDAW#480, regression
+  test `src/lib/staleBoxPointerWrite.test.ts`). A write that lands nowhere is still a lost
+  write: re-resolve with `boxGraph.findBox(uuid)`.
 - AudioRegionBox gain: field is `gain` (dB, decibel constraint), NOT `volume`, NOT a 0-1 range
 - Option API: `isEmpty()` / `nonEmpty()` — NOT `isSome()` / `isNone()`
 - Disconnect pointer: `pointerField.defer()` — NOT `unrefer()` (doesn't exist)
@@ -689,13 +689,16 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   `recording-alignment-audit-debug-demo.html?scenario=multitrack-start&bpm=120&rate=48000&graphChurn=on`
   runs (expect every row at 0 / 0 quanta), then
   `node scripts/audit/recording-alignment/one-quantum-events.ts` for the per-release tally.
-- A recording-alignment cell that reads `investigate` on a TAIL deficit is openDAW#479 (the
-  stop keeps only the chunks the main thread had received), not placement: judge placement on
-  the netted medians in the envelope's `cellVerdicts`; the on-page status column marks every
-  row of such a cell. Reading recipe: `src/demos/recording/CLAUDE.md`.
-- Tests marked "flips when fixed" assert a filed defect AS MEASURED (`staleBoxPointerWrite.test.ts`
-  for openDAW#480). After an SDK upgrade, one of them failing is the fix landing: invert the
-  assertion, note the release in the issue's debug note, and close the loop upstream.
+- A recording-alignment cell that reads `investigate` on a TAIL deficit is a stop-path
+  finding, not placement (the register's closed candidate 2, openDAW#479, was one: the take
+  ended at the chunks received when the stop was observed; the stop is now stamped by the
+  engine and netted, so `tailMissingMs` reads 0 on every row and a deficit is NEW): judge
+  placement on the netted medians in the envelope's `cellVerdicts`; the on-page status column
+  marks every row of such a cell. Reading recipe: `src/demos/recording/CLAUDE.md`.
+- Tests marked "flips when fixed" assert a filed defect AS MEASURED. After an SDK upgrade, one of
+  them failing is the fix landing: invert the assertion so the file pins the fixed behaviour, note
+  the release in the issue's debug note, and close the loop upstream (done once for
+  `staleBoxPointerWrite.test.ts`, openDAW#480; the inverted file is the regression test now).
 - SDK-upgrade dist audit: `npm pack @opendaw/<pkg>@<old> --pack-destination <scratch>` for each
   sub-package, untar, then `diff -rq <old>/dist node_modules/@opendaw/<pkg>/dist` (filter `.d.ts`
   for the surface, `shasum -a 256` the `dist/wasm/**/*.wasm` for binaries). The git tag can
