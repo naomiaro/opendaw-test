@@ -1,0 +1,37 @@
+import { describe, expect, it } from "vitest";
+import { pairReceipts, pickIacPorts } from "./midiLoopback";
+
+describe("pickIacPorts", () => {
+  const i = (id: string, name: string) => ({ id, name });
+  it("pairs the input and output that share a name containing the substring", () => {
+    expect(pickIacPorts([i("in1", "IAC Driver Bus 1"), i("in2", "Keystation")], [i("out1", "IAC Driver Bus 1")], "iac"))
+      .toEqual({ inputId: "in1", outputId: "out1", name: "IAC Driver Bus 1" });
+  });
+  it("refuses when no pair exists and names the setup step", () => {
+    expect(pickIacPorts([i("in2", "Keystation")], [], "IAC")).toMatchObject({ error: expect.stringContaining("Audio MIDI Setup") });
+    expect(pickIacPorts([i("in1", "IAC Driver Bus 1")], [i("out1", "IAC Driver Bus 2")], "IAC")).toMatchObject({ error: expect.any(String) });
+  });
+  it("refuses an ambiguous set and lists the names", () => {
+    const r = pickIacPorts([i("a", "IAC Driver Bus 1"), i("b", "IAC Driver Bus 2")], [i("c", "IAC Driver Bus 1"), i("d", "IAC Driver Bus 2")], "IAC");
+    expect(r).toMatchObject({ error: expect.stringMatching(/Bus 1.*Bus 2.*\?bus=/s) });
+  });
+});
+
+describe("pairReceipts", () => {
+  const n = (pitch: number, on: number) => ({ pitch, velocity: 100, onPerfMs: on, offPerfMs: on + 100 });
+  it("gives each scheduled note its own on and off receipt in time order", () => {
+    const receipts = [
+      { kind: "on" as const, pitch: 36, velocity: 100, timeStamp: 1000.4 },
+      { kind: "off" as const, pitch: 36, velocity: 0, timeStamp: 1100.3 },
+      { kind: "on" as const, pitch: 36, velocity: 100, timeStamp: 2000.6 },
+      { kind: "off" as const, pitch: 36, velocity: 0, timeStamp: 2100.2 },
+    ];
+    expect(pairReceipts([n(36, 1000), n(36, 2000)], receipts))
+      .toEqual([{ onPerfMs: 1000.4, offPerfMs: 1100.3 }, { onPerfMs: 2000.6, offPerfMs: 2100.2 }]);
+  });
+  it("leaves a note without a receipt null instead of stealing a later one", () => {
+    const receipts = [{ kind: "on" as const, pitch: 36, velocity: 100, timeStamp: 2000.6 }];
+    expect(pairReceipts([n(36, 1000), n(36, 2000)], receipts))
+      .toEqual([{ onPerfMs: null, offPerfMs: null }, { onPerfMs: 2000.6, offPerfMs: null }]);
+  });
+});
