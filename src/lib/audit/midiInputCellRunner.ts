@@ -42,8 +42,8 @@ export interface MidiCellRepeatOptions {
   token: RepeatToken;
   /** The page's own watch, so a failed repeat still reports the frame gaps seen so far. */
   frameWatch?: FrameWatch;
-  /** Default off. Engine preferences PERSIST in localStorage across pages, so a `gainDb` set here is restored
-   *  to the value found when the repeat ends, whatever happened in between. */
+  /** Default off. Engine preferences PERSIST in localStorage across pages, so both `enabled` and a `gainDb` set
+   *  here are restored to the values found when the repeat ends, whatever happened in between. */
   metronome?: { enabled: boolean; gainDb?: number };
   /** Called right after the pattern is scheduled on the loopback, before the jank is armed. */
   onScheduled?: (context: ScheduleContext) => void;
@@ -319,13 +319,14 @@ function assertCleanStart(project: Project, audioContext: AudioContext, audioUni
 export async function runMidiCellRepeat(options: MidiCellRepeatOptions): Promise<MidiCellRepeatResult> {
   const settings = options.project.engine.preferences.settings;
   const metronome = options.metronome ?? { enabled: false };
-  const priorGain = settings.metronome.gain;
+  const prior = { enabled: settings.metronome.enabled, gain: settings.metronome.gain };
   settings.metronome.enabled = metronome.enabled;
   if (metronome.gainDb !== undefined) settings.metronome.gain = metronome.gainDb;
   try {
     return await repeatBody(options);
   } finally {
-    if (metronome.gainDb !== undefined) settings.metronome.gain = priorGain;
+    settings.metronome.enabled = prior.enabled;
+    settings.metronome.gain = prior.gain;
   }
 }
 
