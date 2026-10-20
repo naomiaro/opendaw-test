@@ -225,9 +225,12 @@ picks another). Register: `debug/2026-10-20-midi-input-alignment/note.md`.
   output lag the clock pair implies, the figure the latency attribution rests on; count-in
   notes = recorded / sent, reported only. `aligned` needs every figure inside the
   tolerances in `midiInputCalibration.ts` (derived from a render quantum, not fitted);
-  `matches-known-defect` needs every repeat inside one band of `MIDI_KNOWN_DEFECTS`
-  (median range, jitter, duration, display frame interval); else `investigate` names the
-  first failing figure. The on-page copy says it: expect `investigate` or a band, not
+  `matches-known-defect` needs every repeat inside one band of `MIDI_KNOWN_DEFECTS`, which
+  is computed from the row's own output latency, frame interval and sample rate (median
+  within ±5 ms of `2 × (output + compensation latency) − (frame − quantum)`, jitter and
+  duration within a frame plus a quantum), so it holds on any device or display and a
+  median that does not track the formula is a finding; else `investigate` names the first
+  failing figure. The on-page copy says it: expect `investigate` or a band, not
   `aligned`, until the recorder changes.
 - **Scenarios.** `nominal-start`, `janked-start` (the audio harness's 150 ms block on the
   `isRecording` flip), `janked-mid` (the same block fired from a timer task in the middle of

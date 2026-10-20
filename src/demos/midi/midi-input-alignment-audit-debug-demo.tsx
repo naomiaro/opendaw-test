@@ -25,7 +25,10 @@ import {
   isMidiScenario, MIDI_AUDIT_BPMS, MIDI_AUDIT_SCENARIOS, MIDI_BUS_DEFAULT, MIDI_REPEATS_PER_CELL, MIDI_TOLERANCES,
   type MidiScenario,
 } from "@/lib/audit/midiInputCalibration";
-import { classifyMidiCell, median, MIDI_KNOWN_DEFECTS, type RepeatFigures } from "@/lib/audit/midiInputAlignment";
+import {
+  classifyMidiCell, clampJitterBoundMs, expectedLateMedianMs, LATE_MEDIAN_MARGIN_MS, median, MIDI_KNOWN_DEFECTS,
+  type BandContext, type RepeatFigures,
+} from "@/lib/audit/midiInputAlignment";
 import {
   MIDI_AUDIT_SCHEMA_VERSION, summaryFileName, type MidiAuditRow, type MidiAuditSummary, type MidiCellVerdictRecord,
 } from "@/lib/audit/midiInputArtifacts";
@@ -133,13 +136,14 @@ function errorRow(scenario: MidiScenario, bpm: number, repeat: number, detail: s
     placementMedianMs: null, placementMaxAbsDevMs: null, placementP5P95Ms: null, durationErrorMedianMs: null, durationErrorMaxMs: null,
     loopbackDelayMedianMs: null, loopbackDelayMaxMs: null, wrapAdjacent: 0, countInNotes: 0, countInRecorded: 0,
     jankMs: null, takeCount: 0, takeIndexSource: null, anchorContextTime: null, anchorPosition: null, originPpqn: null,
-    frameIntervalMs: null, frameGapMaxMs: null, outputLatencyMs: null, baseLatencyMs: null, compensationLatencyMs: null,
+    sampleRate: null, frameIntervalMs: null, frameGapMaxMs: null, outputLatencyMs: null, baseLatencyMs: null, compensationLatencyMs: null,
     sdkLatencyTermMs: null, heardLagMs: null, cleanupWarning: null, notes: [],
   };
 }
 
-function resultRow(scenario: MidiScenario, bpm: number, repeat: number, r: MidiCellRepeatResult, jank: boolean): MidiAuditRow {
+function resultRow(scenario: MidiScenario, bpm: number, repeat: number, r: MidiCellRepeatResult, jank: boolean, sampleRate: number): MidiAuditRow {
   return {
+    sampleRate,
     ...r.figures,
     scenario, bpm, repeat, status: "pending", detail: null,
     jankMs: jank ? r.jankMs ?? JANK_MS : r.jankMs,
@@ -171,7 +175,7 @@ async function runAudit(setAuditState: (s: string) => void, onRows: (rows: MidiA
     for (const bpm of bpms) {
       const cellRows: MidiAuditRow[] = [];
       const figures: RepeatFigures[] = [];
-      const frameIntervals: Array<number | null> = [];
+      const contexts: Array<BandContext | null> = [];
       for (let repeat = 1; repeat <= repeatsPerCell; repeat++) {
         const label = cellLabel(scenario, bpm, repeat);
         setAuditState(`running:${label}`);
@@ -188,9 +192,12 @@ async function runAudit(setAuditState: (s: string) => void, onRows: (rows: MidiA
             120_000,
             label,
           );
-          row = resultRow(scenario, bpm, repeat, result, scenario === "janked-start");
+          row = resultRow(scenario, bpm, repeat, result, scenario === "janked-start", audioContext.sampleRate);
           figures.push(result.figures);
-          frameIntervals.push(result.frameIntervalMs);
+          contexts.push({
+            outputLatencyMs: result.outputLatencyMs, compensationLatencyMs: result.compensationLatencyMs,
+            frameIntervalMs: result.frameIntervalMs, sampleRate: audioContext.sampleRate,
+          });
         } catch (err) {
           const hidden = hiddenCount > hiddenBefore || document.visibilityState !== "visible";
           const gaps = frameWatch.stop();
@@ -213,7 +220,7 @@ async function runAudit(setAuditState: (s: string) => void, onRows: (rows: MidiA
         onRows([...allRows]);
       }
       const verdict = figures.length === repeatsPerCell
-        ? classifyMidiCell(scenario, figures, MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, frameIntervals)
+        ? classifyMidiCell(scenario, figures, MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, contexts)
         : { status: "investigate" as const, detail: `${repeatsPerCell - figures.length} of ${repeatsPerCell} repeats failed` };
       for (const row of cellRows) {
         if (row.status === "error") continue;
@@ -281,6 +288,11 @@ function Harness() {
   }, [running]);
 
   const count = (status: MidiAuditRow["status"]): number => rows.filter((r) => r.status === status).length;
+  const last = [...rows].reverse().find((r) => r.outputLatencyMs !== null && r.frameIntervalMs !== null && r.sampleRate !== null);
+  const device: BandContext | null = last === undefined ? null : {
+    outputLatencyMs: last.outputLatencyMs as number, compensationLatencyMs: last.compensationLatencyMs ?? 0,
+    frameIntervalMs: last.frameIntervalMs as number, sampleRate: last.sampleRate as number,
+  };
 
   return (
     <Theme appearance="dark" accentColor="amber">
@@ -373,6 +385,11 @@ Tolerances (ms)       placement ±${MIDI_TOLERANCES.placementMs} (one render qua
 Jank                  ${JANK_MS} ms main-thread block (janked-start: on the isRecording flip; janked-mid: a timer task mid pattern)
 Reference             a note's expected position is the HEARD position at its Web MIDI receipt stamp; nothing is netted out.
                       The SDK's latency term, the output and base latency and the frame interval are on every row.
+Known-defect band     computed from each row's OWN figures, so it holds on any device or display:
+                      median within ±${LATE_MEDIAN_MARGIN_MS} ms of 2 × (output + compensation latency) − (frame − quantum);
+                      jitter and duration error within one frame + one quantum; janked-mid may lose one release per repeat.
+                      A median that tracks the formula on a new machine is the same defect; one that does not is a finding.${device === null ? "" : `
+This device           output latency ${device.outputLatencyMs.toFixed(1)} ms, frame ${device.frameIntervalMs.toFixed(2)} ms → expected median ${expectedLateMedianMs(device).toFixed(1)} ms, jitter bound ${clampJitterBoundMs(device).toFixed(1)} ms`}
 Keep this window uncovered for the whole run: a covered window stalls the animation frames the SDK's
                       main-thread sync and this page's waits ride on (a row's "frame gap max" says if it happened).
 Click "Run audit" with a real click — it requests MIDI access and resumes the AudioContext.`}

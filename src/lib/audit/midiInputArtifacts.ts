@@ -45,6 +45,8 @@ export interface MidiAuditRow extends RepeatFigures {
   anchorContextTime: number | null;
   anchorPosition: number | null;
   originPpqn: number | null;
+  /** The context's rate: a quantum's length, which the band computation needs. */
+  sampleRate: number | null;
   frameIntervalMs: number | null;
   /** The longest gap between animation frames during the repeat; a stalled window shows here. */
   frameGapMaxMs: number | null;

@@ -248,27 +248,27 @@ Run `1792529433622`: `?scenario=loop-wrap&bpm=120&repeats=5`, after the `stuck` 
 
 Same shape as the matrix; take order from the labels on every repeat.
 
-### The band this register pins
+### The bands this register pins
 
-`midi-late-60hz` in `MIDI_KNOWN_DEFECTS` (`src/lib/audit/midiInputAlignment.ts`), any
-scenario: median +28 … +38 ms (the 41 bring-up medians, +32.2 … +33.3, with 5 ms to either
-side), largest deviation from the median up to 23 ms and largest duration error up to 23 ms
-(the clamp moves a note or a release at most one frame early, plus a quantum of slot
-staleness: 20 + 2.9), display frame interval 14 … 20 ms (what a 60 Hz display gives
-Chrome's frames, under load included; 18.6 measured). `midi-late-60hz-release-lost`, for
-`janked-mid` only, is the same band plus one lost release per repeat. The median bounds
-are fitted and say so; the jitter and duration bounds come from the mechanism. A cell
-inside it reads `matches-known-defect`; a release that moves the median or tightens the
-jitter reads `aligned` or `investigate`, never silently the same. The band is only for
-rows at 60 Hz: a row whose frame interval lies outside the range, or has none, misses it.
-A 120 Hz band is added once that arm is measured.
+`midi-late` (any scenario) and `midi-late-release-lost` (`janked-mid`, the same plus one lost
+release per repeat) in `MIDI_KNOWN_DEFECTS` (`src/lib/audit/midiInputAlignment.ts`). They
+are computed from each row's OWN figures, so they hold on any device or display: the median
+must sit within ±5 ms of `2 × (outputLatencyMs + compensationLatencyMs) − (frameIntervalMs −
+quantumMs)` (23 ms and 16.7 ms give 32.2 here; a 120 Hz display gives about 40; a 10 ms
+interface at 60 Hz about 6), and the largest deviation and duration error within one frame
+plus one quantum (19.6 ms here). The margin is fitted (the 53 bring-up medians sat within
+±1.3 ms of the formula) and says so; the rest is the mechanism. A median that tracks the
+formula on another machine is the same defect; one that does not is a finding, and so is a
+release that changes the recorder (it reads `aligned` or `investigate`). The page's
+configuration card prints what the formula yields on the machine it runs on.
 
 ### 120 Hz arm
 
-_Not yet run. The display (Liquid Retina XDR) supports 120 Hz; the sweep above ran at
-59.7 Hz. Set System Settings → Displays → Refresh Rate to 120 Hertz and re-run
-`?scenario=all&bpm=120`; the prediction is a median near +40 ms, the difference to the
-60 Hz rows being the frame-stale term._
+_Not yet run. The display (Liquid Retina XDR) supports 120 Hz; the sweeps above ran at
+60 Hz. Set System Settings → Displays → Refresh Rate to 120 Hertz and re-run
+`?scenario=all&bpm=120`; the formula predicts a median near +40 ms, the difference to the
+60 Hz rows being the frame-stale term, and the band follows the row's own frame interval,
+so the cells read the band if the mechanism holds and `investigate` if it does not._
 
 ### Open items
 

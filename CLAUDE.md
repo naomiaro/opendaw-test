@@ -684,8 +684,9 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   `debug/2026-10-20-midi-input-alignment/note.md`, table
   `node scripts/audit/midi-input-alignment/table.ts`. A cell is judged against the HEARD
   beat with nothing netted out, so a constant offset is read against the register's bands
-  (`MIDI_KNOWN_DEFECTS`), not as a new finding; a band is scoped to the display frame
-  interval it was measured at. Reading recipe and what each scenario provokes:
+  (`MIDI_KNOWN_DEFECTS`), not as a new finding; a band is computed from the row's own
+  output latency, frame interval and sample rate, so it holds on any device, and a median
+  that does not track its formula is the finding. Reading recipe and what each scenario provokes:
   `src/demos/midi/CLAUDE.md`.
 - After SDK upgrades, also re-run the standing loudness meter sweep:
   `loudness-meter-audit-debug-demo.html?case=all` (then `&rate=44100`) — a real click on Run,

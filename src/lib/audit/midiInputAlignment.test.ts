@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { MIDI_TOLERANCES } from "./midiInputCalibration";
 import {
-  classifyMidiCell, matchNotes, measureRepeat, median, MIDI_KNOWN_DEFECTS, percentile, splitCountIn, type RecordedNote, type SentNote,
+  classifyMidiCell, expectedLateMedianMs, matchNotes, measureRepeat, median, MIDI_KNOWN_DEFECTS, percentile, splitCountIn,
+  type RecordedNote, type SentNote,
 } from "./midiInputAlignment";
 
 const sent = (index: number, over: Partial<SentNote> = {}): SentNote => ({
@@ -108,20 +109,36 @@ describe("MIDI_KNOWN_DEFECTS", () => {
     placementMedianMs: medianMs, placementMaxAbsDevMs: spread, placementP5P95Ms: spread, durationErrorMedianMs: 0, durationErrorMaxMs: durationMax,
     loopbackDelayMedianMs: 0, loopbackDelayMaxMs: 0, wrapAdjacent: 0, countInNotes: 0, countInRecorded: 0, collapsed: 0,
   });
-  it("classifies every bring-up row of the register, including the one at an 18.6 ms frame", () => {
-    expect(classifyMidiCell("midtimeline-start", [row(32.64, 9.72, 12.5), row(33.33, 9.72, 9.72)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [18.57, 17.33]).status)
-      .toBe("matches-known-defect");
-    expect(classifyMidiCell("loop-wrap", [row(32.82, 10.42, 10.94), row(32.82, 9.38, 13.54)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [17.02, 16.8]).status)
-      .toBe("matches-known-defect");
+  const mac60 = { outputLatencyMs: 23, compensationLatencyMs: 0, frameIntervalMs: 16.7, sampleRate: 44100 };
+  it("derives the expected median from the row's own latency, frame and quantum", () => {
+    // 2 × 23 − (16.7 − 2.9) = 32.2
+    expect(expectedLateMedianMs(mac60)).toBeCloseTo(32.2, 1);
+    // an interface at 10 ms and a 120 Hz display at 48 kHz: 20 − (8.3 − 2.67) = 14.4
+    expect(expectedLateMedianMs({ outputLatencyMs: 10, compensationLatencyMs: 0, frameIntervalMs: 8.3, sampleRate: 48000 })).toBeCloseTo(14.4, 1);
   });
-  it("misses a 120 Hz row, and a collapsed release anywhere but in janked-mid, where its own band takes one per repeat", () => {
-    expect(classifyMidiCell("nominal-start", [row(40, 5, 8)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [8.33]).status).toBe("investigate");
-    expect(classifyMidiCell("nominal-start", [{ ...row(33, 9.4, 8), collapsed: 1 }], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [16.7]))
+  it("classifies every bring-up row of the register from its own figures, the 18.6 ms frame included", () => {
+    expect(classifyMidiCell("midtimeline-start", [row(32.64, 9.72, 12.5), row(33.33, 9.72, 9.72)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS,
+      [{ ...mac60, frameIntervalMs: 18.57 }, { ...mac60, frameIntervalMs: 17.33 }]).status).toBe("matches-known-defect");
+    expect(classifyMidiCell("loop-wrap", [row(32.82, 10.42, 10.94), row(32.82, 9.38, 13.54)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS,
+      [{ ...mac60, frameIntervalMs: 17.02 }, { ...mac60, frameIntervalMs: 16.8 }]).status).toBe("matches-known-defect");
+  });
+  it("moves with the device: a 120 Hz display or another output latency gets its own band, and a row without figures misses", () => {
+    const hz120 = { ...mac60, frameIntervalMs: 8.33 }; // expected 2 × 23 − (8.33 − 2.9) = 40.6
+    expect(classifyMidiCell("nominal-start", [row(40.5, 7, 8)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [hz120]).status).toBe("matches-known-defect");
+    expect(classifyMidiCell("nominal-start", [row(32.8, 7, 8)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [hz120]).status).toBe("investigate");
+    const iface = { outputLatencyMs: 10, compensationLatencyMs: 0, frameIntervalMs: 16.7, sampleRate: 48000 }; // expected 20 − 14 = 6
+    expect(classifyMidiCell("nominal-start", [row(6.5, 7, 8)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [iface]).status).toBe("matches-known-defect");
+    expect(classifyMidiCell("nominal-start", [row(32.8, 7, 8)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [null]).status).toBe("investigate");
+  });
+  it("bounds the jitter by a frame plus a quantum of the row, and a collapsed release only in janked-mid", () => {
+    expect(classifyMidiCell("nominal-start", [row(32.8, 19, 8)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [mac60]).status).toBe("matches-known-defect");
+    expect(classifyMidiCell("nominal-start", [row(32.8, 24, 8)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [mac60]).status).toBe("investigate");
+    expect(classifyMidiCell("nominal-start", [{ ...row(33, 9.4, 8), collapsed: 1 }], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [mac60]))
       .toMatchObject({ status: "investigate", detail: expect.stringContaining("collapsed 1") });
-    const janked = classifyMidiCell("janked-mid", [{ ...row(33, 9.4, 8), collapsed: 1 }, row(33, 9.4, 8)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [16.7, 16.7]);
+    const janked = classifyMidiCell("janked-mid", [{ ...row(33, 9.4, 8), collapsed: 1 }, row(33, 9.4, 8)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [mac60, mac60]);
     expect(janked.status).toBe("matches-known-defect");
     expect(janked.detail).toContain("release");
-    expect(classifyMidiCell("janked-mid", [{ ...row(33, 9.4, 8), collapsed: 2 }], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [16.7]).status).toBe("investigate");
+    expect(classifyMidiCell("janked-mid", [{ ...row(33, 9.4, 8), collapsed: 2 }], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [mac60]).status).toBe("investigate");
   });
 });
 
@@ -150,19 +167,14 @@ describe("classifyMidiCell", () => {
     expect(classifyMidiCell("nominal-start", [clean(1, 12)], MIDI_TOLERANCES).detail).toContain("placementMaxAbsDevMs");
     expect(classifyMidiCell("nominal-start", [{ ...clean(0), missing: 1 }], MIDI_TOLERANCES).detail).toContain("missing 1");
   });
-  it("lets a band carry the clamp jitter and a frame-interval range, and misses it outside either", () => {
-    const band = [{
-      id: "midi-late-60hz", scenario: "any" as const, medianMsMin: 28, medianMsMax: 38, maxDevMsMax: 12,
-      frameIntervalMsRange: [15, 18] as [number, number], detail: "latency sign + frame-stale base at 60 Hz, clamp jitter",
-    }];
-    expect(classifyMidiCell("loop-wrap", [clean(32.8, 10.4), clean(33.3, 9.9)], MIDI_TOLERANCES, band, [16.7, 17.0]).status).toBe("matches-known-defect");
-    expect(classifyMidiCell("loop-wrap", [clean(32.8, 13), clean(33.3, 9.9)], MIDI_TOLERANCES, band, [16.7, 17.0]).status).toBe("investigate");
-    expect(classifyMidiCell("loop-wrap", [clean(32.8, 10.4)], MIDI_TOLERANCES, band, [8.3]).status).toBe("investigate");
-    expect(classifyMidiCell("loop-wrap", [clean(32.8, 10.4)], MIDI_TOLERANCES, band, [null]).status).toBe("investigate");
+  it("lets a static band carry a fixed median range and jitter bound", () => {
+    const band = [{ id: "fixed", scenario: "any" as const, medianMs: [28, 38] as [number, number], maxDevMs: 12, detail: "fixed" }];
+    expect(classifyMidiCell("loop-wrap", [clean(32.8, 10.4), clean(33.3, 9.9)], MIDI_TOLERANCES, band).status).toBe("matches-known-defect");
+    expect(classifyMidiCell("loop-wrap", [clean(32.8, 13), clean(33.3, 9.9)], MIDI_TOLERANCES, band).status).toBe("investigate");
   });
   it("lets a band carry the release jitter as a duration bound and misses a collapsed release", () => {
     const band = [{
-      id: "midi-late-60hz", scenario: "any" as const, medianMsMin: 28, medianMsMax: 38, maxDevMsMax: 12, durationErrorMsMax: 15,
+      id: "midi-late-60hz", scenario: "any" as const, medianMs: [28, 38] as [number, number], maxDevMs: 12, durationErrorMs: 15,
       detail: "clamp jitter on releases too",
     }];
     expect(classifyMidiCell("nominal-start", [{ ...clean(33, 9.6), durationErrorMaxMs: 10.94 }], MIDI_TOLERANCES, band).status).toBe("matches-known-defect");
@@ -171,7 +183,7 @@ describe("classifyMidiCell", () => {
     expect(classifyMidiCell("nominal-start", [{ ...clean(1, 1), durationErrorMaxMs: 10 }], MIDI_TOLERANCES, band).status).toBe("investigate");
   });
   it("matches a known-defect band on the median when counts and spread are clean", () => {
-    const band = [{ id: "midi-late-2x", scenario: "any" as const, medianMsMin: 25, medianMsMax: 45, detail: "twice the output latency" }];
+    const band = [{ id: "midi-late-2x", scenario: "any" as const, medianMs: [25, 45] as [number, number], detail: "twice the output latency" }];
     expect(classifyMidiCell("nominal-start", [clean(31), clean(33)], MIDI_TOLERANCES, band).status).toBe("matches-known-defect");
     expect(classifyMidiCell("nominal-start", [clean(31), clean(50)], MIDI_TOLERANCES, band).status).toBe("investigate");
     expect(classifyMidiCell("nominal-start", [{ ...clean(31), extra: 1 }], MIDI_TOLERANCES, band).status).toBe("investigate");

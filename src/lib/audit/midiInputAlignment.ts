@@ -181,57 +181,87 @@ export function percentile(values: readonly number[], p: number): number | null 
 
 export type MidiCellStatus = "aligned" | "matches-known-defect" | "investigate";
 
+/** What a row measured about its own machine; the mechanism bands are computed from it, so they hold on any device. */
+export interface BandContext {
+  outputLatencyMs: number;
+  compensationLatencyMs: number;
+  frameIntervalMs: number;
+  sampleRate: number;
+}
+
+export function quantumMs(sampleRate: number): number {
+  return (128 / sampleRate) * 1000;
+}
+
+/**
+ * Where the recorder's constant term lands on a given machine: it writes the rendered position
+ * plus its latency term (output + compensation latency), the heard position lags the rendered one
+ * by the same term, and the rendered position it extrapolates from is a frame old less a quantum.
+ */
+export function expectedLateMedianMs({ outputLatencyMs, compensationLatencyMs, frameIntervalMs, sampleRate }: BandContext): number {
+  return 2 * (outputLatencyMs + compensationLatencyMs) - (frameIntervalMs - quantumMs(sampleRate));
+}
+
+/** The clamp moves a note or a release at most one frame early, plus a quantum of slot staleness. */
+export function clampJitterBoundMs({ frameIntervalMs, sampleRate }: BandContext): number {
+  return frameIntervalMs + quantumMs(sampleRate);
+}
+
+/** Margin around the expected median: the bring-up medians sat within ±1 ms of the formula; a quantum and change. */
+export const LATE_MEDIAN_MARGIN_MS = 5;
+
+type Bound<T> = T | ((context: BandContext) => T);
+
 export interface KnownDefectBand {
   id: string;
   scenario: MidiScenario | "any";
-  medianMsMin: number;
-  medianMsMax: number;
+  /** Where every repeat's median must fall; a function of the row's figures for a mechanism band. */
+  medianMs: Bound<[number, number]>;
   /** The jitter the defect carries; the spread tolerance when absent. */
-  maxDevMsMax?: number;
-  /** The release jitter the defect carries, as the largest absolute duration error; the duration tolerance when absent. */
-  durationErrorMsMax?: number;
-  /** The display frame interval the band was measured at; a row outside it, or without one, misses the band. */
-  frameIntervalMsRange?: [number, number];
+  maxDevMs?: Bound<number>;
+  /** The release jitter it carries, as the largest absolute duration error; the duration tolerance when absent. */
+  durationErrorMs?: Bound<number>;
   /** Lost releases the band allows per repeat; none when absent. */
   collapsedMax?: number;
   detail: string;
 }
 
-/**
- * Bands the register pinned (`debug/2026-10-20-midi-input-alignment/note.md`, "Bring-up").
- * A band is the measured shape of a characterized defect: a release that changes it reads
- * `aligned` or `investigate`, never silently the same.
- */
-const LATE_60HZ = {
-  // The 41 bring-up medians (+32.2 … +33.3 ms) with 5 ms to either side.
-  medianMsMin: 28,
-  medianMsMax: 38,
-  // The clamp moves a note at most one frame early plus a quantum of slot staleness: 20 + 2.9 ms.
-  maxDevMsMax: 23,
-  // The same clamp on a release.
-  durationErrorMsMax: 23,
-  // What a 60 Hz display gives Chrome's animation frames, under load included (18.6 ms measured).
-  frameIntervalMsRange: [14, 20] as [number, number],
+const LATE = {
+  medianMs: (ctx: BandContext): [number, number] => {
+    const expected = expectedLateMedianMs(ctx);
+    return [expected - LATE_MEDIAN_MARGIN_MS, expected + LATE_MEDIAN_MARGIN_MS];
+  },
+  maxDevMs: clampJitterBoundMs,
+  durationErrorMs: clampJitterBoundMs,
 };
 
+/**
+ * Bands the register characterized (`debug/2026-10-20-midi-input-alignment/note.md`). A band is the
+ * measured shape of a defect, computed from each row's own output latency, frame interval and
+ * sample rate, so it holds on any machine: a median that tracks the formula matches, one that does
+ * not reads `investigate`, and a release that changes the recorder reads `aligned` or `investigate`.
+ */
 export const MIDI_KNOWN_DEFECTS: readonly KnownDefectBand[] = [
   {
-    id: "midi-late-60hz-release-lost",
+    id: "midi-late-release-lost",
     scenario: "janked-mid",
-    ...LATE_60HZ,
+    ...LATE,
     // The note at the jank instant: a release inside the block, or up to a frame after it, is written from a
     // position as old as the block.
     collapsedMax: 1,
-    detail: "the 60 Hz band, plus one release lost to the main-thread block (written from a position as old as the block)",
+    detail: "the late band, plus one release lost to the main-thread block (written from a position as old as the block)",
   },
   {
-    id: "midi-late-60hz",
+    id: "midi-late",
     scenario: "any",
-    ...LATE_60HZ,
-    detail: "notes written at the rendered position plus the output latency, extrapolated from a frame-stale base "
-      + "(about +32 ms at 60 Hz with 23 ms output latency); the clamp of a stamp before the last frame read spreads them up to a frame early",
+    ...LATE,
+    detail: "notes written at the rendered position plus the latency term, extrapolated from a frame-stale base "
+      + "(2 × (output + compensation latency) − (frame − quantum)); the clamp of a stamp before the last frame read spreads them up to a frame early",
   },
 ];
+
+const resolve = <T,>(bound: Bound<T> | undefined, context: BandContext | null | undefined): T | null | undefined =>
+  typeof bound === "function" ? (context ? (bound as (c: BandContext) => T)(context) : null) : bound;
 
 const fmt = (value: number): string => String(Number(value.toFixed(2)));
 
@@ -240,7 +270,7 @@ export function classifyMidiCell(
   repeats: readonly RepeatFigures[],
   tolerances: MidiTolerances,
   bands: readonly KnownDefectBand[] = MIDI_KNOWN_DEFECTS,
-  frameIntervalsMs: ReadonlyArray<number | null> = [],
+  contexts: ReadonlyArray<BandContext | null> = [],
 ): { status: MidiCellStatus; detail: string } {
   if (repeats.length === 0) return { status: "investigate", detail: "no repeats" };
   const integrity: Array<keyof RepeatFigures> = ["missing", "receiptsMissing", "extra", "stuck", "velocityMismatches"];
@@ -267,16 +297,21 @@ export function classifyMidiCell(
   }
   const band = bands.find((b) =>
     (b.scenario === "any" || b.scenario === scenario)
-    && medians.every((m) => m >= b.medianMsMin && m <= b.medianMsMax)
-    && spreads.every((v) => v <= (b.maxDevMsMax ?? tolerances.spreadMs))
-    && durations.every((v) => v <= (b.durationErrorMsMax ?? tolerances.durationMs))
     && collapsedCounts.every((v) => v <= (b.collapsedMax ?? 0))
-    && (b.frameIntervalMsRange === undefined || repeats.every((_, i) => {
-      const f = frameIntervalsMs[i];
-      return f !== null && f !== undefined && f >= b.frameIntervalMsRange![0] && f <= b.frameIntervalMsRange![1];
-    })));
+    && repeats.every((_, i) => {
+      const context = contexts[i] ?? null;
+      const range = resolve(b.medianMs, context);
+      const maxDev = resolve(b.maxDevMs, context) ?? tolerances.spreadMs;
+      const duration = resolve(b.durationErrorMs, context) ?? tolerances.durationMs;
+      if (range === null || range === undefined || maxDev === null || duration === null) return false;
+      return medians[i] >= range[0] && medians[i] <= range[1] && spreads[i] <= maxDev && durations[i] <= duration;
+    }));
   if (band !== undefined) {
-    return { status: "matches-known-defect", detail: `${band.id}: ${band.detail} (medians ${medians.map(fmt).join(", ")} ms)` };
+    const expected = contexts.map((c) => (c ? fmt(expectedLateMedianMs(c)) : "—"));
+    return {
+      status: "matches-known-defect",
+      detail: `${band.id}: ${band.detail} (medians ${medians.map(fmt).join(", ")} ms; expected ${expected.join(", ")} ms on this machine)`,
+    };
   }
   if (collapsedOffender >= 0) {
     return { status: "investigate", detail: `collapsed ${collapsedCounts[collapsedOffender]} on repeat ${collapsedOffender + 1}` };
