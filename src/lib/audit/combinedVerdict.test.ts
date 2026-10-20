@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { classifyCombinedCell, expectedPartsApartMs } from "./combinedVerdict";
+import { classifyCombinedCell, expectedAudioMs, expectedPartsApartMs } from "./combinedVerdict";
+import { quantumMs } from "./midiInputAlignment";
 
 const ctx = (state: "default" | "calibrated", micInputPartMs = 40.9, outputLatencyMs = 23) => ({
   outputLatencyMs, compensationLatencyMs: 0, frameIntervalMs: 16.7, sampleRate: 44100,
@@ -69,5 +70,13 @@ describe("classifyCombinedCell at its edges", () => {
     ]);
     expect(v.status).toBe("investigate");
     expect(v.detail).toContain("on repeat 2");
+  });
+});
+
+describe("expectedAudioMs with plug-in delay compensation", () => {
+  it("subtracts the compensation latency the audio recorder also skips", () => {
+    const c = { ...ctx("default"), compensationLatencyMs: 5 };
+    expect(expectedAudioMs(c)).toBeCloseTo(63.9 - 23 - 0 - 5, 6);
+    expect(expectedPartsApartMs(c)).toBeCloseTo(2 * 28 - (16.7 - quantumMs(44100)) - (63.9 - 23 - 5), 6);
   });
 });

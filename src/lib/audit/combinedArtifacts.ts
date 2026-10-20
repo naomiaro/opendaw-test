@@ -77,6 +77,10 @@ export function parseCombinedSummary(json: unknown, runToken: number): CombinedS
   }
   if (!Array.isArray(summary.rows)) throw new Error(`summary ${runToken}: rows is not an array`);
   if (!Array.isArray(summary.cellVerdicts)) throw new Error(`summary ${runToken}: cellVerdicts is not an array`);
+  const mic = summary.micRoundTrip as Record<string, unknown> | undefined;
+  if (typeof mic !== "object" || mic === null || typeof mic.roundTripMs !== "number" || typeof mic.inputPartMs !== "number") {
+    throw new Error(`summary ${runToken}: micRoundTrip lacks roundTripMs / inputPartMs`);
+  }
   summary.rows.forEach((row: Record<string, unknown>, i: number) => {
     for (const key of COMBINED_ROW_COUNTS) {
       if (typeof row[key] !== "number") throw new Error(`summary ${runToken}: row ${i} lacks ${key}`);

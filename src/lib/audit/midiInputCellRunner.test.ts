@@ -117,3 +117,17 @@ describe("the metronome gain option", () => {
     expect(metronome).toEqual({ enabled: true, gain: -6 });
   });
 });
+
+describe("the metronome restore of an abandoned repeat", () => {
+  it("does not restore when the token was cancelled, so a later repeat is not flipped under it", async () => {
+    const metronome = { enabled: true, gain: -6 };
+    const token = { cancelled: false };
+    const audioContext = { get state() { token.cancelled = true; return "suspended"; } } as unknown as AudioContext;
+    const project = { engine: { preferences: { settings: { metronome, recording: {} } } } } as never;
+    await expect(runMidiCellRepeat({
+      project, audioContext, loopback: {} as never, audioUnitBox: {} as never, scenario: "nominal-start", bpm: 120, repeat: 1,
+      onStage: () => undefined, token, metronome: { enabled: false, gainDb: -120 },
+    })).rejects.toThrow();
+    expect(metronome).toEqual({ enabled: false, gain: -120 }); // left to the page's own run-level restore
+  });
+});

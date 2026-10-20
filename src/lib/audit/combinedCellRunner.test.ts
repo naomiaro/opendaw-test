@@ -46,4 +46,9 @@ describe("applyInputLatencyState", () => {
     expect(writes[0]).toBeCloseTo(0.06435, 9);
     expect(writes[1]).toBe(0);
   });
+  it("reports what the SDK applies: a negative part is floored to zero by the recorder", () => {
+    const project = { editing: { modify: (fn: () => void) => fn() } } as never;
+    const capture = { captureBox: { inputLatency: { setValue: () => undefined } } } as never;
+    expect(applyInputLatencyState(project, capture, "calibrated", -3)).toBe(0);
+  });
 });

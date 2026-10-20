@@ -86,11 +86,12 @@ export function audioFiguresFrom(input: {
   return measureCombined(match, input.midiNotes, input.bpm, outside);
 }
 
-/** Writes the state to the Tape capture box's own `inputLatency` field (seconds); returns the ms applied. */
+/** Writes the state to the Tape capture box's own `inputLatency` field (seconds); returns the ms the SDK applies,
+ *  which floors a negative value at 0 (`InputLatency.resolve`). */
 export function applyInputLatencyState(project: Project, tapeCapture: CaptureAudio, state: InputLatencyState, micInputPartMs: number): number {
   const seconds = inputLatencySecondsFor(state, micInputPartMs);
   project.editing.modify(() => tapeCapture.captureBox.inputLatency.setValue(seconds));
-  return seconds * 1000;
+  return Math.max(0, seconds) * 1000;
 }
 
 const audioRegionsOf = (tapeAdapter: AudioUnitBoxAdapter): AudioRegionBoxAdapter[] =>
@@ -132,6 +133,7 @@ export async function runCombinedRepeat(options: CombinedRepeatOptions): Promise
   const ctx = scheduleCtx as ScheduleContext;
 
   onStage("audio");
+  if (!region.box.isAttached()) throw new Error("the SDK aborted the take: its region was deleted on stop");
   await waitForLoaderTerminal(loader, 30_000, "take finalization");
   const dataOpt = loader.data;
   if (dataOpt.isEmpty()) throw new Error("the take's loader is terminal but holds no data");
@@ -167,10 +169,10 @@ export async function resetForNextCombinedCell(
         warnings.push(`finalization grace timed out before deleting the Tape's regions: ${String(err)}`);
       }
     }
-    const fileBox = regions[0].file.box;
+    const fileBoxes = [...new Set(regions.map((r) => r.file.box))];
     project.editing.modify(() => {
       regions.forEach((r) => r.box.delete());
-      fileBox.delete();
+      fileBoxes.forEach((box) => { if (box.isAttached()) box.delete(); });
     });
   }
   project.editing.modify(() => tapeCapture.captureBox.inputLatency.setValue(0));

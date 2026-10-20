@@ -21,6 +21,14 @@ describe("roundTripsFrom", () => {
     expect(trips.map((t) => t.roundTripMs!).every((ms) => Math.abs(ms - 64) < 4)).toBe(true); // the detector's hop is 1.45 ms at 44.1 kHz
     expect(trips.every((t) => (t.peakOverFloorDb ?? 0) > 20)).toBe(true);
   });
+  it("takes the onset of the click itself, not a noise rise earlier in the search window", () => {
+    const capture = synth([2822, 2822, 2822]);
+    // a rise of a quarter of the click's level 20 ms before the second click, inside its search window
+    const at = capture.emitFrames[1] + 2822 - Math.round(0.02 * rate);
+    for (let k = 0; k < 353; k++) capture.input[at + k] += 0.12 * Math.sin((2 * Math.PI * 6000 * k) / rate);
+    const trips = roundTripsFrom(capture);
+    expect(Math.abs((trips[1].roundTripMs as number) - 64)).toBeLessThan(4);
+  });
   it("reports a click it cannot find as null instead of taking noise", () => {
     const trips = roundTripsFrom(synth([2822, null, 2822]));
     expect(trips.map((t) => t.detectFrame === null)).toEqual([false, true, false]);
@@ -34,6 +42,10 @@ describe("summarizeRoundTrips", () => {
     expect(r).toMatchObject({ roundTripMs: 64.4, clicksFound: 3 });
     expect((r as { roundTripSpreadMs: number }).roundTripSpreadMs).toBeCloseTo(0.8, 6);
     expect((r as { inputPartMs: number }).inputPartMs).toBeCloseTo(41.4, 6);
+  });
+  it("refuses a spread wider than the band's margin and a negative input part", () => {
+    expect(summarizeRoundTrips([trip(60), trip(64), trip(76)], 23, -60, -20)).toMatchObject({ error: expect.stringMatching(/spread 16/) });
+    expect(summarizeRoundTrips([trip(20), trip(20.1), trip(20.2)], 23, -60, -20)).toMatchObject({ error: expect.stringMatching(/input part -2.9/) });
   });
   it("refuses with the floor and the peak when a click was not found", () => {
     expect(summarizeRoundTrips([trip(64), trip(null), trip(64)], 23, -60, -58)).toMatchObject({ error: expect.stringMatching(/2 of 3.*-60.*-58/s) });

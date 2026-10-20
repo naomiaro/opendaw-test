@@ -166,6 +166,11 @@ async function createMatrixContext(onStatus: (s: string) => void): Promise<Matri
   tapeCapture.monitoringMode = "off";
   tapeCapture.armed.setValue(true);
   await waitFor(() => tapeCapture.outputNode.nonEmpty(), 10_000, "the Tape's input chain");
+  // The SDK falls back to a stream without the device constraint when the device is refused: check what it opened.
+  const opened = tapeCapture.streamDeviceId.unwrapOrNull();
+  if (opened !== null && opened !== input.deviceId) {
+    throw new Error(`the Tape opened "${tapeCapture.deviceLabel.unwrapOrNull() ?? opened}" instead of "${input.label}"`);
+  }
   const tapeAdapter = project.rootBoxAdapter.audioUnits.adapters().find((u) => u.box === tapeUnitBox);
   if (tapeAdapter === undefined) throw new Error("no adapter for the Tape");
 
@@ -174,16 +179,18 @@ async function createMatrixContext(onStatus: (s: string) => void): Promise<Matri
     if (master !== undefined) project.editing.modify(() => master.box.volume.setValue(SILENT_VOLUME_DB));
   }
 
-  console.log(`[combined-audit] in="${input.label}" out="${output.label}" bus="${picked.name}"`);
+  const inputDevice = tapeCapture.deviceLabel.unwrapOrNull() ?? input.label;
+  console.log(`[combined-audit] in="${inputDevice}" out="${output.label}" bus="${picked.name}"`);
   return {
     project, audioContext, midiUnitBox, tapeAdapter, tapeCapture, loopback,
-    busName: picked.name, inputDevice: input.label, outputDevice: output.label, buildFeatures,
+    busName: picked.name, inputDevice, outputDevice: output.label, buildFeatures,
   };
 }
 
 /** Every run measures its own round trip (the built-in path has sat at 64 ms on some runs and 88 ms on others). */
 async function calibrate(ctx: MatrixContext, onStatus: (s: string) => void): Promise<MicRoundTrip> {
   onStatus("setup: calibration (three clicks, keep quiet)");
+  if (ctx.audioContext.state !== "running") throw new Error(`AudioContext is ${ctx.audioContext.state} — click Run with a real click`);
   const mic = await measureMicRoundTrip(ctx.audioContext, ctx.tapeCapture.outputNode.unwrap());
   console.log(`[combined-audit] mic round trip ${mic.roundTripMs.toFixed(2)} ms (spread ${mic.roundTripSpreadMs.toFixed(2)}), `
     + `input part ${mic.inputPartMs.toFixed(2)} ms (output latency ${mic.outputLatencyMs.toFixed(1)} after the clicks), floor ${mic.floorDb.toFixed(1)} peak ${mic.peakDb.toFixed(1)} dBFS`);
@@ -196,8 +203,11 @@ function getMatrixContext(onStatus: (s: string) => void): Promise<MatrixContext>
     let stage = "setup";
     matrixContextPromise = createMatrixContext((s) => { stage = s; onStatus(s); })
       .catch((err: unknown) => {
-        matrixContextPromise = null; // a failed setup is retried on the next run, not cached
-        throw new Error(`${stage} — ${err instanceof Error ? err.message : String(err)}`);
+        // Not retried: a setup that failed after creating units would leave them armed beside a second pair.
+        const message = `${stage} — ${err instanceof Error ? err.message : String(err)} (reload the page to try again)`;
+        matrixContextPromise = Promise.reject(new Error(message));
+        matrixContextPromise.catch(() => undefined);
+        throw new Error(message);
       });
   }
   return matrixContextPromise;
@@ -243,6 +253,10 @@ async function runAudit(setAuditState: (s: string) => void, onRows: (rows: Combi
   let hiddenCount = 0;
   const onVisibility = (): void => { if (document.visibilityState !== "visible") hiddenCount++; };
   document.addEventListener("visibilitychange", onVisibility);
+  // The run's original metronome preference, restored once at the end: a repeat the outer deadline abandoned
+  // skips its own restore, so the run-level one is what leaves localStorage as it was found.
+  const metronomeSettings = project.engine.preferences.settings.metronome;
+  const originalMetronome = { enabled: metronomeSettings.enabled, gain: metronomeSettings.gain };
   const allRows: CombinedRow[] = [];
   const cellVerdicts: CombinedCellVerdict[] = [];
   try {
@@ -308,6 +322,8 @@ async function runAudit(setAuditState: (s: string) => void, onRows: (rows: Combi
     }
   } finally {
     document.removeEventListener("visibilitychange", onVisibility);
+    metronomeSettings.enabled = originalMetronome.enabled;
+    metronomeSettings.gain = originalMetronome.gain;
   }
 
   const summary: CombinedSummary = {
@@ -351,11 +367,12 @@ function Harness() {
   }, [running]);
 
   const count = (status: CombinedRow["status"]): number => rows.filter((r) => r.status === status).length;
-  const last = [...rows].reverse().find((r) => r.outputLatencyMs !== null && r.frameIntervalMs !== null && r.sampleRate !== null && r.micInputPartMs !== null && r.micRoundTripMs !== null);
+  const last = [...rows].reverse().find((r) => r.outputLatencyMs !== null && r.compensationLatencyMs !== null && r.frameIntervalMs !== null
+    && r.sampleRate !== null && r.micInputPartMs !== null && r.micRoundTripMs !== null);
   const predict = (state: InputLatencyState): string => {
     if (last === undefined) return "—";
     const ctx: CombinedContext = {
-      outputLatencyMs: last.outputLatencyMs as number, compensationLatencyMs: last.compensationLatencyMs ?? 0, frameIntervalMs: last.frameIntervalMs as number,
+      outputLatencyMs: last.outputLatencyMs as number, compensationLatencyMs: last.compensationLatencyMs as number, frameIntervalMs: last.frameIntervalMs as number,
       sampleRate: last.sampleRate as number, state, micRoundTripMs: last.micRoundTripMs as number, micInputPartMs: last.micInputPartMs as number,
       inputLatencyAppliedMs: inputLatencySecondsFor(state, last.micInputPartMs as number) * 1000,
     };

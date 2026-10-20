@@ -329,8 +329,12 @@ export async function runMidiCellRepeat(options: MidiCellRepeatOptions): Promise
   try {
     return await repeatBody(options);
   } finally {
-    settings.metronome.enabled = prior.enabled;
-    settings.metronome.gain = prior.gain;
+    // An abandoned repeat (outer deadline fired) may settle during a LATER repeat: it must not restore under it.
+    // The page restores the run's original values once when the run ends.
+    if (!options.token.cancelled) {
+      settings.metronome.enabled = prior.enabled;
+      settings.metronome.gain = prior.gain;
+    }
   }
 }
 
@@ -440,8 +444,10 @@ async function repeatBody(options: MidiCellRepeatOptions): Promise<MidiCellRepea
   project.stopRecording();
   await waitForNotRecording(project, 10_000);
   assertCurrent(token, "finalizing");
-  await nextFrame();
-  await nextFrame();
+  await withDeadline(nextFrame(), 5_000, "an animation frame after the stop");
+  assertCurrent(token, "finalizing");
+  await withDeadline(nextFrame(), 5_000, "an animation frame after the stop");
+  assertCurrent(token, "finalizing");
   const jankMs = jankPromise === null ? null : await jankPromise;
   await Promise.all(countInSends);
   const frameGaps = frameWatch.stop();

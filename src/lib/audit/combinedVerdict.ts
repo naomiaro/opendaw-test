@@ -22,10 +22,10 @@ export interface CombinedContext extends BandContext {
   inputLatencyAppliedMs: number;
 }
 
-/** Where the SDK should land the sound: the round trip less the output latency of THIS repeat (what the audio
- *  recorder subtracts) less the field; an output-latency drift since the calibration therefore cancels. */
+/** Where the SDK should land the sound: the round trip less what the audio recorder subtracts — the output latency of
+ *  THIS repeat, the compensation latency, and the field; an output-latency drift since the calibration therefore cancels. */
 export function expectedAudioMs(ctx: CombinedContext): number {
-  return ctx.micRoundTripMs - ctx.outputLatencyMs - ctx.inputLatencyAppliedMs;
+  return ctx.micRoundTripMs - ctx.outputLatencyMs - ctx.compensationLatencyMs - ctx.inputLatencyAppliedMs;
 }
 
 /** Where the key lands relative to the sound on this machine, by the two recorders' rules. */

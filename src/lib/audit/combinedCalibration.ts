@@ -9,7 +9,7 @@
 import { withDeadline } from "@/lib/deadline";
 import { bandSplit } from "./recordingAlignment";
 import { detectOnsets } from "./onsetDetection";
-import { median } from "./midiInputAlignment";
+import { LATE_MEDIAN_MARGIN_MS, median } from "./midiInputAlignment";
 import { CLICK_DURATION_SEC, CLICK_GAIN, CLICK_HZ } from "./combinedClicks";
 
 export const CALIBRATION_CLICKS = 3;
@@ -108,7 +108,13 @@ export function roundTripsFrom(capture: CalibrationCapture): RoundTrip[] {
     if (peakOverFloorDb < CALIBRATION_MIN_RATIO_DB) return { emitFrame, detectFrame: null, roundTripMs: null, peakOverFloorDb };
     const onsets = detectOnsets(window, sampleRate, { refractorySec: 0.05 });
     if (onsets.length === 0) return { emitFrame, detectFrame: null, roundTripMs: null, peakOverFloorDb };
-    const detectFrame = emitFrame + Math.round(onsets[0] * sampleRate);
+    // The click's own onset is the last one at or before the window's peak; a smaller rise earlier in the window is not it.
+    let peakIndex = 0;
+    for (let i = 1; i < window.length; i++) if (Math.abs(window[i]) > Math.abs(window[peakIndex])) peakIndex = i;
+    const peakSec = peakIndex / sampleRate;
+    const atOrBeforePeak = onsets.filter((t) => t <= peakSec + 0.001);
+    const onsetSec = atOrBeforePeak.length > 0 ? atOrBeforePeak[atOrBeforePeak.length - 1] : onsets[0];
+    const detectFrame = emitFrame + Math.round(onsetSec * sampleRate);
     return { emitFrame, detectFrame, roundTripMs: ((detectFrame - emitFrame) / sampleRate) * 1000, peakOverFloorDb };
   });
 }
@@ -140,10 +146,18 @@ export function summarizeRoundTrips(
     };
   }
   const roundTripMs = median(found) as number;
+  const roundTripSpreadMs = Math.max(...found) - Math.min(...found);
+  if (roundTripSpreadMs > LATE_MEDIAN_MARGIN_MS) {
+    return { error: `calibration spread ${roundTripSpreadMs.toFixed(1)} ms over three clicks (${found.map((v) => v.toFixed(1)).join(", ")}) is wider than the ${LATE_MEDIAN_MARGIN_MS} ms margin a row is judged with: a noisy room or a moving path` };
+  }
+  const inputPartMs = roundTripMs - outputLatencyMs;
+  if (inputPartMs < 0) {
+    return { error: `calibration input part ${inputPartMs.toFixed(1)} ms is negative (round trip ${roundTripMs.toFixed(1)} below output latency ${outputLatencyMs.toFixed(1)}): the output latency read is not the running one` };
+  }
   return {
     roundTripMs,
-    roundTripSpreadMs: Math.max(...found) - Math.min(...found),
-    inputPartMs: roundTripMs - outputLatencyMs,
+    roundTripSpreadMs,
+    inputPartMs,
     outputLatencyMs,
     clicksFound: found.length,
     floorDb,
@@ -183,8 +197,9 @@ export async function measureMicRoundTrip(audioContext: AudioContext, source: Au
       gain: CLICK_GAIN,
     },
   });
-  const captured = new Promise<CalibrationCapture>((resolve) => {
+  const captured = new Promise<CalibrationCapture>((resolve, reject) => {
     node.port.onmessage = (event: MessageEvent<CalibrationCapture>) => resolve(event.data);
+    node.onprocessorerror = () => reject(new Error("the calibration processor threw"));
   });
   source.connect(node);
   node.connect(audioContext.destination);

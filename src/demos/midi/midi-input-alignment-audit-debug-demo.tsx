@@ -171,6 +171,10 @@ async function runAudit(setAuditState: (s: string) => void, onRows: (rows: MidiA
   let hiddenCount = 0;
   const onVisibility = (): void => { if (document.visibilityState !== "visible") hiddenCount++; };
   document.addEventListener("visibilitychange", onVisibility);
+  // The run's original metronome preference, restored once at the end (a repeat the outer deadline abandoned
+  // skips its own restore); engine preferences persist in localStorage for every page on the origin.
+  const metronomeSettings = project.engine.preferences.settings.metronome;
+  const originalMetronome = { enabled: metronomeSettings.enabled, gain: metronomeSettings.gain };
   const allRows: MidiAuditRow[] = [];
   const cellVerdicts: MidiCellVerdictRecord[] = [];
   try {
@@ -237,6 +241,8 @@ async function runAudit(setAuditState: (s: string) => void, onRows: (rows: MidiA
   }
   } finally {
     document.removeEventListener("visibilitychange", onVisibility);
+    metronomeSettings.enabled = originalMetronome.enabled;
+    metronomeSettings.gain = originalMetronome.gain;
   }
 
   const frameIntervals = allRows.map((r) => r.frameIntervalMs).filter((v): v is number => v !== null && v > 0);
