@@ -211,9 +211,12 @@ on the collapsed release (both repeats −109 ms; at 140 bpm, where run 1 had it
 repeats read 240 this time) — the figure that is now `collapsed` with its own band. The
 two `countin-start` repeats that errored (90 r2 hung in its stop stage for the outer
 deadline, 120 r1 then could not settle the position for 30 s) have the shape of a stalled
-animation-frame loop, the occluded-window hazard in the root CLAUDE.md; the page was in
-use at that time. Error rows now say whether the page was hidden during the repeat. The
-cells were re-run with the window visible, run `1792531058883`:
+animation-frame loop, the occluded-window hazard in the root CLAUDE.md; the window was
+partly covered at the time (the user's account). A partly covered window keeps
+`document.visibilityState` at `visible`, so since that run every row carries
+`frameGapMaxMs`, the longest gap between animation frames during the repeat, and an error
+row names a stall past one second as such. The cells were re-run with the window
+uncovered, run `1792531058883`:
 
 | countin-start | 90 | matches-known-defect | 33.33 / 32.99 | 9.37 | 0/0/0/0/0 | 16.78 | 25.19 | 2/6 |
 | countin-start | 120 | matches-known-defect | 33.07 / 33.33 | 8.59 | 0/0/0/0/0 | 16.64 | 25.03 | 2/6 |

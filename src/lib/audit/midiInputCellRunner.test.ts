@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { BAR_PPQN } from "./auditExpectations";
 import { buildPattern } from "./midiInputPattern";
-import { cellLabel, scheduleFor, sentNotesFrom } from "./midiInputCellRunner";
+import { cellLabel, frameGapSummary, scheduleFor, sentNotesFrom } from "./midiInputCellRunner";
 
 const anchor = { contextTime: 12.0, position: 0 };
 const pair = { contextTime: 10.0, performanceTime: 5000 };
@@ -32,5 +32,17 @@ describe("sentNotesFrom", () => {
     expect(sent[1].expectedPpqn).toBeNull();
     expect(sent[1].receiptPerfMs).toBeNull();
     expect(cellLabel("loop-wrap", 90, 2)).toBe("loop-wrap/90/r2");
+  });
+});
+
+describe("frameGapSummary", () => {
+  it("gives the median and the largest gap between frame stamps", () => {
+    const { frames, medianMs, maxGapMs } = frameGapSummary([0, 16.7, 33.4, 50.1, 2050, 2066.7]);
+    expect(frames).toBe(6);
+    expect(medianMs).toBeCloseTo(16.7, 6);
+    expect(maxGapMs).toBeCloseTo(1999.9, 6);
+  });
+  it("is null with fewer than two stamps", () => {
+    expect(frameGapSummary([5])).toEqual({ frames: 1, medianMs: null, maxGapMs: null });
   });
 });

@@ -253,6 +253,10 @@ picks another). Register: `debug/2026-10-20-midi-input-alignment/note.md`.
 - **On an IAC bus `loopbackDelayMs` is 0.000:** Chrome stamps the message with its scheduled
   CoreMIDI time, so the receipt stamp IS the schedule.
 - Edits under `src/` reload the page and lose a run; edit `debug/*.md` instead while one runs.
+  Keep the Chrome window uncovered for the whole run: a partly covered window stalled the
+  animation frames in one sweep (two repeats hung on frame-driven waits) while
+  `document.visibilityState` stayed `visible`; a row's `frameGapMaxMs` is the figure to check
+  before reading a hang as an SDK finding.
 
 ## Cross-References
 - For recording preferences (takes, count-in), see `src/demos/recording/CLAUDE.md`

@@ -40,6 +40,8 @@ export interface MidiCellRepeatOptions {
   repeat: number;
   onStage: (stage: string) => void;
   token: RepeatToken;
+  /** The page's own watch, so a failed repeat still reports the frame gaps seen so far. */
+  frameWatch?: FrameWatch;
 }
 
 export interface MidiCellRepeatResult {
@@ -51,6 +53,7 @@ export interface MidiCellRepeatResult {
   originPpqn: number;
   jankMs: number | null;
   frameIntervalMs: number;
+  frameGapMaxMs: number | null;
   outputLatencyMs: number;
   baseLatencyMs: number;
   compensationLatencyMs: number;
@@ -142,18 +145,35 @@ export function jankBetweenFrames(atPerfMs: number, jankMs: number): Promise<num
   });
 }
 
-/** The median gap between `frames` animation-frame ticks. */
-export function measureFrameIntervalMs(frames: number = 30): Promise<number> {
-  return new Promise<number>((resolve) => {
-    const stamps: number[] = [];
-    const sub = AnimationFrame.add(() => {
-      stamps.push(performance.now());
-      if (stamps.length <= frames) return;
-      sub.terminate();
-      const gaps = stamps.slice(1).map((t, i) => t - stamps[i]);
-      resolve(median(gaps) ?? 0);
-    });
-  });
+export interface FrameGapSummary {
+  frames: number;
+  medianMs: number | null;
+  /** The longest the page went without an animation frame: a stall (a covered or hidden window) shows here
+   *  whatever `document.visibilityState` said. */
+  maxGapMs: number | null;
+}
+
+export function frameGapSummary(stamps: readonly number[]): FrameGapSummary {
+  if (stamps.length < 2) return { frames: stamps.length, medianMs: null, maxGapMs: null };
+  const gaps = stamps.slice(1).map((t, i) => t - stamps[i]);
+  return { frames: stamps.length, medianMs: median(gaps), maxGapMs: Math.max(...gaps) };
+}
+
+/** Records every animation frame from `start()` until `stop()`, for the whole repeat. */
+export class FrameWatch {
+  #stamps: number[] = [];
+  #sub: { terminate(): void } | null = null;
+
+  start(): void {
+    this.#stamps = [];
+    this.#sub = AnimationFrame.add(() => this.#stamps.push(performance.now()));
+  }
+
+  stop(): FrameGapSummary {
+    this.#sub?.terminate();
+    this.#sub = null;
+    return frameGapSummary(this.#stamps);
+  }
 }
 
 export function waitUntilPerf(atPerfMs: number, token: RepeatToken, stage: string): Promise<void> {
@@ -230,6 +250,8 @@ function noteRowsFrom(
 export async function runMidiCellRepeat(options: MidiCellRepeatOptions): Promise<MidiCellRepeatResult> {
   const { project, audioContext, loopback, audioUnitBox, scenario, bpm, onStage, token } = options;
   onStage("prefs");
+  const frameWatch = options.frameWatch ?? new FrameWatch();
+  frameWatch.start();
   project.editing.modify(() => {
     project.timelineBox.bpm.setValue(bpm);
   });
@@ -310,7 +332,6 @@ export async function runMidiCellRepeat(options: MidiCellRepeatOptions): Promise
     : null;
 
   onStage("recording");
-  const frameInterval = measureFrameIntervalMs();
   await waitUntilPerf(perfAt(patternEndPpqn(originPpqn) + STOP_AFTER_PATTERN_PPQN), token, "stop");
 
   onStage("stopping");
@@ -320,7 +341,8 @@ export async function runMidiCellRepeat(options: MidiCellRepeatOptions): Promise
   await nextFrame();
   await nextFrame();
   const jankMs = jankPromise === null ? null : await jankPromise;
-  const frameIntervalMs = await withDeadline(frameInterval, 5_000, "frame interval");
+  const frameGaps = frameWatch.stop();
+  const frameIntervalMs = frameGaps.medianMs ?? 0;
 
   onStage("measuring");
   const recorded = collectRecordedNotes(audioUnitBox);
@@ -345,6 +367,7 @@ export async function runMidiCellRepeat(options: MidiCellRepeatOptions): Promise
     originPpqn,
     jankMs,
     frameIntervalMs,
+    frameGapMaxMs: frameGaps.maxGapMs,
     outputLatencyMs,
     baseLatencyMs,
     compensationLatencyMs,

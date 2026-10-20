@@ -46,6 +46,8 @@ export interface MidiAuditRow extends RepeatFigures {
   anchorPosition: number | null;
   originPpqn: number | null;
   frameIntervalMs: number | null;
+  /** The longest gap between animation frames during the repeat; a stalled window shows here. */
+  frameGapMaxMs: number | null;
   outputLatencyMs: number | null;
   baseLatencyMs: number | null;
   compensationLatencyMs: number | null;

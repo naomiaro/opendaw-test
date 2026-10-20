@@ -31,7 +31,7 @@ import {
 } from "@/lib/audit/midiInputArtifacts";
 import { MidiLoopbackSender, pickIacPorts } from "@/lib/audit/midiLoopback";
 import {
-  cellLabel, resetForNextMidiCell, runMidiCellRepeat, type MidiCellRepeatResult,
+  cellLabel, FrameWatch, resetForNextMidiCell, runMidiCellRepeat, type MidiCellRepeatResult,
 } from "@/lib/audit/midiInputCellRunner";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
@@ -50,6 +50,8 @@ const AUDIT_LINKS: DebugLink[] = [
 
 const BUS = params.get("bus") ?? MIDI_BUS_DEFAULT;
 const AUDIBLE = params.get("audible") === "1";
+/** A gap between animation frames past this is a stalled page, not a slow one. */
+const FRAME_STALL_MS = 1000;
 /** The master unit's volume while the sweep is silent (the schema's floor, in dB). */
 const SILENT_VOLUME_DB = -96;
 
@@ -131,8 +133,8 @@ function errorRow(scenario: MidiScenario, bpm: number, repeat: number, detail: s
     placementMedianMs: null, placementMaxAbsDevMs: null, placementP5P95Ms: null, durationErrorMedianMs: null, durationErrorMaxMs: null,
     loopbackDelayMedianMs: null, loopbackDelayMaxMs: null, wrapAdjacent: 0, countInNotes: 0, countInRecorded: 0,
     jankMs: null, takeCount: 0, takeIndexSource: null, anchorContextTime: null, anchorPosition: null, originPpqn: null,
-    frameIntervalMs: null, outputLatencyMs: null, baseLatencyMs: null, compensationLatencyMs: null, sdkLatencyTermMs: null,
-    heardLagMs: null, cleanupWarning: null, notes: [],
+    frameIntervalMs: null, frameGapMaxMs: null, outputLatencyMs: null, baseLatencyMs: null, compensationLatencyMs: null,
+    sdkLatencyTermMs: null, heardLagMs: null, cleanupWarning: null, notes: [],
   };
 }
 
@@ -143,7 +145,7 @@ function resultRow(scenario: MidiScenario, bpm: number, repeat: number, r: MidiC
     jankMs: jank ? r.jankMs ?? JANK_MS : r.jankMs,
     takeCount: r.takeCount, takeIndexSource: r.takeIndexSource,
     anchorContextTime: r.anchor.contextTime, anchorPosition: r.anchor.position, originPpqn: r.originPpqn,
-    frameIntervalMs: r.frameIntervalMs, outputLatencyMs: r.outputLatencyMs, baseLatencyMs: r.baseLatencyMs,
+    frameIntervalMs: r.frameIntervalMs, frameGapMaxMs: r.frameGapMaxMs, outputLatencyMs: r.outputLatencyMs, baseLatencyMs: r.baseLatencyMs,
     compensationLatencyMs: r.compensationLatencyMs, sdkLatencyTermMs: r.sdkLatencyTermMs, heardLagMs: r.heardLagMs,
     cleanupWarning: null, notes: r.notes,
   };
@@ -176,10 +178,11 @@ async function runAudit(setAuditState: (s: string) => void, onRows: (rows: MidiA
         let stage = "prefs";
         let row: MidiAuditRow;
         const hiddenBefore = hiddenCount;
+        const frameWatch = new FrameWatch();
         try {
           const result = await runRepeatWithDeadline(
             (token) => runMidiCellRepeat({
-              project, audioContext, loopback, audioUnitBox, scenario, bpm, repeat, token,
+              project, audioContext, loopback, audioUnitBox, scenario, bpm, repeat, token, frameWatch,
               onStage: (s) => { stage = s; },
             }),
             120_000,
@@ -190,10 +193,14 @@ async function runAudit(setAuditState: (s: string) => void, onRows: (rows: MidiA
           frameIntervals.push(result.frameIntervalMs);
         } catch (err) {
           const hidden = hiddenCount > hiddenBefore || document.visibilityState !== "visible";
+          const gaps = frameWatch.stop();
+          const stalled = gaps.maxGapMs !== null && gaps.maxGapMs > FRAME_STALL_MS;
           const message = `${stage}: ${err instanceof Error ? err.message : String(err)}`
-            + (hidden ? " [the page was hidden or occluded during this repeat — not an SDK finding]" : "");
+            + (hidden ? " [the page was hidden during this repeat — not an SDK finding]" : "")
+            + (stalled ? ` [animation frames stalled: longest gap ${(gaps.maxGapMs as number).toFixed(0)} ms — a covered or hidden window, not an SDK finding]` : "");
           console.error(`[midi-input-audit] cell ${label} failed: ${message}`);
           row = errorRow(scenario, bpm, repeat, message);
+          row.frameGapMaxMs = gaps.maxGapMs;
         }
         try {
           row.cleanupWarning = await resetForNextMidiCell(project, audioUnitBox, loopback);
@@ -311,7 +318,7 @@ function Harness() {
                 <Table.Header>
                   <Table.Row>
                     {["scenario", "bpm", "rep", "status", "rec/sent", "miss", "no rcpt", "extra", "stuck", "vel", "median ms", "max dev ms",
-                      "collapsed", "p5–p95 ms", "dur max ms", "loopback ms", "frame ms", "sdk term ms", "heard lag ms", "takes", "cin rec/sent", "detail"]
+                      "collapsed", "p5–p95 ms", "dur max ms", "loopback ms", "frame ms", "frame gap max ms", "sdk term ms", "heard lag ms", "takes", "cin rec/sent", "detail"]
                       .map((h) => <Table.ColumnHeaderCell key={h}>{h}</Table.ColumnHeaderCell>)}
                   </Table.Row>
                 </Table.Header>
@@ -339,6 +346,7 @@ function Harness() {
                       <Table.Cell>{ms(r.durationErrorMaxMs)}</Table.Cell>
                       <Table.Cell>{ms(r.loopbackDelayMedianMs)}</Table.Cell>
                       <Table.Cell>{ms(r.frameIntervalMs)}</Table.Cell>
+                      <Table.Cell>{ms(r.frameGapMaxMs)}</Table.Cell>
                       <Table.Cell>{ms(r.sdkLatencyTermMs)}</Table.Cell>
                       <Table.Cell>{ms(r.heardLagMs)}</Table.Cell>
                       <Table.Cell>{r.takeCount}</Table.Cell>
@@ -365,6 +373,8 @@ Tolerances (ms)       placement ±${MIDI_TOLERANCES.placementMs} (one render qua
 Jank                  ${JANK_MS} ms main-thread block (janked-start: on the isRecording flip; janked-mid: a timer task mid pattern)
 Reference             a note's expected position is the HEARD position at its Web MIDI receipt stamp; nothing is netted out.
                       The SDK's latency term, the output and base latency and the frame interval are on every row.
+Keep this window uncovered for the whole run: a covered window stalls the animation frames the SDK's
+                      main-thread sync and this page's waits ride on (a row's "frame gap max" says if it happened).
 Click "Run audit" with a real click — it requests MIDI access and resumes the AudioContext.`}
             </pre>
           </Card>
