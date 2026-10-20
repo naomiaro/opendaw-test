@@ -32,10 +32,10 @@ const max = (values: Array<number | null>): number | null => {
   const present = values.filter((v): v is number => v !== null);
   return present.length === 0 ? null : Math.max(...present);
 };
-const sum = (rows: MidiAuditRow[], key: "missing" | "receiptsMissing" | "extra" | "stuck"): number =>
+const sum = (rows: MidiAuditRow[], key: "missing" | "receiptsMissing" | "extra" | "stuck" | "collapsed"): number =>
   rows.reduce((acc, r) => acc + r[key], 0);
 
-console.log("scenario | bpm | status | median ms (per repeat) | max dev ms | missing/no-receipt/extra/stuck | frame ms | sdk term ms | heard lag ms | count-in rec/sent | detail");
+console.log("scenario | bpm | status | median ms (per repeat) | max dev ms | missing/no-receipt/extra/stuck/collapsed | frame ms | sdk term ms | heard lag ms | count-in rec/sent | detail");
 for (const verdict of summary.cellVerdicts) {
   const rows = summary.rows.filter((r) => r.scenario === verdict.scenario && r.bpm === verdict.bpm);
   console.log([
@@ -44,7 +44,7 @@ for (const verdict of summary.cellVerdicts) {
     verdict.status,
     rows.map((r) => ms(r.placementMedianMs)).join(" / "),
     ms(max(rows.map((r) => r.placementMaxAbsDevMs))),
-    `${sum(rows, "missing")}/${sum(rows, "receiptsMissing")}/${sum(rows, "extra")}/${sum(rows, "stuck")}`,
+    `${sum(rows, "missing")}/${sum(rows, "receiptsMissing")}/${sum(rows, "extra")}/${sum(rows, "stuck")}/${sum(rows, "collapsed")}`,
     ms(max(rows.map((r) => r.frameIntervalMs))),
     ms(max(rows.map((r) => r.sdkLatencyTermMs))),
     ms(max(rows.map((r) => r.heardLagMs))),

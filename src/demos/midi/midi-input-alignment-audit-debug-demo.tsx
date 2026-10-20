@@ -127,7 +127,7 @@ function getMatrixContext(): Promise<MatrixContext> {
 function errorRow(scenario: MidiScenario, bpm: number, repeat: number, detail: string): MidiAuditRow {
   return {
     scenario, bpm, repeat, status: "error", detail,
-    notesSent: 0, notesRecorded: 0, judgedNotes: 0, missing: 0, receiptsMissing: 0, extra: 0, stuck: 0, velocityMismatches: 0,
+    notesSent: 0, notesRecorded: 0, judgedNotes: 0, missing: 0, receiptsMissing: 0, extra: 0, stuck: 0, velocityMismatches: 0, collapsed: 0,
     placementMedianMs: null, placementMaxAbsDevMs: null, placementP5P95Ms: null, durationErrorMedianMs: null, durationErrorMaxMs: null,
     loopbackDelayMedianMs: null, loopbackDelayMaxMs: null, wrapAdjacent: 0, countInNotes: 0, countInRecorded: 0,
     jankMs: null, takeCount: 0, takeIndexSource: null, anchorContextTime: null, anchorPosition: null, originPpqn: null,
@@ -157,8 +157,14 @@ async function runAudit(setAuditState: (s: string) => void, onRows: (rows: MidiA
   const runToken = Date.now();
   const { project, audioContext, audioUnitBox, loopback, busName, inputId, outputId, buildFeatures } = await getMatrixContext();
 
+  // An occluded or hidden window stalls the animation frames the SDK's main-thread sync and
+  // this runner's waits ride on (root CLAUDE.md); an error row says whether that happened.
+  let hiddenCount = 0;
+  const onVisibility = (): void => { if (document.visibilityState !== "visible") hiddenCount++; };
+  document.addEventListener("visibilitychange", onVisibility);
   const allRows: MidiAuditRow[] = [];
   const cellVerdicts: MidiCellVerdictRecord[] = [];
+  try {
   for (const scenario of scenarios) {
     for (const bpm of bpms) {
       const cellRows: MidiAuditRow[] = [];
@@ -169,6 +175,7 @@ async function runAudit(setAuditState: (s: string) => void, onRows: (rows: MidiA
         setAuditState(`running:${label}`);
         let stage = "prefs";
         let row: MidiAuditRow;
+        const hiddenBefore = hiddenCount;
         try {
           const result = await runRepeatWithDeadline(
             (token) => runMidiCellRepeat({
@@ -182,7 +189,9 @@ async function runAudit(setAuditState: (s: string) => void, onRows: (rows: MidiA
           figures.push(result.figures);
           frameIntervals.push(result.frameIntervalMs);
         } catch (err) {
-          const message = `${stage}: ${err instanceof Error ? err.message : String(err)}`;
+          const hidden = hiddenCount > hiddenBefore || document.visibilityState !== "visible";
+          const message = `${stage}: ${err instanceof Error ? err.message : String(err)}`
+            + (hidden ? " [the page was hidden or occluded during this repeat — not an SDK finding]" : "");
           console.error(`[midi-input-audit] cell ${label} failed: ${message}`);
           row = errorRow(scenario, bpm, repeat, message);
         }
@@ -208,6 +217,9 @@ async function runAudit(setAuditState: (s: string) => void, onRows: (rows: MidiA
       console.log(`[midi-input-audit] cell ${scenario}/${bpm}: ${verdict.status} — ${verdict.detail}`);
       onRows([...allRows]);
     }
+  }
+  } finally {
+    document.removeEventListener("visibilitychange", onVisibility);
   }
 
   const frameIntervals = allRows.map((r) => r.frameIntervalMs).filter((v): v is number => v !== null && v > 0);
@@ -299,7 +311,7 @@ function Harness() {
                 <Table.Header>
                   <Table.Row>
                     {["scenario", "bpm", "rep", "status", "rec/sent", "miss", "no rcpt", "extra", "stuck", "vel", "median ms", "max dev ms",
-                      "p5–p95 ms", "dur max ms", "loopback ms", "frame ms", "sdk term ms", "heard lag ms", "takes", "cin rec/sent", "detail"]
+                      "collapsed", "p5–p95 ms", "dur max ms", "loopback ms", "frame ms", "sdk term ms", "heard lag ms", "takes", "cin rec/sent", "detail"]
                       .map((h) => <Table.ColumnHeaderCell key={h}>{h}</Table.ColumnHeaderCell>)}
                   </Table.Row>
                 </Table.Header>
@@ -322,6 +334,7 @@ function Harness() {
                       <Table.Cell>{r.velocityMismatches}</Table.Cell>
                       <Table.Cell>{ms(r.placementMedianMs)}</Table.Cell>
                       <Table.Cell>{ms(r.placementMaxAbsDevMs)}</Table.Cell>
+                      <Table.Cell>{r.collapsed}</Table.Cell>
                       <Table.Cell>{ms(r.placementP5P95Ms)}</Table.Cell>
                       <Table.Cell>{ms(r.durationErrorMaxMs)}</Table.Cell>
                       <Table.Cell>{ms(r.loopbackDelayMedianMs)}</Table.Cell>

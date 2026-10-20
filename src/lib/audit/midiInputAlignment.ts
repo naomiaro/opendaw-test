@@ -5,7 +5,7 @@
  * (`SentNote.expectedPpqn`); nothing is netted out. See the register,
  * `debug/2026-10-20-midi-input-alignment/note.md`.
  */
-import { BEAT_PPQN, type MidiScenario, type MidiTolerances } from "./midiInputCalibration";
+import { BEAT_PPQN, RECORDER_MIN_NOTE_PPQN, type MidiScenario, type MidiTolerances } from "./midiInputCalibration";
 import type { PatternNote } from "./midiInputPattern";
 import { pulsesToMs } from "./midiClockMap";
 
@@ -40,6 +40,8 @@ export interface MatchedNote {
    *  (the recorder rounds the region end up to the next beat past it). A note of its sent length that a late
    *  take lets overhang the region end is placement, not a stuck key. */
   stuck: boolean;
+  /** Written at the recorder's minimum length while it was sent longer than twice that: the release was lost. */
+  collapsed: boolean;
   loopbackDelayMs: number;
 }
 
@@ -85,6 +87,7 @@ export function matchNotes(
       durationErrorMs: pulsesToMs(best.durationPpqn - note.durationPpqn, bpm),
       velocityMismatch: Math.abs(best.velocity - note.velocity) > 1,
       stuck: best.durationPpqn > 2 * note.durationPpqn && best.absolutePpqn + best.durationPpqn >= best.regionEndPpqn - BEAT_PPQN,
+      collapsed: best.durationPpqn <= RECORDER_MIN_NOTE_PPQN && note.durationPpqn > 2 * RECORDER_MIN_NOTE_PPQN,
       loopbackDelayMs: note.receiptPerfMs - note.scheduledPerfMs,
     });
   }
@@ -101,6 +104,8 @@ export interface RepeatFigures {
   extra: number;
   stuck: number;
   velocityMismatches: number;
+  /** Releases the recorder lost (see `MatchedNote.collapsed`); their durations are kept out of the duration figures. */
+  collapsed: number;
   placementMedianMs: number | null;
   placementMaxAbsDevMs: number | null;
   placementP5P95Ms: number | null;
@@ -129,7 +134,7 @@ export function measureRepeat(
   const judged = matched.filter(isJudged);
   const placement = judged.map((m) => m.placementErrorMs);
   const placementMedian = median(placement);
-  const durations = judged.map((m) => m.durationErrorMs);
+  const durations = judged.filter((m) => !m.collapsed).map((m) => m.durationErrorMs);
   const delays = matched.map((m) => m.loopbackDelayMs);
   const sentAll = [...matched.map((m) => m.sent), ...missing, ...receiptsMissing];
   const p5 = percentile(placement, 5);
@@ -143,6 +148,7 @@ export function measureRepeat(
     extra: extra.length,
     stuck: judged.filter((m) => m.stuck).length,
     velocityMismatches: judged.filter((m) => m.velocityMismatch).length,
+    collapsed: judged.filter((m) => m.collapsed).length,
     placementMedianMs: placementMedian,
     placementMaxAbsDevMs: placementMedian === null
       ? null
@@ -185,6 +191,8 @@ export interface KnownDefectBand {
   durationErrorMsMax?: number;
   /** The display frame interval the band was measured at; a row outside it, or without one, misses the band. */
   frameIntervalMsRange?: [number, number];
+  /** Lost releases the band allows per repeat; none when absent. */
+  collapsedMax?: number;
   detail: string;
 }
 
@@ -193,19 +201,31 @@ export interface KnownDefectBand {
  * A band is the measured shape of a characterized defect: a release that changes it reads
  * `aligned` or `investigate`, never silently the same.
  */
+const LATE_60HZ = {
+  // The 41 bring-up medians (+32.2 … +33.3 ms) with 5 ms to either side.
+  medianMsMin: 28,
+  medianMsMax: 38,
+  // The clamp moves a note at most one frame early plus a quantum of slot staleness: 20 + 2.9 ms.
+  maxDevMsMax: 23,
+  // The same clamp on a release.
+  durationErrorMsMax: 23,
+  // What a 60 Hz display gives Chrome's animation frames, under load included (18.6 ms measured).
+  frameIntervalMsRange: [14, 20] as [number, number],
+};
+
 export const MIDI_KNOWN_DEFECTS: readonly KnownDefectBand[] = [
+  {
+    id: "midi-late-60hz-release-lost",
+    scenario: "janked-mid",
+    ...LATE_60HZ,
+    // The note at the jank instant: its release lands inside the block and is lost when a frame runs before its handler.
+    collapsedMax: 1,
+    detail: "the 60 Hz band, plus one release lost inside the main-thread block (written at the minimum length)",
+  },
   {
     id: "midi-late-60hz",
     scenario: "any",
-    // The 41 bring-up medians (+32.2 … +33.3 ms) with 5 ms to either side.
-    medianMsMin: 28,
-    medianMsMax: 38,
-    // The clamp moves a note at most one frame early plus a quantum of slot staleness: 20 + 2.9 ms.
-    maxDevMsMax: 23,
-    // The same clamp on a release.
-    durationErrorMsMax: 23,
-    // What a 60 Hz display gives Chrome's animation frames, under load included (18.6 ms measured).
-    frameIntervalMsRange: [14, 20],
+    ...LATE_60HZ,
     detail: "notes written at the rendered position plus the output latency, extrapolated from a frame-stale base "
       + "(about +32 ms at 60 Hz with 23 ms output latency); the clamp of a stamp before the last frame read spreads them up to a frame early",
   },
@@ -235,10 +255,12 @@ export function classifyMidiCell(
   const medians = repeats.map((r) => r.placementMedianMs as number);
   const spreads = repeats.map((r) => r.placementMaxAbsDevMs as number);
   const durations = repeats.map((r) => Math.abs(r.durationErrorMaxMs ?? 0));
+  const collapsedCounts = repeats.map((r) => r.collapsed);
   const spreadOffender = spreads.findIndex((v) => v > tolerances.spreadMs);
   const medianOffender = medians.findIndex((m) => Math.abs(m) > tolerances.placementMs);
   const durationOffender = durations.findIndex((v) => v > tolerances.durationMs);
-  if (spreadOffender < 0 && medianOffender < 0 && durationOffender < 0) {
+  const collapsedOffender = collapsedCounts.findIndex((v) => v > 0);
+  if (spreadOffender < 0 && medianOffender < 0 && durationOffender < 0 && collapsedOffender < 0) {
     return { status: "aligned", detail: `medians ${medians.map(fmt).join(", ")} ms within ±${tolerances.placementMs}` };
   }
   const band = bands.find((b) =>
@@ -246,12 +268,16 @@ export function classifyMidiCell(
     && medians.every((m) => m >= b.medianMsMin && m <= b.medianMsMax)
     && spreads.every((v) => v <= (b.maxDevMsMax ?? tolerances.spreadMs))
     && durations.every((v) => v <= (b.durationErrorMsMax ?? tolerances.durationMs))
+    && collapsedCounts.every((v) => v <= (b.collapsedMax ?? 0))
     && (b.frameIntervalMsRange === undefined || repeats.every((_, i) => {
       const f = frameIntervalsMs[i];
       return f !== null && f !== undefined && f >= b.frameIntervalMsRange![0] && f <= b.frameIntervalMsRange![1];
     })));
   if (band !== undefined) {
     return { status: "matches-known-defect", detail: `${band.id}: ${band.detail} (medians ${medians.map(fmt).join(", ")} ms)` };
+  }
+  if (collapsedOffender >= 0) {
+    return { status: "investigate", detail: `collapsed ${collapsedCounts[collapsedOffender]} on repeat ${collapsedOffender + 1}` };
   }
   if (durationOffender >= 0) {
     return { status: "investigate", detail: `durationErrorMaxMs ${fmt(durations[durationOffender])} > ${tolerances.durationMs} on repeat ${durationOffender + 1}` };

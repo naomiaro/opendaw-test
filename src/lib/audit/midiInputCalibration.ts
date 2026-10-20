@@ -74,4 +74,8 @@ export const MIDI_TOLERANCES: MidiTolerances = {
   matchWindowPpqn: PPQN.Quarter / 2,
 };
 
+/** The length the recorder writes a key at before its release is known (a 1/128 note); a recorded note this short
+ *  that was sent longer is a release the recorder lost. */
+export const RECORDER_MIN_NOTE_PPQN = PPQN.fromSignature(1, 128);
+
 export const MIDI_BUS_DEFAULT = "IAC";

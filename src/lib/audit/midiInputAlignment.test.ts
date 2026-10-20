@@ -73,6 +73,21 @@ describe("measureRepeat", () => {
   });
 });
 
+describe("collapsed releases", () => {
+  it("counts a note written at the recorder's minimum length while it was sent longer, and keeps it out of the duration figures", () => {
+    const r = matchNotes([sent(0), sent(1)], [rec(0, { durationPpqn: 30 }), rec(1, { durationPpqn: 236 })], 120, 480);
+    expect(r.matched[0].collapsed).toBe(true);
+    expect(r.matched[1].collapsed).toBe(false);
+    const f = measureRepeat(r);
+    expect(f.collapsed).toBe(1);
+    expect(f.durationErrorMaxMs).toBeCloseTo((4 / 960) * 500, 6);
+  });
+  it("is not a collapse when the note was sent that short", () => {
+    const r = matchNotes([sent(0, { durationPpqn: 40 })], [rec(0, { durationPpqn: 30 })], 120, 480);
+    expect(r.matched[0].collapsed).toBe(false);
+  });
+});
+
 describe("median / percentile", () => {
   it("handles even counts and interpolates percentiles", () => {
     expect(median([3, 1, 2, 4])).toBe(2.5);
@@ -86,7 +101,7 @@ describe("MIDI_KNOWN_DEFECTS", () => {
   const row = (medianMs: number, spread: number, durationMax: number): ReturnType<typeof measureRepeat> => ({
     notesSent: 48, notesRecorded: 48, judgedNotes: 48, missing: 0, receiptsMissing: 0, extra: 0, stuck: 0, velocityMismatches: 0,
     placementMedianMs: medianMs, placementMaxAbsDevMs: spread, placementP5P95Ms: spread, durationErrorMedianMs: 0, durationErrorMaxMs: durationMax,
-    loopbackDelayMedianMs: 0, loopbackDelayMaxMs: 0, wrapAdjacent: 0, countInNotes: 0, countInRecorded: 0,
+    loopbackDelayMedianMs: 0, loopbackDelayMaxMs: 0, wrapAdjacent: 0, countInNotes: 0, countInRecorded: 0, collapsed: 0,
   });
   it("classifies every bring-up row of the register, including the one at an 18.6 ms frame", () => {
     expect(classifyMidiCell("midtimeline-start", [row(32.64, 9.72, 12.5), row(33.33, 9.72, 9.72)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [18.57, 17.33]).status)
@@ -94,9 +109,14 @@ describe("MIDI_KNOWN_DEFECTS", () => {
     expect(classifyMidiCell("loop-wrap", [row(32.82, 10.42, 10.94), row(32.82, 9.38, 13.54)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [17.02, 16.8]).status)
       .toBe("matches-known-defect");
   });
-  it("misses a 120 Hz row and a collapsed release", () => {
+  it("misses a 120 Hz row, and a collapsed release anywhere but in janked-mid, where its own band takes one per repeat", () => {
     expect(classifyMidiCell("nominal-start", [row(40, 5, 8)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [8.33]).status).toBe("investigate");
-    expect(classifyMidiCell("janked-mid", [row(33, 9.4, 93.75)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [16.7]).status).toBe("investigate");
+    expect(classifyMidiCell("nominal-start", [{ ...row(33, 9.4, 8), collapsed: 1 }], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [16.7]))
+      .toMatchObject({ status: "investigate", detail: expect.stringContaining("collapsed 1") });
+    const janked = classifyMidiCell("janked-mid", [{ ...row(33, 9.4, 8), collapsed: 1 }, row(33, 9.4, 8)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [16.7, 16.7]);
+    expect(janked.status).toBe("matches-known-defect");
+    expect(janked.detail).toContain("release");
+    expect(classifyMidiCell("janked-mid", [{ ...row(33, 9.4, 8), collapsed: 2 }], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [16.7]).status).toBe("investigate");
   });
 });
 
@@ -116,7 +136,7 @@ describe("classifyMidiCell", () => {
   const clean = (medianMs: number, spread = 1): ReturnType<typeof measureRepeat> => ({
     notesSent: 48, notesRecorded: 48, judgedNotes: 48, missing: 0, receiptsMissing: 0, extra: 0, stuck: 0, velocityMismatches: 0,
     placementMedianMs: medianMs, placementMaxAbsDevMs: spread, placementP5P95Ms: spread, durationErrorMedianMs: 0, durationErrorMaxMs: 1,
-    loopbackDelayMedianMs: 0.4, loopbackDelayMaxMs: 0.9, wrapAdjacent: 0, countInNotes: 0, countInRecorded: 0,
+    loopbackDelayMedianMs: 0.4, loopbackDelayMaxMs: 0.9, wrapAdjacent: 0, countInNotes: 0, countInRecorded: 0, collapsed: 0,
   });
   it("is aligned only when every repeat is clean and inside every tolerance", () => {
     expect(classifyMidiCell("nominal-start", [clean(1), clean(-2)], MIDI_TOLERANCES).status).toBe("aligned");
