@@ -151,14 +151,77 @@ length to exceed twice the sent length.)
   the release to that stale read, which is where the note-on had been placed, so the
   length collapsed to the minimum. At 90 and 120 bpm the same note read 240 ± 12 pulses:
   at 90 the note (167 ms) outlasts the block, at 120 (125 ms) the release's handler ran
-  before a frame did on both repeats. Not a judged figure in this version (the duration
-  tolerance catches it as `durationErrorMaxMs`), listed under open items.
-- **Count-in notes** (two per `countin-start` repeat, sent 400 and 800 ms after the record
-  request): never recorded, as the SDK intends (a key released inside the count-in is
-  dropped). **Wrap-adjacent note** (`loop-wrap`): written into the OLD take at +13 … +16 ms
+  before a frame did on both repeats. In the re-run it was the 120 bpm cell that collapsed
+  (both repeats, −109 ms) and the 140 bpm cell that did not: whether a frame runs before
+  the release handler after the block decides it. Since the re-run it is the judged figure
+  `collapsed` (a recorded length at the recorder's minimum while the sent length was longer
+  than twice that), kept out of the duration figures, with a band of its own for
+  `janked-mid` (`midi-late-60hz-release-lost`, one per repeat) so the cell no longer flaps
+  between verdicts. A third run (`1792531208703`, `janked-mid` only) added the 90 bpm case:
+  the note outlasts the block by 17 ms and was still written at 39 pulses (−140 ms), so the
+  loss is not "the release fell inside the block" but "the first frame after the block reads
+  a position as old as the block, and every release until the next frame extrapolates from
+  it". `collapsed` therefore means written at less than half the sent length; 120 and 140
+  bpm read the band on that run, 90 read `investigate` before the criterion was widened.
+  Issue draft: `drafts/TO-REVIEW-openDAW-issue-release-lost-in-block.md`.
+- **Count-in notes (reported, not judged; a finding against the audio recorder):** three
+  per `countin-start` repeat since the re-run — two pressed at 15 % and 35 % of the
+  count-in bar and held 100 ms, one pressed at 75 % and held half a bar so it is still down
+  at the downbeat. On every row (10 of 10 repeats over two runs) the two short notes are
+  dropped and the held note is written at position 0 with only its post-downbeat part
+  (917 … 985 pulses for 960 expected). `RecordMidi` keeps a key pressed before the take
+  exists in `pendingNotes`, deletes it on release, and flushes what is still down to
+  position 0 when the take is created. The audio recorder captures from before the
+  count-in and keeps that head in the file behind the region's waveform offset, so a
+  pickup played into a microphone survives and can be revealed by trimming the region
+  start. Issue draft: `drafts/TO-REVIEW-openDAW-issue-countin-pickup-notes.md`.
+  **Wrap-adjacent note** (`loop-wrap`): written into the OLD take at +13 … +16 ms
   on two of six rows and into the new take at +32 ms on the other four, as the SDK's
   `crossesLoopEnd` branch says.
 - **`loopbackDelayMs` is 0.000 throughout** (see "What a cell measures").
+
+### Re-run under the band (same day)
+
+Run `1792530368624`, the same matrix after the review fixes (the band pinned, `stuck`
+corrected, the count-in notes reported, `heardLagMs` on every row), display 60.0 Hz:
+
+| scenario | bpm | status | median ms (r1 / r2) | max dev ms | missing / no receipt / extra / stuck / collapsed | frame ms | heard lag ms | count-in rec/sent |
+|---|---|---|---|---|---|---|---|---|
+| nominal-start | 90 | matches-known-defect | 33.33 / 32.99 | 9.72 | 0/0/0/0/NaN | 16.66 | 25.34 | 0/0 |
+| nominal-start | 120 | matches-known-defect | 33.07 / 33.33 | 9.37 | 0/0/0/0/NaN | 16.70 | 25.39 | 0/0 |
+| nominal-start | 140 | matches-known-defect | 33.04 / 33.04 | 9.38 | 0/0/0/0/NaN | 16.66 | 25.37 | 0/0 |
+| janked-start | 90 | matches-known-defect | 32.64 / 33.33 | 9.72 | 0/0/0/0/NaN | 16.69 | 24.87 | 0/0 |
+| janked-start | 120 | matches-known-defect | 32.82 / 32.81 | 8.86 | 0/0/0/0/NaN | 16.69 | 24.21 | 0/0 |
+| janked-start | 140 | matches-known-defect | 33.04 / 33.04 | 8.93 | 0/0/0/0/NaN | 16.66 | 24.59 | 0/0 |
+| janked-mid | 90 | matches-known-defect | 32.64 / 32.64 | 9.03 | 0/0/0/0/NaN | 16.69 | 25.39 | 0/0 |
+| janked-mid | 120 | investigate | 32.82 / 33.33 | 8.33 | 0/0/0/0/NaN | 16.67 | 25.45 | 0/0 |
+| janked-mid | 140 | matches-known-defect | 33.48 / 33.04 | 9.38 | 0/0/0/0/NaN | 16.70 | 25.40 | 0/0 |
+| countin-start | 90 | investigate | 32.64 / — | 9.03 | 0/0/0/0/NaN | 18.03 | 25.09 | 1/3 |
+| countin-start | 120 | investigate | — / 32.81 | 8.85 | 0/0/0/0/NaN | 16.74 | 25.09 | 1/3 |
+| countin-start | 140 | matches-known-defect | 33.03 / 33.04 | 9.38 | 0/0/0/0/NaN | 16.76 | 25.10 | 2/6 |
+| midtimeline-start | 90 | matches-known-defect | 33.33 / 33.33 | 9.72 | 0/0/0/0/NaN | 16.65 | 25.24 | 0/0 |
+| midtimeline-start | 120 | matches-known-defect | 32.81 / 33.33 | 9.90 | 0/0/0/0/NaN | 16.68 | 25.19 | 0/0 |
+| midtimeline-start | 140 | matches-known-defect | 33.48 / 33.04 | 8.93 | 0/0/0/0/NaN | 16.68 | 25.23 | 0/0 |
+| loop-wrap | 90 | matches-known-defect | 32.64 / 33.33 | 9.72 | 0/0/0/0/NaN | 16.70 | 25.08 | 0/0 |
+| loop-wrap | 120 | matches-known-defect | 32.82 / 32.82 | 9.38 | 0/0/0/0/NaN | 16.69 | 25.10 | 0/0 |
+| loop-wrap | 140 | matches-known-defect | 33.48 / 33.48 | 9.82 | 0/0/0/0/NaN | 16.67 | 25.10 | 0/0 |
+
+Rows marked `band` carry the `midi-late-60hz` detail. `janked-mid/120` read `investigate`
+on the collapsed release (both repeats −109 ms; at 140 bpm, where run 1 had it, both
+repeats read 240 this time) — the figure that is now `collapsed` with its own band. The
+two `countin-start` repeats that errored (90 r2 hung in its stop stage for the outer
+deadline, 120 r1 then could not settle the position for 30 s) have the shape of a stalled
+animation-frame loop, the occluded-window hazard in the root CLAUDE.md; the page was in
+use at that time. Error rows now say whether the page was hidden during the repeat. The
+cells were re-run with the window visible, run `1792531058883`:
+
+| countin-start | 90 | matches-known-defect | 33.33 / 32.99 | 9.37 | 0/0/0/0/0 | 16.78 | 25.19 | 2/6 |
+| countin-start | 120 | matches-known-defect | 33.07 / 33.33 | 8.59 | 0/0/0/0/0 | 16.64 | 25.03 | 2/6 |
+| countin-start | 140 | matches-known-defect | 33.04 / 33.04 | 8.93 | 0/0/0/0/0 | 16.80 | 25.26 | 2/6 |
+
+`heardLagMs`, the output lag the clock pair implies, measured on every row: 22.9 … 25.5 ms
+against `outputLatency` 23.0 ms, so the heard clock the expectation is built on lags the
+render clock by what the SDK's own term says, plus about two milliseconds.
 
 ### Against the audio recorder
 
@@ -184,13 +247,14 @@ Same shape as the matrix; take order from the labels on every repeat.
 
 ### The band this register pins
 
-`midi-late-60hz` in `MIDI_KNOWN_DEFECTS` (`src/lib/audit/midiInputAlignment.ts`): median
-+28 … +38 ms, largest deviation up to 12 ms, largest duration error up to 15 ms (the same
-clamp on releases), display frame interval 15 … 18 ms, any scenario. Fitted to the 41 rows
-above (medians +32.2 … +33.3, max dev 7.0 … 10.4, duration max 7.6 … 13.5 outside the two
-collapsed-release rows), with a margin of a quantum on each side of the median and of a
-frame on the jitter. The collapsed release (−93 ms) falls outside it and reads
-`investigate` on `durationErrorMaxMs`, as it should. A cell
+`midi-late-60hz` in `MIDI_KNOWN_DEFECTS` (`src/lib/audit/midiInputAlignment.ts`), any
+scenario: median +28 … +38 ms (the 41 bring-up medians, +32.2 … +33.3, with 5 ms to either
+side), largest deviation from the median up to 23 ms and largest duration error up to 23 ms
+(the clamp moves a note or a release at most one frame early, plus a quantum of slot
+staleness: 20 + 2.9), display frame interval 14 … 20 ms (what a 60 Hz display gives
+Chrome's frames, under load included; 18.6 measured). `midi-late-60hz-release-lost`, for
+`janked-mid` only, is the same band plus one lost release per repeat. The median bounds
+are fitted and say so; the jitter and duration bounds come from the mechanism. A cell
 inside it reads `matches-known-defect`; a release that moves the median or tightens the
 jitter reads `aligned` or `investigate`, never silently the same. The band is only for
 rows at 60 Hz: a row whose frame interval lies outside the range, or has none, misses it.
@@ -206,14 +270,14 @@ _Not yet run. The display (Liquid Retina XDR) supports 120 Hz; the sweep above r
 ### Open items
 
 1. **Constant placement offset** (+32 ms at 60 Hz): characterized above, two mechanisms
-   read from the source, one display rate measured. Draft an upstream issue once the 120 Hz
-   arm has separated the two terms (or, if it cannot be run, with the 60 Hz figures and the
-   source reading, labelled as such). The audio recorder's placement is the reference the
-   issue can point at.
-2. **Release lost inside a main-thread block** (`janked-mid`, 140 bpm, 2 of 2): a judged
-   figure of its own (e.g. a `collapsed` count: duration at the minimum while the sent
-   length was longer) would make it a verdict instead of a duration-tolerance failure;
-   then an upstream issue with the row.
+   read from the source, one display rate measured; the issue draft carries the 60 Hz
+   figures and the source reading, labelled as such, and the 120 Hz arm can be added to
+   it before posting. The audio recorder's placement is the reference the issue points at.
+   Draft: `drafts/TO-REVIEW-openDAW-issue-midi-placement-late.md`.
+2. **Release lost inside a main-thread block** (`janked-mid`: 140 bpm 2 of 2 in run 1,
+   120 bpm 2 of 2 in run 2): judged as `collapsed` since the re-run; issue draft written.
+4. **Count-in pickups** dropped or snapped to the downbeat where the audio recorder keeps
+   them: issue draft written.
 3. **Early-clamp jitter** (up to a frame, 1 … 17 of 48 notes per row): part of band 1's
    shape; whether it gets its own issue depends on how upstream wants the stamp handled.
 

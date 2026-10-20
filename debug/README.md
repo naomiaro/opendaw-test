@@ -6,6 +6,9 @@ Documented bugs and open questions from working with the OpenDAW SDK. Each inves
 
 Drafts that are written and not posted. Find them at any time with `ls debug/*/drafts/TO-REVIEW-*`.
 
+- [`2026-10-20-midi-input-alignment/drafts/TO-REVIEW-openDAW-issue-countin-pickup-notes.md`](./2026-10-20-midi-input-alignment/drafts/TO-REVIEW-openDAW-issue-countin-pickup-notes.md) — a MIDI note played during the count-in is dropped or snapped to the downbeat; audio keeps the same pickup.
+- [`2026-10-20-midi-input-alignment/drafts/TO-REVIEW-openDAW-issue-midi-placement-late.md`](./2026-10-20-midi-input-alignment/drafts/TO-REVIEW-openDAW-issue-midi-placement-late.md) — recorded MIDI lands about 32 ms after the heard beat (rendered position plus the output latency, from a frame-stale read); audio lands on it.
+- [`2026-10-20-midi-input-alignment/drafts/TO-REVIEW-openDAW-issue-release-lost-in-block.md`](./2026-10-20-midi-input-alignment/drafts/TO-REVIEW-openDAW-issue-release-lost-in-block.md) — a key released during a main-thread block is recorded at the minimum length.
 - [`2026-10-13-layer-delete-hang-report/drafts/TO-REVIEW-discord-reply.md`](./2026-10-13-layer-delete-hang-report/drafts/TO-REVIEW-discord-reply.md) — a reply for the Discord thread: what was tried, what the reporter should send.
 
 ## Layout

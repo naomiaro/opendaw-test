@@ -86,6 +86,11 @@ describe("collapsed releases", () => {
     const r = matchNotes([sent(0, { durationPpqn: 40 })], [rec(0, { durationPpqn: 30 })], 120, 480);
     expect(r.matched[0].collapsed).toBe(false);
   });
+  it("counts a release written at less than half the sent length after a block, and not the clamp jitter", () => {
+    const r = matchNotes([sent(0), sent(1)], [rec(0, { durationPpqn: 39 }), rec(1, { durationPpqn: 219 })], 120, 480);
+    expect(r.matched[0].collapsed).toBe(true);
+    expect(r.matched[1].collapsed).toBe(false);
+  });
 });
 
 describe("median / percentile", () => {

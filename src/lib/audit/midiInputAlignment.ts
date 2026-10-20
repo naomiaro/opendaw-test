@@ -40,7 +40,8 @@ export interface MatchedNote {
    *  (the recorder rounds the region end up to the next beat past it). A note of its sent length that a late
    *  take lets overhang the region end is placement, not a stuck key. */
   stuck: boolean;
-  /** Written at the recorder's minimum length while it was sent longer than twice that: the release was lost. */
+  /** Written at less than half its sent length (the sent length longer than twice the recorder's minimum): the release
+   *  was written from a position as old as a main-thread block, down to the minimum length. */
   collapsed: boolean;
   loopbackDelayMs: number;
 }
@@ -87,7 +88,7 @@ export function matchNotes(
       durationErrorMs: pulsesToMs(best.durationPpqn - note.durationPpqn, bpm),
       velocityMismatch: Math.abs(best.velocity - note.velocity) > 1,
       stuck: best.durationPpqn > 2 * note.durationPpqn && best.absolutePpqn + best.durationPpqn >= best.regionEndPpqn - BEAT_PPQN,
-      collapsed: best.durationPpqn <= RECORDER_MIN_NOTE_PPQN && note.durationPpqn > 2 * RECORDER_MIN_NOTE_PPQN,
+      collapsed: best.durationPpqn < note.durationPpqn / 2 && note.durationPpqn > 2 * RECORDER_MIN_NOTE_PPQN,
       loopbackDelayMs: note.receiptPerfMs - note.scheduledPerfMs,
     });
   }
@@ -218,9 +219,10 @@ export const MIDI_KNOWN_DEFECTS: readonly KnownDefectBand[] = [
     id: "midi-late-60hz-release-lost",
     scenario: "janked-mid",
     ...LATE_60HZ,
-    // The note at the jank instant: its release lands inside the block and is lost when a frame runs before its handler.
+    // The note at the jank instant: a release inside the block, or up to a frame after it, is written from a
+    // position as old as the block.
     collapsedMax: 1,
-    detail: "the 60 Hz band, plus one release lost inside the main-thread block (written at the minimum length)",
+    detail: "the 60 Hz band, plus one release lost to the main-thread block (written from a position as old as the block)",
   },
   {
     id: "midi-late-60hz",

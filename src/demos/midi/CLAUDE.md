@@ -220,7 +220,10 @@ picks another). Register: `debug/2026-10-20-midi-input-alignment/note.md`.
   what the recorder ADDS to a write position) rides on every row as `sdkLatencyTermMs`.
 - **Reading a row.** Median = the constant term; max dev and p5–p95 = jitter;
   missing / no receipt / extra / stuck / velocity = integrity (any of them fails the cell);
-  `durationErrorMaxMs` = the release side. `aligned` needs every figure inside the
+  `collapsed` = a release written at less than half its sent length (a band may allow it);
+  `durationErrorMaxMs` = the release side without the collapsed ones; `heardLagMs` = the
+  output lag the clock pair implies, the figure the latency attribution rests on; count-in
+  notes = recorded / sent, reported only. `aligned` needs every figure inside the
   tolerances in `midiInputCalibration.ts` (derived from a render quantum, not fitted);
   `matches-known-defect` needs every repeat inside one band of `MIDI_KNOWN_DEFECTS`
   (median range, jitter, duration, display frame interval); else `investigate` names the
@@ -228,9 +231,11 @@ picks another). Register: `debug/2026-10-20-midi-input-alignment/note.md`.
   `aligned`, until the recorder changes.
 - **Scenarios.** `nominal-start`, `janked-start` (the audio harness's 150 ms block on the
   `isRecording` flip), `janked-mid` (the same block fired from a timer task in the middle of
-  the pattern's bar two, between frames), `countin-start` (one-bar count-in; two unanchored
-  notes inside it are reported, never recorded), `midtimeline-start` (record from bar
-  three), `loop-wrap` (two-bar loop, takes allowed, three passes; the note ON the loop end is
+  the pattern's bar two, between frames), `countin-start` (one-bar count-in; three unanchored
+  notes inside it are reported, not judged: two short ones the SDK drops, one held across
+  the downbeat the SDK writes at position 0), `midtimeline-start` (record from bar
+  three), `loop-wrap` (two-bar loop, takes allowed; the notes span two passes and the stop
+  lead opens a third take; the note ON the loop end is
   `wrapAdjacent` and reported, not judged — the SDK writes a key pressed between the loop end
   and the wrap update into the old take).
 - **What the recorder does, as measured.** `RecordMidi` writes the extrapolated RENDERED
@@ -240,8 +245,11 @@ picks another). Register: `debug/2026-10-20-midi-input-alignment/note.md`.
   `RecordAudio` adds the same latencies to the buffer head it skips and lands at the heard
   beat, so the two recorders disagree by about twice the output latency. A key whose stamp
   precedes the last frame read is clamped to that read (up to a frame early, releases too).
-  A key released inside a main-thread block longer than the note is written at the minimum
-  length when a frame runs before its handler.
+  The first frame after a main-thread block reads a position as old as the block, so a key
+  released inside the block or within the frame after it is written far too short, down to
+  the minimum length. A key pressed and released inside the count-in is dropped; one still
+  held at the downbeat is written at position 0 with its post-downbeat part, where the audio
+  recorder keeps the whole pickup in the file behind the region's waveform offset.
 - **On an IAC bus `loopbackDelayMs` is 0.000:** Chrome stamps the message with its scheduled
   CoreMIDI time, so the receipt stamp IS the schedule.
 - Edits under `src/` reload the page and lose a run; edit `debug/*.md` instead while one runs.
