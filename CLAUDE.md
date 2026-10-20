@@ -676,6 +676,17 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   BUILD from the `buildFeatures` list the page probes off the live SDK, so read a verdict
   against the profile the run's own envelope names; the calibration branch's bands E/F were
   fitted to the runs they classify and carry no predictive content on them.
+- After SDK upgrades, also re-run the standing MIDI input alignment sweep:
+  `midi-input-alignment-audit-debug-demo.html?scenario=all&bpm=all` (then
+  `?scenario=loop-wrap&bpm=120&repeats=5`) — Chrome, a real click on Run, the IAC Driver
+  online (Audio MIDI Setup); measurement lib `src/lib/audit/midiInputAlignment.ts`,
+  calibration `src/lib/audit/midiInputCalibration.ts`, register
+  `debug/2026-10-20-midi-input-alignment/note.md`, table
+  `node scripts/audit/midi-input-alignment/table.ts`. A cell is judged against the HEARD
+  beat with nothing netted out, so a constant offset is read against the register's bands
+  (`MIDI_KNOWN_DEFECTS`), not as a new finding; a band is scoped to the display frame
+  interval it was measured at. Reading recipe and what each scenario provokes:
+  `src/demos/midi/CLAUDE.md`.
 - After SDK upgrades, also re-run the standing loudness meter sweep:
   `loudness-meter-audit-debug-demo.html?case=all` (then `&rate=44100`) — a real click on Run,
   the tab visible throughout, about twelve minutes, silent unless `&audible=1`. Compare the

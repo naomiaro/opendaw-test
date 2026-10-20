@@ -202,6 +202,50 @@ one at the loop start and applies the older-take preference to the pass before i
 `olderTakeAction: "mute-region"`, `olderTakeScope: "previous-only"`), so after Stop only the
 last pass is unmuted. A recording made earlier stays in the project and plays along.
 
+### MIDI Input Alignment Audit (unlisted)
+`midi-input-alignment-audit-debug-demo.html?scenario=<name|all>&bpm=<n|all>[&repeats=<n>][&bus=<substring>][&audible=1]`
+measures where `RecordMidi` places a note against the HEARD beat. The loopback is the macOS
+IAC Driver bus: the page sends a pattern on the IAC output with future Web MIDI timestamps
+(two bars of eighths, one bar of 1/32 notes, each held half its step, 48 distinct pitches),
+the SDK's capture, pinned to the IAC input by `CaptureMidiBox.deviceId` (a `StringField`;
+a connected keyboard stays out), records it, and the page reads the note regions off the
+box graph. The page refuses to run without an input/output pair named `*IAC*` (`?bus=`
+picks another). Register: `debug/2026-10-20-midi-input-alignment/note.md`.
+
+- **Reference frame.** `engine.recordingStart` is `ObservableOption<{contextTime, position}>`:
+  the first recording quantum's END on the context clock and the position at that instant.
+  `AudioContext.getOutputTimestamp()` maps a performance stamp to the HEARD context time.
+  A note's expected position is the heard position at its Web MIDI receipt stamp; nothing is
+  netted out. The SDK's own term (`audioContext.outputLatency + engine.compensationLatency`,
+  what the recorder ADDS to a write position) rides on every row as `sdkLatencyTermMs`.
+- **Reading a row.** Median = the constant term; max dev and p5–p95 = jitter;
+  missing / no receipt / extra / stuck / velocity = integrity (any of them fails the cell);
+  `durationErrorMaxMs` = the release side. `aligned` needs every figure inside the
+  tolerances in `midiInputCalibration.ts` (derived from a render quantum, not fitted);
+  `matches-known-defect` needs every repeat inside one band of `MIDI_KNOWN_DEFECTS`
+  (median range, jitter, duration, display frame interval); else `investigate` names the
+  first failing figure. The on-page copy says it: expect `investigate` or a band, not
+  `aligned`, until the recorder changes.
+- **Scenarios.** `nominal-start`, `janked-start` (the audio harness's 150 ms block on the
+  `isRecording` flip), `janked-mid` (the same block fired from a timer task in the middle of
+  the pattern's bar two, between frames), `countin-start` (one-bar count-in; two unanchored
+  notes inside it are reported, never recorded), `midtimeline-start` (record from bar
+  three), `loop-wrap` (two-bar loop, takes allowed, three passes; the note ON the loop end is
+  `wrapAdjacent` and reported, not judged — the SDK writes a key pressed between the loop end
+  and the wrap update into the old take).
+- **What the recorder does, as measured.** `RecordMidi` writes the extrapolated RENDERED
+  position plus the output latency, from a per-frame position read that is a frame old
+  (single-slot handoff refilled after each read), so every note lands about
+  `2 × outputLatency − (frame − quantum)` past the heard beat, the same at every tempo;
+  `RecordAudio` adds the same latencies to the buffer head it skips and lands at the heard
+  beat, so the two recorders disagree by about twice the output latency. A key whose stamp
+  precedes the last frame read is clamped to that read (up to a frame early, releases too).
+  A key released inside a main-thread block longer than the note is written at the minimum
+  length when a frame runs before its handler.
+- **On an IAC bus `loopbackDelayMs` is 0.000:** Chrome stamps the message with its scheduled
+  CoreMIDI time, so the receipt stamp IS the schedule.
+- Edits under `src/` reload the page and lose a run; edit `debug/*.md` instead while one runs.
+
 ## Cross-References
 - For recording preferences (takes, count-in), see `src/demos/recording/CLAUDE.md`
 - For general recording flow (startRecording, stopRecording), see `src/demos/recording/CLAUDE.md`
