@@ -446,7 +446,7 @@ function Harness() {
                       The engine preference recording.inputLatency is never written; the page refuses to run if another page left it non-zero.
 ?bus=<substring>      default "${MIDI_BUS_DEFAULT}" — the IAC Driver bus
 ?input= / ?output=    substrings of the microphone / speaker labels; default the laptop's built-in pair (an interface later is a parameter)
-?audible=1            hear the synth (the metronome is off in every scenario; the count-in forces it on, so that run sets its gain to −∞ and restores it)
+?audible=1            hear the synth (the metronome is off in every scenario; the count-in forces it on, so that run sets its gain to a finite −120 dB floor and restores it)
 Calibration           three 6 kHz clicks out of the speakers before the first repeat, measured through the Tape capture's own node in the worklet's
                       own frame count (no worklet clock read); written on every row. Keep the room quiet and the window uncovered.
 Prediction            partsApartMs ≈ 2 × (output + compensation latency) − (frame − quantum) − (input part − applied):

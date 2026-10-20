@@ -153,12 +153,18 @@ export function summarizeRoundTrips(
 
 /** Builds the worklet on `source`, measures, disconnects. The output latency is read once the capture is over,
  *  with the output running. Throws the refusal text when a click is not found. */
+const modulesLoaded = new WeakSet<AudioContext>();
+
 export async function measureMicRoundTrip(audioContext: AudioContext, source: AudioNode): Promise<MicRoundTrip> {
-  const moduleUrl = URL.createObjectURL(new Blob([CALIBRATION_PROCESSOR_SOURCE], { type: "application/javascript" }));
-  try {
-    await withDeadline(audioContext.audioWorklet.addModule(moduleUrl), 10_000, "the calibration worklet module");
-  } finally {
-    URL.revokeObjectURL(moduleUrl);
+  // Once per context: a second addModule would re-run registerProcessor, which throws in the worklet scope.
+  if (!modulesLoaded.has(audioContext)) {
+    const moduleUrl = URL.createObjectURL(new Blob([CALIBRATION_PROCESSOR_SOURCE], { type: "application/javascript" }));
+    try {
+      await withDeadline(audioContext.audioWorklet.addModule(moduleUrl), 10_000, "the calibration worklet module");
+    } finally {
+      URL.revokeObjectURL(moduleUrl);
+    }
+    modulesLoaded.add(audioContext);
   }
   const rate = audioContext.sampleRate;
   const node = new AudioWorkletNode(audioContext, CALIBRATION_PROCESSOR, {

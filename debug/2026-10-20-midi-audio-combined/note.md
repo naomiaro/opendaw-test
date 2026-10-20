@@ -34,8 +34,9 @@ render context time whose heard time is the same instant. A Vaporisateur's MIDI 
 pinned to the IAC input, records the keys; a Tape's audio capture, pinned to the microphone,
 records the room. The master is silenced; the metronome is off in every scenario (the
 engine mixes it after the master, so a silenced master would not have silenced it; the
-count-in forces it on, so `countin-start` sets its gain to −∞ for the run and the runner
-restores the flag and the gain it found).
+count-in forces it on, so `countin-start` sets its gain to a finite −120 dB floor for the
+run — −∞ would serialise as `null` in the persisted preferences — and the runner restores
+the flag and the gain it found).
 
 **Calibration, once per run, before the first repeat:** one worklet, fed from the Tape
 capture's own output node (the exact node the take is recorded from; a second microphone

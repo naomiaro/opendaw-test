@@ -284,8 +284,9 @@ MIDI capture and the clicks through a Tape pinned to the microphone, and reports
   every page on the origin); the page refuses to run if it is not 0.
 - **Metronome off** in every scenario: the engine mixes it after the master, so a −96 dB
   master leaves it in the microphone's take. The count-in forces it on, so `countin-start`
-  sets `settings.metronome.gain = -Infinity` and the MIDI runner restores both the flag and
-  the gain it found (preferences persist).
+  sets `settings.metronome.gain` to a finite floor (`METRONOME_SILENT_DB`, −120 dB; −Infinity
+  would serialise as `null` in the persisted preferences and void the section on a crash)
+  and the MIDI runner restores both the flag and the gain it found (preferences persist).
 - **Matching** anchors on the eighth bars (a 1/32 step is 62 ms at 120 bpm; an uncalibrated
   audio side reads 64 ms late, a whole step), re-matches the eighths around the anchor so a
   stray onset cannot take a pair, then matches the 1/32 bar around it and reports every error
