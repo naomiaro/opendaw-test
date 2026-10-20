@@ -947,6 +947,8 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   package.json/package-lock as out of sync). Don't treat the advisory as a CI blocker.
 - SDK upgrades specifically: bump `@opendaw/studio-sdk` only — sub-packages resolve transitively
   from the registry. NEVER install sub-packages as local `file:` references (breaks Cloudflare CI).
+  Then move `openDAWOriginal` to the new release tag and re-pin the XERJ corpus's openDAW clone to
+  the same commit (`xerj` skill, corpus upkeep).
 - SDK-upgrade changelog audits: verify every claim against the INSTALLED tarball
   (`node_modules/@opendaw/*/dist`), not the upstream git tag diff — a release tag can
   contain commits the npm publish was built without (0.0.158: `migrateCaptureTrackMismatch`
@@ -1040,7 +1042,10 @@ MCP server (user scope) and the `xerj` skill (`~/.claude/skills/xerj`, which hol
 commands, the corpus list and its upkeep) all live outside it. Without the skill or the
 node, skip retrieval and work from the SDK checkout (path in `.claude/local.md`): the
 checkout is the place to READ the SDK, the index is for finding where to read. The
-corpus's openDAW clone is **AGPL — adapt the approach, never copy code**. This repo is
+corpus's openDAW clone is **AGPL — adapt the approach, never copy code** — and it is
+pinned to the commit of the INSTALLED SDK release, like the checkout, never to upstream
+main: the corpus describes the code the demos run. Re-pin it on every SDK upgrade (the
+procedure is in the skill). This repo is
 indexed under the prefix `opendaw-test`. Never post to the XERJ project's tracker
 unasked (every `xerj` command prints a banner inviting it).
 
