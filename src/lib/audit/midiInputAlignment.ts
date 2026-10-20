@@ -207,7 +207,8 @@ export function clampJitterBoundMs({ frameIntervalMs, sampleRate }: BandContext)
   return frameIntervalMs + quantumMs(sampleRate);
 }
 
-/** Margin around the expected median: the bring-up medians sat within ±1 ms of the formula; a quantum and change. */
+/** Margin around the expected median: the bring-up medians sat 0 … +2.3 ms above the formula (furthest on rows with a
+ *  slow frame); 5 ms is a quantum and change past that. */
 export const LATE_MEDIAN_MARGIN_MS = 5;
 
 type Bound<T> = T | ((context: BandContext) => T);
@@ -242,6 +243,15 @@ const LATE = {
  * not reads `investigate`, and a release that changes the recorder reads `aligned` or `investigate`.
  */
 export const MIDI_KNOWN_DEFECTS: readonly KnownDefectBand[] = [
+  // The plain band first, so a janked-mid cell that lost no release is labelled with it.
+  {
+    id: "midi-late",
+    scenario: "any",
+    ...LATE,
+    detail: "notes written at the rendered position plus the latency term, extrapolated from a frame-stale base "
+      + "(2 × (output + compensation latency) − (frame − quantum); compensation was 0 on every bring-up row, its half is read "
+      + "from the engine); the clamp of a stamp before the last frame read spreads them up to a frame early",
+  },
   {
     id: "midi-late-release-lost",
     scenario: "janked-mid",
@@ -250,13 +260,6 @@ export const MIDI_KNOWN_DEFECTS: readonly KnownDefectBand[] = [
     // position as old as the block.
     collapsedMax: 1,
     detail: "the late band, plus one release lost to the main-thread block (written from a position as old as the block)",
-  },
-  {
-    id: "midi-late",
-    scenario: "any",
-    ...LATE,
-    detail: "notes written at the rendered position plus the latency term, extrapolated from a frame-stale base "
-      + "(2 × (output + compensation latency) − (frame − quantum)); the clamp of a stamp before the last frame read spreads them up to a frame early",
   },
 ];
 
@@ -283,10 +286,13 @@ export function classifyMidiCell(
     if (r.placementMedianMs === null || r.placementMaxAbsDevMs === null) {
       return { status: "investigate", detail: `no judged notes${on}` };
     }
+    if (r.durationErrorMaxMs === null) {
+      return { status: "investigate", detail: `no duration measured${on}` };
+    }
   }
   const medians = repeats.map((r) => r.placementMedianMs as number);
   const spreads = repeats.map((r) => r.placementMaxAbsDevMs as number);
-  const durations = repeats.map((r) => Math.abs(r.durationErrorMaxMs ?? 0));
+  const durations = repeats.map((r) => Math.abs(r.durationErrorMaxMs as number));
   const collapsedCounts = repeats.map((r) => r.collapsed);
   const spreadOffender = spreads.findIndex((v) => v > tolerances.spreadMs);
   const medianOffender = medians.findIndex((m) => Math.abs(m) > tolerances.placementMs);
@@ -312,6 +318,11 @@ export function classifyMidiCell(
       status: "matches-known-defect",
       detail: `${band.id}: ${band.detail} (medians ${medians.map(fmt).join(", ")} ms; expected ${expected.join(", ")} ms on this machine)`,
     };
+  }
+  const needsContext = bands.some((b) => (b.scenario === "any" || b.scenario === scenario) && typeof b.medianMs === "function");
+  const contextless = repeats.findIndex((_, i) => contexts[i] === null || contexts[i] === undefined);
+  if (needsContext && contextless >= 0) {
+    return { status: "investigate", detail: `no band context on repeat ${contextless + 1} (no frame interval or latency figure)` };
   }
   if (collapsedOffender >= 0) {
     return { status: "investigate", detail: `collapsed ${collapsedCounts[collapsedOffender]} on repeat ${collapsedOffender + 1}` };

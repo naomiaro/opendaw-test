@@ -32,8 +32,11 @@ const max = (values: Array<number | null>): number | null => {
   const present = values.filter((v): v is number => v !== null);
   return present.length === 0 ? null : Math.max(...present);
 };
-const sum = (rows: MidiAuditRow[], key: "missing" | "receiptsMissing" | "extra" | "stuck" | "collapsed"): number =>
-  rows.reduce((acc, r) => acc + r[key], 0);
+/** A count summed over the cell's rows, or "—" when a schema-1 row never recorded it. */
+const sum = (rows: MidiAuditRow[], key: "missing" | "receiptsMissing" | "extra" | "stuck" | "collapsed"): string => {
+  const values = rows.map((r) => r[key] as number | undefined);
+  return values.some((v) => v === undefined) ? "—" : String((values as number[]).reduce((acc, v) => acc + v, 0));
+};
 
 console.log("scenario | bpm | status | median ms (per repeat) | max dev ms | missing/no-receipt/extra/stuck/collapsed | frame ms | frame gap max ms | sdk term ms | heard lag ms | count-in rec/sent | detail");
 for (const verdict of summary.cellVerdicts) {
@@ -49,8 +52,11 @@ for (const verdict of summary.cellVerdicts) {
     ms(max(rows.map((r) => r.frameGapMaxMs ?? null))),
     ms(max(rows.map((r) => r.sdkLatencyTermMs))),
     ms(max(rows.map((r) => r.heardLagMs))),
-    `${rows.reduce((a, r) => a + r.countInRecorded, 0)}/${rows.reduce((a, r) => a + r.countInNotes, 0)}`,
+    rows.some((r) => (r.countInRecorded as number | undefined) === undefined)
+      ? "—"
+      : `${rows.reduce((a, r) => a + r.countInRecorded, 0)}/${rows.reduce((a, r) => a + r.countInNotes, 0)}`,
     verdict.detail,
+    ...rows.filter((r) => r.status === "error").map((r) => `r${r.repeat} error: ${r.detail ?? ""}`),
   ].join(" | "));
 }
 console.log(

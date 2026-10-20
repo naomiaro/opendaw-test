@@ -1,15 +1,19 @@
-<!-- Draft for andremichelle/openDAW. Not posted. Target: a new issue. -->
+<!-- Draft for andremichelle/openDAW. Not posted. Target: a new issue.
+     HELD (2026-10-20): not before the combined MIDI + audio cell has measured the two recorders together;
+     the audio half below is the recorder's arithmetic as the audio sweep validated it, not a same-setup measurement. -->
 
-# Recorded MIDI notes land about 32 ms after the beat the player heard; recorded audio lands on it
+# Recorded MIDI notes land about 32 ms after the beat the player heard; the audio recorder's own arithmetic puts a sound on it
 
 **SDK:** `@opendaw/studio-sdk` 0.0.176 (WASM engine), Chrome, macOS, 60 Hz display, `outputLatency` 23 ms.
 
 A MIDI note recorded through `RecordMidi` is written about 32 ms after the position the player heard
 when the key went down. The offset is the same at 90, 120 and 140 bpm (so it is a time, not a pulse
 count), the same with a count-in, from a mid-timeline start, across a loop wrap, and through a 150 ms
-main-thread block at the start or in the middle. Recorded audio on the same machine lands on the heard
-beat (the recording start-alignment sweep, netted medians within ±2 ms), so a key and a sound produced
-together end up about 32 ms apart in the project.
+main-thread block at the start or in the middle. The audio recorder's arithmetic places a sound at the
+heard beat (it subtracts the output and input latencies; the recording start-alignment sweep validated
+that with a synthetic loopback, netted by the output latency), so by the two recorders' own rules a key
+and a sound produced together end up about 32 ms apart in the project. That pairing has not been
+recorded together yet; the figures below are the MIDI side.
 
 Per note the error is not a single value: most notes sit at +32 … +35 ms, and a minority (1 to 17 of 48
 per take, more at faster note rates) sit at +23 … +28 ms, up to a display frame earlier, with their

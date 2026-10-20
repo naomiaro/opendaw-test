@@ -92,6 +92,9 @@ interface MatrixContext {
 async function createMatrixContext(): Promise<MatrixContext> {
   const { project, audioContext } = await initializeOpenDAW({ bpm: 120 });
   const buildFeatures = detectBuildFeatures(project.engine);
+  if (!buildFeatures.includes("recordingStart")) {
+    throw new Error("this build has no engine.recordingStart; the MIDI audit cannot anchor a repeat");
+  }
   await withDeadline(MidiDevices.requestPermission(), 30_000, "MIDI access");
   const picked = pickIacPorts(MidiDevices.inputDevices(), MidiDevices.outputDevices(), BUS);
   if ("error" in picked) throw new Error(picked.error);
@@ -194,7 +197,7 @@ async function runAudit(setAuditState: (s: string) => void, onRows: (rows: MidiA
           );
           row = resultRow(scenario, bpm, repeat, result, scenario === "janked-start", audioContext.sampleRate);
           figures.push(result.figures);
-          contexts.push({
+          contexts.push(result.frameIntervalMs === null ? null : {
             outputLatencyMs: result.outputLatencyMs, compensationLatencyMs: result.compensationLatencyMs,
             frameIntervalMs: result.frameIntervalMs, sampleRate: audioContext.sampleRate,
           });
@@ -303,7 +306,7 @@ function Harness() {
         <Flex direction="column" gap="4">
           <Heading size="7" align="center">MIDI Input Alignment Audit</Heading>
           <Text size="1" color="gray" align="center">
-            Judged against the heard beat; nothing netted. Expect <code>investigate</code> until the register pins a band.
+            Judged against the heard beat; nothing netted. Expect a known-defect band, not <code>aligned</code>, until the recorder changes.
           </Text>
 
           <Card>
@@ -381,7 +384,7 @@ function Harness() {
 ?repeats=<n>          default ${MIDI_REPEATS_PER_CELL}
 ?bus=<substring>      default "${MIDI_BUS_DEFAULT}" — the IAC Driver bus (Audio MIDI Setup → MIDI Studio → IAC Driver → Device is online)
 ?audible=1            hear the synth and the metronome (silent by default)
-Tolerances (ms)       placement ±${MIDI_TOLERANCES.placementMs} (one render quantum at 48 kHz is 2.67), spread ${MIDI_TOLERANCES.spreadMs}, duration ${MIDI_TOLERANCES.durationMs}; match window ${MIDI_TOLERANCES.matchWindowPpqn} pulses
+Tolerances (ms)       placement ±${MIDI_TOLERANCES.placementMs} (one render quantum: 2.67 at 48 kHz, 2.90 at 44.1 kHz), spread ${MIDI_TOLERANCES.spreadMs}, duration ${MIDI_TOLERANCES.durationMs}; match window ${MIDI_TOLERANCES.matchWindowPpqn} pulses
 Jank                  ${JANK_MS} ms main-thread block (janked-start: on the isRecording flip; janked-mid: a timer task mid pattern)
 Reference             a note's expected position is the HEARD position at its Web MIDI receipt stamp; nothing is netted out.
                       The SDK's latency term, the output and base latency and the frame interval are on every row.

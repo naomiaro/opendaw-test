@@ -1,4 +1,5 @@
-<!-- Draft for andremichelle/openDAW. Not posted. Target: a new issue. -->
+<!-- Draft for andremichelle/openDAW. Not posted. Target: a new issue.
+     HELD (2026-10-20): not before the combined MIDI + audio cell and the MIDI-effects harness have run. -->
 
 # A key released during, or just after, a main-thread block is recorded far too short
 

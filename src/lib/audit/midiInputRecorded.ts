@@ -16,10 +16,14 @@ export interface RecordedTake {
   durationPpqn: number;
 }
 
+export type TakeIndexSource = "label" | "order";
+
 export interface CollectedNotes {
   notes: RecordedNote[];
   takes: RecordedTake[];
-  takeIndexSource: "label" | "order";
+  takeIndexSource: TakeIndexSource;
+  /** Note regions without an event collection: nothing to read, which a caller must not pass off as "no notes". */
+  regionsWithoutEvents: number;
 }
 
 /** Note regions of every track of the unit, tracks in their index order. */
@@ -38,7 +42,7 @@ export function takeIndexFromLabel(label: string): number | null {
 }
 
 /** By label when every label parses; otherwise by position, then the track order `noteRegionsOf` gives. */
-export function orderTakes(regions: readonly NoteRegionBox[]): { takes: RecordedTake[]; source: "label" | "order" } {
+export function orderTakes(regions: readonly NoteRegionBox[]): { takes: RecordedTake[]; source: TakeIndexSource } {
   const labelled = regions.map((regionBox) => ({ regionBox, index: takeIndexFromLabel(regionBox.label.getValue()) }));
   const byLabel = labelled.every(({ index }) => index !== null);
   const ordered = byLabel
@@ -61,12 +65,15 @@ export function collectRecordedNotes(audioUnitBox: AudioUnitBox): CollectedNotes
   const { takes, source } = orderTakes(noteRegionsOf(audioUnitBox));
   const notes: RecordedNote[] = [];
   let earlierTakes = 0;
+  let regionsWithoutEvents = 0;
   for (const take of takes) {
     const { regionBox } = take;
-    const base = regionBox.position.getValue() + earlierTakes;
-    const regionEndPpqn = base + regionBox.duration.getValue();
+    const base = take.positionPpqn + earlierTakes;
+    const regionEndPpqn = base + take.durationPpqn;
     const collection = regionBox.events.targetVertex.unwrapOrNull();
-    if (collection !== null) {
+    if (collection === null) {
+      regionsWithoutEvents++;
+    } else {
       for (const { box } of asInstanceOf(collection.box, NoteEventCollectionBox).events.pointerHub.incoming()) {
         const event = asInstanceOf(box, NoteEventBox);
         notes.push({
@@ -79,10 +86,10 @@ export function collectRecordedNotes(audioUnitBox: AudioUnitBox): CollectedNotes
         });
       }
     }
-    earlierTakes += regionBox.duration.getValue();
+    earlierTakes += take.durationPpqn;
   }
   notes.sort((a, b) => a.absolutePpqn - b.absolutePpqn || a.pitch - b.pitch);
-  return { notes, takes, takeIndexSource: source };
+  return { notes, takes, takeIndexSource: source, regionsWithoutEvents };
 }
 
 /** Deletes every note region of the unit with its event collection (and so its events); returns the count. */

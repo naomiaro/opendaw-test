@@ -245,8 +245,9 @@ picks another). Register: `debug/2026-10-20-midi-input-alignment/note.md`.
   position plus the output latency, from a per-frame position read that is a frame old
   (single-slot handoff refilled after each read), so every note lands about
   `2 × outputLatency − (frame − quantum)` past the heard beat, the same at every tempo;
-  `RecordAudio` adds the same latencies to the buffer head it skips and lands at the heard
-  beat, so the two recorders disagree by about twice the output latency. A key whose stamp
+  `RecordAudio` adds the same latencies plus the input latency to the buffer head it skips,
+  which by its arithmetic lands at the heard beat, so the two recorders should disagree by
+  about twice the output latency (inferred; the combined MIDI + audio cell is the measurement). A key whose stamp
   precedes the last frame read is clamped to that read (up to a frame early, releases too).
   The first frame after a main-thread block reads a position as old as the block, so a key
   released inside the block or within the frame after it is written far too short, down to

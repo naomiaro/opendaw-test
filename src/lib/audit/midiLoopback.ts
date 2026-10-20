@@ -56,7 +56,7 @@ export interface Receipt {
   timeStamp: number;
 }
 
-/** A receipt belongs to a note when it lies within this much of the note's scheduled time (pitches repeat seconds apart). */
+/** A receipt belongs to a note when it lies within this much of the note's scheduled time. */
 const RECEIPT_WINDOW_MS = 50;
 
 /** Per scheduled note, in order: the earliest unused on-receipt of its pitch within the window of its time, then the earliest unused off after it within the window of its release. */
@@ -80,6 +80,13 @@ export function pairReceipts(
     const off = on === null ? null : take("off", note.pitch, on.timeStamp, note.offPerfMs + RECEIPT_WINDOW_MS);
     return { onPerfMs: on?.timeStamp ?? null, offPerfMs: off?.timeStamp ?? null };
   });
+}
+
+/** The first on-receipt of a pitch at or after `notBefore`, or null: how an unscheduled (count-in) note finds its receipt. */
+export function firstReceiptFor(receipts: readonly Receipt[], pitch: number, notBefore: number): Receipt | null {
+  return [...receipts]
+    .sort((a, b) => a.timeStamp - b.timeStamp)
+    .find((r) => r.kind === "on" && r.pitch === pitch && r.timeStamp >= notBefore) ?? null;
 }
 
 const ALL_NOTES_OFF = 123;

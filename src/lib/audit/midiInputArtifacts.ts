@@ -9,7 +9,12 @@ import type { MidiScenario, MidiTolerances } from "./midiInputCalibration";
 import type { NoteTag } from "./midiInputPattern";
 import type { MidiCellStatus, RepeatFigures } from "./midiInputAlignment";
 
-export const MIDI_AUDIT_SCHEMA_VERSION = 1;
+/** 1: the first sweeps; 2: `collapsed`, `countInRecorded`, `heardLagMs`, `frameGapMaxMs`, `sampleRate` on every row. */
+export const MIDI_AUDIT_SCHEMA_VERSION = 2;
+/** Schema 1 summaries are read with their missing figures as undefined; the table prints them as absent. */
+export const MIDI_AUDIT_SCHEMA_VERSIONS_READABLE = [1, 2] as const;
+/** The per-row counts the table sums; a readable summary must carry each as a number or leave it undefined (schema 1). */
+export const MIDI_AUDIT_ROW_COUNTS = ["missing", "receiptsMissing", "extra", "stuck", "collapsed", "countInNotes", "countInRecorded"] as const;
 
 export type MidiAuditRowStatus = MidiCellStatus | "pending" | "error";
 
@@ -30,7 +35,7 @@ export interface MidiAuditNoteRow {
   takeIndex: number | null;
   placementErrorMs: number | null;
   durationErrorMs: number | null;
-  outcome: "matched" | "missing" | "receipt-missing" | "countin-dropped" | "countin-recorded";
+  outcome: "matched" | "missing" | "receipt-missing" | "countin-dropped" | "countin-recorded" | "countin-receipt-missing";
 }
 
 export interface MidiAuditRow extends RepeatFigures {
@@ -95,10 +100,17 @@ export function summaryFileName(runToken: number): string {
 export function parseMidiAuditSummary(json: unknown, runToken: number): MidiAuditSummary {
   if (typeof json !== "object" || json === null) throw new Error(`summary ${runToken}: not an object`);
   const summary = json as Record<string, unknown>;
-  if (summary.schemaVersion !== MIDI_AUDIT_SCHEMA_VERSION) {
-    throw new Error(`summary ${runToken}: schemaVersion ${String(summary.schemaVersion)}, expected ${MIDI_AUDIT_SCHEMA_VERSION}`);
+  if (!(MIDI_AUDIT_SCHEMA_VERSIONS_READABLE as readonly unknown[]).includes(summary.schemaVersion)) {
+    throw new Error(`summary ${runToken}: schemaVersion ${String(summary.schemaVersion)}, readable: ${MIDI_AUDIT_SCHEMA_VERSIONS_READABLE.join(", ")}`);
   }
   if (!Array.isArray(summary.rows)) throw new Error(`summary ${runToken}: rows is not an array`);
   if (!Array.isArray(summary.cellVerdicts)) throw new Error(`summary ${runToken}: cellVerdicts is not an array`);
+  summary.rows.forEach((row: Record<string, unknown>, i: number) => {
+    for (const key of MIDI_AUDIT_ROW_COUNTS) {
+      const value = row[key];
+      if (value !== undefined && typeof value !== "number") throw new Error(`summary ${runToken}: row ${i} ${key} is ${typeof value}, not a number`);
+      if (summary.schemaVersion === MIDI_AUDIT_SCHEMA_VERSION && value === undefined) throw new Error(`summary ${runToken}: row ${i} lacks ${key}`);
+    }
+  });
   return summary as unknown as MidiAuditSummary;
 }

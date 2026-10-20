@@ -39,7 +39,8 @@ export const STOP_AFTER_PATTERN_PPQN = BEAT_PPQN;
 export const JANK_MID_OFFSET_PPQN = BAR_PPQN + BAR_PPQN / 2;
 
 export const PITCH_BASE = 36;
-/** Longer than any held step, so a pitch is never re-triggered while it is held. */
+/** As many pitches as the pattern has notes (16 eighths + 32 thirty-seconds), so no pitch is used twice in a repeat
+ *  and a receipt or a recorded note is never ambiguous. */
 export const PITCH_RANGE = 48;
 export const VELOCITIES = [100, 64, 127, 32] as const;
 /**
@@ -61,8 +62,8 @@ export interface MidiTolerances {
 }
 
 export const MIDI_TOLERANCES: MidiTolerances = {
-  // One render quantum at 48 kHz is 2.67 ms; a pulse at 90 bpm is 0.69 ms. A median
-  // past this is not placement noise.
+  // One render quantum is 2.67 ms at 48 kHz and 2.90 ms at 44.1 kHz; a pulse at 90 bpm is
+  // 0.69 ms. A median past this is not placement noise.
   placementMs: 3,
   // The largest deviation from the median: the same quantum. Jitter wider than a
   // quantum is a defect, not a resolution.

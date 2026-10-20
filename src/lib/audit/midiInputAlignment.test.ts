@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MIDI_TOLERANCES } from "./midiInputCalibration";
 import {
-  classifyMidiCell, expectedLateMedianMs, matchNotes, measureRepeat, median, MIDI_KNOWN_DEFECTS, percentile, splitCountIn,
+  classifyMidiCell, expectedLateMedianMs, matchNotes, measureRepeat, median, MIDI_KNOWN_DEFECTS, percentile, quantumMs, splitCountIn,
   type RecordedNote, type SentNote,
 } from "./midiInputAlignment";
 
@@ -21,6 +21,16 @@ describe("matchNotes", () => {
       .toEqual([[0, expect.closeTo(-1.0417, 3)], [1, expect.closeTo(2.604, 3)]]);
     expect(r.missing).toEqual([]);
     expect(r.extra).toEqual([]);
+  });
+  it("pairs by pitch, never with a neighbour of another pitch inside the window", () => {
+    const r = matchNotes([sent(0)], [rec(1, { absolutePpqn: 10 }), rec(0, { absolutePpqn: 60 })], 120, 480);
+    expect(r.matched.map((m) => [m.recorded.pitch, m.placementErrorMs])).toEqual([[36, expect.closeTo(31.25, 3)]]);
+    expect(r.extra.map((n) => n.pitch)).toEqual([37]);
+  });
+  it("takes the nearest of several same-pitch candidates, whatever their order", () => {
+    const r = matchNotes([sent(0)], [rec(0, { absolutePpqn: 300 }), rec(0, { absolutePpqn: -5 })], 120, 480);
+    expect(r.matched[0].recorded.absolutePpqn).toBe(-5);
+    expect(r.extra.map((n) => n.absolutePpqn)).toEqual([300]);
   });
   it("reports a sent note outside the window as missing and a stray recorded note as extra", () => {
     const r = matchNotes([sent(0)], [rec(0, { absolutePpqn: 600 }), rec(5)], 120, 480);
@@ -66,7 +76,14 @@ describe("measureRepeat", () => {
     const f = measureRepeat(matchNotes(s, r, 120, 480));
     expect(f.placementMedianMs).toBeCloseTo((4 / 960) * 500, 6);
     expect(f.placementMaxAbsDevMs).toBeCloseTo((36 / 960) * 500, 6);
+    expect(f.placementP5P95Ms).toBeCloseTo(((33.2 - 0.4) / 960) * 500, 6);
     expect(f.loopbackDelayMedianMs).toBeCloseTo(0.4, 6);
+  });
+  it("leaves a wrap-adjacent note's stuck, collapsed and velocity flags out of the counts", () => {
+    const s = [sent(0), sent(1, { wrapAdjacent: true })];
+    const r = [rec(0), rec(1, { velocity: 10, durationPpqn: 3840 * 4 - 960, regionEndPpqn: 3840 * 4 })];
+    const f = measureRepeat(matchNotes(s, r, 120, 480));
+    expect(f).toMatchObject({ judgedNotes: 1, stuck: 0, velocityMismatches: 0, collapsed: 0, wrapAdjacent: 1 });
   });
   it("gives null figures and zero judged notes when nothing matched", () => {
     const f = measureRepeat(matchNotes([sent(0)], [], 120, 480));
@@ -130,6 +147,17 @@ describe("MIDI_KNOWN_DEFECTS", () => {
     expect(classifyMidiCell("nominal-start", [row(6.5, 7, 8)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [iface]).status).toBe("matches-known-defect");
     expect(classifyMidiCell("nominal-start", [row(32.8, 7, 8)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [null]).status).toBe("investigate");
   });
+  it("includes the compensation latency in the term the recorder doubles", () => {
+    const ctx = { ...mac60, compensationLatencyMs: 5 };
+    expect(expectedLateMedianMs(ctx)).toBeCloseTo(2 * (23 + 5) - (16.7 - quantumMs(44100)), 6);
+    expect(classifyMidiCell("nominal-start", [row(42.2, 7, 8)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [ctx]).status).toBe("matches-known-defect");
+    expect(classifyMidiCell("nominal-start", [row(32.8, 7, 8)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [ctx]).status).toBe("investigate");
+  });
+  it("labels an all-clean janked-mid cell with the plain late band, not the release-lost one", () => {
+    const v = classifyMidiCell("janked-mid", [row(33, 9.4, 8), row(33, 9.4, 8)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [mac60, mac60]);
+    expect(v.status).toBe("matches-known-defect");
+    expect(v.detail.startsWith("midi-late:")).toBe(true);
+  });
   it("bounds the jitter by a frame plus a quantum of the row, and a collapsed release only in janked-mid", () => {
     expect(classifyMidiCell("nominal-start", [row(32.8, 19, 8)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [mac60]).status).toBe("matches-known-defect");
     expect(classifyMidiCell("nominal-start", [row(32.8, 24, 8)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [mac60]).status).toBe("investigate");
@@ -162,10 +190,24 @@ describe("classifyMidiCell", () => {
   });
   it("is aligned only when every repeat is clean and inside every tolerance", () => {
     expect(classifyMidiCell("nominal-start", [clean(1), clean(-2)], MIDI_TOLERANCES).status).toBe("aligned");
-    expect(classifyMidiCell("nominal-start", [clean(1), clean(31.4)], MIDI_TOLERANCES))
+    expect(classifyMidiCell("nominal-start", [clean(1), clean(31.4)], MIDI_TOLERANCES, []))
       .toMatchObject({ status: "investigate", detail: expect.stringContaining("placementMedianMs 31.4") });
-    expect(classifyMidiCell("nominal-start", [clean(1, 12)], MIDI_TOLERANCES).detail).toContain("placementMaxAbsDevMs");
+    expect(classifyMidiCell("nominal-start", [clean(1, 12)], MIDI_TOLERANCES, []).detail).toContain("placementMaxAbsDevMs");
     expect(classifyMidiCell("nominal-start", [{ ...clean(0), missing: 1 }], MIDI_TOLERANCES).detail).toContain("missing 1");
+  });
+  it("fails the cell on any integrity count, each named in the detail", () => {
+    for (const key of ["missing", "receiptsMissing", "extra", "stuck", "velocityMismatches"] as const) {
+      expect(classifyMidiCell("nominal-start", [{ ...clean(1), [key]: 1 }], MIDI_TOLERANCES))
+        .toMatchObject({ status: "investigate", detail: expect.stringContaining(`${key} 1`) });
+    }
+  });
+  it("does not read a missing duration figure as a zero error", () => {
+    expect(classifyMidiCell("nominal-start", [{ ...clean(1), durationErrorMaxMs: null }], MIDI_TOLERANCES))
+      .toMatchObject({ status: "investigate", detail: expect.stringContaining("no duration measured") });
+  });
+  it("names a missing band context instead of blaming the median", () => {
+    expect(classifyMidiCell("nominal-start", [clean(33, 9)], MIDI_TOLERANCES, MIDI_KNOWN_DEFECTS, [null]))
+      .toMatchObject({ status: "investigate", detail: expect.stringContaining("no band context") });
   });
   it("lets a static band carry a fixed median range and jitter bound", () => {
     const band = [{ id: "fixed", scenario: "any" as const, medianMs: [28, 38] as [number, number], maxDevMs: 12, detail: "fixed" }];

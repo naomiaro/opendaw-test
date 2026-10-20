@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { BAR_PPQN } from "./auditExpectations";
 import { buildPattern } from "./midiInputPattern";
-import { cellLabel, frameGapSummary, scheduleFor, sentNotesFrom } from "./midiInputCellRunner";
+import { cellLabel, frameGapSummary, scheduleFor, sentNotesFrom, waitForRecordingStart } from "./midiInputCellRunner";
 
 const anchor = { contextTime: 12.0, position: 0 };
 const pair = { contextTime: 10.0, performanceTime: 5000 };
@@ -44,5 +44,39 @@ describe("frameGapSummary", () => {
   });
   it("is null with fewer than two stamps", () => {
     expect(frameGapSummary([5])).toEqual({ frames: 1, medianMs: null, maxGapMs: null });
+  });
+});
+
+describe("waitForRecordingStart", () => {
+  const fakeEngine = (initial: { contextTime: number; position: number } | null) => {
+    let value = initial;
+    const observers = new Set<() => void>();
+    const option = {
+      isEmpty: () => value === null,
+      unwrap: () => value as { contextTime: number; position: number },
+      catchupAndSubscribe: (observer: () => void) => {
+        observers.add(observer);
+        observer();
+        return { terminate: () => observers.delete(observer) };
+      },
+    };
+    return {
+      project: { engine: { recordingStart: option } } as never,
+      report: (next: { contextTime: number; position: number }) => { value = next; observers.forEach((o) => o()); },
+      listeners: () => observers.size,
+    };
+  };
+  it("skips the previous repeat's anchor and resolves on the first fresh one, then lets go of the subscription", async () => {
+    const engine = fakeEngine({ contextTime: 10, position: 0 });
+    const pending = waitForRecordingStart(engine.project, 12, 1000);
+    engine.report({ contextTime: 11, position: 0 });
+    engine.report({ contextTime: 12.4, position: 5.57 });
+    await expect(pending).resolves.toEqual({ contextTime: 12.4, position: 5.57 });
+    expect(engine.listeners()).toBe(0);
+  });
+  it("rejects at the deadline and lets go of the subscription", async () => {
+    const engine = fakeEngine(null);
+    await expect(waitForRecordingStart(engine.project, 12, 20)).rejects.toThrow(/no fresh recordingStart/);
+    expect(engine.listeners()).toBe(0);
   });
 });

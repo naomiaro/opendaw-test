@@ -1,4 +1,5 @@
-<!-- Draft for andremichelle/openDAW. Not posted. Target: a new issue. -->
+<!-- Draft for andremichelle/openDAW. Not posted. Target: a new issue.
+     HELD (2026-10-20): not before the combined MIDI + audio cell and the MIDI-effects harness have run. -->
 
 # A MIDI note played during the count-in is dropped, or snapped to the downbeat; the audio recorder keeps the same pickup
 
@@ -19,14 +20,14 @@ with a one-bar count-in and sends three notes on the IAC bus during the count-in
 (pressed at 15 % and 35 % of the bar, held 100 ms) and one pressed at 75 % of the bar and held half a bar,
 so it is still down at the downbeat. The page reads the note regions off the box graph when the take ends.
 
-| bpm | repeat | short notes recorded | held note recorded at | held note length (pulses) | expected length after the downbeat |
-|---|---|---|---|---|---|
-| 90 | 1 / 2 | 0 of 2 / 0 of 2 | position 0 / 0 | 974 / 974 | 960 |
-| 120 | 1 / 2 | 0 of 2 / 0 of 2 | position 0 / 0 | 976 / 975 | 960 |
-| 140 | 1 / 2 | 0 of 2 / 0 of 2 | position 0 / 0 | 980 / 985 | 960 |
+| bpm | repeat | short notes recorded | held note recorded at | held note length (pulses; half a bar held, about 960 of it past the nominal downbeat) |
+|---|---|---|---|---|
+| 90 | 1 / 2 | 0 of 2 / 0 of 2 | position 0 / 0 | 974 / 974 |
+| 120 | 1 / 2 | 0 of 2 / 0 of 2 | position 0 / 0 | 976 / 975 |
+| 140 | 1 / 2 | 0 of 2 / 0 of 2 | position 0 / 0 | 980 / 985 |
 
-Ten of ten repeats over two runs read the same: 0 of 2 short notes, the held note at 0 with its
-post-downbeat part (the few pulses over 960 are the recorder's own placement offset). The pattern the page records after the downbeat is complete on the same rows
+Ten of ten repeats over two runs read the same: 0 of 2 short notes, the held note at 0 with a length of
+917 … 985 pulses (the downbeat time is nominal: one bar after the record request on the page's clock). The pattern the page records after the downbeat is complete on the same rows
 (48 of 48 notes), so nothing else about the take is affected.
 
 **Read in the source (0.0.176):** `packages/studio/core/src/capture/RecordMidi.ts` — a note-on before a

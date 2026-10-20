@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pairReceipts, pickIacPorts } from "./midiLoopback";
+import { firstReceiptFor, pairReceipts, pickIacPorts } from "./midiLoopback";
 
 describe("pickIacPorts", () => {
   const i = (id: string, name: string) => ({ id, name });
@@ -33,5 +33,18 @@ describe("pairReceipts", () => {
     const receipts = [{ kind: "on" as const, pitch: 36, velocity: 100, timeStamp: 2000.6 }];
     expect(pairReceipts([n(36, 1000), n(36, 2000)], receipts))
       .toEqual([{ onPerfMs: null, offPerfMs: null }, { onPerfMs: 2000.6, offPerfMs: null }]);
+  });
+});
+
+describe("firstReceiptFor", () => {
+  it("gives the first on-receipt of a pitch at or after a time, or null", () => {
+    const receipts = [
+      { kind: "on" as const, pitch: 85, velocity: 100, timeStamp: 500 },
+      { kind: "off" as const, pitch: 85, velocity: 0, timeStamp: 600 },
+      { kind: "on" as const, pitch: 85, velocity: 100, timeStamp: 900 },
+    ];
+    expect(firstReceiptFor(receipts, 85, 0)?.timeStamp).toBe(500);
+    expect(firstReceiptFor(receipts, 85, 700)?.timeStamp).toBe(900);
+    expect(firstReceiptFor(receipts, 86, 0)).toBeNull();
   });
 });
