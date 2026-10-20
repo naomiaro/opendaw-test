@@ -115,7 +115,10 @@ export function roundTripsFrom(capture: CalibrationCapture): RoundTrip[] {
 export interface MicRoundTrip {
   roundTripMs: number;
   roundTripSpreadMs: number;
+  /** The round trip less the output latency read AFTER the calibration's own audio has run (Chrome's figure
+   *  before output starts is not the running one: 31 ms was read where 23 ms is live). */
   inputPartMs: number;
+  outputLatencyMs: number;
   clicksFound: number;
   floorDb: number;
   peakDb: number;
@@ -140,6 +143,7 @@ export function summarizeRoundTrips(
     roundTripMs,
     roundTripSpreadMs: Math.max(...found) - Math.min(...found),
     inputPartMs: roundTripMs - outputLatencyMs,
+    outputLatencyMs,
     clicksFound: found.length,
     floorDb,
     peakDb,
@@ -147,8 +151,9 @@ export function summarizeRoundTrips(
   };
 }
 
-/** Builds the worklet on `source`, measures, disconnects. Throws the refusal text when a click is not found. */
-export async function measureMicRoundTrip(audioContext: AudioContext, source: AudioNode, outputLatencyMs: number): Promise<MicRoundTrip> {
+/** Builds the worklet on `source`, measures, disconnects. The output latency is read once the capture is over,
+ *  with the output running. Throws the refusal text when a click is not found. */
+export async function measureMicRoundTrip(audioContext: AudioContext, source: AudioNode): Promise<MicRoundTrip> {
   const moduleUrl = URL.createObjectURL(new Blob([CALIBRATION_PROCESSOR_SOURCE], { type: "application/javascript" }));
   try {
     await withDeadline(audioContext.audioWorklet.addModule(moduleUrl), 10_000, "the calibration worklet module");
@@ -184,6 +189,7 @@ export async function measureMicRoundTrip(audioContext: AudioContext, source: Au
     node.disconnect();
     node.port.onmessage = null;
   }
+  const outputLatencyMs = audioContext.outputLatency * 1000;
   const levels = captureLevels(capture);
   const summary = summarizeRoundTrips(roundTripsFrom(capture), outputLatencyMs, levels.floorDb, levels.peakDb);
   if ("error" in summary) throw new Error(summary.error);
