@@ -193,6 +193,7 @@ export default defineConfig(({command}) => ({
                 automationSimplifierDebug: resolve(__dirname, "automation-simplifier-debug-demo.html"),
                 samplerateAudit: resolve(__dirname, "samplerate-audit-debug-demo.html"),
                 recordingAlignmentAudit: resolve(__dirname, "recording-alignment-audit-debug-demo.html"),
+                midiInputAlignmentAudit: resolve(__dirname, "midi-input-alignment-audit-debug-demo.html"),
                 loudnessMeterAudit: resolve(__dirname, "loudness-meter-audit-debug-demo.html"),
                 inputLatencyCalibrationDebugDemo: resolve(__dirname, "input-latency-calibration-debug-demo.html"),
                 workletClockDebug: resolve(__dirname, "worklet-clock-debug-demo.html"),
