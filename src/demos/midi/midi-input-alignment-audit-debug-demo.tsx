@@ -171,6 +171,10 @@ async function runAudit(setAuditState: (s: string) => void, onRows: (rows: MidiA
   let hiddenCount = 0;
   const onVisibility = (): void => { if (document.visibilityState !== "visible") hiddenCount++; };
   document.addEventListener("visibilitychange", onVisibility);
+  // The run's original metronome preference, restored once at the end (a repeat the outer deadline abandoned
+  // skips its own restore); engine preferences persist in localStorage for every page on the origin.
+  const metronomeSettings = project.engine.preferences.settings.metronome;
+  const originalMetronome = { enabled: metronomeSettings.enabled, gain: metronomeSettings.gain };
   const allRows: MidiAuditRow[] = [];
   const cellVerdicts: MidiCellVerdictRecord[] = [];
   try {
@@ -237,6 +241,8 @@ async function runAudit(setAuditState: (s: string) => void, onRows: (rows: MidiA
   }
   } finally {
     document.removeEventListener("visibilitychange", onVisibility);
+    metronomeSettings.enabled = originalMetronome.enabled;
+    metronomeSettings.gain = originalMetronome.gain;
   }
 
   const frameIntervals = allRows.map((r) => r.frameIntervalMs).filter((v): v is number => v !== null && v > 0);
@@ -383,7 +389,7 @@ function Harness() {
 ?bpm=<n|all>          default all = ${MIDI_AUDIT_BPMS.join(", ")}
 ?repeats=<n>          default ${MIDI_REPEATS_PER_CELL}
 ?bus=<substring>      default "${MIDI_BUS_DEFAULT}" — the IAC Driver bus (Audio MIDI Setup → MIDI Studio → IAC Driver → Device is online)
-?audible=1            hear the synth and the metronome (silent by default)
+?audible=1            hear the synth (the metronome is off: the engine mixes it after the master, so a silenced master would not have silenced it)
 Tolerances (ms)       placement ±${MIDI_TOLERANCES.placementMs} (one render quantum: 2.67 at 48 kHz, 2.90 at 44.1 kHz), spread ${MIDI_TOLERANCES.spreadMs}, duration ${MIDI_TOLERANCES.durationMs}; match window ${MIDI_TOLERANCES.matchWindowPpqn} pulses
 Jank                  ${JANK_MS} ms main-thread block (janked-start: on the isRecording flip; janked-mid: a timer task mid pattern)
 Reference             a note's expected position is the HEARD position at its Web MIDI receipt stamp; nothing is netted out.

@@ -688,6 +688,16 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   output latency, frame interval and sample rate, so it holds on any device, and a median
   that does not track its formula is the finding. Reading recipe and what each scenario provokes:
   `src/demos/midi/CLAUDE.md`.
+- After SDK upgrades, also re-run the standing combined MIDI + audio sweep:
+  `midi-audio-combined-audit-debug-demo.html?scenario=all&bpm=120` — Chrome, a real click on
+  Run, the IAC Driver online, the laptop's built-in microphone and speakers (an interface is
+  `?input=` / `?output=`), the room quiet, the window uncovered. Register
+  `debug/2026-10-20-midi-audio-combined/note.md`, table
+  `node scripts/audit/midi-audio-combined/table.ts`. Its figure is where the key landed minus
+  where the sound landed, in two input-latency states; the speaker-to-microphone round trip is
+  measured inside every run and the band is computed from the row's own figures, so read a
+  cell against the register, not against a fixed number. The page never writes the engine
+  preference `recording.inputLatency` and refuses to run if another page left it non-zero.
 - After SDK upgrades, also re-run the standing loudness meter sweep:
   `loudness-meter-audit-debug-demo.html?case=all` (then `&rate=44100`) — a real click on Run,
   the tab visible throughout, about twelve minutes, silent unless `&audible=1`. Compare the
@@ -947,6 +957,8 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   package.json/package-lock as out of sync). Don't treat the advisory as a CI blocker.
 - SDK upgrades specifically: bump `@opendaw/studio-sdk` only — sub-packages resolve transitively
   from the registry. NEVER install sub-packages as local `file:` references (breaks Cloudflare CI).
+  Then move `openDAWOriginal` to the new release tag and re-pin the XERJ corpus's openDAW clone to
+  the same commit (`xerj` skill, corpus upkeep).
 - SDK-upgrade changelog audits: verify every claim against the INSTALLED tarball
   (`node_modules/@opendaw/*/dist`), not the upstream git tag diff — a release tag can
   contain commits the npm publish was built without (0.0.158: `migrateCaptureTrackMismatch`
@@ -1040,7 +1052,10 @@ MCP server (user scope) and the `xerj` skill (`~/.claude/skills/xerj`, which hol
 commands, the corpus list and its upkeep) all live outside it. Without the skill or the
 node, skip retrieval and work from the SDK checkout (path in `.claude/local.md`): the
 checkout is the place to READ the SDK, the index is for finding where to read. The
-corpus's openDAW clone is **AGPL — adapt the approach, never copy code**. This repo is
+corpus's openDAW clone is **AGPL — adapt the approach, never copy code** — and it is
+pinned to the commit of the INSTALLED SDK release, like the checkout, never to upstream
+main: the corpus describes the code the demos run. Re-pin it on every SDK upgrade (the
+procedure is in the skill). This repo is
 indexed under the prefix `opendaw-test`. Never post to the XERJ project's tracker
 unasked (every `xerj` command prints a banner inviting it).
 

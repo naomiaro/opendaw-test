@@ -42,6 +42,41 @@ export interface MidiCellRepeatOptions {
   token: RepeatToken;
   /** The page's own watch, so a failed repeat still reports the frame gaps seen so far. */
   frameWatch?: FrameWatch;
+  /** Default off. Engine preferences PERSIST in localStorage across pages, so both `enabled` and a `gainDb` set
+   *  here are restored to the values found when the repeat ends, whatever happened in between. `gainDb` applies
+   *  even with `enabled: false`: the count-in turns the metronome on regardless. Finite only (JSON). */
+  metronome?: { enabled: boolean; gainDb?: number };
+  /** Called right after the pattern is scheduled on the loopback, before the jank is armed. */
+  onScheduled?: (context: ScheduleContext) => void;
+  /** Called at the start of the stopping stage. */
+  beforeStop?: () => void;
+}
+
+export interface ScheduleContext {
+  pattern: PatternNote[];
+  scheduled: ScheduledNote[];
+  anchor: RecordingAnchor;
+  pair: OutputStampPair;
+  bpm: number;
+  originPpqn: number;
+  perfAt: (ppqn: number) => number;
+  contextSecAt: (ppqn: number) => number;
+}
+
+export function scheduleContext(
+  pattern: readonly PatternNote[],
+  scheduled: readonly ScheduledNote[],
+  anchor: RecordingAnchor,
+  pair: OutputStampPair,
+  bpm: number,
+  originPpqn: number,
+): ScheduleContext {
+  const contextSecAt = (ppqn: number): number => contextSecAtPosition(anchor, bpm, ppqn);
+  return {
+    pattern: [...pattern], scheduled: [...scheduled], anchor, pair, bpm, originPpqn,
+    perfAt: (ppqn) => perfMsAtHeardContextSec(pair, contextSecAt(ppqn)),
+    contextSecAt,
+  };
 }
 
 export interface MidiCellRepeatResult {
@@ -283,6 +318,27 @@ function assertCleanStart(project: Project, audioContext: AudioContext, audioUni
 }
 
 export async function runMidiCellRepeat(options: MidiCellRepeatOptions): Promise<MidiCellRepeatResult> {
+  const settings = options.project.engine.preferences.settings;
+  const metronome = options.metronome ?? { enabled: false };
+  if (metronome.gainDb !== undefined && !Number.isFinite(metronome.gainDb)) {
+    throw new Error(`metronome.gainDb must be finite (got ${String(metronome.gainDb)}): the preference persists as JSON`);
+  }
+  const prior = { enabled: settings.metronome.enabled, gain: settings.metronome.gain };
+  settings.metronome.enabled = metronome.enabled;
+  if (metronome.gainDb !== undefined) settings.metronome.gain = metronome.gainDb;
+  try {
+    return await repeatBody(options);
+  } finally {
+    // An abandoned repeat (outer deadline fired) may settle during a LATER repeat: it must not restore under it.
+    // The page restores the run's original values once when the run ends.
+    if (!options.token.cancelled) {
+      settings.metronome.enabled = prior.enabled;
+      settings.metronome.gain = prior.gain;
+    }
+  }
+}
+
+async function repeatBody(options: MidiCellRepeatOptions): Promise<MidiCellRepeatResult> {
   const { project, audioContext, loopback, audioUnitBox, scenario, bpm, onStage, token } = options;
   onStage("prefs");
   assertCleanStart(project, audioContext, audioUnitBox, loopback);
@@ -292,7 +348,6 @@ export async function runMidiCellRepeat(options: MidiCellRepeatOptions): Promise
     project.timelineBox.bpm.setValue(bpm);
   });
   const settings = project.engine.preferences.settings;
-  settings.metronome.enabled = true;
   settings.recording.countInBars = 1;
   settings.recording.allowTakes = true;
   settings.recording.olderTakeAction = "mute-region";
@@ -375,6 +430,7 @@ export async function runMidiCellRepeat(options: MidiCellRepeatOptions): Promise
   const pattern = buildPattern({ originPpqn, loopEndPpqn: scenario === "loop-wrap" ? LOOP_WRAP_PPQN : null });
   const scheduled = scheduleFor(pattern, anchor, pair, bpm);
   loopback.schedule(scheduled);
+  options.onScheduled?.(scheduleContext(pattern, scheduled, anchor, pair, bpm, originPpqn));
   const perfAt = (ppqn: number): number => perfMsAtHeardContextSec(pair, contextSecAtPosition(anchor, bpm, ppqn));
   const jankPromise = scenario === "janked-mid"
     ? jankBetweenFrames(perfAt(originPpqn + JANK_MID_OFFSET_PPQN), JANK_MS, token)
@@ -384,11 +440,14 @@ export async function runMidiCellRepeat(options: MidiCellRepeatOptions): Promise
   await waitUntilPerf(perfAt(patternEndPpqn(originPpqn) + STOP_AFTER_PATTERN_PPQN), token, "stop");
 
   onStage("stopping");
+  options.beforeStop?.();
   project.stopRecording();
   await waitForNotRecording(project, 10_000);
   assertCurrent(token, "finalizing");
-  await nextFrame();
-  await nextFrame();
+  await withDeadline(nextFrame(), 5_000, "an animation frame after the stop");
+  assertCurrent(token, "finalizing");
+  await withDeadline(nextFrame(), 5_000, "an animation frame after the stop");
+  assertCurrent(token, "finalizing");
   const jankMs = jankPromise === null ? null : await jankPromise;
   await Promise.all(countInSends);
   const frameGaps = frameWatch.stop();

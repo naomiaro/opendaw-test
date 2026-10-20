@@ -262,6 +262,45 @@ picks another). Register: `debug/2026-10-20-midi-input-alignment/note.md`.
   `document.visibilityState` stayed `visible`; a row's `frameGapMaxMs` is the figure to check
   before reading a hang as an SDK finding.
 
+### Combined MIDI + Audio Audit (unlisted)
+`midi-audio-combined-audit-debug-demo.html?scenario=<nominal-start|countin-start|janked-mid|all>&bpm=<n>[&repeats=<n>][&state=<default|calibrated|both>][&bus=][&input=][&output=][&audible=1]`
+sends each note of the MIDI sweep's pattern on the IAC bus AND plays a 6 kHz click out of the
+speakers at the same heard instant (one `AudioBufferSourceNode` carrying the whole click
+train, started at the render context time of the first note's position, straight to the
+destination, so the harness makes no graph change during the measured span), records the keys through the Vaporisateur's
+MIDI capture and the clicks through a Tape pinned to the microphone, and reports
+`partsApartMs` = where the key landed − where the sound landed. Register:
+`debug/2026-10-20-midi-audio-combined/note.md`.
+
+- **Calibration per run.** Before the first repeat a worklet fed from `CaptureAudio.outputNode`
+  (the node the take is recorded from, `Option<AudioNode>`, present once the chain is armed)
+  emits three clicks and records its input; the round trip is a difference of its own
+  process-call frame counter, never a `currentTime` / `currentFrame` read (Chromium
+  442866743). The output latency is read AFTER the clicks have played (Chrome's figure before
+  output starts is not the running one). Every row carries the run's value; the register
+  holds the history.
+- **Two states** on `CaptureAudioBox.inputLatency` (a `Float32Field` in seconds; `-2` inherits
+  the preference, `-1` means equal to the output latency): `0`, or the run's input part.
+  The engine preference `recording.inputLatency` is NEVER written (localStorage, shared by
+  every page on the origin); the page refuses to run if it is not 0.
+- **Metronome off** in every scenario: the engine mixes it after the master, so a −96 dB
+  master leaves it in the microphone's take. The count-in forces it on, so `countin-start`
+  sets `settings.metronome.gain` to a finite floor (`METRONOME_SILENT_DB`, −120 dB; −Infinity
+  would serialise as `null` in the persisted preferences and void the section on a crash)
+  and the MIDI runner restores both the flag and the gain it found (preferences persist).
+- **Matching** anchors on the eighth bars (a 1/32 step is 62 ms at 120 bpm; an uncalibrated
+  audio side reads 64 ms late, a whole step), re-matches the eighths around the anchor so a
+  stray onset cannot take a pair, then matches the 1/32 bar around it and reports every error
+  raw; a lost click stays lost.
+- **What it measured:** uncalibrated, the key lands 31 ms BEFORE the sound (the audio late by
+  exactly the input part); calibrated, the sound is on its calibrated position to 0.00 ms and
+  the key 33 ms late. The parts-apart figure is safe against a constant the chain hides (key
+  and click share one clock pair); the audio side's 0.00 is a consistency check through one
+  chain, not an absolute truth (a cable loopback is that). The jitter (7–10 ms) is all the
+  MIDI recorder's.
+- `together` is the player's wish (within a quantum); every cell measured so far reads the
+  band computed from the row's own figures.
+
 ## Cross-References
 - For recording preferences (takes, count-in), see `src/demos/recording/CLAUDE.md`
 - For general recording flow (startRecording, stopRecording), see `src/demos/recording/CLAUDE.md`

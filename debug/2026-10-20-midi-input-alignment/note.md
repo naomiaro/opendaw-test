@@ -239,9 +239,14 @@ The recording start-alignment sweep validated the audio recorder's placement ari
 with a synthetic loopback, netted by the output latency, which by that arithmetic places a
 real sound at the heard position. This sweep places MIDI at the heard position + 32 ms on
 the same machine. If both hold, a key and a sound produced together land about 32 ms apart
-in the project at 60 Hz. **Nobody has recorded the two together yet**: the combined
-MIDI + audio cell (follow-ups) is that measurement, and the user's decision (2026-10-20) is
-that no issue goes upstream before it and the MIDI-effects harness have run.
+in the project at 60 Hz. The combined MIDI + audio harness
+([`../2026-10-20-midi-audio-combined/note.md`](../2026-10-20-midi-audio-combined/note.md))
+records the two together through the laptop's speakers and microphone; its first full run
+(6 of 6 cells) read the key 31 ms BEFORE the sound with the microphone uncalibrated and
+33 ms AFTER it calibrated, the audio then on its calibrated position to 0.00 ms (a
+consistency check through one chain; the absolute placement needs the cable-loopback
+reference that register lists). The user's decision (2026-10-20) is that no
+issue goes upstream before that harness and the MIDI-effects harness have run.
 
 ### Loop-wrap, five repeats
 
@@ -303,6 +308,28 @@ combined cell is its measurement.
    them: issue draft written.
 4. **Early-clamp jitter** (up to a frame, 1 … 17 of 48 notes per row): part of band 1's
    shape; whether it gets its own issue depends on how upstream wants the stamp handled.
+
+### Observation: the playhead is drawn in the render domain (2026-10-20)
+
+Raised while reading the +32 ms result: the position a player sees should ideally be the
+one they are hearing. In openDAW's studio the timeline cursor is drawn straight from
+`engine.position` (`packages/app/studio/src/ui/timeline/TimeAxis.tsx`, `position.subscribe(updateCursor)`,
+optionally through an editor mapper), which is the RENDERED position; what leaves the
+speakers is `outputLatency` behind it, 23 ms here, and the only user-facing place the studio
+shows that number is the footer's latency readout. For comparison, waveform-playlist draws its playhead
+at `engine.getAudibleTime()`, the engine time minus the output latency and the scheduler
+look-ahead ("without the subtraction the playhead leads audio by ~100 ms with the Tone
+adapter", `packages/dawcore/src/elements/daw-editor.ts`, MIT), and compensates a recording
+by the same audible-latency window. SoundCraft (Rust, pre-alpha, indexed on the XERJ node as
+`soundcraft` on 2026-10-20) has plug-in delay compensation but no I/O latency compensation
+or MIDI recording yet, so it offers no precedent either way.
+
+What this is and is not: a visual lead of one output latency between the cursor and the
+sound, a UX observation rather than a measured defect (nothing in this register judges the
+cursor). It is tied to the recorder finding through the domain question: the MIDI recorder
+adds the output latency to the rendered position; a playhead in the heard domain would be
+the position a key should land on with nothing added. Not filed; noted for the discussion
+once the combined harness has run.
 
 ### Follow-ups (not in this harness)
 

@@ -1,6 +1,10 @@
 <!-- Draft for andremichelle/openDAW. Not posted. Target: a new issue.
-     HELD (2026-10-20): not before the combined MIDI + audio cell has measured the two recorders together;
-     the audio half below is the recorder's arithmetic as the audio sweep validated it, not a same-setup measurement. -->
+     HELD (2026-10-20): not before the MIDI-effects harness has run. The combined MIDI + audio harness has since
+     MEASURED the two recorders together (debug/2026-10-20-midi-audio-combined/note.md): uncalibrated, the key lands
+     31 ms BEFORE the sound (audio late by exactly the microphone's input part); calibrated, the audio is on the heard
+     beat to 0.00 ms and the key 33 ms late. Before posting, rewrite the title and the audio paragraph on that
+     measurement, and ADD the order-of-fixes note: a MIDI-only fix moves an uncalibrated player's parts from 31 ms
+     to 64 ms apart, so it should land with input-latency calibration or say so. -->
 
 # Recorded MIDI notes land about 32 ms after the beat the player heard; the audio recorder's own arithmetic puts a sound on it
 
