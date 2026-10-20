@@ -688,6 +688,16 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   output latency, frame interval and sample rate, so it holds on any device, and a median
   that does not track its formula is the finding. Reading recipe and what each scenario provokes:
   `src/demos/midi/CLAUDE.md`.
+- After SDK upgrades, also re-run the standing combined MIDI + audio sweep:
+  `midi-audio-combined-audit-debug-demo.html?scenario=all&bpm=120` — Chrome, a real click on
+  Run, the IAC Driver online, the laptop's built-in microphone and speakers (an interface is
+  `?input=` / `?output=`), the room quiet, the window uncovered. Register
+  `debug/2026-10-20-midi-audio-combined/note.md`, table
+  `node scripts/audit/midi-audio-combined/table.ts`. Its figure is where the key landed minus
+  where the sound landed, in two input-latency states; the speaker-to-microphone round trip is
+  measured inside every run and the band is computed from the row's own figures, so read a
+  cell against the register, not against a fixed number. The page never writes the engine
+  preference `recording.inputLatency` and refuses to run if another page left it non-zero.
 - After SDK upgrades, also re-run the standing loudness meter sweep:
   `loudness-meter-audit-debug-demo.html?case=all` (then `&rate=44100`) — a real click on Run,
   the tab visible throughout, about twelve minutes, silent unless `&audible=1`. Compare the

@@ -239,9 +239,12 @@ The recording start-alignment sweep validated the audio recorder's placement ari
 with a synthetic loopback, netted by the output latency, which by that arithmetic places a
 real sound at the heard position. This sweep places MIDI at the heard position + 32 ms on
 the same machine. If both hold, a key and a sound produced together land about 32 ms apart
-in the project at 60 Hz. **Nobody has recorded the two together yet**: the combined
-MIDI + audio cell (follow-ups) is that measurement, and the user's decision (2026-10-20) is
-that no issue goes upstream before it and the MIDI-effects harness have run.
+in the project at 60 Hz. The combined MIDI + audio harness
+([`../2026-10-20-midi-audio-combined/note.md`](../2026-10-20-midi-audio-combined/note.md))
+records the two together through the laptop's speakers and microphone; its first cells read
+the key 31 ms BEFORE the sound with the microphone uncalibrated and 36 ms AFTER it calibrated
+(the audio then within 3 ms of the heard beat). The user's decision (2026-10-20) is that no
+issue goes upstream before that harness and the MIDI-effects harness have run.
 
 ### Loop-wrap, five repeats
 
