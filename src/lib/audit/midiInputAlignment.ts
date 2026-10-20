@@ -36,7 +36,8 @@ export interface MatchedNote {
   placementErrorMs: number;
   durationErrorMs: number;
   velocityMismatch: boolean;
-  /** The recorded note reaches the end of its region: its release was never written. */
+  /** Its release was never written: the note reaches the end of its region AND runs past twice its sent length
+   *  (a late take lets a note of its sent length overhang the region end; that is placement, not a stuck key). */
   stuck: boolean;
   loopbackDelayMs: number;
 }
@@ -82,7 +83,7 @@ export function matchNotes(
       placementErrorMs: pulsesToMs(best.absolutePpqn - expected, bpm),
       durationErrorMs: pulsesToMs(best.durationPpqn - note.durationPpqn, bpm),
       velocityMismatch: Math.abs(best.velocity - note.velocity) > 1,
-      stuck: best.absolutePpqn + best.durationPpqn >= best.regionEndPpqn - 1,
+      stuck: best.absolutePpqn + best.durationPpqn >= best.regionEndPpqn - 1 && best.durationPpqn > 2 * note.durationPpqn,
       loopbackDelayMs: note.receiptPerfMs - note.scheduledPerfMs,
     });
   }

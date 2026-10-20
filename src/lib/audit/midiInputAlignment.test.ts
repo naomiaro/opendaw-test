@@ -38,6 +38,12 @@ describe("matchNotes", () => {
     expect(r.matched[0].stuck).toBe(false);
     expect(r.matched[1].stuck).toBe(true);
   });
+  it("does not call a note of its sent length stuck because a late take lets it overhang the region end", () => {
+    const end = 3840 * 4;
+    const r = matchNotes([sent(0, { expectedPpqn: end - 260 })], [rec(0, { absolutePpqn: end - 200, durationPpqn: 238 })], 120, 480);
+    expect(r.matched.length).toBe(1);
+    expect(r.matched[0].stuck).toBe(false);
+  });
 });
 
 describe("measureRepeat", () => {
