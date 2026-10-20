@@ -2120,7 +2120,25 @@ Parsed with `ScriptDeclaration.parseGroups(code): ReadonlyArray<DeclarationSecti
 // @sample <name>
 ```
 
-Creates a file picker drop zone on the device panel. Note: sample data is **not yet wired** to the Werkstatt processor — `@sample` is more fully realized in the Apparat instrument where `this.samples.<name>` provides audio data.
+Creates a file picker drop zone on the device panel. The script reads the loaded audio as `this.samples.<name>` — `null` until it loads, then an `AudioData` (`frames`, `sampleRate`, `numberOfFrames`, `numberOfChannels`), the same contract as Apparat. The slots are re-resolved every block, so a sample dropped while the transport runs appears without a recompile.
+
+#### Sidechain Declarations (`// @sidechain`)
+
+```
+// @sidechain <name>
+```
+
+Each declaration adds a sidechain input to the device: a `WerkstattSidechainBox` under the device's `side-chains` field (the box accessor is `sideChains`; `label`, `index`, `source` → the tapped unit or device, like the Compressor's `sideChain` pointer). The script reads `this.sidechains.<name>` inside `process()` as `[left, right]` `Float32Array`s — silence while the source is unconnected. Names keep their sources when the lines are reordered; a removed line deletes its box. Reading a name that no line declares throws a named error (the device goes silent and reports it); `this.sidechains` without any declaration is a `TypeError` with a hint appended. A unit tapped by a script sidechain cannot be frozen (`AudioUnitFreeze.hasSidechainDependents`). `ScriptDeclaration.parseSidechains(code)` returns the declarations; `ScriptCompiler.compile` keeps the boxes in step (`ScriptCompiler.reconcileSidechainBoxes`).
+
+#### Latency Declaration (`// @latency`)
+
+```
+// @latency <milliseconds>
+```
+
+A script whose output lags its input (a look-ahead, an FFT frame) declares the delay so the engine's delay compensation aligns every other path to it: the parallel tracks, the dry path of an effects stack, a bus the track feeds, the metronome and recorded takes. A positive `this.latency = frames` set at runtime overrides the declaration (zero or unset falls back to it). A malformed or negative value fails the compile (`ScriptDeclaration.parseLatency`). Compensation is capped at 0.1 s per stage; a path that needs more stays unaligned and is reported.
+
+**A failing script renders silence.** A `process()` that throws (or writes a non-finite sample) mutes the device and keeps it muted until the script is compiled again; a device whose script has not loaded yet mutes each block until it does. The engine keeps a device's output between quanta, so leaving it untouched would loop the last quantum. The error reaches the device's status.
 
 #### Code Compilation (ScriptCompiler)
 

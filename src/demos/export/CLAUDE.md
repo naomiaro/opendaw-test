@@ -74,6 +74,15 @@ see above; engine preferences never travel into an offline render). Provide a no
 Pass a copy (not the live project) — the renderer connects the source's
 `liveStreamReceiver`, which conflicts with a live engine.
 
+### Sections: `MixdownSection` + `renderSection`
+
+`MixdownSection.collect(project)` lists the entire song, the loop area (once / two passes) and
+every marker section; `OfflineEngineRenderer.renderSection(source, optConfig, section,
+progress, abortSignal?, sampleRate?)` renders one, setting the loop area and marker track for
+the render and restoring them via raw `beginTransaction` / `endTransaction` (no undo entry).
+A two-pass loop keeps the second pass. Every offline path settles plug-in delay compensation
+and trims it from the start before the first frame is kept.
+
 ### Mutate-Copy-Restore Pattern for Offline Rendering
 `project.copy()` creates new box instances — you cannot modify the original project's
 boxes through the copy's `editing.modify()` (throws "Modification only prohibited in

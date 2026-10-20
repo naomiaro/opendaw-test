@@ -254,6 +254,8 @@ export const EngineStateSchema = Schema.createBuilder({
     isPlaying: Schema.bool,
     isCountingIn: Schema.bool,
     isRecording: Schema.bool,
+    recordingStopTime: Schema.double,
+    compensationLatency: Schema.float,
     perfIndex: Schema.int32,
     perfBuffer: Schema.floats(PERF_BUFFER_SIZE)
 })
@@ -263,7 +265,9 @@ export type EngineState = ReturnType<typeof EngineStateSchema>["object"]
 
 `Schema.createBuilder` builds a typed view over a `SharedArrayBuffer` with fixed offsets per field. The reader and writer agree on the layout because they share the same `Schema` factory.
 
-Total buffer size: 4 floats × 4 bytes + 3 bools × 1 byte + 1 int32 × 4 bytes + 512 floats × 4 bytes = **2071 bytes** of schema data, plus a 1-byte state header allocated by `SyncStream.reader` = **2072 bytes**.
+Total buffer size: 5 floats × 4 bytes + 3 bools × 1 byte + 1 double × 8 bytes + 1 int32 × 4 bytes + 512 floats × 4 bytes = **2083 bytes** of schema data, plus a 1-byte state header allocated by `SyncStream.reader` = **2084 bytes**.
+
+`recordingStopTime` is the context time of the first frame a stop excludes (the end of the last quantum rendered while recording), `NaN` while recording or before any stop; the worklet sets it in the same render that drops `isRecording`, so a reader sees both together. `RecordAudio` ends the take at that time netted by the same output and input latencies as the start (openDAW#479). `compensationLatency` is the seconds the heard output lags the timeline through plug-in delay compensation (`engine.compensation_latency()` / sample rate); `EngineWorklet` publishes it as `engine.compensationLatency`, which `RecordAudio` and `RecordMidi` add to the take offset, and which the worklet adds to the output latency it times engine MIDI out by (`MIDIReceiver`). The reader turns `recordingStopTime` into `recordingStop: Option<RecordingStop>` — `Option.None` while the time is `NaN`, replaced only when the stamp changes.
 
 The `perfBuffer` field is a circular ring of DSP load measurements written by `HRClock`; `perfIndex` is the write pointer the main thread uses to find the most recent samples.
 
@@ -282,6 +286,8 @@ this.#stateSender = SyncStream.writer(EngineStateSchema(), syncStreamBuffer, sta
     state.isPlaying = view.getUint8(16) === 1
     state.isCountingIn = view.getUint8(17) === 1
     state.isRecording = view.getUint8(18) === 1
+    state.recordingStopTime = this.#recordingStopTime
+    state.compensationLatency = engine.compensation_latency() / sampleRate
     if (this.#measureLoad) {
         state.perfBuffer.set(this.#perfBuffer)
         state.perfIndex = this.#perfWriteIndex
@@ -299,9 +305,15 @@ this.#stateSender = SyncStream.writer(EngineStateSchema(), syncStreamBuffer, sta
 // packages/studio/core/src/EngineWorklet.ts (in the constructor's pre-super() setup)
 const reader = SyncStream.reader<EngineState>(EngineStateSchema(), state => {
     this.#isPlaying.setValue(state.isPlaying)
+    const {recordingStopTime} = state
+    if (this.#recordingStop.mapOr(stop => stop.contextTime !== recordingStopTime, true)) {
+        this.#recordingStop = Number.isFinite(recordingStopTime)
+            ? Option.wrap({contextTime: recordingStopTime}) : Option.None
+    }
     this.#isRecording.setValue(state.isRecording)
     this.#isCountingIn.setValue(state.isCountingIn)
     this.#countInBeatsRemaining.setValue(state.countInBeatsRemaining)
+    this.#compensationLatency.setValue(state.compensationLatency)
     this.#playbackTimestamp.setValue(state.playbackTimestamp)
     this.#bpm.setValue(state.bpm)
     this.#perfBuffer = state.perfBuffer

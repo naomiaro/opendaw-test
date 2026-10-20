@@ -102,7 +102,7 @@ In the script, you access loaded samples via `this.samples.kick` — `null` unti
 Status in current SDK:
 
 - **Apparat** — `@sample` fully wired. `this.samples.<name>` returns audio data the script can consume.
-- **Werkstatt** — `@sample` registers a drop target but the data is *not yet* exposed to the processor. Use samples in Apparat for now; the wiring is planned for Werkstatt.
+- **Werkstatt** — `@sample` fully wired, like Apparat: `this.samples.<name>` returns the loaded audio data (`null` until it loads).
 - **Spielwerk** — `@sample` not applicable; MIDI effects don't consume audio.
 
 ## Apparat — scriptable instrument
@@ -123,7 +123,10 @@ Covered in detail at [Ch. 11 — Werkstatt](./11-effects.md#werkstatt). Summary 
 - **Header:** compiler-written `// @werkstatt js <compilerVersion> <update>` (see [Headers](#headers)).
 - **Input:** receives audio (no MIDI). Your script's `process()` reads from the input buffer and writes to the output.
 - **No `noteOn`/`noteOff`.** Audio in, audio out.
-- **Sample data:** the `@sample` drop target works but, as noted above, the data isn't currently routed to the processor. Plan around this until upstream fixes it.
+- **Sample data:** `@sample` is wired — `this.samples.<name>` returns the loaded audio data, as in Apparat.
+- **Sidechains:** `// @sidechain <name>` declares a named sidechain input; the script reads `this.sidechains.<name>` as `[left, right]` buffers (silence while nothing is connected). Reading a name no line declares stops the device with a named error. Apparat accepts the same declaration.
+- **Latency:** a script that delays its output declares it with `// @latency <ms>` (a positive `this.latency = frames` at runtime overrides it); the engine's delay compensation aligns the rest of the mix to it (see [Ch. 11 — Werkstatt](./11-effects.md#werkstatt)).
+- **A failing script renders silence:** a thrown `process()` mutes the device until the script is compiled again, and a script that has not loaded yet mutes each block until it does, instead of leaving the previous block in the buffer.
 
 Practical Werkstatt use cases: custom filters, wave-shapers, distortion, granular processors, anything where you can express the per-sample (or per-block) transformation in code.
 

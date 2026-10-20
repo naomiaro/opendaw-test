@@ -1,6 +1,8 @@
 # A pointer write through a box instance that undo replaced reaches the live graph
 
 Verified against `@opendaw/studio-sdk` 0.0.175 (`lib-box` 0.0.97) in Node, 2026-10-19.
+**Fixed in 0.0.176** (`lib-box` 0.0.98, upstream `8ac680cc2`: `onPointerAddressUpdated` skips a
+detached pointer), verified 2026-10-20 — see Status.
 Repro and regression test: `src/lib/staleBoxPointerWrite.test.ts` (vitest, a real box graph, no
 browser). No debug page: every effect is in the box graph, the SDK's own sync, and the engine
 binary, all of which run in Node; the studio's restart on a checksum mismatch is the one thing
@@ -83,5 +85,13 @@ boxes; whether any of them writes a POINTER on a held instance was not traced.
 ## Status
 
 Filed as [openDAW#480](https://github.com/andremichelle/openDAW/issues/480) on 2026-10-19
-(`drafts/posted-openDAW-480-stale-pointer-write.md`). The test is the regression check: a
-"flips when fixed" test failing after an SDK upgrade is the fix landing.
+(`drafts/posted-openDAW-480-stale-pointer-write.md`). **Fixed upstream in 0.0.176** (published
+2026-10-20, one day after filing): `BoxGraph.onPointerAddressUpdated` returns early for a pointer
+whose box is detached (outside box construction), the guard `onPrimitiveValueUpdate` already
+had. On the release the five "flips when fixed" tests failed as the file said they would — the
+target's incoming list stays at one, `pointerHub.size()` 1, no update emitted, the mandatory-edge
+control throws again after the stale write, the sync mirror's checksum request resolves and the
+installed `engine.wasm`'s checksum equals the source's. The tests are inverted to assert the fixed
+behaviour and stay the regression check (`changelogs/sdk-0.0.175-to-0.0.176-changes.md`). The
+stale field still stores its own value (as a scalar write does) — a lost write, not a misrouted
+one; the rule to re-resolve through `boxGraph.findBox(uuid)` stands.

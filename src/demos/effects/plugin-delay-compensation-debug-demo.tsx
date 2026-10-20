@@ -26,14 +26,16 @@ import "@radix-ui/themes/styles.css";
 import { Theme, Container, Heading, Text, Flex, Card, Callout, Button, Code } from "@radix-ui/themes";
 import { InfoCircledIcon, PlayIcon } from "@radix-ui/react-icons";
 
-// Repro for `debug/2026-10-19-plugin-delay-compensation/note.md`.
+// Regression check for `debug/2026-10-19-plugin-delay-compensation/note.md` (openDAW#482, fixed
+// upstream: plug-in delay compensation).
 //
 // One Tape track plays a single-sample impulse at IMPULSE_SECONDS. The same slice is rendered
 // offline five times: dry, then with a Compressor and a Maximizer inserted on the track, each with
 // its look-ahead off and on, at settings that apply no gain reduction (ratio 1, threshold 0 dB; the
 // Maximizer keeps its fixed -0.001 dB headroom). Each render is compared with the dry one by
 // normalized cross-correlation (the dry render with itself); the lag is the frames by which the
-// device shifted the track. A delay-compensating engine would read 0 in every row.
+// device shifted the track. With delay compensation every row reads 0; before it the two
+// look-ahead-on rows read the device's whole look-ahead (+240 frames, 5 ms at 48 kHz).
 const SAMPLE_RATE = 48000;
 const BPM = 120;
 const IMPULSE_SECONDS = 0.25;
@@ -226,9 +228,9 @@ const App: React.FC = () => {
   const expected: TestStepRow[] = [
     { label: "dry (no device)", value: `onset ${expectedOnset}, lag 0` },
     { label: "Compressor, look-ahead off", value: "lag 0" },
-    { label: "Compressor, look-ahead on", value: `lag ${lookaheadFrames} frames (5.00 ms) uncompensated; 0 if the engine compensated` },
+    { label: "Compressor, look-ahead on", value: `lag 0 (compensated; ${lookaheadFrames} frames / 5.00 ms before delay compensation)` },
     { label: "Maximizer, look-ahead off", value: "lag 0" },
-    { label: "Maximizer, look-ahead on", value: `lag ${lookaheadFrames} frames (5.00 ms) uncompensated; 0 if the engine compensated` },
+    { label: "Maximizer, look-ahead on", value: `lag 0 (compensated; ${lookaheadFrames} frames / 5.00 ms before delay compensation)` },
   ];
 
   return (
@@ -248,10 +250,12 @@ const App: React.FC = () => {
             ]}
           />
           <Text size="2" color="gray">
-            A device with look-ahead (the Compressor and the Maximizer buffer 5 ms) delays its track by that
-            amount; nothing in the engine delays the other tracks to match. This page renders one impulse
+            A device with look-ahead (the Compressor and the Maximizer buffer 5 ms) reports its latency
+            and the engine delays every other path to match, so the track stays aligned with the mix
+            (openDAW#482, fixed; before it the track arrived 5 ms late). This page renders one impulse
             dry and through each device, look-ahead off and on, at settings that apply no gain reduction,
             and reads the shift by cross-correlation against the dry render. Offline render at 48 kHz.
+            Every row reads lag 0 on a compensating engine.
           </Text>
           <Callout.Root color="gray">
             <Callout.Icon><InfoCircledIcon /></Callout.Icon>

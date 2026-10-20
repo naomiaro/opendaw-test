@@ -182,12 +182,15 @@ sub.terminate();
 
 **Signature:** `OfflineEngineRenderer.start(source, optExportConfiguration, progress, abortSignal?, sampleRate?)` → `Promise<AudioData>`.
 
+**Sections:** `MixdownSection.collect(project)` lists what the studio's mixdown dialog offers — the entire song (`[0, lastRegionAction()]`, with its tail), the loop area once and in two passes (the second pass kept, so the loop's own tail is in it; offered while the loop is disabled too), and one section per marker to the next marker (the last runs to the song end). `OfflineEngineRenderer.renderSection(source, optExportConfiguration, section, progress, abortSignal?, sampleRate?)` renders one; for the render it sets the loop area to the section and enables it only for a two-pass render (disabled otherwise) and disables the marker track, and restores both without an undo entry.
+
 **How it works:**
 1. Disables the timeline loop on the source (restores it after the render)
 2. Resolves the render range — `[0, lastRegionAction()]`, or `ExportConfiguration.range` when set
 3. Spawns the offline engine worker (which self-loads the WASM artifacts)
-4. Renders all audio with effects, bounded by silence detection / `maxDurationSeconds`
-5. Returns `AudioData` with the rendered audio
+4. Settles plug-in delay compensation first (idle quanta until every device has reported its latency and no compensation pass is pending, then back to the start position) and trims the total compensation latency from the start, so the output starts aligned on frame 0; a project without a latent device holds no delay line and renders as before (the SDK's own test pins it bit-identical)
+5. Renders all audio with effects, bounded by silence detection / `maxDurationSeconds`
+6. Returns `AudioData` with the rendered audio
 
 **For stems export:**
 - Each stem is rendered to separate channels in the `AudioData`

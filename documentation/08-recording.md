@@ -468,7 +468,8 @@ project.editing.modify(() => {
    - Take 2: `waveformOffset` = Take 1's offset + Take 1 duration
    - Take N: `waveformOffset` = previous take's offset + previous take's duration
 
-   Consumers should always read `regionBox.waveformOffset.getValue()` directly rather than recomputing — the SDK accounts for output latency, input latency, and worklet startup gap.
+   Consumers should always read `regionBox.waveformOffset.getValue()` directly rather than recomputing — the SDK accounts for output latency, input latency, plug-in delay compensation (`engine.compensationLatency`) and worklet startup gap.
+6. The last take ends where the engine stopped recording, netted by the same latencies as the start: the worklet stamps the stop's context time into the engine state (`engine.recordingStop`), and `RecordAudio` keeps the source connected until the input still in flight at that moment has arrived (if the tail has not fully arrived within the shortfall plus one second, the take is trimmed to what did arrive). Input captured before the stop request is in the take.
 
 ### Rendering Take Peaks
 
