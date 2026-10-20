@@ -32,28 +32,43 @@ export interface ClickPlayer {
   cancel(): void;
 }
 
-/** One oscillator and gain per click, straight to `destination` (not through the master). */
-export function playClicks(audioContext: BaseAudioContext, destination: AudioNode, schedule: readonly ClickSchedule[]): ClickPlayer {
-  const oscillators: OscillatorNode[] = [];
+/** The whole click train as one buffer, starting at the first click: a sine burst of CLICK_HZ at CLICK_GAIN per click. */
+export function renderClickTrain(schedule: readonly ClickSchedule[], sampleRate: number): { startSec: number; samples: Float32Array<ArrayBuffer> } {
+  if (schedule.length === 0) return { startSec: 0, samples: new Float32Array(0) };
+  const startSec = Math.min(...schedule.map((c) => c.contextSec));
+  const endSec = Math.max(...schedule.map((c) => c.contextSec)) + CLICK_DURATION_SEC;
+  const samples = new Float32Array(Math.ceil((endSec - startSec) * sampleRate));
+  const clickFrames = Math.round(CLICK_DURATION_SEC * sampleRate);
   for (const { contextSec } of schedule) {
-    const osc = audioContext.createOscillator();
-    osc.type = "sine";
-    osc.frequency.value = CLICK_HZ;
-    const gain = audioContext.createGain();
-    gain.gain.setValueAtTime(0, 0);
-    gain.gain.setValueAtTime(CLICK_GAIN, contextSec);
-    gain.gain.setValueAtTime(0, contextSec + CLICK_DURATION_SEC);
-    osc.connect(gain).connect(destination);
-    osc.start(contextSec);
-    osc.stop(contextSec + CLICK_DURATION_SEC + 0.005);
-    osc.onended = () => { osc.disconnect(); gain.disconnect(); };
-    oscillators.push(osc);
+    const at = Math.round((contextSec - startSec) * sampleRate);
+    for (let k = 0; k < clickFrames && at + k < samples.length; k++) {
+      samples[at + k] += CLICK_GAIN * Math.sin((2 * Math.PI * CLICK_HZ * k) / sampleRate);
+    }
   }
+  return { startSec, samples };
+}
+
+/**
+ * One AudioBufferSourceNode for the whole train, created and connected before the pattern starts
+ * and left alone until the repeat is over: no graph change during the measured span (a main-thread
+ * graph change is the trigger of Chromium 442866743, the worklet clock stall). Straight to
+ * `destination`, not through the master.
+ */
+export function playClicks(audioContext: BaseAudioContext, destination: AudioNode, schedule: readonly ClickSchedule[]): ClickPlayer {
+  const { startSec, samples } = renderClickTrain(schedule, audioContext.sampleRate);
+  if (samples.length === 0) return { cancel: () => undefined };
+  const buffer = audioContext.createBuffer(1, samples.length, audioContext.sampleRate);
+  buffer.copyToChannel(samples, 0);
+  const source = audioContext.createBufferSource();
+  source.buffer = buffer;
+  source.connect(destination);
+  source.start(startSec);
+  let ended = false;
+  source.onended = () => { ended = true; };
   return {
     cancel: () => {
-      for (const osc of oscillators) {
-        try { osc.stop(); } catch { /* already stopped */ }
-      }
+      if (ended) return;
+      try { source.stop(); } catch { /* not started or already stopped */ }
     },
   };
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { BAR_PPQN } from "./auditExpectations";
 import { buildPattern } from "./midiInputPattern";
-import { clickContextTimes, inputLatencySecondsFor } from "./combinedClicks";
+import { CLICK_DURATION_SEC, clickContextTimes, inputLatencySecondsFor, renderClickTrain } from "./combinedClicks";
 
 describe("clickContextTimes", () => {
   it("puts each click at the render time of its note's heard instant", () => {
@@ -18,5 +18,27 @@ describe("inputLatencySecondsFor", () => {
   it("is zero in the default state and the measured part in seconds when calibrated", () => {
     expect(inputLatencySecondsFor("default", 40.9)).toBe(0);
     expect(inputLatencySecondsFor("calibrated", 40.9)).toBeCloseTo(0.0409, 9);
+  });
+});
+
+describe("renderClickTrain", () => {
+  it("renders every click into one buffer that starts at the first click, silent between clicks", () => {
+    const rate = 44100;
+    const schedule = [{ index: 0, contextSec: 14 }, { index: 1, contextSec: 14.25 }, { index: 2, contextSec: 14.5 }];
+    const { startSec, samples } = renderClickTrain(schedule, rate);
+    expect(startSec).toBe(14);
+    expect(samples.length).toBe(Math.ceil((0.5 + CLICK_DURATION_SEC) * rate));
+    const peak = (fromSec: number, toSec: number) => {
+      let p = 0;
+      for (let i = Math.round(fromSec * rate); i < Math.min(samples.length, Math.round(toSec * rate)); i++) p = Math.max(p, Math.abs(samples[i]));
+      return p;
+    };
+    expect(peak(0, CLICK_DURATION_SEC)).toBeGreaterThan(0.4);
+    expect(peak(CLICK_DURATION_SEC + 0.001, 0.249)).toBe(0);
+    expect(peak(0.25, 0.25 + CLICK_DURATION_SEC)).toBeGreaterThan(0.4);
+    expect(peak(0.5, 0.5 + CLICK_DURATION_SEC)).toBeGreaterThan(0.4);
+  });
+  it("is empty for an empty schedule", () => {
+    expect(renderClickTrain([], 44100).samples.length).toBe(0);
   });
 });
