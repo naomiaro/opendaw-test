@@ -153,10 +153,22 @@ calibrated, in opposite directions; the audio part is placed right, the MIDI par
 `2 × outputLatency − (frame − quantum)` late. This is the measurement the MIDI register's
 "Against the audio recorder" section called inferred; it is inferred no longer.
 
+### A consequence for the order of fixes
+
+Today's shipped SDK has no routine in the product to measure a microphone's delay (the
+loopback calibration is an open upstream PR), so every user is in the **uncalibrated** state,
+where the two errors partly cancel: the key 33 ms late, the sound 64 ms late, the parts 31 ms
+apart. A fix to the MIDI recorder ALONE would put the key on the beat and leave the sound
+64 ms late: the same player's parts would move to 64 ms apart, worse than now, and the fix
+would read as a regression. The MIDI issue should land together with input-latency
+calibration (the upstream PR, or a host-side routine), or say so in its text. Noted
+2026-10-20 before any filing.
+
 ### Open items
 
 - The user's hold stands: no issue goes upstream before the MIDI-effects harness has run.
-  The MIDI register's placement draft can now cite this section for its audio half.
+  The MIDI register's placement draft can now cite this section for its audio half, and
+  should carry the order-of-fixes consequence above.
 - The one-quantum audio state under jank: a note for the audio campaign's register.
 - The 4.8 s frame gap: watch for it on the next run.
 - The interface arm when hardware arrives (`?input=` / `?output=`); a cable loopback would
