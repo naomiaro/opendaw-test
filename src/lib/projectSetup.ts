@@ -18,6 +18,7 @@ import {
 import type { SoundfontService } from "@opendaw/studio-core";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { createHiddenSafeFrameDriver } from "./hiddenSafeFrameDriver";
+import { resolveFrameDriver, resolveFrameEvery, type FrameDriverKind } from "./frameDriverParams";
 import { createThrottledFrames } from "./frameScheduler";
 import { testFeatures } from "../features";
 import { installWasmEngine, ensureWasmReady } from "./wasmEngine";
@@ -71,24 +72,7 @@ export interface ProjectSetupOptions {
   frameDriver?: FrameDriverKind;
 }
 
-export type FrameDriverKind = "window" | "hidden-safe" | "throttled";
-
-function resolveFrameDriver(option: FrameDriverKind | undefined): FrameDriverKind {
-  if (option !== undefined) return option;
-  const param = new URLSearchParams(window.location.search).get("frameDriver");
-  if (param === "window" || param === "hidden-safe" || param === "throttled") return param;
-  if (param !== null) throw new Error(`invalid ?frameDriver= "${param}" — window, hidden-safe or throttled`);
-  return "window";
-}
-
-/** `?frameEvery=N` for the throttled driver: every Nth real frame; 2 when absent. */
-function resolveFrameEvery(): number {
-  const param = new URLSearchParams(window.location.search).get("frameEvery");
-  if (param === null) return 2;
-  const n = Number(param);
-  if (!Number.isInteger(n) || n < 1) throw new Error(`invalid ?frameEvery= "${param}" — an integer of 1 or more`);
-  return n;
-}
+export type { FrameDriverKind } from "./frameDriverParams";
 
 /**
  * Result of OpenDAW project setup
@@ -132,7 +116,7 @@ export interface ProjectSetupResult {
  */
 export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Promise<ProjectSetupResult> {
   const { localAudioBuffers, bpm = 120, onStatusUpdate, audioContextSampleRate, engineTap } = options;
-  const frameDriver = resolveFrameDriver(options.frameDriver);
+  const frameDriver = resolveFrameDriver(options.frameDriver, window.location.search);
 
   console.log("========================================");
   console.log("openDAW -> headless -> initializing");
@@ -155,7 +139,7 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
     : null;
   const owner: unknown = driver !== null ? driver
     : frameDriver === "throttled"
-      ? createThrottledFrames(resolveFrameEvery(), { requestFrame: (cb) => window.requestAnimationFrame(cb), cancelFrame: (id) => window.cancelAnimationFrame(id) })
+      ? createThrottledFrames(resolveFrameEvery(window.location.search), { requestFrame: (cb) => window.requestAnimationFrame(cb), cancelFrame: (id) => window.cancelAnimationFrame(id) })
       : window;
   AnimationFrame.start(owner as Window);
   console.debug("AnimationFrame started!");
