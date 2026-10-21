@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createFrameScheduler, type FrameSchedulerDeps } from "./frameScheduler";
+import { createFrameScheduler, createThrottledFrames, type FrameSchedulerDeps } from "./frameScheduler";
 
 function harness(opts: { hidden?: boolean; active?: boolean; graceMs?: number } = {}) {
   let hidden = opts.hidden ?? false;
@@ -91,18 +91,23 @@ describe("createFrameScheduler", () => {
 });
 
 describe("createThrottledFrames", () => {
-  it("delivers every Nth underlying frame with that frame's timestamp, and cancels the pending one", async () => {
-    const { createThrottledFrames } = await import("./frameScheduler");
-    const frames: Array<(t: number) => void> = [];
-    const t = createThrottledFrames(3, { requestFrame: (cb) => { frames.push(cb); return frames.length; }, cancelFrame: () => { frames.length = 0; } });
+  it("delivers every Nth underlying frame with that frame's timestamp, and a cancel by id after an intermediate frame drops the pending underlying request", () => {
+    const frames = new Map<number, (t: number) => void>();
+    let nextId = 100;
+    const t = createThrottledFrames(3, {
+      requestFrame: (cb) => { const id = nextId++; frames.set(id, cb); return id; },
+      cancelFrame: (id) => { frames.delete(id); },
+    });
+    const fireOne = (ts: number) => { const [id, cb] = [...frames.entries()][0]; frames.delete(id); cb(ts); };
     const seen: number[] = [];
-    const id = t.requestAnimationFrame((ts) => seen.push(ts));
-    for (let i = 1; i <= 3; i++) { const cb = frames.shift(); if (cb) cb(i * 8.33); }
+    t.requestAnimationFrame((ts) => seen.push(ts));
+    for (let i = 1; i <= 3; i++) fireOne(i * 8.33);
     expect(seen.length).toBe(1);
     expect(seen[0]).toBeCloseTo(24.99, 6);
-    t.requestAnimationFrame((ts) => seen.push(ts));
-    t.cancelAnimationFrame(id + 1);
-    for (let i = 4; i <= 6; i++) { const cb = frames.shift(); if (cb) cb(i * 8.33); }
+    const second = t.requestAnimationFrame((ts) => seen.push(ts));
+    fireOne(4 * 8.33);
+    t.cancelAnimationFrame(second);
+    expect(frames.size).toBe(0);
     expect(seen.length).toBe(1);
   });
 });

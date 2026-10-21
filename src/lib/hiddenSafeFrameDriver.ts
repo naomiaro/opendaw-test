@@ -24,48 +24,80 @@ export interface HiddenSafeFrameDriver {
   terminate(): void;
 }
 
-export function createHiddenSafeFrameDriver(isActive: () => boolean): HiddenSafeFrameDriver {
+/** The globals the driver binds to, injectable so the binding is testable without a DOM. */
+export interface HiddenSafeFrameDriverDeps {
+  doc: {
+    readonly visibilityState: DocumentVisibilityState;
+    addEventListener(type: "visibilitychange", fn: () => void): void;
+    removeEventListener(type: "visibilitychange", fn: () => void): void;
+  };
+  win: {
+    requestAnimationFrame(cb: (t: number) => void): number;
+    cancelAnimationFrame(id: number): void;
+  };
+  now(): number;
+  createTicker(intervalMs: number): WorkerTicker;
+}
+
+const browserDeps = (): HiddenSafeFrameDriverDeps => ({
+  doc: document,
+  win: { requestAnimationFrame: (cb) => window.requestAnimationFrame(cb), cancelAnimationFrame: (id) => window.cancelAnimationFrame(id) },
+  now: () => performance.now(),
+  createTicker: createWorkerTicker,
+});
+
+export function createHiddenSafeFrameDriver(
+  isActive: () => boolean,
+  deps: HiddenSafeFrameDriverDeps = browserDeps(),
+): HiddenSafeFrameDriver {
   let ticker: WorkerTicker | null = null;
   let tickId = 0;
   let pendingTick: { id: number; cb: (t: number) => void } | null = null;
   let tickSub: { terminate(): void } | null = null;
+  // The worker lives only while a tick is pending: a hidden idle page runs no timer at all.
+  const releaseTickerIfIdle = (): void => {
+    if (pendingTick !== null) return;
+    tickSub?.terminate();
+    tickSub = null;
+    ticker?.terminate();
+    ticker = null;
+  };
   const onTick = (): void => {
     const entry = pendingTick;
     if (entry === null) return;
     pendingTick = null;
-    entry.cb(performance.now());
+    entry.cb(deps.now());
+    releaseTickerIfIdle();
   };
   const scheduler = createFrameScheduler({
-    isHidden: () => document.visibilityState === "hidden",
+    isHidden: () => deps.doc.visibilityState === "hidden",
     isActive,
-    now: () => performance.now(),
+    now: () => deps.now(),
     graceMs: HIDDEN_GRACE_MS,
-    requestFrame: (cb) => window.requestAnimationFrame(cb),
-    cancelFrame: (id) => window.cancelAnimationFrame(id),
+    requestFrame: (cb) => deps.win.requestAnimationFrame(cb),
+    cancelFrame: (id) => deps.win.cancelAnimationFrame(id),
     requestTick: (cb) => {
-      ticker ??= createWorkerTicker(HIDDEN_TICK_MS);
+      ticker ??= deps.createTicker(HIDDEN_TICK_MS);
       tickSub ??= ticker.subscribe(onTick);
       pendingTick = { id: ++tickId, cb };
       return pendingTick.id;
     },
     cancelTick: (id) => {
       if (pendingTick?.id === id) pendingTick = null;
+      releaseTickerIfIdle();
     },
   });
   const onVisibility = (): void => scheduler.visibilityChanged();
-  document.addEventListener("visibilitychange", onVisibility);
+  deps.doc.addEventListener("visibilitychange", onVisibility);
   return {
     requestAnimationFrame: (cb) => scheduler.requestAnimationFrame(cb),
     cancelAnimationFrame: (id) => scheduler.cancelAnimationFrame(id),
     activityChanged: () => scheduler.activityChanged(),
     transportRequested: () => scheduler.transportRequested(),
     terminate: () => {
-      document.removeEventListener("visibilitychange", onVisibility);
-      tickSub?.terminate();
-      tickSub = null;
-      ticker?.terminate();
-      ticker = null;
+      deps.doc.removeEventListener("visibilitychange", onVisibility);
       pendingTick = null;
+      releaseTickerIfIdle();
     },
   };
 }
