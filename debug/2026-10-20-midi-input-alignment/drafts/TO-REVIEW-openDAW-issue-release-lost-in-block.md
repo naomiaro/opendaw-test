@@ -1,5 +1,9 @@
 <!-- Draft for andremichelle/openDAW. Not posted. Target: a new issue.
-     HELD (2026-10-20): not before the combined MIDI + audio cell and the MIDI-effects harness have run. -->
+     Written 2026-10-20 and HELD; the hold is lifted 2026-10-21: the combined MIDI + audio cell ran on
+     2026-10-20 (debug/2026-10-20-midi-audio-combined/note.md) and the MIDI effect placement audit on
+     2026-10-21 (debug/2026-10-21-midi-effect-placement/note.md; a Pitch or an Arpeggio on the recorded
+     unit left every recorded row unchanged, 48 of 48 notes). Neither run touched the claim below, so the
+     body is as written. Waits for the user's read. -->
 
 # A key released during, or just after, a main-thread block is recorded far too short
 
