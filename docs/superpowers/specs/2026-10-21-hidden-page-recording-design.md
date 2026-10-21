@@ -77,12 +77,20 @@ Behaviour:
   `isCountingIn`, plus `HIDDEN_GRACE_MS` = 2000 after it goes idle so a stop's finalization
   is pumped): `requestAnimationFrame(cb)` registers `cb` for the next worker tick. The tick
   comes from a dedicated worker created from a blob URL that posts a message every
-  `HIDDEN_TICK_MS` (16 ms); the main-thread `onmessage` calls the pending callback with
-  `performance.now()`. `cancelAnimationFrame(id)` drops a pending callback. While hidden and
+  `HIDDEN_TICK_MS` (20 ms: lib-dom's `exe` drops a callback that comes within 16 ms of the
+  last accepted one, so a 16 ms tick with timer jitter would lose about half of them); the
+  main-thread `onmessage` calls the pending callback with `performance.now()`. `cancelAnimationFrame(id)` drops a pending callback. While hidden and
   idle, nothing is pumped: a background tab with the transport stopped stays as idle as
   today (the frame subscribers include every canvas painter, which would otherwise repaint
   at 60 Hz in every background tab for the tab's life). The activity predicate is injected
   (`isActive: () => boolean`), so the scheduler's Node tests cover the gate.
+- The engine's own flags reach the page through the sync these ticks pump, so a page that is
+  hidden and idle when a transport request arrives (a MIDI controller's Record button, a
+  timer; a user cannot click a hidden page) would never see the flag flip and never tick.
+  A transport request (`play`, `stop`, `setPosition`, `prepareRecordingState`,
+  `stopRecording`, clip scheduling, hooked on the engine facade in `initializeOpenDAW`)
+  therefore counts as activity for the same grace period, by which time the engine's flag
+  has arrived through the ticks it started.
 - On `visibilitychange`: when the page becomes hidden, a pending real-frame request is
   cancelled and re-registered for the worker tick (the real frame would never fire); when it
   becomes visible, a pending worker-tick callback is cancelled and re-requested on the real
@@ -157,16 +165,19 @@ Sequence:
 Per take the page reads, through the pure library:
 
 - `finalized` (loader state), `finalizeMs`.
-- `regionDurationSec` against the expected 16 s (within one render quantum).
-- Clicks found / missing / extra and the median beat error via the harness's
-  `measureTakeAlignment` on the take's WAV (the harness's reader), tolerance the harness's.
+- `regionDurationSec` against the expected length (eight bars less the harness's stop lead),
+  within `DURATION_TOLERANCE_MS` = 50: the stop request is issued at a position read that is
+  up to a frame old, and lands on a quantum.
+- Beats matched / missing and the median beat error via the harness's `measureTakeAlignment`
+  on the take's buffer (the harness's reader: `bandSplit`, `detectOnsets`), tolerance the
+  harness's `ALIGNED_TOLERANCE_MS`.
 - `hiddenSpanMs` (visible→hidden→visible), `frameGapMaxMs`, `positionFrozenMs` (the longest
   run of unchanged position samples while the engine was recording), `syncResumeMs` (from
   the visible event to the first position sample that moved).
-- Verdict: `intact` when finalized, duration within a quantum, no click missing or extra,
-  median within the harness tolerance; `not-finalized` when the deadline passed (no take, or
-  a loader that never loaded); `audio-damaged` when finalized but clicks missing / extra or
-  the duration short; `session-stuck` for take 2 when it could not start or settle;
+- Verdict: `intact` when finalized, duration within the tolerance, no beat missing, median
+  within the harness tolerance; `not-finalized` when the deadline passed (no take, or a
+  loader that never loaded); `audio-damaged` when finalized but beats missing or the
+  duration off; `session-stuck` for take 2 when it could not start or settle;
   `not-hidden` when a `cover` run never saw the page hidden (the partial-cover case: judged
   nothing, reported); `main-thread-blocked` is not a verdict but a figure on every `modal`
   row (the frame gap and the position-sample gap, both as long as the dialog), beside the
@@ -176,7 +187,7 @@ Expected (the prediction, written before the first run):
 
 | interrupt | hideAt | driver=window | driver=hidden-safe |
 |---|---|---|---|
-| cover | mid | `intact`, `positionFrozenMs ≈ hiddenSpanMs`, `syncResumeMs` one frame | `intact`, `positionFrozenMs` under a frame |
+| cover | mid | `intact`, `positionFrozenMs ≈ hiddenSpanMs`, `syncResumeMs` one frame | `intact`, `positionFrozenMs` under two ticks |
 | cover | start | `not-finalized` (no take appeared); take 2 `session-stuck` or late | `intact` |
 | cover | stop | finalizes only after the page is visible again; take 2 late | `intact` |
 | modal | mid / start / stop | the driver cannot help: the same three readings as `window`, with the frame and sample gaps equal to the dialog's span | same as `window` |
