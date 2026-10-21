@@ -695,7 +695,9 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   page brought to front, a protocol minimize and a popup of the page's own all leave it
   `visible`), expect both takes `intact` and a longest frame gap under a second; then the three
   `modal` rows (`?interrupt=modal&hideAt=start|mid|stop`, the alert dismissed after five
-  seconds through the Playwright tooling's dialog handler), expect `intact`. Register
+  seconds through the Playwright tooling's dialog handler: an alert answered at once measures
+  nothing, and a span under a second reads `not-hidden`, the page refusing to judge, not a
+  regression), expect `intact`. Register
   `debug/2026-10-21-hidden-page-recording/note.md`.
 - After SDK upgrades, also run the MIDI effect placement audit:
   `midi-effect-placement-audit-debug-demo.html?device=all` then `?rate=44100` — a real click on
