@@ -222,8 +222,7 @@ const App: React.FC = () => {
       if (patternRef.current === pattern) return;
       const held = eventsRef.current;
       project.editing.modify(() => { for (const box of held) if (box.isAttached()) box.delete(); });
-      // A second transaction: a box created inside the clearing transaction is not yet visible to the
-      // collection it joins (repo rule); append folds it into the same undo step.
+      // Creation in a second transaction, folded into the same undo step.
       eventsRef.current = project.editing
         .append(() => pattern.map((note) => project.api.createNoteEvent({
           owner: regionBox, position: note.position as ppqn, duration: note.duration as ppqn, pitch: NOTE_PITCH, velocity: 1,
@@ -237,16 +236,22 @@ const App: React.FC = () => {
       const device = scenario.device;
       const field = midiEffectsFieldOf(project, audioUnitBox);
       const box = project.editing.modify(() => project.api.insertEffect(field, FACTORIES[device])).unwrap("insertEffect");
-      // Settings in their own transaction after the insert commits (repo rule on pointers created in the same transaction).
-      project.editing.modify(() => {
-        box.enabled.setValue(scenario.enabled);
-        applySettings(box, device);
-      });
-      if (device === "spielwerk") {
-        if (scenario.script === null) throw new Error(`row ${scenario.id} has no script`);
-        // Outside any transaction: the compiler opens its own, and registers the module on the live context;
-        // the offline renderer re-registers the compiled code from the box's header.
-        await SPIELWERK_COMPILER.compile(audioContext, project.editing, box as SpielwerkDeviceBox, scenario.script);
+      try {
+        // Settings in their own transaction after the insert commits (repo rule on pointers created in the same transaction).
+        project.editing.modify(() => {
+          box.enabled.setValue(scenario.enabled);
+          applySettings(box, device);
+        });
+        if (device === "spielwerk") {
+          if (scenario.script === null) throw new Error(`row ${scenario.id} has no script`);
+          // Outside any transaction: the compiler opens its own, and registers the module on the live context;
+          // the offline renderer re-registers the compiled code from the box's header.
+          await SPIELWERK_COMPILER.compile(audioContext, project.editing, box as SpielwerkDeviceBox, scenario.script);
+        }
+      } catch (error) {
+        // The insert has committed: a device whose settings or compile failed must not stay on the chain for the later rows.
+        removeMidiEffect(project.editing, box);
+        throw error;
       }
       return box;
     };
@@ -262,6 +267,7 @@ const App: React.FC = () => {
         const { channels } = await renderOfflineSlice(project, 0, renderSeconds(BPM), RATE);
         const left = channels[0];
         const onsets = onsetsOf(left, RATE, ONSET_THRESHOLD, ONSET_SKIP_MS);
+        const peak = peakOf(left);
         let record: MidiEffectRowRecord;
         if (scenario.id === "dry") {
           if (onsets.length !== DRY_PATTERN.length) {
@@ -271,25 +277,25 @@ const App: React.FC = () => {
           instrumentOffset = instrumentOffsetFrames(onsets[0], REGION_POSITION_PPQN, BPM, RATE);
           setOffset(instrumentOffset);
           // The dry row is read against its own grid: its deltas show what the sampler itself does to spacing.
-          const judgement = judgeRule(onsets, expectedFrames(positions, BPM, RATE, instrumentOffset), RULE_TOLERANCE_FRAMES, RATE);
+          const judgement = judgeRule(onsets, expectedFrames(positions, BPM, RATE, instrumentOffset), RULE_TOLERANCE_FRAMES, RATE, peak);
           record = {
             id: scenario.id, label: scenario.label, device: null, enabled: true, judge: "rule",
-            status: judgement.verdict.status, figure: figureOf(judgement.verdict), lag: 0, score: 1, peak: peakOf(left),
+            status: judgement.verdict.status, figure: figureOf(judgement.verdict), lag: 0, score: 1, peak,
             onsets, expected: judgement.expected, deltas: judgement.deltas, expectedCount: DRY_PATTERN.length,
           };
         } else if (scenario.judge === "pass-through") {
           if (dryLeft === null) throw new Error("no dry reference");
-          const judgement = judgePassThrough(dryLeft, left, MAX_LAG_FRAMES, SCORE_FLOOR, RATE);
+          const judgement = judgePassThrough(dryLeft, left, MAX_LAG_FRAMES, SCORE_FLOOR, RATE, onsets.length, expectedOnsetCount(scenario));
           record = {
             id: scenario.id, label: scenario.label, device: scenario.device, enabled: scenario.enabled, judge: "pass-through",
             status: judgement.verdict.status, figure: figureOf(judgement.verdict), lag: judgement.lag, score: judgement.score, peak: judgement.peak,
             onsets, expected: [], deltas: [], expectedCount: expectedOnsetCount(scenario),
           };
         } else {
-          const judgement = judgeRule(onsets, expectedFrames(positions, BPM, RATE, instrumentOffset), RULE_TOLERANCE_FRAMES, RATE);
+          const judgement = judgeRule(onsets, expectedFrames(positions, BPM, RATE, instrumentOffset), RULE_TOLERANCE_FRAMES, RATE, peak);
           record = {
             id: scenario.id, label: scenario.label, device: scenario.device, enabled: scenario.enabled, judge: "rule",
-            status: judgement.verdict.status, figure: figureOf(judgement.verdict), lag: null, score: null, peak: peakOf(left),
+            status: judgement.verdict.status, figure: figureOf(judgement.verdict), lag: null, score: null, peak,
             onsets, expected: judgement.expected, deltas: judgement.deltas, expectedCount: expectedOnsetCount(scenario),
           };
         }

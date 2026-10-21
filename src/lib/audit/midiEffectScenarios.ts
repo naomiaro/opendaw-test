@@ -191,10 +191,14 @@ export function resolveRate(param: string | null): RenderRate {
   return n as RenderRate;
 }
 
-/** `?bpm=`: a positive tempo; 120 when absent. */
+/** `?bpm=`: a positive tempo; 120 when absent. Capped where the echo copies (`ECHO_DELAY_PPQN` apart) would
+ *  fall inside the onset skip and read as missing: 250 bpm. */
 export function resolveBpm(param: string | null): number {
   if (param === null) return 120;
   const n = Number(param);
   if (!Number.isFinite(n) || n <= 0) throw new Error(`invalid ?bpm= "${param}"`);
+  if (PPQN.pulsesToSeconds(ECHO_DELAY_PPQN, n) * 1000 < ONSET_SKIP_MS) {
+    throw new Error(`invalid ?bpm= "${param}": past ${Math.floor((ECHO_DELAY_PPQN * 60 * 1000) / (PPQN.Quarter * ONSET_SKIP_MS))} bpm the echo copies fall inside the ${ONSET_SKIP_MS} ms onset skip`);
+  }
   return n;
 }

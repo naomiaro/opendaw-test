@@ -18,27 +18,39 @@ describe("onsetsOf", () => {
 describe("judgePassThrough", () => {
   it("reads a shifted copy as its shift and an identical one as predicted", () => {
     const dry = burstsAt([1000, 4000]);
-    expect(judgePassThrough(dry, dry, 2400, 0.9, RATE).verdict).toEqual({ status: "as-predicted" });
-    const late = judgePassThrough(dry, burstsAt([1240, 4240]), 2400, 0.9, RATE);
+    expect(judgePassThrough(dry, dry, 2400, 0.9, RATE, 8, 8).verdict).toEqual({ status: "as-predicted" });
+    const late = judgePassThrough(dry, burstsAt([1240, 4240]), 2400, 0.9, RATE, 8, 8);
     expect(late.lag).toBe(240);
     expect(late.verdict.status).toBe("investigate");
   });
+  it("flags a dropped or an added note by the count, which the correlation alone would clear", () => {
+    const dry = burstsAt([1000, 4000, 7000, 10000, 13000, 16000, 19000, 22000]);
+    const seven = judgePassThrough(dry, burstsAt([1000, 4000, 7000, 10000, 13000, 16000, 19000]), 2400, 0.9, RATE, 7, 8);
+    expect(seven.score).toBeGreaterThan(0.9);
+    expect(seven.verdict).toEqual({ status: "investigate", figure: "7 onsets, 8 notes in the pattern" });
+    const nine = judgePassThrough(dry, burstsAt([1000, 4000, 7000, 10000, 13000, 16000, 19000, 22000, 25000]), 2400, 0.9, RATE, 9, 8);
+    expect(nine.score).toBeGreaterThan(0.9);
+    expect(nine.verdict.status).toBe("investigate");
+  });
   it("reports a silent render as an error and a different render as a low score", () => {
     const dry = burstsAt([1000, 4000]);
-    expect(judgePassThrough(dry, new Float32Array(RATE), 2400, 0.9, RATE).verdict.status).toBe("error");
-    const different = judgePassThrough(dry, burstsAt([1000, 4000, 7000, 10000]), 2400, 0.9, RATE);
+    expect(judgePassThrough(dry, new Float32Array(RATE), 2400, 0.9, RATE, 8, 8).verdict.status).toBe("error");
+    const different = judgePassThrough(dry, burstsAt([1000, 4000, 7000, 10000]), 2400, 0.9, RATE, 8, 8);
     expect(different.verdict.status).toBe("investigate");
     expect((different.verdict as { figure: string }).figure).toMatch(/below 0.9/);
   });
 });
 
 describe("judgeRule", () => {
+  it("reports a silent render as an error before counting", () => {
+    expect(judgeRule([], [1000, 4000], 1, RATE, 0).verdict).toEqual({ status: "error", message: "render is silent (peak 0): the sample did not load or the device muted it" });
+  });
   it("accepts one frame, flags two, and flags a count mismatch before any figure", () => {
-    expect(judgeRule([1001, 4000], [1000, 4000], 1, RATE).verdict).toEqual({ status: "as-predicted" });
-    const off = judgeRule([1002, 4000], [1000, 4000], 1, RATE);
+    expect(judgeRule([1001, 4000], [1000, 4000], 1, RATE, 1).verdict).toEqual({ status: "as-predicted" });
+    const off = judgeRule([1002, 4000], [1000, 4000], 1, RATE, 1);
     expect(off.verdict.status).toBe("investigate");
     expect((off.verdict as { figure: string }).figure).toMatch(/onset 0 off by 2 frames/);
-    const count = judgeRule([1000, 4000, 7000], [1000, 4000], 1, RATE);
+    const count = judgeRule([1000, 4000, 7000], [1000, 4000], 1, RATE, 1);
     expect(count.deltas).toEqual([]);
     expect((count.verdict as { figure: string }).figure).toMatch(/3 onsets, rule predicts 2/);
   });

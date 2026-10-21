@@ -66,6 +66,9 @@ describe("page parameters", () => {
     expect(resolveBpm("90")).toBe(90);
     expect(() => resolveBpm("0")).toThrow(/invalid \?bpm=/);
     expect(() => resolveBpm("fast")).toThrow(/invalid \?bpm=/);
+    // Past 250 bpm the echo copies (120 pulses apart) fall inside the 30 ms onset skip and would read as missing.
+    expect(resolveBpm("250")).toBe(250);
+    expect(() => resolveBpm("251")).toThrow(/echo copies/);
   });
 });
 

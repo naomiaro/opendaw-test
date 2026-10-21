@@ -41,17 +41,20 @@ export const peakOf = (samples: Float32Array): number => {
   return peak;
 };
 
+const SILENT: RowVerdict = { status: "error", message: "render is silent (peak 0): the sample did not load or the device muted it" };
+
 /** Expected lag 0 at a score of at least `scoreFloor`: the chain works in pulses and the instrument
  *  resolves the same pulses to the same frames in both renders. A silent candidate is an error, not a
- *  reading (two zero arrays correlate at lag 0, score 0). */
-export function judgePassThrough(reference: Float32Array, candidate: Float32Array, maxLag: number, scoreFloor: number, rate: number): PassThroughJudgement {
+ *  reading (two zero arrays correlate at lag 0, score 0). The onset count is read first: the normalized
+ *  correlation ignores level, so a render with one note of eight dropped or added still scores above 0.9. */
+export function judgePassThrough(reference: Float32Array, candidate: Float32Array, maxLag: number, scoreFloor: number, rate: number, onsetCount: number, expectedCount: number): PassThroughJudgement {
   const peak = peakOf(candidate);
-  if (peak === 0) {
-    return { kind: "pass-through", lag: 0, score: 0, peak, verdict: { status: "error", message: "render is silent (peak 0): the sample did not load or the device muted it" } };
-  }
+  if (peak === 0) return { kind: "pass-through", lag: 0, score: 0, peak, verdict: SILENT };
   const { lag, score } = bestLag(reference, candidate, maxLag);
   let verdict: RowVerdict;
-  if (score < scoreFloor) {
+  if (onsetCount !== expectedCount) {
+    verdict = { status: "investigate", figure: `${onsetCount} onsets, ${expectedCount} notes in the pattern` };
+  } else if (score < scoreFloor) {
     verdict = { status: "investigate", figure: `score ${score.toFixed(3)} below ${scoreFloor}: shift outside ±${maxLag} frames or a different render` };
   } else if (lag !== 0) {
     verdict = { status: "investigate", figure: `lag ${lag} frames (${msOf(lag, rate)} ms), score ${score.toFixed(3)}` };
@@ -69,8 +72,10 @@ export interface RuleJudgement {
   verdict: RowVerdict;
 }
 
-/** The count must match before any figure is read; then every onset within `toleranceFrames` of its expectation. */
-export function judgeRule(onsets: readonly number[], expected: readonly number[], toleranceFrames: number, rate: number): RuleJudgement {
+/** A silent render is an error; then the count must match before any figure is read; then every onset
+ *  within `toleranceFrames` of its expectation. */
+export function judgeRule(onsets: readonly number[], expected: readonly number[], toleranceFrames: number, rate: number, peak: number): RuleJudgement {
+  if (peak === 0) return { kind: "rule", onsets: [...onsets], expected: [...expected], deltas: [], verdict: SILENT };
   if (onsets.length !== expected.length) {
     return {
       kind: "rule", onsets: [...onsets], expected: [...expected], deltas: [],
