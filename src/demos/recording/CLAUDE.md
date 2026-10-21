@@ -639,6 +639,42 @@ without a limit above zero. Replay saved runs (one sample rate at a time) with
   finalization is an empty `finalizeLimitCalls` with `finalizeLoaderState: "record"`, and
   an error row carries the probe of the repeat that failed.
 
+### Recording While the Page Is Hidden (unlisted)
+
+`recording-hidden-window-debug-demo.html[?driver=window|hidden-safe][&interrupt=cover|modal][&hideAt=start|mid|stop][&hiddenSeconds=<n>][&rate=48000|44100][&bpm=<n>]`
+records a Tape through the alignment harness's loopback for eight bars, interrupts the page
+at the chosen moment, reads the take with the harness's reader, then records a second,
+uninterrupted take. Register: `debug/2026-10-21-hidden-page-recording/note.md`.
+
+- **The three frame-bound moments.** `RecordAudio` resolves the take's file inside its
+  `engine.position` subscription, the live length is written per frame, and a stop's
+  finalization waits on the recording flag; the engine's main-thread sync itself runs on
+  animation frames, which Chrome stops for a hidden document and a fully covered window.
+  Measured: the recorder survives all three moments on the SDK's own frame driver — the
+  audio is drained by a worker (openDAW#290) and the main thread catches up when it runs again —
+  but the page's VIEW freezes for the hidden span (`positionFrozenMs` = the hide, to the
+  sample), so a stop driven from a position wait lands late and a harness deadline gives up.
+- **The driver.** `initializeOpenDAW`'s `frameDriver` option (default `window`, the SDK's
+  path; `?frameDriver=hidden-safe` on any demo URL opts in, except on this page, which passes
+  its own `?driver=` as the option) pumps the SDK's `AnimationFrame`
+  from a worker tick while hidden and the transport active, plus two seconds of grace, with a
+  transport request counting as activity (the engine's own flags arrive through the sync the
+  ticks pump). Measured through a 4.7 s hide: frame gap 0.64 s, the position never frozen.
+- **`cover` needs a hand.** Nothing the page or the tooling does hides it (a second tab, a
+  Playwright page in front, a protocol minimize, a popup of its own): the page asks and waits
+  up to two minutes, at the start before the record request, at bar 1, or a bar before the
+  stop request, and a run whose interruption was under a second (a `cover` that never hid, an
+  alert dismissed at once) reads `not-hidden`. Hide
+  Chrome by hand (Cmd+H with Chrome frontmost, click Chrome in the Dock to return). A hand
+  reaches the page only some of the time on a machine with two Chrome windows.
+- **`modal` is out of any driver's reach.** The page's own `alert()` blocks frames and worker
+  messages alike; measured at 9 to 13 s per moment, the take is intact and finalization waits
+  as long as the dialog is up. The Playwright tooling's dialog handler dismisses it on cue.
+- The metronome is ON during the takes: its clicks in the low band are the beat grid the
+  reader matches; off, the reader matches leakage. The judged median nets the loopback delay
+  as the harness's release profile does. A take longer than expected is a late stop, not
+  damage; the beats say whether the content is whole.
+
 ### Input-Latency Calibration Ground-Truth Page (unlisted)
 
 Measures the SDK's loopback input-latency calibration against a delay the harness injects

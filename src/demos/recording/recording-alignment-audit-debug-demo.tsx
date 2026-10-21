@@ -153,6 +153,7 @@ import {
   type HarnessPathBias,
   type RepeatToken,
 } from "@/lib/audit/recordingCellRunner";
+import { FrameWatch } from "@/lib/audit/midiInputCellRunner";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
@@ -258,6 +259,24 @@ const CAPTURE_MODE: CaptureMode = DEFAULT_INPUT ? "default" : "named";
 const NODE_TAPS = params.get("scenario")?.startsWith("multitrack") === true;
 
 const loopback = installLoopbackCapture(2, { serveDefault: DEFAULT_INPUT, nodeTaps: NODE_TAPS });
+
+// A hidden page stalls the frames the main-thread sync rides on (`?frameDriver=hidden-safe`
+// keeps them coming); a covered-but-visible window or a blocked main thread stalls them on any
+// driver (root CLAUDE.md). A failed repeat says so in its row instead of reading as an SDK
+// finding; a watch that saw under two frames in a repeat longer than a second is a stall too.
+let hiddenEvents = 0;
+document.addEventListener("visibilitychange", () => { if (document.visibilityState !== "visible") hiddenEvents++; });
+const FRAME_STALL_MS = 1000;
+function attributeHidden(hiddenBefore: number, frameWatch: FrameWatch, startedAtMs: number): string {
+  const hidden = hiddenEvents > hiddenBefore || document.visibilityState !== "visible";
+  const gaps = frameWatch.stop();
+  const elapsedMs = performance.now() - startedAtMs;
+  const noFrames = gaps.maxGapMs === null && elapsedMs > FRAME_STALL_MS;
+  const stalled = noFrames || (gaps.maxGapMs !== null && gaps.maxGapMs > FRAME_STALL_MS);
+  const gapText = noFrames ? `no two frames in ${elapsedMs.toFixed(0)} ms` : `longest gap ${(gaps.maxGapMs ?? 0).toFixed(0)} ms`;
+  return (hidden ? " [the page was hidden during this repeat — not an SDK finding]" : "")
+    + (stalled ? ` [animation frames stalled: ${gapText} — a covered or hidden window, not an SDK finding]` : "");
+}
 
 type ProbeRow = { label: string; value: string };
 
@@ -714,6 +733,10 @@ async function runAudit(
         let result: CellRepeatResult | null = null;
         let errorMessage: string | null = null;
         clearLastFinalizeProbe();
+        const hiddenBefore = hiddenEvents;
+        const frameWatch = new FrameWatch();
+        frameWatch.start();
+        const repeatStartedAt = performance.now();
         try {
           result = await runRepeatWithDeadline(
             (token) => runCellRepeat({
@@ -734,9 +757,10 @@ async function runAudit(
             label
           );
         } catch (err) {
-          errorMessage = `${stage}: ${err instanceof Error ? err.message : String(err)}`;
+          errorMessage = `${stage}: ${err instanceof Error ? err.message : String(err)}` + attributeHidden(hiddenBefore, frameWatch, repeatStartedAt);
           console.error(`[recording-alignment-audit] cell ${label} failed: ${errorMessage}`);
         }
+        frameWatch.stop();
 
         // Unconditional (success or failure) — a mid-recording error must
         // not leave stale regions for the next repeat/cell. Guarded so a
@@ -1623,6 +1647,10 @@ async function runMultitrackAudit(
         let stage = "prefs";
         let result: MultitrackRepeatResult | null = null;
         let errorMessage: string | null = null;
+        const hiddenBefore = hiddenEvents;
+        const frameWatch = new FrameWatch();
+        frameWatch.start();
+        const repeatStartedAt = performance.now();
         lastMultitrackFinalizeProbes = null;
         try {
           result = await runRepeatWithDeadline(
@@ -1642,9 +1670,10 @@ async function runMultitrackAudit(
             label
           );
         } catch (err) {
-          errorMessage = `${stage}: ${err instanceof Error ? err.message : String(err)}`;
+          errorMessage = `${stage}: ${err instanceof Error ? err.message : String(err)}` + attributeHidden(hiddenBefore, frameWatch, repeatStartedAt);
           console.error(`[recording-alignment-audit] multitrack cell ${label} failed: ${errorMessage}`);
         }
+        frameWatch.stop();
 
         let cleanupWarning: string | null = null;
         try {

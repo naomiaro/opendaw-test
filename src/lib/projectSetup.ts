@@ -17,6 +17,9 @@ import {
 } from "@opendaw/studio-core";
 import type { SoundfontService } from "@opendaw/studio-core";
 import { AnimationFrame } from "@opendaw/lib-dom";
+import { createHiddenSafeFrameDriver } from "./hiddenSafeFrameDriver";
+import { resolveFrameDriver, resolveFrameEvery, type FrameDriverKind } from "./frameDriverParams";
+import { createThrottledFrames } from "./frameScheduler";
 import { testFeatures } from "../features";
 import { installWasmEngine, ensureWasmReady } from "./wasmEngine";
 import { withDeadline } from "./deadline";
@@ -56,7 +59,20 @@ export interface ProjectSetupOptions {
 
   /** Called with the engine worklet node right after it connects to the destination (audit taps). */
   engineTap?: (engineNode: AudioNode) => void;
+
+  /**
+   * What drives the SDK's `AnimationFrame`. `"window"` (the default) is the SDK's own path:
+   * the real animation frame, which stops while the page is hidden. `"hidden-safe"` is the
+   * real frame while the page is visible and a worker tick while it is hidden and the
+   * transport active, so the engine's main-thread sync keeps running behind another tab or
+   * window; `"throttled"` delivers every Nth real frame (`?frameEvery=N`, default 2), for a
+   * sweep that wants a slower engine sync than the display gives. Absent, the page URL's
+   * `?frameDriver=` decides, so any demo and any standing sweep can opt in from its URL.
+   */
+  frameDriver?: FrameDriverKind;
 }
+
+export type { FrameDriverKind } from "./frameDriverParams";
 
 /**
  * Result of OpenDAW project setup
@@ -64,6 +80,8 @@ export interface ProjectSetupOptions {
 export interface ProjectSetupResult {
   project: Project;
   audioContext: AudioContext;
+  /** The frame driver this page runs on. */
+  frameDriver: FrameDriverKind;
 }
 
 /**
@@ -98,6 +116,7 @@ export interface ProjectSetupResult {
  */
 export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Promise<ProjectSetupResult> {
   const { localAudioBuffers, bpm = 120, onStatusUpdate, audioContextSampleRate, engineTap } = options;
+  const frameDriver = resolveFrameDriver(options.frameDriver, window.location.search);
 
   console.log("========================================");
   console.log("openDAW -> headless -> initializing");
@@ -110,9 +129,19 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
   // CRITICAL: Ensure cross-origin isolation is enabled
   assert(crossOriginIsolated, "window must be crossOriginIsolated");
 
-  // CRITICAL: Start the AnimationFrame loop for observable updates
-  console.debug("Starting AnimationFrame loop...");
-  AnimationFrame.start(window);
+  // CRITICAL: Start the AnimationFrame loop for observable updates. The hidden-safe driver
+  // reads the engine's flags through `activeEngine`, assigned once the project exists.
+  console.debug("Starting AnimationFrame loop (" + frameDriver + ")...");
+  let activeEngine: Project["engine"] | null = null;
+  const driver = frameDriver === "hidden-safe"
+    ? createHiddenSafeFrameDriver(() => activeEngine !== null
+      && (activeEngine.isPlaying.getValue() || activeEngine.isRecording.getValue() || activeEngine.isCountingIn.getValue()))
+    : null;
+  const owner: unknown = driver !== null ? driver
+    : frameDriver === "throttled"
+      ? createThrottledFrames(resolveFrameEvery(window.location.search), { requestFrame: (cb) => window.requestAnimationFrame(cb), cancelFrame: (id) => window.cancelAnimationFrame(id) })
+      : window;
+  AnimationFrame.start(owner as Window);
   console.debug("AnimationFrame started!");
 
   onStatusUpdate?.("Booting...");
@@ -323,8 +352,27 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
   // context first — one central guarantee instead of `await resume()` at every
   // demo call site. resume() here always runs inside a user gesture (the click
   // that invoked the handler), so autoplay policy is satisfied.
+  // The hidden-safe driver: the engine's flags arrive through the sync the driver pumps, so a
+  // transport request issued while the page is hidden and idle is counted as activity itself.
+  if (driver !== null) {
+    activeEngine = project.engine;
+    for (const observable of [project.engine.isPlaying, project.engine.isRecording, project.engine.isCountingIn]) {
+      observable.subscribe(() => driver.activityChanged());
+    }
+    const engine = project.engine;
+    const facadeStop = engine.stop.bind(engine);
+    engine.stop = (reset?: boolean): void => { driver.transportRequested(); facadeStop(reset); };
+    const facadeSetPosition = engine.setPosition.bind(engine);
+    engine.setPosition = (position): void => { driver.transportRequested(); facadeSetPosition(position); };
+    const facadePrepareRecording = engine.prepareRecordingState.bind(engine);
+    engine.prepareRecordingState = (countIn: boolean): void => { driver.transportRequested(); facadePrepareRecording(countIn); };
+    const facadeStopRecording = engine.stopRecording.bind(engine);
+    engine.stopRecording = (): void => { driver.transportRequested(); facadeStopRecording(); };
+  }
+
   const facadePlay = project.engine.play.bind(project.engine);
   project.engine.play = (): void => {
+    driver?.transportRequested();
     if (audioContext.state === "running") {
       facadePlay();
       return;
@@ -342,6 +390,7 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
   // clip can't itself be the first gesture in practice.
   const facadeScheduleClipPlay = project.engine.scheduleClipPlay.bind(project.engine);
   project.engine.scheduleClipPlay = (clipIds): void => {
+    driver?.transportRequested();
     if (audioContext.state === "running") {
       facadeScheduleClipPlay(clipIds);
       return;
@@ -350,6 +399,7 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
   };
   const facadeScheduleClipStop = project.engine.scheduleClipStop.bind(project.engine);
   project.engine.scheduleClipStop = (trackIds): void => {
+    driver?.transportRequested();
     if (audioContext.state === "running") {
       facadeScheduleClipStop(trackIds);
       return;
@@ -357,7 +407,7 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
     void audioContext.resume().then(() => facadeScheduleClipStop(trackIds));
   };
 
-  return { project, audioContext };
+  return { project, audioContext, frameDriver };
 }
 
 /**
