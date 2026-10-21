@@ -203,7 +203,7 @@ one at the loop start and applies the older-take preference to the pass before i
 last pass is unmuted. A recording made earlier stays in the project and plays along.
 
 ### MIDI Input Alignment Audit (unlisted)
-`midi-input-alignment-audit-debug-demo.html?scenario=<name|all>&bpm=<n|all>[&repeats=<n>][&bus=<substring>][&audible=1]`
+`midi-input-alignment-audit-debug-demo.html?scenario=<name|all>&bpm=<n|all>[&repeats=<n>][&bus=<substring>][&audible=1][&effect=none|pitch|arpeggio]`
 measures where `RecordMidi` places a note against the HEARD beat. The loopback is the macOS
 IAC Driver bus: the page sends a pattern on the IAC output with future Web MIDI timestamps
 (two bars of eighths, one bar of 1/32 notes, each held half its step, 48 distinct pitches),
@@ -254,6 +254,11 @@ picks another). Register: `debug/2026-10-20-midi-input-alignment/note.md`.
   the minimum length. A key pressed and released inside the count-in is dropped; one still
   held at the downbeat is written at position 0 with its post-downbeat part, where the audio
   recorder keeps the whole pickup in the file behind the region's waveform offset.
+- **`&effect=`** inserts a Pitch (zero shift) or an Arpeggio (factory values) on the recorded
+  unit after the capture is pinned, the insert in one transaction and the settings in the
+  next. The recorder reads the capture's raw note signals before the chain, so every figure
+  is expected unchanged (measured: 48 of 48 notes, same medians, same band); the row and the
+  summary carry `effect`, the table prefixes the cell label with it.
 - **On an IAC bus `loopbackDelayMs` is 0.000:** Chrome stamps the message with its scheduled
   CoreMIDI time, so the receipt stamp IS the schedule.
 - Edits under `src/` reload the page and lose a run; edit `debug/*.md` instead while one runs.
@@ -261,6 +266,37 @@ picks another). Register: `debug/2026-10-20-midi-input-alignment/note.md`.
   animation frames in one sweep (two repeats hung on frame-driven waits) while
   `document.visibilityState` stayed `visible`; a row's `frameGapMaxMs` is the figure to check
   before reading a hang as an SDK finding.
+
+### MIDI Effect Placement Audit (unlisted)
+`midi-effect-placement-audit-debug-demo.html[?rate=48000|44100][&bpm=<n>][&device=all|pitch|velocity|arpeggio|zeitgeist|spielwerk][&sampleMs=<n>][&importMs=<n>]`
+renders a Nano burst pattern offline dry and through each stock MIDI effect, enabled and
+disabled, and reads each row against what the device's own rule predicts. Register:
+`debug/2026-10-21-midi-effect-placement/note.md`; library `src/lib/audit/midiEffect*.ts`;
+table `node scripts/audit/midi-effect-placement/table.ts`.
+
+- **A MIDI effect is a pull link, not an audio node.** The instrument pulls events for a pulse
+  range and each effect pulls its upstream and returns transformed events; everything is in
+  pulses, and the instrument resolves them to sample offsets. A live key is pushed into the
+  same sequencer that plays the regions, so one offline render covers live playing and
+  playback. A disabled effect is left out of the chain.
+- **Two judgements.** A device meant to pass timing through (Pitch, Velocity, a Spielwerk that
+  forwards or re-yields, every device disabled) is read by cross-correlation against the dry
+  render of the same run: expected lag 0. A device meant to move notes (Arpeggio, Zeitgeist,
+  a Spielwerk echo) is read by its onsets against the frames its rule predicts, with the dry
+  row's first onset as the sampler's own offset: expected within one frame. The engine splits
+  the quantum at each event's sample offset (floor), the rule rounds, so a one-frame delta is
+  the mechanism, not a finding; nothing in the pull chain quantizes an event to the quantum.
+  Zeitgeist's expected positions are read through the device adapter's `groove()` and kept
+  as float pulses.
+- **Sample length.** A sample of 1200 frames or fewer never loads (the peaks fit returns no
+  stage, the peak worker throws), on the fetch path and on the recording import path alike;
+  the burst sits at the head of a one-second sample. `?sampleMs=20` reproduces the load
+  failure in `#audit-state`; `?importMs=20` runs a synthetic take of that length through
+  `sampleService.importRecording` first and reports it.
+- **Spielwerk offline.** `ScriptCompiler.compile` on the live context writes the header the
+  offline renderer re-registers from. A script the renderer finds without a header is not
+  registered, and an unregistered Spielwerk forwards its input, so such a row reads as a
+  pass-through, not as the script.
 
 ### Combined MIDI + Audio Audit (unlisted)
 `midi-audio-combined-audit-debug-demo.html?scenario=<nominal-start|countin-start|janked-mid|all>&bpm=<n>[&repeats=<n>][&state=<default|calibrated|both>][&bus=][&input=][&output=][&audible=1]`

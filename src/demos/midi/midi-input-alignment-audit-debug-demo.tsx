@@ -1,29 +1,32 @@
 // MIDI Input Alignment Audit — unlisted sweep page.
 //
-//   midi-input-alignment-audit-debug-demo.html?scenario=<name|all>&bpm=<n|all>[&repeats=<n>][&bus=<substring>][&audible=1]
+//   midi-input-alignment-audit-debug-demo.html?scenario=<name|all>&bpm=<n|all>[&repeats=<n>][&bus=<substring>][&audible=1][&effect=none|pitch|arpeggio]
 //
 // Sends a pre-scheduled note pattern through a virtual MIDI bus (the macOS IAC Driver),
 // lets the SDK record it, and measures where every note landed against the HEARD beat.
 // Nothing is netted out of the verdict figure; the SDK's latency term and the display
-// frame interval ride along on every row for attribution. Register and reading recipe:
+// frame interval ride along on every row for attribution. `&effect=` inserts a MIDI effect on
+// the recorded unit: the recorder reads the capture's raw note signals before the chain, so
+// every figure is expected unchanged. Register and reading recipe:
 // debug/2026-10-20-midi-input-alignment/note.md. DOM contract: #audit-state carries
 // data-audit-state walking setup → running:<cell> → done | error:<message>.
 import { useCallback, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Badge, Button, Card, Container, Flex, Heading, Table, Text, Theme } from "@radix-ui/themes";
 import "@radix-ui/themes/styles.css";
-import { CaptureMidi, MidiDevices, type Project } from "@opendaw/studio-core";
+import { CaptureMidi, EffectFactories, MidiDevices, type Project } from "@opendaw/studio-core";
 import { InstrumentFactories } from "@opendaw/studio-adapters";
-import type { AudioUnitBox } from "@opendaw/studio-boxes";
+import type { ArpeggioDeviceBox, AudioUnitBox, PitchDeviceBox } from "@opendaw/studio-boxes";
 import { OPENDAW_SDK_VERSION } from "@opendaw/studio-sdk";
 import { detectBuildFeatures } from "@/lib/audit/buildFeatures";
 import { initializeOpenDAW } from "@/lib/projectSetup";
+import { midiEffectsFieldOf } from "@/lib/adapterUtils";
 import { withDeadline } from "@/lib/deadline";
 import { runRepeatWithDeadline } from "@/lib/audit/recordingCellRunner";
 import { JANK_MS, type AuditBuildFeature } from "@/lib/audit/recordingAuditCalibration";
 import {
-  isMidiScenario, MIDI_AUDIT_BPMS, MIDI_AUDIT_SCENARIOS, MIDI_BUS_DEFAULT, MIDI_REPEATS_PER_CELL, MIDI_TOLERANCES,
-  type MidiScenario,
+  isMidiScenario, MIDI_AUDIT_BPMS, MIDI_AUDIT_SCENARIOS, MIDI_BUS_DEFAULT, MIDI_REPEATS_PER_CELL, MIDI_TOLERANCES, resolveEffectArm,
+  type MidiEffectArm, type MidiScenario,
 } from "@/lib/audit/midiInputCalibration";
 import {
   classifyMidiCell, clampJitterBoundMs, expectedLateMedianMs, LATE_MEDIAN_MARGIN_MS, median, MIDI_KNOWN_DEFECTS,
@@ -53,6 +56,8 @@ const AUDIT_LINKS: DebugLink[] = [
 
 const BUS = params.get("bus") ?? MIDI_BUS_DEFAULT;
 const AUDIBLE = params.get("audible") === "1";
+/** Resolved at the run, with the other parameters, so an unknown value lands in the error state. */
+const resolveEffect = (): MidiEffectArm => resolveEffectArm(params.get("effect"));
 /** A gap between animation frames past this is a stalled page, not a slow one. */
 const FRAME_STALL_MS = 1000;
 /** The master unit's volume while the sweep is silent (the schema's floor, in dB). */
@@ -89,7 +94,33 @@ interface MatrixContext {
   buildFeatures: AuditBuildFeature[];
 }
 
-async function createMatrixContext(): Promise<MatrixContext> {
+/** The effect arm's device on the recorded unit: the insert in one transaction, its settings in the next
+ *  (repo rule on pointers created in the same transaction). Pitch at zero shift; Arpeggio at the factory
+ *  values (Up, 1 octave, 1/16, gate 1, repeat 1, velocity 0). The device lives for the page. */
+function insertEffectArm(project: Project, audioUnitBox: AudioUnitBox, effect: MidiEffectArm): void {
+  if (effect === "none") return;
+  const field = midiEffectsFieldOf(project, audioUnitBox);
+  const factory = effect === "pitch" ? EffectFactories.Pitch : EffectFactories.Arpeggio;
+  const box = project.editing.modify(() => project.api.insertEffect(field, factory)).unwrap("insertEffect");
+  project.editing.modify(() => {
+    if (effect === "pitch") {
+      const pitch = box as PitchDeviceBox;
+      pitch.semiTones.setValue(0);
+      pitch.cents.setValue(0);
+      pitch.octaves.setValue(0);
+    } else {
+      const arpeggio = box as ArpeggioDeviceBox;
+      arpeggio.modeIndex.setValue(0);
+      arpeggio.numOctaves.setValue(1);
+      arpeggio.rateIndex.setValue(9);
+      arpeggio.gate.setValue(1);
+      arpeggio.repeat.setValue(1);
+      arpeggio.velocity.setValue(0);
+    }
+  });
+}
+
+async function createMatrixContext(effect: MidiEffectArm): Promise<MatrixContext> {
   const { project, audioContext } = await initializeOpenDAW({ bpm: 120 });
   const buildFeatures = detectBuildFeatures(project.engine);
   if (!buildFeatures.includes("recordingStart")) {
@@ -115,26 +146,27 @@ async function createMatrixContext(): Promise<MatrixContext> {
     capture.captureBox.channel.setValue(-1);
   });
   capture.armed.setValue(true);
+  insertEffectArm(project, audioUnitBox, effect);
 
   if (!AUDIBLE) {
     const output = project.rootBoxAdapter.audioUnits.adapters().find((u) => u.isOutput);
     if (output !== undefined) project.editing.modify(() => output.box.volume.setValue(SILENT_VOLUME_DB));
   }
-  console.log(`[midi-input-audit] bus="${picked.name}" input=${picked.inputId} armed, buildFeatures=[${buildFeatures.join(",")}]`);
+  console.log(`[midi-input-audit] bus="${picked.name}" input=${picked.inputId} armed, effect=${effect}, buildFeatures=[${buildFeatures.join(",")}]`);
   return { project, audioContext, audioUnitBox, loopback, busName: picked.name, inputId: picked.inputId, outputId: picked.outputId, buildFeatures };
 }
 
 // Booted once per page load (`Workers.install` asserts on a second call); a failed
 // boot stays failed — reload the page.
 let matrixContextPromise: Promise<MatrixContext> | null = null;
-function getMatrixContext(): Promise<MatrixContext> {
-  if (matrixContextPromise === null) matrixContextPromise = createMatrixContext();
+function getMatrixContext(effect: MidiEffectArm): Promise<MatrixContext> {
+  if (matrixContextPromise === null) matrixContextPromise = createMatrixContext(effect);
   return matrixContextPromise;
 }
 
-function errorRow(scenario: MidiScenario, bpm: number, repeat: number, detail: string): MidiAuditRow {
+function errorRow(scenario: MidiScenario, bpm: number, repeat: number, effect: MidiEffectArm, detail: string): MidiAuditRow {
   return {
-    scenario, bpm, repeat, status: "error", detail,
+    scenario, bpm, repeat, effect, status: "error", detail,
     notesSent: 0, notesRecorded: 0, judgedNotes: 0, missing: 0, receiptsMissing: 0, extra: 0, stuck: 0, velocityMismatches: 0, collapsed: 0,
     placementMedianMs: null, placementMaxAbsDevMs: null, placementP5P95Ms: null, durationErrorMedianMs: null, durationErrorMaxMs: null,
     loopbackDelayMedianMs: null, loopbackDelayMaxMs: null, wrapAdjacent: 0, countInNotes: 0, countInRecorded: 0,
@@ -144,11 +176,11 @@ function errorRow(scenario: MidiScenario, bpm: number, repeat: number, detail: s
   };
 }
 
-function resultRow(scenario: MidiScenario, bpm: number, repeat: number, r: MidiCellRepeatResult, jank: boolean, sampleRate: number): MidiAuditRow {
+function resultRow(scenario: MidiScenario, bpm: number, repeat: number, effect: MidiEffectArm, r: MidiCellRepeatResult, jank: boolean, sampleRate: number): MidiAuditRow {
   return {
     sampleRate,
     ...r.figures,
-    scenario, bpm, repeat, status: "pending", detail: null,
+    scenario, bpm, repeat, effect, status: "pending", detail: null,
     jankMs: jank ? r.jankMs ?? JANK_MS : r.jankMs,
     takeCount: r.takeCount, takeIndexSource: r.takeIndexSource,
     anchorContextTime: r.anchor.contextTime, anchorPosition: r.anchor.position, originPpqn: r.originPpqn,
@@ -163,8 +195,9 @@ async function runAudit(setAuditState: (s: string) => void, onRows: (rows: MidiA
   const scenarios = resolveScenarios(params.get("scenario"));
   const bpms = resolveBpms(params.get("bpm"));
   const repeatsPerCell = resolveRepeats(params.get("repeats"));
+  const effect = resolveEffect();
   const runToken = Date.now();
-  const { project, audioContext, audioUnitBox, loopback, busName, inputId, outputId, buildFeatures } = await getMatrixContext();
+  const { project, audioContext, audioUnitBox, loopback, busName, inputId, outputId, buildFeatures } = await getMatrixContext(effect);
 
   // An occluded or hidden window stalls the animation frames the SDK's main-thread sync and
   // this runner's waits ride on (root CLAUDE.md); an error row says whether that happened.
@@ -199,7 +232,7 @@ async function runAudit(setAuditState: (s: string) => void, onRows: (rows: MidiA
             120_000,
             label,
           );
-          row = resultRow(scenario, bpm, repeat, result, scenario === "janked-start", audioContext.sampleRate);
+          row = resultRow(scenario, bpm, repeat, effect, result, scenario === "janked-start", audioContext.sampleRate);
           figures.push(result.figures);
           contexts.push(result.frameIntervalMs === null ? null : {
             outputLatencyMs: result.outputLatencyMs, compensationLatencyMs: result.compensationLatencyMs,
@@ -213,7 +246,7 @@ async function runAudit(setAuditState: (s: string) => void, onRows: (rows: MidiA
             + (hidden ? " [the page was hidden during this repeat — not an SDK finding]" : "")
             + (stalled ? ` [animation frames stalled: longest gap ${(gaps.maxGapMs as number).toFixed(0)} ms — a covered or hidden window, not an SDK finding]` : "");
           console.error(`[midi-input-audit] cell ${label} failed: ${message}`);
-          row = errorRow(scenario, bpm, repeat, message);
+          row = errorRow(scenario, bpm, repeat, effect, message);
           row.frameGapMaxMs = gaps.maxGapMs;
         }
         try {
@@ -257,6 +290,7 @@ async function runAudit(setAuditState: (s: string) => void, onRows: (rows: MidiA
     sampleRate: audioContext.sampleRate,
     displayRefreshHz: frameMedian === null ? null : 1000 / frameMedian,
     repeatsPerCell,
+    effect,
     tolerances: MIDI_TOLERANCES,
     scenarios, bpms,
     cellVerdicts,
@@ -313,6 +347,9 @@ function Harness() {
           <Heading size="7" align="center">MIDI Input Alignment Audit</Heading>
           <Text size="1" color="gray" align="center">
             Judged against the heard beat; nothing netted. Expect a known-defect band, not <code>aligned</code>, until the recorder changes.
+            {params.get("effect") !== null && params.get("effect") !== "none"
+              ? ` Effect: ${params.get("effect")} on the recorded unit — the recorder reads before the chain, so every figure is expected unchanged.`
+              : ""}
           </Text>
 
           <Card>

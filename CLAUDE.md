@@ -688,6 +688,15 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   output latency, frame interval and sample rate, so it holds on any device, and a median
   that does not track its formula is the finding. Reading recipe and what each scenario provokes:
   `src/demos/midi/CLAUDE.md`.
+- After SDK upgrades, also run the MIDI effect placement audit:
+  `midi-effect-placement-audit-debug-demo.html?device=all` then `?rate=44100` — a real click on
+  Run, deterministic, no hardware, about fifteen seconds; expect every row `as-predicted` (a
+  pass-through device at lag 0, a note-moving device on its own rule's frame within one frame).
+  Register `debug/2026-10-21-midi-effect-placement/note.md`, table
+  `node scripts/audit/midi-effect-placement/table.ts`. Then the MIDI sweep's effect arm:
+  `midi-input-alignment-audit-debug-demo.html?scenario=nominal-start&bpm=120&effect=arpeggio`
+  then `&effect=pitch` (IAC online; expect the same band and 48 of 48 notes as without an
+  effect — the recorder reads the capture's raw note signals before the chain).
 - After SDK upgrades, also re-run the standing combined MIDI + audio sweep:
   `midi-audio-combined-audit-debug-demo.html?scenario=all&bpm=120` — Chrome, a real click on
   Run, the IAC Driver online, the laptop's built-in microphone and speakers (an interface is

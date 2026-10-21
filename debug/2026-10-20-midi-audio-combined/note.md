@@ -191,9 +191,10 @@ calibration (the upstream PR, or a host-side routine), or say so in its text. No
 
 ### Open items
 
-- The user's hold stands: no issue goes upstream before the MIDI-effects harness has run.
-  The MIDI register's placement draft can now cite this section for its audio half, and
-  should carry the order-of-fixes consequence above.
+- The hold is lifted (2026-10-21): the MIDI-effect placement audit has run
+  (`debug/2026-10-21-midi-effect-placement/note.md`). The MIDI register's placement draft now
+  cites this section for its audio half and carries the order-of-fixes consequence above;
+  it waits for the user's read.
 - The one-quantum audio state under jank: a note for the audio campaign's register.
 - The 4.8 s frame gap: watch for it on the next run.
 - The interface arm when hardware arrives (`?input=` / `?output=`); a cable loopback would

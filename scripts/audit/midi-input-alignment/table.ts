@@ -42,7 +42,7 @@ console.log("scenario | bpm | status | median ms (per repeat) | max dev ms | mis
 for (const verdict of summary.cellVerdicts) {
   const rows = summary.rows.filter((r) => r.scenario === verdict.scenario && r.bpm === verdict.bpm);
   console.log([
-    verdict.scenario,
+    summary.effect === "none" ? verdict.scenario : `${verdict.scenario}+${summary.effect}`,
     verdict.bpm,
     verdict.status,
     rows.map((r) => ms(r.placementMedianMs)).join(" / "),
@@ -60,6 +60,6 @@ for (const verdict of summary.cellVerdicts) {
   ].join(" | "));
 }
 console.log(
-  `run ${summary.runToken} | sdk ${summary.sdkVersion} | bus ${summary.busName} | ${summary.sampleRate} Hz | `
+  `run ${summary.runToken} | sdk ${summary.sdkVersion} | effect ${summary.effect} | bus ${summary.busName} | ${summary.sampleRate} Hz | `
   + `display ${summary.displayRefreshHz === null ? "—" : summary.displayRefreshHz.toFixed(1)} Hz | repeats ${summary.repeatsPerCell} | rows ${summary.rows.length}`,
 );

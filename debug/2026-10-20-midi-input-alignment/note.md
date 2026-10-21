@@ -291,10 +291,14 @@ so the cells read the band if the mechanism holds and `investigate` if it does n
 
 ### Open items
 
-**Hold (user's decision, 2026-10-20): no issue goes upstream until the combined MIDI + audio
-harness and the MIDI-effects harness have been written and run.** The three drafts below
-stay `TO-REVIEW` until then; the placement draft's audio half is inferred (above) and the
-combined cell is its measurement.
+**The hold of 2026-10-20 is lifted (2026-10-21):** the combined MIDI + audio harness ran on
+2026-10-20 (`debug/2026-10-20-midi-audio-combined/note.md`, the placement draft's audio half
+measured: the key 31 ms before the sound uncalibrated, 33 ms after it calibrated) and the
+MIDI-effect placement audit on 2026-10-21 (`debug/2026-10-21-midi-effect-placement/note.md`:
+no MIDI effect moves a note it should pass through, each note-moving device lands on its own
+rule's frame, and a Pitch or an Arpeggio on the recorded unit leaves every recorded row
+unchanged — 48 of 48 notes, same medians, same band). The three drafts below are brought up
+to date on those two results and wait for the user's read; nothing is posted.
 
 1. **Constant placement offset** (+32 ms at 60 Hz): characterized above, two mechanisms
    read from the source, one display rate measured; the issue draft carries the 60 Hz
@@ -339,8 +343,9 @@ once the combined harness has run.
   [openDAW#356](https://github.com/andremichelle/openDAW/issues/356).
 - `janked-mid-frame`: the block inside a frame ahead of the SDK's position read (a
   different mechanism from the between-frames block measured here).
-- MIDI effects in the chain (arpeggio, pitch, Spielwerk): whether placement survives the
-  effect and what each one adds.
+- MIDI effects in the chain: measured 2026-10-21 (`debug/2026-10-21-midi-effect-placement/note.md`
+  and this sweep's `&effect=` arm): placement survives the effect unchanged, and each device
+  adds exactly what its rule says to the heard path, nothing to the recorded one.
 - A combined cell: a MIDI capture and an audio tape recording the same pass, judged
   against each other as well as against the grid — the direct repro of the two recorders'
   disagreement.

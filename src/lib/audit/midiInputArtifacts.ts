@@ -5,14 +5,16 @@
  * `scripts/audit/midi-input-alignment/table.ts`.
  */
 import type { AuditBuildFeature } from "./recordingAuditCalibration";
-import type { MidiScenario, MidiTolerances } from "./midiInputCalibration";
+import { isMidiEffectArm, type MidiEffectArm, type MidiScenario, type MidiTolerances } from "./midiInputCalibration";
 import type { NoteTag } from "./midiInputPattern";
 import type { MidiCellStatus, RepeatFigures } from "./midiInputAlignment";
 
-/** 1: the first sweeps; 2: `collapsed`, `countInRecorded`, `heardLagMs`, `frameGapMaxMs`, `sampleRate` on every row. */
-export const MIDI_AUDIT_SCHEMA_VERSION = 2;
-/** Schema 1 summaries are read with their missing figures as undefined; the table prints them as absent. */
-export const MIDI_AUDIT_SCHEMA_VERSIONS_READABLE = [1, 2] as const;
+/** 1: the first sweeps; 2: `collapsed`, `countInRecorded`, `heardLagMs`, `frameGapMaxMs`, `sampleRate` on every row;
+ *  3: `effect` on every row and on the run. */
+export const MIDI_AUDIT_SCHEMA_VERSION = 3;
+/** Schema 1 summaries are read with their missing figures as undefined; the table prints them as absent.
+ *  Schemas 1 and 2 are read with `effect` filled as `"none"`. */
+export const MIDI_AUDIT_SCHEMA_VERSIONS_READABLE = [1, 2, 3] as const;
 /** The per-row counts the table sums; a readable summary must carry each as a number or leave it undefined (schema 1). */
 export const MIDI_AUDIT_ROW_COUNTS = ["missing", "receiptsMissing", "extra", "stuck", "collapsed", "countInNotes", "countInRecorded"] as const;
 
@@ -42,6 +44,8 @@ export interface MidiAuditRow extends RepeatFigures {
   scenario: MidiScenario;
   bpm: number;
   repeat: number;
+  /** The MIDI effect on the recorded unit during this repeat. */
+  effect: MidiEffectArm;
   status: MidiAuditRowStatus;
   detail: string | null;
   jankMs: number | null;
@@ -86,6 +90,8 @@ export interface MidiAuditSummary {
   sampleRate: number;
   displayRefreshHz: number | null;
   repeatsPerCell: number;
+  /** The MIDI effect on the recorded unit for the whole run. */
+  effect: MidiEffectArm;
   tolerances: MidiTolerances;
   scenarios: MidiScenario[];
   bpms: number[];
@@ -105,7 +111,18 @@ export function parseMidiAuditSummary(json: unknown, runToken: number): MidiAudi
   }
   if (!Array.isArray(summary.rows)) throw new Error(`summary ${runToken}: rows is not an array`);
   if (!Array.isArray(summary.cellVerdicts)) throw new Error(`summary ${runToken}: cellVerdicts is not an array`);
+  const current = summary.schemaVersion === MIDI_AUDIT_SCHEMA_VERSION;
+  if (summary.effect === undefined) {
+    if (current) throw new Error(`summary ${runToken}: run lacks effect`);
+    summary.effect = "none";
+  }
+  if (typeof summary.effect !== "string" || !isMidiEffectArm(summary.effect)) throw new Error(`summary ${runToken}: effect "${String(summary.effect)}" is not an arm`);
   summary.rows.forEach((row: Record<string, unknown>, i: number) => {
+    if (row.effect === undefined) {
+      if (current) throw new Error(`summary ${runToken}: row ${i} lacks effect`);
+      row.effect = "none";
+    }
+    if (typeof row.effect !== "string" || !isMidiEffectArm(row.effect)) throw new Error(`summary ${runToken}: row ${i} effect "${String(row.effect)}" is not an arm`);
     for (const key of MIDI_AUDIT_ROW_COUNTS) {
       const value = row[key];
       if (value !== undefined && typeof value !== "number") throw new Error(`summary ${runToken}: row ${i} ${key} is ${typeof value}, not a number`);
