@@ -153,6 +153,7 @@ import {
   type HarnessPathBias,
   type RepeatToken,
 } from "@/lib/audit/recordingCellRunner";
+import { FrameWatch } from "@/lib/audit/midiInputCellRunner";
 import { GitHubCorner } from "@/components/GitHubCorner";
 import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
@@ -258,6 +259,19 @@ const CAPTURE_MODE: CaptureMode = DEFAULT_INPUT ? "default" : "named";
 const NODE_TAPS = params.get("scenario")?.startsWith("multitrack") === true;
 
 const loopback = installLoopbackCapture(2, { serveDefault: DEFAULT_INPUT, nodeTaps: NODE_TAPS });
+
+// A hidden or covered page stalls the frames the SDK's main-thread sync rides on (root
+// CLAUDE.md); a failed repeat says so in its row instead of reading as an SDK finding.
+let hiddenEvents = 0;
+document.addEventListener("visibilitychange", () => { if (document.visibilityState !== "visible") hiddenEvents++; });
+const FRAME_STALL_MS = 1000;
+function attributeHidden(hiddenBefore: number, frameWatch: FrameWatch): string {
+  const hidden = hiddenEvents > hiddenBefore || document.visibilityState !== "visible";
+  const gaps = frameWatch.stop();
+  const stalled = gaps.maxGapMs !== null && gaps.maxGapMs > FRAME_STALL_MS;
+  return (hidden ? " [the page was hidden during this repeat — not an SDK finding]" : "")
+    + (stalled ? ` [animation frames stalled: longest gap ${(gaps.maxGapMs as number).toFixed(0)} ms — a covered or hidden window, not an SDK finding]` : "");
+}
 
 type ProbeRow = { label: string; value: string };
 
@@ -714,6 +728,9 @@ async function runAudit(
         let result: CellRepeatResult | null = null;
         let errorMessage: string | null = null;
         clearLastFinalizeProbe();
+        const hiddenBefore = hiddenEvents;
+        const frameWatch = new FrameWatch();
+        frameWatch.start();
         try {
           result = await runRepeatWithDeadline(
             (token) => runCellRepeat({
@@ -734,9 +751,10 @@ async function runAudit(
             label
           );
         } catch (err) {
-          errorMessage = `${stage}: ${err instanceof Error ? err.message : String(err)}`;
+          errorMessage = `${stage}: ${err instanceof Error ? err.message : String(err)}` + attributeHidden(hiddenBefore, frameWatch);
           console.error(`[recording-alignment-audit] cell ${label} failed: ${errorMessage}`);
         }
+        frameWatch.stop();
 
         // Unconditional (success or failure) — a mid-recording error must
         // not leave stale regions for the next repeat/cell. Guarded so a
@@ -1623,6 +1641,9 @@ async function runMultitrackAudit(
         let stage = "prefs";
         let result: MultitrackRepeatResult | null = null;
         let errorMessage: string | null = null;
+        const hiddenBefore = hiddenEvents;
+        const frameWatch = new FrameWatch();
+        frameWatch.start();
         lastMultitrackFinalizeProbes = null;
         try {
           result = await runRepeatWithDeadline(
@@ -1642,9 +1663,10 @@ async function runMultitrackAudit(
             label
           );
         } catch (err) {
-          errorMessage = `${stage}: ${err instanceof Error ? err.message : String(err)}`;
+          errorMessage = `${stage}: ${err instanceof Error ? err.message : String(err)}` + attributeHidden(hiddenBefore, frameWatch);
           console.error(`[recording-alignment-audit] multitrack cell ${label} failed: ${errorMessage}`);
         }
+        frameWatch.stop();
 
         let cleanupWarning: string | null = null;
         try {
