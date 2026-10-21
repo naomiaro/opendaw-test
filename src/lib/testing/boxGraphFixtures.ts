@@ -5,12 +5,13 @@
  */
 import { Option } from "@opendaw/lib-std";
 import { BoxEditing, type BoxGraph } from "@opendaw/lib-box";
-import type { BoxIO, NanoDeviceBox } from "@opendaw/studio-boxes";
+import { GrooveShuffleBox, ZeitgeistDeviceBox, type AudioUnitBox, type BoxIO, type NanoDeviceBox } from "@opendaw/studio-boxes";
 import {
   AudioUnitFactory, InstrumentFactories, NanoDeviceBoxAdapter, ParameterFieldAdapters, ProjectSkeleton,
   type BoxAdaptersContext,
 } from "@opendaw/studio-adapters";
 import { AudioUnitType, IconSymbol } from "@opendaw/studio-enums";
+import { UUID } from "@opendaw/lib-std";
 
 export type Graph = BoxGraph<BoxIO.TypeMap>;
 
@@ -61,4 +62,36 @@ export function samplerFixture(): SamplerFixture {
   } as unknown as BoxAdaptersContext;
   const adapter = new NanoDeviceBoxAdapter(context, box);
   return { boxGraph, box, adapter, project: { editing: new BoxEditing(boxGraph) } };
+}
+
+export interface ZeitgeistGraph {
+  readonly boxGraph: Graph;
+  readonly unit: AudioUnitBox;
+  readonly device: ZeitgeistDeviceBox;
+  readonly groove: GrooveShuffleBox;
+}
+
+/**
+ * One instrument unit with a Zeitgeist on its MIDI chain, pointing at its own groove box
+ * (the factory's values: duration 480, amount 0.6). The groove is a mandatory-edge target,
+ * so it is created first and the device's pointer refers to it before the transaction ends.
+ */
+export function graphWithZeitgeist(): ZeitgeistGraph {
+  const skeleton = ProjectSkeleton.empty({ createOutputMaximizer: false, createDefaultUser: false });
+  const { boxGraph } = skeleton;
+  return transact(boxGraph, () => {
+    const unit = AudioUnitFactory.create(skeleton, AudioUnitType.Instrument, Option.None);
+    const groove = GrooveShuffleBox.create(boxGraph, UUID.generate(), (box) => {
+      box.label.setValue("Shuffle");
+      box.duration.setValue(480);
+      box.amount.setValue(0.6);
+    });
+    const device = ZeitgeistDeviceBox.create(boxGraph, UUID.generate(), (box) => {
+      box.label.setValue("Zeitgeist");
+      box.index.setValue(0);
+      box.groove.refer(groove);
+      box.host.refer(unit.midiEffects);
+    });
+    return { boxGraph, unit, device, groove };
+  });
 }
