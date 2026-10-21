@@ -5,6 +5,9 @@ sounds, and does one move where the recorder places a recorded note
 
 **SDK Pin:** `@opendaw/studio-sdk@0.0.176` (installed npm package; WASM engine only)
 
+**Filed (2026-10-21):** [openDAW#494](https://github.com/andremichelle/openDAW/issues/494) a sample
+of 1200 frames or fewer never loads (`drafts/posted-openDAW-494-short-sample-never-loads.md`).
+
 **Harness:** unlisted debug demo
 `midi-effect-placement-audit-debug-demo.html[?rate=48000|44100][&bpm=<n>][&device=all|pitch|velocity|arpeggio|zeitgeist|spielwerk][&sampleMs=<n>][&importMs=<n>]`
 on the dev server, Chrome, a real click on "Run audit"; deterministic, no hardware, about

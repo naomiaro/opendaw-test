@@ -1,7 +1,4 @@
-<!-- Draft for andremichelle/openDAW. Not posted. Target: a new issue.
-     Written 2026-10-21 from the MIDI effect placement audit's first attempt (a 960-frame burst sample), then
-     measured on two paths through the page's `?sampleMs=` and `?importMs=` switches (the fetch path and the
-     recording import path); the other two callers of the stage fit are read, not run. Waits for the user's read. -->
+<!-- Posted 2026-10-21 as https://github.com/andremichelle/openDAW/issues/494 — the body below is as filed. -->
 
 # A sample of 1200 frames or fewer never loads: the peaks stage fit returns no stage and the peak worker throws
 

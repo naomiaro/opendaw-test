@@ -454,7 +454,10 @@ const App: React.FC = () => {
             <MoisesLogo />
             <Heading size="7">MIDI Effect Placement Audit</Heading>
           </Flex>
-          <DebugLinkBar links={[{ label: "Register: debug/2026-10-21-midi-effect-placement/note.md", href: REGISTER_URL, kind: "note" }]} />
+          <DebugLinkBar links={[
+            { label: "Register: debug/2026-10-21-midi-effect-placement/note.md", href: REGISTER_URL, kind: "note" },
+            { label: "openDAW#494 (a short sample never loads)", href: "https://github.com/andremichelle/openDAW/issues/494", kind: "note" },
+          ]} />
           <Text size="2" color="gray">
             A Nano sampler plays a 20 ms burst on eight sixteenths at bar 1. The same pattern is rendered offline dry, then
             through each stock MIDI effect and through each effect disabled. A device that passes timing through (Pitch,
