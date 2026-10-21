@@ -5,7 +5,9 @@
  * `scripts/audit/midi-input-alignment/table.ts`.
  */
 import type { AuditBuildFeature } from "./recordingAuditCalibration";
-import { isMidiEffectArm, type MidiEffectArm, type MidiScenario, type MidiTolerances } from "./midiInputCalibration";
+import type { MidiScenario, MidiTolerances } from "./midiInputCalibration";
+// A value import, with the extension the Node table script needs; the module holds no SDK import.
+import { isMidiEffectArm, type MidiEffectArm } from "./midiEffectArm.ts";
 import type { NoteTag } from "./midiInputPattern";
 import type { MidiCellStatus, RepeatFigures } from "./midiInputAlignment";
 
