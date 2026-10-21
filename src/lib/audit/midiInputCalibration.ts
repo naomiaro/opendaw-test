@@ -11,6 +11,7 @@
  */
 import { PPQN } from "@opendaw/lib-dsp";
 import { BAR_PPQN } from "./auditExpectations";
+import { isMidiEffectArm, MIDI_EFFECT_ARMS, type MidiEffectArm } from "./midiEffectArm";
 
 export const MIDI_AUDIT_SCENARIOS = [
   "nominal-start", "janked-start", "janked-mid", "countin-start", "midtimeline-start", "loop-wrap",
@@ -84,12 +85,7 @@ export const MIDI_BUS_DEFAULT = "IAC";
 /** `&effect=`: a MIDI effect inserted on the recorded unit. The recorder reads the capture's raw note
  *  signals before the chain, so every figure is expected unchanged; Arpeggio rewrites the stream the most
  *  (one held key becomes a run of sixteenths), Pitch at zero shift is the pass-through control. */
-export const MIDI_EFFECT_ARMS = ["none", "pitch", "arpeggio"] as const;
-export type MidiEffectArm = (typeof MIDI_EFFECT_ARMS)[number];
-
-export function isMidiEffectArm(value: string): value is MidiEffectArm {
-  return (MIDI_EFFECT_ARMS as readonly string[]).includes(value);
-}
+export { MIDI_EFFECT_ARMS, isMidiEffectArm, type MidiEffectArm } from "./midiEffectArm";
 
 export function resolveEffectArm(param: string | null): MidiEffectArm {
   if (param === null) return "none";
