@@ -90,8 +90,8 @@ or counting in, or within two seconds of a transport request or of the last obse
 activity. The request gate exists because the engine's own flags reach the page through the
 sync these ticks pump: a page hidden and idle when a transport request arrives would
 otherwise never see the flag flip and never tick. A hidden idle page stays as idle as today
-(every canvas painter is a frame subscriber too). `?frameDriver=window` on any demo URL runs
-the SDK's own path; `?frameDriver=throttled&frameEvery=N` delivers every Nth real frame, for
+(every canvas painter is a frame subscriber too). The driver is opt-in, `?frameDriver=hidden-safe`
+on any demo URL, the SDK's own path being the default; `?frameDriver=throttled&frameEvery=N` delivers every Nth real frame, for
 a sweep that wants a slower engine sync than the display gives (the SDK's guard already makes
 a faster display irrelevant).
 
@@ -181,8 +181,11 @@ display can go.
 **Standing check after SDK upgrades:** `?driver=hidden-safe&interrupt=cover&hideAt=start`
 with the page hidden by hand when it asks (Cmd+H on Chrome, count five, click Chrome in the
 Dock), expect both takes `intact` and a frame gap under a second; then the three `modal` rows
-on the default driver through the Playwright tooling's dialog handler, expect `intact`. The
-driver is the demos' default; `?frameDriver=window` on any demo URL is the SDK's own path.
+on the SDK's path (`?driver=window`) through the Playwright tooling's dialog handler, expect
+`intact`. The driver is opt-in: `?frameDriver=hidden-safe` on any demo URL, or the
+`frameDriver` option; the SDK's own path is the demos' default (decided 2026-10-21: nothing
+measured here is a defect, and what the driver buys a demo is a view that is current the
+instant the page returns rather than a hundred milliseconds later).
 
 No upstream issue drafted from this register: nothing measured here is a defect. The driver
 is offered upstream as an improvement as an option (`drafts/TO-REVIEW-openDAW-pr-hidden-safe-frames.md`),

@@ -260,9 +260,9 @@ const NODE_TAPS = params.get("scenario")?.startsWith("multitrack") === true;
 
 const loopback = installLoopbackCapture(2, { serveDefault: DEFAULT_INPUT, nodeTaps: NODE_TAPS });
 
-// On the SDK's own frame driver (`?frameDriver=window`) a hidden page stalls the frames the
-// main-thread sync rides on; a covered-but-visible window or a blocked main thread stalls them on
-// any driver (root CLAUDE.md). A failed repeat says so in its row instead of reading as an SDK
+// A hidden page stalls the frames the main-thread sync rides on (`?frameDriver=hidden-safe`
+// keeps them coming); a covered-but-visible window or a blocked main thread stalls them on any
+// driver (root CLAUDE.md). A failed repeat says so in its row instead of reading as an SDK
 // finding; a watch that saw under two frames in a repeat longer than a second is a stall too.
 let hiddenEvents = 0;
 document.addEventListener("visibilitychange", () => { if (document.visibilityState !== "visible") hiddenEvents++; });

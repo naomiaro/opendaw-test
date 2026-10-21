@@ -654,8 +654,8 @@ uninterrupted take. Register: `debug/2026-10-21-hidden-page-recording/note.md`.
   audio is drained by a worker (openDAW#290) and the main thread catches up when it runs again —
   but the page's VIEW freezes for the hidden span (`positionFrozenMs` = the hide, to the
   sample), so a stop driven from a position wait lands late and a harness deadline gives up.
-- **The driver.** `initializeOpenDAW`'s `frameDriver` option (default `hidden-safe`;
-  `?frameDriver=window` on any demo URL is the SDK's path, except on this page, which passes
+- **The driver.** `initializeOpenDAW`'s `frameDriver` option (default `window`, the SDK's
+  path; `?frameDriver=hidden-safe` on any demo URL opts in, except on this page, which passes
   its own `?driver=` as the option) pumps the SDK's `AnimationFrame`
   from a worker tick while hidden and the transport active, plus two seconds of grace, with a
   transport request counting as activity (the engine's own flags arrive through the sync the

@@ -60,13 +60,13 @@ export interface ProjectSetupOptions {
   engineTap?: (engineNode: AudioNode) => void;
 
   /**
-   * What drives the SDK's `AnimationFrame`. `"hidden-safe"` (the default) is the real frame
-   * while the page is visible and a worker tick while it is hidden and the transport active,
-   * so the engine's main-thread sync keeps running behind another tab or window;
-   * `"window"` is the SDK's own path; `"throttled"` delivers every Nth real frame
-   * (`?frameEvery=N`, default 2), for a sweep that wants a slower engine sync than the display
-   * gives. Absent, the page URL's `?frameDriver=` decides, so any demo and any standing sweep
-   * can be run on the SDK's own frame path or a slowed one.
+   * What drives the SDK's `AnimationFrame`. `"window"` (the default) is the SDK's own path:
+   * the real animation frame, which stops while the page is hidden. `"hidden-safe"` is the
+   * real frame while the page is visible and a worker tick while it is hidden and the
+   * transport active, so the engine's main-thread sync keeps running behind another tab or
+   * window; `"throttled"` delivers every Nth real frame (`?frameEvery=N`, default 2), for a
+   * sweep that wants a slower engine sync than the display gives. Absent, the page URL's
+   * `?frameDriver=` decides, so any demo and any standing sweep can opt in from its URL.
    */
   frameDriver?: FrameDriverKind;
 }
@@ -78,7 +78,7 @@ function resolveFrameDriver(option: FrameDriverKind | undefined): FrameDriverKin
   const param = new URLSearchParams(window.location.search).get("frameDriver");
   if (param === "window" || param === "hidden-safe" || param === "throttled") return param;
   if (param !== null) throw new Error(`invalid ?frameDriver= "${param}" — window, hidden-safe or throttled`);
-  return "hidden-safe";
+  return "window";
 }
 
 /** `?frameEvery=N` for the throttled driver: every Nth real frame; 2 when absent. */

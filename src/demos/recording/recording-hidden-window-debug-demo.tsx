@@ -11,8 +11,8 @@
 // than its window, left Chrome reporting it visible — and `modal` opens the page's own
 // alert(), which blocks the main thread outright. After Stop the take is read with the harness's reader and judged;
 // a second, uninterrupted take then shows whether the session still records. The frame driver
-// is the before/after: `window` is the SDK's own animation frame, `hidden-safe` the demos'
-// default, a worker tick while the page is hidden and the transport active. Register:
+// is the before/after: `window` is the SDK's own animation frame and the demos' default,
+// `hidden-safe` the opt-in worker tick while the page is hidden and the transport active. Register:
 // debug/2026-10-21-hidden-page-recording/note.md. DOM contract: #audit-state carries
 // data-audit-state walking setup → recording:take1 → waiting:hide → hidden → visible →
 // stopping → finalizing → recording:take2 → done | error:<message> (a `modal` run has no
@@ -463,7 +463,7 @@ function App() {
           )}
           <Card>
             <Text size="1" color="gray" style={{ whiteSpace: "pre-wrap", fontFamily: "monospace" }}>
-{`?driver=window|hidden-safe   the SDK's own animation frame, or the demos' default: a worker tick while hidden and the transport active
+{`?driver=window|hidden-safe   the SDK's own animation frame (the demos' default), or the opt-in worker tick while hidden and the transport active
 ?interrupt=cover|modal       hidden by another tab or window (measured on visibilitychange), or the page's own alert() (blocks the main thread)
 ?hideAt=start|mid|stop       cover: before the record request, at bar 1, or a bar before the stop request, the page waiting for your hide; modal: right after the record request, at bar 1, or right after the stop request
 ?hiddenSeconds=<n>           what the prompt asks for (default 5); the page measures the actual span

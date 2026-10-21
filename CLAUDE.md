@@ -890,17 +890,17 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   `requestAnimationFrame`, which freezes OpenDAW's entire main-thread sync
   (`SyncStream reader.tryRead()`, position/isPlaying observables, RecordAudio take
   management). The engine keeps running on the audio thread; the main thread just never
-  observes it. **The demos' frame driver pumps the SDK's `AnimationFrame` from a worker
-  tick while the document is hidden and the transport is playing, recording or counting in**
-  (`src/lib/hiddenSafeFrameDriver.ts`, installed by `initializeOpenDAW`; rules and tests in
-  `src/lib/frameScheduler.ts`), so a frozen sync on a hidden page means the page ran with
-  `?frameDriver=window` (the SDK's own path, on any demo URL except the hidden-page recording
-  page, which takes `?driver=`; that is how a sweep checks the SDK path stays good) or the
-  driver broke (the tick worker warns in the console if it fails to start); `?frameDriver=throttled&frameEvery=N` delivers every Nth
-  real frame, for a slower engine sync than the display gives. A hidden page with the
-  transport idle stays idle. The recorder itself survives a hidden page and a blocked main
-  thread at every moment measured (`debug/2026-10-21-hidden-page-recording/note.md`); what
-  hiding freezes on the SDK's path is the page's VIEW, and a harness deadline acting on it. `resize_window` does NOT reliably unhide a fully occluded window
+  observes it. The recorder itself survives a hidden page and a blocked main thread at every
+  moment measured (`debug/2026-10-21-hidden-page-recording/note.md`); what hiding freezes is
+  the page's VIEW, and a harness deadline acting on it. An opt-in frame driver keeps the view
+  live: `?frameDriver=hidden-safe` on any demo URL (or `initializeOpenDAW`'s `frameDriver`
+  option; the hidden-page recording page takes its own `?driver=`) pumps the SDK's
+  `AnimationFrame` from a worker tick while the document is hidden and the transport is
+  playing, recording or counting in (`src/lib/hiddenSafeFrameDriver.ts`; rules and tests in
+  `src/lib/frameScheduler.ts`; the tick worker warns in the console if it fails to start). A
+  hidden page with the transport idle stays idle on it. `?frameDriver=throttled&frameEvery=N`
+  delivers every Nth real frame, for a slower engine sync than the display gives.
+  `resize_window` does NOT reliably unhide a fully occluded window
   (verified: visibility stayed hidden after resize + screenshot). Audio and
   setInterval keep running while hidden — analyser RMS taps still measure fine;
   move position/isPlaying/UI-state verification to the Playwright browser (rAF
