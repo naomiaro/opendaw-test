@@ -12,6 +12,9 @@ import { BAR_PPQN } from "./auditExpectations";
  *  sampler's shortest attack would multiply a lone sample by the ramp's starting value. */
 export const BURST_STEP_MS = 10;
 export const BURST_FALL_MS = 10;
+/** The sample the burst sits at the head of, the rest silence: the SDK's peaks stage fit returns no stage for a
+ *  sample of 1200 frames or fewer and the peak worker then fails, so a 20 ms sample never loads. */
+export const BURST_SAMPLE_SECONDS = 1;
 /** First frame above this (of full scale) is a note's onset. */
 export const ONSET_THRESHOLD = 0.05;
 /** After an onset the reader steps this far before looking again: the burst's 20 ms plus a margin,
@@ -160,6 +163,13 @@ export function burstChannel(rate: number): Float32Array {
   return out;
 }
 
+/** The sample as loaded: the burst, then silence to `BURST_SAMPLE_SECONDS`. */
+export function burstSample(rate: number): Float32Array {
+  const out = new Float32Array(Math.round(BURST_SAMPLE_SECONDS * rate));
+  out.set(burstChannel(rate));
+  return out;
+}
+
 /** How many onsets the row's rule predicts. */
 export function expectedOnsetCount(scenario: MidiEffectScenario): number {
   switch (scenario.rule) {
@@ -168,4 +178,23 @@ export function expectedOnsetCount(scenario: MidiEffectScenario): number {
     case "echo": return ECHO_REPEATS;
     case null: return scenario.pattern.length;
   }
+}
+
+export const RENDER_RATES = [44100, 48000] as const;
+export type RenderRate = (typeof RENDER_RATES)[number];
+
+/** `?rate=`: the render and live context rate; 48 kHz when absent. */
+export function resolveRate(param: string | null): RenderRate {
+  if (param === null) return 48000;
+  const n = Number(param);
+  if (!(RENDER_RATES as readonly number[]).includes(n)) throw new Error(`invalid ?rate= "${param}" — 44100 or 48000`);
+  return n as RenderRate;
+}
+
+/** `?bpm=`: a positive tempo; 120 when absent. */
+export function resolveBpm(param: string | null): number {
+  if (param === null) return 120;
+  const n = Number(param);
+  if (!Number.isFinite(n) || n <= 0) throw new Error(`invalid ?bpm= "${param}"`);
+  return n;
 }

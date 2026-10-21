@@ -19,9 +19,10 @@ export function echoCopies(position: number, delayPpqn: number, repeats: number)
   return Array.from({ length: repeats }, (_, i) => position + i * delayPpqn);
 }
 
-/** Each position through the groove the Zeitgeist device points at, as an integer pulse. */
+/** Each position through the groove the Zeitgeist device points at. The engine places the event at the warped
+ *  pulse as a float (a pulse is 33 frames at 90 bpm, so rounding it to a whole pulse would be a reading error). */
 export function zeitgeistWarped(positions: readonly number[], groove: { warp(position: number): number }): number[] {
-  return positions.map((position) => Math.round(groove.warp(position)));
+  return positions.map((position) => groove.warp(position));
 }
 
 /** The frame a pulse position lands on at a constant tempo, plus what the instrument adds. */

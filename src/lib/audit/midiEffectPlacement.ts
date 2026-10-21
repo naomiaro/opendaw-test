@@ -34,7 +34,8 @@ export interface PassThroughJudgement {
   verdict: RowVerdict;
 }
 
-const peakOf = (samples: Float32Array): number => {
+/** The largest absolute sample. */
+export const peakOf = (samples: Float32Array): number => {
   let peak = 0;
   for (let i = 0; i < samples.length; i++) peak = Math.max(peak, Math.abs(samples[i]));
   return peak;

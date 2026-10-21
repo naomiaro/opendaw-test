@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  burstChannel, DRY_PATTERN, expectedOnsetCount, MIDI_EFFECT_SCENARIOS, renderSeconds, resolveDevices,
+  burstChannel, burstSample, DRY_PATTERN, expectedOnsetCount, MIDI_EFFECT_SCENARIOS, renderSeconds, resolveBpm, resolveDevices, resolveRate,
   SPIELWERK_ECHO, SPIELWERK_FORWARD, SPIELWERK_YIELD,
 } from "./midiEffectScenarios";
 
@@ -54,5 +54,26 @@ describe("expectations", () => {
     expect(burst[479]).toBe(1);
     expect(burst[959]).toBeCloseTo(0, 2);
     expect(burst[720]).toBeCloseTo(0.5, 1);
+  });
+});
+
+describe("page parameters", () => {
+  it("accepts the two render rates and a positive tempo, defaults otherwise, rejects the rest", () => {
+    expect(resolveRate(null)).toBe(48000);
+    expect(resolveRate("44100")).toBe(44100);
+    expect(() => resolveRate("96000")).toThrow(/invalid \?rate=/);
+    expect(resolveBpm(null)).toBe(120);
+    expect(resolveBpm("90")).toBe(90);
+    expect(() => resolveBpm("0")).toThrow(/invalid \?bpm=/);
+    expect(() => resolveBpm("fast")).toThrow(/invalid \?bpm=/);
+  });
+});
+
+describe("burstSample", () => {
+  it("pads the burst into a one-second sample, the loader refusing anything up to 1200 frames", () => {
+    const sample = burstSample(48000);
+    expect(sample.length).toBe(48000);
+    expect(sample.subarray(0, 960)).toEqual(burstChannel(48000));
+    expect(sample.subarray(960).some((v) => v !== 0)).toBe(false);
   });
 });
