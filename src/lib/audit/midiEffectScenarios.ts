@@ -7,9 +7,8 @@
 import { PPQN } from "@opendaw/lib-dsp";
 import { BAR_PPQN } from "./auditExpectations";
 
-/** The burst: a full-scale step, then a linear fall to zero. Over within 20 ms, so each note has
- *  died before the next sixteenth at any tempo the page accepts. Not a single sample: the
- *  sampler's shortest attack would multiply a lone sample by the ramp's starting value. */
+/** The burst: a full-scale step, then a linear fall to zero, over within 20 ms. Not a single sample:
+ *  the sampler's shortest attack (1 ms) would scale a lone sample by the ramp's first value. */
 export const BURST_STEP_MS = 10;
 export const BURST_FALL_MS = 10;
 /** The sample the burst sits at the head of, the rest silence: the SDK's peaks stage fit returns no stage for a
@@ -20,7 +19,7 @@ export const ONSET_THRESHOLD = 0.05;
 /** After an onset the reader steps this far before looking again: the burst's 20 ms plus a margin,
  *  short of the closest two expected onsets (the echo copies, 120 pulses = 62.5 ms at 120 bpm). */
 export const ONSET_SKIP_MS = 30;
-/** Cross-correlation search window for pass-through rows: 50 ms at 48 kHz. */
+/** Cross-correlation search window for pass-through rows: 2400 frames (50 ms at 48 kHz, 54 ms at 44.1 kHz). */
 export const MAX_LAG_FRAMES = 2400;
 /** Below this a correlation is not a lag reading but a different render. */
 export const SCORE_FLOOR = 0.9;
@@ -35,6 +34,7 @@ export const REGION_DURATION_PPQN = 2 * PPQN.Quarter;
 export const SIXTEENTH_PPQN = PPQN.SemiQuaver;
 export const THIRTY_SECOND_PPQN = PPQN.SemiQuaver / 2;
 
+/** Index 9 of the arpeggiator's descending rate list is 1/16 = 240 pulses; the two must agree. */
 export const ARPEGGIO_RATE_INDEX = 9;
 export const ARPEGGIO_RATE_PPQN = 240;
 export const ZEITGEIST_AMOUNT = 0.6;
@@ -91,7 +91,8 @@ export const SPIELWERK_FORWARD = `class Processor {
 }
 `;
 
-/** \`// @no-pass\`, then every note-on yielded unchanged: the scheduler path. */
+/** \`// @no-pass\`, then every note-on yielded unchanged: yielded events go through the script runtime's own
+ *  scheduling instead of the verbatim forward. */
 export const SPIELWERK_YIELD = `// @no-pass
 class Processor {
     * process(block, events) {
@@ -128,7 +129,7 @@ export const MIDI_EFFECT_SCENARIOS: readonly MidiEffectScenario[] = [
   passThrough("velocity", "Velocity (factory: identity)", "velocity", true),
   passThrough("spielwerk-forward", "Spielwerk, forward (generator yields nothing)", "spielwerk", true, SPIELWERK_FORWARD),
   passThrough("spielwerk-yield", "Spielwerk, yield (@no-pass, every note re-yielded)", "spielwerk", true, SPIELWERK_YIELD),
-  { id: "arpeggio", label: "Arpeggio (Up, 1 octave, 1/16, gate 1, repeat 1)", device: "arpeggio", enabled: true, script: null, pattern: HOLD_PATTERN, judge: "rule", rule: "arpeggio" },
+  { id: "arpeggio", label: "Arpeggio (Up, 1 octave, 1/16, gate 1, repeat 1, velocity 0: every step at 1.0)", device: "arpeggio", enabled: true, script: null, pattern: HOLD_PATTERN, judge: "rule", rule: "arpeggio" },
   { id: "zeitgeist", label: `Zeitgeist (amount ${ZEITGEIST_AMOUNT}, duration ${ZEITGEIST_DURATION_PPQN})`, device: "zeitgeist", enabled: true, script: null, pattern: DRY_PATTERN, judge: "rule", rule: "zeitgeist" },
   { id: "spielwerk-echo", label: `Spielwerk, echo (delay ${ECHO_DELAY_PPQN}, ${ECHO_REPEATS} repeats)`, device: "spielwerk", enabled: true, script: SPIELWERK_ECHO, pattern: ECHO_PATTERN, judge: "rule", rule: "echo" },
   passThrough("pitch-disabled", "Pitch, disabled", "pitch", false),
@@ -163,11 +164,30 @@ export function burstChannel(rate: number): Float32Array {
   return out;
 }
 
-/** The sample as loaded: the burst, then silence to `BURST_SAMPLE_SECONDS`. */
-export function burstSample(rate: number): Float32Array {
-  const out = new Float32Array(Math.round(BURST_SAMPLE_SECONDS * rate));
-  out.set(burstChannel(rate));
+/** The sample as loaded: the burst, then silence to `ms` (`BURST_SAMPLE_SECONDS` by default; `?sampleMs=20` is
+ *  the burst alone, the length the loader refuses). A sample shorter than the burst is cut. */
+export function burstSample(rate: number, ms: number = BURST_SAMPLE_SECONDS * 1000): Float32Array {
+  const out = new Float32Array(Math.round((ms / 1000) * rate));
+  const burst = burstChannel(rate);
+  out.set(burst.length <= out.length ? burst : burst.subarray(0, out.length));
   return out;
+}
+
+/** `?sampleMs=`: the loaded sample's length; one second when absent. */
+export function resolveSampleMs(param: string | null): number {
+  if (param === null) return BURST_SAMPLE_SECONDS * 1000;
+  const n = Number(param);
+  if (!Number.isFinite(n) || n <= 0) throw new Error(`invalid ?sampleMs= "${param}"`);
+  return n;
+}
+
+/** `?importMs=`: run a synthetic recording of this length through the sample service's recording import
+ *  before the audit (the path a finished take goes through); none when absent. */
+export function resolveImportMs(param: string | null): number | null {
+  if (param === null) return null;
+  const n = Number(param);
+  if (!Number.isFinite(n) || n <= 0) throw new Error(`invalid ?importMs= "${param}"`);
+  return n;
 }
 
 /** How many onsets the row's rule predicts. */

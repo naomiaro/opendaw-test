@@ -1,8 +1,8 @@
 /**
  * Removing a MIDI effect device the audit inserted, and reaching a Zeitgeist's groove box.
- * A Zeitgeist points at its own groove box through a mandatory pointer, and the groove box
- * itself requires an incoming edge; the box graph deletes the groove with the device (the test
- * pins it), so one `delete()` in one transaction leaves nothing behind.
+ * The groove box requires an incoming edge and the Zeitgeist's pointer is its only one, so the
+ * graph unstages it with the device (the test pins it): one `delete()` in one transaction
+ * leaves nothing behind. A groove shared by two devices would stay.
  */
 import { GrooveShuffleBox, type ZeitgeistDeviceBox } from "@opendaw/studio-boxes";
 import type { EffectBox } from "@opendaw/studio-core";

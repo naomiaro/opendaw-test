@@ -6,7 +6,7 @@ sounds, and does one move where the recorder places a recorded note
 **SDK Pin:** `@opendaw/studio-sdk@0.0.176` (installed npm package; WASM engine only)
 
 **Harness:** unlisted debug demo
-`midi-effect-placement-audit-debug-demo.html[?rate=48000|44100][&bpm=<n>][&device=all|pitch|velocity|arpeggio|zeitgeist|spielwerk]`
+`midi-effect-placement-audit-debug-demo.html[?rate=48000|44100][&bpm=<n>][&device=all|pitch|velocity|arpeggio|zeitgeist|spielwerk][&sampleMs=<n>][&importMs=<n>]`
 on the dev server, Chrome, a real click on "Run audit"; deterministic, no hardware, about
 fifteen seconds. The summary JSON (`midifx-summary-<runToken>.json`, one record per row with
 every onset) lands in `.verify-output/` via the dev server's `/__verify` sink;
@@ -171,7 +171,18 @@ thread as `Unexpected error loading sample: TypeError: Cannot read properties of
 reporting `sample load failed`, and the render silent. Any sample of 1200 frames or fewer (25 ms
 at 48 kHz, 27 ms at 44.1 kHz) is refused this way: a one-shot click, a short drum hit, or a
 burst like this one cannot be used in a Nano, a Tape or a Playfield. The harness pads the burst
-into a one-second sample. Draft: `drafts/TO-REVIEW-openDAW-issue-short-sample-never-loads.md`.
+into a one-second sample.
+
+Measured on two paths (2026-10-21, 48 kHz):
+
+| switch | path | result |
+|---|---|---|
+| `?sampleMs=20` | the fetch path (`GlobalSampleLoaderManager`, the sample provider's buffer) | `#audit-state` = `error:sample load failed: Cannot read properties of undefined (reading 'shift')` before any render |
+| `?importMs=20` | the recording import path (`SampleService.importRecording` → `importFile`, what a finished take goes through), a synthetic 960-frame take | `error:recording import of 20 ms (960 frames) failed: Cannot read properties of undefined (reading 'shift')` |
+| `?importMs=1000` | the same, 48 000 frames | `recording import of 1000 ms (48000 frames): ok`, the audit runs |
+
+The other two callers of the stage fit (`SampleStorage`, `CloudBackupSamples`) are read, not
+run. Draft: `drafts/TO-REVIEW-openDAW-issue-short-sample-never-loads.md`.
 
 ## Status
 

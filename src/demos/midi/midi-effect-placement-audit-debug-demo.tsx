@@ -1,19 +1,25 @@
 // MIDI Effect Placement Audit — unlisted page.
 //
-//   midi-effect-placement-audit-debug-demo.html[?rate=48000|44100][&bpm=<n>][&device=all|pitch|velocity|arpeggio|zeitgeist|spielwerk]
+//   midi-effect-placement-audit-debug-demo.html[?rate=48000|44100][&bpm=<n>][&device=all|pitch|velocity|arpeggio|zeitgeist|spielwerk][&sampleMs=<n>][&importMs=<n>]
 //
 // One Nano sampler plays a 20 ms burst on a note pattern. The pattern is rendered offline dry,
 // then through each stock MIDI effect (and each effect disabled), and every row is read against
 // what the device's own rule predicts: a pass-through device against the dry render by
 // cross-correlation, a device meant to move notes (Arpeggio, Zeitgeist, a Spielwerk echo) by its
 // onsets against the frames the rule names. A live key enters the same event chain as a region
-// note, so one render covers both the heard and the recorded path's effect side. Register and
+// note, so one render covers the heard path of live playing too (the recorder reads the capture's
+// raw note signals before the chain; the sweep's `&effect=` arm shows that). Register and
 // reading recipe: debug/2026-10-21-midi-effect-placement/note.md. DOM contract: #audit-state
-// carries data-audit-state walking setup → running:<row> → done | error:<message>.
+// carries data-audit-state walking setup → running:<row> → done | error:<message>; a row that
+// failed on its own is a red row under `done`, a failure that voids the later rows (a device that
+// could not be removed) ends the run in `error:`. `?sampleMs=` sets the loaded sample's length
+// (the loader refuses 1200 frames or fewer: the page then reads `error:sample load failed: …`);
+// `?importMs=` first runs a synthetic recording of that length through the sample service's
+// recording import and reports it in the status line, `error:` when it fails.
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { UUID } from "@opendaw/lib-std";
-import type { ppqn } from "@opendaw/lib-dsp";
+import { AudioData, type ppqn } from "@opendaw/lib-dsp";
 import { EffectFactories, type EffectBox, type Project } from "@opendaw/studio-core";
 import { OPENDAW_SDK_VERSION } from "@opendaw/studio-sdk";
 import {
@@ -33,7 +39,7 @@ import { withDeadline } from "@/lib/deadline";
 import {
   ARPEGGIO_RATE_INDEX, ARPEGGIO_RATE_PPQN, burstSample, DRY_PATTERN, ECHO_DELAY_PPQN, ECHO_REPEATS, expectedOnsetCount,
   MAX_LAG_FRAMES, NANO_ATTACK_SECONDS, NANO_RELEASE_SECONDS, NOTE_PITCH, ONSET_SKIP_MS, ONSET_THRESHOLD, REGION_DURATION_PPQN,
-  REGION_POSITION_PPQN, renderSeconds, resolveBpm, resolveDevices, resolveRate, RULE_TOLERANCE_FRAMES, SCORE_FLOOR,
+  REGION_POSITION_PPQN, renderSeconds, resolveBpm, resolveDevices, resolveImportMs, resolveRate, resolveSampleMs, RULE_TOLERANCE_FRAMES, SCORE_FLOOR,
   ZEITGEIST_AMOUNT, ZEITGEIST_DURATION_PPQN, type MidiEffectDevice, type MidiEffectScenario, type PatternNote, type RenderRate,
 } from "@/lib/audit/midiEffectScenarios";
 import { arpeggioSteps, echoCopies, expectedFrames, instrumentOffsetFrames, zeitgeistWarped } from "@/lib/audit/midiEffectRules";
@@ -49,10 +55,14 @@ let PARAM_ERROR: string | null = null;
 let RATE: RenderRate = 48000;
 let BPM = 120;
 let SCENARIOS: MidiEffectScenario[] = [];
+let SAMPLE_MS = 1000;
+let IMPORT_MS: number | null = null;
 try {
   RATE = resolveRate(params.get("rate"));
   BPM = resolveBpm(params.get("bpm"));
   SCENARIOS = resolveDevices(params.get("device"));
+  SAMPLE_MS = resolveSampleMs(params.get("sampleMs"));
+  IMPORT_MS = resolveImportMs(params.get("importMs"));
 } catch (error) {
   PARAM_ERROR = error instanceof Error ? error.message : String(error);
 }
@@ -68,12 +78,19 @@ const FACTORIES = {
   zeitgeist: EffectFactories.Zeitgeist,
   spielwerk: EffectFactories.Spielwerk,
 } as const;
+const COMPILE_DEADLINE_MS = 30_000;
+const SAMPLE_LOAD_DEADLINE_MS = 30_000;
+
+/** A failure that voids every later row: the run ends in `error:` instead of continuing. */
+class RunAbort extends Error {}
 
 interface Built {
   project: Project;
   audioContext: AudioContext;
   audioUnitBox: AudioUnitBox;
   regionBox: NoteRegionBox;
+  /** What `?importMs=` did, shown beside the status for the page's lifetime. */
+  importNote: string | null;
 }
 
 /** The burst, the Nano with it attached, the region at bar 1. Two transactions after init: the file box
@@ -81,7 +98,12 @@ interface Built {
  *  and the region. */
 async function buildProject(localAudioBuffers: Map<string, AudioBuffer>, onStatus: (s: string) => void): Promise<Built> {
   const { project, audioContext } = await initializeOpenDAW({ localAudioBuffers, bpm: BPM, audioContextSampleRate: RATE, onStatusUpdate: onStatus });
-  const channel = burstSample(RATE);
+  let importNote: string | null = null;
+  if (IMPORT_MS !== null) {
+    onStatus(`Importing a ${IMPORT_MS} ms recording...`);
+    importNote = await importShortRecording(project, IMPORT_MS);
+  }
+  const channel = burstSample(RATE, SAMPLE_MS);
   const buffer = audioContext.createBuffer(2, channel.length, RATE);
   buffer.getChannelData(0).set(channel);
   buffer.getChannelData(1).set(channel);
@@ -113,7 +135,41 @@ async function buildProject(localAudioBuffers: Map<string, AudioBuffer>, onStatu
       });
     })
     .unwrap("createNoteRegion");
-  return { project, audioContext, audioUnitBox, regionBox };
+  onStatus("Loading the sample...");
+  await awaitSampleLoaded(project, uuid);
+  return { project, audioContext, audioUnitBox, regionBox, importNote };
+}
+
+/** The burst as a synthetic take through `importRecording`, the function a finished recording's audio goes through. */
+async function importShortRecording(project: Project, ms: number): Promise<string> {
+  const channel = burstSample(RATE, ms);
+  const audioData = AudioData.create(RATE, channel.length, 2);
+  audioData.frames[0].set(channel);
+  audioData.frames[1].set(channel);
+  try {
+    await withDeadline(project.env.sampleService.importRecording(UUID.generate(), audioData, BPM, "short take"), SAMPLE_LOAD_DEADLINE_MS, "recording import");
+    return `recording import of ${ms} ms (${channel.length} frames): ok`;
+  } catch (error) {
+    throw new Error(`recording import of ${ms} ms (${channel.length} frames) failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/** The loader's terminal state, read first and then awaited (the loader has `subscribe` only, and it
+ *  fires synchronously for a terminal state). An error carries the loader's own reason. */
+function awaitSampleLoaded(project: Project, uuid: UUID.Bytes): Promise<void> {
+  const loader = project.sampleManager.getOrCreate(uuid);
+  const failed = (reason: string) => new Error(`sample load failed: ${reason}`);
+  if (loader.state.type === "loaded") return Promise.resolve();
+  if (loader.state.type === "error") return Promise.reject(failed(loader.state.reason));
+  return withDeadline(new Promise<void>((resolve, reject) => {
+    let subscribed = false;
+    const sub = loader.subscribe((state) => {
+      if (state.type !== "loaded" && state.type !== "error") return;
+      if (state.type === "loaded") resolve(); else reject(failed(state.reason));
+      if (subscribed) sub.terminate();
+    });
+    subscribed = true;
+  }), SAMPLE_LOAD_DEADLINE_MS, "sample load");
 }
 
 function applySettings(box: EffectBox, device: MidiEffectDevice): void {
@@ -202,10 +258,11 @@ const App: React.FC = () => {
         setStatus("Ready");
       })
       .catch((error: unknown) => {
-        console.error("Failed to initialize: " + String(error));
+        const message = error instanceof Error ? error.message : String(error);
+        console.error("Failed to initialize: " + message);
         if (mounted) {
-          setStatus(`Error: ${String(error)}`);
-          setAuditState(`error:${String(error)}`);
+          setStatus(`Error: ${message}`);
+          setAuditState(`error:${message}`);
         }
       });
     return () => { mounted = false; };
@@ -221,6 +278,9 @@ const App: React.FC = () => {
     const writePattern = (pattern: readonly PatternNote[]): void => {
       if (patternRef.current === pattern) return;
       const held = eventsRef.current;
+      // Cleared before the delete: a throw between the two transactions must not leave the old pattern claimed.
+      patternRef.current = null;
+      eventsRef.current = [];
       project.editing.modify(() => { for (const box of held) if (box.isAttached()) box.delete(); });
       // Creation in a second transaction, folded into the same undo step.
       eventsRef.current = project.editing
@@ -244,13 +304,20 @@ const App: React.FC = () => {
         });
         if (device === "spielwerk") {
           if (scenario.script === null) throw new Error(`row ${scenario.id} has no script`);
-          // Outside any transaction: the compiler opens its own, and registers the module on the live context;
-          // the offline renderer re-registers the compiled code from the box's header.
-          await SPIELWERK_COMPILER.compile(audioContext, project.editing, box as SpielwerkDeviceBox, scenario.script);
+          // The compiler opens its own transaction, so it runs outside ours.
+          await withDeadline(
+            SPIELWERK_COMPILER.compile(audioContext, project.editing, box as SpielwerkDeviceBox, scenario.script),
+            COMPILE_DEADLINE_MS,
+            `Spielwerk compile for ${scenario.id}`,
+          );
         }
       } catch (error) {
         // The insert has committed: a device whose settings or compile failed must not stay on the chain for the later rows.
-        removeMidiEffect(project.editing, box);
+        try {
+          removeMidiEffect(project.editing, box);
+        } catch (cleanupError) {
+          throw new RunAbort(`${scenario.id}: ${String(error)}; and the device could not be removed: ${String(cleanupError)}`);
+        }
         throw error;
       }
       return box;
@@ -305,7 +372,7 @@ const App: React.FC = () => {
         const message = error instanceof Error ? error.message : String(error);
         console.error(`[midi-effect-audit] ${scenario.id} failed: ${message}`);
         records.push(errorRecord(scenario, message));
-        if (scenario.id === "dry") {
+        if (scenario.id === "dry" || error instanceof RunAbort) {
           setRows([...records]);
           throw new Error(message);
         }
@@ -314,7 +381,9 @@ const App: React.FC = () => {
           try {
             removeMidiEffect(project.editing, box);
           } catch (cleanupError) {
-            console.error(`[midi-effect-audit] ${scenario.id} cleanup failed: ${String(cleanupError)}`);
+            // Every later row would render through this device beside its own: the run ends here.
+            setRows([...records]);
+            throw new RunAbort(`${scenario.id}: the device could not be removed after the render: ${String(cleanupError)}`);
           }
         }
       }
@@ -401,6 +470,7 @@ const App: React.FC = () => {
               <Badge id="audit-state" data-audit-state={auditState} color={auditState.startsWith("error") ? "red" : auditState === "done" ? "green" : "amber"}>
                 {auditState}
               </Badge>
+              {built !== null && built.importNote !== null ? <> — {built.importNote}</> : null}
             </Callout.Text>
           </Callout.Root>
           <TestStep
@@ -450,7 +520,7 @@ const App: React.FC = () => {
                 </Table.Body>
               </Table.Root>
               <Text size="1" color="gray">
-                Instrument offset {offset === null ? "—" : `${offset} frames (${ms(offset)} ms)`} from the dry row's first onset; {RATE} Hz, {BPM} bpm, device {DEVICE_PARAM}.
+                Instrument offset {offset === null ? "—" : `${offset} frames (${ms(offset)} ms)`} from the dry row's first onset; {RATE} Hz, {BPM} bpm, device {DEVICE_PARAM}, sample {SAMPLE_MS} ms.
                 Pass-through tolerance: lag 0 (the chain works in pulses and the instrument resolves the same pulses to the same frames).
                 Rule tolerance: {RULE_TOLERANCE_FRAMES} frame (the pulse-to-frame rounding of the expected position).
               </Text>

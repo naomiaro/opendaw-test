@@ -73,7 +73,7 @@ export interface ZeitgeistGraph {
 
 /**
  * One instrument unit with a Zeitgeist on its MIDI chain, pointing at its own groove box
- * (the factory's values: duration 480, amount 0.6). The groove is a mandatory-edge target,
+ * (duration 480 as the factory writes it, amount 0.6 as the schema defaults it). The groove is a mandatory-edge target,
  * so it is created first and the device's pointer refers to it before the transaction ends.
  */
 export function graphWithZeitgeist(): ZeitgeistGraph {

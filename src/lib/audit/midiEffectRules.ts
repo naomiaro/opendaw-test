@@ -20,7 +20,7 @@ export function echoCopies(position: number, delayPpqn: number, repeats: number)
 }
 
 /** Each position through the groove the Zeitgeist device points at. The engine places the event at the warped
- *  pulse as a float (a pulse is 33 frames at 90 bpm, so rounding it to a whole pulse would be a reading error). */
+ *  pulse as a float (a pulse is 33 frames at 90 bpm and 48 kHz, so rounding it to a whole pulse would be a reading error). */
 export function zeitgeistWarped(positions: readonly number[], groove: { warp(position: number): number }): number[] {
   return positions.map((position) => groove.warp(position));
 }

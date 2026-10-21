@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { PPQN } from "@opendaw/lib-dsp";
 import { onsetsOf } from "./midiEffectPlacement";
 import {
-  burstChannel, burstSample, DRY_PATTERN, ECHO_DELAY_PPQN, ONSET_SKIP_MS, ONSET_THRESHOLD, expectedOnsetCount, MIDI_EFFECT_SCENARIOS, renderSeconds, resolveBpm, resolveDevices, resolveRate,
+  burstChannel, burstSample, DRY_PATTERN, ECHO_DELAY_PPQN, ONSET_SKIP_MS, ONSET_THRESHOLD, resolveImportMs, resolveSampleMs, expectedOnsetCount, MIDI_EFFECT_SCENARIOS, renderSeconds, resolveBpm, resolveDevices, resolveRate,
   SPIELWERK_ECHO, SPIELWERK_FORWARD, SPIELWERK_YIELD,
 } from "./midiEffectScenarios";
 
@@ -88,6 +88,19 @@ describe("the onset skip against the real burst", () => {
     // still above threshold at the skip's end and IS found there, a frame late; the skip is not a dead zone.)
     inside.set(burstChannel(rate), 10000 + Math.round(0.005 * rate));
     expect(onsetsOf(inside, rate, ONSET_THRESHOLD, ONSET_SKIP_MS)).toEqual([10000]);
+  });
+});
+
+describe("the short-sample switches", () => {
+  it("default to a one-second sample and no import, accept a positive length, reject the rest", () => {
+    expect(resolveSampleMs(null)).toBe(1000);
+    expect(resolveSampleMs("20")).toBe(20);
+    expect(() => resolveSampleMs("0")).toThrow(/invalid \?sampleMs=/);
+    expect(resolveImportMs(null)).toBe(null);
+    expect(resolveImportMs("20")).toBe(20);
+    expect(() => resolveImportMs("x")).toThrow(/invalid \?importMs=/);
+    expect(burstSample(48000, 20).length).toBe(960);
+    expect(burstSample(48000, 1000).length).toBe(48000);
   });
 });
 

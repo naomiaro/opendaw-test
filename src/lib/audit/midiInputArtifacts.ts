@@ -5,7 +5,7 @@
  * `scripts/audit/midi-input-alignment/table.ts`.
  */
 import type { AuditBuildFeature } from "./recordingAuditCalibration";
-import type { MidiEffectArm, MidiScenario, MidiTolerances } from "./midiInputCalibration";
+import { isMidiEffectArm, type MidiEffectArm, type MidiScenario, type MidiTolerances } from "./midiInputCalibration";
 import type { NoteTag } from "./midiInputPattern";
 import type { MidiCellStatus, RepeatFigures } from "./midiInputAlignment";
 
@@ -116,11 +116,13 @@ export function parseMidiAuditSummary(json: unknown, runToken: number): MidiAudi
     if (current) throw new Error(`summary ${runToken}: run lacks effect`);
     summary.effect = "none";
   }
+  if (typeof summary.effect !== "string" || !isMidiEffectArm(summary.effect)) throw new Error(`summary ${runToken}: effect "${String(summary.effect)}" is not an arm`);
   summary.rows.forEach((row: Record<string, unknown>, i: number) => {
     if (row.effect === undefined) {
       if (current) throw new Error(`summary ${runToken}: row ${i} lacks effect`);
       row.effect = "none";
     }
+    if (typeof row.effect !== "string" || !isMidiEffectArm(row.effect)) throw new Error(`summary ${runToken}: row ${i} effect "${String(row.effect)}" is not an arm`);
     for (const key of MIDI_AUDIT_ROW_COUNTS) {
       const value = row[key];
       if (value !== undefined && typeof value !== "number") throw new Error(`summary ${runToken}: row ${i} ${key} is ${typeof value}, not a number`);

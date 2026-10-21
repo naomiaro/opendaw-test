@@ -35,5 +35,7 @@ describe("the effect arm on the schema", () => {
     expect(parseMidiAuditSummary(current, 1).rows[0].effect).toBe("arpeggio");
     expect(() => parseMidiAuditSummary({ ...current, rows: [row] }, 1)).toThrow(/lacks effect/);
     expect(() => parseMidiAuditSummary({ ...current, effect: undefined }, 1)).toThrow(/lacks effect/);
+    expect(() => parseMidiAuditSummary({ ...current, effect: "bogus" }, 1)).toThrow(/effect "bogus"/);
+    expect(() => parseMidiAuditSummary({ ...current, rows: [{ ...row, effect: null }] }, 1)).toThrow(/row 0 effect/);
   });
 });

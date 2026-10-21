@@ -96,7 +96,7 @@ interface MatrixContext {
 
 /** The effect arm's device on the recorded unit: the insert in one transaction, its settings in the next
  *  (repo rule on pointers created in the same transaction). Pitch at zero shift; Arpeggio at the factory
- *  values (Up, 1 octave, 1/16, gate 1, repeat 1). The device lives for the page. */
+ *  values (Up, 1 octave, 1/16, gate 1, repeat 1, velocity 0). The device lives for the page. */
 function insertEffectArm(project: Project, audioUnitBox: AudioUnitBox, effect: MidiEffectArm): void {
   if (effect === "none") return;
   const field = midiEffectsFieldOf(project, audioUnitBox);

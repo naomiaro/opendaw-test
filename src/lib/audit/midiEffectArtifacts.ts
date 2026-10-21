@@ -1,7 +1,7 @@
 /**
  * What a run of the MIDI effect placement audit persists: one record per row and one summary
- * per run, uploaded to the dev server's `/__verify` sink as `midifx-summary-<runToken>.json`
- * and read back by `scripts/audit/midi-effect-placement/table.ts`.
+ * per run, uploaded to the dev server's `/__verify` sink (which writes `.verify-output/`) as
+ * `midifx-summary-<runToken>.json` and read back by `scripts/audit/midi-effect-placement/table.ts`.
  */
 import type { MidiEffectDevice, MidiEffectRowId } from "./midiEffectScenarios";
 import type { RowVerdict } from "./midiEffectPlacement";
