@@ -52,6 +52,9 @@ const AUDIT_LINKS: DebugLink[] = [
     href: "https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-10-20-midi-input-alignment/note.md",
     kind: "note",
   },
+  { label: "openDAW#491 (notes land ~33 ms late)", href: "https://github.com/andremichelle/openDAW/issues/491", kind: "note" },
+  { label: "openDAW#492 (release lost in a block)", href: "https://github.com/andremichelle/openDAW/issues/492", kind: "note" },
+  { label: "openDAW#493 (count-in pickups)", href: "https://github.com/andremichelle/openDAW/issues/493", kind: "note" },
 ];
 
 const BUS = params.get("bus") ?? MIDI_BUS_DEFAULT;

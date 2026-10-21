@@ -1,9 +1,4 @@
-<!-- Draft for andremichelle/openDAW. Not posted. Target: a new issue.
-     Written 2026-10-20 and HELD; brought up to date 2026-10-21 after both harnesses ran: the combined
-     MIDI + audio cell (2026-10-20, debug/2026-10-20-midi-audio-combined/note.md) measured the two recorders
-     together, and the MIDI effect placement audit (2026-10-21, debug/2026-10-21-midi-effect-placement/note.md)
-     showed a MIDI effect on the unit changes none of the recorded figures. The title and the audio paragraph
-     now rest on the combined measurement, and the order-of-fixes paragraph is in. Waits for the user's read. -->
+<!-- Posted 2026-10-21 as https://github.com/andremichelle/openDAW/issues/491 — the body below is as filed. -->
 
 # Recorded MIDI notes land about 33 ms after the beat the player heard; a sound recorded at the same instant lands on it once the audio input latency is calibrated
 

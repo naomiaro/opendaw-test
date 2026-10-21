@@ -4,6 +4,13 @@
 
 **SDK Pin:** `@opendaw/studio-sdk@0.0.176` (installed npm package; WASM engine only)
 
+**Filed (2026-10-21):** [openDAW#491](https://github.com/andremichelle/openDAW/issues/491) notes
+land about 33 ms after the heard beat (the combined cell's figure);
+[openDAW#492](https://github.com/andremichelle/openDAW/issues/492) a release in or just after a
+main-thread block is written far too short;
+[openDAW#493](https://github.com/andremichelle/openDAW/issues/493) count-in pickup notes dropped
+or snapped to the downbeat. Bodies as filed under `drafts/posted-openDAW-49x-*.md`.
+
 **Harness:** unlisted debug demo
 `midi-input-alignment-audit-debug-demo.html?scenario=<name|all>&bpm=<n|all>[&repeats=<n>][&bus=<substring>][&audible=1]`
 on the dev server, Chrome on macOS, a real click on "Run audit". The loopback is a virtual
