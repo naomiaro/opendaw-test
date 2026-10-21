@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { PPQN } from "@opendaw/lib-dsp";
+import { onsetsOf } from "./midiEffectPlacement";
 import {
-  burstChannel, burstSample, DRY_PATTERN, expectedOnsetCount, MIDI_EFFECT_SCENARIOS, renderSeconds, resolveBpm, resolveDevices, resolveRate,
+  burstChannel, burstSample, DRY_PATTERN, ECHO_DELAY_PPQN, ONSET_SKIP_MS, ONSET_THRESHOLD, expectedOnsetCount, MIDI_EFFECT_SCENARIOS, renderSeconds, resolveBpm, resolveDevices, resolveRate,
   SPIELWERK_ECHO, SPIELWERK_FORWARD, SPIELWERK_YIELD,
 } from "./midiEffectScenarios";
 
@@ -69,6 +71,23 @@ describe("page parameters", () => {
     // Past 250 bpm the echo copies (120 pulses apart) fall inside the 30 ms onset skip and would read as missing.
     expect(resolveBpm("250")).toBe(250);
     expect(() => resolveBpm("251")).toThrow(/echo copies/);
+  });
+});
+
+describe("the onset skip against the real burst", () => {
+  it("reads the real burst once per note and both echo copies at the default tempo, and does not count a burst inside another's body", () => {
+    const rate = 48000;
+    const delay = Math.round(PPQN.pulsesToSeconds(ECHO_DELAY_PPQN, 120) * rate);
+    const out = new Float32Array(rate);
+    out.set(burstChannel(rate), 10000);
+    out.set(burstChannel(rate), 10000 + delay);
+    expect(onsetsOf(out, rate, ONSET_THRESHOLD, ONSET_SKIP_MS)).toEqual([10000, 10000 + delay]);
+    const inside = new Float32Array(rate);
+    inside.set(burstChannel(rate), 10000);
+    // A second burst 5 ms into the first: one onset. (A burst that begins one frame before the skip ends is
+    // still above threshold at the skip's end and IS found there, a frame late; the skip is not a dead zone.)
+    inside.set(burstChannel(rate), 10000 + Math.round(0.005 * rate));
+    expect(onsetsOf(inside, rate, ONSET_THRESHOLD, ONSET_SKIP_MS)).toEqual([10000]);
   });
 });
 

@@ -45,6 +45,12 @@ describe("judgeRule", () => {
   it("reports a silent render as an error before counting", () => {
     expect(judgeRule([], [1000, 4000], 1, RATE, 0).verdict).toEqual({ status: "error", message: "render is silent (peak 0): the sample did not load or the device muted it" });
   });
+  it("flags an early onset too, and names the onset furthest off", () => {
+    const early = judgeRule([998, 4000], [1000, 4000], 1, RATE, 1);
+    expect((early.verdict as { figure: string }).figure).toMatch(/onset 0 off by -2 frames/);
+    const worst = judgeRule([1000, 4002, 6997], [1000, 4000, 7000], 1, RATE, 1);
+    expect((worst.verdict as { figure: string }).figure).toMatch(/onset 2 off by -3 frames/);
+  });
   it("accepts one frame, flags two, and flags a count mismatch before any figure", () => {
     expect(judgeRule([1001, 4000], [1000, 4000], 1, RATE, 1).verdict).toEqual({ status: "as-predicted" });
     const off = judgeRule([1002, 4000], [1000, 4000], 1, RATE, 1);
