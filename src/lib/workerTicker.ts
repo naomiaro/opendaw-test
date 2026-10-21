@@ -8,7 +8,12 @@ export interface WorkerTicker {
   terminate(): void;
 }
 
-export function createWorkerTicker(intervalMs: number): WorkerTicker {
+/** A worker that fails to start (a CSP `worker-src` block arrives as an `error` event, not a
+ *  throw) would leave every subscriber waiting on a tick that never comes; the failure is reported. */
+export function createWorkerTicker(
+  intervalMs: number,
+  onError: (message: string) => void = (message) => console.warn(`[workerTicker] the tick worker failed, nothing will tick: ${message}`),
+): WorkerTicker {
   const subscribers = new Set<() => void>();
   let worker: Worker | null = null;
   let url: string | null = null;
@@ -18,6 +23,7 @@ export function createWorkerTicker(intervalMs: number): WorkerTicker {
     url = URL.createObjectURL(new Blob([src], { type: "text/javascript" }));
     worker = new Worker(url);
     worker.onmessage = (): void => { for (const fn of [...subscribers]) fn(); };
+    worker.onerror = (event): void => { onError(event.message || "error event without a message"); };
   };
   return {
     subscribe(fn) {

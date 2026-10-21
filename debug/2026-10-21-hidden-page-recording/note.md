@@ -51,8 +51,9 @@ Two interruptions, three moments:
   `visibilitychange`, the longest gap between animation frames (`FrameWatch`), the position
   the main thread reads sampled every 100 ms from a worker tick (a flat line while recording
   is `positionFrozenMs`), and how long after the page became visible the position moved
-  again (`syncResumeMs`). A `cover` run that never saw the page hidden reads `not-hidden` and
-  judges nothing about hiding.
+  again (`syncResumeMs`). A run whose interruption lasted under `MIN_HIDDEN_SPAN_MS` (1 s: a
+  `cover` that never saw the page hidden, a hand that flicked, an alert dismissed at once by
+  a dialog handler) reads `not-hidden` and judges nothing about the interruption.
 - `modal`: the page opens its own `alert()` right after the record request, at bar 1, or
   right after the stop request. That blocks the main thread outright: frames, worker
   messages and `visibilitychange` alike. No frame driver can help there; the row says
@@ -190,6 +191,11 @@ on the user's read.
 ## Open items
 
 - The hidden-safe `mid` and `stop` cover rows, by hand, when a hand reaches the page.
+- A dead tick worker (a CSP `worker-src` block arrives as an `error` event) would leave the
+  driver's hidden path waiting on a tick that never comes, the page frozen as on the SDK's
+  path: the ticker warns in the console, nothing else marks the row. Not reachable here
+  (the site serves no CSP). The position sampler is a second blob worker and would die with
+  it; an empty sample set reads as "position frozen 0 ms".
 - The intensive-throttling regime (a page hidden for more than five minutes): the driver
   covers it by construction (worker timers are not throttled); not exercised.
 - MIDI recording while hidden: `RecordMidi` extrapolates from the last position read, which

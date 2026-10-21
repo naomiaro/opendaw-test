@@ -415,6 +415,7 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
   };
   const facadeScheduleClipStop = project.engine.scheduleClipStop.bind(project.engine);
   project.engine.scheduleClipStop = (trackIds): void => {
+    driver?.transportRequested();
     if (audioContext.state === "running") {
       facadeScheduleClipStop(trackIds);
       return;

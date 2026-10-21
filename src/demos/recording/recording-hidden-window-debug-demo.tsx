@@ -1,6 +1,7 @@
 // Recording while the page is hidden — unlisted repro and standing check.
 //
 //   recording-hidden-window-debug-demo.html[?driver=window|hidden-safe][&interrupt=cover|modal][&hideAt=start|mid|stop][&hiddenSeconds=<n>][&rate=48000|44100][&bpm=<n>]
+//   (the driver is this page's own `?driver=`; `?frameDriver=` is not read here)
 //
 // One Tape records the recording harness's synthetic loopback (a click per beat scheduled on
 // the audio clock) for eight bars. At the chosen moment the page is interrupted: `cover` asks
@@ -14,8 +15,9 @@
 // default, a worker tick while the page is hidden and the transport active. Register:
 // debug/2026-10-21-hidden-page-recording/note.md. DOM contract: #audit-state carries
 // data-audit-state walking setup → recording:take1 → waiting:hide → hidden → visible →
-// stopping → finalizing → recording:take2 → done | error:<message>; data-hide-now flips to "1"
-// while the page asks to be hidden.
+// stopping → finalizing → recording:take2 → done | error:<message> (a `modal` run has no
+// waiting:hide, and its hidden → visible sit around the alert, after `stopping` for `stop`);
+// data-hide-now flips to "1" while the page asks to be hidden.
 import { useCallback, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Badge, Button, Callout, Card, Container, Flex, Heading, Table, Text, Theme } from "@radix-ui/themes";
@@ -157,11 +159,13 @@ interface TakeOptions {
   params: Params;
   label: "take1" | "take2";
   interrupt: boolean;
+  /** Called once the take's record request is about to go out, so a take that then fails is not "never started". */
+  onStarted?: () => void;
   setState: (s: string) => void;
   setHideNow: (on: boolean) => void;
 }
 
-async function runTake({ ctx, params, label, interrupt, setState, setHideNow }: TakeOptions): Promise<TakeOutcome> {
+async function runTake({ ctx, params, label, interrupt, setState, setHideNow, onStarted }: TakeOptions): Promise<TakeOutcome> {
   const { project, audioContext, unitAdapter, bias } = ctx;
   const engine = project.engine;
   const samples: PositionSample[] = [];
@@ -210,7 +214,7 @@ async function runTake({ ctx, params, label, interrupt, setState, setHideNow }: 
   const figures: TakeFigures = {
     appeared: false, finalized: false, finalizeMs: null, regionDurationSec: null,
     expectedDurationSec: project.tempoMap.intervalToSeconds(0, TAKE_BARS * BAR_PPQN - STOP_LEAD_PPQN),
-    beatsMatched: 0, beatsMissing: 0, medianBeatErrorMs: null, alignedToleranceMs: ALIGNED_TOLERANCE_MS,
+    beatsMatched: 0, beatsMissing: 0, medianBeatErrorMs: null, alignedToleranceMs: ALIGNED_TOLERANCE_MS, finalizeReason: null,
   };
   let started = false;
   let schedule: ReferenceSchedule | null = null;
@@ -221,6 +225,7 @@ async function runTake({ ctx, params, label, interrupt, setState, setHideNow }: 
     engine.setPosition(0);
     await waitForPositionSettled(project, 0, 30_000);
     started = true;
+    onStarted?.();
     // The hide wait comes first for a `start` cover: the reference clicks that anchor the buffer run
     // about a minute, and a hand that takes longer than that would leave the take without an anchor.
     if (params.hideAt === "start" && params.interrupt === "cover") await doInterrupt();
@@ -262,8 +267,9 @@ async function runTake({ ctx, params, label, interrupt, setState, setHideNow }: 
       await waitForLoaderTerminal(loader, FINALIZE_DEADLINE_MS, `${label} finalization`);
       figures.finalized = loader.state.type === "loaded";
       figures.finalizeMs = performance.now() - stopAt;
-    } catch {
+    } catch (error) {
       figures.finalized = false;
+      figures.finalizeReason = error instanceof Error ? error.message : String(error);
     }
     if (!figures.finalized) return { record: finish(), figures, hiddenAtMs, visibleAtMs, frameGapMaxMs: null, samples, started };
     const dataOpt = loader.data;
@@ -312,21 +318,30 @@ async function runAudit(params: Params, setState: (s: string) => void, setHideNo
   setState("setup");
   const ctx = await getContext(params);
   const runToken = Date.now();
+  // A second click on Run must not judge the previous run's region.
+  const preWarning = await resetForNextCell(ctx.project, loopback, ctx.unitAdapter);
   const frames1 = new FrameWatch();
   frames1.start();
-  const take1 = await runTake({ ctx, params, label: "take1", interrupt: true, setState, setHideNow });
+  let take1: TakeOutcome;
+  try {
+    take1 = await runTake({ ctx, params, label: "take1", interrupt: true, setState, setHideNow });
+  } catch (error) {
+    frames1.stop();
+    throw new Error(`take 1: ${error instanceof Error ? error.message : String(error)}`);
+  }
   const gaps1 = frames1.stop();
   const cleanupWarning = await resetForNextCell(ctx.project, loopback, ctx.unitAdapter);
   let take2: TakeOutcome | null = null;
   let take2Error: string | null = null;
+  let take2Started = false;
   try {
-    take2 = await runTake({ ctx, params, label: "take2", interrupt: false, setState, setHideNow });
+    take2 = await runTake({ ctx, params, label: "take2", interrupt: false, setState, setHideNow, onStarted: () => { take2Started = true; } });
   } catch (error) {
-    take2Error = error instanceof Error ? error.message : String(error);
+    take2Error = `take 2: ${error instanceof Error ? error.message : String(error)}`;
   }
   const verdicts = classifyRow({
     interrupt: params.interrupt, hiddenSpanMs: take1.hiddenAtMs !== null && take1.visibleAtMs !== null ? take1.visibleAtMs - take1.hiddenAtMs : null,
-    take1: take1.figures, take2: take2?.figures ?? null, take2Started: take2 !== null && take2.started,
+    take1: take1.figures, take2: take2?.figures ?? null, take2Started,
   });
   const row: HiddenRecordingRow = {
     driver: params.driver, interrupt: params.interrupt, hideAt: params.hideAt, hiddenSeconds: params.hiddenSeconds,
@@ -337,9 +352,9 @@ async function runAudit(params: Params, setState: (s: string) => void, setHideNo
     syncResumeMs: take1.visibleAtMs === null ? null : syncResumeMs(take1.samples, take1.visibleAtMs),
     take1: { ...take1.record, verdict: verdicts.take1 },
     take2: take2 === null ? null : { ...take2.record, verdict: verdicts.take2 ?? take2.record.verdict },
-    take2Started: take2 !== null && take2.started,
+    take2Started,
     samples: take1.samples,
-    error: [cleanupWarning, take2Error].filter((e): e is string => e !== null).join("; ") || null,
+    error: [preWarning, cleanupWarning, take2Error].filter((e): e is string => e !== null).join("; ") || null,
   };
   onRow(row);
   const summary: HiddenRecordingSummary = {
@@ -450,7 +465,7 @@ function App() {
             <Text size="1" color="gray" style={{ whiteSpace: "pre-wrap", fontFamily: "monospace" }}>
 {`?driver=window|hidden-safe   the SDK's own animation frame, or the demos' default: a worker tick while hidden and the transport active
 ?interrupt=cover|modal       hidden by another tab or window (measured on visibilitychange), or the page's own alert() (blocks the main thread)
-?hideAt=start|mid|stop       the interruption before the record request, at bar 1, or a bar before the stop request (the page waits for your hide)
+?hideAt=start|mid|stop       cover: before the record request, at bar 1, or a bar before the stop request, the page waiting for your hide; modal: right after the record request, at bar 1, or right after the stop request
 ?hiddenSeconds=<n>           what the prompt asks for (default 5); the page measures the actual span
 Verdicts: intact | not-finalized | audio-damaged | session-stuck (take 2 never started) | not-hidden (a cover run that never hid: judged nothing)`}
             </Text>

@@ -260,17 +260,22 @@ const NODE_TAPS = params.get("scenario")?.startsWith("multitrack") === true;
 
 const loopback = installLoopbackCapture(2, { serveDefault: DEFAULT_INPUT, nodeTaps: NODE_TAPS });
 
-// A hidden or covered page stalls the frames the SDK's main-thread sync rides on (root
-// CLAUDE.md); a failed repeat says so in its row instead of reading as an SDK finding.
+// On the SDK's own frame driver (`?frameDriver=window`) a hidden page stalls the frames the
+// main-thread sync rides on; a covered-but-visible window or a blocked main thread stalls them on
+// any driver (root CLAUDE.md). A failed repeat says so in its row instead of reading as an SDK
+// finding; a watch that saw under two frames in a repeat longer than a second is a stall too.
 let hiddenEvents = 0;
 document.addEventListener("visibilitychange", () => { if (document.visibilityState !== "visible") hiddenEvents++; });
 const FRAME_STALL_MS = 1000;
-function attributeHidden(hiddenBefore: number, frameWatch: FrameWatch): string {
+function attributeHidden(hiddenBefore: number, frameWatch: FrameWatch, startedAtMs: number): string {
   const hidden = hiddenEvents > hiddenBefore || document.visibilityState !== "visible";
   const gaps = frameWatch.stop();
-  const stalled = gaps.maxGapMs !== null && gaps.maxGapMs > FRAME_STALL_MS;
+  const elapsedMs = performance.now() - startedAtMs;
+  const noFrames = gaps.maxGapMs === null && elapsedMs > FRAME_STALL_MS;
+  const stalled = noFrames || (gaps.maxGapMs !== null && gaps.maxGapMs > FRAME_STALL_MS);
+  const gapText = noFrames ? `no two frames in ${elapsedMs.toFixed(0)} ms` : `longest gap ${(gaps.maxGapMs ?? 0).toFixed(0)} ms`;
   return (hidden ? " [the page was hidden during this repeat — not an SDK finding]" : "")
-    + (stalled ? ` [animation frames stalled: longest gap ${(gaps.maxGapMs as number).toFixed(0)} ms — a covered or hidden window, not an SDK finding]` : "");
+    + (stalled ? ` [animation frames stalled: ${gapText} — a covered or hidden window, not an SDK finding]` : "");
 }
 
 type ProbeRow = { label: string; value: string };
@@ -731,6 +736,7 @@ async function runAudit(
         const hiddenBefore = hiddenEvents;
         const frameWatch = new FrameWatch();
         frameWatch.start();
+        const repeatStartedAt = performance.now();
         try {
           result = await runRepeatWithDeadline(
             (token) => runCellRepeat({
@@ -751,7 +757,7 @@ async function runAudit(
             label
           );
         } catch (err) {
-          errorMessage = `${stage}: ${err instanceof Error ? err.message : String(err)}` + attributeHidden(hiddenBefore, frameWatch);
+          errorMessage = `${stage}: ${err instanceof Error ? err.message : String(err)}` + attributeHidden(hiddenBefore, frameWatch, repeatStartedAt);
           console.error(`[recording-alignment-audit] cell ${label} failed: ${errorMessage}`);
         }
         frameWatch.stop();
@@ -1644,6 +1650,7 @@ async function runMultitrackAudit(
         const hiddenBefore = hiddenEvents;
         const frameWatch = new FrameWatch();
         frameWatch.start();
+        const repeatStartedAt = performance.now();
         lastMultitrackFinalizeProbes = null;
         try {
           result = await runRepeatWithDeadline(
@@ -1663,7 +1670,7 @@ async function runMultitrackAudit(
             label
           );
         } catch (err) {
-          errorMessage = `${stage}: ${err instanceof Error ? err.message : String(err)}` + attributeHidden(hiddenBefore, frameWatch);
+          errorMessage = `${stage}: ${err instanceof Error ? err.message : String(err)}` + attributeHidden(hiddenBefore, frameWatch, repeatStartedAt);
           console.error(`[recording-alignment-audit] multitrack cell ${label} failed: ${errorMessage}`);
         }
         frameWatch.stop();

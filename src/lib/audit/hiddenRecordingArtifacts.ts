@@ -1,8 +1,8 @@
 /**
  * What a run of the hidden-page recording page persists: one row per run (two takes), uploaded
  * to the dev server's `/__verify` sink (which writes `.verify-output/`) as
- * `hiddenrec-summary-<runToken>.json`. No SDK import here: the audit table scripts load their
- * summaries under Node, where the SDK's dist does not resolve.
+ * `hiddenrec-summary-<runToken>.json`. No SDK import here, so a Node script can load a summary
+ * through `parseHiddenRecordingSummary` where the SDK's dist does not resolve.
  */
 import type { PositionSample, TakeFigures, TakeVerdict } from "./hiddenRecordingVerdict";
 

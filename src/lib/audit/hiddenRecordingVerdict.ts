@@ -9,13 +9,17 @@
  *  late, which only adds; the beats say whether the content is whole. */
 export const DURATION_TOLERANCE_MS = 50;
 
+/** An interruption shorter than this tested nothing (an alert dismissed at once, a hand that
+ *  flicked): the row reads `not-hidden` whatever the interrupt. */
+export const MIN_HIDDEN_SPAN_MS = 1000;
+
 export interface PositionSample {
   atMs: number;
   positionPpqn: number;
   recording: boolean;
 }
 
-/** The longest span between consecutive samples taken while recording with the position unchanged. */
+/** The longest run of samples, all taken while recording, over which the position did not change. */
 export function positionFrozenMs(samples: readonly PositionSample[]): number {
   let longest = 0;
   let runStart: number | null = null;
@@ -54,13 +58,15 @@ export interface TakeFigures {
   beatsMissing: number;
   medianBeatErrorMs: number | null;
   alignedToleranceMs: number;
+  /** Why the file never reached `loaded`: the loader's error reason or the wait's timeout message. */
+  finalizeReason: string | null;
 }
 
 export type TakeVerdict = "intact" | "not-finalized" | "audio-damaged" | "session-stuck";
 
 export function classifyTake(f: TakeFigures): { verdict: TakeVerdict; detail: string } {
   if (!f.appeared) return { verdict: "not-finalized", detail: "no take appeared" };
-  if (!f.finalized) return { verdict: "not-finalized", detail: "the take's file never finished loading" };
+  if (!f.finalized) return { verdict: "not-finalized", detail: `the take's file never finished loading${f.finalizeReason === null ? "" : `: ${f.finalizeReason}`}` };
   if (f.beatsMissing > 0) return { verdict: "audio-damaged", detail: `${f.beatsMissing} beats missing of ${f.beatsMatched + f.beatsMissing}` };
   if (f.regionDurationSec === null) return { verdict: "audio-damaged", detail: "no region length" };
   const offMs = (f.regionDurationSec - f.expectedDurationSec) * 1000;
@@ -84,7 +90,8 @@ export interface RowInput {
 
 export function classifyRow(input: RowInput): { take1: TakeVerdict | "not-hidden"; take2: TakeVerdict | null; detail: string } {
   const first = classifyTake(input.take1);
-  const take1: TakeVerdict | "not-hidden" = input.interrupt === "cover" && input.hiddenSpanMs === null ? "not-hidden" : first.verdict;
+  const tooShort = input.hiddenSpanMs === null || input.hiddenSpanMs < MIN_HIDDEN_SPAN_MS;
+  const take1: TakeVerdict | "not-hidden" = tooShort ? "not-hidden" : first.verdict;
   let take2: TakeVerdict | null = null;
   let second = "";
   if (!input.take2Started) {
@@ -95,8 +102,11 @@ export function classifyRow(input: RowInput): { take1: TakeVerdict | "not-hidden
     take2 = c.verdict;
     second = c.detail;
   }
+  const why = input.hiddenSpanMs === null
+    ? (input.interrupt === "cover" ? "the page never became hidden" : "the page was never blocked")
+    : `interrupted for only ${input.hiddenSpanMs.toFixed(0)} ms, under the ${MIN_HIDDEN_SPAN_MS} ms floor`;
   const detail = take1 === "not-hidden"
-    ? `the page never became hidden; take 1 on its own: ${first.verdict} (${first.detail}); take 2: ${second}`
+    ? `${why}; take 1 on its own: ${first.verdict} (${first.detail}); take 2: ${second}`
     : `take 1: ${first.detail}; take 2: ${second}`;
   return { take1, take2, detail };
 }

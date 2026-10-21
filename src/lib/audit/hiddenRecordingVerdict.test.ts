@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { classifyRow, classifyTake, frameBlockedMs, positionFrozenMs, syncResumeMs, type TakeFigures } from "./hiddenRecordingVerdict";
+import { classifyRow, classifyTake, frameBlockedMs, MIN_HIDDEN_SPAN_MS, positionFrozenMs, syncResumeMs, type TakeFigures } from "./hiddenRecordingVerdict";
 
 const good: TakeFigures = {
   appeared: true, finalized: true, finalizeMs: 120, regionDurationSec: 15.75, expectedDurationSec: 15.75,
-  beatsMatched: 31, beatsMissing: 0, medianBeatErrorMs: 1.1, alignedToleranceMs: 3,
+  beatsMatched: 31, beatsMissing: 0, medianBeatErrorMs: 1.1, alignedToleranceMs: 3, finalizeReason: null,
 };
 const s = (atMs: number, positionPpqn: number, recording = true) => ({ atMs, positionPpqn, recording });
 
@@ -24,6 +24,7 @@ describe("classifyTake", () => {
     expect(classifyTake(good).verdict).toBe("intact");
     expect(classifyTake({ ...good, appeared: false, finalized: false })).toEqual({ verdict: "not-finalized", detail: "no take appeared" });
     expect(classifyTake({ ...good, finalized: false }).verdict).toBe("not-finalized");
+    expect(classifyTake({ ...good, finalized: false, finalizeReason: "decode failed: EncodingError" }).detail).toBe("the take's file never finished loading: decode failed: EncodingError");
     expect(classifyTake({ ...good, beatsMissing: 3 }).verdict).toBe("audio-damaged");
     expect(classifyTake({ ...good, regionDurationSec: 15.60 }).verdict).toBe("audio-damaged");
     expect(classifyTake({ ...good, regionDurationSec: 15.71 }).verdict).toBe("intact");
@@ -33,9 +34,13 @@ describe("classifyTake", () => {
 });
 
 describe("classifyRow", () => {
-  it("reads not-hidden for a cover run that never hid, and session-stuck for a second take that never started", () => {
+  it("reads not-hidden for a run that never hid or blocked, or did so under the floor, and session-stuck for a second take that never started", () => {
     expect(classifyRow({ interrupt: "cover", hiddenSpanMs: null, take1: good, take2: good, take2Started: true }).take1).toBe("not-hidden");
-    expect(classifyRow({ interrupt: "modal", hiddenSpanMs: null, take1: good, take2: good, take2Started: true }).take1).toBe("intact");
+    expect(classifyRow({ interrupt: "modal", hiddenSpanMs: null, take1: good, take2: good, take2Started: true }).take1).toBe("not-hidden");
+    const flick = classifyRow({ interrupt: "modal", hiddenSpanMs: MIN_HIDDEN_SPAN_MS - 1, take1: good, take2: good, take2Started: true });
+    expect(flick.take1).toBe("not-hidden");
+    expect(flick.detail).toContain("999 ms");
+    expect(classifyRow({ interrupt: "cover", hiddenSpanMs: MIN_HIDDEN_SPAN_MS, take1: good, take2: good, take2Started: true }).take1).toBe("intact");
     expect(classifyRow({ interrupt: "cover", hiddenSpanMs: 5000, take1: good, take2: null, take2Started: false }).take2).toBe("session-stuck");
   });
 });

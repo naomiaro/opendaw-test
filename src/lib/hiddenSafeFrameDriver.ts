@@ -3,8 +3,10 @@
  * owner whose `requestAnimationFrame` is the real one while the page is visible and a worker
  * tick while the page is hidden and the transport active. Chrome stops animation frames for a
  * hidden document and a fully covered window; the engine's main-thread sync (the position,
- * the recording flags, take management) runs on them, so without this a take begun or
- * stopped behind another tab or window never finalized. The rules live in `frameScheduler.ts`.
+ * the recording flags, take management) runs on them, so without this the page's view of the
+ * engine stands still until the page is visible again: a take begun or stopped behind another
+ * tab finalizes only when the page returns, and a stop driven from a position wait lands late.
+ * The rules live in `frameScheduler.ts`.
  */
 import { createFrameScheduler } from "./frameScheduler";
 import { createWorkerTicker, type WorkerTicker } from "./workerTicker";
@@ -19,7 +21,7 @@ export interface HiddenSafeFrameDriver {
   cancelAnimationFrame(id: number): void;
   /** The engine's playing / recording / counting-in flags changed. */
   activityChanged(): void;
-  /** A transport request was issued (play, stop, record, position, clip scheduling). */
+  /** A transport request was issued (play, stop, record, position, clip play and stop). */
   transportRequested(): void;
   terminate(): void;
 }
