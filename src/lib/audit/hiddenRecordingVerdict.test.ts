@@ -27,6 +27,7 @@ describe("classifyTake", () => {
     expect(classifyTake({ ...good, beatsMissing: 3 }).verdict).toBe("audio-damaged");
     expect(classifyTake({ ...good, regionDurationSec: 15.60 }).verdict).toBe("audio-damaged");
     expect(classifyTake({ ...good, regionDurationSec: 15.71 }).verdict).toBe("intact");
+    expect(classifyTake({ ...good, regionDurationSec: 15.90 }).verdict).toBe("intact"); // a stop that landed late only adds
     expect(classifyTake({ ...good, medianBeatErrorMs: 4 }).verdict).toBe("audio-damaged");
   });
 });

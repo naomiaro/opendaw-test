@@ -4,7 +4,9 @@
  * Register: `debug/2026-10-21-hidden-page-recording/note.md`.
  */
 
-/** The stop request is issued at a position read up to a frame old and lands on a quantum. */
+/** A take may be SHORT of its expected length by at most this: the stop request is issued at a
+ *  position read up to a frame old and lands on a quantum. A longer take is a stop that landed
+ *  late, which only adds; the beats say whether the content is whole. */
 export const DURATION_TOLERANCE_MS = 50;
 
 export interface PositionSample {
@@ -62,7 +64,7 @@ export function classifyTake(f: TakeFigures): { verdict: TakeVerdict; detail: st
   if (f.beatsMissing > 0) return { verdict: "audio-damaged", detail: `${f.beatsMissing} beats missing of ${f.beatsMatched + f.beatsMissing}` };
   if (f.regionDurationSec === null) return { verdict: "audio-damaged", detail: "no region length" };
   const offMs = (f.regionDurationSec - f.expectedDurationSec) * 1000;
-  if (Math.abs(offMs) > DURATION_TOLERANCE_MS) {
+  if (offMs < -DURATION_TOLERANCE_MS) {
     return { verdict: "audio-damaged", detail: `region ${f.regionDurationSec.toFixed(3)} s, expected ${f.expectedDurationSec.toFixed(3)} s (${offMs >= 0 ? "+" : ""}${offMs.toFixed(1)} ms)` };
   }
   if (f.medianBeatErrorMs === null) return { verdict: "audio-damaged", detail: "no beat matched" };

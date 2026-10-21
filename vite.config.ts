@@ -188,6 +188,7 @@ export default defineConfig(({command}) => ({
                 timePitchStartPositionDebug: resolve(__dirname, "time-pitch-start-position-debug-demo.html"),
                 audioVerifyDebug: resolve(__dirname, "audio-verify-debug.html"),
                 recordingFinalizeDebug: resolve(__dirname, "recording-finalize-debug-demo.html"),
+                recordingHiddenWindowDebug: resolve(__dirname, "recording-hidden-window-debug-demo.html"),
                 wasmEnsureReadySecondContextDebug: resolve(__dirname, "wasm-ensure-ready-second-context-debug-demo.html"),
                 metronomeStaleClickDebug: resolve(__dirname, "metronome-stale-click-debug-demo.html"),
                 automationSimplifierDebug: resolve(__dirname, "automation-simplifier-debug-demo.html"),
