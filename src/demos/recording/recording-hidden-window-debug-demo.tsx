@@ -4,9 +4,11 @@
 //
 // One Tape records the recording harness's synthetic loopback (a click per beat scheduled on
 // the audio clock) for eight bars. At the chosen moment the page is interrupted: `cover` asks
-// for the page to be hidden (another tab or window; the page measures the real
-// visibilitychange and its frame gaps) and `modal` opens the page's own alert(), which blocks
-// the main thread outright. After Stop the take is read with the harness's reader and judged;
+// for the page to be hidden by a hand (another tab in front, or another app's window fully
+// over it) and waits until it is, measuring the real visibilitychange and its frame gaps —
+// nothing the page can do hides itself: a second tab or a popup of its own, even one larger
+// than its window, left Chrome reporting it visible — and `modal` opens the page's own
+// alert(), which blocks the main thread outright. After Stop the take is read with the harness's reader and judged;
 // a second, uninterrupted take then shows whether the session still records. The frame driver
 // is the before/after: `window` is the SDK's own animation frame, `hidden-safe` the demos'
 // default, a worker tick while the page is hidden and the transport active. Register:
@@ -48,6 +50,8 @@ import {
 const TAKE_BARS = 8;
 const HIDE_AT_PPQN = BAR_PPQN;
 const SAMPLE_INTERVAL_MS = 100;
+/** How long a `cover` run waits for the hand before the start or stop moment goes ahead unhidden. */
+const HIDE_WAIT_DEADLINE_MS = 120_000;
 const REGISTER_URL = "https://github.com/naomiaro/opendaw-test/blob/main/debug/2026-10-21-hidden-page-recording/note.md";
 
 interface Params {
@@ -175,11 +179,15 @@ async function runTake({ ctx, params, label, interrupt, setState, setHideNow }: 
     }
   };
   document.addEventListener("visibilitychange", onVisibility);
+  if (document.visibilityState === "hidden") hiddenAtMs = 0;
   const sampler = createWorkerTicker(SAMPLE_INTERVAL_MS);
   const samplerSub = sampler.subscribe(() => {
     samples.push({ atMs: performance.now() - t0, positionPpqn: engine.position.getValue(), recording: engine.isRecording.getValue() });
   });
-  const doInterrupt = (): void => {
+  // `modal`: the page's own alert at the moment. `cover`: the page asks to be hidden and WAITS
+  // until it is (a hide within a frame of a request is not something a person can do): before
+  // the record request, at bar 1 with the take running, or a bar before the stop request.
+  const doInterrupt = async (): Promise<void> => {
     if (!interrupt) return;
     if (params.interrupt === "modal") {
       setState("hidden");
@@ -188,9 +196,14 @@ async function runTake({ ctx, params, label, interrupt, setState, setHideNow }: 
       hiddenAtMs = before;
       visibleAtMs = performance.now() - t0;
       setState("visible");
-    } else {
-      setState("waiting:hide");
-      setHideNow(true);
+      return;
+    }
+    setState("waiting:hide");
+    setHideNow(true);
+    // A hide that already happened since the take started counts: the hand may be early.
+    const deadline = performance.now() + HIDE_WAIT_DEADLINE_MS;
+    while (hiddenAtMs === null && document.visibilityState !== "hidden" && performance.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 50));
     }
   };
 
@@ -208,14 +221,21 @@ async function runTake({ ctx, params, label, interrupt, setState, setHideNow }: 
     engine.setPosition(0);
     await waitForPositionSettled(project, 0, 30_000);
     started = true;
+    // The hide wait comes first for a `start` cover: the reference clicks that anchor the buffer run
+    // about a minute, and a hand that takes longer than that would leave the take without an anchor.
+    if (params.hideAt === "start" && params.interrupt === "cover") await doInterrupt();
     schedule = buildReferenceSchedule(audioContext.currentTime + 0.2, 120, 0.25, 0.005);
     loopback.scheduleReferenceClicks(schedule.times);
     recordRequestContextTime = audioContext.currentTime;
     project.startRecording(false);
-    if (params.hideAt === "start") doInterrupt();
+    if (params.hideAt === "start" && params.interrupt === "modal") await doInterrupt();
     if (params.hideAt === "mid") {
       await waitForPosition(project, HIDE_AT_PPQN, 20_000);
-      doInterrupt();
+      await doInterrupt();
+    }
+    if (params.hideAt === "stop" && params.interrupt === "cover") {
+      await waitForPosition(project, (TAKE_BARS - 1) * BAR_PPQN, 90_000);
+      await doInterrupt();
     }
     await waitForPosition(project, TAKE_BARS * BAR_PPQN - STOP_LEAD_PPQN, 90_000);
     setState("stopping");
@@ -223,7 +243,7 @@ async function runTake({ ctx, params, label, interrupt, setState, setHideNow }: 
     stopRequestContextTime = audioContext.currentTime;
     const stopAt = performance.now();
     engine.stopRecording();
-    if (params.hideAt === "stop") doInterrupt();
+    if (params.hideAt === "stop" && params.interrupt === "modal") await doInterrupt();
 
     setState("finalizing");
     let take = takeBeforeStop;
@@ -430,7 +450,7 @@ function App() {
             <Text size="1" color="gray" style={{ whiteSpace: "pre-wrap", fontFamily: "monospace" }}>
 {`?driver=window|hidden-safe   the SDK's own animation frame, or the demos' default: a worker tick while hidden and the transport active
 ?interrupt=cover|modal       hidden by another tab or window (measured on visibilitychange), or the page's own alert() (blocks the main thread)
-?hideAt=start|mid|stop       the interruption right after the record request, at bar 1, or right after the stop request
+?hideAt=start|mid|stop       the interruption before the record request, at bar 1, or a bar before the stop request (the page waits for your hide)
 ?hiddenSeconds=<n>           what the prompt asks for (default 5); the page measures the actual span
 Verdicts: intact | not-finalized | audio-damaged | session-stuck (take 2 never started) | not-hidden (a cover run that never hid: judged nothing)`}
             </Text>
