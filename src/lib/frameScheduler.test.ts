@@ -89,3 +89,20 @@ describe("createFrameScheduler", () => {
     expect(seen).toBeCloseTo(16.7, 6);
   });
 });
+
+describe("createThrottledFrames", () => {
+  it("delivers every Nth underlying frame with that frame's timestamp, and cancels the pending one", async () => {
+    const { createThrottledFrames } = await import("./frameScheduler");
+    const frames: Array<(t: number) => void> = [];
+    const t = createThrottledFrames(3, { requestFrame: (cb) => { frames.push(cb); return frames.length; }, cancelFrame: () => { frames.length = 0; } });
+    const seen: number[] = [];
+    const id = t.requestAnimationFrame((ts) => seen.push(ts));
+    for (let i = 1; i <= 3; i++) { const cb = frames.shift(); if (cb) cb(i * 8.33); }
+    expect(seen.length).toBe(1);
+    expect(seen[0]).toBeCloseTo(24.99, 6);
+    t.requestAnimationFrame((ts) => seen.push(ts));
+    t.cancelAnimationFrame(id + 1);
+    for (let i = 4; i <= 6; i++) { const cb = frames.shift(); if (cb) cb(i * 8.33); }
+    expect(seen.length).toBe(1);
+  });
+});

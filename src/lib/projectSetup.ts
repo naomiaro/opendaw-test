@@ -18,6 +18,7 @@ import {
 import type { SoundfontService } from "@opendaw/studio-core";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { createHiddenSafeFrameDriver } from "./hiddenSafeFrameDriver";
+import { createThrottledFrames } from "./frameScheduler";
 import { testFeatures } from "../features";
 import { installWasmEngine, ensureWasmReady } from "./wasmEngine";
 import { withDeadline } from "./deadline";
@@ -62,20 +63,31 @@ export interface ProjectSetupOptions {
    * What drives the SDK's `AnimationFrame`. `"hidden-safe"` (the default) is the real frame
    * while the page is visible and a worker tick while it is hidden and the transport active,
    * so the engine's main-thread sync keeps running behind another tab or window;
-   * `"window"` is the SDK's own path. Absent, the page URL's `?frameDriver=` decides, so any
-   * demo and any standing sweep can be run on the SDK's own frame path.
+   * `"window"` is the SDK's own path; `"throttled"` delivers every Nth real frame
+   * (`?frameEvery=N`, default 2), for a sweep that wants a slower engine sync than the display
+   * gives. Absent, the page URL's `?frameDriver=` decides, so any demo and any standing sweep
+   * can be run on the SDK's own frame path or a slowed one.
    */
   frameDriver?: FrameDriverKind;
 }
 
-export type FrameDriverKind = "window" | "hidden-safe";
+export type FrameDriverKind = "window" | "hidden-safe" | "throttled";
 
 function resolveFrameDriver(option: FrameDriverKind | undefined): FrameDriverKind {
   if (option !== undefined) return option;
   const param = new URLSearchParams(window.location.search).get("frameDriver");
-  if (param === "window" || param === "hidden-safe") return param;
-  if (param !== null) throw new Error(`invalid ?frameDriver= "${param}" — window or hidden-safe`);
+  if (param === "window" || param === "hidden-safe" || param === "throttled") return param;
+  if (param !== null) throw new Error(`invalid ?frameDriver= "${param}" — window, hidden-safe or throttled`);
   return "hidden-safe";
+}
+
+/** `?frameEvery=N` for the throttled driver: every Nth real frame; 2 when absent. */
+function resolveFrameEvery(): number {
+  const param = new URLSearchParams(window.location.search).get("frameEvery");
+  if (param === null) return 2;
+  const n = Number(param);
+  if (!Number.isInteger(n) || n < 1) throw new Error(`invalid ?frameEvery= "${param}" — an integer of 1 or more`);
+  return n;
 }
 
 /**
@@ -141,7 +153,11 @@ export async function initializeOpenDAW(options: ProjectSetupOptions = {}): Prom
     ? createHiddenSafeFrameDriver(() => activeEngine !== null
       && (activeEngine.isPlaying.getValue() || activeEngine.isRecording.getValue() || activeEngine.isCountingIn.getValue()))
     : null;
-  AnimationFrame.start(driver === null ? window : (driver as unknown as Window));
+  const owner: unknown = driver !== null ? driver
+    : frameDriver === "throttled"
+      ? createThrottledFrames(resolveFrameEvery(), { requestFrame: (cb) => window.requestAnimationFrame(cb), cancelFrame: (id) => window.cancelAnimationFrame(id) })
+      : window;
+  AnimationFrame.start(owner as Window);
   console.debug("AnimationFrame started!");
 
   onStatusUpdate?.("Booting...");

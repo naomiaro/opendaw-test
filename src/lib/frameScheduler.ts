@@ -98,3 +98,42 @@ export function createFrameScheduler(deps: FrameSchedulerDeps): FrameScheduler {
     },
   };
 }
+
+/**
+ * Every Nth real frame, for a sweep that wants a slower engine sync than the display gives: the
+ * SDK's loop already drops frames under 16 ms apart, so a faster display changes nothing, and
+ * the question worth asking is what a slower one does. `?frameDriver=throttled&frameEvery=N`.
+ */
+export function createThrottledFrames(
+  every: number,
+  frames: { requestFrame(cb: (t: number) => void): number; cancelFrame(id: number): void },
+): { requestAnimationFrame(cb: (t: number) => void): number; cancelAnimationFrame(id: number): void } {
+  const n = Math.max(1, Math.floor(every));
+  const pending = new Map<number, { cb: (t: number) => void; underlying: number; seen: number }>();
+  let nextId = 1;
+  const arm = (id: number): void => {
+    const entry = pending.get(id);
+    if (entry === undefined) return;
+    entry.underlying = frames.requestFrame((t) => {
+      if (pending.get(id) !== entry) return;
+      entry.seen += 1;
+      if (entry.seen < n) { arm(id); return; }
+      pending.delete(id);
+      entry.cb(t);
+    });
+  };
+  return {
+    requestAnimationFrame(cb) {
+      const id = nextId++;
+      pending.set(id, { cb, underlying: -1, seen: 0 });
+      arm(id);
+      return id;
+    },
+    cancelAnimationFrame(id) {
+      const entry = pending.get(id);
+      if (entry === undefined) return;
+      frames.cancelFrame(entry.underlying);
+      pending.delete(id);
+    },
+  };
+}
