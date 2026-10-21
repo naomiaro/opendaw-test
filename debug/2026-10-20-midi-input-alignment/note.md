@@ -283,11 +283,15 @@ configuration card prints what the formula yields on the machine it runs on.
 
 ### 120 Hz arm
 
-_Not yet run. The display (Liquid Retina XDR) supports 120 Hz; the sweeps above ran at
-60 Hz. Set System Settings → Displays → Refresh Rate to 120 Hertz and re-run
-`?scenario=all&bpm=120`; the formula predicts a median near +40 ms, the difference to the
-60 Hz rows being the frame-stale term, and the band follows the row's own frame interval,
-so the cells read the band if the mechanism holds and `investigate` if it does not._
+_Closed 2026-10-21 without a 120 Hz run: the SDK's frame loop (`@opendaw/lib-dom`,
+`frames.ts`) accepts no callback within 16 ms of the last accepted one, so with the display
+at 120 Hz every sweep page still measured 16.7 ms between the frames the SDK saw (today's
+rows: `frameIntervalMs` 16.65 … 19.04 ms), and a faster display cannot move the frame-stale
+term. The arm that can is a SLOWER sync: the demos' throttled frame driver
+(`?frameDriver=throttled&frameEvery=N`) ran this cell at 60, 30 and 15 Hz on 2026-10-21 —
+medians +32.81, +16.67 and −16.41 ms against the formula's +32.2, +15.6 and −17.7, every cell
+on the band computed from its own frame interval, the jitter collapsing as the interval grows.
+Rows and reading in `debug/2026-10-21-hidden-page-recording/note.md`, "Slow frames"._
 
 ### Open items
 

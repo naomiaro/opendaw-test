@@ -688,6 +688,15 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   output latency, frame interval and sample rate, so it holds on any device, and a median
   that does not track its formula is the finding. Reading recipe and what each scenario provokes:
   `src/demos/midi/CLAUDE.md`.
+- After SDK upgrades, also run the hidden-page recording check:
+  `recording-hidden-window-debug-demo.html?driver=hidden-safe&interrupt=cover&hideAt=start`
+  (a real click on Run; when the page asks, hide Chrome by hand: Cmd+H with Chrome frontmost,
+  count five, click Chrome in the Dock — no tooling hides a page: a second tab, a Playwright
+  page brought to front, a protocol minimize and a popup of the page's own all leave it
+  `visible`), expect both takes `intact` and a longest frame gap under a second; then the three
+  `modal` rows (`?interrupt=modal&hideAt=start|mid|stop`, the alert dismissed after five
+  seconds through the Playwright tooling's dialog handler), expect `intact`. Register
+  `debug/2026-10-21-hidden-page-recording/note.md`.
 - After SDK upgrades, also run the MIDI effect placement audit:
   `midi-effect-placement-audit-debug-demo.html?device=all` then `?rate=44100` — a real click on
   Run, deterministic, no hardware, about fifteen seconds; expect every row `as-predicted` (a
@@ -879,7 +888,16 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
   `requestAnimationFrame`, which freezes OpenDAW's entire main-thread sync
   (`SyncStream reader.tryRead()`, position/isPlaying observables, RecordAudio take
   management). The engine keeps running on the audio thread; the main thread just never
-  observes it. `resize_window` does NOT reliably unhide a fully occluded window
+  observes it. **The demos' frame driver now pumps the SDK's `AnimationFrame` from a worker
+  tick while the document is hidden and the transport is playing, recording or counting in**
+  (`src/lib/hiddenSafeFrameDriver.ts`, installed by `initializeOpenDAW`; rules and tests in
+  `src/lib/frameScheduler.ts`), so a frozen sync on a hidden page now means the page ran with
+  `?frameDriver=window` (the SDK's own path, on any demo URL, which is how a sweep checks it
+  stays good) or the driver broke; `?frameDriver=throttled&frameEvery=N` delivers every Nth
+  real frame, for a slower engine sync than the display gives. A hidden page with the
+  transport idle stays idle. The recorder itself survives a hidden page and a blocked main
+  thread at every moment measured (`debug/2026-10-21-hidden-page-recording/note.md`); what
+  hiding freezes on the SDK's path is the page's VIEW, and a harness deadline acting on it. `resize_window` does NOT reliably unhide a fully occluded window
   (verified: visibility stayed hidden after resize + screenshot). Audio and
   setInterval keep running while hidden — analyser RMS taps still measure fine;
   move position/isPlaying/UI-state verification to the Playwright browser (rAF
