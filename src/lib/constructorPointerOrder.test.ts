@@ -53,6 +53,8 @@ describe("an audio unit re-routed in the transaction that creates it", () => {
       })
       .unwrap("no unit");
     const uuid = unit.address.uuid;
+    expect(target(unit, bus)).toBe("bus");
+    expect(bus.input.pointerHub.size()).toBe(busCount + 1);
     expect(editing.undo()).toBe(true);
     expect(skeleton.boxGraph.findBox(uuid).isEmpty()).toBe(true);
     expect(bus.input.pointerHub.size()).toBe(busCount);

@@ -57,7 +57,7 @@ import {HRClock} from "../../core-processors/src/HRClock"
 import {PeakBroadcaster} from "../../core-processors/src/PeakBroadcaster"
 ```
 
-`HRClock` exists because an AudioWorklet has no `performance.now()` and cannot block: a Worker publishes timestamps through a `SharedArrayBuffer`, and the clock only accepts a measurement when the start and end responses carry consecutive counters, so a torn pair is dropped rather than reported as a spike.
+`HRClock` exists because an AudioWorklet has no `performance.now()` and cannot block: a Worker spins `performance.now()` into one shared float while the measurement is leased, and the clock reads it before and after the pass; a start read of 0 (the worker not running) yields no measurement rather than a spike.
 
 The main thread never hardcodes that name. `EngineWorklet` (`packages/studio/core/src/EngineWorklet.ts`) asks `EngineVariant.current()` for it:
 
@@ -134,7 +134,7 @@ Three behaviours to notice:
 
 `#render()` (`processor.ts:331`) does, in order:
 
-1. If DSP-load measurement is on, read the previous quantum's validated elapsed time from `HRClock`.
+1. If DSP-load measurement is on, read the clock (`HRClock.start()`); `end()` after the pass gives the elapsed time, written to the perf buffer when positive.
 2. Stage live input channels into the engine's monitor-input buffer, if any unit is in effects-monitoring mode.
 3. **`engine.render()`** — the entire audio computation, one call.
 4. Copy the engine's monitor outputs onto the worklet's second output (the monitoring return).

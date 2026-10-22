@@ -94,8 +94,8 @@ engine reads it live via a preference-path subscription, and `EngineWorklet` lea
 `HRClockWorker` for as long as it is on (a worker spinning `performance.now()` into a shared
 float, one core busy; with fewer than four hardware threads the lease is empty and the meter
 reads nothing). Read the
-result from `project.engine.cpuLoad` (`ObservableValue<number>` — already a 0–100 integer
-percentage, do NOT multiply by 100; swap-safe on the facade) and
+result from `project.engine.cpuLoad` (`ObservableValue<number>` — already an integer
+percent of the block budget, above 100 on an overrun; do NOT multiply by 100; swap-safe on the facade) and
 `project.engine.perfBuffer`. Dropout counts come from the **browser**: `audioContext.playbackStats.underrunEvents`
 (Chromium-only — guard with a feature check); the SDK's `BufferUnderrunDetector` exposes no public
 getter and logs nothing to the console.

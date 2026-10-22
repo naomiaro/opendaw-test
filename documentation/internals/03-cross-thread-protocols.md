@@ -479,7 +479,7 @@ Today only slot `[0]` is used. The buffer is sized for future flags; any new one
 
 ## HRClock — high-resolution timing from a spinning clock worker
 
-The audio thread cannot call `performance.now()` reliably (worklet scope) and certainly cannot sleep. To measure how long a `render()` takes — for the DSP load meter — openDAW runs a dedicated worker that does nothing but write `performance.now()` into one shared float, and the audio thread reads that float at the start and the end of each block.
+The audio thread cannot call `performance.now()` reliably (worklet scope) and certainly cannot sleep. To measure how long the worklet's pass takes (`render()` plus the analysers, meters and sync broadcasts after it) — for the DSP load meter — openDAW runs a dedicated worker that does nothing but write `performance.now()` into one shared float, and the audio thread reads that float at the start and the end of each block.
 
 ### The worker
 
@@ -504,7 +504,7 @@ end(): number {return this.#start === 0.0 ? 0.0 : this.#now[0] - this.#start}
 
 The processor calls `start()` before `render()` and `end()` after; an elapsed of 0 (the worker not running, or stalled) is not written, so the perf buffer only advances on a real measurement. The audio thread never blocks and never notifies.
 
-The earlier design — a worker blocking on `Atomics.wait()` with request and response counters — dropped about half of all blocks (and the slowest ones most), was off by up to a millisecond, and cost the audio thread two notifies per block.
+The earlier design — a worker blocking on `Atomics.wait()` with request and response counters — was replaced upstream, whose measurement found it dropping about half of all blocks (and the slowest ones most), off by up to a millisecond, and costing the audio thread two notifies per block.
 
 ## RingBuffer — bulk audio transfer
 

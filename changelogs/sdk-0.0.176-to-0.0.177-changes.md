@@ -52,11 +52,11 @@ handful of fixes, are what matters for this repo:
    `ApparatDeviceBox` and `SpielwerkDeviceBox` gain fields 14 `records` and 15 `buffers`;
    `ScriptDeclaration` parses `@collection` / `@field` / `@record`, `@buffer`, `@stream`
    (value / ring / fft), `@view`, `@window` and `[omit-default-ui]` on a `@param`;
-   `ScriptCompiler.Config` takes optional `records` / `buffers`, `wrap` gains an `enforce`
+   `ScriptCompiler.ScriptDeviceBox` takes optional `records` / `buffers` (`Config` is unchanged), `wrap` gains an `enforce`
    flag, `wrapView` wraps view code, `replace(audioContext, editing, deviceBox, source,
    create)` swaps a device for a fresh one in one undo step (#488: loading an example used to
-   hand the new parameter values to the old processor). The bridge resolves `this.data.<name>`
-   per block, binds `this.streams.<name>`, delivers `host.send` messages to `message()` before
+   hand the new parameter values to the old processor). The bridge replaces `this.data.<name>`
+   when a snapshot arrives between quanta (`dataChanged(name)` per changed collection or buffer), binds `this.streams.<name>`, delivers `host.send` messages to `message()` before
    the next `process()` (`afterRender` drops the queue of a device that did not render), and
    `Engine` / `EngineFacade` / `EngineWorklet` / the processor protocol gain
    `scriptMessage(uuid, message)`. `instantiateWasmEngine` returns `{engine, scriptBridges}`
@@ -70,8 +70,10 @@ handful of fixes, are what matters for this repo:
    index at delivery. **A saved script with a malformed `@collection`, `@stream` or `@buffer`
    line still loads** (a warning; compiling still refuses it).
 9. **OPFS stalls report themselves** — the OPFS worker warns `[OPFS] <op> '<path>' runs for
-   <n>s at '<step>'` when a lone operation holds for 5 s, and `Workers` wraps every OPFS call
-   with a 10 s "no answer from the worker" warning (and one when it finally answers).
+   <n>s at '<step>'` when the operation holding the path lock has held it for 5 s, `[OPFS] <op>
+   '<path>' waits <n>s for <holder op> held for <n>s at '<step>'` when a waiter has waited 2 s,
+   and `Workers` wraps every OPFS call with a 10 s "no answer from the worker" warning (and one
+   when it finally answers).
 
 Sub-package versions (installed): `studio-adapters` 0.3.9 (was 0.3.8), `studio-core` 0.2.11
 (0.2.10), `studio-core-wasm` 0.0.22 (0.0.21), `studio-boxes` 0.0.115 (0.0.114),
@@ -180,7 +182,7 @@ the demos never clip a seconds region against a musical one; the rule documented
   `parseWindows`; `ScriptTokenizer`, `ScriptTopLevel` (a script with a view keeps no
   top-level state), `ScriptEntryPoints`, `ScriptRecords`, `ScriptBuffers`,
   `ScriptViewLayout` (controls fill the free cells, overlaps shown red in the studio).
-  `ScriptCompiler`: `Config.records` / `Config.buffers`, `wrap(config, uuid, update,
+  `ScriptCompiler`: `ScriptDeviceBox.records` / `.buffers`, `wrap(config, uuid, update,
   userCode, enforce?)`, `wrapView(userCode)`, `replace(...)`; param and sample boxes keep
   their values when their lines are reordered (re-numbered, not recreated).
 - **Engine**: `abi` `host_script_data(handle, collection, ptr, records, fields)` (one

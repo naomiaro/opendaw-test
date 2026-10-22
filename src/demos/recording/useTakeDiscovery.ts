@@ -10,7 +10,7 @@ import type {
 import type { AudioRegionBox } from "@opendaw/studio-boxes";
 import type { RecordingTape } from "@/components/RecordingTapeCard";
 import type { TakeRegion, TakeIteration } from "./TakeTimeline";
-import { isLeadInTake, takeIterationNumber, takeNumberOf, trackedTakeBaselines } from "./takeLeadIn";
+import { takeIterationNumber, takeNumberOf, trackedTakeBaselines, withTakeRegion } from "./takeLeadIn";
 
 interface UseTakeDiscoveryOptions {
   project: Project | null;
@@ -142,36 +142,7 @@ export function useTakeDiscovery({
   // Insert a TakeRegion into the row of its recording pass
   const addTakeRegionToState = useCallback(
     (region: TakeRegion, iterationNumber: number) => {
-      setTakeIterations((prev) => {
-        // Skip a regionBox already tracked anywhere (re-subscribe delivers existing regions again)
-        if (prev.some((t) => t.regions.some((r) => r.regionBox === region.regionBox))) {
-          return prev;
-        }
-        const existing = prev.find((t) => t.takeNumber === iterationNumber);
-        if (existing) {
-          // Add region to existing row (multi-track: same pass, different tape)
-          const updatedRegions = [...existing.regions, region];
-          return prev.map((t) =>
-            t.takeNumber === iterationNumber
-              ? {
-                  ...t,
-                  regions: updatedRegions,
-                  isMuted: updatedRegions.every((r) => r.isMuted),
-                }
-              : t
-          );
-        }
-        // New row
-        const newIteration: TakeIteration = {
-          takeNumber: iterationNumber,
-          isLeadIn: isLeadInTake(region.positionPpqn, leadInBars),
-          regions: [region],
-          isMuted: region.isMuted,
-        };
-        return [...prev, newIteration].sort(
-          (a, b) => a.takeNumber - b.takeNumber
-        );
-      });
+      setTakeIterations((prev) => withTakeRegion(prev, region, iterationNumber, leadInBars));
     },
     [leadInBars]
   );

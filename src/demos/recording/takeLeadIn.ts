@@ -1,4 +1,5 @@
 import { PPQN } from "@opendaw/lib-dsp";
+import type { TakeIteration, TakeRegion } from "./TakeTimeline";
 
 /** One bar of 4/4 in pulses — the loop-recording demos lay their loop area out in these. */
 export const BAR_PPQN = PPQN.Quarter * 4;
@@ -52,4 +53,38 @@ export function trackedTakeBaselines(
 export function takeIterationNumber(takeNumber: number, baseline: number, rowsBefore: number): number | null {
   const ordinal = takeNumber - baseline;
   return ordinal > 0 ? rowsBefore + ordinal : null;
+}
+
+/**
+ * The take rows with one more region in them: a region already listed anywhere is left
+ * alone (a re-subscribe delivers existing regions again), a region of a row that exists
+ * joins it (multi-track: the same pass on another tape) and the row's mute is the AND of
+ * its regions, otherwise a new row is opened, flagged as the lead-in by its position, and
+ * the rows are kept in order.
+ */
+export function withTakeRegion(
+  rows: ReadonlyArray<TakeIteration>,
+  region: TakeRegion,
+  iterationNumber: number,
+  leadInBars: number
+): TakeIteration[] {
+  if (rows.some((t) => t.regions.some((r) => r.regionBox === region.regionBox))) {
+    return [...rows];
+  }
+  const existing = rows.find((t) => t.takeNumber === iterationNumber);
+  if (existing) {
+    const regions = [...existing.regions, region];
+    return rows.map((t) =>
+      t.takeNumber === iterationNumber
+        ? { ...t, regions, isMuted: regions.every((r) => r.isMuted) }
+        : t
+    );
+  }
+  const row: TakeIteration = {
+    takeNumber: iterationNumber,
+    isLeadIn: isLeadInTake(region.positionPpqn, leadInBars),
+    regions: [region],
+    isMuted: region.isMuted,
+  };
+  return [...rows, row].sort((a, b) => a.takeNumber - b.takeNumber);
 }

@@ -32,7 +32,7 @@ project.engine.preferences.settings.debug.dspLoadMeasurement = true;
 Then read the value at any time:
 
 ```typescript
-const load = project.engine.cpuLoad.getValue(); // already a percentage, 0–100
+const load = project.engine.cpuLoad.getValue(); // an integer percent of the block budget, above 100 on an overrun
 console.log(`DSP load: ${load}%`);
 ```
 

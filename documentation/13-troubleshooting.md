@@ -201,7 +201,7 @@ sampleLoader.subscribe(state => {
 
 ### Peaks file is corrupt
 
-A stalled OPFS operation reports itself: the worker warns `[OPFS] <operation> '<path>' runs for <n>s at '<step>'` when one lone operation holds for 5 s, and the page warns `[OPFS] <operation> '<path>' has no answer from the worker after <n>s` after 10 s (and again when it finally answers). The OPFS storage layer self-heals corrupt peaks ([Ch. 04 — Sample Loading internals](./internals/04-sample-loading.md#corruption-recovery)). If you see `peaks.bin is corrupted for ... regenerating` in the console, the recovery worked — the next load is fresh.
+A stalled OPFS operation reports itself: the worker warns `[OPFS] <operation> '<path>' runs for <n>s at '<step>'` once the operation holding a path has held it for 5 s, `[OPFS] <operation> '<path>' waits <n>s for <holder> held for <n>s at '<step>'` once a waiter has waited 2 s, and the page warns `[OPFS] <operation> '<path>' has no answer from the worker after <n>s` after 10 s (and again when it finally answers). The OPFS storage layer self-heals corrupt peaks ([Ch. 04 — Sample Loading internals](./internals/04-sample-loading.md#corruption-recovery)). If you see `peaks.bin is corrupted for ... regenerating` in the console, the recovery worked — the next load is fresh.
 
 ## "Export is silent or incomplete"
 
@@ -352,6 +352,6 @@ A short list of "have you considered" things that come up for advanced users:
 ## When all else fails
 
 - **`console.log` from the worklet ends up in `engineToClient.log()`** which routes to the main thread console. So `console.log("WORKLET", x)` inside a processor *does* show up.
-- **Open the system DSP-load meter** — `project.engine.preferences.settings.debug.dspLoadMeasurement = true` enables the HRClock-based meter (see [internals/01](./internals/01-engine-processor.md#further-reading)). If the load is consistently above 1.0, you're dropping audio.
+- **Open the system DSP-load meter** — `project.engine.preferences.settings.debug.dspLoadMeasurement = true` enables the HRClock-based meter (see [internals/01](./internals/01-engine-processor.md#further-reading)). If the load reads above 100 (an integer percent of the block budget), you're dropping audio.
 - **Reduce to a minimal repro.** Start from one of the smallest demos in [`src/demos/`](https://github.com/naomiaro/opendaw-test/tree/main/src/demos) and add complexity until the bug appears. If your problem reproduces in a demo-sized component, it's probably an SDK issue; file a bug. If it doesn't, the issue is somewhere in your app code.
 - **Read the relevant chapter's "Common Issues" section.** Each major chapter (Ch. 02, 04, 06, 07, 08) has scenario-specific gotchas. This chapter covers the cross-cutting ones.
