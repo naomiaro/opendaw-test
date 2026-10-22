@@ -6,6 +6,12 @@ import { BackLink } from "@/components/BackLink";
 import { DebugLinkBar } from "@/components/DebugLinkBar";
 import { browserOf, envelopeName, issueFrom, type ProbeEnvelope, type WatchedIssue } from "@/lib/audit/chromiumWatched";
 import { runFirstReadProbe } from "@/lib/audit/chromiumFirstReadProbe";
+import {
+  AWAITING_NAVIGATION,
+  BLANK_RETURN_URL,
+  judgeStoredBfcacheOnLoad,
+  runBfcacheProbe,
+} from "@/lib/audit/chromiumBfcacheProbe";
 import "@radix-ui/themes/styles.css";
 import { Theme, Container, Heading, Text, Flex, Card, Callout, Badge, Button, Code, Table } from "@radix-ui/themes";
 import { InfoCircledIcon, PlayIcon } from "@radix-ui/react-icons";
@@ -63,6 +69,7 @@ function probeFor(issue: WatchedIssue): Probe {
     case "first-read":
       return runFirstReadProbe;
     case "bfcache":
+      return runBfcacheProbe;
     case "suspend-resume":
     case "capture-gaps":
     case "opfs-usage":
@@ -78,8 +85,8 @@ function probeFor(issue: WatchedIssue): Probe {
  * browser restart) returns its envelope here, from what an earlier run stored; null when
  * there is nothing to judge yet. Called once when the page mounts.
  */
-function judgeStoredOnLoad(_issue: WatchedIssue): ProbeEnvelope | null {
-  return null;
+function judgeStoredOnLoad(issue: WatchedIssue): ProbeEnvelope | null {
+  return issue === "bfcache" ? judgeStoredBfcacheOnLoad() : null;
 }
 
 type Config = { issue: WatchedIssue; error: null } | { issue: null; error: string };
@@ -220,6 +227,12 @@ const App: React.FC<{ issue: WatchedIssue }> = ({ issue }) => {
           <Text id="verdict" data-verdict={verdictWord} size="3" weight="bold">
             {verdictLine}
           </Text>
+          {state.kind === "running" && state.step === AWAITING_NAVIGATION && (
+            <Text size="2">
+              Baseline stored. <a id="navigate-away" href={BLANK_RETURN_URL}>Navigate away</a>, then press the
+              browser's Back button: the page judges the restore when it comes back.
+            </Text>
+          )}
           <Text size="1" color="gray">{browserOf(navigator)}</Text>
           {state.kind === "done" && state.saved !== null && (
             state.saved.failed === null

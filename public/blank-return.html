@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Blank Return</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <style>
+      body { background: #111; color: #ddd; font: 16px/1.5 system-ui, sans-serif; margin: 0; padding: 2rem 16px; }
+      a { color: #f5b041; }
+    </style>
+  </head>
+  <body>
+    <!-- The page the back/forward-cache probe (chromium-watched-issues-debug-demo.html?issue=bfcache) navigates
+         away to. It does nothing: go back with the link or the browser's Back button. -->
+    <p id="blank-return">Away from the probe page. <a id="go-back" href="#" onclick="history.back(); return false;">Go back</a></p>
+  </body>
+</html>
