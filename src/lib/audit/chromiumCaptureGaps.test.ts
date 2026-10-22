@@ -77,12 +77,18 @@ describe("capture gaps", () => {
     expect(judge(withInsert(tone(10), RATE, new Float32Array(480))).judged.verdict).toBe("NOT CHECKED");
   });
 
-  it("reads an all-zero capture as all head, no gap and no duplicate", () => {
+  it("reads a minute of exact zeros as NOT CHECKED no-signal, not CLEAN", () => {
     const silent = new Float32Array(60 * RATE);
-    const { runs, headZeros, duplicates } = judge(silent);
+    const { runs, headZeros, duplicates, judged } = judge(silent);
     expect(headZeros).toBe(silent.length);
     expect(runs).toEqual([]);
     expect(duplicates).toEqual([]);
+    expect(judged.verdict).toBe("NOT CHECKED no-signal");
+  });
+
+  it("reads a head longer than 5 s as NOT CHECKED no-signal, and one just under it as CLEAN", () => {
+    expect(judge(withInsert(tone(60), 0, new Float32Array(6 * RATE))).judged.verdict).toBe("NOT CHECKED no-signal");
+    expect(judge(withInsert(tone(60), 0, new Float32Array(4.9 * RATE))).judged.verdict).toBe("CLEAN");
   });
 
   it("reads a 441-zero run 30 ms after the head as START GAPS, reported apart", () => {

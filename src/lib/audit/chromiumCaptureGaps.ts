@@ -4,7 +4,8 @@
 // back (its duplications between unsynchronised clocks). The zeros before the first non-zero
 // frame are the stream starting, counted apart as the head, not a gap. Events in the first
 // `START_WINDOW_SEC` after the head are the source warming up: reported apart, and they read
-// `START GAPS`, not the tracker's steady-state `GAPS`.
+// `START GAPS`, not the tracker's steady-state `GAPS`. A head longer than `MAX_HEAD_SEC` is no
+// signal at all (a muted microphone delivers exact zeros) and reads `NOT CHECKED no-signal`.
 
 /** The shortest run of exact zeros counted as a gap: a tone never holds zero this long. */
 export const MIN_ZERO_RUN = 100;
@@ -14,6 +15,8 @@ export const DUPLICATE_BLOCK = 128;
 export const MIN_CAPTURE_SECONDS = 30;
 /** Events starting this soon after the first non-zero frame are the source starting up. */
 export const START_WINDOW_SEC = 0.1;
+/** A head of zeros longer than this is no signal, not a stream starting. */
+export const MAX_HEAD_SEC = 5;
 /** One render quantum. */
 export const QUANTUM_FRAMES = 128;
 
@@ -30,7 +33,7 @@ export interface ZeroRun {
   length: number;
 }
 
-export type CaptureGapsVerdict = "GAPS" | "START GAPS" | "CLEAN" | "NOT CHECKED";
+export type CaptureGapsVerdict = "GAPS" | "START GAPS" | "CLEAN" | "NOT CHECKED" | "NOT CHECKED no-signal";
 
 export interface CaptureGapsJudgement {
   verdict: CaptureGapsVerdict;
@@ -95,7 +98,8 @@ export function findDuplicateBlocks(frames: Float32Array, block: number = DUPLIC
 
 /**
  * GAPS for any zero run or duplicate after the start window; START GAPS when the only ones start
- * within `START_WINDOW_SEC` after the head; NOT CHECKED under `MIN_CAPTURE_SECONDS`.
+ * within `START_WINDOW_SEC` after the head; NOT CHECKED under `MIN_CAPTURE_SECONDS`; NOT CHECKED
+ * no-signal when the head is longer than `MAX_HEAD_SEC`, the whole capture included.
  */
 export function judgeCaptureGaps(
   zeroRuns: readonly ZeroRun[],
@@ -113,6 +117,7 @@ export function judgeCaptureGaps(
   const repeats = repeatsAfterHead.filter((start) => start >= windowEnd);
   const verdict: CaptureGapsVerdict =
     durationSec < MIN_CAPTURE_SECONDS ? "NOT CHECKED"
+    : headZeros > MAX_HEAD_SEC * sampleRate ? "NOT CHECKED no-signal"
     : runs.length > 0 || repeats.length > 0 ? "GAPS"
     : startZeroRuns.length > 0 || startDuplicates.length > 0 ? "START GAPS"
     : "CLEAN";

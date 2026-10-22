@@ -144,7 +144,8 @@ Chromium tracker through the browser).
 - **Evidence:** root CLAUDE.md, "Stored Samples Are Swept at Page Load" ([repo PR #132](https://github.com/naomiaro/opendaw-test/pull/132));
   `debug/2026-10-23-chromium-watched-issues/note.md`, "opfs-usage"; probe
   `chromium-watched-issues-debug-demo.html?issue=opfs-usage` (`&truncateFirst=1`), restart envelopes
-  `chromium-opfs-usage-mvk4oyf2-4spf.json` (plain) and `chromium-opfs-usage-mvk4zzeo-oolp.json`
+  `chromium-opfs-usage-mvk4oyf2-4spf.json` (plain; uploaded before the decode, its figures re-judged
+  `NEGATIVE USAGE`, pinned by the Node test) and `chromium-opfs-usage-mvk4zzeo-oolp.json`
   (truncate-first), in-session runs `mvk4ksbd-jmyd`, `mvk4yy1c-cddi`, `mvk3l4wh-mr7j`, `mvk3ldkp-0zna`.
 - **Last checked:** Chrome 155.0.8059.85, macOS 15.6.1, 2026-10-22: `NEGATIVE USAGE` after a restart of
   the user's Chrome, probe `?issue=opfs-usage`; the truncate-first workaround confirmed on the saved
@@ -206,11 +207,13 @@ Chromium tracker through the browser).
 - **Tracker:** [issues.chromium.org/issues/575891839](https://issues.chromium.org/issues/575891839),
   "AudioWorklet clock slows to ~0.5× after BFCache restoration, causing distorted playback". Filed
   2026-10-21, **open**, unconfirmed; macOS, Chrome 155 and Canary 158; not in Firefox or Safari.
-  `suspend()` / `resume()` does not repair it, a reload does; it disappears with
+  The reporter's symptom: a running context with a worklet node, restored from the cache, keeps
+  `running` but advances at half speed, its output lower-pitched and distorted; a context with a plain
+  OscillatorNode is unaffected. `suspend()` / `resume()` does not repair it, a reload does; it disappears with
   `--disable-features=WebAudioBypassOutputBuffering` (the reporter's isolation).
 - **Symptom here:** a page with a running context and a worklet node, restored from the cache
-  (`pageshow.persisted` true), keeps `state: running` and runs its clock at half the wall clock for as
-  long as it lives. Three one-second windows after the restore read 0.4867 / 0.4988 / 0.4986 and
+  (`pageshow.persisted` true), keeps `state: running` and runs its clock at half the wall clock in every
+  window measured. Three one-second windows after the restore read 0.4867 / 0.4988 / 0.4986 and
   0.4813 / 0.5046 / 0.4984 in two runs, against 1.0008 and 0.9774 before. Analysers read both tones at
   their exact pitch before and after: the samples are right, the graph renders them at half speed.
 - **Where it bites here:** a demo that is playing when the user leaves it and comes back with Back. The
@@ -352,6 +355,9 @@ Chromium tracker through the browser).
   17 ms instead of 200 ms would place every take about 180 ms early. Not measured here (no Bluetooth
   device in any sweep); on a Bluetooth recording session, read `audioContext.outputLatency` first, a
   second after `resume()` (it reads 0 at the instant after).
+- **Evidence:** `debug/2026-10-23-chromium-watched-issues/note.md`, "output-latency"; probe
+  `chromium-watched-issues-debug-demo.html?issue=output-latency`, envelope
+  `chromium-output-latency-mvk3xjzv-1180.json`.
 - **Last checked:** 2026-10-22 (tracker read). Probe `?issue=output-latency` in place; built-in speaker
   only on Chrome 155 (base 5.8 ms, output 28 ms); the Bluetooth half not run, needs hardware.
 

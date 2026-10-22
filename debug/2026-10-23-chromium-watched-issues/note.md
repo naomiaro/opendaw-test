@@ -22,7 +22,7 @@ did with it.
 - **571344687, stale first clock read:** `STALE FIRST READ` in 14 of 15 runs, lag tracking the module
   load (5.8 / 29.0 / 110.3 ms at most). Moved to "Measured here".
 - **575891839, half-speed clock after a back/forward-cache restore:** `HALF SPEED` twice in the user's
-  Chrome (windows 0.49–0.50), and the looping demo restored at 0.4996. Moved to "Measured here".
+  Chrome (windows 0.48–0.50), and the looping demo restored at 0.4996. Moved to "Measured here".
   Follow-up PR (not in this one): handle `pageshow` with `persisted` true in the demos — reload or tear the engine down — so a visitor pressing Back on a playing demo does not hear the half-speed clock; verify with the demo reading in the note (injected pageshow listener, transport ratio).
 - **560233271, distortion after suspend / resume:** reproduced, and the trigger is found. An 80 ms
   synchronous task on the worklet thread right before `suspend()` / `resume()` halves the render rate.
@@ -263,8 +263,8 @@ The first envelope has the string `"null"` in its reasons field, a serialization
 second. The route makes no difference; the switch does. Run this probe in a Chrome the user launched.
 
 **What it means for the register.** The entry moves to measured. On Chrome 155, a page with a running
-context and a worklet node comes back from the cache with its clock at half speed for as long as it
-lives, and its context still reads `running`. A demo is such a page. The looping demo entered the cache
+context and a worklet node comes back from the cache with its clock at half speed in every window
+measured, and its context still reads `running`. A demo is such a page. The looping demo entered the cache
 while playing, despite its Web Lock, and came back with its transport at half speed. The demos have no
 `pageshow` handling. The workaround the entry names, tearing the engine down or asking for a reload on
 `pageshow` with `persisted`, is now a decision backed by measurement. This probe checks that decision and
@@ -455,7 +455,8 @@ main thread joins the minute and judges it:
   reported apart (`startZeroRun*`, `startDuplicate*`).
 
 A run reads `GAPS` on any zero run or duplicate after the start window, `START GAPS` when the only ones
-are inside it, `CLEAN` on neither, and `NOT CHECKED` under 30 s of capture.
+are inside it, `CLEAN` on neither, and `NOT CHECKED` under 30 s of capture. A head longer than 5 s is
+no signal (a muted microphone delivers exact zeros) and reads `NOT CHECKED no-signal`, not `CLEAN`.
 
 | envelope | source | rate (track) | head | start-window runs: start, length | runs after it | duplicates | verdict |
 |---|---|---|---|---|---|---|---|
