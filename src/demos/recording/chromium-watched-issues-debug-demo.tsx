@@ -15,6 +15,7 @@ import {
   judgeStoredBfcacheOnLoad,
   runBfcacheProbe,
 } from "@/lib/audit/chromiumBfcacheProbe";
+import { runRoundTripProbe } from "@/lib/audit/chromiumRoundTripProbe";
 import { runOutputLatencyProbe } from "@/lib/audit/chromiumOutputLatencyProbe";
 import { judgeStoredOpfsUsageOnLoad, runOpfsFlushProbe, runOpfsUsageProbe } from "@/lib/audit/chromiumOpfsProbe";
 import "@radix-ui/themes/styles.css";
@@ -89,7 +90,7 @@ function probeFor(issue: WatchedIssue): Probe {
     case "opfs-flush":
       return runOpfsFlushProbe;
     case "output-latency":
-      return runOutputLatencyProbe;
+      return new URLSearchParams(window.location.search).get("roundtrip") === "1" ? runRoundTripProbe : runOutputLatencyProbe;
   }
 }
 

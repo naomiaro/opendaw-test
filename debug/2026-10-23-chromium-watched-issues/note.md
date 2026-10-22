@@ -723,6 +723,49 @@ without one every label reads `(label hidden)` and the `labelsHidden` figure is 
 stays empty is the default device following the system. The saved envelope in `.verify-output/` carries
 every row.
 
+#### Acoustic round trip (`&roundtrip=1`)
+
+The readout above reports what Chrome says. The round-trip page measures what the ear gets.
+`chromium-watched-issues-debug-demo.html?issue=output-latency&roundtrip=1` opens the built-in
+microphone (echo cancellation, noise suppression and gain control off) into a worklet recorder and
+plays 10 reference clicks (6 kHz, 8 ms, `loopbackInjection.ts` constants) one second apart at known
+context times. It finds each click's arrival in the capture and reports the round trip per click
+(median, p95), the reported `outputLatency` and `baseLatency` read one second after resume, the
+labels, the mic settings, and writes the capture as a WAV. `&sink=<text>` makes the context's
+output the one whose label contains the text (a context made with the `sinkId` option after the mic
+is open), so a run does not depend on the system's default; `&gain=` sets the click amplitude
+(default 0.5, the reference gain; the speaker runs used 1).
+
+- **Reused:** the click constants from `loopbackInjection.ts`, the chunked worklet recorder pattern and
+  `recorderChunkFrames` from the capture-gaps probe, the WAV sink from the suspend/resume probe. The
+  combined audit's round-trip code was not reused: it works on SDK takes, this page loads no SDK.
+- **Detector:** a tone match, not RMS. A first run with plain RMS found 0 of 10 clicks: the built-in
+  mic's room noise (RMS about 0.003) sat above a 0.5-gain click from the speaker. The match is the
+  magnitude of the 6 kHz component over an 8 ms window; broadband noise adds little to it. A click is
+  accepted when the match peaks above 8 times its pre-click floor. Pure module `chromiumRoundTrip.ts`
+  with a Node test (known offsets, no clicks, a click below the noise floor in plain RMS).
+- **What the figure means:** the round trip is output path plus air plus the mic's input path (about
+  300 ms here, mostly the browser's microphone source node). That constant is the same for any
+  output, so the register's figure is the difference: headset round trip minus speaker round trip,
+  against the reported difference (161 - 28 = 133 ms, with the readouts above).
+- **Speaker run (Chrome 155, macOS 15.6.1, 2026-10-22, `&sink=speakers&gain=1`):**
+  `chromium-output-latency-mvk7bppn-2mc0.json`, 10 of 10 clicks, round trip median 306.35 ms, p95
+  309.82 ms, first click 303.2 ms, last 309.82 ms. The trips grow by about 0.7 ms per click: the
+  output and input clocks drift against each other (the mic is 48 000 Hz, the context 44 100), so
+  read a median, not a single click, and run both outputs the same way.
+- **Reported `outputLatency` did not follow the sink.** The system default output was the headset at
+  the time (161 ms). A context made with `sinkId` set to the built-in speakers still read 161 ms
+  one second after resume and again at the end, while the speaker readout earlier read 28 ms with
+  the speakers as the default. The label of the used output was the speakers' and the clicks were
+  heard by the mic. So with a non-default sink this Chrome reported the default device's latency.
+  One run; not yet checked with the headset as `sinkId` and the speakers as default.
+- **How to do the headset run:** quiet room, the headset connected. Hold one earbud against the
+  built-in mic (top-left of the keyboard area on a MacBook Pro), then run
+  `...&roundtrip=1&sink=Defunc&gain=1` (the headset's label, a substring is enough). The speaker run
+  is the same URL with `&sink=speakers`. A 6 kHz click through a Bluetooth earbud is quiet; if clicks
+  are missed (`NOT CHECKED n-of-10-clicks-found-missed-...`), raise the system volume or the earbud
+  nearer, not the detector.
+
 ### Out of scope: the quota sentinel (541725401 / 40068799)
 
 The other half of the watched OPFS entry is `write()` returning an error sentinel instead of throwing
