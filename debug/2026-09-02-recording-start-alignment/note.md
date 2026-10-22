@@ -4474,7 +4474,10 @@ head, and the head gate fired:
 raw head deficit 107.7 ms, 81.7 ms after the baseline, both tapes, cell `investigate`.
 The take was still placed right: netted median +1.15 ms, like every other row. The
 probe now loads the module when the context is constructed; the second run's first take
-started 2.7 ms after its request and the run read 32 of 32 `aligned`.
+started 2.7 ms after its request and the run read 32 of 32 `aligned`. Chromium 571344687 (2026-10-08: a processor made right after its module loads reads a
+stale first `currentTime`, by about the load time) sits in the same window; the take here
+arrived late rather than reading early, so it is not shown to be the same mechanism — see
+`docs/known-vendor-issues.md`.
 
 That is the first time this register shows the head gate firing on a late start that
 really happened. It was caused by the probe, not by the SDK.
