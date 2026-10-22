@@ -6,6 +6,7 @@ import { BackLink } from "@/components/BackLink";
 import { DebugLinkBar } from "@/components/DebugLinkBar";
 import { browserOf, envelopeName, issueFrom, type ProbeEnvelope, type WatchedIssue } from "@/lib/audit/chromiumWatched";
 import { runFirstReadProbe } from "@/lib/audit/chromiumFirstReadProbe";
+import { runSuspendResumeProbe } from "@/lib/audit/chromiumSuspendResumeProbe";
 import {
   AWAITING_NAVIGATION,
   BLANK_RETURN_URL,
@@ -71,6 +72,7 @@ function probeFor(issue: WatchedIssue): Probe {
     case "bfcache":
       return runBfcacheProbe;
     case "suspend-resume":
+      return runSuspendResumeProbe;
     case "capture-gaps":
     case "opfs-usage":
     case "opfs-flush":

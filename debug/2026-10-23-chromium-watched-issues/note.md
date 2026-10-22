@@ -206,7 +206,41 @@ any upstream fix. The demo reading was taken once, on one demo; it was not swept
 
 ### suspend-resume (560233271)
 
-Not yet run.
+**Not reproduced.** Chrome 155.0.8059.85 (macOS 15.6.1, Apple silicon, Playwright's Chrome, window
+visible), 2026-10-22, 44 100 Hz. Each run took one real click and read the tone for a two-second
+baseline. It then ran 20 cycles of `suspend()` / `resume()`, each with a one-second window after the
+resume. Verdict **`CLEAN`** on both runs, with 0 console errors on either navigation.
+
+The tone is a 440 Hz sine that the worklet processor renders itself. It goes into an analyser
+(FFT 32 768, no smoothing) and on through a −30 dB gain to the destination. Each window reads the
+analyser once at its end, so every sample read was rendered after the resume. Purity is the tone's own
+bin over the power sum of every other bin above −80 dB, with the window's main lobe (±3 bins) counted
+as the tone. A dropout is a 128-frame stretch whose RMS is under a tenth of the baseline's.
+
+| envelope | cycles | baseline purity | purity, every cycle | dropouts | suspend ms, median / max | resume ms, median / max | state after the last resume |
+|---|---|---|---|---|---|---|---|
+| `chromium-suspend-resume-mvk22th1-syvs.json` | 20 | 60.41 dB | 60.41 dB | 0 | 0.53 / 0.80 | 6.95 / 8.76 | running |
+| `chromium-suspend-resume-mvk23knk-55i8.json` | 20 | 60.41 dB | 60.41 dB | 0 | 0.49 / 0.66 | 6.59 / 9.41 | running |
+
+The worst purity is the baseline's to two decimals, at every cycle of both runs. So the "worst cycle"
+figure only picks out a float rounding difference and carries no information. An earlier run with the
+same probe (`chromium-suspend-resume-mvk21dt6-catu.json`) read the same: `CLEAN`, 20 cycles, 0 dropouts.
+Its purity figures read `null` because a clean sine puts nothing above −80 dB outside its lobe.
+Harmonics now read at the −80 dB floor in that case, so 60.41 dB is a lower bound: the spectrum is
+clean down to the floor. A distortion would have to put its products above −80 dB, about 48 dB below
+the tone, to move the purity by the verdict's 12 dB.
+
+- **20 cycles do not reach it here.** The tracker says "eventually", bisects it to Chrome 152 and
+  reproduces it on macOS only. This is macOS on Chrome 155, so a clean reading is either a race that
+  20 quick cycles on an idle graph do not hit, or a fix that landed between 152 and 155. The probe
+  cannot tell which. The tracker is still open.
+- **The run has no positive control.** Nothing in it distorts the tone on purpose, so the run shows that
+  the purity held. It does not show what a distorted reading looks like on this analyser. The
+  classifier's tests carry the rule.
+- **Neither the demos nor the SDK call `suspend()`.** A grep for `.suspend(` finds nothing in `src/`
+  (outside this probe) or in any `@opendaw/*` dist. `initializeOpenDAW` only resumes. A `DISTORTED`
+  reading would therefore have moved the entry up with "avoid suspend / resume" as the standing rule,
+  not a code change. The entry stays watched, with this reading.
 
 ### capture-gaps (40103985)
 
