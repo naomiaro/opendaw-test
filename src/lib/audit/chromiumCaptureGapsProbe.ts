@@ -1,0 +1,231 @@
+/**
+ * The browser half of the Chromium 40103985 probe (`?issue=capture-gaps`). The click opens a
+ * context at `&rate=48000|44100` (default 48000) and captures a 1 kHz tone through a
+ * `MediaStreamAudioSourceNode` for `CAPTURE_SECONDS`:
+ *
+ * - `&source=loopback` (default): an oscillator into a `MediaStreamAudioDestinationNode` in
+ *   the SAME context, its stream cloned and consumed by the source node: the node path of the
+ *   recording alignment harness's loopback (`loopbackInjection.ts`), built here without the
+ *   SDK-shaped getUserMedia patch since no SDK is loaded.
+ * - `&source=mic`: the microphone with echo cancellation, noise suppression and gain control
+ *   off, the page playing the same tone from the speaker at −20 dB; the recorder sees only
+ *   the microphone.
+ *
+ * A worklet recorder copies channel 0 of the source node into one-second chunks and transfers
+ * them; nothing else is in the graph. The judgement is `chromiumCaptureGaps.ts`.
+ */
+
+import { withDeadline } from "@/lib/deadline";
+import { browserOf, newRunToken, platformOf, runDate, type PlatformNavigator, type ProbeEnvelope } from "./chromiumWatched";
+import { findDuplicateBlocks, findZeroRuns, headZerosOf, judgeCaptureGaps } from "./chromiumCaptureGaps";
+
+export const CAPTURE_SECONDS = 60;
+
+const PROCESSOR_NAME = "chromium-capture-gaps-recorder";
+const TONE_HZ = 1000;
+const LOOPBACK_GAIN = 0.5;
+const SPEAKER_GAIN = 10 ** (-20 / 20);
+const QUANTUM = 128;
+const DEADLINE_MS = 5000;
+/** How long the capture may run past its own length before it is given up. */
+const CAPTURE_GRACE_MS = 10000;
+const LISTED = 5;
+
+export type CaptureSource = "loopback" | "mic";
+export type CaptureRate = 48000 | 44100;
+
+/** The source named by `&source=`; loopback without one; throws on an unknown one. */
+export function sourceFrom(params: URLSearchParams): CaptureSource {
+  const value = params.get("source");
+  if (value === null || value === "loopback") return "loopback";
+  if (value === "mic") return "mic";
+  throw new Error(`&source=${value}: expected loopback or mic`);
+}
+
+/** The context rate named by `&rate=`; 48000 without one; throws on any other. */
+export function rateFrom(params: URLSearchParams): CaptureRate {
+  const value = params.get("rate");
+  if (value === null || value === "48000") return 48000;
+  if (value === "44100") return 44100;
+  throw new Error(`&rate=${value}: expected 48000 or 44100`);
+}
+
+/**
+ * Copies channel 0 of its input into chunks of one second (the last one shorter) until
+ * `frames` frames are taken, transferring each; a quantum whose input has no channel is
+ * recorded as zeros and counted in `emptyQuanta`.
+ */
+const PROCESSOR_SOURCE = `
+class CaptureGapsRecorder extends AudioWorkletProcessor {
+  constructor(options) {
+    super();
+    this.total = options.processorOptions.frames;
+    this.chunkFrames = Math.round(sampleRate);
+    this.taken = 0;
+    this.emptyQuanta = 0;
+    this.begin();
+  }
+  begin() {
+    this.chunk = new Float32Array(Math.min(this.chunkFrames, this.total - this.taken));
+    this.filled = 0;
+  }
+  process(inputs) {
+    if (this.taken >= this.total) return false;
+    const input = inputs[0];
+    if (input.length === 0) this.emptyQuanta++;
+    const count = Math.min(${QUANTUM}, this.chunk.length - this.filled);
+    if (input.length > 0) this.chunk.set(input[0].subarray(0, count), this.filled);
+    this.filled += count;
+    this.taken += count;
+    if (this.filled === this.chunk.length) {
+      this.port.postMessage({ samples: this.chunk, emptyQuanta: this.emptyQuanta }, [this.chunk.buffer]);
+      if (this.taken < this.total) this.begin();
+    }
+    return this.taken < this.total;
+  }
+}
+registerProcessor("${PROCESSOR_NAME}", CaptureGapsRecorder);
+`;
+
+/** What the recorder hears through, and how the source was opened. */
+interface Source {
+  node: MediaStreamAudioSourceNode;
+  track: MediaStreamTrack;
+  deviceLabel: string;
+  /** Every stream opened, stopped at the end. */
+  streams: MediaStream[];
+}
+
+function loopbackSource(context: AudioContext): Source {
+  const oscillator = new OscillatorNode(context, { frequency: TONE_HZ });
+  const gain = new GainNode(context, { gain: LOOPBACK_GAIN });
+  const destination = new MediaStreamAudioDestinationNode(context);
+  oscillator.connect(gain).connect(destination);
+  oscillator.start();
+  const stream = destination.stream.clone();
+  const node = new MediaStreamAudioSourceNode(context, { mediaStream: stream });
+  return { node, track: stream.getAudioTracks()[0], deviceLabel: "loopback (same-context destination stream, cloned)", streams: [destination.stream, stream] };
+}
+
+async function micSource(context: AudioContext): Promise<Source> {
+  const stream = await withDeadline(
+    navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }),
+    30000,
+    "getUserMedia",
+  );
+  const track = stream.getAudioTracks()[0];
+  const deviceId = track.getSettings().deviceId;
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const listed = devices.find((device) => device.kind === "audioinput" && device.deviceId === deviceId);
+  const oscillator = new OscillatorNode(context, { frequency: TONE_HZ });
+  oscillator.connect(new GainNode(context, { gain: SPEAKER_GAIN })).connect(context.destination);
+  oscillator.start();
+  const node = new MediaStreamAudioSourceNode(context, { mediaStream: stream });
+  return { node, track, deviceLabel: listed?.label || track.label, streams: [stream] };
+}
+
+/** Records `frames` frames of the source node's channel 0; resolves with them and the empty-input quanta. */
+function record(context: AudioContext, source: Source, frames: number): Promise<{ samples: Float32Array; emptyQuanta: number }> {
+  return new Promise((resolve, reject) => {
+    const recorder = new AudioWorkletNode(context, PROCESSOR_NAME, {
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      channelCount: 1,
+      channelCountMode: "explicit",
+      channelInterpretation: "discrete",
+      processorOptions: { frames },
+    });
+    const samples = new Float32Array(frames);
+    let offset = 0;
+    recorder.port.onmessage = (event: MessageEvent<{ samples: Float32Array; emptyQuanta: number }>) => {
+      samples.set(event.data.samples, offset);
+      offset += event.data.samples.length;
+      if (offset >= frames) {
+        source.node.disconnect();
+        resolve({ samples, emptyQuanta: event.data.emptyQuanta });
+      }
+    };
+    recorder.port.onmessageerror = () => reject(new Error("recorder-chunk-unreadable"));
+    recorder.onprocessorerror = () => reject(new Error("recorder-threw"));
+    source.node.connect(recorder);
+  });
+}
+
+function joinFirst(values: readonly number[]): string {
+  return values.slice(0, LISTED).join(" ");
+}
+
+/** The click: open the source, record the minute, judge. */
+export async function runCaptureGapsProbe(_signal: AbortSignal, report: (step: string) => void): Promise<ProbeEnvelope> {
+  const params = new URLSearchParams(window.location.search);
+  const sourceKind = sourceFrom(params);
+  const requestedRate = rateFrom(params);
+  const platform = await platformOf(navigator as PlatformNavigator);
+  report("start-audio");
+  const context = new AudioContext({ sampleRate: requestedRate, latencyHint: "interactive" });
+  let source: Source | null = null;
+  try {
+    await withDeadline(context.resume(), DEADLINE_MS, "resume");
+    if (context.state !== "running") throw new Error(`the context is ${context.state} after resume`);
+    const url = URL.createObjectURL(new Blob([PROCESSOR_SOURCE], { type: "text/javascript" }));
+    try {
+      await withDeadline(context.audioWorklet.addModule(url), DEADLINE_MS, "addModule");
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+    report("open-" + sourceKind);
+    source = sourceKind === "mic" ? await micSource(context) : loopbackSource(context);
+    const frames = CAPTURE_SECONDS * context.sampleRate;
+    report("capture");
+    let failedStep: string | null = null;
+    let captured: { samples: Float32Array; emptyQuanta: number } = { samples: new Float32Array(0), emptyQuanta: 0 };
+    try {
+      captured = await withDeadline(record(context, source, frames), CAPTURE_SECONDS * 1000 + CAPTURE_GRACE_MS, "capture");
+    } catch (error) {
+      failedStep = String(error instanceof Error ? error.message : error).replace(/\s+/g, "-");
+      console.error("[chromium-watched] capture-gaps capture failed: " + String(error));
+    }
+    report("judge");
+    const samples = captured.samples;
+    const captureSeconds = samples.length / context.sampleRate;
+    const headZeros = headZerosOf(samples);
+    const runs = findZeroRuns(samples);
+    const duplicates = findDuplicateBlocks(samples).filter((start) => start >= headZeros);
+    const judged = judgeCaptureGaps(runs, duplicates, headZeros, captureSeconds);
+    const verdict =
+      failedStep !== null ? `NOT CHECKED ${failedStep}`
+      : judged.verdict === "NOT CHECKED" ? `NOT CHECKED ${captureSeconds.toFixed(1)}-s`
+      : judged.verdict;
+    const settings = source.track.getSettings();
+    const figures: Record<string, number | string | null> = {
+      verdict,
+      source: sourceKind,
+      requestedRate,
+      sampleRate: context.sampleRate,
+      captureSeconds: Number(captureSeconds.toFixed(3)),
+      headZeros,
+      zeroRunCount: judged.zeroRunCount,
+      longestRunFrames: judged.longestRunFrames,
+      longestRunMs: Number(((judged.longestRunFrames / context.sampleRate) * 1000).toFixed(2)),
+      zeroRunStarts: joinFirst(runs.map((run) => run.start)),
+      zeroRunLengths: joinFirst(runs.map((run) => run.length)),
+      duplicateCount: judged.duplicateCount,
+      duplicateStarts: joinFirst(duplicates),
+      emptyInputQuanta: captured.emptyQuanta,
+      deviceLabel: source.deviceLabel,
+      trackSampleRate: settings.sampleRate ?? null,
+      trackChannelCount: settings.channelCount ?? null,
+      trackDeviceId: settings.deviceId ?? null,
+      trackEchoCancellation: settings.echoCancellation === undefined ? null : String(settings.echoCancellation),
+      baseLatency: context.baseLatency,
+      outputLatency: context.outputLatency,
+      osVersion: platform.platformVersion,
+      chromeFullVersion: platform.uaFullVersion,
+      userAgent: platform.userAgent,
+    };
+    return { issue: "capture-gaps", chrome: browserOf(navigator), date: runDate(), runToken: newRunToken(), verdict, figures };
+  } finally {
+    for (const stream of source?.streams ?? []) for (const track of stream.getTracks()) track.stop();
+    await context.close();
+  }
+}

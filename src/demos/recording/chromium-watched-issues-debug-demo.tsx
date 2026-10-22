@@ -7,6 +7,7 @@ import { DebugLinkBar } from "@/components/DebugLinkBar";
 import { browserOf, envelopeName, issueFrom, type ProbeEnvelope, type WatchedIssue } from "@/lib/audit/chromiumWatched";
 import { runFirstReadProbe } from "@/lib/audit/chromiumFirstReadProbe";
 import { runSuspendResumeProbe } from "@/lib/audit/chromiumSuspendResumeProbe";
+import { runCaptureGapsProbe } from "@/lib/audit/chromiumCaptureGapsProbe";
 import {
   AWAITING_NAVIGATION,
   BLANK_RETURN_URL,
@@ -74,6 +75,7 @@ function probeFor(issue: WatchedIssue): Probe {
     case "suspend-resume":
       return runSuspendResumeProbe;
     case "capture-gaps":
+      return runCaptureGapsProbe;
     case "opfs-usage":
     case "opfs-flush":
       return async () => {
