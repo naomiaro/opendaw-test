@@ -8,6 +8,8 @@
 
 **Tech Stack:** Web Audio API (AudioWorklet, MediaStream nodes, AnalyserNode), OPFS sync access handles in a dedicated worker, Playwright MCP for driving (real clicks, `goBack` for the cache), vitest in Node for the classifiers.
 
+**Execution method (chosen 2026-10-22):** subagent-driven — superpowers:subagent-driven-development, a fresh implementer and a fresh reviewer per task, a whole-branch review at the end.
+
 **Spec:** `docs/known-vendor-issues.md`, section "# Chromium / ## Watched — read from the tracker, not reproduced here" (six entries), plus the unmeasured half of the measured OPFS entry (the persisted usage going negative after a delete and a restart).
 
 ## Global Constraints
