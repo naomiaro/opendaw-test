@@ -124,7 +124,7 @@ function scanCompLanes(
       lanes.push({
         lane: {
           regionBox: regionAdapter.box,
-          label: `Take ${index + 1}`,
+          label: regionAdapter.label,
           color: LANE_COLORS[index % LANE_COLORS.length],
           sampleLoader: fileAdapter.getOrCreateLoader(),
           waveformOffsetFrames: Math.round(waveformOffsetSec * sampleRate),

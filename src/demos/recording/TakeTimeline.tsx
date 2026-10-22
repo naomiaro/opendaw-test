@@ -9,6 +9,7 @@ import { PPQN } from "@opendaw/lib-dsp";
 import { AudioRegionBox } from "@opendaw/studio-boxes";
 import { CanvasPainter } from "@/lib/CanvasPainter";
 import { CANVAS_COLORS } from "@/lib/design/consoleTheme";
+import { takeRowLabel } from "./takeLeadIn";
 
 // --- Types ---
 
@@ -25,6 +26,7 @@ export interface TakeRegion {
 }
 
 export interface TakeIteration {
+  /** The row's key: its place in the list (one row per pass of the loop across the tapes). Not shown — the row is labelled by its regions' own "Take N" labels */
   takeNumber: number;
   isLeadIn: boolean;
   regions: TakeRegion[];
@@ -262,7 +264,7 @@ const TakeIterationLane: React.FC<{
       >
         <Flex align="center" gap="2">
           <Text size="2" weight={!take.isMuted ? "bold" : "medium"}>
-            Take {take.takeNumber}
+            {takeRowLabel(sortedRegions)}
           </Text>
           <Button
             size="1"
@@ -320,7 +322,7 @@ const TakeIterationLane: React.FC<{
                     color: "var(--mc-label)",
                   }}
                 >
-                  {tapeLabels.find((t) => t.id === region.inputTapeId)?.label}
+                  {tapeLabels.find((t) => t.id === region.inputTapeId)?.label} · Take {region.takeNumber}
                 </span>
               )}
               <TakeWaveformCanvas

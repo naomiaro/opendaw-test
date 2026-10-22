@@ -88,3 +88,13 @@ export function withTakeRegion(
   };
   return [...rows, row].sort((a, b) => a.takeNumber - b.takeNumber);
 }
+
+/**
+ * What a take row is called: the SDK's own labels of the regions in it — one "Take N" when
+ * the tapes agree, each tape's label when they differ (a tape recorded alone first numbers on
+ * from where it stood). The row's number is its key, never shown.
+ */
+export function takeRowLabel(regions: ReadonlyArray<{ takeNumber: number }>): string {
+  const labels = [...new Set(regions.map((r) => `Take ${r.takeNumber}`))];
+  return labels.length === 0 ? "Take" : labels.join(" · ");
+}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TakeIteration, TakeRegion } from "./TakeTimeline";
-import { BAR_PPQN, isLeadInTake, takeIterationNumber, takeNumberOf, trackedTakeBaselines, withTakeRegion } from "./takeLeadIn";
+import { BAR_PPQN, isLeadInTake, takeIterationNumber, takeNumberOf, takeRowLabel, trackedTakeBaselines, withTakeRegion } from "./takeLeadIn";
 
 describe("isLeadInTake", () => {
   it("a take that starts before the loop area is the lead-in, whatever its number", () => {
@@ -117,5 +117,13 @@ describe("withTakeRegion", () => {
     let rows = withTakeRegion([], region("a", 2, BAR_PPQN), 2, 1);
     rows = withTakeRegion(rows, region("a", 1, 0), 1, 1);
     expect(rows.map((r) => r.takeNumber)).toEqual([1, 2]);
+  });
+});
+
+describe("takeRowLabel", () => {
+  it("is the SDK's label when the row's tapes agree, and every label when they differ", () => {
+    expect(takeRowLabel([{ takeNumber: 5 }])).toBe("Take 5");
+    expect(takeRowLabel([{ takeNumber: 5 }, { takeNumber: 5 }])).toBe("Take 5");
+    expect(takeRowLabel([{ takeNumber: 5 }, { takeNumber: 1 }])).toBe("Take 5 · Take 1");
   });
 });

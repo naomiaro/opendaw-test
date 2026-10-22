@@ -201,7 +201,11 @@ Every audio recording region is labeled `"Take N"`, including single non-loop re
 and a later recording on the same unit continues after the highest "Take N" already there
 (`RecordTrack.lastTakeNumber`), so a demo must not read "Take 1" as "the first take of this
 recording": the lead-in take is the one positioned before the loop area
-(`isLeadInTake` in `src/demos/recording/takeLeadIn.ts`). Discover via
+(`isLeadInTake` in `src/demos/recording/takeLeadIn.ts`). Two tapes recorded together can
+carry different numbers for one pass of the loop (a tape recorded alone first numbers on
+from where it stood), so the loop demo groups its rows by pass (`takeIterationNumber`) and
+labels a row with its regions' own SDK labels (`takeRowLabel`: "Take 5", or "Take 5 · Take
+1" when the tapes differ) — never with a number of its own. Discover via
 `getAllAudioRegions(project)` from `src/lib/adapterUtils.ts`:
 ```typescript
 import { getAllAudioRegions } from "@/lib/adapterUtils";
