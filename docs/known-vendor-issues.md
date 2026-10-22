@@ -224,6 +224,9 @@ Chromium tracker through the browser).
   `Cache-Control: no-store` is no longer an absolute block in Chrome either.) Run the probe in a Chrome
   the user launched: Playwright's Chrome runs with `--disable-back-forward-cache` and reads
   `NOT CHECKED not-cached`.
+  Follow-up PR (not in this one): handle `pageshow` with `persisted` true in the demos — reload or
+  tear the engine down — so a visitor pressing Back on a playing demo does not hear the half-speed
+  clock; verify with the demo reading in the note (injected pageshow listener, transport ratio).
 - **Evidence:** `debug/2026-10-23-chromium-watched-issues/note.md`, "bfcache"; probe
   `chromium-watched-issues-debug-demo.html?issue=bfcache`, envelopes `chromium-bfcache-mvk1sddg-wilz.json`
   and `chromium-bfcache-mvk1suit-b7ru.json`.

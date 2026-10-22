@@ -23,6 +23,7 @@ did with it.
   load (5.8 / 29.0 / 110.3 ms at most). Moved to "Measured here".
 - **575891839, half-speed clock after a back/forward-cache restore:** `HALF SPEED` twice in the user's
   Chrome (windows 0.49–0.50), and the looping demo restored at 0.4996. Moved to "Measured here".
+  Follow-up PR (not in this one): handle `pageshow` with `persisted` true in the demos — reload or tear the engine down — so a visitor pressing Back on a playing demo does not hear the half-speed clock; verify with the demo reading in the note (injected pageshow listener, transport ratio).
 - **560233271, distortion after suspend / resume:** `CLEAN` twice over 20 cycles; both positive controls
   read `DISTORTED`. Stays watched, "not reproduced".
 - **40103985, zero-filled gaps in captured input:** no gap or duplicate after the first 0.1 s in any
