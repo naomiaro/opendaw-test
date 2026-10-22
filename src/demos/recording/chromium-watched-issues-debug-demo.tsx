@@ -14,6 +14,7 @@ import {
   judgeStoredBfcacheOnLoad,
   runBfcacheProbe,
 } from "@/lib/audit/chromiumBfcacheProbe";
+import { judgeStoredOpfsUsageOnLoad, runOpfsFlushProbe, runOpfsUsageProbe } from "@/lib/audit/chromiumOpfsProbe";
 import "@radix-ui/themes/styles.css";
 import { Theme, Container, Heading, Text, Flex, Card, Callout, Badge, Button, Code, Table } from "@radix-ui/themes";
 import { InfoCircledIcon, PlayIcon } from "@radix-ui/react-icons";
@@ -77,20 +78,29 @@ function probeFor(issue: WatchedIssue): Probe {
     case "capture-gaps":
       return runCaptureGapsProbe;
     case "opfs-usage":
+      return runOpfsUsageProbe;
     case "opfs-flush":
-      return async () => {
-        throw new Error(`the ${issue} probe is not implemented`);
-      };
+      return runOpfsFlushProbe;
   }
 }
 
 /**
  * A probe that judges on a later page load (after a back/forward-cache restore, after a
  * browser restart) returns its envelope here, from what an earlier run stored; null when
- * there is nothing to judge yet. Called once when the page mounts.
+ * there is nothing to judge yet. Called once when the page mounts. A fresh run of such a
+ * probe clears what an earlier run stored before it starts.
  */
-function judgeStoredOnLoad(issue: WatchedIssue): ProbeEnvelope | null {
-  return issue === "bfcache" ? judgeStoredBfcacheOnLoad() : null;
+function judgeStoredOnLoad(issue: WatchedIssue): Promise<ProbeEnvelope> | null {
+  switch (issue) {
+    case "bfcache": {
+      const envelope = judgeStoredBfcacheOnLoad();
+      return envelope === null ? null : Promise.resolve(envelope);
+    }
+    case "opfs-usage":
+      return judgeStoredOpfsUsageOnLoad();
+    default:
+      return null;
+  }
 }
 
 type Config = { issue: WatchedIssue; error: null } | { issue: null; error: string };
@@ -156,7 +166,15 @@ const App: React.FC<{ issue: WatchedIssue }> = ({ issue }) => {
 
   useEffect(() => {
     const stored = judgeStoredOnLoad(issue);
-    if (stored !== null) void finish(stored);
+    if (stored === null) return;
+    setState({ kind: "running", step: "judge-stored" });
+    stored.then(
+      (envelope) => finish(envelope),
+      (error) => {
+        console.error("[chromium-watched] threw judging the stored run: " + String(error));
+        setState({ kind: "error", step: "judge-stored", message: String(error) });
+      }
+    );
   }, [issue, finish]);
 
   const run = useCallback(async () => {
