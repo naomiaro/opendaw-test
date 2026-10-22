@@ -244,7 +244,12 @@ the demos never clip a seconds region against a musical one; the rule documented
   take before the recording flag reaches React), placed after the rows that existed. A second
   recording on the same tape shows as new rows (it used to merge into the first recording's
   rows, every recording being "Take 1" again); the three demos that defined their own
-  `BAR_PPQN` import the shared one. Tests in `takeLeadIn.test.ts`.
+  `BAR_PPQN` import the shared one. The row reducer (`withTakeRegion`: dedupe by region box,
+  join a pass's row, the row's mute as the AND of its regions, lead-in by position, rows in
+  order) is a pure function the hook wraps in `setTakeIterations`. Tests in
+  `takeLeadIn.test.ts` (the position rule, the label parser, the baselines, the row number,
+  and the reducer through a second recording on one tape and two tapes with different
+  numbers).
   Browser check on the release, the built-in microphone, a real click per recording: in the
   loop-recording demo (1-bar lead-in, 2-bar loop, count-in) a first recording gave Take 1 to
   Take 4, the second on the same tape Take 5 to Take 8 — Take 1 and Take 5 drawn full-width as
@@ -266,15 +271,15 @@ the demos never clip a seconds region against a musical one; the rule documented
   advice for READS (`targetVertex`, `captureDevices.get`), which still resolve at commit.
 - **Docs for what changed**: `documentation/internals/03-cross-thread-protocols.md` (the
   HRClock section rewritten for the spinning clock and the lease),
-  `documentation/15-performance-and-debugging.md` (the clock; `cpuLoad` is a 0–100 integer,
-  the example multiplied it by 100 again), `documentation/14-glossary.md`,
+  `documentation/15-performance-and-debugging.md` (the clock; `cpuLoad` is an integer percent,
+  the example multiplied it by 100 again), `documentation/internals/01-engine-processor.md`
+  (the handshake text), `documentation/14-glossary.md`,
   `documentation/19-wasm-engine.md`, `src/demos/engine/CLAUDE.md` (the lease and the
   four-thread floor), `documentation/08-recording.md` and `src/demos/recording/CLAUDE.md`
   (take numbers continue on the unit), `documentation/17-modular-devices.md` (a "Script data,
   streams and views" section: the declarations, `this.data`, `this.streams`, `host.send`,
   `[omit-default-ui]`, the reorder rule, the malformed-line rule, `ScriptCompiler.replace`),
-  `documentation/10-export.md` (`AudioBounce`), `documentation/13-troubleshooting.md` (the
-  OPFS stall warnings), root CLAUDE.md (the pointer rule).
+  `documentation/10-export.md` (`AudioBounce`), `documentation/13-troubleshooting.md` (the OPFS stall warnings; the load threshold is 100, not 1.0), root CLAUDE.md (the pointer rule).
 - **Standing sweeps on the release — every reading the 0.0.176 reading**: sample-rate /
   quantum-alignment **180 of 180** cells pass (every family's maximum deviation the 0.0.176
   value to the hundredth — metronome 0.08, loop-wrap 0.54, seam 0.20, region-fencepost 0.03,
@@ -306,7 +311,7 @@ the demos never clip a seconds region against a musical one; the rule documented
   (they need the IAC Driver, a quiet room with the built-in microphone, or a hand hiding the
   window): the MIDI input sweeps, the combined MIDI + audio sweep, the hidden-page `cover`
   rows.
-- **Verification**: `npm run typecheck` 0 errors, 1241 of 1241 vitest tests, `npm run build`,
+- **Verification**: `npm run typecheck` 0 errors, 1250 of 1250 vitest tests, `npm run build`,
   `npm ci` on the regenerated lockfile; the openDAW checkout and the XERJ corpus clone moved
   to `b78d6b0df` (the `@opendaw/studio-sdk@0.0.177` tag; 38 751 records re-indexed).
 - API claims verified against the installed tarballs (`node_modules/@opendaw/*/dist`, diffed
