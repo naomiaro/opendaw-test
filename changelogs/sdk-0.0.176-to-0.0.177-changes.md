@@ -285,10 +285,14 @@ the demos never clip a seconds region against a musical one; the rule documented
   the pass-through devices at lag 0 / 1.000). Loudness meter **28 of 28 rows at 48 kHz and at
   44.1 kHz** (`loudness-audit-1792691761676.json`, `…1792692465613.json`; every judged metric
   the 0.0.176 value to the hundredth; rows in `debug/2026-10-02-loudness-meter/note.md` under
-  "SDK 0.0.177"). Rows and reading in the recording register under "Standing sweep on
-  0.0.177". Not run this time (they need the IAC Driver, a quiet room with the built-in
-  microphone, or a hand hiding the window): the MIDI input sweeps, the combined MIDI + audio
-  sweep, the hidden-page `cover` rows.
+  "SDK 0.0.177"). Hidden-page recording, the three `modal` rows (`?interrupt=modal&hideAt=
+  start|mid|stop`, the alert dismissed through the tooling's dialog handler after at least five
+  seconds): **both takes `intact` on every row** (31 / 31 beats, median 1.15 ms; the stop row's
+  finalization waited the 17.5 s the dialog was up, as the register says it does). Rows and
+  reading in the recording register under "Standing sweep on 0.0.177". Not run this time
+  (they need the IAC Driver, a quiet room with the built-in microphone, or a hand hiding the
+  window): the MIDI input sweeps, the combined MIDI + audio sweep, the hidden-page `cover`
+  rows.
 - **Verification**: `npm run typecheck` 0 errors, 1241 of 1241 vitest tests, `npm run build`,
   `npm ci` on the regenerated lockfile; the openDAW checkout and the XERJ corpus clone moved
   to `b78d6b0df` (the `@opendaw/studio-sdk@0.0.177` tag; 38 751 records re-indexed).

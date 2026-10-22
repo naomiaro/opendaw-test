@@ -4,7 +4,7 @@
 does at the start, the middle and the stop of a take, and a frame driver that keeps the
 demos' engine sync alive behind another window
 
-**SDK Pin:** `@opendaw/studio-sdk@0.0.176` (installed npm package; WASM engine only)
+**SDK Pin:** `@opendaw/studio-sdk@0.0.177` (installed npm package; WASM engine only; the rows below were measured on 0.0.176, the three `modal` rows re-run on 0.0.177)
 
 **Harness:** unlisted debug demo
 `recording-hidden-window-debug-demo.html[?driver=window|hidden-safe][&interrupt=cover|modal][&hideAt=start|mid|stop][&hiddenSeconds=<n>][&rate=48000|44100][&bpm=<n>]`
@@ -149,6 +149,20 @@ jitter collapses as the interval grows (the clamp of a stamp before the last rea
 reads to land between). At 15 Hz the key is written 17 ms BEFORE the heard beat: the
 frame-stale base outweighs the latency term. The mechanism is confirmed in the direction a
 display can go.
+
+### SDK 0.0.177 (2026-10-22): the three `modal` rows, re-run
+
+Same page, same browser, the alert dismissed through the Playwright tooling's dialog handler
+after at least five seconds (the handler was slow this time, so the spans are long):
+
+| row | take 1 (interrupted) | take 2 (control) | hidden span | finalized in (take 1) |
+|---|---|---|---|---|
+| `modal`, `hideAt=start` | `intact`, 31 / 31, median 1.15 ms | `intact`, 31 / 31 | 11.9 s | 54 ms |
+| `modal`, `hideAt=mid` | `intact`, 48 / 48, median 1.15 ms (region 24.08 s: a late stop, the beats whole) | `intact`, 31 / 31 | 22.0 s | 76 ms |
+| `modal`, `hideAt=stop` | `intact`, 31 / 31, median 1.15 ms | `intact`, 31 / 31 | 17.5 s | 17 587 ms (the dialog's span, as on 0.0.176) |
+
+Nothing the release changed reaches this path; the rows read as on 0.0.176. The `cover` rows
+still need a hand.
 
 ## Reading
 
