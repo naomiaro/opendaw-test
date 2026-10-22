@@ -377,6 +377,15 @@ The last row is the manual mode's smoke test: two real clicks, two rows, Finish,
   unattended room. Round 2's two no-stall 40-cycle runs, `mvk5pda3-2kmc` and `mvk5rajg-qii2`, read
   `DISTORTED` on the microphone the same way, with the clock true. They are not attributed to the
   issue. The clock and the render rate are the figures to quote; the WAV is the audible confirmation.
+- **Round 2's runs, re-judged on the clock rule.** Their saved figures (`baselineClockRatio`,
+  `clockRatioPerCycle`) were put through `judgeHalfRate` and `overallVerdict`:
+
+  | run | clock | verdict now |
+  |---|---|---|
+  | `mvk5tg8m-hx60` (tracker preconditions, 40 cycles) | before 1.0023, half rate from cycle 1 | `HALF RATE` |
+  | `mvk5vayw-hnhh` (tracker preconditions, 20 cycles) | before 1.0032, half rate from cycle 1 | `HALF RATE` |
+  | `mvk5pda3-2kmc`, `mvk5rajg-qii2` (40 cycles, no stall) | true | `DISTORTED` on the microphone, unattributed |
+  | `mvk5no0g-o68z`, `mvk5okvv-cw8n` (20 cycles, no stall) | true | `CLEAN` |
 - **Earlier runs stay as data.** The graph-only `CLEAN` runs, `mvk2auh7-7vhg` and `mvk2bm5g-d5aw`, had no
   stall; the in-graph analyser cannot see the output path. The positive controls, `mvk2ce9z-vsxm` for
   crackle and `mvk2d80b-fihu` for harmonic, show that the in-graph detectors fire.
@@ -386,7 +395,9 @@ The last row is the manual mode's smoke test: two real clicks, two rows, Finish,
   its part.
 - `&module=blob` and `&gapMs=<ms>` are the controls.
 - `&witness=mic` adds the microphone in a context of its own that is never suspended. Its purity
-  leaves out the bins below 200 Hz, and the capture is saved as a WAV.
+  leaves out the bins below 200 Hz, and the capture is saved as a WAV. The WAV is written with
+  `WavFile.encodeFloats` from `@opendaw/lib-dsp`. That is the only SDK import, a file-format utility;
+  nothing in the probe's path goes through anything the SDK repairs.
 - `&cycles=<n>` sets the cycle count.
 - `&manual=1` takes one real click per cycle, as on the repro page, and shows a live row per cycle
   until Finish.
