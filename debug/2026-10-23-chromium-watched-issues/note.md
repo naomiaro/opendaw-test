@@ -507,9 +507,11 @@ needs hardware.** Chrome 155 on macOS 15.6.1, Playwright's Chrome, 2026-10-22, o
 `https://localhost:5173/chromium-watched-issues-debug-demo.html?issue=output-latency` in Chrome with the
 Mac's output on the built-in speaker, click Run, and connect the AirPods (or any Bluetooth output) while
 the 30 seconds run, with the system output switched to them. Read the rows: the tracker expects about
-33 ms before and 200+ ms after on current builds, with the device label changing at the switch. A
-`sinkId` that stays empty is the default device following the system, so the label is the witness. The
-saved envelope in `.verify-output/` carries every row.
+33 ms before and 200+ ms after on current builds. The witness for the switch is the `outputLatency`
+jump. The label is secondary: it shows the device only when the page has a media permission, and
+without one every label reads `(label hidden)` and the `labelsHidden` figure is true. A `sinkId` that
+stays empty is the default device following the system. The saved envelope in `.verify-output/` carries
+every row.
 
 ### Out of scope: the quota sentinel (541725401 / 40068799)
 

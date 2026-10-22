@@ -18,19 +18,21 @@ interface Row {
   outputMs: number;
   sinkId: string;
   label: string;
+  /** The matching output was found but its label was empty: no media permission. */
+  hidden: boolean;
 }
 
 const ms = (seconds: number): number => Math.round(seconds * 1000 * 10) / 10;
 
 /** The label of the output device in use: the `default` entry for an empty sink id. */
-async function outputLabel(sinkId: string): Promise<string> {
+async function outputLabel(sinkId: string): Promise<{ label: string; hidden: boolean }> {
   try {
     const devices = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "audiooutput");
     const match = devices.find((d) => d.deviceId === (sinkId === "" ? "default" : sinkId));
-    if (match === undefined) return "(no matching output)";
-    return match.label === "" ? "(label hidden)" : match.label;
+    if (match === undefined) return { label: "(no matching output)", hidden: false };
+    return match.label === "" ? { label: "(label hidden)", hidden: true } : { label: match.label, hidden: false };
   } catch (error) {
-    return "(enumerateDevices threw: " + String(error) + ")";
+    return { label: "(enumerateDevices threw: " + String(error) + ")", hidden: false };
   }
 }
 
@@ -62,12 +64,14 @@ export async function runOutputLatencyProbe(
     for (let t = 0; t <= READ_SECONDS && !signal.aborted; t++) {
       const reported = (context as AudioContext & { sinkId?: unknown }).sinkId;
       const sinkId = typeof reported === "string" ? reported : "";
+      const device = await outputLabel(sinkId);
       const row: Row = {
         t,
         baseMs: ms(context.baseLatency),
         outputMs: ms(context.outputLatency),
         sinkId,
-        label: await outputLabel(sinkId),
+        label: device.label,
+        hidden: device.hidden,
       };
       rows.push(row);
       report(`t=${t}s base ${row.baseMs} ms, output ${row.outputMs} ms, ${row.label}`);
@@ -87,6 +91,10 @@ export async function runOutputLatencyProbe(
         lastOutputMs: last.outputMs,
         minOutputMs: Math.min(...outputs),
         maxOutputMs: Math.max(...outputs),
+        labelsHidden: rows.every((r) => r.hidden),
+        detail: rows.every((r) => r.hidden)
+          ? "labels hidden (no media permission): read the outputLatency jump, not the label, as the switch"
+          : "labels read",
         deviceLabels: [...new Set(rows.map((r) => r.label))].join(" | "),
         sinkIds: [...new Set(rows.map((r) => r.sinkId === "" ? "(default)" : r.sinkId))].join(" | "),
         sampleRate: context.sampleRate,
