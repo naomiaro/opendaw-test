@@ -5,7 +5,8 @@
  * clock for two seconds. The figures go to `sessionStorage`; the page then offers a link
  * away. Back again, one of two things happens:
  * - the page comes out of the back/forward cache (`pageshow` with `persisted`): the same
- *   context and nodes are still alive, the probe measures three more seconds and judges;
+ *   context and nodes are still alive, the probe measures three one-second windows and judges
+ *   on all but the first;
  * - the page was not cached and loads afresh: `judgeStoredBfcacheOnLoad` finds the stored
  *   figures, reads the navigation's `notRestoredReasons`, and judges `NOT CHECKED`. The
  *   promise of the first run never settles in that case; the new document carries the run.
@@ -13,7 +14,14 @@
  */
 
 import { browserOf, newRunToken, runDate, type ProbeEnvelope } from "./chromiumWatched";
-import { clockRatio, judgeBfcache, type BfcacheJudgement, type ClockRatioSample } from "./chromiumBfcache";
+import {
+  RESTORE_WINDOW_SECONDS,
+  RESTORE_WINDOWS,
+  clockRatio,
+  judgeBfcache,
+  type BfcacheJudgement,
+  type ClockRatioSample,
+} from "./chromiumBfcache";
 
 /** The step the page shows the "Navigate away" link on. */
 export const AWAITING_NAVIGATION = "awaiting-navigation";
@@ -26,7 +34,6 @@ const PROCESSOR_NAME = "chromium-bfcache-tone";
 const WORKLET_HZ = 440;
 const CONTROL_HZ = 660;
 const BEFORE_SECONDS = 2;
-const AFTER_SECONDS = 3;
 const OUTPUT_GAIN = 0.02;
 const FFT_SIZE = 32768;
 const DEADLINE_MS = 5000;
@@ -188,6 +195,7 @@ function envelopeFrom(
     verdict,
     ratioBefore: round(judged.ratioBefore, 4),
     ratioAfter: round(judged.ratioAfter, 4),
+    windowRatiosAfter: judged.windowRatios.length === 0 ? null : judged.windowRatios.map((r) => r.toFixed(4)).join(" "),
     contextAdvanceBeforeSec: round(run.before.contextAdvanceSec, 4),
     wallAdvanceBeforeSec: round(run.before.wallAdvanceSec, 4),
     controlHzBefore: round(run.pitchBefore.control, 2),
@@ -232,14 +240,19 @@ export async function runBfcacheProbe(signal: AbortSignal, report: (step: string
       const judged = judgeBfcache(before, null, true, null);
       return envelopeFrom(run, judged, `NOT CHECKED context-${stateAfterRestore}`, extra);
     }
-    const after = await measureClock(live.context, AFTER_SECONDS, signal);
+    const after: ClockRatioSample[] = [];
+    for (let window = 0; window < RESTORE_WINDOWS; window++) {
+      after.push(await measureClock(live.context, RESTORE_WINDOW_SECONDS, signal));
+    }
     const pitchAfter = pitchesOf(live);
     const judged = judgeBfcache(before, after, true, null);
     const verdict = judged.verdict === "NOT CHECKED" ? `NOT CHECKED ${judged.reason}` : judged.verdict;
     return envelopeFrom(run, judged, verdict, {
       ...extra,
-      contextAdvanceAfterSec: round(after.contextAdvanceSec, 4),
-      wallAdvanceAfterSec: round(after.wallAdvanceSec, 4),
+      // Each window's advance after the restore, context / wall in seconds, one window per `;`.
+      advancesAfterContextWallSec: after
+        .map((w) => w.contextAdvanceSec.toFixed(4) + "/" + w.wallAdvanceSec.toFixed(4))
+        .join("; "),
       controlHzAfter: round(pitchAfter.control, 2),
       workletHzAfter: round(pitchAfter.worklet, 2),
       secondsAway: round((Date.now() - run.startedAt) / 1000, 1),

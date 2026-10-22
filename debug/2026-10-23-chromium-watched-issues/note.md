@@ -18,7 +18,7 @@ condition reads `NOT CHECKED <reason>` and is recorded as such, never as "not re
 | `?issue=` | Chromium issue | What the probe does | Verdict words | Status |
 |---|---|---|---|---|
 | `first-read` | [571344687](https://issues.chromium.org/issues/571344687) — stale first clock read after a slow module load | Builds a worklet node right after `addModule()` resolves (a slow module, a large module, none), five runs each in a running context; the processor reports `currentFrame` from its constructor and first three `process()` calls, judged against the main thread's frame read just before the node was made | `STALE FIRST READ`, `FIRST READ TRUE`, `NOT CHECKED` | **reproduced**: `STALE FIRST READ` on Chrome 155, 2026-10-22 |
-| `bfcache` | [575891839](https://issues.chromium.org/issues/575891839) — half-speed worklet clock after a back/forward-cache restore | Measures the context clock against `performance.now()` with a worklet tone and an oscillator control playing, navigates away and back; on `pageshow.persisted` re-measures and judges, otherwise records the `notRestoredReasons` | `HALF SPEED`, `NORMAL`, `NOT CHECKED` | **reproduced**: `HALF SPEED` on Chrome 155, 2026-10-22 (the user's Chrome; Playwright's cannot enter the cache) |
+| `bfcache` | [575891839](https://issues.chromium.org/issues/575891839) — half-speed worklet clock after a back/forward-cache restore | Measures the context clock against `performance.now()` with a worklet tone and an oscillator control playing, navigates away and back; on `pageshow.persisted` re-measures in three one-second windows and judges on the last two, otherwise records the `notRestoredReasons` | `HALF SPEED`, `NORMAL`, `NOT CHECKED` | **reproduced**: `HALF SPEED` on Chrome 155, 2026-10-22, all three restore windows; a playing demo also restores at half speed (the user's Chrome; Playwright's cannot enter the cache) |
 | `suspend-resume` | [560233271](https://issues.chromium.org/issues/560233271) — distortion after suspend / resume cycles | A worklet-rendered 440 Hz tone into an analyser; a two-second baseline, then 20 `suspend()` / `resume()` cycles with a purity window after each, judged on harmonic purity against the baseline and on dropouts | `DISTORTED`, `CLEAN`, `NOT CHECKED` | not yet run |
 | `capture-gaps` | [40103985](https://issues.chromium.org/issues/40103985) — zero-filled gaps and duplicated blocks in `getUserMedia` input | Records 60 s of a `MediaStreamAudioSourceNode` (`&source=loopback` or `mic`, at 48 000 and 44 100) through a worklet; counts zero runs of 100 frames or more after the head and 128-frame blocks identical to the one before | `GAPS`, `CLEAN`, `NOT CHECKED` | not yet run |
 | `opfs-usage` | [436552046](https://issues.chromium.org/issues/436552046) / [401692415](https://issues.chromium.org/issues/401692415) — OPFS usage not counted for sync-handle writes, negative after a delete | Writes through a sync access handle in a worker, reads `estimate()` before, after the write and after the delete; the user quits and reopens Chrome and the page judges the restart reading on load (`&truncateFirst=1` for the reporter's workaround) | `NOT COUNTED`, `COUNTED`, `NEGATIVE USAGE`, `NOT CHECKED` | not yet run |
@@ -55,7 +55,7 @@ condition reads `NOT CHECKED <reason>` and is recorded as such, never as "not re
    `runToken`, `verdict`, `figures`.
 
 `bfcache` stops at `running:awaiting-navigation` with a "Navigate away" link to `/blank-return.html`;
-click it, then press Back. Restored from the cache, the page re-measures and judges in place. Loaded
+click it, then press Back. Restored from the cache, the page re-measures (three one-second windows) and judges in place. Loaded
 afresh, it judges the stored baseline `NOT CHECKED` with the navigation's `notRestoredReasons`. Run it in a
 Chrome the user launched (claude-in-chrome): Playwright's Chrome runs with `--disable-back-forward-cache`.
 `opfs-usage` judges on a later page load (after the browser restart): the page judges what the earlier
@@ -127,45 +127,82 @@ lag for its whole life; none of this repo's worklets is known to, but that is th
 
 ### bfcache (575891839)
 
-**Reproduced.** Chrome 155.0.8059.85 (macOS 15.6.1, the user's own Chrome driven through
-claude-in-chrome, window visible), 2026-10-22, 44 100 Hz, two runs. Verdict **`HALF SPEED`** both times.
-Each run: a real click on Run, a two-second baseline, a click on "Navigate away" to
-`/blank-return.html`, about ten seconds there, the browser's Back. The page came back from the cache
-(`pageshow.persisted` true), the context still `running`, and the three-second re-measurement read the
-clock at half the wall clock's speed.
+**Reproduced, and it reaches the demos.** Chrome 155.0.8059.85 (macOS 15.6.1, the user's own Chrome
+driven through claude-in-chrome, window visible), 2026-10-22, 44 100 Hz. Verdict **`HALF SPEED`** on both
+judged runs.
 
-| envelope | ratio before | ratio after | context / wall after (s) | control Hz before / after | worklet tone Hz before / after | away (s) |
-|---|---|---|---|---|---|---|
-| `chromium-bfcache-mvk1l93d-mc10.json` | 1.0008 | 0.4912 | 1.4745 / 3.0020 | 660.01 / 660.01 | 440 / 440 | 13.7 |
-| `chromium-bfcache-mvk1ly1n-xi7o.json` | 0.9774 | 0.4952 | 1.4861 / 3.0007 | 660.01 / 660.01 | 440 / 440 | 13.4 |
+Each run went like this:
+1. A real click on Run.
+2. A two-second baseline.
+3. A click on "Navigate away" to `/blank-return.html`, and about ten seconds there.
+4. The browser's Back.
 
-- **The figure matches the tracker's.** The reporter read 0.967 before and 0.501 after; this page reads
-  0.98–1.00 before and 0.49–0.50 after. The state stays `running` and the sample rate stays 44 100.
-- **The analysers cannot hear the drop.** Both tones read their exact pitch before and after, the
-  worklet's sine and the OscillatorNode control alike. An analyser reads the rendered samples, which are
-  right; what is slow is how fast the graph renders against the wall clock. The tracker's "lower-pitched"
-  output is that slowness reaching the speakers, and only an acoustic or output-side measurement shows
-  it. The pitch figures are kept as the check that the graph renders the right signal; they are not the
-  witness. The clock ratio is.
+The page came back from the cache (`pageshow.persisted` true) with the context still `running`. The
+restore is then measured as three consecutive one-second windows. The verdict is judged on the windows
+after the first, so a clock that stalls while it resumes and then runs true reads `NORMAL`.
+
+| envelope | ratio before | windows after the restore | ratio after (windows 2–3) | control Hz before / after | worklet tone Hz before / after |
+|---|---|---|---|---|---|
+| `chromium-bfcache-mvk1sddg-wilz.json` | 1.0008 | 0.4867, 0.4988, 0.4986 | 0.4987 | 660.01 / 660.01 | 440 / 440 |
+| `chromium-bfcache-mvk1suit-b7ru.json` | 0.9774 | 0.4813, 0.5046, 0.4984 | 0.5015 | 660.01 / 660.01 | 440 / 440 |
+
+Each run was away about 12.5 s. Two earlier runs judged one three-second window and read the same
+(`chromium-bfcache-mvk1l93d-mc10.json`, 0.4912; `chromium-bfcache-mvk1ly1n-xi7o.json`, 0.4952). They are
+superseded because one window cannot tell a slow clock from a stall.
+
+- **It is a lasting slowdown, not a stall.** Every window reads half speed, the first included. The clock
+  is at half speed from the moment the page comes back, and it stays there. This matches the tracker's
+  figures: 0.967 before and 0.501 after.
+- **The analysers cannot hear the drop.** Both tones read their exact pitch before and after. An analyser
+  reads the rendered samples, and those are right. What is slow is how fast the graph renders against the
+  wall clock, which is how the tracker's "lower-pitched" output reaches the speakers. The pitch figures
+  only check that the graph renders the right signal. The clock ratio is the evidence.
 - **The dev server does not keep the page out of the cache.** The probe page holds Vite's HMR WebSocket
-  and is cross-origin isolated (COOP `same-origin`, COEP `require-corp`, as every demo is), and Chrome
-  155 cached and restored it all the same.
+  and is cross-origin isolated (COOP `same-origin`, COEP `require-corp`, as every demo is). Chrome 155
+  cached and restored it anyway.
+
+**A demo enters the cache too, and comes back at half speed.** The probe page above has no SDK. Whether a
+demo is cached at all was a separate question. Every demo holds the shared Web Lock
+`opendaw-demos:page-open` for its whole life (`src/lib/storedSamples.ts`), and a held lock is on Chrome's
+list of reasons not to cache a page. It also runs the SDK's workers and OPFS. So this was measured once on
+`looping-demo.html` in the same Chrome, with no change to the demo:
+
+1. A `pageshow` listener was injected through the extension. It writes `persisted` and the navigation's
+   `notRestoredReasons` to `sessionStorage`.
+2. A real click on Play started playback.
+3. A real click on the "Back to demos" link went to `/`.
+4. The browser's Back returned to the demo.
+
+The results:
+- **The demo was restored.** The listener read `persisted: true` with no `notRestoredReasons`. That
+  listener exists only in the original document, so its firing is itself proof of a restore.
+- **The demo came back still playing.** Its transport showed "Playing".
+- **The demo's clock ran at half speed.** Its own position readout advanced 1.50 s in 3.00 s of wall
+  clock, a ratio of **0.4996**.
+- **A fresh load of the same demo ran true.** The same readout, with Play clicked on a fresh load,
+  advanced 2.98 s in 3.00 s, a ratio of **0.993**.
+
+The held Web Lock did not keep the demo out of the cache on this Chrome. Lock contention can still evict
+a cached page. No other page asked for the lock while the demo was cached, because the index page `/`
+does not take it.
 
 **Playwright's Chrome cannot run this probe.** Playwright launches Chrome with
-`--disable-back-forward-cache` (read on `chrome://version`, same Chrome 155.0.8059.85). Two runs there,
-one by the link click (`chromium-bfcache-mvk1jlyi-z477.json`) and one by `page.goto` to the blank page
-(`chromium-bfcache-mvk1kliu-fsvt.json`), both read `NOT CHECKED not-cached` on a `back_forward`
-navigation with no `notRestoredReasons` at all (Chrome reports none when the cache is switched off; the
-first envelope has the string `"null"` there, a serialization bug fixed before the second). Baselines
-0.9656 and 0.9658. The route makes no difference; the switch does. Run this probe in a Chrome the user
-launched.
+`--disable-back-forward-cache`, read on `chrome://version` (same Chrome 155.0.8059.85). Two runs there
+both read `NOT CHECKED not-cached` on a `back_forward` navigation, with no `notRestoredReasons` at all,
+because Chrome reports none when the cache is switched off:
+- one by the link click, `chromium-bfcache-mvk1jlyi-z477.json`, baseline 0.9656;
+- one by `page.goto` to the blank page, `chromium-bfcache-mvk1kliu-fsvt.json`, baseline 0.9658.
 
-**What it means for the register.** The entry moves to measured: on Chrome 155 every demo that is
-playing when the user goes Back and then Forward (or away and Back) comes back with its engine clock,
-and so its audio, at half speed, and nothing on the page says so (the context reads `running`). The
-demos have no `pageshow` handling. The workaround the entry names, tearing the engine down or asking for
-a reload on `pageshow` with `persisted`, is now a decision with a measurement behind it; this probe is
-the check for it and for an upstream fix.
+The first envelope has the string `"null"` in its reasons field, a serialization bug fixed before the
+second. The route makes no difference; the switch does. Run this probe in a Chrome the user launched.
+
+**What it means for the register.** The entry moves to measured. On Chrome 155, a page with a running
+context and a worklet node comes back from the cache with its clock at half speed for as long as it
+lives, and its context still reads `running`. A demo is such a page. The looping demo entered the cache
+while playing, despite its Web Lock, and came back with its transport at half speed. The demos have no
+`pageshow` handling. The workaround the entry names, tearing the engine down or asking for a reload on
+`pageshow` with `persisted`, is now a decision backed by measurement. This probe checks that decision and
+any upstream fix. The demo reading was taken once, on one demo; it was not swept.
 
 ### suspend-resume (560233271)
 
