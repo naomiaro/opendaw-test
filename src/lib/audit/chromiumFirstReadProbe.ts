@@ -173,6 +173,10 @@ export async function runFirstReadProbe(signal: AbortSignal, report: (step: stri
       msPerQuantum === null ? null : Number((judged.largestLagQuanta * msPerQuantum).toFixed(1));
     figures[`${variant}.lagsQuanta`] = joined(lags, 2);
     figures[`${variant}.jumpQuanta`] = joined(judged.jumpQuanta, 2);
+    // The reads the verdict was judged on: creation / constructor / process 1, 2, 3, one run per `;`.
+    figures[`${variant}.framesCreationCtorP1P2P3`] = samples
+      .map((s) => [s.creationFrame, s.constructorFrame, ...s.processFrames].join("/"))
+      .join("; ");
     figures[`${variant}.loadMs`] = joined(results[variant].map((result) => result.variantLoadMs), 1);
   }
 

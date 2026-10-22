@@ -65,29 +65,43 @@ and what it means for the register entry.
 ### first-read (571344687)
 
 **Reproduced.** Chrome 155 (macOS, Playwright's Chrome, window visible), 2026-10-22, 44 100 Hz, one
-click, five runs per variant interleaved, each run in a fresh running context. Verdict
-**`STALE FIRST READ`** on all three variants, 15 of 15 runs. Envelope
-`.verify-output/chromium-first-read-mvk18ai3-q6py.json`; 0 console errors on the navigation.
+click, five runs per variant interleaved, each run in a fresh running context that had run past 0.3 s
+before the first `addModule()`. Verdict **`STALE FIRST READ`** on all three variants, 14 of 15 runs.
+Envelope `.verify-output/chromium-first-read-mvk1dr2x-2os8.json`; 0 console errors on the navigation. An
+earlier run with the same code, before the envelope carried the raw frames
+(`chromium-first-read-mvk18ai3-q6py.json`), read the same: 15 of 15 stale, lags 2 / 6–10 / 36 quanta.
 
 | variant | loaded before the probe module | variant load (ms) | lag of the constructor read (quanta) | largest lag | jump, first to second call (quanta) |
 |---|---|---|---|---|---|
-| `none` | nothing | — | 2, 2, 2, 2, 2 | 5.8 ms | 3, 3, 3, 3, 3 |
-| `large` | 12 000 exported functions | 14.2…27.1 | 8, 10, 10, 6, 8 | 29.0 ms | 9, 11, 11, 7, 9 |
-| `slow` | a top level that busy-waits 100 ms | 104.2…106.1 | 36, 36, 36, 36, 36 | 104.5 ms | 37, 37, 37, 37, 37 |
+| `none` | nothing | — | 2, 2, 2, 2, 0 | 5.8 ms | 3, 3, 3, 3, 1 |
+| `large` | 12 000 exported functions | 19.9…26.6 | 10, 6, 8, 8, 8 | 29.0 ms | 11, 7, 9, 9, 9 |
+| `slow` | a top level that busy-waits 100 ms | 100.9…106.3 | 36, 36, 38, 38, 36 | 110.3 ms | 37, 37, 39, 39, 37 |
 
-The lag is the node's creation frame (the main thread's `currentTime` just before
-`new AudioWorkletNode`) less the processor constructor's `currentFrame`; the first `process()` reads the
-same stale frame, and the second reads one quantum past the creation frame in every run: the jump is the
-lag plus one quantum, exactly. So the signature is the tracker's: the first reads date from about when
-the context's first module load started, and the clock is true from the second call on.
+The raw frames (figure `<variant>.framesCreationCtorP1P2P3`: the node's creation frame, then
+`currentFrame` in the constructor and the first three `process()` calls), `slow` for example:
 
-- **The lag tracks the load time.** `slow` lags 104.5 ms after a 104–106 ms load; `large` lags 17–29 ms
-  after a 14–27 ms load. `large` and `slow` differ as the tracker says (32–43 ms against 96–107 ms
-  there); `large` is shorter here because this machine parses the generated module faster.
-- **`none` is not a control.** The probe module is itself the context's first module load, so the run
-  without a variant shows the issue at its smallest (2 quanta, 5.8 ms), not its absence. The rule
-  "a run is stale when the lag exceeds one quantum and the second call jumps" holds it stale, which is
-  correct: any processor made right after the context's first `addModule()` resolves reads late.
+```
+18176/13568/13568/18304/18432; 18432/13824/13824/18560/18688; 18432/13568/13568/18560/18688;
+18176/13312/13312/18304/18432; 17920/13312/13312/18048/18176
+```
+
+What the frames show, in every one of the 14 stale runs:
+- The constructor and the first `process()` read the same frame.
+- That frame is 13 312 to 13 824, which is 0.30–0.31 s. That is where the context clock stood when the
+  probe started its first `addModule()`, after the 0.3 s settle. The read dates from when module loading
+  started, as the tracker says.
+- The second `process()` reads exactly the creation frame plus 128, and the third reads 128 more.
+  From the second call on, the clock is true.
+
+The one true run (`none`, run 5) read the creation frame in the constructor and first call, and stepped 128
+after that.
+
+- **The lag tracks the load time.** `slow` lags 104–110 ms after a 101–106 ms load. `large` lags
+  17–29 ms after a 20–27 ms load. `large` and `slow` differ as the tracker says (32–43 ms against
+  96–107 ms there). `large` is shorter here because this machine parses the generated module faster.
+- **`none` is not a control.** The probe module is itself the context's first module load. So the run
+  without a variant shows the issue at its smallest (2 quanta, 5.8 ms) in four runs of five, not its
+  absence.
 
 **What it means for the SDK (installed 0.0.177; read in the openDAW checkout, no new code).** The
 engine worklet is built at boot after its module loads (`WasmEngine.ensureReady` awaits `addModule()`,
