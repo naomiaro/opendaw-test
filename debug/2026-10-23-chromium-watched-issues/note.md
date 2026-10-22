@@ -28,7 +28,9 @@ did with it.
   synchronous task on the worklet thread right before `suspend()` / `resume()` halves the render rate.
   The processor runs 172.3 calls per second against 344.5 before, the context clock runs at 0.50, and
   the state persists to the end of the run. Without the stall, 20 cycles stay true. The user heard it
-  on the tracker's own repro page within five clicks. The entry should move to "Measured here", with
+  on the tracker's own repro page twice: on the first attempt the tone was distorted after five
+  clicks about a second apart, driven through the browser extension; on the user's own second
+  attempt it broke on the first click. The entry should move to "Measured here", with
   "avoid suspend / resume, above all after a long worklet task" as the standing rule; the register is
   not edited in this commit.
 - **40103985, zero-filled gaps in captured input:** no gap or duplicate after the first 0.1 s in any
@@ -54,7 +56,7 @@ stand), the single-window bfcache runs, and the OPFS stored-readings load before
 |---|---|---|---|---|
 | `first-read` | [571344687](https://issues.chromium.org/issues/571344687) — stale first clock read after a slow module load | Builds a worklet node right after `addModule()` resolves (a slow module, a large module, none), five runs each in a running context; the processor reports `currentFrame` from its constructor and first three `process()` calls, judged against the main thread's frame read just before the node was made | `STALE FIRST READ`, `FIRST READ TRUE`, `NOT CHECKED` | **reproduced**: `STALE FIRST READ` on Chrome 155, 2026-10-22 |
 | `bfcache` | [575891839](https://issues.chromium.org/issues/575891839) — half-speed worklet clock after a back/forward-cache restore | Measures the context clock against `performance.now()` with a worklet tone and an oscillator control playing, navigates away and back; on `pageshow.persisted` re-measures in three one-second windows and judges on the last two, otherwise records the `notRestoredReasons` | `HALF SPEED`, `NORMAL`, `NOT CHECKED` | **reproduced**: `HALF SPEED` on Chrome 155, 2026-10-22, all three restore windows; a playing demo also restores at half speed (the user's Chrome; Playwright's cannot enter the cache) |
-| `suspend-resume` | [560233271](https://issues.chromium.org/issues/560233271) — distortion after suspend / resume cycles | A worklet-rendered 440 Hz tone into an analyser; a two-second baseline, then 20 `suspend()` / `resume()` cycles with a purity window after each, judged on harmonic purity against the baseline and on dropouts | `DISTORTED`, `CLEAN`, `NOT CHECKED` | **reproduced**: `HALF RATE` with `&tracker=1` (an 80 ms worklet-thread stall before each cycle) on Chrome 155, 2026-10-22; the render rate halves at cycle 2, 3 or 10 and stays halved (344.5 → 172.3 `process()` calls per second, clock 0.50); without the stall, 20 cycles stay true |
+| `suspend-resume` | [560233271](https://issues.chromium.org/issues/560233271) — distortion after suspend / resume cycles | The tracker's tone (a stateless 440 Hz sine from `currentFrame`, from a module file) into an analyser; a two-second baseline, then `suspend()` / `resume()` cycles, with the tracker's preconditions under `&tracker=1` (44.1 kHz, one restart, an 80 ms worklet-thread stall before each cycle). Each one-second window is judged three ways: the clock witness (context clock against wall clock, `process()` calls per second), the graph's purity, click and dropout rules, and with `&witness=mic` the microphone in a context of its own | `HALF RATE`, `DISTORTED`, `DISTORTED (mic only)`, `CLEAN`, `NOT CHECKED` | **reproduced**: `HALF RATE` with `&tracker=1` (an 80 ms worklet-thread stall before each cycle) on Chrome 155, 2026-10-22; the render rate halves at cycle 2, 3 or 10 and stays halved (344.5 → 172.3 `process()` calls per second, clock 0.50); without the stall, 20 cycles stay true |
 | `capture-gaps` | [40103985](https://issues.chromium.org/issues/40103985) — zero-filled gaps and duplicated blocks in `getUserMedia` input | Records 60 s of a `MediaStreamAudioSourceNode` (`&source=loopback` or `mic`, `&rate=48000` or `44100`) through a worklet; counts zero runs of 100 frames or more after the head and 128-frame blocks identical to the one before, the first 0.1 s after the head reported apart | `GAPS`, `START GAPS`, `CLEAN`, `NOT CHECKED` | **start gaps only**: one zero run in the first 55 ms of a capture (loopback 44 100: 441 frames; mic 48 000: 128 frames; every run of those cells), none after it, no duplicate, Chrome 155, 2026-10-22 |
 | `opfs-usage` | [436552046](https://issues.chromium.org/issues/436552046) / [401692415](https://issues.chromium.org/issues/401692415) — OPFS usage not counted for sync-handle writes, negative after a delete | Writes through a sync access handle in a worker, reads `estimate()` before, after the write and after the delete; the user quits and reopens Chrome and the page judges the restart reading on load (`&truncateFirst=1` for the reporter's workaround) | `NOT COUNTED`, `COUNTED`, `NEGATIVE USAGE`, `NOT CHECKED` | **reproduced**: `NEGATIVE USAGE` after a restart of the user's Chrome 155, 2026-10-22 (saved figure −16.5 MB after a plain run's delete, read back as 4.28 GB; about +50.6 MB before it if the delete took the full 64 MiB, as the off-disk reading and round 2 show); the saved figure read off disk drops by the deleted size on a plain delete, by 0 after a truncate; a truncate-first run and a second restart moved it by the hand-deleted samples' size only (−238 137 857 against −238 135 417 predicted) |
 | `opfs-flush` | [40909520](https://issues.chromium.org/issues/40909520) — slow `flush()` on Mac | Times 20 writes of 1 MiB and 20 of 16 MiB, each followed by `flush()`, in a worker; median, p95 and max per size | `MEASURED` (figures only: the tracker's claim is a comparison with other browsers this repo does not make) | **measured**: flush median 0.53–0.57 ms (1 MiB), 1.44–1.46 ms (16 MiB), Chrome 155, macOS 15.6.1, 2026-10-22 |
@@ -276,7 +278,12 @@ Chrome 155.0.8059.85, macOS 15.6.1 (Apple silicon), 2026-10-22, 44 100 Hz. Every
 `chromeFullVersion` and `osVersion` itself.
 
 **By ear, on the tracker's page.** The user opened https://pioug.github.io/chromium-audiocontext/ in
-their own Chrome, clicked Play, then "Suspend / resume". The tone broke on the first click. The page's
+their own Chrome, clicked Play, then "Suspend / resume". There were two attempts, in this order:
+1. Five "Suspend / resume" clicks about a second apart, driven through the browser extension. The
+   tone was distorted after those five.
+2. The user's own clicks. The tone broke on the first one.
+
+The page's
 source is at https://github.com/pioug/chromium-audiocontext. Its click handler is:
 
 ```js
@@ -339,9 +346,13 @@ the microphone witness.
 
 The last row is the manual mode's smoke test: two real clicks, two rows, Finish, envelope uploaded.
 
-- **The stall is the trigger.** With it, four of five runs fell into half rate within ten cycles: at
-  cycle 2, 2, 3 and 10. The fifth was a short 5-cycle run that did not fail. Without it, 20 cycles
-  stayed true.
+- **The stall is the trigger.** Six runs had the stall on. Four fell into half rate within ten cycles,
+  at cycles 2, 2, 3 and 10. Two did not fail:
+  - the 5-cycle run `mvk66fux-d534`;
+  - the manual smoke test `mvk6ah1p-c6ap`, two cycles with the clock true.
+
+  The two short runs that held are consistent with a failure that has come at cycle 2, 3 or 10.
+  Without the stall, 20 cycles stayed true.
 - **Neither the module nor a slower restart prevents it.** The Blob-URL module failed at cycle 2. A
   500 ms gap between `suspend()` and `resume()` only delayed the failure to cycle 10.
 - **Half rate is exact, and it lasts.** The processor's calls fall from 344.5 per second, which is
