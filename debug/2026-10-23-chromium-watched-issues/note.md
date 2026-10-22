@@ -17,7 +17,7 @@ condition reads `NOT CHECKED <reason>` and is recorded as such, never as "not re
 
 | `?issue=` | Chromium issue | What the probe does | Verdict words | Status |
 |---|---|---|---|---|
-| `first-read` | [571344687](https://issues.chromium.org/issues/571344687) — stale first clock read after a slow module load | Builds a worklet node right after `addModule()` resolves (a slow module, a large module, none), five runs each in a running context; the processor reports `currentFrame` from its constructor and first three `process()` calls, judged against the main thread's frame read just before the node was made | `STALE FIRST READ`, `FIRST READ TRUE`, `NOT CHECKED` | not yet run |
+| `first-read` | [571344687](https://issues.chromium.org/issues/571344687) — stale first clock read after a slow module load | Builds a worklet node right after `addModule()` resolves (a slow module, a large module, none), five runs each in a running context; the processor reports `currentFrame` from its constructor and first three `process()` calls, judged against the main thread's frame read just before the node was made | `STALE FIRST READ`, `FIRST READ TRUE`, `NOT CHECKED` | **reproduced**: `STALE FIRST READ` on Chrome 155, 2026-10-22 |
 | `bfcache` | [575891839](https://issues.chromium.org/issues/575891839) — half-speed worklet clock after a back/forward-cache restore | Measures the context clock against `performance.now()` with a worklet tone and an oscillator control playing, navigates away and back; on `pageshow.persisted` re-measures and judges, otherwise records the `notRestoredReasons` | `HALF SPEED`, `NORMAL`, `NOT CHECKED` | not yet run |
 | `suspend-resume` | [560233271](https://issues.chromium.org/issues/560233271) — distortion after suspend / resume cycles | A worklet-rendered 440 Hz tone into an analyser; a two-second baseline, then 20 `suspend()` / `resume()` cycles with a purity window after each, judged on harmonic purity against the baseline and on dropouts | `DISTORTED`, `CLEAN`, `NOT CHECKED` | not yet run |
 | `capture-gaps` | [40103985](https://issues.chromium.org/issues/40103985) — zero-filled gaps and duplicated blocks in `getUserMedia` input | Records 60 s of a `MediaStreamAudioSourceNode` (`&source=loopback` or `mic`, at 48 000 and 44 100) through a worklet; counts zero runs of 100 frames or more after the head and 128-frame blocks identical to the one before | `GAPS`, `CLEAN`, `NOT CHECKED` | not yet run |
@@ -64,7 +64,48 @@ and what it means for the register entry.
 
 ### first-read (571344687)
 
-Not yet run.
+**Reproduced.** Chrome 155 (macOS, Playwright's Chrome, window visible), 2026-10-22, 44 100 Hz, one
+click, five runs per variant interleaved, each run in a fresh running context. Verdict
+**`STALE FIRST READ`** on all three variants, 15 of 15 runs. Envelope
+`.verify-output/chromium-first-read-mvk18ai3-q6py.json`; 0 console errors on the navigation.
+
+| variant | loaded before the probe module | variant load (ms) | lag of the constructor read (quanta) | largest lag | jump, first to second call (quanta) |
+|---|---|---|---|---|---|
+| `none` | nothing | — | 2, 2, 2, 2, 2 | 5.8 ms | 3, 3, 3, 3, 3 |
+| `large` | 12 000 exported functions | 14.2…27.1 | 8, 10, 10, 6, 8 | 29.0 ms | 9, 11, 11, 7, 9 |
+| `slow` | a top level that busy-waits 100 ms | 104.2…106.1 | 36, 36, 36, 36, 36 | 104.5 ms | 37, 37, 37, 37, 37 |
+
+The lag is the node's creation frame (the main thread's `currentTime` just before
+`new AudioWorkletNode`) less the processor constructor's `currentFrame`; the first `process()` reads the
+same stale frame, and the second reads one quantum past the creation frame in every run: the jump is the
+lag plus one quantum, exactly. So the signature is the tracker's: the first reads date from about when
+the context's first module load started, and the clock is true from the second call on.
+
+- **The lag tracks the load time.** `slow` lags 104.5 ms after a 104–106 ms load; `large` lags 17–29 ms
+  after a 14–27 ms load. `large` and `slow` differ as the tracker says (32–43 ms against 96–107 ms
+  there); `large` is shorter here because this machine parses the generated module faster.
+- **`none` is not a control.** The probe module is itself the context's first module load, so the run
+  without a variant shows the issue at its smallest (2 quanta, 5.8 ms), not its absence. The rule
+  "a run is stale when the lag exceeds one quantum and the second call jumps" holds it stale, which is
+  correct: any processor made right after the context's first `addModule()` resolves reads late.
+
+**What it means for the SDK (installed 0.0.177; read in the openDAW checkout, no new code).** The
+engine worklet is built at boot after its module loads (`WasmEngine.ensureReady` awaits `addModule()`,
+then compiles the engine's WASM, and the node follows), so it can sit in the issue's window whenever the
+context is already running at boot (the window is open until the worklet thread renders its first
+quantum). It does not read the clock in its constructor; its `process()`
+stamps each quantum from `QuantumClock.advance(currentFrame)` (`lib-dsp/src/quantum-clock.ts`), whose
+origin is the largest `currentFrame − calls·128` seen. A stale first read gives a low origin, and the
+first true read (the second call, by the figures above) raises it, so from the second quantum on the
+engine's frame is the true one. The `RecordingProcessor` uses the same clock and reports its
+first-quantum frame `SETTLE_QUANTA` (16) calls late, "a stale first read is corrected by any true read
+among the following quanta"; this probe's jumps land on the true frame at the second call, well inside
+16. A recording's worklet is in any case made long after the recorder module loads (once, at engine
+install), outside the window. The figure that says the repair holds end to end is the recording
+start-alignment sweep on 0.0.177: netted placement +1.07…+1.17 ms
+(`debug/2026-09-02-recording-start-alignment/note.md`, `changelogs/sdk-0.0.176-to-0.0.177-changes.md`).
+A worklet that seeded a sample counter from its constructor's `currentFrame` would keep this probe's
+lag for its whole life; none of this repo's worklets is known to, but that is the check for any new one.
 
 ### bfcache (575891839)
 

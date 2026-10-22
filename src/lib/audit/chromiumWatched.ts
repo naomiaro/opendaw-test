@@ -48,9 +48,12 @@ export interface BrowserNavigator {
   userAgentData?: { brands: readonly { brand: string; version: string }[] };
 }
 
-/** The browser's brands joined (`navigator.userAgentData`), else its user-agent string. */
+/** A made-up brand Chrome lists beside its real ones ("Not A;Brand", "Not)A;Brand", …). */
+const GREASE_BRAND = /not.?a.?brand/i;
+
+/** The browser's brands joined (`navigator.userAgentData`), the made-up one left out, else its user-agent string. */
 export function browserOf(nav: BrowserNavigator): string {
-  const brands = nav.userAgentData?.brands;
+  const brands = nav.userAgentData?.brands.filter((b) => !GREASE_BRAND.test(b.brand));
   if (brands !== undefined && brands.length > 0) return brands.map((b) => `${b.brand} ${b.version}`).join(", ");
   return nav.userAgent;
 }

@@ -30,6 +30,20 @@ describe("browserOf", () => {
     expect(browserOf(nav)).toBe("Google Chrome 155, Chromium 155");
   });
 
+  it("leaves out the made-up brand Chrome lists beside its real ones", () => {
+    const nav = {
+      userAgent: "Mozilla/5.0",
+      userAgentData: {
+        brands: [
+          { brand: "Google Chrome", version: "155" },
+          { brand: "Not A;Brand", version: "99" },
+          { brand: "Chromium", version: "155" },
+        ],
+      },
+    };
+    expect(browserOf(nav)).toBe("Google Chrome 155, Chromium 155");
+  });
+
   it("falls back to the user-agent string without brands", () => {
     expect(browserOf({ userAgent: "Mozilla/5.0 Firefox/157.0" })).toBe("Mozilla/5.0 Firefox/157.0");
   });

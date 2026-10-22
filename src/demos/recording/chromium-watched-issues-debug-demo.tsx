@@ -5,6 +5,7 @@ import { MoisesLogo } from "@/components/MoisesLogo";
 import { BackLink } from "@/components/BackLink";
 import { DebugLinkBar } from "@/components/DebugLinkBar";
 import { browserOf, envelopeName, issueFrom, type ProbeEnvelope, type WatchedIssue } from "@/lib/audit/chromiumWatched";
+import { runFirstReadProbe } from "@/lib/audit/chromiumFirstReadProbe";
 import "@radix-ui/themes/styles.css";
 import { Theme, Container, Heading, Text, Flex, Card, Callout, Badge, Button, Code, Table } from "@radix-ui/themes";
 import { InfoCircledIcon, PlayIcon } from "@radix-ui/react-icons";
@@ -60,6 +61,7 @@ type Probe = (signal: AbortSignal, report: (step: string) => void) => Promise<Pr
 function probeFor(issue: WatchedIssue): Probe {
   switch (issue) {
     case "first-read":
+      return runFirstReadProbe;
     case "bfcache":
     case "suspend-resume":
     case "capture-gaps":
