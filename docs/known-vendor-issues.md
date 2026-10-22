@@ -233,31 +233,54 @@ Chromium tracker through the browser).
 - **Last checked:** Chrome 155.0.8059.85, macOS 15.6.1, the user's Chrome, 2026-10-22: `HALF SPEED`
   twice, probe `?issue=bfcache`.
 
-## Watched — read from the tracker, not reproduced here
-
-### Chromium [560233271](https://issues.chromium.org/issues/560233271) — worklet playback stays distorted after an AudioContext suspend / resume cycle
+### Chromium [560233271](https://issues.chromium.org/issues/560233271) — worklet playback stays at half rate, distorted, after an AudioContext suspend / resume that follows a worklet-thread stall
 
 - **Tracker:** [issues.chromium.org/issues/560233271](https://issues.chromium.org/issues/560233271),
   "AudioWorklet playback becomes persistently distorted after AudioContext suspend/resume". Filed
   2026-09-11, **open**, P1, assigned, treated upstream as the root-cause tracker for the suspend / resume
   race in the bypass-output-buffering path ([issue 528653884](https://issues.chromium.org/issues/528653884) was closed by demoting a CHECK, which turned a
   renderer crash into partial output buffers). Bisected to Chrome 152.0.7949.0; macOS only so far; the
-  reporter is BandLab, whose fix was to never suspend.
-- **Symptom:** repeated `suspend()` / `resume()` on a running context with a worklet eventually leaves the
-  output permanently distorted; only a reload or a new context recovers.
+  reporter is BandLab, whose fix was to never suspend. The reporter's reduction
+  ([github.com/pioug/chromium-audiocontext](https://github.com/pioug/chromium-audiocontext), `BUG_REPORT.md`;
+  repro page [pioug.github.io/chromium-audiocontext](https://pioug.github.io/chromium-audiocontext/)) names
+  the preconditions: 44.1 kHz requested explicitly, one restart on Play, an 80 ms synchronous worklet
+  task before each cycle, a module file, a continuous stateless sine.
+- **Symptom here:** a `suspend()` / `resume()` that follows an 80 ms synchronous task on the worklet
+  thread halves the render rate, and it stays halved. The processor's `process()` calls fall from 344.5
+  per second (44 100 / 128) to 172.3, and the context clock runs at 0.50 of the wall clock, for every
+  window to the end of the run: one 128-frame quantum per 256-frame output callback, as the reporter's
+  trace says. It is audible: on the microphone the tone's purity fell from 11.3 dB to −40…−63 dB, and
+  the recording's strongest pitch class moved from A (1.00) to G (0.996, A 0.66), centroid 725 → 2 560 Hz,
+  flatness 0.040 → 0.142. By ear on the tracker's repro page, in the user's Chrome, twice: distorted
+  after five clicks about a second apart on the first attempt, on the first click on the second.
+  Controls: without the stall, 20 cycles stay `CLEAN`, so the stall is the trigger; a Blob-URL module
+  reproduces here too, unlike for the reporter; a 500 ms gap between `suspend()` and `resume()` only
+  delays the failure, to cycle 10. Without the stall, two 40-cycle runs and one paced run broke on
+  the microphone alone with the clock true; those are candidates, not reproductions: the room was
+  unattended, and one of them was shown to be a 0.4 s room sound.
 - **Where it bites here:** neither the demos nor the SDK call `suspend()`; `initializeOpenDAW` only
   resumes after a user gesture. The browser's own suspensions (iOS backgrounding, a context created
-  suspended under autoplay policy and resumed once) are single cycles. Not observed here: 20 quick
-  cycles on an idle one-node graph read `CLEAN`, which is not reproduced, not fixed (the tracker bisects
-  it to 152 and calls it eventual).
-- **Workaround:** keep it that way — never add a suspend / resume cycle to a demo on macOS Chrome;
+  suspended under autoplay policy and resumed once) are single cycles. The engine worklet's per-quantum
+  load makes a worklet-thread stall before any future suspend likely, so a page that suspends and
+  resumes after a long WASM compile, a large message or a heavy `process()` can lose half its render
+  rate until a reload. The probe's earlier graph-only `CLEAN` rows (no stall, and an in-graph analyser
+  on a phase-accumulating tone, which cannot see the output-path fault) are a limit of that probe, not
+  evidence against the issue.
+- **Workaround:** keep it that way: never add a suspend / resume cycle to a demo. A reload or a new
+  context recovers; another `suspend()` / `resume()` does not.
   `--disable-features=WebAudioBypassOutputBuffering` for a local check.
-- **Evidence:** `debug/2026-10-23-chromium-watched-issues/note.md`, "suspend-resume"; envelopes
-  `chromium-suspend-resume-mvk2auh7-7vhg.json`, `chromium-suspend-resume-mvk2bm5g-d5aw.json`, positive
-  controls `…-mvk2ce9z-vsxm.json` (crackle) and `…-mvk2d80b-fihu.json` (harmonic).
-- **Last checked:** not reproduced on Chrome 155.0.8059.85 / macOS 15.6.1, 2026-10-22, probe
-  `?issue=suspend-resume`: `CLEAN` twice (purity 66.51 dB in every one of 20 cycles, 0 clicks,
-  0 dropouts); both positive controls read `DISTORTED`.
+- **Evidence:** `debug/2026-10-23-chromium-watched-issues/note.md`, "suspend-resume"; probe
+  `chromium-watched-issues-debug-demo.html?issue=suspend-resume&tracker=1` (`&witness=mic` adds the
+  microphone and a WAV; `&manual=1` takes one click per cycle, as on the tracker's page); envelopes
+  `chromium-suspend-resume-mvk64uts-dikg.json` (graph), `…-mvk65nh4-kjz3.json` (microphone, with its
+  WAV), `…-mvk5tg8m-hx60.json` and `…-mvk5vayw-hnhh.json` (earlier tracker-precondition runs, re-judged
+  `HALF RATE`); controls `…-mvk67nwz-e5jp.json` (no stall, `CLEAN`), `…-mvk66w4s-yjmr.json` (Blob
+  module), `…-mvk69i2k-w85k.json` (500 ms gap), `…-mvk66fux-d534.json` (5 cycles, `NOT CHECKED`);
+  microphone-only candidates `…-mvk5pda3-2kmc.json`, `…-mvk5rajg-qii2.json`, `…-mvk68gjz-2bwp.json`.
+- **Last checked:** Chrome 155.0.8059.85, macOS 15.6.1, 2026-10-22: `HALF RATE` with
+  `?issue=suspend-resume&tracker=1`, and by ear on the tracker's repro page.
+
+## Watched — read from the tracker, not reproduced here
 
 ### Chromium [40103985](https://issues.chromium.org/issues/40103985) — zero-filled 10 ms gaps and duplicated blocks in `getUserMedia` input under underrun
 

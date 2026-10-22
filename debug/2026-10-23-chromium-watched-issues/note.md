@@ -30,9 +30,8 @@ did with it.
   the state persists to the end of the run. Without the stall, 20 cycles stay true. The user heard it
   on the tracker's own repro page twice: on the first attempt the tone was distorted after five
   clicks about a second apart, driven through the browser extension; on the user's own second
-  attempt it broke on the first click. The entry should move to "Measured here", with
-  "avoid suspend / resume, above all after a long worklet task" as the standing rule; the register is
-  not edited in this commit.
+  attempt it broke on the first click. Moved to "Measured here", with "avoid suspend / resume, above
+  all after a long worklet task" as the standing rule.
 - **40103985, zero-filled gaps in captured input:** no gap or duplicate after the first 0.1 s in any
   unspliced minute; `START GAPS` in two of four cells (441 zeros at loopback 44 100, 128 at mic 48 000).
   Stays watched for the steady-state symptom; the stream-start zero run is recorded in the entry.
