@@ -11,7 +11,8 @@ mark it fixed, name the version) when the vendor ships a fix and a re-measuremen
 Each entry: the tracker and its status, the symptom, where it shows up here, the workaround and
 where it lives, the evidence, and when it was last checked. An entry marked **watched** is an open
 upstream issue read from the tracker that would reach this repo but has not been reproduced here;
-its "Where it bites here" says what a matching symptom would look like.
+its "Where it bites here" says what a matching symptom would look like. An entry without the mark
+was measured here.
 
 ## Chromium 442866743 — a worklet's clock stands still while the main thread changes the audio graph
 
@@ -44,7 +45,7 @@ its "Where it bites here" says what a matching symptom would look like.
   browser is unchanged; re-read the tracker at each SDK upgrade and retire the repairs only on a
   Chrome that reads true under the probe.
 
-## Chromium 571344687 — a worklet processor made right after its module loads reads a stale first clock
+## Chromium 571344687 — a worklet processor made right after its module loads reads a stale first clock (watched)
 
 - **Tracker:** [issues.chromium.org/issues/571344687](https://issues.chromium.org/issues/571344687),
   "AudioWorklet: currentTime is stale in the constructor and first process() after slow module loading".
@@ -57,23 +58,30 @@ its "Where it bites here" says what a matching symptom would look like.
   value and counts samples from there keeps the offset for its whole life. The reporter's reading of the
   source: the global scope's frame is a snapshot taken when the worklet object proxy is created and is
   only updated once the worklet thread renders its first quantum.
-- **Where it bites here:** every take's recording worklet and the engine worklet are processors made
-  after a module load. The alignment register's rule "anything that loads an AudioWorklet module must have
-  it loaded before the first take: a load still running when a take starts delays that take's first frame
-  (117 ms measured)" sits in the same window. The two are not shown to be one mechanism: the harness
-  measured a first frame that ARRIVED late (a true delay), this report a clock read that LAGS; a lagging
-  read alone would place a take early, not late.
+- **Where it bites here:** every recording's worklet (one `RecordingWorklet` per armed capture per
+  recording; loop takes share it) and, on boot, the engine worklet, which is constructed right after its
+  `addModule()` resolves and so sits exactly in the issue's window; the recorder's module is loaded once
+  at engine install, so a recording's worklet is made long after it. The recording CLAUDE.md's rule
+  "anything that loads an AudioWorklet module must have it loaded before the first take: a load still
+  running when a take starts delays that take's first frame (117 ms measured)" is the same window. The
+  two are not shown to be one mechanism: the harness measured a first frame that ARRIVED late (a true
+  delay, a head deficit in the audio with the placement still right), this report a clock read that
+  LAGS; a lagging read alone would place a take early, not late.
 - **Workaround:** the SDK's `QuantumClock` corrects a stale first read once a true read arrives (the
   anchor is the largest `currentFrame − calls·128` seen), and the recording worklet sends its
   first-quantum time 16 calls late for that reason; the report's own workaround for processor authors is
   the same in spirit (re-read `currentTime` every `process()`, never seed a clock from the constructor).
   In this repo: load worklet modules before the first take; any worklet of ours that stamps from the
   constructor is wrong by this issue.
-- **Evidence:** the tracker's repro page (attached there); here only the 117 ms late first take in
-  `debug/2026-09-02-recording-start-alignment/note.md` ("Where the raw skew comes from").
+- **Evidence:** the tracker's repro page (attached there). Here, in
+  `debug/2026-09-02-recording-start-alignment/note.md`: the 117.3 ms late first take when the probe's
+  recorder module loaded at loopback attach ("The probe's own effect"), a second 117.3 ms first-take
+  delay on a witness run that no module load explains, and the cold-start head deficit every standing
+  sweep since 0.0.173 has logged on the first recording of a fresh page load (84.4 / 79.0 / 104.4 /
+  3523.7 / 94.4 ms) — all "arrived late" readings in the same window, none shown to be this issue.
 - **Last checked:** 2026-10-22 (tracker read; not reproduced here).
 
-## Chromium 575891839 — the worklet clock runs at half speed after a back/forward-cache restore
+## Chromium 575891839 — the worklet clock runs at half speed after a back/forward-cache restore (watched)
 
 - **Tracker:** [issues.chromium.org/issues/575891839](https://issues.chromium.org/issues/575891839),
   "AudioWorklet clock slows to ~0.5× after BFCache restoration, causing distorted playback". Filed
@@ -85,14 +93,15 @@ its "Where it bites here" says what a matching symptom would look like.
   is unaffected. Disappears with `--disable-features=WebAudioBypassOutputBuffering` (the reporter's
   isolation: the synchronous worklet render path across the cache's pause / resume).
 - **Where it bites here:** every demo (the engine is a worklet); a user pressing Back and Forward on a
-  playing demo. Not measured here: the demos have no `pageshow` / `pagehide` handling and the back/forward
-  cache case is on the untested list.
-- **Workaround:** none applied. The option is to treat a `pageshow` with `persisted` as a reload (tear the
-  engine down or ask for one), or to opt the page out of the cache with a `pagehide` listener that calls
-  nothing but exists, or `Cache-Control: no-store`. Decide after measuring.
+  playing demo. Not measured here: the demos have no `pageshow` / `pagehide` handling, and no sweep
+  exercises a back/forward-cache restore.
+- **Workaround:** none applied. The option is to handle `pageshow` with `persisted` by tearing the engine
+  down or asking for a reload. (A `pagehide` listener does not keep a page out of the cache — it is the
+  event cache-compatible pages are told to use; an `unload` listener did, and Chrome is deprecating that;
+  `Cache-Control: no-store` is no longer an absolute block in Chrome either.) Decide after measuring.
 - **Last checked:** 2026-10-22 (tracker read; not reproduced here).
 
-## Chromium 560233271 — worklet playback stays distorted after an AudioContext suspend / resume cycle (macOS)
+## Chromium 560233271 — worklet playback stays distorted after an AudioContext suspend / resume cycle (macOS, watched)
 
 - **Tracker:** [issues.chromium.org/issues/560233271](https://issues.chromium.org/issues/560233271),
   "AudioWorklet playback becomes persistently distorted after AudioContext suspend/resume". Filed
@@ -109,7 +118,7 @@ its "Where it bites here" says what a matching symptom would look like.
   `--disable-features=WebAudioBypassOutputBuffering` for a local check.
 - **Last checked:** 2026-10-22 (tracker read).
 
-## Chromium 40103985 — zero-filled 10 ms gaps and duplicated blocks in `getUserMedia` input under underrun
+## Chromium 40103985 — zero-filled 10 ms gaps and duplicated blocks in `getUserMedia` input under underrun (watched)
 
 - **Tracker:** [issues.chromium.org/issues/40103985](https://issues.chromium.org/issues/40103985),
   "Webaudio inserts zero filled parts into buffers supplied by getUserMedia". Filed 2019, **open**, P3,
@@ -119,13 +128,22 @@ its "Where it bites here" says what a matching symptom would look like.
   input and an output device on different clocks (USB in, USB out), 128-frame duplications about once a
   second; the stream's own time then drifts against the context clock. Reported on Windows, macOS and
   Linux; worse on slow machines and under a large graph.
-- **Where it bites here:** any recording from a real device; the harness's synthetic loopback runs in
-  the engine's own context and has never shown it (every beat of every take matched on 0.0.174 through
-  0.0.177), so a real-device recording with a 10 ms hole or a drifting beat would be this, not the SDK.
+- **Where it bites here:** any recording through a `MediaStreamAudioSourceNode`, the loopback included
+  (the sink this issue is about feeds that node). No zero-filled gap or 128-frame duplication has been
+  identified in a take here, and every beat of every take matched on 0.0.174 through 0.0.177 (the
+  `aligned` verdict requires no missing beat). The loopback HAS shown two capture-side artifacts on the
+  same path that could be this mechanism, unestablished: at 44.1 kHz a node's delay stepping UP by
+  exactly 441 frames (10 ms) in 6 of 70 opens, 0.4–1.0 s after the node started, never at 48 kHz in 150
+  opens, which the register reads as a 10 ms-chunked FIFO path; and a 44.1 kHz stream-start head
+  duplicate (the first click copied about 20 ms later at about 65 %, 14 of 30 cells), read as a
+  stream-start FIFO or resampler artifact. A real-device recording with a 10 ms hole or a drifting beat
+  would be this, not the SDK.
 - **Workaround:** none; a `MediaRecorder` capture of the same stream was clean in the reports (not what
   the SDK does). Keep the audio graph small during a take; check `tailMissingMs` and the per-beat errors
   of a real-device take before blaming placement.
-- **Last checked:** 2026-10-22 (tracker read; never observed here).
+- **Evidence:** `debug/2026-09-02-recording-start-alignment/note.md` (the 441-frame step and the
+  stream-start duplicate); `src/demos/recording/CLAUDE.md` (the step).
+- **Last checked:** 2026-10-22 (tracker read; no gap identified here).
 
 ## Chrome — animation frames stop for a hidden document and a fully covered window
 
@@ -215,8 +233,9 @@ its "Where it bites here" says what a matching symptom would look like.
   returns error sentinel instead of throwing QuotaExceededError" and [40068799](https://issues.chromium.org/issues/40068799)
   (the same in incognito, `0xfffffff8`) (open, P2).
 - **Where they would bite here:** the SDK's OPFS worker writes every fetched sample and every finished
-  recording through sync access handles; a slow flush is a stall the worker now reports (`[OPFS] … runs
-  for <n>s at '<step>'`), and a quota overrun on a long recording would come back as a short write count,
+  recording through sync access handles; a flush held for more than five seconds is reported by the worker as a hold at step `write`
+  (`[OPFS] … runs for <n>s at 'write'`; truncate, write and flush share the step), a slower-than-usual
+  flush under that stays silent, and a quota overrun on a long recording would come back as a short write count,
   not an exception. Neither observed here.
 - **Last checked:** 2026-10-22 (titles read only).
 
@@ -232,7 +251,7 @@ its "Where it bites here" says what a matching symptom would look like.
   `statechange` event (root CLAUDE.md, "AudioContext Suspension").
 - **Last checked:** never re-measured; the Opus fallback is exercised on every Apple load.
 
-## Chromium 516995393 — no input-latency figure in the Web Audio API (a spec gap, watched)
+## Chromium 516995393 — no input-latency figure in the Web Audio API (a spec gap)
 
 - **Tracker:** [issues.chromium.org/issues/516995393](https://issues.chromium.org/issues/516995393),
   "Web Audio API input latency reporting - audio recording latency compensation in DAW app". Filed

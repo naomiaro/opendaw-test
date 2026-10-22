@@ -481,7 +481,9 @@ anchor offset (14 frames at 48 kHz, 13 at 44.1 kHz), on every row read. At 44.1 
 node's delay can step by 441 frames (10 ms) in its first second, and a tap that sees it
 reports the delay as not read. Anything that loads an AudioWorklet module must have it
 loaded before the first take: a load still running when a take starts delays that
-take's first frame (117 ms measured). Chromium 571344687 (a stale first clock read in a processor made right after its module loads) sits in the same window; see `docs/known-vendor-issues.md`.
+take's first frame (117 ms measured).
+Chromium 571344687 (a stale first clock read in a processor made right after its module loads)
+sits in the same window; see `docs/known-vendor-issues.md`.
 
 `classifyMultitrackCell` throws when asked to net without one delay record per repeat or
 without a limit above zero. Replay saved runs (one sample rate at a time) with
