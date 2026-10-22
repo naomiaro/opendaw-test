@@ -200,6 +200,7 @@ export default defineConfig(({command}) => ({
                 loudnessMeterAudit: resolve(__dirname, "loudness-meter-audit-debug-demo.html"),
                 inputLatencyCalibrationDebugDemo: resolve(__dirname, "input-latency-calibration-debug-demo.html"),
                 workletClockDebug: resolve(__dirname, "worklet-clock-debug-demo.html"),
+                chromiumWatchedIssuesDebug: resolve(__dirname, "chromium-watched-issues-debug-demo.html"),
                 layerDeleteSoakDebug: resolve(__dirname, "layer-delete-soak-debug-demo.html"),
                 paramWriteEnabledFlipDebug: resolve(__dirname, "param-write-enabled-flip-debug-demo.html"),
                 wasmEngine: resolve(__dirname, "wasm-engine-demo.html"),
