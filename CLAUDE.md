@@ -665,13 +665,18 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
 
 ## Build & Verification
 - **Known vendor issues live in `docs/known-vendor-issues.md`** — browser, platform and hosting
-  behaviours outside the SDK that this repo has measured and works around (the Chromium worklet
-  clock that stands still under graph work, frames stopping on a hidden page, per-node stream
-  delays, Safari's Opus decode, Cloudflare's `NODE_VERSION` resolution, …). Before debugging a
-  symptom that matches one, read its entry: a listed behaviour is not a new finding and its
-  workaround is already in place where the entry says. A sweep cell explained by an entry is read
-  against it, not filed. Add an entry when a vendor behaviour costs a session; mark one fixed only
-  after a re-measurement on the vendor's fix.
+  behaviours outside the SDK that this repo has measured and works around, grouped by vendor
+  (Chromium, Firefox, WebKit, hosting and tooling: the Chromium worklet clock that stands still
+  under graph work, frames stopping on a hidden page, per-node stream delays, Safari's Opus decode
+  and iOS suspensions, WebKit's worklet heap outliving the page, Cloudflare's `NODE_VERSION`
+  resolution, …), with open upstream issues read from the trackers under each vendor's "Watched" section. Before debugging a
+  symptom that matches one, read its entry. The register keeps two kinds apart per vendor: a
+  **measured** entry was reproduced here and its workaround is in place where the entry says, so a
+  sweep cell explained by it is read against it, not filed; a **watched** entry is an open upstream
+  issue read from the tracker and never reproduced here — a candidate, not an attribution: reproduce
+  first (an SDK regression can look the same), then attribute, and move the entry up only on a
+  measurement. Add an entry when a vendor behaviour costs a session; mark one fixed only after a
+  re-measurement on the vendor's fix.
 - After SDK upgrades, re-run the standing sample-rate/quantum-alignment regression sweep:
   `samplerate-audit-debug-demo.html?family=all&bpm=all&rate=all` (calibration in
   `src/lib/audit/auditCalibration.ts`, campaign register in
