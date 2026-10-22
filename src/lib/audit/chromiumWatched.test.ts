@@ -6,6 +6,10 @@ describe("issueFrom", () => {
     expect(issueFrom(new URLSearchParams("issue=bfcache"))).toBe("bfcache");
   });
 
+  it("reads the output-latency issue from the query", () => {
+    expect(issueFrom(new URLSearchParams("issue=output-latency"))).toBe("output-latency");
+  });
+
   it("throws on an unknown value and names every known issue", () => {
     expect(() => issueFrom(new URLSearchParams("issue=nope"))).toThrow(WATCHED_ISSUES.join(", "));
   });

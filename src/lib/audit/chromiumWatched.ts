@@ -2,7 +2,14 @@
 // (`chromium-watched-issues-debug-demo.html?issue=<name>`): which issue a page load
 // probes, what every probe reports, and the file name its envelope is saved under.
 
-export type WatchedIssue = "first-read" | "bfcache" | "suspend-resume" | "capture-gaps" | "opfs-usage" | "opfs-flush";
+export type WatchedIssue =
+  | "first-read"
+  | "bfcache"
+  | "suspend-resume"
+  | "capture-gaps"
+  | "opfs-usage"
+  | "opfs-flush"
+  | "output-latency";
 
 export const WATCHED_ISSUES: readonly WatchedIssue[] = [
   "first-read",
@@ -11,6 +18,7 @@ export const WATCHED_ISSUES: readonly WatchedIssue[] = [
   "capture-gaps",
   "opfs-usage",
   "opfs-flush",
+  "output-latency",
 ];
 
 function isWatchedIssue(value: string): value is WatchedIssue {

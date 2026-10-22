@@ -24,7 +24,7 @@ condition reads `NOT CHECKED <reason>` and is recorded as such, never as "not re
 | `opfs-usage` | [436552046](https://issues.chromium.org/issues/436552046) / [401692415](https://issues.chromium.org/issues/401692415) — OPFS usage not counted for sync-handle writes, negative after a delete | Writes through a sync access handle in a worker, reads `estimate()` before, after the write and after the delete; the user quits and reopens Chrome and the page judges the restart reading on load (`&truncateFirst=1` for the reporter's workaround) | `NOT COUNTED`, `COUNTED`, `NEGATIVE USAGE`, `NOT CHECKED` | **in-session half run, restart half needs a hand**: `COUNTED` on Chrome 155, 2026-10-22; the persisted figure, read off disk, is negative and drops by the deleted size on a plain delete, by 0 after a truncate |
 | `opfs-flush` | [40909520](https://issues.chromium.org/issues/40909520) — slow `flush()` on Mac | Times 20 writes of 1 MiB and 20 of 16 MiB, each followed by `flush()`, in a worker; median, p95 and max per size | `MEASURED` (figures only: the tracker's claim is a comparison with other browsers this repo does not make) | **measured**: flush median 0.53–0.57 ms (1 MiB), 1.44–1.46 ms (16 MiB), Chrome 155, macOS 15.6.1, 2026-10-22 |
 | — | [541725401](https://issues.chromium.org/issues/541725401) / [40068799](https://issues.chromium.org/issues/40068799) — a quota overrun returns a sentinel | No probe: needs the origin's quota exhausted or an incognito profile | — | out of scope, stays watched |
-| — | [388871416](https://issues.chromium.org/issues/388871416) — `outputLatency` with a Bluetooth headset | No page probe: needs a Bluetooth output device (plan Task 7) | — | not yet run |
+| `output-latency` | [388871416](https://issues.chromium.org/issues/388871416) — `outputLatency` with a Bluetooth headset | Resumes a context and reads `baseLatency`, `outputLatency`, `sinkId` and the output device's label from `enumerateDevices()` every second for 30 s; no classifier, the rows are the finding | `MEASURED` (figures only), `NOT CHECKED context-<state>` | **built-in speaker only**: base 5.8 ms / output 28 ms, Chrome 155, 2026-10-22; the Bluetooth half needs hardware, not run |
 
 ## Run recipe
 
@@ -490,6 +490,26 @@ the envelope (`flush1MiBAllMs`, `flush16MiBAllMs`). The 25.65 ms is one flush of
   does not appear here at these sizes.
 - **The entry stays watched**, with these figures and "not slow on Chrome 155, macOS 15.6.1,
   2026-10-22".
+
+### output-latency (388871416)
+
+**Measured on the built-in speaker only: base 5.8 ms, output 28 ms. The Bluetooth half was not run; it
+needs hardware.** Chrome 155 on macOS 15.6.1, Playwright's Chrome, 2026-10-22, one real click, envelope
+`chromium-output-latency-mvk3xjzv-1180.json`. The device label read `Default - MacBook Pro Speakers
+(Built-in)` on every row, `sinkId` was empty (the default), sample rate 44 100.
+
+- `outputLatency` read 0 ms at the first row (the instant after `resume()`) and 28 ms on each of the 30
+  rows after it. A reader that takes one value right after `resume()` gets 0. Wait a second first.
+- The register's "Last checked" for this entry stays as it is: the tracker's claim is about a Bluetooth
+  headset, and nothing here exercised one.
+
+**To run the Bluetooth half:** open
+`https://localhost:5173/chromium-watched-issues-debug-demo.html?issue=output-latency` in Chrome with the
+Mac's output on the built-in speaker, click Run, and connect the AirPods (or any Bluetooth output) while
+the 30 seconds run, with the system output switched to them. Read the rows: the tracker expects about
+33 ms before and 200+ ms after on current builds, with the device label changing at the switch. A
+`sinkId` that stays empty is the default device following the system, so the label is the witness. The
+saved envelope in `.verify-output/` carries every row.
 
 ### Out of scope: the quota sentinel (541725401 / 40068799)
 

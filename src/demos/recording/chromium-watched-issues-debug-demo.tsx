@@ -14,6 +14,7 @@ import {
   judgeStoredBfcacheOnLoad,
   runBfcacheProbe,
 } from "@/lib/audit/chromiumBfcacheProbe";
+import { runOutputLatencyProbe } from "@/lib/audit/chromiumOutputLatencyProbe";
 import { judgeStoredOpfsUsageOnLoad, runOpfsFlushProbe, runOpfsUsageProbe } from "@/lib/audit/chromiumOpfsProbe";
 import "@radix-ui/themes/styles.css";
 import { Theme, Container, Heading, Text, Flex, Card, Callout, Badge, Button, Code, Table } from "@radix-ui/themes";
@@ -21,7 +22,7 @@ import { InfoCircledIcon, PlayIcon } from "@radix-ui/react-icons";
 
 // Probes for the Chromium issues `docs/known-vendor-issues.md` watches, one per page load:
 //
-//   chromium-watched-issues-debug-demo.html?issue=first-read|bfcache|suspend-resume|capture-gaps|opfs-usage|opfs-flush
+//   chromium-watched-issues-debug-demo.html?issue=first-read|bfcache|suspend-resume|capture-gaps|opfs-usage|opfs-flush|output-latency
 //
 // No SDK is loaded: a probe says what Chrome does, not what the SDK repairs. Each probe
 // self-classifies into a verdict word (`#verdict`, `data-verdict`) with the figures it was
@@ -62,6 +63,10 @@ const ISSUE_INFO: Record<WatchedIssue, IssueInfo> = {
     tracker: "40909520",
     title: "FileSystemSyncAccessHandle.flush() is very slow on Mac compared with other browsers",
   },
+  "output-latency": {
+    tracker: "388871416",
+    title: "outputLatency with a Bluetooth headset",
+  },
 };
 
 type Probe = (signal: AbortSignal, report: (step: string) => void) => Promise<ProbeEnvelope>;
@@ -81,6 +86,8 @@ function probeFor(issue: WatchedIssue): Probe {
       return runOpfsUsageProbe;
     case "opfs-flush":
       return runOpfsFlushProbe;
+    case "output-latency":
+      return runOutputLatencyProbe;
   }
 }
 
