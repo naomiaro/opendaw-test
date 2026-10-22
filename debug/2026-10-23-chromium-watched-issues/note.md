@@ -20,7 +20,7 @@ condition reads `NOT CHECKED <reason>` and is recorded as such, never as "not re
 | `first-read` | [571344687](https://issues.chromium.org/issues/571344687) — stale first clock read after a slow module load | Builds a worklet node right after `addModule()` resolves (a slow module, a large module, none), five runs each in a running context; the processor reports `currentFrame` from its constructor and first three `process()` calls, judged against the main thread's frame read just before the node was made | `STALE FIRST READ`, `FIRST READ TRUE`, `NOT CHECKED` | **reproduced**: `STALE FIRST READ` on Chrome 155, 2026-10-22 |
 | `bfcache` | [575891839](https://issues.chromium.org/issues/575891839) — half-speed worklet clock after a back/forward-cache restore | Measures the context clock against `performance.now()` with a worklet tone and an oscillator control playing, navigates away and back; on `pageshow.persisted` re-measures in three one-second windows and judges on the last two, otherwise records the `notRestoredReasons` | `HALF SPEED`, `NORMAL`, `NOT CHECKED` | **reproduced**: `HALF SPEED` on Chrome 155, 2026-10-22, all three restore windows; a playing demo also restores at half speed (the user's Chrome; Playwright's cannot enter the cache) |
 | `suspend-resume` | [560233271](https://issues.chromium.org/issues/560233271) — distortion after suspend / resume cycles | A worklet-rendered 440 Hz tone into an analyser; a two-second baseline, then 20 `suspend()` / `resume()` cycles with a purity window after each, judged on harmonic purity against the baseline and on dropouts | `DISTORTED`, `CLEAN`, `NOT CHECKED` | not yet run |
-| `capture-gaps` | [40103985](https://issues.chromium.org/issues/40103985) — zero-filled gaps and duplicated blocks in `getUserMedia` input | Records 60 s of a `MediaStreamAudioSourceNode` (`&source=loopback` or `mic`, at 48 000 and 44 100) through a worklet; counts zero runs of 100 frames or more after the head and 128-frame blocks identical to the one before | `GAPS`, `CLEAN`, `NOT CHECKED` | **stream-start gaps only**: one zero run in the first 55 ms of a capture (loopback 44 100: 441 frames, 3 of 3; mic 48 000: 128 frames, 3 of 3), none after it in 8 minutes, no duplicate, Chrome 155, 2026-10-22 |
+| `capture-gaps` | [40103985](https://issues.chromium.org/issues/40103985) — zero-filled gaps and duplicated blocks in `getUserMedia` input | Records 60 s of a `MediaStreamAudioSourceNode` (`&source=loopback` or `mic`, `&rate=48000` or `44100`) through a worklet; counts zero runs of 100 frames or more after the head and 128-frame blocks identical to the one before, the first 0.1 s after the head reported apart | `GAPS`, `START GAPS`, `CLEAN`, `NOT CHECKED` | **start gaps only**: one zero run in the first 55 ms of a capture (loopback 44 100: 441 frames; mic 48 000: 128 frames; every run of those cells), none after it, no duplicate, Chrome 155, 2026-10-22 |
 | `opfs-usage` | [436552046](https://issues.chromium.org/issues/436552046) / [401692415](https://issues.chromium.org/issues/401692415) — OPFS usage not counted for sync-handle writes, negative after a delete | Writes through a sync access handle in a worker, reads `estimate()` before, after the write and after the delete; the user quits and reopens Chrome and the page judges the restart reading on load (`&truncateFirst=1` for the reporter's workaround) | `NOT COUNTED`, `COUNTED`, `NEGATIVE USAGE`, `NOT CHECKED` | not yet run |
 | `opfs-flush` | [40909520](https://issues.chromium.org/issues/40909520) — slow `flush()` on Mac | Times 20 writes of 1 MiB and 20 of 16 MiB, each followed by `flush()`, in a worker; median, p95 and max per size | `MEASURED` (figures only: the tracker's claim is a comparison with other browsers this repo does not make) | not yet run |
 | — | [541725401](https://issues.chromium.org/issues/541725401) / [40068799](https://issues.chromium.org/issues/40068799) — a quota overrun returns a sentinel | No probe: needs the origin's quota exhausted or an incognito profile | — | out of scope, stays watched |
@@ -271,12 +271,12 @@ What it means:
 
 ### capture-gaps (40103985)
 
-**The steady-state symptom is not reproduced. Two stream-start gaps are, every time.** The runs are
-Chrome 155.0.8059.85 on macOS 15.6.1 (Apple silicon), all in Playwright's Chrome with the window
-visible, on 2026-10-22. Each capture is 60 s. The microphone Playwright's Chrome opened is the real
-built-in one ("MacBook Pro Microphone (Built-in)"), not a fake device, so no row needed the user's
-Chrome. The microphone rows ran unattended: the room was not checked for quiet, which does not matter to
-these two rules (a run of exact zeros or a bit-identical block is not something room noise makes).
+**The steady-state symptom is not reproduced. A stream-start gap is, every time, in two of the four
+cells.** The runs are Chrome 155.0.8059.85 on macOS 15.6.1 (Apple silicon), all in Playwright's Chrome
+with the window visible, on 2026-10-22. Each capture is 60 s. The microphone Playwright's Chrome opened is
+the real built-in one ("MacBook Pro Microphone (Built-in)"), not a fake device, so no row needed the
+user's Chrome. The microphone rows ran unattended: the room was not checked for quiet, which does not
+matter to these rules (a run of exact zeros or a bit-identical block is not something room noise makes).
 
 Each run takes one real click and opens a context at the requested rate. The source is one of two:
 - **`&source=loopback`.** A 1 kHz oscillator at 0.5 goes into a `MediaStreamAudioDestinationNode` in the
@@ -285,56 +285,69 @@ Each run takes one real click and opens a context at the requested rate. The sou
   in `loopbackInjection.ts` is not used.
 - **`&source=mic`.** `getUserMedia` opens the microphone with echo cancellation, noise suppression and
   gain control off. The page plays the same tone from the speaker at −20 dB, and the recorder hears only
-  the microphone.
+  the microphone. A microphone that cannot be opened reads `NOT CHECKED mic-<error>`; a denial faked in
+  the page read `NOT CHECKED mic-NotAllowedError-Permission-denied`
+  (`chromium-capture-gaps-mvk34aaa-zvf4.json`).
 
-A worklet recorder copies channel 0 of the source node into one-second chunks and transfers them. Nothing
-else is in the graph. The main thread joins the minute and judges it:
+A worklet recorder copies channel 0 of the source node into chunks of whole render quanta, about a second
+each (48 000 frames at 48 000, 44 160 at 44 100), and transfers them. Nothing else is in the graph. The
+main thread joins the minute and judges it:
 - **The head** is the run of zeros before the first non-zero frame: the stream starting, not a gap.
 - **A zero run** is 100 or more exact zeros after the head. A tone never holds zero that long.
 - **A duplicate** is a 128-frame stretch bit-identical to the 128 frames before it, on any alignment,
   and not all zeros.
+- **The start window** is the first 0.1 s after the head. Runs and duplicates starting in it are
+  reported apart (`startZeroRun*`, `startDuplicate*`).
 
-A run reads `GAPS` on any zero run or duplicate, and `NOT CHECKED` under 30 s of capture.
+A run reads `GAPS` on any zero run or duplicate after the start window, `START GAPS` when the only ones
+are inside it, `CLEAN` on neither, and `NOT CHECKED` under 30 s of capture.
 
-| envelope | source | rate (track) | head | zero runs: start, length | duplicates | verdict |
-|---|---|---|---|---|---|---|
-| `chromium-capture-gaps-mvk2m7ao-pq9y.json` | loopback | 48 000 (48 000) | 1 473 | none | 0 | `CLEAN` |
-| `chromium-capture-gaps-mvk2nnsk-1o7r.json` | loopback | 44 100 (44 100) | 825 | 1 266, 441 | 0 | `GAPS` |
-| `chromium-capture-gaps-mvk2s84n-ie8k.json` | loopback | 44 100 (44 100) | 953 | 1 394, 441 | 0 | `GAPS` |
-| `chromium-capture-gaps-mvk2tm6b-svwu.json` | loopback | 44 100 (44 100) | 825 | 1 266, 441 | 0 | `GAPS` |
-| `chromium-capture-gaps-mvk2p7gf-kr1k.json` | mic | 48 000 (48 000) | 384 | 1 664, 128 | 0 | `GAPS` |
-| `chromium-capture-gaps-mvk2v078-l88o.json` | mic | 48 000 (48 000) | 2 176 | 2 432, 128 | 0 | `GAPS` |
-| `chromium-capture-gaps-mvk2wdou-irk0.json` | mic | 48 000 (48 000) | 2 176 | 2 432, 128 | 0 | `GAPS` |
-| `chromium-capture-gaps-mvk2qqe5-nlo9.json` | mic | 44 100 (48 000) | 1 890 | none | 0 | `CLEAN` |
+| envelope | source | rate (track) | head | start-window runs: start, length | runs after it | duplicates | verdict |
+|---|---|---|---|---|---|---|---|
+| `chromium-capture-gaps-mvk38gho-fzko.json` | loopback | 48 000 (48 000) | 1 345 | none | 0 | 0 | `CLEAN` |
+| `chromium-capture-gaps-mvk35pnx-czdb.json` | loopback | 44 100 (44 100) | 825 | 1 266, 441 | 0 | 0 | `START GAPS` |
+| `chromium-capture-gaps-mvk39txh-gxhd.json` | mic | 48 000 (48 000) | 2 176 | 2 432, 128 | 0 | 0 | `START GAPS` |
+| `chromium-capture-gaps-mvk37334-0nth.json` | mic | 44 100 (48 000) | 2 146 | none | 0 | 0 | `CLEAN` |
 
-The four planned rows are the first of each cell. The two `GAPS` cells were run twice more to see
-whether the reading repeats; it does. No quantum reached the recorder without a channel in any run.
+Eight earlier runs, made before the start window existed, read the same events as `GAPS`:
+- **Loopback 44 100, three runs** (`mvk2nnsk-1o7r`, `mvk2s84n-ie8k`, `mvk2tm6b-svwu`). Each holds one
+  441-zero run, 441 frames after the head (at 1 266 or 1 394 after a head of 825 or 953).
+- **Mic 48 000, three runs** (`mvk2p7gf-kr1k`, `mvk2v078-l88o`, `mvk2wdou-irk0`). Each holds one 128-zero
+  run, 256 or 1 280 frames after the head.
+- **Loopback 48 000 and mic 44 100, one run each** (`mvk2m7ao-pq9y`, `mvk2qqe5-nlo9`). Both read clean.
+
+At 44 100 those earlier runs used one-second chunks of 44 100 frames. That is not whole quanta, so the
+recorder dropped 60 frames at each chunk boundary. Their start events fall before the first boundary
+and stand. Their later minutes are not counted as clean: a gap straddling a boundary could have been cut
+under 100 frames. No quantum reached the recorder without a channel in any run.
 
 What the readings show:
-- **Every gap sits in the first 55 ms of the capture.** After that, eight minutes of capture hold no zero
-  run and no duplicate. The tracker's symptom, 10 ms inserts and 128-frame duplications through the
-  stream's life, does not appear on this graph.
-- **The 44 100 loopback inserts exactly 441 frames (10 ms) of zeros, 441 frames after the tone arrives.**
-  The stream delivers one 10 ms chunk of tone, then a 10 ms chunk of zeros, then the tone without a break.
-  That reads as a 10 ms-chunked FIFO that underran once at its start and wrote zeros, the mechanism the
-  tracker names. At 48 000 the same path is clean.
+- **Every gap sits in the first 55 ms after the head.** Eight minutes recorded without splices hold no
+  zero run and no duplicate after that: the four rows above and the four earlier 48 000 runs. The
+  tracker's symptom, 10 ms inserts and 128-frame duplications through the stream's life, does not
+  appear on this graph.
+- **The 44 100 loopback inserts exactly 441 frames (10 ms) of zeros, 441 frames after the tone arrives,
+  in 4 of 4 runs.** The stream delivers one 10 ms chunk of tone, then a 10 ms chunk of zeros, then the
+  tone without a break. That reads as a 10 ms-chunked FIFO that underran once at its start and wrote
+  zeros, the mechanism the tracker names. At 48 000 the same path is clean.
 - **Whether this is the register's 441-frame delay step is not settled.** The size matches: a zero run of
   441 frames moves every later frame 441 frames late, which is a delay step of exactly 441. The timing and
   rate do not: the register's step came 0.4 to 1.0 s after the node started, in 6 of 70 opens, inside the
-  SDK's capture with the engine running; this one comes in the first 32 ms of 3 of 3 bare captures. The
+  SDK's capture with the engine running. This one comes in the first 32 ms, in 4 of 4 bare captures. The
   tone cannot tell an insert from an overwrite here, because 441 frames is exactly ten periods of 1 kHz
   at 44 100.
-- **The 48 000 microphone drops one render quantum.** It reads 128 zeros, 256 or 1 280 frames after the
-  head. At 44 100, where the 48 kHz microphone is resampled into the context, it is clean.
+- **The 48 000 microphone drops one render quantum at its start, in 4 of 4 runs.** It reads 128 zeros,
+  256 or 1 280 frames after the head. At 44 100, where the 48 kHz microphone is resampled into the
+  context, it is clean in 2 of 2.
 
 What it means:
-- **The register entry gains a measured stream-start figure, and its steady-state claim stays watched.**
-  A take that starts within 55 ms of opening its source could lose 10 ms (loopback, 44 100) or one
-  quantum (microphone, 48 000). `CaptureAudio` opens its stream when the tape is armed, or in
-  `prepareRecording` when it is not open yet, so a take meets this window only when arming and recording
-  start together. The probe makes the stream and the source node together, so it cannot say whether the
-  gap belongs to a new stream or to a new source node on an old one (the SDK builds a new node when the
-  requested channels change).
+- **A `START GAPS` reading is a stream-start artefact.** The register records it as measured: a capture
+  loses 10 ms (loopback, 44 100) or one quantum (microphone, 48 000) in its first 55 ms. It is not the
+  tracker's symptom reproduced, and the steady-state entry stays watched.
+- **A take meets the start window only when arming and recording start together.** `CaptureAudio` opens
+  its stream when the tape is armed, or in `prepareRecording` when it is not open yet. The probe makes the
+  stream and the source node together, so it cannot say whether the gap belongs to a new stream or to a
+  new source node on an old one (the SDK builds a new node when the requested channels change).
 - **The tracker ties the steady-state gaps to a large graph and to devices on different clocks.** This
   graph is empty and the microphone shares the output's clock. A run beside a loaded engine graph, or with
   a USB input, is the next step if the steady-state half is ever wanted.

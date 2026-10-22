@@ -2,7 +2,9 @@
 // tone captured through a `MediaStreamAudioSourceNode`, read for runs of exact zeros (the
 // tracker's 480-frame inserts on a FIFO underrun) and for 128-frame blocks repeated back to
 // back (its duplications between unsynchronised clocks). The zeros before the first non-zero
-// frame are the stream starting, counted apart as the head, not a gap.
+// frame are the stream starting, counted apart as the head, not a gap. Events in the first
+// `START_WINDOW_SEC` after the head are the source warming up: reported apart, and they read
+// `START GAPS`, not the tracker's steady-state `GAPS`.
 
 /** The shortest run of exact zeros counted as a gap: a tone never holds zero this long. */
 export const MIN_ZERO_RUN = 100;
@@ -10,19 +12,38 @@ export const MIN_ZERO_RUN = 100;
 export const DUPLICATE_BLOCK = 128;
 /** Less capture than this is not judged. */
 export const MIN_CAPTURE_SECONDS = 30;
+/** Events starting this soon after the first non-zero frame are the source starting up. */
+export const START_WINDOW_SEC = 0.1;
+/** One render quantum. */
+export const QUANTUM_FRAMES = 128;
+
+/**
+ * The recorder's chunk length: whole render quanta, about one second, so no quantum is split
+ * across two chunks (44 100 is not a multiple of 128).
+ */
+export function recorderChunkFrames(sampleRate: number): number {
+  return QUANTUM_FRAMES * Math.max(1, Math.round(sampleRate / QUANTUM_FRAMES));
+}
 
 export interface ZeroRun {
   start: number;
   length: number;
 }
 
-export type CaptureGapsVerdict = "GAPS" | "CLEAN" | "NOT CHECKED";
+export type CaptureGapsVerdict = "GAPS" | "START GAPS" | "CLEAN" | "NOT CHECKED";
 
 export interface CaptureGapsJudgement {
   verdict: CaptureGapsVerdict;
+  /** Zero runs after the start window. */
   zeroRunCount: number;
   longestRunFrames: number;
+  /** Duplicates after the start window. */
   duplicateCount: number;
+  zeroRuns: ZeroRun[];
+  duplicates: number[];
+  /** Zero runs and duplicates starting within `START_WINDOW_SEC` after the head. */
+  startZeroRuns: ZeroRun[];
+  startDuplicates: number[];
 }
 
 /** The frames before the first non-zero one; the whole length when there is none. */
@@ -72,19 +93,37 @@ export function findDuplicateBlocks(frames: Float32Array, block: number = DUPLIC
   return starts;
 }
 
-/** GAPS for any zero run or duplicate after the head; NOT CHECKED under `MIN_CAPTURE_SECONDS`. */
+/**
+ * GAPS for any zero run or duplicate after the start window; START GAPS when the only ones start
+ * within `START_WINDOW_SEC` after the head; NOT CHECKED under `MIN_CAPTURE_SECONDS`.
+ */
 export function judgeCaptureGaps(
   zeroRuns: readonly ZeroRun[],
   duplicates: readonly number[],
   headZeros: number,
   durationSec: number,
+  sampleRate: number,
 ): CaptureGapsJudgement {
-  const runs = zeroRuns.filter((run) => run.start >= headZeros);
-  const repeats = duplicates.filter((start) => start >= headZeros);
-  const zeroRunCount = runs.length;
-  const longestRunFrames = runs.reduce((longest, run) => Math.max(longest, run.length), 0);
-  const duplicateCount = repeats.length;
+  const windowEnd = headZeros + START_WINDOW_SEC * sampleRate;
+  const afterHead = zeroRuns.filter((run) => run.start >= headZeros);
+  const repeatsAfterHead = duplicates.filter((start) => start >= headZeros);
+  const startZeroRuns = afterHead.filter((run) => run.start < windowEnd);
+  const runs = afterHead.filter((run) => run.start >= windowEnd);
+  const startDuplicates = repeatsAfterHead.filter((start) => start < windowEnd);
+  const repeats = repeatsAfterHead.filter((start) => start >= windowEnd);
   const verdict: CaptureGapsVerdict =
-    durationSec < MIN_CAPTURE_SECONDS ? "NOT CHECKED" : zeroRunCount > 0 || duplicateCount > 0 ? "GAPS" : "CLEAN";
-  return { verdict, zeroRunCount, longestRunFrames, duplicateCount };
+    durationSec < MIN_CAPTURE_SECONDS ? "NOT CHECKED"
+    : runs.length > 0 || repeats.length > 0 ? "GAPS"
+    : startZeroRuns.length > 0 || startDuplicates.length > 0 ? "START GAPS"
+    : "CLEAN";
+  return {
+    verdict,
+    zeroRunCount: runs.length,
+    longestRunFrames: runs.reduce((longest, run) => Math.max(longest, run.length), 0),
+    duplicateCount: repeats.length,
+    zeroRuns: runs,
+    duplicates: repeats,
+    startZeroRuns,
+    startDuplicates,
+  };
 }

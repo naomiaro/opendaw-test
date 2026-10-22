@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findDuplicateBlocks, findZeroRuns, headZerosOf, judgeCaptureGaps } from "./chromiumCaptureGaps";
+import { findDuplicateBlocks, findZeroRuns, headZerosOf, judgeCaptureGaps, recorderChunkFrames } from "./chromiumCaptureGaps";
 
 const RATE = 48000;
 
@@ -23,7 +23,7 @@ const judge = (frames: Float32Array) => {
   const runs = findZeroRuns(frames);
   const headZeros = headZerosOf(frames);
   const duplicates = findDuplicateBlocks(frames);
-  return { runs, headZeros, duplicates, judged: judgeCaptureGaps(runs, duplicates, headZeros, frames.length / RATE) };
+  return { runs, headZeros, duplicates, judged: judgeCaptureGaps(runs, duplicates, headZeros, frames.length / RATE, RATE) };
 };
 
 describe("capture gaps", () => {
@@ -40,7 +40,8 @@ describe("capture gaps", () => {
     const { runs, duplicates, judged } = judge(withInsert(tone(60), at, new Float32Array(480)));
     expect(runs).toEqual([{ start: at, length: 480 }]);
     expect(duplicates).toEqual([]);
-    expect(judged).toEqual({ verdict: "GAPS", zeroRunCount: 1, longestRunFrames: 480, duplicateCount: 0 });
+    expect(judged).toMatchObject({ verdict: "GAPS", zeroRunCount: 1, longestRunFrames: 480, duplicateCount: 0 });
+    expect(judged.startZeroRuns).toEqual([]);
   });
 
   it("finds a 128-frame block repeated at 45 s and reads GAPS", () => {
@@ -49,7 +50,7 @@ describe("capture gaps", () => {
     const { runs, duplicates, judged } = judge(withInsert(signal, at + 128, signal.slice(at, at + 128)));
     expect(runs).toEqual([]);
     expect(duplicates).toEqual([at + 128]);
-    expect(judged).toEqual({ verdict: "GAPS", zeroRunCount: 0, longestRunFrames: 0, duplicateCount: 1 });
+    expect(judged).toMatchObject({ verdict: "GAPS", zeroRunCount: 0, longestRunFrames: 0, duplicateCount: 1, duplicates: [at + 128] });
   });
 
   it("finds a repeated block that does not sit on the 128-frame grid", () => {
@@ -82,5 +83,49 @@ describe("capture gaps", () => {
     expect(headZeros).toBe(silent.length);
     expect(runs).toEqual([]);
     expect(duplicates).toEqual([]);
+  });
+
+  it("reads a 441-zero run 30 ms after the head as START GAPS, reported apart", () => {
+    const head = 2000;
+    const at = head + Math.round(0.03 * RATE);
+    const signal = withInsert(withInsert(tone(60), 0, new Float32Array(head)), at, new Float32Array(441));
+    const { judged } = judge(signal);
+    expect(judged.verdict).toBe("START GAPS");
+    expect(judged.startZeroRuns).toEqual([{ start: at, length: 441 }]);
+    expect(judged.zeroRunCount).toBe(0);
+  });
+
+  it("reads a start event and a later 480-zero insert as GAPS, the start event still reported", () => {
+    const head = 2000;
+    const early = head + Math.round(0.03 * RATE);
+    const late = 30 * RATE;
+    let signal = withInsert(tone(60), late, new Float32Array(480));
+    signal = withInsert(signal, early - head, new Float32Array(441));
+    signal = withInsert(signal, 0, new Float32Array(head));
+    const { judged } = judge(signal);
+    expect(judged.verdict).toBe("GAPS");
+    expect(judged.startZeroRuns).toEqual([{ start: early, length: 441 }]);
+    expect(judged.zeroRuns).toEqual([{ start: late + 441 + head, length: 480 }]);
+  });
+
+  it("reads a duplicate inside the start window as START GAPS", () => {
+    const signal = tone(60);
+    const at = 1000;
+    const { judged } = judge(withInsert(signal, at + 128, signal.slice(at, at + 128)));
+    expect(judged.verdict).toBe("START GAPS");
+    expect(judged.startDuplicates).toEqual([at + 128]);
+    expect(judged.duplicateCount).toBe(0);
+  });
+});
+
+describe("recorderChunkFrames", () => {
+  it.each([48000, 44100])("is whole render quanta within one quantum of a second at %i", (rate) => {
+    const frames = recorderChunkFrames(rate);
+    expect(frames % 128).toBe(0);
+    expect(Math.abs(frames - rate)).toBeLessThanOrEqual(64);
+  });
+
+  it("keeps 48 000 as it was", () => {
+    expect(recorderChunkFrames(48000)).toBe(48000);
   });
 });

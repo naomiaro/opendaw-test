@@ -17,7 +17,7 @@
 
 import { withDeadline } from "@/lib/deadline";
 import { browserOf, newRunToken, platformOf, runDate, type PlatformNavigator, type ProbeEnvelope } from "./chromiumWatched";
-import { findDuplicateBlocks, findZeroRuns, headZerosOf, judgeCaptureGaps } from "./chromiumCaptureGaps";
+import { findDuplicateBlocks, findZeroRuns, headZerosOf, judgeCaptureGaps, recorderChunkFrames, type ZeroRun } from "./chromiumCaptureGaps";
 
 export const CAPTURE_SECONDS = 60;
 
@@ -51,7 +51,7 @@ export function rateFrom(params: URLSearchParams): CaptureRate {
 }
 
 /**
- * Copies channel 0 of its input into chunks of one second (the last one shorter) until
+ * Copies channel 0 of its input into chunks of whole quanta, about a second (the last one shorter), until
  * `frames` frames are taken, transferring each; a quantum whose input has no channel is
  * recorded as zeros and counted in `emptyQuanta`.
  */
@@ -60,7 +60,7 @@ class CaptureGapsRecorder extends AudioWorkletProcessor {
   constructor(options) {
     super();
     this.total = options.processorOptions.frames;
-    this.chunkFrames = Math.round(sampleRate);
+    this.chunkFrames = options.processorOptions.chunkFrames;
     this.taken = 0;
     this.emptyQuanta = 0;
     this.begin();
@@ -113,15 +113,21 @@ async function micSource(context: AudioContext): Promise<Source> {
     30000,
     "getUserMedia",
   );
-  const track = stream.getAudioTracks()[0];
-  const deviceId = track.getSettings().deviceId;
-  const devices = await navigator.mediaDevices.enumerateDevices();
-  const listed = devices.find((device) => device.kind === "audioinput" && device.deviceId === deviceId);
-  const oscillator = new OscillatorNode(context, { frequency: TONE_HZ });
-  oscillator.connect(new GainNode(context, { gain: SPEAKER_GAIN })).connect(context.destination);
-  oscillator.start();
-  const node = new MediaStreamAudioSourceNode(context, { mediaStream: stream });
-  return { node, track, deviceLabel: listed?.label || track.label, streams: [stream] };
+  try {
+    const track = stream.getAudioTracks()[0];
+    if (track === undefined) throw new Error("no-audio-track");
+    const deviceId = track.getSettings().deviceId;
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const listed = devices.find((device) => device.kind === "audioinput" && device.deviceId === deviceId);
+    const oscillator = new OscillatorNode(context, { frequency: TONE_HZ });
+    oscillator.connect(new GainNode(context, { gain: SPEAKER_GAIN })).connect(context.destination);
+    oscillator.start();
+    const node = new MediaStreamAudioSourceNode(context, { mediaStream: stream });
+    return { node, track, deviceLabel: listed?.label || track.label, streams: [stream] };
+  } catch (error) {
+    for (const track of stream.getTracks()) track.stop();
+    throw error;
+  }
 }
 
 /** Records `frames` frames of the source node's channel 0; resolves with them and the empty-input quanta. */
@@ -133,7 +139,7 @@ function record(context: AudioContext, source: Source, frames: number): Promise<
       channelCount: 1,
       channelCountMode: "explicit",
       channelInterpretation: "discrete",
-      processorOptions: { frames },
+      processorOptions: { frames, chunkFrames: recorderChunkFrames(context.sampleRate) },
     });
     const samples = new Float32Array(frames);
     let offset = 0;
@@ -155,7 +161,11 @@ function joinFirst(values: readonly number[]): string {
   return values.slice(0, LISTED).join(" ");
 }
 
-/** The click: open the source, record the minute, judge. */
+function stepOf(error: unknown): string {
+  return String(error instanceof Error ? error.message : error).replace(/\s+/g, "-");
+}
+
+/** The click: open the source, record the minute, judge. A source that cannot be opened reads NOT CHECKED. */
 export async function runCaptureGapsProbe(_signal: AbortSignal, report: (step: string) => void): Promise<ProbeEnvelope> {
   const params = new URLSearchParams(window.location.search);
   const sourceKind = sourceFrom(params);
@@ -174,45 +184,58 @@ export async function runCaptureGapsProbe(_signal: AbortSignal, report: (step: s
       URL.revokeObjectURL(url);
     }
     report("open-" + sourceKind);
-    source = sourceKind === "mic" ? await micSource(context) : loopbackSource(context);
-    const frames = CAPTURE_SECONDS * context.sampleRate;
-    report("capture");
     let failedStep: string | null = null;
-    let captured: { samples: Float32Array; emptyQuanta: number } = { samples: new Float32Array(0), emptyQuanta: 0 };
     try {
-      captured = await withDeadline(record(context, source, frames), CAPTURE_SECONDS * 1000 + CAPTURE_GRACE_MS, "capture");
+      source = sourceKind === "mic" ? await micSource(context) : loopbackSource(context);
     } catch (error) {
-      failedStep = String(error instanceof Error ? error.message : error).replace(/\s+/g, "-");
-      console.error("[chromium-watched] capture-gaps capture failed: " + String(error));
+      failedStep = `${sourceKind}-${error instanceof Error ? error.name : "error"}-${stepOf(error)}`;
+      console.error("[chromium-watched] capture-gaps could not open the " + sourceKind + ": " + String(error));
+    }
+    let captured: { samples: Float32Array; emptyQuanta: number } = { samples: new Float32Array(0), emptyQuanta: 0 };
+    if (source !== null) {
+      report("capture");
+      const frames = CAPTURE_SECONDS * context.sampleRate;
+      try {
+        captured = await withDeadline(record(context, source, frames), CAPTURE_SECONDS * 1000 + CAPTURE_GRACE_MS, "capture");
+      } catch (error) {
+        failedStep = stepOf(error);
+        console.error("[chromium-watched] capture-gaps capture failed: " + String(error));
+      }
     }
     report("judge");
     const samples = captured.samples;
     const captureSeconds = samples.length / context.sampleRate;
     const headZeros = headZerosOf(samples);
-    const runs = findZeroRuns(samples);
-    const duplicates = findDuplicateBlocks(samples).filter((start) => start >= headZeros);
-    const judged = judgeCaptureGaps(runs, duplicates, headZeros, captureSeconds);
+    const judged = judgeCaptureGaps(findZeroRuns(samples), findDuplicateBlocks(samples), headZeros, captureSeconds, context.sampleRate);
     const verdict =
       failedStep !== null ? `NOT CHECKED ${failedStep}`
       : judged.verdict === "NOT CHECKED" ? `NOT CHECKED ${captureSeconds.toFixed(1)}-s`
       : judged.verdict;
-    const settings = source.track.getSettings();
+    const settings: MediaTrackSettings = source === null ? {} : source.track.getSettings();
+    const starts = (runs: readonly ZeroRun[]) => joinFirst(runs.map((run) => run.start));
+    const lengths = (runs: readonly ZeroRun[]) => joinFirst(runs.map((run) => run.length));
     const figures: Record<string, number | string | null> = {
       verdict,
       source: sourceKind,
       requestedRate,
       sampleRate: context.sampleRate,
+      recorderChunkFrames: recorderChunkFrames(context.sampleRate),
       captureSeconds: Number(captureSeconds.toFixed(3)),
       headZeros,
       zeroRunCount: judged.zeroRunCount,
       longestRunFrames: judged.longestRunFrames,
       longestRunMs: Number(((judged.longestRunFrames / context.sampleRate) * 1000).toFixed(2)),
-      zeroRunStarts: joinFirst(runs.map((run) => run.start)),
-      zeroRunLengths: joinFirst(runs.map((run) => run.length)),
+      zeroRunStarts: starts(judged.zeroRuns),
+      zeroRunLengths: lengths(judged.zeroRuns),
       duplicateCount: judged.duplicateCount,
-      duplicateStarts: joinFirst(duplicates),
+      duplicateStarts: joinFirst(judged.duplicates),
+      startZeroRunCount: judged.startZeroRuns.length,
+      startZeroRunStarts: starts(judged.startZeroRuns),
+      startZeroRunLengths: lengths(judged.startZeroRuns),
+      startDuplicateCount: judged.startDuplicates.length,
+      startDuplicateStarts: joinFirst(judged.startDuplicates),
       emptyInputQuanta: captured.emptyQuanta,
-      deviceLabel: source.deviceLabel,
+      deviceLabel: source === null ? null : source.deviceLabel,
       trackSampleRate: settings.sampleRate ?? null,
       trackChannelCount: settings.channelCount ?? null,
       trackDeviceId: settings.deviceId ?? null,
