@@ -14,7 +14,7 @@ upstream issue read from the tracker that would reach this repo but has not been
 its "Where it bites here" says what a matching symptom would look like. An entry without the mark
 was measured here.
 
-## Chromium 442866743 — a worklet's clock stands still while the main thread changes the audio graph
+## Chromium [442866743](https://issues.chromium.org/issues/442866743) — a worklet's clock stands still while the main thread changes the audio graph
 
 - **Tracker:** [issues.chromium.org/issues/442866743](https://issues.chromium.org/issues/442866743),
   "currentTime and currentFrame sometimes freeze for a render quantum". Filed 2025-09-03, **open**;
@@ -22,7 +22,7 @@ was measured here.
   clock on only when it gets the audio graph lock, which the main thread holds while it connects or
   disconnects nodes, builds a worklet node or a stream source, or disposes nodes — bulk node creation
   stalls it through the garbage collector's dispose, inferred from the source) and a quicker trigger are on the issue as comment 5 (2026-10-01,
-  from this repo). SDK side: openDAW#424 (filed 2026-10-01).
+  from this repo). SDK side: [openDAW#424](https://github.com/andremichelle/openDAW/issues/424) (filed 2026-10-01).
 - **Symptom:** every `process()` call of some quanta reads the previous quantum's `currentFrame` /
   `currentTime`, or an older one, never a later one, while the main thread connects or disconnects
   nodes or constructs a worklet node. A busy main thread alone does not do it. Chrome only: Firefox
@@ -45,7 +45,7 @@ was measured here.
   browser is unchanged; re-read the tracker at each SDK upgrade and retire the repairs only on a
   Chrome that reads true under the probe.
 
-## Chromium 571344687 — a worklet processor made right after its module loads reads a stale first clock (watched)
+## Chromium [571344687](https://issues.chromium.org/issues/571344687) — a worklet processor made right after its module loads reads a stale first clock (watched)
 
 - **Tracker:** [issues.chromium.org/issues/571344687](https://issues.chromium.org/issues/571344687),
   "AudioWorklet: currentTime is stale in the constructor and first process() after slow module loading".
@@ -81,7 +81,7 @@ was measured here.
   3523.7 / 94.4 ms) — all "arrived late" readings in the same window, none shown to be this issue.
 - **Last checked:** 2026-10-22 (tracker read; not reproduced here).
 
-## Chromium 575891839 — the worklet clock runs at half speed after a back/forward-cache restore (watched)
+## Chromium [575891839](https://issues.chromium.org/issues/575891839) — the worklet clock runs at half speed after a back/forward-cache restore (watched)
 
 - **Tracker:** [issues.chromium.org/issues/575891839](https://issues.chromium.org/issues/575891839),
   "AudioWorklet clock slows to ~0.5× after BFCache restoration, causing distorted playback". Filed
@@ -101,12 +101,12 @@ was measured here.
   `Cache-Control: no-store` is no longer an absolute block in Chrome either.) Decide after measuring.
 - **Last checked:** 2026-10-22 (tracker read; not reproduced here).
 
-## Chromium 560233271 — worklet playback stays distorted after an AudioContext suspend / resume cycle (macOS, watched)
+## Chromium [560233271](https://issues.chromium.org/issues/560233271) — worklet playback stays distorted after an AudioContext suspend / resume cycle (macOS, watched)
 
 - **Tracker:** [issues.chromium.org/issues/560233271](https://issues.chromium.org/issues/560233271),
   "AudioWorklet playback becomes persistently distorted after AudioContext suspend/resume". Filed
   2026-09-11, **open**, P1, assigned, treated upstream as the root-cause tracker for the suspend / resume
-  race in the bypass-output-buffering path (issue 528653884 was closed by demoting a CHECK, which turned a
+  race in the bypass-output-buffering path ([issue 528653884](https://issues.chromium.org/issues/528653884) was closed by demoting a CHECK, which turned a
   renderer crash into partial output buffers). Bisected to Chrome 152.0.7949.0; macOS only so far; the
   reporter is BandLab, whose fix was to never suspend.
 - **Symptom:** repeated `suspend()` / `resume()` on a running context with a worklet eventually leaves the
@@ -118,7 +118,7 @@ was measured here.
   `--disable-features=WebAudioBypassOutputBuffering` for a local check.
 - **Last checked:** 2026-10-22 (tracker read).
 
-## Chromium 40103985 — zero-filled 10 ms gaps and duplicated blocks in `getUserMedia` input under underrun (watched)
+## Chromium [40103985](https://issues.chromium.org/issues/40103985) — zero-filled 10 ms gaps and duplicated blocks in `getUserMedia` input under underrun (watched)
 
 - **Tracker:** [issues.chromium.org/issues/40103985](https://issues.chromium.org/issues/40103985),
   "Webaudio inserts zero filled parts into buffers supplied by getUserMedia". Filed 2019, **open**, P3,
@@ -180,8 +180,7 @@ was measured here.
   `src/lib/audit/loopbackInjection.ts`, `measureNodeDelay` in `src/lib/audit/nodeTap.ts`) and judges the
   netted skew; a raw multi-mic skew is never quoted as an SDK finding. A worklet module must be loaded
   before the first take (a load still running delays that take's first frame, 117 ms measured).
-- **Evidence:** `debug/2026-09-02-recording-start-alignment/note.md` (stream-tap measurement, repo PRs
-  #136 and #138).
+- **Evidence:** `debug/2026-09-02-recording-start-alignment/note.md` (stream-tap measurement, repo PRs [#136](https://github.com/naomiaro/opendaw-test/pull/136) and [#138](https://github.com/naomiaro/opendaw-test/pull/138)).
 - **Last checked:** 2026-10-22 (32 multi-mic rows, raw skew accounted for by the node delays on every repeat).
 
 ## A `MediaStreamAudioDestinationNode` stream from another `AudioContext` reads silent when captured
@@ -197,7 +196,7 @@ was measured here.
 - **Evidence:** `src/demos/recording/CLAUDE.md`, "Don't Synthesize Input to Verify Recording".
 - **Last checked:** 2026-10-22 (every recording-alignment row runs through it).
 
-## Chromium 436552046 / 401692415 — OPFS usage written through sync access handles is not counted, and a delete drives the saved figure negative
+## Chromium [436552046](https://issues.chromium.org/issues/436552046) / [401692415](https://issues.chromium.org/issues/401692415) — OPFS usage written through sync access handles is not counted, and a delete drives the saved figure negative
 
 - **Tracker:** [issues.chromium.org/issues/436552046](https://issues.chromium.org/issues/436552046)
   "OPFS data cannot be deleted" (filed 2025-08, **open**, P2, assigned) and
@@ -221,11 +220,11 @@ was measured here.
   upstream suggestion, not drafted). (`clearStoredSamples()` in `src/lib/storedSamples.ts` also checks
   with `Workers.Opfs.exists` after a delete because `Workers.Opfs.delete` reports nothing when it fails
   — an SDK quirk, not the browser's.)
-- **Evidence:** root CLAUDE.md, "Stored Samples Are Swept at Page Load" (repo PR #132); the tracker's
+- **Evidence:** root CLAUDE.md, "Stored Samples Are Swept at Page Load" ([repo PR #132](https://github.com/naomiaro/opendaw-test/pull/132)); the tracker's
   repro page for the cause.
 - **Last checked:** 2026-10-22 (tracker read; the negative-usage half not reproduced here).
 
-## Chromium OPFS, watched: slow `flush()` on Mac, and a quota overrun that returns a sentinel
+## Chromium [40909520](https://issues.chromium.org/issues/40909520) / [541725401](https://issues.chromium.org/issues/541725401) / [40068799](https://issues.chromium.org/issues/40068799) — OPFS, watched: slow `flush()` on Mac, and a quota overrun that returns a sentinel
 
 - **Trackers:** [40909520](https://issues.chromium.org/issues/40909520)
   "FileSystemSyncAccessHandle.flush() is very slow on Mac compared with other browsers" (open, P2,
@@ -251,7 +250,7 @@ was measured here.
   `statechange` event (root CLAUDE.md, "AudioContext Suspension").
 - **Last checked:** never re-measured; the Opus fallback is exercised on every Apple load.
 
-## Chromium 516995393 — no input-latency figure in the Web Audio API (a spec gap)
+## Chromium [516995393](https://issues.chromium.org/issues/516995393) — no input-latency figure in the Web Audio API (a spec gap)
 
 - **Tracker:** [issues.chromium.org/issues/516995393](https://issues.chromium.org/issues/516995393),
   "Web Audio API input latency reporting - audio recording latency compensation in DAW app". Filed
@@ -264,12 +263,12 @@ was measured here.
   device records late by its own input delay (tens of ms, device-dependent) unless calibrated.
 - **Workaround:** the SDK's `recording.inputLatency` preference and per-capture `captureBox.inputLatency`
   (`InputLatency.EqualsOutput` doubles the compensation), and the loopback calibration on the upstream
-  calibration branch (openDAW PR #380, unreleased; this repo's `input-latency-calibration-debug-demo.html`
+  calibration branch ([openDAW PR #380](https://github.com/andremichelle/openDAW/pull/380), unreleased; this repo's `input-latency-calibration-debug-demo.html`
   measures it). The browser's own `MediaStreamTrack.getSettings().latency` is nominal: 2.67 ms reported
   against 35–63 ms measured on the built-in microphone.
 - **Last checked:** 2026-10-22 (tracker read).
 
-## Chromium 388871416 — `outputLatency` and a Bluetooth headset (watched, low)
+## Chromium [388871416](https://issues.chromium.org/issues/388871416) — `outputLatency` and a Bluetooth headset (watched, low)
 
 - **Tracker:** [issues.chromium.org/issues/388871416](https://issues.chromium.org/issues/388871416).
   Filed 2025-01 against Chrome Dev 133 on macOS with AirPods (`outputLatency` 33 ms on the speaker,
@@ -307,8 +306,7 @@ was measured here.
 - **Symptom:** with `NODE_VERSION=24` the build installed Node 24.13.1 on 2026-10-22, nine minor releases
   behind the security release of the day before (v24.22.1), with four `EBADENGINE` warnings from jsdom 30
   and its dependencies. The image updates node-build at the start of each build, and node-build can lag
-  a Node release by a day: v24.22.1 was absent on 2026-10-21 (the reason the override was set, repo PR
-  #164 having pinned `.nvmrc` to it) and present on 2026-10-22.
+  a Node release by a day: v24.22.1 was absent on 2026-10-21 (the reason the override was set, [repo PR #164](https://github.com/naomiaro/opendaw-test/pull/164) having pinned `.nvmrc` to it) and present on 2026-10-22.
 - **Where it bites here:** the deploy's Node is the override's, so a `.nvmrc` bump changes nothing while
   the variable is set; Node runs at build time only (tsc, vite, vitepress), nothing of it is deployed.
 - **Workaround:** pin `.nvmrc` to the exact release and leave `NODE_VERSION` unset in both environments;
