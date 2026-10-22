@@ -62,7 +62,8 @@ export function purityOf(tone: TonePurity): number {
 /**
  * A tone's purity from an analyser's `getFloatFrequencyData` read. Every bin outside the
  * lobe counts, however low: broadband crackle spreads thin over thousands of bins, each
- * under any per-bin gate, and only their sum shows it.
+ * under any per-bin gate, and only their sum shows it. `minHz` leaves out the bins below it:
+ * a microphone's room rumble would otherwise outweigh the tone.
  */
 export function tonePurityFromSpectrum(
   bins: Float32Array,
@@ -70,11 +71,13 @@ export function tonePurityFromSpectrum(
   fftSize: number,
   dropouts: number,
   clicks: number,
-  toneHz: number = TONE_HZ
+  toneHz: number = TONE_HZ,
+  minHz: number = 0
 ): TonePurity {
   const toneBin = Math.round((toneHz * fftSize) / sampleRate);
+  const firstBin = Math.max(1, Math.ceil((minHz * fftSize) / sampleRate));
   let power = 0;
-  for (let i = 1; i < bins.length; i++) {
+  for (let i = firstBin; i < bins.length; i++) {
     if (Math.abs(i - toneBin) <= TONE_LOBE_BINS) continue;
     power += 10 ** (bins[i] / 10);
   }

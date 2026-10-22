@@ -110,6 +110,19 @@ describe("tonePurityFromSpectrum", () => {
   });
 });
 
+describe("tonePurityFromSpectrum with a lower band edge", () => {
+  it("leaves out every bin below the edge, so room rumble does not count against the tone", () => {
+    const bins = new Float32Array(512).fill(-200);
+    bins[9] = -6;
+    bins[2] = -10; // 94 Hz rumble, below a 200 Hz edge
+    bins[19] = -50;
+    const withEdge = tonePurityFromSpectrum(bins, 48000, 1024, 0, 0, 440, 200);
+    expect(withEdge.harmonicsDb).toBeCloseTo(-50, 4);
+    const without = tonePurityFromSpectrum(bins, 48000, 1024, 0, 0);
+    expect(without.harmonicsDb).toBeGreaterThan(-11);
+  });
+});
+
 describe("countDropouts", () => {
   it("counts the windows whose RMS falls below a tenth of the baseline's", () => {
     const samples = sine(512);

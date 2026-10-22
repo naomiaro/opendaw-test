@@ -24,8 +24,12 @@ did with it.
 - **575891839, half-speed clock after a back/forward-cache restore:** `HALF SPEED` twice in the user's
   Chrome (windows 0.49–0.50), and the looping demo restored at 0.4996. Moved to "Measured here".
   Follow-up PR (not in this one): handle `pageshow` with `persisted` true in the demos — reload or tear the engine down — so a visitor pressing Back on a playing demo does not hear the half-speed clock; verify with the demo reading in the note (injected pageshow listener, transport ratio).
-- **560233271, distortion after suspend / resume:** `CLEAN` twice over 20 cycles; both positive controls
-  read `DISTORTED`. Stays watched, "not reproduced".
+- **560233271, distortion after suspend / resume:** reproduced. The user heard it on the tracker's own
+  repro page within five clicks. The probe reproduces it with the tracker's preconditions
+  (`&repro=tracker`): the context clock runs at 0.50 from cycle 1, and the microphone hears the tone's
+  purity fall by 48–94 dB. The in-graph analyser reads `CLEAN` throughout, because it cannot see the
+  output path. The entry should move to "Measured here", with "avoid suspend / resume" as the standing
+  rule; the register is not edited in this commit.
 - **40103985, zero-filled gaps in captured input:** no gap or duplicate after the first 0.1 s in any
   unspliced minute; `START GAPS` in two of four cells (441 zeros at loopback 44 100, 128 at mic 48 000).
   Stays watched for the steady-state symptom; the stream-start zero run is recorded in the entry.
@@ -49,7 +53,7 @@ stand), the single-window bfcache runs, and the OPFS stored-readings load before
 |---|---|---|---|---|
 | `first-read` | [571344687](https://issues.chromium.org/issues/571344687) — stale first clock read after a slow module load | Builds a worklet node right after `addModule()` resolves (a slow module, a large module, none), five runs each in a running context; the processor reports `currentFrame` from its constructor and first three `process()` calls, judged against the main thread's frame read just before the node was made | `STALE FIRST READ`, `FIRST READ TRUE`, `NOT CHECKED` | **reproduced**: `STALE FIRST READ` on Chrome 155, 2026-10-22 |
 | `bfcache` | [575891839](https://issues.chromium.org/issues/575891839) — half-speed worklet clock after a back/forward-cache restore | Measures the context clock against `performance.now()` with a worklet tone and an oscillator control playing, navigates away and back; on `pageshow.persisted` re-measures in three one-second windows and judges on the last two, otherwise records the `notRestoredReasons` | `HALF SPEED`, `NORMAL`, `NOT CHECKED` | **reproduced**: `HALF SPEED` on Chrome 155, 2026-10-22, all three restore windows; a playing demo also restores at half speed (the user's Chrome; Playwright's cannot enter the cache) |
-| `suspend-resume` | [560233271](https://issues.chromium.org/issues/560233271) — distortion after suspend / resume cycles | A worklet-rendered 440 Hz tone into an analyser; a two-second baseline, then 20 `suspend()` / `resume()` cycles with a purity window after each, judged on harmonic purity against the baseline and on dropouts | `DISTORTED`, `CLEAN`, `NOT CHECKED` | **not reproduced**: `CLEAN` twice on Chrome 155, 2026-10-22 (purity 66.51 dB every cycle, 0 clicks, 0 dropouts); both positive controls read `DISTORTED` |
+| `suspend-resume` | [560233271](https://issues.chromium.org/issues/560233271) — distortion after suspend / resume cycles | A worklet-rendered 440 Hz tone into an analyser; a two-second baseline, then 20 `suspend()` / `resume()` cycles with a purity window after each, judged on harmonic purity against the baseline and on dropouts | `DISTORTED`, `CLEAN`, `NOT CHECKED` | **reproduced** with `&witness=mic&repro=tracker`: `DISTORTED` twice on Chrome 155, 2026-10-22 (clock 0.50 from cycle 1, microphone purity 17 dB → −31…−77 dB); the in-graph reading stays `CLEAN` |
 | `capture-gaps` | [40103985](https://issues.chromium.org/issues/40103985) — zero-filled gaps and duplicated blocks in `getUserMedia` input | Records 60 s of a `MediaStreamAudioSourceNode` (`&source=loopback` or `mic`, `&rate=48000` or `44100`) through a worklet; counts zero runs of 100 frames or more after the head and 128-frame blocks identical to the one before, the first 0.1 s after the head reported apart | `GAPS`, `START GAPS`, `CLEAN`, `NOT CHECKED` | **start gaps only**: one zero run in the first 55 ms of a capture (loopback 44 100: 441 frames; mic 48 000: 128 frames; every run of those cells), none after it, no duplicate, Chrome 155, 2026-10-22 |
 | `opfs-usage` | [436552046](https://issues.chromium.org/issues/436552046) / [401692415](https://issues.chromium.org/issues/401692415) — OPFS usage not counted for sync-handle writes, negative after a delete | Writes through a sync access handle in a worker, reads `estimate()` before, after the write and after the delete; the user quits and reopens Chrome and the page judges the restart reading on load (`&truncateFirst=1` for the reporter's workaround) | `NOT COUNTED`, `COUNTED`, `NEGATIVE USAGE`, `NOT CHECKED` | **reproduced**: `NEGATIVE USAGE` after a restart of the user's Chrome 155, 2026-10-22 (saved figure −16.5 MB after a plain run's delete, read back as 4.28 GB; about +50.6 MB before it if the delete took the full 64 MiB, as the off-disk reading and round 2 show); the saved figure read off disk drops by the deleted size on a plain delete, by 0 after a truncate; a truncate-first run and a second restart moved it by the hand-deleted samples' size only (−238 137 857 against −238 135 417 predicted) |
 | `opfs-flush` | [40909520](https://issues.chromium.org/issues/40909520) — slow `flush()` on Mac | Times 20 writes of 1 MiB and 20 of 16 MiB, each followed by `flush()`, in a worker; median, p95 and max per size | `MEASURED` (figures only: the tracker's claim is a comparison with other browsers this repo does not make) | **measured**: flush median 0.53–0.57 ms (1 MiB), 1.44–1.46 ms (16 MiB), Chrome 155, macOS 15.6.1, 2026-10-22 |
@@ -69,7 +73,7 @@ stand), the single-window bfcache runs, and the OPFS stored-readings load before
    ```
    https://localhost:5173/chromium-watched-issues-debug-demo.html?issue=first-read
    https://localhost:5173/chromium-watched-issues-debug-demo.html?issue=bfcache
-   https://localhost:5173/chromium-watched-issues-debug-demo.html?issue=suspend-resume
+   https://localhost:5173/chromium-watched-issues-debug-demo.html?issue=suspend-resume&witness=mic&repro=tracker
    https://localhost:5173/chromium-watched-issues-debug-demo.html?issue=capture-gaps&source=loopback&rate=48000
    https://localhost:5173/chromium-watched-issues-debug-demo.html?issue=opfs-usage
    https://localhost:5173/chromium-watched-issues-debug-demo.html?issue=opfs-flush
@@ -266,68 +270,102 @@ any upstream fix. The demo reading was taken once, on one demo; it was not swept
 
 ### suspend-resume (560233271)
 
-**Not reproduced under 20 quick cycles on an idle graph on this macOS.** The run is Chrome 155.0.8059.85
-on macOS 15.6.1 (Apple silicon), in Playwright's Chrome with the window visible, on 2026-10-22, at
-44 100 Hz. Both real runs read **`CLEAN`**. Two positive controls read **`DISTORTED`**, and every
-navigation had 0 console errors. Each envelope carries `chromeFullVersion` and `osVersion` itself.
+**Reproduced: by ear on the tracker's page, and on the probe's microphone and clock with the tracker's
+preconditions.** Chrome 155.0.8059.85, macOS 15.6.1 (Apple silicon), 2026-10-22, 44 100 Hz. Every
+envelope carries `chromeFullVersion` and `osVersion` itself.
 
-Each run takes one real click and reads the tone for a two-second baseline. It then runs 20 cycles of
-`suspend()` / `resume()`, each raced against a 5 s deadline, with a one-second window after each resume.
-The tone is a 440 Hz sine that the worklet processor renders itself. It goes into an analyser
-(FFT 32 768, no smoothing), then through a −30 dB gain to the destination. Each window reads the
-analyser once at its end, so every sample read was rendered after the resume. A window is judged three
-ways:
-- **Purity.** This is the tone's own bin over the power sum of every other bin, with the window's main
-  lobe (±3 bins) counted as the tone. No bin is gated, so noise spread thin over the spectrum still
-  adds up.
-- **Dropouts.** A dropout is a 128-frame stretch whose RMS is under a tenth of the baseline's.
-- **Clicks.** A click is a sample whose second difference exceeds 20 times the baseline window's own
-  99.9th percentile. Here the threshold is 3.93 × 10⁻², about twenty times what the clean sine's
-  curvature reaches.
+**By ear.** The user opened the tracker's repro page in their own Chrome: https://pioug.github.io/chromium-audiocontext/, source at
+https://github.com/pioug/chromium-audiocontext. They clicked Play, then "Suspend / resume" about once a
+second. The tone went audibly distorted within five clicks.
 
-A run reads `DISTORTED` on any one of three things: a purity more than 12 dB under the baseline,
-dropouts in two consecutive windows, or a window with more than 2 clicks above the baseline's count.
+**On the probe.** These runs were in Playwright's Chrome, with the window visible and the room left
+unattended. The tone played from the MacBook Pro's speakers at −20 dB. The built-in microphone heard it
+with echo cancellation, noise suppression and gain control off, and its track ran at 48 000 Hz.
 
-| envelope | run | cycles | baseline purity | purity after the cycles | clicks per window | dropouts | suspend ms, median / max | resume ms, median / max | verdict |
-|---|---|---|---|---|---|---|---|---|---|
-| `chromium-suspend-resume-mvk2auh7-7vhg.json` | real | 20 | 66.51 dB | 66.51 dB, every cycle | 0 | 0 | 0.50 / 0.67 | 5.85 / 7.72 | `CLEAN` |
-| `chromium-suspend-resume-mvk2bm5g-d5aw.json` | real | 20 | 66.51 dB | 66.51 dB, every cycle | 0 | 0 | 0.50 / 0.70 | 5.82 / 8.38 | `CLEAN` |
-| `chromium-suspend-resume-mvk2ce9z-vsxm.json` | `&control=crackle` | 20 | 66.51 dB | 7.58 dB from cycle 7 | 2 251–2 259 from cycle 7 | 0 | — | — | `DISTORTED` |
-| `chromium-suspend-resume-mvk2d80b-fihu.json` | `&control=harmonic` | 20 | 66.51 dB | 12.83 dB from cycle 7 | 0 | 0 | — | — | `DISTORTED` |
+| envelope (and WAV) | options | cycles | in-graph verdict | clock, context against wall, per cycle | microphone purity, baseline → cycles | microphone clicks per window | verdict |
+|---|---|---|---|---|---|---|---|
+| `mvk5tg8m-hx60` | `&witness=mic&pace=1000&cycles=40&repro=tracker` | 40 | `CLEAN` (66.51 dB every cycle) | 0.496–0.503 from cycle 1 (baseline 1.0023) | 17.04 → −31.02…−73.04 dB from cycle 1 | 160–1 946 from cycle 1 | `DISTORTED` |
+| `mvk5vayw-hnhh` | `&witness=mic&repro=tracker` | 20 | `CLEAN` | 0.496–0.500 from cycle 1 (baseline 1.0032) | 17.22 → −45.46…−76.89 dB from cycle 1 | 245–692 from cycle 1 | `DISTORTED` |
+| `mvk5no0g-o68z` | `&witness=mic` | 20 | `CLEAN` | 0.996–1.003 | 11.25 → 11.21…13.94 dB | 0 | `CLEAN` |
+| `mvk5okvv-cw8n` | `&witness=mic&pace=1000` | 20 | `CLEAN` | 0.996–1.006 | 11.62 → 11.53…14.08 dB | 0 | `CLEAN` |
+| `mvk5pda3-2kmc` | `&witness=mic&pace=1000&cycles=40` | 40 | `CLEAN` | 0.996–1.007 | 10.93 → 6.61…23.19 dB | 0 to cycle 31, then 18–347 in every window from cycle 32 | `DISTORTED` |
+| `mvk5rajg-qii2` | `&witness=mic&pace=1000&cycles=40` | 40 | `CLEAN` | 0.996–1.004 (`clockRatioMin` 0.9958) | 11.38 → 11.46…20.88 dB | 45 at cycle 15, 0 in every other window | `DISTORTED` |
 
-The context read `running` after the last resume in every run.
+Each name is `chromium-suspend-resume-<token>.json`, with the microphone's capture beside it as
+`.wav` (32-bit float, mono, the witness context's rate). Every navigation had 0 console errors.
 
-What the instrument can see:
-- **The crackle control shows the click rule and the purity rule both firing.** From cycle 7 on, the
-  processor flips the sign of three samples per quantum. Purity falls 59 dB and each window holds
-  about 2 255 clicks.
-- **The harmonic control shows the purity rule alone.** From cycle 7 on, the processor soft-clips the
-  tone. Purity falls 54 dB and the window holds no click. The two rules see different damage.
-- **Both controls are gross.** They prove that the detectors fire in this browser on this graph. They
-  do not measure the smallest damage the detectors would catch.
-- **The detection floor below the controls comes from the rules, not a measurement.** One flipped
-  sample of the 0.5 tone gives three clicks against a baseline of 0, and that reads `DISTORTED` (the
-  classifier's tests), when the sample is larger than about 0.02. On the purity side, damage reads
-  distorted once its power, summed over the whole spectrum, comes within about 54 dB of the tone. That
-  is −74 dB on the analyser's scale, where the tone's bin reads −19.6 dB, wherever in the spectrum the
-  damage falls.
-- **The clean figures are the baseline's to two decimals.** A clean sine's out-of-lobe power,
-  −86.11 dB, is the window's own sidelobe leakage, and it does not move across 20 cycles. The
-  worst-purity cycle figure only picks out float rounding in a clean run.
-- **The earlier `CLEAN` runs do not count.** Three runs used an earlier gated measure that counted only
-  bins above −80 dB and had no click rule: `mvk21dt6-catu`, `mvk22th1-syvs` and `mvk23knk-55i8`. That
-  measure could not see crackle spread thin over the spectrum, nor a click, so those runs are not
-  quoted.
+- **With the tracker's preconditions it fails at the first cycle, every time.** The context clock runs at
+  half the wall clock from cycle 1 to the end, on both runs. That is the tracker's trace: one render
+  quantum per 256-frame callback after the failure. The microphone hears the result. Purity falls
+  48–94 dB below the baseline and every window holds hundreds of clicks. The failure persists for the
+  rest of the run, as the tracker says.
+- **The audio-analyzer confirms it on `mvk5tg8m-hx60.wav`.** Compare the baseline (0.3–2 s) with a late
+  window (40–44 s, cycles 36–40):
 
-What it means:
-- **`CLEAN` means not reproduced here, not fixed.** The tracker says the distortion comes "eventually",
-  bisects it to Chrome 152 and reproduces it on macOS only. Here it is macOS on Chrome 155. So either 20
-  cycles a second apart on a one-node graph do not hit the race, or a fix landed between 152 and 155.
-  The probe cannot tell which, and the tracker is still open.
-- **Neither the demos nor the SDK call `suspend()`.** A grep for `.suspend(` finds nothing in `src/`
-  outside this probe, and nothing in any `@opendaw/*` dist. `initializeOpenDAW` only resumes. A
-  `DISTORTED` reading would have moved the entry up with "avoid suspend / resume" as the standing rule,
-  not a code change. The entry stays watched, with this reading.
+  | figure | baseline | late window |
+  |---|---|---|
+  | strongest pitch class | A at 1.00, the next at 0.25 | G at 0.99, A at 0.69, all twelve between 0.37 and 0.99 |
+  | spectral centroid | 912 Hz | 2 861 Hz |
+  | rolloff | 731 Hz | 5 982 Hz |
+  | flatness | 0.052 | 0.149 |
+  | mid band (0.5–2 kHz) energy | 2.6 × 10⁻⁵ | 1.78 × 10⁻⁴ |
+  | upper-mid band (2–4 kHz) energy | 8 × 10⁻⁶ | 9.5 × 10⁻⁵ |
+
+  The tone is no longer a tone.
+- **The in-graph analyser cannot see the output path.** The worklet's samples stay perfect: 66.51 dB
+  purity and 0 clicks in every window of every run, the failed ones included. What fails is how often
+  Chrome pulls the graph to fill the hardware buffer. The clock ratio and the microphone see that; an
+  analyser inside the graph does not. The earlier graph-only `CLEAN` runs stay as data on that reading:
+  `chromium-suspend-resume-mvk2auh7-7vhg.json` and `mvk2bm5g-d5aw.json`, at 66.51 dB every cycle.
+- **The clock alone is a witness.** It reads 0.50 against a baseline of 1.00 with no microphone, so a
+  graph-only run of `&repro=tracker` would also show the failure in its `clockRatioPerCycle` figure.
+  The verdict does not use it yet. Note that the bfcache probe's half-speed clock (575891839, above)
+  has the same figure.
+- **Without the tracker's preconditions it is rarer, and not proven.** The three 20-cycle runs read
+  `CLEAN`, and so do the pace-1000 run and the back-to-back run. Both 40-cycle runs read `DISTORTED` on
+  the microphone with the clock true throughout:
+  - `mvk5pda3-2kmc` holds clicks in every window from cycle 32. The analyser finds the late window
+    broadband from 34 s on: centroid 750 → 1 200–3 100 Hz, rolloff 0.6 → 1.9–6.9 kHz, flatness
+    0.035 → 0.08–0.22.
+  - `mvk5rajg-qii2` shows one burst at cycle 15: a broadband frame at 16.87 s in the WAV.
+  - In both, the tone at the microphone also steps in level between windows: +6 dB at about 10.5 s and
+    back down at 21 s in the first, and +4.6 dB from 17.1 s in the second. The in-graph level never
+    moves.
+  
+  These two runs predate the per-cycle WAV positions (`micResumeAtWavSec`). The room was unattended, so
+  a sound in it is not excluded. Read them as a candidate for a second, slower failure on the output
+  path, not as a measurement of it.
+- **The positive controls and the gated runs stand as before.** The crackle control (`mvk2ce9z-vsxm`)
+  and the harmonic control (`mvk2d80b-fihu`) read `DISTORTED` on the in-graph analyser. They show that
+  the in-graph detectors fire. They say nothing about the output path. The three gated-measure runs
+  stay unquoted: `mvk21dt6-catu`, `mvk22th1-syvs`, `mvk23knk-55i8`. So does the first unbanded
+  microphone run, `mvk5lujo-9z7s`, whose purity counted the room's rumble below 200 Hz.
+
+**What the probe does now.**
+- **Witness.** `&witness=mic` plays the tone at −20 dB and opens the microphone in a second
+  `AudioContext` that is never suspended. The witness's own capture path therefore cannot fail with
+  the context under test.
+- **Microphone reading.** The microphone runs into an analyser and a recorder, and is judged with the
+  same rules against its own baseline window. Purity there leaves out the bins below 200 Hz
+  (`micPurityMinHz`): the room's rumble outweighed the tone. The capture is saved as
+  `chromium-suspend-resume-<token>.wav`.
+- **Pace.** `&pace=<ms>` sets the wait after each resume, with the window read at its end. 0 keeps
+  the one-second window, so `&pace=1000` and the default differ only in name. Our cycles always waited
+  a second between `resume()` and the next `suspend()`; only the `suspend()` → `resume()` step is
+  back-to-back, and so is the tracker's.
+- **Cycles.** `&cycles=<n>` sets the cycle count; the default is 20.
+- **Tracker preconditions.** `&repro=tracker` applies the three that the tracker's `BUG_REPORT.md`
+  names as necessary: 44 100 Hz requested explicitly, one restart before the baseline, and an 80 ms
+  synchronous task on the worklet thread before each cycle. The worklet is always loaded from a file
+  (`public/chromium-suspend-resume-tone.js`), because the tracker found a Blob URL did not reproduce.
+  The tracker's tone computes its phase from `currentFrame`; ours keeps its own phase.
+
+**What it means.** Neither the demos nor the SDK call `suspend()`. A grep for `.suspend(` finds nothing
+in `src/` outside this probe, and nothing in any `@opendaw/*` dist; `initializeOpenDAW` only resumes. The
+reproduction therefore moves the entry up with "avoid suspend / resume" as the standing rule, not a code
+change. The entry's sentence "Not observed here" no longer holds. A demo that ever adds a suspend /
+resume, for a pause button or a power-saving idle, would put a visitor's Chrome one long worklet task
+away from a half-rate, crackling output, until a reload.
 
 ### capture-gaps (40103985)
 
