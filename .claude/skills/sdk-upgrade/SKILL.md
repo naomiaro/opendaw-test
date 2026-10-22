@@ -117,8 +117,8 @@ async () => { const t0 = Date.now(); while (Date.now() - t0 < 95000) { const s =
 
 Run the hardware-free rows yourself; the IAC, combined and `cover` rows need the user's
 hardware or hand — ask for them at the end rather than skipping silently. Judge every cell
-against its register (root CLAUDE.md names them); a changed row is the finding, a listed
-defect is not. Per-release sections, in the shape of the previous release's: "Standing sweep
+against its register (root CLAUDE.md names them) and against `docs/known-vendor-issues.md`;
+a changed row is the finding, a listed defect or a listed vendor behaviour is not. Per-release sections, in the shape of the previous release's: "Standing sweep
 on <new>" in `debug/2026-09-02-recording-start-alignment/note.md` (single tape table,
 multi-mic table, forced table, the one-quantum count, a Reading) and "SDK <new>, 48 kHz /
 44.1 kHz" in `debug/2026-10-02-loudness-meter/note.md` (the loudsum rows). The MIDI,
@@ -137,7 +137,9 @@ paragraph, and "opendaw-headless follow-ups shipped with this upgrade" with the 
 the docs touched and the API claims verified against the tarballs.
 
 Docs: grep every changed identifier across `documentation/`, `documentation/internals/`,
-root `CLAUDE.md` and the category `CLAUDE.md`s; chapter docs state the present, so
+root `CLAUDE.md` and the category `CLAUDE.md`s; in `docs/known-vendor-issues.md` re-read each
+open tracker, update every entry's "Last checked" with what the sweeps showed, and add an entry
+for any vendor behaviour the upgrade ran into; chapter docs state the present, so
 `grep -rnE '0\.0\.1[0-9]{2}' src documentation CLAUDE.md` must find no new version
 qualifier outside `changelogs/` and `debug/`. `grep -ri moises` over the diff must be empty.
 

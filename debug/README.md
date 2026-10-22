@@ -17,6 +17,7 @@ Drafts that are written and not posted. Find them at any time with `ls debug/*/d
   - `TO-REVIEW-<target>.md` — written, waiting for a read, nothing posted. Add it to "Waiting for a read" above.
   - `posted-<tracker>-<number>[-topic].md` — renamed from `TO-REVIEW-…` when it is posted; the body as filed, with the link at its head.
   - `withdrawn-<topic>.md` — not posted, with the reason at its head.
+- **Vendor behaviours are not investigations.** A browser, platform or hosting behaviour outside the SDK that a note measures and works around also gets an entry in `docs/known-vendor-issues.md` (tracker, symptom, workaround, evidence, last checked), so a later session finds it without reading the note.
 - **The index below is newest first.** A new folder gets a row; a row's status is kept current.
 - **The `.md` files at this folder's top level other than this one are stubs.** Each stands at a path that a filed upstream issue or PR links to and says where the note went. Do not add notes there, and do not delete the stubs.
 
