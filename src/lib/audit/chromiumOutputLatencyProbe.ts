@@ -91,7 +91,7 @@ export async function runOutputLatencyProbe(
         lastOutputMs: last.outputMs,
         minOutputMs: Math.min(...outputs),
         maxOutputMs: Math.max(...outputs),
-        labelsHidden: rows.every((r) => r.hidden),
+        labelsHidden: rows.every((r) => r.hidden) ? "true" : "false",
         detail: rows.every((r) => r.hidden)
           ? "labels hidden (no media permission): read the outputLatency jump, not the label, as the switch"
           : "labels read",
