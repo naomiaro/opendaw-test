@@ -86,8 +86,20 @@ export function suspendResumeOptionsFrom(params: URLSearchParams): SuspendResume
   };
 }
 
-/** The run's verdict: `HALF RATE` when the clock witness fires; else the microphone's when it is on; else the graph's. */
+/** The verdict word for distortion the microphone heard and the graph did not. */
+export const MIC_ONLY_VERDICT = "DISTORTED (mic only)";
+
+/**
+ * The run's verdict, by precedence: `HALF RATE` when the clock rule fires; `DISTORTED` when the
+ * graph's rules fire; `DISTORTED (mic only)` when only the microphone's do, a candidate and not a
+ * reproduction, since a sound in the room reads the same; then a `NOT CHECKED` from either
+ * reading; else `CLEAN`.
+ */
 export function overallVerdict(graph: string, mic: string | null, halfRate: boolean): string {
   if (halfRate) return "HALF RATE";
-  return mic ?? graph;
+  if (graph === "DISTORTED") return "DISTORTED";
+  if (mic === "DISTORTED") return MIC_ONLY_VERDICT;
+  if (graph.startsWith("NOT CHECKED")) return graph;
+  if (mic !== null && mic.startsWith("NOT CHECKED")) return mic;
+  return "CLEAN";
 }

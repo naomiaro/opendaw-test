@@ -334,7 +334,7 @@ the microphone witness.
 | `mvk66w4s-yjmr` | `&tracker=1&module=blob` | `HALF RATE` from cycle 2 | 0.962, then 0.48–0.51 | 344.6 → 172.3 | 6.2–25.8 dB from cycle 2 | — |
 | `mvk67nwz-e5jp` | `&tracker=1&stallMs=0` | `CLEAN` | 0.954–0.963 | 344.5 → 344.4 | 66.51 dB, 0 clicks | — |
 | `mvk69i2k-w85k` | `&tracker=1&gapMs=500` | `HALF RATE` from cycle 10 | 0.99–1.00, then 0.498–0.505 | 344.1 → 172.2 | 6.1–25.4 dB from cycle 10 | — |
-| `mvk68gjz-2bwp` (+ WAV) | `&witness=mic&pace=1000`, no stall | `DISTORTED` on one microphone window, clock `TRUE` | 1.000–1.008 | 344.4 → 344.4 | 66.51 dB, 0 clicks | one window at −7.39 dB: a room sound (below) |
+| `mvk68gjz-2bwp` (+ WAV) | `&witness=mic&pace=1000`, no stall | `DISTORTED (mic only)`: one microphone window, clock `TRUE` | 1.000–1.008 | 344.4 → 344.4 | 66.51 dB, 0 clicks | one window at −7.39 dB: a room sound (below) |
 | `mvk6ah1p-c6ap` | `&tracker=1&manual=1`, two clicks | `NOT CHECKED 2-cycles` | 1.003, 0.957 | 344.4 | 66.51 dB | — |
 
 The last row is the manual mode's smoke test: two real clicks, two rows, Finish, envelope uploaded.
@@ -371,20 +371,24 @@ The last row is the manual mode's smoke test: two real clicks, two rows, Finish,
 
   `mvk5tg8m-hx60.wav`, from round 2's first reproduction, read the same: centroid 912 → 2 861 Hz,
   flatness 0.052 → 0.149.
-- **The microphone alone is not a verdict.** In `mvk68gjz-2bwp`, a no-stall run with the clock true and
-  the graph clean, one window dipped 14 dB and read `DISTORTED`. The WAV shows a single 0.4 s broadband
+- **The microphone alone is not a verdict.** The overall verdict takes the clock rule first
+  (`HALF RATE`), then the graph's rules (`DISTORTED`). Distortion that only the microphone heard reads
+  `DISTORTED (mic only)`, a candidate and not a reproduction, with `verdictDetail` saying so; a sound
+  in the room reads the same. In `mvk68gjz-2bwp`, a no-stall run with the clock true and the graph
+  clean, one microphone window dipped 14 dB. The WAV shows a single 0.4 s broadband
   event at 15.87–16.12 s, inside cycle 14's window, with the clean tone either side: a sound in the
   unattended room. Round 2's two no-stall 40-cycle runs, `mvk5pda3-2kmc` and `mvk5rajg-qii2`, read
-  `DISTORTED` on the microphone the same way, with the clock true. They are not attributed to the
-  issue. The clock and the render rate are the figures to quote; the WAV is the audible confirmation.
+  `DISTORTED (mic only)` the same way, with the clock true. They are not attributed to the issue.
+  The clock and the render rate are the figures to quote; the WAV is the audible confirmation.
 - **Round 2's runs, re-judged on the clock rule.** Their saved figures (`baselineClockRatio`,
-  `clockRatioPerCycle`) were put through `judgeHalfRate` and `overallVerdict`:
+  `clockRatioPerCycle`) were put through `judgeHalfRate` and `overallVerdict`, with the precedence
+  above:
 
   | run | clock | verdict now |
   |---|---|---|
   | `mvk5tg8m-hx60` (tracker preconditions, 40 cycles) | before 1.0023, half rate from cycle 1 | `HALF RATE` |
   | `mvk5vayw-hnhh` (tracker preconditions, 20 cycles) | before 1.0032, half rate from cycle 1 | `HALF RATE` |
-  | `mvk5pda3-2kmc`, `mvk5rajg-qii2` (40 cycles, no stall) | true | `DISTORTED` on the microphone, unattributed |
+  | `mvk5pda3-2kmc`, `mvk5rajg-qii2` (40 cycles, no stall) | true | `DISTORTED (mic only)`, unattributed |
   | `mvk5no0g-o68z`, `mvk5okvv-cw8n` (20 cycles, no stall) | true | `CLEAN` |
 - **Earlier runs stay as data.** The graph-only `CLEAN` runs, `mvk2auh7-7vhg` and `mvk2bm5g-d5aw`, had no
   stall; the in-graph analyser cannot see the output path. The positive controls, `mvk2ce9z-vsxm` for

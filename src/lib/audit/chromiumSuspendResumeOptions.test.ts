@@ -69,17 +69,30 @@ describe("suspendResumeOptionsFrom", () => {
 describe("overallVerdict", () => {
   it("is the graph's verdict without a witness", () => {
     expect(overallVerdict("CLEAN", null, false)).toBe("CLEAN");
+    expect(overallVerdict("DISTORTED", null, false)).toBe("DISTORTED");
   });
 
-  it("is the microphone's verdict when the witness is on, whatever the graph read", () => {
-    expect(overallVerdict("CLEAN", "DISTORTED", false)).toBe("DISTORTED");
-    expect(overallVerdict("DISTORTED", "CLEAN", false)).toBe("CLEAN");
-    expect(overallVerdict("CLEAN", "NOT CHECKED mic-NotAllowedError", false)).toBe("NOT CHECKED mic-NotAllowedError");
-  });
-
-  it("is HALF RATE whenever the clock witness fires, over either reading", () => {
+  it("is HALF RATE whenever the clock rule fires, over either reading", () => {
     expect(overallVerdict("CLEAN", null, true)).toBe("HALF RATE");
-    expect(overallVerdict("CLEAN", "DISTORTED", true)).toBe("HALF RATE");
+    expect(overallVerdict("DISTORTED", "DISTORTED", true)).toBe("HALF RATE");
     expect(overallVerdict("NOT CHECKED 5-cycles", null, true)).toBe("HALF RATE");
+  });
+
+  it("is DISTORTED when the graph rule fires, whatever the microphone read", () => {
+    expect(overallVerdict("DISTORTED", "CLEAN", false)).toBe("DISTORTED");
+    expect(overallVerdict("DISTORTED", "DISTORTED", false)).toBe("DISTORTED");
+  });
+
+  it("marks distortion the microphone alone heard as mic only: a room sound reads the same", () => {
+    expect(overallVerdict("CLEAN", "DISTORTED", false)).toBe("DISTORTED (mic only)");
+  });
+
+  it("is CLEAN when every rule is clean", () => {
+    expect(overallVerdict("CLEAN", "CLEAN", false)).toBe("CLEAN");
+  });
+
+  it("keeps NOT CHECKED when a reading could not be judged and no rule fired", () => {
+    expect(overallVerdict("NOT CHECKED 5-cycles", "NOT CHECKED 5-cycles", false)).toBe("NOT CHECKED 5-cycles");
+    expect(overallVerdict("CLEAN", "NOT CHECKED mic-NotAllowedError", false)).toBe("NOT CHECKED mic-NotAllowedError");
   });
 });

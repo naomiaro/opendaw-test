@@ -37,6 +37,7 @@ import {
 } from "./chromiumSuspendResume";
 import {
   CONTROL_FROM_CYCLE,
+  MIC_ONLY_VERDICT,
   overallVerdict,
   suspendResumeOptionsFrom,
   type SuspendResumeOptions,
@@ -539,6 +540,10 @@ export async function runSuspendResumeProbe(signal: AbortSignal, report: (step: 
         };
     const calls = results.map((r) => r.callsPerSecond);
     return envelope(verdict, {
+      verdictDetail:
+        verdict === MIC_ONLY_VERDICT
+          ? "only the microphone heard distortion: a candidate, not a reproduction (a sound in the room reads the same)"
+          : null,
       clockVerdict: clock.halfRate ? "HALF RATE" : "TRUE",
       graphVerdict: graph.word,
       cycles: results.length,
