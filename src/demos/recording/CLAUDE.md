@@ -196,8 +196,12 @@ state changes. Instead, let AnimationFrame run unconditionally — when there's 
 render it's a no-op.
 
 ### Finding Recording Regions
-Every audio recording region is labeled `"Take N"` starting at N=1, including single
-non-loop recordings (`RecordMidi` labels MIDI takes the same way). Discover via
+Every audio recording region is labeled `"Take N"`, including single non-loop recordings
+(`RecordMidi` labels MIDI takes the same way). N starts at 1 on an audio unit without takes
+and a later recording on the same unit continues after the highest "Take N" already there
+(`RecordTrack.lastTakeNumber`), so a demo must not read "Take 1" as "the first take of this
+recording": the lead-in take is the one positioned before the loop area
+(`isLeadInTake` in `src/demos/recording/takeLeadIn.ts`). Discover via
 `getAllAudioRegions(project)` from `src/lib/adapterUtils.ts`:
 ```typescript
 import { getAllAudioRegions } from "@/lib/adapterUtils";

@@ -6,6 +6,7 @@ import type { SampleLoaderState, AudioRegionBoxAdapter } from "@opendaw/studio-a
 import { AudioUnitBoxAdapter, TrackBoxAdapter } from "@opendaw/studio-adapters";
 import type { AudioUnitBox, TrackBox } from "@opendaw/studio-boxes";
 import { PPQN } from "@opendaw/lib-dsp";
+import { BAR_PPQN } from "./takeLeadIn";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { getAllRegions } from "@/lib/adapterUtils";
 import { waitForLoadingComplete } from "@/lib/engineLoading";
@@ -47,7 +48,6 @@ import {
   Select,
 } from "@radix-ui/themes";
 
-const BAR_PPQN = PPQN.Quarter * 4; // one bar in 4/4
 
 // Dev-only sample-rate audit knob: ?sampleRate=44100 forces the AudioContext's
 // sample rate for forced-rate audit sessions (see

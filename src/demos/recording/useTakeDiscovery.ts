@@ -10,6 +10,7 @@ import type {
 import type { AudioRegionBox } from "@opendaw/studio-boxes";
 import type { RecordingTape } from "@/components/RecordingTapeCard";
 import type { TakeRegion, TakeIteration } from "./TakeTimeline";
+import { isLeadInTake } from "./takeLeadIn";
 
 interface UseTakeDiscoveryOptions {
   project: Project | null;
@@ -37,7 +38,9 @@ export interface UseTakeDiscoveryResult {
  * Reactive take discovery for loop recording: subscribes to the adapter layer
  * (audioUnit tracks → regions) while recording, builds TakeRegion entries from
  * "Take N" regions, groups them into TakeIteration state, and tracks mute
- * changes reactively.
+ * changes reactively. The take number is the SDK's label: a new recording
+ * continues after the highest "Take N" already on the audio unit, so the
+ * lead-in take is told by its position, not by its number.
  */
 export function useTakeDiscovery({
   project,
@@ -111,6 +114,7 @@ export function useTakeDiscovery({
         regionBox,
         inputTapeId,
         takeNumber,
+        positionPpqn: regionBox.position.getValue(),
         isMuted,
         sampleLoader: loader,
         waveformOffsetFrames,
@@ -145,7 +149,7 @@ export function useTakeDiscovery({
         // New take iteration
         const newIteration: TakeIteration = {
           takeNumber: region.takeNumber,
-          isLeadIn: region.takeNumber === 1 && leadInBars > 0,
+          isLeadIn: isLeadInTake(region.positionPpqn, leadInBars),
           regions: [region],
           isMuted: region.isMuted,
         };

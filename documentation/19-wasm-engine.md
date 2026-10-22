@@ -200,6 +200,8 @@ Measuring DSP load runs extra work on the audio thread and slightly perturbs the
 settings.debug.dspLoadMeasurement = true;
 ```
 
+While it is on, `EngineWorklet` leases a clock worker that spins `performance.now()` into a shared float (one core busy); on a machine with fewer than four hardware threads the worker is not started and the meter reports nothing.
+
 With it enabled, read the engine's load and recent history from the facade — both live on the persistent `EngineFacade`, so they survive an engine restart:
 
 ```typescript

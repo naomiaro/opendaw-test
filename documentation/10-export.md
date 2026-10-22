@@ -184,6 +184,8 @@ sub.terminate();
 
 **Sections:** `MixdownSection.collect(project)` lists what the studio's mixdown dialog offers — the entire song (`[0, lastRegionAction()]`, with its tail), the loop area once and in two passes (the second pass kept, so the loop's own tail is in it; offered while the loop is disabled too), and one section per marker to the next marker (the last runs to the song end). `OfflineEngineRenderer.renderSection(source, optExportConfiguration, section, progress, abortSignal?, sampleRate?)` renders one; for the render it sets the loop area to the section and enables it only for a two-pass render (disabled otherwise) and disables the marker track, and restores both without an undo entry.
 
+**Bounce:** `AudioBounce.bounce(project, sampleService, regions, options, abortSignal?)` renders note and audio regions solo through their instrument (`options.tap`: `"pre-fx"`, `"pre-fader"` or `"post-fader"`; `tail` keeps the ring-out until silent, at most 30 s; `merge` renders the regions of one instrument as one file; `loop` renders one pass twice and keeps the second, so it loops like the source), mutes the originals, places the results on a new Tape unit below the instrument (overlapping results on extra tracks), files the samples into a "Bounces" folder of the sample library, and reverts in one undo step. `AudioBounce.canBounce` / `canMerge` / `collectJobs` are the pure parts. The studio's region menu is app code; no demo here uses the API yet.
+
 **How it works:**
 1. Disables the timeline loop on the source (restores it after the render)
 2. Resolves the render range — `[0, lastRegionAction()]`, or `ExportConfiguration.range` when set

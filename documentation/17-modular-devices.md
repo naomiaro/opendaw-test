@@ -140,6 +140,18 @@ Covered in detail at [Ch. 11 — Spielwerk](./11-effects.md#spielwerk). Summary:
 
 Practical Spielwerk use cases: custom arpeggios (more flexible than the built-in Arpeggio), algorithmic sequencers (Euclidean rhythms, fractal patterns), generative composition rules ("turn every minor third into a perfect fifth"), live randomisers.
 
+## Script data, streams and views
+
+The studio can host a sandboxed **view** for a scriptable device (`// @view <ClassName> <column> <row> <columns> <rows>`, `// @window <ClassName> <width> <height>` for a floating window). The view itself is studio app code — nothing in this repo renders one — but the data it shares with the processor ships in the SDK, and a script that declares it compiles and runs headless:
+
+- **`// @collection <name>`** with `// @field <name> …` lines and `// @record …` rows: a table of records, each a `ScriptRecordBox` of `ScriptValueBox` cells under the device's `records` field; the processor reads `this.data.<name>` as frozen records (re-resolved every block, `dataChanged()` when a snapshot changes).
+- **`// @buffer <name> <length>`**: bulk float data (a wavetable, a drawn curve) under the device's `buffers` field, stored as `ScriptBufferChunkBox` children of 256 floats so an edit records and syncs only the chunks it touches; the engine reads the chunks in index order and `this.data.<name>` is the concatenated `Float32Array`.
+- **`// @stream <name> <length> value|ring|fft`**: telemetry the processor writes into `this.streams.<name>` for a view to read (a value stream is a `Float32Array` the processor overwrites; ring and fft streams are broadcast through the live stream).
+- **`host.send(message)`** from a view arrives at the processor's `message(payload)` before its next `process()`; a device that did not render in a quantum (bypassed, outside the graph) drops its queued messages.
+- **`// @param … [omit-default-ui]`** gets no knob in the studio (the view is its only control) and stays automatable, modulatable and MIDI-learnable.
+
+Related rules: reordering `@param` or `@sample` lines keeps their values (the engine re-binds a parameter whose index changed and redelivers a sample whose slot moved); a saved script with a malformed `@collection`, `@stream` or `@buffer` line still loads (a warning; compiling still refuses it); `ScriptCompiler.replace(audioContext, editing, deviceBox, source, create)` swaps a scriptable device for a fresh one in one undo step, so nothing of the old device reaches the new script. `ScriptCompiler.Config` takes optional `records` and `buffers` fields; the Werkstatt demo's `compile(audioContext, editing, box, script)` call is unchanged.
+
 ## Hot reload
 
 Recompiling is **not** done by writing `code` directly — `apparatBox.code.setValue(src)` stores

@@ -201,7 +201,7 @@ sampleLoader.subscribe(state => {
 
 ### Peaks file is corrupt
 
-The OPFS storage layer self-heals corrupt peaks ([Ch. 04 — Sample Loading internals](./internals/04-sample-loading.md#corruption-recovery)). If you see `peaks.bin is corrupted for ... regenerating` in the console, the recovery worked — the next load is fresh.
+A stalled OPFS operation reports itself: the worker warns `[OPFS] <operation> '<path>' runs for <n>s at '<step>'` when one lone operation holds for 5 s, and the page warns `[OPFS] <operation> '<path>' has no answer from the worker after <n>s` after 10 s (and again when it finally answers). The OPFS storage layer self-heals corrupt peaks ([Ch. 04 — Sample Loading internals](./internals/04-sample-loading.md#corruption-recovery)). If you see `peaks.bin is corrupted for ... regenerating` in the console, the recovery worked — the next load is fresh.
 
 ## "Export is silent or incomplete"
 

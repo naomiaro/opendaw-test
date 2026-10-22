@@ -16,6 +16,8 @@ export interface TakeRegion {
   regionBox: AudioRegionBox;
   inputTapeId: string;
   takeNumber: number;
+  /** Where the region starts on the timeline; the lead-in take starts before the loop area */
+  positionPpqn: number;
   isMuted: boolean;
   sampleLoader: SampleLoader | null;
   waveformOffsetFrames: number;
@@ -221,7 +223,7 @@ const TakeIterationLane: React.FC<{
   const leadInPercent = totalBars > 0 ? (leadInBars / totalBars) * 100 : 0;
   const loopPercent = totalBars > 0 ? (loopLengthBars / totalBars) * 100 : 0;
 
-  // Take 1 spans all bars (includes lead-in), take 2+ only spans loop region
+  // The lead-in take spans all bars (it started before the loop), the loop takes only the loop
   const isFullWidth = take.isLeadIn || leadInBars === 0;
   const marginLeft = isFullWidth ? 0 : leadInPercent;
   const width = isFullWidth ? 100 : loopPercent;
