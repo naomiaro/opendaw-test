@@ -138,8 +138,8 @@ the docs touched and the API claims verified against the tarballs.
 
 Docs: grep every changed identifier across `documentation/`, `documentation/internals/`,
 root `CLAUDE.md` and the category `CLAUDE.md`s; in `docs/known-vendor-issues.md` re-read each
-open tracker, update every entry's "Last checked" with what the sweeps showed, and add an entry
-for any vendor behaviour the upgrade ran into; chapter docs state the present, so
+open tracker, update "Last checked" on every entry a sweep exercised, and add an entry for any
+vendor behaviour the upgrade ran into; chapter docs state the present, so
 `grep -rnE '0\.0\.1[0-9]{2}' src documentation CLAUDE.md` must find no new version
 qualifier outside `changelogs/` and `debug/`. `grep -ri moises` over the diff must be empty.
 

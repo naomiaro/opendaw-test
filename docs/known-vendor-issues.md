@@ -2,7 +2,8 @@
 
 A register of browser, platform and hosting behaviours outside the SDK that this repo has
 measured and works around. Read it before debugging a symptom that matches one: a listed
-behaviour is not a new finding, and its workaround is already in place somewhere named below.
+behaviour is not a new finding, and each entry says where its workaround lives, or what is
+still to do.
 It is a register, so it carries versions and dates; the chapter docs and CLAUDE.md state the
 present only. Add an entry when a vendor behaviour costs a session; retire it (keep the row,
 mark it fixed, name the version) when the vendor ships a fix and a re-measurement confirms it.
@@ -15,8 +16,9 @@ where it lives, the evidence, and when it was last checked.
 - **Tracker:** [issues.chromium.org/issues/442866743](https://issues.chromium.org/issues/442866743),
   "currentTime and currentFrame sometimes freeze for a render quantum". Filed 2025-09-03, **open**;
   reproduced by Chromium triage on 142–144 and back to M-132. The cause (the render thread moves the
-  clock on only when it gets the audio graph lock, which the main thread holds while it connects,
-  disconnects or builds a node) and a quicker trigger are on the issue as comment 5 (2026-10-01,
+  clock on only when it gets the audio graph lock, which the main thread holds while it connects or
+  disconnects nodes, builds a worklet node or a stream source, or disposes nodes — bulk node creation
+  stalls it through the garbage collector's dispose, inferred from the source) and a quicker trigger are on the issue as comment 5 (2026-10-01,
   from this repo). SDK side: openDAW#424 (filed 2026-10-01).
 - **Symptom:** every `process()` call of some quanta reads the previous quantum's `currentFrame` /
   `currentTime`, or an older one, never a later one, while the main thread connects or disconnects
@@ -56,7 +58,10 @@ where it lives, the evidence, and when it was last checked.
   the take stays intact and finalization waits for the dialog.
 - **Evidence:** `debug/2026-10-21-hidden-page-recording/note.md`; page
   `recording-hidden-window-debug-demo.html`.
-- **Last checked:** 2026-10-22 (three `modal` rows intact on SDK 0.0.177).
+- **Last checked:** the hidden-page behaviour and the driver on 2026-10-21 (`cover` rows on SDK 0.0.176:
+  the window driver's three rows intact, hidden-safe `start` intact, hidden-safe `mid` / `stop` not yet
+  measured by hand); the three `modal` rows, which block frames by other means, re-run intact on 0.0.177
+  on 2026-10-22.
 
 ## Chrome — each `MediaStreamAudioSourceNode` delivers its stream with a delay of its own
 
@@ -66,18 +71,19 @@ where it lives, the evidence, and when it was last checked.
   44.1 kHz a node's delay can step by 441 frames (10 ms) in its first second. Two tapes recorded together
   therefore carry a raw skew of 0 to 4 quanta that is the browser's, not the SDK's.
 - **Where it bites here:** the multi-mic recording-alignment rows; any two-input recording.
-- **Workaround:** none in the SDK (it places each take against its own first-frame time, which the
-  skew cancels out of). The harness listens to the SDK's own source nodes (`nodeTaps` in
+- **Workaround:** none in the SDK: it cannot see a node's delay, and two takes recorded together sit
+  apart on the timeline by the two nodes' delay difference (0 to 4 quanta measured). The harness nets it
+  out: it listens to the SDK's own source nodes (`nodeTaps` in
   `src/lib/audit/loopbackInjection.ts`, `measureNodeDelay` in `src/lib/audit/nodeTap.ts`) and judges the
   netted skew; a raw multi-mic skew is never quoted as an SDK finding. A worklet module must be loaded
   before the first take (a load still running delays that take's first frame, 117 ms measured).
 - **Evidence:** `debug/2026-09-02-recording-start-alignment/note.md` (stream-tap measurement, repo PRs
-  #136–#138).
+  #136 and #138).
 - **Last checked:** 2026-10-22 (32 multi-mic rows, raw skew accounted for by the node delays on every repeat).
 
-## Chrome — a `MediaStreamAudioDestinationNode` stream from another `AudioContext` reads silent when captured
+## A `MediaStreamAudioDestinationNode` stream from another `AudioContext` reads silent when captured
 
-- **Tracker:** none; measured behaviour.
+- **Tracker:** none; measured in Chrome, not tried elsewhere.
 - **Symptom:** a `getUserMedia` override returning a destination-node stream made in a different
   AudioContext than the engine's gives flat peaks (the oscillator taps fine directly); and a shared
   stream dies for every consumer once one of them calls `track.stop()` (a tape disarm or remove).
@@ -93,9 +99,9 @@ where it lives, the evidence, and when it was last checked.
 - **Tracker:** none; measured.
 - **Symptom:** 40 MB reported against 8.7 GB of sample files under `samples/v2`.
 - **Where it bites here:** judging whether the per-page sample sweep works; any storage read-out.
-- **Workaround:** sum the file sizes under `samples/v2` instead; `clearStoredSamples()` in
-  `src/lib/storedSamples.ts` checks with `Workers.Opfs.exists` after a delete because
-  `Workers.Opfs.delete` reports nothing when it fails.
+- **Workaround:** sum the file sizes under `samples/v2` instead. (`clearStoredSamples()` in
+  `src/lib/storedSamples.ts` also checks with `Workers.Opfs.exists` after a delete because
+  `Workers.Opfs.delete` reports nothing when it fails — an SDK quirk, not the browser's.)
 - **Evidence:** root CLAUDE.md, "Stored Samples Are Swept at Page Load" (repo PR #132).
 - **Last checked:** 2026-10-01.
 
@@ -109,8 +115,7 @@ where it lives, the evidence, and when it was last checked.
 - **Workaround:** `getAudioExtension()` in `src/lib/audioUtils.ts` picks m4a (AAC) on Apple devices by
   user-agent, not by feature detection; before `play()` check `audioContext.state` and wait for the
   `statechange` event (root CLAUDE.md, "AudioContext Suspension").
-- **Last checked:** Safari 18.6 (2026-10-01, for the clock probe); the Opus fallback is exercised on
-  every Apple load.
+- **Last checked:** never re-measured; the Opus fallback is exercised on every Apple load.
 
 ## Chrome and Edge only — `AudioContext.setSinkId`
 
@@ -147,7 +152,9 @@ where it lives, the evidence, and when it was last checked.
   when a build fails right after a `.nvmrc` bump because node-build lacks the version, wait a day or set
   `NODE_VERSION` to the exact version, never to a bare major, and remove it again. Verify in the build log
   ("Installing nodejs <version>").
-- **Last checked:** 2026-10-22 (the override was still set, the build on 24.13.1).
+- **Status:** `NODE_VERSION=24` is still set in Production and Preview; delete it in both to let
+  `.nvmrc` drive the deploy.
+- **Last checked:** 2026-10-22 (the override still set, the build on 24.13.1).
 
 ## TypeScript — DOM lib without `FileSystemSyncAccessHandle` and `AudioPlaybackStats`
 
