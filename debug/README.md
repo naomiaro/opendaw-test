@@ -8,6 +8,7 @@ Drafts that are written and not posted. Find them at any time with `ls debug/*/d
 
 - **Both harnesses have run (the combined cell 2026-10-20, the MIDI-effect placement audit 2026-10-21: no effect moves a note it should pass through, and none moves a recorded note). The three drafts below are brought up to date and ready for the user's read:**
 - [`2026-10-21-hidden-page-recording/drafts/TO-REVIEW-openDAW-pr-hidden-safe-frames.md`](./2026-10-21-hidden-page-recording/drafts/TO-REVIEW-openDAW-pr-hidden-safe-frames.md) — not an issue: the recorder survives a hidden page and a blocked main thread at every moment measured; this is the hidden-safe frame driver offered upstream as an improvement, an option on the user's read.
+- [`2026-10-23-chromium-watched-issues/drafts/TO-REVIEW-opendaw-opfs-delete-usage.md`](./2026-10-23-chromium-watched-issues/drafts/TO-REVIEW-opendaw-opfs-delete-usage.md) — a new openDAW issue: `OpfsWorker` writes through sync access handles and deletes without truncating, so every delete drives Chrome's saved per-origin usage negative (Chromium 436552046 / 401692415), measured across two restarts; the repro page goes live when PR #175 merges.
 - [`2026-10-13-layer-delete-hang-report/drafts/TO-REVIEW-discord-reply.md`](./2026-10-13-layer-delete-hang-report/drafts/TO-REVIEW-discord-reply.md) — a reply for the Discord thread: what was tried, what the reporter should send.
 
 ## Layout
