@@ -7,6 +7,7 @@ import { DebugLinkBar } from "@/components/DebugLinkBar";
 import { browserOf, envelopeName, issueFrom, type ProbeEnvelope, type WatchedIssue } from "@/lib/audit/chromiumWatched";
 import { runFirstReadProbe } from "@/lib/audit/chromiumFirstReadProbe";
 import { runSuspendResumeProbe } from "@/lib/audit/chromiumSuspendResumeProbe";
+import { manualSession, type ManualState } from "@/lib/audit/chromiumSuspendResumeManual";
 import { runCaptureGapsProbe } from "@/lib/audit/chromiumCaptureGapsProbe";
 import {
   AWAITING_NAVIGATION,
@@ -109,6 +110,55 @@ function judgeStoredOnLoad(issue: WatchedIssue): Promise<ProbeEnvelope> | null {
       return null;
   }
 }
+
+/**
+ * The suspend-resume probe's manual mode (`&manual=1`): one real click per cycle, as on the
+ * tracker's repro page, with a live row per cycle. Shown only while a manual run is on.
+ */
+const ManualPanel: React.FC = () => {
+  const [manual, setManual] = useState<ManualState>({ active: false, awaiting: false, rows: [] });
+  useEffect(() => manualSession.subscribe(setManual), []);
+  if (!manual.active && manual.rows.length === 0) return null;
+  const db = (value: number | null) => (value === null ? "—" : value.toFixed(2));
+  return (
+    <Flex direction="column" gap="2">
+      {manual.active && (
+        <Flex gap="3" wrap="wrap">
+          <Button id="manual-cycle" onClick={() => manualSession.press("cycle")} disabled={!manual.awaiting}>
+            Suspend / resume
+          </Button>
+          <Button id="manual-finish" variant="soft" onClick={() => manualSession.press("finish")} disabled={!manual.awaiting}>
+            Finish
+          </Button>
+        </Flex>
+      )}
+      <div style={{ overflowX: "auto" }}>
+        <Table.Root size="1" id="manual-rows">
+          <Table.Header>
+            <Table.Row>
+              <Table.ColumnHeaderCell>cycle</Table.ColumnHeaderCell>
+              <Table.ColumnHeaderCell>graph purity dB</Table.ColumnHeaderCell>
+              <Table.ColumnHeaderCell>mic purity dB</Table.ColumnHeaderCell>
+              <Table.ColumnHeaderCell>mic clicks</Table.ColumnHeaderCell>
+              <Table.ColumnHeaderCell>clock ratio</Table.ColumnHeaderCell>
+            </Table.Row>
+          </Table.Header>
+          <Table.Body>
+            {manual.rows.map((row) => (
+              <Table.Row key={row.cycle}>
+                <Table.RowHeaderCell>{row.cycle}</Table.RowHeaderCell>
+                <Table.Cell>{db(row.graphPurityDb)}</Table.Cell>
+                <Table.Cell>{db(row.micPurityDb)}</Table.Cell>
+                <Table.Cell>{row.micClicks === null ? "—" : row.micClicks}</Table.Cell>
+                <Table.Cell>{row.clockRatio.toFixed(3)}</Table.Cell>
+              </Table.Row>
+            ))}
+          </Table.Body>
+        </Table.Root>
+      </div>
+    </Flex>
+  );
+};
 
 type Config = { issue: WatchedIssue; error: null } | { issue: null; error: string };
 
@@ -262,6 +312,7 @@ const App: React.FC<{ issue: WatchedIssue }> = ({ issue }) => {
               browser's Back button: the page judges the restore when it comes back.
             </Text>
           )}
+          {issue === "suspend-resume" && <ManualPanel />}
           <Text size="1" color="gray">{browserOf(navigator)}</Text>
           {state.kind === "done" && state.saved !== null && (
             state.saved.failed === null

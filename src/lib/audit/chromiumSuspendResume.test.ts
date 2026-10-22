@@ -4,6 +4,7 @@ import {
   clickThreshold,
   countClicks,
   countDropouts,
+  judgeHalfRate,
   judgeSuspendResume,
   purityOf,
   tonePurityFromSpectrum,
@@ -146,5 +147,32 @@ describe("clicks", () => {
     expect(clicks).toBeGreaterThanOrEqual(3);
     const judged = judgeSuspendResume(tone(60), cycles(20, (i) => tone(60, 0, i === 3 ? clicks : 0)), 20);
     expect(judged.verdict).toBe("DISTORTED");
+  });
+});
+
+describe("judgeHalfRate", () => {
+  const second = (ratio: number) => ({ contextAdvanceSec: ratio, wallAdvanceSec: 1 });
+  const before = { contextAdvanceSec: 2, wallAdvanceSec: 2 };
+
+  it("reads a clock that drops to half speed and stays there as half rate, from the first slow window", () => {
+    const judged = judgeHalfRate(before, [1.0, 1.0, 0.5, 0.5, 0.5].map(second));
+    expect(judged.halfRate).toBe(true);
+    expect(judged.firstHalfCycle).toBe(2);
+    expect(judged.ratioBefore).toBeCloseTo(1, 6);
+    expect(judged.ratios).toEqual([1.0, 1.0, 0.5, 0.5, 0.5]);
+  });
+
+  it("does not read a single slow window that recovers as half rate", () => {
+    const judged = judgeHalfRate(before, [1.0, 0.5, 1.0, 1.0].map(second));
+    expect(judged.halfRate).toBe(false);
+    expect(judged.firstHalfCycle).toBeNull();
+  });
+
+  it("does not read one slow window at the very end as half rate: it must hold for two", () => {
+    expect(judgeHalfRate(before, [1.0, 1.0, 0.5].map(second)).halfRate).toBe(false);
+  });
+
+  it("does not judge against a clock that was already slow before the cycles", () => {
+    expect(judgeHalfRate({ contextAdvanceSec: 1.6, wallAdvanceSec: 2 }, [0.5, 0.5].map(second)).halfRate).toBe(false);
   });
 });

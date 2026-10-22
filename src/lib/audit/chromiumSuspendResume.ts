@@ -5,6 +5,8 @@
  * `chromiumSuspendResumeProbe.ts`.
  */
 
+import { BASELINE_MIN_RATIO, HALF_SPEED_MAX_RATIO, clockRatio, type ClockRatioSample } from "./chromiumBfcache";
+
 /** One measurement window of the 440 Hz tone, read from an analyser. */
 export interface TonePurity {
   /** The tone's FFT bin, in dB. */
@@ -138,4 +140,31 @@ export function judgeSuspendResume(baseline: TonePurity, afterCycles: TonePurity
   const dropoutsTogether = afterCycles.some((tone, i) => i > 0 && tone.dropouts > 0 && afterCycles[i - 1].dropouts > 0);
   const clicked = worstClicks > baseline.clicks + CLICK_MARGIN;
   return { verdict: purityFell || dropoutsTogether || clicked ? "DISTORTED" : "CLEAN", ...judged };
+}
+
+export interface HalfRateJudgement {
+  /** The clock fell under `HALF_SPEED_MAX_RATIO` after a cycle and stayed there to the end of the run. */
+  halfRate: boolean;
+  ratioBefore: number;
+  /** Each cycle's window's ratio, the context clock's advance over the wall clock's. */
+  ratios: number[];
+  /** The cycle (from 0) whose window first read slow and every later one too; null when none. */
+  firstHalfCycle: number | null;
+}
+
+/**
+ * The tracker's mechanism: after the failure each 256-frame output callback renders one
+ * quantum instead of two, so the context clock runs at half the wall clock's speed and
+ * stays there. Half rate needs a true baseline (at least `BASELINE_MIN_RATIO`) and a slow
+ * window that every later window matches, two at the least: one slow window at the end
+ * of a run cannot say whether it held.
+ */
+export function judgeHalfRate(before: ClockRatioSample, after: ClockRatioSample[]): HalfRateJudgement {
+  const ratioBefore = clockRatio(before);
+  const ratios = after.map(clockRatio);
+  let firstHalfCycle: number | null = null;
+  for (let i = ratios.length - 1; i >= 0 && ratios[i] < HALF_SPEED_MAX_RATIO; i--) firstHalfCycle = i;
+  const held = firstHalfCycle !== null && ratios.length - firstHalfCycle >= 2;
+  const halfRate = ratioBefore >= BASELINE_MIN_RATIO && held;
+  return { halfRate, ratioBefore, ratios, firstHalfCycle: halfRate ? firstHalfCycle : null };
 }

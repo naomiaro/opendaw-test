@@ -1,30 +1,35 @@
 /**
  * The browser half of the Chromium 560233271 probe (`?issue=suspend-resume`). The click starts a
- * running context with a 440 Hz sine the worklet processor renders itself
- * (`public/chromium-suspend-resume-tone.js`, loaded from the file: the tracker's reduced case
- * did not reproduce from a Blob URL), into an analyser and on through a gain to the destination
- * (−30 dB, or −20 dB with the microphone witness). It reads the tone for a two-second baseline,
- * then runs the cycles of `suspend()` / `resume()`, each raced against a deadline, and reads a
- * window at the end of the wait after each resume. Every window reads the analyser once: the
+ * running context with the tracker's tone, a stateless 440 Hz sine at 0.2 that the worklet renders
+ * from `currentFrame` (`public/chromium-suspend-resume-tone.js`, loaded from the file unless
+ * `&module=blob`), into an analyser and on through a gain to the destination (−30 dB, or −20 dB
+ * with the microphone witness; the repro page connects the node to the destination with no gain).
+ * It reads a two-second baseline, then runs the cycles. One cycle is what the repro page's click
+ * does: the optional worklet-thread stall, `suspend()`, the optional gap, `resume()`, each raced
+ * against a deadline; then the window, whose end is read. A window reads the analyser once: the
  * spectrum gives the tone's purity, the time-domain samples the dropouts and the clicks. Each
- * wait also measures the context clock against the wall clock: the tracker's trace shows the
- * failure as one render quantum per 256-frame callback, half the render rate.
+ * window also measures the context clock against the wall clock, and the processor's `process()`
+ * calls per second: the tracker's trace shows the failure as one render quantum per 256-frame
+ * callback, half the render rate.
  *
  * With `&witness=mic` the microphone, captured in a second context that is never suspended, is
  * read the same way and judged against its own baseline window, and the whole capture is saved
- * as a WAV beside the envelope. The options are `chromiumSuspendResumeOptions.ts`; the judgement
- * is `chromiumSuspendResume.ts`.
+ * as a WAV beside the envelope. With `&manual=1` each cycle waits for a click on the page's
+ * "Suspend / resume" button (`chromiumSuspendResumeManual.ts`) instead of the pace timer.
+ * The options are `chromiumSuspendResumeOptions.ts`; the judgement is `chromiumSuspendResume.ts`.
  */
 
 import { WavFile } from "@opendaw/lib-dsp";
 import { withDeadline } from "@/lib/deadline";
 import { browserOf, newRunToken, platformOf, runDate, type PlatformNavigator, type ProbeEnvelope } from "./chromiumWatched";
+import { type ClockRatioSample } from "./chromiumBfcache";
 import {
   MIN_CYCLES,
   TONE_HZ,
   clickThreshold,
   countClicks,
   countDropouts,
+  judgeHalfRate,
   judgeSuspendResume,
   purityOf,
   tonePurityFromSpectrum,
@@ -32,12 +37,11 @@ import {
 } from "./chromiumSuspendResume";
 import {
   CONTROL_FROM_CYCLE,
-  TRACKER_BLOCK_MS,
-  TRACKER_SAMPLE_RATE,
   overallVerdict,
   suspendResumeOptionsFrom,
   type SuspendResumeOptions,
 } from "./chromiumSuspendResumeOptions";
+import { manualSession } from "./chromiumSuspendResumeManual";
 
 const PROCESSOR_URL = "/chromium-suspend-resume-tone.js";
 const PROCESSOR_NAME = "chromium-suspend-resume-tone";
@@ -155,43 +159,80 @@ function readTone(
   return { tone: tonePurityFromSpectrum(bins, sampleRate, analyser.fftSize, dropouts, clicks, TONE_HZ, minHz), reference: ref };
 }
 
+/** The processor's `process()` calls so far, as last reported, and the worklet's Date.now() then. */
+interface CallsReport {
+  calls: number;
+  at: number;
+}
+
 interface Live {
   context: AudioContext;
   analyser: AnalyserNode;
   tone: AudioWorkletNode;
+  /** Every calls report so far, oldest first. */
+  reports: CallsReport[];
+  /** The worklet thread busy for `ms`; resolves when it answers. */
+  stall: (ms: number) => Promise<void>;
+}
+
+async function loadModule(context: AudioContext, options: SuspendResumeOptions): Promise<void> {
+  if (options.module === "file") {
+    await withDeadline(context.audioWorklet.addModule(PROCESSOR_URL), DEADLINE_MS, "addModule");
+    return;
+  }
+  const source = await withDeadline(fetch(PROCESSOR_URL).then((response) => response.text()), DEADLINE_MS, "fetch-module");
+  const url = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
+  try {
+    await withDeadline(context.audioWorklet.addModule(url), DEADLINE_MS, "addModule-blob");
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 async function startLive(options: SuspendResumeOptions): Promise<Live> {
-  const context = new AudioContext(
-    options.repro === "tracker" ? { sampleRate: TRACKER_SAMPLE_RATE, latencyHint: "interactive" } : { latencyHint: "interactive" },
-  );
+  const context = new AudioContext(options.rate === null ? { latencyHint: "interactive" } : { sampleRate: options.rate, latencyHint: "interactive" });
   try {
     await withDeadline(context.resume(), DEADLINE_MS, "resume");
-    await withDeadline(context.audioWorklet.addModule(PROCESSOR_URL), DEADLINE_MS, "addModule");
+    await loadModule(context, options);
     const analyser = new AnalyserNode(context, { fftSize: FFT_SIZE, smoothingTimeConstant: 0 });
     const output = new GainNode(context, { gain: options.witness === "mic" ? SPEAKER_GAIN : GRAPH_GAIN });
-    const tone = new AudioWorkletNode(context, PROCESSOR_NAME, {
-      outputChannelCount: [1],
-      processorOptions: { control: options.control },
-    });
+    const tone = new AudioWorkletNode(context, PROCESSOR_NAME, { processorOptions: { control: options.control } });
+    const reports: CallsReport[] = [];
+    let stalled: (() => void) | null = null;
+    tone.port.onmessage = (event: MessageEvent<{ type: "calls"; calls: number; at: number } | { type: "stalled" }>) => {
+      if (event.data.type === "calls") reports.push({ calls: event.data.calls, at: event.data.at });
+      else if (stalled !== null) {
+        const done = stalled;
+        stalled = null;
+        done();
+      }
+    };
     tone.connect(analyser).connect(output).connect(context.destination);
-    return { context, analyser, tone };
+    const stall = (ms: number) =>
+      withDeadline(
+        new Promise<void>((resolve) => {
+          stalled = resolve;
+          tone.port.postMessage({ stall: ms });
+        }),
+        DEADLINE_MS,
+        "stall",
+      );
+    return { context, analyser, tone, reports, stall };
   } catch (error) {
     await context.close();
     throw error;
   }
 }
 
-/** The tracker's long task: the worklet thread busy for `ms`, awaited before the cycle. */
-function blockWorklet(tone: AudioWorkletNode, ms: number): Promise<void> {
-  return withDeadline(
-    new Promise<void>((resolve) => {
-      tone.port.onmessage = () => resolve();
-      tone.port.postMessage({ block: ms });
-    }),
-    DEADLINE_MS,
-    "block",
-  );
+/**
+ * Calls per second over the reports that arrived inside a window: the first and the last of
+ * them, so no stretch before the window (a stall, a suspension) counts. Null with fewer than two.
+ */
+function callsPerSecond(inWindow: CallsReport[]): number | null {
+  if (inWindow.length < 2) return null;
+  const from = inWindow[0];
+  const to = inWindow[inWindow.length - 1];
+  return (to.calls - from.calls) / ((to.at - from.at) / 1000);
 }
 
 /** The microphone, in a context of its own that is never suspended, into an analyser and a recorder. */
@@ -292,7 +333,71 @@ function verdictOf(tones: TonePurity[], baseline: TonePurity, failedStep: string
   return { word, judged };
 }
 
-/** The click: baseline, then the cycles, each followed by a window read at the end of its wait; judge. */
+/** One measurement window: the clock, the render rate and both readings at its end. */
+interface WindowReading {
+  clock: ClockRatioSample;
+  callsPerSecond: number | null;
+  graph: TonePurity;
+  mic: TonePurity | null;
+}
+
+/** What one cycle measured. */
+interface CycleResult extends WindowReading {
+  suspendMs: number;
+  resumeMs: number;
+  /** Where the resume resolved in the microphone's WAV, in seconds; null without the witness. */
+  resumeAtWav: number | null;
+}
+
+/** Everything a run's cycles share. */
+interface Rig {
+  options: SuspendResumeOptions;
+  live: Live;
+  witness: Witness | null;
+  graphReference: Reference;
+  micReference: Reference | null;
+  signal: AbortSignal;
+}
+
+/** Waits `ms` with the tone playing, then reads the window. */
+async function measureWindow(rig: Rig, ms: number, graphReference: Reference | null, micReference: Reference | null): Promise<WindowReading & { graphRef: Reference; micRef: Reference | null }> {
+  const { context } = rig.live;
+  const contextStart = context.currentTime;
+  const wallStart = performance.now();
+  const reportsBefore = rig.live.reports.length;
+  await wait(ms, rig.signal);
+  const clock = { contextAdvanceSec: context.currentTime - contextStart, wallAdvanceSec: (performance.now() - wallStart) / 1000 };
+  const graph = readTone(rig.live.analyser, context.sampleRate, graphReference);
+  const mic = rig.witness === null ? null : readTone(rig.witness.analyser, rig.witness.context.sampleRate, micReference, MIC_MIN_HZ);
+  return {
+    clock,
+    callsPerSecond: callsPerSecond(rig.live.reports.slice(reportsBefore)),
+    graph: graph.tone,
+    mic: mic === null ? null : mic.tone,
+    graphRef: graph.reference,
+    micRef: mic === null ? null : mic.reference,
+  };
+}
+
+/** One cycle, as the repro page's click: stall, suspend, gap, resume; then the window. */
+async function runCycle(rig: Rig, cycle: number, windowMs: number): Promise<CycleResult> {
+  const { context } = rig.live;
+  if (rig.options.stallMs > 0) await rig.live.stall(rig.options.stallMs);
+  const t0 = performance.now();
+  await withDeadline(context.suspend(), DEADLINE_MS, `suspend-${cycle}`);
+  const t1 = performance.now();
+  if (rig.options.gapMs > 0) await wait(rig.options.gapMs, rig.signal);
+  const t2 = performance.now();
+  await withDeadline(context.resume(), DEADLINE_MS, `resume-${cycle}`);
+  const t3 = performance.now();
+  if (context.state !== "running") throw new Error(`context-${context.state}-${cycle}`);
+  const resumeAtWav = rig.witness === null ? null : rig.witness.context.currentTime - rig.witness.recordStart;
+  if (rig.options.control !== null && cycle === CONTROL_FROM_CYCLE) rig.live.tone.port.postMessage({ control: true });
+  const reading = await measureWindow(rig, windowMs, rig.graphReference, rig.micReference);
+  return { ...reading, suspendMs: t1 - t0, resumeMs: t3 - t2, resumeAtWav };
+}
+
+/** The click: baseline, then the cycles (timed, or one per click in manual mode); judge. */
 export async function runSuspendResumeProbe(signal: AbortSignal, report: (step: string) => void): Promise<ProbeEnvelope> {
   const options = suspendResumeOptionsFrom(new URLSearchParams(window.location.search));
   const platform = await platformOf(navigator as PlatformNavigator);
@@ -305,11 +410,19 @@ export async function runSuspendResumeProbe(signal: AbortSignal, report: (step: 
     verdict,
     figures: {
       verdict,
+      tracker: options.tracker ? "yes" : null,
+      manual: options.manual ? "yes" : null,
       control: options.control === null ? null : `${options.control} from cycle ${CONTROL_FROM_CYCLE}`,
       witness: options.witness,
       paceMs: options.paceMs,
-      cyclesRequested: options.cycles,
-      repro: options.repro === null ? null : `${options.repro}: ${TRACKER_SAMPLE_RATE} Hz requested, one restart, ${TRACKER_BLOCK_MS} ms worklet task per cycle`,
+      cyclesRequested: options.manual ? null : options.cycles,
+      stallMs: options.stallMs,
+      gapMs: options.gapMs,
+      rateRequested: options.rate,
+      firstCycle: options.firstCycle ? "yes" : null,
+      module: options.module,
+      toneAmplitude: 0.2,
+      outputGainDb: options.witness === "mic" ? -20 : -30,
       ...figures,
       os: osOf(navigator as OsNavigator),
       osVersion: platform.platformVersion,
@@ -334,57 +447,58 @@ export async function runSuspendResumeProbe(signal: AbortSignal, report: (step: 
     live = await startLive(options);
     const { context } = live;
     if (context.state !== "running") throw new Error(`the context is ${context.state} after resume`);
-    if (options.repro === "tracker") {
-      report("initial-restart");
-      await withDeadline(context.suspend(), DEADLINE_MS, "initial-suspend");
-      await withDeadline(context.resume(), DEADLINE_MS, "initial-resume");
+    if (options.firstCycle) {
+      report("first-cycle");
+      await withDeadline(context.suspend(), DEADLINE_MS, "first-suspend");
+      await withDeadline(context.resume(), DEADLINE_MS, "first-resume");
     }
     report("measure-baseline");
-    const baselineContext = context.currentTime;
-    const baselineWall = performance.now();
-    await wait(BASELINE_SECONDS * 1000, signal);
-    const baselineClockRatio = (context.currentTime - baselineContext) / ((performance.now() - baselineWall) / 1000);
-    const graphBase = readTone(live.analyser, context.sampleRate, null);
-    const micBase = witness === null ? null : readTone(witness.analyser, witness.context.sampleRate, null, MIC_MIN_HZ);
-    const graphTones: TonePurity[] = [];
-    const micTones: TonePurity[] = [];
-    const clockRatios: number[] = [];
-    const suspendMs: number[] = [];
-    const resumeMs: number[] = [];
-    /** Where each resume resolved in the microphone's WAV, in seconds (the witness context's clock, about one quantum coarse). */
-    const resumeAtWav: number[] = [];
-    const waitMs = options.paceMs > 0 ? options.paceMs : WINDOW_SECONDS * 1000;
+    const partial: Rig = { options, live, witness, graphReference: { rms: 0, clickThreshold: 0 }, micReference: null, signal };
+    const baseline = await measureWindow(partial, BASELINE_SECONDS * 1000, null, null);
+    const rig: Rig = { ...partial, graphReference: baseline.graphRef, micReference: baseline.micRef };
+    const results: CycleResult[] = [];
     let failedStep: string | null = null;
-    for (let cycle = 1; cycle <= options.cycles; cycle++) {
+    const windowMs = options.paceMs > 0 ? options.paceMs : WINDOW_SECONDS * 1000;
+    const attempt = async (cycle: number, ms: number): Promise<boolean> => {
       report(`cycle-${cycle}`);
       try {
-        if (options.repro === "tracker") await blockWorklet(live.tone, TRACKER_BLOCK_MS);
-        const t0 = performance.now();
-        await withDeadline(context.suspend(), DEADLINE_MS, `suspend-${cycle}`);
-        const t1 = performance.now();
-        await withDeadline(context.resume(), DEADLINE_MS, `resume-${cycle}`);
-        const t2 = performance.now();
-        if (context.state !== "running") throw new Error(`context-${context.state}-${cycle}`);
-        suspendMs.push(t1 - t0);
-        resumeMs.push(t2 - t1);
-        if (witness !== null) resumeAtWav.push(witness.context.currentTime - witness.recordStart);
-        if (options.control !== null && cycle === CONTROL_FROM_CYCLE) live.tone.port.postMessage({ control: true });
+        results.push(await runCycle(rig, cycle, ms));
+        return true;
       } catch (error) {
         failedStep = stepOf(error);
         console.error("[chromium-watched] suspend-resume cycle " + cycle + " failed: " + String(error));
-        break;
+        return false;
       }
-      const contextStart = context.currentTime;
-      const wallStart = performance.now();
-      await wait(waitMs, signal);
-      clockRatios.push((context.currentTime - contextStart) / ((performance.now() - wallStart) / 1000));
-      graphTones.push(readTone(live.analyser, context.sampleRate, graphBase.reference).tone);
-      if (witness !== null && micBase !== null) micTones.push(readTone(witness.analyser, witness.context.sampleRate, micBase.reference, MIC_MIN_HZ).tone);
+    };
+    if (options.manual) {
+      manualSession.start();
+      try {
+        for (let cycle = 1; ; cycle++) {
+          report("awaiting-click");
+          if ((await manualSession.nextAction()) === "finish") break;
+          if (!(await attempt(cycle, WINDOW_SECONDS * 1000))) break;
+          const last = results[results.length - 1];
+          manualSession.addRow({
+            cycle,
+            graphPurityDb: purityOf(last.graph),
+            micPurityDb: last.mic === null ? null : purityOf(last.mic),
+            micClicks: last.mic === null ? null : last.mic.clicks,
+            clockRatio: last.clock.contextAdvanceSec / last.clock.wallAdvanceSec,
+          });
+        }
+      } finally {
+        manualSession.end();
+      }
+    } else {
+      for (let cycle = 1; cycle <= options.cycles; cycle++) if (!(await attempt(cycle, windowMs))) break;
     }
     report("judge");
-    const graph = verdictOf(graphTones, graphBase.tone, failedStep);
-    const mic = micBase === null ? null : verdictOf(micTones, micBase.tone, failedStep);
-    const verdict = overallVerdict(graph.word, mic === null ? null : mic.word);
+    const graphTones = results.map((r) => r.graph);
+    const micTones = results.flatMap((r) => (r.mic === null ? [] : [r.mic]));
+    const graph = verdictOf(graphTones, baseline.graph, failedStep);
+    const mic = baseline.mic === null ? null : verdictOf(micTones, baseline.mic, failedStep);
+    const clock = judgeHalfRate(baseline.clock, results.map((r) => r.clock));
+    const verdict = overallVerdict(graph.word, mic === null ? null : mic.word, clock.halfRate);
     let wav: { name: string | null; error: string | null } = { name: null, error: null };
     if (witness !== null) {
       report("save-wav");
@@ -394,24 +508,23 @@ export async function runSuspendResumeProbe(signal: AbortSignal, report: (step: 
         wav = { name: null, error: stepOf(error) };
       }
     }
-    const minRatio = clockRatios.length === 0 ? null : Math.min(...clockRatios);
     const micFigures: Record<string, number | string | null> =
-      witness === null || micBase === null || mic === null ? {}
+      witness === null || baseline.mic === null || baseline.micRef === null || mic === null ? {}
       : {
           micVerdict: mic.word,
           micPurityMinHz: MIC_MIN_HZ,
-          micBaselinePurityDb: round(purityOf(micBase.tone), 2),
-          micBaselineFundamentalDb: round(micBase.tone.fundamentalDb, 2),
-          micBaselineHarmonicsDb: round(micBase.tone.harmonicsDb, 2),
-          micBaselineClicks: micBase.tone.clicks,
-          micClickThreshold: micBase.reference.clickThreshold.toExponential(3),
+          micBaselinePurityDb: round(purityOf(baseline.mic), 2),
+          micBaselineFundamentalDb: round(baseline.mic.fundamentalDb, 2),
+          micBaselineHarmonicsDb: round(baseline.mic.harmonicsDb, 2),
+          micBaselineClicks: baseline.mic.clicks,
+          micClickThreshold: baseline.micRef.clickThreshold.toExponential(3),
           micPurityPerCycleDb: micTones.map((tone) => purityOf(tone).toFixed(2)).join(" "),
           micWorstPurityDb: round(mic.judged.worstPurityDb, 2),
           micWorstCycle: mic.judged.worstCycle === null ? null : mic.judged.worstCycle + 1,
           micClicksPerCycle: micTones.map((tone) => tone.clicks).join(" "),
           micWorstClicks: mic.judged.worstClicks,
           micDropoutsPerCycle: micTones.map((tone) => tone.dropouts).join(" "),
-          micResumeAtWavSec: resumeAtWav.map((at) => at.toFixed(2)).join(" "),
+          micResumeAtWavSec: results.map((r) => (r.resumeAtWav === null ? "-" : r.resumeAtWav.toFixed(2))).join(" "),
           micDeviceLabel: witness.deviceLabel,
           micTrackSettings: JSON.stringify({
             sampleRate: witness.settings.sampleRate,
@@ -424,17 +537,29 @@ export async function runSuspendResumeProbe(signal: AbortSignal, report: (step: 
           wavName: wav.name,
           wavError: wav.error,
         };
+    const calls = results.map((r) => r.callsPerSecond);
     return envelope(verdict, {
+      clockVerdict: clock.halfRate ? "HALF RATE" : "TRUE",
       graphVerdict: graph.word,
-      cycles: graphTones.length,
+      cycles: results.length,
+      manualClicks: options.manual ? results.length : null,
       failedStep,
-      baselinePurityDb: round(purityOf(graphBase.tone), 2),
-      baselineFundamentalDb: round(graphBase.tone.fundamentalDb, 2),
-      baselineHarmonicsDb: round(graphBase.tone.harmonicsDb, 2),
-      baselineDropouts: graphBase.tone.dropouts,
-      baselineRms: round(graphBase.reference.rms, 4),
-      baselineClicks: graphBase.tone.clicks,
-      clickThreshold: graphBase.reference.clickThreshold.toExponential(3),
+      // The context clock's advance over the wall clock's per window: 1 is true, the tracker's failure reads 0.5.
+      ratioBefore: round(clock.ratioBefore, 4),
+      clockRatioPerCycle: clock.ratios.map((ratio) => ratio.toFixed(3)).join(" "),
+      clockRatioMin: round(clock.ratios.length === 0 ? null : Math.min(...clock.ratios), 4),
+      firstHalfRateCycle: clock.firstHalfCycle === null ? null : clock.firstHalfCycle + 1,
+      // The processor's process() calls per second of the worklet's Date.now(): sampleRate / 128 is true.
+      callsPerSecondBefore: round(baseline.callsPerSecond, 1),
+      callsPerSecondPerCycle: calls.map((c) => (c === null ? "-" : c.toFixed(1))).join(" "),
+      callsPerSecondAfterMedian: round(median(calls.flatMap((c) => (c === null ? [] : [c]))), 1),
+      baselinePurityDb: round(purityOf(baseline.graph), 2),
+      baselineFundamentalDb: round(baseline.graph.fundamentalDb, 2),
+      baselineHarmonicsDb: round(baseline.graph.harmonicsDb, 2),
+      baselineDropouts: baseline.graph.dropouts,
+      baselineRms: round(baseline.graphRef.rms, 4),
+      baselineClicks: baseline.graph.clicks,
+      clickThreshold: baseline.graphRef.clickThreshold.toExponential(3),
       // Cycles count from 1 in every figure.
       purityPerCycleDb: graphTones.map((tone) => purityOf(tone).toFixed(2)).join(" "),
       worstPurityDb: round(graph.judged.worstPurityDb, 2),
@@ -444,15 +569,11 @@ export async function runSuspendResumeProbe(signal: AbortSignal, report: (step: 
       clicksPerCycle: graphTones.map((tone) => tone.clicks).join(" "),
       worstClicks: graph.judged.worstClicks,
       worstClicksCycle: graph.judged.worstClicksCycle === null ? null : graph.judged.worstClicksCycle + 1,
-      // The context clock's advance over the wall clock's in each wait: 1 is true, the tracker's failure reads 0.5.
-      baselineClockRatio: round(baselineClockRatio, 4),
-      clockRatioPerCycle: clockRatios.map((ratio) => ratio.toFixed(3)).join(" "),
-      clockRatioMin: round(minRatio, 4),
       ...micFigures,
-      suspendMsMedian: round(median(suspendMs), 2),
-      suspendMsMax: round(suspendMs.length === 0 ? null : Math.max(...suspendMs), 2),
-      resumeMsMedian: round(median(resumeMs), 2),
-      resumeMsMax: round(resumeMs.length === 0 ? null : Math.max(...resumeMs), 2),
+      suspendMsMedian: round(median(results.map((r) => r.suspendMs)), 2),
+      suspendMsMax: round(results.length === 0 ? null : Math.max(...results.map((r) => r.suspendMs)), 2),
+      resumeMsMedian: round(median(results.map((r) => r.resumeMs)), 2),
+      resumeMsMax: round(results.length === 0 ? null : Math.max(...results.map((r) => r.resumeMs)), 2),
       contextStateAfterLastResume: context.state,
       sampleRate: context.sampleRate,
       baseLatency: context.baseLatency,
