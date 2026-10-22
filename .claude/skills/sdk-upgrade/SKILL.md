@@ -114,9 +114,20 @@ async () => { const t0 = Date.now(); while (Date.now() - t0 < 95000) { const s =
 | `midi-input-alignment-audit-debug-demo.html?scenario=all&bpm=all`, then `?scenario=loop-wrap&bpm=120&repeats=5`, then `?scenario=nominal-start&bpm=120&effect=arpeggio` and `&effect=pitch` | real click | IAC Driver online (Audio MIDI Setup) | `node scripts/audit/midi-input-alignment/table.ts` |
 | `midi-audio-combined-audit-debug-demo.html?scenario=all&bpm=120` | real click | IAC + built-in mic and speakers, quiet room, window uncovered | `node scripts/audit/midi-audio-combined/table.ts` |
 | `recording-hidden-window-debug-demo.html?driver=hidden-safe&interrupt=cover&hideAt=start`, then `?interrupt=modal&hideAt=start|mid|stop` | real click | `cover` needs a HAND (Cmd+H, count five, click Chrome in the Dock); `modal` needs the dialog handler after five seconds | both takes `intact` |
+| `chromium-watched-issues-debug-demo.html?issue=first-read` | `button "Run"` | none | `#verdict[data-verdict]`; read against the Chromium entries in `docs/known-vendor-issues.md` (`STALE FIRST READ` is the measured entry, `FIRST READ TRUE` would be the fix) |
+| `chromium-watched-issues-debug-demo.html?issue=suspend-resume`, then `&control=crackle` and `&control=harmonic` | `button "Run"` | none | the real run against the register (`CLEAN` is its watched reading); both controls must read `DISTORTED` or the run judged nothing |
+| `chromium-watched-issues-debug-demo.html?issue=capture-gaps&source=loopback&rate=48000`, then `&rate=44100` | `button "Run"` | none; 60 s each | the verdict and the start-window figures against the register's stream-start zero run |
+| `chromium-watched-issues-debug-demo.html?issue=opfs-flush`, then `?issue=opfs-usage` (in-session) | `button "Run"` | none | flush medians against the register's figures; `opfs-usage` in-session reads `COUNTED` |
+| `chromium-watched-issues-debug-demo.html?issue=bfcache` | `button "Run"`, then "Navigate away", then the browser's Back | the USER'S Chrome (claude-in-chrome): Playwright's Chrome runs with `--disable-back-forward-cache` and reads `NOT CHECKED not-cached` | `HALF SPEED` is the measured entry, `NORMAL` would be the fix |
+| `chromium-watched-issues-debug-demo.html?issue=opfs-usage`, then `&truncateFirst=1`, each followed by a restart | `button "Run"`; the judging load needs no click | a HAND in the user's Chrome: Cmd+Q, start Chrome, type the URL (no session restore) | `NEGATIVE USAGE` with the decoded saved figure; `restartDriftBytes` against the previous restart (about −64 MiB plain, about 0 truncate-first, plus anything else deleted in between) |
+| `chromium-watched-issues-debug-demo.html?issue=capture-gaps&source=mic&rate=48000`, then `&rate=44100` | `button "Run"` | the built-in microphone, a quiet room | as the loopback rows |
+| `chromium-watched-issues-debug-demo.html?issue=output-latency` | `button "Run"` | a Bluetooth output connected and selected during the 30 s | the `outputLatency` rows before and after the switch; no verdict |
 
-Run the hardware-free rows yourself; the IAC, combined and `cover` rows need the user's
-hardware or hand — ask for them at the end rather than skipping silently. Judge every cell
+Run the hardware-free rows yourself; the IAC, combined and `cover` rows, and the Chromium
+probe's bfcache, OPFS restart, microphone and Bluetooth rows, need the user's Chrome,
+hardware or hand — ask for them at the end rather than skipping silently. The Chromium
+probe loads no SDK: its rows say whether a watched browser issue still stands, and a
+changed verdict moves the register entry, never the SDK's reading. Judge every cell
 against its register (root CLAUDE.md names them) and against `docs/known-vendor-issues.md`;
 a changed row is the finding, a listed defect or a listed vendor behaviour is not. Per-release sections, in the shape of the previous release's: "Standing sweep
 on <new>" in `debug/2026-09-02-recording-start-alignment/note.md` (single tape table,

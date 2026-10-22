@@ -1,6 +1,7 @@
 # Chromium watched issues, measured on this repo's own probes
 
-**Started:** 2026-10-23. **Plan:** `docs/superpowers/plans/2026-10-22-chromium-watched-issues-measurement.md`.
+**Started:** 2026-10-23. **Plan:** `docs/superpowers/plans/2026-10-22-chromium-watched-issues-measurement.md`,
+deleted in the PR that completed it (git history keeps it); this note and the register carry its decisions.
 **Spec:** `docs/known-vendor-issues.md`, "# Chromium / ## Watched — read from the tracker, not reproduced
 here", plus the unmeasured half of the measured OPFS entry (436552046: the persisted usage going negative
 after a delete and a restart).
@@ -13,15 +14,43 @@ Each entry either moves to "Measured here" in the register with a figure, or sta
 reproduced on Chrome N, <date>" and the probe that failed to show it. A run that could not exercise the
 condition reads `NOT CHECKED <reason>` and is recorded as such, never as "not reproduced".
 
+## Summary
+
+Chrome 155.0.8059.85, macOS 15.6.1, 2026-10-22. One line per entry: the verdict, then what the register
+did with it.
+
+- **571344687, stale first clock read:** `STALE FIRST READ` in 14 of 15 runs, lag tracking the module
+  load (5.8 / 29.0 / 110.3 ms at most). Moved to "Measured here".
+- **575891839, half-speed clock after a back/forward-cache restore:** `HALF SPEED` twice in the user's
+  Chrome (windows 0.49–0.50), and the looping demo restored at 0.4996. Moved to "Measured here".
+- **560233271, distortion after suspend / resume:** `CLEAN` twice over 20 cycles; both positive controls
+  read `DISTORTED`. Stays watched, "not reproduced".
+- **40103985, zero-filled gaps in captured input:** no gap or duplicate after the first 0.1 s in any
+  unspliced minute; `START GAPS` in two of four cells (441 zeros at loopback 44 100, 128 at mic 48 000).
+  Stays watched for the steady-state symptom; the stream-start zero run is recorded in the entry.
+- **436552046 / 401692415, OPFS usage going negative:** `NEGATIVE USAGE` after a real restart of the
+  user's Chrome, and a truncate-first delete left the saved figure alone across a second restart. The
+  measured entry's unmeasured half is now measured, and the workaround is confirmed.
+- **40909520, slow `flush()`:** `MEASURED`, median 0.53–0.57 ms per 1 MiB, 1.44–1.46 ms per 16 MiB.
+  Stays watched with the figures; no slowness here.
+- **541725401 / 40068799, quota sentinel:** no probe (needs the quota exhausted or an incognito
+  profile). Stays watched, out of scope.
+- **388871416, `outputLatency` with Bluetooth:** built-in speaker only (base 5.8 ms, output 28 ms). The
+  Bluetooth half was not run; it needs hardware. Stays watched.
+
+Runs made with an earlier version of a probe are kept below as data and not quoted for a verdict: the
+gated suspend / resume runs, the 44 100 capture minutes spliced at chunk boundaries (their start events
+stand), the single-window bfcache runs, and the OPFS stored-readings load before the session marker.
+
 ## The issues
 
 | `?issue=` | Chromium issue | What the probe does | Verdict words | Status |
 |---|---|---|---|---|
 | `first-read` | [571344687](https://issues.chromium.org/issues/571344687) — stale first clock read after a slow module load | Builds a worklet node right after `addModule()` resolves (a slow module, a large module, none), five runs each in a running context; the processor reports `currentFrame` from its constructor and first three `process()` calls, judged against the main thread's frame read just before the node was made | `STALE FIRST READ`, `FIRST READ TRUE`, `NOT CHECKED` | **reproduced**: `STALE FIRST READ` on Chrome 155, 2026-10-22 |
 | `bfcache` | [575891839](https://issues.chromium.org/issues/575891839) — half-speed worklet clock after a back/forward-cache restore | Measures the context clock against `performance.now()` with a worklet tone and an oscillator control playing, navigates away and back; on `pageshow.persisted` re-measures in three one-second windows and judges on the last two, otherwise records the `notRestoredReasons` | `HALF SPEED`, `NORMAL`, `NOT CHECKED` | **reproduced**: `HALF SPEED` on Chrome 155, 2026-10-22, all three restore windows; a playing demo also restores at half speed (the user's Chrome; Playwright's cannot enter the cache) |
-| `suspend-resume` | [560233271](https://issues.chromium.org/issues/560233271) — distortion after suspend / resume cycles | A worklet-rendered 440 Hz tone into an analyser; a two-second baseline, then 20 `suspend()` / `resume()` cycles with a purity window after each, judged on harmonic purity against the baseline and on dropouts | `DISTORTED`, `CLEAN`, `NOT CHECKED` | not yet run |
+| `suspend-resume` | [560233271](https://issues.chromium.org/issues/560233271) — distortion after suspend / resume cycles | A worklet-rendered 440 Hz tone into an analyser; a two-second baseline, then 20 `suspend()` / `resume()` cycles with a purity window after each, judged on harmonic purity against the baseline and on dropouts | `DISTORTED`, `CLEAN`, `NOT CHECKED` | **not reproduced**: `CLEAN` twice on Chrome 155, 2026-10-22 (purity 66.51 dB every cycle, 0 clicks, 0 dropouts); both positive controls read `DISTORTED` |
 | `capture-gaps` | [40103985](https://issues.chromium.org/issues/40103985) — zero-filled gaps and duplicated blocks in `getUserMedia` input | Records 60 s of a `MediaStreamAudioSourceNode` (`&source=loopback` or `mic`, `&rate=48000` or `44100`) through a worklet; counts zero runs of 100 frames or more after the head and 128-frame blocks identical to the one before, the first 0.1 s after the head reported apart | `GAPS`, `START GAPS`, `CLEAN`, `NOT CHECKED` | **start gaps only**: one zero run in the first 55 ms of a capture (loopback 44 100: 441 frames; mic 48 000: 128 frames; every run of those cells), none after it, no duplicate, Chrome 155, 2026-10-22 |
-| `opfs-usage` | [436552046](https://issues.chromium.org/issues/436552046) / [401692415](https://issues.chromium.org/issues/401692415) — OPFS usage not counted for sync-handle writes, negative after a delete | Writes through a sync access handle in a worker, reads `estimate()` before, after the write and after the delete; the user quits and reopens Chrome and the page judges the restart reading on load (`&truncateFirst=1` for the reporter's workaround) | `NOT COUNTED`, `COUNTED`, `NEGATIVE USAGE`, `NOT CHECKED` | **reproduced**: `NEGATIVE USAGE` after a restart of the user's Chrome 155, 2026-10-22 (saved figure +50.6 MB before a plain run's delete, −16.5 MB after, read back as 4.28 GB); the saved figure read off disk drops by the deleted size on a plain delete, by 0 after a truncate; truncate-first restart round still to run |
+| `opfs-usage` | [436552046](https://issues.chromium.org/issues/436552046) / [401692415](https://issues.chromium.org/issues/401692415) — OPFS usage not counted for sync-handle writes, negative after a delete | Writes through a sync access handle in a worker, reads `estimate()` before, after the write and after the delete; the user quits and reopens Chrome and the page judges the restart reading on load (`&truncateFirst=1` for the reporter's workaround) | `NOT COUNTED`, `COUNTED`, `NEGATIVE USAGE`, `NOT CHECKED` | **reproduced**: `NEGATIVE USAGE` after a restart of the user's Chrome 155, 2026-10-22 (saved figure +50.6 MB before a plain run's delete, −16.5 MB after, read back as 4.28 GB); the saved figure read off disk drops by the deleted size on a plain delete, by 0 after a truncate; a truncate-first run and a second restart moved it by the hand-deleted samples' size only (−238 137 857 against −238 135 417 predicted) |
 | `opfs-flush` | [40909520](https://issues.chromium.org/issues/40909520) — slow `flush()` on Mac | Times 20 writes of 1 MiB and 20 of 16 MiB, each followed by `flush()`, in a worker; median, p95 and max per size | `MEASURED` (figures only: the tracker's claim is a comparison with other browsers this repo does not make) | **measured**: flush median 0.53–0.57 ms (1 MiB), 1.44–1.46 ms (16 MiB), Chrome 155, macOS 15.6.1, 2026-10-22 |
 | — | [541725401](https://issues.chromium.org/issues/541725401) / [40068799](https://issues.chromium.org/issues/40068799) — a quota overrun returns a sentinel | No probe: needs the origin's quota exhausted or an incognito profile | — | out of scope, stays watched |
 | `output-latency` | [388871416](https://issues.chromium.org/issues/388871416) — `outputLatency` with a Bluetooth headset | Resumes a context and reads `baseLatency`, `outputLatency`, `sinkId` and the output device's label from `enumerateDevices()` every second for 30 s; no classifier, the rows are the finding | `MEASURED` (figures only), `NOT CHECKED context-<state>` | **built-in speaker only**: base 5.8 ms / output 28 ms, Chrome 155, 2026-10-22; the Bluetooth half needs hardware, not run |
@@ -411,17 +440,47 @@ fully and the URL reopened by hand, 194 s after the run
   from the session's `estimate()` baseline, which is not the saved figure. The judge now decodes the
   restart reading instead, and reads this envelope's figures as `NEGATIVE USAGE` with a saved figure of
   −16 522 249 (a Node test pins it).
-- **Next step: a truncate-first run and a restart.** Its expected drift against this reading is 0. The
-  user's Chrome holds no stored restart reading yet (this restart predates the key), so seed it before
-  the run, in the page's console on `https://localhost:5173`:
 
-  ```
-  localStorage.setItem("chromium-watched:opfs-usage:last-restart", JSON.stringify({ usage: 4278445047, date: "2026-10-22" }))
-  ```
+**Round 2: a truncate-first run and a second restart, the same Chrome, the same day.** Between the
+rounds the user deleted `samples/v2` by hand in DevTools: 9 files, 238 135 417 bytes, the demos' sample
+cache, written through sync handles. The restart reading above was seeded as the previous restart, in
+the page's console:
 
-  Then run `?issue=opfs-usage&truncateFirst=1`, quit Chrome fully, and reopen the URL by hand. Open no
-  demo on `localhost:5173` in between: a demo's page-load sweep deletes `samples/v2` and moves the saved
-  figure by those files' sizes.
+```
+localStorage.setItem("chromium-watched:opfs-usage:last-restart", JSON.stringify({ usage: 4278445047, date: "2026-10-22" }))
+```
+
+The prediction was written down before the result: if a truncate-first delete leaves the saved figure
+alone, the drift is −238 135 417, the samples' delete alone. The run
+(`chromium-opfs-usage-mvk4yy1c-cddi.json`, `&truncateFirst=1`) read `COUNTED` in the session: 4 040 307 190
+before the write, 4 107 416 234 after it, 4 040 307 190 after the delete. Chrome was quit fully and the
+URL reopened by hand 48 s later (`chromium-opfs-usage-mvk4zzeo-oolp.json`, no session marker, the same
+Chrome and OS on both sides):
+
+| figure | value |
+|---|---|
+| `estimate()` after the restart | 4 040 307 190 |
+| that reading as the saved figure, signed | −254 660 106 |
+| drift since the first restart (`restartDriftBytes`) | −238 137 857 |
+| predicted drift (the samples' delete, nothing for the run) | −238 135 417 |
+| difference | −2 440 |
+| files in the origin's OPFS at the restart | 0 |
+| quota at the run and at the restart | 14 777 725 430 |
+
+- **The truncate-first delete subtracted nothing from the saved figure.** The drift is the samples'
+  delete within 2 440 bytes. A plain delete of the run's file would have added −67 108 864 on top.
+- **The 2 440 bytes are directory overhead.** The session's own figure dropped by the same 238 137 857
+  when the samples were removed: 4 278 445 047 at the first restart, 4 040 307 190 when the round-2 run
+  began.
+- **The samples' delete is the plain-delete case again, on files the demos wrote.** Nine files written
+  through sync handles, never counted, took their full 238 MB off the saved figure, which went from
+  −16.5 MB to −254.7 MB. That is the mechanism by which the demos' page-load sweep drives an origin
+  negative.
+- **The envelope's detail says "this truncate-first run matches neither".** The judge compares the drift
+  with −67 108 864 (plain) and 0 (truncate-first), within 1 MiB. The samples were deleted inside the same
+  restart interval, so the drift carries them, and neither figure fits. Netting the samples out leaves
+  −2 440, which is the truncate-first prediction. The verdict `NEGATIVE USAGE` is the envelope's own,
+  judged on the decoded reading.
 
 The in-session runs in Playwright's Chrome came first. That profile already carried the restart half's
 symptom, and its saved figure was read off disk. The runs are Chrome 155.0.8059.85 on macOS 15.6.1, in Playwright's Chrome with the window visible, on
@@ -472,10 +531,9 @@ entry. The earliest plain run, `chromium-opfs-usage-mvk3igq7-p9j9.json`, predate
   for `localhost:5180`, −6 483 891 580 for `localhost:5181`. 3 889 404 852 is not the saved value modulo
   2³² (that is 2 975 046 580 now). How a start turns a saved value into the session's figure is not
   settled here.
-- **What the restart half would add.** It would show the next start reading a figure derived from the
-  saved one, and how. The tracker's form is 2³² + value. On this profile the saved value is already
-  below −2³² and the reported figure does not match that form. So the restart half is now a question
-  about the conversion; the defect itself is shown.
+- **The restart half was run afterwards, in the user's Chrome (above).** There the next start read
+  2³² + value, the tracker's form, for a saved value above −2³². On this Playwright profile the saved
+  value is already below −2³², and how a start converts it is not settled.
 
 **The stored-readings path, by a plain reload, in Playwright's Chrome.** It ran twice:
 - **Before the session marker existed.** `chromium-opfs-usage-mvk3j1q2-hxdm.json`, `secondsSinceStored` 27,
@@ -500,8 +558,13 @@ What it means for the register:
   stored. On a browser with a hard quota or an eviction policy that reads `usage`, this is the cost. In
   this profile the quota is 14.6 GB.
 - **Truncating to 0 through a sync handle before `removeEntry()` keeps the saved figure where it was.**
-  That is the workaround the tracker names. The sweep deletes a folder through the SDK's
-  `Workers.Opfs.delete`, so taking it up would mean truncating each file first.
+  That is the workaround the tracker names, confirmed twice: on the file read off disk in Playwright's
+  Chrome, and across a real restart in the user's Chrome (round 2). The sweep deletes a folder through
+  the SDK's `Workers.Opfs.delete`, so taking it up would mean truncating each file first. The SDK's OPFS
+  worker writes through sync access handles and deletes without truncating
+  (`node_modules/@opendaw/lib-fusion/dist/opfs/OpfsWorker.js`: `createSyncAccessHandle` at line 158,
+  `truncate(data.length)` on write at line 19, `removeEntry` with no `truncate(0)` at lines 81, 108 and
+  111). That makes an upstream suggestion a candidate; it is not drafted.
 
 ### opfs-flush (40909520)
 

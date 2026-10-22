@@ -120,20 +120,35 @@ Chromium tracker through the browser).
   value drifts.
 - **Symptom here:** `navigator.storage.estimate()` reported 40 MB against 8.7 GB of sample files under
   `samples/v2` — the SDK's OPFS worker writes samples through sync access handles, so they were never
-  counted. The inverse, a ~4 GB usage after the page's sample sweep deletes the folder and the browser
-  restarts, is predicted by the same cause and has not been looked for here; on a browser with a hard
-  per-site quota (Brave: 2 GiB) that reading makes the origin look over quota.
+  counted. The inverse is measured too, in the user's Chrome across a full quit and reopen: a 64 MiB file
+  written through a sync handle never reached the saved figure, its plain `removeEntry()` took the full
+  64 MiB off it (+50 586 615 to −16 522 249 bytes), and the next start read the origin as 4 278 445 047
+  bytes, 2³² + the saved value. A truncate-first run and a second restart moved the saved figure by
+  −238 137 857 against −238 135 417 predicted for the 238 MB of demo samples deleted by hand in between,
+  so the truncated delete subtracted nothing. In-session `estimate()` follows the write and the delete
+  (`COUNTED`, +67 109 044 for 67 108 864 bytes). The saved per-origin file read off disk in Playwright's
+  Chrome dropped by exactly 67 108 864 on a plain delete and by 0 on a truncate-first one; that
+  profile's `localhost:5173` figure stood at about −22.7 GB, read as 3.89 GB with no file stored. On a
+  browser with a hard per-site quota (Brave: 2 GiB) such a reading makes the origin look over quota.
 - **Where it bites here:** judging whether the per-page sample sweep works; any storage read-out; a quota
   check before a write.
 - **Workaround:** sum the file sizes under `samples/v2` instead; never trust `estimate()` for OPFS. The
   reporter's: truncate a file to 0 through a sync access handle before `removeEntry()`, which keeps the
-  saved usage from going negative — the SDK's OPFS worker deletes without truncating (a candidate
-  upstream suggestion, not drafted). (`clearStoredSamples()` in `src/lib/storedSamples.ts` also checks
+  saved usage from going negative, confirmed here on the saved figure across a restart. The SDK's OPFS
+  worker writes through sync access handles (`createSyncAccessHandle`,
+  `node_modules/@opendaw/lib-fusion/dist/opfs/OpfsWorker.js:158`) and deletes without truncating
+  (`removeEntry` at `:81`, `:108`, `:111`), so the demos' page-load sweep lowers the saved figure by
+  every sample it removes: a candidate upstream suggestion, not drafted. (`clearStoredSamples()` in `src/lib/storedSamples.ts` also checks
   with `Workers.Opfs.exists` after a delete because `Workers.Opfs.delete` reports nothing when it fails
   — an SDK quirk, not the browser's.)
-- **Evidence:** root CLAUDE.md, "Stored Samples Are Swept at Page Load" ([repo PR #132](https://github.com/naomiaro/opendaw-test/pull/132)); the tracker's
-  repro page for the cause.
-- **Last checked:** 2026-10-22 (tracker read; the negative-usage half not reproduced here).
+- **Evidence:** root CLAUDE.md, "Stored Samples Are Swept at Page Load" ([repo PR #132](https://github.com/naomiaro/opendaw-test/pull/132));
+  `debug/2026-10-23-chromium-watched-issues/note.md`, "opfs-usage"; probe
+  `chromium-watched-issues-debug-demo.html?issue=opfs-usage` (`&truncateFirst=1`), restart envelopes
+  `chromium-opfs-usage-mvk4oyf2-4spf.json` (plain) and `chromium-opfs-usage-mvk4zzeo-oolp.json`
+  (truncate-first), in-session runs `mvk4ksbd-jmyd`, `mvk4yy1c-cddi`, `mvk3l4wh-mr7j`, `mvk3ldkp-0zna`.
+- **Last checked:** Chrome 155.0.8059.85, macOS 15.6.1, 2026-10-22: `NEGATIVE USAGE` after a restart of
+  the user's Chrome, probe `?issue=opfs-usage`; the truncate-first workaround confirmed on the saved
+  figure across a second restart.
 
 ### Chromium [516995393](https://issues.chromium.org/issues/516995393) — no input-latency figure in the Web Audio API (a spec gap)
 
@@ -153,63 +168,69 @@ Chromium tracker through the browser).
   against 35–63 ms measured on the built-in microphone.
 - **Last checked:** 2026-10-22 (tracker read).
 
-## Watched — read from the tracker, not reproduced here
-
 ### Chromium [571344687](https://issues.chromium.org/issues/571344687) — a worklet processor made right after its module loads reads a stale first clock
 
 - **Tracker:** [issues.chromium.org/issues/571344687](https://issues.chromium.org/issues/571344687),
   "AudioWorklet: currentTime is stale in the constructor and first process() after slow module loading".
   Filed 2026-10-08, **open**, P2; reproduced by Chromium triage on Linux, Windows and macOS, Chrome 155 to
-  Canary 157 and back to M-144 (not a regression). Chrome only: Firefox 157 reads true.
-- **Symptom:** in a running context, a processor constructed shortly after `addModule()` resolves reads
-  `currentTime` / `currentFrame` in its constructor and first `process()` from about the moment module
-  loading STARTED (32–107 ms stale in the report, scaling with the load time); the second `process()`
-  jumps to the true frame and advances normally. A processor that seeds a clock from the constructor
-  value and counts samples from there keeps the offset for its whole life. The reporter's reading of the
-  source: the global scope's frame is a snapshot taken when the worklet object proxy is created and is
-  only updated once the worklet thread renders its first quantum.
-- **Where it bites here:** every recording's worklet (one `RecordingWorklet` per armed capture per
-  recording; loop takes share it) and, on boot, the engine worklet, which is constructed right after its
-  `addModule()` resolves and so sits exactly in the issue's window; the recorder's module is loaded once
-  at engine install, so a recording's worklet is made long after it. The recording CLAUDE.md's rule
-  "anything that loads an AudioWorklet module must have it loaded before the first take: a load still
-  running when a take starts delays that take's first frame (117 ms measured)" is the same window. The
-  two are not shown to be one mechanism: the harness measured a first frame that ARRIVED late (a true
-  delay, a head deficit in the audio with the placement still right), this report a clock read that
-  LAGS; a lagging read alone would place a take early, not late.
-- **Workaround:** the SDK's `QuantumClock` corrects a stale first read once a true read arrives (the
-  anchor is the largest `currentFrame − calls·128` seen), and the recording worklet sends its
-  first-quantum time 16 calls late for that reason; the report's own workaround for processor authors is
-  the same in spirit (re-read `currentTime` every `process()`, never seed a clock from the constructor).
-  In this repo: load worklet modules before the first take; any worklet of ours that stamps from the
-  constructor is wrong by this issue.
-- **Evidence:** the tracker's repro page (attached there). Here, in
-  `debug/2026-09-02-recording-start-alignment/note.md`: the 117.3 ms late first take when the probe's
-  recorder module loaded at loopback attach ("The probe's own effect"), a second 117.3 ms first-take
-  delay on a witness run that no module load explains, and the cold-start head deficit every standing
-  sweep since 0.0.173 has logged on the first recording of a fresh page load (84.4 / 79.0 / 104.4 /
-  3523.7 / 94.4 ms) — all "arrived late" readings in the same window, none shown to be this issue.
-- **Last checked:** 2026-10-22 (tracker read; not reproduced here).
+  Canary 157 and back to M-144 (not a regression). Chrome only: Firefox 157 reads true. The reporter's
+  reading of the source: the global scope's frame is a snapshot taken when the worklet object proxy is
+  created and is only updated once the worklet thread renders its first quantum.
+- **Symptom here:** in a running context, a processor built right after `addModule()` resolves reads the
+  same frame in its constructor and its first `process()`: the frame the clock stood at when the first
+  `addModule()` STARTED. The second `process()` reads the node's creation frame plus 128, and the clock is
+  true from then on. The lag tracks the load time: at most 5.8 ms with no extra module (the probe's own
+  module is the context's first load, so this is the issue at its smallest, not a control), 29.0 ms
+  after a module of 12 000 exported functions (20–27 ms load), 110.3 ms after a top level that
+  busy-waits 100 ms. 14 of 15 runs stale. A processor that seeds a counter from its constructor's
+  `currentFrame` keeps the lag for its whole life.
+- **Where it bites here:** the engine worklet, built at boot right after its module loads, so in the
+  window whenever the context is already running at boot. It does not read the clock in its
+  constructor, and its `QuantumClock` takes the true frame from the second quantum on. A recording's
+  worklet is made long after the recorder's module loads (once, at engine install), outside the window.
+  The recording CLAUDE.md's rule that a worklet module must be loaded before the first take (a load
+  still running delays that take's first frame, 117 ms measured) is a different reading: that first
+  frame ARRIVED late, this issue's read LAGS, and a lagging read alone would place a take early.
+- **Workaround:** the SDK's `QuantumClock` (lib-dsp) anchors at the largest `currentFrame − calls·128`
+  seen, so a stale first read is corrected by the first true one; the recording worklet sends its
+  first-quantum time 16 calls late for that reason. A worklet of ours must re-read the clock in
+  `process()` and never seed one from its constructor; check any new worklet for that.
+- **Evidence:** `debug/2026-10-23-chromium-watched-issues/note.md`, "first-read"; probe
+  `chromium-watched-issues-debug-demo.html?issue=first-read`, envelope
+  `chromium-first-read-mvk1dr2x-2os8.json` (each run's raw frames).
+- **Last checked:** Chrome 155, macOS, Playwright's Chrome, 2026-10-22: `STALE FIRST READ`, 14 of 15
+  runs, probe `?issue=first-read`.
 
 ### Chromium [575891839](https://issues.chromium.org/issues/575891839) — the worklet clock runs at half speed after a back/forward-cache restore
 
 - **Tracker:** [issues.chromium.org/issues/575891839](https://issues.chromium.org/issues/575891839),
   "AudioWorklet clock slows to ~0.5× after BFCache restoration, causing distorted playback". Filed
   2026-10-21, **open**, unconfirmed; macOS, Chrome 155 and Canary 158; not in Firefox or Safari.
-- **Symptom:** a document with a running `AudioContext` and an `AudioWorkletNode`, navigated away from
-  and restored from the back/forward cache (`pageshow.persisted: true`), keeps `state: running` and its
-  sample rate but advances `currentTime` at about half wall-clock speed; the output is lower-pitched and
-  distorted; `suspend()` / `resume()` does not repair it, a reload does. A plain `OscillatorNode` context
-  is unaffected. Disappears with `--disable-features=WebAudioBypassOutputBuffering` (the reporter's
-  isolation: the synchronous worklet render path across the cache's pause / resume).
-- **Where it bites here:** every demo (the engine is a worklet); a user pressing Back and Forward on a
-  playing demo. Not measured here: the demos have no `pageshow` / `pagehide` handling, and no sweep
-  exercises a back/forward-cache restore.
+  `suspend()` / `resume()` does not repair it, a reload does; it disappears with
+  `--disable-features=WebAudioBypassOutputBuffering` (the reporter's isolation).
+- **Symptom here:** a page with a running context and a worklet node, restored from the cache
+  (`pageshow.persisted` true), keeps `state: running` and runs its clock at half the wall clock for as
+  long as it lives. Three one-second windows after the restore read 0.4867 / 0.4988 / 0.4986 and
+  0.4813 / 0.5046 / 0.4984 in two runs, against 1.0008 and 0.9774 before. Analysers read both tones at
+  their exact pitch before and after: the samples are right, the graph renders them at half speed.
+- **Where it bites here:** a demo that is playing when the user leaves it and comes back with Back. The
+  looping demo, playing, entered the cache despite its held Web Lock, came back with no
+  `notRestoredReasons` and still "Playing", and its position advanced 1.50 s in 3.00 s of wall clock
+  (0.4996); a fresh load of it ran at 0.993. One run, through an injected `pageshow` listener, not swept.
+  The dev server's HMR socket and COOP / COEP did not keep the probe page out of the cache either.
 - **Workaround:** none applied. The option is to handle `pageshow` with `persisted` by tearing the engine
-  down or asking for a reload. (A `pagehide` listener does not keep a page out of the cache — it is the
-  event cache-compatible pages are told to use; an `unload` listener did, and Chrome is deprecating that;
-  `Cache-Control: no-store` is no longer an absolute block in Chrome either.) Decide after measuring.
-- **Last checked:** 2026-10-22 (tracker read; not reproduced here).
+  down or asking for a reload; the measurement now backs that decision. (A `pagehide` listener does not
+  keep a page out of the cache; an `unload` listener did, and Chrome is deprecating that;
+  `Cache-Control: no-store` is no longer an absolute block in Chrome either.) Run the probe in a Chrome
+  the user launched: Playwright's Chrome runs with `--disable-back-forward-cache` and reads
+  `NOT CHECKED not-cached`.
+- **Evidence:** `debug/2026-10-23-chromium-watched-issues/note.md`, "bfcache"; probe
+  `chromium-watched-issues-debug-demo.html?issue=bfcache`, envelopes `chromium-bfcache-mvk1sddg-wilz.json`
+  and `chromium-bfcache-mvk1suit-b7ru.json`.
+- **Last checked:** Chrome 155.0.8059.85, macOS 15.6.1, the user's Chrome, 2026-10-22: `HALF SPEED`
+  twice, probe `?issue=bfcache`.
+
+## Watched — read from the tracker, not reproduced here
 
 ### Chromium [560233271](https://issues.chromium.org/issues/560233271) — worklet playback stays distorted after an AudioContext suspend / resume cycle
 
@@ -223,10 +244,17 @@ Chromium tracker through the browser).
   output permanently distorted; only a reload or a new context recovers.
 - **Where it bites here:** neither the demos nor the SDK call `suspend()`; `initializeOpenDAW` only
   resumes after a user gesture. The browser's own suspensions (iOS backgrounding, a context created
-  suspended under autoplay policy and resumed once) are single cycles. Not observed here.
+  suspended under autoplay policy and resumed once) are single cycles. Not observed here: 20 quick
+  cycles on an idle one-node graph read `CLEAN`, which is not reproduced, not fixed (the tracker bisects
+  it to 152 and calls it eventual).
 - **Workaround:** keep it that way — never add a suspend / resume cycle to a demo on macOS Chrome;
   `--disable-features=WebAudioBypassOutputBuffering` for a local check.
-- **Last checked:** 2026-10-22 (tracker read).
+- **Evidence:** `debug/2026-10-23-chromium-watched-issues/note.md`, "suspend-resume"; envelopes
+  `chromium-suspend-resume-mvk2auh7-7vhg.json`, `chromium-suspend-resume-mvk2bm5g-d5aw.json`, positive
+  controls `…-mvk2ce9z-vsxm.json` (crackle) and `…-mvk2d80b-fihu.json` (harmonic).
+- **Last checked:** not reproduced on Chrome 155.0.8059.85 / macOS 15.6.1, 2026-10-22, probe
+  `?issue=suspend-resume`: `CLEAN` twice (purity 66.51 dB in every one of 20 cycles, 0 clicks,
+  0 dropouts); both positive controls read `DISTORTED`.
 
 ### Chromium [40103985](https://issues.chromium.org/issues/40103985) — zero-filled 10 ms gaps and duplicated blocks in `getUserMedia` input under underrun
 
@@ -246,15 +274,27 @@ Chromium tracker through the browser).
   exactly 441 frames (10 ms) in 6 of 70 opens, 0.4–1.0 s after the node started, never at 48 kHz in 150
   opens, which the register reads as a 10 ms-chunked FIFO path; and a 44.1 kHz stream-start head
   duplicate (the first click copied about 20 ms later at about 65 %, 14 of 30 cells), read as a
-  stream-start FIFO or resampler artifact. A real-device recording with a 10 ms hole or a drifting beat
+  stream-start FIFO or resampler artifact. The bare probe (no SDK, 60 s per cell) measured a stream-start
+  zero run: one 441-frame run (10 ms) 441 frames after the tone arrives on the loopback at 44 100, and one
+  128-frame run on the built-in microphone at 48 000, every run of those cells, all within the first
+  55 ms; loopback 48 000 and microphone 44 100 were clean. That run is the same node path as the
+  441-frame step and the same size, but not the same timing: it comes in the first 32 ms of a bare
+  capture, the step 0.4–1.0 s into a capture beside the engine. A real-device recording with a 10 ms hole or a drifting beat
   is a candidate for this issue — reproduce and attribute before concluding, since an SDK ring-buffer
   regression would look the same.
 - **Workaround:** none; a `MediaRecorder` capture of the same stream was clean in the reports (not what
   the SDK does). Keep the audio graph small during a take; check `tailMissingMs` and the per-beat errors
   of a real-device take before blaming placement.
 - **Evidence:** `debug/2026-09-02-recording-start-alignment/note.md` (the 441-frame step and the
-  stream-start duplicate); `src/demos/recording/CLAUDE.md` (the step).
-- **Last checked:** 2026-10-22 (tracker read; no gap identified here).
+  stream-start duplicate); `src/demos/recording/CLAUDE.md` (the step);
+  `debug/2026-10-23-chromium-watched-issues/note.md`, "capture-gaps" (envelopes
+  `chromium-capture-gaps-mvk38gho-fzko.json`, `…-mvk35pnx-czdb.json`, `…-mvk39txh-gxhd.json`,
+  `…-mvk37334-0nth.json`).
+- **Last checked:** steady-state gaps not reproduced on Chrome 155.0.8059.85 / macOS 15.6.1, 2026-10-22,
+  probe `?issue=capture-gaps`: no zero run and no duplicate after the first 0.1 s in any unspliced
+  minute; `START GAPS` at loopback 44 100 and microphone 48 000, `CLEAN` at loopback 48 000 and
+  microphone 44 100. The tracker ties the steady-state gaps to a large graph and to devices on different
+  clocks, neither of which the probe had.
 
 ### Chromium [40909520](https://issues.chromium.org/issues/40909520) / [541725401](https://issues.chromium.org/issues/541725401) / [40068799](https://issues.chromium.org/issues/40068799) — OPFS: slow `flush()` on Mac, and a quota overrun that returns a sentinel
 
@@ -268,7 +308,13 @@ Chromium tracker through the browser).
   (`[OPFS] … runs for <n>s at 'write'`; truncate, write and flush share the step), a slower-than-usual
   flush under that stays silent, and a quota overrun on a long recording would come back as a short write count,
   not an exception. Neither observed here.
-- **Last checked:** 2026-10-22 (titles read only).
+- **Evidence:** `debug/2026-10-23-chromium-watched-issues/note.md`, "opfs-flush"; envelopes
+  `chromium-opfs-flush-mvk3i5ql-rcug.json`, `chromium-opfs-flush-mvk3ibtu-y9rp.json`.
+- **Last checked:** the flush: not slow on Chrome 155.0.8059.85 / macOS 15.6.1, 2026-10-22, probe
+  `?issue=opfs-flush`, `MEASURED`: median 0.53–0.57 ms per 1 MiB flush, 1.44–1.46 ms per 16 MiB, in two
+  runs (one 25.65 ms outlier among 40 16 MiB flushes). The tracker's claim is a comparison with other
+  browsers, which this repo does not make. The sentinel: no probe, out of scope; it needs the origin's
+  quota exhausted or an incognito profile.
 
 ### Chromium [388871416](https://issues.chromium.org/issues/388871416) — `outputLatency` and a Bluetooth headset
 
@@ -278,8 +324,10 @@ Chromium tracker through the browser).
   or without the output-buffering flag, so current builds report it. Open, needs feedback.
 - **Where it would bite here:** take placement nets `outputLatency`; a Bluetooth output that reported
   17 ms instead of 200 ms would place every take about 180 ms early. Not measured here (no Bluetooth
-  device in any sweep); on a Bluetooth recording session, read `audioContext.outputLatency` first.
-- **Last checked:** 2026-10-22 (tracker read).
+  device in any sweep); on a Bluetooth recording session, read `audioContext.outputLatency` first, a
+  second after `resume()` (it reads 0 at the instant after).
+- **Last checked:** 2026-10-22 (tracker read). Probe `?issue=output-latency` in place; built-in speaker
+  only on Chrome 155 (base 5.8 ms, output 28 ms); the Bluetooth half not run, needs hardware.
 
 # Firefox
 
