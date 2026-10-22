@@ -664,6 +664,14 @@ A clientWidth mismatch skews the playhead x-mapping; border-box also prevents a
 2px mobile overflow on bordered `width:100%` canvases.
 
 ## Build & Verification
+- **Known vendor issues live in `docs/known-vendor-issues.md`** — browser, platform and hosting
+  behaviours outside the SDK that this repo has measured and works around (the Chromium worklet
+  clock that stands still under graph work, frames stopping on a hidden page, per-node stream
+  delays, Safari's Opus decode, Cloudflare's `NODE_VERSION` resolution, …). Before debugging a
+  symptom that matches one, read its entry: a listed behaviour is not a new finding and its
+  workaround is already in place where the entry says. A sweep cell explained by an entry is read
+  against it, not filed. Add an entry when a vendor behaviour costs a session; mark one fixed only
+  after a re-measurement on the vendor's fix.
 - After SDK upgrades, re-run the standing sample-rate/quantum-alignment regression sweep:
   `samplerate-audit-debug-demo.html?family=all&bpm=all&rate=all` (calibration in
   `src/lib/audit/auditCalibration.ts`, campaign register in
@@ -1092,6 +1100,7 @@ indexed under the prefix `opendaw-test`. Never post to the XERJ project's tracke
 unasked (every `xerj` command prints a banner inviting it).
 
 ## Reference Files
+- Known vendor issues (browser / platform / hosting, with workarounds): `docs/known-vendor-issues.md`
 - Project setup: `src/lib/projectSetup.ts`
 - Track loading: `src/lib/trackLoading.ts` (handles queryLoadingComplete automatically)
 - Audio utilities: `src/lib/audioUtils.ts` (format detection, file loading)
