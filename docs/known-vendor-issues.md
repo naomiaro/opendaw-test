@@ -352,14 +352,18 @@ Chromium tracker through the browser).
   17 ms on the headset); Chromium triage on M142 through M144 (2025-11) reads 200+ ms on the headset with
   or without the output-buffering flag, so current builds report it. Open, needs feedback.
 - **Where it would bite here:** take placement nets `outputLatency`; a Bluetooth output that reported
-  17 ms instead of 200 ms would place every take about 180 ms early. Not measured here (no Bluetooth
-  device in any sweep); on a Bluetooth recording session, read `audioContext.outputLatency` first, a
-  second after `resume()` (it reads 0 at the instant after).
+  17 ms instead of 200 ms would place every take about 180 ms early. Measured here, the headset figure
+  is reported, not understated: 161 ms on a Bluetooth headset against 28 ms on the built-in speaker. On a
+  Bluetooth recording session, read `audioContext.outputLatency` a second after `resume()` (it reads 0
+  at the instant after, on both outputs).
 - **Evidence:** `debug/2026-10-23-chromium-watched-issues/note.md`, "output-latency"; probe
-  `chromium-watched-issues-debug-demo.html?issue=output-latency`, envelope
-  `chromium-output-latency-mvk3xjzv-1180.json`.
-- **Last checked:** 2026-10-22 (tracker read). Probe `?issue=output-latency` in place; built-in speaker
-  only on Chrome 155 (base 5.8 ms, output 28 ms); the Bluetooth half not run, needs hardware.
+  `chromium-watched-issues-debug-demo.html?issue=output-latency`, envelopes
+  `chromium-output-latency-mvk3xjzv-1180.json` (built-in speaker) and
+  `chromium-output-latency-mvk6xq4h-115y.json` (Bluetooth headset).
+- **Last checked:** the understatement did not reproduce on Chrome 155.0.8059.85, 2026-10-22:
+  `outputLatency` 28 ms on the built-in speaker, 161 ms on a Defunc TRUE AUDIO Bluetooth headset (base
+  5.8 ms both), the first read after `resume()` 0 ms both times, probe `?issue=output-latency`, envelopes
+  `mvk3xjzv-1180` / `mvk6xq4h-115y`. Stays watched.
 
 # Firefox
 

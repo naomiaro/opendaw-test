@@ -42,8 +42,9 @@ did with it.
   Stays watched with the figures; no slowness here.
 - **541725401 / 40068799, quota sentinel:** no probe (needs the quota exhausted or an incognito
   profile). Stays watched, out of scope.
-- **388871416, `outputLatency` with Bluetooth:** built-in speaker only (base 5.8 ms, output 28 ms). The
-  Bluetooth half was not run; it needs hardware. Stays watched.
+- **388871416, `outputLatency` with Bluetooth:** the understatement did not reproduce. `outputLatency`
+  read 28 ms on the built-in speaker and 161 ms on a Bluetooth headset (base 5.8 ms both), in line with
+  the tracker's current triage, not the original report. Stays watched.
 
 Runs made with an earlier version of a probe are kept below as data and not quoted for a verdict: the
 gated suspend / resume runs, the 44 100 capture minutes spliced at chunk boundaries (their start events
@@ -60,7 +61,7 @@ stand), the single-window bfcache runs, and the OPFS stored-readings load before
 | `opfs-usage` | [436552046](https://issues.chromium.org/issues/436552046) / [401692415](https://issues.chromium.org/issues/401692415) — OPFS usage not counted for sync-handle writes, negative after a delete | Writes through a sync access handle in a worker, reads `estimate()` before, after the write and after the delete; the user quits and reopens Chrome and the page judges the restart reading on load (`&truncateFirst=1` for the reporter's workaround) | `NOT COUNTED`, `COUNTED`, `NEGATIVE USAGE`, `NOT CHECKED` | **reproduced**: `NEGATIVE USAGE` after a restart of the user's Chrome 155, 2026-10-22 (saved figure −16.5 MB after a plain run's delete, read back as 4.28 GB; about +50.6 MB before it if the delete took the full 64 MiB, as the off-disk reading and round 2 show); the saved figure read off disk drops by the deleted size on a plain delete, by 0 after a truncate; a truncate-first run and a second restart moved it by the hand-deleted samples' size only (−238 137 857 against −238 135 417 predicted) |
 | `opfs-flush` | [40909520](https://issues.chromium.org/issues/40909520) — slow `flush()` on Mac | Times 20 writes of 1 MiB and 20 of 16 MiB, each followed by `flush()`, in a worker; median, p95 and max per size | `MEASURED` (figures only: the tracker's claim is a comparison with other browsers this repo does not make) | **measured**: flush median 0.53–0.57 ms (1 MiB), 1.44–1.46 ms (16 MiB), Chrome 155, macOS 15.6.1, 2026-10-22 |
 | — | [541725401](https://issues.chromium.org/issues/541725401) / [40068799](https://issues.chromium.org/issues/40068799) — a quota overrun returns a sentinel | No probe: needs the origin's quota exhausted or an incognito profile | — | out of scope, stays watched |
-| `output-latency` | [388871416](https://issues.chromium.org/issues/388871416) — `outputLatency` with a Bluetooth headset | Resumes a context and reads `baseLatency`, `outputLatency`, `sinkId` and the output device's label from `enumerateDevices()` every second for 30 s; no classifier, the rows are the finding | `MEASURED` (figures only), `NOT CHECKED context-<state>` | **built-in speaker only**: base 5.8 ms / output 28 ms, Chrome 155, 2026-10-22; the Bluetooth half needs hardware, not run |
+| `output-latency` | [388871416](https://issues.chromium.org/issues/388871416) — `outputLatency` with a Bluetooth headset | Resumes a context and reads `baseLatency`, `outputLatency`, `sinkId` and the output device's label from `enumerateDevices()` every second for 30 s; no classifier, the rows are the finding | `MEASURED` (figures only), `NOT CHECKED context-<state>` | **understatement not reproduced**: output 28 ms on the built-in speaker, 161 ms on a Bluetooth headset, base 5.8 ms both, Chrome 155, 2026-10-22 |
 
 ## Run recipe
 
@@ -696,17 +697,23 @@ the envelope (`flush1MiBAllMs`, `flush16MiBAllMs`). The 25.65 ms is one flush of
 
 ### output-latency (388871416)
 
-**Measured on the built-in speaker only: base 5.8 ms, output 28 ms. The Bluetooth half was not run; it
-needs hardware.** Chrome 155 on macOS 15.6.1, Playwright's Chrome, 2026-10-22, one real click, envelope
-`chromium-output-latency-mvk3xjzv-1180.json`. The device label read `Default - MacBook Pro Speakers
-(Built-in)` on every row, `sinkId` was empty (the default), sample rate 44 100.
+**The understatement did not reproduce: 28 ms on the built-in speaker, 161 ms on a Bluetooth headset.**
+The original report read the headset LOWER than the speaker (17 ms against 33 ms). Chromium's triage on
+current builds reads 200+ ms on a headset. This pair agrees with the triage, so the entry stays watched.
+Both runs are Chrome 155.0.8059.85 on macOS 15.6.1, Playwright's Chrome, 2026-10-22, one real click,
+`sinkId` empty (the default), sample rate 44 100.
 
-- `outputLatency` read 0 ms at the first row (the instant after `resume()`) and 28 ms on each of the 30
-  rows after it. A reader that takes one value right after `resume()` gets 0. Wait a second first.
-- The register's "Last checked" for this entry stays as it is: the tracker's claim is about a Bluetooth
-  headset, and nothing here exercised one.
+| envelope | device label (every row) | base | first row | rows after it |
+|---|---|---|---|---|---|
+| `chromium-output-latency-mvk3xjzv-1180.json` | `Default - MacBook Pro Speakers (Built-in)` | 5.8 ms | 0 ms | 28 ms on all 30 |
+| `chromium-output-latency-mvk6xq4h-115y.json` | `Default - Defunc TRUE AUDIO (Bluetooth)` | 5.8 ms | 0 ms | 161 ms on all 30 |
 
-**To run the Bluetooth half:** open
+- `outputLatency` reads 0 ms at the first row (the instant after `resume()`) on both outputs. A reader
+  that takes one value right after `resume()` gets 0. Wait a second first.
+- The headset was the system output for the whole run, so there is no switch inside one envelope; the
+  two envelopes are the before and after.
+
+**To re-run the Bluetooth half:** open
 `https://localhost:5173/chromium-watched-issues-debug-demo.html?issue=output-latency` in Chrome with the
 Mac's output on the built-in speaker, click Run, and connect the AirPods (or any Bluetooth output) while
 the 30 seconds run, with the system output switched to them. Read the rows: the tracker expects about
