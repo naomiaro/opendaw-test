@@ -5,6 +5,7 @@ import {
   parseStoredUsageRun,
   summarizeFlush,
   usageEnvelope,
+  type RestartReading,
   type StoredUsageRun,
 } from "./chromiumOpfs";
 
@@ -79,6 +80,21 @@ describe("summarizeFlush", () => {
   });
 });
 
+/** A restart load's reading: no session marker, a newer Chrome than the run's, a later day. */
+const restartReading = (usage: number, over: Partial<RestartReading> = {}): RestartReading => ({
+  usage,
+  quota: 300 * GIB,
+  testFiles: 0,
+  opfsBytes: 0,
+  sessionMarkerPresent: false,
+  chrome: "Google Chrome 156",
+  userAgent: "Mozilla/5.0 restart",
+  chromeFullVersion: "156.0.1.2",
+  osVersion: "15.7",
+  date: "2026-10-24",
+  ...over,
+});
+
 describe("the stored readings judged on a later load", () => {
   it("parses what the run stored and refuses anything else", () => {
     const run = storedRun();
@@ -99,7 +115,7 @@ describe("the stored readings judged on a later load", () => {
     const afterRestart = 2 ** 32 - WRITTEN;
     const envelope = usageEnvelope(
       storedRun({ afterWrite: 1000, afterDelete: 1000 }),
-      { usage: afterRestart, quota: 300 * GIB, testFiles: 0, opfsBytes: 0 },
+      restartReading(afterRestart),
       "mvkzzzzz-r3st",
       1_000_000 + 95_000
     );
@@ -111,21 +127,57 @@ describe("the stored readings judged on a later load", () => {
     expect(envelope.figures.testFilesAtRestart).toBe(0);
   });
 
-  it("names a phantom usage that was already there at the run, and the drift across the restart", () => {
-    const wrapped = 2 ** 32 - 405_562_444;
-    const run = storedRun({ beforeWrite: wrapped, afterWrite: wrapped + WRITTEN, afterDelete: wrapped });
-    const inSession = usageEnvelope(run, null, "mvk9abcd-q1w2", 1_000_500);
-    expect(inSession.figures.unexplainedAtRunBytes).toBe(wrapped);
-    expect(inSession.figures.restartDriftBytes).toBeNull();
-    const restarted = usageEnvelope(run, { usage: wrapped - WRITTEN, quota: 300 * GIB, testFiles: 0, opfsBytes: 0 }, "mvkzzzzz-r3st", 1_090_000);
-    expect(restarted.verdict).toBe("NEGATIVE USAGE");
-    expect(restarted.figures.restartDriftBytes).toBe(-WRITTEN);
-    expect(String(restarted.figures.detail)).toContain("already unexplained at the run");
+  it("records the restart load's own browser, OS and date beside the run's", () => {
+    const envelope = usageEnvelope(storedRun(), restartReading(1000), "mvkzzzzz-r3st", 1_010_000);
+    expect(envelope.chrome).toBe("Google Chrome 156");
+    expect(envelope.date).toBe("2026-10-24");
+    expect(envelope.figures.restartChromeFullVersion).toBe("156.0.1.2");
+    expect(envelope.figures.restartOsVersion).toBe("15.7");
+    expect(envelope.figures.restartDate).toBe("2026-10-24");
+    expect(envelope.figures.chromeFullVersion).toBe("155.0.8059.85");
+    expect(envelope.figures.runDate).toBe("2026-10-22");
+  });
+
+  it("reads NOT CHECKED not-restarted when the run's session marker survived, whatever the usage", () => {
+    const envelope = usageEnvelope(storedRun(), restartReading(4_032_000_000, { sessionMarkerPresent: true }), "mvkzzzzz-r3st", 1_027_000);
+    expect(envelope.verdict).toBe("NOT CHECKED not-restarted");
+    expect(envelope.figures.sessionMarkerPresent).toBe("yes");
   });
 
   it("judges a restart reading near the run's own baseline as the in-session verdict", () => {
-    const envelope = usageEnvelope(storedRun(), { usage: 1000, quota: 300 * GIB, testFiles: 0, opfsBytes: 0 }, "mvkzzzzz-r3st", 1_010_000);
+    const envelope = usageEnvelope(storedRun(), restartReading(1000), "mvkzzzzz-r3st", 1_010_000);
     expect(envelope.verdict).toBe("COUNTED");
+    expect(envelope.figures.sessionMarkerPresent).toBe("no");
     expect(String(envelope.figures.detail)).toContain("restart: 1000");
+  });
+});
+
+describe("a restart on an origin that already carried a phantom at the run", () => {
+  const wrapped = 2 ** 32 - 405_562_444;
+  const phantomRun = (truncateFirst: boolean) =>
+    storedRun({ truncateFirst, beforeWrite: wrapped, afterWrite: wrapped + WRITTEN, afterDelete: wrapped });
+
+  it("names the phantom in the in-session envelope", () => {
+    const inSession = usageEnvelope(phantomRun(false), null, "mvk9abcd-q1w2", 1_000_500);
+    expect(inSession.figures.unexplainedAtRunBytes).toBe(wrapped);
+    expect(inSession.figures.restartDriftBytes).toBeNull();
+  });
+
+  it("reads a drift of minus the written size as NEGATIVE USAGE: this run's delete drove the saved figure down", () => {
+    const envelope = usageEnvelope(phantomRun(false), restartReading(wrapped - WRITTEN + 4096), "mvkzzzzz-r3st", 1_090_000);
+    expect(envelope.verdict).toBe("NEGATIVE USAGE");
+    expect(envelope.figures.restartDriftBytes).toBe(-WRITTEN + 4096);
+    expect(String(envelope.figures.detail)).toContain("already unexplained at the run");
+  });
+
+  it("reads a drift of about 0 as COUNTED, the phantom named: the truncate-first delete left the saved figure alone", () => {
+    const envelope = usageEnvelope(phantomRun(true), restartReading(wrapped + 180), "mvkzzzzz-r3st", 1_090_000);
+    expect(envelope.verdict).toBe("COUNTED");
+    expect(String(envelope.figures.detail)).toContain("already unexplained at the run");
+  });
+
+  it("reads any other drift as NOT CHECKED phantom-before-run", () => {
+    const envelope = usageEnvelope(phantomRun(false), restartReading(wrapped - 10 * WRITTEN), "mvkzzzzz-r3st", 1_090_000);
+    expect(envelope.verdict).toBe("NOT CHECKED phantom-before-run");
   });
 });

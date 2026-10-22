@@ -26,6 +26,8 @@ import {
 } from "./chromiumOpfsWorker";
 
 const STORAGE_KEY = "chromium-watched:opfs-usage";
+/** Set at Run in `sessionStorage`: a later load that still finds it is the same session, not a restart. */
+const SESSION_MARKER_KEY = "chromium-watched:opfs-usage:session";
 const USAGE_MIB = 64;
 const FLUSH_COUNT = 20;
 const USAGE_DEADLINE_MS = 30_000;
@@ -87,6 +89,7 @@ async function notChecked(issue: "opfs-usage" | "opfs-flush", reason: string, ru
 export async function runOpfsUsageProbe(_signal: AbortSignal, report: (step: string) => void): Promise<ProbeEnvelope> {
   localStorage.removeItem(STORAGE_KEY);
   const runToken = newRunToken();
+  sessionStorage.setItem(SESSION_MARKER_KEY, runToken);
   if (!hasGetDirectory()) return notChecked("opfs-usage", "no-getDirectory", runToken);
   const truncateFirst = new URLSearchParams(window.location.search).get("truncateFirst") === "1";
   report("write-delete");
@@ -120,9 +123,10 @@ export async function runOpfsUsageProbe(_signal: AbortSignal, report: (step: str
 }
 
 /**
- * On a page load of `?issue=opfs-usage`: readings an earlier run stored mean this load is the
- * restart half (the page cannot tell a restart from a reload; the user confirms the quit).
- * Null when nothing is stored; else the judgement, after which the readings are cleared.
+ * On a page load of `?issue=opfs-usage`: readings an earlier run stored mean this load may be the
+ * restart half. The run's `sessionStorage` marker tells a reload apart: still there, the load reads
+ * `NOT CHECKED not-restarted` and the readings are KEPT for the real restart. Gone, the load is
+ * judged and the readings are cleared. Null when nothing is stored.
  */
 export function judgeStoredOpfsUsageOnLoad(): Promise<ProbeEnvelope> | null {
   const raw = localStorage.getItem(STORAGE_KEY);
@@ -133,16 +137,29 @@ export function judgeStoredOpfsUsageOnLoad(): Promise<ProbeEnvelope> | null {
     console.warn("[chromium-watched] opfs-usage: the stored readings did not parse and were cleared");
     return null;
   }
+  const sessionMarkerPresent = sessionStorage.getItem(SESSION_MARKER_KEY) !== null;
   return (async () => {
     const answer = answerOf<ScanResult>(await ask({ kind: "scan" }, SCAN_DEADLINE_MS), "scan");
     if ("missing" in answer) throw new Error(`the scan found no OPFS: ${answer.missing}`);
+    const platform = await platformOf(navigator as PlatformNavigator);
     const envelope = usageEnvelope(
       run,
-      { usage: answer.usage, quota: answer.quota, testFiles: answer.testFiles, opfsBytes: answer.opfsBytes },
+      {
+        usage: answer.usage,
+        quota: answer.quota,
+        testFiles: answer.testFiles,
+        opfsBytes: answer.opfsBytes,
+        sessionMarkerPresent,
+        chrome: browserOf(navigator),
+        userAgent: platform.userAgent,
+        chromeFullVersion: platform.uaFullVersion,
+        osVersion: platform.platformVersion,
+        date: runDate(),
+      },
       newRunToken(),
       Date.now()
     );
-    localStorage.removeItem(STORAGE_KEY);
+    if (!sessionMarkerPresent) localStorage.removeItem(STORAGE_KEY);
     return envelope;
   })();
 }

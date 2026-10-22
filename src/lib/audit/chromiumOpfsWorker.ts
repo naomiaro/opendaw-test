@@ -55,18 +55,24 @@ const usage = async (req) => {
   const atRun = await walk(await navigator.storage.getDirectory());
   const before = await estimate();
   const file = await dir.getFileHandle(name, { create: true });
-  let handle = await file.createSyncAccessHandle();
-  const data = chunk(MIB);
-  let written = 0;
-  for (let i = 0; i < req.mib; i++) written += handle.write(data, { at: i * MIB });
-  handle.flush();
-  handle.close();
-  const afterWrite = await estimate();
-  handle = await file.createSyncAccessHandle();
-  const sizeReadBack = handle.getSize();
-  if (req.truncateFirst) { handle.truncate(0); handle.flush(); }
-  handle.close();
-  await dir.removeEntry(name);
+  let handle = null;
+  let written = 0, afterWrite, sizeReadBack;
+  try {
+    handle = await file.createSyncAccessHandle();
+    const data = chunk(MIB);
+    for (let i = 0; i < req.mib; i++) written += handle.write(data, { at: i * MIB });
+    handle.flush();
+    handle.close();
+    handle = null;
+    afterWrite = await estimate();
+    handle = await file.createSyncAccessHandle();
+    sizeReadBack = handle.getSize();
+    if (req.truncateFirst) { handle.truncate(0); handle.flush(); }
+  } finally {
+    // A throw mid-write must not leave the file behind for a later scan to count.
+    if (handle !== null) handle.close();
+    await dir.removeEntry(name);
+  }
   const afterDelete = await estimate();
   return { ok: true, kind: "usage", writtenBytes: written, sizeReadBack, truncated: req.truncateFirst, opfsBytesAtRun: atRun.bytes,
     beforeWrite: before.usage, afterWrite: afterWrite.usage, afterDelete: afterDelete.usage,

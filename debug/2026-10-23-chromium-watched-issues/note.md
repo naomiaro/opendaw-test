@@ -67,14 +67,26 @@ Chrome (claude-in-chrome, or by hand):
    The page writes, reads back and deletes 64 MiB, shows `COUNTED` or `NOT COUNTED`, and keeps the
    readings in `localStorage`.
 2. Quit Chrome fully (Cmd+Q, every window), then start it again.
-3. Open the same URL. The page reads `estimate()` once, scans the origin's OPFS, judges and uploads the
-   envelope with no click. `secondsSinceStored` says how long ago step 1 was; the page cannot know that
-   Chrome was restarted in between, so the person who quit it says so.
+3. Open the same URL **by hand**: type it or pick it from the address bar, not through Reopen Closed Tab
+   or a session restore. The page reads `estimate()` once, scans the origin's OPFS, judges and uploads
+   the envelope with no click.
 4. Repeat with `&truncateFirst=1`.
+
+The Run click sets a `sessionStorage` marker. A later load that still finds it is the same browsing
+session, a reload rather than a restart: it reads `NOT CHECKED not-restarted` and keeps the stored
+readings for the real restart. Chrome's session restore can carry `sessionStorage` over, which is why
+step 3 reopens the URL by hand; a restored tab reads `not-restarted` too. Without the marker the page
+still cannot prove that Chrome was restarted, so the person who quit it says so. `secondsSinceStored`
+says how long ago step 1 was. The envelope's top-level `chrome` and `date` are the restart load's,
+with `restartChromeFullVersion`, `restartOsVersion` and `restartDate` beside the run's own
+(`chromeFullVersion`, `osVersion`, `runDate`): quitting Chrome is when a pending update installs.
 
 Read the restart envelope's `restartDriftBytes` (the restart reading minus the run's own baseline):
 the reported cause predicts minus the file's size for a plain delete and 0 after a truncate.
-`unexplainedAtRunBytes` says whether a phantom was already there before the run.
+`unexplainedAtRunBytes` says whether a phantom was already there before the run. When it is 1 GiB or
+more, the restart reading alone cannot tell this run's effect from the phantom, so the drift decides:
+within 1 MiB of minus the written size reads `NEGATIVE USAGE`, within 1 MiB of 0 reads `COUNTED` (the
+phantom named in the detail), anything else `NOT CHECKED phantom-before-run`.
 
 ## Findings
 
@@ -426,11 +438,13 @@ entry. The earliest plain run, `chromium-opfs-usage-mvk3igq7-p9j9.json`, predate
 
 **Not run: the restart half (needs a hand).** Nobody may quit the user's Chrome while they are away.
 The Playwright browser is shared with other agents of this session, so it was not closed either.
-The recipe is under "Run recipe". The stored-readings path ran end to end once, by a plain reload rather
-than a restart: `chromium-opfs-usage-mvk3j1q2-hxdm.json`, `secondsSinceStored` 27, read
-`NEGATIVE USAGE` on the profile's standing 3.89 GB with 0 bytes of files. That verdict is the profile's,
-not the run's. The envelope now carries `unexplainedAtRunBytes`, and the restart detail says
-"already unexplained at the run" in that case. The judgement from stored readings and a restart
+The recipe is under "Run recipe". The stored-readings path ran end to end by a plain reload, twice:
+- **Before the session marker existed.** `chromium-opfs-usage-mvk3j1q2-hxdm.json`, `secondsSinceStored` 27,
+  read `NEGATIVE USAGE` on the profile's standing 3.89 GB with 0 bytes of files and used up the stored
+  run. That verdict is the profile's, not the run's, and the reload was not a restart. It is superseded.
+- **With the marker.** A plain run (`chromium-opfs-usage-mvk3tw5x-n7al.json`, `COUNTED`), then a reload
+  (`chromium-opfs-usage-mvk3tz69-4nl1.json`, `secondsSinceStored` 4): `NOT CHECKED not-restarted`,
+  `sessionMarkerPresent` yes, drift 0, and the stored readings were still there afterwards. The judgement from stored readings and a restart
 figure is covered by Node tests (`src/lib/audit/chromiumOpfs.test.ts`). Every run's stored readings
 were cleared from the Playwright profile's `localStorage` once its figures were taken, so a later load
 there judges nothing.
