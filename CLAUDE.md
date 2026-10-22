@@ -506,13 +506,17 @@ Early `return` inside the callback still COMMITS the transaction — only a thro
 aborts it. Bailing out mid-build leaves partial state committed; throw instead,
 or document the partial state the early return leaves behind.
 
-### Pointer Re-Routing: Separate Transaction from Creation
-`createInstrument()` internally routes `audioUnitBox.output` to master. Re-routing with
-`output.refer(newTarget)` in the same `editing.modify()` may not disconnect the old
-connection, causing dual routing. Always re-route in a separate transaction. Similarly,
-`targetVertex` traversal on pointers created in the same transaction may return stale data.
-This also applies to `captureDevices.get(uuid)` — resolve captures and set their fields
-(deviceId, requestChannels) in a **separate** transaction after `createInstrument` commits.
+### Pointer Re-Routing and Reads After Creation
+`createInstrument()` internally routes `audioUnitBox.output` to master inside the box's
+constructor. Re-routing with `output.refer(newTarget)` in the same `editing.modify()` is
+correct: the constructor update and the later change resolve in order, the old edge is gone,
+undo and redo replay the final target, an aborted transaction rolls both back (regression test
+`src/lib/constructorPointerOrder.test.ts`, which fails on a lib-box without the ordering).
+What still waits for the commit is READING: a constructor pointer not changed again resolves at
+the end of the transaction, so `targetVertex` traversal on boxes created in the same
+transaction may read empty, and `captureDevices.get(uuid)` may not know the capture yet —
+resolve captures and set their fields (deviceId, requestChannels) in a **separate**
+transaction after `createInstrument` commits.
 
 The same staleness applies to **event/adapter collections**: a box created inside a
 transaction (e.g. the `ValueEventBox` seed `createTrackRegion` adds since 0.0.167) is
@@ -523,13 +527,11 @@ transaction, clear/populate events in a second — and make the second one
 transaction's undo entry (two `modify` calls = two undo steps and breaks undo
 atomicity).
 
-**The positive rule:** `pointerField.refer(target)` replaces the existing target atomically.
-Do NOT call `defer()` first in the same transaction unless you mean to leave the pointer
-empty — combining `defer()` + later `refer(new)` within one `editing.modify()` recreates
-the createInstrument-style race. Use `defer()` standalone (when removing a reference) or
-`refer()` standalone (when swapping to a new target). Verified against SDK's
-`AudioContentModifier.toPitchStretch` / `toTimeStretch` which swap play-mode in a single
-transaction this way.
+**The positive rule:** `pointerField.refer(target)` replaces the existing target atomically,
+so a `defer()` before it is never needed — use `defer()` standalone (when removing a
+reference) or `refer()` standalone (when swapping to a new target), as the SDK's
+`AudioContentModifier.toPitchStretch` / `toTimeStretch` do when they swap play-mode in a
+single transaction.
 
 ### createInstrument Inside editing.modify()
 `project.api.createInstrument()` returns `{ audioUnitBox, instrumentBox, trackBox }` directly — no `.unwrap()`.

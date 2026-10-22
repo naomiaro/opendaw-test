@@ -32,15 +32,15 @@ project.engine.preferences.settings.debug.dspLoadMeasurement = true;
 Then read the value at any time:
 
 ```typescript
-const load = project.engine.cpuLoad.getValue();
-console.log(`DSP load: ${(load * 100).toFixed(1)}%`);
+const load = project.engine.cpuLoad.getValue(); // an integer percent of the block budget, above 100 on an overrun
+console.log(`DSP load: ${load}%`);
 ```
 
-- **< 0.5** — comfortable headroom.
-- **0.5 – 0.9** — running hot; investigate.
-- **≥ 1.0** — the audio thread is overrunning. You will hear dropouts.
+- **< 50** — comfortable headroom.
+- **50 – 90** — running hot; investigate.
+- **≥ 100** — the audio thread is overrunning. You will hear dropouts.
 
-The meter is implemented with the `HRClock` worker that signals across a `SharedArrayBuffer` ([internals/03 — HRClock](./internals/03-cross-thread-protocols.md#hrclock--high-resolution-timing-via-atomicswaitnotify)).
+The meter reads a worker that spins `performance.now()` into a `SharedArrayBuffer` while the measurement is on ([internals/03 — HRClock](./internals/03-cross-thread-protocols.md#hrclock--high-resolution-timing-from-a-spinning-clock-worker)); on a machine with fewer than four hardware threads the worker is not started and the meter reports nothing.
 
 ### Step 2: bisect the chain
 

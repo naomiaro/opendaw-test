@@ -91,7 +91,7 @@ This means existing audio regions are never trimmed, split, or deleted by the re
 ```
 audioUnitBox (Tape "Lead Vocal")
   +-- trackBox 0 ── existing audio regions (untouched)
-  +-- trackBox 1 ── new recording region ("Take 1")
+  +-- trackBox 1 ── new recording region ("Take N", one past the highest take already on the unit)
 ```
 
 This applies to both loop and non-loop recording. For loop recording with `allowTakes`, each loop iteration creates additional TrackBoxes via the same `findOrCreate()` mechanism:
@@ -455,8 +455,12 @@ project.editing.modify(() => {
 
 ### How Takes Work Internally
 
-1. `RecordAudio.start()` creates the first take region (labeled "Take 1") on an empty track
-   (see "Recording on Tracks with Existing Content" above for how the track is selected)
+1. `RecordAudio.start()` creates the first take region on an empty track (see "Recording on
+   Tracks with Existing Content" above for how the track is selected). It is labeled "Take 1" on
+   an audio unit without takes; a later recording on the same unit continues after the highest
+   "Take N" among its regions (`RecordTrack.lastTakeNumber`, read once at record start; regions
+   renamed by the user drop out of the count), so three recordings give Take 1, Take 2, Take 3,
+   not three regions called "Take 1". `RecordMidi` numbers the same way.
 2. When the engine position wraps past the loop end, a new take is created:
    - `RecordTrack.findOrCreate()` finds an empty track or creates a new one
    - A new `AudioRegionBox` is created (labeled "Take 2", "Take 3", etc.)

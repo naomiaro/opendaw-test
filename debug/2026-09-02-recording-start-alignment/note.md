@@ -5791,3 +5791,77 @@ engine and netted like the start, the input in flight is waited for, and the tai
 frames). openDAW#479 is closed by this release; a tail deficit on a later release is a new
 finding, not this one.
 
+## Standing sweep on 0.0.177 (2026-10-22)
+
+`@opendaw/studio-sdk@0.0.177` (build probe `upstream`, `buildFeatures: ["recordingStart"]` →
+`release` profile; PRs #378 / #380 still open, so the probe marker stays
+`calibrateInputLatency`). What the release changes on this harness's path: nothing in the
+placement or the stop — the tail timeout 0.0.176 added now does nothing once the recording is
+saved (openDAW#483, a Windows report: the timeout read zero frames through the released worklet
+and resized the take to nothing; this harness's takes end with the tail already in, so it never
+read it), and a new recording numbers its takes after the highest "Take N" already on the unit
+(each harness take is on a fresh tape, so every row is still "Take 1"). Details in
+`changelogs/sdk-0.0.176-to-0.0.177-changes.md`. The harness is the one the 0.0.176 sweep ran, on
+a fresh `node_modules` and dev server (the lockfile was regenerated for the upgrade). Chrome
+155, the Playwright browser, the tab visible throughout.
+
+### Single tape
+
+| file | rate | rows | error rows | cells `aligned` | finalized | netted medians | raw medians |
+|---|---|---|---|---|---|---|---|
+| `recaudit-summary-1792689656151.json` | 48000 | 60 | 0 | 9 of 10 | 60 of 60 | +1.07…+1.17 ms | −9.60…−0.21 ms |
+| `recaudit-summary-1792690074147.json` | 44100 | 60 | 0 | 10 of 10 | 60 of 60 | +0.97…+1.19 ms | −1.54…+1.29 ms |
+
+**Placement is the 0.0.176 placement to the row.** The 48 kHz netted tally reads 1.15 ×33,
+1.17 ×15, 1.07 / 1.10 / 1.13 / 1.14 ×3 each — the 0.0.174, 0.0.175 and 0.0.176 tally exactly;
+at 44.1 kHz every cell reads +1.09…+1.19 and `loop-wrap` +0.97…+1.12, as before. Loader state
+`loaded` on all 120 rows, 0 WAV upload failures, stop lead 198–307 ms, every repeat finalized.
+
+**Tail deficit: 0 of 60 rows at 48 kHz; 2 of 60 at 44.1 kHz, 0.06 and 0.14 ms**
+(`janked-start/120` r1, `nominal-start/120` r2 — the one-to-six-frame rounding the 0.0.176 sweep
+read at 0.02 / 0.04 ms; the 2 ms tolerance is not approached). Post-stop capture margin
+768–1664 frames (16.0–34.7 ms) at 48 kHz against a loopback hop of 12.3–21.6 ms, 768–2176 frames
+(17.4–49.3 ms) at 44.1 kHz against 20.3–23.1 ms.
+
+**Head deficit: one row, `nominal-start/120` repeat 1 at 48 kHz, 94.4 ms** — the first recording
+of the first page load on a freshly installed `node_modules` and a fresh dev server, the
+cold-start event every sweep since 0.0.173 has recorded at the same place (84.4 / 79.0 / 104.4 /
+3523.7 ms). Not an SDK finding: no other row of either run has one. That row is the only cell
+not `aligned` on the release.
+
+### Multi-mic (`multitrack-all`, 120 BPM, 48000 Hz), 8 repeats per cell
+
+| file | rows | error rows | finalized | node delays read | netted, every row | cells | raw inter-tape skew in render quanta, start · janked |
+|---|---|---|---|---|---|---|---|
+| `recaudit-mt-summary-1792690492685.json` | 32 | 0 | 32 of 32 | 32 of 32 | +1.146 | both `aligned` | 0 ×8 · 0 ×8 |
+
+Netted skew 0.00 and first-frame check 0.00 on every row, every raw skew accounted for by the two
+source nodes' own delays, 4 clock discontinuities (the reference clicks' scheduling, as before),
+no event, every repeat finalized both tapes, no tail deficit on any row, raw skew 0 on 16 of 16
+repeats. Post-stop margin 16.0–40.0 ms.
+
+### Forced: the SDK's stamps under graph work (three runs)
+
+`scenario=multitrack-start&graphChurn=on` (`…1792690636160`, `…1792690706873`,
+`…1792690779640`), 48 rows, 0 error rows, a node delay on every one, 221 / 176 / 212 clock
+discontinuities per run (121 / 97 / 113 stalls), 60 433 to 74 024 connect / disconnect pairs per
+repeat, `nodeTapMissingQuanta` 0 to 1.
+
+| netted / first-frame check, in quanta off the usual | rows |
+|---|---|
+| 0 / 0 | 48 |
+
+As on 0.0.174 through 0.0.176 (48 of 48): the repair holds under a churn well above the natural
+rate. Netted +1.146 on every row. No tail deficit on any row.
+
+### The one-quantum event, counted
+
+`one-quantum-events.ts` after these runs: 0.0.177 **0 in 76** repeats (30 single-tape at
+48 kHz, 30 at 44.1 kHz, 16 multi-mic), against 0 in 76 on 0.0.176 and 0.0.175, 0 in 92 on
+0.0.174, 6 in 788 on 0.0.173 and 1 in 416 on 0.0.172. The forced runs stay out of the tally
+(`forced runs left out: 21`). No near miss this time.
+
+### Reading
+
+Every reading is the 0.0.176 reading to the row: placement, inter-tape skew, finalization, the
+stamp repair, the netted stop. The release changes nothing on this path, and the sweep says so.

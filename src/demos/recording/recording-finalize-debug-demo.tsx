@@ -7,7 +7,7 @@ import type {
   AudioRegionBoxAdapter,
 } from "@opendaw/studio-adapters";
 import { AnimationFrame } from "@opendaw/lib-dom";
-import { PPQN } from "@opendaw/lib-dsp";
+import { BAR_PPQN } from "./takeLeadIn";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { useAudioDevicePermission } from "@/hooks/useAudioDevicePermission";
 import { useRecordingTapes } from "@/hooks/useRecordingTapes";
@@ -38,7 +38,6 @@ import { Theme, Container, Flex, Text, Button, Card, Badge } from "@radix-ui/the
  * fish for the first-cycle race.
  */
 
-const BAR_PPQN = PPQN.Quarter * 4; // one bar in 4/4
 const LOOP_LENGTH_BARS = 2;
 const DEBUG_FINALIZE_TIMEOUT_MS = 8_000; // shorter than the 30s prod barrier — verdict shows fast
 const POLL_INTERVAL_MS = 100;

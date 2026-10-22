@@ -5,6 +5,7 @@ import { Project } from "@opendaw/studio-core";
 import type { SampleLoaderState } from "@opendaw/studio-adapters";
 import { AnimationFrame } from "@opendaw/lib-dom";
 import { PPQN } from "@opendaw/lib-dsp";
+import { BAR_PPQN } from "./takeLeadIn";
 import { initializeOpenDAW } from "@/lib/projectSetup";
 import { getAllRegions } from "@/lib/adapterUtils";
 import { waitForLoadingComplete } from "@/lib/engineLoading";
@@ -38,7 +39,6 @@ import {
 // --- Constants ---
 
 const MAX_TAPES = 4;
-const BAR_PPQN = PPQN.Quarter * 4; // one bar in 4/4 time
 
 // Loop progress bar — the width transition is smoothing only, so it is
 // dropped (not the bar itself) under prefers-reduced-motion.

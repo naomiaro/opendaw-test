@@ -10,7 +10,7 @@ Three primitives carry all the traffic between them:
 
 1. **`MessagePort` + `Messenger` + `Communicator`** — typed RPC for commands, async resource loading, and structural notifications.
 2. **`SharedArrayBuffer` + `SyncStream`** — lock-free state polling, used by the audio thread to publish playhead / meters / DSP load that the UI reads every animation frame.
-3. **`SharedArrayBuffer` + `Atomics.wait/notify`** — blocking notification, used by the HRClock worker and the `RingBuffer`.
+3. **`SharedArrayBuffer` + `Atomics.wait/notify`** — blocking notification, used by the `RingBuffer` (the HRClock worker shares a buffer too, but spins instead of waiting).
 
 Almost every cross-thread interaction in openDAW is one of these three patterns dressed up in a typed wrapper.
 
@@ -477,67 +477,34 @@ This is the entire mechanism behind `Engine.sleep()`. No RPC, no audio glitch �
 
 Today only slot `[0]` is used. The buffer is sized for future flags; any new ones would be added at higher slot indices to preserve compatibility.
 
-## HRClock — high-resolution timing via Atomics.wait/notify
+## HRClock — high-resolution timing from a spinning clock worker
 
-The audio thread cannot call `performance.now()` reliably (worklet scope) and certainly cannot sleep. To measure how long a `render()` takes — for the DSP load meter — openDAW uses a dedicated worker that blocks on `Atomics.wait()` and reports back via `performance.now()`.
+The audio thread cannot call `performance.now()` reliably (worklet scope) and certainly cannot sleep. To measure how long the worklet's pass takes (`render()` plus the analysers, meters and sync broadcasts after it) — for the DSP load meter — openDAW runs a dedicated worker that does nothing but write `performance.now()` into one shared float, and the audio thread reads that float at the start and the end of each block.
 
 ### The worker
 
-`packages/studio/core/src/HRClockWorker.ts` is a 44-line file that constructs an inline Worker:
+`packages/studio/core/src/HRClockWorker.ts` constructs an inline Worker on demand:
 
 ```typescript
-this.sab = new SharedArrayBuffer(32)
-const code = `
-    onmessage = (e) => {
-        const int32 = new Int32Array(e.data)
-        const float64 = new Float64Array(e.data)
-        let lastCounter = 0
-        while (true) {
-            Atomics.wait(int32, 0, lastCounter)
-            lastCounter = Atomics.load(int32, 0)
-            const isStart = (lastCounter & 1) === 1
-            if (isStart) {
-                float64[2] = performance.now()
-                Atomics.store(int32, 1, lastCounter)
-            } else {
-                float64[3] = performance.now()
-                Atomics.store(int32, 2, lastCounter)
-            }
-        }
-    }
-`
-const blob = new Blob([code], {type: "application/javascript"})
-this.#worker = new Worker(URL.createObjectURL(blob))
-this.#worker.postMessage(this.sab)
+this.sab = new SharedArrayBuffer(Float64Array.BYTES_PER_ELEMENT)
+const code = `onmessage = (event) => {const now = new Float64Array(event.data); while (true) {now[0] = performance.now()}}`
+this.#url = URL.createObjectURL(new Blob([code], {type: "application/javascript"}))
 ```
 
-The 32-byte SAB layout:
-
-| Bytes | View | Purpose |
-|---|---|---|
-| 0–3 | `int32[0]` | request counter (incremented by audio thread) |
-| 4–7 | `int32[1]` | start response counter (set by worker on start) |
-| 8–11 | `int32[2]` | end response counter (set by worker on end) |
-| 16–23 | `float64[2]` | start timestamp |
-| 24–31 | `float64[3]` | end timestamp |
-
-Counter parity (odd / even) tells the worker whether to write a start or end timestamp. This means each `process()` call increments the counter twice — once at the start, once at the end.
+The worker exists only while someone holds a lease: `HRClockWorker.get().lease()` returns a `Terminable`; the first lease starts the worker, the last one ending terminates it and resets the shared float to 0. `EngineWorklet` holds a lease while `debug.dspLoadMeasurement` is on. On a machine with fewer than four hardware threads (`navigator.hardwareConcurrency < 4`) `lease()` returns `Terminable.Empty`: no worker, the clock reads 0, the meter reports nothing. The spinning worker burns one core for as long as it is leased, which is why the measurement is off by default.
 
 ### Audio-thread API
 
-`packages/studio/core-processors/src/HRClock.ts` is the consumer side. It is engine-independent — it knows only about the 32-byte SAB layout above — which is why it outlived the engine rewrite: the WASM worklet processor constructs one from `processorOptions.hrClockBuffer` and brackets its render with it.
-
-`start()` increments the counter and reads back the *previous* round's timestamps to compute elapsed time. `end()` increments again. The key correctness check:
+`packages/studio/core-processors/src/HRClock.ts` is the consumer side and knows only the one-float layout:
 
 ```typescript
-if (this.#prevStartCounter > 0 && this.#prevEndCounter === this.#prevStartCounter + 1) {
-    elapsed = this.#prevEndTs - this.#prevStartTs
-}
+start(): void {this.#start = this.#now[0]}
+end(): number {return this.#start === 0.0 ? 0.0 : this.#now[0] - this.#start}
 ```
 
-If the counter pair doesn't match (worker fell behind, OS jitter), `elapsed = 0` — better to report no measurement than a bogus one.
+The processor calls `start()` before `render()` and `end()` after; an elapsed of 0 (the worker not running, or stalled) is not written, so the perf buffer only advances on a real measurement. The audio thread never blocks and never notifies.
 
-The audio thread never blocks. It writes one `Atomics.add` + `Atomics.notify` per call and proceeds.
+The earlier design — a worker blocking on `Atomics.wait()` with request and response counters — was replaced upstream, whose measurement found it dropping about half of all blocks (and the slowest ones most), off by up to a millisecond, and costing the audio thread two notifies per block.
 
 ## RingBuffer — bulk audio transfer
 

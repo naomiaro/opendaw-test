@@ -108,8 +108,8 @@ constants are exported as `EngineSettings.RecordingCountInBars`,
 When `allowTakes` is true AND `loopArea.enabled` is true, each time playback wraps past
 `loopArea.to` back to `loopArea.from`, the current take is finalized and a new take begins.
 
-- Recording can start **before** the loop region. Take 1 records from the start position
-  through the first loop wrap. Subsequent takes are scoped to the loop region
+- Recording can start **before** the loop region. The recording's first take records from
+  the start position through the first loop wrap. Subsequent takes are scoped to the loop region
   (`loopFrom` → `loopTo`).
 - With `loopArea.enabled = false`, `allowTakes` has no effect — recording produces a
   single continuous region regardless of the setting.
@@ -125,7 +125,7 @@ overrides it per capture. Sentinels from `InputLatency` (`@opendaw/studio-core`)
 - `InputLatency.EqualsOutput` (-1) — equal to output latency (doubles the compensation)
 - values ≥ 0 — seconds added to output latency
 `InputLatency.resolve(localOverride, preference, outputLatency)` returns the
-resolved seconds; the result feeds take 1's `waveformOffset`.
+resolved seconds; the result feeds the recording's first take's `waveformOffset`.
 
 ### capture.armed Is Not a Box Graph Field
 - `capture.armed` is a `MutableObservableValue<boolean>`, not a box graph field
@@ -196,8 +196,16 @@ state changes. Instead, let AnimationFrame run unconditionally — when there's 
 render it's a no-op.
 
 ### Finding Recording Regions
-Every audio recording region is labeled `"Take N"` starting at N=1, including single
-non-loop recordings (`RecordMidi` labels MIDI takes the same way). Discover via
+Every audio recording region is labeled `"Take N"`, including single non-loop recordings
+(`RecordMidi` labels MIDI takes the same way). N starts at 1 on an audio unit without takes
+and a later recording on the same unit continues after the highest "Take N" already there
+(`RecordTrack.lastTakeNumber`), so a demo must not read "Take 1" as "the first take of this
+recording": the lead-in take is the one positioned before the loop area
+(`isLeadInTake` in `src/demos/recording/takeLeadIn.ts`). Two tapes recorded together can
+carry different numbers for one pass of the loop (a tape recorded alone first numbers on
+from where it stood), so the loop demo groups its rows by pass (`takeIterationNumber`) and
+labels a row with its regions' own SDK labels (`takeRowLabel`: "Take 5", or "Take 5 · Take
+1" when the tapes differ) — never with a number of its own. Discover via
 `getAllAudioRegions(project)` from `src/lib/adapterUtils.ts`:
 ```typescript
 import { getAllAudioRegions } from "@/lib/adapterUtils";
@@ -276,7 +284,8 @@ Then `UUID.toString(audioUnitBox.address.uuid)` matches `RecordingTape.id`.
 
 ### Loop Take Buffer Layout and Offsets
 All takes record into a single continuous audio buffer. The count-in offset is only
-explicitly set for take 1; subsequent takes inherit it transitively through accumulation:
+explicitly set for the recording's first take (numbered 1 on an empty unit; the offsets
+below use that case); subsequent takes inherit it transitively through accumulation:
 ```
 Buffer: [count-in frames | Take 1 audio | Take 2 audio | Take 3 audio ...]
 

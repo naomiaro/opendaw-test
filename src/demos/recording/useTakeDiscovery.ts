@@ -10,6 +10,7 @@ import type {
 import type { AudioRegionBox } from "@opendaw/studio-boxes";
 import type { RecordingTape } from "@/components/RecordingTapeCard";
 import type { TakeRegion, TakeIteration } from "./TakeTimeline";
+import { takeIterationNumber, takeNumberOf, trackedTakeBaselines, withTakeRegion } from "./takeLeadIn";
 
 interface UseTakeDiscoveryOptions {
   project: Project | null;
@@ -37,7 +38,12 @@ export interface UseTakeDiscoveryResult {
  * Reactive take discovery for loop recording: subscribes to the adapter layer
  * (audioUnit tracks → regions) while recording, builds TakeRegion entries from
  * "Take N" regions, groups them into TakeIteration state, and tracks mute
- * changes reactively.
+ * changes reactively. The SDK numbers each audio unit's takes on from the
+ * highest "Take N" it already holds, so a second recording's labels continue
+ * and two tapes recorded together can carry different numbers for one pass
+ * of the loop. The rows are therefore grouped by recording pass (the take's
+ * ordinal past its unit's baseline, after the rows the recording found), and
+ * the lead-in take is told by its position, not by its number.
  */
 export function useTakeDiscovery({
   project,
@@ -55,6 +61,13 @@ export function useTakeDiscovery({
   const sampleLoadersRef = useRef<Set<SampleLoader>>(new Set());
   // Ref for recordingTapes to avoid restarting adapter subscriptions when tapes change
   const recordingTapesRef = useRef<RecordingTape[]>([]);
+  // Mirror of takeIterations for the recording-start snapshot (how many rows exist already)
+  const takeIterationsRef = useRef<TakeIteration[]>([]);
+  // Per recording pass: each tape's highest take number among the rows that existed when
+  // the pass started, and how many rows those were — set on the recording's rising edge,
+  // cleared on its fall. Read off the rows, not the box graph: the SDK creates the first
+  // take before the recording flag reaches React, so a graph read would count it as old.
+  const passRef = useRef<{ baselines: Map<string, number>; rowsBefore: number } | null>(null);
 
   // Cleanup subscriptions on unmount (but NOT sampleLoadersRef — handleStopRecording owns that)
   useEffect(() => {
@@ -71,17 +84,22 @@ export function useTakeDiscovery({
     recordingTapesRef.current = recordingTapes;
   }, [recordingTapes]);
 
+  useEffect(() => {
+    takeIterationsRef.current = takeIterations;
+  }, [takeIterations]);
+
+  useEffect(() => {
+    if (!isRecording) passRef.current = null;
+  }, [isRecording]);
+
   // Build a TakeRegion from a region adapter, using the typed adapter layer
   // for sampleLoader resolution and tape matching.
   const buildTakeRegion = useCallback(
     (regionAdapter: AudioRegionBoxAdapter): TakeRegion | null => {
       if (!audioContext) return null;
 
-      const label = regionAdapter.label;
-      if (!label.startsWith("Take ")) return null;
-
-      const takeNumber = parseInt(label.replace("Take ", ""), 10);
-      if (isNaN(takeNumber)) return null;
+      const takeNumber = takeNumberOf(regionAdapter.label);
+      if (takeNumber === null) return null;
 
       const isMuted = regionAdapter.mute;
       const sampleRate = audioContext.sampleRate;
@@ -111,6 +129,7 @@ export function useTakeDiscovery({
         regionBox,
         inputTapeId,
         takeNumber,
+        positionPpqn: regionBox.position.getValue(),
         isMuted,
         sampleLoader: loader,
         waveformOffsetFrames,
@@ -120,39 +139,10 @@ export function useTakeDiscovery({
     [audioContext]
   );
 
-  // Insert a TakeRegion into takeIterations state incrementally
+  // Insert a TakeRegion into the row of its recording pass
   const addTakeRegionToState = useCallback(
-    (region: TakeRegion) => {
-      setTakeIterations((prev) => {
-        const existing = prev.find((t) => t.takeNumber === region.takeNumber);
-        if (existing) {
-          // Skip if this exact regionBox is already tracked (prevents duplicates on re-subscribe)
-          if (existing.regions.some((r) => r.regionBox === region.regionBox)) {
-            return prev;
-          }
-          // Add region to existing take (multi-track: same take, different tape)
-          const updatedRegions = [...existing.regions, region];
-          return prev.map((t) =>
-            t.takeNumber === region.takeNumber
-              ? {
-                  ...t,
-                  regions: updatedRegions,
-                  isMuted: updatedRegions.every((r) => r.isMuted),
-                }
-              : t
-          );
-        }
-        // New take iteration
-        const newIteration: TakeIteration = {
-          takeNumber: region.takeNumber,
-          isLeadIn: region.takeNumber === 1 && leadInBars > 0,
-          regions: [region],
-          isMuted: region.isMuted,
-        };
-        return [...prev, newIteration].sort(
-          (a, b) => a.takeNumber - b.takeNumber
-        );
-      });
+    (region: TakeRegion, iterationNumber: number) => {
+      setTakeIterations((prev) => withTakeRegion(prev, region, iterationNumber, leadInBars));
     },
     [leadInBars]
   );
@@ -184,6 +174,15 @@ export function useTakeDiscovery({
     const subs: Terminable[] = [];
     const allAudioUnits = project.rootBoxAdapter.audioUnits.adapters();
 
+    // The recording's rising edge: snapshot what the rows hold before the new takes arrive
+    if (passRef.current === null) {
+      passRef.current = {
+        baselines: trackedTakeBaselines(takeIterationsRef.current),
+        rowsBefore: takeIterationsRef.current.length,
+      };
+    }
+    const pass = passRef.current;
+
     for (const tape of recordingTapes) {
       const audioUnitAdapter = allAudioUnits.find(
         (au) => au.box === tape.capture.audioUnitBox
@@ -205,8 +204,15 @@ export function useTakeDiscovery({
               if (!regionAdapter.isAudioRegion()) return;
               const takeRegion = buildTakeRegion(regionAdapter);
               if (!takeRegion) return;
+              const iterationNumber = takeIterationNumber(
+                takeRegion.takeNumber,
+                pass.baselines.get(takeRegion.inputTapeId) ?? 0,
+                pass.rowsBefore
+              );
+              // A take from before this recording is tracked already, or not this pass's
+              if (iterationNumber === null) return;
 
-              addTakeRegionToState(takeRegion);
+              addTakeRegionToState(takeRegion, iterationNumber);
 
               if (takeRegion.sampleLoader) {
                 sampleLoadersRef.current.add(takeRegion.sampleLoader);

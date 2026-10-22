@@ -109,7 +109,7 @@ Bouncing an `AudioUnit` to an offline-rendered audio buffer that replaces the li
 ## H
 
 ### `HRClock`
-A high-resolution timing channel between the audio thread and a dedicated Worker that wakes on `Atomics.notify`. Used for the DSP-load meter. See [internals/03](./internals/03-cross-thread-protocols.md).
+A dedicated Worker that spins `performance.now()` into a shared float while the DSP-load meter is on; the audio thread reads it at the start and the end of each block. Not started on machines with fewer than four hardware threads. See [internals/03](./internals/03-cross-thread-protocols.md).
 
 ## I
 

@@ -9,6 +9,7 @@ import { PPQN } from "@opendaw/lib-dsp";
 import { AudioRegionBox } from "@opendaw/studio-boxes";
 import { CanvasPainter } from "@/lib/CanvasPainter";
 import { CANVAS_COLORS } from "@/lib/design/consoleTheme";
+import { takeRowLabel } from "./takeLeadIn";
 
 // --- Types ---
 
@@ -16,6 +17,8 @@ export interface TakeRegion {
   regionBox: AudioRegionBox;
   inputTapeId: string;
   takeNumber: number;
+  /** Where the region starts on the timeline; the lead-in take starts before the loop area */
+  positionPpqn: number;
   isMuted: boolean;
   sampleLoader: SampleLoader | null;
   waveformOffsetFrames: number;
@@ -23,6 +26,7 @@ export interface TakeRegion {
 }
 
 export interface TakeIteration {
+  /** The row's key: its place in the list (one row per pass of the loop across the tapes). Not shown — the row is labelled by its regions' own "Take N" labels */
   takeNumber: number;
   isLeadIn: boolean;
   regions: TakeRegion[];
@@ -221,7 +225,7 @@ const TakeIterationLane: React.FC<{
   const leadInPercent = totalBars > 0 ? (leadInBars / totalBars) * 100 : 0;
   const loopPercent = totalBars > 0 ? (loopLengthBars / totalBars) * 100 : 0;
 
-  // Take 1 spans all bars (includes lead-in), take 2+ only spans loop region
+  // The lead-in take spans all bars (it started before the loop), the loop takes only the loop
   const isFullWidth = take.isLeadIn || leadInBars === 0;
   const marginLeft = isFullWidth ? 0 : leadInPercent;
   const width = isFullWidth ? 100 : loopPercent;
@@ -260,7 +264,7 @@ const TakeIterationLane: React.FC<{
       >
         <Flex align="center" gap="2">
           <Text size="2" weight={!take.isMuted ? "bold" : "medium"}>
-            Take {take.takeNumber}
+            {takeRowLabel(sortedRegions)}
           </Text>
           <Button
             size="1"
@@ -318,7 +322,7 @@ const TakeIterationLane: React.FC<{
                     color: "var(--mc-label)",
                   }}
                 >
-                  {tapeLabels.find((t) => t.id === region.inputTapeId)?.label}
+                  {tapeLabels.find((t) => t.id === region.inputTapeId)?.label} · Take {region.takeNumber}
                 </span>
               )}
               <TakeWaveformCanvas
