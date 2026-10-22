@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { WATCHED_ISSUES, browserOf, envelopeName, issueFrom, newRunToken, runDate } from "./chromiumWatched";
+import { WATCHED_ISSUES, browserOf, envelopeName, issueFrom, newRunToken, platformOf, runDate } from "./chromiumWatched";
 
 describe("issueFrom", () => {
   it("reads a known issue from the query", () => {
@@ -59,5 +59,37 @@ describe("newRunToken", () => {
 describe("runDate", () => {
   it("is the ISO date of the run", () => {
     expect(runDate(new Date("2026-10-23T08:30:00Z"))).toBe("2026-10-23");
+  });
+});
+
+describe("platformOf", () => {
+  it("reads the full browser version and the OS version from the high-entropy values", async () => {
+    const nav = {
+      userAgent: "Mozilla/5.0 (Macintosh)",
+      userAgentData: {
+        getHighEntropyValues: async (hints: string[]) => {
+          expect(hints).toEqual(["uaFullVersion", "platformVersion"]);
+          return { uaFullVersion: "155.0.8059.85", platformVersion: "15.6.1" };
+        },
+      },
+    };
+    expect(await platformOf(nav)).toEqual({
+      userAgent: "Mozilla/5.0 (Macintosh)",
+      uaFullVersion: "155.0.8059.85",
+      platformVersion: "15.6.1",
+    });
+  });
+
+  it("gives nulls when the browser has no userAgentData", async () => {
+    expect(await platformOf({ userAgent: "Mozilla/5.0 (Firefox)" })).toEqual({
+      userAgent: "Mozilla/5.0 (Firefox)",
+      uaFullVersion: null,
+      platformVersion: null,
+    });
+  });
+
+  it("gives nulls when the high-entropy read rejects", async () => {
+    const nav = { userAgent: "UA", userAgentData: { getHighEntropyValues: () => Promise.reject(new Error("denied")) } };
+    expect(await platformOf(nav)).toEqual({ userAgent: "UA", uaFullVersion: null, platformVersion: null });
   });
 });

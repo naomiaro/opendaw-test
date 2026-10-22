@@ -206,40 +206,67 @@ any upstream fix. The demo reading was taken once, on one demo; it was not swept
 
 ### suspend-resume (560233271)
 
-**Not reproduced.** Chrome 155.0.8059.85 (macOS 15.6.1, Apple silicon, Playwright's Chrome, window
-visible), 2026-10-22, 44 100 Hz. Each run took one real click and read the tone for a two-second
-baseline. It then ran 20 cycles of `suspend()` / `resume()`, each with a one-second window after the
-resume. Verdict **`CLEAN`** on both runs, with 0 console errors on either navigation.
+**Not reproduced under 20 quick cycles on an idle graph on this macOS.** The run is Chrome 155.0.8059.85
+on macOS 15.6.1 (Apple silicon), in Playwright's Chrome with the window visible, on 2026-10-22, at
+44 100 Hz. Both real runs read **`CLEAN`**. Two positive controls read **`DISTORTED`**, and every
+navigation had 0 console errors. Each envelope carries `chromeFullVersion` and `osVersion` itself.
 
+Each run takes one real click and reads the tone for a two-second baseline. It then runs 20 cycles of
+`suspend()` / `resume()`, each raced against a 5 s deadline, with a one-second window after each resume.
 The tone is a 440 Hz sine that the worklet processor renders itself. It goes into an analyser
-(FFT 32 768, no smoothing) and on through a −30 dB gain to the destination. Each window reads the
-analyser once at its end, so every sample read was rendered after the resume. Purity is the tone's own
-bin over the power sum of every other bin above −80 dB, with the window's main lobe (±3 bins) counted
-as the tone. A dropout is a 128-frame stretch whose RMS is under a tenth of the baseline's.
+(FFT 32 768, no smoothing), then through a −30 dB gain to the destination. Each window reads the
+analyser once at its end, so every sample read was rendered after the resume. A window is judged three
+ways:
+- **Purity.** This is the tone's own bin over the power sum of every other bin, with the window's main
+  lobe (±3 bins) counted as the tone. No bin is gated, so noise spread thin over the spectrum still
+  adds up.
+- **Dropouts.** A dropout is a 128-frame stretch whose RMS is under a tenth of the baseline's.
+- **Clicks.** A click is a sample whose second difference exceeds 20 times the baseline window's own
+  99.9th percentile. Here the threshold is 3.93 × 10⁻², about twenty times what the clean sine's
+  curvature reaches.
 
-| envelope | cycles | baseline purity | purity, every cycle | dropouts | suspend ms, median / max | resume ms, median / max | state after the last resume |
-|---|---|---|---|---|---|---|---|
-| `chromium-suspend-resume-mvk22th1-syvs.json` | 20 | 60.41 dB | 60.41 dB | 0 | 0.53 / 0.80 | 6.95 / 8.76 | running |
-| `chromium-suspend-resume-mvk23knk-55i8.json` | 20 | 60.41 dB | 60.41 dB | 0 | 0.49 / 0.66 | 6.59 / 9.41 | running |
+A run reads `DISTORTED` on any one of three things: a purity more than 12 dB under the baseline,
+dropouts in two consecutive windows, or a window with more than 2 clicks above the baseline's count.
 
-The worst purity is the baseline's to two decimals, at every cycle of both runs. So the "worst cycle"
-figure only picks out a float rounding difference and carries no information. An earlier run with the
-same probe (`chromium-suspend-resume-mvk21dt6-catu.json`) read the same: `CLEAN`, 20 cycles, 0 dropouts.
-Its purity figures read `null` because a clean sine puts nothing above −80 dB outside its lobe.
-Harmonics now read at the −80 dB floor in that case, so 60.41 dB is a lower bound: the spectrum is
-clean down to the floor. A distortion would have to put its products above −80 dB, about 48 dB below
-the tone, to move the purity by the verdict's 12 dB.
+| envelope | run | cycles | baseline purity | purity after the cycles | clicks per window | dropouts | suspend ms, median / max | resume ms, median / max | verdict |
+|---|---|---|---|---|---|---|---|---|---|
+| `chromium-suspend-resume-mvk2auh7-7vhg.json` | real | 20 | 66.51 dB | 66.51 dB, every cycle | 0 | 0 | 0.50 / 0.67 | 5.85 / 7.72 | `CLEAN` |
+| `chromium-suspend-resume-mvk2bm5g-d5aw.json` | real | 20 | 66.51 dB | 66.51 dB, every cycle | 0 | 0 | 0.50 / 0.70 | 5.82 / 8.38 | `CLEAN` |
+| `chromium-suspend-resume-mvk2ce9z-vsxm.json` | `&control=crackle` | 20 | 66.51 dB | 7.58 dB from cycle 7 | 2 251–2 259 from cycle 7 | 0 | — | — | `DISTORTED` |
+| `chromium-suspend-resume-mvk2d80b-fihu.json` | `&control=harmonic` | 20 | 66.51 dB | 12.83 dB from cycle 7 | 0 | 0 | — | — | `DISTORTED` |
 
-- **20 cycles do not reach it here.** The tracker says "eventually", bisects it to Chrome 152 and
-  reproduces it on macOS only. This is macOS on Chrome 155, so a clean reading is either a race that
-  20 quick cycles on an idle graph do not hit, or a fix that landed between 152 and 155. The probe
-  cannot tell which. The tracker is still open.
-- **The run has no positive control.** Nothing in it distorts the tone on purpose, so the run shows that
-  the purity held. It does not show what a distorted reading looks like on this analyser. The
-  classifier's tests carry the rule.
+The context read `running` after the last resume in every run.
+
+What the instrument can see:
+- **The crackle control shows the click rule and the purity rule both firing.** From cycle 7 on, the
+  processor flips the sign of three samples per quantum. Purity falls 59 dB and each window holds
+  about 2 255 clicks.
+- **The harmonic control shows the purity rule alone.** From cycle 7 on, the processor soft-clips the
+  tone. Purity falls 54 dB and the window holds no click. The two rules see different damage.
+- **Both controls are gross.** They prove that the detectors fire in this browser on this graph. They
+  do not measure the smallest damage the detectors would catch.
+- **The detection floor below the controls comes from the rules, not a measurement.** One flipped
+  sample of the 0.5 tone gives three clicks against a baseline of 0, and that reads `DISTORTED` (the
+  classifier's tests), when the sample is larger than about 0.02. On the purity side, damage reads
+  distorted once its power, summed over the whole spectrum, comes within about 54 dB of the tone. That
+  is −74 dB on the analyser's scale, where the tone's bin reads −19.6 dB, wherever in the spectrum the
+  damage falls.
+- **The clean figures are the baseline's to two decimals.** A clean sine's out-of-lobe power,
+  −86.11 dB, is the window's own sidelobe leakage, and it does not move across 20 cycles. The
+  worst-purity cycle figure only picks out float rounding in a clean run.
+- **The earlier `CLEAN` runs do not count.** Three runs used an earlier gated measure that counted only
+  bins above −80 dB and had no click rule: `mvk21dt6-catu`, `mvk22th1-syvs` and `mvk23knk-55i8`. That
+  measure could not see crackle spread thin over the spectrum, nor a click, so those runs are not
+  quoted.
+
+What it means:
+- **`CLEAN` means not reproduced here, not fixed.** The tracker says the distortion comes "eventually",
+  bisects it to Chrome 152 and reproduces it on macOS only. Here it is macOS on Chrome 155. So either 20
+  cycles a second apart on a one-node graph do not hit the race, or a fix landed between 152 and 155.
+  The probe cannot tell which, and the tracker is still open.
 - **Neither the demos nor the SDK call `suspend()`.** A grep for `.suspend(` finds nothing in `src/`
-  (outside this probe) or in any `@opendaw/*` dist. `initializeOpenDAW` only resumes. A `DISTORTED`
-  reading would therefore have moved the entry up with "avoid suspend / resume" as the standing rule,
+  outside this probe, and nothing in any `@opendaw/*` dist. `initializeOpenDAW` only resumes. A
+  `DISTORTED` reading would have moved the entry up with "avoid suspend / resume" as the standing rule,
   not a code change. The entry stays watched, with this reading.
 
 ### capture-gaps (40103985)

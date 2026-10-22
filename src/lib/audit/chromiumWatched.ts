@@ -67,3 +67,32 @@ export function newRunToken(now: number = Date.now()): string {
 export function runDate(now: Date = new Date()): string {
   return now.toISOString().slice(0, 10);
 }
+
+/** The parts of `navigator` a probe reads the full browser and OS versions from. */
+export interface PlatformNavigator {
+  userAgent: string;
+  userAgentData?: { getHighEntropyValues?: (hints: string[]) => Promise<{ uaFullVersion?: string; platformVersion?: string }> };
+}
+
+/** What a probe records of the browser and OS beyond `browserOf`: null where the browser does not say. */
+export interface PlatformVersions {
+  userAgent: string;
+  uaFullVersion: string | null;
+  platformVersion: string | null;
+}
+
+/** The full browser version and the OS version (`userAgentData.getHighEntropyValues`); nulls when unavailable. */
+export async function platformOf(nav: PlatformNavigator): Promise<PlatformVersions> {
+  const read = nav.userAgentData?.getHighEntropyValues;
+  if (read === undefined) return { userAgent: nav.userAgent, uaFullVersion: null, platformVersion: null };
+  try {
+    const values = await read.call(nav.userAgentData, ["uaFullVersion", "platformVersion"]);
+    return {
+      userAgent: nav.userAgent,
+      uaFullVersion: values.uaFullVersion ?? null,
+      platformVersion: values.platformVersion ?? null,
+    };
+  } catch {
+    return { userAgent: nav.userAgent, uaFullVersion: null, platformVersion: null };
+  }
+}

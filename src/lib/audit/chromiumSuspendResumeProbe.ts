@@ -5,15 +5,21 @@
  * two-second baseline, then runs `SUSPEND_RESUME_CYCLES` cycles of `suspend()` / `resume()`,
  * each raced against a deadline, with a one-second window after each resume. Every window
  * reads the analyser once at its end: the spectrum gives the tone's purity, the time-domain
- * samples (the last FFT_SIZE frames, all rendered after the resume) give the dropouts. The
- * judgement is `chromiumSuspendResume.ts`.
+ * samples (the last FFT_SIZE frames, all rendered after the resume) give the dropouts and
+ * the clicks. The judgement is `chromiumSuspendResume.ts`.
+ *
+ * `&control=crackle|harmonic` is the positive control: from cycle `CONTROL_FROM_CYCLE` on, the
+ * processor flips the sign of three samples per quantum (crackle) or soft-clips the tone
+ * (harmonic). A control run must read DISTORTED; it shows what the instrument can see.
  */
 
 import { withDeadline } from "@/lib/deadline";
-import { browserOf, newRunToken, runDate, type ProbeEnvelope } from "./chromiumWatched";
+import { browserOf, newRunToken, platformOf, runDate, type PlatformNavigator, type ProbeEnvelope } from "./chromiumWatched";
 import {
   MIN_CYCLES,
   TONE_HZ,
+  clickThreshold,
+  countClicks,
   countDropouts,
   judgeSuspendResume,
   purityOf,
@@ -31,20 +37,39 @@ const FFT_SIZE = 32768;
 /** One render quantum: a zero-filled partial buffer shows as one window. */
 const DROPOUT_WINDOW = 128;
 const DEADLINE_MS = 5000;
+/** The cycle (from 1) a control run starts distorting the tone at. */
+export const CONTROL_FROM_CYCLE = 7;
+
+export type SuspendResumeControl = "crackle" | "harmonic";
+
+/** The control named by `&control=`; null without one; throws on an unknown one. */
+export function controlFrom(params: URLSearchParams): SuspendResumeControl | null {
+  const value = params.get("control");
+  if (value === null) return null;
+  if (value === "crackle" || value === "harmonic") return value;
+  throw new Error(`&control=${value}: expected crackle or harmonic`);
+}
 
 /** The worklet's tone: a sine it renders from its own phase at the context rate. */
 const PROCESSOR_SOURCE = `
 class SuspendResumeTone extends AudioWorkletProcessor {
-  constructor() {
+  constructor(options) {
     super();
     this.phase = 0;
+    this.control = options.processorOptions.control;
+    this.active = false;
+    this.port.onmessage = () => { this.active = true; };
   }
   process(_inputs, outputs) {
     const channels = outputs[0];
     const step = (2 * Math.PI * ${TONE_HZ}) / sampleRate;
+    const crackle = this.active && this.control === "crackle";
+    const harmonic = this.active && this.control === "harmonic";
     for (let i = 0; i < channels[0].length; i++) {
-      const value = 0.5 * Math.sin(this.phase);
+      let value = 0.5 * Math.sin(this.phase);
       this.phase += step;
+      if (harmonic) value = (0.5 * Math.tanh(4 * value)) / Math.tanh(2);
+      if (crackle && (i === 17 || i === 63 || i === 101)) value = -value;
       for (const channel of channels) channel[i] = value;
     }
     this.phase %= 2 * Math.PI;
@@ -99,9 +124,10 @@ function round(value: number | null, digits: number): number | null {
 interface Live {
   context: AudioContext;
   analyser: AnalyserNode;
+  tone: AudioWorkletNode;
 }
 
-async function startLive(): Promise<Live> {
+async function startLive(control: SuspendResumeControl | null): Promise<Live> {
   const context = new AudioContext({ latencyHint: "interactive" });
   try {
     await withDeadline(context.resume(), DEADLINE_MS, "resume");
@@ -113,30 +139,45 @@ async function startLive(): Promise<Live> {
     }
     const analyser = new AnalyserNode(context, { fftSize: FFT_SIZE, smoothingTimeConstant: 0 });
     const output = new GainNode(context, { gain: OUTPUT_GAIN });
-    const tone = new AudioWorkletNode(context, PROCESSOR_NAME, { outputChannelCount: [1] });
+    const tone = new AudioWorkletNode(context, PROCESSOR_NAME, {
+      outputChannelCount: [1],
+      processorOptions: { control },
+    });
     tone.connect(analyser).connect(output).connect(context.destination);
-    return { context, analyser };
+    return { context, analyser, tone };
   } catch (error) {
     await context.close();
     throw error;
   }
 }
 
+/** What the baseline window sets for every later one. */
+interface Reference {
+  rms: number;
+  clickThreshold: number;
+}
+
 /** One analyser read: the spectrum and the time-domain samples, taken together. */
-function readTone(live: Live, baselineRms: number | null): { tone: TonePurity; rms: number } {
+function readTone(live: Live, reference: Reference | null): { tone: TonePurity; reference: Reference } {
   const bins = new Float32Array(live.analyser.frequencyBinCount);
   const samples = new Float32Array(live.analyser.fftSize);
   live.analyser.getFloatFrequencyData(bins);
   live.analyser.getFloatTimeDomainData(samples);
-  const rms = rmsOf(samples);
-  const dropouts = countDropouts(samples, DROPOUT_WINDOW, baselineRms ?? rms);
-  return { tone: tonePurityFromSpectrum(bins, live.context.sampleRate, live.analyser.fftSize, dropouts), rms };
+  const ref = reference ?? { rms: rmsOf(samples), clickThreshold: clickThreshold(samples) };
+  const dropouts = countDropouts(samples, DROPOUT_WINDOW, ref.rms);
+  const clicks = countClicks(samples, ref.clickThreshold);
+  return {
+    tone: tonePurityFromSpectrum(bins, live.context.sampleRate, live.analyser.fftSize, dropouts, clicks),
+    reference: ref,
+  };
 }
 
 /** The click: baseline, then the cycles, each followed by a one-second window; judge. */
 export async function runSuspendResumeProbe(signal: AbortSignal, report: (step: string) => void): Promise<ProbeEnvelope> {
+  const control = controlFrom(new URLSearchParams(window.location.search));
+  const platform = await platformOf(navigator as PlatformNavigator);
   report("start-audio");
-  const live = await startLive();
+  const live = await startLive(control);
   try {
     if (live.context.state !== "running") throw new Error(`the context is ${live.context.state} after resume`);
     report("measure-baseline");
@@ -157,13 +198,14 @@ export async function runSuspendResumeProbe(signal: AbortSignal, report: (step: 
         if (live.context.state !== "running") throw new Error(`context-${live.context.state}-${cycle}`);
         suspendMs.push(t1 - t0);
         resumeMs.push(t2 - t1);
+        if (control !== null && cycle === CONTROL_FROM_CYCLE) live.tone.port.postMessage("start");
       } catch (error) {
         failedStep = String(error instanceof Error ? error.message : error).replace(/\s+/g, "-");
         console.error("[chromium-watched] suspend-resume cycle " + cycle + " failed: " + String(error));
         break;
       }
       await wait(WINDOW_SECONDS * 1000, signal);
-      afterCycles.push(readTone(live, base.rms).tone);
+      afterCycles.push(readTone(live, base.reference).tone);
     }
     const cycles = afterCycles.length;
     const judged = judgeSuspendResume(base.tone, afterCycles, cycles);
@@ -173,19 +215,25 @@ export async function runSuspendResumeProbe(signal: AbortSignal, report: (step: 
       : judged.verdict;
     const figures: Record<string, number | string | null> = {
       verdict,
+      control: control === null ? null : `${control} from cycle ${CONTROL_FROM_CYCLE}`,
       cycles,
       failedStep,
       baselinePurityDb: round(purityOf(base.tone), 2),
       baselineFundamentalDb: round(base.tone.fundamentalDb, 2),
       baselineHarmonicsDb: round(base.tone.harmonicsDb, 2),
       baselineDropouts: base.tone.dropouts,
-      baselineRms: round(base.rms, 4),
+      baselineRms: round(base.reference.rms, 4),
+      baselineClicks: base.tone.clicks,
+      clickThreshold: base.reference.clickThreshold.toExponential(3),
       // Cycles count from 1 in every figure.
       purityPerCycleDb: afterCycles.map((tone) => purityOf(tone).toFixed(2)).join(" "),
       worstPurityDb: round(judged.worstPurityDb, 2),
       worstCycle: judged.worstCycle === null ? null : judged.worstCycle + 1,
       dropoutsPerCycle: afterCycles.map((tone) => tone.dropouts).join(" "),
       dropoutsAfter: judged.dropoutsAfter,
+      clicksPerCycle: afterCycles.map((tone) => tone.clicks).join(" "),
+      worstClicks: judged.worstClicks,
+      worstClicksCycle: judged.worstClicksCycle === null ? null : judged.worstClicksCycle + 1,
       suspendMsMedian: round(median(suspendMs), 2),
       suspendMsMax: round(suspendMs.length === 0 ? null : Math.max(...suspendMs), 2),
       resumeMsMedian: round(median(resumeMs), 2),
@@ -193,6 +241,9 @@ export async function runSuspendResumeProbe(signal: AbortSignal, report: (step: 
       contextStateAfterLastResume: live.context.state,
       sampleRate: live.context.sampleRate,
       os: osOf(navigator as OsNavigator),
+      osVersion: platform.platformVersion,
+      chromeFullVersion: platform.uaFullVersion,
+      userAgent: platform.userAgent,
     };
     return { issue: "suspend-resume", chrome: browserOf(navigator), date: runDate(), runToken: newRunToken(), verdict, figures };
   } finally {
