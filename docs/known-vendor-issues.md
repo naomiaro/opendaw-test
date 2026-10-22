@@ -9,10 +9,12 @@ present only. Add an entry when a vendor behaviour costs a session; retire it (k
 mark it fixed, name the version) when the vendor ships a fix and a re-measurement confirms it.
 
 Each entry: the tracker and its status, the symptom, where it shows up here, the workaround and
-where it lives, the evidence, and when it was last checked. An entry marked **watched** is an open
-upstream issue read from the tracker that would reach this repo but has not been reproduced here;
-its "Where it bites here" says what a matching symptom would look like. An entry without the mark
-was measured here.
+where it lives, the evidence, and when it was last checked. Every vendor section keeps two kinds
+apart: **Measured here** — behaviours reproduced in this repo, each with its workaround in place,
+which a matching sweep cell is read against instead of filed — and **Watched** — open upstream
+issues read from the tracker and never reproduced here, whose "Where it bites here" says what a
+matching symptom would look like. A watched entry is a candidate, not an attribution: reproduce
+first (an SDK regression can look the same), and move the entry up only on a measurement.
 
 Grouped by vendor: Chromium (Chrome, Edge, Brave), Firefox, WebKit (Safari, iOS, WKWebView), then the gaps that
 span them, then the hosting and tooling entries. The three browser sections were swept from their trackers on
@@ -21,7 +23,9 @@ Chromium tracker through the browser).
 
 # Chromium
 
-## Chromium [442866743](https://issues.chromium.org/issues/442866743) — a worklet's clock stands still while the main thread changes the audio graph
+## Measured here
+
+### Chromium [442866743](https://issues.chromium.org/issues/442866743) — a worklet's clock stands still while the main thread changes the audio graph
 
 - **Tracker:** [issues.chromium.org/issues/442866743](https://issues.chromium.org/issues/442866743),
   "currentTime and currentFrame sometimes freeze for a render quantum". Filed 2025-09-03, **open**;
@@ -52,7 +56,106 @@ Chromium tracker through the browser).
   browser is unchanged; re-read the tracker at each SDK upgrade and retire the repairs only on a
   Chrome that reads true under the probe.
 
-## Chromium [571344687](https://issues.chromium.org/issues/571344687) — a worklet processor made right after its module loads reads a stale first clock (watched)
+### Chrome — animation frames stop for a hidden document and a fully covered window
+
+- **Tracker:** none; documented behaviour (page visibility, and occlusion on macOS), not a bug.
+- **Symptom:** `requestAnimationFrame` stops, so everything the SDK runs on it freezes: the main-thread
+  sync (`SyncStream` reads, position and `isPlaying` observables, `RecordAudio` take management).
+  The engine keeps rendering on the audio thread; the page just never observes it. A harness deadline
+  acting on the frozen view then fails a run that the recorder completed.
+- **Where it bites here:** browser-automation runs with an occluded Chrome window; recording demos
+  hidden mid-take. `resize_window` does not unhide a fully occluded window.
+- **Workaround:** keep the window visible for sweeps; `?frameDriver=hidden-safe` on any demo URL (or
+  `initializeOpenDAW`'s `frameDriver` option) pumps the SDK's `AnimationFrame` from a worker tick while
+  the document is hidden and the transport is active (`src/lib/hiddenSafeFrameDriver.ts`). The page's
+  own `alert()` blocks frames and worker messages alike; nothing helps there, and nothing needs to:
+  the take stays intact and finalization waits for the dialog.
+- **Evidence:** `debug/2026-10-21-hidden-page-recording/note.md`; page
+  `recording-hidden-window-debug-demo.html`.
+- **Last checked:** the hidden-page behaviour and the driver on 2026-10-21 (`cover` rows on SDK 0.0.176:
+  the window driver's three rows intact, hidden-safe `start` intact, hidden-safe `mid` / `stop` not yet
+  measured by hand); the three `modal` rows, which block frames by other means, re-run intact on 0.0.177
+  on 2026-10-22.
+
+### Chrome — each `MediaStreamAudioSourceNode` delivers its stream with a delay of its own
+
+- **Tracker:** none; measured behaviour, not reported (a node's delay is set when it starts).
+- **Symptom:** two source nodes on the same stream clone, created in one task, are a render quantum
+  apart in a third to a half of the pairs; nodes started at different moments differ by up to 12 ms; at
+  44.1 kHz a node's delay can step by 441 frames (10 ms) in its first second. Two tapes recorded together
+  therefore carry a raw skew of 0 to 4 quanta that is the browser's, not the SDK's.
+- **Where it bites here:** the multi-mic recording-alignment rows; any two-input recording.
+- **Workaround:** none in the SDK: it cannot see a node's delay, and two takes recorded together sit
+  apart on the timeline by the two nodes' delay difference (0 to 4 quanta measured). The harness nets it
+  out: it listens to the SDK's own source nodes (`nodeTaps` in
+  `src/lib/audit/loopbackInjection.ts`, `measureNodeDelay` in `src/lib/audit/nodeTap.ts`) and judges the
+  netted skew; a raw multi-mic skew is never quoted as an SDK finding. A worklet module must be loaded
+  before the first take (a load still running delays that take's first frame, 117 ms measured).
+- **Evidence:** `debug/2026-09-02-recording-start-alignment/note.md` (stream-tap measurement, repo PRs [#136](https://github.com/naomiaro/opendaw-test/pull/136) and [#138](https://github.com/naomiaro/opendaw-test/pull/138)).
+- **Last checked:** 2026-10-22 (32 multi-mic rows, raw skew accounted for by the node delays on every repeat).
+
+### A `MediaStreamAudioDestinationNode` stream from another `AudioContext` reads silent when captured
+
+- **Tracker:** none; measured in Chrome, not tried elsewhere.
+- **Symptom:** a `getUserMedia` override returning a destination-node stream made in a different
+  AudioContext than the engine's gives flat peaks (the oscillator taps fine directly); and a shared
+  stream dies for every consumer once one of them calls `track.stop()` (a tape disarm or remove).
+- **Where it bites here:** synthetic input for recording tests.
+- **Workaround:** build the loopback in the SAME AudioContext the engine captures into (rms 0.0745 on a
+  4 s take, 14.9× the threshold) and hand each `getUserMedia` call a `stream.clone()`; see
+  `src/lib/audit/loopbackInjection.ts`. The real microphone otherwise.
+- **Evidence:** `src/demos/recording/CLAUDE.md`, "Don't Synthesize Input to Verify Recording".
+- **Last checked:** 2026-10-22 (every recording-alignment row runs through it).
+
+### Chromium [436552046](https://issues.chromium.org/issues/436552046) / [401692415](https://issues.chromium.org/issues/401692415) — OPFS usage written through sync access handles is not counted, and a delete drives the saved figure negative
+
+- **Tracker:** [issues.chromium.org/issues/436552046](https://issues.chromium.org/issues/436552046)
+  "OPFS data cannot be deleted" (filed 2025-08, **open**, P2, assigned) and
+  [401692415](https://issues.chromium.org/issues/401692415) "StorageManager::estimate reports high OPFS
+  utilization after purging all files" (open). A reporter's deterministic root cause (2026-09-25, Chrome
+  154): writes through `FileSystemSyncAccessHandle` never update the persisted per-origin usage
+  (`File System/<n>/t/.usage`), `createWritable()` writes do; `removeEntry()` subtracts the file's full
+  size, so the saved value goes negative and the next browser start reads it as 2³² + value, about 4 GB
+  for an origin that stores nothing. While the browser runs, `estimate()` is right; only the persisted
+  value drifts.
+- **Symptom here:** `navigator.storage.estimate()` reported 40 MB against 8.7 GB of sample files under
+  `samples/v2` — the SDK's OPFS worker writes samples through sync access handles, so they were never
+  counted. The inverse, a ~4 GB usage after the page's sample sweep deletes the folder and the browser
+  restarts, is predicted by the same cause and has not been looked for here; on a browser with a hard
+  per-site quota (Brave: 2 GiB) that reading makes the origin look over quota.
+- **Where it bites here:** judging whether the per-page sample sweep works; any storage read-out; a quota
+  check before a write.
+- **Workaround:** sum the file sizes under `samples/v2` instead; never trust `estimate()` for OPFS. The
+  reporter's: truncate a file to 0 through a sync access handle before `removeEntry()`, which keeps the
+  saved usage from going negative — the SDK's OPFS worker deletes without truncating (a candidate
+  upstream suggestion, not drafted). (`clearStoredSamples()` in `src/lib/storedSamples.ts` also checks
+  with `Workers.Opfs.exists` after a delete because `Workers.Opfs.delete` reports nothing when it fails
+  — an SDK quirk, not the browser's.)
+- **Evidence:** root CLAUDE.md, "Stored Samples Are Swept at Page Load" ([repo PR #132](https://github.com/naomiaro/opendaw-test/pull/132)); the tracker's
+  repro page for the cause.
+- **Last checked:** 2026-10-22 (tracker read; the negative-usage half not reproduced here).
+
+### Chromium [516995393](https://issues.chromium.org/issues/516995393) — no input-latency figure in the Web Audio API (a spec gap)
+
+- **Tracker:** [issues.chromium.org/issues/516995393](https://issues.chromium.org/issues/516995393),
+  "Web Audio API input latency reporting - audio recording latency compensation in DAW app". Filed
+  2026-05-27 by a browser-DAW developer with openDAW as the example, P2, **status External Dependency**:
+  Chromium's answer (2026-05-28) is that the API has three output-latency measures (`baseLatency`,
+  `outputLatency`, `AudioPlaybackStats`) and none for input, that Media Capture and Streams lets a page
+  request a latency range but not read the actual one back, and that it needs specification work first.
+- **Where it bites here:** the whole recording start-alignment campaign (`debug/2026-09-02-recording-
+  start-alignment/note.md`): a take is placed by `outputLatency` plus a guessed input latency, so a real
+  device records late by its own input delay (tens of ms, device-dependent) unless calibrated.
+- **Workaround:** the SDK's `recording.inputLatency` preference and per-capture `captureBox.inputLatency`
+  (`InputLatency.EqualsOutput` doubles the compensation), and the loopback calibration on the upstream
+  calibration branch ([openDAW PR #380](https://github.com/andremichelle/openDAW/pull/380), unreleased; this repo's `input-latency-calibration-debug-demo.html`
+  measures it). The browser's own `MediaStreamTrack.getSettings().latency` is nominal: 2.67 ms reported
+  against 35–63 ms measured on the built-in microphone.
+- **Last checked:** 2026-10-22 (tracker read).
+
+## Watched — read from the tracker, not reproduced here
+
+### Chromium [571344687](https://issues.chromium.org/issues/571344687) — a worklet processor made right after its module loads reads a stale first clock
 
 - **Tracker:** [issues.chromium.org/issues/571344687](https://issues.chromium.org/issues/571344687),
   "AudioWorklet: currentTime is stale in the constructor and first process() after slow module loading".
@@ -88,7 +191,7 @@ Chromium tracker through the browser).
   3523.7 / 94.4 ms) — all "arrived late" readings in the same window, none shown to be this issue.
 - **Last checked:** 2026-10-22 (tracker read; not reproduced here).
 
-## Chromium [575891839](https://issues.chromium.org/issues/575891839) — the worklet clock runs at half speed after a back/forward-cache restore (watched)
+### Chromium [575891839](https://issues.chromium.org/issues/575891839) — the worklet clock runs at half speed after a back/forward-cache restore
 
 - **Tracker:** [issues.chromium.org/issues/575891839](https://issues.chromium.org/issues/575891839),
   "AudioWorklet clock slows to ~0.5× after BFCache restoration, causing distorted playback". Filed
@@ -108,7 +211,7 @@ Chromium tracker through the browser).
   `Cache-Control: no-store` is no longer an absolute block in Chrome either.) Decide after measuring.
 - **Last checked:** 2026-10-22 (tracker read; not reproduced here).
 
-## Chromium [560233271](https://issues.chromium.org/issues/560233271) — worklet playback stays distorted after an AudioContext suspend / resume cycle (macOS, watched)
+### Chromium [560233271](https://issues.chromium.org/issues/560233271) — worklet playback stays distorted after an AudioContext suspend / resume cycle
 
 - **Tracker:** [issues.chromium.org/issues/560233271](https://issues.chromium.org/issues/560233271),
   "AudioWorklet playback becomes persistently distorted after AudioContext suspend/resume". Filed
@@ -125,7 +228,7 @@ Chromium tracker through the browser).
   `--disable-features=WebAudioBypassOutputBuffering` for a local check.
 - **Last checked:** 2026-10-22 (tracker read).
 
-## Chromium [40103985](https://issues.chromium.org/issues/40103985) — zero-filled 10 ms gaps and duplicated blocks in `getUserMedia` input under underrun (watched)
+### Chromium [40103985](https://issues.chromium.org/issues/40103985) — zero-filled 10 ms gaps and duplicated blocks in `getUserMedia` input under underrun
 
 - **Tracker:** [issues.chromium.org/issues/40103985](https://issues.chromium.org/issues/40103985),
   "Webaudio inserts zero filled parts into buffers supplied by getUserMedia". Filed 2019, **open**, P3,
@@ -144,7 +247,8 @@ Chromium tracker through the browser).
   opens, which the register reads as a 10 ms-chunked FIFO path; and a 44.1 kHz stream-start head
   duplicate (the first click copied about 20 ms later at about 65 %, 14 of 30 cells), read as a
   stream-start FIFO or resampler artifact. A real-device recording with a 10 ms hole or a drifting beat
-  would be this, not the SDK.
+  is a candidate for this issue — reproduce and attribute before concluding, since an SDK ring-buffer
+  regression would look the same.
 - **Workaround:** none; a `MediaRecorder` capture of the same stream was clean in the reports (not what
   the SDK does). Keep the audio graph small during a take; check `tailMissingMs` and the per-beat errors
   of a real-device take before blaming placement.
@@ -152,86 +256,7 @@ Chromium tracker through the browser).
   stream-start duplicate); `src/demos/recording/CLAUDE.md` (the step).
 - **Last checked:** 2026-10-22 (tracker read; no gap identified here).
 
-## Chrome — animation frames stop for a hidden document and a fully covered window
-
-- **Tracker:** none; documented behaviour (page visibility, and occlusion on macOS), not a bug.
-- **Symptom:** `requestAnimationFrame` stops, so everything the SDK runs on it freezes: the main-thread
-  sync (`SyncStream` reads, position and `isPlaying` observables, `RecordAudio` take management).
-  The engine keeps rendering on the audio thread; the page just never observes it. A harness deadline
-  acting on the frozen view then fails a run that the recorder completed.
-- **Where it bites here:** browser-automation runs with an occluded Chrome window; recording demos
-  hidden mid-take. `resize_window` does not unhide a fully occluded window.
-- **Workaround:** keep the window visible for sweeps; `?frameDriver=hidden-safe` on any demo URL (or
-  `initializeOpenDAW`'s `frameDriver` option) pumps the SDK's `AnimationFrame` from a worker tick while
-  the document is hidden and the transport is active (`src/lib/hiddenSafeFrameDriver.ts`). The page's
-  own `alert()` blocks frames and worker messages alike; nothing helps there, and nothing needs to:
-  the take stays intact and finalization waits for the dialog.
-- **Evidence:** `debug/2026-10-21-hidden-page-recording/note.md`; page
-  `recording-hidden-window-debug-demo.html`.
-- **Last checked:** the hidden-page behaviour and the driver on 2026-10-21 (`cover` rows on SDK 0.0.176:
-  the window driver's three rows intact, hidden-safe `start` intact, hidden-safe `mid` / `stop` not yet
-  measured by hand); the three `modal` rows, which block frames by other means, re-run intact on 0.0.177
-  on 2026-10-22.
-
-## Chrome — each `MediaStreamAudioSourceNode` delivers its stream with a delay of its own
-
-- **Tracker:** none; measured behaviour, not reported (a node's delay is set when it starts).
-- **Symptom:** two source nodes on the same stream clone, created in one task, are a render quantum
-  apart in a third to a half of the pairs; nodes started at different moments differ by up to 12 ms; at
-  44.1 kHz a node's delay can step by 441 frames (10 ms) in its first second. Two tapes recorded together
-  therefore carry a raw skew of 0 to 4 quanta that is the browser's, not the SDK's.
-- **Where it bites here:** the multi-mic recording-alignment rows; any two-input recording.
-- **Workaround:** none in the SDK: it cannot see a node's delay, and two takes recorded together sit
-  apart on the timeline by the two nodes' delay difference (0 to 4 quanta measured). The harness nets it
-  out: it listens to the SDK's own source nodes (`nodeTaps` in
-  `src/lib/audit/loopbackInjection.ts`, `measureNodeDelay` in `src/lib/audit/nodeTap.ts`) and judges the
-  netted skew; a raw multi-mic skew is never quoted as an SDK finding. A worklet module must be loaded
-  before the first take (a load still running delays that take's first frame, 117 ms measured).
-- **Evidence:** `debug/2026-09-02-recording-start-alignment/note.md` (stream-tap measurement, repo PRs [#136](https://github.com/naomiaro/opendaw-test/pull/136) and [#138](https://github.com/naomiaro/opendaw-test/pull/138)).
-- **Last checked:** 2026-10-22 (32 multi-mic rows, raw skew accounted for by the node delays on every repeat).
-
-## A `MediaStreamAudioDestinationNode` stream from another `AudioContext` reads silent when captured
-
-- **Tracker:** none; measured in Chrome, not tried elsewhere.
-- **Symptom:** a `getUserMedia` override returning a destination-node stream made in a different
-  AudioContext than the engine's gives flat peaks (the oscillator taps fine directly); and a shared
-  stream dies for every consumer once one of them calls `track.stop()` (a tape disarm or remove).
-- **Where it bites here:** synthetic input for recording tests.
-- **Workaround:** build the loopback in the SAME AudioContext the engine captures into (rms 0.0745 on a
-  4 s take, 14.9× the threshold) and hand each `getUserMedia` call a `stream.clone()`; see
-  `src/lib/audit/loopbackInjection.ts`. The real microphone otherwise.
-- **Evidence:** `src/demos/recording/CLAUDE.md`, "Don't Synthesize Input to Verify Recording".
-- **Last checked:** 2026-10-22 (every recording-alignment row runs through it).
-
-## Chromium [436552046](https://issues.chromium.org/issues/436552046) / [401692415](https://issues.chromium.org/issues/401692415) — OPFS usage written through sync access handles is not counted, and a delete drives the saved figure negative
-
-- **Tracker:** [issues.chromium.org/issues/436552046](https://issues.chromium.org/issues/436552046)
-  "OPFS data cannot be deleted" (filed 2025-08, **open**, P2, assigned) and
-  [401692415](https://issues.chromium.org/issues/401692415) "StorageManager::estimate reports high OPFS
-  utilization after purging all files" (open). A reporter's deterministic root cause (2026-09-25, Chrome
-  154): writes through `FileSystemSyncAccessHandle` never update the persisted per-origin usage
-  (`File System/<n>/t/.usage`), `createWritable()` writes do; `removeEntry()` subtracts the file's full
-  size, so the saved value goes negative and the next browser start reads it as 2³² + value, about 4 GB
-  for an origin that stores nothing. While the browser runs, `estimate()` is right; only the persisted
-  value drifts.
-- **Symptom here:** `navigator.storage.estimate()` reported 40 MB against 8.7 GB of sample files under
-  `samples/v2` — the SDK's OPFS worker writes samples through sync access handles, so they were never
-  counted. The inverse, a ~4 GB usage after the page's sample sweep deletes the folder and the browser
-  restarts, is predicted by the same cause and has not been looked for here; on a browser with a hard
-  per-site quota (Brave: 2 GiB) that reading makes the origin look over quota.
-- **Where it bites here:** judging whether the per-page sample sweep works; any storage read-out; a quota
-  check before a write.
-- **Workaround:** sum the file sizes under `samples/v2` instead; never trust `estimate()` for OPFS. The
-  reporter's: truncate a file to 0 through a sync access handle before `removeEntry()`, which keeps the
-  saved usage from going negative — the SDK's OPFS worker deletes without truncating (a candidate
-  upstream suggestion, not drafted). (`clearStoredSamples()` in `src/lib/storedSamples.ts` also checks
-  with `Workers.Opfs.exists` after a delete because `Workers.Opfs.delete` reports nothing when it fails
-  — an SDK quirk, not the browser's.)
-- **Evidence:** root CLAUDE.md, "Stored Samples Are Swept at Page Load" ([repo PR #132](https://github.com/naomiaro/opendaw-test/pull/132)); the tracker's
-  repro page for the cause.
-- **Last checked:** 2026-10-22 (tracker read; the negative-usage half not reproduced here).
-
-## Chromium [40909520](https://issues.chromium.org/issues/40909520) / [541725401](https://issues.chromium.org/issues/541725401) / [40068799](https://issues.chromium.org/issues/40068799) — OPFS, watched: slow `flush()` on Mac, and a quota overrun that returns a sentinel
+### Chromium [40909520](https://issues.chromium.org/issues/40909520) / [541725401](https://issues.chromium.org/issues/541725401) / [40068799](https://issues.chromium.org/issues/40068799) — OPFS: slow `flush()` on Mac, and a quota overrun that returns a sentinel
 
 - **Trackers:** [40909520](https://issues.chromium.org/issues/40909520)
   "FileSystemSyncAccessHandle.flush() is very slow on Mac compared with other browsers" (open, P2,
@@ -245,25 +270,7 @@ Chromium tracker through the browser).
   not an exception. Neither observed here.
 - **Last checked:** 2026-10-22 (titles read only).
 
-## Chromium [516995393](https://issues.chromium.org/issues/516995393) — no input-latency figure in the Web Audio API (a spec gap)
-
-- **Tracker:** [issues.chromium.org/issues/516995393](https://issues.chromium.org/issues/516995393),
-  "Web Audio API input latency reporting - audio recording latency compensation in DAW app". Filed
-  2026-05-27 by a browser-DAW developer with openDAW as the example, P2, **status External Dependency**:
-  Chromium's answer (2026-05-28) is that the API has three output-latency measures (`baseLatency`,
-  `outputLatency`, `AudioPlaybackStats`) and none for input, that Media Capture and Streams lets a page
-  request a latency range but not read the actual one back, and that it needs specification work first.
-- **Where it bites here:** the whole recording start-alignment campaign (`debug/2026-09-02-recording-
-  start-alignment/note.md`): a take is placed by `outputLatency` plus a guessed input latency, so a real
-  device records late by its own input delay (tens of ms, device-dependent) unless calibrated.
-- **Workaround:** the SDK's `recording.inputLatency` preference and per-capture `captureBox.inputLatency`
-  (`InputLatency.EqualsOutput` doubles the compensation), and the loopback calibration on the upstream
-  calibration branch ([openDAW PR #380](https://github.com/andremichelle/openDAW/pull/380), unreleased; this repo's `input-latency-calibration-debug-demo.html`
-  measures it). The browser's own `MediaStreamTrack.getSettings().latency` is nominal: 2.67 ms reported
-  against 35–63 ms measured on the built-in microphone.
-- **Last checked:** 2026-10-22 (tracker read).
-
-## Chromium [388871416](https://issues.chromium.org/issues/388871416) — `outputLatency` and a Bluetooth headset (watched, low)
+### Chromium [388871416](https://issues.chromium.org/issues/388871416) — `outputLatency` and a Bluetooth headset
 
 - **Tracker:** [issues.chromium.org/issues/388871416](https://issues.chromium.org/issues/388871416).
   Filed 2025-01 against Chrome Dev 133 on macOS with AirPods (`outputLatency` 33 ms on the speaker,
@@ -276,7 +283,9 @@ Chromium tracker through the browser).
 
 # Firefox
 
-## Firefox — graph calls queue on the render thread, which renders late under churn
+## Measured here
+
+### Firefox — graph calls queue on the render thread, which renders late under churn
 
 - **Trackers:** the cost is known upstream as a family of quadratic graph operations: [1945316](https://bugzilla.mozilla.org/show_bug.cgi?id=1945316)
   "N sine waves spends infinite time in GraphRunner" (reopened, P3; the 2026-10-16 analysis: `AudioNode::Connect`
@@ -294,17 +303,20 @@ Chromium tracker through the browser).
 - **Evidence:** `debug/2026-10-01-worklet-clock-stale/note.md`, "Firefox, and the probe's dose".
 - **Last checked:** 2026-10-22 (trackers read; the churn figures measured 2026-10-01).
 
-## Firefox [1629478](https://bugzilla.mozilla.org/show_bug.cgi?id=1629478) — `inputs[0]` is empty for the first process() calls until the source is actively processing (by spec)
+## Watched — read from the tracker, not reproduced here
+
+### Firefox [1629478](https://bugzilla.mozilla.org/show_bug.cgi?id=1629478) — `inputs[0]` is empty for the first process() calls until the source is actively processing (by spec)
 
 - **Tracker:** [bugzilla 1629478](https://bugzilla.mozilla.org/show_bug.cgi?id=1629478), unconfirmed, P5, 2020; the answer on it is the spec: `inputs[n]` is an
   empty array while no actively-processing node feeds input n, and a media or stream source is not actively
   processing until it delivers. Up to about 70 empty calls were seen before a `MediaStreamAudioSourceNode` delivered.
 - **Where it bites here:** the recording worklet: a stamp taken on the first `process()` call would predate the input.
 - **Workaround:** in place in the SDK — `RecordingProcessor` records its first-quantum call only once `inputs[0]`
-  carries the expected channel count, and stamps from there. A worklet of ours that reads input must do the same.
-- **Last checked:** 2026-10-22 (tracker read; the SDK's guard verified on the 0.0.177 tag).
+  carries the expected channel count, and stamps from there (read on the 0.0.177 tag; the empty calls themselves
+  were not counted here). A worklet of ours that reads input must do the same.
+- **Last checked:** 2026-10-22 (tracker read).
 
-## Firefox [2070740](https://bugzilla.mozilla.org/show_bug.cgi?id=2070740) — suspend / resume / close promise settlement can get out of order (watched, low)
+### Firefox [2070740](https://bugzilla.mozilla.org/show_bug.cgi?id=2070740) — suspend / resume / close promise settlement can get out of order
 
 - **Tracker:** [bugzilla 2070740](https://bugzilla.mozilla.org/show_bug.cgi?id=2070740), new, S3, 2026-09: a main-thread short circuit added for "closed before
   resume completed" rejections can settle out of order with the graph thread's suspend and close; the spec does not say
@@ -313,7 +325,7 @@ Chromium tracker through the browser).
   closes a context after that, so the race needs a close during a pending resume to show.
 - **Last checked:** 2026-10-22 (tracker read).
 
-## Firefox OPFS — [2076609](https://bugzilla.mozilla.org/show_bug.cgi?id=2076609), [2072928](https://bugzilla.mozilla.org/show_bug.cgi?id=2072928), [2072923](https://bugzilla.mozilla.org/show_bug.cgi?id=2072923), [2060133](https://bugzilla.mozilla.org/show_bug.cgi?id=2060133) (watched)
+### Firefox OPFS — [2076609](https://bugzilla.mozilla.org/show_bug.cgi?id=2076609), [2072928](https://bugzilla.mozilla.org/show_bug.cgi?id=2072928), [2072923](https://bugzilla.mozilla.org/show_bug.cgi?id=2072923), [2060133](https://bugzilla.mozilla.org/show_bug.cgi?id=2060133)
 
 - **Trackers:** [2076609](https://bugzilla.mozilla.org/show_bug.cgi?id=2076609) every `createSyncAccessHandle()` in an origin fails with `UnknownError` after an
   unclean shutdown while a handle was open (Firefox 156, a syntactically invalid SQL statement in the usage tracking;
@@ -327,7 +339,7 @@ Chromium tracker through the browser).
   many files loads and sweeps slowly. None measured here (the sweeps run in Chrome).
 - **Last checked:** 2026-10-22 (titles and descriptions read).
 
-## Firefox [2034508](https://bugzilla.mozilla.org/show_bug.cgi?id=2034508) — `renderQuantumSize` not implemented (watched, low)
+### Firefox [2034508](https://bugzilla.mozilla.org/show_bug.cgi?id=2034508) — `renderQuantumSize` not implemented
 
 - **Tracker:** [bugzilla 2034508](https://bugzilla.mozilla.org/show_bug.cgi?id=2034508), new, 2026-04. The engine assumes the 128-frame quantum everywhere;
   a context constructed with another `renderSizeHint` is not something this repo does, so the gap is harmless here.
@@ -335,7 +347,9 @@ Chromium tracker through the browser).
 
 # WebKit
 
-## Safari — `decodeAudioData` does not decode Ogg Opus, and iOS re-suspends the AudioContext
+## Measured here
+
+### Safari — `decodeAudioData` does not decode Ogg Opus, and iOS re-suspends the AudioContext
 
 - **Trackers:** Opus: [327697](https://bugs.webkit.org/show_bug.cgi?id=327697) "decodeAudioData refuses Opus WebM in every mapping family but 0" (new, 2026-10,
   Safari 27; the Ogg Opus case this repo hit is older and unfiled). The iOS suspension family: [281566](https://bugs.webkit.org/show_bug.cgi?id=281566)
@@ -354,7 +368,9 @@ Chromium tracker through the browser).
   `statechange` event (root CLAUDE.md, "AudioContext Suspension").
 - **Last checked:** 2026-10-22 (trackers read); never re-measured here, the Opus fallback is exercised on every Apple load.
 
-## WebKit [256023](https://bugs.webkit.org/show_bug.cgi?id=256023) — a worklet's thread and heap outlive the page, so reloads leak until `WebAssembly.Memory` fails (watched)
+## Watched — read from the tracker, not reproduced here
+
+### WebKit [256023](https://bugs.webkit.org/show_bug.cgi?id=256023) — a worklet's thread and heap outlive the page, so reloads leak until `WebAssembly.Memory` fails
 
 - **Tracker:** [bugs.webkit.org 256023](https://bugs.webkit.org/show_bug.cgi?id=256023), new, P2, 2023; re-confirmed 2026-10-20 on the iOS 27 simulator
   with an analysis that it is not Wasm-specific: an AudioWorklet's thread and heap outlive the page, so whatever the
@@ -366,7 +382,7 @@ Chromium tracker through the browser).
 - **Workaround:** none in the SDK; open the page in a new tab instead of reloading, until the fix ships.
 - **Last checked:** 2026-10-22 (tracker read).
 
-## WebKit [327552](https://bugs.webkit.org/show_bug.cgi?id=327552) — previously played audio is heard when resuming a context that has a worklet (watched)
+### WebKit [327552](https://bugs.webkit.org/show_bug.cgi?id=327552) — previously played audio is heard when resuming a context that has a worklet
 
 - **Tracker:** [bugs.webkit.org 327552](https://bugs.webkit.org/show_bug.cgi?id=327552), new, 2026-10-14, macOS 26 nightly: after `suspend()` then
   `resume()` a stretch of the pre-suspend audio plays, the worklet's `process()` is then called rapidly as the clock
@@ -374,7 +390,7 @@ Chromium tracker through the browser).
 - **Where it bites here:** nothing here suspends a context; the browser's own iOS suspension and resume would.
 - **Last checked:** 2026-10-22 (tracker read).
 
-## WebKit [327275](https://bugs.webkit.org/show_bug.cgi?id=327275) — a background tab holding a Web Audio context glitches audio system-wide (macOS 27, watched)
+### WebKit [327275](https://bugs.webkit.org/show_bug.cgi?id=327275) — a background tab holding a Web Audio context glitches audio system-wide (macOS 27)
 
 - **Tracker:** [bugs.webkit.org 327275](https://bugs.webkit.org/show_bug.cgi?id=327275), new, 2026-10-12, Safari 27 on macOS 27: the GPU process serves
   CoreAudio a 128-frame IO cycle (2.7 ms); once Safari is not frontmost, RunningBoard demotes that process to
@@ -386,7 +402,7 @@ Chromium tracker through the browser).
   distorted after switching the route to AirPlay" (iOS 26.7, only a new context recovers).
 - **Last checked:** 2026-10-22 (trackers read).
 
-## WebKit [326286](https://bugs.webkit.org/show_bug.cgi?id=326286) — iOS 26.2 to 27: output crackles while an echo-cancelled microphone capture is open (watched)
+### WebKit [326286](https://bugs.webkit.org/show_bug.cgi?id=326286) — iOS 26.2 to 27: output crackles while an echo-cancelled microphone capture is open
 
 - **Tracker:** [bugs.webkit.org 326286](https://bugs.webkit.org/show_bug.cgi?id=326286), new, P2 Major, 2026-10-04, re-confirmed on iPhone 16 Pro / iOS
   27.0.1 in Safari and a WKWebView app: any audio the page plays while a `getUserMedia` stream with
@@ -399,7 +415,7 @@ Chromium tracker through the browser).
   in practice), [283037](https://bugs.webkit.org/show_bug.cgi?id=283037) "Web Audio while recording does not use Bluetooth headphones" (iOS 17).
 - **Last checked:** 2026-10-22 (trackers read).
 
-## WebKit OPFS and workers — [326901](https://bugs.webkit.org/show_bug.cgi?id=326901) / [326345](https://bugs.webkit.org/show_bug.cgi?id=326345), [293955](https://bugs.webkit.org/show_bug.cgi?id=293955), [279739](https://bugs.webkit.org/show_bug.cgi?id=279739) (watched)
+### WebKit OPFS and workers — [326901](https://bugs.webkit.org/show_bug.cgi?id=326901) / [326345](https://bugs.webkit.org/show_bug.cgi?id=326345), [293955](https://bugs.webkit.org/show_bug.cgi?id=293955), [279739](https://bugs.webkit.org/show_bug.cgi?id=279739)
 
 - **Trackers:** [326901](https://bugs.webkit.org/show_bug.cgi?id=326901) "worker storage and network operations complete only when the main thread of the
   page runs" and [326345](https://bugs.webkit.org/show_bug.cgi?id=326345) "dedicated-worker fetch and OPFS operations wait for the page main thread to
@@ -410,11 +426,12 @@ Chromium tracker through the browser).
   lock or no-such-file error is meant).
 - **Where they would bite here:** the SDK's OPFS worker is a dedicated worker; on Safari its sample writes and the
   page sweep wait on the page's main thread, which is exactly what a long synchronous task or a blocked frame driver
-  stalls — the "[OPFS] … runs for <n>s" warnings would fire for the browser's reason, not the SDK's. A sample library
+  stalls — the "[OPFS] … runs for <n>s" warnings could fire for the browser's reason; tell the two apart
+  (a blocked main thread on Safari, a slow write anywhere) before attributing. A sample library
   with more than about 250 handles open at once cannot exist on Safari. None measured here.
 - **Last checked:** 2026-10-22 (descriptions read).
 
-## WebKit [328462](https://bugs.webkit.org/show_bug.cgi?id=328462) — "Enhanced Security" disables `SharedArrayBuffer` (watched)
+### WebKit [328462](https://bugs.webkit.org/show_bug.cgi?id=328462) — "Enhanced Security" disables `SharedArrayBuffer`
 
 - **Tracker:** [bugs.webkit.org 328462](https://bugs.webkit.org/show_bug.cgi?id=328462), new, 2026-10-22, pull request 77899 open: Safari's Enhanced
   Security setting switches `SharedArrayBuffer` off. The SDK needs it for the engine's sync stream, the recording ring
@@ -438,7 +455,9 @@ Chromium tracker through the browser).
 
 # Hosting and tooling
 
-## Cloudflare Pages — `NODE_VERSION=<major>` resolves to the build image's default, not the newest release
+## Measured here
+
+### Cloudflare Pages — `NODE_VERSION=<major>` resolves to the build image's default, not the newest release
 
 - **Tracker:** none; observed in the build logs of this project.
 - **Symptom:** with `NODE_VERSION=24` the build installed Node 24.13.1 on 2026-10-22, nine minor releases
@@ -455,7 +474,7 @@ Chromium tracker through the browser).
   `.nvmrc` drive the deploy.
 - **Last checked:** 2026-10-22 (the override still set, the build on 24.13.1).
 
-## TypeScript — DOM lib without `FileSystemSyncAccessHandle` and `AudioPlaybackStats`
+### TypeScript — DOM lib without `FileSystemSyncAccessHandle` and `AudioPlaybackStats`
 
 - **Tracker:** none; the SDK's declaration files name DOM types the TypeScript lib does not have, and
   this repo checks declaration files (`skipLibCheck` off).
