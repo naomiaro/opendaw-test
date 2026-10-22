@@ -28,6 +28,20 @@ import {
 const STORAGE_KEY = "chromium-watched:opfs-usage";
 /** Set at Run in `sessionStorage`: a later load that still finds it is the same session, not a restart. */
 const SESSION_MARKER_KEY = "chromium-watched:opfs-usage:session";
+/** Every restart load's reading and date, kept across runs: the next restart's drift is measured against it. */
+const LAST_RESTART_KEY = "chromium-watched:opfs-usage:last-restart";
+
+/** The restart reading an earlier restart load stored; null when there is none or it does not parse. */
+function previousRestart(): { usage: number; date: string } | null {
+  const raw = localStorage.getItem(LAST_RESTART_KEY);
+  if (raw === null) return null;
+  try {
+    const value = JSON.parse(raw) as { usage?: unknown; date?: unknown };
+    return typeof value.usage === "number" && typeof value.date === "string" ? { usage: value.usage, date: value.date } : null;
+  } catch {
+    return null;
+  }
+}
 const USAGE_MIB = 64;
 const FLUSH_COUNT = 20;
 const USAGE_DEADLINE_MS = 30_000;
@@ -126,7 +140,8 @@ export async function runOpfsUsageProbe(_signal: AbortSignal, report: (step: str
  * On a page load of `?issue=opfs-usage`: readings an earlier run stored mean this load may be the
  * restart half. The run's `sessionStorage` marker tells a reload apart: still there, the load reads
  * `NOT CHECKED not-restarted` and the readings are KEPT for the real restart. Gone, the load is
- * judged and the readings are cleared. Null when nothing is stored.
+ * judged against the previous restart reading, the readings are cleared, and this restart's
+ * reading is kept for the next one. Null when nothing is stored.
  */
 export function judgeStoredOpfsUsageOnLoad(): Promise<ProbeEnvelope> | null {
   const raw = localStorage.getItem(STORAGE_KEY);
@@ -155,11 +170,15 @@ export function judgeStoredOpfsUsageOnLoad(): Promise<ProbeEnvelope> | null {
         chromeFullVersion: platform.uaFullVersion,
         osVersion: platform.platformVersion,
         date: runDate(),
+        previousRestart: previousRestart(),
       },
       newRunToken(),
       Date.now()
     );
-    if (!sessionMarkerPresent) localStorage.removeItem(STORAGE_KEY);
+    if (!sessionMarkerPresent) {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.setItem(LAST_RESTART_KEY, JSON.stringify({ usage: answer.usage, date: runDate() }));
+    }
     return envelope;
   })();
 }

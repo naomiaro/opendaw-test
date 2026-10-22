@@ -36,6 +36,20 @@ describe("judgeOpfsUsage", () => {
     const judged = judgeOpfsUsage({ beforeWrite: 0, afterWrite: 0, afterDelete: 0, afterRestart: 4_032_000_000 }, 64_000_000);
     expect(judged.verdict).toBe("NEGATIVE USAGE");
     expect(judged.detail).toContain("restart: 4032000000");
+    expect(judged.savedUsageSigned).toBe(4_032_000_000 - 2 ** 32);
+  });
+
+  it("decodes the user's restart reading as a saved figure of -16 522 249 and reads NEGATIVE USAGE", () => {
+    const reported = { beforeWrite: 1_750_486_588, afterWrite: 1_817_595_632, afterDelete: 1_750_486_588, afterRestart: 4_278_445_047 };
+    expect(judgeOpfsUsage(reported, WRITTEN, 0)).toMatchObject({ verdict: "NEGATIVE USAGE", savedUsageSigned: -16_522_249 });
+    // The same reading with the 238 MB of sample files that origin held: they cannot account for 4.28 GB.
+    expect(judgeOpfsUsage(reported, WRITTEN, 238_135_417)).toMatchObject({ verdict: "NEGATIVE USAGE", savedUsageSigned: -16_522_249 });
+  });
+
+  it("reads a positive saved figure after a restart with no files as the in-session verdict", () => {
+    const judged = judgeOpfsUsage({ beforeWrite: 0, afterWrite: WRITTEN, afterDelete: 0, afterRestart: 50_586_615 }, WRITTEN, 0);
+    expect(judged.verdict).toBe("COUNTED");
+    expect(judged.savedUsageSigned).toBe(50_586_615);
   });
 
   it("reads a write that the session counts as COUNTED, with the restart half NOT CHECKED in the detail", () => {
@@ -92,6 +106,7 @@ const restartReading = (usage: number, over: Partial<RestartReading> = {}): Rest
   chromeFullVersion: "156.0.1.2",
   osVersion: "15.7",
   date: "2026-10-24",
+  previousRestart: null,
   ...over,
 });
 
@@ -152,32 +167,55 @@ describe("the stored readings judged on a later load", () => {
   });
 });
 
-describe("a restart on an origin that already carried a phantom at the run", () => {
-  const wrapped = 2 ** 32 - 405_562_444;
-  const phantomRun = (truncateFirst: boolean) =>
-    storedRun({ truncateFirst, beforeWrite: wrapped, afterWrite: wrapped + WRITTEN, afterDelete: wrapped });
+describe("the drift against the previous restart reading", () => {
+  const before = 4_278_445_047;
 
-  it("names the phantom in the in-session envelope", () => {
-    const inSession = usageEnvelope(phantomRun(false), null, "mvk9abcd-q1w2", 1_000_500);
+  it("says when there is no previous restart reading", () => {
+    const envelope = usageEnvelope(storedRun(), restartReading(before), "mvkzzzzz-r3st", 1_090_000);
+    expect(envelope.figures.restartDriftBytes).toBeNull();
+    expect(String(envelope.figures.detail)).toContain("no previous restart reading");
+  });
+
+  it("matches a plain delete when the saved figure fell by about the written size", () => {
+    const previous = 50_586_615;
+    const envelope = usageEnvelope(
+      storedRun(),
+      restartReading(before, { previousRestart: { usage: previous, date: "2026-10-21" } }),
+      "mvkzzzzz-r3st",
+      1_090_000
+    );
+    expect(envelope.verdict).toBe("NEGATIVE USAGE");
+    expect(envelope.figures.restartDriftBytes).toBe(-WRITTEN);
+    expect(envelope.figures.previousRestartUsage).toBe(previous);
+    expect(String(envelope.figures.detail)).toContain("matches plain");
+  });
+
+  it("matches truncate-first when the saved figure stayed where it was", () => {
+    const envelope = usageEnvelope(
+      storedRun({ truncateFirst: true }),
+      restartReading(before + 180, { previousRestart: { usage: before, date: "2026-10-22" } }),
+      "mvkzzzzz-r3st",
+      1_090_000
+    );
+    expect(envelope.verdict).toBe("NEGATIVE USAGE");
+    expect(envelope.figures.restartDriftBytes).toBe(180);
+    expect(String(envelope.figures.detail)).toContain("matches truncate-first");
+  });
+
+  it("matches neither for any other drift", () => {
+    const envelope = usageEnvelope(
+      storedRun(),
+      restartReading(before, { previousRestart: { usage: before + 10 * WRITTEN, date: "2026-10-22" } }),
+      "mvkzzzzz-r3st",
+      1_090_000
+    );
+    expect(String(envelope.figures.detail)).toContain("matches neither");
+  });
+
+  it("keeps the phantom already in the session's tally as a figure", () => {
+    const wrapped = 2 ** 32 - 405_562_444;
+    const inSession = usageEnvelope(storedRun({ beforeWrite: wrapped, afterWrite: wrapped + WRITTEN, afterDelete: wrapped }), null, "mvk9abcd-q1w2", 1_000_500);
     expect(inSession.figures.unexplainedAtRunBytes).toBe(wrapped);
     expect(inSession.figures.restartDriftBytes).toBeNull();
-  });
-
-  it("reads a drift of minus the written size as NEGATIVE USAGE: this run's delete drove the saved figure down", () => {
-    const envelope = usageEnvelope(phantomRun(false), restartReading(wrapped - WRITTEN + 4096), "mvkzzzzz-r3st", 1_090_000);
-    expect(envelope.verdict).toBe("NEGATIVE USAGE");
-    expect(envelope.figures.restartDriftBytes).toBe(-WRITTEN + 4096);
-    expect(String(envelope.figures.detail)).toContain("already unexplained at the run");
-  });
-
-  it("reads a drift of about 0 as COUNTED, the phantom named: the truncate-first delete left the saved figure alone", () => {
-    const envelope = usageEnvelope(phantomRun(true), restartReading(wrapped + 180), "mvkzzzzz-r3st", 1_090_000);
-    expect(envelope.verdict).toBe("COUNTED");
-    expect(String(envelope.figures.detail)).toContain("already unexplained at the run");
-  });
-
-  it("reads any other drift as NOT CHECKED phantom-before-run", () => {
-    const envelope = usageEnvelope(phantomRun(false), restartReading(wrapped - 10 * WRITTEN), "mvkzzzzz-r3st", 1_090_000);
-    expect(envelope.verdict).toBe("NOT CHECKED phantom-before-run");
   });
 });

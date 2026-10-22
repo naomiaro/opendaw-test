@@ -27,34 +27,41 @@ export interface UsageReadings {
 }
 
 /**
- * `NEGATIVE USAGE` when the restart reading exceeds what the origin stores by 1 GiB or more;
- * otherwise the in-session verdict, `NOT COUNTED` when the usage moved by under half the
- * bytes written; `NOT CHECKED` when an in-session reading is missing. The detail names both
- * halves. `storedBytesAtRestart` is the size of every file in the origin's OPFS at the
- * restart reading (0 when it holds none).
+ * The restart reading decoded as the saved figure it came from: Chrome stores the per-origin usage
+ * signed and a start reads a negative one as 2³² + value, so a reading of 2³¹ or more is a negative
+ * saved figure read back unsigned.
+ */
+export function savedUsageSigned(afterRestart: number): number {
+  return afterRestart >= 2 ** 31 ? afterRestart - 2 ** 32 : afterRestart;
+}
+
+/**
+ * `NEGATIVE USAGE` when the restart reading decodes to a negative saved figure (no baseline needed)
+ * and the origin's files cannot account for the raw reading (they come within 1 GiB of it only on
+ * an origin that really stores 2 GiB or more); otherwise the in-session verdict, `NOT COUNTED` when
+ * the usage moved by under half the bytes written; `NOT CHECKED` when an in-session reading is
+ * missing. The detail names both halves. `storedBytesAtRestart` is the size of every file in the
+ * origin's OPFS at the restart reading (0 when it holds none).
  */
 export function judgeOpfsUsage(
   reported: UsageReadings,
   writtenBytes: number,
   storedBytesAtRestart: number = 0
-): { verdict: OpfsUsageVerdict; detail: string } {
+): { verdict: OpfsUsageVerdict; detail: string; savedUsageSigned: number | null } {
   const { beforeWrite, afterWrite, afterDelete, afterRestart } = reported;
-  const restart = afterRestart === null ? "restart: NOT CHECKED" : `restart: ${afterRestart} bytes`;
-  if (afterRestart !== null && afterRestart - storedBytesAtRestart >= GIB) {
-    return {
-      verdict: "NEGATIVE USAGE",
-      detail: `${restart}, ${storedBytesAtRestart} bytes stored, ${afterRestart - storedBytesAtRestart} unexplained`,
-    };
-  }
-  if (![beforeWrite, afterWrite, afterDelete, writtenBytes].every(Number.isFinite)) {
-    return { verdict: "NOT CHECKED", detail: `in-session: readings missing; ${restart}` };
-  }
+  const saved = afterRestart === null ? null : savedUsageSigned(afterRestart);
+  const restart =
+    afterRestart === null ? "restart: NOT CHECKED" : `restart: ${afterRestart} bytes, saved figure ${saved}, ${storedBytesAtRestart} bytes of files`;
+  const inSessionMissing = ![beforeWrite, afterWrite, afterDelete, writtenBytes].every(Number.isFinite);
   const counted = afterWrite - beforeWrite;
-  const inSession: OpfsUsageVerdict = counted < writtenBytes / 2 ? "NOT COUNTED" : "COUNTED";
-  return {
-    verdict: inSession,
-    detail: `in-session: ${inSession} (+${counted} of ${writtenBytes} bytes, ${afterDelete - beforeWrite} left after the delete); ${restart}`,
-  };
+  const inSession: OpfsUsageVerdict = inSessionMissing ? "NOT CHECKED" : counted < writtenBytes / 2 ? "NOT COUNTED" : "COUNTED";
+  const sessionDetail = inSessionMissing
+    ? "in-session: readings missing"
+    : `in-session: ${inSession} (+${counted} of ${writtenBytes} bytes, ${afterDelete - beforeWrite} left after the delete)`;
+  if (afterRestart !== null && saved !== null && saved < 0 && storedBytesAtRestart + GIB < afterRestart) {
+    return { verdict: "NEGATIVE USAGE", detail: `${restart}; ${sessionDetail}`, savedUsageSigned: saved };
+  }
+  return { verdict: inSession, detail: `${sessionDetail}; ${restart}`, savedUsageSigned: saved };
 }
 
 /** Median, nearest-rank 95th percentile and maximum of a list of times. Throws on an empty list. */
@@ -126,56 +133,64 @@ export interface RestartReading {
   chromeFullVersion: string | null;
   osVersion: string | null;
   date: string;
+  /** The restart reading an earlier restart load stored, if any: the drift is measured against it. */
+  previousRestart: { usage: number; date: string } | null;
 }
 
 /** How close a drift must sit to minus the written size, or to 0, to be read as one or the other. */
 export const DRIFT_TOLERANCE_BYTES = 1024 * 1024;
 
+/** What the drift since the previous restart matches: a plain delete (about −written) or truncate-first (about 0). */
+function driftMatch(drift: number, writtenBytes: number): string {
+  if (Math.abs(drift + writtenBytes) <= DRIFT_TOLERANCE_BYTES) return "plain";
+  if (Math.abs(drift) <= DRIFT_TOLERANCE_BYTES) return "truncate-first";
+  return "neither";
+}
+
 /**
- * The restart half judged: `NOT CHECKED not-restarted` when the session marker survived. On an
- * origin whose usage was already 1 GiB or more beyond its files at the run, the restart reading
- * cannot tell this run's effect from the earlier phantom, so the drift from the run's baseline
- * decides: about minus the written size is `NEGATIVE USAGE` (this delete drove the saved figure
- * further down), about 0 is `COUNTED` (the delete left it alone), anything else
- * `NOT CHECKED phantom-before-run`. Otherwise `judgeOpfsUsage`.
+ * The restart half judged: `NOT CHECKED not-restarted` when the session marker survived, else
+ * `judgeOpfsUsage` on the restart reading. The drift since the previous restart reading (saved
+ * figures, signed) is a figure and a sentence in the detail, not a verdict.
  */
-function judgeRestart(run: StoredUsageRun, restart: RestartReading): { verdict: string; detail: string } {
-  const drift = restart.usage - run.beforeWrite;
-  const unexplainedAtRun = run.beforeWrite - run.opfsBytesAtRun;
+function judgeRestart(run: StoredUsageRun, restart: RestartReading): { verdict: string; detail: string; drift: number | null } {
   if (restart.sessionMarkerPresent) {
     return {
       verdict: "NOT CHECKED not-restarted",
       detail: `the run's session marker is still there: a reload, not a restart; restart: ${restart.usage} bytes; readings kept`,
+      drift: null,
     };
   }
-  if (unexplainedAtRun >= GIB) {
-    const already = `already unexplained at the run: ${unexplainedAtRun} bytes`;
-    const verdict =
-      Math.abs(drift + run.writtenBytes) <= DRIFT_TOLERANCE_BYTES ? "NEGATIVE USAGE"
-      : Math.abs(drift) <= DRIFT_TOLERANCE_BYTES ? "COUNTED"
-      : "NOT CHECKED phantom-before-run";
-    return { verdict, detail: `restart: ${restart.usage} bytes, drift ${drift} from the run's baseline (${run.writtenBytes} deleted); ${already}` };
-  }
-  return judgeOpfsUsage(
+  const judged = judgeOpfsUsage(
     { beforeWrite: run.beforeWrite, afterWrite: run.afterWrite, afterDelete: run.afterDelete, afterRestart: restart.usage },
     run.writtenBytes,
     restart.opfsBytes
   );
+  if (restart.previousRestart === null) {
+    return { ...judged, detail: `${judged.detail}; drift: no previous restart reading`, drift: null };
+  }
+  const drift = savedUsageSigned(restart.usage) - savedUsageSigned(restart.previousRestart.usage);
+  const detail =
+    `${judged.detail}; drift since the restart of ${restart.previousRestart.date}: ${drift} bytes ` +
+    `(plain delete expected ≈ −${run.writtenBytes}, truncate-first expected ≈ 0; this ${run.truncateFirst ? "truncate-first" : "plain"} run matches ${driftMatch(drift, run.writtenBytes)})`;
+  return { ...judged, detail, drift };
 }
 
 /**
  * The envelope of a usage run: in-session when `restart` is null, else the later load's.
  * A restart envelope gets its own run token (so the in-session file is not overwritten), names
  * the stored run's, and carries the restart load's browser, OS and date at the top level, the
- * run's beside them. `unexplainedAtRunBytes` is usage the origin's files did not account for
- * before the write (a phantom an earlier restart left); `restartDriftBytes` is how the usage
- * moved from the run's baseline across the restart, which the reported cause puts at minus the
- * file's size for a plain delete and 0 after a truncate.
+ * run's beside them. `unexplainedAtRunBytes` is usage the session's tally held beyond the origin's
+ * files before the write; `savedUsageSigned` is the restart reading decoded as the saved figure;
+ * `restartDriftBytes` is how the saved figure moved since the previous restart reading, which the
+ * reported cause puts at minus the file's size for a plain delete and 0 after a truncate.
  */
 export function usageEnvelope(run: StoredUsageRun, restart: RestartReading | null, runToken: string, now: number): ProbeEnvelope {
   const judged =
     restart === null
-      ? judgeOpfsUsage({ beforeWrite: run.beforeWrite, afterWrite: run.afterWrite, afterDelete: run.afterDelete, afterRestart: null }, run.writtenBytes)
+      ? {
+          ...judgeOpfsUsage({ beforeWrite: run.beforeWrite, afterWrite: run.afterWrite, afterDelete: run.afterDelete, afterRestart: null }, run.writtenBytes),
+          drift: null,
+        }
       : judgeRestart(run, restart);
   const figures: Record<string, number | string | null> = {
     verdict: judged.verdict,
@@ -194,7 +209,10 @@ export function usageEnvelope(run: StoredUsageRun, restart: RestartReading | nul
     residualAfterDeleteBytes: run.afterDelete - run.beforeWrite,
     opfsBytesAtRun: run.opfsBytesAtRun,
     unexplainedAtRunBytes: run.beforeWrite - run.opfsBytesAtRun,
-    restartDriftBytes: restart === null ? null : restart.usage - run.beforeWrite,
+    savedUsageSigned: restart === null ? null : savedUsageSigned(restart.usage),
+    restartDriftBytes: judged.drift,
+    previousRestartUsage: restart?.previousRestart?.usage ?? null,
+    previousRestartDate: restart?.previousRestart?.date ?? null,
     quotaAtRun: run.quota,
     afterRestart: restart?.usage ?? null,
     quotaAtRestart: restart?.quota ?? null,
